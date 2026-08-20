@@ -1,5 +1,6 @@
 #pragma once
 
+// pi-lens-ignore: clang:pp_file_not_found
 #include "Common.h"
 #include "ObjectGuid.h"
 #include <string>
@@ -16,11 +17,9 @@ namespace TortoiseBots {
 class BotSessionAdapter
 {
 public:
-    // Create a headless WorldSession for the given account/character and
-    // immediately start the normal character-loading flow (LoginQueryHolder).
-    // Returns the new session on success, nullptr on failure.
-    // The session is added to World::m_sessions and will appear in the world
-    // after the async DB load completes (same path as a normal login).
+    // Create and queue a headless WorldSession for the given account/character.
+    // BotManager dispatches the normal LoginQueryHolder flow after the queued
+    // session becomes visible to World. Returns the session on success.
     static WorldSession* CreateHeadlessSession(uint32 accountId, ObjectGuid characterGuid);
 
     // Explicit logout for a headless session. Safe to call from the world thread.

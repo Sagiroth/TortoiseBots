@@ -4,10 +4,16 @@
 # Enable the module's auto-test headless login on startup (for Phase 3 spike proof).
 # 0 = manual only, 1 = auto run the 7-step login→world→save→logout→relog test with the
 # character below. The character must already exist (created normally via client or DB)
-# and will be logged in as a headless session on a bot account.
+# and will be logged in as a headless session using that account's real security level.
 TortoiseBots.AutoTest = 0
-TortoiseBots.AutoTest.AccountId = 1
+TortoiseBots.AutoTest.AccountId = 0
 TortoiseBots.AutoTest.CharacterGuid = 0
+
+# Regression check: AddBot followed immediately by RemoveBot must cancel the queued
+# session before it reaches World::m_sessions. Keep disabled outside a test run.
+TortoiseBots.PendingAddRemoveTest = 0
+TortoiseBots.PendingAddRemoveTest.AccountId = 0
+TortoiseBots.PendingAddRemoveTest.CharacterGuid = 0
 
 # Logging
 TortoiseBots.LogLevel = 1

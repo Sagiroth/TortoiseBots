@@ -1,3 +1,4 @@
+// pi-lens-ignore: clang:pp_file_not_found
 #include "BotHostAdapter.h"
 #include "BotSessionAdapter.h"
 #include "../runtime/BotManager.h"
@@ -78,6 +79,14 @@ void BotHostAdapter::OnWorldUpdate(uint32 diff)
 
     ++m_ticks;
 
+    if (m_ticks == 200 && sConfig.GetBoolDefault("TortoiseBots.PendingAddRemoveTest", false))
+    {
+        uint32 acct = sConfig.GetIntDefault("TortoiseBots.PendingAddRemoveTest.AccountId", 0);
+        uint32 guidLow = sConfig.GetIntDefault("TortoiseBots.PendingAddRemoveTest.CharacterGuid", 0);
+        if (acct && guidLow)
+            BotManager::Instance().RunPendingAddRemoveTest(acct, ObjectGuid(HIGHGUID_PLAYER, guidLow));
+    }
+
     // AutoTest is gated by `TortoiseBots.AutoTest` (default OFF). BUILD_PLAYERBOTS=ON
     // alone must never log a test character. Enable via `TortoiseBots.AutoTest = 1`
     // and `TortoiseBots.AutoTest.AccountId` / `CharacterGuid` in mangosd.conf.
@@ -86,8 +95,8 @@ void BotHostAdapter::OnWorldUpdate(uint32 diff)
         extern bool sTortoiseBotsAutoTestAllowed();
         if (sTortoiseBotsAutoTestAllowed())
         {
-            uint32 acct = sConfig.GetIntDefault("TortoiseBots.AutoTest.AccountId", 4);
-            uint32 guidLow = sConfig.GetIntDefault("TortoiseBots.AutoTest.CharacterGuid", 1);
+            uint32 acct = sConfig.GetIntDefault("TortoiseBots.AutoTest.AccountId", 0);
+            uint32 guidLow = sConfig.GetIntDefault("TortoiseBots.AutoTest.CharacterGuid", 0);
             if (guidLow == 0)
                 return;
             ObjectGuid testGuid(HIGHGUID_PLAYER, guidLow);

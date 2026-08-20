@@ -27,11 +27,9 @@ WorldSession* BotSessionAdapter::CreateHeadlessSession(uint32 accountId, ObjectG
     std::string remoteAddr = "127.0.0.1";
     uint32 binaryAddr = 0x7F000001; // 127.0.0.1
 
-    // Use the account's actual security level so reserved-name and GM checks pass
-    // (e.g. the default "Admin" character is named "Admin" which is reserved for SEC_PLAYER).
+    // Use the account's stored security level. Test characters must be valid for
+    // that level; the module never elevates an account for a fixture.
     AccountTypes sec = sAccountMgr.GetSecurity(accountId);
-    if (sec == SEC_PLAYER && accountId == 4) // fallback for the default admin account in test env
-        sec = SEC_ADMINISTRATOR;
 
     // Transport is established at construction time — no SetHeadless mutation.
     WorldSession* session = new WorldSession(accountId, nullptr, sec, time_t(0), LOCALE_enUS, remoteAddr, binaryAddr, SessionTransport::Headless);
@@ -41,8 +39,7 @@ WorldSession* BotSessionAdapter::CreateHeadlessSession(uint32 accountId, ObjectG
     // Use the normal queued AddSession path. The session will be moved from
     // addSessQueue to m_sessions on the next World::UpdateSessions. BotManager
     // defers LoginPlayer until FindSession(accountId) returns this session, so
-    // the LoginQueryHolder callback's FindSession succeeds (avoids the race that
-    // previously required AddSessionDirect).
+    // the LoginQueryHolder callback's FindSession succeeds.
     sWorld.AddSession(session);
 
     sLog.outString("TortoiseBots: CreateHeadlessSession acct %u guid %s headless %u ptr %p — queued add (login deferred)", accountId, characterGuid.GetString().c_str(), session->IsHeadless(), (void*)session);

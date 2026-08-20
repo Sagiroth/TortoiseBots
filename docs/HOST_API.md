@@ -1,11 +1,11 @@
 # HOST_API — Tortoise WoW 1.18.1 Host Boundary Discovery (Phase 1)
 
 **Date:** 2026-08-20
-**Target core:** `Penqle/tortoise-wow` (online: https://github.com/Penqle/tortoise-wow) — snapshot packaged in a local `tortoise-docker-penqle/source` checkout (clean after PR #396)
+**Target core:** `Penqle/tortoise-wow` (online: <https://github.com/Penqle/tortoise-wow>) — snapshot packaged in a local `tortoise-docker-penqle/source` checkout (clean after PR #396)
 **Docker wrapper commit:** `d07ec3fe8fd5` / `9310e37 Tortoise WoW (Penqle, no-bots)` — local Docker packaging
-**Plan ref:** `docs/PLAN.md` (online: https://github.com/tortoise-wow-stack/TortoiseBots/blob/main/docs/PLAN.md) §9 / §26 — Phase 1 Host-boundary discovery
-**Core source root inspected:** local `tortoise-docker-penqle/source` checkout if present (online canonical: https://github.com/Penqle/tortoise-wow)
-**Reference checkouts (if present locally):** `playerbots-references/{cmangos-playerbots@076045e, mangoszero-server@1817ae1, shyalya-tortoise-wow@1f9497e, cmangos-mangos-classic@9b682be}` (online: https://github.com/cmangos/playerbots, https://github.com/mangoszero/server, https://github.com/Shyalya/tortoise-wow, https://github.com/cmangos/mangos-classic)
+**Plan ref:** `docs/PLAN.md` (online: <https://github.com/tortoise-wow-stack/TortoiseBots/blob/main/docs/PLAN.md>) §9 / §26 — Phase 1 Host-boundary discovery
+**Core source root inspected:** local `tortoise-docker-penqle/source` checkout if present (online canonical: <https://github.com/Penqle/tortoise-wow>)
+**Reference checkouts (if present locally):** `playerbots-references/{cmangos-playerbots@076045e, mangoszero-server@1817ae1, shyalya-tortoise-wow@1f9497e, cmangos-mangos-classic@9b682be}` (online: <https://github.com/cmangos/playerbots>, <https://github.com/mangoszero/server>, <https://github.com/Shyalya/tortoise-wow>, <https://github.com/cmangos/mangos-classic>)
 
 > Goal: enumerate the **minimum events/capabilities the PlayerBots module actually needs** from the core, and identify where an existing general-purpose hook suffices vs where a genuinely new centralized seam is required. Design is based on the **actual current source tree**, not assumptions from CMaNGOS/MangosZero/Shyalya.
 
@@ -35,7 +35,7 @@ rg -n 'BUILD_PLAYERBOTS|AiPlayerbot' source
 Tortoise is **not** TrinityCore/AzerothCore-style with `WorldScript`/`PlayerScript`/`AccountScript`/`GuildScript` registries. It retains the older MaNGOS `ScriptMgr` ( `src/game/ScriptMgr.h` 1654 lines, `ScriptMgr.cpp` 2914 lines):
 
 | Facility | File | What it provides |
-|---|---|---|
+| --- | --- | --- |
 | `struct Script` | `ScriptMgr.h:1449` | Old DB-script bindings: `pGossipHello`, `pQuestAcceptNPC`, `pItemUse`, `pEffectDummyCreature`, `GOGetAI`, `GetAI`, `GetInstanceData`, `GetSpellScript`, `GetAuraScript`, etc. Registered via `Script::RegisterSelf()` and `sScriptMgr.Initialize()` (`World.cpp:2180`). |
 | `ScriptMapMap` DB scripts | `ScriptMgr.h:1120` | `sQuestEndScripts`, `sQuestStartScripts`, `sSpellScripts`, `sEventScripts`, `sGossipScripts`, `sCreatureMovementScripts` — loaded from DB tables, not C++ hooks. |
 | `SpellScript` / `AuraScript` | `ScriptMgr.h:1380,1417` | Per-spell/auras hooks (`OnCheckCast`, `OnEffectExecute`, `OnAbsorb`, `OnPeriodicTick`, etc.). Useful for Turtle spell shims later, not for bot lifecycle. |
@@ -47,7 +47,7 @@ Tortoise is **not** TrinityCore/AzerothCore-style with `WorldScript`/`PlayerScri
 ### 1.2 World / Session / Player lifecycle paths (actual code)
 
 | Path | File:Line | Notes |
-|---|---|---|
+| --- | --- | --- |
 | **Socket accept → session** | `Protocol/WorldSocket.cpp:382` (`HandleAuthSession`) | `ACE_NEW_RETURN(m_Session, WorldSession(id, this, ...), -1)` then `sWorld.AddSession(m_Session)` (`:370`). `WorldSession` constructor is `WorldSession(uint32 id, WorldSocket *sock, ...)` (`WorldSession.h:308`, `WorldSession.cpp:83`). The `sock` pointer is stored as `m_Socket` (`WorldSession.h:991`). |
 | **Session map** | `World.h:905-906, World.cpp:283,288` | `SessionMap m_sessions` + `LockedQueue<WorldSession*> addSessQueue`. `World::AddSession` defers to `AddSession_(s)` in `World::UpdateSessions`. |
 | **Auth & net-free checks** | `WorldSession.cpp:163,214,342,367,383,736` | `SendPacket` early-outs if `m_Socket==nullptr` (163). `Update` checks `!m_Socket` (383) and `IsClosed`. `LogoutPlayer` has explicit `if (_player->GetGroup() && !_player->GetGroup()->isRaidGroup() && m_Socket)` (736) — null-socket already partially handled. |
@@ -69,14 +69,14 @@ Tortoise is **not** TrinityCore/AzerothCore-style with `WorldScript`/`PlayerScri
 Per `PLAN.md` §9 — columns: need → existing general hook? → new core seam required? → rationale.
 
 | # | Need | Existing hook? | New seam? | Why / Evidence |
-|---|---|---|:-:|---|
+| --- | --- | --- | :-: | --- |
 | 1 | **World tick** (`diff` each server frame) | **No** — `World::Update(diff)` (`World.cpp:2448`) is closed. No `WorldScript::OnUpdate` registry. `WorldSessionScript` has no world-tick callback. | **Yes — single centralized hook** | Bot AI must run once per tick (follow, combat, threat). Options: (a) add one `if (sBotMgr) sBotMgr->Update(diff)` call inside `World::Update` (after `UpdateSessions`), or (b) reuse `HardcodedEvents`-like `WorldEvent` — but a direct call is clearer and less invasive. No need for per-player hook. |
 | 2 | **Player login** (human or bot character enters world) | **Partial** — `WorldSession::HandlePlayerLogin(LoginQueryHolder*)` (`CharacterHandler.cpp:561`) exists and already calls `ALL_SESSION_SCRIPTS(this, OnLogin(pCurr))` (`:1005`). `LoginQueryHolder::Initialize()` is reusable. | **No for notification; Yes for bot creation** | For *observing* login, `WorldSessionScript::OnLogin` is sufficient. For *creating* a bot login without a socket, need a headless factory (see #6). No new hook for observation. |
 | 3 | **Player logout / save / reload** | **Partial** — `WorldSession::LogoutPlayer(bool Save)` (`WorldSession.cpp:572`) does full save/cleanup. `WorldSessionScript` has **no** `OnLogout`. | **Optional — reuse or add `OnLogout`** | Module can track logout by owning the headless session lifecycle itself. Adding a symmetric `OnLogout` to `WorldSessionScript` is cheap (one line in `LogoutPlayer`) and useful for diagnostics, but not strictly required for MVP — bot logout is initiated by the module (`BotManager::LogoutBot`). |
 | 4 | **AddToWorld / RemoveFromWorld** | **No** dedicated script. `Map::Add`/`Remove` (`Map.cpp:1124`) and `Player::AddToWorld` semantics are internal. | **No** | Module does not need to intercept `AddToWorld`. Bot login already goes through `HandlePlayerLogin` → `Map::ExistingPlayerLogin`. Bot-specific post-enter logic (follow, formation) lives in module after `OnLogin`. |
 | 5 | **Player Update** (`Player::Update(diff)`) | **No** hook. `Player.cpp:1566` is called from `Map::Update`. No `PlayerScript::OnUpdate`. | **No** | Do not hook `Player::Update`. Instead drive bot decisions from the *single* world-tick hook (#1) by iterating `BotManager::GetBots()` and calling `BotController::Update(diff)`. This avoids scattering bot checks into `Player.cpp`/`Unit.cpp` (Rule 1). |
 | 6 | **Headless / synthetic session** (bot `Player` without a real `WorldSocket`) | **No seam, but partial tolerance** — `WorldSession` already tolerates `m_Socket==nullptr` in `SendPacket` (163), `Update` (383), `LogoutPlayer` (736). `NullSessionAnticheat` (`Anticheat.h:143`) is an existing null-transport precedent. `WorldSession` constructor still requires `WorldSocket*` (`WorldSession.h:308`). | **Yes — the key host seam (1 file + 1 factory)** | This is the *only* non-negotiable new core capability (PLAN Rule 5). Design below (§3). Must avoid `WorldSession::GetBot()` / `m_bot`. Prefer generic `HasNetworkTransport()` / `CanReceiveClientPackets()` (`WorldSession::GetSocket()==nullptr`) and a centralized `CreateHeadlessSession(...)` factory that creates a `WorldSession` with `nullptr` socket, `NullSessionAnticheat`, and null broadcaster. All bot-specific meaning stays in module. |
-| 7 | **Chat / command execution** (` .bot add / follow / whisper`) | **Partial** — `WorldSessionScript::OnPacket` and `OnWhispered` exist, but `ChatHandler::getCommandTable()` (`Chat.cpp:42`) is monolithic with no `AddCommand` registry. Chat opcode handling is in `Handlers/ChatHandler.cpp`. | **Lean — No core chat hook if module owns commands; one optional hook if integrating with core chat** | For MVP, keep `.bot` commands **entirely in the module** (PLAN §12): module parses `CHAT_MSG_SAY/WHISPER/PARTY` via `OnPacket` or by having `WorldSession::HandleMessagechatOpcode` call a single `sBotChatHandler->OnChat(player, msg, type)` if module present (one `if (sBotMgr)` check in `ChatHandler.cpp`). Better: module registers its own `ChatCommand` sub-table via a new `ChatHandler::RegisterModuleCommands` seam (single file, generic). Either is ≤1 hook. Do not duplicate full command tables into core. |
+| 7 | **Chat / command execution** (`.bot add / follow / whisper`) | **Partial** — `WorldSessionScript::OnPacket` and `OnWhispered` exist, but `ChatHandler::getCommandTable()` (`Chat.cpp:42`) is monolithic with no `AddCommand` registry. Chat opcode handling is in `Handlers/ChatHandler.cpp`. | **Lean — No core chat hook if module owns commands; one optional hook if integrating with core chat** | For MVP, keep `.bot` commands **entirely in the module** (PLAN §12): module parses `CHAT_MSG_SAY/WHISPER/PARTY` via `OnPacket` or by having `WorldSession::HandleMessagechatOpcode` call a single `sBotChatHandler->OnChat(player, msg, type)` if module present (one `if (sBotMgr)` check in `ChatHandler.cpp`). Better: module registers its own `ChatCommand` sub-table via a new `ChatHandler::RegisterModuleCommands` seam (single file, generic). Either is ≤1 hook. Do not duplicate full command tables into core. |
 | 8 | **Group membership / invite / leave / leader** | **No** script hook. `Group::AddMember/RemoveMember` (`Group.cpp:357,438`) and `Group::UpdatePlayerOnlineStatus` (1435) are direct. | **No** | Module can use existing `Group` API + `ObjectAccessor::FindPlayer` + `Player::GetGroup`/`InviteToGroup`/`UninviteFromGroup`. Polling group state each world tick is sufficient for MVP (5-player). No need to hook `Group.cpp`. |
 | 9 | **Movement** (follow, stay, formation, path) | **No** hook, but **no hook needed** — normal `Player`/`Unit` movement APIs exist: `Player::TeleportTo`, `MovePoint`, `MotionMaster`, `Map::IsValid`, `ObjectPosSelector`. | **No** | Bot movement is just AI calling normal movement APIs from `BotController::Update`. Do not add `if (isBot)` branches into `MovementHandler.cpp` or `Unit.cpp`. If pathfinding needs `mmaps`, reuse existing `DetourNavMesh`. |
 | 10 | **Loot / rolls** | No script hook. `LootMgr`, `Group::GroupLoot/NeedBeforeGreed/MasterLoot/CountRollVote` exist. | **No** | MVP loot = simple rules (free-for-all or round-robin). Module can call existing `Loot`/`GroupLoot` APIs. No new seam. |
@@ -90,7 +90,9 @@ Per `PLAN.md` §9 — columns: need → existing general hook? → new core seam
 
 ---
 
-## 3. Headless Session — Deep Dive & Proposed Design
+## 3. Headless Session — Deep Dive & Historical Design Notes
+
+> The final Phase 3 seam is recorded in §10; it supersedes the proposal wording in §§3–4.
 
 ### 3.1 Current session/transport assumptions (why this is the hard seam)
 
@@ -156,12 +158,12 @@ For a single configured character (existing character, owned by test account), w
 
 ---
 
-## 4. Minimum Required Core Edits — Proposal (for review, not yet implemented)
+## 4. Minimum Required Core Edits — Historical Proposal (superseded by §10)
 
 **Target: ≤4 files directly PlayerBots-aware, all concentrated in a single host boundary.**
 
 | File | Edit | Why it is necessary | Generic vs bot-specific |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `src/game/WorldSession.h` + `WorldSession.cpp` | Add `bool HasNetworkTransport() const` + `bool IsHeadless() const` + (optional) `static WorldSession* CreateHeadlessSession(uint32 accountId, ObjectGuid guid)` or at minimum allow `WorldSocket* nullptr` construction. Formalize that `SendPacket`/`Update`/`LogoutPlayer` already handle null socket; add `NullSessionAnticheat` wiring for headless sessions. | The *only* way to get a bot `Player` into the world through normal `Player`/`Map` machinery without a TCP socket (PLAN Rule 5). Without this, bot login is impossible without forking socket code. | **Generic** — “headless/synthetic session” is a legitimate core concept (e.g. for future automation, tests). No bot word in the core API if Option B is chosen. |
 | `src/game/World.h` + `World.cpp` | Add one module-update call in `World::Update(diff)` near `UpdateSessions`/`sMapMgr.Update`: `if (sBotHost) sBotHost->Update(diff);` (weak symbol / optional). And optionally a `SetBotHost(IBotHost*)` registration. | Bot AI needs a once-per-frame driver. `World::Update` is the only place that already drives all sessions and maps; there is no existing `WorldScript::OnUpdate`. Without this, module would have to poll from a thread — unsafe for `Player`/`Map` access. | **Generic** — `IBotHost` can be named `IHeadlessSessionHost` or `IWorldTickListener`; not bot-specific. Single call site. |
 | `src/game/Chat/Chat.h` + `Chat/Chat.cpp` *(optional, deferrable)* | Add `ChatHandler::RegisterModuleCommand(const char* modName, ChatCommand* table)` or a single dispatch hook in `ChatHandler::HandleChat` (`if (sBotHost && sBotHost->HandleChat(player, msg, type)) return;`). | MVP `.bot` commands can already be handled via `WorldSessionScript::OnPacket` interception without touching `Chat.cpp`. This edit is **not required for Phase 3**. Propose to add only when chat-command ownership is validated in Phase 4. | **Generic** — module command registration. |
@@ -223,10 +225,39 @@ No SQL or config required when `OFF`.
 
 ---
 
-## 9. Remaining Questions for Review
+## 9. Review status
 
-1. Confirm exact Penqle core commit to pin in `docs/BASELINE.md` (Phase 0) — currently only the Docker wrapper commit is available; need `git -C source rev-parse HEAD` on a true Penqle checkout.
-2. Choose **Option A vs B** for headless factory location (in-core vs module-owned bridge). Recommend **B** for minimal core diff.
-3. Approve the single `World::Update` hook vs an alternative `WorldEvent` registration.
-4. Defer `Chat` hook to Phase 4 or approve a generic `RegisterModuleCommand` seam now.
+- Factory location: **Option B**, module-owned `BotSessionAdapter`.
+- World tick: **`IWorldUpdateListener`**, with callbacks copied under a mutex and invoked outside it.
+- Login: queued `AddSession`; `BotManager` dispatches `LoginPlayer` only after the session is visible in `World::m_sessions`.
+- `AddSessionDirect`: removed after the queued runtime spike passed.
+- Chat/command registration: deferred to Phase 4; no chat seam was added here.
+- Exact local core snapshot: Docker source is `d07ec3f` (the source tree is an ephemeral synced checkout, not a separate Git worktree).
 
+---
+
+## 10. Phase 3 final host seam
+
+The final seam has three generic capabilities; the core never asks whether a `Player` is a bot:
+
+| Capability | Public surface | Final behavior |
+| --- | --- | --- |
+| Transport | `SessionTransport`, `IsHeadless()`, `HasNetworkTransport()`, `InitHeadlessSession()` | `BotSessionAdapter` constructs `WorldSession(..., SessionTransport::Headless)` and uses `NullSessionAnticheat`. Transport is fixed at construction; there is no `SetHeadless` mutation. |
+| Queued session lifecycle | `World::AddSession`, `HasPendingSession`, `CancelPendingSession` | `AddSession` remains the normal queued path. A headless session is kept alive for the one `UpdateSessions` pass needed to dispatch `LoginPlayer`; cancellation removes and deletes a still-queued session. `World::InternalShutdown` also drains the queue. `AddSessionDirect` is gone. |
+| World tick | `IWorldUpdateListener::OnWorldUpdate(uint32)` | `World` drains optional-module factories after construction, copies listeners under `m_worldUpdateListenersMutex`, then invokes them outside the lock. |
+
+The module lifecycle is explicit: `PendingAdd → PendingLogin → InWorld`, with `Removing` retained until the session/player is gone. `AddBot → immediate RemoveBot` cancels the pending queue entry and erases the record only after confirming there is no active session, pending session, player, or `BotRecord`.
+
+Security is not altered by the module: `BotSessionAdapter` uses `sAccountMgr.GetSecurity(accountId)` verbatim. The runtime fixture used here is account `4`, character `Dudette` (guid `1`), whose stored account security is used; no `accountId == 4` elevation exists.
+
+### Phase 3 evidence
+
+- Queued `AddSession` spike: **passed** — login, enter-world, save, logout, and relog all completed; no `AddSessionDirect` remains.
+- Pending add/remove regression: **passed** — `PendingAddRemoveTest PASSED ... active 0 player 0 record 0 pending 0`.
+- Active-bot graceful shutdown: **passed** — before stop `characters.online=1`, `account.online=1`; after `docker compose stop mangosd`, both were `0`.
+- Build and static audits: see §7 and the handover commands; no legacy `GetBot`/`m_bot`/`sPlayerBotMgr` matches remain.
+- Real-client human reclaim: **not yet run**; it requires a client session and is deliberately left for the next manual test pass.
+
+### Portability note
+
+The current Linux static-library bootstrap uses whole-archive linking plus the used factory registrar. A Windows/MSVC integration must use `/WHOLEARCHIVE:tortoise_bots.lib` (or replace the registrar with an explicit `TortoiseBots::Initialize()` call from the host).
