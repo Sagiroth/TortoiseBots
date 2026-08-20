@@ -3,6 +3,7 @@
 #include "../runtime/BotManager.h"
 #include "ObjectGuid.h"
 #include "ObjectMgr.h"
+#include "Config/Config.h"
 #include "Log.h"
 #include "World.h"
 #include "ObjectAccessor.h"
@@ -77,27 +78,26 @@ void BotHostAdapter::OnWorldUpdate(uint32 diff)
 
     ++m_ticks;
 
-    // Phase 3 spike auto-trigger: if no test is running and we have a known test
-    // character (account 4 / guid 1 — the default Admin), start the 7-step
-    // headless lifecycle test automatically. This is only for the Phase 3 spike
-    // proof; in production AutoTest is gated by config.
+    // AutoTest is gated by `TortoiseBots.AutoTest` (default OFF). BUILD_PLAYERBOTS=ON
+    // alone must never log a test character. Enable via `TortoiseBots.AutoTest = 1`
+    // and `TortoiseBots.AutoTest.AccountId` / `CharacterGuid` in mangosd.conf.
     if (m_ticks == 200 && !BotManager::Instance().IsAutoTestEnabled())
     {
-        // Check via ObjectMgr cache if the test character exists (cheap, no DB query).
-        extern bool sTortoiseBotsAutoTestAllowed(); // forward, defined below
+        extern bool sTortoiseBotsAutoTestAllowed();
         if (sTortoiseBotsAutoTestAllowed())
         {
-            // Use the default Admin character if it exists.
-            // sObjectMgr.GetPlayerDataByGUID is O(1) cache lookup, not a DB query per tick.
-            // We defer the actual IsBot check to BotManager.
-            ObjectGuid testGuid(HIGHGUID_PLAYER, uint32(1));
-            // Only trigger if the data is cached (character exists).
-            // Include ObjectMgr.h for the check — we do it lazily here to avoid
-            // heavy include in the header.
-            // The actual enable is safe to call even if the guid is invalid; BotManager
-            // will log and abort the test.
-            sLog.outString("TortoiseBots: auto-triggering 7-step headless spike test (acct 4 guid 1)");
-            BotManager::Instance().SetAutoTestEnabled(true, 4, testGuid);
+            uint32 acct = sConfig.GetIntDefault("TortoiseBots.AutoTest.AccountId", 4);
+            uint32 guidLow = sConfig.GetIntDefault("TortoiseBots.AutoTest.CharacterGuid", 1);
+            if (guidLow == 0)
+                return;
+            ObjectGuid testGuid(HIGHGUID_PLAYER, guidLow);
+            if (!sObjectMgr.GetPlayerDataByGUID(guidLow))
+            {
+                sLog.outString("TortoiseBots: AutoTest requested but character guid %u not in cache — skipping", guidLow);
+                return;
+            }
+            sLog.outString("TortoiseBots: auto-triggering 7-step headless spike test (acct %u guid %u)", acct, guidLow);
+            BotManager::Instance().SetAutoTestEnabled(true, acct, testGuid);
         }
     }
 
@@ -108,9 +108,10 @@ void BotHostAdapter::OnWorldUpdate(uint32 diff)
 
 bool sTortoiseBotsAutoTestAllowed()
 {
-    // For the spike we allow auto-test unconditionally (the server is a local
-    // Docker test stack). In a real deployment this would read sConfig.
-    return true;
+    // Gate through configuration — BUILD_PLAYERBOTS=ON alone must never auto-log a test character.
+    // Default OFF. Enable by adding `TortoiseBots.AutoTest = 1` to mangosd.conf
+    // (or tortoise_bots.conf if sConfig is extended to load it) and restarting.
+    return sConfig.GetBoolDefault("TortoiseBots.AutoTest", false);
 }
 
 } // namespace TortoiseBots

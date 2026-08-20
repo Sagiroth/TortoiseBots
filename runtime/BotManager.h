@@ -18,9 +18,9 @@ struct BotRecord
 {
     uint32 accountId = 0;
     ObjectGuid characterGuid;
-    WorldSession* session = nullptr;
     uint32 ticksInWorld = 0;
     bool enteredWorld = false;
+    bool pendingLogin = false; // true until LoginPlayer has been dispatched and FindSession succeeds
 };
 
 class BotManager
