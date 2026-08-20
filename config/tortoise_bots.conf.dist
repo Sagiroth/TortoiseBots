@@ -1,0 +1,13 @@
+# TortoiseBots configuration (Phase 2/3 spike)
+# Copy to tortoise_bots.conf (or mangosd.conf gets these via sConfig).
+
+# Enable the module's auto-test headless login on startup (for Phase 3 spike proof).
+# 0 = manual only, 1 = auto run the 7-step login→world→save→logout→relog test with the
+# character below. The character must already exist (created normally via client or DB)
+# and will be logged in as a headless session on a bot account.
+TortoiseBots.AutoTest = 0
+TortoiseBots.AutoTest.AccountId = 1
+TortoiseBots.AutoTest.CharacterGuid = 0
+
+# Logging
+TortoiseBots.LogLevel = 1
