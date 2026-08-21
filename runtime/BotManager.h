@@ -1,5 +1,6 @@
 #pragma once
 
+// pi-lens-ignore: clang:pp_file_not_found
 #include "Common.h"
 #include "ObjectGuid.h"
 #include <cstdint>
@@ -14,13 +15,22 @@ class WorldSession;
 
 namespace TortoiseBots {
 
+enum class BotLifecycle
+{
+    PendingAdd,
+    PendingLogin,
+    InWorld,
+    Removing,
+};
+
 struct BotRecord
 {
     uint32 accountId = 0;
     ObjectGuid characterGuid;
-    WorldSession* session = nullptr;
     uint32 ticksInWorld = 0;
     bool enteredWorld = false;
+    // pi-lens-ignore: no-bit-fields
+    BotLifecycle lifecycle = BotLifecycle::PendingAdd;
 };
 
 class BotManager
@@ -35,6 +45,9 @@ public:
     bool RemoveBot(ObjectGuid guid, bool save = true);
     BotRecord* FindBot(ObjectGuid guid);
     bool IsBot(ObjectGuid guid) const;
+
+    // Deterministic regression check for AddBot -> immediate RemoveBot.
+    bool RunPendingAddRemoveTest(uint32 accountId, ObjectGuid guid);
 
     // For the spike test: if enabled, automatically perform the 7 steps.
     void SetAutoTestEnabled(bool enable, uint32 accountId = 0, ObjectGuid guid = ObjectGuid());

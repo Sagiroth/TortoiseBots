@@ -27,7 +27,7 @@ fi
 mkdir -p "${DEST}"
 
 RSYNC_ARGS=(
-  -a --delete
+  -a --delete --delete-excluded --prune-empty-dirs
   --exclude='.git/'
   --exclude='build/'
   --exclude='.venv/'
@@ -35,7 +35,7 @@ RSYNC_ARGS=(
   --exclude='AGENTS.md'
   --exclude='README.md'
   --exclude='.gitignore'
-  --exclude='scripts/sync-to-docker.sh' # avoid recursion if script is copied
+  --exclude='scripts/'
 )
 
 if [[ "${1:-}" == "--check" ]]; then

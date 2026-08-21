@@ -4,7 +4,7 @@
 
 This workspace is for PlayerBots development targeting **Tortoise WoW 1.18.1**.
 
-This repository is available online (private) at https://github.com/tortoise-wow-stack/TortoiseBots — but this AGENTS.md is intentionally agnostic to where the checkout lives. Before pulling/cloning anything, check whether a local copy already exists alongside this repository; only use the online URL if no local checkout is present.
+This repository is available online (private) at <https://github.com/tortoise-wow-stack/TortoiseBots> — but this AGENTS.md is intentionally agnostic to where the checkout lives. Before pulling/cloning anything, check whether a local copy already exists alongside this repository; only use the online URL if no local checkout is present.
 
 PlayerBots is intentionally being rebuilt around a clean, optional module
 architecture.
@@ -22,7 +22,7 @@ The primary architectural objective is:
 
 For PlayerBots work, read in this order:
 
-1. `docs/PLAN.md` (canonical online copy: https://github.com/tortoise-wow-stack/TortoiseBots/blob/main/docs/PLAN.md — check for a local copy first; it may already exist alongside this repository)
+1. `docs/PLAN.md` (canonical online copy: <https://github.com/tortoise-wow-stack/TortoiseBots/blob/main/docs/PLAN.md> — check for a local copy first; it may already exist alongside this repository)
 2. `docs/HOST_API.md` if it exists
 3. The relevant files under `docs/`
 4. `docs/DISCOVERY.md` only when historical/upstream context is needed
@@ -34,7 +34,7 @@ When researching existing PlayerBots behavior, also read the
 Tortoise WoW Knowledge Base instructions first:
 
 - First check whether a local checkout already exists alongside this repository (look for a sibling `TortoiseWoWKnowledgeBase` checkout).
-- Only if no local copy is present, use the online reference: https://github.com/tortoise-wow-stack/TortoiseWoWKnowledgeBase/blob/main/AGENTS.md
+- Only if no local copy is present, use the online reference: <https://github.com/tortoise-wow-stack/TortoiseWoWKnowledgeBase/blob/main/AGENTS.md>
 
 Then use its `playerbots/` documentation as a behavioral/capability reference.
 
@@ -54,14 +54,14 @@ Only if no local copy is found, use the online URLs below as the reference point
 
 Online references (use only if local not present):
 
-- Knowledge Base: https://github.com/tortoise-wow-stack/TortoiseWoWKnowledgeBase
-- `mangoszero-server`: https://github.com/mangoszero/server
-- `cmangos-playerbots`: https://github.com/cmangos/playerbots
-- `cmangos-mangos-classic`: https://github.com/cmangos/mangos-classic
-- `shyalya-tortoise-wow`: https://github.com/Shyalya/tortoise-wow
-- This project (private): https://github.com/tortoise-wow-stack/TortoiseBots
-- Penqle core: https://github.com/Penqle/tortoise-wow
-- Docker/runtime environment: https://github.com/Sagiroth/tortoise-docker-penqle (local sibling `tortoise-docker-penqle` if present)
+- Knowledge Base: <https://github.com/tortoise-wow-stack/TortoiseWoWKnowledgeBase>
+- `mangoszero-server`: <https://github.com/mangoszero/server>
+- `cmangos-playerbots`: <https://github.com/cmangos/playerbots>
+- `cmangos-mangos-classic`: <https://github.com/cmangos/mangos-classic>
+- `shyalya-tortoise-wow`: <https://github.com/Shyalya/tortoise-wow>
+- This project (private): <https://github.com/tortoise-wow-stack/TortoiseBots>
+- Penqle core: <https://github.com/Penqle/tortoise-wow>
+- Docker/runtime environment: <https://github.com/Sagiroth/tortoise-docker-penqle> (local sibling `tortoise-docker-penqle` if present)
 
 Local Penqle Docker/runtime environment (if present — check sibling checkout first):
 
@@ -267,7 +267,7 @@ Do not assume Vanilla 1.12 behavior is correct for Turtle 1.18.1.
 Start with:
 
 1. current target source tree
-2. `tortoise-docker-penqle` Docker/runtime environment (sibling checkout, if present — online ref: https://github.com/Sagiroth/tortoise-docker-penqle)
+2. `tortoise-docker-penqle` Docker/runtime environment (sibling checkout, if present — online ref: <https://github.com/Sagiroth/tortoise-docker-penqle>)
 3. server logs / runtime state
 4. reference repositories only if the failure needs comparison
 
@@ -521,14 +521,18 @@ the target module.
 
 ## Validation
 
-For PlayerBots changes, run the relevant available checks.
+Use the smallest check that proves the current change. Batch related edits before compiling; do not rebuild after every file edit.
 
-At minimum verify:
+### Validation cadence
 
-- Bots OFF build remains valid
-- Bots ON build remains valid when applicable
-- `git diff --check`
-- no legacy PlayerBots coupling has returned
+- **Docs/config-only change:** no build. Run Markdown/config validation and `git diff --check`.
+- **Module-only code change:** sync the module, then run one cached build of the affected target (usually `mangosd`) after the slice is coherent.
+- **Core seam, CMake, Dockerfile, or build-argument change:** build the affected target; rebuild the image only when the runtime image or build inputs changed.
+- **Phase/PR boundary:** run the full OFF/ON build matrix, legacy-coupling audits, `git diff --check`, and the requested Docker/runtime gates.
+- Use cached builds by default. Use `--no-cache` only to diagnose a cache/image problem or when explicitly requested.
+- If the binary and image are unchanged, restart the existing stack for runtime checks instead of rebuilding it.
+
+Every code change still needs its targeted check and a clear report of what was, and was not, run.
 
 Useful audit:
 
@@ -592,9 +596,8 @@ Never claim behavior was tested if it was only inspected statically.
 
 When a change affects runtime behavior and the Docker/runtime environment is available
 (a sibling `tortoise-docker-penqle` checkout may already exist alongside this repository),
-use that sibling checkout
-
-for the relevant verification.
+use that sibling checkout for the relevant verification. Do not rebuild merely to restart
+an unchanged binary; reuse the running image and preserve its data.
 
 Before running it:
 
