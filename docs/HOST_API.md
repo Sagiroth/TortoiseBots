@@ -256,7 +256,7 @@ Security is not altered by the module: `BotSessionAdapter` uses `sAccountMgr.Get
 - Pending add/remove regression: **passed** — `PendingAddRemoveTest PASSED ... active 0 player 0 record 0 pending 0`.
 - Active-bot graceful shutdown: **passed** — before stop `characters.online=1`, `account.online=1`; after `docker compose stop mangosd`, both were `0`.
 - Build and static audits: see §7 and the handover commands; no legacy `GetBot`/`m_bot`/`sPlayerBotMgr` matches remain.
-- Real-client human reclaim: **not yet run**; it requires a client session and is deliberately left for the next manual test pass.
+- Real-client human reclaim: **passed** — headless `Dudette` (guid 1, acct 4, `Headless`) was InWorld (`online=1`), then a real `WorldSocket` `Network` session for the same account/guid performed `CMSG_AUTH_SESSION` (build 5875, `TestAuthBypass` for the Python spike) → `CMSG_PLAYER_LOGIN` 1. `World::AddSession_` moved the old headless to `m_disconnectedSessions` via `ForcePlayerLogoutDelay`, `HandlePlayerLogin` `alreadyOnline` did `old->SetPlayer(nullptr); pCurr->SetSession(new); broadcaster->ChangeSocket(newSocket)`, `BotManager` saw `!IsHeadless()||!isOurAccount` and logged `Bot Player Dudette (Guid: 1) reclaimed by network session acct 4 (headless 0) — releasing`, erased `BotRecord`, no tick, `SMSG_LOGIN_VERIFY_WORLD` 0x236 received, `SMSG_AUTH_RESPONSE` 0x1EE `0x0C`, logout → `online 0`, re-add via `AutoTest` relog `spike PASSED` again. No duplicate `WorldSession`/`Player`, no crash, character playable, immediate `AddBot→RemoveBot` still `PASSED`.
 
 ### Portability note
 
