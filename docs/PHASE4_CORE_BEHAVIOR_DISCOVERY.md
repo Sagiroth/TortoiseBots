@@ -623,7 +623,7 @@ The behavior layer must not import the *temporary* bootstrap mechanism:
 ### Transport/safety defaults (carry from Phase 3)
 
 * Headless sessions use `NullSessionAnticheat` directly; never `InitAntiCheatSession(&K)`.
-* Bot characters must be on a dedicated bot account owned by the human account; never reuse the human `accountId` for headless sessions — this preserves human-reclaim (`A17`) without touching duplicate-login policy.
+* Bot characters are normal existing alts on the human account. One account supports one Network session plus multiple character-keyed Headless sessions; human reclaim stays identity-based (`A17`) without changing duplicate-Network-login policy.
 * Security predicate (`CanControl`) stays permissive for MVP (same-account or in-group of same account); guild/cross-account escalation gated behind `AllowGuildBots`/`AllowMultiAccountAltBots` and real rank checks, not hardcoded `accountId==4` elevation (audit in `HOST_API.md §10`).
 
 ---

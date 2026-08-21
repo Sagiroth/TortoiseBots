@@ -19,10 +19,33 @@ Online canonical references (use only if local not present):
 
 ## Status
 
-Phase 1 (host-boundary discovery) complete — see `docs/HOST_API.md`. No module code yet; the first implementation gate is review of the host seam proposal.
+Current development is in **Phase 4**.
+
+- Phase 3 headless lifecycle/session foundation is implemented.
+- Phase 4 Slice 1 `Follow` is implemented and manually playtested.
+- Same-account alt support is being finalized: one account may have **1 Network + N Headless** character sessions, so a player can control their own existing alts without dedicated bot accounts.
+- Next behavior slice after the session seam is finalized: **Stay**, then Assist/basic combat.
+
+The first product target is intentionally small and playable: log into one normal character, spawn your own alts as Headless bots, party with them, and level together.
 
 ## Quick start (local-first)
 
 1. Check whether sibling checkouts already exist alongside this repo (`playerbots-references/`, `TortoiseWoWKnowledgeBase`, `tortoise-docker-penqle`).
 2. If not present, clone from the online URLs above.
 3. Read `AGENTS.md` → `docs/PLAN.md` → `docs/HOST_API.md`.
+
+
+## Development loop
+
+Keep iteration fast:
+
+```text
+coherent edit batch
+-> one cached BUILD_PLAYERBOTS=ON build
+-> smallest relevant runtime/manual check
+-> continue
+```
+
+Do **not** run the full OFF/ON matrix after every edit. Run it once when a shared core/CMake change has stabilized or at a phase/PR/handover boundary.
+
+If a manual gameplay test already passed and the relevant code has not changed, do not repeat it just to reconfirm unchanged behavior.

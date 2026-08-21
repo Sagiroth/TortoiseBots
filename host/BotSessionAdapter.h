@@ -22,8 +22,8 @@ public:
     // session becomes visible to World. Returns the session on success.
     static WorldSession* CreateHeadlessSession(uint32 accountId, ObjectGuid characterGuid);
 
-    // Explicit logout for a headless session. Safe to call from the world thread.
-    static bool LogoutHeadlessSession(WorldSession* session, bool save = true);
+    // Explicit logout for a headless character session. Safe to call from the world thread.
+    static bool LogoutHeadlessSession(WorldSession* session, ObjectGuid characterGuid, bool save = true);
 
     // Re-login helper for the Phase 3 acceptance test: logout then create a new
     // headless session for the same character after a short delay is handled by

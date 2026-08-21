@@ -127,7 +127,7 @@ Packet filtering already uses this shape: `WorldSessionFilter::PacketFilter` alr
 // WorldSession.h — add generic factory, still centralized
 static WorldSession* CreateHeadlessSession(uint32 accountId, ObjectGuid characterGuid);
  // - allocates WorldSession(id, nullptr, SEC_PLAYER, 0, LOCALE_enUS, "127.0.0.1", 0x7F000001)
- // - accountId is a dedicated bot account (or sub-guid) owned by the human account — NOT the human's own accountId
+ // - accountId is the character's ordinary owning account; Headless registration is character-keyed
  // - InitAntiCheatSession → NullSessionAnticheat (skip K)
  // - LoadTutorialsData() (no-op for bots)
  // - sWorld.AddSession(session)
@@ -243,10 +243,13 @@ The final seam has three generic capabilities; the core never asks whether a `Pl
 | Capability | Public surface | Final behavior |
 | --- | --- | --- |
 | Transport | `SessionTransport`, `IsHeadless()`, `HasNetworkTransport()`, `InitHeadlessSession()` | `BotSessionAdapter` constructs `WorldSession(..., SessionTransport::Headless)` and uses `NullSessionAnticheat`. Transport is fixed at construction; there is no `SetHeadless` mutation. |
-| Queued session lifecycle | `World::AddSession`, `HasPendingSession`, `CancelPendingSession` | `AddSession` remains the normal queued path. A headless session is kept alive for the one `UpdateSessions` pass needed to dispatch `LoginPlayer`; cancellation removes and deletes a still-queued session. `World::InternalShutdown` also drains the queue. `AddSessionDirect` is gone. |
+| Queued session lifecycle | `World::AddSession` (Network), `AddHeadlessSession` (Headless), `HasPendingHeadlessSession`, `CancelPendingHeadlessSession` | Network sessions remain account-keyed in `m_sessions`. A Headless session carries its character `ObjectGuid` through a separate pending queue, then enters `m_headlessSessions`; cancellation removes and deletes only that queued Headless session. `World::InternalShutdown` drains both queues. `AddSessionDirect` is gone. |
+| Async login dispatch | `LoginQueryHolder { accountId, characterGuid, SessionTransport }` | The query callback retains no `WorldSession*`: Network holders resolve `FindSession(accountId)` and Headless holders resolve `FindHeadlessSession(characterGuid)`. This keeps same-account Headless login and real-client reclaim unambiguous. |
 | World tick | `IWorldUpdateListener::OnWorldUpdate(uint32)` | `World` drains optional-module factories after construction, copies listeners under `m_worldUpdateListenersMutex`, then invokes them outside the lock. |
 
-The module lifecycle is explicit: `PendingAdd → PendingLogin → InWorld`, with `Removing` retained until the session/player is gone. `AddBot → immediate RemoveBot` cancels the pending queue entry and erases the record only after confirming there is no active session, pending session, player, or `BotRecord`.
+One account may have at most one active Network session in `m_sessions` and may have multiple active Headless character sessions in `m_headlessSessions`. Headless sessions are keyed by character `ObjectGuid`, not account ID; they do not affect Network-only session counts, queues, limits, or realm population. `account.online` remains `1` while either registry has a session for the account and becomes `0` only after neither does.
+
+The module lifecycle is explicit: `PendingAdd → PendingLogin → InWorld`, with `Removing` retained until the session/player is gone. `AddBot → immediate RemoveBot` cancels the pending Headless entry and erases the record only after confirming there is no active Headless session, pending Headless session, player, or `BotRecord`.
 
 Security is not altered by the module: `BotSessionAdapter` uses `sAccountMgr.GetSecurity(accountId)` verbatim. The runtime fixture used here is account `4`, character `Dudette` (guid `1`), whose stored account security is used; no `accountId == 4` elevation exists.
 
