@@ -1,19 +1,20 @@
 #pragma once
-
-// pi-lens-ignore: clang:pp_file_not_found
-#include "Common.h"
-#include "ObjectGuid.h"
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <memory>
+// pi-lens-ignore: clang:pp_file_not_found
+#include "ObjectGuid.h"
+#ifndef MANGOS_OBJECT_GUID_H
+using ObjectGuid = uint64_t;
+#endif
 
 class WorldSession;
 
-// Minimal runtime for Phase 3 spike — not the full strategy/AI.
-// Tracks headless sessions we created and drives the 7-step acceptance test
-// when enabled via config or console.
-
 namespace TortoiseBots {
+
+class BotController;
+enum class BotIntent;
 
 enum class BotLifecycle
 {
@@ -25,12 +26,21 @@ enum class BotLifecycle
 
 struct BotRecord
 {
-    uint32 accountId = 0;
+    uint32_t accountId = 0;
+// pi-lens-ignore: clang:unknown_typename
     ObjectGuid characterGuid;
-    uint32 ticksInWorld = 0;
+// pi-lens-ignore: clang:unknown_typename
+    ObjectGuid masterGuid; // owner/master for Follow
+    uint32_t ticksInWorld = 0;
     bool enteredWorld = false;
     // pi-lens-ignore: no-bit-fields
     BotLifecycle lifecycle = BotLifecycle::PendingAdd;
+};
+
+struct BotEntry
+{
+    BotRecord record;
+    std::unique_ptr<BotController> controller;
 };
 
 class BotManager
@@ -38,32 +48,50 @@ class BotManager
 public:
     static BotManager& Instance();
 
-    void OnWorldUpdate(uint32 diff);
+    void OnWorldUpdate(uint32_t diff);
 
     // Manual control for testing
-    WorldSession* AddBot(uint32 accountId, ObjectGuid guid);
+// pi-lens-ignore: clang:unknown_typename
+    WorldSession* AddBot(uint32_t accountId, ObjectGuid guid, ObjectGuid masterGuid = ObjectGuid());
+// pi-lens-ignore: clang:unknown_typename
+    WorldSession* AddBotWithMaster(uint32_t accountId, ObjectGuid guid, ObjectGuid masterGuid);
+// pi-lens-ignore: clang:unknown_typename
     bool RemoveBot(ObjectGuid guid, bool save = true);
+// pi-lens-ignore: clang:unknown_typename
     BotRecord* FindBot(ObjectGuid guid);
+// pi-lens-ignore: clang:unknown_typename
     bool IsBot(ObjectGuid guid) const;
 
+    // Follow intent
+// pi-lens-ignore: clang:unknown_typename
+    bool SetBotFollow(ObjectGuid botGuid, ObjectGuid masterGuid);
+// pi-lens-ignore: clang:unknown_typename
+    BotController* GetController(ObjectGuid guid);
+// pi-lens-ignore: clang:unknown_typename
+    BotController const* GetController(ObjectGuid guid) const;
+
     // Deterministic regression check for AddBot -> immediate RemoveBot.
-    bool RunPendingAddRemoveTest(uint32 accountId, ObjectGuid guid);
+// pi-lens-ignore: clang:unknown_typename
+    bool RunPendingAddRemoveTest(uint32_t accountId, ObjectGuid guid);
 
     // For the spike test: if enabled, automatically perform the 7 steps.
-    void SetAutoTestEnabled(bool enable, uint32 accountId = 0, ObjectGuid guid = ObjectGuid());
+// pi-lens-ignore: clang:unknown_typename
+    void SetAutoTestEnabled(bool enable, uint32_t accountId = 0, ObjectGuid guid = ObjectGuid());
     bool IsAutoTestEnabled() const { return m_autoTestEnabled; }
 
 private:
     BotManager() = default;
     ~BotManager() = default;
 
-    void UpdateAutoTest(uint32 diff);
+    void UpdateAutoTest(uint32_t diff);
+    void UpdateControllers(uint32_t diff);
 
-    std::unordered_map<uint32, BotRecord> m_bots; // key = guid counter
+    std::unordered_map<uint32_t, BotEntry> m_bots; // key = guid counter
     bool m_autoTestEnabled = false;
-    uint32 m_autoTestAccount = 0;
+    uint32_t m_autoTestAccount = 0;
+// pi-lens-ignore: clang:unknown_typename
     ObjectGuid m_autoTestGuid;
-    uint32 m_autoTestTicks = 0;
+    uint32_t m_autoTestTicks = 0;
     enum class AutoState { Idle, LoggingIn, InWorld, Saving, LoggingOut, Relogging, Done };
     AutoState m_autoState = AutoState::Idle;
 };
