@@ -22,6 +22,7 @@ set(TORTOISEBOTS_SOURCES
     host/Module.cpp
     host/BotHostAdapter.cpp
     host/BotSessionAdapter.cpp
+    host/BotChatAdapter.cpp
     runtime/BotManager.cpp
     runtime/BotController.cpp
     behavior/Movement.cpp
@@ -32,6 +33,7 @@ set(TORTOISEBOTS_HEADERS
     host/Module.h
     host/BotHostAdapter.h
     host/BotSessionAdapter.h
+    host/BotChatAdapter.h
     runtime/BotManager.h
     runtime/BotController.h
     behavior/Config.h

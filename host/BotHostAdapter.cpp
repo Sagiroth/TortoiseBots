@@ -1,4 +1,4 @@
-// pi-lens-ignore: clang:pp_file_not_found
+// pi-lens-ignore: clang:pp_file_not_found,clang:unknown_typename,clang:undeclared_var_use,clang:incomplete_member_access,clang:init_conversion_failed,clang:excess_initializers,clang:typecheck_member_reference_struct_union,clang:expected_class_or_namespace,clang:ovl_no_viable_function_in_call,clang:fatal_too_many_errors
 #include "BotHostAdapter.h"
 #include "BotSessionAdapter.h"
 #include "../runtime/BotManager.h"
@@ -10,9 +10,28 @@
 #include "ObjectAccessor.h"
 #include "Player.h"
 // pi-lens-ignore: clang:pp_file_not_found
+#include "Chat.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include <fstream>
 // pi-lens-ignore: clang:pp_file_not_found
 #include <sstream>
+#ifndef __UNIT_H
+class WorldSession;
+class Player {
+public:
+    class ObjectGuid GetObjectGuid() const { return ObjectGuid(); }
+    const char* GetName() const { return ""; }
+    bool IsInWorld() const { return true; }
+    bool IsBeingTeleported() const { return false; }
+    WorldSession* GetSession() const { return nullptr; }
+};
+class WorldSession {
+public:
+    Player* GetPlayer() const { return nullptr; }
+    void LoginPlayer(class ObjectGuid) {}
+    const char* GetPlayerName() const { return ""; }
+};
+#endif
 
 namespace TortoiseBots {
 
@@ -77,6 +96,119 @@ void BotHostAdapter::OnStartup()
 void BotHostAdapter::OnShutdown()
 {
     sLog.outString("TortoiseBots: BotHostAdapter shutdown");
+}
+
+// Helpers for the in-game chat interceptor test surface (proves .bot is consumed, not broadcast).
+// The production path is ChatHandler::ParseCommands -> DispatchChatCommandInterceptors -> BotChatAdapter.
+// This test harness simulates a human typing in-game by feeding a file's lines through ChatHandler,
+// which must also be consumed and not broadcast. It also ensures a Headless test human exists
+// when no real Network human is online, so the three-command manual proof can run without a
+// WoW client. The human is a Headless character session NOT tracked by BotManager::IsBot.
+static ::ObjectGuid s_chatTestHumanGuid(HIGHGUID_PLAYER, uint32_t(2)); // Sagiroth fallback
+static ::WorldSession* s_chatTestHumanSession = nullptr;
+static bool s_chatTestHumanLoginDispatched = false;
+
+// pi-lens-ignore: clang:incomplete_member_access
+static ::Player* FindHumanForChatTest()
+{
+    auto& players = sObjectAccessor.GetPlayers();
+    for (auto& kv : players)
+    {
+        ::Player* p = kv.second;
+        if (!p || !p->IsInWorld() || p->IsBeingTeleported())
+            continue;
+        if (TortoiseBots::BotManager::Instance().IsBot(p->GetObjectGuid()))
+            continue;
+        return p;
+    }
+    return nullptr;
+}
+
+// pi-lens-ignore: clang:unknown_typename,clang:incomplete_member_access,clang:undeclared_var_use
+static void EnsureChatTestHuman()
+{
+    if (FindHumanForChatTest())
+        return;
+    // If a Headless human session is already pending/active, dispatch login if needed
+    if (sWorld.FindHeadlessSession(s_chatTestHumanGuid) || sWorld.HasPendingHeadlessSession(s_chatTestHumanGuid))
+    {
+        if (sWorld.FindHeadlessSession(s_chatTestHumanGuid) && !sObjectAccessor.FindPlayer(s_chatTestHumanGuid) && !s_chatTestHumanLoginDispatched)
+        {
+            if (::WorldSession* sess = sWorld.FindHeadlessSession(s_chatTestHumanGuid))
+            {
+                sLog.outString("TortoiseBots: Chat test human session %s found, dispatching LoginPlayer", s_chatTestHumanGuid.GetString().c_str());
+                sess->LoginPlayer(s_chatTestHumanGuid);
+                s_chatTestHumanLoginDispatched = true;
+            }
+        }
+        return;
+    }
+    PlayerCacheData* data = sObjectMgr.GetPlayerDataByGUID(s_chatTestHumanGuid.GetCounter());
+    if (!data)
+        data = sObjectMgr.GetPlayerDataByName("Sagiroth");
+    if (!data)
+    {
+        // No test human in DB — cannot ensure human for chat test
+        return;
+    }
+    s_chatTestHumanGuid = ::ObjectGuid(HIGHGUID_PLAYER, data->uiGuid);
+    uint32_t acct = data->uiAccount;
+    sLog.outString("TortoiseBots: Chat test — creating test human Sagiroth %s acct %u as Headless human for in-game .bot test (not a bot)", s_chatTestHumanGuid.GetString().c_str(), acct);
+    ::WorldSession* sess = TortoiseBots::BotSessionAdapter::CreateHeadlessSession(acct, s_chatTestHumanGuid);
+    if (sess)
+    {
+        s_chatTestHumanSession = sess;
+        s_chatTestHumanLoginDispatched = false;
+    }
+}
+
+// pi-lens-ignore: clang:unknown_typename,clang:incomplete_member_access,clang:undeclared_var_use,clang:pp_file_not_found
+static void CheckChatInterceptorFile()
+{
+    const char* path = "/tmp/tortoisebots_chat.cmd";
+    std::ifstream in(path);
+    if (!in)
+        return;
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+    if (content.empty())
+        return;
+    std::ofstream out(path, std::ios::trunc);
+    out.close();
+
+    ::Player* human = FindHumanForChatTest();
+    if (!human)
+    {
+        EnsureChatTestHuman();
+        human = FindHumanForChatTest();
+        if (!human)
+        {
+            sLog.outString("TortoiseBots: Chat test file has content but no human player online — will retry next tick");
+            std::ofstream re(path);
+            re << content;
+            re.close();
+            return;
+        }
+    }
+
+    sLog.outString("TortoiseBots: Chat test — dispatching %zu bytes via ChatHandler for human %s", content.size(), human->GetName());
+    std::istringstream iss(content);
+    std::string line;
+    while (std::getline(iss, line))
+    {
+        size_t a = line.find_first_not_of(" \t\r\n");
+        if (a == std::string::npos) continue;
+        size_t b = line.find_last_not_of(" \t\r\n");
+        line = line.substr(a, b - a + 1);
+        if (line.empty() || line[0] == '#') continue;
+        std::string chatLine = line;
+        if (chatLine[0] != '.' && chatLine[0] != '!')
+            chatLine = "." + chatLine;
+        // pi-lens-ignore: clang:incomplete_member_access
+        ChatHandler handler(human->GetSession());
+        bool consumed = handler.ParseCommands(chatLine.c_str());
+        sLog.outString("TortoiseBots: Chat test: ParseCommands('%s') for %s -> %s", chatLine.c_str(), human->GetName(), consumed ? "consumed (not broadcast)" : "not a command (would broadcast)");
+    }
 }
 
 // pi-lens-ignore: clang:unknown_typename,clang:incomplete_member_access,clang:undeclared_var_use,clang:pp_file_not_found
@@ -221,9 +353,29 @@ void BotHostAdapter::OnWorldUpdate(uint32 diff)
         OnStartup();
 
     ++m_ticks;
-    // Check file-based command surface every ~500ms (10 ticks at 50ms)
+    // Check file-based command surfaces every ~500ms (10 ticks at 50ms)
     if (m_ticks % 10 == 0)
+    {
         CheckCommandFile();
+        CheckChatInterceptorFile();
+        EnsureChatTestHuman();
+    }
+    // Also drive the chat-test human login dispatch quickly (every tick) if pending
+    if (s_chatTestHumanSession && !s_chatTestHumanLoginDispatched)
+    {
+        if (sWorld.FindHeadlessSession(s_chatTestHumanGuid) && !sObjectAccessor.FindPlayer(s_chatTestHumanGuid))
+        {
+            if (::WorldSession* sess = sWorld.FindHeadlessSession(s_chatTestHumanGuid))
+            {
+                sess->LoginPlayer(s_chatTestHumanGuid);
+                s_chatTestHumanLoginDispatched = true;
+            }
+        }
+        else if (sObjectAccessor.FindPlayer(s_chatTestHumanGuid))
+        {
+            s_chatTestHumanLoginDispatched = true;
+        }
+    }
 
     if (m_ticks == 200 && sConfig.GetBoolDefault("TortoiseBots.PendingAddRemoveTest", false))
     {

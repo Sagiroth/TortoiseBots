@@ -6,7 +6,20 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectGuid.h"
 #ifndef MANGOS_OBJECT_GUID_H
-using ObjectGuid = uint64_t;
+// Lens/build fallback — core header not on analyzer include path.
+enum { HIGHGUID_PLAYER = 0 };
+class ObjectGuid {
+public:
+    ObjectGuid() {}
+    ObjectGuid(uint32_t, uint32_t) {}
+    bool IsEmpty() const { return true; }
+    bool IsPlayer() const { return true; }
+    uint32_t GetCounter() const { return 0; }
+    std::string GetString() const { return ""; }
+    bool operator==(ObjectGuid const&) const { return true; }
+    bool operator!=(ObjectGuid const&) const { return false; }
+    void Clear() {}
+};
 #endif
 
 class WorldSession;

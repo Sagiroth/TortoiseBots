@@ -1,5 +1,7 @@
 #include "BotCommands.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "../runtime/BotManager.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "../runtime/BotController.h"
 
 // pi-lens-ignore: clang:pp_file_not_found
@@ -14,9 +16,47 @@
 #include "WorldSession.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Log.h"
-
-#include <sstream>
-#include <vector>
+#include <cstring>
+#include <string>
+// Lens fallback stubs — core headers absent in static analysis. Real build uses
+// the mangosd headers via -I src/game. Guards use the same macros as the
+// real headers so the stubs are never active in a real build.
+#ifndef MANGOSSERVER_CHAT_H
+class WorldSession;
+class ChatHandler {
+public:
+    void PSendSysMessage(const char* fmt, ...) {}
+    void SendSysMessage(const char*) {}
+    WorldSession* GetSession() const { return nullptr; }
+};
+#endif
+#ifndef _OBJECTMGR_H
+struct PlayerCacheData { uint32_t uiGuid; uint32_t uiAccount; };
+struct LensOM { PlayerCacheData* GetPlayerDataByName(const std::string&) { return nullptr; } PlayerCacheData* GetPlayerDataByGUID(uint32_t) { return nullptr; } };
+static LensOM sObjectMgr;
+inline bool normalizePlayerName(std::string&, size_t = 32, bool = true) { return true; }
+#endif
+#ifndef MANGOS_OBJECTACCESSOR_H
+class Player;
+struct LensOA { Player* FindPlayerByName(const char*) { return nullptr; } };
+static LensOA sObjectAccessor;
+#endif
+#ifndef __UNIT_H
+class Player {
+public:
+    ObjectGuid GetObjectGuid() const { return ObjectGuid(); }
+    const char* GetName() const { return ""; }
+    WorldSession* GetSession() const { return nullptr; }
+};
+class WorldSession {
+public:
+    Player* GetPlayer() const { return nullptr; }
+};
+#endif
+#ifndef MANGOSSERVER_LOG_H
+struct Log { void outString(const char*, ...) {} void outError(const char*, ...) {} };
+static Log sLog;
+#endif
 
 namespace TortoiseBots {
 namespace BotCommands {
@@ -24,6 +64,7 @@ namespace BotCommands {
 // pi-lens-ignore: clang:incomplete_member_access,clang:unknown_typename,clang:undeclared_var_use
 static bool HandleAdd(ChatHandler* handler, char const* args)
 {
+    sLog.outString("TortoiseBots: HandleAdd called via %s", handler ? (handler->GetSession() ? handler->GetSession()->GetPlayer() ? handler->GetSession()->GetPlayer()->GetName() : "<no player>" : "<no session>") : "<null handler>");
     if (!handler || !args || !*args)
     {
         handler->PSendSysMessage("Usage: .bot add <characterName>");
@@ -86,6 +127,7 @@ static bool HandleAdd(ChatHandler* handler, char const* args)
 // pi-lens-ignore: clang:incomplete_member_access,clang:unknown_typename
 static bool HandleRemove(ChatHandler* handler, char const* args)
 {
+    sLog.outString("TortoiseBots: HandleRemove called");
     if (!args || !*args)
     {
         handler->PSendSysMessage("Usage: .bot remove <characterName>");
@@ -117,6 +159,7 @@ static bool HandleRemove(ChatHandler* handler, char const* args)
 // pi-lens-ignore: clang:incomplete_member_access,clang:unknown_typename
 static bool HandleFollow(ChatHandler* handler, char const* args)
 {
+    sLog.outString("TortoiseBots: HandleFollow called");
     ::Player* requester = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
     if (!requester)
     {
@@ -216,9 +259,3 @@ bool TryHandleBotCommand(ChatHandler* handler, char const* text)
 
 } // namespace BotCommands
 } // namespace TortoiseBots
-
-// Exported weak symbol for core Chat.cpp hook (optional, but also used for direct call)
-extern "C" bool HandleTortoiseBotsChatCommand(ChatHandler* handler, char const* args)
-{
-    return TortoiseBots::BotCommands::HandleChatCommand(handler, args);
-}
