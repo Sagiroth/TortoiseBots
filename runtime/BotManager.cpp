@@ -1,10 +1,18 @@
 #include "BotManager.h"
+#include "BotController.h"
 #include "../host/BotSessionAdapter.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "WorldSession.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectAccessor.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "Player.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "Log.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "World.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "ObjectMgr.h"
 
 namespace TortoiseBots {
 
@@ -14,9 +22,9 @@ BotManager& BotManager::Instance()
     return instance;
 }
 
-bool BotManager::RunPendingAddRemoveTest(uint32 accountId, ObjectGuid guid)
+bool BotManager::RunPendingAddRemoveTest(uint32_t accountId, ::ObjectGuid guid)
 {
-    if (sWorld.FindSession(accountId) || sWorld.HasPendingSession(accountId, SessionTransport::Headless) ||
+    if (sWorld.FindHeadlessSession(guid) || sWorld.HasPendingHeadlessSession(guid) ||
         sObjectAccessor.FindPlayer(guid) || FindBot(guid))
     {
         sLog.outError("TortoiseBots: PendingAddRemoveTest precondition failed for acct %u guid %s",
@@ -24,16 +32,16 @@ bool BotManager::RunPendingAddRemoveTest(uint32 accountId, ObjectGuid guid)
         return false;
     }
 
-    WorldSession* session = AddBot(accountId, guid);
-    bool queued = session && sWorld.HasPendingSession(accountId, SessionTransport::Headless);
+    ::WorldSession* session = AddBot(accountId, guid);
+    bool queued = session && sWorld.HasPendingHeadlessSession(guid);
     bool removed = RemoveBot(guid, false);
-    bool noActiveSession = !sWorld.FindSession(accountId);
+    bool noActiveSession = !sWorld.FindHeadlessSession(guid);
     bool noPlayer = !sObjectAccessor.FindPlayer(guid);
     bool noRecord = !FindBot(guid);
-    bool noPendingSession = !sWorld.HasPendingSession(accountId, SessionTransport::Headless);
+    bool noPendingSession = !sWorld.HasPendingHeadlessSession(guid);
 
     if (!noPendingSession)
-        sWorld.CancelPendingSession(accountId, SessionTransport::Headless);
+        sWorld.CancelPendingHeadlessSession(guid);
 
     bool passed = session && queued && removed && noActiveSession && noPlayer && noRecord && noPendingSession;
     sLog.outString("TortoiseBots: PendingAddRemoveTest %s acct %u queued %u active %u player %u record %u pending %u",
@@ -41,50 +49,51 @@ bool BotManager::RunPendingAddRemoveTest(uint32 accountId, ObjectGuid guid)
     return passed;
 }
 
-WorldSession* BotManager::AddBot(uint32 accountId, ObjectGuid guid)
+::WorldSession* BotManager::AddBot(uint32_t accountId, ::ObjectGuid guid, ::ObjectGuid masterGuid)
 {
-    uint32 key = guid.GetCounter();
+    return AddBotWithMaster(accountId, guid, masterGuid);
+}
+
+::WorldSession* BotManager::AddBotWithMaster(uint32_t accountId, ::ObjectGuid guid, ::ObjectGuid masterGuid)
+{
+    uint32_t key = guid.GetCounter();
     auto it = m_bots.find(key);
     if (it != m_bots.end())
     {
         sLog.outString("TortoiseBots: AddBot guid %s already tracked (state %u enteredWorld %u)",
-            guid.GetString().c_str(), static_cast<uint32>(it->second.lifecycle), it->second.enteredWorld);
-        // Return the current session if any (lookup via FindSession, not stale pointer)
-        if (WorldSession* sess = sWorld.FindSession(accountId))
+            guid.GetString().c_str(), static_cast<uint32_t>(it->second.record.lifecycle), it->second.record.enteredWorld);
+        if (::WorldSession* sess = sWorld.FindHeadlessSession(guid))
             return sess;
         return nullptr;
     }
 
-    // CreateHeadlessSession queues AddSession. LoginPlayer is dispatched only after
-    // the queued session is visible through FindSession (see OnWorldUpdate).
-    WorldSession* sess = BotSessionAdapter::CreateHeadlessSession(accountId, guid);
+    ::WorldSession* sess = BotSessionAdapter::CreateHeadlessSession(accountId, guid);
     if (!sess)
         return nullptr;
 
-    BotRecord rec;
-    rec.accountId = accountId;
-    rec.characterGuid = guid;
-    rec.lifecycle = BotLifecycle::PendingAdd;
-    m_bots[key] = rec;
-    sLog.outString("TortoiseBots: AddBot %s on acct %u (PendingAdd, queued AddSession)",
-        guid.GetString().c_str(), accountId);
+    BotEntry entry;
+    entry.record.accountId = accountId;
+    entry.record.characterGuid = guid;
+    entry.record.masterGuid = masterGuid;
+    entry.record.lifecycle = BotLifecycle::PendingAdd;
+    // Controller owns follow intent; master may be empty (no-op until SetBotFollow)
+    entry.controller = std::make_unique<BotController>(guid, masterGuid);
+    // Default intent is Follow (if master provided) — already set in controller ctor
+    m_bots.emplace(key, std::move(entry));
+    sLog.outString("TortoiseBots: AddBot %s on acct %u master %s (PendingAdd, queued AddSession)",
+        guid.GetString().c_str(), accountId, masterGuid.GetString().c_str());
     return sess;
 }
 
-bool BotManager::RemoveBot(ObjectGuid guid, bool save)
+bool BotManager::RemoveBot(::ObjectGuid guid, bool save)
 {
-    uint32 key = guid.GetCounter();
+    uint32_t key = guid.GetCounter();
     auto it = m_bots.find(key);
     if (it == m_bots.end())
         return false;
 
-    BotRecord& rec = it->second;
-    uint32 accountId = rec.accountId;
-
-    // PendingAdd owns a queue entry, not an m_sessions entry. Cancel it before
-    // erasing the record so an immediate AddBot -> RemoveBot cannot orphan it.
-    if (rec.lifecycle == BotLifecycle::PendingAdd &&
-        sWorld.CancelPendingSession(accountId, SessionTransport::Headless))
+    BotRecord& rec = it->second.record;
+    if (rec.lifecycle == BotLifecycle::PendingAdd && sWorld.CancelPendingHeadlessSession(guid))
     {
         m_bots.erase(it);
         sLog.outString("TortoiseBots: RemoveBot %s cancelled PendingAdd", guid.GetString().c_str());
@@ -93,25 +102,19 @@ bool BotManager::RemoveBot(ObjectGuid guid, bool save)
 
     rec.lifecycle = BotLifecycle::Removing;
 
-    // Lookup the live session via World, not a stale pointer. A pending login may
-    // still have no Player; OnWorldUpdate keeps the Removing record until loading
-    // finishes and the resulting Player is logged out.
-    WorldSession* sess = sWorld.FindSession(accountId);
+    ::WorldSession* sess = sWorld.FindHeadlessSession(guid);
     if (!sess)
     {
-        if (Player* p = sObjectAccessor.FindPlayer(guid))
+        if (::Player* p = sObjectAccessor.FindPlayer(guid))
             sess = p->GetSession();
     }
     if (sess && sess->IsHeadless())
-        BotSessionAdapter::LogoutHeadlessSession(sess, save);
-    else if (sess && !sess->IsHeadless())
+        BotSessionAdapter::LogoutHeadlessSession(sess, guid, save);
+    else if (sess)
         sLog.outError("TortoiseBots: RemoveBot %s found non-headless session acct %u — releasing on reclaim",
             guid.GetString().c_str(), sess->GetAccountId());
 
-    // A concurrent queue drain may have moved the session after the first check.
-    // Retry cancellation only while it is still pending; otherwise the next world
-    // tick owns the Removing -> erased transition.
-    if (sWorld.CancelPendingSession(accountId, SessionTransport::Headless))
+    if (sWorld.CancelPendingHeadlessSession(guid))
     {
         m_bots.erase(it);
         sLog.outString("TortoiseBots: RemoveBot %s cancelled pending session", guid.GetString().c_str());
@@ -122,20 +125,56 @@ bool BotManager::RemoveBot(ObjectGuid guid, bool save)
     return true;
 }
 
-BotRecord* BotManager::FindBot(ObjectGuid guid)
+BotRecord* BotManager::FindBot(::ObjectGuid guid)
 {
     auto it = m_bots.find(guid.GetCounter());
     if (it == m_bots.end())
         return nullptr;
-    return &it->second;
+    return &it->second.record;
 }
 
-bool BotManager::IsBot(ObjectGuid guid) const
+bool BotManager::IsBot(::ObjectGuid guid) const
 {
     return m_bots.find(guid.GetCounter()) != m_bots.end();
 }
 
-void BotManager::SetAutoTestEnabled(bool enable, uint32 accountId, ObjectGuid guid)
+BotController* BotManager::GetController(::ObjectGuid guid)
+{
+    auto it = m_bots.find(guid.GetCounter());
+    if (it == m_bots.end())
+        return nullptr;
+    return it->second.controller.get();
+}
+
+BotController const* BotManager::GetController(::ObjectGuid guid) const
+{
+    auto it = m_bots.find(guid.GetCounter());
+    if (it == m_bots.end())
+        return nullptr;
+    return it->second.controller.get();
+}
+
+bool BotManager::SetBotFollow(::ObjectGuid botGuid, ::ObjectGuid masterGuid)
+{
+    auto it = m_bots.find(botGuid.GetCounter());
+    if (it == m_bots.end())
+        return false;
+    it->second.record.masterGuid = masterGuid;
+    if (it->second.controller)
+    {
+        it->second.controller->SetMaster(masterGuid);
+        it->second.controller->SetIntent(BotIntent::Follow);
+    }
+    else
+    {
+        it->second.controller = std::make_unique<BotController>(botGuid, masterGuid);
+    }
+    sLog.outString("TortoiseBots: SetBotFollow bot %s -> master %s",
+        botGuid.GetString().c_str(), masterGuid.GetString().c_str());
+    return true;
+}
+
+void BotManager::SetAutoTestEnabled(bool enable, uint32_t accountId, ::ObjectGuid guid)
 {
     m_autoTestEnabled = enable;
     m_autoTestAccount = accountId;
@@ -146,25 +185,40 @@ void BotManager::SetAutoTestEnabled(bool enable, uint32 accountId, ObjectGuid gu
         enable ? "enabled" : "disabled", accountId, guid.GetString().c_str());
 }
 
-void BotManager::OnWorldUpdate(uint32 diff)
+void BotManager::UpdateControllers(uint32_t diff)
 {
-    // AddSession is queued. Only dispatch LoginPlayer after the queue has moved
-    // the session into m_sessions, making the lifecycle explicit:
-    // PendingAdd -> PendingLogin -> InWorld, or any state -> Removing.
+    for (auto& kv : m_bots)
+    {
+        BotEntry& entry = kv.second;
+        if (entry.record.lifecycle != BotLifecycle::InWorld)
+            continue;
+        if (!entry.controller)
+            continue;
+        // Keep controller's master in sync with record (in case SetBotFollow wasn't used)
+        if (entry.controller->GetMasterGuid() != entry.record.masterGuid)
+            entry.controller->SetMaster(entry.record.masterGuid);
+        entry.controller->Update(diff);
+    }
+}
+
+void BotManager::OnWorldUpdate(uint32_t diff)
+{
+    // Headless registration is queued. Only dispatch LoginPlayer after World has
+    // made the session visible by this bot's character guid.
     for (auto it = m_bots.begin(); it != m_bots.end(); )
     {
-        BotRecord& rec = it->second;
+        BotRecord& rec = it->second.record;
         if (rec.lifecycle == BotLifecycle::PendingAdd)
         {
-            WorldSession* sess = sWorld.FindSession(rec.accountId);
-            if (sess && sess->IsHeadless() && sess->GetAccountId() == rec.accountId)
+            ::WorldSession* sess = sWorld.FindHeadlessSession(rec.characterGuid);
+            if (sess)
             {
                 rec.lifecycle = BotLifecycle::PendingLogin;
                 sLog.outString("TortoiseBots: BotManager dispatching LoginPlayer for %s (acct %u, sess %p)",
                     rec.characterGuid.GetString().c_str(), rec.accountId, (void*)sess);
                 sess->LoginPlayer(rec.characterGuid);
             }
-            else if (!sWorld.HasPendingSession(rec.accountId, SessionTransport::Headless) && !sess)
+            else if (!sWorld.HasPendingHeadlessSession(rec.characterGuid))
             {
                 sLog.outError("TortoiseBots: Bot %s lost before LoginPlayer; dropping record",
                     rec.characterGuid.GetString().c_str());
@@ -177,16 +231,16 @@ void BotManager::OnWorldUpdate(uint32 diff)
 
     for (auto it = m_bots.begin(); it != m_bots.end(); )
     {
-        BotRecord& rec = it->second;
-        Player* p = sObjectAccessor.FindPlayer(rec.characterGuid);
+        BotRecord& rec = it->second.record;
+        ::Player* p = sObjectAccessor.FindPlayer(rec.characterGuid);
 
         if (rec.lifecycle == BotLifecycle::Removing)
         {
             if (p)
             {
-                WorldSession* playerSess = p->GetSession();
-                if (playerSess && playerSess->IsHeadless() && playerSess->GetAccountId() == rec.accountId)
-                    BotSessionAdapter::LogoutHeadlessSession(playerSess, true);
+                ::WorldSession* playerSess = p->GetSession();
+                if (playerSess && playerSess == sWorld.FindHeadlessSession(rec.characterGuid))
+                    BotSessionAdapter::LogoutHeadlessSession(playerSess, rec.characterGuid, true);
                 else
                 {
                     sLog.outString("TortoiseBots: Bot %s reclaimed by network during removal — releasing",
@@ -195,14 +249,14 @@ void BotManager::OnWorldUpdate(uint32 diff)
                     continue;
                 }
             }
-            else if (sWorld.CancelPendingSession(rec.accountId, SessionTransport::Headless))
+            else if (sWorld.CancelPendingHeadlessSession(rec.characterGuid))
             {
                 sLog.outString("TortoiseBots: Bot %s removed before session activation",
                     rec.characterGuid.GetString().c_str());
                 it = m_bots.erase(it);
                 continue;
             }
-            else if (!sWorld.FindSession(rec.accountId))
+            else if (!sWorld.FindHeadlessSession(rec.characterGuid))
             {
                 sLog.outString("TortoiseBots: Bot %s removal complete",
                     rec.characterGuid.GetString().c_str());
@@ -215,23 +269,26 @@ void BotManager::OnWorldUpdate(uint32 diff)
 
         if (p)
         {
-            // Human reclaim detection: if the player's session is no longer the
-            // headless session we created, stop controlling it.
-            WorldSession* playerSess = p->GetSession();
-            bool isHeadless = playerSess && playerSess->IsHeadless();
-            bool isOurAccount = playerSess && playerSess->GetAccountId() == rec.accountId;
-            if (!isHeadless || !isOurAccount)
+            ::WorldSession* playerSess = p->GetSession();
+            bool isOwnHeadless = playerSess && playerSess == sWorld.FindHeadlessSession(rec.characterGuid);
+            if (!isOwnHeadless)
             {
                 sLog.outString("TortoiseBots: Bot %s reclaimed by %s session acct %u (headless %u) — releasing",
-                    rec.characterGuid.GetString().c_str(), isHeadless ? "headless" : "network",
-                    playerSess ? playerSess->GetAccountId() : 0, isHeadless);
+                    rec.characterGuid.GetString().c_str(), playerSess && playerSess->IsHeadless() ? "headless" : "network",
+                    playerSess ? playerSess->GetAccountId() : 0, playerSess && playerSess->IsHeadless());
                 it = m_bots.erase(it);
                 continue;
             }
             if (p->IsInWorld())
             {
                 if (!rec.enteredWorld)
+                {
                     sLog.outString("TortoiseBots: Bot %s entered world", rec.characterGuid.GetString().c_str());
+                    if (!it->second.controller)
+                        it->second.controller = std::make_unique<BotController>(rec.characterGuid, rec.masterGuid);
+                    else
+                        it->second.controller->SetMaster(rec.masterGuid);
+                }
                 rec.enteredWorld = true;
                 rec.lifecycle = BotLifecycle::InWorld;
                 ++rec.ticksInWorld;
@@ -239,11 +296,8 @@ void BotManager::OnWorldUpdate(uint32 diff)
         }
         else if (rec.lifecycle == BotLifecycle::PendingLogin)
         {
-            // Keep the record while the async LoginQueryHolder is in flight.
-            // A removal request is handled on a later tick after the callback
-            // either produces a Player or the headless session disappears.
-            if (!sWorld.FindSession(rec.accountId) &&
-                !sWorld.HasPendingSession(rec.accountId, SessionTransport::Headless))
+            if (!sWorld.FindHeadlessSession(rec.characterGuid) &&
+                !sWorld.HasPendingHeadlessSession(rec.characterGuid))
             {
                 sLog.outError("TortoiseBots: Bot %s login ended without a session",
                     rec.characterGuid.GetString().c_str());
@@ -251,8 +305,8 @@ void BotManager::OnWorldUpdate(uint32 diff)
                 continue;
             }
         }
-        else if (!sWorld.FindSession(rec.accountId) &&
-                 !sWorld.HasPendingSession(rec.accountId, SessionTransport::Headless))
+        else if (!sWorld.FindHeadlessSession(rec.characterGuid) &&
+                 !sWorld.HasPendingHeadlessSession(rec.characterGuid))
         {
             sLog.outString("TortoiseBots: Bot %s session ended — releasing",
                 rec.characterGuid.GetString().c_str());
@@ -262,11 +316,13 @@ void BotManager::OnWorldUpdate(uint32 diff)
         ++it;
     }
 
+    UpdateControllers(diff);
+
     if (m_autoTestEnabled)
         UpdateAutoTest(diff);
 }
 
-void BotManager::UpdateAutoTest(uint32 diff)
+void BotManager::UpdateAutoTest(uint32_t diff)
 {
     (void)diff;
     ++m_autoTestTicks;
@@ -295,20 +351,20 @@ void BotManager::UpdateAutoTest(uint32 diff)
                 {
                     if (m_autoTestTicks % 40 == 0)
                     {
-                        Player* p = sObjectAccessor.FindPlayer(m_autoTestGuid);
-                        WorldSession* sess = sWorld.FindSession(rec->accountId);
-                        std::string sessInfo = sess ? (sess->IsHeadless() ? "headless" : "network") : "<null>";
+                        ::Player* p = sObjectAccessor.FindPlayer(m_autoTestGuid);
+                        ::WorldSession* sess = sWorld.FindHeadlessSession(rec->characterGuid);
+                        std::string sessInfo = sess ? "headless" : "<null>";
                         bool loading = sess ? sess->PlayerLoading() : false;
                         std::string playerInfo = p ? (p->IsInWorld() ? "IsInWorld" : "not InWorld") : "FindPlayer null";
                         sLog.outString("TortoiseBots: AutoTest LoggingIn tick %u sess %s (%p) acct %u loading %u player %s pending %u", m_autoTestTicks, sessInfo.c_str(), (void*)sess, rec->accountId, loading, playerInfo.c_str(), rec->lifecycle == BotLifecycle::PendingLogin);
                         if (sess)
-                            sLog.outString("TortoiseBots:   sess details transport %u m_Socket %p IsHeadless %u", (uint32)sess->GetTransport(), (void*)sess->GetSocket(), sess->IsHeadless());
+                            sLog.outString("TortoiseBots:   sess details transport %u m_Socket %p IsHeadless %u", (uint32_t)sess->GetTransport(), (void*)sess->GetSocket(), sess->IsHeadless());
                     }
                     if (m_autoTestTicks > 400)
                     {
-                        Player* p = sObjectAccessor.FindPlayer(m_autoTestGuid);
-                        WorldSession* sess = sWorld.FindSession(rec->accountId);
-                        sLog.outError("TortoiseBots: AutoTest login timeout after %u ticks (sess %s loading %u player %s)", m_autoTestTicks, sess ? (sess->IsHeadless() ? "headless" : "network") : "null", sess ? sess->PlayerLoading() : 0, p ? (p->IsInWorld() ? "IsInWorld" : "notInWorld") : "null");
+                        ::Player* p = sObjectAccessor.FindPlayer(m_autoTestGuid);
+                        ::WorldSession* sess = sWorld.FindHeadlessSession(rec->characterGuid);
+                        sLog.outError("TortoiseBots: AutoTest login timeout after %u ticks (sess %s loading %u player %s)", m_autoTestTicks, sess ? "headless" : "null", sess ? sess->PlayerLoading() : 0, p ? (p->IsInWorld() ? "IsInWorld" : "notInWorld") : "null");
                         m_autoState = AutoState::Done;
                     }
                 }
@@ -325,7 +381,7 @@ void BotManager::UpdateAutoTest(uint32 diff)
             {
                 if (BotRecord* rec = FindBot(m_autoTestGuid))
                 {
-                    Player* p = sObjectAccessor.FindPlayer(m_autoTestGuid);
+                    ::Player* p = sObjectAccessor.FindPlayer(m_autoTestGuid);
                     if (p)
                     {
                         p->SaveToDB(false, false);
@@ -350,8 +406,8 @@ void BotManager::UpdateAutoTest(uint32 diff)
             {
                 if (!sObjectAccessor.FindPlayer(m_autoTestGuid) &&
                     !FindBot(m_autoTestGuid) &&
-                    !sWorld.FindSession(m_autoTestAccount) &&
-                    !sWorld.HasPendingSession(m_autoTestAccount, SessionTransport::Headless))
+                    !sWorld.FindHeadlessSession(m_autoTestGuid) &&
+                    !sWorld.HasPendingHeadlessSession(m_autoTestGuid))
                 {
                     sLog.outString("TortoiseBots: AutoTest step 5 — re-login bot");
                     AddBot(m_autoTestAccount, m_autoTestGuid);
@@ -376,17 +432,13 @@ void BotManager::UpdateAutoTest(uint32 diff)
                 }
                 else if (m_autoTestTicks % 40 == 0)
                 {
-                    Player* p = sObjectAccessor.FindPlayer(m_autoTestGuid);
-                    WorldSession* sess = sWorld.FindSession(rec->accountId);
-                    sLog.outString("TortoiseBots: AutoTest Relogging tick %u sess %s pending %u player %s", m_autoTestTicks, sess ? (sess->IsHeadless() ? "headless" : "network") : "null", rec->lifecycle == BotLifecycle::PendingLogin, p ? (p->IsInWorld() ? "IsInWorld" : "notInWorld") : "null");
+                    ::Player* p = sObjectAccessor.FindPlayer(m_autoTestGuid);
+                    ::WorldSession* sess = sWorld.FindHeadlessSession(rec->characterGuid);
+                    sLog.outString("TortoiseBots: AutoTest Relogging tick %u sess %s pending %u player %s", m_autoTestTicks, sess ? "headless" : "null", rec->lifecycle == BotLifecycle::PendingLogin, p ? (p->IsInWorld() ? "IsInWorld" : "notInWorld") : "null");
                 }
             }
             break;
         case AutoState::Done:
-            // Stay done; human reclaim and shutdown are verified externally.
-            // For the cleanup pass we also verify that a human reclaim would be
-            // detected via the OnWorldUpdate check above (FindPlayer returns a
-            // network session).
             break;
     }
 }

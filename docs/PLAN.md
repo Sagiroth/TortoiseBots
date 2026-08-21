@@ -630,7 +630,7 @@ docs/HOST_API.md
 Example:
 
 | Need | Existing hook? | New core seam required? | Why |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | World tick | yes/no | yes/no | |
 | Bot login | yes/no | yes/no | |
 | Bot logout | yes/no | yes/no | |
@@ -743,6 +743,11 @@ The core understands:
 network-backed session
 headless session
 ```
+
+One account may have at most one active Network session and may have multiple
+active Headless character sessions. Network sessions remain account-keyed;
+Headless sessions are character-identity-keyed and do not consume Network
+population, queue, or realm-limit capacity.
 
 The module understands:
 
@@ -919,7 +924,7 @@ docs/BEHAVIOR_BACKLOG.md
 Suggested table:
 
 | Capability | Priority | KB reference | Upstream source | Turtle source | Status | Tests |
-|---|---:|---|---|---|---|---|
+| --- | ---: | --- | --- | --- | --- | --- |
 | Heal critical ally | P0 | ... | cmangos | Shyalya | todo | |
 | Polymorph marked target | P1 | ... | cmangos | Shyalya | todo | |
 | Interrupt caster | P0 | ... | cmangos | Shyalya | todo | |

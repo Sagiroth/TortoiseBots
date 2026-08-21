@@ -521,18 +521,51 @@ the target module.
 
 ## Validation
 
-Use the smallest check that proves the current change. Batch related edits before compiling; do not rebuild after every file edit.
+Use the **smallest check that proves the current change**. Validation must not dominate implementation time.
+
+Batch related edits before compiling. Do not rebuild after every file edit, every diagnostic observation, every docs change, or every manual test.
+
+### Default development loop
+
+For an active implementation slice:
+
+```text
+inspect
+-> make a coherent batch of edits
+-> one cached BUILD_PLAYERBOTS=ON build if compiled code changed
+-> run the smallest relevant runtime/manual check
+-> continue implementing
+```
+
+Repeat the build only if compiled code changed after the last successful build.
+
+A successful build remains valid evidence for unchanged code. A successful manual test remains valid evidence for unchanged behavior.
 
 ### Validation cadence
 
-- **Docs/config-only change:** no build. Run Markdown/config validation and `git diff --check`.
-- **Module-only code change:** sync the module, then run one cached build of the affected target (usually `mangosd`) after the slice is coherent.
-- **Core seam, CMake, Dockerfile, or build-argument change:** build the affected target; rebuild the image only when the runtime image or build inputs changed.
-- **Phase/PR boundary:** run the full OFF/ON build matrix, legacy-coupling audits, `git diff --check`, and the requested Docker/runtime gates.
+- **Docs/comments/config-only change:** no C++ build. Run only the smallest relevant text/config check plus `git diff --check`.
+- **Module-only C++ change:** run one cached `BUILD_PLAYERBOTS=ON` build of the smallest affected target after the edit batch is coherent.
+- **Generic core-seam change:** while iterating, build the cached `BUILD_PLAYERBOTS=ON` target only. Do **not** run OFF/ON after every core edit.
+- **Optional-build/CMake/build-gating change:** run the directly affected configuration when needed to prove the change, then defer the full matrix until the slice is stable.
+- **Phase/PR/handover boundary:** run the full OFF/ON matrix **once**, after implementation has stabilized, plus coupling audits, `git diff --check`, and the required runtime gates.
 - Use cached builds by default. Use `--no-cache` only to diagnose a cache/image problem or when explicitly requested.
-- If the binary and image are unchanged, restart the existing stack for runtime checks instead of rebuilding it.
+- Rebuild the Docker image only when the runtime image genuinely needs new build output or build inputs changed. If the existing runtime can use the already-built binary, reuse it.
+- If the binary/image is unchanged, restart or reuse the existing stack instead of rebuilding.
+- If the user already manually validated a behavior and no code affecting that behavior changed afterward, **do not ask them to repeat the same test**.
+- Do not repeat login/logout/follow/shutdown acceptance scenarios merely for ceremony. Re-run them only when the changed code could plausibly regress them or at the final phase/PR gate.
 
-Every code change still needs its targeted check and a clear report of what was, and was not, run.
+### Anti-churn rule
+
+If validation/recompilation is taking more time than implementing the current playable slice:
+
+1. stop,
+2. identify the single cheapest check that proves the current edit,
+3. run that check only,
+4. continue implementation.
+
+Do not turn every intermediate edit into a release-candidate validation cycle.
+
+Every code change still needs a targeted check and a clear report of what was, and was not, run.
 
 Useful audit:
 
@@ -596,8 +629,12 @@ Never claim behavior was tested if it was only inspected statically.
 
 When a change affects runtime behavior and the Docker/runtime environment is available
 (a sibling `tortoise-docker-penqle` checkout may already exist alongside this repository),
-use that sibling checkout for the relevant verification. Do not rebuild merely to restart
-an unchanged binary; reuse the running image and preserve its data.
+use that sibling checkout for the **smallest relevant verification**. Do not rebuild merely
+to restart an unchanged binary; reuse the running image and preserve its data.
+
+Prefer one focused gameplay check for the behavior just changed. Do not replay the whole
+historical acceptance matrix after each slice. Full regression journeys belong at phase/PR
+boundaries or after changes to the shared lifecycle/session seam.
 
 Before running it:
 

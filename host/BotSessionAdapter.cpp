@@ -36,21 +36,20 @@ WorldSession* BotSessionAdapter::CreateHeadlessSession(uint32 accountId, ObjectG
     session->InitHeadlessSession();
     session->SetUsername("TortoiseBot#" + std::to_string(accountId));
 
-    // Use the normal queued AddSession path. The session will be moved from
-    // addSessQueue to m_sessions on the next World::UpdateSessions. BotManager
-    // defers LoginPlayer until FindSession(accountId) returns this session, so
-    // the LoginQueryHolder callback's FindSession succeeds.
-    sWorld.AddSession(session);
+    // Queue under the character identity, never in World::m_sessions which is
+    // intentionally reserved for the one Network session per account.
+    sWorld.AddHeadlessSession(session, characterGuid);
 
-    sLog.outString("TortoiseBots: CreateHeadlessSession acct %u guid %s headless %u ptr %p — queued add (login deferred)", accountId, characterGuid.GetString().c_str(), session->IsHeadless(), (void*)session);
-    // Do not call LoginPlayer here; BotManager will call it on the next tick when
-    // the session is findable. This keeps the core's normal queued lifecycle.
+    sLog.outString("TortoiseBots: CreateHeadlessSession acct %u guid %s headless %u ptr %p — queued headless add (login deferred)", accountId, characterGuid.GetString().c_str(), session->IsHeadless(), (void*)session);
+    // Do not call LoginPlayer here; BotManager waits until the session is
+    // discoverable by character guid through World::FindHeadlessSession.
+
     return session;
 }
 
-bool BotSessionAdapter::LogoutHeadlessSession(WorldSession* session, bool save)
+bool BotSessionAdapter::LogoutHeadlessSession(WorldSession* session, ObjectGuid characterGuid, bool save)
 {
-    if (!session)
+    if (!session || sWorld.FindHeadlessSession(characterGuid) != session)
         return false;
     if (!IsHeadlessSession(session))
     {
@@ -58,12 +57,10 @@ bool BotSessionAdapter::LogoutHeadlessSession(WorldSession* session, bool save)
         return false;
     }
 
-    sLog.outString("TortoiseBots: LogoutHeadlessSession acct %u player %s save=%u",
-        session->GetAccountId(), session->GetPlayerName(), save);
+    sLog.outString("TortoiseBots: LogoutHeadlessSession acct %u guid %s player %s save=%u",
+        session->GetAccountId(), characterGuid.GetString().c_str(), session->GetPlayerName(), save);
     session->LogoutPlayer(save);
-    // The session object will be removed from World::m_sessions on the next
-    // World::UpdateSessions if it has no player. We don't delete it here; World owns it.
-    return true;
+    return sWorld.RemoveHeadlessSession(characterGuid);
 }
 
 WorldSession* BotSessionAdapter::RelogHeadlessSession(uint32 accountId, ObjectGuid characterGuid)

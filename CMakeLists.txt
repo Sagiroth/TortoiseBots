@@ -23,6 +23,9 @@ set(TORTOISEBOTS_SOURCES
     host/BotHostAdapter.cpp
     host/BotSessionAdapter.cpp
     runtime/BotManager.cpp
+    runtime/BotController.cpp
+    behavior/Movement.cpp
+    commands/BotCommands.cpp
 )
 
 set(TORTOISEBOTS_HEADERS
@@ -30,6 +33,10 @@ set(TORTOISEBOTS_HEADERS
     host/BotHostAdapter.h
     host/BotSessionAdapter.h
     runtime/BotManager.h
+    runtime/BotController.h
+    behavior/Config.h
+    behavior/Movement.h
+    commands/BotCommands.h
 )
 
 add_library(tortoise_bots STATIC
