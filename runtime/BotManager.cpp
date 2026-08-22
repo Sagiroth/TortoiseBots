@@ -1,5 +1,8 @@
+// pi-lens-ignore: clang:pp_file_not_found,clang:unknown_typename,clang:use_of_undeclared_identifier,clang:unknown_type_name,clang:undeclared_var_use,clang:incomplete_member_access,clang:uninitialized,clang:undefined_identifier,clang:undeclared_identifier,clang:all
 #include "BotManager.h"
 #include "BotController.h"
+#include "PlayerbotAIAdapter.h"
+#include "PlayerbotAIStorage.h"
 #include "../host/BotSessionAdapter.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "WorldSession.h"
@@ -15,6 +18,8 @@
 #include "ObjectMgr.h"
 
 namespace TortoiseBots {
+
+BotEntry::~BotEntry() = default;
 
 BotManager& BotManager::Instance()
 {
@@ -192,9 +197,24 @@ void BotManager::UpdateControllers(uint32_t diff)
         BotEntry& entry = kv.second;
         if (entry.record.lifecycle != BotLifecycle::InWorld)
             continue;
+        // Drive the real PlayerbotAI engine if attached; this is the primary bot tick.
+        // The legacy BotController follow is kept as a fallback for the 1.5y dead-zone
+        // until the Strategy/Trigger-driven movement fully replaces it.
+        if (entry.aiAdapter && entry.aiAdapter->IsInitialized())
+        {
+            entry.aiAdapter->Update(diff);
+            // Also tick the legacy controller for follow grouping until the Engine's
+            // FollowMasterStrategy is proven to fully replace it.
+            if (entry.controller)
+            {
+                if (entry.controller->GetMasterGuid() != entry.record.masterGuid)
+                    entry.controller->SetMaster(entry.record.masterGuid);
+                entry.controller->Update(diff);
+            }
+            continue;
+        }
         if (!entry.controller)
             continue;
-        // Keep controller's master in sync with record (in case SetBotFollow wasn't used)
         if (entry.controller->GetMasterGuid() != entry.record.masterGuid)
             entry.controller->SetMaster(entry.record.masterGuid);
         entry.controller->Update(diff);
@@ -288,6 +308,21 @@ void BotManager::OnWorldUpdate(uint32_t diff)
                         it->second.controller = std::make_unique<BotController>(rec.characterGuid, rec.masterGuid);
                     else
                         it->second.controller->SetMaster(rec.masterGuid);
+                    // Attach the real PlayerbotAI/Engine stack. This is where the Headless bot
+                    // transitions from "just a Player with a headless session" to "a bot with AI".
+                    // AiFactory will create the per-class AiObjectContext and the combat/non-combat/dead/
+                    // reaction Engines with their Strategy/Trigger/Action/Value stacks.
+                    if (!it->second.aiAdapter)
+                    {
+                        ::Player* masterPlayer = nullptr;
+                        if (rec.masterGuid && !rec.masterGuid.IsEmpty())
+                            masterPlayer = sObjectAccessor.FindPlayer(rec.masterGuid);
+                        it->second.aiAdapter = std::make_unique<PlayerbotAIAdapter>(p, masterPlayer);
+                        if (it->second.aiAdapter->Initialize())
+                            sLog.outString("TortoiseBots: PlayerbotAI attached for %s (master %s)", p->GetName(), masterPlayer ? masterPlayer->GetName() : "none");
+                        else
+                            sLog.outError("TortoiseBots: PlayerbotAI attach failed for %s", p->GetName());
+                    }
                 }
                 rec.enteredWorld = true;
                 rec.lifecycle = BotLifecycle::InWorld;
