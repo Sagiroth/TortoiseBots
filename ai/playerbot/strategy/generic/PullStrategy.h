@@ -1,99 +1,82 @@
-// Forward-ported from mod-playerbots Base/Strategy/PullStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "playerbot/strategy/Strategy.h"
+#include "playerbot/strategy/Multiplier.h"
 
-/*
- * Ported from the CMaNGOS playerbots project (https://github.com/cmangos/playerbots), GPL v2,
- * with modifications for AzerothCore.
- * Original authors:
- *   ike3 <ike@email.org> - original author
- *   Sebastiaan Keek (mostlikely4r) <sebastiaan.keek@gmail.com>
- *   David Parra Ausina (Flekz) <davidparraausina@gmail.com>
- */
-
-#ifndef PLAYERBOTS_PULLSTRATEGY_H
-#define PLAYERBOTS_PULLSTRATEGY_H
-
-#include "Strategy.h"
-
-class Action;
-class Multiplier;
-class Unit;
-
-class PlayerbotAI;
-
-class PullStrategy : public Strategy
+namespace ai
 {
-public:
-    PullStrategy(PlayerbotAI* botAI, std::string const action, std::string const preAction = "");
+    class PullStrategy : public Strategy
+    {
+    public:
+        PullStrategy(PlayerbotAI* ai, std::string pullAction, std::string prePullAction = "");
 
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    void InitMultipliers(std::vector<Multiplier*>& multipliers) override;
-    std::string const getName() override { return "pull"; }
-    std::vector<NextAction> getDefaultActions() override;
-    uint32 GetType() const override { return STRATEGY_TYPE_COMBAT | STRATEGY_TYPE_NONCOMBAT; }
+    public:
+        std::string getName() override { return "pull"; }
 
-    static PullStrategy* Get(PlayerbotAI* botAI);
-    static uint8 GetMaxPullTime() { return 15; }
+        static PullStrategy* Get(PlayerbotAI* ai);
+        static uint8 GetMaxPullTime() { return 15; }
+        const time_t& GetPullStartTime() const { return pullStartTime; }
+        
+        bool CanDoPullAction(Unit* target);
 
-    time_t GetPullStartTime() const { return pullStartTime; }
-    bool IsPullPendingToStart() const { return pendingToStart; }
-    bool HasPullStarted() const { return pullStartTime > 0; }
+        Unit* GetTarget() const;
+        bool HasTarget() const { return GetTarget() != nullptr; }
 
-    bool CanDoPullAction(Unit* target);
-    Unit* GetTarget() const;
-    bool HasTarget() const;
+        std::string GetPullActionName() const;
+        std::string GetSpellName() const;
+        float GetRange() const;
 
-    virtual std::string GetPullActionName() const;
-    std::string GetSpellName() const;
-    float GetRange() const;
-    virtual std::string GetPreActionName() const;
+        std::string GetPreActionName() const;
 
-    void RequestPull(Unit* target, bool resetTime = true);
-    void OnPullStarted();
-    void OnPullEnded();
+        void RequestPull(Unit* target, bool resetTime = true);
+        bool IsPullPendingToStart() const { return pendingToStart; }
+        bool HasPullStarted() const { return pullStartTime > 0; }
+        void OnPullStarted();
+        void OnPullEnded();
+        ReactStates GetPetReactState() const { return petReactState; }
+        void SetPetReactState(ReactStates reactState) { petReactState = reactState; }
 
-    ReactStates GetPetReactState() const { return petReactState; }
-    void SetPetReactState(ReactStates reactState) { petReactState = reactState; }
+    private:
+        void SetTarget(Unit* target);
 
-private:
-    void SetTarget(Unit* target);
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+        void InitNonCombatMultipliers(std::list<Multiplier*>& multipliers) override;
 
-private:
-    std::string const action;
-    std::string const preAction;
-    bool pendingToStart = false;
-    time_t pullStartTime = 0;
-    ReactStates petReactState = REACT_DEFENSIVE;
-};
+    private:
+        std::string pullActionName; //shoot
+        std::string preActionName;
+        bool pendingToStart;
+        time_t pullStartTime;
+        ReactStates petReactState;
+    };
 
-class PullMultiplier : public Multiplier
-{
-public:
-    PullMultiplier(PlayerbotAI* botAI);
+    class PullMultiplier : public Multiplier
+    {
+    public:
+        PullMultiplier(PlayerbotAI* ai) : Multiplier(ai, "pull") {}
 
-    float GetValue(Action* action) override;
-};
+    public:
+        float GetValue(Action* action) override;
+    };
 
-class PossibleAddsStrategy : public Strategy
-{
-public:
-    PossibleAddsStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
+    class PossibleAdsStrategy : public Strategy
+    {
+    public:
+        PossibleAdsStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "ads"; }
 
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "adds"; }
-};
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*> &triggers) override;
+    };
 
-class PullBackStrategy : public Strategy
-{
-public:
-    PullBackStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
+    class PullBackStrategy : public Strategy
+    {
+    public:
+        PullBackStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "pull back"; }
 
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "pull back"; }
-};
-
-#endif
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
+    };
+}

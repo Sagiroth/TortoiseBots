@@ -1,34 +1,41 @@
-// Forward-ported from mod-playerbots Base/Strategy/DpsAssistStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "playerbot/strategy/Strategy.h"
 
-#ifndef PLAYERBOTS_DPSASSISTSTRATEGY_H
-#define PLAYERBOTS_DPSASSISTSTRATEGY_H
-
-#include "NonCombatStrategy.h"
-
-class PlayerbotAI;
-
-class DpsAssistStrategy : public NonCombatStrategy
+namespace ai
 {
-public:
-    DpsAssistStrategy(PlayerbotAI* botAI) : NonCombatStrategy(botAI) {}
+    class DpsAssistStrategy : public Strategy
+    {
+    public:
+        DpsAssistStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "dps assist"; }
+		int GetType() override { return STRATEGY_TYPE_DPS; }
 
-    std::string const getName() override { return "dps assist"; }
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-};
-
-class DpsAoeStrategy : public NonCombatStrategy
-{
-public:
-    DpsAoeStrategy(PlayerbotAI* botAI) : NonCombatStrategy(botAI) {}
-
-    std::string const getName() override { return "dps aoe"; }
-    uint32 GetType() const override { return STRATEGY_TYPE_DPS; }
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-};
-
+#ifdef GenerateBotHelp
+        virtual std::string GetHelpName() { return "dps assist"; } //Must equal iternal name
+        virtual std::string GetHelpDescription() {
+            return "This strategy will make the bot assist others when picking a target to attack.";
+        }
+        virtual std::vector<std::string> GetRelatedStrategies() { return { "dps aoe" }; }
 #endif
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+    };
+
+    class DpsAoeStrategy : public Strategy
+    {
+    public:
+        DpsAoeStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "dps aoe"; }
+        int GetType() override { return STRATEGY_TYPE_DPS; }
+
+#ifdef GenerateBotHelp
+        virtual std::string GetHelpName() { return "dps aoe"; } //Must equal iternal name
+        virtual std::string GetHelpDescription() {
+            return "This strategy will make the bot use aoe abilities when multiple targets are close to eachother.";
+        }
+        virtual std::vector<std::string> GetRelatedStrategies() { return { "dps assist" }; }
+#endif
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*> &triggers) override;
+    };
+}

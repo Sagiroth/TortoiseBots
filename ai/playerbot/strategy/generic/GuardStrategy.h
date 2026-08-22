@@ -1,25 +1,22 @@
-// Forward-ported from mod-playerbots Base/Strategy/GuardStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
-
-#ifndef PLAYERBOTS_GUARDSTRATEGY_H
-#define PLAYERBOTS_GUARDSTRATEGY_H
-
+#pragma once
 #include "NonCombatStrategy.h"
 
-class PlayerbotAI;
-
-class GuardStrategy : public NonCombatStrategy
+namespace ai
 {
-public:
-    GuardStrategy(PlayerbotAI* botAI) : NonCombatStrategy(botAI) {}
-
-    std::string const getName() override { return "guard"; }
-    std::vector<NextAction> getDefaultActions() override;
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-};
-
+    class GuardStrategy : public NonCombatStrategy
+    {
+    public:
+        GuardStrategy(PlayerbotAI* ai) : NonCombatStrategy(ai) {}
+        std::string getName() override { return "guard"; }
+#ifdef GenerateBotHelp
+        virtual std::string GetHelpName() { return "guard"; } //Must equal iternal name
+        virtual std::string GetHelpDescription() {
+            return "This a position strategy that will make the bot stay in a location until they have something to attack.";
+        }
+        virtual std::vector<std::string> GetRelatedStrategies() { return { "follow", "stay", "runaway", "flee from adds", "free" }; }
 #endif
+    private:
+        NextAction** GetDefaultNonCombatActions() override;
+        NextAction** GetDefaultCombatActions() override;
+    };
+}

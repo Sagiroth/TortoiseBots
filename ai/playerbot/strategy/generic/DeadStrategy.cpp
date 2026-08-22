@@ -1,34 +1,48 @@
-// Forward-ported from mod-playerbots Base/Strategy/DeadStrategy.cpp
-// Source: mod-playerbots@5397110, Shyalya@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
 
+#include "playerbot/playerbot.h"
+#include "playerbot/strategy/Strategy.h"
+#include "playerbot/strategy/values/DeadValues.h"
 #include "DeadStrategy.h"
-#include "Playerbots.h"
 
-void DeadStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+using namespace ai;
+
+void DeadStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
 {
-    PassThroughStrategy::InitTriggers(triggers);
+    PassTroughStrategy::InitDeadTriggers(triggers);
 
-    triggers.push_back(
-        new TriggerNode("often", { NextAction("auto release", relevance) }));
-    triggers.push_back(
-        new TriggerNode("bg active", { NextAction("auto release", relevance) }));
-    triggers.push_back(
-        new TriggerNode("dead", { NextAction("find corpse", relevance) }));
     triggers.push_back(new TriggerNode(
-        "corpse near", { NextAction("revive from corpse", relevance - 1.0f) }));
-    triggers.push_back(new TriggerNode("resurrect request",
-                                       { NextAction("accept resurrect", relevance) }));
-    triggers.push_back(
-        new TriggerNode("falling far", { NextAction("repop", relevance + 1.f) }));
-    triggers.push_back(
-        new TriggerNode("location stuck", { NextAction("repop", relevance + 1) }));
+        "very often",
+        NextAction::array(0, new NextAction("auto release", relevance), NULL)));
+
     triggers.push_back(new TriggerNode(
-        "can self resurrect", { NextAction("self resurrect", relevance + 2.0f) }));
+        "val::gt32::{death count," + std::to_string(DeadValueConstants::DEATH_COUNT_BEFORE_EVAC) + "}",
+        NextAction::array(0, new NextAction("repop", relevance + 4.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "very often",
+        NextAction::array(0, new NextAction("self resurrect", relevance + 3.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "val::should spirit healer",
+        NextAction::array(0, new NextAction("spirit healer", relevance + 2.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "dead",
+       NextAction::array(0, new NextAction("find corpse", relevance), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "corpse near",
+        NextAction::array(0, new NextAction("revive from corpse", relevance-1.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "resurrect request",
+        NextAction::array(0, new NextAction("accept resurrect", relevance), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "falling far",
+        NextAction::array(0, new NextAction("repop", relevance+1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "move long stuck",
+        NextAction::array(0, new NextAction("repop", relevance+1), NULL)));
 }
-
-DeadStrategy::DeadStrategy(PlayerbotAI* botAI) : PassThroughStrategy(botAI) {}

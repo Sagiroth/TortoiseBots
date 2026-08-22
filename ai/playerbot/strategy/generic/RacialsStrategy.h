@@ -1,24 +1,16 @@
-// Forward-ported from mod-playerbots Base/Strategy/RacialsStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "playerbot/strategy/Strategy.h"
 
-#ifndef PLAYERBOTS_RACIALSSTRATEGY_H
-#define PLAYERBOTS_RACIALSSTRATEGY_H
-
-#include "Strategy.h"
-
-class PlayerbotAI;
-
-class RacialsStrategy : public Strategy
+namespace ai
 {
-public:
-    RacialsStrategy(PlayerbotAI* botAI);
-
-    std::string const getName() override { return "racials"; }
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-};
-
-#endif
+    class RacialsStrategy : public Strategy
+    {
+    public:
+        RacialsStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "racials"; }
+    
+    private:
+        void InitNonCombatTriggers(std::list<TriggerNode*> &triggers) override;
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+    };
+}

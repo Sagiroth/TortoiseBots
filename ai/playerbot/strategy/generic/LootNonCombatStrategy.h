@@ -1,51 +1,87 @@
-// Forward-ported from mod-playerbots Base/Strategy/LootNonCombatStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "playerbot/strategy/Strategy.h"
 
-#ifndef PLAYERBOTS_LOOTNONCOMBATSTRATEGY_H
-#define PLAYERBOTS_LOOTNONCOMBATSTRATEGY_H
-
-#include "Strategy.h"
-
-class PlayerbotAI;
-
-class LootNonCombatStrategy : public Strategy
+namespace ai
 {
-public:
-    LootNonCombatStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
+    class LootNonCombatStrategy : public Strategy
+    {
+    public:
+        LootNonCombatStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "loot"; }
+#ifdef GenerateBotHelp
+        virtual std::string GetHelpName() { return "loot"; } //Must equal iternal name
+        virtual std::string GetHelpDescription() {
+            return "This strategy will make bots look for, open and get items from nearby lootable objects.";
+        }
+        virtual std::vector<std::string> GetRelatedStrategies() { return { "gather" }; }
+#endif        
+    public:
+        void InitNonCombatTriggers(std::list<TriggerNode*> &triggers) override;
+    };
 
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "loot"; }
-};
-
-class GatherStrategy : public Strategy
-{
-public:
-    GatherStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
-
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "gather"; }
-};
-
-class RevealStrategy : public Strategy
-{
-public:
-    RevealStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
-
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "reveal"; }
-};
-
-class UseBobberStrategy : public Strategy
-{
-public:
-    UseBobberStrategy(PlayerbotAI* botAI) : Strategy(botAI){}
-    uint32 GetType() const override { return STRATEGY_TYPE_NONCOMBAT; }
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override {return "use bobber";}
-};
-
+    class GatherStrategy : public Strategy
+    {
+    public:
+        GatherStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "gather"; }
+#ifdef GenerateBotHelp
+        virtual std::string GetHelpName() { return "gather"; } //Must equal iternal name
+        virtual std::string GetHelpDescription() {
+            return "This strategy will make bots look for and save nearby gathering nodes to loot later.";
+        }
+        virtual std::vector<std::string> GetRelatedStrategies() { return { "reveal" }; }
 #endif
+    private:
+        void InitNonCombatTriggers(std::list<TriggerNode*> &triggers) override;
+    };
+
+    class RevealStrategy : public Strategy
+    {
+    public:
+        RevealStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "reveal"; }
+#ifdef GenerateBotHelp
+        virtual std::string GetHelpName() { return "reveal"; } //Must equal iternal name
+        virtual std::string GetHelpDescription() {
+            return "This strategy will make bots point out nearby gathering nodes that they can open.";
+        }
+        virtual std::vector<std::string> GetRelatedStrategies() { return { "gather" }; }
+#endif
+    private:
+        void InitNonCombatTriggers(std::list<TriggerNode*> &triggers) override;
+    };
+
+    class RollStrategy : public Strategy
+    {
+    public:
+        RollStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "roll"; }
+#ifdef GenerateBotHelp
+        virtual std::string GetHelpName() { return "roll"; } //Must equal iternal name
+        virtual std::string GetHelpDescription() {
+            return "This strategy will make bots automatically roll on items.";
+        }
+        virtual std::vector<std::string> GetRelatedStrategies() { return { "delayed roll"}; }
+#endif
+    private:
+        void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+    };
+
+    class DelayedRollStrategy : public Strategy
+    {
+    public:
+        DelayedRollStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "delayed roll"; }
+#ifdef GenerateBotHelp
+        virtual std::string GetHelpName() { return "delayed roll"; } //Must equal iternal name
+        virtual std::string GetHelpDescription() {
+            return "This strategy will make bots roll on item after the master rolls..";
+        }
+        virtual std::vector<std::string> GetRelatedStrategies() { return { "roll" }; }
+#endif
+    private:
+        void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+    };
+}

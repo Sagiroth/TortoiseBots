@@ -1,18 +1,17 @@
-// Forward-ported from mod-playerbots Base/Strategy/GuardStrategy.cpp
-// Source: mod-playerbots@5397110, Shyalya@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
 
+#include "playerbot/playerbot.h"
+#include "playerbot/strategy/values/PositionValue.h"
 #include "GuardStrategy.h"
 
-std::vector<NextAction> GuardStrategy::getDefaultActions()
+using namespace ai;
+
+NextAction** GuardStrategy::GetDefaultNonCombatActions()
 {
-    return {
-        NextAction("guard", 4.0f)
-    };
+    return NextAction::array(0, new NextAction("check mount state", 4.0f), new NextAction("guard", 4.0f), NULL);
 }
 
-void GuardStrategy::InitTriggers(std::vector<TriggerNode*>& /*triggers*/) {}
+
+NextAction** GuardStrategy::GetDefaultCombatActions()
+{
+    return GuardStrategy::GetDefaultNonCombatActions();
+}

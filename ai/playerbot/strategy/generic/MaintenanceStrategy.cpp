@@ -1,80 +1,52 @@
-// Forward-ported from mod-playerbots Base/Strategy/MaintenanceStrategy.cpp
-// Source: mod-playerbots@5397110, Shyalya@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
 
+#include "playerbot/playerbot.h"
 #include "MaintenanceStrategy.h"
-#include "Playerbots.h"
 
-std::vector<NextAction> MaintenanceStrategy::getDefaultActions() { return {}; }
+using namespace ai;
 
-void MaintenanceStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+void MaintenanceStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
 {
-    triggers.push_back(
-        new TriggerNode(
-            "seldom",
-            {
-                NextAction("clean quest log", 6.0f)
-            }
-        )
-    );
-    triggers.push_back(
-        new TriggerNode(
-            "random",
-            {
-                NextAction("use random recipe", 1.0f)
-            }
-        )
-    );
-    triggers.push_back(
-        new TriggerNode(
-            "random",
-            {
-                NextAction("disenchant random item", 1.0f)
-            }
-        )
-    );
-    triggers.push_back(
-        new TriggerNode(
-            "random",
-            {
-                NextAction("enchant random item", 1.0f)
-            }
-        )
-    );
-    triggers.push_back(
-        new TriggerNode(
-            "random",
-            {
-                NextAction("smart destroy item", 1.0f)
-            }
-        )
-    );
-    triggers.push_back(
-        new TriggerNode(
-            "move stuck",
-            {
-                NextAction("reset", 1.0f)
-            }
-        )
-    );
-    triggers.push_back(
-        new TriggerNode(
-            "random",
-            {
-                NextAction("use random quest item", 0.9f)
-            }
-        )
-    );
-    triggers.push_back(
-        new TriggerNode(
-            "random",
-            {
-                NextAction("auto share quest", 0.9f)
-            }
-        )
-    );
+    triggers.push_back(new TriggerNode(
+        "random",
+        NextAction::array(0, new NextAction("clean quest log", 6.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "random",
+        NextAction::array(0, new NextAction("use random recipe", 1.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "random",
+        NextAction::array(0, new NextAction("open random item", 0.9f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "random",
+        NextAction::array(0, new NextAction("disenchant random item", 1.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "random",
+        NextAction::array(0, new NextAction("enchant random item", 1.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "random",
+        NextAction::array(0, new NextAction("smart destroy item", 1.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "move stuck",
+        NextAction::array(0, new NextAction("unstuck", 0.7f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "move long stuck",
+        NextAction::array(0, new NextAction("unstuck", 0.9f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "random",
+        NextAction::array(0, new NextAction("use random quest item", 0.9f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "random",
+        NextAction::array(0, new NextAction("auto share quest", 0.9f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "random",
+        NextAction::array(0, new NextAction("auto complete quest", 1.0f), NULL)));
 }

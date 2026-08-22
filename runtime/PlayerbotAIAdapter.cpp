@@ -25,7 +25,7 @@ bool PlayerbotAIAdapter::Initialize()
     // This uses the Shyalya Tortoise baseline PlayerbotAI which is already
     // translated for MANGOSBOT_ZERO and Penqle's WorldLocation/Position APIs,
     // layered with mod-playerbots modern generic/class improvements.
-    ai_ = std::make_unique<PlayerbotAI>(bot_);
+    ai_ = new PlayerbotAI(bot_);
     if (!ai_) return false;
 
     // Set the master for the bot. PlayerbotAI::SetMaster expects a Player* that
@@ -44,7 +44,7 @@ bool PlayerbotAIAdapter::Initialize()
     // Register the AI in the module-local storage so donor code that still does
     // player->GetPlayerbotAI() (now shimmed to PlayerbotAIStorage) can find it
     // without touching core Player.
-    PlayerbotAIStorage::Instance().SetAI(bot_, ai_.get());
+    PlayerbotAIStorage::Instance().SetAI(bot_, ai_);
 
     initialized_ = true;
     sLog.outString("TortoiseBots: PlayerbotAI attached for %s (%s) master %s",
@@ -66,7 +66,7 @@ void PlayerbotAIAdapter::Update(uint32_t diff)
 void PlayerbotAIAdapter::Shutdown()
 {
     if (bot_) PlayerbotAIStorage::Instance().RemoveAI(bot_);
-    ai_.reset();
+    delete ai_; ai_ = nullptr;
     initialized_ = false;
 }
 

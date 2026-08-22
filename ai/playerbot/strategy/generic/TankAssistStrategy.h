@@ -1,25 +1,16 @@
-// Forward-ported from mod-playerbots Base/Strategy/TankAssistStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "playerbot/strategy/Strategy.h"
 
-#ifndef PLAYERBOTS_TANKASSISTSTRATEGY_H
-#define PLAYERBOTS_TANKASSISTSTRATEGY_H
-
-#include "Strategy.h"
-
-class PlayerbotAI;
-
-class TankAssistStrategy : public Strategy
+namespace ai
 {
-public:
-    TankAssistStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
+    class TankAssistStrategy : public Strategy
+    {
+    public:
+        TankAssistStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "tank assist"; }
+        int GetType() override { return STRATEGY_TYPE_TANK; }
 
-    std::string const getName() override { return "tank assist"; }
-    uint32 GetType() const override { return STRATEGY_TYPE_TANK; }
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-};
-
-#endif
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*> &triggers) override;
+    };
+}

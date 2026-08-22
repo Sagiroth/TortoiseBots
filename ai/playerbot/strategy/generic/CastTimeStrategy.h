@@ -1,32 +1,30 @@
-// Forward-ported from mod-playerbots Base/Strategy/CastTimeStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "playerbot/strategy/Multiplier.h"
+#include "playerbot/strategy/Strategy.h"
 
-#ifndef PLAYERBOTS_CASTTIMESTRATEGY_H
-#define PLAYERBOTS_CASTTIMESTRATEGY_H
-
-#include "Strategy.h"
-
-class PlayerbotAI;
-
-class CastTimeMultiplier : public Multiplier
+namespace ai
 {
-public:
-    CastTimeMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "cast time") {}
+    class CastTimeMultiplier : public Multiplier
+    {
+    public:
+        CastTimeMultiplier(PlayerbotAI* ai) : Multiplier(ai, "cast time") {}
 
-    float GetValue(Action* action) override;
-};
+    public:
+        virtual float GetValue(Action* action) override;
+    };
 
-class CastTimeStrategy : public Strategy
-{
-public:
-    CastTimeStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
-
-    void InitMultipliers(std::vector<Multiplier*>& multipliers) override;
-    std::string const getName() override { return "cast time"; }
-};
-
+    class CastTimeStrategy : public Strategy
+    {
+    public:
+        CastTimeStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "cast time"; }
+#ifdef GenerateBotHelp
+        virtual std::string GetHelpName() { return "cast time"; } //Must equal iternal name
+        virtual std::string GetHelpDescription() {
+            return "This strategy will make bots less likely to cast long casttime spells when the target is at critical health.";
+        }
+        virtual std::vector<std::string> GetRelatedStrategies() { return { }; }
 #endif
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+    };
+}

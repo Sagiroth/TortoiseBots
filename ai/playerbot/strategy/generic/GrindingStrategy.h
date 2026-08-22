@@ -1,33 +1,16 @@
-// Forward-ported from mod-playerbots Base/Strategy/GrindingStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
-
-#ifndef PLAYERBOTS_GRINDINGSTRATEGY_H
-#define PLAYERBOTS_GRINDINGSTRATEGY_H
-
+#pragma once
 #include "NonCombatStrategy.h"
 
-class PlayerbotAI;
-
-class GrindingStrategy : public NonCombatStrategy
+namespace ai
 {
-public:
-    GrindingStrategy(PlayerbotAI* botAI) : NonCombatStrategy(botAI) {}
+    class GrindingStrategy : public NonCombatStrategy
+    {
+    public:
+        GrindingStrategy(PlayerbotAI* ai) : NonCombatStrategy(ai) {}
+        std::string getName() override { return "grind"; }
+        int GetType() override { return STRATEGY_TYPE_DPS; }
 
-    std::string const getName() override { return "grind"; }
-    uint32 GetType() const override { return STRATEGY_TYPE_DPS; }
-    std::vector<NextAction> getDefaultActions() override;
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-};
-
-class MoveRandomStrategy : public NonCombatStrategy
-{
-public:
-    MoveRandomStrategy(PlayerbotAI* botAI) : NonCombatStrategy(botAI) {}
-    std::string const getName() override { return "move random"; }
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-};
-#endif
+    private:
+        void InitNonCombatTriggers(std::list<TriggerNode*> &triggers) override;
+    };
+}

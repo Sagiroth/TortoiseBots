@@ -1,33 +1,51 @@
-// Forward-ported from mod-playerbots Base/Strategy/FleeStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "playerbot/strategy/Strategy.h"
+#include "playerbot/strategy/Multiplier.h"
 
-#ifndef PLAYERBOTS_FLEESTRATEGY_H
-#define PLAYERBOTS_FLEESTRATEGY_H
-
-#include "Strategy.h"
-
-class PlayerbotAI;
-
-class FleeStrategy : public Strategy
+namespace ai
 {
-public:
-    FleeStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
+    // Breaks the ranged-caster flee loop: once a bot has fled repeatedly with no progress the
+    // "flee" action is dampened below the nukes so it casts instead of running forever, and an
+    // in-progress non-instant cast is never interrupted by flee (see GetValue).
+    class FleeMultiplier : public Multiplier
+    {
+    public:
+        FleeMultiplier(PlayerbotAI* ai) : Multiplier(ai, "flee") {}
 
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "flee"; };
-};
+    public:
+        float GetValue(Action* action) override;
+    };
 
-class FleeFromAddsStrategy : public Strategy
-{
-public:
-    FleeFromAddsStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
-
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "flee from adds"; };
-};
-
+    class FleeStrategy : public Strategy
+    {
+    public:
+        FleeStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "flee"; };
+#ifdef GenerateBotHelp
+        virtual std::string GetHelpName() { return "flee"; } //Must equal iternal name
+        virtual std::string GetHelpDescription() {
+            return "This strategy will make the bot flee when it is in danger.";
+        }
+        virtual std::vector<std::string> GetRelatedStrategies() { return { "flee from adds" }; }
 #endif
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*> &triggers) override;
+        void InitCombatMultipliers(std::list<Multiplier*> &multipliers) override;
+    };
+
+    class FleeFromAddsStrategy : public Strategy
+    {
+    public:
+        FleeFromAddsStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "flee from adds"; };
+#ifdef GenerateBotHelp
+        virtual std::string GetHelpName() { return "flee from adds"; } //Must equal iternal name
+        virtual std::string GetHelpDescription() {
+            return "This a position strategy that will make the bot try to avoid adds the prevent aggro.";
+        }
+        virtual std::vector<std::string> GetRelatedStrategies() { return { "flee", "follow", "stay", "runaway", "guard", "free" }; }
+#endif
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*> &triggers) override;
+    };
+}

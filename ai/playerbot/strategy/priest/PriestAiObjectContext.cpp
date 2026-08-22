@@ -1,384 +1,321 @@
-// Forward-ported from mod-playerbots /mnt/pny-ssd/Tortoise WoW Projects/playerbots-references/mod-playerbots/src/Ai/Class/Priest/PriestAiObjectContext.cpp - modern donor, Tortoise 1.18.1 adapted via Shyalya translation reference
-// Source: mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70, Shyalya reference: shyalya-tortoise-wow@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
-
-#include "PriestAiObjectContext.h"
-#include "GenericPriestStrategy.h"
-#include "HolyPriestStrategy.h"
-#include "NamedObjectContext.h"
-#include "Playerbots.h"
+#include "playerbot/playerbot.h"
 #include "PriestActions.h"
-#include "PriestNonCombatStrategy.h"
 #include "PriestTriggers.h"
-#include "PullStrategy.h"
+#include "PriestAiObjectContext.h"
+#include "playerbot/strategy/NamedObjectContext.h"
+#include "DisciplinePriestStrategy.h"
 #include "ShadowPriestStrategy.h"
+#include "HolyPriestStrategy.h"
 
-class PriestStrategyFactoryInternal : public NamedObjectContext<Strategy>
+namespace ai
 {
-public:
-    PriestStrategyFactoryInternal()
+    namespace priest
     {
-        creators["nc"] = &PriestStrategyFactoryInternal::nc;
-        creators["pull"] = &PriestStrategyFactoryInternal::pull;
-        creators["aoe"] = &PriestStrategyFactoryInternal::shadow_aoe;
-        creators["shadow aoe"] = &PriestStrategyFactoryInternal::shadow_aoe;
-        creators["dps debuff"] = &PriestStrategyFactoryInternal::shadow_debuff;
-        creators["shadow debuff"] = &PriestStrategyFactoryInternal::shadow_debuff;
-        creators["cure"] = &PriestStrategyFactoryInternal::cure;
-        creators["buff"] = &PriestStrategyFactoryInternal::buff;
-        creators["boost"] = &PriestStrategyFactoryInternal::boost;
-        creators["rshadow"] = &PriestStrategyFactoryInternal::rshadow;
-        creators["cc"] = &PriestStrategyFactoryInternal::cc;
-        creators["healer dps"] = &PriestStrategyFactoryInternal::healer_dps;
-    }
+        class StrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            StrategyFactoryInternal()
+            {
+                creators["aoe"] = [](PlayerbotAI* ai) { return new AoePlaceholderStrategy(ai); };
+                creators["cure"] = [](PlayerbotAI* ai) { return new CurePlaceholderStrategy(ai); };
+                creators["buff"] = [](PlayerbotAI* ai) { return new BuffPlaceholderStrategy(ai); };
+                creators["pull"] = [](PlayerbotAI* ai) { return new PullStrategy(ai, "shoot"); };
+                creators["cc"] = [](PlayerbotAI* ai) { return new CcPlaceholderStrategy(ai); };
+                creators["offheal"] = [](PlayerbotAI* ai) { return new OffhealPlaceholderStrategy(ai); };
+                creators["boost"] = [](PlayerbotAI* ai) { return new BoostPlaceholderStrategy(ai); };
+                creators["offdps"] = [](PlayerbotAI* ai) { return new OffdpsPlaceholderStrategy(ai); };
+            }
+        };
 
-private:
-    static Strategy* cc(PlayerbotAI* botAI) { return new PriestCcStrategy(botAI); }
-    static Strategy* rshadow(PlayerbotAI* botAI) { return new PriestShadowResistanceStrategy(botAI); }
-    static Strategy* boost(PlayerbotAI* botAI) { return new PriestBoostStrategy(botAI); }
-    static Strategy* buff(PlayerbotAI* botAI) { return new PriestBuffStrategy(botAI); }
-    static Strategy* nc(PlayerbotAI* botAI) { return new PriestNonCombatStrategy(botAI); }
-    static Strategy* shadow_aoe(PlayerbotAI* botAI) { return new ShadowPriestAoeStrategy(botAI); }
-    static Strategy* pull(PlayerbotAI* botAI) { return new PullStrategy(botAI, "shoot"); }
-    static Strategy* shadow_debuff(PlayerbotAI* botAI) { return new ShadowPriestDebuffStrategy(botAI); }
-    static Strategy* cure(PlayerbotAI* botAI) { return new PriestCureStrategy(botAI); }
-    static Strategy* healer_dps(PlayerbotAI* botAI) { return new PriestHealerDpsStrategy(botAI); }
+        class AoeSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            AoeSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["aoe discipline pve"] = [](PlayerbotAI* ai) { return new DisciplinePriestAoePveStrategy(ai); };
+                creators["aoe discipline pvp"] = [](PlayerbotAI* ai) { return new DisciplinePriestAoePvpStrategy(ai); };
+                creators["aoe discipline raid"] = [](PlayerbotAI* ai) { return new DisciplinePriestAoeRaidStrategy(ai); };
+                creators["aoe holy pve"] = [](PlayerbotAI* ai) { return new HolyPriestAoePveStrategy(ai); };
+                creators["aoe holy pvp"] = [](PlayerbotAI* ai) { return new HolyPriestAoePvpStrategy(ai); };
+                creators["aoe holy raid"] = [](PlayerbotAI* ai) { return new HolyPriestAoeRaidStrategy(ai); };
+                creators["aoe shadow pve"] = [](PlayerbotAI* ai) { return new ShadowPriestAoePveStrategy(ai); };
+                creators["aoe shadow pvp"] = [](PlayerbotAI* ai) { return new ShadowPriestAoePvpStrategy(ai); };
+                creators["aoe shadow raid"] = [](PlayerbotAI* ai) { return new ShadowPriestAoeRaidStrategy(ai); };
+            }
+        };
+
+        class CureSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            CureSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["cure discipline pve"] = [](PlayerbotAI* ai) { return new DisciplinePriestCurePveStrategy(ai); };
+                creators["cure discipline pvp"] = [](PlayerbotAI* ai) { return new DisciplinePriestCurePvpStrategy(ai); };
+                creators["cure discipline raid"] = [](PlayerbotAI* ai) { return new DisciplinePriestCureRaidStrategy(ai); };
+                creators["cure holy pve"] = [](PlayerbotAI* ai) { return new HolyPriestCurePveStrategy(ai); };
+                creators["cure holy pvp"] = [](PlayerbotAI* ai) { return new HolyPriestCurePvpStrategy(ai); };
+                creators["cure holy raid"] = [](PlayerbotAI* ai) { return new HolyPriestCureRaidStrategy(ai); };
+                creators["cure shadow pve"] = [](PlayerbotAI* ai) { return new ShadowPriestCurePveStrategy(ai); };
+                creators["cure shadow pvp"] = [](PlayerbotAI* ai) { return new ShadowPriestCurePvpStrategy(ai); };
+                creators["cure shadow raid"] = [](PlayerbotAI* ai) { return new ShadowPriestCureRaidStrategy(ai); };
+            }
+        };
+
+        class BuffSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            BuffSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["buff discipline pve"] = [](PlayerbotAI* ai) { return new DisciplinePriestBuffPveStrategy(ai); };
+                creators["buff discipline pvp"] = [](PlayerbotAI* ai) { return new DisciplinePriestBuffPvpStrategy(ai); };
+                creators["buff discipline raid"] = [](PlayerbotAI* ai) { return new DisciplinePriestBuffRaidStrategy(ai); };
+                creators["buff holy pve"] = [](PlayerbotAI* ai) { return new HolyPriestBuffPveStrategy(ai); };
+                creators["buff holy pvp"] = [](PlayerbotAI* ai) { return new HolyPriestBuffPvpStrategy(ai); };
+                creators["buff holy raid"] = [](PlayerbotAI* ai) { return new HolyPriestBuffRaidStrategy(ai); };
+                creators["buff shadow pve"] = [](PlayerbotAI* ai) { return new ShadowPriestBuffPveStrategy(ai); };
+                creators["buff shadow pvp"] = [](PlayerbotAI* ai) { return new ShadowPriestBuffPvpStrategy(ai); };
+                creators["buff shadow raid"] = [](PlayerbotAI* ai) { return new ShadowPriestBuffRaidStrategy(ai); };
+            }
+        };
+
+        class BoostSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            BoostSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["boost discipline pve"] = [](PlayerbotAI* ai) { return new DisciplinePriestBoostPveStrategy(ai); };
+                creators["boost discipline pvp"] = [](PlayerbotAI* ai) { return new DisciplinePriestBoostPvpStrategy(ai); };
+                creators["boost discipline raid"] = [](PlayerbotAI* ai) { return new DisciplinePriestBoostRaidStrategy(ai); };
+                creators["boost holy pve"] = [](PlayerbotAI* ai) { return new HolyPriestBoostPveStrategy(ai); };
+                creators["boost holy pvp"] = [](PlayerbotAI* ai) { return new HolyPriestBoostPvpStrategy(ai); };
+                creators["boost holy raid"] = [](PlayerbotAI* ai) { return new HolyPriestBoostRaidStrategy(ai); };
+                creators["boost shadow pve"] = [](PlayerbotAI* ai) { return new ShadowPriestBoostPveStrategy(ai); };
+                creators["boost shadow pvp"] = [](PlayerbotAI* ai) { return new ShadowPriestBoostPvpStrategy(ai); };
+                creators["boost shadow raid"] = [](PlayerbotAI* ai) { return new ShadowPriestBoostRaidStrategy(ai); };
+            }
+        };
+
+        class OffhealSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            OffhealSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["offheal pve"] = [](PlayerbotAI* ai) { return new PriestOffhealPveStrategy(ai); };
+                creators["offheal pvp"] = [](PlayerbotAI* ai) { return new PriestOffhealPvpStrategy(ai); };
+                creators["offheal raid"] = [](PlayerbotAI* ai) { return new PriestOffhealRaidStrategy(ai); };
+            }
+        };
+
+        class OffdpsSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            OffdpsSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["offdps pve"] = [](PlayerbotAI* ai) { return new PriestOffdpsPveStrategy(ai); };
+                creators["offdps pvp"] = [](PlayerbotAI* ai) { return new PriestOffdpsPvpStrategy(ai); };
+                creators["offdps raid"] = [](PlayerbotAI* ai) { return new PriestOffdpsRaidStrategy(ai); };
+            }
+        };
+
+        class CcSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            CcSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["cc holy pve"] = [](PlayerbotAI* ai) { return new HolyPriestCcPveStrategy(ai); };
+                creators["cc holy pvp"] = [](PlayerbotAI* ai) { return new HolyPriestCcPvpStrategy(ai); };
+                creators["cc holy raid"] = [](PlayerbotAI* ai) { return new HolyPriestCcRaidStrategy(ai); };
+                creators["cc shadow pve"] = [](PlayerbotAI* ai) { return new ShadowPriestCcPveStrategy(ai); };
+                creators["cc shadow pvp"] = [](PlayerbotAI* ai) { return new ShadowPriestCcPvpStrategy(ai); };
+                creators["cc shadow raid"] = [](PlayerbotAI* ai) { return new ShadowPriestCcRaidStrategy(ai); };
+                creators["cc discipline pve"] = [](PlayerbotAI* ai) { return new DisciplinePriestCcPveStrategy(ai); };
+                creators["cc discipline pvp"] = [](PlayerbotAI* ai) { return new DisciplinePriestCcPvpStrategy(ai); };
+                creators["cc discipline raid"] = [](PlayerbotAI* ai) { return new DisciplinePriestCcRaidStrategy(ai); };
+            }
+        };
+
+        class ClassStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            ClassStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["holy"] = [](PlayerbotAI* ai) { return new HolyPriestPlaceholderStrategy(ai); };
+                creators["shadow"] = [](PlayerbotAI* ai) { return new ShadowPriestPlaceholderStrategy(ai); };
+                creators["discipline"] = [](PlayerbotAI* ai) { return new DisciplinePriestPlaceholderStrategy(ai); };
+                creators["heal"] = [](PlayerbotAI* ai) { return new HolyPriestPlaceholderStrategy(ai); };
+                creators["dps"] = [](PlayerbotAI* ai) { return new ShadowPriestPlaceholderStrategy(ai); };
+            }
+        };
+
+        class ClassSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            ClassSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["discipline pvp"] = [](PlayerbotAI* ai) { return new DisciplinePriestPvpStrategy(ai); };
+                creators["discipline pve"] = [](PlayerbotAI* ai) { return new DisciplinePriestPveStrategy(ai); };
+                creators["discipline raid"] = [](PlayerbotAI* ai) { return new DisciplinePriestRaidStrategy(ai); };
+                creators["holy pvp"] = [](PlayerbotAI* ai) { return new HolyPriestPvpStrategy(ai); };
+                creators["holy pve"] = [](PlayerbotAI* ai) { return new HolyPriestPveStrategy(ai); };
+                creators["holy raid"] = [](PlayerbotAI* ai) { return new HolyPriestRaidStrategy(ai); };
+                creators["shadow pvp"] = [](PlayerbotAI* ai) { return new ShadowPriestPvpStrategy(ai); };
+                creators["shadow pve"] = [](PlayerbotAI* ai) { return new ShadowPriestPveStrategy(ai); };
+                creators["shadow raid"] = [](PlayerbotAI* ai) { return new ShadowPriestRaidStrategy(ai); };
+            }
+        };
+
+        class TriggerFactoryInternal : public NamedObjectContext<Trigger>
+        {
+        public:
+            TriggerFactoryInternal()
+            {
+                creators["devouring plague"] = [](PlayerbotAI* ai) { return new DevouringPlagueTrigger(ai); };
+                creators["shadow word: pain"] = [](PlayerbotAI* ai) { return new PowerWordPainTrigger(ai); };
+                creators["shadow word: pain on attacker"] = [](PlayerbotAI* ai) { return new PowerWordPainOnAttackerTrigger(ai); };
+                creators["dispel magic"] = [](PlayerbotAI* ai) { return new DispelMagicTrigger(ai); };
+                creators["dispel magic on party"] = [](PlayerbotAI* ai) { return new DispelMagicPartyMemberTrigger(ai); };
+                creators["cure disease"] = [](PlayerbotAI* ai) { return new CureDiseaseTrigger(ai); };
+                creators["party member cure disease"] = [](PlayerbotAI* ai) { return new PartyMemberCureDiseaseTrigger(ai); };
+                creators["power word: fortitude"] = [](PlayerbotAI* ai) { return new PowerWordFortitudeTrigger(ai); };
+                creators["power word: fortitude on party"] = [](PlayerbotAI* ai) { return new PowerWordFortitudeOnPartyTrigger(ai); };
+                creators["divine spirit"] = [](PlayerbotAI* ai) { return new DivineSpiritTrigger(ai); };
+                creators["divine spirit on party"] = [](PlayerbotAI* ai) { return new DivineSpiritOnPartyTrigger(ai); };
+                creators["inner fire"] = [](PlayerbotAI* ai) { return new InnerFireTrigger(ai); };
+                creators["vampiric touch"] = [](PlayerbotAI* ai) { return new VampiricTouchTrigger(ai); };
+                creators["vampiric touch on attacker"] = [](PlayerbotAI* ai) { return new VampiricTouchOnAttackerTrigger(ai); };
+                creators["vampiric embrace"] = [](PlayerbotAI* ai) { return new VampiricEmbraceTrigger(ai); };
+                creators["shadowform"] = [](PlayerbotAI* ai) { return new ShadowformTrigger(ai); };
+                creators["power infusion"] = [](PlayerbotAI* ai) { return new PowerInfusionTrigger(ai); };
+                creators["inner focus"] = [](PlayerbotAI* ai) { return new InnerFocusTrigger(ai); };
+                creators["shadow protection"] = [](PlayerbotAI* ai) { return new ShadowProtectionTrigger(ai); };
+                creators["shadow protection on party"] = [](PlayerbotAI* ai) { return new ShadowProtectionOnPartyTrigger(ai); };
+                creators["prayer of shadow protection on party"] = [](PlayerbotAI* ai) { return new PrayerOfShadowProtectionOnPartyTrigger(ai); };
+                creators["prayer of fortitude on party"] = [](PlayerbotAI* ai) { return new PrayerOfFortitudeOnPartyTrigger(ai); };
+                creators["prayer of spirit on party"] = [](PlayerbotAI* ai) { return new PrayerOfSpiritOnPartyTrigger(ai); };
+                creators["shackle undead"] = [](PlayerbotAI* ai) { return new ShackleUndeadTrigger(ai); };
+                creators["discipline fire"] = [](PlayerbotAI* ai) { return new HolyFireTrigger(ai); };
+                creators["touch of weakness"] = [](PlayerbotAI* ai) { return new TouchOfWeaknessTrigger(ai); };
+                creators["hex of weakness"] = [](PlayerbotAI* ai) { return new HexOfWeaknessTrigger(ai); };
+                creators["shadowguard"] = [](PlayerbotAI* ai) { return new ShadowguardTrigger(ai); };
+                creators["starshards"] = [](PlayerbotAI* ai) { return new StarshardsTrigger(ai); };
+                creators["fear ward"] = [](PlayerbotAI* ai) { return new FearWardTrigger(ai); };
+                creators["feedback"] = [](PlayerbotAI* ai) { return new FeedbackTrigger(ai); };
+                // TurtleWoW Shadow redesign awareness:
+                creators["spirit tap buff"] = [](PlayerbotAI* ai) { return new SpiritTapBuffTrigger(ai); };
+                creators["shadow weaving missing"] = [](PlayerbotAI* ai) { return new ShadowWeavingMissingTrigger(ai); };
+                creators["binding heal"] = [](PlayerbotAI* ai) { return new BindingHealTrigger(ai); };
+                creators["chastise"] = [](PlayerbotAI* ai) { return new ChastiseTrigger(ai); };
+                creators["silence"] = [](PlayerbotAI* ai) { return new SilenceTrigger(ai); };
+                creators["silence on enemy healer"] = [](PlayerbotAI* ai) { return new SilenceEnemyHealerTrigger(ai); };
+                creators["shadowfiend"] = [](PlayerbotAI* ai) { return new ShadowfiendTrigger(ai); };
+                creators["mind blast"] = [](PlayerbotAI* ai) { return new MindBlastTrigger(ai); };
+                creators["smite"] = [](PlayerbotAI* ai) { return new SmiteTrigger(ai); };
+                creators["holy fire"] = [](PlayerbotAI* ai) { return new HolyFireTrigger(ai); };
+            }
+        };
+
+        class AiObjectContextInternal : public NamedObjectContext<Action>
+        {
+        public:
+            AiObjectContextInternal()
+            {
+                creators["power infusion"] = [](PlayerbotAI* ai) { return new CastPowerInfusionAction(ai); };
+                creators["inner focus"] = [](PlayerbotAI* ai) { return new CastInnerFocusAction(ai); };
+                creators["shadow word: pain"] = [](PlayerbotAI* ai) { return new CastPowerWordPainAction(ai); };
+                creators["shadow word: pain on attacker"] = [](PlayerbotAI* ai) { return new CastPowerWordPainOnAttackerAction(ai); };
+                creators["devouring plague"] = [](PlayerbotAI* ai) { return new CastDevouringPlagueAction(ai); };
+                creators["mind flay"] = [](PlayerbotAI* ai) { return new CastMindFlayAction(ai); };
+                creators["discipline fire"] = [](PlayerbotAI* ai) { return new CastHolyFireAction(ai); };
+                creators["smite"] = [](PlayerbotAI* ai) { return new CastSmiteAction(ai); };
+                creators["mind blast"] = [](PlayerbotAI* ai) { return new CastMindBlastAction(ai); };
+                creators["shadowform"] = [](PlayerbotAI* ai) { return new CastShadowformAction(ai); };
+                creators["remove shadowform"] = [](PlayerbotAI* ai) { return new CastRemoveShadowformAction(ai); };
+                creators["discipline nova"] = [](PlayerbotAI* ai) { return new CastHolyNovaAction(ai); };
+                creators["power word: fortitude"] = [](PlayerbotAI* ai) { return new CastPowerWordFortitudeAction(ai); };
+                creators["power word: fortitude on party"] = [](PlayerbotAI* ai) { return new CastPowerWordFortitudeOnPartyAction(ai); };
+                creators["divine spirit"] = [](PlayerbotAI* ai) { return new CastDivineSpiritAction(ai); };
+                creators["divine spirit on party"] = [](PlayerbotAI* ai) { return new CastDivineSpiritOnPartyAction(ai); };
+                creators["power word: shield"] = [](PlayerbotAI* ai) { return new CastPowerWordShieldAction(ai); };
+                creators["power word: shield on party"] = [](PlayerbotAI* ai) { return new CastPowerWordShieldOnPartyAction(ai); };
+                creators["renew"] = [](PlayerbotAI* ai) { return new CastRenewAction(ai); };
+                creators["renew on party"] = [](PlayerbotAI* ai) { return new CastRenewOnPartyAction(ai); };
+                creators["greater heal"] = [](PlayerbotAI* ai) { return new CastGreaterHealAction(ai); };
+                creators["greater heal on party"] = [](PlayerbotAI* ai) { return new CastGreaterHealOnPartyAction(ai); };
+                creators["heal"] = [](PlayerbotAI* ai) { return new CastHealAction(ai); };
+                creators["heal on party"] = [](PlayerbotAI* ai) { return new CastHealOnPartyAction(ai); };
+                creators["lesser heal"] = [](PlayerbotAI* ai) { return new CastLesserHealAction(ai); };
+                creators["lesser heal on party"] = [](PlayerbotAI* ai) { return new CastLesserHealOnPartyAction(ai); };
+                creators["flash heal"] = [](PlayerbotAI* ai) { return new CastFlashHealAction(ai); };
+                creators["flash heal on party"] = [](PlayerbotAI* ai) { return new CastFlashHealOnPartyAction(ai); };
+                creators["dispel magic"] = [](PlayerbotAI* ai) { return new CastDispelMagicAction(ai); };
+                creators["dispel magic on party"] = [](PlayerbotAI* ai) { return new CastDispelMagicOnPartyAction(ai); };
+                creators["dispel magic on target"] = [](PlayerbotAI* ai) { return new CastDispelMagicOnTargetAction(ai); };
+                creators["cure disease"] = [](PlayerbotAI* ai) { return new CastCureDiseaseAction(ai); };
+                creators["cure disease on party"] = [](PlayerbotAI* ai) { return new CastCureDiseaseOnPartyAction(ai); };
+                creators["abolish disease"] = [](PlayerbotAI* ai) { return new CastAbolishDiseaseAction(ai); };
+                creators["abolish disease on party"] = [](PlayerbotAI* ai) { return new CastAbolishDiseaseOnPartyAction(ai); };
+                creators["fade"] = [](PlayerbotAI* ai) { return new CastFadeAction(ai); };
+                creators["inner fire"] = [](PlayerbotAI* ai) { return new CastInnerFireAction(ai); };
+                creators["resurrection"] = [](PlayerbotAI* ai) { return new CastResurrectionAction(ai); };
+                creators["circle of healing"] = [](PlayerbotAI* ai) { return new CastCircleOfHealingAction(ai); };
+                creators["psychic scream"] = [](PlayerbotAI* ai) { return new CastPsychicScreamAction(ai); };
+                creators["vampiric touch"] = [](PlayerbotAI* ai) { return new CastVampiricTouchAction(ai); };
+                creators["vampiric touch on attacker"] = [](PlayerbotAI* ai) { return new CastVampiricTouchActionOnAttacker(ai); };
+                creators["vampiric embrace"] = [](PlayerbotAI* ai) { return new CastVampiricEmbraceAction(ai); };
+                //creators["dispersion"] = [](PlayerbotAI* ai) { return new CastDispersionAction(ai); };
+                creators["shadow protection"] = [](PlayerbotAI* ai) { return new CastShadowProtectionAction(ai); };
+                creators["shadow protection on party"] = [](PlayerbotAI* ai) { return new CastShadowProtectionOnPartyAction(ai); };
+                creators["shackle undead"] = [](PlayerbotAI* ai) { return new CastShackleUndeadAction(ai); };
+                creators["prayer of fortitude on party"] = [](PlayerbotAI* ai) { return new CastPrayerOfFortitudeOnPartyAction(ai); };
+                creators["prayer of spirit on party"] = [](PlayerbotAI* ai) { return new CastPrayerOfSpiritOnPartyAction(ai); };
+                creators["prayer of shadow protection on party"] = [](PlayerbotAI* ai) { return new CastPrayerOfShadowProtectionAction(ai); };
+                creators["silence"] = [](PlayerbotAI* ai) { return new CastSilenceAction(ai); };
+                creators["silence on enemy healer"] = [](PlayerbotAI* ai) { return new CastSilenceOnEnemyHealerAction(ai); };
+                creators["mana burn"] = [](PlayerbotAI* ai) { return new CastManaBurnAction(ai); };
+                creators["levitate"] = [](PlayerbotAI* ai) { return new CastLevitateAction(ai); };
+                creators["prayer of healing"] = [](PlayerbotAI* ai) { return new CastPrayerOfHealingAction(ai); };
+                creators["lightwell"] = [](PlayerbotAI* ai) { return new CastLightwellAction(ai); };
+                creators["mind soothe"] = [](PlayerbotAI* ai) { return new CastMindSootheAction(ai); };
+                creators["touch of weakness"] = [](PlayerbotAI* ai) { return new CastTouchOfWeaknessAction(ai); };
+                creators["hex of weakness"] = [](PlayerbotAI* ai) { return new CastHexOfWeaknessAction(ai); };
+                creators["shadowguard"] = [](PlayerbotAI* ai) { return new CastShadowguardAction(ai); };
+                creators["desperate prayer"] = [](PlayerbotAI* ai) { return new CastDesperatePrayerAction(ai); };
+                creators["fear ward"] = [](PlayerbotAI* ai) { return new CastFearWardAction(ai); };
+                creators["starshards"] = [](PlayerbotAI* ai) { return new CastStarshardsAction(ai); };
+                creators["elune's grace"] = [](PlayerbotAI* ai) { return new CastElunesGraceAction(ai); };
+                creators["feedback"] = [](PlayerbotAI* ai) { return new CastFeedbackAction(ai); };
+                creators["symbol of hope"] = [](PlayerbotAI* ai) { return new CastSymbolOfHopeAction(ai); };
+                creators["consume magic"] = [](PlayerbotAI* ai) { return new CastConsumeMagicAction(ai); };
+                creators["chastise"] = [](PlayerbotAI* ai) { return new CastChastiseAction(ai); };
+                creators["shadow word: death"] = [](PlayerbotAI* ai) { return new CastShadowWordDeathAction(ai); };
+                creators["shadowfiend"] = [](PlayerbotAI* ai) { return new CastShadowfiendAction(ai); };
+                creators["mass dispel"] = [](PlayerbotAI* ai) { return new CastMassDispelAction(ai); };
+                creators["pain suppression"] = [](PlayerbotAI* ai) { return new CastPainSuppressionAction(ai); };
+                creators["pain suppression on party"] = [](PlayerbotAI* ai) { return new CastPainSuppressionProtectAction(ai); };
+                creators["prayer of mending"] = [](PlayerbotAI* ai) { return new CastPrayerOfMendingAction(ai); };
+                creators["binding heal"] = [](PlayerbotAI* ai) { return new CastBindingHealAction(ai); };
+                creators["holy fire"] = [](PlayerbotAI* ai) { return new CastHolyFireAction(ai); };
+                creators["holy nova"] = [](PlayerbotAI* ai) { return new CastHolyNovaAction(ai); };
+                creators["update pve strats"] = [](PlayerbotAI* ai) { return new UpdatePriestPveStrategiesAction(ai); };
+                creators["update pvp strats"] = [](PlayerbotAI* ai) { return new UpdatePriestPvpStrategiesAction(ai); };
+                creators["update raid strats"] = [](PlayerbotAI* ai) { return new UpdatePriestRaidStrategiesAction(ai); };
+            }
+        };
+    };
 };
 
-class PriestCombatStrategyFactoryInternal : public NamedObjectContext<Strategy>
+PriestAiObjectContext::PriestAiObjectContext(PlayerbotAI* ai) : AiObjectContext(ai)
 {
-public:
-    PriestCombatStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
-    {
-        creators["heal"] = &PriestCombatStrategyFactoryInternal::heal;
-        creators["shadow"] = &PriestCombatStrategyFactoryInternal::dps;
-        creators["dps"] = &PriestCombatStrategyFactoryInternal::dps;
-        creators["holy dps"] = &PriestCombatStrategyFactoryInternal::holy_dps;
-        creators["holy heal"] = &PriestCombatStrategyFactoryInternal::holy_heal;
-    }
-
-private:
-    static Strategy* heal(PlayerbotAI* botAI) { return new HealPriestStrategy(botAI); }
-    static Strategy* dps(PlayerbotAI* botAI) { return new ShadowPriestStrategy(botAI); }
-    static Strategy* holy_dps(PlayerbotAI* botAI) { return new HolyPriestStrategy(botAI); }
-    static Strategy* holy_heal(PlayerbotAI* botAI) { return new HolyHealPriestStrategy(botAI); }
-};
-
-class PriestTriggerFactoryInternal : public NamedObjectContext<Trigger>
-{
-public:
-    PriestTriggerFactoryInternal()
-    {
-        creators["devouring plague"] = &PriestTriggerFactoryInternal::devouring_plague;
-        creators["shadow word: pain"] = &PriestTriggerFactoryInternal::shadow_word_pain;
-        creators["shadow word: pain on attacker"] = &PriestTriggerFactoryInternal::shadow_word_pain_on_attacker;
-        creators["dispel magic"] = &PriestTriggerFactoryInternal::dispel_magic;
-        creators["dispel magic on party"] = &PriestTriggerFactoryInternal::dispel_magic_party_member;
-        creators["cure disease"] = &PriestTriggerFactoryInternal::cure_disease;
-        creators["party member cure disease"] = &PriestTriggerFactoryInternal::party_member_cure_disease;
-        creators["power word: fortitude"] = &PriestTriggerFactoryInternal::power_word_fortitude;
-        creators["power word: fortitude on party"] = &PriestTriggerFactoryInternal::power_word_fortitude_on_party;
-        creators["divine spirit"] = &PriestTriggerFactoryInternal::divine_spirit;
-        creators["divine spirit on party"] = &PriestTriggerFactoryInternal::divine_spirit_on_party;
-        creators["inner fire"] = &PriestTriggerFactoryInternal::inner_fire;
-        creators["vampiric touch"] = &PriestTriggerFactoryInternal::vampiric_touch;
-        creators["vampiric touch on attacker"] = &PriestTriggerFactoryInternal::vampiric_touch_on_attacker;
-        creators["shadowform"] = &PriestTriggerFactoryInternal::shadowform;
-        creators["vampiric embrace"] = &PriestTriggerFactoryInternal::vampiric_embrace;
-        creators["power infusion"] = &PriestTriggerFactoryInternal::power_infusion;
-        creators["inner focus"] = &PriestTriggerFactoryInternal::inner_focus;
-        creators["shadow protection"] = &PriestTriggerFactoryInternal::shadow_protection;
-        creators["shadow protection on party"] = &PriestTriggerFactoryInternal::shadow_protection_on_party;
-        creators["shackle undead"] = &PriestTriggerFactoryInternal::shackle_undead;
-        creators["holy fire"] = &PriestTriggerFactoryInternal::holy_fire;
-        creators["touch of weakness"] = &PriestTriggerFactoryInternal::touch_of_weakness;
-        creators["hex of weakness"] = &PriestTriggerFactoryInternal::hex_of_weakness;
-        creators["shadowguard"] = &PriestTriggerFactoryInternal::shadowguard;
-        creators["fear ward"] = &PriestTriggerFactoryInternal::fear_ward;
-        creators["feedback"] = &PriestTriggerFactoryInternal::feedback;
-        creators["binding heal"] = &PriestTriggerFactoryInternal::binding_heal;
-        creators["chastise"] = &PriestTriggerFactoryInternal::chastise;
-        creators["silence"] = &PriestTriggerFactoryInternal::silence;
-        creators["silence on enemy healer"] = &PriestTriggerFactoryInternal::silence_on_enemy_healer;
-        creators["shadowfiend"] = &PriestTriggerFactoryInternal::shadowfiend;
-        creators["mind sear channel check"] = &PriestTriggerFactoryInternal::mind_sear_channel_check;
-    }
-
-private:
-    static Trigger* vampiric_embrace(PlayerbotAI* botAI) { return new VampiricEmbraceTrigger(botAI); }
-    static Trigger* shadowform(PlayerbotAI* botAI) { return new ShadowformTrigger(botAI); }
-    static Trigger* vampiric_touch(PlayerbotAI* botAI) { return new VampiricTouchTrigger(botAI); }
-    static Trigger* vampiric_touch_on_attacker(PlayerbotAI* botAI) { return new VampiricTouchOnAttackerTrigger(botAI); }
-    static Trigger* devouring_plague(PlayerbotAI* botAI) { return new DevouringPlagueTrigger(botAI); }
-    static Trigger* shadow_word_pain(PlayerbotAI* botAI) { return new ShadowWordPainTrigger(botAI); }
-    static Trigger* shadow_word_pain_on_attacker(PlayerbotAI* botAI)
-    {
-        return new ShadowWordPainOnAttackerTrigger(botAI);
-    }
-    static Trigger* dispel_magic(PlayerbotAI* botAI) { return new DispelMagicTrigger(botAI); }
-    static Trigger* dispel_magic_party_member(PlayerbotAI* botAI) { return new DispelMagicPartyMemberTrigger(botAI); }
-    static Trigger* cure_disease(PlayerbotAI* botAI) { return new CureDiseaseTrigger(botAI); }
-    static Trigger* party_member_cure_disease(PlayerbotAI* botAI) { return new PartyMemberCureDiseaseTrigger(botAI); }
-    static Trigger* power_word_fortitude(PlayerbotAI* botAI) { return new PowerWordFortitudeTrigger(botAI); }
-    static Trigger* power_word_fortitude_on_party(PlayerbotAI* botAI)
-    {
-        return new PowerWordFortitudeOnPartyTrigger(botAI);
-    }
-    static Trigger* divine_spirit(PlayerbotAI* botAI) { return new DivineSpiritTrigger(botAI); }
-    static Trigger* divine_spirit_on_party(PlayerbotAI* botAI) { return new DivineSpiritOnPartyTrigger(botAI); }
-    static Trigger* inner_fire(PlayerbotAI* botAI) { return new InnerFireTrigger(botAI); }
-    static Trigger* power_infusion(PlayerbotAI* botAI) { return new PowerInfusionTrigger(botAI); }
-    static Trigger* inner_focus(PlayerbotAI* botAI) { return new InnerFocusTrigger(botAI); }
-    static Trigger* shadow_protection_on_party(PlayerbotAI* botAI) { return new ShadowProtectionOnPartyTrigger(botAI); }
-    static Trigger* shadow_protection(PlayerbotAI* botAI) { return new ShadowProtectionTrigger(botAI); }
-    static Trigger* shackle_undead(PlayerbotAI* botAI) { return new ShackleUndeadTrigger(botAI); }
-    static Trigger* feedback(PlayerbotAI* botAI) { return new FeedbackTrigger(botAI); }
-    static Trigger* fear_ward(PlayerbotAI* botAI) { return new FearWardTrigger(botAI); }
-    static Trigger* shadowguard(PlayerbotAI* botAI) { return new ShadowguardTrigger(botAI); }
-    static Trigger* hex_of_weakness(PlayerbotAI* botAI) { return new HexOfWeaknessTrigger(botAI); }
-    static Trigger* touch_of_weakness(PlayerbotAI* botAI) { return new TouchOfWeaknessTrigger(botAI); }
-    static Trigger* holy_fire(PlayerbotAI* botAI) { return new HolyFireTrigger(botAI); }
-    static Trigger* shadowfiend(PlayerbotAI* botAI) { return new ShadowfiendTrigger(botAI); }
-    static Trigger* silence_on_enemy_healer(PlayerbotAI* botAI) { return new SilenceEnemyHealerTrigger(botAI); }
-    static Trigger* silence(PlayerbotAI* botAI) { return new SilenceTrigger(botAI); }
-    static Trigger* chastise(PlayerbotAI* botAI) { return new ChastiseTrigger(botAI); }
-    static Trigger* binding_heal(PlayerbotAI* botAI) { return new BindingHealTrigger(botAI); }
-    static Trigger* mind_sear_channel_check(PlayerbotAI* botAI) { return new MindSearChannelCheckTrigger(botAI); }
-};
-
-class PriestAiObjectContextInternal : public NamedObjectContext<Action>
-{
-public:
-    PriestAiObjectContextInternal()
-    {
-        creators["power infusion"] = &PriestAiObjectContextInternal::power_infusion;
-        creators["inner focus"] = &PriestAiObjectContextInternal::inner_focus;
-        creators["shadow word: pain"] = &PriestAiObjectContextInternal::shadow_word_pain;
-        creators["shadow word: pain on attacker"] = &PriestAiObjectContextInternal::shadow_word_pain_on_attacker;
-        creators["devouring plague"] = &PriestAiObjectContextInternal::devouring_plague;
-        creators["mind flay"] = &PriestAiObjectContextInternal::mind_flay;
-        creators["holy fire"] = &PriestAiObjectContextInternal::holy_fire;
-        creators["smite"] = &PriestAiObjectContextInternal::smite;
-        creators["mind blast"] = &PriestAiObjectContextInternal::mind_blast;
-        creators["shadowform"] = &PriestAiObjectContextInternal::shadowform;
-        creators["remove shadowform"] = &PriestAiObjectContextInternal::remove_shadowform;
-        creators["holy nova"] = &PriestAiObjectContextInternal::holy_nova;
-        creators["power word: fortitude"] = &PriestAiObjectContextInternal::power_word_fortitude;
-        creators["power word: fortitude on party"] = &PriestAiObjectContextInternal::power_word_fortitude_on_party;
-        creators["divine spirit"] = &PriestAiObjectContextInternal::divine_spirit;
-        creators["divine spirit on party"] = &PriestAiObjectContextInternal::divine_spirit_on_party;
-        creators["power word: shield"] = &PriestAiObjectContextInternal::power_word_shield;
-        creators["power word: shield on party"] = &PriestAiObjectContextInternal::power_word_shield_on_party;
-        creators["power word: shield on almost full health below"] =
-            &PriestAiObjectContextInternal::power_word_shield_on_almost_full_health_below;
-        creators["power word: shield on not full"] = &PriestAiObjectContextInternal::power_word_shield_on_not_full;
-        creators["renew"] = &PriestAiObjectContextInternal::renew;
-        creators["renew on party"] = &PriestAiObjectContextInternal::renew_on_party;
-        creators["greater heal"] = &PriestAiObjectContextInternal::greater_heal;
-        creators["greater heal on party"] = &PriestAiObjectContextInternal::greater_heal_on_party;
-        creators["heal"] = &PriestAiObjectContextInternal::heal;
-        creators["heal on party"] = &PriestAiObjectContextInternal::heal_on_party;
-        creators["lesser heal"] = &PriestAiObjectContextInternal::lesser_heal;
-        creators["lesser heal on party"] = &PriestAiObjectContextInternal::lesser_heal_on_party;
-        creators["flash heal"] = &PriestAiObjectContextInternal::flash_heal;
-        creators["flash heal on party"] = &PriestAiObjectContextInternal::flash_heal_on_party;
-        creators["dispel magic"] = &PriestAiObjectContextInternal::dispel_magic;
-        creators["dispel magic on party"] = &PriestAiObjectContextInternal::dispel_magic_on_party;
-        creators["dispel magic on target"] = &PriestAiObjectContextInternal::dispel_magic_on_target;
-        creators["cure disease"] = &PriestAiObjectContextInternal::cure_disease;
-        creators["cure disease on party"] = &PriestAiObjectContextInternal::cure_disease_on_party;
-        creators["abolish disease"] = &PriestAiObjectContextInternal::abolish_disease;
-        creators["abolish disease on party"] = &PriestAiObjectContextInternal::abolish_disease_on_party;
-        creators["fade"] = &PriestAiObjectContextInternal::fade;
-        creators["inner fire"] = &PriestAiObjectContextInternal::inner_fire;
-        creators["resurrection"] = &PriestAiObjectContextInternal::resurrection;
-        creators["circle of healing on party"] = &PriestAiObjectContextInternal::circle_of_healing;
-        creators["psychic scream"] = &PriestAiObjectContextInternal::psychic_scream;
-        creators["vampiric touch"] = &PriestAiObjectContextInternal::vampiric_touch;
-        creators["vampiric touch on attacker"] = &PriestAiObjectContextInternal::vampiric_touch_on_attacker;
-        creators["vampiric embrace"] = &PriestAiObjectContextInternal::vampiric_embrace;
-        creators["dispersion"] = &PriestAiObjectContextInternal::dispersion;
-        creators["shadow protection"] = &PriestAiObjectContextInternal::shadow_protection;
-        creators["shadow protection on party"] = &PriestAiObjectContextInternal::shadow_protection_on_party;
-        creators["shackle undead"] = &PriestAiObjectContextInternal::shackle_undead;
-        creators["power infusion on party"] = &PriestAiObjectContextInternal::power_infusion_on_party;
-        creators["silence"] = &PriestAiObjectContextInternal::silence;
-        creators["silence on enemy healer"] = &PriestAiObjectContextInternal::silence_on_enemy_healer;
-        creators["mana burn"] = &PriestAiObjectContextInternal::mana_burn;
-        creators["levitate"] = &PriestAiObjectContextInternal::levitate;
-        creators["prayer of healing on party"] = &PriestAiObjectContextInternal::prayer_of_healing;
-        creators["lightwell"] = &PriestAiObjectContextInternal::lightwell;
-        creators["mind soothe"] = &PriestAiObjectContextInternal::mind_soothe;
-        creators["touch of weakness"] = &PriestAiObjectContextInternal::touch_of_weakness;
-        creators["hex of weakness"] = &PriestAiObjectContextInternal::hex_of_weakness;
-        creators["shadowguard"] = &PriestAiObjectContextInternal::shadowguard;
-        creators["desperate prayer"] = &PriestAiObjectContextInternal::desperate_prayer;
-        creators["fear ward"] = &PriestAiObjectContextInternal::fear_ward;
-        creators["fear ward on party"] = &PriestAiObjectContextInternal::fear_ward_on_party;
-        creators["starshards"] = &PriestAiObjectContextInternal::starshards;
-        creators["elune's grace"] = &PriestAiObjectContextInternal::elunes_grace;
-        creators["feedback"] = &PriestAiObjectContextInternal::feedback;
-        creators["symbol of hope"] = &PriestAiObjectContextInternal::symbol_of_hope;
-        creators["consume magic"] = &PriestAiObjectContextInternal::consume_magic;
-        creators["chastise"] = &PriestAiObjectContextInternal::chastise;
-        creators["shadow word: death"] = &PriestAiObjectContextInternal::shadow_word_death;
-        creators["shadowfiend"] = &PriestAiObjectContextInternal::shadowfiend;
-        creators["mass dispel"] = &PriestAiObjectContextInternal::mass_dispel;
-        creators["pain suppression"] = &PriestAiObjectContextInternal::pain_suppression;
-        creators["pain suppression on party"] = &PriestAiObjectContextInternal::pain_suppression_on_party;
-        creators["prayer of mending on party"] = &PriestAiObjectContextInternal::prayer_of_mending;
-        creators["binding heal"] = &PriestAiObjectContextInternal::binding_heal;
-        creators["penance on party"] = &PriestAiObjectContextInternal::penance_on_party;
-        creators["hymn of hope"] = &PriestAiObjectContextInternal::hymn_of_hope;
-        creators["divine hymn"] = &PriestAiObjectContextInternal::divine_hymn;
-        creators["mind sear"] = &PriestAiObjectContextInternal::mind_sear;
-        creators["guardian spirit on party"] = &PriestAiObjectContextInternal::guardian_spirit_on_party;
-    }
-
-private:
-    static Action* shadow_protection_on_party(PlayerbotAI* botAI)
-    {
-        return new CastShadowProtectionOnPartyAction(botAI);
-    }
-    static Action* shadow_protection(PlayerbotAI* botAI) { return new CastShadowProtectionAction(botAI); }
-    static Action* power_infusion(PlayerbotAI* botAI) { return new CastPowerInfusionAction(botAI); }
-    static Action* inner_focus(PlayerbotAI* botAI) { return new CastInnerFocusAction(botAI); }
-    static Action* dispersion(PlayerbotAI* botAI) { return new CastDispersionAction(botAI); }
-    static Action* vampiric_embrace(PlayerbotAI* botAI) { return new CastVampiricEmbraceAction(botAI); }
-    static Action* vampiric_touch(PlayerbotAI* botAI) { return new CastVampiricTouchAction(botAI); }
-    static Action* vampiric_touch_on_attacker(PlayerbotAI* botAI)
-    {
-        return new CastVampiricTouchOnAttackerAction(botAI);
-    }
-    static Action* psychic_scream(PlayerbotAI* botAI) { return new CastPsychicScreamAction(botAI); }
-    static Action* circle_of_healing(PlayerbotAI* botAI) { return new CastCircleOfHealingAction(botAI); }
-    static Action* resurrection(PlayerbotAI* botAI) { return new CastResurrectionAction(botAI); }
-    static Action* shadow_word_pain(PlayerbotAI* botAI) { return new CastShadowWordPainAction(botAI); }
-    static Action* shadow_word_pain_on_attacker(PlayerbotAI* botAI)
-    {
-        return new CastShadowWordPainOnAttackerAction(botAI);
-    }
-    static Action* devouring_plague(PlayerbotAI* botAI) { return new CastDevouringPlagueAction(botAI); }
-    static Action* mind_flay(PlayerbotAI* botAI) { return new CastMindFlayAction(botAI); }
-    static Action* holy_fire(PlayerbotAI* botAI) { return new CastHolyFireAction(botAI); }
-    static Action* smite(PlayerbotAI* botAI) { return new CastSmiteAction(botAI); }
-    static Action* mind_blast(PlayerbotAI* botAI) { return new CastMindBlastAction(botAI); }
-    static Action* shadowform(PlayerbotAI* botAI) { return new CastShadowformAction(botAI); }
-    static Action* remove_shadowform(PlayerbotAI* botAI) { return new CastRemoveShadowformAction(botAI); }
-    static Action* holy_nova(PlayerbotAI* botAI) { return new CastHolyNovaAction(botAI); }
-    static Action* power_word_fortitude(PlayerbotAI* botAI) { return new CastPowerWordFortitudeAction(botAI); }
-    static Action* power_word_fortitude_on_party(PlayerbotAI* botAI)
-    {
-        return new CastPowerWordFortitudeOnPartyAction(botAI);
-    }
-    static Action* divine_spirit(PlayerbotAI* botAI) { return new CastDivineSpiritAction(botAI); }
-    static Action* divine_spirit_on_party(PlayerbotAI* botAI) { return new CastDivineSpiritOnPartyAction(botAI); }
-    static Action* power_word_shield(PlayerbotAI* botAI) { return new CastPowerWordShieldAction(botAI); }
-    static Action* power_word_shield_on_party(PlayerbotAI* botAI)
-    {
-        return new CastPowerWordShieldOnPartyAction(botAI);
-    }
-    static Action* power_word_shield_on_almost_full_health_below(PlayerbotAI* ai)
-    {
-        return new CastPowerWordShieldOnAlmostFullHealthBelowAction(ai);
-    }
-    static Action* power_word_shield_on_not_full(PlayerbotAI* ai) { return new CastPowerWordShieldOnNotFullAction(ai); }
-    static Action* renew(PlayerbotAI* botAI) { return new CastRenewAction(botAI); }
-    static Action* renew_on_party(PlayerbotAI* botAI) { return new CastRenewOnPartyAction(botAI); }
-    static Action* greater_heal(PlayerbotAI* botAI) { return new CastGreaterHealAction(botAI); }
-    static Action* greater_heal_on_party(PlayerbotAI* botAI) { return new CastGreaterHealOnPartyAction(botAI); }
-    static Action* heal(PlayerbotAI* botAI) { return new CastHealAction(botAI); }
-    static Action* heal_on_party(PlayerbotAI* botAI) { return new CastHealOnPartyAction(botAI); }
-    static Action* lesser_heal(PlayerbotAI* botAI) { return new CastLesserHealAction(botAI); }
-    static Action* lesser_heal_on_party(PlayerbotAI* botAI) { return new CastLesserHealOnPartyAction(botAI); }
-    static Action* flash_heal(PlayerbotAI* botAI) { return new CastFlashHealAction(botAI); }
-    static Action* flash_heal_on_party(PlayerbotAI* botAI) { return new CastFlashHealOnPartyAction(botAI); }
-    static Action* dispel_magic(PlayerbotAI* botAI) { return new CastDispelMagicAction(botAI); }
-    static Action* dispel_magic_on_party(PlayerbotAI* botAI) { return new CastDispelMagicOnPartyAction(botAI); }
-    static Action* dispel_magic_on_target(PlayerbotAI* botAI) { return new CastDispelMagicOnTargetAction(botAI); }
-    static Action* cure_disease(PlayerbotAI* botAI) { return new CastCureDiseaseAction(botAI); }
-    static Action* cure_disease_on_party(PlayerbotAI* botAI) { return new CastCureDiseaseOnPartyAction(botAI); }
-    static Action* abolish_disease(PlayerbotAI* botAI) { return new CastAbolishDiseaseAction(botAI); }
-    static Action* abolish_disease_on_party(PlayerbotAI* botAI) { return new CastAbolishDiseaseOnPartyAction(botAI); }
-    static Action* fade(PlayerbotAI* botAI) { return new CastFadeAction(botAI); }
-    static Action* inner_fire(PlayerbotAI* botAI) { return new CastInnerFireAction(botAI); }
-    static Action* shackle_undead(PlayerbotAI* botAI) { return new CastShackleUndeadAction(botAI); }
-    static Action* feedback(PlayerbotAI* botAI) { return new CastFeedbackAction(botAI); }
-    static Action* elunes_grace(PlayerbotAI* botAI) { return new CastElunesGraceAction(botAI); }
-    static Action* starshards(PlayerbotAI* botAI) { return new CastStarshardsAction(botAI); }
-    static Action* fear_ward_on_party(PlayerbotAI* botAI) { return new CastFearWardOnPartyAction(botAI); }
-    static Action* fear_ward(PlayerbotAI* botAI) { return new CastFearWardAction(botAI); }
-    static Action* desperate_prayer(PlayerbotAI* botAI) { return new CastDesperatePrayerAction(botAI); }
-    static Action* shadowguard(PlayerbotAI* botAI) { return new CastShadowguardAction(botAI); }
-    static Action* hex_of_weakness(PlayerbotAI* botAI) { return new CastHexOfWeaknessAction(botAI); }
-    static Action* touch_of_weakness(PlayerbotAI* botAI) { return new CastTouchOfWeaknessAction(botAI); }
-    static Action* mind_soothe(PlayerbotAI* botAI) { return new CastMindSootheAction(botAI); }
-    static Action* lightwell(PlayerbotAI* botAI) { return new CastLightwellAction(botAI); }
-    static Action* prayer_of_healing(PlayerbotAI* botAI) { return new CastPrayerOfHealingAction(botAI); }
-    static Action* levitate(PlayerbotAI* botAI) { return new CastLevitateAction(botAI); }
-    static Action* mana_burn(PlayerbotAI* botAI) { return new CastManaBurnAction(botAI); }
-    static Action* silence_on_enemy_healer(PlayerbotAI* botAI) { return new CastSilenceOnEnemyHealerAction(botAI); }
-    static Action* silence(PlayerbotAI* botAI) { return new CastSilenceAction(botAI); }
-    static Action* power_infusion_on_party(PlayerbotAI* botAI) { return new CastPowerInfusionOnPartyAction(botAI); }
-    static Action* binding_heal(PlayerbotAI* botAI) { return new CastBindingHealAction(botAI); }
-    static Action* prayer_of_mending(PlayerbotAI* botAI) { return new CastPrayerOfMendingAction(botAI); }
-    static Action* pain_suppression_on_party(PlayerbotAI* botAI) { return new CastPainSuppressionProtectAction(botAI); }
-    static Action* pain_suppression(PlayerbotAI* botAI) { return new CastPainSuppressionAction(botAI); }
-    static Action* mass_dispel(PlayerbotAI* botAI) { return new CastMassDispelAction(botAI); }
-    static Action* shadowfiend(PlayerbotAI* botAI) { return new CastShadowfiendAction(botAI); }
-    static Action* shadow_word_death(PlayerbotAI* botAI) { return new CastShadowWordDeathAction(botAI); }
-    static Action* chastise(PlayerbotAI* botAI) { return new CastChastiseAction(botAI); }
-    static Action* consume_magic(PlayerbotAI* botAI) { return new CastConsumeMagicAction(botAI); }
-    static Action* symbol_of_hope(PlayerbotAI* botAI) { return new CastSymbolOfHopeAction(botAI); }
-    static Action* penance_on_party(PlayerbotAI* ai) { return new CastPenanceOnPartyAction(ai); }
-    static Action* hymn_of_hope(PlayerbotAI* ai) { return new CastHymnOfHopeAction(ai); }
-    static Action* divine_hymn(PlayerbotAI* ai) { return new CastDivineHymnAction(ai); }
-    static Action* mind_sear(PlayerbotAI* ai) { return new CastMindSearAction(ai); }
-    static Action* guardian_spirit_on_party(PlayerbotAI* ai) { return new CastGuardianSpiritOnPartyAction(ai); }
-};
-
-SharedNamedObjectContextList<Strategy> PriestAiObjectContext::sharedStrategyContexts;
-SharedNamedObjectContextList<Action> PriestAiObjectContext::sharedActionContexts;
-SharedNamedObjectContextList<Trigger> PriestAiObjectContext::sharedTriggerContexts;
-SharedNamedObjectContextList<UntypedValue> PriestAiObjectContext::sharedValueContexts;
-
-PriestAiObjectContext::PriestAiObjectContext(PlayerbotAI* botAI)
-    : AiObjectContext(botAI, sharedStrategyContexts, sharedActionContexts, sharedTriggerContexts, sharedValueContexts)
-{
-}
-
-void PriestAiObjectContext::BuildSharedContexts()
-{
-    BuildSharedStrategyContexts(sharedStrategyContexts);
-    BuildSharedActionContexts(sharedActionContexts);
-    BuildSharedTriggerContexts(sharedTriggerContexts);
-    BuildSharedValueContexts(sharedValueContexts);
-}
-
-void PriestAiObjectContext::BuildSharedStrategyContexts(SharedNamedObjectContextList<Strategy>& strategyContexts)
-{
-    AiObjectContext::BuildSharedStrategyContexts(strategyContexts);
-    strategyContexts.Add(new PriestStrategyFactoryInternal());
-    strategyContexts.Add(new PriestCombatStrategyFactoryInternal());
-}
-
-void PriestAiObjectContext::BuildSharedActionContexts(SharedNamedObjectContextList<Action>& actionContexts)
-{
-    AiObjectContext::BuildSharedActionContexts(actionContexts);
-    actionContexts.Add(new PriestAiObjectContextInternal());
-}
-
-void PriestAiObjectContext::BuildSharedTriggerContexts(SharedNamedObjectContextList<Trigger>& triggerContexts)
-{
-    AiObjectContext::BuildSharedTriggerContexts(triggerContexts);
-    triggerContexts.Add(new PriestTriggerFactoryInternal());
-}
-
-void PriestAiObjectContext::BuildSharedValueContexts(SharedNamedObjectContextList<UntypedValue>& valueContexts)
-{
-    AiObjectContext::BuildSharedValueContexts(valueContexts);
+    strategyContexts.Add(new ai::priest::StrategyFactoryInternal());
+    strategyContexts.Add(new ai::priest::AoeSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::priest::CureSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::priest::ClassStrategyFactoryInternal());
+    strategyContexts.Add(new ai::priest::ClassSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::priest::BuffSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::priest::BoostSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::priest::OffhealSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::priest::OffdpsSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::priest::CcSituationStrategyFactoryInternal());
+    actionContexts.Add(new ai::priest::AiObjectContextInternal());
+    triggerContexts.Add(new ai::priest::TriggerFactoryInternal());
 }

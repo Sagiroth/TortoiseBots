@@ -1,24 +1,15 @@
-// Forward-ported from mod-playerbots Base/Strategy/KiteStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "playerbot/strategy/Strategy.h"
 
-#ifndef PLAYERBOTS_KITESTRATEGY_H
-#define PLAYERBOTS_KITESTRATEGY_H
-
-#include "Strategy.h"
-
-class PlayerbotAI;
-
-class KiteStrategy : public Strategy
+namespace ai
 {
-public:
-    KiteStrategy(PlayerbotAI* botAI);
-
-    std::string const getName() override { return "kite"; }
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-};
-
-#endif
+    class KiteStrategy : public Strategy
+    {
+    public:
+        KiteStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "kite"; }
+    
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*> &triggers) override;
+    };
+}

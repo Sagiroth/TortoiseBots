@@ -1,51 +1,56 @@
-// Forward-ported from mod-playerbots Base/Strategy/QuestStrategies.cpp
-// Source: mod-playerbots@5397110, Shyalya@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
 
+#include "playerbot/playerbot.h"
 #include "QuestStrategies.h"
-#include "Playerbots.h"
 
-QuestStrategy::QuestStrategy(PlayerbotAI* botAI) : PassThroughStrategy(botAI) { supported.push_back("accept quest"); }
+using namespace ai;
 
-void QuestStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+QuestStrategy::QuestStrategy(PlayerbotAI* ai) : PassTroughStrategy(ai)
 {
-    PassThroughStrategy::InitTriggers(triggers);
-
-    triggers.push_back(
-        new TriggerNode("quest share", {  NextAction("accept quest share", relevance) }));
+    supported.push_back("accept quest");
 }
 
-void DefaultQuestStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+void QuestStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-    QuestStrategy::InitTriggers(triggers);
+    PassTroughStrategy::InitNonCombatTriggers(triggers);
+
+    triggers.push_back(new TriggerNode("quest share", NextAction::array(0, new NextAction("accept quest share", relevance), NULL)));
+};
+
+void DefaultQuestStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
+{
+    QuestStrategy::InitNonCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
-        "use game object", {  NextAction("talk to quest giver", relevance) }));
+        "use game object",
+        NextAction::array(0,
+            new NextAction("talk to quest giver", relevance), NULL)));
+
     triggers.push_back(new TriggerNode(
-        "gossip hello", {  NextAction("talk to quest giver", relevance) }));
+        "gossip hello",
+        NextAction::array(0,
+            new NextAction("talk to quest giver", relevance), NULL)));
+
     triggers.push_back(new TriggerNode(
-        "complete quest", {  NextAction("talk to quest giver", relevance) }));
+        "complete quest",
+        NextAction::array(0, new NextAction("talk to quest giver", relevance), NULL)));
 }
 
-DefaultQuestStrategy::DefaultQuestStrategy(PlayerbotAI* botAI) : QuestStrategy(botAI) {}
-
-void AcceptAllQuestsStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+void AcceptAllQuestsStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
 {
-    QuestStrategy::InitTriggers(triggers);
+    QuestStrategy::InitNonCombatTriggers(triggers);
 
-    triggers.push_back(
-        new TriggerNode("use game object", {  NextAction("talk to quest giver", relevance),
-                                                             NextAction("accept all quests", relevance) }));
-    triggers.push_back(
-        new TriggerNode("gossip hello", {  NextAction("talk to quest giver", relevance),
-                                                          NextAction("accept all quests", relevance) }));
-    triggers.push_back(
-        new TriggerNode("complete quest", {  NextAction("talk to quest giver", relevance),
-                                                            NextAction("accept all quests", relevance) }));
+    triggers.push_back(new TriggerNode(
+        "use game object",
+        NextAction::array(0,
+            new NextAction("talk to quest giver", relevance), new NextAction("accept all quests", relevance), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "gossip hello",
+        NextAction::array(0,
+            new NextAction("talk to quest giver", relevance), new NextAction("accept all quests", relevance), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "complete quest",
+        NextAction::array(0, 
+            new NextAction("talk to quest giver", relevance), new NextAction("accept all quests", relevance), NULL)));
 }
-
-AcceptAllQuestsStrategy::AcceptAllQuestsStrategy(PlayerbotAI* botAI) : QuestStrategy(botAI) {}

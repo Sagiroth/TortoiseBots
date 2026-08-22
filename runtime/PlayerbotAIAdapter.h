@@ -35,13 +35,13 @@ public:
     // Called on bot logout/removal
     void Shutdown();
 
-    PlayerbotAI* GetAI() const { return ai_.get(); }
+    PlayerbotAI* GetAI() const { return ai_; }
     bool IsInitialized() const { return initialized_; }
 
 private:
     Player* bot_;
     Player* master_;
-    std::unique_ptr<PlayerbotAI> ai_;
+    PlayerbotAI* ai_ = nullptr; // raw ptr, owned via PlayerbotAIStorage lifecycle; avoids unique_ptr incomplete type at header
     bool initialized_ = false;
 };
 

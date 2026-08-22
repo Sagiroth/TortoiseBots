@@ -1,25 +1,23 @@
-// Forward-ported from mod-playerbots Base/Strategy/DuelStrategy.cpp
-// Source: mod-playerbots@5397110, Shyalya@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
 
+#include "playerbot/playerbot.h"
 #include "DuelStrategy.h"
 
-void DuelStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
-{
-    PassThroughStrategy::InitTriggers(triggers);
+using namespace ai;
 
-    triggers.push_back(
-        new TriggerNode("duel requested", { NextAction("accept duel", relevance) }));
-    triggers.push_back(
-        new TriggerNode("no attackers", { NextAction("attack duel opponent", 70.0f) }));
+void DuelStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
+{
+    PassTroughStrategy::InitNonCombatTriggers(triggers);
+
+    triggers.push_back(new TriggerNode(
+        "duel requested",
+        NextAction::array(0, new NextAction("accept duel", relevance), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "no attackers",
+        NextAction::array(0, new NextAction("attack duel opponent", 70.0f), NULL)));
 }
 
-DuelStrategy::DuelStrategy(PlayerbotAI* botAI) : PassThroughStrategy(botAI) {}
-
-void StartDuelStrategy::InitTriggers(std::vector<TriggerNode*>& /*triggers*/) {}
-
-StartDuelStrategy::StartDuelStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
+void DuelStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    InitNonCombatTriggers(triggers);
+}

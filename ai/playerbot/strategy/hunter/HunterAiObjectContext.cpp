@@ -1,300 +1,344 @@
-// Forward-ported from mod-playerbots /mnt/pny-ssd/Tortoise WoW Projects/playerbots-references/mod-playerbots/src/Ai/Class/Hunter/HunterAiObjectContext.cpp - modern donor, Tortoise 1.18.1 adapted via Shyalya translation reference
-// Source: mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70, Shyalya reference: shyalya-tortoise-wow@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
 
+#include "playerbot/playerbot.h"
+#include "HunterActions.h"
+#include "HunterTriggers.h"
 #include "HunterAiObjectContext.h"
 #include "BeastMasteryHunterStrategy.h"
-#include "GenericHunterNonCombatStrategy.h"
-#include "GenericHunterStrategy.h"
-#include "HunterActions.h"
-#include "HunterBuffStrategies.h"
-#include "HunterTriggers.h"
 #include "MarksmanshipHunterStrategy.h"
-#include "NamedObjectContext.h"
-#include "Playerbots.h"
 #include "SurvivalHunterStrategy.h"
+#include "playerbot/strategy/NamedObjectContext.h"
 
-class HunterStrategyFactoryInternal : public NamedObjectContext<Strategy>
+namespace ai
 {
-public:
-    HunterStrategyFactoryInternal()
+    namespace hunter
     {
-        creators["nc"] = &HunterStrategyFactoryInternal::nc;
-        creators["pet"] = &HunterStrategyFactoryInternal::pet;
-        creators["cc"] = &HunterStrategyFactoryInternal::cc;
-        creators["trap weave"] = &HunterStrategyFactoryInternal::trap_weave;
-        creators["bm"] = &HunterStrategyFactoryInternal::beast_mastery;
-        creators["mm"] = &HunterStrategyFactoryInternal::marksmanship;
-        creators["surv"] = &HunterStrategyFactoryInternal::survival;
-        creators["aoe"] = &HunterStrategyFactoryInternal::aoe;
-    }
+        class StrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            StrategyFactoryInternal()
+            {
+                creators["aoe"] = [](PlayerbotAI* ai) { return new AoePlaceholderStrategy(ai); };
+                creators["buff"] = [](PlayerbotAI* ai) { return new BuffPlaceholderStrategy(ai); };
+                creators["pull"] = [](PlayerbotAI* ai) { return new PullStrategy(ai, "serpent sting"); };
+                creators["cc"] = [](PlayerbotAI* ai) { return new CcPlaceholderStrategy(ai); };
+                creators["boost"] = [](PlayerbotAI* ai) { return new BoostPlaceholderStrategy(ai); };
+                creators["pet"] = [](PlayerbotAI* ai) { return new HunterPetStrategy(ai); };
+            }
+        };
 
-private:
-    static Strategy* nc(PlayerbotAI* botAI) { return new GenericHunterNonCombatStrategy(botAI); }
-    static Strategy* pet(PlayerbotAI* botAI) { return new HunterPetStrategy(botAI); }
-    static Strategy* cc(PlayerbotAI* botAI) { return new HunterCcStrategy(botAI); }
-    static Strategy* trap_weave(PlayerbotAI* botAI) { return new HunterTrapWeaveStrategy(botAI); }
-    static Strategy* beast_mastery(PlayerbotAI* botAI) { return new BeastMasteryHunterStrategy(botAI); }
-    static Strategy* marksmanship(PlayerbotAI* botAI) { return new MarksmanshipHunterStrategy(botAI); }
-    static Strategy* survival(PlayerbotAI* botAI) { return new SurvivalHunterStrategy(botAI); }
-    static Strategy* aoe(PlayerbotAI* botAI) { return new AoEHunterStrategy(botAI); }
+        class AoeSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            AoeSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["aoe beast mastery pve"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterAoePveStrategy(ai); };
+                creators["aoe beast mastery pvp"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterAoePvpStrategy(ai); };
+                creators["aoe beast mastery raid"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterAoeRaidStrategy(ai); };
+                creators["aoe marksmanship pve"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterAoePveStrategy(ai); };
+                creators["aoe marksmanship pvp"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterAoePvpStrategy(ai); };
+                creators["aoe marksmanship raid"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterAoeRaidStrategy(ai); };
+                creators["aoe survival pve"] = [](PlayerbotAI* ai) { return new SurvivalHunterAoePveStrategy(ai); };
+                creators["aoe survival pvp"] = [](PlayerbotAI* ai) { return new SurvivalHunterAoePvpStrategy(ai); };
+                creators["aoe survival raid"] = [](PlayerbotAI* ai) { return new SurvivalHunterAoeRaidStrategy(ai); };
+            }
+        };
+
+        class BuffSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            BuffSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["buff beast mastery pve"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterBuffPveStrategy(ai); };
+                creators["buff beast mastery pvp"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterBuffPvpStrategy(ai); };
+                creators["buff beast mastery raid"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterBuffRaidStrategy(ai); };
+                creators["buff marksmanship pve"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterBuffPveStrategy(ai); };
+                creators["buff marksmanship pvp"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterBuffPvpStrategy(ai); };
+                creators["buff marksmanship raid"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterBuffRaidStrategy(ai); };
+                creators["buff survival pve"] = [](PlayerbotAI* ai) { return new SurvivalHunterBuffPveStrategy(ai); };
+                creators["buff survival pvp"] = [](PlayerbotAI* ai) { return new SurvivalHunterBuffPvpStrategy(ai); };
+                creators["buff survival raid"] = [](PlayerbotAI* ai) { return new SurvivalHunterBuffRaidStrategy(ai); };
+            }
+        };
+
+        class BoostSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            BoostSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["boost beast mastery pve"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterBoostPveStrategy(ai); };
+                creators["boost beast mastery pvp"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterBoostPvpStrategy(ai); };
+                creators["boost beast mastery raid"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterBoostRaidStrategy(ai); };
+                creators["boost marksmanship pve"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterBoostPveStrategy(ai); };
+                creators["boost marksmanship pvp"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterBoostPvpStrategy(ai); };
+                creators["boost marksmanship raid"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterBoostRaidStrategy(ai); };
+                creators["boost survival pve"] = [](PlayerbotAI* ai) { return new SurvivalHunterBoostPveStrategy(ai); };
+                creators["boost survival pvp"] = [](PlayerbotAI* ai) { return new SurvivalHunterBoostPvpStrategy(ai); };
+                creators["boost survival raid"] = [](PlayerbotAI* ai) { return new SurvivalHunterBoostRaidStrategy(ai); };
+            }
+        };
+
+        class CcSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            CcSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["cc marksmanship pve"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterCcPveStrategy(ai); };
+                creators["cc marksmanship pvp"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterCcPvpStrategy(ai); };
+                creators["cc marksmanship raid"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterCcRaidStrategy(ai); };
+                creators["cc survival pve"] = [](PlayerbotAI* ai) { return new SurvivalHunterCcPveStrategy(ai); };
+                creators["cc survival pvp"] = [](PlayerbotAI* ai) { return new SurvivalHunterCcPvpStrategy(ai); };
+                creators["cc survival raid"] = [](PlayerbotAI* ai) { return new SurvivalHunterCcRaidStrategy(ai); };
+                creators["cc beast mastery pve"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterCcPveStrategy(ai); };
+                creators["cc beast mastery pvp"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterCcPvpStrategy(ai); };
+                creators["cc beast mastery raid"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterCcRaidStrategy(ai); };
+            }
+        };
+
+        class StingManualStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            StingManualStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["sting"] = [](PlayerbotAI* ai) { return new HunterStingPlaceholderStrategy(ai); };
+                creators["sting serpent"] = [](PlayerbotAI* ai) { return new HunterManualStingStrategy(ai, "sting serpent", "serpent sting", "serpent sting"); };
+                creators["sting scorpid"] = [](PlayerbotAI* ai) { return new HunterManualStingStrategy(ai, "sting scorpid", "scorpid sting", "scorpid sting"); };
+                creators["sting viper"] = [](PlayerbotAI* ai) { return new HunterManualStingStrategy(ai, "sting viper", "viper sting", "viper sting"); };
+            }
+        };
+
+        class StingSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            StingSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["sting marksmanship pve"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterStingPveStrategy(ai); };
+                creators["sting marksmanship pvp"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterStingPvpStrategy(ai); };
+                creators["sting marksmanship raid"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterStingRaidStrategy(ai); };
+                creators["sting survival pve"] = [](PlayerbotAI* ai) { return new SurvivalHunterStingPveStrategy(ai); };
+                creators["sting survival pvp"] = [](PlayerbotAI* ai) { return new SurvivalHunterStingPvpStrategy(ai); };
+                creators["sting survival raid"] = [](PlayerbotAI* ai) { return new SurvivalHunterStingRaidStrategy(ai); };
+                creators["sting beast mastery pve"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterStingPveStrategy(ai); };
+                creators["sting beast mastery pvp"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterStingPvpStrategy(ai); };
+                creators["sting beast mastery raid"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterStingRaidStrategy(ai); };
+            }
+        };
+
+        class AspectManualStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            AspectManualStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["aspect"] = [](PlayerbotAI* ai) { return new HunterAspectPlaceholderStrategy(ai); };
+                creators["aspect hawk"] = [](PlayerbotAI* ai) { return new HunterManualAspectStrategy(ai, "aspect hawk", "aspect of the hawk", "aspect of the hawk"); };
+                creators["aspect monkey"] = [](PlayerbotAI* ai) { return new HunterManualAspectStrategy(ai, "aspect monkey", "aspect of the monkey", "aspect of the monkey"); };
+                creators["aspect cheetah"] = [](PlayerbotAI* ai) { return new HunterManualAspectStrategy(ai, "aspect cheetah", "aspect of the cheetah", "aspect of the cheetah"); };
+                creators["aspect pack"] = [](PlayerbotAI* ai) { return new HunterManualAspectStrategy(ai, "aspect pack", "aspect of the pack", "aspect of the pack"); };
+                creators["aspect beast"] = [](PlayerbotAI* ai) { return new HunterManualAspectStrategy(ai, "aspect beast", "aspect of the beast", "aspect of the beast"); };
+                creators["aspect wild"] = [](PlayerbotAI* ai) { return new HunterManualAspectStrategy(ai, "aspect wild", "aspect of the wild", "aspect of the wild"); };
+                creators["aspect viper"] = [](PlayerbotAI* ai) { return new HunterManualAspectStrategy(ai, "aspect viper", "aspect of the viper", "aspect of the viper"); };
+                creators["aspect dragonhawk"] = [](PlayerbotAI* ai) { return new HunterManualAspectStrategy(ai, "aspect dragonhawk", "aspect of the dragonhawk", "aspect of the dragonhawk"); };
+            }
+        };
+
+        class AspectSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            AspectSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["aspect marksmanship pve"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterAspectPveStrategy(ai); };
+                creators["aspect marksmanship pvp"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterAspectPvpStrategy(ai); };
+                creators["aspect marksmanship raid"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterAspectRaidStrategy(ai); };
+                creators["aspect survival pve"] = [](PlayerbotAI* ai) { return new SurvivalHunterAspectPveStrategy(ai); };
+                creators["aspect survival pvp"] = [](PlayerbotAI* ai) { return new SurvivalHunterAspectPvpStrategy(ai); };
+                creators["aspect survival raid"] = [](PlayerbotAI* ai) { return new SurvivalHunterAspectRaidStrategy(ai); };
+                creators["aspect beast mastery pve"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterAspectPveStrategy(ai); };
+                creators["aspect beast mastery pvp"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterAspectPvpStrategy(ai); };
+                creators["aspect beast mastery raid"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterAspectRaidStrategy(ai); };
+            }
+        };
+
+        class ClassStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            ClassStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["marksmanship"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterPlaceholderStrategy(ai); };
+                creators["survival"] = [](PlayerbotAI* ai) { return new SurvivalHunterPlaceholderStrategy(ai); };
+                creators["beast mastery"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterPlaceholderStrategy(ai); };
+            }
+        };
+
+        class ClassSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            ClassSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["beast mastery pvp"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterPvpStrategy(ai); };
+                creators["beast mastery pve"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterPveStrategy(ai); };
+                creators["beast mastery raid"] = [](PlayerbotAI* ai) { return new BeastMasteryHunterRaidStrategy(ai); };
+                creators["marksmanship pvp"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterPvpStrategy(ai); };
+                creators["marksmanship pve"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterPveStrategy(ai); };
+                creators["marksmanship raid"] = [](PlayerbotAI* ai) { return new MarksmanshipHunterRaidStrategy(ai); };
+                creators["survival pvp"] = [](PlayerbotAI* ai) { return new SurvivalHunterPvpStrategy(ai); };
+                creators["survival pve"] = [](PlayerbotAI* ai) { return new SurvivalHunterPveStrategy(ai); };
+                creators["survival raid"] = [](PlayerbotAI* ai) { return new SurvivalHunterRaidStrategy(ai); };
+            }
+        };
+
+        class TriggerFactoryInternal : public NamedObjectContext<Trigger>
+        {
+        public:
+            TriggerFactoryInternal()
+            {
+                creators["black arrow"] = [](PlayerbotAI* ai) { return new BlackArrowTrigger(ai); };
+                creators["black arrow on snare target"] = [](PlayerbotAI* ai) { return new BlackArrowSnareTrigger(ai); };
+                creators["no stings"] = [](PlayerbotAI* ai) { return new HunterNoStingsActiveTrigger(ai); };
+                creators["hunters pet dead"] = [](PlayerbotAI* ai) { return new HuntersPetDeadTrigger(ai); };
+                creators["hunters pet low health"] = [](PlayerbotAI* ai) { return new HuntersPetLowHealthTrigger(ai); };
+                creators["hunter's mark"] = [](PlayerbotAI* ai) { return new HuntersMarkTrigger(ai); };
+                creators["freezing trap"] = [](PlayerbotAI* ai) { return new FreezingTrapTrigger(ai); };
+                creators["frost trap"] = [](PlayerbotAI* ai) { return new FrostTrapTrigger(ai); };
+                creators["explosive trap"] = [](PlayerbotAI* ai) { return new ExplosiveTrapTrigger(ai); };
+                creators["rapid fire"] = [](PlayerbotAI* ai) { return new RapidFireTrigger(ai); };
+                creators["kill command"] = [](PlayerbotAI* ai) { return new KillCommandBoostTrigger(ai); };
+                creators["aspect of the hawk"] = [](PlayerbotAI* ai) { return new AspectOfTheHawkTrigger(ai); };
+                creators["aspect of the wild"] = [](PlayerbotAI* ai) { return new AspectOfTheWildTrigger(ai); };
+                creators["aspect of the viper"] = [](PlayerbotAI* ai) { return new AspectOfTheViperTrigger(ai); };
+                creators["aspect of the monkey"] = [](PlayerbotAI* ai) { return new AspectOfTheMonkeyTrigger(ai); };
+                creators["aspect of the beast"] = [](PlayerbotAI* ai) { return new AspectOfTheBeastTrigger(ai); };
+                creators["aspect of the cheetah"] = [](PlayerbotAI* ai) { return new AspectOfTheCheetahTrigger(ai); };
+                creators["aspect of the dragonhawk"] = [](PlayerbotAI* ai) { return new AspectOfTheDragonhawkTrigger(ai); };
+                creators["aspect of the pack"] = [](PlayerbotAI* ai) { return new AspectOfThePackTrigger(ai); };
+                creators["trueshot aura"] = [](PlayerbotAI* ai) { return new TrueshotAuraTrigger(ai); };
+                creators["serpent sting on attacker"] = [](PlayerbotAI* ai) { return new SerpentStingOnAttackerTrigger(ai); };
+                creators["viper sting on attacker"] = [](PlayerbotAI* ai) { return new ViperStingOnAttackerTrigger(ai); };
+                creators["pet not happy"] = [](PlayerbotAI* ai) { return new HunterPetNotHappy(ai); };
+                creators["concussive shot on snare target"] = [](PlayerbotAI* ai) { return new ConsussiveShotSnareTrigger(ai); };
+                creators["scare beast"] = [](PlayerbotAI* ai) { return new ScareBeastTrigger(ai); };
+                creators["low ammo"] = [](PlayerbotAI* ai) { return new HunterLowAmmoTrigger(ai); };
+                creators["no ammo"] = [](PlayerbotAI* ai) { return new HunterNoAmmoTrigger(ai); };
+                creators["has ammo"] = [](PlayerbotAI* ai) { return new HunterHasAmmoTrigger(ai); };
+                creators["switch to melee"] = [](PlayerbotAI* ai) { return new SwitchToMeleeTrigger(ai); };
+                creators["switch to ranged"] = [](PlayerbotAI* ai) { return new SwitchToRangedTrigger(ai); };
+                creators["feign death"] = [](PlayerbotAI* ai) { return new FeignDeathTrigger(ai); };
+                creators["scatter shot on snare target"] = [](PlayerbotAI* ai) { return new ScatterShotSnareTrigger(ai); };
+                creators["chimera shot"] = [](PlayerbotAI* ai) { return new ChimeraShotCanCastTrigger(ai); };
+                creators["explosive shot"] = [](PlayerbotAI* ai) { return new ExplosiveShotCanCastTrigger(ai); };
+                creators["multi-shot"] = [](PlayerbotAI* ai) { return new MultishotCanCastTrigger(ai); };
+                creators["steady shot"] = [](PlayerbotAI* ai) { return new SteadyShotCanCastTrigger(ai); };
+                creators["intimidation on snare target"] = [](PlayerbotAI* ai) { return new IntimidationSnareTrigger(ai); };
+                creators["counterattack"] = [](PlayerbotAI* ai) { return new CounterattackCanCastTrigger(ai); };
+                creators["wyvern sting"] = [](PlayerbotAI* ai) { return new WybernStingSnareTrigger(ai); };
+                creators["mongoose bite"] = [](PlayerbotAI* ai) { return new MongooseBiteCastTrigger(ai); };
+                creators["viper sting"] = [](PlayerbotAI* ai) { return new ViperStingTrigger(ai); };
+                creators["aimed shot"] = [](PlayerbotAI* ai) { return new AimedShotTrigger(ai); };
+                creators["bestial wrath"] = [](PlayerbotAI* ai) { return new BestialWrathBoostTrigger(ai); };
+                creators["silencing shot interrupt"] = [](PlayerbotAI* ai) { return new SilencingShotInterruptTrigger(ai); };
+                creators["silencing shot on enemy healer"] = [](PlayerbotAI* ai) { return new SilencingShotInterruptHealerTrigger(ai); };
+                creators["no pet"] = [](PlayerbotAI* ai) { return new HunterNoPet(ai); };
+                creators["stealthed nearby"] = [](PlayerbotAI* ai) { return new StealthedNearbyTrigger(ai); };
+            }
+        };
+
+        class AiObjectContextInternal : public NamedObjectContext<Action>
+        {
+        public:
+            AiObjectContextInternal()
+            {
+                creators["auto shot"] = [](PlayerbotAI* ai) { return new CastAutoShotAction(ai); };
+                creators["equip ammo"] = [](PlayerbotAI* ai) { return new HunterEquipAmmoAction(ai); };
+                creators["aimed shot"] = [](PlayerbotAI* ai) { return new CastAimedShotAction(ai); };
+                creators["chimera shot"] = [](PlayerbotAI* ai) { return new CastChimeraShotAction(ai); };
+                creators["explosive shot"] = [](PlayerbotAI* ai) { return new CastExplosiveShotAction(ai); };
+                creators["arcane shot"] = [](PlayerbotAI* ai) { return new CastArcaneShotAction(ai); };
+                creators["tranquilizing shot"] = [](PlayerbotAI* ai) { return new CastTranquilizingShotAction(ai); };
+                creators["concussive shot"] = [](PlayerbotAI* ai) { return new CastConcussiveShotAction(ai); };
+                creators["distracting shot"] = [](PlayerbotAI* ai) { return new CastDistractingShotAction(ai); };
+                creators["multi-shot"] = [](PlayerbotAI* ai) { return new CastMultiShotAction(ai); };
+                creators["volley"] = [](PlayerbotAI* ai) { return new CastVolleyAction(ai); };
+                creators["serpent sting"] = [](PlayerbotAI* ai) { return new CastSerpentStingAction(ai); };
+                creators["serpent sting on attacker"] = [](PlayerbotAI* ai) { return new CastSerpentStingOnAttackerAction(ai); };
+                creators["viper sting on attacker"] = [](PlayerbotAI* ai) { return new CastViperStingOnAttackerAction(ai); };
+                creators["wyvern sting"] = [](PlayerbotAI* ai) { return new WyvernStingSnareAction(ai); };
+                creators["viper sting"] = [](PlayerbotAI* ai) { return new CastViperStingAction(ai); };
+                creators["scorpid sting"] = [](PlayerbotAI* ai) { return new CastScorpidStingAction(ai); };
+                creators["hunter's mark"] = [](PlayerbotAI* ai) { return new CastHuntersMarkAction(ai); };
+                creators["mend pet"] = [](PlayerbotAI* ai) { return new CastMendPetAction(ai); };
+                creators["revive pet"] = [](PlayerbotAI* ai) { return new CastRevivePetAction(ai); };
+                creators["call pet"] = [](PlayerbotAI* ai) { return new CastCallPetAction(ai); };
+                creators["black arrow"] = [](PlayerbotAI* ai) { return new CastBlackArrow(ai); };
+                creators["rapid fire"] = [](PlayerbotAI* ai) { return new CastRapidFireAction(ai); };
+                creators["kill command"] = [](PlayerbotAI* ai) { return new CastKillCommandAction(ai); };
+                creators["boost"] = [](PlayerbotAI* ai) { return new CastRapidFireAction(ai); };
+                creators["readiness"] = [](PlayerbotAI* ai) { return new CastReadinessAction(ai); };
+                creators["aspect of the monkey"] = [](PlayerbotAI* ai) { return new CastAspectOfTheMonkeyAction(ai); };
+                creators["aspect of the hawk"] = [](PlayerbotAI* ai) { return new CastAspectOfTheHawkAction(ai); };
+                creators["aspect of the wild"] = [](PlayerbotAI* ai) { return new CastAspectOfTheWildAction(ai); };
+                creators["aspect of the viper"] = [](PlayerbotAI* ai) { return new CastAspectOfTheViperAction(ai); };
+                creators["aspect of the pack"] = [](PlayerbotAI* ai) { return new CastAspectOfThePackAction(ai); };
+                creators["aspect of the cheetah"] = [](PlayerbotAI* ai) { return new CastAspectOfTheCheetahAction(ai); };
+                creators["aspect of the beast"] = [](PlayerbotAI* ai) { return new CastAspectOfTheBeastAction(ai); };
+                creators["aspect of the dragonhawk"] = [](PlayerbotAI* ai) { return new CastAspectOfTheDragonhawkAction(ai); };
+                creators["remove aspect of the cheetah"] = [](PlayerbotAI* ai) { return new RemoveBuffAction(ai, "aspect of the cheetah"); };
+                creators["trueshot aura"] = [](PlayerbotAI* ai) { return new CastTrueshotAuraAction(ai); };
+                creators["feign death"] = [](PlayerbotAI* ai) { return new CastFeignDeathAction(ai); };
+                creators["wing clip"] = [](PlayerbotAI* ai) { return new CastWingClipAction(ai); };
+                creators["raptor strike"] = [](PlayerbotAI* ai) { return new CastRaptorStrikeAction(ai); };
+                creators["feed pet"] = [](PlayerbotAI* ai) { return new FeedPetAction(ai); };
+                creators["bestial wrath"] = [](PlayerbotAI* ai) { return new CastBestialWrathAction(ai); };
+                creators["scare beast"] = [](PlayerbotAI* ai) { return new CastScareBeastAction(ai); };
+                creators["scare beast on cc"] = [](PlayerbotAI* ai) { return new CastScareBeastCcAction(ai); };
+                creators["remove feign death"] = [](PlayerbotAI* ai) { return new RemoveFeignDeathAction(ai); };
+                creators["scatter shot"] = [](PlayerbotAI* ai) { return new CastScatterShotAction(ai); };
+                creators["scatter shot on closest attacker targeting me"] = [](PlayerbotAI* ai) { return new CastScatterShotAction(ai); };
+                creators["intimidation"] = [](PlayerbotAI* ai) { return new IntimidationAction(ai); };
+                creators["deterrence"] = [](PlayerbotAI* ai) { return new DeterrenceAction(ai); };
+                creators["counterattack"] = [](PlayerbotAI* ai) { return new CastCounterattackAction(ai); };
+                creators["wyvern sting"] = [](PlayerbotAI* ai) { return new WyvernStingSnareAction(ai); };
+                creators["mongoose bite"] = [](PlayerbotAI* ai) { return new MongooseBiteAction(ai); };
+                creators["black arrow on snare target"] = [](PlayerbotAI* ai) { return new CastBlackArrowSnareAction(ai); };
+                creators["silencing shot"] = [](PlayerbotAI* ai) { return new CastSilencingShotAction(ai); };
+                creators["silencing shot on enemy healer"] = [](PlayerbotAI* ai) { return new CastSilencingShotOnHealerAction(ai); };
+                creators["readiness"] = [](PlayerbotAI* ai) { return new CastReadinessAction(ai); };
+                creators["steady shot"] = [](PlayerbotAI* ai) { return new CastSteadyShotAction(ai); };
+                creators["tame beast"] = [](PlayerbotAI* ai) { return new TameBeastAction(ai); };
+                creators["flare"] = [](PlayerbotAI* ai) { return new CastFlareAction(ai); };
+                creators["immolation trap"] = [](PlayerbotAI* ai) { return new CastImmolationTrapAction(ai); };
+                creators["frost trap"] = [](PlayerbotAI* ai) { return new CastFrostTrapAction(ai); };
+                creators["explosive trap"] = [](PlayerbotAI* ai) { return new CastExplosiveTrapAction(ai); };
+                creators["freezing trap"] = [](PlayerbotAI* ai) { return new CastFreezingTrapAction(ai); };
+                creators["immolation trap on target"] = [](PlayerbotAI* ai) { return new CastImmolationTrapOnTargetAction(ai); };
+                creators["frost trap on target"] = [](PlayerbotAI* ai) { return new CastFrostTrapOnTargetAction(ai); };
+                creators["explosive trap on target"] = [](PlayerbotAI* ai) { return new CastExplosiveTrapOnTargetAction(ai); };
+                creators["freezing trap on target"] = [](PlayerbotAI* ai) { return new CastFreezingTrapOnTargetAction(ai); };
+                creators["freezing trap on cc"] = [](PlayerbotAI* ai) { return new CastFreezingTrapOnCcAction(ai); };
+                creators["immolation trap in place"] = [](PlayerbotAI* ai) { return new CastImmolationTrapInPlaceAction(ai); };
+                creators["frost trap in place"] = [](PlayerbotAI* ai) { return new CastFrostTrapInPlaceAction(ai); };
+                creators["explosive trap in place"] = [](PlayerbotAI* ai) { return new CastExplosiveTrapInPlaceAction(ai); };
+                creators["freezing trap in place"] = [](PlayerbotAI* ai) { return new CastFreezingTrapInPlaceAction(ai); };
+                creators["dismiss pet"] = [](PlayerbotAI* ai) { return new CastDismissPetAction(ai); };
+                creators["update pve strats"] = [](PlayerbotAI* ai) { return new UpdateHunterPveStrategiesAction(ai); };
+                creators["update pvp strats"] = [](PlayerbotAI* ai) { return new UpdateHunterPvpStrategiesAction(ai); };
+                creators["update raid strats"] = [](PlayerbotAI* ai) { return new UpdateHunterRaidStrategiesAction(ai); };
+            }
+        };
+    };
 };
 
-class HunterBuffStrategyFactoryInternal : public NamedObjectContext<Strategy>
+HunterAiObjectContext::HunterAiObjectContext(PlayerbotAI* ai) : AiObjectContext(ai)
 {
-public:
-    HunterBuffStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
-    {
-        creators["bspeed"] = &HunterBuffStrategyFactoryInternal::bspeed;
-        creators["bdps"] = &HunterBuffStrategyFactoryInternal::bdps;
-        creators["rnature"] = &HunterBuffStrategyFactoryInternal::rnature;
-    }
-
-private:
-    static Strategy* bspeed(PlayerbotAI* botAI) { return new HunterBuffSpeedStrategy(botAI); }
-    static Strategy* bdps(PlayerbotAI* botAI) { return new HunterBuffDpsStrategy(botAI); }
-    static Strategy* rnature(PlayerbotAI* botAI) { return new HunterNatureResistanceStrategy(botAI); }
-};
-
-class HunterTriggerFactoryInternal : public NamedObjectContext<Trigger>
-{
-public:
-    HunterTriggerFactoryInternal()
-    {
-        creators["black arrow"] = &HunterTriggerFactoryInternal::black_arrow;
-        creators["no stings"] = &HunterTriggerFactoryInternal::NoStings;
-        creators["hunters pet dead"] = &HunterTriggerFactoryInternal::hunters_pet_dead;
-        creators["hunters pet low health"] = &HunterTriggerFactoryInternal::hunters_pet_low_health;
-        creators["hunters pet medium health"] = &HunterTriggerFactoryInternal::hunters_pet_medium_health;
-        creators["hunter's mark"] = &HunterTriggerFactoryInternal::hunters_mark;
-        creators["freezing trap"] = &HunterTriggerFactoryInternal::freezing_trap;
-        creators["rapid fire"] = &HunterTriggerFactoryInternal::rapid_fire;
-        creators["aspect of the pack"] = &HunterTriggerFactoryInternal::aspect_of_the_pack;
-        creators["aspect of the dragonhawk"] = &HunterTriggerFactoryInternal::aspect_of_the_dragonhawk;
-        creators["aspect of the wild"] = &HunterTriggerFactoryInternal::aspect_of_the_wild;
-        creators["aspect of the viper"] = &HunterTriggerFactoryInternal::aspect_of_the_viper;
-        creators["trueshot aura"] = &HunterTriggerFactoryInternal::trueshot_aura;
-        creators["no track"] = &HunterTriggerFactoryInternal::no_track;
-        creators["serpent sting on attacker"] = &HunterTriggerFactoryInternal::serpent_sting_on_attacker;
-        creators["pet not happy"] = &HunterTriggerFactoryInternal::pet_not_happy;
-        creators["concussive shot on snare target"] = &HunterTriggerFactoryInternal::concussive_shot_on_snare_target;
-        creators["scare beast"] = &HunterTriggerFactoryInternal::scare_beast;
-        creators["low ammo"] = &HunterTriggerFactoryInternal::low_ammo;
-        creators["no ammo"] = &HunterTriggerFactoryInternal::no_ammo;
-        creators["has ammo"] = &HunterTriggerFactoryInternal::has_ammo;
-        creators["switch to melee"] = &HunterTriggerFactoryInternal::switch_to_melee;
-        creators["switch to ranged"] = &HunterTriggerFactoryInternal::switch_to_ranged;
-        creators["misdirection on main tank"] = &HunterTriggerFactoryInternal::misdirection_on_main_tank;
-        creators["tranquilizing shot enrage"] = &HunterTriggerFactoryInternal::remove_enrage;
-        creators["tranquilizing shot magic"] = &HunterTriggerFactoryInternal::remove_magic;
-        creators["immolation trap no cd"] = &HunterTriggerFactoryInternal::immolation_trap_no_cd;
-        creators["kill command"] = &HunterTriggerFactoryInternal::kill_command;
-        creators["explosive shot"] = &HunterTriggerFactoryInternal::explosive_shot;
-        creators["lock and load"] = &HunterTriggerFactoryInternal::lock_and_load;
-        creators["silencing shot"] = &HunterTriggerFactoryInternal::silencing_shot;
-        creators["intimidation"] = &HunterTriggerFactoryInternal::intimidation;
-        creators["volley channel check"] = &HunterTriggerFactoryInternal::volley_channel_check;
-    }
-
-private:
-    static Trigger* auto_shot(PlayerbotAI* botAI) { return new AutoShotTrigger(botAI); }
-    static Trigger* scare_beast(PlayerbotAI* botAI) { return new ScareBeastTrigger(botAI); }
-    static Trigger* concussive_shot_on_snare_target(PlayerbotAI* botAI) {
-        return new ConcussiveShotOnSnareTargetTrigger(botAI); }
-    static Trigger* pet_not_happy(PlayerbotAI* botAI) { return new HunterPetNotHappy(botAI); }
-    static Trigger* serpent_sting_on_attacker(PlayerbotAI* botAI) { return new SerpentStingOnAttackerTrigger(botAI); }
-    static Trigger* trueshot_aura(PlayerbotAI* botAI) { return new TrueshotAuraTrigger(botAI); }
-    static Trigger* no_track(PlayerbotAI* botAI) { return new NoTrackTrigger(botAI); }
-    static Trigger* aspect_of_the_viper(PlayerbotAI* botAI) { return new HunterAspectOfTheViperTrigger(botAI); }
-    static Trigger* black_arrow(PlayerbotAI* botAI) { return new BlackArrowTrigger(botAI); }
-    static Trigger* NoStings(PlayerbotAI* botAI) { return new HunterNoStingsActiveTrigger(botAI); }
-    static Trigger* hunters_pet_dead(PlayerbotAI* botAI) { return new HuntersPetDeadTrigger(botAI); }
-    static Trigger* hunters_pet_low_health(PlayerbotAI* botAI) { return new HuntersPetLowHealthTrigger(botAI); }
-    static Trigger* hunters_pet_medium_health(PlayerbotAI* botAI) { return new HuntersPetMediumHealthTrigger(botAI); }
-    static Trigger* hunters_mark(PlayerbotAI* botAI) { return new HuntersMarkTrigger(botAI); }
-    static Trigger* freezing_trap(PlayerbotAI* botAI) { return new FreezingTrapTrigger(botAI); }
-    static Trigger* aspect_of_the_pack(PlayerbotAI* botAI) { return new HunterAspectOfThePackTrigger(botAI); }
-    static Trigger* rapid_fire(PlayerbotAI* botAI) { return new RapidFireTrigger(botAI); }
-    static Trigger* aspect_of_the_dragonhawk(PlayerbotAI* botAI) { return new HunterAspectOfTheDragonhawkTrigger(botAI); }
-    static Trigger* aspect_of_the_wild(PlayerbotAI* botAI) { return new HunterAspectOfTheWildTrigger(botAI); }
-    static Trigger* low_ammo(PlayerbotAI* botAI) { return new HunterLowAmmoTrigger(botAI); }
-    static Trigger* no_ammo(PlayerbotAI* botAI) { return new HunterNoAmmoTrigger(botAI); }
-    static Trigger* has_ammo(PlayerbotAI* botAI) { return new HunterHasAmmoTrigger(botAI); }
-    static Trigger* switch_to_melee(PlayerbotAI* botAI) { return new SwitchToMeleeTrigger(botAI); }
-    static Trigger* switch_to_ranged(PlayerbotAI* botAI) { return new SwitchToRangedTrigger(botAI); }
-    static Trigger* misdirection_on_main_tank(PlayerbotAI* botAI) { return new MisdirectionOnMainTankTrigger(botAI); }
-    static Trigger* remove_enrage(PlayerbotAI* botAI) { return new TargetRemoveEnrageTrigger(botAI); }
-    static Trigger* remove_magic(PlayerbotAI* botAI) { return new TargetRemoveMagicTrigger(botAI); }
-    static Trigger* immolation_trap_no_cd(PlayerbotAI* botAI) { return new ImmolationTrapNoCdTrigger(botAI); }
-    static Trigger* kill_command(PlayerbotAI* botAI) { return new KillCommandTrigger(botAI); }
-    static Trigger* explosive_shot(PlayerbotAI* botAI) { return new ExplosiveShotTrigger(botAI); }
-    static Trigger* lock_and_load(PlayerbotAI* botAI) { return new LockAndLoadTrigger(botAI); }
-    static Trigger* silencing_shot(PlayerbotAI* botAI) { return new SilencingShotTrigger(botAI); }
-    static Trigger* intimidation(PlayerbotAI* botAI) { return new IntimidationTrigger(botAI); }
-    static Trigger* volley_channel_check(PlayerbotAI* botAI) { return new VolleyChannelCheckTrigger(botAI); }
-};
-
-class HunterAiObjectContextInternal : public NamedObjectContext<Action>
-{
-public:
-    HunterAiObjectContextInternal()
-    {
-        creators["auto shot"] = &HunterAiObjectContextInternal::auto_shot;
-        creators["aimed shot"] = &HunterAiObjectContextInternal::aimed_shot;
-        creators["chimera shot"] = &HunterAiObjectContextInternal::chimera_shot;
-        creators["arcane shot"] = &HunterAiObjectContextInternal::arcane_shot;
-        creators["concussive shot"] = &HunterAiObjectContextInternal::concussive_shot;
-        creators["distracting shot"] = &HunterAiObjectContextInternal::distracting_shot;
-        creators["multi-shot"] = &HunterAiObjectContextInternal::multi_shot;
-        creators["volley"] = &HunterAiObjectContextInternal::volley;
-        creators["serpent sting"] = &HunterAiObjectContextInternal::serpent_sting;
-        creators["serpent sting on attacker"] = &HunterAiObjectContextInternal::serpent_sting_on_attacker;
-        creators["wyvern sting"] = &HunterAiObjectContextInternal::wyvern_sting;
-        creators["viper sting"] = &HunterAiObjectContextInternal::viper_sting;
-        creators["scorpid sting"] = &HunterAiObjectContextInternal::scorpid_sting;
-        creators["hunter's mark"] = &HunterAiObjectContextInternal::hunters_mark;
-        creators["mend pet"] = &HunterAiObjectContextInternal::mend_pet;
-        creators["kill command"] = &HunterAiObjectContextInternal::kill_command;
-        creators["revive pet"] = &HunterAiObjectContextInternal::revive_pet;
-        creators["call pet"] = &HunterAiObjectContextInternal::call_pet;
-        creators["black arrow"] = &HunterAiObjectContextInternal::black_arrow;
-        creators["freezing trap"] = &HunterAiObjectContextInternal::freezing_trap;
-        creators["rapid fire"] = &HunterAiObjectContextInternal::rapid_fire;
-        creators["boost"] = &HunterAiObjectContextInternal::rapid_fire;
-        creators["deterrence"] = &HunterAiObjectContextInternal::deterrence;
-        creators["readiness"] = &HunterAiObjectContextInternal::readiness;
-        creators["aspect of the hawk"] = &HunterAiObjectContextInternal::aspect_of_the_hawk;
-        creators["aspect of the dragonhawk"] = &HunterAiObjectContextInternal::aspect_of_the_dragonhawk;
-        creators["aspect of the monkey"] = &HunterAiObjectContextInternal::aspect_of_the_monkey;
-        creators["aspect of the wild"] = &HunterAiObjectContextInternal::aspect_of_the_wild;
-        creators["aspect of the viper"] = &HunterAiObjectContextInternal::aspect_of_the_viper;
-        creators["aspect of the pack"] = &HunterAiObjectContextInternal::aspect_of_the_pack;
-        creators["aspect of the cheetah"] = &HunterAiObjectContextInternal::aspect_of_the_cheetah;
-        creators["trueshot aura"] = &HunterAiObjectContextInternal::trueshot_aura;
-        creators["track humanoids"] = &HunterAiObjectContextInternal::track_humanoids;
-        creators["feign death"] = &HunterAiObjectContextInternal::feign_death;
-        creators["wing clip"] = &HunterAiObjectContextInternal::wing_clip;
-        creators["raptor strike"] = &HunterAiObjectContextInternal::raptor_strike;
-        creators["mongoose bite"] = &HunterAiObjectContextInternal::mongoose_bite;
-        creators["feed pet"] = &HunterAiObjectContextInternal::feed_pet;
-        creators["bestial wrath"] = &HunterAiObjectContextInternal::bestial_wrath;
-        creators["scare beast"] = &HunterAiObjectContextInternal::scare_beast;
-        creators["scare beast on cc"] = &HunterAiObjectContextInternal::scare_beast_on_cc;
-        creators["tranquilizing shot"] = &HunterAiObjectContextInternal::tranquilizing_shot;
-        creators["steady shot"] = &HunterAiObjectContextInternal::steady_shot;
-        creators["kill shot"] = &HunterAiObjectContextInternal::kill_shot;
-        creators["misdirection on main tank"] = &HunterAiObjectContextInternal::misdirection_on_main_tank;
-        creators["silencing shot"] = &HunterAiObjectContextInternal::silencing_shot;
-        creators["disengage"] = &HunterAiObjectContextInternal::disengage;
-        creators["immolation trap"] = &HunterAiObjectContextInternal::immolation_trap;
-        creators["explosive trap"] = &HunterAiObjectContextInternal::explosive_trap;
-        creators["explosive shot base"] = &HunterAiObjectContextInternal::explosive_shot_base;
-        creators["explosive shot rank 4"] = &HunterAiObjectContextInternal::explosive_shot_rank_4;
-        creators["explosive shot rank 3"] = &HunterAiObjectContextInternal::explosive_shot_rank_3;
-        creators["explosive shot rank 2"] = &HunterAiObjectContextInternal::explosive_shot_rank_2;
-        creators["explosive shot rank 1"] = &HunterAiObjectContextInternal::explosive_shot_rank_1;
-        creators["intimidation"] = &HunterAiObjectContextInternal::intimidation;
-    }
-
-private:
-    static Action* scare_beast(PlayerbotAI* botAI) { return new CastScareBeastAction(botAI); }
-    static Action* scare_beast_on_cc(PlayerbotAI* botAI) { return new CastScareBeastCcAction(botAI); }
-    static Action* bestial_wrath(PlayerbotAI* botAI) { return new CastBestialWrathAction(botAI); }
-    static Action* feed_pet(PlayerbotAI* botAI) { return new FeedPetAction(botAI); }
-    static Action* feign_death(PlayerbotAI* botAI) { return new CastFeignDeathAction(botAI); }
-    static Action* trueshot_aura(PlayerbotAI* botAI) { return new CastTrueshotAuraAction(botAI); }
-    static Action* track_humanoids(PlayerbotAI* botAI) { return new CastBuffSpellAction(botAI, "track humanoids"); }
-    static Action* auto_shot(PlayerbotAI* botAI) { return new CastAutoShotAction(botAI); }
-    static Action* aimed_shot(PlayerbotAI* botAI) { return new CastAimedShotAction(botAI); }
-    static Action* chimera_shot(PlayerbotAI* botAI) { return new CastChimeraShotAction(botAI); }
-    static Action* arcane_shot(PlayerbotAI* botAI) { return new CastArcaneShotAction(botAI); }
-    static Action* concussive_shot(PlayerbotAI* botAI) { return new CastConcussiveShotAction(botAI); }
-    static Action* distracting_shot(PlayerbotAI* botAI) { return new CastDistractingShotAction(botAI); }
-    static Action* multi_shot(PlayerbotAI* botAI) { return new CastMultiShotAction(botAI); }
-    static Action* volley(PlayerbotAI* botAI) { return new CastVolleyAction(botAI); }
-    static Action* serpent_sting(PlayerbotAI* botAI) { return new CastSerpentStingAction(botAI); }
-    static Action* serpent_sting_on_attacker(PlayerbotAI* botAI) { return new CastSerpentStingOnAttackerAction(botAI); }
-    static Action* wyvern_sting(PlayerbotAI* botAI) { return new CastWyvernStingAction(botAI); }
-    static Action* viper_sting(PlayerbotAI* botAI) { return new CastViperStingAction(botAI); }
-    static Action* scorpid_sting(PlayerbotAI* botAI) { return new CastScorpidStingAction(botAI); }
-    static Action* hunters_mark(PlayerbotAI* botAI) { return new CastHuntersMarkAction(botAI); }
-    static Action* mend_pet(PlayerbotAI* botAI) { return new CastMendPetAction(botAI); }
-    static Action* kill_command(PlayerbotAI* botAI) { return new CastKillCommandAction(botAI); }
-    static Action* revive_pet(PlayerbotAI* botAI) { return new CastRevivePetAction(botAI); }
-    static Action* call_pet(PlayerbotAI* botAI) { return new CastCallPetAction(botAI); }
-    static Action* black_arrow(PlayerbotAI* botAI) { return new CastBlackArrowAction(botAI); }
-    static Action* freezing_trap(PlayerbotAI* botAI) { return new CastFreezingTrap(botAI); }
-    static Action* rapid_fire(PlayerbotAI* botAI) { return new CastRapidFireAction(botAI); }
-    static Action* deterrence(PlayerbotAI* botAI) { return new CastDeterrenceAction(botAI); }
-    static Action* readiness(PlayerbotAI* botAI) { return new CastReadinessAction(botAI); }
-    static Action* aspect_of_the_hawk(PlayerbotAI* botAI) { return new CastAspectOfTheHawkAction(botAI); }
-    static Action* aspect_of_the_dragonhawk(PlayerbotAI* botAI) { return new CastAspectOfTheDragonhawkAction(botAI); }
-    static Action* aspect_of_the_monkey(PlayerbotAI* botAI) { return new CastAspectOfTheMonkeyAction(botAI); }
-    static Action* aspect_of_the_wild(PlayerbotAI* botAI) { return new CastAspectOfTheWildAction(botAI); }
-    static Action* aspect_of_the_viper(PlayerbotAI* botAI) { return new CastAspectOfTheViperAction(botAI); }
-    static Action* aspect_of_the_pack(PlayerbotAI* botAI) { return new CastAspectOfThePackAction(botAI); }
-    static Action* aspect_of_the_cheetah(PlayerbotAI* botAI) { return new CastAspectOfTheCheetahAction(botAI); }
-    static Action* wing_clip(PlayerbotAI* botAI) { return new CastWingClipAction(botAI); }
-    static Action* raptor_strike(PlayerbotAI* botAI) { return new CastRaptorStrikeAction(botAI); }
-    static Action* mongoose_bite(PlayerbotAI* botAI) { return new CastMongooseBiteAction(botAI); }
-    static Action* tranquilizing_shot(PlayerbotAI* botAI) { return new CastTranquilizingShotAction(botAI); }
-    static Action* steady_shot(PlayerbotAI* botAI) { return new CastSteadyShotAction(botAI); }
-    static Action* kill_shot(PlayerbotAI* botAI) { return new CastKillShotAction(botAI); }
-    static Action* misdirection_on_main_tank(PlayerbotAI* botAI) { return new CastMisdirectionOnMainTankAction(botAI); }
-    static Action* silencing_shot(PlayerbotAI* botAI) { return new CastSilencingShotAction(botAI); }
-    static Action* disengage(PlayerbotAI* botAI) { return new CastDisengageAction(botAI); }
-    static Action* immolation_trap(PlayerbotAI* botAI) { return new CastImmolationTrapAction(botAI); }
-    static Action* explosive_trap(PlayerbotAI* botAI) { return new CastExplosiveTrapAction(botAI); }
-    static Action* explosive_shot_base(PlayerbotAI* botAI) { return new CastExplosiveShotBaseAction(botAI); }
-    static Action* explosive_shot_rank_4(PlayerbotAI* botAI) { return new CastExplosiveShotRank4Action(botAI); }
-    static Action* explosive_shot_rank_3(PlayerbotAI* botAI) { return new CastExplosiveShotRank3Action(botAI); }
-    static Action* explosive_shot_rank_2(PlayerbotAI* botAI) { return new CastExplosiveShotRank2Action(botAI); }
-    static Action* explosive_shot_rank_1(PlayerbotAI* botAI) { return new CastExplosiveShotRank1Action(botAI); }
-    static Action* intimidation(PlayerbotAI* botAI) { return new CastIntimidationAction(botAI); }
-};
-
-SharedNamedObjectContextList<Strategy> HunterAiObjectContext::sharedStrategyContexts;
-SharedNamedObjectContextList<Action> HunterAiObjectContext::sharedActionContexts;
-SharedNamedObjectContextList<Trigger> HunterAiObjectContext::sharedTriggerContexts;
-SharedNamedObjectContextList<UntypedValue> HunterAiObjectContext::sharedValueContexts;
-
-HunterAiObjectContext::HunterAiObjectContext(PlayerbotAI* botAI)
-    : AiObjectContext(botAI, sharedStrategyContexts, sharedActionContexts, sharedTriggerContexts, sharedValueContexts)
-{
+    strategyContexts.Add(new ai::hunter::StrategyFactoryInternal());
+    strategyContexts.Add(new ai::hunter::AoeSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::hunter::ClassStrategyFactoryInternal());
+    strategyContexts.Add(new ai::hunter::ClassSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::hunter::BuffSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::hunter::BoostSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::hunter::CcSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::hunter::StingManualStrategyFactoryInternal());
+    strategyContexts.Add(new ai::hunter::StingSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::hunter::AspectManualStrategyFactoryInternal());
+    strategyContexts.Add(new ai::hunter::AspectSituationStrategyFactoryInternal());
+    actionContexts.Add(new ai::hunter::AiObjectContextInternal());
+    triggerContexts.Add(new ai::hunter::TriggerFactoryInternal());
 }
 
-void HunterAiObjectContext::BuildSharedContexts()
-{
-    BuildSharedStrategyContexts(sharedStrategyContexts);
-    BuildSharedActionContexts(sharedActionContexts);
-    BuildSharedTriggerContexts(sharedTriggerContexts);
-    BuildSharedValueContexts(sharedValueContexts);
-}
-
-void HunterAiObjectContext::BuildSharedStrategyContexts(SharedNamedObjectContextList<Strategy>& strategyContexts)
-{
-    AiObjectContext::BuildSharedStrategyContexts(strategyContexts);
-    strategyContexts.Add(new HunterStrategyFactoryInternal());
-    strategyContexts.Add(new HunterBuffStrategyFactoryInternal());
-}
-
-void HunterAiObjectContext::BuildSharedActionContexts(SharedNamedObjectContextList<Action>& actionContexts)
-{
-    AiObjectContext::BuildSharedActionContexts(actionContexts);
-    actionContexts.Add(new HunterAiObjectContextInternal());
-}
-
-void HunterAiObjectContext::BuildSharedTriggerContexts(SharedNamedObjectContextList<Trigger>& triggerContexts)
-{
-    AiObjectContext::BuildSharedTriggerContexts(triggerContexts);
-    triggerContexts.Add(new HunterTriggerFactoryInternal());
-}
-
-void HunterAiObjectContext::BuildSharedValueContexts(SharedNamedObjectContextList<UntypedValue>& valueContexts)
-{
-    AiObjectContext::BuildSharedValueContexts(valueContexts);
-}

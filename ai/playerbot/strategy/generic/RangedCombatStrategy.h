@@ -1,24 +1,16 @@
-// Forward-ported from mod-playerbots Base/Strategy/RangedCombatStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
-
-#ifndef PLAYERBOTS_RANGEDCOMBATSTRATEGY_H
-#define PLAYERBOTS_RANGEDCOMBATSTRATEGY_H
-
 #include "CombatStrategy.h"
+#pragma once
 
-class PlayerbotAI;
-
-class RangedCombatStrategy : public CombatStrategy
+namespace ai
 {
-public:
-    RangedCombatStrategy(PlayerbotAI* botAI) : CombatStrategy(botAI) {}
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    uint32 GetType() const override { return STRATEGY_TYPE_COMBAT | STRATEGY_TYPE_RANGED; }
-    std::string const getName() override { return "ranged"; }
-};
+    class RangedCombatStrategy : public CombatStrategy
+    {
+    public:
+        RangedCombatStrategy(PlayerbotAI* ai) : CombatStrategy(ai) {}
+        int GetType() override { return STRATEGY_TYPE_COMBAT | STRATEGY_TYPE_RANGED; }
+        std::string getName() override { return "ranged"; }
 
-#endif
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+    };
+}

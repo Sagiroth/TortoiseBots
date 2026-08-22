@@ -1,24 +1,22 @@
-// Forward-ported from mod-playerbots Base/Strategy/RTSCStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "playerbot/strategy/Strategy.h"
 
-#ifndef PLAYERBOTS_RTSCSTRATEGY_H
-#define PLAYERBOTS_RTSCSTRATEGY_H
-
-#include "Strategy.h"
-
-class PlayerbotAI;
-
-class RTSCStrategy : public Strategy
+namespace ai
 {
-public:
-    RTSCStrategy(PlayerbotAI* botAI);
+    class RTSCStrategy : public Strategy
+    {
+    public:
+        RTSCStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "rtsc"; }
+    };
 
-    std::string const getName() override { return "RTSC"; }
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-};
+    class RTSCSJumptrategy : public Strategy
+    {
+    public:
+        RTSCSJumptrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "rtsc jump"; }
 
-#endif
+    protected:
+        virtual void InitNonCombatTriggers(std::list<TriggerNode*> &triggers) override;
+    };
+}

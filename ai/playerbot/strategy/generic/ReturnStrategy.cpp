@@ -1,16 +1,14 @@
-// Forward-ported from mod-playerbots Base/Strategy/ReturnStrategy.cpp
-// Source: mod-playerbots@5397110, Shyalya@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
 
+#include "playerbot/playerbot.h"
 #include "ReturnStrategy.h"
-#include "Playerbots.h"
 
-void ReturnStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+using namespace ai;
+
+void ReturnStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
 {
-    triggers.push_back(new TriggerNode("return", { NextAction("set return position", 1.5f),
-                                                                   NextAction("return", 1.0f), }));
+    triggers.push_back(new TriggerNode(
+        "return",
+        NextAction::array(0, 
+            new NextAction("set return position", 1.5f),
+            new NextAction("return", 1.0f), NULL)));
 }

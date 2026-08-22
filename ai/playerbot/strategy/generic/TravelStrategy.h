@@ -1,50 +1,55 @@
-// Forward-ported from mod-playerbots Base/Strategy/TravelStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "playerbot/strategy/Strategy.h"
 
-#ifndef PLAYERBOTS_TRAVELSTRATEGY_H
-#define PLAYERBOTS_TRAVELSTRATEGY_H
-
-#include "Strategy.h"
-
-class PlayerbotAI;
-
-class TravelStrategy : public Strategy
+namespace ai
 {
-public:
-    TravelStrategy(PlayerbotAI* botAI);
+    class TravelActionMultiplier : public Multiplier
+    {
+    public:
+        TravelActionMultiplier(PlayerbotAI* ai) : Multiplier(ai, "travel action") {}
 
-    std::string const getName() override { return "travel"; }
+    public:
+        virtual float GetValue(Action* action) override;
+    };
 
-    std::vector<NextAction> getDefaultActions() override;
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-};
+    class TravelStrategy : public Strategy
+    {
+    public:
+        TravelStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "travel"; }
 
-class ExploreStrategy : public Strategy
-{
-public:
-    ExploreStrategy(PlayerbotAI* botAI) : Strategy(botAI){};
+    public:
+        void InitNonCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+        void InitNonCombatTriggers(std::list<TriggerNode*> &triggers) override;
+        NextAction** GetDefaultNonCombatActions() override;
+    };
 
-    std::string const getName() override { return "explore"; }
-};
+    class TravelOnceStrategy : public Strategy
+    {
+    public:
+        TravelOnceStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        std::string getName() override { return "travel once"; }
+    };
 
-class MapStrategy : public Strategy
-{
-public:
-    MapStrategy(PlayerbotAI* botAI) : Strategy(botAI){};
+    class ExploreStrategy : public Strategy
+    {
+    public:
+        ExploreStrategy(PlayerbotAI* ai) : Strategy(ai) {};
+        std::string getName() override { return "explore"; }
+    };
 
-    std::string const getName() override { return "map"; }
-};
+    class MapStrategy : public Strategy
+    {
+    public:
+        MapStrategy(PlayerbotAI* ai) : Strategy(ai) {};
+        std::string getName() override { return "map"; }
+    };
 
-class MapFullStrategy : public Strategy
-{
-public:
-    MapFullStrategy(PlayerbotAI* botAI) : Strategy(botAI){};
-
-    std::string const getName() override { return "map full"; }
-};
-
-#endif
+    class MapFullStrategy : public Strategy
+    {
+    public:
+        MapFullStrategy(PlayerbotAI* ai) : Strategy(ai) {};
+        std::string getName() override { return "map full"; }
+    };
+}

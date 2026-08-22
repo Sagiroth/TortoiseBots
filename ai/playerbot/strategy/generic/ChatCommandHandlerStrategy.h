@@ -1,24 +1,24 @@
-// Forward-ported from mod-playerbots Base/Strategy/ChatCommandHandlerStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "PassTroughStrategy.h"
 
-#ifndef PLAYERBOTS_CHATCOMMANDHANDLERSTRATEGY_H
-#define PLAYERBOTS_CHATCOMMANDHANDLERSTRATEGY_H
-
-#include "PassThroughStrategy.h"
-
-class PlayerbotAI;
-
-class ChatCommandHandlerStrategy : public PassThroughStrategy
+namespace ai
 {
-public:
-    ChatCommandHandlerStrategy(PlayerbotAI* botAI);
+    class ChatCommandHandlerStrategy : public PassTroughStrategy
+    {
+    public:
+        ChatCommandHandlerStrategy(PlayerbotAI* ai);
+        std::string getName() override { return "chat"; }
 
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "chat"; }
-};
-
+#ifdef GenerateBotHelp
+        virtual std::string GetHelpName() { return "chat"; } //Must equal internal name
+        virtual std::string GetHelpDescription() 
+        {
+            return "This strategy will make bots respond to various chat commands.";
+        }
+        virtual std::vector<std::string> GetRelatedStrategies() { return { }; }
 #endif
+
+    private:
+        void InitReactionTriggers(std::list<TriggerNode*> &triggers) override;
+    };
+}

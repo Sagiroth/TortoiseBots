@@ -1,41 +1,43 @@
-// Forward-ported from mod-playerbots Base/Strategy/StayStrategy.cpp
-// Source: mod-playerbots@5397110, Shyalya@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
 
+#include "playerbot/playerbot.h"
+#include "playerbot/strategy/values/PositionValue.h"
 #include "StayStrategy.h"
-#include "Playerbots.h"
 
-void StayStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+using namespace ai;
+
+NextAction** StayStrategy::GetDefaultNonCombatActions()
 {
-    triggers.push_back(
-        new TriggerNode(
-            "return to stay position",
-            {
-                NextAction("return to stay position", ACTION_MOVE)
-            }
-        )
-    );
+    return NextAction::array(0, new NextAction("stay", 1.0f), NULL);
 }
 
-std::vector<NextAction> StayStrategy::getDefaultActions()
+ai::NextAction** StayStrategy::GetDefaultCombatActions()
 {
-    return {
-        NextAction("stay", 1.0f)
-    };
+    return GetDefaultNonCombatActions();
 }
 
-void SitStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+void StayStrategy::OnStrategyAdded(BotState state)
 {
-    triggers.push_back(
-        new TriggerNode(
-            "sit",
-            {
-                NextAction("sit", 1.5f)
-            }
-        )
-    );
+    if (state == ai->GetState() && ai->GetBot()->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE)
+    {
+        ai->StopMoving();
+    }
+}
+
+void StayStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "return to stay position",
+        NextAction::array(0, new NextAction("return to stay position", 1.5f), NULL)));
+}
+
+void StayStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    InitNonCombatTriggers(triggers);
+}
+
+void SitStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "sit",
+        NextAction::array(0, new NextAction("sit", 1.5f), NULL)));
 }

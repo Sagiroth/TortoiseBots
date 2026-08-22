@@ -1,66 +1,109 @@
-// Forward-ported from mod-playerbots Base/Strategy/NonCombatStrategy.cpp
-// Source: mod-playerbots@5397110, Shyalya@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
 
+#include "playerbot/playerbot.h"
 #include "NonCombatStrategy.h"
+#include "playerbot/strategy/Value.h"
 
-void NonCombatStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+using namespace ai;
+
+void NonCombatStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-    triggers.push_back(new TriggerNode("random", { NextAction("clean quest log", 1.0f) }));
-    triggers.push_back(new TriggerNode("timer", { NextAction("check mount state", 1.0f) }));
+    triggers.push_back(new TriggerNode(
+        "very often",
+        NextAction::array(0, new NextAction("check mount state", 1.0f), new NextAction("check values", 1.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "near dark portal",
+        NextAction::array(0, new NextAction("move to dark portal", 1.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "at dark portal azeroth",
+        NextAction::array(0, new NextAction("use dark portal azeroth", 1.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "at dark portal outland",
+        NextAction::array(0, new NextAction("move from dark portal", 1.0f), NULL)));
+
+    /*
+    triggers.push_back(new TriggerNode(
+        "vehicle near",
+        NextAction::array(0, new NextAction("enter vehicle", 10.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "very often",
+        NextAction::array(0, new NextAction("use lightwell", 80.0f), NULL)));
+    */
 }
 
-void CollisionStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+void CollisionStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
 {
-    triggers.push_back(
-        new TriggerNode("collision", { NextAction("move out of collision", 2.0f) }));
+    triggers.push_back(new TriggerNode(
+        "collision",
+        NextAction::array(0, new NextAction("move out of collision", 2.0f), NULL)));
 }
 
-void MountStrategy::InitTriggers(std::vector<TriggerNode*>& /*triggers*/)
+void MountStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
 {
+    /*triggers.push_back(new TriggerNode(
+        "no possible targets",
+        NextAction::array(0, new NextAction("mount", 1.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "no rpg target",
+        NextAction::array(0, new NextAction("mount", 1.0f), NULL)));*/
+
+    /*triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("mount", 4.0f), NULL)));*/
 }
 
-void WorldBuffStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+void WorldBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-    triggers.push_back(
-        new TriggerNode(
-            "need world buff",
-            {
-                NextAction("world buff", 1.0f)
-            }
-        )
-    );
+    triggers.push_back(new TriggerNode(
+        "need world buff",
+        NextAction::array(0, new NextAction("world buff", 1.0f), NULL)));
 }
 
-void MasterFishingStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+void WorldBuffStrategy::OnStrategyRemoved(BotState state)
 {
-    triggers.push_back(
-        new TriggerNode(
-            "very often",
+    // Remove world buffs
+    Player* bot = ai->GetBot();
+    if (bot)
+    {
+        for (auto& wb : sPlayerbotAIConfig.worldBuffs)
+        {
+            if (bot->HasAura(wb.spellId))
             {
-                NextAction("move near water" , 10.0f)
+                bot->RemoveAurasDueToSpell(wb.spellId);
             }
-        )
-    );
-    triggers.push_back(
-        new TriggerNode(
-            "very often",
-            {
-                NextAction("go fishing" , 10.0f)
-            }
-        )
-    );
-    triggers.push_back(
-        new TriggerNode(
-            "random",
-            {
-                NextAction("end master fishing", 12.0f),
-                NextAction("equip upgrades packet action", 6.0f)
-            }
-        )
-    );
+        }
+    }
+}
+
+void NoWarStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "at war",
+        NextAction::array(0, new NextAction("faction", 1.0f), NULL)));
+}
+
+void GlyphStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "apply glyphs",
+        NextAction::array(0, new NextAction("auto set glyph", 1.0f), NULL)));
+}
+
+void FishStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "val::can fish",
+        NextAction::array(0, new NextAction("move to fish" + modifier, 5.0f), new NextAction("fish" + modifier, 10.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "val::can open fishing dobber",
+        NextAction::array(0, new NextAction("use fishing bobber", 99.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "val::done fishing",
+        NextAction::array(0, new NextAction("equip upgrades", 6.0f), NULL)));
 }

@@ -1,24 +1,16 @@
-// Forward-ported from mod-playerbots Base/Strategy/UsePotionsStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "playerbot/strategy/Strategy.h"
 
-#ifndef PLAYERBOTS_USEPOTIONSSTRATEGY_H
-#define PLAYERBOTS_USEPOTIONSSTRATEGY_H
-
-#include "Strategy.h"
-
-class PlayerbotAI;
-
-class UsePotionsStrategy : public Strategy
+namespace ai
 {
-public:
-    UsePotionsStrategy(PlayerbotAI* botAI);
+    class UsePotionsStrategy : public Strategy
+    {
+    public:
+        UsePotionsStrategy(PlayerbotAI* ai);
+        std::string getName() override { return "potions"; }
 
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "potions"; }
-};
-
-#endif
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*> &triggers) override;
+        void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;
+    };
+}

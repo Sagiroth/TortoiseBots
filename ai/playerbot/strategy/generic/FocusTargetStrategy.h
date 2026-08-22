@@ -1,22 +1,35 @@
-// Forward-ported from mod-playerbots Base/Strategy/FocusTargetStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "playerbot/strategy/Strategy.h"
 
-#ifndef PLAYERBOTS_FOCUSTARGETSTRATEGY_H
-#define PLAYERBOTS_FOCUSTARGETSTRATEGY_H
-
-#include "Strategy.h"
-
-class PlayerbotAI;
-
-class FocusHealTargetsStrategy : public Strategy
+namespace ai
 {
-public:
-    FocusHealTargetsStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
-    std::string const getName() override { return "focus heal targets"; }
-};
+    class FocusHealTargetsStrategy : public Strategy
+    {
+    public:
+        FocusHealTargetsStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "focus heal targets"; }
 
+#ifdef GenerateBotHelp
+        virtual std::string GetHelpName() { return "focus heal targets"; } //Must equal iternal name
+        virtual std::string GetHelpDescription()
+        {
+            return "This strategy will make the bot focus heal the specified target using the 'set focus heal <targetname>' command";
+        }
 #endif
+    };
+
+    class FocusRtiTargetsStrategy : public Strategy
+    {
+    public:
+        FocusRtiTargetsStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "focus rti targets"; }
+
+#ifdef GenerateBotHelp
+        virtual std::string GetHelpName() { return "focus rti targets"; } //Must equal iternal name
+        virtual std::string GetHelpDescription()
+        {
+            return "This strategy will make the bot ignore all targets except it's current rti target.";
+        }
+#endif
+    };    
+}

@@ -1,39 +1,62 @@
-// Forward-ported from mod-playerbots Base/Strategy/LootNonCombatStrategy.cpp
-// Source: mod-playerbots@5397110, Shyalya@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
 
+#include "playerbot/playerbot.h"
 #include "LootNonCombatStrategy.h"
-#include "Playerbots.h"
 
-void LootNonCombatStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+using namespace ai;
+
+void LootNonCombatStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
 {
-    triggers.push_back(new TriggerNode("loot available", { NextAction("loot", 6.0f) }));
-    triggers.push_back(
-        new TriggerNode("far from loot target", { NextAction("move to loot", 7.0f) }));
-    triggers.push_back(new TriggerNode("can loot", { NextAction("open loot", 8.0f) }));
-    triggers.push_back(new TriggerNode("often", { NextAction("add all loot", 5.0f) }));
+    triggers.push_back(new TriggerNode(
+        "loot available",
+        NextAction::array(0, new NextAction("loot", 6.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "far from loot target",
+        NextAction::array(0, new NextAction("move to loot", 7.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "can loot",
+        NextAction::array(0, new NextAction("open loot", 8.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("add all loot", 1.0f), NULL)));
 }
 
-void GatherStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+void GatherStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
 {
-    triggers.push_back(
-        new TriggerNode("timer", { NextAction("add gathering loot", 5.0f) }));
+    triggers.push_back(new TriggerNode(
+        "timer",
+        NextAction::array(0, new NextAction("add gathering loot", 2.0f), NULL)));
 }
 
-void RevealStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+void RevealStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
 {
-    triggers.push_back(
-        new TriggerNode("often", { NextAction("reveal gathering item", 50.0f) }));
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("reveal gathering item", 50.0f), NULL)));
 }
 
-void UseBobberStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+void RollStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-     triggers.push_back(
-        new TriggerNode("can use fishing bobber", { NextAction("use fishing bobber", 20.0f) }));
-    triggers.push_back(
-        new TriggerNode("random", { NextAction("remove bobber strategy", 20.0f) }));
+    triggers.push_back(new TriggerNode(
+        "very often",
+        NextAction::array(0, new NextAction("auto loot roll", 100.0f), NULL)));
+}
+
+void RollStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    RollStrategy::InitNonCombatTriggers(triggers);
+}
+
+void DelayedRollStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "loot roll",
+        NextAction::array(0, new NextAction("loot roll", 100.0f), NULL)));
+}
+
+void DelayedRollStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    DelayedRollStrategy::InitNonCombatTriggers(triggers);
 }

@@ -1,41 +1,36 @@
-// Forward-ported from mod-playerbots Base/Strategy/QuestStrategies.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "PassTroughStrategy.h"
 
-#ifndef PLAYERBOTS_QUESTSTRATEGIES_H
-#define PLAYERBOTS_QUESTSTRATEGIES_H
-
-#include "PassThroughStrategy.h"
-
-class PlayerbotAI;
-
-class QuestStrategy : public PassThroughStrategy
+namespace ai
 {
-public:
-    QuestStrategy(PlayerbotAI* botAI);
+    class QuestStrategy : public PassTroughStrategy
+    {
+    public:
+        QuestStrategy(PlayerbotAI* ai);
 
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-};
+    protected:
+        virtual void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        virtual void InitCombatTriggers(std::list<TriggerNode*>& triggers) override {};
+        virtual void InitDeadTriggers(std::list<TriggerNode*>& triggers) override {}
+    };
 
-class DefaultQuestStrategy : public QuestStrategy
-{
-public:
-    DefaultQuestStrategy(PlayerbotAI* botAI);
+    class DefaultQuestStrategy : public QuestStrategy
+    {
+    public:
+        DefaultQuestStrategy(PlayerbotAI* ai) : QuestStrategy(ai) {}
+        std::string getName() override { return "quest"; }
 
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "quest"; }
-};
+    private:
+        void InitNonCombatTriggers(std::list<TriggerNode*> &triggers) override;
+    };
 
-class AcceptAllQuestsStrategy : public QuestStrategy
-{
-public:
-    AcceptAllQuestsStrategy(PlayerbotAI* botAI);
+    class AcceptAllQuestsStrategy : public QuestStrategy
+    {
+    public:
+        AcceptAllQuestsStrategy(PlayerbotAI* ai) : QuestStrategy(ai) {}
+        std::string getName() override { return "accept all quests"; }
 
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "accept all quests"; }
-};
-
-#endif
+    private:
+        void InitNonCombatTriggers(std::list<TriggerNode*> &triggers) override;
+    };
+}

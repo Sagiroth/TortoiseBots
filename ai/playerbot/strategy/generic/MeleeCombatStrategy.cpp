@@ -1,26 +1,40 @@
-// Forward-ported from mod-playerbots Base/Strategy/MeleeCombatStrategy.cpp
-// Source: mod-playerbots@5397110, Shyalya@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
 
+#include "playerbot/playerbot.h"
 #include "MeleeCombatStrategy.h"
-#include "Playerbots.h"
 
-void MeleeCombatStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+using namespace ai;
+
+void MeleeCombatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 {
-    CombatStrategy::InitTriggers(triggers);
+    triggers.push_back(new TriggerNode(
+        "enemy out of melee",
+        NextAction::array(0, new NextAction("reach melee", ACTION_MOVE), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "enemy out of melee", { NextAction("reach melee", ACTION_HIGH + 1) }));
+        "enemy too close for melee",
+        NextAction::array(0, new NextAction("move out of enemy contact", static_cast<float>(ACTION_NORMAL) + 8.0f), NULL)));
 }
 
-void SetBehindCombatStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+void SetBehindCombatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 {
-    CombatStrategy::InitTriggers(triggers);
+    triggers.push_back(new TriggerNode(
+        "not behind target",
+        NextAction::array(0, new NextAction("set behind", ACTION_HIGH), NULL)));
+}
 
-    triggers.push_back(new TriggerNode("not behind target",
-                                       { NextAction("set behind", ACTION_MOVE + 7) }));
+void ChaseJumpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "very often",
+        NextAction::array(0, new NextAction("jump::chase", static_cast<float>(ACTION_MOVE) + 9.0f), NULL)));
+}
+
+void ChaseJumpStrategy::InitCombatTriggers(std::list<TriggerNode *> &triggers)
+{
+    InitNonCombatTriggers(triggers);
+}
+
+void ChaseJumpStrategy::InitReactionTriggers(std::list<TriggerNode *> &triggers)
+{
+    InitNonCombatTriggers(triggers);
 }

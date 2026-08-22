@@ -1,24 +1,15 @@
-// Forward-ported from mod-playerbots Base/Strategy/MarkRtiStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "playerbot/strategy/Strategy.h"
 
-#ifndef PLAYERBOTS_MARKRTISTRATEGY_H
-#define PLAYERBOTS_MARKRTISTRATEGY_H
-
-#include "Strategy.h"
-
-class PlayerbotAI;
-
-class MarkRtiStrategy : public Strategy
+namespace ai
 {
-public:
-    MarkRtiStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
+    class MarkRtiStrategy : public Strategy
+    {
+    public:
+        MarkRtiStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "mark rti"; }
 
-    std::string const getName() override { return "mark rti"; }
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-};
-
-#endif
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*> &triggers) override;
+    };
+}

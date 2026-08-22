@@ -1,17 +1,12 @@
-// Forward-ported from mod-playerbots Base/Strategy/KiteStrategy.cpp
-// Source: mod-playerbots@5397110, Shyalya@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
 
+#include "playerbot/playerbot.h"
 #include "KiteStrategy.h"
-#include "Playerbots.h"
 
-KiteStrategy::KiteStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
+using namespace ai;
 
-void KiteStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+void KiteStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 {
-    triggers.push_back(new TriggerNode("has aggro", { NextAction("runaway", 51.0f) }));
+    triggers.push_back(new TriggerNode(
+        "has aggro",
+        NextAction::array(0, new NextAction("runaway", 51.0f), NULL)));
 }

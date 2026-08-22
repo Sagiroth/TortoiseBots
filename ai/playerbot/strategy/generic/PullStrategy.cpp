@@ -1,27 +1,9 @@
-// Forward-ported from mod-playerbots Base/Strategy/PullStrategy.cpp
-// Source: mod-playerbots@5397110, Shyalya@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
 
-/*
- * Ported from the CMaNGOS playerbots project (https://github.com/cmangos/playerbots), GPL v2,
- * with modifications for AzerothCore.
- * Original authors:
- *   ike3 <ike@email.org> - original author
- *   Sebastiaan Keek (mostlikely4r) <sebastiaan.keek@gmail.com>
- *   David Parra Ausina (Flekz) <davidparraausina@gmail.com>
- */
-
+#include "playerbot/playerbot.h"
+#include "playerbot/strategy/PassiveMultiplier.h"
 #include "PullStrategy.h"
-#include "AiObjectContext.h"
-#include "PassiveMultiplier.h"
-#include "Player.h"
-#include "PlayerbotAI.h"
-#include "Playerbots.h"
-#include "SpellMgr.h"
+
+using namespace ai;
 
 class PullStrategyActionNodeFactory : public NamedObjectFactory<ActionNode>
 {
@@ -32,257 +14,273 @@ public:
     }
 
 private:
-    static ActionNode* pull_start(PlayerbotAI* /*botAI*/)
+    static ActionNode* pull_start(PlayerbotAI* ai)
     {
-        return new ActionNode("pull start", {}, {}, { NextAction("pull action", ACTION_NORMAL) });
+        return new ActionNode("pull start",
+            /*P*/ NULL,
+            /*A*/ NULL,
+            /*C*/ NextAction::array(0, new NextAction("pull action", ACTION_NORMAL), NULL));
     }
 };
 
-PullStrategy::PullStrategy(PlayerbotAI* botAI, std::string const action, std::string const preAction)
-    : Strategy(botAI), action(action), preAction(preAction)
+PullStrategy::PullStrategy(PlayerbotAI* ai, std::string pullAction, std::string prePullAction)
+: Strategy(ai)
+, pullActionName(pullAction)
+, preActionName(prePullAction)
+, pendingToStart(false)
+, pullStartTime(0)
+, petReactState(REACT_DEFENSIVE)
 {
-    actionNodeFactories.Add(new PullStrategyActionNodeFactory());
-}
+    actionNodeFactories.Add(std::make_unique<PullStrategyActionNodeFactory>());
 
-PullStrategy* PullStrategy::Get(PlayerbotAI* botAI)
-{
-    if (!botAI)
-        return nullptr;
-
-    if (PullStrategy* strategy = dynamic_cast<PullStrategy*>(botAI->GetStrategy("pull", BOT_STATE_NON_COMBAT)))
-    {
-        if (strategy->IsPullPendingToStart() || strategy->HasPullStarted() || strategy->HasTarget())
-            return strategy;
-    }
-
-    return dynamic_cast<PullStrategy*>(botAI->GetStrategy("pull", BOT_STATE_COMBAT));
-}
-
-Unit* PullStrategy::GetTarget() const
-{
-    ObjectGuid const guid = botAI->GetAiObjectContext()->GetValue<ObjectGuid>("pull strategy target")->Get();
-    if (guid.IsEmpty())
-        return nullptr;
-
-    Unit* target = botAI->GetUnit(guid);
-    Player* bot = botAI->GetBot();
-    if (!bot || !target || !target->IsAlive() || !target->IsInWorld() ||
-        target->GetMapId() != bot->GetMapId())
-        return nullptr;
-
-    return target;
-}
-
-bool PullStrategy::HasTarget() const { return GetTarget() != nullptr; }
-
-void PullStrategy::SetTarget(Unit* target)
-{
-    botAI->GetAiObjectContext()->GetValue<ObjectGuid>("pull strategy target")->Set(target ? target->GetGUID() : ObjectGuid::Empty);
+    if (!ai->GetBot())
+        return;
 }
 
 std::string PullStrategy::GetPullActionName() const
 {
-    return action;
+    std::string modPullActionName = pullActionName;
+
+    // Select the faerie fire based on druid strategy
+    if (ai->GetBot()->getClass() == CLASS_DRUID)
+    {
+        if (modPullActionName == "faerie fire")
+        {
+            if (ai->HasSpell("faerie fire (feral)") && (ai->HasStrategy("tank feral", BotState::BOT_STATE_COMBAT) || ai->HasStrategy("dps feral", BotState::BOT_STATE_COMBAT)))
+            {
+                modPullActionName = "faerie fire (feral)";
+            }
+        }
+    }
+
+    return modPullActionName;
 }
 
 std::string PullStrategy::GetSpellName() const
 {
-    Player* bot = botAI->GetBot();
     std::string spellName = GetPullActionName();
-    if (!bot || spellName != "shoot")
-        return spellName;
-
-    Item* equippedWeapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED);
-    if (!equippedWeapon)
-        return spellName;
-
-    ItemTemplate const* itemTemplate = equippedWeapon->GetTemplate();
-    if (!itemTemplate)
-        return spellName;
-
-    switch (itemTemplate->SubClass)
+    if (spellName == "shoot")
     {
-        case ITEM_SUBCLASS_WEAPON_THROWN:
-            return "throw";
-        case ITEM_SUBCLASS_WEAPON_GUN:
-            return "shoot gun";
-        case ITEM_SUBCLASS_WEAPON_BOW:
-            return "shoot bow";
-        case ITEM_SUBCLASS_WEAPON_CROSSBOW:
-            return "shoot crossbow";
-        default:
-            return spellName;
+        const Item* equippedWeapon = ai->GetBot()->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED);
+        if (equippedWeapon)
+        {
+            const ItemPrototype* itemPrototype = equippedWeapon->GetProto();
+            if (itemPrototype)
+            {
+                switch (itemPrototype->SubClass)
+                {
+#ifdef MANGOSBOT_ZERO
+                    case ITEM_SUBCLASS_WEAPON_GUN:
+                    {
+                        spellName += " gun";
+                        break;
+                    }
+
+                    case ITEM_SUBCLASS_WEAPON_BOW:
+                    {
+                        spellName += " bow";
+                        break;
+                    }
+
+                    case ITEM_SUBCLASS_WEAPON_CROSSBOW:
+                    {
+                        spellName += " crossbow";
+                        break;
+                    }
+#endif
+                    case ITEM_SUBCLASS_WEAPON_THROWN:
+                    {
+                        spellName = "throw";
+                        break;
+                    }
+
+                    default: break;
+                }
+            }
+        }
     }
+
+    return spellName;
 }
 
 float PullStrategy::GetRange() const
 {
-    Player* bot = botAI->GetBot();
-    std::string const spellName = GetSpellName();
-    if (bot && !spellName.empty())
+    float range;
+
+    // Try to get the pull action range
+    if (ai->GetSpellRange(GetSpellName(), &range))
     {
-        uint32 const spellId = botAI->GetAiObjectContext()->GetValue<uint32>("spell id", spellName)->Get();
-        if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId))
-            return bot->GetSpellMaxRangeForTarget(GetTarget(), spellInfo) - CONTACT_DISTANCE;
+        range -= CONTACT_DISTANCE;
+    }
+    else
+    {
+        // Set the default range if the range was not found
+        range = (pullActionName == "shoot") ? ai->GetRange("shoot") : ai->GetRange("spell");
     }
 
-    return (action == "shoot" ? botAI->GetRange("shoot") : botAI->GetRange("spell")) - CONTACT_DISTANCE;
+    return range;
 }
 
 std::string PullStrategy::GetPreActionName() const
 {
-    return preAction;
+    std::string modPullActionName = preActionName;
+
+    // Select the faerie fire based on druid strategy
+    if (ai->GetBot()->getClass() == CLASS_DRUID)
+    {
+        if (modPullActionName == "dire bear form")
+        {
+            if (GetPullActionName() == "faerie fire")
+            {
+                modPullActionName.clear();
+            }
+        }
+    }
+
+    return modPullActionName;
+}
+
+void PullStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "pull start",
+        NextAction::array(0, new NextAction("pull start", ACTION_MOVE), new NextAction("pull action", ACTION_MOVE), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "pull end",
+        NextAction::array(0, new NextAction("pull end", ACTION_MOVE), NULL)));
+}
+
+void PullStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    InitCombatTriggers(triggers);
+
+    // ShouldPullTrigger is restrictive enough - dungeon, tank, grouped, nobody
+    // fighting, healer with mana, a reachable target - that it can afford a high
+    // relevance. Without one it loses to whatever the bot does while idle, which
+    // is the behaviour this is meant to replace.
+    triggers.push_back(new TriggerNode(
+        "should pull",
+        NextAction::array(0, new NextAction("pull nearest target", ACTION_HIGH), NULL)));
+}
+
+void PullStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new PullMultiplier(ai));
+}
+
+void PullStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    InitCombatMultipliers(multipliers);
+}
+
+PullStrategy* PullStrategy::Get(PlayerbotAI* ai)
+{
+    return ai ? ai->GetStrategy<PullStrategy>("pull", BotState::BOT_STATE_COMBAT) : nullptr;
+}
+
+Unit* PullStrategy::GetTarget() const
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    return AI_VALUE(Unit*, "pull target");
+}
+
+void PullStrategy::SetTarget(Unit* target)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    SET_AI_VALUE(Unit*, "pull target", target);
 }
 
 bool PullStrategy::CanDoPullAction(Unit* target)
 {
-    Player* bot = botAI->GetBot();
-    if (!bot || !target)
+    // Check if the bot can perform the pull action
+
+    // check if has ranged weapon
+    if (ai->GetBot()->getClass() != CLASS_DRUID && ai->GetBot()->getClass() != CLASS_PALADIN && !ai->GetBot()->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED))
         return false;
 
-    if (!target->IsInWorld() || target->GetMapId() != bot->GetMapId())
-        return false;
-
-    if (bot->getClass() != CLASS_DRUID && bot->getClass() != CLASS_PALADIN &&
-        GetPullActionName() == "shoot" && !bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED))
+    bool canPull = false;
+    const std::string& pullAction = GetPullActionName();
+    if (!pullAction.empty())
     {
-        return false;
+        // Temporarily set the pull target to be used by the can do specific action method
+        AiObjectContext* context = ai->GetAiObjectContext();
+        Unit* previousTarget = GetTarget();
+        SetTarget(target);
+
+        canPull = ai->CanDoSpecificAction("pull action", true, false);
+
+        // Restore the previous pull target
+        SetTarget(previousTarget);
     }
 
-    std::string const spellName = GetSpellName();
-    if (spellName.empty())
-        return false;
+    return canPull;
+}
 
-    return true;
+
+void PullStrategy::OnPullStarted()
+{
+    pendingToStart = false;
+}
+
+void PullStrategy::OnPullEnded()
+{
+    pullStartTime = 0;
+    SetTarget(nullptr);
 }
 
 void PullStrategy::RequestPull(Unit* target, bool resetTime)
 {
     SetTarget(target);
     pendingToStart = true;
-    if (resetTime)
-        pullStartTime = time(nullptr);
+    if(resetTime)
+    {
+        pullStartTime = time(0);
+    }
 }
-
-void PullStrategy::OnPullStarted() { pendingToStart = false; }
-
-void PullStrategy::OnPullEnded()
-{
-    pullStartTime = 0;
-    pendingToStart = false;
-    SetTarget(nullptr);
-}
-
-PullMultiplier::PullMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "pull") {}
 
 float PullMultiplier::GetValue(Action* action)
 {
-    PullStrategy const* strategy = PullStrategy::Get(botAI);
-    if (!strategy || !strategy->HasTarget() || !action)
-        return 1.0f;
+    const PullStrategy* strategy = PullStrategy::Get(ai);
+    if (strategy && strategy->HasTarget())
+    {
+        if ((action->getName() == "pull my target") ||
+            (action->getName() == "pull rti target") ||
+            (action->getName() == "reach pull") ||
+            (action->getName() == "pull start") ||
+            (action->getName() == "pull action") ||
+            (action->getName() == "return to pull position") ||
+            (action->getName() == "pull end"))
+        {
+            return 1.0f;
+        }
 
-    if (!strategy->IsPullPendingToStart() && !strategy->HasPullStarted())
-        return 1.0f;
+        if (action->getRelevance() >= 100)
+        {
+            return 0.01f;
+        }
 
-    std::string const actionName = action->getName();
-    if (actionName == "pull my target" ||
-        actionName == "pull rti target" ||
-        actionName == "reach pull" ||
-        actionName == "pull start" ||
-        actionName == "pull action" ||
-        actionName == "return to pull position" ||
-        actionName == "pull end" ||
-        actionName == "follow" ||
-        actionName == "set facing")
-        return 1.0f;
+        return 0.0f;
+    }
 
-    return 0.0f;
+    return 1.0f;
 }
 
-class MagePullMultiplier : public PassiveMultiplier
-{
-public:
-    MagePullMultiplier(PlayerbotAI* botAI, std::string const action) : PassiveMultiplier(botAI), actionName(action) {}
-
-    float GetValue(Action* action) override;
-
-private:
-    std::string const actionName;
-};
-
-float MagePullMultiplier::GetValue(Action* action)
-{
-    if (!action)
-        return 1.0f;
-
-    PullStrategy const* strategy = PullStrategy::Get(botAI);
-    if (!strategy || !strategy->HasTarget())
-        return 1.0f;
-
-    std::string const name = action->getName();
-    if (actionName == name || name == "pull action" || name == "pull start" || name == "pull end" ||
-        name == "pull my target" || name == "pull rti target" ||
-        name == "reach spell" || name == "reach pull" ||
-        name == "return to pull position" || name == "follow" ||
-        name == "set facing" || name == "change strategy")
-        return 1.0f;
-
-    return PassiveMultiplier::GetValue(action);
-}
-
-std::vector<NextAction> PullStrategy::getDefaultActions()
-{
-    return {
-        NextAction("pull action", 105.0f),
-    };
-}
-
-void PullStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+void PossibleAdsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     triggers.push_back(new TriggerNode(
-        "pull start",
-        {
-            NextAction("pull start", 106.0f),
-            NextAction("pull action", ACTION_MOVE)
-        }
-    ));
-
-    triggers.push_back(new TriggerNode(
-        "pull end",
-        {
-            NextAction("pull end", 107.0f)
-        }
-    ));
+        "possible ads",
+        NextAction::array(0, new NextAction("flee with pet", ACTION_EMERGENCY), NULL)));
 }
 
-void PullStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
+void PullBackStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-    multipliers.push_back(new PullMultiplier(botAI));
-    multipliers.push_back(new MagePullMultiplier(botAI, action));
-}
-
-void PossibleAddsStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
-{
-    Strategy::InitTriggers(triggers);
-
-    triggers.push_back(
-        new TriggerNode(
-            "possible adds",
-            {
-                NextAction("flee with pet", 60)
-            }
-        )
-    );
-}
-
-void PullBackStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
-{
-    Strategy::InitTriggers(triggers);
-
     triggers.push_back(new TriggerNode(
         "return to pull position",
-        {
-            NextAction("return to pull position", ACTION_MOVE + 5.0f)
-        }
-    ));
+        NextAction::array(0, new NextAction("return to pull position", static_cast<float>(ACTION_MOVE) + 5.0f), NULL)));
+}
+
+void PullBackStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    InitCombatTriggers(triggers);
 }

@@ -1,33 +1,29 @@
-// Forward-ported from mod-playerbots Base/Strategy/WorldPacketHandlerStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "PassTroughStrategy.h"
 
-#ifndef PLAYERBOTS_WORLDPACKETHANDLERSTRATEGY_H
-#define PLAYERBOTS_WORLDPACKETHANDLERSTRATEGY_H
-
-#include "PassThroughStrategy.h"
-
-class PlayerbotAI;
-
-class WorldPacketHandlerStrategy : public PassThroughStrategy
+namespace ai
 {
-public:
-    WorldPacketHandlerStrategy(PlayerbotAI* botAI);
+    class WorldPacketHandlerStrategy : public PassTroughStrategy
+    {
+    public:
+        WorldPacketHandlerStrategy(PlayerbotAI* ai);
+        std::string getName() override { return "default"; }
 
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "default"; }
-};
+    private:
+        void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitDeadTriggers(std::list<TriggerNode*>& triggers) override;
+    };
 
-class ReadyCheckStrategy : public PassThroughStrategy
-{
-public:
-    ReadyCheckStrategy(PlayerbotAI* botAI) : PassThroughStrategy(botAI) { }
+    class ReadyCheckStrategy : public PassTroughStrategy
+    {
+    public:
+        ReadyCheckStrategy(PlayerbotAI* ai) : PassTroughStrategy(ai) {}
+        std::string getName() override { return "ready check"; }
 
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "ready check"; }
-};
-
-#endif
+    private:
+        void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitDeadTriggers(std::list<TriggerNode*>& triggers) override;
+    };
+}

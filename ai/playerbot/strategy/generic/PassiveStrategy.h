@@ -1,24 +1,16 @@
-// Forward-ported from mod-playerbots Base/Strategy/PassiveStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "playerbot/strategy/Strategy.h"
 
-#ifndef PLAYERBOTS_PASSIVESTRATEGY_H
-#define PLAYERBOTS_PASSIVESTRATEGY_H
-
-#include "Strategy.h"
-
-class PlayerbotAI;
-
-class PassiveStrategy : public Strategy
+namespace ai
 {
-public:
-    PassiveStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
+    class PassiveStrategy : public Strategy
+    {
+    public:
+        PassiveStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "passive"; }
 
-    void InitMultipliers(std::vector<Multiplier*>& multipliers) override;
-    std::string const getName() override { return "passive"; }
-};
-
-#endif
+    private:
+        void InitNonCombatMultipliers(std::list<Multiplier*> &multipliers) override;
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+    };
+}

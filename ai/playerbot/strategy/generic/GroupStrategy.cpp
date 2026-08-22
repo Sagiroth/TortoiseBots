@@ -1,18 +1,39 @@
-// Forward-ported from mod-playerbots Base/Strategy/GroupStrategy.cpp
-// Source: mod-playerbots@5397110, Shyalya@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
 
+#include "playerbot/playerbot.h"
 #include "GroupStrategy.h"
-#include "Playerbots.h"
 
-void GroupStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+using namespace ai;
+
+void GroupStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
 {
-    triggers.push_back(new TriggerNode("often", { NextAction("invite nearby", 4.0f) }));
-    triggers.push_back(new TriggerNode("random", { NextAction("invite guild", 4.0f) }));
-    triggers.push_back(new TriggerNode("random", { NextAction("leave far away", 4.0f) }));
-    triggers.push_back(new TriggerNode("seldom", { NextAction("reset instances", 1.0f) }));
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("invite nearby", 4.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "random",
+        NextAction::array(0, new NextAction("invite guild", 4.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "seldom",
+        NextAction::array(0, new NextAction("leave far away", 4.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "leader is afk",
+        NextAction::array(0, new NextAction("leave far away", 4.0f), NULL)));
+
+    /*triggers.push_back(new TriggerNode(
+        "seldom",
+        NextAction::array(0, new NextAction("reset instances", 1.0f), NULL)));*/
+}
+
+void GroupStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "seldom",
+        NextAction::array(0, new NextAction("leave far away", 4.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "leader is afk",
+        NextAction::array(0, new NextAction("leave far away", 4.0f), NULL)));
 }

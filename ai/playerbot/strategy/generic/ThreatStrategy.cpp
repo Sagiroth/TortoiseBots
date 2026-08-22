@@ -1,66 +1,49 @@
-// Forward-ported from mod-playerbots Base/Strategy/ThreatStrategy.cpp
-// Source: mod-playerbots@5397110, Shyalya@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
 
+#include "playerbot/playerbot.h"
 #include "ThreatStrategy.h"
-#include "GenericSpellActions.h"
-#include "Map.h"
-#include "Playerbots.h"
+#include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/strategy/actions/GenericSpellActions.h"
+
+using namespace ai;
 
 float ThreatMultiplier::GetValue(Action* action)
 {
-    if (AI_VALUE(bool, "neglect threat"))
-    {
-        return 1.0f;
-    }
-
-    if (!action || action->getThreatType() == Action::ActionThreatType::None)
+    if (action == NULL || action->getThreatType() == ActionThreatType::ACTION_THREAT_NONE)
         return 1.0f;
 
     if (!AI_VALUE(bool, "group"))
         return 1.0f;
 
-    if (action->getThreatType() == Action::ActionThreatType::Aoe)
+    if (action->getThreatType() == ActionThreatType::ACTION_THREAT_AOE)
     {
         uint8 threat = AI_VALUE2(uint8, "threat", "aoe");
         if (threat >= 50)
             return 0.0f;
+    }    
+    
+
+    if (ai->HasStrategy("debug threat", BotState::BOT_STATE_COMBAT))
+    {
+        if (ai->GetMaster())
+        {
+            if (AI_VALUE2(bool, "trigger active", "high threat"))
+            {
+                ai->GetMaster()->GetSession()->SendPlaySpellVisual(ai->GetBot()->GetObjectGuid(), 6372);
+            }
+            else if (AI_VALUE2(bool, "trigger active", "medium threat"))
+            {
+                ai->GetMaster()->GetSession()->SendPlaySpellVisual(ai->GetBot()->GetObjectGuid(), 5036);
+            }
+        }
     }
 
-    uint8 threat = AI_VALUE2(uint8, "threat", "current target");
-    if (threat >= 80)
-        return 0.0f;
+    if (AI_VALUE2(bool, "trigger active", "high threat"))
+        return 0.0;
 
     return 1.0f;
 }
 
-void ThreatStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
+void ThreatStrategy::InitCombatMultipliers(std::list<Multiplier*> &multipliers)
 {
-    multipliers.push_back(new ThreatMultiplier(botAI));
-}
-
-float FocusMultiplier::GetValue(Action* action)
-{
-    if (!action)
-    {
-        return 1.0f;
-    }
-    if (action->getThreatType() == Action::ActionThreatType::Aoe && !dynamic_cast<CastHealingSpellAction*>(action))
-    {
-        return 0.0f;
-    }
-    if (dynamic_cast<CastDebuffSpellOnAttackerAction*>(action))
-    {
-        return 0.0f;
-    }
-    return 1.0f;
-}
-
-void FocusStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
-{
-    multipliers.push_back(new FocusMultiplier(botAI));
+    multipliers.push_back(new ThreatMultiplier(ai));
 }

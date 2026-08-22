@@ -1,3 +1,4 @@
+#include "../../runtime/PlayerbotAIStorage.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/AiFactory.h"
 #include "strategy/AiObjectContext.h"
@@ -16,6 +17,7 @@
 #include "strategy/deathknight/DKAiObjectContext.h"
 #endif // MANGOSBOT_ZERO: no DK
 #include "Objects/Player.h"
+#include "../../runtime/PlayerbotAIStorage.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/RandomPlayerbotMgr.h"
 #include "Battlegrounds/BattleGroundMgr.h"

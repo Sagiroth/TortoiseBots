@@ -1,23 +1,18 @@
-// Forward-ported from mod-playerbots Base/Strategy/LfgStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "PassTroughStrategy.h"
 
-#ifndef PLAYERBOTS_LFGSTRATEGY_H
-#define PLAYERBOTS_LFGSTRATEGY_H
-
-#include "PassThroughStrategy.h"
-
-class LfgStrategy : public PassThroughStrategy
+namespace ai
 {
-public:
-    LfgStrategy(PlayerbotAI* botAI);
+    class LfgStrategy : public PassTroughStrategy
+    {
+    public:
+        LfgStrategy(PlayerbotAI* ai) : PassTroughStrategy(ai) {}
+		int GetType() override { return STRATEGY_TYPE_NONCOMBAT; }
+        std::string getName() override { return "lfg"; }
 
-    uint32 GetType() const override { return STRATEGY_TYPE_NONCOMBAT; }
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "lfg"; }
-};
-
-#endif
+    private:
+        void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override {}
+        void InitDeadTriggers(std::list<TriggerNode*>& triggers) override {}
+    };
+}

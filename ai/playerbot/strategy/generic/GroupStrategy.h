@@ -1,25 +1,17 @@
-// Forward-ported from mod-playerbots Base/Strategy/GroupStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
-
-#ifndef PLAYERBOTS_GROUPSTRATEGY_H
-#define PLAYERBOTS_GROUPSTRATEGY_H
-
+#pragma once
 #include "NonCombatStrategy.h"
 
-class PlayerbotAI;
-
-class GroupStrategy : public NonCombatStrategy
+namespace ai
 {
-public:
-    GroupStrategy(PlayerbotAI* botAI) : NonCombatStrategy(botAI) {}
+    class GroupStrategy : public NonCombatStrategy
+    {
+    public:
+        GroupStrategy(PlayerbotAI* ai) : NonCombatStrategy(ai) {}
+        std::string getName() override { return "group"; }
+        int GetType() override { return STRATEGY_TYPE_GENERIC; }
 
-    std::string const getName() override { return "group"; }
-    uint32 GetType() const override { return STRATEGY_TYPE_GENERIC; }
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-};
-
-#endif
+    private:
+        void InitNonCombatTriggers(std::list<TriggerNode*> &triggers) override;
+        void InitDeadTriggers(std::list<TriggerNode*>& triggers) override;
+    };
+}

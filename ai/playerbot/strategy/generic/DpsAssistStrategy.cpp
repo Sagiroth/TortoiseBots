@@ -1,22 +1,19 @@
-// Forward-ported from mod-playerbots Base/Strategy/DpsAssistStrategy.cpp
-// Source: mod-playerbots@5397110, Shyalya@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
 
+#include "playerbot/playerbot.h"
 #include "DpsAssistStrategy.h"
-#include "Playerbots.h"
 
-void DpsAssistStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+using namespace ai;
+
+void DpsAssistStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 {
-    triggers.push_back(
-        new TriggerNode("not dps target active", { NextAction("dps assist", 50.0f) }));
+    triggers.push_back(new TriggerNode(
+        "not dps target active",
+        NextAction::array(0, new NextAction("dps assist", 60.0f), NULL)));
 }
 
-void DpsAoeStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+void DpsAoeStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 {
-    triggers.push_back(
-        new TriggerNode("not dps aoe target active", { NextAction("dps aoe", 50.0f) }));
+    triggers.push_back(new TriggerNode(
+        "not dps aoe target active",
+        NextAction::array(0, new NextAction("dps aoe", 60.0f), NULL)));
 }

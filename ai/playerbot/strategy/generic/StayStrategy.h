@@ -1,34 +1,29 @@
-// Forward-ported from mod-playerbots Base/Strategy/StayStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
-
-#ifndef PLAYERBOTS_STAYSTRATEGY_H
-#define PLAYERBOTS_STAYSTRATEGY_H
-
+#pragma once
 #include "NonCombatStrategy.h"
 
-class PlayerbotAI;
-
-class StayStrategy : public Strategy
+namespace ai
 {
-public:
-    StayStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
+    class StayStrategy : public Strategy
+    {
+    public:
+        StayStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "stay"; }
 
-    std::string const getName() override { return "stay"; }
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::vector<NextAction> getDefaultActions() override;
-};
+    private:
+        void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        NextAction** GetDefaultNonCombatActions() override;
+        NextAction** GetDefaultCombatActions() override;
+        virtual void OnStrategyAdded(BotState state) override;
+    };
 
-class SitStrategy : public NonCombatStrategy
-{
-public:
-    SitStrategy(PlayerbotAI* botAI) : NonCombatStrategy(botAI) {}
+    class SitStrategy : public NonCombatStrategy
+    {
+    public:
+        SitStrategy(PlayerbotAI* ai) : NonCombatStrategy(ai) {}
+        std::string getName() override { return "sit"; }
 
-    std::string const getName() override { return "sit"; }
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-};
-
-#endif
+    private:
+        void InitNonCombatTriggers(std::list<TriggerNode*> &triggers) override;
+    };
+}

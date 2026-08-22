@@ -1,24 +1,24 @@
-// Forward-ported from mod-playerbots Base/Strategy/DeadStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "PassTroughStrategy.h"
 
-#ifndef PLAYERBOTS_DEADSTRATEGY_H
-#define PLAYERBOTS_DEADSTRATEGY_H
-
-#include "PassThroughStrategy.h"
-
-class PlayerbotAI;
-
-class DeadStrategy : public PassThroughStrategy
+namespace ai
 {
-public:
-    DeadStrategy(PlayerbotAI* botAI);
+    class DeadStrategy : public PassTroughStrategy
+    {
+    public:
+        DeadStrategy(PlayerbotAI* ai) : PassTroughStrategy(ai) {}
+        std::string getName() override { return "dead"; }
 
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "dead"; }
-};
-
+#ifdef GenerateBotHelp
+        virtual std::string GetHelpName() { return "dead"; } //Must equal iternal name
+        virtual std::string GetHelpDescription() {
+            return "This strategy will includes various behavior when the bot is dead.\n The main goal is to revive in a safe location.";
+        }
+        virtual std::vector<std::string> GetRelatedStrategies() { return { }; }
 #endif
+    private:
+        void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override {}
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override {}
+        void InitDeadTriggers(std::list<TriggerNode*> &triggers) override;
+    };
+}

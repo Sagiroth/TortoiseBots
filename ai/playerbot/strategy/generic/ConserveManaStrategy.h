@@ -1,32 +1,42 @@
-// Forward-ported from mod-playerbots Base/Strategy/ConserveManaStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "playerbot/strategy/Multiplier.h"
+#include "playerbot/strategy/Strategy.h"
 
-#ifndef PLAYERBOTS_CONSERVEMANASTRATEGY_H
-#define PLAYERBOTS_CONSERVEMANASTRATEGY_H
-
-#include "Strategy.h"
-
-class PlayerbotAI;
-
-class HealerAutoSaveManaMultiplier : public Multiplier
+namespace ai
 {
-public:
-    HealerAutoSaveManaMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "save mana") {}
+    class ConserveManaMultiplier : public Multiplier
+    {
+    public:
+        ConserveManaMultiplier(PlayerbotAI* ai) : Multiplier(ai, "conserve mana") {}
 
-    float GetValue(Action* action) override;
-};
+    public:
+        virtual float GetValue(Action* action) override;
+    };
 
-class HealerAutoSaveManaStrategy : public Strategy
-{
-public:
-    HealerAutoSaveManaStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
+    class SaveManaMultiplier : public Multiplier
+    {
+    public:
+        SaveManaMultiplier(PlayerbotAI* ai) : Multiplier(ai, "save mana") {}
 
-    void InitMultipliers(std::vector<Multiplier*>& multipliers) override;
-    std::string const getName() override { return "save mana"; }
-};
+    public:
+        virtual float GetValue(Action* action) override;
+    };
 
+    class ConserveManaStrategy : public Strategy
+    {
+    public:
+        ConserveManaStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "conserve mana"; }
+
+#ifdef GenerateBotHelp
+        virtual std::string GetHelpName() { return "conserve mana"; } //Must equal iternal name
+        virtual std::string GetHelpDescription() {
+            return "This strategy will make bots wait longer between casting the same spell twice.\n"
+                   "the delay is based on [h:value|mana save level].";
+        }
+        virtual std::vector<std::string> GetRelatedStrategies() { return { }; }
 #endif
+    private:
+        void InitCombatMultipliers(std::list<Multiplier*> &multipliers) override;
+    };
+}

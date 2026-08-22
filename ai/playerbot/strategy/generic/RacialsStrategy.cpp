@@ -1,110 +1,65 @@
-// Forward-ported from mod-playerbots Base/Strategy/RacialsStrategy.cpp
-// Source: mod-playerbots@5397110, Shyalya@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
 
+#include "playerbot/playerbot.h"
 #include "RacialsStrategy.h"
-#include "Playerbots.h"
 
-namespace
+using namespace ai;
+
+void RacialsStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
 {
-    constexpr uint32 SPELL_ARCANE_TORRENT_ENERGY = 25046;
-    constexpr uint32 SPELL_ARCANE_TORRENT_MANA = 28730;
-    constexpr uint32 SPELL_ARCANE_TORRENT_RUNIC_POWER = 50613;
-    constexpr uint32 SPELL_WAR_STOMP = 20549;
-    constexpr uint32 SPELL_BERSERKING = 26297;
-    constexpr uint32 SPELL_EVERY_MAN_FOR_HIMSELF = 59752;
-    constexpr uint32 SPELL_WILL_OF_THE_FORSAKEN = 7744;
-    constexpr uint32 SPELL_STONEFORM = 20594;
-    constexpr uint32 SPELL_ESCAPE_ARTIST = 20589;
-}
-
-RacialsStrategy::RacialsStrategy(PlayerbotAI* botAI) : Strategy(botAI)
-{
-    // No custom ActionNodeFactory needed
-}
-
-void RacialsStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
-{
-    Player* bot = botAI->GetBot();
-
-    if (bot->HasSpell(SPELL_ARCANE_TORRENT_MANA))
-    {
-        triggers.push_back(new TriggerNode(
-            "low mana", { NextAction("arcane torrent", ACTION_NORMAL + 5) }));
-    }
-
-    if (bot->HasSpell(SPELL_ARCANE_TORRENT_ENERGY))
-    {
-        triggers.push_back(new TriggerNode(
-            "low energy", { NextAction("arcane torrent", ACTION_NORMAL + 5) }));
-    }
-
-    if (bot->HasSpell(SPELL_ARCANE_TORRENT_RUNIC_POWER))
-    {
-        // No low runic power trigger exists; this trigger should be modified if one is added
-        triggers.push_back(new TriggerNode(
-            "generic boost", { NextAction("arcane torrent", ACTION_NORMAL + 5) }));
-    }
-
-    if (bot->HasSpell(SPELL_WAR_STOMP))
-    {
-        triggers.push_back(new TriggerNode(
-            "medium aoe", { NextAction("war stomp", ACTION_NORMAL + 5) }));
-    }
-
-    if (bot->HasSpell(SPELL_BERSERKING))
-    {
-        triggers.push_back(new TriggerNode(
-            "generic boost", { NextAction("berserking", ACTION_NORMAL + 5) }));
-    }
-
-    if (bot->HasSpell(SPELL_EVERY_MAN_FOR_HIMSELF))
-    {
-        triggers.push_back(new TriggerNode(
-            "loss of control", { NextAction("every man for himself", ACTION_EMERGENCY + 1) }));
-    }
-
-    if (bot->HasSpell(SPELL_WILL_OF_THE_FORSAKEN))
-    {
-        triggers.push_back(new TriggerNode(
-            "fear charm sleep", { NextAction("will of the forsaken", ACTION_EMERGENCY + 1) }));
-    }
-
-    if (bot->HasSpell(SPELL_STONEFORM))
-    {
-        triggers.push_back(new TriggerNode(
-            "poison disease bleed", { NextAction("stoneform", ACTION_DISPEL) }));
-    }
-
-    if (bot->HasSpell(SPELL_ESCAPE_ARTIST))
-    {
-        triggers.push_back(new TriggerNode(
-            "movement impaired", { NextAction("escape artist", ACTION_EMERGENCY + 1) }));
-    }
-
-    if (botAI->HasSpell("blood fury"))
-    {
-        triggers.push_back(new TriggerNode(
-            "generic boost", { NextAction("blood fury", ACTION_NORMAL + 5) }));
-    }
-
-    if (botAI->HasSpell("gift of the naaru"))
-    {
-        // Currently targets self only
-        triggers.push_back(new TriggerNode(
-            "medium health", { NextAction("gift of the naaru", ACTION_LIGHT_HEAL + 5) }));
-    }
-
-    if (botAI->HasSpell("lifeblood"))
-    {
-        triggers.push_back(new TriggerNode(
-            "medium health", { NextAction("lifeblood", ACTION_LIGHT_HEAL + 5) }));
-    }
+	triggers.push_back(new TriggerNode(
+		"low health", 
+		NextAction::array(0, new NextAction("gift of the naaru", 71.0f), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "generic boost", { NextAction("use trinket", ACTION_NORMAL + 4) }));
+        "melee medium aoe",
+        NextAction::array(0, new NextAction("war stomp", 71.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "war stomp",
+        NextAction::array(0, new NextAction("war stomp", 71.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "cannibalize",
+        NextAction::array(0, new NextAction("cannibalize", 71.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "perception",
+        NextAction::array(0, new NextAction("perception", 71.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "rooted",
+        NextAction::array(0, new NextAction("escape artist", 71.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "will of the forsaken",
+        NextAction::array(0, new NextAction("will of the forsaken", 71.0f), NULL)));
+
+    /*triggers.push_back(new TriggerNode(
+        "shadowmeld",
+        NextAction::array(0, new NextAction("shadowmeld", 71.0f), NULL)));*/
+
+    triggers.push_back(new TriggerNode(
+        "berserking",
+        NextAction::array(0, new NextAction("berserking", 58.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "blood fury",
+        NextAction::array(0, new NextAction("blood fury", 71.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "stoneform",
+        NextAction::array(0, new NextAction("stoneform", 71.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "mana tap",
+        NextAction::array(0, new NextAction("mana tap", 71.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "arcane torrent",
+        NextAction::array(0, new NextAction("arcane torrent", 71.0f), NULL)));
+}
+
+void RacialsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    InitNonCombatTriggers(triggers);
 }

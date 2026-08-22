@@ -1,24 +1,14 @@
-// Forward-ported from mod-playerbots Base/Strategy/TellTargetStrategy.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+#pragma once
+#include "playerbot/strategy/Strategy.h"
 
-#ifndef PLAYERBOTS_TELLTARGETSTRATEGY_H
-#define PLAYERBOTS_TELLTARGETSTRATEGY_H
-
-#include "Strategy.h"
-
-class PlayerbotAI;
-
-class TellTargetStrategy : public Strategy
+namespace ai
 {
-public:
-    TellTargetStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
-
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "TellTarget"; }
-};
-
-#endif
+    class TellTargetStrategy : public Strategy
+    {
+    public:
+        TellTargetStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "tell target"; }
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*> &triggers) override;
+    };
+}

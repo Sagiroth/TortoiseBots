@@ -1,16 +1,12 @@
-// Forward-ported from mod-playerbots Base/Strategy/RunawayStrategy.cpp
-// Source: mod-playerbots@5397110, Shyalya@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
 
+#include "playerbot/playerbot.h"
 #include "RunawayStrategy.h"
-#include "Playerbots.h"
 
-void RunawayStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+using namespace ai;
+
+void RunawayStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 {
-    triggers.push_back(
-        new TriggerNode("enemy too close for spell", { NextAction("runaway", 50.0f) }));
+    triggers.push_back(new TriggerNode(
+        "enemy too close for spell",
+        NextAction::array(0, new NextAction("runaway", 50.0f), NULL)));
 }

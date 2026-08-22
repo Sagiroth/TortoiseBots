@@ -1,13 +1,12 @@
-// Forward-ported from mod-playerbots Base/Strategy/RTSCStrategy.cpp
-// Source: mod-playerbots@5397110, Shyalya@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
 
+#include "playerbot/playerbot.h"
 #include "RTSCStrategy.h"
 
-RTSCStrategy::RTSCStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
+using namespace ai;
 
-void RTSCStrategy::InitTriggers(std::vector<TriggerNode*>& /*triggers*/) {}
+void RTSCSJumptrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "rtsc jump active",
+        NextAction::array(0, new NextAction("jump::rtsc", ACTION_MOVE), NULL)));
+}

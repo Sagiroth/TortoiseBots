@@ -1,490 +1,400 @@
-// Forward-ported from mod-playerbots /mnt/pny-ssd/Tortoise WoW Projects/playerbots-references/mod-playerbots/src/Ai/Class/Shaman/ShamanAiObjectContext.cpp - modern donor, Tortoise 1.18.1 adapted via Shyalya translation reference
-// Source: mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70, Shyalya reference: shyalya-tortoise-wow@1f9497e
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
 
-#include "ShamanAiObjectContext.h"
-#include "ElementalShamanStrategy.h"
-#include "EnhancementShamanStrategy.h"
-#include "GenericShamanStrategy.h"
-#include "NamedObjectContext.h"
-#include "Playerbots.h"
-#include "RestoShamanStrategy.h"
+#include "playerbot/playerbot.h"
 #include "ShamanActions.h"
-#include "ShamanNonCombatStrategy.h"
+#include "ShamanAiObjectContext.h"
 #include "ShamanTriggers.h"
-#include "TotemsShamanStrategy.h"
+#include "playerbot/strategy/NamedObjectContext.h"
+#include "ElementalShamanStrategy.h"
+#include "RestorationShamanStrategy.h"
+#include "EnhancementShamanStrategy.h"
 
-class ShamanStrategyFactoryInternal : public NamedObjectContext<Strategy>
+namespace ai
 {
-public:
-    ShamanStrategyFactoryInternal()
+    namespace shaman
     {
-        creators["nc"] = &ShamanStrategyFactoryInternal::nc;
-        creators["aoe"] = &ShamanStrategyFactoryInternal::aoe;
-        creators["cure"] = &ShamanStrategyFactoryInternal::cure;
-        creators["healer dps"] = &ShamanStrategyFactoryInternal::healer_dps;
-        creators["boost"] = &ShamanStrategyFactoryInternal::boost;
-    }
+        class StrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            StrategyFactoryInternal()
+            {
+                creators["aoe"] = [](PlayerbotAI* ai) { return new AoePlaceholderStrategy(ai); };
+                creators["cc"] = [](PlayerbotAI* ai) { return new CcPlaceholderStrategy(ai); };
+                creators["cure"] = [](PlayerbotAI* ai) { return new CurePlaceholderStrategy(ai); };
+                creators["buff"] = [](PlayerbotAI* ai) { return new BuffPlaceholderStrategy(ai); };
+                creators["boost"] = [](PlayerbotAI* ai) { return new BoostPlaceholderStrategy(ai); };
+                creators["pull"] = [](PlayerbotAI* ai) { return new PullStrategy(ai, "lightning bolt"); };
+                creators["offheal"] = [](PlayerbotAI* ai) { return new OffhealPlaceholderStrategy(ai); };
+            }
+        };
 
-private:
-    static Strategy* nc(PlayerbotAI* botAI) { return new ShamanNonCombatStrategy(botAI); }
-    static Strategy* aoe(PlayerbotAI* botAI) { return new ShamanAoeStrategy(botAI); }
-    static Strategy* cure(PlayerbotAI* botAI) { return new ShamanCureStrategy(botAI); }
-    static Strategy* healer_dps(PlayerbotAI* botAI) { return new ShamanHealerDpsStrategy(botAI); }
-    static Strategy* boost(PlayerbotAI* botAI) { return new ShamanBoostStrategy(botAI); }
+        class AoeSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            AoeSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["aoe elemental pve"] = [](PlayerbotAI* ai) { return new ElementalShamanAoePveStrategy(ai); };
+                creators["aoe elemental pvp"] = [](PlayerbotAI* ai) { return new ElementalShamanAoePvpStrategy(ai); };
+                creators["aoe elemental raid"] = [](PlayerbotAI* ai) { return new ElementalShamanAoeRaidStrategy(ai); };
+                creators["aoe restoration pve"] = [](PlayerbotAI* ai) { return new RestorationShamanAoePveStrategy(ai); };
+                creators["aoe restoration pvp"] = [](PlayerbotAI* ai) { return new RestorationShamanAoePvpStrategy(ai); };
+                creators["aoe restoration raid"] = [](PlayerbotAI* ai) { return new RestorationShamanAoeRaidStrategy(ai); };
+                creators["aoe enhancement pve"] = [](PlayerbotAI* ai) { return new EnhancementShamanAoePveStrategy(ai); };
+                creators["aoe enhancement pvp"] = [](PlayerbotAI* ai) { return new EnhancementShamanAoePvpStrategy(ai); };
+                creators["aoe enhancement raid"] = [](PlayerbotAI* ai) { return new EnhancementShamanAoeRaidStrategy(ai); };
+            }
+        };
+
+        class CcSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            CcSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["cc elemental pve"] = [](PlayerbotAI* ai) { return new ElementalShamanCcPveStrategy(ai); };
+                creators["cc elemental pvp"] = [](PlayerbotAI* ai) { return new ElementalShamanCcPvpStrategy(ai); };
+                creators["cc elemental raid"] = [](PlayerbotAI* ai) { return new ElementalShamanCcRaidStrategy(ai); };
+                creators["cc restoration pve"] = [](PlayerbotAI* ai) { return new RestorationShamanCcPveStrategy(ai); };
+                creators["cc restoration pvp"] = [](PlayerbotAI* ai) { return new RestorationShamanCcPvpStrategy(ai); };
+                creators["cc restoration raid"] = [](PlayerbotAI* ai) { return new RestorationShamanCcRaidStrategy(ai); };
+                creators["cc enhancement pve"] = [](PlayerbotAI* ai) { return new EnhancementShamanCcPveStrategy(ai); };
+                creators["cc enhancement pvp"] = [](PlayerbotAI* ai) { return new EnhancementShamanCcPvpStrategy(ai); };
+                creators["cc enhancement raid"] = [](PlayerbotAI* ai) { return new EnhancementShamanCcRaidStrategy(ai); };
+            }
+        };
+
+        class CureSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            CureSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["cure elemental pve"] = [](PlayerbotAI* ai) { return new ElementalShamanCurePveStrategy(ai); };
+                creators["cure elemental pvp"] = [](PlayerbotAI* ai) { return new ElementalShamanCurePvpStrategy(ai); };
+                creators["cure elemental raid"] = [](PlayerbotAI* ai) { return new ElementalShamanCureRaidStrategy(ai); };
+                creators["cure restoration pve"] = [](PlayerbotAI* ai) { return new RestorationShamanCurePveStrategy(ai); };
+                creators["cure restoration pvp"] = [](PlayerbotAI* ai) { return new RestorationShamanCurePvpStrategy(ai); };
+                creators["cure restoration raid"] = [](PlayerbotAI* ai) { return new RestorationShamanCureRaidStrategy(ai); };
+                creators["cure enhancement pve"] = [](PlayerbotAI* ai) { return new EnhancementShamanCurePveStrategy(ai); };
+                creators["cure enhancement pvp"] = [](PlayerbotAI* ai) { return new EnhancementShamanCurePvpStrategy(ai); };
+                creators["cure enhancement raid"] = [](PlayerbotAI* ai) { return new EnhancementShamanCureRaidStrategy(ai); };
+            }
+        };
+
+        class BuffSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            BuffSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["buff elemental pve"] = [](PlayerbotAI* ai) { return new ElementalShamanBuffPveStrategy(ai); };
+                creators["buff elemental pvp"] = [](PlayerbotAI* ai) { return new ElementalShamanBuffPvpStrategy(ai); };
+                creators["buff elemental raid"] = [](PlayerbotAI* ai) { return new ElementalShamanBuffRaidStrategy(ai); };
+                creators["buff restoration pve"] = [](PlayerbotAI* ai) { return new RestorationShamanBuffPveStrategy(ai); };
+                creators["buff restoration pvp"] = [](PlayerbotAI* ai) { return new RestorationShamanBuffPvpStrategy(ai); };
+                creators["buff restoration raid"] = [](PlayerbotAI* ai) { return new RestorationShamanBuffRaidStrategy(ai); };
+                creators["buff enhancement pve"] = [](PlayerbotAI* ai) { return new EnhancementShamanBuffPveStrategy(ai); };
+                creators["buff enhancement pvp"] = [](PlayerbotAI* ai) { return new EnhancementShamanBuffPvpStrategy(ai); };
+                creators["buff enhancement raid"] = [](PlayerbotAI* ai) { return new EnhancementShamanBuffRaidStrategy(ai); };
+            }
+        };
+
+        class OffhealSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            OffhealSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["offheal pve"] = [](PlayerbotAI* ai) { return new ShamanOffhealPveStrategy(ai); };
+                creators["offheal pvp"] = [](PlayerbotAI* ai) { return new ShamanOffhealPvpStrategy(ai); };
+                creators["offheal raid"] = [](PlayerbotAI* ai) { return new ShamanOffhealRaidStrategy(ai); };
+            }
+        };
+
+        class BoostSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            BoostSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["boost elemental pve"] = [](PlayerbotAI* ai) { return new ElementalShamanBoostPveStrategy(ai); };
+                creators["boost elemental pvp"] = [](PlayerbotAI* ai) { return new ElementalShamanBoostPvpStrategy(ai); };
+                creators["boost elemental raid"] = [](PlayerbotAI* ai) { return new ElementalShamanBoostRaidStrategy(ai); };
+                creators["boost restoration pve"] = [](PlayerbotAI* ai) { return new RestorationShamanBoostPveStrategy(ai); };
+                creators["boost restoration pvp"] = [](PlayerbotAI* ai) { return new RestorationShamanBoostPvpStrategy(ai); };
+                creators["boost restoration raid"] = [](PlayerbotAI* ai) { return new RestorationShamanBoostRaidStrategy(ai); };
+                creators["boost enhancement pve"] = [](PlayerbotAI* ai) { return new EnhancementShamanBoostPveStrategy(ai); };
+                creators["boost enhancement pvp"] = [](PlayerbotAI* ai) { return new EnhancementShamanBoostPvpStrategy(ai); };
+                creators["boost enhancement raid"] = [](PlayerbotAI* ai) { return new EnhancementShamanBoostRaidStrategy(ai); };
+            }
+        };
+
+        class EarthTotemStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            EarthTotemStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["totems"] = [](PlayerbotAI* ai) { return new ShamanTotemsPlaceholderStrategy(ai); };
+                creators["totembar elements"] = [](PlayerbotAI* ai) { return new ShamanTotemBarElementsStrategy(ai); };
+                creators["totembar ancestors"] = [](PlayerbotAI* ai) { return new ShamanTotemBarAncestorsStrategy(ai); };
+                creators["totembar spirits"] = [](PlayerbotAI* ai) { return new ShamanTotemBarSpiritsStrategy(ai); };
+                creators["totem earth stoneclaw"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem earth stoneclaw", "earth totem", "stoneclaw totem"); };
+                creators["totem earth stoneskin"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem earth stoneskin", "earth totem", "stoneskin totem"); };
+                creators["totem earth earthbind"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem earth earthbind", "earth totem", "earthbind totem"); };
+                creators["totem earth strength"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem earth strength", "earth totem", "strength of earth totem"); };
+                creators["totem earth tremor"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem earth tremor", "earth totem", "tremor totem"); };
+            }
+        };
+
+        class FireTotemStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            FireTotemStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["totems"] = [](PlayerbotAI* ai) { return new ShamanTotemsPlaceholderStrategy(ai); };
+                creators["totembar elements"] = [](PlayerbotAI* ai) { return new ShamanTotemBarElementsStrategy(ai); };
+                creators["totembar ancestors"] = [](PlayerbotAI* ai) { return new ShamanTotemBarAncestorsStrategy(ai); };
+                creators["totembar spirits"] = [](PlayerbotAI* ai) { return new ShamanTotemBarSpiritsStrategy(ai); };
+                creators["totem fire nova"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem fire nova", "fire totem", "fire nova"); };
+                creators["totem fire flametongue"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem fire flametongue", "fire totem", "flametongue totem"); };
+                creators["totem fire resistance"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem fire resistance", "fire totem", "fire resistance totem"); };
+                creators["totem fire magma"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem fire magma", "fire totem", "magma totem"); };
+                creators["totem fire searing"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem fire searing", "fire totem", "searing totem"); };
+                creators["totem fire wrath"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem fire wrath", "fire totem", "totem of wrath"); };
+            }
+        };
+
+        class WaterTotemStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            WaterTotemStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["totems"] = [](PlayerbotAI* ai) { return new ShamanTotemsPlaceholderStrategy(ai); };
+                creators["totembar elements"] = [](PlayerbotAI* ai) { return new ShamanTotemBarElementsStrategy(ai); };
+                creators["totembar ancestors"] = [](PlayerbotAI* ai) { return new ShamanTotemBarAncestorsStrategy(ai); };
+                creators["totembar spirits"] = [](PlayerbotAI* ai) { return new ShamanTotemBarSpiritsStrategy(ai); };
+                creators["totem water cleansing"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem water cleansing", "water totem", "disease cleansing totem"); };
+                creators["totem water resistance"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem water resistance", "water totem", "fire resistance totem"); };
+                creators["totem water healing"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem water healing", "water totem", "healing stream totem"); };
+                creators["totem water mana"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem water mana", "water totem", "mana spring totem"); };
+                creators["totem water poison"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem water poison", "water totem", "poison cleansing totem"); };
+            }
+        };
+
+        class AirTotemStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            AirTotemStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["totems"] = [](PlayerbotAI* ai) { return new ShamanTotemsPlaceholderStrategy(ai); };
+                creators["totembar elements"] = [](PlayerbotAI* ai) { return new ShamanTotemBarElementsStrategy(ai); };
+                creators["totembar ancestors"] = [](PlayerbotAI* ai) { return new ShamanTotemBarAncestorsStrategy(ai); };
+                creators["totembar spirits"] = [](PlayerbotAI* ai) { return new ShamanTotemBarSpiritsStrategy(ai); };
+                creators["totem air grace"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem air grace", "air totem", "grace of air totem"); };
+                creators["totem air grounding"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem air grounding", "air totem", "grounding totem"); };
+                creators["totem air resistance"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem air resistance", "air totem", "nature resistance totem"); };
+                creators["totem air tranquil"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem air tranquil", "air totem", "tranquil air totem"); };
+                creators["totem air windfury"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem air windfury", "air totem", "windfury totem"); };
+                creators["totem air windwall"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem air windwall", "air totem", "windwall totem"); };
+                creators["totem air wrath"] = [](PlayerbotAI* ai) { return new ShamanManualTotemStrategy(ai, "totem air wrath", "air totem", "wrath of air totem"); };
+            }
+        };
+
+        class TotemsSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            TotemsSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["totems elemental pve"] = [](PlayerbotAI* ai) { return new ElementalShamanTotemsPveStrategy(ai); };
+                creators["totems elemental pvp"] = [](PlayerbotAI* ai) { return new ElementalShamanTotemsPvpStrategy(ai); };
+                creators["totems elemental raid"] = [](PlayerbotAI* ai) { return new ElementalShamanTotemsRaidStrategy(ai); };
+                creators["totems restoration pve"] = [](PlayerbotAI* ai) { return new RestorationShamanTotemsPveStrategy(ai); };
+                creators["totems restoration pvp"] = [](PlayerbotAI* ai) { return new RestorationShamanTotemsPvpStrategy(ai); };
+                creators["totems restoration raid"] = [](PlayerbotAI* ai) { return new RestorationShamanTotemsRaidStrategy(ai); };
+                creators["totems enhancement pve"] = [](PlayerbotAI* ai) { return new EnhancementShamanTotemsPveStrategy(ai); };
+                creators["totems enhancement pvp"] = [](PlayerbotAI* ai) { return new EnhancementShamanTotemsPvpStrategy(ai); };
+                creators["totems enhancement raid"] = [](PlayerbotAI* ai) { return new EnhancementShamanTotemsRaidStrategy(ai); };
+            }
+        };
+
+        class ClassStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            ClassStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["restoration"] = [](PlayerbotAI* ai) { return new RestorationShamanPlaceholderStrategy(ai); };
+                creators["heal"] = [](PlayerbotAI* ai) { return new RestorationShamanPlaceholderStrategy(ai); };
+                creators["enhancement"] = [](PlayerbotAI* ai) { return new EnhancementShamanPlaceholderStrategy(ai); };
+                creators["elemental"] = [](PlayerbotAI* ai) { return new ElementalShamanPlaceholderStrategy(ai); };
+            }
+        };
+
+        class ClassSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            ClassSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["elemental pvp"] = [](PlayerbotAI* ai) { return new ElementalShamanPvpStrategy(ai); };
+                creators["elemental pve"] = [](PlayerbotAI* ai) { return new ElementalShamanPveStrategy(ai); };
+                creators["elemental raid"] = [](PlayerbotAI* ai) { return new ElementalShamanRaidStrategy(ai); };
+                creators["restoration pvp"] = [](PlayerbotAI* ai) { return new RestorationShamanPvpStrategy(ai); };
+                creators["restoration pve"] = [](PlayerbotAI* ai) { return new RestorationShamanPveStrategy(ai); };
+                creators["restoration raid"] = [](PlayerbotAI* ai) { return new RestorationShamanRaidStrategy(ai); };
+                creators["enhancement pvp"] = [](PlayerbotAI* ai) { return new EnhancementShamanPvpStrategy(ai); };
+                creators["enhancement pve"] = [](PlayerbotAI* ai) { return new EnhancementShamanPveStrategy(ai); };
+                creators["enhancement raid"] = [](PlayerbotAI* ai) { return new EnhancementShamanRaidStrategy(ai); };
+            }
+        };
+    };
 };
 
-class ShamanCombatStrategyFactoryInternal : public NamedObjectContext<Strategy>
+namespace ai
 {
-public:
-    ShamanCombatStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+    namespace shaman
     {
-        creators["heal"] = &ShamanCombatStrategyFactoryInternal::resto;
-        creators["melee"] = &ShamanCombatStrategyFactoryInternal::enh;
-        creators["dps"] = &ShamanCombatStrategyFactoryInternal::enh;
-        creators["caster"] = &ShamanCombatStrategyFactoryInternal::ele;
-        //creators["offheal"] = &ShamanCombatStrategyFactoryInternal::offheal;
-        creators["resto"] = &ShamanCombatStrategyFactoryInternal::resto;
-        creators["enh"] = &ShamanCombatStrategyFactoryInternal::enh;
-        creators["ele"] = &ShamanCombatStrategyFactoryInternal::ele;
-    }
+        using namespace ai;
 
-private:
-    static Strategy* resto(PlayerbotAI* botAI) { return new RestoShamanStrategy(botAI); }
-    static Strategy* enh(PlayerbotAI* botAI) { return new EnhancementShamanStrategy(botAI); }
-    static Strategy* ele(PlayerbotAI* botAI) { return new ElementalShamanStrategy(botAI); }
+        class TriggerFactoryInternal : public NamedObjectContext<Trigger>
+        {
+        public:
+            TriggerFactoryInternal()
+            {
+                creators["wind shear"] = [](PlayerbotAI* ai) { return new WindShearInterruptSpellTrigger(ai); };
+                creators["purge"] = [](PlayerbotAI* ai) { return new PurgeTrigger(ai); };
+                creators["shaman weapon"] = [](PlayerbotAI* ai) { return new ShamanWeaponTrigger(ai); };
+                creators["water shield"] = [](PlayerbotAI* ai) { return new WaterShieldTrigger(ai); };
+                creators["lightning shield"] = [](PlayerbotAI* ai) { return new LightningShieldTrigger(ai); };
+                creators["water breathing"] = [](PlayerbotAI* ai) { return new WaterBreathingTrigger(ai); };
+                creators["water walking"] = [](PlayerbotAI* ai) { return new WaterWalkingTrigger(ai); };
+                creators["water breathing on party"] = [](PlayerbotAI* ai) { return new WaterBreathingOnPartyTrigger(ai); };
+                creators["water walking on party"] = [](PlayerbotAI* ai) { return new WaterWalkingOnPartyTrigger(ai); };
+                creators["cleanse spirit poison"] = [](PlayerbotAI* ai) { return new CleanseSpiritPoisonTrigger(ai); };
+                creators["cleanse spirit curse"] = [](PlayerbotAI* ai) { return new CleanseSpiritCurseTrigger(ai); };
+                creators["cleanse spirit disease"] = [](PlayerbotAI* ai) { return new CleanseSpiritDiseaseTrigger(ai); };
+                creators["party member cleanse spirit poison"] = [](PlayerbotAI* ai) { return new PartyMemberCleanseSpiritPoisonTrigger(ai); };
+                creators["party member cleanse spirit curse"] = [](PlayerbotAI* ai) { return new PartyMemberCleanseSpiritCurseTrigger(ai); };
+                creators["party member cleanse spirit disease"] = [](PlayerbotAI* ai) { return new PartyMemberCleanseSpiritDiseaseTrigger(ai); };
+                creators["shock"] = [](PlayerbotAI* ai) { return new ShockTrigger(ai); };
+                creators["frost shock snare"] = [](PlayerbotAI* ai) { return new FrostShockSnareTrigger(ai); };
+                creators["heroism"] = [](PlayerbotAI* ai) { return new HeroismTrigger(ai); };
+                creators["bloodlust"] = [](PlayerbotAI* ai) { return new BloodlustTrigger(ai); };
+                creators["maelstrom weapon"] = [](PlayerbotAI* ai) { return new MaelstromWeaponTrigger(ai); };
+                creators["wind shear on enemy healer"] = [](PlayerbotAI* ai) { return new WindShearInterruptEnemyHealerSpellTrigger(ai); };
+                creators["cure poison"] = [](PlayerbotAI* ai) { return new CurePoisonTrigger(ai); };
+                creators["party member cure poison"] = [](PlayerbotAI* ai) { return new PartyMemberCurePoisonTrigger(ai); };
+                creators["cure disease"] = [](PlayerbotAI* ai) { return new CureDiseaseTrigger(ai); };
+                creators["party member cure disease"] = [](PlayerbotAI* ai) { return new PartyMemberCureDiseaseTrigger(ai); };
+                creators["fire totem"] = [](PlayerbotAI* ai) { return new FireTotemTrigger(ai); };
+                creators["fire totem aoe"] = [](PlayerbotAI* ai) { return new FireTotemAoeTrigger(ai); };
+                creators["earth totem"] = [](PlayerbotAI* ai) { return new EarthTotemTrigger(ai); };
+                creators["water totem"] = [](PlayerbotAI* ai) { return new WaterTotemTrigger(ai); };
+                creators["air totem"] = [](PlayerbotAI* ai) { return new AirTotemTrigger(ai); };
+                creators["call of the elements"] = [](PlayerbotAI* ai) { return new TotemsAreNotSummonedTrigger(ai); };
+                creators["call of the ancestors"] = [](PlayerbotAI* ai) { return new TotemsAreNotSummonedTrigger(ai); };
+                creators["call of the spirits"] = [](PlayerbotAI* ai) { return new TotemsAreNotSummonedTrigger(ai); };
+                creators["totemic recall"] = [](PlayerbotAI* ai) { return new ReadyToRemoveTotemsTrigger(ai); };
+                creators["earth shield on party tank"] = [](PlayerbotAI* ai) { return new PartyTankEarthShieldTrigger(ai); };
+                creators["chain lightning"] = [](PlayerbotAI* ai) { return new ChainLightningTrigger(ai); };
+                creators["stormstrike"] = [](PlayerbotAI* ai) { return new StormstrikeTrigger(ai); };
+            }
+        };
+
+        class AiObjectContextInternal : public NamedObjectContext<Action>
+        {
+        public:
+            AiObjectContextInternal()
+            {
+                creators["water shield"] = [](PlayerbotAI* ai) { return new CastWaterShieldAction(ai); };
+                creators["lightning shield"] = [](PlayerbotAI* ai) { return new CastLightningShieldAction(ai); };
+                creators["strength of earth totem"] = [](PlayerbotAI* ai) { return new CastStrengthOfEarthTotemAction(ai); };
+                creators["flametongue totem"] = [](PlayerbotAI* ai) { return new CastFlametongueTotemAction(ai); };
+                creators["searing totem"] = [](PlayerbotAI* ai) { return new CastSearingTotemAction(ai); };
+                creators["magma totem"] = [](PlayerbotAI* ai) { return new CastMagmaTotemAction(ai); };
+                creators["totem of wrath"] = [](PlayerbotAI* ai) { return new CastTotemOfWrathAction(ai); };
+                creators["windfury totem"] = [](PlayerbotAI* ai) { return new CastWindfuryTotemAction(ai); };
+                creators["stoneskin totem"] = [](PlayerbotAI* ai) { return new CastStoneskinTotemAction(ai); };
+                creators["stoneclaw totem"] = [](PlayerbotAI* ai) { return new CastStoneclawTotemAction(ai); };
+                creators["grounding totem"] = [](PlayerbotAI* ai) { return new CastGroundingTotemAction(ai); };
+                creators["grace of air totem"] = [](PlayerbotAI* ai) { return new CastGraceOfAirTotemAction(ai); };
+                creators["windwall totem"] = [](PlayerbotAI* ai) { return new CastWindwallTotemAction(ai); };
+                creators["mana spring totem"] = [](PlayerbotAI* ai) { return new CastManaSpringTotemAction(ai); };
+                creators["mana tide totem"] = [](PlayerbotAI* ai) { return new CastManaTideTotemAction(ai); };
+                creators["earthbind totem"] = [](PlayerbotAI* ai) { return new CastEarthbindTotemAction(ai); };
+                creators["tremor totem"] = [](PlayerbotAI* ai) { return new CastTremorTotemAction(ai); };
+                creators["tranquil air totem"] = [](PlayerbotAI* ai) { return new CastTranquilAirTotemAction(ai); };
+                creators["healing stream totem"] = [](PlayerbotAI* ai) { return new CastHealingStreamTotemAction(ai); };
+                creators["wrath of air totem"] = [](PlayerbotAI* ai) { return new CastWrathOfAirTotemAction(ai); };
+                creators["frost resistance totem"] = [](PlayerbotAI* ai) { return new CastFrostResistanceTotemAction(ai); };
+                creators["fire resistance totem"] = [](PlayerbotAI* ai) { return new CastFireResistanceTotemAction(ai); };
+                creators["nature resistance totem"] = [](PlayerbotAI* ai) { return new CastNatureResistanceTotemAction(ai); };
+                creators["disease cleansing totem"] = [](PlayerbotAI* ai) { return new CastDiseaseCleansingTotemAction(ai); };
+                creators["poison cleansing totem"] = [](PlayerbotAI* ai) { return new CastPoisonCleansingTotemAction(ai); };
+                creators["wind shear"] = [](PlayerbotAI* ai) { return new CastWindShearAction(ai); };
+                creators["wind shear on enemy healer"] = [](PlayerbotAI* ai) { return new CastWindShearOnEnemyHealerAction(ai); };
+                creators["rockbiter weapon"] = [](PlayerbotAI* ai) { return new CastRockbiterWeaponAction(ai); };
+                creators["flametongue weapon"] = [](PlayerbotAI* ai) { return new CastFlametongueWeaponAction(ai); };
+                creators["frostbrand weapon"] = [](PlayerbotAI* ai) { return new CastFrostbrandWeaponAction(ai); };
+                creators["windfury weapon"] = [](PlayerbotAI* ai) { return new CastWindfuryWeaponAction(ai); };
+                creators["earthliving weapon"] = [](PlayerbotAI* ai) { return new CastEarthlivingWeaponAction(ai); };
+                creators["purge"] = [](PlayerbotAI* ai) { return new CastPurgeAction(ai); };
+                creators["healing wave"] = [](PlayerbotAI* ai) { return new CastHealingWaveAction(ai); };
+                creators["lesser healing wave"] = [](PlayerbotAI* ai) { return new CastLesserHealingWaveAction(ai); };
+                creators["healing wave on party"] = [](PlayerbotAI* ai) { return new CastHealingWaveOnPartyAction(ai); };
+                creators["lesser healing wave on party"] = [](PlayerbotAI* ai) { return new CastLesserHealingWaveOnPartyAction(ai); };
+                creators["earth shield"] = [](PlayerbotAI* ai) { return new CastEarthShieldAction(ai); };
+                creators["earth shield on party"] = [](PlayerbotAI* ai) { return new CastEarthShieldOnPartyAction(ai); };
+                creators["chain heal"] = [](PlayerbotAI* ai) { return new CastChainHealAction(ai); };
+                creators["riptide"] = [](PlayerbotAI* ai) { return new CastRiptideAction(ai); };
+                creators["riptide on party"] = [](PlayerbotAI* ai) { return new CastRiptideOnPartyAction(ai); };
+                creators["stormstrike"] = [](PlayerbotAI* ai) { return new CastStormstrikeAction(ai); };
+                creators["lava lash"] = [](PlayerbotAI* ai) { return new CastLavaLashAction(ai); };
+                creators["fire nova"] = [](PlayerbotAI* ai) { return new CastFireNovaAction(ai); };
+                creators["ancestral spirit"] = [](PlayerbotAI* ai) { return new CastAncestralSpiritAction(ai); };
+                creators["water walking"] = [](PlayerbotAI* ai) { return new CastWaterWalkingAction(ai); };
+                creators["water breathing"] = [](PlayerbotAI* ai) { return new CastWaterBreathingAction(ai); };
+                creators["water walking on party"] = [](PlayerbotAI* ai) { return new CastWaterWalkingOnPartyAction(ai); };
+                creators["water breathing on party"] = [](PlayerbotAI* ai) { return new CastWaterBreathingOnPartyAction(ai); };
+                creators["cleanse spirit"] = [](PlayerbotAI* ai) { return new CastCleanseSpiritAction(ai); };
+                creators["cleanse spirit poison on party"] = [](PlayerbotAI* ai) { return new CastCleanseSpiritPoisonOnPartyAction(ai); };
+                creators["cleanse spirit disease on party"] = [](PlayerbotAI* ai) { return new CastCleanseSpiritDiseaseOnPartyAction(ai); };
+                creators["cleanse spirit curse on party"] = [](PlayerbotAI* ai) { return new CastCleanseSpiritCurseOnPartyAction(ai); };
+                creators["flame shock"] = [](PlayerbotAI* ai) { return new CastFlameShockAction(ai); };
+                creators["earth shock"] = [](PlayerbotAI* ai) { return new CastEarthShockAction(ai); };
+                creators["frost shock"] = [](PlayerbotAI* ai) { return new CastFrostShockAction(ai); };
+                creators["chain lightning"] = [](PlayerbotAI* ai) { return new CastChainLightningAction(ai); };
+                creators["lightning bolt"] = [](PlayerbotAI* ai) { return new CastLightningBoltAction(ai); };
+                creators["thunderstorm"] = [](PlayerbotAI* ai) { return new CastThunderstormAction(ai); };
+                creators["heroism"] = [](PlayerbotAI* ai) { return new CastHeroismAction(ai); };
+                creators["bloodlust"] = [](PlayerbotAI* ai) { return new CastBloodlustAction(ai); };
+                creators["cure disease"] = [](PlayerbotAI* ai) { return new CastCureDiseaseAction(ai); };
+                creators["cure disease on party"] = [](PlayerbotAI* ai) { return new CastCureDiseaseOnPartyAction(ai); };
+                creators["cure poison"] = [](PlayerbotAI* ai) { return new CastCurePoisonAction(ai); };
+                creators["cure poison on party"] = [](PlayerbotAI* ai) { return new CastCurePoisonOnPartyAction(ai); };
+                creators["ghost wolf"] = [](PlayerbotAI* ai) { return new CastGhostWolfAction(ai); };
+                creators["call of the elements"] = [](PlayerbotAI* ai) { return new CastCallOfTheElements(ai); };
+                creators["call of the ancestors"] = [](PlayerbotAI* ai) { return new CastCallOfTheAncestors(ai); };
+                creators["call of the spirits"] = [](PlayerbotAI* ai) { return new CastCallOfTheSpirits(ai); };
+                creators["totemic recall"] = [](PlayerbotAI* ai) { return new CastTotemicRecall(ai); };
+                creators["set totembars on levelup"] = [](PlayerbotAI* ai) { return new SetTotemBars(ai); };
+                creators["update pve strats"] = [](PlayerbotAI* ai) { return new UpdateShamanPveStrategiesAction(ai); };
+                creators["update pvp strats"] = [](PlayerbotAI* ai) { return new UpdateShamanPvpStrategiesAction(ai); };
+                creators["update raid strats"] = [](PlayerbotAI* ai) { return new UpdateShamanRaidStrategiesAction(ai); };
+                creators["earth shield on party tank"] = [](PlayerbotAI* ai) { return new CastEarthShieldOnPartyTankAction(ai); };
+            }
+        };
+    };
 };
 
-class ShamanEarthTotemStrategyFactoryInternal : public NamedObjectContext<Strategy>
+ShamanAiObjectContext::ShamanAiObjectContext(PlayerbotAI* ai) : AiObjectContext(ai)
 {
-public:
-    ShamanEarthTotemStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
-    {
-        creators["strength of earth"] = &ShamanEarthTotemStrategyFactoryInternal::strength_of_earth_totem;
-        creators["stoneskin"] = &ShamanEarthTotemStrategyFactoryInternal::stoneskin_totem;
-        creators["tremor"] = &ShamanEarthTotemStrategyFactoryInternal::earth_totem;
-        creators["earthbind"] = &ShamanEarthTotemStrategyFactoryInternal::earthbind_totem;
-    }
-
-private:
-    static Strategy* strength_of_earth_totem(PlayerbotAI* botAI) { return new StrengthOfEarthTotemStrategy(botAI); }
-    static Strategy* stoneskin_totem(PlayerbotAI* botAI) { return new StoneskinTotemStrategy(botAI); }
-    static Strategy* earth_totem(PlayerbotAI* botAI) { return new EarthTotemStrategy(botAI); }
-    static Strategy* earthbind_totem(PlayerbotAI* botAI) { return new EarthbindTotemStrategy(botAI); }
-};
-
-class ShamanFireTotemStrategyFactoryInternal : public NamedObjectContext<Strategy>
-{
-public:
-    ShamanFireTotemStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
-    {
-        creators["searing"] = &ShamanFireTotemStrategyFactoryInternal::searing_totem;
-        creators["magma"] = &ShamanFireTotemStrategyFactoryInternal::magma_totem;
-        creators["flametongue"] = &ShamanFireTotemStrategyFactoryInternal::flametongue_totem;
-        creators["wrath"] = &ShamanFireTotemStrategyFactoryInternal::totem_of_wrath;
-        creators["frost resistance"] = &ShamanFireTotemStrategyFactoryInternal::frost_resistance_totem;
-    }
-
-private:
-    static Strategy* searing_totem(PlayerbotAI* botAI) { return new SearingTotemStrategy(botAI); }
-    static Strategy* magma_totem(PlayerbotAI* botAI) { return new MagmaTotemStrategy(botAI); }
-    static Strategy* flametongue_totem(PlayerbotAI* botAI) { return new FlametongueTotemStrategy(botAI); }
-    static Strategy* totem_of_wrath(PlayerbotAI* botAI) { return new TotemOfWrathStrategy(botAI); }
-    static Strategy* frost_resistance_totem(PlayerbotAI* botAI) { return new FrostResistanceTotemStrategy(botAI); }
-};
-
-class ShamanWaterTotemStrategyFactoryInternal : public NamedObjectContext<Strategy>
-{
-public:
-    ShamanWaterTotemStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
-    {
-        creators["healing stream"] = &ShamanWaterTotemStrategyFactoryInternal::healing_stream_totem;
-        creators["mana spring"] = &ShamanWaterTotemStrategyFactoryInternal::mana_spring_totem;
-        creators["cleansing"] = &ShamanWaterTotemStrategyFactoryInternal::cleansing_totem;
-        creators["fire resistance"] = &ShamanWaterTotemStrategyFactoryInternal::fire_resistance_totem;
-    }
-
-private:
-    static Strategy* healing_stream_totem(PlayerbotAI* botAI) { return new HealingStreamTotemStrategy(botAI); }
-    static Strategy* mana_spring_totem(PlayerbotAI* botAI) { return new ManaSpringTotemStrategy(botAI); }
-    static Strategy* cleansing_totem(PlayerbotAI* botAI) { return new CleansingTotemStrategy(botAI); }
-    static Strategy* fire_resistance_totem(PlayerbotAI* botAI) { return new FireResistanceTotemStrategy(botAI); }
-};
-
-class ShamanAirTotemStrategyFactoryInternal : public NamedObjectContext<Strategy>
-{
-public:
-    ShamanAirTotemStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
-    {
-        creators["wrath of air"] = &ShamanAirTotemStrategyFactoryInternal::wrath_of_air_totem;
-        creators["windfury"] = &ShamanAirTotemStrategyFactoryInternal::windfury_totem;
-        creators["nature resistance"] = &ShamanAirTotemStrategyFactoryInternal::nature_resistance_totem;
-        creators["grounding"] = &ShamanAirTotemStrategyFactoryInternal::grounding_totem;
-    }
-
-private:
-    static Strategy* wrath_of_air_totem(PlayerbotAI* botAI) { return new WrathOfAirTotemStrategy(botAI); }
-    static Strategy* windfury_totem(PlayerbotAI* botAI) { return new WindfuryTotemStrategy(botAI); }
-    static Strategy* nature_resistance_totem(PlayerbotAI* botAI) { return new NatureResistanceTotemStrategy(botAI); }
-    static Strategy* grounding_totem(PlayerbotAI* botAI) { return new GroundingTotemStrategy(botAI); }
-};
-
-class ShamanATriggerFactoryInternal : public NamedObjectContext<Trigger>
-{
-public:
-    ShamanATriggerFactoryInternal()
-    {
-        creators["wind shear"] = &ShamanATriggerFactoryInternal::wind_shear;
-        creators["purge"] = &ShamanATriggerFactoryInternal::purge;
-        creators["main hand weapon no imbue"] = &ShamanATriggerFactoryInternal::main_hand_weapon_no_imbue;
-        creators["off hand weapon no imbue"] = &ShamanATriggerFactoryInternal::off_hand_weapon_no_imbue;
-        creators["water shield"] = &ShamanATriggerFactoryInternal::water_shield;
-        creators["lightning shield"] = &ShamanATriggerFactoryInternal::lightning_shield;
-        creators["water breathing"] = &ShamanATriggerFactoryInternal::water_breathing;
-        creators["water walking"] = &ShamanATriggerFactoryInternal::water_walking;
-        creators["water breathing on party"] = &ShamanATriggerFactoryInternal::water_breathing_on_party;
-        creators["water walking on party"] = &ShamanATriggerFactoryInternal::water_walking_on_party;
-        creators["cleanse spirit poison"] = &ShamanATriggerFactoryInternal::cleanse_poison;
-        creators["cleanse spirit curse"] = &ShamanATriggerFactoryInternal::cleanse_curse;
-        creators["cleanse spirit disease"] = &ShamanATriggerFactoryInternal::cleanse_disease;
-        creators["party member cleanse spirit poison"] = &ShamanATriggerFactoryInternal::party_member_cleanse_poison;
-        creators["party member cleanse spirit curse"] = &ShamanATriggerFactoryInternal::party_member_cleanse_curse;
-        creators["party member cleanse spirit disease"] = &ShamanATriggerFactoryInternal::party_member_cleanse_disease;
-        creators["shock"] = &ShamanATriggerFactoryInternal::shock;
-        creators["frost shock snare"] = &ShamanATriggerFactoryInternal::frost_shock_snare;
-        creators["heroism"] = &ShamanATriggerFactoryInternal::heroism;
-        creators["bloodlust"] = &ShamanATriggerFactoryInternal::bloodlust;
-        creators["elemental mastery"] = &ShamanATriggerFactoryInternal::elemental_mastery;
-        creators["wind shear on enemy healer"] = &ShamanATriggerFactoryInternal::wind_shear_on_enemy_healer;
-        creators["earth shield on main tank"] = &ShamanATriggerFactoryInternal::earth_shield_on_main_tank;
-        creators["maelstrom weapon 3"] = &ShamanATriggerFactoryInternal::maelstrom_weapon_3;
-        creators["maelstrom weapon 4"] = &ShamanATriggerFactoryInternal::maelstrom_weapon_4;
-        creators["maelstrom weapon 5"] = &ShamanATriggerFactoryInternal::maelstrom_weapon_5;
-        creators["flame shock"] = &ShamanATriggerFactoryInternal::flame_shock;
-        creators["fire elemental totem"] = &ShamanATriggerFactoryInternal::fire_elemental_totem;
-        creators["earth shock execute"] = &ShamanATriggerFactoryInternal::earth_shock_execute;
-        creators["spirit walk ready"] = &ShamanATriggerFactoryInternal::spirit_walk_ready;
-        creators["chain lightning no cd"] = &ShamanATriggerFactoryInternal::chain_lightning_no_cd;
-        creators["call of the elements and enemy within melee"] = &ShamanATriggerFactoryInternal::call_of_the_elements_and_enemy_within_melee;
-        creators["maelstrom weapon 5 and medium aoe"] = &ShamanATriggerFactoryInternal::maelstrom_weapon_5_and_medium_aoe;
-        creators["maelstrom weapon 4 and medium aoe"] = &ShamanATriggerFactoryInternal::maelstrom_weapon_4_and_medium_aoe;
-        creators["call of the elements"] = &ShamanATriggerFactoryInternal::call_of_the_elements;
-        creators["totemic recall"] = &ShamanATriggerFactoryInternal::totemic_recall;
-        creators["no earth totem"] = &ShamanATriggerFactoryInternal::no_earth_totem;
-        creators["no fire totem"] = &ShamanATriggerFactoryInternal::no_fire_totem;
-        creators["no water totem"] = &ShamanATriggerFactoryInternal::no_water_totem;
-        creators["no air totem"] = &ShamanATriggerFactoryInternal::no_air_totem;
-        creators["set strength of earth totem"] = &ShamanATriggerFactoryInternal::set_strength_of_earth_totem;
-        creators["set stoneskin totem"] = &ShamanATriggerFactoryInternal::set_stoneskin_totem;
-        creators["set tremor totem"] = &ShamanATriggerFactoryInternal::set_tremor_totem;
-        creators["set earthbind totem"] = &ShamanATriggerFactoryInternal::set_earthbind_totem;
-        creators["set searing totem"] = &ShamanATriggerFactoryInternal::set_searing_totem;
-        creators["set magma totem"] = &ShamanATriggerFactoryInternal::set_magma_totem;
-        creators["set flametongue totem"] = &ShamanATriggerFactoryInternal::set_flametongue_totem;
-        creators["set totem of wrath"] = &ShamanATriggerFactoryInternal::set_totem_of_wrath;
-        creators["set frost resistance totem"] = &ShamanATriggerFactoryInternal::set_frost_resistance_totem;
-        creators["set healing stream totem"] = &ShamanATriggerFactoryInternal::set_healing_stream_totem;
-        creators["set mana spring totem"] = &ShamanATriggerFactoryInternal::set_mana_spring_totem;
-        creators["set cleansing totem"] = &ShamanATriggerFactoryInternal::set_cleansing_totem;
-        creators["set fire resistance totem"] = &ShamanATriggerFactoryInternal::set_fire_resistance_totem;
-        creators["set wrath of air totem"] = &ShamanATriggerFactoryInternal::set_wrath_of_air_totem;
-        creators["set windfury totem"] = &ShamanATriggerFactoryInternal::set_windfury_totem;
-        creators["set nature resistance totem"] = &ShamanATriggerFactoryInternal::set_nature_resistance_totem;
-        creators["set grounding totem"] = &ShamanATriggerFactoryInternal::set_grounding_totem;
-    }
-
-private:
-    static Trigger* maelstrom_weapon_3(PlayerbotAI* botAI) { return new MaelstromWeaponTrigger(botAI, 3); }
-    static Trigger* maelstrom_weapon_4(PlayerbotAI* botAI) { return new MaelstromWeaponTrigger(botAI, 4); }
-    static Trigger* maelstrom_weapon_5(PlayerbotAI* botAI) { return new MaelstromWeaponTrigger(botAI, 5); }
-    static Trigger* heroism(PlayerbotAI* botAI) { return new HeroismTrigger(botAI); }
-    static Trigger* bloodlust(PlayerbotAI* botAI) { return new BloodlustTrigger(botAI); }
-    static Trigger* elemental_mastery(PlayerbotAI* botAI) { return new ElementalMasteryTrigger(botAI); }
-    static Trigger* party_member_cleanse_disease(PlayerbotAI* botAI) { return new PartyMemberCleanseSpiritDiseaseTrigger(botAI); }
-    static Trigger* party_member_cleanse_curse(PlayerbotAI* botAI) { return new PartyMemberCleanseSpiritCurseTrigger(botAI); }
-    static Trigger* party_member_cleanse_poison(PlayerbotAI* botAI) { return new PartyMemberCleanseSpiritPoisonTrigger(botAI); }
-    static Trigger* cleanse_disease(PlayerbotAI* botAI) { return new CleanseSpiritDiseaseTrigger(botAI); }
-    static Trigger* cleanse_curse(PlayerbotAI* botAI) { return new CleanseSpiritCurseTrigger(botAI); }
-    static Trigger* cleanse_poison(PlayerbotAI* botAI) { return new CleanseSpiritPoisonTrigger(botAI); }
-    static Trigger* water_breathing(PlayerbotAI* botAI) { return new WaterBreathingTrigger(botAI); }
-    static Trigger* water_walking(PlayerbotAI* botAI) { return new WaterWalkingTrigger(botAI); }
-    static Trigger* water_breathing_on_party(PlayerbotAI* botAI) { return new WaterBreathingOnPartyTrigger(botAI); }
-    static Trigger* water_walking_on_party(PlayerbotAI* botAI) { return new WaterWalkingOnPartyTrigger(botAI); }
-    static Trigger* wind_shear(PlayerbotAI* botAI) { return new WindShearInterruptSpellTrigger(botAI); }
-    static Trigger* purge(PlayerbotAI* botAI) { return new PurgeTrigger(botAI); }
-    static Trigger* main_hand_weapon_no_imbue(PlayerbotAI* botAI) { return new MainHandWeaponNoImbueTrigger(botAI); }
-    static Trigger* off_hand_weapon_no_imbue(PlayerbotAI* botAI) { return new OffHandWeaponNoImbueTrigger(botAI); }
-    static Trigger* water_shield(PlayerbotAI* botAI) { return new WaterShieldTrigger(botAI); }
-    static Trigger* lightning_shield(PlayerbotAI* botAI) { return new LightningShieldTrigger(botAI); }
-    static Trigger* shock(PlayerbotAI* botAI) { return new ShockTrigger(botAI); }
-    static Trigger* frost_shock_snare(PlayerbotAI* botAI) { return new FrostShockSnareTrigger(botAI); }
-    static Trigger* wind_shear_on_enemy_healer(PlayerbotAI* botAI) { return new WindShearInterruptEnemyHealerSpellTrigger(botAI); }
-    static Trigger* earth_shield_on_main_tank(PlayerbotAI* botAI) { return new EarthShieldOnMainTankTrigger(botAI); }
-    static Trigger* flame_shock(PlayerbotAI* botAI) { return new FlameShockTrigger(botAI); }
-    static Trigger* fire_elemental_totem(PlayerbotAI* botAI) { return new FireElementalTotemTrigger(botAI); }
-    static Trigger* earth_shock_execute(PlayerbotAI* botAI) { return new EarthShockExecuteTrigger(botAI); }
-    static Trigger* spirit_walk_ready(PlayerbotAI* botAI) { return new SpiritWalkTrigger(botAI); }
-    static Trigger* chain_lightning_no_cd(PlayerbotAI* botAI) { return new ChainLightningNoCdTrigger(botAI); }
-    static Trigger* call_of_the_elements_and_enemy_within_melee(PlayerbotAI* botAI) { return new CallOfTheElementsAndEnemyWithinMeleeTrigger(botAI); }
-    static Trigger* maelstrom_weapon_5_and_medium_aoe(PlayerbotAI* botAI) { return new MaelstromWeapon5AndMediumAoeTrigger(botAI); }
-    static Trigger* maelstrom_weapon_4_and_medium_aoe(PlayerbotAI* botAI) { return new MaelstromWeapon4AndMediumAoeTrigger(botAI); }
-    static Trigger* call_of_the_elements(PlayerbotAI* botAI) { return new CallOfTheElementsTrigger(botAI); }
-    static Trigger* totemic_recall(PlayerbotAI* botAI) { return new TotemicRecallTrigger(botAI); }
-    static Trigger* no_earth_totem(PlayerbotAI* botAI) { return new NoEarthTotemTrigger(botAI); }
-    static Trigger* no_fire_totem(PlayerbotAI* botAI) { return new NoFireTotemTrigger(botAI); }
-    static Trigger* no_water_totem(PlayerbotAI* botAI) { return new NoWaterTotemTrigger(botAI); }
-    static Trigger* no_air_totem(PlayerbotAI* botAI) { return new NoAirTotemTrigger(botAI); }
-    static Trigger* set_strength_of_earth_totem(PlayerbotAI* botAI) { return new SetStrengthOfEarthTotemTrigger(botAI); }
-    static Trigger* set_stoneskin_totem(PlayerbotAI* botAI) { return new SetStoneskinTotemTrigger(botAI); }
-    static Trigger* set_tremor_totem(PlayerbotAI* botAI) { return new SetTremorTotemTrigger(botAI); }
-    static Trigger* set_earthbind_totem(PlayerbotAI* botAI) { return new SetEarthbindTotemTrigger(botAI); }
-    static Trigger* set_searing_totem(PlayerbotAI* botAI) { return new SetSearingTotemTrigger(botAI); }
-    static Trigger* set_magma_totem(PlayerbotAI* botAI) { return new SetMagmaTotemTrigger(botAI); }
-    static Trigger* set_flametongue_totem(PlayerbotAI* botAI) { return new SetFlametongueTotemTrigger(botAI); }
-    static Trigger* set_totem_of_wrath(PlayerbotAI* botAI) { return new SetTotemOfWrathTrigger(botAI); }
-    static Trigger* set_frost_resistance_totem(PlayerbotAI* botAI) { return new SetFrostResistanceTotemTrigger(botAI); }
-    static Trigger* set_healing_stream_totem(PlayerbotAI* botAI) { return new SetHealingStreamTotemTrigger(botAI); }
-    static Trigger* set_mana_spring_totem(PlayerbotAI* botAI) { return new SetManaSpringTotemTrigger(botAI); }
-    static Trigger* set_cleansing_totem(PlayerbotAI* botAI) { return new SetCleansingTotemTrigger(botAI); }
-    static Trigger* set_fire_resistance_totem(PlayerbotAI* botAI) { return new SetFireResistanceTotemTrigger(botAI); }
-    static Trigger* set_wrath_of_air_totem(PlayerbotAI* botAI) { return new SetWrathOfAirTotemTrigger(botAI); }
-    static Trigger* set_windfury_totem(PlayerbotAI* botAI) { return new SetWindfuryTotemTrigger(botAI); }
-    static Trigger* set_nature_resistance_totem(PlayerbotAI* botAI) { return new SetNatureResistanceTotemTrigger(botAI); }
-    static Trigger* set_grounding_totem(PlayerbotAI* botAI) { return new SetGroundingTotemTrigger(botAI); }
-};
-
-class ShamanAiObjectContextInternal : public NamedObjectContext<Action>
-{
-public:
-    ShamanAiObjectContextInternal()
-    {
-        creators["water shield"] = &ShamanAiObjectContextInternal::water_shield;
-        creators["lightning shield"] = &ShamanAiObjectContextInternal::lightning_shield;
-        creators["wind shear"] = &ShamanAiObjectContextInternal::wind_shear;
-        creators["wind shear on enemy healer"] = &ShamanAiObjectContextInternal::wind_shear_on_enemy_healer;
-        creators["rockbiter weapon main hand"] = &ShamanAiObjectContextInternal::rockbiter_weapon_main_hand;
-        creators["flametongue weapon main hand"] = &ShamanAiObjectContextInternal::flametongue_weapon_main_hand;
-        creators["flametongue weapon off hand"] = &ShamanAiObjectContextInternal::flametongue_weapon_off_hand;
-        // creators["frostbrand weapon off hand"] = &ShamanAiObjectContextInternal::frostbrand_weapon_off_hand;
-        creators["windfury weapon main hand"] = &ShamanAiObjectContextInternal::windfury_weapon_main_hand;
-        creators["earthliving weapon main hand"] = &ShamanAiObjectContextInternal::earthliving_weapon_main_hand;
-        creators["purge"] = &ShamanAiObjectContextInternal::purge;
-        creators["healing wave"] = &ShamanAiObjectContextInternal::healing_wave;
-        creators["lesser healing wave"] = &ShamanAiObjectContextInternal::lesser_healing_wave;
-        creators["healing wave on party"] = &ShamanAiObjectContextInternal::healing_wave_on_party;
-        creators["lesser healing wave on party"] = &ShamanAiObjectContextInternal::lesser_healing_wave_on_party;
-        creators["earth shield"] = &ShamanAiObjectContextInternal::earth_shield;
-        creators["earth shield on party"] = &ShamanAiObjectContextInternal::earth_shield_on_party;
-        creators["chain heal on party"] = &ShamanAiObjectContextInternal::chain_heal;
-        creators["riptide"] = &ShamanAiObjectContextInternal::riptide;
-        creators["riptide on party"] = &ShamanAiObjectContextInternal::riptide_on_party;
-        creators["stormstrike"] = &ShamanAiObjectContextInternal::stormstrike;
-        creators["lava lash"] = &ShamanAiObjectContextInternal::lava_lash;
-        creators["fire nova"] = &ShamanAiObjectContextInternal::fire_nova;
-        creators["ancestral spirit"] = &ShamanAiObjectContextInternal::ancestral_spirit;
-        creators["water walking"] = &ShamanAiObjectContextInternal::water_walking;
-        creators["water breathing"] = &ShamanAiObjectContextInternal::water_breathing;
-        creators["water walking on party"] = &ShamanAiObjectContextInternal::water_walking_on_party;
-        creators["water breathing on party"] = &ShamanAiObjectContextInternal::water_breathing_on_party;
-        creators["cleanse spirit"] = &ShamanAiObjectContextInternal::cleanse_spirit;
-        creators["cleanse spirit poison on party"] = &ShamanAiObjectContextInternal::cleanse_spirit_poison_on_party;
-        creators["cleanse spirit disease on party"] = &ShamanAiObjectContextInternal::cleanse_spirit_disease_on_party;
-        creators["cleanse spirit curse on party"] = &ShamanAiObjectContextInternal::cleanse_spirit_curse_on_party;
-        creators["flame shock"] = &ShamanAiObjectContextInternal::flame_shock;
-        creators["earth shock"] = &ShamanAiObjectContextInternal::earth_shock;
-        creators["frost shock"] = &ShamanAiObjectContextInternal::frost_shock;
-        creators["chain lightning"] = &ShamanAiObjectContextInternal::chain_lightning;
-        creators["lightning bolt"] = &ShamanAiObjectContextInternal::lightning_bolt;
-        creators["thunderstorm"] = &ShamanAiObjectContextInternal::thunderstorm;
-        creators["heroism"] = &ShamanAiObjectContextInternal::heroism;
-        creators["bloodlust"] = &ShamanAiObjectContextInternal::bloodlust;
-        creators["elemental mastery"] = &ShamanAiObjectContextInternal::elemental_mastery;
-        creators["cure toxins"] = &ShamanAiObjectContextInternal::cure_toxins;
-        creators["cure toxins poison on party"] = &ShamanAiObjectContextInternal::cure_toxins_poison_on_party;
-        creators["cure toxins disease on party"] = &ShamanAiObjectContextInternal::cure_toxins_disease_on_party;
-        creators["lava burst"] = &ShamanAiObjectContextInternal::lava_burst;
-        creators["earth shield on main tank"] = &ShamanAiObjectContextInternal::earth_shield_on_main_tank;
-        creators["shamanistic rage"] = &ShamanAiObjectContextInternal::shamanistic_rage;
-        creators["feral spirit"] = &ShamanAiObjectContextInternal::feral_spirit;
-        creators["spirit walk"] = &ShamanAiObjectContextInternal::spirit_walk;
-        creators["call of the elements"] = &ShamanAiObjectContextInternal::call_of_the_elements;
-        creators["totemic recall"] = &ShamanAiObjectContextInternal::totemic_recall;
-        creators["strength of earth totem"] = &ShamanAiObjectContextInternal::strength_of_earth_totem;
-        creators["stoneskin totem"] = &ShamanAiObjectContextInternal::stoneskin_totem;
-        creators["tremor totem"] = &ShamanAiObjectContextInternal::tremor_totem;
-        creators["earthbind totem"] = &ShamanAiObjectContextInternal::earthbind_totem;
-        creators["stoneclaw totem"] = &ShamanAiObjectContextInternal::stoneclaw_totem;
-        creators["searing totem"] = &ShamanAiObjectContextInternal::searing_totem;
-        creators["magma totem"] = &ShamanAiObjectContextInternal::magma_totem;
-        creators["flametongue totem"] = &ShamanAiObjectContextInternal::flametongue_totem;
-        creators["totem of wrath"] = &ShamanAiObjectContextInternal::totem_of_wrath;
-        creators["frost resistance totem"] = &ShamanAiObjectContextInternal::frost_resistance_totem;
-        creators["fire elemental totem"] = &ShamanAiObjectContextInternal::fire_elemental_totem;
-        creators["fire elemental totem melee"] = &ShamanAiObjectContextInternal::fire_elemental_totem_melee;
-        creators["healing stream totem"] = &ShamanAiObjectContextInternal::healing_stream_totem;
-        creators["mana spring totem"] = &ShamanAiObjectContextInternal::mana_spring_totem;
-        creators["cleansing totem"] = &ShamanAiObjectContextInternal::cleansing_totem;
-        creators["mana tide totem"] = &ShamanAiObjectContextInternal::mana_tide_totem;
-        creators["fire resistance totem"] = &ShamanAiObjectContextInternal::fire_resistance_totem;
-        creators["wrath of air totem"] = &ShamanAiObjectContextInternal::wrath_of_air_totem;
-        creators["windfury totem"] = &ShamanAiObjectContextInternal::windfury_totem;
-        creators["nature resistance totem"] = &ShamanAiObjectContextInternal::nature_resistance_totem;
-        creators["set strength of earth totem"] = &ShamanAiObjectContextInternal::set_strength_of_earth_totem;
-        creators["set stoneskin totem"] = &ShamanAiObjectContextInternal::set_stoneskin_totem;
-        creators["set tremor totem"] = &ShamanAiObjectContextInternal::set_tremor_totem;
-        creators["set earthbind totem"] = &ShamanAiObjectContextInternal::set_earthbind_totem;
-        creators["set searing totem"] = &ShamanAiObjectContextInternal::set_searing_totem;
-        creators["set magma totem"] = &ShamanAiObjectContextInternal::set_magma_totem;
-        creators["set flametongue totem"] = &ShamanAiObjectContextInternal::set_flametongue_totem;
-        creators["set totem of wrath"] = &ShamanAiObjectContextInternal::set_totem_of_wrath;
-        creators["set frost resistance totem"] = &ShamanAiObjectContextInternal::set_frost_resistance_totem;
-        creators["set healing stream totem"] = &ShamanAiObjectContextInternal::set_healing_stream_totem;
-        creators["set mana spring totem"] = &ShamanAiObjectContextInternal::set_mana_spring_totem;
-        creators["set cleansing totem"] = &ShamanAiObjectContextInternal::set_cleansing_totem;
-        creators["set fire resistance totem"] = &ShamanAiObjectContextInternal::set_fire_resistance_totem;
-        creators["set wrath of air totem"] = &ShamanAiObjectContextInternal::set_wrath_of_air_totem;
-        creators["set windfury totem"] = &ShamanAiObjectContextInternal::set_windfury_totem;
-        creators["set nature resistance totem"] = &ShamanAiObjectContextInternal::set_nature_resistance_totem;
-        creators["set grounding totem"] = &ShamanAiObjectContextInternal::set_grounding_totem;
-    }
-
-private:
-    static Action* heroism(PlayerbotAI* botAI) { return new CastHeroismAction(botAI); }
-    static Action* bloodlust(PlayerbotAI* botAI) { return new CastBloodlustAction(botAI); }
-    static Action* elemental_mastery(PlayerbotAI* botAI) { return new CastElementalMasteryAction(botAI); }
-    static Action* thunderstorm(PlayerbotAI* botAI) { return new CastThunderstormAction(botAI); }
-    static Action* lightning_bolt(PlayerbotAI* botAI) { return new CastLightningBoltAction(botAI); }
-    static Action* chain_lightning(PlayerbotAI* botAI) { return new CastChainLightningAction(botAI); }
-    static Action* frost_shock(PlayerbotAI* botAI) { return new CastFrostShockAction(botAI); }
-    static Action* earth_shock(PlayerbotAI* botAI) { return new CastEarthShockAction(botAI); }
-    static Action* flame_shock(PlayerbotAI* botAI) { return new CastFlameShockAction(botAI); }
-    static Action* cleanse_spirit(PlayerbotAI* botAI) { return new CastCleanseSpiritAction(botAI); }
-    static Action* cleanse_spirit_poison_on_party(PlayerbotAI* botAI) { return new CastCleanseSpiritPoisonOnPartyAction(botAI); }
-    static Action* cleanse_spirit_disease_on_party(PlayerbotAI* botAI) { return new CastCleanseSpiritDiseaseOnPartyAction(botAI); }
-    static Action* cleanse_spirit_curse_on_party(PlayerbotAI* botAI) { return new CastCleanseSpiritCurseOnPartyAction(botAI); }
-    static Action* water_walking(PlayerbotAI* botAI) { return new CastWaterWalkingAction(botAI); }
-    static Action* water_breathing(PlayerbotAI* botAI) { return new CastWaterBreathingAction(botAI); }
-    static Action* water_walking_on_party(PlayerbotAI* botAI) { return new CastWaterWalkingOnPartyAction(botAI); }
-    static Action* water_breathing_on_party(PlayerbotAI* botAI) { return new CastWaterBreathingOnPartyAction(botAI); }
-    static Action* water_shield(PlayerbotAI* botAI) { return new CastWaterShieldAction(botAI); }
-    static Action* lightning_shield(PlayerbotAI* botAI) { return new CastLightningShieldAction(botAI); }
-    static Action* fire_nova(PlayerbotAI* botAI) { return new CastFireNovaAction(botAI); }
-    static Action* wind_shear(PlayerbotAI* botAI) { return new CastWindShearAction(botAI); }
-    static Action* rockbiter_weapon_main_hand(PlayerbotAI* botAI) { return new CastRockbiterWeaponMainHandAction(botAI); }
-    static Action* flametongue_weapon_main_hand(PlayerbotAI* botAI) { return new CastFlametongueWeaponMainHandAction(botAI); }
-    static Action* flametongue_weapon_off_hand(PlayerbotAI* botAI) { return new CastFlametongueWeaponOffHandAction(botAI); }
-    // static Action* frostbrand_weapon_off_hand(PlayerbotAI* botAI) { return new CastFrostbrandWeaponOffHandAction(botAI); }
-    static Action* earthliving_weapon_main_hand(PlayerbotAI* botAI) { return new CastEarthlivingWeaponMainHandAction(botAI); }
-    static Action* windfury_weapon_main_hand(PlayerbotAI* botAI) { return new CastWindfuryWeaponMainHandAction(botAI); }
-    static Action* purge(PlayerbotAI* botAI) { return new CastPurgeAction(botAI); }
-    static Action* healing_wave(PlayerbotAI* botAI) { return new CastHealingWaveAction(botAI); }
-    static Action* lesser_healing_wave(PlayerbotAI* botAI) { return new CastLesserHealingWaveAction(botAI); }
-    static Action* healing_wave_on_party(PlayerbotAI* botAI) { return new CastHealingWaveOnPartyAction(botAI); }
-    static Action* lesser_healing_wave_on_party(PlayerbotAI* botAI) { return new CastLesserHealingWaveOnPartyAction(botAI); }
-    static Action* earth_shield(PlayerbotAI* botAI) { return new CastEarthShieldAction(botAI); }
-    static Action* earth_shield_on_party(PlayerbotAI* botAI) { return new CastEarthShieldOnPartyAction(botAI); }
-    static Action* chain_heal(PlayerbotAI* botAI) { return new CastChainHealAction(botAI); }
-    static Action* riptide(PlayerbotAI* botAI) { return new CastRiptideAction(botAI); }
-    static Action* riptide_on_party(PlayerbotAI* botAI) { return new CastRiptideOnPartyAction(botAI); }
-    static Action* stormstrike(PlayerbotAI* botAI) { return new CastStormstrikeAction(botAI); }
-    static Action* lava_lash(PlayerbotAI* botAI) { return new CastLavaLashAction(botAI); }
-    static Action* ancestral_spirit(PlayerbotAI* botAI) { return new CastAncestralSpiritAction(botAI); }
-    static Action* wind_shear_on_enemy_healer(PlayerbotAI* botAI) { return new CastWindShearOnEnemyHealerAction(botAI); }
-    static Action* cure_toxins(PlayerbotAI* botAI) { return new CastCureToxinsActionSham(botAI); }
-    static Action* cure_toxins_poison_on_party(PlayerbotAI* botAI) { return new CastCureToxinsPoisonOnPartyActionSham(botAI); }
-    static Action* cure_toxins_disease_on_party(PlayerbotAI* botAI) { return new CastCureToxinsDiseaseOnPartyActionSham(botAI); }
-    static Action* lava_burst(PlayerbotAI* botAI) { return new CastLavaBurstAction(botAI); }
-    static Action* earth_shield_on_main_tank(PlayerbotAI* botAI) { return new CastEarthShieldOnMainTankAction(botAI); }
-    static Action* shamanistic_rage(PlayerbotAI* botAI) { return new CastShamanisticRageAction(botAI); }
-    static Action* feral_spirit(PlayerbotAI* botAI) { return new CastFeralSpiritAction(botAI); }
-    static Action* spirit_walk(PlayerbotAI* botAI) { return new CastSpiritWalkAction(botAI); }
-    static Action* call_of_the_elements(PlayerbotAI* botAI) { return new CastCallOfTheElementsAction(botAI); }
-    static Action* totemic_recall(PlayerbotAI* botAI) { return new CastTotemicRecallAction(botAI); }
-    static Action* strength_of_earth_totem(PlayerbotAI* botAI) { return new CastStrengthOfEarthTotemAction(botAI); }
-    static Action* stoneskin_totem(PlayerbotAI* botAI) { return new CastStoneskinTotemAction(botAI); }
-    static Action* tremor_totem(PlayerbotAI* botAI) { return new CastTremorTotemAction(botAI); }
-    static Action* earthbind_totem(PlayerbotAI* botAI) { return new CastEarthbindTotemAction(botAI); }
-    static Action* stoneclaw_totem(PlayerbotAI* botAI) { return new CastStoneclawTotemAction(botAI); }
-    static Action* searing_totem(PlayerbotAI* botAI) { return new CastSearingTotemAction(botAI); }
-    static Action* magma_totem(PlayerbotAI* botAI) { return new CastMagmaTotemAction(botAI); }
-    static Action* flametongue_totem(PlayerbotAI* botAI) { return new CastFlametongueTotemAction(botAI); }
-    static Action* totem_of_wrath(PlayerbotAI* botAI) { return new CastTotemOfWrathAction(botAI); }
-    static Action* frost_resistance_totem(PlayerbotAI* botAI) { return new CastFrostResistanceTotemAction(botAI); }
-    static Action* fire_elemental_totem(PlayerbotAI* botAI) { return new CastFireElementalTotemAction(botAI); }
-    static Action* fire_elemental_totem_melee(PlayerbotAI* botAI) { return new CastFireElementalTotemMeleeAction(botAI); }
-    static Action* healing_stream_totem(PlayerbotAI* botAI) { return new CastHealingStreamTotemAction(botAI); }
-    static Action* mana_spring_totem(PlayerbotAI* botAI) { return new CastManaSpringTotemAction(botAI); }
-    static Action* cleansing_totem(PlayerbotAI* botAI) { return new CastCleansingTotemAction(botAI); }
-    static Action* mana_tide_totem(PlayerbotAI* botAI) { return new CastManaTideTotemAction(botAI); }
-    static Action* fire_resistance_totem(PlayerbotAI* botAI) { return new CastFireResistanceTotemAction(botAI); }
-    static Action* wrath_of_air_totem(PlayerbotAI* botAI) { return new CastWrathOfAirTotemAction(botAI); }
-    static Action* windfury_totem(PlayerbotAI* botAI) { return new CastWindfuryTotemAction(botAI); }
-    static Action* nature_resistance_totem(PlayerbotAI* botAI) { return new CastNatureResistanceTotemAction(botAI); }
-    static Action* set_strength_of_earth_totem(PlayerbotAI* botAI) { return new SetStrengthOfEarthTotemAction(botAI); }
-    static Action* set_stoneskin_totem(PlayerbotAI* botAI) { return new SetStoneskinTotemAction(botAI); }
-    static Action* set_tremor_totem(PlayerbotAI* botAI) { return new SetTremorTotemAction(botAI); }
-    static Action* set_earthbind_totem(PlayerbotAI* botAI) { return new SetEarthbindTotemAction(botAI); }
-    static Action* set_searing_totem(PlayerbotAI* botAI) { return new SetSearingTotemAction(botAI); }
-    static Action* set_magma_totem(PlayerbotAI* botAI) { return new SetMagmaTotemAction(botAI); }
-    static Action* set_flametongue_totem(PlayerbotAI* botAI) { return new SetFlametongueTotemAction(botAI); }
-    static Action* set_totem_of_wrath(PlayerbotAI* botAI) { return new SetTotemOfWrathAction(botAI); }
-    static Action* set_frost_resistance_totem(PlayerbotAI* botAI) { return new SetFrostResistanceTotemAction(botAI); }
-    static Action* set_healing_stream_totem(PlayerbotAI* botAI) { return new SetHealingStreamTotemAction(botAI); }
-    static Action* set_mana_spring_totem(PlayerbotAI* botAI) { return new SetManaSpringTotemAction(botAI); }
-    static Action* set_cleansing_totem(PlayerbotAI* botAI) { return new SetCleansingTotemAction(botAI); }
-    static Action* set_fire_resistance_totem(PlayerbotAI* botAI) { return new SetFireResistanceTotemAction(botAI); }
-    static Action* set_wrath_of_air_totem(PlayerbotAI* botAI) { return new SetWrathOfAirTotemAction(botAI); }
-    static Action* set_windfury_totem(PlayerbotAI* botAI) { return new SetWindfuryTotemAction(botAI); }
-    static Action* set_nature_resistance_totem(PlayerbotAI* botAI) { return new SetNatureResistanceTotemAction(botAI); }
-    static Action* set_grounding_totem(PlayerbotAI* botAI) { return new SetGroundingTotemAction(botAI); }
-};
-
-SharedNamedObjectContextList<Strategy> ShamanAiObjectContext::sharedStrategyContexts;
-SharedNamedObjectContextList<Action> ShamanAiObjectContext::sharedActionContexts;
-SharedNamedObjectContextList<Trigger> ShamanAiObjectContext::sharedTriggerContexts;
-SharedNamedObjectContextList<UntypedValue> ShamanAiObjectContext::sharedValueContexts;
-
-ShamanAiObjectContext::ShamanAiObjectContext(PlayerbotAI* botAI)
-    : AiObjectContext(botAI, sharedStrategyContexts, sharedActionContexts, sharedTriggerContexts, sharedValueContexts)
-{
-}
-
-void ShamanAiObjectContext::BuildSharedContexts()
-{
-    BuildSharedStrategyContexts(sharedStrategyContexts);
-    BuildSharedActionContexts(sharedActionContexts);
-    BuildSharedTriggerContexts(sharedTriggerContexts);
-    BuildSharedValueContexts(sharedValueContexts);
-}
-
-void ShamanAiObjectContext::BuildSharedStrategyContexts(SharedNamedObjectContextList<Strategy>& strategyContexts)
-{
-    AiObjectContext::BuildSharedStrategyContexts(strategyContexts);
-    strategyContexts.Add(new ShamanStrategyFactoryInternal());
-    strategyContexts.Add(new ShamanCombatStrategyFactoryInternal());
-    strategyContexts.Add(new ShamanEarthTotemStrategyFactoryInternal());
-    strategyContexts.Add(new ShamanFireTotemStrategyFactoryInternal());
-    strategyContexts.Add(new ShamanWaterTotemStrategyFactoryInternal());
-    strategyContexts.Add(new ShamanAirTotemStrategyFactoryInternal());
-}
-
-void ShamanAiObjectContext::BuildSharedActionContexts(SharedNamedObjectContextList<Action>& actionContexts)
-{
-    AiObjectContext::BuildSharedActionContexts(actionContexts);
-    actionContexts.Add(new ShamanAiObjectContextInternal());
-}
-
-void ShamanAiObjectContext::BuildSharedTriggerContexts(SharedNamedObjectContextList<Trigger>& triggerContexts)
-{
-    AiObjectContext::BuildSharedTriggerContexts(triggerContexts);
-    triggerContexts.Add(new ShamanATriggerFactoryInternal());
-}
-
-void ShamanAiObjectContext::BuildSharedValueContexts(SharedNamedObjectContextList<UntypedValue>& valueContexts)
-{
-    AiObjectContext::BuildSharedValueContexts(valueContexts);
+    strategyContexts.Add(new ai::shaman::StrategyFactoryInternal());
+    strategyContexts.Add(new ai::shaman::EarthTotemStrategyFactoryInternal());
+    strategyContexts.Add(new ai::shaman::FireTotemStrategyFactoryInternal());
+    strategyContexts.Add(new ai::shaman::WaterTotemStrategyFactoryInternal());
+    strategyContexts.Add(new ai::shaman::AirTotemStrategyFactoryInternal());
+    strategyContexts.Add(new ai::shaman::TotemsSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::shaman::AoeSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::shaman::CcSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::shaman::CureSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::shaman::ClassStrategyFactoryInternal());
+    strategyContexts.Add(new ai::shaman::ClassSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::shaman::BuffSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::shaman::OffhealSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::shaman::BoostSituationStrategyFactoryInternal());
+    actionContexts.Add(new ai::shaman::AiObjectContextInternal());
+    triggerContexts.Add(new ai::shaman::TriggerFactoryInternal());
 }
