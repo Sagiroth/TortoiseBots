@@ -11,6 +11,8 @@ set(TORTOISEBOTS_SOURCES
     host/BotChatAdapter.cpp
     runtime/BotManager.cpp
     runtime/BotController.cpp
+    runtime/PlayerbotAIStorage.cpp
+    runtime/PlayerbotAIAdapter.cpp
     behavior/Movement.cpp
     commands/BotCommands.cpp
 )
@@ -141,13 +143,53 @@ file(GLOB BOT_CLASS_CONTEXT_SRC
 list(FILTER BOT_GENERIC_SRC EXCLUDE REGEX ".*Test.*")
 list(FILTER BOT_CORE_SRC EXCLUDE REGEX ".*Test.*")
 
+# Value/Trigger/Action - real modern families (mod-playerbots donor, Shyalya Tortoise translation)
+# These are header-heavy and bring the full Strategy/Trigger/Action/Value engine.
+# For this checkpoint we include the Value/Trigger/Action *contexts* and the
+# concrete Value/Trigger/Action implementations as a coherent batch.
+file(GLOB BOT_VALUE_SRC
+    ai/playerbot/strategy/values/*.cpp
+    ai/playerbot/strategy/values/*.h
+)
+file(GLOB BOT_TRIGGER_SRC
+    ai/playerbot/strategy/triggers/*.cpp
+    ai/playerbot/strategy/triggers/*.h
+)
+file(GLOB BOT_ACTION_SRC
+    ai/playerbot/strategy/actions/*.cpp
+    ai/playerbot/strategy/actions/*.h
+)
+list(FILTER BOT_VALUE_SRC EXCLUDE REGEX ".*Test.*")
+list(FILTER BOT_TRIGGER_SRC EXCLUDE REGEX ".*Test.*")
+list(FILTER BOT_ACTION_SRC EXCLUDE REGEX ".*Test.*")
+
 set(TORTOISEBOTS_AI_SOURCES
     ${BOT_CORE_SRC}
     ${BOT_STRATEGY_SRC}
     ${BOT_CONTEXT_SRC}
     ${BOT_CLASS_CONTEXT_SRC}
+    ${BOT_VALUE_SRC}
+    ${BOT_TRIGGER_SRC}
+    ${BOT_ACTION_SRC}
+    # Travel/WorldPosition/GuidPosition - real Tortoise-translated code + modern TravelMgr
+    ai/playerbot/TravelMgr.cpp
+    ai/playerbot/TravelMgr.h
+    ai/playerbot/TravelNode.cpp
+    ai/playerbot/TravelNode.h
+    ai/playerbot/WorldPosition.cpp
+    ai/playerbot/WorldPosition.h
+    ai/playerbot/GuidPosition.cpp
+    ai/playerbot/GuidPosition.h
+    # Module-local AI registry (replaces Player::GetPlayerbotAI host coupling)
+    runtime/PlayerbotAIStorage.cpp
+    runtime/PlayerbotAIStorage.h
     ai/botpch.cpp
 )
+# For this checkpoint we still keep the bulk generic/class actions out of the default build
+# to avoid the 800-file dep tree; they are present in ai/ and will be enabled in the
+# next batch after Value/Trigger/Action + Travel/WorldPosition are stable.
+# file(GLOB BOT_GENERIC_SRC ...) and file(GLOB BOT_CLASS_CONTEXT_SRC ...) are
+# defined above and will be added in the next batch.
 # Exclude WotLK-only and test scaffolding
 list(FILTER TORTOISEBOTS_AI_SOURCES EXCLUDE REGEX ".*deathknight.*")
 list(FILTER TORTOISEBOTS_AI_SOURCES EXCLUDE REGEX ".*DeathKnight.*")
@@ -169,6 +211,10 @@ target_include_directories(tortoise_bots
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/ai
         ${CMAKE_CURRENT_SOURCE_DIR}/ai/playerbot
+        ${CMAKE_CURRENT_SOURCE_DIR}/ai/playerbot/strategy
+        ${CMAKE_CURRENT_SOURCE_DIR}/ai/playerbot/strategy/actions
+        ${CMAKE_CURRENT_SOURCE_DIR}/ai/playerbot/strategy/values
+        ${CMAKE_CURRENT_SOURCE_DIR}/ai/playerbot/strategy/triggers
         ${CMAKE_CURRENT_SOURCE_DIR}/host
         ${CMAKE_CURRENT_SOURCE_DIR}/runtime
         ${CMAKE_SOURCE_DIR}/src/game

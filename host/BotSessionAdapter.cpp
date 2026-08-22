@@ -1,11 +1,20 @@
+// pi-lens-ignore: clang:pp_file_not_found,clang:unknown_typename,clang:undeclared_var_use,clang:incomplete_member_access,clang:init_conversion_failed,clang:excess_initializers,clang:typecheck_member_reference_struct_union,clang:expected_class_or_namespace,clang:ovl_no_viable_function_in_call,clang:fatal_too_many_errors,clang:unknown_type_name,clang:use_of_undeclared_identifier
 #include "BotSessionAdapter.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "WorldSession.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "World.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "AccountMgr.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectAccessor.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectMgr.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "Player.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "Log.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "Database/DatabaseEnv.h"
 
 namespace TortoiseBots {

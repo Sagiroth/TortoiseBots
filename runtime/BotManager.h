@@ -50,10 +50,12 @@ struct BotRecord
     BotLifecycle lifecycle = BotLifecycle::PendingAdd;
 };
 
+class PlayerbotAIAdapter;
 struct BotEntry
 {
     BotRecord record;
-    std::unique_ptr<BotController> controller;
+    std::unique_ptr<BotController> controller; // legacy follow, kept for 1.5y dead-zone safety until Strategy/Trigger fully drives movement
+    std::unique_ptr<PlayerbotAIAdapter> aiAdapter; // real PlayerbotAI/Engine/Strategy stack
 };
 
 class BotManager

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Objects/Player.h"
+#include "World.h"
+static inline uint32 GetTotalTalentPoints_TB(Player* bot) { uint32 pts = bot->GetLevel() < 10 ? 0 : bot->GetLevel() - 9; pts += bot->GetBonusTalentCount(); return uint32(pts * sWorld.getConfig(CONFIG_FLOAT_RATE_TALENT)); }
 
 struct TalentEntry;
 struct TalentTabEntry;
@@ -31,13 +33,13 @@ class TalentSpec {
 
         TalentSpec() {};
         TalentSpec(uint32 classMask) { GetTalents(classMask); }
-        TalentSpec(Player* bot) { GetTalents(bot->getClassMask()); ReadTalents(bot); }
+        TalentSpec(Player* bot) { GetTalents(bot->GetClassMask()); ReadTalents(bot); }
         TalentSpec(TalentSpec* base, std::string link) { talents = base->talents; ReadTalents(link); }
-        TalentSpec(Player* bot, std::string link) { GetTalents(bot->getClassMask()); ReadTalents(link); }
+        TalentSpec(Player* bot, std::string link) { GetTalents(bot->GetClassMask()); ReadTalents(link); }
 
         bool CheckTalentLink(std::string link, std::ostringstream* out);
         virtual bool CheckTalents(uint32 freeTalentPoints, std::ostringstream* out);
-        virtual bool CheckTalents(Player* bot, std::ostringstream* out) { return CheckTalents(bot->CalculateTalentsPoints(), out); }
+        virtual bool CheckTalents(Player* bot, std::ostringstream* out) { return CheckTalents(GetTotalTalentPoints_TB(bot), out); }
         void CropTalents(Player* botl);
         void ShiftTalents(TalentSpec* oldTalents, Player* botl);
         void ApplyTalents(Player* bot, std::ostringstream* out);

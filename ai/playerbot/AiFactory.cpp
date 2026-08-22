@@ -12,7 +12,9 @@
 #include "strategy/druid/DruidAiObjectContext.h"
 #include "strategy/hunter/HunterAiObjectContext.h"
 #include "strategy/rogue/RogueAiObjectContext.h"
+#ifdef MANGOSBOT_TWO
 #include "strategy/deathknight/DKAiObjectContext.h"
+#endif // MANGOSBOT_ZERO: no DK
 #include "Objects/Player.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/RandomPlayerbotMgr.h"
@@ -946,10 +948,10 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
 
     if (!player->InBattleGround())
     {
-        PlayerbotAI* ai = player->GetPlayerbotAI();
+        PlayerbotAI* ai = nullptr /* GetPlayerbotAI stub */;
         Player* master = ai ? ai->GetMaster() : nullptr;
 
-        if (master && !master->GetPlayerbotAI())
+        if (master && master->GetSession() && !master->GetSession()->IsHeadless())
         {
             const char* wanderFollow = sPlayerbotAIConfig.useWanderAsDefaultFollowStrategy ? "wander" : "follow";
             nonCombatEngine->addStrategies("racials", "nc", "food", wanderFollow, "default", "quest", "loot", "gather", "duel", "emote", "buff", "mount", NULL);
@@ -1019,7 +1021,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
                 nonCombatEngine->addStrategy("bg");
             }
 
-            if(!master || master->GetPlayerbotAI())
+            if(!master || (master->GetSession() && master->GetSession()->IsHeadless()))
             {
                 nonCombatEngine->addStrategy("maintenance");
             }
@@ -1032,7 +1034,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
             {
                 if (master)
                 {
-                    if (master->GetPlayerbotAI() || sRandomPlayerbotMgr.IsFreeBot(player))
+                    if (nullptr /* GetPlayerbotAI stub - use IsHeadless */ || sRandomPlayerbotMgr.IsFreeBot(player))
                     {
                         nonCombatEngine->addStrategy("collision");
                         nonCombatEngine->addStrategy("grind");
@@ -1046,7 +1048,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
                             nonCombatEngine->addStrategy("rpg");
                         }
 
-                        if (!master || master->GetPlayerbotAI())
+                        if (!master || (master->GetSession() && master->GetSession()->IsHeadless()))
                         {
                             nonCombatEngine->addStrategy("maintenance");
                         }

@@ -381,7 +381,7 @@ public:
     void ChangeEngine(BotState type);
     void DoNextAction(bool minimal = false);
     bool CanDoSpecificAction(const std::string& name, bool isUseful = true, bool isPossible = true);
-    virtual bool DoSpecificAction(const std::string& name, Event event = Event(), bool silent = false);
+    virtual bool DoSpecificAction(const std::string& name, ai::Event event = ai::Event(), bool silent = false);
     void ChangeStrategy(const std::string& name, BotState type);
     void PrintStrategies(Player* requester, BotState type);
     void ClearStrategies(BotState type);
@@ -624,20 +624,20 @@ public:
     // teleport forever (every a bot / cross-continent bot). See     // 2026-05-07 root-cause investigation.
     bool IsRealPlayer()
     {
-        std::string const& addr = bot->GetSession()->GetRemoteAddress();
-        return addr != "disconnected/bot" && addr != "<BOT>";
+        // Headless check: real player has a network session, bot has headless
+        return bot && bot->GetSession() && !bot->GetSession()->IsHeadless();
     }
     bool IsRealPlayer(Unit* unit)
     {
         if (!unit->IsPlayer()) return false;
-        std::string const& addr = ((Player*)unit)->GetSession()->GetRemoteAddress();
-        return addr != "disconnected/bot" && addr != "<BOT>";
+        Player* pl = (Player*)unit;
+        return pl->GetSession() && !pl->GetSession()->IsHeadless();
     }
     bool IsSelfMaster() { return master ? (master == bot) : false; }
     //Bot has a master that is a player.
-    bool HasRealPlayerMaster() { return master && (!master->GetPlayerbotAI() || master->GetPlayerbotAI()->IsRealPlayer()); } 
+    bool HasRealPlayerMaster() { return master && master->GetSession() && !master->GetSession()->IsHeadless(); } 
     //Bot has a master that is actively playing.
-    bool HasActivePlayerMaster() const { return master && !master->GetPlayerbotAI(); }
+    bool HasActivePlayerMaster() const { return master && master->GetSession() && !master->GetSession()->IsHeadless(); }
     //Checks if the bot is summoned as alt of a player
     bool IsAlt() { return HasRealPlayerMaster() && !sRandomPlayerbotMgr.IsRandomBot(bot); }
     //Get the group leader or the master of the bot.
@@ -756,8 +756,8 @@ public:
     bool HandleSpellClick(uint32 entry);
     bool HandleSpellClick(ObjectGuid guid);
 
-    void SetLastEvent(Event& event) { lastEvent = event; }
-    Event& GetLastEvent() { return lastEvent; }
+    void SetLastEvent(ai::Event& event) { lastEvent = event; }
+    ai::Event& GetLastEvent() { return lastEvent; }
 
 #ifdef BUILD_ELUNA
     MaNGOS::unique_weak_ptr<PlayerbotAI> GetWeakPtr() const { return m_weakRef; }
@@ -810,7 +810,7 @@ protected:
     bool m_recordMessages = false;
     bool m_recordIncommingMessages = false;
     std::vector<std::string> m_recordedMessages;
-    Event lastEvent;
+    ai::Event lastEvent;
 
 public:
     void RecordMessages(bool record, bool incomming = false) { m_recordMessages = record; m_recordIncommingMessages = incomming; if (!record) m_recordedMessages.clear(); }

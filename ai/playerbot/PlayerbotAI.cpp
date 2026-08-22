@@ -46,14 +46,14 @@
 
 #include <boost/algorithm/string.hpp>
 
-#ifdef MANGOSBOT_TWO
-#include "Entities/Vehicle.h"
-#endif
+// #ifdef MANGOSBOT_TWO
+// #include "Entities/Vehicle.h"
+// #endif // MANGOSBOT_ZERO: no vehicle in 1.18.1
 
 #ifdef BUILD_ELUNA
 #include "LuaEngine/LuaEngine.h"
 #endif
-#include "AI/ScriptDevAI/ScriptDevAIMgr.h"
+// #include "AI/ScriptDevAI/ScriptDevAIMgr.h" // WotLK/AzerothCore only, gated for MANGOSBOT_ZERO
 #include "strategy/values/GuildValues.h"
 
 using namespace ai;
@@ -2637,7 +2637,7 @@ void PlayerbotAI::ResetStrategies(bool autoLoad)
 
 bool PlayerbotAI::IsRanged(Player* player, bool inGroup)
 {
-    PlayerbotAI* botAi = player->GetPlayerbotAI();
+    PlayerbotAI* botAi = nullptr /* GetPlayerbotAI -> IsHeadless check via BotManager */;
     if (botAi)
     {
         bool isRanged = botAi->ContainsStrategy(STRATEGY_TYPE_RANGED);
@@ -2667,7 +2667,7 @@ bool PlayerbotAI::IsMelee(Player* player, bool inGroup)
 
 bool PlayerbotAI::IsTank(Player* player, bool inGroup)
 {
-    PlayerbotAI* botAi = player->GetPlayerbotAI();
+    PlayerbotAI* botAi = nullptr /* GetPlayerbotAI -> IsHeadless check via BotManager */;
     if (botAi)
     {
         bool isTank = botAi->ContainsStrategy(STRATEGY_TYPE_TANK);
@@ -2682,7 +2682,7 @@ bool PlayerbotAI::IsTank(Player* player, bool inGroup)
 
 bool PlayerbotAI::IsHeal(Player* player, bool inGroup)
 {
-    PlayerbotAI* botAi = player->GetPlayerbotAI();
+    PlayerbotAI* botAi = nullptr /* GetPlayerbotAI -> IsHeadless check via BotManager */;
     if (botAi)
     {
         bool isHeal = botAi->ContainsStrategy(STRATEGY_TYPE_HEAL);
@@ -3733,7 +3733,7 @@ bool PlayerbotAI::TellPlayerNoFacing(Player* player, std::string text, Playerbot
 
 bool PlayerbotAI::TellError(Player* player, std::string text, PlayerbotSecurityLevel securityLevel, bool ignoreSilent)
 {
-    if (!IsTellAllowed(player, securityLevel) || !IsSafe(player) || player->GetPlayerbotAI())
+    if (!IsTellAllowed(player, securityLevel) || !IsSafe(player) || nullptr /* GetPlayerbotAI -> IsHeadless check via BotManager */)
         return false;
 
     if (!ignoreSilent && HasStrategy("silent", BotState::BOT_STATE_NON_COMBAT))
@@ -8821,7 +8821,7 @@ bool PlayerbotAI::HandleSpellClick(ObjectGuid guid)
     {
         if (itr->second.IsFitToRequirements(bot, creature))
         {
-            if (sScriptDevAIMgr.OnNpcSpellClick(bot, creature, itr->second.spellId))
+            if (false /* sScriptDevAIMgr.OnNpcSpellClick stub for MANGOSBOT_ZERO */)
                 return true;
 
             Unit* caster = (itr->second.castFlags & 0x1) ? (Unit*)bot : (Unit*)creature;

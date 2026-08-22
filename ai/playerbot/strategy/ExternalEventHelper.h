@@ -49,7 +49,7 @@ namespace ai
                 return true;
             }
 
-            if (owner->isRealPlayer())
+            if (owner->GetSession() && !owner->GetSession()->IsHeadless())
             {
                 HandleCommand("c", command, owner);
                 HandleCommand("t", command, owner);
