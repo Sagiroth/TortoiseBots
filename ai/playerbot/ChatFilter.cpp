@@ -1,4 +1,5 @@
 #include "playerbot.h"
+#include "../../runtime/PlayerbotAIStorage.h" // Headless storage, not Player::GetPlayerbotAI
 #include "ChatFilter.h"
 #include "strategy/values/RtiTargetValue.h"
 #include "strategy/values/ItemUsageValue.h"
@@ -810,7 +811,7 @@ public:
     virtual std::string Filter(std::string message) override
     {
         Player* bot = ai->GetBot();
-        AiObjectContext* context = bot->GetPlayerbotAI()->GetAiObjectContext();
+        AiObjectContext* context = PlayerbotAIStorage::Instance().GetAI(bot)->GetAiObjectContext();
 
         if (message.find("@needrepair") == 0)
         {
@@ -1200,7 +1201,7 @@ public:
             }
 
             Player* bot = ai->GetBot();
-            auto botQuestIds = bot->GetPlayerbotAI()->GetAllCurrentQuestIds();
+            auto botQuestIds = PlayerbotAIStorage::Instance().GetAI(bot)->GetAllCurrentQuestIds();
 
             std::set<uint32> matchingQuestIds;
             for (auto botQuestId : botQuestIds)

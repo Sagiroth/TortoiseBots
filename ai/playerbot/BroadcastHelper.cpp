@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "../../runtime/PlayerbotAIStorage.h" // Headless storage, not Player::GetPlayerbotAI
 #include "BroadcastHelper.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/AiFactory.h"
@@ -1075,7 +1076,7 @@ bool BroadcastHelper::BroadcastSuggestThunderfury(
 
         std::map<std::string, std::string> placeholders;
         ItemPrototype const* thunderfuryProto = sObjectMgr.GetItemPrototype(19019);
-        placeholders["%thunderfury_link"] = bot->GetPlayerbotAI()->GetChatHelper()->formatItem(thunderfuryProto);
+        placeholders["%thunderfury_link"] = PlayerbotAIStorage::Instance().GetAI(bot)->GetChatHelper()->formatItem(thunderfuryProto);
         placeholders["%random_inventory_item_link"] = botItems.size() > 0 ? ai->GetChatHelper()->formatItem(botItems[rand() % botItems.size()]) : BOT_TEXT("string_empty_link");
 
         return BroadcastToChannelWithGlobalChance(

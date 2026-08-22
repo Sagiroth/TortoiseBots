@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/ServerFacade.h"
+#include "../../runtime/PlayerbotAIStorage.h" // Headless storage, not Player::GetPlayerbotAI
 #include "values/ItemUsageValue.h"
 
 char * strstri (const char* str1, const char* str2);
@@ -575,7 +576,7 @@ namespace ai
     class FindItemUsageVisitor : public FindItemVisitor
     {
     public:
-        FindItemUsageVisitor(Player* bot, ItemUsage usage = ItemUsage::ITEM_USAGE_NONE) : FindItemVisitor(), bot(bot), usage(usage) { context = bot->GetPlayerbotAI()->GetAiObjectContext();};
+        FindItemUsageVisitor(Player* bot, ItemUsage usage = ItemUsage::ITEM_USAGE_NONE) : FindItemVisitor(), bot(bot), usage(usage) { context = PlayerbotAIStorage::Instance().GetAI(bot)->GetAiObjectContext();};
 
         void SetUsage(ItemUsage newUsage = ItemUsage::ITEM_USAGE_NONE) { usage = newUsage; }
 
@@ -597,7 +598,7 @@ namespace ai
     class FindVendorItemsVisitor : public FindItemVisitor
     {
     public:
-        FindVendorItemsVisitor(Player* bot, bool includeAH) : FindItemVisitor(), bot(bot), includeAH(includeAH) { context = bot->GetPlayerbotAI()->GetAiObjectContext(); };
+        FindVendorItemsVisitor(Player* bot, bool includeAH) : FindItemVisitor(), bot(bot), includeAH(includeAH) { context = PlayerbotAIStorage::Instance().GetAI(bot)->GetAiObjectContext(); };
 
         virtual bool Accept(const ItemPrototype* proto) override { return false; }
 
