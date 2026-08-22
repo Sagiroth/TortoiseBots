@@ -1,0 +1,4 @@
+{
+  "ignore": ["ai/**", "playerbots-references/**", "tortoise-wow/**", "tortoise-docker-penqle/**"],
+  "exclude": ["ai/**"]
+}

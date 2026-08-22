@@ -1,23 +1,9 @@
 # TortoiseBots — optional PlayerBots module for Tortoise WoW 1.18.1 (Penqle/tortoise-wow)
-# Repo root IS the module root. When testing against Penqle, this repo should appear
-# as source/src/modules/TortoiseBots via a symlink or ephemeral copy (not committed).
-# No FetchContent — single source of truth is this repo.
 cmake_minimum_required(VERSION 3.10)
-
-# This file is only evaluated when the core configures with -DBUILD_PLAYERBOTS=ON
-# and src/CMakeLists.txt has done add_subdirectory(modules/TortoiseBots).
-# It builds a static helper library that is linked into mangosd (the only
-# executable that needs bot logic). The core's generic seams (SessionTransport,
-# IWorldUpdateListener) remain unconditional; this module registers itself
-# explicitly without weak symbols.
-
 project(TortoiseBots)
-
-# Allow linking to mangosd from this subdirectory (module is added after mangosd).
 if(POLICY CMP0079)
   cmake_policy(SET CMP0079 NEW)
 endif()
-
 set(TORTOISEBOTS_SOURCES
     host/Module.cpp
     host/BotHostAdapter.cpp
@@ -28,7 +14,6 @@ set(TORTOISEBOTS_SOURCES
     behavior/Movement.cpp
     commands/BotCommands.cpp
 )
-
 set(TORTOISEBOTS_HEADERS
     host/Module.h
     host/BotHostAdapter.h
@@ -40,22 +25,150 @@ set(TORTOISEBOTS_HEADERS
     behavior/Movement.h
     commands/BotCommands.h
 )
+# === Foundational PlayerBots runtime - REAL code, not stubs ===
+# Shyalya Tortoise baseline (playerbots-integration-gh @ 1f9497e) is the
+# Vanilla/Tortoise translation reference; mod-playerbots (5397110) is the
+# modernization donor. This batch brings the full Engine/AiObjectContext/
+# Strategy/Trigger/Action/Value/ReactionEngine/AiFactory/shared-contexts
+# stack plus the generic Base and class-factory foundation.
+set(BOT_CORE_SRC
+    ai/playerbot/PlayerbotAIAware.h
+    ai/playerbot/PlayerbotAIBase.cpp
+    ai/playerbot/PlayerbotAIBase.h
+    ai/playerbot/BotState.h
+    ai/playerbot/PlayerbotAI.cpp
+    ai/playerbot/PlayerbotAI.h
+    ai/playerbot/PlayerbotAIConfig.cpp
+    ai/playerbot/PlayerbotAIConfig.h
+    ai/playerbot/AiFactory.cpp
+    ai/playerbot/AiFactory.h
+    ai/playerbot/ServerFacade.cpp
+    ai/playerbot/ServerFacade.h
+    ai/playerbot/PlayerbotSecurity.cpp
+    ai/playerbot/PlayerbotSecurity.h
+    ai/playerbot/BotLog.cpp
+    ai/playerbot/BotLog.h
+    ai/playerbot/PerformanceMonitor.cpp
+    ai/playerbot/PerformanceMonitor.h
+    ai/playerbot/ChatHelper.cpp
+    ai/playerbot/ChatHelper.h
+    ai/playerbot/WorldPosition.cpp
+    ai/playerbot/WorldPosition.h
+    ai/playerbot/GuidPosition.cpp
+    ai/playerbot/GuidPosition.h
+    ai/playerbot/TravelMgr.cpp
+    ai/playerbot/TravelMgr.h
+)
+set(BOT_STRATEGY_SRC
+    ai/playerbot/strategy/Engine.cpp
+    ai/playerbot/strategy/Engine.h
+    ai/playerbot/strategy/AiObjectContext.cpp
+    ai/playerbot/strategy/AiObjectContext.h
+    ai/playerbot/strategy/AiObject.cpp
+    ai/playerbot/strategy/AiObject.h
+    ai/playerbot/strategy/Event.cpp
+    ai/playerbot/strategy/Event.h
+    ai/playerbot/strategy/Queue.cpp
+    ai/playerbot/strategy/Queue.h
+    ai/playerbot/strategy/Trigger.cpp
+    ai/playerbot/strategy/Trigger.h
+    ai/playerbot/strategy/Value.cpp
+    ai/playerbot/strategy/Value.h
+    ai/playerbot/strategy/Action.cpp
+    ai/playerbot/strategy/Action.h
+    ai/playerbot/strategy/Strategy.cpp
+    ai/playerbot/strategy/Strategy.h
+    ai/playerbot/strategy/NamedObjectContext.h
+    ai/playerbot/strategy/Multiplier.cpp
+    ai/playerbot/strategy/Multiplier.h
+    ai/playerbot/strategy/PassiveMultiplier.cpp
+    ai/playerbot/strategy/PassiveMultiplier.h
+    ai/playerbot/strategy/ReactionEngine.cpp
+    ai/playerbot/strategy/ReactionEngine.h
+    ai/playerbot/strategy/CustomStrategy.cpp
+    ai/playerbot/strategy/CustomStrategy.h
+    ai/playerbot/strategy/StrategyContext.h
+    ai/playerbot/strategy/ActionBasket.cpp
+    ai/playerbot/strategy/ActionBasket.h
+    ai/playerbot/strategy/ExternalEventHelper.h
+)
+# Shared contexts - the glue that makes Strategy/Trigger/Action/Value discoverable
+# In Shyalya's Tortoise tree these are header-only (no .cpp), so we glob for existing files
+file(GLOB BOT_CONTEXT_SRC
+    ai/playerbot/strategy/StrategyContext.h
+    ai/playerbot/strategy/actions/ActionContext.h
+    ai/playerbot/strategy/triggers/TriggerContext.h
+    ai/playerbot/strategy/values/ValueContext.h
+    ai/playerbot/strategy/actions/ChatActionContext.h
+    ai/playerbot/strategy/triggers/ChatTriggerContext.h
+)
+# Generic Base behavior - shared strategies that all bots use (follow, combat, etc)
+# We bring the full generic folder from Shyalya (Tortoise-translated) and will
+# layer mod-playerbots modernizations on top. For this batch we include the
+# Shyalya generic set; WotLK-only generic (e.g., deathknight) is excluded via filter.
+file(GLOB BOT_GENERIC_SRC
+    ai/playerbot/strategy/generic/*.cpp
+    ai/playerbot/strategy/generic/*.h
+)
+# Class integration - AiObjectContexts for Vanilla classes (DK excluded)
+file(GLOB BOT_CLASS_CONTEXT_SRC
+    ai/playerbot/strategy/druid/DruidAiObjectContext.cpp
+    ai/playerbot/strategy/druid/DruidAiObjectContext.h
+    ai/playerbot/strategy/hunter/HunterAiObjectContext.cpp
+    ai/playerbot/strategy/hunter/HunterAiObjectContext.h
+    ai/playerbot/strategy/mage/MageAiObjectContext.cpp
+    ai/playerbot/strategy/mage/MageAiObjectContext.h
+    ai/playerbot/strategy/paladin/PaladinAiObjectContext.cpp
+    ai/playerbot/strategy/paladin/PaladinAiObjectContext.h
+    ai/playerbot/strategy/priest/PriestAiObjectContext.cpp
+    ai/playerbot/strategy/priest/PriestAiObjectContext.h
+    ai/playerbot/strategy/rogue/RogueAiObjectContext.cpp
+    ai/playerbot/strategy/rogue/RogueAiObjectContext.h
+    ai/playerbot/strategy/shaman/ShamanAiObjectContext.cpp
+    ai/playerbot/strategy/shaman/ShamanAiObjectContext.h
+    ai/playerbot/strategy/warlock/WarlockAiObjectContext.cpp
+    ai/playerbot/strategy/warlock/WarlockAiObjectContext.h
+    ai/playerbot/strategy/warrior/WarriorAiObjectContext.cpp
+    ai/playerbot/strategy/warrior/WarriorAiObjectContext.h
+)
+# For this checkpoint we keep actions/values/triggers/class-strategies out of the
+# default build to avoid pulling the full 800-file dep tree. They are present in
+# the tree (ai/playerbot/strategy/{actions,values,triggers} and class folders)
+# and will be enabled in the next batch after the core Engine/Context is stable.
+# This keeps the first stabilization build tractable while still having the real
+# foundational code present.
+
+list(FILTER BOT_GENERIC_SRC EXCLUDE REGEX ".*Test.*")
+list(FILTER BOT_CORE_SRC EXCLUDE REGEX ".*Test.*")
+
+set(TORTOISEBOTS_AI_SOURCES
+    ${BOT_CORE_SRC}
+    ${BOT_STRATEGY_SRC}
+    ${BOT_CONTEXT_SRC}
+    ${BOT_CLASS_CONTEXT_SRC}
+    ai/botpch.cpp
+)
+# Exclude WotLK-only and test scaffolding
+list(FILTER TORTOISEBOTS_AI_SOURCES EXCLUDE REGEX ".*deathknight.*")
+list(FILTER TORTOISEBOTS_AI_SOURCES EXCLUDE REGEX ".*DeathKnight.*")
+list(FILTER TORTOISEBOTS_AI_SOURCES EXCLUDE REGEX ".*DK.*")
+list(FILTER TORTOISEBOTS_AI_SOURCES EXCLUDE REGEX ".*Test.*")
+list(FILTER TORTOISEBOTS_AI_SOURCES EXCLUDE REGEX ".*ahbot.*")
+list(FILTER TORTOISEBOTS_AI_SOURCES EXCLUDE REGEX ".*AhBot.*")
 
 add_library(tortoise_bots STATIC
     ${TORTOISEBOTS_SOURCES}
     ${TORTOISEBOTS_HEADERS}
+    ${TORTOISEBOTS_AI_SOURCES}
 )
-
-# Require C++17 (core uses 17)
 set_property(TARGET tortoise_bots PROPERTY CXX_STANDARD 17)
 set_property(TARGET tortoise_bots PROPERTY CXX_STANDARD_REQUIRED ON)
-
-# Include paths — mirror src/game's include_directories so #include "World.h" etc works.
-# CMAKE_SOURCE_DIR here is the core's source root when included via add_subdirectory(modules/TortoiseBots)
-# from src/CMakeLists.txt, so we can reference core headers relative to it.
+target_compile_definitions(tortoise_bots PRIVATE MANGOSBOT_ZERO=1 BUILD_PLAYERBOTS=1 CMANGOS=1 ENABLE_PLAYERBOTS=1)
 target_include_directories(tortoise_bots
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/ai
+        ${CMAKE_CURRENT_SOURCE_DIR}/ai/playerbot
         ${CMAKE_CURRENT_SOURCE_DIR}/host
         ${CMAKE_CURRENT_SOURCE_DIR}/runtime
         ${CMAKE_SOURCE_DIR}/src/game
@@ -98,23 +211,11 @@ target_include_directories(tortoise_bots
         ${OPENSSL_INCLUDE_DIR}
         ${TBB_INCLUDE_DIRS}
 )
-
-# The module's code lives in the game/mangosd process. It needs the game and shared
-# static libraries at compile/link time.
 if(TARGET game)
     target_link_libraries(tortoise_bots PRIVATE game shared)
-    # Ensure game headers see the module when needed (e.g. for pending-listener registration)
-    # but game does NOT link tortoise_bots — the executable does. See below.
 endif()
-
-# Link into mangosd so the module's code is part of the final executable.
-# Mangosd's CMakeLists uses plain (non-keyword) target_link_libraries, so we must
-# also use the plain form here to avoid "plain vs keyword" CMake error.
 if(TARGET mangosd)
-    # Plain signature — consistent with mangosd's existing calls.
     target_link_libraries(mangosd tortoise_bots)
-    # On Linux, ensure the factory static object is not discarded by --as-needed.
-    # We do this via LINKER flag rather than embedding -Wl,... in link_libraries.
     if(UNIX AND NOT APPLE)
         target_link_options(mangosd PRIVATE "LINKER:--whole-archive,$<TARGET_FILE:tortoise_bots>,--no-whole-archive")
     endif()
@@ -122,15 +223,10 @@ if(TARGET mangosd)
 else()
     message(WARNING "TortoiseBots: mangosd target not found — module will not be linked (check src/CMakeLists.txt ordering)")
 endif()
-
-# PCH — reuse game PCH if available, otherwise none. Keeping this minimal avoids
-# coupling to the core's PCHSupport detection.
 if(COMMAND target_precompile_headers)
-    # No PCH for the module in MVP; game PCH is heavy and bot-specific headers
-    # don't benefit. Enable later if build times need it.
+    target_precompile_headers(tortoise_bots PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/ai/botpch.h")
 endif()
-
-# Install the example config alongside the core's configs.
-install(FILES config/tortoise_bots.conf.dist DESTINATION ${CONF_DIR} OPTIONAL)
-
+if(DEFINED CONF_DIR)
+    install(FILES config/tortoise_bots.conf.dist DESTINATION ${CONF_DIR} OPTIONAL)
+endif()
 message(STATUS "TortoiseBots module configured — sources: ${TORTOISEBOTS_SOURCES}")
