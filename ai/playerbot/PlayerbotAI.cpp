@@ -53,7 +53,9 @@
 #ifdef BUILD_ELUNA
 #include "LuaEngine/LuaEngine.h"
 #endif
+#ifdef MANGOSBOT_TWO
 #include "AI/ScriptDevAI/ScriptDevAIMgr.h"
+#endif // MANGOSBOT_ZERO: no ScriptDevAI
 #include "strategy/values/GuildValues.h"
 
 using namespace ai;
@@ -8821,8 +8823,10 @@ bool PlayerbotAI::HandleSpellClick(ObjectGuid guid)
     {
         if (itr->second.IsFitToRequirements(bot, creature))
         {
+#ifdef MANGOSBOT_TWO
             if (sScriptDevAIMgr.OnNpcSpellClick(bot, creature, itr->second.spellId))
                 return true;
+#endif
 
             Unit* caster = (itr->second.castFlags & 0x1) ? (Unit*)bot : (Unit*)creature;
             Unit* target = (itr->second.castFlags & 0x2) ? (Unit*)bot : (Unit*)creature;
