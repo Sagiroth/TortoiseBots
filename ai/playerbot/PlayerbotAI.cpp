@@ -1,4 +1,3 @@
-#include "../../runtime/PlayerbotAIStorage.h"
 #include "PlayerbotMgr.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/PerformanceMonitor.h"
@@ -47,18 +46,14 @@
 
 #include <boost/algorithm/string.hpp>
 
-// #ifdef MANGOSBOT_TWO
-// #ifdef MANGOSBOT_TWO
 #ifdef MANGOSBOT_TWO
 #include "Entities/Vehicle.h"
-#endif // MANGOSBOT_ZERO: no vehicle in 1.18.1
-#endif // MANGOSBOT_ZERO: no vehicle
-// #endif // MANGOSBOT_ZERO: no vehicle in 1.18.1
+#endif
 
 #ifdef BUILD_ELUNA
 #include "LuaEngine/LuaEngine.h"
 #endif
-// // #include "AI/ScriptDevAI/ScriptDevAIMgr.h" // WotLK/AzerothCore only // WotLK/AzerothCore only, gated for MANGOSBOT_ZERO
+#include "AI/ScriptDevAI/ScriptDevAIMgr.h"
 #include "strategy/values/GuildValues.h"
 
 using namespace ai;
@@ -1939,7 +1934,7 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
 
             if (isAiChat)
             {
-                ChatChannelSource chatChannelSource = PlayerbotAIStorage::Instance().GetAI(bot)->GetChatChannelSource(bot, msgtype, chanName);
+                ChatChannelSource chatChannelSource = bot->GetPlayerbotAI()->GetChatChannelSource(bot, msgtype, chanName);
 
                 std::string llmChannel;
 
@@ -2206,7 +2201,7 @@ void PlayerbotAI::DoNextAction(bool min)
         Player* playerMaster = nullptr;
 
         //Are there any non-bot players in the group?
-        if (!newMaster || PlayerbotAIStorage::Instance().GetAI(newMaster))
+        if (!newMaster || newMaster->GetPlayerbotAI())
             for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
             {
                 Player* member = gref->getSource();
@@ -2227,14 +2222,14 @@ void PlayerbotAI::DoNextAction(bool min)
                     continue;
 
                 //Do not make bots your master if they are nog group leader.
-                if (PlayerbotAIStorage::Instance().GetAI(member) && !bot->InBattleGround())
+                if (member->GetPlayerbotAI() && !bot->InBattleGround())
                     continue;
 
                 if (bot->InBattleGround())
                     continue;
 
                 // same BG
-                if (bot->InBattleGround() && bot->GetBattleGround()->GetTypeId() == BATTLEGROUND_AV && !PlayerbotAIStorage::Instance().GetAI(member) && member->InBattleGround() && bot->GetMapId() == member->GetMapId())
+                if (bot->InBattleGround() && bot->GetBattleGround()->GetTypeId() == BATTLEGROUND_AV && !member->GetPlayerbotAI() && member->InBattleGround() && bot->GetMapId() == member->GetMapId())
                 {
                     // TODO disable move to objective if have master in bg
                     continue;
@@ -2333,7 +2328,7 @@ void PlayerbotAI::DoNextAction(bool min)
 
         if (!group && sRandomPlayerbotMgr.IsFreeBot(bot) && !IsRealPlayer())
         {
-            PlayerbotAIStorage::Instance().GetAI(bot)->SetMaster(nullptr);
+            bot->GetPlayerbotAI()->SetMaster(nullptr);
         }
 	}
 	else if (bot->m_movementInfo.HasMovementFlag(MOVEFLAG_WALK_MODE)) bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_WALK_MODE);
@@ -2642,7 +2637,7 @@ void PlayerbotAI::ResetStrategies(bool autoLoad)
 
 bool PlayerbotAI::IsRanged(Player* player, bool inGroup)
 {
-    PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(bot);
+    PlayerbotAI* botAi = player->GetPlayerbotAI();
     if (botAi)
     {
         bool isRanged = botAi->ContainsStrategy(STRATEGY_TYPE_RANGED);
@@ -2672,7 +2667,7 @@ bool PlayerbotAI::IsMelee(Player* player, bool inGroup)
 
 bool PlayerbotAI::IsTank(Player* player, bool inGroup)
 {
-    PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(bot);
+    PlayerbotAI* botAi = player->GetPlayerbotAI();
     if (botAi)
     {
         bool isTank = botAi->ContainsStrategy(STRATEGY_TYPE_TANK);
@@ -2687,7 +2682,7 @@ bool PlayerbotAI::IsTank(Player* player, bool inGroup)
 
 bool PlayerbotAI::IsHeal(Player* player, bool inGroup)
 {
-    PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(bot);
+    PlayerbotAI* botAi = player->GetPlayerbotAI();
     if (botAi)
     {
         bool isHeal = botAi->ContainsStrategy(STRATEGY_TYPE_HEAL);
@@ -2849,7 +2844,7 @@ std::vector<Player*> PlayerbotAI::GetPlayersInGroup()
     {
         Player* member = ref->getSource();
 
-        if (PlayerbotAIStorage::Instance().GetAI(member) && !PlayerbotAIStorage::Instance().GetAI(member)->IsRealPlayer())
+        if (member->GetPlayerbotAI() && !member->GetPlayerbotAI()->IsRealPlayer())
             continue;
 
         members.push_back(ref->getSource());
@@ -3738,7 +3733,7 @@ bool PlayerbotAI::TellPlayerNoFacing(Player* player, std::string text, Playerbot
 
 bool PlayerbotAI::TellError(Player* player, std::string text, PlayerbotSecurityLevel securityLevel, bool ignoreSilent)
 {
-    if (!IsTellAllowed(player, securityLevel) || !IsSafe(player) || PlayerbotAIStorage::Instance().GetAI(bot))
+    if (!IsTellAllowed(player, securityLevel) || !IsSafe(player) || player->GetPlayerbotAI())
         return false;
 
     if (!ignoreSilent && HasStrategy("silent", BotState::BOT_STATE_NON_COMBAT))
@@ -5360,7 +5355,6 @@ bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)
 bool PlayerbotAI::CastVehicleSpell(uint32 spellId, Unit* target, float projectileSpeed, bool needTurn)
 {
 #ifdef MANGOSBOT_TWO
-#ifdef MANGOSBOT_TWO
     if (!spellId)
         return false;
 
@@ -5516,7 +5510,6 @@ bool PlayerbotAI::CastVehicleSpell(uint32 spellId, Unit* target, float projectil
 
 bool PlayerbotAI::IsInVehicle(bool canControl, bool canCast, bool canAttack, bool canTurn, bool fixed, std::string vehicleName)
 {
-#ifdef MANGOSBOT_TWO
 #ifdef MANGOSBOT_TWO
     TransportInfo* transportInfo = bot->GetTransportInfo();
     if (!transportInfo || !transportInfo->GetTransport() || !transportInfo->IsOnVehicle())
@@ -6111,7 +6104,7 @@ ActivePiorityType PlayerbotAI::GetPriorityType()
             if (member == bot)
                 continue;
 
-            if (!PlayerbotAIStorage::Instance().GetAI(member) || (PlayerbotAIStorage::Instance().GetAI(member) && PlayerbotAIStorage::Instance().GetAI(member)->HasRealPlayerMaster()))
+            if (!member->GetPlayerbotAI() || (member->GetPlayerbotAI() && member->GetPlayerbotAI()->HasRealPlayerMaster()))
                 return ActivePiorityType::IN_GROUP_WITH_REAL_PLAYER;
         }
     }
@@ -8828,7 +8821,7 @@ bool PlayerbotAI::HandleSpellClick(ObjectGuid guid)
     {
         if (itr->second.IsFitToRequirements(bot, creature))
         {
-            if (false /* false /* sScriptDevAIMgr stub */ && (false stub for MANGOSBOT_ZERO */)
+            if (sScriptDevAIMgr.OnNpcSpellClick(bot, creature, itr->second.spellId))
                 return true;
 
             Unit* caster = (itr->second.castFlags & 0x1) ? (Unit*)bot : (Unit*)creature;
