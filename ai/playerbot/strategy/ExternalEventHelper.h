@@ -49,7 +49,7 @@ namespace ai
                 return true;
             }
 
-            if (owner->GetSession() && !owner->GetSession()->IsHeadless())
+            if (owner->GetSession() && owner->GetSession()->GetSocket() != nullptr)
             {
                 HandleCommand("c", command, owner);
                 HandleCommand("t", command, owner);

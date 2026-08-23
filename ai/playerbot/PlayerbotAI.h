@@ -36,16 +36,16 @@ public:
 
 class ChannelAcces
 {
-public:    
+public:
     struct PlayerInfo
     {
         ObjectGuid player;
-        uint8 flags;       
+        uint8 flags;
     };
 
     typedef std::map<ObjectGuid, PlayerInfo> PlayerList;
 
-    bool IsOn(ObjectGuid who) const { return m_players.find(who) != m_players.end(); }    
+    bool IsOn(ObjectGuid who) const { return m_players.find(who) != m_players.end(); }
     std::string                 m_name;
     std::string                 m_password;
     ObjectGuid                  m_ownerGuid;
@@ -243,7 +243,7 @@ enum class BotTypeNumber : uint8
     GROUPER_TYPE_NUMBER = 2,
     GUILDER_TYPE_NUMBER = 3,
     CHATFILTER_NUMBER = 4 ,
-    DUMMY_ATTACK_NUMBER = 5, 
+    DUMMY_ATTACK_NUMBER = 5,
     RPG_PHASE_NUMBER = 6,
     RPG_STYLE_NUMBER = 7,
     WORLD_PVP_LOCATION = 8
@@ -367,7 +367,7 @@ public:
     void HandleCommands();
 private:
     void UpdateAIInternal(uint32 elapsed, bool minimal = false) override;
-public:    
+public:
     static std::string BotStateToString(BotState state);
     std::string GetDefaultMovementStrategy();
     void EnsureDefaultMovementStrategy(Player* requester = nullptr);
@@ -551,14 +551,14 @@ public:
     std::vector<Item*> GetInventoryItems();
     uint32 GetInventoryItemsCountWithId(uint32 itemId);
     bool HasItemInInventory(uint32 itemId);
-    bool HasNotFullStacksInBagsForLootItems(LootItemList &questLootItemList);
-    bool HasQuestItemsInLootList(LootItemList &questLootItemList);
+    bool HasNotFullStacksInBagsForLootItems(LootItemList const& questLootItemList);
+    bool HasQuestItemsInLootList(LootItemList const& questLootItemList);
     bool HasQuestItemsInWOLootList(WorldObject* wo);
     bool CanLootSomethingFromWO(WorldObject* wo);
     PlayerbotHolder* GetHolder() const;
 private:
     void InventoryIterateItemsInBags(IterateItemsVisitor* visitor);
-    void InventoryIterateItemsInEquip(IterateItemsVisitor* visitor);   
+    void InventoryIterateItemsInEquip(IterateItemsVisitor* visitor);
     void InventoryIterateItemsInBank(IterateItemsVisitor* visitor);
     void InventoryIterateItemsInBuyBack(IterateItemsVisitor* visitor);
 
@@ -625,19 +625,19 @@ public:
     bool IsRealPlayer()
     {
         // Headless check: real player has a network session, bot has headless
-        return bot && bot->GetSession() && !bot->GetSession()->IsHeadless();
+        return bot && bot->GetSession() && bot->GetSession()->GetSocket() != nullptr;
     }
     bool IsRealPlayer(Unit* unit)
     {
         if (!unit->IsPlayer()) return false;
         Player* pl = (Player*)unit;
-        return pl->GetSession() && !pl->GetSession()->IsHeadless();
+        return pl->GetSession() && pl->GetSession()->GetSocket() != nullptr;
     }
     bool IsSelfMaster() { return master ? (master == bot) : false; }
     //Bot has a master that is a player.
-    bool HasRealPlayerMaster() { return master && master->GetSession() && !master->GetSession()->IsHeadless(); } 
+    bool HasRealPlayerMaster() { return master && master->GetSession() && master->GetSession()->GetSocket() != nullptr; }
     //Bot has a master that is actively playing.
-    bool HasActivePlayerMaster() const { return master && master->GetSession() && !master->GetSession()->IsHeadless(); }
+    bool HasActivePlayerMaster() const { return master && master->GetSession() && master->GetSession()->GetSocket() != nullptr; }
     //Checks if the bot is summoned as alt of a player
     bool IsAlt() { return HasRealPlayerMaster() && !sRandomPlayerbotMgr.IsRandomBot(bot); }
     //Get the group leader or the master of the bot.
@@ -645,13 +645,13 @@ public:
 
     bool IsGroupLeader() { return bot->GetGroup() && bot->GetGroup()->GetLeaderGuid() == bot->GetObjectGuid(); }
 
-    //Check if player is safe to use.    
+    //Check if player is safe to use.
     static bool IsSafe(Player* player, WorldObject* obj) {return obj && obj->GetMapId() == player->GetMapId() && obj->GetInstanceId() == player->GetInstanceId() && (!obj->IsPlayer() || !((Player*)obj)->IsBeingTeleported() || !((Player*)obj)->GetSession()->GetPlayer()); }
     bool IsSafe(WorldObject* obj) { return IsSafe(bot, obj); }
     bool IsSafe(Player* player) { return IsSafe(bot, player); }
 
     //Returns a semi-random (cycling) number that is fixed for each bot.
-    uint32 GetFixedBotNumber(BotTypeNumber typeNumber, uint32 maxNum = 100, float cyclePerMin = 1, bool ignoreGuid = false); 
+    uint32 GetFixedBotNumber(BotTypeNumber typeNumber, uint32 maxNum = 100, float cyclePerMin = 1, bool ignoreGuid = false);
 
     GrouperType GetGrouperType();
     GuilderType GetGuilderType();
@@ -715,7 +715,7 @@ public:
     void OnCombatEnded();
     void OnDeath();
     void OnResurrected();
-    
+
     void SetActionDuration(const Action* action);
     void SetActionDuration(uint32 duration);
 

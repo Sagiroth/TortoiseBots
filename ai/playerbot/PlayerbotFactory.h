@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../../runtime/PlayerbotAIStorage.h"
+
 class Player;
 class PlayerbotMgr;
 class ChatHandler;

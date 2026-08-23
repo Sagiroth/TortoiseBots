@@ -1010,6 +1010,42 @@ inline bool IsAutoRepeatRangedSpell(SpellEntry const* spellInfo) {
     return spellInfo && (spellInfo->AttributesEx2 & SPELL_ATTR_EX2_AUTOREPEAT_FLAG);
 }
 
+// === Penqle/CMaNGOS spelling compatibility ===
+// These are module-local aliases only; they never enter the Tortoise core.
+#ifndef getObjectGuid
+#define getObjectGuid GetObjectGuid
+#endif
+#ifndef getPositionX
+#define getPositionX GetPositionX
+#define getPositionY GetPositionY
+#define getPositionZ GetPositionZ
+#define getOrientation GetOrientation
+#endif
+#ifndef getOpcode
+#define getOpcode GetOpcode
+#endif
+#ifndef getZoneId
+#define getZoneId GetZoneId
+#endif
+#ifndef GetSource
+#define GetSource getSource
+#endif
+#ifndef GetState
+#define GetState getState
+#endif
+#ifndef IsRaidGroup
+#define IsRaidGroup isRaidGroup
+#endif
+#ifndef IsSpellReady
+#define IsSpellReady HasSpellCooldown
+#endif
+#ifndef getDistance2d
+#define getDistance2d GetDistance2d
+#endif
+#ifndef getXPForLevel
+#define getXPForLevel GetXPForLevel
+#endif
+
 // === Tortoise 1.18.1 E2E Headless adaptations (merged from minimal shim) ===
 #ifndef WORLDSTATE_ADDED
 #define WORLDSTATE_ADDED
@@ -1034,7 +1070,7 @@ inline RandomPlayerbotMgrStubHeadless sRandomPlayerbotMgrHeadless;
 // === Headless isRealPlayer / GetPlayerbotMgr shims ===
 class PlayerbotMgr;
 inline bool isRealPlayer_Helper(Player* p) {
-    return p && p->GetSession() && !p->GetSession()->IsHeadless();
+    return p && p->GetSession() && p->GetSession()->GetSocket() != nullptr;
 }
 inline PlayerbotMgr* GetPlayerbotMgr_Helper(Player* p) { (void)p; return nullptr; }
 inline bool IsInGroup_Helper(Player* a, Player* b, bool sameGroup=false) { if (!a || !b) return false; Group* g = a->GetGroup(); if (!g) return false; if (sameGroup) { Group* og = b->GetGroup(); return g == og; } return g->IsMember(b->GetObjectGuid()); }

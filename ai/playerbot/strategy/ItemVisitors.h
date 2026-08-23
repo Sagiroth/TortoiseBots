@@ -176,7 +176,7 @@ namespace ai
         QueryItemCountVisitor(uint32 itemId)
         {
             count = 0;
-            this->itemid = itemId;
+            this->itemId = itemId;
         }
 
         virtual bool Visit(Item* item) override
@@ -523,7 +523,7 @@ namespace ai
             }
 
             if (proto->LockID
-#ifdef MANGOSBOT_TWO                
+#ifdef MANGOSBOT_TWO
                 && !item->IsUnlocked()
 #endif
                 )

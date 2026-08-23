@@ -1,4 +1,10 @@
-// Stub for World/WorldState.h - WotLK only, not in Tortoise 1.18.1
 #pragma once
-struct WorldState {};
-inline WorldState sWorldState;
+// Vanilla/Turtle has no WotLK world-state expansion API. The compatibility
+// shim supplies the minimal expansion query for code that is explicitly gated
+// away by MANGOSBOT_ZERO.
+#ifndef WORLDSTATE_ADDED
+#define WORLDSTATE_ADDED
+struct WorldStateHeadless { int GetExpansion() const { return 0; } };
+using WorldState = WorldStateHeadless;
+inline WorldStateHeadless sWorldState;
+#endif

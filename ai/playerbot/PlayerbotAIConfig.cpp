@@ -115,12 +115,12 @@ bool PlayerbotAIConfig::Initialize()
 
     if (botConfigFile.empty() || !config.SetSource(botConfigFile.c_str()))
     {
-        if (!config.SetSource(_D_AIPLAYERBOT_CONFIG))
+        if (!config.SetSource(_D_AIPLAYERBOT_CONFIG.c_str()))
         {
             sLog.outString("AI Playerbot is Disabled. No configuration file at %s%s%s.",
                 botConfigFile.empty() ? "" : botConfigFile.c_str(),
                 botConfigFile.empty() ? "" : " or ",
-                _D_AIPLAYERBOT_CONFIG);
+                _D_AIPLAYERBOT_CONFIG.c_str());
             return false;
         }
     }
@@ -286,7 +286,7 @@ bool PlayerbotAIConfig::Initialize()
             }
             catch (const std::exception&)
             {
-                sLog.outError"AiPlayerbot.BgBotTeamCap: cannot read '%s'", pair.c_str());
+                sLog.outError("AiPlayerbot.BgBotTeamCap: cannot read '%s'", pair.c_str());
             }
         }
     }
@@ -307,7 +307,7 @@ bool PlayerbotAIConfig::Initialize()
         }
     }
     enableMinimalMove = config.GetBoolDefault("AiPlayerbot.EnableMinimalMove", true);
-    
+
     randomBotTeleportDistance = config.GetIntDefault("AiPlayerbot.RandomBotTeleportDistance", 1000);
     transportTeleportType = config.GetIntDefault("AiPlayerbot.TransportTeleportType", 2);
     randomBotTeleportNearPlayer = config.GetBoolDefault("AiPlayerbot.RandomBotTeleportNearPlayer", false);
@@ -362,20 +362,20 @@ bool PlayerbotAIConfig::Initialize()
     randomBotLoginWithPlayer = config.GetBoolDefault("AiPlayerbot.RandomBotLoginWithPlayer", false);
     asyncBotLogin = config.GetBoolDefault("AiPlayerbot.AsyncBotLogin", false);
     preloadHolders = config.GetBoolDefault("AiPlayerbot.PreloadHolders", false);
-    
+
     freeRoomForNonSpareBots = config.GetIntDefault("AiPlayerbot.FreeRoomForNonSpareBots", 1);
 
     loginBotsNearPlayerRange = config.GetIntDefault("AiPlayerbot.LoginBotsNearPlayerRange", 1000);
-    
+
     LoadListString<std::vector<std::string> >(config.GetStringDefault("AiPlayerbot.DefaultLoginCriteria", "maxbots,spareroom,offline"), defaultLoginCriteria);
 
-    std::vector<std::string> criteriaValues = configA->GetValues"AiPlayerbot.LoginCriteria");
+    std::vector<std::string> criteriaValues = configA->GetValues("AiPlayerbot.LoginCriteria");
     std::sort(criteriaValues.begin(), criteriaValues.end());
     loginCriteria.clear();
     for (auto& value : criteriaValues)
     {
         loginCriteria.push_back({});
-        LoadListString<std::vector<std::string> >(config.GetStringDefault((value).c_str(), ""), loginCriteria.back());
+        LoadListString<std::vector<std::string> >(config.GetStringDefault(value.c_str(), ""), loginCriteria.back());
     }
 
     if (criteriaValues.empty())
@@ -388,7 +388,7 @@ bool PlayerbotAIConfig::Initialize()
         loginCriteria.push_back({ "logoff,classrace,level" });
         loginCriteria.push_back({ "logoff,classrace" });
     }
-    
+
 
     // There is no level 0, but the array has that slot and GetLevelBucketSize
     // indexes it with whatever it is handed - so give it a defined value.
@@ -396,7 +396,8 @@ bool PlayerbotAIConfig::Initialize()
 
     for (uint32 level = 1; level <= PLAYER_STRONG_MAX_LEVEL; ++level)
     {
-        levelProbability[level] = config.GetIntDefault("AiPlayerbot.LevelProbability." + std::to_string(level)).c_str(), 100);
+        std::string key = "AiPlayerbot.LevelProbability." + std::to_string(level);
+        levelProbability[level] = config.GetIntDefault(key.c_str(), 100);
     }
 
     sLog.outString("Loading Race/Class probabilities");
@@ -411,7 +412,8 @@ bool PlayerbotAIConfig::Initialize()
         //Set race defaults
         if (race > 0)
         {
-            int rProb = config.GetIntDefault("AiPlayerbot.ClassRaceProb.0." + std::to_string(race)).c_str(), 100);
+            std::string key = "AiPlayerbot.ClassRaceProb.0." + std::to_string(race);
+            int rProb = config.GetIntDefault(key.c_str(), 100);
 
             for (uint32 cls = 1; cls < MAX_CLASSES; ++cls)
             {
@@ -423,7 +425,8 @@ bool PlayerbotAIConfig::Initialize()
     //Class overrides
     for (uint32 cls = 1; cls < MAX_CLASSES; ++cls)
     {
-        int cProb = config.GetIntDefault("AiPlayerbot.ClassRaceProb." + std::to_string(cls)).c_str(), -1);
+        std::string key = "AiPlayerbot.ClassRaceProb." + std::to_string(cls);
+        int cProb = config.GetIntDefault(key.c_str(), -1);
 
         if (cProb >= 0)
         {
@@ -439,7 +442,8 @@ bool PlayerbotAIConfig::Initialize()
     {
         for (uint32 cls = 1; cls < MAX_CLASSES; ++cls)
         {
-            int rcProb = config.GetIntDefault("AiPlayerbot.ClassRaceProb." + std::to_string(cls) + "." + std::to_string(race)).c_str(), -1);
+            std::string key = "AiPlayerbot.ClassRaceProb." + std::to_string(cls) + "." + std::to_string(race);
+            int rcProb = config.GetIntDefault(key.c_str(), -1);
             if (rcProb >= 0)
                 classRaceProbability[cls][race] = rcProb;
 
@@ -449,7 +453,7 @@ bool PlayerbotAIConfig::Initialize()
                 // combination that cannot exist looked like it had been accepted
                 // and the bots simply came out as something else.
                 if (rcProb > 0)
-                    sLog.outError"AiPlayerbot.ClassRaceProb.%u.%u is set to %d, but that class cannot be that race. Ignoring it - those bots will be created as another race.",
+                    sLog.outError("AiPlayerbot.ClassRaceProb.%u.%u is set to %d, but that class cannot be that race. Ignoring it - those bots will be created as another race.",
                         cls, race, rcProb);
 
                 classRaceProbability[cls][race] = 0;
@@ -486,10 +490,10 @@ bool PlayerbotAIConfig::Initialize()
 	        for (uint32 race = 1; race < MAX_RACES; ++race)
 	        {
 		    std::string key = "AiPlayerbot.ClassRaceProb." + std::to_string(cls) + "." + std::to_string(race);
-		    int count = config.GetIntDefault((key).c_str(), -1);
+		    int count = config.GetIntDefault(key.c_str(), -1);
 
 		    if (count >= 0 && !factory.isAvailableRace(cls, race))
-		        sLog.outError"AiPlayerbot.ClassRaceProb.%u.%u asks for %d bots, but that class cannot be that race. Ignoring it.",
+		        sLog.outError("AiPlayerbot.ClassRaceProb.%u.%u asks for %d bots, but that class cannot be that race. Ignoring it.",
 		            cls, race, count);
 		    else if (count >= 0)
 		    {
@@ -502,7 +506,7 @@ bool PlayerbotAIConfig::Initialize()
 
     botCheatMask = uint32(CheatAction::GetCheatMask(config.GetStringDefault("AiPlayerbot.BotCheats", "taxi,item,breath")));
 
-    rndBotCheatMask = uint32(CheatAction::GetCheatMask(config.GetStringDefault("AiPlayerbot.RndBotCheats", "taxi,item,breath")));    
+    rndBotCheatMask = uint32(CheatAction::GetCheatMask(config.GetStringDefault("AiPlayerbot.RndBotCheats", "taxi,item,breath")));
 
     LoadListString<std::list<std::string>>(config.GetStringDefault("AiPlayerbot.AllowedLogFiles", ""), allowedLogFiles);
     LoadListString<std::list<std::string>>(config.GetStringDefault("AiPlayerbot.DebugFilter", "add gathering loot,check values,emote,check mount state,jump"), debugFilter);
@@ -510,7 +514,7 @@ bool PlayerbotAIConfig::Initialize()
     worldBuffs.clear();
 
     //Get all config values starting with AiPlayerbot.WorldBuff
-    std::vector<std::string> values = configA->GetValues"AiPlayerbot.WorldBuff");
+    std::vector<std::string> values = configA->GetValues("AiPlayerbot.WorldBuff");
 
     if (values.size())
     {
@@ -529,7 +533,7 @@ bool PlayerbotAIConfig::Initialize()
 
             //Get list of buffs for this combination.
             std::list<uint32> buffs;
-            LoadList<std::list<uint32>>(config.GetStringDefault((value).c_str(), ""), buffs);
+            LoadList<std::list<uint32>>(config.GetStringDefault(value.c_str(), ""), buffs);
 
             //Store buffs for later application.
             for (auto buff : buffs)
@@ -587,8 +591,8 @@ bool PlayerbotAIConfig::Initialize()
     enableActionLog = config.GetBoolDefault("AiPlayerbot.EnableActionLog", false);
     botLogFile = config.GetStringDefault("AiPlayerbot.BotLogFile", "bots.log");
     {
-        std::string logsDir = sConfig.GetStringDefault(("LogsDir");
-        bool botLogDebug = config.GetBoolDefault("AiPlayerbot.BotLogDebug").c_str(), false);
+        std::string logsDir = sConfig.GetStringDefault("LogsDir", "");
+        bool botLogDebug = config.GetBoolDefault("AiPlayerbot.BotLogDebug", false);
         BotLog::Instance().Initialize(botLogFile.c_str(), logsDir.c_str(), botLogDebug);
     }
     enableOffSpecStrategies = config.GetBoolDefault("AiPlayerbot.EnableOffSpecStrategies", true);
@@ -711,13 +715,13 @@ bool PlayerbotAIConfig::Initialize()
     catch (const std::invalid_argument& e) {
         sLog.outError("Unable to parse LLMApiEndpoint url: %s", e.what());
     }
-    llmApiKey = config.GetStringDefault("AiPlayerbot.LLMApiKey", "");    
+    llmApiKey = config.GetStringDefault("AiPlayerbot.LLMApiKey", "");
     llmApiJson = config.GetStringDefault("AiPlayerbot.LLMApiJson", "{ \"max_length\": 100, \"prompt\": \"[<pre prompt>]<context> <prompt> <post prompt>\"}");
     llmContextLength = config.GetIntDefault("AiPlayerbot.LLMContextLength", 4096);
     llmGenerationTimeout = config.GetIntDefault("AiPlayerbot.LLMGenerationTimeout", 600);
     llmMaxSimultaniousGenerations = config.GetIntDefault("AiPlayerbot.LLMMaxSimultaniousGenerations", 100);
-        
-    
+
+
     llmPrePrompt = config.GetStringDefault("AiPlayerbot.LLMPrePrompt", "You are a roleplaying character in World of Warcraft: <expansion name>. Your name is <bot name>. The <other type> <other name> is speaking to you <channel name> and is an <other gender> <other race> <other class> of level <other level>. You are level <bot level> and play as a <bot gender> <bot race> <bot class> that is currently in <bot subzone> <bot zone>. Answer as a roleplaying character. Limit responses to 100 characters.");
 
     llmPreRpgPrompt = config.GetStringDefault("AiPlayerbot.LLMRpgPrompt", "In World of Warcraft: <expansion name> in <bot zone> <bot subzone> stands <bot type> <bot name> a level <bot level> <bot gender> <bot race> <bot class>."
@@ -744,7 +748,7 @@ bool PlayerbotAIConfig::Initialize()
     try {
         std::regex pattern(llmResponseStartPattern);
     }
-    catch (const std::regex_error& e) {        
+    catch (const std::regex_error& e) {
         sLog.outError("Regex error in %s: %s", llmResponseStartPattern.c_str(), e.what());
     }
 
@@ -1191,8 +1195,8 @@ void PlayerbotAIConfig::logEvent(PlayerbotAI* ai, std::string eventName, std::st
         out << std::fixed << std::setprecision(2);
         WorldPosition(bot).printWKT(out);
 
-        out << std::to_string(bot->getRace()) << ",";
-        out << std::to_string(bot->getClass()) << ",";
+        out << std::to_string(bot->GetRace()) << ",";
+        out << std::to_string(bot->GetClass()) << ",";
         float subLevel = ai->GetLevelFloat();
 
         out << subLevel << ",";

@@ -42,7 +42,7 @@ namespace ai
                 UpdateMovementState();
 
                 // Ignore movement if too far
-                const float distanceToTarget = bot->getDistance(target, false, DIST_CALC_COMBAT_REACH);
+                const float distanceToTarget = bot->GetDistance(target);
                 float chaseDist = range;
                 const bool inLos = bot->IsWithinLOSInMap(target, true);
                 const bool isFriend = sServerFacade.IsFriendlyTo(bot, target);
@@ -65,7 +65,7 @@ namespace ai
                         sServerFacade.IsDistanceGreaterThan(distanceToTarget, sPlayerbotAIConfig.tooCloseDistance))
                 {
                     return true;
-                }                 
+                }
 
                 if (ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
                 {
@@ -73,7 +73,7 @@ namespace ai
                     out << "Moving to reach " << ChatHelper::formatWorldobject(target);
                     ai->TellPlayerNoFacing(GetMaster(), out);
                 }
-                
+
                 if (inLos && isFriend && (range <= ai->GetRange("follow")))
                 {
                     return MoveNear(target, chaseDist);
@@ -123,7 +123,7 @@ namespace ai
                         if (bot->IsWithinLOSInMap(target, true))
                         {
                             // Check if the bot is already on the range required
-                            return bot->getDistance(target, true, DIST_CALC_COMBAT_REACH) > range;
+                            return bot->GetDistance(target) > range;
                         }
 
                         return true;
