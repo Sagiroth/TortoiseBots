@@ -27,11 +27,19 @@ void PlayerbotAIStorage::SetAI(Player* player, PlayerbotAI* ai)
 
 void PlayerbotAIStorage::RemoveAI(Player* player)
 {
+    // PlayerbotAIAdapter can outlive Player during WorldSession logout. A raw
+    // pointer remains a valid map key but must never be dereferenced here.
     std::lock_guard<std::mutex> lock(mutex_);
     if (!player) return;
-    ObjectGuid guid = player->GetObjectGuid();
-    byGuid_.erase(guid);
-    byPlayer_.erase(player);
+    auto playerIt = byPlayer_.find(player);
+    if (playerIt == byPlayer_.end()) return;
+    PlayerbotAI* ai = playerIt->second;
+    byPlayer_.erase(playerIt);
+    for (auto it = byGuid_.begin(); it != byGuid_.end(); )
+    {
+        if (it->second == ai) it = byGuid_.erase(it);
+        else ++it;
+    }
 }
 
 PlayerbotAI* PlayerbotAIStorage::GetAI(Player* player) const
@@ -40,7 +48,6 @@ PlayerbotAI* PlayerbotAIStorage::GetAI(Player* player) const
     if (!player) return nullptr;
     auto it = byPlayer_.find(player);
     if (it != byPlayer_.end()) return it->second;
-    // Fallback: lookup by guid (covers cases where Player* identity changed but GUID same)
     ObjectGuid guid = player->GetObjectGuid();
     auto it2 = byGuid_.find(guid);
     if (it2 != byGuid_.end()) return it2->second;
@@ -51,6 +58,5 @@ PlayerbotAI* PlayerbotAIStorage::GetAI(ObjectGuid guid) const
 {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = byGuid_.find(guid);
-    if (it != byGuid_.end()) return it->second;
-    return nullptr;
+    return it != byGuid_.end() ? it->second : nullptr;
 }

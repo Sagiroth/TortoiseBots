@@ -21,7 +21,7 @@ float ServerFacade::GetDistance2d(Unit *unit, WorldObject* wo)
     unit->getDistance2d(wo);
 #endif
 #ifdef CMANGOS
-    sqrt(unit->getDistance2d(wo->getPositionX(), wo->getPositionY(), DIST_CALC_NONE));
+    unit->GetDistance2d(wo);
 #endif
     return round(dist * 10.0f) / 10.0f;
 }
@@ -33,7 +33,7 @@ float ServerFacade::GetDistance2d(Unit *unit, float x, float y)
     unit->getDistance2d(x, y);
 #endif
 #ifdef CMANGOS
-    sqrt(unit->getDistance2d(x, y, DIST_CALC_NONE));
+    unit->GetDistance2d(x, y);
 #endif
     return round(dist * 10.0f) / 10.0f;
 }
@@ -167,9 +167,9 @@ bool ServerFacade::isMoving(Unit *unit)
 #endif
 #ifdef CMANGOS
 #ifdef MANGOSBOT_ONE
-    return !unit->IsStopped() || unit->HasUnitState(UNIT_STAT_FALLING) || unit->IsJumping();
+    return !unit->IsStopped() || unit->IsJumping();
 #else
-    return !unit->IsStopped() || unit->HasUnitState(UNIT_STAT_FALLING);
+    return !unit->IsStopped();
 #endif
 #endif
 }

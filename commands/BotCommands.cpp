@@ -114,8 +114,13 @@ static bool HandleAdd(ChatHandler* handler, char const* args)
     uint32_t accountId = data->uiAccount;
     ::ObjectGuid masterGuid = requester->GetObjectGuid();
 
-    // Basic ownership check: for this slice, allow same-account or any if GM
-    // Full security ladder deferred to later slice.
+    if (!requester->GetSession() ||
+        (accountId != requester->GetSession()->GetAccountId() && requester->GetSession()->GetSecurity() < SEC_GAMEMASTER))
+    {
+        handler->PSendSysMessage("You may only control characters on your account.");
+        return true;
+    }
+
     ::WorldSession* sess = BotManager::Instance().AddBotWithMaster(accountId, guid, masterGuid);
     if (sess)
         handler->PSendSysMessage("Bot %s added, following %s.", name.c_str(), requester->GetName());
@@ -149,6 +154,14 @@ static bool HandleRemove(ChatHandler* handler, char const* args)
         return true;
     }
     ::ObjectGuid guid(HIGHGUID_PLAYER, data->uiGuid);
+    ::Player* requester = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+    BotRecord* record = BotManager::Instance().FindBot(guid);
+    if (record && requester && requester->GetSession()->GetSecurity() < SEC_GAMEMASTER &&
+        record->accountId != requester->GetSession()->GetAccountId())
+    {
+        handler->PSendSysMessage("You may only control characters on your account.");
+        return true;
+    }
     if (BotManager::Instance().RemoveBot(guid, true))
         handler->PSendSysMessage("Bot %s removed.", name.c_str());
     else
@@ -189,6 +202,13 @@ static bool HandleFollow(ChatHandler* handler, char const* args)
     }
     ::ObjectGuid botGuid(HIGHGUID_PLAYER, data->uiGuid);
     ::ObjectGuid masterGuid = requester->GetObjectGuid();
+    BotRecord* record = BotManager::Instance().FindBot(botGuid);
+    if (!record || (requester->GetSession()->GetSecurity() < SEC_GAMEMASTER &&
+        record->accountId != requester->GetSession()->GetAccountId()))
+    {
+        handler->PSendSysMessage("You may only control characters on your account.");
+        return true;
+    }
     if (BotManager::Instance().SetBotFollow(botGuid, masterGuid))
         handler->PSendSysMessage("Bot %s now following %s.", name.c_str(), requester->GetName());
     else

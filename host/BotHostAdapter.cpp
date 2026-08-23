@@ -1,6 +1,7 @@
 // pi-lens-ignore: clang:pp_file_not_found,clang:unknown_typename,clang:undeclared_var_use,clang:incomplete_member_access,clang:init_conversion_failed,clang:excess_initializers,clang:typecheck_member_reference_struct_union,clang:expected_class_or_namespace,clang:ovl_no_viable_function_in_call,clang:fatal_too_many_errors
 #include "BotHostAdapter.h"
 #include "BotSessionAdapter.h"
+#include "BotChatAdapter.h"
 #include "../runtime/BotManager.h"
 #include "ObjectGuid.h"
 #include "ObjectMgr.h"
@@ -9,6 +10,9 @@
 #include "World.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
+#include "Creature.h"
+#include "Maps/CellImpl.h"
+#include "Maps/GridNotifiers.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Chat.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -88,7 +92,8 @@ void BotHostAdapter::OnStartup()
 {
     if (m_startupLogged)
         return;
-    sLog.outString("TortoiseBots: BotHostAdapter startup — registered as world tick listener");
+    BotChatAdapter::Instance().EnsureRegistered();
+    sLog.outString("TortoiseBots: BotHostAdapter startup — world tick and .bot chat interceptor registered");
     m_startupLogged = true;
 }
 
@@ -107,6 +112,9 @@ void BotHostAdapter::OnShutdown()
 static ::ObjectGuid s_chatTestHumanGuid(HIGHGUID_PLAYER, uint32_t(2)); // Sagiroth fallback
 static ::WorldSession* s_chatTestHumanSession = nullptr;
 static bool s_chatTestHumanLoginDispatched = false;
+static ::Unit* s_combatHarnessTarget = nullptr;
+static ::Player* s_combatHarnessHuman = nullptr;
+static uint32 s_combatHarnessTicks = 0;
 
 // pi-lens-ignore: clang:incomplete_member_access
 static ::Player* FindHumanForChatTest()
@@ -338,6 +346,46 @@ static void CheckCommandFile()
             else
                 sLog.outString("TortoiseBots: follow %s not found", name.c_str());
         }
+        else if (cmd == "combat")
+        {
+            // Deterministic runtime acceptance harness: make the human engage a
+            // real nearby hostile. PlayerbotAI still has to detect the master's
+            // target and execute its normal Trigger/Action/Warrior stack.
+            ::Player* bot = sObjectAccessor.FindPlayer(::ObjectGuid(HIGHGUID_PLAYER, uint32(1)));
+            if (bot)
+            {
+                // Temporary fixture preparation only: the historical Dudette row
+                // has no equipment/power. Real characters provide these normally.
+                if (!bot->GetWeaponForAttack(BASE_ATTACK, true, true))
+                    bot->StoreNewItemInBestSlots(25, 1);
+            }
+            Unit* target = human->SummonCreature(2141, human->GetPositionX() + 0.5f, human->GetPositionY(), human->GetPositionZ(),
+                human->GetOrientation(), TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 120000, true);
+            if (!target)
+            {
+                std::list<Unit*> hostiles;
+                MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck check(human, human, 40.0f);
+                MaNGOS::UnitListSearcher<MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck> searcher(hostiles, check);
+                Cell::VisitAllObjects(human, searcher, 40.0f);
+                for (Unit* candidate : hostiles)
+                    if (candidate && candidate->IsAlive() && candidate != human && human->IsValidAttackTarget(candidate) &&
+                        (!target || candidate->GetDistance2d(human) < target->GetDistance2d(human)))
+                        target = candidate;
+            }
+            if (!target) { sLog.outString("TortoiseBots: combat: no hostile within 40 yards"); continue; }
+            target->SetHealth(std::min<uint32>(target->GetHealth(), 1000));
+            human->SetSelectionGuid(target->GetObjectGuid());
+            bool humanAttack = human->Attack(target, true);
+            human->SetInCombatState(60000, target);
+            target->SetInCombatWith(human);
+            bool counterAttack = target->Attack(human, true);
+            s_combatHarnessTarget = target;
+            s_combatHarnessHuman = human;
+            s_combatHarnessTicks = 0;
+            sLog.outString("TortoiseBots: combat harness human=%s target=%s health=%u humanAttack=%u counterAttack=%u inCombat=%u humanPos=%.1f,%.1f botPos=%s",
+                human->GetName(), target->GetName(), target->GetMaxHealth(), humanAttack, counterAttack, human->IsInCombat(),
+                human->GetPositionX(), human->GetPositionY(), bot ? (std::to_string(bot->GetPositionX()) + "," + std::to_string(bot->GetPositionY())).c_str() : "none");
+        }
         else
         {
             sLog.outString("TortoiseBots: unknown command '%s' in %s", cmd.c_str(), path);
@@ -406,6 +454,17 @@ void BotHostAdapter::OnWorldUpdate(uint32 diff)
             sLog.outString("TortoiseBots: auto-triggering 7-step headless spike test (acct %u guid %u)", acct, guidLow);
             BotManager::Instance().SetAutoTestEnabled(true, acct, testGuid);
         }
+    }
+
+    if (s_combatHarnessTarget && s_combatHarnessHuman && s_combatHarnessTarget->IsAlive() && ++s_combatHarnessTicks > 100)
+    {
+        sLog.outString("TortoiseBots: combat harness ending real encounter target=%s", s_combatHarnessTarget->GetName());
+        s_combatHarnessHuman->Kill(s_combatHarnessTarget, nullptr, false);
+        s_combatHarnessHuman->AttackStop();
+        if (::Player* bot = sObjectAccessor.FindPlayer(::ObjectGuid(HIGHGUID_PLAYER, uint32(1))) )
+            bot->AttackStop();
+        s_combatHarnessTarget = nullptr;
+        s_combatHarnessHuman = nullptr;
     }
 
     // Phase 3: drive BotManager (headless session lifecycle, auto-test, etc.).

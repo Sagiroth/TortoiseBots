@@ -7,8 +7,12 @@ using namespace ai;
 void FollowMasterStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
 {
     triggers.push_back(new TriggerNode(
+        "master target active",
+        NextAction::array(0, new NextAction("dps assist", ACTION_EMERGENCY), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "out of free move range",
-        NextAction::array(0, new NextAction("check mount state", ACTION_HIGH), new NextAction("follow", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("follow", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode(
         "update follow",
@@ -17,7 +21,13 @@ void FollowMasterStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &trigge
 
 void FollowMasterStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-    InitNonCombatTriggers(triggers);
+    triggers.push_back(new TriggerNode(
+        "out of free move range",
+        NextAction::array(0, new NextAction("follow", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "update follow",
+        NextAction::array(0, new NextAction("follow", ACTION_IDLE), NULL)));
 }
 
 void FollowMasterStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)

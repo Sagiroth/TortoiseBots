@@ -1022,10 +1022,6 @@ inline WorldStateHeadless sWorldState;
 #ifndef LogCommon_h
 #define LogCommon_h
 #endif
-class PlayerbotAI;
-namespace shym {
-inline PlayerbotAI* GetPlayerbotAI_Helper(class Player* p);
-}
 struct RandomPlayerbotMgrStubHeadless {
     bool IsRandomBot(Player*) const { return false; }
     bool IsFreeBot(Player*) const { return false; }
@@ -1034,9 +1030,6 @@ struct RandomPlayerbotMgrStubHeadless {
 #ifndef sRandomPlayerbotMgr
 inline RandomPlayerbotMgrStubHeadless sRandomPlayerbotMgrHeadless;
 #define sRandomPlayerbotMgr sRandomPlayerbotMgrHeadless
-#endif
-#ifndef GetPlayerbotAI
-#define GetPlayerbotAI GetPlayerbotAI_Helper
 #endif
 // === Headless isRealPlayer / GetPlayerbotMgr shims ===
 class PlayerbotMgr;

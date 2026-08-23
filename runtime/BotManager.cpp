@@ -197,21 +197,11 @@ void BotManager::UpdateControllers(uint32_t diff)
         BotEntry& entry = kv.second;
         if (entry.record.lifecycle != BotLifecycle::InWorld)
             continue;
-        // Drive the real PlayerbotAI engine if attached; this is the primary bot tick.
-        // The legacy BotController follow is kept as a fallback for the 1.5y dead-zone
-        // until the Strategy/Trigger-driven movement fully replaces it.
+        // PlayerbotAI is authoritative once attached. BotController remains only
+        // as a pre-AI bootstrap fallback and cannot satisfy follow acceptance.
         if (entry.aiAdapter && entry.aiAdapter->IsInitialized())
         {
-            printf("TortoiseBots: BotManager UpdateControllers for %s diff %u\n", entry.record.characterGuid.GetString().c_str(), diff);
             entry.aiAdapter->Update(diff);
-            // Also tick the legacy controller for follow grouping until the Engine's
-            // FollowMasterStrategy is proven to fully replace it.
-            if (entry.controller)
-            {
-                if (entry.controller->GetMasterGuid() != entry.record.masterGuid)
-                    entry.controller->SetMaster(entry.record.masterGuid);
-                entry.controller->Update(diff);
-            }
             continue;
         }
         if (!entry.controller)

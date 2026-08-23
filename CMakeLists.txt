@@ -13,7 +13,6 @@ set(TORTOISEBOTS_SOURCES
     runtime/BotController.cpp
     runtime/PlayerbotAIStorage.cpp
     runtime/PlayerbotAIAdapter.cpp
-    runtime/Stubs.cpp
     behavior/Movement.cpp
     commands/BotCommands.cpp
 )
@@ -28,56 +27,28 @@ set(TORTOISEBOTS_HEADERS
     behavior/Movement.h
     commands/BotCommands.h
 )
-# === Foundational PlayerBots runtime - REAL code, not stubs ===
-# Shyalya Tortoise baseline (playerbots-integration-gh @ 1f9497e) is the
-# Vanilla/Tortoise translation reference; mod-playerbots (5397110) is the
-# modernization donor. This batch brings the full Engine/AiObjectContext/
-# Strategy/Trigger/Action/Value/ReactionEngine/AiFactory/shared-contexts
-# stack plus the generic Base and class-factory foundation.
-# E2E: minimal real engine (Ponytail: enable only what proves Strategy/Trigger/Action/Value + Warrior follow)
-set(BOT_CORE_SRC
+# First playable Warrior vertical slice: mature Engine plus focused real
+# Strategy/Trigger/Action/Value contexts. Expansion, travel, random-bot, AH,
+# raid and other class families remain physically available but are not built.
+set(TORTOISEBOTS_AI_SOURCES
     ai/playerbot/PlayerbotAIAware.h
     ai/playerbot/PlayerbotAIBase.cpp
     ai/playerbot/PlayerbotAIBase.h
     ai/playerbot/BotState.h
+    ai/playerbot/PlayerbotAI.cpp
     ai/playerbot/PlayerbotAI.h
+    ai/playerbot/PlayerbotAIConfig.h
     ai/playerbot/AiFactory.cpp
     ai/playerbot/AiFactory.h
-    #ai/playerbot/ChatHelper.cpp # E2E: stubbed via Stubs.cpp to avoid Penqle GetMapId/getMapId mismatches
-    ai/playerbot/ChatHelper.h
-    #ai/playerbot/ChatFilter.cpp # E2E: stubbed
-    ai/playerbot/ChatFilter.h
-    #ai/playerbot/PlayerbotSecurity.cpp # E2E: stubbed
-    ai/playerbot/PlayerbotSecurity.h
-    #ai/playerbot/BotLog.cpp # E2E: stubbed via Stubs.cpp
+    ai/playerbot/ServerFacade.cpp
+    ai/playerbot/ServerFacade.h
+    ai/playerbot/BotLog.cpp
     ai/playerbot/BotLog.h
-    #ai/playerbot/PerformanceMonitor.cpp # E2E: stubbed via Engine.cpp
-    ai/playerbot/PerformanceMonitor.h
-    #ai/playerbot/WorldPosition.cpp # E2E: stubbed via Stubs vmap + header wrappers
-    ai/playerbot/WorldPosition.h
-    #ai/playerbot/GuidPosition.cpp # E2E: stubbed
+    ai/playerbot/ChatHelper.h
+    ai/playerbot/ChatFilter.h
+    ai/playerbot/PlayerbotSecurity.h
     ai/playerbot/GuidPosition.h
-    #ai/playerbot/PlayerbotSecurity.cpp
-    #ai/playerbot/PlayerbotSecurity.h
-    #ai/playerbot/PlayerbotAI.cpp
-    #ai/playerbot/PlayerbotAIConfig.cpp
-    #ai/playerbot/PlayerbotAIConfig.h
-    #ai/playerbot/ServerFacade.cpp
-    #ai/playerbot/ServerFacade.h
-    #ai/playerbot/BotLog.cpp
-    #ai/playerbot/BotLog.h
-    #ai/playerbot/PerformanceMonitor.cpp
-    #ai/playerbot/PerformanceMonitor.h
-    #ai/playerbot/ChatHelper.cpp
-    #ai/playerbot/ChatHelper.h
-    #ai/playerbot/WorldPosition.cpp
-    #ai/playerbot/WorldPosition.h
-    #ai/playerbot/GuidPosition.cpp
-    #ai/playerbot/GuidPosition.h
-    #ai/playerbot/TravelMgr.cpp
-    #ai/playerbot/TravelMgr.h
-)
-set(BOT_STRATEGY_SRC
+    ai/playerbot/WorldPosition.h
     ai/playerbot/strategy/Engine.cpp
     ai/playerbot/strategy/Engine.h
     ai/playerbot/strategy/AiObjectContext.cpp
@@ -90,132 +61,48 @@ set(BOT_STRATEGY_SRC
     ai/playerbot/strategy/Queue.h
     ai/playerbot/strategy/Trigger.cpp
     ai/playerbot/strategy/Trigger.h
-    #ai/playerbot/strategy/Value.cpp # E2E: header-only for minimal, concrete Value families via generic
     ai/playerbot/strategy/Value.h
     ai/playerbot/strategy/Action.cpp
     ai/playerbot/strategy/Action.h
     ai/playerbot/strategy/Strategy.cpp
     ai/playerbot/strategy/Strategy.h
-    ai/playerbot/strategy/NamedObjectContext.h
     ai/playerbot/strategy/Multiplier.cpp
     ai/playerbot/strategy/Multiplier.h
     ai/playerbot/strategy/PassiveMultiplier.cpp
     ai/playerbot/strategy/PassiveMultiplier.h
     ai/playerbot/strategy/ReactionEngine.cpp
     ai/playerbot/strategy/ReactionEngine.h
-    ai/playerbot/strategy/CustomStrategy.cpp
-    ai/playerbot/strategy/CustomStrategy.h
-    ai/playerbot/strategy/StrategyContext.h
     ai/playerbot/strategy/ActionBasket.cpp
     ai/playerbot/strategy/ActionBasket.h
-    ai/playerbot/strategy/ExternalEventHelper.h
-)
-# Shared contexts - the glue that makes Strategy/Trigger/Action/Value discoverable
-# In Shyalya's Tortoise tree these are header-only (no .cpp), so we glob for existing files
-file(GLOB BOT_CONTEXT_SRC
-    ai/playerbot/strategy/StrategyContext.h
-    ai/playerbot/strategy/actions/ActionContext.h
-    ai/playerbot/strategy/triggers/TriggerContext.h
-    ai/playerbot/strategy/values/ValueContext.h
-    ai/playerbot/strategy/actions/ChatActionContext.h
-    ai/playerbot/strategy/triggers/ChatTriggerContext.h
-)
-# Generic Base behavior - shared strategies that all bots use (follow, combat, etc)
-# We bring the full generic folder from Shyalya (Tortoise-translated) and will
-# layer mod-playerbots modernizations on top. For this batch we include the
-# Shyalya generic set; WotLK-only generic (e.g., deathknight) is excluded via filter.
-file(GLOB BOT_GENERIC_SRC
-    ai/playerbot/strategy/generic/*.cpp
-    ai/playerbot/strategy/generic/*.h
-)
-# Class integration - AiObjectContexts for Vanilla classes (DK excluded)
-file(GLOB BOT_CLASS_CONTEXT_SRC
-    ai/playerbot/strategy/druid/DruidAiObjectContext.cpp
-    ai/playerbot/strategy/druid/DruidAiObjectContext.h
-    ai/playerbot/strategy/hunter/HunterAiObjectContext.cpp
-    ai/playerbot/strategy/hunter/HunterAiObjectContext.h
-    ai/playerbot/strategy/mage/MageAiObjectContext.cpp
-    ai/playerbot/strategy/mage/MageAiObjectContext.h
-    ai/playerbot/strategy/paladin/PaladinAiObjectContext.cpp
-    ai/playerbot/strategy/paladin/PaladinAiObjectContext.h
-    ai/playerbot/strategy/priest/PriestAiObjectContext.cpp
-    ai/playerbot/strategy/priest/PriestAiObjectContext.h
-    ai/playerbot/strategy/rogue/RogueAiObjectContext.cpp
-    ai/playerbot/strategy/rogue/RogueAiObjectContext.h
-    ai/playerbot/strategy/shaman/ShamanAiObjectContext.cpp
-    ai/playerbot/strategy/shaman/ShamanAiObjectContext.h
-    ai/playerbot/strategy/warlock/WarlockAiObjectContext.cpp
-    ai/playerbot/strategy/warlock/WarlockAiObjectContext.h
+    ai/playerbot/strategy/generic/CombatStrategy.cpp
+    ai/playerbot/strategy/generic/CombatStrategy.h
+    ai/playerbot/strategy/generic/NonCombatStrategy.cpp
+    ai/playerbot/strategy/generic/NonCombatStrategy.h
+    ai/playerbot/strategy/generic/ClassStrategy.cpp
+    ai/playerbot/strategy/generic/ClassStrategy.h
+    ai/playerbot/strategy/generic/DeadStrategy.cpp
+    ai/playerbot/strategy/generic/DeadStrategy.h
+    ai/playerbot/strategy/generic/DpsAssistStrategy.cpp
+    ai/playerbot/strategy/generic/DpsAssistStrategy.h
+    ai/playerbot/strategy/generic/FollowMasterStrategy.cpp
+    ai/playerbot/strategy/generic/FollowMasterStrategy.h
+    ai/playerbot/strategy/generic/MeleeCombatStrategy.cpp
+    ai/playerbot/strategy/generic/MeleeCombatStrategy.h
+    ai/playerbot/strategy/warrior/WarriorStrategy.cpp
+    ai/playerbot/strategy/warrior/WarriorStrategy.h
+    ai/playerbot/strategy/warrior/ArmsWarriorStrategy.cpp
+    ai/playerbot/strategy/warrior/ArmsWarriorStrategy.h
+    ai/playerbot/strategy/warrior/FuryWarriorStrategy.cpp
+    ai/playerbot/strategy/warrior/FuryWarriorStrategy.h
+    ai/playerbot/strategy/warrior/ProtectionWarriorStrategy.cpp
+    ai/playerbot/strategy/warrior/ProtectionWarriorStrategy.h
     ai/playerbot/strategy/warrior/WarriorAiObjectContext.cpp
     ai/playerbot/strategy/warrior/WarriorAiObjectContext.h
-)
-# For this checkpoint we keep actions/values/triggers/class-strategies out of the
-# default build to avoid pulling the full 800-file dep tree. They are present in
-# the tree (ai/playerbot/strategy/{actions,values,triggers} and class folders)
-# and will be enabled in the next batch after the core Engine/Context is stable.
-# This keeps the first stabilization build tractable while still having the real
-# foundational code present.
-
-list(FILTER BOT_GENERIC_SRC EXCLUDE REGEX ".*Test.*")
-list(FILTER BOT_CORE_SRC EXCLUDE REGEX ".*Test.*")
-
-# Value/Trigger/Action - real modern families (mod-playerbots donor, Shyalya Tortoise translation)
-# These are header-heavy and bring the full Strategy/Trigger/Action/Value engine.
-# For this checkpoint we include the Value/Trigger/Action *contexts* and the
-# concrete Value/Trigger/Action implementations as a coherent batch.
-file(GLOB BOT_VALUE_SRC
-    ai/playerbot/strategy/values/*.cpp
-    ai/playerbot/strategy/values/*.h
-)
-file(GLOB BOT_TRIGGER_SRC
-    ai/playerbot/strategy/triggers/*.cpp
-    ai/playerbot/strategy/triggers/*.h
-)
-file(GLOB BOT_ACTION_SRC
-    ai/playerbot/strategy/actions/*.cpp
-    ai/playerbot/strategy/actions/*.h
-)
-list(FILTER BOT_VALUE_SRC EXCLUDE REGEX ".*Test.*")
-list(FILTER BOT_TRIGGER_SRC EXCLUDE REGEX ".*Test.*")
-list(FILTER BOT_ACTION_SRC EXCLUDE REGEX ".*Test.*")
-
-set(TORTOISEBOTS_AI_SOURCES
-    ${BOT_CORE_SRC}
-    ${BOT_STRATEGY_SRC}
-    #${BOT_CONTEXT_SRC} # E2E: keep header-only, concrete families via Stubs
-    #${BOT_CLASS_CONTEXT_SRC} # E2E: enable after Engine green
-    #${BOT_VALUE_SRC} # E2E green: keep header-only Value/Trigger/Action contexts, concrete families via generic/warrior
-    #${BOT_TRIGGER_SRC} # E2E green
-    #${BOT_ACTION_SRC} # E2E green
-    # Travel/WorldPosition/GuidPosition - excluded for E2E green checkpoint
-    # ai/playerbot/TravelMgr.cpp
-    # ai/playerbot/TravelMgr.h
-    # ai/playerbot/TravelNode.cpp
-    # ai/playerbot/TravelNode.h
-    # ai/playerbot/WorldPosition.cpp
-    # ai/playerbot/WorldPosition.h
-    # ai/playerbot/GuidPosition.cpp
-    # ai/playerbot/GuidPosition.h
-    # Module-local AI registry (replaces Player::GetPlayerbotAI host coupling)
-    runtime/PlayerbotAIStorage.cpp
-    runtime/PlayerbotAIStorage.h
-    runtime/MinimalPlayerbotAI.cpp
-    ai/playerbot/strategy/warrior/WarriorAiObjectContext.cpp
-    ai/playerbot/strategy/warrior/WarriorAiObjectContext.h
+    runtime/VerticalSliceObjects.cpp
+    runtime/VerticalSliceObjects.h
+    runtime/VerticalPlayerbotAIConfig.cpp
     ai/botpch.cpp
 )
-# For this checkpoint we still keep the bulk generic/class actions out of the default build
-# to avoid the 800-file dep tree; they are present in ai/ and will be enabled in the
-# next batch after Value/Trigger/Action + Travel/WorldPosition are stable.
-# file(GLOB BOT_GENERIC_SRC ...) and file(GLOB BOT_CLASS_CONTEXT_SRC ...) are
-# defined above and will be added in the next batch.
-# Exclude WotLK-only and test scaffolding
-list(FILTER TORTOISEBOTS_AI_SOURCES EXCLUDE REGEX ".*deathknight.*")
-list(FILTER TORTOISEBOTS_AI_SOURCES EXCLUDE REGEX ".*DeathKnight.*")
-list(FILTER TORTOISEBOTS_AI_SOURCES EXCLUDE REGEX ".*DK.*")
-list(FILTER TORTOISEBOTS_AI_SOURCES EXCLUDE REGEX ".*Test.*")
-list(FILTER TORTOISEBOTS_AI_SOURCES EXCLUDE REGEX ".*ahbot.*")
-list(FILTER TORTOISEBOTS_AI_SOURCES EXCLUDE REGEX ".*AhBot.*")
 
 add_library(tortoise_bots STATIC
     ${TORTOISEBOTS_SOURCES}

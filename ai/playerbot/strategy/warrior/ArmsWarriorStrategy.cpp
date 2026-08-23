@@ -1073,7 +1073,7 @@ public:
     float GetValue(Action* action) override
     {
         // Disable Berserker Stance
-        const std::string& actionName = action->GetName();
+        const std::string& actionName = action->getName();
         if ((actionName == "berserker stance" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||
@@ -1081,7 +1081,7 @@ public:
             actionName == "cleave") &&
             AI_VALUE2(bool, "trigger active", "melee light aoe") &&
             bot->HasSpell(12292) &&
-            bot->IsSpellReady(12292) &&
+            !bot->HasSpellCooldown(12292) &&
             !bot->HasAura(12292))
         {
             return 0.0f;
@@ -1091,7 +1091,7 @@ public:
         if ((actionName == "battle stance") &&
             AI_VALUE2(bool, "trigger active", "melee light aoe") &&
             bot->HasSpell(12292) &&
-            !bot->IsSpellReady(12292))
+            bot->HasSpellCooldown(12292))
         {
             return 0.0f;
         }
@@ -1108,7 +1108,7 @@ public:
     float GetValue(Action* action) override
     {
         // Disable Berserker Stance
-        const std::string& actionName = action->GetName();
+        const std::string& actionName = action->getName();
         if ((actionName == "berserker stance" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||
@@ -1116,7 +1116,7 @@ public:
             actionName == "cleave") &&
             AI_VALUE2(bool, "trigger active", "melee light aoe") &&
             bot->HasSpell(12292) &&
-            bot->IsSpellReady(12292) &&
+            !bot->HasSpellCooldown(12292) &&
             !bot->HasAura(12292))
         {
             return 0.0f;
@@ -1126,7 +1126,7 @@ public:
         if ((actionName == "battle stance") &&
             AI_VALUE2(bool, "trigger active", "melee light aoe") &&
             bot->HasSpell(12292) &&
-            !bot->IsSpellReady(12292))
+            bot->HasSpellCooldown(12292))
         {
             return 0.0f;
         }
@@ -1143,7 +1143,7 @@ public:
     float GetValue(Action* action) override
     {
         // Disable Berserker Stance
-        const std::string& actionName = action->GetName();
+        const std::string& actionName = action->getName();
         if ((actionName == "berserker stance" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||
@@ -1151,7 +1151,7 @@ public:
             actionName == "cleave") &&
             AI_VALUE2(bool, "trigger active", "melee light aoe") &&
             bot->HasSpell(12292) &&
-            bot->IsSpellReady(12292) &&
+            !bot->HasSpellCooldown(12292) &&
             !bot->HasAura(12292))
         {
             return 0.0f;
@@ -1161,7 +1161,7 @@ public:
         if ((actionName == "battle stance") &&
             AI_VALUE2(bool, "trigger active", "melee light aoe") &&
             bot->HasSpell(12292) &&
-            !bot->IsSpellReady(12292))
+            bot->HasSpellCooldown(12292))
         {
             return 0.0f;
         }
