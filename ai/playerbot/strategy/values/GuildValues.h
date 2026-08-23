@@ -126,7 +126,7 @@ namespace ai
             }
 
             QuestStatus status = bot->GetQuestStatus(order.questId);
-            // Quest already in log (incomplete or complete) — no need to accept.
+            // Quest already in log (incomplete or complete)  no need to accept.
             if (status == QUEST_STATUS_INCOMPLETE || status == QUEST_STATUS_COMPLETE)
                 return false;
 

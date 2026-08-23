@@ -131,7 +131,7 @@ bool InitializePetAction::isUseful()
         // Or if alt bot and autoLearnTrainerSpells is true
         (!sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()) && sPlayerbotAIConfig.autoLearnTrainerSpells))
     {
-        if (bot->getClass() == CLASS_HUNTER)
+        if (bot->GetClass() == CLASS_HUNTER)
         {
             bool hasTamedPet = bot->GetPet();
             if (!hasTamedPet)
@@ -152,7 +152,7 @@ bool InitializePetAction::isUseful()
         }
 // Warlock pets should auto learn spells in WOTLK
 #ifndef MANGOSBOT_TWO
-        else if (bot->getClass() == CLASS_WARLOCK)
+        else if (bot->GetClass() == CLASS_WARLOCK)
         {
             // Only initialize if warlock has the pet summoned
             Pet* pet = bot->GetPet();
@@ -354,8 +354,8 @@ bool InitializePetAction::isUseful()
 
 bool SetPetAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string command = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string command = event.GetParam();
 
     // Extract the command and the parameters
     std::string parameter;
@@ -413,7 +413,7 @@ bool SetPetAction::Execute(Event& event)
         else if (command == "aggressive")
         {
             // Send pet action packet
-            const ObjectGuid& petGuid = pet->GetObjectGuid();
+            const ObjectGuid& petGuid = pet->getObjectGuid();
             const uint8 flag = ACT_REACTION;
             const uint32 spellId = REACT_AGGRESSIVE;
             const uint32 data = (flag << 24) | spellId;
@@ -431,7 +431,7 @@ bool SetPetAction::Execute(Event& event)
         else if (command == "defensive")
         {
             // Send pet action packet
-            const ObjectGuid& petGuid = pet->GetObjectGuid();
+            const ObjectGuid& petGuid = pet->getObjectGuid();
             const uint8 flag = ACT_REACTION;
             const uint32 spellId = REACT_DEFENSIVE;
             const uint32 data = (flag << 24) | spellId;
@@ -449,7 +449,7 @@ bool SetPetAction::Execute(Event& event)
         else if (command == "passive")
         {
             // Send pet action packet
-            const ObjectGuid& petGuid = pet->GetObjectGuid();
+            const ObjectGuid& petGuid = pet->getObjectGuid();
             const uint8 flag = ACT_REACTION;
             const uint32 spellId = REACT_PASSIVE;
             const uint32 data = (flag << 24) | spellId;
@@ -467,7 +467,7 @@ bool SetPetAction::Execute(Event& event)
         else if (command == "follow")
         {
             // Send pet action packet
-            const ObjectGuid& petGuid = pet->GetObjectGuid();
+            const ObjectGuid& petGuid = pet->getObjectGuid();
             const ObjectGuid& targetGuid = ObjectGuid();
             const uint8 flag = ACT_COMMAND;
             const uint32 spellId = COMMAND_FOLLOW;
@@ -485,7 +485,7 @@ bool SetPetAction::Execute(Event& event)
         else if (command == "stay")
         {
             // Send pet action packet
-            const ObjectGuid& petGuid = pet->GetObjectGuid();
+            const ObjectGuid& petGuid = pet->getObjectGuid();
             const ObjectGuid& targetGuid = ObjectGuid();
             const uint8 flag = ACT_COMMAND;
             const uint32 spellId = COMMAND_STAY;
@@ -506,7 +506,7 @@ bool SetPetAction::Execute(Event& event)
             {
                 constexpr uint32 PET_IMP = 416;
                 constexpr uint32 PHASE_SHIFT = 4511;
-                if (bot->getClass() == CLASS_WARLOCK &&
+                if (bot->GetClass() == CLASS_WARLOCK &&
                     pet->AI() && pet->AI()->HasReactState(REACT_PASSIVE) &&
                     pet->GetEntry() == PET_IMP && pet->HasAura(PHASE_SHIFT))
                 {
@@ -515,8 +515,8 @@ bool SetPetAction::Execute(Event& event)
                 }
 
                 // Send pet action packet
-                const ObjectGuid& petGuid = pet->GetObjectGuid();
-                const ObjectGuid& targetGuid = requester->GetTarget()->GetObjectGuid();
+                const ObjectGuid& petGuid = pet->getObjectGuid();
+                const ObjectGuid& targetGuid = requester->GetTarget()->getObjectGuid();
                 const uint8 flag = ACT_COMMAND;
                 const uint32 spellId = COMMAND_ATTACK;
                 const uint32 command = (flag << 24) | spellId;
@@ -537,7 +537,7 @@ bool SetPetAction::Execute(Event& event)
         }
         else if (command == "dismiss")
         {
-            if (pet->getPetType() == HUNTER_PET)
+            if (pet->GetPetType() == HUNTER_PET)
             {
                 if (ai->DoSpecificAction("dismiss pet", event, true))
                 {
@@ -554,7 +554,7 @@ bool SetPetAction::Execute(Event& event)
             else
             {
                 // Send pet action packet
-                const ObjectGuid& petGuid = pet->GetObjectGuid();
+                const ObjectGuid& petGuid = pet->getObjectGuid();
                 const ObjectGuid& targetGuid = ObjectGuid();
                 const uint8 flag = ACT_COMMAND;
                 const uint32 spellId = COMMAND_DISMISS;
@@ -577,14 +577,14 @@ bool SetPetAction::Execute(Event& event)
         }
         else if (command == "abandon")
         {
-            if (bot->getClass() == CLASS_HUNTER)
+            if (bot->GetClass() == CLASS_HUNTER)
             {
                 //std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_PET_ABANDON, 8));
-                //*packet << pet->GetObjectGuid();
-                //bot->GetSession()->QueuePacket(std::move(packet));
+                //*packet << pet->getObjectGuid();
+                //bot->GetSession()->QueuePacket(packet.release());
 
                 // Send pet action packet
-                const ObjectGuid& petGuid = pet->GetObjectGuid();
+                const ObjectGuid& petGuid = pet->getObjectGuid();
 
                 WorldPacket packet(CMSG_PET_ABANDON);
                 packet << petGuid;
@@ -605,7 +605,7 @@ bool SetPetAction::Execute(Event& event)
     }
     else if (command == "call")
     {
-        if (bot->getClass() == CLASS_HUNTER || bot->getClass() == CLASS_WARLOCK)
+        if (bot->GetClass() == CLASS_HUNTER || bot->GetClass() == CLASS_WARLOCK)
         {
             ai->ChangeStrategy("+pet", BotState::BOT_STATE_COMBAT);
             ai->ChangeStrategy("+pet", BotState::BOT_STATE_NON_COMBAT);

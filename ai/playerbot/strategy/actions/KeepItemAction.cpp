@@ -9,8 +9,8 @@ using namespace ai;
 
 bool KeepItemAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string text = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string text = event.GetParam();
 
     std::string type = text.substr(0, text.find(" "));
 

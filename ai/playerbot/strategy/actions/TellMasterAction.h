@@ -27,7 +27,7 @@ namespace ai
 
         virtual bool Execute(Event& event) override
         {
-            Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+            Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
             ai->TellPlayer(requester, BOT_TEXT("wait_travel_close"));
             return true;
         }

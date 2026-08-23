@@ -67,7 +67,7 @@ bool CastSpellAction::Execute(Event& event)
 
         if (GetTargetName() == "current target" && (!bot->GetCurrentSpell(CURRENT_MELEE_SPELL) && !bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL)))
         {
-            if (bot->getClass() == CLASS_HUNTER && spellName != "auto shot" && sServerFacade.GetDistance2d(bot, target) > 5.0f)
+            if (bot->GetClass() == CLASS_HUNTER && spellName != "auto shot" && sServerFacade.getDistance2d(bot, target) > 5.0f)
                 ai->CastSpell("auto shot", target);
         }
 
@@ -111,7 +111,7 @@ bool CastSpellAction::isPossible()
     }
     else
     {
-        float dist = bot->GetDistance(spellTarget, true, ai->IsRanged(bot) ? DIST_CALC_COMBAT_REACH : DIST_CALC_COMBAT_REACH_WITH_MELEE);
+        float dist = bot->getDistance(spellTarget, true, ai->IsRanged(bot) ? DIST_CALC_COMBAT_REACH : DIST_CALC_COMBAT_REACH_WITH_MELEE);
         if (range == ATTACK_DISTANCE) 
         {
             canReach = bot->CanReachWithMeleeAttack(spellTarget);
@@ -228,13 +228,13 @@ bool CastPetSpellAction::isPossible()
         if (pet->HasSpell(spellId) && pet->IsSpellReady(spellId))
         {
             // Check if the pet is not too far from the owner
-            if (bot->GetDistance(pet) <= sPlayerbotAIConfig.sightDistance)
+            if (bot->getDistance(pet) <= sPlayerbotAIConfig.sightDistance)
             {
                 bool canReach = false;
                 const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(spellId);
                 if (pSpellInfo)
                 {
-                    const float dist = pet->GetDistance(spellTarget, true, DIST_CALC_COMBAT_REACH);
+                    const float dist = pet->getDistance(spellTarget, true, DIST_CALC_COMBAT_REACH);
                     canReach = dist <= (range + sPlayerbotAIConfig.contactDistance);
 
                     if (pSpellInfo->rangeIndex != SPELL_RANGE_IDX_COMBAT && pSpellInfo->rangeIndex != SPELL_RANGE_IDX_SELF_ONLY && pSpellInfo->rangeIndex != SPELL_RANGE_IDX_ANYWHERE)
@@ -308,7 +308,7 @@ bool CastFrozenDeathboltAction::isPossible()
     if (!target)
         return false;
 
-    if (target->GetDistance(bot) > range)
+    if (target->getDistance(bot) > range)
         return false;
 
     return CastVehicleSpellAction::isPossible();
@@ -321,7 +321,7 @@ bool CastDevourHumanoidAction::isPossible()
     if (!target)
         return false;
 
-    if (target->GetDistance(bot) > range)
+    if (target->getDistance(bot) > range)
         return false;
 
     return CastVehicleSpellAction::isPossible();
@@ -521,8 +521,8 @@ bool CastSpellTargetAction::IsTargetValid(Unit* target)
 {
     return target &&
            ai->IsSafe(target) &&
-           (bot == target || sServerFacade.GetDistance2d(bot, target) < sPlayerbotAIConfig.sightDistance) &&
-           bot->IsInGroup(target) &&
+           (bot == target || sServerFacade.getDistance2d(bot, target) < sPlayerbotAIConfig.sightDistance) &&
+           IsInGroup_Helper(bot, target) &&
            (!aliveCheck || !target->IsDead()) &&
            (!auraCheck || !ai->HasAura(GetSpellID(), target));
 }
@@ -663,7 +663,7 @@ bool CastItemTargetAction::Execute(Event& event)
     if (target)
     {
         targets.setUnitTarget(target);
-        targets.setDestination(target->GetPositionX(), target->GetPositionY(), target->GetPositionZ());
+        targets.setDestination(target->getPositionX(), target->getPositionY(), target->getPositionZ());
     }
     else
         targets.m_targetMask = TARGET_FLAG_SELF;

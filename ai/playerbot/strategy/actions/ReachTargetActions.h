@@ -42,7 +42,7 @@ namespace ai
                 UpdateMovementState();
 
                 // Ignore movement if too far
-                const float distanceToTarget = bot->GetDistance(target, false, DIST_CALC_COMBAT_REACH);
+                const float distanceToTarget = bot->getDistance(target, false, DIST_CALC_COMBAT_REACH);
                 float chaseDist = range;
                 const bool inLos = bot->IsWithinLOSInMap(target, true);
                 const bool isFriend = sServerFacade.IsFriendlyTo(bot, target);
@@ -61,7 +61,7 @@ namespace ai
                 }
 
                 if (MoveStyleValue::WaitForEnemy(ai) && target->m_movementInfo.HasMovementFlag(movementFlagsMask) &&
-                        sServerFacade.IsInFront(target, bot, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT) &&
+                        sServerFacade.isInFront(target, bot, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT) &&
                         sServerFacade.IsDistanceGreaterThan(distanceToTarget, sPlayerbotAIConfig.tooCloseDistance))
                 {
                     return true;
@@ -123,7 +123,7 @@ namespace ai
                         if (bot->IsWithinLOSInMap(target, true))
                         {
                             // Check if the bot is already on the range required
-                            return bot->GetDistance(target, true, DIST_CALC_COMBAT_REACH) > range;
+                            return bot->getDistance(target, true, DIST_CALC_COMBAT_REACH) > range;
                         }
 
                         return true;
@@ -249,7 +249,7 @@ namespace ai
 
             for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
             {
-                Player* member = ref->getSource();
+                Player* member = ref->GetSource();
                 if (!member || !sServerFacade.IsAlive(member))
                     continue;
 

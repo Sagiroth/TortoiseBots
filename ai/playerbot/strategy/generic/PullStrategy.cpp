@@ -42,7 +42,7 @@ std::string PullStrategy::GetPullActionName() const
     std::string modPullActionName = pullActionName;
 
     // Select the faerie fire based on druid strategy
-    if (ai->GetBot()->getClass() == CLASS_DRUID)
+    if (ai->GetBot()->GetClass() == CLASS_DRUID)
     {
         if (modPullActionName == "faerie fire")
         {
@@ -126,7 +126,7 @@ std::string PullStrategy::GetPreActionName() const
     std::string modPullActionName = preActionName;
 
     // Select the faerie fire based on druid strategy
-    if (ai->GetBot()->getClass() == CLASS_DRUID)
+    if (ai->GetBot()->GetClass() == CLASS_DRUID)
     {
         if (modPullActionName == "dire bear form")
         {
@@ -196,7 +196,7 @@ bool PullStrategy::CanDoPullAction(Unit* target)
     // Check if the bot can perform the pull action
 
     // check if has ranged weapon
-    if (ai->GetBot()->getClass() != CLASS_DRUID && ai->GetBot()->getClass() != CLASS_PALADIN && !ai->GetBot()->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED))
+    if (ai->GetBot()->GetClass() != CLASS_DRUID && ai->GetBot()->GetClass() != CLASS_PALADIN && !ai->GetBot()->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED))
         return false;
 
     bool canPull = false;

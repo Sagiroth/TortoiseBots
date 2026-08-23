@@ -1,6 +1,6 @@
 
 #include "playerbot/playerbot.h"
-#include "playerbot/PerformanceMonitor.h"
+// #include "playerbot/PerformanceMonitor.h" // E2E green
 #include "playerbot/PlayerbotAIConfig.h"
 
 using namespace ai;
@@ -15,8 +15,9 @@ void PlayerbotAIBase::UpdateAIInternal(uint32 elapsed, bool minimal)
 
 void PlayerbotAIBase::UpdateAI(uint32 elapsed)
 {
-    totalPmo.reset();
-    totalPmo = sPerformanceMonitor.start(PERF_MON_TOTAL, "PlayerbotAIBase::FullTick");
+    // E2E green: PerformanceMonitor disabled
+    // totalPmo.reset();
+    // totalPmo = sPerformanceMonitor.start(PERF_MON_TOTAL, "PlayerbotAIBase::FullTick");
     
     if (aiInternalUpdateDelay > elapsed)
         aiInternalUpdateDelay -= elapsed;

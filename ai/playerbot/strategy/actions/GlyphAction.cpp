@@ -8,8 +8,8 @@ using namespace ai;
 
 bool GlyphAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string param = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string param = event.GetParam();
     ItemIds ids = ChatHelper::parseItems(param);
     ProcessGlyphAction glyphAction = &GlyphAction::List;
 
@@ -158,7 +158,7 @@ void GlyphAction::Set(uint32 itemId, uint8 wantedSlotId, std::ostringstream& msg
     }
 #endif
 
-    if (glyphProto->AllowableClass != bot->getClassMask())
+    if (glyphProto->AllowableClass != bot->GetClassMask())
     {
         msg << BOT_TEXT2("%glyph is not a valid glyph for this class", placeholders);
         return;
@@ -289,7 +289,7 @@ uint8 GlyphAction::GetEquipedGlyphSlot(uint32 itemId)
 
 bool AutoSetGlyphAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
     std::vector<uint32> availableGlyphs = AI_VALUE(std::vector<uint32>, "available glyphs");
 

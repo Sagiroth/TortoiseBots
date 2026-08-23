@@ -17,7 +17,7 @@ namespace ai
     public:
         virtual bool Execute(Event& event) override
         {
-            Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+            Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
             if (sServerFacade.IsAlive(bot))
                 return false;
 
@@ -27,8 +27,8 @@ namespace ai
                 return false;
             }
 
-            WorldPacket& p = event.getPacket();
-            if (!p.empty() && p.GetOpcode() == CMSG_REPOP_REQUEST)
+            WorldPacket& p = event.GetPacket();
+            if (!p.empty() && p.getOpcode() == CMSG_REPOP_REQUEST)
                 ai->TellPlayerNoFacing(requester, "Releasing...", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
             else
                 ai->TellPlayerNoFacing(requester, "Meet me at the graveyard", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
@@ -129,7 +129,7 @@ namespace ai
 
         virtual bool Execute(Event& event) override
         {
-            Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+            Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
             if (sServerFacade.IsAlive(bot) || !bot->GetCorpse())
             {
@@ -152,7 +152,7 @@ namespace ai
     public:
         virtual bool Execute(Event& event) override
         {
-            Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+            Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
             sLog.outDetail("Repop bot #%d %s:%d <%s>", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
 
@@ -171,7 +171,7 @@ namespace ai
                 if (Group* group = bot->GetGroup())
                 {
                     sLog.outDetail("Repop: Removing bot #%d %s:%d <%s> from group", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
-                    group->RemoveMember(bot->GetObjectGuid(), 0);
+                    group->RemoveMember(bot->getObjectGuid(), 0);
                 }
             }
 
@@ -194,14 +194,14 @@ namespace ai
             // overrides their homebind to reflect this. GetPlayerInfo() below would return the
             // real racial spawn point instead, sending the bot right back to the excluded zone
             // on every death, so route these two races through the homebind branch instead.
-            bool useHomebindOverride = bot->getRace() == RACE_GOBLIN || bot->getRace() == RACE_HIGH_ELF;
-            PlayerInfo const* defaultPlayerInfo = useHomebindOverride ? nullptr : sObjectMgr.GetPlayerInfo(bot->getRace(), bot->getClass());
+            bool useHomebindOverride = bot->GetRace() == RACE_GOBLIN || bot->GetRace() == RACE_HIGH_ELF;
+            PlayerInfo const* defaultPlayerInfo = useHomebindOverride ? nullptr : sObjectMgr.GetPlayerInfo(bot->GetRace(), bot->GetClass());
             if (defaultPlayerInfo)
             {
                 sLog.outDetail("Repop: Teleporting bot #%d %s:%d <%s> to spawn", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
                 //teleport bot to spawn
                 bot->TeleportTo(defaultPlayerInfo->mapId, defaultPlayerInfo->positionX, defaultPlayerInfo->positionY, defaultPlayerInfo->positionZ, defaultPlayerInfo->orientation);
-                if (bot->isRealPlayer())
+                if (isRealPlayer_Helper(bot))
                     bot->SendHeartBeat();
             }
             else

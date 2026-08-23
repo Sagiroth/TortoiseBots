@@ -59,7 +59,7 @@ std::list<int32> ItemVendorListValue::Calculate()
 
 bool VendorHasUsefulItemValue::Calculate()
 {
-    uint32 entry = stoi(this->getQualifier());
+    uint32 entry = stoi(this->GetQualifier());
     CreatureInfo const* cInfo = sObjectMgr.GetCreatureTemplate(entry);
 
     if (!cInfo)

@@ -24,10 +24,10 @@ bool SpellCastUsefulValue::Calculate()
 	{
 		Spell* spell = bot->GetCurrentSpell(CURRENT_MELEE_SPELL);
 #ifdef CMANGOS
-		if (spell && spell->m_spellInfo->Id == spellid && IsNextMeleeSwingSpell(spell->m_spellInfo) && bot->hasUnitState(UNIT_STAT_MELEE_ATTACKING))
+		if (spell && spell->m_spellInfo->Id == spellid && IsNextMeleeSwingSpell(spell->m_spellInfo) && bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING))
 #endif
 #ifdef MANGOS
-		if (spell && spell->m_spellInfo->Id == spellid && spell->IsNextMeleeSwingSpell() && bot->hasUnitState(UNIT_STAT_MELEE_ATTACKING))
+		if (spell && spell->m_spellInfo->Id == spellid && spell->IsNextMeleeSwingSpell() && bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING))
 #endif
 			return false;
 	}
@@ -37,7 +37,7 @@ bool SpellCastUsefulValue::Calculate()
         if (spellid == lastSpellId)
         {
             Spell* const pSpell = bot->FindCurrentSpellBySpellId(lastSpellId);
-            if (pSpell && (pSpell->getState() == SPELL_STATE_CASTING || pSpell->getState() == SPELL_STATE_CHANNELING))
+            if (pSpell && (pSpell->GetState() == SPELL_STATE_CASTING || pSpell->GetState() == SPELL_STATE_CHANNELING))
                 return false;
         }
 	}

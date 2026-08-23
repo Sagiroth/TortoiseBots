@@ -39,7 +39,7 @@ bool TellPvpStatsAction::Execute(Event event)
     // Prefer the actual chat sender (whisper / say / etc.) if available.
     Player* requester = nullptr;
 
-    if (Unit* owner = event.getOwner())
+    if (Unit* owner = event.GetOwner())
         requester = owner->ToPlayer();
 
     // Fallback to master if event owner is not available.

@@ -18,8 +18,8 @@ HelpAction::~HelpAction()
 
 bool HelpAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string param = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string param = event.GetParam();
     std::string helpTopic;
 
     if(param.find("Hvalue:help") != std::string::npos)

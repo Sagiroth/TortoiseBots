@@ -23,7 +23,7 @@ bool WaitForAttackKeepSafeDistanceAction::Execute(Event& event)
         if (bestPoint)
         {
             // Move to the best point
-            return MoveTo(bestPoint.getMapId(), bestPoint.getX(), bestPoint.getY(), bestPoint.getZ(), false, false, false, true);
+            return MoveTo(bestPoint.GetMapId(), bestPoint.getX(), bestPoint.getY(), bestPoint.getZ(), false, false, false, true);
         }
     }
 
@@ -37,7 +37,7 @@ const ai::WorldPosition WaitForAttackKeepSafeDistanceAction::GetBestPoint(Unit* 
     const WorldPosition targetPosition(target);
     const int8 startDir = urand(0, 1) * 2 - 1;
     const float radiansIncrement = (5.0f / 180.0f) * (M_PI_F);
-    const float startAngle = targetPosition.getAngleTo(botPosition) + urand(0.f,radiansIncrement) * startDir;
+    const float startAngle = targetPosition.GetAngleTo(botPosition) + urand(0.f,radiansIncrement) * startDir;
     const float distance = frand(minDistance, maxDistance);
     const std::list<ObjectGuid> enemies = AI_VALUE(std::list<ObjectGuid>, "possible targets no los");
 
@@ -59,7 +59,7 @@ const ai::WorldPosition WaitForAttackKeepSafeDistanceAction::GetBestPoint(Unit* 
 
             WorldPosition point = targetPosition + WorldPosition(0, distance * cos(pointAngle), distance * sin(pointAngle), 1.0f);
 
-            point.setZ(point.getHeight());
+            point.setZ(point.GetHeight());
 
             if (ai->HasStrategy("debug move", BotState::BOT_STATE_COMBAT))
             {

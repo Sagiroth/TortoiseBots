@@ -9,7 +9,7 @@ namespace ai
     public:
         CraftData() : itemId(0) {}
 
-        CraftData(const CraftData& other) : itemId(other.itemId)
+        CraftData(const CraftData& other) : itemId(other.itemid)
         {
             required.insert(other.required.begin(), other.required.end());
             obtained.insert(other.obtained.begin(), other.obtained.end());

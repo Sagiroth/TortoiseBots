@@ -12,7 +12,7 @@ EntryGuidps EntryGuidpsValue::Calculate()
 {
     EntryGuidps guidps;
 
-    for (auto& creatureDataPair : WorldPosition().getCreaturesNear())
+    for (auto& creatureDataPair : WorldPosition().GetCreaturesNear())
     {
         AsyncGuidPosition aGuidP(creatureDataPair);
         if (aGuidP.isValid() && !aGuidP.IsEventUnspawned())
@@ -22,7 +22,7 @@ EntryGuidps EntryGuidpsValue::Calculate()
         }
     }
 
-    for (auto& goDataPair : WorldPosition().getGameObjectsNear())
+    for (auto& goDataPair : WorldPosition().GetGameObjectsNear())
     {
         AsyncGuidPosition aGuidP(goDataPair);
         if (aGuidP.isValid() && !aGuidP.IsEventUnspawned())
@@ -84,7 +84,7 @@ EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
 
         for (auto& flag : allowedNpcFlags)
         {
-            if ((cInfo->NpcFlags & flag) != 0)
+            if ((cInfo->npc_flags & flag) != 0)
             {
                 purpose |= (uint32)TravelDestinationPurpose::GenericRpg;
                 break;
@@ -93,7 +93,7 @@ EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
 
         for (auto& [flag, flagPurpose] : npcPurposeMap)
         {
-            if ((cInfo->NpcFlags & flag) != 0)
+            if ((cInfo->npc_flags & flag) != 0)
             {
                 purpose |= (uint32)flagPurpose;
             }
@@ -127,9 +127,9 @@ EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
             }
         }
 
-        if (cInfo->Rank == CREATURE_ELITE_ELITE || cInfo->Rank == CREATURE_ELITE_RAREELITE || cInfo->Rank == CREATURE_ELITE_WORLDBOSS || cInfo->Rank == CREATURE_ELITE_RARE)
+        if (cInfo->rank == CREATURE_ELITE_ELITE || cInfo->rank == CREATURE_ELITE_RAREELITE || cInfo->rank == CREATURE_ELITE_WORLDBOSS || cInfo->rank == CREATURE_ELITE_RARE)
         {
-            if (cInfo->Rank == 1)
+            if (cInfo->rank == 1)
             {
                 if (guidpMap[entry].size() == 1)
                     purpose |= (uint32)TravelDestinationPurpose::Boss;

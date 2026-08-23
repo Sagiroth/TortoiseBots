@@ -11,8 +11,8 @@ using namespace ai;
 bool GuildBankAction::Execute(Event& event)
 {
 #ifndef MANGOSBOT_ZERO
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string text = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string text = event.GetParam();
     if (text.empty())
         return false;
 
@@ -26,7 +26,7 @@ bool GuildBankAction::Execute(Event& event)
     for (std::list<ObjectGuid>::iterator i = gos.begin(); i != gos.end(); ++i)
     {
         GameObject* go = ai->GetGameObject(*i);
-        if (!go || !bot->GetGameObjectIfCanInteractWith(go->GetObjectGuid(), GAMEOBJECT_TYPE_GUILD_BANK))
+        if (!go || !bot->GetGameObjectIfCanInteractWith(go->getObjectGuid(), GAMEOBJECT_TYPE_GUILD_BANK))
             continue;
 
         return Execute(text, go, requester);

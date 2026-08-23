@@ -35,7 +35,7 @@ bool MonitorMovementDistance::IsConditionMet(const std::string& monitorStr, Play
     if (!TestRegistry::ParseLocation(name, loc))
         return false;
 
-    const float dist = bot->GetDistance(loc.coord_x, loc.coord_y, loc.coord_z);
+    const float dist = bot->getDistance(loc.x, loc.y, loc.z);
     if (op == '<')
         return dist < threshold;
 
@@ -57,7 +57,7 @@ bool MonitorNotOnMap::IsConditionMet(const std::string& monitorStr, Player* bot,
         return true;
 
     // Penqle's MapEntry::name is a single char* (not a localized array).
-    std::string currentMapName = botPos.getMapEntry()->name ? botPos.getMapEntry()->name : "";
+    std::string currentMapName = botPos.GetMapEntry()->name ? botPos.GetMapEntry()->name : "";
 
     if (currentMapName != wantMapName)
         return true;
@@ -91,12 +91,12 @@ bool MonitorMovementCanNotReachNodes::IsConditionMet(const std::string& monitorS
         return false;
 
     WorldPosition pos = WorldPosition(bot);
-    std::vector<TravelNode*> startNodes = sTravelNodeMap.getNodes(pos);
+    std::vector<TravelNode*> startNodes = sTravelNodeMap.GetNodes(pos);
 
     for (uint32 i = 0; i < std::min(5,int(startNodes.size())); i++)
     {
         WorldPosition nodePos = *startNodes[i]->getPosition();
-        if (nodePos.isPathTo(pos.getPathTo(nodePos, bot),1.0f))
+        if (nodePos.isPathTo(pos.GetPathTo(nodePos, bot),1.0f))
             return false;
     }
 
@@ -110,7 +110,7 @@ bool MonitorMovementSpeed::IsConditionMet(const std::string& monitorStr, Player*
     static std::map<ObjectGuid, bool> lastOnTransport;
     static std::map<ObjectGuid, bool> lastOnTaxi;
 
-    ObjectGuid guid = bot->GetObjectGuid();
+    ObjectGuid guid = bot->getObjectGuid();
 
     if (!lastPositions.count(guid))
     {
@@ -190,7 +190,7 @@ bool MonitorMovementSpawnDistance::IsConditionMet(const std::string& monitorStr,
     if (TrySplitOnce(monitorStr, "=>", leftSide, rightSide, parseMessage, GetName(), true) != TestResult::PASS)
         return false;
 
-    float dist = bot->GetDistance(spawned);
+    float dist = bot->getDistance(spawned);
 
     char op = 0;
     std::string valueStr;

@@ -118,7 +118,7 @@ namespace ai
 
             for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
             {
-                Player* member = ref->getSource();
+                Player* member = ref->GetSource();
                 if (!member || !sServerFacade.IsAlive(member))
                     continue;
 

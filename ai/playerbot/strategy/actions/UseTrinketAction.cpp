@@ -9,7 +9,7 @@ using namespace ai;
 
 bool UseTrinketAction::Execute(Event& event)
 {
-	Player* requester = event.getOwner();
+	Player* requester = event.GetOwner();
 	std::list<Item*> trinkets = AI_VALUE(std::list<Item*>, "trinkets on use");
 	for (Item* item : trinkets)
 	{

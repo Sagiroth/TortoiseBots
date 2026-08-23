@@ -29,13 +29,13 @@ GuidPosition FreeMoveCenterValue::Calculate()
 
         //Use formation location as reference point.
         Formation* formation = AI_VALUE(Formation*, "formation");
-        GuidPosition loc(followTarget->GetObjectGuid(),formation->GetLocation());
+        GuidPosition loc(followTarget->getObjectGuid(),formation->GetLocation());
 
-        if (Formation::IsNullLocation(loc) || loc.mapid == -1)
+        if (Formation::IsNullLocation(loc) || loc.mapId == -1)
             return followTarget;
 
         //Move the location to a location around follow targets destination.
-        if (player && player->GetPlayerbotAI() && ai->IsSafe(player) && PAI_VALUE(WorldPosition, "last long move"))
+        if (player && PlayerbotAIStorage::Instance().GetAI(player) && ai->IsSafe(player) && PAI_VALUE(WorldPosition, "last long move"))
             loc += (PAI_VALUE(WorldPosition, "last long move") - player);
 
         return loc;
@@ -44,10 +44,10 @@ GuidPosition FreeMoveCenterValue::Calculate()
     PositionEntry pos;
 
     if (ai->HasStrategy("stay", ai->GetState()) && (pos = AI_VALUE2(PositionEntry, "pos", "stay")).isSet())
-        return GuidPosition(bot->GetObjectGuid(), pos.Get());
+        return GuidPosition(bot->getObjectGuid(), pos.Get());
 
     if (ai->HasStrategy("guard", ai->GetState()) && (pos = AI_VALUE2(PositionEntry, "pos", "guard")).isSet())
-        return GuidPosition(bot->GetObjectGuid(), pos.Get());
+        return GuidPosition(bot->getObjectGuid(), pos.Get());
 
     return bot;
 }

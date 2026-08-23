@@ -147,7 +147,7 @@ float CloseToHazardTrigger::GetDistanceToHazard(const ObjectGuid& hazzardGuid)
         GameObject* gameObjectHazard = ai->GetGameObject(hazzardGuid);
         if (gameObjectHazard)
         {
-            return bot->GetDistance(gameObjectHazard) + gameObjectHazard->GetObjectBoundingRadius();
+            return bot->getDistance(gameObjectHazard) + gameObjectHazard->getObjectBoundingRadius();
         }
     }
     else if (hazzardGuid.IsCreature())
@@ -155,7 +155,7 @@ float CloseToHazardTrigger::GetDistanceToHazard(const ObjectGuid& hazzardGuid)
         Creature* creatureHazard = ai->GetCreature(hazzardGuid);
         if (creatureHazard)
         {
-            return bot->GetDistance(creatureHazard, true, DIST_CALC_COMBAT_REACH);
+            return bot->getDistance(creatureHazard, true, DIST_CALC_COMBAT_REACH);
         }
     }
 
@@ -198,7 +198,7 @@ bool EnvironmentalHazardTrigger::IsActive()
             // false-triggering, while still reacting before the literal damage radius for
             // genuinely bigger hazards.
             float reactRadius = goInfo->trap.radius + 2.0f;
-            float distance = bot->GetDistance(go) + go->GetObjectBoundingRadius();
+            float distance = bot->getDistance(go) + go->getObjectBoundingRadius();
             if (distance <= reactRadius)
                 closeToHazard = true;
 
@@ -231,7 +231,7 @@ std::list<ObjectGuid> CloseToCreatureHazardTrigger::GetPossibleHazards()
     Cell::VisitAllObjects(bot, searcher, hazardRadius);
     for (Unit* unit : creatures)
     {
-        possibleHazards.push_back(unit->GetObjectGuid());
+        possibleHazards.push_back(unit->getObjectGuid());
     }
 
     return possibleHazards;
@@ -243,7 +243,7 @@ bool CloseToCreatureHazardTrigger::IsHazardValid(const ObjectGuid& hazzardGuid)
     if (creatureHazard)
     {
         // Check if the creature is not targeting the bot
-        if (!creatureHazard->GetVictim() || (creatureHazard->GetVictim()->GetObjectGuid() != bot->GetObjectGuid()))
+        if (!creatureHazard->GetVictim() || (creatureHazard->GetVictim()->getObjectGuid() != bot->getObjectGuid()))
         {
             return true;
         }
@@ -287,7 +287,7 @@ bool CloseToCreatureTrigger::IsActive()
             if (creature)
             {
                 // Check if the bot is not being targeted by the creature
-                if (!creature->GetVictim() || (creature->GetVictim()->GetObjectGuid() != bot->GetObjectGuid()))
+                if (!creature->GetVictim() || (creature->GetVictim()->getObjectGuid() != bot->getObjectGuid()))
                 {
                     // See if the creature is within the specified distance
                     if (bot->IsWithinDist(creature, range))

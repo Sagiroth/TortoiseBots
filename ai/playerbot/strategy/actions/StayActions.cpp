@@ -46,7 +46,7 @@ bool StayActionBase::Stay(Player* requester)
 
 bool StayAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     return Stay(requester);
 }
 

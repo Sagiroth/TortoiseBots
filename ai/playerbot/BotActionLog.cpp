@@ -262,9 +262,9 @@ void BotActionLog::LogState(PlayerbotAI* ai, const char* reason)
           "target=%s targetGuid=0x%llx",
           reason ? reason : "tick",
           hp, mp, (int)inCombat, (int)bot->IsAlive(), bot->GetLevel(),
-          bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetOrientation(),
-          bot->GetMapId(), bot->GetZoneId(),
-          tgtName, (unsigned long long)(tgt ? tgt->GetObjectGuid().GetRawValue() : 0));
+          bot->getPositionX(), bot->getPositionY(), bot->getPositionZ(), bot->getOrientation(),
+          bot->GetMapId(), bot->getZoneId(),
+          tgtName, (unsigned long long)(tgt ? tgt->getObjectGuid().GetRawValue() : 0));
 
     // Aura snapshot: dump every aura currently
     // on the bot from m_spellAuraHolders. This lets us correlate what the user *sees*
@@ -429,21 +429,21 @@ void BotActionLog_LogDamage(Unit* attacker, Unit* victim, uint32 damage, uint32 
     if (!attackerAi && !victimAi) return;
 
     auto bucket = [&](Unit* who) -> bool {
-        uint64 g = who ? who->GetObjectGuid().GetRawValue() : 0;
+        uint64 g = who ? who->getObjectGuid().GetRawValue() : 0;
         return ((++sCounter[g]) % kSampleEvery) == 0;
     };
 
     if (attackerAi && bucket(attacker)) {
         BotActionLog::Write(attackerAi, "DMG_DEALT",
             "victim=0x%llx victimName=%s spell=%u dmg=%u type=%s",
-            (unsigned long long)(victim ? victim->GetObjectGuid().GetRawValue() : 0),
+            (unsigned long long)(victim ? victim->getObjectGuid().GetRawValue() : 0),
             victim ? victim->GetName() : "?",
             spellId, damage, damageType ? damageType : "?");
     }
     if (victimAi && bucket(victim)) {
         BotActionLog::Write(victimAi, "DMG_TAKEN",
             "attacker=0x%llx attackerName=%s spell=%u dmg=%u type=%s",
-            (unsigned long long)(attacker ? attacker->GetObjectGuid().GetRawValue() : 0),
+            (unsigned long long)(attacker ? attacker->getObjectGuid().GetRawValue() : 0),
             attacker ? attacker->GetName() : "?",
             spellId, damage, damageType ? damageType : "?");
     }

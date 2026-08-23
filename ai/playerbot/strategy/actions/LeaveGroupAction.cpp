@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "../../runtime/PlayerbotAIStorage.h" // Headless storage shim
 #include "LeaveGroupAction.h"
 
 namespace ai
@@ -14,7 +15,7 @@ namespace ai
         if (ai->HasActivePlayerMaster() && player != bot && player != ai->GetMaster() && player->GetSession() && player->GetSession()->GetSecurity() < SEC_MODERATOR)
             return false;
 
-        bool aiMaster = (ai->GetMaster() && ai->GetMaster()->GetPlayerbotAI());
+        bool aiMaster = (ai->GetMaster() && PlayerbotAIStorage::Instance().GetAI(ai->GetMaster()));
 
         ai->TellPlayer(player, BOT_TEXT("goodbye"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_TALK, false);
 
@@ -31,13 +32,13 @@ namespace ai
             std::string member = bot->GetName();
             p << uint32(PARTY_OP_LEAVE) << member << uint32(0);
             bot->GetSession()->HandleGroupDisbandOpcode(p);
-            if (ai->HasRealPlayerMaster() && ai->GetMaster()->GetObjectGuid() != player->GetObjectGuid())
-                bot->Whisper("I left my group", LANG_UNIVERSAL, player->GetObjectGuid());
+            if (ai->HasRealPlayerMaster() && ai->GetMaster()->getObjectGuid() != player->getObjectGuid())
+                bot->Whisper("I left my group", LANG_UNIVERSAL, player->getObjectGuid());
         }
 
         if (freeBot)
         {
-            bot->GetPlayerbotAI()->SetMaster(nullptr);
+            PlayerbotAIStorage::Instance().GetAI(bot)->SetMaster(nullptr);
         }        
 
         if(!aiMaster)
@@ -68,7 +69,7 @@ namespace ai
 
         for (GroupReference* gref = bot->GetGroup()->GetFirstMember(); gref; gref = gref->next())
         {
-            Player* member = gref->getSource();
+            Player* member = gref->GetSource();
             if (!ai->IsSafe(member))
                 return false;
         }

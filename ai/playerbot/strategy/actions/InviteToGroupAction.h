@@ -10,8 +10,8 @@ namespace ai
 
         virtual bool Execute(Event& event) override
         {
-            Player* master = event.getOwner();
-            std::string param = event.getParam();
+            Player* master = event.GetOwner();
+            std::string param = event.GetParam();
             
             Player* target = nullptr;
             if (!param.empty())

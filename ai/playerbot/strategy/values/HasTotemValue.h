@@ -28,7 +28,7 @@ namespace ai
                 
                 if (!totemIsInRange) continue;
 
-                Unit* totemOwner = totem->GetCreator();
+                Unit* totemOwner = totem->GetOwner();
                 if (!totemOwner)
                     continue;
 
@@ -46,7 +46,7 @@ namespace ai
                     // Totem from a player in our group found, and we are either not in a raid or in the same raid subgroup
                     if (totemPlayerOwner->GetGroup() == botGroup)
                     {
-                        if (!botGroup->IsRaidGroup() || botGroup->SameSubGroup(totemPlayerOwner, bot)) return true;
+                        if (!botGroup->isRaidGroup() || botGroup->SameSubGroup(totemPlayerOwner, bot)) return true;
                     }
 #endif
                 }

@@ -7,13 +7,13 @@ using namespace ai;
 
 bool FactionAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string cmd = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string cmd = event.GetParam();
 
     bool setWar = (cmd.find("+atwar") == 0);
     bool removeWar = (cmd.find("-atwar") == 0);
 
-    if (event.getSource() == "at war")
+    if (event.GetSource() == "at war")
         removeWar = true;
 
     std::string factionName;

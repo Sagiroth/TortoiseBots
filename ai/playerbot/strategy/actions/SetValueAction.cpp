@@ -6,11 +6,11 @@ using namespace ai;
 
 bool SetValueAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!requester)
         return false;
 
-    std::string param = event.getParam();
+    std::string param = event.GetParam();
     std::string value;
 
     if (param.find("group size ") == 0)

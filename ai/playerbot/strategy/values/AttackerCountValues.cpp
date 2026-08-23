@@ -8,7 +8,7 @@ using namespace ai;
 
 uint8 MyAttackerCountValue::Calculate()
 {
-    return bot->getAttackers().size();
+    return bot->GetAttackers().size();
 }
 
 bool HasAggroValue::Calculate()
@@ -18,13 +18,13 @@ bool HasAggroValue::Calculate()
     // Player targets don't have aggro
     if (target && !target->IsPlayer())
     {
-        HostileReference* ref = sServerFacade.GetHostileRefManager(bot).getFirst();
+        HostileReference* ref = sServerFacade.GetHostileRefManager(bot).GetFirst();
         if (ref)
         {
             while (ref)
             {
-                ThreatManager* threatManager = ref->getSource();
-                Unit* attacker = threatManager->getOwner();
+                ThreatManager* threatManager = ref->GetSource();
+                Unit* attacker = threatManager->GetOwner();
                 Unit* victim = attacker->GetVictim();
 
                 if ((victim == bot) && (target == attacker))
@@ -37,10 +37,10 @@ bool HasAggroValue::Calculate()
                 }
             }
 
-            ref = sServerFacade.GetThreatManager(target).getCurrentVictim();
+            ref = sServerFacade.GetThreatManager(target).GetCurrentVictim();
             if (ref)
             {
-                Unit* victim = ref->getTarget();
+                Unit* victim = ref->GetTarget();
                 return victim && (victim == bot);
 
                 /*
@@ -94,7 +94,7 @@ uint8 BalancePercentValue::Calculate()
             for (Group::member_citerator itr = groupSlot.begin(); itr != groupSlot.end(); itr++)
             {
                 Player* player = sObjectMgr.GetPlayer(itr->guid);
-                if (!player || !sServerFacade.IsAlive(player) || !player->IsInWorld() || player->GetMapId() != bot->GetMapId() || sServerFacade.GetDistance2d(bot, player) > 30.0f)
+                if (!player || !sServerFacade.IsAlive(player) || !player->IsInWorld() || player->GetMapId() != bot->GetMapId() || sServerFacade.getDistance2d(bot, player) > 30.0f)
                     continue;
 
                 playerLevel += player->GetLevel();
@@ -120,7 +120,7 @@ uint8 BalancePercentValue::Calculate()
                 continue;
 
             uint32 level = creature->GetLevel();
-            switch (creature->GetCreatureInfo()->Rank) 
+            switch (creature->GetCreatureInfo()->rank) 
             {
                 case CREATURE_ELITE_RARE:
                 {

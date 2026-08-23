@@ -20,7 +20,7 @@ constexpr uint32 BG_EY_NETHERSTORM_FLAG_SPELL = 34976;
 
 bool IsDisallowedShapeshiftForm(Player* bot)
 {
-    if (bot->getClass() == CLASS_DRUID)
+    if (bot->GetClass() == CLASS_DRUID)
     {
         ShapeshiftForm form = bot->GetShapeshiftForm();
         return form == FORM_TRAVEL || form == FORM_AQUA ||
@@ -28,7 +28,7 @@ bool IsDisallowedShapeshiftForm(Player* bot)
                form == FORM_BEAR || form == FORM_DIREBEAR ||
                form == FORM_CAT;
     }
-    else if (bot->getClass() == CLASS_PRIEST)
+    else if (bot->GetClass() == CLASS_PRIEST)
     {
         return bot->GetShapeshiftForm() == FORM_SPIRITOFREDEMPTION;
     }
@@ -47,7 +47,7 @@ bool DrinkAction::Execute(Event event)
         bot->ClearUnitState(UNIT_STATE_CHASE);
         bot->ClearUnitState(UNIT_STATE_FOLLOW);
 
-        if (bot->isMoving())
+        if (bot->IsMoving())
         {
             bot->GetMotionMaster()->Clear(false);
             bot->StopMoving();
@@ -100,7 +100,7 @@ bool EatAction::Execute(Event event)
         bot->ClearUnitState(UNIT_STATE_CHASE);
         bot->ClearUnitState(UNIT_STATE_FOLLOW);
 
-        if (bot->isMoving())
+        if (bot->IsMoving())
         {
             bot->GetMotionMaster()->Clear(false);
             bot->StopMoving();

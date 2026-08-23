@@ -8,7 +8,7 @@ using namespace ai;
 
 bool ImbueWithStoneAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner();
+    Player* requester = event.GetOwner();
     if (bot->IsInCombat() || bot->GetLevel() > 70)
         return false;
 
@@ -17,7 +17,7 @@ bool ImbueWithStoneAction::Execute(Event& event)
         bot->RemoveSpellsCausingAura(SPELL_AURA_MOD_STEALTH);
 
     // hp check
-    if (bot->getStandState() != UNIT_STAND_STATE_STAND)
+    if (bot->GetStandState() != UNIT_STAND_STATE_STAND)
         bot->SetStandState(UNIT_STAND_STATE_STAND);
 
     bool allowMainhand = true;
@@ -25,7 +25,7 @@ bool ImbueWithStoneAction::Execute(Event& event)
 #ifndef MANGOSBOT_TWO
     // Check if shaman +30 lvl (non-WOTLK)
 
-    if (bot->getClass() == CLASS_SHAMAN && bot->GetLevel() > 30)
+    if (bot->GetClass() == CLASS_SHAMAN && bot->GetLevel() > 30)
         allowMainhand = false;
 
     if (bot->GetGroup())
@@ -33,11 +33,11 @@ bool ImbueWithStoneAction::Execute(Event& event)
         Group* group = bot->GetGroup();
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
         {
-            Player* member = ref->getSource();
+            Player* member = ref->GetSource();
             if (!member || member == bot || !member->IsInWorld() || !group->SameSubGroup(bot, member))
                 continue;
 
-            if (member->getClass() == CLASS_SHAMAN && member->GetLevel() > 32)
+            if (member->GetClass() == CLASS_SHAMAN && member->GetLevel() > 32)
             {
                 allowMainhand = false;
                 break;
@@ -93,7 +93,7 @@ bool ImbueWithStoneAction::isUseful()
 
 #ifndef MANGOSBOT_TWO
     // Deny mainhand stone use if bot is a Shaman over 30 or grouped with one over 32 (TBC/Vanilla only)
-    if (bot->getClass() == CLASS_SHAMAN && bot->GetLevel() > 30)
+    if (bot->GetClass() == CLASS_SHAMAN && bot->GetLevel() > 30)
         allowMainhand = false;
 
     if (bot->GetGroup())
@@ -101,11 +101,11 @@ bool ImbueWithStoneAction::isUseful()
         Group* group = bot->GetGroup();
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
         {
-            Player* member = ref->getSource();
+            Player* member = ref->GetSource();
             if (!member || member == bot || !member->IsInWorld() || !group->SameSubGroup(bot, member))
                 continue;
 
-            if (member->getClass() == CLASS_SHAMAN && member->GetLevel() > 32)
+            if (member->GetClass() == CLASS_SHAMAN && member->GetLevel() > 32)
             {
                 allowMainhand = false;
                 break;
@@ -152,7 +152,7 @@ bool ImbueWithStoneAction::isUseful()
 
 bool ImbueWithOilAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner();
+    Player* requester = event.GetOwner();
     if (bot->IsInCombat() || bot->GetLevel() > 70)
         return false;
 
@@ -161,7 +161,7 @@ bool ImbueWithOilAction::Execute(Event& event)
         bot->RemoveSpellsCausingAura(SPELL_AURA_MOD_STEALTH);
 
     // hp check
-    if (bot->getStandState() != UNIT_STAND_STATE_STAND)
+    if (bot->GetStandState() != UNIT_STAND_STATE_STAND)
         bot->SetStandState(UNIT_STAND_STATE_STAND);
 
     // Search and apply oil to weapons

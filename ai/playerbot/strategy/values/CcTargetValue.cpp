@@ -50,7 +50,7 @@ public:
         if (AI_VALUE(uint8,"aoe count") > 2)
         {
             WorldLocation aoe = AI_VALUE(WorldLocation,"aoe position");
-            if (sServerFacade.IsDistanceLessOrEqualThan(sServerFacade.GetDistance2d(creature, aoe.coord_x, aoe.coord_y), sPlayerbotAIConfig.aoeRadius))
+            if (sServerFacade.IsDistanceLessOrEqualThan(sServerFacade.getDistance2d(creature, aoe.x, aoe.y), sPlayerbotAIConfig.aoeRadius))
                 return;
         }
 
@@ -78,7 +78,7 @@ public:
             if (!ai->IsTank(member))
                 continue;
 
-            float distance = sServerFacade.GetDistance2d(member, creature);
+            float distance = sServerFacade.getDistance2d(member, creature);
             if (distance < minDistance)
                 minDistance = distance;
         }

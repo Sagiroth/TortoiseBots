@@ -13,22 +13,22 @@ std::list<ObjectGuid> AoeCountValue::FindMaxDensity(Player* bot, float range)
     std::map<ObjectGuid, std::list<ObjectGuid> > groups;
     if (bot)
     {
-        std::list<ObjectGuid> units = *bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers");
+        std::list<ObjectGuid> units = *PlayerbotAIStorage::Instance().GetAI(bot)->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers");
         
         for (std::list<ObjectGuid>::iterator i = units.begin(); i != units.end(); ++i)
         {
-            Unit* unit = bot->GetPlayerbotAI()->GetUnit(*i);
+            Unit* unit = PlayerbotAIStorage::Instance().GetAI(bot)->GetUnit(*i);
             if (unit)
             {
-                float distanceToPlayer = sServerFacade.GetDistance2d(unit, bot);
+                float distanceToPlayer = sServerFacade.getDistance2d(unit, bot);
                 if (sServerFacade.IsDistanceLessOrEqualThan(distanceToPlayer, range))
                 {
                     for (std::list<ObjectGuid>::iterator j = units.begin(); j != units.end(); ++j)
                     {
-                        Unit* other = bot->GetPlayerbotAI()->GetUnit(*j);
+                        Unit* other = PlayerbotAIStorage::Instance().GetAI(bot)->GetUnit(*j);
                         if (other)
                         {
-                            float d = sServerFacade.GetDistance2d(unit, other);
+                            float d = sServerFacade.getDistance2d(unit, other);
                             if (sServerFacade.IsDistanceLessOrEqualThan(d, sPlayerbotAIConfig.aoeRadius * 2.0f))
                             {
                                 groups[*i].push_back(*j);
@@ -64,22 +64,22 @@ WorldLocation AoePositionValue::Calculate()
     float x1, y1, x2, y2;
     for (std::list<ObjectGuid>::iterator i = group.begin(); i != group.end(); ++i)
     {
-        Unit* unit = bot->GetPlayerbotAI()->GetUnit(*i);
+        Unit* unit = PlayerbotAIStorage::Instance().GetAI(bot)->GetUnit(*i);
         if (!unit)
             continue;
 
-        if (i == group.begin() || x1 > unit->GetPositionX())
-            x1 = unit->GetPositionX();
-        if (i == group.begin() || x2 < unit->GetPositionX())
-            x2 = unit->GetPositionX();
-        if (i == group.begin() || y1 > unit->GetPositionY())
-            y1 = unit->GetPositionY();
-        if (i == group.begin() || y2 < unit->GetPositionY())
-            y2 = unit->GetPositionY();
+        if (i == group.begin() || x1 > unit->getPositionX())
+            x1 = unit->getPositionX();
+        if (i == group.begin() || x2 < unit->getPositionX())
+            x2 = unit->getPositionX();
+        if (i == group.begin() || y1 > unit->getPositionY())
+            y1 = unit->getPositionY();
+        if (i == group.begin() || y2 < unit->getPositionY())
+            y2 = unit->getPositionY();
     }
     float x = (x1 + x2) / 2;
     float y = (y1 + y2) / 2;
-    float z = bot->GetPositionZ() + CONTACT_DISTANCE;;
+    float z = bot->getPositionZ() + CONTACT_DISTANCE;;
     bot->UpdateAllowedPositionZ(x, y, z);
     return WorldLocation(bot->GetMapId(), x, y, z, 0);
 }

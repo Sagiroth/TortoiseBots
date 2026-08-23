@@ -370,7 +370,7 @@ public:
         if (!melee && !ranged)
             return message;
 
-        switch (bot->getClass())
+        switch (bot->GetClass())
         {
             case CLASS_WARRIOR:
             case CLASS_PALADIN:
@@ -456,14 +456,14 @@ public:
                 continue;
 
             ObjectGuid rtiTarget = group->GetTargetIcon(RtiTargetValue::GetRtiIndex(rti.substr(1)));
-            if (bot->GetObjectGuid() == rtiTarget)
+            if (bot->getObjectGuid() == rtiTarget)
                 return ChatFilter::Filter(message);
 
             Unit* target = *ai->GetAiObjectContext()->GetValue<Unit*>("current target");
             if (!target)
                 return "";
 
-            if (target->GetObjectGuid() != rtiTarget)
+            if (target->getObjectGuid() != rtiTarget)
                 return "";
 
             found |= isRti;
@@ -525,7 +525,7 @@ public:
         for (std::map<std::string, uint8>::iterator i = classNames.begin(); i != classNames.end(); i++)
         {
             bool isClass = message.find(i->first) == 0;
-            if (isClass && bot->getClass() != i->second)
+            if (isClass && bot->GetClass() != i->second)
                 return "";
 
             found |= isClass;
@@ -572,7 +572,7 @@ public:
     {
         Player* bot = ai->GetBot();
 
-        std::string filter = "@" + ChatHelper::formatRace(bot->getRace());
+        std::string filter = "@" + ChatHelper::formatRace(bot->GetRace());
 
         filter[1] = tolower(filter[1]);
 
@@ -646,7 +646,7 @@ public:
             if (!bot->GetGroup())
                 return message;
 
-            if(bot->GetGroup()->IsLeader(bot->GetObjectGuid()))
+            if(bot->GetGroup()->IsLeader(bot->getObjectGuid()))
                 return ChatFilter::Filter(message);
         }
         if (message.find("@raid") == 0)
@@ -671,7 +671,7 @@ public:
             if (!bot->GetGroup()->IsRaidGroup())
                 return message;
 
-            if (bot->GetGroup()->IsLeader(bot->GetObjectGuid()))
+            if (bot->GetGroup()->IsLeader(bot->getObjectGuid()))
                 return ChatFilter::Filter(message);
         }
 
@@ -756,7 +756,7 @@ public:
                 return message;
 
             Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-            if (guild->GetLeaderGuid() != bot->GetObjectGuid())
+            if (guild->GetLeaderGuid() != bot->getObjectGuid())
                 return message;
 
             return ChatFilter::Filter(message);
@@ -771,7 +771,7 @@ public:
             if (!rank.empty())
             {
                 Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-                std::string rankName = guild->GetRankName(guild->GetRank(bot->GetObjectGuid()));
+                std::string rankName = guild->GetRankName(guild->GetRank(bot->getObjectGuid()));
 
                 if (rank.find(rankName) != 0)
                     return message;
@@ -1065,7 +1065,7 @@ public:
 
             if (bot->GetTerrain())
             {
-                std::string name = WorldPosition(bot).getAreaName(true, true);
+                std::string name = WorldPosition(bot).GetAreaName(true, true);
                 std::string filter = name;
 
                 std::transform(filter.begin(), filter.end(), filter.begin(),[](unsigned char c) { return std::tolower(c); });

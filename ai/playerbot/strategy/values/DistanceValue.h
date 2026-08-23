@@ -49,7 +49,7 @@ namespace ai
 
                 float distance = oldLocation.distance(bot);
 
-                if (oldLocation.getMapId() != bot->GetMapId() || distance > sPlayerbotAIConfig.reactDistance)
+                if (oldLocation.GetMapId() != bot->GetMapId() || distance > sPlayerbotAIConfig.reactDistance)
                     return distance;
 
                 rpgTarget.updatePosition(bot->GetInstanceId());
@@ -78,7 +78,7 @@ namespace ai
             {
                 Stance* stance = AI_VALUE(Stance*, "stance");
                 WorldLocation loc = stance->GetLocation();
-                return sServerFacade.GetDistance2d(ai->GetBot(), loc.coord_x, loc.coord_y);
+                return sServerFacade.GetDistance2d(ai->GetBot(), loc.x, loc.y);
             }
             else
             {
@@ -88,9 +88,9 @@ namespace ai
                     Formation* formation = AI_VALUE(Formation*, "formation");
                     WorldLocation loc = formation->GetLocation();
                     if (Formation::IsNullLocation(loc))
-                        loc = WorldLocation(target->GetMapId(), target->GetPosition());
+                        loc = WorldLocation(target->GetMapId(), target->getPosition());
 
-                    return sServerFacade.GetDistance2d(ai->GetBot(), loc.coord_x, loc.coord_y);
+                    return sServerFacade.GetDistance2d(ai->GetBot(), loc.x, loc.y);
                 }
             }
 

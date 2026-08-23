@@ -86,7 +86,7 @@ bool EquipGlyphsAction::CollectGlyphs(std::vector<uint32> const& itemIds,
             return false;
 
         // check class by AllowableClass
-        if ((info->proto->AllowableClass & bot->getClassMask()) == 0)
+        if ((info->proto->AllowableClass & bot->GetClassMask()) == 0)
             return false;
 
         out.push_back(info);
@@ -101,7 +101,7 @@ bool EquipGlyphsAction::Execute(Event event)
 {
     // 1) parse IDs
     std::vector<uint32> itemIds;
-    std::istringstream iss(event.getParam());
+    std::istringstream iss(event.GetParam());
     for (uint32 id; iss >> id; ) itemIds.push_back(id);
 
     std::vector<GlyphInfo const*> glyphs;

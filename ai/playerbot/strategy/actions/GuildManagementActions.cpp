@@ -18,7 +18,7 @@ Player* GuidManageAction::GetPlayer(Event event)
             return player;
     }
 
-    std::string text = event.getParam();
+    std::string text = event.GetParam();
 
     if (!text.empty())
     {
@@ -34,7 +34,7 @@ Player* GuidManageAction::GetPlayer(Event event)
     }
         
     Player* master = GetMaster();
-    if (master && master == event.getOwner())
+    if (master && master == event.GetOwner())
         guid = bot->GetSelectionGuid();
     
     player = sObjectMgr.GetPlayer(guid);
@@ -42,7 +42,7 @@ Player* GuidManageAction::GetPlayer(Event event)
     if (player)
         return player;
 
-    player = event.getOwner();
+    player = event.GetOwner();
 
     if (player)
        return player;
@@ -69,7 +69,7 @@ bool GuildManageNearbyAction::Execute(Event& event)
     uint32 found = 0;
 
     Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-    MemberSlot* botMember = guild->GetMemberSlot(bot->GetObjectGuid());
+    MemberSlot* botMember = guild->GetMemberSlot(bot->getObjectGuid());
 
     std::list<ObjectGuid> nearGuids = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid> >("nearest friendly players")->Get();
     for (auto& guid : nearGuids)
@@ -79,13 +79,13 @@ bool GuildManageNearbyAction::Execute(Event& event)
         if (!player || bot == player)
             continue;
 
-        if (player->isDND())
+        if (player->IsDND())
             continue;
 
 
         if(player->GetGuildId()) //Promote or demote nearby members based on chance.
         {          
-            MemberSlot* member = guild->GetMemberSlot(player->GetObjectGuid());
+            MemberSlot* member = guild->GetMemberSlot(player->getObjectGuid());
             uint32 dCount = AI_VALUE(uint32, "death count");
 
             if (!urand(0, 30) && dCount < 2 && guild->HasRankRight(botMember->RankId, GR_RIGHT_PROMOTE) && bot->GetRank() + 1 < player->GetRank())
@@ -121,10 +121,10 @@ bool GuildManageNearbyAction::Execute(Event& event)
         if (player->GetGuildIdInvited())
             continue;
 
-        if (!sPlayerbotAIConfig.randomBotInvitePlayer && player->isRealPlayer())
+        if (!sPlayerbotAIConfig.randomBotInvitePlayer && isRealPlayer_Helper(player))
             continue;
 
-        PlayerbotAI* botAi = player->GetPlayerbotAI();
+        PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(player);
 
         if (botAi)
         {            
@@ -140,9 +140,9 @@ bool GuildManageNearbyAction::Execute(Event& event)
 
         }
 
-        bool sameGroup = bot->GetGroup() && bot->GetGroup()->IsMember(player->GetObjectGuid());
+        bool sameGroup = bot->GetGroup() && bot->GetGroup()->IsMember(player->getObjectGuid());
 
-        if (!sameGroup && sServerFacade.GetDistance2d(bot, player) > sPlayerbotAIConfig.spellDistance)
+        if (!sameGroup && sServerFacade.getDistance2d(bot, player) > sPlayerbotAIConfig.spellDistance)
             continue;
 
         if (sPlayerbotAIConfig.inviteChat && (sRandomPlayerbotMgr.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
@@ -152,9 +152,9 @@ bool GuildManageNearbyAction::Execute(Event& event)
             placeholders["%members"] = std::to_string(guild->GetMemberSize());
             placeholders["%guildname"] = guild->GetName();
             AreaTableEntry const* current_area = GetAreaEntryByAreaID(sServerFacade.GetAreaId(bot));
-            AreaTableEntry const* current_zone = GetAreaEntryByAreaID(sTerrainMgr.GetZoneId(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()));
-            placeholders["%area_name"] = current_area && current_area->area_name ? std::string(current_area->area_name) : BOT_TEXT("string_unknown_area");
-            placeholders["%zone_name"] = current_zone && current_zone->area_name ? std::string(current_zone->area_name) : BOT_TEXT("string_unknown_area");
+            AreaTableEntry const* current_zone = GetAreaEntryByAreaID(sTerrainMgr.getZoneId(bot->GetMapId(), bot->getPositionX(), bot->getPositionY(), bot->getPositionZ()));
+            placeholders["%area_name"] = current_area && current_area->name ? std::string(current_area->name) : BOT_TEXT("string_unknown_area");
+            placeholders["%zone_name"] = current_zone && current_zone->name ? std::string(current_zone->name) : BOT_TEXT("string_unknown_area");
 
             std::vector<std::string> lines;
 
@@ -208,7 +208,7 @@ bool GuildManageNearbyAction::Execute(Event& event)
                 if (sameGroup)
                 {
                     WorldPacket data;
-                    ChatHandler::BuildChatPacket(data, bot->GetGroup()->IsRaidGroup() ? CHAT_MSG_RAID : CHAT_MSG_PARTY, line.c_str(), LANG_UNIVERSAL, CHAT_TAG_NONE, bot->GetObjectGuid(), bot->GetName());
+                    ChatHandler::BuildChatPacket(data, bot->GetGroup()->IsRaidGroup() ? CHAT_MSG_RAID : CHAT_MSG_PARTY, line.c_str(), LANG_UNIVERSAL, CHAT_TAG_NONE, bot->getObjectGuid(), bot->GetName());
                     bot->GetGroup()->BroadcastPacket(data,true);
                 }
                 else
@@ -232,15 +232,15 @@ bool GuildManageNearbyAction::isUseful()
         return false;
 
     Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-    MemberSlot* botMember = guild->GetMemberSlot(bot->GetObjectGuid());
+    MemberSlot* botMember = guild->GetMemberSlot(bot->getObjectGuid());
 
     return  guild->HasRankRight(botMember->RankId, GR_RIGHT_DEMOTE) || guild->HasRankRight(botMember->RankId, GR_RIGHT_PROMOTE) || guild->HasRankRight(botMember->RankId, GR_RIGHT_INVITE);
 }
 
 bool GuildLeaveAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    Player* owner = event.getOwner();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    Player* owner = event.GetOwner();
     if (owner && !ai->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_GUILD, false, owner, true))
     {
         ai->TellError(requester, "Sorry, I am happy in my guild :)");

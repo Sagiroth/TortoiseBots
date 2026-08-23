@@ -31,16 +31,16 @@ bool SellAction::Execute(Event& event)
     static uint8 maxAutoSellPercentageOfBag = 80;
 
 
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
-    std::string text = event.getParam();
+    std::string text = event.GetParam();
 
     if (text == "*" || text.empty())
         text = "gray";
 
     std::list<Item*> items = ai->InventoryParseItems(text, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
 
-    if (event.getSource() == "rpg action")
+    if (event.GetSource() == "rpg action")
     {
         items.sort([](Item* i, Item* j) {return i->GetProto()->SellPrice * i->GetCount() < j->GetProto()->SellPrice * j->GetCount(); }); //Sell cheapest items first.
     }
@@ -52,7 +52,7 @@ bool SellAction::Execute(Event& event)
         if (Sell(requester, *i))
             soldItems++;
 
-        if (event.getSource() == "rpg action" && soldItems >= shouldSell)
+        if (event.GetSource() == "rpg action" && soldItems >= shouldSell)
             break;
     }
 
@@ -94,7 +94,7 @@ bool SellAction::Sell(Player* requester, Item* item)
             continue;
         }
 
-        ObjectGuid itemguid = item->GetObjectGuid();
+        ObjectGuid itemguid = item->getObjectGuid();
         uint32 count = item->GetCount();
 
         uint32 botMoney = bot->GetMoney();

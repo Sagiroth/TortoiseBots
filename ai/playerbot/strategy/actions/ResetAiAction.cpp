@@ -9,7 +9,7 @@ using namespace ai;
 
 bool ResetAiAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     ResetValues();
     ResetStrategies();
 
@@ -33,7 +33,7 @@ void ResetAiAction::ResetStrategies()
 
 void ResetAiAction::ResetValues()
 {
-    uint64 guid = ai->GetBot()->GetObjectGuid().GetRawValue();
+    uint64 guid = ai->GetBot()->getObjectGuid().GetRawValue();
 
     auto results = CharacterDatabase.PQuery("SELECT `value` FROM `ai_playerbot_db_store` WHERE `guid` = '%lu' and `preset` = '' and `key` = 'value'", guid);
     if (results)
@@ -67,7 +67,7 @@ void ResetAiAction::ResetValues()
 
 bool SaveAiAction::Execute(Event& event)
 {
-   std::string preset = event.getParam();
+   std::string preset = event.GetParam();
    boost::trim(preset);
 
    if (preset.empty())
@@ -78,7 +78,7 @@ bool SaveAiAction::Execute(Event& event)
 
    sPlayerbotDbStore.Save(ai, preset);
 
-   if (Player* requester = event.getOwner() ? event.getOwner() : GetMaster())
+   if (Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster())
    {
       ai->TellError(requester, "Strategies saved");
    }
@@ -88,7 +88,7 @@ bool SaveAiAction::Execute(Event& event)
 
 bool LoadAiAction::Execute(Event& event)
 {
-   std::string preset = event.getParam();
+   std::string preset = event.GetParam();
    boost::trim(preset);
 
    if (preset.empty())
@@ -99,7 +99,7 @@ bool LoadAiAction::Execute(Event& event)
 
    sPlayerbotDbStore.Load(ai, preset);
 
-   if (Player* requester = event.getOwner() ? event.getOwner() : GetMaster())
+   if (Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster())
    {
       ai->TellError(requester, "Strategies loaded");
    }
@@ -109,9 +109,9 @@ bool LoadAiAction::Execute(Event& event)
 
 bool ListAiAction::Execute(Event& event)
 {
-   if (Player* requester = event.getOwner() ? event.getOwner() : GetMaster())
+   if (Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster())
    {
-      uint64 guid = ai->GetBot()->GetObjectGuid().GetRawValue();
+      uint64 guid = ai->GetBot()->getObjectGuid().GetRawValue();
 
       ai->TellError(requester, "### PRESETS AVAILABLE ###");
 
@@ -134,7 +134,7 @@ bool ListAiAction::Execute(Event& event)
 
 bool ResetStratsAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     ResetStrategies();
    
     if (fullReset)
@@ -147,7 +147,7 @@ bool ResetStratsAction::Execute(Event& event)
 
 bool ResetValuesAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     ResetValues();
 
     if (fullReset)

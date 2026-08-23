@@ -8,7 +8,7 @@ using namespace ai;
 
 bool WorldBuffAction::Execute(Event& event)
 {    
-    std::string text = event.getParam();
+    std::string text = event.GetParam();
 
     for (auto& wb : NeedWorldBuffs(bot))
     {
@@ -35,7 +35,7 @@ std::vector<uint32> WorldBuffAction::NeedWorldBuffs(Unit* unit)
         if (wb.factionId != 0 && wb.factionId != factionId)
             continue;
 
-        if (wb.classId != 0 && wb.classId != unit->getClass())
+        if (wb.classId != 0 && wb.classId != unit->GetClass())
             continue;
 
         if (plr && wb.specId != 0 && wb.specId != (AiFactory::GetPlayerSpecTab(plr) + 1))

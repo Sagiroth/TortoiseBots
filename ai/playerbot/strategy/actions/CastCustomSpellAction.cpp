@@ -39,9 +39,9 @@ bool CastCustomSpellAction::Execute(Event& event)
     std::string text = getQualifier();
 
     if(text.empty() || text == "travel")
-        text = event.getParam();
+        text = event.GetParam();
 
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
     // Process summon request
     if (CastSummonPlayer(requester, text))
@@ -158,13 +158,13 @@ bool CastCustomSpellAction::Execute(Event& event)
     else
         woTarget = target;
 
-    if (woTarget != bot && !sServerFacade.IsInFront(bot, woTarget, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
+    if (woTarget != bot && !sServerFacade.isInFront(bot, woTarget, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
     {
         sServerFacade.SetFacingTo(bot, woTarget);
         SetDuration(sPlayerbotAIConfig.globalCoolDown);
         std::ostringstream msg;
         msg << "cast " << text;
-        ai->HandleCommand(CHAT_MSG_WHISPER, msg.str(), event.getOwner() ? *event.getOwner() : *bot);
+        ai->HandleCommand(CHAT_MSG_WHISPER, msg.str(), event.GetOwner() ? *event.GetOwner() : *bot);
         return true;
     }
 
@@ -278,7 +278,7 @@ bool CastCustomSpellAction::Execute(Event& event)
 
 bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string command)
 {
-    if (bot->getClass() == CLASS_WARLOCK)
+    if (bot->GetClass() == CLASS_WARLOCK)
     {
         if (command.find("summon") != std::string::npos)
         {
@@ -320,7 +320,7 @@ bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string comm
                                     target = member;
                                 }
 
-                                if (member->GetDistance(bot) <= sPlayerbotAIConfig.reactDistance)
+                                if (member->getDistance(bot) <= sPlayerbotAIConfig.reactDistance)
                                 {
                                     membersAroundSummoner++;
                                 }
@@ -350,7 +350,7 @@ bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string comm
                                             target = member;
                                         }
 
-                                        if (ai->IsSafe(member) && member->GetDistance(bot) <= sPlayerbotAIConfig.reactDistance)
+                                        if (ai->IsSafe(member) && member->getDistance(bot) <= sPlayerbotAIConfig.reactDistance)
                                         {
                                             membersAroundSummoner++;
                                         }
@@ -365,22 +365,22 @@ bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string comm
                 {
                     if (membersAroundSummoner >= 3)
                     {
-                        if (target->isRealPlayer())
+                        if (isRealPlayer_Helper(target))
                         {
                             float x, y, z;
-                            bot->GetPosition(x, y, z);
+                            bot->getPosition(x, y, z);
                             target->SetSummonPoint(bot->GetMapId(), x, y, z);
 
                             WorldPacket data(SMSG_SUMMON_REQUEST, 8 + 4 + 4);
-                            data << bot->GetObjectGuid();
-                            data << uint32(bot->GetZoneId());
+                            data << bot->getObjectGuid();
+                            data << uint32(bot->getZoneId());
                             data << uint32(MAX_PLAYER_SUMMON_DELAY * IN_MILLISECONDS);
                             target->GetSession()->SendPacket(data);
                         }
                         else
                         {
-                            target->TeleportTo(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetOrientation());
-                            if (target->isRealPlayer())
+                            target->TeleportTo(bot->GetMapId(), bot->getPositionX(), bot->getPositionY(), bot->getPositionZ(), bot->getOrientation());
+                            if (isRealPlayer_Helper(target))
                                 target->SendHeartBeat();
                         }
 
@@ -415,13 +415,13 @@ bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string comm
 
 bool CastRandomSpellAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     std::list<std::pair<uint32, std::string>> spellMap = GetSpellList();
     
     Unit* target = nullptr;
     GameObject* got = nullptr;
 
-    std::string name = event.getParam();
+    std::string name = event.GetParam();
     if (name.empty())
     {
         name = getName();
@@ -489,12 +489,12 @@ bool CastRandomSpellAction::Execute(Event& event)
                 spellList.push_back(std::make_pair(spellId, std::make_pair(spellPriority, target)));
             }
 
-            if (target && ai->CanCastSpell(spellId, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), 0))
+            if (target && ai->CanCastSpell(spellId, target->getPositionX(), target->getPositionY(), target->getPositionZ(), 0))
             {
                 spellList.push_back(std::make_pair(spellId, std::make_pair(spellPriority, target)));
             }
 
-            if (got && ai->CanCastSpell(spellId, got->GetPositionX(), got->GetPositionY(), got->GetPositionZ(), 0))
+            if (got && ai->CanCastSpell(spellId, got->getPositionX(), got->getPositionY(), got->getPositionZ(), 0))
             {
                 spellList.push_back(std::make_pair(spellId, std::make_pair(spellPriority, got)));
             }
@@ -574,13 +574,13 @@ bool CastRandomSpellAction::castSpell(uint32 spellId, WorldObject* wo, Player* r
     {
         if (pSpellInfo->Targets & TARGET_FLAG_DEST_LOCATION)
         {
-            if (ai->CastSpell(spellId, wo->GetPositionX(), wo->GetPositionY(), wo->GetPositionZ(), nullptr, false, &spellDuration))
+            if (ai->CastSpell(spellId, wo->getPositionX(), wo->getPositionY(), wo->getPositionZ(), nullptr, false, &spellDuration))
             {
                 ai->TellPlayer(requester, "Casting " + ChatHelper::formatSpell(pSpellInfo) + " near " + ChatHelper::formatWorldobject(wo), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
                 executed = true;
             }
         }
-        else if (wo->GetObjectGuid().IsUnit())
+        else if (wo->getObjectGuid().IsUnit())
         {
             if (ai->CastSpell(spellId, (Unit*)wo, nullptr, false, &spellDuration))
             {
@@ -591,7 +591,7 @@ bool CastRandomSpellAction::castSpell(uint32 spellId, WorldObject* wo, Player* r
                 executed = true;
             }
         }
-        else if (wo->GetObjectGuid().IsGameObject())
+        else if (wo->getObjectGuid().IsGameObject())
         {
             if (ai->CastSpell(spellId, (GameObject*)wo, nullptr, false, &spellDuration))
             {
@@ -601,7 +601,7 @@ bool CastRandomSpellAction::castSpell(uint32 spellId, WorldObject* wo, Player* r
         }
         else
         {
-            if (ai->CastSpell(spellId, wo->GetPositionX(), wo->GetPositionY(), wo->GetPositionZ(), nullptr, false, &spellDuration))
+            if (ai->CastSpell(spellId, wo->getPositionX(), wo->getPositionY(), wo->getPositionZ(), nullptr, false, &spellDuration))
             {
                 ai->TellPlayer(requester, "Casting " + ChatHelper::formatSpell(pSpellInfo) + " near " + ChatHelper::formatWorldobject(wo), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
                 executed = true;
@@ -630,7 +630,7 @@ bool CraftRandomItemAction::Execute(Event& event)
     std::vector<uint32> spellIds = AI_VALUE(std::vector<uint32>, "craft spells");
     std::shuffle(spellIds.begin(), spellIds.end(),*GetRandomGenerator());
 
-    std::list<ObjectGuid> wos = chat->parseGameobjects(event.getParam());
+    std::list<ObjectGuid> wos = chat->parseGameobjects(event.GetParam());
     WorldObject* wot = nullptr;
 
     for (auto wo : wos)
@@ -695,7 +695,7 @@ bool CraftRandomItemAction::Execute(Event& event)
         std::ostringstream cmd;
         cmd << "castnc ";
 
-        if (((wot && sServerFacade.IsInFront(bot, wot, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))))
+        if (((wot && sServerFacade.isInFront(bot, wot, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))))
         {
             cmd << chat->formatWorldobject(wot) << " ";
         }
@@ -713,7 +713,7 @@ bool CraftRandomItemAction::Execute(Event& event)
 
 bool DisenchantRandomItemAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     std::list<uint32> items = AI_VALUE2(std::list<uint32>, "inventory item ids", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_DISENCHANT));
 
     items.reverse();

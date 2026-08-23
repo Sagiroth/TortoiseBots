@@ -22,10 +22,10 @@ bool GuildShareItemAction::Execute(Event& event)
         return false;
 
     Player* receiver = shareTarget.receiver;
-    uint32 itemId = shareTarget.itemId;
+    uint32 itemId = shareTarget.itemid;
     uint32 shareAmount = shareTarget.amount; // 0 = give all (existing behavior)
 
-    PlayerbotAI* receiverAi = receiver->GetPlayerbotAI();
+    PlayerbotAI* receiverAi = PlayerbotAIStorage::Instance().GetAI(receiver);
     if (!receiverAi)
         return false;
 
@@ -50,7 +50,7 @@ bool GuildShareItemAction::Execute(Event& event)
             }
 
             bot->MoveItemFromInventory(item->GetBagSlot(), item->GetSlot(), true);
-            item->SetOwnerGuid(receiver->GetObjectGuid());
+            item->SetOwnerGuid(receiver->getObjectGuid());
             receiver->MoveItemToInventory(dest, item, true);
 
             std::ostringstream receiverOut;

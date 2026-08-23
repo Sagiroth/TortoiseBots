@@ -21,7 +21,7 @@ TestResult CommandSetupTeleport::Execute(const std::string& params, Player* bot,
         return TestResult::IMPOSSIBLE;
     }
 
-    if (bot->TeleportTo(loc.mapid, loc.coord_x, loc.coord_y, loc.coord_z, bot->GetOrientation()))
+    if (bot->TeleportTo(loc.mapId, loc.x, loc.y, loc.z, bot->getOrientation()))
     {
         return TestResult::PASS;
     }
@@ -159,7 +159,7 @@ TestResult CommandSetupSetDestination::Execute(const std::string& params, Player
     if (target)
     {
         TemporaryTravelDestination* tempDest = new TemporaryTravelDestination(loc);
-        target->SetTarget(tempDest, tempDest->GetPosition());
+        target->SetTarget(tempDest, tempDest->getPosition());
         target->SetStatus(TravelStatus::TRAVEL_STATUS_TRAVEL);
         target->SetForced(true);
         target->SetConditions({"not::manual bool::is travel refresh"});

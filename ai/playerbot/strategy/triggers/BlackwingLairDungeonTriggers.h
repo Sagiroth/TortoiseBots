@@ -23,7 +23,7 @@ namespace ai
 
         bool IsActive() override
         {
-            if (bot->getClass() != CLASS_ROGUE)
+            if (bot->GetClass() != CLASS_ROGUE)
                 return false;
 
             if (ai->HasAura("stealth", bot))
@@ -41,7 +41,7 @@ namespace ai
 
         bool IsActive() override
         {
-            if (bot->getClass() != CLASS_ROGUE)
+            if (bot->GetClass() != CLASS_ROGUE)
                 return false;
 
             std::list<GuidPosition> gosInSight = AI_VALUE(std::list<GuidPosition>, "go usable filter::go trapped filter::entry filter::{gos in sight,suppression devices}");
@@ -58,7 +58,7 @@ namespace ai
 
         bool IsActive() override
         {
-            if (bot->getClass() != CLASS_ROGUE)
+            if (bot->GetClass() != CLASS_ROGUE)
                 return false;
 
             std::list<GuidPosition> gos = AI_VALUE(std::list<GuidPosition>, "go usable filter::go trapped filter::entry filter::{gos close,suppression devices}");

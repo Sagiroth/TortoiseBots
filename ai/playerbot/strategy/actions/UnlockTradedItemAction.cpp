@@ -50,7 +50,7 @@ bool UnlockTradedItemAction::CanUnlockItem(Item* item)
         return false;
 
     // Ensure the bot is a rogue and has Lockpicking skill
-    if (bot->getClass() != CLASS_ROGUE || !botAI->HasSkill(SKILL_LOCKPICKING))
+    if (bot->GetClass() != CLASS_ROGUE || !botAI->HasSkill(SKILL_LOCKPICKING))
         return false;
 
     // Ensure the item is actually locked

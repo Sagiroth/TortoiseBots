@@ -76,7 +76,7 @@ bool EnemyPlayersValue::IsValid(Unit* target, Player* player)
             // Check that the target is not a mind controlled ally
             if (target->HasAuraType(SPELL_AURA_MOD_CHARM) || target->HasAuraType(SPELL_AURA_MOD_POSSESS))
             {
-                if (player && player->IsInGroup(target))
+                if (player && IsInGroup_Helper(player, target))
                 {
                     return false;
                 }
@@ -85,7 +85,7 @@ bool EnemyPlayersValue::IsValid(Unit* target, Player* player)
             /*
             // Check if too far away (Do we need this?)
             const float maxPvPDistance = GetMaxAttackDistance(player);
-            const bool inCannon = player->GetPlayerbotAI() && player->GetPlayerbotAI()->IsInVehicle(false, true);
+            const bool inCannon = PlayerbotAIStorage::Instance().GetAI(player) && PlayerbotAIStorage::Instance().GetAI(player)->IsInVehicle(false, true);
             uint32 const pvpDistance = (inCannon || player->GetHealth() > enemyPlayer->GetHealth()) ? maxPvPDistance : 20.0f;
             if (!player->IsWithinDist(enemyPlayer, pvpDistance, false))
             {
@@ -108,7 +108,7 @@ void EnemyPlayersValue::ApplyFilter(std::list<ObjectGuid>& targets, bool getOne)
         Unit* target = ai->GetUnit(targetGuid);
         if (IsValid(target, bot))
         {
-            filteredTargets.push_back(target->GetObjectGuid());
+            filteredTargets.push_back(target->getObjectGuid());
 
             if (getOne)
             {
@@ -147,7 +147,7 @@ Unit* EnemyPlayerValue::Calculate()
         Unit* firstTarget = ai->GetUnit(enemyPlayers.front());
         if (firstTarget)
         {
-            bestEnemyPlayerDistance = firstTarget->GetDistance(bot, false);
+            bestEnemyPlayerDistance = firstTarget->getDistance(bot, false);
             bestEnemyPlayerHealth = firstTarget->GetHealth();
             bestEnemyPlayer = firstTarget;
         }
@@ -168,7 +168,7 @@ Unit* EnemyPlayerValue::Calculate()
                 if (isMelee)
                 {
                     // Score best enemy player based on lowest distance
-                    const float distanceToEnemyPlayer = target->GetDistance(bot, false);
+                    const float distanceToEnemyPlayer = target->getDistance(bot, false);
                     if (distanceToEnemyPlayer < bestEnemyPlayerDistance)
                     {
                         bestEnemyPlayerDistance = distanceToEnemyPlayer;
@@ -212,7 +212,7 @@ float EnemyPlayerValue::GetMaxAttackDistance(Player* bot)
 
         if (bgType == BATTLEGROUND_IC)
         {
-            if (bot->GetPlayerbotAI()->IsInVehicle(false, true))
+            if (PlayerbotAIStorage::Instance().GetAI(bot)->IsInVehicle(false, true))
                 return 120.0f;
         }
 #endif

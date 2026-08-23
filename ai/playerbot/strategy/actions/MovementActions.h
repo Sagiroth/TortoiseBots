@@ -27,7 +27,7 @@ namespace ai
 
         inline bool MoveTo(const WorldLocation& location, bool idle = false, bool react = false, bool noPath = false, bool ignoreEnemyTargets = false)
         {
-           return MoveTo(location.mapid, location.coord_x, location.coord_y, location.coord_z, idle, react, noPath, ignoreEnemyTargets);
+           return MoveTo(location.mapId, location.x, location.y, location.z, idle, react, noPath, ignoreEnemyTargets);
         }
 
         static bool UseTaxi(PlayerbotAI* ai, uint32 entry = 0, bool needNpc = true);

@@ -58,16 +58,16 @@ bool RpgAction::SetNextRpgAction()
 
         for (auto& triggerNode : triggerNodes)
         {
-            Trigger* trigger = context->GetTrigger(triggerNode->getName());
+            Trigger* trigger = context->GetTrigger(triggerNode->GetName());
 
             if (trigger)
             {
 
                 triggerNode->setTrigger(trigger);
 
-                NextAction** nextActions = triggerNode->getHandlers();
+                NextAction** nextActions = triggerNode->GetHandlers();
 
-                Trigger* trigger = triggerNode->getTrigger();
+                Trigger* trigger = triggerNode->GetTrigger();
 
                 bool isChecked = false;
 
@@ -75,7 +75,7 @@ bool RpgAction::SetNextRpgAction()
                 {
                     NextAction* nextAction = nextActions[i];
 
-                    if (nextAction->getRelevance() > 2.0f)
+                    if (nextAction->GetRelevance() > 2.0f)
                         continue;
 
                     if (!isChecked && !trigger->IsActive())
@@ -83,13 +83,13 @@ bool RpgAction::SetNextRpgAction()
 
                     isChecked = true;
 
-                    Action* action = ai->GetAiObjectContext()->GetAction(nextAction->getName());
+                    Action* action = ai->GetAiObjectContext()->GetAction(nextAction->GetName());
 
-                    if (!dynamic_cast<RpgEnabled*>(action) || !action->isPossible() || !action->isUseful())
+                    if (!dynamic_cast<RpgEnabled*>(action) || !action->IsPossible() || !action->IsUseful())
                         continue;
 
                     actions.push_back(action);
-                    relevances.push_back((nextAction->getRelevance() - 1) * 1000);
+                    relevances.push_back((nextAction->GetRelevance() - 1) * 1000);
                 }
                 NextAction::destroy(nextActions);
             }
@@ -121,7 +121,7 @@ bool RpgAction::SetNextRpgAction()
         {
             std::ostringstream out;
 
-            out << " " << action.first->getName() << " " << action.second;
+            out << " " << action.first->GetName() << " " << action.second;
 
             ai->TellPlayerNoFacing(GetMaster(), out);
         }
@@ -139,12 +139,12 @@ bool RpgAction::SetNextRpgAction()
         out << "do: ";
         out << chat->formatWorldobject(AI_VALUE(GuidPosition, "rpg target").GetWorldObject(bot->GetInstanceId()));
 
-        out << " " << action->getName();
+        out << " " << action->GetName();
 
         ai->TellPlayerNoFacing(GetMaster(), out);
     }
 
-    SET_AI_VALUE(std::string, "next rpg action", action->getName());
+    SET_AI_VALUE(std::string, "next rpg action", action->GetName());
 
     return true;
 }

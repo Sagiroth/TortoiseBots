@@ -11,8 +11,8 @@ using namespace ai;
 
 bool EquipAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string text = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string text = event.GetParam();
     if (text == "?")
     {
         ListItems(requester);
@@ -295,9 +295,9 @@ bool EquipUpgradesAction::Execute(Event& event)
     if (!sPlayerbotAIConfig.autoEquipUpgradeLoot && !sRandomPlayerbotMgr.IsRandomBot(bot))
         return false;
 
-    if (event.getSource() == "trade status")
+    if (event.GetSource() == "trade status")
     {
-        WorldPacket p(event.getPacket());
+        WorldPacket p(event.GetPacket());
         p.rpos(0);
         uint32 status;
         p >> status;
@@ -307,17 +307,17 @@ bool EquipUpgradesAction::Execute(Event& event)
             return false;
         }
     }
-    else if (event.getSource() == "item push result")
+    else if (event.GetSource() == "item push result")
     {
         bool valid = false;
-        WorldPacket& data = event.getPacket();
+        WorldPacket& data = event.GetPacket();
         if (!data.empty())
         {
             data.rpos(0);
 
             ObjectGuid guid;
             data >> guid;
-            if (guid != bot->GetObjectGuid())
+            if (guid != bot->getObjectGuid())
             {
                 return false;
             }

@@ -6,14 +6,14 @@ using namespace ai;
 
 bool HireAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!requester)
         return false;
 
     if (!sRandomPlayerbotMgr.IsRandomBot(bot))
         return false;
 
-    uint32 account = sObjectMgr.GetPlayerAccountIdByGUID(requester->GetObjectGuid());
+    uint32 account = sObjectMgr.GetPlayerAccountIdByGUID(requester->getObjectGuid());
     auto results = CharacterDatabase.PQuery("SELECT count(*) FROM characters where account = '%u'", account);
 
     uint32 charCount = 10;

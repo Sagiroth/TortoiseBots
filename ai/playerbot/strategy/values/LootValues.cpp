@@ -487,10 +487,10 @@ bool ShouldLootObject::Calculate()
 
 	for (auto& lItem : lootAccess.GetLootContentFor(bot))
 	{
-		if (!lItem->itemId)
+		if (!lItem->itemid)
 			continue;
 
-		uint32 canLootAmount = AI_VALUE2(uint32, "stack space for item", lItem->itemId);
+		uint32 canLootAmount = AI_VALUE2(uint32, "stack space for item", lItem->itemid);
 
 		if (canLootAmount < lItem->count)
 			continue;
@@ -564,7 +564,7 @@ std::string ActiveRolls::Format()
 
 			if (item)
 			{
-				const ItemPrototype* proto = sItemStorage.LookupEntry<ItemPrototype>(item->itemId);
+				const ItemPrototype* proto = sItemStorage.LookupEntry<ItemPrototype>(item->itemid);
 
 				if (proto)
 				{

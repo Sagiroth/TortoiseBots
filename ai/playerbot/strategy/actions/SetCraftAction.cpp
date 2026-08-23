@@ -11,11 +11,11 @@ std::map<uint32, SkillLineAbilityEntry const*> SetCraftAction::skillSpells;
 
 bool SetCraftAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!requester)
         return false;
 
-    std::string link = event.getParam();
+    std::string link = event.GetParam();
 
     CraftData& data = AI_VALUE(CraftData&, "craft");
     if (link == "reset")
@@ -100,7 +100,7 @@ bool SetCraftAction::Execute(Event& event)
         return false;
     }
 
-    data.itemId = itemId;
+    data.itemid = itemId;
 
     TellCraft(requester);
     return true;
@@ -115,7 +115,7 @@ void SetCraftAction::TellCraft(Player* requester)
         return;
     }
 
-    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(data.itemId);
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(data.itemid);
     if (!proto)
         return;
 
@@ -148,7 +148,7 @@ uint32 SetCraftAction::GetCraftFee(CraftData& data)
     if (data.IsEmpty())
         return 0;
 
-    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(data.itemId);
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(data.itemid);
     if (!proto)
         return 0;
 

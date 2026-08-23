@@ -15,7 +15,7 @@ using namespace ai;
 
 void PlayerbotDbStore::Load(PlayerbotAI *ai, std::string preset)
 {
-    uint64 guid = ai->GetBot()->GetObjectGuid().GetRawValue();
+    uint64 guid = ai->GetBot()->getObjectGuid().GetRawValue();
 
     auto results = CharacterDatabase.PQuery("SELECT `key`,`value` FROM `ai_playerbot_db_store` WHERE `guid` = '%lu' AND `preset` = '%s'", guid, preset.c_str());
     if (results)
@@ -44,7 +44,7 @@ void PlayerbotDbStore::Load(PlayerbotAI *ai, std::string preset)
 
 void PlayerbotDbStore::Save(PlayerbotAI *ai, std::string preset)
 {
-    uint64 guid = ai->GetBot()->GetObjectGuid().GetRawValue();
+    uint64 guid = ai->GetBot()->getObjectGuid().GetRawValue();
 
     Reset(ai, preset);
 
@@ -72,7 +72,7 @@ std::string PlayerbotDbStore::FormatStrategies(std::string type, std::list<std::
 
 void PlayerbotDbStore::Reset(PlayerbotAI *ai, std::string preset)
 {
-    uint64 guid = ai->GetBot()->GetObjectGuid().GetRawValue();
+    uint64 guid = ai->GetBot()->getObjectGuid().GetRawValue();
     uint32 account = sObjectMgr.GetPlayerAccountIdByGUID(ObjectGuid(guid));
 
     CharacterDatabase.PExecute("DELETE FROM `ai_playerbot_db_store` WHERE `guid` = '%lu' AND `preset` = '%s'", guid, preset.c_str());

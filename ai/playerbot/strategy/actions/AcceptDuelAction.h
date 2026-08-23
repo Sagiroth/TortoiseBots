@@ -12,7 +12,7 @@ namespace ai
 
         virtual bool Execute(Event& event) override
         {
-            WorldPacket p(event.getPacket());
+            WorldPacket p(event.GetPacket());
 
             ObjectGuid flagGuid;
             p >> flagGuid;
@@ -21,7 +21,7 @@ namespace ai
 
             // do not auto duel with low hp or below certain level
             if (bot->GetLevel() < sPlayerbotAIConfig.botAcceptDuelMinimumLevel
-                || ((!ai->HasRealPlayerMaster() || (ai->GetMaster() && ai->GetMaster()->GetObjectGuid() != playerGuid)) && AI_VALUE2(uint8, "health", "self target") < 90))
+                || ((!ai->HasRealPlayerMaster() || (ai->GetMaster() && ai->GetMaster()->getObjectGuid() != playerGuid)) && AI_VALUE2(uint8, "health", "self target") < 90))
             {
                 WorldPacket packet(CMSG_DUEL_CANCELLED, 8);
                 packet << flagGuid;

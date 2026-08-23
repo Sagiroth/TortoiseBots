@@ -41,8 +41,8 @@ bool ReleaseSpiritAction::Execute(Event event)
         return false;
     }
 
-    const WorldPacket& packet = event.getPacket();
-    const std::string message = !packet.empty() && packet.GetOpcode() == CMSG_REPOP_REQUEST
+    const WorldPacket& packet = event.GetPacket();
+    const std::string message = !packet.empty() && packet.getOpcode() == CMSG_REPOP_REQUEST
         ? PlayerbotTextMgr::instance().GetBotTextOrDefault("release_spirit_releasing", "Releasing...", {})
         : PlayerbotTextMgr::instance().GetBotTextOrDefault("release_spirit_meet_graveyard", "Meet me at the graveyard", {});
     botAI->TellMasterNoFacing(message);
@@ -105,7 +105,7 @@ bool AutoReleaseSpiritAction::Execute(Event /*event*/)
 
 bool AutoReleaseSpiritAction::isUseful()
 {
-    if (!bot->isDead() || bot->InArena())
+    if (!bot->IsDead() || bot->InArena())
         return false;
 
     if (bot->InBattleground())
@@ -145,14 +145,14 @@ bool AutoReleaseSpiritAction::HandleBattlegroundSpiritHealer()
     if (!spiritHealer)
         return false;
 
-    if (bot->GetDistance(spiritHealer) >= INTERACTION_DISTANCE)
+    if (bot->getDistance(spiritHealer) >= INTERACTION_DISTANCE)
     {
         // Bot needs to actually click spirit-healer in BG to get res timer going
         // and in IOC it's not within clicking range when they res in own base
 
         // Teleport to nearest friendly Spirit Healer when not currently in range of one.
         bot->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_TELEPORTED | AURA_INTERRUPT_FLAG_CHANGE_MAP);
-        bot->TeleportTo(bot->GetMapId(), spiritHealer->GetPositionX(), spiritHealer->GetPositionY(), spiritHealer->GetPositionZ(), 0.f);
+        bot->TeleportTo(bot->GetMapId(), spiritHealer->getPositionX(), spiritHealer->getPositionY(), spiritHealer->getPositionZ(), 0.f);
         RESET_AI_VALUE(bool, "combat::self target");
         RESET_AI_VALUE(WorldPosition, "current position");
     }
@@ -242,7 +242,7 @@ int64 RepopAction::CalculateDeadTime() const
     if (Corpse* corpse = bot->GetCorpse())
         return time(nullptr) - corpse->GetGhostTime();
 
-    return bot->isDead() ? 0 : 60 * MINUTE;
+    return bot->IsDead() ? 0 : 60 * MINUTE;
 }
 
 void RepopAction::PerformGraveyardTeleport(const GraveyardStruct* graveyard) const

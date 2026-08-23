@@ -34,14 +34,14 @@ bool QuestAction::Execute(Event& event)
     for (std::list<ObjectGuid>::iterator i = npcs.begin(); i != npcs.end(); i++)
     {
         Unit* unit = ai->GetUnit(*i);
-        if (unit && bot->GetDistance(unit) <= INTERACTION_DISTANCE)
+        if (unit && bot->getDistance(unit) <= INTERACTION_DISTANCE)
             result |= ProcessQuests(unit);
     }
     std::list<ObjectGuid> gos = AI_VALUE(std::list<ObjectGuid>, "nearest game objects no los");
     for (std::list<ObjectGuid>::iterator i = gos.begin(); i != gos.end(); i++)
     {
         GameObject* go = ai->GetGameObject(*i);
-        if (go && bot->GetDistance(go) <= INTERACTION_DISTANCE)
+        if (go && bot->getDistance(go) <= INTERACTION_DISTANCE)
             result |= ProcessQuests(go);
     }
 
@@ -163,18 +163,18 @@ bool QuestAction::ProcessQuests(WorldObject* questGiver)
         if (questGiver->GetEntry() == blocked)
             return false;
 
-    ObjectGuid guid = questGiver->GetObjectGuid();
+    ObjectGuid guid = questGiver->getObjectGuid();
 
-    if (sServerFacade.GetDistance2d(bot, questGiver) > INTERACTION_DISTANCE && !sPlayerbotAIConfig.syncQuestWithPlayer)
+    if (sServerFacade.getDistance2d(bot, questGiver) > INTERACTION_DISTANCE && !sPlayerbotAIConfig.syncQuestWithPlayer)
     {
         Player* master = ai->GetMaster();
-        if (!ai->GetMaster() || sServerFacade.GetDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
+        if (!ai->GetMaster() || sServerFacade.getDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
             ai->TellPlayerNoFacing(master, BOT_TEXT("quest_error_talk"));
 
         return false;
     }
 
-    if (!sServerFacade.IsInFront(bot, questGiver, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
+    if (!sServerFacade.isInFront(bot, questGiver, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
     {
         sServerFacade.SetFacingTo(bot, questGiver);
     }
@@ -219,7 +219,7 @@ bool QuestAction::AcceptQuest(Player* requester, Quest const* quest, uint64 ques
         {
             outputMessage = BOT_TEXT2("quest_error_have_quest", args);
         }
-        else if (!ai->GetMaster() || sServerFacade.GetDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
+        else if (!ai->GetMaster() || sServerFacade.getDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
         {
             outputMessage = BOT_TEXT2("quest_error_cant_take", args);
         }
@@ -242,7 +242,7 @@ bool QuestAction::AcceptQuest(Player* requester, Quest const* quest, uint64 ques
 
         if (bot->GetQuestStatus(questId) == QUEST_STATUS_NONE && sPlayerbotAIConfig.syncQuestWithPlayer)
         {
-            Object* pObject = bot->GetObjectByTypeMask((ObjectGuid)questGiver, TYPEMASK_CREATURE_GAMEOBJECT_PLAYER_OR_ITEM);
+            Object* pObject = bot->getObjectByTypeMask((ObjectGuid)questGiver, TYPEMASK_CREATURE_GAMEOBJECT_PLAYER_OR_ITEM);
             bot->AddQuest(quest, pObject);
         }
 
@@ -256,7 +256,7 @@ bool QuestAction::AcceptQuest(Player* requester, Quest const* quest, uint64 ques
         }
     }
 
-    if (success || !ai->GetMaster() || sServerFacade.GetDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
+    if (success || !ai->GetMaster() || sServerFacade.getDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
         ai->TellPlayer(requester, outputMessage, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
 
     return success;
@@ -267,14 +267,14 @@ bool QuestAction::AcceptQuest(Player* requester, Quest const* quest, uint64 ques
 */
 bool QuestUpdateAddKillAction::Execute(Event& event)
 {
-    WorldPacket p(event.getPacket());
+    WorldPacket p(event.GetPacket());
     p.rpos(0);
 
     uint32 entry, questId, available, required;
     ObjectGuid guid;
     p >> questId >> entry >> available >> required >> guid;
 
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
     Quest const* qInfo = sObjectMgr.GetQuestTemplate(questId);
 
@@ -321,13 +321,13 @@ bool QuestUpdateAddKillAction::Execute(Event& event)
 
 bool QuestUpdateAddItemAction::Execute(Event& event)
 {
-    WorldPacket p(event.getPacket());
+    WorldPacket p(event.GetPacket());
     p.rpos(0);
 
     uint32 itemId, count;
     p >> itemId >> count;
 
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
     ItemPrototype const* itemPrototype = sObjectMgr.GetItemPrototype(itemId);
 
@@ -378,13 +378,13 @@ bool QuestUpdateFailedAction::Execute(Event& event)
 
 bool QuestUpdateFailedTimerAction::Execute(Event& event)
 {
-    WorldPacket p(event.getPacket());
+    WorldPacket p(event.GetPacket());
     p.rpos(0);
 
     uint32 questId;
     p >> questId;
 
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
     Quest const* qInfo = sObjectMgr.GetQuestTemplate(questId);
 
@@ -406,7 +406,7 @@ bool QuestUpdateFailedTimerAction::Execute(Event& event)
     }
 
     //drop quest
-    bot->GetPlayerbotAI()->DropQuest(questId);
+    PlayerbotAIStorage::Instance().GetAI(bot)->DropQuest(questId);
 
     sPlayerbotAIConfig.logEvent(ai, "QuestUpdateFailedTimerAction", std::to_string(questId), "FailedTimer");
     return false;
@@ -414,13 +414,13 @@ bool QuestUpdateFailedTimerAction::Execute(Event& event)
 
 bool QuestUpdateCompleteAction::Execute(Event& event)
 {
-    WorldPacket p(event.getPacket());
+    WorldPacket p(event.GetPacket());
     p.rpos(0);
 
     uint32 questId;
     p >> questId;
 
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
     Quest const* qInfo = sObjectMgr.GetQuestTemplate(questId);
 

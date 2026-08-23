@@ -91,13 +91,13 @@ bool BotUseItemSpell::OpenLockCheck()
                 // we need a go target in case of TARGET_GAMEOBJECT (for other targets acceptable GO and items)
                 if (m_spellInfo->EffectImplicitTargetA[i] == TARGET_GAMEOBJECT)
                 {
-                    if (!m_targets.getGOTarget())
+                    if (!m_targets.GetGOTarget())
                         return false;
                 }
 
                 // get the lock entry
                 uint32 lockId;
-                if (GameObject* go = m_targets.getGOTarget())
+                if (GameObject* go = m_targets.GetGOTarget())
                 {
                     // In BattleGround players can use only flags and banners
                     if (((Player*)m_caster)->InBattleGround() &&
@@ -119,7 +119,7 @@ bool BotUseItemSpell::OpenLockCheck()
                     if (go->GetGOInfo()->CannotBeUsedUnderImmunity() && m_caster->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE))
                         return false;
                 }
-                else if (Item* item = m_targets.getItemTarget())
+                else if (Item* item = m_targets.GetItemTarget())
                 {
                     // not own (trade?)
                     if (item->GetOwner() != m_caster)
@@ -233,8 +233,8 @@ bool RequiresItemToUse(const ItemPrototype* itemProto, PlayerbotAI* ai, Player* 
 
 bool UseAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner();
-    std::string useName = event.getParam();
+    Player* requester = event.GetOwner();
+    std::string useName = event.GetParam();
 
     if (useName.empty())
     {
@@ -261,7 +261,7 @@ bool UseAction::Execute(Event& event)
             GameObject* go = ai->GetGameObject(goGUID);
             if (go)
             {
-                const float distance = bot->GetDistance(go);
+                const float distance = bot->getDistance(go);
                 if (distance < closest)
                 {
                     targetGameObject = go;
@@ -322,7 +322,7 @@ bool UseAction::Execute(Event& event)
             GameObject* go = ai->GetGameObject(goGUID);
             if (go && std::string(go->GetName()).find(useName))
             {
-                const float distance = bot->GetDistance(go);
+                const float distance = bot->getDistance(go);
                 if (distance < closest)
                 {
                     targetGameObject = go;
@@ -571,13 +571,13 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
             if (unit)
             {
                 unitTarget = unit;
-                targets.setDestination(unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ());
+                targets.setDestination(unit->getPositionX(), unit->getPositionY(), unit->getPositionZ());
                 validTarget = true;
             }
-            else if (gameObject && gameObject->IsSpawned())
+            else if (gameObject && gameObject->isSpawned())
             {
                 gameObjectTarget = gameObject;
-                targets.setDestination(gameObject->GetPositionX(), gameObject->GetPositionY(), gameObject->GetPositionZ());
+                targets.setDestination(gameObject->getPositionX(), gameObject->getPositionY(), gameObject->getPositionZ());
                 validTarget = true;
             }
         }
@@ -594,7 +594,7 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
         
         if ((spellTargets & TARGET_FLAG_GAMEOBJECT || spellTargets & TARGET_FLAG_LOCKED) && !validTarget)
         {
-            if (gameObject && gameObject->IsSpawned())
+            if (gameObject && gameObject->isSpawned())
             {
                 gameObjectTarget = gameObject;
                 targets.setGOTarget(gameObject);
@@ -789,7 +789,7 @@ bool UseAction::UseGameObject(Player* requester, Event& event, GameObject* gameO
         return false;
     }
 
-    ObjectGuid guid = gameObject->GetObjectGuid();
+    ObjectGuid guid = gameObject->getObjectGuid();
     if (!sServerFacade.isSpawned(gameObject) || gameObject->IsInUse() || gameObject->GetGoState() != GO_STATE_READY)
     {
         std::ostringstream out; out << "I can't use " << chat->formatGameobject(gameObject);
@@ -797,7 +797,7 @@ bool UseAction::UseGameObject(Player* requester, Event& event, GameObject* gameO
         return false;
     }
 
-    if (bot->GetDistance(gameObject) > INTERACTION_DISTANCE)
+    if (bot->getDistance(gameObject) > INTERACTION_DISTANCE)
     {
         std::ostringstream out; out << "I'm too far away from " << chat->formatGameobject(gameObject);
         ai->TellPlayerNoFacing(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
@@ -917,14 +917,14 @@ bool UseAction::UseGameObject(Player* requester, Event& event, GameObject* gameO
     {
         if (gameObject->ActivateToQuest(bot))
         {
-            Event event("use game object", gameObject->GetObjectGuid(), bot);
+            Event event("use game object", gameObject->getObjectGuid(), bot);
             ai->DoSpecificAction("talk to quest giver", event, true);
         }
     }
 
     std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
     *packet << guid;
-    bot->GetSession()->QueuePacket(std::move(packet));
+    bot->GetSession()->QueuePacket(packet.release());
     
     std::ostringstream out; out << "Using " << chat->formatGameobject(gameObject);
     ai->TellPlayerNoFacing(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
@@ -947,13 +947,13 @@ bool UseAction::UseQuestGiverItem(Player* requester, Item* item)
     if (!bot->CanTakeQuest(quest, false))
         return false;
 
-    if (item->GetOwnerGuid() != bot->GetObjectGuid())
+    if (item->GetOwnerGuid() != bot->getObjectGuid())
         return false;
 
     if (!bot->HasItemCount(proto->ItemId, 1))
         return false;
 
-    Item* validItem = bot->GetItemByGuid(item->GetObjectGuid());
+    Item* validItem = bot->GetItemByGuid(item->getObjectGuid());
     if (!validItem || validItem != item)
         return false;
 
@@ -1002,7 +1002,7 @@ bool UseAction::OpenItem(Player* requester, Item* item)
         std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_OPEN_ITEM, 2));
         *packet << item->GetBagSlot();
         *packet << item->GetSlot();
-        bot->GetSession()->QueuePacket(std::move(packet)); // queue the packet to get around race condition
+        bot->GetSession()->QueuePacket(packet.release()); // queue the packet to get around race condition
         return true;
 }
 
@@ -1043,7 +1043,7 @@ bool UseAction::UseGemItem(Player* requester, Item* item, Item* gem, bool replac
     }
 
     WorldPacket* const packet = new WorldPacket(CMSG_SOCKET_GEMS);
-    *packet << item->GetObjectGuid();
+    *packet << item->getObjectGuid();
 
     bool fits = false;
     for (uint32 enchant_slot = SOCK_ENCHANTMENT_SLOT; enchant_slot < SOCK_ENCHANTMENT_SLOT + MAX_GEM_SOCKETS; ++enchant_slot)
@@ -1061,7 +1061,7 @@ bool UseAction::UseGemItem(Player* requester, Item* item, Item* gem, bool replac
             uint32 enchant_id = item->GetEnchantmentId(EnchantmentSlot(enchant_slot));
             if (!enchant_id)
             {
-                *packet << gem->GetObjectGuid();
+                *packet << gem->getObjectGuid();
                 fits = true;
                 continue;
             }
@@ -1069,14 +1069,14 @@ bool UseAction::UseGemItem(Player* requester, Item* item, Item* gem, bool replac
             SpellItemEnchantmentEntry const* enchantEntry = sSpellItemEnchantmentStore.LookupEntry(enchant_id);
             if (!enchantEntry || !enchantEntry->GemID)
             {
-                *packet << gem->GetObjectGuid();
+                *packet << gem->getObjectGuid();
                 fits = true;
                 continue;
             }
 
             if (replace && enchantEntry->GemID != gem->GetProto()->ItemId)
             {
-                *packet << gem->GetObjectGuid();
+                *packet << gem->getObjectGuid();
                 fits = true;
                 continue;
             }
@@ -1113,7 +1113,7 @@ bool UseAction::UseGemItem(Player* requester, Item* item, Item* gem, bool replac
 
 bool UseItemIdAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner();
+    Player* requester = event.GetOwner();
     MakeVerbose(requester != nullptr);
 
     uint32 itemId = 0;
@@ -1124,7 +1124,7 @@ bool UseItemIdAction::Execute(Event& event)
     {
         itemId = GetItemId();
         unitTarget = GetTarget();
-        std::string params = event.getParam();
+        std::string params = event.GetParam();
         std::list<ObjectGuid> gos = chat->parseGameobjects(params);
         if (!gos.empty())
         {
@@ -1270,13 +1270,13 @@ bool UseHearthStoneAction::Execute(Event& event)
         if (!bot->HasItemCount(40582, 1)) //Scourgestone
             return false;
 
-        event = Event(event.getSource(), "scourgestone");
+        event = Event(event.GetSource(), "scourgestone");
     }
 
     const bool used = UseAction::Execute(event);
     if (used)
     {
-        sPlayerbotAIConfig.logEvent(ai, "UseHearthStoneAction", event.getParam(), event.getSource());
+        sPlayerbotAIConfig.logEvent(ai, "UseHearthStoneAction", event.GetParam(), event.GetSource());
         RESET_AI_VALUE(bool, "combat::self target");
         RESET_AI_VALUE(WorldPosition, "current position");
     }
@@ -1325,7 +1325,7 @@ bool UseRandomRecipeAction::isUseful()
 
 bool UseRandomRecipeAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
     std::list<Item*> recipes = AI_VALUE2(std::list<Item*>, "inventory items", "recipe"); 
 
@@ -1365,7 +1365,7 @@ bool OpenRandomItemAction::isUseful()
 
 bool OpenRandomItemAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
     std::list<Item*> items = AI_VALUE2(std::list<Item*>, "inventory items", "open");
 
@@ -1404,7 +1404,7 @@ bool UseRandomQuestItemAction::isUseful()
 
 bool UseRandomQuestItemAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     Unit* unitTarget = nullptr;
     GameObject* goTarget = nullptr;
 

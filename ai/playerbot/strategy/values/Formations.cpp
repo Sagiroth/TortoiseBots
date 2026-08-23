@@ -12,7 +12,7 @@ WorldLocation Formation::NullLocation = WorldLocation();
 
 bool IsSameLocation(WorldLocation const &a, WorldLocation const &b)
 {
-	return a.coord_x == b.coord_x && a.coord_y == b.coord_y && a.coord_z == b.coord_z && a.mapid == b.mapid;
+	return a.x == b.x && a.y == b.y && a.z == b.z && a.mapId == b.mapId;
 }
 
 float Formation::GetMaxDistance()
@@ -28,12 +28,12 @@ bool Formation::IsNullLocation(WorldLocation const& loc)
 float Formation::GetAngle()
 {
     WorldLocation loc = GetLocation();
-    if (Formation::IsNullLocation(loc) || loc.mapid == -1)
+    if (Formation::IsNullLocation(loc) || loc.mapId == -1)
         return 0.0f;
 
     Unit* followTarget = AI_VALUE(Unit*, "follow target");
 
-    float angle = WorldPosition(followTarget).getAngleTo(loc) - followTarget->GetOrientation();
+    float angle = WorldPosition(followTarget).GetAngleTo(loc) - followTarget->getOrientation();
     if (angle < 0) angle += 2 * M_PI_F;
 
     return angle;
@@ -42,7 +42,7 @@ float Formation::GetAngle()
 float Formation::GetOffset()
 {
     WorldLocation loc = GetLocation();
-    if (Formation::IsNullLocation(loc) || loc.mapid == -1)
+    if (Formation::IsNullLocation(loc) || loc.mapId == -1)
         return 0.0f;
 
     Unit* followTarget = AI_VALUE(Unit*, "follow target");
@@ -61,9 +61,9 @@ WorldLocation FollowFormation::GetLocation()
         return Formation::NullLocation;
 
     float angle = GetFollowAngle();
-    float x = followTarget->GetPositionX() + cos(angle) * range;
-    float y = followTarget->GetPositionY() + sin(angle) * range;
-    float z = followTarget->GetPositionZ();
+    float x = followTarget->getPositionX() + cos(angle) * range;
+    float y = followTarget->getPositionY() + sin(angle) * range;
+    float z = followTarget->getPositionZ();
 
     return WorldLocation(bot->GetMapId(), x, y, z);
 }
@@ -82,12 +82,12 @@ WorldLocation MoveAheadFormation::GetLocation()
     if (Formation::IsNullLocation(loc))
         return loc;
 
-    float x = loc.coord_x;
-    float y = loc.coord_y;
-    float z = loc.coord_z;
+    float x = loc.x;
+    float y = loc.y;
+    float z = loc.z;
 
     if (sServerFacade.isMoving(master)) {
-        float ori = master->GetOrientation();
+        float ori = master->getOrientation();
 
         float aheadDistance = sPlayerbotAIConfig.tooCloseDistance;//std::min(std::max(sPlayerbotAIConfig.tooCloseDistance,sqrt(WorldPosition(0, x, y, z).sqDistance2d(bot))), sPlayerbotAIConfig.sightDistance);
 
@@ -148,11 +148,11 @@ namespace ai
             if (!ai->IsSafe(followTarget))
                 return WorldLocation();
 
-            float range = ai->GetRange("follow") + followTarget->GetObjectBoundingRadius();
+            float range = ai->GetRange("follow") + followTarget->getObjectBoundingRadius();
             float angle = GetFollowAngle();
-            float x = followTarget->GetPositionX() + cos(angle) * range;
-            float y = followTarget->GetPositionY() + sin(angle) * range;
-            float z = followTarget->GetPositionZ();
+            float x = followTarget->getPositionX() + cos(angle) * range;
+            float y = followTarget->getPositionY() + sin(angle) * range;
+            float z = followTarget->getPositionZ();
 #ifdef MANGOSBOT_TWO
             float ground = followTarget->GetMap()->GetHeight(followTarget->GetPhaseMask(), x, y, z);
 #else
@@ -163,7 +163,7 @@ namespace ai
 
             // prevent going into terrain
             float ox, oy, oz;
-            followTarget->GetPosition(ox, oy, oz);
+            followTarget->getPosition(ox, oy, oz);
 #ifdef MANGOSBOT_TWO
             followTarget->GetMap()->GetHitPosition(ox, oy, oz + bot->GetCollisionHeight(), x, y, z, bot->GetPhaseMask(), -0.5f);
 #else
@@ -205,9 +205,9 @@ namespace ai
                 dr = sqrt(dx*dx + dy*dy);
             }
 
-            float x = followTarget->GetPositionX() + cos(angle) * range + dx;
-            float y = followTarget->GetPositionY() + sin(angle) * range + dy;
-            float z = followTarget->GetPositionZ();
+            float x = followTarget->getPositionX() + cos(angle) * range + dx;
+            float y = followTarget->getPositionY() + sin(angle) * range + dy;
+            float z = followTarget->getPositionZ();
 #ifdef MANGOSBOT_TWO
             float ground = followTarget->GetMap()->GetHeight(followTarget->GetPhaseMask(), x, y, z);
 #else
@@ -249,9 +249,9 @@ namespace ai
 				return Formation::NullLocation;
 
             float angle = GetFollowAngle();
-            float x = target->GetPositionX() + cos(angle) * range;
-            float y = target->GetPositionY() + sin(angle) * range;
-            float z = target->GetPositionZ();
+            float x = target->getPositionX() + cos(angle) * range;
+            float y = target->getPositionY() + sin(angle) * range;
+            float z = target->getPositionZ();
 #ifdef MANGOSBOT_TWO
             float ground = target->GetMap()->GetHeight(target->GetPhaseMask(), x, y, z);
 #else
@@ -285,15 +285,15 @@ namespace ai
             if (!followTarget)
                 return Formation::NullLocation;
 
-            float x = followTarget->GetPositionX();
-            float y = followTarget->GetPositionY();
-            float z = followTarget->GetPositionZ();
-            float orientation = followTarget->GetOrientation();
+            float x = followTarget->getPositionX();
+            float y = followTarget->getPositionY();
+            float z = followTarget->getPositionZ();
+            float orientation = followTarget->getOrientation();
 
             std::vector<Player*> players;
             for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
             {
-                Player* member = gref->getSource();
+                Player* member = gref->GetSource();
                 if (!ai->IsSafe(member)) continue;
                 if (member != followTarget)
                     players.push_back(member);
@@ -321,16 +321,16 @@ namespace ai
             if (!followTarget)
                 return Formation::NullLocation;
 
-            float x = followTarget->GetPositionX();
-            float y = followTarget->GetPositionY();
-            float z = followTarget->GetPositionZ();
-            float orientation = followTarget->GetOrientation();
+            float x = followTarget->getPositionX();
+            float y = followTarget->getPositionY();
+            float z = followTarget->getPositionZ();
+            float orientation = followTarget->getOrientation();
 
             std::vector<Player*> tanks;
             std::vector<Player*> dps;
             for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
             {
-                Player* member = gref->getSource();
+                Player* member = gref->GetSource();
                 if (!ai->IsSafe(member)) continue;
                 if (member != followTarget)
                 {
@@ -377,7 +377,7 @@ namespace ai
         {             
             Unit* followTarget = AI_VALUE(Unit*, "follow target");
 
-            float currentAngle = WorldPosition(followTarget).getAngleTo(bot) - followTarget->GetOrientation();
+            float currentAngle = WorldPosition(followTarget).GetAngleTo(bot) - followTarget->getOrientation();
             float followAngle = currentAngle;
             
             if(bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
@@ -417,7 +417,7 @@ namespace ai
 
             Unit* followTarget = AI_VALUE(Unit*, "follow target");
 
-            if (!ai->IsSafe(followTarget) || sServerFacade.GetDistance2d(bot, followTarget) > sPlayerbotAIConfig.reactDistance)
+            if (!ai->IsSafe(followTarget) || sServerFacade.getDistance2d(bot, followTarget) > sPlayerbotAIConfig.reactDistance)
             {
                 WorldPosition pos(bot->GetMapId(), cos(GetFollowAngle()) * ai->GetRange("follow"), sin(GetFollowAngle()) * ai->GetRange("follow"), 0);
                 followPosition.Set(pos);
@@ -426,9 +426,9 @@ namespace ai
             {
                 WorldPosition relPos(bot);
                 relPos -= WorldPosition(ai->GetMaster());
-                relPos.rotateXY(-1 * ai->GetMaster()->GetOrientation());
+                relPos.rotateXY(-1 * ai->GetMaster()->getOrientation());
 
-                followPosition.Set(relPos.getX(), relPos.getY(), relPos.getZ(), relPos.getMapId());
+                followPosition.Set(relPos.getX(), relPos.getY(), relPos.getZ(), relPos.GetMapId());
             }
 
             posMap["follow"] = followPosition;
@@ -449,7 +449,7 @@ namespace ai
 
             WorldPosition relPos(followPosition.mapId, followPosition.x, followPosition.y, followPosition.z);
 
-            relPos.rotateXY(followTarget->GetOrientation());
+            relPos.rotateXY(followTarget->getOrientation());
 
             return WorldPosition(followTarget) + relPos;
         }
@@ -461,12 +461,12 @@ float Formation::GetFollowAngle()
     Player* followTarget = (Player*)AI_VALUE(Unit*, "follow target");
 
     Group* group = bot->GetGroup();
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     int index = 1, total = 1;
 
-    if (!group && followTarget && !followTarget->GetPlayerbotAI() && followTarget->GetPlayerbotMgr())
+    if (!group && followTarget && !PlayerbotAIStorage::Instance().GetAI(followTarget) && GetPlayerbotMgr_Helper(followTarget))
     {
-        followTarget->GetPlayerbotMgr()->ForEachPlayerbot([&](Player* player)
+        GetPlayerbotMgr_Helper(followTarget)->ForEachPlayerbot([&](Player* player)
         {
             if (player == bot) index = total;
             total++;
@@ -477,7 +477,7 @@ float Formation::GetFollowAngle()
         std::vector<Player*> roster;
         for (GroupReference *ref = group->GetFirstMember(); ref; ref = ref->next())
         {
-            Player* member = ref->getSource();
+            Player* member = ref->GetSource();
             if (!ai->IsSafe(member) || !sServerFacade.IsAlive(member)) continue;
             if (member && member != followTarget && !ai->IsTank(member) && !ai->IsHeal(member))
             {
@@ -486,7 +486,7 @@ float Formation::GetFollowAngle()
         }
         for (GroupReference *ref = group->GetFirstMember(); ref; ref = ref->next())
         {
-            Player* member = ref->getSource();
+            Player* member = ref->GetSource();
             if (!ai->IsSafe(member) || !sServerFacade.IsAlive(member)) continue;
             if (member && member != followTarget && ai->IsHeal(member))
             {
@@ -496,7 +496,7 @@ float Formation::GetFollowAngle()
         bool left = true;
         for (GroupReference *ref = group->GetFirstMember(); ref; ref = ref->next())
         {
-            Player* member = ref->getSource();
+            Player* member = ref->GetSource();
             if (!ai->IsSafe(member) || !sServerFacade.IsAlive(member)) continue;
             if (member && member != followTarget && ai->IsTank(member))
             {
@@ -513,7 +513,7 @@ float Formation::GetFollowAngle()
         total = roster.size() + 1;
     }
 
-    float start = (followTarget ? followTarget->GetOrientation() : 0.0f);
+    float start = (followTarget ? followTarget->getOrientation() : 0.0f);
     return start + (0.125f + 1.75f * index / total + (total == 2 ? 0.125f : 0.0f)) * M_PI;
 }
 
@@ -537,7 +537,7 @@ void FormationValue::Reset()
 
 std::string FormationValue::Save()
 {
-    return value ? value->getName() : "?";
+    return value ? value->GetName() : "?";
 }
 
 bool FormationValue::Load(std::string formation)
@@ -599,13 +599,13 @@ bool FormationValue::Load(std::string formation)
 
 bool SetFormationAction::Execute(Event& event)
 {
-    std::string formation = event.getParam();
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    std::string formation = event.GetParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
     FormationValue* value = (FormationValue*)context->GetValue<Formation*>("formation");
     if (formation == "?" || formation.empty())
     {
-        std::ostringstream str; str << "Formation: |cff00ff00" << value->Get()->getName();
+        std::ostringstream str; str << "Formation: |cff00ff00" << value->Get()->GetName();
         ai->TellPlayer(requester, str);
         return true;
     }
@@ -614,7 +614,7 @@ bool SetFormationAction::Execute(Event& event)
     {
         WorldLocation loc = value->Get()->GetLocation();
         if (!Formation::IsNullLocation(loc))
-            ai->Ping(loc.coord_x, loc.coord_y);
+            ai->Ping(loc.x, loc.y);
 
         return true;
     }
@@ -622,7 +622,7 @@ bool SetFormationAction::Execute(Event& event)
     if (formation == "default" || formation == "reset")
     {
         value->Reset();
-        std::ostringstream str; str << "Formation reset to: " << value->Get()->getName();
+        std::ostringstream str; str << "Formation reset to: " << value->Get()->GetName();
         ai->TellPlayer(requester, str);
         return true;
     }

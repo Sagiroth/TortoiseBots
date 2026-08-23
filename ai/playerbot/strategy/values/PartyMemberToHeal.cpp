@@ -18,7 +18,7 @@ public:
 uint32 getIncomingdamage(Unit const* pTarget)
 {
     uint32 damage = 0;
-    for (auto const& pAttacker : pTarget->getAttackers())
+    for (auto const& pAttacker : pTarget->GetAttackers())
         if (pAttacker->CanReachWithMeleeAttack(pTarget))
             damage += uint32((pAttacker->GetFloatValue(UNIT_FIELD_MINDAMAGE) + pAttacker->GetFloatValue(UNIT_FIELD_MAXDAMAGE)) / 2);
 
@@ -47,7 +47,7 @@ Unit* PartyMemberToHeal::Calculate()
     {
         Unit* target = ai->GetUnit(bot->GetSelectionGuid());
         if (target &&
-            target->GetObjectGuid() != bot->GetObjectGuid() && 
+            target->getObjectGuid() != bot->getObjectGuid() && 
             sServerFacade.IsFriendlyTo(bot, target) &&
             target->GetHealthPercent() < 100 && 
             Check(target))
@@ -109,7 +109,7 @@ Unit* PartyMemberToHeal::Calculate()
                 }
             }
 
-            if (isTank && bot->IsInGroup(player))
+            if (isTank && IsInGroup_Helper(bot, player))
             {
                 tankTargets.push_back(player);
             }
@@ -142,7 +142,7 @@ Unit* PartyMemberToHeal::Calculate()
             {
                 break;
             }
-            else if (ai->IsHeal(player) && player->GetPlayerbotAI())
+            else if (ai->IsHeal(player) && PlayerbotAIStorage::Instance().GetAI(player))
             {
                 float percent = (float)player->GetPower(POWER_MANA) / (float)player->GetMaxPower(POWER_MANA) * 100.0;
                 if (percent > sPlayerbotAIConfig.lowMana)
@@ -174,7 +174,7 @@ Unit* PartyMemberToHeal::Calculate()
 
 bool PartyMemberToHeal::CanHealPet(Pet* pet)
 {
-    return MINI_PET != pet->getPetType();
+    return MINI_PET != pet->GetPetType();
 }
 
 bool PartyMemberToHeal::Check(Unit* player)
@@ -189,7 +189,7 @@ bool PartyMemberToHeal::Check(Unit* player)
     if (!player)
         return false;
 
-    if (player->GetObjectGuid() == bot->GetObjectGuid())
+    if (player->getObjectGuid() == bot->getObjectGuid())
         return false;
 
     if (player->GetMapId() != bot->GetMapId())
@@ -198,7 +198,7 @@ bool PartyMemberToHeal::Check(Unit* player)
     if (!player->IsInWorld())
         return false;
                                                      
-    if (sServerFacade.GetDistance2d(bot, player) > maxDist)
+    if (sServerFacade.getDistance2d(bot, player) > maxDist)
         return false;
 
     return true;
@@ -214,7 +214,7 @@ std::vector<Player*> PartyMemberToHeal::GetPartyMembers()
         for(const ObjectGuid& focusHealTarget : focusHealTargets)
         {
             Player* player = (Player*)ai->GetUnit(focusHealTarget);
-            if (player && player->IsInGroup(bot) && ai->IsSafe(player))
+            if (player && IsInGroup_Helper(player, bot) && ai->IsSafe(player))
             {
                 partyMembers.push_back(player);
             }
@@ -227,7 +227,7 @@ std::vector<Player*> PartyMemberToHeal::GetPartyMembers()
         {
             for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
             {
-                Player* player = gref->getSource();
+                Player* player = gref->GetSource();
                 if (player && ai->IsSafe(player))
                 {
                     partyMembers.push_back(player);
@@ -268,11 +268,11 @@ Unit* PartyMemberToProtect::Calculate()
         if (pVictim == bot)
             continue;
 
-        if (sServerFacade.GetDistance2d(pVictim, bot) > 30.0f)
+        if (sServerFacade.getDistance2d(pVictim, bot) > 30.0f)
             continue;
 
         float attackDistance = isRanged ? 30.0f : 10.0f;
-        if (sServerFacade.GetDistance2d(pVictim, unit) > attackDistance)
+        if (sServerFacade.getDistance2d(pVictim, unit) > attackDistance)
             continue;
 
         if (ai->IsTank((Player*)pVictim) && pVictim->GetHealthPercent() > 10)
@@ -300,7 +300,7 @@ Unit* PartyMemberToRemoveRoots::Calculate()
     {
         for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
         {
-            Player* player = gref->getSource();
+            Player* player = gref->GetSource();
             if (sServerFacade.IsAlive(player))
             {
                 if (player->m_duel && player->m_duel->opponent)

@@ -32,7 +32,7 @@ std::list<ObjectGuid> AttackersValue::Calculate()
 
         if (rtiTarget && rtiTarget->IsInWorld() && rtiTarget->GetMapId() == bot->GetMapId())
         {
-            return { rtiTarget->GetObjectGuid() };
+            return { rtiTarget->getObjectGuid() };
         }
 
         return result;
@@ -55,10 +55,10 @@ std::list<ObjectGuid> AttackersValue::Calculate()
             if (!ai->IsSafe(player))
                 continue;
 
-            if (sServerFacade.GetDistance2d(bot, player) > 10.0f)
+            if (sServerFacade.getDistance2d(bot, player) > 10.0f)
                 continue;
 
-            PlayerbotAI* botAi = player->GetPlayerbotAI();
+            PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(player);
 
             if (!botAi)
                 continue;
@@ -98,7 +98,7 @@ std::list<ObjectGuid> AttackersValue::Calculate()
             {
                 target = (targetName == "attack target") ? ai->GetUnit(PAI_VALUE(ObjectGuid, targetName)) : PAI_VALUE(Unit*, targetName);
                 if (target)
-                    result.remove(target->GetObjectGuid());
+                    result.remove(target->getObjectGuid());
             }
 
             //Add bot specific targets of this bot.
@@ -106,7 +106,7 @@ std::list<ObjectGuid> AttackersValue::Calculate()
             {
                 target = (targetName == "attack target") ? ai->GetUnit(AI_VALUE(ObjectGuid, targetName)) : AI_VALUE(Unit*, targetName);
                 if (target)
-                    result.push_back(target->GetObjectGuid());
+                    result.push_back(target->getObjectGuid());
             }
 
             //Validate these targets.
@@ -161,7 +161,7 @@ std::list<ObjectGuid> AttackersValue::Calculate()
     // Convert the targets to guids
     for (Unit* target : targets)
     {
-        result.push_back(target->GetObjectGuid());
+        result.push_back(target->getObjectGuid());
     }
 
     return result;
@@ -179,7 +179,7 @@ void AttackersValue::AddTargetsOf(Group* group, std::set<Unit*>& targets, std::s
            member->IsInWorld() &&
            !member->IsBeingTeleported() &&
            (member->GetMapId() == bot->GetMapId()) && 
-           (sServerFacade.GetDistance2d(bot, member) <= GetRange()))
+           (sServerFacade.getDistance2d(bot, member) <= GetRange()))
         {
             AddTargetsOf(member, targets, invalidTargets, getOne);
 
@@ -200,7 +200,7 @@ void AttackersValue::AddTargetsOf(Player* player, std::set<Unit*>& targets, std:
         std::set<Unit*> units;
 
         // If the player is a bot
-        PlayerbotAI* playerBot = player->GetPlayerbotAI();
+        PlayerbotAI* playerBot = PlayerbotAIStorage::Instance().GetAI(player);
         if (playerBot)
         {
             // Get all the units around the player
@@ -249,7 +249,7 @@ void AttackersValue::AddTargetsOf(Player* player, std::set<Unit*>& targets, std:
         }
 
         // Get the current attackers of the player
-        for (Unit* attacker : player->getAttackers())
+        for (Unit* attacker : player->GetAttackers())
         {
             units.insert(attacker);
         }
@@ -264,9 +264,9 @@ void AttackersValue::AddTargetsOf(Player* player, std::set<Unit*>& targets, std:
 
         // Add the pet attackers (if nearby)
         Pet* pet = player->GetPet();
-        if (pet && sServerFacade.GetDistance2d(bot, pet) <= GetRange())
+        if (pet && sServerFacade.getDistance2d(bot, pet) <= GetRange())
         {
-            for (Unit* attacker : pet->getAttackers())
+            for (Unit* attacker : pet->GetAttackers())
             {
                 units.insert(attacker);
             }
@@ -282,7 +282,7 @@ void AttackersValue::AddTargetsOf(Player* player, std::set<Unit*>& targets, std:
             if((targets.find(unit) == targets.end()))
             {
                 // Prevent checking a target that has already been invalidated
-                if(InCombat(unit, player) || (invalidTargets.find(unit->GetObjectGuid()) == invalidTargets.end()))
+                if(InCombat(unit, player) || (invalidTargets.find(unit->getObjectGuid()) == invalidTargets.end()))
                 {
                     if (IsValid(unit, player, bot))
                     {
@@ -299,7 +299,7 @@ void AttackersValue::AddTargetsOf(Player* player, std::set<Unit*>& targets, std:
                     }
                     else
                     {
-                        invalidTargets.insert(unit->GetObjectGuid());
+                        invalidTargets.insert(unit->getObjectGuid());
                     }
                 }
             }
@@ -310,7 +310,7 @@ void AttackersValue::AddTargetsOf(Player* player, std::set<Unit*>& targets, std:
 bool AttackersValue::InCombat(Unit* target, Player* player, bool checkPullTargets)
 {
     // Check if the the target is attacking the player
-    bool inCombat = (target->getThreatManager().getThreat(player) > 0.0f) ||
+    bool inCombat = (target->GetThreatManager().GetThreat(player) > 0.0f) ||
                     (target->GetVictim() && (target->GetVictim() == player));
 
     // Check if the target is attacking the player's pet
@@ -319,14 +319,14 @@ bool AttackersValue::InCombat(Unit* target, Player* player, bool checkPullTarget
         Pet* pet = player->GetPet();
         if (pet)
         {
-            inCombat = (target->getThreatManager().getThreat(pet) > 0.0f) ||
+            inCombat = (target->GetThreatManager().GetThreat(pet) > 0.0f) ||
                        (target->GetVictim() && (target->GetVictim() == pet));
         }
     }
 
-    if(!inCombat && checkPullTargets && player->GetPlayerbotAI())
+    if(!inCombat && checkPullTargets && PlayerbotAIStorage::Instance().GetAI(player))
     {
-        inCombat = (PAI_VALUE(ObjectGuid, "attack target") == target->GetObjectGuid()) ||
+        inCombat = (PAI_VALUE(ObjectGuid, "attack target") == target->getObjectGuid()) ||
                    (PAI_VALUE(Unit*, "pull target") == target);
     }
 
@@ -351,7 +351,7 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
     if (enemyPlayer)
     {
         // Don't consider enemy players if pvp strategy is not set
-        if (playerToCheckAgainst->GetPlayerbotAI() && !playerToCheckAgainst->GetPlayerbotAI()->HasStrategy("pvp", BotState::BOT_STATE_COMBAT))
+        if (PlayerbotAIStorage::Instance().GetAI(playerToCheckAgainst) && !PlayerbotAIStorage::Instance().GetAI(playerToCheckAgainst)->HasStrategy("pvp", BotState::BOT_STATE_COMBAT))
         {
             return false;
         }
@@ -362,7 +362,7 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
             return false;
         }
 
-        const bool isDuelOpponent = player->m_duel && player->m_duel->opponent == target->GetObjectGuid();
+        const bool isDuelOpponent = player->m_duel && player->m_duel->opponent == target->getObjectGuid();
 
         // Don't check distance on duel opponents
         if (!isDuelOpponent)
@@ -382,7 +382,7 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
         if (checkInCombat && !isDuelOpponent && !InCombat(target, player, (player == owner)))
         {
             bool isRtiTarget = false;
-            if (player->GetPlayerbotAI() && !player->GetPlayerbotAI()->HasActivePlayerMaster())
+            if (PlayerbotAIStorage::Instance().GetAI(player) && !PlayerbotAIStorage::Instance().GetAI(player)->HasActivePlayerMaster())
             {
                 Unit* rtiTarget = PAI_VALUE(Unit*, "rti target");
                 if (target == rtiTarget)
@@ -411,7 +411,7 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
         if (checkInCombat && !InCombat(target, player, (player == owner)))
         {
             bool isRtiTarget = false;
-            if (player->GetPlayerbotAI() && !player->GetPlayerbotAI()->HasActivePlayerMaster())
+            if (PlayerbotAIStorage::Instance().GetAI(player) && !PlayerbotAIStorage::Instance().GetAI(player)->HasActivePlayerMaster())
             {
                 Unit* rtiTarget = PAI_VALUE(Unit*, "rti target");
                 if (target == rtiTarget)
@@ -423,7 +423,7 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
         }
 
         // If the target is a player's pet and in a PvP prohibited zone
-        if (target->GetObjectGuid().IsPet() && inPvPProhibitedZone)
+        if (target->getObjectGuid().IsPet() && inPvPProhibitedZone)
         {
             return false;
         }
@@ -447,10 +447,10 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
 
 bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
 {
-    if (!playerToCheckAgainst->GetPlayerbotAI())
+    if (!PlayerbotAIStorage::Instance().GetAI(playerToCheckAgainst))
         return false; 
 
-    PlayerbotAI* ai = playerToCheckAgainst->GetPlayerbotAI();
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(playerToCheckAgainst);
     AiObjectContext* context = ai->GetAiObjectContext();
 
     //Ignore Hard hostiles while not already fighting.

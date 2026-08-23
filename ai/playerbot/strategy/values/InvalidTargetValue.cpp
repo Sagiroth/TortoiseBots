@@ -24,7 +24,7 @@ bool InvalidTargetValue::Calculate()
 
     if (qualifier == "current target")
     {
-        if (target->GetObjectGuid() != bot->GetSelectionGuid())
+        if (target->getObjectGuid() != bot->GetSelectionGuid())
         {
             return true;
         }
@@ -34,7 +34,7 @@ bool InvalidTargetValue::Calculate()
     if (!validTarget)
     {
         std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "possible attack targets");
-        if (std::find(attackers.begin(), attackers.end(), target->GetObjectGuid()) != attackers.end())
+        if (std::find(attackers.begin(), attackers.end(), target->getObjectGuid()) != attackers.end())
         {
             return false;
         }

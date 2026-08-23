@@ -11,7 +11,7 @@
 
 bool WipeAction::Execute(Event event)
 {
-    Player* const owner = event.getOwner();
+    Player* const owner = event.GetOwner();
     Player* const master = this->botAI->GetMaster();
 
     if (owner != nullptr && master != nullptr && master->GetGUID() != owner->GetGUID())

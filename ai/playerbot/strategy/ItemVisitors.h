@@ -176,7 +176,7 @@ namespace ai
         QueryItemCountVisitor(uint32 itemId)
         {
             count = 0;
-            this->itemId = itemId;
+            this->itemid = itemId;
         }
 
         virtual bool Visit(Item* item) override

@@ -28,7 +28,7 @@ namespace ai
                 if(ai->IsSafe(unit))
                 {
                     if ((ignoreLos || sServerFacade.IsWithinLOSInMap(bot, unit)) && AcceptUnit(unit))
-                        results.push_back(unit->GetObjectGuid());
+                        results.push_back(unit->getObjectGuid());
                 }
             }
             return results;

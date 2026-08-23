@@ -202,6 +202,7 @@ void BotManager::UpdateControllers(uint32_t diff)
         // until the Strategy/Trigger-driven movement fully replaces it.
         if (entry.aiAdapter && entry.aiAdapter->IsInitialized())
         {
+            printf("TortoiseBots: BotManager UpdateControllers for %s diff %u\n", entry.record.characterGuid.GetString().c_str(), diff);
             entry.aiAdapter->Update(diff);
             // Also tick the legacy controller for follow grouping until the Engine's
             // FollowMasterStrategy is proven to fully replace it.

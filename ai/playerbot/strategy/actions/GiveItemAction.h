@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/strategy/Action.h"
+#include "../../runtime/PlayerbotAIStorage.h" // Headless storage shim
 
 namespace ai
 {
@@ -26,9 +27,9 @@ namespace ai
             if (!target)
                 return false;
 
-            bool isBot = target->IsPlayer() && ((Player*)target)->GetPlayerbotAI();
+            bool isBot = target->IsPlayer() && PlayerbotAIStorage::Instance().GetAI((Player*)target);
 
-            return !isBot || (isBot && !((Player*)target)->GetPlayerbotAI()->HasCheat(BotCheatMask::item));
+            return !isBot || (isBot && !PlayerbotAIStorage::Instance().GetAI((Player*)target)->HasCheat(BotCheatMask::item));
         }
     };
 
@@ -43,9 +44,9 @@ namespace ai
             if (!target)
                 return false;
 
-            bool isBot = target->IsPlayer() && ((Player*)target)->GetPlayerbotAI();
+            bool isBot = target->IsPlayer() && PlayerbotAIStorage::Instance().GetAI((Player*)target);
 
-            return !isBot || (isBot && !((Player*)target)->GetPlayerbotAI()->HasCheat(BotCheatMask::item));
+            return !isBot || (isBot && !PlayerbotAIStorage::Instance().GetAI((Player*)target)->HasCheat(BotCheatMask::item));
         }
     };
 }

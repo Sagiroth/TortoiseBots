@@ -76,7 +76,7 @@ std::string PlayerbotHelpMgr::formatFloat(float num)
 bool PlayerbotHelpMgr::IsGenericSupported(PlayerbotAIAware* object)
 {
     std::set<std::string> supported;
-    std::string name = object->getName();
+    std::string name = object->GetName();
     if (dynamic_cast<Strategy*>(object))
         supported = genericContext->GetSupportedStrategies();
     else if (dynamic_cast<Trigger*>(object))
@@ -94,7 +94,7 @@ bool PlayerbotHelpMgr::IsGenericSupported(PlayerbotAIAware* object)
 
 std::string PlayerbotHelpMgr::GetObjectName(PlayerbotAIAware* object, std::string className)
 {
-    return IsGenericSupported(object) ? object->getName() : className + " " + object->getName();
+    return IsGenericSupported(object) ? object->GetName() : className + " " + object->GetName();
 }
 
 std::string PlayerbotHelpMgr::GetObjectLink(PlayerbotAIAware* object, std::string className)
@@ -110,9 +110,9 @@ std::string PlayerbotHelpMgr::GetObjectLink(PlayerbotAIAware* object, std::strin
         prefix = "value";
 
     if (className != "generic")
-        return "[h:" + prefix + ":" + GetObjectName(object, className) + "|" + object->getName() + "]";
+        return "[h:" + prefix + ":" + GetObjectName(object, className) + "|" + object->GetName() + "]";
     
-    return "[h:" + prefix + "|" + object->getName() + "]";   
+    return "[h:" + prefix + "|" + object->GetName() + "]";   
 }
 
 void PlayerbotHelpMgr::LoadStrategies(std::string className, AiObjectContext* context)
@@ -142,65 +142,65 @@ void PlayerbotHelpMgr::LoadStrategies(std::string className, AiObjectContext* co
 
             if (!triggers.empty())
             {
-                triggers.sort([](TriggerNode* a, TriggerNode* b) {return a->getName() < b->getName(); });
+                triggers.sort([](TriggerNode* a, TriggerNode* b) {return a->GetName() < b->GetName(); });
 
                 for (auto& triggerNode : triggers)
                 {
-                    Trigger* trigger = context->GetTrigger(triggerNode->getName());
+                    Trigger* trigger = context->GetTrigger(triggerNode->GetName());
 
                     if (!trigger)
-                        sLog.outError("Trigger %s is used in strategy %s but can not be created.", triggerNode->getName().c_str(), strategyName.c_str());
+                        sLog.outError("Trigger %s is used in strategy %s but can not be created.", triggerNode->GetName().c_str(), strategyName.c_str());
 
                     if (trigger)
                     {
                         triggerNode->setTrigger(trigger);
 
-                        NextAction** nextActions = triggerNode->getHandlers();
+                        NextAction** nextActions = triggerNode->GetHandlers();
 
                         std::vector<NextAction*> nextActionList;
 
                         for (int32 i = 0; i < NextAction::size(nextActions); i++)
                             nextActionList.push_back(nextActions[i]);
 
-                        std::sort(nextActionList.begin(), nextActionList.end(), [](NextAction* a, NextAction* b) {return a->getName() < b->getName(); });
+                        std::sort(nextActionList.begin(), nextActionList.end(), [](NextAction* a, NextAction* b) {return a->GetName() < b->GetName(); });
 
                         for (auto nextAction : nextActionList)
                         {
-                            Action* action = context->GetAction(nextAction->getName());
+                            Action* action = context->GetAction(nextAction->GetName());
 
                             if (!action)
-                                sLog.outError("Action %s is defined in strategy %s for trigger %s but can not be created.", nextAction->getName().c_str(), strategyName.c_str(), triggerNode->getName().c_str());
+                                sLog.outError("Action %s is defined in strategy %s for trigger %s but can not be created.", nextAction->GetName().c_str(), strategyName.c_str(), triggerNode->GetName().c_str());
 
                             if (action)
                             {
-                                classMap[className][strategy][state][trigger][action] = nextAction->getRelevance();
-                                supportedActionName[action->getName()] = nextAction->getName();
+                                classMap[className][strategy][state][trigger][action] = nextAction->GetRelevance();
+                                supportedActionName[action->GetName()] = nextAction->GetName();
                             }
                         }
                     }
                 }
             }
 
-            if (strategy->getDefaultActions(state))
+            if (strategy->GetDefaultActions(state))
             {
                 std::vector<NextAction*> nextActionList;
 
-                for (int32 i = 0; i < NextAction::size(strategy->getDefaultActions(state)); i++)
-                    nextActionList.push_back(strategy->getDefaultActions(state)[i]);
+                for (int32 i = 0; i < NextAction::size(strategy->GetDefaultActions(state)); i++)
+                    nextActionList.push_back(strategy->GetDefaultActions(state)[i]);
 
-                std::sort(nextActionList.begin(), nextActionList.end(), [](NextAction* a, NextAction* b) {return a->getName() < b->getName(); });
+                std::sort(nextActionList.begin(), nextActionList.end(), [](NextAction* a, NextAction* b) {return a->GetName() < b->GetName(); });
 
                 for (auto nextAction : nextActionList)
                 {
-                    Action* action = context->GetAction(nextAction->getName());
+                    Action* action = context->GetAction(nextAction->GetName());
 
                     if (!action)
-                        sLog.outError("Default action %s is defined in strategy %s but can not be created.", action->getName().c_str(), strategyName.c_str());
+                        sLog.outError("Default action %s is defined in strategy %s but can not be created.", action->GetName().c_str(), strategyName.c_str());
 
                     if (action)
                     {
-                        classMap[className][strategy][state][nullptr][action] = nextAction->getRelevance();
-                        supportedActionName[action->getName()] = nextAction->getName();
+                        classMap[className][strategy][state][nullptr][action] = nextAction->GetRelevance();
+                        supportedActionName[action->GetName()] = nextAction->GetName();
                     }
                 }
             }
@@ -290,7 +290,7 @@ void PlayerbotHelpMgr::GenerateStrategyHelp()
         {
             Strategy* strategy = strat.first;
 
-            std::string strategyName = strategy->getName();
+            std::string strategyName = strategy->GetName();
             std::string linkName = GetObjectName(strategy, className);
 
             stratLinks.push_back(GetObjectLink(strategy, className));
@@ -391,7 +391,7 @@ void PlayerbotHelpMgr::GenerateTriggerHelp()
                     if (!trigger) //Ignore default actions
                         continue;
 
-                    std::string triggerName = trigger->getName();
+                    std::string triggerName = trigger->GetName();
                     std::string linkName = GetObjectName(trigger, className);
 
                     if (std::find(triggers.begin(), triggers.end(), triggerName) != triggers.end())
@@ -510,7 +510,7 @@ void PlayerbotHelpMgr::GenerateActionHelp()
 
                     for (auto& act : trig.second)
                     {
-                        std::string ActionName = act.first->getName();
+                        std::string ActionName = act.first->GetName();
                         Action* action = act.first;
 
                         std::string linkName = GetObjectName(action, className);
@@ -611,19 +611,19 @@ void PlayerbotHelpMgr::GenerateValueHelp()
                             if (!trig.first)
                                 continue;
 
-                            if (trig.first->GetHelpName() == trig.first->getName())
+                            if (trig.first->GetHelpName() == trig.first->GetName())
                                 for (auto val : trig.first->GetUsedValues())
                                     if (val == valueName)
-                                        if (std::find(usedInTrigger.begin(), usedInTrigger.end(), trig.first->getName()) == usedInTrigger.end())
-                                            usedInTrigger.push_back(trig.first->getName());
+                                        if (std::find(usedInTrigger.begin(), usedInTrigger.end(), trig.first->GetName()) == usedInTrigger.end())
+                                            usedInTrigger.push_back(trig.first->GetName());
 
                             for (auto& act : trig.second)
                             {
-                                if (act.first->GetHelpName() == act.first->getName())
+                                if (act.first->GetHelpName() == act.first->GetName())
                                     for (auto val : act.first->GetUsedValues())
                                         if (val == valueName)
-                                            if (std::find(usedInAction.begin(), usedInAction.end(), act.first->getName()) == usedInAction.end())
-                                                usedInAction.push_back(act.first->getName());
+                                            if (std::find(usedInAction.begin(), usedInAction.end(), act.first->GetName()) == usedInAction.end())
+                                                usedInAction.push_back(act.first->GetName());
                             }
                         }
                     }
@@ -636,8 +636,8 @@ void PlayerbotHelpMgr::GenerateValueHelp()
                     if (otherValue->GetHelpName() == otherValueName)
                         for (auto val : otherValue->GetUsedValues())
                             if (val == valueName)
-                                if (std::find(usedInValue.begin(), usedInValue.end(), otherValue->getName()) == usedInValue.end())
-                                    usedInValue.push_back(otherValue->getName());
+                                if (std::find(usedInValue.begin(), usedInValue.end(), otherValue->GetName()) == usedInValue.end())
+                                    usedInValue.push_back(otherValue->GetName());
                 }
 
                 description = value->GetHelpDescription();

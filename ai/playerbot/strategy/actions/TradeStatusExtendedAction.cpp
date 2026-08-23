@@ -23,7 +23,7 @@ bool TradeStatusExtendedAction::Execute(Event event)
     if (!tradeData)
         return false;
 
-    WorldPacket p(event.getPacket());
+    WorldPacket p(event.GetPacket());
     p.rpos(0);
 
     uint8 isTraderData;
@@ -76,7 +76,7 @@ bool TradeStatusExtendedAction::Execute(Event event)
             }
 
             constexpr uint32 SPELL_PICK_LOCK = 1804;
-            if (bot->getClass() == CLASS_ROGUE && bot->HasSpell(SPELL_PICK_LOCK) && lockbox->IsLocked())
+            if (bot->GetClass() == CLASS_ROGUE && bot->HasSpell(SPELL_PICK_LOCK) && lockbox->IsLocked())
             {
                 // botAI->CastSpell(SPELL_PICK_LOCK, bot, lockbox); // Attempt to cast Pick Lock on the lockbox
                 botAI->DoSpecificAction("unlock traded item");

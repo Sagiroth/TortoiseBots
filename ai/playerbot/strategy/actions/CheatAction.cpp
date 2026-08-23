@@ -6,10 +6,10 @@ using namespace ai;
 
 bool CheatAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (requester && requester->GetSession()->GetSecurity() >= SEC_GAMEMASTER)
     {
-        std::string param = event.getParam();
+        std::string param = event.GetParam();
         uint32 cheatMask = (uint32)ai->GetCheat();
         std::vector<std::string> splitted = split(param, ',');
         for (std::vector<std::string>::iterator i = splitted.begin(); i != splitted.end(); i++)

@@ -13,7 +13,7 @@ uint64 extractGuid(WorldPacket& packet);
 
 bool CheckMountStateAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     Player* groupMaster = ai->GetGroupMaster();
 
     if (bot->IsMounted() && (bot->GetTransport() || bot->IsTaxiFlying() || bot->IsBeingTeleported()))
@@ -32,7 +32,7 @@ bool CheckMountStateAction::Execute(Event& event)
     bool farFromMaster = false;
 
     if(groupMaster)
-        farFromMaster = bot->GetMapId() != groupMaster->GetMapId() || bot->GetDistance(groupMaster) > sPlayerbotAIConfig.sightDistance;
+        farFromMaster = bot->GetMapId() != groupMaster->GetMapId() || bot->getDistance(groupMaster) > sPlayerbotAIConfig.sightDistance;
 
     bool canAttackTarget = false;
     bool shouldChaseTarget = false;
@@ -259,17 +259,17 @@ bool CheckMountStateAction::isUseful()
     if (!bot->IsInWorld())
         return false;
 
-    bool isOutdoor = bot->GetMap()->GetTerrain()->IsOutdoors(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ());
+    bool isOutdoor = bot->GetMap()->GetTerrain()->IsOutdoors(bot->getPositionX(), bot->getPositionY(), bot->getPositionZ());
     if (!isOutdoor)
         return false;
 
     if (bot->IsTaxiFlying())
         return false;
 
-    if (bot->getClass() == CLASS_ROGUE && bot->InBattleGround() && (ai->HasAura("stealth", bot) || ai->HasAura("sprint", bot)))
+    if (bot->GetClass() == CLASS_ROGUE && bot->InBattleGround() && (ai->HasAura("stealth", bot) || ai->HasAura("sprint", bot)))
         return false;
 
-    if (bot->getClass() == CLASS_DRUID && bot->InBattleGround() && (ai->HasAura("prowl", bot) || ai->HasAura("dash", bot)))
+    if (bot->GetClass() == CLASS_DRUID && bot->InBattleGround() && (ai->HasAura("prowl", bot) || ai->HasAura("dash", bot)))
         return false;
 
 #ifndef MANGOSBOT_ZERO
@@ -277,7 +277,7 @@ bool CheckMountStateAction::isUseful()
         return false;
 #endif
 
-    if (!bot->GetPlayerbotAI()->HasStrategy("mount", BotState::BOT_STATE_NON_COMBAT) && !bot->IsMounted())
+    if (!PlayerbotAIStorage::Instance().GetAI(bot)->HasStrategy("mount", BotState::BOT_STATE_NON_COMBAT) && !bot->IsMounted())
         return false;
 
     if (!bot->IsMounted() && bot->IsInWater())
@@ -318,7 +318,7 @@ bool CheckMountStateAction::CanFly() const
 
 #ifdef MANGOSBOT_ONE
     uint32 zone, area;
-    bot->GetZoneAndAreaId(zone, area);
+    bot->getZoneAndAreaId(zone, area);
     uint32 v_map = GetVirtualMapForMapAndZone(bot->GetMapId(), zone);
     MapEntry const* mapEntry = sMapStore.LookupEntry(v_map);
     if (!mapEntry || mapEntry->addon < 1 || !mapEntry->IsContinent())
@@ -326,7 +326,7 @@ bool CheckMountStateAction::CanFly() const
 #endif
 #ifdef MANGOSBOT_TWO
     uint32 zone, area;
-    bot->GetZoneAndAreaId(zone, area);
+    bot->getZoneAndAreaId(zone, area);
     if (!bot->CanStartFlyInArea(bot->GetMapId(), zone, area, false))
         return false;
 #endif
@@ -374,7 +374,7 @@ bool CheckMountStateAction::CanMountInBg() const
 
 float CheckMountStateAction::GetAttackDistance() const
 {
-    switch (bot->getClass())
+    switch (bot->GetClass())
     {
     case CLASS_WARRIOR:
     case CLASS_PALADIN:
@@ -403,21 +403,21 @@ bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
     {
         for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
         {
-            Player* member = ref->getSource();
+            Player* member = ref->GetSource();
             if (member == bot)
                 continue;
 
             if (!ai->IsSafe(member))
                 continue;
 
-            if (!member->GetPlayerbotAI())
+            if (!PlayerbotAIStorage::Instance().GetAI(member))
                 continue;
 
             if (!member->IsAlive())
                 continue;
 
-            if (!(member->GetPlayerbotAI()->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
-                member->GetPlayerbotAI()->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)))
+            if (!(PlayerbotAIStorage::Instance().GetAI(member)->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
+                PlayerbotAIStorage::Instance().GetAI(member)->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)))
                 continue;
 
             if (WorldPosition(bot).distance(member) > sPlayerbotAIConfig.reactDistance * 5)

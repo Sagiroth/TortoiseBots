@@ -9,8 +9,8 @@ using namespace ai;
 
 bool AutoLearnSpellAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string param = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string param = event.GetParam();
 
     std::ostringstream out;
 
@@ -49,7 +49,7 @@ void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
 
     if (!ai->HasActivePlayerMaster()) //Hunter spells for pets.
     {
-        if (bot->getClass() == CLASS_HUNTER && bot->GetLevel() >= 10)
+        if (bot->GetClass() == CLASS_HUNTER && bot->GetLevel() >= 10)
         {
 #if !defined(MANGOSBOT_TWO) // Beast training not available in WotLK 
             bot->learnSpell(5149, false); //Beast training
@@ -77,10 +77,10 @@ void AutoLearnSpellAction::LearnTrainerSpells(std::ostringstream* out)
             co->TrainerType != TRAINER_TYPE_PETS)
             continue;
 
-        if (co->TrainerType == TRAINER_TYPE_PETS && bot->getClass() == CLASS_HUNTER)
+        if (co->TrainerType == TRAINER_TYPE_PETS && bot->GetClass() == CLASS_HUNTER)
             continue;
 
-        if ((co->TrainerType == TRAINER_TYPE_CLASS || co->TrainerType == TRAINER_TYPE_PETS) && co->TrainerClass != bot->getClass())
+        if ((co->TrainerType == TRAINER_TYPE_CLASS || co->TrainerType == TRAINER_TYPE_PETS) && co->TrainerClass != bot->GetClass())
             continue;
 
         uint32 trainerId = co->TrainerTemplateId;
@@ -131,7 +131,7 @@ void AutoLearnSpellAction::LearnTrainerSpells(std::ostringstream* out)
                                     if (SpellName.find("Apprentice") != std::string::npos && pSkill->categoryId == SKILL_CATEGORY_PROFESSION || pSkill->categoryId == SKILL_CATEGORY_SECONDARY)
                                         continue;
 #elif defined(MANGOSBOT_ONE) || defined(MANGOSBOT_TWO) // TBC OR WOTLK
-                                    std::string SpellRank = spell->Rank[0];
+                                    std::string SpellRank = spell->rank[0];
                                     if (SpellName.find("Apprentice") != std::string::npos && (pSkill->categoryId == SKILL_CATEGORY_PROFESSION || pSkill->categoryId == SKILL_CATEGORY_SECONDARY))
                                         continue;
                                     else if (SpellRank.find("Apprentice") != std::string::npos && (pSkill->categoryId == SKILL_CATEGORY_PROFESSION || pSkill->categoryId == SKILL_CATEGORY_SECONDARY))
@@ -234,7 +234,7 @@ void AutoLearnSpellAction::LearnDroppedSpells(std::ostringstream* out)
     spellList[CLASS_DRUID][50] = { 21849 };
     spellList[CLASS_DRUID][60] = { 31018, 25297, 25299, 25298, 21850 };
     
-    for (const auto& levelSpells : spellList[bot->getClass()])
+    for (const auto& levelSpells : spellList[bot->GetClass()])
     {
         if (bot->GetLevel() >= levelSpells.first)
         {
@@ -292,7 +292,7 @@ void AutoLearnSpellAction::GetClassQuestItem(Quest const* quest, std::ostringstr
 std::string formatSpell(SpellEntry const* sInfo)
 {
     std::ostringstream out;
-    std::string rank = sInfo->Rank[0];
+    std::string rank = sInfo->rank[0];
 
     if (rank.empty())
         out << "|cffffffff|Hspell:" << sInfo->Id << "|h[" << sInfo->SpellName[LOCALE_enUS] << "]|h|r" << " (" << sInfo->Id << ")";
@@ -365,26 +365,26 @@ bool AutoLearnSpellAction::IsValidSpell(uint32 spellId)
         spellId != 8385 && // Prevents Shaman from learning Swift Wind spell which is cast onto player as a reward, the spell is not supposed to be learned.
         // Hunter
         spellId != 542  && // Prevents hunter from learning pet skill zzOLDLearn Nature Resistance.
-        spellId != 6284 && // Prevents hunter from learning pet skill Pet Hardiness Rank 1
-        spellId != 6287 && // Prevents hunter from learning pet skill Pet Hardiness Rank 2
-        spellId != 6288 && // Prevents hunter from learning pet skill Pet Hardiness Rank 3
-        spellId != 6289 && // Prevents hunter from learning pet skill Pet Hardiness Rank 4
-        spellId != 6290 && // Prevents hunter from learning pet skill Pet Hardiness Rank 5
-        spellId != 6312 && // Prevents hunter from learning pet skill Pet Aggression Rank 1
-        spellId != 6318 && // Prevents hunter from learning pet skill Pet Aggression Rank 2
-        spellId != 6319 && // Prevents hunter from learning pet skill Pet Aggression Rank 3
-        spellId != 6320 && // Prevents hunter from learning pet skill Pet Aggression Rank 4
-        spellId != 6321 && // Prevents hunter from learning pet skill Pet Aggression Rank 5
-        spellId != 6329 && // Prevents hunter from learning pet skill Pet Recovery Rank 1
-        spellId != 6335 && // Prevents hunter from learning pet skill Pet Recovery Rank 2
-        spellId != 6336 && // Prevents hunter from learning pet skill Pet Recovery Rank 3
-        spellId != 6337 && // Prevents hunter from learning pet skill Pet Recovery Rank 4
-        spellId != 6338 && // Prevents hunter from learning pet skill Pet Recovery Rank 5
-        spellId != 6448 && // Prevents hunter from learning pet skill Pet Resistance Rank 1
-        spellId != 6450 && // Prevents hunter from learning pet skill Pet Resistance Rank 2
-        spellId != 6451 && // Prevents hunter from learning pet skill Pet Resistance Rank 3
-        spellId != 6452 && // Prevents hunter from learning pet skill Pet Resistance Rank 4
-        spellId != 6453 && // Prevents hunter from learning pet skill Pet Resistance Rank 5
+        spellId != 6284 && // Prevents hunter from learning pet skill Pet Hardiness rank 1
+        spellId != 6287 && // Prevents hunter from learning pet skill Pet Hardiness rank 2
+        spellId != 6288 && // Prevents hunter from learning pet skill Pet Hardiness rank 3
+        spellId != 6289 && // Prevents hunter from learning pet skill Pet Hardiness rank 4
+        spellId != 6290 && // Prevents hunter from learning pet skill Pet Hardiness rank 5
+        spellId != 6312 && // Prevents hunter from learning pet skill Pet Aggression rank 1
+        spellId != 6318 && // Prevents hunter from learning pet skill Pet Aggression rank 2
+        spellId != 6319 && // Prevents hunter from learning pet skill Pet Aggression rank 3
+        spellId != 6320 && // Prevents hunter from learning pet skill Pet Aggression rank 4
+        spellId != 6321 && // Prevents hunter from learning pet skill Pet Aggression rank 5
+        spellId != 6329 && // Prevents hunter from learning pet skill Pet Recovery rank 1
+        spellId != 6335 && // Prevents hunter from learning pet skill Pet Recovery rank 2
+        spellId != 6336 && // Prevents hunter from learning pet skill Pet Recovery rank 3
+        spellId != 6337 && // Prevents hunter from learning pet skill Pet Recovery rank 4
+        spellId != 6338 && // Prevents hunter from learning pet skill Pet Recovery rank 5
+        spellId != 6448 && // Prevents hunter from learning pet skill Pet Resistance rank 1
+        spellId != 6450 && // Prevents hunter from learning pet skill Pet Resistance rank 2
+        spellId != 6451 && // Prevents hunter from learning pet skill Pet Resistance rank 3
+        spellId != 6452 && // Prevents hunter from learning pet skill Pet Resistance rank 4
+        spellId != 6453 && // Prevents hunter from learning pet skill Pet Resistance rank 5
         // Paladin
         spellId != 1973; // Prevents Paladins from learning zzOldHip Shot III.
 #elif MANGOSBOT_ONE
@@ -413,12 +413,12 @@ bool AutoLearnSpellAction::IsValidSpell(uint32 spellId)
         spellId != 49916 && // DK Strangulate doesn't have ranks
         // Mage
         spellId != 526 &&   // Prevents mage from learning shaman Cure Toxins
-        spellId != 52127 && // Prevents mage from learning shaman Water Shield Rank 1
-        spellId != 52129 && // Prevents mage from learning shaman Water Shield Rank 2
-        spellId != 52131 && // Prevents mage from learning shaman Water Shield Rank 3
-        spellId != 52134 && // Prevents mage from learning shaman Water Shield Rank 4
-        spellId != 52136 && // Prevents mage from learning shaman Water Shield Rank 5
-        spellId != 52138 && // Prevents mage from learning shaman Water Shield Rank 6
+        spellId != 52127 && // Prevents mage from learning shaman Water Shield rank 1
+        spellId != 52129 && // Prevents mage from learning shaman Water Shield rank 2
+        spellId != 52131 && // Prevents mage from learning shaman Water Shield rank 3
+        spellId != 52134 && // Prevents mage from learning shaman Water Shield rank 4
+        spellId != 52136 && // Prevents mage from learning shaman Water Shield rank 5
+        spellId != 52138 && // Prevents mage from learning shaman Water Shield rank 6
         spellId != 51730 && // Prevents mage from learning shaman Earthliving Weapon 1
         spellId != 51988 && // Prevents mage from learning shaman Earthliving Weapon 2
         spellId != 51991 && // Prevents mage from learning shaman Earthliving Weapon 3
@@ -430,7 +430,7 @@ bool AutoLearnSpellAction::IsValidSpell(uint32 spellId)
         spellId != 66844 && // Prevents mage from learning shaman Call of the Spirits
         spellId != 42748 && // Prevents mage from learning shaman Shadow Axe
         spellId != 2894 &&  // Prevents mage from learning shaman Fire Elemental Totem
-        spellId != 51505 && // Prevents mage from learning shaman Lave Burst Rank 1
+        spellId != 51505 && // Prevents mage from learning shaman Lave Burst rank 1
         spellId != 51514;   // Prevents mage from learning shaman Hex
 #endif
     return isSpellValid;

@@ -16,7 +16,7 @@ bool IsBehindValue::Calculate()
     if (!target)
         return false;
 
-    float targetOrientation = target->GetOrientation();
+    float targetOrientation = target->getOrientation();
 
     float deltaAngle = Position::NormalizeOrientation(targetOrientation - target->GetAngle(bot));
     if (deltaAngle > M_PI)

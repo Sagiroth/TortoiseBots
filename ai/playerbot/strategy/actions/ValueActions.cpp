@@ -53,10 +53,10 @@ Player* FindGroupPlayerByName(Player* player, const std::string& playerName)
 
 bool SetFocusHealTargetsAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (ai->IsHeal(bot) || ai->HasStrategy("offheal", BotState::BOT_STATE_COMBAT))
     {
-        const std::string param = LowercaseString(event.getParam());
+        const std::string param = LowercaseString(event.GetParam());
         if (!param.empty())
         {
             std::list<ObjectGuid> focusHealTargets = AI_VALUE(std::list<ObjectGuid>, "focus heal targets");
@@ -132,7 +132,7 @@ bool SetFocusHealTargetsAction::Execute(Event& event)
                                 const Player* target = FindGroupPlayerByName(bot, playerName);
                                 if (target)
                                 {
-                                    const ObjectGuid& targetGuid = target->GetObjectGuid();
+                                    const ObjectGuid& targetGuid = target->getObjectGuid();
                                     if (add)
                                     {
                                         // Check if the target exists already on the list
@@ -202,8 +202,8 @@ bool SetFocusHealTargetsAction::Execute(Event& event)
 
 bool SetWaitForAttackTimeAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string newTimeStr = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string newTimeStr = event.GetParam();
     if (!newTimeStr.empty())
     {
         // Check if the param is a number
@@ -237,8 +237,8 @@ bool SetWaitForAttackTimeAction::Execute(Event& event)
 
 bool SetFollowTargetAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    const std::string param = LowercaseString(event.getParam());
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    const std::string param = LowercaseString(event.GetParam());
     if (!param.empty())
     {
         const bool removeTarget = param == "none" || param == "unset";
@@ -289,8 +289,8 @@ bool SetFollowTargetAction::Execute(Event& event)
 
 bool SetSpellTargetAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    const std::string param = LowercaseString(event.getParam());
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    const std::string param = LowercaseString(event.GetParam());
     if (!param.empty())
     {
         std::list<ObjectGuid> targets = AI_VALUE(std::list<ObjectGuid>, name);
@@ -366,7 +366,7 @@ bool SetSpellTargetAction::Execute(Event& event)
                             const Player* target = FindGroupPlayerByName(bot, playerName);
                             if (target)
                             {
-                                const ObjectGuid& targetGuid = target->GetObjectGuid();
+                                const ObjectGuid& targetGuid = target->getObjectGuid();
                                 if (add)
                                 {
                                     // Check if the target exists already on the list

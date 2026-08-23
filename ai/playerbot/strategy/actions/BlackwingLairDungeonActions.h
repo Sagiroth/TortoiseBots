@@ -55,7 +55,7 @@ namespace ai
                 ai->TellPlayerNoFacing(GetMaster(), "Moving to Suppression Device at " + std::to_string((int)closestDist) + " yards");
             }
 
-            return MoveTo(closest.getMapId(), closest.getX(), closest.getY(), closest.getZ());
+            return MoveTo(closest.GetMapId(), closest.getX(), closest.getY(), closest.getZ());
         }
 
         bool isPossible() override
@@ -77,7 +77,7 @@ namespace ai
 
         bool Execute(Event& event) override
         {
-            if (bot->getClass() != CLASS_ROGUE)
+            if (bot->GetClass() != CLASS_ROGUE)
                 return false;
 
             if (ai->HasAura("stealth", bot))
@@ -96,7 +96,7 @@ namespace ai
 
         bool isPossible() override
         {
-            return bot->getClass() == CLASS_ROGUE && !ai->HasAura("stealth", bot);
+            return bot->GetClass() == CLASS_ROGUE && !ai->HasAura("stealth", bot);
         }
 
         bool isUseful() override
@@ -130,11 +130,11 @@ namespace ai
                 if (go->GetLootState() != GO_READY)
                     continue;
 
-                if (!bot->GetGameObjectIfCanInteractWith(go->GetObjectGuid(), GAMEOBJECT_TYPE_TRAP))
+                if (!bot->GetGameObjectIfCanInteractWith(go->getObjectGuid(), GAMEOBJECT_TYPE_TRAP))
                     continue;
 
                 std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
-                *packet << go->GetObjectGuid();
+                *packet << go->getObjectGuid();
                 bot->GetSession()->QueuePacket(std::move(packet));
 
                 if (ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
@@ -161,7 +161,7 @@ namespace ai
 
         bool Execute(Event& event) override
         {
-            if (bot->getClass() != CLASS_ROGUE)
+            if (bot->GetClass() != CLASS_ROGUE)
                 return false;
 
             if (!bot->HasSpell(SPELL_DISARM_TRAP))
@@ -206,7 +206,7 @@ namespace ai
 
         bool isPossible() override
         {
-            return bot->getClass() == CLASS_ROGUE && 
+            return bot->GetClass() == CLASS_ROGUE && 
                    bot->HasSpell(SPELL_DISARM_TRAP) && 
                    ai->CanMove();
         }

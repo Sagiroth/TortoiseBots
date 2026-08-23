@@ -9,10 +9,10 @@ bool RememberTaxiAction::Execute(Event& event)
 {
 
 
-    WorldPacket p(event.getPacket());
+    WorldPacket p(event.GetPacket());
     p.rpos(0);
 
-    switch (p.GetOpcode())
+    switch (p.getOpcode())
     {
     case CMSG_ACTIVATETAXI:
         {

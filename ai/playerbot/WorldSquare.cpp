@@ -8,17 +8,17 @@ void WorldPointContainer::printWKT(std::ostringstream& out, bool squares) const
     if (!squares)
     {
         for (auto& p : points)
-            out << p->getDisplayX() << " " << p->getDisplayY() << ",";
+            out << p->GetDisplayX() << " " << p->GetDisplayY() << ",";
     }
     {
         for (auto& p : GetSquare())
-            out << p.getDisplayX() << " " << p.getDisplayY() << ",";
+            out << p.GetDisplayX() << " " << p.GetDisplayY() << ",";
     }
 }
 
 float MapWpSquare::sqOutDistance(const WorldPosition& point) const
 {
-    if (point.mapid != mapId)
+    if (point.mapId != mapId)
     {
         float minSqDist = FLT_MAX;
         //distance = point -> portal (on map of square)

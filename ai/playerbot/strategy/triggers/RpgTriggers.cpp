@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "../../runtime/PlayerbotAIStorage.h" // Headless storage shim
 #include "RpgTriggers.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/actions/GuildCreateActions.h"
@@ -40,7 +41,7 @@ bool RpgTaxiTrigger::IsActive()
     if (guidP.IsHostileTo(bot))
         return false;
 
-    uint32 node = sObjectMgr.GetNearestTaxiNode(guidP.getX(), guidP.getY(), guidP.getZ(), guidP.getMapId(), bot->GetTeam());
+    uint32 node = sObjectMgr.GetNearestTaxiNode(guidP.getX(), guidP.getY(), guidP.getZ(), guidP.GetMapId(), bot->GetTeam());
 
     if (!node)
         return false;
@@ -52,7 +53,7 @@ bool RpgTaxiTrigger::IsActive()
     for (uint32 i = 0; i < sTaxiPathStore.GetNumRows(); ++i)
     {
         TaxiPathEntry const* entry = sTaxiPathStore.LookupEntry(i);
-        if (entry && entry->from == node && (bot->m_taxi.IsTaximaskNodeKnown(entry->to) || bot->isTaxiCheater()))
+        if (entry && entry->from == node && (bot->m_taxi.IsTaximaskNodeKnown(entry->to) || bot->IsTaxiCheater()))
         {
             return true;
         }
@@ -73,10 +74,10 @@ bool RpgDiscoverTrigger::IsActive()
     if (guidP.IsHostileTo(bot))
         return false;
 
-    if (bot->isTaxiCheater())
+    if (bot->IsTaxiCheater())
         return false;
 
-    uint32 node = sObjectMgr.GetNearestTaxiNode(guidP.getX(), guidP.getY(), guidP.getZ(), guidP.getMapId(), bot->GetTeam());
+    uint32 node = sObjectMgr.GetNearestTaxiNode(guidP.getX(), guidP.getY(), guidP.getZ(), guidP.GetMapId(), bot->GetTeam());
 
     if (bot->m_taxi.IsTaximaskNodeKnown(node))
         return false;
@@ -259,7 +260,7 @@ bool RpgRepairTrigger::IsActive()
     if (guidP.IsHostileTo(bot))
         return false;
 
-    if (bot->GetGroup() && bot->GetGroup()->IsLeader(bot->GetObjectGuid()) && AI_VALUE2_LAZY(bool, "group or", "can repair,following party,near leader"))
+    if (bot->GetGroup() && bot->GetGroup()->IsLeader(bot->getObjectGuid()) && AI_VALUE2_LAZY(bool, "group or", "can repair,following party,near leader"))
         return true;
 
     if (AI_VALUE(bool, "can repair"))
@@ -274,19 +275,19 @@ bool RpgTrainTrigger::IsTrainerOf(CreatureInfo const* cInfo, Player* pPlayer)
     switch (cInfo->TrainerType)
     {
     case TRAINER_TYPE_CLASS:
-        if (pPlayer->getClass() != cInfo->TrainerClass)
+        if (pPlayer->GetClass() != cInfo->TrainerClass)
         {
             return false;
         }
         break;
     case TRAINER_TYPE_PETS:
-        if (pPlayer->getClass() != CLASS_HUNTER)
+        if (pPlayer->GetClass() != CLASS_HUNTER)
         {
             return false;
         }
         break;
     case TRAINER_TYPE_MOUNTS:
-        if (cInfo->TrainerRace && pPlayer->getRace() != cInfo->TrainerRace)
+        if (cInfo->TrainerRace && pPlayer->GetRace() != cInfo->TrainerRace)
         {
             // Allowed to train if exalted
             if (FactionTemplateEntry const* faction_template = sFactionTemplateStore.LookupEntry(cInfo->Faction))
@@ -503,7 +504,7 @@ bool RpgHomeBindTrigger::IsActive()
         return false;
 
     //Update if the new bind is closer to the group leaders bind than the old one.
-    if (bot->GetGroup() && !ai->IsGroupLeader() && ai->GetGroupMaster() && ai->GetGroupMaster()->GetPlayerbotAI())
+    if (bot->GetGroup() && !ai->IsGroupLeader() && ai->GetGroupMaster() && PlayerbotAIStorage::Instance().GetAI(ai->GetGroupMaster()))
     {
         Player* player = ai->GetGroupMaster();
 
@@ -539,7 +540,7 @@ bool RpgQueueBGTrigger::IsActive()
     if (guidP.IsHostileTo(bot))
         return false;
 
-    if (bot->GetGroup() && !bot->GetGroup()->IsLeader(bot->GetObjectGuid()))
+    if (bot->GetGroup() && !bot->GetGroup()->IsLeader(bot->getObjectGuid()))
         return false;
 
     if (AI_VALUE(BattleGroundTypeId, "rpg bg type") == BATTLEGROUND_TYPE_NONE)
@@ -547,7 +548,7 @@ bool RpgQueueBGTrigger::IsActive()
 
     Action* action = context->GetAction("free bg join");
 
-    if (!action->isUseful())
+    if (!action->IsUseful())
         return false;
 
     return true;
@@ -647,7 +648,7 @@ bool RpgAIChatTrigger::IsActive()
     {
         Player* player = guidP.GetPlayer();
 
-        if (!player || player->isRealPlayer())
+        if (!player || isRealPlayer_Helper(player))
             return false;
     }
 
@@ -709,7 +710,7 @@ bool RpgTradeUsefulTrigger::isFriend(Player* player)
     if (ai->IsAlt() && GetMaster() == player)
         return true;
 
-    if (player->GetPlayerbotAI() && player->GetPlayerbotAI()->GetMaster() == bot && player->GetPlayerbotAI()->IsAlt())
+    if (PlayerbotAIStorage::Instance().GetAI(player) && PlayerbotAIStorage::Instance().GetAI(player)->GetMaster() == bot && PlayerbotAIStorage::Instance().GetAI(player)->IsAlt())
         return true;
 
     if (player->GetGuildId() && player->GetGuildId() == bot->GetGuildId())
@@ -806,7 +807,7 @@ bool RpgDuelTrigger::IsActive()
     if (ai->HasRealPlayerMaster())
     {
         // do not auto duel if master is not afk
-        if (ai->GetMaster() && !ai->GetMaster()->isAFK())
+        if (ai->GetMaster() && !ai->GetMaster()->IsAFK())
             return false;
     }
 
@@ -831,7 +832,7 @@ bool RpgDuelTrigger::IsActive()
         return false;
 
     // caster or target already have requested duel
-    if (bot->m_duel || player->m_duel || !player->GetSocial() || player->GetSocial()->HasIgnore(bot->GetObjectGuid()))
+    if (bot->m_duel || player->m_duel || !player->GetSocial() || player->GetSocial()->HasIgnore(bot->getObjectGuid()))
         return false;
 
     AreaTableEntry const* targetAreaEntry = GetAreaEntryByAreaID(sServerFacade.GetAreaId(player));
@@ -911,7 +912,7 @@ bool RpgGossipTalkTrigger::IsActive()
     if (!creature)
         return false;
 
-    if (!creature->isGossip())
+    if (!creature->IsGossip())
         return false;
 
 #ifdef MANGOSBOT_TWO

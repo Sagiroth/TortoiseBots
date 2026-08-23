@@ -14,7 +14,7 @@ namespace ai
     {
     public:
         virtual bool IsIn(const WorldPosition& point) const {
-            return point.coord_x >= min.coord_x && point.coord_x <= max.coord_x && point.coord_y >= min.coord_y && point.coord_y <= max.coord_y;
+            return point.x >= min.x && point.x <= max.x && point.y >= min.y && point.y <= max.y;
         }
 
         virtual float sqInDistance(const WorldPosition& point) const = 0;
@@ -435,7 +435,7 @@ namespace ai
     {
     public:
         virtual bool IsIn(const WorldPosition& point) const override {
-            if (point.getMapId() != mapId) return false; return WorldPointSquareContainer
+            if (point.GetMapId() != mapId) return false; return WorldPointSquareContainer
                 ::IsIn(point);
         }
 
@@ -443,7 +443,7 @@ namespace ai
 
         virtual void AddPoint(WorldPosition* point) override {
             WorldPointSquareContainer::AddPoint(point);
-            mapId = point->getMapId();
+            mapId = point->GetMapId();
         }
     private:
         static uint32 GetGridId(const WorldPosition& point)
@@ -466,12 +466,12 @@ namespace ai
         }
     protected:
         virtual bool IsIn(const WorldPosition& point) const override { return true; }
-        virtual bool OnMap(const WorldPosition& point) const { return HasSubSquare(point.getMapId()); }
+        virtual bool OnMap(const WorldPosition& point) const { return HasSubSquare(point.GetMapId()); }
         virtual uint32 ClosestMapId(const WorldPosition& point) const;
         const MapEntry* ClosetMapEntry(const WorldPosition& point) const { return sMapStore.LookupEntry(ClosestMapId(point)); }
         virtual bool IsOverWorld(const WorldPosition& point) const { const MapEntry* entry = ClosetMapEntry(point); return entry ? entry->IsContinent() : false; }
         virtual bool IsUnique() const { return GetSize() == 1; }
     private:
-        virtual uint32 GetSubSquareId(const WorldPosition& point) const override { return point.mapid; };
+        virtual uint32 GetSubSquareId(const WorldPosition& point) const override { return point.mapId; };
     };
 }

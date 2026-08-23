@@ -7,10 +7,10 @@ using namespace ai;
 
 bool TellItemCountAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if(requester)
     {
-        std::string text = event.getParam();
+        std::string text = event.GetParam();
 
         if (text.find("@") == 0)
             return false;

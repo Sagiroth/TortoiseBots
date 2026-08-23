@@ -1073,7 +1073,7 @@ public:
     float GetValue(Action* action) override
     {
         // Disable Berserker Stance
-        const std::string& actionName = action->getName();
+        const std::string& actionName = action->GetName();
         if ((actionName == "berserker stance" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||
@@ -1108,7 +1108,7 @@ public:
     float GetValue(Action* action) override
     {
         // Disable Berserker Stance
-        const std::string& actionName = action->getName();
+        const std::string& actionName = action->GetName();
         if ((actionName == "berserker stance" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||
@@ -1143,7 +1143,7 @@ public:
     float GetValue(Action* action) override
     {
         // Disable Berserker Stance
-        const std::string& actionName = action->getName();
+        const std::string& actionName = action->GetName();
         if ((actionName == "berserker stance" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||

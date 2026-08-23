@@ -3,7 +3,7 @@
 
 bool UnstuckAction::Execute(Event& event)
 {
-    std::string source = event.getSource();
+    std::string source = event.GetSource();
     Player* bot = ai->GetBot();
     Player* master = ai->GetMaster();
 

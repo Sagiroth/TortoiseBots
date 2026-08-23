@@ -10,17 +10,17 @@ using namespace ai;
 
 bool WtsAction::Execute(Event& event)
 {
-    Player* owner = event.getOwner();
+    Player* owner = event.GetOwner();
     if (!owner)
         return false;
 
     std::ostringstream out;
-    std::string text = event.getParam();
+    std::string text = event.GetParam();
 
     if (!sRandomPlayerbotMgr.IsRandomBot(bot))
         return false;
 
-    std::string link = event.getParam();
+    std::string link = event.GetParam();
 
     ItemIds itemIds = chat->parseItems(link);
     if (itemIds.empty())
@@ -49,7 +49,7 @@ bool WtsAction::Execute(Event& event)
         tell << "I'll buy " << chat->formatItem(proto) << " for " << chat->formatMoney(buyPrice);
 
         // ignore random bot chat filter
-        bot->Whisper(tell.str(), LANG_UNIVERSAL, owner->GetObjectGuid());
+        bot->Whisper(tell.str(), LANG_UNIVERSAL, owner->getObjectGuid());
     }
 
     return true;

@@ -12,7 +12,7 @@ void TellPosition(PlayerbotAI* ai, Player* requester, std::string name, ai::Posi
     if (pos.isSet())
     {
         float x = pos.x, y = pos.y;
-        Map2ZoneCoordinates(x, y, ai->GetBot()->GetZoneId());
+        Map2ZoneCoordinates(x, y, ai->GetBot()->getZoneId());
         out << " is set to " << x << "," << y;
     }
     else
@@ -22,8 +22,8 @@ void TellPosition(PlayerbotAI* ai, Player* requester, std::string name, ai::Posi
 
 bool PositionAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string param = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string param = event.GetParam();
 	if (param.empty())
 		return false;
 
@@ -70,7 +70,7 @@ bool PositionAction::Execute(Event& event)
 
 	if (action == "set")
 	{
-        pos.Set(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), ai->GetBot()->GetMapId());
+        pos.Set(bot->getPositionX(), bot->getPositionY(), bot->getPositionZ(), ai->GetBot()->GetMapId());
 	    posMap[name] = pos;
 
 	    std::ostringstream out; out << "Position " << name << " is set";
@@ -93,7 +93,7 @@ bool PositionAction::Execute(Event& event)
 
 bool MoveToPositionAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 	ai::PositionEntry pos = context->GetValue<ai::PositionMap&>("position")->Get()[qualifier];
     if (!pos.isSet())
     {
@@ -154,7 +154,7 @@ bool SetReturnPositionAction::Execute(Event& event)
         float dist = ai->GetRange("follow") * urand(0, 1000) / 1000.0f;
         float x = returnPos.x + cos(angle) * dist,
              y = returnPos.y + sin(angle) * dist,
-             z = bot->GetPositionZ();
+             z = bot->getPositionZ();
         bot->UpdateAllowedPositionZ(x, y, z);
 
         if (!bot->IsWithinLOS(x, y, z, true))
@@ -186,13 +186,13 @@ bool ReturnToStayPositionAction::isPossible()
     PositionEntry stayPosition = posMap["stay"];
     if (stayPosition.isSet())
     {
-        const float distance = bot->GetDistance(stayPosition.x, stayPosition.y, stayPosition.z);
+        const float distance = bot->getDistance(stayPosition.x, stayPosition.y, stayPosition.z);
         if (distance > sPlayerbotAIConfig.reactDistance)
         {
             ai->TellError(GetMaster(), "The stay position is too far to return. I am going to stay where I am now");
             
             // Set the stay position to current position
-            stayPosition.Set(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+            stayPosition.Set(bot->getPositionX(), bot->getPositionY(), bot->getPositionZ(), bot->GetMapId());
             posMap["stay"] = stayPosition;
         }
 
@@ -216,13 +216,13 @@ bool ReturnToPullPositionAction::isPossible()
             {
                 if (target->GetTarget() == bot)
                 {
-                    const float distance = bot->GetDistance(stayPosition.x, stayPosition.y, stayPosition.z);
+                    const float distance = bot->getDistance(stayPosition.x, stayPosition.y, stayPosition.z);
                     if (distance > sPlayerbotAIConfig.reactDistance)
                     {
                         ai->TellError(GetMaster(), "The pull position is too far to return. I am going to pull where I am now");
 
                         // Set the stay position to current position
-                        stayPosition.Set(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+                        stayPosition.Set(bot->getPositionX(), bot->getPositionY(), bot->getPositionZ(), bot->GetMapId());
                         posMap["pull"] = stayPosition;
                     }
 

@@ -17,7 +17,7 @@
 bool PetsAction::Execute(Event event)
 {
     // Extract the command parameter from the event (e.g., "aggressive", "defensive", "attack", etc.)
-    std::string param = event.getParam();
+    std::string param = event.GetParam();
     if (param.empty() && !defaultCmd.empty())
         param = defaultCmd;
 
@@ -153,7 +153,7 @@ bool PetsAction::Execute(Event event)
             botAI->TellError(text);
             return false;
         }
-        if (sPlayerbotAIConfig.IsPvpProhibited(bot->GetZoneId(), bot->GetAreaId()) &&
+        if (sPlayerbotAIConfig.IsPvpProhibited(bot->getZoneId(), bot->GetAreaId()) &&
             (targetUnit->IsPlayer() || targetUnit->IsPet()) &&
             (!bot->duel || bot->duel->Opponent != targetUnit))
         {

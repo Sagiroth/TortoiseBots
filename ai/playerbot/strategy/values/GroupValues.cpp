@@ -15,11 +15,11 @@ std::list<ObjectGuid> GroupMembersValue::Calculate()
     {
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
         {
-            members.push_back(ref->getSource()->GetObjectGuid());
+            members.push_back(ref->GetSource()->getObjectGuid());
         }
     }
     else
-        members.push_back(bot->GetObjectGuid());
+        members.push_back(bot->getObjectGuid());
 
     return members;
 }
@@ -47,7 +47,7 @@ bool IsNearLeaderValue::Calculate()
     if (groupMaster == bot)
         return true;
 
-    return sServerFacade.GetDistance2d(bot, ai->GetGroupMaster()) < sPlayerbotAIConfig.reactDistance;
+    return sServerFacade.getDistance2d(bot, ai->GetGroupMaster()) < sPlayerbotAIConfig.reactDistance;
 }
 
 uint32 GroupBoolCountValue::Calculate()
@@ -64,7 +64,7 @@ uint32 GroupBoolCountValue::Calculate()
         if (!ai->IsSafe(player))
             continue;
 
-        if (!player->GetPlayerbotAI())
+        if (!PlayerbotAIStorage::Instance().GetAI(player))
             continue;
 
         if (PAI_VALUE2(bool, "and", getQualifier()))
@@ -86,7 +86,7 @@ bool GroupBoolANDValue::Calculate()
         if (!ai->IsSafe(player))
             continue;
 
-        if (!player->GetPlayerbotAI())
+        if (!PlayerbotAIStorage::Instance().GetAI(player))
             continue;
 
         if (!PAI_VALUE2(bool,"and", getQualifier()))
@@ -108,7 +108,7 @@ bool GroupBoolORValue::Calculate()
         if (!ai->IsSafe(player))
             continue;
 
-        if (!player->GetPlayerbotAI())
+        if (!PlayerbotAIStorage::Instance().GetAI(player))
             continue;
 
         if (PAI_VALUE2(bool, "and", getQualifier()))
@@ -131,7 +131,7 @@ bool GroupReadyValue::Calculate()
 
         if (inDungeon) // In dungeons all following members need to be alive before continuing.
         {
-            PlayerbotAI* memberAi = member->GetPlayerbotAI();
+            PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(member);
 
             bool isFollowing = memberAi
                 ? (memberAi->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
@@ -142,7 +142,7 @@ bool GroupReadyValue::Calculate()
                 return false;
         }
         //We only wait for members that are in range otherwise we might be waiting for bots stuck in dead loops forever.
-        if (ai->GetGroupMaster() && sServerFacade.GetDistance2d(member, ai->GetGroupMaster()) > sPlayerbotAIConfig.sightDistance)
+        if (ai->GetGroupMaster() && sServerFacade.getDistance2d(member, ai->GetGroupMaster()) > sPlayerbotAIConfig.sightDistance)
             continue;        
 
         bool hasAttackers = AI_VALUE_LAZY(bool, "has attackers") || AI_VALUE_LAZY(bool, "has enemy player targets") || AI_VALUE_LAZY(Unit*, "dps target");

@@ -13,10 +13,10 @@ namespace ai
         virtual bool Execute(Event& event) override
         {
             Player* passLeaderTo = PassLeaderTo(event);
-            if (passLeaderTo && passLeaderTo != bot && bot->GetGroup() && bot->GetGroup()->IsMember(passLeaderTo->GetObjectGuid()))
+            if (passLeaderTo && passLeaderTo != bot && bot->GetGroup() && bot->GetGroup()->IsMember(passLeaderTo->getObjectGuid()))
             {
                 WorldPacket p(SMSG_GROUP_SET_LEADER, 8);
-                p << passLeaderTo->GetObjectGuid();
+                p << passLeaderTo->getObjectGuid();
                 bot->GetSession()->HandleGroupSetLeaderOpcode(p);
                 
                 if (!message.empty())
@@ -36,7 +36,7 @@ namespace ai
 
         virtual bool isUseful() override
         {
-            return ai->IsAlt() && bot->GetGroup() && bot->GetGroup()->IsLeader(bot->GetObjectGuid());
+            return ai->IsAlt() && bot->GetGroup() && bot->GetGroup()->IsLeader(bot->getObjectGuid());
         }
 
         virtual bool isUsefulWhenStunned() override { return true; }
@@ -50,11 +50,11 @@ namespace ai
     public:
         GiveLeaderAction(PlayerbotAI* ai, std::string message = "Lead the way!") : PassLeadershipToMasterAction(ai, "give leader", message) {}
 
-        virtual Player* PassLeaderTo(Event& event) { return event.getOwner(); };
+        virtual Player* PassLeaderTo(Event& event) { return event.GetOwner(); };
 
         virtual bool isUseful() override
         {
-            return bot->GetGroup() && bot->GetGroup()->IsLeader(bot->GetObjectGuid());
+            return bot->GetGroup() && bot->GetGroup()->IsLeader(bot->getObjectGuid());
         }        
     };    
 }

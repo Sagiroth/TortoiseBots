@@ -18,7 +18,7 @@ using namespace ai;
 
 Creature* SeeSpellAction::CreateWps(Player* wpOwner, float x, float y, float z, float o, uint32 entry, Creature* lastWp, bool important)
 {
-    float dist = wpOwner->GetDistance(x, y, z);
+    float dist = wpOwner->getDistance(x, y, z);
     float delay = 1000.0f * dist / wpOwner->GetSpeed(MOVE_RUN) + sPlayerbotAIConfig.reactDelay;
 
     if (!important)
@@ -48,8 +48,8 @@ bool SeeSpellAction::isUseful()
 
 bool SeeSpellAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    WorldPacket p(event.getPacket());
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    WorldPacket p(event.GetPacket());
     uint32 spellId;
 
     p.rpos(0);
@@ -77,7 +77,7 @@ bool SeeSpellAction::Execute(Event& event)
 
     p >> targets.ReadForCaster(requester);
     // Penqle exposes getDestination() instead of m_destPos.
-    float dx, dy, dz; targets.getDestination(dx, dy, dz);
+    float dx, dy, dz; targets.GetDestination(dx, dy, dz);
     WorldPosition spellPosition(requester->GetMapId(), dx, dy, dz);
     SET_AI_VALUE(WorldPosition, "see spell location", spellPosition);
 
@@ -96,9 +96,9 @@ bool SeeSpellAction::Execute(Event& event)
 
         out << " area = ";
 
-        out << path.getArea(bot->GetMapId(), x, y, z);
+        out << path.GetArea(bot->GetMapId(), x, y, z);
 
-        unsigned short flags = path.getFlags(bot->GetMapId(), x, y, z);
+        unsigned short flags = path.GetFlags(bot->GetMapId(), x, y, z);
 
         out << " flags = " << flags;
 
@@ -123,9 +123,9 @@ bool SeeSpellAction::Execute(Event& event)
     if (nextAction.empty())
     {
         if (!inRange && selected)
-            requester->GetSession()->SendPlaySpellVisual(bot->GetObjectGuid(), 6372);
+            requester->GetSession()->SendPlaySpellVisual(bot->getObjectGuid(), 6372);
         else if (inRange && !selected)
-            requester->GetSession()->SendPlaySpellVisual(bot->GetObjectGuid(), 5036);
+            requester->GetSession()->SendPlaySpellVisual(bot->getObjectGuid(), 5036);
 
         SET_AI_VALUE(bool, "RTSC selected", inRange);
 
@@ -217,7 +217,7 @@ bool SeeSpellAction::SelectSpell(Player* requester, WorldPosition& spellPosition
     if (spellPosition.distance(bot) <= 5 || AI_VALUE(bool, "RTSC selected"))
     {
         SET_AI_VALUE(bool, "RTSC selected", true);
-        requester->GetSession()->SendPlaySpellVisual(bot->GetObjectGuid(), 5036);
+        requester->GetSession()->SendPlaySpellVisual(bot->getObjectGuid(), 5036);
     }
     return true;
 }
@@ -232,7 +232,7 @@ bool SeeSpellAction::MoveToSpell(Player* requester, WorldPosition& spellPosition
         PositionMap& posMap = AI_VALUE(PositionMap&, "position");
         PositionEntry stayPosition = posMap["stay"];
 
-        stayPosition.Set(spellPosition.getX(), spellPosition.getY(), spellPosition.getZ(), spellPosition.getMapId());
+        stayPosition.Set(spellPosition.getX(), spellPosition.getY(), spellPosition.getZ(), spellPosition.GetMapId());
         posMap["stay"] = stayPosition;
         posMap["return"] = stayPosition;
     }
@@ -241,7 +241,7 @@ bool SeeSpellAction::MoveToSpell(Player* requester, WorldPosition& spellPosition
         PositionMap& posMap = AI_VALUE(PositionMap&, "position");
         PositionEntry guardPosition = posMap["guard"];
 
-        guardPosition.Set(spellPosition.getX(), spellPosition.getY(), spellPosition.getZ(), spellPosition.getMapId());
+        guardPosition.Set(spellPosition.getX(), spellPosition.getY(), spellPosition.getZ(), spellPosition.GetMapId());
         posMap["guard"] = guardPosition;
         posMap["return"] = guardPosition;
     }
@@ -249,33 +249,33 @@ bool SeeSpellAction::MoveToSpell(Player* requester, WorldPosition& spellPosition
     {
         FormationValue* formation = (FormationValue*)context->GetValue<Formation*>("formation");
 
-        if (formation->getName() == "custom")
+        if (formation->GetName() == "custom")
         {
             PositionMap& posMap = AI_VALUE(PositionMap&, "position");
             PositionEntry followPosition = posMap["follow"];
 
             spellPosition -= WorldPosition(requester);
-            spellPosition.rotateXY(-1 * requester->GetOrientation());
+            spellPosition.rotateXY(-1 * requester->getOrientation());
 
-            followPosition.Set(spellPosition.getX(), spellPosition.getY(), spellPosition.getZ(), spellPosition.getMapId());
+            followPosition.Set(spellPosition.getX(), spellPosition.getY(), spellPosition.getZ(), spellPosition.GetMapId());
             posMap["follow"] = followPosition;
             posMap["return"] = followPosition;
         }
     }
 
-    return MoveTo(spellPosition.getMapId(), spellPosition.getX(), spellPosition.getY(), spellPosition.getZ(), false, false);
+    return MoveTo(spellPosition.GetMapId(), spellPosition.getX(), spellPosition.getY(), spellPosition.getZ(), false, false);
 }
 
 void SeeSpellAction::SetFormationOffset(Player* requester, WorldPosition& spellPosition)
 {
     Formation* formation = AI_VALUE(Formation*, "formation");
 
-    if (formation->getName() == "custom")
+    if (formation->GetName() == "custom")
         return;
 
     WorldLocation formationLocation = formation->GetLocation();
 
-    if (formationLocation.coord_x != 0 || formationLocation.coord_y != 0)
+    if (formationLocation.x != 0 || formationLocation.y != 0)
     {
         spellPosition -= WorldPosition(requester);
         spellPosition += formationLocation;

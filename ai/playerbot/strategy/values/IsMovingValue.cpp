@@ -16,7 +16,7 @@ bool IsMovingValue::Calculate()
     if (!target)
         return false;
 
-    return target->isMoving();
+    return target->IsMoving();
 }
 
 bool IsSwimmingValue::Calculate()

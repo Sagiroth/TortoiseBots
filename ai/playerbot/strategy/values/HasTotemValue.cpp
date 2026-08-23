@@ -22,7 +22,7 @@ bool HasTotemValue::Calculate()
 
         if (Creature* OldTotem = bot->GetMap()->GetCreature(bot->m_SummonSlot[i]))
         {
-            if (OldTotem->IsSummon() && OldTotem->GetDistance(bot) <= 30.0f)
+            if (OldTotem->IsSummon() && OldTotem->getDistance(bot) <= 30.0f)
             {
                 if (strstri(OldTotem->GetName().c_str(), qualifier.c_str()))
                     return true;

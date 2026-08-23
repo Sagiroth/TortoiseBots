@@ -7,7 +7,7 @@ using namespace ai;
 
 static bool IsNpcNearby(Player* bot, uint32 npcEntry)
 {
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     if (!ai)
         return false;
 
@@ -19,7 +19,7 @@ static bool IsNpcNearby(Player* bot, uint32 npcEntry)
             continue;
 
         if (unit->GetEntry() == npcEntry &&
-            bot->GetDistance(unit) <= INTERACTION_DISTANCE)
+            bot->getDistance(unit) <= INTERACTION_DISTANCE)
             return true;
     }
     return false;
@@ -27,7 +27,7 @@ static bool IsNpcNearby(Player* bot, uint32 npcEntry)
 
 static bool IsNearDMNorthDoor(Player* bot)
 {
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     if (!ai)
         return false;
 
@@ -39,7 +39,7 @@ static bool IsNearDMNorthDoor(Player* bot)
             continue;
 
         if (go->GetEntry() == GO_DM_NORTH_DOOR &&
-            bot->GetDistance(go) <= INTERACTION_DISTANCE)
+            bot->getDistance(go) <= INTERACTION_DISTANCE)
             return true;
     }
     return false;
@@ -47,7 +47,7 @@ static bool IsNearDMNorthDoor(Player* bot)
 
 static bool IsPortalNearby(Player* bot, const char* destKeyword)
 {
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     if (!ai)
         return false;
 
@@ -81,7 +81,7 @@ static bool IsPortalNearby(Player* bot, const char* destKeyword)
 
 static bool IsNearSongflower(Player* bot)
 {
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     if (!ai)
         return false;
 
@@ -92,7 +92,7 @@ static bool IsNearSongflower(Player* bot)
         if (!go || !IsSongflowerEntry(go->GetEntry()))
             continue;
 
-        if (bot->GetDistance(go) <= INTERACTION_DISTANCE)
+        if (bot->getDistance(go) <= INTERACTION_DISTANCE)
             return true;
     }
     return false;
@@ -100,7 +100,7 @@ static bool IsNearSongflower(Player* bot)
 
 static bool IsNearBonfire(Player* bot)
 {
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     if (!ai)
         return false;
 
@@ -112,7 +112,7 @@ static bool IsNearBonfire(Player* bot)
             continue;
 
         if (go->GetEntry() == GO_BONFIRE_FERALAS &&
-            bot->GetDistance(go) <= INTERACTION_DISTANCE)
+            bot->getDistance(go) <= INTERACTION_DISTANCE)
             return true;
     }
     return false;
@@ -120,7 +120,7 @@ static bool IsNearBonfire(Player* bot)
 
 static bool AreAllGroupMembersInPortalDestZone(Player* bot)
 {
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     if (!ai)
         return false;
 
@@ -132,7 +132,7 @@ static bool AreAllGroupMembersInPortalDestZone(Player* bot)
         if (!member)
             continue;
 
-        uint32 zoneId = member->GetZoneId();
+        uint32 zoneId = member->getZoneId();
         if (zoneId != destZone)
             return false;
     }
@@ -148,7 +148,7 @@ static uint32 ForEachGroupMember(Player* bot, std::function<void(Player*)> callb
     uint32 count = 0;
     for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
     {
-        Player* member = ref->getSource();
+        Player* member = ref->GetSource();
         if (!member || member == bot)
             continue;
 
@@ -177,13 +177,13 @@ static bool DoAllGroupMembersHaveDMTBuffs(Player* bot)
     uint32 totalMembers = 0;
     for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
     {
-        if (ref->getSource() && ref->getSource() != bot)
+        if (ref->GetSource() && ref->GetSource() != bot)
             ++totalMembers;
     }
 
     for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
     {
-        Player* member = ref->getSource();
+        Player* member = ref->GetSource();
         if (member == bot)
             continue;
 
@@ -205,7 +205,7 @@ static bool DoAllGroupMembersHaveSongflower(Player* bot)
 
     for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
     {
-        Player* member = ref->getSource();
+        Player* member = ref->GetSource();
         if (member == bot)
             continue;
 
@@ -223,7 +223,7 @@ static bool IsInStepZone(Player* bot, WorldBuffTravelStep step)
 {
     uint32 zoneId = 0;
     uint32 areaId = 0;
-    bot->GetZoneAndAreaId(zoneId, areaId);
+    bot->getZoneAndAreaId(zoneId, areaId);
 
     bool horde = IsHordeFaction(bot);
 
@@ -313,7 +313,7 @@ bool WorldBuffTravelNeedMoveTrigger::IsActive()
     if (s == WorldBuffTravelStep::STEP_DM_PORTAL)
     {
         uint32 destZone = GetDMPortalDestZone(bot);
-        if (bot->GetZoneId() == destZone)
+        if (bot->getZoneId() == destZone)
             return false;
 
         return !IsInStepZone(bot, WorldBuffTravelStep::STEP_DM_TRAVEL);
@@ -322,7 +322,7 @@ bool WorldBuffTravelNeedMoveTrigger::IsActive()
     if (s == WorldBuffTravelStep::STEP_PORTAL_HOME)
     {
         uint32 homeZone = GetHomeZone(bot);
-        if (bot->GetZoneId() == homeZone)
+        if (bot->getZoneId() == homeZone)
             return false;
 
         if (bot->IsBeingTeleported())
@@ -358,7 +358,7 @@ bool WorldBuffTravelDMPortalCastTrigger::IsActive()
     if (step != static_cast<uint8>(WorldBuffTravelStep::STEP_DM_PORTAL))
         return false;
 
-    if (bot->getClass() != CLASS_MAGE)
+    if (bot->GetClass() != CLASS_MAGE)
         return false;
 
     if (!HasAllDMTributeBuffs(bot))
@@ -394,7 +394,7 @@ bool WorldBuffTravelPortalStepTrigger::IsActive()
     if (step != static_cast<uint8>(WorldBuffTravelStep::STEP_PORTAL_HOME))
         return false;
 
-    if (bot->getClass() != CLASS_MAGE)
+    if (bot->GetClass() != CLASS_MAGE)
         return false;
 
     if (!DoAllGroupMembersHaveSongflower(bot))

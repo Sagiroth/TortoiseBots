@@ -35,10 +35,10 @@ public:
         if (!action)
             return 1.0f;
 
-        if (ai->GetBot()->getClass() != CLASS_ROGUE)
+        if (ai->GetBot()->GetClass() != CLASS_ROGUE)
             return 1.0f;
 
-        const std::string& name = action->getName();
+        const std::string& name = action->GetName();
 
         // Enable only the following strats for suppression room to avoid regular combat breaking logic
         if (name == "stealth for suppression device" ||
@@ -130,7 +130,7 @@ void SuppressionRoomStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& m
 
 void SuppressionRoomStrategy::OnStrategyAdded(BotState state)
 {
-    if (ai->GetBot()->getClass() == CLASS_ROGUE)
+    if (ai->GetBot()->GetClass() == CLASS_ROGUE)
     {
         ai->ChangeStrategy("-avoid aoe", BotState::BOT_STATE_COMBAT);
         ai->ChangeStrategy("-avoid aoe", BotState::BOT_STATE_NON_COMBAT);

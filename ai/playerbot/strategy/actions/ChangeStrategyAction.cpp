@@ -7,15 +7,15 @@ using namespace ai;
 
 bool ChangeCombatStrategyAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string text = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string text = event.GetParam();
     text = text.empty() ? getName() : text;
 
     ai->ChangeStrategy(text, BotState::BOT_STATE_COMBAT);
 
     if (!sPlayerbotAIConfig.bExplicitDbStoreSave)
     {
-       if (event.getSource() == "co")
+       if (event.GetSource() == "co")
        {
           std::vector<std::string> splitted = split(text, ',');
           CharacterDatabase.BeginTransaction();
@@ -45,15 +45,15 @@ bool ChangeCombatStrategyAction::Execute(Event& event)
 
 bool ChangeNonCombatStrategyAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string text = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string text = event.GetParam();
     text = text.empty() ? getName() : text;
 
     ai->ChangeStrategy(text, BotState::BOT_STATE_NON_COMBAT);
 
     if (!sPlayerbotAIConfig.bExplicitDbStoreSave)
     {
-       if (event.getSource() == "nc")
+       if (event.GetSource() == "nc")
        {
           std::vector<std::string> splitted = split(text, ',');
           CharacterDatabase.BeginTransaction();
@@ -83,8 +83,8 @@ bool ChangeNonCombatStrategyAction::Execute(Event& event)
 
 bool ChangeDeadStrategyAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string text = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string text = event.GetParam();
     text = text.empty() ? getName() : text;
 
     ai->ChangeStrategy(text, BotState::BOT_STATE_DEAD);
@@ -99,8 +99,8 @@ bool ChangeDeadStrategyAction::Execute(Event& event)
 
 bool ChangeReactionStrategyAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string text = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string text = event.GetParam();
     text = text.empty() ? getName() : text;
 
     ai->ChangeStrategy(text, BotState::BOT_STATE_REACTION);
@@ -115,15 +115,15 @@ bool ChangeReactionStrategyAction::Execute(Event& event)
 
 bool ChangeAllStrategyAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string text = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string text = event.GetParam();
     std::string strategyName = text.empty() ? strategy : text;
 
     ai->ChangeStrategy(strategyName, BotState::BOT_STATE_ALL);
 
     if (!sPlayerbotAIConfig.bExplicitDbStoreSave)
     {
-       if (event.getSource() == "nc" || event.getSource() == "co")
+       if (event.GetSource() == "nc" || event.GetSource() == "co")
        {
           std::vector<std::string> splitted = split(text, ',');
           CharacterDatabase.BeginTransaction();

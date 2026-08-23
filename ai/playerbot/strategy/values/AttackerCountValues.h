@@ -82,7 +82,7 @@ namespace ai
                 return 0;
 
             uint32 damage = 0;
-            for (auto const& pAttacker : target->getAttackers())
+            for (auto const& pAttacker : target->GetAttackers())
                 if (pAttacker->CanReachWithMeleeAttack(target))
                     damage += uint32((pAttacker->GetFloatValue(UNIT_FIELD_MINDAMAGE) + pAttacker->GetFloatValue(UNIT_FIELD_MAXDAMAGE)) / 2);
 

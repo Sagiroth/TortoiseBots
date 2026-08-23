@@ -13,7 +13,7 @@ namespace ai
         {
             if (!sServerFacade.IsAlive(bot))
             {
-                WorldPacket p(event.getPacket());
+                WorldPacket p(event.GetPacket());
                 p.rpos(0);
                 ObjectGuid guid;
                 p >> guid;

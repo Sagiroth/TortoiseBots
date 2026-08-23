@@ -123,9 +123,9 @@ std::vector<TrainerSpell const*> TrainableSpellsValue::Calculate()
 
         for (auto& [requirement, trainerSpellList] : spellReqList)
         {
-            if (trainerType == TRAINER_TYPE_CLASS && requirement != bot->getClass())
+            if (trainerType == TRAINER_TYPE_CLASS && requirement != bot->GetClass())
                 continue;
-            if (trainerType == TRAINER_TYPE_MOUNTS && requirement != bot->getRace())
+            if (trainerType == TRAINER_TYPE_MOUNTS && requirement != bot->GetRace())
                 continue;
 
             for (auto& [trainerSpell, trainers] : trainerSpellList)
@@ -182,9 +182,9 @@ std::vector<int32> AvailableTrainersValue::Calculate()
 
         for (auto& [requirement, trainerSpellList] : spellReqList)
         {
-            if (trainerType == TRAINER_TYPE_CLASS && requirement != bot->getClass())
+            if (trainerType == TRAINER_TYPE_CLASS && requirement != bot->GetClass())
                 continue;
-            if (trainerType == TRAINER_TYPE_MOUNTS && requirement != bot->getRace())
+            if (trainerType == TRAINER_TYPE_MOUNTS && requirement != bot->GetRace())
                 continue;
 
             for (auto& [trainerSpell, trainers] : trainerSpellList)

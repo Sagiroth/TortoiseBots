@@ -12,10 +12,10 @@ using namespace ai;
 
 bool BuyAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     bool buyUseful = false;
     ItemIds itemIds;
-    std::string link = event.getParam();
+    std::string link = event.GetParam();
 
     if (link == "vendor")
         buyUseful = true;
@@ -334,8 +334,8 @@ bool BuyAction::BuyItem(Player* requester, VendorItemData const* tItems, ObjectG
 
 bool BuyBackAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string text = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string text = event.GetParam();
 
     std::list<Item*> found = ai->InventoryParseItems(text, IterateItemsMask::ITERATE_ITEMS_IN_BUYBACK);
 

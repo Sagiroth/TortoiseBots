@@ -47,7 +47,7 @@ void TrainerAction::Learn(uint32 cost, ObjectGuid trainerGuid, uint32 spellId, T
     bot->GetSession()->SendPlaySpellVisual(trainerGuid, 0xB3);   // visual effect on trainer
 
     WorldPacket data(SMSG_PLAY_SPELL_IMPACT, 8 + 4);             // visual effect on player
-    data << bot->GetObjectGuid();
+    data << bot->getObjectGuid();
     data << uint32(0x016A);                                      // index from SpellVisualKit.dbc
     bot->GetSession()->SendPacket(data);
 
@@ -174,7 +174,7 @@ bool TrainerAction::Iterate(Player* requester, Creature* creature, TrainerSpellA
         out << chat->formatSpell(pSpellInfo) << chat->formatMoney(cost);
 
         if (action)
-            (this->*action)(cost, creature->GetObjectGuid(), itr->first, tSpell, out);
+            (this->*action)(cost, creature->getObjectGuid(), itr->first, tSpell, out);
 
         if (!hasHeader)
         {
@@ -186,7 +186,7 @@ bool TrainerAction::Iterate(Player* requester, Creature* creature, TrainerSpellA
 
     if(hasHeader)
         TellFooter(requester, totalCost);
-    else if (!ai->GetMaster() || sServerFacade.GetDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
+    else if (!ai->GetMaster() || sServerFacade.getDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
         ai->TellPlayerNoFacing(requester, "No spells can be learned from this trainer");
 
     return hasTrainable;
@@ -194,11 +194,11 @@ bool TrainerAction::Iterate(Player* requester, Creature* creature, TrainerSpellA
 
 bool TrainerAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string text = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string text = event.GetParam();
     Creature* creature = nullptr;
 
-    if (event.getSource() == "rpg action")
+    if (event.GetSource() == "rpg action")
     {
         ObjectGuid guid = event.getObject();
         creature = ai->GetCreature(guid);
@@ -215,13 +215,13 @@ bool TrainerAction::Execute(Event& event)
     if (!creature || !creature->IsTrainer())
 #endif
 #ifdef CMANGOS
-    if (!creature || !creature->isTrainer())
+    if (!creature || !creature->IsTrainer())
 #endif
         return false;       
             
     if (!creature->IsTrainerOf(bot, false))
     {
-        if (!ai->GetMaster() || sServerFacade.GetDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
+        if (!ai->GetMaster() || sServerFacade.getDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
             ai->TellPlayerNoFacing(requester, "This trainer cannot teach me");
         return false;
     }
@@ -231,7 +231,7 @@ bool TrainerAction::Execute(Event& event)
     TrainerSpellData const* tSpells = creature->GetTrainerTemplateSpells();
     if (!cSpells && !tSpells)
     {
-        if (!ai->GetMaster() || sServerFacade.GetDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
+        if (!ai->GetMaster() || sServerFacade.getDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
             ai->TellPlayerNoFacing(requester, "No spells can be learned from this trainer");
         return false;
     }

@@ -8,7 +8,7 @@ using namespace ai;
 
 bool RepairAllAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     std::list<ObjectGuid> npcs = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
     for (std::list<ObjectGuid>::iterator i = npcs.begin(); i != npcs.end(); i++)
     {
@@ -17,10 +17,10 @@ bool RepairAllAction::Execute(Event& event)
             continue;
 
 #ifdef MANGOS
-        if(bot->hasUnitState(UNIT_STAT_DIED))
+        if(bot->HasUnitState(UNIT_STAT_DIED))
 #endif
 #ifdef CMANGOS
-        if (bot->hasUnitState(UNIT_STAT_FEIGN_DEATH))
+        if (bot->HasUnitState(UNIT_STAT_FEIGN_DEATH))
 #endif
             bot->RemoveSpellsCausingAura(SPELL_AURA_FEIGN_DEATH);
 

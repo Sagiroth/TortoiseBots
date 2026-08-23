@@ -11,7 +11,7 @@ namespace ai
 
         virtual bool Execute(Event& event) override
         {            
-            Player* master = event.getOwner();
+            Player* master = event.GetOwner();
 
             return Leave(master);
         }
@@ -28,7 +28,7 @@ namespace ai
 
         virtual bool Execute(Event& event) override
         {
-            WorldPacket& p = event.getPacket();
+            WorldPacket& p = event.GetPacket();
             p.rpos(0);
             uint32 operation;
             std::string member;
@@ -53,9 +53,9 @@ namespace ai
 
         virtual bool Execute(Event& event) override
         {
-            WorldPacket& p = event.getPacket();
+            WorldPacket& p = event.GetPacket();
 
-            if (p.GetOpcode() == CMSG_GROUP_UNINVITE)
+            if (p.getOpcode() == CMSG_GROUP_UNINVITE)
             {
                 p.rpos(0);
                 std::string membername;
@@ -71,13 +71,13 @@ namespace ai
                     return Leave(bot);
             }
 
-            if (p.GetOpcode() == CMSG_GROUP_UNINVITE_GUID)
+            if (p.getOpcode() == CMSG_GROUP_UNINVITE_GUID)
             {
                 p.rpos(0);
                 ObjectGuid guid;
                 p >> guid;
 
-                if (bot->GetObjectGuid() == guid)
+                if (bot->getObjectGuid() == guid)
                     return Leave(bot);
             }
 

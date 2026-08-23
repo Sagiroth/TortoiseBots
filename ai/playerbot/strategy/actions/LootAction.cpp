@@ -32,7 +32,7 @@ bool LootAction::Execute(Event& event)
             if (c && sServerFacade.GetDeathState(c) == CORPSE)
             {
                 float safeRange = sPlayerbotAIConfig.followDistance + bot->GetMaxLootDistance(c);
-                if (sServerFacade.GetDistance2d(master, c) > safeRange)
+                if (sServerFacade.getDistance2d(master, c) > safeRange)
                     continue;
             }
         }
@@ -106,7 +106,7 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
     if (creature && !creature->IsWithinDistInMap(bot, bot->GetMaxLootDistance(creature), true, SizeFactor::None))
     {
         sLog.outDebug("[BOT LOOT] %s: not in 3D loot range (dist2d=%.1f maxLoot=%.1f), keep approaching guid=%lu",
-            bot->GetName(), sServerFacade.GetDistance2d(bot, creature), bot->GetMaxLootDistance(creature), lootObject.guid.GetRawValue());
+            bot->GetName(), sServerFacade.getDistance2d(bot, creature), bot->GetMaxLootDistance(creature), lootObject.guid.GetRawValue());
         return false;
     }
 
@@ -136,7 +136,7 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
         sLog.outDebug("[BOT LOOT] %s: loot ctx guid=%lu alive=%d tapped=%d dist2d=%.1f maxLoot=%.1f",
             bot->GetName(), lootObject.guid.GetRawValue(),
             creature->IsAlive() ? 1 : 0, creature->IsTappedBy(bot) ? 1 : 0,
-            sServerFacade.GetDistance2d(bot, creature), bot->GetMaxLootDistance(creature));
+            sServerFacade.getDistance2d(bot, creature), bot->GetMaxLootDistance(creature));
 
         sLog.outDebug("[BOT LOOT] %s: sending CMSG_LOOT (crouch emote) guid=%lu lootDelay=%u",
             bot->GetName(), lootObject.guid.GetRawValue(), sPlayerbotAIConfig.lootDelay);
@@ -146,11 +146,11 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
         bot->GetSession()->HandleLootOpcode(packet);
         SetDuration(sPlayerbotAIConfig.lootDelay);
 
-        if (bot->isRealPlayer())
+        if (isRealPlayer_Helper(bot))
         {
             WorldPacket data(SMSG_EMOTE, 4 + 8);
             data << uint32(EMOTE_ONESHOT_LOOT);
-            data << bot->GetObjectGuid();
+            data << bot->getObjectGuid();
             bot->GetSession()->SendPacket(data);
         }
 
@@ -181,7 +181,7 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
     }
 
     GameObject* go = ai->GetGameObject(lootObject.guid);
-    if (go && sServerFacade.GetDistance2d(bot, go) > INTERACTION_DISTANCE)
+    if (go && sServerFacade.getDistance2d(bot, go) > INTERACTION_DISTANCE)
         return false;
 
     if (go && (go->IsInUse() || go->GetGoState() == GO_STATE_ACTIVE))
@@ -330,8 +330,8 @@ bool OpenLootAction::CanOpenLock(uint32 skillId, uint32 reqSkillValue)
 
 bool StoreLootAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    WorldPacket p(event.getPacket()); // (8+1+4+1+1+4+4+4+4+4+1)
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    WorldPacket p(event.GetPacket()); // (8+1+4+1+1+4+4+4+4+4+1)
     ObjectGuid guid;
     uint8 loot_type;
     uint32 gold = 0;
@@ -555,7 +555,7 @@ bool StoreLootAction::IsLootAllowed(ItemQualifier& itemQualifier, PlayerbotAI *a
     bool canLoot = LootStrategyValue::CanLoot(itemQualifier, ai);
 
     //if (canLoot && proto->Bonding == BIND_WHEN_PICKED_UP && ai->HasActivePlayerMaster())
-    //    canLoot = sPlayerbotAIConfig.IsInRandomAccountList(sObjectMgr.GetPlayerAccountIdByGUID(ai->GetBot()->GetObjectGuid()));
+    //    canLoot = sPlayerbotAIConfig.IsInRandomAccountList(sObjectMgr.GetPlayerAccountIdByGUID(ai->GetBot()->getObjectGuid()));
 
     return canLoot;
 }

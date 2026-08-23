@@ -16,7 +16,7 @@ GuidPosition::GuidPosition(std::string qualifier)
 
     uint64 g;
     char p;
-    b >> this->mapid >> p >> this->coord_x >> p >> this->coord_y >> p >> this->coord_z >> p >> this->orientation;
+    b >> this->mapId >> p >> this->x >> p >> this->y >> p >> this->z >> p >> this->orientation;
 
     //if (b.tellp() == std::streampos(0))
     //    return;
@@ -57,7 +57,7 @@ std::string GuidPosition::to_string() const
 {
     std::ostringstream b;
     char p = '|';
-    b << this->getMapId() << p << this->coord_x << p << this->coord_y << p << this->coord_z << p << this->orientation << p << GetRawValue();
+    b << this->GetMapId() << p << this->x << p << this->y << p << this->z << p << this->orientation << p << GetRawValue();
     return b.str();
 }
 
@@ -212,10 +212,10 @@ std::string GuidPosition::print()
 {
     std::ostringstream out;
     out << this->GetRawValue();
-    out << ';' << mapid << std::fixed << std::setprecision(2);
-    out << ';' << coord_x;
-    out << ';' << coord_y;
-    out << ';' << coord_z;
+    out << ';' << mapId << std::fixed << std::setprecision(2);
+    out << ';' << x;
+    out << ';' << y;
+    out << ';' << z;
     out << ';' << orientation;
 
     return out.str();

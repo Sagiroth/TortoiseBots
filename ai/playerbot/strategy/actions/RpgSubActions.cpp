@@ -98,7 +98,7 @@ void RpgHelper::resetFacing(GuidPosition guidPosition)
 
 void RpgHelper::setDelay(bool waitForGroup)
 {
-    if ((!ai->HasRealPlayerMaster() && !bot->GetGroup()) || (bot->GetGroup() && bot->GetGroup()->IsLeader(bot->GetObjectGuid()) && waitForGroup))
+    if ((!ai->HasRealPlayerMaster() && !bot->GetGroup()) || (bot->GetGroup() && bot->GetGroup()->IsLeader(bot->getObjectGuid()) && waitForGroup))
         ai->SetActionDuration(sPlayerbotAIConfig.rpgDelay);       
     else
         ai->SetActionDuration(sPlayerbotAIConfig.rpgDelay / 5);
@@ -162,13 +162,13 @@ bool RpgTaxiAction::Execute(Event& event)
 
     ai->Unmount();
 
-    uint32 node = sObjectMgr.GetNearestTaxiNode(guidP.getX(), guidP.getY(), guidP.getZ(), guidP.getMapId(), bot->GetTeam());
+    uint32 node = sObjectMgr.GetNearestTaxiNode(guidP.getX(), guidP.getY(), guidP.getZ(), guidP.GetMapId(), bot->GetTeam());
 
     std::vector<uint32> nodes;
     for (uint32 i = 0; i < sTaxiPathStore.GetNumRows(); ++i)
     {
         TaxiPathEntry const* entry = sTaxiPathStore.LookupEntry(i);
-        if (entry && entry->from == node && (bot->m_taxi.IsTaximaskNodeKnown(entry->to) || bot->isTaxiCheater()))
+        if (entry && entry->from == node && (bot->m_taxi.IsTaximaskNodeKnown(entry->to) || bot->IsTaxiCheater()))
         {
             // Only destinations usable by the bot's own faction. Previously
             // the sole check was whether the flight point is KNOWN - but with
@@ -226,7 +226,7 @@ bool RpgTaxiAction::Execute(Event& event)
     bot->ResolvePendingMount();
 #endif
 
-    sLog.outDetail("Bot #%d <%s> is flying from %s to %s (%zu location available)", bot->GetGUIDLow(), bot->GetName(), nodeFrom->name[0], nodeTo->name[0], nodes.size());
+    sLog.outDetail("Bot #%d <%s> is flying from %s to %s (%zu location available)", bot->GetGUIDLow(), bot->GetName(), nodeFrom->Name, nodeTo->Name, nodes.size());
     bot->SetMoney(money);
 
     rpg->AfterExecute();
@@ -242,7 +242,7 @@ bool RpgDiscoverAction::Execute(Event& event)
 
     GuidPosition guidP = rpg->guidP();
 
-    uint32 node = sObjectMgr.GetNearestTaxiNode(guidP.getX(), guidP.getY(), guidP.getZ(), guidP.getMapId(), bot->GetTeam());
+    uint32 node = sObjectMgr.GetNearestTaxiNode(guidP.getX(), guidP.getY(), guidP.getZ(), guidP.GetMapId(), bot->GetTeam());
 
     if (!node)
         return false;
@@ -265,7 +265,7 @@ bool RpgHealAction::Execute(Event& event)
 
     rpg->BeforeExecute();
     
-    switch (bot->getClass())
+    switch (bot->GetClass())
     {
     case CLASS_PRIEST:
         retVal = ai->DoSpecificAction("lesser heal on party", Event(), true);
@@ -376,7 +376,7 @@ bool RpgAIChatAction::SpeakLine()
 
     packet >> chatTag;
 
-    if (bot->GetObjectGuid() == senderGuid)
+    if (bot->getObjectGuid() == senderGuid)
     {
         if (type == CHAT_MSG_EMOTE)
             bot->TextEmote(message.c_str());
@@ -544,7 +544,7 @@ bool RpgAIChatAction::RequestNewLines()
 
     WorldSession* session = bot->GetSession();
 
-    bool debug = bot->GetPlayerbotAI()->HasStrategy("debug llm", BotState::BOT_STATE_NON_COMBAT);
+    bool debug = PlayerbotAIStorage::Instance().GetAI(bot)->HasStrategy("debug llm", BotState::BOT_STATE_NON_COMBAT);
 
     uint32 lang = bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH;
 
@@ -723,7 +723,7 @@ bool RpgTradeUsefulAction::Execute(Event& event)
     if (ai->IsRealPlayer() && !bot->GetTradeData()) //Start the trade from the other side to open the window
     {
         WorldPacket packet(CMSG_INITIATE_TRADE);
-        packet << bot->GetObjectGuid();
+        packet << bot->getObjectGuid();
         player->GetSession()->HandleInitiateTradeOpcode(packet);
     }
 
@@ -802,25 +802,25 @@ bool RpgEnchantAction::Execute(Event& event)
 
         ai->TellDebug(ai->GetMaster(), "enchanting" + param.str(), "debug rpg");
 
-        if (player->isRealPlayer() && !player->GetTradeData()) //Start the trade from the other side to open the window
+        if (isRealPlayer_Helper(player) && !player->GetTradeData()) //Start the trade from the other side to open the window
         {
             ai->TellDebug(ai->GetMaster(), "open trade window", "debug rpg");
             WorldPacket packet(CMSG_INITIATE_TRADE);
-            packet << player->GetObjectGuid();
+            packet << player->getObjectGuid();
             bot->GetSession()->HandleInitiateTradeOpcode(packet);
         }
 
-        if (!player->GetTradeData() || !player->GetTradeData()->HasItem(item->GetObjectGuid()))
+        if (!player->GetTradeData() || !player->GetTradeData()->HasItem(item->getObjectGuid()))
         {
             ai->TellDebug(ai->GetMaster(), "starting trade", "debug rpg");
-            player->GetPlayerbotAI()->DoSpecificAction("trade", Event("rpg action", param.str().c_str()), true);
+            PlayerbotAIStorage::Instance().GetAI(player)->DoSpecificAction("trade", Event("rpg action", param.str().c_str()), true);
         }
 
         bool isTrading = bot->GetTradeData();
 
         if (isTrading)
         {
-            if (player->GetTradeData()->HasItem(item->GetObjectGuid())) //Did we manage to add the item to the trade?
+            if (player->GetTradeData()->HasItem(item->getObjectGuid())) //Did we manage to add the item to the trade?
             {
                 uint32 duration;
                 Unit* target = nullptr;
@@ -887,7 +887,7 @@ bool RpgDuelAction::Execute(Event& event)
 
 bool RpgItemAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     GuidPosition guidP = AI_VALUE(GuidPosition, "rpg target"), objectGuidP;
 
     if (sServerFacade.isMoving(bot))

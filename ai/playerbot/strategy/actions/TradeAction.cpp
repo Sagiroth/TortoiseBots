@@ -8,7 +8,7 @@ using namespace ai;
 
 bool TradeAction::Execute(Event& event)
 {
-    std::string text = event.getParam();
+    std::string text = event.GetParam();
 
     if (!bot->GetTrader())
     {
@@ -25,7 +25,7 @@ bool TradeAction::Execute(Event& event)
 
         if (!player)
         {
-            player = event.getOwner() ? event.getOwner() : GetMaster();
+            player = event.GetOwner() ? event.GetOwner() : GetMaster();
         }
 
         if (!player) 
@@ -36,7 +36,7 @@ bool TradeAction::Execute(Event& event)
         if (!player->GetTrader())
         {
             WorldPacket packet(CMSG_INITIATE_TRADE);
-            packet << player->GetObjectGuid();
+            packet << player->getObjectGuid();
             bot->GetSession()->HandleInitiateTradeOpcode(packet);
             return true;
         }

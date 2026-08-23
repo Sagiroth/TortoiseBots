@@ -53,7 +53,7 @@ Unit* PartyMemberSnaredTargetValue::Calculate()
         if (!predicate.Check(member))
             continue;
 
-        float const distanceSq = bot->GetExactDist2dSq(member->GetPositionX(), member->GetPositionY());
+        float const distanceSq = bot->GetExactDist2dSq(member->getPositionX(), member->getPositionY());
         if (distanceSq < closestDistanceSq)
         {
             closestDistanceSq = distanceSq;

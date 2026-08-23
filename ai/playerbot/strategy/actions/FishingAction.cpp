@@ -72,9 +72,9 @@ float HasFishableWaterOrLand(float x, float y, float z,  Map* map, uint32 phaseM
 
 bool HasLosToWater(Player* bot, float wx, float wy, float waterZ)
 {
-    float z = bot->GetCollisionHeight() + bot->GetPositionZ();
-    return bot->GetMap()->isInLineOfSight(
-        bot->GetPositionX(), bot->GetPositionY(), z,
+    float z = bot->GetCollisionHeight() + bot->getPositionZ();
+    return bot->GetMap()->IsInLineOfSight(
+        bot->getPositionX(), bot->getPositionY(), z,
         wx, wy, waterZ,
         bot->GetPhaseMask(),
         LINEOFSIGHT_ALL_CHECKS,
@@ -88,9 +88,9 @@ WorldPosition FindLandFromPosition(PlayerbotAI* botAI, float startDistance, floa
     uint32 phaseMask = bot->GetPhaseMask();
     Player* master = botAI->GetMaster();
 
-    float targetX = targetPos.GetPositionX();
-    float targetY = targetPos.GetPositionY();
-    float targetZ = targetPos.GetPositionZ();
+    float targetX = targetPos.getPositionX();
+    float targetY = targetPos.getPositionY();
+    float targetZ = targetPos.getPositionZ();
 
     for (float dist = startDistance; dist <= endDistance; dist += increment)
     {
@@ -108,12 +108,12 @@ WorldPosition FindLandFromPosition(PlayerbotAI* botAI, float startDistance, floa
         {
             if (checkLOS)
             {
-                bool hasLOS = map->isInLineOfSight(checkX, checkY, groundZ, targetX, targetY, targetZ, phaseMask, LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::Nothing);
+                bool hasLOS = map->IsInLineOfSight(checkX, checkY, groundZ, targetX, targetY, targetZ, phaseMask, LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::Nothing);
                 if (!hasLOS)
                     continue;
             }
             // Add a distance check for the position to prevent the bot from moving out of range to the master.
-            if (master && botAI->HasStrategy("follow", BOT_STATE_NON_COMBAT) && master->GetDistance(checkX, checkY, groundZ) > fishingSearchWindow - SEARCH_LAND_BUFFER)
+            if (master && botAI->HasStrategy("follow", BOT_STATE_NON_COMBAT) && master->getDistance(checkX, checkY, groundZ) > fishingSearchWindow - SEARCH_LAND_BUFFER)
                 continue;
 
             return WorldPosition(bot->GetMapId(), checkX, checkY, groundZ);
@@ -135,9 +135,9 @@ WorldPosition FindLandRadialFromPosition (PlayerbotAI* botAI, WorldPosition targ
     Map* map = bot->GetMap();
     uint32 phaseMask = bot->GetPhaseMask();
 
-    float targetX = targetPos.GetPositionX();
-    float targetY = targetPos.GetPositionY();
-    float targetZ = targetPos.GetPositionZ();
+    float targetX = targetPos.getPositionX();
+    float targetY = targetPos.getPositionY();
+    float targetZ = targetPos.getPositionZ();
 
     for (float dist = startDistance; dist <= endDistance; dist += increment)
     {
@@ -152,7 +152,7 @@ WorldPosition FindLandRadialFromPosition (PlayerbotAI* botAI, WorldPosition targ
             if (groundZ == INVALID_HEIGHT)
                 continue;
 
-            if (map->isInLineOfSight(checkX, checkY, groundZ, targetX, targetY, targetZ, phaseMask, LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::Nothing) && master->GetDistance(checkX, checkY, groundZ) > fishingSearchWindow - SEARCH_LAND_BUFFER)
+            if (map->IsInLineOfSight(checkX, checkY, groundZ, targetX, targetY, targetZ, phaseMask, LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::Nothing) && master->getDistance(checkX, checkY, groundZ) > fishingSearchWindow - SEARCH_LAND_BUFFER)
                 continue;
 
             boundaryPoints.emplace_back(WorldPosition(bot->GetMapId(), checkX, checkY, groundZ));
@@ -234,7 +234,7 @@ WorldPosition FindFishingHole(PlayerbotAI* botAI)
             continue;
         if (go->GetGoType() == GAMEOBJECT_TYPE_FISHINGHOLE)
         {
-            float dist = player->GetDistance2d(go);
+            float dist = player->getDistance2d(go);
             if (dist < minDist)
             {
                 minDist = dist;
@@ -243,7 +243,7 @@ WorldPosition FindFishingHole(PlayerbotAI* botAI)
         }
     }
     if (nearestFishingHole)
-        return WorldPosition(nearestFishingHole->GetMapId(), nearestFishingHole->GetPositionX(), nearestFishingHole->GetPositionY(), nearestFishingHole->GetPositionZ());
+        return WorldPosition(nearestFishingHole->GetMapId(), nearestFishingHole->getPositionX(), nearestFishingHole->getPositionY(), nearestFishingHole->getPositionZ());
 
     return WorldPosition();
 }
@@ -252,7 +252,7 @@ bool MoveNearWaterAction::Execute(Event /*event*/)
 {
     WorldPosition landSpot = AI_VALUE(WorldPosition, "fishing spot");
     if (landSpot.IsValid())
-        return MoveTo(landSpot.GetMapId(), landSpot.GetPositionX(), landSpot.GetPositionY(), landSpot.GetPositionZ());
+        return MoveTo(landSpot.GetMapId(), landSpot.getPositionX(), landSpot.getPositionY(), landSpot.getPositionZ());
 
     return false;
 }
@@ -283,12 +283,12 @@ bool MoveNearWaterAction::isPossible()
     if (fishingHole.IsValid())
     {
         float distance = bot->GetExactDist2d(&fishingHole);
-        bool hasLOS = bot->IsWithinLOS(fishingHole.GetPositionX(), fishingHole.GetPositionY(), fishingHole.GetPositionZ());
+        bool hasLOS = bot->IsWithinLOS(fishingHole.getPositionX(), fishingHole.getPositionY(), fishingHole.getPositionZ());
         // Water spot is in range, and we have LOS to it. Set bot position to fishing spot and do not move
         if (distance >= MIN_DISTANCE_TO_WATER &&
             distance <= MAX_DISTANCE_TO_WATER && hasLOS)
         {
-            SET_AI_VALUE(WorldPosition, "fishing spot", WorldPosition(WorldPosition(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ())));
+            SET_AI_VALUE(WorldPosition, "fishing spot", WorldPosition(WorldPosition(bot->GetMapId(), bot->getPositionX(), bot->getPositionY(), bot->getPositionZ())));
             return false;
         }
         // Water spot is out of range, lets look for a spot to move to for the fishing hole.
@@ -304,18 +304,18 @@ bool MoveNearWaterAction::isPossible()
     }
     // Can the bot fish from current position?
     WorldPosition waterAtCurrentPos =
-        FindWaterRadial(bot, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMap(),
+        FindWaterRadial(bot, bot->getPositionX(), bot->getPositionY(), bot->getPositionZ(), bot->GetMap(),
                         bot->GetPhaseMask(), MIN_DISTANCE_TO_WATER, MAX_DISTANCE_TO_WATER, SEARCH_INCREMENT, true);
     if (waterAtCurrentPos.IsValid())
     {
         SET_AI_VALUE(WorldPosition, "fishing spot",
-                     WorldPosition(WorldPosition(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(),
-                                                 bot->GetPositionZ())));
+                     WorldPosition(WorldPosition(bot->GetMapId(), bot->getPositionX(), bot->getPositionY(),
+                                                 bot->getPositionZ())));
         return false;
     }
     // Lets find some water where we can fish.
     WorldPosition water = FindWaterRadial(
-        bot, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+        bot, bot->getPositionX(), bot->getPositionY(), bot->getPositionZ(),
         bot->GetMap(), bot->GetPhaseMask(),
         MIN_DISTANCE_TO_WATER,
         fishingSearchWindow + MAX_DISTANCE_TO_WATER,
@@ -324,7 +324,7 @@ bool MoveNearWaterAction::isPossible()
     if (!water.IsValid())
         return false;
 
-    float angle = bot->GetAngle(water.GetPositionX(), water.GetPositionY());
+    float angle = bot->GetAngle(water.getPositionX(), water.getPositionY());
     WorldPosition landSpot =
         FindLandFromPosition(botAI, 0.0f, MAX_DISTANCE_TO_WATER, 1.0f, angle, water, fishingSearchWindow, false);
 
@@ -411,15 +411,15 @@ bool FishingAction::Execute(Event event)
     {
         Position pos = fishingHole;
         float distance = bot->GetExactDist2d(&pos);
-        bool hasLOS = bot->IsWithinLOS(fishingHole.GetPositionX(), fishingHole.GetPositionY(), fishingHole.GetPositionZ());
+        bool hasLOS = bot->IsWithinLOS(fishingHole.getPositionX(), fishingHole.getPositionY(), fishingHole.getPositionZ());
         if (distance < MAX_DISTANCE_TO_WATER &&
             distance > MIN_DISTANCE_TO_WATER && hasLOS)
             target = fishingHole;
     }
     if (!target.IsValid())
     {
-        target = FindWaterRadial(bot, bot->GetPositionX(), bot->GetPositionY(),
-                bot->GetPositionZ(), bot->GetMap(), bot->GetPhaseMask(),
+        target = FindWaterRadial(bot, bot->getPositionX(), bot->getPositionY(),
+                bot->getPositionZ(), bot->GetMap(), bot->GetPhaseMask(),
                 MIN_DISTANCE_TO_WATER, MAX_DISTANCE_TO_WATER, SEARCH_INCREMENT, true, 32);
         if (!target.IsValid())
             return false;
@@ -428,14 +428,14 @@ bool FishingAction::Execute(Event event)
 
     if (!bot->HasInArc(1.0, &pos, 1.0))
     {
-        float angle = bot->GetAngle(pos.GetPositionX(), pos.GetPositionY());
+        float angle = bot->GetAngle(pos.getPositionX(), pos.getPositionY());
         bot->SetOrientation(angle);
         if (!bot->IsRooted())
             bot->SendMovementFlagUpdate();
     }
 
     EquipFishingPoleAction equipAction(botAI);
-    if (equipAction.isUseful())
+    if (equipAction.IsUseful())
         return equipAction.Execute(event);
 
     botAI->CastSpell(FISHING_SPELL, bot);
@@ -474,7 +474,7 @@ bool UseBobberAction::Execute(Event /*event*/)
                 continue;
             if (go->GetOwnerGUID() != bot->GetGUID())
                 continue;
-            if (go->getLootState() == GO_READY)
+            if (go->GetLootState() == GO_READY)
             {
                 go->Use(bot);
                 botAI->ChangeStrategy("-use bobber", BOT_STATE_NON_COMBAT);
@@ -495,10 +495,10 @@ bool EndMasterFishingAction::isUseful()
 {
     FishingSpotValue* fishingSpotValueObject = (FishingSpotValue*)context->GetValue<WorldPosition>("fishing spot");
     WorldPosition pos = fishingSpotValueObject->Get();
-    if (pos.IsValid() && !fishingSpotValueObject->IsStale(FISHING_LOCATION_TIMEOUT) && pos == bot->GetPosition())
+    if (pos.IsValid() && !fishingSpotValueObject->IsStale(FISHING_LOCATION_TIMEOUT) && pos == bot->getPosition())
         return false;
 
-    WorldPosition nearWater = FindWaterRadial(bot, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+    WorldPosition nearWater = FindWaterRadial(bot, bot->getPositionX(), bot->getPositionY(), bot->getPositionZ(),
         bot->GetMap(), bot->GetPhaseMask(), MIN_DISTANCE_TO_WATER, sPlayerbotAIConfig.endFishingWithMaster, 10.0f);
     return !nearWater.IsValid();
 }

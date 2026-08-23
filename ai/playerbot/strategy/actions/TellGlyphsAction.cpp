@@ -68,7 +68,7 @@ bool TellGlyphsAction::Execute(Event event)
     //-----------------------------------------------------------------
     // 1. who sended the wisp ?  (source of event)
     //-----------------------------------------------------------------
-    Player* sender = event.getOwner();          // API Event
+    Player* sender = event.GetOwner();          // API Event
     if (!sender)
         return false;
 

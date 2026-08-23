@@ -68,7 +68,7 @@ bool GuildAcceptQuestOrderAction::Execute(Event& event)
             Quest const* candidate = sObjectMgr.GetQuestTemplate(questId);
             if (candidate && bot->GetQuestStatus(questId) != QUEST_STATUS_COMPLETE)
             {
-                QuestStatusData& qsd = bot->getQuestStatusMap()[questId];
+                QuestStatusData& qsd = bot->GetQuestStatusMap()[questId];
                 bool hasProgress = false;
                 for (int i = 0; i < QUEST_OBJECTIVES_COUNT; i++)
                 {
@@ -102,19 +102,19 @@ bool GuildAcceptQuestOrderAction::Execute(Event& event)
     for (auto& guid : npcs)
     {
         Unit* unit = ai->GetUnit(guid);
-        if (!unit || bot->GetDistance(unit) > INTERACTION_DISTANCE)
+        if (!unit || bot->getDistance(unit) > INTERACTION_DISTANCE)
             continue;
 
         if (!unit->HasQuest(order.questId))
             continue;
 
-        if (!sServerFacade.IsInFront(bot, unit, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
+        if (!sServerFacade.isInFront(bot, unit, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
             sServerFacade.SetFacingTo(bot, unit);
 
         // Accept the quest via the opcode handler.
         WorldPacket p(CMSG_QUESTGIVER_ACCEPT_QUEST);
         uint32 unk1 = 0;
-        p << unit->GetObjectGuid() << order.questId << unk1;
+        p << unit->getObjectGuid() << order.questId << unk1;
         p.rpos(0);
         bot->GetSession()->HandleQuestgiverAcceptQuestOpcode(p);
 
@@ -135,7 +135,7 @@ bool GuildAcceptQuestOrderAction::Execute(Event& event)
     for (auto& guid : gos)
     {
         GameObject* go = ai->GetGameObject(guid);
-        if (!go || bot->GetDistance(go) > INTERACTION_DISTANCE)
+        if (!go || bot->getDistance(go) > INTERACTION_DISTANCE)
             continue;
 
         if (!go->HasQuest(order.questId))
@@ -143,7 +143,7 @@ bool GuildAcceptQuestOrderAction::Execute(Event& event)
 
         WorldPacket p(CMSG_QUESTGIVER_ACCEPT_QUEST);
         uint32 unk1 = 0;
-        p << go->GetObjectGuid() << order.questId << unk1;
+        p << go->getObjectGuid() << order.questId << unk1;
         p.rpos(0);
         bot->GetSession()->HandleQuestgiverAcceptQuestOpcode(p);
 

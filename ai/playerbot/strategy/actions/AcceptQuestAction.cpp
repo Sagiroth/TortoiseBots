@@ -31,7 +31,7 @@ bool AcceptAllQuestsAction::ProcessQuest(Player* requester, Quest const* quest, 
     if (turtleOnlyBlacklist.count(quest->GetQuestId()))
         return false;
 
-    if (AcceptQuest(requester, quest, questGiver->GetObjectGuid()))
+    if (AcceptQuest(requester, quest, questGiver->getObjectGuid()))
     {
         if (sPlayerbotAIConfig.globalSoundEffects)
             bot->PlayDistanceSound(620);
@@ -43,7 +43,7 @@ bool AcceptAllQuestsAction::ProcessQuest(Player* requester, Quest const* quest, 
 
 bool AcceptQuestAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!requester)
         return false;
 
@@ -51,13 +51,13 @@ bool AcceptQuestAction::Execute(Event& event)
     uint64 guid = 0;
     uint32 quest = 0;
 
-    std::string text = event.getParam();
+    std::string text = event.GetParam();
     PlayerbotChatHandler ch(requester);
     quest = ch.extractQuestId(text);
 
     bool hasAccept = false;
 
-    if (event.getPacket().empty())
+    if (event.GetPacket().empty())
     {
         std::list<ObjectGuid> npcs = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
         for (std::list<ObjectGuid>::iterator i = npcs.begin(); i != npcs.end(); i++)
@@ -65,10 +65,10 @@ bool AcceptQuestAction::Execute(Event& event)
             Unit* unit = ai->GetUnit(*i);
             if (unit && quest && unit->HasQuest(quest))
             {
-                guid = unit->GetObjectGuid().GetRawValue();
+                guid = unit->getObjectGuid().GetRawValue();
                 break;
             }
-            if (unit && text == "*" && bot->GetDistance(unit) <= INTERACTION_DISTANCE)
+            if (unit && text == "*" && bot->getDistance(unit) <= INTERACTION_DISTANCE)
                 hasAccept |= QuestAction::ProcessQuests(unit);
         }
         std::list<ObjectGuid> gos = AI_VALUE(std::list<ObjectGuid>, "nearest game objects no los");
@@ -77,16 +77,16 @@ bool AcceptQuestAction::Execute(Event& event)
             GameObject* go = ai->GetGameObject(*i);
             if (go && quest && go->HasQuest(quest))
             {
-                guid = go->GetObjectGuid().GetRawValue();
+                guid = go->getObjectGuid().GetRawValue();
                 break;
             }
-            if (go && text == "*" && bot->GetDistance(go) <= INTERACTION_DISTANCE)
+            if (go && text == "*" && bot->getDistance(go) <= INTERACTION_DISTANCE)
                 hasAccept |= QuestAction::ProcessQuests(go);
         }
     }
     else
     {
-        WorldPacket& p = event.getPacket();
+        WorldPacket& p = event.GetPacket();
         p.rpos(0);
         p >> guid >> quest;
     }
@@ -108,13 +108,13 @@ bool AcceptQuestAction::Execute(Event& event)
 
 bool AcceptQuestShareAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     Player* bot = ai->GetBot();
 
     if (!ai->IsSafe(requester))
         requester = bot;
 
-    WorldPacket& p = event.getPacket();
+    WorldPacket& p = event.GetPacket();
     p.rpos(0);
     uint32 quest;
     p >> quest;
@@ -175,9 +175,9 @@ bool AcceptQuestShareAction::Execute(Event& event)
 bool ConfirmQuestAction::Execute(Event& event)
 {
     Player *bot = ai->GetBot();
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
-    WorldPacket& p = event.getPacket();
+    WorldPacket& p = event.GetPacket();
     p.rpos(0);
     uint32 quest;
     p >> quest;
@@ -220,9 +220,9 @@ bool ConfirmQuestAction::Execute(Event& event)
 bool QuestDetailsAction::Execute(Event& event)
 {
     Player* bot = ai->GetBot();
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
-    WorldPacket& p = event.getPacket();
+    WorldPacket& p = event.GetPacket();
     p.rpos(0);
     ObjectGuid guid;
     uint32 quest;

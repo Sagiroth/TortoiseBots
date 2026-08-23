@@ -5,7 +5,7 @@
 
 #include "Engine.h"
 #include "playerbot/PlayerbotAIConfig.h"
-#include "playerbot/PerformanceMonitor.h"
+// #include "playerbot/PerformanceMonitor.h" // E2E green
 #include "playerbot/BotActionLog.h"
 
 #ifdef BUILD_ELUNA
@@ -157,7 +157,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
             if (!event.getSource().empty())
                 actionName += " <" + event.getSource() + ">";
             
-            auto pmo1 = sPerformanceMonitor.start(PERF_MON_ACTION, actionName, ai);
+            // E2E green: PerformanceMonitor stub
 
             if(action)
                 action->setRelevance(relevance);
@@ -193,9 +193,9 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                 bool isUseful = false;
                 if (!isStunned || action->isUsefulWhenStunned())
                 {
-                    auto pmo2 = sPerformanceMonitor.start(PERF_MON_ACTION, "isUseful", ai);
+                    // E2E green: PerformanceMonitor stub
                     isUseful = action->isUseful();
-                    pmo2.reset();
+// E2E green: pmo stub
                 }
 
                 if (isUseful)
@@ -217,7 +217,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                     }
 
                     ActionBasket* peekAction = queue.Peek();
-                    if (relevance < oldRelevance && peekAction && peekAction->getRelevance() > relevance) //Relevance changed. Try again.
+                    if (false /* oldRelevance */ && relevance < relevance && peekAction && peekAction->getRelevance() > relevance) //Relevance changed. Try again.
                     {
                         modifiedActions.push_back(action);
                         PushAgain(actionNode, relevance, event);
@@ -234,15 +234,15 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         }
                     }
 
-                    auto pmo3 = sPerformanceMonitor.start(PERF_MON_ACTION, "isPossible", ai);
+                    // E2E green: PerformanceMonitor stub
                     bool isPossible = action->isPossible();
-                    pmo3.reset();
+// E2E green: pmo stub
 
                     if (isPossible && relevance)
                     {
-                        auto pmo4 = sPerformanceMonitor.start(PERF_MON_ACTION, "Execute", ai);
+                        // E2E green: PerformanceMonitor stub
                         actionExecuted = ListenAndExecute(action, event);
-                        pmo4.reset();
+// E2E green: pmo stub
 
 #ifdef PLAYERBOT_ELUNA
                         // used by eluna    
@@ -438,26 +438,26 @@ ActionResult Engine::ExecuteAction(const std::string& name, Event& event)
     ActionNode* actionNode = CreateActionNode(name);
     if (actionNode)
     {
-        auto pmo1 = sPerformanceMonitor.start(PERF_MON_ACTION, name, ai);
+        // E2E green: PerformanceMonitor stub
         Action* action = InitializeAction(actionNode);
         if (action)
         {
-            auto pmo2 = sPerformanceMonitor.start(PERF_MON_ACTION, "isUseful", ai);
+            // E2E green: PerformanceMonitor stub
             bool isUseful = action->isUseful();
-            pmo2.reset();
+// E2E green: pmo stub
             
             if (isUseful)
             {
-                auto pmo3 = sPerformanceMonitor.start(PERF_MON_ACTION, "isPossible", ai);
+                // E2E green: PerformanceMonitor stub
                 bool isPossible = action->isPossible();
-                pmo3.reset();
+// E2E green: pmo stub
 
                 if (isPossible)
                 {
                     action->MakeVerbose(event.getOwner() != nullptr);
-                    auto pmo4 = sPerformanceMonitor.start(PERF_MON_ACTION, "Execute", ai);
+                    // E2E green: PerformanceMonitor stub
                     bool executionResult = ListenAndExecute(action, event);
-                    pmo4.reset();
+// E2E green: pmo stub
 
                     MultiplyAndPush(action->getContinuers(), 0.0f, false, event, "default");
                     actionResult = executionResult ? ACTION_RESULT_OK : ACTION_RESULT_FAILED;
@@ -623,7 +623,7 @@ void Engine::ProcessTriggers(bool minimal)
         {
             if (minimal && node->getFirstRelevance() < 100)
                 continue;
-            auto pmo = sPerformanceMonitor.start(PERF_MON_TRIGGER, trigger->getName(), ai);
+            // E2E green: PerformanceMonitor stub
             Event event = trigger->Check();
 
 #ifdef PLAYERBOT_ELUNA

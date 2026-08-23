@@ -1575,7 +1575,7 @@ public:
     float GetValue(Action* action) override
     {
         // Only allow stealth actions
-        const std::string& actionName = action->getName();
+        const std::string& actionName = action->GetName();
         if ((actionName == "unstealth") ||
             (actionName == "check stealth") ||
             (actionName == "feral charge - cat") ||

@@ -9,7 +9,7 @@ float WorldBuffTravelMultiplier::GetValue(Action* action)
     if (!action)
         return 1.0f;
 
-    std::string name = action->getName();
+    std::string name = action->GetName();
 
     if (name == "choose travel target" || name == "request travel target" ||
         name == "request named travel target" || name == "request quest travel target" ||

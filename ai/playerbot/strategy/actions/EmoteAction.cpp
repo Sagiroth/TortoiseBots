@@ -100,15 +100,15 @@ void EmoteActionBase::InitEmotes()
 
 bool EmoteActionBase::Emote(Unit* target, uint32 type, bool textEmote)
 {
-    if (target && !sServerFacade.IsInFront(bot, target, sPlayerbotAIConfig.sightDistance, M_PI_F))
+    if (target && !sServerFacade.isInFront(bot, target, sPlayerbotAIConfig.sightDistance, M_PI_F))
         sServerFacade.SetFacingTo(bot, target);
 
     ObjectGuid oldSelection = bot->GetSelectionGuid();
     if (target)
     {
-        bot->SetSelectionGuid(target->GetObjectGuid());
+        bot->SetSelectionGuid(target->getObjectGuid());
         Player* player = dynamic_cast<Player*>(target);
-        if (player && player->GetPlayerbotAI() && !sServerFacade.IsInFront(player, bot, sPlayerbotAIConfig.sightDistance, M_PI_F))
+        if (player && PlayerbotAIStorage::Instance().GetAI(player) && !sServerFacade.isInFront(player, bot, sPlayerbotAIConfig.sightDistance, M_PI_F))
             sServerFacade.SetFacingTo(player, bot);
     }
 
@@ -116,7 +116,7 @@ bool EmoteActionBase::Emote(Unit* target, uint32 type, bool textEmote)
     {
         WorldPacket data(SMSG_TEXT_EMOTE);
         data << type;
-        data << urand(0, GetNumberOfEmoteVariants((TextEmotes)type, bot->getRace(), bot->getGender()) - 1);
+        data << urand(0, GetNumberOfEmoteVariants((TextEmotes)type, bot->GetRace(), bot->GetGender()) - 1);
         data << ((bot->GetSelectionGuid() && urand(0, 1)) ? bot->GetSelectionGuid() : ObjectGuid());
         bot->GetSession()->HandleTextEmoteOpcode(data);
     }
@@ -138,7 +138,7 @@ Unit* EmoteActionBase::GetTarget()
     for (std::list<ObjectGuid>::iterator i = nfp.begin(); i != nfp.end(); ++i)
     {
         Unit* unit = ai->GetUnit(*i);
-        if (unit && sServerFacade.GetDistance2d(bot, unit) < sPlayerbotAIConfig.tooCloseDistance) targets.push_back(unit);
+        if (unit && sServerFacade.getDistance2d(bot, unit) < sPlayerbotAIConfig.tooCloseDistance) targets.push_back(unit);
     }
 
     if (!targets.empty())
@@ -621,7 +621,7 @@ bool EmoteActionBase::ReceiveEmote(Player* requester, Player* source, uint32 emo
         break;
     }
 
-    if (source && !sServerFacade.isMoving(bot) && !sServerFacade.IsInFront(bot, source, sPlayerbotAIConfig.farDistance, M_PI_F))
+    if (source && !sServerFacade.isMoving(bot) && !sServerFacade.isInFront(bot, source, sPlayerbotAIConfig.farDistance, M_PI_F))
         sServerFacade.SetFacingTo(bot, source);
 
     if (verbal)
@@ -637,8 +637,8 @@ bool EmoteActionBase::ReceiveEmote(Player* requester, Player* source, uint32 emo
     {
         WorldPacket data(SMSG_TEXT_EMOTE);
         data << textEmote;
-        data << urand(0, GetNumberOfEmoteVariants((TextEmotes)textEmote, bot->getRace(), bot->getGender()) - 1);
-        data << ((source && urand(0, 1)) ? source->GetObjectGuid() : ObjectGuid());
+        data << urand(0, GetNumberOfEmoteVariants((TextEmotes)textEmote, bot->GetRace(), bot->GetGender()) - 1);
+        data << ((source && urand(0, 1)) ? source->getObjectGuid() : ObjectGuid());
         bot->GetSession()->HandleTextEmoteOpcode(data);
     }
     else
@@ -652,13 +652,13 @@ bool EmoteActionBase::ReceiveEmote(Player* requester, Player* source, uint32 emo
 
 bool EmoteAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    WorldPacket p(event.getPacket());
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    WorldPacket p(event.GetPacket());
     uint32 emote = 0;
     Player* pSource = NULL;
     bool isReact = false;
     bool isTarget = false;
-    if (!p.empty() && p.GetOpcode() == SMSG_TEXT_EMOTE)
+    if (!p.empty() && p.getOpcode() == SMSG_TEXT_EMOTE)
     {
         isReact = true;
         ObjectGuid source;
@@ -693,14 +693,14 @@ bool EmoteAction::Execute(Event& event)
         if (text_emote == TEXTEMOTE_EAT)
             allowEmote = false;
 
-        if (allowEmote && pSource && (pSource->GetObjectGuid() != bot->GetObjectGuid()))
+        if (allowEmote && pSource && (pSource->getObjectGuid() != bot->getObjectGuid()))
         {
             sLog.outDetail("Bot #%d %s:%d <%s> received SMSG_TEXT_EMOTE %d from player #%d <%s>", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName(), text_emote, pSource->GetGUIDLow(), pSource->GetName());
             emote = text_emote;
         }
     }
 
-    if (!p.empty() && p.GetOpcode() == SMSG_EMOTE)
+    if (!p.empty() && p.getOpcode() == SMSG_EMOTE)
     {
         isReact = true;
         ObjectGuid source;
@@ -709,9 +709,9 @@ bool EmoteAction::Execute(Event& event)
         p >> emoteId >> source;
 
         pSource = sObjectMgr.GetPlayer(source);
-        if (pSource && pSource != bot && sServerFacade.GetDistance2d(bot, pSource) < sPlayerbotAIConfig.farDistance && emoteId != EMOTE_ONESHOT_NONE)
+        if (pSource && pSource != bot && sServerFacade.getDistance2d(bot, pSource) < sPlayerbotAIConfig.farDistance && emoteId != EMOTE_ONESHOT_NONE)
         {
-            if ((pSource->GetObjectGuid() != bot->GetObjectGuid()) && (pSource->GetSelectionGuid() == bot->GetObjectGuid() || (urand(0, 1) && sServerFacade.IsInFront(pSource, bot, 10.0f, M_PI_F))))
+            if ((pSource->getObjectGuid() != bot->getObjectGuid()) && (pSource->GetSelectionGuid() == bot->getObjectGuid() || (urand(0, 1) && sServerFacade.isInFront(pSource, bot, 10.0f, M_PI_F))))
             {
                 sLog.outDetail("Bot #%d %s:%d <%s> received SMSG_EMOTE %d from player #%d <%s>", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName(), emoteId, pSource->GetGUIDLow(), pSource->GetName());
                 std::vector<uint32> types;
@@ -777,7 +777,7 @@ bool EmoteAction::Execute(Event& event)
             return false;
     }
 
-    std::string param = event.getParam();
+    std::string param = event.GetParam();
     if ((!isReact && param.empty()) || emote)
     {
         time_t lastEmote = AI_VALUE2(time_t, "last emote", qualifier);
@@ -797,7 +797,7 @@ bool EmoteAction::Execute(Event& event)
     {
         WorldPacket data(SMSG_TEXT_EMOTE);
         data << textEmotes[param];
-        data << urand(0, GetNumberOfEmoteVariants((TextEmotes)textEmotes[param], bot->getRace(), bot->getGender()) - 1);
+        data << urand(0, GetNumberOfEmoteVariants((TextEmotes)textEmotes[param], bot->GetRace(), bot->GetGender()) - 1);
         data << ((bot->GetSelectionGuid() && urand(0, 1)) ? bot->GetSelectionGuid() : ObjectGuid());
         bot->GetSession()->HandleTextEmoteOpcode(data);
 
@@ -852,16 +852,16 @@ bool TalkAction::Execute(Event& event)
     if (target)
     {
         Player* player = dynamic_cast<Player*>(target);
-        if (player && player->GetPlayerbotAI())
-            player->GetPlayerbotAI()->GetAiObjectContext()->GetValue<ObjectGuid>("talk target")->Set(bot->GetObjectGuid());
+        if (player && PlayerbotAIStorage::Instance().GetAI(player))
+            PlayerbotAIStorage::Instance().GetAI(player)->GetAiObjectContext()->GetValue<ObjectGuid>("talk target")->Set(bot->getObjectGuid());
 
-        context->GetValue<ObjectGuid>("talk target")->Set(target->GetObjectGuid());
+        context->GetValue<ObjectGuid>("talk target")->Set(target->getObjectGuid());
         //return Emote(target, GetRandomEmote(target, true), true);
         uint32 emote = GetRandomEmote(target, true);
         WorldPacket data(SMSG_TEXT_EMOTE);
         data << emote;
-        data << urand(0, GetNumberOfEmoteVariants((TextEmotes)emote, bot->getRace(), bot->getGender()) - 1);
-        data << ((target && urand(0, 1)) ? target->GetObjectGuid() : ObjectGuid());
+        data << urand(0, GetNumberOfEmoteVariants((TextEmotes)emote, bot->GetRace(), bot->GetGender()) - 1);
+        data << ((target && urand(0, 1)) ? target->getObjectGuid() : ObjectGuid());
         bot->GetSession()->HandleTextEmoteOpcode(data);
         return true;
     }

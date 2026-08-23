@@ -203,7 +203,7 @@ public:
         virtual bool isUseful()
         {
             Unit* target = GetTarget();
-            return CastMeleeSpellAction::isUseful() && (ai->HasStrategy("close", BotState::BOT_STATE_COMBAT) || bot->hasUnitState(UNIT_STAT_MELEE_ATTACKING));
+            return CastMeleeSpellAction::isUseful() && (ai->HasStrategy("close", BotState::BOT_STATE_COMBAT) || bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING));
         }
     };
 
@@ -273,7 +273,7 @@ public:
 
             Creature* creature = target->ToCreature();
             return creature && creature->GetCreatureInfo() &&
-                   creature->GetCreatureInfo()->isTameable();
+                   creature->GetCreatureInfo()->IsTameable();
         }
     };
 

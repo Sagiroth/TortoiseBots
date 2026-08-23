@@ -334,8 +334,8 @@ namespace ai
 
         virtual bool isUseful()
         {
-            return CastComboAction::isUseful() && GetTarget() && (GetTarget()->getClass() == CLASS_WARRIOR ||
-                GetTarget()->getClass() == CLASS_ROGUE);
+            return CastComboAction::isUseful() && GetTarget() && (GetTarget()->GetClass() == CLASS_WARRIOR ||
+                GetTarget()->GetClass() == CLASS_ROGUE);
         }
     };
 
@@ -362,11 +362,11 @@ namespace ai
                 Group* group = bot->GetGroup();
                 for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
                 {
-                    Player* member = ref->getSource();
+                    Player* member = ref->GetSource();
                     if (!member || member == bot || !member->IsInWorld() || !group->SameSubGroup(bot, member))
                         continue;
 
-                    if (member->getClass() == CLASS_SHAMAN && member->GetLevel() > 32)
+                    if (member->GetClass() == CLASS_SHAMAN && member->GetLevel() > 32)
                         return false;
                 }
             }

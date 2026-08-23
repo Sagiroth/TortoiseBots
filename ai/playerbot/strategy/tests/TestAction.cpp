@@ -74,11 +74,11 @@ TestAction::TestAction(PlayerbotAI* ai, std::string name)
 
 bool TestAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner();
+    Player* requester = event.GetOwner();
     if (!requester)
         requester = GetMaster();
 
-    std::string param = event.getParam();
+    std::string param = event.GetParam();
 
     //LogToConsole("[TestAction] Execute called with param: " + param + " step" + std::to_string(pc));
 
@@ -203,8 +203,8 @@ TestResult TestAction::ExecuteCommand(const std::string& line, std::string& mess
         if (command->Matches(line))
         {
             std::string params;
-            if (line.size() > command->GetNameSize())
-                params = line.substr(command->GetNameSize());
+            if (line.size() > command->getNameSize())
+                params = line.substr(command->getNameSize());
 
             return command->Execute(params, bot, ai, ctx, message);
         }
@@ -244,8 +244,8 @@ void TestAction::CheckMonitors()
             {
                 std::string message, params;
 
-                if (monitorStr.size() > monitor->GetNameSize())
-                    params = monitorStr.substr(monitor->GetNameSize());
+                if (monitorStr.size() > monitor->getNameSize())
+                    params = monitorStr.substr(monitor->getNameSize());
 
                 TestResult r = monitor->Check(params, bot, ctx, message);
                 if (r != TestResult::PENDING)
@@ -323,7 +323,7 @@ void TestAction::ReportResult()
         LogToConsole(logLine);
 
         if (ai->GetHolder())
-            ai->GetHolder()->DeleteBot(bot->GetObjectGuid(), false);        
+            ai->GetHolder()->DeleteBot(bot->getObjectGuid(), false);        
     }
 }
 

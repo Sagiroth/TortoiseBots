@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "../../runtime/PlayerbotAIStorage.h" // Headless storage shim
 #include "TradeStatusAction.h"
 
 #include "playerbot/strategy/ItemVisitors.h"
@@ -20,10 +21,10 @@ bool TradeStatusAction::Execute(Event& event)
         return false;
 
     bool shouldTrade = true;
-    if (!trader->GetPlayerbotAI())
+    if (!PlayerbotAIStorage::Instance().GetAI(trader))
     {
         shouldTrade = false;
-        if (trader == master || bot->IsInGroup(trader))
+        if (trader == master || IsInGroup_Helper(bot, trader))
         {
             shouldTrade = ai->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false, trader);
         }
@@ -38,7 +39,7 @@ bool TradeStatusAction::Execute(Event& event)
         return false;
     }
 
-    WorldPacket p(event.getPacket());
+    WorldPacket p(event.GetPacket());
     p.rpos(0);
     uint32 status;
     p >> status;
@@ -92,7 +93,7 @@ bool TradeStatusAction::Execute(Event& event)
                 uint32 count = i->second;
 
                 CraftData &craftData = AI_VALUE(CraftData&, "craft");
-                if (!craftData.IsEmpty() && craftData.itemId == itemId)
+                if (!craftData.IsEmpty() && craftData.itemid == itemId)
                 {
                     craftData.Crafted(count);
                 }
@@ -103,7 +104,7 @@ bool TradeStatusAction::Execute(Event& event)
     }
     else if (status == TRADE_STATUS_BEGIN_TRADE)
     {
-        if (!sServerFacade.IsInFront(bot, trader, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
+        if (!sServerFacade.isInFront(bot, trader, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
             sServerFacade.SetFacingTo(bot, trader);
 
         BeginTrade();
@@ -117,7 +118,7 @@ bool TradeStatusAction::Execute(Event& event)
 void TradeStatusAction::BeginTrade()
 {
     Player* trader = bot->GetTrader();
-    if (!trader || trader->GetPlayerbotAI())
+    if (!trader || PlayerbotAIStorage::Instance().GetAI(trader))
         return;
 
     WorldPacket p;
@@ -146,7 +147,7 @@ bool TradeStatusAction::CheckTrade()
     if (!bot->GetTradeData() || !trader || !trader->GetTradeData())
         return false;
 
-    if (!ai->HasActivePlayerMaster() && bot->GetTrader()->GetPlayerbotAI())
+    if (!ai->HasActivePlayerMaster() && PlayerbotAIStorage::Instance().GetAI(bot->GetTrader()))
     {
         bool isGivingItem = false;
         for (uint32 slot = 0; slot < TRADE_SLOT_TRADED_COUNT; ++slot)
@@ -176,7 +177,7 @@ bool TradeStatusAction::CheckTrade()
         if (isGettingItem)
         {
             std::string name = trader->GetName();
-            if (bot->GetGroup() && bot->GetGroup()->IsMember(bot->GetTrader()->GetObjectGuid()) && ai->HasRealPlayerMaster())
+            if (bot->GetGroup() && bot->GetGroup()->IsMember(bot->GetTrader()->getObjectGuid()) && ai->HasRealPlayerMaster())
             {
                 ai->TellPlayerNoFacing(trader, "Thank you " + name + ".", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
             }
@@ -322,7 +323,7 @@ int32 TradeStatusAction::CalculateCost(Player* player, bool sell)
                 continue;
             }
 
-            if (player == bot && sell && craftData.itemId == proto->ItemId && craftData.IsFulfilled())
+            if (player == bot && sell && craftData.itemid == proto->ItemId && craftData.IsFulfilled())
             {
                 sum += item->GetCount() * SetCraftAction::GetCraftFee(craftData);
                 continue;

@@ -7,7 +7,7 @@ using namespace ai;
 std::vector<uint32> AvailableGlyphsValue::Calculate()
 {
     std::vector<uint32> glyphList;
-    for (auto& itemId : sRandomItemMgr.GetGlyphs(bot->getClassMask()))
+    for (auto& itemId : sRandomItemMgr.GetGlyphs(bot->GetClassMask()))
     {
         const ItemPrototype* glyphProto = sObjectMgr.GetItemPrototype(itemId);
 
@@ -121,7 +121,7 @@ std::vector<uint32> WantedGlyphsValue::Calculate()
         //Pick the premade spec of the same tree as the bot's tree.
         TalentSpec oldSpec(bot);
         int currentTree = oldSpec.highestTree();
-        for (auto& path : sPlayerbotAIConfig.classSpecs[bot->getClass()].talentPath)
+        for (auto& path : sPlayerbotAIConfig.classSpecs[bot->GetClass()].talentPath)
         {
             if (path.talentSpec.back().highestTree() != currentTree)
                 continue;
@@ -139,7 +139,7 @@ std::vector<uint32> WantedGlyphsValue::Calculate()
     GlyphPriorityList glyphPriorityList;
     uint32 listLevel = 999;
 
-    for (auto& [level, glyphList] : sPlayerbotAIConfig.glyphPriorityMap[bot->getClass()][specId])
+    for (auto& [level, glyphList] : sPlayerbotAIConfig.glyphPriorityMap[bot->GetClass()][specId])
     {
         if (level < listLevel && level >= bot->GetLevel()) //Find the lowest level list that is above the bots current level.
         {
@@ -171,7 +171,7 @@ std::vector<uint32> EquipedGlyphsValue::Calculate()
 #ifdef MANGOSBOT_TWO
         if (uint32 glyphId = bot->GetGlyph(glyphSlot))
         {
-            if (const ItemPrototype* glyphProto = GetGlyphProtoFromGlyphId(glyphId, bot->getClassMask()))
+            if (const ItemPrototype* glyphProto = GetGlyphProtoFromGlyphId(glyphId, bot->GetClassMask()))
                 glyphItemId = glyphProto->ItemId;
         }
 #endif

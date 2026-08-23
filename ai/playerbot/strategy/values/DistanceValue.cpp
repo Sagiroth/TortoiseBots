@@ -26,7 +26,7 @@ float DistanceValue::Calculate()
         if (!obj || !obj->IsInWorld())
             return 0.0f;
 
-        return ServerFacade::instance().GetDistance2d(botAI->GetBot(), obj);
+        return ServerFacade::instance().getDistance2d(botAI->GetBot(), obj);
     }
 
     if (qualifier.find("position_") == 0)
@@ -39,7 +39,7 @@ float DistanceValue::Calculate()
         if (botAI->GetBot()->GetMapId() != pos.mapId)
             return 0.0f;
 
-        return ServerFacade::instance().GetDistance2d(botAI->GetBot(), pos.x, pos.y);
+        return ServerFacade::instance().getDistance2d(botAI->GetBot(), pos.x, pos.y);
     }
 
     Unit* target = nullptr;
@@ -69,7 +69,7 @@ float DistanceValue::Calculate()
         if (!target || !target->IsInWorld())
             return 0.0f;
 
-        return bot->GetDistance2d(target);
+        return bot->getDistance2d(target);
     }
     else
     {
@@ -78,7 +78,7 @@ float DistanceValue::Calculate()
         {
             Formation* formation = AI_VALUE(Formation*, "formation");
             WorldLocation loc = formation->GetLocation();
-            return ServerFacade::instance().GetDistance2d(botAI->GetBot(), loc.GetPositionX(), loc.GetPositionY());
+            return ServerFacade::instance().getDistance2d(botAI->GetBot(), loc.getPositionX(), loc.getPositionY());
         }
     }
 
@@ -88,7 +88,7 @@ float DistanceValue::Calculate()
     if (target == botAI->GetBot())
         return 0.0f;
 
-    return ServerFacade::instance().GetDistance2d(botAI->GetBot(), target);
+    return ServerFacade::instance().getDistance2d(botAI->GetBot(), target);
 }
 
 bool InsideTargetValue::Calculate()
@@ -97,6 +97,6 @@ bool InsideTargetValue::Calculate()
     if (!target || !target->IsInWorld() || target == botAI->GetBot())
         return false;
 
-    float dist = ServerFacade::instance().GetDistance2d(botAI->GetBot(), target->GetPositionX(), target->GetPositionY());
+    float dist = ServerFacade::instance().getDistance2d(botAI->GetBot(), target->getPositionX(), target->getPositionY());
     return ServerFacade::instance().IsDistanceLessThan(dist, target->GetCombatReach());
 }

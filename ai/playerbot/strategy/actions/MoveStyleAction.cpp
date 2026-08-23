@@ -9,8 +9,8 @@ using namespace ai;
 
 bool MoveStyleAction::Execute(Event& event)
 {
-    std::string strategy = event.getParam();
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    std::string strategy = event.GetParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
     MoveStyleValue* value = (MoveStyleValue*)context->GetValue<std::string>("move style");
 

@@ -20,7 +20,7 @@ Unit* PartyMemberValue::FindPartyMember(std::list<Player*>* party, FindPlayerPre
         if (ignoreTanks && ai->IsTank(player))
             continue;
 
-        if (bot->GetGroup() && !player->IsInGroup(bot) && !CanFreeMoveValue::CanFreeMoveTo(ai, player))
+        if (bot->GetGroup() && !IsInGroup_Helper(player, bot) && !CanFreeMoveValue::CanFreeMoveTo(ai, player))
             continue;
 
         if (Check(player) && predicate.Check(player))
@@ -45,17 +45,17 @@ Unit* PartyMemberValue::FindPartyMember(FindPlayerPredicate &predicate, bool ign
     {
         for (GroupReference *ref = group->GetFirstMember(); ref; ref = ref->next())
         {
-            if (!ref->getSource() || bot->GetMapId() != ref->getSource()->GetMapId()) continue;
+            if (!ref->GetSource() || bot->GetMapId() != ref->GetSource()->GetMapId()) continue;
 
-            if (ref->getSource() != bot)
+            if (ref->GetSource() != bot)
             {
-                if (ref->getSubGroup() != bot->GetSubGroup())
+                if (ref->GetSubGroup() != bot->GetSubGroup())
                 {
-                    nearestPlayers.push_back(ref->getSource()->GetObjectGuid());
+                    nearestPlayers.push_back(ref->GetSource()->getObjectGuid());
                 }
                 else
                 {
-                    nearestPlayers.push_front(ref->getSource()->GetObjectGuid());
+                    nearestPlayers.push_front(ref->GetSource()->getObjectGuid());
                 }
             }
         }
@@ -72,7 +72,7 @@ Unit* PartyMemberValue::FindPartyMember(FindPlayerPredicate &predicate, bool ign
     if (allowBufOutOfGroupPlayers && AI_VALUE2(uint32, "current mount speed", "self target"))
         allowBufOutOfGroupPlayers = false;
 
-    if (allowBufOutOfGroupPlayers && !AI_VALUE(LastMovement&, "last movement").lastPath.empty() && AI_VALUE(LastMovement&, "last movement").lastPath.getBack().distance(bot) > sPlayerbotAIConfig.sightDistance)
+    if (allowBufOutOfGroupPlayers && !AI_VALUE(LastMovement&, "last movement").lastPath.empty() && AI_VALUE(LastMovement&, "last movement").lastPath.GetBack().distance(bot) > sPlayerbotAIConfig.sightDistance)
         allowBufOutOfGroupPlayers = false;
 
     if (allowBufOutOfGroupPlayers)
@@ -146,8 +146,8 @@ bool PartyMemberValue::Check(Unit* player)
 bool PartyMemberValue::IsTargetOfSpellCast(Player* target, SpellEntryPredicate &predicate)
 {
     std::list<ObjectGuid> nearestPlayers = AI_VALUE(std::list<ObjectGuid>, "nearest friendly players");
-    ObjectGuid targetGuid = target ? target->GetObjectGuid() : bot->GetObjectGuid();
-    ObjectGuid corpseGuid = target && target->GetCorpse() ? target->GetCorpse()->GetObjectGuid() : ObjectGuid();
+    ObjectGuid targetGuid = target ? target->getObjectGuid() : bot->getObjectGuid();
+    ObjectGuid corpseGuid = target && target->GetCorpse() ? target->GetCorpse()->getObjectGuid() : ObjectGuid();
 
     for (std::list<ObjectGuid>::iterator i = nearestPlayers.begin(); i != nearestPlayers.end(); ++i)
     {
@@ -162,13 +162,13 @@ bool PartyMemberValue::IsTargetOfSpellCast(Player* target, SpellEntryPredicate &
                 Spell* spell = player->GetCurrentSpell((CurrentSpellTypes)type);
                 if (spell && predicate.Check(spell->m_spellInfo)) 
                 {
-                    ObjectGuid unitTarget = spell->m_targets.getUnitTargetGuid();
+                    ObjectGuid unitTarget = spell->m_targets.GetUnitTargetGuid();
                     if (unitTarget == targetGuid)
                         return true;
 
                     if (corpseGuid)
                     {
-                        ObjectGuid corpseTarget = spell->m_targets.getCorpseTargetGuid();
+                        ObjectGuid corpseTarget = spell->m_targets.GetCorpseTargetGuid();
                         if (corpseTarget == corpseGuid)
                             return true;
                     }

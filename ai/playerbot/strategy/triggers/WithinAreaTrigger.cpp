@@ -23,14 +23,14 @@ bool WithinAreaTrigger::IsActive()
     if (!sObjectMgr->GetAreaTriggerTeleport(movement.lastAreaTrigger))
         return false;
 
-    return IsPointInAreaTriggerZone(at, bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+    return IsPointInAreaTriggerZone(at, bot->GetMapId(), bot->getPositionX(), bot->getPositionY(), bot->getPositionZ(),
                                     0.5f);
 }
 
-bool WithinAreaTrigger::IsPointInAreaTriggerZone(AreaTrigger const* atEntry, uint32 mapid, float x, float y, float z,
+bool WithinAreaTrigger::IsPointInAreaTriggerZone(AreaTrigger const* atEntry, uint32 mapId, float x, float y, float z,
                                                  float delta)
 {
-    if (mapid != atEntry->map)
+    if (mapId != atEntry->map)
         return false;
 
     if (atEntry->radius > 0)

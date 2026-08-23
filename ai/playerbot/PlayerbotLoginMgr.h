@@ -97,7 +97,7 @@ namespace ai
 		uint8 GetRace() const { return race; }
 		uint8 GetClass() const { return cls; }
 		uint32 GetLevel() const;
-		Player* GetPlayer() const { return sObjectMgr.GetPlayer(ObjectGuid(HIGHGUID_PLAYER, guid), false); }
+		Player* GetPlayer() const { return sObjectMgr.GetPlayer(ObjectGuid(HIGHGUID_PLAYER, guid)); }
 		bool IsNearPlayer(const LoginSpace& space) const;
 		bool IsOnPlayerMap(const LoginSpace& space) const;
 		bool IsInPlayerGroup(const LoginSpace& space) const;

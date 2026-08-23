@@ -67,7 +67,7 @@ namespace ai
             Formation* formation = AI_VALUE(Formation*, "formation");
 
             WorldLocation loc = formation->GetLocation();
-            if (Formation::IsNullLocation(loc) || loc.mapid == -1)
+            if (Formation::IsNullLocation(loc) || loc.mapId == -1)
                 return WorldLocation();
 
             return loc;

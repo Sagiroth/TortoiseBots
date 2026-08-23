@@ -7,8 +7,8 @@ using namespace ai;
 
 bool CustomStrategyEditAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string text = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string text = event.GetParam();
     int pos = text.find(" ");
     if (pos == std::string::npos) return PrintHelp(requester);
     std::string name = text.substr(0, pos);

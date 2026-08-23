@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "../../runtime/PlayerbotAIStorage.h" // Headless storage shim
 #include "NearestNonBotPlayersValue.h"
 
 #include "Maps/GridNotifiers.h"
@@ -18,11 +19,11 @@ void NearestNonBotPlayersValue::FindUnits(std::list<Unit*> &targets)
 
 bool NearestNonBotPlayersValue::AcceptUnit(Unit* unit)
 {
-    ObjectGuid guid = unit->GetObjectGuid();
+    ObjectGuid guid = unit->getObjectGuid();
 #ifdef MANGOS
-    return guid.IsPlayer() && !((Player*)unit)->GetPlayerbotAI() && (!((Player*)unit)->isGameMaster() || ((Player*)unit)->isGMVisible());
+    return guid.IsPlayer() && !PlayerbotAIStorage::Instance().GetAI((Player*)unit) && (!((Player*)unit)->IsGameMaster() || ((Player*)unit)->IsGMVisible());
 #endif
 #ifdef CMANGOS
-    return guid.IsPlayer() && !((Player*)unit)->GetPlayerbotAI() && (!((Player*)unit)->IsGameMaster() || ((Player*)unit)->isGMVisible());
+    return guid.IsPlayer() && !PlayerbotAIStorage::Instance().GetAI((Player*)unit) && (!((Player*)unit)->IsGameMaster() || ((Player*)unit)->IsGMVisible());
 #endif
 }

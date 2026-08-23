@@ -9,7 +9,7 @@ std::map<InventoryResult, std::string> InventoryChangeFailureAction::messages;
 
 bool InventoryChangeFailureAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!requester)
         return false;
 
@@ -82,7 +82,7 @@ bool InventoryChangeFailureAction::Execute(Event& event)
         messages[EQUIP_ERR_LOOT_CANT_LOOT_THAT_NOW] = "Cannot loot this right now";
     }
 
-    WorldPacket p(event.getPacket());
+    WorldPacket p(event.GetPacket());
     p.rpos(0);
     uint8 err;
     p >> err;

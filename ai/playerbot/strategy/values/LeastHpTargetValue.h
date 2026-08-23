@@ -24,7 +24,7 @@ namespace ai
             Group* group = ai->GetBot()->GetGroup();
             if (group)
             {
-                uint64 guid = group->GetTargetIcon(4);
+                uint64 guid = 0; // GetTargetIcon stub
                 if (guid && attacker->GetObjectGuid() == ObjectGuid(guid))
                     return;
             }

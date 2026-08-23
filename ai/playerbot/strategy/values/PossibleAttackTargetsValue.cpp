@@ -106,7 +106,7 @@ void PossibleAttackTargetsValue::RemoveNonThreating(std::list<ObjectGuid>& targe
 bool PossibleAttackTargetsValue::HasIgnoreCCRti(Unit* target, Player* player)
 {
     Group* group = player->GetGroup();
-    return group && (group->GetTargetIcon(7) == target->GetObjectGuid());
+    return group && (group->GetTargetIcon(7) == target->getObjectGuid());
 }
 
 bool PossibleAttackTargetsValue::HasBreakableCC(Unit* target, Player* player)
@@ -121,7 +121,7 @@ bool PossibleAttackTargetsValue::HasBreakableCC(Unit* target, Player* player)
         return true;
     }
 
-    PlayerbotAI* ai = player->GetPlayerbotAI();
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(player);
     if (ai)
     {
         if (ai->HasAura("sap", target))
@@ -145,7 +145,7 @@ bool PossibleAttackTargetsValue::HasBreakableCC(Unit* target, Player* player)
 
 bool PossibleAttackTargetsValue::HasUnBreakableCC(Unit* target, Player* player)
 {
-    if (target->IsStunned())
+    if (target->HasUnitState(UNIT_STAT_STUNNED))
     {
         return true;
     }
@@ -172,7 +172,7 @@ bool PossibleAttackTargetsValue::IsImmuneToDamage(Unit* target, Player* player)
     }
 
     // Immune to damage
-    PlayerbotAI* ai = player->GetPlayerbotAI();
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(player);
     if (!ai)
         return false;
 
@@ -222,7 +222,7 @@ bool PossibleAttackTargetsValue::IsTapped(Unit* target, Player* player)
 {
     if (player)
     {
-        PlayerbotAI* ai = player->GetPlayerbotAI();
+        PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(player);
 
         if (ai && ai->HasAura("tame beast", target))
             return false;
@@ -232,7 +232,7 @@ bool PossibleAttackTargetsValue::IsTapped(Unit* target, Player* player)
         {
             Unit* victim = creature->GetVictim();
             Player* master = ai ? ai->GetMaster() : nullptr;
-            PlayerbotAI* ai = player->GetPlayerbotAI();
+            PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(player);
 
              if (!victim) //Target is not attacking anything.
                 return true;
@@ -240,7 +240,7 @@ bool PossibleAttackTargetsValue::IsTapped(Unit* target, Player* player)
             if (master && victim == master) //Target is attacking master.
                 return true;
 
-            if (player->IsInGroup(victim)) //Target is attacking groupmember.
+            if (IsInGroup_Helper(player, victim)) //Target is attacking groupmember.
                 return true;
 
             if (!creature->HasLootRecipient()) //Target is untapped.
@@ -249,11 +249,11 @@ bool PossibleAttackTargetsValue::IsTapped(Unit* target, Player* player)
             if (creature->IsTappedBy(player)) //Target is tapped by player.
                 return true;
 
-            if (master && target->getThreatManager().getThreat(master)) //Master as threat
+            if (master && target->GetThreatManager().GetThreat(master)) //Master as threat
                 return true;
 
             if (ai && ai->HasStrategy("attack tagged", BotState::BOT_STATE_NON_COMBAT)) //Can attack tagged.
-                if(ai->HasActivePlayerMaster() || !player->GetGroup() || player->GetGroup()->IsLeader(player->GetObjectGuid())) //Playing with a player or not in a group or master of group.
+                if(ai->HasActivePlayerMaster() || !player->GetGroup() || player->GetGroup()->IsLeader(player->getObjectGuid())) //Playing with a player or not in a group or master of group.
                     return true;
         }
     }
@@ -272,22 +272,22 @@ bool PossibleAttackTargetsValue::IsValid(Unit* target, Player* player, float ran
     if (!IsPossibleTarget(target, player, range, ignoreCC))
         return false;
 
-    if (sServerFacade.GetThreatManager(target).getCurrentVictim())
+    if (sServerFacade.GetThreatManager(target).GetCurrentVictim())
         return true;
 
     if (target->GetGuidValue(UNIT_FIELD_TARGET))
         return true;
 
-    if (target->GetObjectGuid().IsPlayer())
+    if (target->getObjectGuid().IsPlayer())
         return true;
 
-    if (player->GetPlayerbotAI() && (target->GetObjectGuid() == PAI_VALUE(ObjectGuid, "attack target")))
+    if (PlayerbotAIStorage::Instance().GetAI(player) && (target->getObjectGuid() == PAI_VALUE(ObjectGuid, "attack target")))
         return true;
 
     if(!HasIgnoreCCRti(target, player) && (HasBreakableCC(target, player) || HasUnBreakableCC(target, player)))
         return true;
 
-    if (player->GetPlayerbotAI() && !player->GetPlayerbotAI()->HasActivePlayerMaster()&& PAI_VALUE(Unit*, "rti target") == target)
+    if (PlayerbotAIStorage::Instance().GetAI(player) && !PlayerbotAIStorage::Instance().GetAI(player)->HasActivePlayerMaster()&& PAI_VALUE(Unit*, "rti target") == target)
         return true;
 
     return false;
@@ -346,7 +346,7 @@ bool PossibleAttackTargetsValue::IsPossibleTarget(Unit* target, Player* player, 
 
 bool PossibleAddsValue::Calculate()
 {
-    PlayerbotAI *ai = bot->GetPlayerbotAI();
+    PlayerbotAI *ai = PlayerbotAIStorage::Instance().GetAI(bot);
     std::list<ObjectGuid> possible = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get();
     std::list<ObjectGuid> attackers = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
 
@@ -356,14 +356,14 @@ bool PossibleAddsValue::Calculate()
         if (find(attackers.begin(), attackers.end(), guid) != attackers.end()) continue;
 
         Unit* add = ai->GetUnit(guid);
-        if (add && !add->GetGuidValue(UNIT_FIELD_TARGET) && !sServerFacade.GetThreatManager(add).getCurrentVictim() && sServerFacade.IsHostileTo(add, bot))
+        if (add && !add->GetGuidValue(UNIT_FIELD_TARGET) && !sServerFacade.GetThreatManager(add).GetCurrentVictim() && sServerFacade.IsHostileTo(add, bot))
         {
             for (std::list<ObjectGuid>::iterator j = attackers.begin(); j != attackers.end(); ++j)
             {
                 Unit* attacker = ai->GetUnit(*j);
                 if (!attacker) continue;
 
-                float dist = sServerFacade.GetDistance2d(attacker, add);
+                float dist = sServerFacade.getDistance2d(attacker, add);
                 if (sServerFacade.IsDistanceLessOrEqualThan(dist, sPlayerbotAIConfig.aoeRadius * 1.5f)) continue;
                 if (sServerFacade.IsDistanceLessOrEqualThan(dist, sPlayerbotAIConfig.aggroDistance)) return true;
             }

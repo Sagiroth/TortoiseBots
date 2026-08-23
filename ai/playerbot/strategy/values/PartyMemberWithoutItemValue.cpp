@@ -15,7 +15,7 @@ public:
     virtual bool Check(Unit* unit) override
     {
         Pet* pet = dynamic_cast<Pet*>(unit);
-        if (pet && (pet->getPetType() == MINI_PET || pet->getPetType() == SUMMON_PET))
+        if (pet && (pet->GetPetType() == MINI_PET || pet->GetPetType() == SUMMON_PET))
             return false;
 
         if (!sServerFacade.IsAlive(unit))
@@ -29,11 +29,11 @@ public:
         if (!(member->IsInSameGroupWith(ai->GetBot()) || member->IsInSameRaidWith(ai->GetBot())))
 #endif
 #ifdef CMANGOS
-        if (!member->IsInGroup(ai->GetBot()))
+        if (!IsInGroup_Helper(member, ai->GetBot()))
 #endif
             return false;
 
-        PlayerbotAI *botAi = member->GetPlayerbotAI();
+        PlayerbotAI *botAi = PlayerbotAIStorage::Instance().GetAI(member);
         if (!botAi)
             return false;
 
@@ -72,7 +72,7 @@ public:
         if (!member)
             return false;
 
-        return member->getClass() != CLASS_MAGE;
+        return member->GetClass() != CLASS_MAGE;
     }
 
 };
@@ -92,7 +92,7 @@ public:
         if (!member)
             return false;
 
-        uint8 cls = member->getClass();
+        uint8 cls = member->GetClass();
         return cls == CLASS_DRUID ||
                 cls == CLASS_HUNTER ||
                 cls == CLASS_PALADIN ||

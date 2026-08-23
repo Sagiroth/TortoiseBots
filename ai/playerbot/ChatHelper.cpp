@@ -456,7 +456,7 @@ std::string ChatHelper::formatGameobject(const GameObject* go)
                 name = gl->Name[loc_idx];
         }
     }
-    out << "|cFFFFFF00|Hfound:" << go->GetObjectGuid().GetRawValue() << ":" << go->GetEntry() << ":" <<  "|h[" << name << "]|h|r";
+    out << "|cFFFFFF00|Hfound:" << go->getObjectGuid().GetRawValue() << ":" << go->GetEntry() << ":" <<  "|h[" << name << "]|h|r";
     return out.str();
 }
 
@@ -475,7 +475,7 @@ std::string ChatHelper::formatWorldobject(const WorldObject* wo)
                 name = gl->Name[loc_idx];
         }
     }
-    out << "|cFFFFFF00|Hfound:" << wo->GetObjectGuid().GetRawValue() << ":" << wo->GetEntry() << ":" << "|h[" << name << "]|h|r";
+    out << "|cFFFFFF00|Hfound:" << wo->getObjectGuid().GetRawValue() << ":" << wo->GetEntry() << ":" << "|h[" << name << "]|h|r";
     return out.str();
 }
 
@@ -970,12 +970,12 @@ std::string ChatHelper::formatRole(BotRoles role)
 
 std::string ChatHelper::specName(const Player* player)
 {
-    return specs[player->getClass()][AiFactory::GetPlayerSpecTab(player)];
+    return specs[player->GetClass()][AiFactory::GetPlayerSpecTab(player)];
 }
 
 std::string ChatHelper::formatClass(const Player* player, int spec)
 {
-    uint8 cls = player->getClass();
+    uint8 cls = player->GetClass();
 
     std::ostringstream out;
     out << specs[cls][spec] << " (";
@@ -1143,19 +1143,19 @@ std::string ChatHelper::formatWorldPosition(const WorldPosition& pos, const Worl
 {
     std::ostringstream out;
     out << std::fixed << std::setprecision(2);
-    if (!refPos || refPos.getMapId() != pos.getMapId())
+    if (!refPos || refPos.GetMapId() != pos.GetMapId())
     {
         out << pos.getX() << "," << pos.getY() << "," << pos.getZ();
 
-        if (pos.getMap(pos.getFirstInstanceId()))
-            out << " in " << pos.getMap(pos.getFirstInstanceId())->GetMapName();
+        if (pos.GetMap(pos.GetFirstInstanceId()))
+            out << " in " << pos.GetMap(pos.GetFirstInstanceId())->GetMapName();
         else
-            out << " map:" << pos.getMapId();
+            out << " map:" << pos.GetMapId();
     }
     else
     {
         float distance = refPos.distance(pos);
-        float angle = refPos.getAngleTo(pos);
+        float angle = refPos.GetAngleTo(pos);
 
         out << distance << "y to the " << formatAngle(angle);
     }
@@ -1167,8 +1167,8 @@ std::string ChatHelper::formatWorldPosition(const WorldPosition& pos, const Worl
 std::string ChatHelper::formatGuidPosition(const GuidPosition& guidP, const GuidPosition& ref)
 {
     std::ostringstream out;
-    if (guidP.GetWorldObject(guidP.getFirstInstanceId()))
-        out << formatWorldobject(guidP.GetWorldObject(guidP.getFirstInstanceId()));
+    if (guidP.GetWorldObject(guidP.GetFirstInstanceId()))
+        out << formatWorldobject(guidP.GetWorldObject(guidP.GetFirstInstanceId()));
     else if (guidP.GetCreatureTemplate())
         out << formatWorldEntry(guidP.GetEntry());
     else if (guidP.GetGameObjectInfo())
@@ -1182,7 +1182,7 @@ std::string ChatHelper::formatGuidPosition(const GuidPosition& guidP, const Guid
         out << " " << formatWorldPosition(guidP, ref);
 
     if(ref && ref.IsPlayer() && (guidP.IsCreature() || guidP.IsPlayer()))
-        out << " " << formatReaction(guidP.GetReactionTo(ref, ref.getFirstInstanceId()));
+        out << " " << formatReaction(guidP.GetReactionTo(ref, ref.GetFirstInstanceId()));
 
     out << "]|h|r";
 

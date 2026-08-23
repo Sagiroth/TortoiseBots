@@ -11,8 +11,8 @@ using namespace ai;
 
 bool AhAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string text = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string text = event.GetParam();
 
     std::list<ObjectGuid> npcs = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
     for (std::list<ObjectGuid>::iterator i = npcs.begin(); i != npcs.end(); i++)
@@ -46,7 +46,7 @@ bool AhAction::ExecuteCommand(Player* requester, std::string text, Unit* auction
 
     if (text == "vendor")
     {
-        AuctionHouseEntry const* auctionHouseEntry = bot->GetSession()->GetCheckedAuctionHouseForAuctioneer(auctioneer->GetObjectGuid());
+        AuctionHouseEntry const* auctionHouseEntry = bot->GetSession()->GetCheckedAuctionHouseForAuctioneer(auctioneer->getObjectGuid());
         if (!auctionHouseEntry)
             return false;
 
@@ -125,7 +125,7 @@ bool AhAction::ExecuteCommand(Player* requester, std::string text, Unit* auction
 
 bool AhAction::PostItem(Player* requester, Item* item, uint32 price, Unit* auctioneer, uint32 time)
 {
-    ObjectGuid itemGuid = item->GetObjectGuid();
+    ObjectGuid itemGuid = item->getObjectGuid();
     ItemPrototype const* proto = item->GetProto();
 
     ItemQualifier itemQualifier(item);
@@ -133,7 +133,7 @@ bool AhAction::PostItem(Player* requester, Item* item, uint32 price, Unit* aucti
     uint32 cnt = item->GetCount();
 
     WorldPacket packet;
-    packet << auctioneer->GetObjectGuid();
+    packet << auctioneer->getObjectGuid();
 #ifdef MANGOSBOT_TWO
     packet << (uint32)1;
 #endif
@@ -160,7 +160,7 @@ bool AhAction::PostItem(Player* requester, Item* item, uint32 price, Unit* aucti
 
 bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auctioneer)
 {
-    AuctionHouseEntry const* auctionHouseEntry = bot->GetSession()->GetCheckedAuctionHouseForAuctioneer(auctioneer->GetObjectGuid());
+    AuctionHouseEntry const* auctionHouseEntry = bot->GetSession()->GetCheckedAuctionHouseForAuctioneer(auctioneer->getObjectGuid());
     if (!auctionHouseEntry)
         return false;
 
@@ -392,7 +392,7 @@ bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auct
 
 bool AhBidAction::BidItem(Player* requester, AuctionEntry* auction, uint32 price, Unit* auctioneer, bool isBuyout, std::string reason)
 {
-    AuctionHouseEntry const* auctionHouseEntry = bot->GetSession()->GetCheckedAuctionHouseForAuctioneer(auctioneer->GetObjectGuid());
+    AuctionHouseEntry const* auctionHouseEntry = bot->GetSession()->GetCheckedAuctionHouseForAuctioneer(auctioneer->getObjectGuid());
     if (!auctionHouseEntry)
         return false;
 
@@ -408,7 +408,7 @@ bool AhBidAction::BidItem(Player* requester, AuctionEntry* auction, uint32 price
         return false;
 
     WorldPacket packet;
-    packet << auctioneer->GetObjectGuid();
+    packet << auctioneer->getObjectGuid();
     packet << auction->Id;
     packet << price;
 

@@ -115,10 +115,16 @@ namespace ai
 
         //Getters
         uint32 getMapId() const { return mapId; }
+        uint32 GetMapId() const { return getMapId(); }
         float getX() const { return x; }
         float getY() const { return y; }
         float getZ() const { return z; }
         float getO() const { return o; }
+        // Penqle compat - capitalized aliases for ChatHelper etc
+        uint32 GetFirstInstanceId() const { return getFirstInstanceId(); }
+        Map* GetMap(uint32 instanceId) const { return getMap(instanceId); }
+        std::string GetAreaName(bool fullName=true, bool zoneName=false) const { return getAreaName(fullName, zoneName); }
+        float GetAngleTo(const WorldPosition& endPos) const { return getAngleTo(endPos); }
         G3D::Vector3 getVector3() const;
         std::string print(uint8 precision = 2, bool onlyXyz = false) const;
         virtual std::string to_string() const { char p = '|'; std::stringstream out; out << mapId << p << x << p << y << p << z << p << o; return out.str(); };
@@ -234,7 +240,7 @@ namespace ai
 
         bool IsInStaticLineOfSight(WorldPosition pos, float heightMod = 0.5f) const;
 #if defined(MANGOSBOT_TWO)
-        bool IsInLineOfSight(WorldPosition pos, float heightMod = 0.5f) const { return mapId == pos.mapId && getMap(getFirstInstanceId()) && getMap(getFirstInstanceId())->IsInLineOfSight(x, y, z + heightMod, pos.x, pos.y, pos.z + heightMod, 0, true); }
+        bool IsInLineOfSight(WorldPosition pos, float heightMod = 0.5f) const { return mapId == pos.mapId && getMap(getFirstInstanceId()) && getMap(getFirstInstanceId())->isInLineOfSight(x, y, z + heightMod, pos.x, pos.y, pos.z + heightMod, 0, true); }
         bool GetHitPosition(WorldPosition& pos) const { return getMap(getFirstInstanceId())->GetHitPosition(x, y, z, pos.x, pos.y, pos.z,0, 0.0f);};
 #else
         // Penqle uses lowercase isInLineOfSight (cmangos uppercase IsInLineOfSight).

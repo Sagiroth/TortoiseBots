@@ -15,8 +15,8 @@ constexpr std::string_view FILTER_NAME_PARAM = "filter:name:";
 
 bool TellLosAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string param = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string param = event.GetParam();
 
     if (param.empty() || param == "targets")
     {
@@ -147,7 +147,7 @@ std::list<GameObject*> TellLosAction::FilterGameObjects(Player* requester, const
 
             for (GameObject* obj : gameobjects)
             {
-               float distance = requester->GetDistance(obj);
+               float distance = requester->getDistance(obj);
                distanceObjectPairs.emplace_back(distance, obj);
             }
 
@@ -195,7 +195,7 @@ void TellLosAction::TellGameObjects(Player* requester, std::string title, const 
 
       if (bShowRange)
       {
-         float distance = requester->GetDistance(go);
+         float distance = requester->getDistance(go);
 
          ss << " " << distance << "m";
       }

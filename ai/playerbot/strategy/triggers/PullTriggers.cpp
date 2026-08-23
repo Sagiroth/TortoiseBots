@@ -33,7 +33,7 @@ bool ShouldPullTrigger::IsActive()
 
     for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
     {
-        Player* member = ref->getSource();
+        Player* member = ref->GetSource();
         if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId())
             continue;
 
@@ -71,7 +71,7 @@ bool PullEndTrigger::IsActive()
             }
             else
             {
-                float distanceToPullTarget = target->GetDistance(ai->GetBot());
+                float distanceToPullTarget = target->getDistance(ai->GetBot());
 
 
                 if (distanceToPullTarget <= ATTACK_DISTANCE || target->IsNonMeleeSpellCasted(true) || (ai->IsRanged(bot) && distanceToPullTarget <= ai->GetRange("spell")))
@@ -82,7 +82,7 @@ bool PullEndTrigger::IsActive()
                         PositionEntry pullPosition = posMap["pull"];
                         if (pullPosition.isSet())
                         {
-                            distanceToPullTarget = bot->GetDistance(pullPosition.x, pullPosition.y, pullPosition.z);
+                            distanceToPullTarget = bot->getDistance(pullPosition.x, pullPosition.y, pullPosition.z);
                             return distanceToPullTarget <= ai->GetRange("follow");
                         }
                     }

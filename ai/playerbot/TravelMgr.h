@@ -25,8 +25,8 @@ namespace ai
 		WorldPosition GetPointFrom() const { return pointFrom; }
 		WorldPosition GetPointTo() const { return pointTo; }
 	private:
-		bool isFrom(const WorldPosition& point) const { return point.getMapId() == pointFrom.getMapId(); }
-		bool isTo(const WorldPosition& point) const { return point.getMapId() == pointTo.getMapId(); }
+		bool isFrom(const WorldPosition& point) const { return point.GetMapId() == pointFrom.GetMapId(); }
+		bool isTo(const WorldPosition& point) const { return point.GetMapId() == pointTo.GetMapId(); }
 
 		bool isUseful(const WorldPosition& point) const { return isFrom(point) || isTo(point); }
 		bool isUseful(const WorldPosition& start, const WorldPosition& end) const { return isFrom(start) && isTo(end); }
@@ -43,7 +43,7 @@ namespace ai
 		PlayerTravelInfo() {};
 		PlayerTravelInfo(Player* player);
 		
-		const WorldPosition& GetPosition() const { return position; }
+		const WorldPosition& getPosition() const { return position; }
 		Team GetTeam() const { return team; }
 		uint32 GetLevel() const  { return level; }
 		uint16 GetCurrentSkill(SkillType skillType) const  { return currentSkill[skillType]; }
@@ -132,7 +132,7 @@ namespace ai
 
 		virtual bool IsOut(const WorldPosition& pos, float radius = 0) const { return !OnMap(pos) || DistanceTo(pos) > (radius ? radius : radiusMax); }
 	private:
-		//bool OnMap(const WorldPosition& pos) const { return NearestPoint(pos)->getMapId() == pos.getMapId(); }
+		//bool OnMap(const WorldPosition& pos) const { return NearestPoint(pos)->GetMapId() == pos.GetMapId(); }
 
 		//std::vector<WorldPosition*> points;
 		float radiusMin = INTERACTION_DISTANCE;
@@ -164,7 +164,7 @@ namespace ai
 
         virtual std::string GetShortName() const override { return "temp"; };
 
-		WorldPosition* GetPosition() { return &destination; }
+		WorldPosition* getPosition() { return &destination; }
         void SetPosition(WorldPosition newDestination) { destination = newDestination; }
     private:
         WorldPosition destination;
@@ -178,7 +178,7 @@ namespace ai
 		virtual GameObjectInfo const* GetGoInfo() const { return goInfo; }
 		virtual CreatureInfo const* GetCreatureInfo() const { return creatureInfo; }
 		virtual TravelDestinationPurpose GetPurpose() const override { return purpose; }
-		bool HasNpcFlag(uint32 flag) { if(GetCreatureInfo() && (GetCreatureInfo()->NpcFlags & flag)) return true; return false; }
+		bool HasNpcFlag(uint32 flag) { if(GetCreatureInfo() && (GetCreatureInfo()->npc_flags & flag)) return true; return false; }
 
 		virtual std::string GetShortName() const override;
 	private:
@@ -230,7 +230,7 @@ namespace ai
 		virtual bool IsActive(Player* bot, const PlayerTravelInfo& info) const override;
 		virtual std::string GetTitle() const override;
 
-		virtual uint8 GetObjective() const;
+		virtual uint8 getObjective() const;
 	};
 
 	//A location with rpg target(s) based on race and level
@@ -249,10 +249,10 @@ namespace ai
 	{
 	public:
 		ZoneTravelDestination(TravelDestinationPurpose purpose, uint32 /*id*/, int32 entry) : EntryTravelDestination(purpose, entry) {
-			SetExpireFast(); SetCooldownShort(); if (auto area = GetArea()) { title = area->area_name[0]; level = area->area_level; }
+			SetExpireFast(); SetCooldownShort(); if (auto area = GetArea()) { title = area->Name; level = area->AreaLevel; }
 		}
 	protected:
-		virtual std::string GetZoneName() const { return title; }
+		virtual std::string getZoneName() const { return title; }
 		AreaTableEntry const* GetArea() const;
 		int32 GetLevel() const { return level; }
 	private:
@@ -268,7 +268,7 @@ namespace ai
 
 		virtual bool IsPossible(const PlayerTravelInfo& info) const override;
 		virtual bool IsActive(Player* bot, const PlayerTravelInfo& info) const override;
-		virtual std::string GetTitle() const override { return GetZoneName(); }
+		virtual std::string GetTitle() const override { return getZoneName(); }
 	};
 
 	//A location with zone exploration target(s) 
@@ -347,7 +347,7 @@ namespace ai
 
 		float Distance(Player* bot) const { WorldPosition pos(bot);  return wPosition->distance(pos); };
 		TravelDestination* GetDestination() const { return tDestination; };
-		WorldPosition* GetPosition() const { return wPosition; };
+		WorldPosition* getPosition() const { return wPosition; };
 		std::string GetPosStr() const { return wPosition->to_string(); }
 
 		int32 GetEntry() const { if (!tDestination) return 0; return tDestination->GetEntry(); }

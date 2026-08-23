@@ -491,7 +491,7 @@ namespace ai
             {
                 for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
                 {
-                    if (ai->HasAura("earth shield", ref->getSource(), false, true))
+                    if (ai->HasAura("earth shield", ref->GetSource(), false, true))
                         return false;
                 }
             }

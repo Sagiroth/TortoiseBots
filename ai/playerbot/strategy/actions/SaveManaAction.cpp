@@ -8,8 +8,8 @@ using namespace ai;
 
 bool SaveManaAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string text = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string text = event.GetParam();
     double value = AI_VALUE(double, "mana save level");
 
     if (text == "?")
@@ -21,7 +21,7 @@ bool SaveManaAction::Execute(Event& event)
 
     if (text == "*")
     {
-        switch (bot->getClass())
+        switch (bot->GetClass())
         {
         case CLASS_HUNTER:
         case CLASS_SHAMAN:

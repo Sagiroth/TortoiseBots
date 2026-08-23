@@ -15,16 +15,16 @@ using namespace MaNGOS;
 
 bool UseMeetingStoneAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!requester)
         return false;
 
-    WorldPacket p(event.getPacket());
+    WorldPacket p(event.GetPacket());
     p.rpos(0);
     ObjectGuid guid;
     p >> guid;
 
-	if (requester->GetSelectionGuid() && requester->GetSelectionGuid() != bot->GetObjectGuid())
+	if (requester->GetSelectionGuid() && requester->GetSelectionGuid() != bot->getObjectGuid())
 		return false;
 
 	if (!requester->GetSelectionGuid() && requester->GetGroup() != bot->GetGroup())
@@ -74,7 +74,7 @@ private:
 
 bool SummonAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!requester || requester->IsBeingTeleported())
         return false;
 
@@ -90,7 +90,7 @@ bool SummonAction::Execute(Event& event)
         return true;
     }
 
-    if(bot->GetMapId() == requester->GetMapId() && !WorldPosition(bot).canPathTo(requester, bot) && bot->GetDistance(requester) < sPlayerbotAIConfig.sightDistance) //We can't walk to requester so fine to short-range teleport.
+    if(bot->GetMapId() == requester->GetMapId() && !WorldPosition(bot).canPathTo(requester, bot) && bot->getDistance(requester) < sPlayerbotAIConfig.sightDistance) //We can't walk to requester so fine to short-range teleport.
         return Teleport(requester, requester, bot);
 
     if (bot->IsTaxiFlying())
@@ -191,9 +191,9 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
             static float const MAX_GROUND_DROP = 5.0f;
 
             uint32 mapId = summoner->GetMapId();
-            float x = summoner->GetPositionX() + cos(angle) * ai->GetRange("follow");
-            float y = summoner->GetPositionY() + sin(angle) * ai->GetRange("follow");
-            float z = summoner->GetPositionZ();
+            float x = summoner->getPositionX() + cos(angle) * ai->GetRange("follow");
+            float y = summoner->getPositionY() + sin(angle) * ai->GetRange("follow");
+            float z = summoner->getPositionZ();
             summoner->UpdateGroundPositionZ(x, y, z);
 
             // UpdateGroundPositionZ asks Map::GetHeight for the ground under
@@ -201,13 +201,13 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
             // on: in front of an instance portal, on a platform or a bridge it
             // returns the terrain below. The bot then arrives underneath the
             // world, cannot path anywhere and just stands there.
-            bool const badGround = std::fabs(z - summoner->GetPositionZ()) > MAX_GROUND_DROP;
+            bool const badGround = std::fabs(z - summoner->getPositionZ()) > MAX_GROUND_DROP;
 
             if (badGround || !summoner->IsWithinLOS(x, y, z + player->GetCollisionHeight(), true))
             {
-                x = summoner->GetPositionX();
-                y = summoner->GetPositionY();
-                z = summoner->GetPositionZ();
+                x = summoner->getPositionX();
+                y = summoner->getPositionY();
+                z = summoner->getPositionZ();
             }
 
             if (summoner->IsWithinLOS(x, y, z + player->GetCollisionHeight(), true))
@@ -245,7 +245,7 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
                     return false;
                 }
 
-                if(player->isRealPlayer())
+                if(isRealPlayer_Helper(player))
                     player->SendHeartBeat();
 
                 if (summoner->GetTransport())
@@ -268,7 +268,7 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
 
 bool AcceptSummonAction::Execute(Event& event)
 {
-    WorldPacket p(event.getPacket());
+    WorldPacket p(event.GetPacket());
     p.rpos(0);
     ObjectGuid summonerGuid;
     p >> summonerGuid;

@@ -6,7 +6,7 @@
 namespace ai
 {    
     /*                uint32 zone, subzone;
-    gameObject->GetZoneAndAreaId(zone, subzone);
+    gameObject->getZoneAndAreaId(zone, subzone);
     // if subzone loot exist use it
     if (!FillLoot(subzone, LootTemplates_Fishing, player, true, (subzone != zone)) && subzone != zone)
         // else use zone loot (if zone diff. from subzone, must exist in like case)

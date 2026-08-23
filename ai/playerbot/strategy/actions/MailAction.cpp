@@ -96,7 +96,7 @@ public:
         if (mail->money)
         {
             std::ostringstream out;
-            if (event.getSource() == "rpg action")
+            if (event.GetSource() == "rpg action")
             {
                 copper += mail->money;
             }
@@ -134,7 +134,7 @@ public:
 
                 if (item)
                 {
-                    if (event.getSource() == "rpg action")
+                    if (event.GetSource() == "rpg action")
                     {
                         items.push_back(ChatHelper::formatItem(item, item->GetCount()));
                     }
@@ -264,11 +264,11 @@ ReadMailProcessor ReadMailProcessor::instance;
 
 bool MailAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    if (!requester && event.getSource() != "rpg action")
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    if (!requester && event.GetSource() != "rpg action")
         return false;
 
-    if (!MailProcessor::FindMailbox(ai) && event.getSource() != "debug")
+    if (!MailProcessor::FindMailbox(ai) && event.GetSource() != "debug")
     {
         ai->TellError(requester, "There is no mailbox nearby");
         return false;
@@ -282,7 +282,7 @@ bool MailAction::Execute(Event& event)
         processors["read"] = &ReadMailProcessor::instance;
     }
 
-    std::string text = event.getParam();
+    std::string text = event.GetParam();
     if (text.empty())
     {
         ai->TellPlayer(requester, "whisper 'mail ?' to query mailbox, 'mail take/delete/read filter' to take/delete/read mails by filter");
@@ -347,7 +347,7 @@ ObjectGuid MailProcessor::FindMailbox(PlayerbotAI* ai)
         GameObject* go = ai->GetGameObject(*i);
         if (go && go->GetGoType() == GAMEOBJECT_TYPE_MAILBOX)
         {
-            mailbox = go->GetObjectGuid();
+            mailbox = go->getObjectGuid();
             break;
         }
     }

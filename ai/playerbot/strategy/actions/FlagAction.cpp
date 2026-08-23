@@ -8,8 +8,8 @@ using namespace ai;
 
 bool FlagAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string cmd = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string cmd = event.GetParam();
     if (!qualifier.empty())
         cmd = qualifier;
     std::vector<std::string> ss = split(cmd, ' ');
@@ -37,7 +37,7 @@ bool FlagAction::Execute(Event& event)
         SheathState currentSheathe = bot->GetSheath();
         if (setFlag || (toggleFlag && currentSheathe == SHEATH_STATE_UNARMED))
         {
-            if (bot->getClass() == CLASS_HUNTER)
+            if (bot->GetClass() == CLASS_HUNTER)
                 bot->SetSheath(SHEATH_STATE_RANGED);
             else
                 bot->SetSheath(SHEATH_STATE_MELEE);

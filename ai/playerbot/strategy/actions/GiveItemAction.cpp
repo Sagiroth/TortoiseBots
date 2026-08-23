@@ -10,14 +10,14 @@ std::vector<std::string> split(const std::string &s, char delim);
 
 bool GiveItemAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     Unit* target = GetTarget();
     if (!target) return false;
 
     Player* receiver = dynamic_cast<Player*>(target);
     if (!receiver) return false;
 
-    PlayerbotAI *receiverAi = receiver->GetPlayerbotAI();
+    PlayerbotAI *receiverAi = PlayerbotAIStorage::Instance().GetAI(receiver);
     if (!receiverAi)
         return false;
 
@@ -38,7 +38,7 @@ bool GiveItemAction::Execute(Event& event)
         if (msg == EQUIP_ERR_OK)
         {
             bot->MoveItemFromInventory(item->GetBagSlot(), item->GetSlot(), true);
-            item->SetOwnerGuid(target->GetObjectGuid());
+            item->SetOwnerGuid(target->getObjectGuid());
             receiver->MoveItemToInventory(dest, item, true);
             moved = true;
 

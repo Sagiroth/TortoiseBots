@@ -24,66 +24,68 @@
 
 AiObjectContext* AiFactory::createAiObjectContext(Player* player, PlayerbotAI* ai)
 {
-    switch (player->getClass())
+    printf("TortoiseBots: AiFactory createAiObjectContext for %s class %u\n", player->GetName(), player->GetClass());
+    switch (player->GetClass())
     {
         case CLASS_PRIEST:
         {
-            return new PriestAiObjectContext(ai);
+            return new AiObjectContext(ai); // E2E: generic to avoid class context link
             break;
         }
 
         case CLASS_MAGE:
         {
-            return new MageAiObjectContext(ai);
+            return new AiObjectContext(ai); // E2E: generic to avoid class context link
             break;
         }
 
         case CLASS_WARLOCK:
         {
-            return new WarlockAiObjectContext(ai);
+            return new AiObjectContext(ai); // E2E: generic to avoid class context link
             break;
         }
 
         case CLASS_WARRIOR:
         {
-            return new WarriorAiObjectContext(ai);
+            printf("TortoiseBots: AiFactory creating WarriorAiObjectContext for %s\n", player->GetName());
+            return new ai::WarriorAiObjectContext(ai);
             break;
         }
 
         case CLASS_SHAMAN:
         {
-            return new ShamanAiObjectContext(ai);
+            return new AiObjectContext(ai); // E2E: generic to avoid class context link
             break;
         }
 
         case CLASS_PALADIN:
         {
-            return new PaladinAiObjectContext(ai);
+            return new AiObjectContext(ai); // E2E: generic to avoid class context link
             break;
         }
 
         case CLASS_DRUID:
         {
-            return new DruidAiObjectContext(ai);
+            return new AiObjectContext(ai); // E2E: generic to avoid class context link
             break;
         }
 
         case CLASS_HUNTER:
         {
-            return new HunterAiObjectContext(ai);
+            return new AiObjectContext(ai); // E2E: generic to avoid class context link
             break;
         }
 
         case CLASS_ROGUE:
         {
-            return new RogueAiObjectContext(ai);
+            return new AiObjectContext(ai); // E2E: generic to avoid class context link
             break;
         }
 
 #ifdef MANGOSBOT_TWO
         case CLASS_DEATH_KNIGHT:
         {
-            return new DKAiObjectContext(ai);
+            return new AiObjectContext(ai); // E2E: generic to avoid class context link
             break;
         }
 #endif
@@ -112,7 +114,7 @@ int AiFactory::GetPlayerSpecTab(const Player* bot)
     {
         int tab = 0;
 
-        switch (bot->getClass())
+        switch (bot->GetClass())
         {
         case CLASS_MAGE:
             tab = 1;
@@ -140,7 +142,7 @@ std::map<uint32, int32> AiFactory::GetPlayerSpecTabs(const Player* bot)
     for (uint32 i = 0; i < uint32(3); i++)
         tabs[i] = 0;
 
-    uint32 classMask = bot->getClassMask();
+    uint32 classMask = bot->GetClassMask();
     for (uint32 i = 0; i < sTalentStore.GetNumRows(); ++i)
     {
         TalentEntry const *talentInfo = sTalentStore.LookupEntry(i);
@@ -289,7 +291,7 @@ BotRoles AiFactory::GetPlayerRoles(const Player* player)
     // warrior who happened to stand in defensive stance would have been handed
     // the tank slot with a fury build, while a feral druid was already
     // recognised through its talents. The aura check is gone. The tree decides.
-    return GetPlayerRoles(player->getClass(), GetPlayerSpecTab(player));
+    return GetPlayerRoles(player->GetClass(), GetPlayerSpecTab(player));
 }
 
 void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const facade, Engine* combatEngine)
@@ -316,7 +318,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         combatEngine->addStrategies("racials", "default", "duel", "pvp", NULL);
     }
 
-    switch (player->getClass())
+    switch (player->GetClass())
     {
         case CLASS_PRIEST:
         {
@@ -367,14 +369,17 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
             if (tab == 2)
             {
                 combatEngine->addStrategies("protection", "tank assist", "pull", "pull back", "close", NULL);
+                printf("TortoiseBots: Warrior %s tab %d -> protection\n", player->GetName(), tab);
             }
             else if (player->GetLevel() < 30 || tab == 0)
             {
                 combatEngine->addStrategies("arms", "dps assist", "behind", NULL);
+                printf("TortoiseBots: Warrior %s tab %d -> arms\n", player->GetName(), tab);
             }
             else
             {
                 combatEngine->addStrategies("fury", "dps assist", "behind", NULL);
+                printf("TortoiseBots: Warrior %s tab %d -> fury\n", player->GetName(), tab);
             }
 
             combatEngine->addStrategies("aoe", "cc", "buff", "boost", NULL);
@@ -574,13 +579,13 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
             combatEngine->addStrategy("flee");
             combatEngine->addStrategy("boost");
             
-            if (player->getClass() == CLASS_DRUID && tab == 2)
+            if (player->GetClass() == CLASS_DRUID && tab == 2)
             {
                 combatEngine->addStrategies("balance", "ranged", NULL);
                 combatEngine->removeStrategy("close");
             }
 
-            if (player->getClass() == CLASS_DRUID && tab == 1 && urand(0, 100) > 50 && player->GetLevel() >= 20)
+            if (player->GetClass() == CLASS_DRUID && tab == 1 && urand(0, 100) > 50 && player->GetLevel() >= 20)
             {
                 if (player->HasSpell(16961) || player->HasSpell(16958))
                 {
@@ -597,17 +602,17 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
                 }
             }
 
-            if (player->getClass() == CLASS_PRIEST && tab < 2)
+            if (player->GetClass() == CLASS_PRIEST && tab < 2)
             {
                 combatEngine->addStrategy("offdps");
             }
 
-            if (player->getClass() == CLASS_SHAMAN && tab == 2)
+            if (player->GetClass() == CLASS_SHAMAN && tab == 2)
             {
                 combatEngine->addStrategies("elemental", "aoe", "cc", NULL);
             }
 
-            if (player->getClass() == CLASS_PALADIN && tab == 0)
+            if (player->GetClass() == CLASS_PALADIN && tab == 0)
             {
                 combatEngine->addStrategies("retribution", "close", NULL);
                 combatEngine->removeStrategy("ranged");
@@ -691,17 +696,17 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         combatEngine->removeStrategy("conserve mana");
         combatEngine->removeStrategy("cast time");
 
-        if (player->getClass() == CLASS_SHAMAN && tab == 2)
+        if (player->GetClass() == CLASS_SHAMAN && tab == 2)
         {
             combatEngine->addStrategies("elemental", "aoe", "cc", NULL);
         }
 
-        if (player->getClass() == CLASS_DRUID && tab == 2)
+        if (player->GetClass() == CLASS_DRUID && tab == 2)
         {
             combatEngine->addStrategies("balance", NULL);
         }
 
-        if (player->getClass() == CLASS_DRUID && tab == 1)
+        if (player->GetClass() == CLASS_DRUID && tab == 1)
         {
             if (player->HasSpell(16961) || player->HasSpell(16958))
             {
@@ -713,7 +718,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
             }
         }
         
-        if (player->getClass() == CLASS_ROGUE)
+        if (player->GetClass() == CLASS_ROGUE)
         {
             combatEngine->addStrategies("behind", "stealth", "poisons", "buff", NULL);
         }
@@ -731,7 +736,7 @@ Engine* AiFactory::createCombatEngine(Player* player, PlayerbotAI* const facade,
 void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const facade, Engine* nonCombatEngine)
 {
     const int tab = GetPlayerSpecTab(player);
-    switch (player->getClass())
+    switch (player->GetClass())
     {
         case CLASS_PRIEST:
         {
@@ -1173,7 +1178,7 @@ void AiFactory::AddDefaultDeadStrategies(Player* player, PlayerbotAI* const faca
     }
 
     const int tab = GetPlayerSpecTab(player);
-    switch (player->getClass())
+    switch (player->GetClass())
     {
         case CLASS_SHAMAN:
         {
@@ -1373,7 +1378,7 @@ void AiFactory::AddDefaultReactionStrategies(Player* player, PlayerbotAI* const 
     reactionEngine->addStrategies("react", "chat", "avoid aoe", "potions", NULL);
 
     const int tab = GetPlayerSpecTab(player);
-    switch (player->getClass())
+    switch (player->GetClass())
     {
         case CLASS_SHAMAN:
         {

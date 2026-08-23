@@ -15,12 +15,12 @@ namespace ai
         if (inviter == player)
             return false;
 
-        if (!player->GetPlayerbotAI() && !ai->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE, true, player))
+        if (!PlayerbotAIStorage::Instance().GetAI(player) && !ai->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE, true, player))
             return false;
 
         if (Group* group = inviter->GetGroup())
         {
-            if(player->GetPlayerbotAI() && !player->GetPlayerbotAI()->IsRealPlayer())
+            if(PlayerbotAIStorage::Instance().GetAI(player) && !PlayerbotAIStorage::Instance().GetAI(player)->IsRealPlayer())
                 if (!group->IsRaidGroup() && group->GetMembersCount() > 4)
                     group->ConvertToRaid();
         }
@@ -42,7 +42,7 @@ namespace ai
         if (bot->InBattleGroundQueue())
             return false;
 
-        Player* master = event.getOwner();
+        Player* master = event.GetOwner();
 
         Group* group = master->GetGroup();
 
@@ -53,7 +53,7 @@ namespace ai
                 if(group->IsRaidGroup())
                     return false;
 
-                if(event.getSource() == "create group")
+                if(event.GetSource() == "create group")
                     group->ConvertToRaid();
                 else 
                     return false;
@@ -77,7 +77,7 @@ namespace ai
 
         bool invite = Invite(master, bot);
 
-        if (invite && (event.getSource() == "create group"))
+        if (invite && (event.GetSource() == "create group"))
         {
             if (!ai->DoSpecificAction("accept invitation", event, true))
                 return false;
@@ -157,7 +157,7 @@ namespace ai
         {
             BotRoles role = PlayerbotAI::IsTank(player, false) ? BOT_ROLE_TANK : PlayerbotAI::IsHeal(player, false) ? BOT_ROLE_HEALER :
                                                                                                                       BOT_ROLE_DPS;
-            uint8 cls = (Classes)player->getClass();
+            uint8 cls = (Classes)player->GetClass();
 
             if (allowedClassNr[0][role] > 0)
                 allowedClassNr[0][role]--;
@@ -180,7 +180,7 @@ namespace ai
                 continue;
 
             BotRoles role = PlayerbotAI::IsTank(player, false) ? BOT_ROLE_TANK : PlayerbotAI::IsHeal(player, false) ? BOT_ROLE_HEALER : BOT_ROLE_DPS;
-            uint8 cls = (Classes)player->getClass();
+            uint8 cls = (Classes)player->GetClass();
 
             if (allowedClassNr[0][role] > 0)
                 allowedClassNr[0][role]--;
@@ -194,7 +194,7 @@ namespace ai
 
     bool LfgAction::Execute(Event& event)
     {
-        Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+        Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
         if (bot->InBattleGround())
             return false;
 
@@ -210,7 +210,7 @@ namespace ai
         if (requester->GetLevel() > bot->GetLevel() + 4 || bot->GetLevel() > requester->GetLevel() + 4)
             return false;
 
-        std::string param = event.getParam();
+        std::string param = event.GetParam();
 
         if (!param.empty() && param != "40" && param != "25" && param != "20" && param != "10" && param != "5")
         {
@@ -223,7 +223,7 @@ namespace ai
         std::unordered_map<uint8, std::unordered_map<BotRoles, uint32>> allowedClassNr = AllowedClassRoleNr(5);
 
         BotRoles role = ai->IsTank(requester, false) ? BOT_ROLE_TANK : (ai->IsHeal(requester, false) ? BOT_ROLE_HEALER : BOT_ROLE_DPS);
-        Classes cls = (Classes)requester->getClass();
+        Classes cls = (Classes)requester->GetClass();
 
         if (!Qualified::isValidNumberString(param))
            param = "5";
@@ -251,7 +251,7 @@ namespace ai
         allowedClassNr = AllowedClassRoleNr(requester, stoi(param));  
 
         role = ai->IsTank(bot, false) ? BOT_ROLE_TANK : (ai->IsHeal(bot, false) ? BOT_ROLE_HEALER : BOT_ROLE_DPS);
-        cls = (Classes)bot->getClass();
+        cls = (Classes)bot->GetClass();
 
         if (allowedClassNr[0][role] == 0)
             return false;
@@ -322,18 +322,18 @@ namespace ai
             if (player->GetGroup())
                 continue;
 
-            if (!sPlayerbotAIConfig.randomBotInvitePlayer && player->isRealPlayer())
+            if (!sPlayerbotAIConfig.randomBotInvitePlayer && isRealPlayer_Helper(player))
                 continue;
 
             Group* group = bot->GetGroup();
 
-            if (player->isDND())
+            if (player->IsDND())
                 continue;
 
             if (player->IsBeingTeleported())
                 continue;
 
-            PlayerbotAI* botAi = player->GetPlayerbotAI();
+            PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(player);
 
             if (botAi)
             {
@@ -347,7 +347,7 @@ namespace ai
             if (abs(int32(player->GetLevel() - bot->GetLevel())) > 2)
                 continue;
 
-            if (sServerFacade.GetDistance2d(bot, player) > sPlayerbotAIConfig.spellDistance)
+            if (sServerFacade.getDistance2d(bot, player) > sPlayerbotAIConfig.spellDistance)
                 continue;
 
             //When inviting the 5th member of the group convert to raid for future invites.
@@ -451,10 +451,10 @@ namespace ai
             if (player->GetGroup())
                 continue;
 
-            if (player->isDND())
+            if (player->IsDND())
                 continue;
 
-            if (!sPlayerbotAIConfig.randomBotInvitePlayer && player->isRealPlayer())
+            if (!sPlayerbotAIConfig.randomBotInvitePlayer && isRealPlayer_Helper(player))
                 continue;
 
             if (player->IsBeingTeleported())
@@ -471,7 +471,7 @@ namespace ai
             if (WorldPosition(player).distance(bot) > 1000 && player->GetLevel() < 15)
                 continue;
 
-            PlayerbotAI* playerAi = player->GetPlayerbotAI();
+            PlayerbotAI* playerAi = PlayerbotAIStorage::Instance().GetAI(player);
 
             if (playerAi)
             {
@@ -491,7 +491,7 @@ namespace ai
             if (bot->GetLevel() > player->GetLevel() + 5) //Do not invite members that too low level or risk dragging them to deadly places.
                 continue;
 
-            if (!playerAi && sServerFacade.GetDistance2d(bot, player) > sPlayerbotAIConfig.sightDistance)
+            if (!playerAi && sServerFacade.getDistance2d(bot, player) > sPlayerbotAIConfig.sightDistance)
                 continue;
 
             Group* group = bot->GetGroup();

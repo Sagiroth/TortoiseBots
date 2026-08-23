@@ -254,7 +254,7 @@ private:
             // reopen ranged distance (which the "target->GetVictim() != bot" case below would
             // otherwise attempt even against a target just as fast as the bot, e.g. whenever
             // the pet currently has aggro, regardless of what happens if aggro flips back).
-            if (bot->getClass() == CLASS_HUNTER && bot->GetLevel() < 10)
+            if (bot->GetClass() == CLASS_HUNTER && bot->GetLevel() < 10)
                 return false;
 
 #ifdef MANGOSBOT_ZERO
@@ -340,11 +340,11 @@ private:
                 return false;
 
             float distanceTo = AI_VALUE2(float, "distance", GetTargetName());
-            if (target->GetSelectionGuid() != bot->GetObjectGuid() && sServerFacade.IsDistanceGreaterOrEqualThan(distanceTo, 8.0f))
+            if (target->GetSelectionGuid() != bot->getObjectGuid() && sServerFacade.IsDistanceGreaterOrEqualThan(distanceTo, 8.0f))
                 return true;
 
             // victim
-            if (target->GetSelectionGuid() == bot->GetObjectGuid())
+            if (target->GetSelectionGuid() == bot->getObjectGuid())
             {
                 if (sServerFacade.IsDistanceGreaterOrEqualThan(distanceTo, 15.0f))
                     return true;

@@ -24,11 +24,11 @@ public:
         if (!PossibleAttackTargetsValue::IsValid(creature, bot))
         {
             std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "possible attack targets");
-            if (std::find(attackers.begin(), attackers.end(), creature->GetObjectGuid()) == attackers.end())
+            if (std::find(attackers.begin(), attackers.end(), creature->getObjectGuid()) == attackers.end())
                 return;
         }
 
-        float threat = threatManager->getThreat(bot);
+        float threat = threatManager->GetThreat(bot);
         if (!result || (minThreat - threat) > 0.1f)
         {
             minThreat = threat;

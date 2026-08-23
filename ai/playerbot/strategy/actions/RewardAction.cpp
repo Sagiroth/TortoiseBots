@@ -8,8 +8,8 @@ using namespace ai;
 
 bool RewardAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string link = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string link = event.GetParam();
 
     ItemIds itemIds = chat->parseItems(link);
     if (itemIds.empty())
@@ -43,7 +43,7 @@ bool RewardAction::Execute(Event& event)
        return true;
     }
 
-    if(!ai->GetMaster() || sServerFacade.GetDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
+    if(!ai->GetMaster() || sServerFacade.getDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
         ai->TellPlayer(requester, BOT_TEXT("quest_error_talk"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
 
     return false;

@@ -7,7 +7,7 @@ using namespace ai;
 
 bool SetHomeAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     ObjectGuid selection = bot->GetSelectionGuid();
     bool isRpgAction = AI_VALUE(GuidPosition, "rpg target") == selection;
 

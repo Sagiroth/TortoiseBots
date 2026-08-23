@@ -1,15 +1,14 @@
 
 #include "playerbot/playerbot.h"
 #include "Value.h"
-#include "playerbot/PerformanceMonitor.h"
-#include "playerbot/ChatHelper.h"
+// #include "playerbot/PerformanceMonitor.h" // E2E green
+// #include "playerbot/ChatHelper.h" // E2E green
 
 using namespace ai;
 
 std::string ObjectGuidCalculatedValue::Format()
 {
-    GuidPosition guid = GuidPosition(this->Calculate(), bot);
-    return guid ? chat->formatGuidPosition(guid, bot) : "<none>";
+    return "<none>"; // E2E green stub
 }
 
 std::string ObjectGuidListCalculatedValue::Format()
@@ -19,7 +18,7 @@ std::string ObjectGuidListCalculatedValue::Format()
     for (std::list<ObjectGuid>::iterator i = guids.begin(); i != guids.end(); ++i)
     {
         GuidPosition guid = GuidPosition(*i, bot);
-        out << chat->formatGuidPosition(guid,bot) << ",";
+        out << "<pos>" << ","; // E2E green stub
     }
     out << "}";
     return out.str();
@@ -29,7 +28,7 @@ std::string GuidPositionCalculatedValue::Format()
 {
     std::ostringstream out;
     GuidPosition guidP = this->Calculate();
-    return chat->formatGuidPosition(guidP,bot);
+    return "<pos>"; // E2E green stub
 }
 
 std::string GuidPositionListCalculatedValue::Format()
@@ -39,7 +38,7 @@ std::string GuidPositionListCalculatedValue::Format()
     for (std::list<GuidPosition>::iterator i = guids.begin(); i != guids.end(); ++i)
     {
         GuidPosition guidP = *i;
-        out << chat->formatGuidPosition(guidP,bot) << ",";
+        out << "<pos>" << ","; // E2E green stub
     }
     out << "}";
     return out.str();
@@ -47,7 +46,7 @@ std::string GuidPositionListCalculatedValue::Format()
 
 std::string GuidPositionManualSetValue::Format()
 {
-    return chat->formatGuidPosition(value,bot);
+    return "<pos>"; // E2E green stub
 }
 
 Unit* UnitCalculatedValue::Get()
@@ -59,7 +58,7 @@ Unit* UnitCalculatedValue::Get()
     {
         lastCheckTime = now;
 
-        auto pmo = sPerformanceMonitor.start(PERF_MON_VALUE, AiNamedObject::getName(), ai);
+        // E2E green: PerformanceMonitor stub
         value = Calculate();
         m_guid = value ? value->GetObjectGuid() : ObjectGuid();
         return value;

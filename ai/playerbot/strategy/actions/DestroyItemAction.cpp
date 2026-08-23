@@ -7,8 +7,8 @@ using namespace ai;
 
 bool DestroyItemAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string text = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string text = event.GetParam();
     ItemIds ids = chat->parseItems(text);
 
     for (ItemIds::iterator i =ids.begin(); i != ids.end(); i++)
@@ -35,7 +35,7 @@ void DestroyItemAction::DestroyItem(FindItemVisitor* visitor, Player* requester)
 
 bool SmartDestroyItemAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     uint8 bagSpace = AI_VALUE(uint8, "bag space");
 
     if (bagSpace < 90)
@@ -117,7 +117,7 @@ bool SmartDestroyItemAction::Execute(Event& event)
 
 bool DestroyAllGrayItemsAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
     bool hasDestroyedAnyItems = false;
 

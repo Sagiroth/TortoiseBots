@@ -10,8 +10,8 @@ using namespace ai;
 
 bool LootStrategyAction::Execute(Event& event)
 {
-    std::string strategy = event.getParam();
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    std::string strategy = event.GetParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
     LootObjectStack* lootItems = AI_VALUE(LootObjectStack*, "available loot");
     std::set<uint32>& alwaysLootItems = AI_VALUE(std::set<uint32>&, "always loot list");

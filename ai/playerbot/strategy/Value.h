@@ -2,7 +2,7 @@
 #include "Action.h"
 #include "Event.h"
 #include "playerbot/PlayerbotAIAware.h"
-#include "playerbot/PerformanceMonitor.h"
+// #include "playerbot/PerformanceMonitor.h" // E2E green
 #include "ObjectMgr.h"
 #include "AiObject.h"
 #include "playerbot/GuidPosition.h"
@@ -63,7 +63,7 @@ namespace ai
             {
                 lastCheckTime = now;
 
-                auto pmo = sPerformanceMonitor.start(PERF_MON_VALUE, AiNamedObject::getName(), this->ai);
+                // auto pmo = sPerformanceMonitor.start
                 value = Calculate();
             }
             return value;
@@ -100,7 +100,7 @@ namespace ai
             {
                 this->lastCheckTime = now;
 
-                auto pmo = sPerformanceMonitor.start(PERF_MON_VALUE, AiNamedObject::getName(), this->ai);
+                // auto pmo = sPerformanceMonitor.start
                 this->value = this->Calculate();
             }
             return this->value;

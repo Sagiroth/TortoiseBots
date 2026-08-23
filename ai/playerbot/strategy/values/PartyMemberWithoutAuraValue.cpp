@@ -17,7 +17,7 @@ public:
     virtual bool Check(Unit* unit) override
     {
         Pet* pet = dynamic_cast<Pet*>(unit);
-        if (pet && (pet->getPetType() == MINI_PET || pet->getPetType() == SUMMON_PET))
+        if (pet && (pet->GetPetType() == MINI_PET || pet->GetPetType() == SUMMON_PET))
             return false;
 
         if (!sServerFacade.IsAlive(unit)) return false;
@@ -88,11 +88,11 @@ public:
     virtual bool Check(Unit* unit) override
     {
         Pet* pet = dynamic_cast<Pet*>(unit);
-        if (pet && (pet->getPetType() == MINI_PET || pet->getPetType() == SUMMON_PET))
+        if (pet && (pet->GetPetType() == MINI_PET || pet->GetPetType() == SUMMON_PET))
             return false;
 
         if (!sServerFacade.IsAlive(unit)) return false;
-        if (sServerFacade.GetDistance2d(unit, ai->GetBot()) > 30.0f) return false;
+        if (sServerFacade.getDistance2d(unit, ai->GetBot()) > 30.0f) return false;
 
         for (std::vector<std::string>::iterator i = auras.begin(); i != auras.end(); ++i)
         {

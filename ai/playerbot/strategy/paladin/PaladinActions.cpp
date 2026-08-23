@@ -99,7 +99,7 @@ std::vector<std::string> CastPveBlessingAction::GetPossibleBlessingsForTarget(Un
         Player* player = (Player*)target;
         if (ai->IsTank(player))
         {
-            if (player->getClass() == CLASS_PALADIN)
+            if (player->GetClass() == CLASS_PALADIN)
             {
                 blessings = { "blessing of wisdom", "blessing of kings", "blessing of might", "blessing of sanctuary", "blessing of light" };
             }
@@ -114,7 +114,7 @@ std::vector<std::string> CastPveBlessingAction::GetPossibleBlessingsForTarget(Un
         }
         else
         {
-            if (player->getClass() == CLASS_PALADIN)
+            if (player->GetClass() == CLASS_PALADIN)
             {
                 blessings = { "blessing of wisdom", "blessing of might", "blessing of kings", "blessing of light", "blessing of sanctuary" };
             }
@@ -136,7 +136,7 @@ std::vector<std::string> CastPvpBlessingAction::GetPossibleBlessingsForTarget(Un
         Player* player = (Player*)target;
         if (ai->IsTank(player))
         {
-            if (player->getClass() == CLASS_PALADIN)
+            if (player->GetClass() == CLASS_PALADIN)
             {
                 blessings = { "blessing of wisdom", "blessing of kings", "blessing of might", "blessing of sanctuary", "blessing of light" };
             }
@@ -151,7 +151,7 @@ std::vector<std::string> CastPvpBlessingAction::GetPossibleBlessingsForTarget(Un
         }
         else
         {
-            if (player->getClass() == CLASS_PALADIN)
+            if (player->GetClass() == CLASS_PALADIN)
             {
                 blessings = { "blessing of wisdom", "blessing of might", "blessing of kings", "blessing of light", "blessing of sanctuary" };
             }
@@ -173,7 +173,7 @@ std::vector<std::string> CastRaidBlessingAction::GetPossibleBlessingsForTarget(U
         Player* player = (Player*)target;
         if (ai->IsTank(player))
         {
-            if (player->getClass() == CLASS_PALADIN)
+            if (player->GetClass() == CLASS_PALADIN)
             {
                 blessings = { "blessing of wisdom", "blessing of kings", "blessing of might", "blessing of sanctuary", "blessing of light" };
             }
@@ -188,7 +188,7 @@ std::vector<std::string> CastRaidBlessingAction::GetPossibleBlessingsForTarget(U
         }
         else
         {
-            if (player->getClass() == CLASS_PALADIN)
+            if (player->GetClass() == CLASS_PALADIN)
             {
                 blessings = { "blessing of wisdom", "blessing of might", "blessing of kings", "blessing of light", "blessing of sanctuary" };
             }
@@ -267,7 +267,7 @@ std::string CastBlessingOnPartyAction::GetBlessingForTarget(Unit* target)
             // Don't cast greater salvation on possible tank classes
             if (greater && blessing == "blessing of salvation" && target->IsPlayer())
             {
-                const uint8 playerClass = ((Player*)target)->getClass();
+                const uint8 playerClass = ((Player*)target)->GetClass();
 #ifdef MANGOSBOT_TWO
                 if (playerClass == CLASS_PALADIN || playerClass == CLASS_WARRIOR || playerClass == CLASS_DRUID || playerClass == CLASS_DEATH_KNIGHT)
 #else
@@ -302,7 +302,7 @@ std::vector<std::string> CastPveBlessingOnPartyAction::GetPossibleBlessingsForTa
         Player* player = (Player*)target;
         if (ai->IsTank(player))
         {
-            if (player->getClass() == CLASS_PALADIN)
+            if (player->GetClass() == CLASS_PALADIN)
             {
                 blessings = { "blessing of wisdom", "blessing of kings", "blessing of might", "blessing of sanctuary", "blessing of light" };
             }
@@ -317,7 +317,7 @@ std::vector<std::string> CastPveBlessingOnPartyAction::GetPossibleBlessingsForTa
         }
         else if (ai->IsRanged(player))
         {
-            if (player->getClass() == CLASS_HUNTER)
+            if (player->GetClass() == CLASS_HUNTER)
             {
                 blessings = { "blessing of wisdom", "blessing of kings", "blessing of might", "blessing of light", "blessing of sanctuary" };
             }
@@ -328,7 +328,7 @@ std::vector<std::string> CastPveBlessingOnPartyAction::GetPossibleBlessingsForTa
         }
         else
         {
-            if (player->getClass() == CLASS_PALADIN)
+            if (player->GetClass() == CLASS_PALADIN)
             {
                 blessings = { "blessing of wisdom", "blessing of might", "blessing of kings", "blessing of light", "blessing of sanctuary" };
             }
@@ -355,7 +355,7 @@ std::vector<std::string> CastPvpBlessingOnPartyAction::GetPossibleBlessingsForTa
         Player* player = (Player*)target;
         if (ai->IsTank(player))
         {
-            if (player->getClass() == CLASS_PALADIN)
+            if (player->GetClass() == CLASS_PALADIN)
             {
                 blessings = { "blessing of wisdom", "blessing of kings", "blessing of might", "blessing of sanctuary", "blessing of light" };
             }
@@ -370,7 +370,7 @@ std::vector<std::string> CastPvpBlessingOnPartyAction::GetPossibleBlessingsForTa
         }
         else if (ai->IsRanged(player))
         {
-            if (player->getClass() == CLASS_HUNTER)
+            if (player->GetClass() == CLASS_HUNTER)
             {
                 blessings = { "blessing of wisdom", "blessing of kings", "blessing of might", "blessing of light", "blessing of sanctuary" };
             }
@@ -381,7 +381,7 @@ std::vector<std::string> CastPvpBlessingOnPartyAction::GetPossibleBlessingsForTa
         }
         else
         {
-            if (player->getClass() == CLASS_PALADIN)
+            if (player->GetClass() == CLASS_PALADIN)
             {
                 blessings = { "blessing of wisdom", "blessing of might", "blessing of kings", "blessing of light", "blessing of sanctuary" };
             }
@@ -408,7 +408,7 @@ std::vector<std::string> CastRaidBlessingOnPartyAction::GetPossibleBlessingsForT
         Player* player = (Player*)target;
         if (ai->IsTank(player))
         {
-            if (player->getClass() == CLASS_PALADIN)
+            if (player->GetClass() == CLASS_PALADIN)
             {
                 blessings = { "blessing of wisdom", "blessing of kings", "blessing of might", "blessing of sanctuary", "blessing of light" };
             }
@@ -423,7 +423,7 @@ std::vector<std::string> CastRaidBlessingOnPartyAction::GetPossibleBlessingsForT
         }
         else if (ai->IsRanged(player))
         {
-            if (player->getClass() == CLASS_HUNTER)
+            if (player->GetClass() == CLASS_HUNTER)
             {
                 blessings = { "blessing of wisdom", "blessing of kings", "blessing of might", "blessing of light", "blessing of sanctuary" };
             }
@@ -434,7 +434,7 @@ std::vector<std::string> CastRaidBlessingOnPartyAction::GetPossibleBlessingsForT
         }
         else
         {
-            if (player->getClass() == CLASS_PALADIN)
+            if (player->GetClass() == CLASS_PALADIN)
             {
                 blessings = { "blessing of wisdom", "blessing of might", "blessing of kings", "blessing of light", "blessing of sanctuary" };
             }

@@ -1340,7 +1340,7 @@ void RandomItemMgr::BuildItemInfoCache()
         }
 
         cacheInfo->quality = proto->Quality;
-        cacheInfo->itemId = proto->ItemId;
+        cacheInfo->itemid = proto->ItemId;
         cacheInfo->slot = slot;
         cacheInfo->itemLevel = proto->ItemLevel;
 
@@ -1447,7 +1447,7 @@ void RandomItemMgr::BuildItemInfoCache()
             "scale_16, scale_17, scale_18, scale_19, scale_20, scale_21, scale_22, scale_23, scale_24, scale_25, scale_26, scale_27, scale_28, scale_29, scale_30, scale_31, scale_32)"
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
-        stmt.addUInt32(cacheInfo->itemId);
+        stmt.addUInt32(cacheInfo->itemid);
         stmt.addUInt32(cacheInfo->quality);
         stmt.addUInt32(cacheInfo->slot);
         stmt.addUInt32(cacheInfo->source);
@@ -1467,7 +1467,7 @@ void RandomItemMgr::BuildItemInfoCache()
 
         stmt.Execute();
 
-        itemInfoCache[cacheInfo->itemId] = cacheInfo;
+        itemInfoCache[cacheInfo->itemid] = cacheInfo;
     }
 
     CharacterDatabase.CommitTransaction();
@@ -2462,21 +2462,21 @@ uint32 RandomItemMgr::CalculateSocketWeight(uint8 playerclass, ItemQualifier& qu
 uint32 RandomItemMgr::ItemStatWeight(Player* player, ItemQualifier& qualifier)
 {
     ItemSpecType itSpec;
-    uint32 weight = CalculateStatWeight(player->getClass(), GetPlayerSpecId(player), qualifier.GetProto(), itSpec);
+    uint32 weight = CalculateStatWeight(player->GetClass(), GetPlayerSpecId(player), qualifier.GetProto(), itSpec);
     if(qualifier.GetEnchantId())
-        weight += CalculateEnchantWeight(player->getClass(), GetPlayerSpecId(player), qualifier.GetEnchantId());
+        weight += CalculateEnchantWeight(player->GetClass(), GetPlayerSpecId(player), qualifier.GetEnchantId());
     if (qualifier.GetRandomPropertyId())
-        weight += CalculateRandomPropertyWeight(player->getClass(), GetPlayerSpecId(player), qualifier.GetRandomPropertyId());
+        weight += CalculateRandomPropertyWeight(player->GetClass(), GetPlayerSpecId(player), qualifier.GetRandomPropertyId());
     if(qualifier.GetGem1())
-        weight += CalculateGemWeight(player->getClass(), GetPlayerSpecId(player), qualifier.GetGem1());
+        weight += CalculateGemWeight(player->GetClass(), GetPlayerSpecId(player), qualifier.GetGem1());
     if (qualifier.GetGem2())
-        weight += CalculateGemWeight(player->getClass(), GetPlayerSpecId(player), qualifier.GetGem2());
+        weight += CalculateGemWeight(player->GetClass(), GetPlayerSpecId(player), qualifier.GetGem2());
     if (qualifier.GetGem3())
-        weight += CalculateGemWeight(player->getClass(), GetPlayerSpecId(player), qualifier.GetGem3());
+        weight += CalculateGemWeight(player->GetClass(), GetPlayerSpecId(player), qualifier.GetGem3());
     if (qualifier.GetGem4())
-        weight += CalculateGemWeight(player->getClass(), GetPlayerSpecId(player), qualifier.GetGem4());
+        weight += CalculateGemWeight(player->GetClass(), GetPlayerSpecId(player), qualifier.GetGem4());
 
-    weight += CalculateSocketWeight(player->getClass(), qualifier, GetPlayerSpecId(player));
+    weight += CalculateSocketWeight(player->GetClass(), qualifier, GetPlayerSpecId(player));
 
     return weight;
 }
@@ -2598,7 +2598,7 @@ std::string RandomItemMgr::GetPlayerSpecName(Player* player)
 {
     std::string specName;
     int tab = AiFactory::GetPlayerSpecTab(player);
-    switch (player->getClass())
+    switch (player->GetClass())
     {
     case CLASS_PRIEST:
         if (tab == 2)
@@ -2704,7 +2704,7 @@ uint32 RandomItemMgr::GetPlayerSpecId(Player* player)
 
     for (auto itr : m_weightScales)
     {
-        if (itr.second.info.name == specName && itr.second.info.classId == player->getClass())
+        if (itr.second.info.name == specName && itr.second.info.classId == player->GetClass())
             return itr.second.info.id;
     }
     return 0;
@@ -2822,14 +2822,14 @@ uint32 RandomItemMgr::GetUpgrade(Player* player, std::string spec, uint8 slot, u
 
         if (!closestUpgrade)
         {
-            closestUpgrade = info->itemId;
+            closestUpgrade = info->itemid;
             closestUpgradeWeight = info->weights[specId];
         }
 
         // pick closest upgrade
         if (info->weights[specId] < closestUpgradeWeight)
         {
-            closestUpgrade = info->itemId;
+            closestUpgrade = info->itemid;
             closestUpgradeWeight = info->weights[specId];
         }
     }
@@ -2952,13 +2952,13 @@ std::vector<uint32> RandomItemMgr::GetUpgradeList(Player* player, uint32 specId,
         //        continue;
         //}
 
-        listItems.push_back(info->itemId);
+        listItems.push_back(info->itemid);
         //continue;
 
         // pick closest upgrade
         if (info->weights[specId] > closestUpgradeWeight)
         {
-            closestUpgrade = info->itemId;
+            closestUpgrade = info->itemid;
             closestUpgradeWeight = info->weights[specId];
         }
     }
@@ -3279,7 +3279,7 @@ uint32 RandomItemMgr::GetLiveStatWeight(Player* player, uint32 itemId, uint32 sp
         if (!m_weightScales[spec].info.id)
             continue;
 
-        if (m_weightScales[spec].info.classId != player->getClass())
+        if (m_weightScales[spec].info.classId != player->GetClass())
             continue;
 
         if (info->weights[spec] > bestSpecScore && info->weights[spec] > 1)

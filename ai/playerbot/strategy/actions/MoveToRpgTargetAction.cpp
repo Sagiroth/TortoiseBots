@@ -32,7 +32,7 @@ bool MoveToRpgTargetAction::Execute(Event& event)
     {
         Player* player = guidP.GetPlayer();
 
-        if (player && ai->IsSafe(player) && player->GetPlayerbotAI())
+        if (player && ai->IsSafe(player) && PlayerbotAIStorage::Instance().GetAI(player))
         {
             GuidPosition guidPP = PAI_VALUE(GuidPosition, "rpg target");
 
@@ -116,9 +116,9 @@ bool MoveToRpgTargetAction::Execute(Event& event)
         return false;
     }
 
-    float x = wo->GetPositionX();
-    float y = wo->GetPositionY();
-    float z = wo->GetPositionZ();
+    float x = wo->getPositionX();
+    float y = wo->getPositionY();
+    float z = wo->getPositionZ();
     float mapId = wo->GetMapId();
 
     if (ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
@@ -129,7 +129,7 @@ bool MoveToRpgTargetAction::Execute(Event& event)
     }
 	
 	if (sPlayerbotAIConfig.RandombotsWalkingRPG)
-        if (!bot->GetTerrain()->IsOutdoors(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
+        if (!bot->GetTerrain()->IsOutdoors(bot->getPositionX(), bot->getPositionY(), bot->getPositionZ()))
             bot->m_movementInfo.AddMovementFlag(MOVEFLAG_WALK_MODE);
 
     float angle;
@@ -140,7 +140,7 @@ bool MoveToRpgTargetAction::Execute(Event& event)
         if (!unit || !unit->IsMoving())
             angle = wo->GetAngle(bot) + (M_PI * irand(-25, 25) / 100.0); //Closest 45 degrees towards the target
         else if (!unit->HasInArc(bot))
-            angle = wo->GetOrientation() + (M_PI * irand(-10, 10) / 100.0); //20 degrees infront of target (leading it's movement)
+            angle = wo->getOrientation() + (M_PI * irand(-10, 10) / 100.0); //20 degrees infront of target (leading it's movement)
         else
             angle = wo->GetAngle(bot); //Current approuch angle.
 
@@ -171,7 +171,7 @@ bool MoveToRpgTargetAction::Execute(Event& event)
 
     bool couldMove;
 
-    if (unit && unit->IsMoving() && bot->GetDistance(unit) < INTERACTION_DISTANCE * 2 && unit->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE)
+    if (unit && unit->IsMoving() && bot->getDistance(unit) < INTERACTION_DISTANCE * 2 && unit->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE)
     {
 
         Creature* creature = static_cast<Creature*>(unit);

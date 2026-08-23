@@ -451,7 +451,7 @@ bool UseConsumableAction::HasAnyCandidateAura(const ConsumableCandidate& candida
 
 BotConsumableRole UseConsumableAction::GetBotRole() const
 {
-    const uint8 cls = bot->getClass();
+    const uint8 cls = bot->GetClass();
     const int tab = AiFactory::GetPlayerSpecTab(bot);
 
     switch (cls)

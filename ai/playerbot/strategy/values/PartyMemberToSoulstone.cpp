@@ -31,7 +31,7 @@ public:
         if (!player || !player->IsAlive() || player->InBattleGround())
             return false;
 
-        if (sServerFacade.GetDistance2d(ai->GetBot(), player) > ai->GetRange("spell"))
+        if (sServerFacade.getDistance2d(ai->GetBot(), player) > ai->GetRange("spell"))
             return false;
 
         // Skip DPS — only healers and tanks are worth stoning
@@ -55,10 +55,10 @@ static bool HasOtherWarlockInGroup(Player* bot, Group* group)
 {
     for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
     {
-        Player* member = ref->getSource();
+        Player* member = ref->GetSource();
         if (!member || member == bot)
             continue;
-        if (member->getClass() == CLASS_WARLOCK)
+        if (member->GetClass() == CLASS_WARLOCK)
             return true;
     }
     return false;

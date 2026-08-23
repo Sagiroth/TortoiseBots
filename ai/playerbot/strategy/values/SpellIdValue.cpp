@@ -142,7 +142,7 @@ uint32 SpellIdValue::Calculate()
             if (!pSpellInfo)
                 continue;
 
-            std::string spellName = pSpellInfo->Rank[0];
+            std::string spellName = pSpellInfo->rank[0];
 
             // For atoi, the input std::string has to start with a digit, so lets search for the first digit
             size_t i = 0;

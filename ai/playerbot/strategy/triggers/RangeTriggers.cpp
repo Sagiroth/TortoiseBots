@@ -16,8 +16,8 @@
 bool EnemyTooCloseForSpellTrigger::IsActive()
 {
     Unit* target = AI_VALUE(Unit*, "current target");
-    return target && (target->GetVictim() != bot || target->isFrozen() || target->HasRootAura()) &&
-           target->GetObjectSize() <= 10.0f && target->IsWithinCombatRange(bot, MIN_MELEE_REACH);
+    return target && (target->GetVictim() != bot || target->IsFrozen() || target->HasRootAura()) &&
+           target->getObjectSize() <= 10.0f && target->IsWithinCombatRange(bot, MIN_MELEE_REACH);
     //     Unit* target = AI_VALUE(Unit*, "current target");
     //     if (!target)
     //     {
@@ -31,13 +31,13 @@ bool EnemyTooCloseForSpellTrigger::IsActive()
     //     bool isBoss = false;
     //     bool isRaid = false;
     //     float combatReach = bot->GetCombatReach() + target->GetCombatReach();
-    //     float targetDistance = ServerFacade::instance().GetDistance2d(bot, target) + combatReach;
+    //     float targetDistance = ServerFacade::instance().getDistance2d(bot, target) + combatReach;
     //     if (target->IsCreature())
     //     {
     //         Creature* creature = botAI->GetCreature(target->GetGUID());
     //             if (creature)
     //             {
-    //                 isBoss = creature->isWorldBoss();
+    //                 isBoss = creature->IsWorldBoss();
     //             }
     //     }
 
@@ -59,7 +59,7 @@ bool EnemyTooCloseForAutoShotTrigger::IsActive()
         return false;
 
     // hunter move away after casting immolation/explosive trap
-    bool trapToCast = bot->getClass() == CLASS_HUNTER;
+    bool trapToCast = bot->GetClass() == CLASS_HUNTER;
     uint32 spellId = AI_VALUE2(uint32, "spell id", "immolation trap");
     if (!spellId)
         trapToCast = false;
@@ -67,7 +67,7 @@ bool EnemyTooCloseForAutoShotTrigger::IsActive()
     if (spellId && bot->HasSpellCooldown(spellId))
         trapToCast = false;
 
-    return !trapToCast && (target->GetVictim() != bot || target->isFrozen() || target->HasRootAura()) &&
+    return !trapToCast && (target->GetVictim() != bot || target->IsFrozen() || target->HasRootAura()) &&
            bot->IsWithinMeleeRange(target);
 
     // if (target->GetTarget() == bot->GetGUID() && !bot->GetGroup() && !target->HasUnitState(UNIT_STATE_ROOT) &&
@@ -77,13 +77,13 @@ bool EnemyTooCloseForAutoShotTrigger::IsActive()
     // bool isBoss = false;
     // bool isRaid = false;
     // float combatReach = bot->GetCombatReach() + target->GetCombatReach();
-    // float targetDistance = ServerFacade::instance().GetDistance2d(bot, target) + combatReach;
+    // float targetDistance = ServerFacade::instance().getDistance2d(bot, target) + combatReach;
     // if (target->IsCreature())
     // {
     //     Creature* creature = botAI->GetCreature(target->GetGUID());
     //     if (creature)
     //     {
-    //         isBoss = creature->isWorldBoss();
+    //         isBoss = creature->IsWorldBoss();
     //     }
     // }
 
@@ -98,7 +98,7 @@ bool EnemyTooCloseForShootTrigger::IsActive()
     Unit* target = AI_VALUE(Unit*, "current target");
     // target->IsWithinCombatRange()
 
-    return target && (target->GetVictim() != bot || target->isFrozen() || target->HasRootAura()) &&
+    return target && (target->GetVictim() != bot || target->IsFrozen() || target->HasRootAura()) &&
            target->IsWithinCombatRange(bot, MIN_MELEE_REACH);
 
     //     Unit* target = AI_VALUE(Unit*, "current target");
@@ -112,13 +112,13 @@ bool EnemyTooCloseForShootTrigger::IsActive()
     //     bool isBoss = false;
     //     bool isRaid = false;
     //     float combatReach = bot->GetCombatReach() + target->GetCombatReach();
-    //     float targetDistance = ServerFacade::instance().GetDistance2d(bot, target) + combatReach;
+    //     float targetDistance = ServerFacade::instance().getDistance2d(bot, target) + combatReach;
     //     if (target->IsCreature())
     //     {
     //         Creature* creature = botAI->GetCreature(target->GetGUID());
     //         if (creature)
     //         {
-    //             isBoss = creature->isWorldBoss();
+    //             isBoss = creature->IsWorldBoss();
     //         }
     //     }
 
@@ -177,7 +177,7 @@ EnemyOutOfSpellRangeTrigger::EnemyOutOfSpellRangeTrigger(PlayerbotAI* botAI)
 //         return false;
 
 //     float combatReach = bot->GetCombatReach() + target->GetCombatReach();
-//     return target && (ServerFacade::instance().GetDistance2d(bot, target) > (distance + combatReach +
+//     return target && (ServerFacade::instance().getDistance2d(bot, target) > (distance + combatReach +
 //     sPlayerbotAIConfig.contactDistance) || !bot->IsWithinLOSInMap(target));
 // }
 
@@ -187,7 +187,7 @@ EnemyOutOfSpellRangeTrigger::EnemyOutOfSpellRangeTrigger(PlayerbotAI* botAI)
 //     if (!target)
 //         return false;
 
-//     float targetDistance = ServerFacade::instance().GetDistance2d(bot, target);
+//     float targetDistance = ServerFacade::instance().getDistance2d(bot, target);
 //     return target && (targetDistance > std::max(5.0f, bot->GetCombatReach() + target->GetCombatReach()) ||
 //     (!bot->IsWithinLOSInMap(target) && targetDistance > 5.0f));
 // }
@@ -198,7 +198,7 @@ bool PartyMemberToHealOutOfSpellRangeTrigger::IsActive()
     if (!target)
         return false;
 
-    return target && (ServerFacade::instance().GetDistance2d(bot, target) > (distance + sPlayerbotAIConfig.contactDistance) ||
+    return target && (ServerFacade::instance().getDistance2d(bot, target) > (distance + sPlayerbotAIConfig.contactDistance) ||
                       !bot->IsWithinLOSInMap(target));
 }
 
@@ -244,7 +244,7 @@ bool TooCloseToPlayerWithDebuffTrigger::TooCloseToPlayerWithDebuff(uint32 spellI
 
     for (Unit* debuffedPlayer : debuffedPlayers)
     {
-        float dist = debuffedPlayer->GetExactDist2d(bot->GetPositionX(), bot->GetPositionY());
+        float dist = debuffedPlayer->GetExactDist2d(bot->getPositionX(), bot->getPositionY());
         if (dist < range)
         {
             return true;
@@ -283,7 +283,7 @@ bool TooFarFromPlayerWithAuraTrigger::TooFarFromPlayerWithAura(uint32 spellId, f
 
     for (Unit* debuffedPlayer : debuffedPlayers)
     {
-        float dist = debuffedPlayer->GetExactDist2d(bot->GetPositionX(), bot->GetPositionY());
+        float dist = debuffedPlayer->GetExactDist2d(bot->getPositionX(), bot->getPositionY());
         if (dist > range)
         {
             return true;

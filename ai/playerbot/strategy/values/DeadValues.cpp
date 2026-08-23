@@ -20,9 +20,9 @@ GuidPosition GraveyardValue::Calculate()
     {
         auto travelTarget = AI_VALUE(TravelTarget*, "travel target");
 
-        if (travelTarget && travelTarget->GetPosition() && travelTarget->GetPosition()->getMapId() == bot->GetMapId())
+        if (travelTarget && travelTarget->getPosition() && travelTarget->getPosition()->GetMapId() == bot->GetMapId())
         {
-            refPosition = *travelTarget->GetPosition();
+            refPosition = *travelTarget->getPosition();
         }
     }
     else if (getQualifier() == "another closest appropriate")
@@ -38,7 +38,7 @@ GuidPosition GraveyardValue::Calculate()
         refPosition.getX(),
         refPosition.getY(),
         refPosition.getZ(),
-        refPosition.getMapId(),
+        refPosition.GetMapId(),
         bot->GetTeam()
     );
 
@@ -71,7 +71,7 @@ WorldSafeLocsEntry const* GraveyardValue::GetAnotherAppropriateClosestGraveyard(
         return nullptr;
 
     uint32 botMapId = corpse->GetMapId();
-    uint32 botZoneId = corpse->GetZoneId();
+    uint32 botZoneId = corpse->getZoneId();
 
     for (auto mapValues : sWorld.GetGraveyardManager().GetGraveyardMap())
     {
@@ -90,7 +90,7 @@ WorldSafeLocsEntry const* GraveyardValue::GetAnotherAppropriateClosestGraveyard(
         if (graveyardCoreEntry->map_id != botMapId)
             continue;
 
-        uint32 graveyardZoneId = sTerrainMgr.GetZoneId(graveyardCoreEntry->map_id, graveyardCoreEntry->x, graveyardCoreEntry->y, graveyardCoreEntry->z);
+        uint32 graveyardZoneId = sTerrainMgr.getZoneId(graveyardCoreEntry->map_id, graveyardCoreEntry->x, graveyardCoreEntry->y, graveyardCoreEntry->z);
         auto graveyardAreaEntry = GetAreaEntryByAreaID(graveyardZoneId);
 
         //skip same zone
@@ -101,7 +101,7 @@ WorldSafeLocsEntry const* GraveyardValue::GetAnotherAppropriateClosestGraveyard(
             continue;
 
         //skip higher level zones
-        if (bot->GetLevel() + 5 < (uint32)graveyardAreaEntry->area_level)
+        if (bot->GetLevel() + 5 < (uint32)graveyardAreaEntry->AreaLevel)
             continue;
 
         float dist = WorldPosition(corpse).sqDistance(graveyardCoreEntry);

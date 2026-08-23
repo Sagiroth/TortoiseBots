@@ -24,13 +24,13 @@ namespace ai
             if (!at)
                 return false;
 
-            return IsPointInAreaTriggerZone(atEntry, bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), 0.5f);
+            return IsPointInAreaTriggerZone(atEntry, bot->GetMapId(), bot->getPositionX(), bot->getPositionY(), bot->getPositionZ(), 0.5f);
         }
 
     private:
-        bool IsPointInAreaTriggerZone(AreaTriggerEntry const* atEntry, uint32 mapid, float x, float y, float z, float delta)
+        bool IsPointInAreaTriggerZone(AreaTriggerEntry const* atEntry, uint32 mapId, float x, float y, float z, float delta)
         {
-            if (mapid != atEntry->mapid)
+            if (mapId != atEntry->mapId)
                 return false;
 
             if (atEntry->radius > 0)

@@ -30,7 +30,7 @@ bool CheckMailAction::Execute(Event& event)
         if (!owner)
             continue;
 
-        uint32 account = sObjectMgr.GetPlayerAccountIdByGUID(owner->GetObjectGuid());
+        uint32 account = sObjectMgr.GetPlayerAccountIdByGUID(owner->getObjectGuid());
         if (sPlayerbotAIConfig.IsInRandomAccountList(account))
             continue;
 

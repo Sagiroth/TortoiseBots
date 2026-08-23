@@ -56,7 +56,7 @@ bool SetFocusHealTargetsAction::Execute(Event event)
         return false;
     }
 
-    std::string const param = LowercaseString(event.getParam());
+    std::string const param = LowercaseString(event.GetParam());
     if (param.empty())
     {
         std::string text = PlayerbotTextMgr::instance().GetBotTextOrDefault(

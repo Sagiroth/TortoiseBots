@@ -113,14 +113,14 @@ bool PlayerbotAIConfig::Initialize()
             botConfigFile = mainConfig.substr(0, slash + 1) + "aiplayerbot.conf";
     }
 
-    if (botConfigFile.empty() || !config.SetSource(botConfigFile, "PlayerBots_"))
+    if (botConfigFile.empty() || !config.SetSource(botConfigFile.c_str()))
     {
-        if (!config.SetSource(_D_AIPLAYERBOT_CONFIG, "PlayerBots_"))
+        if (!config.SetSource(_D_AIPLAYERBOT_CONFIG))
         {
             sLog.outString("AI Playerbot is Disabled. No configuration file at %s%s%s.",
                 botConfigFile.empty() ? "" : botConfigFile.c_str(),
                 botConfigFile.empty() ? "" : " or ",
-                _D_AIPLAYERBOT_CONFIG.c_str());
+                _D_AIPLAYERBOT_CONFIG);
             return false;
         }
     }
@@ -286,7 +286,7 @@ bool PlayerbotAIConfig::Initialize()
             }
             catch (const std::exception&)
             {
-                sLog.outError("AiPlayerbot.BgBotTeamCap: cannot read '%s'", pair.c_str());
+                sLog.outError"AiPlayerbot.BgBotTeamCap: cannot read '%s'", pair.c_str());
             }
         }
     }
@@ -369,13 +369,13 @@ bool PlayerbotAIConfig::Initialize()
     
     LoadListString<std::vector<std::string> >(config.GetStringDefault("AiPlayerbot.DefaultLoginCriteria", "maxbots,spareroom,offline"), defaultLoginCriteria);
 
-    std::vector<std::string> criteriaValues = configA->GetValues("AiPlayerbot.LoginCriteria");
+    std::vector<std::string> criteriaValues = configA->GetValues"AiPlayerbot.LoginCriteria");
     std::sort(criteriaValues.begin(), criteriaValues.end());
     loginCriteria.clear();
     for (auto& value : criteriaValues)
     {
         loginCriteria.push_back({});
-        LoadListString<std::vector<std::string> >(config.GetStringDefault(value, ""), loginCriteria.back());
+        LoadListString<std::vector<std::string> >(config.GetStringDefault((value).c_str(), ""), loginCriteria.back());
     }
 
     if (criteriaValues.empty())
@@ -396,7 +396,7 @@ bool PlayerbotAIConfig::Initialize()
 
     for (uint32 level = 1; level <= PLAYER_STRONG_MAX_LEVEL; ++level)
     {
-        levelProbability[level] = config.GetIntDefault("AiPlayerbot.LevelProbability." + std::to_string(level), 100);
+        levelProbability[level] = config.GetIntDefault("AiPlayerbot.LevelProbability." + std::to_string(level)).c_str(), 100);
     }
 
     sLog.outString("Loading Race/Class probabilities");
@@ -411,7 +411,7 @@ bool PlayerbotAIConfig::Initialize()
         //Set race defaults
         if (race > 0)
         {
-            int rProb = config.GetIntDefault("AiPlayerbot.ClassRaceProb.0." + std::to_string(race), 100);
+            int rProb = config.GetIntDefault("AiPlayerbot.ClassRaceProb.0." + std::to_string(race)).c_str(), 100);
 
             for (uint32 cls = 1; cls < MAX_CLASSES; ++cls)
             {
@@ -423,7 +423,7 @@ bool PlayerbotAIConfig::Initialize()
     //Class overrides
     for (uint32 cls = 1; cls < MAX_CLASSES; ++cls)
     {
-        int cProb = config.GetIntDefault("AiPlayerbot.ClassRaceProb." + std::to_string(cls), -1);
+        int cProb = config.GetIntDefault("AiPlayerbot.ClassRaceProb." + std::to_string(cls)).c_str(), -1);
 
         if (cProb >= 0)
         {
@@ -439,7 +439,7 @@ bool PlayerbotAIConfig::Initialize()
     {
         for (uint32 cls = 1; cls < MAX_CLASSES; ++cls)
         {
-            int rcProb = config.GetIntDefault("AiPlayerbot.ClassRaceProb." + std::to_string(cls) + "." + std::to_string(race), -1);
+            int rcProb = config.GetIntDefault("AiPlayerbot.ClassRaceProb." + std::to_string(cls) + "." + std::to_string(race)).c_str(), -1);
             if (rcProb >= 0)
                 classRaceProbability[cls][race] = rcProb;
 
@@ -449,7 +449,7 @@ bool PlayerbotAIConfig::Initialize()
                 // combination that cannot exist looked like it had been accepted
                 // and the bots simply came out as something else.
                 if (rcProb > 0)
-                    sLog.outError("AiPlayerbot.ClassRaceProb.%u.%u is set to %d, but that class cannot be that race. Ignoring it - those bots will be created as another race.",
+                    sLog.outError"AiPlayerbot.ClassRaceProb.%u.%u is set to %d, but that class cannot be that race. Ignoring it - those bots will be created as another race.",
                         cls, race, rcProb);
 
                 classRaceProbability[cls][race] = 0;
@@ -486,10 +486,10 @@ bool PlayerbotAIConfig::Initialize()
 	        for (uint32 race = 1; race < MAX_RACES; ++race)
 	        {
 		    std::string key = "AiPlayerbot.ClassRaceProb." + std::to_string(cls) + "." + std::to_string(race);
-		    int count = config.GetIntDefault(key, -1);
+		    int count = config.GetIntDefault((key).c_str(), -1);
 
 		    if (count >= 0 && !factory.isAvailableRace(cls, race))
-		        sLog.outError("AiPlayerbot.ClassRaceProb.%u.%u asks for %d bots, but that class cannot be that race. Ignoring it.",
+		        sLog.outError"AiPlayerbot.ClassRaceProb.%u.%u asks for %d bots, but that class cannot be that race. Ignoring it.",
 		            cls, race, count);
 		    else if (count >= 0)
 		    {
@@ -510,7 +510,7 @@ bool PlayerbotAIConfig::Initialize()
     worldBuffs.clear();
 
     //Get all config values starting with AiPlayerbot.WorldBuff
-    std::vector<std::string> values = configA->GetValues("AiPlayerbot.WorldBuff");
+    std::vector<std::string> values = configA->GetValues"AiPlayerbot.WorldBuff");
 
     if (values.size())
     {
@@ -529,7 +529,7 @@ bool PlayerbotAIConfig::Initialize()
 
             //Get list of buffs for this combination.
             std::list<uint32> buffs;
-            LoadList<std::list<uint32>>(config.GetStringDefault(value, ""), buffs);
+            LoadList<std::list<uint32>>(config.GetStringDefault((value).c_str(), ""), buffs);
 
             //Store buffs for later application.
             for (auto buff : buffs)
@@ -587,8 +587,8 @@ bool PlayerbotAIConfig::Initialize()
     enableActionLog = config.GetBoolDefault("AiPlayerbot.EnableActionLog", false);
     botLogFile = config.GetStringDefault("AiPlayerbot.BotLogFile", "bots.log");
     {
-        std::string logsDir = sConfig.GetStringDefault("LogsDir");
-        bool botLogDebug = config.GetBoolDefault("AiPlayerbot.BotLogDebug", false);
+        std::string logsDir = sConfig.GetStringDefault(("LogsDir");
+        bool botLogDebug = config.GetBoolDefault("AiPlayerbot.BotLogDebug").c_str(), false);
         BotLog::Instance().Initialize(botLogFile.c_str(), logsDir.c_str(), botLogDebug);
     }
     enableOffSpecStrategies = config.GetBoolDefault("AiPlayerbot.EnableOffSpecStrategies", true);
@@ -1098,7 +1098,7 @@ bool PlayerbotAIConfig::openLog(std::string fileName, char const* mode, bool has
     if (fileOpen) //close log file
         fclose(file);
 
-    std::string m_logsDir = sConfig.GetStringDefault("LogsDir");
+    std::string m_logsDir = sConfig.GetStringDefault("LogsDir", "");
     if (!m_logsDir.empty())
     {
         if ((m_logsDir.at(m_logsDir.length() - 1) != '/') && (m_logsDir.at(m_logsDir.length() - 1) != '\\'))

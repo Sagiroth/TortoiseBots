@@ -140,7 +140,7 @@ bool FearPvpTrigger::IsActive()
         if (health <= sPlayerbotAIConfig.lowHealth)
         {
 			// Check if targeting bot
-			if (target->GetSelectionGuid() == bot->GetObjectGuid())
+			if (target->GetSelectionGuid() == bot->getObjectGuid())
 			{
                 // Check if the bot has feared anyone
                 bool alreadyFeared = false;
@@ -157,7 +157,7 @@ bool FearPvpTrigger::IsActive()
 
                 if (!alreadyFeared)
                 {
-                    const float distance = target->GetDistance(bot);
+                    const float distance = target->getDistance(bot);
                     return distance <= 10.0f;
                 }
 			}

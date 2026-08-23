@@ -389,7 +389,7 @@ bool RandomPlayerbotFactory::CreateRandomBot(uint8 cls, uint8 inputRace)
 	        hair.second, // hairColor,
 	        facialHair, 0))
     {
-        player->DeleteFromDB(player->GetObjectGuid(), accountId, true, true);
+        player->DeleteFromDB(player->getObjectGuid(), accountId, true, true);
         delete session;
         delete player;
         sLog.outError("Unable to create random bot for account %d - name: \"%s\"; race: %u; class: %u",
@@ -1364,12 +1364,12 @@ void RandomPlayerbotFactory::CreateRandomArenaTeams()
             continue;
 
         ArenaTeam* arenateam = new ArenaTeam();
-        if (!arenateam->Create(player->GetObjectGuid(), type, arenaTeamName))
+        if (!arenateam->Create(player->getObjectGuid(), type, arenaTeamName))
         {
             sLog.outError("Error creating arena team %s", arenaTeamName.c_str());
             continue;
         }
-        arenateam->SetCaptain(player->GetObjectGuid());
+        arenateam->SetCaptain(player->getObjectGuid());
         sLog.outBasic("Bot #%d %s:%d <%s>: captain of random Arena %s team - %s", player->GetGUIDLow(), player->GetTeam() == ALLIANCE ? "A" : "H", player->GetLevel(), player->GetName(), arenaTypeName.c_str(), arenateam->GetName().c_str());
         // set random emblem
         uint32 backgroundColor = urand(0xFF000000, 0xFFFFFFFF), emblemStyle = urand(0, 101), emblemColor = urand(0xFF000000, 0xFFFFFFFF), borderStyle = urand(0, 5), borderColor = urand(0xFF000000, 0xFFFFFFFF);
@@ -1400,7 +1400,7 @@ void RandomPlayerbotFactory::CreateRandomArenaTeams()
             if (member->GetTeam() != player->GetTeam())
                 continue;
 
-            arenateam->AddMember(member->GetObjectGuid());
+            arenateam->AddMember(member->getObjectGuid());
             sLog.outBasic("Bot #%d %s:%d <%s>: added to random Arena %s team - %s", member->GetGUIDLow(), member->GetTeam() == ALLIANCE ? "A" : "H", member->GetLevel(), member->GetName(), arenaTypeName.c_str(), arenateam->GetName().c_str());
 
             /*if (player->GetArenaTeamIdFromDB(possibleMember, type))

@@ -18,12 +18,12 @@ bool CheckValuesAction::Execute(Event& event)
 {
     if (ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
     {
-        ai->Ping(bot->GetPositionX() - 7.5, bot->GetPositionY() + 7.5);
+        ai->Ping(bot->getPositionX() - 7.5, bot->getPositionY() + 7.5);
 
         LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
 
         if (!lastMove.lastPath.empty())
-            ai->Ping(lastMove.lastPath.getFront().getX() - 7.5, lastMove.lastPath.getFront().getY() + 7.5);
+            ai->Ping(lastMove.lastPath.GetFront().getX() - 7.5, lastMove.lastPath.GetFront().getY() + 7.5);
     }
 
     if (ai->HasStrategy("map", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("map full", BotState::BOT_STATE_NON_COMBAT))

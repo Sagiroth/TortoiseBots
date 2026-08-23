@@ -32,7 +32,7 @@ namespace ai
             if (!target)
                 return false;
 
-            return sServerFacade.IsUnderwater(target) || target->IsInSwimmableWater();
+            return sServerFacade.IsUnderwater(target) || target->IsInWater();
         }
     };
 }

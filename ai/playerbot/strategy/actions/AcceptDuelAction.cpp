@@ -12,7 +12,7 @@
 
 bool AcceptDuelAction::Execute(Event event)
 {
-    WorldPacket p(event.getPacket());
+    WorldPacket p(event.GetPacket());
 
     ObjectGuid flagGuid;
     p >> flagGuid;

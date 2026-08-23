@@ -28,7 +28,7 @@ bool AtDarkPortalAzerothTrigger::IsActive()
 {
     if (sServerFacade.GetAreaId(bot) == 72)
     {
-        if (sServerFacade.GetDistance2d(bot, -11906.9f, -3208.53f) < 20.0f)
+        if (sServerFacade.getDistance2d(bot, -11906.9f, -3208.53f) < 20.0f)
         {
             return true;
         }
@@ -40,7 +40,7 @@ bool AtDarkPortalOutlandTrigger::IsActive()
 {
     if (sServerFacade.GetAreaId(bot) == 3539)
     {
-        if (sServerFacade.GetDistance2d(bot, -248.1939f, 921.919f) < 10.0f)
+        if (sServerFacade.getDistance2d(bot, -248.1939f, 921.919f) < 10.0f)
         {
             return true;
         }

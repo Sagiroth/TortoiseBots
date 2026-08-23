@@ -32,7 +32,7 @@ bool ChooseRpgTargetAction::HasSameTarget(ObjectGuid guid, uint32 max, std::list
         if (!ai->IsSafe(player))
             continue;
 
-        PlayerbotAI* ai = player->GetPlayerbotAI();
+        PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(player);
 
         if (!ai)
             continue;
@@ -60,7 +60,7 @@ std::unordered_map<ObjectGuid, float> ChooseRpgTargetAction::GetTargets(Player* 
     focusQuestTravelList focusList = AI_VALUE(focusQuestTravelList, "focus travel target");
 
     GuidPosition masterRpgTarget;
-    if (requester && ai->IsSafe(requester) && requester->GetPlayerbotAI())
+    if (requester && ai->IsSafe(requester) && PlayerbotAIStorage::Instance().GetAI(requester))
     {
         Player* player = requester;
         masterRpgTarget = PAI_VALUE(GuidPosition, "rpg target");
@@ -123,7 +123,7 @@ std::unordered_map<ObjectGuid, float> ChooseRpgTargetAction::GetTargets(Player* 
     }
 
     //Force RpgTrigger to be active even if we aren't currently close to the rpg target.
-    SET_AI_VALUE(std::string, "next rpg action", this->getName());
+    SET_AI_VALUE(std::string, "next rpg action", this->GetName());
 
     bool hasGoodRelevance = false;
     rgpActionReason.clear();
@@ -182,7 +182,7 @@ std::unordered_map<ObjectGuid, float> ChooseRpgTargetAction::GetTargets(Player* 
                 SkipRpgTarget("Go is not spawned, ready or is in use.");
 
             //Ignore objects that are too high or low compared to the bot.
-            if (fabs(go->GetPositionZ() - bot->GetPositionZ()) > 20.f)
+            if (fabs(go->getPositionZ() - bot->getPositionZ()) > 20.f)
                 SkipRpgTarget("Go is too high/low compared to bot.");
 
             // Never pick an environmental-damage trap (e.g. a "Campfire" GO that also deals
@@ -209,7 +209,7 @@ std::unordered_map<ObjectGuid, float> ChooseRpgTargetAction::GetTargets(Player* 
             if (!ai->IsSafe(player))
                 SkipRpgTarget("Player is not safe.");
 
-            if (player->GetPlayerbotAI())
+            if (PlayerbotAIStorage::Instance().GetAI(player))
             {
                 GuidPosition guidPP = PAI_VALUE(GuidPosition, "rpg target");
 
@@ -218,7 +218,7 @@ std::unordered_map<ObjectGuid, float> ChooseRpgTargetAction::GetTargets(Player* 
                     SkipRpgTarget("Player has bot as rpg target.");
 
                 //Leaders are not allowed to rpg with groupmembers to prevent follow from making members run away.
-                if (bot->GetGroup() && player->GetGroup() == bot->GetGroup() && bot->GetGroup()->IsLeader(bot->GetObjectGuid()))
+                if (bot->GetGroup() && player->GetGroup() == bot->GetGroup() && bot->GetGroup()->IsLeader(bot->getObjectGuid()))
                     SkipRpgTarget("Player is group member and I am leader of same group.");
             }
         }
@@ -316,21 +316,21 @@ float ChooseRpgTargetAction::getMaxRelevance(GuidPosition guidP)
         //Loop over all triggers of this strategy.
         for (auto& triggerNode : triggerNodes)
         {
-            Trigger* trigger = context->GetTrigger(triggerNode->getName());
+            Trigger* trigger = context->GetTrigger(triggerNode->GetName());
 
             if (trigger)
             {
                 triggerNode->setTrigger(trigger);
 
-                if (triggerNode->getFirstRelevance() < maxRelevance || triggerNode->getFirstRelevance() > 2.0f)
+                if (triggerNode->GetFirstRelevance() < maxRelevance || triggerNode->GetFirstRelevance() > 2.0f)
                     continue;
 
-                Trigger* trigger = triggerNode->getTrigger();
+                Trigger* trigger = triggerNode->GetTrigger();
 
                 if (!trigger->IsActive())
                     continue;
 
-                NextAction** nextActions = triggerNode->getHandlers();
+                NextAction** nextActions = triggerNode->GetHandlers();
 
                 bool isRpg = false;
 
@@ -339,7 +339,7 @@ float ChooseRpgTargetAction::getMaxRelevance(GuidPosition guidP)
                 {
                     NextAction* nextAction = nextActions[i];
 
-                    Action* action = ai->GetAiObjectContext()->GetAction(nextAction->getName());
+                    Action* action = ai->GetAiObjectContext()->GetAction(nextAction->GetName());
 
                     if (dynamic_cast<RpgEnabled*>(action))
                         isRpg = true;
@@ -354,9 +354,9 @@ float ChooseRpgTargetAction::getMaxRelevance(GuidPosition guidP)
                 //Note the highest relevance of this node and the reason it triggers.
                 if (isRpg)
                 {
-                    maxRelevance = triggerNode->getFirstRelevance();
+                    maxRelevance = triggerNode->GetFirstRelevance();
                     if (rgpActionReason[guidP].empty())
-                        rgpActionReason[guidP] = triggerNode->getName();
+                        rgpActionReason[guidP] = triggerNode->GetName();
                 }
             }
         }
@@ -382,14 +382,14 @@ float ChooseRpgTargetAction::getMaxRelevance(GuidPosition guidP)
 
 bool ChooseRpgTargetAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     std::unordered_map<ObjectGuid, float> targets = GetTargets(requester);
 
     if (targets.empty())
         return false;
 
     GuidPosition masterRpgTarget;
-    if (requester && ai->IsSafe(requester) && requester->GetPlayerbotAI())
+    if (requester && ai->IsSafe(requester) && PlayerbotAIStorage::Instance().GetAI(requester))
     {
         Player* player = requester;
         masterRpgTarget = PAI_VALUE(GuidPosition, "rpg target");
@@ -565,7 +565,7 @@ bool ChooseRpgTargetAction::isUseful()
     {
         GuidPosition center(AI_VALUE(GuidPosition, "free move center"));
 
-        if (center.getMapId() != bot->GetMapId())
+        if (center.GetMapId() != bot->GetMapId())
             return false;
 
         if (center.sqDistance2d(bot) > range * range + sPlayerbotAIConfig.rpgDistance * sPlayerbotAIConfig.rpgDistance)

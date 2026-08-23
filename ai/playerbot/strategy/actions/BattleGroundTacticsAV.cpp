@@ -124,7 +124,7 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
     {
         if (Creature* pDrek = bot->GetMap()->GetCreature(bg->GetSingleCreatureGuid(BG_AV_BOSS_H, 0)))
         {
-            objectiveLocation = WorldLocation(pDrek->GetMapId(), pDrek->GetPosition());
+            objectiveLocation = WorldLocation(pDrek->GetMapId(), pDrek->getPosition());
             return true;
         }
     }
@@ -141,7 +141,7 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
     if (supporter && (bg->IsActiveEvent(BG_AV_NODE_GY_SNOWFALL, BG_AV_NODE_STATUS_HORDE_CONTESTED) || bg->IsActiveEvent(BG_AV_NODE_GY_SNOWFALL, BG_AV_NODE_STATUS_HORDE_OCCUPIED) || bg->IsActiveEvent(BG_AV_NODE_GY_SNOWFALL, BG_AV_NODE_STATUS_NEUTRAL_OCCUPIED)))
     {
 #endif
-        if (WorldLocation snowfallGraveyard; sRandomPlayerbotMgr.GetNamedLocation("AV_SNOWFALL_GRAVEYARD", snowfallGraveyard))
+        if (WorldLocation snowfallGraveyard; sRandomPlayerbotMgr.getNamedLocation("AV_SNOWFALL_GRAVEYARD", snowfallGraveyard))
         {
             if (WorldPosition(bot).IsWithinDist(WorldPosition(snowfallGraveyard), VISIBILITY_DISTANCE_LARGE))
             {
@@ -158,9 +158,9 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
         {
             if (pGalvangar->GetHealth() > 0)
             {
-                if (WorldLocation icebloodGarrison; sRandomPlayerbotMgr.GetNamedLocation("AV_ICEBLOOD_GARRISON_WAITING_ALLIANCE", icebloodGarrison))
+                if (WorldLocation icebloodGarrison; sRandomPlayerbotMgr.getNamedLocation("AV_ICEBLOOD_GARRISON_WAITING_ALLIANCE", icebloodGarrison))
                 {
-                    uint32 attackCount = getDefendersCount(Position(icebloodGarrison.coord_x, icebloodGarrison.coord_y, icebloodGarrison.coord_z, icebloodGarrison.orientation), 10.0f, false);
+                    uint32 attackCount = getDefendersCount(Position(icebloodGarrison.x, icebloodGarrison.y, icebloodGarrison.z, icebloodGarrison.orientation), 10.0f, false);
 
                     // Prepare to attack Captain
                     if (attackCount < 5 && !sServerFacade.IsInCombat(pGalvangar))
@@ -169,7 +169,7 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
                     }
                     else
                     {
-                        objectiveLocation = WorldLocation(pGalvangar->GetMapId(), pGalvangar->GetPosition());
+                        objectiveLocation = WorldLocation(pGalvangar->GetMapId(), pGalvangar->getPosition());
                     }
 
                     return true;
@@ -190,7 +190,7 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
                 continue;
             }
 
-            if (WorldLocation location; sRandomPlayerbotMgr.GetNamedLocation(locationName, location))
+            if (WorldLocation location; sRandomPlayerbotMgr.getNamedLocation(locationName, location))
             {
                 objectiveLocations.push_back(location);
             }
@@ -210,7 +210,7 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
         {
             if (bot->IsWithinDist(neutralMineBoss, VISIBILITY_DISTANCE_LARGE) && neutralMineBoss->GetDeathState() != DEAD && bg->IsActiveEvent(BG_AV_MINE_BOSSES_SOUTH, TEAM_INDEX_NEUTRAL))
             {
-                objectiveLocation = WorldLocation(neutralMineBoss->GetMapId(), neutralMineBoss->GetPosition());
+                objectiveLocation = WorldLocation(neutralMineBoss->GetMapId(), neutralMineBoss->getPosition());
                 return true;
             }
         }
@@ -219,7 +219,7 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
         {
             if (bot->IsWithinDist(hordeMineBoss, VISIBILITY_DISTANCE_LARGE) && hordeMineBoss->GetDeathState() != DEAD && bg->IsActiveEvent(BG_AV_MINE_BOSSES_SOUTH, TEAM_INDEX_HORDE))
             {
-                objectiveLocation = WorldLocation(hordeMineBoss->GetMapId(), hordeMineBoss->GetPosition());
+                objectiveLocation = WorldLocation(hordeMineBoss->GetMapId(), hordeMineBoss->getPosition());
                 return true;
             }
         }
@@ -244,7 +244,7 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
 #endif
                 continue;
 
-            if (WorldLocation location; sRandomPlayerbotMgr.GetNamedLocation(locationName, location))
+            if (WorldLocation location; sRandomPlayerbotMgr.getNamedLocation(locationName, location))
             {
                 objectiveLocations.push_back(location);
             }
@@ -285,7 +285,7 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
     {
         if (Creature* pVanndar = bot->GetMap()->GetCreature(bg->GetSingleCreatureGuid(BG_AV_BOSS_A, 0)))
         {
-            objectiveLocation = WorldLocation(pVanndar->GetMapId(), pVanndar->GetPosition());
+            objectiveLocation = WorldLocation(pVanndar->GetMapId(), pVanndar->getPosition());
             return true;
         }
     }
@@ -302,7 +302,7 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
     if (supporter && (bg->IsActiveEvent(BG_AV_NODE_GY_SNOWFALL, BG_AV_NODE_STATUS_ALLY_CONTESTED) || bg->IsActiveEvent(BG_AV_NODE_GY_SNOWFALL, BG_AV_NODE_STATUS_ALLY_OCCUPIED) || bg->IsActiveEvent(BG_AV_NODE_GY_SNOWFALL, BG_AV_NODE_STATUS_NEUTRAL_OCCUPIED)))
     {
 #endif
-        if (WorldLocation snowfallGraveyard; sRandomPlayerbotMgr.GetNamedLocation("AV_SNOWFALL_GRAVEYARD", snowfallGraveyard))
+        if (WorldLocation snowfallGraveyard; sRandomPlayerbotMgr.getNamedLocation("AV_SNOWFALL_GRAVEYARD", snowfallGraveyard))
         {
             if (WorldPosition(bot).IsWithinDist(WorldPosition(snowfallGraveyard), VISIBILITY_DISTANCE_LARGE))
             {
@@ -319,9 +319,9 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
         {
             if (pBalinda->GetHealth() > 0)
             {
-                if (WorldLocation stoneheartOutpost; sRandomPlayerbotMgr.GetNamedLocation("AV_STONEHEART_OUTPOST_WAITING_HORDE", stoneheartOutpost))
+                if (WorldLocation stoneheartOutpost; sRandomPlayerbotMgr.getNamedLocation("AV_STONEHEART_OUTPOST_WAITING_HORDE", stoneheartOutpost))
                 {
-                    uint32 attackCount = getDefendersCount(Position(stoneheartOutpost.coord_x, stoneheartOutpost.coord_y, stoneheartOutpost.coord_z, stoneheartOutpost.orientation), 10.0f, false);
+                    uint32 attackCount = getDefendersCount(Position(stoneheartOutpost.x, stoneheartOutpost.y, stoneheartOutpost.z, stoneheartOutpost.orientation), 10.0f, false);
 
                     // Prepare to attack Captain
                     if (attackCount < 5 && !sServerFacade.IsInCombat(pBalinda))
@@ -330,7 +330,7 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
                     }
                     else
                     {
-                        objectiveLocation = WorldLocation(pBalinda->GetMapId(), pBalinda->GetPosition());
+                        objectiveLocation = WorldLocation(pBalinda->GetMapId(), pBalinda->getPosition());
                     }
 
                     return true;
@@ -351,7 +351,7 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
                 continue;
             }
 
-            if (WorldLocation location; sRandomPlayerbotMgr.GetNamedLocation(locationName, location))
+            if (WorldLocation location; sRandomPlayerbotMgr.getNamedLocation(locationName, location))
             {
                 objectiveLocations.push_back(location);
             }
@@ -377,7 +377,7 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
         {
             if (bot->IsWithinDist(neutralMineBoss, VISIBILITY_DISTANCE_GIGANTIC) && neutralMineBoss->GetDeathState() != DEAD && bg->IsActiveEvent(BG_AV_MINE_BOSSES_NORTH, TEAM_INDEX_NEUTRAL))
             {
-                objectiveLocation = WorldLocation(neutralMineBoss->GetMapId(), neutralMineBoss->GetPosition());
+                objectiveLocation = WorldLocation(neutralMineBoss->GetMapId(), neutralMineBoss->getPosition());
                 return true;
             }
         }
@@ -386,7 +386,7 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
         {
             if (bot->IsWithinDist(allianceMineBoss, VISIBILITY_DISTANCE_GIGANTIC) && allianceMineBoss->GetDeathState() != DEAD && bg->IsActiveEvent(BG_AV_MINE_BOSSES_NORTH, TEAM_INDEX_ALLIANCE))
             {
-                objectiveLocation = WorldLocation(allianceMineBoss->GetMapId(), allianceMineBoss->GetPosition());
+                objectiveLocation = WorldLocation(allianceMineBoss->GetMapId(), allianceMineBoss->getPosition());
                 return true;
             }
         }
@@ -411,7 +411,7 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
 #endif
                 continue;
 
-            if (WorldLocation location; sRandomPlayerbotMgr.GetNamedLocation(locationName, location))
+            if (WorldLocation location; sRandomPlayerbotMgr.getNamedLocation(locationName, location))
             {
                 objectiveLocations.push_back(location);
             }
@@ -472,7 +472,7 @@ bool BGTactics::CheckFlagAv()
         if (!sServerFacade.isSpawned(go) || go->IsInUse() || go->GetGoState() != GO_STATE_READY)
             continue;
 
-        if (!bot->CanInteract(go))
+        if (!true /*CanInteract stub*/)
             continue;
 
         if (!bot->IsWithinDistInMap(go, INTERACTION_DISTANCE))
@@ -497,7 +497,7 @@ bool BGTactics::CheckFlagAv()
         ai->WaitForSpellCast(spell);
 
         //WorldPacket data(CMSG_GAMEOBJ_USE);
-        //data << go->GetObjectGuid();
+        //data << go->getObjectGuid();
         //bot->GetSession()->HandleGameObjectUseOpcode(data);
 
         resetObjective();

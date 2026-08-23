@@ -63,7 +63,7 @@ public:
         Player* bot = ai->GetBot();
         if (requester)
         {
-            bool distance = sServerFacade.GetDistance2d(bot, requester) <= sPlayerbotAIConfig.sightDistance;
+            bool distance = sServerFacade.getDistance2d(bot, requester) <= sPlayerbotAIConfig.sightDistance;
             if (!distance)
             {
                 return false;
@@ -83,7 +83,7 @@ public:
     bool Check(Player* requester, PlayerbotAI *ai, AiObjectContext* context) override
     {
         Player* bot = ai->GetBot();
-        if (bot->getClass() == CLASS_HUNTER)
+        if (bot->GetClass() == CLASS_HUNTER)
         {
             if (!bot->GetUInt32Value(PLAYER_AMMO_ID))
             {
@@ -141,14 +141,14 @@ public:
 
 bool ReadyCheckAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    WorldPacket p = event.getPacket();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    WorldPacket p = event.GetPacket();
     ObjectGuid player;
     p.rpos(0);
     if (!p.empty())
     {
         p >> player;
-        if (player == bot->GetObjectGuid())
+        if (player == bot->getObjectGuid())
             return false;
     }
 
@@ -211,6 +211,6 @@ bool ReadyCheckAction::ReadyCheck(Player* requester)
 
 bool FinishReadyCheckAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     return ReadyCheck(requester);
 }

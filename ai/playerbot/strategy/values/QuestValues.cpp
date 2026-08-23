@@ -253,7 +253,7 @@ std::list<GuidPosition> ActiveQuestTakersValue::Calculate()
 
 	std::list<GuidPosition> retQuestTakers;
 
-	QuestStatusMap& questStatusMap = bot->getQuestStatusMap();
+	QuestStatusMap& questStatusMap = bot->GetQuestStatusMap();
 
 	for (auto& [questId, questStatusData]: questStatusMap)
 	{
@@ -311,7 +311,7 @@ std::list<GuidPosition> ActiveQuestObjectivesValue::Calculate()
 
 	std::list<GuidPosition> retQuestObjectives;
 
-	QuestStatusMap& questStatusMap = bot->getQuestStatusMap();
+	QuestStatusMap& questStatusMap = bot->GetQuestStatusMap();
 
 	for (auto& [questId, questStatusData] : questStatusMap)
 	{		
@@ -382,7 +382,7 @@ bool NeedForQuestValue::Calculate()
 
 	std::list<GuidPosition> retQuestObjectives;
 
-	QuestStatusMap& questStatusMap = bot->getQuestStatusMap();
+	QuestStatusMap& questStatusMap = bot->GetQuestStatusMap();
 
 	for (auto& questStatus : questStatusMap)
 	{
@@ -523,7 +523,7 @@ uint32 DialogStatusValue::getDialogStatus(Player* bot, int32 questgiver, uint32 
 				if (bot->SatisfyQuestLevel(pQuest, false))
 				{
 					int32 lowLevelDiff = sWorld.getConfig(CONFIG_INT32_QUEST_LOW_LEVEL_HIDE_DIFF);
-					if (pQuest->IsAutoComplete() || (pQuest->IsRepeatable() && bot->getQuestStatusMap()[itr->second].m_rewarded))
+					if (pQuest->IsAutoComplete() || (pQuest->IsRepeatable() && bot->GetQuestStatusMap()[itr->second].m_rewarded))
 					{
 						dialogStatusNew = DIALOG_STATUS_REWARD_REP;
 					}
@@ -599,7 +599,7 @@ bool NeedQuestObjectiveValue::Calculate()
 	if (!bot->IsActiveQuest(questId))
 		return false;
 
-	QuestStatusData& questStatus = bot->getQuestStatusMap().at(questId);
+	QuestStatusData& questStatus = bot->GetQuestStatusMap().at(questId);
 
 	if (getQualifier().find("reward") != std::string::npos)
     {

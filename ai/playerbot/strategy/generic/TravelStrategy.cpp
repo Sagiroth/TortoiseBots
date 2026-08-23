@@ -10,7 +10,7 @@ float TravelActionMultiplier::GetValue(Action* action)
     if (action == NULL) return 1.0f;
 
     bool hasTarget = AI_VALUE(bool, "travel target active");
-    std::string name = action->getName();
+    std::string name = action->GetName();
 
     if (hasTarget && name.find("request") == 0)
     {

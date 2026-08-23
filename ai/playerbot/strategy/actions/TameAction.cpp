@@ -37,7 +37,7 @@ bool HasBeastMastery(Player* bot)
 bool TameAction::Execute(Event event)
 {
     // Parse the user's input command into mode and value (e.g. "name wolf", "id 1234", etc.)
-    std::string param = event.getParam();
+    std::string param = event.GetParam();
     std::istringstream iss(param);
     std::string mode, value;
     iss >> mode;
@@ -426,7 +426,7 @@ bool TameAction::RenamePet(const std::string& newName)
     // Remove the current pet and (re-)cast Call Pet spell if the bot is a hunter
     bot->RemovePet(nullptr, PET_SAVE_AS_CURRENT, true);
     constexpr uint32 SPELL_CALL_PET = 883;
-    if (bot->getClass() == CLASS_HUNTER && bot->HasSpell(SPELL_CALL_PET))
+    if (bot->GetClass() == CLASS_HUNTER && bot->HasSpell(SPELL_CALL_PET))
         bot->CastSpell(bot, SPELL_CALL_PET, true);
 
     return true;
@@ -436,7 +436,7 @@ bool TameAction::CreateAndSetPet(uint32 creatureEntry)
 {
     Player* bot = botAI->GetBot();
     // Ensure the player is a hunter and at least level 10 (required for pets)
-    if (bot->getClass() != CLASS_HUNTER || bot->GetLevel() < 10)
+    if (bot->GetClass() != CLASS_HUNTER || bot->GetLevel() < 10)
     {
         botAI->TellError(PlayerbotTextMgr::instance().GetBotTextOrDefault(
             "tame_only_hunters_level_10", "Only level 10+ hunters can have pets.", {}));
@@ -520,7 +520,7 @@ bool TameAction::AbandonPet()
     Pet* pet = bot->GetPet();
 
     // Check if the bot has a pet and that it is a hunter pet
-    if (pet && pet->getPetType() == HUNTER_PET)
+    if (pet && pet->GetPetType() == HUNTER_PET)
     {
         // Remove the pet from the bot and mark it as deleted in the database
         bot->RemovePet(pet, PET_SAVE_AS_DELETED);

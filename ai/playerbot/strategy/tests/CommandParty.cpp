@@ -55,7 +55,7 @@ TestResult CommandPartyForm::Execute(const std::string& params, Player* bot,
     if (!group)
     {
         group = new Group;
-        if (!group->Create(bot->GetObjectGuid(), bot->GetName()))
+        if (!group->Create(bot->getObjectGuid(), bot->GetName()))
         {
             delete group;
             message = "Failed to create group";
@@ -95,7 +95,7 @@ TestResult CommandPartyForm::Execute(const std::string& params, Player* bot,
             return TestResult::IMPOSSIBLE;
         }
 
-        if (PlayerbotAI* memberAi = member->GetPlayerbotAI())
+        if (PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(member))
             memberAi->HandleCommand(CHAT_MSG_WHISPER, "follow " + std::string(bot->GetName()), *bot);
     }
 

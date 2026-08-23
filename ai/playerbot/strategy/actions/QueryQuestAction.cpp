@@ -7,10 +7,10 @@ using namespace ai;
 
 bool QueryQuestAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     Player *bot = ai->GetBot();
     WorldPosition botPos(bot);
-    std::string text = event.getParam();
+    std::string text = event.GetParam();
 
     PlayerbotChatHandler ch(bot);
     uint32 questId = ch.extractQuestId(text);
@@ -63,7 +63,7 @@ bool QueryQuestAction::Execute(Event& event)
 void QueryQuestAction::TellObjectives(Player* requester, uint32 questId)
 {
     Quest const* questTemplate = sObjectMgr.GetQuestTemplate(questId);
-    QuestStatusData questStatus = bot->getQuestStatusMap()[questId];
+    QuestStatusData questStatus = bot->GetQuestStatusMap()[questId];
 
     for (int i = 0; i < QUEST_OBJECTIVES_COUNT; i++)
     {

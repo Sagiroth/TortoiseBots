@@ -418,7 +418,7 @@ namespace ai
                 Unit* target = GetTarget();
                 if (target->IsPlayer())
                 {
-                    const uint8 playerClass = ((Player*)target)->getClass();
+                    const uint8 playerClass = ((Player*)target)->GetClass();
 #ifdef MANGOSBOT_TWO
                     if (playerClass == CLASS_PALADIN || playerClass == CLASS_WARRIOR || playerClass == CLASS_DRUID || playerClass == CLASS_DEATH_KNIGHT)
 #else

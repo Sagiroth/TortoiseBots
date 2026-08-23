@@ -15,7 +15,7 @@ Unit* SnareTargetValue::Calculate()
     if (enemy)
     {
         Player* plr = dynamic_cast<Player*>(enemy);
-        if (plr && !(plr->HasAuraType(SPELL_AURA_MOD_ROOT) || plr->HasAuraType(SPELL_AURA_MOD_STUN)) && (!plr->IsStopped() || plr->IsNonMeleeSpellCasted(false) || (plr->GetVictim() && plr->GetVictim()->GetObjectGuid() == bot->GetObjectGuid())))
+        if (plr && !(plr->HasAuraType(SPELL_AURA_MOD_ROOT) || plr->HasAuraType(SPELL_AURA_MOD_STUN)) && (!plr->IsStopped() || plr->IsNonMeleeSpellCasted(false) || (plr->GetVictim() && plr->GetVictim()->getObjectGuid() == bot->getObjectGuid())))
             return enemy;
     }
 
@@ -27,7 +27,7 @@ Unit* SnareTargetValue::Calculate()
         if (!unit)
             continue;
 
-        if (sServerFacade.GetDistance2d(bot, unit) > ai->GetRange("spell"))
+        if (sServerFacade.getDistance2d(bot, unit) > ai->GetRange("spell"))
             continue;
 
         // case real player or bot not moving
@@ -58,7 +58,7 @@ Unit* SnareTargetValue::Calculate()
         case CHASE_MOTION_TYPE:
             chaseTarget = sServerFacade.GetChaseTarget(unit);
             if (!chaseTarget) continue;
-            Player* chaseTargetPlayer = sObjectMgr.GetPlayer(chaseTarget->GetObjectGuid());
+            Player* chaseTargetPlayer = sObjectMgr.GetPlayer(chaseTarget->getObjectGuid());
             
             // check if need to snare
             bool shouldSnare = true;

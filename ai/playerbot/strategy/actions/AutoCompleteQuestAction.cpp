@@ -5,7 +5,7 @@ using namespace ai;
 
 bool AutoCompleteQuestAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
     // Static list of quest IDs to auto-complete
     static const std::vector<uint32> autoCompleteQuests = {

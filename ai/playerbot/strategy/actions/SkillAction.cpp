@@ -6,8 +6,8 @@ using namespace ai;
 
 bool SkillAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string cmd = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string cmd = event.GetParam();
 
     bool unlearn = (cmd.find("unlearn ") == 0);
 

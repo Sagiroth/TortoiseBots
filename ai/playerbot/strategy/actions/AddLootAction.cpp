@@ -28,10 +28,10 @@ bool AddLootAction::Execute(Event& event)
 
 bool AddAllLootAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     bool added = false;
 
-    std::string text = event.getParam();
+    std::string text = event.GetParam();
 
     if (!text.empty())
     {
@@ -99,11 +99,11 @@ bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
         return false;
     }
 
-    if (abs(wo->GetPositionZ() - bot->GetPositionZ()) > INTERACTION_DISTANCE)
+    if (abs(wo->getPositionZ() - bot->getPositionZ()) > INTERACTION_DISTANCE)
     {
         ai->TellDebug(requester, "Object too high or low.", "debug loot");
         sLog.outDebug("[BOT LOOT] %s: AddLoot reject guid=%lu (z-diff %.1f > %.1f)",
-            bot->GetName(), guid.GetRawValue(), (float)fabs(wo->GetPositionZ() - bot->GetPositionZ()), (float)INTERACTION_DISTANCE);
+            bot->GetName(), guid.GetRawValue(), (float)fabs(wo->getPositionZ() - bot->getPositionZ()), (float)INTERACTION_DISTANCE);
         return false;
     }
 
@@ -129,7 +129,7 @@ bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
         if (isInDungeon
             && group->GetLootMethod() == LootMethod::MASTER_LOOT
             && group->GetMasterLooterGuid()
-            && group->GetMasterLooterGuid() != bot->GetObjectGuid())
+            && group->GetMasterLooterGuid() != bot->getObjectGuid())
         {
             ai->TellDebug(requester, "Not master looter.", "debug loot");
             sLog.outDebug("[BOT LOOT] %s: AddLoot reject guid=%lu (dungeon MASTER_LOOT, not master looter)",
@@ -158,8 +158,8 @@ bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
         lootDistanceToUse = sPlayerbotAIConfig.lootDistance;
     }
 
-    float botDist = sServerFacade.GetDistance2d(bot, wo);
-    float masterDist = sServerFacade.GetDistance2d(requester, wo);
+    float botDist = sServerFacade.getDistance2d(bot, wo);
+    float masterDist = sServerFacade.getDistance2d(requester, wo);
     if (sServerFacade.IsDistanceGreaterThan(masterDist, lootDistanceToUse))
     {
         ai->TellDebug(requester, "Outside of loot range: " + std::to_string(lootDistanceToUse), "debug loot");
@@ -269,7 +269,7 @@ bool AddGatheringLootAction::AddLoot(Player* requester, ObjectGuid guid)
         gatheringDistanceToUse = sPlayerbotAIConfig.gatheringDistance;
     }
 
-    if (sServerFacade.IsDistanceGreaterThan(sServerFacade.GetDistance2d(requester, wo), gatheringDistanceToUse))
+    if (sServerFacade.IsDistanceGreaterThan(sServerFacade.getDistance2d(requester, wo), gatheringDistanceToUse))
     {
         return false;
     }

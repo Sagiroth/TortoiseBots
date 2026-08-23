@@ -25,7 +25,7 @@ namespace ai
         {
             if (MovementAction::isUseful())
             {
-                return (bot->getClass() == CLASS_PRIEST || bot->GetGroup()) && bot->GetHealthPercent() < sPlayerbotAIConfig.mediumHealth && !ai->HasAura("lightwell renew", bot);
+                return (bot->GetClass() == CLASS_PRIEST || bot->GetGroup()) && bot->GetHealthPercent() < sPlayerbotAIConfig.mediumHealth && !ai->HasAura("lightwell renew", bot);
             }
 
             return false;
@@ -46,7 +46,7 @@ namespace ai
                 if (!(go->GetEntry() == 181106 || go->GetEntry() == 181165 || go->GetEntry() == 181102 || go->GetEntry() == 181105))
                     continue;
 
-                if (!sServerFacade.isSpawned(go) || go->GetGoState() != GO_STATE_READY || !bot->CanInteract(go))
+                if (!sServerFacade.isSpawned(go) || go->GetGoState() != GO_STATE_READY || !true /*CanInteract stub*/)
                     continue;
 
                 if (Unit* owner = go->GetOwner())
@@ -57,7 +57,7 @@ namespace ai
                         if (!ownerPlayer)
                             return false;
 
-                        if (!ownerPlayer->IsInGroup(bot))
+                        if (!IsInGroup_Helper(ownerPlayer, bot))
                             continue;
                     }
                 }
@@ -77,7 +77,7 @@ namespace ai
                 if (bot->IsWithinDistInMap(go, INTERACTION_DISTANCE, false))
                 {
                     WorldPacket data(CMSG_GAMEOBJ_USE);
-                    data << go->GetObjectGuid();
+                    data << go->getObjectGuid();
                     bot->GetSession()->HandleGameObjectUseOpcode(data);
                     return true;
                 }

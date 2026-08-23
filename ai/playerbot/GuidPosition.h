@@ -53,7 +53,7 @@ namespace ai
 
         void updatePosition(uint32 m_instanceId) { WorldObject* wo = GetWorldObject(m_instanceId); if (wo) WorldPosition::set(wo); }
 
-        // Penqle's CreatureInfo has npc_flags (lowercase + underscore); cmangos has NpcFlags.
+        // Penqle's CreatureInfo has npc_flags (lowercase + underscore); cmangos has npc_flags.
         bool HasNpcFlag(NPCFlags flag) { return IsCreature() && GetCreatureTemplate()->npc_flags & flag; }
         bool isGoType(GameobjectTypes type) { return IsGameObject() && GetGameObjectInfo()->type == type; }
 

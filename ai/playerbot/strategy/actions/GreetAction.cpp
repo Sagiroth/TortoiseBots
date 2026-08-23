@@ -18,7 +18,7 @@ bool GreetAction::Execute(Event& event)
     Player* player = dynamic_cast<Player*>(ai->GetUnit(guid));
     if (!player) return false;
 
-    if (!sServerFacade.IsInFront(bot, player, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
+    if (!sServerFacade.isInFront(bot, player, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
         sServerFacade.SetFacingTo(bot, player);
 
     ObjectGuid oldSel = bot->GetSelectionGuid();

@@ -25,10 +25,10 @@ uint8 AoeHealValue::Calculate()
 	for (Group::member_citerator itr = groupSlot.begin(); itr != groupSlot.end(); itr++)
 	{
 		Player *player = sObjectMgr.GetPlayer(itr->guid);
-		if( !player || !sServerFacade.IsAlive(player) || sServerFacade.GetDistance2d(bot, player) > 30.0f)
+		if( !player || !sServerFacade.IsAlive(player) || sServerFacade.getDistance2d(bot, player) > 30.0f)
 			continue;
 
-        if (bot->getClass() == CLASS_PRIEST && !bot->IsInGroup(player, true))
+        if (bot->GetClass() == CLASS_PRIEST && !IsInGroup_Helper(bot, player, true))
             continue;
 
 	    float percent = (static_cast<float> (player->GetHealth()) / player->GetMaxHealth()) * 100;

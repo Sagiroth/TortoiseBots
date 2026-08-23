@@ -150,7 +150,7 @@ void AutoMaintenanceOnLevelupAction::LearnQuestSpells(std::ostringstream* out)
 std::string const AutoMaintenanceOnLevelupAction::FormatSpell(SpellInfo const* sInfo)
 {
     std::ostringstream out;
-    std::string const rank = sInfo->Rank[0];
+    std::string const rank = sInfo->rank[0];
 
     if (rank.empty())
         out << "|cffffffff|Hspell:" << sInfo->Id << "|h[" << sInfo->SpellName[LOCALE_enUS] << "]|h|r";

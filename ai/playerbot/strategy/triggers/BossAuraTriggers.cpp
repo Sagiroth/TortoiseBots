@@ -20,7 +20,7 @@ bool BossFireResistanceTrigger::IsActive()
         return false;
 
     // Check if bot is paladin
-    if (bot->getClass() != CLASS_PALADIN)
+    if (bot->GetClass() != CLASS_PALADIN)
         return false;
 
     // Check if bot have fire resistance aura
@@ -29,7 +29,7 @@ bool BossFireResistanceTrigger::IsActive()
 
     // Check if bot dont have already have fire resistance strategy
     PaladinFireResistanceStrategy paladinFireResistanceStrategy(botAI);
-    if (botAI->HasStrategy(paladinFireResistanceStrategy.getName(), BotState::BOT_STATE_COMBAT))
+    if (botAI->HasStrategy(paladinFireResistanceStrategy.GetName(), BotState::BOT_STATE_COMBAT))
         return false;
 
     // Check that the bot actually knows the spell
@@ -42,7 +42,7 @@ bool BossFireResistanceTrigger::IsActive()
 
     // Get the group and ensure it's a raid group
     Group* group = bot->GetGroup();
-    if (!group || !group->isRaidGroup())
+    if (!group || !group->IsRaidGroup())
         return false;
 
     // Iterate through group members to find the first alive paladin
@@ -53,7 +53,7 @@ bool BossFireResistanceTrigger::IsActive()
             continue;
 
         // Check if the member is a paladin
-        if (member->getClass() == CLASS_PALADIN)
+        if (member->GetClass() == CLASS_PALADIN)
         {
             // Return true only if the current bot is the first alive paladin
             return member == bot;
@@ -71,7 +71,7 @@ bool BossFrostResistanceTrigger::IsActive()
         return false;
 
     // Check if bot is paladin
-    if (bot->getClass() != CLASS_PALADIN)
+    if (bot->GetClass() != CLASS_PALADIN)
         return false;
 
     // Check if bot have frost resistance aura
@@ -80,7 +80,7 @@ bool BossFrostResistanceTrigger::IsActive()
 
     // Check if bot dont have already have frost resistance strategy
     PaladinFrostResistanceStrategy paladinFrostResistanceStrategy(botAI);
-    if (botAI->HasStrategy(paladinFrostResistanceStrategy.getName(), BotState::BOT_STATE_COMBAT))
+    if (botAI->HasStrategy(paladinFrostResistanceStrategy.GetName(), BotState::BOT_STATE_COMBAT))
         return false;
 
     // Check that the bot actually knows the spell
@@ -93,7 +93,7 @@ bool BossFrostResistanceTrigger::IsActive()
 
     // Get the group and ensure it's a raid group
     Group* group = bot->GetGroup();
-    if (!group || !group->isRaidGroup())
+    if (!group || !group->IsRaidGroup())
         return false;
 
     // Iterate through group members to find the first alive paladin
@@ -104,7 +104,7 @@ bool BossFrostResistanceTrigger::IsActive()
             continue;
 
         // Check if the member is a paladin
-        if (member->getClass() == CLASS_PALADIN)
+        if (member->GetClass() == CLASS_PALADIN)
         {
             // Return true only if the current bot is the first alive paladin
             return member == bot;
@@ -126,7 +126,7 @@ bool BossNatureResistanceTrigger::IsActive()
         return false;
 
     // Check if bot is hunter
-    if (bot->getClass() != CLASS_HUNTER)
+    if (bot->GetClass() != CLASS_HUNTER)
         return false;
 
     // Check if bot have nature resistance aura
@@ -135,7 +135,7 @@ bool BossNatureResistanceTrigger::IsActive()
 
     // Check if bot dont have already setted nature resistance aura
     HunterNatureResistanceStrategy hunterNatureResistanceStrategy(botAI);
-    if (botAI->HasStrategy(hunterNatureResistanceStrategy.getName(), BotState::BOT_STATE_COMBAT))
+    if (botAI->HasStrategy(hunterNatureResistanceStrategy.GetName(), BotState::BOT_STATE_COMBAT))
         return false;
 
     // Check that the bot actually knows Aspect of the Wild
@@ -147,7 +147,7 @@ bool BossNatureResistanceTrigger::IsActive()
 
     // Get the group and ensure it's a raid group
     Group* group = bot->GetGroup();
-    if (!group || !group->isRaidGroup())
+    if (!group || !group->IsRaidGroup())
         return false;
 
     // Iterate through group members to find the first alive hunter
@@ -158,7 +158,7 @@ bool BossNatureResistanceTrigger::IsActive()
             continue;
 
         // Check if the member is a hunter
-        if (member->getClass() == CLASS_HUNTER)
+        if (member->GetClass() == CLASS_HUNTER)
         {
             // Return true only if the current bot is the first alive hunter
             return member == bot;
@@ -176,7 +176,7 @@ bool BossShadowResistanceTrigger::IsActive()
         return false;
 
     // Check if bot is paladin
-    if (bot->getClass() != CLASS_PALADIN)
+    if (bot->GetClass() != CLASS_PALADIN)
         return false;
 
     // Check if bot have shadow resistance aura
@@ -185,7 +185,7 @@ bool BossShadowResistanceTrigger::IsActive()
 
     // Check if bot dont have already have shadow resistance strategy
     PaladinShadowResistanceStrategy paladinShadowResistanceStrategy(botAI);
-    if (botAI->HasStrategy(paladinShadowResistanceStrategy.getName(), BotState::BOT_STATE_COMBAT))
+    if (botAI->HasStrategy(paladinShadowResistanceStrategy.GetName(), BotState::BOT_STATE_COMBAT))
         return false;
 
     // Check that the bot actually knows the spell
@@ -198,7 +198,7 @@ bool BossShadowResistanceTrigger::IsActive()
 
     // Get the group and ensure it's a raid group
     Group* group = bot->GetGroup();
-    if (!group || !group->isRaidGroup())
+    if (!group || !group->IsRaidGroup())
         return false;
 
     // Iterate through group members to find the first alive paladin
@@ -209,7 +209,7 @@ bool BossShadowResistanceTrigger::IsActive()
             continue;
 
         // Check if the member is a paladin
-        if (member->getClass() == CLASS_PALADIN)
+        if (member->GetClass() == CLASS_PALADIN)
         {
             // Return true only if the current bot is the first alive paladin
             return member == bot;

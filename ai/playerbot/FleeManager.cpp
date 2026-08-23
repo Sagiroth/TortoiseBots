@@ -24,7 +24,7 @@ void FleeManager::calculateDistanceToCreatures(FleePoint *point)
         if (!unit->IsWithinLOS(point->x, point->y, point->z + unit->GetCollisionHeight(), true))
             continue;
 
-		float d = sServerFacade.GetDistance2d(unit, point->x, point->y);
+		float d = sServerFacade.getDistance2d(unit, point->x, point->y);
         point->sumDistance += d;
         if (point->minDistance < 0 || point->minDistance > d) point->minDistance = d;
 	}
@@ -77,12 +77,12 @@ void FleeManager::calculatePossibleDestinations(std::list<FleePoint*> &points)
                 float x = botPosX + cos(angle) * maxAllowedDistance, y = botPosY + sin(angle) * maxAllowedDistance, z = botPosZ + CONTACT_DISTANCE;
                 if (MoveStyleValue::CheckForEdges(PlayerbotAIStorage::Instance().GetAI(bot)) && isTooCloseToEdge(x, y, z, angle)) continue;
 
-                if (forceMaxDistance && sServerFacade.IsDistanceLessThan(sServerFacade.GetDistance2d(bot, x, y), maxAllowedDistance - sPlayerbotAIConfig.tooCloseDistance))
+                if (forceMaxDistance && sServerFacade.IsDistanceLessThan(sServerFacade.getDistance2d(bot, x, y), maxAllowedDistance - sPlayerbotAIConfig.tooCloseDistance))
                     continue;
 
                 bot->UpdateAllowedPositionZ(x, y, z);
 
-                const TerrainInfo* terrain = startPosition.getTerrain();
+                const TerrainInfo* terrain = startPosition.GetTerrain();
                 if (terrain && terrain->IsInWater(x, y, z))
                     continue;
 
@@ -191,7 +191,7 @@ bool FleeManager::isUseful()
                     return true;
                 }
 
-                //float d = sServerFacade.GetDistance2d(unit, bot);
+                //float d = sServerFacade.getDistance2d(unit, bot);
                 //if (sServerFacade.IsDistanceLessThan(d, sPlayerbotAIConfig.aggroDistance)) return true;
             }
         }

@@ -32,7 +32,7 @@ bool MoveToFishAction::Execute(Event& event)
     if (!fishSpot && qualifier == "travel") //Get travel fish spot if available.
     {
         TravelTarget* target = AI_VALUE(TravelTarget*, "leader travel target");
-        fishSpot = *target->GetPosition();
+        fishSpot = *target->getPosition();
 
         if (AI_VALUE(TravelTarget*, "travel target") != target) //Do not fish ontop of master.
             fishSpot = *sTravelMgr.GetFishSpot(bot, true);
@@ -42,7 +42,7 @@ bool MoveToFishAction::Execute(Event& event)
     {
         fishSpot = *sTravelMgr.GetFishSpot(bot);
 
-        TravelPath movePath = sTravelNodeMap.getFullPath(bot, fishSpot, bot);
+        TravelPath movePath = sTravelNodeMap.GetFullPath(bot, fishSpot, bot);
 
 
         if (movePath.empty())
@@ -106,7 +106,7 @@ bool FishAction::Execute(Event& event)
 
     WorldPosition fishSpot = AI_VALUE2(WorldPosition, "custom position", "fish spot");
 
-    if (abs(fishSpot.getO() - bot->GetOrientation()) > 0.5)
+    if (abs(fishSpot.getO() - bot->getOrientation()) > 0.5)
     {
         bot->SetFacingTo(fishSpot.getO());
         SetDuration(100);
@@ -144,7 +144,7 @@ bool UseFishingBobberAction::Execute(Event& event)
         if (obj->GetEntry() != 35591)
             continue;
 
-        if (obj->GetOwnerGuid() != bot->GetObjectGuid())
+        if (obj->GetOwnerGuid() != bot->getObjectGuid())
             continue;
 
         if (obj->GetLootState() != GO_READY)
@@ -158,8 +158,8 @@ bool UseFishingBobberAction::Execute(Event& event)
         }
 
         std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
-        *packet << obj->GetObjectGuid();
-        bot->GetSession()->QueuePacket(std::move(packet));
+        *packet << obj->getObjectGuid();
+        bot->GetSession()->QueuePacket(packet.release());
 
         std::ostringstream out; out << "Opening " << chat->formatGameobject(obj);
         ai->TellPlayerNoFacing(ai->GetMaster(), out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);

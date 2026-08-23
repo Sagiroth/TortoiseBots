@@ -10,11 +10,11 @@ using namespace ai;
 
 bool SendMailAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    uint32 account = sObjectMgr.GetPlayerAccountIdByGUID(bot->GetObjectGuid());
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    uint32 account = sObjectMgr.GetPlayerAccountIdByGUID(bot->getObjectGuid());
     bool randomBot = sPlayerbotAIConfig.IsInRandomAccountList(account);
 
-    std::string text = event.getParam();
+    std::string text = event.GetParam();
     Player* receiver = requester;
     Player* tellTo = requester;
     std::vector<std::string> ss = split(text, ' ');
@@ -24,7 +24,7 @@ bool SendMailAction::Execute(Event& event)
         if (p) receiver = p;
     }
 
-    if (!receiver) receiver = event.getOwner();
+    if (!receiver) receiver = event.GetOwner();
 
     if (!receiver || receiver == bot)
     {
@@ -36,7 +36,7 @@ bool SendMailAction::Execute(Event& event)
     ItemIds ids = chat->parseItems(text);
     if (ids.size() > 1)
     {
-        bot->Whisper("You can not request more than one item", LANG_UNIVERSAL, tellTo->GetObjectGuid());
+        bot->Whisper("You can not request more than one item", LANG_UNIVERSAL, tellTo->getObjectGuid());
         return false;
     }
 
@@ -48,7 +48,7 @@ bool SendMailAction::Execute(Event& event)
 
         if (randomBot)
         {
-            bot->Whisper("I cannot send money", LANG_UNIVERSAL, tellTo->GetObjectGuid());
+            bot->Whisper("I cannot send money", LANG_UNIVERSAL, tellTo->getObjectGuid());
             return false;
         }
 
@@ -99,14 +99,14 @@ bool SendMailAction::Execute(Event& event)
             {
                 std::ostringstream out;
                 out << "Cannot send " << ChatHelper::formatItem(item);
-                bot->Whisper(out.str(), LANG_UNIVERSAL, tellTo->GetObjectGuid());
+                bot->Whisper(out.str(), LANG_UNIVERSAL, tellTo->getObjectGuid());
                 continue;
             }
 
             ItemPrototype const *proto = item->GetProto();
             bot->MoveItemFromInventory(item->GetBagSlot(), item->GetSlot(), true);
             item->DeleteFromInventoryDB();
-            item->SetOwnerGuid(receiver->GetObjectGuid());
+            item->SetOwnerGuid(receiver->getObjectGuid());
             item->SaveToDB();
             draft.AddItem(item);
             if (randomBot)
@@ -116,7 +116,7 @@ bool SendMailAction::Execute(Event& event)
                 {
                     std::ostringstream out;
                     out << ChatHelper::formatItem(item) << ": it is not for sale";
-                    bot->Whisper(out.str(), LANG_UNIVERSAL, tellTo->GetObjectGuid());
+                    bot->Whisper(out.str(), LANG_UNIVERSAL, tellTo->getObjectGuid());
                     return false;
                 }
                 draft.SetCOD(price);
@@ -124,7 +124,7 @@ bool SendMailAction::Execute(Event& event)
             draft.SendMailTo(MailReceiver(receiver), MailSender(bot));
 
             std::ostringstream out; out << "Sent mail to " << receiver->GetName();
-            bot->Whisper(out.str(), LANG_UNIVERSAL, tellTo->GetObjectGuid());
+            bot->Whisper(out.str(), LANG_UNIVERSAL, tellTo->getObjectGuid());
             return true;
         }
     }

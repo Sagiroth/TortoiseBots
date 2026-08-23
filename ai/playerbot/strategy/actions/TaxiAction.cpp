@@ -8,14 +8,14 @@ using namespace ai;
 
 bool TaxiAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     ai->RemoveShapeshift();
 
     LastMovement& movement = context->GetValue<LastMovement&>("last taxi")->Get();
 
-    WorldPacket& p = event.getPacket();
-    std::string param = event.getParam();
-    if ((!p.empty() && (p.GetOpcode() == CMSG_TAXICLEARALLNODES || p.GetOpcode() == CMSG_TAXICLEARNODE)) || param == "clear")
+    WorldPacket& p = event.GetPacket();
+    std::string param = event.GetParam();
+    if ((!p.empty() && (p.getOpcode() == CMSG_TAXICLEARALLNODES || p.getOpcode() == CMSG_TAXICLEARNODE)) || param == "clear")
     {
         movement.taxiNodes.clear();
         movement.Set(NULL);
@@ -30,7 +30,7 @@ bool TaxiAction::Execute(Event& event)
         if (!npc)
             continue;
 
-        uint32 curloc = sObjectMgr.GetNearestTaxiNode(npc->GetPositionX(), npc->GetPositionY(), npc->GetPositionZ(), npc->GetMapId(), bot->GetTeam());
+        uint32 curloc = sObjectMgr.GetNearestTaxiNode(npc->getPositionX(), npc->getPositionY(), npc->getPositionZ(), npc->GetMapId(), bot->GetTeam());
 
         std::vector<uint32> nodes;
         for (uint32 i = 0; i < sTaxiPathStore.GetNumRows(); ++i)
@@ -56,7 +56,7 @@ bool TaxiAction::Execute(Event& event)
                 if (!dest) continue;
 
                 std::ostringstream out;
-                out << index++ << ": " << dest->name[0];
+                out << index++ << ": " << dest->Name;
                 ai->TellPlayerNoFacing(requester, out.str());
             }
             return true;
@@ -84,7 +84,7 @@ bool TaxiAction::Execute(Event& event)
         {
             movement.taxiNodes.clear();
             movement.Set(NULL);
-            if (!ai->GetMaster() || sServerFacade.GetDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
+            if (!ai->GetMaster() || sServerFacade.getDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
                 ai->TellPlayerNoFacing(requester, "I can't fly with you");
             return false;
         }
@@ -96,7 +96,7 @@ bool TaxiAction::Execute(Event& event)
         return true;
     }
 
-    if(!ai->GetMaster() || sServerFacade.GetDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
+    if(!ai->GetMaster() || sServerFacade.getDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
         ai->TellPlayerNoFacing(requester, "Cannot find any flightmaster to talk");
 
     return false;

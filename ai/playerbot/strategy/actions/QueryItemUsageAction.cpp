@@ -9,18 +9,18 @@ using namespace ai;
 
 bool QueryItemUsageAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner();
+    Player* requester = event.GetOwner();
     if (!GetMaster() && !sPlayerbotAIConfig.randomBotSayWithoutMaster && !requester)
         return false;
 
-    WorldPacket& data = event.getPacket();
+    WorldPacket& data = event.GetPacket();
     if (!data.empty())
     {
         data.rpos(0);
 
         ObjectGuid guid;
         data >> guid;
-        if (guid != bot->GetObjectGuid())
+        if (guid != bot->getObjectGuid())
             return false;
 
         uint32 received, created, isShowChatMessage, slotId, itemId,suffixFactor, count;
@@ -49,10 +49,10 @@ bool QueryItemUsageAction::Execute(Event& event)
 
         if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
         {
-            if (event.getSource() == "item push result")
+            if (event.GetSource() == "item push result")
             {
 
-                QuestStatusMap& questMap = bot->getQuestStatusMap();
+                QuestStatusMap& questMap = bot->GetQuestStatusMap();
                 for (QuestStatusMap::const_iterator i = questMap.begin(); i != questMap.end(); i++)
                 {
                     const Quest* questTemplate = sObjectMgr.GetQuestTemplate(i->first);
@@ -85,7 +85,7 @@ bool QueryItemUsageAction::Execute(Event& event)
         return true;
     }
 
-    std::string text = event.getParam();
+    std::string text = event.GetParam();
     std::vector<ItemQualifier> qualifiers;
     bool reason = false;
 
@@ -248,7 +248,7 @@ std::string QueryItemUsageAction::QueryItemPrice(ItemQualifier& qualifier)
 std::string QueryItemUsageAction::QueryQuestItem(uint32 itemId)
 {
     Player *bot = ai->GetBot();
-    QuestStatusMap& questMap = bot->getQuestStatusMap();
+    QuestStatusMap& questMap = bot->GetQuestStatusMap();
     for (QuestStatusMap::const_iterator i = questMap.begin(); i != questMap.end(); i++)
     {
         const Quest *questTemplate = sObjectMgr.GetQuestTemplate( i->first );

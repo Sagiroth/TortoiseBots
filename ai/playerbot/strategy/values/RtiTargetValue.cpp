@@ -61,8 +61,8 @@ Unit* RtiTargetValue::Calculate()
     //////////////////////////////////////////////////////end: delete below check
 
     Unit* unit = botAI->GetUnit(guid);
-    if (!unit || unit->isDead() || !bot->IsWithinLOSInMap(unit) || !AttackersValue::IsValidTarget(unit, bot) ||
-        ServerFacade::instance().IsDistanceGreaterThan(ServerFacade::instance().GetDistance2d(bot, unit),
+    if (!unit || unit->IsDead() || !bot->IsWithinLOSInMap(unit) || !AttackersValue::IsValidTarget(unit, bot) ||
+        ServerFacade::instance().IsDistanceGreaterThan(ServerFacade::instance().getDistance2d(bot, unit),
                                              sPlayerbotAIConfig.sightDistance))
         return nullptr;
 
@@ -71,7 +71,7 @@ Unit* RtiTargetValue::Calculate()
     if (Player* master = botAI->GetMaster())
     {
         if (master->IsInWorld() && master->GetMapId() == unit->GetMapId() &&
-            ServerFacade::instance().IsDistanceGreaterThan(ServerFacade::instance().GetDistance2d(master, unit),
+            ServerFacade::instance().IsDistanceGreaterThan(ServerFacade::instance().getDistance2d(master, unit),
                 sPlayerbotAIConfig.sightDistance))
             return nullptr;
     }

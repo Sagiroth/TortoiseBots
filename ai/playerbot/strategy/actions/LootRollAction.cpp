@@ -10,7 +10,7 @@ using namespace ai;
 
 bool LootStartRollAction::Execute(Event& event)
 {
-    WorldPacket p(event.getPacket()); //WorldPacket packet for CMSG_LOOT_ROLL, (8+4+1)
+    WorldPacket p(event.GetPacket()); //WorldPacket packet for CMSG_LOOT_ROLL, (8+4+1)
     ObjectGuid creatureGuid;
     uint32 itemSlot;
     uint32 itemId;
@@ -25,7 +25,7 @@ bool LootStartRollAction::Execute(Event& event)
     p.rpos(0); //reset packet pointer
     p >> creatureGuid; //creature guid what we're looting
 #ifdef MANGOSBOT_TWO
-    p >> mapId; /// 3.3.3 mapid
+    p >> mapId; /// 3.3.3 mapId
 #endif 
     p >> itemSlot; // the itemEntryId for the item that shall be rolled for
     p >> itemId; // the itemEntryId for the item that shall be rolled for
@@ -68,8 +68,8 @@ bool LootStartRollAction::Execute(Event& event)
 
 bool RollAction::Execute(Event& event)
 {      
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string text = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string text = event.GetParam();
 
     if (text.empty())
     {
@@ -228,7 +228,7 @@ RollVote RollAction::CalculateRollVote(ItemQualifier& itemQualifier)
             needVote = ROLL_GREED;
     }
 
-    bool canLoot = StoreLootAction::IsLootAllowed(itemQualifier, bot->GetPlayerbotAI());
+    bool canLoot = StoreLootAction::IsLootAllowed(itemQualifier, PlayerbotAIStorage::Instance().GetAI(bot));
 
     if (AI_VALUE2(bool, "manual bool", "roll feedback"))
     {
@@ -290,7 +290,7 @@ bool RollAction::HumansStillDeciding(ObjectGuid lootGuid, uint32 slot, bool& hum
     for (auto const& vote : roll->playerVote)
     {
         Player* voter = sObjectMgr.GetPlayer(vote.first);
-        if (!voter || voter->GetPlayerbotAI())
+        if (!voter || PlayerbotAIStorage::Instance().GetAI(voter))
             continue;
 
         if (vote.second == ROLL_NEED)
@@ -338,7 +338,7 @@ bool LootRollAction::Execute(Event& event)
 {
     Player* bot = QueryItemUsageAction::ai->GetBot();
 
-    WorldPacket p(event.getPacket()); //WorldPacket packet for CMSG_LOOT_ROLL, (8+4+1)
+    WorldPacket p(event.GetPacket()); //WorldPacket packet for CMSG_LOOT_ROLL, (8+4+1)
     ObjectGuid guid;
     uint32 slot;
     uint8 rollType;

@@ -12,8 +12,8 @@ bool GossipHelloAction::Execute(Event& event)
 {
 	ObjectGuid guid;
 
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-	WorldPacket &p = event.getPacket();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+	WorldPacket &p = event.GetPacket();
 	if (p.empty())
 	{
 		if (requester)
@@ -39,9 +39,9 @@ bool GossipHelloAction::Execute(Event& event)
 	if (pMenuItemBounds.first == pMenuItemBounds.second)
 		return false;
 
-    std::string text = event.getParam();
+    std::string text = event.GetParam();
 	int menuToSelect = -1;
-    if (event.getSource().find("rpg action") == 0)
+    if (event.GetSource().find("rpg action") == 0)
     {
         Creature* pCreature = bot->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_NONE);
 
@@ -79,7 +79,7 @@ bool GossipHelloAction::Execute(Event& event)
         ProcessGossip(requester, guid, menuToSelect);
 	}
 
-	bot->TalkedToCreature(pCreature->GetEntry(), pCreature->GetObjectGuid());
+	bot->TalkedToCreature(pCreature->GetEntry(), pCreature->getObjectGuid());
 	return true;
 }
 

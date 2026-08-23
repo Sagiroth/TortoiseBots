@@ -9,7 +9,7 @@ using namespace ai;
 
 bool TellTargetAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     Unit* target = context->GetValue<Unit*>("current target")->Get();
     if (target)
     {
@@ -24,7 +24,7 @@ bool TellTargetAction::Execute(Event& event)
 
 bool TellAttackersAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
     ai->TellPlayer(requester, "--- Attackers ---");
 
@@ -39,15 +39,15 @@ bool TellAttackersAction::Execute(Event& event)
     }
 
     ai->TellPlayer(requester, "--- Threat ---");
-    HostileReference* ref = sServerFacade.GetHostileRefManager(bot).getFirst();
+    HostileReference* ref = sServerFacade.GetHostileRefManager(bot).GetFirst();
     if (!ref)
         return true;
 
     while (ref)
     {
-        ThreatManager* threatManager = ref->getSource();
-        Unit* unit = threatManager->getOwner();
-        float threat = ref->getThreat();
+        ThreatManager* threatManager = ref->GetSource();
+        Unit* unit = threatManager->GetOwner();
+        float threat = ref->GetThreat();
 
         std::ostringstream out; out << unit->GetName() << " (" << threat << ")";
         ai->TellPlayer(requester, out);
@@ -59,7 +59,7 @@ bool TellAttackersAction::Execute(Event& event)
 
 bool TellPossibleAttackTargetsAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     ai->TellPlayer(requester, "--- Attack Targets ---");
 
     std::list<ObjectGuid> attackers = context->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
@@ -73,15 +73,15 @@ bool TellPossibleAttackTargetsAction::Execute(Event& event)
     }
 
     ai->TellPlayer(requester, "--- Threat ---");
-    HostileReference *ref = sServerFacade.GetHostileRefManager(bot).getFirst();
+    HostileReference *ref = sServerFacade.GetHostileRefManager(bot).GetFirst();
     if (!ref)
         return true;
 
     while( ref )
     {
-        ThreatManager *threatManager = ref->getSource();
-        Unit *unit = threatManager->getOwner();
-        float threat = ref->getThreat();
+        ThreatManager *threatManager = ref->GetSource();
+        Unit *unit = threatManager->GetOwner();
+        float threat = ref->GetThreat();
 
         std::ostringstream out; out << unit->GetName() << " (" << threat << ")";
         ai->TellPlayer(requester, out);

@@ -31,7 +31,7 @@ public:
             return false;
 
         // Do not move if currently being targeted
-        if (!bot->getAttackers().empty())
+        if (!bot->GetAttackers().empty())
             return false;
 
         Unit* target = AI_VALUE(Unit*, "current target");
@@ -40,7 +40,7 @@ public:
 
         float safeDistance = WaitForAttackStrategy::GetSafeDistance();
         float safeDistanceThreshold = WaitForAttackStrategy::GetSafeDistanceThreshold();
-        float distanceToTarget = ServerFacade::instance().GetDistance2d(bot, target);
+        float distanceToTarget = ServerFacade::instance().getDistance2d(bot, target);
 
         return (distanceToTarget > (safeDistance + safeDistanceThreshold)) ||
                (distanceToTarget < (safeDistance - safeDistanceThreshold));

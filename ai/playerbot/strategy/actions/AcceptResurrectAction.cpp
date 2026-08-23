@@ -15,7 +15,7 @@ bool AcceptResurrectAction::Execute(Event event)
     if (bot->IsAlive())
         return false;
 
-    WorldPacket p(event.getPacket());
+    WorldPacket p(event.GetPacket());
     p.rpos(0);
     ObjectGuid guid;
     p >> guid;

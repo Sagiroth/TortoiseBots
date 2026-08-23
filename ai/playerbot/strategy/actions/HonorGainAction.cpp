@@ -8,9 +8,9 @@ using namespace ai;
 
 bool HonorGainAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
-    WorldPacket p(event.getPacket()); // (4+8+4)
+    WorldPacket p(event.GetPacket()); // (4+8+4)
     uint32 honorPointsGain;
     ObjectGuid guid;
     uint32 victimRank;

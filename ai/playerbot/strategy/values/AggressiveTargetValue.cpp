@@ -43,20 +43,20 @@ Unit* AggressiveTargetValue::Calculate()
         if (!bot->IsHostileTo(unit) && unit->GetNpcFlags() != UNIT_NPC_FLAG_NONE)
             continue;
 
-        if (abs(bot->GetPositionZ() - unit->GetPositionZ()) > INTERACTION_DISTANCE)
+        if (abs(bot->getPositionZ() - unit->getPositionZ()) > INTERACTION_DISTANCE)
             continue;
 
         if (!bot->InBattleground() && master && botAI->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) &&
-            ServerFacade::instance().GetDistance2d(master, unit) > aggroRange)
+            ServerFacade::instance().getDistance2d(master, unit) > aggroRange)
             continue;
 
         if (!bot->IsWithinLOSInMap(unit))
             continue;
 
-        if (bot->GetDistance(unit) > aggroRange)
+        if (bot->getDistance(unit) > aggroRange)
             continue;
 
-        float newdistance = bot->GetDistance(unit);
+        float newdistance = bot->getDistance(unit);
         if (!result || (newdistance < distance))
         {
             distance = newdistance;

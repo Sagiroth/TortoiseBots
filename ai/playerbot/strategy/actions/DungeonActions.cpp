@@ -18,7 +18,7 @@ bool MoveAwayFromHazard::Execute(Event& event)
     for (const HazardPosition& hazard : hazards)
     {
         const WorldPosition& hazardPosition = hazard.first;
-        const float distance = bot->GetDistance(hazardPosition.getX(), hazardPosition.getY(), hazardPosition.getZ());
+        const float distance = bot->getDistance(hazardPosition.getX(), hazardPosition.getY(), hazardPosition.getZ());
         if (distance < closestHazardDistance)
         {
             closestHazardDistance = distance;
@@ -41,7 +41,7 @@ bool MoveAwayFromHazard::Execute(Event& event)
             {
                 const int8 startDir = urand(0, 1) * 2 - 1;
                 const WorldPosition targetPosition(currentTarget);
-                angle = targetPosition.getAngleTo(initialPosition) + (0.5 * M_PI_F * startDir);
+                angle = targetPosition.GetAngleTo(initialPosition) + (0.5 * M_PI_F * startDir);
             }
             else
             {
@@ -54,7 +54,7 @@ bool MoveAwayFromHazard::Execute(Event& event)
             for (uint8 i = 0; i < attempts; i++)
             {
                 WorldPosition point = initialPosition + WorldPosition(0, distance * cos(angle), distance * sin(angle), 1.0f);
-                point.setZ(point.getHeight());
+                point.setZ(point.GetHeight());
 
                 // Check if the point is not near other hazards
                 if (!IsHazardNearby(point, hazards))
@@ -137,7 +137,7 @@ bool MoveAwayFromCreature::Execute(Event& event)
             creatures.push_back(creature);
 
             // Get the closest creature to the bot
-            const float distance = bot->GetDistance(creature);
+            const float distance = bot->getDistance(creature);
             if (distance < closestCreatureDistance)
             {
                 closestCreatureDistance = distance;
@@ -163,7 +163,7 @@ bool MoveAwayFromCreature::Execute(Event& event)
     // Generate the initial angle directly behind the bot looking at the closest creature
     const WorldPosition botPosition(bot);
     const WorldPosition creaturePosition(closestCreature);
-    float angleLeft = creaturePosition.getAngleTo(botPosition);
+    float angleLeft = creaturePosition.GetAngleTo(botPosition);
     float angleRight = angleLeft;
 
     const uint8 attempts = 20;
@@ -179,9 +179,9 @@ bool MoveAwayFromCreature::Execute(Event& event)
 
         // Calculate a point to the left and right
         WorldPosition pointLeft = creaturePosition + WorldPosition(0, distance * cos(angleLeft), distance * sin(angleLeft), 1.0f);
-        pointLeft.setZ(pointLeft.getHeight());
+        pointLeft.setZ(pointLeft.GetHeight());
         WorldPosition pointRight = creaturePosition + WorldPosition(0, distance * cos(angleRight), distance * sin(angleRight), 1.0f);
-        pointRight.setZ(pointRight.getHeight());
+        pointRight.setZ(pointRight.GetHeight());
 
         if (IsValidPoint(pointLeft, creatures, hazards))
         {
@@ -252,7 +252,7 @@ bool MoveAwayFromCreature::HasCreaturesNearby(const WorldPosition& point, const 
 {
     for (const Creature* creature : creatures)
     {
-        const float distance = creature->GetDistance(point.getX(), point.getY(), point.getZ());
+        const float distance = creature->getDistance(point.getX(), point.getY(), point.getZ());
         if (distance <= range)
         {
             return true;

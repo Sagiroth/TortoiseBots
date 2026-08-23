@@ -95,7 +95,7 @@ bool HasManaValue::Calculate()
 uint8 ComboPointsValue::Calculate()
 {
     Unit *target = GetTarget();
-	if (!target || target->GetObjectGuid() != bot->GetComboTargetGuid())
+	if (!target || target->getObjectGuid() != bot->GetComboTargetGuid())
 		return 0;
 
     return bot->GetComboPoints();
@@ -137,7 +137,7 @@ bool IsInCombatValue::Calculate()
                 if (!member || member == bot) continue;
 
                 if (sServerFacade.IsInCombat(member) &&
-                    sServerFacade.IsDistanceLessOrEqualThan(sServerFacade.GetDistance2d(member, bot), sPlayerbotAIConfig.reactDistance)) return true;
+                    sServerFacade.IsDistanceLessOrEqualThan(sServerFacade.getDistance2d(member, bot), sPlayerbotAIConfig.reactDistance)) return true;
             }
         }
     }

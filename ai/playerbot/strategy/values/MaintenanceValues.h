@@ -160,7 +160,7 @@ namespace ai
         ShouldDrinkValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "should drink", 2) {}
         virtual bool Calculate() override
         {
-            if (!bot->HasMana())
+            if (!bot->GetPower(POWER_MANA) > 0)
                 return false;
 
             if (AI_VALUE2(uint8, "mana", "self target") >= 85)
@@ -184,7 +184,7 @@ namespace ai
                 return true;
 
             float minDistance = sPlayerbotAIConfig.EatDrinkMinDistance;
-            if (!bot->GetGroup()->IsRaidGroup())
+            if (!bot->GetGroup()->isRaidGroup())
                 minDistance += sPlayerbotAIConfig.followDistance;
             else
                 minDistance += sPlayerbotAIConfig.raidFollowDistance;
@@ -223,7 +223,7 @@ namespace ai
                 return true;
 
             float minDistance = sPlayerbotAIConfig.EatDrinkMinDistance;
-            if (!bot->GetGroup()->IsRaidGroup())
+            if (!bot->GetGroup()->isRaidGroup())
                 minDistance += sPlayerbotAIConfig.followDistance;
             else
                 minDistance += sPlayerbotAIConfig.raidFollowDistance;
@@ -243,7 +243,7 @@ namespace ai
         {
             Player* master = ai->GetMaster();
 
-            float mpMissingPct = 100.0f - bot->GetPowerPercent();
+            float mpMissingPct = 100.0f - bot->GetPowerPercent(POWER_MANA);
             float multiplier = bot->InBattleGround() ? 20000.0f : 27000.0f;
             float drinkDuration = multiplier * (mpMissingPct / 100.0f);
 
@@ -259,7 +259,7 @@ namespace ai
 
             float minDistance = sPlayerbotAIConfig.followDistance;
 
-            if (bot->GetGroup()->IsRaidGroup())
+            if (bot->GetGroup()->isRaidGroup())
                 minDistance = sPlayerbotAIConfig.raidFollowDistance;
 
             if (!master->IsMoving())
@@ -304,7 +304,7 @@ namespace ai
 
             float minDistance = sPlayerbotAIConfig.followDistance;
 
-            if (bot->GetGroup()->IsRaidGroup())
+            if (bot->GetGroup()->isRaidGroup())
                 minDistance = sPlayerbotAIConfig.raidFollowDistance;
 
             if (!master->IsMoving())

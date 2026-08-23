@@ -17,7 +17,7 @@ namespace ai
         virtual void SendPacket(WorldPacket data) { Event event = Event();  SendPacket(data, event); };
         virtual Player* GetPlayer(Event event);
         virtual bool PlayerIsValid(Player* member) { return !member->GetGuildId(); };
-        virtual uint8 GetRankId(Player* member) { return sGuildMgr.GetGuildById(member->GetGuildId())->GetMemberSlot(member->GetObjectGuid())->RankId; }
+        virtual uint8 GetRankId(Player* member) { return sGuildMgr.GetGuildById(member->GetGuildId())->GetMemberSlot(member->getObjectGuid())->RankId; }
         virtual bool GuildIsFull(uint32 GuildId) { Guild* guild = sGuildMgr.GetGuildById(GuildId); return  guild->GetMemberSize() >= 1000; }
 
         uint16 opcode;
@@ -72,7 +72,7 @@ namespace ai
     {
     public:
         GuildLeaderAction(PlayerbotAI* ai, std::string name = "guild leader", uint16 opcode = CMSG_GUILD_LEADER) : GuidManageAction(ai, name, opcode) {}
-        virtual bool isUseful() override { return bot->GetGuildId() && sGuildMgr.GetGuildById(bot->GetGuildId())->GetLeaderGuid() == bot->GetObjectGuid(); }
+        virtual bool isUseful() override { return bot->GetGuildId() && sGuildMgr.GetGuildById(bot->GetGuildId())->GetLeaderGuid() == bot->getObjectGuid(); }
     
     protected:
         virtual void SendPacket(WorldPacket data, Event event) override { bot->GetSession()->HandleGuildLeaderOpcode(data); };

@@ -12,7 +12,7 @@
 
 bool QuestConfirmAcceptAction::Execute(Event event)
 {
-    WorldPacket packet(event.getPacket());
+    WorldPacket packet(event.GetPacket());
     uint32 questId;
     packet >> questId;
 

@@ -25,16 +25,16 @@ void ReturnPositionResetAction::SetPosition(WorldPosition wPos, std::string posN
 
 void ReturnPositionResetAction::PrintStrategies(PlayerbotAI* ai, Event& event)
 {
-    if (event.getParam() == "?")
+    if (event.GetParam() == "?")
     {
-        Player* requester = event.getOwner() ? event.getOwner() : ai->GetMaster();
+        Player* requester = event.GetOwner() ? event.GetOwner() : ai->GetMaster();
         ai->PrintStrategies(requester, BotState::BOT_STATE_ALL);
     }
 }
 
 bool FollowChatShortcutAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!requester)
         return false;
 
@@ -55,33 +55,33 @@ bool FollowChatShortcutAction::Execute(Event& event)
     Formation* formation = AI_VALUE(Formation*, "formation");
     MEM_AI_VALUE(WorldPosition, "master position")->Reset();
 
-    if (formation->getName() == "custom") //If in custom formation set relative position to current position.
+    if (formation->GetName() == "custom") //If in custom formation set relative position to current position.
     {
         ai::PositionEntry pos = posMap["follow"];
 
         WorldPosition relPos(bot);
 
-        if (!ai->IsSafe(requester) || sServerFacade.GetDistance2d(bot, requester) > sPlayerbotAIConfig.reactDistance) //Use default formation location.
+        if (!ai->IsSafe(requester) || sServerFacade.getDistance2d(bot, requester) > sPlayerbotAIConfig.reactDistance) //Use default formation location.
         {
             relPos = WorldPosition(bot->GetMapId(), cos(GetFollowAngle()) * ai->GetRange("follow"), sin(GetFollowAngle()) * ai->GetRange("follow"), 0);
         }
         else //Use relative location.
         {
             relPos -= WorldPosition(ai->GetMaster());
-            relPos.rotateXY(-1 * ai->GetMaster()->GetOrientation());
+            relPos.rotateXY(-1 * ai->GetMaster()->getOrientation());
         }
 
-        pos.Set(relPos.getX(), relPos.getY(), relPos.getZ(), relPos.getMapId());
+        pos.Set(relPos.getX(), relPos.getY(), relPos.getZ(), relPos.GetMapId());
         posMap["follow"] = pos;
     }
 
     if (sServerFacade.IsInCombat(bot))
     {     
         WorldLocation loc = formation->GetLocation();
-        if (Formation::IsNullLocation(loc) || loc.mapid == -1)
+        if (Formation::IsNullLocation(loc) || loc.mapId == -1)
             return false;
 
-        if (MoveTo(loc.mapid, loc.coord_x, loc.coord_y, loc.coord_z, false, false))
+        if (MoveTo(loc.mapId, loc.x, loc.y, loc.z, false, false))
         {
             ai->TellPlayerNoFacing(requester, BOT_TEXT("following"));
             return true;
@@ -94,7 +94,7 @@ bool FollowChatShortcutAction::Execute(Event& event)
 
 bool StayChatShortcutAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!requester)
         return false;
 
@@ -114,7 +114,7 @@ bool StayChatShortcutAction::Execute(Event& event)
 
 bool GuardChatShortcutAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!requester)
         return false;
 
@@ -134,7 +134,7 @@ bool GuardChatShortcutAction::Execute(Event& event)
 
 bool FreeChatShortcutAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!requester)
         return false;
 
@@ -150,7 +150,7 @@ bool FreeChatShortcutAction::Execute(Event& event)
 
 bool WanderChatShortcutAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!requester)
         return false;
 
@@ -166,7 +166,7 @@ bool WanderChatShortcutAction::Execute(Event& event)
 
 bool FleeChatShortcutAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!requester)
         return false;
 
@@ -178,7 +178,7 @@ bool FleeChatShortcutAction::Execute(Event& event)
 
     PrintStrategies(ai, event);
 
-    if (bot->GetMapId() != requester->GetMapId() || sServerFacade.GetDistance2d(bot, requester) > sPlayerbotAIConfig.sightDistance)
+    if (bot->GetMapId() != requester->GetMapId() || sServerFacade.getDistance2d(bot, requester) > sPlayerbotAIConfig.sightDistance)
     {
         ai->TellPlayerNoFacing(requester, BOT_TEXT("fleeing_far"));
         return true;
@@ -189,7 +189,7 @@ bool FleeChatShortcutAction::Execute(Event& event)
 
 bool GoawayChatShortcutAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!requester)
         return false;
 
@@ -206,7 +206,7 @@ bool GoawayChatShortcutAction::Execute(Event& event)
 
 bool GrindChatShortcutAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!requester)
         return false;
 
@@ -219,7 +219,7 @@ bool GrindChatShortcutAction::Execute(Event& event)
 
 bool TankAttackChatShortcutAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!requester)
         return false;
 
@@ -236,7 +236,7 @@ bool TankAttackChatShortcutAction::Execute(Event& event)
 
 bool MaxDpsChatShortcutAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!requester)
         return false;
 

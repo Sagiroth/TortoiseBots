@@ -8,8 +8,8 @@ using namespace ai;
 
 bool RtiAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string text = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string text = event.GetParam();
     std::string type = "rti";
     if (text.find("cc ") == 0)
     {
@@ -69,7 +69,7 @@ bool MarkRtiAction::Execute(Event& event)
         for (int i = 0; i < 8; i++)
         {
             ObjectGuid guid = group->GetTargetIcon(i);
-            if (guid == unit->GetObjectGuid())
+            if (guid == unit->getObjectGuid())
             {
                 marked = true;
                 break;
@@ -93,9 +93,9 @@ bool MarkRtiAction::Execute(Event& event)
 
     int index = RtiTargetValue::GetRtiIndex(rti);
 #ifndef MANGOSBOT_TWO
-    group->SetTargetIcon(index, target->GetObjectGuid());
+    group->SetTargetIcon(index, target->getObjectGuid());
 #else
-    group->SetTargetIcon(index, bot->GetObjectGuid(), target->GetObjectGuid());
+    group->SetTargetIcon(index, bot->getObjectGuid(), target->getObjectGuid());
 #endif
     return true;
 }

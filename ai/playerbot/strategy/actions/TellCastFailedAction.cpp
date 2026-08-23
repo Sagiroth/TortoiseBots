@@ -7,8 +7,8 @@ using namespace ai;
 
 bool TellCastFailedAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    WorldPacket p(event.getPacket());
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    WorldPacket p(event.GetPacket());
     p.rpos(0);
     uint8 castCount, result;
     uint32 spellId;
@@ -56,8 +56,8 @@ bool TellCastFailedAction::Execute(Event& event)
 
 bool TellSpellAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string spell = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string spell = event.GetParam();
     uint32 spellId = AI_VALUE2(uint32, "spell id", spell);
     if (!spellId)
         return false;

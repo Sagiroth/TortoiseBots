@@ -225,7 +225,7 @@ TestResult TestMonitor::Check(const std::string& monitorStr, Player* bot, TestCo
         if (bot->IsInWorld())
         {
             WorldPosition pos(bot);
-            placeholders["<current position>"] = pos.print(2, true) + " m" + std::to_string(pos.getMapId());
+            placeholders["<current position>"] = pos.print(2, true) + " m" + std::to_string(pos.GetMapId());
 
             if (ctx.testStartPosition)
                 placeholders["<distance traveled>"] = std::to_string(static_cast<uint32>(ctx.testStartPosition.distance(pos))) + "m";

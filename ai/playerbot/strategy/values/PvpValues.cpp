@@ -16,7 +16,7 @@ std::list<CreatureDataPair const*> BgMastersValue::Calculate()
     BattleGroundTypeId bgTypeId = (BattleGroundTypeId)stoi(qualifier);
 
     std::vector<uint32> entries;
-    std::map<Team, std::map<BattleGroundTypeId, std::list<uint32>>> battleMastersCache = sRandomPlayerbotMgr.getBattleMastersCache();
+    std::map<Team, std::map<BattleGroundTypeId, std::list<uint32>>> battleMastersCache = sRandomPlayerbotMgr.GetBattleMastersCache();
     entries.insert(entries.end(), battleMastersCache[TEAM_BOTH_ALLOWED][bgTypeId].begin(), battleMastersCache[TEAM_BOTH_ALLOWED][bgTypeId].end());
     entries.insert(entries.end(), battleMastersCache[ALLIANCE][bgTypeId].begin(), battleMastersCache[ALLIANCE][bgTypeId].end());
     entries.insert(entries.end(), battleMastersCache[HORDE][bgTypeId].begin(), battleMastersCache[HORDE][bgTypeId].end());
@@ -25,7 +25,7 @@ std::list<CreatureDataPair const*> BgMastersValue::Calculate()
 
     for (auto entry : entries)
     {
-        for(auto creaturePair : WorldPosition().getCreaturesNear(0, entry))
+        for(auto creaturePair : WorldPosition().GetCreaturesNear(0, entry))
         {
             bmGuids.push_back(creaturePair);
         }        
@@ -65,7 +65,7 @@ CreatureDataPair const* BgMasterValue::NearestBm(bool allowDead)
         float dist = botPos.distance(bmPos); //This is the aproximate travel distance.
 
         // Skip battlemasters that are not on the same map
-        if (bot->GetMapId() != bmPos.getMapId())
+        if (bot->GetMapId() != bmPos.GetMapId())
             continue;
 
         //Did we already find a closer unit that is not dead?
@@ -80,7 +80,7 @@ CreatureDataPair const* BgMasterValue::NearestBm(bool allowDead)
         FactionTemplateEntry const* bmFactionEntry = sFactionTemplateStore.LookupEntry(bmTemplate->Faction);
 
         //Is the unit hostile?
-        if (ai->getReaction(bmFactionEntry) < REP_NEUTRAL)
+        if (ai->GetReaction(bmFactionEntry) < REP_NEUTRAL)
             continue;
 
         AreaTableEntry const* area = bmPos.GetArea();
@@ -131,7 +131,7 @@ BattleGroundTypeId RpgBgTypeValue::Calculate()
         {
             BattleGroundQueueTypeId queueTypeId = (BattleGroundQueueTypeId)i;
 
-            BattleGroundTypeId bgTypeId = sServerFacade.BgTemplateId(queueTypeId);
+            BattleGroundTypeId bgTypeId = sServerFacade.BGTemplateId(queueTypeId);
 
             BattleGround* bg = sBattleGroundMgr.GetBattleGroundTemplate(bgTypeId);
             if (!bg)
@@ -144,7 +144,7 @@ BattleGroundTypeId RpgBgTypeValue::Calculate()
             if (bot->InBattleGroundQueueForBattleGroundQueueType(queueTypeId))
                 continue;
 
-            std::map<Team, std::map<BattleGroundTypeId, std::list<uint32>>> battleMastersCache = sRandomPlayerbotMgr.getBattleMastersCache();
+            std::map<Team, std::map<BattleGroundTypeId, std::list<uint32>>> battleMastersCache = sRandomPlayerbotMgr.GetBattleMastersCache();
 
             for (auto& entry : battleMastersCache[TEAM_BOTH_ALLOWED][bgTypeId])
                 if (entry == guidPosition.GetEntry())

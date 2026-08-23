@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "../../runtime/PlayerbotAIStorage.h" // Headless storage shim
 #include "GoAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
@@ -21,11 +22,11 @@ char* strstri(const char* haystack, const char* needle);
 
 bool GoAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!requester)
         return false;
 
-    std::string param = event.getParam();
+    std::string param = event.GetParam();
 
     if (param.empty())
     {
@@ -34,9 +35,9 @@ bool GoAction::Execute(Event& event)
 
     if (param == "?")
     {
-        float x = bot->GetPositionX();
-        float y = bot->GetPositionY();
-        Map2ZoneCoordinates(x, y, bot->GetZoneId());
+        float x = bot->getPositionX();
+        float y = bot->getPositionY();
+        Map2ZoneCoordinates(x, y, bot->getZoneId());
         std::ostringstream out;
         out << "I am at " << x << "," << y;
         ai->TellPlayer(requester, out.str());
@@ -180,8 +181,8 @@ inline void TellPosition(PlayerbotAI* ai, Player* requester)
         if (!tMap.empty())
         {
             auto tEnd = tMap.back();
-            WorldPosition taxiEnd(tEnd->mapid, tEnd->x, tEnd->y, tEnd->z);
-            std::string endArea = taxiEnd.getAreaName();
+            WorldPosition taxiEnd(tEnd->mapId, tEnd->x, tEnd->y, tEnd->z);
+            std::string endArea = taxiEnd.GetAreaName();
 
             if (!endArea.empty())
                 out << " to " << endArea;
@@ -208,10 +209,10 @@ inline void TellPosition(PlayerbotAI* ai, Player* requester)
 
         if (requester != bot && botPos.distance(requester) < 60.0f)
         {
-            out << uint32(botPos.distance(requester)) << " yards " << ChatHelper::formatAngle(WorldPosition(requester).getAngleTo(bot)) << " from you.";
+            out << uint32(botPos.distance(requester)) << " yards " << ChatHelper::formatAngle(WorldPosition(requester).GetAngleTo(bot)) << " from you.";
         }
-        else if (!WorldPosition(bot).getAreaName().empty())
-            out << "In " << WorldPosition(bot).getAreaName();
+        else if (!WorldPosition(bot).GetAreaName().empty())
+            out << "In " << WorldPosition(bot).GetAreaName();
         else
             out << "In " << bot->GetMap()->GetMapName();
     }
@@ -229,7 +230,7 @@ inline bool TellStuck(PlayerbotAI* ai, Player* requester)
     if (ai->HasActivePlayerMaster())
         return false;
 
-    if (ai->GetGroupMaster() && !ai->GetGroupMaster()->GetPlayerbotAI())
+    if (ai->GetGroupMaster() && PlayerbotAIStorage::Instance().GetAI(!ai->GetGroupMaster()))
         return false;
 
     if (!ai->AllowActivity(ALL_ACTIVITY))
@@ -300,7 +301,7 @@ inline bool TellGrouped(PlayerbotAI* ai, Player* requester)
 
     std::ostringstream out;
 
-    if (bot->GetGroup()->IsLeader(bot->GetObjectGuid()))
+    if (bot->GetGroup()->IsLeader(bot->getObjectGuid()))
     {
         out << "Leading a";
         if (bot->GetGroup()->IsRaidGroup())
@@ -403,7 +404,7 @@ inline void TellDead(PlayerbotAI* ai, Player* requester)
     Player* bot = ai->GetBot();
     AiObjectContext* context = ai->GetAiObjectContext();
 
-    std::string botArea = WorldPosition(bot).getAreaName();
+    std::string botArea = WorldPosition(bot).GetAreaName();
 
     std::ostringstream out;
 
@@ -424,7 +425,7 @@ inline void TellDead(PlayerbotAI* ai, Player* requester)
         {
             GuidPosition grave = AI_VALUE(GuidPosition, "best graveyard");
 
-            std::string graveArea = grave.getAreaName();
+            std::string graveArea = grave.GetAreaName();
 
             out << " walking to graveyard ";
 
@@ -541,7 +542,7 @@ bool GoAction::TellHowToGo(TravelDestination* dest, Player* requester) const
     }
 
     std::vector<WorldPosition> beginPath, endPath;
-    TravelNodeRoute route = sTravelNodeMap.getRoute(botPos, *point, beginPath, endPath, bot);
+    TravelNodeRoute route = sTravelNodeMap.GetRoute(botPos, *point, beginPath, endPath, bot);
 
     if (route.isEmpty())
     {
@@ -550,24 +551,24 @@ bool GoAction::TellHowToGo(TravelDestination* dest, Player* requester) const
     }
 
     WorldPosition poi = *point;
-    float pointAngle = botPos.getAngleTo(poi);
+    float pointAngle = botPos.GetAngleTo(poi);
 
-    if (botPos.distance(poi) > sPlayerbotAIConfig.reactDistance || route.getNodes().size() == 1)
+    if (botPos.distance(poi) > sPlayerbotAIConfig.reactDistance || route.GetNodes().size() == 1)
     {
         poi = botPos;
         TravelNode* nearNode = nullptr;
         TravelNode* nextNode = nullptr;
 
-        nextNode = nearNode = route.getNodes().front();
+        nextNode = nearNode = route.GetNodes().front();
 
-        for (auto node : route.getNodes())
+        for (auto node : route.GetNodes())
         {
             if (node == nearNode)
                 continue;
 
-            TravelNodePath* travelPath = nextNode->getPathTo(node);
+            TravelNodePath* travelPath = nextNode->GetPathTo(node);
 
-            std::vector<WorldPosition> path = travelPath->getPath();
+            std::vector<WorldPosition> path = travelPath->GetPath();
 
             for (auto& p : path)
             {
@@ -583,15 +584,15 @@ bool GoAction::TellHowToGo(TravelDestination* dest, Player* requester) const
         }
 
         if (nearNode)
-            ai->TellPlayerNoFacing(requester, "We are now near " + nearNode->getName() + ".");
+            ai->TellPlayerNoFacing(requester, "We are now near " + nearNode->GetName() + ".");
 
         ai->TellPlayerNoFacing(requester, "if we want to travel to " + dest->GetTitle());
-        if (nextNode->getPosition()->getAreaName(true, true) != botPos.getAreaName(true, true))
-            ai->TellPlayerNoFacing(requester, "we should head to " + nextNode->getName() + " in " + nextNode->getPosition()->getAreaName(true, true));
+        if (nextNode->getPosition()->GetAreaName(true, true) != botPos.GetAreaName(true, true))
+            ai->TellPlayerNoFacing(requester, "we should head to " + nextNode->GetName() + " in " + nextNode->getPosition()->GetAreaName(true, true));
         else
-            ai->TellPlayerNoFacing(requester, "we should head to " + nextNode->getName());
+            ai->TellPlayerNoFacing(requester, "we should head to " + nextNode->GetName());
 
-        pointAngle = botPos.getAngleTo(poi);
+        pointAngle = botPos.GetAngleTo(poi);
     }
     else
         ai->TellPlayerNoFacing(requester, "We are near " + dest->GetTitle());
@@ -643,7 +644,7 @@ bool GoAction::MoveToGo(std::string& param, Player* requester)
          {
             if (go && sServerFacade.isSpawned(go))
             {
-               if (sServerFacade.IsDistanceGreaterThan(sServerFacade.GetDistance2d(bot, go), sPlayerbotAIConfig.reactDistance))
+               if (sServerFacade.IsDistanceGreaterThan(sServerFacade.getDistance2d(bot, go), sPlayerbotAIConfig.reactDistance))
                {
                   ai->TellError(requester, "It is too far away");
                   return false;
@@ -653,7 +654,7 @@ bool GoAction::MoveToGo(std::string& param, Player* requester)
                ai->TellPlayerNoFacing(requester, out.str());
 
                WorldPosition pos;
-               go->GetPosition(pos);
+               go->getPosition(pos);
                const float angle = GetFollowAngle();
                const float distance = INTERACTION_DISTANCE;
                pos += WorldPosition(0, cos(angle)* distance, sin(angle)* distance, 0.5f);
@@ -698,7 +699,7 @@ bool GoAction::MoveToUnit(std::string& param, Player* requester)
         {
             std::ostringstream out; out << "Moving to " << unit->GetName();
             ai->TellPlayerNoFacing(requester, out.str());
-            return MoveNear(bot->GetMapId(), unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ() + 0.5f, ai->GetRange("follow"));
+            return MoveNear(bot->GetMapId(), unit->getPositionX(), unit->getPositionY(), unit->getPositionZ() + 0.5f, ai->GetRange("follow"));
         }
     }
 
@@ -716,7 +717,7 @@ bool GoAction::MoveToGps(std::string& param, Player* requester)
         if (coords.size() > 2)
             z = atof(coords[2].c_str());
         else
-            z = bot->GetPositionZ();
+            z = bot->getPositionZ();
 
         if (ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
         {
@@ -724,10 +725,10 @@ bool GoAction::MoveToGps(std::string& param, Player* requester)
 
             path.calculate(x, y, z, false);
 
-            Vector3 end = path.getEndPosition();
-            Vector3 aend = path.getActualEndPosition();
+            Vector3 end = path.GetEndPosition();
+            Vector3 aend = path.GetActualEndPosition();
 
-            PointsArray const& points = path.getPath();
+            PointsArray const& points = path.GetPath();
             PathType type = path.getPathType();
 
             std::ostringstream out;
@@ -771,17 +772,17 @@ bool GoAction::MoveToMapGps(std::string& param, Player* requester)
         float x = atof(coords[0].c_str());
         float y = atof(coords[1].c_str());
 
-        Zone2MapCoordinates(x, y, bot->GetZoneId());
+        Zone2MapCoordinates(x, y, bot->getZoneId());
 
         Map* map = bot->GetMap();
-        float z = bot->GetPositionZ();
+        float z = bot->getPositionZ();
 
         if (!WorldPosition(bot->GetMapId(), x, y, z).isValid())
             return false;
 
         bot->UpdateAllowedPositionZ(x, y, z);
 
-        if (sServerFacade.IsDistanceGreaterThan(sServerFacade.GetDistance2d(bot, x, y), sPlayerbotAIConfig.reactDistance))
+        if (sServerFacade.IsDistanceGreaterThan(sServerFacade.getDistance2d(bot, x, y), sPlayerbotAIConfig.reactDistance))
         {
             ai->TellPlayer(requester, BOT_TEXT("error_far"));
             return false;
@@ -806,7 +807,7 @@ bool GoAction::MoveToMapGps(std::string& param, Player* requester)
         }
 
         float x1 = x, y1 = y;
-        Map2ZoneCoordinates(x1, y1, bot->GetZoneId());
+        Map2ZoneCoordinates(x1, y1, bot->getZoneId());
         std::ostringstream out; out << "Moving to " << x1 << "," << y1;
         ai->TellPlayerNoFacing(requester, out.str());
         return MoveNear(bot->GetMapId(), x, y, z + 0.5f, ai->GetRange("follow"));
@@ -819,7 +820,7 @@ bool GoAction::MoveToPosition(std::string& param, Player* requester)
     PositionEntry pos = context->GetValue<PositionMap&>("position")->Get()[param];
     if (pos.isSet())
     {
-        if (sServerFacade.IsDistanceGreaterThan(sServerFacade.GetDistance2d(bot, pos.x, pos.y), sPlayerbotAIConfig.reactDistance))
+        if (sServerFacade.IsDistanceGreaterThan(sServerFacade.getDistance2d(bot, pos.x, pos.y), sPlayerbotAIConfig.reactDistance))
         {
             ai->TellError(requester, BOT_TEXT("error_far"));
             return false;
@@ -839,7 +840,7 @@ void GoAction::UpdateStrategyPosition(const WorldPosition& position)
       PositionMap& posMap = AI_VALUE(PositionMap&, "position");
       PositionEntry& stayPosition = posMap["stay"];
 
-      stayPosition.Set(position.getX(), position.getY(), position.getZ(), position.getMapId());
+      stayPosition.Set(position.getX(), position.getY(), position.getZ(), position.GetMapId());
       posMap["stay"] = stayPosition;
       posMap["return"] = stayPosition;
    }
@@ -848,7 +849,7 @@ void GoAction::UpdateStrategyPosition(const WorldPosition& position)
       PositionMap& posMap = AI_VALUE(PositionMap&, "position");
       PositionEntry& guardPosition = posMap["guard"];
 
-      guardPosition.Set(position.getX(), position.getY(), position.getZ(), position.getMapId());
+      guardPosition.Set(position.getX(), position.getY(), position.getZ(), position.GetMapId());
       posMap["guard"] = guardPosition;
       posMap["return"] = guardPosition;
    }

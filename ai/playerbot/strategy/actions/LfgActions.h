@@ -4,11 +4,11 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/RandomPlayerbotMgr.h"
-#ifdef MANGOSBOT_ZERO
+#ifdef MANGOSBOT_TWO
 #include "LFG/LFGMgr.h"
 #include "LFG/LFGDefines.h"
 #include "LFG/LFGQueue.h"
-#endif
+#endif // MANGOSBOT_TWO: LFG not in Tortoise 1.18.1
 #ifdef MANGOSBOT_TWO
 #include "LFG/LFGMgr.h"
 #include "LFG/LFG.h"

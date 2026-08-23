@@ -7,8 +7,8 @@ using namespace ai;
 
 bool BankAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string text = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string text = event.GetParam();
 
     std::list<ObjectGuid> npcs = AI_VALUE(std::list<ObjectGuid>, "nearest npcs no los");
     for (std::list<ObjectGuid>::iterator i = npcs.begin(); i != npcs.end(); i++)

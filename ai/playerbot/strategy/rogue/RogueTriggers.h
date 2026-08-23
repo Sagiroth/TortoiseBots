@@ -169,7 +169,7 @@ namespace ai
             }
 #endif
 
-            return (target && sServerFacade.GetDistance2d(bot, target) < distance);
+            return (target && sServerFacade.getDistance2d(bot, target) < distance);
         }
     };
 

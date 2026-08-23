@@ -34,7 +34,7 @@ bool BuyPetitionAction::Execute(Event& event)
 
         WorldPacket data(CMSG_PETITION_BUY);
 
-        data << pCreature->GetObjectGuid();
+        data << pCreature->getObjectGuid();
         data << uint32(0);
         data << uint64(0);
         data << guildName.c_str();
@@ -88,7 +88,7 @@ bool BuyPetitionAction::canBuyPetition(Player* bot)
     if (bot->GetGuildIdInvited())
         return false;    
 
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     AiObjectContext* context = ai->GetAiObjectContext();
 
     if (AI_VALUE2(uint32, "item count", "Hitem:5863:"))
@@ -145,10 +145,10 @@ bool PetitionOfferAction::Execute(Event& event)
 #ifndef MANGOSBOT_ZERO
     data << uint32(0);
 #endif
-    data << petitions.front()->GetObjectGuid();
+    data << petitions.front()->getObjectGuid();
     data << guid;
 
-    auto result = CharacterDatabase.PQuery("SELECT playerguid FROM petition_sign WHERE player_account = '%u' AND petitionguid = '%u'", player->GetSession()->GetAccountId(), petitions.front()->GetObjectGuid().GetCounter());
+    auto result = CharacterDatabase.PQuery("SELECT playerguid FROM petition_sign WHERE player_account = '%u' AND petitionguid = '%u'", player->GetSession()->GetAccountId(), petitions.front()->getObjectGuid().GetCounter());
 
     if (result)
     {
@@ -157,7 +157,7 @@ bool PetitionOfferAction::Execute(Event& event)
 
     bot->GetSession()->HandleOfferPetitionOpcode(data);
 
-    result = CharacterDatabase.PQuery("SELECT playerguid FROM petition_sign WHERE petitionguid = '%u'", petitions.front()->GetObjectGuid().GetCounter());
+    result = CharacterDatabase.PQuery("SELECT playerguid FROM petition_sign WHERE petitionguid = '%u'", petitions.front()->getObjectGuid().GetCounter());
     uint8 signs = result ? (uint8)result->GetRowCount() : 0;
 
     context->GetValue<uint8>("petition signs")->Set(signs);
@@ -183,10 +183,10 @@ bool PetitionOfferNearbyAction::Execute(Event& event)
         if (player->GetGuildIdInvited())
             continue;
 
-        if (!sPlayerbotAIConfig.randomBotInvitePlayer && player->isRealPlayer())
+        if (!sPlayerbotAIConfig.randomBotInvitePlayer && isRealPlayer_Helper(player))
             continue;
 
-        PlayerbotAI* botAi = player->GetPlayerbotAI();
+        PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(player);
 
         if (botAi)
         {
@@ -194,10 +194,10 @@ bool PetitionOfferNearbyAction::Execute(Event& event)
                 continue;
         }
 
-        if (sServerFacade.GetDistance2d(bot, player) > sPlayerbotAIConfig.sightDistance)
+        if (sServerFacade.getDistance2d(bot, player) > sPlayerbotAIConfig.sightDistance)
             continue;
 
-        if (sPlayerbotAIConfig.inviteChat && sServerFacade.GetDistance2d(bot, player) < sPlayerbotAIConfig.spellDistance && (sRandomPlayerbotMgr.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
+        if (sPlayerbotAIConfig.inviteChat && sServerFacade.getDistance2d(bot, player) < sPlayerbotAIConfig.spellDistance && (sRandomPlayerbotMgr.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
         {
             std::map<std::string, std::string> placeholders;
             placeholders["%name"] = player->GetName();
@@ -223,7 +223,7 @@ bool PetitionOfferNearbyAction::Execute(Event& event)
 
 bool PetitionTurnInAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     std::list<ObjectGuid> vendors = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid> >("nearest npcs")->Get();
     bool vendored = false, result = false;
 
@@ -246,7 +246,7 @@ bool PetitionTurnInAction::Execute(Event& event)
         if (!petition)
             return false;
 
-        data << petition->GetObjectGuid();
+        data << petition->getObjectGuid();
 
         bot->GetSession()->HandleTurnInPetitionOpcode(data);
 
@@ -322,7 +322,7 @@ bool PetitionTurnInAction::isUseful()
 
 bool BuyTabardAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     bool canBuy = ai->DoSpecificAction("buy", Event("buy tabard", "|cHitem:5976:|r"),true);
 
     if (canBuy && AI_VALUE2(uint32, "item count", chat->formatQItem(5976)))
@@ -354,7 +354,7 @@ bool BuyTabardAction::isUseful()
     if (!ai->AllowActivity(TRAVEL_ACTIVITY))
         return false;
 
-    if (bot->GetGroup() && !bot->GetGroup()->IsLeader(bot->GetObjectGuid()))
+    if (bot->GetGroup() && !bot->GetGroup()->IsLeader(bot->getObjectGuid()))
         if (ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("guard", BotState::BOT_STATE_NON_COMBAT))
             return false;
 

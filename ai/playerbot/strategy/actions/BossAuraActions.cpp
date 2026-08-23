@@ -23,7 +23,7 @@ bool BossFireResistanceAction::isUseful()
 bool BossFireResistanceAction::Execute(Event /*event*/)
 {
     PaladinFireResistanceStrategy paladinFireResistanceStrategy(botAI);
-    botAI->ChangeStrategy(ADD_STRATEGY_CHAR + paladinFireResistanceStrategy.getName(), BotState::BOT_STATE_COMBAT);
+    botAI->ChangeStrategy(ADD_STRATEGY_CHAR + paladinFireResistanceStrategy.GetName(), BotState::BOT_STATE_COMBAT);
     botAI->DoSpecificAction("fire resistance aura", Event(), true);
     return true;
 }
@@ -37,7 +37,7 @@ bool BossFrostResistanceAction::isUseful()
 bool BossFrostResistanceAction::Execute(Event /*event*/)
 {
     PaladinFrostResistanceStrategy paladinFrostResistanceStrategy(botAI);
-    botAI->ChangeStrategy(ADD_STRATEGY_CHAR + paladinFrostResistanceStrategy.getName(), BotState::BOT_STATE_COMBAT);
+    botAI->ChangeStrategy(ADD_STRATEGY_CHAR + paladinFrostResistanceStrategy.GetName(), BotState::BOT_STATE_COMBAT);
     botAI->DoSpecificAction("frost resistance aura", Event(), true);
     return true;
 }
@@ -51,7 +51,7 @@ bool BossNatureResistanceAction::isUseful()
 bool BossNatureResistanceAction::Execute(Event /*event*/)
 {
     HunterNatureResistanceStrategy hunterNatureResistanceStrategy(botAI);
-    botAI->ChangeStrategy(ADD_STRATEGY_CHAR + hunterNatureResistanceStrategy.getName(), BotState::BOT_STATE_COMBAT);
+    botAI->ChangeStrategy(ADD_STRATEGY_CHAR + hunterNatureResistanceStrategy.GetName(), BotState::BOT_STATE_COMBAT);
     botAI->DoSpecificAction("aspect of the wild", Event(), true);
     return true;
 }
@@ -65,7 +65,7 @@ bool BossShadowResistanceAction::isUseful()
 bool BossShadowResistanceAction::Execute(Event /*event*/)
 {
     PaladinShadowResistanceStrategy paladinShadowResistanceStrategy(botAI);
-    botAI->ChangeStrategy(ADD_STRATEGY_CHAR + paladinShadowResistanceStrategy.getName(), BotState::BOT_STATE_COMBAT);
+    botAI->ChangeStrategy(ADD_STRATEGY_CHAR + paladinShadowResistanceStrategy.GetName(), BotState::BOT_STATE_COMBAT);
     botAI->DoSpecificAction("shadow resistance aura", Event(), true);
     return true;
 }

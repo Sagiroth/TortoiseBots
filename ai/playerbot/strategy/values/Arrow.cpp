@@ -21,7 +21,7 @@ WorldLocation ArrowFormation::GetLocationInternal()
     if (!ai->IsSafe(followTarget))
         return Formation::NullLocation;
 
-    float orientation = followTarget->GetOrientation();
+    float orientation = followTarget->getOrientation();
     MultiLineUnitPlacer placer(orientation, range);
 
     tanks.PlaceUnits(&placer);
@@ -42,9 +42,9 @@ WorldLocation ArrowFormation::GetLocationInternal()
     if (!masterUnit || !botUnit)
         return Formation::NullLocation;
 
-    float x = followTarget->GetPositionX() - masterUnit->GetX() + botUnit->GetX();
-    float y = followTarget->GetPositionY() - masterUnit->GetY() + botUnit->GetY();
-    float z = followTarget->GetPositionZ();
+    float x = followTarget->getPositionX() - masterUnit->getX() + botUnit->getX();
+    float y = followTarget->getPositionY() - masterUnit->getY() + botUnit->getY();
+    float z = followTarget->getPositionZ();
 
 #ifdef MANGOSBOT_TWO
     float ground = followTarget->GetMap()->GetHeight(followTarget->GetPhaseMask(), x, y, z + 0.5f);
@@ -88,7 +88,7 @@ void ArrowFormation::FillSlotsExceptMaster()
     uint32 index = 0;
     while (gref)
     {
-        Player* member = gref->getSource();
+        Player* member = gref->GetSource();
         if (ai->IsSafe(member))
         {
             if (member == bot)
@@ -109,7 +109,7 @@ void ArrowFormation::AddMasterToSlot()
     uint32 index = 0;
     while (gref)
     {
-        Player* member = gref->getSource();
+        Player* member = gref->GetSource();
 
         if (member == followTarget)
         {
@@ -161,7 +161,7 @@ void FormationSlot::Move(float dx, float dy)
     for (std::vector<FormationUnit*>::iterator i = units.begin(); i != units.end(); ++i)
     {
         FormationUnit* unit = *i;
-        unit->SetLocation(unit->GetX() + dx, unit->GetY() + dy);
+        unit->SetLocation(unit->getX() + dx, unit->getY() + dy);
     }
 }
 

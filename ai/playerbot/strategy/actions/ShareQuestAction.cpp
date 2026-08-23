@@ -6,8 +6,8 @@ using namespace ai;
 
 bool ShareQuestAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string link = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string link = event.GetParam();
 
     if (!requester)
         return false;
@@ -40,7 +40,7 @@ bool ShareQuestAction::Execute(Event& event)
 
 bool AutoShareQuestAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     bool shared = false;
 
     for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
@@ -55,12 +55,12 @@ bool AutoShareQuestAction::Execute(Event& event)
 
         for (GroupReference* itr = bot->GetGroup()->GetFirstMember(); itr != nullptr; itr = itr->next())
         {
-            Player* player = itr->getSource();
+            Player* player = itr->GetSource();
 
             if (!player || player == bot || !player->IsInWorld() || !ai->IsSafe(player))         // skip self
                 continue;
 
-            if (bot->GetDistance(player) > 10)
+            if (bot->getDistance(player) > 10)
                 continue;
 
             if (!player->SatisfyQuestStatus(quest, false))
@@ -78,13 +78,13 @@ bool AutoShareQuestAction::Execute(Event& event)
             if (player->GetDividerGuid())
                 continue;
 
-            if (player->GetPlayerbotAI())
+            if (PlayerbotAIStorage::Instance().GetAI(player))
             {
                 if (PAI_VALUE(uint8, "free quest log slots") < 15 || !urand(0,5))
                 {
                     WorldPacket packet(CMSG_PUSHQUESTTOPARTY, 20);
                     packet << logQuest;
-                    player->GetPlayerbotAI()->HandleMasterIncomingPacket(packet);
+                    PlayerbotAIStorage::Instance().GetAI(player)->HandleMasterIncomingPacket(packet);
                 }
             }
             else

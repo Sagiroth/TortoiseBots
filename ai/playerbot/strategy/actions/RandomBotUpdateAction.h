@@ -1,6 +1,7 @@
 #pragma once
 
 #include "playerbot/RandomPlayerbotMgr.h"
+#include "../../runtime/PlayerbotAIStorage.h" // Headless storage shim
 #include "playerbot/strategy/Action.h"
 
 namespace ai
@@ -16,7 +17,7 @@ namespace ai
             if (!sRandomPlayerbotMgr.IsRandomBot(bot))
                 return false;
 
-            if (bot->GetGroup() && ai->GetGroupMaster() && (!ai->GetGroupMaster()->GetPlayerbotAI() || ai->GetGroupMaster()->GetPlayerbotAI()->IsRealPlayer()))
+            if (bot->GetGroup() && ai->GetGroupMaster() && (PlayerbotAIStorage::Instance().GetAI(!ai->GetGroupMaster()) || PlayerbotAIStorage::Instance().GetAI(ai->GetGroupMaster())->IsRealPlayer()))
                 return true;
 
             if (ai->HasPlayerNearby())

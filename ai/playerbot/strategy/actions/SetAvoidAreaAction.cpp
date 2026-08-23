@@ -28,7 +28,7 @@ bool SetAvoidAreaAction::Execute(Event& event)
         if (!cInfo)
             continue;
 
-        if (cInfo->NpcFlags > 0) //Ignore npcs.
+        if (cInfo->npc_flags > 0) //Ignore npcs.
             continue;
 
         if (bot->GetLevel() > 3 && cInfo->MaxLevel < bot->GetLevel() - 3) //Ignore lower level mobs.
@@ -47,8 +47,8 @@ bool SetAvoidAreaAction::Execute(Event& event)
             continue;
 
         WorldPosition point(targetUnit);
-        pathfinder.setArea(point.getMapId(), point.getX(), point.getY(), point.getZ(), 12, targetUnit->GetAttackDistance(bot) * 2.5);
-        pathfinder.setArea(point.getMapId(), point.getX(), point.getY(), point.getZ(), 13, targetUnit->GetAttackDistance(bot));
+        pathfinder.setArea(point.GetMapId(), point.getX(), point.getY(), point.getZ(), 12, targetUnit->GetAttackDistance(bot) * 2.5);
+        pathfinder.setArea(point.GetMapId(), point.getX(), point.getY(), point.getZ(), 13, targetUnit->GetAttackDistance(bot));
     }
 
     return true;

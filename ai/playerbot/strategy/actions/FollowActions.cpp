@@ -21,9 +21,9 @@ bool FollowAction::Execute(Event& event)
         if (formation)
         {
             WorldLocation loc = formation->GetLocation();
-            if (!Formation::IsNullLocation(loc) && loc.mapid != -1)
+            if (!Formation::IsNullLocation(loc) && loc.mapId != -1)
             {
-                moved = Follow(followTarget, formation->GetOffset(), formation->GetAngle());
+                moved = Follow(followTarget, formation->getOffset(), formation->GetAngle());
             }
         }
     }
@@ -60,17 +60,17 @@ bool FollowAction::isUseful()
 
     if (followTarget)
     {
-        distance = sServerFacade.GetDistance2d(bot, followTarget);
+        distance = sServerFacade.getDistance2d(bot, followTarget);
     }
     else
     {
         WorldLocation loc = formation->GetLocation();
-        if (Formation::IsNullLocation(loc) || bot->GetMapId() != loc.mapid)
+        if (Formation::IsNullLocation(loc) || bot->GetMapId() != loc.mapId)
         {
             return false;
         }
 
-        distance = sServerFacade.GetDistance2d(bot, loc.coord_x, loc.coord_y);
+        distance = sServerFacade.getDistance2d(bot, loc.x, loc.y);
     }
 
     if (sServerFacade.IsDistanceGreaterThan(distance, sPlayerbotAIConfig.sightDistance))
@@ -84,7 +84,7 @@ bool FollowAction::isUseful()
         return true;
     }
 
-    if (followTarget && sServerFacade.GetChaseTarget(bot) && sServerFacade.GetChaseTarget(bot)->GetObjectGuid() == followTarget->GetObjectGuid() && formation->GetAngle() == sServerFacade.GetChaseAngle(bot) && formation->GetOffset() == sServerFacade.GetChaseOffset(bot))
+    if (followTarget && sServerFacade.GetChaseTarget(bot) && sServerFacade.GetChaseTarget(bot)->getObjectGuid() == followTarget->getObjectGuid() && formation->GetAngle() == sServerFacade.GetChaseAngle(bot) && formation->getOffset() == sServerFacade.GetChaseOffset(bot))
     {
         return false;
     }
@@ -116,7 +116,7 @@ bool StopFollowAction::isUseful()
 
 bool FleeToMasterAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     Unit* fTarget = AI_VALUE(Unit*, "master target");
     bool canFollow = Follow(fTarget);
     if (!canFollow)
@@ -172,7 +172,7 @@ bool FleeToMasterAction::isUseful()
 
     Unit* target = AI_VALUE(Unit*, "current target");
 
-    if (target && ai->GetGroupMaster()->HasTarget(target->GetObjectGuid()))
+    if (target && ai->GetGroupMaster()->HasTarget(target->getObjectGuid()))
         return false;
 
     if (!(ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||

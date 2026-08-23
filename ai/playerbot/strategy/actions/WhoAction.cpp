@@ -17,7 +17,7 @@ inline int strcmpi(const char* s1, const char* s2)
 
 bool WhoAction::Execute(Event& event)
 {
-    Player* owner = event.getOwner();
+    Player* owner = event.GetOwner();
     if (!owner)
         return false;
 
@@ -27,11 +27,11 @@ bool WhoAction::Execute(Event& event)
     if (owner->IsStunnedByLogout())
         return false;
 
-    if (!sObjectMgr.GetPlayer(owner->GetObjectGuid()))
+    if (!sObjectMgr.GetPlayer(owner->getObjectGuid()))
         return false;
 
     std::ostringstream out;
-    std::string text = event.getParam();
+    std::string text = event.GetParam();
     if (!text.empty())
     {
         out << QuerySkill(text);
@@ -48,7 +48,7 @@ bool WhoAction::Execute(Event& event)
     {
         if (AreaTableEntry const* areaEntry = GetAreaEntryByAreaID(sServerFacade.GetAreaId(bot)))
         {
-            out << ", (|cffb04040" << areaEntry->area_name[0] << "|r)";
+            out << ", (|cffb04040" << areaEntry->Name << "|r)";
         }
     }
 
@@ -96,7 +96,7 @@ std::string WhoAction::QuerySkill(std::string text)
     if (!skill || !ai->HasSkill((SkillType)skill))
         return "";
 
-    std::string skillName = chat->getSkillName(skill);
+    std::string skillName = chat->GetSkillName(skill);
     uint32 spellId = AI_VALUE2(uint32, "spell id", skillName);
     uint16 value = bot->GetSkillValue(skill);
 #ifdef MANGOS
@@ -105,7 +105,7 @@ std::string WhoAction::QuerySkill(std::string text)
 #ifdef CMANGOS
     uint16 maxSkill = bot->GetSkillMax(skill);
 #endif
-    ObjectGuid guid = bot->GetObjectGuid();
+    ObjectGuid guid = bot->getObjectGuid();
     std::string data = "0";
     out << "|cFFFFFF00|Htrade:" << spellId << ":" << value << ":" << maxSkill << ":"
             << std::hex << std::uppercase << guid.GetRawValue()

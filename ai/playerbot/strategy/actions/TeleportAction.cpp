@@ -8,7 +8,7 @@ using namespace ai;
 
 bool TeleportAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     std::list<ObjectGuid> gos = *context->GetValue<std::list<ObjectGuid> >("nearest game objects no los");
     for (std::list<ObjectGuid>::iterator i = gos.begin(); i != gos.end(); i++)
     {
@@ -25,7 +25,7 @@ bool TeleportAction::Execute(Event& event)
         if (pSpellInfo->Effect[0] != SPELL_EFFECT_TELEPORT_UNITS && pSpellInfo->Effect[1] != SPELL_EFFECT_TELEPORT_UNITS && pSpellInfo->Effect[2] != SPELL_EFFECT_TELEPORT_UNITS)
             continue;
 
-        if (!bot->GetGameObjectIfCanInteractWith(go->GetObjectGuid(), MAX_GAMEOBJECT_TYPE))
+        if (!bot->GetGameObjectIfCanInteractWith(go->getObjectGuid(), MAX_GAMEOBJECT_TYPE))
             continue;
 
         std::ostringstream out; out << "Teleporting using " << goInfo->name;
@@ -35,7 +35,7 @@ bool TeleportAction::Execute(Event& event)
 
         std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
         *packet << *i;
-        bot->GetSession()->QueuePacket(std::move(packet));
+        bot->GetSession()->QueuePacket(packet.release());
         return true;
     }
 

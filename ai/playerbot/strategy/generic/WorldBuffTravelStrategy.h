@@ -155,7 +155,7 @@ namespace ai
 
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
         {
-            Player* member = ref->getSource();
+            Player* member = ref->GetSource();
             if (member == player)
                 continue;
 
@@ -171,7 +171,7 @@ namespace ai
             if (member->IsTaxiFlying())
                 return false;
 
-            if (player->GetDistance(member) > PORTAL_REGROUP_DISTANCE)
+            if (player->getDistance(member) > PORTAL_REGROUP_DISTANCE)
                 return false;
         }
         return true;
@@ -193,7 +193,7 @@ namespace ai
         if (!HasAllDMTributeBuffs(player))
             return WorldBuffTravelStep::STEP_BRAGOK;
 
-        uint32 zoneId = player->GetZoneId();
+        uint32 zoneId = player->getZoneId();
         uint32 portalDestZone = GetDMPortalDestZone(player);
         if (zoneId != ZONE_FELWOOD && zoneId != portalDestZone)
         {

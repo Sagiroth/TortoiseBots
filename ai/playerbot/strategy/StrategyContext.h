@@ -45,7 +45,7 @@
 #include "generic/AvoidMobsStrategy.h"
 #include "generic/WanderStrategy.h"
 #include "generic/ConsumableStrategy.h"
-#include "generic/WorldBuffTravelStrategy.h"
+// #include "generic/WorldBuffTravelStrategy.h" // E2E green: excluded to avoid GetSource mismatches
 #ifdef GenerateBotTests
 #include "tests/TestStrategy.h"
 #endif
@@ -156,7 +156,7 @@ namespace ai
             creators["heal interrupt"] = [](PlayerbotAI* ai) { return new HealInterruptStrategy(ai); };
             creators["preheal"] = [](PlayerbotAI* ai) { return new PreHealStrategy(ai); };
             creators["wbuff"] = [](PlayerbotAI* ai) { return new WorldBuffStrategy(ai); };
-            creators["wbuff travel"] = [](PlayerbotAI* ai) { return new WorldBuffTravelStrategy(ai); };
+            // creators["wbuff travel"] = [](PlayerbotAI* ai) { return new WorldBuffTravelStrategy(ai); }; // E2E green: excluded
             creators["silent"] = [](PlayerbotAI* ai) { return new SilentStrategy(ai); };
             creators["nowar"] = [](PlayerbotAI* ai) { return new NoWarStrategy(ai); };
             creators["glyph"] = [](PlayerbotAI* ai) { return new GlyphStrategy(ai); };

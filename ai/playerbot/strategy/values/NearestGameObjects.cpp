@@ -83,7 +83,7 @@ std::list<ObjectGuid> NearestGameObjects::Calculate()
                 break;
         }
 
-        result.push_back(go->GetObjectGuid());
+        result.push_back(go->getObjectGuid());
     }
 
     return result;
@@ -119,7 +119,7 @@ std::list<ObjectGuid> NearestDynamicObjects::Calculate()
             break;
         }
 
-        result.push_back(go->GetObjectGuid());
+        result.push_back(go->getObjectGuid());
     }
 
     return result;

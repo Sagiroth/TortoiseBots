@@ -7,7 +7,7 @@ using namespace ai;
 
 bool StatsAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     std::ostringstream out;
 
     ListGold(out);

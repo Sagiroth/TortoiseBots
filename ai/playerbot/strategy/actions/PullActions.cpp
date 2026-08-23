@@ -33,7 +33,7 @@ Unit* PullNearestTargetAction::FindPullTarget(PlayerbotAI* ai)
         if (!AttackersValue::IsValid(unit, bot, nullptr, false))
             continue;
 
-        const float distance = unit->GetDistance(bot);
+        const float distance = unit->getDistance(bot);
         if (distance < bestDistance)
         {
             bestDistance = distance;
@@ -57,7 +57,7 @@ bool PullRequestAction::Execute(Event& event)
         return false;
     }
 
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
     Unit* target = GetTarget(event);
     if (!target)
@@ -67,7 +67,7 @@ bool PullRequestAction::Execute(Event& event)
     }
 
     const float maxPullDistance = sPlayerbotAIConfig.reactDistance * 3;
-    const float distanceToPullTarget = target->GetDistance(ai->GetBot());
+    const float distanceToPullTarget = target->getDistance(ai->GetBot());
     if (distanceToPullTarget > maxPullDistance)
     {
         ai->TellPlayerNoFacing(requester, "The target is too far away");
@@ -91,7 +91,7 @@ bool PullRequestAction::Execute(Event& event)
     PositionMap& posMap = AI_VALUE(PositionMap&, "position");
     PositionEntry pullPosition = posMap["pull"];
 
-    pullPosition.Set(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+    pullPosition.Set(bot->getPositionX(), bot->getPositionY(), bot->getPositionZ(), bot->GetMapId());
     posMap["pull"] = pullPosition;
 
     strategy->RequestPull(target);
@@ -106,8 +106,8 @@ Unit* PullMyTargetAction::GetTarget(Event& event)
 {
     Unit* target = nullptr;
 
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    if (event.getSource() == "attack anything")
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    if (event.GetSource() == "attack anything")
     {
         ObjectGuid guid = event.getObject();
         target = ai->GetCreature(guid);
@@ -179,7 +179,7 @@ bool PullAction::Execute(Event& event)
         if (target)
         {
             // Check if we are on pull range
-            const float distanceToTarget = target->GetDistance(bot);
+            const float distanceToTarget = target->getDistance(bot);
             if (distanceToTarget <= strategy->GetRange())
             {
                 if (sServerFacade.isMoving(bot))

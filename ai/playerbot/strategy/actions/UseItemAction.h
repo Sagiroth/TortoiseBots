@@ -597,7 +597,7 @@ namespace ai
                 return false;
 #endif
 
-            if (bot->getClass() == CLASS_MAGE) // mage should use mana gem, shares cd with dark rune
+            if (bot->GetClass() == CLASS_MAGE) // mage should use mana gem, shares cd with dark rune
                 return false;
 
             return bot->GetHealth() > 1000;

@@ -37,7 +37,7 @@ bool AttackAnythingAction::isUseful()
     if(!target->IsPlayer() && bot->isInFront(target,target->GetAttackDistance(bot)*1.5f, M_PI_F*0.5f) && target->CanAttackOnSight(bot) && target->GetLevel() < bot->GetLevel() + 3.0) //Attack before being attacked.
         return true;
 
-    if (AI_VALUE(bool, "travel target traveling") && CanFreeMoveValue::CanFreeMoveTo(ai, *AI_VALUE(TravelTarget*,"travel target")->GetPosition())) //Bot is traveling
+    if (AI_VALUE(bool, "travel target traveling") && CanFreeMoveValue::CanFreeMoveTo(ai, *AI_VALUE(TravelTarget*,"travel target")->getPosition())) //Bot is traveling
         return false;
 
     return true;
@@ -65,9 +65,9 @@ bool ai::AttackAnythingAction::Execute(Event& event)
                 {
                     if (PullStrategy* strategy = PullStrategy::Get(ai))
                     {
-                        if (strategy->CanDoPullAction(grindTarget) && (ai->GetBot()->getClass() == CLASS_DRUID || ai->GetBot()->getClass() == CLASS_PALADIN || AI_VALUE2(uint32, "item count", "ammo")))
+                        if (strategy->CanDoPullAction(grindTarget) && (ai->GetBot()->GetClass() == CLASS_DRUID || ai->GetBot()->GetClass() == CLASS_PALADIN || AI_VALUE2(uint32, "item count", "ammo")))
                         {
-                            Event pullEvent("attack anything", grindTarget->GetObjectGuid());
+                            Event pullEvent("attack anything", grindTarget->getObjectGuid());
                             bool doAction = ai->DoSpecificAction("pull my target", pullEvent, true);
 
                             if (doAction)
@@ -78,7 +78,7 @@ bool ai::AttackAnythingAction::Execute(Event& event)
                     }
                 }
 
-                context->GetValue<ObjectGuid>("attack target")->Set(grindTarget->GetObjectGuid());
+                context->GetValue<ObjectGuid>("attack target")->Set(grindTarget->getObjectGuid());
                 ai->StopMoving();
             }
         }
@@ -105,7 +105,7 @@ bool AttackEnemyFlagCarrierAction::isUseful()
     // but never actually attacked once they caught up. The check belongs on
     // the TARGET (confirming it's genuinely still an active flag carrier),
     // not on the attacker.
-    return target && sServerFacade.IsDistanceLessOrEqualThan(sServerFacade.GetDistance2d(bot, target), 75.0f) && (target->HasAura(23333) || target->HasAura(23335) || target->HasAura(34976));
+    return target && sServerFacade.IsDistanceLessOrEqualThan(sServerFacade.getDistance2d(bot, target), 75.0f) && (target->HasAura(23333) || target->HasAura(23335) || target->HasAura(34976));
 }
 
 bool SelectNewTargetAction::Execute(Event& event)
@@ -114,7 +114,7 @@ bool SelectNewTargetAction::Execute(Event& event)
     if (target && sServerFacade.UnitIsDead(target))
     {
         // Save the dead target for later looting
-        ObjectGuid guid = target->GetObjectGuid();
+        ObjectGuid guid = target->getObjectGuid();
         if (guid)
         {
             AI_VALUE(LootObjectStack*, "available loot")->Add(guid);
@@ -180,7 +180,7 @@ bool SelectNewTargetAction::Execute(Event& event)
             if (creatureAI)
             {
                 // Send pet action packet
-                const ObjectGuid& petGuid = pet->GetObjectGuid();
+                const ObjectGuid& petGuid = pet->getObjectGuid();
                 const ObjectGuid& targetGuid = ObjectGuid();
                 const uint8 flag = ACT_COMMAND;
                 const uint32 spellId = COMMAND_FOLLOW;

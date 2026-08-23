@@ -6,8 +6,8 @@ using namespace ai;
 
 bool LogLevelAction::Execute(Event& event)
 {
-    std::string param = event.getParam();
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    std::string param = event.GetParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     Value<LogLevel> *value = ai->GetAiObjectContext()->GetValue<LogLevel>("log level");
 
     std::ostringstream out; 

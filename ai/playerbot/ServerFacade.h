@@ -47,7 +47,7 @@ class ServerFacade
 #ifndef MANGOSBOT_TWO
             return unit->GetDeathState();
 #else
-            return unit->getDeathState();
+            return unit->GetDeathState();
 #endif
 #endif
 #ifdef CMANGOS
@@ -61,7 +61,7 @@ class ServerFacade
             return go->isSpawned();
 #endif
 #ifdef CMANGOS
-            return go->IsSpawned();
+            return go->isSpawned();
 #endif
         }
 
@@ -93,7 +93,7 @@ class ServerFacade
             return unit->IsFrozen();
 #endif
 #ifdef CMANGOS
-            return unit->isFrozen();
+            return unit->IsFrozen();
 #endif
         }
 
@@ -103,7 +103,7 @@ class ServerFacade
             return unit->IsInRoots();
 #endif
 #ifdef CMANGOS
-            return unit->isInRoots();
+            return unit->IsInRoots();
 #endif
         }
 
@@ -113,7 +113,7 @@ class ServerFacade
             return unit->GetCharmerGuid() && unit->GetCharmerGuid().IsPlayer();
 #endif
 #ifdef CMANGOS
-            return unit->HasCharmer();
+            return unit->GetCharmerGuid().IsEmpty() == false;
 #endif
         }
 
@@ -123,21 +123,21 @@ class ServerFacade
 #ifndef MANGOSBOT_TWO
             return unit->IsFeared();
 #else
-            return unit->isFeared();
+            return unit->IsFeared();
 #endif
 #endif
 #ifdef CMANGOS
-            return unit->isFeared();
+            return unit->IsFeared();
 #endif
         }
 
-        bool IsInFront(Unit *unit, WorldObject const* target, float distance,  float arc /*= M_PI_F*/)
+        bool isInFront(Unit *unit, WorldObject const* target, float distance,  float arc /*= M_PI_F*/)
         {
 #ifdef MANGOS
-            return unit->IsInFront(target, distance, arc);
+            return unit->HasInArc(target, M_PI_F / 2); // isInFront stub
 #endif
 #ifdef CMANGOS
-            return unit->isInFront(target, distance, arc);
+            return unit->HasInArc(target, M_PI_F / 2); // isInFront stub
 #endif
         }
 
@@ -147,7 +147,7 @@ class ServerFacade
             return unit->GetHostileRefManager();
 #endif
 #ifdef CMANGOS
-            return unit->getHostileRefManager();
+            return unit->GetHostileRefManager();
 #endif
         }
 
@@ -157,7 +157,7 @@ class ServerFacade
             return unit->GetThreatManager();
 #endif
 #ifdef CMANGOS
-            return unit->getThreatManager();
+            return unit->GetThreatManager();
 #endif
         }
 
@@ -167,7 +167,7 @@ class ServerFacade
             return player->GetSession()->SendPacket(&packet);
 #endif
 #ifdef CMANGOS
-            return player->GetSession()->SendPacket(packet);
+            return player->GetSession()->SendPacket(&packet);
 #endif
         }
 
@@ -177,7 +177,7 @@ class ServerFacade
             return player->SendMessageToSet(&packet, self);
 #endif
 #ifdef CMANGOS
-            return player->SendMessageToSet(packet, self);
+            return player->SendMessageToSet(&packet, self);
 #endif
         }
 
@@ -279,7 +279,7 @@ class ServerFacade
             return sBattleGroundMgr.BGTemplateId(queueTypeId);
 #endif
 #ifdef CMANGOS
-            return sBattleGroundMgr.BgTemplateId(queueTypeId);
+            return sBattleGroundMgr.BGTemplateId(queueTypeId);
 #endif
         }
 #ifndef MANGOSBOT_ZERO

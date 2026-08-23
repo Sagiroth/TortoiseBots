@@ -31,7 +31,7 @@ std::list<ObjectGuid> PossibleTargetsValue::Calculate()
         Unit* unit = *i;
         if (unit && (shouldIgnoreValidate || AcceptUnit(unit)))
         {
-            results.push_back(unit->GetObjectGuid());
+            results.push_back(unit->getObjectGuid());
         }
     }
 
@@ -81,7 +81,7 @@ bool PossibleTargetsValue::IsFriendly(Unit* target, Player* player)
 
 bool PossibleTargetsValue::IsAttackable(Unit* target, Player* player)
 {
-    const bool inVehicle = player->GetPlayerbotAI() && player->GetPlayerbotAI()->IsInVehicle();
+    const bool inVehicle = PlayerbotAIStorage::Instance().GetAI(player) && PlayerbotAIStorage::Instance().GetAI(player)->IsInVehicle();
     return !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_ATTACKABLE_1) &&
            !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_UNTARGETABLE) &&
            (inVehicle || !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_UNINTERACTIBLE)) &&
@@ -116,7 +116,7 @@ bool PossibleTargetsValue::IsValid(Unit* target, Player* player, bool ignoreLos)
         // used to be part of this, which meant a bot fighting anyone could pick
         // out every stealthed player within range.
         bool isInCombatWithTarget = target->GetVictim() == player || 
-                                     target->getThreatManager().getThreat(player) > 0.0f;
+                                     target->GetThreatManager().GetThreat(player) > 0.0f;
 
         if (!ignoreLos && !isInCombatWithTarget)
         {
@@ -125,7 +125,7 @@ bool PossibleTargetsValue::IsValid(Unit* target, Player* player, bool ignoreLos)
                 return false;
             }
         }
-        if (!CanFreeMoveValue::CanFreeAttack(player->GetPlayerbotAI(), target))
+        if (!CanFreeMoveValue::CanFreeAttack(PlayerbotAIStorage::Instance().GetAI(player), target))
             return false;
 
         return true;

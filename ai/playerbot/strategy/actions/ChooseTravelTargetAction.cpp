@@ -31,7 +31,7 @@ bool ChooseTravelTargetAction::Execute(Event& event)
     if(travelTarget->GetStatus() != TravelStatus::TRAVEL_STATUS_PREPARE)
         return false;
 
-    Player* requester = event.getOwner() ? event.getOwner() : (GetMaster() ? GetMaster() : bot);
+    Player* requester = event.GetOwner() ? event.GetOwner() : (GetMaster() ? GetMaster() : bot);
     FutureDestinations* futureDestinations = AI_VALUE(FutureDestinations*, "future travel destinations");
     std::string futureTravelPurpose = AI_VALUE2(std::string, "manual string", "future travel purpose");
     std::string futureTravelPurposeName = GetTravelPurposeName(futureTravelPurpose);
@@ -139,7 +139,7 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
 
     if (QuestObjectiveTravelDestination* dest = dynamic_cast<QuestObjectiveTravelDestination*>(oldTarget->GetDestination()))
     {
-        std::string condition = "group or::{following party,need quest objective::{" + std::to_string(dest->GetQuestId()) + "," + std::to_string((uint8)dest->GetObjective()) + "}}";
+        std::string condition = "group or::{following party,need quest objective::{" + std::to_string(dest->GetQuestId()) + "," + std::to_string((uint8)dest->getObjective()) + "}}";
         oldTarget->AddCondition(condition);
         if (Quest const* q = sObjectMgr.GetQuestTemplate(dest->GetQuestId()))
             sPlayerbotAIConfig.logEvent(ai, "QuestTravelToObjective", q->GetTitle(), std::to_string(dest->GetQuestId()));
@@ -173,10 +173,10 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
 };
 
 //Tell the master what travel target we are moving towards.
-//This should at some point be rewritten to be denser or perhaps logic moved to ->getTitle()
+//This should at some point be rewritten to be denser or perhaps logic moved to ->GetTitle()
 void ChooseTravelTargetAction::ReportTravelTarget(Player* bot, Player* requester, TravelTarget* newTarget, TravelTarget* oldTarget)
 {
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     AiObjectContext* context = ai->GetAiObjectContext();
 
     TravelDestination* destination = newTarget->GetDestination();
@@ -213,14 +213,14 @@ void ChooseTravelTargetAction::ReportTravelTarget(Player* bot, Player* requester
         {
             out << "Currently";
 
-            if (newTarget->GetPosition() && !newTarget->GetPosition()->getAreaName().empty())
+            if (newTarget->getPosition() && !newTarget->getPosition()->GetAreaName().empty())
             {
                 if (destination->DistanceTo(bot) < 100.0f)
                     out << " in ";
                 else
                     out << " near ";
 
-                out << newTarget->GetPosition()->getAreaName();
+                out << newTarget->getPosition()->GetAreaName();
             }
             else
                 out << " traveling";
@@ -236,11 +236,11 @@ void ChooseTravelTargetAction::ReportTravelTarget(Player* bot, Player* requester
             else
                 out << "Traveling";
 
-            if (newTarget->GetPosition())
+            if (newTarget->getPosition())
             {
                 out << " " << round(newTarget->Distance(bot)) << "y";
-                if (!newTarget->GetPosition()->getAreaName().empty())
-                    out << " to " << newTarget->GetPosition()->getAreaName();
+                if (!newTarget->getPosition()->GetAreaName().empty())
+                    out << " to " << newTarget->getPosition()->GetAreaName();
             }
         }
 
@@ -285,15 +285,15 @@ void ChooseTravelTargetAction::ReportTravelTarget(Player* bot, Player* requester
     if (sPlayerbotAIConfig.hasLog("travel_map.csv"))
     {
         WorldPosition botPos(bot);
-        WorldPosition destPos = *newTarget->GetPosition();
+        WorldPosition destPos = *newTarget->getPosition();
 
         std::ostringstream out;
         out << sPlayerbotAIConfig.GetTimestampStr() << "+00,";
         out << bot->GetName() << ",";
         out << std::fixed << std::setprecision(2);
 
-        out << std::to_string(bot->getRace()) << ",";
-        out << std::to_string(bot->getClass()) << ",";
+        out << std::to_string(bot->GetRace()) << ",";
+        out << std::to_string(bot->GetClass()) << ",";
         float subLevel = ai->GetLevelFloat();
 
         out << subLevel << ",";
@@ -363,7 +363,7 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
             {
                 // Checked after IsActive so the area lookup only happens for
                 // the point that was actually selected.
-                if (!target->IsForced() && position && position->isEnemyHomeZoneFor(bot->GetTeam()))
+                if (!target->IsForced() && position && position->IsEnemyHomeZoneFor(bot->GetTeam()))
                 {
                     ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - enemy home zone", "debug travel");
 
@@ -504,9 +504,9 @@ bool ChooseGroupTravelTargetAction::Execute(Event& event)
 
     for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
     {
-        if (ref->getSource() != bot)
+        if (ref->GetSource() != bot)
         {
-            groupPlayers.push_back(ref->getSource()->GetObjectGuid());
+            groupPlayers.push_back(ref->GetSource()->getObjectGuid());
         }
     }
 
@@ -521,7 +521,7 @@ bool ChooseGroupTravelTargetAction::Execute(Event& event)
     std::unordered_map<TravelDestination*, std::vector<std::string>> conditions;
     std::unordered_map<TravelDestination*, Player*> playerDesitnations;
 
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
     //Find targets of the group.
     for (auto& member : groupPlayers)
@@ -534,10 +534,10 @@ bool ChooseGroupTravelTargetAction::Execute(Event& event)
         if (!ai->IsSafe(player))
             continue;
 
-        if (!player->GetPlayerbotAI())
+        if (!PlayerbotAIStorage::Instance().GetAI(player))
             continue;
 
-        if (!player->GetPlayerbotAI()->GetAiObjectContext())
+        if (!PlayerbotAIStorage::Instance().GetAI(player)->GetAiObjectContext())
             continue;
 
         TravelTarget* groupTarget = PAI_VALUE(TravelTarget*, "travel target");
@@ -553,7 +553,7 @@ bool ChooseGroupTravelTargetAction::Execute(Event& event)
 
         if (!groupTarget->GetDestination()->IsActive(player, PlayerTravelInfo(player)) || !groupTarget->IsConditionsActive())
         {
-            player->GetPlayerbotAI()->TellDebug(requester,"Target is cooling down because a group member found it to be inactive.", "debug travel");
+            PlayerbotAIStorage::Instance().GetAI(player)->TellDebug(requester,"Target is cooling down because a group member found it to be inactive.", "debug travel");
             groupTarget->SetStatus(TravelStatus::TRAVEL_STATUS_COOLDOWN);
             continue;
         }
@@ -569,7 +569,7 @@ bool ChooseGroupTravelTargetAction::Execute(Event& event)
 
     for (auto& groupTarget : groupTargets)
     {
-        travelList[0].push_back(TravelPoint(groupTarget->GetDestination(), groupTarget->GetPosition(), groupTarget->GetPosition()->distance(bot)));
+        travelList[0].push_back(TravelPoint(groupTarget->GetDestination(), groupTarget->getPosition(), groupTarget->getPosition()->distance(bot)));
 
         ai->TellDebug(requester, playerDesitnations[groupTarget->GetDestination()]->GetName() + std::string(": ") + groupTarget->GetDestination()->GetShortName() + std::string(" (") + std::to_string(groupTarget->GetRelevance()) + std::string(")"), "debug travel");
     }
@@ -619,7 +619,7 @@ bool RefreshTravelTargetAction::Execute(Event& event)
 
     TravelDestination* oldDestination = target->GetDestination();
 
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
     if (target->IsMaxRetry(false))
     {
@@ -643,7 +643,7 @@ bool RefreshTravelTargetAction::Execute(Event& event)
     for (uint8 i = 0; i < 5; i++)
     {
         std::list<uint8> chancesToGoFar = { 10,20,90 }; //Closest map, grid, cell.
-        newPosition = oldDestination->GetNextPoint(*target->GetPosition(), chancesToGoFar);
+        newPosition = oldDestination->GetNextPoint(*target->getPosition(), chancesToGoFar);
         if (newPosition && sTravelMgr.IsLocationLevelValid(*newPosition, info, (uint32)oldDestination->GetPurpose()))
             break;        
     }
@@ -706,7 +706,7 @@ bool ResetTargetAction::Execute(Event& event)
     context->ClearValues("no active travel destinations");
 
     TravelTarget newTarget = TravelTarget(ai);
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     setNewTarget(requester, &newTarget, oldTarget);
 
     oldTarget->SetStatus(TravelStatus::TRAVEL_STATUS_COOLDOWN);
@@ -735,7 +735,7 @@ bool RequestTravelTargetAction::Execute(Event& event)
 {
     TravelDestinationPurpose actionPurpose = TravelDestinationPurpose(stoi(getQualifier()));
 
-    WorldPosition center = event.getOwner() ? event.getOwner() : (GetMaster() ? GetMaster() : bot);
+    WorldPosition center = event.GetOwner() ? event.GetOwner() : (GetMaster() ? GetMaster() : bot);
 
     ai->TellDebug(ai->GetMaster(), "Getting new destination ranges for " + TravelDestinationPurposeName.at(actionPurpose), "debug travel");
 
@@ -743,7 +743,7 @@ bool RequestTravelTargetAction::Execute(Event& event)
 
     AI_VALUE(TravelTarget*, "travel target")->SetStatus(TravelStatus::TRAVEL_STATUS_PREPARE);
     SET_AI_VALUE2(std::string, "manual string", "future travel purpose", getQualifier());
-    SET_AI_VALUE2(std::string, "manual string", "future travel condition", event.getSource());
+    SET_AI_VALUE2(std::string, "manual string", "future travel condition", event.GetSource());
     SET_AI_VALUE2(int, "manual int", "future travel relevance", relevance * 100);
 
     return true;
@@ -817,7 +817,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
 {
     std::string travelName = getQualifier();
 
-    WorldPosition center = event.getOwner() ? event.getOwner() : (GetMaster() ? GetMaster() : bot);
+    WorldPosition center = event.GetOwner() ? event.GetOwner() : (GetMaster() ? GetMaster() : bot);
 
     ai->TellDebug(ai->GetMaster(), "Getting new destination ranges for travel " + getQualifier(), "debug travel");
 
@@ -1199,7 +1199,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                                 if (!dest->GetCreatureInfo())
                                     return true;
 
-                                if (dest->GetCreatureInfo()->NpcFlags & UNIT_NPC_FLAG_AUCTIONEER)
+                                if (dest->GetCreatureInfo()->npc_flags & UNIT_NPC_FLAG_AUCTIONEER)
                                     return false;
 
                                 return true;
@@ -1302,7 +1302,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                             if (!dest->GetCreatureInfo())
                                 return true;
 
-                            if (dest->GetCreatureInfo()->NpcFlags & cityFlags)
+                            if (dest->GetCreatureInfo()->npc_flags & cityFlags)
                                 return false;
 
                             return true;
@@ -1317,7 +1317,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
     SET_AI_VALUE2(std::string, "manual string", "future travel condition",
         travelName == "guild meeting" ? "should travel named::guild meeting" :
         travelName == "guild order" ? "should travel named::guild order" :
-        event.getSource());
+        event.GetSource());
     SET_AI_VALUE2(int, "manual int", "future travel relevance", relevance * 100);
 
     return true;
@@ -1366,7 +1366,7 @@ bool RequestNamedTravelTargetAction::isAllowed() const
 
 bool RequestQuestTravelTargetAction::Execute(Event& event)
 {
-    WorldPosition center = event.getOwner() ? event.getOwner() : (GetMaster() ? GetMaster() : bot);
+    WorldPosition center = event.GetOwner() ? event.GetOwner() : (GetMaster() ? GetMaster() : bot);
 
     ai->TellDebug(ai->GetMaster(), "Getting new destination ranges for travel quest", "debug travel");
 
@@ -1393,10 +1393,10 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
         if (player->GetMapId() != bot->GetMapId())
             continue;
 
-        if (!player->GetPlayerbotAI())
+        if (!PlayerbotAIStorage::Instance().GetAI(player))
             continue;
 
-        QuestStatusMap& questMap = player->getQuestStatusMap();
+        QuestStatusMap& questMap = player->GetQuestStatusMap();
 
         bool onlyClassQuest = bot == player && !urand(0, 10);
 
@@ -1466,7 +1466,7 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
     // limit of 20.
     {
         uint32 finished = 0, active = 0;
-        for (auto& [questId, questStatus] : bot->getQuestStatusMap())
+        for (auto& [questId, questStatus] : bot->GetQuestStatusMap())
         {
             if (questStatus.m_rewarded)
                 continue;
@@ -1507,12 +1507,12 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
             else objectives++;
         }
 
-        for (auto& [questId, questStatus] : bot->getQuestStatusMap())
+        for (auto& [questId, questStatus] : bot->GetQuestStatusMap())
             if (!questStatus.m_rewarded && questStatus.m_status == QUEST_STATUS_COMPLETE)
                 readyToHandIn++;
 
         sLog.outBasic("QUESTPROBE: %s has %u finished and unhanded-in, %u quests in the log; offered %u taker, %u objective, %u giver destinations",
-            bot->GetName(), readyToHandIn, uint32(bot->getQuestStatusMap().size()),
+            bot->GetName(), readyToHandIn, uint32(bot->GetQuestStatusMap().size()),
             takers, objectives, givers);
     }
 
@@ -1536,7 +1536,7 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
 
     AI_VALUE(TravelTarget*, "travel target")->SetStatus(TravelStatus::TRAVEL_STATUS_PREPARE);
     SET_AI_VALUE2(std::string, "manual string", "future travel purpose", "quest");
-    SET_AI_VALUE2(std::string, "manual string", "future travel condition", event.getSource());
+    SET_AI_VALUE2(std::string, "manual string", "future travel condition", event.GetSource());
     SET_AI_VALUE2(int, "manual int", "future travel relevance", relevance * 100);
 
     return true;
@@ -1554,8 +1554,8 @@ bool RequestQuestTravelTargetAction::isAllowed() const
 
 bool FocusTravelTargetAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string text = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string text = event.GetParam();
 
     if (text == "?")
     {

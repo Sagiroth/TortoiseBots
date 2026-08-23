@@ -65,9 +65,9 @@ static const GameObjectData* FindClosestSongflowerSpawn(Player* bot)
     const GameObjectData* best = nullptr;
     float bestDistSq = std::numeric_limits<float>::max();
     uint32 botMapId = bot->GetMapId();
-    float botX = bot->GetPositionX();
-    float botY = bot->GetPositionY();
-    float botZ = bot->GetPositionZ();
+    float botX = bot->getPositionX();
+    float botY = bot->getPositionY();
+    float botZ = bot->getPositionZ();
 
     struct SongflowerFinder
     {
@@ -82,12 +82,12 @@ static const GameObjectData* FindClosestSongflowerSpawn(Player* bot)
             if (!IsSongflowerEntry(data.id))
                 return false;
 
-            if (data.position.mapid != mapId)
+            if (data.position.mapId != mapId)
                 return false;
 
-            float dx = data.position.coord_x - x;
-            float dy = data.position.coord_y - y;
-            float dz = data.position.coord_z - z;
+            float dx = data.position.x - x;
+            float dy = data.position.y - y;
+            float dz = data.position.z - z;
             float distSq = dx * dx + dy * dy + dz * dz;
 
             if (distSq < bestDistSq)
@@ -148,21 +148,21 @@ static bool SummonPlayerToSummoner(Player* summoner, Player* target, PlayerbotAI
         return false;
 
     float x, y, z;
-    summoner->GetPosition(x, y, z);
+    summoner->getPosition(x, y, z);
 
-    if (target->isRealPlayer())
+    if (isRealPlayer_Helper(target))
     {
         target->SetSummonPoint(summoner->GetMapId(), x, y, z);
 
         WorldPacket data(SMSG_SUMMON_REQUEST, 8 + 4 + 4);
-        data << summoner->GetObjectGuid();
-        data << uint32(summoner->GetZoneId());
+        data << summoner->getObjectGuid();
+        data << uint32(summoner->getZoneId());
         data << uint32(MAX_PLAYER_SUMMON_DELAY * IN_MILLISECONDS);
         target->GetSession()->SendPacket(data);
     }
     else
     {
-        target->TeleportTo(summoner->GetMapId(), x, y, z, summoner->GetOrientation());
+        target->TeleportTo(summoner->GetMapId(), x, y, z, summoner->getOrientation());
     }
 
     return true;
@@ -188,7 +188,7 @@ void WorldBuffTravelApplyAction::ApplyBuffToSelfAndRealPlayers(uint32 spellId)
         if (member->GetMapId() != bot->GetMapId())
             continue;
 
-        if (bot->GetDistance(member) > 100.0f)
+        if (bot->getDistance(member) > 100.0f)
             continue;
 
         PlayerbotAI::AddAura(member, spellId);
@@ -217,8 +217,8 @@ bool WorldBuffTravelApplyAction::TakeFlightFromMaster(uint32 npcEntry, uint32 de
         bot->GetSession()->SendLearnNewTaxiNode(flightMaster);
 
         uint32 srcNode = sObjectMgr.GetNearestTaxiNode(
-            flightMaster->GetPositionX(), flightMaster->GetPositionY(),
-            flightMaster->GetPositionZ(), flightMaster->GetMapId(), bot->GetTeam());
+            flightMaster->getPositionX(), flightMaster->getPositionY(),
+            flightMaster->getPositionZ(), flightMaster->GetMapId(), bot->GetTeam());
 
         if (!srcNode)
             return false;
@@ -239,7 +239,7 @@ bool WorldBuffTravelApplyAction::TakeFlightFromMaster(uint32 npcEntry, uint32 de
 // If bot is a warlock at a regrouping step, summon far away group members and sync their step.
 bool WorldBuffTravelApplyAction::TrySummonFarAwayMembers(WorldBuffTravelStep step)
 {
-    if (bot->getClass() != CLASS_WARLOCK)
+    if (bot->GetClass() != CLASS_WARLOCK)
         return false;
 
     if (step != WorldBuffTravelStep::STEP_BOOTY_BAY &&
@@ -255,7 +255,7 @@ bool WorldBuffTravelApplyAction::TrySummonFarAwayMembers(WorldBuffTravelStep ste
 
     static std::map<ObjectGuid, time_t> lastSummonAttempt;
     time_t now = time(nullptr);
-    ObjectGuid botGuid = bot->GetObjectGuid();
+    ObjectGuid botGuid = bot->getObjectGuid();
     auto it = lastSummonAttempt.find(botGuid);
     if (it != lastSummonAttempt.end() && now < it->second)
         return true;
@@ -272,7 +272,7 @@ bool WorldBuffTravelApplyAction::TrySummonFarAwayMembers(WorldBuffTravelStep ste
     const Group::MemberSlotList& groupSlot = group->GetMemberSlots();
     for (Group::member_citerator itr = groupSlot.begin(); itr != groupSlot.end(); ++itr)
     {
-        if (itr->guid == bot->GetObjectGuid())
+        if (itr->guid == bot->getObjectGuid())
             continue;
 
         Player* member = sObjectMgr.GetPlayer(itr->guid);
@@ -286,7 +286,7 @@ bool WorldBuffTravelApplyAction::TrySummonFarAwayMembers(WorldBuffTravelStep ste
             continue;
 
         bool needsSummonByStep = false;
-        PlayerbotAI* memberAI = member->GetPlayerbotAI();
+        PlayerbotAI* memberAI = PlayerbotAIStorage::Instance().GetAI(member);
         if (memberAI)
         {
             uint8 memberStep = memberAI->GetAiObjectContext()->GetValue<uint8>("world buff travel step")->Get();
@@ -297,7 +297,7 @@ bool WorldBuffTravelApplyAction::TrySummonFarAwayMembers(WorldBuffTravelStep ste
         }
 
         bool differentMap = member->GetMapId() != bot->GetMapId();
-        bool farAway = !differentMap && bot->GetDistance(member) > PORTAL_REGROUP_DISTANCE;
+        bool farAway = !differentMap && bot->getDistance(member) > PORTAL_REGROUP_DISTANCE;
 
         if (!needsSummonByStep && !differentMap && !farAway)
             continue;
@@ -308,7 +308,7 @@ bool WorldBuffTravelApplyAction::TrySummonFarAwayMembers(WorldBuffTravelStep ste
             continue;
         }
 
-        if (member->isRealPlayer())
+        if (isRealPlayer_Helper(member))
             realPlayersToSummon.push_back(member);
         else
             botsToSummon.push_back(member);
@@ -331,7 +331,7 @@ bool WorldBuffTravelApplyAction::TrySummonFarAwayMembers(WorldBuffTravelStep ste
             ai->TellPlayer(GetMaster(), "Summoning " + std::string(toSummon->GetName()) + " to the group!");
 
             // Sync the summoned member's step to the warlock's step
-            PlayerbotAI* memberAI = toSummon->GetPlayerbotAI();
+            PlayerbotAI* memberAI = PlayerbotAIStorage::Instance().GetAI(toSummon);
             if (memberAI)
             {
                 memberAI->GetAiObjectContext()->GetValue<uint8>("world buff travel step")->Set(warlockStep);
@@ -523,7 +523,7 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
         if (step == WorldBuffTravelStep::STEP_DM_PORTAL)
         {
             uint32 destZone = GetDMPortalDestZone(bot);
-            if (bot->GetZoneId() == destZone)
+            if (bot->getZoneId() == destZone)
                 return false;
 
             GameObjectData const* goData = sObjectMgr.GetGOData(GO_DM_NORTH_DOOR_GUID);
@@ -534,14 +534,14 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
             }
 
             ai->TellPlayer(GetMaster(), "Regrouping at Dire Maul North for portal...");
-            return MoveTo(goData->position.mapid, goData->position.coord_x, goData->position.coord_y, goData->position.coord_z);
+            return MoveTo(goData->position.mapId, goData->position.x, goData->position.y, goData->position.z);
         }
 
         // PORTAL_HOME: regroup at the nearest Songflower
         if (step == WorldBuffTravelStep::STEP_PORTAL_HOME)
         {
             uint32 homeZone = GetHomeZone(bot);
-            if (bot->GetZoneId() == homeZone)
+            if (bot->getZoneId() == homeZone)
                 return false;
 
             const GameObjectData* goData = FindClosestSongflowerSpawn(bot);
@@ -553,7 +553,7 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
 
             const char* portalName = GetHomePortalKeyword(bot);
             ai->TellPlayer(GetMaster(), std::string("Regrouping at Songflower waiting for Portal: ") + portalName + "...");
-            return MoveTo(goData->position.mapid, goData->position.coord_x, goData->position.coord_y, goData->position.coord_z);
+            return MoveTo(goData->position.mapId, goData->position.x, goData->position.y, goData->position.z);
         }
 
         return false;
@@ -576,7 +576,7 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
         }
 
         ai->TellPlayer(GetMaster(), "Traveling to Dire Maul North for world buffs");
-        return MoveTo(goData->position.mapid, goData->position.coord_x, goData->position.coord_y, goData->position.coord_z);
+        return MoveTo(goData->position.mapId, goData->position.x, goData->position.y, goData->position.z);
     }
 
     if (step == WorldBuffTravelStep::STEP_SONGFLOWER)
@@ -589,7 +589,7 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
         }
 
         ai->TellPlayer(GetMaster(), "Traveling to nearest Songflower for world buffs");
-        return MoveTo(goData->position.mapid, goData->position.coord_x, goData->position.coord_y, goData->position.coord_z);
+        return MoveTo(goData->position.mapId, goData->position.x, goData->position.y, goData->position.z);
     }
 
     if (step == WorldBuffTravelStep::STEP_FORGOTTEN_COAST && horde)
@@ -610,12 +610,12 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
                 if (data.id != GO_BONFIRE_FERALAS)
                     return false;
 
-                if (data.position.mapid != mapId)
+                if (data.position.mapId != mapId)
                     return false;
 
-                float dx = data.position.coord_x - x;
-                float dy = data.position.coord_y - y;
-                float dz = data.position.coord_z - z;
+                float dx = data.position.x - x;
+                float dy = data.position.y - y;
+                float dz = data.position.z - z;
                 float distSq = dx * dx + dy * dy + dz * dz;
 
                 if (distSq < bestDistSq)
@@ -627,8 +627,8 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
             }
         };
 
-        BonfireFinder finder{ bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(),
-                              bot->GetPositionZ(), nullptr, bestDistSq };
+        BonfireFinder finder{ bot->GetMapId(), bot->getPositionX(), bot->getPositionY(),
+                              bot->getPositionZ(), nullptr, bestDistSq };
         sObjectMgr.DoGOData(finder);
 
         if (!finder.best)
@@ -638,12 +638,12 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
         }
 
         ai->TellPlayer(GetMaster(), "Traveling to the Dire Maul in Feralas");
-        return MoveTo(finder.best->position.mapid, finder.best->position.coord_x, finder.best->position.coord_y, finder.best->position.coord_z);
+        return MoveTo(finder.best->position.mapId, finder.best->position.x, finder.best->position.y, finder.best->position.z);
     }
 
     if (step == WorldBuffTravelStep::STEP_FELWOOD)
     {
-        uint32 zoneId = bot->GetZoneId();
+        uint32 zoneId = bot->getZoneId();
         uint32 portalDestZone = GetDMPortalDestZone(bot);
         if (zoneId != portalDestZone && zoneId != ZONE_FELWOOD)
         {
@@ -660,7 +660,7 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
 
             const char* portalName = horde ? "Orgrimmar" : "Darnassus";
             ai->TellPlayer(GetMaster(), std::string("Regrouping at Dire Maul North before portal to ") + portalName + "...");
-            return MoveTo(goData->position.mapid, goData->position.coord_x, goData->position.coord_y, goData->position.coord_z);
+            return MoveTo(goData->position.mapId, goData->position.x, goData->position.y, goData->position.z);
         }
     }
 
@@ -718,7 +718,7 @@ bool WorldBuffTravelDMExitedAction::Execute(Event& event)
 
 bool WorldBuffTravelDMCastPortalAction::isUseful()
 {
-    return bot->getClass() == CLASS_MAGE;
+    return bot->GetClass() == CLASS_MAGE;
 }
 
 bool WorldBuffTravelDMCastPortalAction::Execute(Event& event)
@@ -766,14 +766,14 @@ bool WorldBuffTravelDMTakePortalAction::Execute(Event& event)
     GameObject* portalGO = FindNearbyPortalGO(ai, bot, gos, keyword);
     if (portalGO)
     {
-        float dist = bot->GetDistance(portalGO);
+        float dist = bot->getDistance(portalGO);
         if (dist > INTERACTION_DISTANCE)
-            return MoveTo(portalGO->GetMapId(), portalGO->GetPositionX(),
-                portalGO->GetPositionY(), portalGO->GetPositionZ());
+            return MoveTo(portalGO->GetMapId(), portalGO->getPositionX(),
+                portalGO->getPositionY(), portalGO->getPositionZ());
 
         std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
-        *packet << portalGO->GetObjectGuid();
-        bot->GetSession()->QueuePacket(std::move(packet));
+        *packet << portalGO->getObjectGuid();
+        bot->GetSession()->QueuePacket(packet.release());
 
         ai->TellPlayer(GetMaster(), std::string("Taking the portal to ") + keyword + "!");
         context->GetValue<uint8>("world buff travel step")->Set(
@@ -787,7 +787,7 @@ bool WorldBuffTravelDMTakePortalAction::Execute(Event& event)
 
 bool WorldBuffTravelCastPortalAction::isUseful()
 {
-    return bot->getClass() == CLASS_MAGE;
+    return bot->GetClass() == CLASS_MAGE;
 }
 
 bool WorldBuffTravelCastPortalAction::Execute(Event& event)
@@ -835,14 +835,14 @@ bool WorldBuffTravelTakePortalAction::Execute(Event& event)
     GameObject* portalGO = FindNearbyPortalGO(ai, bot, gos, keyword);
     if (portalGO)
     {
-        float dist = bot->GetDistance(portalGO);
+        float dist = bot->getDistance(portalGO);
         if (dist > INTERACTION_DISTANCE)
-            return MoveTo(portalGO->GetMapId(), portalGO->GetPositionX(),
-                portalGO->GetPositionY(), portalGO->GetPositionZ());
+            return MoveTo(portalGO->GetMapId(), portalGO->getPositionX(),
+                portalGO->getPositionY(), portalGO->getPositionZ());
 
         std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
-        *packet << portalGO->GetObjectGuid();
-        bot->GetSession()->QueuePacket(std::move(packet));
+        *packet << portalGO->getObjectGuid();
+        bot->GetSession()->QueuePacket(packet.release());
 
         ai->TellPlayer(GetMaster(), "Taking the portal home!");
         context->GetValue<uint8>("world buff travel step")->Set(

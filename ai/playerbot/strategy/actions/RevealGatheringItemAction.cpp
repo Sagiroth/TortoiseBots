@@ -45,7 +45,7 @@ bool RevealGatheringItemAction::Execute(Event& event)
     {
         GameObject* go = *tIter;
         if (!go || !sServerFacade.isSpawned(go) ||
-                sServerFacade.IsDistanceLessOrEqualThan(sServerFacade.GetDistance2d(bot, go), sPlayerbotAIConfig.gatheringDistance))
+                sServerFacade.IsDistanceLessOrEqualThan(sServerFacade.getDistance2d(bot, go), sPlayerbotAIConfig.gatheringDistance))
             continue;
 
         if (LockEntry const *lockInfo = sLockStore.LookupEntry(go->GetGOInfo()->GetLockId()))
@@ -91,7 +91,7 @@ bool RevealGatheringItemAction::Execute(Event& event)
     }
 
     // everything is fine, do it
-    ai->Ping(go->GetPositionX(), go->GetPositionY());
+    ai->Ping(go->getPositionX(), go->getPositionY());
     bot->Say(msg.str(), LANG_UNIVERSAL);
     return true;
 }

@@ -139,10 +139,10 @@ void TestRegistry::GenerateMovementTestsImpl(int maxTests, float minDist, float 
             if (startPos.isBg() || endPos.isBg())
                 continue;
 
-            if (startPos.isDungeon() && startPos.getMapEntry()->IsRaid())
+            if (startPos.isDungeon() && startPos.GetMapEntry()->IsRaid())
                 continue;
 
-            if (endPos.isDungeon() && endPos.getMapEntry()->IsRaid())
+            if (endPos.isDungeon() && endPos.GetMapEntry()->IsRaid())
                 continue;
 
             float dist = startPos.distance(endPos);
@@ -304,15 +304,15 @@ void TestRegistry::GenerateBossWalkTest()
     {
         for (auto& point : destination->GetPoints())
         {
-            if (!point->getMapEntry())
+            if (!point->GetMapEntry())
                 continue;
 
-            const MapEntry * mapEntry = point->getMapEntry();
+            const MapEntry * mapEntry = point->GetMapEntry();
 
             if (!mapEntry->IsDungeon())
                 continue;
 
-            const InstanceTemplate* instanceTemplate = point->getInstanceTemplate();
+            const InstanceTemplate* instanceTemplate = point->GetInstanceTemplate();
             if (!instanceTemplate)
                 continue;
 
@@ -340,15 +340,15 @@ void TestRegistry::GenerateBossWalkTest()
 
             if (!ParseLocation(mapName, entry))
             {
-                for (auto& node : sTravelNodeMap.getNodes())
+                for (auto& node : sTravelNodeMap.GetNodes())
                 {
-                    if (node->getMapId() != mapEntry->MapID)
+                    if (node->GetMapId() != mapEntry->MapID)
                         continue;
 
-                    if (!node->isPortal())
+                    if (!node->IsPortal())
                         continue;
 
-                    for (auto& [otherNode, path] : *node->getLinks())
+                    for (auto& [otherNode, path] : *node->GetLinks())
                     {
                         if (path->getPathType() != TravelNodePathType::areaTrigger)
                             continue;

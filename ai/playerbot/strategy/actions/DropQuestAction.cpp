@@ -6,8 +6,8 @@ using namespace ai;
 
 bool DropQuestAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string link = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string link = event.GetParam();
     if (!GetMaster())
         return false;
 
@@ -32,7 +32,7 @@ bool DropQuestAction::Execute(Event& event)
             entry = logQuest;
 
             bot->SetQuestStatus(entry, QUEST_STATUS_NONE);
-            bot->getQuestStatusMap()[entry].m_rewarded = false;
+            bot->GetQuestStatusMap()[entry].m_rewarded = false;
 
             dropped = true;
 
@@ -49,8 +49,8 @@ bool DropQuestAction::Execute(Event& event)
 
 bool CleanQuestLogAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string link = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string link = event.GetParam();
     if (ai->HasActivePlayerMaster())
         return false;
 
@@ -148,7 +148,7 @@ void CleanQuestLogAction::DropQuestType(Player* requester, uint8 &numQuest, uint
         }
 
         //Drop quest.
-        bot->GetPlayerbotAI()->DropQuest(questId);
+        PlayerbotAIStorage::Instance().GetAI(bot)->DropQuest(questId);
 
         numQuest--;
 
@@ -163,7 +163,7 @@ bool CleanQuestLogAction::HasProgress(Player* bot, Quest const* quest)
     if (bot->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE)
         return true;
 
-    QuestStatusData questStatus = bot->getQuestStatusMap()[questId];
+    QuestStatusData questStatus = bot->GetQuestStatusMap()[questId];
 
     for (int i = 0; i < QUEST_OBJECTIVES_COUNT; i++)
     {

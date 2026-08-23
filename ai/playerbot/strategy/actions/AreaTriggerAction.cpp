@@ -7,13 +7,13 @@ using namespace ai;
 
 bool ReachAreaTriggerAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     uint32 triggerId;
 
     if (ai->IsRealPlayer()) //Do not trigger own area trigger.
         return false;
 
-    WorldPacket p(event.getPacket());
+    WorldPacket p(event.GetPacket());
     p.rpos(0);
     p >> triggerId;
 
@@ -32,15 +32,15 @@ bool ReachAreaTriggerAction::Execute(Event& event)
         return true;
     }
 
-    if (bot->GetMapId() != atEntry->mapid || bot->GetDistance(atEntry->x, atEntry->y, atEntry->z) > sPlayerbotAIConfig.sightDistance)
+    if (bot->GetMapId() != atEntry->mapId || bot->getDistance(atEntry->x, atEntry->y, atEntry->z) > sPlayerbotAIConfig.sightDistance)
     {
         ai->TellError(requester, "I won't follow: too far away");
         return true;
     }
 
     MotionMaster &mm = *bot->GetMotionMaster();
-	mm.MovePoint(atEntry->mapid, atEntry->x, atEntry->y, atEntry->z, FORCED_MOVEMENT_RUN);
-    const float distance = sqrt(bot->GetDistance(atEntry->x, atEntry->y, atEntry->z, DIST_CALC_NONE));
+	mm.MovePoint(atEntry->mapId, atEntry->x, atEntry->y, atEntry->z, FORCED_MOVEMENT_RUN);
+    const float distance = sqrt(bot->getDistance(atEntry->x, atEntry->y, atEntry->z, DIST_CALC_NONE));
     const float duration = 1000.0f * distance / bot->GetSpeed(MOVE_RUN) + sPlayerbotAIConfig.reactDelay;
     ai->TellError(requester, "Wait for me");
     SetDuration(duration);

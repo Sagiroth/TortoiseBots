@@ -115,7 +115,7 @@ uint32 MoneyNeededForValue::Calculate()
 {
     NeedMoneyFor needMoneyFor = NeedMoneyFor(stoi(getQualifier()));
 
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     AiObjectContext* context = ai->GetAiObjectContext();
 
     uint32 moneyWanted = 0;
@@ -131,13 +131,13 @@ uint32 MoneyNeededForValue::Calculate()
         moneyWanted = AI_VALUE(uint32, "max repair cost");
         break;
     case NeedMoneyFor::ammo:
-        moneyWanted = (bot->getClass() == CLASS_HUNTER) ? (level * level * level) / 10 : 0; //Or level^3 (1s @ lvl10, 30s @ lvl30, 2g @ lvl60, 5g @ lvl80): Todo replace (should be best ammo buyable x 8 stacks cost)
+        moneyWanted = (bot->GetClass() == CLASS_HUNTER) ? (level * level * level) / 10 : 0; //Or level^3 (1s @ lvl10, 30s @ lvl30, 2g @ lvl60, 5g @ lvl80): Todo replace (should be best ammo buyable x 8 stacks cost)
         break;
     case NeedMoneyFor::spells:
         moneyWanted = AI_VALUE2(uint32, "train cost", TRAINER_TYPE_CLASS);
         break;
     case NeedMoneyFor::travel:
-        moneyWanted = bot->isTaxiCheater() ? 0 : 1500; //15s for traveling half a continent. Todo: Add better calculation (Should be ???)
+        moneyWanted = bot->IsTaxiCheater() ? 0 : 1500; //15s for traveling half a continent. Todo: Add better calculation (Should be ???)
         break;
     case NeedMoneyFor::gear:
         moneyWanted = level * level * level; //Or level^3 (10s @ lvl10, 3g @ lvl30, 20g @ lvl60, 50g @ lvl80): Todo replace (Should be ~total cost of all >green gear equiped)

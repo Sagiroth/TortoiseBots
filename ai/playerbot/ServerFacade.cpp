@@ -18,10 +18,10 @@ float ServerFacade::GetDistance2d(Unit *unit, WorldObject* wo)
 
     float dist =
 #ifdef MANGOS
-    unit->GetDistance2d(wo);
+    unit->getDistance2d(wo);
 #endif
 #ifdef CMANGOS
-    sqrt(unit->GetDistance2d(wo->GetPositionX(), wo->GetPositionY(), DIST_CALC_NONE));
+    sqrt(unit->getDistance2d(wo->getPositionX(), wo->getPositionY(), DIST_CALC_NONE));
 #endif
     return round(dist * 10.0f) / 10.0f;
 }
@@ -30,10 +30,10 @@ float ServerFacade::GetDistance2d(Unit *unit, float x, float y)
 {
     float dist =
 #ifdef MANGOS
-    unit->GetDistance2d(x, y);
+    unit->getDistance2d(x, y);
 #endif
 #ifdef CMANGOS
-    sqrt(unit->GetDistance2d(x, y, DIST_CALC_NONE));
+    sqrt(unit->getDistance2d(x, y, DIST_CALC_NONE));
 #endif
     return round(dist * 10.0f) / 10.0f;
 }
@@ -76,7 +76,7 @@ bool ServerFacade::IsFriendlyTo(Unit* bot, Unit* to)
     return bot->IsFriendlyTo(to);
 #endif
 #ifdef CMANGOS
-    return bot->IsFriend(to);
+    return bot->IsFriendlyTo(to);
 #endif
 }
 
@@ -86,7 +86,7 @@ bool ServerFacade::IsHostileTo(Unit* bot, Unit* to)
     return bot->IsHostileTo(to);
 #endif
 #ifdef CMANGOS
-    return bot->IsEnemy(to);
+    return bot->IsHostileTo(to);
 #endif
 }
 
@@ -96,7 +96,7 @@ bool ServerFacade::IsFriendlyTo(WorldObject* bot, Unit* to)
     return bot->IsFriendlyTo(to);
 #endif
 #ifdef CMANGOS
-    return bot->IsFriend(to);
+    return bot->IsFriendlyTo(to);
 #endif
 }
 
@@ -106,7 +106,7 @@ bool ServerFacade::IsHostileTo(WorldObject* bot, Unit* to)
     return bot->IsHostileTo(to);
 #endif
 #ifdef CMANGOS
-    return bot->IsEnemy(to);
+    return bot->IsHostileTo(to);
 #endif
 }
 
@@ -120,10 +120,10 @@ bool ServerFacade::IsSpellReady(Player* bot, uint32 spell, uint32 itemId)
     if (itemId)
     {
         const ItemPrototype* proto = sObjectMgr.GetItemPrototype(itemId);
-        return bot->IsSpellReady(spell, proto);
+        return !bot->HasSpellCooldown(spell);
     }
     else
-        return bot->IsSpellReady(spell);
+        return !bot->HasSpellCooldown(spell);
 #endif
 }
 
@@ -142,7 +142,7 @@ bool ServerFacade::IsUnderwater(Unit *unit)
 FactionTemplateEntry const* ServerFacade::GetFactionTemplateEntry(Unit *unit)
 {
 #ifdef MANGOS
-    return unit->getFactionTemplateEntry();
+    return unit->GetFactionTemplateEntry();
 #endif
 #ifdef CMANGOS
     return unit->GetFactionTemplateEntry();
@@ -167,9 +167,9 @@ bool ServerFacade::isMoving(Unit *unit)
 #endif
 #ifdef CMANGOS
 #ifdef MANGOSBOT_ONE
-    return !unit->IsStopped() || unit->IsFalling() || unit->IsJumping();
+    return !unit->IsStopped() || unit->HasUnitState(UNIT_STAT_FALLING) || unit->IsJumping();
 #else
-    return !unit->IsStopped() || unit->IsFalling();
+    return !unit->IsStopped() || unit->HasUnitState(UNIT_STAT_FALLING);
 #endif
 #endif
 }

@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "../../runtime/PlayerbotAIStorage.h" // Headless storage shim
 #include "TravelAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
@@ -29,7 +30,7 @@ bool TravelAction::isUseful()
     if (!AI_VALUE(bool,"travel target active"))
         return false;
 
-    if (bot->GetGroup() && !bot->GetGroup()->IsLeader(bot->GetObjectGuid()))
+    if (bot->GetGroup() && !bot->GetGroup()->IsLeader(bot->getObjectGuid()))
         if (ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("guard", BotState::BOT_STATE_NON_COMBAT))
             return false;
 
@@ -55,7 +56,7 @@ bool TravelAction::isUseful()
 bool MoveToDarkPortalAction::Execute(Event& event)
 {
     if (bot->GetGroup())
-        if (!ai->IsGroupLeader() && ai->HasActivePlayerMaster() && !bot->GetPlayerbotAI()->GetGroupMaster()->GetPlayerbotAI())
+        if (!ai->IsGroupLeader() && ai->HasActivePlayerMaster() && !PlayerbotAIStorage::Instance().GetAI(PlayerbotAIStorage::Instance().GetAI(bot)->GetGroupMaster()))
             return false;
 
 #ifndef MANGOSBOT_ZERO
@@ -128,7 +129,7 @@ bool DarkPortalAzerothAction::Execute(Event& event)
         WorldPacket packet(CMSG_AREATRIGGER);
         packet << 4354;
 
-        return bot->GetPlayerbotAI()->DoSpecificAction("reach area trigger", Event("travel action", packet));
+        return PlayerbotAIStorage::Instance().GetAI(bot)->DoSpecificAction("reach area trigger", Event("travel action", packet));
     }
 #endif
     return false;

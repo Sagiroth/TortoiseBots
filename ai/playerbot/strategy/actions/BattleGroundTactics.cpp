@@ -2318,84 +2318,84 @@ bool BGTactics::wsgPaths()
 
     uint32 Preference = context->GetValue<uint32>("bg role")->Get();
 
-    bool atAllyGY = bot->GetPositionX() > 1388.f && bot->GetPositionY() > 1515.f && bot->GetPositionZ() > 335.0f;
-    bool atHordeGY = bot->GetPositionY() < 1400.0f && bot->GetPositionX() < 1075.0f && bot->GetPositionZ() > 330.0f;
+    bool atAllyGY = bot->getPositionX() > 1388.f && bot->getPositionY() > 1515.f && bot->getPositionZ() > 335.0f;
+    bool atHordeGY = bot->getPositionY() < 1400.0f && bot->getPositionX() < 1075.0f && bot->getPositionZ() > 330.0f;
 
-    if (pos.x > bot->GetPositionX()) //He's somewhere at the alliance side
+    if (pos.x > bot->getPositionX()) //He's somewhere at the alliance side
     {
         if (Preference < 4 && !atHordeGY) //preference < 4 = move through tunnel (< 6 becuse GY disabled)
         {
-            if (bot->GetPositionX() < 1006.f) //to the fasty
+            if (bot->getPositionX() < 1006.f) //to the fasty
             {
                 MoveTo(bg->GetMapId(), 1006.590210f, 1450.435059f, 335.721283f);
                 return  true;
             }
-            else if (bot->GetPositionX() < 1125.f) //to the horde entrance
+            else if (bot->getPositionX() < 1125.f) //to the horde entrance
             {
-                if (bot->GetPositionY() < 1400.f)
-                    MoveTo(bg->GetMapId(), 1125.778076f, bot->GetPositionY(), 316.567047f);
+                if (bot->getPositionY() < 1400.f)
+                    MoveTo(bg->GetMapId(), 1125.778076f, bot->getPositionY(), 316.567047f);
                 else
                     MoveTo(bg->GetMapId(), 1125.778076f, 1460.059937f, 316.0f);
                 return  true;
             }
         }
         else if (Preference < 7 || (atHordeGY && urand(0, 2))) { // preference < 7 = move through graveyard (BUGGED)
-            if (bot->GetPositionX() < 985.f) //to the gate at the upper tunnel
+            if (bot->getPositionX() < 985.f) //to the gate at the upper tunnel
             {
                 MoveTo(bg->GetMapId(), 985.940125f, 1423.260254f, 345.418121f);
                 return  true;
             }
-            else if (bot->GetPositionX() < 1054.5f) //to the gate at the upper tunnel
+            else if (bot->getPositionX() < 1054.5f) //to the gate at the upper tunnel
             {
                 MoveTo(bg->GetMapId(), 1055.182251f, 1396.967529f, 339.361511f);
                 return  true;
             }
-            else if (bot->GetPositionX() < 1070.f) //to the horde entrance
+            else if (bot->getPositionX() < 1070.f) //to the horde entrance
             {
                 MoveTo(bg->GetMapId(), 1076.778076f, 1396.0f, 324.0f, false, false, true);
                 return  true;
             }
-            else if (bot->GetPositionX() < 1125.f) //to the horde entrance
+            else if (bot->getPositionX() < 1125.f) //to the horde entrance
             {
-                MoveTo(bg->GetMapId(), 1125.778076f, bot->GetPositionY(), 316.567047f);
+                MoveTo(bg->GetMapId(), 1125.778076f, bot->getPositionY(), 316.567047f);
                 return  true;
             }
         }
         else if (!atHordeGY || urand(0, 2)){ //all other preference: run down the ramp 
-            if (bot->GetPositionX() < 985.f) //to the gate at the upper tunnel
+            if (bot->getPositionX() < 985.f) //to the gate at the upper tunnel
             {
                 MoveTo(bg->GetMapId(), 985.940125f, 1423.260254f, 345.418121f);
                 return  true;
             }
-            else if (bot->GetPositionX() < 1031.f) //to the first step of the ramp from the tunnel
+            else if (bot->getPositionX() < 1031.f) //to the first step of the ramp from the tunnel
             {
                 MoveTo(bg->GetMapId(), 1031.764282f, 1454.516235f, 343.337860f);
                 return  true;
             }
-            else if (bot->GetPositionX() < 1051.f && bot->GetPositionY() < 1494.f) //to the second step of the ramp from the tunnel
+            else if (bot->getPositionX() < 1051.f && bot->getPositionY() < 1494.f) //to the second step of the ramp from the tunnel
             {
                 MoveTo(bg->GetMapId(), 1051.304810f, 1494.917725f, 342.043518f);
                 return  true;
             }
-            else if (bot->GetPositionX() < 1050.f && bot->GetPositionY() < 1538.f) //down the ramp
+            else if (bot->getPositionX() < 1050.f && bot->getPositionY() < 1538.f) //down the ramp
             {
                 MoveTo(bg->GetMapId(), 1050.089478f, 1538.054443f, 332.460388f);
                 return  true;
             }
-            else if (bot->GetPositionX() < 1098.f) //at the ground now
+            else if (bot->getPositionX() < 1098.f) //at the ground now
             {
                 MoveTo(bg->GetMapId(), 1098.716797f, 1535.618652f, 315.727539f);
                 return  true;
             }
-            else if (bot->GetPositionX() < 1239.f)
+            else if (bot->getPositionX() < 1239.f)
             {
                 MoveTo(bg->GetMapId(), 1239.085693f, 1541.408569f + frand(-2, +2), 306.491791f);
                 return  true;
             }
         }
-        if (bot->GetPositionX() < 1227.f) //move to a more random location in the middle part
+        if (bot->getPositionX() < 1227.f) //move to a more random location in the middle part
         {
-            if (bot->GetPositionY() < 1400.f)
+            if (bot->getPositionY() < 1400.f)
                 MoveTo(bg->GetMapId(), 1269.962158f, 1382.655640f + frand(-2, +2), 308.545288f);
             else
                 MoveTo(bg->GetMapId(), 1227.446289f, 1476.235718f + frand(-2, +2), 307.484589f);
@@ -2403,12 +2403,12 @@ bool BGTactics::wsgPaths()
         }
         if (Preference < 5) //through the tunnel
         {
-            if (bot->GetPositionX() < 1351.f) //move to the alliance entrance
+            if (bot->getPositionX() < 1351.f) //move to the alliance entrance
             {
                 MoveTo(bg->GetMapId(), 1351.759155f + frand(0, 2), 1462.368042f + frand(-2, +2), 323.673737f);
                 return  true;
             }
-            else if (bot->GetPositionX() < 1449.f) //move to the alliance fasty
+            else if (bot->getPositionX() < 1449.f) //move to the alliance fasty
             {
                 MoveTo(bg->GetMapId(), 1449.574219f, 1470.698608f, 342.675476f);
                 return  true;
@@ -2419,22 +2419,22 @@ bool BGTactics::wsgPaths()
             }
         }
         else { //up the ramp
-            if (bot->GetPositionX() < 1360.f) //gate at the ramp
+            if (bot->getPositionX() < 1360.f) //gate at the ramp
             {
                 MoveTo(bg->GetMapId(), 1360.088501f, 1393.451660f + frand(-2, +2), 326.183624f);
                 return  true;
             }
-            if (bot->GetPositionX() < 1399.f) //half way up
+            if (bot->getPositionX() < 1399.f) //half way up
             {
                 MoveTo(bg->GetMapId(), 1399.362061f, 1405.105347f + frand(-2, +2), 341.481476f);
                 return  true;
             }
-            if (bot->GetPositionX() < 1417.f) //first halway
+            if (bot->getPositionX() < 1417.f) //first halway
             {
                 MoveTo(bg->GetMapId(), 1417.096191f, 1459.552368f + frand(-2, +2), 349.591827f);
                 return  true;
             }
-            if (bot->GetPositionX() < 1500.2f) //gate to the flag room
+            if (bot->getPositionX() < 1500.2f) //gate to the flag room
             {
                 MoveTo(bg->GetMapId(), 1505.045654f, 1493.787231f, 352.017670f);
                 return  true;
@@ -2449,28 +2449,28 @@ bool BGTactics::wsgPaths()
     {
         if (Preference < 4 && !atAllyGY) //through the tunnel
         {
-            if (bot->GetPositionX() > 1449.7f) //to the fasty
+            if (bot->getPositionX() > 1449.7f) //to the fasty
             {
                 MoveTo(bg->GetMapId(), 1449.574219f, 1470.698608f, 342.675476f);
                 return  true;
             }
-            else if (bot->GetPositionX() > 1443.9f) { // moving from the fasty to the gate directly is bugged.. moving back to the tunnel first
+            else if (bot->getPositionX() > 1443.9f) { // moving from the fasty to the gate directly is bugged.. moving back to the tunnel first
                 MoveTo(bg->GetMapId(), 1443.761963f, 1459.581909f, 342.115417f);
             }
-            else if (bot->GetPositionX() > 1380.9f) { // move into the tunnel
+            else if (bot->getPositionX() > 1380.9f) { // move into the tunnel
                 MoveTo(bg->GetMapId(), 1380.761963f, 1457.581909f, 329.115417f);
             }
-            else if (bot->GetPositionX() > 1351.9f) //to the alliance entrance
+            else if (bot->getPositionX() > 1351.9f) //to the alliance entrance
             {
-                if (bot->GetPositionY() > 1500.f)
-                    MoveTo(bg->GetMapId(), 1125.778076f, bot->GetPositionY(), 315.698883f);
+                if (bot->getPositionY() > 1500.f)
+                    MoveTo(bg->GetMapId(), 1125.778076f, bot->getPositionY(), 315.698883f);
                 else
                     MoveTo(bg->GetMapId(), 1125.778076f, 1452.059937f, 315.698883f);
                 return  true;
             }
-            if (bot->GetPositionX() > 1240.f) //move to a more random location in the middle part
+            if (bot->getPositionX() > 1240.f) //move to a more random location in the middle part
             {
-                if (bot->GetPositionY() > 1500.f)
+                if (bot->getPositionY() > 1500.f)
                     MoveTo(bg->GetMapId(), 1239.085693f, 1541.408569f + frand(-2, +2), 306.491791f);
                 else
                     MoveTo(bg->GetMapId(), 1227.446289f, 1476.235718f + frand(-2, +2), 307.484589f);
@@ -2479,27 +2479,27 @@ bool BGTactics::wsgPaths()
         }
         else if (Preference < 7 || (atAllyGY && urand(0, 2))) // through the graveyard
         {
-            if (bot->GetPositionX() > 1510.2f) //To the first gate
+            if (bot->getPositionX() > 1510.2f) //To the first gate
             {
                 MoveTo(bg->GetMapId(), 1500.045654f, 1493.787231f, 352.017670f);
                 return  true;
             }
-            else if (bot->GetPositionX() > 1460.f) //to the second gate
+            else if (bot->getPositionX() > 1460.f) //to the second gate
             {
                 MoveTo(bg->GetMapId(), 1459.490234f, 1494.175072f, 351.565155f);
                 return  true;
             }
-            else if (bot->GetPositionX() > 1424.f || (bot->GetPositionX() > 1388.f && bot->GetPositionY() > 1530.f && bot->GetPositionZ() > 335.0f)) //to the graveyard
+            else if (bot->getPositionX() > 1424.f || (bot->getPositionX() > 1388.f && bot->getPositionY() > 1530.f && bot->getPositionZ() > 335.0f)) //to the graveyard
             {
                 MoveTo(bg->GetMapId(), 1422.106201f, 1529.851196f, 342.0f);
                 return  true;
             }
-            else if (bot->GetPositionX() > 1400.f) // to the field (jump down)
+            else if (bot->getPositionX() > 1400.f) // to the field (jump down)
             {
                 MoveTo(bg->GetMapId(), 1398.7f, 1534.6f, 322.5f, false, false, true);
                 return  true;
             }
-            else if (bot->GetPositionX() > 1345.f) // to the field
+            else if (bot->getPositionX() > 1345.f) // to the field
             {
                 MoveTo(bg->GetMapId(), 1344.334595f + frand(-2, +2), 1514.917236f, 319.081726f);
                 return  true;
@@ -2507,32 +2507,32 @@ bool BGTactics::wsgPaths()
         }
         else if (!atAllyGY || urand(0, 2))
         {
-            if (bot->GetPositionX() > 1505.2f) //To the first gate
+            if (bot->getPositionX() > 1505.2f) //To the first gate
             {
             MoveTo(bg->GetMapId(), 1500.045654f, 1493.787231f, 352.017670f);
             return  true;
             }
-            else if (bot->GetPositionX() > 1460.f) //to the second gate
+            else if (bot->getPositionX() > 1460.f) //to the second gate
             {
             MoveTo(bg->GetMapId(), 1459.490234f, 1494.175072f, 351.565155f);
             return  true;
             }
-            else if (bot->GetPositionX() > 1418.f) //half on the upper ramp
+            else if (bot->getPositionX() > 1418.f) //half on the upper ramp
             {
             MoveTo(bg->GetMapId(), 1417.096191f, 1459.552368f, 349.591827f);
             return  true;
             }
-            else if (bot->GetPositionX() > 1400.f) //middle down the ramp
+            else if (bot->getPositionX() > 1400.f) //middle down the ramp
             {
             MoveTo(bg->GetMapId(), 1399.362061f, 1405.105347f, 341.481476f);
             return  true;
             }
-            else if (bot->GetPositionX() > 1357.f) //at the gate
+            else if (bot->getPositionX() > 1357.f) //at the gate
             {
             MoveTo(bg->GetMapId(), 1356.088501f, 1393.451660f, 326.183624f);
             return  true;
             }
-            else if (bot->GetPositionX() > 1270.f) // run the gate side way to the middle field
+            else if (bot->getPositionX() > 1270.f) // run the gate side way to the middle field
             {
                 MoveTo(bg->GetMapId(), 1269.962158f, 1398.655640f + frand(-2, +2), 309.945288f);
             //MoveTo(bg->GetMapId(), 1269.962158f, 1382.655640f + frand(-2, +2), 308.545288f);
@@ -2541,27 +2541,27 @@ bool BGTactics::wsgPaths()
         }
         if (Preference < 5) //horde ramp
         {
-            if (bot->GetPositionX() > 1099.f) //move to the horde ramp gate
+            if (bot->getPositionX() > 1099.f) //move to the horde ramp gate
             {
                 MoveTo(bg->GetMapId(), 1096.716797f, 1535.618652f, 315.727539f);
                 return  true;
             }
-            if (bot->GetPositionX() > 1071.f) //move the ramp up a piece
+            if (bot->getPositionX() > 1071.f) //move the ramp up a piece
             {
                 MoveTo(bg->GetMapId(), 1070.089478f, 1538.054443f, 332.460388f);
                 return  true;
             }
-            if (bot->GetPositionX() > 1050.2f) //move the ramp up a piece
+            if (bot->getPositionX() > 1050.2f) //move the ramp up a piece
             {
                 MoveTo(bg->GetMapId(), 1050.089478f, 1538.054443f, 332.460388f);
                 return  true;
             }
-            if (bot->GetPositionX() > 1032.f) //up in front of first entrance
+            if (bot->getPositionX() > 1032.f) //up in front of first entrance
             {
                 MoveTo(bg->GetMapId(), 1031.764282f, 1454.516235f, 343.337860f);
                 return  true;
             }
-            if (bot->GetPositionX() > 986.f) //up in front of first entrance
+            if (bot->getPositionX() > 986.f) //up in front of first entrance
             {
                 MoveTo(bg->GetMapId(), 985.940125f, 1423.260254f, 345.418121f);
                 return  true;
@@ -2571,12 +2571,12 @@ bool BGTactics::wsgPaths()
         }
         else { //horde tunnel
 
-            if (bot->GetPositionX() > 1127.9f) //move to the horde entrance
+            if (bot->getPositionX() > 1127.9f) //move to the horde entrance
             {
                 MoveTo(bg->GetMapId(), 1127.778076f, 1462.059937f, 315.698883f);
                 return  true;
             }
-            else if (bot->GetPositionX() > 1006.7f) //move to the horde fasty
+            else if (bot->getPositionX() > 1006.7f) //move to the horde fasty
             {
                 MoveTo(bg->GetMapId(), 1006.590210f, 1450.435059f, 335.721283f);
                 return  true;
@@ -2600,16 +2600,16 @@ bool BGTactics::wsgRoofJump()
 
     uint32 Preference = context->GetValue<uint32>("bg role")->Get();
 
-    bool atHordeSecondFloorJump = bot->GetPositionX() < 933.f && bot->GetPositionY() > 1450.f && bot->GetPositionZ() > 354.f;
-    bool atAllianceSecondFloorJump = bot->GetPositionX() > 1522.f && bot->GetPositionY() < 1468.f && bot->GetPositionZ() > 361.f;
-    bool atHordeRoof = bot->GetPositionX() < 987.f && bot->GetPositionY() > 1417.f && bot->GetPositionZ() > 364.f;
-    bool atAllianceRoof = bot->GetPositionX() > 1465.f && bot->GetPositionZ() > 370.f;
+    bool atHordeSecondFloorJump = bot->getPositionX() < 933.f && bot->getPositionY() > 1450.f && bot->getPositionZ() > 354.f;
+    bool atAllianceSecondFloorJump = bot->getPositionX() > 1522.f && bot->getPositionY() < 1468.f && bot->getPositionZ() > 361.f;
+    bool atHordeRoof = bot->getPositionX() < 987.f && bot->getPositionY() > 1417.f && bot->getPositionZ() > 364.f;
+    bool atAllianceRoof = bot->getPositionX() > 1465.f && bot->getPositionZ() > 370.f;
     bool inCombat = bot->IsInCombat();
 
     if (atHordeRoof && (!inCombat || (pos.z < 365.f && pos.x > 987.f)))
     {
         // not at jump point
-        if (bot->GetPositionX() > 933.f || bot->GetPositionY() > 1450.f)
+        if (bot->getPositionX() > 933.f || bot->getPositionY() > 1450.f)
             return MoveTo(bg->GetMapId(), WS_FLAG_HORDE_ROOF_JUMP_UPPER.x, WS_FLAG_HORDE_ROOF_JUMP_UPPER.y, WS_FLAG_HORDE_ROOF_JUMP_UPPER.z);
         else
             return MoveTo(bg->GetMapId(), WS_FLAG_HORDE_ROOF_JUMP_LOWER.x, WS_FLAG_HORDE_ROOF_JUMP_LOWER.y, WS_FLAG_HORDE_ROOF_JUMP_LOWER.z, false, false, true);
@@ -2618,7 +2618,7 @@ bool BGTactics::wsgRoofJump()
     if (atAllianceRoof && (!inCombat || (pos.z < 372.f && pos.x < 1465.f)))
     {
         // not at jump point
-        if (bot->GetPositionX() < 1521.f || bot->GetPositionY() > 1467.f)
+        if (bot->getPositionX() < 1521.f || bot->getPositionY() > 1467.f)
             return MoveTo(bg->GetMapId(), WS_FLAG_ALLIANCE_ROOF_JUMP_UPPER.x, WS_FLAG_ALLIANCE_ROOF_JUMP_UPPER.y, WS_FLAG_ALLIANCE_ROOF_JUMP_UPPER.z);
         else
             return MoveTo(bg->GetMapId(), WS_FLAG_ALLIANCE_ROOF_JUMP_LOWER.x, WS_FLAG_ALLIANCE_ROOF_JUMP_LOWER.y, WS_FLAG_ALLIANCE_ROOF_JUMP_LOWER.z, false, false, true);
@@ -2627,7 +2627,7 @@ bool BGTactics::wsgRoofJump()
     if (atHordeSecondFloorJump && (!inCombat || (pos.z < 354.f && pos.x > 933.f)))
     {
         // not at jump point
-        if (bot->GetPositionY() > 1452.f)
+        if (bot->getPositionY() > 1452.f)
             return MoveTo(bg->GetMapId(), WS_FLAG_HORDE_FLOOR_JUMP_UPPER.x, WS_FLAG_HORDE_FLOOR_JUMP_UPPER.y, WS_FLAG_HORDE_FLOOR_JUMP_UPPER.z);
         else
             return MoveTo(bg->GetMapId(), WS_FLAG_HORDE_FLOOR_JUMP_LOWER.x, WS_FLAG_HORDE_FLOOR_JUMP_LOWER.y, WS_FLAG_HORDE_FLOOR_JUMP_LOWER.z, false, false, true);
@@ -2636,7 +2636,7 @@ bool BGTactics::wsgRoofJump()
     if (atAllianceSecondFloorJump && (!inCombat || (pos.z < 361.f && pos.x < 1421.f)))
     {
         // not at jump point
-        if (bot->GetPositionY() < 1468.f)
+        if (bot->getPositionY() < 1468.f)
             return MoveTo(bg->GetMapId(), WS_FLAG_ALLIANCE_FLOOR_JUMP_UPPER.x, WS_FLAG_ALLIANCE_FLOOR_JUMP_UPPER.y, WS_FLAG_ALLIANCE_FLOOR_JUMP_UPPER.z);
         else
             return MoveTo(bg->GetMapId(), WS_FLAG_ALLIANCE_FLOOR_JUMP_UPPER.x, WS_FLAG_ALLIANCE_FLOOR_JUMP_UPPER.y, WS_FLAG_ALLIANCE_FLOOR_JUMP_UPPER.z, false, false, true);
@@ -2653,18 +2653,18 @@ bool BGTactics::eotsJump()
 
     uint32 role = context->GetValue<uint32>("bg role")->Get();
 
-    bool atAllyIsle = bot->GetPositionX() > 2496.f && bot->GetPositionZ() > 1250.0f;
-    bool atHordeIsle = bot->GetPositionX() < 1834.0f && bot->GetPositionZ() > 1250.0f;
+    bool atAllyIsle = bot->getPositionX() > 2496.f && bot->getPositionZ() > 1250.0f;
+    bool atHordeIsle = bot->getPositionX() < 1834.0f && bot->getPositionZ() > 1250.0f;
 
     if (bot->GetTeam() == ALLIANCE)
     {
         if (atAllyIsle) // move to island end
             return urand(0, 1) ? MoveTo(bg->GetMapId(), 2492.0f, 1597.0f + frand(-2, +2), 1255.0f) : MoveTo(bg->GetMapId(), 2495.0f, 1604.0f + frand(-2, +2), 1256.0f);
-        if (bot->GetPositionX() < 2500.f && bot->GetPositionZ() > 1245.0f) // jump on first island
+        if (bot->getPositionX() < 2500.f && bot->getPositionZ() > 1245.0f) // jump on first island
             return role < 7 ? MoveTo(bg->GetMapId(), 2484.0f, 1607.0f + frand(-2, +2), 1238.0f, false, false, true) : MoveTo(bg->GetMapId(), 2474.0f, 1602.0f + frand(-2, +2), 1240.0f, false, false, true);
-        if (bot->GetPositionX() > 2470.f && bot->GetPositionZ() > 1230.0f) // jump on ground
+        if (bot->getPositionX() > 2470.f && bot->getPositionZ() > 1230.0f) // jump on ground
         {
-            if (bot->GetPositionX() > 2480.f)
+            if (bot->getPositionX() > 2480.f)
                 return MoveTo(bg->GetMapId(), 2486.0f, 1624.0f + frand(-2, +2), 1226.0f, false, false, true);
             else
                 return MoveTo(bg->GetMapId(), 2458.0f, 1601.0f + frand(-2, +2), 1207.0f, false, false, true);
@@ -2674,11 +2674,11 @@ bool BGTactics::eotsJump()
     {
         if (atHordeIsle) // move to island end
             return urand(0, 1) ? MoveTo(bg->GetMapId(), 1835.0f, 1544.0f + frand(-2, +2), 1255.0f) : MoveTo(bg->GetMapId(), 1835.0f, 1534.0f + frand(-2, +2), 1254.0f);
-        if (bot->GetPositionX() > 1830.f && bot->GetPositionZ() > 1250.0f) // jump on first island
+        if (bot->getPositionX() > 1830.f && bot->getPositionZ() > 1250.0f) // jump on first island
             return role < 7 ? MoveTo(bg->GetMapId(), 1853.0f, 1530.0f + frand(-2, +2), 1239.0f, false, false, true) : MoveTo(bg->GetMapId(), 1854.0f, 1542.0f + frand(-2, +2), 1241.0f, false, false, true);
-        if (bot->GetPositionX() < 1859.f && bot->GetPositionZ() > 1230.0f) // jump on ground
+        if (bot->getPositionX() < 1859.f && bot->getPositionZ() > 1230.0f) // jump on ground
         {
-            if (bot->GetPositionY() > 1535.f)
+            if (bot->getPositionY() > 1535.f)
                 return MoveTo(bg->GetMapId(), 1867.0f, 1533.0f + frand(-2, +2), 1210.0f, false, false, true);
             else
                 return MoveTo(bg->GetMapId(), 1848.0f, 1512.0f + frand(-2, +2), 1225.0f, false, false, true);
@@ -2989,7 +2989,7 @@ static bool BgTeamHasRealPlayer(BattleGround* bg, Team team)
     for (auto const& itr : bg->GetPlayers())
     {
         if (Player* p = sObjectMgr.GetPlayer(itr.first))
-            if (!p->GetPlayerbotAI() && p->GetTeam() == team)
+            if (!PlayerbotAIStorage::Instance().GetAI(p) && p->GetTeam() == team)
                 return true;
     }
     return false;
@@ -3032,7 +3032,7 @@ bool BGTactics::selectObjective(bool reset)
         {
             if (!pos.isSet())
             {
-                pos.Set(objectiveLocation.coord_x, objectiveLocation.coord_y, objectiveLocation.coord_z, objectiveLocation.mapid);
+                pos.Set(objectiveLocation.x, objectiveLocation.y, objectiveLocation.z, objectiveLocation.mapId);
             }
 
             posMap["bg objective"] = pos;
@@ -3084,8 +3084,8 @@ bool BGTactics::selectObjective(bool reset)
                     //ostringstream out;
                     //out << "Protecting " << (bot->GetTeam() == ALLIANCE ? "Alliance FC" : "Horde FC");
                     //bot->Say(out.str(), LANG_UNIVERSAL);
-                    pos.Set(teamFC->GetPositionX(), teamFC->GetPositionY(), teamFC->GetPositionZ(), bot->GetMapId());
-                    if (sServerFacade.GetDistance2d(bot, teamFC) < 50.0f)
+                    pos.Set(teamFC->getPositionX(), teamFC->getPositionY(), teamFC->getPositionZ(), bot->GetMapId());
+                    if (sServerFacade.getDistance2d(bot, teamFC) < 50.0f)
                         Follow(teamFC);
                 }
                 else
@@ -3093,7 +3093,7 @@ bool BGTactics::selectObjective(bool reset)
                     Unit* enemyFC = AI_VALUE(Unit*, "enemy flag carrier");
                     if (enemyFC)
                     {
-                        pos.Set(enemyFC->GetPositionX(), enemyFC->GetPositionY(), enemyFC->GetPositionZ(), bot->GetMapId());
+                        pos.Set(enemyFC->getPositionX(), enemyFC->getPositionY(), enemyFC->getPositionZ(), bot->GetMapId());
 
                         //ostringstream out;
                         //out << "Attacking " << (bot->GetTeam() == ALLIANCE ? "Horde FC" : "Alliance FC");
@@ -3129,7 +3129,7 @@ bool BGTactics::selectObjective(bool reset)
                 Unit* enemyFC = AI_VALUE(Unit*, "enemy flag carrier");
                 if (enemyFC)
                 {
-                    pos.Set(enemyFC->GetPositionX(), enemyFC->GetPositionY(), enemyFC->GetPositionZ(), bot->GetMapId());
+                    pos.Set(enemyFC->getPositionX(), enemyFC->getPositionY(), enemyFC->getPositionZ(), bot->GetMapId());
 
                     //ostringstream out;
                     //out << "Attacking " << (bot->GetTeam() == ALLIANCE ? "Horde FC" : "Alliance FC");
@@ -3213,7 +3213,7 @@ bool BGTactics::selectObjective(bool reset)
             float probabilityToKeepSameObjective = 1.0f; // Start at 100% then lower over time
 
             GameObject* lastObj = botSelectedObjectives[botGUID];
-            float const lastObjDist = bot->GetDistance(lastObj);
+            float const lastObjDist = bot->getDistance(lastObj);
 
             if (lastObjDist < 50.00f) // if we are close, stick to the objective a bit longer
             {
@@ -3262,7 +3262,7 @@ bool BGTactics::selectObjective(bool reset)
 
         if (BgObjective)
         {
-            pos.Set(BgObjective->GetPositionX(), BgObjective->GetPositionY(), BgObjective->GetPositionZ(), BgObjective->GetMapId());
+            pos.Set(BgObjective->getPositionX(), BgObjective->getPositionY(), BgObjective->getPositionZ(), BgObjective->GetMapId());
             posMap["bg objective"] = pos;
             std::string ObjVerbose = "";
 
@@ -3334,7 +3334,7 @@ bool BGTactics::selectObjective(bool reset)
                 {
                     if (!bg->IsActiveEvent(attackObjectivesFront[0], rootTeamIndex) || !bg->IsActiveEvent(attackObjectivesFront[1], rootTeamIndex))
                     { //Capture front objectives before attacking back objectives
-                        //sLog.outDetail("Bot #%d %s:%d <%s>: Get Front Objectives", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->getLevel(), bot->GetName());
+                        //sLog.outDetail("Bot #%d %s:%d <%s>: Get Front Objectives", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
                         if (role < 6) {
                             BgObjective = bot->GetMap()->GetGameObject(bg->GetSingleGameObjectGuid(attackObjectivesFront[0], 0));
                         }
@@ -3345,7 +3345,7 @@ bool BGTactics::selectObjective(bool reset)
                     }
                     else
                     { //Now capture all objectives with priority on back
-                        //sLog.outDetail("Bot #%d %s:%d <%s>: Get All Objectives", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->getLevel(), bot->GetName());
+                        //sLog.outDetail("Bot #%d %s:%d <%s>: Get All Objectives", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
                         if (role < 4)
                         {
                             BgObjective = bot->GetMap()->GetGameObject(bg->GetSingleGameObjectGuid(attackObjectivesFront[0], 0));
@@ -3381,8 +3381,8 @@ bool BGTactics::selectObjective(bool reset)
                 if (teamFC)
                 {
                     BgObjective = teamFC;
-                    //pos.Set(teamFC->GetPositionX(), teamFC->GetPositionY(), teamFC->GetPositionZ(), bot->GetMapId());
-                    if (sServerFacade.GetDistance2d(bot, teamFC) < 50.0f)
+                    //pos.Set(teamFC->getPositionX(), teamFC->getPositionY(), teamFC->getPositionZ(), bot->GetMapId());
+                    if (sServerFacade.getDistance2d(bot, teamFC) < 50.0f)
                         Follow(teamFC);
                 }
                 else
@@ -3391,13 +3391,13 @@ bool BGTactics::selectObjective(bool reset)
                     if (enemyFC)
                     {
                         BgObjective = enemyFC;
-                        //pos.Set(enemyFC->GetPositionX(), enemyFC->GetPositionY(), enemyFC->GetPositionZ(), bot->GetMapId());
+                        //pos.Set(enemyFC->getPositionX(), enemyFC->getPositionY(), enemyFC->getPositionZ(), bot->GetMapId());
                     }
                     else
                     {
                         if (GameObject* pGO = bot->GetMap()->GetGameObject(bg->GetSingleGameObjectGuid(EY_EVENT_CAPTURE_FLAG, EY_EVENT2_FLAG_CENTER)))
                         {
-                            if (pGO->IsSpawned())
+                            if (pGO->isSpawned())
                             {
                                 BgObjective = pGO;
                             }
@@ -3413,7 +3413,7 @@ bool BGTactics::selectObjective(bool reset)
 
             if (!bg->IsActiveEvent(attackObjectivesFront[0], rootTeamIndex) && !bg->IsActiveEvent(attackObjectivesFront[1], rootTeamIndex) && !bg->IsActiveEvent(attackObjectivesBack[0], rootTeamIndex) && !bg->IsActiveEvent(attackObjectivesBack[1], rootTeamIndex))
             { //Retreat with flag
-                //sLog.outDetail("Bot #%d %s:%d <%s>: Retreat with flag", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->getLevel(), bot->GetName());
+                //sLog.outDetail("Bot #%d %s:%d <%s>: Retreat with flag", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
                 if (rootTeam == HORDE)
                 {
                     areaTrigger = 0;
@@ -3427,7 +3427,7 @@ bool BGTactics::selectObjective(bool reset)
             }
             else
             { //Deliver flag
-                //sLog.outDetail("Bot #%d %s:%d <%s>: Deliver flag", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->getLevel(), bot->GetName());
+                //sLog.outDetail("Bot #%d %s:%d <%s>: Deliver flag", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
                 if (bg->IsActiveEvent(EY_AttackObjectives[0], rootTeamIndex))
                 {
                     areaTrigger = AREATRIGGER_FEL_REAVER_RUINS_POINT;
@@ -3465,7 +3465,7 @@ bool BGTactics::selectObjective(bool reset)
 
         if (BgObjective)
         {
-            pos.Set(BgObjective->GetPositionX(), BgObjective->GetPositionY(), BgObjective->GetPositionZ(), BgObjective->GetMapId());
+            pos.Set(BgObjective->getPositionX(), BgObjective->getPositionY(), BgObjective->getPositionZ(), BgObjective->GetMapId());
             posMap["bg objective"] = pos;
             return true;
         }
@@ -3696,7 +3696,7 @@ bool BGTactics::selectObjective(bool reset)
 
                                         // set siege position
                                         ai::PositionEntry siegePos = context->GetValue<ai::PositionMap&>("position")->Get()["bg siege"];
-                                        siegePos.Set(gate->GetPositionX(), gate->GetPositionY(), gate->GetPositionZ(), bot->GetMapId());
+                                        siegePos.Set(gate->getPositionX(), gate->getPositionY(), gate->getPositionZ(), bot->GetMapId());
                                         posMap["bg siege"] = siegePos;
                                         return true;
                                     }
@@ -3967,7 +3967,7 @@ bool BGTactics::selectObjective(bool reset)
 
                                         // set siege position
                                         ai::PositionEntry siegePos = context->GetValue<ai::PositionMap&>("position")->Get()["bg siege"];
-                                        siegePos.Set(gate->GetPositionX(), gate->GetPositionY(), gate->GetPositionZ(), bot->GetMapId());
+                                        siegePos.Set(gate->getPositionX(), gate->getPositionY(), gate->getPositionZ(), bot->GetMapId());
                                         posMap["bg siege"] = siegePos;
                                         return true;
                                     }
@@ -4023,7 +4023,7 @@ bool BGTactics::selectObjective(bool reset)
 
         if (BgObjective)
         {
-            pos.Set(BgObjective->GetPositionX(), BgObjective->GetPositionY(), BgObjective->GetPositionZ(), bot->GetMapId());
+            pos.Set(BgObjective->getPositionX(), BgObjective->getPositionY(), BgObjective->getPositionZ(), bot->GetMapId());
             posMap["bg objective"] = pos;
             return true;
         }
@@ -4061,9 +4061,9 @@ bool BGTactics::moveToObjective()
         }
 #endif
 
-        if (sServerFacade.IsDistanceGreaterThan(sServerFacade.GetDistance2d(bot, pos.x, pos.y), 100.0f))
+        if (sServerFacade.IsDistanceGreaterThan(sServerFacade.getDistance2d(bot, pos.x, pos.y), 100.0f))
         {
-            //ostringstream out; out << "It is too far away! " << pos.x << ", " << pos.y << ", Distance: " << sServerFacade.GetDistance2d(bot, pos.x, pos.y);
+            //ostringstream out; out << "It is too far away! " << pos.x << ", " << pos.y << ", Distance: " << sServerFacade.getDistance2d(bot, pos.x, pos.y);
             //bot->Say(out.str(), LANG_UNIVERSAL);
             return false;
         }
@@ -4073,14 +4073,14 @@ bool BGTactics::moveToObjective()
                 return true;*/
 
         // don't try to move if already close
-        if (sqrt(bot->GetDistance(pos.x, pos.y, pos.z, DIST_CALC_NONE)) < 5.0f)
+        if (sqrt(bot->getDistance(pos.x, pos.y, pos.z, DIST_CALC_NONE)) < 5.0f)
         {
             resetObjective();
 
             return true;
         }
 
-        //ostringstream out; out << "Moving to objective " << pos.x << ", " << pos.y << ", Distance: " << sServerFacade.GetDistance2d(bot, pos.x, pos.y);
+        //ostringstream out; out << "Moving to objective " << pos.x << ", " << pos.y << ", Distance: " << sServerFacade.getDistance2d(bot, pos.x, pos.y);
         //bot->Say(out.str(), LANG_UNIVERSAL);
 
         // more precise position for wsg
@@ -4145,7 +4145,7 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
 
         {
             BattleBotWaypoint& lastPoint = ((*pPath)[pPath->size() - 1]);
-            float const distanceFromPathEndToTarget = sqrt(Position(pos.x, pos.y, pos.z, 0.f).GetDistance(Position(lastPoint.x, lastPoint.y, lastPoint.z, 0.f)));
+            float const distanceFromPathEndToTarget = sqrt(Position(pos.x, pos.y, pos.z, 0.f).getDistance(Position(lastPoint.x, lastPoint.y, lastPoint.z, 0.f)));
             if (closestDistanceToTarget > distanceFromPathEndToTarget)
             {
                 float closestDistanceFromMeToPoint = FLT_MAX;
@@ -4153,7 +4153,7 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
                 for (uint32 i = 0; i < pPath->size(); i++)
                 {
                     BattleBotWaypoint& waypoint = ((*pPath)[i]);
-                    float const distanceFromMeToPoint = sqrt(bot->GetDistance(waypoint.x, waypoint.y, waypoint.z, DIST_CALC_NONE));
+                    float const distanceFromMeToPoint = sqrt(bot->getDistance(waypoint.x, waypoint.y, waypoint.z, DIST_CALC_NONE));
                     if (distanceFromMeToPoint < maxDistanceToPoint && closestDistanceFromMeToPoint > distanceFromMeToPoint)
                     {
                         reverse = false;
@@ -4178,7 +4178,7 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
 
         {
             BattleBotWaypoint& firstPoint = ((*pPath)[0]);
-            float const distanceFromPathBeginToTarget = sqrt(Position(pos.x, pos.y, pos.z, 0).GetDistance(Position(firstPoint.x, firstPoint.y, firstPoint.z, 0.f)));
+            float const distanceFromPathBeginToTarget = sqrt(Position(pos.x, pos.y, pos.z, 0).getDistance(Position(firstPoint.x, firstPoint.y, firstPoint.z, 0.f)));
             if (closestDistanceToTarget > distanceFromPathBeginToTarget)
             {
                 float closestDistanceFromMeToPoint = FLT_MAX;
@@ -4186,7 +4186,7 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
                 for (uint32 i = 0; i < pPath->size(); i++)
                 {
                     BattleBotWaypoint& waypoint = ((*pPath)[i]);
-                    float const distanceFromMeToPoint = sqrt(bot->GetDistance(waypoint.x, waypoint.y, waypoint.z, DIST_CALC_NONE));
+                    float const distanceFromMeToPoint = sqrt(bot->getDistance(waypoint.x, waypoint.y, waypoint.z, DIST_CALC_NONE));
                     if (distanceFromMeToPoint < maxDistanceToPoint && closestDistanceFromMeToPoint > distanceFromMeToPoint)
                     {
                         reverse = true;
@@ -4288,7 +4288,7 @@ bool BGTactics::moveToObjectiveWp(BattleBotPath* const& currentPath, uint32 curr
 
     //ostringstream out; out << "WP: ";
     //reverse ? out << currPoint << " <<< -> " << nPoint : out << currPoint << ">>> ->" << nPoint;
-    //out << ", " << nextPoint.x << ", " << nextPoint.y << " Path Size: " << currentPath->size() << ", Dist: " << sServerFacade.GetDistance2d(bot, nextPoint.x, nextPoint.y);
+    //out << ", " << nextPoint.x << ", " << nextPoint.y << " Path Size: " << currentPath->size() << ", Dist: " << sServerFacade.getDistance2d(bot, nextPoint.x, nextPoint.y);
     //bot->Say(out.str(), LANG_UNIVERSAL);
 
     return MoveTo(bot->GetMapId(), nextPoint.x + frand(-2, 2), nextPoint.y + frand(-2, 2), nextPoint.z);
@@ -4327,7 +4327,7 @@ bool BGTactics::startNewPathBegin(std::vector<BattleBotPath*> const& vPaths)
             continue;
 
         BattleBotWaypoint* pStart = &((*pPath)[0]);
-        if (sqrt(bot->GetDistance(pStart->x, pStart->y, pStart->z, DIST_CALC_NONE)) < INTERACTION_DISTANCE)
+        if (sqrt(bot->getDistance(pStart->x, pStart->y, pStart->z, DIST_CALC_NONE)) < INTERACTION_DISTANCE)
             availablePaths.emplace_back(AvailablePath(pPath, false));
 
         // Some paths are not allowed backwards.
@@ -4335,7 +4335,7 @@ bool BGTactics::startNewPathBegin(std::vector<BattleBotPath*> const& vPaths)
             continue;
 
         BattleBotWaypoint* pEnd = &((*pPath)[(*pPath).size() - 1]);
-        if (sqrt(bot->GetDistance(pEnd->x, pEnd->y, pEnd->z, DIST_CALC_NONE)) < INTERACTION_DISTANCE)
+        if (sqrt(bot->getDistance(pEnd->x, pEnd->y, pEnd->z, DIST_CALC_NONE)) < INTERACTION_DISTANCE)
             availablePaths.emplace_back(AvailablePath(pPath, true));
     }
 
@@ -4383,7 +4383,7 @@ bool BGTactics::startNewPathFree(std::vector<BattleBotPath*> const& vPaths)
         for (uint32 i = 0; i < pPath->size(); i++)
         {
             BattleBotWaypoint& waypoint = ((*pPath)[i]);
-            float const distanceToPoint = sqrt(bot->GetDistance(waypoint.x, waypoint.y, waypoint.z, DIST_CALC_NONE));
+            float const distanceToPoint = sqrt(bot->getDistance(waypoint.x, waypoint.y, waypoint.z, DIST_CALC_NONE));
             if (distanceToPoint < closestDistance)
             {
                 pClosestPath = pPath;
@@ -4486,7 +4486,7 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
         // is out of range, so with the operands the other way round every
         // Warsong bot produced one per tick regardless of distance - 15000+ a
         // session - while only the continue was ever gated on bgType.
-        if (bgType != BATTLEGROUND_WS && !bot->CanInteract(go))
+        if (bgType != BATTLEGROUND_WS && !true /*CanInteract stub*/)
             continue;
         
         if (flagRange)
@@ -4533,7 +4533,7 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
             ai->WaitForSpellCast(spell);
 
             //WorldPacket data(CMSG_GAMEOBJ_USE);
-            //data << go->GetObjectGuid();
+            //data << go->getObjectGuid();
             //bot->GetSession()->HandleGameObjectUseOpcode(data);
             resetObjective();
             return true;
@@ -4571,7 +4571,7 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
                 //ostringstream out; out << "Flag is nearby, using " << go->GetName();
                 //bot->Say(out.str(), LANG_UNIVERSAL);
                 WorldPacket data(CMSG_GAMEOBJ_USE);
-                data << go->GetObjectGuid();
+                data << go->getObjectGuid();
                 bot->GetSession()->HandleGameObjectUseOpcode(data);
 
                 resetObjective();
@@ -4579,9 +4579,9 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
             }
             else
             {
-                //ostringstream out; out << "Flag is far, moving to " << go->GetName() << " " << go->GetPositionX() << " " << go->GetPositionY() << " Distance:" << sServerFacade.GetDistance2d(bot, go->GetPositionX(), go->GetPositionY());
+                //ostringstream out; out << "Flag is far, moving to " << go->GetName() << " " << go->getPositionX() << " " << go->getPositionY() << " Distance:" << sServerFacade.getDistance2d(bot, go->getPositionX(), go->getPositionY());
                 //bot->Say(out.str(), LANG_UNIVERSAL);
-                return MoveTo(bot->GetMapId(), go->GetPositionX(), go->GetPositionY(), go->GetPositionZ());
+                return MoveTo(bot->GetMapId(), go->getPositionX(), go->getPositionY(), go->getPositionZ());
             }
             break;
         }
@@ -4615,7 +4615,7 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
 
                 // Dropped flag is instant use
                 WorldPacket data(CMSG_GAMEOBJ_USE);
-                data << go->GetObjectGuid();
+                data << go->getObjectGuid();
                 bot->GetSession()->HandleGameObjectUseOpcode(data);
 
                 resetObjective();
@@ -4623,7 +4623,7 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
             }
             else
             {
-                return MoveTo(bot->GetMapId(), go->GetPositionX(), go->GetPositionY(), go->GetPositionZ());
+                return MoveTo(bot->GetMapId(), go->getPositionX(), go->getPositionY(), go->getPositionZ());
             }
             break;
         }
@@ -4640,7 +4640,7 @@ bool BGTactics::flagTaken()
     if (!bg)
         return false;
 
-    return !bg->GetFlagCarrierGuid(GetTeamIndexByTeamId(bg->GetOtherTeam(bot->GetTeam()))).IsEmpty();
+    return !bg->GetFlagCarrierGuid(GetTeamIndexByTeamId(bg->getOtherTeam(bot->GetTeam()))).IsEmpty();
 }
 
 bool BGTactics::teamFlagTaken()
@@ -4700,7 +4700,7 @@ bool BGTactics::useBuff()
             continue;
 
         // use speed buff only if close
-        if (sServerFacade.IsDistanceGreaterThan(sServerFacade.GetDistance2d(bot, go), go->GetEntry() == Buff_Entries[0] ? 20.0f : VISIBILITY_DISTANCE_SMALL))
+        if (sServerFacade.IsDistanceGreaterThan(sServerFacade.getDistance2d(bot, go), go->GetEntry() == Buff_Entries[0] ? 20.0f : VISIBILITY_DISTANCE_SMALL))
             continue;
 
         if (needSpeed && go->GetEntry() == Buff_Entries[0])
@@ -4722,7 +4722,7 @@ bool BGTactics::useBuff()
             //ostringstream out; out << "Moving to buff...";
             //bot->Say(out.str(), LANG_UNIVERSAL);
 
-            return MoveTo(go->GetMapId(), go->GetPositionX(), go->GetPositionY(), go->GetPositionZ());
+            return MoveTo(go->GetMapId(), go->getPositionX(), go->getPositionY(), go->getPositionZ());
         }
     }
     return false;
@@ -4741,7 +4741,7 @@ uint32 BGTactics::getDefendersCount(Position point, float range, bool combat)
 
     for (auto& guid : bg->GetBgMap()->GetPlayers())
     {
-        Player* player = guid.getSource();
+        Player* player = guid.GetSource();
         if (!player)
             continue;
 
@@ -4750,7 +4750,7 @@ uint32 BGTactics::getDefendersCount(Position point, float range, bool combat)
             if (!combat && sServerFacade.IsInCombat(player))
                 continue;
 
-            if (sServerFacade.GetDistance2d(player, point.x, point.y) < range)
+            if (sServerFacade.getDistance2d(player, point.x, point.y) < range)
                 ++defCount;
         }
     }
@@ -4774,9 +4774,9 @@ bool BGTactics::IsLockedInsideKeep()
         return false;
 
     bool isInside = false;
-    if (bot->GetTeam() == ALLIANCE && bot->GetPositionX() < 410.0f && bot->GetPositionY() > -900.0f && bot->GetPositionY() < -765.0f)
+    if (bot->GetTeam() == ALLIANCE && bot->getPositionX() < 410.0f && bot->getPositionY() > -900.0f && bot->getPositionY() < -765.0f)
         isInside = true;
-    if (bot->GetTeam() == HORDE && bot->GetPositionX() > 1153.0f && bot->GetPositionY() > -849.0f && bot->GetPositionY() < -679.0f)
+    if (bot->GetTeam() == HORDE && bot->getPositionX() > 1153.0f && bot->getPositionY() > -849.0f && bot->getPositionY() < -679.0f)
         isInside = true;
 
     if (!isInside)
@@ -4833,7 +4833,7 @@ bool BGTactics::IsLockedInsideKeep()
         // get closest portal
         if (bot->GetTeam() == ALLIANCE && go->GetEntry() == BG_IC_GO_TELEPORTER_INSIDE_A)
         {
-            float tempDist = sServerFacade.GetDistance2d(bot, go->GetPositionX(), go->GetPositionY());
+            float tempDist = sServerFacade.getDistance2d(bot, go->getPositionX(), go->getPositionY());
 
             if (sServerFacade.IsDistanceLessThan(tempDist, closestDistance))
             {
@@ -4846,7 +4846,7 @@ bool BGTactics::IsLockedInsideKeep()
         // get closest portal
         if (bot->GetTeam() == HORDE && go->GetEntry() == BG_IC_GO_TELEPORTER_INSIDE_H)
         {
-            float tempDist = sServerFacade.GetDistance2d(bot, go->GetPositionX(), go->GetPositionY());
+            float tempDist = sServerFacade.getDistance2d(bot, go->getPositionX(), go->getPositionY());
 
             if (sServerFacade.IsDistanceLessThan(tempDist, closestDistance))
             {
@@ -4875,13 +4875,13 @@ bool BGTactics::IsLockedInsideKeep()
         if (bot->IsWithinDistInMap(closestPortal, INTERACTION_DISTANCE))
         {
             WorldPacket data(CMSG_GAMEOBJ_USE);
-            data << closestPortal->GetObjectGuid();
+            data << closestPortal->getObjectGuid();
             bot->GetSession()->HandleGameObjectUseOpcode(data);
             return true;
         }
         else
         {
-            return MoveTo(bot->GetMapId(), closestPortal->GetPositionX(), closestPortal->GetPositionY(), closestPortal->GetPositionZ());
+            return MoveTo(bot->GetMapId(), closestPortal->getPositionX(), closestPortal->getPositionY(), closestPortal->getPositionZ());
         }
     }
 
@@ -4922,7 +4922,7 @@ bool ArenaTactics::Execute(Event& event)
         ai->ChangeStrategy("-collision", BotState::BOT_STATE_NON_COMBAT);
 
 #ifdef MANGOS
-    if (sBattleGroundMgr.IsArenaType(bg->GetTypeID()))
+    if (sBattleGroundMgr.IsArenaType(bg->GetTypeId()))
 #endif
 #ifdef CMANGOS
         if (sBattleGroundMgr.IsArenaType(bg->GetTypeId()))
@@ -4943,7 +4943,7 @@ bool ArenaTactics::moveToCenter(BattleGround *bg)
 #ifndef MANGOSBOT_ZERO
     uint32 Preference = context->GetValue<uint32>("bg role")->Get();
 #ifdef MANGOS
-    switch (bg->GetTypeID())
+    switch (bg->GetTypeId())
 #endif
 #ifdef CMANGOS
         switch (bg->GetTypeId())

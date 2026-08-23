@@ -15,7 +15,7 @@ using namespace ai;
 bool ArenaTeamAcceptAction::Execute(Event& event)
 {
 #ifndef MANGOSBOT_ZERO
-    WorldPacket p(event.getPacket());
+    WorldPacket p(event.GetPacket());
     p.rpos(0);
     Player* inviter = nullptr;
     std::string Invitedname;

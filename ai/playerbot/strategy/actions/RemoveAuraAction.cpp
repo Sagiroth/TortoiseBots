@@ -10,7 +10,7 @@ bool RemoveAuraAction::Execute(Event& event)
     std::string spell = aura;
     if (spell.empty())
     {
-        spell = event.getParam();
+        spell = event.GetParam();
     }
     
     return ai->RemoveAura(spell);

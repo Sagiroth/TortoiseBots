@@ -1010,7 +1010,7 @@ namespace ai
                 if (!(corpse->GetCreatureType() == CREATURE_TYPE_HUMANOID || corpse->GetCreatureType() == CREATURE_TYPE_UNDEAD))
                     continue;
 
-                if (sServerFacade.GetDistance2d(bot, corpse) <= 5.0f)
+                if (sServerFacade.getDistance2d(bot, corpse) <= 5.0f)
                     return true;
             }
             return false;
@@ -1180,7 +1180,7 @@ namespace ai
                 if (!enemy)
                     continue;
 
-                if (enemy->getClass() == CLASS_ROGUE || enemy->getClass() == CLASS_DRUID)
+                if (enemy->GetClass() == CLASS_ROGUE || enemy->GetClass() == CLASS_DRUID)
                     return true;
             }
             return false;

@@ -351,7 +351,7 @@ namespace ai
             }
 #endif
 
-            return (target && sServerFacade.GetDistance2d(bot, target) < distance);
+            return (target && sServerFacade.getDistance2d(bot, target) < distance);
         }
     };
 
@@ -428,7 +428,7 @@ namespace ai
                 && target->IsAlive()                                                    //target is alive
                 && !ai->HasAura("lifebloom", target, true, true, -1, false, 2000, 8)    //target dont have max stacked aura or aura will expire soon
                 && ai->CanCastSpell("lifebloom", target, 0)                             //bot can cast spell
-                && !target->getAttackers().empty();                                     //target have attackers
+                && !target->GetAttackers().empty();                                     //target have attackers
         }
     };
 

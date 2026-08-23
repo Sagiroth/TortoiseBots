@@ -9,8 +9,8 @@ using namespace ai;
 
 bool SkipSpellsListAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string cmd = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string cmd = event.GetParam();
     std::set<uint32>& skipSpells = AI_VALUE(std::set<uint32>&, "skip spells list");
 
     if (cmd == "reset")

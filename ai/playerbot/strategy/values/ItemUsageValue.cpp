@@ -122,10 +122,10 @@ ItemUsage ItemUsageValue::Calculate()
         {
             for (const auto& entry : shareList)
             {
-                if (entry.itemId == itemId)
+                if (entry.itemid == itemId)
                     return ItemUsage::ITEM_USAGE_KEEP;
 
-                ItemPrototype const* craftProto = sObjectMgr.GetItemPrototype(entry.itemId);
+                ItemPrototype const* craftProto = sObjectMgr.GetItemPrototype(entry.itemid);
                 if (craftProto)
                 {
                     std::vector<std::pair<uint32, uint32>> reagents = GetAllReagentItemIdsForCraftingItem(craftProto);
@@ -144,7 +144,7 @@ ItemUsage ItemUsageValue::Calculate()
         return ItemUsage::ITEM_USAGE_KEEP;
 
     //WARLOCKS GOT TO KEEP SOULSHARDS (keep at least 10)
-    if (bot->getClass() == CLASS_WARLOCK && proto->ItemId == 6265 && CurrentStacks(ai, proto) <= 10)
+    if (bot->GetClass() == CLASS_WARLOCK && proto->ItemId == 6265 && CurrentStacks(ai, proto) <= 10)
         return ItemUsage::ITEM_USAGE_KEEP;
 
     //SKILL
@@ -232,7 +232,7 @@ ItemUsage ItemUsageValue::Calculate()
             foodType = "bandage";
         }
 
-        bool botHasHealingSpells = bot->getClass() == CLASS_PALADIN || bot->getClass() == CLASS_PRIEST || bot->getClass() == CLASS_DRUID || bot->getClass() == CLASS_SHAMAN;
+        bool botHasHealingSpells = bot->GetClass() == CLASS_PALADIN || bot->GetClass() == CLASS_PRIEST || bot->GetClass() == CLASS_DRUID || bot->GetClass() == CLASS_SHAMAN;
 
         //itemlevel 1 consumables are mostly level-independent
         bool isAppropriateConsumableLevel = proto->RequiredLevel <= bot->GetLevel()
@@ -354,9 +354,9 @@ if ((proto->Class == ITEM_CLASS_PROJECTILE ||
      (proto->Class == ITEM_CLASS_WEAPON && proto->SubClass == ITEM_SUBCLASS_WEAPON_THROWN)) &&
     bot->CanUseItem(proto) == EQUIP_ERR_OK)
 {
-    if ((bot->getClass() == CLASS_HUNTER && proto->Class != ITEM_CLASS_WEAPON) ||
-        bot->getClass() == CLASS_ROGUE ||
-        bot->getClass() == CLASS_WARRIOR)
+    if ((bot->GetClass() == CLASS_HUNTER && proto->Class != ITEM_CLASS_WEAPON) ||
+        bot->GetClass() == CLASS_ROGUE ||
+        bot->GetClass() == CLASS_WARRIOR)
     {
         Item* const pItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED);
         if (pItem)
@@ -387,7 +387,7 @@ if ((proto->Class == ITEM_CLASS_PROJECTILE ||
                     currentAmmoProto = sObjectMgr.GetItemPrototype(currentAmmoId);
 
                 float betterAmmoStacks = BetterStacks(proto, "ammo"); // how much better ammo we have
-                float needAmmo = (bot->getClass() == CLASS_HUNTER) ? 8 : 2;
+                float needAmmo = (bot->GetClass() == CLASS_HUNTER) ? 8 : 2;
 
                 if (ai->HasCheat(BotCheatMask::item))
                     needAmmo = 1;
@@ -435,7 +435,7 @@ if ((proto->Class == ITEM_CLASS_PROJECTILE ||
 #endif
 
         //keep relevant class consumables (e.g. rogue poisons)
-        if (proto->AllowableClass == bot->getClass() && proto->RequiredLevel + 6 >= bot->GetLevel())
+        if (proto->AllowableClass == bot->GetClass() && proto->RequiredLevel + 6 >= bot->GetLevel())
         {
             if (bot->GetLevel() == maxExpansionCharacterLevel && proto->RequiredLevel + 6 >= bot->GetLevel())
             {
@@ -532,7 +532,7 @@ if ((proto->Class == ITEM_CLASS_PROJECTILE ||
 
 ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, Player* bot)
 {
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     AiObjectContext* context = ai->GetAiObjectContext();
     ChatHelper* chat = ai->GetChatHelper();
     ItemPrototype const* itemProto = itemQualifier.GetProto();
@@ -563,7 +563,7 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     {
         Item* equippedRangedWeapon = bot->GetWeaponForAttack(WeaponAttackType::RANGED_ATTACK, false, false);
 
-        if (bot->getClass() == CLASS_HUNTER && equippedRangedWeapon)
+        if (bot->GetClass() == CLASS_HUNTER && equippedRangedWeapon)
         {
             ItemPrototype const* rangedWeaponItemProto = equippedRangedWeapon->GetProto();
             if (!rangedWeaponItemProto)
@@ -589,7 +589,7 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
             if (!isCorrectQuiverTypeForCurrentWeapon)
                 return ItemUsage::ITEM_USAGE_NONE;
 
-            std::vector<Bag*> equippedQuivers = bot->GetPlayerbotAI()->GetEquippedQuivers();
+            std::vector<Bag*> equippedQuivers = PlayerbotAIStorage::Instance().GetAI(bot)->GetEquippedQuivers();
 
             for (auto quiver : equippedQuivers)
             {
@@ -629,9 +629,9 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     if (statWeight)
         shouldEquip = true;
 
-    if (itemProto->Class == ITEM_CLASS_WEAPON && !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->getClass(), specId, itemProto))
+    if (itemProto->Class == ITEM_CLASS_WEAPON && !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto))
         shouldEquip = false;
-    if (itemProto->Class == ITEM_CLASS_ARMOR && !sRandomItemMgr.ShouldEquipArmorForSpec(bot->getClass(), specId, itemProto))
+    if (itemProto->Class == ITEM_CLASS_ARMOR && !sRandomItemMgr.ShouldEquipArmorForSpec(bot->GetClass(), specId, itemProto))
         shouldEquip = false;
 
     Item* oldItem = bot->GetItemByPos(dest);
@@ -640,7 +640,7 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     ai->TellDebug(ai->GetMaster(), "Checking equip: " + chat->formatItem(itemProto) + " to " + chat->formatSlot(slot) + " vs " + (oldItem ? chat->formatItem(oldItem->GetProto()) : "empty"), "debug equip");
 
     if (itemProto->Class == ITEM_CLASS_WEAPON &&
-        !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->getClass(), specId, itemProto))
+        !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto))
     {
         if (oldItem)
             return ItemUsage::ITEM_USAGE_NONE;
@@ -899,7 +899,7 @@ bool ItemUsageValue::IsNeededForQuest(Player* player, uint32 itemId, bool ignore
         if (!quest)
             continue;
 
-        QuestStatusData& qData = player->getQuestStatusMap()[quest->GetQuestId()];
+        QuestStatusData& qData = player->GetQuestStatusMap()[quest->GetQuestId()];
         if (qData.m_status != QUEST_STATUS_INCOMPLETE)
             continue;
 
@@ -1082,7 +1082,7 @@ bool ItemUsageValue::IsItemNeededForUsefullCraft(ItemPrototype const* proto, boo
 
 Item* ItemUsageValue::CurrentItem(ItemPrototype const* proto, Player* bot)
 {
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     AiObjectContext* context = ai->GetAiObjectContext();
     ChatHelper* chat = ai->GetChatHelper();
     Item* bestItem = nullptr;
@@ -1477,7 +1477,7 @@ bool ItemUsageValue::IsItemSoldByAnyVendor(ItemPrototype const* proto)
 
 bool ItemUsageValue::MustEquipForQuest(ItemPrototype const* proto, Player* bot)
 {
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     AiObjectContext* context = ai->GetAiObjectContext();
 
     switch (proto->ItemId)

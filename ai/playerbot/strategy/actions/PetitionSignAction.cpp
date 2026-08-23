@@ -14,8 +14,8 @@ using namespace ai;
 
 bool PetitionSignAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    WorldPacket p(event.getPacket());
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    WorldPacket p(event.GetPacket());
     p.rpos(0);
     ObjectGuid petitionGuid;
     ObjectGuid inviter;

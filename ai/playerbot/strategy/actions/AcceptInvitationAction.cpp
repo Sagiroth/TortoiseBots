@@ -20,7 +20,7 @@ bool AcceptInvitationAction::Execute(Event event)
     Group* grp = bot->GetGroupInvite();
     if (!grp)
         return false;
-    WorldPacket packet = event.getPacket();
+    WorldPacket packet = event.GetPacket();
     uint8 flag;
     std::string name;
     packet >> flag >> name;
@@ -38,7 +38,7 @@ bool AcceptInvitationAction::Execute(Event event)
         return false;
     }
 
-    if (bot->isAFK())
+    if (bot->IsAFK())
         bot->ToggleAFK();
 
     WorldPacket p;
@@ -60,7 +60,7 @@ bool AcceptInvitationAction::Execute(Event event)
 
     botAI->TellMaster(PlayerbotTextMgr::instance().GetBotTextOrDefault("hello", "Hello", {}));
 
-    if (sPlayerbotAIConfig.summonWhenGroup && bot->GetDistance(inviter) > sPlayerbotAIConfig.sightDistance)
+    if (sPlayerbotAIConfig.summonWhenGroup && bot->getDistance(inviter) > sPlayerbotAIConfig.sightDistance)
     {
         Teleport(inviter, bot, true);
     }

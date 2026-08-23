@@ -12,7 +12,7 @@ using namespace ai;
 
 bool AttackAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
     Unit* target = GetTarget();
     if (target && target->IsInWorld() && target->GetMapId() == bot->GetMapId())
@@ -25,11 +25,11 @@ bool AttackAction::Execute(Event& event)
 
 bool AttackMyTargetAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     SC_LOG("attack-cmd entry bot=%s requester=%s eventOwner=%s",
            bot ? bot->GetName() : "(null)",
            requester ? requester->GetName() : "(null)",
-           event.getOwner() ? event.getOwner()->GetName() : "(null)");
+           event.GetOwner() ? event.GetOwner()->GetName() : "(null)");
 
     if(requester)
     {
@@ -74,14 +74,14 @@ bool AttackMyTargetAction::Execute(Event& event)
 
 bool AttackRTITargetAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     Unit* rtiTarget = AI_VALUE(Unit*, "rti target");
 
     if (rtiTarget && rtiTarget->IsInWorld() && rtiTarget->GetMapId() == bot->GetMapId())
     {
         if (Attack(requester, rtiTarget))
         {
-            SET_AI_VALUE(ObjectGuid, "attack target", rtiTarget->GetObjectGuid());
+            SET_AI_VALUE(ObjectGuid, "attack target", rtiTarget->getObjectGuid());
             return true;
         }
     }
@@ -123,8 +123,8 @@ bool AttackAction::Attack(Player* requester, Unit* target)
                bot ? bot->GetName() : "(null)",
                target ? target->GetName() : "(null)",
                bot ? (int)bot->IsMounted() : -1,
-               target ? sServerFacade.GetDistance2d(bot, target) : -1.0f);
-        if (bot->IsMounted() && (sServerFacade.GetDistance2d(bot, target) < 40.0f || bot->IsFlying()))
+               target ? sServerFacade.getDistance2d(bot, target) : -1.0f);
+        if (bot->IsMounted() && (sServerFacade.getDistance2d(bot, target) < 40.0f || bot->IsFlying()))
         {
             ai->Unmount();
             
@@ -134,8 +134,8 @@ bool AttackAction::Attack(Player* requester, Unit* target)
             }
         }
 
-        ObjectGuid guid = target->GetObjectGuid();
-        bot->SetSelectionGuid(target->GetObjectGuid());
+        ObjectGuid guid = target->getObjectGuid();
+        bot->SetSelectionGuid(target->getObjectGuid());
 
         Unit* oldTarget = AI_VALUE(Unit*, "current target");
         if(oldTarget)
@@ -171,7 +171,7 @@ bool AttackAction::Attack(Player* requester, Unit* target)
             }
         }
 
-        if (ai->CanMove() && !sServerFacade.IsInFront(bot, target, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
+        if (ai->CanMove() && !sServerFacade.isInFront(bot, target, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
         {
             sServerFacade.SetFacingTo(bot, target);
         }
@@ -182,7 +182,7 @@ bool AttackAction::Attack(Player* requester, Unit* target)
         if (!ai->HasStrategy("stealthed", BotState::BOT_STATE_COMBAT) && !isWaitingForAttack)
         {
             ai->PlayAttackEmote(1);
-            result = bot->Attack(target, !ai->IsRanged(bot) || (sServerFacade.GetDistance2d(bot, target) < 5.0f));
+            result = bot->Attack(target, !ai->IsRanged(bot) || (sServerFacade.getDistance2d(bot, target) < 5.0f));
             SC_LOG("attack-cmd bot->Attack bot=%s tgt=%s result=%d",
                    bot ? bot->GetName() : "(null)",
                    target ? target->GetName() : "(null)",
@@ -244,7 +244,7 @@ bool AttackAction::IsTargetValid(Player* requester, Unit* target)
 
         return false;
     }
-    else if (sServerFacade.GetDistance2d(bot, target) > sPlayerbotAIConfig.sightDistance)
+    else if (sServerFacade.getDistance2d(bot, target) > sPlayerbotAIConfig.sightDistance)
     {
         if (verbose)
         {
@@ -267,6 +267,6 @@ bool AttackDuelOpponentAction::isUseful()
 
 bool AttackDuelOpponentAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     return Attack(requester, AI_VALUE(Unit*, "duel target"));
 }

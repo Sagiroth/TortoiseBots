@@ -7,7 +7,7 @@ using namespace ai;
 
 bool TellReputationAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!requester)
         return false;
 
@@ -29,7 +29,7 @@ bool TellReputationAction::Execute(Event& event)
     int32 reputation = bot->GetReputationMgr().GetReputation(faction);
 
     std::ostringstream out;
-    out << entry->name[0] << ": ";
+    out << entry->Name << ": ";
     out << "|cff";
     ReputationRank rank = bot->GetReputationMgr().GetRank(entry);
     switch (rank) {

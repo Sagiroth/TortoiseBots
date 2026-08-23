@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/strategy/Trigger.h"
+#include "../../runtime/PlayerbotAIStorage.h" // Headless storage shim
 #include <Maps/MoveMap.h>
 
 namespace ai
@@ -27,7 +28,7 @@ namespace ai
             if (ai->HasActivePlayerMaster())
                 return false;
 
-            if (ai->GetGroupMaster() && !ai->GetGroupMaster()->GetPlayerbotAI())
+            if (ai->GetGroupMaster() && PlayerbotAIStorage::Instance().GetAI(!ai->GetGroupMaster()))
                 return false;
 
             if (!ai->AllowActivity(ALL_ACTIVITY))
@@ -70,7 +71,7 @@ namespace ai
             if (ai->HasActivePlayerMaster())
                 return false;
 
-            if (ai->GetGroupMaster() && !ai->GetGroupMaster()->GetPlayerbotAI())
+            if (ai->GetGroupMaster() && PlayerbotAIStorage::Instance().GetAI(!ai->GetGroupMaster()))
                 return false;
 
             if (!ai->AllowActivity(ALL_ACTIVITY))
@@ -102,15 +103,15 @@ namespace ai
             }
 
 #ifdef MANGOSBOT_TWO
-            if (cell.GridX() > 0 && cell.GridY() > 0 && !MMAP::MMapFactory::createOrGetMMapManager()->IsMMapTileLoaded(botPos.getMapId(), 0, cell.GridX(), cell.GridY()) && !MMAP::MMapFactory::createOrGetMMapManager()->loadMap(sWorld.GetDataPath(), botPos.getMapId(), 0, cell.GridX(), cell.GridY(), 0))
+            if (cell.GridX() > 0 && cell.GridY() > 0 && !MMAP::MMapFactory::createOrGetMMapManager()->IsMMapTileLoaded(botPos.GetMapId(), 0, cell.GridX(), cell.GridY()) && !MMAP::MMapFactory::createOrGetMMapManager()->loadMap(sWorld.GetDataPath(), botPos.GetMapId(), 0, cell.GridX(), cell.GridY(), 0))
             {
                 ai->TellDebug(ai->GetMaster(), "Stuck: In unloaded grid" + std::to_string(grid.x_coord) + "," + std::to_string(grid.y_coord), "debug stuck");
 
                 return true;
             }
 #else
-            if (cell.GridX() > 0 && cell.GridY() > 0 && !MMAP::MMapFactory::createOrGetMMapManager()->IsMMapIsLoaded(botPos.getMapId(), cell.GridX(), cell.GridY()) 
-                && !MMAP::MMapFactory::createOrGetMMapManager()->loadMap(sWorld.GetDataPath(), botPos.getMapId(), cell.GridX(), cell.GridY()))
+            if (cell.GridX() > 0 && cell.GridY() > 0 && !MMAP::MMapFactory::createOrGetMMapManager()->IsMMapIsLoaded(botPos.GetMapId(), cell.GridX(), cell.GridY()) 
+                && !MMAP::MMapFactory::createOrGetMMapManager()->loadMap(sWorld.GetDataPath(), botPos.GetMapId(), cell.GridX(), cell.GridY()))
             {
                 ai->TellDebug(ai->GetMaster(), "Stuck: In unloaded grid" + std::to_string(grid.x_coord) + "," + std::to_string(grid.y_coord), "debug stuck");
 
@@ -158,7 +159,7 @@ namespace ai
             if (ai->HasActivePlayerMaster())
                 return false;
 
-            if (ai->GetGroupMaster() && !ai->GetGroupMaster()->GetPlayerbotAI())
+            if (ai->GetGroupMaster() && PlayerbotAIStorage::Instance().GetAI(!ai->GetGroupMaster()))
                 return false;
 
             if (!ai->AllowActivity(ALL_ACTIVITY))
@@ -199,7 +200,7 @@ namespace ai
             if (ai->HasActivePlayerMaster())
                 return false;
 
-            if (ai->GetGroupMaster() && !ai->GetGroupMaster()->GetPlayerbotAI())
+            if (ai->GetGroupMaster() && PlayerbotAIStorage::Instance().GetAI(!ai->GetGroupMaster()))
                 return false;
 
             if (!ai->AllowActivity(ALL_ACTIVITY))
@@ -243,7 +244,7 @@ namespace ai
                 if (!leader)
                     return false;
 
-                return leader->isAFK();
+                return leader->IsAFK();
             }
 
             return false;

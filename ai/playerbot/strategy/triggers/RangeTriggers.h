@@ -21,7 +21,7 @@ namespace ai
                 if (ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT) ||
                     ai->HasStrategy("guard", BotState::BOT_STATE_COMBAT) ||
                     ai->HasStrategy("wander", BotState::BOT_STATE_COMBAT))
-                    if(bot->getClass() != CLASS_HUNTER || sServerFacade.GetDistance2d(bot, target) > 5.0f)
+                    if(bot->GetClass() != CLASS_HUNTER || sServerFacade.getDistance2d(bot, target) > 5.0f)
                         return false;                   
 
                 const bool canMove = !PossibleAttackTargetsValue::HasBreakableCC(target, bot) && !PossibleAttackTargetsValue::HasUnBreakableCC(target, bot);
@@ -34,7 +34,7 @@ namespace ai
 
                 float const combatReach = bot->GetCombinedCombatReach(target, false);
                 float const minDistance = ai->GetRange("spell") + combatReach;
-                float const targetDistance = sServerFacade.GetDistance2d(bot, target) + combatReach;
+                float const targetDistance = sServerFacade.getDistance2d(bot, target) + combatReach;
 
                 // No need to move if the target is rooted and you can shoot
                 if (!canMove && (targetDistance > minDistance))
@@ -44,11 +44,11 @@ namespace ai
 
                 bool isBoss = false;
                 bool isRaid = false;
-                bool isVictim = target->GetVictim() && target->GetVictim()->GetObjectGuid() == bot->GetObjectGuid();
+                bool isVictim = target->GetVictim() && target->GetVictim()->getObjectGuid() == bot->getObjectGuid();
 
                 if (target->IsCreature())
                 {
-                    Creature* creature = ai->GetCreature(target->GetObjectGuid());
+                    Creature* creature = ai->GetCreature(target->getObjectGuid());
                     if (creature)
                     {
                         isBoss = creature->IsWorldBoss();
@@ -61,7 +61,7 @@ namespace ai
                 // Casters have no minimum range — only flee if the mob is actually targeting/attacking this bot.
                 // Hunters are excluded: their ranged weapons have a ~8 yd minimum range so they must
                 // maintain distance even when the mob is focused on someone else.
-                if (bot->getClass() != CLASS_HUNTER && !isVictim && target->GetTarget() != bot)
+                if (bot->GetClass() != CLASS_HUNTER && !isVictim && target->GetTarget() != bot)
                     return false;
 
                 //if (isBoss || isRaid)
@@ -110,7 +110,7 @@ namespace ai
 
                 float const combatReach = bot->GetCombinedCombatReach(target, false);
                 float const minShootDistance = ai->GetRange("shoot") + combatReach;
-                float const targetDistance = sServerFacade.GetDistance2d(bot, target) + combatReach;
+                float const targetDistance = sServerFacade.getDistance2d(bot, target) + combatReach;
 
                 // No need to move if the target is rooted and you can shoot
                 if (target->IsRooted() && (targetDistance > minShootDistance))
@@ -120,11 +120,11 @@ namespace ai
 
                 bool isBoss = false;
                 bool isRaid = false;
-                bool isVictim = target->GetVictim() && target->GetVictim()->GetObjectGuid() == bot->GetObjectGuid();
+                bool isVictim = target->GetVictim() && target->GetVictim()->getObjectGuid() == bot->getObjectGuid();
 
                 if (target->IsCreature())
                 {
-                    Creature* creature = ai->GetCreature(target->GetObjectGuid());
+                    Creature* creature = ai->GetCreature(target->getObjectGuid());
                     if (creature)
                     {
                         isBoss = creature->IsWorldBoss();
@@ -267,7 +267,7 @@ namespace ai
             if (!target)
                 return false;
 
-            return target && (bot->GetDistance(target, true, DIST_CALC_COMBAT_REACH) > (distance - sPlayerbotAIConfig.contactDistance)) || !bot->IsWithinLOSInMap(target, true);
+            return target && (bot->getDistance(target, true, DIST_CALC_COMBAT_REACH) > (distance - sPlayerbotAIConfig.contactDistance)) || !bot->IsWithinLOSInMap(target, true);
         }
     };
 
@@ -283,7 +283,7 @@ namespace ai
             if (!target)
                 return false;
 
-            return target && (bot->GetDistance(target, true, DIST_CALC_COMBAT_REACH) > (distance - sPlayerbotAIConfig.contactDistance)) || !bot->IsWithinLOSInMap(target, true);
+            return target && (bot->getDistance(target, true, DIST_CALC_COMBAT_REACH) > (distance - sPlayerbotAIConfig.contactDistance)) || !bot->IsWithinLOSInMap(target, true);
         }
     };
 
@@ -346,7 +346,7 @@ namespace ai
             Formation* formation = AI_VALUE(Formation*, "formation");
 
             //Already using proper formation.
-            if (sServerFacade.GetChaseTarget(bot) && sServerFacade.GetChaseTarget(bot)->GetObjectGuid() == followTarget->GetObjectGuid() && formation->GetAngle() == sServerFacade.GetChaseAngle(bot) && formation->GetOffset() == sServerFacade.GetChaseOffset(bot))
+            if (sServerFacade.GetChaseTarget(bot) && sServerFacade.GetChaseTarget(bot)->getObjectGuid() == followTarget->getObjectGuid() && formation->GetAngle() == sServerFacade.GetChaseAngle(bot) && formation->getOffset() == sServerFacade.GetChaseOffset(bot))
                 return false;
 
             if (!ai->IsStateActive(BotState::BOT_STATE_COMBAT))
@@ -446,7 +446,7 @@ namespace ai
                 if (!ai->HasStrategy("stay", ai->GetState()))
                 {
                     // Do not move if currently being targeted
-                    const bool isBeingTargeted = !bot->getAttackers().empty();
+                    const bool isBeingTargeted = !bot->GetAttackers().empty();
                     if (!isBeingTargeted)
                     {
                         Unit* target = AI_VALUE(Unit*, "current target");
@@ -454,7 +454,7 @@ namespace ai
                         {
                             const float safeDistance = WaitForAttackStrategy::GetSafeDistance();
                             const float safeDistanceThreshold = WaitForAttackStrategy::GetSafeDistanceThreshold();
-                            const float distanceToTarget = sServerFacade.GetDistance2d(bot, target);
+                            const float distanceToTarget = sServerFacade.getDistance2d(bot, target);
                             return (distanceToTarget > (safeDistance + safeDistanceThreshold)) ||
                                    (distanceToTarget < (safeDistance - safeDistanceThreshold));
                         }

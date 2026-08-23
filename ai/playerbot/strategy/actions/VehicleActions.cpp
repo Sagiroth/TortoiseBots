@@ -37,13 +37,13 @@ bool EnterVehicleAction::Execute(Event& event)
             continue;
         }
 
-        //if (fabs(bot->GetPositionZ() - vehicle->GetPositionZ()) < 20.0f)
+        //if (fabs(bot->getPositionZ() - vehicle->getPositionZ()) < 20.0f)
         //    continue;
 
-        //if (sServerFacade.GetDistance2d(bot, vehicle) > 100.0f)
+        //if (sServerFacade.getDistance2d(bot, vehicle) > 100.0f)
         //    continue;
 
-        if (sServerFacade.GetDistance2d(bot, vehicle) > 10.0f)
+        if (sServerFacade.getDistance2d(bot, vehicle) > 10.0f)
             return MoveTo(vehicle, INTERACTION_DISTANCE - 1.0f);
 
         uint8 seat = 0;
@@ -69,7 +69,7 @@ bool EnterVehicleAction::Execute(Event& event)
         // check if bot is on vehicle
         if (Unit* passenger = vehicle->GetVehicleInfo()->GetPassenger(seat))
         {
-            if (passenger->GetObjectGuid() == bot->GetObjectGuid())
+            if (passenger->getObjectGuid() == bot->getObjectGuid())
                 return true;
         }
     }

@@ -38,7 +38,7 @@ bool FindNonCcTargetStrategy::IsCcTarget(Unit* attacker)
             if (!player || !sServerFacade.IsAlive(player) || !ai->IsSafe(player))
                 continue;
 
-            if (player->GetPlayerbotAI())
+            if (PlayerbotAIStorage::Instance().GetAI(player))
             {
                 if (PAI_VALUE(Unit*,"rti cc target") == attacker)
                     return true;
@@ -48,14 +48,14 @@ bool FindNonCcTargetStrategy::IsCcTarget(Unit* attacker)
                 if (index != -1)
                 {
                     uint64 guid = group->GetTargetIcon(index);
-                    if (guid && attacker->GetObjectGuid() == ObjectGuid(guid))
+                    if (guid && attacker->getObjectGuid() == ObjectGuid(guid))
                         return true;
                 }
             }
         }
 
         uint64 guid = group->GetTargetIcon(4);
-        if (guid && attacker->GetObjectGuid() == ObjectGuid(guid))
+        if (guid && attacker->getObjectGuid() == ObjectGuid(guid))
             return true;
     }
 
@@ -75,7 +75,7 @@ void FindTargetStrategy::GetPlayerCount(Unit* creature, int* tankCount, int* dps
     *tankCount = 0;
     *dpsCount = 0;
 
-    Unit::AttackerSet attackers(creature->getAttackers());
+    Unit::AttackerSet attackers(creature->GetAttackers());
     for (std::set<Unit*>::const_iterator i = attackers.begin(); i != attackers.end(); i++)
     {
         Unit* attacker = *i;
@@ -101,7 +101,7 @@ TravelTarget* LeaderTravelTargetValue::Calculate()
     TravelTarget* target = AI_VALUE(TravelTarget*, "travel target");
 
     Player* player = ai->GetGroupMaster();
-    if (!player || player == bot || !player->GetPlayerbotAI() || !ai->IsSafe(player))
+    if (!player || player == bot || !PlayerbotAIStorage::Instance().GetAI(player) || !ai->IsSafe(player))
         return target;
 
     if (bot->GetGroup() && !ai->IsGroupLeader())
@@ -126,7 +126,7 @@ WorldPosition LastLongMoveValue::Calculate()
     if (lastMove.lastPath.empty())
         return WorldPosition();
 
-    return lastMove.lastPath.getBack();
+    return lastMove.lastPath.GetBack();
 }
 
 WorldPosition HomeBindValue::Calculate()
@@ -145,7 +145,7 @@ std::string HomeBindValue::Format()
 
 void PullTargetValue::Set(Unit* unit)
 {
-    guid = unit ? unit->GetObjectGuid() : ObjectGuid();
+    guid = unit ? unit->getObjectGuid() : ObjectGuid();
 }
 
 Unit* PullTargetValue::Get()
@@ -189,7 +189,7 @@ Unit* ClosestAttackerTargetingMeTargetValue::Calculate()
         Unit* attacker = ai->GetUnit(attackerGuid);
         if (attacker)
         {
-            const float distance = bot->GetDistance(attacker, true, DIST_CALC_COMBAT_REACH);
+            const float distance = bot->getDistance(attacker, true, DIST_CALC_COMBAT_REACH);
             if (distance < closest)
             {
                 closest = distance;
@@ -208,7 +208,7 @@ std::list<ObjectGuid> FriendlyManualTargetsValue::Get()
         Unit* player = ai->GetUnit(playerGuid);
         if (ai->IsSafe(player))
         {
-            if (bot->IsInGroup(player))
+            if (IsInGroup_Helper(bot, player))
             {
                 return false;
             }

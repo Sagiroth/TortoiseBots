@@ -11,10 +11,10 @@ float MyThreatValue::Calculate()
 {
     Unit* target = AI_VALUE(Unit*, qualifier);
     
-    if (target->GetObjectGuid() != lastTarget) //Reset history if we switched target.
+    if (target->getObjectGuid() != lastTarget) //Reset history if we switched target.
         LogCalculatedValue::Reset();
 
-    lastTarget = target->GetObjectGuid();
+    lastTarget = target->getObjectGuid();
       
     return ThreatValue::GetThreat(bot, target);
 }
@@ -65,10 +65,10 @@ float ThreatValue::GetThreat(Player* player, Unit* target)
     if (target->IsFriend(player))
         target = target->GetTarget();
 
-    if (target->GetObjectGuid().IsPlayer())
+    if (target->getObjectGuid().IsPlayer())
         return 0;
 
-    float botThreat = sServerFacade.GetThreatManager(target).getThreat(player);
+    float botThreat = sServerFacade.GetThreatManager(target).GetThreat(player);
 
     return botThreat;
 }
@@ -81,7 +81,7 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
     if (target->IsFriend(ai->GetBot()))
         target = target->GetTarget();
 
-    if (target->GetObjectGuid().IsPlayer())
+    if (target->getObjectGuid().IsPlayer())
         return 0;
 
     Group* group = ai->GetBot()->GetGroup();
@@ -92,13 +92,13 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
 
     for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
     {
-        Player* player = gref->getSource();
+        Player* player = gref->GetSource();
         if (!player || !sServerFacade.IsAlive(player) || !ai->IsSafe(player) || player == ai->GetBot())
             continue;
 
         if (ai->IsTank(player))
         {
-            float threat = sServerFacade.GetThreatManager(target).getThreat(player);
+            float threat = sServerFacade.GetThreatManager(target).GetThreat(player);
             if (maxThreat < threat)
                 maxThreat = threat;
         }
@@ -118,7 +118,7 @@ uint8 ThreatValue::Calculate(Unit* target)
     if (!target)
         return 0;
 
-    if (target->GetObjectGuid().IsPlayer())
+    if (target->getObjectGuid().IsPlayer())
         return 0;
 
     Group* group = bot->GetGroup();

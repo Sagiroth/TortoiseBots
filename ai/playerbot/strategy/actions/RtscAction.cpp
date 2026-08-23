@@ -9,8 +9,8 @@ using namespace ai;
 
 bool RTSCAction::Execute(Event& event)
 {
-	std::string command = event.getParam();
-	Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+	std::string command = event.GetParam();
+	Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
 	if (command.empty() && !qualifier.empty())
 	{
@@ -49,7 +49,7 @@ bool RTSCAction::Execute(Event& event)
 	if (command == "select" && !selected)
 	{
 		SET_AI_VALUE(bool, "RTSC selected", true);
-		requester->GetSession()->SendPlaySpellVisual(bot->GetObjectGuid(), 5036);
+		requester->GetSession()->SendPlaySpellVisual(bot->getObjectGuid(), 5036);
 		return true;
 	}
 	else if (command == "cancel")
@@ -57,7 +57,7 @@ bool RTSCAction::Execute(Event& event)
 		RESET_AI_VALUE(bool, "RTSC selected");
 		RESET_AI_VALUE(std::string, "RTSC next spell action");
 		if(selected)
-			requester->GetSession()->SendPlaySpellVisual(bot->GetObjectGuid(), 6372);
+			requester->GetSession()->SendPlaySpellVisual(bot->getObjectGuid(), 6372);
 		return true;
 	}
 	else if (command == "toggle")
@@ -65,12 +65,12 @@ bool RTSCAction::Execute(Event& event)
 		if (!selected)
 		{
 			SET_AI_VALUE(bool, "RTSC selected", true);
-			requester->GetSession()->SendPlaySpellVisual(bot->GetObjectGuid(), 5036);
+			requester->GetSession()->SendPlaySpellVisual(bot->getObjectGuid(), 5036);
 		}
 		else
 		{
 			SET_AI_VALUE(bool, "RTSC selected", false);
-			requester->GetSession()->SendPlaySpellVisual(bot->GetObjectGuid(), 6372);
+			requester->GetSession()->SendPlaySpellVisual(bot->getObjectGuid(), 6372);
 		}
 
 		return true;
@@ -134,7 +134,7 @@ bool RTSCAction::Execute(Event& event)
 				if (!ai->IsSafe(player))
 					continue;
 
-				if (!player->GetPlayerbotAI())
+				if (!PlayerbotAIStorage::Instance().GetAI(player))
 					continue;
 
 				if (args.size() < 5 && player != bot)
@@ -202,7 +202,7 @@ bool RTSCAction::Execute(Event& event)
 				if (!ai->IsSafe(player))
 					continue;
 
-				if (!player->GetPlayerbotAI())
+				if (!PlayerbotAIStorage::Instance().GetAI(player))
 					continue;
 
 				if (args.size() < 5 && player != bot)

@@ -260,11 +260,11 @@ std::list<std::pair<uint32, std::string> > ListSpellsAction::GetSpellList(std::s
 
 bool ListSpellsAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!requester)
         return false;
 
-    std::string filter = event.getParam();
+    std::string filter = event.GetParam();
 
     std::list<std::pair<uint32, std::string> > spells = GetSpellList(filter);
 

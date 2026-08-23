@@ -37,7 +37,7 @@ std::list<Item*> ItemsUsefulToGiveValue::Calculate()
 
     std::list<Item*> giveItems;
 
-    if (ai->HasActivePlayerMaster() || !player->GetPlayerbotAI())
+    if (ai->HasActivePlayerMaster() || !PlayerbotAIStorage::Instance().GetAI(player))
         return giveItems;
 
     std::list<ItemUsage> myUsages = { ItemUsage::ITEM_USAGE_NONE , ItemUsage::ITEM_USAGE_VENDOR, ItemUsage::ITEM_USAGE_AH, ItemUsage::ITEM_USAGE_BROKEN_AH, ItemUsage::ITEM_USAGE_DISENCHANT };
@@ -61,7 +61,7 @@ std::list<Item*> ItemsUsefulToGiveValue::Calculate()
             if (trade)
             {
 
-                if (trade->HasItem(item->GetObjectGuid())) //This specific item isn't being traded.
+                if (trade->HasItem(item->getObjectGuid())) //This specific item isn't being traded.
                     continue;
 
                 if (IsTradingItem(item->GetEntry())) //A simular item isn't being traded.
@@ -89,7 +89,7 @@ std::list<Item*> ItemsUsefulToEnchantValue::Calculate()
 
     std::list<Item*> enchantItems;
 
-    if (ai->HasActivePlayerMaster() || !player->GetPlayerbotAI() || !ai->IsSafe(player))
+    if (ai->HasActivePlayerMaster() || !PlayerbotAIStorage::Instance().GetAI(player) || !ai->IsSafe(player))
         return enchantItems;
 
     std::vector<uint32> enchantSpells = AI_VALUE(std::vector<uint32>, "enchant spells");
@@ -123,7 +123,7 @@ std::list<Item*> ItemsUsefulToEnchantValue::Calculate()
         if (trade)
         {
 
-            if (trade->HasItem(item->GetObjectGuid())) //This specific item isn't being traded.
+            if (trade->HasItem(item->getObjectGuid())) //This specific item isn't being traded.
                 continue;
 
             if (std::any_of(enchantItems.begin(), enchantItems.end(), [item](Item* i) {return i->GetEntry() == item->GetEntry(); })) //We didn't already add a simular item to this list.
@@ -134,9 +134,9 @@ std::list<Item*> ItemsUsefulToEnchantValue::Calculate()
 
         uint32 currentEnchnatWeight = 0;
         if (item->GetEnchantmentId(PERM_ENCHANTMENT_SLOT))
-            currentEnchnatWeight = sRandomItemMgr.CalculateEnchantWeight(bot->getClass(), sRandomItemMgr.GetPlayerSpecId(bot), item->GetEnchantmentId(PERM_ENCHANTMENT_SLOT));
+            currentEnchnatWeight = sRandomItemMgr.CalculateEnchantWeight(bot->GetClass(), sRandomItemMgr.GetPlayerSpecId(bot), item->GetEnchantmentId(PERM_ENCHANTMENT_SLOT));
 
-        uint32 newEnchantWeight = sRandomItemMgr.CalculateEnchantWeight(bot->getClass(), sRandomItemMgr.GetPlayerSpecId(bot), enchant_id);
+        uint32 newEnchantWeight = sRandomItemMgr.CalculateEnchantWeight(bot->GetClass(), sRandomItemMgr.GetPlayerSpecId(bot), enchant_id);
 
         if (!item->GetEnchantmentId(PERM_ENCHANTMENT_SLOT) || currentEnchnatWeight >= newEnchantWeight)
             continue;

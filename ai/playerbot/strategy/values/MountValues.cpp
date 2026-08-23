@@ -114,7 +114,7 @@ bool MountValue::IsValidLocation(Player* bot)
 
 #ifdef MANGOSBOT_ONE
         uint32 zone, area;
-        bot->GetZoneAndAreaId(zone, area);
+        bot->getZoneAndAreaId(zone, area);
         uint32 v_map = GetVirtualMapForMapAndZone(bot->GetMapId(), zone);
         MapEntry const* mapEntry = sMapStore.LookupEntry(v_map);
         if (!mapEntry || mapEntry->addon < 1 || !mapEntry->IsContinent())
@@ -122,7 +122,7 @@ bool MountValue::IsValidLocation(Player* bot)
 #endif
 #ifdef MANGOSBOT_TWO
         uint32 zone, area;
-        bot->GetZoneAndAreaId(zone, area);
+        bot->getZoneAndAreaId(zone, area);
         if (!bot->CanStartFlyInArea(bot->GetMapId(), zone, area, false))
             return false;
 #endif
@@ -283,7 +283,7 @@ std::string MountListValue::Format()
 uint32 MountSkillTypeValue::Calculate()
 {
 #ifdef MANGOSBOT_ZERO
-    switch (bot->getRace())
+    switch (bot->GetRace())
     {
     case RACE_HUMAN:
         return SKILL_RIDING_HORSE;

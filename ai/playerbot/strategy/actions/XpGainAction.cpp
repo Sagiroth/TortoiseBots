@@ -12,11 +12,11 @@ using namespace ai;
 
 bool XpGainAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
     RESET_AI_VALUE(uint32,"death count");
 
-    WorldPacket p(event.getPacket()); // (8+4+1+4+8)
+    WorldPacket p(event.GetPacket()); // (8+4+1+4+8)
     ObjectGuid guid;
     uint32 xpgain;
     uint8 type = 0; // 00-kill_xp type, 01-non_kill_xp type
@@ -77,7 +77,7 @@ bool XpGainAction::Execute(Event& event)
     uint32 levelAfter = bot->GetLevel();
 
     if (levelAfter > levelBefore && levelAfter >= 5 &&
-        sRandomPlayerbotMgr.IsRandomBot(bot) && !bot->GetPlayerbotAI()->HasRealPlayerMaster())
+        sRandomPlayerbotMgr.IsRandomBot(bot) && !PlayerbotAIStorage::Instance().GetAI(bot)->HasRealPlayerMaster())
     {
         sLog.outBasic("Bot #%d <%s> levelled %d->%d (Execute hook), triggering gear update",
             bot->GetGUIDLow(), bot->GetName(), levelBefore, levelAfter);
@@ -118,7 +118,7 @@ void XpGainAction::GiveXP(int32 xp, Unit* victim)
     }
 
     // XP resting bonus for kill
-    uint32 rested_bonus_xp = victim ? bot->GetXPRestBonus(xp) : 0;
+    uint32 rested_bonus_xp = victim ? bot->getXPRestBonus(xp) : 0;
 
     //SendLogXPGain(xp, victim, rested_bonus_xp);
 

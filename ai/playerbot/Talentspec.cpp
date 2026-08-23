@@ -135,7 +135,7 @@ void TalentSpec::SetPublicNote(Player* bot)
     if (sPlayerbotAIConfig.talentsInPublicNote && bot->GetGuildId())
     {
         Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-        MemberSlot* member = guild->GetMemberSlot(bot->GetObjectGuid());
+        MemberSlot* member = guild->GetMemberSlot(bot->getObjectGuid());
         if (guild->HasRankRight(member->RankId, GR_RIGHT_EPNOTE))
             member->SetPublicNote(ChatHelper::specName(bot) + " (" + std::to_string(spec.GetTalentPoints(0)) + "/" + std::to_string(spec.GetTalentPoints(1)) + "/" + std::to_string(spec.GetTalentPoints(2)) + ")");
     }

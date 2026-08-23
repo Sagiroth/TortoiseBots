@@ -7,24 +7,24 @@ using namespace ai;
 
 bool ListQuestsAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    if (event.getParam() == "completed" || event.getParam() == "co")
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    if (event.GetParam() == "completed" || event.GetParam() == "co")
     {
         ListQuests(requester, QUEST_LIST_FILTER_COMPLETED);
     }
-    else if (event.getParam() == "incompleted" || event.getParam() == "in")
+    else if (event.GetParam() == "incompleted" || event.GetParam() == "in")
     {
         ListQuests(requester, QUEST_LIST_FILTER_INCOMPLETED);
     }
-    else if (event.getParam() == "all")
+    else if (event.GetParam() == "all")
     {
         ListQuests(requester, QUEST_LIST_FILTER_ALL);
     }
-    else if (event.getParam().find("travel") == 0)
+    else if (event.GetParam().find("travel") == 0)
     {
         std::set<uint32> questIds;
-        if (event.getParam().size() > 8)
-            questIds = ChatHelper::ExtractAllQuestIds(event.getParam());
+        if (event.GetParam().size() > 8)
+            questIds = ChatHelper::ExtractAllQuestIds(event.GetParam());
 
         ListQuests(requester, QUEST_LIST_FILTER_ALL, QUEST_TRAVEL_DETAIL_SUMMARY, questIds);
     }
@@ -87,7 +87,7 @@ int ListQuestsAction::ListQuests(Player* requester, bool completed, bool silent,
         if (player->GetMapId() != bot->GetMapId())
             continue;
 
-        if (!player->GetPlayerbotAI())
+        if (!PlayerbotAIStorage::Instance().GetAI(player))
             continue;
 
         for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
@@ -136,7 +136,7 @@ int ListQuestsAction::ListQuests(Player* requester, bool completed, bool silent,
             QuestTravelDestination* QuestDestination = (QuestTravelDestination*)target->GetDestination();
 
             if (QuestDestination->GetQuestId() == questId)
-                out << "[Active]" << target->GetPosition()->distance(botPos);
+                out << "[Active]" << target->getPosition()->distance(botPos);
         }
 
         DestinationList destinations = sTravelMgr.GetDestinations(info, PurposeFlag, { (int32)questId }, false, 1000000.0f);

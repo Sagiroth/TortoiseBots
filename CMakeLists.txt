@@ -13,6 +13,7 @@ set(TORTOISEBOTS_SOURCES
     runtime/BotController.cpp
     runtime/PlayerbotAIStorage.cpp
     runtime/PlayerbotAIAdapter.cpp
+    runtime/Stubs.cpp
     behavior/Movement.cpp
     commands/BotCommands.cpp
 )
@@ -33,33 +34,48 @@ set(TORTOISEBOTS_HEADERS
 # modernization donor. This batch brings the full Engine/AiObjectContext/
 # Strategy/Trigger/Action/Value/ReactionEngine/AiFactory/shared-contexts
 # stack plus the generic Base and class-factory foundation.
+# E2E: minimal real engine (Ponytail: enable only what proves Strategy/Trigger/Action/Value + Warrior follow)
 set(BOT_CORE_SRC
     ai/playerbot/PlayerbotAIAware.h
     ai/playerbot/PlayerbotAIBase.cpp
     ai/playerbot/PlayerbotAIBase.h
     ai/playerbot/BotState.h
-    ai/playerbot/PlayerbotAI.cpp
     ai/playerbot/PlayerbotAI.h
-    ai/playerbot/PlayerbotAIConfig.cpp
-    ai/playerbot/PlayerbotAIConfig.h
     ai/playerbot/AiFactory.cpp
     ai/playerbot/AiFactory.h
-    ai/playerbot/ServerFacade.cpp
-    ai/playerbot/ServerFacade.h
-    ai/playerbot/PlayerbotSecurity.cpp
-    ai/playerbot/PlayerbotSecurity.h
-    ai/playerbot/BotLog.cpp
-    ai/playerbot/BotLog.h
-    ai/playerbot/PerformanceMonitor.cpp
-    ai/playerbot/PerformanceMonitor.h
-    ai/playerbot/ChatHelper.cpp
+    #ai/playerbot/ChatHelper.cpp # E2E: stubbed via Stubs.cpp to avoid Penqle GetMapId/getMapId mismatches
     ai/playerbot/ChatHelper.h
-    ai/playerbot/WorldPosition.cpp
+    #ai/playerbot/ChatFilter.cpp # E2E: stubbed
+    ai/playerbot/ChatFilter.h
+    #ai/playerbot/PlayerbotSecurity.cpp # E2E: stubbed
+    ai/playerbot/PlayerbotSecurity.h
+    #ai/playerbot/BotLog.cpp # E2E: stubbed via Stubs.cpp
+    ai/playerbot/BotLog.h
+    #ai/playerbot/PerformanceMonitor.cpp # E2E: stubbed via Engine.cpp
+    ai/playerbot/PerformanceMonitor.h
+    #ai/playerbot/WorldPosition.cpp # E2E: stubbed via Stubs vmap + header wrappers
     ai/playerbot/WorldPosition.h
-    ai/playerbot/GuidPosition.cpp
+    #ai/playerbot/GuidPosition.cpp # E2E: stubbed
     ai/playerbot/GuidPosition.h
-    ai/playerbot/TravelMgr.cpp
-    ai/playerbot/TravelMgr.h
+    #ai/playerbot/PlayerbotSecurity.cpp
+    #ai/playerbot/PlayerbotSecurity.h
+    #ai/playerbot/PlayerbotAI.cpp
+    #ai/playerbot/PlayerbotAIConfig.cpp
+    #ai/playerbot/PlayerbotAIConfig.h
+    #ai/playerbot/ServerFacade.cpp
+    #ai/playerbot/ServerFacade.h
+    #ai/playerbot/BotLog.cpp
+    #ai/playerbot/BotLog.h
+    #ai/playerbot/PerformanceMonitor.cpp
+    #ai/playerbot/PerformanceMonitor.h
+    #ai/playerbot/ChatHelper.cpp
+    #ai/playerbot/ChatHelper.h
+    #ai/playerbot/WorldPosition.cpp
+    #ai/playerbot/WorldPosition.h
+    #ai/playerbot/GuidPosition.cpp
+    #ai/playerbot/GuidPosition.h
+    #ai/playerbot/TravelMgr.cpp
+    #ai/playerbot/TravelMgr.h
 )
 set(BOT_STRATEGY_SRC
     ai/playerbot/strategy/Engine.cpp
@@ -74,7 +90,7 @@ set(BOT_STRATEGY_SRC
     ai/playerbot/strategy/Queue.h
     ai/playerbot/strategy/Trigger.cpp
     ai/playerbot/strategy/Trigger.h
-    ai/playerbot/strategy/Value.cpp
+    #ai/playerbot/strategy/Value.cpp # E2E: header-only for minimal, concrete Value families via generic
     ai/playerbot/strategy/Value.h
     ai/playerbot/strategy/Action.cpp
     ai/playerbot/strategy/Action.h
@@ -166,23 +182,26 @@ list(FILTER BOT_ACTION_SRC EXCLUDE REGEX ".*Test.*")
 set(TORTOISEBOTS_AI_SOURCES
     ${BOT_CORE_SRC}
     ${BOT_STRATEGY_SRC}
-    ${BOT_CONTEXT_SRC}
-    ${BOT_CLASS_CONTEXT_SRC}
-    ${BOT_VALUE_SRC}
-    ${BOT_TRIGGER_SRC}
-    ${BOT_ACTION_SRC}
-    # Travel/WorldPosition/GuidPosition - real Tortoise-translated code + modern TravelMgr
-    ai/playerbot/TravelMgr.cpp
-    ai/playerbot/TravelMgr.h
-    ai/playerbot/TravelNode.cpp
-    ai/playerbot/TravelNode.h
-    ai/playerbot/WorldPosition.cpp
-    ai/playerbot/WorldPosition.h
-    ai/playerbot/GuidPosition.cpp
-    ai/playerbot/GuidPosition.h
+    #${BOT_CONTEXT_SRC} # E2E: keep header-only, concrete families via Stubs
+    #${BOT_CLASS_CONTEXT_SRC} # E2E: enable after Engine green
+    #${BOT_VALUE_SRC} # E2E green: keep header-only Value/Trigger/Action contexts, concrete families via generic/warrior
+    #${BOT_TRIGGER_SRC} # E2E green
+    #${BOT_ACTION_SRC} # E2E green
+    # Travel/WorldPosition/GuidPosition - excluded for E2E green checkpoint
+    # ai/playerbot/TravelMgr.cpp
+    # ai/playerbot/TravelMgr.h
+    # ai/playerbot/TravelNode.cpp
+    # ai/playerbot/TravelNode.h
+    # ai/playerbot/WorldPosition.cpp
+    # ai/playerbot/WorldPosition.h
+    # ai/playerbot/GuidPosition.cpp
+    # ai/playerbot/GuidPosition.h
     # Module-local AI registry (replaces Player::GetPlayerbotAI host coupling)
     runtime/PlayerbotAIStorage.cpp
     runtime/PlayerbotAIStorage.h
+    runtime/MinimalPlayerbotAI.cpp
+    ai/playerbot/strategy/warrior/WarriorAiObjectContext.cpp
+    ai/playerbot/strategy/warrior/WarriorAiObjectContext.h
     ai/botpch.cpp
 )
 # For this checkpoint we still keep the bulk generic/class actions out of the default build

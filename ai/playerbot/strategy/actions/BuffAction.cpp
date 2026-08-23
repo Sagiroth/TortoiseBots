@@ -39,7 +39,7 @@ public:
             if (bot->HasAura(spellId))
                 return true;
 
-            Item* itemForSpell = *bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<Item*>("item for spell", spellId);
+            Item* itemForSpell = *PlayerbotAIStorage::Instance().GetAI(bot)->GetAiObjectContext()->GetValue<Item*>("item for spell", spellId);
             if (itemForSpell && itemForSpell->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT))
                 return true;
         
@@ -84,8 +84,8 @@ void BuffAction::TellHeader(uint32 subClass, Player* requester)
 
 bool BuffAction::Execute(Event& event)
 {
-    std::string text = event.getParam();
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    std::string text = event.GetParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
     FindBuffVisitor visitor(bot);
     ai->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);

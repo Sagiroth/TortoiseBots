@@ -35,7 +35,7 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
     Group* group = bot->GetGroup();
     Player* master = GetMaster();
 
-    if (master && (master == bot || master->GetMapId() != bot->GetMapId() || master->IsBeingTeleported() || !master->GetPlayerbotAI()))
+    if (master && (master == bot || master->GetMapId() != bot->GetMapId() || master->IsBeingTeleported() || !PlayerbotAIStorage::Instance().GetAI(master)))
         master = nullptr;
 
     // TEMP-DEBUG(grind-target): the existing "debug grind" strategy only reaches a
@@ -55,7 +55,7 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
             out << sPlayerbotAIConfig.GetTimestampStr() << "+00,";
             out << bot->GetName() << ",\"" << u->GetName() << "\"," << u->GetEntry() << ",";
             out << (int)sServerFacade.IsHostileTo(bot, u) << "," << (int)sServerFacade.IsFriendlyTo(bot, u) << ",";
-            out << bot->GetDistance(u) << ",\"" << reason << "\"";
+            out << bot->getDistance(u) << ",\"" << reason << "\"";
             sPlayerbotAIConfig.log("grind_target.csv", out.str().c_str());
         }
     };
@@ -103,7 +103,7 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
         {
             Player* member = sObjectMgr.GetPlayer(itr->guid);
             if (member && sServerFacade.IsAlive(member))
-                groupMembers.push_back({ member, member->GetPositionX(), member->GetPositionY() });
+                groupMembers.push_back({ member, member->getPositionX(), member->getPositionY() });
         }
     }
 
@@ -171,7 +171,7 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
         }
 #endif
 
-        if (abs(bot->GetPositionZ() - unit->GetPositionZ()) > sPlayerbotAIConfig.spellDistance)
+        if (abs(bot->getPositionZ() - unit->getPositionZ()) > sPlayerbotAIConfig.spellDistance)
         {
             logGrind(unit, "ignored (to far above/below).");
             continue;
@@ -186,20 +186,20 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
         if (!bot->InBattleGround() && master &&
             (ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
              ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)) &&
-            sServerFacade.GetDistance2d(master, unit) > sPlayerbotAIConfig.proximityDistance)
+            sServerFacade.getDistance2d(master, unit) > sPlayerbotAIConfig.proximityDistance)
         {
             logGrind(unit, "ignored (far from master).");
             continue;
         }
 
-        if (!bot->InBattleGround() && (int)unit->GetLevel() - (int)bot->GetLevel() > 4 && !unit->GetObjectGuid().IsPlayer())
+        if (!bot->InBattleGround() && (int)unit->GetLevel() - (int)bot->GetLevel() > 4 && !unit->getObjectGuid().IsPlayer())
         {
             logGrind(unit, std::to_string((int)unit->GetLevel() - (int)bot->GetLevel()) + " levels above bot).");
             continue;
         }
 
         Creature* creature = dynamic_cast<Creature*>(unit);
-        if (creature && creature->GetCreatureInfo() && creature->GetCreatureInfo()->Rank > CREATURE_ELITE_NORMAL && !AI_VALUE(bool, "can fight elite") &&
+        if (creature && creature->GetCreatureInfo() && creature->GetCreatureInfo()->rank > CREATURE_ELITE_NORMAL && !AI_VALUE(bool, "can fight elite") &&
             !AI_VALUE2(bool, "trigger active", "in vehicle"))
         {
             logGrind(unit, "ignored (can not fight elites currently).");
@@ -224,7 +224,7 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
             continue;
         }
 
-        float newdistance = sServerFacade.GetDistance2d(bot, unit);
+        float newdistance = sServerFacade.getDistance2d(bot, unit);
 
         uint32 entry = unit->GetEntry();
         bool needForQuest = false;
@@ -286,7 +286,7 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
                 if (!member || !sServerFacade.IsAlive(member))
                     continue;
 
-                newdistance = sServerFacade.GetDistance2d(member, unit);
+                newdistance = sServerFacade.getDistance2d(member, unit);
                 if (!result || newdistance < distance)
                 {
                     distance = newdistance;
@@ -337,9 +337,9 @@ int GrindTargetValue::GetTargetingPlayerCount( Unit* unit )
         if( !member || !sServerFacade.IsAlive(member) || member == bot)
             continue;
 
-        PlayerbotAI* ai = member->GetPlayerbotAI();
+        PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(member);
         if ((ai && *ai->GetAiObjectContext()->GetValue<Unit*>("current target") == unit) ||
-            (!ai && member->GetSelectionGuid() == unit->GetObjectGuid()))
+            (!ai && member->GetSelectionGuid() == unit->getObjectGuid()))
             count++;
     }
 

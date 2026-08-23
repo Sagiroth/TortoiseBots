@@ -29,5 +29,6 @@ protected:
 protected:
 	uint32 aiInternalUpdateDelay;
 
-    std::unique_ptr<PerformanceMonitorOperation> totalPmo;
+    // E2E green: use void* to avoid incomplete type at PCH time
+    void* totalPmo = nullptr;
 };

@@ -6,8 +6,8 @@ using namespace ai;
 
 bool ChangeChatAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string text = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string text = event.GetParam();
     ChatMsg parsed = chat->parseChat(text);
     if (parsed == CHAT_MSG_SYSTEM)
     {

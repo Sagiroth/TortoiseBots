@@ -28,7 +28,7 @@ namespace ai
                 return false;
             }
             
-            if (bot->isAFK())
+            if (bot->IsAFK())
                 bot->ToggleAFK();
 
             WorldPacket p;
@@ -36,7 +36,7 @@ namespace ai
             p << roles_mask;
             bot->GetSession()->HandleGroupAcceptOpcode(p);
 
-            if (!bot->GetGroup() || !bot->GetGroup()->IsMember(inviter->GetObjectGuid()))
+            if (!bot->GetGroup() || !bot->GetGroup()->IsMember(inviter->getObjectGuid()))
                 return false;
 
             if (sRandomPlayerbotMgr.IsFreeBot(bot))
@@ -56,7 +56,7 @@ namespace ai
 
             Player* master = inviter;
 
-            if (master->GetPlayerbotAI()) //Copy formation from bot master.
+            if (PlayerbotAIStorage::Instance().GetAI(master)) //Copy formation from bot master.
             {
                 if (sPlayerbotAIConfig.inviteChat && (sRandomPlayerbotMgr.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
                 {
@@ -72,13 +72,13 @@ namespace ai
 
                     if (guild && master->IsInGuild(bot->GetGuildId()))
                         guild->BroadcastToGuild(bot->GetSession(), reply, LANG_UNIVERSAL);
-                    else if (sServerFacade.GetDistance2d(bot, master) < sPlayerbotAIConfig.spellDistance * 1.5)
+                    else if (sServerFacade.getDistance2d(bot, master) < sPlayerbotAIConfig.spellDistance * 1.5)
                         bot->Say(reply, (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
                 }
 
                 Formation* masterFormation = MAI_VALUE(Formation*, "formation");
                 FormationValue* value = (FormationValue*)context->GetValue<Formation*>("formation");
-                value->Load(masterFormation->getName());
+                value->Load(masterFormation->GetName());
             }
 
             ai->TellPlayer(inviter, BOT_TEXT("hello"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);

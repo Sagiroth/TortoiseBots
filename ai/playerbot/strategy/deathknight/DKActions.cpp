@@ -22,7 +22,7 @@ bool CastRaiseDeadAction::isPossible()
 		if (creature->GetCreatureType() != CREATURE_TYPE_HUMANOID)
 			continue;
 
-		if (!bot->isHonorOrXPTarget(creature))
+		if (!bot->IsHonorOrXPTarget(creature))
 			continue;
 
 		return true;
@@ -59,8 +59,8 @@ bool CastRaiseDeadAction::isPossible()
 
 bool RuneforgeAction::Execute(Event& event)
 {
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    std::string text = event.getParam();
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    std::string text = event.GetParam();
 
     uint32 runeforgeSpellId;
 

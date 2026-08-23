@@ -97,18 +97,18 @@ bool OutNumberedTrigger::IsActive()
     // closes. Don't fire this trigger for low-level Hunters at all; PanicTrigger (separate,
     // narrower - critical health AND low/no mana) is untouched, so a genuine near-death
     // escape attempt still fires.
-    if (bot->getClass() == CLASS_HUNTER && bot->GetLevel() < 10)
+    if (bot->GetClass() == CLASS_HUNTER && bot->GetLevel() < 10)
         return false;
 
     // Druid has Rejuvenation/Healing Touch as a genuine pre-10 self-sufficiency fallback -
     // no need to preserve a flee/retreat option here either. Same reasoning as Hunter above,
     // different tool (self-heal instead of "no viable kiting toolkit").
-    if (bot->getClass() == CLASS_DRUID && bot->GetLevel() < 10)
+    if (bot->GetClass() == CLASS_DRUID && bot->GetLevel() < 10)
         return false;
 
     // Mage has no kiting toolkit pre-10 either (Frost Nova is level 10, Blink is level 22) -
     // same reasoning as Hunter: fleeing can't create real distance yet, so don't bother.
-    if (bot->getClass() == CLASS_MAGE && bot->GetLevel() < 10)
+    if (bot->GetClass() == CLASS_MAGE && bot->GetLevel() < 10)
         return false;
 
     // Priest gets real self-healing from level 1 (Renew, Heal), so the pre-10 case is the
@@ -116,7 +116,7 @@ bool OutNumberedTrigger::IsActive()
     // solo (no group to preserve healing capacity for), that reasoning holds at any level -
     // there's no one else depending on this bot surviving longer by running instead of
     // healing through it.
-    if (bot->getClass() == CLASS_PRIEST && (bot->GetLevel() < 10 || !bot->GetGroup()))
+    if (bot->GetClass() == CLASS_PRIEST && (bot->GetLevel() < 10 || !bot->GetGroup()))
         return false;
 
     // Don't trigger if the bot is a dungeon or raid
@@ -178,7 +178,7 @@ bool OutNumberedTrigger::IsActive()
 
         healthMod = player->GetHealthPercent() / 100.0f;
 
-        if (dLevel > -10 && sServerFacade.GetDistance2d(bot, player) < 10.0f)
+        if (dLevel > -10 && sServerFacade.getDistance2d(bot, player) < 10.0f)
             friendPower += std::max(200 + 20 * dLevel, dLevel * 200)* healthMod;
     }
 
@@ -491,7 +491,7 @@ bool DeflectSpellTrigger::IsActive()
     if (!target->IsNonMeleeSpellCasted(true))
         return false;
 
-    if (!target->HasTarget(bot->GetObjectGuid()))
+    if (!target->HasTarget(bot->getObjectGuid()))
         return false;
 
     uint32 spellid = context->GetValue<uint32>("spell id", spell)->Get();
@@ -628,7 +628,7 @@ bool TankAssistTrigger::IsActive()
     return tankTarget->GetVictim() != AI_VALUE(Unit*, "self target");
 #endif
 #ifdef MANGOS
-    return tankTarget->getVictim() != AI_VALUE(Unit*, "self target");
+    return tankTarget->GetVictim() != AI_VALUE(Unit*, "self target");
 #endif
 }
 
@@ -813,7 +813,7 @@ bool ReturnToStayPositionTrigger::IsActive()
     PositionEntry stayPosition = AI_VALUE(PositionMap&, "position")["stay"];
     if (stayPosition.isSet())
     {
-        const float distance = bot->GetDistance(stayPosition.x, stayPosition.y, stayPosition.z);
+        const float distance = bot->getDistance(stayPosition.x, stayPosition.y, stayPosition.z);
         return distance > ai->GetRange("follow");
     }
 
@@ -825,7 +825,7 @@ bool ReturnToPullPositionTrigger::IsActive()
     PositionEntry pullPosition = AI_VALUE(PositionMap&, "position")["pull"];
     if (pullPosition.isSet())
     {
-        const float distance = bot->GetDistance(pullPosition.x, pullPosition.y, pullPosition.z);
+        const float distance = bot->getDistance(pullPosition.x, pullPosition.y, pullPosition.z);
         return distance > ai->GetRange("follow");
     }
 
@@ -860,7 +860,7 @@ bool InRaidFightTrigger::IsActive()
 bool GreaterBuffOnPartyTrigger::IsActive()
 {
     Unit* target = GetTarget();
-    return target && bot->IsInGroup(target) && BuffOnPartyTrigger::IsActive() && !ai->HasAura(lowerSpell, target, false, checkIsOwner);
+    return target && IsInGroup_Helper(bot, target) && BuffOnPartyTrigger::IsActive() && !ai->HasAura(lowerSpell, target, false, checkIsOwner);
 }
 
 bool TargetOfAttacker::IsActive()
@@ -871,7 +871,7 @@ bool TargetOfAttacker::IsActive()
 bool TargetOfAttackerInRange::IsActive()
 {
     const Unit* closestAttacker = AI_VALUE(Unit*, "closest attacker targeting me");
-    return closestAttacker && bot->GetDistance(closestAttacker, true, DIST_CALC_COMBAT_REACH) <= (distance - sPlayerbotAIConfig.contactDistance);
+    return closestAttacker && bot->getDistance(closestAttacker, true, DIST_CALC_COMBAT_REACH) <= (distance - sPlayerbotAIConfig.contactDistance);
 }
 
 bool TargetOfCastedAuraTypeTrigger::IsActive()
@@ -923,7 +923,7 @@ bool TargetOfCastedAuraTypeTrigger::IsActive()
 
             if (auraTypeSpell)
             {
-                Unit* spellTarget = auraTypeSpell->m_targets.getUnitTarget();
+                Unit* spellTarget = auraTypeSpell->m_targets.GetUnitTarget();
                 if (spellTarget == bot)
                 {
                     return true;
@@ -999,8 +999,8 @@ bool SpellTargetTrigger::IsTargetValid(Unit* target)
 {
     return target &&
            ai->IsSafe(target) &&
-           (bot == target || sServerFacade.GetDistance2d(bot, target) < sPlayerbotAIConfig.sightDistance) &&
-           (bot->IsInGroup(target)) &&
+           (bot == target || sServerFacade.getDistance2d(bot, target) < sPlayerbotAIConfig.sightDistance) &&
+           (IsInGroup_Helper(bot, target)) &&
            (!aliveCheck || !target->IsDead()) &&
            (!auraCheck || !ai->HasAura(spell, target));
 }
