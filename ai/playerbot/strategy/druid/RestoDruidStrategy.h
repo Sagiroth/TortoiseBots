@@ -19,7 +19,7 @@ public:
     RestoDruidStrategy(PlayerbotAI* botAI);
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "resto"; }
+    std::string getName() override { return "resto"; }
     uint32 GetType() const override { return STRATEGY_TYPE_RANGED | STRATEGY_TYPE_HEAL; }
 };
 
@@ -29,7 +29,7 @@ public:
     DruidBlanketStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "blanketing"; }
+    std::string getName() override { return "blanketing"; }
 };
 
 class DruidTranquilityStrategy : public Strategy
@@ -38,7 +38,7 @@ public:
     DruidTranquilityStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "tranquility"; }
+    std::string getName() override { return "tranquility"; }
 };
 
 #endif

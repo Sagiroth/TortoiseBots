@@ -80,7 +80,7 @@ CreatureDataPair const* BgMasterValue::NearestBm(bool allowDead)
         FactionTemplateEntry const* bmFactionEntry = sFactionTemplateStore.LookupEntry(bmTemplate->Faction);
 
         //Is the unit hostile?
-        if (ai->GetReaction(bmFactionEntry) < REP_NEUTRAL)
+        if (ai->getReaction(bmFactionEntry) < REP_NEUTRAL)
             continue;
 
         AreaTableEntry const* area = bmPos.GetArea();
@@ -131,7 +131,7 @@ BattleGroundTypeId RpgBgTypeValue::Calculate()
         {
             BattleGroundQueueTypeId queueTypeId = (BattleGroundQueueTypeId)i;
 
-            BattleGroundTypeId bgTypeId = sServerFacade.BGTemplateId(queueTypeId);
+            BattleGroundTypeId bgTypeId = sServerFacade.BgTemplateId(queueTypeId);
 
             BattleGround* bg = sBattleGroundMgr.GetBattleGroundTemplate(bgTypeId);
             if (!bg)

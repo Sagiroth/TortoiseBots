@@ -19,7 +19,7 @@ public:
 
 public:
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "cat"; }
+    std::string getName() override { return "cat"; }
     std::vector<NextAction> getDefaultActions() override;
     uint32 GetType() const override { return STRATEGY_TYPE_COMBAT | STRATEGY_TYPE_MELEE; }
 };
@@ -33,7 +33,7 @@ public:
     CatOffhealStrategy(PlayerbotAI* botAI);
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "offheal"; }
+    std::string getName() override { return "offheal"; }
 };
 
 #endif

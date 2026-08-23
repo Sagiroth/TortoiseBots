@@ -13,7 +13,7 @@
 #include "TradeData.h"
 #include "WorldPacket.h"
 
-bool TradeStatusExtendedAction::Execute(Event event)
+bool TradeStatusExtendedAction::Execute(Event& event)
 {
     Player* trader = bot->GetTrader();
     if (!trader)

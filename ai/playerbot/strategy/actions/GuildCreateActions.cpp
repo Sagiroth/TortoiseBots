@@ -1,7 +1,6 @@
 
 #include "playerbot/playerbot.h"
 #include "GuildCreateActions.h"
-#include "playerbot/RandomPlayerbotFactory.h"
 #include "playerbot/LootObjectStack.h"
 #ifndef MANGOSBOT_ZERO
 #ifdef CMANGOS
@@ -28,7 +27,7 @@ bool BuyPetitionAction::Execute(Event& event)
         if (!pCreature)
             continue;
 
-        std::string guildName = RandomPlayerbotFactory::CreateRandomGuildName();
+        std::string guildName = std::string(bot->GetName()) + "'s Guild";
         if (guildName.empty())
             continue;
 

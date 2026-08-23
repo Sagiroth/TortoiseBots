@@ -80,6 +80,7 @@ public:
         void LoadNamedLocations();
         bool AddNamedLocation(std::string const& name, WorldLocation const& location);
         bool GetNamedLocation(std::string const& name, WorldLocation& location);
+        bool getNamedLocation(std::string const& name, WorldLocation& location) { return GetNamedLocation(name, location); }
 
         static bool HandlePlayerbotConsoleCommand(ChatHandler* handler, char const* args);
         bool IsRandomBot(Player* bot);
@@ -159,6 +160,7 @@ public:
         virtual void MovePlayerBot(uint32 guid, PlayerbotHolder* newHolder) override;
 
         std::map<Team, std::map<BattleGroundTypeId, std::list<uint32> > > getBattleMastersCache() { return BattleMastersCache; }
+        std::map<Team, std::map<BattleGroundTypeId, std::list<uint32> > > GetBattleMastersCache() { return getBattleMastersCache(); }
 
         float getActivityMod() { return activityMod; }
         float getActivityPercentage() { return activityMod * 100.0f; }

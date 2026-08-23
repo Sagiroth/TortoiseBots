@@ -17,7 +17,7 @@ class UnlockTradedItemAction : public Action
 public:
     UnlockTradedItemAction(PlayerbotAI* botAI) : Action(botAI, "unlock traded item") {}
 
-    bool Execute(Event event) override;
+    bool Execute(Event& event) override;
 
 private:
     bool CanUnlockItem(Item* item);

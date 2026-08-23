@@ -15,7 +15,7 @@ public:
     virtual bool Check(Unit* unit) override
     {
         Pet* pet = dynamic_cast<Pet*>(unit);
-        if (pet && (pet->GetPetType() == MINI_PET || pet->GetPetType() == SUMMON_PET))
+        if (pet && (pet->getPetType() == MINI_PET || pet->getPetType() == SUMMON_PET))
             return false;
 
         return sServerFacade.IsAlive(unit) && sServerFacade.getDistance2d(ai->GetBot(), unit) <= ai->GetRange("spell") && ai->HasAuraToDispel(unit, dispelType);

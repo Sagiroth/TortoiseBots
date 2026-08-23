@@ -273,7 +273,7 @@ public:
 
             Creature* creature = target->ToCreature();
             return creature && creature->GetCreatureInfo() &&
-                   creature->GetCreatureInfo()->IsTameable();
+                   creature->GetCreatureInfo()->isTameable();
         }
     };
 

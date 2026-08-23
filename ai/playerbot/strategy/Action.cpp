@@ -76,6 +76,17 @@ NextAction** NextAction::array(uint32 n, ...)
     return res;
 }
 
+NextAction** NextAction::array(std::initializer_list<NextAction> actions)
+{
+    NextAction** result = new NextAction*[actions.size() + 1];
+    size_t index = 0;
+    for (const NextAction& action : actions)
+        result[index++] = new NextAction(action);
+
+    result[index] = NULL;
+    return result;
+}
+
 void NextAction::destroy(NextAction** actions)
 {
     if (!actions)

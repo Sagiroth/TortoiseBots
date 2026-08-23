@@ -368,7 +368,7 @@ bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string comm
                         if (isRealPlayer_Helper(target))
                         {
                             float x, y, z;
-                            bot->getPosition(x, y, z);
+                            bot->GetPosition(x, y, z);
                             target->SetSummonPoint(bot->GetMapId(), x, y, z);
 
                             WorldPacket data(SMSG_SUMMON_REQUEST, 8 + 4 + 4);

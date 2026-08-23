@@ -70,6 +70,20 @@ class PlayerbotTextMgr
         std::string GetBotText(ChatReplyType replyType, std::string name);
         bool GetBotText(std::string name, std::string& text);
         bool GetBotText(std::string name, std::string& text, std::map<std::string, std::string> placeholders);
+        // Use localized/database text when it exists, otherwise preserve the
+        // caller's behavior without making SQL-backed bot text mandatory.
+        std::string GetBotTextOrDefault(std::string name, std::string fallback, std::map<std::string, std::string> placeholders)
+        {
+            std::string text = GetBotText(name);
+            if (!text.empty())
+            {
+                ReplacePlaceholders(text, placeholders);
+                return text;
+            }
+
+            ReplacePlaceholders(fallback, placeholders);
+            return fallback;
+        }
         void LoadBotTexts();
         void LoadBotTextChance();
 

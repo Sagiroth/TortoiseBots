@@ -17,7 +17,7 @@ class TellEmblemsAction : public InventoryAction
 public:
     TellEmblemsAction(PlayerbotAI* botAI) : InventoryAction(botAI, "emblems") {}
 
-    bool Execute(Event event) override;
+    bool Execute(Event& event) override;
 };
 
 #endif

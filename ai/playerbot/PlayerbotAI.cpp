@@ -1,4 +1,3 @@
-#include "PlayerbotMgr.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/PerformanceMonitor.h"
 #include <stdarg.h>
@@ -1272,14 +1271,7 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
 
         if (logout && !bot->GetSession()->ShouldLogOut(time(nullptr)))
         {
-            if (master && GetPlayerbotMgr_Helper(master))
-            {
-                GetPlayerbotMgr_Helper(master)->LogoutPlayerBot(bot->getObjectGuid().GetRawValue());
-            }
-            else
-            {
-                sRandomPlayerbotMgr.LogoutPlayerBot(bot->getObjectGuid().GetRawValue());
-            }
+            TortoiseBots::BotManager::Instance().RemoveBot(bot->GetObjectGuid(), true);
             return;
         }
 
@@ -1587,7 +1579,7 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
             if (type == CHAT_MSG_WHISPER)
                 TellPlayer(&fromPlayer, BOT_TEXT("logout_start"));
 
-            if (master && GetPlayerbotMgr_Helper(master))
+            if (master && TortoiseBots::BotManager::Instance().IsBot(bot->GetObjectGuid()))
                 SetShouldLogOut(true);
         }
     }
@@ -3508,8 +3500,8 @@ bool PlayerbotAI::TellError(Player* player, std::string text, PlayerbotSecurityL
     if (!ignoreSilent && HasStrategy("silent", BotState::BOT_STATE_NON_COMBAT))
         return false;
 
-    PlayerbotMgr* mgr = GetPlayerbotMgr_Helper(player);
-    if (mgr) mgr->TellError(bot->GetName(), text);
+    if (player)
+        TellPlayer(player, text);
 
     return false;
 }
@@ -6662,23 +6654,6 @@ bool PlayerbotAI::HasSkill(SkillType skill)
     return bot->HasSkill(skill) && bot->GetSkillValue(skill) > 0;
 }
 
-#ifdef PLAYERBOT_LEGACY_CHAT
-bool ChatHandler::HandlePlayerbotCommand(char* args)
-{
-    return PlayerbotMgr::HandlePlayerbotMgrCommand(this, args);
-}
-
-bool ChatHandler::HandleRandomPlayerbotCommand(char* args)
-{
-    return RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(this, args);
-}
-
-bool ChatHandler::HandleAhBotCommand(char* args)
-{
-    return false;
-}
-#endif
-
 float PlayerbotAI::GetRange(std::string type)
 {
     float val = 0;
@@ -7590,14 +7565,6 @@ void PlayerbotAI::ReceiveDelayedPacket(futurePackets futPackets)
         });
 
     t.detach();
-}
-
-PlayerbotHolder* PlayerbotAI::GetHolder() const
-{
-    if (sRandomPlayerbotMgr.IsRandomBot(bot))
-        return &sRandomPlayerbotMgr;
-
-    return GetPlayerbotMgr_Helper(bot);
 }
 
 std::string PlayerbotAI::InventoryParseOutfitName(std::string outfit)

@@ -44,7 +44,7 @@ float EstimatedGroupDpsValue::Calculate()
                 continue;
 
             // Ignore real players and selfbots as they may not help with damage.
-            if (!GET_PLAYERBOT_AI(member) || IsSelfBot(member))
+            if (!GET_PLAYERBOT_AI(member))
                 continue;
 
             if (!member || !member->IsInWorld() || !member->IsAlive())
@@ -53,7 +53,7 @@ float EstimatedGroupDpsValue::Calculate()
             if (member->GetMapId() != bot->GetMapId())
                 continue;
 
-            if (member->GetExactDist(bot) > sPlayerbotAIConfig.sightDistance)
+            if (member->GetDistance(bot) > sPlayerbotAIConfig.sightDistance)
                 continue;
 
             groupPlayer.push_back(member);
@@ -70,7 +70,7 @@ float EstimatedGroupDpsValue::Calculate()
             roleMultiplier = 1.0f;
         float basicDps = GetBasicDps(player->GetLevel());
         float basicGs = GetBasicGs(player->GetLevel());
-        uint32 mixedGearScore = PlayerbotAI::GetMixedGearScore(player, true, false, 12);
+        uint32 mixedGearScore = GET_PLAYERBOT_AI(player)->GetEquipGearScore(player, false, false);
         float gs_modifier = (float)mixedGearScore / basicGs;
         // bonus for wotlk epic gear
         if (mixedGearScore >= 300)
@@ -134,23 +134,23 @@ float EstimatedGroupDpsValue::GetBasicGs(uint32 level)
 
     if (level <= 8)
     {
-        basic_gs = PlayerbotFactory::CalcMixedGearScore(level + 5, ITEM_QUALITY_NORMAL);
+        basic_gs = std::max(1u, (level + 5) * 10u);
     }
     else if (level <= 15)
     {
-        basic_gs = PlayerbotFactory::CalcMixedGearScore(level + 5, ITEM_QUALITY_UNCOMMON);
+        basic_gs = std::max(1u, (level + 5) * 12u);
     }
     else if (level <= 60)
     {
-        basic_gs = PlayerbotFactory::CalcMixedGearScore(level + 5, ITEM_QUALITY_RARE);
+        basic_gs = std::max(1u, (level + 5) * 14u);
     }
     else if (level <= 70)
     {
-        basic_gs = PlayerbotFactory::CalcMixedGearScore(85 + (level - 60) * 3, ITEM_QUALITY_RARE);
+        basic_gs = std::max(1u, (85u + (level - 60) * 3u) * 14u);
     }
     else
     {
-        basic_gs = PlayerbotFactory::CalcMixedGearScore(155 + (level - 70) * 4, ITEM_QUALITY_RARE);
+        basic_gs = std::max(1u, (155u + (level - 70) * 4u) * 14u);
     }
     return basic_gs;
 }

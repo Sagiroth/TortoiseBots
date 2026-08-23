@@ -171,7 +171,7 @@ namespace ai
             if (member->IsTaxiFlying())
                 return false;
 
-            if (player->getDistance(member) > PORTAL_REGROUP_DISTANCE)
+            if (player->GetDistance(member) > PORTAL_REGROUP_DISTANCE)
                 return false;
         }
         return true;

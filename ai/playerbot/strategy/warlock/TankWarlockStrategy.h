@@ -17,7 +17,7 @@ class TankWarlockStrategy : public GenericWarlockStrategy
 public:
     TankWarlockStrategy(PlayerbotAI* botAI);
 
-    std::string const getName() override { return "tank"; }
+    std::string getName() override { return "tank"; }
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
     std::vector<NextAction> getDefaultActions() override;
 };

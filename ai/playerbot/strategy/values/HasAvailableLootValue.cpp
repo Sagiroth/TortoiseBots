@@ -7,11 +7,6 @@
  */
 
 #include "HasAvailableLootValue.h"
-#include "LootObjectStack.h"
-#include "Playerbots.h"
 
-bool HasAvailableLootValue::Calculate()
-{
-    return !AI_VALUE(bool, "can loot") &&
-           AI_VALUE(LootObjectStack*, "available loot")->CanLoot(sPlayerbotAIConfig.lootDistance);
-}
+// The Tortoise translation is inline in the header; this donor TU is retained
+// so the source remains visible in the native module manifest.

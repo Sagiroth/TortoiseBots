@@ -519,10 +519,11 @@ Unit* CastSpellTargetAction::GetTarget()
 
 bool CastSpellTargetAction::IsTargetValid(Unit* target)
 {
+    Player* targetPlayer = dynamic_cast<Player*>(target);
     return target &&
            ai->IsSafe(target) &&
            (bot == target || sServerFacade.getDistance2d(bot, target) < sPlayerbotAIConfig.sightDistance) &&
-           IsInGroup_Helper(bot, target) &&
+           (targetPlayer && IsInGroup_Helper(bot, targetPlayer)) &&
            (!aliveCheck || !target->IsDead()) &&
            (!auraCheck || !ai->HasAura(GetSpellID(), target));
 }

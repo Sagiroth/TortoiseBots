@@ -184,7 +184,7 @@ std::vector<TalentPath*> ChangeTalentsAction::getPremadePaths(Player* bot, Talen
     {
         TalentSpec newSpec = *GetBestPremadeSpec(bot, path.id);
         newSpec.CropTalents(bot);        
-        if (oldSpec->IsEarlierVersionOf(newSpec))
+        if (oldSpec->isEarlierVersionOf(newSpec))
         {
             ret.push_back(&path);
         }
@@ -441,5 +441,4 @@ bool AutoSetTalentsAction::Execute(Event& event)
 
     return true;
 }
-
 

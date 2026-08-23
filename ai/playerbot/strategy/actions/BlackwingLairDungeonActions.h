@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
 #include "DungeonActions.h"
 #include "ChangeStrategyAction.h"
 #include "MovementActions.h"

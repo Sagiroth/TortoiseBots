@@ -37,7 +37,6 @@
 #include "generic/RTSCStrategy.h"
 #include "generic/DebugStrategy.h"
 #include "generic/BattlegroundStrategy.h"
-#include "generic/LfgStrategy.h"
 #include "generic/MaintenanceStrategy.h"
 #include "generic/GroupStrategy.h"
 #include "generic/GuildStrategy.h"
@@ -54,7 +53,6 @@
 #include "generic/OnyxiasLairDungeonStrategies.h"
 #include "generic/MoltenCoreDungeonStrategies.h"
 #include "generic/BlackwingLairDungeonStrategies.h"
-#include "generic/KarazhanDungeonStrategies.h"
 #include "generic/NaxxramasDungeonStrategies.h"
 
 namespace ai
@@ -89,7 +87,6 @@ namespace ai
             creators["tell target"] = [](PlayerbotAI* ai) { return new TellTargetStrategy(ai); };
             creators["pvp"] = [](PlayerbotAI* ai) { return new AttackEnemyPlayersStrategy(ai); };
             creators["return"] = [](PlayerbotAI* ai) { return new ReturnStrategy(ai); };
-            creators["lfg"] = [](PlayerbotAI* ai) { return new LfgStrategy(ai); };
             creators["custom"] = [](PlayerbotAI* ai) { return new CustomStrategy(ai); };
             creators["reveal"] = [](PlayerbotAI* ai) { return new RevealStrategy(ai); };
             creators["collision"] = [](PlayerbotAI* ai) { return new CollisionStrategy(ai); };
@@ -159,7 +156,6 @@ namespace ai
             // creators["wbuff travel"] = [](PlayerbotAI* ai) { return new WorldBuffTravelStrategy(ai); }; // E2E green: excluded
             creators["silent"] = [](PlayerbotAI* ai) { return new SilentStrategy(ai); };
             creators["nowar"] = [](PlayerbotAI* ai) { return new NoWarStrategy(ai); };
-            creators["glyph"] = [](PlayerbotAI* ai) { return new GlyphStrategy(ai); };
             creators["ai chat"] = [](PlayerbotAI* ai) { return new AIChatStrategy(ai); };
 
             // Dungeon Strategies
@@ -167,15 +163,12 @@ namespace ai
             creators["onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairDungeonStrategy(ai); };
             creators["molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreDungeonStrategy(ai); };
             creators["blackwing lair"] = [](PlayerbotAI* ai) { return new BlackwingLairDungeonStrategy(ai); };
-            creators["karazhan"] = [](PlayerbotAI* ai) { return new KarazhanDungeonStrategy(ai); };
             creators["naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasDungeonStrategy(ai); };
 
             // Dungeon Boss Strategies
             creators["onyxia"] = [](PlayerbotAI* ai) { return new OnyxiaFightStrategy(ai); };
             creators["magmadar"] = [](PlayerbotAI* ai) { return new MagmadarFightStrategy(ai); };
             creators["suppression room"] = [](PlayerbotAI* ai) { return new SuppressionRoomStrategy(ai); };
-            creators["netherspite"] = [](PlayerbotAI* ai) { return new NetherspiteFightStrategy(ai); };
-            creators["prince malchezaar"] = [](PlayerbotAI* ai) { return new PrinceMalchezaarFightStrategy(ai); };
             creators["four horseman"] = [](PlayerbotAI* ai) { return new FourHorsemanFightStrategy(ai); };
 
 #ifdef GenerateBotTests

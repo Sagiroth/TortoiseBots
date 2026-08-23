@@ -44,7 +44,7 @@ WorldLocation Stance::GetNearLocation(float angle, float distance)
 WorldLocation MoveStance::GetLocationInternal()
 {
     Unit* target = GetTarget();
-    float distance = std::max(sPlayerbotAIConfig.meleeDistance, target->getObjectBoundingRadius());
+    float distance = std::max(sPlayerbotAIConfig.meleeDistance, target->GetObjectBoundingRadius());
 
     float angle = GetAngle();
     return GetNearLocation(angle, distance);

@@ -224,7 +224,7 @@ public:
     GenericWarriorStrategy(PlayerbotAI* botAI);
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "warrior"; }
+    std::string getName() override { return "warrior"; }
 };
 
 class WarrirorAoeStrategy : public CombatStrategy
@@ -233,7 +233,7 @@ public:
     WarrirorAoeStrategy(PlayerbotAI* botAI);
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "aoe"; }
+    std::string getName() override { return "aoe"; }
 };
 
 #endif

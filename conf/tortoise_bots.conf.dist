@@ -1,0 +1,16 @@
+# TortoiseBots configuration.
+# Install as tortoise_bots.conf in the module config directory when enabling
+# the native module.
+
+# Optional lifecycle regression test. The character must already exist.
+TortoiseBots.AutoTest = 0
+TortoiseBots.AutoTest.AccountId = 0
+TortoiseBots.AutoTest.CharacterGuid = 0
+
+# Optional AddBot -> immediate RemoveBot queue regression test.
+TortoiseBots.PendingAddRemoveTest = 0
+TortoiseBots.PendingAddRemoveTest.AccountId = 0
+TortoiseBots.PendingAddRemoveTest.CharacterGuid = 0
+
+# Module diagnostics.
+TortoiseBots.LogLevel = 1

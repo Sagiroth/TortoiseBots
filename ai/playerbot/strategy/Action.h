@@ -1,9 +1,12 @@
 #pragma once
+#include <initializer_list>
 #include "Event.h"
 #include "Value.h"
 #include "AiObject.h"
 #include "AiObject.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/ServerFacade.h"
+#include "playerbot/playerbotDefs.h"
 
 class Unit;
 
@@ -43,13 +46,16 @@ namespace ai
         // such as CustomStrategy::getName() build their name at call time, and a
         // reference to that would dangle.
         const std::string& getName() const { return name; }
+        const std::string& GetName() const { return getName(); }
         float getRelevance() const { return relevance; }
+        float GetRelevance() const { return getRelevance(); }
 
     public:
         static int size(NextAction** actions);
         static NextAction** clone(NextAction** actions);
         static NextAction** merge(NextAction** what, NextAction** with);
         static NextAction** array(uint32 n,...);
+        static NextAction** array(std::initializer_list<NextAction> actions);
         static void destroy(NextAction** actions);
 
     private:
@@ -78,11 +84,14 @@ namespace ai
         virtual bool Execute(Event& event) { return true; }
         virtual bool isPossible() { return true; }
         virtual bool isUseful() { return true; }
+        bool IsPossible() { return isPossible(); }
+        bool IsUseful() { return isUseful(); }
         virtual bool isUsefulWhenStunned() { return false; }
         virtual NextAction** getPrerequisites() { return NULL; }
         virtual NextAction** getAlternatives() { return NULL; }
         virtual NextAction** getContinuers() { return NULL; }
         virtual ActionThreatType getThreatType() { return ActionThreatType::ACTION_THREAT_NONE; }
+        virtual ActionThreatType GetThreatType() { return getThreatType(); }
         void Update() {}  //Nonfunctional see AiObjectContext::Update() to enable.
         void Reset() {}
         virtual Unit* GetTarget();
@@ -133,6 +142,18 @@ namespace ai
             this->prerequisites = prerequisites;
             this->alternatives = alternatives;
             this->continuers = continuers;
+        }
+
+        ActionNode(std::string name,
+                   std::initializer_list<NextAction> prerequisites,
+                   std::initializer_list<NextAction> alternatives,
+                   std::initializer_list<NextAction> continuers)
+        {
+            this->action = NULL;
+            this->name = name;
+            this->prerequisites = NextAction::array(prerequisites);
+            this->alternatives = NextAction::array(alternatives);
+            this->continuers = NextAction::array(continuers);
         }
 
         virtual ~ActionNode()
@@ -187,3 +208,9 @@ namespace ai
         time_t created;
 	};
 }
+
+using ai::Action;
+using ai::ActionBasket;
+using ai::ActionNode;
+using ai::ActionThreatType;
+using ai::NextAction;

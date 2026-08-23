@@ -52,7 +52,7 @@ bool QueryItemUsageAction::Execute(Event& event)
             if (event.GetSource() == "item push result")
             {
 
-                QuestStatusMap& questMap = bot->GetQuestStatusMap();
+                QuestStatusMap& questMap = bot->getQuestStatusMap();
                 for (QuestStatusMap::const_iterator i = questMap.begin(); i != questMap.end(); i++)
                 {
                     const Quest* questTemplate = sObjectMgr.GetQuestTemplate(i->first);
@@ -248,7 +248,7 @@ std::string QueryItemUsageAction::QueryItemPrice(ItemQualifier& qualifier)
 std::string QueryItemUsageAction::QueryQuestItem(uint32 itemId)
 {
     Player *bot = ai->GetBot();
-    QuestStatusMap& questMap = bot->GetQuestStatusMap();
+    QuestStatusMap& questMap = bot->getQuestStatusMap();
     for (QuestStatusMap::const_iterator i = questMap.begin(); i != questMap.end(); i++)
     {
         const Quest *questTemplate = sObjectMgr.GetQuestTemplate( i->first );

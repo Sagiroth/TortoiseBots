@@ -63,7 +63,7 @@ namespace
 // -----------------------------------------------------------------
 // Action
 // -----------------------------------------------------------------
-bool TellGlyphsAction::Execute(Event event)
+bool TellGlyphsAction::Execute(Event& event)
 {
     //-----------------------------------------------------------------
     // 1. who sended the wisp ?  (source of event)

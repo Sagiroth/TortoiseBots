@@ -19,7 +19,7 @@ class TameAction : public Action
 public:
     TameAction(PlayerbotAI* botAI) : Action(botAI, "tame") {}
 
-    bool Execute(Event event) override;
+    bool Execute(Event& event) override;
 
 private:
     bool SetPetByName(const std::string& name);

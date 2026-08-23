@@ -28,6 +28,7 @@ namespace ai
 
     public:
         virtual std::string getName() { return name; }
+        virtual std::string GetName() { return getName(); }
 
     protected:
         std::string name;

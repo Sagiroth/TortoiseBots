@@ -1,4 +1,6 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
+#include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/strategy/Value.h"
 #include "SubStrategyValue.h"

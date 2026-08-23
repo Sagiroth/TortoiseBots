@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
 #include "GenericActions.h"
 
 namespace ai
@@ -22,7 +23,7 @@ namespace ai
                 if (!message.empty())
                     ai->TellPlayerNoFacing(passLeaderTo, message);
 
-                if (sRandomPlayerbotMgr.IsRandomBot(bot))
+                if (TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()))
                 {
                     ai->ResetStrategies();
                     ai->Reset();

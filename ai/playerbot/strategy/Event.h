@@ -42,6 +42,9 @@ namespace ai
         WorldPacket& getPacket() { return packet; }
         ObjectGuid getObject();
         Player* getOwner() { return owner; }
+        std::string GetParam() { return getParam(); }
+        WorldPacket& GetPacket() { return getPacket(); }
+        Player* GetOwner() { return getOwner(); }
         bool operator! () const { return source.empty(); }
 
     protected:
@@ -51,3 +54,5 @@ namespace ai
         Player* owner = nullptr;
 	};
 }
+
+using ai::Event;

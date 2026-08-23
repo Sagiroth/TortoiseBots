@@ -147,7 +147,7 @@ float CloseToHazardTrigger::GetDistanceToHazard(const ObjectGuid& hazzardGuid)
         GameObject* gameObjectHazard = ai->GetGameObject(hazzardGuid);
         if (gameObjectHazard)
         {
-            return bot->getDistance(gameObjectHazard) + gameObjectHazard->getObjectBoundingRadius();
+            return bot->getDistance(gameObjectHazard) + gameObjectHazard->GetObjectBoundingRadius();
         }
     }
     else if (hazzardGuid.IsCreature())
@@ -198,7 +198,7 @@ bool EnvironmentalHazardTrigger::IsActive()
             // false-triggering, while still reacting before the literal damage radius for
             // genuinely bigger hazards.
             float reactRadius = goInfo->trap.radius + 2.0f;
-            float distance = bot->getDistance(go) + go->getObjectBoundingRadius();
+            float distance = bot->getDistance(go) + go->GetObjectBoundingRadius();
             if (distance <= reactRadius)
                 closeToHazard = true;
 

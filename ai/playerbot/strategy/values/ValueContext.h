@@ -1,4 +1,6 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
+#include "playerbot/strategy/AiObjectContext.h"
 
 #include "ActiveSpellValue.h"
 #include "NearestGameObjects.h"
@@ -58,7 +60,7 @@
 #include "LastSpellCastTimeValue.h"
 #include "CombatStartTimeValue.h"
 #include "ManaSaveLevelValue.h"
-#include "LfgValues.h"
+#include "LfgValues.h" // BotRolesValue is a shared role-calculation value; LFG actions remain disabled.
 #include "PvpValues.h"
 #include "EnemyHealerTargetValue.h"
 #include "Formations.h"
@@ -100,7 +102,6 @@
 #include "playerbot/strategy/druid/DruidValues.h"
 #include "TravelValues.h"
 #include "LootValues.h"
-#include "GlyphValues.h"
 #include "StuckValues.h"
 #include "FishValues.h"
 #include "RuneForgeValues.h"
@@ -251,7 +252,6 @@ namespace ai
             creators["invalid target"] = [](PlayerbotAI* ai) { return new InvalidTargetValue(ai); };
             creators["mana save level"] = [](PlayerbotAI* ai) { return new ManaSaveLevelValue(ai); };
             creators["combat"] = [](PlayerbotAI* ai) { return new IsInCombatValue(ai); };
-            creators["lfg proposal"] = [](PlayerbotAI* ai) { return new LfgProposalValue(ai); };
             creators["bag space"] = [](PlayerbotAI* ai) { return new BagSpaceValue(ai); };
             creators["durability"] = [](PlayerbotAI* ai) { return new DurabilityValue(ai); };
             creators["durability inventory"] = [](PlayerbotAI* ai) { return new DurabilityInventoryValue(ai); };
@@ -445,10 +445,6 @@ namespace ai
 
             creators["party tank without lifebloom"] = [](PlayerbotAI* ai) { return new PartyTankWithoutLifebloomValue(ai); };
             creators["move style"] = [](PlayerbotAI* ai) { return new MoveStyleValue(ai); };
-            creators["available glyphs"] = [](PlayerbotAI* ai) { return new AvailableGlyphsValue(ai); };
-            creators["wanted glyphs"] = [](PlayerbotAI* ai) { return new WantedGlyphsValue(ai); };
-            creators["equiped glyphs"] = [](PlayerbotAI* ai) { return new EquipedGlyphsValue(ai); };
-            creators["glyph is upgrade"] = [](PlayerbotAI* ai) { return new GlyphIsUpgradeValue(ai); };
 
             //Travel
             creators["focus travel target"] = [](PlayerbotAI* ai) { return new FocusTravelTargetValue(ai); };

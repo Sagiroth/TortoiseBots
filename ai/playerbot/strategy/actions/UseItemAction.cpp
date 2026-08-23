@@ -91,13 +91,13 @@ bool BotUseItemSpell::OpenLockCheck()
                 // we need a go target in case of TARGET_GAMEOBJECT (for other targets acceptable GO and items)
                 if (m_spellInfo->EffectImplicitTargetA[i] == TARGET_GAMEOBJECT)
                 {
-                    if (!m_targets.GetGOTarget())
+                    if (!m_targets.getGOTarget())
                         return false;
                 }
 
                 // get the lock entry
                 uint32 lockId;
-                if (GameObject* go = m_targets.GetGOTarget())
+                if (GameObject* go = m_targets.getGOTarget())
                 {
                     // In BattleGround players can use only flags and banners
                     if (((Player*)m_caster)->InBattleGround() &&
@@ -119,7 +119,7 @@ bool BotUseItemSpell::OpenLockCheck()
                     if (go->GetGOInfo()->CannotBeUsedUnderImmunity() && m_caster->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE))
                         return false;
                 }
-                else if (Item* item = m_targets.GetItemTarget())
+                else if (Item* item = m_targets.getItemTarget())
                 {
                     // not own (trade?)
                     if (item->GetOwner() != m_caster)

@@ -32,7 +32,7 @@ bool DropQuestAction::Execute(Event& event)
             entry = logQuest;
 
             bot->SetQuestStatus(entry, QUEST_STATUS_NONE);
-            bot->GetQuestStatusMap()[entry].m_rewarded = false;
+            bot->getQuestStatusMap()[entry].m_rewarded = false;
 
             dropped = true;
 
@@ -163,7 +163,7 @@ bool CleanQuestLogAction::HasProgress(Player* bot, Quest const* quest)
     if (bot->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE)
         return true;
 
-    QuestStatusData questStatus = bot->GetQuestStatusMap()[questId];
+        QuestStatusData questStatus = bot->getQuestStatusMap()[questId];
 
     for (int i = 0; i < QUEST_OBJECTIVES_COUNT; i++)
     {

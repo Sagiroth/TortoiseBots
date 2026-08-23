@@ -17,7 +17,7 @@ class GenericHunterNonCombatStrategy : public NonCombatStrategy
 public:
     GenericHunterNonCombatStrategy(PlayerbotAI* botAI);
 
-    std::string const getName() override { return "nc"; }
+    std::string getName() override { return "nc"; }
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
 };
 
@@ -26,7 +26,7 @@ class HunterPetStrategy : public Strategy
 public:
     HunterPetStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
-    std::string const getName() override { return "pet"; }
+    std::string getName() override { return "pet"; }
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
 };
 

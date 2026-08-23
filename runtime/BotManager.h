@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include <memory>
+#include <vector>
 // pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectGuid.h"
 #ifndef MANGOS_OBJECT_GUID_H
@@ -23,6 +24,7 @@ public:
 #endif
 
 class WorldSession;
+class Player;
 
 namespace TortoiseBots {
 
@@ -46,6 +48,7 @@ struct BotRecord
     ObjectGuid masterGuid; // owner/master for Follow
     uint32_t ticksInWorld = 0;
     bool enteredWorld = false;
+    bool random = false;
     // pi-lens-ignore: no-bit-fields
     BotLifecycle lifecycle = BotLifecycle::PendingAdd;
 };
@@ -68,18 +71,34 @@ public:
     static BotManager& Instance();
 
     void OnWorldUpdate(uint32_t diff);
+    void OnPlayerLogin(Player* player);
+    void OnPlayerBeforeLogout(Player* player);
+    void OnPlayerLogout(Player* player);
+    void ReleaseToClient(Player* player);
 
     // Manual control for testing
 // pi-lens-ignore: clang:unknown_typename
     WorldSession* AddBot(uint32_t accountId, ObjectGuid guid, ObjectGuid masterGuid = ObjectGuid());
+    WorldSession* AddRandomBot(uint32_t accountId, ObjectGuid guid);
 // pi-lens-ignore: clang:unknown_typename
     WorldSession* AddBotWithMaster(uint32_t accountId, ObjectGuid guid, ObjectGuid masterGuid);
 // pi-lens-ignore: clang:unknown_typename
     bool RemoveBot(ObjectGuid guid, bool save = true);
 // pi-lens-ignore: clang:unknown_typename
     BotRecord* FindBot(ObjectGuid guid);
-// pi-lens-ignore: clang:unknown_typename
+    // pi-lens-ignore: clang:unknown_typename
     bool IsBot(ObjectGuid guid) const;
+    // Random bots are still module-owned records; this distinction prevents
+    // behavior code from consulting a donor RandomPlayerbotMgr singleton.
+    bool IsRandomBot(ObjectGuid guid) const;
+
+    // Snapshot of in-world bots owned by a master. Callers never receive the
+    // manager's records or session pointers, only live Player identities.
+    std::vector<Player*> GetBotsForMaster(ObjectGuid masterGuid) const;
+    // Snapshot of every live module-owned bot for legacy holder adapters and
+    // diagnostics. Ownership remains entirely inside BotManager.
+    std::vector<Player*> GetAllBots() const;
+    uint32_t GetBotCount() const { return static_cast<uint32_t>(m_bots.size()); }
 
     // Follow intent
 // pi-lens-ignore: clang:unknown_typename

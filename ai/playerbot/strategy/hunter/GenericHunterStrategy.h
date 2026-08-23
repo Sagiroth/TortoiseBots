@@ -19,7 +19,7 @@ public:
     GenericHunterStrategy(PlayerbotAI* botAI);
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "hunter"; }
+    std::string getName() override { return "hunter"; }
     uint32 GetType() const override { return CombatStrategy::GetType() | STRATEGY_TYPE_RANGED | STRATEGY_TYPE_DPS; }
 };
 
@@ -29,7 +29,7 @@ public:
     AoEHunterStrategy(PlayerbotAI* botAI);
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "aoe"; }
+    std::string getName() override { return "aoe"; }
 };
 
 class HunterCcStrategy : public Strategy
@@ -38,7 +38,7 @@ public:
     HunterCcStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "cc"; }
+    std::string getName() override { return "cc"; }
 };
 
 class HunterTrapWeaveStrategy : public Strategy
@@ -47,7 +47,7 @@ public:
     HunterTrapWeaveStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "trap weave"; }
+    std::string getName() override { return "trap weave"; }
 };
 
 #endif

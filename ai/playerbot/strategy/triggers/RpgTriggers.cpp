@@ -8,7 +8,6 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/TravelMgr.h"
-#include "AI/ScriptDevAI/ScriptDevAIMgr.h"
 
 using namespace ai;
 
@@ -926,7 +925,7 @@ bool RpgGossipTalkTrigger::IsActive()
     }
 #endif
 
-    if (!sScriptDevAIMgr.OnGossipHello(bot, creature))
+    if (!sScriptMgr.OnGossipHello(bot, creature))
     {
         bot->PrepareGossipMenu(creature, creature->GetDefaultGossipMenuId());
     }

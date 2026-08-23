@@ -18,7 +18,7 @@ public:
     PaladinBuffManaStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "bwisdom"; }
+    std::string getName() override { return "bwisdom"; }
 };
 
 class PaladinBuffHealthStrategy : public Strategy
@@ -27,7 +27,7 @@ public:
     PaladinBuffHealthStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "bsanc"; }
+    std::string getName() override { return "bsanc"; }
 };
 
 class PaladinBuffDpsStrategy : public Strategy
@@ -36,7 +36,7 @@ public:
     PaladinBuffDpsStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "bmight"; }
+    std::string getName() override { return "bmight"; }
 };
 
 class PaladinBuffArmorStrategy : public Strategy
@@ -45,7 +45,7 @@ public:
     PaladinBuffArmorStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "barmor"; }
+    std::string getName() override { return "barmor"; }
 };
 
 class PaladinBuffAoeStrategy : public Strategy
@@ -54,7 +54,7 @@ public:
     PaladinBuffAoeStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "baoe"; }
+    std::string getName() override { return "baoe"; }
 };
 
 class PaladinBuffCastStrategy : public Strategy
@@ -63,7 +63,7 @@ public:
     PaladinBuffCastStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "bcast"; }
+    std::string getName() override { return "bcast"; }
 };
 
 class PaladinBuffSpeedStrategy : public Strategy
@@ -72,7 +72,7 @@ public:
     PaladinBuffSpeedStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "bspeed"; }
+    std::string getName() override { return "bspeed"; }
 };
 
 class PaladinBuffThreatStrategy : public Strategy
@@ -81,7 +81,7 @@ public:
     PaladinBuffThreatStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "bthreat"; }
+    std::string getName() override { return "bthreat"; }
 };
 
 class PaladinBuffStatsStrategy : public Strategy
@@ -90,7 +90,7 @@ public:
     PaladinBuffStatsStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "bkings"; }
+    std::string getName() override { return "bkings"; }
 };
 
 class PaladinShadowResistanceStrategy : public Strategy
@@ -99,7 +99,7 @@ public:
     PaladinShadowResistanceStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "rshadow"; }
+    std::string getName() override { return "rshadow"; }
 };
 
 class PaladinFrostResistanceStrategy : public Strategy
@@ -108,7 +108,7 @@ public:
     PaladinFrostResistanceStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "rfrost"; }
+    std::string getName() override { return "rfrost"; }
 };
 
 class PaladinFireResistanceStrategy : public Strategy
@@ -117,7 +117,7 @@ public:
     PaladinFireResistanceStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "rfire"; }
+    std::string getName() override { return "rfire"; }
 };
 
 #endif

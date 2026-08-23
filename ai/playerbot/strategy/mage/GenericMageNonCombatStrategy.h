@@ -17,7 +17,7 @@ class GenericMageNonCombatStrategy : public NonCombatStrategy
 public:
     GenericMageNonCombatStrategy(PlayerbotAI* botAI);
 
-    std::string const getName() override { return "nc"; }
+    std::string getName() override { return "nc"; }
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
 };
 
@@ -27,7 +27,7 @@ public:
     MageBuffManaStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "bmana"; }
+    std::string getName() override { return "bmana"; }
 };
 
 class MageBuffDpsStrategy : public Strategy
@@ -36,7 +36,7 @@ public:
     MageBuffDpsStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "bdps"; }
+    std::string getName() override { return "bdps"; }
 };
 
 class MageBuffStrategy : public Strategy
@@ -45,7 +45,7 @@ public:
     MageBuffStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "buff"; }
+    std::string getName() override { return "buff"; }
 };
 
 #endif

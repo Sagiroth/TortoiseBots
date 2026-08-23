@@ -86,7 +86,7 @@ bool HealTargetFullHealthTrigger::IsActive()
         if (PlayerbotAI::IsHealSpell(currentSpell->m_spellInfo))
         {
             std::string status = "fullhp";
-            if (Unit* pTarget = currentSpell->m_targets.GetUnitTarget())
+            if (Unit* pTarget = currentSpell->m_targets.getUnitTarget())
             {
                 bool hpFull = pTarget->GetHealth() == pTarget->GetMaxHealth();
                 if (!hpFull && (pTarget->GetHealthPercent() > 90.f))

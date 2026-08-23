@@ -134,7 +134,7 @@ std::list<HazardPosition> HazardsValue::Calculate()
         {
             // Try to retrieve the hazard position
             WorldPosition hazardPosition;
-            if (hazard.getPosition(ai, hazardPosition))
+            if (hazard.GetPosition(ai, hazardPosition))
             {
                 hazards.emplace_back(std::make_pair(hazardPosition, hazard.GetRadius()));
                 validHazard = true;

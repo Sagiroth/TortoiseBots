@@ -19,6 +19,7 @@ namespace ai
         virtual void Qualify(int32 qualifier) { std::ostringstream out; out << qualifier; this->qualifier = out.str(); }
         virtual void Qualify(const std::string& qualifier) { this->qualifier = qualifier; }
         std::string getQualifier() const { return qualifier; }
+        std::string GetQualifier() const { return getQualifier(); }
         void Reset() { qualifier.clear(); }
 
         static std::string MultiQualify(const std::vector<std::string>& qualifiers, const std::string& separator, const std::string_view brackets = "{}")
@@ -387,6 +388,11 @@ namespace ai
             factories.emplace_back(std::move(factory));
         }
 
+        void Add(NamedObjectFactory<T>* factory)
+        {
+            factories.emplace_back(factory);
+        }
+
         T* GetObject(std::string_view name, PlayerbotAI* ai)
         {
             for (auto it = factories.rbegin(); it != factories.rend(); ++it)
@@ -401,3 +407,9 @@ namespace ai
         std::vector<std::unique_ptr<NamedObjectFactory<T>>> factories;
     };
 };
+
+using ai::Qualified;
+using ai::NamedObjectFactory;
+using ai::NamedObjectContext;
+using ai::NamedObjectContextList;
+using ai::NamedObjectFactoryList;

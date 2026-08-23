@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
 #include "MovementActions.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/PlayerbotAIConfig.h"

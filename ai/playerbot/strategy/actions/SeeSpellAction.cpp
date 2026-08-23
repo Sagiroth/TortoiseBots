@@ -77,7 +77,7 @@ bool SeeSpellAction::Execute(Event& event)
 
     p >> targets.ReadForCaster(requester);
     // Penqle exposes getDestination() instead of m_destPos.
-    float dx, dy, dz; targets.GetDestination(dx, dy, dz);
+    float dx, dy, dz; targets.getDestination(dx, dy, dz);
     WorldPosition spellPosition(requester->GetMapId(), dx, dy, dz);
     SET_AI_VALUE(WorldPosition, "see spell location", spellPosition);
 
@@ -98,7 +98,7 @@ bool SeeSpellAction::Execute(Event& event)
 
         out << path.GetArea(bot->GetMapId(), x, y, z);
 
-        unsigned short flags = path.GetFlags(bot->GetMapId(), x, y, z);
+        unsigned short flags = path.getFlags(bot->GetMapId(), x, y, z);
 
         out << " flags = " << flags;
 

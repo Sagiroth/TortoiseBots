@@ -28,7 +28,7 @@ public:
                 return;
         }
 
-        float threat = threatManager->GetThreat(bot);
+        float threat = threatManager->getThreat(bot);
         if (!result || (minThreat - threat) > 0.1f)
         {
             minThreat = threat;

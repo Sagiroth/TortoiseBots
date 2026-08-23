@@ -18,7 +18,7 @@ public:
     HunterBuffSpeedStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "bspeed"; }
+    std::string getName() override { return "bspeed"; }
 };
 
 class HunterBuffDpsStrategy : public Strategy
@@ -27,7 +27,7 @@ public:
     HunterBuffDpsStrategy(PlayerbotAI* botAI);
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "bdps"; }
+    std::string getName() override { return "bdps"; }
 };
 
 class HunterNatureResistanceStrategy : public Strategy
@@ -36,7 +36,7 @@ public:
     HunterNatureResistanceStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "rnature"; }
+    std::string getName() override { return "rnature"; }
 };
 
 #endif

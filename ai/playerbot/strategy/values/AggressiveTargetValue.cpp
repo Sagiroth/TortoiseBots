@@ -19,7 +19,7 @@ Unit* AggressiveTargetValue::Calculate()
                    !GET_PLAYERBOT_AI(master)))
         master = nullptr;
 
-    GuidVector targets = AI_VALUE(GuidVector, "possible targets");
+    std::list<ObjectGuid> targets = AI_VALUE(std::list<ObjectGuid>, "possible targets");
     if (targets.empty())
         return nullptr;
 
@@ -33,20 +33,21 @@ Unit* AggressiveTargetValue::Calculate()
         if (!unit || !unit->IsAlive())
             continue;
 
-        if (!unit->IsInWorld() || unit->IsDuringRemoveFromWorld())
+        if (!unit->IsInWorld())
             continue;
 
-        if (unit->ToCreature() && !unit->ToCreature()->GetCreatureTemplate()->lootid &&
+        CreatureInfo const* creatureInfo = unit->ToCreature() ? unit->ToCreature()->GetCreatureInfo() : nullptr;
+        if (creatureInfo && !creatureInfo->loot_id &&
             bot->GetReactionTo(unit) >= REP_NEUTRAL)
             continue;
 
-        if (!bot->IsHostileTo(unit) && unit->GetNpcFlags() != UNIT_NPC_FLAG_NONE)
+        if (!bot->IsHostileTo(unit) && creatureInfo && creatureInfo->npc_flags != UNIT_NPC_FLAG_NONE)
             continue;
 
         if (abs(bot->getPositionZ() - unit->getPositionZ()) > INTERACTION_DISTANCE)
             continue;
 
-        if (!bot->InBattleground() && master && botAI->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) &&
+        if (!bot->InBattleGround() && master && botAI->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) &&
             ServerFacade::instance().getDistance2d(master, unit) > aggroRange)
             continue;
 

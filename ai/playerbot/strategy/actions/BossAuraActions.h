@@ -20,7 +20,7 @@ public:
         : Action(botAI, bossName + " fire resistance action"), bossName(bossName)
     {
     }
-    bool Execute(Event event) override;
+    bool Execute(Event& event) override;
     bool isUseful() override;
 
 private:
@@ -34,7 +34,7 @@ public:
         : Action(botAI, bossName + " frost resistance action"), bossName(bossName)
     {
     }
-    bool Execute(Event event) override;
+    bool Execute(Event& event) override;
     bool isUseful() override;
 
 private:
@@ -48,7 +48,7 @@ public:
         : Action(botAI, bossName + " nature resistance action"), bossName(bossName)
     {
     }
-    bool Execute(Event event) override;
+    bool Execute(Event& event) override;
     bool isUseful() override;
 
 private:
@@ -62,7 +62,7 @@ public:
         : Action(botAI, bossName + " shadow resistance action"), bossName(bossName)
     {
     }
-    bool Execute(Event event) override;
+    bool Execute(Event& event) override;
     bool isUseful() override;
 
 private:

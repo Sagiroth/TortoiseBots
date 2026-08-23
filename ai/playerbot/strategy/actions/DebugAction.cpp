@@ -4061,7 +4061,7 @@ bool DebugAction::HandleTaxi(Event& event, Player* requester, const std::string&
 
         std::ostringstream out;
 
-        out << taxiNode->Name;
+        out << taxiNode->name[LOCALE_enUS];
 
         ai->TellPlayerNoFacing(requester, out);
     }
@@ -5360,7 +5360,7 @@ bool DebugAction::HandleActivity(Event& event, Player* requester, const std::str
     }
 
     auto bracket = ai->GetPriorityBracket(ai->GetPriorityType());
-    float activityPct = sRandomPlayerbotMgr.GetActivityPercentage();
+    float activityPct = sRandomPlayerbotMgr.getActivityPercentage();
 
     std::ostringstream out;
     out << "State: " << stateName << ", Active: " << (isActive ? "yes" : "no");

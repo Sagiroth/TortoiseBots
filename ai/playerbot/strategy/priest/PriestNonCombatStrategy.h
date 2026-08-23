@@ -18,7 +18,7 @@ public:
     PriestNonCombatStrategy(PlayerbotAI* botAI);
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "nc"; }
+    std::string getName() override { return "nc"; }
 };
 
 class PriestBuffStrategy : public NonCombatStrategy
@@ -27,7 +27,7 @@ public:
     PriestBuffStrategy(PlayerbotAI* botAI) : NonCombatStrategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "buff"; }
+    std::string getName() override { return "buff"; }
 };
 
 class PriestShadowResistanceStrategy : public NonCombatStrategy
@@ -36,7 +36,7 @@ public:
     PriestShadowResistanceStrategy(PlayerbotAI* botAI) : NonCombatStrategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "rshadow"; }
+    std::string getName() override { return "rshadow"; }
 };
 
 #endif

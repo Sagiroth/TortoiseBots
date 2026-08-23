@@ -340,7 +340,7 @@ bool WorldPosition::IsInStaticLineOfSight(WorldPosition pos, float heightMod) co
     float dstY = pos.y;
     float dstZ = pos.z + heightMod;
 
-    return VMAP::VMapFactory::createOrGetVMapManager()->IsInLineOfSight(mapId, srcX, srcY, srcZ, dstX, dstY, dstZ);
+    return VMAP::VMapFactory::createOrGetVMapManager()->isInLineOfSight(mapId, srcX, srcY, srcZ, dstX, dstY, dstZ);
 }
 
 bool WorldPosition::canFly() const
@@ -352,7 +352,7 @@ bool WorldPosition::canFly() const
         return false;
 
     uint32 zoneid, areaid;
-    getTerrain()->getZoneAndAreaId(zoneid, areaid, getX(), getY(), getZ());
+    getTerrain()->GetZoneAndAreaId(zoneid, areaid, getX(), getY(), getZ());
 
 #ifdef MANGOSBOT_ONE  
     uint32 v_map = GetVirtualMapForMapAndZone(getMapId(), zoneid);
@@ -433,17 +433,17 @@ void WorldPosition::printWKT(const std::vector<WorldPosition>& points, std::ostr
     }
 
     for (auto& p : points)
-        out << p.GetDisplayX() << " " << p.GetDisplayY() << (!loop && &p == &points.back() ? "" : ",");
+        out << p.getDisplayX() << " " << p.getDisplayY() << (!loop && &p == &points.back() ? "" : ",");
 
     if (loop)
-        out << points.front().GetDisplayX() << " " << points.front().GetDisplayY();
+        out << points.front().getDisplayX() << " " << points.front().getDisplayY();
 
     out << (dim == 2 ? "))\"," : ")\",");
 }
 
 WorldPosition WorldPosition::getDisplayLocation() const
 { 
-    WorldPosition mapOffset = sTravelNodeMap.GetMapOffset(getMapId());
+    WorldPosition mapOffset = sTravelNodeMap.getMapOffset(getMapId());
     return offset(mapOffset);
 };
 
@@ -493,7 +493,7 @@ std::string WorldPosition::getAreaName(const bool fullName, const bool zoneName)
     if (!area)
         return "";
 
-    std::string areaName = area->name ? area->name : "";
+    std::string areaName = area->Name ? area->Name : "";
 
     if (fullName)
     {
@@ -506,7 +506,7 @@ std::string WorldPosition::getAreaName(const bool fullName, const bool zoneName)
             if (!parentArea)
                 break;
 
-            std::string subAreaName = parentArea->name ? parentArea->name : "";
+            std::string subAreaName = parentArea->Name ? parentArea->Name : "";
 
             if (zoneName)
                 areaName = subAreaName;
@@ -718,7 +718,7 @@ WorldPosition WorldPosition::RandomPointOnTrans(GenericTransport* transport, uin
         {
             botForPath->SetTransport(transport);
 
-            std::vector<WorldPosition> posPath = pos.GetPathStepFrom(botForPath, botForPath, false);
+            std::vector<WorldPosition> posPath = pos.getPathStepFrom(WorldPosition(botForPath), botForPath, false);
 
             if (posPath.empty())
                 continue;
@@ -981,7 +981,7 @@ std::vector<G3D::Vector3> WorldPosition::toPointsArray(const std::vector<WorldPo
 {
     std::vector<G3D::Vector3> retVec;
     for (auto p : path)
-        retVec.push_back(p.GetVector3());
+        retVec.push_back(p.getVector3());
 
     return retVec;
 }
@@ -1012,9 +1012,9 @@ std::vector<WorldPosition> WorldPosition::getPathStepFrom(const WorldPosition& s
         end.CalculatePassengerOffset(bot->GetTransport());
     }
 
-    pathfinder->calculate(start.GetVector3(), end.GetVector3(), false);
+    pathfinder->calculate(start.getVector3(), end.getVector3(), false);
 
-    points = pathfinder->GetPath();
+    points = pathfinder->getPath();
 
     if (bot && bot->GetTransport())
     {
@@ -1165,7 +1165,7 @@ bool WorldPosition::ClosestCorrectPoint(float maxRange, float maxHeight, uint32 
 
     dtNavMeshQuery const* query = mmap->GetNavMeshQuery(getMapId(), instanceId);
 
-    MANGOS_ASSERT(query && query->GetAttachedNavMesh());
+    MANGOS_ASSERT(query && query->getAttachedNavMesh());
 
     float curPoint[VERTEX_SIZE] = {y, z, x };
     float extend[VERTEX_SIZE] = { maxRange, maxHeight, maxRange };

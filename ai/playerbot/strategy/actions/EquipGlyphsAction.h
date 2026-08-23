@@ -17,7 +17,7 @@ class EquipGlyphsAction : public Action
 {
 public:
     EquipGlyphsAction(PlayerbotAI* ai) : Action(ai, "glyph equip") {}
-    bool Execute(Event event) override;
+    bool Execute(Event& event) override;
 
     /// ---- Rendu public pour être utilisable par le cache global ----
     struct GlyphInfo

@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
 
 #include "AcceptInvitationAction.h"
 #include "PassLeadershipToMasterAction.h"
@@ -20,14 +21,12 @@
 #include "TellCastFailedAction.h"
 #include "AcceptDuelAction.h"
 #include "ReadyCheckAction.h"
-#include "LfgActions.h"
 #include "SecurityCheckAction.h"
 #include "GuildAcceptAction.h"
 #include "AcceptBattleGroundInvitationAction.h"
 #include "PetitionSignAction.h"
 #include "BattleGroundJoinAction.h"
 #include "SeeSpellAction.h"
-#include "ArenaTeamActions.h"
 
 namespace ai
 {
@@ -36,11 +35,6 @@ namespace ai
     public:
         WorldPacketActionContext()
         {   
-            creators["lfg join"] = [](PlayerbotAI* ai) { return new LfgJoinAction(ai); };
-            creators["lfg accept"] = [](PlayerbotAI* ai) { return new LfgAcceptAction(ai); };
-            creators["lfg role check"] = [](PlayerbotAI* ai) { return new LfgRoleCheckAction(ai); };
-            creators["lfg leave"] = [](PlayerbotAI* ai) { return new LfgLeaveAction(ai); };
-            creators["lfg teleport"] = [](PlayerbotAI* ai) { return new LfgTeleportAction(ai); };
             creators["bg status check"] = [](PlayerbotAI* ai) { return new BGStatusCheckAction(ai); };
             creators["bg status"] = [](PlayerbotAI* ai) { return new BGStatusAction(ai); };
             creators["bg join"] = [](PlayerbotAI* ai) { return new BGJoinAction(ai); };
@@ -88,7 +82,6 @@ namespace ai
             creators["inventory change failure"] = [](PlayerbotAI* ai) { return new InventoryChangeFailureAction(ai); };
             creators["petition sign"] = [](PlayerbotAI* ai) { return new PetitionSignAction(ai); };
             creators["see spell"] = [](PlayerbotAI* ai) { return new SeeSpellAction(ai); };
-            creators["arena team accept"] = [](PlayerbotAI* ai) { return new ArenaTeamAcceptAction(ai); };
         }
     };
 };

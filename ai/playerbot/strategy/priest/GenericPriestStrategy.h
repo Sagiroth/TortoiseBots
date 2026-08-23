@@ -27,7 +27,7 @@ public:
     PriestCureStrategy(PlayerbotAI* botAI);
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "cure"; }
+    std::string getName() override { return "cure"; }
 };
 
 class PriestBoostStrategy : public Strategy
@@ -36,7 +36,7 @@ public:
     PriestBoostStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "boost"; }
+    std::string getName() override { return "boost"; }
 };
 
 class PriestCcStrategy : public Strategy
@@ -45,7 +45,7 @@ public:
     PriestCcStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "cc"; }
+    std::string getName() override { return "cc"; }
 };
 
 class PriestHealerDpsStrategy : public Strategy
@@ -54,7 +54,7 @@ public:
     PriestHealerDpsStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "healer dps"; }
+    std::string getName() override { return "healer dps"; }
 };
 
 #endif

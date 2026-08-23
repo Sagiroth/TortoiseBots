@@ -42,8 +42,8 @@ WorldLocation ArrowFormation::GetLocationInternal()
     if (!masterUnit || !botUnit)
         return Formation::NullLocation;
 
-    float x = followTarget->getPositionX() - masterUnit->getX() + botUnit->getX();
-    float y = followTarget->getPositionY() - masterUnit->getY() + botUnit->getY();
+    float x = followTarget->getPositionX() - masterUnit->GetX() + botUnit->GetX();
+    float y = followTarget->getPositionY() - masterUnit->GetY() + botUnit->GetY();
     float z = followTarget->getPositionZ();
 
 #ifdef MANGOSBOT_TWO
@@ -161,7 +161,7 @@ void FormationSlot::Move(float dx, float dy)
     for (std::vector<FormationUnit*>::iterator i = units.begin(); i != units.end(); ++i)
     {
         FormationUnit* unit = *i;
-        unit->SetLocation(unit->getX() + dx, unit->getY() + dy);
+        unit->SetLocation(unit->GetX() + dx, unit->GetY() + dy);
     }
 }
 

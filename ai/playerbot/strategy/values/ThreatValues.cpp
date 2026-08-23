@@ -68,7 +68,7 @@ float ThreatValue::GetThreat(Player* player, Unit* target)
     if (target->getObjectGuid().IsPlayer())
         return 0;
 
-    float botThreat = sServerFacade.GetThreatManager(target).GetThreat(player);
+    float botThreat = sServerFacade.GetThreatManager(target).getThreat(player);
 
     return botThreat;
 }
@@ -98,7 +98,7 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
 
         if (ai->IsTank(player))
         {
-            float threat = sServerFacade.GetThreatManager(target).GetThreat(player);
+            float threat = sServerFacade.GetThreatManager(target).getThreat(player);
             if (maxThreat < threat)
                 maxThreat = threat;
         }

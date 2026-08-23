@@ -9,6 +9,13 @@ namespace ai
     public:
         CombatStrategy(PlayerbotAI* ai) : Strategy(ai) {}
         virtual int GetType() override { return STRATEGY_TYPE_COMBAT; }
+        uint32 GetType() const override { return STRATEGY_TYPE_COMBAT; }
+
+        // Modern class strategies use vector-owned trigger/multiplier lists.
+        // Their concrete implementations add the class behavior; the legacy
+        // common combat hooks remain owned by the list API.
+        void InitTriggers(std::vector<TriggerNode*>&) override {}
+        void InitMultipliers(std::vector<Multiplier*>&) override {}
 
     protected:
         virtual void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
@@ -116,3 +123,5 @@ namespace ai
 #endif
     };
 }
+
+using ai::CombatStrategy;

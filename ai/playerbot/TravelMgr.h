@@ -231,6 +231,7 @@ namespace ai
 		virtual std::string GetTitle() const override;
 
 		virtual uint8 getObjective() const;
+		virtual uint8 GetObjective() const;
 	};
 
 	//A location with rpg target(s) based on race and level
@@ -505,4 +506,3 @@ namespace ai
 }
 
 #define sTravelMgr MaNGOS::Singleton<TravelMgr>::Instance()
-

@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
 #include "playerbot/strategy/values/CraftValues.h"
 #include "GenericActions.h"
 

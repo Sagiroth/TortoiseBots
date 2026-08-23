@@ -7,20 +7,5 @@
  */
 
 #include "IsBehindValue.h"
-#include "Playerbots.h"
-#include <cmath>
 
-bool IsBehindValue::Calculate()
-{
-    Unit* target = AI_VALUE(Unit*, qualifier);
-    if (!target)
-        return false;
-
-    float targetOrientation = target->getOrientation();
-
-    float deltaAngle = Position::NormalizeOrientation(targetOrientation - target->GetAngle(bot));
-    if (deltaAngle > M_PI)
-        deltaAngle -= 2.0f * M_PI; // -PI..PI
-
-    return fabs(deltaAngle) > M_PI_2;
-}
+// Implemented inline by the Tortoise value header.

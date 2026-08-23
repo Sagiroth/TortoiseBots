@@ -1340,7 +1340,7 @@ void RandomItemMgr::BuildItemInfoCache()
         }
 
         cacheInfo->quality = proto->Quality;
-        cacheInfo->itemid = proto->ItemId;
+        cacheInfo->itemId = proto->ItemId;
         cacheInfo->slot = slot;
         cacheInfo->itemLevel = proto->ItemLevel;
 
@@ -1447,7 +1447,7 @@ void RandomItemMgr::BuildItemInfoCache()
             "scale_16, scale_17, scale_18, scale_19, scale_20, scale_21, scale_22, scale_23, scale_24, scale_25, scale_26, scale_27, scale_28, scale_29, scale_30, scale_31, scale_32)"
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
-        stmt.addUInt32(cacheInfo->itemid);
+        stmt.addUInt32(cacheInfo->itemId);
         stmt.addUInt32(cacheInfo->quality);
         stmt.addUInt32(cacheInfo->slot);
         stmt.addUInt32(cacheInfo->source);
@@ -1467,7 +1467,7 @@ void RandomItemMgr::BuildItemInfoCache()
 
         stmt.Execute();
 
-        itemInfoCache[cacheInfo->itemid] = cacheInfo;
+        itemInfoCache[cacheInfo->itemId] = cacheInfo;
     }
 
     CharacterDatabase.CommitTransaction();
@@ -2822,14 +2822,14 @@ uint32 RandomItemMgr::GetUpgrade(Player* player, std::string spec, uint8 slot, u
 
         if (!closestUpgrade)
         {
-            closestUpgrade = info->itemid;
+            closestUpgrade = info->itemId;
             closestUpgradeWeight = info->weights[specId];
         }
 
         // pick closest upgrade
         if (info->weights[specId] < closestUpgradeWeight)
         {
-            closestUpgrade = info->itemid;
+            closestUpgrade = info->itemId;
             closestUpgradeWeight = info->weights[specId];
         }
     }
@@ -2952,13 +2952,13 @@ std::vector<uint32> RandomItemMgr::GetUpgradeList(Player* player, uint32 specId,
         //        continue;
         //}
 
-        listItems.push_back(info->itemid);
+        listItems.push_back(info->itemId);
         //continue;
 
         // pick closest upgrade
         if (info->weights[specId] > closestUpgradeWeight)
         {
-            closestUpgrade = info->itemid;
+            closestUpgrade = info->itemId;
             closestUpgradeWeight = info->weights[specId];
         }
     }

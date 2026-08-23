@@ -17,7 +17,7 @@ class SetFocusHealTargetsAction : public Action
 public:
     SetFocusHealTargetsAction(PlayerbotAI* botAI) : Action(botAI, "focus heal targets") {}
 
-    bool Execute(Event event) override;
+    bool Execute(Event& event) override;
 };
 
 #endif

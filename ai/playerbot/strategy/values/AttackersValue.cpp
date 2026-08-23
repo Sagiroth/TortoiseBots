@@ -310,7 +310,7 @@ void AttackersValue::AddTargetsOf(Player* player, std::set<Unit*>& targets, std:
 bool AttackersValue::InCombat(Unit* target, Player* player, bool checkPullTargets)
 {
     // Check if the the target is attacking the player
-    bool inCombat = (target->GetThreatManager().GetThreat(player) > 0.0f) ||
+    bool inCombat = (target->GetThreatManager().getThreat(player) > 0.0f) ||
                     (target->GetVictim() && (target->GetVictim() == player));
 
     // Check if the target is attacking the player's pet
@@ -319,7 +319,7 @@ bool AttackersValue::InCombat(Unit* target, Player* player, bool checkPullTarget
         Pet* pet = player->GetPet();
         if (pet)
         {
-            inCombat = (target->GetThreatManager().GetThreat(pet) > 0.0f) ||
+            inCombat = (target->GetThreatManager().getThreat(pet) > 0.0f) ||
                        (target->GetVictim() && (target->GetVictim() == pet));
         }
     }

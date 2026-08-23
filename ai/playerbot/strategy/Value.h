@@ -7,6 +7,7 @@
 #include "AiObject.h"
 #include "playerbot/GuidPosition.h"
 #include "NamedObjectContext.h"
+#include "ValueMacros.h"
 
 namespace ai
 {
@@ -443,3 +444,33 @@ namespace ai
         }
     };
 }
+
+// Forward-ported value sources use the donor's global type names.  Export the
+// module value primitives as aliases while their implementations remain in
+// namespace ai.
+using ai::UntypedValue;
+using ai::CalculatedValue;
+using ai::SingleCalculatedValue;
+using ai::MemoryCalculatedValue;
+using ai::LogCalculatedValue;
+using ai::Uint8CalculatedValue;
+using ai::Uint32CalculatedValue;
+using ai::FloatCalculatedValue;
+using ai::BoolCalculatedValue;
+using ai::StringCalculatedValue;
+using ai::UnitCalculatedValue;
+using ai::CDPairCalculatedValue;
+using ai::CDPairListCalculatedValue;
+using ai::ObjectGuidCalculatedValue;
+using ai::ObjectGuidListCalculatedValue;
+using ai::GuidPositionCalculatedValue;
+using ai::GuidPositionListCalculatedValue;
+using ai::ManualSetValue;
+using ai::UnitManualSetValue;
+using ai::GuidPositionManualSetValue;
+using ai::BoolManualSetValue;
+using ai::IntManualSetValue;
+using ai::IntManualSetSavedValue;
+using ai::StringManualSetValue;
+using ai::StringManualSetSavedValue;
+using ai::TimeManualSetValue;

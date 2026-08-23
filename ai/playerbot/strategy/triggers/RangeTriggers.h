@@ -267,7 +267,7 @@ namespace ai
             if (!target)
                 return false;
 
-            return target && (bot->getDistance(target, true, DIST_CALC_COMBAT_REACH) > (distance - sPlayerbotAIConfig.contactDistance)) || !bot->IsWithinLOSInMap(target, true);
+            return target && (bot->GetDistance(target, true, DIST_CALC_COMBAT_REACH) > (distance - sPlayerbotAIConfig.contactDistance)) || !bot->IsWithinLOSInMap(target, true);
         }
     };
 
@@ -283,7 +283,7 @@ namespace ai
             if (!target)
                 return false;
 
-            return target && (bot->getDistance(target, true, DIST_CALC_COMBAT_REACH) > (distance - sPlayerbotAIConfig.contactDistance)) || !bot->IsWithinLOSInMap(target, true);
+            return target && (bot->GetDistance(target, true, DIST_CALC_COMBAT_REACH) > (distance - sPlayerbotAIConfig.contactDistance)) || !bot->IsWithinLOSInMap(target, true);
         }
     };
 
@@ -346,7 +346,7 @@ namespace ai
             Formation* formation = AI_VALUE(Formation*, "formation");
 
             //Already using proper formation.
-            if (sServerFacade.GetChaseTarget(bot) && sServerFacade.GetChaseTarget(bot)->getObjectGuid() == followTarget->getObjectGuid() && formation->GetAngle() == sServerFacade.GetChaseAngle(bot) && formation->getOffset() == sServerFacade.GetChaseOffset(bot))
+            if (sServerFacade.GetChaseTarget(bot) && sServerFacade.GetChaseTarget(bot)->getObjectGuid() == followTarget->getObjectGuid() && formation->GetAngle() == sServerFacade.GetChaseAngle(bot) && formation->GetOffset() == sServerFacade.GetChaseOffset(bot))
                 return false;
 
             if (!ai->IsStateActive(BotState::BOT_STATE_COMBAT))

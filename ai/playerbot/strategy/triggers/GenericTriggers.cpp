@@ -860,7 +860,8 @@ bool InRaidFightTrigger::IsActive()
 bool GreaterBuffOnPartyTrigger::IsActive()
 {
     Unit* target = GetTarget();
-    return target && IsInGroup_Helper(bot, target) && BuffOnPartyTrigger::IsActive() && !ai->HasAura(lowerSpell, target, false, checkIsOwner);
+    Player* targetPlayer = dynamic_cast<Player*>(target);
+    return targetPlayer && IsInGroup_Helper(bot, targetPlayer) && BuffOnPartyTrigger::IsActive() && !ai->HasAura(lowerSpell, target, false, checkIsOwner);
 }
 
 bool TargetOfAttacker::IsActive()
@@ -923,7 +924,7 @@ bool TargetOfCastedAuraTypeTrigger::IsActive()
 
             if (auraTypeSpell)
             {
-                Unit* spellTarget = auraTypeSpell->m_targets.GetUnitTarget();
+                Unit* spellTarget = auraTypeSpell->m_targets.getUnitTarget();
                 if (spellTarget == bot)
                 {
                     return true;
@@ -997,10 +998,11 @@ bool SpellTargetTrigger::IsActive()
 
 bool SpellTargetTrigger::IsTargetValid(Unit* target)
 {
+    Player* targetPlayer = dynamic_cast<Player*>(target);
     return target &&
            ai->IsSafe(target) &&
            (bot == target || sServerFacade.getDistance2d(bot, target) < sPlayerbotAIConfig.sightDistance) &&
-           (IsInGroup_Helper(bot, target)) &&
+           (targetPlayer && IsInGroup_Helper(bot, targetPlayer)) &&
            (!aliveCheck || !target->IsDead()) &&
            (!auraCheck || !ai->HasAura(spell, target));
 }

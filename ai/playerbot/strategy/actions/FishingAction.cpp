@@ -11,7 +11,6 @@
 #include "FishValues.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
-#include "ItemPackets.h"
 #include "LastMovementValue.h"
 #include "Map.h"
 #include "MovementActions.h"
@@ -19,7 +18,6 @@
 #include "PlayerbotAI.h"
 #include "PlayerbotTextMgr.h"
 #include "Playerbots.h"
-#include "Position.h"
 
 uint32 const FISHING_SPELL = 7620;
 uint32 const FISHING_POLE = 6256;
@@ -248,7 +246,7 @@ WorldPosition FindFishingHole(PlayerbotAI* botAI)
     return WorldPosition();
 }
 
-bool MoveNearWaterAction::Execute(Event /*event*/)
+bool MoveNearWaterAction::Execute(Event& /*event*/)
 {
     WorldPosition landSpot = AI_VALUE(WorldPosition, "fishing spot");
     if (landSpot.IsValid())
@@ -336,16 +334,14 @@ bool MoveNearWaterAction::isPossible()
     return false;
 }
 
-bool EquipFishingPoleAction::Execute(Event /*event*/)
+bool EquipFishingPoleAction::Execute(Event& /*event*/)
 {
     if (!_pole)
         return false;
 
     WorldPacket eqPacket(CMSG_AUTOEQUIP_ITEM_SLOT, 2);
     eqPacket << _pole->GetGUID() << uint8(EQUIPMENT_SLOT_MAINHAND);
-    WorldPackets::Item::AutoEquipItemSlot nicePacket(std::move(eqPacket));
-    nicePacket.Read();
-    bot->GetSession()->HandleAutoEquipItemSlotOpcode(nicePacket);
+    bot->GetSession()->HandleAutoEquipItemSlotOpcode(eqPacket);
     return true;
 }
 
@@ -403,7 +399,7 @@ bool EquipFishingPoleAction::isUseful()
     return false;
 }
 
-bool FishingAction::Execute(Event event)
+bool FishingAction::Execute(Event& event)
 {
     WorldPosition target = WorldPosition();
     WorldPosition fishingHole = FindFishingHole(botAI);
@@ -463,7 +459,7 @@ bool UseBobberAction::isUseful()
     return AI_VALUE(bool, "can use fishing bobber");
 }
 
-bool UseBobberAction::Execute(Event /*event*/)
+bool UseBobberAction::Execute(Event& /*event*/)
 {
     GuidVector gos = AI_VALUE(GuidVector, "nearest game objects no los");
     for (auto const& guid : gos)
@@ -485,7 +481,7 @@ bool UseBobberAction::Execute(Event /*event*/)
     return false;
 }
 
-bool EndMasterFishingAction::Execute(Event /*event*/)
+bool EndMasterFishingAction::Execute(Event& /*event*/)
 {
     botAI->ChangeStrategy("-master fishing", BOT_STATE_NON_COMBAT);
     return true;
@@ -503,7 +499,7 @@ bool EndMasterFishingAction::isUseful()
     return !nearWater.IsValid();
 }
 
-bool RemoveBobberStrategyAction::Execute(Event /*event*/)
+bool RemoveBobberStrategyAction::Execute(Event& /*event*/)
 {
     botAI->ChangeStrategy("-use bobber", BOT_STATE_NON_COMBAT);
     return true;

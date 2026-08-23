@@ -17,7 +17,7 @@ class GenericRogueNonCombatStrategy : public NonCombatStrategy
 public:
     GenericRogueNonCombatStrategy(PlayerbotAI* botAI);
 
-    std::string const getName() override { return "nc"; }
+    std::string getName() override { return "nc"; }
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
 };
 

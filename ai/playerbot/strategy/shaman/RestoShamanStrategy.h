@@ -19,7 +19,7 @@ public:
     RestoShamanStrategy(PlayerbotAI* botAI);
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "resto"; }
+    std::string getName() override { return "resto"; }
     uint32 GetType() const override { return STRATEGY_TYPE_RANGED | STRATEGY_TYPE_HEAL; }
 };
 
@@ -29,7 +29,7 @@ public:
     ShamanHealerDpsStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "healer dps"; }
+    std::string getName() override { return "healer dps"; }
 };
 
 #endif

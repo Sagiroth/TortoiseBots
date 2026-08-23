@@ -31,7 +31,7 @@ namespace
     }
 }
 
-bool TellPvpStatsAction::Execute(Event event)
+bool TellPvpStatsAction::Execute(Event& event)
 {
     if (!bot)
         return false;

@@ -1,4 +1,6 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
+#include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/Value.h"
 #include "playerbot/strategy/NamedObjectContext.h"
 
@@ -9,7 +11,7 @@ namespace ai
     public:
         CraftData() : itemId(0) {}
 
-        CraftData(const CraftData& other) : itemId(other.itemid)
+        CraftData(const CraftData& other) : itemId(other.itemId)
         {
             required.insert(other.required.begin(), other.required.end());
             obtained.insert(other.obtained.begin(), other.obtained.end());

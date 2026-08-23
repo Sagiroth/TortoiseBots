@@ -1,46 +1,33 @@
 #include "BotChatAdapter.h"
+
 #include "../commands/BotCommands.h"
+
+#include <cctype>
+#include <string>
 
 namespace TortoiseBots {
 
-// Keep the adapter from being discarded when linking tortoise_bots as a static
-// library with --as-needed. The real guarantee is whole-archive plus the
-// explicit EnsureRegistered call from Module/BotHostAdapter, but retain the
-// used attribute as a fallback.
-#if defined(__GNUC__)
-__attribute__((used))
-#endif
-static BotChatAdapter* s_botChatAdapterInstancePtr = nullptr;
-
-BotChatAdapter& BotChatAdapter::Instance()
+BotChatAdapter::BotChatAdapter()
+    : AllCommandScript("tortoisebots_commands")
 {
-    static BotChatAdapter instance;
-    s_botChatAdapterInstancePtr = &instance;
-    return instance;
 }
 
-bool BotChatAdapter::TryHandleCommand(ChatHandler* handler, char const* text)
+bool BotChatAdapter::CanExecuteCommand(ChatHandler* handler, char const* command, char const* args)
 {
-    // Thin delegation — no parsing beyond what BotCommands already does, no
-    // movement or behavior logic here. BotCommands owns the "bot ..." prefix
-    // check and the add/remove/follow dispatch to BotManager/BotController.
-    return BotCommands::TryHandleBotCommand(handler, text);
-}
+    if (!command)
+        return true;
 
-void BotChatAdapter::EnsureRegistered()
-{
-    if (m_registered)
-        return;
-    RegisterChatCommandInterceptor(this);
-    m_registered = true;
-}
+    std::string commandName(command);
+    for (char& character : commandName)
+        character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
 
-void BotChatAdapter::EnsureUnregistered()
-{
-    if (!m_registered)
-        return;
-    UnregisterChatCommandInterceptor(this);
-    m_registered = false;
+    if (commandName != "bot")
+        return true;
+
+    // Returning false tells the generic AllCommandScript registry that this
+    // command has been consumed; normal core command lookup must not see it.
+    BotCommands::HandleChatCommand(handler, args ? args : "");
+    return false;
 }
 
 } // namespace TortoiseBots

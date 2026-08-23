@@ -5,6 +5,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "Arrow.h"
+#include "../../../../runtime/BotManager.h"
 
 using namespace ai;
 
@@ -148,7 +149,7 @@ namespace ai
             if (!ai->IsSafe(followTarget))
                 return WorldLocation();
 
-            float range = ai->GetRange("follow") + followTarget->getObjectBoundingRadius();
+            float range = ai->GetRange("follow") + followTarget->GetObjectBoundingRadius();
             float angle = GetFollowAngle();
             float x = followTarget->getPositionX() + cos(angle) * range;
             float y = followTarget->getPositionY() + sin(angle) * range;
@@ -163,7 +164,7 @@ namespace ai
 
             // prevent going into terrain
             float ox, oy, oz;
-            followTarget->getPosition(ox, oy, oz);
+            followTarget->GetPosition(ox, oy, oz);
 #ifdef MANGOSBOT_TWO
             followTarget->GetMap()->GetHitPosition(ox, oy, oz + bot->GetCollisionHeight(), x, y, z, bot->GetPhaseMask(), -0.5f);
 #else
@@ -464,13 +465,13 @@ float Formation::GetFollowAngle()
     PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     int index = 1, total = 1;
 
-    if (!group && followTarget && !PlayerbotAIStorage::Instance().GetAI(followTarget) && GetPlayerbotMgr_Helper(followTarget))
+    if (!group && followTarget && !PlayerbotAIStorage::Instance().GetAI(followTarget))
     {
-        GetPlayerbotMgr_Helper(followTarget)->ForEachPlayerbot([&](Player* player)
+        for (Player* player : TortoiseBots::BotManager::Instance().GetBotsForMaster(followTarget->GetObjectGuid()))
         {
             if (player == bot) index = total;
             total++;
-        });
+        }
     }
     else if (group)
     {

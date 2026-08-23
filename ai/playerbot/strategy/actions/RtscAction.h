@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
 
 #include "SeeSpellAction.h"
 #include "playerbot/strategy/values/RTSCValues.h"

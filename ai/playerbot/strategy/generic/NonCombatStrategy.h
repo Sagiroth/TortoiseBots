@@ -10,6 +10,9 @@ namespace ai
         NonCombatStrategy(PlayerbotAI* ai) : Strategy(ai) {}
 		virtual int GetType() override { return STRATEGY_TYPE_NONCOMBAT; }
         std::string getName() override { return "nc"; }
+
+        void InitTriggers(std::vector<TriggerNode*>&) override {}
+        void InitMultipliers(std::vector<Multiplier*>&) override {}
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "nc"; } //Must equal iternal name
         virtual std::string GetHelpDescription() {
@@ -170,3 +173,5 @@ namespace ai
 #endif
     };
 }
+
+using ai::NonCombatStrategy;

@@ -100,6 +100,7 @@ namespace ai
 
     protected:
         bool MultiplyAndPush(NextAction** actions, float forceRelevance, bool skipPrerequisites, const Event& event, const char* pushType);
+        bool MultiplyAndPush(const std::vector<NextAction>& actions, float forceRelevance, bool skipPrerequisites, const Event& event, const char* pushType);
         void Reset();
         void ProcessTriggers(bool minimal);
         void PushDefaultActions();

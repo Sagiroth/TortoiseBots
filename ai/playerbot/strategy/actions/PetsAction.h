@@ -18,7 +18,7 @@ class PetsAction : public Action
 public:
     PetsAction(PlayerbotAI* botAI, const std::string& defaultCmd = "") : Action(botAI, "pet"), defaultCmd(defaultCmd) {}
 
-    bool Execute(Event event) override;
+    bool Execute(Event& event) override;
 
 private:
     std::string defaultCmd;

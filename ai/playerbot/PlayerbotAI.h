@@ -1,5 +1,4 @@
 #pragma once
-#include "PlayerbotMgr.h"
 #include "PlayerbotAIBase.h"
 #include "strategy/AiObjectContext.h"
 #include "strategy/ReactionEngine.h"
@@ -11,13 +10,40 @@
 #include "PlayerTalentSpec.h"
 #include <stack>
 #include "strategy/IterateItemsMask.h"
-#include "RandomPlayerbotMgr.h"
+#include "../../runtime/BotManager.h"
 
 class Player;
-class PlayerbotMgr;
 class ChatHandler;
 
 using namespace ai;
+
+enum DRUID_TABS
+{
+    DRUID_TAB_BALANCE,
+    DRUID_TAB_FERAL,
+    DRUID_TAB_RESTORATION,
+};
+
+enum MAGE_TABS
+{
+    MAGE_TAB_ARCANE,
+    MAGE_TAB_FIRE,
+    MAGE_TAB_FROST,
+};
+
+enum PALADIN_TABS
+{
+    PALADIN_TAB_HOLY,
+    PALADIN_TAB_PROTECTION,
+    PALADIN_TAB_RETRIBUTION,
+};
+
+enum SHAMAN_TABS
+{
+    SHAMAN_TAB_ELEMENTAL,
+    SHAMAN_TAB_ENHANCEMENT,
+    SHAMAN_TAB_RESTORATION,
+};
 
 bool IsAlliance(uint8 race);
 
@@ -496,8 +522,8 @@ public:
 
     SpellCastResult CheckSpellTargetAlignment(SpellEntry const* spellInfo, Unit* target);
 
-    virtual bool CanCastSpell(std::string name, Unit* target, uint8 effectMask, Item* itemTarget = nullptr, bool ignoreRange = false, bool ignoreInCombat = false, bool ignoreMount = false, SpellCastResult* checkResult = nullptr);
-    bool CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, bool checkHasSpell = true, Item* itemTarget = nullptr, bool ignoreRange = false, bool ignoreInCombat = false, bool ignoreMount = false, SpellCastResult* checkResult = nullptr);
+    virtual bool CanCastSpell(std::string name, Unit* target, uint8 effectMask = 0, Item* itemTarget = nullptr, bool ignoreRange = false, bool ignoreInCombat = false, bool ignoreMount = false, SpellCastResult* checkResult = nullptr);
+    bool CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask = 0, bool checkHasSpell = true, Item* itemTarget = nullptr, bool ignoreRange = false, bool ignoreInCombat = false, bool ignoreMount = false, SpellCastResult* checkResult = nullptr);
     bool CanCastSpell(uint32 spellid, GameObject* goTarget, uint8 effectMask, bool checkHasSpell = true, bool ignoreRange = false, bool ignoreInCombat = false, bool ignoreMount = false, SpellCastResult* checkResult = nullptr);
     bool CanCastSpell(uint32 spellid, float x, float y, float z, uint8 effectMask, bool checkHasSpell = true, Item* itemTarget = nullptr, bool ignoreRange = false, bool ignoreInCombat = false, bool ignoreMount = false, SpellCastResult* checkResult = nullptr);
     bool CanCastVehicleSpell(uint32 spellid, Unit* target);
@@ -555,7 +581,6 @@ public:
     bool HasQuestItemsInLootList(LootItemList const& questLootItemList);
     bool HasQuestItemsInWOLootList(WorldObject* wo);
     bool CanLootSomethingFromWO(WorldObject* wo);
-    PlayerbotHolder* GetHolder() const;
 private:
     void InventoryIterateItemsInBags(IterateItemsVisitor* visitor);
     void InventoryIterateItemsInEquip(IterateItemsVisitor* visitor);
@@ -639,7 +664,7 @@ public:
     //Bot has a master that is actively playing.
     bool HasActivePlayerMaster() const { return master && master->GetSession() && master->GetSession()->GetSocket() != nullptr; }
     //Checks if the bot is summoned as alt of a player
-    bool IsAlt() { return HasRealPlayerMaster() && !sRandomPlayerbotMgr.IsRandomBot(bot); }
+    bool IsAlt() { return HasRealPlayerMaster() && !TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()); }
     //Get the group leader or the master of the bot.
     Player* GetGroupMaster() { return bot->InBattleGround() ? master : bot->GetGroup() ? (sObjectMgr.GetPlayer(bot->GetGroup()->GetLeaderGuid()) ? sObjectMgr.GetPlayer(bot->GetGroup()->GetLeaderGuid()) : master) : master; }
 

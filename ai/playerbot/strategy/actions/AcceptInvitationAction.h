@@ -1,4 +1,7 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
+#include "playerbot/ServerFacade.h"
+#include "playerbot/strategy/values/Formations.h"
 
 #include "playerbot/strategy/Action.h"
 
@@ -39,7 +42,7 @@ namespace ai
             if (!bot->GetGroup() || !bot->GetGroup()->IsMember(inviter->getObjectGuid()))
                 return false;
 
-            if (sRandomPlayerbotMgr.IsFreeBot(bot))
+            if (TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()))
             {
                 ai->SetMaster(inviter);
 
@@ -58,7 +61,7 @@ namespace ai
 
             if (PlayerbotAIStorage::Instance().GetAI(master)) //Copy formation from bot master.
             {
-                if (sPlayerbotAIConfig.inviteChat && (sRandomPlayerbotMgr.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
+                if (sPlayerbotAIConfig.inviteChat && (TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()) || !ai->HasActivePlayerMaster()))
                 {
                     std::map<std::string, std::string> placeholders;
                     placeholders["%name"] = master->GetName();

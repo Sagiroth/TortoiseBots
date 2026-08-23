@@ -32,9 +32,10 @@ WorldSession* BotSessionAdapter::CreateHeadlessSession(uint32 accountId, ObjectG
     // HandlePlayerLogin alreadyOnline path handles human-reclaim vs duplicate bot login.
     // For MVP we keep validation minimal and let LoadFromDB reject mismatches.
 
-    // Use a synthetic remote address for headless sessions.
-    std::string remoteAddr = "127.0.0.1";
-    uint32 binaryAddr = 0x7F000001; // 127.0.0.1
+    // Transport identity is carried by SessionTransport, not by a synthetic
+    // remote-address marker.
+    std::string remoteAddr;
+    uint32 binaryAddr = 0;
 
     // Use the account's stored security level. Test characters must be valid for
     // that level; the module never elevates an account for a fixture.
@@ -47,7 +48,8 @@ WorldSession* BotSessionAdapter::CreateHeadlessSession(uint32 accountId, ObjectG
 
     // Queue under the character identity, never in World::m_sessions which is
     // intentionally reserved for the one Network session per account.
-    sWorld.AddHeadlessSession(session, characterGuid);
+    if (!sWorld.AddHeadlessSession(session, characterGuid))
+        return nullptr;
 
     sLog.outString("TortoiseBots: CreateHeadlessSession acct %u guid %s headless %u ptr %p — queued headless add (login deferred)", accountId, characterGuid.GetString().c_str(), session->IsHeadless(), (void*)session);
     // Do not call LoginPlayer here; BotManager waits until the session is

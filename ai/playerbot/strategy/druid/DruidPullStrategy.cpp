@@ -13,9 +13,10 @@
 std::string DruidPullStrategy::GetPullActionName() const
 {
     std::string const pullActionName = PullStrategy::GetPullActionName();
+    PlayerbotAI* botAI = ai;
     std::string const actionName =
         botAI->HasSpell("faerie fire (feral)") &&
-            (botAI->HasStrategy("bear", BOT_STATE_COMBAT) || botAI->HasStrategy("cat", BOT_STATE_COMBAT))
+            (botAI->HasStrategy("bear", BotState::BOT_STATE_COMBAT) || botAI->HasStrategy("cat", BotState::BOT_STATE_COMBAT))
             ? "faerie fire (feral)" : pullActionName;
 
     Unit* target = GetTarget();

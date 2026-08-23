@@ -18,7 +18,7 @@ public:
     GenericPaladinStrategy(PlayerbotAI* botAI);
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "paladin"; }
+    std::string getName() override { return "paladin"; }
 };
 
 class PaladinCureStrategy : public Strategy
@@ -27,7 +27,7 @@ public:
     PaladinCureStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "cure"; }
+    std::string getName() override { return "cure"; }
 };
 
 class PaladinBoostStrategy : public Strategy
@@ -36,7 +36,7 @@ public:
     PaladinBoostStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "boost"; }
+    std::string getName() override { return "boost"; }
 };
 
 class PaladinCcStrategy : public Strategy
@@ -45,7 +45,7 @@ public:
     PaladinCcStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "cc"; }
+    std::string getName() override { return "cc"; }
 };
 
 class PaladinHealerDpsStrategy : public Strategy
@@ -54,7 +54,7 @@ public:
     PaladinHealerDpsStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "healer dps"; }
+    std::string getName() override { return "healer dps"; }
 };
 
 #endif

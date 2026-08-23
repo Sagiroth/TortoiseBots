@@ -7,30 +7,8 @@
  */
 
 #include "HasTotemValue.h"
-#include "Playerbots.h"
 
-char* strstri(char const* str1, char const* str2);
-
-bool HasTotemValue::Calculate()
-{
-    for (uint8 i = 0; i < MAX_SUMMON_SLOT; ++i)
-    {
-        if (!bot->m_SummonSlot[i])
-        {
-            continue;
-        }
-
-        if (Creature* OldTotem = bot->GetMap()->GetCreature(bot->m_SummonSlot[i]))
-        {
-            if (OldTotem->IsSummon() && OldTotem->getDistance(bot) <= 30.0f)
-            {
-                if (strstri(OldTotem->GetName().c_str(), qualifier.c_str()))
-                    return true;
-            }
-        }
-    }
-    return false;
-}
+// Implemented inline by the Tortoise value header.
 
 // bool HasTotemValue::Calculate()
 // {

@@ -1,38 +1,17 @@
 #pragma once
 
-// pi-lens-ignore: clang:pp_file_not_found
-#include "IChatCommandInterceptor.h"
-#include <string>
-
-// Thin chat-command adapter — the only place that knows "IChatCommandInterceptor + 'bot' = TortoiseBots".
-// Core sees only IChatCommandInterceptor; this adapter is bot-aware and delegates to
-// the reusable BotCommands/BotManager APIs (no movement/behavior logic here).
-// Replaceable later by a Penqle CommandScript: that migration only re-registers the
-// same BotCommands handlers via the new script system, no change to BotCommands/BotController.
+#include "ScriptObjects.h"
 
 namespace TortoiseBots {
 
-// pi-lens-ignore: clang:unknown_typename,clang:expected_class_name
-class BotChatAdapter : public IChatCommandInterceptor
+// Native AllCommandScript adapter. It keeps the public `.bot` surface in the
+// module without adding a bot-specific branch to core ChatHandler code.
+class BotChatAdapter final : public AllCommandScript
 {
 public:
-    static BotChatAdapter& Instance();
+    BotChatAdapter();
 
-    // IChatCommandInterceptor
-    // pi-lens-ignore: clang:unknown_typename,clang:unknown_type
-    bool TryHandleCommand(ChatHandler* handler, char const* text) override;
-
-    // Explicit lifecycle — called from Module/BotHostAdapter EnsureRegistered.
-    void EnsureRegistered();
-    void EnsureUnregistered();
-
-private:
-    BotChatAdapter() = default;
-    ~BotChatAdapter() = default;
-    BotChatAdapter(BotChatAdapter const&) = delete;
-    BotChatAdapter& operator=(BotChatAdapter const&) = delete;
-
-    bool m_registered = false;
+    bool CanExecuteCommand(ChatHandler* handler, char const* command, char const* args) override;
 };
 
 } // namespace TortoiseBots

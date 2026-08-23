@@ -96,7 +96,7 @@ std::string WhoAction::QuerySkill(std::string text)
     if (!skill || !ai->HasSkill((SkillType)skill))
         return "";
 
-    std::string skillName = chat->GetSkillName(skill);
+    std::string skillName = chat->getSkillName(skill);
     uint32 spellId = AI_VALUE2(uint32, "spell id", skillName);
     uint16 value = bot->GetSkillValue(skill);
 #ifdef MANGOS

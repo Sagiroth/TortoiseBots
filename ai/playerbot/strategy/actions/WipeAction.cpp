@@ -9,7 +9,7 @@
 #include "WipeAction.h"
 #include "PlayerbotAI.h"
 
-bool WipeAction::Execute(Event event)
+bool WipeAction::Execute(Event& event)
 {
     Player* const owner = event.GetOwner();
     Player* const master = this->botAI->GetMaster();
@@ -17,7 +17,7 @@ bool WipeAction::Execute(Event event)
     if (owner != nullptr && master != nullptr && master->GetGUID() != owner->GetGUID())
         return false;
 
-    bot->Kill(bot, bot);
+    bot->Kill(bot, nullptr);
 
     return true;
 }

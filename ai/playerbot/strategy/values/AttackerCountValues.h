@@ -1,4 +1,6 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
+#include "playerbot/strategy/AiObjectContext.h"
 #include "StatsValues.h"
 
 namespace ai

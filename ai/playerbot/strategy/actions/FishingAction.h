@@ -27,7 +27,7 @@ class FishingAction : public Action
 public:
     FishingAction(PlayerbotAI* botAI) : Action(botAI, "go fishing") {}
 
-    bool Execute(Event event) override;
+    bool Execute(Event& event) override;
     bool isUseful() override;
 };
 
@@ -36,7 +36,7 @@ class EquipFishingPoleAction : public Action
 public:
     EquipFishingPoleAction(PlayerbotAI* botAI) : Action(botAI, "equip fishing pole") {}
 
-    bool Execute(Event event) override;
+    bool Execute(Event& event) override;
     bool isUseful() override;
 
 private:
@@ -48,7 +48,7 @@ class MoveNearWaterAction : public MovementAction
 public:
     MoveNearWaterAction(PlayerbotAI* botAI) : MovementAction(botAI, "move near water") {}
 
-    bool Execute(Event event) override;
+    bool Execute(Event& event) override;
     bool isUseful() override;
     bool isPossible() override;
 };
@@ -58,7 +58,7 @@ class UseBobberAction : public Action
 public:
     UseBobberAction(PlayerbotAI* botAI) : Action(botAI, "use fishing bobber") {}
 
-    bool Execute(Event event) override;
+    bool Execute(Event& event) override;
     bool isUseful() override;
 };
 
@@ -67,7 +67,7 @@ class EndMasterFishingAction : public Action
 public:
     EndMasterFishingAction(PlayerbotAI* botAI) : Action(botAI, "end master fishing") {}
 
-    bool Execute(Event event) override;
+    bool Execute(Event& event) override;
     bool isUseful() override;
 };
 
@@ -76,7 +76,7 @@ class RemoveBobberStrategyAction : public Action
 public:
     RemoveBobberStrategyAction(PlayerbotAI* botAI) : Action(botAI, "remove bobber strategy") {}
 
-    bool Execute(Event event) override;
+    bool Execute(Event& event) override;
 };
 
 #endif

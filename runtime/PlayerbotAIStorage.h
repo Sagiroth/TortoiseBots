@@ -27,3 +27,7 @@ private:
     std::unordered_map<ObjectGuid, PlayerbotAI*> byGuid_;
     std::unordered_map<Player*, PlayerbotAI*> byPlayer_;
 };
+
+#ifndef GET_PLAYERBOT_AI
+#define GET_PLAYERBOT_AI(player) PlayerbotAIStorage::Instance().GetAI(player)
+#endif

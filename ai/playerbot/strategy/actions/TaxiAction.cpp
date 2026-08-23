@@ -56,7 +56,7 @@ bool TaxiAction::Execute(Event& event)
                 if (!dest) continue;
 
                 std::ostringstream out;
-                out << index++ << ": " << dest->Name;
+                out << index++ << ": " << dest->name[LOCALE_enUS];
                 ai->TellPlayerNoFacing(requester, out.str());
             }
             return true;

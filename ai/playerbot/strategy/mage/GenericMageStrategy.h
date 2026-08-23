@@ -18,7 +18,7 @@ class GenericMageStrategy : public RangedCombatStrategy
 public:
     GenericMageStrategy(PlayerbotAI* botAI);
 
-    std::string const getName() override { return "mage"; }
+    std::string getName() override { return "mage"; }
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
     uint32 GetType() const override
     {
@@ -32,7 +32,7 @@ public:
     MageCureStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "cure"; }
+    std::string getName() override { return "cure"; }
 };
 
 class MageBoostStrategy : public Strategy
@@ -41,7 +41,7 @@ public:
     MageBoostStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "boost"; }
+    std::string getName() override { return "boost"; }
 };
 
 class MageCcStrategy : public Strategy
@@ -50,7 +50,7 @@ public:
     MageCcStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "cc"; }
+    std::string getName() override { return "cc"; }
 };
 
 class MageAoeStrategy : public CombatStrategy
@@ -59,7 +59,7 @@ public:
     MageAoeStrategy(PlayerbotAI* botAI) : CombatStrategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "aoe"; }
+    std::string getName() override { return "aoe"; }
 };
 
 #endif

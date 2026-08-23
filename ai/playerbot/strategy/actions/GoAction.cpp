@@ -654,7 +654,7 @@ bool GoAction::MoveToGo(std::string& param, Player* requester)
                ai->TellPlayerNoFacing(requester, out.str());
 
                WorldPosition pos;
-               go->getPosition(pos);
+               go->GetPosition(pos);
                const float angle = GetFollowAngle();
                const float distance = INTERACTION_DISTANCE;
                pos += WorldPosition(0, cos(angle)* distance, sin(angle)* distance, 0.5f);
@@ -725,8 +725,8 @@ bool GoAction::MoveToGps(std::string& param, Player* requester)
 
             path.calculate(x, y, z, false);
 
-            Vector3 end = path.GetEndPosition();
-            Vector3 aend = path.GetActualEndPosition();
+            Vector3 end = path.getEndPosition();
+            Vector3 aend = path.getActualEndPosition();
 
             PointsArray const& points = path.GetPath();
             PathType type = path.getPathType();

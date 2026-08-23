@@ -7,14 +7,13 @@
  */
 
 #include "PetsAction.h"
-#include "CharmInfo.h"
 #include "Creature.h"
 #include "CreatureAI.h"
 #include "Pet.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
 
-bool PetsAction::Execute(Event event)
+bool PetsAction::Execute(Event& event)
 {
     // Extract the command parameter from the event (e.g., "aggressive", "defensive", "attack", etc.)
     std::string param = event.GetParam();

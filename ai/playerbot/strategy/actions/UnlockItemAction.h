@@ -17,7 +17,7 @@ class UnlockItemAction : public Action
 public:
     UnlockItemAction(PlayerbotAI* botAI) : Action(botAI, "unlock item") { }
 
-    bool Execute(Event event) override;
+    bool Execute(Event& event) override;
 
 private:
     void UnlockItem(Item* item);

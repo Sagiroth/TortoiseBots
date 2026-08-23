@@ -7,6 +7,7 @@
 #include "Maps/PathFinder.h"
 #include "TravelNode.h"
 #include "PlayerbotAI.h"
+#include "playerbot/RandomPlayerbotMgr.h"
 #include "BotTests.h"
 #include "ObjectAccessor.h"
 
@@ -452,6 +453,11 @@ uint8 QuestObjectiveTravelDestination::GetObjective() const
         return 0;
     }
     return 0;
+}
+
+uint8 QuestObjectiveTravelDestination::getObjective() const
+{
+    return GetObjective();
 }
 
 bool RpgTravelDestination::IsPossible(const PlayerTravelInfo& info) const
@@ -1500,7 +1506,9 @@ void TravelMgr::LoadQuestTravelTable()
     if (sPlayerbotAIConfig.hasLog("log_analysis.csv"))
     {
         sLog.outString("Running analysis.");
-        LogAnalysis::RunAnalysis();
+#ifdef GenerateBotTests
+                    LogAnalysis::RunAnalysis();
+#endif
     }
 
     sLog.outString("Clearing log files.");

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sync TortoiseBots module into the Penqle Docker source tree.
 # Single source of truth is this repo (TortoiseBots). The Docker source
-# at ../tortoise-docker-penqle/source/src/modules/TortoiseBots is an
+# at ../tortoise-docker-penqle/source/modules/TortoiseBots is an
 # ephemeral copy (gitignored in that repo) used only for `docker compose build`.
 #
 # Usage:
@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODULE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # Default Docker source location (sibling checkout). Override with env.
 DOCKER_ROOT="${DOCKER_ROOT:-$(cd "${MODULE_ROOT}/../tortoise-docker-penqle" && pwd)}"
-DEST="${DOCKER_ROOT}/source/src/modules/TortoiseBots"
+DEST="${DOCKER_ROOT}/source/modules/TortoiseBots"
 
 if [[ ! -d "${DOCKER_ROOT}/source" ]]; then
   echo "Docker source not found at ${DOCKER_ROOT}/source" >&2

@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "GenericActions.h"
 

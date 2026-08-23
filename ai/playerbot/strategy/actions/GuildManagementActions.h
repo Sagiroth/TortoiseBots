@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
 #include "GenericActions.h"
 #include "Guild/GuildMgr.h"
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
 
 #include "GenericActions.h"
 #include "EmoteAction.h"
@@ -56,7 +57,6 @@
 #include "GuildShareItemAction.h"
 #include "GuildShareAhBuyAction.h"
 #include "RpgSubActions.h"
-#include "VehicleActions.h"
 #include "UseTrinketAction.h"
 #include "BotStateActions.h"
 #include "WaitForAttackAction.h"
@@ -65,7 +65,6 @@
 #include "ShareQuestAction.h"
 #include "UpdateGearAction.h"
 #include "SetAvoidAreaAction.h"
-#include "GlyphAction.h"
 #include "FishAction.h"
 #include "AutoCompleteQuestAction.h"
 #include "UnstuckAction.h"
@@ -76,7 +75,6 @@
 #include "OnyxiasLairDungeonActions.h"
 #include "MoltenCoreDungeonActions.h"
 #include "BlackwingLairDungeonActions.h"
-#include "KarazhanDungeonActions.h"
 #include "NaxxramasDungeonActions.h"
 
 #ifdef GenerateBotTests
@@ -264,8 +262,6 @@ namespace ai
             creators["use lightwell"] = [](PlayerbotAI* ai) { return new UseLightwellAction(ai); };
 
             // Vehicles
-            creators["enter vehicle"] = [](PlayerbotAI* ai) { return new EnterVehicleAction(ai); };
-            creators["leave vehicle"] = [](PlayerbotAI* ai) { return new LeaveVehicleAction(ai); };
             creators["hurl boulder"] = [](PlayerbotAI* ai) { return new CastHurlBoulderAction(ai); };
             creators["ram"] = [](PlayerbotAI* ai) { return new CastRamAction(ai); };
             creators["steam rush"] = [](PlayerbotAI* ai) { return new CastSteamRushAction(ai); };
@@ -320,7 +316,6 @@ namespace ai
             creators["rpg item"] = [](PlayerbotAI* ai) { return new RpgItemAction(ai); };
             creators["rpg gossip talk"] = [](PlayerbotAI* ai) { return new RpgGossipTalkAction(ai); };
 
-            creators["auto set glyph"] = [](PlayerbotAI* ai) { return new AutoSetGlyphAction(ai); };
             creators["auto complete quest"] = [](PlayerbotAI* ai) { return new AutoCompleteQuestAction(ai); };
 
             creators["move to fish"] = [](PlayerbotAI* ai) { return new MoveToFishAction(ai); };
@@ -361,8 +356,6 @@ namespace ai
             creators["disable molten core strategy"] = [](PlayerbotAI* ai) { return new MoltenCoreDisableDungeonStrategyAction(ai); };
             creators["enable blackwing lair strategy"] = [](PlayerbotAI* ai) { return new BlackwingLairEnableDungeonStrategyAction(ai); };
             creators["disable blackwing lair strategy"] = [](PlayerbotAI* ai) { return new BlackwingLairDisableDungeonStrategyAction(ai); };
-            creators["enable karazhan strategy"] = [](PlayerbotAI* ai) { return new KarazhanEnableDungeonStrategyAction(ai); };
-            creators["disable karazhan strategy"] = [](PlayerbotAI* ai) { return new KarazhanDisableDungeonStrategyAction(ai); };
             creators["enable naxxramas strategy"] = [](PlayerbotAI* ai) { return new NaxxramasEnableDungeonStrategyAction(ai); };
             creators["disable naxxramas strategy"] = [](PlayerbotAI* ai) { return new NaxxramasDisableDungeonStrategyAction(ai); };
 
@@ -382,19 +375,6 @@ namespace ai
             creators["move to suppression device"] = [](PlayerbotAI* ai) { return new MoveToSuppressionDeviceAction(ai); };
             creators["stealth for suppression device"] = [](PlayerbotAI* ai) { return new StealthForSuppressionDeviceAction(ai); };
             creators["disarm suppression device"] = [](PlayerbotAI* ai) { return new DisarmSuppressionDeviceAction(ai); };
-
-            creators["enable netherspite fight strategy"] = [](PlayerbotAI* ai) { return new NetherspiteEnableFightStrategyAction(ai); };
-            creators["disable netherspite fight strategy"] = [](PlayerbotAI* ai) { return new NetherspiteDisableFightStrategyAction(ai); };
-            creators["move away from void zone"] = [](PlayerbotAI* ai) { return new VoidZoneMoveAwayAction(ai); };
-            creators["add nether portal - perseverence for tank"] = [](PlayerbotAI* ai) { return new AddNetherPortalPerseverenceForTankAction(ai); };
-            creators["remove nether portal buffs from netherspite"] = [](PlayerbotAI* ai) { return new RemoveNetherPortalBuffsFromNetherspiteAction(ai); };
-            creators["remove nether portal - perseverence"] = [](PlayerbotAI* ai) { return new RemoveNetherPortalPerseverenceAction(ai); };
-            creators["remove nether portal - serenity"] = [](PlayerbotAI* ai) { return new RemoveNetherPortalSerenityAction(ai); };
-            creators["remove nether portal - dominance"] = [](PlayerbotAI* ai) { return new RemoveNetherPortalDominanceAction(ai); };
-
-            creators["enable prince malchezaar fight strategy"] = [](PlayerbotAI* ai) { return new PrinceMalchezaarEnableFightStrategyAction(ai); };
-            creators["disable prince malchezaar fight strategy"] = [](PlayerbotAI* ai) { return new PrinceMalchezaarDisableFightStrategyAction(ai); };
-            creators["move away from netherspite infernal"] = [](PlayerbotAI* ai) { return new NetherspiteInfernalMoveAwayAction(ai); };
 
             creators["enable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanEnableFightStrategyAction(ai); };
             creators["disable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanDisableFightStrategyAction(ai); };

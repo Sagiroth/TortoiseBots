@@ -20,7 +20,7 @@ public:
     {
     }
 
-    bool Execute(Event event);
+    bool Execute(Event& event);
 
 protected:
     void AutoTeleportForLevel();

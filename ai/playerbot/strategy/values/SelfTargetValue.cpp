@@ -7,6 +7,5 @@
  */
 
 #include "SelfTargetValue.h"
-#include "Playerbots.h"
 
-Unit* SelfTargetValue::Calculate() { return botAI->GetBot(); }
+// Implemented inline by the Tortoise value header.

@@ -1,4 +1,6 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
+#include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/Value.h"
 #include "TargetValue.h"
 #include "playerbot/LootObjectStack.h"
@@ -88,7 +90,7 @@ namespace ai
                     Formation* formation = AI_VALUE(Formation*, "formation");
                     WorldLocation loc = formation->GetLocation();
                     if (Formation::IsNullLocation(loc))
-                        loc = WorldLocation(target->GetMapId(), target->getPosition());
+                        loc = WorldLocation(target->GetMapId(), target->GetPosition());
 
                     return sServerFacade.GetDistance2d(ai->GetBot(), loc.x, loc.y);
                 }

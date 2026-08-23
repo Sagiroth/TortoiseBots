@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
 #include "ChooseTravelTargetAction.h"
 #include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/ServerFacade.h"

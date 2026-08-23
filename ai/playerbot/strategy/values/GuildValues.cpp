@@ -141,7 +141,7 @@ uint32 ai::CountGuildFinishedItemDeficit(Player* bot, uint32 itemId, const std::
 
             for (const auto& entry : shareList)
             {
-                if (entry.itemid != itemId)
+                if (entry.itemId != itemId)
                     continue;
 
                 if (!entry.MatchesPlayer(player))
@@ -199,7 +199,7 @@ static std::unordered_map<uint32, uint32> CountGuildFinishedItemDeficits(
 
             for (const auto& entry : shareList)
             {
-                if (itemIds.find(entry.itemid) == itemIds.end())
+                if (itemIds.find(entry.itemId) == itemIds.end())
                     continue;
 
                 if (!entry.MatchesPlayer(player))
@@ -208,12 +208,12 @@ static std::unordered_map<uint32, uint32> CountGuildFinishedItemDeficits(
                 uint32 has = 0;
                 PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(player);
                 if (memberAi)
-                    has = memberAi->GetInventoryItemsCountWithId(entry.itemid);
+                    has = memberAi->GetInventoryItemsCountWithId(entry.itemId);
                 else
-                    has = player->GetItemCount(entry.itemid, true);
+                    has = player->GetItemCount(entry.itemId, true);
 
                 if (has < entry.amount)
-                    deficits[entry.itemid] += entry.amount - has;
+                    deficits[entry.itemId] += entry.amount - has;
             }
         }
     };
@@ -611,7 +611,7 @@ std::vector<GuildShareItemEntry> GuildShareListValue::Calculate()
             GuildShareItemEntry entry;
             entry.filter = roleFilter;
             entry.playerClass = playerClass;
-            entry.itemid = itemId;
+            entry.itemId = itemId;
             entry.amount = amount;
             result.push_back(entry);
         }
@@ -633,7 +633,7 @@ GuildOrder GuildShareCraftOrderValue::Calculate()
 
     std::set<uint32> finishedItemIds;
     for (const auto& entry : shareList)
-        finishedItemIds.insert(entry.itemid);
+        finishedItemIds.insert(entry.itemId);
 
     std::unordered_map<uint32, uint32> craftSpells = BuildCraftSpellMap(bot, finishedItemIds);
     if (craftSpells.empty())
@@ -717,7 +717,7 @@ GuildOrder GuildShareFarmOrderValue::Calculate()
 
     std::set<uint32> finishedItemIds;
     for (const auto& entry : shareList)
-        finishedItemIds.insert(entry.itemid);
+        finishedItemIds.insert(entry.itemId);
 
     std::unordered_map<uint32, uint32> deficits = CountGuildFinishedItemDeficits(bot, finishedItemIds, shareList);
     std::unordered_map<uint32, uint32> itemRemaining = ComputeRemainingNeeds(ai, finishedItemIds, deficits);
@@ -869,7 +869,7 @@ GuildOrder GuildShareFarmOrderValue::Calculate()
     }
 
     const FarmCandidate& chosen = bestCandidates[urand(0, bestCandidates.size() - 1)];
-    ItemPrototype const* bestProto = sObjectMgr.GetItemPrototype(chosen.itemid);
+    ItemPrototype const* bestProto = sObjectMgr.GetItemPrototype(chosen.itemId);
     if (!bestProto)
         return order;
 
@@ -907,21 +907,21 @@ GuildOrder GuildShareQuestRewardOrderValue::Calculate()
         if (!entry.MatchesPlayer(bot))
             continue;
 
-        uint32 currentCount = ai->GetInventoryItemsCountWithId(entry.itemid);
+        uint32 currentCount = ai->GetInventoryItemsCountWithId(entry.itemId);
         if (currentCount >= entry.amount)
             continue;
 
         uint32 needed = entry.amount - currentCount;
 
-        auto questRewards = FindRepeatableQuestsRewardingItem(entry.itemid);
+        auto questRewards = FindRepeatableQuestsRewardingItem(entry.itemId);
         if (questRewards.empty())
             continue;
 
-        std::list<int32> dropEntries = GAI_VALUE2(std::list<int32>, "item drop list", entry.itemid);
+        std::list<int32> dropEntries = GAI_VALUE2(std::list<int32>, "item drop list", entry.itemId);
         if (!dropEntries.empty())
             continue;
 
-        std::set<uint32> singleItemSet = { entry.itemid };
+        std::set<uint32> singleItemSet = { entry.itemId };
         std::unordered_map<uint32, uint32> craftSpells = BuildCraftSpellMap(bot, singleItemSet);
         if (!craftSpells.empty())
             continue;
@@ -937,7 +937,7 @@ GuildOrder GuildShareQuestRewardOrderValue::Calculate()
                 bot->GetQuestStatus(questId) != QUEST_STATUS_COMPLETE)
                 continue;
 
-            candidates.push_back({ entry.itemid, questId, rewardIdx, needed, quest->GetTitle() });
+            candidates.push_back({ entry.itemId, questId, rewardIdx, needed, quest->GetTitle() });
         }
     }
 
@@ -950,7 +950,7 @@ GuildOrder GuildShareQuestRewardOrderValue::Calculate()
     order.target = chosen.questTitle;
     order.amount = chosen.needed;
     order.questId = chosen.questId;
-    order.rewardItemId = chosen.itemid;
+    order.rewardItemId = chosen.itemId;
 
     return order;
 }
@@ -970,9 +970,9 @@ uint32 GuildShareQuestRewardItemValue::Calculate()
         if (!entry.MatchesPlayer(bot))
             continue;
 
-        uint32 currentCount = ai->GetInventoryItemsCountWithId(entry.itemid);
+        uint32 currentCount = ai->GetInventoryItemsCountWithId(entry.itemId);
         if (currentCount < entry.amount)
-            neededItems[entry.itemid] = entry.amount - currentCount;
+            neededItems[entry.itemId] = entry.amount - currentCount;
     }
 
     if (neededItems.empty())
@@ -1027,7 +1027,7 @@ GuildShareTarget GuildShareTargetValue::Calculate()
 
     std::unordered_set<uint32> shareItemIds;
     for (const auto& entry : shareList)
-        shareItemIds.insert(entry.itemid);
+        shareItemIds.insert(entry.itemId);
 
     bool hasAnyShareItem = false;
     for (uint32 itemId : shareItemIds)
@@ -1065,11 +1065,11 @@ GuildShareTarget GuildShareTargetValue::Calculate()
             if (!entry.MatchesPlayer(player))
                 continue;
 
-            uint32 botCount = ai->GetInventoryItemsCountWithId(entry.itemid);
+            uint32 botCount = ai->GetInventoryItemsCountWithId(entry.itemId);
             if (botCount == 0)
                 continue;
 
-            uint32 targetCount = targetAi->GetInventoryItemsCountWithId(entry.itemid);
+            uint32 targetCount = targetAi->GetInventoryItemsCountWithId(entry.itemId);
             if (targetCount >= entry.amount)
                 continue;
 
@@ -1095,7 +1095,7 @@ GuildShareTarget GuildShareTargetValue::Calculate()
             }
 
             result.receiver = player;
-            result.itemid = entry.itemid;
+            result.itemId = entry.itemId;
             result.amount = needed;
             return result;
         }
@@ -1115,7 +1115,7 @@ std::vector<uint32> NeedsProfessionReagentsValue::GetMissingReagents(PlayerbotAI
 
     std::set<uint32> finishedItemIds;
     for (const auto& entry : shareList)
-        finishedItemIds.insert(entry.itemid);
+        finishedItemIds.insert(entry.itemId);
 
     std::unordered_map<uint32, uint32> craftSpells = BuildCraftSpellMap(bot, finishedItemIds);
     if (craftSpells.empty())

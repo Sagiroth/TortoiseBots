@@ -1,4 +1,6 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
+#include "playerbot/ChatHelper.h"
 #include "playerbot/strategy/Trigger.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"

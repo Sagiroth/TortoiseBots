@@ -7,6 +7,11 @@
 
 using namespace ai;
 
+TriggerNode::TriggerNode(std::string name, std::initializer_list<NextAction> handlers)
+    : name(std::move(name)), trigger(NULL), handlers(NextAction::array(handlers))
+{
+}
+
 Event Trigger::Check()
 {
 	if (triggered)

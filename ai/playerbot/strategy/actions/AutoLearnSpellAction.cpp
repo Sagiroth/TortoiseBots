@@ -292,7 +292,7 @@ void AutoLearnSpellAction::GetClassQuestItem(Quest const* quest, std::ostringstr
 std::string formatSpell(SpellEntry const* sInfo)
 {
     std::ostringstream out;
-    std::string rank = sInfo->rank[0];
+    std::string rank = sInfo->Rank[0];
 
     if (rank.empty())
         out << "|cffffffff|Hspell:" << sInfo->Id << "|h[" << sInfo->SpellName[LOCALE_enUS] << "]|h|r" << " (" << sInfo->Id << ")";

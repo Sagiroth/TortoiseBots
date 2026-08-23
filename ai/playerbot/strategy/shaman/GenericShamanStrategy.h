@@ -26,7 +26,7 @@ public:
     ShamanCureStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "cure"; }
+    std::string getName() override { return "cure"; }
 };
 
 class ShamanBoostStrategy : public Strategy
@@ -35,7 +35,7 @@ public:
     ShamanBoostStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "boost"; }
+    std::string getName() override { return "boost"; }
 };
 
 class ShamanAoeStrategy : public CombatStrategy
@@ -44,7 +44,7 @@ public:
     ShamanAoeStrategy(PlayerbotAI* botAI) : CombatStrategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "aoe"; }
+    std::string getName() override { return "aoe"; }
 };
 
 #endif

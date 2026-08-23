@@ -122,10 +122,10 @@ ItemUsage ItemUsageValue::Calculate()
         {
             for (const auto& entry : shareList)
             {
-                if (entry.itemid == itemId)
+                if (entry.itemId == itemId)
                     return ItemUsage::ITEM_USAGE_KEEP;
 
-                ItemPrototype const* craftProto = sObjectMgr.GetItemPrototype(entry.itemid);
+                ItemPrototype const* craftProto = sObjectMgr.GetItemPrototype(entry.itemId);
                 if (craftProto)
                 {
                     std::vector<std::pair<uint32, uint32>> reagents = GetAllReagentItemIdsForCraftingItem(craftProto);
@@ -899,7 +899,7 @@ bool ItemUsageValue::IsNeededForQuest(Player* player, uint32 itemId, bool ignore
         if (!quest)
             continue;
 
-        QuestStatusData& qData = player->GetQuestStatusMap()[quest->GetQuestId()];
+        QuestStatusData& qData = player->getQuestStatusMap()[quest->GetQuestId()];
         if (qData.m_status != QUEST_STATUS_INCOMPLETE)
             continue;
 

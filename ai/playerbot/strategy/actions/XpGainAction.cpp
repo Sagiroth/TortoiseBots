@@ -118,7 +118,7 @@ void XpGainAction::GiveXP(int32 xp, Unit* victim)
     }
 
     // XP resting bonus for kill
-    uint32 rested_bonus_xp = victim ? bot->getXPRestBonus(xp) : 0;
+    uint32 rested_bonus_xp = victim ? bot->GetXPRestBonus(xp) : 0;
 
     //SendLogXPGain(xp, victim, rested_bonus_xp);
 

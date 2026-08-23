@@ -14,7 +14,7 @@
 #include "SharedDefines.h"
 #include "SpellMgr.h"
 
-bool AutoMaintenanceOnLevelupAction::Execute(Event /*event*/)
+bool AutoMaintenanceOnLevelupAction::Execute(Event& /*event*/)
 {
     AutoPickTalents();
     AutoLearnSpell();

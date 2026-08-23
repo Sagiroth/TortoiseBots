@@ -20,6 +20,8 @@ PlayerbotAIAdapter::~PlayerbotAIAdapter()
 bool PlayerbotAIAdapter::Initialize()
 {
     if (!bot_ || !bot_->IsInWorld() || initialized_) return false; // pi-lens-ignore: clang:all
+    if (!sPlayerbotAIConfig.enabled)
+        return false;
     ai_ = new PlayerbotAI(bot_); // pi-lens-ignore: clang:all
     if (!ai_) return false;
     if (master_) ai_->SetMaster(master_); // pi-lens-ignore: clang:all

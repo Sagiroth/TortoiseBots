@@ -242,7 +242,7 @@ bool QuestAction::AcceptQuest(Player* requester, Quest const* quest, uint64 ques
 
         if (bot->GetQuestStatus(questId) == QUEST_STATUS_NONE && sPlayerbotAIConfig.syncQuestWithPlayer)
         {
-            Object* pObject = bot->getObjectByTypeMask((ObjectGuid)questGiver, TYPEMASK_CREATURE_GAMEOBJECT_PLAYER_OR_ITEM);
+            Object* pObject = bot->GetObjectByTypeMask((ObjectGuid)questGiver, TYPEMASK_CREATURE_GAMEOBJECT_PLAYER_OR_ITEM);
             bot->AddQuest(quest, pObject);
         }
 

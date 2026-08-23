@@ -18,7 +18,7 @@ public:
     OffhealRetPaladinStrategy(PlayerbotAI* botAI);
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "offheal"; }
+    std::string getName() override { return "offheal"; }
     std::vector<NextAction> getDefaultActions() override;
     uint32 GetType() const override
     {

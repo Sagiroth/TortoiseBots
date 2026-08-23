@@ -27,6 +27,7 @@
 #include <chrono>
 #include <random>
 #include <cstdio>
+#include <vector>
 
 // === Type renames ===
 // cmangos's Transport class is called GenericTransport in WotLK builds and
@@ -43,6 +44,7 @@ typedef CreatureAI UnitAI;
 // before the alias is used.
 #include "ObjectGuid.h"
 typedef ObjectGuidSet GuidSet;
+using GuidVector = std::vector<ObjectGuid>;
 
 // cmangos uses AreaTableEntry; Penqle has AreaEntry (defined in Maps/Map.h).
 // They model the same data. Forward-declare and typedef.
@@ -1050,20 +1052,12 @@ inline WorldStateHeadless sWorldState;
 #ifndef LogCommon_h
 #define LogCommon_h
 #endif
-struct RandomPlayerbotMgrStubHeadless {
-    bool IsRandomBot(Player*) const { return false; }
-    bool IsFreeBot(Player*) const { return false; }
-    bool IsRandomBot(ObjectGuid) const { return false; }
-};
-#ifndef sRandomPlayerbotMgr
-inline RandomPlayerbotMgrStubHeadless sRandomPlayerbotMgrHeadless;
-#define sRandomPlayerbotMgr sRandomPlayerbotMgrHeadless
-#endif
-// === Headless isRealPlayer / GetPlayerbotMgr shims ===
-class PlayerbotMgr;
+// RandomPlayerbotMgr.h owns the sRandomPlayerbotMgr name. Do not install a
+// header-only stub here: the module-local facade implementation must be the
+// single behavior-facing owner, while BotManager remains the session owner.
+// === Headless transport helpers ===
 inline bool isRealPlayer_Helper(Player* p) {
     return p && p->GetSession() && p->GetSession()->GetSocket() != nullptr;
 }
-inline PlayerbotMgr* GetPlayerbotMgr_Helper(Player* p) { (void)p; return nullptr; }
 inline bool IsInGroup_Helper(Player* a, Player* b, bool sameGroup=false) { if (!a || !b) return false; Group* g = a->GetGroup(); if (!g) return false; if (sameGroup) { Group* og = b->GetGroup(); return g == og; } return g->IsMember(b->GetObjectGuid()); }
 inline bool IsRealPlayer_Helper(Player* p) { return isRealPlayer_Helper(p); }

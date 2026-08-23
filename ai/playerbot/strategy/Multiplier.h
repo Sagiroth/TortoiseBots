@@ -22,3 +22,5 @@ namespace ai
     };
 
 }
+
+using ai::Multiplier;

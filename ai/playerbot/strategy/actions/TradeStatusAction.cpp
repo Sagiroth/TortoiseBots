@@ -93,7 +93,7 @@ bool TradeStatusAction::Execute(Event& event)
                 uint32 count = i->second;
 
                 CraftData &craftData = AI_VALUE(CraftData&, "craft");
-                if (!craftData.IsEmpty() && craftData.itemid == itemId)
+                if (!craftData.IsEmpty() && craftData.itemId == itemId)
                 {
                     craftData.Crafted(count);
                 }
@@ -323,7 +323,7 @@ int32 TradeStatusAction::CalculateCost(Player* player, bool sell)
                 continue;
             }
 
-            if (player == bot && sell && craftData.itemid == proto->ItemId && craftData.IsFulfilled())
+            if (player == bot && sell && craftData.itemId == proto->ItemId && craftData.IsFulfilled())
             {
                 sum += item->GetCount() * SetCraftAction::GetCraftFee(craftData);
                 continue;

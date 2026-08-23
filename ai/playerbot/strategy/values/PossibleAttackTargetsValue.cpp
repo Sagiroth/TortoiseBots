@@ -232,7 +232,6 @@ bool PossibleAttackTargetsValue::IsTapped(Unit* target, Player* player)
         {
             Unit* victim = creature->GetVictim();
             Player* master = ai ? ai->GetMaster() : nullptr;
-            PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(player);
 
              if (!victim) //Target is not attacking anything.
                 return true;
@@ -240,7 +239,8 @@ bool PossibleAttackTargetsValue::IsTapped(Unit* target, Player* player)
             if (master && victim == master) //Target is attacking master.
                 return true;
 
-            if (IsInGroup_Helper(player, victim)) //Target is attacking groupmember.
+            Player* victimPlayer = dynamic_cast<Player*>(victim);
+            if (victimPlayer && IsInGroup_Helper(player, victimPlayer)) //Target is attacking groupmember.
                 return true;
 
             if (!creature->HasLootRecipient()) //Target is untapped.
@@ -249,7 +249,7 @@ bool PossibleAttackTargetsValue::IsTapped(Unit* target, Player* player)
             if (creature->IsTappedBy(player)) //Target is tapped by player.
                 return true;
 
-            if (master && target->GetThreatManager().GetThreat(master)) //Master as threat
+            if (master && target->GetThreatManager().getThreat(master)) //Master as threat
                 return true;
 
             if (ai && ai->HasStrategy("attack tagged", BotState::BOT_STATE_NON_COMBAT)) //Can attack tagged.
@@ -272,7 +272,7 @@ bool PossibleAttackTargetsValue::IsValid(Unit* target, Player* player, float ran
     if (!IsPossibleTarget(target, player, range, ignoreCC))
         return false;
 
-    if (sServerFacade.GetThreatManager(target).GetCurrentVictim())
+    if (sServerFacade.GetThreatManager(target).getCurrentVictim())
         return true;
 
     if (target->GetGuidValue(UNIT_FIELD_TARGET))
@@ -356,7 +356,7 @@ bool PossibleAddsValue::Calculate()
         if (find(attackers.begin(), attackers.end(), guid) != attackers.end()) continue;
 
         Unit* add = ai->GetUnit(guid);
-        if (add && !add->GetGuidValue(UNIT_FIELD_TARGET) && !sServerFacade.GetThreatManager(add).GetCurrentVictim() && sServerFacade.IsHostileTo(add, bot))
+        if (add && !add->GetGuidValue(UNIT_FIELD_TARGET) && !sServerFacade.GetThreatManager(add).getCurrentVictim() && sServerFacade.IsHostileTo(add, bot))
         {
             for (std::list<ObjectGuid>::iterator j = attackers.begin(); j != attackers.end(); ++j)
             {

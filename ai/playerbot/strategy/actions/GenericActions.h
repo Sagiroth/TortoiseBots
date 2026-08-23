@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
 #include "GenericSpellActions.h"
 #include "ReachTargetActions.h"
 #include "ChooseTargetActions.h"

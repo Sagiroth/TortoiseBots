@@ -27,11 +27,11 @@ bool CollisionValue::Calculate()
         Unit* target = *i;
         if (bot == target) continue;
 
-        if (!target->IsVisibleFor(bot, bot))
+        if (!target->isVisibleFor(bot, bot))
             continue;
 
         float dist = sServerFacade.getDistance2d(bot, target->getPositionX(), target->getPositionY());
-        if (sServerFacade.IsDistanceLessThan(dist, target->getObjectBoundingRadius())) return true;
+        if (sServerFacade.IsDistanceLessThan(dist, target->GetObjectBoundingRadius())) return true;
     }
 
     return false;

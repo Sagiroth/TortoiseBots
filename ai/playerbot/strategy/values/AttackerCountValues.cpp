@@ -18,13 +18,13 @@ bool HasAggroValue::Calculate()
     // Player targets don't have aggro
     if (target && !target->IsPlayer())
     {
-        HostileReference* ref = sServerFacade.GetHostileRefManager(bot).GetFirst();
+        HostileReference* ref = sServerFacade.GetHostileRefManager(bot).getFirst();
         if (ref)
         {
             while (ref)
             {
                 ThreatManager* threatManager = ref->GetSource();
-                Unit* attacker = threatManager->GetOwner();
+                Unit* attacker = threatManager->getOwner();
                 Unit* victim = attacker->GetVictim();
 
                 if ((victim == bot) && (target == attacker))
@@ -37,10 +37,10 @@ bool HasAggroValue::Calculate()
                 }
             }
 
-            ref = sServerFacade.GetThreatManager(target).GetCurrentVictim();
+            ref = sServerFacade.GetThreatManager(target).getCurrentVictim();
             if (ref)
             {
-                Unit* victim = ref->GetTarget();
+                Unit* victim = ref->getTarget();
                 return victim && (victim == bot);
 
                 /*

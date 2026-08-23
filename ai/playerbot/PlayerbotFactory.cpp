@@ -10,7 +10,6 @@
 #include "Database/DBCStore.h"
 #include "SharedDefines.h"
 #include "RandomItemMgr.h"
-#include "RandomPlayerbotFactory.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/AiFactory.h"
 #include "Guild/GuildMgr.h"
@@ -5119,8 +5118,9 @@ void PlayerbotFactory::InitGuild()
     if (bot->GetGuildId())
         return;
 
-    if (sPlayerbotAIConfig.randomBotGuilds.size() < sPlayerbotAIConfig.randomBotGuildCount)
-        RandomPlayerbotFactory::CreateRandomGuilds();
+    // Random guild population belongs to the retired random-bot manager. The
+    // native MVP only joins already-existing guilds and never creates a hidden
+    // global population while initializing an owned bot.
 
     std::vector<uint32> guilds;
     for (std::list<uint32>::iterator i = sPlayerbotAIConfig.randomBotGuilds.begin(); i != sPlayerbotAIConfig.randomBotGuilds.end(); ++i)

@@ -1,4 +1,5 @@
 #pragma once
+#include <initializer_list>
 #include "Event.h"
 #include "Value.h"
 #include "AiObject.h"
@@ -78,19 +79,27 @@ namespace ai
             this->handlers = handlers;
             this->trigger = NULL;
         }
+        TriggerNode(std::string name, std::initializer_list<NextAction> handlers);
         virtual ~TriggerNode();
 
     public:
         Trigger* getTrigger() { return trigger; }
+        Trigger* GetTrigger() { return getTrigger(); }
         void setTrigger(Trigger* trigger) { this->trigger = trigger; }
         std::string getName() { return name; }
+        std::string GetName() { return getName(); }
 
     public:
         NextAction** getHandlers();
+        NextAction** GetHandlers() { return getHandlers(); }
         float getFirstRelevance();
+        float GetFirstRelevance() { return getFirstRelevance(); }
     private:
         std::string name;
         Trigger* trigger;
         NextAction** handlers;
     };
 }
+
+using ai::Trigger;
+using ai::TriggerNode;

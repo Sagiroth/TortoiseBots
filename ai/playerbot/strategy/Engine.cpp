@@ -110,7 +110,18 @@ void Engine::Init()
         Strategy* strategy = i->second;
         strategy->InitMultipliers(multipliers, state);
         strategy->InitTriggers(triggers, state);
+        std::vector<Multiplier*> modernMultipliers;
+        strategy->InitMultipliers(modernMultipliers);
+        for (Multiplier* multiplier : modernMultipliers)
+            multipliers.push_back(multiplier);
+
+        std::vector<TriggerNode*> modernTriggers;
+        strategy->InitTriggers(modernTriggers);
+        for (TriggerNode* trigger : modernTriggers)
+            triggers.push_back(trigger);
+
         MultiplyAndPush(strategy->getDefaultActions(state), 0.0f, false, Event(), "default");
+        MultiplyAndPush(strategy->getDefaultActions(), 0.0f, false, Event(), "default");
     }
 
 	if (testMode)
@@ -432,6 +443,18 @@ bool Engine::MultiplyAndPush(NextAction** actions, float forceRelevance, bool sk
     return pushed;
 }
 
+bool Engine::MultiplyAndPush(const std::vector<NextAction>& actions, float forceRelevance,
+                             bool skipPrerequisites, const Event& event, const char* pushType)
+{
+    NextAction** compatibleActions = new NextAction*[actions.size() + 1];
+    size_t index = 0;
+    for (const NextAction& action : actions)
+        compatibleActions[index++] = new NextAction(action);
+
+    compatibleActions[index] = NULL;
+    return MultiplyAndPush(compatibleActions, forceRelevance, skipPrerequisites, event, pushType);
+}
+
 ActionResult Engine::ExecuteAction(const std::string& name, Event& event)
 {
     ActionResult actionResult = ACTION_RESULT_UNKNOWN;
@@ -653,6 +676,7 @@ void Engine::PushDefaultActions()
     {
         Strategy* strategy = i->second;
         MultiplyAndPush(strategy->getDefaultActions(state), 0.0f, false, Event(), "default");
+        MultiplyAndPush(strategy->getDefaultActions(), 0.0f, false, Event(), "default");
     }
 }
 

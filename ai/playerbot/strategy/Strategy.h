@@ -26,6 +26,7 @@ namespace ai
 	enum ActionPriority
 	{
 	    ACTION_IDLE = 1,
+	    ACTION_DEFAULT = 5,
 	    ACTION_NORMAL = 10,
 	    ACTION_HIGH = 20,
 	    ACTION_MOVE = 30,
@@ -44,14 +45,23 @@ namespace ai
         Strategy(PlayerbotAI* ai);
         virtual ~Strategy() {}
 
-    public:
+	public:
         void InitTriggers(std::list<TriggerNode*> &triggers, BotState state);
         void InitMultipliers(std::list<Multiplier*> &multipliers, BotState state);
 
 		virtual NextAction** getDefaultActions(BotState state);
+		// Compatibility surface for the modern vector-based strategy sources.
+		// The engine consumes both representations during the transition so
+		// existing Tortoise strategies and forward-ported class strategies can
+		// coexist without weakening either implementation.
+		virtual std::vector<NextAction> getDefaultActions() { return {}; }
+		virtual void InitTriggers(std::vector<TriggerNode*>&) {}
+		virtual void InitMultipliers(std::vector<Multiplier*>&) {}
 		virtual int GetType() { return STRATEGY_TYPE_GENERIC; }
+		virtual uint32 GetType() const { return STRATEGY_TYPE_GENERIC; }
         virtual ActionNode* GetAction(std::string name);
 		virtual std::string getName() = 0;
+		std::string GetName() { return getName(); }
         void Update() {} //Nonfunctional see AiObjectContext::Update() to enable.
         void Reset() {}
 
@@ -82,3 +92,41 @@ namespace ai
         NamedObjectFactoryList<ActionNode> actionNodeFactories;
     };
 }
+
+// The class-strategy forward ports follow the donor's global-name convention,
+// while the original Tortoise strategy core keeps its types in namespace ai.
+// These aliases are intentionally confined to the PlayerBots module headers.
+using ai::Action;
+using ai::ActionNode;
+using ai::Multiplier;
+using ai::NamedObjectContext;
+using ai::NextAction;
+using ai::Strategy;
+using ai::StrategyType;
+using ai::Trigger;
+using ai::TriggerNode;
+
+using ai::NamedObjectFactory;
+using ai::NamedObjectFactoryList;
+
+using ai::ACTION_DEFAULT;
+using ai::ACTION_IDLE;
+using ai::ACTION_NORMAL;
+using ai::ACTION_HIGH;
+using ai::ACTION_MOVE;
+using ai::ACTION_INTERRUPT;
+using ai::ACTION_DISPEL;
+using ai::ACTION_LIGHT_HEAL;
+using ai::ACTION_MEDIUM_HEAL;
+using ai::ACTION_CRITICAL_HEAL;
+using ai::ACTION_EMERGENCY;
+using ai::ACTION_PASSTROUGH;
+using ai::STRATEGY_TYPE_GENERIC;
+using ai::STRATEGY_TYPE_COMBAT;
+using ai::STRATEGY_TYPE_NONCOMBAT;
+using ai::STRATEGY_TYPE_TANK;
+using ai::STRATEGY_TYPE_DPS;
+using ai::STRATEGY_TYPE_HEAL;
+using ai::STRATEGY_TYPE_RANGED;
+using ai::STRATEGY_TYPE_MELEE;
+using ai::STRATEGY_TYPE_REACTION;

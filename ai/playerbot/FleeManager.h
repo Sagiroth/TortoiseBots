@@ -44,6 +44,7 @@ namespace ai
 	public:
 		bool CalculateDestination(float* rx, float* ry, float* rz);
         bool isUseful();
+        bool IsUseful() { return isUseful(); }
 
 	private:
 		void calculatePossibleDestinations(std::list<FleePoint*> &points);

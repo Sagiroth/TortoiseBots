@@ -1,4 +1,6 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
+#include "playerbot/strategy/AiObjectContext.h"
 #include <boost/bimap.hpp>
 #include <boost/bimap/multiset_of.hpp>
 #include "ItemUsageValue.h"

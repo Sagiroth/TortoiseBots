@@ -30,7 +30,10 @@ public:
         if (!botAI->GetBot()->IsWithinLOSInMap(unit))
             return false;
 
-        return botAI->IsMovementImpaired(unit) && !botAI->HasAnyAuraOf(unit, "stealth", "prowl", nullptr);
+        bool movementImpaired = unit->HasAuraType(SPELL_AURA_MOD_ROOT) ||
+                                unit->HasAuraType(SPELL_AURA_MOD_STUN) ||
+                                unit->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED);
+        return movementImpaired && !botAI->HasAnyAuraOf(unit, "stealth", "prowl", nullptr);
     }
 };
 
@@ -40,9 +43,9 @@ Unit* PartyMemberSnaredTargetValue::Calculate()
     if (!group)
         return nullptr;
 
-    PartyMemberSnaredTargetPredicate predicate(botAI);
+    PartyMemberSnaredTargetPredicate predicate(ai);
     Player* bestTarget = nullptr;
-    float closestDistanceSq = std::numeric_limits<float>::max();
+    float closestDistance = std::numeric_limits<float>::max();
 
     for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
     {
@@ -53,10 +56,10 @@ Unit* PartyMemberSnaredTargetValue::Calculate()
         if (!predicate.Check(member))
             continue;
 
-        float const distanceSq = bot->GetExactDist2dSq(member->getPositionX(), member->getPositionY());
-        if (distanceSq < closestDistanceSq)
+        float const distance = bot->GetDistance2d(member);
+        if (distance < closestDistance)
         {
-            closestDistanceSq = distanceSq;
+            closestDistance = distance;
             bestTarget = member;
         }
     }

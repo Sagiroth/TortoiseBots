@@ -264,3 +264,24 @@ Security is not altered by the module: `BotSessionAdapter` uses `sAccountMgr.Get
 ### Portability note
 
 The current Linux static-library bootstrap uses whole-archive linking plus the used factory registrar. A Windows/MSVC integration must use `/WHOLEARCHIVE:tortoise_bots.lib` (or replace the registrar with an explicit `TortoiseBots::Initialize()` call from the host).
+
+## 11. Current native module boundary — 2026-08-24
+
+The Phase 1 material above is historical design/discovery. The implemented
+boundary is now Penqle's native `modules/<name>/` loader:
+
+- `src/TortoiseBotsModule.cpp` is the only loader-recursed source.
+- `host/BotHostAdapter`, `BotPlayerAdapter`, and `BotChatAdapter` register
+  generic `WorldScript`, `PlayerScript`, and `AllCommandScript` hooks.
+- `runtime/BotManager` owns bot records, Headless sessions, controllers, and
+  `PlayerbotAIAdapter` instances. Donor `PlayerbotMgr.cpp`,
+  `RandomPlayerbotMgr.cpp`, and `PlayerbotLoginMgr.cpp` are not compiled.
+- Core asks only about generic transport/headless capabilities and lifecycle
+  hooks; it does not expose bot identity or bot-specific player fields.
+- `BUILD_PLAYERBOTS=ON` selects the native TortoiseBots path. The old vendored
+  CMaNGOS tree requires `BUILD_LEGACY_PLAYERBOTS=ON` explicitly.
+
+The current link/runtime checkpoint is recorded in `docs/PROVENANCE.md`. The
+runtime evidence for this checkpoint is module load and clean world startup
+with AI disabled; a broad bot gameplay journey remains a separate acceptance
+gate because the selected source set still documents explicit API gaps.

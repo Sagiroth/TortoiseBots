@@ -21,11 +21,11 @@ namespace ai
         Unit* GetTarget() const;
         bool HasTarget() const { return GetTarget() != nullptr; }
 
-        std::string GetPullActionName() const;
+        virtual std::string GetPullActionName() const;
         std::string GetSpellName() const;
         float GetRange() const;
 
-        std::string GetPreActionName() const;
+        virtual std::string GetPreActionName() const;
 
         void RequestPull(Unit* target, bool resetTime = true);
         bool IsPullPendingToStart() const { return pendingToStart; }
@@ -80,3 +80,5 @@ namespace ai
         void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
     };
 }
+
+using ai::PullStrategy;

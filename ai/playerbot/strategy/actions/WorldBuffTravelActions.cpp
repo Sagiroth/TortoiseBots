@@ -148,7 +148,7 @@ static bool SummonPlayerToSummoner(Player* summoner, Player* target, PlayerbotAI
         return false;
 
     float x, y, z;
-    summoner->getPosition(x, y, z);
+    summoner->GetPosition(x, y, z);
 
     if (isRealPlayer_Helper(target))
     {

@@ -100,7 +100,7 @@ public:
     FeralChargeDruidStrategy(PlayerbotAI* botAI) : CombatStrategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "feral charge"; }
+    std::string getName() override { return "feral charge"; }
 };
 
 #endif

@@ -67,8 +67,8 @@ bool MovementAction::MoveNear(WorldObject* target, float distance)
     for (float angle = followAngle; angle <= followAngle + 2 * M_PI; angle += M_PI_F / 4.0f)
     {
 #ifdef CMANGOS
-        float dist = distance + target->getObjectBoundingRadius();
-        target->GetNearPoint(bot, x, y, z, bot->getObjectBoundingRadius(), std::min(dist, ai->GetRange("follow")), angle);
+        float dist = distance + target->GetObjectBoundingRadius();
+        target->GetNearPoint(bot, x, y, z, bot->GetObjectBoundingRadius(), std::min(dist, ai->GetRange("follow")), angle);
 #endif
 #ifdef MANGOS
         float x = target->getPositionX() + cos(angle) * distance,
@@ -2349,7 +2349,7 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
 
     MotionMaster &mm = *bot->GetMotionMaster();
 
-    distance = distance <= target->getObjectBoundingRadius() ? 0 : distance - target->getObjectBoundingRadius();
+    distance = distance <= target->GetObjectBoundingRadius() ? 0 : distance - target->GetObjectBoundingRadius();
 
     UpdateMovementState();
 
@@ -2823,8 +2823,8 @@ bool MovementAction::Flee(Unit *target)
         return false;
     }
 
-    HostileReference* ref = sServerFacade.GetThreatManager(target).GetCurrentVictim();
-    const bool isTarget = ref && ref->GetTarget() == bot;
+    HostileReference* ref = sServerFacade.GetThreatManager(target).getCurrentVictim();
+    const bool isTarget = ref && ref->getTarget() == bot;
 
     time_t lastFlee = AI_VALUE(LastMovement&, "last movement").lastFlee;
     time_t now = time(0);
@@ -3005,7 +3005,7 @@ bool MovementAction::Flee(Unit *target)
             fullDistance = true;
 
         FleeManager manager(bot, fullDistance ? (ai->GetRange("flee") * 2) : ai->GetRange("flee"), bot->GetAngle(target) + M_PI);
-        if (!manager.IsUseful())
+        if (!manager.isUseful())
         {
             return false;
         }
@@ -3339,7 +3339,7 @@ bool SetBehindTargetAction::Execute(Event& event)
 
     // prevent going into terrain
     float ox, oy, oz;
-    target->getPosition(ox, oy, oz);
+    target->GetPosition(ox, oy, oz);
 #ifdef MANGOSBOT_TWO
     target->GetMap()->GetHitPosition(ox, oy, oz + bot->GetCollisionHeight(), x, y, z, bot->GetPhaseMask(), -0.5f);
 #else
@@ -4139,7 +4139,7 @@ bool JumpAction::IsNotMagmaSlime(const WorldPosition &dest, Unit *jumper)
             return true;
 
         GridMapLiquidData data;
-        if (terrain->GetLiquidStatus(dest.getX(), dest.getY(), dest.getZ(), MAP_ALL_LIQUIDS, &data) == LIQUID_MAP_NO_WATER)
+        if (terrain->getLiquidStatus(dest.getX(), dest.getY(), dest.getZ(), MAP_ALL_LIQUIDS, &data) == LIQUID_MAP_NO_WATER)
             return true;
 
         switch (data.type_flags)
@@ -4518,4 +4518,3 @@ WorldPosition JumpAction::GetPossibleJumpStartForInRange(const WorldPosition& sr
     sLog.outDetail("%s: GetPossibleJumpStartFor Failed to find jump point!", jumper->GetName());
     return WorldPosition();
 }
-

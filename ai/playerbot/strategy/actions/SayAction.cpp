@@ -157,7 +157,7 @@ void ChatReplyAction::GetAIChatPlaceholders(std::map<std::string, std::string>& 
     placeholders["<" + preFix + " faction>"] = ChatHelper::formatFactionName(factionId);
     WorldPosition pos(unit);
     placeholders["<" + preFix + " zone>"] = pos.GetAreaName();
-    placeholders["<" + preFix + " subzone>"] = pos.GetAreaOverride();
+    placeholders["<" + preFix + " subzone>"] = pos.getAreaOverride();
 
     if (unit->IsPlayer())
     {

@@ -34,7 +34,7 @@ bool HasBeastMastery(Player* bot)
     return bot->HasAura(53270);
 }
 
-bool TameAction::Execute(Event event)
+bool TameAction::Execute(Event& event)
 {
     // Parse the user's input command into mode and value (e.g. "name wolf", "id 1234", etc.)
     std::string param = event.GetParam();
@@ -520,7 +520,7 @@ bool TameAction::AbandonPet()
     Pet* pet = bot->GetPet();
 
     // Check if the bot has a pet and that it is a hunter pet
-    if (pet && pet->GetPetType() == HUNTER_PET)
+    if (pet && pet->getPetType() == HUNTER_PET)
     {
         // Remove the pet from the bot and mark it as deleted in the database
         bot->RemovePet(pet, PET_SAVE_AS_DELETED);

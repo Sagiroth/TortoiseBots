@@ -100,7 +100,7 @@ bool SetCraftAction::Execute(Event& event)
         return false;
     }
 
-    data.itemid = itemId;
+    data.itemId = itemId;
 
     TellCraft(requester);
     return true;
@@ -115,7 +115,7 @@ void SetCraftAction::TellCraft(Player* requester)
         return;
     }
 
-    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(data.itemid);
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(data.itemId);
     if (!proto)
         return;
 
@@ -148,7 +148,7 @@ uint32 SetCraftAction::GetCraftFee(CraftData& data)
     if (data.IsEmpty())
         return 0;
 
-    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(data.itemid);
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(data.itemId);
     if (!proto)
         return 0;
 

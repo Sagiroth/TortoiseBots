@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
 
 #include "playerbot/RandomPlayerbotMgr.h"
 #include "../../runtime/PlayerbotAIStorage.h" // Headless storage shim

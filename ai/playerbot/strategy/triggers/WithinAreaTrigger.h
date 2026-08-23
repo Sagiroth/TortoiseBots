@@ -30,7 +30,7 @@ namespace ai
     private:
         bool IsPointInAreaTriggerZone(AreaTriggerEntry const* atEntry, uint32 mapId, float x, float y, float z, float delta)
         {
-            if (mapId != atEntry->mapId)
+            if (mapId != atEntry->mapid)
                 return false;
 
             if (atEntry->radius > 0)

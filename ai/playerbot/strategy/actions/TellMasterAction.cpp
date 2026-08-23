@@ -7,28 +7,8 @@
  */
 
 #include "TellMasterAction.h"
-#include "Event.h"
-#include "Playerbots.h"
 
-bool TellMasterAction::Execute(Event /*event*/)
-{
-    botAI->TellMaster(text);
-    return true;
-}
-
-bool OutOfReactRangeAction::Execute(Event /*event*/)
-{
-    botAI->TellMaster("Wait for me!");
-    return true;
-}
-
-bool OutOfReactRangeAction::isUseful()
-{
-    bool canFollow = Follow(AI_VALUE(Unit*, "group leader"));
-    if (!canFollow)
-    {
-        return false;
-    }
-
-    return true;
-}
+// The Tortoise-compatible implementations are intentionally inline in the
+// header so the requester/master target selection stays with the action's
+// current host-facing API.  This donor translation unit remains as a
+// provenance marker but contributes no second definition.

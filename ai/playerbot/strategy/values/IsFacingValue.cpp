@@ -7,14 +7,5 @@
  */
 
 #include "IsFacingValue.h"
-#include "Playerbots.h"
-#include <cmath>
 
-bool IsFacingValue::Calculate()
-{
-    Unit* target = AI_VALUE(Unit*, qualifier);
-    if (!target)
-        return false;
-
-    return bot->HasInArc(M_PI_2, target);
-}
+// Implemented inline by the Tortoise value header.

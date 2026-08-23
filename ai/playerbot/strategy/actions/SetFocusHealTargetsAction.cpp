@@ -44,7 +44,7 @@ static Player* FindGroupPlayerByName(Player* player, std::string const& playerNa
     return nullptr;
 }
 
-bool SetFocusHealTargetsAction::Execute(Event event)
+bool SetFocusHealTargetsAction::Execute(Event& event)
 {
     if (!botAI->IsHeal(bot) && !botAI->HasStrategy("offheal", BOT_STATE_COMBAT))
     {

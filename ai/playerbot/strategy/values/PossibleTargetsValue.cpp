@@ -116,7 +116,7 @@ bool PossibleTargetsValue::IsValid(Unit* target, Player* player, bool ignoreLos)
         // used to be part of this, which meant a bot fighting anyone could pick
         // out every stealthed player within range.
         bool isInCombatWithTarget = target->GetVictim() == player || 
-                                     target->GetThreatManager().GetThreat(player) > 0.0f;
+                                     target->GetThreatManager().getThreat(player) > 0.0f;
 
         if (!ignoreLos && !isInCombatWithTarget)
         {

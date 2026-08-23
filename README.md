@@ -19,12 +19,23 @@ Online canonical references (use only if local not present):
 
 ## Status
 
-Current development is in **Phase 4**.
+Current development is in **Phase 4 stabilization**.
+
+The module is packaged through Penqle's native `modules/<name>/` loader. Only
+`src/TortoiseBotsModule.cpp` lives below the loader's recursive `src/` tree;
+the broad donor source is selected explicitly by `TortoiseBots.cmake` so
+Death Knight, LFG, glyph, vehicle, Arena, and expansion-only families cannot
+be compiled accidentally.
 
 - Phase 3 headless lifecycle/session foundation is implemented.
-- Phase 4 Slice 1 `Follow` is implemented and manually playtested.
-- Same-account alt support is being finalized: one account may have **1 Network + N Headless** character sessions, so a player can control their own existing alts without dedicated bot accounts.
-- Next behavior slice after the session seam is finalized: **Stay**, then Assist/basic combat.
+- Native Penqle module discovery, ScriptMgr adapters, module-local AI ownership,
+  and the broad Vanilla/Turtle strategy/value/trigger/action source set are
+  compiled and linked into `mangosd`.
+- `BUILD_PLAYERBOTS=OFF` with modules disabled and `BUILD_PLAYERBOTS=ON` with
+  `MODULE_TORTOISEBOTS=static` both pass the cached `mangosd` build.
+- The local runtime stack starts the native module and reaches “World server is
+  up and running”; AI remains disabled unless `aiplayerbot.conf` explicitly
+  enables it.
 
 The first product target is intentionally small and playable: log into one normal character, spawn your own alts as Headless bots, party with them, and level together.
 
@@ -33,6 +44,20 @@ The first product target is intentionally small and playable: log into one norma
 1. Check whether sibling checkouts already exist alongside this repo (`playerbots-references/`, `TortoiseWoWKnowledgeBase`, `tortoise-docker-penqle`).
 2. If not present, clone from the online URLs above.
 3. Read `AGENTS.md` → `docs/PLAN.md` → `docs/HOST_API.md`.
+
+The native core build is enabled with:
+
+```sh
+cmake -S <tortoise-wow> -B <build> -DMODULES=static -DMODULE_TORTOISEBOTS=static
+cmake --build <build> --target mangosd
+```
+
+For the full native configuration also set `-DBUILD_PLAYERBOTS=ON`. The legacy
+vendored CMaNGOS tree is not selected by that option; it requires the explicit
+`BUILD_LEGACY_PLAYERBOTS=ON` migration escape hatch.
+
+`scripts/sync-to-docker.sh` copies this repository into the sibling core's
+`modules/TortoiseBots/` directory for the documented Docker workflow.
 
 
 ## Development loop

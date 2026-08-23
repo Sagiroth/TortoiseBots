@@ -3,6 +3,7 @@
 
 #include <iomanip>
 #include <regex>
+#include <filesystem>
 
 #include "ObjectMgr.h"
 #include "PlayerbotAI.h"
@@ -127,9 +128,9 @@ float TravelNodePath::getCost(Unit* unit, uint32 cGold)
             uint32 triggerId = getPathObject();
             AreaTriggerEntry const* atEntry = sAreaTriggerStore.LookupEntry(pathObject);
             AreaTrigger const* at = sObjectMgr.GetAreaTrigger(pathObject);
-            if (atEntry && at && atEntry->mapId == bot->GetMapId())
+            if (atEntry && at && atEntry->mapid == bot->GetMapId())
             {
-                Map* map = WorldPosition(atEntry->mapId, atEntry->box_x, atEntry->box_y, atEntry->box_z).GetMap(bot->GetInstanceId());
+                Map* map = WorldPosition(atEntry->mapid, atEntry->box_x, atEntry->box_y, atEntry->box_z).GetMap(bot->GetInstanceId());
                 if (map)
                     if (at && at->conditionId && !sObjectMgr.IsConditionSatisfied(at->conditionId, bot, map, nullptr, (ConditionSource)CONDITION_FROM_AREATRIGGER_TELEPORT))
                         return -1;
@@ -247,7 +248,7 @@ uint32 TravelNode::getAreaTriggerId()
         if (!atEntry)
             continue;
 
-        WorldPosition inPos = WorldPosition(atEntry->mapId, atEntry->x, atEntry->y, atEntry->z - 4.0f, 0);
+        WorldPosition inPos = WorldPosition(atEntry->mapid, atEntry->x, atEntry->y, atEntry->z - 4.0f, 0);
 
         if (*getPosition() == inPos)
             return link.second->getPathObject();
@@ -2095,7 +2096,7 @@ void TravelNodeMap::LoadMaps()
 
         uint32 mapId = sMapStore.LookupEntry(i)->MapID;
 
-        for (const auto& entry : boost::filesystem::directory_iterator(sWorld.GetDataPath() + "mmaps"))
+        for (const auto& entry : std::filesystem::directory_iterator(sWorld.GetDataPath() + "mmaps"))
         {
             if (entry.path().extension() == ".mmtile")
             {
@@ -2231,7 +2232,7 @@ void TravelNodeMap::generateAreaTriggerNodes()
         if (!at)
             continue;
 
-        WorldPosition inPos = WorldPosition(atEntry->mapId, atEntry->x, atEntry->y, atEntry->z - 4.0f, 0);
+        WorldPosition inPos = WorldPosition(atEntry->mapid, atEntry->x, atEntry->y, atEntry->z - 4.0f, 0);
 
         WorldPosition outPos = WorldPosition(at->target_mapId, at->target_X, at->target_Y, at->target_Z, at->target_Orientation);
 
@@ -2259,7 +2260,7 @@ void TravelNodeMap::generateAreaTriggerNodes()
         if (!at)
             continue;
 
-        WorldPosition inPos = WorldPosition(atEntry->mapId, atEntry->x, atEntry->y, atEntry->z - 4.0f, 0);
+        WorldPosition inPos = WorldPosition(atEntry->mapid, atEntry->x, atEntry->y, atEntry->z - 4.0f, 0);
 
         WorldPosition outPos = WorldPosition(at->target_mapId, at->target_X, at->target_Y, at->target_Z, at->target_Orientation);
 
@@ -2539,7 +2540,7 @@ void TravelNodeMap::generateTransportNodes()
                 //Loop over the path and connect stop locations.
                 for (auto& p : path)
                 {
-                    WorldPosition pos = WorldPosition(p->mapId, p->x, p->y, p->z, 0);
+                    WorldPosition pos = WorldPosition(p->mapid, p->x, p->y, p->z, 0);
 
                     if (prevNode)
                     {
@@ -2583,7 +2584,7 @@ void TravelNodeMap::generateTransportNodes()
                     //Continue from start until first stop and connect to end.
                     for (auto& p : path)
                     {
-                        WorldPosition pos = WorldPosition(p->mapId, p->x, p->y, p->z, 0);
+                        WorldPosition pos = WorldPosition(p->mapid, p->x, p->y, p->z, 0);
 
                         //if (data->displayId == 3015)
                         //    pos.setZ(pos.getZ() + 6.0f);
@@ -3004,11 +3005,11 @@ void TravelNodeMap::generateTaxiPaths()
 
         std::vector<WorldPosition> ppath;
 
-        if (startNode->fDist(WorldPosition(nodes.front()->mapId, nodes.front()->x, nodes.front()->y, nodes.front()->z, 0.0)) > 0.1f)
+        if (startNode->fDist(WorldPosition(nodes.front()->mapid, nodes.front()->x, nodes.front()->y, nodes.front()->z, 0.0)) > 0.1f)
             ppath.push_back(*startNode->getPosition());
 
         for (auto& n : nodes)
-            ppath.push_back(WorldPosition(n->mapId, n->x, n->y, n->z, 0.0));
+            ppath.push_back(WorldPosition(n->mapid, n->x, n->y, n->z, 0.0));
 
         if (endNode->fDist(ppath.back()) > 0.1f)
             ppath.push_back(*endNode->getPosition());

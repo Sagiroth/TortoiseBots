@@ -153,8 +153,8 @@ bool GuildManageNearbyAction::Execute(Event& event)
             placeholders["%guildname"] = guild->GetName();
             AreaTableEntry const* current_area = GetAreaEntryByAreaID(sServerFacade.GetAreaId(bot));
             AreaTableEntry const* current_zone = GetAreaEntryByAreaID(sTerrainMgr.getZoneId(bot->GetMapId(), bot->getPositionX(), bot->getPositionY(), bot->getPositionZ()));
-            placeholders["%area_name"] = current_area && current_area->name ? std::string(current_area->name) : BOT_TEXT("string_unknown_area");
-            placeholders["%zone_name"] = current_zone && current_zone->name ? std::string(current_zone->name) : BOT_TEXT("string_unknown_area");
+            placeholders["%area_name"] = current_area && current_area->Name ? std::string(current_area->Name) : BOT_TEXT("string_unknown_area");
+            placeholders["%zone_name"] = current_zone && current_zone->Name ? std::string(current_zone->Name) : BOT_TEXT("string_unknown_area");
 
             std::vector<std::string> lines;
 

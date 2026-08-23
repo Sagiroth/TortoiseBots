@@ -120,12 +120,17 @@ namespace ai
         float getY() const { return y; }
         float getZ() const { return z; }
         float getO() const { return o; }
+        float GetX() const { return getX(); }
+        float GetY() const { return getY(); }
+        float GetZ() const { return getZ(); }
+        float GetO() const { return getO(); }
         // Penqle compat - capitalized aliases for ChatHelper etc
         uint32 GetFirstInstanceId() const { return getFirstInstanceId(); }
         Map* GetMap(uint32 instanceId) const { return getMap(instanceId); }
         std::string GetAreaName(bool fullName=true, bool zoneName=false) const { return getAreaName(fullName, zoneName); }
         float GetAngleTo(const WorldPosition& endPos) const { return getAngleTo(endPos); }
         G3D::Vector3 getVector3() const;
+        G3D::Vector3 GetVector3() const { return getVector3(); }
         std::string print(uint8 precision = 2, bool onlyXyz = false) const;
         virtual std::string to_string() const { char p = '|'; std::stringstream out; out << mapId << p << x << p << y << p << z << p << o; return out.str(); };
 
@@ -133,11 +138,13 @@ namespace ai
         void printWKT(std::ostringstream& out) const { printWKT({ *this }, out); }
 
         bool isOverworld() const { return mapId == 0 || mapId == 1 || mapId == 530 || mapId == 571 || mapId == 609; }
+        bool IsOverworld() const { return isOverworld(); }
         bool isBg() const { return mapId == 30 || mapId == 489 || mapId == 529 || mapId == 566 || mapId == 607 || mapId == 628; }
         bool isArena() const { return mapId == 559 || mapId == 572 || mapId == 562 || mapId == 617 || mapId == 618; }
         bool isInstance() const { return !isOverworld() || mapId == 609;}
         bool isInWater() const { return getTerrain() ? getTerrain()->IsInWater(x, y, z) : false; };
         bool isUnderWater() const { return getTerrain() ? getTerrain()->IsUnderWater(x, y, z) : false; };
+        bool IsUnderWater() const { return isUnderWater(); }
         bool setAtWaterSurface();
         bool isUnderground() const;
         float getWaterLevel() const { return getTerrain() ? getTerrain()->GetWaterLevel(x, y, z) : -200000.0f; };
@@ -226,6 +233,7 @@ namespace ai
         // cmangos uses sMapStore (DBCStorage<MapEntry>);
         // Penqle uses sMapStorage (SQLStorage) with templated LookupEntry.
         const MapEntry* getMapEntry() const { return sMapStorage.LookupEntry<MapEntry>(mapId); }
+        const MapEntry* GetMapEntry() const { return getMapEntry(); }
         uint32 getFirstInstanceId() const { for (auto& map : sMapMgr.Maps()) { if (map.second->GetId() == getMapId()) return map.second->GetInstanceId(); }; return 0; }
 
         // Penqle has no sObjectMgr.GetInstanceTemplate; stub returns nullptr.
@@ -233,7 +241,9 @@ namespace ai
         InstanceTemplate const* getInstanceTemplate() { return nullptr; }
         Map* getMap(uint32 instanceId) const { if (!*this) return nullptr; loadMapAndVMap(instanceId); return sMapMgr.FindMap(mapId, instanceId ? instanceId : (getMapEntry()->Instanceable() ? getFirstInstanceId() : 0)); }
         const TerrainInfo* getTerrain() const { return getMap(getFirstInstanceId()) ? getMap(getFirstInstanceId())->GetTerrain() : sTerrainMgr.LoadTerrain(getMapId()); }
+        const TerrainInfo* GetTerrain() const { return getTerrain(); }
         bool isDungeon() { return getMapEntry()->IsDungeon(); }
+        bool IsDungeon() { return isDungeon(); }
         // Penqle's AreaEntry uses Flags (capital F); cmangos uses flags.
         bool isCity() { return GetArea() && GetArea()->Flags & (AREA_FLAG_CITY | AREA_FLAG_SLAVE_CAPITAL); }
         float getVisibilityDistance() { return getMap(0) ? getMap(0)->GetVisibilityDistance() : (isOverworld() ? World::GetMaxVisibleDistanceOnContinents() : World::GetMaxVisibleDistanceInInstances()); }
@@ -260,6 +270,7 @@ namespace ai
         // Penqle's Map::GetHeight signature is (x, y, z, vmap=true, maxSearchDist=...).
         // Bot's `swim` parameter doesn't map directly; pass `true` for vmap (most common bot use case is on-map height).
         float getHeight(bool swim = false) const { return getMap(getFirstInstanceId()) ? getMap(getFirstInstanceId())->GetHeight(x, y, z, true) : z; }
+        float GetHeight(bool swim = false) const { return getHeight(swim); }
         // Penqle has no GetHeightInRange method. Approximate with GetHeight (loses range-search behavior).
         float GetHeightInRange(float maxSearchDist = 4.0f) const { return getMap(getFirstInstanceId()) ? getMap(getFirstInstanceId())->GetHeight(x, y, z, true, maxSearchDist) : z; }
 #endif
@@ -267,6 +278,7 @@ namespace ai
         float currentHeight() const { return z - getHeight(); }
 
         std::set<GenericTransport*> getTransports(uint32 entry = 0);
+        std::set<GenericTransport*> GetTransports(uint32 entry = 0) { return getTransports(entry); }
         void CalculatePassengerPosition(GenericTransport* transport);
         void CalculatePassengerOffset(GenericTransport* transport);
 
@@ -311,22 +323,27 @@ namespace ai
         WorldPosition getDisplayLocation() const;
         float getDisplayX() const { return getDisplayLocation().y * -1.0; }
         float getDisplayY() const { return getDisplayLocation().x; }
+        float GetDisplayX() const { return getDisplayX(); }
+        float GetDisplayY() const { return getDisplayY(); }
 
         bool isValid() const { return MaNGOS::IsValidMapCoord(x, y, z, o); };
         virtual uint16 getAreaFlag() const {
             loadVMap();
             return isValid() && isVmapLoaded() ? sTerrainMgr.GetAreaFlag(getMapId(), x, y, z) : 0; };
         AreaTableEntry const* GetArea() const;
+        uint16 GetAreaFlag() const { return getAreaFlag(); }
 
         // Does this position sit in the home territory of the faction opposing
         // 'team'? Contested zones (team NONE) are not. Sub-areas inherit their
         // zone's team - "The Crossroads" itself carries none, The Barrens does.
         bool isEnemyHomeZoneFor(Team team) const;
+        bool IsEnemyHomeZoneFor(Team team) const { return isEnemyHomeZoneFor(team); }
         std::string getAreaName(const bool fullName = true, const bool zoneName = false) const;
         // Penqle's TerrainInfo has no AreaNameInfo or GetAreaName method.
         // Stub to empty string (loses WMO area-override lookup; would need a Penqle-side equivalent).
         std::string getAreaOverride() const { return ""; }
         int32 getAreaLevel() const;
+        int32 GetAreaLevel() const { return getAreaLevel(); }
 
         bool HasAreaFlag(const AreaFlags flag = AREA_FLAG_CAPITAL) const;
         bool HasFaction(const Team team) const;
@@ -337,25 +354,34 @@ namespace ai
         //Pathfinding
         std::vector<WorldPosition> getPathStepFrom(const WorldPosition& startPos, std::unique_ptr<PathFinder>& pathfinder, const Unit* bot, bool forceNormalPath = false) const;
         std::vector<WorldPosition> getPathStepFrom(const WorldPosition& startPos, const Unit* bot, bool forceNormalPath = false) const;
+        std::vector<WorldPosition> GetPathStepFrom(const WorldPosition& startPos, const Unit* bot, bool forceNormalPath = false) const { return getPathStepFrom(startPos, bot, forceNormalPath); }
         std::vector<WorldPosition> getPathFromPath(const std::vector<WorldPosition>& startPath, const Unit* bot, const uint8 maxAttempt = 40) const;
+        std::vector<WorldPosition> GetPathFromPath(const std::vector<WorldPosition>& startPath, const Unit* bot, const uint8 maxAttempt = 40) const { return getPathFromPath(startPath, bot, maxAttempt); }
         std::vector<WorldPosition> getPathFrom(const WorldPosition& startPos, const Unit* bot) { return getPathFromPath({ startPos }, bot); };
+        std::vector<WorldPosition> GetPathFrom(const WorldPosition& startPos, const Unit* bot) { return getPathFrom(startPos, bot); }
         std::vector<WorldPosition> getPathTo(WorldPosition endPos, const Unit* bot) const { return endPos.getPathFrom(*this, bot); }
+        std::vector<WorldPosition> GetPathTo(WorldPosition endPos, const Unit* bot) const { return getPathTo(endPos, bot); }
         bool isPathTo(const std::vector<WorldPosition>& path, float const maxDistance = 0, float const maxZDistance = 2.0f) const;
+        bool IsPathTo(const std::vector<WorldPosition>& path, float const maxDistance = 0, float const maxZDistance = 2.0f) const { return isPathTo(path, maxDistance, maxZDistance); }
         bool cropPathTo(std::vector<WorldPosition>& path, const float maxDistance = 0) const;
         bool canPathTo(const WorldPosition& endPos, const Unit* bot) const { return endPos.isPathTo(getPathTo(endPos, bot)); }
 
         float getPathLength(const std::vector<WorldPosition>& points) const { float dist = 0.0f; for (auto& p : points) if (&p == &points.front()) dist = 0; else dist += std::prev(&p, 1)->distance(p); return dist; }
+        float GetPathLength(const std::vector<WorldPosition>& points) const { return getPathLength(points); }
 
         bool ClosestCorrectPoint(float maxRange, float maxHeight = 5.0f, uint32 instanceId = 0);
         bool GetReachableRandomPointOnGround(const Player* bot, const float radius, const bool randomRange = true); //Generic terrain.
         std::vector<WorldPosition> ComputePathToRandomPoint(const Player* bot, const float radius, const bool randomRange = true); //For use with transports.
 
         uint32 getUnitsAggro(const std::list<ObjectGuid>& units, const Player* bot) const;
+        uint32 GetUnitsAggro(const std::list<ObjectGuid>& units, const Player* bot) const { return getUnitsAggro(units, bot); }
 
         //Creatures
         std::vector<CreatureDataPair const*> getCreaturesNear(const float radius = 0, const uint32 entry = 0) const;
+        std::vector<CreatureDataPair const*> GetCreaturesNear(const float radius = 0, const uint32 entry = 0) const { return getCreaturesNear(radius, entry); }
         //GameObjects
         std::vector<GameObjectDataPair const*> getGameObjectsNear(const float radius = 0, const uint32 entry = 0) const;
+        std::vector<GameObjectDataPair const*> GetGameObjectsNear(const float radius = 0, const uint32 entry = 0) const { return getGameObjectsNear(radius, entry); }
     };
 
     inline ByteBuffer& operator<<(ByteBuffer& b, WorldPosition& guidP)

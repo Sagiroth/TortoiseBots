@@ -27,7 +27,7 @@ public:
     DruidCureStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "cure"; }
+    std::string getName() override { return "cure"; }
 };
 
 class DruidBoostStrategy : public Strategy
@@ -36,7 +36,7 @@ public:
     DruidBoostStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "boost"; }
+    std::string getName() override { return "boost"; }
 };
 
 class DruidCcStrategy : public Strategy
@@ -45,7 +45,7 @@ public:
     DruidCcStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "cc"; }
+    std::string getName() override { return "cc"; }
 };
 
 class DruidHealerDpsStrategy : public Strategy
@@ -54,7 +54,7 @@ public:
     DruidHealerDpsStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "healer dps"; }
+    std::string getName() override { return "healer dps"; }
 };
 
 class DruidAoeStrategy : public Strategy
@@ -63,7 +63,7 @@ public:
     DruidAoeStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "aoe"; }
+    std::string getName() override { return "aoe"; }
 };
 
 #endif

@@ -27,6 +27,90 @@ BotManager& BotManager::Instance()
     return instance;
 }
 
+void BotManager::OnPlayerLogin(::Player* player)
+{
+    if (!player)
+        return;
+
+    auto it = m_bots.find(player->GetObjectGuid().GetCounter());
+    if (it == m_bots.end())
+        return;
+
+    ::WorldSession* session = player->GetSession();
+    if (!session || !session->IsHeadless())
+    {
+        ReleaseToClient(player);
+        return;
+    }
+
+    BotEntry& entry = it->second;
+    BotRecord& record = entry.record;
+    if (record.enteredWorld)
+        return;
+
+    record.enteredWorld = true;
+    record.lifecycle = BotLifecycle::InWorld;
+    if (!entry.controller)
+        entry.controller = std::make_unique<BotController>(record.characterGuid, record.masterGuid);
+    else
+        entry.controller->SetMaster(record.masterGuid);
+
+    if (!entry.aiAdapter)
+    {
+        ::Player* masterPlayer = nullptr;
+        if (record.masterGuid && !record.masterGuid.IsEmpty())
+            masterPlayer = sObjectAccessor.FindPlayer(record.masterGuid);
+
+        entry.aiAdapter = std::make_unique<PlayerbotAIAdapter>(player, masterPlayer);
+        if (!entry.aiAdapter->Initialize())
+            sLog.outError("TortoiseBots: PlayerbotAI attach failed for %s", player->GetName());
+    }
+
+    sLog.outString("TortoiseBots: bot %s entered world through native PlayerScript", player->GetName());
+}
+
+void BotManager::OnPlayerBeforeLogout(::Player* player)
+{
+    if (!player)
+        return;
+
+    auto it = m_bots.find(player->GetObjectGuid().GetCounter());
+    if (it == m_bots.end())
+        return;
+
+    if (it->second.aiAdapter)
+        it->second.aiAdapter->Shutdown();
+
+    if (it->second.record.lifecycle != BotLifecycle::Removing)
+        it->second.record.lifecycle = BotLifecycle::Removing;
+}
+
+void BotManager::OnPlayerLogout(::Player* player)
+{
+    if (!player)
+        return;
+
+    auto it = m_bots.find(player->GetObjectGuid().GetCounter());
+    if (it != m_bots.end() && it->second.aiAdapter)
+        it->second.aiAdapter->Shutdown();
+}
+
+void BotManager::ReleaseToClient(::Player* player)
+{
+    if (!player)
+        return;
+
+    auto it = m_bots.find(player->GetObjectGuid().GetCounter());
+    if (it == m_bots.end())
+        return;
+
+    if (it->second.aiAdapter)
+        it->second.aiAdapter->Shutdown();
+
+    sLog.outString("TortoiseBots: releasing module control of %s to a network client", player->GetName());
+    m_bots.erase(it);
+}
+
 bool BotManager::RunPendingAddRemoveTest(uint32_t accountId, ::ObjectGuid guid)
 {
     if (sWorld.FindHeadlessSession(guid) || sWorld.HasPendingHeadlessSession(guid) ||
@@ -57,6 +141,14 @@ bool BotManager::RunPendingAddRemoveTest(uint32_t accountId, ::ObjectGuid guid)
 ::WorldSession* BotManager::AddBot(uint32_t accountId, ::ObjectGuid guid, ::ObjectGuid masterGuid)
 {
     return AddBotWithMaster(accountId, guid, masterGuid);
+}
+
+::WorldSession* BotManager::AddRandomBot(uint32_t accountId, ::ObjectGuid guid)
+{
+    ::WorldSession* session = AddBotWithMaster(accountId, guid, ::ObjectGuid());
+    if (BotRecord* record = FindBot(guid))
+        record->random = true;
+    return session;
 }
 
 ::WorldSession* BotManager::AddBotWithMaster(uint32_t accountId, ::ObjectGuid guid, ::ObjectGuid masterGuid)
@@ -143,6 +235,38 @@ bool BotManager::IsBot(::ObjectGuid guid) const
     return m_bots.find(guid.GetCounter()) != m_bots.end();
 }
 
+bool BotManager::IsRandomBot(::ObjectGuid guid) const
+{
+    auto it = m_bots.find(guid.GetCounter());
+    return it != m_bots.end() && it->second.record.random;
+}
+
+std::vector<::Player*> BotManager::GetBotsForMaster(::ObjectGuid masterGuid) const
+{
+    std::vector<::Player*> result;
+    for (auto const& entry : m_bots)
+    {
+        if (entry.second.record.masterGuid != masterGuid)
+            continue;
+
+        if (::Player* player = sObjectAccessor.FindPlayer(entry.second.record.characterGuid))
+            result.push_back(player);
+    }
+    return result;
+}
+
+std::vector<::Player*> BotManager::GetAllBots() const
+{
+    std::vector<::Player*> result;
+    result.reserve(m_bots.size());
+    for (auto const& entry : m_bots)
+    {
+        if (::Player* player = sObjectAccessor.FindPlayer(entry.second.record.characterGuid))
+            result.push_back(player);
+    }
+    return result;
+}
+
 BotController* BotManager::GetController(::ObjectGuid guid)
 {
     auto it = m_bots.find(guid.GetCounter());
@@ -222,7 +346,7 @@ void BotManager::OnWorldUpdate(uint32_t diff)
         if (rec.lifecycle == BotLifecycle::PendingAdd)
         {
             ::WorldSession* sess = sWorld.FindHeadlessSession(rec.characterGuid);
-            if (sess)
+            if (sess && !sess->PlayerLoading())
             {
                 rec.lifecycle = BotLifecycle::PendingLogin;
                 sLog.outString("TortoiseBots: BotManager dispatching LoginPlayer for %s (acct %u, sess %p)",
@@ -294,26 +418,7 @@ void BotManager::OnWorldUpdate(uint32_t diff)
             {
                 if (!rec.enteredWorld)
                 {
-                    sLog.outString("TortoiseBots: Bot %s entered world", rec.characterGuid.GetString().c_str());
-                    if (!it->second.controller)
-                        it->second.controller = std::make_unique<BotController>(rec.characterGuid, rec.masterGuid);
-                    else
-                        it->second.controller->SetMaster(rec.masterGuid);
-                    // Attach the real PlayerbotAI/Engine stack. This is where the Headless bot
-                    // transitions from "just a Player with a headless session" to "a bot with AI".
-                    // AiFactory will create the per-class AiObjectContext and the combat/non-combat/dead/
-                    // reaction Engines with their Strategy/Trigger/Action/Value stacks.
-                    if (!it->second.aiAdapter)
-                    {
-                        ::Player* masterPlayer = nullptr;
-                        if (rec.masterGuid && !rec.masterGuid.IsEmpty())
-                            masterPlayer = sObjectAccessor.FindPlayer(rec.masterGuid);
-                        it->second.aiAdapter = std::make_unique<PlayerbotAIAdapter>(p, masterPlayer);
-                        if (it->second.aiAdapter->Initialize())
-                            sLog.outString("TortoiseBots: PlayerbotAI attached for %s (master %s)", p->GetName(), masterPlayer ? masterPlayer->GetName() : "none");
-                        else
-                            sLog.outError("TortoiseBots: PlayerbotAI attach failed for %s", p->GetName());
-                    }
+                    OnPlayerLogin(p);
                 }
                 rec.enteredWorld = true;
                 rec.lifecycle = BotLifecycle::InWorld;

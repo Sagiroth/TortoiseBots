@@ -282,6 +282,11 @@ class ServerFacade
             return sBattleGroundMgr.BGTemplateId(queueTypeId);
 #endif
         }
+
+        BattleGroundTypeId BGTemplateId(BattleGroundQueueTypeId queueTypeId)
+        {
+            return BgTemplateId(queueTypeId);
+        }
 #ifndef MANGOSBOT_ZERO
         ArenaType BgArenaType(BattleGroundQueueTypeId queueTypeId)
         {

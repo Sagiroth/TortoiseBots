@@ -337,45 +337,6 @@ void PerformanceMonitorOperation::finish()
         stack->erase(std::remove(stack->begin(), stack->end(), name), stack->end());
 }
 
-bool ChatHandler::HandlePerfMonCommand(char* args)
-{
-    if (!strcmp(args, "reset"))
-    {
-        sPerformanceMonitor.Reset();
-        sLog.outString("Performance monitor reset");
-        return true;
-    }
-
-    if (!strcmp(args, "toggle"))
-    {
-        sPlayerbotAIConfig.perfMonEnabled = !sPlayerbotAIConfig.perfMonEnabled;
-        if (sPlayerbotAIConfig.perfMonEnabled)
-            sLog.outString("Performance monitor enabled");
-        else
-            sLog.outString("Performance monitor disabled");
-
-        return true;
-    }   
-
-    std::string arguments = args;
-
-    bool tick = false, stack = false, map = false;
-
-    if (arguments.find("tick") != std::string::npos) 
-    {
-        tick = true;
-    }
-
-    if (arguments.find("stack") != std::string::npos)
-    {
-        stack = true;
-    }
-
-    if (arguments.find("map") != std::string::npos)
-    {
-        map = true;
-    }
-
-    sPerformanceMonitor.PrintStats(tick, stack, map);
-    return true;
-}
+// The host owns the legacy ChatHandler::HandlePerfMonCommand symbol. Keeping
+// the monitor implementation here avoids a second definition when the
+// native module is linked with the core's command compatibility table.

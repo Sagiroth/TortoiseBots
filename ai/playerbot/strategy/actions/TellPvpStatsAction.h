@@ -17,6 +17,6 @@ class TellPvpStatsAction : public Action
 public:
     TellPvpStatsAction(PlayerbotAI* botAI) : Action(botAI, "tell pvp stats") {}
 
-    bool Execute(Event event) override;
+    bool Execute(Event& event) override;
 };
 #endif

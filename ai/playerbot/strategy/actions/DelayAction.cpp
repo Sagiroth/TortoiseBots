@@ -7,20 +7,5 @@
  */
 
 #include "DelayAction.h"
-#include "Event.h"
-#include "PlayerbotAI.h"
-#include "PlayerbotAIConfig.h"
 
-bool DelayAction::Execute(Event /*event*/)
-{
-    const uint32 delay = PlayerbotAIConfig::instance().passiveDelay + PlayerbotAIConfig::instance().globalCoolDown;
-
-    botAI->SetNextCheckDelay(delay);
-
-    return true;
-}
-
-bool DelayAction::isUseful()
-{
-    return !botAI->AllowActivity(ALL_ACTIVITY);
-}
+// Implemented inline by the Tortoise action header.

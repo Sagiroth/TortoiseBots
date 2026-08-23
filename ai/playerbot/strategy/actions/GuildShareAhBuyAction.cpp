@@ -128,7 +128,7 @@ std::map<uint32, uint32> GuildShareAhBuyAction::GetNeededItems()
 
     std::set<uint32> finishedItemIds;
     for (const auto& entry : shareList)
-        finishedItemIds.insert(entry.itemid);
+        finishedItemIds.insert(entry.itemId);
 
     for (uint32 itemId : finishedItemIds)
     {
@@ -212,7 +212,7 @@ bool GuildShareAhBuyAction::Execute(Event& event)
     std::vector<GuildShareItemEntry> shareList = AI_VALUE(std::vector<GuildShareItemEntry>, "guild share list");
     std::set<uint32> finishedItemIds;
     for (const auto& entry : shareList)
-        finishedItemIds.insert(entry.itemid);
+        finishedItemIds.insert(entry.itemId);
 
     uint32 availableBudget = AI_VALUE2(uint32, "free money for", uint32(NeedMoneyFor::guild));
 
@@ -295,13 +295,13 @@ bool GuildShareAhBuyAction::Execute(Event& event)
 
         auction->UpdateBid(auction->buyout, bot);
 
-        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(bestCandidate.itemid);
+        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(bestCandidate.itemId);
         std::ostringstream out;
         out << "Bought " << bestCandidate.count << "x ";
         if (proto)
             out << proto->Name1;
         else
-            out << "item #" << bestCandidate.itemid;
+            out << "item #" << bestCandidate.itemId;
         out << " from AH for guild share list (" << (bestCandidate.buyout / 10000) << "g)";
 
         ai->TellPlayerNoFacing(GetMaster(), out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);

@@ -22,7 +22,7 @@ bool GuildShareItemAction::Execute(Event& event)
         return false;
 
     Player* receiver = shareTarget.receiver;
-    uint32 itemId = shareTarget.itemid;
+    uint32 itemId = shareTarget.itemId;
     uint32 shareAmount = shareTarget.amount; // 0 = give all (existing behavior)
 
     PlayerbotAI* receiverAi = PlayerbotAIStorage::Instance().GetAI(receiver);

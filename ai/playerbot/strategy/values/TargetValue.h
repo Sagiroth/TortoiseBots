@@ -1,4 +1,7 @@
 #pragma once
+#include "playerbot/strategy/AiObjectContext.h"
+#include "playerbot/PlayerbotAI.h"
+#include "playerbot/ChatHelper.h"
 #include "playerbot/strategy//AiObject.h"
 #include "playerbot/strategy/Value.h"
 #include "playerbot/TravelMgr.h"
@@ -170,3 +173,5 @@ namespace ai
         BuffTargetsValue(PlayerbotAI* ai) : FriendlyManualTargetsValue(ai) {}
     };
 }
+
+using ai::TargetValue;

@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
 #include "QueryItemUsageAction.h"
 
 namespace ai

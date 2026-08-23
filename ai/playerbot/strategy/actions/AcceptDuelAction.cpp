@@ -7,33 +7,5 @@
  */
 
 #include "AcceptDuelAction.h"
-#include "Event.h"
-#include "Playerbots.h"
 
-bool AcceptDuelAction::Execute(Event event)
-{
-    WorldPacket p(event.GetPacket());
-
-    ObjectGuid flagGuid;
-    p >> flagGuid;
-    ObjectGuid playerGuid;
-    p >> playerGuid;
-
-    // Do not auto duel with low health
-    if ((!botAI->HasGameClientMaster() ||
-        (botAI->GetMaster() && botAI->GetMaster()->GetGUID() != playerGuid)) &&
-        AI_VALUE2(uint8, "health", "self target") < 90)
-    {
-        WorldPacket packet(CMSG_DUEL_CANCELLED, 8);
-        packet << flagGuid;
-        bot->GetSession()->HandleDuelCancelledOpcode(packet);
-        return false;
-    }
-
-    WorldPacket packet(CMSG_DUEL_ACCEPTED, 8);
-    packet << flagGuid;
-    bot->GetSession()->HandleDuelAcceptedOpcode(packet);
-
-    botAI->ResetStrategies();
-    return true;
-}
+// Implemented inline by the Tortoise action header.

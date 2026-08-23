@@ -1,4 +1,6 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
+#include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/Value.h"
 
 namespace ai
@@ -30,3 +32,5 @@ namespace ai
         bool Check(Unit* player);
 	};
 }
+
+using ai::PartyMemberValue;

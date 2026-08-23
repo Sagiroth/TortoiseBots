@@ -1,4 +1,6 @@
 #pragma once
+#include "playerbot/PlayerbotAI.h"
+#include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/Value.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/actions/GenericActions.h"
@@ -15,6 +17,7 @@ namespace ai
         virtual WorldLocation GetLocation() { return NullLocation; }
         virtual float GetAngle();
         virtual float GetOffset();
+        virtual float getOffset() { return GetOffset(); }
         virtual float GetMaxDistance();
         static WorldLocation NullLocation;
 		static bool IsNullLocation(WorldLocation const& loc);
@@ -81,4 +84,3 @@ namespace ai
         virtual bool Execute(Event& event) override;
     };
 };
-

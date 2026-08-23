@@ -7,26 +7,5 @@
  */
 
 #include "IsMovingValue.h"
-#include "Playerbots.h"
 
-bool IsMovingValue::Calculate()
-{
-    Unit* target = AI_VALUE(Unit*, qualifier);
-
-    if (!target)
-        return false;
-
-    return target->IsMoving();
-}
-
-bool IsSwimmingValue::Calculate()
-{
-    Unit* target = AI_VALUE(Unit*, qualifier);
-
-    if (!target)
-        return false;
-
-    int8 targetInLiquidState = target->GetLiquidData().Status;
-
-    return targetInLiquidState == LIQUID_MAP_UNDER_WATER || (targetInLiquidState == LIQUID_MAP_IN_WATER && target->CanSwim());
-}
+// Implemented inline by the Tortoise value header.

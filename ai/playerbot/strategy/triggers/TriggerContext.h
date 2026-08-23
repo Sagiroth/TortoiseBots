@@ -4,7 +4,6 @@
 #include "GenericTriggers.h"
 #include "LootTriggers.h"
 #include "GenericTriggers.h"
-#include "LfgTriggers.h"
 #include "PvpTriggers.h"
 #include "RpgTriggers.h"
 #include "TravelTriggers.h"
@@ -18,9 +17,7 @@
 #include "OnyxiasLairDungeonTriggers.h"
 #include "MoltenCoreDungeonTriggers.h"
 #include "BlackwingLairDungeonTriggers.h"
-#include "KarazhanDungeonTriggers.h"
 #include "NaxxramasDungeonTriggers.h"
-#include "GlyphTriggers.h"
 #include "WorldBuffTravelTriggers.h"
 
 #ifdef GenerateBotTests
@@ -162,9 +159,6 @@ namespace ai
             creators["low aoe heal"] = [](PlayerbotAI* ai) { return new AoeHealTrigger(ai, "low aoe heal", "low", 2); };
             creators["medium aoe heal"] = [](PlayerbotAI* ai) { return new AoeHealTrigger(ai, "medium aoe heal", "medium", 2); };
             creators["invalid target"] = [](PlayerbotAI* ai) { return new InvalidTargetTrigger(ai); };
-            creators["lfg proposal active"] = [](PlayerbotAI* ai) { return new LfgProposalActiveTrigger(ai); };
-
-            creators["unknown dungeon"] = [](PlayerbotAI* ai) { return new UnknownDungeonTrigger(ai); };
 
             creators["random bot update"] = [](PlayerbotAI* ai) { return new RandomBotUpdateTrigger(ai); };
             creators["no non bot players around"] = [](PlayerbotAI* ai) { return new NoNonBotPlayersAroundTrigger(ai); };
@@ -279,7 +273,6 @@ namespace ai
             creators["random jump"] = [](PlayerbotAI* ai) { return new RandomJumpTrigger(ai); };
             creators["rtsc jump active"] = [](PlayerbotAI* ai) { return new RtscJumpTrigger(ai); };
 
-            creators["apply glyphs"] = [](PlayerbotAI* ai) { return new ApplyGlyphTrigger(ai); };
 
             // racials
             creators["berserking"] = [](PlayerbotAI* ai) { return new BerserkingTrigger(ai); };
@@ -298,8 +291,6 @@ namespace ai
             creators["leave onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairLeaveDungeonTrigger(ai); };
             creators["enter molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreEnterDungeonTrigger(ai); };
             creators["leave molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreLeaveDungeonTrigger(ai); };
-            creators["enter karazhan"] = [](PlayerbotAI* ai) { return new KarazhanEnterDungeonTrigger(ai); };
-            creators["leave karazhan"] = [](PlayerbotAI* ai) { return new KarazhanLeaveDungeonTrigger(ai); };
             creators["enter naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasEnterDungeonTrigger(ai); };
             creators["leave naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasLeaveDungeonTrigger(ai); };
             creators["enter blackwing lair"] = [](PlayerbotAI* ai) { return new BlackwingLairEnterDungeonTrigger(ai); };
@@ -325,18 +316,6 @@ namespace ai
             creators["suppression device in sight"] = [](PlayerbotAI* ai) { return new SuppressionDeviceInSightTrigger(ai); };
             creators["suppression device close"] = [](PlayerbotAI* ai) { return new SuppressionDeviceCloseTrigger(ai); };
 
-            creators["start netherspite fight"] = [](PlayerbotAI* ai) { return new NetherspiteStartFightTrigger(ai); };
-            creators["end netherspite fight"] = [](PlayerbotAI* ai) { return new NetherspiteEndFightTrigger(ai); };
-            creators["void zone too close"] = [](PlayerbotAI* ai) { return new VoidZoneTooCloseTrigger(ai); };
-            creators["add nether portal - perseverence for tank"] = [](PlayerbotAI* ai) { return new NetherspiteBeamsCheatNeedRefreshTrigger(ai, 2); };
-            creators["remove nether portal buffs from netherspite"] = [](PlayerbotAI* ai) { return new NetherspiteBeamsCheatNeedRefreshTrigger(ai); };
-            creators["remove nether portal - dominance"] = [](PlayerbotAI* ai) { return new RemoveNetherPortalDominanceTrigger(ai); };
-            creators["remove nether portal - perseverence"] = [](PlayerbotAI* ai) { return new RemoveNetherPortalPerseverenceTrigger(ai); };
-            creators["remove nether portal - serenity"] = [](PlayerbotAI* ai) { return new RemoveNetherPortalSerenityTrigger(ai); };
-
-            creators["start prince malchezaar fight"] = [](PlayerbotAI* ai) { return new PrinceMalchezaarStartFightTrigger(ai); };
-            creators["end prince malchezaar fight"] = [](PlayerbotAI* ai) { return new PrinceMalchezaarEndFightTrigger(ai); };
-            creators["netherspite infernal too close"] = [](PlayerbotAI* ai) { return new NetherspiteInfernalTooCloseTrigger(ai); };
 
             creators["start four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanStartFightTrigger(ai); };
             creators["end four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanEndFightTrigger(ai); };

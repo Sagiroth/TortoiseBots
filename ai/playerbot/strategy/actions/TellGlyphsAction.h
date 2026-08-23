@@ -16,7 +16,7 @@ public:
     TellGlyphsAction(PlayerbotAI* ai, std::string const name = "glyphs")
         : Action(ai, name) {}
 
-    bool Execute(Event event) override;
+    bool Execute(Event& event) override;
 };
 
 #endif

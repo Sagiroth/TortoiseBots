@@ -208,7 +208,8 @@ std::list<ObjectGuid> FriendlyManualTargetsValue::Get()
         Unit* player = ai->GetUnit(playerGuid);
         if (ai->IsSafe(player))
         {
-            if (IsInGroup_Helper(bot, player))
+            Player* playerTarget = dynamic_cast<Player*>(player);
+            if (playerTarget && IsInGroup_Helper(bot, playerTarget))
             {
                 return false;
             }

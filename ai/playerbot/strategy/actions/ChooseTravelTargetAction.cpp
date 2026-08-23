@@ -1396,7 +1396,7 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
         if (!PlayerbotAIStorage::Instance().GetAI(player))
             continue;
 
-        QuestStatusMap& questMap = player->GetQuestStatusMap();
+        QuestStatusMap& questMap = player->getQuestStatusMap();
 
         bool onlyClassQuest = bot == player && !urand(0, 10);
 
@@ -1466,7 +1466,7 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
     // limit of 20.
     {
         uint32 finished = 0, active = 0;
-        for (auto& [questId, questStatus] : bot->GetQuestStatusMap())
+        for (auto& [questId, questStatus] : bot->getQuestStatusMap())
         {
             if (questStatus.m_rewarded)
                 continue;
@@ -1507,12 +1507,12 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
             else objectives++;
         }
 
-        for (auto& [questId, questStatus] : bot->GetQuestStatusMap())
+        for (auto& [questId, questStatus] : bot->getQuestStatusMap())
             if (!questStatus.m_rewarded && questStatus.m_status == QUEST_STATUS_COMPLETE)
                 readyToHandIn++;
 
         sLog.outBasic("QUESTPROBE: %s has %u finished and unhanded-in, %u quests in the log; offered %u taker, %u objective, %u giver destinations",
-            bot->GetName(), readyToHandIn, uint32(bot->GetQuestStatusMap().size()),
+            bot->GetName(), readyToHandIn, uint32(bot->getQuestStatusMap().size()),
             takers, objectives, givers);
     }
 

@@ -11,7 +11,7 @@
 #include "Playerbots.h"
 #include <array>
 
-bool TellEmblemsAction::Execute(Event /*event*/)
+bool TellEmblemsAction::Execute(Event& /*event*/)
 {
     static std::array<uint32, 6> const emblemIds = {
         29434, // Badge of Justice

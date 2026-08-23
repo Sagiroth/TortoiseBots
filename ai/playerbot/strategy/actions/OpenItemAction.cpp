@@ -8,18 +8,25 @@
 
 #include "OpenItemAction.h"
 #include "AiObjectContext.h"
-#include "ItemTemplate.h"
+#include "Objects/ItemPrototype.h"
 #include "LootObjectStack.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
 #include "WorldPacket.h"
 
-bool OpenItemAction::Execute(Event /*event*/)
+bool OpenItemAction::Execute(Event& /*event*/)
 {
     bool foundOpenable = false;
 
-    Item* item = botAI->FindOpenableItem();
+    Item* item = nullptr;
+    for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END && !item; ++slot)
+    {
+        Item* candidate = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+        if (candidate && candidate->GetProto() &&
+            ((candidate->GetProto()->Flags & ITEM_FLAG_LOOTABLE) || candidate->GetProto()->LockID))
+            item = candidate;
+    }
     if (item)
     {
         uint8 bag = item->GetBagSlot();  // Retrieves the bag slot (0 for main inventory)
@@ -44,6 +51,6 @@ void OpenItemAction::OpenItem(Item* item, uint8 bag, uint8 slot)
     botAI->GetAiObjectContext()->GetValue<LootObject>("loot target")->Set(lootObject);
 
     std::ostringstream out;
-    out << "Opened item: " << item->GetTemplate()->Name1;
-    botAI->TellMaster(out.str());
+    out << "Opened item: " << item->GetProto()->Name1;
+    botAI->TellPlayerNoFacing(botAI->GetMaster(), out.str());
 }

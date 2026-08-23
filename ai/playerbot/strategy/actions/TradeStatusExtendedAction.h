@@ -18,7 +18,7 @@ class TradeStatusExtendedAction : public QueryItemUsageAction
 public:
     TradeStatusExtendedAction(PlayerbotAI* botAI) : QueryItemUsageAction(botAI, "trade status extended") {}
 
-    bool Execute(Event event) override;
+    bool Execute(Event& event) override;
 };
 
 #endif

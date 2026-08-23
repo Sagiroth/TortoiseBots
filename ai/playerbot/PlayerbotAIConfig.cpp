@@ -4,7 +4,6 @@
 #include <cerrno>
 #include <cstring>
 #include "BotLog.h"
-#include "RandomPlayerbotFactory.h"
 #include "AccountMgr.h"
 #include "playerbot/PlayerbotFactory.h"
 #include "RandomItemMgr.h"
@@ -405,7 +404,40 @@ bool PlayerbotAIConfig::Initialize()
     classRaceProbabilityTotal = 0;
 
     useFixedClassRaceCounts = config.GetBoolDefault("AiPlayerbot.ClassRace.UseFixedClassRaceCounts", false);
-    RandomPlayerbotFactory factory(0);
+    auto isAvailableRace = [](uint8 cls, uint8 race)
+    {
+        switch (cls)
+        {
+            case CLASS_WARRIOR:
+                return race == RACE_HUMAN || race == RACE_NIGHTELF || race == RACE_GNOME || race == RACE_DWARF ||
+                    race == RACE_ORC || race == RACE_UNDEAD || race == RACE_TAUREN || race == RACE_TROLL ||
+                    race == RACE_GOBLIN || race == RACE_HIGH_ELF;
+            case CLASS_PALADIN:
+                return race == RACE_HUMAN || race == RACE_DWARF || race == RACE_HIGH_ELF;
+            case CLASS_ROGUE:
+                return race == RACE_HUMAN || race == RACE_DWARF || race == RACE_NIGHTELF || race == RACE_GNOME ||
+                    race == RACE_ORC || race == RACE_UNDEAD || race == RACE_TROLL || race == RACE_GOBLIN ||
+                    race == RACE_HIGH_ELF;
+            case CLASS_PRIEST:
+                return race == RACE_HUMAN || race == RACE_DWARF || race == RACE_NIGHTELF || race == RACE_TROLL ||
+                    race == RACE_UNDEAD || race == RACE_HIGH_ELF;
+            case CLASS_MAGE:
+                return race == RACE_HUMAN || race == RACE_GNOME || race == RACE_UNDEAD || race == RACE_TROLL ||
+                    race == RACE_GOBLIN || race == RACE_HIGH_ELF;
+            case CLASS_WARLOCK:
+                return race == RACE_HUMAN || race == RACE_GNOME || race == RACE_UNDEAD || race == RACE_ORC ||
+                    race == RACE_GOBLIN;
+            case CLASS_SHAMAN:
+                return race == RACE_ORC || race == RACE_TAUREN || race == RACE_TROLL;
+            case CLASS_HUNTER:
+                return race == RACE_HUMAN || race == RACE_DWARF || race == RACE_NIGHTELF || race == RACE_ORC ||
+                    race == RACE_TAUREN || race == RACE_TROLL || race == RACE_GOBLIN || race == RACE_HIGH_ELF;
+            case CLASS_DRUID:
+                return race == RACE_NIGHTELF || race == RACE_TAUREN;
+            default:
+                return false;
+        }
+    };
 
     for (uint32 race = 1; race < MAX_RACES; ++race)
     {
@@ -447,7 +479,7 @@ bool PlayerbotAIConfig::Initialize()
             if (rcProb >= 0)
                 classRaceProbability[cls][race] = rcProb;
 
-            if (!factory.isAvailableRace(cls, race))
+            if (!isAvailableRace(cls, race))
             {
                 // Dropped without a word until now, so an entry naming a
                 // combination that cannot exist looked like it had been accepted
@@ -492,7 +524,7 @@ bool PlayerbotAIConfig::Initialize()
 		    std::string key = "AiPlayerbot.ClassRaceProb." + std::to_string(cls) + "." + std::to_string(race);
 		    int count = config.GetIntDefault(key.c_str(), -1);
 
-		    if (count >= 0 && !factory.isAvailableRace(cls, race))
+		    if (count >= 0 && !isAvailableRace(cls, race))
 		        sLog.outError("AiPlayerbot.ClassRaceProb.%u.%u asks for %d bots, but that class cannot be that race. Ignoring it.",
 		            cls, race, count);
 		    else if (count >= 0)

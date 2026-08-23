@@ -97,7 +97,7 @@ bool EquipGlyphsAction::CollectGlyphs(std::vector<uint32> const& itemIds,
 /// -----------------------------------------------------------------
 ///  Action
 /// -----------------------------------------------------------------
-bool EquipGlyphsAction::Execute(Event event)
+bool EquipGlyphsAction::Execute(Event& event)
 {
     // 1) parse IDs
     std::vector<uint32> itemIds;

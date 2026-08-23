@@ -18,7 +18,7 @@ public:
     FrostFireMageStrategy(PlayerbotAI* botAI);
 
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string const getName() override { return "frostfire"; }
+    std::string getName() override { return "frostfire"; }
     std::vector<NextAction> getDefaultActions() override;
 };
 

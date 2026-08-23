@@ -4145,7 +4145,7 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
 
         {
             BattleBotWaypoint& lastPoint = ((*pPath)[pPath->size() - 1]);
-            float const distanceFromPathEndToTarget = sqrt(Position(pos.x, pos.y, pos.z, 0.f).getDistance(Position(lastPoint.x, lastPoint.y, lastPoint.z, 0.f)));
+            float const distanceFromPathEndToTarget = sqrt(Position(pos.x, pos.y, pos.z, 0.f).GetDistance(Position(lastPoint.x, lastPoint.y, lastPoint.z, 0.f)));
             if (closestDistanceToTarget > distanceFromPathEndToTarget)
             {
                 float closestDistanceFromMeToPoint = FLT_MAX;
@@ -4178,7 +4178,7 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
 
         {
             BattleBotWaypoint& firstPoint = ((*pPath)[0]);
-            float const distanceFromPathBeginToTarget = sqrt(Position(pos.x, pos.y, pos.z, 0).getDistance(Position(firstPoint.x, firstPoint.y, firstPoint.z, 0.f)));
+            float const distanceFromPathBeginToTarget = sqrt(Position(pos.x, pos.y, pos.z, 0).GetDistance(Position(firstPoint.x, firstPoint.y, firstPoint.z, 0.f)));
             if (closestDistanceToTarget > distanceFromPathBeginToTarget)
             {
                 float closestDistanceFromMeToPoint = FLT_MAX;
@@ -4640,7 +4640,7 @@ bool BGTactics::flagTaken()
     if (!bg)
         return false;
 
-    return !bg->GetFlagCarrierGuid(GetTeamIndexByTeamId(bg->getOtherTeam(bot->GetTeam()))).IsEmpty();
+    return !bg->GetFlagCarrierGuid(GetTeamIndexByTeamId(bg->GetOtherTeam(bot->GetTeam()))).IsEmpty();
 }
 
 bool BGTactics::teamFlagTaken()

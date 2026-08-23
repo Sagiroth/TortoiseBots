@@ -37,7 +37,7 @@ bool IsDisallowedShapeshiftForm(Player* bot)
 }
 }
 
-bool DrinkAction::Execute(Event event)
+bool DrinkAction::Execute(Event& event)
 {
     if (botAI->HasCheat(BotCheatMask::food))
     {
@@ -90,7 +90,7 @@ bool DrinkAction::isPossible()
     return botAI->HasCheat(BotCheatMask::food) || UseItemAction::isPossible();
 }
 
-bool EatAction::Execute(Event event)
+bool EatAction::Execute(Event& event)
 {
     if (botAI->HasCheat(BotCheatMask::food))
     {

@@ -49,7 +49,7 @@ Unit* PartyMemberValue::FindPartyMember(FindPlayerPredicate &predicate, bool ign
 
             if (ref->GetSource() != bot)
             {
-                if (ref->GetSubGroup() != bot->GetSubGroup())
+                if (ref->getSubGroup() != bot->GetSubGroup())
                 {
                     nearestPlayers.push_back(ref->GetSource()->getObjectGuid());
                 }
@@ -162,13 +162,13 @@ bool PartyMemberValue::IsTargetOfSpellCast(Player* target, SpellEntryPredicate &
                 Spell* spell = player->GetCurrentSpell((CurrentSpellTypes)type);
                 if (spell && predicate.Check(spell->m_spellInfo)) 
                 {
-                    ObjectGuid unitTarget = spell->m_targets.GetUnitTargetGuid();
+                    ObjectGuid unitTarget = spell->m_targets.getUnitTargetGuid();
                     if (unitTarget == targetGuid)
                         return true;
 
                     if (corpseGuid)
                     {
-                        ObjectGuid corpseTarget = spell->m_targets.GetCorpseTargetGuid();
+                        ObjectGuid corpseTarget = spell->m_targets.getCorpseTargetGuid();
                         if (corpseTarget == corpseGuid)
                             return true;
                     }

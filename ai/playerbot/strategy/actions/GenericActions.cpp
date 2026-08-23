@@ -537,7 +537,7 @@ bool SetPetAction::Execute(Event& event)
         }
         else if (command == "dismiss")
         {
-            if (pet->GetPetType() == HUNTER_PET)
+            if (pet->getPetType() == HUNTER_PET)
             {
                 if (ai->DoSpecificAction("dismiss pet", event, true))
                 {

@@ -68,7 +68,7 @@ bool GuildAcceptQuestOrderAction::Execute(Event& event)
             Quest const* candidate = sObjectMgr.GetQuestTemplate(questId);
             if (candidate && bot->GetQuestStatus(questId) != QUEST_STATUS_COMPLETE)
             {
-                QuestStatusData& qsd = bot->GetQuestStatusMap()[questId];
+                QuestStatusData& qsd = bot->getQuestStatusMap()[questId];
                 bool hasProgress = false;
                 for (int i = 0; i < QUEST_OBJECTIVES_COUNT; i++)
                 {
