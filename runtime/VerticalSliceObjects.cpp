@@ -4,6 +4,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/Value.h"
 #include "playerbot/strategy/generic/DeadStrategy.h"
+#include "playerbot/strategy/generic/CombatStrategy.h"
 #include "playerbot/strategy/generic/DpsAssistStrategy.h"
 #include "playerbot/strategy/generic/FollowMasterStrategy.h"
 #include "playerbot/strategy/generic/MeleeCombatStrategy.h"
@@ -285,6 +286,13 @@ private:
     BotState state_;
 };
 
+class RealCombatStrategy final : public CombatStrategy
+{
+public:
+    RealCombatStrategy(PlayerbotAI* ai) : CombatStrategy(ai) {}
+    std::string getName() override { return "combat"; }
+};
+
 class RealArmsWarriorStrategy final : public ArmsWarriorStrategy
 {
 public:
@@ -335,6 +343,7 @@ VerticalStrategyContext::VerticalStrategyContext()
 {
     creators["follow"] = [](PlayerbotAI* ai) { return new FollowMasterStrategy(ai); };
     creators["close"] = [](PlayerbotAI* ai) { return new MeleeCombatStrategy(ai); };
+    creators["combat"] = [](PlayerbotAI* ai) { return new RealCombatStrategy(ai); };
     creators["nc"] = [](PlayerbotAI* ai) { return new NonCombatStrategy(ai); };
     creators["dps assist"] = [](PlayerbotAI* ai) { return new DpsAssistStrategy(ai); };
     creators["dead"] = [](PlayerbotAI* ai) { return new DeadStrategy(ai); };

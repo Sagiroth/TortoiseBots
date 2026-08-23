@@ -64,7 +64,7 @@ void AddWarriorStrategies(Player* player, Engine* engine, bool follow, bool dead
 void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI*, Engine* engine)
 {
     AddWarriorStrategies(player, engine, true, false);
-    engine->addStrategies("dps assist", "close", nullptr);
+    engine->addStrategies("combat", "dps assist", "close", nullptr);
 }
 
 Engine* AiFactory::createCombatEngine(Player* player, PlayerbotAI* ai, AiObjectContext* context)
