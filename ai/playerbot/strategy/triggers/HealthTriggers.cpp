@@ -80,7 +80,7 @@ bool AoeHealTrigger::IsActive()
 bool HealTargetFullHealthTrigger::IsActive()
 {
     Spell* currentSpell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL);
-    if (currentSpell && (currentSpell->GetState() == SPELL_STATE_CASTING) && (currentSpell->GetCastedTime() > 0U))
+    if (currentSpell && (currentSpell->getState() == SPELL_STATE_CASTING) && (currentSpell->GetCastedTime() > 0U))
     {
         // Interrupt pre casted heals if target is not injured.
         if (PlayerbotAI::IsHealSpell(currentSpell->m_spellInfo))

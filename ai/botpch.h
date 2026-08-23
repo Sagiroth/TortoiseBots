@@ -81,6 +81,7 @@
 // Playerbot AI framework - minimal subset for Engine
 #include "playerbot/PlayerbotAIAware.h"
 #include "playerbot/BotState.h"
+#include "runtime/PlayerbotAIStorage.h"
 // The remaining AI framework headers are included per-TU via their own #includes,
 // not via the PCH, to keep the PCH tractable for the first checkpoint.
 // #include "playerbot/strategy/AiObject.h"

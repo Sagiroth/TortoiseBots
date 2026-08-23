@@ -659,7 +659,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     {
         // Update the delay with the spell cast time
         Spell* currentSpell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL);
-        if (currentSpell && (currentSpell->GetState() == SPELL_STATE_CASTING) && (currentSpell->GetCastedTime() > 0U))
+        if (currentSpell && (currentSpell->getState() == SPELL_STATE_CASTING) && (currentSpell->GetCastedTime() > 0U))
         {
             SetAIInternalUpdateDelay(currentSpell->GetCastedTime() + sPlayerbotAIConfig.reactDelay + sWorld.GetAverageDiff());
 

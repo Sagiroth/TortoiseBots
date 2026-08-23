@@ -826,11 +826,6 @@ inline AreaEntry const* GetAreaEntryByMapId(uint32 mapId) {
     return mapEntry ? AreaEntry::GetById(mapEntry->linkedZone) : nullptr;
 }
 
-// === MeetingStoneInfo / MeetingStoneSet (cmangos LFG) ===
-// Tortoise 1.18.1 has no MeetingStoneInfo (WotLK LFG). Stub for the single bot typedef that references it.
-struct MeetingStoneInfo { uint32 dummy = 0; };
-typedef std::vector<MeetingStoneInfo> MeetingStoneSet;
-
 // === CharSections (cmangos-only DBC) ===
 // Penqle has no CharSections.dbc loader, but the file exists in the data dir.
 // We load it manually here so bots get real randomized appearances.
@@ -1029,9 +1024,6 @@ inline bool IsAutoRepeatRangedSpell(SpellEntry const* spellInfo) {
 #endif
 #ifndef GetSource
 #define GetSource getSource
-#endif
-#ifndef GetState
-#define GetState getState
 #endif
 #ifndef IsRaidGroup
 #define IsRaidGroup isRaidGroup

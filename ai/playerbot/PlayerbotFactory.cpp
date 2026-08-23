@@ -108,7 +108,7 @@ void PlayerbotFactory::Init()
 
         taxiNodeLevel.Index = i;
         taxiNodeLevel.MapId = taxiNode->map_id;
-        taxiNodeLevel.Level = taxiPosition.GetAreaLevel();
+        taxiNodeLevel.Level = taxiPosition.getAreaLevel();
 
         if (taxiNode->MountCreatureID[0])
             overworldTaxiNodeLevelsH.push_back(taxiNodeLevel);
@@ -582,9 +582,9 @@ void PlayerbotFactory::InitPet()
 				continue;
 
 #ifdef MANGOSBOT_TWO
-            if (!co->IsTameable(bot->CanTameExoticPets()))
+            if (!co->isTameable(bot->CanTameExoticPets()))
 #else
-            if (!co->IsTameable())
+            if (!co->isTameable())
 #endif
                 continue;
 
@@ -2408,7 +2408,7 @@ void PlayerbotFactory::ResetQuests()
         }
 
         // reset rewarded for restart repeatable quest
-        bot->GetQuestStatusMap().erase(entry);
+        bot->getQuestStatusMap().erase(entry);
         //bot->GetQuestStatusMap()[entry].m_rewarded = false;
         //bot->GetQuestStatusMap()[entry].m_status = QUEST_STATUS_NONE;
     }
