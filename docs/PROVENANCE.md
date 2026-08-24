@@ -271,12 +271,13 @@ test was performed.
 
 Feature: close the module-owned Turtle WoW 1.18.1 audit findings without
 reintroducing core ownership coupling: canonical SQL packaging, additive
-schema repair, bounded startup caches, owner-input SQL safety, collection
+schema repair, fail-closed startup caches, owner-input SQL safety, collection
 mount lookup, later-expansion residue removal, and repeatable surface checks.
 
 Source repository: TortoiseBots `audit/playerbots-turtle-1.18.1`
 
-Source commit: `9db49df` (`fix: close Turtle WoW PlayerBots audit findings`)
+Source commit: `3a96923` (`fix: fail closed on incomplete Turtle bot caches`;
+includes the preceding `9db49df` remediation commit).
 
 Required target core: local Penqle `tortoise-wow`
 `playerbots-integration-gh@9487c5150a6553c665fafc1f4568669b8b00f011`.
@@ -312,7 +313,11 @@ Local validation:
   phase reported only the sibling builder's absent `realmd` artifact.
 - Cached `bash ../tortoise-docker-penqle/dev/build-off` completed the
   `BUILD_PLAYERBOTS=OFF`, `MODULES=disabled` `mangosd` build successfully.
-- The incremental ON rebuild after the final C++ safety edits also linked
-  successfully; the same optional `realmd` install warning remained.
+- The final incremental ON rebuild after the cache fail-closed and data-derived
+  eligibility edits also linked successfully; the same optional `realmd`
+  install warning remained.
+- The final cached OFF rebuild after those edits completed `mangosd`
+  successfully with `BUILD_PLAYERBOTS=OFF`, `BUILD_LEGACY_PLAYERBOTS=OFF`, and
+  `MODULES=disabled`.
 - No server restart, fresh-schema migration run, gameplay journey, database
   reset, or reference-checkout modification was performed in this pass.
