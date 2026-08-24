@@ -29,7 +29,7 @@ Feature: Native module packaging, module-local runtime support, and broad Vanill
 
 Source repository: local Penqle `tortoise-wow` sibling plus local TortoiseBots checkout
 
-Source commit: core `73f32c063e6c4481a0415690896025178ca8076f` on branch `playerbots-integration-gh`; TortoiseBots current native stabilization commit is recorded in the final handoff.
+Source commit: core `73f32c063e6c4481a0415690896025178ca8076f` on branch `playerbots-integration-gh`; TortoiseBots `3484208` (`Finish native PlayerBots integration and playtest bridge`).
 
 Source files: `TortoiseBots.cmake`, `src/TortoiseBotsModule.cpp`, `host/*`, `runtime/*`, `ai/playerbot/*`, `strategy/{generic,druid,hunter,mage,paladin,priest,rogue,shaman,warlock,warrior}/*`, `strategy/{actions,triggers,values}/*`
 
@@ -72,7 +72,7 @@ Known scope gates: expansion-only DK/glyph/vehicle/LFG/Arena/Karazhan paths rema
 
 Feature: generic packet/event bridge, safe multi-value configuration, isolated native static-module settings, mature command surface, random-bot debt cleanup, and fresh class journeys.
 
-Source repository: TortoiseBots current `phase4-follow` worktree; required Penqle core `playerbots-integration-gh@73f32c063e6c4481a0415690896025178ca8076f`.
+Source repository: TortoiseBots `phase4-follow@3484208`; required Penqle core `playerbots-integration-gh@73f32c063e6c4481a0415690896025178ca8076f`.
 
 Source files: `host/BotPacketAdapter.*`, `runtime/BotManager.*`, `runtime/PlayerbotAIAdapter.cpp`, `runtime/PlayerbotRuntimeFacade.cpp`, `runtime/RandomBotService.*`, `commands/BotCommands.cpp`, `ai/playerbot/PlayerbotAIConfig.*`, `ai/playerbot/strategy/ValueMacros.h`, `ai/playerbot/AiFactory.cpp`, `TortoiseBots.cmake`, `conf/tortoise_bots.conf.dist`, and Penqle `modules/CMakeLists.txt`/`Config`.
 
