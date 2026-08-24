@@ -396,6 +396,7 @@ private:
 public:
     static std::string BotStateToString(BotState state);
     std::string GetDefaultMovementStrategy();
+    void SetMovementStrategy(const std::string& movement);
     void EnsureDefaultMovementStrategy(Player* requester = nullptr);
 	std::string HandleRemoteCommand(std::string command);
     void HandleCommand(uint32 type, const std::string& text, Player& fromPlayer, const uint32 lang = LANG_UNIVERSAL);
@@ -712,6 +713,9 @@ public:
         this->master = m;
         this->masterGuid = m ? m->GetObjectGuid() : ObjectGuid();
     }
+    // Clear only the raw pointer after a human logout. Keep masterGuid so the
+    // module can rebind the same owned bot when that character reconnects.
+    void ClearMasterPointer() { this->master = nullptr; }
     AiObjectContext* GetAiObjectContext() { return aiObjectContext; }
     void SetAiObjectContext(AiObjectContext* aiObjectContext) { this->aiObjectContext = aiObjectContext; }
     ChatHelper* GetChatHelper() { return &chatHelper; }

@@ -12,8 +12,8 @@
 > Current implementation note: the historical Phase 1 inventory below is
 > retained for provenance. The reproducible core seam used by the current
 > native module is `tortoise-wow` branch `playerbots-integration-gh` at
-> `73f32c063e6c4481a0415690896025178ca8076f` (`Add reproducible headless
-> module seam and static isolation`).
+> `9487c5150a6553c665fafc1f4568669b8b00f011` (`Drop stale PlayerBots include
+> path from module defaults`), based on `133c6d19bf5898c1e4f5129b2890b1db89b17a07`.
 
 ---
 
@@ -302,7 +302,8 @@ through compatibility no-ops.
 
 The reproducible core requirement is `tortoise-wow` branch
 `playerbots-integration-gh` at
-`73f32c063e6c4481a0415690896025178ca8076f`. It contains the generic
+`9487c5150a6553c665fafc1f4568669b8b00f011` (parent
+`133c6d19bf5898c1e4f5129b2890b1db89b17a07`). It contains the generic
 `SessionTransport`, GUID-keyed Headless registry/queue, same-account
 `1 Network + N Headless` lifecycle and reclaim behavior, generic ScriptMgr
 hooks, packet hooks, and the per-static-module object-target build mechanism.
@@ -316,14 +317,48 @@ hooks, packet hooks, and the per-static-module object-target build mechanism.
 - Network master receives → each owned AI's `HandleMasterIncomingPacket`.
 
 The module does not add bot-specific packet branches to core. The fresh
-`PacketBridgeTest` runtime journey exercised native group invite/accept and
-master incoming/outgoing delivery, then removed both Headless sessions cleanly.
+`PacketBridgeTest` runtime journey exercised Headless outgoing delivery,
+Network-master outgoing delivery, and automatic mature Trigger → Action group
+acceptance, then removed both Headless sessions cleanly. Incoming delivery is
+registered through the same generic `ServerScript::CanPacketReceive` hook and
+logs selected real-client opcodes; the final proof of that path is deliberately
+left to the manual Network-client journey rather than a synthetic adapter call.
 
 Static native modules are compiled as isolated `OBJECT` targets and folded
 into the combined `modules` archive. TortoiseBots definitions, include paths,
 and PCH are attached to `mod_tortoisebots_static`, not sibling static module
-sources.
+sources. Core commits `133c6d19` and `9487c515` remove static-module include
+directories and the stale `src/game/PlayerBots` path from the combined archive
+target; its generated loader needs only common module includes.
 
 Penqle `Config::GetValues(prefix)` now enumerates actual ACE configuration
 keys safely. `AiPlayerbot.LoginCriteria.*` and `AiPlayerbot.WorldBuff.*` load
 without a casted object layout; the runtime emitted `Loading WorldBuffs`.
+
+## 13. Final pre-playtest correctness pass — 2026-08-24
+
+The native module now owns one centralized movement transition helper on
+`PlayerbotAI`. Follow removes stale wander/stay state, wander removes
+follow/stay, and stay removes follow/wander; guard, free, and passive retain
+their mature shortcut relationships. `BotController` contains only bot/master
+GUIDs and intent/diagnostic state. `BotManager` never invokes controller
+movement; `PlayerbotAIAdapter` is the only gameplay update owner.
+
+The packet fixture is strict: it emits the native group invite and waits for
+the normal `SMSG_GROUP_INVITE → WorldPacketTrigger → AcceptInvitationAction`
+path to join the group. There is no direct `DoSpecificAction("accept invitation")`
+rescue and no direct incoming adapter injection. The fixture passed automatic
+group acceptance and cleanup after the final cached ON build.
+
+Human logout clears only the live raw master pointer from each matching
+Headless AI; the module retains `BotRecord.masterGuid`. A later Network login
+rebinds matching existing Headless bots without replacing their sessions and
+restores follow or stay intent. The canonical random timing loader key is
+`AiPlayerbot.MaxRandomBotRandomizeTime`, with the former typo retained only as
+a compatibility fallback.
+
+The value audit fixed concrete null assumptions in mount-speed aggregation and
+possible-adds evaluation. Temporary `AiFactory`/command/action `printf` or
+info-level diagnostics were removed or demoted; selected packet-hook and
+lifecycle errors remain operational diagnostics. The runtime is left with AI
+enabled and the packet fixture disabled for manual client playtesting.

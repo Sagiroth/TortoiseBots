@@ -5,7 +5,6 @@
 #include "PlayerbotAIStorage.h"
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "../host/BotSessionAdapter.h"
-#include "../host/BotPacketAdapter.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "WorldSession.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -38,15 +37,17 @@ void BotManager::OnPlayerLogin(::Player* player)
         return;
 
     auto it = m_bots.find(player->GetObjectGuid().GetCounter());
-    if (it == m_bots.end())
-        return;
-
     ::WorldSession* session = player->GetSession();
     if (!session || !session->IsHeadless())
     {
-        ReleaseToClient(player);
+        if (it != m_bots.end())
+            ReleaseToClient(player);
+        RebindOwnedBots(player);
         return;
     }
+
+    if (it == m_bots.end())
+        return;
 
     BotEntry& entry = it->second;
     BotRecord& record = entry.record;
@@ -79,6 +80,10 @@ void BotManager::OnPlayerBeforeLogout(::Player* player)
     if (!player)
         return;
 
+    ::WorldSession* session = player->GetSession();
+    if (!session || !session->IsHeadless())
+        DetachOwnedBots(player);
+
     auto it = m_bots.find(player->GetObjectGuid().GetCounter());
     if (it == m_bots.end())
         return;
@@ -98,6 +103,63 @@ void BotManager::OnPlayerLogout(::Player* player)
     auto it = m_bots.find(player->GetObjectGuid().GetCounter());
     if (it != m_bots.end() && it->second.aiAdapter)
         it->second.aiAdapter->Shutdown();
+}
+
+void BotManager::DetachOwnedBots(::Player* master)
+{
+    if (!master)
+        return;
+
+    ObjectGuid masterGuid = master->GetObjectGuid();
+    for (auto& kv : m_bots)
+    {
+        BotEntry& entry = kv.second;
+        if (entry.record.masterGuid != masterGuid)
+            continue;
+
+        ::Player* bot = sObjectAccessor.FindPlayer(entry.record.characterGuid);
+        if (!bot || !bot->GetSession() || !bot->GetSession()->IsHeadless())
+            continue;
+
+        if (entry.aiAdapter && entry.aiAdapter->IsInitialized())
+            entry.aiAdapter->DetachMaster();
+        else if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
+            ai->ClearMasterPointer();
+
+        sLog.outDebug("TortoiseBots: detached live master pointer %s from bot %s; ownership GUID retained",
+            master->GetName(), bot->GetName());
+    }
+}
+
+void BotManager::RebindOwnedBots(::Player* master)
+{
+    if (!master || !master->GetSession() || master->GetSession()->IsHeadless())
+        return;
+
+    ObjectGuid masterGuid = master->GetObjectGuid();
+    for (auto& kv : m_bots)
+    {
+        BotEntry& entry = kv.second;
+        if (entry.record.masterGuid != masterGuid ||
+            entry.record.lifecycle != BotLifecycle::InWorld)
+            continue;
+
+        ::Player* bot = sObjectAccessor.FindPlayer(entry.record.characterGuid);
+        if (!bot || !bot->GetSession() || !bot->GetSession()->IsHeadless())
+            continue;
+
+        bool follow = !entry.controller || entry.controller->GetIntent() == BotIntent::Follow;
+        if (entry.aiAdapter && entry.aiAdapter->IsInitialized())
+            entry.aiAdapter->RebindMaster(master, follow);
+        else if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
+        {
+            ai->SetMaster(master);
+            ai->SetMovementStrategy(follow ? "follow" : "stay");
+        }
+
+        sLog.outString("TortoiseBots: rebound master %s to existing Headless bot %s (%s)",
+            master->GetName(), bot->GetName(), follow ? "follow" : "stay");
+    }
 }
 
 void BotManager::ReleaseToClient(::Player* player)
@@ -309,7 +371,7 @@ bool BotManager::SetBotFollow(::ObjectGuid botGuid, ::ObjectGuid masterGuid)
         if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
         {
             ai->SetMaster(sObjectAccessor.FindPlayer(masterGuid));
-            ai->EnsureDefaultMovementStrategy();
+            ai->SetMovementStrategy("follow");
         }
     }
     sLog.outString("TortoiseBots: SetBotFollow bot %s -> master %s",
@@ -342,16 +404,13 @@ void BotManager::SetPacketBridgeTestEnabled(bool enable, uint32_t accountId,
         masterGuid.GetString().c_str(), botGuid.GetString().c_str());
 }
 
-void BotManager::UpdateControllers(uint32_t diff)
+void BotManager::UpdateBots(uint32_t diff)
 {
     for (auto& kv : m_bots)
     {
         BotEntry& entry = kv.second;
         if (entry.record.lifecycle != BotLifecycle::InWorld)
             continue;
-        // PlayerbotAI is authoritative. BotController retains only the native
-        // intent record used by commands/diagnostics; it is never a gameplay
-        // fallback and cannot satisfy follow acceptance.
         if (entry.aiAdapter && entry.aiAdapter->IsInitialized())
         {
             entry.aiAdapter->Update(diff);
@@ -470,7 +529,7 @@ void BotManager::OnWorldUpdate(uint32_t diff)
         ++it;
     }
 
-    UpdateControllers(diff);
+    UpdateBots(diff);
 
     if (m_autoTestEnabled)
         UpdateAutoTest(diff);
@@ -526,10 +585,6 @@ void BotManager::UpdatePacketBridgeTest(uint32_t diff)
             invite << bot->GetName() << uint32(0);
             syntheticNetwork->HandleGroupInviteOpcode(invite);
 
-            sLog.outString("TortoiseBots: PacketBridgeTest invite state masterGroup %p botGroup %p botInvite %p",
-                static_cast<void*>(master->GetGroup()), static_cast<void*>(bot->GetGroup()),
-                static_cast<void*>(bot->GetGroupInvite()));
-
             master->SetSession(originalSession);
             syntheticNetwork->SetPlayer(nullptr);
             delete syntheticNetwork;
@@ -549,24 +604,15 @@ void BotManager::UpdatePacketBridgeTest(uint32_t diff)
 
     if (m_packetTestStage == 2)
     {
-        if (bot && bot->GetGroupInvite() && m_packetTestTicks == 20)
-        {
-            if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
-            {
-                bool accepted = ai->DoSpecificAction("accept invitation", ai::Event(), true);
-                sLog.outString("TortoiseBots: PacketBridgeTest mature accept action fallback %s for %s",
-                    accepted ? "executed" : "not executed", bot->GetName());
-            }
-        }
-
         if (master && bot && master->GetGroup() && bot->GetGroup() == master->GetGroup() &&
             master->GetGroup()->IsMember(bot->GetObjectGuid()))
         {
             sLog.outString("TortoiseBots: PacketBridgeTest group invite/accept PASSED — mature PlayerbotAI joined group");
 
-            // Exercise the master-incoming direction at the same module seam,
-            // then let the native handler process the uninvite. The synthetic
-            // Network session is deliberately not added to World's account map.
+            // Exercise the native uninvite handler for cleanup. Incoming packet
+            // delivery is intentionally not injected here: the strict runtime
+            // proof must come from a real Network session through Penqle's
+            // ServerScript::CanPacketReceive hook.
             WorldSession* originalSession = master->GetSession();
             WorldSession* syntheticNetwork = new WorldSession(
                 m_packetTestAccount, nullptr, sAccountMgr.GetSecurity(m_packetTestAccount),
@@ -576,13 +622,12 @@ void BotManager::UpdatePacketBridgeTest(uint32_t diff)
 
             WorldPacket uninvite(CMSG_GROUP_UNINVITE);
             uninvite << bot->GetName();
-            BotPacketAdapter::DispatchMasterIncoming(syntheticNetwork, uninvite);
             syntheticNetwork->HandleGroupUninviteOpcode(uninvite);
 
             master->SetSession(originalSession);
             syntheticNetwork->SetPlayer(nullptr);
             delete syntheticNetwork;
-            sLog.outString("TortoiseBots: PacketBridgeTest master incoming uninvite dispatched");
+            sLog.outString("TortoiseBots: PacketBridgeTest native uninvite cleanup applied; live incoming hook remains client-gated");
             m_packetTestStage = 3;
             m_packetTestTicks = 0;
         }

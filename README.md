@@ -41,11 +41,17 @@ be compiled accidentally.
   default to off. Enable random bots only with pre-existing configured random
   characters until the creation workflow is added.
 - The required generic Penqle seam is
-  `playerbots-integration-gh@73f32c063e6c4481a0415690896025178ca8076f`.
+  `playerbots-integration-gh@9487c5150a6553c665fafc1f4568669b8b00f011`.
 - The fresh Docker packet journey passed native group invite/accept and
   cleanup, with real Warrior, Mage, Priest, and Hunter class contexts. The
   preserved runtime also contains disposable `TBPLAY` class fixtures for
   manual client playtesting.
+- The final correctness pass centralizes follow/wander/stay transitions,
+  removes the old controller movement loop, strictly validates automatic
+  packet-triggered invitation acceptance, preserves master GUIDs across human
+  reconnects, and uses the documented `AiPlayerbot.MaxRandomBotRandomizeTime`
+  key. The remaining live gate is the real-client journey, which is left to
+  the manual playtest.
 
 The native `.bot` surface includes `add`, `remove`, `follow`, `invite`,
 `uninvite`, `stay`, `list`, `stats`, and same-account mature-AI `command`.

@@ -129,7 +129,9 @@ private:
 
     void UpdateAutoTest(uint32_t diff);
     void UpdatePacketBridgeTest(uint32_t diff);
-    void UpdateControllers(uint32_t diff);
+    void UpdateBots(uint32_t diff);
+    void DetachOwnedBots(Player* master);
+    void RebindOwnedBots(Player* master);
 
     std::unordered_map<uint32_t, BotEntry> m_bots; // key = guid counter
     bool m_autoTestEnabled = false;

@@ -224,8 +224,7 @@ static bool HandleStay(ChatHandler* handler, char const* args)
         return true;
     }
 
-    ai->ChangeStrategy("-follow,+stay", BotState::BOT_STATE_NON_COMBAT);
-    ai->ChangeStrategy("-follow,+stay", BotState::BOT_STATE_REACTION);
+    ai->SetMovementStrategy("stay");
     if (BotController* controller = BotManager::Instance().GetController(bot->GetObjectGuid()))
         controller->SetIntent(BotIntent::None);
     handler->PSendSysMessage("Bot %s will stay.", name.c_str());
@@ -267,7 +266,6 @@ static bool HandleMatureCommand(ChatHandler* handler, char const* args)
 // pi-lens-ignore: clang:incomplete_member_access,clang:unknown_typename,clang:undeclared_var_use
 static bool HandleAdd(ChatHandler* handler, char const* args)
 {
-    sLog.outString("TortoiseBots: HandleAdd called via %s", handler ? (handler->GetSession() ? handler->GetSession()->GetPlayer() ? handler->GetSession()->GetPlayer()->GetName() : "<no player>" : "<no session>") : "<null handler>");
     if (!handler || !args || !*args)
     {
         handler->PSendSysMessage("Usage: .bot add <characterName>");
@@ -335,7 +333,6 @@ static bool HandleAdd(ChatHandler* handler, char const* args)
 // pi-lens-ignore: clang:incomplete_member_access,clang:unknown_typename
 static bool HandleRemove(ChatHandler* handler, char const* args)
 {
-    sLog.outString("TortoiseBots: HandleRemove called");
     if (!args || !*args)
     {
         handler->PSendSysMessage("Usage: .bot remove <characterName>");
@@ -375,7 +372,6 @@ static bool HandleRemove(ChatHandler* handler, char const* args)
 // pi-lens-ignore: clang:incomplete_member_access,clang:unknown_typename
 static bool HandleFollow(ChatHandler* handler, char const* args)
 {
-    sLog.outString("TortoiseBots: HandleFollow called");
     ::Player* requester = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
     if (!requester)
     {

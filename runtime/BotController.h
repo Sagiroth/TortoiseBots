@@ -17,8 +17,6 @@ public:
 };
 #endif
 
-class Player;
-
 namespace TortoiseBots {
 
 enum class BotIntent
@@ -40,28 +38,12 @@ public:
     BotIntent GetIntent() const { return m_intent; }
     void SetIntent(BotIntent intent);
 
-    // Called from BotManager::OnWorldUpdate on the world thread.
-    // Resolves bot/master via sObjectAccessor each tick; no long-lived Player*.
-    void Update(uint32_t diff);
-
     // Diagnostics
     const char* GetIntentName() const;
-
-private:
-    bool CanFollow(::Player* bot, ::Player* master) const;
-    void DoFollow(::Player* bot, ::Player* master);
 
     ObjectGuid m_botGuid;
     ObjectGuid m_masterGuid;
     BotIntent m_intent = BotIntent::Follow;
-
-    uint32_t m_nextUpdateMs = 0;
-
-    // Follow restart guard (mirrors legacy FollowAction::isUseful)
-    ObjectGuid m_lastFollowTarget;
-    float m_lastFollowDist = -1.0f;
-    float m_lastFollowAngle = -1000.0f;
-    bool m_loggedFollowing = false;
 };
 
 } // namespace TortoiseBots

@@ -32,6 +32,12 @@ public:
     // Called every world tick (BotManager::Update) — drives Engine::DoNextAction
     void Update(uint32_t diff);
 
+    // Rebind only the live master pointer. BotManager owns the durable GUID
+    // relationship and chooses whether the prior movement intent was follow
+    // or stay; no Headless session or PlayerbotAI is recreated.
+    void RebindMaster(Player* master, bool follow);
+    void DetachMaster();
+
     // Called on bot logout/removal
     void Shutdown();
 

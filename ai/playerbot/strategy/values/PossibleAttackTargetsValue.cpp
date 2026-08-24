@@ -347,6 +347,9 @@ bool PossibleAttackTargetsValue::IsPossibleTarget(Unit* target, Player* player, 
 bool PossibleAddsValue::Calculate()
 {
     PlayerbotAI *ai = PlayerbotAIStorage::Instance().GetAI(bot);
+    if (!ai || !ai->GetAiObjectContext())
+        return false;
+
     std::list<ObjectGuid> possible = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get();
     std::list<ObjectGuid> attackers = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
 

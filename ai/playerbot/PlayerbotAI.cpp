@@ -282,7 +282,6 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         if (live != master)
         {
             master = nullptr;
-            masterGuid = ObjectGuid();
         }
     }
 
@@ -6362,18 +6361,54 @@ std::string PlayerbotAI::GetDefaultMovementStrategy()
     return "wander";
 }
 
+void PlayerbotAI::SetMovementStrategy(const std::string& movement)
+{
+    // Keep the mature chat-shortcut semantics in one place. Follow, wander,
+    // and stay are the mutually exclusive owner-controlled modes. Guard and
+    // free intentionally retain their mature relationships with passive/stay.
+    if (movement == "follow")
+    {
+        ChangeStrategy("+follow,-passive,-stay,-wander", BotState::BOT_STATE_REACTION);
+        ChangeStrategy("+follow,-passive,-stay,-wander", BotState::BOT_STATE_NON_COMBAT);
+        ChangeStrategy("-stay,-wander,-guard", BotState::BOT_STATE_COMBAT);
+        if (HasStrategy("passive", BotState::BOT_STATE_COMBAT))
+            ChangeStrategy("-passive,-follow", BotState::BOT_STATE_COMBAT);
+    }
+    else if (movement == "wander")
+    {
+        ChangeStrategy("+wander,-follow,-stay,-passive", BotState::BOT_STATE_REACTION);
+        ChangeStrategy("+wander,-follow,-stay,-guard,-passive", BotState::BOT_STATE_NON_COMBAT);
+        ChangeStrategy("-follow,-guard,-stay,-passive", BotState::BOT_STATE_COMBAT);
+    }
+    else if (movement == "stay")
+    {
+        ChangeStrategy("+stay,-follow,-wander,-passive", BotState::BOT_STATE_REACTION);
+        ChangeStrategy("+stay,-follow,-wander,-passive", BotState::BOT_STATE_NON_COMBAT);
+        ChangeStrategy("+stay,-follow,-wander,-passive", BotState::BOT_STATE_COMBAT);
+    }
+    else if (movement == "guard")
+    {
+        ChangeStrategy("+guard,-follow,-wander,-passive", BotState::BOT_STATE_REACTION);
+        ChangeStrategy("+guard,-follow,-wander,-passive", BotState::BOT_STATE_NON_COMBAT);
+        ChangeStrategy("+guard,-follow,-wander,-passive", BotState::BOT_STATE_COMBAT);
+    }
+    else if (movement == "free")
+    {
+        ChangeStrategy("+free,-passive", BotState::BOT_STATE_REACTION);
+        ChangeStrategy("+free,-passive", BotState::BOT_STATE_NON_COMBAT);
+        ChangeStrategy("+free,-passive", BotState::BOT_STATE_COMBAT);
+    }
+    else if (movement == "passive")
+    {
+        ChangeStrategy("+passive", BotState::BOT_STATE_REACTION);
+        ChangeStrategy("+passive", BotState::BOT_STATE_NON_COMBAT);
+        ChangeStrategy("+passive", BotState::BOT_STATE_COMBAT);
+    }
+}
+
 void PlayerbotAI::EnsureDefaultMovementStrategy(Player* requester)
 {
-    std::string movement = GetDefaultMovementStrategy();
-
-    for (BotState state : { BotState::BOT_STATE_REACTION, BotState::BOT_STATE_NON_COMBAT })
-    {
-        if (HasStrategy("stay", state))
-            ChangeStrategy("-stay", state);
-
-        if (!HasStrategy(movement, state))
-            ChangeStrategy("+" + movement, state);
-    }
+    SetMovementStrategy(GetDefaultMovementStrategy());
 
     if (requester)
     {

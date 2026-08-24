@@ -24,68 +24,58 @@
 
 AiObjectContext* AiFactory::createAiObjectContext(Player* player, PlayerbotAI* ai)
 {
-    printf("TortoiseBots: AiFactory createAiObjectContext for %s class %u\n", player->GetName(), player->GetClass());
     switch (player->GetClass())
     {
         case CLASS_PRIEST:
         {
-            printf("TortoiseBots: AiFactory creating PriestAiObjectContext for %s\n", player->GetName());
             return new ai::PriestAiObjectContext(ai);
             break;
         }
 
         case CLASS_MAGE:
         {
-            printf("TortoiseBots: AiFactory creating MageAiObjectContext for %s\n", player->GetName());
             return new ai::MageAiObjectContext(ai);
             break;
         }
 
         case CLASS_WARLOCK:
         {
-            printf("TortoiseBots: AiFactory creating WarlockAiObjectContext for %s\n", player->GetName());
             return new ai::WarlockAiObjectContext(ai);
             break;
         }
 
         case CLASS_WARRIOR:
         {
-            printf("TortoiseBots: AiFactory creating WarriorAiObjectContext for %s\n", player->GetName());
             return new ai::WarriorAiObjectContext(ai);
             break;
         }
 
         case CLASS_SHAMAN:
         {
-            printf("TortoiseBots: AiFactory creating ShamanAiObjectContext for %s\n", player->GetName());
             return new ai::ShamanAiObjectContext(ai);
             break;
         }
 
         case CLASS_PALADIN:
         {
-            printf("TortoiseBots: AiFactory creating PaladinAiObjectContext for %s\n", player->GetName());
             return new ai::PaladinAiObjectContext(ai);
             break;
         }
 
         case CLASS_DRUID:
         {
-            printf("TortoiseBots: AiFactory creating DruidAiObjectContext for %s\n", player->GetName());
             return new ai::DruidAiObjectContext(ai);
             break;
         }
 
         case CLASS_HUNTER:
         {
-            printf("TortoiseBots: AiFactory creating HunterAiObjectContext for %s\n", player->GetName());
             return new ai::HunterAiObjectContext(ai);
             break;
         }
 
         case CLASS_ROGUE:
         {
-            printf("TortoiseBots: AiFactory creating RogueAiObjectContext for %s\n", player->GetName());
             return new ai::RogueAiObjectContext(ai);
             break;
         }
@@ -377,17 +367,14 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
             if (tab == 2)
             {
                 combatEngine->addStrategies("protection", "tank assist", "pull", "pull back", "close", NULL);
-                printf("TortoiseBots: Warrior %s tab %d -> protection\n", player->GetName(), tab);
             }
             else if (player->GetLevel() < 30 || tab == 0)
             {
                 combatEngine->addStrategies("arms", "dps assist", "behind", NULL);
-                printf("TortoiseBots: Warrior %s tab %d -> arms\n", player->GetName(), tab);
             }
             else
             {
                 combatEngine->addStrategies("fury", "dps assist", "behind", NULL);
-                printf("TortoiseBots: Warrior %s tab %d -> fury\n", player->GetName(), tab);
             }
 
             combatEngine->addStrategies("aoe", "cc", "buff", "boost", NULL);

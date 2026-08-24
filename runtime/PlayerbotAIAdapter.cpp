@@ -48,6 +48,23 @@ void PlayerbotAIAdapter::Update(uint32_t diff)
     ai_->UpdateAI(diff); // pi-lens-ignore: clang:all
 }
 
+void PlayerbotAIAdapter::RebindMaster(Player* master, bool follow)
+{
+    master_ = master;
+    if (!ai_)
+        return;
+
+    ai_->SetMaster(master); // pi-lens-ignore: clang:all
+    ai_->SetMovementStrategy(follow ? "follow" : "stay"); // pi-lens-ignore: clang:all
+}
+
+void PlayerbotAIAdapter::DetachMaster()
+{
+    master_ = nullptr;
+    if (ai_)
+        ai_->ClearMasterPointer(); // pi-lens-ignore: clang:all
+}
+
 void PlayerbotAIAdapter::Shutdown()
 {
     if (bot_) PlayerbotAIStorage::Instance().RemoveAI(bot_); // pi-lens-ignore: clang:all

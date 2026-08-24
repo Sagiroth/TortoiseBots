@@ -27,7 +27,7 @@ bool BotPacketAdapter::CanPacketSend(WorldSession* session, WorldPacket const& p
     if (session->IsHeadless())
     {
         if (packet.getOpcode() == SMSG_GROUP_INVITE)
-            sLog.outString("TortoiseBots: packet bridge bot outgoing SMSG_GROUP_INVITE from %s", session->GetPlayer() ? session->GetPlayer()->GetName() : "<none>");
+            sLog.outDebug("TortoiseBots: ServerScript CanPacketSend bot outgoing SMSG_GROUP_INVITE from %s", session->GetPlayer() ? session->GetPlayer()->GetName() : "<none>");
         if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(session->GetPlayer()))
             ai->HandleBotOutgoingPacket(packet);
         return true;
@@ -47,7 +47,7 @@ bool BotPacketAdapter::CanPacketSend(WorldSession* session, WorldPacket const& p
             uint32 partyResult = 0;
             std::string member;
             result >> operation >> member >> partyResult;
-            sLog.outString("TortoiseBots: packet bridge master outgoing SMSG_PARTY_COMMAND_RESULT master %s -> bot %s operation %u result %u member %s",
+            sLog.outDebug("TortoiseBots: ServerScript CanPacketSend master SMSG_PARTY_COMMAND_RESULT %s -> bot %s operation %u result %u member %s",
                 master->GetName(), bot ? bot->GetName() : "<none>", operation, partyResult, member.c_str());
         }
         if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
@@ -80,7 +80,7 @@ void BotPacketAdapter::DispatchMasterIncoming(WorldSession* session, WorldPacket
         packet.getOpcode() == CMSG_GOSSIP_HELLO ||
         packet.getOpcode() == CMSG_LOOT_ROLL)
     {
-        sLog.outString("TortoiseBots: packet bridge master incoming opcode %u from %s", packet.getOpcode(), master->GetName());
+        sLog.outString("TortoiseBots: ServerScript CanPacketReceive master opcode %u from %s", packet.getOpcode(), master->GetName());
     }
 
     for (Player* bot : BotManager::Instance().GetBotsForMaster(master->GetObjectGuid()))

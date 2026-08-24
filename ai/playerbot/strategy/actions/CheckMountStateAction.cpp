@@ -277,7 +277,7 @@ bool CheckMountStateAction::isUseful()
         return false;
 #endif
 
-    if (!PlayerbotAIStorage::Instance().GetAI(bot)->HasStrategy("mount", BotState::BOT_STATE_NON_COMBAT) && !bot->IsMounted())
+    if (!ai->HasStrategy("mount", BotState::BOT_STATE_NON_COMBAT) && !bot->IsMounted())
         return false;
 
     if (!bot->IsMounted() && bot->IsInWater())
@@ -416,16 +416,20 @@ bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
             if (!member->IsAlive())
                 continue;
 
-            if (!(PlayerbotAIStorage::Instance().GetAI(member)->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
-                PlayerbotAIStorage::Instance().GetAI(member)->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)))
+            PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(member);
+            if (!memberAi)
+                continue;
+
+            if (!(memberAi->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
+                memberAi->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)))
                 continue;
 
             if (WorldPosition(bot).distance(member) > sPlayerbotAIConfig.reactDistance * 5)
                 continue;
 
-            Player* player = member;
-
-            maxSpeed = std::min(maxSpeed, PAI_VALUE2(uint32, "max mount speed", canFly ? "fly" : ""));
+            if (auto* speedValue = memberAi->GetAiObjectContext()->GetValue<uint32>(
+                    "max mount speed", canFly ? "fly" : ""))
+                maxSpeed = std::min(maxSpeed, speedValue->Get());
         }
     }
 
