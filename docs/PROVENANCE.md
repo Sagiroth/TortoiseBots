@@ -276,8 +276,8 @@ mount lookup, later-expansion residue removal, and repeatable surface checks.
 
 Source repository: TortoiseBots `audit/playerbots-turtle-1.18.1`
 
-Source commit: `3a96923` (`fix: fail closed on incomplete Turtle bot caches`;
-includes the preceding `9db49df` remediation commit).
+Source commit: `2afd2d1` (`fix: match effective core SQL paths and migration
+history`; includes the preceding `9db49df` and `3a96923` remediation commits).
 
 Required target core: local Penqle `tortoise-wow`
 `playerbots-integration-gh@9487c5150a6553c665fafc1f4568669b8b00f011`.

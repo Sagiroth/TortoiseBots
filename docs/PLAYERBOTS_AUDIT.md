@@ -82,7 +82,7 @@ Vanilla/Turtle product surface before adding more classes or dungeon behavior.
 
 | ID | Severity | Finding | Status |
 | --- | --- | --- | --- |
-| F-01 | P0 | Module SQL install path does not match the core's effective case-sensitive AutoUpdater configuration. | Resolved in `TortoiseBots.cmake` against Penqle's configured `world/character` names; preserved-stack migration evidence remains to be gathered. |
+| F-01 | P0 | Module SQL install path does not match the core's effective case-sensitive AutoUpdater configuration. | Resolved in `TortoiseBots.cmake` against Penqle's configured `world/character` names; preserved-stack AutoUpdater application verified. |
 | F-02 | P0 | The local core has a stale untracked module copy, and `BUILD_PLAYERBOTS=OFF` does not itself gate an explicitly enabled native module. | Native CMake forcing is resolved; stale sibling checkout and core legacy path remain external follow-up. |
 | F-03 | P1 | Bot-specific legacy code remains in the core: LFT random-bot filling, bot command stubs, bot slots, and legacy module hooks. | Open core-owned follow-up; no new module coupling was added. |
 | F-04 | P1 | Active native code retains later-expansion consumable IDs, item IDs, spell IDs, and level gates. | Resolved for the audited known-absent IDs; retained level-60 spell rows were revalidated against local core data. |
@@ -97,7 +97,7 @@ Vanilla/Turtle product surface before adding more classes or dungeon behavior.
 | F-13 | P2 | `file(GLOB)` still compiles every action/value/trigger/generic source added to those directories. | A CMake filename guard and repeatable surface script now fail on audited donor families; globs remain a deliberate maintainability trade-off. |
 | F-14 | P2 | The developer quest-ledger script contains hard-coded `/home/ubuntu` paths and is not a runtime module component. | Resolved: moved to `tools/` and made log defaults portable. |
 | F-15 | P1 | The optional cache schema is incomplete: `ai_playerbot_item_info_cache` lacks the `scale_1`–`scale_32` columns written by `RandomItemMgr`; help-generation schema also has a latent `template_changed` mismatch. | Resolved in the Char/World migrations. |
-| F-16 | P1 | World/character table ownership is inconsistent, one runtime table is created outside migrations, and missing travel tables can trigger full map/path generation plus destructive cache rewrites. | Module ownership/startup behavior is resolved; empty-schema runtime was not rerun. |
+| F-16 | P1 | World/character table ownership is inconsistent, one runtime table is created outside migrations, and missing travel tables can trigger full map/path generation plus destructive cache rewrites. | Module ownership/startup behavior is resolved; fresh SQL and preserved-stack startup are verified, but a full empty-core runtime was not run. |
 | F-17 | P0 | Owner-accessible RTSC file save/load accepts unrestricted filenames and can escape `LogsDir`. | Resolved by removing RTSC/SeeSpell from the module graph and command contexts. |
 | F-18 | P1 | Custom strategy editing interpolates player-controlled strings into raw SQL through `DirectPExecute`. | Resolved with length checks and escaping in edit, load, and persisted bot-state paths. |
 | F-19 | P1/P2 | The cleaned physical tree still compiles later-rank factory/boss-aura code and a custom RTSC/test surface; some of it is dead only because no context registers it. | Resolved for the audited residue; local core data validates retained 28610/28612/31016/31018 level-60 rows. |
