@@ -49,7 +49,7 @@ Feature: Pet taming/control, lockpicking, bounded random-bot lifecycle, AH/econo
 
 Source repository: local `TortoiseBots` checkout; host/runtime seam in the local Penqle `tortoise-wow` sibling
 
-Source commit: TortoiseBots `b5c5911`; behavior references `shyalya-tortoise-wow@1f9497e0f42bfc1055841bb6ebdc7caa3515de0b`, `cmangos-playerbots@076045efa835da9aab7c943bca752aebe1baad`, and `mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70`; core working snapshot `43af5657f356e1f8d0c609089b3c0c764eff7dd5`
+Source commit: TortoiseBots `7768537`; behavior references `shyalya-tortoise-wow@1f9497e0f42bfc1055841bb6ebdc7caa3515de0b`, `cmangos-playerbots@076045efa835da9aab7c943bca752aebe1baad`, and `mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70`; core working snapshot `43af5657f356e1f8d0c609089b3c0c764eff7dd5`
 
 Source files: `TameAction.*`, `UnlockItemAction.*`, `UnlockTradedItemAction.*`, `ChatActionContext.h`, `WorldPacketActionContext.h`, `runtime/RandomBotService.*`, `runtime/PlayerbotRuntimeFacade.cpp`, `ai/playerbot/RandomItemMgr.cpp`, `data/sql/{world,char}/*`, `TortoiseBots.cmake`, `host/BotHostAdapter.cpp`, `conf/tortoise_bots.conf.dist`
 
