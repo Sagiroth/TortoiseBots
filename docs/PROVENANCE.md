@@ -252,7 +252,8 @@ Feature: residual Vanilla/Turtle cleanup after the main donor-tree removal.
 
 Source repository: TortoiseBots `cleanup/vanilla-turtle`.
 
-Source commit: to be recorded after the follow-up commit is created.
+Source commit: `3213a058931ec7b88c87322cb11f02df4ffed8e1` (follow-up cleanup
+commit; this metadata commit records its exact SHA).
 
 Copied / ported / independently reimplemented: no new gameplay was imported.
 This pass removed the unreachable legacy movement body, the dead spell-click
