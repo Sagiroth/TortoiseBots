@@ -36,6 +36,10 @@ be compiled accidentally.
 - The local runtime stack starts the native module and reaches “World server is
   up and running”; AI remains disabled unless `aiplayerbot.conf` explicitly
   enables it.
+- The native install also carries the optional AI cache/state migrations and
+  `tortoise_bots.conf`; random-bot autologin and account/character creation
+  default to off. Enable random bots only with pre-existing configured random
+  characters until the creation workflow is added.
 
 The first product target is intentionally small and playable: log into one normal character, spawn your own alts as Headless bots, party with them, and level together.
 
