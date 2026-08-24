@@ -8,6 +8,21 @@
 if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
   set(TORTOISEBOTS_ROOT "${CMAKE_CURRENT_LIST_DIR}")
 
+  # Make source selection observable. The Penqle development builder mounts
+  # this checkout over the core's optional module path; a direct core build
+  # must not silently fall back to an unrelated stale copy.
+  set(TORTOISEBOTS_SOURCE_COMMIT "unknown")
+  execute_process(
+    COMMAND git -c "safe.directory=${TORTOISEBOTS_ROOT}" -C "${TORTOISEBOTS_ROOT}" rev-parse HEAD
+    RESULT_VARIABLE TORTOISEBOTS_GIT_RESULT
+    OUTPUT_VARIABLE TORTOISEBOTS_SOURCE_COMMIT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+  if(NOT TORTOISEBOTS_GIT_RESULT EQUAL 0)
+    set(TORTOISEBOTS_SOURCE_COMMIT "unknown")
+  endif()
+  message(STATUS "TortoiseBots source: ${TORTOISEBOTS_ROOT} commit ${TORTOISEBOTS_SOURCE_COMMIT}")
+
   # PlayerbotAIConfig reads its mature configuration beside mangosd.conf.
   set(TORTOISEBOTS_AI_CONFIG "${CMAKE_CURRENT_BINARY_DIR}/aiplayerbot.conf")
   configure_file(
