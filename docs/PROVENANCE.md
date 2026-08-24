@@ -215,7 +215,8 @@ Feature: subtractive product cleanup from the multi-expansion donor tree.
 
 Source repository: TortoiseBots `cleanup/vanilla-turtle` working branch.
 
-Source commit: to be filled after the cleanup commit is created.
+Source commit: `322120ef1fe9b848cfe520ad58f6ff698fa801e9` (the cleanup commit;
+this follow-up metadata commit records its exact SHA).
 
 Source files: `TortoiseBots.cmake`, `ai/playerbot/*`, the nine class strategy
 folders, `runtime/*`, `conf/*`, `data/sql/*`, `README.md`, and current module
