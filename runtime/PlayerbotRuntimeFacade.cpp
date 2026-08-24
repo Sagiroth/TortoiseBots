@@ -13,6 +13,7 @@
 #include "ObjectMgr.h"
 #include "Objects/Player.h"
 #include "Log.h"
+#include "Database/DatabaseEnv.h"
 
 #include <mutex>
 #include <set>
@@ -232,16 +233,36 @@ void RandomPlayerbotMgr::SetValue(Player* bot, std::string type, uint32 value, s
         SetValue(bot->GetObjectGuid().GetCounter(), std::move(type), value, std::move(data), validIn);
 }
 
-double RandomPlayerbotMgr::GetBuyMultiplier(Player* /*bot*/)
+double RandomPlayerbotMgr::GetBuyMultiplier(Player* bot)
 {
-    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::GetBuyMultiplier");
-    return 1.0;
+    if (!bot)
+        return 1.0;
+
+    uint32 value = GetValue(bot, "buymultiplier");
+    if (!value)
+    {
+        value = urand(50, 120);
+        SetValue(bot, "buymultiplier", value, {},
+            static_cast<int32>(sPlayerbotAIConfig.maxRandomBotsPriceChangeInterval));
+    }
+
+    return static_cast<double>(value) / 100.0;
 }
 
-double RandomPlayerbotMgr::GetSellMultiplier(Player* /*bot*/)
+double RandomPlayerbotMgr::GetSellMultiplier(Player* bot)
 {
-    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::GetSellMultiplier");
-    return 1.0;
+    if (!bot)
+        return 1.0;
+
+    uint32 value = GetValue(bot, "sellmultiplier");
+    if (!value)
+    {
+        value = urand(80, 250);
+        SetValue(bot, "sellmultiplier", value, {},
+            static_cast<int32>(sPlayerbotAIConfig.maxRandomBotsPriceChangeInterval));
+    }
+
+    return static_cast<double>(value) / 100.0;
 }
 
 uint32 RandomPlayerbotMgr::GetTradeDiscount(Player* bot, Player* master)
@@ -293,15 +314,27 @@ bool RandomPlayerbotMgr::ProcessBot(Player* /*player*/)
     return false;
 }
 
-bool RandomPlayerbotMgr::GetNamedLocation(std::string const& /*name*/, WorldLocation& /*location*/)
+bool RandomPlayerbotMgr::GetNamedLocation(std::string const& name, WorldLocation& location)
 {
-    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::GetNamedLocation");
-    return false;
+    std::string escaped = name;
+    WorldDatabase.escape_string(escaped);
+    auto result = WorldDatabase.PQuery(
+        "SELECT map_id, position_x, position_y, position_z, orientation "
+        "FROM ai_playerbot_named_location WHERE name = '%s' LIMIT 1", escaped.c_str());
+    if (!result)
+        return false;
+
+    Field* fields = result->Fetch();
+    location = WorldLocation(fields[0].GetUInt32(), fields[1].GetFloat(), fields[2].GetFloat(),
+        fields[3].GetFloat(), fields[4].GetFloat());
+    return true;
 }
 
 void RandomPlayerbotMgr::LoadNamedLocations()
 {
-    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::LoadNamedLocations");
+    // The native TravelMgr reads the same table on demand. Keep this donor
+    // lifecycle hook intentionally quiet instead of claiming that named
+    // locations are unavailable.
 }
 
 void RandomPlayerbotMgr::LoadBattleMastersCache()

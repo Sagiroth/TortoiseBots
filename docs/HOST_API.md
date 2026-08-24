@@ -286,5 +286,8 @@ runtime gate now also covers AI-enabled startup with the native auxiliary
 schema, Headless AI attachment, pending add/remove cancellation, save/logout,
 and relog. The random-bot service is bounded and only discovers pre-existing
 characters; it does not create accounts or own sessions outside `BotManager`.
+The native compatibility layer also serves the named-location table and
+per-character AH buy/sell multipliers; random gear teleporting and account
+creation remain outside the current boundary.
 Expansion-only source families remain explicitly filtered rather than compiled
 through compatibility no-ops.
