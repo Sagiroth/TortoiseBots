@@ -307,6 +307,9 @@ public:
     // cache. Keep it opt-in; direct movement and quest destinations do not
     // require a generated graph for the owned-bot MVP.
     bool generateTravelNodes;
+    // Fish-location generation scans populated grids and writes the resulting
+    // points to WorldDatabase. Keep the expensive persistent rebuild opt-in.
+    bool generateFishLocations;
     bool syncLevelWithPlayers;
     uint32 syncLevelMaxAbove, syncLevelNoPlayer;
     bool syncAltLevelToMaster;

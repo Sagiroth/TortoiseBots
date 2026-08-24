@@ -391,6 +391,13 @@ AiPlayerbot.AutoLearnDroppedSpells = 0
 # Default: 0 (disabled)
 # AiPlayerbot.GenerateTravelNodes = 1
 
+# Generate and persist fish-location points when no FISH_LOCATION rows exist.
+# This scans populated grids and writes a potentially large cache to World.
+# Leave disabled for normal startup; deploy a precomputed named-location cache
+# or enable only for an intentional offline rebuild.
+# Default: 0 (disabled)
+# AiPlayerbot.GenerateFishLocations = 1
+
 # Random Bots will also move to destinations when not seen by the player
 # AiPlayerbot.EnableMinimalMove = 1
 

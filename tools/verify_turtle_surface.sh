@@ -50,6 +50,8 @@ grep -q 'GetMotionMaster()->GetCurrent' ai/playerbot/ServerFacade.cpp \
     || fail "chase inspection fell back to a non-native victim/default path"
 grep -q 'GetChannelEntryFor' ai/cmangos-compat-shim.h \
     || fail "chat-channel compatibility proxy is not backed by core data"
+grep -q 'GenerateFishLocations", false' ai/playerbot/PlayerbotAIConfig.cpp \
+    || fail "fish-location generation is not disabled by default"
 
 for id in \
     27023 27025 27045 27051 27101 27151 27152 27153 34600 \

@@ -2147,6 +2147,12 @@ void TravelMgr::LoadFishLocations()
 
     if (!result)
     {
+        if (!sPlayerbotAIConfig.generateFishLocations)
+        {
+            sLog.outString("No persisted fish locations; generation is disabled, using direct fishing fallback.");
+            return;
+        }
+
         sTravelNodeMap.setHasToGen();
         GetFishLocations();
         sTravelNodeMap.setHasToGen(false);
