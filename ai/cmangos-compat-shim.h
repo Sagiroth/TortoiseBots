@@ -686,16 +686,15 @@ inline CmangosSkillLineAbilityStoreProxy sSkillLineAbilityStore;
 #define sAreaStore sAreaStorage
 
 // === sChatChannelsStore proxy ===
-// Tortoise keeps ChatChannels in ObjectMgr::m_chatChannelsMap (private) with
-// ChatChannelsEntry { id, name[8] } — cmangos had { ChannelID, pattern[8] }. For E2E we
-// don't need bots to auto-join channels; stub the store as empty so JoinChatChannels is a
-// no-op. This keeps the PCH compiling without accessing private ObjectMgr internals or
-// inventing a pattern[] field that doesn't exist in this core.
+// Tortoise exposes the loaded ChatChannels data through ObjectMgr accessors.
+// Use that source instead of returning an empty donor-shaped store: the native
+// client/core already owns the channel definitions and JoinChatChannels can
+// make an informed decision from them.
 struct CmangosChatChannelsStoreProxy
 {
     template<typename T = ChatChannelsEntry>
-    T const* LookupEntry(uint32 /*id*/) const { return nullptr; }
-    uint32 GetNumRows() const { return 0; }
+    T const* LookupEntry(uint32 id) const { return sObjectMgr.GetChannelEntryFor(id); }
+    uint32 GetNumRows() const { return static_cast<uint32>(sObjectMgr.GetChatChannelsMap().size()); }
 };
 inline CmangosChatChannelsStoreProxy sChatChannelsStore;
 

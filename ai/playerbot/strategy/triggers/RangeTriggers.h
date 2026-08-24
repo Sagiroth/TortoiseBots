@@ -346,7 +346,10 @@ namespace ai
             Formation* formation = AI_VALUE(Formation*, "formation");
 
             //Already using proper formation.
-            if (sServerFacade.GetChaseTarget(bot) && sServerFacade.GetChaseTarget(bot)->getObjectGuid() == followTarget->getObjectGuid() && formation->GetAngle() == sServerFacade.GetChaseAngle(bot) && formation->GetOffset() == sServerFacade.GetChaseOffset(bot))
+            if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE &&
+                sServerFacade.GetChaseTarget(bot) &&
+                sServerFacade.GetChaseTarget(bot)->getObjectGuid() == followTarget->getObjectGuid() &&
+                !bot->IsStopped())
                 return false;
 
             if (!ai->IsStateActive(BotState::BOT_STATE_COMBAT))

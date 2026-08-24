@@ -84,7 +84,10 @@ bool FollowAction::isUseful()
         return true;
     }
 
-    if (followTarget && sServerFacade.GetChaseTarget(bot) && sServerFacade.GetChaseTarget(bot)->getObjectGuid() == followTarget->getObjectGuid() && formation->GetAngle() == sServerFacade.GetChaseAngle(bot) && formation->getOffset() == sServerFacade.GetChaseOffset(bot))
+    if (followTarget && bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE &&
+        sServerFacade.GetChaseTarget(bot) &&
+        sServerFacade.GetChaseTarget(bot)->getObjectGuid() == followTarget->getObjectGuid() &&
+        !bot->IsStopped())
     {
         return false;
     }

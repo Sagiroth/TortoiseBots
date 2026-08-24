@@ -1288,7 +1288,11 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
     if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
     {
         Unit* currentTarget = sServerFacade.GetChaseTarget(bot);
-        if (currentTarget && currentTarget->getObjectGuid() == target->getObjectGuid() && sServerFacade.GetChaseAngle(bot) == angle && sServerFacade.GetChaseOffset(bot) == distance)
+        // The Penqle generator intentionally keeps its requested angle and
+        // offset private. The public target/current-motion contract is enough
+        // to let the native generator continue; repeatedly replacing it while
+        // it is moving causes jitter and defeats the follow dead-zone.
+        if (currentTarget && currentTarget->getObjectGuid() == target->getObjectGuid() && !bot->IsStopped())
             return false;
     }
 
@@ -1412,8 +1416,7 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE)
     {
         if (!bot->IsStopped() &&
-            sServerFacade.GetChaseTarget(bot) == obj &&
-            sServerFacade.GetChaseOffset(bot) == distance)
+            sServerFacade.GetChaseTarget(bot) == obj)
         {
             bot->SetTarget(obj); //Needed to keep chase going in combat.
             bot->Attack((Unit*)obj, false); //Needed to keep chase going in combat.
@@ -1687,8 +1690,7 @@ bool MovementAction::Flee(Unit *target)
 
         if (mm->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE)
         {
-            // Penqle's ChaseMovementGenerator is templated; ServerFacade returns safe defaults.
-            if (sServerFacade.GetChaseTarget(bot) == target && sServerFacade.GetChaseOffset(bot) == distance)
+            if (sServerFacade.GetChaseTarget(bot) == target && !bot->IsStopped())
                 return true;
         }
 

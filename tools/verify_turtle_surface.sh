@@ -46,6 +46,11 @@ if rg -n 'BUILD_PLAYERBOTS[[:space:]]*=[[:space:]]*1' TortoiseBots.cmake; then
     fail "native module forces the legacy BUILD_PLAYERBOTS option"
 fi
 
+grep -q 'GetMotionMaster()->GetCurrent' ai/playerbot/ServerFacade.cpp \
+    || fail "chase inspection fell back to a non-native victim/default path"
+grep -q 'GetChannelEntryFor' ai/cmangos-compat-shim.h \
+    || fail "chat-channel compatibility proxy is not backed by core data"
+
 for id in \
     27023 27025 27045 27051 27101 27151 27152 27153 34600 \
     42985 49055 49056 49057 49058 49059 49060 49061 49062 49063 \

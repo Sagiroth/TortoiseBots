@@ -149,16 +149,65 @@ FactionTemplateEntry const* ServerFacade::GetFactionTemplateEntry(Unit *unit)
 #endif
 }
 
-// Penqle's ChaseMovementGenerator is a template. The static_cast dance the
-// bot module uses against cmangos's non-templated version is fragile here,
-// so return safe defaults. Wiring actual chase-generator inspection is
-// future work.
-Unit* ServerFacade::GetChaseTarget(Unit* target) {
-    return target ? target->GetVictim() : nullptr;
+namespace
+{
+template<class T>
+Unit* GetTargetedMovementTarget(T* unit)
+{
+    if (!unit || !unit->GetMotionMaster())
+        return nullptr;
+
+    MovementGenerator const* generator = unit->GetMotionMaster()->GetCurrent();
+    if (!generator)
+        return nullptr;
+
+    switch (generator->GetMovementGeneratorType())
+    {
+        case CHASE_MOTION_TYPE:
+            return static_cast<ChaseMovementGenerator<T> const*>(generator)->GetTarget();
+        case FOLLOW_MOTION_TYPE:
+            return static_cast<FollowMovementGenerator<T> const*>(generator)->GetTarget();
+        default:
+            return nullptr;
+    }
 }
 
-float ServerFacade::GetChaseAngle(Unit* /*target*/) { return 0.0f; }
-float ServerFacade::GetChaseOffset(Unit* /*target*/) { return 0.0f; }
+float RelativeTargetAngle(Unit* unit, Unit* target)
+{
+    if (!unit || !target)
+        return 0.0f;
+
+    float angle = target->GetAngle(unit) - target->GetOrientation();
+    while (angle > M_PI_F)
+        angle -= 2.0f * M_PI_F;
+    while (angle < -M_PI_F)
+        angle += 2.0f * M_PI_F;
+    return angle;
+}
+}
+
+Unit* ServerFacade::GetChaseTarget(Unit* target)
+{
+    if (!target)
+        return nullptr;
+
+    if (target->GetTypeId() == TYPEID_PLAYER)
+        return GetTargetedMovementTarget(static_cast<Player*>(target));
+    if (target->GetTypeId() == TYPEID_UNIT)
+        return GetTargetedMovementTarget(static_cast<Creature*>(target));
+    return nullptr;
+}
+
+float ServerFacade::GetChaseAngle(Unit* target)
+{
+    return RelativeTargetAngle(target, GetChaseTarget(target));
+}
+
+float ServerFacade::GetChaseOffset(Unit* target)
+{
+    Unit* chaseTarget = GetChaseTarget(target);
+    return target && chaseTarget ? target->GetDistance2d(chaseTarget) : 0.0f;
+}
 
 bool ServerFacade::isMoving(Unit *unit)
 {
