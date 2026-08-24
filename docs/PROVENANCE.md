@@ -276,8 +276,9 @@ mount lookup, later-expansion residue removal, and repeatable surface checks.
 
 Source repository: TortoiseBots `audit/playerbots-turtle-1.18.1`
 
-Source commit: `887a6673675d06d716acc713aaeed8dca05d7e9f` (`build: report native
-module source identity`), on top of `9605a73c9bc16f0bf4fb4e84bba974a70f68c735`
+Source commit: `89a5e645e1485bd2e35b4944e88fdadfc6c95d05` (`fix: remove remaining
+expansion-only item branches`), on top of `887a6673675d06d716acc713aaeed8dca05d7e9f`
+(`build: report native module source identity`), `9605a73c9bc16f0bf4fb4e84bba974a70f68c735`
 (`fix: disable fish cache rebuild on startup`), `a6ea16605fde1b77e396ca588e0b34ddb1978bd5`
 (`fix: align movement and channel shims with Turtle core`),
 `7fa875a6c6bc51534b4a5a3f2f373f3dd7446208` (`fix: quarantine optional LLM
@@ -356,9 +357,14 @@ Local validation:
   preserved-data restart. The current startup logged `No persisted fish
   locations; generation is disabled, using direct fishing fallback.` and did
   not log fish-grid generation or cache-save activity.
+- The final expansion-residue pass removed the local-core-absent Mage mana-gem
+  IDs `22044`/`33312`, Druid reagent IDs `22147`/`22148`, and post-60 lifetime
+  formulas. The cached ON/OFF builds and preserved startup remained clean;
+  local SQL confirmed `33312` is a non-mana item and the other three IDs are
+  absent from the target item data.
 - A forced CMake configure printed the supported builder's bind-mounted module
   root `/work/core/modules/TortoiseBots` and exact commit
-  `887a6673675d06d716acc713aaeed8dca05d7e9f`; Git's scoped safe-directory
+  `89a5e645e1485bd2e35b4944e88fdadfc6c95d05`; Git's scoped safe-directory
   option avoids changing global configuration. This makes stale direct-core
   module selection observable.
 - The real Turtle client was launched under Wine through normal and

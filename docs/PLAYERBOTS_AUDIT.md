@@ -85,7 +85,7 @@ Vanilla/Turtle product surface before adding more classes or dungeon behavior.
 | F-01 | P0 | Module SQL install path does not match the core's effective case-sensitive AutoUpdater configuration. | Resolved in `TortoiseBots.cmake` against Penqle's configured `world/character` names; preserved-stack AutoUpdater application verified. |
 | F-02 | P0 | The local core has a stale untracked module copy, and `BUILD_PLAYERBOTS=OFF` does not itself gate an explicitly enabled native module. | Native CMake forcing is resolved; the supported builder bind-mounts this checkout and CMake now prints `/work/core/modules/TortoiseBots` plus exact commit `887a6673675d06d716acc713aaeed8dca05d7e9f`. The stale sibling copy and direct-core workflow remain external follow-up. |
 | F-03 | P1 | Bot-specific legacy code remains in the core: LFT random-bot filling, bot command stubs, bot slots, and legacy module hooks. | Open core-owned follow-up; no new module coupling was added. |
-| F-04 | P1 | Active native code retains later-expansion consumable IDs, item IDs, spell IDs, and level gates. | Resolved for the audited known-absent IDs; retained level-60 spell rows were revalidated against local core data. |
+| F-04 | P1 | Active native code retains later-expansion consumable IDs, item IDs, spell IDs, and level gates. | Resolved: audited absent spell/item branches, post-60 level formulas, WotLK/TBC mana-gem IDs, and the level-70 Druid reagent branch are removed; retained level-60/Turtle rows were revalidated against local core data. |
 | F-05 | P1 | The compatibility shim contains silent no-op/default implementations for movement, instance, chat-channel, transport, formation, emote, session-state, and loot semantics. | Partially resolved: active chase/follow inspection now uses the native generator target, loaded channel definitions are exposed through ObjectMgr, and supported movement paths avoid private donor state; remaining capability debt is explicit and not advertised as complete Turtle behavior. |
 | F-06 | P1/P2 | Custom Goblin/High Elf starting areas are deliberately bypassed because local navigation data is incomplete. | Keep as an explicit limitation until custom MMAP/pathing is validated. |
 | F-07 | P1/P2 | Turtle collection mounts are not modeled by the factory/randomization path. | Partially resolved with core `collection_mount` lookup plus existing-inventory/full-list support; factory spell initialization follows the existing classic factory model, while item-use gameplay acceptance remains future work. |
@@ -140,8 +140,11 @@ action” wording in the finding bodies below.
 - The known-absent local IDs found in the second pass are gone from active
   source: later consumable/poison/bandage/oil/stone items, missing hearthstone
   fallback data, missing gathering spell IDs, and the later Mage mana gem
-  branches. The old giant hardcoded random-gear unavailable-item set was
-  removed; the active ItemPrototype/cache data is authoritative.
+  branches. The final pass also removed the absent `22044`, `22147`, and
+  `22148` items, the non-mana `33312` branch, the post-60 lifetime formulas,
+  and the level-70 Druid reagent branch. The old giant hardcoded random-gear
+  unavailable-item set was removed; the active ItemPrototype/cache data is
+  authoritative.
 - Collection mounts now use the core `collection_mount` mapping in
   `MountValue`, `FullMountListValue`, inventory mount lookup, and factory
   mount selection. Eligibility is checked against the loaded item, spell,
