@@ -314,7 +314,7 @@ def print_summary(rows: list, min_attempts: int) -> None:
     print("  NO_TURNIN    — objectives completed but quest not turned in: travel/NPC targeting issue")
     print()
     print("BLACKLIST candidates → AcceptAllQuestsAction::ProcessQuest")
-    print("  src/modules/PlayerBots/playerbot/strategy/actions/AcceptQuestAction.cpp")
+    print("  ai/playerbot/strategy/actions/AcceptQuestAction.cpp")
     if hidden:
         print()
         print(f"  ({hidden} quest(s) with < {min_attempts} accepts hidden — rerun with --min-attempts 1 to see all)")

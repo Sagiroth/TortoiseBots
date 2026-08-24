@@ -624,7 +624,9 @@ bool PlayerbotAIConfig::Initialize()
     respawnModForInstances = config.GetBoolDefault("AiPlayerbot.RespawnModForInstances", false);
 
     //LLM START
-    llmEnabled = config.GetIntDefault("AiPlayerbot.LLMEnabled", 1);
+    // The native generator is deliberately disabled until an asynchronous,
+    // optional provider is implemented. Keep chat behavior inert by default.
+    llmEnabled = config.GetIntDefault("AiPlayerbot.LLMEnabled", 0);
     llmApiEndpoint = config.GetStringDefault("AiPlayerbot.LLMApiEndpoint", "http://127.0.0.1:5001/api/v1/generate");
     try {
         llmEndPointUrl = parseUrl(llmApiEndpoint);
@@ -708,6 +710,7 @@ bool PlayerbotAIConfig::Initialize()
     for (auto& channelName : blockedChannels)
         llmBlockedReplyChannels.insert(sourceName[channelName]);
 
+    if (llmEnabled > 0)
     {
         std::string promptsFile = config.GetStringDefault("AiPlayerbot.LLMDefaultPromptsFile", "llm_character_card");
         LoadLLMDefaultPrompts(promptsFile);
