@@ -168,20 +168,26 @@ intentionally unperformed in this pass.
 ## Final merge-hardening pass — 2026-08-24
 
 Feature: current-scope ownership cleanup, controller removal, explicit native
-source selection, optional-data startup safety, disposable-fixture guards, and
-diff hygiene.
+source selection, optional-data startup safety, disposable-fixture guards,
+packet lifetime safety, and diff hygiene.
 
-Source repository: TortoiseBots `phase4-follow@8eec3a1ea33fd04e42c05eb208f27967858cb0b0`.
+Source repository: TortoiseBots `phase4-follow@7fd7a35`.
 Required core remains `playerbots-integration-gh@9487c5150a6553c665fafc1f4568669b8b00f011`.
 
 Source files: `runtime/BotManager.*`, `runtime/PlayerbotAIAdapter.*`,
 `runtime/PlayerbotRuntimeFacade.cpp`, `commands/BotCommands.cpp`,
 `host/{BotHostAdapter,BotSessionAdapter}.cpp`, mature ownership-transition
-actions, `TortoiseBots.cmake`, `ai/playerbot/{TravelNode,RandomItemMgr}.cpp`,
-and current host/provenance documentation.
+actions, `host/BotPacketAdapter.cpp`, asynchronous packet delivery in
+`ai/playerbot/PlayerbotAI.cpp`, the active compatibility shims,
+`TortoiseBots.cmake`, `ai/playerbot/{TravelNode,RandomItemMgr}.cpp`, and
+current host/provenance documentation.
 
 Local validation: `git diff --check` passes; no active `BotController` or
 legacy core ownership symbols remain; the final native image built, linked,
 and installed successfully and its preserved Docker stack reached world-ready
-with module SQL migrations applied. The fresh AI-enabled rerun after the final
-authorization remains the next runtime gate.
+with module SQL migrations applied. The AI-enabled runtime reached Headless AI
+attachment and automatic invite acceptance, but the pre-catch packet run then
+terminated on a malformed party packet before cleanup. The follow-up rebuild
+containing the packet safety catch was intentionally stopped at the user's
+request, so a fresh post-catch AI runtime pass remains unclaimed. No database
+or Docker volume was reset.
