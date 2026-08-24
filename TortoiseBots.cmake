@@ -9,14 +9,34 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
   set(TORTOISEBOTS_ROOT "${CMAKE_CURRENT_LIST_DIR}")
 
   # PlayerbotAIConfig deliberately keeps its mature, large configuration
-  # template beside the behavior source. Native module packaging still needs
-  # to install it under the canonical aiplayerbot.conf.dist name.
-  set(TORTOISEBOTS_AI_CONFIG "${CMAKE_CURRENT_BINARY_DIR}/aiplayerbot.conf.dist")
+  # template beside the behavior source. Native packaging installs the
+  # runtime file beside mangosd.conf; deployments can copy/edit it explicitly.
+  set(TORTOISEBOTS_AI_CONFIG "${CMAKE_CURRENT_BINARY_DIR}/aiplayerbot.conf")
   configure_file(
     "${TORTOISEBOTS_ROOT}/ai/playerbot/aiplayerbot.conf.dist.in"
     "${TORTOISEBOTS_AI_CONFIG}"
     COPYONLY)
-  CopyModuleConfig("${TORTOISEBOTS_AI_CONFIG}")
+  # PlayerbotAIConfig resolves this file beside mangosd.conf, not through the
+  # module INI aggregator used by tortoise_bots.conf.
+  install(FILES "${TORTOISEBOTS_AI_CONFIG}" DESTINATION "${CONF_DIR}")
+
+  configure_file(
+    "${TORTOISEBOTS_ROOT}/conf/tortoise_bots.conf.dist"
+    "${CMAKE_CURRENT_BINARY_DIR}/tortoise_bots.conf"
+    COPYONLY)
+  CopyModuleConfig("${CMAKE_CURRENT_BINARY_DIR}/tortoise_bots.conf")
+
+  # Static modules do not have a shared-library payload to carry their data.
+  # Install the native migrations beside the runtime module path so the core
+  # AutoUpdater can apply them only when this optional module is deployed.
+  if(EXISTS "${TORTOISEBOTS_ROOT}/data/sql/world")
+    install(DIRECTORY "${TORTOISEBOTS_ROOT}/data/sql/world/"
+      DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/TortoiseBots/data/sql/World")
+  endif()
+  if(EXISTS "${TORTOISEBOTS_ROOT}/data/sql/char")
+    install(DIRECTORY "${TORTOISEBOTS_ROOT}/data/sql/char/"
+      DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/TortoiseBots/data/sql/Char")
+  endif()
 
   set(TORTOISEBOTS_HOST_SRC
     "${TORTOISEBOTS_ROOT}/host/Module.cpp"
@@ -26,6 +46,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/host/BotPlayerAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/BotManager.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/BotController.cpp"
+    "${TORTOISEBOTS_ROOT}/runtime/RandomBotService.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/PlayerbotAIStorage.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/PlayerbotAIAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/PlayerbotRuntimeFacade.cpp"
@@ -170,11 +191,6 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
   # implementations already registered by ActionContext.
   list(FILTER TORTOISEBOTS_ACTION_SRC EXCLUDE REGEX ".*/NonCombatActions\\.cpp$")
   list(FILTER TORTOISEBOTS_ACTION_SRC EXCLUDE REGEX ".*/PetsAction\\.cpp$")
-  # TameAction is also a WotLK/AzerothCore pet-stable port. Tortoise exposes
-  # the native Pet API, but not CreatureTemplate/PetStable/CreateTamedPetFrom;
-  # leave this behavior as a tracked porting gap rather than a compile-only
-  # compatibility shim.
-  list(FILTER TORTOISEBOTS_ACTION_SRC EXCLUDE REGEX ".*/TameAction\\.cpp$")
   # ArenaTeam/ArenaTeamMgr are not part of the Vanilla/Turtle host and this
   # reporting action is not registered by the native ActionContext yet.
   list(FILTER TORTOISEBOTS_ACTION_SRC EXCLUDE REGEX ".*/TellPvpStatsAction\\.cpp$")
@@ -185,11 +201,6 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
   # container/API. The native strategy/values/TradeValues.cpp is the supported
   # implementation and is already part of TORTOISEBOTS_VALUE_SRC.
   list(FILTER TORTOISEBOTS_ACTION_SRC EXCLUDE REGEX ".*/TradeValues\\.cpp$")
-  # These lockpicking wrappers depend on AzerothCore ItemTemplate/TradeData
-  # headers. Native item opening/loot paths remain compiled; keep the
-  # lockpicking command as a later host-specific port.
-  list(FILTER TORTOISEBOTS_ACTION_SRC EXCLUDE REGEX ".*/UnlockItemAction\\.cpp$")
-  list(FILTER TORTOISEBOTS_ACTION_SRC EXCLUDE REGEX ".*/UnlockTradedItemAction\\.cpp$")
   # ValueActions.cpp is the native implementation of focus-heal target
   # commands; the separately forward-ported file defines the same action
   # under a different base class and must not be compiled alongside it.

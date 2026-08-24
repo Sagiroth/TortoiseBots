@@ -9,16 +9,16 @@ ConfVersion=2020072501
 # The bot subsystem is built into mangosd but inert
 # unless this is flipped to 1 + the user knows what they're doing. Flip when you
 # want to test/play with bots; flip back when you want guaranteed clean live play.
-AiPlayerbot.Enabled = 1
+AiPlayerbot.Enabled = 0
 
 # Enable random bot system
 # Single-bot manual-add (`.bot add <name>`) is the
 # recommended starting point. Random bots auto-spawn dozens of characters and
 # need DB schema + tuned class probabilities — defer this.
-AiPlayerbot.RandomBotAutologin = 1
+AiPlayerbot.RandomBotAutologin = 0
 
 # Log on all random bots on start
-AiPlayerbot.RandomBotLoginAtStartup = 1
+AiPlayerbot.RandomBotLoginAtStartup = 0
 
 # Disable automatic DBStore save
 AiPlayerbot.ExplicitDbStoreSave = 0
@@ -39,10 +39,10 @@ AiPlayerbot.DeleteRandomBotAccounts = 0
 AiPlayerbot.BotAutologin = 0
 
 # Enable LFG for random bots
-AiPlayerbot.RandomBotJoinLfg = 1
+AiPlayerbot.RandomBotJoinLfg = 0
 
 # Enable BG/Arena for random Bots
-AiPlayerbot.RandomBotJoinBG = 1
+AiPlayerbot.RandomBotJoinBG = 0
 
 # Enable Auto join BG - bots randomly join WSG and 2v2 Arena if server is not lagging
 AiPlayerbot.RandomBotAutoJoinBG = 0
@@ -51,11 +51,11 @@ AiPlayerbot.RandomBotAutoJoinBG = 0
 AiPlayerbot.PreQuests = 0
 
 # Create random bot accounts and characters automaticallylly
-AiPlayerbot.RandomBotAutoCreate = 1
+AiPlayerbot.RandomBotAutoCreate = 0
 
 # Random bot count
-AiPlayerbot.MinRandomBots = 1000
-AiPlayerbot.MaxRandomBots = 1000
+AiPlayerbot.MinRandomBots = 0
+AiPlayerbot.MaxRandomBots = 0
 AiPlayerbot.RandomBotMinLevel = 5
 AiPlayerbot.RandomBotMaxLevel = 60
 

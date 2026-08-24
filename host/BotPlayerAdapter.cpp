@@ -1,6 +1,7 @@
 #include "BotPlayerAdapter.h"
 
 #include "../runtime/BotManager.h"
+#include "../runtime/RandomBotService.h"
 #include "WorldSession.h"
 
 namespace TortoiseBots {
@@ -19,6 +20,8 @@ BotPlayerAdapter::BotPlayerAdapter()
 
 void BotPlayerAdapter::OnLogin(Player* player)
 {
+    if (player && player->GetSession() && !player->GetSession()->IsHeadless())
+        RandomBotService::Instance().OnHumanLogin();
     BotManager::Instance().OnPlayerLogin(player);
 }
 
@@ -30,6 +33,8 @@ void BotPlayerAdapter::OnBeforeLogout(Player* player)
 void BotPlayerAdapter::OnLogout(Player* player)
 {
     BotManager::Instance().OnPlayerLogout(player);
+    if (player && player->GetSession() && !player->GetSession()->IsHeadless())
+        RandomBotService::Instance().OnHumanLogout();
 }
 
 void BotPlayerAdapter::OnReleaseToClient(Player* player)

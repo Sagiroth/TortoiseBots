@@ -1,9 +1,4 @@
-// Forward-ported from mod-playerbots UnlockItemAction.h
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+// Vanilla/Turtle lockpicking action.
 
 #ifndef PLAYERBOTS_UNLOCKITEMACTION_H
 #define PLAYERBOTS_UNLOCKITEMACTION_H
@@ -11,6 +6,8 @@
 #include "Action.h"
 
 class PlayerbotAI;
+class Item;
+class Player;
 
 class UnlockItemAction : public Action
 {
@@ -20,7 +17,7 @@ public:
     bool Execute(Event& event) override;
 
 private:
-    void UnlockItem(Item* item);
+    void UnlockItem(Item* item, Player* requester);
 };
 
 #endif

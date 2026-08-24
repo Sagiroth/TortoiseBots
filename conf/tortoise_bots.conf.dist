@@ -2,6 +2,8 @@
 # Install as tortoise_bots.conf in the module config directory when enabling
 # the native module.
 
+[TortoiseBotsConf]
+
 # Optional lifecycle regression test. The character must already exist.
 TortoiseBots.AutoTest = 0
 TortoiseBots.AutoTest.AccountId = 0

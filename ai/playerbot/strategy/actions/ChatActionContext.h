@@ -80,6 +80,9 @@
 #include "SkillAction.h"
 #include "FactionAction.h"
 #include "SetValueAction.h"
+#include "TameAction.h"
+#include "UnlockItemAction.h"
+#include "UnlockTradedItemAction.h"
 #include "SayAction.h"
 
 namespace ai
@@ -196,6 +199,10 @@ namespace ai
             creators["wait for attack time"] = [](PlayerbotAI* ai) { return new SetWaitForAttackTimeAction(ai); };
             creators["self resurrect"] = [](PlayerbotAI* ai) { return new SelfResurrectAction(ai); };
             creators["pet"] = [](PlayerbotAI* ai) { return new SetPetAction(ai); };
+            creators["tame"] = [](PlayerbotAI* ai) { return new TameAction(ai); };
+            creators["unlock"] = [](PlayerbotAI* ai) { return new UnlockItemAction(ai); };
+            creators["unlock item"] = [](PlayerbotAI* ai) { return new UnlockItemAction(ai); };
+            creators["unlock traded item"] = [](PlayerbotAI* ai) { return new UnlockTradedItemAction(ai); };
 
             creators["focus heal targets"] = [](PlayerbotAI* ai) { return new SetFocusHealTargetsAction(ai); };
             creators["follow target"] = [](PlayerbotAI* ai) { return new SetFollowTargetAction(ai); };

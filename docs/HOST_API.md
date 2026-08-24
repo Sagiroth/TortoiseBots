@@ -282,6 +282,9 @@ boundary is now Penqle's native `modules/<name>/` loader:
   CMaNGOS tree requires `BUILD_LEGACY_PLAYERBOTS=ON` explicitly.
 
 The current link/runtime checkpoint is recorded in `docs/PROVENANCE.md`. The
-runtime evidence for this checkpoint is module load and clean world startup
-with AI disabled; a broad bot gameplay journey remains a separate acceptance
-gate because the selected source set still documents explicit API gaps.
+runtime gate now also covers AI-enabled startup with the native auxiliary
+schema, Headless AI attachment, pending add/remove cancellation, save/logout,
+and relog. The random-bot service is bounded and only discovers pre-existing
+characters; it does not create accounts or own sessions outside `BotManager`.
+Expansion-only source families remain explicitly filtered rather than compiled
+through compatibility no-ops.

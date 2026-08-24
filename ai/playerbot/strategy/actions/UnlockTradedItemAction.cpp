@@ -1,106 +1,92 @@
-// Forward-ported from mod-playerbots UnlockTradedItemAction.cpp - modern donor
-// Source: mod-playerbots@5397110, Shyalya@1f9497e Tortoise 1.18.1 baseline
-/*
- * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
- * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
- * or (at your option) any later version.
- */
+// Vanilla/Turtle trade lockpicking action.
 
+#include "playerbot/playerbot.h"
 #include "UnlockTradedItemAction.h"
+#include "Database/DBCStores.h"
+#include "Objects/Item.h"
+#include "Objects/ItemPrototype.h"
+#include "Objects/Player.h"
 #include "PlayerbotAI.h"
-#include "SpellInfo.h"
-#include "TradeData.h"
+#include "SharedDefines.h"
+
+#include <sstream>
 
 inline constexpr uint32_t PICK_LOCK_SPELL_ID = 1804;
 
-bool UnlockTradedItemAction::Execute(Event& /*event*/)
+bool UnlockTradedItemAction::Execute(Event& event)
 {
     Player* trader = bot->GetTrader();
     if (!trader)
-        return false; // No active trade session
+        return false;
 
-    TradeData* tradeData = trader->GetTradeData();
+    TradeData* tradeData = bot->GetTradeData();
     if (!tradeData)
-        return false; // No trade data available
+        return false;
 
-    Item* lockbox = tradeData->GetItem(TRADE_SLOT_NONTRADED);
+    Item* lockbox = tradeData->GetTraderData()->GetItem(TRADE_SLOT_NONTRADED);
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     if (!lockbox)
     {
-        botAI->TellError("No item in the Do Not Trade slot.");
+        ai->TellError(requester ? requester : bot, "No item in the Do Not Trade slot.");
         return false;
     }
 
     if (!CanUnlockItem(lockbox))
     {
-        botAI->TellError("Cannot unlock this item.");
+        ai->TellError(requester ? requester : bot, "I cannot unlock this traded item.");
         return false;
     }
 
-    UnlockItem(lockbox);
-    return true;
+    return UnlockItem(lockbox, requester);
 }
 
 bool UnlockTradedItemAction::CanUnlockItem(Item* item)
 {
-    if (!item)
+    if (!item || !item->GetProto())
         return false;
 
-    ItemTemplate const* itemTemplate = item->GetTemplate();
-    if (!itemTemplate)
+    ItemPrototype const* itemTemplate = item->GetProto();
+    if (bot->GetClass() != CLASS_ROGUE || !botAI->HasSkill(SKILL_LOCKPICKING) || !bot->HasSpell(PICK_LOCK_SPELL_ID))
         return false;
 
-    // Ensure the bot is a rogue and has Lockpicking skill
-    if (bot->GetClass() != CLASS_ROGUE || !botAI->HasSkill(SKILL_LOCKPICKING))
+    if (itemTemplate->LockID == 0 || item->HasFlag(ITEM_FIELD_FLAGS, ITEM_DYNFLAG_UNLOCKED))
         return false;
 
-    // Ensure the item is actually locked
-    if (itemTemplate->LockID == 0 || !item->IsLocked())
-        return false;
-
-    // Check if the bot's Lockpicking skill is high enough
-    uint32 lockId = itemTemplate->LockID;
-    LockEntry const* lockInfo = sLockStore.LookupEntry(lockId);
+    LockEntry const* lockInfo = sLockStore.LookupEntry(itemTemplate->LockID);
     if (!lockInfo)
         return false;
 
     uint32 botSkill = bot->GetSkillValue(SKILL_LOCKPICKING);
-    for (uint8 j = 0; j < 8; ++j)
+    for (uint8 j = 0; j < MAX_LOCK_CASE; ++j)
     {
-        if (lockInfo->Type[j] == LOCK_KEY_SKILL && SkillByLockType(LockType(lockInfo->Index[j])) == SKILL_LOCKPICKING)
-        {
-            uint32 requiredSkill = lockInfo->Skill[j];
-            if (botSkill >= requiredSkill)
-                return true;
-            else
-            {
-                std::ostringstream out;
-                out << "Lockpicking skill too low (" << botSkill << "/" << requiredSkill << ") to unlock: "
-                    << item->GetTemplate()->Name1;
-                botAI->TellMaster(out.str());
-            }
-        }
+        if (lockInfo->Type[j] != LOCK_KEY_SKILL ||
+            SkillByLockType(LockType(lockInfo->Index[j])) != SKILL_LOCKPICKING)
+            continue;
+
+        uint32 requiredSkill = lockInfo->Skill[j];
+        if (botSkill >= requiredSkill)
+            return true;
+
+        std::ostringstream out;
+        out << "Lockpicking skill too low (" << botSkill << "/" << requiredSkill << ") to unlock: "
+            << itemTemplate->Name1;
+        ai->TellPlayer(GetMaster() ? GetMaster() : bot, out.str());
+        return false;
     }
 
     return false;
 }
 
-void UnlockTradedItemAction::UnlockItem(Item* item)
+bool UnlockTradedItemAction::UnlockItem(Item* item, Player* requester)
 {
-    if (!bot->HasSpell(PICK_LOCK_SPELL_ID))
-    {
-        botAI->TellError("Cannot unlock, Pick Lock spell is missing.");
-        return;
-    }
-
-    // Use CastSpell to unlock the item
-    if (botAI->CastSpell(PICK_LOCK_SPELL_ID, bot->GetTrader(), item)) // Unit target is trader
+    if (botAI->CastSpell(PICK_LOCK_SPELL_ID, bot->GetTrader(), item))
     {
         std::ostringstream out;
-        out << "Picking Lock on traded item: " << item->GetTemplate()->Name1;
-        botAI->TellMaster(out.str());
+        out << "Picking Lock on traded item: " << item->GetProto()->Name1;
+        ai->TellPlayer(requester ? requester : bot, out.str());
+        return true;
     }
-    else
-    {
-        botAI->TellError("Failed to cast Pick Lock.");
-    }
+
+    ai->TellError(requester ? requester : bot, "Failed to cast Pick Lock on the traded item.");
+    return false;
 }

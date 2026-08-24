@@ -218,6 +218,18 @@ void RandomItemMgr::BuildRandomItemCache()
     }
     else
     {
+        // The native module ships the cache schema separately from the large
+        // optional dataset. MaNGOS returns an empty result as nullptr here;
+        // distinguish that from a genuinely absent/legacy cache so startup
+        // does not synchronously issue one INSERT per item on the world
+        // thread. A populated cache still follows the mature load path.
+        auto cacheCount = CharacterDatabase.PQuery("SELECT COUNT(*) FROM ai_playerbot_rnditem_cache");
+        if (cacheCount && cacheCount->Fetch()->GetUInt32() == 0)
+        {
+            sLog.outString("Random item cache is present but empty; skipping optional cache generation");
+            return;
+        }
+
         sLog.outString("Building random item cache from %u items", sItemStorage.GetMaxEntry());
         for (uint32 itemId = 0; itemId < sItemStorage.GetMaxEntry(); ++itemId)
         {
@@ -3333,6 +3345,13 @@ void RandomItemMgr::BuildEquipCache()
     }
     else
     {
+        auto cacheCount = CharacterDatabase.PQuery("SELECT COUNT(*) FROM ai_playerbot_equip_cache");
+        if (cacheCount && cacheCount->Fetch()->GetUInt32() == 0)
+        {
+            sLog.outString("Equipment cache is present but empty; skipping optional cache generation");
+            return;
+        }
+
         uint64 total = uint64(MAX_CLASSES * 3 * maxLevel * EQUIPMENT_SLOT_END * ITEM_QUALITY_ARTIFACT);
         sLog.outString("Building equipment cache for %d classes, %d specs, %d levels, %d slots, %d quality from %d items (%zu total)",
                 MAX_CLASSES, MAX_STAT_SCALES, maxLevel, EQUIPMENT_SLOT_END, ITEM_QUALITY_ARTIFACT, sItemStorage.GetMaxEntry(), total);

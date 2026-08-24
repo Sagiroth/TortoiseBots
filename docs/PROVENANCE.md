@@ -39,6 +39,30 @@ Reason: use mature combat/class/travel behavior without compiling donor manager,
 
 Local validation: static `modules` target and `mangosd` link passed with `BUILD_PLAYERBOTS=ON`, `BUILD_LEGACY_PLAYERBOTS=OFF`, `MODULE_TORTOISEBOTS=static`; the complementary `BUILD_PLAYERBOTS=OFF`, `MODULES=disabled` `mangosd` build passed; the local Penqle runtime reached `TortoiseBots: native module loaded (AI disabled)` and `World server is up and running` after applying the three pending non-destructive world migrations required by the preserved database.
 
-Explicit gaps: `AutoMaintenanceOnLevelupAction`, `FishingAction`, `InventoryAction`/`TellEmblemsAction`, `NonCombatActions`, `PetsAction`/`TameAction`, `TellPvpStatsAction`, extended/lockpicking trade wrappers, donor `TradeValues.cpp`, and expansion-only LFG/glyph/Karazhan/vehicle/Arena registrations remain excluded where they require WotLK/AzerothCore APIs or unsupported host data. Native loot, quest, inventory operations, travel, trade, and class combat paths remain compiled; no empty gameplay stubs were added.
+Explicit gaps at that earlier checkpoint: `AutoMaintenanceOnLevelupAction`, advanced `FishingAction`, `InventoryAction`/`TellEmblemsAction`, `NonCombatActions`, guardian-oriented `PetsAction`, `TellPvpStatsAction`, extended trade reporting, donor `TradeValues.cpp`, and expansion-only LFG/glyph/Karazhan/vehicle/Arena registrations remained excluded where they required WotLK/AzerothCore APIs or unsupported host data. Native loot, quest, inventory operations, travel, trade, class combat, pet-taming, and lockpicking paths are now compiled; no empty gameplay stubs were added.
 
 Architecture note: core integration is generic Headless transport/session lifecycle plus ScriptMgr hooks. `BUILD_PLAYERBOTS=ON` selects the native module and does not pull the legacy vendored CMaNGOS tree; `BUILD_LEGACY_PLAYERBOTS` is a separate explicit escape hatch.
+
+## Native runtime and Vanilla/Turtle behavior checkpoint — 2026-08-24
+
+Feature: Pet taming/control, lockpicking, bounded random-bot lifecycle, cache-safe startup, and native module SQL packaging
+
+Source repository: local `TortoiseBots` checkout; host/runtime seam in the local Penqle `tortoise-wow` sibling
+
+Source commit: behavior references `shyalya-tortoise-wow@1f9497e0f42bfc1055841bb6ebdc7caa3515de0b`, `cmangos-playerbots@076045efa835da9aab7c943bca752aebe1baad`, and `mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70`; core working snapshot `43af5657f356e1f8d0c609089b3c0c764eff7dd5`
+
+Source files: `TameAction.*`, `UnlockItemAction.*`, `UnlockTradedItemAction.*`, `ChatActionContext.h`, `WorldPacketActionContext.h`, `runtime/RandomBotService.*`, `ai/playerbot/RandomItemMgr.cpp`, `data/sql/{world,char}/*`, `TortoiseBots.cmake`, `host/BotHostAdapter.cpp`, `conf/tortoise_bots.conf.dist`
+
+Copied / ported / independently reimplemented:
+
+- Tame-beast behavior was independently reimplemented around the host's real `SPELL_EFFECT_TAMECREATURE` path; rename and abandon use the native `Pet`/`Player` APIs. The old WotLK pet-stable construction was not retained.
+- Lockpicking was ported to `ItemPrototype`, `LockEntry`, `ITEM_DYNFLAG_UNLOCKED`, the native Pick Lock spell, and the native trade-slot path. The old AzerothCore `ItemTemplate`/extended trade wrappers were not retained.
+- Random bots use a module-local, startup-loaded pool of pre-existing characters on the configured random-account prefix. `BotManager` remains the only Headless/session owner; account/character creation and donor login managers remain intentionally outside the module.
+- Empty optional item/equipment caches are accepted without synchronous world-thread cache generation. Populated mature caches still load normally.
+- Schema-only native migrations cover the tables queried by the active Vanilla/Turtle AI initializer and per-bot state. Mature datasets remain deployable separately.
+
+Reason: complete coherent Vanilla/Turtle families without reintroducing donor manager/session ownership or making optional AI startup depend on a large synchronous cache write.
+
+Local validation: ON/static `mangosd` build passed after the cache, config, SQL-install, and installed-module-path changes; OFF/disabled `mangosd` build passed and the ON/static configuration was restored. Docker runtime with AI enabled loaded the module, attached `PlayerbotAI` to Dudette (guid 1, account 4), passed `PendingAddRemoveTest`, saved/logged out, re-logged, and emitted `AutoTest step 6 — bot re-entered world, spike PASSED`. The preserved DB was not reset; only additive missing schema migrations were applied. Random pool startup correctly reported zero candidates because no `RNDBOT*` accounts exist in the fixture.
+
+Known scope gates: expansion-only DK/glyph/vehicle/LFG/Arena/Karazhan paths remain filtered; the donor `PetsAction` guardian-control wrapper and advanced WotLK fishing wrapper remain excluded because native `SetPetAction`, `FishAction`, travel, loot, and profession paths already provide the applicable Vanilla behavior. Account/character auto-creation for random bots remains an explicit follow-up; existing random characters are supported.

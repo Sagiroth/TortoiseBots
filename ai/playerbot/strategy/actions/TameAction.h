@@ -9,10 +9,11 @@
 #define PLAYERBOTS_TAMEACTION_H
 
 #include "Action.h"
-#include "PlayerbotFactory.h"
 #include <string>
 
 class PlayerbotAI;
+class Player;
+class Creature;
 
 class TameAction : public Action
 {
@@ -22,15 +23,9 @@ public:
     bool Execute(Event& event) override;
 
 private:
-    bool SetPetByName(const std::string& name);
-    bool SetPetById(uint32 id);
-    bool SetPetByFamily(const std::string& family);
-    bool RenamePet(const std::string& newName);
-    bool CreateAndSetPet(uint32 creatureEntry);
-    bool AbandonPet();
-
-    std::string lastPetName;
-    uint32 lastPetId = 0;
+    Creature* FindTarget(std::string const& mode, std::string const& value, Player* requester);
+    bool RenamePet(std::string const& name, Player* requester);
+    bool AbandonPet(Player* requester);
 };
 
 #endif
