@@ -19,8 +19,6 @@ constexpr uint32 SPELL_CONJURE_MANA_RUBY = 10054;
 constexpr uint32 SPELL_CONJURE_MANA_CITRINE = 10053;
 constexpr uint32 SPELL_CONJURE_MANA_JADE = 3552;
 constexpr uint32 SPELL_CONJURE_MANA_AGATE = 759;
-constexpr uint32 SPELL_FROSTFIRE_BOLT = 44614;
-constexpr uint32 SPELL_ICE_SHARDS = 15047;
 }
 
 class GenericMageStrategyActionNodeFactory : public NamedObjectFactory<ActionNode>
@@ -29,7 +27,6 @@ public:
     GenericMageStrategyActionNodeFactory()
     {
         creators["frostbolt"] = &frostbolt;
-        creators["frostfire bolt"] = &frostfire_bolt;
         creators["scorch"] = &scorch;
         creators["remove curse"] = &remove_curse;
         creators["remove curse on party"] = &remove_curse_on_party;
@@ -42,14 +39,6 @@ private:
         return new ActionNode("frostbolt",
                               /*P*/ {},
                               /*A*/ { NextAction("shoot") },
-                              /*C*/ {});
-    }
-
-    static ActionNode* frostfire_bolt([[maybe_unused]] PlayerbotAI* botAI)
-    {
-        return new ActionNode("frostfire bolt",
-                              /*P*/ {},
-                              /*A*/ { NextAction("fireball") },
                               /*C*/ {});
     }
 
@@ -95,8 +84,6 @@ void GenericMageStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     RangedCombatStrategy::InitTriggers(triggers);
 
     // Threat Triggers
-    triggers.push_back(new TriggerNode("high threat", { NextAction("mirror image", 60.0f) }));
-    triggers.push_back(new TriggerNode("medium threat", { NextAction("invisibility", 30.0f) }));
 
     // Defensive Triggers
     triggers.push_back(new TriggerNode("critical health", { NextAction("ice block", 90.0f) }));
@@ -123,8 +110,6 @@ void GenericMageStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode("low mana", { NextAction("evocation", 90.0f) }));
 
-    // Counterspell / Spellsteal Triggers
-    triggers.push_back(new TriggerNode("spellsteal", { NextAction("spellsteal", 40.0f) }));
     triggers.push_back(new TriggerNode("counterspell on enemy healer", { NextAction("counterspell on enemy healer", 40.0f) }));
 }
 
@@ -142,28 +127,14 @@ void MageBoostStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     if (tab == MAGE_TAB_ARCANE)
     {
         triggers.push_back(new TriggerNode("arcane power", { NextAction("arcane power", 29.0f) }));
-        triggers.push_back(new TriggerNode("icy veins", { NextAction("icy veins", 28.5f) }));
-        triggers.push_back(new TriggerNode("mirror image", { NextAction("mirror image", 28.0f) }));
     }
     else if (tab == MAGE_TAB_FIRE)
     {
-        if (bot->HasSpell(SPELL_FROSTFIRE_BOLT) && bot->HasAura(SPELL_ICE_SHARDS))
-        { // Frostfire
-            triggers.push_back(new TriggerNode("combustion", { NextAction("combustion", 18.0f) }));
-            triggers.push_back(new TriggerNode("icy veins", { NextAction("icy veins", 17.5f) }));
-            triggers.push_back(new TriggerNode("mirror image", { NextAction("mirror image", 17.0f) }));
-        }
-        else
-        { // Fire
-            triggers.push_back(new TriggerNode("combustion", { NextAction("combustion", 18.0f) }));
-            triggers.push_back(new TriggerNode("mirror image", { NextAction("mirror image", 17.5f) }));
-        }
+        triggers.push_back(new TriggerNode("combustion", { NextAction("combustion", 18.0f) }));
     }
     else if (tab == MAGE_TAB_FROST)  // Frost
     {
         triggers.push_back(new TriggerNode("cold snap", { NextAction("cold snap", 28.0f) }));
-        triggers.push_back(new TriggerNode("icy veins", { NextAction("icy veins", 27.5f) }));
-        triggers.push_back(new TriggerNode("mirror image", { NextAction("mirror image", 26.0f) }));
     }
 }
 
@@ -175,7 +146,6 @@ void MageCcStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     int tab = AiFactory::GetPlayerSpecTab(bot);
     if (tab == MAGE_TAB_FIRE)
     {
-        triggers.push_back(new TriggerNode("enemy too close for spell", {NextAction("dragon's breath", ACTION_INTERRUPT + 1)}));
         triggers.push_back(new TriggerNode("enemy is close", {NextAction("blast wave", ACTION_INTERRUPT)}));
     }
 }
@@ -198,14 +168,12 @@ void MageAoeStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     {
         triggers.push_back(
             new TriggerNode("medium aoe", {
-                                      NextAction("dragon's breath", 39.0f),
                                       NextAction("blast wave", 38.0f),
                                       NextAction("flamestrike", 23.0f),
                                       NextAction("blizzard", 22.0f) }));
 
         triggers.push_back(new TriggerNode("flamestrike active and medium aoe", { NextAction("blizzard", 24.0f) }));
         triggers.push_back(new TriggerNode("firestarter", { NextAction("flamestrike", 40.0f) }));
-        triggers.push_back(new TriggerNode("living bomb on attackers", { NextAction("living bomb on attackers", 21.0f) }));
     }
     else if (tab == MAGE_TAB_FROST)
     {

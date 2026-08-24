@@ -280,12 +280,12 @@ boundary is now Penqle's native `modules/<name>/` loader:
 - `host/BotHostAdapter`, `BotPlayerAdapter`, and `BotChatAdapter` register
   generic `WorldScript`, `PlayerScript`, and `AllCommandScript` hooks.
 - `World` owns Network and Headless session lifetime. `runtime/BotManager` owns
-  bot records and `PlayerbotAIAdapter` instances. Donor `PlayerbotMgr.cpp`,
-  `RandomPlayerbotMgr.cpp`, and `PlayerbotLoginMgr.cpp` are not compiled.
+  bot records and `PlayerbotAIAdapter` instances. Donor manager/login sources
+  are absent; the module's `RandomBotFacade` is only a narrow behavior adapter.
 - Core asks only about generic transport/headless capabilities and lifecycle
   hooks; it does not expose bot identity or bot-specific player fields.
-- `BUILD_PLAYERBOTS=ON` selects the native TortoiseBots path. The old vendored
-  CMaNGOS tree requires `BUILD_LEGACY_PLAYERBOTS=ON` explicitly.
+- `BUILD_PLAYERBOTS=ON` selects the native TortoiseBots path; this repository
+  does not carry a legacy vendored PlayerBots build path.
 
 The current link/runtime checkpoint is recorded in `docs/PROVENANCE.md`. The
 runtime gate now also covers AI-enabled startup with the native auxiliary
@@ -297,8 +297,10 @@ AI adapters.
 The native compatibility layer also serves the named-location table and
 per-character AH buy/sell multipliers; random gear teleporting and account
 creation remain outside the current boundary.
-Expansion-only source families remain explicitly filtered rather than compiled
-through compatibility no-ops.
+The physical source tree and CMake graph contain only the positive
+Vanilla/Turtle implementation set. Native core LFG/meeting-stone behavior is
+owned by the core; the module keeps only applicable group-role helpers and does
+not recreate an automatic expansion-era dungeon queue.
 
 ## 12. Current packet/config/build seam — 2026-08-24
 

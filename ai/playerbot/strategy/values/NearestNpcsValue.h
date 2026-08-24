@@ -18,14 +18,4 @@ namespace ai
         bool AcceptUnit(Unit* unit) override;
 	};
 
-    class NearestVehiclesValue : public NearestUnitsValue
-    {
-    public:
-        NearestVehiclesValue(PlayerbotAI* ai, float range = sPlayerbotAIConfig.sightDistance) :
-            NearestUnitsValue(ai, "nearest vehicles", range) {}
-
-    protected:
-        void FindUnits(std::list<Unit*>& targets) override;
-        bool AcceptUnit(Unit* unit) override;
-    };
 }

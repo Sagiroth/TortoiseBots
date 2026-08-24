@@ -68,18 +68,9 @@ bool TaxiAction::Execute(Event& event)
             uint32 path = nodes[selected - 1];
             TaxiPathEntry const* entry = sTaxiPathStore.LookupEntry(path);
             if (!entry) return false;
-#ifdef MANGOSBOT_TWO
-            bot->OnTaxiFlightEject(true);
-#endif
             bool didTaxi =  bot->ActivateTaxiPathTo({ entry->from, entry->to }, npc, 0);
-#ifdef MANGOSBOT_TWO
-            bot->ResolvePendingMount();
-#endif
             return didTaxi;
         }
-#ifdef MANGOSBOT_TWO
-        bot->OnTaxiFlightEject(true);
-#endif
         if (!movement.taxiNodes.empty() && !bot->ActivateTaxiPathTo(movement.taxiNodes, npc))
         {
             movement.taxiNodes.clear();
@@ -89,9 +80,6 @@ bool TaxiAction::Execute(Event& event)
             return false;
         }
 
-#ifdef MANGOSBOT_TWO
-        bot->ResolvePendingMount();
-#endif
 
         return true;
     }

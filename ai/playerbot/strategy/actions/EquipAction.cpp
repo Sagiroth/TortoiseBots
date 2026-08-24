@@ -292,7 +292,7 @@ void EquipAction::EquipItem(PlayerbotAI* ai, Player* requester, Item* item, bool
 
 bool EquipUpgradesAction::Execute(Event& event)
 {
-    if (!sPlayerbotAIConfig.autoEquipUpgradeLoot && !sRandomPlayerbotMgr.IsRandomBot(bot))
+    if (!sPlayerbotAIConfig.autoEquipUpgradeLoot && !sRandomBotFacade.IsRandomBot(bot))
         return false;
 
     if (event.GetSource() == "trade status")
@@ -386,10 +386,6 @@ bool EquipUpgradesAction::Execute(Event& event)
 
     for (auto& item : items)
     {
-#ifdef MANGOSBOT_TWO
-        if (item->GetProto()->Class == ITEM_CLASS_GLYPH)
-            continue;
-#endif
 
         ItemUsage usage = AI_VALUE2(ItemUsage, "item usage", ItemQualifier(item).GetQualifier());
         if (usage == ItemUsage::ITEM_USAGE_EQUIP || usage == ItemUsage::ITEM_USAGE_BAD_EQUIP)

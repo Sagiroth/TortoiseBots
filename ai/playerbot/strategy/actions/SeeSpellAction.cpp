@@ -53,20 +53,8 @@ bool SeeSpellAction::Execute(Event& event)
     uint32 spellId;
 
     p.rpos(0);
-#ifndef MANGOSBOT_TWO
     p >> spellId;
-#endif
 
-#ifdef MANGOSBOT_ONE
-    uint8  cast_count;
-    p >> cast_count;
-#endif
-#ifdef MANGOSBOT_TWO
-    uint8  cast_count, cast_flags;
-    p >> cast_count;
-    p >> spellId;
-    p >> cast_flags;
-#endif
 
     if (spellId != RTSC_MOVE_SPELL)
         return false;

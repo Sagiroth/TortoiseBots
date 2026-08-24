@@ -131,7 +131,7 @@ bool GuildManageNearbyAction::Execute(Event& event)
             if (botAi->GetGuilderType() == GuilderType::SOLO) //Do not invite solo players.
                 continue;
 
-            if (botAi->HasActivePlayerMaster() && !sRandomPlayerbotMgr.IsRandomBot(player)) //Do not invite alts of active players.
+            if (botAi->HasActivePlayerMaster() && !sRandomBotFacade.IsRandomBot(player)) //Do not invite alts of active players.
                 continue;
 
             if (guild->GetMemberSize() >= botAi->GetMaxPreferedGuildSize() || guild->GetMemberSize() < botAi->GetMaxPreferedGuildSize() / 4)
@@ -145,7 +145,7 @@ bool GuildManageNearbyAction::Execute(Event& event)
         if (!sameGroup && sServerFacade.getDistance2d(bot, player) > sPlayerbotAIConfig.spellDistance)
             continue;
 
-        if (sPlayerbotAIConfig.inviteChat && (sRandomPlayerbotMgr.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
+        if (sPlayerbotAIConfig.inviteChat && (sRandomBotFacade.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
         {
             std::map<std::string, std::string> placeholders;
             placeholders["%name"] = player->GetName();

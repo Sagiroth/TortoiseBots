@@ -6,13 +6,6 @@
 #include "Battlegrounds/BattleGroundMgr.h"
 #include "Battlegrounds/BattleGroundWS.h"
 #include "Battlegrounds/BattleGroundAB.h"
-#ifndef MANGOSBOT_ZERO
-#include "BattleGround/BattleGroundEY.h"
-#endif
-#ifdef MANGOSBOT_TWO
-#include "BattleGround/BattleGroundIC.h"
-#include "BattleGround/BattleGroundSA.h"
-#endif
 #include "CheckMountStateAction.h"
 
 using namespace ai;
@@ -37,8 +30,6 @@ typedef std::vector<BattleBotWaypoint> BattleBotPath;
 extern std::vector<BattleBotPath*> const vPaths_WS;
 extern std::vector<BattleBotPath*> const vPaths_AB;
 extern std::vector<BattleBotPath*> const vPaths_AV;
-extern std::vector<BattleBotPath*> const vPaths_EY;
-extern std::vector<BattleBotPath*> const vPaths_IC;
 
 class BGTactics : public MovementAction
 {
@@ -51,7 +42,7 @@ public:
         {
             return "This action handles the bot's tactical movement in battlegrounds.\n"
                    "It includes pathfinding for objectives, flag handling, and strategic positioning.\n"
-                   "Supports WSG, AB, AV, EY, and IC battlegrounds with specialized waypoints.";
+                   "Supports the Vanilla WSG, AB, and AV battlegrounds with specialized waypoints.";
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
@@ -70,7 +61,6 @@ private:
     bool resetObjective();
     bool wsgPaths();
     bool wsgRoofJump();
-    bool eotsJump();
     bool atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<uint32> const& vFlagIds);
     bool CheckFlagAv();
     bool flagTaken();
@@ -78,25 +68,4 @@ private:
     bool protectFC();
     bool useBuff();
     uint32 getDefendersCount(Position point, float range, bool combat = true);
-    bool IsLockedInsideKeep();
-};
-
-class ArenaTactics : public MovementAction
-{
-public:
-    ArenaTactics(PlayerbotAI* ai, std::string name = "arena tactics") : MovementAction(ai, name) {}
-
-#ifdef GenerateBotHelp
-        virtual std::string GetHelpName() { return "arena tactics"; }
-        virtual std::string GetHelpDescription()
-        {
-            return "This action handles the bot's movement strategy in arenas.\n"
-                   "Focuses on controlling the center of the arena and maintaining optimal positioning.";
-        }
-        virtual std::vector<std::string> GetUsedActions() { return {}; }
-        virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif
-    virtual bool Execute(Event& event) override;
-private:
-    bool moveToCenter(BattleGround *bg);
 };

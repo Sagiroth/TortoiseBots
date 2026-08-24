@@ -2,8 +2,6 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/PlayerbotHelpMgr.h"
-#include "playerbot/RandomPlayerbotMgr.h"
-#include "playerbot/PlayerbotMgr.h"
 
 
 #include "Database/DatabaseEnv.h"
@@ -21,7 +19,6 @@
 #include "strategy/druid/DruidAiObjectContext.h"
 #include "strategy/hunter/HunterAiObjectContext.h"
 #include "strategy/rogue/RogueAiObjectContext.h"
-#include "strategy/deathknight/DKAiObjectContext.h"
 #endif
 
 PlayerbotHelpMgr::PlayerbotHelpMgr()
@@ -223,9 +220,6 @@ void PlayerbotHelpMgr::LoadAllStrategies()
     classContext["hunter"] = new HunterAiObjectContext(ai);
     classContext["rogue"] = new RogueAiObjectContext(ai);
     classContext["priest"] = new PriestAiObjectContext(ai);
-//#ifdef MANGOSBOT_TWO
-    classContext["deathknight"] = new DKAiObjectContext(ai);
-//#endif
     classContext["shaman"] = new ShamanAiObjectContext(ai);
     classContext["mage"] = new MageAiObjectContext(ai);
     classContext["warlock"] = new WarlockAiObjectContext(ai);
@@ -809,15 +803,7 @@ void PlayerbotHelpMgr::GenerateHelp()
     // remote_ip MUST be "disconnected/bot" so PlayerbotAI::IsRealPlayer() returns false.
     WorldSession* session = new WorldSession(0, NULL, SEC_PLAYER,
 
-#ifdef MANGOSBOT_TWO
-        2, 0, LOCALE_enUS, "disconnected/bot", 0, 0, false);
-#endif
-#ifdef MANGOSBOT_ONE
-    2, 0, LOCALE_enUS, "disconnected/bot", 0, 0, false);
-#endif
-#ifdef MANGOSBOT_ZERO
     0, LOCALE_enUS, "disconnected/bot", 0);
-#endif
 
     session->SetNoAnticheat();
 

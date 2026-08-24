@@ -116,12 +116,6 @@ float TravelNodePath::getCost(Unit* unit, uint32 cGold)
     Player* bot = dynamic_cast<Player*>(unit);
     if (bot)
     {
-        if (path.size() && path.back().GetMapId() == 530 && bot->GetLevel() < 58) //Outland
-            return -1;
-
-        if (path.size() && path.back().GetMapId() == 571 && bot->GetLevel() < 68) //Northrend
-            return -1;
-
         //Check if we can use this area trigger.
         if (getPathType() == TravelNodePathType::areaTrigger && pathObject)
         {
@@ -2074,13 +2068,9 @@ void TravelNodeMap::LoadMaps()
             continue;
 
         uint32 mapId = sMapStore.LookupEntry(i)->MapID;
-        if (mapId == 0 || mapId == 1 || mapId == 530 || mapId == 571)
+        if (mapId == 0 || mapId == 1)
         {
-#ifndef MANGOSBOT_TWO
             MMAP::MMapFactory::createOrGetMMapManager()->loadAllMapTiles(sWorld.GetDataPath(), mapId);
-#else
-            MMAP::MMapFactory::createOrGetMMapManager()->loadAllMapTiles(sWorld.GetDataPath(), mapId, 0);
-#endif
         }
         else
         {
@@ -2088,7 +2078,6 @@ void TravelNodeMap::LoadMaps()
         }
     }
 
-#ifndef MANGOSBOT_TWO
     for (uint32 i = 0; i < sMapStore.GetNumRows(); ++i)
     {
         if (!sMapStore.LookupEntry(i))
@@ -2115,7 +2104,6 @@ void TravelNodeMap::LoadMaps()
             }
         }
     }
-#endif
 }
 
 void TravelNodeMap::generateNpcNodes()
@@ -2193,10 +2181,6 @@ void TravelNodeMap::generateStartNodes()
     startNames[RACE_TROLL] = "Orc and Troll";
     startNames[RACE_GOBLIN] = "Goblin";
     startNames[RACE_HIGH_ELF] = "High Elf";
-#ifndef MANGOSBOT_ZERO
-    startNames[RACE_BLOODELF] = "Blood elf";
-    startNames[RACE_DRAENEI] = "Draenei";
-#endif
 
     for (uint32 i = 0; i < MAX_RACES; i++)
     {
@@ -2430,13 +2414,8 @@ void TravelNodeMap::generateTransportNodes()
 
                         for (auto& p : aPath)
                         {
-#ifndef MANGOSBOT_TWO
                             float dx = cos(basePos.getO()) * p.second->X - sin(basePos.getO()) * p.second->Y;
                             float dy = sin(basePos.getO()) * p.second->X + cos(basePos.getO()) * p.second->Y;
-#else
-                            float dx = -1 * p.second->X;
-                            float dy = -1 * p.second->Y;
-#endif
 
                             WorldPosition pos = WorldPosition(basePos.GetMapId(), basePos.getX() + dx, basePos.getY() + dy, basePos.getZ() + p.second->Z, basePos.getO());
 
@@ -2486,13 +2465,8 @@ void TravelNodeMap::generateTransportNodes()
                         {
                             for (auto& p : aPath)
                             {
-#ifndef MANGOSBOT_TWO
                                 float dx = cos(basePos.getO()) * p.second->X - sin(basePos.getO()) * p.second->Y;
                                 float dy = sin(basePos.getO()) * p.second->X + cos(basePos.getO()) * p.second->Y;
-#else
-                                float dx = -1 * p.second->X;
-                                float dy = -1 * p.second->Y;
-#endif
                                 WorldPosition pos = WorldPosition(basePos.GetMapId(), basePos.getX() + dx, basePos.getY() + dy, basePos.getZ() + p.second->Z, basePos.getO());
 
                                 ppath.push_back(pos);
@@ -2664,57 +2638,7 @@ void TravelNodeMap::addManualNodes()
 
     node = sTravelNodeMap.addNode(WorldPosition(1, 7016.75f, -2153.84f, 595.09f), "c1-Timbermaw Hold", true, false);
 
-#ifndef MANGOSBOT_ZERO
-    node = sTravelNodeMap.addNode(WorldPosition(530, 571.10f, 6938.97f, -16.81f), "c1-Coilfang", true, false);
-    node = sTravelNodeMap.addNode(WorldPosition(530, 571.10f, 6938.97f, -15.20f), "c2-Coilfang", true, false);
-    node = sTravelNodeMap.addNode(WorldPosition(530, 651.07f, 6865.37f, -82.34f), "c3-Coilfang", true, false);
-    node = sTravelNodeMap.addNode(WorldPosition(530, 607.17f, 6908.68f, -49.20f), "c4-Coilfang", true, false);
-    node = sTravelNodeMap.addNode(WorldPosition(530, 574.68f, 6942.93f, -37.72f), "c5-Coilfang", true, false);
-    node = sTravelNodeMap.addNode(WorldPosition(530, 723.74f, 6865.78f, -74.10f), "c6-Coilfang", true, false);
-    node = sTravelNodeMap.addNode(WorldPosition(530, 731.57f, 6866.01f, -70.47f), "c7-Coilfang", true, false);
-#endif
 
-#ifdef MANGOSBOT_TWO
-    //Teleport doodah
-    node = sTravelNodeMap.addNode(WorldPosition(0, -7502.20f, -1152.98f, 269.55f), "c1-Blackrock Mountain", true, false);
-    node = sTravelNodeMap.addNode(WorldPosition(0, -7591.31f, -1114.44f, 249.91f), "c2-Blackrock Mountain", true, false);
-
-    node = sTravelNodeMap.addNode(WorldPosition(609, 2390.02f, -5640.91f, 377.09f), "c1-Ebon Hold", true, false);
-    otherNode = sTravelNodeMap.addNode(WorldPosition(609, 2383.65f, -5645.20f, 420.77f), "c2-Ebon Hold", true, false);
-
-    TravelNodePath travelPath(0.1f, 3.0f, (uint8)TravelNodePathType::areaTrigger, 0, true);
-    travelPath.setPath({*node->getPosition(), *otherNode->getPosition()});
-    node->setPathTo(otherNode, travelPath);
-    travelPath.setPath({*otherNode->getPosition(), *node->getPosition()});
-    otherNode->setPathTo(node, travelPath);
-
-    //Scourge gryphons.
-    //These use HandleSpellClick
-    node = sTravelNodeMap.addNode(WorldPosition(609, 2325.03f, -5659.60f, 382.24f), "c3-Ebon Hold", true, false, false, 29488);
-    otherNode = sTravelNodeMap.addNode(WorldPosition(609, 2409.09f, -5722.37f, 154.00f), "c3-Scarlet Enclave", true, false, false, 29501);
-
-    travelPath = TravelNodePath(0.1f, 3.0f, (uint8)TravelNodePathType::flightPath, 29488, true);
-    travelPath.setPath({*node->getPosition(), *otherNode->getPosition()});
-    node->setPathTo(otherNode, travelPath);
-    travelPath = TravelNodePath(0.1f, 3.0f, (uint8)TravelNodePathType::flightPath, 29501, true);
-    travelPath.setPath({*otherNode->getPosition(), *node->getPosition()});
-    otherNode->setPathTo(node, travelPath);
-
-    node = sTravelNodeMap.addNode(WorldPosition(609, 2348.58f, -5695.35f, 382.24f), "c4-Ebon Hold", true, false, false, 29488);
-    otherNode = sTravelNodeMap.addNode(WorldPosition(609, 2402.86f, -5727.03f, 154.00f), "c4-Scarlet Enclave", true, false, false, 29501);
-
-    travelPath = TravelNodePath(0.1f, 3.0f, (uint8)TravelNodePathType::flightPath, 29488, true);
-    travelPath.setPath({*node->getPosition(), *otherNode->getPosition()});
-    node->setPathTo(otherNode, travelPath);
-    travelPath = TravelNodePath(0.1f, 3.0f, (uint8)TravelNodePathType::flightPath, 29501, true);
-    travelPath.setPath({*otherNode->getPosition(), *node->getPosition()});
-    otherNode->setPathTo(node, travelPath);
-
-    node = sTravelNodeMap.addNode(WorldPosition(609, 2528.22f, -5580.44f, 162.02f), "c1-The Noxious Pass", true, false);
-    node = sTravelNodeMap.addNode(WorldPosition(609, 2538.35f, -5573.05f, 162.46f), "c2-The Noxious Pass", true, false);
-    node = sTravelNodeMap.addNode(WorldPosition(609, 2546.61f, -5563.89f, 162.88f), "c3-The Noxious Pass", true, false);
-    node = sTravelNodeMap.addNode(WorldPosition(609, 2563.52f, -5547.79f, 163.27f), "c4-The Noxious Pass", true, false);
-#endif
 }
 
 void TravelNodeMap::generateNodes()
@@ -3596,8 +3520,6 @@ void TravelNodeMap::calcMapOffset()
 {
     mapOffsets.push_back(std::make_pair(0, WorldPosition(0, 0, 0, 0, 0)));
     mapOffsets.push_back(std::make_pair(1, WorldPosition(1, -3680.0, 13670.0, 0, 0)));
-    mapOffsets.push_back(std::make_pair(530, WorldPosition(530, 15000.0, -20000.0, 0, 0)));
-    mapOffsets.push_back(std::make_pair(571, WorldPosition(571, 10000.0, 5000.0, 0, 0)));
 
     std::vector<uint32> mapIds;
 

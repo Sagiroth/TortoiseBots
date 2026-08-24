@@ -48,7 +48,6 @@ namespace ai
         bool HandleMonsterTalk(Event& event, Player* requester, const std::string& text);
         bool HandleGY(Event& event, Player* requester, const std::string& text);
         bool HandleGrid(Event& event, Player* requester, const std::string& text);
-        bool HandleTest(Event& event, Player* requester, const std::string& text);
         bool HandleValues(Event& event, Player* requester, const std::string& text);
         bool HandleGPS(Event& event, Player* requester, const std::string& text);
         bool HandleSetValueUInt32(Event& event, Player* requester, const std::string& text);

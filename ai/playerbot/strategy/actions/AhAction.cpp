@@ -21,12 +21,12 @@ bool AhAction::Execute(Event& event)
         if (!npc)
             continue;
 
-        if (!sRandomPlayerbotMgr.m_ahActionMutex.try_lock()) //Another bot is using the Auction right now. Try again later.
+        if (!sRandomBotFacade.m_ahActionMutex.try_lock()) //Another bot is using the Auction right now. Try again later.
             return false;
 
         bool doneAuction = ExecuteCommand(requester, text, npc);
 
-        sRandomPlayerbotMgr.m_ahActionMutex.unlock();
+        sRandomBotFacade.m_ahActionMutex.unlock();
 
         return doneAuction;
     }
@@ -38,11 +38,7 @@ bool AhAction::Execute(Event& event)
 bool AhAction::ExecuteCommand(Player* requester, std::string text, Unit* auctioneer)
 {
     uint32 time;
-#ifdef MANGOSBOT_ZERO
     time = 8 * HOUR / MINUTE;
-#else
-    time = 12 * HOUR / MINUTE;
-#endif
 
     if (text == "vendor")
     {
@@ -134,13 +130,7 @@ bool AhAction::PostItem(Player* requester, Item* item, uint32 price, Unit* aucti
 
     WorldPacket packet;
     packet << auctioneer->getObjectGuid();
-#ifdef MANGOSBOT_TWO
-    packet << (uint32)1;
-#endif
     packet << itemGuid;
-#ifdef MANGOSBOT_TWO
-    packet << cnt;
-#endif
     packet << price * 95 / 100; //bid price?
     packet << price; //buyout price?
     packet << time;

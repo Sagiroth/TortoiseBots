@@ -45,9 +45,6 @@ bool HonorGainAction::Execute(Event& event)
         if (player)
         {
             if (!bot->InBattleGround()
-#ifndef MANGOSBOT_ZERO
-                && !bot->InArena()
-#endif
                 )
             {
                 BroadcastHelper::BroadcastPlayerKill(ai, bot, player);

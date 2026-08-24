@@ -11,27 +11,6 @@ void NonCombatStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
         "very often",
         NextAction::array(0, new NextAction("check mount state", 1.0f), new NextAction("check values", 1.0f), NULL)));
 
-    triggers.push_back(new TriggerNode(
-        "near dark portal",
-        NextAction::array(0, new NextAction("move to dark portal", 1.0f), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "at dark portal azeroth",
-        NextAction::array(0, new NextAction("use dark portal azeroth", 1.0f), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "at dark portal outland",
-        NextAction::array(0, new NextAction("move from dark portal", 1.0f), NULL)));
-
-    /*
-    triggers.push_back(new TriggerNode(
-        "vehicle near",
-        NextAction::array(0, new NextAction("enter vehicle", 10.0f), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "very often",
-        NextAction::array(0, new NextAction("use lightwell", 80.0f), NULL)));
-    */
 }
 
 void CollisionStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
@@ -84,13 +63,6 @@ void NoWarStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "at war",
         NextAction::array(0, new NextAction("faction", 1.0f), NULL)));
-}
-
-void GlyphStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
-{
-    triggers.push_back(new TriggerNode(
-        "apply glyphs",
-        NextAction::array(0, new NextAction("auto set glyph", 1.0f), NULL)));
 }
 
 void FishStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

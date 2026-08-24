@@ -129,21 +129,4 @@ namespace ai
         virtual bool IsActive() override;
     };
 
-    class VehicleNearTrigger : public Trigger
-    {
-    public:
-        VehicleNearTrigger(PlayerbotAI* ai) : Trigger(ai, "vehicle near", 10) {}
-
-    public:
-        virtual bool IsActive() override;
-    };
-
-    class InVehicleTrigger : public Trigger, public Qualified
-    {
-    public:
-        InVehicleTrigger(PlayerbotAI* ai) : Trigger(ai, "in vehicle"), Qualified() {}
-
-    public:
-        virtual bool IsActive() override;
-    };
 }

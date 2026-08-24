@@ -4,9 +4,6 @@
 #include "playerbot/ServerFacade.h"
 #include "Battlegrounds/BattleGroundWS.h"
 #include "playerbot/strategy/values/PositionValue.h"
-#ifndef MANGOSBOT_ZERO
-#include "BattleGround/BattleGroundEY.h"
-#endif
 
 using namespace ai;
 
@@ -91,22 +88,6 @@ bool BgInviteActiveTrigger::IsActive()
         BattleGroundQueueTypeId queueTypeId = bot->GetBattleGroundQueueTypeId(i);
         if (queueTypeId == BATTLEGROUND_QUEUE_NONE)
             continue;
-#ifdef MANGOSBOT_TWOx
-        BattleGroundQueue& bgQueue = sServerFacade.bgQueue(queueTypeId);
-        GroupQueueInfo ginfo;
-        if (bgQueue.GetPlayerGroupInfoData(bot->getObjectGuid(), &ginfo))
-        {
-            if (ginfo.isInvitedToBgInstanceGuid && ginfo.removeInviteTime)
-            {
-                sLog.outDetail("Bot #%d <%s> (%u %s) : Invited to BG but not in BG", bot->GetGUIDLow(), bot->GetName(), bot->GetLevel(), bot->GetTeam() == ALLIANCE ? "A" : "H");
-                return true;
-            }
-        }
-#endif
-#ifndef MANGOSBOT_ZERO
-        if (bot->IsInvitedForBattleGroundQueueType(queueTypeId))
-            return true;
-#endif
     }
     return false;
 }
@@ -162,13 +143,6 @@ bool PlayerHasFlag::IsActive()
                 return true;
             }
         }
-#ifndef MANGOSBOT_ZERO
-        if (bot->GetBattleGroundTypeId() == BattleGroundTypeId::BATTLEGROUND_EY)
-        {
-            BattleGroundEY* bg = (BattleGroundEY*)ai->GetBot()->GetBattleGround();
-            return bot->getObjectGuid() == bg->GetFlagCarrierGuid();
-        }
-#endif
         return false;
     }
     return false;
@@ -252,14 +226,3 @@ bool PlayerWantsInBattlegroundTrigger::IsActive()
 
     return true;
 };
-
-bool VehicleNearTrigger::IsActive()
-{
-    std::list<ObjectGuid> npcs = AI_VALUE(std::list<ObjectGuid>, "nearest vehicles");
-    return npcs.size();
-}
-
-bool InVehicleTrigger::IsActive()
-{
-    return ai->IsInVehicle(false,false,false,false,false, getQualifier());
-}

@@ -242,13 +242,8 @@ bool FindCorpseAction::Execute(Event& event)
     }
     else
     {
-#ifndef MANGOSBOT_ZERO
-        if (bot->IsMovingIgnoreFlying())
-            moved = true;
-#else
         if (bot->IsMoving())
             moved = true;
-#endif
         if (moved)
         {
             sLog.outDetail("[BOT CORPSE] %s: find corpse - already moving towards corpse", bot->GetName());

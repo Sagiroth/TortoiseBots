@@ -363,7 +363,6 @@ bool RpgTrainTrigger::IsActive()
         if (!pSpellInfo)
             continue;
 
-#ifdef MANGOSBOT_ZERO
         if (tSpell->learnedSpell)
         {
             bool learned = true;
@@ -391,41 +390,6 @@ bool RpgTrainTrigger::IsActive()
             if (!learned)
                 continue;
         }
-#else
-        if (!tSpell->learnedSpell.empty())
-        {
-            bool anySpellLearned = false;
-            for (auto& learnedSpell : tSpell->learnedSpell)
-            {
-                bool learned = true;
-                if (bot->HasSpell(learnedSpell))
-                {
-                    learned = false;
-                }
-                else
-                {
-                    for (int j = 0; j < 3; ++j)
-                    {
-                        if (pSpellInfo->Effect[j] == SPELL_EFFECT_LEARN_SPELL)
-                        {
-                            learned = false;
-                            uint32 learnedSpell = pSpellInfo->EffectTriggerSpell[j];
-
-                            if (!bot->HasSpell(learnedSpell))
-                            {
-                                learned = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (learned)
-                    anySpellLearned = true;
-            }
-            if (!anySpellLearned)
-                continue;
-        }
-#endif
 
         NeedMoneyFor budgetType = NeedMoneyFor::spells;
 
@@ -594,10 +558,8 @@ bool RpgUseTrigger::IsActive()
     case GAMEOBJECT_TYPE_CAMERA:                        // 13
     case GAMEOBJECT_TYPE_FISHINGNODE:                   // 17 fishing bobber
     case GAMEOBJECT_TYPE_SUMMONING_RITUAL:              // 18
-#ifndef MANGOSBOT_TWO
     case GAMEOBJECT_TYPE_AUCTIONHOUSE:
     case GAMEOBJECT_TYPE_LOTTERY_KIOSK:
-#endif
     case GAMEOBJECT_TYPE_SPELLCASTER:                   // 22
     case GAMEOBJECT_TYPE_MEETINGSTONE:                  // 23
     case GAMEOBJECT_TYPE_FLAGSTAND:                     // 24
@@ -874,23 +836,6 @@ bool RpgSpellClickTrigger::IsActive()
 {
     GuidPosition guidP(getGuidP());
 
-#ifdef MANGOSBOT_TWO
-    if (!guidP.IsCreatureOrVehicle())
-        return false;
-
-    switch(guidP.GetEntry())
-    {
-    case 29488: //Scourge gryphon
-    case 29501:
-        return false;
-    }
-
-    if (TransportInfo* transportInfo = bot->GetTransportInfo())
-    {
-        if (transportInfo && transportInfo->IsOnVehicle())
-            return false;
-    }
-#endif
 
     return ai->CanSpellClick(guidP);
 }
@@ -914,16 +859,6 @@ bool RpgGossipTalkTrigger::IsActive()
     if (!creature->IsGossip())
         return false;
 
-#ifdef MANGOSBOT_TWO
-    switch (guidP.GetEntry())
-    {
-    case 28653: //Salanar the Horseman
-        return AI_VALUE2(bool, "need quest objective", "12687,0"); //Only when we need "Into the Realm of Shadows"
-    case 35365: //Behsten (xp gain disable) Maybe add back later for some bots?
-    case 35364: //Slahtz
-        return false;
-    }
-#endif
 
     if (!sScriptMgr.OnGossipHello(bot, creature))
     {

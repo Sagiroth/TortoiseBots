@@ -3,7 +3,7 @@
 #include "WhoAction.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/strategy/ItemVisitors.h"
-#include "playerbot/RandomPlayerbotMgr.h"
+#include "playerbot/RandomBotFacade.h"
 
 using namespace ai;
 
@@ -36,7 +36,7 @@ bool WhoAction::Execute(Event& event)
     {
         out << QuerySkill(text);
 
-        if (sRandomPlayerbotMgr.IsFreeBot(bot))
+        if (sRandomBotFacade.IsFreeBot(bot))
             out << QueryTrade(text);
     }
     else

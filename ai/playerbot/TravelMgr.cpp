@@ -7,8 +7,7 @@
 #include "Maps/PathFinder.h"
 #include "TravelNode.h"
 #include "PlayerbotAI.h"
-#include "playerbot/RandomPlayerbotMgr.h"
-#include "BotTests.h"
+#include "playerbot/RandomBotFacade.h"
 #include "ObjectAccessor.h"
 
 using namespace ai;
@@ -233,13 +232,6 @@ bool QuestObjectiveTravelDestination::IsPossible(const PlayerTravelInfo& info) c
     //Check mob level
     if (GetEntry() > 0)
     {
-#ifdef MANGOSBOT_TWO
-        switch (GetQuestId())
-        {
-            case 12779: //An End To All Things
-                skipShouldGrindCheck = true;
-        }
-#endif
     }
 
     if (!forceThisQuest)
@@ -260,17 +252,6 @@ bool QuestObjectiveTravelDestination::IsPossible(const PlayerTravelInfo& info) c
     //Check mob level
     if (GetEntry() > 0)
     {
-#ifdef MANGOSBOT_TWO
-        switch (GetQuestId()) {
-        case 12680: //Grand Theft Palomino
-        case 12687: //Into the Realm of Shadows
-        case 12698: //The Gift That Keeps On Giving
-        case 12779: //An End To All Things
-        case 12801: //The Light of Dawn
-        case 12701: //Massacre At Light's Point
-            skipKillableCheck = true;
-        }
-#endif
 
         CreatureInfo const* cInfo = GetCreatureInfo();
 
@@ -335,51 +316,6 @@ bool QuestObjectiveTravelDestination::IsActive(Player* bot, const PlayerTravelIn
 
     if (GetEntry() > 0)
     {
-#ifdef MANGOSBOT_TWO
-        switch (GetQuestId())
-        {
-            case 12848: //The Endless Hunger
-                skipKillableCheck = true;
-                break;
-            case 12680: //Grand Theft Palomino
-                switch (GetEntry())
-                {
-                    case 28605: //Havenshire horse
-                    case 28606:
-                    case 28607: return !AI_VALUE2(bool, "trigger active", "in vehicle") && ai->CanSpellClick(bot, GetEntry()); break;
-                    case 28653: //Salanar the Horseman
-                        return true;
-                        break;
-                }
-                break;
-            case 12687: //Into the Realm of Shadows
-                switch (GetEntry())
-                {
-                    case 28768: //Dark Rider of Acherus
-                    case 28909:
-                    case 28782: //Acherus Deathcharger
-                        return !AI_VALUE2(bool, "trigger active", "in vehicle");
-                    case 29501: //Scourge Gryphon (return to hand in)
-                        return AI_VALUE2(bool, "trigger active", "in vehicle");
-                }
-                break;
-            case 12698: //The Gift That Keeps On Giving
-                switch (GetEntry())
-                {
-                    case 28819: //Scarlet Miner
-                        return !bot->FindGuardianWithEntry(28845);
-                    case 28658: //Gothic the Harvester
-                        return bot->FindGuardianWithEntry(28845);
-                }
-                break;
-            case 12701: //Massacre At Light's Point
-                switch (GetEntry())
-                {
-                    case 28833: //Scarlet Cannon
-                        return DistanceTo(bot) < 30.0f;
-                }
-        }
-#endif
 
         CreatureInfo const* cInfo = GetCreatureInfo();
 
@@ -603,10 +539,6 @@ bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 
     CreatureInfo const* cInfo = GetCreatureInfo();
 
-#ifdef MANGOSBOT_TWO
-    if (cInfo->rank == CREATURE_ELITE_NORMAL && cInfo->MinLootGold == 0 && info.getPosition().GetMapId() == 609)
-        return true;
-#endif
 
     int32 botLevel = info.GetLevel();
 
@@ -671,11 +603,7 @@ bool BossTravelDestination::IsPossible(const PlayerTravelInfo& info) const
     {
         if (info.IsInRaid())
         {
-#ifndef MANGOSBOT_TWO
             if (mapEntry && mapEntry->IsNonRaidDungeon())
-#else
-            if (mapEntry && mapEntry->IsNonRaidDungeon())
-#endif
                 return false;
         }
         else if (mapEntry && mapEntry->IsRaid())
@@ -1088,14 +1016,10 @@ TravelState TravelTarget::GetTravelState() {
 
 void TravelMgr::Clear()
 {
-#ifndef MANGOSBOT_ZERO
-    sObjectAccessor.ExecuteOnAllPlayers([this](Player* plr) { TravelMgr::SetNullTravelTarget(plr); });
-#else
     HashMapHolder<Player>::ReadGuard g(HashMapHolder<Player>::GetLock());
     HashMapHolder<Player>::MapType& m = sObjectAccessor.GetPlayers();
     for (HashMapHolder<Player>::MapType::iterator itr = m.begin(); itr != m.end(); ++itr)
         TravelMgr::SetNullTravelTarget(itr->second);
-#endif
     for (auto& [purpose, entries] : destinationMap)
         for (auto& [id, dests] : entries)
             for (auto& dest : dests)
@@ -1321,9 +1245,8 @@ void TravelMgr::SetMobAvoidAreaMap(uint32 mapId)
 }
 
 // Custom player-only starting zones with no MMAP support: Blackstone Island (Goblin, map 1)
-// and Thalassian Highlands (High Elf, map 0). Bots are spawned in Durotar/Elwynn instead
-// (RandomPlayerbotFactory::CreateRandomBot) and RandomPlayerbotMgr::RandomTeleport already
-// excludes these by zone ID for teleport destinations. This is a plain coordinate check
+// and Thalassian Highlands (High Elf, map 0). Native bot placement avoids these zones.
+// This is a plain coordinate check
 // (bounds taken from the zones' own NPC spawns) rather than a zone-ID lookup because this
 // function runs once at startup over every quest-relevant spawn in the game, and
 // GetZoneAndAreaId can force-load grid data per call - doing that here deadlocked the server.
@@ -1396,8 +1319,7 @@ void TravelMgr::LoadQuestTravelTable()
                 for (auto& guidP : guidpMap.at(entry))
                 {
                     // Never send bots to custom player-only starting zones (no MMAP support).
-                    // Same exclusion as RandomPlayerbotMgr::RandomTeleport, but done as a plain
-                    // coordinate check here: this loop runs over every quest-relevant spawn in
+                    // This loop runs over every quest-relevant spawn in
                     // the game, and GetZoneAndAreaId can force-load grid data per call, which
                     // deadlocked the server when tried at this stage of the boot sequence.
                     if (IsInBlackstoneOrThalassian(guidP.GetMapId(), guidP.getX(), guidP.getY()))
@@ -1506,9 +1428,6 @@ void TravelMgr::LoadQuestTravelTable()
     if (sPlayerbotAIConfig.hasLog("log_analysis.csv"))
     {
         sLog.outString("Running analysis.");
-#ifdef GenerateBotTests
-                    LogAnalysis::RunAnalysis();
-#endif
     }
 
     sLog.outString("Clearing log files.");
@@ -1558,17 +1477,7 @@ void TravelMgr::LoadQuestTravelTable()
         out << "avarageLevel30-39,";
         out << "avarageLevel40-49,";
         out << "avarageLevel50-59,";
-#ifdef MANGOSBOT_ZERO
         out << "avarageLevel60,";
-#else
-        out << "avarageLevel60-69,";
-#ifdef MANGOSBOT_ONE
-        out << "avarageLevel70,";
-#else
-        out << "avarageLevel70-79,";
-        out << "avarageLevel80,";
-#endif
-#endif
 
         out << "totalGold,";
         out << "avarageGold,";
@@ -2062,96 +1971,6 @@ void TravelMgr::LoadQuestTravelTable()
 
             sPlayerbotAIConfig.log("vmangoslines.csv", out.str().c_str());
 
-            mapId = 530;
-
-            static float const ShattrathAreaSouthLimit[] = {
-            -2493.8823f,  5761.6894f,
-            -2593.7438f,  4768.7978f,
-            -1831.5280f,  3383.5705f
-            };
-
-            pos.clear();
-
-            size = my_sizeof(ShattrathAreaSouthLimit) / my_sizeof(ShattrathAreaSouthLimit[0]);
-
-            for (int32 i = 0; i < size - 1; i = i + 2)
-            {
-                if (ShattrathAreaSouthLimit[i] == 0)
-                    break;
-                pos.push_back(WorldPosition(mapId, ShattrathAreaSouthLimit[i], ShattrathAreaSouthLimit[i + 1], 0));
-            }
-
-            out.str("");
-            out.clear();
-
-            out << "ShattrathAreaSouthLimit" << ",";
-            WorldPosition().printWKT(pos, out, 1);
-            out << std::fixed;
-
-            sPlayerbotAIConfig.log("vmangoslines.csv", out.str().c_str());
-
-            static float const HellfireZangarSouthLimit[] = {
-
-            -531.47265f,  8697.5830f,
-            -514.56945f,  7291.2763f,
-            -404.92804f,  6976.7958f,
-            -593.56475f,  6646.0634f,
-            -856.75695f,  6318.5507f,
-            -1166.2729f,  5799.7817f,
-            -1007.9321f,  4761.1352f,
-            -1831.5280f,  3383.5705f,
-            -2135.1586f,  2335.4426f,
-            -2179.3974f,  896.0285f,
-            };
-
-            pos.clear();
-
-            size = my_sizeof(HellfireZangarSouthLimit) / my_sizeof(HellfireZangarSouthLimit[0]);
-
-            for (int32 i = 0; i < size - 1; i = i + 2)
-            {
-                if (HellfireZangarSouthLimit[i] == 0)
-                    break;
-                pos.push_back(WorldPosition(mapId, HellfireZangarSouthLimit[i], HellfireZangarSouthLimit[i + 1], 0));
-            }
-
-            out.str("");
-            out.clear();
-
-            out << "HellfireZangarSouthLimit" << ",";
-            WorldPosition().printWKT(pos, out, 1);
-            out << std::fixed;
-
-            sPlayerbotAIConfig.log("vmangoslines.csv", out.str().c_str());
-
-            static float const BladeEdgeNetherSouthLimit[] = {
-            2074.6831f,  8216.6113f,
-            1248.3884f,  7472.7592f,
-            1118.4877f,  6972.6821f,
-            1212.2004f,  6106.2861f,
-            1175.4729f,  5633.375f,
-            1543.8314f,  3961.8886f,
-            };
-
-            pos.clear();
-
-            size = my_sizeof(BladeEdgeNetherSouthLimit) / my_sizeof(BladeEdgeNetherSouthLimit[0]);
-
-            for (int32 i = 0; i < size - 1; i = i + 2)
-            {
-                if (BladeEdgeNetherSouthLimit[i] == 0)
-                    break;
-                pos.push_back(WorldPosition(mapId, BladeEdgeNetherSouthLimit[i], BladeEdgeNetherSouthLimit[i + 1], 0));
-            }
-
-            out.str("");
-            out.clear();
-
-            out << "BladeEdgeNetherSouthLimit" << ",";
-            WorldPosition().printWKT(pos, out, 1);
-            out << std::fixed;
-
-            sPlayerbotAIConfig.log("vmangoslines.csv", out.str().c_str());
     }
 
     if (sPlayerbotAIConfig.hasLog("gos.csv"))
@@ -2249,7 +2068,7 @@ void TravelMgr::LoadQuestTravelTable()
     {
         sLog.outString("Create telecache overlay exports.");
 
-        sRandomPlayerbotMgr.PrintTeleportCache();
+        sRandomBotFacade.PrintTeleportCache();
     }
 
     if (sPlayerbotAIConfig.hasLog("travel_destinations.csv"))
@@ -2279,22 +2098,7 @@ void TravelMgr::LoadQuestTravelTable()
         }
     }
 
-#ifndef MANGOSBOT_TWO
     sTerrainMgr.Update(60 * 60 * 24);
-#else
-    for (uint32 i = 0; i < sMapStore.GetNumRows(); ++i)
-    {
-        if (!sMapStore.LookupEntry(i))
-            continue;
-
-        uint32 mapId = sMapStore.LookupEntry(i)->MapID;
-
-        if (WorldPosition(mapId, 0, 0).GetMap(0))
-            continue;
-
-        WorldPosition::unloadMapAndVMaps(mapId);
-    }
-#endif
 }
 
 void TravelMgr::GetPopulatedGrids()
@@ -2672,12 +2476,6 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
 {
     bool canFightElite = info.GetBoolValue("can fight elite");
     int32 botLevel = (int32)info.GetLevel();
-
-    if (position.GetMapId() == 530 && info.GetLevel() < 58) //Outland
-        return false;
-
-    if (position.GetMapId() == 571 && info.GetLevel() < 68) //Northrend
-        return false;
 
     if (info.GetBoolValue("can fight boss"))
         botLevel += 5;

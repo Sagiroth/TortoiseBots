@@ -42,18 +42,14 @@ void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
     if (sPlayerbotAIConfig.autoLearnTrainerSpells)
         LearnTrainerSpells(out);
 
-#ifdef MANGOSBOT_ZERO
     if (sPlayerbotAIConfig.autoLearnDroppedSpells)
         LearnDroppedSpells(out);
-#endif
 
     if (!ai->HasActivePlayerMaster()) //Hunter spells for pets.
     {
         if (bot->GetClass() == CLASS_HUNTER && bot->GetLevel() >= 10)
         {
-#if !defined(MANGOSBOT_TWO) // Beast training not available in WotLK
             bot->learnSpell(5149, false); //Beast training
-#endif
             bot->learnSpell(883, false); //Call pet
             bot->learnSpell(982, false); //Revive pet
             bot->learnSpell(6991, false); //Feed pet
@@ -114,11 +110,7 @@ void AutoLearnSpellAction::LearnTrainerSpells(std::ostringstream* out)
                 if (spell)
                 {
                     std::string SpellName = spell->SpellName[0];
-#ifdef MANGOSBOT_ZERO
                     if (spell->Effect[EFFECT_INDEX_1] == SPELL_EFFECT_SKILL_STEP)
-#elif defined(MANGOSBOT_ONE) || defined(MANGOSBOT_TWO) // TBC OR WOTLK
-                        if (spell->Effect[EFFECT_INDEX_1] == SPELL_EFFECT_SKILL || spell->Effect[EFFECT_INDEX_1] == SPELL_EFFECT_SKILL_STEP)
-#endif
                         {
                             uint32 skill = spell->EffectMiscValue[EFFECT_INDEX_1];
 
@@ -127,34 +119,15 @@ void AutoLearnSpellAction::LearnTrainerSpells(std::ostringstream* out)
                                 SkillLineEntry const* pSkill = sSkillLineStore.LookupEntry(skill);
                                 if (pSkill)
                                 {
-#ifdef MANGOSBOT_ZERO
                                     if (SpellName.find("Apprentice") != std::string::npos && pSkill->categoryId == SKILL_CATEGORY_PROFESSION || pSkill->categoryId == SKILL_CATEGORY_SECONDARY)
                                         continue;
-#elif defined(MANGOSBOT_ONE) || defined(MANGOSBOT_TWO) // TBC OR WOTLK
-                                    std::string SpellRank = spell->rank[0];
-                                    if (SpellName.find("Apprentice") != std::string::npos && (pSkill->categoryId == SKILL_CATEGORY_PROFESSION || pSkill->categoryId == SKILL_CATEGORY_SECONDARY))
-                                        continue;
-                                    else if (SpellRank.find("Apprentice") != std::string::npos && (pSkill->categoryId == SKILL_CATEGORY_PROFESSION || pSkill->categoryId == SKILL_CATEGORY_SECONDARY))
-                                        continue;
-#endif
                                 }
                             }
                         }
                 }
 
             }
-#ifdef MANGOSBOT_ZERO // Vanilla
             LearnSpellFromSpell(tSpell->spell, out);
-#elif defined(MANGOSBOT_ONE) || defined(MANGOSBOT_TWO)
-            if (IsTeachingSpellListedAsSpell(tSpell->spell))
-            {
-                LearnSpellFromSpell(tSpell->spell, out);
-            }
-            else
-            {
-                LearnSpell(tSpell->spell, out);
-            }
-#endif
         }
     }
 }
@@ -354,7 +327,6 @@ bool AutoLearnSpellAction::LearnSpellFromSpell(uint32 spellId, std::ostringstrea
 bool AutoLearnSpellAction::IsValidSpell(uint32 spellId)
 {
     bool isSpellValid = true;
-#ifdef MANGOSBOT_ZERO
     isSpellValid =
         // All Classes (Classic)
         spellId != 6463 && // Incorrect lock pick skill that was taught to all classes (Rogues still learn correct lock pick skill) (DB Error)
@@ -387,59 +359,12 @@ bool AutoLearnSpellAction::IsValidSpell(uint32 spellId)
         spellId != 6453 && // Prevents hunter from learning pet skill Pet Resistance rank 5
         // Paladin
         spellId != 1973; // Prevents Paladins from learning zzOldHip Shot III.
-#elif MANGOSBOT_ONE
-    isSpellValid =
-        // Paladin
-        spellId != 10321 &&       // Prevents Paladin from learning judgment training spell.
-        // Hunter
-        spellId != 530;     // Prevents hunter from learning Charm (Possess) (Spell is attached to a pet trainer)
-#elif MANGOSBOT_TWO
-    isSpellValid =
-        // Rogue
-        spellId != 1785 && // Rogue Stealth no longer has ranks so remove learning ranks 2-4
-        spellId != 1786 && // Rogue Stealth no longer has ranks so remove learning ranks 2-4
-        spellId != 1787 && // Rogue Stealth no longer has ranks so remove learning ranks 2-4
-        // Druid
-        spellId != 6783 && // Druid Prowl no longer has ranks so remove learning ranks 2-3
-        spellId != 9913 && // Druid Prowl no longer has ranks so remove learning ranks 2-3
-        // DK
-        spellId != 51426 && // DK Pestilence doesn't have ranks
-        spellId != 51427 && // DK Pestilence doesn't have ranks
-        spellId != 51428 && // DK Pestilence doesn't have ranks
-        spellId != 51429 && // DK Pestilence doesn't have ranks
-        spellId != 49913 && // DK Strangulate doesn't have ranks
-        spellId != 49914 && // DK Strangulate doesn't have ranks
-        spellId != 49915 && // DK Strangulate doesn't have ranks
-        spellId != 49916 && // DK Strangulate doesn't have ranks
-        // Mage
-        spellId != 526 &&   // Prevents mage from learning shaman Cure Toxins
-        spellId != 52127 && // Prevents mage from learning shaman Water Shield rank 1
-        spellId != 52129 && // Prevents mage from learning shaman Water Shield rank 2
-        spellId != 52131 && // Prevents mage from learning shaman Water Shield rank 3
-        spellId != 52134 && // Prevents mage from learning shaman Water Shield rank 4
-        spellId != 52136 && // Prevents mage from learning shaman Water Shield rank 5
-        spellId != 52138 && // Prevents mage from learning shaman Water Shield rank 6
-        spellId != 51730 && // Prevents mage from learning shaman Earthliving Weapon 1
-        spellId != 51988 && // Prevents mage from learning shaman Earthliving Weapon 2
-        spellId != 51991 && // Prevents mage from learning shaman Earthliving Weapon 3
-        spellId != 51992 && // Prevents mage from learning shaman Earthliving Weapon 4
-        spellId != 51993 && // Prevents mage from learning shaman Earthliving Weapon 5
-        spellId != 51994 && // Prevents mage from learning shaman Earthliving Weapon 6
-        spellId != 66842 && // Prevents mage from learning shaman Call of the Elements
-        spellId != 66843 && // Prevents mage from learning shaman Call of the Ancestors
-        spellId != 66844 && // Prevents mage from learning shaman Call of the Spirits
-        spellId != 42748 && // Prevents mage from learning shaman Shadow Axe
-        spellId != 2894 &&  // Prevents mage from learning shaman Fire Elemental Totem
-        spellId != 51505 && // Prevents mage from learning shaman Lave Burst rank 1
-        spellId != 51514;   // Prevents mage from learning shaman Hex
-#endif
     return isSpellValid;
 }
 
 bool AutoLearnSpellAction::IsTeachingSpellListedAsSpell(uint32 spellId)
 {
     bool isTeachingSpellListedAsSpell = false;
-#ifdef MANGOSBOT_ZERO
     isTeachingSpellListedAsSpell =
         spellId == 19318 ||    // Touch of weakness Teaching Spell listed as actual spell
         spellId == 2946  ||    // Devouring Plague Teaching Spell listed as actual spell
@@ -450,6 +375,5 @@ bool AutoLearnSpellAction::IsTeachingSpellListedAsSpell(uint32 spellId)
         spellId == 19337 ||    // Fear Ward Teaching Spell listed as actual spell
         spellId == 19357 ||    // Elune's Grace Teaching Spell listed as actual spell
         spellId == 19350;      // Starshards Teaching Spell listed as actual spell
-#endif
         return isTeachingSpellListedAsSpell;
 }

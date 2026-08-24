@@ -22,9 +22,6 @@ bool TellReputationAction::Execute(Event& event)
     const FactionTemplateEntry *factionTemplate = sServerFacade.GetFactionTemplateEntry(unit);
     uint32 faction = factionTemplate->faction;
     const FactionEntry* entry = sFactionStore.LookupEntry
-    #ifdef MANGOSBOT_ONE
-            <FactionEntry>
-    #endif
             (faction);
     int32 reputation = bot->GetReputationMgr().GetReputation(faction);
 

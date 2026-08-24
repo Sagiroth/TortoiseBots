@@ -505,18 +505,10 @@ namespace ai
         TurnUndeadTrigger(PlayerbotAI* ai) : HasCcTargetTrigger(ai, "turn undead") {}
     };
 
-    class HandOfSacrificeTrigger : public PartyMemberLowHealthTrigger
-    {
-    public:
-        HandOfSacrificeTrigger(PlayerbotAI* ai) : PartyMemberLowHealthTrigger(ai, "hand of sacrifice", sPlayerbotAIConfig.criticalHealth, 0, true) {}
-    };
-
     class BlessingOfSacrificeTrigger : public PartyMemberLowHealthTrigger
     {
     public:
         BlessingOfSacrificeTrigger(PlayerbotAI* ai) : PartyMemberLowHealthTrigger(ai, "blessing of sacrifice", sPlayerbotAIConfig.criticalHealth, 0, true) {}
     };
 
-    DEBUFF_TRIGGER(AvengerShieldTrigger, "avenger's shield");
-    BOOST_TRIGGER(DivineIlluminationBoostTrigger, "divine illumination");
 }

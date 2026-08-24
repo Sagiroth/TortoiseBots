@@ -3,9 +3,6 @@
 #include "PvpValues.h"
 #include "Battlegrounds/BattleGroundWS.h"
 #include "playerbot/ServerFacade.h"
-#ifndef MANGOSBOT_ZERO
-#include "BattleGround/BattleGroundEY.h"
-#endif
 #include "playerbot/TravelMgr.h"
 #include "SharedValueContext.h"
 
@@ -16,7 +13,7 @@ std::list<CreatureDataPair const*> BgMastersValue::Calculate()
     BattleGroundTypeId bgTypeId = (BattleGroundTypeId)stoi(qualifier);
 
     std::vector<uint32> entries;
-    std::map<Team, std::map<BattleGroundTypeId, std::list<uint32>>> battleMastersCache = sRandomPlayerbotMgr.GetBattleMastersCache();
+    std::map<Team, std::map<BattleGroundTypeId, std::list<uint32>>> battleMastersCache = sRandomBotFacade.GetBattleMastersCache();
     entries.insert(entries.end(), battleMastersCache[TEAM_BOTH_ALLOWED][bgTypeId].begin(), battleMastersCache[TEAM_BOTH_ALLOWED][bgTypeId].end());
     entries.insert(entries.end(), battleMastersCache[ALLIANCE][bgTypeId].begin(), battleMastersCache[ALLIANCE][bgTypeId].end());
     entries.insert(entries.end(), battleMastersCache[HORDE][bgTypeId].begin(), battleMastersCache[HORDE][bgTypeId].end());
@@ -144,7 +141,7 @@ BattleGroundTypeId RpgBgTypeValue::Calculate()
             if (bot->InBattleGroundQueueForBattleGroundQueueType(queueTypeId))
                 continue;
 
-            std::map<Team, std::map<BattleGroundTypeId, std::list<uint32>>> battleMastersCache = sRandomPlayerbotMgr.GetBattleMastersCache();
+            std::map<Team, std::map<BattleGroundTypeId, std::list<uint32>>> battleMastersCache = sRandomBotFacade.GetBattleMastersCache();
 
             for (auto& entry : battleMastersCache[TEAM_BOTH_ALLOWED][bgTypeId])
                 if (entry == guidPosition.GetEntry())
@@ -187,38 +184,6 @@ Unit* FlagCarrierValue::Calculate()
                     return nullptr;
             }
         }
-#ifndef MANGOSBOT_ZERO
-        if (ai->GetBot()->GetBattleGroundTypeId() == BattleGroundTypeId::BATTLEGROUND_EY)
-        {
-            BattleGroundEY* bg = (BattleGroundEY*)ai->GetBot()->GetBattleGround();
-
-            if (!bg)
-                return nullptr;
-
-            if (bg->GetFlagCarrierGuid().IsEmpty())
-                return nullptr;
-
-            Player* fc = bg->GetBgMap()->GetPlayer(bg->GetFlagCarrierGuid());
-            if (!fc)
-                return nullptr;
-
-            if (!sameTeam && (fc->GetTeam() != bot->GetTeam()))
-                carrier = fc;
-
-            if (sameTeam && (fc->GetTeam() == bot->GetTeam()))
-                carrier = fc;
-
-            if (carrier)
-            {
-                if (ignoreRange || bot->IsWithinDistInMap(carrier, sPlayerbotAIConfig.sightDistance))
-                {
-                    return carrier;
-                }
-                else
-                    return nullptr;
-            }
-        }
-#endif
     }
     return carrier;
 }

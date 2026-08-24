@@ -124,10 +124,6 @@ void StatsAction::ListXP(std::ostringstream& out)
     uint32 restPercent = 0;
     if (restXP && nextLevelXP)
         restPercent = 2 * (100 * restXP / nextLevelXP);
-#ifdef MANGOSBOT_TWO
-    if (bot->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_XP_USER_DISABLED))
-        out << "|cffff0000" << "[xp off]";
-#endif
 
     out << "|cff00ff00" << xpPercent << "|cffffd333/|cff00ff00" << restPercent << "%|cffffffff XP";
 }

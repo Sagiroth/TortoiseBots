@@ -232,12 +232,7 @@ namespace ai
         {
             //If no input use max raid for raid groups.
             if (param.empty() && group->IsRaidGroup())
-#ifdef MANGOSBOT_ZERO
                 param = "40";
-#else
-                /// Default to TBC Raiding. Max size 25
-                param = "25";
-#endif
 
             if (group->IsFull())
             {
@@ -314,10 +309,6 @@ namespace ai
             if (player->GetMapId() != bot->GetMapId())
                 continue;
 
-#ifdef MANGOSBOT_TWO
-            if (player->InSamePhase(bot->GetPhaseMask()))
-                continue;
-#endif
 
             if (player->GetGroup())
                 continue;
@@ -355,7 +346,7 @@ namespace ai
                 group->ConvertToRaid();
 
             Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-            if (sPlayerbotAIConfig.inviteChat && (sRandomPlayerbotMgr.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
+            if (sPlayerbotAIConfig.inviteChat && (sRandomBotFacade.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
             {
                 if (guild && player && bot->IsInGuild(player->GetGuildId()))
                 {
@@ -463,10 +454,6 @@ namespace ai
             if (player->GetMapId() != bot->GetMapId() && player->GetLevel() < 30)
                 continue;
 
-#ifdef MANGOSBOT_TWO
-            if (player->GetMapId() == 609 && player->GetMapId() != bot->GetMapId())
-                continue;
-#endif
 
             if (WorldPosition(player).distance(bot) > 1000 && player->GetLevel() < 15)
                 continue;
@@ -501,7 +488,7 @@ namespace ai
                 group->ConvertToRaid();
             }
 
-            if (sPlayerbotAIConfig.inviteChat && (sRandomPlayerbotMgr.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
+            if (sPlayerbotAIConfig.inviteChat && (sRandomBotFacade.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
             {
                 BroadcastHelper::BroadcastGuildGroupOrRaidInvite(
                     ai,

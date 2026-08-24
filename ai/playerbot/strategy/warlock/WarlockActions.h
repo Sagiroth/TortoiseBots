@@ -22,12 +22,6 @@ namespace ai
 		CastDemonArmorAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "demon armor") {}
 	};
 
-	class CastFelArmorAction : public CastBuffSpellAction
-	{
-	public:
-		CastFelArmorAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "fel armor") {}
-	};
-
     BEGIN_RANGED_SPELL_ACTION(CastShadowBoltAction, "shadow bolt")
     END_SPELL_ACTION()
 
@@ -94,28 +88,13 @@ namespace ai
             {
                 itemId = 16895;
             }
-            else if (level >= 60 && level < 70)
+            else if (level >= 60)
             {
                 itemId = 16896;
-            }
-            else if (level >= 70 && level < 76)
-            {
-                itemId = 22116;
-            }
-            else if (level >= 76)
-            {
-                itemId = 36895;
             }
 
             return itemId;
         }
-    };
-
-    class CastSoulShatterAction : public CastSpellAction
-    {
-    public:
-		CastSoulShatterAction(PlayerbotAI* ai) : CastSpellAction(ai, "soulshatter") {}
-        std::string GetTargetName() override { return "self target"; }
     };
 
     class CastSoulFireAction : public CastSpellAction
@@ -155,18 +134,6 @@ namespace ai
 	public:
 	    CastCorruptionOnAttackerAction(PlayerbotAI* ai) : CastRangedDebuffSpellOnAttackerAction(ai, "corruption") {}
 	};
-
-    class CastSeedOfCorruptionOnAttackerAction : public CastRangedDebuffSpellOnAttackerAction
-    {
-    public:
-		CastSeedOfCorruptionOnAttackerAction(PlayerbotAI* ai) : CastRangedDebuffSpellOnAttackerAction(ai, "seed of corruption") {}
-    };
-
-    class CastUnstableAfflictionOnAttackerAction : public CastRangedDebuffSpellOnAttackerAction
-    {
-    public:
-		CastUnstableAfflictionOnAttackerAction(PlayerbotAI* ai) : CastRangedDebuffSpellOnAttackerAction(ai, "unstable affliction") {}
-    };
 
     class CastCurseOfAgonyAction : public CastRangedDebuffSpellAction
     {
@@ -358,24 +325,6 @@ namespace ai
         }
     };
 
-    class CastSummonFelguardAction : public CastSpellAction
-    {
-    public:
-        CastSummonFelguardAction(PlayerbotAI* ai) : CastSpellAction(ai, "summon felguard") {}
-        std::string GetTargetName() override { return "self target"; }
-
-        bool isUseful() override
-        {
-            Unit* pet = AI_VALUE(Unit*, "pet target");
-            if (pet)
-            {
-                return pet->GetEntry() != 17252;
-            }
-
-            return true;
-        }
-    };
-
 	class CastSummonInfernoAction : public CastSpellAction
 	{
 	public:
@@ -426,26 +375,11 @@ namespace ai
         CastBanishOnCcAction(PlayerbotAI* ai) : CastCrowdControlSpellAction(ai, "banish") {}
     };
 
-    class CastSeedOfCorruptionAction : public CastRangedDebuffSpellAction
-    {
-    public:
-        CastSeedOfCorruptionAction(PlayerbotAI* ai) : CastRangedDebuffSpellAction(ai, "seed of corruption") {}
-    };
-
     class CastRainOfFireAction : public CastSpellAction
     {
     public:
         CastRainOfFireAction(PlayerbotAI* ai) : CastSpellAction(ai, "rain of fire") {}
     };
-
-    class CastShadowfuryAction : public CastSpellAction
-    {
-    public:
-        CastShadowfuryAction(PlayerbotAI* ai) : CastSpellAction(ai, "shadowfury") {}
-    };
-
-	SNARE_ACTION(CastShadowfurySnareAction, "shadowfury");
-	RANGED_DEBUFF_ACTION(CastUnstableAfflictionAction, "unstable affliction");
 
     class CastImmolateAction : public CastRangedDebuffSpellAction
     {

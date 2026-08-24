@@ -17,8 +17,7 @@
 
 #include "playerbotDefs.h"
 #include "playerbot/PlayerbotAIAware.h"
-#include "PlayerbotMgr.h"
-#include "playerbot/RandomPlayerbotMgr.h"
+#include "playerbot/RandomBotFacade.h"
 #include "ChatHelper.h"
 #include "BroadcastHelper.h"
 #include "PlayerbotAI.h"

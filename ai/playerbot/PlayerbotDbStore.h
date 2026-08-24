@@ -3,7 +3,6 @@
 
 #include "Common.h"
 #include "PlayerbotAIBase.h"
-#include "PlayerbotMgr.h"
 
 class PlayerbotDbStore
 {

@@ -23,9 +23,9 @@ Current development is in **Phase 4 stabilization**.
 
 The module is packaged through Penqle's native `modules/<name>/` loader. Only
 `src/TortoiseBotsModule.cpp` lives below the loader's recursive `src/` tree;
-the broad donor source is selected explicitly by `TortoiseBots.cmake` so
-Death Knight, LFG, glyph, vehicle, Arena, and expansion-only families cannot
-be compiled accidentally.
+the positive Vanilla/Turtle source graph is selected explicitly by
+`TortoiseBots.cmake`. Core-owned LFG/meeting-stone and transport concepts are
+retained, while donor-only expansion families are absent from the module tree.
 
 - Phase 3 headless lifecycle/session foundation is implemented.
 - Native Penqle module discovery, ScriptMgr adapters, module-local AI ownership,
@@ -82,9 +82,8 @@ cmake -S <tortoise-wow> -B <build> -DMODULES=static -DMODULE_TORTOISEBOTS=static
 cmake --build <build> --target mangosd
 ```
 
-For the full native configuration also set `-DBUILD_PLAYERBOTS=ON`. The legacy
-vendored CMaNGOS tree is not selected by that option; it requires the explicit
-`BUILD_LEGACY_PLAYERBOTS=ON` migration escape hatch.
+For the full native configuration also set `-DBUILD_PLAYERBOTS=ON`. The module
+build has no legacy vendored PlayerBots source path.
 
 `scripts/sync-to-docker.sh` copies this repository into the sibling core's
 `modules/TortoiseBots/` directory for the documented Docker workflow.

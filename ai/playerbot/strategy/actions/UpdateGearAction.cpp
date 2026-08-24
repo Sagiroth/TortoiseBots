@@ -1,7 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "UpdateGearAction.h"
-#include "playerbot/RandomPlayerbotMgr.h"
+#include "playerbot/RandomBotFacade.h"
 #include "playerbot/AiFactory.h"
 
 using namespace ai;
@@ -94,7 +94,7 @@ bool UpdateGearAction::Execute(Event& event)
             {
                 // Try to equip and enchant the item
                 uint16 eDest;
-                if (RandomPlayerbotMgr::CanEquipUnseenItem(bot, slot, eDest, pItemId) == EQUIP_ERR_OK)
+                if (RandomBotFacade::CanEquipUnseenItem(bot, slot, eDest, pItemId) == EQUIP_ERR_OK)
                 {
                     Item* pItem = bot->EquipNewItem(eDest, pItemId, true);
                     if (pItem)
@@ -129,7 +129,7 @@ bool UpdateGearAction::isUseful()
     {
         // Only for max level random bots that are playing with a real player
         Player* master = GetMaster();
-        if (master && isRealPlayer_Helper(master) && IsInGroup_Helper(bot, master) && sRandomPlayerbotMgr.IsRandomBot(bot))
+        if (master && isRealPlayer_Helper(master) && IsInGroup_Helper(bot, master) && sRandomBotFacade.IsRandomBot(bot))
         {
             return bot->GetLevel() >= DEFAULT_MAX_LEVEL;
         }

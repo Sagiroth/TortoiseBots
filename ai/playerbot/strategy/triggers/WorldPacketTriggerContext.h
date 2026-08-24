@@ -45,13 +45,8 @@ namespace ai
             creators["ready check finished"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "ready check finished"); };
             creators["uninvite"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "uninvite"); };
             creators["uninvite guid"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "uninvite guid"); };
-            creators["lfg join"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "lfg join"); };
-            creators["lfg proposal"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "lfg proposal"); };
-            creators["lfg role check"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "lfg role check"); };
-            creators["lfg leave"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "lfg leave"); };
             creators["guild accept"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "guild accept"); };
             creators["petition offer"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "petition offer"); };
-            creators["lfg teleport"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "lfg teleport"); };
             creators["inventory change failure"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "inventory change failure"); };
             creators["bg status"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "bg status"); };
             creators["levelup"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "levelup"); };
@@ -62,7 +57,6 @@ namespace ai
             creators["revive from corpse"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "revive from corpse"); };
             creators["receive emote"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "receive emote"); };
             creators["receive text emote"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "receive text emote"); };
-            creators["arena team invite"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "arena team invite"); };
             creators["summon request"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "summon request"); };
         }
     };

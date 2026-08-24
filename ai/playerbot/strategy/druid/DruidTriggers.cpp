@@ -29,8 +29,3 @@ bool EntanglingRootsKiteTrigger::IsActive()
 
     return !HasMaxDebuffs();
 }
-
-Value<Unit*>* LifebloomTankTrigger::GetTargetValue()
-{
-    return context->GetValue<Unit*>("party tank without lifebloom", "lifebloom");
-}

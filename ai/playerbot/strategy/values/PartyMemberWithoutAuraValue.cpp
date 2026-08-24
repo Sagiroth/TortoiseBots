@@ -24,7 +24,6 @@ public:
 
         for (std::vector<std::string>::iterator i = auras.begin(); i != auras.end(); ++i)
         {
-#ifdef MANGOSBOT_ZERO
             // Ignore mana buff spells for non mana users
             if (*i == "arcane intellect" || *i == "arcane brilliance" || *i == "divine spirit" || *i == "prayer of spirit")
             {
@@ -33,7 +32,6 @@ public:
                     return false;
                 }
             }
-#endif
 
             if (ai->HasAura(*i, unit))
                 return false;

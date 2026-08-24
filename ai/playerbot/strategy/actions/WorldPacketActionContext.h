@@ -23,7 +23,6 @@
 #include "ReadyCheckAction.h"
 #include "SecurityCheckAction.h"
 #include "GuildAcceptAction.h"
-#include "AcceptBattleGroundInvitationAction.h"
 #include "PetitionSignAction.h"
 #include "BattleGroundJoinAction.h"
 #include "SeeSpellAction.h"
@@ -38,9 +37,7 @@ namespace ai
         {
             creators["bg status check"] = [](PlayerbotAI* ai) { return new BGStatusCheckAction(ai); };
             creators["bg status"] = [](PlayerbotAI* ai) { return new BGStatusAction(ai); };
-            creators["bg join"] = [](PlayerbotAI* ai) { return new BGJoinAction(ai); };
             creators["bg leave"] = [](PlayerbotAI* ai) { return new BGLeaveAction(ai); };
-            creators["arena tactics"] = [](PlayerbotAI* ai) { return new ArenaTactics(ai); };
             creators["accept invitation"] = [](PlayerbotAI* ai) { return new AcceptInvitationAction(ai); };
             creators["give leader in dungeon"] = [](PlayerbotAI* ai) { return new GiveLeaderAction(ai, "I don't know this dungeon, lead the way!"); };
             creators["leader"] = [](PlayerbotAI* ai) { return new PassLeadershipToMasterAction(ai); };

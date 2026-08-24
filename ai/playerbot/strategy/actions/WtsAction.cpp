@@ -3,7 +3,7 @@
 #include "WtsAction.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/strategy/ItemVisitors.h"
-#include "playerbot/RandomPlayerbotMgr.h"
+#include "playerbot/RandomBotFacade.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 
 using namespace ai;
@@ -17,7 +17,7 @@ bool WtsAction::Execute(Event& event)
     std::ostringstream out;
     std::string text = event.GetParam();
 
-    if (!sRandomPlayerbotMgr.IsRandomBot(bot))
+    if (!sRandomBotFacade.IsRandomBot(bot))
         return false;
 
     std::string link = event.GetParam();

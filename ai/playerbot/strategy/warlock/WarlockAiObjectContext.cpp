@@ -116,7 +116,6 @@ namespace ai
                 creators["pet voidwalker"] = [](PlayerbotAI* ai) { return new WarlockManualPetStrategy(ai, "pet voidwalker", "no voidwalker", "summon voidwalker"); };
                 creators["pet succubus"] = [](PlayerbotAI* ai) { return new WarlockManualPetStrategy(ai, "pet succubus", "no succubus", "summon succubus"); };
                 creators["pet felhunter"] = [](PlayerbotAI* ai) { return new WarlockManualPetStrategy(ai, "pet felhunter", "no felhunter", "summon felhunter"); };
-                creators["pet felguard"] = [](PlayerbotAI* ai) { return new WarlockManualPetStrategy(ai, "pet felguard", "no felguard", "summon felguard"); };
             }
         };
 
@@ -216,7 +215,6 @@ namespace ai
                 creators["curse of shadow on attacker"] = [](PlayerbotAI* ai) { return new CurseOfShadowOnAttackerTrigger(ai); };
                 creators["banish"] = [](PlayerbotAI* ai) { return new BanishTrigger(ai); };
                 creators["spellstone"] = [](PlayerbotAI* ai) { return new SpellstoneTrigger(ai); };
-                creators["backlash"] = [](PlayerbotAI* ai) { return new BacklashTrigger(ai); };
                 creators["fear"] = [](PlayerbotAI* ai) { return new FearTrigger(ai); };
                 creators["fear pvp"] = [](PlayerbotAI* ai) { return new FearPvpTrigger(ai); };
                 creators["immolate"] = [](PlayerbotAI* ai) { return new ImmolateTrigger(ai); };
@@ -227,10 +225,6 @@ namespace ai
                 creators["death coil on enemy healer"] = [](PlayerbotAI* ai) { return new DeathCoilInterruptTHealerTrigger(ai); };
                 creators["death coil on snare target"] = [](PlayerbotAI* ai) { return new DeathCoilSnareTrigger(ai); };
                 creators["inferno"] = [](PlayerbotAI* ai) { return new InfernoTrigger(ai); };
-                creators["shadowfury interrupt"] = [](PlayerbotAI* ai) { return new ShadowfuryInterruptTrigger(ai); };
-                creators["shadowfury on snare target"] = [](PlayerbotAI* ai) { return new ShadowfurySnareTrigger(ai); };
-                creators["unstable affliction"] = [](PlayerbotAI* ai) { return new UnstableAfflictionTrigger(ai); };
-                creators["unstable affliction on attacker"] = [](PlayerbotAI* ai) { return new UnstableAfflictionOnAttackerTrigger(ai); };
                 creators["life tap"] = [](PlayerbotAI* ai) { return new LifeTapTrigger(ai); };
                 creators["drain soul"] = [](PlayerbotAI* ai) { return new DrainSoulTrigger(ai); };
                 creators["no curse"] = [](PlayerbotAI* ai) { return new NoCurseTrigger(ai); };
@@ -241,10 +235,8 @@ namespace ai
                 creators["no voidwalker"] = [](PlayerbotAI* ai) { return new NoVoidwalkerTrigger(ai); };
                 creators["no succubus"] = [](PlayerbotAI* ai) { return new NoSuccubusTrigger(ai); };
                 creators["no felhunter"] = [](PlayerbotAI* ai) { return new NoFelhunterTrigger(ai); };
-                creators["no felguard"] = [](PlayerbotAI* ai) { return new NoFelguardTrigger(ai); };
                 creators["spell lock"] = [](PlayerbotAI* ai) { return new SpellLockTrigger(ai); };
                 creators["spell lock enemy healer"] = [](PlayerbotAI* ai) { return new SpellLockEnemyHealerTrigger(ai); };
-                creators["seed of corruption on attacker"] = [](PlayerbotAI* ai) { return new SeedOfCorruptionOnAttackerTrigger(ai); };
                 creators["soulstone"] = [](PlayerbotAI* ai) { return new SoulstoneTrigger(ai); };
                 creators["shadow ward"] = [](PlayerbotAI* ai) { return new ShadowWardTrigger(ai); };
             }
@@ -255,7 +247,6 @@ namespace ai
         public:
             AiObjectContextInternal()
             {
-                creators["fel armor"] = [](PlayerbotAI* ai) { return new CastFelArmorAction(ai); };
                 creators["demon armor"] = [](PlayerbotAI* ai) { return new CastDemonArmorAction(ai); };
                 creators["demon skin"] = [](PlayerbotAI* ai) { return new CastDemonSkinAction(ai); };
                 creators["create healthstone"] = [](PlayerbotAI* ai) { return new CastCreateHealthstoneAction(ai); };
@@ -267,12 +258,10 @@ namespace ai
                 creators["summon succubus"] = [](PlayerbotAI* ai) { return new CastSummonSuccubusAction(ai); };
                 creators["summon felhunter"] = [](PlayerbotAI* ai) { return new CastSummonFelhunterAction(ai); };
                 creators["summon imp"] = [](PlayerbotAI* ai) { return new CastSummonImpAction(ai); };
-                creators["summon felguard"] = [](PlayerbotAI* ai) { return new CastSummonFelguardAction(ai); };
                 creators["summon inferno"] = [](PlayerbotAI* ai) { return new CastSummonInfernoAction(ai); };
                 creators["immolate"] = [](PlayerbotAI* ai) { return new CastImmolateAction(ai); };
                 creators["corruption"] = [](PlayerbotAI* ai) { return new CastCorruptionAction(ai); };
                 creators["corruption on attacker"] = [](PlayerbotAI* ai) { return new CastCorruptionOnAttackerAction(ai); };
-                creators["seed of corruption on attacker"] = [](PlayerbotAI* ai) { return new CastSeedOfCorruptionOnAttackerAction(ai); };
                 creators["siphon life"] = [](PlayerbotAI* ai) { return new CastSiphonLifeAction(ai); };
                 creators["siphon life on attacker"] = [](PlayerbotAI* ai) { return new CastSiphonLifeOnAttackerAction(ai); };
                 creators["curse of agony"] = [](PlayerbotAI* ai) { return new CastCurseOfAgonyAction(ai); };
@@ -295,10 +284,7 @@ namespace ai
                 creators["drain life"] = [](PlayerbotAI* ai) { return new CastDrainLifeAction(ai); };
                 creators["banish"] = [](PlayerbotAI* ai) { return new CastBanishAction(ai); };
                 creators["banish on cc"] = [](PlayerbotAI* ai) { return new CastBanishOnCcAction(ai); };
-                creators["seed of corruption"] = [](PlayerbotAI* ai) { return new CastSeedOfCorruptionAction(ai); };
                 creators["rain of fire"] = [](PlayerbotAI* ai) { return new CastRainOfFireAction(ai); };
-                creators["shadowfury"] = [](PlayerbotAI* ai) { return new CastShadowfuryAction(ai); };
-                creators["shadowfury on snare target"] = [](PlayerbotAI* ai) { return new CastShadowfurySnareAction(ai); };
                 creators["life tap"] = [](PlayerbotAI* ai) { return new CastLifeTapAction(ai); };
                 creators["fear"] = [](PlayerbotAI* ai) { return new CastFearAction(ai); };
                 creators["fear on cc"] = [](PlayerbotAI* ai) { return new CastFearOnCcAction(ai); };
@@ -311,9 +297,6 @@ namespace ai
                 creators["death coil on snare target"] = [](PlayerbotAI* ai) { return new CastDeathCoilSnareAction(ai); };
                 creators["dark pact"] = [](PlayerbotAI* ai) { return new CastDarkPactAction(ai); };
                 creators["howl of terror"] = [](PlayerbotAI* ai) { return new CastHowlOfTerrorAction(ai); };
-                creators["unstable affliction"] = [](PlayerbotAI* ai) { return new CastUnstableAfflictionAction(ai); };
-                creators["unstable affliction on attacker"] = [](PlayerbotAI* ai) { return new CastUnstableAfflictionOnAttackerAction(ai); };
-                creators["soulshatter"] = [](PlayerbotAI* ai) { return new CastSoulShatterAction(ai); };
                 creators["searing pain"] = [](PlayerbotAI* ai) { return new CastSearingPainAction(ai); };
                 creators["soul fire"] = [](PlayerbotAI* ai) { return new CastSoulFireAction(ai); };
                 creators["curse of exhaustion"] = [](PlayerbotAI* ai) { return new CastCurseOfExhaustionAction(ai); };

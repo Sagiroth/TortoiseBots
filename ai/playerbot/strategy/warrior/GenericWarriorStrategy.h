@@ -24,7 +24,6 @@ public:
         creators["mocking blow"] = &mocking_blow;
         creators["overpower"] = &overpower;
         creators["retaliation"] = &retaliation;
-        creators["shattering throw"] = &shattering_throw;
 
         // temp
         creators["mortal strike"] = &mortal_strike;
@@ -207,15 +206,6 @@ private:
         );
     }
 
-    static ActionNode* shattering_throw([[maybe_unused]] PlayerbotAI* botAI)
-    {
-        return new ActionNode(
-            "shattering throw",
-            /*P*/ { NextAction("battle stance") },
-            /*A*/ {},
-            /*C*/ {}
-        );
-    }
 };
 
 class GenericWarriorStrategy : public CombatStrategy

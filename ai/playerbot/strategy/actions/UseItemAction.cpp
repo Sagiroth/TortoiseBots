@@ -80,9 +80,7 @@ bool BotUseItemSpell::OpenLockCheck()
         // for effects of spells that have only one target
         switch (m_spellInfo->Effect[i])
         {
-#ifndef MANGOSBOT_TWO
             case SPELL_EFFECT_OPEN_LOCK_ITEM:
-#endif
             case SPELL_EFFECT_OPEN_LOCK:
             {
                 if (m_caster->GetTypeId() != TYPEID_PLAYER) // only players can open locks, gather etc.
@@ -222,11 +220,6 @@ bool RequiresItemToUse(const ItemPrototype* itemProto, PlayerbotAI* ai, Player* 
     if (itemProto->Class == ITEM_CLASS_QUEST)
         return true;
 
-#ifndef MANGOSBOT_ZERO
-    // If item is a gem
-    if (itemProto->Class == ITEM_CLASS_GEM)
-        return true;
-#endif
 
     return false;
 }
@@ -436,13 +429,6 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
         return UseQuestGiverItem(requester, itemUsed);
     }
 
-#ifndef MANGOSBOT_ZERO
-    // Check for gem items
-    if (proto->Class == ITEM_CLASS_GEM)
-    {
-        return UseGemItem(requester, item, itemUsed, true);
-    }
-#endif
 
     // Check for item equipped, skip exceptions listed in RequiresItemToUse
     if (proto->InventoryType != INVTYPE_NON_EQUIP && itemUsed && !itemUsed->IsEquipped())
@@ -512,11 +498,7 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
         }
 
         // Wrong triggering type
-#ifdef MANGOSBOT_ZERO
         if (spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_USE && spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_NO_DELAY_USE)
-#else
-        if (spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_USE)
-#endif
         {
             continue;
         }
@@ -654,17 +636,6 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
             BotUseItemSpell* spell = new BotUseItemSpell(bot, spellInfo, (successCasts > 0) ? TRIGGERED_OLD_TRIGGERED : TRIGGERED_NONE);
             spell->m_clientCast = true;
 
-#ifdef MANGOSBOT_ONE
-            // used in item_template.spell_2 with spell_id with SPELL_GENERIC_LEARN in spell_1
-            if (spellInfo->Id == SPELL_ID_GENERIC_LEARN && proto->Spells[1].SpellTrigger == ITEM_SPELLTRIGGER_LEARN_SPELL_ID)
-                spell->m_currentBasePoints[EFFECT_INDEX_0] = proto->Spells[1].SpellId;
-#endif
-#ifdef MANGOSBOT_TWO
-            // used in item_template.spell_2 with spell_id with SPELL_GENERIC_LEARN in spell_1
-            if ((spellInfo->Id == SPELL_ID_GENERIC_LEARN
-                || spellInfo->Id == SPELL_ID_GENERIC_LEARN_PET) && proto->Spells[1].SpellTrigger == ITEM_SPELLTRIGGER_LEARN_SPELL_ID)
-                spell->m_currentBasePoints[EFFECT_INDEX_0] = proto->Spells[1].SpellId;
-#endif
 
             // Spend the item if used in the spell
             if (itemUsed)
@@ -1034,82 +1005,6 @@ bool UseAction::HasItemCooldown(uint32 itemId) const
     return false;
 }
 
-#ifndef MANGOSBOT_ZERO
-bool UseAction::UseGemItem(Player* requester, Item* item, Item* gem, bool replace)
-{
-    if (!item || !gem)
-    {
-        return false;
-    }
-
-    WorldPacket* const packet = new WorldPacket(CMSG_SOCKET_GEMS);
-    *packet << item->getObjectGuid();
-
-    bool fits = false;
-    for (uint32 enchant_slot = SOCK_ENCHANTMENT_SLOT; enchant_slot < SOCK_ENCHANTMENT_SLOT + MAX_GEM_SOCKETS; ++enchant_slot)
-    {
-        uint8 SocketColor = item->GetProto()->Socket[enchant_slot - SOCK_ENCHANTMENT_SLOT].Color;
-        GemPropertiesEntry const* gemProperty = sGemPropertiesStore.LookupEntry(gem->GetProto()->GemProperties);
-        if (gemProperty && (gemProperty->color & SocketColor))
-        {
-            if (fits)
-            {
-                *packet << ObjectGuid();
-                continue;
-            }
-
-            uint32 enchant_id = item->GetEnchantmentId(EnchantmentSlot(enchant_slot));
-            if (!enchant_id)
-            {
-                *packet << gem->getObjectGuid();
-                fits = true;
-                continue;
-            }
-
-            SpellItemEnchantmentEntry const* enchantEntry = sSpellItemEnchantmentStore.LookupEntry(enchant_id);
-            if (!enchantEntry || !enchantEntry->GemID)
-            {
-                *packet << gem->getObjectGuid();
-                fits = true;
-                continue;
-            }
-
-            if (replace && enchantEntry->GemID != gem->GetProto()->ItemId)
-            {
-                *packet << gem->getObjectGuid();
-                fits = true;
-                continue;
-            }
-        }
-
-        *packet << ObjectGuid();
-    }
-
-    if (fits)
-    {
-        if (verbose)
-        {
-            std::map<std::string, std::string> replyArgs;
-            replyArgs["%item"] = chat->formatItem(item);
-            replyArgs["%gem"] = chat->formatItem(gem);
-            ai->TellPlayerNoFacing(requester, BOT_TEXT2("use_command_socket", replyArgs), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
-        }
-
-        bot->GetSession()->HandleSocketOpcode(*packet);
-
-        return true;
-    }
-    else
-    {
-        if (verbose)
-        {
-            ai->TellPlayerNoFacing(requester, BOT_TEXT("use_command_socket_error"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
-        }
-
-        return false;
-    }
-}
-#endif
 
 bool UseItemIdAction::Execute(Event& event)
 {
@@ -1191,11 +1086,7 @@ bool UseItemIdAction::isPossible()
             continue;
 
         // wrong triggering type
-#ifdef MANGOSBOT_ZERO
         if (spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_USE && spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_NO_DELAY_USE)
-#else
-        if (spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_USE)
-#endif
             continue;
 
         SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellData.SpellId);

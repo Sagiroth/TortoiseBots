@@ -107,7 +107,6 @@ std::vector<NextAction> DpsPaladinStrategy::getDefaultActions()
         NextAction("hammer of wrath", ACTION_DEFAULT + 0.6f),
         NextAction("judgement of wisdom", ACTION_DEFAULT + 0.5f),
         NextAction("crusader strike", ACTION_DEFAULT + 0.4f),
-        NextAction("divine storm", ACTION_DEFAULT + 0.3f),
         NextAction("consecration", ACTION_DEFAULT + 0.1f),
         NextAction("melee", ACTION_DEFAULT)
     };
@@ -129,7 +128,7 @@ void DpsPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new TriggerNode(
             "seal",
             {
-                NextAction("seal of corruption", ACTION_HIGH)
+                NextAction("seal of command", ACTION_HIGH)
             }
         )
     );
@@ -144,17 +143,8 @@ void DpsPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
     triggers.push_back(
         new TriggerNode(
-            "avenging wrath",
-            {
-                NextAction("avenging wrath", ACTION_HIGH + 2)
-            }
-        )
-    );
-    triggers.push_back(
-        new TriggerNode(
             "medium aoe",
             {
-                NextAction("divine storm", ACTION_HIGH + 4),
                 NextAction("consecration", ACTION_HIGH + 3)
             }
         )

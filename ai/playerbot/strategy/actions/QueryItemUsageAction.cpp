@@ -2,7 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "QueryItemUsageAction.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
-#include "playerbot/RandomPlayerbotMgr.h"
+#include "playerbot/RandomBotFacade.h"
 #include "playerbot/RandomItemMgr.h"
 
 using namespace ai;
@@ -207,7 +207,7 @@ std::string QueryItemUsageAction::QueryItemUsage(ItemQualifier& qualifier, bool 
 
 std::string QueryItemUsageAction::QueryItemPrice(ItemQualifier& qualifier)
 {
-    if (!sRandomPlayerbotMgr.IsRandomBot(bot))
+    if (!sRandomBotFacade.IsRandomBot(bot))
         return "";
 
     if (qualifier.GetProto()->Bonding == BIND_WHEN_PICKED_UP)

@@ -11,27 +11,4 @@ namespace ai
         virtual bool IsActive() override;
     };
 
-    class NearDarkPortalTrigger : public Trigger
-    {
-    public:
-        NearDarkPortalTrigger(PlayerbotAI* ai) : Trigger(ai, "near dark portal", 10) {}
-
-        virtual bool IsActive() override;
-    };
-
-    class AtDarkPortalAzerothTrigger : public Trigger
-    {
-    public:
-        AtDarkPortalAzerothTrigger(PlayerbotAI* ai) : Trigger(ai, "at dark portal azeroth", 10) {}
-
-        virtual bool IsActive() override;
-    };
-
-    class AtDarkPortalOutlandTrigger : public Trigger
-    {
-    public:
-        AtDarkPortalOutlandTrigger(PlayerbotAI* ai) : Trigger(ai, "at dark portal outland", 10) {}
-
-        virtual bool IsActive() override;
-    };
 }

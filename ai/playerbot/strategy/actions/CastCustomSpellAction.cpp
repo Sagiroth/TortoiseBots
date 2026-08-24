@@ -31,10 +31,6 @@ static inline void ltrim(std::string& s)
 
 bool CastCustomSpellAction::Execute(Event& event)
 {
-    // only allow proper vehicle seats
-    if (ai->IsInVehicle() && !ai->IsInVehicle(false, false, true))
-        return false;
-
     Unit* target = nullptr;
     std::string text = getQualifier();
 
@@ -287,7 +283,6 @@ bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string comm
                 command.find("voidwalker") != std::string::npos ||
                 command.find("succubus") != std::string::npos ||
                 command.find("felhunter") != std::string::npos ||
-                command.find("felguard") != std::string::npos ||
                 command.find("felsteed") != std::string::npos ||
                 command.find("dreadsteed") != std::string::npos)
             {
@@ -672,25 +667,18 @@ bool CraftRandomItemAction::Execute(Event& event)
 
         uint32 castCount = AI_VALUE2(uint32, "has reagents for", spellId);
 
-        if (spellId == 61288) //Crafting random glyph
-        {
-            castCount = 1;
-        }
-        else
-        {
-            uint32 newItemId = pSpellInfo->EffectItemType[0];
+        uint32 newItemId = pSpellInfo->EffectItemType[0];
 
-            if (!newItemId)
-                continue;
+        if (!newItemId)
+            continue;
 
-            ItemPrototype const* proto = sObjectMgr.GetItemPrototype(newItemId);
+        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(newItemId);
 
-            if (!proto)
-                continue;
+        if (!proto)
+            continue;
 
-            if (castCount > proto->GetMaxStackSize())
-                castCount = proto->GetMaxStackSize();
-        }
+        if (castCount > proto->GetMaxStackSize())
+            castCount = proto->GetMaxStackSize();
 
         std::ostringstream cmd;
         cmd << "castnc ";
@@ -738,12 +726,6 @@ bool DisenchantRandomItemAction::Execute(Event& event)
         if (!proto->DisenchantID)
             continue;
 
-#ifndef MANGOSBOT_ZERO
-        // 2.0.x addon: Check player enchanting level against the item disenchanting requirements
-        int32 item_disenchantskilllevel = proto->RequiredDisenchantSkill;
-        if (item_disenchantskilllevel > int32(bot->GetSkillValue(SKILL_ENCHANTING)))
-            continue;
-#endif
 
         // don't touch rare+ items if with real player/guild
         if ((ai->HasRealPlayerMaster() || ai->IsInRealGuild()) && proto->Quality > ITEM_QUALITY_UNCOMMON)

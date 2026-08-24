@@ -12,12 +12,6 @@ namespace ai
         BgTypeValue(PlayerbotAI* ai) : ManualSetValue<uint32>(ai, 0, "bg type") {}
     };
 
-    class ArenaTypeValue : public ManualSetValue<uint32>
-    {
-    public:
-        ArenaTypeValue(PlayerbotAI* ai) : ManualSetValue<uint32>(ai, 0, "arena type") {}
-    };
-
     class BgRoleValue : public ManualSetValue<uint32>
     {
     public:

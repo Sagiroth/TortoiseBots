@@ -181,8 +181,6 @@ namespace ai
                 creators["divine spirit"] = [](PlayerbotAI* ai) { return new DivineSpiritTrigger(ai); };
                 creators["divine spirit on party"] = [](PlayerbotAI* ai) { return new DivineSpiritOnPartyTrigger(ai); };
                 creators["inner fire"] = [](PlayerbotAI* ai) { return new InnerFireTrigger(ai); };
-                creators["vampiric touch"] = [](PlayerbotAI* ai) { return new VampiricTouchTrigger(ai); };
-                creators["vampiric touch on attacker"] = [](PlayerbotAI* ai) { return new VampiricTouchOnAttackerTrigger(ai); };
                 creators["vampiric embrace"] = [](PlayerbotAI* ai) { return new VampiricEmbraceTrigger(ai); };
                 creators["shadowform"] = [](PlayerbotAI* ai) { return new ShadowformTrigger(ai); };
                 creators["power infusion"] = [](PlayerbotAI* ai) { return new PowerInfusionTrigger(ai); };
@@ -203,11 +201,9 @@ namespace ai
                 // TurtleWoW Shadow redesign awareness:
                 creators["spirit tap buff"] = [](PlayerbotAI* ai) { return new SpiritTapBuffTrigger(ai); };
                 creators["shadow weaving missing"] = [](PlayerbotAI* ai) { return new ShadowWeavingMissingTrigger(ai); };
-                creators["binding heal"] = [](PlayerbotAI* ai) { return new BindingHealTrigger(ai); };
                 creators["chastise"] = [](PlayerbotAI* ai) { return new ChastiseTrigger(ai); };
                 creators["silence"] = [](PlayerbotAI* ai) { return new SilenceTrigger(ai); };
                 creators["silence on enemy healer"] = [](PlayerbotAI* ai) { return new SilenceEnemyHealerTrigger(ai); };
-                creators["shadowfiend"] = [](PlayerbotAI* ai) { return new ShadowfiendTrigger(ai); };
                 creators["mind blast"] = [](PlayerbotAI* ai) { return new MindBlastTrigger(ai); };
                 creators["smite"] = [](PlayerbotAI* ai) { return new SmiteTrigger(ai); };
                 creators["holy fire"] = [](PlayerbotAI* ai) { return new HolyFireTrigger(ai); };
@@ -257,12 +253,8 @@ namespace ai
                 creators["fade"] = [](PlayerbotAI* ai) { return new CastFadeAction(ai); };
                 creators["inner fire"] = [](PlayerbotAI* ai) { return new CastInnerFireAction(ai); };
                 creators["resurrection"] = [](PlayerbotAI* ai) { return new CastResurrectionAction(ai); };
-                creators["circle of healing"] = [](PlayerbotAI* ai) { return new CastCircleOfHealingAction(ai); };
                 creators["psychic scream"] = [](PlayerbotAI* ai) { return new CastPsychicScreamAction(ai); };
-                creators["vampiric touch"] = [](PlayerbotAI* ai) { return new CastVampiricTouchAction(ai); };
-                creators["vampiric touch on attacker"] = [](PlayerbotAI* ai) { return new CastVampiricTouchActionOnAttacker(ai); };
                 creators["vampiric embrace"] = [](PlayerbotAI* ai) { return new CastVampiricEmbraceAction(ai); };
-                //creators["dispersion"] = [](PlayerbotAI* ai) { return new CastDispersionAction(ai); };
                 creators["shadow protection"] = [](PlayerbotAI* ai) { return new CastShadowProtectionAction(ai); };
                 creators["shadow protection on party"] = [](PlayerbotAI* ai) { return new CastShadowProtectionOnPartyAction(ai); };
                 creators["shackle undead"] = [](PlayerbotAI* ai) { return new CastShackleUndeadAction(ai); };
@@ -288,12 +280,6 @@ namespace ai
                 creators["consume magic"] = [](PlayerbotAI* ai) { return new CastConsumeMagicAction(ai); };
                 creators["chastise"] = [](PlayerbotAI* ai) { return new CastChastiseAction(ai); };
                 creators["shadow word: death"] = [](PlayerbotAI* ai) { return new CastShadowWordDeathAction(ai); };
-                creators["shadowfiend"] = [](PlayerbotAI* ai) { return new CastShadowfiendAction(ai); };
-                creators["mass dispel"] = [](PlayerbotAI* ai) { return new CastMassDispelAction(ai); };
-                creators["pain suppression"] = [](PlayerbotAI* ai) { return new CastPainSuppressionAction(ai); };
-                creators["pain suppression on party"] = [](PlayerbotAI* ai) { return new CastPainSuppressionProtectAction(ai); };
-                creators["prayer of mending"] = [](PlayerbotAI* ai) { return new CastPrayerOfMendingAction(ai); };
-                creators["binding heal"] = [](PlayerbotAI* ai) { return new CastBindingHealAction(ai); };
                 creators["holy fire"] = [](PlayerbotAI* ai) { return new CastHolyFireAction(ai); };
                 creators["holy nova"] = [](PlayerbotAI* ai) { return new CastHolyNovaAction(ai); };
                 creators["update pve strats"] = [](PlayerbotAI* ai) { return new UpdatePriestPveStrategiesAction(ai); };

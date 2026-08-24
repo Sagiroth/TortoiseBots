@@ -1,14 +1,6 @@
 
 #include "playerbot/playerbot.h"
 #include "PetitionSignAction.h"
-#ifndef MANGOSBOT_ZERO
-#ifdef CMANGOS
-#include "Arena/ArenaTeam.h"
-#endif
-#ifdef MANGOS
-#include "ArenaTeam.h"
-#endif
-#endif
 
 using namespace ai;
 
@@ -20,35 +12,14 @@ bool PetitionSignAction::Execute(Event& event)
     ObjectGuid petitionGuid;
     ObjectGuid inviter;
     uint8 unk = 0;
-    bool isArena = false;
     p >> petitionGuid >> inviter;
     uint32 type = 9;
 
-#ifndef MANGOSBOT_ZERO
-    auto result = CharacterDatabase.PQuery("SELECT `type` FROM `petition` WHERE `petitionguid` = '%u'", petitionGuid.GetCounter());
-    if (!result)
-    {
-        return false;
-    }
-
-    Field* fields = result->Fetch();
-    type = fields[0].GetUInt32();
-#endif
 
     bool accept = true;
 
     if (type != 9)
     {
-#ifndef MANGOSBOT_ZERO
-        isArena = true;
-        uint8 slot = ArenaTeam::GetSlotByType(ArenaType(type));
-        if (bot->GetArenaTeamId(slot))
-        {
-            // player is already in an arena team
-            ai->TellError(requester, "Sorry, I am already in such team");
-            accept = false;
-        }
-#endif
     }
     else
     {
@@ -87,7 +58,7 @@ bool PetitionSignAction::Execute(Event& event)
         WorldPacket data(MSG_PETITION_DECLINE);
         data << petitionGuid;
         bot->GetSession()->HandlePetitionDeclineOpcode(data);
-        sLog.outDetail("Bot #%d <%s> declines %s invite", bot->GetGUIDLow(), bot->GetName(), isArena ? "Arena" : "Guild");
+        sLog.outDetail("Bot #%d <%s> declines guild invite", bot->GetGUIDLow(), bot->GetName());
         return false;
     }
     if (accept)
@@ -96,7 +67,7 @@ bool PetitionSignAction::Execute(Event& event)
         data << petitionGuid << unk;
         bot->GetSession()->HandlePetitionSignOpcode(data);
         bot->Say("Thanks for the invite!", LANG_UNIVERSAL);
-        sLog.outDetail("Bot #%d <%s> accepts %s invite", bot->GetGUIDLow(), bot->GetName(), isArena ? "Arena" : "Guild");
+        sLog.outDetail("Bot #%d <%s> accepts guild invite", bot->GetGUIDLow(), bot->GetName());
         return true;
     }
     return false;

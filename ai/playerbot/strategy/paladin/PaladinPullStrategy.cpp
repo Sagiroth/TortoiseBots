@@ -19,11 +19,8 @@ std::string PaladinPullStrategy::GetPullActionName() const
         return PullStrategy::GetPullActionName();
     }
 
-    if (botAI->CanCastSpell("avenger's shield", target))
-        return "avenger's shield";
-
-    if (botAI->CanCastSpell("hand of reckoning", target))
-        return "hand of reckoning";
+    if (botAI->CanCastSpell("judgement", target))
+        return "judgement";
 
     return PullStrategy::GetPullActionName();
 }

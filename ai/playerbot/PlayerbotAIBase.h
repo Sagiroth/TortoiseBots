@@ -1,7 +1,6 @@
 #pragma once
 
 class Player;
-class PlayerbotMgr;
 class ChatHandler;
 class PerformanceMonitorOperation;
 

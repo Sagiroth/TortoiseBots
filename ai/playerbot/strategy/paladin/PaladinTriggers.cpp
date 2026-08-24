@@ -46,7 +46,6 @@ bool SealTrigger::IsActive()
 	Unit* target = GetTarget();
 	return !ai->HasAura("seal of justice", target) &&
         !ai->HasAura("seal of command", target) &&
-        !ai->HasAura("seal of vengeance", target) &&
 		!ai->HasAura("seal of righteousness", target) &&
 		!ai->HasAura("seal of light", target) &&
         !ai->HasAura("seal of wisdom", target) &&
@@ -316,11 +315,7 @@ bool ConsecrationTrigger::IsActive()
 {
     if (SpellNoCooldownTrigger::IsActive())
     {
-#ifdef MANGOSBOT_TWO
-        return true;
-#else
         return AI_VALUE2(uint8, "mana", "self target") > sPlayerbotAIConfig.mediumMana;
-#endif
     }
 
     return false;
@@ -330,11 +325,7 @@ bool ExorcismTrigger::IsActive()
 {
     if (SpellNoCooldownTrigger::IsActive())
     {
-#ifdef MANGOSBOT_TWO
-        return ai->HasAura("the art of war", bot);
-#else
         return AI_VALUE2(uint8, "mana", "self target") > sPlayerbotAIConfig.mediumMana;
-#endif
     }
 
     return false;

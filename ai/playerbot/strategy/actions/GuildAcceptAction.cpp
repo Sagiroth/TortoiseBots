@@ -66,7 +66,7 @@ bool GuildAcceptAction::Execute(Event& event)
         accept = false;
     }
 
-    if (accept && sPlayerbotAIConfig.inviteChat && sServerFacade.getDistance2d(bot, inviter) < sPlayerbotAIConfig.spellDistance * 1.5 && PlayerbotAIStorage::Instance().GetAI(inviter) && (sRandomPlayerbotMgr.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
+    if (accept && sPlayerbotAIConfig.inviteChat && sServerFacade.getDistance2d(bot, inviter) < sPlayerbotAIConfig.spellDistance * 1.5 && PlayerbotAIStorage::Instance().GetAI(inviter) && (sRandomBotFacade.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
     {
         if (urand(0, 3))
             bot->Say(BOT_TEXT2("Sounds good %name sign me up!", placeholders), (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));

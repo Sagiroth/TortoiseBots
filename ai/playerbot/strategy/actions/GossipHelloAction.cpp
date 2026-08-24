@@ -30,7 +30,7 @@ bool GossipHelloAction::Execute(Event& event)
 	Creature *pCreature = bot->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_NONE);
 	if (!pCreature)
 	{
-		DEBUG_LOG("[PlayerbotMgr]: HandleMasterIncomingPacket - Received  CMSG_GOSSIP_HELLO %s not found or you can't interact with him.", guid.GetString().c_str());
+		DEBUG_LOG("Playerbot: received CMSG_GOSSIP_HELLO for an unavailable target %s.", guid.GetString().c_str());
 		return false;
 	}
 
@@ -148,11 +148,7 @@ bool GossipHelloAction::ProcessGossip(Player* requester, ObjectGuid creatureGuid
     WorldPacket p;
     std::string code;
     p << creatureGuid;
-#ifdef MANGOSBOT_ZERO
     p << actualMenuToSelect;
-#else
-    p << menu.GetMenuId() << actualMenuToSelect;
-#endif
     p << code;
     bot->GetSession()->HandleGossipSelectOptionOpcode(p);
 

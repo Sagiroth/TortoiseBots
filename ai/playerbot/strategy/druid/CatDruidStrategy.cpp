@@ -13,7 +13,6 @@ class CatDruidStrategyActionNodeFactory : public NamedObjectFactory<ActionNode>
 public:
     CatDruidStrategyActionNodeFactory()
     {
-        creators["feral charge - cat"] = &feral_charge_cat;
         creators["cat form"] = &cat_form;
         creators["claw"] = &claw;
         creators["pounce"] = &pounce;
@@ -22,16 +21,6 @@ public:
     }
 
 private:
-    static ActionNode* feral_charge_cat([[maybe_unused]] PlayerbotAI* botAI)
-    {
-        return new ActionNode(
-            "feral charge - cat",
-            /*P*/ {},
-            /*A*/ { NextAction("reach melee") },
-            /*C*/ {}
-        );
-    }
-
     static ActionNode* cat_form([[maybe_unused]] PlayerbotAI* botAI)
     {
         return new ActionNode(
@@ -135,14 +124,6 @@ void CatDruidStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             }
         )
     );
-    triggers.push_back(
-        new TriggerNode(
-            "savage roar", {
-                NextAction("savage roar", 26.0f)
-            }
-        )
-    );
-
     triggers.push_back(
         new TriggerNode(
             "combo points 5 available", {

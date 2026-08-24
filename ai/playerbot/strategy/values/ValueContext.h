@@ -60,7 +60,7 @@
 #include "LastSpellCastTimeValue.h"
 #include "CombatStartTimeValue.h"
 #include "ManaSaveLevelValue.h"
-#include "LfgValues.h" // BotRolesValue is a shared role-calculation value; LFG actions remain disabled.
+#include "LfgValues.h" // Vanilla/Turtle meeting-stone and group role support.
 #include "PvpValues.h"
 #include "EnemyHealerTargetValue.h"
 #include "Formations.h"
@@ -104,7 +104,6 @@
 #include "LootValues.h"
 #include "StuckValues.h"
 #include "FishValues.h"
-#include "RuneForgeValues.h"
 #include "WorldBuffTravelValues.h"
 
 namespace ai
@@ -125,7 +124,6 @@ namespace ai
             creators["closest game objects static los"] = [](PlayerbotAI* ai) { return new NearestGameObjects(ai, INTERACTION_DISTANCE, LOS_STATIC); };
             creators["nearest npcs"] = [](PlayerbotAI* ai) { return new NearestNpcsValue(ai); };
             creators["nearest npcs no los"] = [](PlayerbotAI* ai) { return new NearestNpcsValue(ai, sPlayerbotAIConfig.sightDistance, true); };
-            creators["nearest vehicles"] = [](PlayerbotAI* ai) { return new NearestVehiclesValue(ai); };
             creators["nearest friendly players"] = [](PlayerbotAI* ai) { return new NearestFriendlyPlayersValue(ai); };
             creators["closest friendly players"] = [](PlayerbotAI* ai) { return new NearestFriendlyPlayersValue(ai, INTERACTION_DISTANCE); };
             creators["possible targets"] = [](PlayerbotAI* ai) { return new PossibleTargetsValue(ai); };
@@ -216,7 +214,6 @@ namespace ai
             creators["trinkets on use"] = [](PlayerbotAI* ai) { return new EquipedUsableTrinketValue(ai); };
 
             creators["spell id"] = [](PlayerbotAI* ai) { return new SpellIdValue(ai); };
-            creators["vehicle spell id"] = [](PlayerbotAI* ai) { return new VehicleSpellIdValue(ai); };
             creators["item for spell"] = [](PlayerbotAI* ai) { return new ItemForSpellValue(ai); };
             creators["spell cast useful"] = [](PlayerbotAI* ai) { return new SpellCastUsefulValue(ai); };
             creators["spell ready"] = [](PlayerbotAI* ai) { return new SpellReadyValue(ai); };
@@ -303,7 +300,6 @@ namespace ai
 
             creators["bg type"] = [](PlayerbotAI* ai) { return new BgTypeValue(ai); };
             creators["rpg bg type"] = [](PlayerbotAI* ai) { return new RpgBgTypeValue(ai); };
-            creators["arena type"] = [](PlayerbotAI* ai) { return new ArenaTypeValue(ai); };
             creators["bg role"] = [](PlayerbotAI* ai) { return new BgRoleValue(ai); };
             creators["bg master"] = [](PlayerbotAI* ai) { return new BgMasterValue(ai); };
             creators["enemy flag carrier"] = [](PlayerbotAI* ai) { return new FlagCarrierValue(ai, false, true); };
@@ -443,7 +439,6 @@ namespace ai
             creators["trigger active"] = [](PlayerbotAI* ai) { return new TriggerActiveValue(ai); };
             creators["has strategy"] = [](PlayerbotAI* ai) { return new HasStrategyValue(ai); };
 
-            creators["party tank without lifebloom"] = [](PlayerbotAI* ai) { return new PartyTankWithoutLifebloomValue(ai); };
             creators["move style"] = [](PlayerbotAI* ai) { return new MoveStyleValue(ai); };
 
             //Travel
@@ -474,9 +469,6 @@ namespace ai
             creators["time since last change"] = [](PlayerbotAI* ai) { return new TimeSinceLastChangeValue(ai); };
             creators["distance moved since"] = [](PlayerbotAI* ai) { return new DistanceMovedSinceValue(ai); };
 
-            creators["runeforge spells"] = [](PlayerbotAI* ai) { return new RuneForgeSpellsValue(ai); };
-            creators["best runeforge spell"] = [](PlayerbotAI* ai) { return new BestRuneForgeSpellValue(ai); };
-            creators["should runeforge"] = [](PlayerbotAI* ai) { return new ShouldRuneForgeValue(ai); };
         };
     };
 }

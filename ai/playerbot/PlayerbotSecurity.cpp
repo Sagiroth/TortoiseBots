@@ -1,5 +1,4 @@
 
-#include "PlayerbotMgr.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "PlayerbotAI.h"
@@ -78,15 +77,7 @@ PlayerbotSecurityLevel PlayerbotSecurity::LevelFor(Player* from, DenyReason* rea
             }
         }
 
-#ifdef MANGOSBOT_ONE
-        if (PlayerbotAIStorage::Instance().GetAI(bot)->HasRealPlayerMaster() && bot->GetSession()->m_lfgInfo.queued)
-#endif
-#ifdef MANGOSBOT_ZERO
         if (sWorld.GetLFGQueue().IsPlayerInQueue(bot->getObjectGuid()))
-#endif
-#ifdef MANGOSBOT_TWO
-        if (false/*sLFGMgr.GetQueueInfo(bot->getObjectGuid())*/)
-#endif
         {
             if (!bot->GetGuildId() || bot->GetGuildId() != from->GetGuildId())
             {

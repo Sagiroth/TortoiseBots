@@ -73,8 +73,8 @@
 #include <numeric>
 
 // Playerbot core - minimal for foundational checkpoint: do NOT pull full playerbot.h
-// (which drags in RandomPlayerbotMgr/WorldPosition with many cmangos->Penqle
-// mismatches). The foundational Engine/AiObjectContext/Strategy core does not
+// (which drags in the behavior facade and WorldPosition compatibility surface).
+// The foundational Engine/AiObjectContext/Strategy core does not
 // need the full playerbot.h. Include only what the PCH itself needs.
 // #include "playerbot/playerbot.h"
 

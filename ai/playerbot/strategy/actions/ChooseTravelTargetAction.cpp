@@ -7,7 +7,7 @@
 #include "playerbot/strategy/values/SharedValueContext.h"
 #include "playerbot/strategy/values/GuildValues.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
-#include "playerbot/RandomPlayerbotMgr.h"
+#include "playerbot/RandomBotFacade.h"
 #include "Guild/GuildMgr.h"
 #include <iomanip>
 
@@ -81,7 +81,7 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         // TEMPORARY, see the probe in RequestQuestTravelTargetAction. Destinations
         // came back and none of them was accepted - worth telling apart from "none
         // were offered", which looks identical from the outside.
-        if (sRandomPlayerbotMgr.IsPinnedBot(bot->GetGUIDLow()))
+        if (sRandomBotFacade.IsPinnedBot(bot->GetGUIDLow()))
             sLog.outBasic("QUESTPROBE: %s got %u destination ranges for '%s' and picked none",
                 bot->GetName(), uint32(destinationList.size()), futureTravelPurpose.c_str());
 
@@ -376,16 +376,6 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                     break;
                 }
 
-#ifdef MANGOSBOT_TWO
-                if (GuidPosition* guidP = static_cast<GuidPosition*>(position))
-                {
-                    if (!bot->InSamePhase(guidP->GetPhaseMask()))
-                    {
-                        ai->TellDebug(requester, "Not same phase: " + destination->GetTitle() + " " + std::to_string(round(destination->DistanceTo(bot))) + "y", "debug travel");
-                        continue;
-                    }
-                }
-#endif
 
                 target->SetTarget(destination, position);
                 hasTarget = true;
@@ -1497,7 +1487,7 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
     // this records what was on offer; which one then won is already written to
     // bot_events.csv by setNewTarget. Limited to the pinned bots, since a
     // thousand of them would drown the log. Remove once the answer is in.
-    if (sRandomPlayerbotMgr.IsPinnedBot(bot->GetGUIDLow()))
+    if (sRandomBotFacade.IsPinnedBot(bot->GetGUIDLow()))
     {
         uint32 takers = 0, objectives = 0, givers = 0, readyToHandIn = 0;
         for (auto& [purpose, questId, range] : destinationFetches)

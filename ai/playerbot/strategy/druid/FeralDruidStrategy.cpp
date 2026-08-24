@@ -97,10 +97,6 @@ void FeralChargeDruidStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     Player* bot = botAI->GetBot();
 
-    if (bot->HasSpell(SPELL_CAT_FORM) && !bot->HasAura(AURA_THICK_HIDE))
-        triggers.push_back(new TriggerNode(
-            "enemy out of melee", { NextAction("feral charge - cat", 29.0f) }));
-    else
-        triggers.push_back(new TriggerNode(
-            "enemy out of melee", { NextAction("feral charge - bear", 18.0f) }));
+    triggers.push_back(new TriggerNode(
+        "enemy out of melee", { NextAction("feral charge - bear", 18.0f) }));
 }

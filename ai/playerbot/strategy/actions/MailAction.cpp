@@ -127,9 +127,6 @@ public:
                 WorldPacket packet;
                 packet << mailbox;
                 packet << mail->messageID;
-#ifndef MANGOSBOT_ZERO
-                packet << *i;
-#endif
                 Item* item = bot->GetMItem(*i);
 
                 if (item)
@@ -242,15 +239,11 @@ public:
         std::ostringstream out, body;
         out << "|cffffffff" << mail->subject;
         ai->TellPlayer(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
-#ifdef MANGOSBOT_TWO
-
-#else
         if (mail->itemTextId)
         {
             body << "\n" << sObjectMgr.GetItemText(mail->itemTextId);
             ai->TellPlayer(requester, body.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
         }
-#endif
         return true;
     }
 
@@ -332,9 +325,6 @@ void MailProcessor::RemoveMail(Player* bot, uint32 id, ObjectGuid mailbox)
     WorldPacket packet;
     packet << mailbox;
     packet << id;
-#ifndef MANGOSBOT_ZERO
-    packet << (uint32)0; //mailTemplateId
-#endif
     bot->GetSession()->HandleMailDelete(packet);
 }
 

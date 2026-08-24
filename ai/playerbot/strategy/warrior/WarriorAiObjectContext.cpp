@@ -128,7 +128,6 @@ namespace ai
             TriggerFactoryInternal()
             {
                 creators["hamstring"] = [](PlayerbotAI* ai) { return new HamstringTrigger(ai); };
-                creators["victory rush"] = [](PlayerbotAI* ai) { return new VictoryRushTrigger(ai); };
                 creators["death wish"] = [](PlayerbotAI* ai) { return new DeathWishTrigger(ai); };
                 creators["battle shout"] = [](PlayerbotAI* ai) { return new BattleShoutTrigger(ai); };
                 creators["rend"] = [](PlayerbotAI* ai) { return new RendDebuffTrigger(ai); };
@@ -147,11 +146,9 @@ namespace ai
                 creators["shield block"] = [](PlayerbotAI* ai) { return new ShieldBlockTrigger(ai); };
                 creators["sunder armor"] = [](PlayerbotAI* ai) { return new SunderArmorDebuffTrigger(ai); };
                 creators["demoralizing shout"] = [](PlayerbotAI* ai) { return new DemoralizingShoutDebuffTrigger(ai); };
-                creators["devastate"] = [](PlayerbotAI* ai) { return new DevastateAvailableTrigger(ai); };
                 creators["revenge"] = [](PlayerbotAI* ai) { return new RevengeAvailableTrigger(ai); };
                 creators["overpower"] = [](PlayerbotAI* ai) { return new OverpowerAvailableTrigger(ai); };
                 creators["mocking blow"] = [](PlayerbotAI* ai) { return new MockingBlowTrigger(ai); };
-                creators["rampage"] = [](PlayerbotAI* ai) { return new RampageAvailableTrigger(ai); };
                 creators["mortal strike"] = [](PlayerbotAI* ai) { return new MortalStrikeDebuffTrigger(ai); };
                 creators["thunder clap on snare target"] = [](PlayerbotAI* ai) { return new ThunderClapSnareTrigger(ai); };
                 creators["thunder clap"] = [](PlayerbotAI* ai) { return new ThunderClapTrigger(ai); };
@@ -164,13 +161,9 @@ namespace ai
                 creators["intercept on enemy healer"] = [](PlayerbotAI* ai) { return new InterceptInterruptEnemyHealerSpellTrigger(ai); };
                 creators["intercept"] = [](PlayerbotAI* ai) { return new InterceptInterruptSpellTrigger(ai); };
                 creators["taunt on snare target"] = [](PlayerbotAI* ai) { return new TauntSnareTrigger(ai); };
-                creators["commanding shout"] = [](PlayerbotAI* ai) { return new CommandingShoutTrigger(ai); };
                 creators["intercept on snare target"] = [](PlayerbotAI* ai) { return new InterceptSnareTrigger(ai); };
-                creators["spell reflection"] = [](PlayerbotAI* ai) { return new SpellReflectionTrigger(ai); };
                 creators["sudden death"] = [](PlayerbotAI* ai) { return new SuddenDeathTrigger(ai); };
                 creators["instant slam"] = [](PlayerbotAI* ai) { return new SlamInstantTrigger(ai); };
-                creators["shockwave"] = [](PlayerbotAI* ai) { return new ShockwaveTrigger(ai); };
-                creators["shockwave on snare target"] = [](PlayerbotAI* ai) { return new ShockwaveSnareTrigger(ai); };
                 creators["taste for blood"] = [](PlayerbotAI* ai) { return new TasteForBloodTrigger(ai); };
                 creators["thunder clap and rage"] = [](PlayerbotAI* ai) { return new TwoTriggers(ai, "thunder clap", "medium rage available"); };
                 creators["thunder clap and rage and aoe"] = [](PlayerbotAI* ai) { return new TwoTriggers(ai, "thunder clap and rage", "ranged light aoe"); };
@@ -187,7 +180,6 @@ namespace ai
         public:
             AiObjectContextInternal()
             {
-                creators["devastate"] = [](PlayerbotAI* ai) { return new CastDevastateAction(ai); };
                 creators["overpower"] = [](PlayerbotAI* ai) { return new CastOverpowerAction(ai); };
                 creators["charge"] = [](PlayerbotAI* ai) { return new CastChargeAction(ai); };
                 creators["bloodthirst"] = [](PlayerbotAI* ai) { return new CastBloodthirstAction(ai); };
@@ -196,7 +188,6 @@ namespace ai
                 creators["mocking blow"] = [](PlayerbotAI* ai) { return new CastMockingBlowAction(ai); };
                 creators["death wish"] = [](PlayerbotAI* ai) { return new CastDeathWishAction(ai); };
                 creators["berserker rage"] = [](PlayerbotAI* ai) { return new CastBerserkerRageAction(ai); };
-                creators["victory rush"] = [](PlayerbotAI* ai) { return new CastVictoryRushAction(ai); };
                 creators["execute"] = [](PlayerbotAI* ai) { return new CastExecuteAction(ai); };
                 creators["defensive stance"] = [](PlayerbotAI* ai) { return new CastDefensiveStanceAction(ai); };
                 creators["hamstring"] = [](PlayerbotAI* ai) { return new CastHamstringAction(ai); };
@@ -219,13 +210,10 @@ namespace ai
                 creators["disarm"] = [](PlayerbotAI* ai) { return new CastDisarmAction(ai); };
                 creators["sunder armor"] = [](PlayerbotAI* ai) { return new CastSunderArmorAction(ai); };
                 creators["last stand"] = [](PlayerbotAI* ai) { return new CastLastStandAction(ai); };
-                creators["shockwave"] = [](PlayerbotAI* ai) { return new CastShockwaveAction(ai); };
-                creators["shockwave on snare target"] = [](PlayerbotAI* ai) { return new CastShockwaveSnareAction(ai); };
                 creators["cleave"] = [](PlayerbotAI* ai) { return new CastCleaveAction(ai); };
                 creators["concussion blow"] = [](PlayerbotAI* ai) { return new CastConcussionBlowAction(ai); };
                 creators["shield bash on enemy healer"] = [](PlayerbotAI* ai) { return new CastShieldBashOnEnemyHealerAction(ai); };
                 creators["berserker stance"] = [](PlayerbotAI* ai) { return new CastBerserkerStanceAction(ai); };
-                creators["commanding shout"] = [](PlayerbotAI* ai) { return new CastCommandingShoutAction(ai); };
                 creators["retaliation"] = [](PlayerbotAI* ai) { return new CastRetaliationAction(ai); };
                 creators["mortal strike"] = [](PlayerbotAI* ai) { return new CastMortalStrikeAction(ai); };
                 creators["sweeping strikes"] = [](PlayerbotAI* ai) { return new CastSweepingStrikesAction(ai); };
@@ -235,17 +223,11 @@ namespace ai
                 creators["pummel on enemy healer"] = [](PlayerbotAI* ai) { return new CastPummelOnEnemyHealerAction(ai); };
                 creators["recklessness"] = [](PlayerbotAI* ai) { return new CastRecklessnessAction(ai); };
                 creators["piercing howl"] = [](PlayerbotAI* ai) { return new CastPiercingHowlAction(ai); };
-                creators["rampage"] = [](PlayerbotAI* ai) { return new CastRampageAction(ai); };
                 creators["intervene"] = [](PlayerbotAI* ai) { return new CastInterveneAction(ai); };
-                creators["spell reflection"] = [](PlayerbotAI* ai) { return new CastSpellReflectionAction(ai); };
                 creators["thunder clap on snare target"] = [](PlayerbotAI* ai) { return new CastThunderClapSnareAction(ai); };
                 creators["taunt on snare target"] = [](PlayerbotAI* ai) { return new CastTauntOnSnareTargetAction(ai); };
                 creators["intercept on enemy healer"] = [](PlayerbotAI* ai) { return new CastInterceptOnEnemyHealerAction(ai); };
                 creators["intercept on snare target"] = [](PlayerbotAI* ai) { return new CastInterceptOnSnareTargetAction(ai); };
-                creators["bladestorm"] = [](PlayerbotAI* ai) { return new CastBladestormAction(ai); };
-                creators["heroic throw"] = [](PlayerbotAI* ai) { return new CastHeroicThrowAction(ai); };
-                creators["heroic throw on snare target"] = [](PlayerbotAI* ai) { return new CastHeroicThrowSnareAction(ai); };
-                creators["shattering throw"] = [](PlayerbotAI* ai) { return new CastShatteringThrowAction(ai); };
                 creators["update pve strats"] = [](PlayerbotAI* ai) { return new UpdateWarriorPveStrategiesAction(ai); };
                 creators["update pvp strats"] = [](PlayerbotAI* ai) { return new UpdateWarriorPvpStrategiesAction(ai); };
                 creators["update raid strats"] = [](PlayerbotAI* ai) { return new UpdateWarriorRaidStrategiesAction(ai); };

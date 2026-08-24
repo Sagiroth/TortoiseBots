@@ -164,11 +164,7 @@ uint32 MoneyNeededForValue::Calculate()
     {
         //Save deposit needed for all items the bot wants to AH.
         uint32 time;
-#ifdef MANGOSBOT_ZERO
         time = 8 * HOUR;
-#else
-        time = 12 * HOUR;
-#endif
         float totalDeposit = 0;
         for (auto item : AI_VALUE2(std::list<Item*>, "inventory items", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_AH)))
         {
@@ -235,59 +231,26 @@ uint32 MoneyNeededForValue::Calculate()
     case NeedMoneyFor::mount:
     {
         uint32 maxMountSpeed = 0;
-        uint32 maxFlyMountSpeed = 0;
 
         moneyWanted = AI_VALUE2(uint32, "train cost", TRAINER_TYPE_MOUNTS);
 
         for (auto& mount : AI_VALUE(std::vector<MountValue>, "mount list"))
         {
-            if (mount.GetSpeed(false) > maxMountSpeed)
+            if (mount.GetSpeed() > maxMountSpeed)
             {
-                maxMountSpeed = mount.GetSpeed(false);
-                maxFlyMountSpeed = mount.GetSpeed(true);
+                maxMountSpeed = mount.GetSpeed();
             }
         }
 
-#ifdef MANGOSBOT_ZERO
         const uint8 basicRidingLevel = 40;
         const uint8 epicRidingLevel = 60;
-        const uint8 basicFlyingRidingLevel = 0;
-        const uint8 EpicFlyingRidingLevel = 0;
         const uint32 basicMountCost = 40 * GOLD;
         const uint32 epicMountCost = 1000 * GOLD;
-        const uint32 flyingMountCost = 0;
-        const uint32 epicFlyingMountCost = 0;
-#endif
-#ifdef MANGOSBOT_ONE
-        const uint8 basicRidingLevel = 30;
-        const uint8 epicRidingLevel = 60;
-        const uint8 basicFlyingRidingLevel = 70;
-        const uint8 EpicFlyingRidingLevel = 70;
-        const uint32 basicMountCost = 950 * SILVER;
-        const uint32 epicMountCost = 40 * GOLD;
-        const uint32 flyingMountCost = 100 * GOLD;
-        const uint32 epicFlyingMountCost = 200 * GOLD;
-#endif
-#ifdef MANGOSBOT_TWO
-        const uint8 basicRidingLevel = 20;
-        const uint8 epicRidingLevel = 40;
-        const uint8 basicFlyingRidingLevel = 60;
-        const uint8 EpicFlyingRidingLevel = 70;
-        const uint32 basicMountCost = 90 * SILVER;
-        const uint32 epicMountCost = 9 * GOLD;
-        const uint32 flyingMountCost = 40 * GOLD;
-        const uint32 epicFlyingMountCost = 80 * GOLD;
-#endif
 
         if (level >= basicRidingLevel && maxMountSpeed < 59)
                 moneyWanted += basicMountCost;
         if (level >= epicRidingLevel && maxMountSpeed < 99)
                 moneyWanted += epicMountCost;
-        if (level >= flyingMountCost && maxFlyMountSpeed < 99)
-                moneyWanted += basicFlyingRidingLevel;
-        if(level >= epicFlyingMountCost && maxFlyMountSpeed < 279)
-                moneyWanted += EpicFlyingRidingLevel;
-        //todo Wotlk frozen weather flying.
         break;
     }
     }

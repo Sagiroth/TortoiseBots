@@ -183,7 +183,7 @@ bool GuildShareAhBuyAction::Execute(Event& event)
     if (!auctioneer)
         return false;
 
-    if (!sRandomPlayerbotMgr.m_ahActionMutex.try_lock())
+    if (!sRandomBotFacade.m_ahActionMutex.try_lock())
         return false;
 
     bool bought = false;
@@ -191,21 +191,21 @@ bool GuildShareAhBuyAction::Execute(Event& event)
     AuctionHouseEntry const* ahEntry = AuctionHouseMgr::GetAuctionHouseEntry(auctioneer);
     if (!ahEntry)
     {
-        sRandomPlayerbotMgr.m_ahActionMutex.unlock();
+        sRandomBotFacade.m_ahActionMutex.unlock();
         return false;
     }
 
     AuctionHouseObject* auctionHouse = sAuctionMgr.GetAuctionsMap(ahEntry);
     if (!auctionHouse)
     {
-        sRandomPlayerbotMgr.m_ahActionMutex.unlock();
+        sRandomBotFacade.m_ahActionMutex.unlock();
         return false;
     }
 
     std::map<uint32, uint32> neededItems = GetNeededItems();
     if (neededItems.empty())
     {
-        sRandomPlayerbotMgr.m_ahActionMutex.unlock();
+        sRandomBotFacade.m_ahActionMutex.unlock();
         return false;
     }
 
@@ -309,6 +309,6 @@ bool GuildShareAhBuyAction::Execute(Event& event)
         bought = true;
     }
 
-    sRandomPlayerbotMgr.m_ahActionMutex.unlock();
+    sRandomBotFacade.m_ahActionMutex.unlock();
     return bought;
 }

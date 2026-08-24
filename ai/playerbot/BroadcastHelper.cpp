@@ -28,7 +28,6 @@ bool BroadcastHelper::BroadcastTest(
     return false;
 
     //don't think bots rejoin channnels when changing areas?
-    //GetPlayerbotMgr_Helper(bot)->JoinChatChannels(bot);
 
     std::map<std::string, std::string> placeholders;
     placeholders["%rand1"] = std::to_string(urand(0, 1));

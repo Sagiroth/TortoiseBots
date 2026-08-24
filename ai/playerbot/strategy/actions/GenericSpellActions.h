@@ -367,9 +367,6 @@ namespace ai
     // racials
 
     // heal
-#ifndef MANGOSBOT_ZERO
-    HEAL_ACTION(CastGiftOfTheNaaruAction, "gift of the naaru");
-#endif
     HEAL_ACTION(CastCannibalizeAction, "cannibalize");
 
     // buff
@@ -382,10 +379,6 @@ namespace ai
 
     // spells
 
-#ifndef MANGOSBOT_ZERO
-    SPELL_ACTION(CastManaTapAction, "mana tap");
-    SPELL_ACTION(CastArcaneTorrentAction, "arcane torrent");
-#endif
 
     class CastWarStompAction : public CastSpellAction
     {
@@ -398,9 +391,6 @@ namespace ai
     BUFF_ACTION(CastWillOfTheForsakenAction, "will of the forsaken");
     BUFF_ACTION_U(CastEscapeArtistAction, "escape artist", !ai->HasAura("stealth", AI_VALUE(Unit*, "self target")));
 
-#ifdef MANGOSBOT_TWO
-    SPELL_ACTION(CastEveryManforHimselfAction, "every man for himself");
-#endif
 
     class CastSpellOnEnemyHealerAction : public CastSpellAction
     {
@@ -459,158 +449,4 @@ namespace ai
         virtual bool Execute(Event& event) override;
     };
 
-    //--------------------//
-    //   Vehicle Actions  //
-    //--------------------//
-
-    class CastVehicleSpellAction : public CastSpellAction
-    {
-    public:
-        CastVehicleSpellAction(PlayerbotAI* ai, std::string spell) : CastSpellAction(ai, spell)
-        {
-            range = 120.0f;
-            speed = 30.0f;
-            SetSpellName(spell, "vehicle spell id", !GetSpellID());
-        }
-
-        virtual bool Execute(Event& event) override;
-        virtual bool isUseful() override;
-        virtual bool isPossible() override;
-
-    protected:
-        virtual ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_NONE; }
-        virtual std::string GetTargetName() override { return "current target"; }
-        virtual std::string GetReachActionName() override { return ""; }
-        float speed;
-        bool needTurn = true;
-    };
-
-    class CastHurlBoulderAction : public CastVehicleSpellAction
-    {
-    public:
-        CastHurlBoulderAction(PlayerbotAI* ai) : CastVehicleSpellAction(ai, "hurl boulder") {}
-    };
-
-    class CastSteamRushAction : public CastVehicleSpellAction
-    {
-    public:
-        CastSteamRushAction(PlayerbotAI* ai) : CastVehicleSpellAction(ai, "steam rush") {}
-    };
-
-    class CastRamAction : public CastVehicleSpellAction
-    {
-    public:
-        CastRamAction(PlayerbotAI* ai) : CastVehicleSpellAction(ai, "ram") {}
-    };
-
-    class CastNapalmAction : public CastVehicleSpellAction
-    {
-    public:
-        CastNapalmAction(PlayerbotAI* ai) : CastVehicleSpellAction(ai, "napalm") {}
-    };
-
-    class CastFireCannonAction : public CastVehicleSpellAction
-    {
-    public:
-        CastFireCannonAction(PlayerbotAI* ai) : CastVehicleSpellAction(ai, "fire cannon") {}
-    };
-
-    class CastSteamBlastAction : public CastVehicleSpellAction
-    {
-    public:
-        CastSteamBlastAction(PlayerbotAI* ai) : CastVehicleSpellAction(ai, "steam blast") {}
-    };
-
-    class CastIncendiaryRocketAction : public CastVehicleSpellAction
-    {
-    public:
-        CastIncendiaryRocketAction(PlayerbotAI* ai) : CastVehicleSpellAction(ai, "incendiary rocket") {}
-    };
-
-    class CastRocketBlastAction : public CastVehicleSpellAction
-    {
-    public:
-        CastRocketBlastAction(PlayerbotAI* ai) : CastVehicleSpellAction(ai, "rocket blast") {}
-    };
-
-    class CastGlaiveThrowAction : public CastVehicleSpellAction
-    {
-    public:
-        CastGlaiveThrowAction(PlayerbotAI* ai) : CastVehicleSpellAction(ai, "glaive throw") {}
-    };
-
-    class CastBladeSalvoAction : public CastVehicleSpellAction
-    {
-    public:
-        CastBladeSalvoAction(PlayerbotAI* ai) : CastVehicleSpellAction(ai, "blade salvo") {}
-    };
-
-    class CastDeliverStolenHorseAction : public CastVehicleSpellAction
-    {
-    public:
-        CastDeliverStolenHorseAction(PlayerbotAI* ai) : CastVehicleSpellAction(ai, "deliver stolen horse") {}
-    protected:
-        virtual std::string GetTargetName() override { return "self target"; }
-    };
-
-    class CastHorsemansCallAction : public CastVehicleSpellAction
-    {
-    public:
-        CastHorsemansCallAction(PlayerbotAI* ai) : CastVehicleSpellAction(ai, "horseman call") {
-            range = 120.0f;
-            SetSpellName("Horseman's Call", "vehicle spell id", true);
-        }
-    protected:
-        virtual std::string GetTargetName() override { return "self target"; }
-    };
-
-    class CastScarletCannonAction : public CastVehicleSpellAction
-    {
-    public:
-        CastScarletCannonAction(PlayerbotAI* ai) : CastVehicleSpellAction(ai, "scarlet cannon") { speed = 3000.0f; }
-    protected:
-        virtual std::string GetTargetName() override { return "grind target"; }
-    };
-
-    class CastElectroMagneticPulseAction : public CastVehicleSpellAction
-    {
-    public:
-        CastElectroMagneticPulseAction(PlayerbotAI* ai) : CastVehicleSpellAction(ai, "electro - magnetic pulse") { range = 20.0f; }
-    protected:
-        virtual std::string GetTargetName() override { return "grind target"; }
-    };
-
-    class CastSkeletalGryphonEscapeAction : public CastVehicleSpellAction
-    {
-    public:
-        CastSkeletalGryphonEscapeAction(PlayerbotAI* ai) : CastVehicleSpellAction(ai, "skeletal gryphon escape") {}
-    protected:
-        virtual std::string GetTargetName() override { return "self target"; }
-    };
-
-    class CastFrozenDeathboltAction : public CastVehicleSpellAction
-    {
-    public:
-        CastFrozenDeathboltAction(PlayerbotAI* ai) : CastVehicleSpellAction(ai, "frozen deathbolt")
-        {
-            needTurn = false;
-            speed = 3000.0f;
-        };
-        virtual bool isPossible() override;
-    protected:
-        virtual std::string GetTargetName() override { return "grind target"; }
-    };
-
-    class CastDevourHumanoidAction : public CastVehicleSpellAction
-    {
-    public:
-        CastDevourHumanoidAction(PlayerbotAI* ai) : CastVehicleSpellAction(ai, "devour humanoid")
-        {
-            range = 15.0f;
-            needTurn = false;
-        }
-        virtual bool isPossible() override;
-    protected:
-        virtual std::string GetTargetName() override { return "grind target"; }
-    };
 }

@@ -22,9 +22,6 @@
 
 // Strength of Earth Totem
 static const uint32 STRENGTH_OF_EARTH_TOTEM[] = {
-    58643,  // rank 8
-    57622,  // rank 7
-    25528,  // rank 6
     25361,  // rank 5
     10442,  // rank 4
     8161,   // rank 3
@@ -35,10 +32,6 @@ static const size_t STRENGTH_OF_EARTH_TOTEM_COUNT = sizeof(STRENGTH_OF_EARTH_TOT
 
 // Stoneskin Totem
 static const uint32 STONESKIN_TOTEM[] = {
-    58753,  // rank 10
-    58751,  // rank 9
-    25509,  // rank 8
-    25508,  // rank 7
     10408,  // rank 6
     10407,  // rank 5
     10406,  // rank 4
@@ -62,10 +55,6 @@ static const size_t EARTHBIND_TOTEM_COUNT = sizeof(EARTHBIND_TOTEM) / sizeof(uin
 
 // Stoneclaw Totem
 static const uint32 STONECLAW_TOTEM[] = {
-    58582,  // rank 10
-    58581,  // rank 9
-    58580,  // rank 8
-    25525,  // rank 7
     10428,  // rank 6
     10427,  // rank 5
     6392,   // rank 4
@@ -77,10 +66,6 @@ static const size_t STONECLAW_TOTEM_COUNT = sizeof(STONECLAW_TOTEM) / sizeof(uin
 
 // Searing Totem
 static const uint32 SEARING_TOTEM[] = {
-    58704,  // rank 10
-    58703,  // rank 9
-    58699,  // rank 8
-    25533,  // rank 7
     10438,  // rank 6
     10437,  // rank 5
     6365,   // rank 4
@@ -92,9 +77,6 @@ static const size_t SEARING_TOTEM_COUNT = sizeof(SEARING_TOTEM) / sizeof(uint32)
 
 // Magma Totem
 static const uint32 MAGMA_TOTEM[] = {
-    58734,  // rank 7
-    58731,  // rank 6
-    25552,  // rank 5
     10587,  // rank 4
     10586,  // rank 3
     10585,  // rank 2
@@ -104,10 +86,6 @@ static const size_t MAGMA_TOTEM_COUNT = sizeof(MAGMA_TOTEM) / sizeof(uint32);
 
 // Flametongue Totem
 static const uint32 FLAMETONGUE_TOTEM[] = {
-    58656,  // rank 8
-    58652,  // rank 7
-    58649,  // rank 6
-    25557,  // rank 5
     16387,  // rank 4
     10526,  // rank 3
     8249,   // rank 2
@@ -115,38 +93,16 @@ static const uint32 FLAMETONGUE_TOTEM[] = {
 };
 static const size_t FLAMETONGUE_TOTEM_COUNT = sizeof(FLAMETONGUE_TOTEM) / sizeof(uint32);
 
-// Totem of Wrath
-static const uint32 TOTEM_OF_WRATH[] = {
-    57722,  // rank 4
-    57721,  // rank 3
-    57720,  // rank 2
-    30706   // rank 1
-};
-static const size_t TOTEM_OF_WRATH_COUNT = sizeof(TOTEM_OF_WRATH) / sizeof(uint32);
-
 // Frost Resistance Totem
 static const uint32 FROST_RESISTANCE_TOTEM[] = {
-    58745,  // rank 6
-    58741,  // rank 5
-    25560,  // rank 4
     10479,  // rank 3
     10478,  // rank 2
     8181    // rank 1
 };
 static const size_t FROST_RESISTANCE_TOTEM_COUNT = sizeof(FROST_RESISTANCE_TOTEM) / sizeof(uint32);
 
-// Fire Elemental Totem
-static const uint32 FIRE_ELEMENTAL_TOTEM[] = {
-    2894  // rank 1
-};
-static const size_t FIRE_ELEMENTAL_TOTEM_COUNT = sizeof(FIRE_ELEMENTAL_TOTEM) / sizeof(uint32);
-
 // Healing Stream Totem
 static const uint32 HEALING_STREAM_TOTEM[] = {
-    58757,  // rank 9
-    58756,  // rank 8
-    58755,  // rank 7
-    25567,  // rank 6
     10463,  // rank 5
     10462,  // rank 4
     6377,   // rank 3
@@ -157,10 +113,6 @@ static const size_t HEALING_STREAM_TOTEM_COUNT = sizeof(HEALING_STREAM_TOTEM) / 
 
 // Mana Spring Totem
 static const uint32 MANA_SPRING_TOTEM[] = {
-    58774,  // rank 8
-    58773,  // rank 7
-    58771,  // rank 6
-    25570,  // rank 5
     10497,  // rank 4
     10496,  // rank 3
     10495,  // rank 2
@@ -176,9 +128,6 @@ static const size_t CLEANSING_TOTEM_COUNT = sizeof(CLEANSING_TOTEM) / sizeof(uin
 
 // Fire Resistance Totem
 static const uint32 FIRE_RESISTANCE_TOTEM[] = {
-    58739,  // rank 6
-    58737,  // rank 5
-    25563,  // rank 4
     10538,  // rank 3
     10537,  // rank 2
     8184    // rank 1
@@ -191,12 +140,6 @@ static const uint32 MANA_TIDE_TOTEM[] = {
 };
 static const size_t MANA_TIDE_TOTEM_COUNT = sizeof(MANA_TIDE_TOTEM) / sizeof(uint32);
 
-// Wrath of Air Totem
-static const uint32 WRATH_OF_AIR_TOTEM[] = {
-    3738  // rank 1
-};
-static const size_t WRATH_OF_AIR_TOTEM_COUNT = sizeof(WRATH_OF_AIR_TOTEM) / sizeof(uint32);
-
 // Windfury Totem
 static const uint32 WINDFURY_TOTEM[] = {
     8512  // rank 1
@@ -205,9 +148,6 @@ static const size_t WINDFURY_TOTEM_COUNT = sizeof(WINDFURY_TOTEM) / sizeof(uint3
 
 // Nature Resistance Totem
 static const uint32 NATURE_RESISTANCE_TOTEM[] = {
-    58749,  // rank 6
-    58746,  // rank 5
-    25574,  // rank 4
     10601,  // rank 3
     10600,  // rank 2
     10595   // rank 1
@@ -280,14 +220,6 @@ public:
     std::string getName() override { return "flametongue"; }
 };
 
-class TotemOfWrathStrategy : public GenericShamanStrategy
-{
-public:
-    TotemOfWrathStrategy(PlayerbotAI* botAI);
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string getName() override { return "wrath"; }
-};
-
 class FrostResistanceTotemStrategy : public GenericShamanStrategy
 {
 public:
@@ -330,14 +262,6 @@ public:
 };
 
 // Air Totem Strategies
-class WrathOfAirTotemStrategy : public GenericShamanStrategy
-{
-public:
-    WrathOfAirTotemStrategy(PlayerbotAI* botAI);
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-    std::string getName() override { return "wrath of air"; }
-};
-
 class WindfuryTotemStrategy : public GenericShamanStrategy
 {
 public:

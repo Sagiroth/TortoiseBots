@@ -85,10 +85,6 @@ namespace ai
             if (bot->GetCorpse())
                 return false;
 
-#ifndef MANGOSBOT_ZERO
-            if (bot->InArena())
-                return false;
-#endif
 
             if (bot->InBattleGround())
                 return !bot->GetCorpse() || !bot->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST);
@@ -191,9 +187,8 @@ namespace ai
             travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
             travelTarget->SetExpireIn(1000);
 
-            // Goblin/High Elf bots are spawned in Durotar/Elwynn instead of their real (custom,
-            // player-only, bot-excluded) starting zone - RandomPlayerbotFactory::CreateRandomBot
-            // overrides their homebind to reflect this. GetPlayerInfo() below would return the
+            // Goblin/High Elf bots are spawned in Durotar/Elwynn instead of their real custom,
+            // player-only starting zone. GetPlayerInfo() below would return the
             // real racial spawn point instead, sending the bot right back to the excluded zone
             // on every death, so route these two races through the homebind branch instead.
             bool useHomebindOverride = bot->GetRace() == RACE_GOBLIN || bot->GetRace() == RACE_HIGH_ELF;

@@ -2,14 +2,6 @@
 #include "playerbot/playerbot.h"
 #include "GuildCreateActions.h"
 #include "playerbot/LootObjectStack.h"
-#ifndef MANGOSBOT_ZERO
-#ifdef CMANGOS
-#include "Arena/ArenaTeam.h"
-#endif
-#ifdef MANGOS
-#include "ArenaTeam.h"
-#endif
-#endif
 #include "playerbot/ServerFacade.h"
 #include "playerbot/TravelMgr.h"
 #include "Guild/GuildMgr.h"
@@ -37,11 +29,7 @@ bool BuyPetitionAction::Execute(Event& event)
         data << uint32(0);
         data << uint64(0);
         data << guildName.c_str();
-#ifdef MANGOSBOT_TWO
-        data << std::string("");
-#else
         data << uint32(0);
-#endif
         data << uint32(0);
         data << uint32(0);
         data << uint32(0);
@@ -55,10 +43,6 @@ bool BuyPetitionAction::Execute(Event& event)
         data << uint16(0);
         data << uint8(0);
 
-#ifdef MANGOSBOT_TWO
-        for (int i = 0; i < 10; ++i)
-            data << std::string("");
-#endif
 
         data << uint32(0); // index
         data << uint32(0);
@@ -141,9 +125,6 @@ bool PetitionOfferAction::Execute(Event& event)
 
     WorldPacket data(CMSG_OFFER_PETITION);
 
-#ifndef MANGOSBOT_ZERO
-    data << uint32(0);
-#endif
     data << petitions.front()->getObjectGuid();
     data << guid;
 
@@ -196,7 +177,7 @@ bool PetitionOfferNearbyAction::Execute(Event& event)
         if (sServerFacade.getDistance2d(bot, player) > sPlayerbotAIConfig.sightDistance)
             continue;
 
-        if (sPlayerbotAIConfig.inviteChat && sServerFacade.getDistance2d(bot, player) < sPlayerbotAIConfig.spellDistance && (sRandomPlayerbotMgr.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
+        if (sPlayerbotAIConfig.inviteChat && sServerFacade.getDistance2d(bot, player) < sPlayerbotAIConfig.spellDistance && (sRandomBotFacade.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
         {
             std::map<std::string, std::string> placeholders;
             placeholders["%name"] = player->GetName();

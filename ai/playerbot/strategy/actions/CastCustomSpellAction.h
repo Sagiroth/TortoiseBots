@@ -40,11 +40,7 @@ namespace ai
         virtual bool AcceptSpell(const SpellEntry* pSpellInfo)
         {
             bool isTradeSkill = pSpellInfo->Effect[0] == SPELL_EFFECT_CREATE_ITEM && pSpellInfo->ReagentCount[0] > 0 &&
-#ifdef MANGOSBOT_ZERO
                 pSpellInfo->School == 0;
-#else
-                pSpellInfo->SchoolMask == 1;
-#endif
 
             bool hasCost = pSpellInfo->manaCost > 0;
 

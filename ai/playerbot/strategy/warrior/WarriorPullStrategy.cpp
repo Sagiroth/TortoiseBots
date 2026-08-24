@@ -11,12 +11,5 @@
 
 std::string WarriorPullStrategy::GetPullActionName() const
 {
-    Unit* target = GetTarget();
-    if (!target)
-        return PullStrategy::GetPullActionName();
-
-    if (botAI->CanCastSpell("heroic throw", target))
-        return "heroic throw";
-
     return PullStrategy::GetPullActionName();
 }

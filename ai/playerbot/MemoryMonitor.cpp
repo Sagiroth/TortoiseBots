@@ -11,7 +11,7 @@
 #include "psapi.h"
 #include "windows.h"
 #endif
-#include "RandomPlayerbotMgr.h"
+#include "runtime/BotManager.h"
 
 void MemoryMonitor::Add(std::string objectType, uint64_t object, int level, std::string stack)
 {
@@ -125,7 +125,7 @@ void MemoryMonitor::LogCount(std::string filename)
     //line = timestamp.c_str();
     line = std::to_string(static_cast<uint32>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch() - GetApplicationStartTime().time_since_epoch()).count()));
 
-    line += "," + std::to_string(sRandomPlayerbotMgr.GetPlayerbotsAmount());
+    line += "," + std::to_string(TortoiseBots::BotManager::Instance().GetBotCount());
 
     #if PLATFORM == PLATFORM_WINDOWS
     PROCESS_MEMORY_COUNTERS_EX pmc;

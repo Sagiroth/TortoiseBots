@@ -22,7 +22,7 @@ namespace ai
                    "- Combat status (dismounts when in combat)\n"
                    "- Travel distance (mounts for long distances)\n"
                    "- Group coordination (matches master's mount state)\n"
-                   "- Level requirements (minimum level 20/30/40 depending on expansion)";
+                   "- Vanilla/Turtle mount level requirements (minimum level 20/30/40)";
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {"mount list", "current mount speed"}; }
@@ -33,7 +33,6 @@ namespace ai
         virtual bool isUseful() override;
 
     private:
-        virtual bool CanFly() const;
         bool CanMountInBg() const;
         float GetAttackDistance() const;
 

@@ -47,9 +47,6 @@ namespace ai
         GameObject* GetGameObject(uint32 instanceId) const;
         Player* GetPlayer() const;
 
-#ifdef MANGOSBOT_TWO
-        uint32 GetPhaseMask() const { return IsCreature() ? (GetCreatureData() ? GetCreatureData()->phaseMask : 1) : (GetGameObjectData() ? GetGameObjectData()->phaseMask : 1);}
-#endif
 
         void updatePosition(uint32 m_instanceId) { WorldObject* wo = GetWorldObject(m_instanceId); if (wo) WorldPosition::set(wo); }
 

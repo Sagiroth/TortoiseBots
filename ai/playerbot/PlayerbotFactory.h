@@ -3,7 +3,6 @@
 #include "../../runtime/PlayerbotAIStorage.h"
 
 class Player;
-class PlayerbotMgr;
 class ChatHandler;
 
 struct EnchantTemplate
@@ -49,7 +48,6 @@ class PlayerbotFactory
 public:
     PlayerbotFactory(Player* bot, uint32 level, uint32 itemQuality = 0) : level(level), itemQuality(itemQuality), bot(bot), ai(PlayerbotAIStorage::Instance().GetAI(bot)) {}
 
-    static ObjectGuid GetRandomBot();
     static void Init();
     void Refresh();
     void Randomize(bool incremental, bool syncWithMaster);
@@ -116,8 +114,6 @@ private:
     void InitInventoryEquip();
     void InitInventorySkill();
     Item* StoreItem(uint32 itemId, uint32 count, bool ignoreCount = false);
-    void InitGuild();
-    void InitArenaTeam();
     void InitImmersive();
     void AddConsumables();
     static void AddPrevQuests(uint32 questId, std::list<uint32>& questIds);

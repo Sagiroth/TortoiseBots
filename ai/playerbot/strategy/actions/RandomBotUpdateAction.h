@@ -1,7 +1,7 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
 
-#include "playerbot/RandomPlayerbotMgr.h"
+#include "playerbot/RandomBotFacade.h"
 #include "../../runtime/PlayerbotAIStorage.h" // Headless storage shim
 #include "playerbot/strategy/Action.h"
 
@@ -15,7 +15,7 @@ namespace ai
 
         virtual bool Execute(Event& event) override
         {
-            if (!sRandomPlayerbotMgr.IsRandomBot(bot))
+            if (!sRandomBotFacade.IsRandomBot(bot))
                 return false;
 
             if (bot->GetGroup() && ai->GetGroupMaster() && (PlayerbotAIStorage::Instance().GetAI(!ai->GetGroupMaster()) || PlayerbotAIStorage::Instance().GetAI(ai->GetGroupMaster())->IsRealPlayer()))
@@ -24,7 +24,7 @@ namespace ai
             if (ai->HasPlayerNearby())
                 return true;
 
-            return sRandomPlayerbotMgr.ProcessBot(bot);
+            return sRandomBotFacade.ProcessBot(bot);
         }
 
         virtual bool isUseful() override

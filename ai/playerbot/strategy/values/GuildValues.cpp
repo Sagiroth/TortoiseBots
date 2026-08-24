@@ -441,9 +441,6 @@ uint8 GuildShareListValue::ParseClassName(const std::string& name)
     if (lower == "mage")     return CLASS_MAGE;
     if (lower == "warlock")  return CLASS_WARLOCK;
     if (lower == "druid")    return CLASS_DRUID;
-#ifdef CLASS_DEATH_KNIGHT
-    if (lower == "deathknight" || lower == "death knight" || lower == "dk") return CLASS_DEATH_KNIGHT;
-#endif
     return 0;
 }
 

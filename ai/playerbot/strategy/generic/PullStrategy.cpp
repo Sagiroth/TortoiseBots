@@ -69,7 +69,6 @@ std::string PullStrategy::GetSpellName() const
             {
                 switch (itemPrototype->SubClass)
                 {
-#ifdef MANGOSBOT_ZERO
                     case ITEM_SUBCLASS_WEAPON_GUN:
                     {
                         spellName += " gun";
@@ -87,7 +86,6 @@ std::string PullStrategy::GetSpellName() const
                         spellName += " crossbow";
                         break;
                     }
-#endif
                     case ITEM_SUBCLASS_WEAPON_THROWN:
                     {
                         spellName = "throw";

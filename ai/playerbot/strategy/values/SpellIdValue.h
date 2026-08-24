@@ -13,10 +13,4 @@ namespace ai
         virtual uint32 Calculate() override;
     };
 
-    class VehicleSpellIdValue : public CalculatedValue<uint32>, public Qualified
-    {
-    public:
-        VehicleSpellIdValue(PlayerbotAI* ai);
-        virtual uint32 Calculate() override;
-    };
 }

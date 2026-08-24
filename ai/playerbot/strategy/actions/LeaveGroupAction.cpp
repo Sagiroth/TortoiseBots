@@ -19,7 +19,7 @@ namespace ai
 
         ai->TellPlayer(player, BOT_TEXT("goodbye"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_TALK, false);
 
-        bool freeBot = sRandomPlayerbotMgr.IsFreeBot(bot);
+        bool freeBot = sRandomBotFacade.IsFreeBot(bot);
 
         bool shouldStay = freeBot && bot->GetGroup() && player == bot;
 
@@ -84,7 +84,7 @@ namespace ai
 
         uint32 dCount = AI_VALUE(uint32, "death count");
 
-        if (ai->HasRealPlayerMaster() && !sRandomPlayerbotMgr.IsRandomBot(bot))
+        if (ai->HasRealPlayerMaster() && !sRandomBotFacade.IsRandomBot(bot))
             return false;
 
         if (dCount > 9)

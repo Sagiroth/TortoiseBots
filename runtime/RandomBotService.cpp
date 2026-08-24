@@ -9,7 +9,7 @@
 #include "Log.h"
 #include "Database/DatabaseEnv.h"
 #include "playerbot/PlayerbotAIConfig.h"
-#include "playerbot/RandomPlayerbotMgr.h"
+#include "playerbot/RandomBotFacade.h"
 
 #include <algorithm>
 #include <ctime>
@@ -41,9 +41,6 @@ void RandomBotService::Initialize()
     m_targetCount = TargetCount();
     m_started = sPlayerbotAIConfig.randomBotLoginAtStartup &&
         (!sPlayerbotAIConfig.randomBotLoginWithPlayer || m_humanSessions > 0);
-
-    if (sPlayerbotAIConfig.randomBotAutoCreate)
-        sLog.outString("TortoiseBots: native random-bot service uses existing random characters; account/character auto-create is not enabled");
 
     sLog.outString("TortoiseBots: native random-bot pool loaded (%u candidates, target %u, startup %u)",
         static_cast<uint32>(m_candidates.size()), m_targetCount, m_started);
@@ -249,7 +246,7 @@ void RandomBotService::Update(uint32_t diff)
 
         // Recovery/expired-value work stays on the world thread and is bounded
         // by the configured service cadence rather than a second AI loop.
-        sRandomPlayerbotMgr.ProcessBot(player);
+        sRandomBotFacade.ProcessBot(player);
 
         m_strategyAgeMs[i] += elapsed;
         uint32 strategyInterval = sPlayerbotAIConfig.minRandomBotChangeStrategyTime;
@@ -257,7 +254,7 @@ void RandomBotService::Update(uint32_t diff)
             strategyInterval = urand(strategyInterval, sPlayerbotAIConfig.maxRandomBotChangeStrategyTime);
         if (strategyInterval && m_strategyAgeMs[i] >= strategyInterval * 1000)
         {
-            sRandomPlayerbotMgr.ChangeStrategy(player);
+            sRandomBotFacade.ChangeStrategy(player);
             m_strategyAgeMs[i] = 0;
         }
 
@@ -268,7 +265,7 @@ void RandomBotService::Update(uint32_t diff)
         if (sPlayerbotAIConfig.randomGearUpgradeEnabled && randomizeInterval &&
             m_randomizeAgeMs[i] >= randomizeInterval * 1000)
         {
-            sRandomPlayerbotMgr.UpdateGearSpells(player);
+            sRandomBotFacade.UpdateGearSpells(player);
             m_randomizeAgeMs[i] = 0;
         }
     }

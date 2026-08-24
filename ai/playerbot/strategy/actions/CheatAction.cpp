@@ -76,9 +76,9 @@ void CheatAction::ListCheats(Player* requester)
     for (int i = 0; i < log2((uint32)BotCheatMask::maxMask); i++)
     {
         BotCheatMask cheatMask = BotCheatMask(1 << i);
-        if (sRandomPlayerbotMgr.IsRandomBot(bot) && (uint32)cheatMask & (uint32)sPlayerbotAIConfig.rndBotCheatMask)
+        if (sRandomBotFacade.IsRandomBot(bot) && (uint32)cheatMask & (uint32)sPlayerbotAIConfig.rndBotCheatMask)
             out << "[conf:" << GetCheatName(BotCheatMask(cheatMask)) << "]";
-        else if (!sRandomPlayerbotMgr.IsRandomBot(bot) && (uint32)cheatMask & (uint32)sPlayerbotAIConfig.botCheatMask)
+        else if (!sRandomBotFacade.IsRandomBot(bot) && (uint32)cheatMask & (uint32)sPlayerbotAIConfig.botCheatMask)
             out << "[conf:" << GetCheatName(BotCheatMask(cheatMask)) << "]";
         else if (ai->HasCheat(cheatMask))
             out << "[" << GetCheatName(BotCheatMask(cheatMask)) << "]";

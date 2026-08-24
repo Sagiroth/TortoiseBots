@@ -13,13 +13,8 @@ bool CompareSpells(std::pair<uint32, std::string>& s1, std::pair<uint32, std::st
 {
     const SpellEntry* const si1 = sServerFacade.LookupSpellInfo(s1.first);
     const SpellEntry* const si2 = sServerFacade.LookupSpellInfo(s2.first);
-#ifdef MANGOSBOT_ZERO
     int p1 = si1->School * 20000;
     int p2 = si2->School * 20000;
-#else
-    int p1 = si1->SchoolMask * 20000;
-    int p2 = si2->SchoolMask * 20000;
-#endif
 
     uint32 skill1 = 0, skill2 = 0;
     uint32 skillValue1 = 0, skillValue2 = 0;

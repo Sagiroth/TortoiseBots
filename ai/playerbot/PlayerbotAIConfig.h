@@ -7,7 +7,6 @@
 #include "SystemConfig.h"
 
 class Player;
-class PlayerbotMgr;
 class ChatHandler;
 
 #if PLATFORM == PLATFORM_WINDOWS
@@ -30,9 +29,8 @@ enum class BotCheatMask : uint32
     movespeed = 1 << 8,
     attackspeed = 1 << 9,
     breath = 1 << 10,
-    glyph = 1 << 11,
-    quest = 1 << 12,
-    maxMask = 1 << 13
+    quest = 1 << 11,
+    maxMask = 1 << 12
 };
 
 enum class BotAutoLogin : uint32
@@ -87,12 +85,6 @@ struct ParsedUrl {
     bool https;
 };
 
-//GlyphPrioritySpecMap[specId][level] = {{glyphItemId, prereqTalentSpell}};
-using GlyphPriority = std::pair<uint32, uint32>;
-using GlyphPriorityList = std::vector<GlyphPriority>;
-using GlyphPriorityLevelMap = std::unordered_map<uint32, GlyphPriorityList>;
-using GlyphPrioritySpecMap = std::unordered_map<uint32, GlyphPriorityLevelMap>;
-
 class PlayerbotAIConfig
 {
 public:
@@ -126,8 +118,6 @@ public:
     uint32 openGoSpell;
     bool randomBotAutologin;
     BotAutoLogin botAutologin;
-    std::string randomBotMapsAsString;
-    std::vector<uint32> randomBotMaps;
     std::list<uint32> randomBotQuestItems;
     std::list<uint32> randomBotAccounts;
     std::unordered_set<uint32> nonRandomBotAccounts;
@@ -137,14 +127,8 @@ public:
     std::list<std::pair<uint32, uint32>> freeAltBots;
     std::list<std::string> toggleAlwaysOnlineAccounts;
     std::list<std::string> toggleAlwaysOnlineChars;
-    bool enableRandomTeleports;
     bool enableMinimalMove;
-    uint32 randomBotTeleportDistance;
-    bool randomBotTeleportNearPlayer;
     uint32 transportTeleportType;
-    uint32 randomBotTeleportNearPlayerMaxAmount;
-    float randomBotTeleportNearPlayerMaxAmountRadius;
-    uint32 randomBotTeleportMinInterval, randomBotTeleportMaxInterval;
     uint32 randomGearMaxLevel;
     uint32 randomGearMaxDiff;
     bool randomGearUpgradeEnabled;
@@ -157,21 +141,16 @@ public:
     bool randomGearProgression;
     float randomGearLoweringChance;
     bool rollBadItemsWithPlayer;
-    float randomBotMaxLevelChance;
-    float randomBotRpgChance;
     float usePotionChance;
     float attackEmoteChance;
-    bool randomBotAutoCreate;
     uint32 minRandomBots, maxRandomBots;
-    uint32 randomBotUpdateInterval, randomBotCountChangeMinInterval, randomBotCountChangeMaxInterval;
+    uint32 randomBotUpdateInterval;
     bool randomBotTimedLogout, randomBotTimedOffline;
     uint32 minRandomBotInWorldTime, maxRandomBotInWorldTime;
     uint32 minRandomBotRandomizeTime, maxRandomBotRandomizeTime;
     uint32 minRandomBotChangeStrategyTime, maxRandomBotChangeStrategyTime;
     uint32 minRandomBotReviveTime, maxRandomBotReviveTime;
-    uint32 minRandomBotPvpTime, maxRandomBotPvpTime;
     uint32 randomBotsMaxLoginsPerInterval;
-    uint32 randomBotsPerInterval;
     uint32 minRandomBotsPriceChangeInterval, maxRandomBotsPriceChangeInterval;
     //Auction house settings
     bool shouldQueryAHListingsOutsideOfAH;
@@ -180,70 +159,35 @@ public:
     bool botCheckAllAuctionListings;
     bool botsSaveEpics;
     //
-    bool randomBotJoinLfg;
-    bool logRandomBotJoinLfg;
-    bool randomBotJoinBG;
-    bool randomBotAutoJoinBG;
-    uint32 randomBotBracketCount;
     bool randomBotLoginAtStartup;
-    uint32 randomBotTeleLevel;
     bool logInGroupOnly, logValuesPerTick;
     bool fleeingEnabled;
     bool summonAtInnkeepersEnabled;
     std::string combatStrategies, nonCombatStrategies, reactStrategies, deadStrategies;
     std::string randomBotCombatStrategies, randomBotNonCombatStrategies, randomBotReactStrategies, randomBotDeadStrategies;
-    uint32 randomBotMinLevel, randomBotMaxLevel;
+    uint32 randomBotMaxLevel;
     float randomChangeMultiplier;
-    std::string premadeLevelSpec[MAX_CLASSES][10][91]; //lvl 10 - 100
     uint32 classRaceProbabilityTotal;
     uint32 classRaceProbability[MAX_CLASSES][MAX_RACES];
     bool useFixedClassRaceCounts;
     using ClassRacePair = std::pair<uint8, uint8>;
     std::map<ClassRacePair, uint32> fixedClassRaceCounts;
-    uint32 levelProbability[PLAYER_STRONG_MAX_LEVEL + 1];   // see levelBucket in PlayerbotLoginMgr.h
     ClassSpecs classSpecs[MAX_CLASSES];
-    GlyphPrioritySpecMap glyphPriorityMap[MAX_CLASSES];
     bool gearProgressionSystemEnabled;
     uint32 gearProgressionSystemItemLevels[MAX_GEAR_PROGRESSION_LEVEL][2];
     int32 gearProgressionSystemItems[MAX_GEAR_PROGRESSION_LEVEL][MAX_CLASSES][4][SLOT_EMPTY];
     std::string commandPrefix, commandSeparator;
     std::string randomBotAccountPrefix;
     // Character names that stay online and are never teleported away.
-    // Resolved to guids by RandomPlayerbotMgr, which has the database.
+    // Resolved to live bot records by the native random-bot service.
     std::list<std::string> pinnedBotNames;
 
-    // Bots per team a battleground may fill while no real player is queuing for
-    // that bracket, keyed by BattleGroundTypeId. Deliberately below the
-    // template maximum so a player who queues later drops into the running
-    // match rather than starting a second one. Empty means no cap.
-    std::map<uint32, uint32> bgBotTeamCap;
-
-    // -1 when the type is not listed at all, otherwise the configured number.
-    // Zero is meaningful: it switches the battleground off for bots entirely,
-    // which is what a map disabled by the client patch needs.
-    // How many battleground instances of one type and bracket bots may keep
-    // running at once while nobody real is waiting. Was hardcoded to 1, which
-    // took Warsong from 400 matches a day down to 12.
-    uint32 bgMaxInstancesPerBracket;
-    int32 GetBgBotTeamCap(uint32 bgTypeId) const
-    {
-        auto it = bgBotTeamCap.find(bgTypeId);
-        return it == bgBotTeamCap.end() ? -1 : (int32)it->second;
-    }
-    uint32 randomBotAccountCount;
-    bool deleteRandomBotAccounts;
-    uint32 randomBotGuildCount;
-    bool deleteRandomBotGuilds;
-    uint32 randomBotArenaTeamCount;
-    bool deleteRandomBotArenaTeams;
-    std::list<uint32> randomBotArenaTeams;
 	bool RandombotsWalkingRPG;
 	bool RandombotsWalkingRPGInDoors;
     bool boostFollow;
     bool turnInRpg;
     bool globalSoundEffects;
     bool shareTargets;
-    std::list<uint32> randomBotGuilds;
 	std::list<uint32> pvpProhibitedZoneIds;
     bool enableGreet;
     bool randomBotShowHelmet;
@@ -376,11 +320,6 @@ public:
     bool respawnModForPlayerBots, respawnModForInstances;
 
     bool randomBotLoginWithPlayer;
-    bool asyncBotLogin, preloadHolders;
-    uint32 freeRoomForNonSpareBots;
-    uint32 loginBotsNearPlayerRange;
-    std::vector<std::string> defaultLoginCriteria;
-    std::vector<std::vector<std::string>> loginCriteria;
 
     bool jumpInBg;
     bool jumpWithPlayer;
@@ -406,7 +345,7 @@ public:
     uint32 botCheatMask = 0;
     uint32 rndBotCheatMask = 0;
 
-    std::vector<std::string> BotCheatMaskName = { "taxi", "gold", "health", "mana", "power", "item", "cooldown", "repair", "movespeed", "attackspeed", "breath", "glyph", "quest", "maxMask" };
+    std::vector<std::string> BotCheatMaskName = { "taxi", "gold", "health", "mana", "power", "item", "cooldown", "repair", "movespeed", "attackspeed", "breath", "quest", "maxMask" };
 
     struct worldBuff{
         uint32 spellId;
@@ -420,7 +359,6 @@ public:
 
     std::vector<worldBuff> worldBuffs;
 
-    int commandServerPort;
     bool perfMonEnabled;
     bool bExplicitDbStoreSave = false;
 

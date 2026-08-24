@@ -191,12 +191,6 @@ ChatHelper::ChatHelper(PlayerbotAI* ai) : PlayerbotAIAware(ai)
     specs[CLASS_WARRIOR][1] = "fury";
     specs[CLASS_WARRIOR][2] = "protection";
 
-#ifdef MANGOSBOT_TWO
-    classes[CLASS_DEATH_KNIGHT] = "dk";
-    specs[CLASS_DEATH_KNIGHT][0] = "blood";
-    specs[CLASS_DEATH_KNIGHT][1] = "frost";
-    specs[CLASS_DEATH_KNIGHT][2] = "unholy";
-#endif
 
     races[RACE_DWARF] = "Dwarf";
     races[RACE_GNOME] = "Gnome";
@@ -206,10 +200,6 @@ ChatHelper::ChatHelper(PlayerbotAI* ai) : PlayerbotAIAware(ai)
     races[RACE_TAUREN] = "Tauren";
     races[RACE_TROLL] = "Troll";
     races[RACE_UNDEAD] = "Undead";
-#ifndef MANGOSBOT_ZERO
-    races[RACE_BLOODELF] = "Blood Elf";
-    races[RACE_DRAENEI] = "Draenei";
-#endif
 }
 
 std::string ChatHelper::formatMoney(uint32 copper)
@@ -697,11 +687,7 @@ std::string ChatHelper::formatFaction(uint32 factionId, Player* player)
 {
     std::string name = "unknown faction";
 
-#ifndef MANGOSBOT_ONE
     const FactionEntry* factionEntry = sFactionStore.LookupEntry(factionId);
-#else
-    const FactionEntry* factionEntry = sFactionStore.LookupEntry<FactionEntry>(factionId);
-#endif
 
     if (factionEntry)
     {
@@ -1091,11 +1077,7 @@ std::string ChatHelper::formatFactionName(uint32 factionId)
 {
     std::string name = "unknown faction";
 
-#ifndef MANGOSBOT_ONE
     const FactionEntry* factionEntry = sFactionStore.LookupEntry(factionId);
-#else
-    const FactionEntry* factionEntry = sFactionStore.LookupEntry<FactionEntry>(factionId);
-#endif
 
     if (factionEntry)
     {

@@ -47,7 +47,6 @@ Item* ItemForSpellValue::Calculate()
     // Workaround as some spells have no item mask (e.g. shaman weapon enhancements)
     if (!strcmpi(spellInfo->SpellName[0].c_str(), "rockbiter weapon") ||
             !strcmpi(spellInfo->SpellName[0].c_str(), "flametongue weapon") ||
-            !strcmpi(spellInfo->SpellName[0].c_str(), "earthliving weapon") ||
             !strcmpi(spellInfo->SpellName[0].c_str(), "frostbrand weapon") ||
             !strcmpi(spellInfo->SpellName[0].c_str(), "windfury weapon"))
     {

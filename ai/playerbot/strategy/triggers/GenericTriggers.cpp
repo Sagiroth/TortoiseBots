@@ -322,21 +322,13 @@ bool DebuffTrigger::IsActive()
 
 bool DebuffTrigger::HasMaxDebuffs()
 {
-#ifdef MANGOSBOT_TWO
-    return false;
-#else
     Unit* target = GetTarget();
     if(target)
     {
-#ifdef MANGOSBOT_ONE
-        constexpr uint32 debuffLimit = 40;
-#else
         constexpr uint32 debuffLimit = 16;
-#endif
 
         return ai->GetAuras(target, false, false).size() >= debuffLimit;
     }
-#endif
 
     return false;
 }
@@ -501,10 +493,6 @@ bool DeflectSpellTrigger::IsActive()
     SpellEntry const *deflectSpell = sServerFacade.LookupSpellInfo(spellid);
     if (!deflectSpell)
         return false;
-
-    // warrior deflects all
-    if (spell == "spell reflection")
-        return true;
 
     // human priest feedback
     if (spell == "feedback")
@@ -791,11 +779,7 @@ bool CorpseNearTrigger::IsActive()
 
 bool IsFallingTrigger::IsActive()
 {
-#ifndef MANGOSBOT_TWO
     return bot->HasMovementFlag(MOVEFLAG_JUMPING);
-#else
-    return bot->HasMovementFlag(MOVEFLAG_FALLING);
-#endif
 }
 
 bool IsFallingFarTrigger::IsActive()
@@ -1025,11 +1009,7 @@ bool ItemTargetTrigger::IsTargetValid(Unit* target)
             {
                 for (uint8 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
                 {
-#ifdef MANGOSBOT_ZERO
                     if (proto->Spells[i].SpellTrigger == ITEM_SPELLTRIGGER_ON_USE || proto->Spells[i].SpellTrigger == ITEM_SPELLTRIGGER_ON_NO_DELAY_USE)
-#else
-                    if (proto->Spells[i].SpellTrigger == ITEM_SPELLTRIGGER_ON_USE)
-#endif
                     {
                         if (proto->Spells[i].SpellId > 0 && ai->HasAura(proto->Spells[i].SpellId, target))
                         {
@@ -1061,11 +1041,7 @@ bool ItemTargetTrigger::IsSpellReady()
     {
         for (uint8 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
         {
-#ifdef MANGOSBOT_ZERO
             if (proto->Spells[i].SpellTrigger == ITEM_SPELLTRIGGER_ON_USE || proto->Spells[i].SpellTrigger == ITEM_SPELLTRIGGER_ON_NO_DELAY_USE)
-#else
-            if (proto->Spells[i].SpellTrigger == ITEM_SPELLTRIGGER_ON_USE)
-#endif
             {
                 if (proto->Spells[i].SpellId > 0)
                 {
@@ -1088,17 +1064,9 @@ bool AtWarTrigger::IsActive()
 {
     ReputationMgr& mgr = bot->GetReputationMgr();
 
-#ifndef MANGOSBOT_ONE
     for (uint32 id = 0; id < sFactionStore.GetNumRows(); ++id)
-#else
-    for (uint32 id = 0; id < sFactionStore.GetMaxEntry(); ++id)
-#endif
     {
-#ifndef MANGOSBOT_ONE
         const FactionEntry* factionEntry = sFactionStore.LookupEntry(id);
-#else
-        const FactionEntry* factionEntry = sFactionStore.LookupEntry<FactionEntry>(id);
-#endif
 
         if (!factionEntry)
             continue;

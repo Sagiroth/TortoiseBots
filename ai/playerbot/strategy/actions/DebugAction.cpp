@@ -14,11 +14,7 @@
 #include "Maps/PathFinder.h"
 #include "playerbot/PlayerbotLLMInterface.h"
 
-#ifdef MANGOSBOT_TWO
 #include "vmap/VMapFactory.h"
-#else
-#include "vmap/VMapFactory.h"
-#endif
 
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
@@ -26,9 +22,6 @@
 
 #include <iomanip>
 #include "SayAction.h"
-#ifdef GenerateBotTests
-#include "playerbot/strategy/tests/TestRegistry.h"
-#endif
 #include "Maps/MoveMap.h"
 
 using namespace ai;
@@ -68,8 +61,6 @@ bool DebugAction::Execute(Event& event)
         return HandleGY(event, requester, text);
     else if (text == "grid" && isMod)
         return HandleGrid(event, requester, text);
-    else if (text.find("test") == 0 && isMod)
-        return HandleTest(event, requester, text);
     else if (text.find("values") == 0)
         return HandleValues(event, requester, text);
     else if (text == "gps" && isMod)
@@ -1335,55 +1326,6 @@ bool DebugAction::HandleGrid(Event& event, Player* requester, const std::string&
     return true;
 }
 
-bool DebugAction::HandleTest(Event& event, Player* requester, const std::string& text)
-{
-    std::string param = "";
-    if (text.length() > 4)
-    {
-        param = text.substr(5);
-    }
-
-    if (param.empty())
-    {
-        ai->TellPlayer(requester, "=== debug test ===");
-        ai->TellPlayer(requester, "Usage: debug test <command>");
-        ai->TellPlayer(requester, "");
-        ai->TellPlayer(requester, "  locations          - List all test locations");
-        ai->TellPlayer(requester, "  locate <name>      - Test location resolution");
-        ai->TellPlayer(requester, "  [clear expired]  - Clear expired AI values");
-        return true;
-    }
-
-#ifdef GenerateBotTests
-    if (param == "locations")
-    {
-        ai->TellPlayer(requester, "=== Test Locations ===");
-        auto tests = TestRegistry::GetAvailableTests();
-        ai->TellPlayer(requester, "Available tests: " + std::to_string(tests.size()));
-        return true;
-    }
-
-    if (param.find("locate ") == 0)
-    {
-        std::string locationName = param.substr(7);
-        GuidPosition loc;
-        if (TestRegistry::ParseLocation(locationName, loc))
-        {
-            std::ostringstream out;
-            out << locationName << " -> map=" << loc.mapId << " pos=(" << std::fixed << std::setprecision(2) << loc.x << ", " << loc.y << ", " << loc.z << ")";
-            ai->TellPlayer(requester, out.str());
-        }
-        else
-        {
-            ai->TellPlayer(requester, "Failed to resolve location: " + locationName);
-        }
-        return true;
-    }
-#endif
-
-    return true;
-}
-
 bool DebugAction::HandleGPS(Event& event, Player* requester, const std::string& text)
 {
     std::ostringstream out;
@@ -1886,11 +1828,7 @@ bool DebugAction::HandleOnTrans(Event& event, Player* requester, const std::stri
     bot->GetMotionMaster()->Clear();
 
     std::vector<G3D::Vector3> pointPath = transPos.toPointsArray(path);
-#ifndef MANGOSBOT_TWO
     bot->GetMotionMaster()->MovePath(pointPath, FORCED_MOVEMENT_RUN, false, false);
-#else
-    bot->GetMotionMaster()->MovePath(pointPath, FORCED_MOVEMENT_RUN, false);
-#endif
 
     return true;
 }
@@ -1929,11 +1867,7 @@ bool DebugAction::HandleOffTrans(Event& event, Player* requester, const std::str
 
     std::vector<G3D::Vector3> pointPath = exitPos.toPointsArray(path);
 
-#ifndef MANGOSBOT_TWO
     bot->GetMotionMaster()->MovePath(pointPath, FORCED_MOVEMENT_RUN, false, false);
-#else
-    bot->GetMotionMaster()->MovePath(pointPath, FORCED_MOVEMENT_RUN, false);
-#endif
 
     return true;
 }
@@ -2077,7 +2011,7 @@ bool DebugAction::HandleCorpse(Event& event, Player* requester, const std::strin
 
 bool DebugAction::HandleLogoutTime(Event& event, Player* requester, const std::string& text)
 {
-    int32 time = sRandomPlayerbotMgr.GetValueValidTime(bot->GetGUIDLow(), "add");
+    int32 time = sRandomBotFacade.GetValueValidTime(bot->GetGUIDLow(), "add");
 
     int32 min = 0, hr = 0;
 
@@ -2305,11 +2239,7 @@ bool DebugAction::HandleQuest(Event& event, Player* requester, const std::string
                 uint32 curRep = bot->GetReputationMgr().GetReputation(repFaction);
                 if (curRep < repValue)
                 {
-#ifndef MANGOSBOT_ONE
                     if (FactionEntry const* factionEntry = sFactionStore.LookupEntry(repFaction))
-#else
-                    if (FactionEntry const* factionEntry = sFactionStore.LookupEntry<FactionEntry>(repFaction))
-#endif
                         bot->GetReputationMgr().SetReputation(factionEntry, repValue);
                 }
             }
@@ -3327,10 +3257,8 @@ bool DebugAction::HandleNPC(Event& event, Player* requester, const std::string& 
         ai->TellPlayerNoFacing(requester, "UNIT_NPC_FLAG_STABLEMASTER");
     if (guidP.HasNpcFlag(UNIT_NPC_FLAG_REPAIR))
         ai->TellPlayerNoFacing(requester, "UNIT_NPC_FLAG_REPAIR");
-#ifdef MANGOSBOT_ZERO
     if (guidP.HasNpcFlag(UNIT_NPC_FLAG_OUTDOORPVP))
         ai->TellPlayerNoFacing(requester, "UNIT_NPC_FLAG_OUTDOORPVP");
-#endif
 
 
     std::ostringstream out2;
@@ -3461,9 +3389,7 @@ bool DebugAction::HandleGO(Event& event, Player* requester, const std::string& t
     types[GAMEOBJECT_TYPE_FISHINGNODE] = "GAMEOBJECT_TYPE_FISHINGNODE";
     types[GAMEOBJECT_TYPE_SUMMONING_RITUAL] = "GAMEOBJECT_TYPE_SUMMONING_RITUAL";
     types[GAMEOBJECT_TYPE_MAILBOX] = "GAMEOBJECT_TYPE_MAILBOX";
-#ifndef MANGOSBOT_TWO
     types[GAMEOBJECT_TYPE_AUCTIONHOUSE] = "GAMEOBJECT_TYPE_AUCTIONHOUSE";
-#endif
     types[GAMEOBJECT_TYPE_GUARDPOST] = "GAMEOBJECT_TYPE_GUARDPOST";
     types[GAMEOBJECT_TYPE_SPELLCASTER] = "GAMEOBJECT_TYPE_SPELLCASTER";
     types[GAMEOBJECT_TYPE_MEETINGSTONE] = "GAMEOBJECT_TYPE_MEETINGSTONE";
@@ -3471,18 +3397,9 @@ bool DebugAction::HandleGO(Event& event, Player* requester, const std::string& t
     types[GAMEOBJECT_TYPE_FISHINGHOLE] = "GAMEOBJECT_TYPE_FISHINGHOLE";
     types[GAMEOBJECT_TYPE_FLAGDROP] = "GAMEOBJECT_TYPE_FLAGDROP";
     types[GAMEOBJECT_TYPE_MINI_GAME] = "GAMEOBJECT_TYPE_MINI_GAME";
-#ifndef MANGOSBOT_TWO
     types[GAMEOBJECT_TYPE_LOTTERY_KIOSK] = "GAMEOBJECT_TYPE_LOTTERY_KIOSK";
-#endif
     types[GAMEOBJECT_TYPE_CAPTURE_POINT] = "GAMEOBJECT_TYPE_CAPTURE_POINT";
     types[GAMEOBJECT_TYPE_AURA_GENERATOR] = "GAMEOBJECT_TYPE_AURA_GENERATOR";
-#ifdef MANGOSBOT_TWO
-    types[GAMEOBJECT_TYPE_DUNGEON_DIFFICULTY] = "GAMEOBJECT_TYPE_DUNGEON_DIFFICULTY";
-    types[GAMEOBJECT_TYPE_BARBER_CHAIR] = "GAMEOBJECT_TYPE_BARBER_CHAIR";
-    types[GAMEOBJECT_TYPE_DESTRUCTIBLE_BUILDING] = "GAMEOBJECT_TYPE_DESTRUCTIBLE_BUILDING";
-    types[GAMEOBJECT_TYPE_GUILD_BANK] = "GAMEOBJECT_TYPE_GUILD_BANK";
-    types[GAMEOBJECT_TYPE_TRAPDOOR] = "GAMEOBJECT_TYPE_TRAPDOOR";
-#endif
 
     ai->TellPlayerNoFacing(requester, types[guidP.GetGameObjectInfo()->type]);
 
@@ -3629,9 +3546,6 @@ bool DebugAction::HandleItem(Event& event, Player* requester, const std::string&
         { ITEM_CLASS_KEY, "Key" },
         { ITEM_CLASS_PERMANENT, "Permanent" },
         { ITEM_CLASS_MISC, "Miscellaneous" },
-#ifdef MANGOSBOT_TWO
-        { ITEM_CLASS_GLYPH, "Glyph" }
-#endif
     };
 
     static const std::unordered_map<uint32, std::unordered_map<uint32, std::string>> itemSubclassNames = {
@@ -3696,13 +3610,6 @@ bool DebugAction::HandleItem(Event& event, Player* requester, const std::string&
         { ITEM_CLASS_MISC, {
             { 0, "Junk" }, { 1, "Reagent" }, { 2, "Pet" }, { 3, "Holiday" }, { 4, "Other" }, { 5, "Mount" }
         }},
-#ifdef MANGOSBOT_TWO
-        { ITEM_CLASS_GLYPH, {
-            { 1, "Glyph Warrior" }, { 2, "Glyph Paladin" }, { 3, "Glyph Hunter" }, { 4, "Glyph Rogue" },
-            { 5, "Glyph Priest" }, { 6, "Glyph Death Knight" }, { 7, "Glyph Shaman" }, { 8, "Glyph Mage" },
-            { 9, "Glyph Warlock" }, { 11, "Glyph Druid" }
-        }}
-#endif
     };
 
 
@@ -5360,7 +5267,7 @@ bool DebugAction::HandleActivity(Event& event, Player* requester, const std::str
     }
 
     auto bracket = ai->GetPriorityBracket(ai->GetPriorityType());
-    float activityPct = sRandomPlayerbotMgr.getActivityPercentage();
+    constexpr float activityPct = 100.0f;
 
     std::ostringstream out;
     out << "State: " << stateName << ", Active: " << (isActive ? "yes" : "no");
@@ -5433,11 +5340,7 @@ bool DebugAction::HandleTransanal(Event& event, Player* requester, const std::st
 
                             float hx = x, hy = y, hz = z - 50;
 
-#ifndef MANGOSBOT_TWO
                             bool hasHit = map->GetHitPosition(testPos.getX(), testPos.getY(), testPos.getZ(), hx, hy, hz, 0.0f);
-#else
-                            bool hasHit = map->GetHitPosition(testPos.getX(), testPos.getY(), testPos.getZ(), hx, hy, hz, 0, 0.0f);
-#endif
 
                             if (!hasHit)
                                 continue;
@@ -5464,21 +5367,7 @@ bool DebugAction::HandleTransanal(Event& event, Player* requester, const std::st
 
                 // remote_ip MUST be "disconnected/bot" so PlayerbotAI::IsRealPlayer() returns false.
                 WorldSession* session = new WorldSession(0, NULL, SEC_PLAYER,
-#ifdef MANGOSBOT_TWO
-                    2,
-                    0,
-                    LOCALE_enUS,
-                    "disconnected/bot",
-                    0,
-                    0,
-                    false);
-#endif
-#ifdef MANGOSBOT_ONE
-                    2, 0, LOCALE_enUS, "disconnected/bot", 0, 0, false);
-#endif
-#ifdef MANGOSBOT_ZERO
                     0, LOCALE_enUS, "disconnected/bot", 0);
-#endif
 
                     session->SetNoAnticheat();
 
@@ -5701,11 +5590,7 @@ bool DebugAction::HandleUpdownspace(Event& event, Player* requester, const std::
     VMAP::VMapFactory::createOrGetVMapManager()->getObjectHitPos(bot->GetMapId(), botX, botY, startZ, destX_down, destY_down, destZ_down, vmapDestX_down, vmapDestY_down, vmapDestZ_down, 0);
     bool vmapHitDown = (vmapDestX_down != botX || vmapDestY_down != botY || fabs(vmapDestZ_down - (startZ - 50.0f)) > 0.1f);
 
-#ifndef MANGOSBOT_TWO
     bool combinedHitDown = bot->GetMap()->GetHitPosition(botX, botY, startZ, destX_down, destY_down, destZ_down, 0);
-#else
-    bool combinedHitDown = bot->GetMap()->GetHitPosition(botX, botY, startZ, destX_down, destY_down, destZ_down, 0, 0);
-#endif
 
     if (vmapHitDown)
         out << "VMAP DOWN hit at z: " << vmapDestZ_down << "\n";
@@ -5727,11 +5612,7 @@ bool DebugAction::HandleUpdownspace(Event& event, Player* requester, const std::
     VMAP::VMapFactory::createOrGetVMapManager()->getObjectHitPos(bot->GetMapId(), botX, botY, startZ, destX_up, destY_up, destZ_up, vmapDestX_up, vmapDestY_up, vmapDestZ_up, 0);
     bool vmapHitUp = (vmapDestX_up != botX || vmapDestY_up != botY || fabs(vmapDestZ_up - (startZ + 50.0f)) > 0.1f);
 
-#ifndef MANGOSBOT_TWO
     bool combinedHitUp = bot->GetMap()->GetHitPosition(botX, botY, startZ, destX_up, destY_up, destZ_up, 0);
-#else
-    bool combinedHitUp = bot->GetMap()->GetHitPosition(botX, botY, startZ, destX_up, destY_up, destZ_up, 0, 0);
-#endif
 
     if (vmapHitUp)
         out << "VMAP UP hit at z: " << vmapDestZ_up << "\n";

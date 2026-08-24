@@ -3,7 +3,7 @@
 #include "PlayerbotAIAdapter.h"
 #include "PlayerbotAIStorage.h"
 #include "../ai/playerbot/PlayerbotAI.h"
-#include "../ai/playerbot/RandomPlayerbotMgr.h"
+#include "../ai/playerbot/RandomBotFacade.h"
 #include "../host/BotSessionAdapter.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "WorldSession.h"
@@ -626,7 +626,7 @@ void BotManager::OnWorldUpdate(uint32_t diff)
     // perception/social queries. Refresh it from the authoritative native
     // records immediately before any AI update; it never owns sessions.
     PlayerbotAI::ProcessDelayedPackets();
-    sRandomPlayerbotMgr.SyncNativePlayers();
+    sRandomBotFacade.SyncNativePlayers();
     UpdateBots(diff);
 
     if (m_autoTestEnabled)

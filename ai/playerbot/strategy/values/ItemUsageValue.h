@@ -29,11 +29,7 @@ namespace ai
 
         bool operator==(const ItemQualifier& qualifier) const { return itemId == qualifier.itemId && enchantId == qualifier.enchantId && randomPropertyId == qualifier.randomPropertyId && gem1 == qualifier.gem1 && gem2 == qualifier.gem2 && gem3 == qualifier.gem3 && gem4 == qualifier.gem4; }
 
-#ifdef MANGOSBOT_ZERO
         std::string GetLinkQualifier() { return std::to_string(itemId) + ":" + std::to_string(enchantId) + ":" + std::to_string(randomPropertyId) + ":0"; }
-#else
-        std::string GetLinkQualifier() { return std::to_string(itemId) + ":" + std::to_string(enchantId) + ":" + std::to_string(gem1) + ":" + std::to_string(gem2) + ":" + std::to_string(gem3) + ":" + std::to_string(gem4) + ":" + std::to_string(randomPropertyId) + ":0"; }
-#endif
         std::string GetQualifier() { return std::to_string(itemId) + ((enchantId || gem1 || gem2 || gem3 || gem4 || randomPropertyId) ? ":" + std::to_string(enchantId) + ":" + std::to_string(gem1) + ":" + std::to_string(gem2) + ":" + std::to_string(gem3) + ":" + std::to_string(gem4) + ":" + std::to_string(randomPropertyId) : ""); }
 
         ItemPrototype const* GetProto() { if (!proto) proto = sItemStorage.LookupEntry<ItemPrototype>(itemId); return proto; };

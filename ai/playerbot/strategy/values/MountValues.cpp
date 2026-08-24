@@ -6,13 +6,8 @@
 
 using namespace ai;
 
-uint32 MountValue::GetSpeed(uint32 spellId, bool canFly)
+uint32 MountValue::GetSpeed(uint32 spellId)
 {
-#ifdef MANGOSBOT_ZERO
-    if (canFly)
-        return 0;
-#endif
-
     const SpellEntry* const spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellId);
 
     if (!spellInfo)
@@ -20,22 +15,11 @@ uint32 MountValue::GetSpeed(uint32 spellId, bool canFly)
 
     switch (spellInfo->Id) //Aura's hard coded in spell.cpp
     {
-    case 783:  //travel form
-    case 2645: //ghost wolf
-        if(!canFly)
+    case 783:  // travel form
+    case 2645: // ghost wolf
         return 39;
-        break;
-    case 33943: //flight form
-        if (canFly)
-            return 59;
-        break;
-    case 40120: //swift flight form
-        if (canFly)
-            return 279;
-        break;
     case 26656: //Black AQ mount
-        if (!canFly)
-            return 99;
+        return 99;
     }
 
     bool isMount = false;
@@ -51,25 +35,8 @@ uint32 MountValue::GetSpeed(uint32 spellId, bool canFly)
     if(!isMount)
         return 0;
 
-#ifndef MANGOSBOT_ZERO
-    //This part stops bots from mounting flying mounts when they can't fly. This should be tweaked if bots ever are able to normally ride flying mounts in the old-world.
-    if (isMount && !canFly)
-    {
-        for (int i = 0; i < 3; i++)
-        {
-            if (spellInfo->EffectApplyAuraName[i] == SPELL_AURA_MOD_FLIGHT_SPEED_MOUNTED)
-            {
-                return 0;
-            }
-        }
-    }
-#endif
 
-#ifdef MANGOSBOT_ZERO
     uint32 effect = SPELL_AURA_MOD_INCREASE_MOUNTED_SPEED;
-#else
-    uint32 effect = canFly ? SPELL_AURA_MOD_FLIGHT_SPEED_MOUNTED : SPELL_AURA_MOD_INCREASE_MOUNTED_SPEED; //If we can fly only look at flight speed. Normal mounts then don't get any speed.
-#endif
 
     if (isMount)
     {
@@ -97,9 +64,6 @@ uint32 MountValue::GetMountSpell(uint32 itemId)
     {
         if (GetSpeed(proto->Spells[j].SpellId))
             return proto->Spells[j].SpellId;
-
-        if (GetSpeed(proto->Spells[j].SpellId, true))
-            return proto->Spells[j].SpellId;
     }
 
     return 0;
@@ -107,27 +71,6 @@ uint32 MountValue::GetMountSpell(uint32 itemId)
 
 bool MountValue::IsValidLocation(Player* bot)
 {
-    if (GetSpeed(true)) //Flying mount
-    {
-        if (bot->GetMapId() != 530 && bot->GetMapId() != 571)
-            return false;
-
-#ifdef MANGOSBOT_ONE
-        uint32 zone, area;
-        bot->getZoneAndAreaId(zone, area);
-        uint32 v_map = GetVirtualMapForMapAndZone(bot->GetMapId(), zone);
-        MapEntry const* mapEntry = sMapStore.LookupEntry(v_map);
-        if (!mapEntry || mapEntry->addon < 1 || !mapEntry->IsContinent())
-            return false;
-#endif
-#ifdef MANGOSBOT_TWO
-        uint32 zone, area;
-        bot->getZoneAndAreaId(zone, area);
-        if (!bot->CanStartFlyInArea(bot->GetMapId(), zone, area, false))
-            return false;
-#endif
-    }
-
     const SpellEntry* const spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellId);
 
     bool isAQ40Mounted = false;
@@ -256,14 +199,12 @@ std::vector<MountValue> MountListValue::Calculate()
 
 uint32 MaxMountSpeedValue::Calculate()
 {
-    bool canFly = !qualifier.empty();
-
     std::vector<MountValue> mounts = AI_VALUE(std::vector<MountValue>, "mount list");
 
     uint32 maxSpeed = 0;
 
     for (auto& mount : mounts)
-        maxSpeed = std::max(maxSpeed, mount.GetSpeed(canFly));
+        maxSpeed = std::max(maxSpeed, mount.GetSpeed());
 
     return maxSpeed;
 }
@@ -273,7 +214,7 @@ std::string MountListValue::Format()
     std::ostringstream out; out << "{";
     for (auto& mount : this->Calculate())
     {
-        std::string speed = std::to_string(mount.GetSpeed(false) + 1) + "%" + (mount.GetSpeed(true) ? ("/" + (std::to_string(mount.GetSpeed(true) + 1) + "%")) : "");
+        std::string speed = std::to_string(mount.GetSpeed() + 1) + "%";
         out << (mount.IsItem() ? "(item)" : "(spell)") << chat->formatSpell(mount.GetSpellId()) << "(" << speed << "),";
     }
     out << "}";
@@ -282,7 +223,6 @@ std::string MountListValue::Format()
 
 uint32 MountSkillTypeValue::Calculate()
 {
-#ifdef MANGOSBOT_ZERO
     switch (bot->GetRace())
     {
     case RACE_HUMAN:
@@ -312,9 +252,6 @@ uint32 MountSkillTypeValue::Calculate()
         return SKILL_RIDING;
         break;
     }
-#else
-    return SKILL_RIDING;
-#endif
 }
 
 std::vector<int32> AvailableMountVendors::Calculate()
@@ -355,15 +292,7 @@ bool CanTrainMountValue::Calculate()
 
 bool CanBuyMountValue::Calculate()
 {
-#ifdef MANGOSBOT_ZERO
     uint8 minRidingLevel = 40;
-#endif
-#ifdef MANGOSBOT_ONE
-    uint8 minRidingLevel = 30;
-#endif
-#ifdef MANGOSBOT_TWO
-    uint8 minRidingLevel = 20;
-#endif
     if (bot->GetLevel() < minRidingLevel)
         return false;
 

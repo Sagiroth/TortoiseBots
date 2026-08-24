@@ -108,21 +108,6 @@ void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
     {
         bool isQuestItemOnly = false;
 
-#ifdef MANGOSBOT_TWO
-        for (int i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; i++)
-        {
-            int itemId = go->GetGOInfo()->questItems[i];
-
-            if (ItemUsageValue::IsNeededForQuest(bot, itemId))
-            {
-                if (debug)
-                    ai->TellDebug(ai->GetMaster(), "GO has item needed for quest.", "debug loot");
-                this->guid = guid;
-                return;
-            }
-            isQuestItemOnly |= itemId > 0;
-        }
-#else
         /*if (!guid.IsEmpty())
         {
             for (auto& entry : GAI_VALUE2(std::list<int32>, "item drop list", -1*uint(go->GetEntry())))
@@ -135,7 +120,6 @@ void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
                 isQuestItemOnly |= entry > 0;
             }
         }*/
-#endif
 
         if (isQuestItemOnly)
         {

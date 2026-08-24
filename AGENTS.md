@@ -629,8 +629,10 @@ Never claim behavior was tested if it was only inspected statically.
 
 When a change affects runtime behavior and the Docker/runtime environment is available
 (a sibling `tortoise-docker-penqle` checkout may already exist alongside this repository),
-use that sibling checkout for the **smallest relevant verification**. Do not rebuild merely
-to restart an unchanged binary; reuse the running image and preserve its data.
+use that sibling checkout for the **smallest relevant verification**. For compilation/runtime
+validation, use the persistent builder provided by the sibling `tortoise-docker-penqle`
+checkout. Do not fall back to full Docker image rebuilds for normal source edits. Do not
+rebuild merely to restart an unchanged binary; reuse the running image and preserve its data.
 
 Prefer one focused gameplay check for the behavior just changed. Do not replay the whole
 historical acceptance matrix after each slice. Full regression journeys belong at phase/PR

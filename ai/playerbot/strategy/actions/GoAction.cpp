@@ -795,11 +795,7 @@ bool GoAction::MoveToMapGps(std::string& param, Player* requester)
             return false;
         }
 
-#ifdef MANGOSBOT_TWO
-        float ground = map->GetHeight(bot->GetPhaseMask(), x, y, z + 0.5f);
-#else
         float ground = map->GetHeight(x, y, z + 0.5f);
-#endif
         if (ground <= INVALID_HEIGHT)
         {
             ai->TellError(requester, BOT_TEXT("error_cant_go"));

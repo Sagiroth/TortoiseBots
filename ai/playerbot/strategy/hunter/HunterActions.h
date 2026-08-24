@@ -28,13 +28,7 @@ public:
     BEGIN_RANGED_SPELL_ACTION(CastArcaneShotAction, "arcane shot")
     END_SPELL_ACTION()
 
-    BEGIN_RANGED_SPELL_ACTION(CastExplosiveShotAction, "explosive shot")
-    END_SPELL_ACTION()
-
     BEGIN_RANGED_SPELL_ACTION(CastAimedShotAction, "aimed shot")
-    END_SPELL_ACTION()
-
-    BEGIN_RANGED_SPELL_ACTION(CastChimeraShotAction, "chimera shot")
     END_SPELL_ACTION()
 
     BEGIN_RANGED_DEBUFF_ACTION(CastConcussiveShotAction, "concussive shot")
@@ -110,22 +104,10 @@ public:
         }
     };
 
-    class CastAspectOfTheViperAction : public CastBuffSpellAction
-    {
-    public:
-        CastAspectOfTheViperAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "aspect of the viper") {}
-    };
-
     class CastAspectOfTheBeastAction : public CastBuffSpellAction
     {
     public:
         CastAspectOfTheBeastAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "aspect of the beast") {}
-    };
-
-    class CastAspectOfTheDragonhawkAction : public CastBuffSpellAction
-    {
-    public:
-        CastAspectOfTheDragonhawkAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "aspect of the dragonhawk") {}
     };
 
     class CastCallPetAction : public CastBuffSpellAction
@@ -167,21 +149,6 @@ public:
         CastRapidFireAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "rapid fire") {}
     };
 
-    class CastKillCommandAction : public CastBuffSpellAction
-    {
-    public:
-        CastKillCommandAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "kill command") {}
-    };
-
-    class CastBlackArrow : public CastRangedDebuffSpellAction
-    {
-    public:
-        CastBlackArrow(PlayerbotAI* ai) : CastRangedDebuffSpellAction(ai, "black arrow") {}
-    };
-
-    SNARE_ACTION(CastBlackArrowSnareAction, "black arrow");
-    SPELL_ACTION(CastSilencingShotAction, "silencing shot");
-    ENEMY_HEALER_ACTION(CastSilencingShotOnHealerAction, "silencing shot");
     BUFF_ACTION(CastReadinessAction, "readiness");
     ;
     class CastWingClipAction : public CastMeleeSpellAction
@@ -284,28 +251,14 @@ public:
         virtual std::string GetTargetName() override { return "nearest stealthed unit"; }
     };
 
-    class CastSteadyShotAction : public CastSpellAction
-    {
-    public:
-        CastSteadyShotAction(PlayerbotAI* ai) : CastSpellAction(ai, "steady shot") {}
-        virtual bool Execute(Event& event);
-
-    private:
-        uint32 weaponDelay;
-    };
-
     class TrapOnTargetAction : public CastSpellAction
     {
     public:
-#ifdef MANGOSBOT_ZERO
         // For vanilla, bots need to feign death before dropping the trap
         TrapOnTargetAction(PlayerbotAI* ai, std::string spell) : CastSpellAction(ai, "feign death"), trapSpell(spell)
         {
             trapSpellID = AI_VALUE2(uint32, "spell id", trapSpell);
         }
-#else
-        TrapOnTargetAction(PlayerbotAI* ai, std::string spell) : CastSpellAction(ai, spell), trapSpell(spell) {}
-#endif
 
     protected:
         // Traps don't really have target for the spell
@@ -333,7 +286,6 @@ public:
             return NextAction::merge(NextAction::array(0, new NextAction(reachAction + "::" + qualifiersStr), NULL), Action::getPrerequisites());
         }
 
-#ifdef MANGOSBOT_ZERO
         bool isPossible() override
         {
             // If the trap spell and feign death are not on cooldown
@@ -344,7 +296,6 @@ public:
         {
             return NextAction::merge(NextAction::array(0, new NextAction(trapSpell, ACTION_PASSTROUGH), NULL), CastSpellAction::getContinuers());
         }
-#endif
 
 private:
         std::string trapSpell;
@@ -373,14 +324,12 @@ private:
         // Traps don't really have target for the spell
         std::string GetTargetName() override { return "self target"; }
 
-#ifdef MANGOSBOT_ZERO
         bool Execute(Event& event) override
         {
             // The trap could come just after feign death, so better remove it
             ai->RemoveAura("feign death");
             return CastSpellAction::Execute(event);
         }
-#endif
     };
 
     class CastImmolationTrapAction : public CastTrapAction
