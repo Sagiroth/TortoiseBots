@@ -571,7 +571,10 @@ public:
     std::list<Unit*> GetAllHostileNPCNonPetUnitsAroundWO(WorldObject* wo, float distanceAround);
 
     static void SendDelayedPacket(WorldSession* session, std::future<std::vector<std::pair<WorldPacket, uint32>>> futurePacket);
-    void ReceiveDelayedPacket(std::future<std::vector<std::pair<WorldPacket, uint32>>> futurePacket);
+    // Drain packets produced by optional asynchronous work on the world
+    // thread. The queue is keyed by durable bot GUID, never by a raw session
+    // captured by a worker thread.
+    static void ProcessDelayedPackets();
  public:
     std::vector<Bag*> GetEquippedAnyBags();
     std::vector<Bag*> GetEquippedQuivers();

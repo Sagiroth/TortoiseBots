@@ -350,8 +350,19 @@ inline const char* strstr(std::string const& haystack, const char* needle) {
 #endif
 
 // === IsAutocastable (cmangos free function) ===
-inline bool IsAutocastable(uint32 /*spellId*/) { return false; }
-inline bool IsAutocastable(SpellEntry const* /*spellInfo*/) { return false; }
+// Penqle's Vanilla SpellEntry does not carry cmangos' separate
+// SPELL_ATTR_EX_NO_AUTOCAST_AI bit. Pet::ToggleAutocast uses the same native
+// rule available here: passive spells cannot be toggled, while non-passive pet
+// spells may be placed in the autocast list.
+inline bool IsAutocastable(SpellEntry const* spellInfo)
+{
+    return spellInfo && !spellInfo->IsPassiveSpell();
+}
+
+inline bool IsAutocastable(uint32 spellId)
+{
+    return IsAutocastable(sSpellMgr.GetSpellEntry(spellId));
+}
 
 // === IsSpellAppliesAura / IsSpellHaveEffect / IsAreaAuraEffect (cmangos free functions) ===
 inline bool IsSpellAppliesAura(SpellEntry const* spellInfo, uint32 effectMask = 0xFFFFFFFF) {
@@ -638,7 +649,10 @@ inline bool HasPersistentAuraEffect(SpellEntry const* /*spellInfo*/) { return fa
 #define BG_AB_BANNER_MINE 4
 #endif
 
-// === SEC_GAMEMASTER alias (cmangos has it; Penqle goes SEC_PLAYER → SEC_ADMINISTRATOR) ===
+// === SEC_GAMEMASTER alias ===
+// Penqle has no intermediate GM rank: SEC_ADMINISTRATOR is the first elevated
+// account level. Native command ownership deliberately uses that level for
+// the documented GM override.
 #ifndef SEC_GAMEMASTER
 #define SEC_GAMEMASTER SEC_ADMINISTRATOR
 #endif

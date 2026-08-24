@@ -909,8 +909,7 @@ bool PlayerbotAIConfig::Initialize()
         sTravelMgr.LoadQuestTravelTable();
     }
 
-    sLog.outString("Loading named locations...");
-    sRandomPlayerbotMgr.LoadNamedLocations();
+    sLog.outString("Named locations use native on-demand lookup.");
 
     if (sPlayerbotAIConfig.randomBotJoinBG)
         sRandomPlayerbotMgr.LoadBattleMastersCache();

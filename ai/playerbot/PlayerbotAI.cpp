@@ -1,7 +1,11 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/PerformanceMonitor.h"
 #include <stdarg.h>
+#include <deque>
 #include <iomanip>
+#include <memory>
+#include <mutex>
+#include <thread>
 
 #include "playerbot/AiFactory.h"
 
@@ -58,6 +62,30 @@
 #include "strategy/values/GuildValues.h"
 
 using namespace ai;
+
+namespace
+{
+struct DelayedBotPacket
+{
+    ObjectGuid botGuid;
+    std::unique_ptr<WorldPacket> packet;
+};
+
+// Intentionally process-lifetime storage: an LLM worker may finish while
+// World is shutting down, and a short-lived static destructor would re-create
+// the same lifetime race this queue is meant to avoid.
+std::deque<DelayedBotPacket>& DelayedBotPackets()
+{
+    static auto* packets = new std::deque<DelayedBotPacket>();
+    return *packets;
+}
+
+std::mutex& DelayedBotPacketsMutex()
+{
+    static auto* mutex = new std::mutex();
+    return *mutex;
+}
+}
 
 static uint32 GetQuestSlotQuestId(Player* player, uint16 slot)
 {
@@ -5961,7 +5989,9 @@ ActivePiorityType PlayerbotAI::GetPriorityType()
             return ActivePiorityType::NO_PATH;
     }
 
-    //If has real players - slow down continents without player
+    // If the native random population is empty, slow down continents without
+    // random-bot activity. GetPlayers() is a compatibility view, not a
+    // network-player registry.
     //This means we first disable bots in a different continent/area.
     if (sRandomPlayerbotMgr.GetPlayers().empty())
         return ActivePiorityType::IN_EMPTY_SERVER;
@@ -7623,33 +7653,52 @@ std::list<Unit*> PlayerbotAI::GetAllHostileNPCNonPetUnitsAroundWO(WorldObject* w
 
 void PlayerbotAI::SendDelayedPacket(WorldSession* session, futurePackets futPackets)
 {
-    std::thread t([session, futPacket = std::move(futPackets)]() mutable {
-        for (auto& delayedPacket : futPacket.get())
+    ObjectGuid botGuid = session && session->GetPlayer()
+        ? session->GetPlayer()->GetObjectGuid()
+        : ObjectGuid();
+    if (botGuid.IsEmpty())
+        return;
+
+    std::thread([botGuid, futPacket = std::move(futPackets)]() mutable {
+        try
         {
-            if (delayedPacket.second)
-                std::this_thread::sleep_for(std::chrono::milliseconds(delayedPacket.second));
+            for (auto& delayedPacket : futPacket.get())
+            {
+                if (delayedPacket.second)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(delayedPacket.second));
 
-            std::unique_ptr<WorldPacket> packetPtr(new WorldPacket(delayedPacket.first));
-            session->QueuePacket(packetPtr.release());
+                DelayedBotPacket queued{botGuid,
+                    std::make_unique<WorldPacket>(std::move(delayedPacket.first))};
+                std::lock_guard<std::mutex> lock(DelayedBotPacketsMutex());
+                DelayedBotPackets().push_back(std::move(queued));
+            }
         }
-    });
-
-    t.detach();
+        catch (...)
+        {
+            sLog.outError("PlayerbotAI: asynchronous delayed packet generation failed for bot %s",
+                botGuid.GetString().c_str());
+        }
+    }).detach();
 }
 
-void PlayerbotAI::ReceiveDelayedPacket(futurePackets futPackets)
+void PlayerbotAI::ProcessDelayedPackets()
 {
-    PacketHandlingHelper* handler = &botOutgoingPacketHandlers;
-    std::thread t([handler, futPackets = std::move(futPackets)]() mutable {
-        for (auto& delayedPacket : futPackets.get())
-        {
-            handler->AddPacket(delayedPacket.first);
-            if(delayedPacket.second)
-                std::this_thread::sleep_for(std::chrono::milliseconds(delayedPacket.second));
-        }
-        });
+    std::deque<DelayedBotPacket> ready;
+    {
+        std::lock_guard<std::mutex> lock(DelayedBotPacketsMutex());
+        ready.swap(DelayedBotPackets());
+    }
 
-    t.detach();
+    for (auto& queued : ready)
+    {
+        Player* bot = sObjectAccessor.FindPlayer(queued.botGuid);
+        if (!bot || !bot->IsInWorld() || !bot->GetSession() ||
+            !bot->GetSession()->IsHeadless() ||
+            !PlayerbotAIStorage::Instance().GetAI(bot))
+            continue;
+
+        bot->GetSession()->QueuePacket(std::move(queued.packet));
+    }
 }
 
 std::string PlayerbotAI::InventoryParseOutfitName(std::string outfit)

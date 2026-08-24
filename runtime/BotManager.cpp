@@ -119,8 +119,9 @@ void BotManager::DetachOwnedBots(::Player* master)
 
         if (entry.aiAdapter && entry.aiAdapter->IsInitialized())
             entry.aiAdapter->DetachMaster();
-        else if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
-            ai->ClearMasterPointer();
+        else if (PlayerbotAIStorage::Instance().GetAI(bot))
+            sLog.outError("TortoiseBots: cannot detach master for %s because the module AI adapter is unavailable",
+                bot->GetName());
 
         sLog.outDebug("TortoiseBots: detached live master pointer %s from bot %s; ownership GUID retained",
             master->GetName(), bot->GetName());
@@ -146,12 +147,9 @@ void BotManager::RebindOwnedBots(::Player* master)
 
         if (entry.aiAdapter && entry.aiAdapter->IsInitialized())
             entry.aiAdapter->RebindMaster(master);
-        else if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
-        {
-            ai->SetMaster(master);
-            if (!ai->HasActiveMovementStrategy())
-                ai->EnsureDefaultMovementStrategy();
-        }
+        else if (PlayerbotAIStorage::Instance().GetAI(bot))
+            sLog.outError("TortoiseBots: cannot rebind master for %s because the module AI adapter is unavailable",
+                bot->GetName());
 
         sLog.outString("TortoiseBots: rebound master %s to existing Headless bot %s; mature movement preserved",
             master->GetName(), bot->GetName());
@@ -358,8 +356,9 @@ bool BotManager::BindBotMaster(::ObjectGuid botGuid, ::ObjectGuid masterGuid)
         return false;
 
     ::Player* master = sObjectAccessor.FindPlayer(masterGuid);
-    bool moduleHeadlessMaster = master && master->GetSession() &&
-        master->GetSession()->IsHeadless() && IsBot(masterGuid);
+    auto masterEntry = m_bots.find(masterGuid.GetCounter());
+    bool moduleHeadlessMaster = master && masterEntry != m_bots.end() &&
+        IsLiveHeadlessBot(masterEntry->second, master);
     if (!master || !master->IsInWorld() || !master->GetSession() ||
         (master->GetSession()->IsHeadless() && !moduleHeadlessMaster))
     {
@@ -386,11 +385,17 @@ bool BotManager::BindBotMaster(::ObjectGuid botGuid, ::ObjectGuid masterGuid)
                 botGuid.GetString().c_str());
             return false;
         }
+        if (!it->second.aiAdapter || !it->second.aiAdapter->IsInitialized())
+        {
+            sLog.outError("TortoiseBots: cannot bind bot %s because its module AI adapter is unavailable",
+                botGuid.GetString().c_str());
+            return false;
+        }
     }
 
     it->second.record.masterGuid = masterGuid;
     if (ai)
-        ai->SetMaster(master);
+        it->second.aiAdapter->RebindMaster(master);
 
     return true;
 }
@@ -419,11 +424,17 @@ bool BotManager::ClearBotMaster(::ObjectGuid botGuid)
                 botGuid.GetString().c_str());
             return false;
         }
+        if (!it->second.aiAdapter || !it->second.aiAdapter->IsInitialized())
+        {
+            sLog.outError("TortoiseBots: cannot clear master for bot %s because its module AI adapter is unavailable",
+                botGuid.GetString().c_str());
+            return false;
+        }
     }
 
     it->second.record.masterGuid = ObjectGuid();
     if (ai)
-        ai->SetMaster(nullptr);
+        it->second.aiAdapter->DetachMaster();
 
     return true;
 }
@@ -614,6 +625,7 @@ void BotManager::OnWorldUpdate(uint32_t diff)
     // Mature PlayerbotAI still exposes a donor-shaped population view for
     // perception/social queries. Refresh it from the authoritative native
     // records immediately before any AI update; it never owns sessions.
+    PlayerbotAI::ProcessDelayedPackets();
     sRandomPlayerbotMgr.SyncNativePlayers();
     UpdateBots(diff);
 

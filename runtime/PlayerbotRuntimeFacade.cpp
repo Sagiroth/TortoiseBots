@@ -417,18 +417,40 @@ bool RandomPlayerbotMgr::GetNamedLocation(std::string const& name, WorldLocation
     return true;
 }
 
-void RandomPlayerbotMgr::LoadNamedLocations()
-{
-    // The native TravelMgr reads the same table on demand. Keep this donor
-    // lifecycle hook intentionally quiet instead of claiming that named
-    // locations are unavailable.
-}
-
 void RandomPlayerbotMgr::LoadBattleMastersCache()
 {
-    // Vanilla battleground entries are loaded by the core BattleGroundMgr;
-    // the donor random manager's separate cache is not needed by the native
-    // action path.
+    BattleMastersCache.clear();
+
+    // Keep the mature value path's compatibility view backed by the same
+    // native table used by BattleGroundMgr. The cache is loaded once during
+    // AI initialization; it is not a second battleground owner and is never
+    // consulted by the random service's world-tick loop.
+    auto result = WorldDatabase.Query(
+        "SELECT entry, bg_template FROM battlemaster_entry");
+    if (!result)
+    {
+        sLog.outString("TortoiseBots: battlemaster_entry is empty; battleground target discovery unavailable");
+        return;
+    }
+
+    uint32 loaded = 0;
+    do
+    {
+        Field* fields = result->Fetch();
+        uint32 entry = fields[0].GetUInt32();
+        uint32 bgTemplate = fields[1].GetUInt32();
+        if (!entry || !sObjectMgr.GetCreatureTemplate(entry))
+            continue;
+
+        // Faction/area filtering remains in BgMasterValue. Keeping the
+        // native entry in the neutral bucket avoids recreating the donor's
+        // faction-template cache while preserving valid battlemaster
+        // candidates.
+        BattleMastersCache[TEAM_BOTH_ALLOWED][BattleGroundTypeId(bgTemplate)].push_back(entry);
+        ++loaded;
+    } while (result->NextRow());
+
+    sLog.outString("TortoiseBots: loaded %u native battlemaster entries for mature AI values", loaded);
 }
 
 InventoryResult RandomPlayerbotMgr::CanEquipUnseenItem(Player* player, uint8 slot, uint16& dest, uint32 item)

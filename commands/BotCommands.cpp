@@ -347,7 +347,8 @@ static bool HandleAdd(ChatHandler* handler, char const* args)
 
     ::WorldSession* sess = BotManager::Instance().AddBotWithMaster(accountId, guid, masterGuid);
     if (sess)
-        handler->PSendSysMessage("Bot %s added, following %s.", name.c_str(), requester->GetName());
+        handler->PSendSysMessage("Bot %s queued for login; it will follow %s after entering the world.",
+            name.c_str(), requester->GetName());
     else
         handler->PSendSysMessage("Failed to add bot %s (already exists or error).", name.c_str());
     return true;
@@ -356,6 +357,14 @@ static bool HandleAdd(ChatHandler* handler, char const* args)
 // pi-lens-ignore: clang:incomplete_member_access,clang:unknown_typename
 static bool HandleRemove(ChatHandler* handler, char const* args)
 {
+    if (!handler)
+        return false;
+    Player* requester = Requester(handler);
+    if (!requester)
+    {
+        handler->PSendSysMessage("You must be in-game to remove a bot.");
+        return true;
+    }
     if (!args || !*args)
     {
         handler->PSendSysMessage("Usage: .bot remove <characterName>");
@@ -377,16 +386,19 @@ static bool HandleRemove(ChatHandler* handler, char const* args)
         return true;
     }
     ::ObjectGuid guid(HIGHGUID_PLAYER, data->uiGuid);
-    ::Player* requester = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
     BotRecord* record = BotManager::Instance().FindBot(guid);
-    if (record && requester && requester->GetSession()->GetSecurity() < SEC_GAMEMASTER &&
-        record->accountId != requester->GetSession()->GetAccountId())
+    if (!record)
+    {
+        handler->PSendSysMessage("Character '%s' is not a module-owned bot.", name.c_str());
+        return true;
+    }
+    if (!CanControl(requester, record))
     {
         handler->PSendSysMessage("You may only control characters on your account.");
         return true;
     }
     if (BotManager::Instance().RemoveBot(guid, true))
-        handler->PSendSysMessage("Bot %s removed.", name.c_str());
+        handler->PSendSysMessage("Removal requested for bot %s; Headless cleanup completes asynchronously.", name.c_str());
     else
         handler->PSendSysMessage("Bot %s not found or not removable.", name.c_str());
     return true;

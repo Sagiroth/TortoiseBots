@@ -40,16 +40,8 @@ bool BotPacketAdapter::CanPacketSend(WorldSession* session, WorldPacket const& p
     for (Player* bot : BotManager::Instance().GetBotsForMaster(master->GetObjectGuid()))
     {
         if (packet.getOpcode() == SMSG_PARTY_COMMAND_RESULT)
-        {
-            WorldPacket result(packet);
-            result.rpos(0);
-            uint32 operation = 0;
-            uint32 partyResult = 0;
-            std::string member;
-            result >> operation >> member >> partyResult;
-            sLog.outDebug("TortoiseBots: ServerScript CanPacketSend master SMSG_PARTY_COMMAND_RESULT %s -> bot %s operation %u result %u member %s",
-                master->GetName(), bot ? bot->GetName() : "<none>", operation, partyResult, member.c_str());
-        }
+            sLog.outDebug("TortoiseBots: ServerScript CanPacketSend master SMSG_PARTY_COMMAND_RESULT %s -> bot %s",
+                master->GetName(), bot ? bot->GetName() : "<none>");
         if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
             ai->HandleMasterOutgoingPacket(packet);
     }

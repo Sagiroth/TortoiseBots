@@ -77,7 +77,6 @@ public:
         void SetDatabaseDelay(std::string db, uint32 delay) {databaseDelay[db] = delay;}
         uint32 GetDatabaseDelay(std::string db) {if(databaseDelay.find(db) == databaseDelay.end()) return 0; return databaseDelay[db];}
 
-        void LoadNamedLocations();
         bool AddNamedLocation(std::string const& name, WorldLocation const& location);
         bool GetNamedLocation(std::string const& name, WorldLocation& location);
         bool getNamedLocation(std::string const& name, WorldLocation& location) { return GetNamedLocation(name, location); }
@@ -108,8 +107,9 @@ public:
         void OnPlayerLogin(Player* player);
         void OnPlayerLoginError(uint32 bot);
         Player* GetRandomPlayer();
-        // Compatibility view for mature AI queries. The native module refreshes
-        // this from BotManager; it is not a session or lifecycle owner.
+        // Compatibility view for mature random-population queries. The native
+        // module refreshes this from BotManager; it is not a real-player
+        // registry, session owner, or lifecycle owner.
         PlayerBotMap& GetPlayers() { return players; };
         void SyncNativePlayers();
         Player* GetPlayer(uint32 playerGuid);

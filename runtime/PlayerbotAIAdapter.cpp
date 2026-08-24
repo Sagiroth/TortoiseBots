@@ -4,6 +4,7 @@
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "ByteBuffer.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "Log.h"
@@ -50,7 +51,18 @@ bool PlayerbotAIAdapter::Initialize()
 void PlayerbotAIAdapter::Update(uint32_t diff)
 {
     if (!initialized_ || !ai_ || !bot_ || !bot_->IsInWorld()) return; // pi-lens-ignore: clang:all
-    ai_->UpdateAI(diff); // pi-lens-ignore: clang:all
+    try
+    {
+        ai_->UpdateAI(diff); // pi-lens-ignore: clang:all
+    }
+    catch (ByteBufferException const&)
+    {
+        // Donor packet actions parse opcode-specific payloads. A malformed
+        // or host-variant packet must be dropped for this tick, never unwind
+        // through the world update and terminate mangosd.
+        sLog.outError("TortoiseBots: dropped malformed packet while updating bot %s",
+            bot_->GetName()); // pi-lens-ignore: clang:all
+    }
 }
 
 void PlayerbotAIAdapter::RebindMaster(Player* master)
