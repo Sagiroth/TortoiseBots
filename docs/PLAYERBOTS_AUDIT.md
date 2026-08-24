@@ -1,6 +1,6 @@
 # TortoiseBots PlayerBots Audit
 
-- **Date:** 2026-08-24
+- **Date:** 2026-08-24 (final verification 2026-08-25)
 - **Audit target:** TortoiseBots `13c0632f6a42f0f685de763c17f19c96bc392892`
 - **Closure pass:** TortoiseBots working tree after audit commit `7cdb0b4`; source changes are recorded below and will be committed with the remediation PR.
 - **Target core:** local `tortoise-wow` `9487c5150a6553c665fafc1f4568669b8b00f011` (`playerbots-integration-gh`)
@@ -31,8 +31,8 @@ expansion. They are now handled as follows:
 1. Module SQL now installs into the core's exact case-sensitive configured
    `world/` and `character/` paths. `mangosd.conf.dist.in` explicitly sets
    those names; `AutoUpdater.cpp`'s uppercase values are fallback defaults
-   only. Fresh isolated SQL application is verified below, while live
-   migration evidence is still being gathered.
+   only. Fresh isolated SQL application and preserved-stack migration
+   processing are verified below.
 2. The native CMake file no longer forces the legacy `BUILD_PLAYERBOTS=1`
    define. The local core checkout still contains both a stale, untracked
    `modules/TortoiseBots/` copy and a tracked legacy
@@ -91,7 +91,7 @@ Vanilla/Turtle product surface before adding more classes or dungeon behavior.
 | F-07 | P1/P2 | Turtle collection mounts are not modeled by the factory/randomization path. | Partially resolved with core `collection_mount` lookup plus existing-inventory/full-list support; factory spell initialization follows the existing classic factory model, while item-use gameplay acceptance remains future work. |
 | F-08 | P2 | Turtle custom dungeon/zone encounter behavior is not represented by explicit strategies. | Add it as a separate behavior backlog, not as assumed Vanilla coverage. |
 | F-09 | P1/P2 | Talent validation is server-aware, but broad Turtle custom talent interactions remain data/acceptance-test debt. | Validate each class/spec against local DBC and server spell/aura data. |
-| F-10 | P2 | The configuration template is a large donor configuration surface, including random bots, economy, LFG/social behavior, gear progression, and LLM settings. | Split MVP config from deferred systems. |
+| F-10 | P2 | The configuration template is a large donor configuration surface, including random bots, economy, LFG/social behavior, gear progression, and LLM settings. | Accepted for this baseline as a compatibility template: random population and LLM behavior are off by default, and the retained deferred keys are not a claim of MVP support. A smaller split template remains an ergonomics follow-up. |
 | F-11 | P2/Accepted | The native command surface is intentionally narrower than the Shyalya behavior baseline. | Document partial compatibility and remove stale command registrations. |
 | F-12 | P2/Accepted | No PlayerBots client addon is present; only the normal Turtle addons and TortoiseGMManager are installed. | Fine for server-side `.bot` MVP; document addon/state-query work as future scope. |
 | F-13 | P2 | `file(GLOB)` still compiles every action/value/trigger/generic source added to those directories. | A CMake filename guard and repeatable surface script now fail on audited donor families; globs remain a deliberate maintainability trade-off. |
@@ -139,6 +139,11 @@ action” wording in the finding bodies below.
   required level, class, and race data. Factory initialization teaches the
   mapped spell like the existing classic factory path; it does not claim to
   simulate consuming a physical collection item.
+- The optional LLM generator is inert by default: `LLMEnabled` falls back to
+  `0`, prompt-file loading is gated behind explicit enablement, and the
+  current generator returns the no-response fallback without making a network
+  call. The quest-ledger tooling now points at the native module path rather
+  than the removed `src/modules/PlayerBots` tree.
 - The developer quest ledger is in `tools/` with portable log defaults. The
   CMake graph retains explicit Vanilla class directories and rejects future
   source filenames containing the audited Death Knight, glyph, vehicle,
@@ -152,17 +157,26 @@ valid Tortoise data until the core data itself changes.
 
 ### Explicitly open core/product boundaries
 
-- F-03 is core-owned. The local core still contains `LFTBotFill.cpp`, stale
-  `.bot`/`.rndbot`/AHBot/perfmon stubs and slots, and the tracked legacy
-  `src/modules/PlayerBots` escape hatch. This module PR does not edit the core
-  checkout or claim that those paths are clean; native TortoiseBots itself has
-  no legacy ownership symbols or new scattered core hooks.
-- F-05 remains a compatibility capability matrix rather than silently
-  supported behavior. The shim still has deliberate no-op/default paths for
-  formation, emote lookup, taxi spline inspection, transport animation,
-  channel discovery, some session-state helpers, and chase-generator details.
-  Those need targeted Tortoise adapters or explicit acceptance tests before
-  the related features are advertised as complete.
+- F-03 is core-owned and now precisely bounded. The local core still compiles
+  `src/game/LFT/LFTBotFill.cpp` (`src/game/CMakeLists.txt:135`), which recognizes
+  `RNDBOT` accounts and inserts them into the normal LFT queue; it still
+  registers `.bot`, `.rndbot`, `.ahbot`, and `.perfmon` in `Chat.cpp:1001-1007`
+  with fallback handlers in `PlayerbotStubs.cpp:34-45`; and it retains the
+  two bot-named reservations in `ModuleSlots.h:21-26`. The tracked
+  `src/modules/PlayerBots` tree remains behind the separate legacy option.
+  These are not hidden native-module dependencies: `BUILD_LEGACY_PLAYERBOTS=OFF`
+  and the explicit `MODULE_TORTOISEBOTS` path build the reviewed module, while
+  the generic `Script_IsAIControlled`/Headless/ScriptMgr seams are the approved
+  integration boundary. Removing the legacy core product surface requires a
+  separate core PR, which this module PR does not fabricate.
+- F-05 is accepted as an explicit MVP capability boundary, not advertised as
+  complete behavior. Against the local core, `GetTaxiPathSpline()` and
+  `GetTransportAnimInfo()` are absent/null, `MotionMaster::MoveInFormation`
+  is a no-op compatibility method, `ChatChannels` lookup is intentionally
+  empty, and no `EmotesTextSound` loader exists even though the client DBC is
+  present. The module uses its own formation math, direct taxi/travel paths,
+  native loot resolution, and generic session transport for the supported MVP;
+  the remaining donor-only semantics require targeted core adapters/tests.
 - F-06 remains accepted: Goblin/High Elf custom starts use safe homebind or
   direct movement because the local custom navigation data is incomplete.
   F-08 and F-09 remain behavior/data acceptance backlogs for Turtle custom
@@ -514,10 +528,12 @@ character creation off (`aiplayerbot.conf.dist.in:14-48`,
 disabled and returns the existing no-response fallback
 (`PlayerbotLLMInterface.cpp:376-383`), so it is not currently blocking combat.
 
-The large template is still an operator-facing claim surface. A user can
-reasonably assume every setting is supported because it is shipped. Split the
-configuration into an MVP file and clearly marked deferred files, or generate
-the template from only settings that the native module actually owns.
+The large template remains an operator-facing compatibility surface. The
+native defaults keep random population and LLM behavior off, and the current
+LLM generator returns the no-response fallback without making a network call.
+This audit accepts the retained keys as deferred compatibility configuration;
+it does not advertise every inherited setting as supported MVP behavior. A
+smaller split template is an ergonomics follow-up.
 
 ### F-11 — Current server command surface is intentionally narrow
 
@@ -774,8 +790,8 @@ opt-in migration with provenance.
 3. Build acceptance coverage for Turtle custom starts, dungeons, and talent
    interactions from the local server data. The module must not infer support
    from a numeric ID alone.
-4. Decide whether to split the broad inherited configuration into an MVP
-   file and explicitly deferred random-population/economy/LLM/social files.
+4. Optionally split the broad inherited configuration into an MVP file and
+   explicitly deferred random-population/economy/LLM/social files.
 5. Add a client addon only after the server command/state contract is stable;
    validate it against the local Turtle client and addon transport.
 
@@ -826,10 +842,12 @@ it did not modify the sibling core, Dockerfile, compose file, or reference
 checkouts. The only database mutations were additive module migrations and
 cleanup of duplicate migration rows created by the audit harness, plus normal
 disposable-fixture save/logout activity; no database reset or volume wipe was
-performed. The real Turtle client could be launched under Wine but rendered a
-black window in this environment, so no real-client `.bot` command journey is
-claimed. The optional install wrapper's only failure was the sibling builder's
-absent `realmd` binary after the successful `mangosd` link.
+performed. The real Turtle client was launched under Wine through both the
+normal and software-forced rendering paths, but both rendered a black window
+with no observable login UI in this environment. Therefore no real-client
+`.bot` command journey is claimed. The optional install wrapper's only failure
+was the sibling builder's absent `realmd` binary after the successful
+`mangosd` link.
 
 ## 10. Provenance
 

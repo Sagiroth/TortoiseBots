@@ -267,7 +267,7 @@ Local validation: targeted static checks and one cached persistent
 `BUILD_PLAYERBOTS=ON` native `mangosd` build; no runtime restart or gameplay
 test was performed.
 
-## Turtle audit closure pass — 2026-08-24
+## Turtle audit closure pass — 2026-08-24/25
 
 Feature: close the module-owned Turtle WoW 1.18.1 audit findings without
 reintroducing core ownership coupling: effective configured SQL packaging, additive
@@ -276,8 +276,10 @@ mount lookup, later-expansion residue removal, and repeatable surface checks.
 
 Source repository: TortoiseBots `audit/playerbots-turtle-1.18.1`
 
-Source commit: `2afd2d1` (`fix: match effective core SQL paths and migration
-history`; includes the preceding `9db49df` and `3a96923` remediation commits).
+Source commit: `7fa875a6c6bc51534b4a5a3f2f373f3dd7446208` (`fix: quarantine
+optional LLM and stale tooling paths`), on top of `2afd2d1` (`fix: match
+effective core SQL paths and migration history`) and the preceding `9db49df`
+and `3a96923` remediation commits.
 
 Required target core: local Penqle `tortoise-wow`
 `playerbots-integration-gh@9487c5150a6553c665fafc1f4568669b8b00f011`.
@@ -285,7 +287,8 @@ Required target core: local Penqle `tortoise-wow`
 Source files: `TortoiseBots.cmake`, `README.md`,
 `ai/playerbot/{PlayerbotAI,PlayerbotAIConfig,PlayerbotDbStore,PlayerbotFactory,RandomItemMgr,TravelMgr,TravelNode}.{cpp,h}`,
   the edited strategy/action/value/context files, `data/sql/{world,char}/*`,
-`tools/analyze_quest_ledger.py`, `tools/verify_turtle_surface.sh`, and
+`ai/playerbot/aiplayerbot.conf.dist.in`, `tools/analyze_quest_ledger.py`,
+`tools/verify_turtle_surface.sh`, and
 `docs/PLAYERBOTS_AUDIT.md`.
 
 Copied / ported / independently reimplemented:
@@ -328,5 +331,12 @@ Local validation:
   applied both `20260824090003_*` cleanup migrations, reached AI-enabled
   world-ready, passed `PendingAddRemoveTest`, the six-step `AutoTest`, and the
   packet group invite/accept plus cleanup journey. No volume reset was used.
-- The real Turtle client was attempted under Wine but rendered black in this
-  environment; no real-client `.bot` command journey is claimed.
+- The final ON rebuild after making the optional LLM generator inert by
+  default, the complementary OFF rebuild, and a preserved-data server restart
+  all passed. Startup no longer attempts to load the optional LLM prompt file;
+  the module still reached AI-enabled world-ready with the empty-cache and
+  direct-travel safeguards.
+- The real Turtle client was launched under Wine through normal and
+  software-forced rendering paths; both rendered black with no observable
+  login UI in this environment, so no real-client `.bot` command journey is
+  claimed.
