@@ -20,7 +20,7 @@ std::unordered_map<uint32, std::vector<std::pair<uint32, uint32>>> ItemUsageValu
 std::unordered_set<uint32> ItemUsageValue::m_allItemIdsSoldByAnyVendors;
 std::unordered_set<uint32> ItemUsageValue::m_itemIdsSoldByAnyVendorsWithLimitedMaxCount;
 
-ItemQualifier::ItemQualifier(std::string qualifier, bool linkQualifier) : itemId(0), enchantId(0), randomPropertyId(0), gem1(0), gem2(0), gem3(0), gem4(0), proto(nullptr) {
+ItemQualifier::ItemQualifier(std::string qualifier) : itemId(0), enchantId(0), randomPropertyId(0), proto(nullptr) {
     std::vector<std::string> numbers = Qualified::getMultiQualifiers(qualifier, ":");
 
     if (numbers.empty())
@@ -31,24 +31,17 @@ ItemQualifier::ItemQualifier(std::string qualifier, bool linkQualifier) : itemId
 
     itemId = stoi(numbers[0]);
 
-    uint32 propertyPosition = linkQualifier ? 2 : 6;
-
     if (numbers.size() > 1 && !numbers[1].empty())
         enchantId = stoi(numbers[1]);
 
-    if (numbers.size() > propertyPosition && !numbers[propertyPosition].empty())
-        randomPropertyId = stoi(numbers[propertyPosition]);
+    if (numbers.size() > 2 && !numbers[2].empty())
+        randomPropertyId = stoi(numbers[2]);
 
-}
-
-uint32 ItemQualifier::GemId(Item* item, uint8 gemSlot)
-{
-    return 0;
 }
 
 ItemUsage ItemUsageValue::Calculate()
 {
-    ItemQualifier itemQualifier(qualifier, false);
+    ItemQualifier itemQualifier(qualifier);
     uint32 itemId = itemQualifier.GetId();
     if (!itemId)
         return ItemUsage::ITEM_USAGE_NONE;
@@ -615,12 +608,6 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     }
 
     const ItemPrototype* oldItemProto = oldItem->GetProto();
-
-    if(MustEquipForQuest(itemProto, bot) && !MustEquipForQuest(oldItemProto, bot))
-        return ItemUsage::ITEM_USAGE_EQUIP;
-
-    if (MustEquipForQuest(oldItemProto, bot))
-        return ItemUsage::ITEM_USAGE_KEEP;
 
     if (itemProto->Class == ITEM_CLASS_ARMOR && itemProto->InventoryType == INVTYPE_TABARD)
     {
@@ -1399,20 +1386,6 @@ std::vector<std::pair<uint32, uint32>> ItemUsageValue::GetAllReagentItemIdsForCr
 bool ItemUsageValue::IsItemSoldByAnyVendor(ItemPrototype const* proto)
 {
     return m_allItemIdsSoldByAnyVendors.count(proto->ItemId) > 0;
-}
-
-bool ItemUsageValue::MustEquipForQuest(ItemPrototype const* proto, Player* bot)
-{
-    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
-    AiObjectContext* context = ai->GetAiObjectContext();
-
-    switch (proto->ItemId)
-    {
-    case 39371:
-        return AI_VALUE2(bool, "need quest objective", 12720);
-    }
-
-    return false;
 }
 
 bool ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(ItemPrototype const* proto)

@@ -244,13 +244,6 @@ namespace ai
         virtual bool IsActive() override;
     };
 
-    class RpgSpellClickTrigger : public RpgTrigger
-    {
-    public:
-        RpgSpellClickTrigger(PlayerbotAI* ai, std::string name = "rpg spell click") : RpgTrigger(ai, name) {}
-        virtual bool IsActive() override;
-    };
-
     class RpgGossipTalkTrigger : public RpgTrigger
     {
     public:

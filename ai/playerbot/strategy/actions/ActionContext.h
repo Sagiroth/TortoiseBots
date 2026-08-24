@@ -278,7 +278,6 @@ namespace ai
             creators["rpg use"] = [](PlayerbotAI* ai) { return new RpgUseAction(ai); };
             creators["rpg ai chat"] = [](PlayerbotAI* ai) { return new RpgAIChatAction(ai); };
             creators["rpg spell"] = [](PlayerbotAI* ai) { return new RpgSpellAction(ai); };
-            creators["rpg spell click"] = [](PlayerbotAI* ai) { return new RpgSpellClickAction(ai); };
             creators["rpg craft"] = [](PlayerbotAI* ai) { return new RpgCraftAction(ai); };
             creators["rpg trade useful"] = [](PlayerbotAI* ai) { return new RpgTradeUsefulAction(ai); };
             creators["rpg enchant"] = [](PlayerbotAI* ai) { return new RpgEnchantAction(ai); };

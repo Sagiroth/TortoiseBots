@@ -1726,8 +1726,6 @@ uint32 RandomItemMgr::CalculateStatWeight(uint8 playerclass, uint8 spec, ItemPro
     spellPower += auraDamageStatWeight;
     attackPower += auraApStatWeight;
 
-    uint32 socketBonus = 0;
-
     if (spellHeal > spellPower || isHealingItem)
         specType |= ITEM_SPEC_SPELL_HEALING;
 
@@ -1811,12 +1809,6 @@ uint32 RandomItemMgr::CalculateStatWeight(uint8 playerclass, uint8 spec, ItemPro
     statWeight += spellHeal;
     statWeight += attackPower;
     statWeight += defenseStats;
-
-    // if stat value consists of only socket bonuses - skip
-    if (socketBonus && !(statWeight || basicStatsWeight))
-        return 0;
-
-    statWeight += socketBonus;
 
     // handle negative stats
     if (basicStatsWeight < 0 && ((uint32)(abs(basicStatsWeight)) >= statWeight))
@@ -2004,8 +1996,6 @@ uint32 RandomItemMgr::CalculateEnchantWeight(uint8 playerclass, uint8 spec, uint
             break;
         case 7: //Use Spell
             break;
-        case 8: //Prismatic socket
-            break;
         }
     }
 
@@ -2032,17 +2022,6 @@ uint32 RandomItemMgr::CalculateRandomPropertyWeight(uint8 playerclass, uint8 spe
     return weight;
 }
 
-uint32 RandomItemMgr::CalculateGemWeight(uint8 playerclass, uint8 spec, uint32 gemId)
-{
-    return 0;
-}
-
-uint32 RandomItemMgr::CalculateSocketWeight(uint8 playerclass, ItemQualifier& qualifier, uint8 spec)
-{
-    return 0;
-}
-
-
 uint32 RandomItemMgr::ItemStatWeight(Player* player, ItemQualifier& qualifier)
 {
     ItemSpecType itSpec;
@@ -2051,17 +2030,6 @@ uint32 RandomItemMgr::ItemStatWeight(Player* player, ItemQualifier& qualifier)
         weight += CalculateEnchantWeight(player->GetClass(), GetPlayerSpecId(player), qualifier.GetEnchantId());
     if (qualifier.GetRandomPropertyId())
         weight += CalculateRandomPropertyWeight(player->GetClass(), GetPlayerSpecId(player), qualifier.GetRandomPropertyId());
-    if(qualifier.GetGem1())
-        weight += CalculateGemWeight(player->GetClass(), GetPlayerSpecId(player), qualifier.GetGem1());
-    if (qualifier.GetGem2())
-        weight += CalculateGemWeight(player->GetClass(), GetPlayerSpecId(player), qualifier.GetGem2());
-    if (qualifier.GetGem3())
-        weight += CalculateGemWeight(player->GetClass(), GetPlayerSpecId(player), qualifier.GetGem3());
-    if (qualifier.GetGem4())
-        weight += CalculateGemWeight(player->GetClass(), GetPlayerSpecId(player), qualifier.GetGem4());
-
-    weight += CalculateSocketWeight(player->GetClass(), qualifier, GetPlayerSpecId(player));
-
     return weight;
 }
 
@@ -3328,13 +3296,6 @@ uint32 RandomItemMgr::GetRandomTrade(uint32 level)
     std::vector<uint32> trade = tradeCache[(level - 1) / 10];
     if (trade.empty()) return 0;
     return trade[urand(0, trade.size() - 1)];
-}
-
-std::vector<uint32> RandomItemMgr::GetGemsList()
-{
-    std::vector<uint32>_gems;
-
-    return _gems;
 }
 
 void RandomItemMgr::BuildRarityCache()

@@ -249,7 +249,6 @@ void PlayerbotFactory::Randomize(bool incremental, bool syncWithMaster)
     }
 
     InitEquipment(incremental, syncWithMaster);
-    InitGems();
     pmo.reset();
 
     if (isRandomBot)
@@ -2402,7 +2401,6 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
                             }
                             pItem->SetOwnerGuid(bot->getObjectGuid());
                             EnchantItem(pItem);
-                            //AddGems(pItem);
                             found = true;
                         }
                     }
@@ -2608,14 +2606,6 @@ void PlayerbotFactory::EnchantItem(Item* item)
     int tab = AiFactory::GetPlayerSpecTab(bot);
     uint32 tempId = uint32((uint32)bot->GetClass() * (uint32)10);
     ApplyEnchantTemplate(tempId += (uint32)tab, item);
-}
-
-void PlayerbotFactory::AddGems(Item* item)
-{
-    if (!item)
-        return;
-
-    return;
 }
 
 void PlayerbotFactory::InitAllSkills()
@@ -3769,13 +3759,6 @@ void PlayerbotFactory::LoadEnchantContainer()
          ++count;
       } while (result->NextRow());
    }
-}
-
-/*void PlayerbotFactory::InitGems() //WIP
-{
-}*/
-void PlayerbotFactory::InitGems() //WIP
-{
 }
 
 void PlayerbotFactory::InitTaxiNodes()

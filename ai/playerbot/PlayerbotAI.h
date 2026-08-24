@@ -281,7 +281,6 @@ enum class ActivePiorityType : uint8
     IS_ALWAYS_ACTIVE,
     IN_COMBAT,
     IN_BG_QUEUE,
-    IN_LFG,
     NEARBY_PLAYER,
     PLAYER_FRIEND,
     PLAYER_GUILD,
@@ -740,11 +739,6 @@ public:
     void QueuePacket(WorldPacket& pkt);
 
     float GetLevelFloat() const;
-
-    static bool CanSpellClick(Player* bot, uint32 entry);
-    bool CanSpellClick(ObjectGuid guid) const;
-    bool HandleSpellClick(uint32 entry);
-    bool HandleSpellClick(ObjectGuid guid);
 
     void SetLastEvent(ai::Event& event) { lastEvent = event; }
     ai::Event& GetLastEvent() { return lastEvent; }

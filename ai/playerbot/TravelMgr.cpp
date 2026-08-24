@@ -326,9 +326,6 @@ bool QuestObjectiveTravelDestination::IsActive(Player* bot, const PlayerTravelIn
         }
     }
 
-    if (!skipKillableCheck)
-        skipKillableCheck = ai->CanSpellClick(bot, GetEntry());
-
     std::vector<std::string> qualifier = { std::to_string(GetQuestTemplate()->GetQuestId()), std::to_string(GetObjective()) };
 
     if (!AI_VALUE2(bool, "group or", "following party,need quest objective::" + Qualified::MultiQualify(qualifier, ","))) //Noone needs the quest objective.

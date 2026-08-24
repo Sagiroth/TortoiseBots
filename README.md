@@ -85,8 +85,18 @@ cmake --build <build> --target mangosd
 For the full native configuration also set `-DBUILD_PLAYERBOTS=ON`. The module
 build has no legacy vendored PlayerBots source path.
 
-`scripts/sync-to-docker.sh` copies this repository into the sibling core's
-`modules/TortoiseBots/` directory for the documented Docker workflow.
+For normal source edits, keep this checkout as the working repository and use
+the sibling `tortoise-docker-penqle` checkout's persistent builder:
+
+```sh
+cd ../tortoise-docker-penqle
+bash dev/build-playerbots
+# only when runtime verification is needed:
+bash dev/restart-server
+```
+
+Reuse the existing build directory and runtime stack; normal edits do not
+require a Docker image rebuild or a sync/copy workflow.
 
 
 ## Development loop

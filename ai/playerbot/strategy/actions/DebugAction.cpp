@@ -3556,7 +3556,7 @@ bool DebugAction::HandleItem(Event& event, Player* requester, const std::string&
         { ITEM_CLASS_CONTAINER, {
             { 0, "Container" }, { 1, "Soul Container" }, { 2, "Herb Container" }, { 3, "Enchanting Container" },
             { 4, "Engineering Container" }, { 5, "Gem Container" }, { 6, "Mining Container" },
-            { 7, "Leatherworking Container" }, { 8, "Inscription Container" }
+            { 7, "Leatherworking Container" }
         }},
         { ITEM_CLASS_WEAPON, {
             { 0, "Axe (1H)" }, { 1, "Axe (2H)" }, { 2, "Bow" }, { 3, "Gun" }, { 4, "Mace (1H)" }, { 5, "Mace (2H)" },
@@ -3579,7 +3579,7 @@ bool DebugAction::HandleItem(Event& event, Player* requester, const std::string&
             { 0, "Wand" }, { 1, "Bolt" }, { 2, "Arrow" }, { 3, "Bullet" }, { 4, "Thrown" }
         }},
         { ITEM_CLASS_TRADE_GOODS, {
-            { 0, "Trade Goods" }, { 1, "Parts" }, { 2, "Explosives" }, { 3, "Devices" }, { 4, "Jewelcrafting" },
+            { 0, "Trade Goods" }, { 1, "Parts" }, { 2, "Explosives" }, { 3, "Devices" },
             { 5, "Cloth" }, { 6, "Leather" }, { 7, "Metal & Stone" }, { 8, "Meat" }, { 9, "Herb" },
             { 10, "Elemental" }, { 11, "Other" }, { 12, "Enchanting" }, { 13, "Material" },
             { 14, "Armor Enchantment" }, { 15, "Weapon Enchantment" }
@@ -5254,7 +5254,6 @@ bool DebugAction::HandleActivity(Event& event, Player* requester, const std::str
         case ActivePiorityType::IS_ALWAYS_ACTIVE: priorityTypeName = "always_active"; break;
         case ActivePiorityType::IN_COMBAT: priorityTypeName = "combat"; break;
         case ActivePiorityType::IN_BG_QUEUE: priorityTypeName = "bg_queue"; break;
-        case ActivePiorityType::IN_LFG: priorityTypeName = "lfg"; break;
         case ActivePiorityType::NEARBY_PLAYER: priorityTypeName = "nearby_player"; break;
         case ActivePiorityType::PLAYER_FRIEND: priorityTypeName = "friend"; break;
         case ActivePiorityType::PLAYER_GUILD: priorityTypeName = "guild"; break;

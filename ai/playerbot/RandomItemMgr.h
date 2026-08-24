@@ -164,15 +164,10 @@ class RandomItemMgr
         uint32 GetRandomFood(uint32 level, uint32 category);
         uint32 GetFood(uint32 level, uint32 category);
         uint32 GetRandomTrade(uint32 level);
-        std::vector<uint32> GetGemsList();
-
         uint32 CalculateRandomEnchantId(uint8 playerclass, uint8 spec, ItemPrototype const* proto);
         uint32 CalculateBestRandomEnchantId(uint8 playerclass, uint8 spec, uint32 itemId);
         uint32 CalculateEnchantWeight(uint8 playerclass, uint8 spec, uint32 enchantId);
         uint32 CalculateRandomPropertyWeight(uint8 playerclass, uint8 spec, int32 randomPropertyId);
-        uint32 CalculateGemWeight(uint8 playerclass, uint8 spec, uint32 gemId);
-        uint32 CalculateSocketWeight(uint8 playerclass, ItemQualifier& qualifier, uint8 spec);
-
         uint32 CalculateStatWeight(uint8 playerclass, uint8 spec, ItemPrototype const* proto, ItemSpecType &itSpec);
         uint32 ItemStatWeight(Player* player, ItemQualifier& qualifier);
         uint32 ItemStatWeight(Player* player, Item* item);

@@ -61,19 +61,10 @@ bool LootAction::Execute(Event& event)
 
 enum ProfessionSpells
 {
-    ALCHEMY                      = 2259,
-    BLACKSMITHING                = 2018,
-    COOKING                      = 2550,
-    ENCHANTING                   = 7411,
     ENGINEERING                  = 49383,
-    FIRST_AID                    = 3273,
-    FISHING                      = 7620,
     HERB_GATHERING               = 2366,
-    INSCRIPTION                  = 45357,
-    JEWELCRAFTING                = 25229,
     MINING                       = 2575,
-    SKINNING                     = 8613,
-    TAILORING                    = 3908
+    SKINNING                      = 8613
 };
 
 bool OpenLootAction::Execute(Event& event)

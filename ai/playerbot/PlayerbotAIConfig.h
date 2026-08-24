@@ -57,14 +57,6 @@ enum class BotAlwaysOnline : uint32
     DISABLED_BY_COMMAND = 2
 };
 
-enum class BotLoginCriteriaType : uint8
-{
-    RACECLASS = 0,
-    LEVEL = 1,
-    RANGE_TO_PLAYER = 2,
-    MAX_LOGIN_CRITERIA = 3
-};
-
 #define MAX_GEAR_PROGRESSION_LEVEL 6
 
 class ConfigAccess

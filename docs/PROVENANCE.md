@@ -245,3 +245,23 @@ linked successfully. The ON wrapper's optional install step reports only that
 stack was restarted from that artifact without an image rebuild or data reset;
 the native module loaded and the world server reached ready. No manual
 gameplay test was run, as requested.
+
+## Surgical dead-code follow-up — 2026-08-24
+
+Feature: residual Vanilla/Turtle cleanup after the main donor-tree removal.
+
+Source repository: TortoiseBots `cleanup/vanilla-turtle`.
+
+Source commit: to be recorded after the follow-up commit is created.
+
+Copied / ported / independently reimplemented: no new gameplay was imported.
+This pass removed the unreachable legacy movement body, the dead spell-click
+path, fake gem/socket qualifier and weight compatibility, the WotLK DK quest
+special case, unused DK talent enum slots, and adjacent no-op branches.
+
+Reason: remove concrete dead remnants identified during review without
+starting another broad cleanup audit.
+
+Local validation: targeted static checks and one cached persistent
+`BUILD_PLAYERBOTS=ON` native `mangosd` build; no runtime restart or gameplay
+test was performed.

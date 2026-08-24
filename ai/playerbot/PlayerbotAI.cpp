@@ -463,40 +463,28 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         {
             //bot->SetFallInformation(0, bot->m_movementInfo.pos.z);
             bot->m_movementInfo.AddMovementFlag(MOVEFLAG_JUMPING);
-            // use motion master (disabled for now, makes bot move to ceiling it just hit)
-            static bool useMoveFall = false;
-            if (false)
-            {
-                jumpTime = 0;
-                fallAfterJump = false;
-                ResetJumpDestination();
-                sLog.outDetail("%s: Jump: MoveFall activated", bot->GetName());
-            }
             // simulate falling
+            float landingHeight = bot->m_movementInfo.pos.z;
+            bot->UpdateAllowedPositionZ(bot->m_movementInfo.pos.x, bot->m_movementInfo.pos.y, landingHeight);
+
+            // calculate fall time
+            float gravity = 19.2911f;
+            float terminalVelocity = 60.148f;
+            float time;
+
+            const float terminal_length = float(terminalVelocity * terminalVelocity) / (2.f * gravity);
+            const float terminalFallTime = float(terminalVelocity / gravity);
+
+            float path_length = fabs(bot->m_movementInfo.pos.z - landingHeight);
+            if (path_length >= terminal_length)
+                time = (path_length - terminal_length) / terminalVelocity + terminalFallTime;
             else
-            {
-                float landingHeight = bot->m_movementInfo.pos.z;
-                bot->UpdateAllowedPositionZ(bot->m_movementInfo.pos.x, bot->m_movementInfo.pos.y, landingHeight);
+                time = sqrtf(2.f * path_length / gravity);
 
-                // calculate fall time
-                float gravity = 19.2911f;
-                float terminalVelocity = 60.148f;
-                float time;
-
-                const float terminal_length = float(terminalVelocity* terminalVelocity) / (2.f* gravity);
-                const float terminalFallTime = float(terminalVelocity / gravity);
-
-                float path_length = fabs(bot->m_movementInfo.pos.z - landingHeight);
-                if (path_length >= terminal_length)
-                    time = (path_length - terminal_length) / terminalVelocity + terminalFallTime;
-                else
-                    time = sqrtf(2.f * path_length / gravity);
-
-                SetJumpTime(curTime + uint32(time * static_cast<uint32>(IN_MILLISECONDS)) + 1000);
-                fallAfterJump = false;
-                jumpDestination = WorldPosition(bot->GetMapId(), bot->m_movementInfo.pos.x, bot->m_movementInfo.pos.y, landingHeight);
-                sLog.outDetail("%s: Jump: Falling simulated, height: %f, timeToLand %u", bot->GetName(), landingHeight, jumpTime);
-            }
+            SetJumpTime(curTime + uint32(time * static_cast<uint32>(IN_MILLISECONDS)) + 1000);
+            fallAfterJump = false;
+            jumpDestination = WorldPosition(bot->GetMapId(), bot->m_movementInfo.pos.x, bot->m_movementInfo.pos.y, landingHeight);
+            sLog.outDetail("%s: Jump: Falling simulated, height: %f, timeToLand %u", bot->GetName(), landingHeight, jumpTime);
         }
     }
 
@@ -5404,11 +5392,6 @@ ActivePiorityType PlayerbotAI::GetPriorityType()
     if (bot->InBattleGroundQueue())
         return ActivePiorityType::IN_BG_QUEUE;
 
-    bool isLFG = false;
-
-    if (isLFG)
-        return ActivePiorityType::IN_LFG;
-
     if (sPlayerbotAIConfig.enableMinimalMove)
     {
         AiObjectContext* context = GetAiObjectContext();
@@ -5442,9 +5425,6 @@ ActivePiorityType PlayerbotAI::GetPriorityType()
     if (bot->IsBeingTeleported() || !bot->IsInWorld() || !bot->GetMap()->HavePlayers())
         return ActivePiorityType::IN_INACTIVE_MAP;
 
-    if (false)
-        return ActivePiorityType::IN_ACTIVE_MAP;
-
     return ActivePiorityType::IN_ACTIVE_AREA;
 }
 
@@ -5474,8 +5454,6 @@ std::pair<uint32, uint32> PlayerbotAI::GetPriorityBracket(ActivePiorityType type
     }
     case ActivePiorityType::IN_BG_QUEUE:
         return { 0,20 };
-    case ActivePiorityType::IN_LFG:
-        return { 0,30 };
     case ActivePiorityType::NEARBY_PLAYER:
         return { 0,40 };
     case ActivePiorityType::PLAYER_FRIEND:
@@ -5517,7 +5495,6 @@ bool PlayerbotAI::AllowActive(ActivityType activityType)
             break;
         case ActivePiorityType::IS_ALWAYS_ACTIVE:
         case ActivePiorityType::IN_BG_QUEUE:
-        case ActivePiorityType::IN_LFG:
         case ActivePiorityType::PLAYER_FRIEND:
         case ActivePiorityType::PLAYER_GUILD:
         case ActivePiorityType::NO_PATH:
@@ -5547,7 +5524,6 @@ bool PlayerbotAI::AllowActive(ActivityType activityType)
             break;
         case ActivePiorityType::NEARBY_PLAYER:
         case ActivePiorityType::IN_BG_QUEUE:
-        case ActivePiorityType::IN_LFG:
         case ActivePiorityType::PLAYER_FRIEND:
         case ActivePiorityType::PLAYER_GUILD:
         case ActivePiorityType::NO_PATH:
@@ -7787,24 +7763,4 @@ float PlayerbotAI::GetLevelFloat() const
     level += float(xp) / float(nextLevelXp);
 
     return level;
-}
-
-bool PlayerbotAI::CanSpellClick(Player* bot, uint32 entry)
-{
-    return false;
-}
-
-bool PlayerbotAI::CanSpellClick(ObjectGuid guid) const
-{
-    return false;
-}
-
-bool PlayerbotAI::HandleSpellClick(uint32 entry)
-{
-    return false;
-}
-
-bool PlayerbotAI::HandleSpellClick(ObjectGuid guid)
-{
-    return false;
 }

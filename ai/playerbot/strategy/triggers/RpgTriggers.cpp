@@ -832,14 +832,6 @@ bool RandomJumpTrigger::IsActive()
     return bot->IsInWorld() && ai->HasPlayerNearby() && !ai->IsJumping() && frand(0.0f, 1.0f) < sPlayerbotAIConfig.jumpRandomChance;
 }
 
-bool RpgSpellClickTrigger::IsActive()
-{
-    GuidPosition guidP(getGuidP());
-
-
-    return ai->CanSpellClick(guidP);
-}
-
 bool RpgGossipTalkTrigger::IsActive()
 {
     GuidPosition guidP(getGuidP());

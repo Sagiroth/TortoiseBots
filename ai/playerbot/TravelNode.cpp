@@ -171,8 +171,7 @@ float TravelNodePath::getCost(Unit* unit, uint32 cGold)
             }
             else
             {
-                if (!PlayerbotAI::CanSpellClick(bot, pathObject)) //Click Spell flightpath.
-                    return -1;
+                return -1;
             }
         }
 
