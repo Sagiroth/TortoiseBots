@@ -19,7 +19,7 @@ Notes (updated 2026-08-22 — large-batch forward-port):
 - Host seam remains generic and minimal: `SessionTransport`, `IsHeadless()`, `HasNetworkTransport()`, `IWorldUpdateListener` (≤5 host files, verified via `rg -n -i 'PlayerBot|BotService|Headless' src/game` only shows `InitHeadlessSession`). No `IsBot()`/`GetBot()`/`m_bot`/`sPlayerBotMgr` reintroduced. Same-account `1 Network + N Headless` GUID-driven lifecycle and human reclaim are preserved via `BotManager` + `BotSessionAdapter`.
 - Upstream licenses (GPL-2.0 for MaNGOS/CMaNGOS/Shyalya, GPL-2.0 for `mod-playerbots`) are preserved; headers retain original copyright/license and this file records donor SHAs/source files before migration copies were deleted. No `AzerothCore` `PlayerbotMgr`/`BotSession` ownership model is reintroduced.
 - The broad donor tree is now wired into the active CMake source set: real `PlayerbotAI`/`AiFactory`, generic behavior, all nine Vanilla class folders, Value/Trigger/Action families, Travel, grouping, loot, quests, dungeon/raid and PvP families are compiled as one coherent batch rather than left dead in-tree. `MANGOSBOT_ZERO` filters expansion-only folders. Fresh runtime probes now cover the packet bridge and Warrior/Mage/Priest/Hunter class attachment/group journeys.
-| Follow (dead-zone 1.5y, MoveFollow behind M_PI, restart guard same target/dist/angle, CanFollow guards) | `cmangos/playerbots` + `mangoszero/server` | `cmangos-playerbots@076045e` / `mangoszero-server@1817ae1` | `cmangos: playerbot/strategy/actions/FollowActions.cpp:36-90`; `mangoszero: src/modules/Bots/playerbot/strategy/actions/MovementActions.cpp:440-560` | The real PlayerbotAI path uses `FollowMasterStrategy`/`FollowAction`; `BotController` retains only an intent/diagnostic record and is never a gameplay fallback after AI attachment | Keep 1.5y jitter-free follow without a second movement owner | Cached ON/static build and fresh AI-enabled runtime packet journeys passed without controller fallback execution |
+| Follow (dead-zone 1.5y, MoveFollow behind M_PI, public native target/moving-state restart guard, CanFollow guards) | `cmangos/playerbots` + `mangoszero/server` | `cmangos-playerbots@076045e` / `mangoszero-server@1817ae1` | `cmangos: playerbot/strategy/actions/FollowActions.cpp:36-90`; `mangoszero: src/modules/Bots/playerbot/strategy/actions/MovementActions.cpp:440-560`; local `ServerFacade.cpp` adapter over Penqle `MotionMaster::GetCurrent()` | The real PlayerbotAI path uses `FollowMasterStrategy`/`FollowAction`; the Tortoise adapter reads the public native targeted-generator target and moving state instead of pretending Penqle's private angle/offset fields are available. `BotController` retains only an intent/diagnostic record and is never a gameplay fallback after AI attachment | Keep 1.5y jitter-free follow without a second movement owner or re-entrant generator replacement | Cached ON/static build; preserved AI-enabled runtime packet journey exercised `follow chat shortcut`, group invite/accept, and cleanup without a movement-state crash |
 | Warrior vertical slice | Shyalya `playerbots-integration-gh` + modern `mod-playerbots` | `1f9497e` / `5397110` | Focused `Engine`/`Queue`/`Trigger`/`Action`/`Value` primitives, generic `FollowMasterStrategy`/assist/combat/non-combat/dead strategies, and Warrior Arms/Fury/Protection strategy files | Ported/adapted focused family; unrelated expansion systems remain excluded by the CMake source set | Make one owned Tortoise bot use strategy-driven follow and combat before widening the donor tree | Cached Docker build: `Built target tortoise_bots`, `Built target mangosd`; runtime: same-account Headless Sagiroth + Dudette, `dps assist`, successful Warrior Heroic Strike spell 78, encounter end/follow resume, clean removal; `PlayerbotAIStorage` logout use-after-free fixed and revalidated |
 | Broad Vanilla/Turtle source-set checkpoint | Shyalya `playerbots-integration-gh` + modern `mod-playerbots` | `1f9497e` / `5397110` | `CMakeLists.txt` globs the real `PlayerbotAI`, generic, nine Vanilla class, Value/Trigger/Action, Travel, grouping, loot, quest, dungeon/raid, BG/PvP and economy families; `MANGOSBOT_ZERO` excludes Death Knight and other expansion-only paths | Adapted Penqle naming and data shapes in the module-local compatibility layer; native loot ownership, area names/flags, channel wrappers and const loot-list views replace unsafe CMaNGOS member assumptions | Compile and stabilize the broad family without adding core `GetBot`/`m_bot` ownership | The first broad Docker pass reached the module compilation stage and exposed a small remaining Penqle API family in `PlayerbotAI.cpp`; the correct Penqle `module-system` host snapshot must also carry the documented generic Headless/session seams before a broad runtime claim is made |
 
@@ -276,10 +276,11 @@ mount lookup, later-expansion residue removal, and repeatable surface checks.
 
 Source repository: TortoiseBots `audit/playerbots-turtle-1.18.1`
 
-Source commit: `7fa875a6c6bc51534b4a5a3f2f373f3dd7446208` (`fix: quarantine
-optional LLM and stale tooling paths`), on top of `2afd2d1` (`fix: match
-effective core SQL paths and migration history`) and the preceding `9db49df`
-and `3a96923` remediation commits.
+Source commit: `a6ea16605fde1b77e396ca588e0b34ddb1978bd5` (`fix: align movement
+and channel shims with Turtle core`), on top of `7fa875a6c6bc51534b4a5a3f2f373f3dd7446208`
+(`fix: quarantine optional LLM and stale tooling paths`), `2afd2d1` (`fix:
+match effective core SQL paths and migration history`), and the preceding
+`9db49df` and `3a96923` remediation commits.
 
 Required target core: local Penqle `tortoise-wow`
 `playerbots-integration-gh@9487c5150a6553c665fafc1f4568669b8b00f011`.
@@ -287,8 +288,9 @@ Required target core: local Penqle `tortoise-wow`
 Source files: `TortoiseBots.cmake`, `README.md`,
 `ai/playerbot/{PlayerbotAI,PlayerbotAIConfig,PlayerbotDbStore,PlayerbotFactory,RandomItemMgr,TravelMgr,TravelNode}.{cpp,h}`,
   the edited strategy/action/value/context files, `data/sql/{world,char}/*`,
-`ai/playerbot/aiplayerbot.conf.dist.in`, `tools/analyze_quest_ledger.py`,
-`tools/verify_turtle_surface.sh`, and
+`ai/playerbot/{ServerFacade.cpp,cmangos-compat-shim.h}`, the follow/movement
+and range-trigger files, `ai/playerbot/aiplayerbot.conf.dist.in`,
+`tools/{analyze_quest_ledger.py,verify_turtle_surface.sh}`, and
 `docs/PLAYERBOTS_AUDIT.md`.
 
 Copied / ported / independently reimplemented:
@@ -299,6 +301,10 @@ Copied / ported / independently reimplemented:
   the core `collection_mount` table and `MountManager` contract.
 - Removed RTSC/SeeSpell/BossAura and later-ID branches are subtractive cleanup,
   not replacements with expansion behavior.
+- Movement inspection now uses the local core's public targeted-generator
+  target/current-motion contract; current follow/chase guards no longer depend
+  on fabricated zero offsets or private donor fields. The chat-channel proxy
+  delegates to the core's loaded `ObjectMgr` channel map.
 - SQL changes are module-owned schema and additive compatibility migrations;
   the final `20260824090003_*` cleanup explicitly drops only obsolete,
   module-owned donor cache tables; no character state or database reset is
@@ -336,6 +342,13 @@ Local validation:
   all passed. Startup no longer attempts to load the optional LLM prompt file;
   the module still reached AI-enabled world-ready with the empty-cache and
   direct-travel safeguards.
+- The subsequent full cached ON rebuild after the movement/channel shim fix,
+  the complementary OFF build, and a preserved-data restart also passed. The
+  focused packet fixture then exercised `follow chat shortcut`, native group
+  invite/accept, and cleanup on the updated binary without a movement-state
+  crash. Startup retained the expected core warning that custom dungeon rows
+  reference the missing `custom_dungeon_portal` script; no teleport behavior
+  was invented in the module.
 - The real Turtle client was launched under Wine through normal and
   software-forced rendering paths; both rendered black with no observable
   login UI in this environment, so no real-client `.bot` command journey is
