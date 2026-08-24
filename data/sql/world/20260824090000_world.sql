@@ -53,16 +53,15 @@ CREATE TABLE IF NOT EXISTS `ai_playerbot_help_texts` (
   `id` smallint unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(255) NOT NULL,
   `template_text` text NOT NULL,
-  `template_changed` tinyint unsigned NOT NULL DEFAULT 0,
-  `text` text NOT NULL DEFAULT '',
-  `text_loc1` text NOT NULL DEFAULT '',
-  `text_loc2` text NOT NULL DEFAULT '',
-  `text_loc3` text NOT NULL DEFAULT '',
-  `text_loc4` text NOT NULL DEFAULT '',
-  `text_loc5` text NOT NULL DEFAULT '',
-  `text_loc6` text NOT NULL DEFAULT '',
-  `text_loc7` text NOT NULL DEFAULT '',
-  `text_loc8` text NOT NULL DEFAULT '',
+  `text` text NOT NULL,
+  `text_loc1` text NOT NULL,
+  `text_loc2` text NOT NULL,
+  `text_loc3` text NOT NULL,
+  `text_loc4` text NOT NULL,
+  `text_loc5` text NOT NULL,
+  `text_loc6` text NOT NULL,
+  `text_loc7` text NOT NULL,
+  `text_loc8` text NOT NULL,
   PRIMARY KEY (`id`),
   KEY `name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
@@ -78,10 +77,14 @@ CREATE TABLE IF NOT EXISTS `ai_playerbot_named_location` (
   PRIMARY KEY (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
-CREATE TABLE IF NOT EXISTS `ai_playerbot_zone_level` (
-  `id` bigint unsigned NOT NULL,
-  `level` bigint NOT NULL,
-  PRIMARY KEY (`id`)
+CREATE TABLE IF NOT EXISTS `ai_playerbot_rpg_races` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `entry` bigint unsigned DEFAULT NULL,
+  `race` bigint unsigned DEFAULT NULL,
+  `minl` bigint unsigned DEFAULT NULL,
+  `maxl` bigint unsigned DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `entry` (`entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
 CREATE TABLE IF NOT EXISTS `ai_playerbot_travelnode` (

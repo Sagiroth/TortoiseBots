@@ -24,17 +24,18 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
 
   # Optional module migrations are installed only with the module. The core
   # AutoUpdater applies them on startup without making bots a core dependency.
-  # AutoUpdater's module contract is case-sensitive on Linux and uses the
-  # configured target names World and Char by default. Keep the source and
-  # installed trees identical so a fresh install cannot silently skip these
-  # optional migrations.
-  if(EXISTS "${TORTOISEBOTS_ROOT}/data/sql/World")
-    install(DIRECTORY "${TORTOISEBOTS_ROOT}/data/sql/World/"
-      DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/TortoiseBots/data/sql/World")
+  # AutoUpdater's module contract is case-sensitive on Linux. Penqle's
+  # effective mangosd.conf.dist names these configured folders `world` and
+  # `character`; the uppercase names in AutoUpdater.cpp are only fallback
+  # defaults when those settings are absent. Keep the module aligned with the
+  # shipped core configuration so a fresh install cannot silently skip SQL.
+  if(EXISTS "${TORTOISEBOTS_ROOT}/data/sql/world")
+    install(DIRECTORY "${TORTOISEBOTS_ROOT}/data/sql/world/"
+      DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/TortoiseBots/data/sql/world")
   endif()
-  if(EXISTS "${TORTOISEBOTS_ROOT}/data/sql/Char")
-    install(DIRECTORY "${TORTOISEBOTS_ROOT}/data/sql/Char/"
-      DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/TortoiseBots/data/sql/Char")
+  if(EXISTS "${TORTOISEBOTS_ROOT}/data/sql/char")
+    install(DIRECTORY "${TORTOISEBOTS_ROOT}/data/sql/char/"
+      DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/TortoiseBots/data/sql/character")
   endif()
 
   set(TORTOISEBOTS_HOST_SRC

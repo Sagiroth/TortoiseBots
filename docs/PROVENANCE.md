@@ -270,7 +270,7 @@ test was performed.
 ## Turtle audit closure pass — 2026-08-24
 
 Feature: close the module-owned Turtle WoW 1.18.1 audit findings without
-reintroducing core ownership coupling: canonical SQL packaging, additive
+reintroducing core ownership coupling: effective configured SQL packaging, additive
 schema repair, fail-closed startup caches, owner-input SQL safety, collection
 mount lookup, later-expansion residue removal, and repeatable surface checks.
 
@@ -284,7 +284,7 @@ Required target core: local Penqle `tortoise-wow`
 
 Source files: `TortoiseBots.cmake`, `README.md`,
 `ai/playerbot/{PlayerbotAI,PlayerbotAIConfig,PlayerbotDbStore,PlayerbotFactory,RandomItemMgr,TravelMgr,TravelNode}.{cpp,h}`,
-the edited strategy/action/value/context files, `data/sql/{World,Char}/*`,
+  the edited strategy/action/value/context files, `data/sql/{world,char}/*`,
 `tools/analyze_quest_ledger.py`, `tools/verify_turtle_surface.sh`, and
 `docs/PLAYERBOTS_AUDIT.md`.
 
@@ -297,7 +297,9 @@ Copied / ported / independently reimplemented:
 - Removed RTSC/SeeSpell/BossAura and later-ID branches are subtractive cleanup,
   not replacements with expansion behavior.
 - SQL changes are module-owned schema and additive compatibility migrations;
-  they do not drop or reset existing data.
+  the final `20260824090003_*` cleanup explicitly drops only obsolete,
+  module-owned donor cache tables; no character state or database reset is
+  involved.
 
 Reason: the module must be a trustworthy Tortoise 1.18.1 foundation. Core
 `LFTBotFill`, legacy `src/modules/PlayerBots`, and the remaining compatibility
@@ -319,5 +321,12 @@ Local validation:
 - The final cached OFF rebuild after those edits completed `mangosd`
   successfully with `BUILD_PLAYERBOTS=OFF`, `BUILD_LEGACY_PLAYERBOTS=OFF`, and
   `MODULES=disabled`.
-- No server restart, fresh-schema migration run, gameplay journey, database
-  reset, or reference-checkout modification was performed in this pass.
+- A disposable MariaDB 11.4 container applied both configured `world` and
+  `character` migration pairs twice; the final schemas had 32 scale columns,
+  `template_changed`, and zero obsolete donor tables.
+- The preserved Docker stack processed the configured lowercase module paths,
+  applied both `20260824090003_*` cleanup migrations, reached AI-enabled
+  world-ready, passed `PendingAddRemoveTest`, the six-step `AutoTest`, and the
+  packet group invite/accept plus cleanup journey. No volume reset was used.
+- The real Turtle client was attempted under Wine but rendered black in this
+  environment; no real-client `.bot` command journey is claimed.

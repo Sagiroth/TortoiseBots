@@ -43,9 +43,10 @@ retained, while donor-only expansion families are absent from the module tree.
   `tortoise_bots.conf`; random-bot autologin and account/character creation
   default to off. Enable random bots only with pre-existing configured random
   characters until the creation workflow is added.
-- Module SQL is installed under the core's case-sensitive `World/` and `Char/`
-  AutoUpdater folders. The additive `20260824090002_*` migrations repair
-  already-created cache/help tables without dropping data.
+- Module SQL is installed under the core's case-sensitive configured
+  `world/` and `character/` AutoUpdater folders. The additive
+  `20260824090002_*` migrations repair already-created cache/help tables; the
+  `20260824090003_*` migrations remove only obsolete module-owned donor caches.
 - `tools/verify_turtle_surface.sh` is the cheap pre-build guard for migration
   paths, removed donor/test families, known-absent IDs, and legacy-option
   forcing.

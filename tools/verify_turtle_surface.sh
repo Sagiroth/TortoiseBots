@@ -9,23 +9,29 @@ fail() {
     exit 1
 }
 
-test -f data/sql/World/20260824090000_world.sql || fail "World migration is missing"
-test -f data/sql/Char/20260824090001_char.sql || fail "Char migration is missing"
-test -f data/sql/World/20260824090002_world.sql || fail "World compatibility migration is missing"
-test -f data/sql/Char/20260824090002_char.sql || fail "Char compatibility migration is missing"
-test ! -e data/sql/world || fail "lowercase world migration directory remains"
-test ! -e data/sql/char || fail "lowercase char migration directory remains"
+test -f data/sql/world/20260824090000_world.sql || fail "world migration is missing"
+test -f data/sql/char/20260824090001_char.sql || fail "character migration is missing"
+test -f data/sql/world/20260824090002_world.sql || fail "world compatibility migration is missing"
+test -f data/sql/char/20260824090002_char.sql || fail "character compatibility migration is missing"
+test -f data/sql/world/20260824090003_world.sql || fail "world cleanup migration is missing"
+test -f data/sql/char/20260824090003_char.sql || fail "character cleanup migration is missing"
+test ! -e data/sql/World || fail "uppercase World migration directory remains"
+test ! -e data/sql/Char || fail "uppercase Char migration directory remains"
 
-grep -q 'template_changed' data/sql/World/20260824090000_world.sql \
+grep -q 'template_changed' data/sql/world/20260824090002_world.sql \
     || fail "help schema lacks template_changed"
-grep -q 'scale_32' data/sql/Char/20260824090001_char.sql \
+grep -q 'scale_32' data/sql/char/20260824090002_char.sql \
     || fail "item-info schema lacks scale_32"
-grep -q 'ai_playerbot_zone_level' data/sql/World/20260824090000_world.sql \
+grep -q 'ai_playerbot_zone_level' data/sql/world/20260824090002_world.sql \
     || fail "zone-level schema is not owned by World migration"
-grep -q 'ADD COLUMN IF NOT EXISTS' data/sql/World/20260824090002_world.sql \
+grep -q 'ADD COLUMN IF NOT EXISTS' data/sql/world/20260824090002_world.sql \
     || fail "World compatibility migration is not additive"
-grep -q 'scale_32' data/sql/Char/20260824090002_char.sql \
+grep -q 'scale_32' data/sql/char/20260824090002_char.sql \
     || fail "Char compatibility migration lacks scale_32"
+grep -q 'DROP TABLE IF EXISTS' data/sql/world/20260824090003_world.sql \
+    || fail "World cleanup migration lacks explicit dead-table cleanup"
+grep -q 'DROP TABLE IF EXISTS' data/sql/char/20260824090003_char.sql \
+    || fail "Char cleanup migration lacks explicit dead-table cleanup"
 
 if rg -n -i 'rtsc|see spell|bossaura|ai_playerbot_(random_bots|rpg_races|tele_cache|rarity_cache)' \
     ai host runtime commands conf; then

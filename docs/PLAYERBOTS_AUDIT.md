@@ -28,10 +28,11 @@ capability follow-ups.
 At the audited baseline, four integration problems were blockers before
 expansion. They are now handled as follows:
 
-1. Module SQL now installs into the core's exact case-sensitive `World/` and
-   `Char/` paths. A fresh-schema runtime was not rerun in this pass, so that
-   installation contract is statically verified rather than claimed as live
-   migration evidence.
+1. Module SQL now installs into the core's exact case-sensitive configured
+   `world/` and `character/` paths. `mangosd.conf.dist.in` explicitly sets
+   those names; `AutoUpdater.cpp`'s uppercase values are fallback defaults
+   only. Fresh isolated SQL application is verified below, while live
+   migration evidence is still being gathered.
 2. The native CMake file no longer forces the legacy `BUILD_PLAYERBOTS=1`
    define. The local core checkout still contains both a stale, untracked
    `modules/TortoiseBots/` copy and a tracked legacy
@@ -81,7 +82,7 @@ Vanilla/Turtle product surface before adding more classes or dungeon behavior.
 
 | ID | Severity | Finding | Status |
 | --- | --- | --- | --- |
-| F-01 | P0 | Module SQL install path does not match the core AutoUpdater's case-sensitive `World/Char` lookup. | Resolved in `TortoiseBots.cmake`; fresh-schema runtime evidence remains unclaimed. |
+| F-01 | P0 | Module SQL install path does not match the core's effective case-sensitive AutoUpdater configuration. | Resolved in `TortoiseBots.cmake` against Penqle's configured `world/character` names; preserved-stack migration evidence remains to be gathered. |
 | F-02 | P0 | The local core has a stale untracked module copy, and `BUILD_PLAYERBOTS=OFF` does not itself gate an explicitly enabled native module. | Native CMake forcing is resolved; stale sibling checkout and core legacy path remain external follow-up. |
 | F-03 | P1 | Bot-specific legacy code remains in the core: LFT random-bot filling, bot command stubs, bot slots, and legacy module hooks. | Open core-owned follow-up; no new module coupling was added. |
 | F-04 | P1 | Active native code retains later-expansion consumable IDs, item IDs, spell IDs, and level gates. | Resolved for the audited known-absent IDs; retained level-60 spell rows were revalidated against local core data. |
@@ -111,14 +112,15 @@ action” wording in the finding bodies below.
 
 ### Resolved inside TortoiseBots
 
-- `TortoiseBots.cmake` installs `data/sql/World` and `data/sql/Char`, matching
-  the core `AutoUpdater` defaults. It selects the native module through
+- `TortoiseBots.cmake` installs `data/sql/world` and `data/sql/char` to the
+  configured `world/character` folders in Penqle's `mangosd.conf.dist.in`.
+  It selects the native module through
   `MODULE_TORTOISEBOTS` and no longer injects the legacy
   `BUILD_PLAYERBOTS=1` define.
-- The World migration now owns `ai_playerbot_zone_level`, the help table has
-  `template_changed`, and the Character migration has `scale_1` through
-  `scale_32`. Removed migrations no longer create `random_bots`, `rpg_races`,
-  `tele_cache`, or the unowned rarity cache.
+- The additive World/Character migrations now own `ai_playerbot_zone_level`,
+  `template_changed`, and `scale_1` through `scale_32`; the `20260824090003_*`
+  migrations remove the explicitly obsolete module-owned donor tables without
+  touching character state.
 - Travel startup no longer creates or bulk-populates tables. Travel-node
   generation is disabled by default through `AiPlayerbot.GenerateTravelNodes`,
   malformed node references are skipped, and an opt-in cache save uses one
@@ -259,10 +261,16 @@ TortoiseBots.cmake:27-33
 .../modules/TortoiseBots/data/sql/character
 ```
 
-The core AutoUpdater reads the configured folder names with defaults
-`World` and `Char` (`tortoise-wow/src/shared/Database/AutoUpdater.cpp:497-512`)
-and constructs the module path verbatim at `:269-276`. Linux paths are
-case-sensitive.
+The effective Penqle deployment contract is case-sensitive and is defined by
+the shipped `src/mangosd/mangosd.conf.dist.in`:
+
+```text
+Database.AutoUpdate.CharUpdateName = "character"
+Database.AutoUpdate.WorldUpdateName = "world"
+```
+
+`AutoUpdater.cpp:497-512` has uppercase `Char`/`World` fallback values only
+when those settings are absent. Linux paths are case-sensitive.
 
 The local running image was inspected read-only and contains:
 
@@ -271,16 +279,13 @@ The local running image was inspected read-only and contains:
 /opt/turtle/modules/TortoiseBots/data/sql/character/20260824090001_char.sql
 ```
 
-The local `render-config.sh` changes `Database.AutoUpdate.Path` but does not
-change `WorldUpdateName` or `CharUpdateName`. Unless those names are overridden
-elsewhere, the module migrations are not on the path the core scans. The stale
-untracked core copy uses the uppercase destinations (`tortoise-wow/modules/TortoiseBots/TortoiseBots.cmake:29-38`), which explains how earlier runtime evidence could appear correct while the reviewed repository is not.
+The local running image confirms the configured lowercase names. The target
+CMake and source directories now follow that exact contract; the stale
+untracked core copy remains a separate source-selection risk.
 
-**Required action:** install to `data/sql/World` and `data/sql/Char`, or make
-the core/module folder names an explicit shared contract. Add a packaging test
-that installs the module and asserts that both migration files are found at
-the exact AutoUpdater path. Do not claim a fresh-schema runtime test until this
-is checked.
+**Closure evidence:** the isolated MariaDB 11.4 migration check applies both
+World and Character migration pairs twice successfully. Preserved-stack
+AutoUpdater application is still a separate runtime check.
 
 ### F-02 — Two different module trees are present locally (P0)
 
@@ -799,18 +804,32 @@ The cached `BUILD_PLAYERBOTS=ON`, `BUILD_LEGACY_PLAYERBOTS=OFF`, static
 best-effort install wrapper reported the expected missing `realmd` artifact,
 then copied the built `mangosd` to the install volume; this does not invalidate
 the successful ON build. The complementary cached `BUILD_PLAYERBOTS=OFF`,
-`MODULES=disabled` build also completed successfully. No server restart,
-gameplay journey, fresh-schema run, database reset, or reference-checkout
-modification was performed.
+`MODULES=disabled` build also completed successfully.
+
+Fresh-schema SQL evidence: a disposable MariaDB 11.4 container applied
+`data/sql/world/{20260824090000,20260824090002,20260824090003}_*.sql` and
+`data/sql/char/{20260824090001,20260824090002,20260824090003}_*.sql` twice.
+All statements succeeded; the final schemas contained 32 `scale_*` columns,
+`template_changed`, the zone-level table, and zero obsolete donor tables.
+
+Preserved-stack evidence: after copying only the current module SQL into the
+running container, the core logged AutoUpdater processing from the configured
+`/opt/turtle/modules/TortoiseBots/data/sql/character` and `/world` paths and
+applied both `20260824090003_*` migrations. AI startup reached world-ready
+with empty-cache fail-closed logs and direct travel fallback. The disposable
+TBPLAY fixtures produced `PendingAddRemoveTest PASSED`, the six-step
+`AutoTest` lifecycle PASSED, and `PacketBridgeTest group invite/accept PASSED`
+followed by `PacketBridgeTest cleanup PASSED`.
 
 The closure pass modified module C++, SQL, CMake, README, and tooling files;
-it did not modify the sibling core, Dockerfile, compose file, database, or
-reference checkouts. Existing historical runtime claims in
-`docs/PROVENANCE.md` were treated as provenance, not repeated as fresh tests.
-The installed runtime path observation remains read-only evidence and is not a
-fresh AutoUpdater acceptance test. The optional install wrapper's only failure
-was the sibling builder's absent `realmd` binary after the successful
-`mangosd` link.
+it did not modify the sibling core, Dockerfile, compose file, or reference
+checkouts. The only database mutations were additive module migrations and
+cleanup of duplicate migration rows created by the audit harness, plus normal
+disposable-fixture save/logout activity; no database reset or volume wipe was
+performed. The real Turtle client could be launched under Wine but rendered a
+black window in this environment, so no real-client `.bot` command journey is
+claimed. The optional install wrapper's only failure was the sibling builder's
+absent `realmd` binary after the successful `mangosd` link.
 
 ## 10. Provenance
 
