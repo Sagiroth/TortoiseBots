@@ -266,3 +266,53 @@ starting another broad cleanup audit.
 Local validation: targeted static checks and one cached persistent
 `BUILD_PLAYERBOTS=ON` native `mangosd` build; no runtime restart or gameplay
 test was performed.
+
+## Turtle audit closure pass — 2026-08-24
+
+Feature: close the module-owned Turtle WoW 1.18.1 audit findings without
+reintroducing core ownership coupling: canonical SQL packaging, additive
+schema repair, bounded startup caches, owner-input SQL safety, collection
+mount lookup, later-expansion residue removal, and repeatable surface checks.
+
+Source repository: TortoiseBots `audit/playerbots-turtle-1.18.1`
+
+Source commit: `9db49df` (`fix: close Turtle WoW PlayerBots audit findings`)
+
+Required target core: local Penqle `tortoise-wow`
+`playerbots-integration-gh@9487c5150a6553c665fafc1f4568669b8b00f011`.
+
+Source files: `TortoiseBots.cmake`, `README.md`,
+`ai/playerbot/{PlayerbotAI,PlayerbotAIConfig,PlayerbotDbStore,PlayerbotFactory,RandomItemMgr,TravelMgr,TravelNode}.{cpp,h}`,
+the edited strategy/action/value/context files, `data/sql/{World,Char}/*`,
+`tools/analyze_quest_ledger.py`, `tools/verify_turtle_surface.sh`, and
+`docs/PLAYERBOTS_AUDIT.md`.
+
+Copied / ported / independently reimplemented:
+
+- No new upstream gameplay was copied in this pass.
+- Existing mature behavior was kept where the local core data validates it;
+  the factory collection-mount selection is an independent module adapter over
+  the core `collection_mount` table and `MountManager` contract.
+- Removed RTSC/SeeSpell/BossAura and later-ID branches are subtractive cleanup,
+  not replacements with expansion behavior.
+- SQL changes are module-owned schema and additive compatibility migrations;
+  they do not drop or reset existing data.
+
+Reason: the module must be a trustworthy Tortoise 1.18.1 foundation. Core
+`LFTBotFill`, legacy `src/modules/PlayerBots`, and the remaining compatibility
+fallback matrix are intentionally recorded as separate core/product follow-up,
+not hidden inside this module PR.
+
+Local validation:
+
+- `tools/verify_turtle_surface.sh` passed.
+- `git diff --check` passed before commit.
+- Cached `bash ../tortoise-docker-penqle/dev/build-playerbots` completed the
+  static native module and `mangosd` link successfully. Its best-effort install
+  phase reported only the sibling builder's absent `realmd` artifact.
+- Cached `bash ../tortoise-docker-penqle/dev/build-off` completed the
+  `BUILD_PLAYERBOTS=OFF`, `MODULES=disabled` `mangosd` build successfully.
+- The incremental ON rebuild after the final C++ safety edits also linked
+  successfully; the same optional `realmd` install warning remained.
+- No server restart, fresh-schema migration run, gameplay journey, database
+  reset, or reference-checkout modification was performed in this pass.
