@@ -15,6 +15,7 @@
 #include "Log.h"
 
 #include <mutex>
+#include <set>
 #include <string>
 #include <unordered_map>
 
@@ -30,6 +31,15 @@ struct StoredValue
 std::mutex s_valuesMutex;
 std::unordered_map<std::string, StoredValue> s_values;
 std::unordered_map<std::string, uint32> s_tradeDiscounts;
+
+void ReportUnsupportedRandomFeature(char const* feature)
+{
+    static std::mutex reportMutex;
+    static std::set<std::string> reported;
+    std::lock_guard<std::mutex> lock(reportMutex);
+    if (reported.insert(feature).second)
+        sLog.outInfo("TortoiseBots: legacy random-bot feature '%s' is not available under native BotManager ownership", feature);
+}
 
 std::string ValueKey(uint32 guid, std::string const& name)
 {
@@ -114,6 +124,7 @@ void PlayerbotHolder::ForEachPlayerbot(std::function<void(Player*)> callback) co
 
 void PlayerbotHolder::UpdateSessions(uint32 /*elapsed*/)
 {
+    ReportUnsupportedRandomFeature("PlayerbotHolder::UpdateSessions");
 }
 
 void PlayerbotHolder::LogoutAllBots()
@@ -125,6 +136,7 @@ void PlayerbotHolder::LogoutAllBots()
 
 void PlayerbotHolder::JoinChatChannels(Player* /*bot*/)
 {
+    ReportUnsupportedRandomFeature("PlayerbotHolder::JoinChatChannels");
 }
 
 void PlayerbotHolder::OnBotLogin(Player* bot)
@@ -148,12 +160,13 @@ RandomPlayerbotMgr::~RandomPlayerbotMgr() = default;
 
 void RandomPlayerbotMgr::UpdateAIInternal(uint32 /*elapsed*/, bool /*minimal*/)
 {
-    // Random creation/login is being moved to BotManager; this legacy tick is
-    // deliberately not another world-thread owner.
+    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::UpdateAIInternal");
 }
 
-void RandomPlayerbotMgr::OnBotLoginInternal(Player* /*bot*/)
+void RandomPlayerbotMgr::OnBotLoginInternal(Player* bot)
 {
+    if (bot)
+        TortoiseBots::BotManager::Instance().OnPlayerLogin(bot);
 }
 
 void RandomPlayerbotMgr::MovePlayerBot(uint32 guid, PlayerbotHolder* newHolder)
@@ -161,13 +174,14 @@ void RandomPlayerbotMgr::MovePlayerBot(uint32 guid, PlayerbotHolder* newHolder)
     PlayerbotHolder::MovePlayerBot(guid, newHolder);
 }
 
-uint32 RandomPlayerbotMgr::GetOrCreateAccount(Player* /*master*/, std::string& /*error*/)
+uint32 RandomPlayerbotMgr::GetOrCreateAccount(Player* master, std::string& error)
 {
-    return 0;
+    return PlayerbotHolder::GetOrCreateAccount(master, error);
 }
 
-void RandomPlayerbotMgr::OnBotDeleted(uint32 /*botGuid*/, uint32 /*accountId*/)
+void RandomPlayerbotMgr::OnBotDeleted(uint32 botGuid, uint32 accountId)
 {
+    PlayerbotHolder::OnBotDeleted(botGuid, accountId);
 }
 
 bool RandomPlayerbotMgr::IsRandomBot(Player* bot)
@@ -220,11 +234,13 @@ void RandomPlayerbotMgr::SetValue(Player* bot, std::string type, uint32 value, s
 
 double RandomPlayerbotMgr::GetBuyMultiplier(Player* /*bot*/)
 {
+    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::GetBuyMultiplier");
     return 1.0;
 }
 
 double RandomPlayerbotMgr::GetSellMultiplier(Player* /*bot*/)
 {
+    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::GetSellMultiplier");
     return 1.0;
 }
 
@@ -263,28 +279,34 @@ void RandomPlayerbotMgr::Remove(Player* bot)
 
 void RandomPlayerbotMgr::Refresh(Player* /*bot*/)
 {
+    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::Refresh");
 }
 
 void RandomPlayerbotMgr::UpdateGearSpells(Player* /*bot*/)
 {
+    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::UpdateGearSpells");
 }
 
 bool RandomPlayerbotMgr::ProcessBot(Player* /*player*/)
 {
+    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::ProcessBot");
     return false;
 }
 
 bool RandomPlayerbotMgr::GetNamedLocation(std::string const& /*name*/, WorldLocation& /*location*/)
 {
+    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::GetNamedLocation");
     return false;
 }
 
 void RandomPlayerbotMgr::LoadNamedLocations()
 {
+    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::LoadNamedLocations");
 }
 
 void RandomPlayerbotMgr::LoadBattleMastersCache()
 {
+    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::LoadBattleMastersCache");
 }
 
 InventoryResult RandomPlayerbotMgr::CanEquipUnseenItem(Player* player, uint8 slot, uint16& dest, uint32 item)
@@ -298,21 +320,25 @@ InventoryResult RandomPlayerbotMgr::CanEquipUnseenItem(Player* player, uint8 slo
 
 const CreatureDataPair* RandomPlayerbotMgr::GetCreatureDataByEntry(uint32 /*entry*/)
 {
+    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::GetCreatureDataByEntry");
     return nullptr;
 }
 
 uint32 RandomPlayerbotMgr::GetCreatureGuidByEntry(uint32 /*entry*/)
 {
+    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::GetCreatureGuidByEntry");
     return 0;
 }
 
 uint32 RandomPlayerbotMgr::GetBattleMasterEntry(Player* /*bot*/, BattleGroundTypeId /*bgTypeId*/, bool /*fake*/)
 {
+    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::GetBattleMasterEntry");
     return 0;
 }
 
 bool RandomPlayerbotMgr::IsPinnedBot(uint32 /*guidLow*/)
 {
+    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::IsPinnedBot");
     return false;
 }
 
@@ -325,24 +351,30 @@ bool RandomPlayerbotMgr::AddRandomBot(uint32 guid)
 
 void RandomPlayerbotMgr::RandomTeleportForLevel(Player* /*bot*/, bool /*activeOnly*/)
 {
+    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::RandomTeleportForLevel");
 }
 
 void RandomPlayerbotMgr::RandomTeleportForRpg(Player* /*bot*/, bool /*activeOnly*/)
 {
+    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::RandomTeleportForRpg");
 }
 
 void RandomPlayerbotMgr::ChangeStrategy(Player* /*player*/)
 {
+    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::ChangeStrategy");
 }
 
 void RandomPlayerbotMgr::Revive(Player* /*player*/)
 {
+    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::Revive");
 }
 
 void RandomPlayerbotMgr::PrintTeleportCache()
 {
+    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::PrintTeleportCache");
 }
 
 void RandomPlayerbotMgr::PrintStats(uint32 /*requesterGuid*/)
 {
+    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::PrintStats");
 }
