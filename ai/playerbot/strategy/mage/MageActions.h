@@ -9,7 +9,6 @@ namespace ai
     BUFF_ACTION(CastFireWardAction, "fire ward");
     BUFF_ACTION(CastFrostWardAction, "frost ward");
     BUFF_ACTION(CastBlinkAction, "blink");
-    SPELL_ACTION(CastIceLanceAction, "ice lance");
 
     class CastFireballAction : public CastSpellAction
     {
@@ -27,19 +26,6 @@ namespace ai
     {
     public:
         CastFireBlastAction(PlayerbotAI* ai) : CastSpellAction(ai, "fire blast") {}
-    };
-
-    class CastArcaneBlastAction : public CastBuffSpellAction
-    {
-    public:
-        CastArcaneBlastAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "arcane blast") {}
-        virtual std::string GetTargetName() override { return "current target"; }
-    };
-
-    class CastArcaneBarrageAction : public CastSpellAction
-    {
-    public:
-        CastArcaneBarrageAction(PlayerbotAI* ai) : CastSpellAction(ai, "arcane barrage") {}
     };
 
     class CastArcaneMissilesAction : public CastSpellAction
@@ -108,12 +94,6 @@ namespace ai
     {
 	public:
 		CastRemoveLesserCurseAction(PlayerbotAI* ai) : CastCureSpellAction(ai, "remove lesser curse") {}
-	};
-
-	class CastIcyVeinsAction : public CastBuffSpellAction
-    {
-	public:
-		CastIcyVeinsAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "icy veins") {}
 	};
 
 	class CastCombustionAction : public CastBuffSpellAction
@@ -220,12 +200,6 @@ namespace ai
     BUFF_ACTION(CastIceBarrierAction, "ice barrier");
     BUFF_ACTION(CastManaShieldAction, "mana shield");
 
-    class CastMoltenArmorAction : public CastBuffSpellAction
-    {
-    public:
-        CastMoltenArmorAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "molten armor") {}
-    };
-
     class CastMageArmorAction : public CastBuffSpellAction
     {
     public:
@@ -260,18 +234,6 @@ namespace ai
             return ai->CastSpell(polySpells[urand(0, polySpells.size() - 1)], GetTarget());
         }
     };
-
-	class CastSpellstealAction : public CastSpellAction
-	{
-	public:
-		CastSpellstealAction(PlayerbotAI* ai) : CastSpellAction(ai, "spellsteal") {}
-	};
-
-	class CastInvisibilityAction : public CastBuffSpellAction
-	{
-	public:
-	    CastInvisibilityAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "invisibility") {}
-	};
 
     class CastLesserInvisibilityAction : public CastBuffSpellAction
     {
@@ -322,42 +284,10 @@ namespace ai
         CastConeOfColdAction(PlayerbotAI* ai) : CastMeleeAoeSpellAction(ai, "cone of cold", 10.0f) {}
     };
 
-    BUFF_ACTION(CastSummonWaterElementalAction, "summon water elemental");
-
-    class CastDragonsBreathAction : public CastMeleeAoeSpellAction
-    {
-    public:
-        CastDragonsBreathAction(PlayerbotAI* ai) : CastMeleeAoeSpellAction(ai, "dragon's breath", 10.0f) {}
-    };
-
     class CastBlastWaveAction : public CastMeleeAoeSpellAction
     {
     public:
         CastBlastWaveAction(PlayerbotAI* ai) : CastMeleeAoeSpellAction(ai, "blast wave", 10.0f) {}
-    };
-
-    class CastLivingBombAction : public CastRangedDebuffSpellAction
-    {
-    public:
-        CastLivingBombAction(PlayerbotAI* ai) : CastRangedDebuffSpellAction(ai, "living bomb") {}
-    };
-
-    class CastFrostfireBoltAction : public CastSpellAction
-    {
-    public:
-        CastFrostfireBoltAction(PlayerbotAI* ai) : CastSpellAction(ai, "frostfire bolt") {}
-    };
-
-    class DeepFreezeAction : public CastSpellAction
-    {
-    public:
-        DeepFreezeAction(PlayerbotAI* ai) : CastSpellAction(ai, "deep freeze") {}
-    };
-
-    class MirrorImageAction : public CastBuffSpellAction
-    {
-    public:
-        MirrorImageAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "mirror image") {}
     };
 
     class UseManaGemAction : public UseItemIdAction

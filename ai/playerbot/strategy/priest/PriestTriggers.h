@@ -7,8 +7,6 @@ namespace ai
     DEBUFF_TRIGGER(HolyFireTrigger, "holy fire");
     DEBUFF_TRIGGER(PowerWordPainTrigger, "shadow word: pain");
     DEBUFF_ENEMY_TRIGGER(PowerWordPainOnAttackerTrigger, "shadow word: pain");
-    DEBUFF_TRIGGER(VampiricTouchTrigger, "vampiric touch");
-    DEBUFF_ENEMY_TRIGGER(VampiricTouchOnAttackerTrigger, "vampiric touch");
     DEBUFF_TRIGGER(VampiricEmbraceTrigger, "vampiric embrace");
     CURE_TRIGGER(DispelMagicTrigger, "dispel magic", DISPEL_MAGIC);
     CURE_PARTY_TRIGGER(DispelMagicPartyMemberTrigger, "dispel magic", DISPEL_MAGIC);
@@ -30,7 +28,6 @@ namespace ai
     SNARE_TRIGGER(ChastiseTrigger, "chastise");
     DEBUFF_TRIGGER(StarshardsTrigger, "starshards");
 
-    BOOST_TRIGGER_A(ShadowfiendTrigger, "shadowfiend");
     CAN_CAST_TRIGGER(MindBlastTrigger, "mind blast");
     CAN_CAST_TRIGGER(SmiteTrigger, "smite");
 
@@ -92,17 +89,6 @@ namespace ai
     {
     public:
         PrayerOfShadowProtectionOnPartyTrigger(PlayerbotAI* ai) : GreaterBuffOnPartyTrigger(ai, "prayer of shadow protection", "shadow protection", 4) {}
-    };
-
-    class BindingHealTrigger : public PartyMemberLowHealthTrigger
-    {
-    public:
-        BindingHealTrigger(PlayerbotAI* ai) : PartyMemberLowHealthTrigger(ai, "binding heal", sPlayerbotAIConfig.lowHealth, 0) {}
-
-        virtual bool IsActive() override
-        {
-            return PartyMemberLowHealthTrigger::IsActive() && AI_VALUE2(uint8, "health", "self target") < sPlayerbotAIConfig.mediumHealth;
-        }
     };
 
     class PowerInfusionTrigger : public SpellTargetTrigger

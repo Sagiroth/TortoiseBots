@@ -56,7 +56,7 @@ bool XpGainAction::Execute(Event& event)
         BroadcastHelper::BroadcastCreatureKill(ai, bot, creature);
     }
 
-    if (!sRandomPlayerbotMgr.IsFreeBot(bot) || sPlayerbotAIConfig.playerbotsXPrate == 1)
+    if (!sRandomBotFacade.IsFreeBot(bot) || sPlayerbotAIConfig.playerbotsXPrate == 1)
         return false;
 
     if (!type)
@@ -77,11 +77,11 @@ bool XpGainAction::Execute(Event& event)
     uint32 levelAfter = bot->GetLevel();
 
     if (levelAfter > levelBefore && levelAfter >= 5 &&
-        sRandomPlayerbotMgr.IsRandomBot(bot) && !PlayerbotAIStorage::Instance().GetAI(bot)->HasRealPlayerMaster())
+        sRandomBotFacade.IsRandomBot(bot) && !PlayerbotAIStorage::Instance().GetAI(bot)->HasRealPlayerMaster())
     {
         sLog.outBasic("Bot #%d <%s> levelled %d->%d (Execute hook), triggering gear update",
             bot->GetGUIDLow(), bot->GetName(), levelBefore, levelAfter);
-        sRandomPlayerbotMgr.UpdateGearSpells(bot);
+        sRandomBotFacade.UpdateGearSpells(bot);
     }
 
     return false;

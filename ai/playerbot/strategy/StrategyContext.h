@@ -45,10 +45,6 @@
 #include "generic/WanderStrategy.h"
 #include "generic/ConsumableStrategy.h"
 // #include "generic/WorldBuffTravelStrategy.h" // E2E green: excluded to avoid GetSource mismatches
-#ifdef GenerateBotTests
-#include "tests/TestStrategy.h"
-#endif
-
 #include "generic/DungeonStrategy.h"
 #include "generic/OnyxiasLairDungeonStrategies.h"
 #include "generic/MoltenCoreDungeonStrategies.h"
@@ -113,14 +109,10 @@ namespace ai
             creators["close"] = [](PlayerbotAI* ai) { return new MeleeCombatStrategy(ai); };
             creators["ranged"] = [](PlayerbotAI* ai) { return new RangedCombatStrategy(ai); };
             creators["behind"] = [](PlayerbotAI* ai) { return new SetBehindCombatStrategy(ai); };
-            creators["bg"] = [](PlayerbotAI* ai) { return new BGStrategy(ai); };
             creators["battleground"] = [](PlayerbotAI* ai) { return new BattlegroundStrategy(ai); };
             creators["warsong"] = [](PlayerbotAI* ai) { return new WarsongStrategy(ai); };
             creators["alterac"] = [](PlayerbotAI* ai) { return new AlteracStrategy(ai); };
             creators["arathi"] = [](PlayerbotAI* ai) { return new ArathiStrategy(ai); };
-            creators["eye"] = [](PlayerbotAI* ai) { return new EyeStrategy(ai); };
-            creators["isle"] = [](PlayerbotAI* ai) { return new IsleStrategy(ai); };
-            creators["arena"] = [](PlayerbotAI* ai) { return new ArenaStrategy(ai); };
             creators["mount"] = [](PlayerbotAI* ai) { return new MountStrategy(ai); };
             creators["attack tagged"] = [](PlayerbotAI* ai) { return new AttackTaggedStrategy(ai); };
             creators["debug"] = [](PlayerbotAI* ai) { return new DebugStrategy(ai); };
@@ -171,9 +163,6 @@ namespace ai
             creators["suppression room"] = [](PlayerbotAI* ai) { return new SuppressionRoomStrategy(ai); };
             creators["four horseman"] = [](PlayerbotAI* ai) { return new FourHorsemanFightStrategy(ai); };
 
-#ifdef GenerateBotTests
-            creators["test"] = [](PlayerbotAI* ai) { return new TestStrategy(ai); };
-#endif
         }
     };
 

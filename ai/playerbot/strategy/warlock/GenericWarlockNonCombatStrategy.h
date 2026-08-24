@@ -61,16 +61,6 @@ public:
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
 };
 
-class SummonFelguardStrategy : public NonCombatStrategy
-{
-public:
-    SummonFelguardStrategy(PlayerbotAI* ai);
-    virtual std::string getName() override { return "felguard"; }
-
-public:
-    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
-};
-
 class SoulstoneSelfStrategy : public NonCombatStrategy
 {
 public:

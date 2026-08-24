@@ -166,10 +166,6 @@ bool ServerFacade::isMoving(Unit *unit)
     return unit->m_movementInfo.HasMovementFlag(movementFlagsMask);
 #endif
 #ifdef CMANGOS
-#ifdef MANGOSBOT_ONE
-    return !unit->IsStopped() || unit->IsJumping();
-#else
     return !unit->IsStopped();
-#endif
 #endif
 }

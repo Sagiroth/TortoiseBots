@@ -55,9 +55,6 @@ namespace ai
         bool UseItemInternal(Player* requester, uint32 itemId, Unit* target, GameObject* gameObjectTarget, Item* itemTarget);
         bool UseQuestGiverItem(Player* requester, Item* item);
         bool OpenItem(Player* requester, Item* item);
-#ifndef MANGOSBOT_ZERO
-        bool UseGemItem(Player* requester, Item* item, Item* gem, bool replace = false);
-#endif
     };
 
     class UseItemIdAction : public UseAction
@@ -109,11 +106,7 @@ namespace ai
         bool Execute(Event& event) override
         {
             // Check the chance of using a potion (only in pvp)
-#ifdef MANGOSBOT_ZERO
             const bool shouldUsePotion = !ai->IsInPvp() || frand(0.0f, 1.0f) < sPlayerbotAIConfig.usePotionChance;
-#else
-            const bool shouldUsePotion = !bot->InArena() && (!ai->IsInPvp() || frand(0.0f, 1.0f) < sPlayerbotAIConfig.usePotionChance);
-#endif
             if (shouldUsePotion)
             {
                 return UseItemIdAction::Execute(event);
@@ -130,11 +123,7 @@ namespace ai
                         if (spellData.SpellId)
                         {
                             // wrong triggering type
-#ifdef MANGOSBOT_ZERO
                             if (spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_USE && spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_NO_DELAY_USE)
-#else
-                            if (spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_USE)
-#endif
                             {
                                 continue;
                             }
@@ -253,11 +242,7 @@ namespace ai
                         if (spellData.SpellId)
                         {
                             // wrong triggering type
-#ifdef MANGOSBOT_ZERO
                             if (spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_USE && spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_NO_DELAY_USE)
-#else
-                            if (spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_USE)
-#endif
                             {
                                 continue;
                             }
@@ -366,10 +351,6 @@ namespace ai
 
         virtual uint32 GetItemId() override
         {
-#ifndef MANGOSBOT_ZERO
-            if (bot->InArena())
-                return false;
-#endif
             return (bot->GetLevel() >= 68) ? 23827 : 10646;
         }
     };
@@ -381,10 +362,6 @@ namespace ai
         UseOilOfImmolationAction(PlayerbotAI* ai) : UseItemIdAction(ai, "oil of immolation") {}
         virtual bool isUseful() override
         {
-#ifndef MANGOSBOT_ZERO
-            if (bot->InArena())
-                return false;
-#endif
             return UseItemIdAction::isUseful() && bot->GetLevel() >= 31 && !ai->HasAura(11350, bot);
         }
 
@@ -398,10 +375,6 @@ namespace ai
         UseStoneshieldPotionAction(PlayerbotAI* ai) : UseItemIdAction(ai, "stoneshield potion") {}
         virtual bool isUseful() override
         {
-#ifndef MANGOSBOT_ZERO
-            if (bot->InArena())
-                return false;
-#endif
             return UseItemIdAction::isUseful() && bot->GetLevel() >= 46 && !ai->HasAura(17540, bot);
         }
 
@@ -506,18 +479,6 @@ namespace ai
         virtual uint32 GetItemId() override
         {
             int firstAidSkillValue = bot->GetSkillValue(129);
-#ifdef MANGOSBOT_TWO
-            if (firstAidSkillValue >= 400)
-                return 34722;
-            if (firstAidSkillValue >= 350)
-                return 34721;
-#endif
-#ifndef MANGOSBOT_ZERO
-            if (firstAidSkillValue >= 325)
-                return 21991;
-            if (firstAidSkillValue >= 300)
-                return 21990;
-#endif
             if (firstAidSkillValue >= 225)
                 return 14530;
             if (firstAidSkillValue >= 200)
@@ -552,10 +513,6 @@ namespace ai
 
         virtual bool isUseful() override
         {
-#ifndef MANGOSBOT_ZERO
-            if (bot->InArena())
-                return false;
-#endif
 
             Unit* target = GetTarget();
             if (!target)
@@ -593,10 +550,6 @@ namespace ai
             if(!UseItemIdAction::isUseful())
                 return false;
 
-#ifndef MANGOSBOT_ZERO
-            if (bot->InArena())
-                return false;
-#endif
 
             if (bot->GetClass() == CLASS_MAGE) // mage should use mana gem, shares cd with dark rune
                 return false;

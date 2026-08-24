@@ -9,69 +9,12 @@
 #include "TankPaladinStrategy.h"
 #include "Playerbots.h"
 
-class TankPaladinStrategyActionNodeFactory : public NamedObjectFactory<ActionNode>
-{
-public:
-    TankPaladinStrategyActionNodeFactory()
-    {
-        creators["seal of corruption"] = &seal_of_corruption;
-        creators["seal of vengeance"] = &seal_of_vengeance;
-        creators["seal of command"] = &seal_of_command;
-        creators["hand of reckoning"] = &hand_of_reckoning;
-        creators["taunt spell"] = &hand_of_reckoning;
-    }
-
-private:
-    static ActionNode* seal_of_command([[maybe_unused]] PlayerbotAI* botAI)
-    {
-        return new ActionNode(
-            "seal of command",
-            /*P*/ {},
-            /*A*/ { NextAction("seal of corruption") },
-            /*C*/ {}
-        );
-    }
-    static ActionNode* seal_of_corruption([[maybe_unused]] PlayerbotAI* botAI)
-    {
-        return new ActionNode(
-            "seal of corruption",
-            /*P*/ {},
-            /*A*/ { NextAction("seal of vengeance") },
-            /*C*/ {}
-        );
-    }
-
-    static ActionNode* seal_of_vengeance([[maybe_unused]] PlayerbotAI* botAI)
-    {
-        return new ActionNode(
-            "seal of vengeance",
-            /*P*/ {},
-            /*A*/ { NextAction("seal of righteousness") },
-            /*C*/ {}
-        );
-    }
-
-    static ActionNode* hand_of_reckoning([[maybe_unused]] PlayerbotAI* botAI)
-    {
-        return new ActionNode(
-            "hand of reckoning",
-            /*P*/ {},
-            /*A*/ { NextAction("righteous defense") },
-            /*C*/ {}
-        );
-    }
-};
-
-TankPaladinStrategy::TankPaladinStrategy(PlayerbotAI* botAI) : GenericPaladinStrategy(botAI)
-{
-    actionNodeFactories.Add(new TankPaladinStrategyActionNodeFactory());
-}
+TankPaladinStrategy::TankPaladinStrategy(PlayerbotAI* botAI) : GenericPaladinStrategy(botAI) {}
 
 std::vector<NextAction> TankPaladinStrategy::getDefaultActions()
 {
     return {
-        NextAction("shield of righteousness", ACTION_DEFAULT + 0.6f),
-        NextAction("hammer of the righteous", ACTION_DEFAULT + 0.5f),
+        NextAction("consecration", ACTION_DEFAULT + 0.6f),
         NextAction("judgement of wisdom", ACTION_DEFAULT + 0.4f),
         NextAction("melee", ACTION_DEFAULT)
     };
@@ -85,7 +28,7 @@ void TankPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new TriggerNode(
             "seal",
             {
-                NextAction("seal of corruption", ACTION_HIGH)
+                NextAction("seal of righteousness", ACTION_HIGH)
             }
         )
     );
@@ -101,7 +44,7 @@ void TankPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new TriggerNode(
             "light aoe",
             {
-                NextAction("avenger's shield", ACTION_HIGH + 5)
+                NextAction("consecration", ACTION_HIGH + 5)
             }
         )
     );
@@ -109,8 +52,7 @@ void TankPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new TriggerNode(
             "medium aoe",
             {
-                NextAction("consecration", ACTION_HIGH + 7),
-                NextAction("avenger's shield", ACTION_HIGH + 6)
+                NextAction("consecration", ACTION_HIGH + 7)
             }
         )
     );
@@ -118,7 +60,7 @@ void TankPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new TriggerNode(
             "lose aggro",
             {
-                NextAction("hand of reckoning", ACTION_HIGH + 7)
+                NextAction("judgement", ACTION_HIGH + 7)
             }
         )
     );
@@ -127,14 +69,6 @@ void TankPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             "medium health",
             {
                 NextAction("holy shield", ACTION_HIGH + 4)
-            }
-        )
-    );
-    triggers.push_back(
-        new TriggerNode(
-            "avenging wrath",
-            {
-                NextAction("avenging wrath", ACTION_HIGH + 2)
             }
         )
     );
@@ -151,14 +85,6 @@ void TankPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             "righteous fury",
             {
                 NextAction("righteous fury", ACTION_HIGH + 8)
-            }
-        )
-    );
-    triggers.push_back(
-        new TriggerNode(
-            "medium group heal setting",
-            {
-                NextAction("divine sacrifice", ACTION_HIGH + 5)
             }
         )
     );

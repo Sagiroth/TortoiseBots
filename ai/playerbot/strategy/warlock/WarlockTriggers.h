@@ -38,25 +38,15 @@ namespace ai
 
     DEBUFF_TRIGGER_A(CorruptionTrigger, "corruption");
     DEBUFF_TRIGGER(SiphonLifeTrigger, "siphon life");
-    DEBUFF_TRIGGER(UnstableAfflictionTrigger, "unstable affliction");
 
     INTERRUPT_TRIGGER(DeathCoilInterruptTrigger, "death coil");
     INTERRUPT_HEALER_TRIGGER(DeathCoilInterruptTHealerTrigger, "death coil");
     SNARE_TRIGGER(DeathCoilSnareTrigger, "death coil");
-    SNARE_TRIGGER(ShadowfurySnareTrigger, "shadowfury");
-    INTERRUPT_TRIGGER(ShadowfuryInterruptTrigger, "shadowfury");
 
     class CorruptionOnAttackerTrigger : public DebuffOnAttackerTrigger
     {
     public:
         CorruptionOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "corruption") {}
-        bool IsActive() override;
-    };
-
-    class SeedOfCorruptionOnAttackerTrigger : public DebuffOnAttackerTrigger
-    {
-    public:
-        SeedOfCorruptionOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "seed of corruption") {}
         bool IsActive() override;
     };
 
@@ -122,24 +112,12 @@ namespace ai
         SiphonLifeOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "siphon life") {}
     };
 
-    class UnstableAfflictionOnAttackerTrigger : public DebuffOnAttackerTrigger
-    {
-    public:
-        UnstableAfflictionOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "unstable affliction") {}
-    };
-
     DEBUFF_TRIGGER(ImmolateTrigger, "immolate");
 
     class ShadowTranceTrigger : public HasAuraTrigger
     {
     public:
         ShadowTranceTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "shadow trance") {}
-    };
-
-    class BacklashTrigger : public HasAuraTrigger
-    {
-    public:
-        BacklashTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "backlash", 1, SPELL_AURA_ADD_PCT_MODIFIER) {}
     };
 
     class BanishTrigger : public HasCcTargetTrigger
@@ -273,12 +251,6 @@ namespace ai
     {
     public:
         NoFelhunterTrigger(PlayerbotAI* ai) : NoSpecificPetTrigger(ai, "no felhunter", 417) {}
-    };
-
-    class NoFelguardTrigger : public NoSpecificPetTrigger
-    {
-    public:
-        NoFelguardTrigger(PlayerbotAI* ai) : NoSpecificPetTrigger(ai, "no felguard", 17252) {}
     };
 
     class SpellLockTrigger : public InterruptSpellTrigger

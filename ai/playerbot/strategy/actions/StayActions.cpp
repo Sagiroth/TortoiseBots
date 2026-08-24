@@ -21,7 +21,6 @@ bool StayActionBase::Stay(Player* requester)
 	if (mm.GetCurrentMovementGeneratorType() == FLIGHT_MOTION_TYPE || bot->IsFlying())
 #endif
 	{
-		if (verbose) ai->TellError(requester, "I can not stay, I'm flying!");
 		return false;
 	}
 

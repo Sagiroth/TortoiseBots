@@ -102,14 +102,6 @@ namespace ai
                 return true;
             }
 
-#ifdef MANGOSBOT_TWO
-            if (cell.GridX() > 0 && cell.GridY() > 0 && !MMAP::MMapFactory::createOrGetMMapManager()->IsMMapTileLoaded(botPos.GetMapId(), 0, cell.GridX(), cell.GridY()) && !MMAP::MMapFactory::createOrGetMMapManager()->loadMap(sWorld.GetDataPath(), botPos.GetMapId(), 0, cell.GridX(), cell.GridY(), 0))
-            {
-                ai->TellDebug(ai->GetMaster(), "Stuck: In unloaded grid" + std::to_string(grid.x_coord) + "," + std::to_string(grid.y_coord), "debug stuck");
-
-                return true;
-            }
-#else
             if (cell.GridX() > 0 && cell.GridY() > 0 && !MMAP::MMapFactory::createOrGetMMapManager()->IsMMapIsLoaded(botPos.GetMapId(), cell.GridX(), cell.GridY())
                 && !MMAP::MMapFactory::createOrGetMMapManager()->loadMap(sWorld.GetDataPath(), botPos.GetMapId(), cell.GridX(), cell.GridY()))
             {
@@ -117,7 +109,6 @@ namespace ai
 
                 return true;
             }
-#endif
 
             uint32 timeSinceLastMove = AI_VALUE2(uint32, "time since last change", "current position");
 

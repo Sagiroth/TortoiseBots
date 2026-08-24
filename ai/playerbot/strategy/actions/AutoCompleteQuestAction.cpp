@@ -10,18 +10,10 @@ bool AutoCompleteQuestAction::Execute(Event& event)
     // Static list of quest IDs to auto-complete
     static const std::vector<uint32> autoCompleteQuests = {
         0,     //Dummy quest : please remove when a classic quest is found that needs to be skipped.
-#ifdef MANGOSBOT_TWO
-        25229, // a-few-good-gnomes: Bot uses motivatron but it does nothing in game.
-        12641, // Death Comes From On High: Requires complex vehicle control.
-#endif
     };
 
     static const std::vector<std::pair<uint32, uint8>> autoCompleteObjectives = {
         {0,     0}
-#ifdef MANGOSBOT_TWO
-        ,
-        //{12779, 1}  // An End To All Things (second objective needs vehicle riding).
-#endif
     };
 
     bool completedQuest = false;
@@ -106,12 +98,6 @@ bool AutoCompleteQuestAction::Execute(Event& event)
         if (!isAutoCompleteQuest)
             continue;
 
-#ifdef MANGOSBOT_TWO
-        // player kills
-        if (pQuest->HasSpecialFlag(QUEST_SPECIAL_FLAGS_PLAYER_KILL))
-            if (uint32 reqPlayers = pQuest->GetPlayersSlain())
-                bot->KilledPlayerCreditForQuest(reqPlayers, pQuest);
-#endif
 
         // If the quest requires reputation to complete
         if (uint32 repFaction = pQuest->GetRepObjectiveFaction())
@@ -119,11 +105,7 @@ bool AutoCompleteQuestAction::Execute(Event& event)
             uint32 repValue = pQuest->GetRepObjectiveValue();
             uint32 curRep = bot->GetReputationMgr().GetReputation(repFaction);
             if (curRep < repValue)
-#ifndef MANGOSBOT_ONE
                 if (FactionEntry const* factionEntry = sFactionStore.LookupEntry(repFaction))
-#else
-                if (FactionEntry const* factionEntry = sFactionStore.LookupEntry<FactionEntry>(repFaction))
-#endif
                     bot->GetReputationMgr().SetReputation(factionEntry, repValue);
         }
 

@@ -131,15 +131,7 @@ void ChatReplyAction::GetAIChatPlaceholders(std::map<std::string, std::string>& 
     else
         placeholders["<sender name>"];
 
-#ifdef MANGOSBOT_ZERO
     placeholders["<expansion name>"] = "Vanilla";
-#endif
-#ifdef MANGOSBOT_ONE
-    placeholders["<expansion name>"] = "The Burning Crusade";
-#endif
-#ifdef MANGOSBOT_TWO
-    placeholders["<expansion name>"] = "Wrath of the Lich King";
-#endif
     return;
 }
 

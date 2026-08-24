@@ -36,34 +36,6 @@ namespace ai
         EviscerateTrigger(PlayerbotAI* ai, uint8 comboPoints = 4) : ComboPointsAvailableTrigger(ai, comboPoints) {}
     };
 
-    class CloakOfShadowsTrigger : public NeedCureTrigger
-    {
-    public:
-        CloakOfShadowsTrigger(PlayerbotAI* ai) : NeedCureTrigger(ai, "cloak of shadows", DISPEL_MAGIC) {}
-    };
-
-    /*
-    class TricksOfTheTradeOnTankTrigger : public BuffOnTankTrigger
-    {
-    public:
-        TricksOfTheTradeOnTankTrigger(PlayerbotAI* ai) : BuffOnTankTrigger(ai, "tricks of the trade", 1) {}
-
-        virtual bool IsActive() override
-        {
-            return BuffOnTankTrigger::IsActive() &&
-                GetTarget() &&
-                !ai->HasAura("tricks of the trade", GetTarget()) &&
-#ifdef MANGOS
-                (ai->GetBot()->IsInSameGroupWith((Player*)GetTarget()) || ai->GetBot()->IsInSameRaidWith((Player*)GetTarget())) &&
-#endif
-#ifdef CMANGOS
-                (ai->GetBot()->IsInGroup((Player*)GetTarget(), true) || ai->GetBot()->IsInGroup((Player*)GetTarget()))
-#endif
-                ;
-        }
-    };
-    */
-
     class ExposeArmorTrigger : public NoDebuffAndComboPointsAvailableTrigger
     {
     public:
@@ -162,12 +134,6 @@ namespace ai
                 distance += 20;
             }
 
-#ifndef MANGOSBOT_ZERO
-            if (bot->InArena())
-            {
-                distance += 20;
-            }
-#endif
 
             return (target && sServerFacade.getDistance2d(bot, target) < distance);
         }
@@ -302,9 +268,4 @@ namespace ai
         ApplyWoundPoisonTrigger(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonTrigger(ai, inMainHand, { 703, 704, 705, 706, 2644, 3772, 3773 }, "apply wound poison main hand") {}
     };
 
-    class ApplyAnestheticPoisonTrigger : public ApplyPoisonTrigger
-    {
-    public:
-        ApplyAnestheticPoisonTrigger(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonTrigger(ai, inMainHand, { 2640, 3774 }, "apply anesthetic poison main hand") {}
-    };
 }

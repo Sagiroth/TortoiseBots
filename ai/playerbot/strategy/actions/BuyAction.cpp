@@ -46,9 +46,6 @@ bool BuyAction::Execute(Event& event)
 
             VendorItemData const* tItems = pCreature->GetVendorItems();
             VendorItemData const* vItems = {};
-#ifndef MANGOSBOT_ZERO
-            vItems = pCreature->GetVendorTemplateItems();
-#endif
             if (!tItems && !vItems)
                 continue;
 
@@ -83,15 +80,6 @@ bool BuyAction::Execute(Event& event)
 
                 pmo.reset();
 
-#ifndef MANGOSBOT_ZERO
-                const ItemExtendedCostEntry* iece = nullptr;
-                if (tItem->ExtendedCost)
-                {
-                    iece = sItemExtendedCostStore.LookupEntry(tItem->ExtendedCost);
-                    if (!iece)
-                        continue;
-                }
-#endif
 
                 for (uint32 n = 0; n < 10; ++n) //Buy 10 times or until no longer usefull/possible
                 {
@@ -123,32 +111,6 @@ bool BuyAction::Execute(Event& event)
                     if (price > money)
                         break;
 
-#ifndef MANGOSBOT_ZERO
-                    // ExtendedCost check
-                    if (iece)
-                    {
-                        if (iece->reqhonorpoints && bot->GetHonorPoints() < iece->reqhonorpoints)
-                            break;
-                        if (iece->reqarenapoints && bot->GetArenaPoints() < iece->reqarenapoints)
-                            break;
-
-                        bool itemsOk = true;
-                        for (uint8 k = 0; k < MAX_EXTENDED_COST_ITEMS; ++k)
-                        {
-                            if (iece->reqitem[k] && !bot->HasItemCount(iece->reqitem[k], iece->reqitemcount[k]))
-                            {
-                                itemsOk = false;
-                                break;
-                            }
-                        }
-                        if (!itemsOk)
-                            break;
-#ifdef MANGOSBOT_TWO
-                        if (iece->reqpersonalarenarating && bot->GetMaxPersonalArenaRatingRequirement(iece->reqarenaslot) < iece->reqpersonalarenarating)
-                            break;
-#endif
-                    }
-#endif
 
                     if (usage == ItemUsage::ITEM_USAGE_USE && ItemUsageValue::CurrentStacks(ai, proto) >= 1)
                         break;
@@ -288,11 +250,7 @@ bool BuyAction::BuyItem(Player* requester, VendorItemData const* tItems, ObjectG
                 bot->SetMoney(10000000);
             }
 
-#ifdef MANGOSBOT_TWO
-            bot->BuyItemFromVendorSlot(vendorguid, slot, itemId, 1, NULL_BAG, NULL_SLOT);
-#else
             bot->BuyItemFromVendor(vendorguid, itemId, 1, NULL_BAG, NULL_SLOT);
-#endif
             if (ai->HasCheat(BotCheatMask::gold))
             {
                 bot->SetMoney(botMoney);

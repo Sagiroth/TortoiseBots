@@ -1445,3 +1445,16 @@ of PlayerBots implementations and Turtle-specific knowledge."
 ```
 
 That difference should guide every architectural decision.
+
+## Current implementation note — 2026-08-24
+
+The active cleanup branch is now a Vanilla/Turtle 1.18.1 product slice. The
+module CMake graph is positive and explicit: nine Vanilla classes, generic
+combat/group/travel behavior, Vanilla raids, WSG/AB/AV tactics, and the
+Tortoise custom spell paths confirmed in the target core. Core-owned
+LFG/meeting-stone, transport/taxi, and battleground queue concepts remain
+available; the module does not recreate the donor automatic dungeon queue.
+Expansion-only donor families and obsolete manager/login/test compatibility
+trees are absent from the physical source graph. `RandomBotFacade` is a narrow
+behavior adapter; `BotManager` remains the owner of module bot records and
+headless lifecycle.

@@ -61,13 +61,8 @@ void WarrirorAoeStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     triggers.push_back(new TriggerNode(
         "light aoe", { NextAction("sweeping strikes", ACTION_HIGH + 7),
-                                       NextAction("bladestorm", ACTION_HIGH + 6),
                                        NextAction("thunder clap", ACTION_HIGH + 5),
-                                       NextAction("shockwave", ACTION_HIGH + 4),
                                        NextAction("demoralizing shout without life time check", ACTION_HIGH + 1),
                                        NextAction("cleave", ACTION_HIGH) }));
-    triggers.push_back(
-        new TriggerNode("shockwave on snare target",
-                        { NextAction("shockwave on snare target", ACTION_HIGH + 5) }));
 
 }

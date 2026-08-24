@@ -157,11 +157,7 @@ namespace ai
         virtual bool Calculate() override
         {
             uint32 dialogStatus = AI_VALUE2(uint32, "dialog status", getQualifier());
-#ifndef MANGOSBOT_TWO
             return dialogStatus == DIALOG_STATUS_CHAT;
-#else
-            return dialogStatus == DIALOG_STATUS_LOW_LEVEL_AVAILABLE;
-#endif
         };
     };
 
@@ -182,11 +178,7 @@ namespace ai
         virtual bool Calculate() override
         {
             uint32 dialogStatus = AI_VALUE2(uint32, "dialog status", getQualifier());
-#ifdef MANGOSBOT_ZERO
             return dialogStatus == DIALOG_STATUS_REWARD2;
-#else
-            return dialogStatus == DIALOG_STATUS_REWARD2 || dialogStatus == DIALOG_STATUS_REWARD;
-#endif
         };
     };
 

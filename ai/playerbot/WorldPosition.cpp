@@ -12,11 +12,7 @@
 
 #include "Maps/MoveMap.h"
 
-#ifdef MANGOSBOT_TWO
 #include "vmap/VMapFactory.h"
-#else
-#include "vmap/VMapFactory.h"
-#endif
 
 #include <numeric>
 #include <iomanip>
@@ -59,9 +55,6 @@ void WorldPosition::set(const ObjectGuid& guid, const uint32 mapId, const uint32
         break;
     }
     case HIGHGUID_UNIT:
-#ifdef MANGOSBOT_TWO
-    case HIGHGUID_VEHICLE:
-#endif
     {
         setMapId(mapId);
         setX(1); //Pretend to know so map can be loaded.
@@ -341,40 +334,6 @@ bool WorldPosition::IsInStaticLineOfSight(WorldPosition pos, float heightMod) co
     float dstZ = pos.z + heightMod;
 
     return VMAP::VMapFactory::createOrGetVMapManager()->isInLineOfSight(mapId, srcX, srcY, srcZ, dstX, dstY, dstZ);
-}
-
-bool WorldPosition::canFly() const
-{
-#ifdef MANGOSBOT_ZERO
-    return false;
-#endif
-    if (!getTerrain())
-        return false;
-
-    uint32 zoneid, areaid;
-    getTerrain()->GetZoneAndAreaId(zoneid, areaid, getX(), getY(), getZ());
-
-#ifdef MANGOSBOT_ONE
-    uint32 v_map = GetVirtualMapForMapAndZone(getMapId(), zoneid);
-    MapEntry const* mapEntry = sMapStore.LookupEntry(v_map);
-    if (!mapEntry || mapEntry->addon < 1 || !mapEntry->IsContinent())
-        return false;
-#endif
-#ifdef MANGOSBOT_TWO
-    // Disallow mounting in wintergrasp when battle is in progress
-    if (OutdoorPvP* outdoorPvP = sOutdoorPvPMgr.GetScript(zoneid))
-    {
-        if (outdoorPvP->IsBattlefield())
-            return ((Battlefield*)outdoorPvP)->GetBattlefieldStatus() != BF_STATUS_IN_PROGRESS;
-    }
-
-    // don't allow flying in Dalaran restricted areas
-    // (no other zones currently has areas with AREA_FLAG_CANNOT_FLY)
-    if (AreaTableEntry const* atEntry = GetAreaEntryByAreaID(areaid))
-        return (!(atEntry->flags & AREA_FLAG_CANNOT_FLY));
-#endif
-
-    return true;
 }
 
 float WorldPosition::projectOnSegment(const WorldPosition& p1, const WorldPosition& p2) const
@@ -870,11 +829,7 @@ bool WorldPosition::isVmapLoaded(uint32 /*mapId*/, int /*x*/, int /*y*/)
 
 bool WorldPosition::isMmapLoaded(uint32 mapId, uint32 instanceId, int x, int y)
 {
-#ifndef MANGOSBOT_TWO
     return MMAP::MMapFactory::createOrGetMMapManager()->IsMMapIsLoaded(mapId, x, y);
-#else
-    return MMAP::MMapFactory::createOrGetMMapManager()->IsMMapTileLoaded(mapId, instanceId, x, y);
-#endif
 }
 
 bool WorldPosition::loadMapAndVMap(uint32 mapId, uint32 instanceId, int x, int y)
@@ -882,7 +837,7 @@ bool WorldPosition::loadMapAndVMap(uint32 mapId, uint32 instanceId, int x, int y
     std::string logName = "load_map_grid.csv";
 
     bool hasMmap = false;
-    if (mapId == 0 || mapId == 1 || mapId == 530 || mapId == 571)
+    if (mapId == 0 || mapId == 1)
         hasMmap = isMmapLoaded(mapId, 0, x, y);
     else
         hasMmap = isMmapLoaded(mapId, instanceId, x, y);
@@ -897,30 +852,13 @@ bool WorldPosition::loadMapAndVMap(uint32 mapId, uint32 instanceId, int x, int y
 
     if (!hasMmap)
     {
-#ifndef MANGOSBOT_TWO
-        if (mapId == 0 || mapId == 1 || mapId == 530 || mapId == 571)
+        if (mapId == 0 || mapId == 1)
             isLoaded = MMAP::MMapFactory::createOrGetMMapManager()->loadMap(sWorld.GetDataPath(), mapId, x, y);
         else
         {
             MMAP::MMapFactory::createOrGetMMapManager()->loadMapInstance(sWorld.GetDataPath(), mapId, instanceId);
             isLoaded = MMAP::MMapFactory::createOrGetMMapManager()->loadMap(sWorld.GetDataPath(), mapId, x, y);
         }
-#else
-        if (mapId == 0 || mapId == 1 || mapId == 530 || mapId == 571)
-        {
-            isLoaded = MMAP::MMapFactory::createOrGetMMapManager()->loadMap(sWorld.GetDataPath(), mapId, 0, x, y, 0);
-        }
-        else
-        {
-            bool loadedMap = MMAP::MMapFactory::createOrGetMMapManager()->GetNavMesh(mapId, instanceId);
-
-            if (!loadedMap)
-                loadedMap = MMAP::MMapFactory::createOrGetMMapManager()->loadMapInstance(sWorld.GetDataPath(), mapId, instanceId);
-
-            if (loadedMap)
-                isLoaded = MMAP::MMapFactory::createOrGetMMapManager()->loadMap(sWorld.GetDataPath(), mapId, instanceId, x, y, 0);
-        }
-#endif
 
 
         //if (!isLoaded)
@@ -954,10 +892,8 @@ void WorldPosition::loadMapAndVMaps(const WorldPosition& secondPos, uint32 insta
 
 void WorldPosition::unloadMapAndVMaps(uint32 mapId)
 {
-#ifndef MANGOSBOT_TWO
     //TerrainInfoAccess* terrain = reinterpret_cast<TerrainInfoAccess*>(const_cast<TerrainInfo*>(sTerrainMgr.LoadTerrain(mapId)));
     //terrain->UnLoadUnused();
-#endif
 }
 
 bool WorldPosition::loadVMap(uint32 mapId, int x, int y)
@@ -1195,11 +1131,7 @@ bool WorldPosition::ClosestCorrectPoint(float maxRange, float maxHeight, uint32 
 
 bool WorldPosition::GetReachableRandomPointOnGround(const Player* bot, const float radius, const bool randomRange)
 {
-#ifndef MANGOSBOT_TWO
     return getMap(bot ? bot->GetInstanceId() : getFirstInstanceId())->GetReachableRandomPointOnGround(x, y, z, radius, randomRange);
-#else
-    return getMap(bot ? bot->GetInstanceId() : getFirstInstanceId())->GetReachableRandomPointOnGround(bot->GetPhaseMask(), x, y, z, radius, randomRange);
-#endif
 }
 
 bool WorldPosition::isUnderground() const

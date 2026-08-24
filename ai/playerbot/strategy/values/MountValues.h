@@ -16,10 +16,9 @@ namespace ai
         bool IsItem() { return proto; }
         const ItemPrototype* GetItemProto() { return proto; }
         uint32 GetSpellId() { return spellId; }
-        uint32 GetSpeed(bool canFly) { return GetSpeed(spellId, canFly); }
-        static uint32 IsMountSpell(uint32 spellId) { return GetSpeed(spellId, false) || GetSpeed(spellId, true); }
-        static uint32 GetSpeed(uint32 spellId, bool canFly);
-        static uint32 GetSpeed(uint32 spellId) { return std::max(GetSpeed(spellId, false), GetSpeed(spellId, true)); };
+        uint32 GetSpeed() { return GetSpeed(spellId); }
+        static uint32 IsMountSpell(uint32 spellId) { return GetSpeed(spellId); }
+        static uint32 GetSpeed(uint32 spellId);
         static uint32 GetMountSpell(uint32 itemId);
         bool IsValidLocation(Player* bot);
 

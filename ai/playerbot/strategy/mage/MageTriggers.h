@@ -59,13 +59,6 @@ namespace ai
         virtual bool IsActive() override;
     };
 
-    class MoltenArmorTrigger : public BuffTrigger
-    {
-    public:
-        MoltenArmorTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "molten armor", 5) {}
-        virtual bool IsActive() override;
-    };
-
     class FireballTrigger : public DebuffTrigger
     {
     public:
@@ -76,18 +69,6 @@ namespace ai
     {
     public:
         PyroblastTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "pyroblast", 10) {}
-    };
-
-    class MissileBarrageTrigger : public HasAuraTrigger
-    {
-    public:
-        MissileBarrageTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "missile barrage") {}
-    };
-
-    class ArcaneBlastTrigger : public BuffTrigger
-    {
-    public:
-        ArcaneBlastTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "arcane blast") {}
     };
 
     class CounterspellInterruptSpellTrigger : public InterruptSpellTrigger
@@ -101,14 +82,6 @@ namespace ai
     public:
         CombustionTrigger(PlayerbotAI* ai) : BoostTrigger(ai, "combustion") {}
     };
-
-    class IcyVeinsTrigger : public BoostTrigger
-    {
-    public:
-        IcyVeinsTrigger(PlayerbotAI* ai) : BoostTrigger(ai, "icy veins") {}
-    };
-
-    BOOST_TRIGGER(WaterElementalBoostTrigger, "summon water elemental");
 
     class PolymorphTrigger : public HasCcTargetTrigger
     {
@@ -126,12 +99,6 @@ namespace ai
     {
     public:
         PartyMemberRemoveCurseTrigger(PlayerbotAI* ai) : PartyMemberNeedCureTrigger(ai, "remove curse", DISPEL_CURSE) {}
-    };
-
-    class SpellstealTrigger : public TargetAuraDispelTrigger
-    {
-    public:
-        SpellstealTrigger(PlayerbotAI* ai) : TargetAuraDispelTrigger(ai, "spellsteal", DISPEL_MAGIC) {}
     };
 
     class CounterspellEnemyHealerTrigger : public InterruptEnemyHealerTrigger
@@ -179,19 +146,7 @@ namespace ai
         }
     };
 
-    class IceLanceTrigger : public Trigger
-    {
-    public:
-        IceLanceTrigger(PlayerbotAI* ai) : Trigger(ai, "ice lance") {}
-        bool IsActive() override;
-        std::string GetTargetName() override { return "current target"; }
-    };
-
-    BUFF_TRIGGER(MirrorImageTrigger, "mirror image");
-    BUFF_TRIGGER_A(HotStreakTrigger, "hot streak");
-    BUFF_TRIGGER_A(FireballOrFrostfireBoltFreeTrigger, "fireball!");
     DEBUFF_TRIGGER_A(NoImprovedScorchDebuffTrigger, "improved scorch");
-    HAS_AURA_TRIGGER(FingersOfFrostTrigger, "fingers of frost");
 
     class NoFireVulnerabilityTrigger : public Trigger
     {
@@ -234,12 +189,6 @@ namespace ai
         virtual std::string GetTargetName() override { return "current target"; }
     };
 
-    class LivingBombTrigger : public DebuffTrigger
-    {
-    public:
-        LivingBombTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "living bomb") {}
-    };
-
     class ColdSnapTrigger : public Trigger
     {
     public:
@@ -247,8 +196,7 @@ namespace ai
 
         virtual bool IsActive() override
         {
-            return !bot->IsSpellReady(12472)    //icy veins on cooldown
-                && bot->IsSpellReady(11958);    //cold snap not on cooldown
+            return bot->IsSpellReady(11958);    //cold snap not on cooldown
         }
     };
 

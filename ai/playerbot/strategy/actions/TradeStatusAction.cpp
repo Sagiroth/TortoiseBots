@@ -5,7 +5,7 @@
 
 #include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/PlayerbotAIConfig.h"
-#include "playerbot/RandomPlayerbotMgr.h"
+#include "playerbot/RandomBotFacade.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/CraftValues.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
@@ -50,7 +50,7 @@ bool TradeStatusAction::Execute(Event& event)
         uint32 status = 0;
         p << status;
 
-        uint32 discount = sRandomPlayerbotMgr.GetTradeDiscount(bot, trader);
+        uint32 discount = sRandomBotFacade.GetTradeDiscount(bot, trader);
         if (CheckTrade())
         {
             int32 botMoney = CalculateCost(bot, true);
@@ -71,7 +71,7 @@ bool TradeStatusAction::Execute(Event& event)
 
             if (bot->GetTradeData())
             {
-                sRandomPlayerbotMgr.SetTradeDiscount(bot, trader, discount);
+                sRandomBotFacade.SetTradeDiscount(bot, trader, discount);
                 return false;
             }
 
@@ -130,9 +130,9 @@ void TradeStatusAction::BeginTrade()
     ai->TellPlayer(trader, "=== Inventory ===");
     ai->InventoryTellItems(trader, visitor.items, visitor.soulbound);
 
-    if (sRandomPlayerbotMgr.IsRandomBot(bot))
+    if (sRandomBotFacade.IsRandomBot(bot))
     {
-        uint32 discount = sRandomPlayerbotMgr.GetTradeDiscount(bot, ai->GetMaster());
+        uint32 discount = sRandomBotFacade.GetTradeDiscount(bot, ai->GetMaster());
         if (discount)
         {
             std::ostringstream out; out << "Discount up to: " << chat->formatMoney(discount);
@@ -189,7 +189,7 @@ bool TradeStatusAction::CheckTrade()
         return isGettingItem;
     }
 
-    if (!sRandomPlayerbotMgr.IsRandomBot(bot))
+    if (!sRandomBotFacade.IsRandomBot(bot))
     {
         int32 botItemsMoney = CalculateCost(bot, true);
         int32 botMoney = bot->GetTradeData()->GetMoney() + botItemsMoney;
@@ -244,7 +244,7 @@ bool TradeStatusAction::CheckTrade()
         return false;
     }
 
-    int32 discount = (int32)sRandomPlayerbotMgr.GetTradeDiscount(bot, trader);
+    int32 discount = (int32)sRandomBotFacade.GetTradeDiscount(bot, trader);
     int32 delta = playerMoney - botMoney;
     int32 moneyDelta = (int32)trader->GetTradeData()->GetMoney() - (int32)bot->GetTradeData()->GetMoney();
     bool success = false;
@@ -268,7 +268,7 @@ bool TradeStatusAction::CheckTrade()
 
     if (success)
     {
-        sRandomPlayerbotMgr.AddTradeDiscount(bot, trader, delta);
+        sRandomBotFacade.AddTradeDiscount(bot, trader, delta);
         switch (urand(0, 4)) {
         case 0:
             ai->TellPlayer(trader, "A pleasure doing business with you");

@@ -72,7 +72,7 @@ float EstimatedGroupDpsValue::Calculate()
         float basicGs = GetBasicGs(player->GetLevel());
         uint32 mixedGearScore = GET_PLAYERBOT_AI(player)->GetEquipGearScore(player, false, false);
         float gs_modifier = (float)mixedGearScore / basicGs;
-        // bonus for wotlk epic gear
+        // Scale the estimate for unusually strong gear.
         if (mixedGearScore >= 300)
         {
             gs_modifier *= 1 + (mixedGearScore - 300) * 0.01;

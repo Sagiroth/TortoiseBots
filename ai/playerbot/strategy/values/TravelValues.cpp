@@ -104,7 +104,7 @@ EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
         {
             purpose |= (uint32)TravelDestinationPurpose::Grind;
         }
-        else  //Added these specifically because dk start mobs drop no money but have sellable loot.
+        else
         {
             switch (entry)
             {

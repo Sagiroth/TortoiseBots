@@ -228,8 +228,6 @@ namespace ai
                 creators["cat form"] = [](PlayerbotAI* ai) { return new CatFormTrigger(ai); };
                 creators["tree form"] = [](PlayerbotAI* ai) { return new TreeFormTrigger(ai); };
                 creators["moonkin form"] = [](PlayerbotAI* ai) { return new MoonkinFormTrigger(ai); };
-                creators["eclipse (solar)"] = [](PlayerbotAI* ai) { return new EclipseSolarTrigger(ai); };
-                creators["eclipse (lunar)"] = [](PlayerbotAI* ai) { return new EclipseLunarTrigger(ai); };
                 creators["arcane eclipse"] = [](PlayerbotAI* ai) { return new HasArcaneEclipseTrigger(ai); };
                 creators["nature eclipse"] = [](PlayerbotAI* ai) { return new HasNatureEclipseTrigger(ai); };
                 creators["bash on enemy healer"] = [](PlayerbotAI* ai) { return new BashInterruptEnemyHealerSpellTrigger(ai); };
@@ -246,7 +244,6 @@ namespace ai
                 creators["powershift"] = [](PlayerbotAI* ai) { return new PowershiftTrigger(ai); };
                 creators["rebirth"] = [](PlayerbotAI* ai) { return new RebirthTrigger(ai); };
                 creators["innervate"] = [](PlayerbotAI* ai) { return new InnervateTrigger(ai); };
-                creators["lifebloom"] = [](PlayerbotAI* ai) { return new LifebloomTankTrigger(ai); };
                 creators["clearcasting"] = [](PlayerbotAI* ai) { return new ClearcastingTrigger(ai); };
             }
         };
@@ -257,7 +254,6 @@ namespace ai
             AiObjectContextInternal()
             {
                 creators["feral charge - bear"] = [](PlayerbotAI* ai) { return new CastFeralChargeBearAction(ai); };
-                creators["feral charge - cat"] = [](PlayerbotAI* ai) { return new CastFeralChargeCatAction(ai); };
                 creators["swipe (bear)"] = [](PlayerbotAI* ai) { return new CastSwipeBearAction(ai); };
                 creators["faerie fire (feral)"] = [](PlayerbotAI* ai) { return new CastFaerieFireFeralAction(ai); };
                 creators["faerie fire"] = [](PlayerbotAI* ai) { return new CastFaerieFireAction(ai); };
@@ -270,6 +266,7 @@ namespace ai
                 creators["aquatic form"] = [](PlayerbotAI* ai) { return new CastAquaticFormAction(ai); };
                 creators["caster form"] = [](PlayerbotAI* ai) { return new CastCasterFormAction(ai); };
                 creators["mangle (bear)"] = [](PlayerbotAI* ai) { return new CastMangleBearAction(ai); };
+                creators["mangle (cat)"] = [](PlayerbotAI* ai) { return new CastMangleCatAction(ai); };
                 creators["maul"] = [](PlayerbotAI* ai) { return new CastMaulAction(ai); };
                 creators["bash"] = [](PlayerbotAI* ai) { return new CastBashAction(ai); };
                 creators["swipe"] = [](PlayerbotAI* ai) { return new CastSwipeAction(ai); };
@@ -282,13 +279,11 @@ namespace ai
                 creators["hibernate"] = [](PlayerbotAI* ai) { return new CastHibernateAction(ai); };
                 creators["hibernate on cc"] = [](PlayerbotAI* ai) { return new CastHibernateCcAction(ai); };
                 creators["wrath"] = [](PlayerbotAI* ai) { return new CastWrathAction(ai); };
-                creators["starfall"] = [](PlayerbotAI* ai) { return new CastStarfallAction(ai); };
                 creators["insect swarm"] = [](PlayerbotAI* ai) { return new CastInsectSwarmAction(ai); };
                 creators["moonfire"] = [](PlayerbotAI* ai) { return new CastMoonfireAction(ai); };
                 creators["starfire"] = [](PlayerbotAI* ai) { return new CastStarfireAction(ai); };
                 creators["nature's grasp"] = [](PlayerbotAI* ai) { return new CastNaturesGraspAction(ai); };
                 creators["claw"] = [](PlayerbotAI* ai) { return new CastClawAction(ai); };
-                creators["mangle (cat)"] = [](PlayerbotAI* ai) { return new CastMangleCatAction(ai); };
                 creators["swipe (cat)"] = [](PlayerbotAI* ai) { return new CastSwipeCatAction(ai); };
                 creators["rake"] = [](PlayerbotAI* ai) { return new CastRakeAction(ai); };
                 creators["ferocious bite"] = [](PlayerbotAI* ai) { return new CastFerociousBiteAction(ai); };
@@ -337,7 +332,6 @@ namespace ai
                 creators["update pve strats"] = [](PlayerbotAI* ai) { return new UpdateDruidPveStrategiesAction(ai); };
                 creators["update pvp strats"] = [](PlayerbotAI* ai) { return new UpdateDruidPvpStrategiesAction(ai); };
                 creators["update raid strats"] = [](PlayerbotAI* ai) { return new UpdateDruidRaidStrategiesAction(ai); };
-                creators["lifebloom"] = [](PlayerbotAI* ai) { return new CastLifebloomAction(ai); };
             }
         };
     };

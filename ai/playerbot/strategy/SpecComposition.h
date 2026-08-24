@@ -16,7 +16,7 @@
 //
 // Without these macros, every spec file repeats 4 trivial methods × 3 spec
 // variants × N mixin families (base / Aoe / Buff / Boost / Cc / Cure) ×
-// 3 expansion ifdef blocks (MANGOSBOT_ZERO/ONE/TWO) — yielding ~600+ lines
+// 3 version-specific ifdef blocks — yielding ~600+ lines
 // of identical pass-through boilerplate per file.
 //
 // With the macro: one line per spec.

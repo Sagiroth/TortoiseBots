@@ -66,7 +66,20 @@ Reason: complete coherent Vanilla/Turtle families without reintroducing donor ma
 
 Local validation: ON/static `mangosd` build passed after the cache, config, SQL-install, installed-module-path, economy, recovery, packet, command, and class-context changes; OFF/disabled `mangosd` build passed and the ON/static configuration was restored. Docker runtime with AI enabled loaded the module, attached real Warrior/Mage/Priest/Hunter contexts, passed packet-bridge group invite/accept and cleanup journeys, and retained the earlier save/logout/relog spike evidence. The preserved DB was not reset; only additive missing schema migrations and disposable `TBPLAY` class fixtures were added. Random pool startup correctly reported zero candidates because no `RNDBOT*` accounts exist in the fixture.
 
-Known scope gates: expansion-only DK/glyph/vehicle/LFG/Arena/Karazhan paths remain filtered; the donor `PetsAction` guardian-control wrapper and advanced WotLK fishing wrapper remain excluded because native `SetPetAction`, `FishAction`, travel, loot, and profession paths provide the applicable Vanilla behavior. Account/character auto-creation remains the intentional random-bot product gap; existing random characters, bounded login/logout, native TravelMgr relocation, AI strategy rotation/recovery, gear refresh, and AH/economy pricing are supported. Core `BattleGroundMgr` remains authoritative for Vanilla battleground entries; the mature value compatibility view reads the same native `battlemaster_entry` table once at AI startup and does not own battleground state.
+Known scope gates: the physical tree and positive CMake graph contain no DK,
+glyph, vehicle, Arena, Karazhan, or expansion-only donor families. Native
+core LFG/meeting-stone behavior remains available; the module retains only
+applicable group-role helpers and does not recreate the donor automatic queue.
+The donor `PetsAction` guardian-control wrapper and post-Vanilla fishing
+wrapper remain excluded because native pet, fishing, travel, loot, and
+profession paths provide the applicable Vanilla/Turtle behavior.
+Account/character auto-creation remains the intentional random-bot product
+gap; existing random characters, bounded login/logout, native TravelMgr
+relocation, AI strategy rotation/recovery, gear refresh, and AH/economy pricing
+are supported. Core `BattleGroundMgr` remains authoritative for Vanilla and
+Turtle battleground entries; the mature value compatibility view reads the
+same native `battlemaster_entry` table once at AI startup and does not own
+battleground state.
 
 ## Packet/config/static-isolation and playtest gate — 2026-08-24
 
@@ -86,7 +99,11 @@ not final acceptance evidence.
 
 Migration cleanup: removed `MinimalPlayerbotAI*`, `VerticalSlice*`, `cmangos-compat-shim.h.orig`, and all tracked `*.shyalya.bak` copies after retaining donor provenance above. The obsolete `BotController` has also been removed; `PlayerbotAI` is the sole gameplay update owner.
 
-Intentional gaps only: random account/character auto-creation, advanced WotLK fishing, and expansion-only source families remain outside the Vanilla/Turtle product surface. A real human-client journey was not claimed from the automated server-side packet fixture; the preserved runtime is left AI-enabled and ready for manual client playtesting.
+Intentional gaps only: random account/character auto-creation and the
+post-Vanilla fishing wrapper remain outside the Vanilla/Turtle product
+surface. A real human-client journey was not claimed from the automated
+server-side packet fixture; the preserved runtime is left AI-enabled and
+ready for manual client playtesting.
 
 ## Final pre-playtest correctness pass — 2026-08-24
 
@@ -120,10 +137,10 @@ fixture intentionally does not synthesize `CanPacketReceive`; a real client
 incoming event remains the manual playtest gate. No client login was automated
 in this pass at the user's request.
 
-Remaining intentional gaps are unchanged: random account/character creation,
-advanced WotLK fishing, and expansion-only source families. The next action is
-manual playtesting of the real Network client path, including incoming packet
-delivery and reconnect/reclaim behavior.
+Remaining intentional gaps are unchanged: random account/character creation
+and the post-Vanilla fishing wrapper. The next action is manual playtesting of
+the real Network client path, including incoming packet delivery and
+reconnect/reclaim behavior.
 
 Core reproducibility: check out `playerbots-integration-gh` at
 `9487c5150a6553c665fafc1f4568669b8b00f011` (parent
@@ -191,3 +208,61 @@ terminated on a malformed party packet before cleanup. The follow-up rebuild
 containing the packet safety catch was intentionally stopped at the user's
 request, so a fresh post-catch AI runtime pass remains unclaimed. No database
 or Docker volume was reset.
+
+## Vanilla/Turtle source cleanup — 2026-08-24
+
+Feature: subtractive product cleanup from the multi-expansion donor tree.
+
+Source repository: TortoiseBots `cleanup/vanilla-turtle` working branch.
+
+Source commit: `322120ef1fe9b848cfe520ad58f6ff698fa801e9` (the cleanup commit;
+this follow-up metadata commit records its exact SHA).
+
+Source files: `TortoiseBots.cmake`, `ai/playerbot/*`, the nine class strategy
+folders, `runtime/*`, `conf/*`, `data/sql/*`, `README.md`, and current module
+documentation.
+
+Copied / ported / independently reimplemented: no new gameplay was imported.
+The cleanup removed physical Death Knight, donor manager/login/command-server,
+test, glyph, rune-forging, vehicle, Arena, Karazhan, automatic donor-LFG,
+advanced-fishing, and duplicate food/inventory families. It also removed
+later-expansion registrations and class actions while retaining core-backed
+Tortoise custom spells (Druid Eclipse/Tree of Life/Mangle, Shaman Bloodlust/
+Earth Shield/Water Shield, Warrior Intervene), all nine Vanilla classes,
+Vanilla raids, WSG/AB/AV tactics, native transport/taxi travel, and native
+core LFG/meeting-stone/group-role concepts. The former
+`RandomPlayerbotMgr` name was replaced by the narrow `RandomBotFacade`; native
+`BotManager` and `RandomBotService` remain the ownership boundaries.
+
+Reason: make the physical tree, active registrations, configuration, and
+compatibility surface read as one Vanilla/Turtle product rather than a donor
+tree hidden behind subtractive CMake filters.
+
+Local validation: the persistent sibling builder's cached `BUILD_PLAYERBOTS=ON`
+and complementary `BUILD_PLAYERBOTS=OFF` `mangosd` targets both compiled and
+linked successfully. The ON wrapper's optional install step reports only that
+`realmd` is not built; the `mangosd` artifact is produced. The existing Docker
+stack was restarted from that artifact without an image rebuild or data reset;
+the native module loaded and the world server reached ready. No manual
+gameplay test was run, as requested.
+
+## Surgical dead-code follow-up — 2026-08-24
+
+Feature: residual Vanilla/Turtle cleanup after the main donor-tree removal.
+
+Source repository: TortoiseBots `cleanup/vanilla-turtle`.
+
+Source commit: `3213a058931ec7b88c87322cb11f02df4ffed8e1` (follow-up cleanup
+commit; this metadata commit records its exact SHA).
+
+Copied / ported / independently reimplemented: no new gameplay was imported.
+This pass removed the unreachable legacy movement body, the dead spell-click
+path, fake gem/socket qualifier and weight compatibility, the WotLK DK quest
+special case, unused DK talent enum slots, and adjacent no-op branches.
+
+Reason: remove concrete dead remnants identified during review without
+starting another broad cleanup audit.
+
+Local validation: targeted static checks and one cached persistent
+`BUILD_PLAYERBOTS=ON` native `mangosd` build; no runtime restart or gameplay
+test was performed.

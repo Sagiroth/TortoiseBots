@@ -32,36 +32,20 @@ AiPlayerbot.ExplicitDbStoreSave = 0
 # Login Bots when real players login
 # AiPlayerbot.RandomBotLoginWithPlayer = 0
 
-# Delete all random bot accounts (reset randombots)
-AiPlayerbot.DeleteRandomBotAccounts = 0
-
 # auto-login all player alts as bots on player login
 AiPlayerbot.BotAutologin = 0
-
-# Enable LFG for random bots
-AiPlayerbot.RandomBotJoinLfg = 0
-
-# Enable BG/Arena for random Bots
-AiPlayerbot.RandomBotJoinBG = 0
-
-# Enable Auto join BG - bots randomly join WSG and 2v2 Arena if server is not lagging
-AiPlayerbot.RandomBotAutoJoinBG = 0
 
 # Mark many quests <= Bot level as complete (slows down bot creation)
 AiPlayerbot.PreQuests = 0
 
-# Create random bot accounts and characters automaticallylly
-AiPlayerbot.RandomBotAutoCreate = 0
-
 # Random bot count
 AiPlayerbot.MinRandomBots = 0
 AiPlayerbot.MaxRandomBots = 0
-AiPlayerbot.RandomBotMinLevel = 5
 AiPlayerbot.RandomBotMaxLevel = 60
 
-# Accounts to create for random bots
+# Existing random-bot accounts to discover by prefix. The native service never
+# creates accounts or characters.
 AiPlayerbot.RandomBotAccountPrefix = RNDBOT
-AiPlayerbot.RandomBotAccountCount = 500
 
 # Disable core mangos map/bot optimizations which hinders bot activity
 # Works best together with AiPlayerbot.DisableActivityPriorities = 1
@@ -97,37 +81,14 @@ AiPlayerbot.DisableActivityPriorities = 1
 # When enabled, bot alts will level up one level at a time to match their master's level
 # AiPlayerbot.SyncAltLevelToMaster = 0
 
-# Random bot guild count
-AiPlayerbot.RandomBotGuildCount = 20
-
-# Delete all random bot guilds
-AiPlayerbot.DeleteRandomBotGuilds = 0
-
-# Arena teams are not part of the Vanilla/Turtle module surface.
-AiPlayerbot.RandomBotArenaTeamCount = 0
-
-# Delete all random bot arena teams
-AiPlayerbot.DeleteRandomBotArenaTeams = 0
-
-# Vanilla/Turtle maps only. Outland (530) and Northrend (571) are expansion
-# maps and must not be selected by this configuration.
-AiPlayerbot.RandomBotMaps = 0,1
-
-# Min and max intervals for random teleports, in seconds (default: 2hrs and 48hrs)
-# The comment above was right and the values below were not: they had drifted to
-# 24hrs and 7 days, so a bot stayed put for up to a week. tbc and wotlk both ship
-# 2hrs/48hrs; vanilla now does too.
-AiPlayerbot.RandomBotTeleportTeleportMinInterval = 7200
-AiPlayerbot.RandomBotTeleportTeleportMaxInterval = 172800
-
 # Change random bot has lower gear
 AiPlayerbot.RandomGearLoweringChance = 0.15
 
-# Max item level of random equipment
-# Classic
+# Max item level of random equipment. Vanilla/Turtle Naxxramas items reach
+# roughly item level 100; keep the default bounded to that dataset.
 # Max iLVL Tier 1 = 66 | Tier 2 = 76 | Tier 2.5 = 81 | Tier 3 = 99
 # Max iLVL Phase 1 = 71(MC, ONY, ZG) | Phase 2(BWL) = 77 | Phase 2.5(AQ) = 88 | Phase 3(NAXX) = 100 (NOT RECOMMENDED SINCE ILVL OVERLAPS BETWEEN TIERS)
-AiPlayerbot.RandomGearMaxLevel = 500
+AiPlayerbot.RandomGearMaxLevel = 100
 
 # Max difference between bot level and item's required level to be used in randomisation
 # Default = 9, means bots level 60 can use items that require (themselves or via quests) level 51 and above
@@ -156,21 +117,6 @@ AiPlayerbot.RandomGearBlacklist = 0
 # 1 - roll need on such items
 # 0 - roll greed on such items (Default)
 AiPlayerbot.RollBadItemsWithPlayer = 0
-
-# Chance random bot has max level on first randomize (default 0.15)
-AiPlayerbot.RandomBotMaxLevelChance = 0.15
-
-# Chance bot chooses RPG (Teleport to random camp for their level) instead of grinding
-AiPlayerbot.RandomBotRpgChance = 0.8
-
-# Random bots teleport to zones around real player if level is appropriate
-# AiPlayerbot.RandomBotTeleportNearPlayer = 0
-
-# Limit how many random bots teleport to points in zones around real player
-# AiPlayerbot.RandomBotTeleportNearPlayerMaxAmount = 0
-
-# Limit whithin what distance between other bots they teleport to points in zones around real player
-# AiPlayerbot.RandomBotTeleportNearPlayerMaxAmountRadius = 0
 
 # Bot transport use style: 0 = walk on transports (currently not available), 1 = teleport on transports and ride it, 2 = teleport from dock to dock bypassing transport.
 # AiPlayerbot.TransportTeleportType = 2
@@ -209,8 +155,8 @@ AiPlayerbot.RandomBotShowCloak = 1
 # This is a bet on uptime, so choose deliberately:
 #
 #   0  Every bot is rolled a level on creation, which spreads the population
-#      across the world immediately. What tbc and wotlk ship, and the right
-#      choice for a realm that is started and stopped rather than left running.
+#      across the world immediately. This is the right choice for a realm
+#      that is started and stopped rather than left running.
 #
 #   1  Bots all begin at randombotStartingLevel and have to work their way up,
 #      which only happens while the realm is actually running. On a realm that
@@ -237,7 +183,7 @@ AiPlayerbot.XPRate = 3
 
 # Set minimum level of randombots where gets enchants on items (Maxlevel + 1 to disable)
 # Default: 60
-AiPlayerbot.minEnchantingBotLevel = 81
+AiPlayerbot.minEnchantingBotLevel = 61
 
 # Randombots checking players gear score level and deny the group invite if it's too low
 # Default: 0 (disabled)
@@ -1060,20 +1006,16 @@ AiPlayerbot.NonCombatStrategies = +grind,+loot,+custom::say,+return,+delayed rol
 # PvP Restricted Zones (bots don't pvp)
 #AiPlayerbot.PvpProhibitedZoneIds = 2255,656,2361,2362,2363,976,35,2268,3425,392,541,1446,3828,3712,3738,3565,3539,3623,4152,3988,4658,4284,4418,4436,4275,4323
 
-# Spells every random bot will learn on randomize. Expansion-only flying spells
-# are intentionally not supplied by the Vanilla/Turtle defaults.
+# Spells every random bot will learn on randomize. Keep this list limited to
+# spells present in the Vanilla/Turtle data set.
 #AiPlayerbot.RandomBotSpellIds = 1
 
-# Level diff between random bots and nearby creatures for random teleports
-#AiPlayerbot.RandomBotTeleLevel = 3
 
 #AiPlayerbot.OpenGoSpell = 6477
 
 # Intervals
 AiPlayerbot.RandomBotUpdateInterval = 500
 AiPlayerbot.RandomBotsMaxLoginsPerInterval = 30
-AiPlayerbot.RandomBotCountChangeMinInterval = 1800
-AiPlayerbot.RandomBotCountChangeMaxInterval = 7200
 #AiPlayerbot.MinRandomBotInWorldTime = 3600
 #AiPlayerbot.MaxRandomBotInWorldTime = 1209600
 #AiPlayerbot.MinRandomBotRandomizeTime = 7200
@@ -1103,12 +1045,6 @@ AiPlayerbot.RandomBotCountChangeMaxInterval = 7200
 # AiPlayerbot.BotCheckAllAuctionListings = 0
 #
 #######################################
-
-#(0-1) enable or disable random teleports
-# AiPlayerbot.EnableRandomTeleports = 1
-
-# How far random bots are teleported after death
-AiPlayerbot.RandomBotTeleportDistance = 100
 
 # rpg jump is a strategy that makes bot do random jumps
 
@@ -1148,9 +1084,6 @@ AiPlayerbot.UseKnockback = 1
 #AiPlayerbot.LogInGroupOnly = 1
 #AiPlayerbot.LogValuesPerTick = 0
 #AiPlayerbot.RandomChangeMultiplier = 1
-
-# Command server port, 0 - disabled
-#AiPlayerbot.CommandServerPort = 8888
 
 AiPlayerbot.PerfMonEnabled = 0
 
@@ -1229,14 +1162,14 @@ AiPlayerbot.AllowedLogFiles = bot_events.csv,deaths.csv
 # AiPlayerbot.LLMMaxSimultaniousGenerations = 100
 
 # The default prompt to send at the beginning of each conversation.
-# AiPlayerbot.LLMPrePrompt = You are a roleplaying character in World of Warcraft: <expansion name>. Your name is <bot name>. The <other type> <other name> is speaking to you <channel name> and is an <other gender> <other race> <other class> of level <other level>. You are level <bot level> and play as a <bot gender> <bot race> <bot class> that is currently in <bot subzone> <bot zone>. Answer as a roleplaying character. Limit responses to 100 characters.
+# AiPlayerbot.LLMPrePrompt = You are a roleplaying character in Vanilla/Turtle WoW. Your name is <bot name>. The <other type> <other name> is speaking to you <channel name> and is an <other gender> <other race> <other class> of level <other level>. You are level <bot level> and play as a <bot gender> <bot race> <bot class> that is currently in <bot subzone> <bot zone>. Answer as a roleplaying character. Limit responses to 100 characters.
 # The prompt part containing the last message from the player the bot is responding to.
 # AiPlayerbot.LLMPrompt = <receiver name>:<initial message>
 # The default prompt to send at the end of each conversation.
 # AiPlayerbot.LLMPostPrompt = <bot name>:
 
 # The prompt used for rpg chat with npc's
-# AiPlayerbot.LLMRpgPrompt = In World of Warcraft: <expansion name> in <bot zone> <bot subzone> stands <bot type> <bot name> a level <bot level> <bot gender> <bot race> <bot class>. Standing nearby is <unit type> <unit name> <unit subname> a level <unit level> <unit gender> <unit race> <unit faction> <unit class>. Answer as a roleplaying character. Limit responses to 100 characters.
+# AiPlayerbot.LLMRpgPrompt = In Vanilla/Turtle WoW in <bot zone> <bot subzone> stands <bot type> <bot name> a level <bot level> <bot gender> <bot race> <bot class>. Standing nearby is <unit type> <unit name> <unit subname> a level <unit level> <unit gender> <unit race> <unit faction> <unit class>. Answer as a roleplaying character. Limit responses to 100 characters.
 
 # Response parse method. The (json) response that the llm will output needs to be cut and split to result in a number of plain lines the bot can give as feedback.
 # Step1: What pattern the server should look for to find the start of the repsonse the llm gave.
@@ -1279,56 +1212,6 @@ AiPlayerbot.LLMDefaultPromptsFile = llm_character_card.txt
 # AiPlayerbot.LLMApiKey = YOUR_API_KEY
 # AiPlayerbot.LLMApiJson = {"model": "gpt-4o-mini", "messages": [{"role": "system", "content": "<pre prompt> <context>"},{"role": "user", "content": "<prompt>"}],"max_tokens": 60}
 # AiPlayerbot.LLMResponseStartPattern = ("content":\s*")
-
-# Enable the alternative asynchronous login system.
-AiPlayerbot.AsyncBotLogin = 0
-
-# Dramatically speeds up initial and future bot logins but takes 2gb/1000 accounts and might prevent player login during the initial bot login period.
-# !!warning heavy db usage at start!!
-# AiPlayerbot.PreloadHolders = 0
-
-# The login criteria to apply when trying to log in/keep online bots. options:
-# maxbots: Keep the total number of bots below the maxium (between max/min).
-# spareroom: Keep some spare room below the max to login better bots.
-# bg: Bots online inside battlegrounds should not log off.
-# arena: Bots online inside arenas should not log off.
-# instance: Bots online inside instances should not log off.
-# online: Bots currently online stay online.
-# logoff: Bots slated to logoff should log off. (Needs RandomBotTimedLogout)
-# offline: Bots slated to stay offline should stay offline. (Needs RandomBotTimedOffline)
-# classrace: Match the online bots to the configured class/race probabilities.
-# level: Match the online bots to the configured level probabilities.
-# range: Prefer bots near an online player.
-# map: Prefer bots on the same map of an online player.
-# group: Prefer bots in the same group as an online player.
-# guild: Prefer bots in the same guild as an online player.
-#
-# How it works: All bots are evaluated based on configurd criteria wether they should be online of offline.
-# The default criteria must all be true or the bot will be logged off and can not log in.
-# Each line works as an AND construction where all criteria must be met. Note they are alphabetically sorted so use 01,02 for more than 9 lines.
-# Example logoff,classrace,level,online means a bot needs to have room in available level and classrace brackets, be online and not be slated to log off.
-# The multiple lines work as an OR construction where the top lines are used first and as more bots are needed it moves down.
-# Example 1 = group, 2 = bg. First it tries to login all bots in player groups, then as more bots are needed it looks for bots that might be online inside battlegrounds.
-#
-# AiPlayerbot.DefaultLoginCriteria1 = maxbots,spareroom,offline
-# AiPlayerbot.LoginCriteria.1 = group
-# AiPlayerbot.LoginCriteria.2 = bg
-# AiPlayerbot.LoginCriteria.3 = arena
-# AiPlayerbot.LoginCriteria.4 = guild
-# AiPlayerbot.LoginCriteria.5 = logoff,classrace,level,online
-# AiPlayerbot.LoginCriteria.6 = logoff,classrace,level
-# AiPlayerbot.LoginCriteria.7 = logoff,classrace
-
-# When bots are logged in that do not fully match all criteria selected it will do so up to xxx spaces below the maximum. Bots that suddenly match all the criteria will then have room to use this to log in.
-# AiPlayerbot.FreeRoomForNonSpareBots = 0
-
-# Only log in bots within this distance from a real player.
-# AiPlayerbot.LoginBotsNearPlayerRange = 1000
-
-# AiPlayerbot.LevelProbability.<level> = <number>         #Probability Randombots will be allowed to login with this level. (default 100)
-# AiPlayerbot.LevelProbability.1 = 100
-# AiPlayerbot.LevelProbability.10 = 100
-# AiPlayerbot.LevelProbability.60 = 100
 
 # Mystery config value. Currently enables async bot pathfinding. Rarely crashes the server.
 # AiPlayerbot.TweakValue = 0
@@ -5044,7 +4927,7 @@ AiPlayerbot.GearProgressionSystem.5.11.3.18 = 5976	# Tabard
 # How far a healer will look for someone to heal, and how far it will walk to
 # reach them. Both the target choice, the "out of spell range" trigger and the
 # approach action read this, so it has to stay inside what the heals can actually
-# reach - 40 yards in this expansion. It shipped as 125, which meant a healer
+# reach - 40 yards in this Vanilla/Turtle realm. It shipped as 125, which meant a healer
 # sixty yards away thought it was in position, never closed the gap, and failed
 # every cast.
 AiPlayerbot.HealDistance = 30

@@ -21,12 +21,6 @@ namespace ai
         AspectOfTheWildTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "aspect of the wild") {}
     };
 
-    class AspectOfTheViperTrigger : public BuffTrigger
-    {
-    public:
-        AspectOfTheViperTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "aspect of the viper") {}
-    };
-
     class AspectOfThePackTrigger : public BuffTrigger
     {
     public:
@@ -51,30 +45,11 @@ namespace ai
         AspectOfTheCheetahTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "aspect of the cheetah") {}
     };
 
-    class AspectOfTheDragonhawkTrigger : public BuffTrigger
-    {
-    public:
-        AspectOfTheDragonhawkTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "aspect of the dragonhawk") {}
-
-        bool IsActive() override
-        {
-            return BuffTrigger::IsActive() && !ai->HasAura("aspect of the hawk", bot);
-        }
-    };
-
     BEGIN_TRIGGER(HuntersPetDeadTrigger, Trigger)
     END_TRIGGER()
 
     BEGIN_TRIGGER(HuntersPetLowHealthTrigger, Trigger)
     END_TRIGGER()
-
-    class BlackArrowTrigger : public DebuffTrigger
-    {
-    public:
-        BlackArrowTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "black arrow") {}
-    };
-
-    SNARE_TRIGGER(BlackArrowSnareTrigger, "black arrow");
 
     class HuntersMarkTrigger : public DebuffTrigger
     {
@@ -87,7 +62,6 @@ namespace ai
     public:
         FreezingTrapTrigger(PlayerbotAI* ai) : HasCcTargetTrigger(ai, "freezing trap") {}
 
-#ifdef MANGOSBOT_ZERO
         bool IsActive() override
         {
             // Check if feign death not on cooldown
@@ -98,7 +72,6 @@ namespace ai
 
             return false;
         }
-#endif
     };
 
     class FrostTrapTrigger : public MeleeLightAoeTrigger
@@ -111,13 +84,11 @@ namespace ai
 
         bool IsActive() override
         {
-#ifdef MANGOSBOT_ZERO
             // Check if feign death not on cooldown
             if (!sServerFacade.IsSpellReady(bot, 5384))
             {
                 return false;
             }
-#endif
 
             return sServerFacade.IsSpellReady(bot, spellId) && MeleeLightAoeTrigger::IsActive();
         }
@@ -136,13 +107,11 @@ namespace ai
 
         bool IsActive() override
         {
-#ifdef MANGOSBOT_ZERO
             // Check if feign death not on cooldown
             if (!sServerFacade.IsSpellReady(bot, 5384))
             {
                 return false;
             }
-#endif
 
             return sServerFacade.IsSpellReady(bot, spellId) && RangedMediumAoeTrigger::IsActive();
         }
@@ -257,11 +226,7 @@ private:
             if (bot->GetClass() == CLASS_HUNTER && bot->GetLevel() < 10)
                 return false;
 
-#ifdef MANGOSBOT_ZERO
             bool hasAmmo = ai->HasCheat(BotCheatMask::item) || AI_VALUE2(uint32, "item count", "ammo");
-#else
-            bool hasAmmo = ai->HasCheat(BotCheatMask::item) || bot->HasAura(46699) || AI_VALUE2(uint32, "item count", "ammo");
-#endif
             if (!hasAmmo)
                 return false;
 
@@ -282,11 +247,7 @@ private:
 
         bool IsActive() override
         {
-#ifdef MANGOSBOT_ZERO
             bool hasAmmo = ai->HasCheat(BotCheatMask::item) || AI_VALUE2(uint32, "item count", "ammo");
-#else
-            bool hasAmmo = ai->HasCheat(BotCheatMask::item) || bot->HasAura(46699) || AI_VALUE2(uint32, "item count", "ammo");
-#endif
             if (!hasAmmo)
                 return true;
 
@@ -299,19 +260,13 @@ private:
         }
     };
 
-    CAN_CAST_TRIGGER(ChimeraShotCanCastTrigger, "chimera shot");
-    CAN_CAST_TRIGGER(ExplosiveShotCanCastTrigger, "explosive shot");
     CAN_CAST_TRIGGER(MultishotCanCastTrigger, "multi-shot");
-    CAN_CAST_TRIGGER(SteadyShotCanCastTrigger, "steady shot");
-    BOOST_TRIGGER(KillCommandBoostTrigger, "kill command");
     SNARE_TRIGGER(IntimidationSnareTrigger, "intimidation");
     CAN_CAST_TRIGGER(CounterattackCanCastTrigger, "counterattack");
     SNARE_TRIGGER(WybernStingSnareTrigger, "wyvern sting");
     CAN_CAST_TRIGGER(MongooseBiteCastTrigger, "mongoose bite");
     BOOST_TRIGGER(BestialWrathBoostTrigger, "bestial wrath");
 
-    INTERRUPT_TRIGGER(SilencingShotInterruptTrigger, "silencing shot");
-    INTERRUPT_HEALER_TRIGGER(SilencingShotInterruptHealerTrigger, "silencing shot");
 
     class ViperStingTrigger : public DebuffTrigger
     {

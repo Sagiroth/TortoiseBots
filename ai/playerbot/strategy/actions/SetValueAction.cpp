@@ -19,11 +19,7 @@ bool SetValueAction::Execute(Event& event)
 
         if (!Qualified::isValidNumberString(value))
         {
-#ifdef MANGOSBOT_ZERO
             ai->TellPlayer(requester, "Incorrect value " + value + " allowed values: -1,0,1,2,3,4,5,20,40", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
-#else
-            ai->TellPlayer(requester, "Incorrect value " + value + " allowed values: -1,0,1,2,3,4,5,10,25", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
-#endif
             return false;
         }
 
@@ -38,13 +34,8 @@ bool SetValueAction::Execute(Event& event)
         case 3:
         case 4:
         case 5:
-#ifndef MANGOSBOT_ZERO
-        case 10:
-        case 25:
-#else
         case 20:
         case 40:
-#endif
             SET_AI_VALUE2(int32, "manual saved int", "grouper override", uint32(type));
 
             if (type == -1)
@@ -63,11 +54,7 @@ bool SetValueAction::Execute(Event& event)
             return true;
             break;
         default:
-#ifdef MANGOSBOT_ZERO
             ai->TellPlayer(requester, "Incorrect value " + value + " allowed values: -1,0,1,2,3,4,5,20,40", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
-#else
-            ai->TellPlayer(requester, "Incorrect value " + value + " allowed values: -1,0,1,2,3,4,5,10,25", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
-#endif
         }
         return false;
     }

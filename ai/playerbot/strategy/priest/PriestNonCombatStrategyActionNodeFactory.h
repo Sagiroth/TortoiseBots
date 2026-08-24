@@ -31,7 +31,6 @@ public:
         creators["lesser heal on party"] = &lesser_heal_on_party;
         creators["flash heal"] = &flash_heal;
         creators["flash heal on party"] = &flash_heal_on_party;
-        creators["circle of healing on party"] = &circle_of_healing;
     }
 
 private:
@@ -123,14 +122,6 @@ private:
     {
         return new ActionNode("flash heal on party",
                               /*P*/ { NextAction("remove shadowform") },
-                              /*A*/ {},
-                              /*C*/ {});
-    }
-    static ActionNode* circle_of_healing([[maybe_unused]] PlayerbotAI* botAI)
-    {
-        return new ActionNode("circle of healing on party",
-                              /*P*/ { NextAction("remove shadowform") },
-                              // /*A*/ { NextAction("flash heal on party") },
                               /*A*/ {},
                               /*C*/ {});
     }

@@ -27,8 +27,6 @@ bool CheckMountStateAction::Execute(Event& event)
     bool hasAttackers = AI_VALUE(bool, "has attackers");
     bool hasEnemy = AI_VALUE(bool, "has enemy player targets") || AI_VALUE(Unit*, "dps target");
 
-    bool canFly = CanFly();
-
     bool farFromMaster = false;
 
     if(groupMaster)
@@ -249,10 +247,6 @@ bool CheckMountStateAction::Execute(Event& event)
 
 bool CheckMountStateAction::isUseful()
 {
-    // do not use on vehicle
-    if (ai->IsInVehicle())
-        return false;
-
     if (bot->IsDead())
         return false;
 
@@ -272,10 +266,6 @@ bool CheckMountStateAction::isUseful()
     if (bot->GetClass() == CLASS_DRUID && bot->InBattleGround() && (ai->HasAura("prowl", bot) || ai->HasAura("dash", bot)))
         return false;
 
-#ifndef MANGOSBOT_ZERO
-    if (bot->InArena())
-        return false;
-#endif
 
     if (!ai->HasStrategy("mount", BotState::BOT_STATE_NON_COMBAT) && !bot->IsMounted())
         return false;
@@ -311,33 +301,6 @@ bool CheckMountStateAction::isUseful()
     return true;
 }
 
-bool CheckMountStateAction::CanFly() const
-{
-    if (bot->GetMapId() != 530 && bot->GetMapId() != 571)
-        return false;
-
-#ifdef MANGOSBOT_ONE
-    uint32 zone, area;
-    bot->getZoneAndAreaId(zone, area);
-    uint32 v_map = GetVirtualMapForMapAndZone(bot->GetMapId(), zone);
-    MapEntry const* mapEntry = sMapStore.LookupEntry(v_map);
-    if (!mapEntry || mapEntry->addon < 1 || !mapEntry->IsContinent())
-        return false;
-#endif
-#ifdef MANGOSBOT_TWO
-    uint32 zone, area;
-    bot->getZoneAndAreaId(zone, area);
-    if (!bot->CanStartFlyInArea(bot->GetMapId(), zone, area, false))
-        return false;
-#endif
-
-    for (auto& mount : AI_VALUE(std::vector<MountValue>, "mount list"))
-        if (mount.GetSpeed(true))
-            return true;
-
-    return false;
-}
-
 bool CheckMountStateAction::CanMountInBg() const
 {
     //Do not mount with or near flag.
@@ -349,7 +312,6 @@ bool CheckMountStateAction::CanMountInBg() const
         {
             return false;
         }
-#ifdef MANGOSBOT_ZERO
         //check near A Flag
         uint32 lowguid = 90000;
         uint32 id = 179830;
@@ -367,7 +329,6 @@ bool CheckMountStateAction::CanMountInBg() const
 
         if (bot->IsWithinDistInMap(HordeflagStand, 3.0f))
             return false;
-#endif
     }
     return true;
 }
@@ -393,8 +354,6 @@ float CheckMountStateAction::GetAttackDistance() const
 
 bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
 {
-    bool canFly = CanFly();
-
     uint32 currentSpeed = AI_VALUE2(uint32, "current mount speed", "self target");
 
     uint32 maxSpeed = 9999;
@@ -428,7 +387,7 @@ bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
                 continue;
 
             if (auto* speedValue = memberAi->GetAiObjectContext()->GetValue<uint32>(
-                    "max mount speed", canFly ? "fly" : ""))
+                    "max mount speed"))
                 maxSpeed = std::min(maxSpeed, speedValue->Get());
         }
     }
@@ -436,11 +395,11 @@ bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
     std::vector<MountValue> mountList = AI_VALUE(std::vector<MountValue>, "mount list");
 
     std::shuffle(mountList.begin(), mountList.end(), *GetRandomGenerator());
-    std::sort(mountList.begin(), mountList.end(), [canFly](MountValue i, MountValue j) {return i.GetSpeed(canFly) > j.GetSpeed(canFly); });
+    std::sort(mountList.begin(), mountList.end(), [](MountValue i, MountValue j) {return i.GetSpeed() > j.GetSpeed(); });
 
     for (auto& mount : mountList)
     {
-        if (mount.GetSpeed(canFly) > maxSpeed)
+        if (mount.GetSpeed() > maxSpeed)
             continue;
 
         if (currentSpeed > maxSpeed)
@@ -453,7 +412,7 @@ bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
         if (ai->HasStrategy("debug mount", BotState::BOT_STATE_NON_COMBAT))
             ai->TellPlayerNoFacing(requester, "Try to mount with " + chat->formatSpell(mount.GetSpellId()));
 
-        if (currentSpeed >= mount.GetSpeed(canFly))
+        if (currentSpeed >= mount.GetSpeed())
         {
             if (ai->HasStrategy("debug mount", BotState::BOT_STATE_NON_COMBAT))
                 ai->TellPlayerNoFacing(requester, "Speed not faster than current.");
@@ -517,7 +476,7 @@ bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
             uint32 castDuration;
             if (ai->CastSpell(mount.GetSpellId(), bot, nullptr, true, &castDuration))
             {
-                sPlayerbotAIConfig.logEvent(ai, "CheckMountStateAction", sServerFacade.LookupSpellInfo(mount.GetSpellId())->SpellName[0], std::to_string(mount.GetSpeed(canFly)));
+                sPlayerbotAIConfig.logEvent(ai, "CheckMountStateAction", sServerFacade.LookupSpellInfo(mount.GetSpellId())->SpellName[0], std::to_string(mount.GetSpeed()));
                 SetDuration(castDuration);
                 didMount = true;
             }

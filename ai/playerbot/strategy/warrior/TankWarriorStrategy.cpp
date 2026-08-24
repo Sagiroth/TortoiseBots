@@ -15,62 +15,18 @@ public:
     {
         creators["charge"] = &charge;
         creators["sunder armor"] = &sunder_armor;
-        creators["commanding shout"] = &commanding_shout;
-        creators["devastate"] = &devastate;
         creators["last stand"] = &last_stand;
-        creators["heroic throw on snare target"] = &heroic_throw_on_snare_target;
-        creators["heroic throw taunt"] = &heroic_throw_taunt;
         creators["taunt"] = &taunt;
         creators["taunt spell"] = &taunt;
     }
 
 private:
-    static ActionNode* heroic_throw_taunt(PlayerbotAI* /*botAI*/)
-    {
-        return new ActionNode(
-            "heroic throw",
-            /*P*/ {},
-            /*A*/ { NextAction("shield slam") },
-            /*C*/ {}
-        );
-    }
-
-    static ActionNode* heroic_throw_on_snare_target(PlayerbotAI* /*botAI*/)
-    {
-        return new ActionNode(
-            "heroic throw on snare target",
-            /*P*/ {},
-            /*A*/ { NextAction("taunt on snare target") },
-            /*C*/ {}
-        );
-    }
-
     static ActionNode* last_stand(PlayerbotAI* /*botAI*/)
     {
         return new ActionNode(
             "last stand",
             /*P*/ {},
             /*A*/ { NextAction("intimidating shout") },
-            /*C*/ {}
-        );
-    }
-
-    static ActionNode* devastate(PlayerbotAI* /*botAI*/)
-    {
-        return new ActionNode(
-            "devastate",
-            /*P*/ {},
-            /*A*/ { NextAction("sunder armor") },
-            /*C*/ {}
-        );
-    }
-
-    static ActionNode* commanding_shout(PlayerbotAI* /*botAI*/)
-    {
-        return new ActionNode(
-            "commanding shout",
-            /*P*/ {},
-            /*A*/ { NextAction("battle shout") },
             /*C*/ {}
         );
     }
@@ -100,7 +56,7 @@ private:
         return new ActionNode(
             "taunt",
             /*P*/ {},
-            /*A*/ { NextAction("heroic throw taunt") },
+            /*A*/ { NextAction("shield slam") },
             /*C*/ {}
         );
     }
@@ -114,7 +70,7 @@ TankWarriorStrategy::TankWarriorStrategy(PlayerbotAI* botAI) : GenericWarriorStr
 std::vector<NextAction> TankWarriorStrategy::getDefaultActions()
 {
     return {
-        NextAction("devastate", ACTION_DEFAULT + 0.3f),
+        NextAction("sunder armor", ACTION_DEFAULT + 0.3f),
         NextAction("revenge", ACTION_DEFAULT + 0.2f),
         NextAction("demoralizing shout", ACTION_DEFAULT + 0.1f),
         NextAction("melee", ACTION_DEFAULT)
@@ -127,17 +83,8 @@ void TankWarriorStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
     triggers.push_back(
         new TriggerNode(
-            "vigilance",
-            {
-                NextAction("vigilance", ACTION_HIGH + 7)
-            }
-        )
-    );
-    triggers.push_back(
-        new TriggerNode(
             "enemy out of melee",
             {
-                NextAction("heroic throw", ACTION_MOVE + 11),
                 NextAction("charge", ACTION_MOVE + 10)
             }
         )
@@ -161,14 +108,6 @@ void TankWarriorStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     );
     triggers.push_back(
         new TriggerNode(
-            "commanding shout",
-            {
-                NextAction("commanding shout", ACTION_HIGH + 8)
-            }
-        )
-    );
-    triggers.push_back(
-        new TriggerNode(
             "bloodrage",
             {
                 NextAction("bloodrage", ACTION_HIGH + 2)
@@ -179,7 +118,7 @@ void TankWarriorStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new TriggerNode(
             "sunder armor",
             {
-                NextAction("devastate", ACTION_HIGH + 2)
+                NextAction("sunder armor", ACTION_HIGH + 2)
             }
         )
     );
@@ -188,7 +127,7 @@ void TankWarriorStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             "medium rage available",
             {
                 NextAction("shield slam", ACTION_HIGH + 2),
-                NextAction("devastate", ACTION_HIGH + 1)
+                NextAction("sunder armor", ACTION_HIGH + 1)
             }
         )
     );
@@ -228,7 +167,7 @@ void TankWarriorStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new TriggerNode(
             "taunt on snare target",
             {
-                NextAction("heroic throw on snare target", ACTION_INTERRUPT)
+                NextAction("taunt on snare target", ACTION_INTERRUPT)
             }
         )
     );
@@ -244,8 +183,7 @@ void TankWarriorStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new TriggerNode(
             "critical health",
             {
-                NextAction("last stand", ACTION_EMERGENCY + 3),
-                NextAction("enraged regeneration", ACTION_EMERGENCY + 2)
+                NextAction("last stand", ACTION_EMERGENCY + 3)
             }
         )
     );
@@ -278,22 +216,6 @@ void TankWarriorStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             "shield bash on enemy healer",
             {
                 NextAction("shield bash on enemy healer", ACTION_INTERRUPT)
-            }
-        )
-    );
-    triggers.push_back(
-        new TriggerNode(
-            "spell reflection",
-            {
-                NextAction("spell reflection", ACTION_INTERRUPT + 1)
-            }
-        )
-    );
-    triggers.push_back(
-        new TriggerNode(
-            "victory rush",
-            {
-                NextAction("victory rush", ACTION_INTERRUPT)
             }
         )
     );

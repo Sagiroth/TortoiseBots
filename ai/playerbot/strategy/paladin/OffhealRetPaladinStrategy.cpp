@@ -16,8 +16,6 @@ public:
     OffhealRetPaladinStrategyActionNodeFactory()
     {
         creators["retribution aura"] = &retribution_aura;
-        creators["seal of corruption"] = &seal_of_corruption;
-        creators["seal of vengeance"] = &seal_of_vengeance;
         creators["seal of command"] = &seal_of_command;
         creators["blessing of might"] = &blessing_of_might;
     }
@@ -29,26 +27,6 @@ private:
             "retribution aura",
             /*P*/ {},
             /*A*/ { NextAction("devotion aura") },
-            /*C*/ {}
-        );
-    }
-
-    static ActionNode* seal_of_corruption([[maybe_unused]] PlayerbotAI* botAI)
-    {
-        return new ActionNode(
-            "seal of corruption",
-            /*P*/ {},
-            /*A*/ { NextAction("seal of vengeance") },
-            /*C*/ {}
-        );
-    }
-
-    static ActionNode* seal_of_vengeance([[maybe_unused]] PlayerbotAI* botAI)
-    {
-        return new ActionNode(
-            "seal of vengeance",
-            /*P*/ {},
-            /*A*/ { NextAction("seal of command") },
             /*C*/ {}
         );
     }
@@ -85,7 +63,6 @@ std::vector<NextAction> OffhealRetPaladinStrategy::getDefaultActions()
         NextAction("hammer of wrath", ACTION_DEFAULT + 0.6f),
         NextAction("judgement of wisdom", ACTION_DEFAULT + 0.5f),
         NextAction("crusader strike", ACTION_DEFAULT + 0.4f),
-        NextAction("divine storm", ACTION_DEFAULT + 0.3f),
         NextAction("melee", ACTION_DEFAULT)
     };
 }
@@ -99,7 +76,7 @@ void OffhealRetPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers
         new TriggerNode(
             "seal",
             {
-                NextAction("seal of corruption", ACTION_HIGH)
+                NextAction("seal of command", ACTION_HIGH)
             }
         )
     );
@@ -107,8 +84,7 @@ void OffhealRetPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers
         new TriggerNode(
             "low mana",
             {
-                NextAction("seal of wisdom", ACTION_HIGH + 5),
-                NextAction("divine plea", ACTION_HIGH + 4)
+                NextAction("seal of wisdom", ACTION_HIGH + 5)
             }
         )
     );
@@ -122,17 +98,8 @@ void OffhealRetPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers
     );
     triggers.push_back(
         new TriggerNode(
-            "avenging wrath",
-            {
-                NextAction("avenging wrath", ACTION_HIGH + 2)
-            }
-        )
-    );
-    triggers.push_back(
-        new TriggerNode(
             "medium aoe",
             {
-                NextAction("divine storm", ACTION_HIGH + 4),
                 NextAction("consecration", ACTION_HIGH + 3)
             }
         )
@@ -209,14 +176,6 @@ void OffhealRetPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers
             "party member to heal out of spell range",
             {
                 NextAction("reach party member to heal", ACTION_EMERGENCY + 3)
-            }
-        )
-    );
-    triggers.push_back(
-        new TriggerNode(
-            "beacon of light on main tank",
-            {
-                NextAction("beacon of light on main tank", ACTION_CRITICAL_HEAL + 7)
             }
         )
     );

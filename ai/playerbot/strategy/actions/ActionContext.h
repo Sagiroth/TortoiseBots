@@ -77,10 +77,6 @@
 #include "BlackwingLairDungeonActions.h"
 #include "NaxxramasDungeonActions.h"
 
-#ifdef GenerateBotTests
-#include "../tests/TestAction.h"
-#endif
-
 namespace ai
 {
     class ActionContext : public NamedObjectContext<Action>
@@ -191,9 +187,6 @@ namespace ai
             creators["invite nearby"] = [](PlayerbotAI* ai) { return new InviteNearbyToGroupAction(ai); };
             creators["invite guild"] = [](PlayerbotAI* ai) { return new InviteGuildToGroupAction(ai); };
             creators["leave far away"] = [](PlayerbotAI* ai) { return new LeaveFarAwayAction(ai); };
-            creators["move to dark portal"] = [](PlayerbotAI* ai) { return new MoveToDarkPortalAction(ai); };
-            creators["move from dark portal"] = [](PlayerbotAI* ai) { return new MoveFromDarkPortalAction(ai); };
-            creators["use dark portal azeroth"] = [](PlayerbotAI* ai) { return new DarkPortalAzerothAction(ai); };
             creators["world buff"] = [](PlayerbotAI* ai) { return new WorldBuffAction(ai); };
             creators["world buff travel apply"] = [](PlayerbotAI* ai) { return new WorldBuffTravelApplyAction(ai); };
             creators["world buff travel cast portal"] = [](PlayerbotAI* ai) { return new WorldBuffTravelCastPortalAction(ai); };
@@ -206,7 +199,6 @@ namespace ai
             creators["world buff travel dm take portal"] = [](PlayerbotAI* ai) { return new WorldBuffTravelDMTakePortalAction(ai); };
             creators["hearthstone"] = [](PlayerbotAI* ai) { return new UseHearthStoneAction(ai); };
             creators["cast random spell"] = [](PlayerbotAI* ai) { return new CastRandomSpellAction(ai); };
-            creators["free bg join"] = [](PlayerbotAI* ai) { return new FreeBGJoinAction(ai); };
             creators["use random recipe"] = [](PlayerbotAI* ai) { return new UseRandomRecipeAction(ai); };
             creators["open random item"] = [](PlayerbotAI* ai) { return new OpenRandomItemAction(ai); };
             creators["use random quest item"] = [](PlayerbotAI* ai) { return new UseRandomQuestItemAction(ai); };
@@ -261,28 +253,6 @@ namespace ai
             // lightwell
             creators["use lightwell"] = [](PlayerbotAI* ai) { return new UseLightwellAction(ai); };
 
-            // Vehicles
-            creators["hurl boulder"] = [](PlayerbotAI* ai) { return new CastHurlBoulderAction(ai); };
-            creators["ram"] = [](PlayerbotAI* ai) { return new CastRamAction(ai); };
-            creators["steam rush"] = [](PlayerbotAI* ai) { return new CastSteamRushAction(ai); };
-            creators["steam blast"] = [](PlayerbotAI* ai) { return new CastSteamBlastAction(ai); };
-            creators["napalm"] = [](PlayerbotAI* ai) { return new CastNapalmAction(ai); };
-            creators["fire cannon"] = [](PlayerbotAI* ai) { return new CastFireCannonAction(ai); };
-            creators["incendiary rocket"] = [](PlayerbotAI* ai) { return new CastIncendiaryRocketAction(ai); };
-            creators["rocket blast"] = [](PlayerbotAI* ai) { return new CastRocketBlastAction(ai); };
-            creators["blade salvo"] = [](PlayerbotAI* ai) { return new CastBladeSalvoAction(ai); };
-            creators["glaive throw"] = [](PlayerbotAI* ai) { return new CastGlaiveThrowAction(ai); };
-
-            // Quest vehicles
-            creators["deliver stolen horse"] = [](PlayerbotAI* ai) { return new CastDeliverStolenHorseAction(ai); };
-            creators["horsemans call"] = [](PlayerbotAI* ai) { return new CastHorsemansCallAction(ai); };
-
-            creators["scarlet cannon"] = [](PlayerbotAI* ai) { return new CastScarletCannonAction(ai); };
-            creators["electro - magnetic pulse"] = [](PlayerbotAI* ai) { return new CastElectroMagneticPulseAction(ai); };
-            creators["skeletal gryphon escape"] = [](PlayerbotAI* ai) { return new CastSkeletalGryphonEscapeAction(ai); };
-
-            creators["frozen deathbolt"] = [](PlayerbotAI* ai) { return new CastFrozenDeathboltAction(ai); };
-            creators["devour humanoid"] = [](PlayerbotAI* ai) { return new CastDevourHumanoidAction(ai); };
 
 
             //Rpg
@@ -308,7 +278,6 @@ namespace ai
             creators["rpg use"] = [](PlayerbotAI* ai) { return new RpgUseAction(ai); };
             creators["rpg ai chat"] = [](PlayerbotAI* ai) { return new RpgAIChatAction(ai); };
             creators["rpg spell"] = [](PlayerbotAI* ai) { return new RpgSpellAction(ai); };
-            creators["rpg spell click"] = [](PlayerbotAI* ai) { return new RpgSpellClickAction(ai); };
             creators["rpg craft"] = [](PlayerbotAI* ai) { return new RpgCraftAction(ai); };
             creators["rpg trade useful"] = [](PlayerbotAI* ai) { return new RpgTradeUsefulAction(ai); };
             creators["rpg enchant"] = [](PlayerbotAI* ai) { return new RpgEnchantAction(ai); };
@@ -337,14 +306,6 @@ namespace ai
             creators["stoneform"] = [](PlayerbotAI* ai) { return new CastStoneformAction(ai); };
             creators["perception"] = [](PlayerbotAI* ai) { return new CastPerceptionAction(ai); };
             creators["will of the forsaken"] = [](PlayerbotAI* ai) { return new CastWillOfTheForsakenAction(ai); };
-#ifndef MANGOSBOT_ZERO
-            creators["mana tap"] = [](PlayerbotAI* ai) { return new CastManaTapAction(ai); };
-            creators["arcane torrent"] = [](PlayerbotAI* ai) { return new CastArcaneTorrentAction(ai); };
-            creators["gift of the naaru"] = [](PlayerbotAI* ai) { return new CastGiftOfTheNaaruAction(ai); };
-#endif
-#ifdef MANGOSBOT_TWO
-            creators["every_man_for_himself"] = [](PlayerbotAI* ai) { return new CastEveryManforHimselfAction(ai); };
-#endif
 
             creators["use id"] = [](PlayerbotAI* ai) { return new UseItemIdAction(ai); };
             creators["move to"] = [](PlayerbotAI* ai) { return new MoveToAction(ai); };
@@ -379,9 +340,6 @@ namespace ai
             creators["enable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanEnableFightStrategyAction(ai); };
             creators["disable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanDisableFightStrategyAction(ai); };
 
-#ifdef GenerateBotTests
-            creators["test"] = [](PlayerbotAI* ai) { return new TestAction(ai); };
-#endif
         }
     };
 };

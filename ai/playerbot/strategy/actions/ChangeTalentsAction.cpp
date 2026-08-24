@@ -33,8 +33,8 @@ bool ChangeTalentsAction::Execute(Event& event)
             out << "Reset talents and spec";
             TalentSpec newSpec(bot, "0-0-0");
             newSpec.ApplyTalents(bot, &out);
-            sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specNo", 0);
-            sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specLink", 0);
+            sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specNo", 0);
+            sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specLink", 0);
         }
         else
         {
@@ -73,8 +73,8 @@ bool ChangeTalentsAction::Execute(Event& event)
                 if (newSpec.CheckTalents(bot, &out))
                 {
                     newSpec.ApplyTalents(bot, &out);
-                    sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specNo", 0);
-                    sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specLink", 1, specLink);
+                    sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specNo", 0);
+                    sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specLink", 1, specLink);
                 }
 
                 ai->UpdateTalentSpec();
@@ -97,7 +97,7 @@ bool ChangeTalentsAction::Execute(Event& event)
                         if (paths.size() > 1)
                             out << "Found " << paths.size() << " possible specs to choose from. ";
 
-                        TalentPath* path = PickPremadePath(paths, sRandomPlayerbotMgr.IsRandomBot(bot));
+                        TalentPath* path = PickPremadePath(paths, sRandomBotFacade.IsRandomBot(bot));
                         TalentSpec newSpec = *GetBestPremadeSpec(bot, path->id);
                         std::string specLink = newSpec.GetTalentLink();
                         newSpec.CropTalents(bot);
@@ -106,8 +106,8 @@ bool ChangeTalentsAction::Execute(Event& event)
                         if (newSpec.GetTalentPoints() > 0)
                         {
                             out << "Apply spec " << "|h|cffffffff" << path->name << " " << newSpec.formatSpec(cls);
-                            sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specNo", path->id + 1);
-                            sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specLink", 0);
+                            sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specNo", path->id + 1);
+                            sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specLink", 0);
 
                             ai->UpdateTalentSpec();
                         }
@@ -125,7 +125,7 @@ bool ChangeTalentsAction::Execute(Event& event)
         out.str("");
         out.clear();
 
-        uint32 specId = sRandomPlayerbotMgr.GetValue(bot->GetGUIDLow(), "specNo") - 1;
+        uint32 specId = sRandomBotFacade.GetValue(bot->GetGUIDLow(), "specNo") - 1;
         std::string specName = "";
         TalentPath* specPath;
         if (specId)
@@ -281,9 +281,9 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
         return false;
     }
 
-    uint32 specNo = sRandomPlayerbotMgr.GetValue(bot->GetGUIDLow(), "specNo");
+    uint32 specNo = sRandomBotFacade.GetValue(bot->GetGUIDLow(), "specNo");
     uint32 specId = specNo ? specNo - 1 : 0;
-    std::string specLink = sRandomPlayerbotMgr.GetData(bot->GetGUIDLow(), "specLink");
+    std::string specLink = sRandomBotFacade.GetData(bot->GetGUIDLow(), "specLink");
     uint8 cls = bot->GetClass();
 
     //Continue the current spec
@@ -369,14 +369,14 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
             *out << "No predefined talents found for this class.";
             specId = -1;
         }
-        else if (paths.size() > 1 && sPlayerbotAIConfig.autoPickTalents != "full" && !sRandomPlayerbotMgr.IsRandomBot(bot))
+        else if (paths.size() > 1 && sPlayerbotAIConfig.autoPickTalents != "full" && !sRandomBotFacade.IsRandomBot(bot))
         {
             *out << "Found multiple specs: ";
             listPremadePaths(cls, paths, out);
         }
         else
         {
-            specId = PickPremadePath(paths, sRandomPlayerbotMgr.IsRandomBot(bot))->id;
+            specId = PickPremadePath(paths, sRandomBotFacade.IsRandomBot(bot))->id;
             TalentSpec newSpec = *GetBestPremadeSpec(bot, specId);
             specLink = newSpec.GetTalentLink();
             newSpec.CropTalents(bot);
@@ -391,11 +391,11 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
         }
     }
 
-    sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specNo", specId + 1);
+    sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specNo", specId + 1);
     if (!specLink.empty() && specId == -1)
-        sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specLink", 1, specLink);
+        sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specLink", 1, specLink);
     else
-        sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specLink", 0);
+        sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specLink", 0);
 
     return (specNo == 0) ? false : true;
 }
@@ -425,7 +425,7 @@ bool AutoSetTalentsAction::Execute(Event& event)
 
     std::ostringstream out;
 
-    if (sPlayerbotAIConfig.autoPickTalents == "no" && !sRandomPlayerbotMgr.IsRandomBot(bot))
+    if (sPlayerbotAIConfig.autoPickTalents == "no" && !sRandomBotFacade.IsRandomBot(bot))
     {
         return false;
     }

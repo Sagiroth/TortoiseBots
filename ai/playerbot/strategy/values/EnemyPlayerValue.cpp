@@ -83,17 +83,6 @@ bool EnemyPlayersValue::IsValid(Unit* target, Player* player)
                 }
             }
 
-            /*
-            // Check if too far away (Do we need this?)
-            const float maxPvPDistance = GetMaxAttackDistance(player);
-            const bool inCannon = PlayerbotAIStorage::Instance().GetAI(player) && PlayerbotAIStorage::Instance().GetAI(player)->IsInVehicle(false, true);
-            uint32 const pvpDistance = (inCannon || player->GetHealth() > enemyPlayer->GetHealth()) ? maxPvPDistance : 20.0f;
-            if (!player->IsWithinDist(enemyPlayer, pvpDistance, false))
-            {
-                return false;
-            }
-            */
-
             return true;
         }
     }
@@ -207,16 +196,6 @@ float EnemyPlayerValue::GetMaxAttackDistance(Player* bot)
 
         BattleGroundTypeId bgType = bg->GetTypeId();
 
-#ifdef MANGOSBOT_TWO
-        if (bgType == BATTLEGROUND_RB)
-            bgType = bg->GetTypeId(true);
-
-        if (bgType == BATTLEGROUND_IC)
-        {
-            if (PlayerbotAIStorage::Instance().GetAI(bot)->IsInVehicle(false, true))
-                return 120.0f;
-        }
-#endif
         if (bgType == BATTLEGROUND_AV)
         {
             bool strifeTime = bg->GetStartTime() < (uint32)(20 * MINUTE * IN_MILLISECONDS);

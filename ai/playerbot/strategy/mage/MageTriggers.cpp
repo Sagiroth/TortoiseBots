@@ -10,7 +10,6 @@ bool AnyMageArmorTrigger::IsActive()
     Unit* target = GetTarget();
     return !ai->HasAura("ice armor", target) &&
            !ai->HasAura("frost armor", target) &&
-           !ai->HasAura("molten armor", target) &&
            !ai->HasAura("mage armor", target);
 }
 
@@ -27,32 +26,9 @@ bool IceArmorTrigger::IsActive()
            !ai->HasAura("frost armor", target);
 }
 
-bool MoltenArmorTrigger::IsActive()
-{
-    Unit* target = GetTarget();
-    return !ai->HasAura("molten armor", target);
-}
-
 bool ManaShieldTrigger::IsActive()
 {
     return !ai->HasAura("mana shield", bot) && AI_VALUE2(uint8, "mana", "self target") > sPlayerbotAIConfig.mediumMana;
-}
-
-bool IceLanceTrigger::IsActive()
-{
-    Unit* target = GetTarget();
-    return target && ai->HasAnyAuraOf(target, "frost nova", "frostbite", NULL);
-}
-
-bool HotStreakTrigger::IsActive()
-{
-    //Usage by id. By name hot streak aura doesn't work.
-    return ai->HasAura(48108, bot);
-}
-
-bool FireballOrFrostfireBoltFreeTrigger::IsActive()
-{
-    return ai->HasAura("fireball!", bot);
 }
 
 bool NoImprovedScorchDebuffTrigger::IsActive()

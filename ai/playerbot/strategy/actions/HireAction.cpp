@@ -10,7 +10,7 @@ bool HireAction::Execute(Event& event)
     if (!requester)
         return false;
 
-    if (!sRandomPlayerbotMgr.IsRandomBot(bot))
+    if (!sRandomBotFacade.IsRandomBot(bot))
         return false;
 
     uint32 account = sObjectMgr.GetPlayerAccountIdByGUID(requester->getObjectGuid());
@@ -35,7 +35,7 @@ bool HireAction::Execute(Event& event)
         return false;
     }
 
-    uint32 discount = sRandomPlayerbotMgr.GetTradeDiscount(bot, requester);
+    uint32 discount = sRandomBotFacade.GetTradeDiscount(bot, requester);
     uint32 m = 1 + (bot->GetLevel() / 10);
     uint32 moneyReq = m * 5000 * bot->GetLevel();
     if ((int)discount < (int)moneyReq)
@@ -49,7 +49,7 @@ bool HireAction::Execute(Event& event)
     ai->TellPlayer(requester, "I will join you at your next relogin");
 
     bot->SetMoney(moneyReq);
-    sRandomPlayerbotMgr.Remove(bot);
+    sRandomBotFacade.Remove(bot);
     CharacterDatabase.PExecute("update characters set account = '%u' where guid = '%u'",
             account, bot->GetGUIDLow());
 

@@ -187,18 +187,6 @@ namespace ai
         virtual bool IsActive() override { return !ai->HasAura("cat form", bot); }
     };
 
-    class EclipseSolarTrigger : public HasAuraTrigger
-    {
-    public:
-        EclipseSolarTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "eclipse (solar)") {}
-    };
-
-    class EclipseLunarTrigger : public HasAuraTrigger
-    {
-    public:
-        EclipseLunarTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "eclipse (lunar)") {}
-    };
-
     // TurtleWoW Balance redesign: Eclipse capstone (talent 320, spell 51444).
     // Wrath crit → "Arcane Eclipse" buff (spell 51443) → boosts Arcane damage
     //   → bot pivots to spam Starfire during the ~10 sec window.
@@ -344,12 +332,6 @@ namespace ai
                 distance += 20;
             }
 
-#ifndef MANGOSBOT_ZERO
-            if (bot->InArena())
-            {
-                distance += 20;
-            }
-#endif
 
             return (target && sServerFacade.getDistance2d(bot, target) < distance);
         }
@@ -411,24 +393,6 @@ namespace ai
             }
 
             return false;
-        }
-    };
-
-    class LifebloomTankTrigger : public Trigger
-    {
-    public:
-        explicit LifebloomTankTrigger(PlayerbotAI* ai) : Trigger(ai, "lifebloom", 1) {}
-
-        Value<Unit*>* GetTargetValue() override;
-        bool IsActive() override
-        {
-            Unit* target = GetTarget();
-            return target
-                && ai->IsTank((Player*)target)                                          //target is tank
-                && target->IsAlive()                                                    //target is alive
-                && !ai->HasAura("lifebloom", target, true, true, -1, false, 2000, 8)    //target dont have max stacked aura or aura will expire soon
-                && ai->CanCastSpell("lifebloom", target, 0)                             //bot can cast spell
-                && !target->GetAttackers().empty();                                     //target have attackers
         }
     };
 

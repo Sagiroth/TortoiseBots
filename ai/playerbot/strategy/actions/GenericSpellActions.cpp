@@ -148,9 +148,6 @@ bool CastSpellAction::isPossible()
 
 bool CastSpellAction::isUseful()
 {
-    if (ai->IsInVehicle() && !ai->IsInVehicle(false, false, true))
-        return false;
-
     if(!AI_VALUE2(bool, "spell cast useful", spellName))
         return false;
 
@@ -286,47 +283,6 @@ bool HealHotPartyMemberAction::isUseful()
     return HealPartyMemberAction::isUseful() && !ai->HasAura(GetSpellName(), GetTarget());
 }
 
-bool CastVehicleSpellAction::isPossible()
-{
-    return ai->CanCastVehicleSpell(GetSpellID(), GetTarget());
-}
-
-bool CastVehicleSpellAction::isUseful()
-{
-    return ai->IsInVehicle(false, true);
-}
-
-bool CastVehicleSpellAction::Execute(Event& event)
-{
-    return ai->CastVehicleSpell(GetSpellID(), GetTarget(), speed, needTurn);
-}
-
-bool CastFrozenDeathboltAction::isPossible()
-{
-    Unit* target = GetTarget();
-
-    if (!target)
-        return false;
-
-    if (target->getDistance(bot) > range)
-        return false;
-
-    return CastVehicleSpellAction::isPossible();
-}
-
-bool CastDevourHumanoidAction::isPossible()
-{
-    Unit* target = GetTarget();
-
-    if (!target)
-        return false;
-
-    if (target->getDistance(bot) > range)
-        return false;
-
-    return CastVehicleSpellAction::isPossible();
-}
-
 bool CastShootAction::isPossible()
 {
     // Check if the bot has a ranged weapon equipped and has ammo
@@ -382,9 +338,7 @@ void CastShootAction::UpdateWeaponInfo()
             std::string spellName = "shoot";
             bool isRangedWeapon = false;
 
-#ifdef MANGOSBOT_ZERO
             needsAmmo = true;
-#endif
 
             const ItemPrototype* itemPrototype = equippedWeapon->GetProto();
             switch (itemPrototype->SubClass)
@@ -392,33 +346,25 @@ void CastShootAction::UpdateWeaponInfo()
                 case ITEM_SUBCLASS_WEAPON_GUN:
                 {
                     isRangedWeapon = true;
-#ifdef MANGOSBOT_ZERO
                     spellName += " gun";
-#endif
                     break;
                 }
                 case ITEM_SUBCLASS_WEAPON_BOW:
                 {
                     isRangedWeapon = true;
-#ifdef MANGOSBOT_ZERO
                     spellName += " bow";
-#endif
                     break;
                 }
                 case ITEM_SUBCLASS_WEAPON_CROSSBOW:
                 {
                     isRangedWeapon = true;
-#ifdef MANGOSBOT_ZERO
                     spellName += " crossbow";
-#endif
                     break;
                 }
                 case ITEM_SUBCLASS_WEAPON_WAND:
                 {
                     isRangedWeapon = true;
-#ifdef MANGOSBOT_ZERO
                     needsAmmo = false;
-#endif
                     break;
                 }
                 case ITEM_SUBCLASS_WEAPON_THROWN:
@@ -441,9 +387,7 @@ void CastShootAction::UpdateWeaponInfo()
         }
 
         // Check the ammunition
-#ifdef MANGOSBOT_ZERO
         needsAmmo = (GetSpellName() != "shoot") ? (AI_VALUE2(uint32, "item count", "ammo") <= 0) : false;
-#endif
     }
     else
     {
@@ -540,11 +484,7 @@ bool CastItemTargetAction::IsTargetValid(Unit* target)
             {
                 for (uint8 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
                 {
-#ifdef MANGOSBOT_ZERO
                     if (proto->Spells[i].SpellTrigger == ITEM_SPELLTRIGGER_ON_USE || proto->Spells[i].SpellTrigger == ITEM_SPELLTRIGGER_ON_NO_DELAY_USE)
-#else
-                    if (proto->Spells[i].SpellTrigger == ITEM_SPELLTRIGGER_ON_USE)
-#endif
                     {
                         if (proto->Spells[i].SpellId > 0 && ai->HasAura(proto->Spells[i].SpellId, target))
                         {
@@ -620,11 +560,7 @@ bool CastItemTargetAction::isPossible()
             continue;
 
         // wrong triggering type
-#ifdef MANGOSBOT_ZERO
         if (spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_USE && spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_NO_DELAY_USE)
-#else
-        if (spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_USE)
-#endif
             continue;
 
         SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellData.SpellId);
@@ -681,11 +617,7 @@ bool CastItemTargetAction::Execute(Event& event)
             continue;
 
         // wrong triggering type
-#ifdef MANGOSBOT_ZERO
         if (spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_USE && spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_NO_DELAY_USE)
-#else
-        if (spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_USE)
-#endif
             continue;
 
         SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellData.SpellId);

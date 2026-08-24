@@ -22,11 +22,7 @@ namespace ai
                 creators["cc"] = [](PlayerbotAI* ai) { return new CcPlaceholderStrategy(ai); };
                 creators["offheal"] = [](PlayerbotAI* ai) { return new OffhealPlaceholderStrategy(ai); };
                 creators["boost"] = [](PlayerbotAI* ai) { return new BoostPlaceholderStrategy(ai); };
-#ifdef MANGOSBOT_TWO
-                creators["pull"] = [](PlayerbotAI* ai) { return new PullStrategy(ai, "judgement of light", "seal of righteousness"); };
-#else
                 creators["pull"] = [](PlayerbotAI* ai) { return new PullStrategy(ai, "judgement", "seal of righteousness"); };
-#endif
             }
         };
 
@@ -283,14 +279,12 @@ namespace ai
                 creators["hammer of justice on snare target"] = [](PlayerbotAI* ai) { return new HammerOfJusticeSnareTrigger(ai); };
                 creators["divine favor"] = [](PlayerbotAI* ai) { return new DivineFavorTrigger(ai); };
                 creators["turn undead"] = [](PlayerbotAI* ai) { return new TurnUndeadTrigger(ai); };
-                creators["avenger's shield"] = [](PlayerbotAI* ai) { return new AvengerShieldTrigger(ai); };
                 creators["consecration"] = [](PlayerbotAI* ai) { return new ConsecrationTrigger(ai); };
                 creators["exorcism"] = [](PlayerbotAI* ai) { return new ExorcismTrigger(ai); };
                 creators["repentance on enemy healer"] = [](PlayerbotAI* ai) { return new RepentanceOnHealerTrigger(ai); };
                 creators["repentance on snare target"] = [](PlayerbotAI* ai) { return new RepentanceSnareTrigger(ai); };
                 creators["repentance interrupt"] = [](PlayerbotAI* ai) { return new RepentanceInterruptTrigger(ai); };
                 creators["hammer of justice on enemy"] = [](PlayerbotAI* ai) { return new HammerOfJusticeOnEnemyTrigger(ai); };
-                creators["hand of sacrifice"] = [](PlayerbotAI* ai) { return new HandOfSacrificeTrigger(ai); };
                 creators["blessing of sacrifice"] = [](PlayerbotAI* ai) { return new BlessingOfSacrificeTrigger(ai); };
                 creators["crusader strike"] = [](PlayerbotAI* ai) { return new CrusaderStrikeTrigger(ai); };
                 // TurtleWoW Holy Paladin Daybreak target-prioritization:
@@ -314,7 +308,6 @@ namespace ai
             AiObjectContextInternal()
             {
                 creators["seal of command"] = [](PlayerbotAI* ai) { return new CastSealOfCommandAction(ai); };
-                creators["seal of vengeance"] = [](PlayerbotAI* ai) { return new CastSealOfVengeanceAction(ai); };
                 creators["pve blessing"] = [](PlayerbotAI* ai) { return new CastPveBlessingAction(ai); };
                 creators["pve greater blessing"] = [](PlayerbotAI* ai) { return new CastPveGreaterBlessingAction(ai); };
                 creators["pvp blessing"] = [](PlayerbotAI* ai) { return new CastPvpBlessingAction(ai); };
@@ -355,7 +348,6 @@ namespace ai
                 creators["devotion aura"] = [](PlayerbotAI* ai) { return new CastDevotionAuraAction(ai); };
                 creators["concentration aura"] = [](PlayerbotAI* ai) { return new CastConcentrationAuraAction(ai); };
                 creators["crusader aura"] = [](PlayerbotAI* ai) { return new CastCrusaderAuraAction(ai); };
-                creators["divine storm"] = [](PlayerbotAI* ai) { return new CastDivineStormAction(ai); };
                 creators["redemption"] = [](PlayerbotAI* ai) { return new CastRedemptionAction(ai); };
                 creators["crusader strike"] = [](PlayerbotAI* ai) { return new CastCrusaderStrikeAction(ai); };
                 creators["retribution aura"] = [](PlayerbotAI* ai) { return new CastRetributionAuraAction(ai); };
@@ -380,8 +372,6 @@ namespace ai
                 creators["seal of justice"] = [](PlayerbotAI* ai) { return new CastSealOfJusticeAction(ai); };
                 creators["seal of righteousness"] = [](PlayerbotAI* ai) { return new CastSealOfRighteousnessAction(ai); };
                 creators["flash of light"] = [](PlayerbotAI* ai) { return new CastFlashOfLightAction(ai); };
-                creators["hand of reckoning"] = [](PlayerbotAI* ai) { return new CastHandOfReckoningAction(ai); };
-                creators["avenger's shield"] = [](PlayerbotAI* ai) { return new CastAvengersShieldAction(ai); };
                 creators["exorcism"] = [](PlayerbotAI* ai) { return new CastExorcismAction(ai); };
                 creators["judgement"] = [](PlayerbotAI* ai) { return new CastJudgementAction(ai); };
                 creators["judgement of light"] = [](PlayerbotAI* ai) { return new CastJudgementOfLightAction(ai); };
@@ -398,7 +388,6 @@ namespace ai
                 creators["judgement of justice"] = [](PlayerbotAI* ai) { return new CastJudgementOfJusticeAction(ai); };
                 creators["hammer of wrath"] = [](PlayerbotAI* ai) { return new CastHammerOfWrathAction(ai); };
                 creators["holy shield"] = [](PlayerbotAI* ai) { return new CastHolyShieldAction(ai); };
-                creators["hammer of the righteous"] = [](PlayerbotAI* ai) { return new CastHammerOfTheRighteousAction(ai); };
                 creators["righteous fury"] = [](PlayerbotAI* ai) { return new CastRighteousFuryAction(ai); };
                 creators["hammer of justice on enemy healer"] = [](PlayerbotAI* ai) { return new CastHammerOfJusticeOnEnemyHealerAction(ai); };
                 creators["hammer of justice on snare target"] = [](PlayerbotAI* ai) { return new CastHammerOfJusticeSnareAction(ai); };
@@ -406,16 +395,12 @@ namespace ai
                 creators["turn undead"] = [](PlayerbotAI* ai) { return new CastTurnUndeadAction(ai); };
                 creators["blessing of protection on party"] = [](PlayerbotAI* ai) { return new CastBlessingOfProtectionOnPartyAction(ai); };
                 creators["blessing of freedom on party"] = [](PlayerbotAI* ai) { return new CastBlessingOfFreedomOnPartyAction(ai); };
-                creators["righteous defense"] = [](PlayerbotAI* ai) { return new CastRighteousDefenseAction(ai); };
                 creators["repentance"] = [](PlayerbotAI* ai) { return new CastRepentanceAction(ai); };
                 creators["repentance on snare target"] = [](PlayerbotAI* ai) { return new CastRepentanceSnareAction(ai); };
                 creators["repentance on enemy healer"] = [](PlayerbotAI* ai) { return new CastRepentanceOnHealerAction(ai); };
                 creators["holy shock"] = [](PlayerbotAI* ai) { return new CastHolyShockAction(ai); };
                 creators["holy shock on party"] = [](PlayerbotAI* ai) { return new CastHolyShockOnPartyAction(ai); };
                 creators["blessing of freedom"] = [](PlayerbotAI* ai) { return new CastBlessingOfFreedomAction(ai); };
-                creators["avenging wrath"] = [](PlayerbotAI* ai) { return new CastAvengingWrathAction(ai); };
-                creators["divine illumination"] = [](PlayerbotAI* ai) { return new CastDivineIlluminationAction(ai); };
-                creators["hand of sacrifice"] = [](PlayerbotAI* ai) { return new CastHandOfSacrificeAction(ai); };
                 creators["blessing of sacrifice"] = [](PlayerbotAI* ai) { return new CastBlessingOfSacrificeAction(ai); };
                 creators["update pve strats"] = [](PlayerbotAI* ai) { return new UpdatePaladinPveStrategiesAction(ai); };
                 creators["update pvp strats"] = [](PlayerbotAI* ai) { return new UpdatePaladinPvpStrategiesAction(ai); };

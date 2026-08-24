@@ -42,16 +42,11 @@ namespace ai
 
                 if (const Player* totemPlayerOwner = totemOwner->IsPlayer() ? dynamic_cast<Player*>(totemOwner) : nullptr)
                 {
-#ifdef MANGOSBOT_TWO
-                    // Most totems are raid-wide in Wrath - Special handling should be added for the handful that aren't
-                    if (totemPlayerOwner->GetGroup() == botGroup) return true;
-#else
                     // Totem from a player in our group found, and we are either not in a raid or in the same raid subgroup
                     if (totemPlayerOwner->GetGroup() == botGroup)
                     {
                         if (!botGroup->isRaidGroup() || botGroup->SameSubGroup(totemPlayerOwner, bot)) return true;
                     }
-#endif
                 }
             }
 

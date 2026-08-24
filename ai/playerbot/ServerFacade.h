@@ -44,11 +44,7 @@ class ServerFacade
         DeathState GetDeathState(Unit *unit)
         {
 #ifdef MANGOS
-#ifndef MANGOSBOT_TWO
             return unit->GetDeathState();
-#else
-            return unit->GetDeathState();
-#endif
 #endif
 #ifdef CMANGOS
             return unit->GetDeathState();
@@ -120,11 +116,7 @@ class ServerFacade
         bool IsFeared(Unit *unit)
         {
 #ifdef MANGOS
-#ifndef MANGOSBOT_TWO
             return unit->IsFeared();
-#else
-            return unit->IsFeared();
-#endif
 #endif
 #ifdef CMANGOS
             return unit->IsFeared();
@@ -287,17 +279,6 @@ class ServerFacade
         {
             return BgTemplateId(queueTypeId);
         }
-#ifndef MANGOSBOT_ZERO
-        ArenaType BgArenaType(BattleGroundQueueTypeId queueTypeId)
-        {
-#ifdef MANGOS
-            return sBattleGroundMgr.BGArenaType(queueTypeId);
-#endif
-#ifdef CMANGOS
-            return sBattleGroundMgr.BgArenaType(queueTypeId);
-#endif
-        }
-#endif
 
         uint32 GetAreaId(WorldObject* wo)
         {

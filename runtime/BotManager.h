@@ -85,8 +85,8 @@ public:
     BotRecord* FindBot(ObjectGuid guid);
     // pi-lens-ignore: clang:unknown_typename
     bool IsBot(ObjectGuid guid) const;
-    // Random bots are still module-owned records; this distinction prevents
-    // behavior code from consulting a donor RandomPlayerbotMgr singleton.
+    // Random bots are still module-owned records; this distinction keeps
+    // population identity inside BotManager.
     bool IsRandomBot(ObjectGuid guid) const;
 
     // Snapshot of in-world bots owned by a master. Callers never receive the

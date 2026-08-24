@@ -19,14 +19,9 @@ namespace ai
     BUFF_ACTION(CastDivineSpiritAction, "divine spirit");
     BUFF_PARTY_ACTION(CastDivineSpiritOnPartyAction, "divine spirit");
     GREATER_BUFF_PARTY_ACTION(CastPrayerOfSpiritOnPartyAction, "prayer of spirit");
-    //disc 2.4.3
-    SPELL_ACTION(CastMassDispelAction, "mass dispel");
 
     // disc talents
     BUFF_ACTION(CastInnerFocusAction, "inner focus");
-    // disc 2.4.3 talents
-    BUFF_ACTION(CastPainSuppressionAction, "pain suppression");
-    PROTECT_ACTION(CastPainSuppressionProtectAction, "pain suppression");
 
     // holy
     HEAL_ACTION(CastLesserHealAction, "lesser heal");
@@ -39,13 +34,9 @@ namespace ai
     HEAL_PARTY_ACTION(CastFlashHealOnPartyAction, "flash heal");
     HEAL_ACTION(CastRenewAction, "renew");
     HEAL_HOT_PARTY_ACTION(CastRenewOnPartyAction, "renew");
-    // holy 2.4.3
-    HEAL_PARTY_ACTION(CastPrayerOfMendingAction, "prayer of mending");
-    HEAL_PARTY_ACTION(CastBindingHealAction, "binding heal");
 
     BUFF_ACTION(CastPrayerOfHealingAction, "prayer of healing");
     AOE_HEAL_ACTION(CastLightwellAction, "lightwell");
-    AOE_HEAL_ACTION(CastCircleOfHealingAction, "circle of healing");
 
     SPELL_ACTION(CastSmiteAction, "smite");
     SPELL_ACTION(CastHolyNovaAction, "holy nova");
@@ -69,8 +60,6 @@ namespace ai
     BUFF_ACTION(CastShadowProtectionAction, "shadow protection");
     BUFF_PARTY_ACTION(CastShadowProtectionOnPartyAction, "shadow protection");
     GREATER_BUFF_PARTY_ACTION(CastPrayerOfShadowProtectionAction, "prayer of shadow protection");
-    // shadow 2.4.3
-    BUFF_ACTION(CastShadowfiendAction, "shadowfiend");
     SPELL_ACTION(CastShadowWordDeathAction, "shadow word: death");
 
     // shadow talents
@@ -79,9 +68,6 @@ namespace ai
     BUFF_ACTION(CastShadowformAction, "shadowform");
     SPELL_ACTION(CastSilenceAction, "silence");
     ENEMY_HEALER_ACTION(CastSilenceOnEnemyHealerAction, "silence");
-    // shadow talents 2.4.3
-    RANGED_DEBUFF_ACTION(CastVampiricTouchAction, "vampiric touch");
-    RANGED_DEBUFF_ENEMY_ACTION(CastVampiricTouchActionOnAttacker, "vampiric touch on attacker");
 
     // racials
     RANGED_DEBUFF_ACTION(CastDevouringPlagueAction, "devouring plague");

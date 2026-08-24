@@ -137,10 +137,9 @@ namespace ai
         static void printWKT(const std::vector<WorldPosition>& points, std::ostringstream& out, const uint32 dim = 0, const bool loop = false);
         void printWKT(std::ostringstream& out) const { printWKT({ *this }, out); }
 
-        bool isOverworld() const { return mapId == 0 || mapId == 1 || mapId == 530 || mapId == 571 || mapId == 609; }
+        bool isOverworld() const { return mapId == 0 || mapId == 1 || mapId == 609; }
         bool IsOverworld() const { return isOverworld(); }
-        bool isBg() const { return mapId == 30 || mapId == 489 || mapId == 529 || mapId == 566 || mapId == 607 || mapId == 628; }
-        bool isArena() const { return mapId == 559 || mapId == 572 || mapId == 562 || mapId == 617 || mapId == 618; }
+        bool isBg() const { return mapId == 27 || mapId == 30 || mapId == 489 || mapId == 529; }
         bool isInstance() const { return !isOverworld() || mapId == 609;}
         bool isInWater() const { return getTerrain() ? getTerrain()->IsInWater(x, y, z) : false; };
         bool isUnderWater() const { return getTerrain() ? getTerrain()->IsUnderWater(x, y, z) : false; };
@@ -249,31 +248,19 @@ namespace ai
         float getVisibilityDistance() { return getMap(0) ? getMap(0)->GetVisibilityDistance() : (isOverworld() ? World::GetMaxVisibleDistanceOnContinents() : World::GetMaxVisibleDistanceInInstances()); }
 
         bool IsInStaticLineOfSight(WorldPosition pos, float heightMod = 0.5f) const;
-#if defined(MANGOSBOT_TWO)
-        bool IsInLineOfSight(WorldPosition pos, float heightMod = 0.5f) const { return mapId == pos.mapId && getMap(getFirstInstanceId()) && getMap(getFirstInstanceId())->isInLineOfSight(x, y, z + heightMod, pos.x, pos.y, pos.z + heightMod, 0, true); }
-        bool GetHitPosition(WorldPosition& pos) const { return getMap(getFirstInstanceId())->GetHitPosition(x, y, z, pos.x, pos.y, pos.z,0, 0.0f);};
-#else
         // Penqle uses lowercase isInLineOfSight (cmangos uppercase IsInLineOfSight).
         bool IsInLineOfSight(WorldPosition pos, float heightMod = 0.5f) const { return mapId == pos.mapId && getMap(getFirstInstanceId()) && getMap(getFirstInstanceId())->isInLineOfSight(x, y, z + heightMod, pos.x, pos.y, pos.z + heightMod, true); }
         // Penqle's equivalent of cmangos's GetHitPosition is GetLosHitPosition (signature: srcX,Y,Z, destX,Y,Z, modifyDist).
         bool GetHitPosition(WorldPosition& pos) { return getMap(getFirstInstanceId())->GetLosHitPosition(x, y, z, pos.x, pos.y, pos.z, 0.0f);};
-#endif
 
 
         bool isOutside() const { WorldPosition high(*this); high.setZ(z + 500.0f); return IsInLineOfSight(high); }
-        bool canFly() const;
-
-#if defined(MANGOSBOT_TWO)
-        const float getHeight(bool swim = false) const { if(getMap(getFirstInstanceId())) return getMap(getFirstInstanceId())->GetHeight(0, x, y, z, swim); return 0.0;}
-        float GetHeightInRange(float maxSearchDist = 4.0f) const { float z = z;  return getMap(getFirstInstanceId()) ? (getMap(getFirstInstanceId())->GetHeightInRange(0, x, y, z, maxSearchDist) ? z : z) : z; }
-#else
         // Penqle's Map::GetHeight signature is (x, y, z, vmap=true, maxSearchDist=...).
         // Bot's `swim` parameter doesn't map directly; pass `true` for vmap (most common bot use case is on-map height).
         float getHeight(bool swim = false) const { return getMap(getFirstInstanceId()) ? getMap(getFirstInstanceId())->GetHeight(x, y, z, true) : z; }
         float GetHeight(bool swim = false) const { return getHeight(swim); }
         // Penqle has no GetHeightInRange method. Approximate with GetHeight (loses range-search behavior).
         float GetHeightInRange(float maxSearchDist = 4.0f) const { return getMap(getFirstInstanceId()) ? getMap(getFirstInstanceId())->GetHeight(x, y, z, true, maxSearchDist) : z; }
-#endif
 
         float currentHeight() const { return z - getHeight(); }
 

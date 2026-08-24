@@ -16,24 +16,14 @@ bool LootStartRollAction::Execute(Event& event)
     uint32 itemId;
     uint32 randomSuffix;
     int32 randomPropertyId;
-#ifdef MANGOSBOT_TWO
-    uint32 mapId;
-    uint32 count;
-#endif
     uint32 timeout;
 
     p.rpos(0); //reset packet pointer
     p >> creatureGuid; //creature guid what we're looting
-#ifdef MANGOSBOT_TWO
-    p >> mapId; /// 3.3.3 mapId
-#endif
     p >> itemSlot; // the itemEntryId for the item that shall be rolled for
     p >> itemId; // the itemEntryId for the item that shall be rolled for
     p >> randomSuffix; // randomSuffix
     p >> randomPropertyId; // item random property ID
-#ifdef MANGOSBOT_TWO
-    p >> count; // items in stack
-#endif
     p >> timeout;  // the countdown time to choose "need" or "greed"
 
     LootRollMap lootRolls = AI_VALUE(LootRollMap, "active rolls");
@@ -210,11 +200,7 @@ RollVote RollAction::CalculateRollVote(ItemQualifier& itemQualifier)
         needVote = ROLL_GREED;
         break;
     case ItemUsage::ITEM_USAGE_DISENCHANT:
-#ifndef MANGOSBOT_TWO
         needVote = ROLL_GREED;
-#else
-        needVote = ROLL_DISENCHANT;
-#endif
         break;
     }
 

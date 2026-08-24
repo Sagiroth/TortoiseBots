@@ -71,7 +71,6 @@ DpsRogueStrategy::DpsRogueStrategy(PlayerbotAI* botAI) : MeleeCombatStrategy(bot
 std::vector<NextAction> DpsRogueStrategy::getDefaultActions()
 {
     return {
-        NextAction("killing spree", ACTION_DEFAULT + 0.1f),
         NextAction("melee", ACTION_DEFAULT)
     };
 }
@@ -148,15 +147,6 @@ void DpsRogueStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
     triggers.push_back(
         new TriggerNode(
-            "critical health",
-            {
-                NextAction("cloak of shadows", ACTION_HIGH + 7)
-            }
-        )
-    );
-
-    triggers.push_back(
-        new TriggerNode(
             "kick",
             {
                 NextAction("kick", ACTION_INTERRUPT + 2)
@@ -211,14 +201,6 @@ void DpsRogueStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         )
     );
 
-    triggers.push_back(
-        new TriggerNode(
-            "low tank threat",
-            {
-                NextAction("tricks of the trade on main tank", ACTION_HIGH + 7)
-            }
-        )
-    );
 }
 
 class StealthedRogueStrategyActionNodeFactory : public NamedObjectFactory<ActionNode>
@@ -364,14 +346,6 @@ void RogueAoeStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             "light aoe",
             {
                 NextAction("blade flurry", ACTION_HIGH)
-            }
-        )
-    );
-    triggers.push_back(
-        new TriggerNode(
-            "medium aoe",
-            {
-                NextAction("fan of knives", ACTION_NORMAL + 5)
             }
         )
     );

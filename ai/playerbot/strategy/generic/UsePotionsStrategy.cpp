@@ -33,11 +33,9 @@ void UsePotionsStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
         "critical health",
         NextAction::array(0, new NextAction("healthstone", ACTION_CRITICAL_HEAL + 1), NULL)));
 
-#ifdef MANGOSBOT_ZERO
     triggers.push_back(new TriggerNode(
         "critical health",
         NextAction::array(0, new NextAction("whipper root tuber", ACTION_CRITICAL_HEAL), NULL)));
-#endif
 
     triggers.push_back(new TriggerNode(
         "low health",

@@ -105,12 +105,6 @@ namespace ai
 		CastWrathAction(PlayerbotAI* ai) : CastSpellAction(ai, "wrath") {}
 	};
 
-	class CastStarfallAction : public CastSpellAction
-	{
-	public:
-		CastStarfallAction(PlayerbotAI* ai) : CastSpellAction(ai, "starfall") {}
-	};
-
 	class CastHurricaneAction : public CastSpellAction
 	{
 	public:
@@ -294,15 +288,7 @@ namespace ai
 		virtual bool isUseful()
 		{
 			bool firstmount = bot->GetLevel() >=
-#ifdef MANGOSBOT_ZERO
 				40
-#else
-#ifdef MANGOSBOT_ONE
-				30
-#else
-				20
-#endif
-#endif
 				;
 
 			// useful if no mount or with wsg flag
@@ -317,19 +303,13 @@ namespace ai
 
 		virtual bool isUseful()
 		{
-			return ai->HasAnyAuraOf(GetTarget(), "dire bear form", "bear form", "cat form", "travel form", "aquatic form", "flight form", "swift flight form", "moonkin form", "tree of life", NULL);
+			return ai->HasAnyAuraOf(GetTarget(), "dire bear form", "bear form", "cat form", "travel form", "aquatic form", "moonkin form", "tree of life", NULL);
 		}
 
 		virtual bool isPossible() { return true; }
 
 		virtual bool Execute(Event& event);
 	};
-
-    class CastFeralChargeCatAction : public CastReachTargetSpellAction
-    {
-    public:
-        CastFeralChargeCatAction(PlayerbotAI* ai) : CastReachTargetSpellAction(ai, "feral charge - cat", 1.5f) {}
-    };
 
     class CastCowerAction : public CastBuffSpellAction
     {
@@ -497,11 +477,7 @@ namespace ai
     {
     public:
         CastFeralChargeBearAction(PlayerbotAI* ai)
-#ifdef MANGOSBOT_TWO
-        : CastReachTargetSpellAction(ai, "feral charge - bear", 1.5f) {}
-#else
         : CastReachTargetSpellAction(ai, "feral charge", 1.5f) {}
-#endif
     };
 
     class CastGrowlAction : public CastSpellAction
@@ -544,11 +520,7 @@ namespace ai
     class CastSwipeBearAction : public CastMeleeSpellAction
     {
     public:
-#ifdef MANGOSBOT_TWO
-        CastSwipeBearAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "swipe (bear)") {}
-#else
         CastSwipeBearAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "swipe") {}
-#endif
     };
 
     class CastLacerateAction : public CastMeleeSpellAction
@@ -579,14 +551,6 @@ namespace ai
     {
     public:
         CastEnrageAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "enrage") {}
-    };
-
-    class CastLifebloomAction : public CastSpellAction
-    {
-    public:
-        explicit CastLifebloomAction(PlayerbotAI* ai) : CastSpellAction(ai, "lifebloom") {}
-
-        std::string GetTargetName() override { return "party tank without lifebloom"; }
     };
 
     class UpdateDruidPveStrategiesAction : public UpdateStrategyDependenciesAction

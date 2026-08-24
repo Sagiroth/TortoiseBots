@@ -62,18 +62,6 @@ bool PossibleTargetsValue::IsFriendly(Unit* target, Player* player)
     {
         friendly = true;
 
-#ifndef MANGOSBOT_ZERO
-        // Check if the target is another player in a duel/arena
-        Player* targetPlayer = dynamic_cast<Player*>(target);
-        if (targetPlayer)
-        {
-            // If the target is in an arena with the player and is not on the same team
-            if (targetPlayer->InArena() && player->InArena() && (targetPlayer->GetBGTeam() != player->GetBGTeam()))
-            {
-                friendly = false;
-            }
-        }
-#endif
     }
 
     return friendly;
@@ -81,10 +69,9 @@ bool PossibleTargetsValue::IsFriendly(Unit* target, Player* player)
 
 bool PossibleTargetsValue::IsAttackable(Unit* target, Player* player)
 {
-    const bool inVehicle = PlayerbotAIStorage::Instance().GetAI(player) && PlayerbotAIStorage::Instance().GetAI(player)->IsInVehicle();
     return !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_ATTACKABLE_1) &&
            !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_UNTARGETABLE) &&
-           (inVehicle || !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_UNINTERACTIBLE)) &&
+           !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_UNINTERACTIBLE) &&
            !target->HasAuraType(SPELL_AURA_SPIRIT_OF_REDEMPTION);
 }
 

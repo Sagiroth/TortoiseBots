@@ -18,32 +18,3 @@ bool HasNearbyQuestTakerTrigger::IsActive()
 
     return AI_VALUE(bool, "has nearby quest taker");
 }
-
-bool NearDarkPortalTrigger::IsActive()
-{
-    return sServerFacade.GetAreaId(bot) == 72;
-}
-
-bool AtDarkPortalAzerothTrigger::IsActive()
-{
-    if (sServerFacade.GetAreaId(bot) == 72)
-    {
-        if (sServerFacade.getDistance2d(bot, -11906.9f, -3208.53f) < 20.0f)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-bool AtDarkPortalOutlandTrigger::IsActive()
-{
-    if (sServerFacade.GetAreaId(bot) == 3539)
-    {
-        if (sServerFacade.getDistance2d(bot, -248.1939f, 921.919f) < 10.0f)
-        {
-            return true;
-        }
-    }
-    return false;
-}

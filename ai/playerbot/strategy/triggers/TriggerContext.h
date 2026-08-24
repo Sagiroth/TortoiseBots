@@ -20,10 +20,6 @@
 #include "NaxxramasDungeonTriggers.h"
 #include "WorldBuffTravelTriggers.h"
 
-#ifdef GenerateBotTests
-#include "../tests/TestTriggers.h"
-#endif
-
 namespace ai
 {
     class TriggerContext : public NamedObjectContext<Trigger>
@@ -202,13 +198,6 @@ namespace ai
             creators["charmed"] = [](PlayerbotAI* ai) { return new CharmedTrigger(ai); };
             creators["stunned"] = [](PlayerbotAI* ai) { return new StunnedTrigger(ai); };
 
-            // move to/enter dark portal if near
-            creators["near dark portal"] = [](PlayerbotAI* ai) { return new NearDarkPortalTrigger(ai); };
-            creators["at dark portal azeroth"] = [](PlayerbotAI* ai) { return new AtDarkPortalAzerothTrigger(ai); };
-            creators["at dark portal outland"] = [](PlayerbotAI* ai) { return new AtDarkPortalOutlandTrigger(ai); };
-
-            creators["vehicle near"] = [](PlayerbotAI* ai) { return new VehicleNearTrigger(ai); };
-            creators["in vehicle"] = [](PlayerbotAI* ai) { return new InVehicleTrigger(ai); };
 
             creators["need world buff"] = [](PlayerbotAI* ai) { return new NeedWorldBuffTrigger(ai); };
 
@@ -262,7 +251,6 @@ namespace ai
             creators["rpg quest use"] = [](PlayerbotAI* ai) { return new RpgQuestUseTrigger(ai); };
             creators["rpg ai chat"] = [](PlayerbotAI* ai) { return new RpgAIChatTrigger(ai); };
             creators["rpg spell"] = [](PlayerbotAI* ai) { return new RpgSpellTrigger(ai); };
-            creators["rpg spell click"] = [](PlayerbotAI* ai) { return new RpgSpellClickTrigger(ai); };
             creators["rpg craft"] = [](PlayerbotAI* ai) { return new RpgCraftTrigger(ai); };
             creators["rpg trade useful"] = [](PlayerbotAI* ai) { return new RpgTradeUsefulTrigger(ai); };
             creators["rpg enchant"] = [](PlayerbotAI* ai) { return new RpgEnchantTrigger(ai); };
@@ -320,10 +308,6 @@ namespace ai
             creators["start four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanStartFightTrigger(ai); };
             creators["end four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanEndFightTrigger(ai); };
 
-            // Test framework triggers
-#ifdef GenerateBotTests
-            creators["test ready"] = [](PlayerbotAI* ai) { return new TestReadyTrigger(ai); };
-#endif
         }
     };
 };

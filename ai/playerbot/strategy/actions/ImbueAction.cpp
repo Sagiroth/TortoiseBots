@@ -22,9 +22,6 @@ bool ImbueWithStoneAction::Execute(Event& event)
 
     bool allowMainhand = true;
 
-#ifndef MANGOSBOT_TWO
-    // Check if shaman +30 lvl (non-WOTLK)
-
     if (bot->GetClass() == CLASS_SHAMAN && bot->GetLevel() > 30)
         allowMainhand = false;
 
@@ -44,7 +41,6 @@ bool ImbueWithStoneAction::Execute(Event& event)
             }
         }
     }
-#endif
 
     // Mainhand
     if (allowMainhand)
@@ -91,8 +87,7 @@ bool ImbueWithStoneAction::isUseful()
     if (bot->GetLevel() > 70)
         return false;
 
-#ifndef MANGOSBOT_TWO
-    // Deny mainhand stone use if bot is a Shaman over 30 or grouped with one over 32 (TBC/Vanilla only)
+    // Deny mainhand stone use if bot is a Shaman over 30 or grouped with one over 32.
     if (bot->GetClass() == CLASS_SHAMAN && bot->GetLevel() > 30)
         allowMainhand = false;
 
@@ -112,7 +107,6 @@ bool ImbueWithStoneAction::isUseful()
             }
         }
     }
-#endif
 
     // Check Offhand always
     Item* secondaryWeapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND);

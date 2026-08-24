@@ -92,10 +92,6 @@ bool MarkRtiAction::Execute(Event& event)
     }
 
     int index = RtiTargetValue::GetRtiIndex(rti);
-#ifndef MANGOSBOT_TWO
     group->SetTargetIcon(index, target->getObjectGuid());
-#else
-    group->SetTargetIcon(index, bot->getObjectGuid(), target->getObjectGuid());
-#endif
     return true;
 }

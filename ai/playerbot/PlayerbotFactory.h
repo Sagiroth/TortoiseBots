@@ -3,7 +3,6 @@
 #include "../../runtime/PlayerbotAIStorage.h"
 
 class Player;
-class PlayerbotMgr;
 class ChatHandler;
 
 struct EnchantTemplate
@@ -49,7 +48,6 @@ class PlayerbotFactory
 public:
     PlayerbotFactory(Player* bot, uint32 level, uint32 itemQuality = 0) : level(level), itemQuality(itemQuality), bot(bot), ai(PlayerbotAIStorage::Instance().GetAI(bot)) {}
 
-    static ObjectGuid GetRandomBot();
     static void Init();
     void Refresh();
     void Randomize(bool incremental, bool syncWithMaster);
@@ -57,7 +55,7 @@ public:
     static std::list<uint32> specialQuestIds;
     void InitSkills();
     void EnchantEquipment();
-    void EquipGear() { InitEquipment(false, false); InitGems(); }
+    void EquipGear() { InitEquipment(false, false); }
     void EquipGearBest() { return InitEquipment(false, false, false); }
     void EquipGearPartialUpgrade() { return InitEquipment(false, false, true, true); }
     void UpgradeGear(bool syncWithMaster) { return InitEquipment(!syncWithMaster, syncWithMaster); }
@@ -104,7 +102,6 @@ private:
     bool CanEquipArmor(ItemPrototype const* proto);
     bool CanEquipWeapon(ItemPrototype const* proto);
     void EnchantItem(Item* item);
-    void AddGems(Item* item);
     void AddItemStats(uint32 mod, uint8 &sp, uint8 &ap, uint8 &tank);
     void AddItemSpellStats(uint32 smod, uint8& sp, uint8& ap, uint8& tank);
     bool CheckItemStats(uint8 sp, uint8 ap, uint8 tank);
@@ -116,15 +113,12 @@ private:
     void InitInventoryEquip();
     void InitInventorySkill();
     Item* StoreItem(uint32 itemId, uint32 count, bool ignoreCount = false);
-    void InitGuild();
-    void InitArenaTeam();
     void InitImmersive();
     void AddConsumables();
     static void AddPrevQuests(uint32 questId, std::list<uint32>& questIds);
     void LoadEnchantContainer();
     void ApplyEnchantTemplate();
     void ApplyEnchantTemplate(uint8 spec, Item* item = nullptr);
-    void InitGems();
     EnchantContainer::const_iterator GetEnchantContainerBegin() { return m_EnchantContainer.begin(); }
     EnchantContainer::const_iterator GetEnchantContainerEnd() { return m_EnchantContainer.end(); }
 

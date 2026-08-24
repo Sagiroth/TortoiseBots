@@ -36,18 +36,8 @@ namespace ai
         CastChainHealAction(PlayerbotAI* ai) : CastAoeHealSpellAction(ai, "chain heal") {}
     };
 
-    class CastRiptideAction : public CastHealingSpellAction
-    {
-    public:
-        CastRiptideAction(PlayerbotAI* ai) : CastHealingSpellAction(ai, "riptide") {}
-    };
-
-    class CastRiptideOnPartyAction : public HealPartyMemberAction
-    {
-    public:
-        CastRiptideOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "riptide") {}
-    };
-
+    // Turtle/Tortoise keeps the classic-era Earth Shield and Water Shield
+    // variants as native player spells.
     class CastEarthShieldAction : public CastBuffSpellAction
     {
     public:
@@ -71,12 +61,6 @@ namespace ai
 	public:
 		CastLightningShieldAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "lightning shield") {}
 	};
-
-    class CastEarthlivingWeaponAction : public CastEnchantItemAction
-    {
-    public:
-        CastEarthlivingWeaponAction(PlayerbotAI* ai) : CastEnchantItemAction(ai, "earthliving weapon") {}
-    };
 
     class CastRockbiterWeaponAction : public CastEnchantItemAction
     {
@@ -184,12 +168,6 @@ namespace ai
         CastTremorTotemAction(PlayerbotAI* ai) : CastTotemAction(ai, "tremor totem") {}
     };
 
-    class CastTranquilAirTotemAction : public CastTotemAction
-    {
-    public:
-        CastTranquilAirTotemAction(PlayerbotAI* ai) : CastTotemAction(ai, "tranquil air totem") {}
-    };
-
     class CastStrengthOfEarthTotemAction : public CastTotemAction
     {
     public:
@@ -214,17 +192,6 @@ namespace ai
 	{
 	public:
 		CastHealingStreamTotemAction(PlayerbotAI* ai) : CastTotemAction(ai, "healing stream totem") {}
-	};
-
-	class CastWrathOfAirTotemAction : public CastTotemAction
-	{
-	public:
-		CastWrathOfAirTotemAction(PlayerbotAI* ai) : CastTotemAction(ai, "wrath of air totem") {}
-
-        virtual bool isUseful() override
-        {
-            return (!bot->GetGroup() || ai->HasStrategy("totem air wrath", BotState::BOT_STATE_COMBAT)) && CastTotemAction::isUseful();
-        }
 	};
 
     class CastFrostResistanceTotemAction : public CastTotemAction
@@ -255,12 +222,6 @@ namespace ai
     {
     public:
         CastPoisonCleansingTotemAction(PlayerbotAI* ai) : CastTotemAction(ai, "poison cleansing totem") {}
-    };
-
-    class CastTotemOfWrathAction : public CastTotemAction
-    {
-    public:
-        CastTotemOfWrathAction(PlayerbotAI* ai) : CastTotemAction(ai, "totem of wrath") {}
     };
 
     class CastCleansingTotemAction : public CastTotemAction
@@ -326,12 +287,6 @@ namespace ai
         CastFireNovaAction(PlayerbotAI* ai) : CastSpellAction(ai, "fire nova") {}
     };
 
-    class CastWindShearAction : public CastSpellAction
-    {
-    public:
-        CastWindShearAction(PlayerbotAI* ai) : CastSpellAction(ai, "wind shear") {}
-    };
-
 	class CastAncestralSpiritAction : public ResurrectPartyMemberAction
 	{
 	public:
@@ -344,17 +299,17 @@ namespace ai
 		CastPurgeAction(PlayerbotAI* ai) : CastSpellAction(ai, "purge") {}
 	};
 
-	class CastStormstrikeAction : public CastMeleeSpellAction
+    class CastStormstrikeAction : public CastMeleeSpellAction
     {
 	public:
 		CastStormstrikeAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "stormstrike") {}
 	};
 
-	class CastLavaLashAction : public CastMeleeSpellAction
+    class CastBloodlustAction : public CastBuffSpellAction
     {
-	public:
-		CastLavaLashAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "lava lash") {}
-	};
+    public:
+        CastBloodlustAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "bloodlust") {}
+    };
 
     class CastWaterBreathingAction : public CastBuffSpellAction
     {
@@ -378,34 +333,6 @@ namespace ai
     {
     public:
         CastWaterWalkingOnPartyAction(PlayerbotAI* ai) : BuffOnPartyAction(ai, "water walking") {}
-    };
-
-    class CastCleanseSpiritAction : public CastCureSpellAction
-    {
-    public:
-        CastCleanseSpiritAction(PlayerbotAI* ai) : CastCureSpellAction(ai, "cleanse spirit") {}
-    };
-
-    class CastCleanseSpiritPoisonOnPartyAction : public CurePartyMemberAction
-    {
-    public:
-        CastCleanseSpiritPoisonOnPartyAction(PlayerbotAI* ai) : CurePartyMemberAction(ai, "cleanse spirit", DISPEL_POISON) {}
-
-        virtual std::string getName() override { return "cleanse spirit poison on party"; }
-    };
-    class CastCleanseSpiritCurseOnPartyAction : public CurePartyMemberAction
-    {
-    public:
-        CastCleanseSpiritCurseOnPartyAction(PlayerbotAI* ai) : CurePartyMemberAction(ai, "cleanse spirit", DISPEL_CURSE) {}
-
-        virtual std::string getName() override { return "cleanse spirit curse on party"; }
-    };
-    class CastCleanseSpiritDiseaseOnPartyAction : public CurePartyMemberAction
-    {
-    public:
-        CastCleanseSpiritDiseaseOnPartyAction(PlayerbotAI* ai) : CurePartyMemberAction(ai, "cleanse spirit", DISPEL_DISEASE) {}
-
-        virtual std::string getName() override { return "cleanse spirit disease on party"; }
     };
 
     class CastFlameShockAction : public CastRangedDebuffSpellAction
@@ -438,30 +365,6 @@ namespace ai
         CastLightningBoltAction(PlayerbotAI* ai) : CastSpellAction(ai, "lightning bolt") {}
     };
 
-    class CastThunderstormAction : public CastMeleeSpellAction
-    {
-    public:
-        CastThunderstormAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "thunderstorm") {}
-    };
-
-    class CastHeroismAction : public CastBuffSpellAction
-    {
-    public:
-        CastHeroismAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "heroism") {}
-    };
-
-    class CastBloodlustAction : public CastBuffSpellAction
-    {
-    public:
-        CastBloodlustAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "bloodlust") {}
-    };
-
-    class CastWindShearOnEnemyHealerAction : public CastSpellOnEnemyHealerAction
-    {
-    public:
-        CastWindShearOnEnemyHealerAction(PlayerbotAI* ai) : CastSpellOnEnemyHealerAction(ai, "wind shear") {}
-    };
-
     class CastCurePoisonAction : public CastCureSpellAction
     {
     public:
@@ -487,6 +390,12 @@ namespace ai
         virtual std::string getName() override { return "cure disease on party"; }
     };
 
+    class CastEarthShieldOnPartyTankAction : public BuffOnTankAction
+    {
+    public:
+        CastEarthShieldOnPartyTankAction(PlayerbotAI* ai) : BuffOnTankAction(ai, "earth shield") {}
+    };
+
     class CastCallOfTheElements : public CastBuffSpellAction
     {
     public:
@@ -508,17 +417,7 @@ namespace ai
     class CastTotemicRecall : public CastBuffSpellAction
     {
     public:
-#ifdef MANGOSBOT_ONE
-        CastTotemicRecall(PlayerbotAI* ai) : CastBuffSpellAction(ai, "totemic call") {}
-#else
         CastTotemicRecall(PlayerbotAI* ai) : CastBuffSpellAction(ai, "totemic recall") {}
-#endif
-    };
-
-    class CastEarthShieldOnPartyTankAction : public BuffOnTankAction
-    {
-    public:
-        CastEarthShieldOnPartyTankAction(PlayerbotAI* ai) : BuffOnTankAction(ai, "earth shield") {}
     };
 
     class SetTotemBars : public Action
@@ -526,49 +425,6 @@ namespace ai
     public:
         SetTotemBars(PlayerbotAI* ai) : Action(ai, "setup shaman totembar")
         {
-#ifdef MANGOSBOT_TWO
-            //This sets the totems in the proper actions bars (the totem bars)
-            //Fire totems
-            uint32 totem_of_wrath_id = AI_VALUE2(uint32, "spell id", "totem of wrath");
-            uint32 searing_totem_id = AI_VALUE2(uint32, "spell id", "searing totem");
-            uint32 magma_totem_id = AI_VALUE2(uint32, "spell id", "magma totem");
-
-            //Earth totems
-            uint32 strength_of_earth_totem_id = AI_VALUE2(uint32, "spell id", "strength of earth totem");
-            uint32 stoneskin_totem_id = AI_VALUE2(uint32, "spell id", "stoneskin totem");
-
-            //Air totems
-            uint32 windfury_totem_id = AI_VALUE2(uint32, "spell id", "windfury totem");
-            uint32 wrath_of_air_totem_id = AI_VALUE2(uint32, "spell id", "wrath of air totem");
-
-            //Water totems
-            uint32 healing_stream_totem_id = AI_VALUE2(uint32, "spell id", "healing stream totem");
-            uint32 mana_spring_totem_id = AI_VALUE2(uint32, "spell id", "mana spring totem");
-
-            Player* bot = ai->GetBot();
-            // Call of the elements - Melee focus
-            if (magma_totem_id)
-                bot->addActionButton(bot->GetActiveSpec(), ACTION_BUTTON_SHAMAN_TOTEMS_BAR, magma_totem_id, ACTION_BUTTON_SPELL);
-            if (strength_of_earth_totem_id)
-                bot->addActionButton(bot->GetActiveSpec(), ACTION_BUTTON_SHAMAN_TOTEMS_BAR + 1, strength_of_earth_totem_id, ACTION_BUTTON_SPELL);
-            if (windfury_totem_id)
-                bot->addActionButton(bot->GetActiveSpec(), ACTION_BUTTON_SHAMAN_TOTEMS_BAR + 2, windfury_totem_id, ACTION_BUTTON_SPELL);
-            if (healing_stream_totem_id)
-                bot->addActionButton(bot->GetActiveSpec(), ACTION_BUTTON_SHAMAN_TOTEMS_BAR + 3, healing_stream_totem_id, ACTION_BUTTON_SPELL);
-
-            // Call of the Ancestors - Caster focus
-            if (totem_of_wrath_id)
-                bot->addActionButton(bot->GetActiveSpec(), ACTION_BUTTON_SHAMAN_TOTEMS_BAR + 4, totem_of_wrath_id, ACTION_BUTTON_SPELL);
-            else if (searing_totem_id)
-                bot->addActionButton(bot->GetActiveSpec(), ACTION_BUTTON_SHAMAN_TOTEMS_BAR + 4, searing_totem_id, ACTION_BUTTON_SPELL);
-
-            if (stoneskin_totem_id)
-                bot->addActionButton(bot->GetActiveSpec(), ACTION_BUTTON_SHAMAN_TOTEMS_BAR + 5, stoneskin_totem_id, ACTION_BUTTON_SPELL);
-            if (wrath_of_air_totem_id)
-                bot->addActionButton(bot->GetActiveSpec(), ACTION_BUTTON_SHAMAN_TOTEMS_BAR + 6, wrath_of_air_totem_id, ACTION_BUTTON_SPELL);
-            if (mana_spring_totem_id)
-                bot->addActionButton(bot->GetActiveSpec(), ACTION_BUTTON_SHAMAN_TOTEMS_BAR + 7, mana_spring_totem_id, ACTION_BUTTON_SPELL);
-#endif
         }
     };
 

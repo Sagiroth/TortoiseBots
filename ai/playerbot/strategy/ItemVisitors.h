@@ -383,10 +383,6 @@ namespace ai
         virtual bool Accept(const ItemPrototype* proto) override
         {
 
-#ifdef MANGOSBOT_TWO
-            if (proto->Spells[0].SpellId == SPELL_ID_GENERIC_LEARN_PET && bot->HasSpell(proto->Spells[1].SpellId))
-                return false; //Do not include mount items the bot already learned.
-#endif
 
             for (int j = 0; j < MAX_ITEM_PROTO_SPELLS; j++)
             {
@@ -428,15 +424,7 @@ namespace ai
 
                     for (int i = 0 ; i < 3; i++)
                     {
-#ifdef MANGOSBOT_ZERO
                         if (spellInfo->Effect[i] == SPELL_EFFECT_SUMMON_CRITTER)
-#else
-#ifdef MANGOSBOT_ONE
-						if (spellInfo->Effect[i] == SPELL_EFFECT_97)
-#else
-						if (spellInfo->Effect[i] == SPELL_EFFECT_SUMMON_PET)
-#endif
-#endif
                             return true;
                     }
                 }
@@ -523,9 +511,6 @@ namespace ai
             }
 
             if (proto->LockID
-#ifdef MANGOSBOT_TWO
-                && !item->IsUnlocked()
-#endif
                 )
                 return false;
 

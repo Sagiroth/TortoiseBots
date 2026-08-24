@@ -204,7 +204,6 @@ namespace ai
             creators["unlock item"] = [](PlayerbotAI* ai) { return new UnlockItemAction(ai); };
             creators["unlock traded item"] = [](PlayerbotAI* ai) { return new UnlockTradedItemAction(ai); };
 
-            creators["focus heal targets"] = [](PlayerbotAI* ai) { return new SetFocusHealTargetsAction(ai); };
             creators["follow target"] = [](PlayerbotAI* ai) { return new SetFollowTargetAction(ai); };
             creators["boost targets"] = [](PlayerbotAI* ai) { return new SetBoostTargetsAction(ai); };
             creators["revive targets"] = [](PlayerbotAI* ai) { return new SetReviveTargetsAction(ai); };

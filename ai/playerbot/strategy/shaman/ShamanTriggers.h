@@ -21,9 +21,7 @@ namespace ai
         {
             // Avoid removing any of the big cooldown totems.
             return AI_VALUE(bool, "have any totem")
-                && !AI_VALUE2(bool, "has totem", "mana tide totem")
-                && !AI_VALUE2(bool, "has totem", "earth elemental totem")
-                && !AI_VALUE2(bool, "has totem", "fire elemental totem");
+                && !AI_VALUE2(bool, "has totem", "mana tide totem");
         }
     };
 
@@ -89,9 +87,7 @@ namespace ai
                 return !AI_VALUE2(bool, "has totem", "searing totem") &&
                        !AI_VALUE2(bool, "has totem", "magma totem") &&
                        !AI_VALUE2(bool, "has totem", "frost resistance totem") &&
-                       !AI_VALUE2(bool, "has totem", "flametongue totem") &&
-                       !AI_VALUE2(bool, "has totem", "totem of wrath") &&
-                       !AI_VALUE2(bool, "has totem", "fire elemental totem");
+                       !AI_VALUE2(bool, "has totem", "flametongue totem");
             }
         }
 
@@ -109,9 +105,7 @@ namespace ai
                 !AI_VALUE2(bool, "has totem", "searing totem") &&
                 !AI_VALUE2(bool, "has totem", "magma totem") &&
                 !AI_VALUE2(bool, "has totem", "frost resistance totem") &&
-                !AI_VALUE2(bool, "has totem", "flametongue totem") &&
-                !AI_VALUE2(bool, "has totem", "totem of wrath") &&
-                !AI_VALUE2(bool, "has totem", "fire elemental totem");
+                !AI_VALUE2(bool, "has totem", "flametongue totem");
         }
     };
 
@@ -153,8 +147,7 @@ namespace ai
                        !AI_VALUE2(bool, "has totem", "stoneskin totem") &&
                        !AI_VALUE2(bool, "has totem", "stoneclaw totem") &&
                        !AI_VALUE2(bool, "has totem", "strength of earth totem") &&
-                       !AI_VALUE2(bool, "has totem", "tremor totem") &&
-                       !AI_VALUE2(bool, "has totem", "earth elemental totem");
+                       !AI_VALUE2(bool, "has totem", "tremor totem");
             }
         }
 
@@ -186,10 +179,6 @@ namespace ai
             {
                 return !AI_VALUE2(bool, "has totem", "nature resistance totem");
             }
-            else if (ai->HasStrategy("totem air tranquil", BotState::BOT_STATE_COMBAT))
-            {
-                return !AI_VALUE2(bool, "has totem", "tranquil air totem");
-            }
             else if (ai->HasStrategy("totem air windfury", BotState::BOT_STATE_COMBAT))
             {
                 return !AI_VALUE2(bool, "has totem", "windfury totem");
@@ -198,20 +187,14 @@ namespace ai
             {
                 return !AI_VALUE2(bool, "has totem", "windwall totem");
             }
-            else if (ai->HasStrategy("totem air wrath", BotState::BOT_STATE_COMBAT))
-            {
-                return !AI_VALUE2(bool, "has totem", "wrath of air totem");
-            }
             else
             {
                 return !AI_VALUE2(bool, "has totem", "grace of air totem") &&
                        !AI_VALUE2(bool, "has totem", "windwall totem") &&
-                       !AI_VALUE2(bool, "has totem", "tranquil air totem") &&
                        !AI_VALUE2(bool, "has totem", "windfury totem") &&
                        !AI_VALUE2(bool, "has totem", "grounding totem") &&
                        !AI_VALUE2(bool, "has totem", "sentry totem") &&
-                       !AI_VALUE2(bool, "has totem", "nature resistance totem") &&
-                       !AI_VALUE2(bool, "has totem", "wrath of air totem");
+                       !AI_VALUE2(bool, "has totem", "nature resistance totem");
             }
         }
 
@@ -266,22 +249,16 @@ namespace ai
         bool inMovement;
     };
 
-    class WindShearInterruptSpellTrigger : public InterruptSpellTrigger
+    class LightningShieldTrigger : public BuffTrigger
     {
     public:
-        WindShearInterruptSpellTrigger(PlayerbotAI* ai) : InterruptSpellTrigger(ai, "wind shear") {}
+        LightningShieldTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "lightning shield") {}
     };
 
     class WaterShieldTrigger : public BuffTrigger
     {
     public:
         WaterShieldTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "water shield") {}
-    };
-
-    class LightningShieldTrigger : public BuffTrigger
-    {
-    public:
-        LightningShieldTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "lightning shield") {}
     };
 
     class PurgeTrigger : public TargetAuraDispelTrigger
@@ -382,42 +359,6 @@ namespace ai
         }
     };
 
-    class CleanseSpiritPoisonTrigger : public NeedCureTrigger
-    {
-    public:
-        CleanseSpiritPoisonTrigger(PlayerbotAI* ai) : NeedCureTrigger(ai, "cleanse spirit", DISPEL_POISON) {}
-    };
-
-    class PartyMemberCleanseSpiritPoisonTrigger : public PartyMemberNeedCureTrigger
-    {
-    public:
-        PartyMemberCleanseSpiritPoisonTrigger(PlayerbotAI* ai) : PartyMemberNeedCureTrigger(ai, "cleanse spirit", DISPEL_POISON) {}
-    };
-
-    class CleanseSpiritCurseTrigger : public NeedCureTrigger
-    {
-    public:
-        CleanseSpiritCurseTrigger(PlayerbotAI* ai) : NeedCureTrigger(ai, "cleanse spirit", DISPEL_CURSE) {}
-    };
-
-    class PartyMemberCleanseSpiritCurseTrigger : public PartyMemberNeedCureTrigger
-    {
-    public:
-        PartyMemberCleanseSpiritCurseTrigger(PlayerbotAI* ai) : PartyMemberNeedCureTrigger(ai, "cleanse spirit", DISPEL_CURSE) {}
-    };
-
-    class CleanseSpiritDiseaseTrigger : public NeedCureTrigger
-    {
-    public:
-        CleanseSpiritDiseaseTrigger(PlayerbotAI* ai) : NeedCureTrigger(ai, "cleanse spirit", DISPEL_DISEASE) {}
-    };
-
-    class PartyMemberCleanseSpiritDiseaseTrigger : public PartyMemberNeedCureTrigger
-    {
-    public:
-        PartyMemberCleanseSpiritDiseaseTrigger(PlayerbotAI* ai) : PartyMemberNeedCureTrigger(ai, "cleanse spirit", DISPEL_DISEASE) {}
-    };
-
     class ShockTrigger : public DebuffTrigger
     {
     public:
@@ -429,30 +370,6 @@ namespace ai
     {
     public:
         FrostShockSnareTrigger(PlayerbotAI* ai) : SnareTargetTrigger(ai, "frost shock") {}
-    };
-
-    class HeroismTrigger : public BoostTrigger
-    {
-    public:
-        HeroismTrigger(PlayerbotAI* ai) : BoostTrigger(ai, "heroism") {}
-    };
-
-    class BloodlustTrigger : public BoostTrigger
-    {
-    public:
-        BloodlustTrigger(PlayerbotAI* ai) : BoostTrigger(ai, "bloodlust") {}
-    };
-
-    class MaelstromWeaponTrigger : public HasAuraTrigger
-    {
-    public:
-        MaelstromWeaponTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "maelstrom weapon") {}
-    };
-
-    class WindShearInterruptEnemyHealerSpellTrigger : public InterruptEnemyHealerTrigger
-    {
-    public:
-        WindShearInterruptEnemyHealerSpellTrigger(PlayerbotAI* ai) : InterruptEnemyHealerTrigger(ai, "wind shear") {}
     };
 
     class CurePoisonTrigger : public NeedCureTrigger
@@ -479,23 +396,26 @@ namespace ai
         PartyMemberCureDiseaseTrigger(PlayerbotAI* ai) : PartyMemberNeedCureTrigger(ai, "cure disease", DISPEL_DISEASE) {}
     };
 
+    class BloodlustTrigger : public BoostTrigger
+    {
+    public:
+        BloodlustTrigger(PlayerbotAI* ai) : BoostTrigger(ai, "bloodlust") {}
+    };
+
     class PartyTankEarthShieldTrigger : public BuffOnTankTrigger
     {
     public:
         PartyTankEarthShieldTrigger(PlayerbotAI* ai) : BuffOnTankTrigger(ai, "earth shield") {}
 
-        virtual bool IsActive() override
+        bool IsActive() override
         {
             Group* group = bot->GetGroup();
             if (group)
             {
                 for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
-                {
                     if (ai->HasAura("earth shield", ref->GetSource(), false, true))
                         return false;
-                }
             }
-
             return BuffOnTankTrigger::IsActive();
         }
     };

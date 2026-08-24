@@ -11,18 +11,14 @@
 
 namespace
 {
-constexpr uint32 SPELL_TOTEM_OF_WRATH = 30706;
-constexpr uint32 SPELL_FLAMETONGUE_TOTEM = 8227;
 constexpr uint32 SPELL_CLEANSING_TOTEM = 8170;
 constexpr uint32 SPELL_MANA_SPRING_TOTEM = 5675;
-constexpr uint32 SPELL_WRATH_OF_AIR_TOTEM = 3738;
 constexpr uint32 SPELL_GROUNDING_TOTEM = 8177;
 constexpr uint32 SPELL_WINDFURY_TOTEM = 8512;
 }
 
-// These combat strategies are used to set the corresponding totems on the bar, and cast the totem when it's missing.
-// There are special cases for Totem of Wrath, Windfury Totem, Wrath of Air totem, and Cleansing totem - these totems
-// aren't learned at level 30, and have fallbacks in order to prevent the trigger from continuously firing.
+// These combat strategies set the corresponding Vanilla/Turtle totems on the
+// bar and cast them when they are missing.
 
 // Earth Totems
 StrengthOfEarthTotemStrategy::StrengthOfEarthTotemStrategy(PlayerbotAI* botAI) : GenericShamanStrategy(botAI) {}
@@ -82,19 +78,6 @@ void FlametongueTotemStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("no fire totem", { NextAction("flametongue totem", 55.0f) }));
 }
 
-TotemOfWrathStrategy::TotemOfWrathStrategy(PlayerbotAI* botAI) : GenericShamanStrategy(botAI) {}
-void TotemOfWrathStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
-{
-    GenericShamanStrategy::InitTriggers(triggers);
-    // If the bot hasn't learned Totem of Wrath yet, set Flametongue Totem instead.
-    Player* bot = botAI->GetBot();
-    if (bot->HasSpell(SPELL_TOTEM_OF_WRATH))
-        triggers.push_back(new TriggerNode("set totem of wrath", { NextAction("set totem of wrath", 60.0f) }));
-    else if (bot->HasSpell(SPELL_FLAMETONGUE_TOTEM))
-        triggers.push_back(new TriggerNode("set flametongue totem", { NextAction("set flametongue totem", 60.0f) }));
-    triggers.push_back(new TriggerNode("no fire totem", { NextAction("totem of wrath", 55.0f) }));
-}
-
 FrostResistanceTotemStrategy::FrostResistanceTotemStrategy(PlayerbotAI* botAI) : GenericShamanStrategy(botAI) {}
 void FrostResistanceTotemStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
@@ -142,19 +125,6 @@ void FireResistanceTotemStrategy::InitTriggers(std::vector<TriggerNode*>& trigge
 }
 
 // Air Totems
-WrathOfAirTotemStrategy::WrathOfAirTotemStrategy(PlayerbotAI* botAI) : GenericShamanStrategy(botAI) {}
-void WrathOfAirTotemStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
-{
-    GenericShamanStrategy::InitTriggers(triggers);
-    // If the bot hasn't learned Wrath of Air Totem yet, set Grounding Totem instead.
-    Player* bot = botAI->GetBot();
-    if (bot->HasSpell(SPELL_WRATH_OF_AIR_TOTEM))
-        triggers.push_back(new TriggerNode("set wrath of air totem", { NextAction("set wrath of air totem", 60.0f) }));
-    else if (bot->HasSpell(SPELL_GROUNDING_TOTEM))
-        triggers.push_back(new TriggerNode("set grounding totem", { NextAction("set grounding totem", 60.0f) }));
-    triggers.push_back( new TriggerNode("no air totem", { NextAction("wrath of air totem", 55.0f) }));
-}
-
 WindfuryTotemStrategy::WindfuryTotemStrategy(PlayerbotAI* botAI) : GenericShamanStrategy(botAI) {}
 void WindfuryTotemStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {

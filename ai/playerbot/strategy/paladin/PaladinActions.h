@@ -9,7 +9,6 @@ namespace ai
 	BUFF_ACTION(CastSealOfLightAction, "seal of light");
 	BUFF_ACTION(CastSealOfWisdomAction, "seal of wisdom");
 	BUFF_ACTION(CastSealOfCommandAction, "seal of command");
-	BUFF_ACTION(CastSealOfVengeanceAction, "seal of vengeance");
 
 	class CastJudgementAction : public CastMeleeDebuffSpellAction
 	{
@@ -17,7 +16,7 @@ namespace ai
 		CastJudgementAction(PlayerbotAI* ai) : CastMeleeDebuffSpellAction(ai, "judgement") { range = 10.0f; }
 		virtual bool isUseful()
 		{
-			return ai->HasAnyAuraOf(bot, "seal of justice", "seal of command", "seal of vengeance", "seal of blood", "seal of righteousness", "seal of light", "seal of wisdom", NULL);
+			return ai->HasAnyAuraOf(bot, "seal of justice", "seal of command", "seal of righteousness", "seal of light", "seal of wisdom", NULL);
 		}
 	};
 
@@ -47,15 +46,7 @@ namespace ai
 	BUFF_ACTION(CastBlessingOfFreedomAction, "blessing of freedom");
 	// fury
 	BUFF_ACTION(CastRighteousFuryAction, "righteous fury");
-	BUFF_ACTION(CastAvengingWrathAction, "avenging wrath");
 
-	BUFF_ACTION(CastDivineIlluminationAction, "divine illumination");
-
-	class CastDivineStormAction : public CastBuffSpellAction
-	{
-	public:
-		CastDivineStormAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "divine storm") {}
-	};
 
 	class CastCrusaderStrikeAction : public CastMeleeSpellAction
 	{
@@ -419,11 +410,7 @@ namespace ai
                 if (target->IsPlayer())
                 {
                     const uint8 playerClass = ((Player*)target)->GetClass();
-#ifdef MANGOSBOT_TWO
-                    if (playerClass == CLASS_PALADIN || playerClass == CLASS_WARRIOR || playerClass == CLASS_DRUID || playerClass == CLASS_DEATH_KNIGHT)
-#else
                     if (playerClass == CLASS_PALADIN || playerClass == CLASS_WARRIOR || playerClass == CLASS_DRUID)
-#endif
                     {
                         return false;
                     }
@@ -503,12 +490,6 @@ namespace ai
         CastHammerOfJusticeAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "hammer of justice") {}
     };
 
-	class CastHammerOfTheRighteousAction : public CastMeleeSpellAction
-	{
-	public:
-		CastHammerOfTheRighteousAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "hammer of the righteous") {}
-	};
-
 	class CastPurifyPoisonAction : public CastCureSpellAction
 	{
 	public:
@@ -533,18 +514,6 @@ namespace ai
 	public:
 		CastPurifyDiseaseOnPartyAction(PlayerbotAI* ai) : CurePartyMemberAction(ai, "purify", DISPEL_DISEASE) {}
 		virtual std::string getName() override { return "purify disease on party"; }
-	};
-
-	class CastHandOfReckoningAction : public CastSpellAction
-	{
-	public:
-		CastHandOfReckoningAction(PlayerbotAI* ai) : CastSpellAction(ai, "hand of reckoning") {}
-	};
-
-	class CastRighteousDefenseAction : public CastSpellAction
-	{
-	public:
-		CastRighteousDefenseAction(PlayerbotAI* ai) : CastSpellAction(ai, "righteous defense") {}
 	};
 
 	class CastCleansePoisonAction : public CastCureSpellAction
@@ -588,9 +557,6 @@ namespace ai
 
 	SPELL_ACTION(CastExorcismAction, "exorcism");
 
-    BEGIN_SPELL_ACTION(CastAvengersShieldAction, "avenger's shield")
-    END_SPELL_ACTION()
-
 	class CastHolyShieldAction : public CastBuffSpellAction
 	{
 	public:
@@ -621,12 +587,6 @@ namespace ai
         CastTurnUndeadAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "turn undead") {}
         virtual Value<Unit*>* GetTargetValue() { return context->GetValue<Unit*>("cc target", getName()); }
     };
-
-	class CastHandOfSacrificeAction : public BuffOnPartyAction
-	{
-	public:
-		CastHandOfSacrificeAction(PlayerbotAI* ai) : BuffOnPartyAction(ai, "hand of sacrifice") {}
-	};
 
 	class CastBlessingOfSacrificeAction : public BuffOnPartyAction
 	{

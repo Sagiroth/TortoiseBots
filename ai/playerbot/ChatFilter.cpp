@@ -375,11 +375,6 @@ public:
             case CLASS_WARRIOR:
             case CLASS_PALADIN:
             case CLASS_ROGUE:
-            /*case CLASS_DEATH_KNIGHT:
-                if (ranged)
-                    return "";
-                break;*/
-
             case CLASS_HUNTER:
             case CLASS_PRIEST:
             case CLASS_MAGE:
@@ -486,9 +481,6 @@ class ClassChatFilter : public ChatFilter
 public:
     ClassChatFilter(PlayerbotAI* ai) : ChatFilter(ai)
     {
-#ifdef MANGOSBOT_TWO
-        classNames["@deathknight"] = CLASS_DEATH_KNIGHT;
-#endif
         classNames["@druid"] = CLASS_DRUID;
         classNames["@hunter"] = CLASS_HUNTER;
         classNames["@mage"] = CLASS_MAGE;

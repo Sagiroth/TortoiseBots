@@ -23,7 +23,6 @@ void TrainerAction::Learn(uint32 cost, ObjectGuid trainerGuid, uint32 spellId, T
     if (!proto)
         return;
 
-#ifdef MANGOSBOT_ZERO
     if (tSpell->learnedSpell)
     {
         // old code
@@ -42,20 +41,6 @@ void TrainerAction::Learn(uint32 cost, ObjectGuid trainerGuid, uint32 spellId, T
     }
     else
         ai->CastSpell(tSpell->spell, bot);
-#else
-    // From NPCHandler
-    bot->GetSession()->SendPlaySpellVisual(trainerGuid, 0xB3);   // visual effect on trainer
-
-    WorldPacket data(SMSG_PLAY_SPELL_IMPACT, 8 + 4);             // visual effect on player
-    data << bot->getObjectGuid();
-    data << uint32(0x016A);                                      // index from SpellVisualKit.dbc
-    bot->GetSession()->SendPacket(data);
-
-    if (tSpell->IsCastable())
-        bot->CastSpell(bot, tSpell->spell, TRIGGERED_OLD_TRIGGERED);
-    else
-        bot->learnSpell(spellId, false);
-#endif
 
     sPlayerbotAIConfig.logEvent(ai, "TrainerAction", proto->SpellName[0], std::to_string(proto->Id));
 
@@ -97,7 +82,6 @@ bool TrainerAction::Iterate(Player* requester, Creature* creature, TrainerSpellA
         if (!pSpellInfo)
             continue;
 
-#ifdef MANGOSBOT_ZERO
         if (tSpell->learnedSpell)
         {
             bool learned = true;
@@ -127,42 +111,6 @@ bool TrainerAction::Iterate(Player* requester, Creature* creature, TrainerSpellA
             if (!learned)
                 continue;
         }
-#else
-        if (!tSpell->learnedSpell.empty())
-        {
-            bool anySpellLearned = false;
-            for (auto& learnedSpell : tSpell->learnedSpell)
-            {
-                bool learned = true;
-                if (bot->HasSpell(learnedSpell))
-                {
-                    learned = false;
-                }
-                else
-                {
-                    for (int j = 0; j < 3; ++j)
-                    {
-                        if (pSpellInfo->Effect[j] == SPELL_EFFECT_LEARN_SPELL)
-                        {
-                            learned = false;
-                            uint32 learnedSpell = pSpellInfo->EffectTriggerSpell[j];
-
-                            if (!bot->HasSpell(learnedSpell))
-                            {
-                                learned = true;
-                                hasTrainable = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (learned)
-                    anySpellLearned = true;
-            }
-            if (!anySpellLearned)
-                continue;
-        }
-#endif
 
         if (!spells.empty() && spells.find(tSpell->spell) == spells.end())
             continue;
@@ -241,7 +189,7 @@ bool TrainerAction::Execute(Event& event)
     if (spell)
         spells.insert(spell);
 
-    if (text.find("learn") != std::string::npos || sRandomPlayerbotMgr.IsFreeBot(bot) || (sPlayerbotAIConfig.autoTrainSpells != "no" && (creature->GetCreatureInfo()->TrainerType != TRAINER_TYPE_TRADESKILLS || !ai->HasActivePlayerMaster()))) //Todo rewrite to only exclude start primary profession skills and make config dependent.
+    if (text.find("learn") != std::string::npos || sRandomBotFacade.IsFreeBot(bot) || (sPlayerbotAIConfig.autoTrainSpells != "no" && (creature->GetCreatureInfo()->TrainerType != TRAINER_TYPE_TRADESKILLS || !ai->HasActivePlayerMaster()))) //Todo rewrite to only exclude start primary profession skills and make config dependent.
     {
         if(Iterate(requester, creature, &TrainerAction::Learn, spells))
             context->ClearValues("item usage"); //Bot might be able to use new items.

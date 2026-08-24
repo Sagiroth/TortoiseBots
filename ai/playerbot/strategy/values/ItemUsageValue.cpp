@@ -20,7 +20,7 @@ std::unordered_map<uint32, std::vector<std::pair<uint32, uint32>>> ItemUsageValu
 std::unordered_set<uint32> ItemUsageValue::m_allItemIdsSoldByAnyVendors;
 std::unordered_set<uint32> ItemUsageValue::m_itemIdsSoldByAnyVendorsWithLimitedMaxCount;
 
-ItemQualifier::ItemQualifier(std::string qualifier, bool linkQualifier) : itemId(0), enchantId(0), randomPropertyId(0), gem1(0), gem2(0), gem3(0), gem4(0), proto(nullptr) {
+ItemQualifier::ItemQualifier(std::string qualifier) : itemId(0), enchantId(0), randomPropertyId(0), proto(nullptr) {
     std::vector<std::string> numbers = Qualified::getMultiQualifiers(qualifier, ":");
 
     if (numbers.empty())
@@ -31,52 +31,17 @@ ItemQualifier::ItemQualifier(std::string qualifier, bool linkQualifier) : itemId
 
     itemId = stoi(numbers[0]);
 
-#ifdef MANGOSBOT_ZERO
-    uint32 propertyPosition = linkQualifier ? 2 : 6;
-#else
-    uint32 propertyPosition = linkQualifier ? 6 : 6;
-#endif
-
     if (numbers.size() > 1 && !numbers[1].empty())
         enchantId = stoi(numbers[1]);
 
-    if (numbers.size() > propertyPosition && !numbers[propertyPosition].empty())
-        randomPropertyId = stoi(numbers[propertyPosition]);
+    if (numbers.size() > 2 && !numbers[2].empty())
+        randomPropertyId = stoi(numbers[2]);
 
-#ifndef MANGOSBOT_ZERO
-    uint8 gemPosition = linkQualifier ? 2 : 2;
-
-    if (numbers.size() > gemPosition + 3)
-    {
-        if (!numbers[gemPosition].empty())
-            gem1 = stoi(numbers[gemPosition]);
-        if (!numbers[gemPosition + 1].empty())
-            gem2 = stoi(numbers[gemPosition + 1]);
-        if (!numbers[gemPosition + 2].empty())
-            gem3 = stoi(numbers[gemPosition + 2]);
-        if (!numbers[gemPosition + 3].empty())
-            gem4 = stoi(numbers[gemPosition + 3]);
-    }
-#endif
-}
-
-uint32 ItemQualifier::GemId(Item* item, uint8 gemSlot)
-{
-#ifdef MANGOSBOT_ZERO
-    return 0;
-#else
-    uint32 enchantId = item->GetEnchantmentId(EnchantmentSlot(SOCK_ENCHANTMENT_SLOT + gemSlot));
-
-    if (!enchantId)
-        return 0;
-
-    return enchantId;
-#endif
 }
 
 ItemUsage ItemUsageValue::Calculate()
 {
-    ItemQualifier itemQualifier(qualifier, false);
+    ItemQualifier itemQualifier(qualifier);
     uint32 itemId = itemQualifier.GetId();
     if (!itemId)
         return ItemUsage::ITEM_USAGE_NONE;
@@ -275,24 +240,17 @@ ItemUsage ItemUsageValue::Calculate()
         if (mounts.empty())
             return ItemUsage::ITEM_USAGE_EQUIP;
 
-        uint32 newSpeed[2] = { MountValue::GetSpeed(MountValue::GetMountSpell(itemId), false), MountValue::GetSpeed(MountValue::GetMountSpell(itemId), true) };
+        uint32 newSpeed = MountValue::GetSpeed(MountValue::GetMountSpell(itemId));
 
         bool hasBetterMount = false, hasSameMount = false;
 
         for (auto& mount : mounts)
         {
-            for (bool canFly : {true, false})
-            {
-                if (!newSpeed[canFly])
-                    continue;
-
-                uint32 currentSpeed = mount.GetSpeed(canFly);
-
-                if (currentSpeed > newSpeed[canFly])
-                    hasBetterMount = true;
-                else if (currentSpeed == newSpeed[canFly])
-                    hasSameMount = true;
-            }
+            uint32 currentSpeed = mount.GetSpeed();
+            if (currentSpeed > newSpeed)
+                hasBetterMount = true;
+            else if (currentSpeed == newSpeed)
+                hasSameMount = true;
 
             if (hasBetterMount)
                 break;
@@ -306,11 +264,6 @@ ItemUsage ItemUsageValue::Calculate()
     if (equip != ItemUsage::ITEM_USAGE_NONE)
         return equip;
 
-#ifdef MANGOSBOT_TWO
-    if (proto->Class == ITEM_CLASS_GLYPH)
-        if (!ai->HasCheat(BotCheatMask::glyph) && AI_VALUE2(bool, "glyph is upgrade", itemId))
-            return ItemUsage::ITEM_USAGE_EQUIP;
-#endif
 
     if (forceUsage == ForceItemUsage::FORCE_USAGE_EQUIP)
         return ItemUsage::ITEM_USAGE_KEEP;
@@ -322,21 +275,12 @@ ItemUsage ItemUsageValue::Calculate()
         if (proto->DisenchantID)
         {
 
-#ifndef MANGOSBOT_ZERO
-            // 2.0.x addon: Check player enchanting level against the item disenchanting requirements
-            int32 item_disenchantskilllevel = proto->RequiredDisenchantSkill;
-            if (item_disenchantskilllevel <= int32(bot->GetSkillValue(SKILL_ENCHANTING)))
-            {
-#endif
                 Item* item = CurrentItem(proto, bot);
 
                 //Bot has budget to replace the item it wants to disenchant.
-                if (!item || !sRandomPlayerbotMgr.IsRandomBot(bot) || AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::tradeskill) > proto->BuyPrice)
+                if (!item || !sRandomBotFacade.IsRandomBot(bot) || AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::tradeskill) > proto->BuyPrice)
                     return ItemUsage::ITEM_USAGE_DISENCHANT;
 
-#ifndef MANGOSBOT_ZERO
-            }
-#endif
         }
     }
 
@@ -421,28 +365,22 @@ if ((proto->Class == ITEM_CLASS_PROJECTILE ||
 }
 
     //KEEP
-    if (proto->Quality >= ITEM_QUALITY_EPIC && sPlayerbotAIConfig.botsSaveEpics && !sRandomPlayerbotMgr.IsRandomBot(bot))
+    if (proto->Quality >= ITEM_QUALITY_EPIC && sPlayerbotAIConfig.botsSaveEpics && !sRandomBotFacade.IsRandomBot(bot))
         return ItemUsage::ITEM_USAGE_KEEP;
 
     if (proto->Class == ItemClass::ITEM_CLASS_CONSUMABLE)
     {
-        uint8 maxExpansionCharacterLevel = 60;
-#ifdef MANGOSBOT_ONE
-        maxExpansionCharacterLevel = 70;
-#endif
-#ifdef MANGOSBOT_TWO
-        maxExpansionCharacterLevel = 80;
-#endif
+        uint8 maxCharacterLevel = 60;
 
         //keep relevant class consumables (e.g. rogue poisons)
         if (proto->AllowableClass == bot->GetClass() && proto->RequiredLevel + 6 >= bot->GetLevel())
         {
-            if (bot->GetLevel() == maxExpansionCharacterLevel && proto->RequiredLevel + 6 >= bot->GetLevel())
+            if (bot->GetLevel() == maxCharacterLevel && proto->RequiredLevel + 6 >= bot->GetLevel())
             {
                 return ItemUsage::ITEM_USAGE_USE;
             }
 
-            if (bot->GetLevel() == maxExpansionCharacterLevel && proto->RequiredLevel + 10 >= bot->GetLevel())
+            if (bot->GetLevel() == maxCharacterLevel && proto->RequiredLevel + 10 >= bot->GetLevel())
             {
                 return ItemUsage::ITEM_USAGE_USE;
             }
@@ -469,10 +407,6 @@ if ((proto->Class == ITEM_CLASS_PROJECTILE ||
                 sellUsage = ItemUsage::ITEM_USAGE_NONE;
         }
 
-#ifdef MANGOSBOT_TWO
-        if(bot->GetMapId() == 609)
-            return sellUsage;
-#endif
 
         //if item value is significantly higher than its vendor sell price and we actually have money to place the item on ah.
         uint32 ahMoney = AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::ah);
@@ -553,7 +487,7 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     }
     else
     {
-        result = RandomPlayerbotMgr::CanEquipUnseenItem(bot, NULL_SLOT, dest, itemProto->ItemId);
+        result = RandomBotFacade::CanEquipUnseenItem(bot, NULL_SLOT, dest, itemProto->ItemId);
     }
 
     if (result != EQUIP_ERR_OK)
@@ -674,12 +608,6 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     }
 
     const ItemPrototype* oldItemProto = oldItem->GetProto();
-
-    if(MustEquipForQuest(itemProto, bot) && !MustEquipForQuest(oldItemProto, bot))
-        return ItemUsage::ITEM_USAGE_EQUIP;
-
-    if (MustEquipForQuest(oldItemProto, bot))
-        return ItemUsage::ITEM_USAGE_KEEP;
 
     if (itemProto->Class == ITEM_CLASS_ARMOR && itemProto->InventoryType == INVTYPE_TABARD)
     {
@@ -855,11 +783,7 @@ std::string ItemUsageValue::ReasonForNeed(ItemUsage usage, ItemQualifier qualifi
 uint32 ItemUsageValue::GetAhDepositCost(ItemPrototype const* proto, uint32 count)
 {
     uint32 time;
-#ifdef MANGOSBOT_ZERO
     time = 8 * HOUR;
-#else
-    time = 12 * HOUR;
-#endif
 
     float deposit = float(proto->SellPrice * count * (time / MIN_AUCTION_TIME));
 
@@ -981,17 +905,10 @@ bool ItemUsageValue::IsItemUsefulForSkill(ItemPrototype const* proto)
             return true;
         if (ai->HasSkill(SKILL_COOKING) && IsItemUsedBySkill(proto, SKILL_COOKING))
             return true;
-#ifndef MANGOSBOT_ZERO
-        if (ai->HasSkill(SKILL_JEWELCRAFTING) && IsItemUsedBySkill(proto, SKILL_JEWELCRAFTING))
-            return true;
-#endif
         if (ai->HasSkill(SKILL_MINING) &&
             (
                 IsItemUsedBySkill(proto, SKILL_MINING)// ||
                 //IsItemUsedBySkill(proto, SKILL_BLACKSMITHING) ||
-#ifndef MANGOSBOT_ZERO
-                //IsItemUsedBySkill(proto, SKILL_JEWELCRAFTING) ||
-#endif
                 //IsItemUsedBySkill(proto, SKILL_ENGINEERING)
                 ))
             return true;
@@ -1107,7 +1024,7 @@ Item* ItemUsageValue::CurrentItemInSlot(ItemPrototype const* proto, Player* bot)
     uint16 dest;
 
     InventoryResult result;
-    result = RandomPlayerbotMgr::CanEquipUnseenItem(bot, NULL_SLOT, dest, proto->ItemId);
+    result = RandomBotFacade::CanEquipUnseenItem(bot, NULL_SLOT, dest, proto->ItemId);
 
     if (result != EQUIP_ERR_OK)
         return nullptr;
@@ -1303,10 +1220,6 @@ bool ItemUsageValue::IsAntiVenom(ItemPrototype const* proto)
 
 uint32 ItemUsageValue::GetRecipeSpell(ItemPrototype const* proto)
 {
-#ifndef MANGOSBOT_ZERO
-    if (proto->Spells[0].SpellId == SPELL_ID_GENERIC_LEARN && proto->Spells[1].SpellTrigger == ITEM_SPELLTRIGGER_LEARN_SPELL_ID)
-        return proto->Spells[1].SpellId;
-#endif
 
     if (proto->Spells[2].SpellId)
         return proto->Spells[2].SpellId;
@@ -1475,20 +1388,6 @@ bool ItemUsageValue::IsItemSoldByAnyVendor(ItemPrototype const* proto)
     return m_allItemIdsSoldByAnyVendors.count(proto->ItemId) > 0;
 }
 
-bool ItemUsageValue::MustEquipForQuest(ItemPrototype const* proto, Player* bot)
-{
-    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
-    AiObjectContext* context = ai->GetAiObjectContext();
-
-    switch (proto->ItemId)
-    {
-    case 39371:
-        return AI_VALUE2(bool, "need quest objective", 12720);
-    }
-
-    return false;
-}
-
 bool ItemUsageValue::IsItemSoldByAnyVendorButHasLimitedMaxCount(ItemPrototype const* proto)
 {
     return m_itemIdsSoldByAnyVendorsWithLimitedMaxCount.count(proto->ItemId) > 0;
@@ -1510,7 +1409,7 @@ uint32 ItemUsageValue::GetAHMedianBuyoutPricePerItem(ItemPrototype const* proto)
     {
         std::vector<float> prices;
 
-        for (auto& auction : sRandomPlayerbotMgr.GetAhPrices(proto->ItemId))
+        for (auto& auction : sRandomBotFacade.GetAhPrices(proto->ItemId))
         {
             prices.push_back((float)auction.buyout / (float)auction.itemCount);
         }
@@ -1533,7 +1432,7 @@ uint32 ItemUsageValue::GetAHListingLowestBuyoutPricePerItem(ItemPrototype const*
         float minPrice = 0;
         uint32 minBuyout = 0;
 
-        for (auto& auction : sRandomPlayerbotMgr.GetAhPrices(proto->ItemId))
+        for (auto& auction : sRandomBotFacade.GetAhPrices(proto->ItemId))
         {
             if (!minBuyout || minBuyout > auction.buyout)
             {
@@ -1855,14 +1754,14 @@ uint32 ItemUsageValue::GetItemBaseValue(ItemPrototype const* proto, uint8 maxRea
 
 uint32 ItemUsageValue::GetBotBuyPrice(ItemPrototype const* proto, Player* bot)
 {
-    return static_cast<uint32>(GetItemBaseValue(proto) * sRandomPlayerbotMgr.GetBuyMultiplier(bot));
+    return static_cast<uint32>(GetItemBaseValue(proto) * sRandomBotFacade.GetBuyMultiplier(bot));
 }
 
 uint32 ItemUsageValue::GetBotSellPrice(ItemPrototype const* proto, Player* bot)
 {
     //should never sell for less than sell to vendor price
     return std::max(
-        static_cast<uint32>((GetItemBaseValue(proto) + 1) * sRandomPlayerbotMgr.GetSellMultiplier(bot)),
+        static_cast<uint32>((GetItemBaseValue(proto) + 1) * sRandomBotFacade.GetSellMultiplier(bot)),
         static_cast<uint32>(proto->SellPrice * 1.1f)
     );
 }
@@ -1892,7 +1791,7 @@ uint32 ItemUsageValue::DesiredPricePerItem(Player* bot, const ItemPrototype* pro
 
     std::vector<AuctionEntry> auctions;
 
-    for (auto& auction : sRandomPlayerbotMgr.GetAhPrices(proto->ItemId))
+    for (auto& auction : sRandomBotFacade.GetAhPrices(proto->ItemId))
     {
         float pricePerItem = float(auction.buyout) / float(auction.itemCount);
 

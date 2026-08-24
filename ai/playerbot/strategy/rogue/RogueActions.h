@@ -8,24 +8,6 @@ namespace ai
 
     BUFF_ACTION_U(CastPreparationAction, "preparation", !bot->IsSpellReady(14177) || !bot->IsSpellReady(2983) || !bot->IsSpellReady(2094));
 
-    class CastShadowstepAction : public CastSpellAction
-    {
-    public:
-        CastShadowstepAction(PlayerbotAI* ai) : CastSpellAction(ai, "shadowstep") {}
-
-        virtual bool isPossible() { return true; }
-
-        virtual bool isUseful() override
-        {
-            return bot->HasSpell(36554) && bot->IsSpellReady(36554);
-        }
-
-        virtual bool Execute(Event& event) override
-        {
-            return bot->CastSpell(GetTarget(), 36554, TRIGGERED_OLD_TRIGGERED);
-        }
-    };
-
 	class CastEvasionAction : public CastBuffSpellAction
 	{
 	public:
@@ -189,12 +171,6 @@ namespace ai
 		CastAdrenalineRushAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "adrenaline rush") {}
 	};
 
-	class CastKillingSpreeAction : public CastBuffSpellAction
-	{
-	public:
-		CastKillingSpreeAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "killing spree") {}
-	};
-
     class CastKickOnEnemyHealerAction : public CastSpellOnEnemyHealerAction
     {
     public:
@@ -205,18 +181,6 @@ namespace ai
 
     private:
         std::string GetReachActionName() override { return "reach melee"; }
-    };
-
-    class CastTricksOfTheTradeOnPartyAction : public BuffOnPartyAction
-    {
-    public:
-        CastTricksOfTheTradeOnPartyAction(PlayerbotAI* ai) : BuffOnPartyAction(ai, "tricks of the trade") {}
-    };
-
-    class CastCloakOfShadowsAction : public CastCureSpellAction
-    {
-    public:
-        CastCloakOfShadowsAction(PlayerbotAI* ai) : CastCureSpellAction(ai, "cloak of shadows") {}
     };
 
     class CastSapAction : public CastMeleeSpellAction
@@ -297,12 +261,6 @@ namespace ai
         CastSinisterStrikeAction(PlayerbotAI* ai) : CastComboAction(ai, "sinister strike") {}
     };
 
-    class CastMutilateAction : public CastComboAction
-    {
-    public:
-        CastMutilateAction(PlayerbotAI* ai) : CastComboAction(ai, "mutilate") {}
-    };
-
     class CastRiposteAction : public CastComboAction
     {
     public:
@@ -355,8 +313,7 @@ namespace ai
             if (!mainHand)
                 return true;
 
-#ifndef MANGOSBOT_TWO
-            // Deny if grouped with shaman over 32 in same subgroup (non-WOTLK)
+            // Avoid applying the poison when a higher-level shaman is sharing the subgroup.
             if (bot->GetGroup())
             {
                 Group* group = bot->GetGroup();
@@ -370,7 +327,6 @@ namespace ai
                         return false;
                 }
             }
-#endif
             return true;
         }
 
@@ -505,12 +461,6 @@ namespace ai
     {
     public:
         ApplyWoundPoisonAction(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonAction(ai, inMainHand, { 10918, 10920, 10921, 10922, 22055, 43234, 43235 }, "apply wound poison") {}
-    };
-
-    class ApplyAnestheticPoisonAction : public ApplyPoisonAction
-    {
-    public:
-        ApplyAnestheticPoisonAction(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonAction(ai, inMainHand, { 21835, 43237 }, "apply anesthetic poison") {}
     };
 
     class UpdateRoguePveStrategiesAction : public UpdateStrategyDependenciesAction

@@ -9,8 +9,7 @@ bool DemonArmorTrigger::IsActive()
 {
 	Unit* target = GetTarget();
 	return !ai->HasAura("demon skin", target) &&
-		   !ai->HasAura("demon armor", target) &&
-		   !ai->HasAura("fel armor", target);
+			   !ai->HasAura("demon armor", target);
 }
 
 bool SpellstoneTrigger::IsActive()
@@ -26,7 +25,12 @@ bool InfernoTrigger::IsActive()
 bool CorruptionTrigger::IsActive()
 {
 	Unit* target = GetTarget();
-	return target && !ai->HasAura("corruption", target) && !ai->HasAura("seed of corruption", target) && !HasMaxDebuffs();
+	return target && !ai->HasAura("corruption", target) && !HasMaxDebuffs();
+}
+
+bool CorruptionOnAttackerTrigger::IsActive()
+{
+    return DebuffOnAttackerTrigger::IsActive();
 }
 
 bool LifeTapTrigger::IsActive()
@@ -66,26 +70,6 @@ bool DrainSoulTrigger::IsActive()
 	}
 
 	return false;
-}
-
-bool CorruptionOnAttackerTrigger::IsActive()
-{
-    if (DebuffOnAttackerTrigger::IsActive())
-    {
-        return !ai->HasAura("seed of corruption", GetTarget(), false, true);
-	}
-
-	return false;
-}
-
-bool SeedOfCorruptionOnAttackerTrigger::IsActive()
-{
-    if (DebuffOnAttackerTrigger::IsActive())
-    {
-        return AI_VALUE(uint8, "attackers count") >= 3;
-    }
-
-    return false;
 }
 
 bool NoCurseTrigger::IsActive()
@@ -195,8 +179,7 @@ bool DemonicSacrificeTrigger::IsActive()
 			   !ai->HasAura(18789, bot) && // Burning Wish (Imp)
 			   !ai->HasAura(18790, bot) && // Fel Stamina (Voidwalker)
 			   !ai->HasAura(18791, bot) && // Touch of Shadow (Succubus)
-			   !ai->HasAura(18792, bot) && // Fel Energy (Felhunter)
-			   !ai->HasAura(35701, bot);   // Touch of Shadow (Felguard)
+				   !ai->HasAura(18792, bot);   // Fel Energy (Felhunter)
 	}
 
 	return false;
@@ -238,17 +221,9 @@ uint32 SoulstoneTrigger::GetItemId()
     {
         itemId = 16895;
     }
-    else if (level >= 60 && level < 70)
+    else if (level >= 60)
     {
         itemId = 16896;
-    }
-    else if (level >= 70 && level < 76)
-    {
-        itemId = 22116;
-    }
-    else if (level >= 76)
-    {
-        itemId = 36895;
     }
 
     return itemId;

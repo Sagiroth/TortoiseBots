@@ -32,7 +32,7 @@ SuggestWhatToDoAction::SuggestWhatToDoAction(PlayerbotAI* ai, std::string name)
 
 bool SuggestWhatToDoAction::isUseful()
 {
-    if (!sRandomPlayerbotMgr.IsRandomBot(bot) || bot->GetGroup() || bot->GetInstanceId())
+    if (!sRandomBotFacade.IsRandomBot(bot) || bot->GetGroup() || bot->GetInstanceId())
         return false;
 
     std::string qualifier = "suggest what to do";
@@ -178,29 +178,7 @@ void SuggestWhatToDoAction::grindReputation()
         factions["Gadgetzan"] = 50;
         factions["Ratchet"] = 20;
 
-#ifndef MANGOSBOT_ZERO
-        factions["Ashtongue Deathsworn"] = 70;
-        factions["Cenarion Expedition"] = 62;
-        factions["The Consortium"] = 65;
-        factions["Honor Hold"] = 66;
-        factions["Keepers of Time"] = 68;
-        factions["Netherwing"] = 65;
-        factions["Ogri'la"] = 65;
-        factions["The Scale of the Sands"] = 65;
-        factions["Sporeggar"] = 65;
-        factions["Tranquillien"] = 10;
-        factions["The Violet Eye"] = 70;
-#endif
 
-#ifdef MANGOSBOT_TWO
-        factions["Argent Crusade"] = 75;
-        factions["Ashen Verdict"] = 75;
-        factions["The Kalu'ak"] = 72;
-        factions["Kirin Tor"] = 75;
-        factions["Knights of the Ebon Blade"] = 77;
-        factions["The Sons of Hodir"] = 78;
-        factions["The Wyrmrest Accord"] = 77;
-#endif
     }
 
     std::vector<std::string> levels;
@@ -271,7 +249,7 @@ private:
 
 bool SuggestTradeAction::isUseful()
 {
-    if (!sRandomPlayerbotMgr.IsRandomBot(bot) || bot->GetGroup() || bot->GetInstanceId())
+    if (!sRandomBotFacade.IsRandomBot(bot) || bot->GetGroup() || bot->GetInstanceId())
         return false;
 
     return true;

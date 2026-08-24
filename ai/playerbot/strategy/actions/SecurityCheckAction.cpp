@@ -1,14 +1,14 @@
 
 #include "playerbot/playerbot.h"
 #include "../../runtime/PlayerbotAIStorage.h" // Headless storage shim
-#include "playerbot/RandomPlayerbotMgr.h"
+#include "playerbot/RandomBotFacade.h"
 #include "SecurityCheckAction.h"
 
 using namespace ai;
 
 bool SecurityCheckAction::isUseful()
 {
-    return sRandomPlayerbotMgr.IsRandomBot(bot) && ai->GetMaster() && ai->GetMaster()->GetSession()->GetSecurity() < SEC_GAMEMASTER && PlayerbotAIStorage::Instance().GetAI(!ai->GetMaster());
+    return sRandomBotFacade.IsRandomBot(bot) && ai->GetMaster() && ai->GetMaster()->GetSession()->GetSecurity() < SEC_GAMEMASTER && PlayerbotAIStorage::Instance().GetAI(!ai->GetMaster());
 }
 
 bool SecurityCheckAction::Execute(Event& event)

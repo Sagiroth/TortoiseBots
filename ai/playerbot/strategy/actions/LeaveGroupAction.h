@@ -1,6 +1,6 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
-#include "playerbot/RandomPlayerbotMgr.h"
+#include "playerbot/RandomBotFacade.h"
 #include "GenericActions.h"
 
 namespace ai

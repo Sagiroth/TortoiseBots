@@ -4,7 +4,7 @@
 
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
-#include "playerbot/RandomPlayerbotMgr.h"
+#include "playerbot/RandomBotFacade.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/LootStrategyValue.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
@@ -61,19 +61,10 @@ bool LootAction::Execute(Event& event)
 
 enum ProfessionSpells
 {
-    ALCHEMY                      = 2259,
-    BLACKSMITHING                = 2018,
-    COOKING                      = 2550,
-    ENCHANTING                   = 7411,
     ENGINEERING                  = 49383,
-    FIRST_AID                    = 3273,
-    FISHING                      = 7620,
     HERB_GATHERING               = 2366,
-    INSCRIPTION                  = 45357,
-    JEWELCRAFTING                = 25229,
     MINING                       = 2575,
-    SKINNING                     = 8613,
-    TAILORING                    = 3908
+    SKINNING                      = 8613
 };
 
 bool OpenLootAction::Execute(Event& event)
@@ -416,9 +407,6 @@ bool StoreLootAction::Execute(Event& event)
         ItemQualifier itemQualifier(itemid, ((int32)randomPropertyId));
 
 		if (lootslot_type != LOOT_SLOT_NORMAL
-#ifndef MANGOSBOT_ZERO
-		        && lootslot_type != LOOT_SLOT_OWNER
-#endif
             )
 		{
 			sLog.outDebug("[BOT LOOT] %s: skip item=%u slot_type=%u (not normal/owner)", bot->GetName(), itemid, lootslot_type);
@@ -454,11 +442,11 @@ bool StoreLootAction::Execute(Event& event)
         }
 
         Player* master = ai->GetMaster();
-        if (sRandomPlayerbotMgr.IsRandomBot(bot) && master)
+        if (sRandomBotFacade.IsRandomBot(bot) && master)
         {
             uint32 price = itemcount * ItemUsageValue::GetBotBuyPrice(proto, bot) + gold;
             if (price)
-                sRandomPlayerbotMgr.AddTradeDiscount(bot, master, price);
+                sRandomBotFacade.AddTradeDiscount(bot, master, price);
         }
 
         WorldPacket packet(CMSG_AUTOSTORE_LOOT_ITEM, 1);

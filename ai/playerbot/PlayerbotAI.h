@@ -125,12 +125,8 @@ enum ChatChannelId
     TRADE = 2,
     LOCAL_DEFENSE = 22,
     WORLD_DEFENSE = 23,
-#ifdef MANGOSBOT_ZERO
     //Yes, for 1.12 it is 24
     LOOKING_FOR_GROUP = 24,
-#else
-    LOOKING_FOR_GROUP = 26,
-#endif
     GUILD_RECRUITMENT = 25,
 };
 
@@ -187,11 +183,7 @@ enum RoguePoisonDisplayId
    CRIPPLING_POISON_DISPLAYID_II = 2947,
    MIND_POISON_DISPLAYID = 13709,
    INSTANT_POISON_DISPLAYID = 13710,
-#ifdef MANGOSBOT_ZERO
    WOUND_POISON_DISPLAYID = 13708
-#else
-   WOUND_POISON_DISPLAYID = 37278
-#endif
 };
 
 enum SharpeningStoneDisplayId
@@ -218,7 +210,6 @@ enum WeightStoneDisplayId
    ADAMANTITE_WEIGHTSTONE_DISPLAYID = 39549,
 };
 
-#ifdef MANGOSBOT_ZERO
 // m_zero
 enum WizardOilDisplayId
 {
@@ -237,25 +228,6 @@ enum ManaOilDisplayId
     BRILLIANT_MANA_OIL = 33455,
     SUPERIOR_MANA_OIL = 36862,
 };
-#else
-enum WizardOilDisplayId
-{
-   MINOR_WIZARD_OIL     = 9731,
-   LESSER_WIZARD_OIL    = 47903,
-   BRILLIANT_WIZARD_OIL = 47901,
-   WIZARD_OIL           = 47905,
-   SUPERIOR_WIZARD_OIL  = 47904,
-  /// Blessed Wizard Oil = 26865,//scourge inv
-};
-
-enum ManaOilDisplayId
-{
-   MINOR_MANA_OIL       = 34492,
-   LESSER_MANA_OIL      = 47902,
-   BRILLIANT_MANA_OIL   = 41488,
-   SUPERIOR_MANA_OIL    = 36862,
-};
-#endif
 
 enum ShieldWardDisplayId
 {
@@ -283,13 +255,8 @@ enum class GrouperType : uint8
     LEADER_3 = 3,
     LEADER_4 = 4,
     LEADER_5 = 5,
-#ifndef MANGOSBOT_ZERO
-    RAIDER_10 = 10,
-    RAIDER_MAX = 25
-#else
     RAIDER_20 = 20,
     RAIDER_MAX = 40
-#endif
 };
 
 enum class GuilderType : uint8
@@ -314,7 +281,6 @@ enum class ActivePiorityType : uint8
     IS_ALWAYS_ACTIVE,
     IN_COMBAT,
     IN_BG_QUEUE,
-    IN_LFG,
     NEARBY_PLAYER,
     PLAYER_FRIEND,
     PLAYER_GUILD,
@@ -482,11 +448,7 @@ public:
     Item * FindBandage() const;
     Item* FindStoneFor(Item* weapon) const;
     Item* FindOilFor(Item* weapon) const;
-#ifdef MANGOSBOT_ZERO
     void ImbueItem(Item* item, uint16 targetFlag, ObjectGuid targetGUID);
-#else
-    void ImbueItem(Item* item, uint32 targetFlag, ObjectGuid targetGUID);
-#endif
     void ImbueItem(Item* item, uint8 targetInventorySlot);
     void ImbueItem(Item* item, Unit* target);
     void ImbueItem(Item* item);
@@ -528,18 +490,12 @@ public:
     bool CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask = 0, bool checkHasSpell = true, Item* itemTarget = nullptr, bool ignoreRange = false, bool ignoreInCombat = false, bool ignoreMount = false, SpellCastResult* checkResult = nullptr);
     bool CanCastSpell(uint32 spellid, GameObject* goTarget, uint8 effectMask, bool checkHasSpell = true, bool ignoreRange = false, bool ignoreInCombat = false, bool ignoreMount = false, SpellCastResult* checkResult = nullptr);
     bool CanCastSpell(uint32 spellid, float x, float y, float z, uint8 effectMask, bool checkHasSpell = true, Item* itemTarget = nullptr, bool ignoreRange = false, bool ignoreInCombat = false, bool ignoreMount = false, SpellCastResult* checkResult = nullptr);
-    bool CanCastVehicleSpell(uint32 spellid, Unit* target);
 
     virtual bool CastSpell(std::string name, Unit* target, Item* itemTarget = nullptr, bool waitForSpell = true, uint32* outSpellDuration = nullptr);
     bool CastSpell(uint32 spellId, Unit* target, Item* itemTarget = nullptr, bool waitForSpell = true, uint32* outSpellDuration = nullptr);
     bool CastSpell(uint32 spellId, GameObject* goTarget, Item* itemTarget = nullptr, bool waitForSpell = true, uint32* outSpellDuration = nullptr);
     bool CastSpell(uint32 spellId, float x, float y, float z, Item* itemTarget = nullptr, bool waitForSpell = true, uint32* outSpellDuration = nullptr);
     bool CastPetSpell(uint32 spellId, Unit* target);
-    bool CastVehicleSpell(uint32 spellId, Unit* target, float projectileSpeed, bool needTurn);
-    bool CastVehicleSpell(uint32 spellId, float x, float y, float z);
-
-    bool IsInVehicle(bool canControl = false, bool canCast = false, bool canAttack = false, bool canTurn = false, bool fixed = false, std::string vehicleName = "");
-
     uint32 GetEquipGearScore(Player* player, bool withBags, bool withBank);
     uint32 GetEquipStatsValue(Player* player);
     bool HasSkill(SkillType skill);
@@ -783,11 +739,6 @@ public:
     void QueuePacket(WorldPacket& pkt);
 
     float GetLevelFloat() const;
-
-    static bool CanSpellClick(Player* bot, uint32 entry);
-    bool CanSpellClick(ObjectGuid guid) const;
-    bool HandleSpellClick(uint32 entry);
-    bool HandleSpellClick(ObjectGuid guid);
 
     void SetLastEvent(ai::Event& event) { lastEvent = event; }
     ai::Event& GetLastEvent() { return lastEvent; }
