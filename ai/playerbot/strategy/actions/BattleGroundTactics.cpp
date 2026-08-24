@@ -4929,7 +4929,8 @@ bool ArenaTactics::Execute(Event& event)
 #endif
         {
             ai->ResetStrategies(false);
-            ai->SetMaster(NULL);
+            if (!TortoiseBots::BotManager::Instance().ClearBotMaster(bot->GetObjectGuid()))
+                ai->SetMaster(nullptr);
         }
 
     if (!bot->IsInCombat())

@@ -52,18 +52,26 @@ namespace ai
             if (!bot->GetGroup() || !bot->GetGroup()->IsMember(inviter->getObjectGuid()))
                 return false;
 
+            bool adoptedHumanMaster = false;
             if (TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()))
             {
-                ai->SetMaster(inviter);
-
-                std::string defaultMovementStrategy = ai->GetDefaultMovementStrategy();
-                ai->ChangeStrategy("+" + defaultMovementStrategy, BotState::BOT_STATE_NON_COMBAT);
+                adoptedHumanMaster = TortoiseBots::BotManager::Instance().BindBotMaster(
+                    bot->GetObjectGuid(), inviter->GetObjectGuid());
+                if (!adoptedHumanMaster)
+                {
+                    sLog.outError("TortoiseBots: random bot %s accepted human %s but durable master bind failed",
+                        bot->GetName(), inviter->GetName());
+                    ai->SetMaster(inviter);
+                }
             }
 
             ai->ResetStrategies();
             
             ai->ChangeStrategy("-lfg,-bg", BotState::BOT_STATE_NON_COMBAT);
             ai->Reset();
+
+            if (adoptedHumanMaster)
+                ai->SetMovementStrategy("follow");
 
             sPlayerbotAIConfig.logEvent(ai, "AcceptInvitationAction", grp->GetLeaderName(), std::to_string(grp->GetMembersCount()));
 

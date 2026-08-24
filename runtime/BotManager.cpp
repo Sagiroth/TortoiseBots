@@ -148,17 +148,17 @@ void BotManager::RebindOwnedBots(::Player* master)
         if (!bot || !bot->GetSession() || !bot->GetSession()->IsHeadless())
             continue;
 
-        bool follow = !entry.controller || entry.controller->GetIntent() == BotIntent::Follow;
         if (entry.aiAdapter && entry.aiAdapter->IsInitialized())
-            entry.aiAdapter->RebindMaster(master, follow);
+            entry.aiAdapter->RebindMaster(master);
         else if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
         {
             ai->SetMaster(master);
-            ai->SetMovementStrategy(follow ? "follow" : "stay");
+            if (!ai->HasActiveMovementStrategy())
+                ai->EnsureDefaultMovementStrategy();
         }
 
-        sLog.outString("TortoiseBots: rebound master %s to existing Headless bot %s (%s)",
-            master->GetName(), bot->GetName(), follow ? "follow" : "stay");
+        sLog.outString("TortoiseBots: rebound master %s to existing Headless bot %s; mature movement preserved",
+            master->GetName(), bot->GetName());
     }
 }
 
@@ -350,30 +350,79 @@ BotController const* BotManager::GetController(::ObjectGuid guid) const
     return it->second.controller.get();
 }
 
-bool BotManager::SetBotFollow(::ObjectGuid botGuid, ::ObjectGuid masterGuid)
+bool BotManager::BindBotMaster(::ObjectGuid botGuid, ::ObjectGuid masterGuid)
 {
+    if (masterGuid.IsEmpty())
+        return false;
+
     auto it = m_bots.find(botGuid.GetCounter());
     if (it == m_bots.end())
         return false;
+
     it->second.record.masterGuid = masterGuid;
     if (it->second.controller)
-    {
         it->second.controller->SetMaster(masterGuid);
-        it->second.controller->SetIntent(BotIntent::Follow);
-    }
-    else
+
+    if (::Player* bot = sObjectAccessor.FindPlayer(botGuid))
     {
-        it->second.controller = std::make_unique<BotController>(botGuid, masterGuid);
+        if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
+            ai->SetMaster(sObjectAccessor.FindPlayer(masterGuid));
+    }
+
+    return true;
+}
+
+bool BotManager::ClearBotMaster(::ObjectGuid botGuid)
+{
+    auto it = m_bots.find(botGuid.GetCounter());
+    if (it == m_bots.end() || !it->second.record.random)
+        return false;
+
+    it->second.record.masterGuid = ObjectGuid();
+    if (it->second.controller)
+    {
+        it->second.controller->SetMaster(ObjectGuid());
+        it->second.controller->SetIntent(BotIntent::None);
     }
 
     if (::Player* bot = sObjectAccessor.FindPlayer(botGuid))
     {
         if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
+            ai->SetMaster(nullptr);
+    }
+
+    return true;
+}
+
+bool BotManager::SetBotFollow(::ObjectGuid botGuid, ::ObjectGuid masterGuid)
+{
+    if (!BindBotMaster(botGuid, masterGuid))
+        return false;
+
+    auto it = m_bots.find(botGuid.GetCounter());
+    if (it == m_bots.end())
+        return false;
+
+    if (!it->second.controller)
+        it->second.controller = std::make_unique<BotController>(botGuid, masterGuid);
+    it->second.controller->SetMaster(masterGuid);
+    it->second.controller->SetIntent(BotIntent::Follow);
+
+    if (::Player* bot = sObjectAccessor.FindPlayer(botGuid))
+    {
+        if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
         {
-            ai->SetMaster(sObjectAccessor.FindPlayer(masterGuid));
-            ai->SetMovementStrategy("follow");
+            if (Player* master = sObjectAccessor.FindPlayer(masterGuid))
+            {
+                ai::Event followEvent("follow", "", master);
+                if (!ai->DoSpecificAction("follow chat shortcut", followEvent, true))
+                    ai->SetMovementStrategy("follow");
+            }
+            else
+                ai->SetMovementStrategy("follow");
         }
     }
+
     sLog.outString("TortoiseBots: SetBotFollow bot %s -> master %s",
         botGuid.GetString().c_str(), masterGuid.GetString().c_str());
     return true;

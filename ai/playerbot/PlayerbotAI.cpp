@@ -2179,7 +2179,19 @@ void PlayerbotAI::DoNextAction(bool min)
     if (master && master != bot && !HasActivePlayerMaster() && (!group || group->GetLeaderGuid() != master->getObjectGuid()))
     {
         master = IsRealPlayer() ? bot : nullptr;
-        SetMaster(master);
+        if (master)
+        {
+            if (!TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()) ||
+                !TortoiseBots::BotManager::Instance().BindBotMaster(
+                    bot->GetObjectGuid(), master->GetObjectGuid()))
+                SetMaster(master);
+        }
+        else
+        {
+            if (!TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()) ||
+                !TortoiseBots::BotManager::Instance().ClearBotMaster(bot->GetObjectGuid()))
+                SetMaster(nullptr);
+        }
         ResetStrategies();
     }
 
@@ -2274,7 +2286,15 @@ void PlayerbotAI::DoNextAction(bool min)
         if (newMaster && (!master || master != newMaster) && bot != newMaster)
         {
             master = newMaster;
-            SetMaster(newMaster);
+            if (sRandomPlayerbotMgr.IsFreeBot(bot) &&
+                TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()))
+            {
+                if (!TortoiseBots::BotManager::Instance().BindBotMaster(
+                        bot->GetObjectGuid(), newMaster->GetObjectGuid()))
+                    SetMaster(newMaster);
+            }
+            else
+                SetMaster(newMaster);
             ResetStrategies();
 
             if (sRandomPlayerbotMgr.IsFreeBot(bot))
@@ -2318,7 +2338,8 @@ void PlayerbotAI::DoNextAction(bool min)
 
         if (!group && sRandomPlayerbotMgr.IsFreeBot(bot) && !IsRealPlayer())
         {
-            PlayerbotAIStorage::Instance().GetAI(bot)->SetMaster(nullptr);
+            if (!TortoiseBots::BotManager::Instance().ClearBotMaster(bot->GetObjectGuid()))
+                PlayerbotAIStorage::Instance().GetAI(bot)->SetMaster(nullptr);
         }
 	}
 	else if (bot->m_movementInfo.HasMovementFlag(MOVEFLAG_WALK_MODE)) bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_WALK_MODE);
@@ -6359,6 +6380,22 @@ std::string PlayerbotAI::GetDefaultMovementStrategy()
 
     // Bot/no master -> wander
     return "wander";
+}
+
+bool PlayerbotAI::HasActiveMovementStrategy()
+{
+    static char const* const movementStrategies[] = {
+        "follow", "stay", "wander", "guard", "free", "passive"
+    };
+
+    for (char const* strategy : movementStrategies)
+    {
+        if (HasStrategy(strategy, BotState::BOT_STATE_NON_COMBAT) ||
+            HasStrategy(strategy, BotState::BOT_STATE_REACTION))
+            return true;
+    }
+
+    return false;
 }
 
 void PlayerbotAI::SetMovementStrategy(const std::string& movement)

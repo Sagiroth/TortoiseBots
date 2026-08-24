@@ -101,9 +101,16 @@ public:
     std::vector<Player*> GetAllBots() const;
     uint32_t GetBotCount() const { return static_cast<uint32_t>(m_bots.size()); }
 
-    // Follow intent
+    // Native follow intent and durable master ownership.
 // pi-lens-ignore: clang:unknown_typename
     bool SetBotFollow(ObjectGuid botGuid, ObjectGuid masterGuid);
+    // Durable ownership seam for mature random-bot group adoption/release.
+    // This updates the BotRecord and live PlayerbotAI pointer without
+    // replacing the existing Headless session.
+// pi-lens-ignore: clang:unknown_typename
+    bool BindBotMaster(ObjectGuid botGuid, ObjectGuid masterGuid);
+// pi-lens-ignore: clang:unknown_typename
+    bool ClearBotMaster(ObjectGuid botGuid);
 // pi-lens-ignore: clang:unknown_typename
     BotController* GetController(ObjectGuid guid);
 // pi-lens-ignore: clang:unknown_typename
@@ -118,8 +125,9 @@ public:
     void SetAutoTestEnabled(bool enable, uint32_t accountId = 0, ObjectGuid guid = ObjectGuid());
     bool IsAutoTestEnabled() const { return m_autoTestEnabled; }
 
-    // Fresh runtime packet/event journey: two same-account Headless players,
-    // native group invite/accept, and all three packet bridge directions.
+    // Strict runtime packet journey: Headless outgoing, Network-master
+    // outgoing where applicable, and automatic mature invite acceptance.
+    // Real Network incoming delivery remains a manual-client gate.
     void SetPacketBridgeTestEnabled(bool enable, uint32_t accountId = 0,
         ObjectGuid masterGuid = ObjectGuid(), ObjectGuid botGuid = ObjectGuid());
 

@@ -38,7 +38,8 @@ namespace ai
 
         if (freeBot)
         {
-            PlayerbotAIStorage::Instance().GetAI(bot)->SetMaster(nullptr);
+            if (!TortoiseBots::BotManager::Instance().ClearBotMaster(bot->GetObjectGuid()))
+                PlayerbotAIStorage::Instance().GetAI(bot)->SetMaster(nullptr);
         }        
 
         if(!aiMaster)

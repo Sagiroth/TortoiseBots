@@ -48,14 +48,18 @@ void PlayerbotAIAdapter::Update(uint32_t diff)
     ai_->UpdateAI(diff); // pi-lens-ignore: clang:all
 }
 
-void PlayerbotAIAdapter::RebindMaster(Player* master, bool follow)
+void PlayerbotAIAdapter::RebindMaster(Player* master)
 {
     master_ = master;
     if (!ai_)
         return;
 
     ai_->SetMaster(master); // pi-lens-ignore: clang:all
-    ai_->SetMovementStrategy(follow ? "follow" : "stay"); // pi-lens-ignore: clang:all
+    // Mature strategy state survives a master pointer disconnect. Only repair
+    // a bot with no movement strategy at all; never let a stale native intent
+    // overwrite mature follow/stay/wander/guard/free/passive commands.
+    if (!ai_->HasActiveMovementStrategy()) // pi-lens-ignore: clang:all
+        ai_->EnsureDefaultMovementStrategy(); // pi-lens-ignore: clang:all
 }
 
 void PlayerbotAIAdapter::DetachMaster()

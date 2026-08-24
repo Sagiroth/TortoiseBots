@@ -1125,7 +1125,8 @@ bool BGLeaveAction::Execute(Event& event)
         bot->GetSession()->HandleLeaveBattlefieldOpcode(leave);
 
         if (sRandomPlayerbotMgr.IsFreeBot(bot))
-            ai->SetMaster(NULL);
+            if (!TortoiseBots::BotManager::Instance().ClearBotMaster(bot->GetObjectGuid()))
+                ai->SetMaster(nullptr);
 
         ai->ResetStrategies();
         ai->GetAiObjectContext()->GetValue<uint32>("bg type")->Set(0);
@@ -1162,7 +1163,8 @@ bool BGLeaveAction::Execute(Event& event)
         bot->GetSession()->HandleBattleFieldPortOpcode(packet);
 
     if (sRandomPlayerbotMgr.IsFreeBot(bot))
-        ai->SetMaster(NULL);
+        if (!TortoiseBots::BotManager::Instance().ClearBotMaster(bot->GetObjectGuid()))
+            ai->SetMaster(nullptr);
 
     ai->ResetStrategies();
     ai->GetAiObjectContext()->GetValue<uint32>("bg type")->Set(0);
@@ -1393,7 +1395,8 @@ bool BGStatusAction::Execute(Event& event)
 
         // remove warsong strategy
         if (sRandomPlayerbotMgr.IsFreeBot(bot))
-            ai->SetMaster(NULL);
+            if (!TortoiseBots::BotManager::Instance().ClearBotMaster(bot->GetObjectGuid()))
+                ai->SetMaster(nullptr);
 
         ai->ChangeStrategy("-pvp", BotState::BOT_STATE_COMBAT);
         ai->ChangeStrategy("-warsong", BotState::BOT_STATE_COMBAT);

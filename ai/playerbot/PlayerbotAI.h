@@ -397,6 +397,7 @@ public:
     static std::string BotStateToString(BotState state);
     std::string GetDefaultMovementStrategy();
     void SetMovementStrategy(const std::string& movement);
+    bool HasActiveMovementStrategy();
     void EnsureDefaultMovementStrategy(Player* requester = nullptr);
 	std::string HandleRemoteCommand(std::string command);
     void HandleCommand(uint32 type, const std::string& text, Player& fromPlayer, const uint32 lang = LANG_UNIVERSAL);

@@ -52,6 +52,10 @@ be compiled accidentally.
   reconnects, and uses the documented `AiPlayerbot.MaxRandomBotRandomizeTime`
   key. The remaining live gate is the real-client journey, which is left to
   the manual playtest.
+- Native `.bot stay` now reuses the mature stay shortcut, including its current
+  position anchors. Reconnect preserves the live mature movement strategies,
+  and random-bot human adoption/release updates the durable `BotRecord` master
+  relationship.
 
 The native `.bot` surface includes `add`, `remove`, `follow`, `invite`,
 `uninvite`, `stay`, `list`, `stats`, and same-account mature-AI `command`.

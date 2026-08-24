@@ -224,7 +224,15 @@ static bool HandleStay(ChatHandler* handler, char const* args)
         return true;
     }
 
-    ai->SetMovementStrategy("stay");
+    // Reuse the mature action so the command updates both strategies and the
+    // current "return"/"stay" position anchors.
+    ai::Event stayEvent("stay", "", requester);
+    if (!ai->DoSpecificAction("stay chat shortcut", stayEvent, true))
+    {
+        handler->PSendSysMessage("Bot %s could not enter mature stay mode.", name.c_str());
+        return true;
+    }
+
     if (BotController* controller = BotManager::Instance().GetController(bot->GetObjectGuid()))
         controller->SetIntent(BotIntent::None);
     handler->PSendSysMessage("Bot %s will stay.", name.c_str());

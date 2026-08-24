@@ -134,3 +134,30 @@ inherit a selected module's include directories; the selected OBJECT target
 still receives its own module settings. The configured
 Penqle remote rejected publication with HTTP 403, so this exact local commit
 must be applied from the writable core fork/PR before reproducing elsewhere.
+
+## Narrow post-review cleanup pass — 2026-08-24
+
+Feature: mature `.bot stay` anchors, mature-AI-authoritative reconnect,
+durable random-bot master bind/clear, and corrected packet-fixture wording.
+
+Source files: `commands/BotCommands.cpp`, `runtime/BotManager.{h,cpp}`,
+`runtime/PlayerbotAIAdapter.{h,cpp}`, `ai/playerbot/PlayerbotAI.{h,cpp}`,
+`ai/playerbot/strategy/actions/AcceptInvitationAction.h`,
+`ai/playerbot/strategy/actions/LeaveGroupAction.cpp`,
+`ai/playerbot/strategy/actions/BattleGroundJoinAction.cpp`,
+`ai/playerbot/strategy/actions/BattleGroundTactics.cpp`, and the current
+status/host-boundary documentation.
+
+Copied / ported / independently reimplemented: native commands now reuse the
+existing mature `StayChatShortcutAction`/`FollowChatShortcutAction` actions;
+reconnect treats the existing mature strategy set as authoritative and only
+applies the default when no movement strategy exists. `BindBotMaster` and
+`ClearBotMaster` are small module-local lifecycle operations; they do not add
+core fields or replace Headless sessions.
+
+Local validation: cached ON/static `mangosd` passed after the coherent edit
+batch; the final strict PacketBridgeTest passed automatic mature invite
+acceptance and cleanup with no direct accept-action fallback. The final binary
+was deployed with AI enabled, the fixture was then disabled, and the world
+reached ready state. The real-client journey remains intentionally unperformed
+in this pass.
