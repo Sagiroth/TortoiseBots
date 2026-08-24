@@ -276,10 +276,13 @@ mount lookup, later-expansion residue removal, and repeatable surface checks.
 
 Source repository: TortoiseBots `audit/playerbots-turtle-1.18.1`
 
-Source commit: `a6ea16605fde1b77e396ca588e0b34ddb1978bd5` (`fix: align movement
-and channel shims with Turtle core`), on top of `7fa875a6c6bc51534b4a5a3f2f373f3dd7446208`
-(`fix: quarantine optional LLM and stale tooling paths`), `2afd2d1` (`fix:
-match effective core SQL paths and migration history`), and the preceding
+Source commit: `887a6673675d06d716acc713aaeed8dca05d7e9f` (`build: report native
+module source identity`), on top of `9605a73c9bc16f0bf4fb4e84bba974a70f68c735`
+(`fix: disable fish cache rebuild on startup`), `a6ea16605fde1b77e396ca588e0b34ddb1978bd5`
+(`fix: align movement and channel shims with Turtle core`),
+`7fa875a6c6bc51534b4a5a3f2f373f3dd7446208` (`fix: quarantine optional LLM
+and stale tooling paths`), `2afd2d1` (`fix: match effective core SQL paths
+and migration history`), and the preceding
 `9db49df` and `3a96923` remediation commits.
 
 Required target core: local Penqle `tortoise-wow`
@@ -349,6 +352,15 @@ Local validation:
   crash. Startup retained the expected core warning that custom dungeon rows
   reference the missing `custom_dungeon_portal` script; no teleport behavior
   was invented in the module.
+- The final fish-generation hardening rebuild passed both ON/OFF gates and a
+  preserved-data restart. The current startup logged `No persisted fish
+  locations; generation is disabled, using direct fishing fallback.` and did
+  not log fish-grid generation or cache-save activity.
+- A forced CMake configure printed the supported builder's bind-mounted module
+  root `/work/core/modules/TortoiseBots` and exact commit
+  `887a6673675d06d716acc713aaeed8dca05d7e9f`; Git's scoped safe-directory
+  option avoids changing global configuration. This makes stale direct-core
+  module selection observable.
 - The real Turtle client was launched under Wine through normal and
   software-forced rendering paths; both rendered black with no observable
   login UI in this environment, so no real-client `.bot` command journey is

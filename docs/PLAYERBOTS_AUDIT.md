@@ -83,7 +83,7 @@ Vanilla/Turtle product surface before adding more classes or dungeon behavior.
 | ID | Severity | Finding | Status |
 | --- | --- | --- | --- |
 | F-01 | P0 | Module SQL install path does not match the core's effective case-sensitive AutoUpdater configuration. | Resolved in `TortoiseBots.cmake` against Penqle's configured `world/character` names; preserved-stack AutoUpdater application verified. |
-| F-02 | P0 | The local core has a stale untracked module copy, and `BUILD_PLAYERBOTS=OFF` does not itself gate an explicitly enabled native module. | Native CMake forcing is resolved; stale sibling checkout and core legacy path remain external follow-up. |
+| F-02 | P0 | The local core has a stale untracked module copy, and `BUILD_PLAYERBOTS=OFF` does not itself gate an explicitly enabled native module. | Native CMake forcing is resolved; the supported builder bind-mounts this checkout and CMake now prints `/work/core/modules/TortoiseBots` plus exact commit `887a6673675d06d716acc713aaeed8dca05d7e9f`. The stale sibling copy and direct-core workflow remain external follow-up. |
 | F-03 | P1 | Bot-specific legacy code remains in the core: LFT random-bot filling, bot command stubs, bot slots, and legacy module hooks. | Open core-owned follow-up; no new module coupling was added. |
 | F-04 | P1 | Active native code retains later-expansion consumable IDs, item IDs, spell IDs, and level gates. | Resolved for the audited known-absent IDs; retained level-60 spell rows were revalidated against local core data. |
 | F-05 | P1 | The compatibility shim contains silent no-op/default implementations for movement, instance, chat-channel, transport, formation, emote, session-state, and loot semantics. | Partially resolved: active chase/follow inspection now uses the native generator target, loaded channel definitions are exposed through ObjectMgr, and supported movement paths avoid private donor state; remaining capability debt is explicit and not advertised as complete Turtle behavior. |
@@ -97,7 +97,7 @@ Vanilla/Turtle product surface before adding more classes or dungeon behavior.
 | F-13 | P2 | `file(GLOB)` still compiles every action/value/trigger/generic source added to those directories. | A CMake filename guard and repeatable surface script now fail on audited donor families; globs remain a deliberate maintainability trade-off. |
 | F-14 | P2 | The developer quest-ledger script contains hard-coded `/home/ubuntu` paths and is not a runtime module component. | Resolved: moved to `tools/` and made log defaults portable. |
 | F-15 | P1 | The optional cache schema is incomplete: `ai_playerbot_item_info_cache` lacks the `scale_1`–`scale_32` columns written by `RandomItemMgr`; help-generation schema also has a latent `template_changed` mismatch. | Resolved in the Char/World migrations. |
-| F-16 | P1 | World/character table ownership is inconsistent, one runtime table is created outside migrations, and missing travel tables can trigger full map/path generation plus destructive cache rewrites. | Module ownership/startup behavior is resolved; fresh SQL and preserved-stack startup are verified, but a full empty-core runtime was not run. |
+| F-16 | P1 | World/character table ownership is inconsistent, one runtime table is created outside migrations, and missing travel tables can trigger full map/path generation plus destructive cache rewrites. | Module ownership/startup behavior is resolved: travel-node and fish-location rebuilds are opt-in, cache generation fails closed, fresh SQL and preserved-stack startup are verified. |
 | F-17 | P0 | Owner-accessible RTSC file save/load accepts unrestricted filenames and can escape `LogsDir`. | Resolved by removing RTSC/SeeSpell from the module graph and command contexts. |
 | F-18 | P1 | Custom strategy editing interpolates player-controlled strings into raw SQL through `DirectPExecute`. | Resolved with length checks and escaping in edit, load, and persisted bot-state paths. |
 | F-19 | P1/P2 | The cleaned physical tree still compiles later-rank factory/boss-aura code and a custom RTSC/test surface; some of it is dead only because no context registers it. | Resolved for the audited residue; local core data validates retained 28610/28612/31016/31018 level-60 rows. |
@@ -117,6 +117,11 @@ action” wording in the finding bodies below.
   It selects the native module through
   `MODULE_TORTOISEBOTS` and no longer injects the legacy
   `BUILD_PLAYERBOTS=1` define.
+- The supported persistent builder proves source selection at configure time:
+  it bind-mounts this checkout over the core module path and reports the exact
+  module commit. A direct core checkout that ignores that overlay remains an
+  external packaging/source-of-truth concern, not an implicit native-module
+  dependency.
 - The additive World/Character migrations now own `ai_playerbot_zone_level`,
   `template_changed`, and `scale_1` through `scale_32`; the `20260824090003_*`
   migrations remove the explicitly obsolete module-owned donor tables without
@@ -125,6 +130,10 @@ action” wording in the finding bodies below.
   generation is disabled by default through `AiPlayerbot.GenerateTravelNodes`,
   malformed node references are skipped, and an opt-in cache save uses one
   transaction instead of leaving a deliberately partial cache between stages.
+  Fish-location generation is also disabled by default through
+  `AiPlayerbot.GenerateFishLocations`; a missing/empty persisted fish cache now
+  logs a direct-fallback decision instead of scanning populated grids and
+  writing WorldDatabase rows during startup.
 - RTSC, SeeSpell, BossAura, and the associated packet/file registrations are
   physically removed. Custom strategy names/action lines are length-bounded
   and escaped on edit, load, and persisted bot-state paths.
@@ -662,6 +671,7 @@ The module's table ownership is inconsistent:
 | --- | --- | --- |
 | Travel graph | `TravelNode.cpp:3248-3430` always uses `WorldDatabase`; the World migration owns all three tables. | The baseline schema was already World-owned for the travel graph; the closure keeps that ownership and removes the unrelated dead cache tables from Character. |
 | Zone levels | `TravelMgr.cpp:1204-1250` uses `WorldDatabase`, executes `CREATE TABLE IF NOT EXISTS`, then inserts one row for each loaded area. | `ai_playerbot_zone_level` is absent from the module world migration, so schema ownership is hidden in runtime code and startup mutates the world database. |
+| Fish locations | `TravelMgr.cpp:2138-2389` reads `ai_playerbot_named_location` and previously generated/saved a full fish-point cache when no rows were returned. | The closure makes this rebuild opt-in through `AiPlayerbot.GenerateFishLocations`; normal startup now returns a direct-fishing fallback without scanning grids or writing rows. |
 | Item/equipment caches | `RandomItemMgr::Init` calls the cache builders at `RandomItemMgr.cpp:72-82`; missing tables fall through to generation paths such as `:128-215` and `:2825-2984`. | A missed migration can turn startup into a large per-item scan and one-INSERT-per-item workload on the world thread. |
 
 When AI is enabled, `BotHostAdapter::OnStartup` calls
@@ -682,8 +692,10 @@ the cache empty or partial.
 **Required action:** put every table in exactly the database its code uses,
 remove duplicate wrong-database tables, migrate `ai_playerbot_zone_level`
 explicitly or make it a deliberate non-persistent cache, and never silently
-fall back from a missing migration to full map generation on a live world
-thread. Use a versioned/staged cache rebuild if travel persistence is retained.
+fall back from a missing migration to full map/fish generation on a live world
+thread. Use a versioned/staged cache rebuild if travel persistence is retained;
+the module's current offline rebuild switches are `GenerateTravelNodes` and
+`GenerateFishLocations`.
 
 ### F-17 — Owner-authorized RTSC command can write outside the log directory (P0)
 
