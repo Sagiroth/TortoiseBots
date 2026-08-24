@@ -92,7 +92,7 @@ public:
     {
     public:
         CastAspectOfTheCheetahAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "aspect of the cheetah") {}
-        
+
         bool isUseful() override
         {
             return CastBuffSpellAction::isUseful() && !AI_VALUE(bool, "has attackers");
@@ -103,7 +103,7 @@ public:
     {
     public:
         CastAspectOfThePackAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "aspect of the pack") {}
-    
+
         bool isUseful() override
         {
             return CastBuffSpellAction::isUseful() && !AI_VALUE(bool, "has attackers");

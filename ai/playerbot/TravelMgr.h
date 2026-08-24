@@ -37,12 +37,12 @@ namespace ai
 		float portalLength = 0.1f;
 	};
 
-	class PlayerTravelInfo 
+	class PlayerTravelInfo
 	{
 	public:
 		PlayerTravelInfo() {};
 		PlayerTravelInfo(Player* player);
-		
+
 		const WorldPosition& getPosition() const { return position; }
 		Team GetTeam() const { return team; }
 		uint32 GetLevel() const  { return level; }
@@ -71,7 +71,7 @@ namespace ai
 
 		focusQuestTravelList focusList = {};
 
-		std::unordered_map<std::string, bool> boolValues = 
+		std::unordered_map<std::string, bool> boolValues =
 		{
 			{"should get money", false},
 			{"should sell", false},
@@ -98,7 +98,7 @@ namespace ai
 			{"death count", 0},
 		};
 	};
-	
+
 	//A destination for a bot to travel to and do something.
 	class TravelDestination : public WorldWpSquare
 	{
@@ -149,7 +149,7 @@ namespace ai
 		NullTravelDestination() : TravelDestination() { SetCooldownLong(); };
 
 		virtual std::string GetTitle() const override { return "no destination"; }
-		
+
 		virtual bool IsIn(const WorldPosition& pos, float radius = 0) const override { return true; }
 
 		virtual std::string GetShortName() const override { return "idle"; };
@@ -261,7 +261,7 @@ namespace ai
 		int32 level = 0;
 	};
 
-	//A location with zone exploration target(s) 
+	//A location with zone exploration target(s)
 	class ExploreTravelDestination : public ZoneTravelDestination
 	{
 	public:
@@ -272,7 +272,7 @@ namespace ai
 		virtual std::string GetTitle() const override { return getZoneName(); }
 	};
 
-	//A location with zone exploration target(s) 
+	//A location with zone exploration target(s)
 	class GrindTravelDestination : public EntryTravelDestination
 	{
 	public:
@@ -378,7 +378,7 @@ namespace ai
 		bool IsMaxRetry(bool isMove) { return isMove ? (moveRetryCount > 10) : (extendRetryCount >= 5); }
 
 		void SetTarget(TravelDestination* tDestination1, WorldPosition* wPosition1);
-		
+
 		void AddCondition(std::string condition) { travelConditions.push_back(condition); }
 		void SetConditions(std::vector<std::string> conditions) { travelConditions = conditions; }
 		std::vector<std::string> GetConditions() { return travelConditions; }

@@ -19,7 +19,7 @@ namespace ai
             return "This value will return true if all of the values included in the qualifier return true.";
         }
         virtual std::vector<std::string> GetUsedValues() { return { }; }
-#endif 
+#endif
     };
 
     class NotValue : public BoolCalculatedValue, public Qualified
@@ -36,7 +36,7 @@ namespace ai
             return "This value will return false if any of the values included in the qualifier return true.";
         }
         virtual std::vector<std::string> GetUsedValues() { return { }; }
-#endif 
+#endif
     };
 
     class BoolOrValue : public BoolCalculatedValue, public Qualified
@@ -53,7 +53,7 @@ namespace ai
             return "This value will return true if any of the values included in the qualifier return true.";
         }
         virtual std::vector<std::string> GetUsedValues() { return { }; }
-#endif 
+#endif
     };
 
     class GT32Value : public BoolCalculatedValue, public Qualified
@@ -70,6 +70,6 @@ namespace ai
             return "This value will return true if the first value is greater than the second value";
         }
         virtual std::vector<std::string> GetUsedValues() { return { }; }
-#endif 
+#endif
     };
 }

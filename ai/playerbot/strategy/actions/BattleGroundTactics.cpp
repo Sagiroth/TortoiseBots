@@ -2361,7 +2361,7 @@ bool BGTactics::wsgPaths()
                 return  true;
             }
         }
-        else if (!atHordeGY || urand(0, 2)){ //all other preference: run down the ramp 
+        else if (!atHordeGY || urand(0, 2)){ //all other preference: run down the ramp
             if (bot->getPositionX() < 985.f) //to the gate at the upper tunnel
             {
                 MoveTo(bg->GetMapId(), 985.940125f, 1423.260254f, 345.418121f);
@@ -2789,7 +2789,7 @@ bool BGTactics::Execute(Event& event)
     {
         return selectObjective();
     }
-    
+
     if (getName() == "protect fc")
     {
         if (!bot->IsMounted() && !sServerFacade.IsInCombat(bot))
@@ -3190,7 +3190,7 @@ bool BGTactics::selectObjective(bool reset)
             bool isContested = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_ALLY_CONTESTED) : bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_HORDE_CONTESTED);
             bool isFriendly = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_HORDE_OCCUPIED) || bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_HORDE_CONTESTED) : bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_ALLY_OCCUPIED) || bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_ALLY_CONTESTED);
 
-            // If we're a defender, target friendly, neutral or under attack objectives (maybe remove the under attack ones?). if we're an attacker, target enemy, neutral or under attack objectives. 
+            // If we're a defender, target friendly, neutral or under attack objectives (maybe remove the under attack ones?). if we're an attacker, target enemy, neutral or under attack objectives.
             if ((defender && (isActiveNeutral || isFriendly || isContested)) || (!defender && (isActiveNeutral || isContested || isOccupied)))
             {
                 if (GameObject* pGO = bot->GetMap()->GetGameObject(bg->GetSingleGameObjectGuid(objective.first, BG_AB_NODE_STATUS_NEUTRAL)))
@@ -4488,7 +4488,7 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
         // session - while only the continue was ever gated on bgType.
         if (bgType != BATTLEGROUND_WS && !true /*CanInteract stub*/)
             continue;
-        
+
         if (flagRange)
             if (!bot->IsWithinDistInMap(go, flagRange))
                 continue;
@@ -4886,7 +4886,7 @@ bool BGTactics::IsLockedInsideKeep()
     }
 
     return moveToStart(true);
-    
+
 #endif
     return false;
 }
@@ -4930,7 +4930,8 @@ bool ArenaTactics::Execute(Event& event)
         {
             ai->ResetStrategies(false);
             if (!TortoiseBots::BotManager::Instance().ClearBotMaster(bot->GetObjectGuid()))
-                ai->SetMaster(nullptr);
+                sLog.outError("TortoiseBots: failed to clear durable master for %s on arena transition",
+                    bot->GetName());
         }
 
     if (!bot->IsInCombat())

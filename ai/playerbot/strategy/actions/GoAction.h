@@ -30,7 +30,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return { "travel target" ,  "nearest npcs" ,  "nearest friendly players" , "position" }; }
-#endif 
+#endif
 
     private:
         bool TellWhereToGo(std::string& param, Player* requester) const;

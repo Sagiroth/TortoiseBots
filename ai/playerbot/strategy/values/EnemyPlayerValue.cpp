@@ -143,7 +143,7 @@ Unit* EnemyPlayerValue::Calculate()
         const bool isMelee = !ai->IsRanged(bot);
         uint32 bestEnemyPlayerHealth = std::numeric_limits<uint32>::max();
         float bestEnemyPlayerDistance = std::numeric_limits<float>::max();
-      
+
         // Use the first enemy player as a base
         Unit* firstTarget = ai->GetUnit(enemyPlayers.front());
         if (firstTarget)

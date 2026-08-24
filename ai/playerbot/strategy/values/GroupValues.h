@@ -32,7 +32,7 @@ namespace ai
         GroupBoolCountValue(PlayerbotAI* ai) : Uint32CalculatedValue(ai, "group count"), Qualified() {}
         virtual uint32 Calculate() override;
     };
-    
+
     class GroupBoolANDValue : public BoolCalculatedValue, public Qualified
     {
     public:

@@ -18,7 +18,7 @@ namespace ai
         virtual std::string GetHelpTypeName() { return "loot"; }
         virtual std::string GetHelpDescription() { return "This value contains a list of item ids that should always be looted."; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
 
     private:
         std::set<uint32> list;

@@ -40,7 +40,7 @@ bool ChooseTravelTargetAction::Execute(Event& event)
     if (!futureDestinations->valid())
     {
         travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_NONE);
-        context->ClearValues("no active travel destinations");        
+        context->ClearValues("no active travel destinations");
         return false;
     }
 
@@ -89,7 +89,7 @@ bool ChooseTravelTargetAction::Execute(Event& event)
     }
 
     setNewTarget(requester, &newTarget, travelTarget);
-    
+
     return true;
 }
 
@@ -112,7 +112,7 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
     if (CanFreeMoveValue::CanFreeMoveTo(ai, newTarget->GetPosStr()))
         ReportTravelTarget(bot, requester, newTarget, oldTarget);
 
-    //If we are heading to a creature/npc clear it from the ignore list. 
+    //If we are heading to a creature/npc clear it from the ignore list.
     if (oldTarget && oldTarget == newTarget && newTarget->GetEntry())
     {
         std::set<ObjectGuid>& ignoreList = context->GetValue<std::set<ObjectGuid>&>("ignore rpg target")->Get();
@@ -190,7 +190,7 @@ void ChooseTravelTargetAction::ReportTravelTarget(Player* bot, Player* requester
 
     if (newTarget->IsForced())
         out << "(Forced) ";
-        
+
     std::string futureTravelPurpose = AI_VALUE2(std::string, "manual string", "future travel purpose");
     std::string futureTravelPurposeName = GetTravelPurposeName(futureTravelPurpose);
 
@@ -199,7 +199,7 @@ void ChooseTravelTargetAction::ReportTravelTarget(Player* bot, Player* requester
 
     std::string futureTravelDetail = AI_VALUE2(std::string, "manual string", "future travel detail");
 
-    std::string shortName = destination->GetShortName();    
+    std::string shortName = destination->GetShortName();
 
     if (typeid(*destination) == typeid(NullTravelDestination))
     {
@@ -312,7 +312,7 @@ void ChooseTravelTargetAction::ReportTravelTarget(Player* bot, Player* requester
 
         out << "," << futureTravelPurposeName;
 
-        sPlayerbotAIConfig.log("travel_map.csv", out.str().c_str());        
+        sPlayerbotAIConfig.log("travel_map.csv", out.str().c_str());
     }
 }
 
@@ -400,8 +400,8 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
 
         if (hasTarget)
             break;
-    }         
-     
+    }
+
     if(hasTarget)
         ai->TellDebug(requester, "Point at " + std::to_string(uint32(target->Distance(bot))) + "y selected.", "debug travel");
 
@@ -558,7 +558,7 @@ bool ChooseGroupTravelTargetAction::Execute(Event& event)
             continue;
         }
 
-        groupTargets.push_back(groupTarget);        
+        groupTargets.push_back(groupTarget);
         playerDesitnations[groupTarget->GetDestination()] = player;
         conditions[groupTarget->GetDestination()] = groupTarget->GetConditions();
     }
@@ -583,7 +583,7 @@ bool ChooseGroupTravelTargetAction::Execute(Event& event)
 
     if (!SetBestTarget(requester, &newTarget, travelList))
         return false;
-    
+
     newTarget.SetGroupCopy(playerDesitnations[newTarget.GetDestination()]);
 
     setNewTarget(requester, &newTarget, oldTarget);
@@ -637,7 +637,7 @@ bool RefreshTravelTargetAction::Execute(Event& event)
     }
 
     PlayerTravelInfo info(bot);
-    
+
     WorldPosition* newPosition;
 
     for (uint8 i = 0; i < 5; i++)
@@ -645,7 +645,7 @@ bool RefreshTravelTargetAction::Execute(Event& event)
         std::list<uint8> chancesToGoFar = { 10,20,90 }; //Closest map, grid, cell.
         newPosition = oldDestination->GetNextPoint(*target->getPosition(), chancesToGoFar);
         if (newPosition && sTravelMgr.IsLocationLevelValid(*newPosition, info, (uint32)oldDestination->GetPurpose()))
-            break;        
+            break;
     }
 
     if (!newPosition)
@@ -666,7 +666,7 @@ bool RefreshTravelTargetAction::Execute(Event& event)
     target->SetStatus(TravelStatus::TRAVEL_STATUS_READY);
     target->IncRetry(false);
 
-    RESET_AI_VALUE(bool, "travel target active");    
+    RESET_AI_VALUE(bool, "travel target active");
     context->ClearValues("no active travel destinations");
     SET_AI_VALUE2(std::string, "manual string", "future travel detail", std::string());
 
@@ -1625,6 +1625,6 @@ bool FocusTravelTargetAction::Execute(Event& event)
     TravelTarget* oldTarget = AI_VALUE(TravelTarget*, "travel target");
 
     oldTarget->SetExpireIn(1000);
-    
+
     return true;
 }

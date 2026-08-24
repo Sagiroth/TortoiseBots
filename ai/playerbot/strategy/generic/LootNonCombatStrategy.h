@@ -14,7 +14,7 @@ namespace ai
             return "This strategy will make bots look for, open and get items from nearby lootable objects.";
         }
         virtual std::vector<std::string> GetRelatedStrategies() { return { "gather" }; }
-#endif        
+#endif
     public:
         void InitNonCombatTriggers(std::list<TriggerNode*> &triggers) override;
     };

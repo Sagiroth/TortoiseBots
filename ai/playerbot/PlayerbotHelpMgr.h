@@ -74,7 +74,7 @@ class PlayerbotHelpMgr
         void PrintCoverage();
 
         void SaveTemplates();
-        
+
         void GenerateHelp();
 #endif
         static void FormatHelpTopic(std::string& text);

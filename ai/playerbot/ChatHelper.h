@@ -105,8 +105,8 @@ namespace ai
         static std::string formatWorldPosition(const WorldPosition& pos, const WorldPosition refPos = WorldPosition());
         static std::string formatGuidPosition(const GuidPosition& guidP, const GuidPosition& ref);
 
-        static std::string formatBoolean(bool flag);       
-       
+        static std::string formatBoolean(bool flag);
+
         static bool parseable(const std::string& text);
 
         void eraseAllSubStr(std::string& mainStr, const std::string& toErase);

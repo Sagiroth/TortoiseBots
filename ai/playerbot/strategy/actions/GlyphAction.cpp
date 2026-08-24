@@ -47,7 +47,7 @@ bool GlyphAction::Execute(Event& event)
             std::string removeSlots = param.substr(7);
 
             for (auto& token : getMultiQualifiers(removeSlots, " "))
-            {               
+            {
                 if (isValidNumberString(token))
                 {
                     std::ostringstream out;
@@ -254,7 +254,7 @@ void GlyphAction::Remove(uint32 itemId, uint8 removeSlotId, std::ostringstream& 
     {
         msg << BOT_TEXT2("No glyph in slot %slot", placeholders);
     }
-        
+
     const ItemPrototype* glyphProto = sObjectMgr.GetItemPrototype(itemId);
 
     if (!glyphProto)
@@ -298,7 +298,7 @@ bool AutoSetGlyphAction::Execute(Event& event)
     std::vector<uint32> equipedGlyphs = AI_VALUE(std::vector<uint32>, "equiped glyphs");
 
     std::vector<uint32> newGlyphs;
-    std::vector<uint8> newSlots;    
+    std::vector<uint8> newSlots;
 
     std::reverse(wantedGlyphs.begin(), wantedGlyphs.end());
 
@@ -318,7 +318,7 @@ bool AutoSetGlyphAction::Execute(Event& event)
         GlyphSlotType glyphSlotType = EquipedGlyphsValue::GetGlyphSlotTypeFromItemId(itemId);
 
         for (uint8 newSlot = 0; newSlot < equipedGlyphs.size(); newSlot++)
-        {            
+        {
             GlyphSlotType slotType = EquipedGlyphsValue::GetGlyphSlotTypeFromSlot(newSlot, bot->GetLevel());
 
             if (slotType == GlyphSlotType::LOCKED_SLOT)

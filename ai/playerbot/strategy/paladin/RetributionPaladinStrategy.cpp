@@ -61,12 +61,12 @@ void RetributionPaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& tri
 
     triggers.push_back(new TriggerNode(
         "critical health",
-        NextAction::array(0, new NextAction("repentance or shield", ACTION_EMERGENCY + 1), 
+        NextAction::array(0, new NextAction("repentance or shield", ACTION_EMERGENCY + 1),
                              new NextAction("holy light", ACTION_EMERGENCY), NULL)));
 
     triggers.push_back(new TriggerNode(
         "critical health",
-        NextAction::array(0, new NextAction("divine shield", ACTION_EMERGENCY + 1), 
+        NextAction::array(0, new NextAction("divine shield", ACTION_EMERGENCY + 1),
                              new NextAction("holy light", ACTION_EMERGENCY), NULL)));
 
     triggers.push_back(new TriggerNode(

@@ -4,7 +4,7 @@
 #include "playerbot/strategy/Value.h"
 
 namespace ai
-{    
+{
     class SubStrategyValue : public ManualSetValue<std::string>
 	{
 	public:
@@ -20,4 +20,3 @@ namespace ai
         std::string allowedValues;
     };
 };
-

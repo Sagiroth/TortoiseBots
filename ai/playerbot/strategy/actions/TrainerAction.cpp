@@ -64,7 +64,7 @@ void TrainerAction::Learn(uint32 cost, ObjectGuid trainerGuid, uint32 spellId, T
 
 bool TrainerAction::Iterate(Player* requester, Creature* creature, TrainerSpellAction action, SpellIds& spells)
 {
-    bool hasHeader = false;    
+    bool hasHeader = false;
     bool hasTrainable = false;
 
     TrainerSpellData const* cSpells = creature->GetTrainerSpells();
@@ -217,8 +217,8 @@ bool TrainerAction::Execute(Event& event)
 #ifdef CMANGOS
     if (!creature || !creature->IsTrainer())
 #endif
-        return false;       
-            
+        return false;
+
     if (!creature->IsTrainerOf(bot, false))
     {
         if (!ai->GetMaster() || sServerFacade.getDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))

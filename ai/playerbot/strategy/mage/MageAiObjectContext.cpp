@@ -188,7 +188,7 @@ namespace ai
                 creators["hot streak"] = [](PlayerbotAI* ai) { return new HotStreakTrigger(ai); };
                 creators["free fireball"] = [](PlayerbotAI* ai) { return new FireballOrFrostfireBoltFreeTrigger(ai); };
                 creators["fingers of frost"] = [](PlayerbotAI* ai) { return new FingersOfFrostTrigger(ai); };
-                creators["mirror image"] = [](PlayerbotAI* ai) { return new MirrorImageTrigger(ai); };                
+                creators["mirror image"] = [](PlayerbotAI* ai) { return new MirrorImageTrigger(ai); };
                 creators["no improved scorch"] = [](PlayerbotAI* ai) { return new NoImprovedScorchDebuffTrigger(ai); };
                 creators["no fire vulnerability"] = [](PlayerbotAI* ai) { return new NoFireVulnerabilityTrigger(ai); };
                 creators["living bomb"] = [](PlayerbotAI* ai) { return new LivingBombTrigger(ai); };

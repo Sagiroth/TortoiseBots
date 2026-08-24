@@ -19,7 +19,7 @@ namespace ai
     {
     public:
         PullMyTargetAction(PlayerbotAI* ai) : PullRequestAction(ai, "pull my target") {}
-    
+
     private:
         Unit* GetTarget(Event& event) override;
     };

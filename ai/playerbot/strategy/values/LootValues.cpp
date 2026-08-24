@@ -150,7 +150,7 @@ LootTemplateAccess const* DropMapValue::GetLootTemplate(ObjectGuid guid, LootTyp
 	else if (guid.IsItem())
 	{
 		ItemPrototype const* proto = sObjectMgr.GetItemPrototype(guid.GetEntry());
-		
+
 		if (proto)
 		{
 			if (type == LOOT_CORPSE)
@@ -393,7 +393,7 @@ uint32 StackSpaceForItem::Calculate()
 
 	ItemPrototype const* proto = sItemStorage.LookupEntry<ItemPrototype>(itemId);
 
-	if (!proto) 
+	if (!proto)
 		return maxValue;
 
 	if (proto->MaxCount > 0)
@@ -401,7 +401,7 @@ uint32 StackSpaceForItem::Calculate()
 
 	if (ai->HasActivePlayerMaster())
 		return maxValue;
-	
+
 	if (AI_VALUE(uint8, "bag space") <= 80)
 		return maxValue;
 
@@ -466,7 +466,7 @@ bool ShouldLootObject::Calculate()
         if (!StoreLootAction::IsLootAllowed(ltemQualifier, ai))
             return false;
 
-		return true;				
+		return true;
     }
 
 	// Dispatch via cast to access m_loot (lives on Creature/GameObject only).

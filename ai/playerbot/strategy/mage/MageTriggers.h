@@ -25,7 +25,7 @@ namespace ai
         virtual bool IsActive() override { return BuffOnPartyTrigger::IsActive() && !ai->HasAura("arcane brilliance", GetTarget()); }
     };
 
-    class ArcaneIntellectTrigger : public BuffTrigger 
+    class ArcaneIntellectTrigger : public BuffTrigger
     {
     public:
         ArcaneIntellectTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "arcane intellect", 4) {}
@@ -38,7 +38,7 @@ namespace ai
         ArcaneBrillianceOnPartyTrigger(PlayerbotAI* ai) : GreaterBuffOnPartyTrigger(ai, "arcane brilliance", "arcane intellect", 4) {}
     };
 
-    class AnyMageArmorTrigger : public BuffTrigger 
+    class AnyMageArmorTrigger : public BuffTrigger
     {
     public:
         AnyMageArmorTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "any mage armor", 5) {}
@@ -66,25 +66,25 @@ namespace ai
         virtual bool IsActive() override;
     };
 
-    class FireballTrigger : public DebuffTrigger 
+    class FireballTrigger : public DebuffTrigger
     {
     public:
         FireballTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "fireball") {}
 	};
 
-    class PyroblastTrigger : public DebuffTrigger 
+    class PyroblastTrigger : public DebuffTrigger
     {
     public:
         PyroblastTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "pyroblast", 10) {}
     };
 
-    class MissileBarrageTrigger : public HasAuraTrigger 
+    class MissileBarrageTrigger : public HasAuraTrigger
     {
     public:
         MissileBarrageTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "missile barrage") {}
     };
 
-    class ArcaneBlastTrigger : public BuffTrigger 
+    class ArcaneBlastTrigger : public BuffTrigger
     {
     public:
         ArcaneBlastTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "arcane blast") {}
@@ -225,7 +225,7 @@ namespace ai
                     }
 
                     return true;
-                }                    
+                }
             }
 
             return false;
@@ -234,7 +234,7 @@ namespace ai
         virtual std::string GetTargetName() override { return "current target"; }
     };
 
-    class LivingBombTrigger : public DebuffTrigger 
+    class LivingBombTrigger : public DebuffTrigger
     {
     public:
         LivingBombTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "living bomb") {}

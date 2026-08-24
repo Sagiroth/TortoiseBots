@@ -38,4 +38,3 @@ bool LeaveLargeGuildTrigger::IsActive()
 
 	return members > maxMembers;
 }
-

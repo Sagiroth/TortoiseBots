@@ -8,7 +8,7 @@
 using namespace ai;
 
 GuidPosition FreeMoveCenterValue::Calculate()
-{       
+{
     if (ai->HasStrategy("follow", ai->GetState()) ||
         ai->HasStrategy("wander", ai->GetState()))
     {
@@ -18,7 +18,7 @@ GuidPosition FreeMoveCenterValue::Calculate()
             return bot;
 
         //Use bot as center when follow target is on a different map.
-        if (followTarget->GetMapId() != bot->GetMapId()) 
+        if (followTarget->GetMapId() != bot->GetMapId())
             return followTarget;
 
         Player* player = dynamic_cast<Player*>(followTarget);
@@ -74,7 +74,7 @@ float FreeMoveRangeValue::Calculate()
    {
        return ai->GetRange("guard");
    }
-    
+
    return 0;
 }
 

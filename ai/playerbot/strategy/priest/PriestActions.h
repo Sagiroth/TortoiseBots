@@ -42,7 +42,7 @@ namespace ai
     // holy 2.4.3
     HEAL_PARTY_ACTION(CastPrayerOfMendingAction, "prayer of mending");
     HEAL_PARTY_ACTION(CastBindingHealAction, "binding heal");
-    
+
     BUFF_ACTION(CastPrayerOfHealingAction, "prayer of healing");
     AOE_HEAL_ACTION(CastLightwellAction, "lightwell");
     AOE_HEAL_ACTION(CastCircleOfHealingAction, "circle of healing");
@@ -96,7 +96,7 @@ namespace ai
     SPELL_ACTION(CastConsumeMagicAction, "consume magic");
     SNARE_ACTION(CastChastiseAction, "chastise");
 
-    class CastRemoveShadowformAction : public Action 
+    class CastRemoveShadowformAction : public Action
     {
     public:
         CastRemoveShadowformAction(PlayerbotAI* ai) : Action(ai, "remove shadowform") {}

@@ -5,7 +5,7 @@
 
 using namespace ai;
 
-bool ShouldAHSellValue::Calculate() 
+bool ShouldAHSellValue::Calculate()
 {
     if (ShouldSellValue::Calculate()) //We need space so we want to try to AH items anyway.
         return true;

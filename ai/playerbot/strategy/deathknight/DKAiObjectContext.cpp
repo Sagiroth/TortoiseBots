@@ -70,7 +70,7 @@ namespace ai
         class TriggerFactoryInternal : public NamedObjectContext<Trigger>
         {
         public:
-            TriggerFactoryInternal()  
+            TriggerFactoryInternal()
             {
                 creators["bone shield"] = [](PlayerbotAI* ai) { return new BoneShieldTrigger(ai); };
                 creators["pestilence"] = [](PlayerbotAI* ai) { return new PestilenceTrigger(ai); };
@@ -108,7 +108,7 @@ namespace ai
         public:
             AiObjectContextInternal()
             {
-                
+
 				// Unholy
 				creators["bone shield"] = [](PlayerbotAI* ai) { return new CastBoneShieldAction(ai); };
 				creators["plague strike"] = [](PlayerbotAI* ai) { return new CastPlagueStrikeAction(ai); };

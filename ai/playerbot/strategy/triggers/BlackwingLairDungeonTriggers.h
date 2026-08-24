@@ -46,7 +46,7 @@ namespace ai
 
             std::list<GuidPosition> gosInSight = AI_VALUE(std::list<GuidPosition>, "go usable filter::go trapped filter::entry filter::{gos in sight,suppression devices}");
             std::list<GuidPosition> gosClose = AI_VALUE(std::list<GuidPosition>, "entry filter::{gos close,suppression devices}");
-            
+
             return !gosInSight.empty() && gosClose.empty();
         }
     };

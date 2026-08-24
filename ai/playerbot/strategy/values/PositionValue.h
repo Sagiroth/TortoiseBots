@@ -39,7 +39,7 @@ namespace ai
 
     class SinglePositionValue : public CalculatedValue<PositionEntry>, public Qualified
     {
-    public: 
+    public:
         SinglePositionValue(PlayerbotAI* ai, std::string name = "pos") : CalculatedValue(ai, name), Qualified() {};
         virtual PositionEntry Calculate() override;
         virtual void Set(PositionEntry value) override;
@@ -52,7 +52,7 @@ namespace ai
         CurrentPositionValue(PlayerbotAI* ai, std::string name = "current position", uint32 checkInterval = 1) : LogCalculatedValue<WorldPosition>(ai, name, checkInterval) { minChangeInterval = 60;  logLength = 30; };
         virtual bool EqualToLast(WorldPosition value) override { return value.fDist(lastValue) < sPlayerbotAIConfig.tooCloseDistance; }
         virtual WorldPosition Calculate() override { return WorldPosition(bot); };
-    };  
+    };
 
     class MasterPositionValue : public MemoryCalculatedValue<WorldPosition>
     {

@@ -22,7 +22,7 @@ namespace ai
                     continue;
 
                 Creature* creature = dynamic_cast<Creature*>(unit);
-                if (creature && creature->IsTotem()) 
+                if (creature && creature->IsTotem())
                 {
                     return true;
                 }

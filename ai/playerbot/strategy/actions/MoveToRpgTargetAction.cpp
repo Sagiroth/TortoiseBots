@@ -127,14 +127,14 @@ bool MoveToRpgTargetAction::Execute(Event& event)
 
         ai->Poi(x, y, name);
     }
-	
+
 	if (sPlayerbotAIConfig.RandombotsWalkingRPG)
         if (!bot->GetTerrain()->IsOutdoors(bot->getPositionX(), bot->getPositionY(), bot->getPositionZ()))
             bot->m_movementInfo.AddMovementFlag(MOVEFLAG_WALK_MODE);
 
     float angle;
     float distance = 1.0f;
-    
+
     if (bot->IsWithinLOS(x, y, z, true))
     {
         if (!unit || !unit->IsMoving())
@@ -158,7 +158,7 @@ bool MoveToRpgTargetAction::Execute(Event& event)
     y += sin(angle) * INTERACTION_DISTANCE * distance;
 
     WorldPosition movePos(mapId, x, y, z);
-    
+
     if (movePos.distance(bot) < sPlayerbotAIConfig.sightDistance)
     {
         if (!movePos.ClosestCorrectPoint(5.0f, 5.0f, bot->GetInstanceId()) || abs(movePos.getZ()- z) > 10.0f)
@@ -260,5 +260,3 @@ bool MoveToRpgTargetAction::isUseful()
 
     return true;
 }
-
-

@@ -62,4 +62,3 @@ bool FlagAction::Execute(Event& event)
     ai->TellPlayer(requester, out.str());
     return true;
 }
-

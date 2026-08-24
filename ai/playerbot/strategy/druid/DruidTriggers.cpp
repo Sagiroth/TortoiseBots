@@ -5,8 +5,8 @@
 
 using namespace ai;
 
-bool EntanglingRootsKiteTrigger::IsActive() 
-{ 
+bool EntanglingRootsKiteTrigger::IsActive()
+{
 	if (!DebuffTrigger::IsActive())
 		return false;
 

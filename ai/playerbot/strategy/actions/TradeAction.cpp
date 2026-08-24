@@ -28,7 +28,7 @@ bool TradeAction::Execute(Event& event)
             player = event.GetOwner() ? event.GetOwner() : GetMaster();
         }
 
-        if (!player) 
+        if (!player)
         {
             return false;
         }
@@ -45,7 +45,7 @@ bool TradeAction::Execute(Event& event)
             return false;
         }
     }
-    
+
     uint32 copper = chat->parseMoney(text);
     if (copper > 0)
     {
@@ -122,4 +122,3 @@ bool TradeAction::TradeItem(const Item& item, int8 slot)
     bot->GetSession()->HandleSetTradeItemOpcode(packet);
     return true;
 }
-

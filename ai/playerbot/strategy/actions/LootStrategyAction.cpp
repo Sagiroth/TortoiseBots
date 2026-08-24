@@ -37,7 +37,7 @@ bool LootStrategyAction::Execute(Event& event)
         skipLootItems.clear();
         ai->TellPlayer(requester, "My loot list is now empty");
         return true;
-    }    
+    }
     else
     {
         std::set<std::string> itemQualifiers = chat->parseItemQualifiers(strategy);
@@ -73,21 +73,21 @@ bool LootStrategyAction::Execute(Event& event)
                     ai->TellPlayer(requester, out.str());
                 }
             }
-            
+
             if (remove || add)
             {
                 std::set<uint32>::iterator j = skipLootItems.find(itemid);
                 if (j != skipLootItems.end()) skipLootItems.erase(j);
                 changes = true;
             }
-            
+
             if (remove || ignore)
             {
                 std::set<uint32>::iterator j = alwaysLootItems.find(itemid);
                 if (j != alwaysLootItems.end()) alwaysLootItems.erase(j);
                 changes = true;
             }
-            
+
             if (ignore)
             {
                 skipLootItems.insert(itemid);
@@ -100,7 +100,7 @@ bool LootStrategyAction::Execute(Event& event)
                 changes = true;
             }
         }
-            
+
         for (std::list<ObjectGuid>::iterator i = gos.begin(); i != gos.end(); ++i)
         {
             GameObject *go = ai->GetGameObject(*i);
@@ -149,7 +149,7 @@ void LootStrategyAction::TellLootList(Player* requester, const std::string& name
 
         out << " " << chat->formatItem(proto);
     }
-    
+
     ai->TellPlayer(requester, out);
 }
 

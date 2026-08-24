@@ -14,7 +14,7 @@ namespace ai
 
         static bool WaitForEnemy(PlayerbotAI* ai) { return HasValue(ai, "wait"); }
         static bool CheckForEdges(PlayerbotAI* ai) { return HasValue(ai, "noedge"); }
-        
+
 	private:
         static bool HasValue(PlayerbotAI* ai, const std::string& value);
     };

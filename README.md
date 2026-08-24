@@ -47,7 +47,7 @@ be compiled accidentally.
   preserved runtime also contains disposable `TBPLAY` class fixtures for
   manual client playtesting.
 - The final correctness pass centralizes follow/wander/stay transitions,
-  removes the old controller movement loop, strictly validates automatic
+  removes the redundant controller state and old controller movement loop, strictly validates automatic
   packet-triggered invitation acceptance, preserves master GUIDs across human
   reconnects, and uses the documented `AiPlayerbot.MaxRandomBotRandomizeTime`
   key. The remaining live gate is the real-client journey, which is left to
@@ -59,6 +59,13 @@ be compiled accidentally.
 
 The native `.bot` surface includes `add`, `remove`, `follow`, `invite`,
 `uninvite`, `stay`, `list`, `stats`, and same-account mature-AI `command`.
+
+Owned-bot commands require the character to belong to the requester’s account;
+GM-level handlers intentionally retain an administrative override. `invite`
+reports only that the native group invitation was sent, and `command` reports
+forwarding to mature `PlayerbotAI`; neither claims that the resulting action or
+group join succeeded. Built-in diagnostics require the disposable `TBPLAY`
+account or `TBPLAY`-prefixed fixtures and are disabled by default.
 
 The first product target is intentionally small and playable: log into one normal character, spawn your own alts as Headless bots, party with them, and level together.
 

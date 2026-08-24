@@ -20,6 +20,6 @@ bool ChangeChatAction::Execute(Event& event)
         std::ostringstream out; out << "Chat set to " << chat->formatChat(parsed);
         ai->TellPlayer(requester, out);
     }
-    
+
     return true;
 }

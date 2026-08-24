@@ -43,7 +43,7 @@ namespace ai
         template<class T>
         Value<T>* GetValue(const std::string& name, int32 param)
         {
-        	std::ostringstream out; out << param;
+	std::ostringstream out; out << param;
             return GetValue<T>(name, out.str());
         }
 

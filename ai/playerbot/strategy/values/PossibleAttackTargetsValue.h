@@ -27,7 +27,7 @@ namespace ai
             return "This value contains all the units the bot should attack.";
         }
         virtual std::vector<std::string> GetUsedValues() { return { "attackers", "attack target"}; }
-#endif 
+#endif
 
 	private:
 		void RemoveNonThreating(std::list<ObjectGuid>& targets, bool getOne);
@@ -51,6 +51,6 @@ namespace ai
             return "This value returns true if any of the targets the bot wants to attack could agro adds.";
         }
         virtual std::vector<std::string> GetUsedValues() { return { "possible targets no los", "possible attack targets" }; }
-#endif 
+#endif
     };
 }

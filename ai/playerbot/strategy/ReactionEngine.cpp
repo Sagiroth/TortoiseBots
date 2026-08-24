@@ -27,11 +27,11 @@ bool Reaction::Update(uint32 elapsed)
     return !IsActive();
 }
 
-ReactionEngine::ReactionEngine(PlayerbotAI* ai, AiObjectContext* factory, BotState engineState) 
+ReactionEngine::ReactionEngine(PlayerbotAI* ai, AiObjectContext* factory, BotState engineState)
 : Engine(ai, factory, engineState)
 , aiReactionUpdateDelay(0U)
 {
-    
+
 }
 
 bool ReactionEngine::FindReaction(bool isStunned)
@@ -51,7 +51,7 @@ bool ReactionEngine::FindReaction(bool isStunned)
         // Look for the best reaction (if any available)
         int iterations = 0;
         int iterationsPerTick = queue.Size() *  sPlayerbotAIConfig.iterationsPerTick;
-        do 
+        do
         {
             // Get the best reaction in the queue (sorted by relevance)
             reactionItem = queue.Peek();
@@ -295,7 +295,7 @@ void ReactionEngine::Reset()
 bool ReactionEngine::CanUpdateAIReaction() const
 {
     Player* bot = ai->GetBot();
-    return (aiReactionUpdateDelay < 100U) && 
+    return (aiReactionUpdateDelay < 100U) &&
             bot->IsInWorld() &&
            !bot->IsBeingTeleported();
 }

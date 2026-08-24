@@ -21,7 +21,7 @@ uint32 MountValue::GetSpeed(uint32 spellId, bool canFly)
     switch (spellInfo->Id) //Aura's hard coded in spell.cpp
     {
     case 783:  //travel form
-    case 2645: //ghost wolf   
+    case 2645: //ghost wolf
         if(!canFly)
         return 39;
         break;
@@ -321,7 +321,7 @@ std::vector<int32> AvailableMountVendors::Calculate()
 {
     std::vector<int32> mountVendors;
     std::vector<MountValue> mountList = GAI_VALUE(std::vector<MountValue>, "full mount list");
-    
+
     for (auto& mount : mountList)
     {
         if (!mount.IsItem())

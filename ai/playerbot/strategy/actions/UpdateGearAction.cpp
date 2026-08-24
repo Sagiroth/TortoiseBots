@@ -164,8 +164,8 @@ uint8 UpdateGearAction::GetMasterItemProgressionLevel(uint8 slot, uint8 avgProgr
 {
     // If checking weapons or ranged weapons use the average item lvl
     if (slot == EQUIPMENT_SLOT_MAINHAND ||
-        slot == EQUIPMENT_SLOT_OFFHAND || 
-        slot == EQUIPMENT_SLOT_RANGED || 
+        slot == EQUIPMENT_SLOT_OFFHAND ||
+        slot == EQUIPMENT_SLOT_RANGED ||
         slot == EQUIPMENT_SLOT_TRINKET1 ||
         slot == EQUIPMENT_SLOT_TRINKET2 ||
         slot == EQUIPMENT_SLOT_BODY ||
@@ -220,7 +220,7 @@ void UpdateGearAction::EnchantItem(Item* item)
                     pEnchant.SpellId = fields[2].GetUInt32();
                     pEnchant.SlotId = fields[3].GetUInt8();
                     enchants.push_back(pEnchant);
-                } 
+                }
                 while (result->NextRow());
             }
         }

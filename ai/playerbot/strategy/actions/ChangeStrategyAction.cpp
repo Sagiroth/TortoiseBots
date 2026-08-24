@@ -39,7 +39,7 @@ bool ChangeCombatStrategyAction::Execute(Event& event)
     {
         ai->PrintStrategies(requester, BotState::BOT_STATE_COMBAT);
     }
-    
+
     return true;
 }
 

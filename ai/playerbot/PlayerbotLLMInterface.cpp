@@ -291,12 +291,12 @@ inline void RestoreBlockingSocket(int sock) {
 inline std::string SSLRecvWithTimeout(SSL* ssl, int timeout_seconds, int& bytesRead) {
     char buffer[4096];
     std::string response;
-    
+
     auto start = std::chrono::steady_clock::now();
-    
+
     while (true) {
         bytesRead = SSL_read(ssl, buffer, sizeof(buffer) - 1);
-        
+
         if (bytesRead > 0) {
             buffer[bytesRead] = '\0';
             response += buffer;
@@ -315,7 +315,7 @@ inline std::string SSLRecvWithTimeout(SSL* ssl, int timeout_seconds, int& bytesR
             }
         }
     }
-    
+
     return response;
 }
 
@@ -385,7 +385,7 @@ std::string PlayerbotLLMInterface::Generate(const std::string& prompt, int timeO
 inline std::string extractAfterPattern(const std::string& content, const std::string& startPattern) {
     if (startPattern.empty())
         return content;
-        
+
     std::regex pattern(startPattern);
     std::smatch match;
 
@@ -402,7 +402,7 @@ inline std::string extractAfterPattern(const std::string& content, const std::st
 inline std::string extractBeforePattern(const std::string& content, const std::string& endPattern) {
     if (endPattern.empty())
         return content;
-        
+
     std::regex pattern(endPattern);
     std::smatch match;
 
@@ -418,15 +418,15 @@ inline std::string extractBeforePattern(const std::string& content, const std::s
 
 inline std::vector<std::string> splitResponse(const std::string& response, const std::string& splitPattern) {
     std::vector<std::string> result;
-    
+
     if (splitPattern.empty()) {
         result.push_back(response);
         return result;
     }
-    
+
     std::regex pattern(splitPattern);
     std::smatch match;
-    
+
     std::sregex_iterator begin(response.begin(), response.end(), pattern);
     std::sregex_iterator end;
     for (auto it = begin; it != end; ++it) {
@@ -449,7 +449,7 @@ std::vector<std::string> PlayerbotLLMInterface::ParseResponse(const std::string&
 
     if (debug)
         debugLines.push_back("start pattern:" + startPattern);
-    
+
     actualResponse = extractAfterPattern(actualResponse, startPattern);
 
     PlayerbotTextMgr::ReplaceAll(actualResponse, R"(\")", "'");
@@ -479,7 +479,7 @@ std::vector<std::string> PlayerbotLLMInterface::ParseResponse(const std::string&
         debugLines.push_back("split pattern:" + splitPattern);
     }
 
-    std::vector<std::string> responses = splitResponse(actualResponse, splitPattern);   
+    std::vector<std::string> responses = splitResponse(actualResponse, splitPattern);
 
     if (debug)
         debugLines.insert(debugLines.end(), responses.begin(), responses.end());
@@ -506,7 +506,7 @@ void PlayerbotLLMInterface::LimitContext(std::string& context, int currentLength
                     break;
                 }
             }
-            
+
             if (cutPosition < context.size()) {
                 context = context.substr(cutPosition);
             }

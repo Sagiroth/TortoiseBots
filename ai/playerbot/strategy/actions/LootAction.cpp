@@ -224,7 +224,7 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
 
     sLog.outDebug("[BOT LOOT] %s: GO opening with spell=%u guid=%lu", bot->GetName(), spellId, lootObject.guid.GetRawValue());
 
-    //Keys need to use the key 
+    //Keys need to use the key
     if (spellId == sPlayerbotAIConfig.openGoSpell && go && lootObject.reqItem && bot->HasItemCount(lootObject.reqItem,1,false))
     {
         return ai->DoSpecificAction("use", Event("do loot", chat->formatQItem(lootObject.reqItem) + " " + chat->formatGameobject(go)));
@@ -502,7 +502,7 @@ bool StoreLootAction::Execute(Event& event)
 bool StoreLootAction::IsLootAllowed(ItemQualifier& itemQualifier, PlayerbotAI *ai)
 {
     AiObjectContext *context = ai->GetAiObjectContext();
-    
+
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemQualifier.GetId());
     if (!proto)
         return false;

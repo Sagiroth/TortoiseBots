@@ -171,7 +171,7 @@ namespace ai
         static void InitNonCombatTriggers(std::list<TriggerNode*>& triggers);
     };
 
-    // Generic strategy to be used for all class boost CDs rotations 
+    // Generic strategy to be used for all class boost CDs rotations
     class BoostStrategy : public Strategy
     {
     public:

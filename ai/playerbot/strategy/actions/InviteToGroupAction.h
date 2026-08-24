@@ -13,18 +13,18 @@ namespace ai
         {
             Player* master = event.GetOwner();
             std::string param = event.GetParam();
-            
+
             Player* target = nullptr;
             if (!param.empty())
             {
                 target = sObjectMgr.GetPlayer(param.c_str());
             }
-            
+
             if (!target)
             {
                 target = master;
             }
-            
+
             return Invite(bot, target);
         }
 

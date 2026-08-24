@@ -21,7 +21,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
     };
 
     class CleanQuestLogAction : public ChatCommandAction
@@ -42,7 +42,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {"can fight equal"}; }
-#endif 
+#endif
 
         void DropQuestType(Player* requester, uint8& numQuest, uint8 wantNum = 100, bool isGreen = false, bool hasProgress = false, bool isComplete = false);
 

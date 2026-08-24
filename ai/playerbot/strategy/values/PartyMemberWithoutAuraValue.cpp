@@ -50,7 +50,7 @@ Unit* FriendlyUnitWithoutAuraValue::Calculate()
 {
     bool ignoreTank = false;
     std::string auras = qualifier;
-    
+
     size_t paramPos = qualifier.find("-");
     if (paramPos != std::string::npos)
     {

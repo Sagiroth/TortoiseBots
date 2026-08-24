@@ -21,7 +21,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {"hazards"}; }
-#endif 
+#endif
 
     private:
         bool IsHazardNearby(const WorldPosition& point, const std::list<HazardPosition>& hazards) const;
@@ -43,7 +43,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {"hazards"}; }
-#endif 
+#endif
 
     private:
         bool IsValidPoint(const WorldPosition& point, const std::list<Creature*>& creatures, const std::list<HazardPosition>& hazards);

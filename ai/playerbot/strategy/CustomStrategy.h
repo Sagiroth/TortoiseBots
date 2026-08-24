@@ -18,7 +18,7 @@ namespace ai
 
     private:
         std::list<std::string> actionLines;
-        
+
     public:
         // Nothing in the tree ever writes to this, so the branch that reads it
         // is never taken. Left in place because it is public and something

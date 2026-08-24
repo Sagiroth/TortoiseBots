@@ -4,13 +4,13 @@
 #include "playerbot/strategy/Value.h"
 
 namespace ai
-{    
+{
     class FreeMoveCenterValue : public GuidPositionCalculatedValue
 	{
 	public:
         FreeMoveCenterValue(PlayerbotAI* ai) : GuidPositionCalculatedValue(ai, "free move center", 5) {};
         virtual GuidPosition Calculate() override;
-    };   
+    };
 
     class FreeMoveRangeValue : public FloatCalculatedValue
     {
@@ -31,6 +31,5 @@ namespace ai
     private:
         //Actual caculation functions used.
         static bool CanFreeMove(PlayerbotAI* ai, WorldPosition dest, float range);
-    }; 
+    };
 };
-

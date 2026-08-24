@@ -15,5 +15,5 @@ namespace ai
         static void AnalyseQuests();
         static void AnalyseCounts();
         static void AnalyseTestResults();
-    };    
+    };
 }

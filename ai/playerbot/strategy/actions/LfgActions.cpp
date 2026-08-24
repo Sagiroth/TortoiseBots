@@ -487,8 +487,8 @@ bool LfgJoinAction::JoinLFG()
                 }
             }
         }
-        
-        // set auto invite if real player in queue 
+
+        // set auto invite if real player in queue
         std::vector<uint32> player_dungeons = sRandomPlayerbotMgr.LfgDungeons[bot->GetTeam()];
         if (!player_dungeons.empty() && !group)
         {
@@ -753,7 +753,7 @@ bool LfgJoinAction::JoinLFG()
             }
         }
     }
-    
+
     if (!joinedLFG)
         return false;
 
@@ -978,7 +978,7 @@ bool LfgRoleCheckAction::Execute(Event& event)
         uint8 currentRoles = pData.m_roles;
         LfgRoles newRoles = GetRoles();
         if (currentRoles == (uint8)newRoles) return false;
-        
+
         sWorld.GetLFGQueue().GetMessager().AddMessage([group = group->getObjectGuid(), playerGuid = bot->getObjectGuid(), newRoles](LFGQueue* queue)
         {
             queue->SetPlayerRoles(group, playerGuid, newRoles);
@@ -1197,7 +1197,7 @@ bool LfgJoinAction::isUseful()
     Map* map = bot->GetMap();
     if (map && map->Instanceable())
         return false;
-    
+
 #ifdef MANGOSBOT_ZERO
     if (sRandomPlayerbotMgr.LfgDungeons[bot->GetTeam()].empty())
         return false;

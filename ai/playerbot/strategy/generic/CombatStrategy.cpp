@@ -143,8 +143,8 @@ float WaitForAttackMultiplier::GetValue(Action* action)
 {
     // Allow some movement and targeting actions
     const std::string& actionName = action->getName();
-    if ((actionName != "wait for attack keep safe distance") && 
-        (actionName != "dps assist") && 
+    if ((actionName != "wait for attack keep safe distance") &&
+        (actionName != "dps assist") &&
         (actionName != "set facing") &&
         (actionName != "pull my target") &&
         (actionName != "pull rti target") &&

@@ -115,7 +115,7 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
         if (!unit)
             continue;
 
-#ifdef MANGOSBOT_TWO 
+#ifdef MANGOSBOT_TWO
         if (bot->GetMapId() == 609)
         {
             switch (unit->GetEntry())
@@ -146,7 +146,7 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
                 if (AI_VALUE2(bool, "need quest objective", "12727"))
                     continue;
                 if (AI_VALUE2(bool, "need quest objective", "12754"))
-                    continue;                
+                    continue;
                 break;
             case 29102: //HearthglenCrusader
             case 29103: //Tirisfal Crusader

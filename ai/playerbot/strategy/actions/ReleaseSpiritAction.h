@@ -52,7 +52,7 @@ namespace ai
         }
     };
 
-    class AutoReleaseSpiritAction : public ReleaseSpiritAction 
+    class AutoReleaseSpiritAction : public ReleaseSpiritAction
     {
     public:
         AutoReleaseSpiritAction(PlayerbotAI* ai, std::string name = "auto release") : ReleaseSpiritAction(ai, name) {}
@@ -167,7 +167,7 @@ namespace ai
                 bot->SaveToDB();
             }
 
-            
+
             if (!ai->HasRealPlayerMaster())
             {
                 if (Group* group = bot->GetGroup())

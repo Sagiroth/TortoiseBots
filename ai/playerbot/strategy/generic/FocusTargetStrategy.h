@@ -31,5 +31,5 @@ namespace ai
             return "This strategy will make the bot ignore all targets except it's current rti target.";
         }
 #endif
-    };    
+    };
 }

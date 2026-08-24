@@ -3,7 +3,7 @@
 
 namespace ai
 {
-    
+
     BUFF_TRIGGER(HornOfWinterTrigger, "horn of winter");
     BUFF_TRIGGER(BoneShieldTrigger, "bone shield");
     BUFF_TRIGGER(ImprovedIcyTalonsTrigger, "improved icy talons");

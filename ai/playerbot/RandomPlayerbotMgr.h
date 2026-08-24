@@ -47,7 +47,7 @@ public:
     botPID(double dt, double max, double min, double Kp, double Ki, double Kd);
     void adjust(double Kp, double Ki, double Kd);
     void reset();
-   
+
     double calculate(double setpoint, double pv);
     ~botPID();
 
@@ -108,7 +108,10 @@ public:
         void OnPlayerLogin(Player* player);
         void OnPlayerLoginError(uint32 bot);
         Player* GetRandomPlayer();
+        // Compatibility view for mature AI queries. The native module refreshes
+        // this from BotManager; it is not a session or lifecycle owner.
         PlayerBotMap& GetPlayers() { return players; };
+        void SyncNativePlayers();
         Player* GetPlayer(uint32 playerGuid);
         void PrintStats(uint32 requesterGuid);
         double GetBuyMultiplier(Player* bot);
@@ -252,12 +255,12 @@ public:
         uint32 bgBotsCount;
         uint32 playersLevel = 0;
         uint32 botCount = 0;
-        uint32 activeBots = 0;        
+        uint32 activeBots = 0;
 
         std::unordered_map<uint32, std::vector<std::pair<int32,int32>>> playerBotMoveLog;
         typedef std::unordered_map <uint32, std::list<float>> botPerformanceMetric;
         std::unordered_map<std::string, botPerformanceMetric> botPerformanceMetrics;
-        
+
         std::vector<std::pair<uint32, uint32>> RpgLocationsNear(const WorldLocation pos, const std::map<uint32, std::map<uint32, std::vector<std::string>>>& areaNames, uint32 radius = 2000);
         void PushMetric(botPerformanceMetric& metric, const uint32 bot, const float value, const uint32 maxNum = 60) const;
         float GetMetricDelta(botPerformanceMetric& metric) const;

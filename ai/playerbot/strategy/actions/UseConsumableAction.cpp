@@ -31,7 +31,7 @@ const std::vector<uint32> UseConsumableAction::alcoholItemIds = {
     21151,
 };
 
-// Never use these items 
+// Never use these items
 const std::vector<uint32> UseConsumableAction::excludedItemIds = {
     13455,  // Greater Stoneshield Potion
     13461,  // Mighty Rage Potion

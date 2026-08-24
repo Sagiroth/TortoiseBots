@@ -10,7 +10,7 @@ bool LogLevelAction::Execute(Event& event)
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     Value<LogLevel> *value = ai->GetAiObjectContext()->GetValue<LogLevel>("log level");
 
-    std::ostringstream out; 
+    std::ostringstream out;
     if (param != "?")
     {
         value->Set(string2logLevel(param));
@@ -21,12 +21,12 @@ bool LogLevelAction::Execute(Event& event)
         out << "My log level is " << logLevel2string(value->Get());
     }
     ai->TellPlayer(requester, out);
-    return true;    
+    return true;
 }
 
 std::string LogLevelAction::logLevel2string(LogLevel level)
 {
-    switch (level) 
+    switch (level)
     {
     case LOG_LVL_BASIC:
         return "basic";
@@ -46,6 +46,6 @@ LogLevel LogLevelAction::string2logLevel(std::string level)
         return LOG_LVL_MINIMAL;
     else if (level == "detail")
         return LOG_LVL_DETAIL;
-    else 
+    else
         return LOG_LVL_BASIC;
 }

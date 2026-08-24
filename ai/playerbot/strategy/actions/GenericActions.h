@@ -8,7 +8,7 @@
 
 namespace ai
 {
-    class MeleeAction : public AttackAction 
+    class MeleeAction : public AttackAction
     {
     public:
         MeleeAction(PlayerbotAI* ai) : AttackAction(ai, "melee") {}
@@ -69,7 +69,7 @@ namespace ai
 
             return false;
         }
-        
+
         virtual bool Execute(Event& event) override
         {
             GameObject* go = ai->GetGameObject(lightwellGameObject);

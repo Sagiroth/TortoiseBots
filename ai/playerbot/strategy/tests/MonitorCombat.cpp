@@ -55,7 +55,7 @@ bool MonitorCombatMob::IsConditionMet(const std::string& monitorStr, Player* bot
         }
     }
 
-    if (found && allDead)   
+    if (found && allDead)
         return true;
 
     return false;

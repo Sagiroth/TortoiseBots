@@ -57,7 +57,7 @@ bool CleanQuestLogAction::Execute(Event& event)
     uint8 totalQuests = 0;
 
     DropQuestType(requester, totalQuests); //Count the total quests
-     
+
     if (MAX_QUEST_LOG_SIZE - totalQuests > 6)
     {
         DropQuestType(requester, totalQuests, MAX_QUEST_LOG_SIZE, true, true); //Drop failed quests

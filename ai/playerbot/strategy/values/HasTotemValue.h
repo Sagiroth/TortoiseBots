@@ -25,10 +25,10 @@ namespace ai
                 Creature* totem = dynamic_cast<Creature*>(unit);
                 if (!totem || !totem->IsTotem())
                     continue;
-                
+
                 const bool totemIsInRange = strstri(totem->GetName(), qualifier.c_str()) &&
                     sServerFacade.GetDistance2d(bot, totem) <= ai->GetRange("spell");
-                
+
                 if (!totemIsInRange) continue;
 
                 Unit* totemOwner = totem->GetOwner();

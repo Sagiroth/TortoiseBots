@@ -2,7 +2,7 @@
 #include "playerbot/strategy/Strategy.h"
 
 namespace ai
-{   
+{
     class AvoidMobsStrategy : public Strategy
     {
     public:

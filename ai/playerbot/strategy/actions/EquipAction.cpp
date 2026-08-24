@@ -103,7 +103,7 @@ void EquipAction::EquipItems(Player* requester, ItemIds ids)
     for (ItemIds::iterator i = ids.begin(); i != ids.end(); i++)
     {
         FindItemByIdVisitor visitor(*i);
-        EquipItem(requester, &visitor);        
+        EquipItem(requester, &visitor);
     }
 }
 
@@ -125,7 +125,7 @@ void EquipAction::EquipItem(Player* requester, FindItemVisitor* visitor)
 {
     ai->InventoryIterateItems(visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
     std::list<Item*> items = visitor->GetResult();
-	if (!items.empty()) 
+	if (!items.empty())
     {
         EquipItem(ai, requester, *items.begin());
     }
@@ -145,7 +145,7 @@ uint8 EquipAction::GetSmallestBagSlot(Player* bot)
             {
                 continue;
             }
-            
+
             curBag = bag;
             curSlots = pBag->GetBagSize();
         }
@@ -265,7 +265,7 @@ void EquipAction::EquipItem(PlayerbotAI* ai, Player* requester, Item* item, bool
             }
         }
 
-        if (!equipedBag) 
+        if (!equipedBag)
         {
             WorldPacket packet(CMSG_AUTOEQUIP_ITEM, 2);
             packet << bagIndex << slot;
@@ -341,7 +341,7 @@ bool EquipUpgradesAction::Execute(Event& event)
 
             ItemQualifier itemQualifier(itemId, (int32)itemRandomPropertyId);
             const ItemPrototype* itemProto = itemQualifier.GetProto();
-            if (itemProto && (itemProto->Class == ItemClass::ITEM_CLASS_WEAPON || 
+            if (itemProto && (itemProto->Class == ItemClass::ITEM_CLASS_WEAPON ||
                               itemProto->Class == ItemClass::ITEM_CLASS_ARMOR ||
                               itemProto->Class == ItemClass::ITEM_CLASS_CONTAINER))
             {
@@ -357,7 +357,7 @@ bool EquipUpgradesAction::Execute(Event& event)
 
     Item* oldMainhand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
     Item* oldOffhand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND);
-        
+
     if (oldMainhand)
         UnequipAction::UnequipItem(ai, bot, oldMainhand, true);
     if (oldOffhand)
@@ -397,7 +397,7 @@ bool EquipUpgradesAction::Execute(Event& event)
             sLog.outDetail("Bot #%d <%s> auto equips item %d (%s)", bot->GetGUIDLow(), bot->GetName(), item->GetProto()->ItemId, usage == ItemUsage::ITEM_USAGE_EQUIP ? "better than current" : usage == ItemUsage::ITEM_USAGE_BAD_EQUIP ? "wrong item but empty slot" : "");
             ai->TellDebug(ai->GetMaster(), "Equipping: " + chat->formatItem(item) + " - " + ItemUsageValue::ReasonForNeed(usage, item, 1, bot), "debug equip");
 
-            EquipItem(ai, GetMaster(), item, item == oldMainhand || item == oldOffhand);   
+            EquipItem(ai, GetMaster(), item, item == oldMainhand || item == oldOffhand);
             didEquip = true;
         }
     }

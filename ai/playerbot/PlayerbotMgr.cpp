@@ -314,7 +314,7 @@ void PlayerbotHolder::MovePlayerBot(uint32 guid, PlayerbotHolder* newHolder)
 {
     if (newHolder)
     {
-        auto it = playerBots.find(guid); 
+        auto it = playerBots.find(guid);
         if (it != playerBots.end() && it->second != nullptr)
         {
             newHolder->OnBotLogin(it->second);
@@ -539,9 +539,9 @@ void PlayerbotHolder::LogoutPlayerBot(uint32 guid, bool allowInstant, bool forDe
                 if (!bot)
                 {
                     playerBots[guid] = nullptr;
-                    delete botWorldSessionPtr;    
+                    delete botWorldSessionPtr;
                 }
-                
+
                 return;
             }
             else
@@ -549,9 +549,9 @@ void PlayerbotHolder::LogoutPlayerBot(uint32 guid, bool allowInstant, bool forDe
                 playerBots[guid] = nullptr;  // deletes bot player ptr inside this WorldSession PlayerBotMap
                 delete botWorldSessionPtr;  // finally delete the bot's WorldSession
             }
-            
+
             return;
-        } 
+        }
         // if instant logout possible, do it
         else if (bot && (logout || !botWorldSessionPtr->IsLogingOut()))
         {
@@ -592,7 +592,7 @@ void PlayerbotHolder::DisablePlayerBot(uint32 guid, bool logOutPlayer)
         WorldSession* botWorldSessionPtr = bot->GetSession();
         playerBots[guid] = nullptr;    // deletes bot player ptr inside this WorldSession PlayerBotMap
 
-        if (PlayerbotAIStorage::Instance().GetAI(bot)) 
+        if (PlayerbotAIStorage::Instance().GetAI(bot))
         {
             bot->RemovePlayerbotAI();
         }
@@ -855,13 +855,13 @@ std::string PlayerbotHolder::ProcessBotCommand(std::string cmd, ObjectGuid guid,
     if (it != m_botCommandHandlers.end())
     {
         std::string realParam;
-        
+
         if (!subType.empty())
             realParam = subType;
         else if (it->second == &PlayerbotHolder::HandleBotAddLogin || it->second == &PlayerbotHolder::HandleBotAlways || it->second == &PlayerbotHolder::HandleBotDelete)
-            realParam = std::to_string(guid.GetRawValue());        
+            realParam = std::to_string(guid.GetRawValue());
         else
-            realParam = param;            
+            realParam = param;
 
         return (this->*it->second)(bot, master, realParam);
     }
@@ -931,7 +931,7 @@ std::list<std::string> PlayerbotHolder::HandlePlayerbotCommand(const std::string
         param = args.substr(params[0].size() + 1);
         charname = params[1];
     }
-    
+
     for (auto& [prefix, handler] : m_holderHandlers)
     {
         if (command != prefix)
@@ -955,7 +955,7 @@ std::list<std::string> PlayerbotHolder::HandlePlayerbotCommand(const std::string
             messages.push_back(helpText);
             return messages;
         }
-    }    
+    }
 
     if (charname == "*" && master)
     {
@@ -1451,7 +1451,7 @@ void PlayerbotMgr::CheckTellErrors(uint32 elapsed)
             out << *j;
         }
         out << "|cfff00000: " << text;
-        
+
         ChatHandler(master->GetSession()).PSendSysMessage("%s", out.str().c_str());
     }
     errors.clear();
@@ -1467,7 +1467,7 @@ std::list<std::string> PlayerbotHolder::HandleList(Player* master, const std::st
 std::list<std::string> PlayerbotHolder::HandleHelp(Player* master, const std::string param, AccountTypes security)
 {
     std::list<std::string> messages;
-    
+
     if (param.empty())
     {
         messages.push_back("Available commands: list, reload, tweak, always, self, debug, c, do, record, read, clear");
@@ -1487,7 +1487,7 @@ std::list<std::string> PlayerbotHolder::HandleHelp(Player* master, const std::st
         messages.push_back(commands);
         return messages;
     }
-    
+
     std::string helpText = GetCommandTexts(param);
     if (helpText.empty())
     {
@@ -1497,7 +1497,7 @@ std::list<std::string> PlayerbotHolder::HandleHelp(Player* master, const std::st
     {
         messages.push_back(helpText);
     }
-    
+
     return messages;
 }
 
@@ -1538,7 +1538,7 @@ std::string PlayerbotHolder::HandleBotAlways(Player* bot, Player* master, const 
 
     ObjectGuid guid = ObjectGuid(uint64(std::stoull(param)));
     uint32 accountId = sObjectMgr.GetPlayerAccountIdByGUID(guid);
-    std::string alwaysName;    
+    std::string alwaysName;
 
     if (!sObjectMgr.GetPlayerNameByGUID(guid, alwaysName))
         return "Unable to find player.";
@@ -1607,7 +1607,7 @@ std::list<std::string> PlayerbotHolder::HandleSelf(Player* master, const std::st
     if (PlayerbotAIStorage::Instance().GetAI(master))
     {
         DisablePlayerBot(master->GetGUIDLow(), false);
-       
+
         if (sRandomPlayerbotMgr.GetValue(master->getObjectGuid().GetCounter(), "selfbot"))
         {
             messages.push_back("Disable player ai (on login)");
@@ -1709,7 +1709,7 @@ std::string PlayerbotHolder::HandleConsoleWhisper(Player* bot, Player* master, c
                 message = "";
 
             sender = bot; //Switch sender reciever
-            reciever = master; 
+            reciever = master;
         }
     }
 
@@ -1738,7 +1738,7 @@ std::string PlayerbotHolder::HandleConsoleWhisper(Player* bot, Player* master, c
         if (PlayerbotAIStorage::Instance().GetAI(sender) && PlayerbotAIStorage::Instance().GetAI(sender)->GetMaster())
             out << " (master " << PlayerbotAIStorage::Instance().GetAI(sender)->GetMaster()->GetName() << ")";
 
-        return out.str(); 
+        return out.str();
     }
 
     WorldPacket packet_template(CMSG_MESSAGECHAT);
@@ -1773,7 +1773,7 @@ std::string PlayerbotHolder::HandleConsoleCmd(Player* bot, Player* master, const
     if (!helper.ParseChatCommand(param, master ? master : bot))
     {
         return "command failed";
-    }    
+    }
 
     return msg;
 }
@@ -1795,7 +1795,7 @@ std::string PlayerbotHolder::HandleBotTest(Player* bot, Player* master, const st
     // Activate test strategy which will run the test over multiple ticks
     std::string strategyName = "test::" + param;
     ai->ChangeStrategy("+" + strategyName, BotState::BOT_STATE_NON_COMBAT);
-    
+
     return "Test '" + param + "' started for bot " + bot->GetName();
 }
 
@@ -2257,7 +2257,7 @@ std::string PlayerbotHolder::HandleBotRemoveLogout(Player* bot, Player* master, 
 }
 
 void PlayerbotHolder::CreateBot(Player* master, const std::string param, std::list<std::string>& messages, ObjectGuid& guid)
-{    
+{
     // Allow null master for RA/console usage
     // Player* master can be null when called via .rndbot commands
 
@@ -2546,7 +2546,7 @@ std::list<std::string> PlayerbotHolder::HandleGroup(Player* master, const std::s
         else
             passThroughParam += key + "=" + value + " ";
     }
-    
+
     std::unordered_map<uint8, std::unordered_map<BotRoles, uint32>> allowedClassNr = LfgAction::AllowedClassRoleNr(master, groupSize);
 
     RandomPlayerbotFactory factory(0);
@@ -2608,9 +2608,9 @@ std::list<std::string> PlayerbotHolder::HandleGroup(Player* master, const std::s
                 currentGroupSize++;
             }
         }
-    
-        allowedClassNr[0][role]--; 
-        
+
+        allowedClassNr[0][role]--;
+
         if (allowedClassNr[cls].find(role) != allowedClassNr[cls].end())
             allowedClassNr[cls][role]--;
     }
@@ -2630,7 +2630,7 @@ std::list<std::string> PlayerbotHolder::HandleGroup(Player* master, const std::s
 
 #ifdef GenerateBotTests
 std::list<std::string> PlayerbotHolder::HandleRunTest(Player* master, const std::string param, AccountTypes security)
-{    
+{
     std::list<std::string> messages;
 
     if (param.empty())
@@ -2795,7 +2795,7 @@ void PlayerbotHolder::UpdatePendingTests(uint32 elapsed)
 
         std::string createParams = TestRegistry::GetBotCreationRequirement(pt.testName);
 
-        createParams += " login=0 temporary=1 test=" + pt.testName;       
+        createParams += " login=0 temporary=1 test=" + pt.testName;
 
         std::list<std::string> createMsgs = HandleCreate(nullptr, createParams, SEC_PLAYER);
 
@@ -2839,7 +2839,7 @@ uint32 PlayerbotHolder::GetOrCreateAccount(Player* master, std::string& error)
         error = "GetOrCreateAccount requires master or override in derived class";
         return 0;
     }
-    
+
     uint32 masterAccountId = master->GetSession()->GetAccountId();
     return masterAccountId;
 }
@@ -2855,7 +2855,7 @@ bool PlayerbotHolder::DeleteBot(ObjectGuid guid, bool allowInstant)
     if (Player* player = sObjectMgr.GetPlayer(guid, true))
     {
         //Attempt instant logout.
-        player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING); 
+        player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING);
         LogoutPlayerBot(guid, allowInstant, true);
     }
 
@@ -2883,7 +2883,7 @@ std::string PlayerbotHolder::HandleBotDelete(Player* bot, Player* master, const 
 
     uint32 masterAccountId = master ? master->GetSession()->GetAccountId() : 0;
     PlayerbotMgr* mgr = master ? GetPlayerbotMgr_Helper(master) : nullptr;
-    
+
     uint32 botAccount = sObjectMgr.GetPlayerAccountIdByGUID(guid);
     bool isRandomAccount = sPlayerbotAIConfig.IsInRandomAccountList(botAccount);
 
@@ -3108,7 +3108,7 @@ std::unordered_map<std::string, std::string> PlayerbotHolder::GetCommandTexts()
         {"create", "Create a new bot character.\nUsage: .(rnd)bot create level=<n> class=<class> race=<race>"},
         {"spoof", "Spoof as another bot for command routing.\nUsage: .(rnd)bot spoof <botname>"},
         {"runtest", "Run bot tests.\nUsage: .rndbot runtest <testnamepart> [count]"},
-        
+
         // Bot commands (used with .(rnd)bot <bot> ...)
         {"add", "Add a bot to the player's group.\nUsage: .(rnd)bot add <playername>"},
         {"login", "Add a bot to the player's group.\nUsage: .(rnd)bot login <playername>"},
@@ -3116,69 +3116,69 @@ std::unordered_map<std::string, std::string> PlayerbotHolder::GetCommandTexts()
         {"logout", "Remove a bot from the player's group.\nUsage: .(rnd)bot logout <botname>"},
         {"rm", "Remove a bot from the player's group.\nUsage: .(rnd)bot rm <botname>"},
         {"delete", "Delete a bot character.\nUsage: .(rnd)bot delete <botname>"},
-        
+
         {"gear", "Equip best gear on bot.\nUsage: .(rnd)bot gear <bot> "},
         {"equip", "Equip best gear on bot.\nUsage: .(rnd)bot equip  <bot> "},
-        
+
         {"train", "Train bot spells at trainer.\nUsage: .(rnd)bot train <bot> "},
         {"learn", "Train bot spells at trainer.\nUsage: .(rnd)bot learn <bot> "},
-        
+
         {"food", "Buy food/drink for bot.\nUsage: .(rnd)bot food <bot> "},
         {"drink", "Buy food/drink for bot.\nUsage: .(rnd)bot drink <bot> "},
-        
+
         {"potions", "Buy potions for bot.\nUsage: .(rnd)bot potions <bot> "},
         {"pots", "Buy potions for bot.\nUsage: .(rnd)bot pots <bot> "},
-        
+
         {"consumes", "Buy all consumables for bot.\nUsage: .(rnd)bot consumes <bot> "},
         {"consumables", "Buy all consumables for bot.\nUsage: .(rnd)bot consumables <bot> "},
-        
+
         {"regs", "Buy reagents for bot.\nUsage: .(rnd)bot regs <bot> "},
         {"reg", "Buy reagents for bot.\nUsage: .(rnd)bot reg <bot> "},
         {"reagents", "Buy reagents for bot.\nUsage: .(rnd)bot reagents  <bot> "},
-        
+
         {"prepare", "Prepare bot (gear, food, pots, etc).\nUsage: .(rnd)bot prepare <bot> "},
         {"prep", "Prepare bot (gear, food, pots, etc).\nUsage: .(rnd)bot prep <bot>"},
         {"refresh", "Refresh bot gear and items.\nUsage: .(rnd)bot refresh <bot> "},
-        
+
         {"init", "Initialize bot with default actions.\nUsage: .(rnd)bot init <bot> "},
-        
+
         {"enchants", "Apply enchants to bot's gear.\nUsage: .(rnd)bot enchants <bot> "},
-        
+
         {"ammo", "Buy ammo for bot.\nUsage: .(rnd)bot ammo <bot> "},
-        
+
         {"pet", "Summon/dismiss pet for bot.\nUsage: .(rnd)bot pet <bot> "},
-        
+
         {"levelup", "Level up bot.\nUsage: .(rnd)bot levelup <bot>"},
         {"level", "Level up bot.\nUsage: .(rnd)bot level <bot>"},
-        
+
         {"random", "Randomize bot appearance and gear.\nUsage: .(rnd)bot random <bot>"},
-        
+
         {"always", "Enable offline AI for a player.\nUsage: .(rnd)bot always <playername>"},
-        
+
         {"debug", "Run debug commands on the bot (GM only).\nUsage: .(rnd)bot debug <bot> <command>"},
-        
+
         {"c", "Execute a chat command on the bot.\nUsage: .(rnd)bot c <bot> <command>"},
-        
+
         {"w", "Send a whisper.\nUsage: .(rnd)bot w <bot> <message> (while spoofing as sender)\nUsage: .(rnd)bot <sender> <reciever> "},
-        
+
         {"p", "Send a party message as the bot.\nUsage: .(rnd)bot p <message> (while spoofing as sender)\n .(rnd)bot p <botname> <message>\nNote: No message = party info.\nExample: .rndbot p Dunpriest (shows party info)"},
-        
+
         {"g", "Send a guild message as the bot.\nUsage: .(rnd)bot g <message> (while spoofing as sender)\n .(rnd)bot g <botname> <message>\nNote: No message = guild info.\nExample: .rndbot g Dunpriest (shows guild info)"},
-        
+
         {"r", "Send a raid message as the bot.\nUsage: .(rnd)bot r <message> (while spoofing as sender)\n .(rnd)bot r <botname> <message>"},
-        
+
         {"rl", "Transfer raid leadership.\nUsage: .(rnd)bot rl <message> (while spoofing as sender)\n .(rnd)bot rl <botname>"},
-        
+
         {"do", "Execute a bot action (sync, immediate response).\nUsage: .(rnd)bot do <bot> <action>\nExample: .(rnd)bot do <bot> stats, where, quests, who"},
-        
+
         {"cmd", "Execute a bot action (async, queued).\nUsage: .(rnd)bot cmd <bot> do <action>\nNote: Use with record to capture output."},
-        
+
         {"record", "Enable message recording for async commands.\nUsage: .(rnd)bot record <bot> enable\nUsage: .(rnd)bot record <bot> disable"},
-        
+
         {"read", "Get recorded async command output.\nUsage: .(rnd)bot read <bot>"},
-        
+
         {"clear", "Clear recorded messages without retrieving.\nUsage: .(rnd)bot clear <bot>"},
-        
+
         {"spoof", "Spoof as another bot for command routing.\nUsage: .(rnd)bot spoof <botname>\nUsage: .(rnd)bot spoof (to clear)"}
     };
 }
@@ -3186,7 +3186,7 @@ std::unordered_map<std::string, std::string> PlayerbotHolder::GetCommandTexts()
 std::list<std::string> PlayerbotHolder::HandleSpoof(Player* master, const std::string param, AccountTypes security)
 {
     std::list<std::string> messages;
-    
+
     if (param.empty())
     {
         // Clear the spoof
@@ -3209,7 +3209,7 @@ std::list<std::string> PlayerbotHolder::HandleSpoof(Player* master, const std::s
         }
         return messages;
     }
-    
+
     // Look up player by name
     ObjectGuid guid = sObjectMgr.GetPlayerGuidByName(param);
     if (!guid)
@@ -3217,7 +3217,7 @@ std::list<std::string> PlayerbotHolder::HandleSpoof(Player* master, const std::s
         messages.push_back("Player '" + param + "' not found.");
         return messages;
     }
-    
+
     // Get the player to verify they exist
     Player* player = sObjectMgr.GetPlayer(guid, false);
     if (!player)
@@ -3225,11 +3225,11 @@ std::list<std::string> PlayerbotHolder::HandleSpoof(Player* master, const std::s
         messages.push_back("Player '" + param + "' found but is not online.");
         return messages;
     }
-    
+
     std::string playerName;
     sObjectMgr.GetPlayerNameByGUID(guid, playerName);
     m_spoofGuid = guid;
-    
+
     messages.push_back("Spoof set to: " + playerName + " (" + std::to_string(guid.GetCounter()) + ")");
     return messages;
 }

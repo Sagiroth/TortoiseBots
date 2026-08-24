@@ -31,7 +31,7 @@ public:
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
     virtual bool Execute(Event& event) override;
     virtual bool isUseful() override;
     virtual bool canJoinBg(Player* player, BattleGroundQueueTypeId queueTypeId, BattleGroundBracketId bracketId);
@@ -59,7 +59,7 @@ public:
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
     virtual bool shouldJoinBg(BattleGroundQueueTypeId queueTypeId, BattleGroundBracketId bracketId);
 };
 
@@ -77,7 +77,7 @@ public:
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
     virtual bool Execute(Event& event) override;
 };
 
@@ -95,7 +95,7 @@ public:
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
     virtual bool Execute(Event& event) override;
     virtual bool isUseful() override;
 };
@@ -113,7 +113,7 @@ public:
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
     virtual bool Execute(Event& event) override;
     virtual bool isUseful() override;
 };

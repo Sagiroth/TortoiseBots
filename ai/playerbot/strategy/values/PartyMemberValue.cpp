@@ -60,7 +60,7 @@ Unit* PartyMemberValue::FindPartyMember(FindPlayerPredicate &predicate, bool ign
             }
         }
     }
-    
+
     bool allowBufOutOfGroupPlayers = !ignoreOutOfGroup;
 
     if (allowBufOutOfGroupPlayers && !ai->AllowActivity(OUT_OF_PARTY_ACTIVITY))
@@ -90,7 +90,7 @@ Unit* PartyMemberValue::FindPartyMember(FindPlayerPredicate &predicate, bool ign
     for (std::list<ObjectGuid>::iterator i = nearestPlayers.begin(); i != nearestPlayers.end(); ++i)
     {
         Player* player = dynamic_cast<Player*>(ai->GetUnit(*i));
-        if (!player || player == bot) 
+        if (!player || player == bot)
         {
             continue;
         }
@@ -157,10 +157,10 @@ bool PartyMemberValue::IsTargetOfSpellCast(Player* target, SpellEntryPredicate &
 
         if (player->IsNonMeleeSpellCasted(true))
         {
-            for (int type = CURRENT_GENERIC_SPELL; type < CURRENT_MAX_SPELL; type++) 
+            for (int type = CURRENT_GENERIC_SPELL; type < CURRENT_MAX_SPELL; type++)
             {
                 Spell* spell = player->GetCurrentSpell((CurrentSpellTypes)type);
-                if (spell && predicate.Check(spell->m_spellInfo)) 
+                if (spell && predicate.Check(spell->m_spellInfo))
                 {
                     ObjectGuid unitTarget = spell->m_targets.getUnitTargetGuid();
                     if (unitTarget == targetGuid)

@@ -15,7 +15,7 @@ namespace ai
         static PullStrategy* Get(PlayerbotAI* ai);
         static uint8 GetMaxPullTime() { return 15; }
         const time_t& GetPullStartTime() const { return pullStartTime; }
-        
+
         bool CanDoPullAction(Unit* target);
 
         Unit* GetTarget() const;

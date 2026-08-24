@@ -917,7 +917,7 @@ void RandomItemMgr::BuildItemInfoCache()
 
     if (m_weightScales[1].stats.empty())
     {
-        sLog.outError("Error loading item weight scales");
+        sLog.outInfo("TortoiseBots: optional item weight scales are empty; random gear scoring is unavailable");
         return;
     }
 
@@ -3784,7 +3784,7 @@ uint32 RandomItemMgr::GetRandomFood(uint32 level, uint32 category)
 
 void RandomItemMgr::BuildTradeCache()
 {
-    tradeCache.clear(); 
+    tradeCache.clear();
 
     uint32 maxLevel = sPlayerbotAIConfig.randomBotMaxLevel;
     if (maxLevel > sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL))

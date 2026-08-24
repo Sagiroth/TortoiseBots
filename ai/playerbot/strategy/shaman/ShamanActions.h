@@ -6,7 +6,7 @@
 namespace ai
 {
     BUFF_ACTION(CastGhostWolfAction, "ghost wolf");
-    class CastLesserHealingWaveAction : public CastHealingSpellAction 
+    class CastLesserHealingWaveAction : public CastHealingSpellAction
     {
     public:
         CastLesserHealingWaveAction(PlayerbotAI* ai) : CastHealingSpellAction(ai, "lesser healing wave") {}
@@ -18,7 +18,7 @@ namespace ai
         CastLesserHealingWaveOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "lesser healing wave") {}
     };
 
-    class CastHealingWaveAction : public CastHealingSpellAction 
+    class CastHealingWaveAction : public CastHealingSpellAction
     {
     public:
         CastHealingWaveAction(PlayerbotAI* ai) : CastHealingSpellAction(ai, "healing wave") {}
@@ -30,13 +30,13 @@ namespace ai
         CastHealingWaveOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "healing wave") {}
     };
 
-    class CastChainHealAction : public CastAoeHealSpellAction 
+    class CastChainHealAction : public CastAoeHealSpellAction
     {
     public:
         CastChainHealAction(PlayerbotAI* ai) : CastAoeHealSpellAction(ai, "chain heal") {}
     };
 
-    class CastRiptideAction : public CastHealingSpellAction 
+    class CastRiptideAction : public CastHealingSpellAction
     {
     public:
         CastRiptideAction(PlayerbotAI* ai) : CastHealingSpellAction(ai, "riptide") {}
@@ -48,7 +48,7 @@ namespace ai
         CastRiptideOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "riptide") {}
     };
 
-    class CastEarthShieldAction : public CastBuffSpellAction 
+    class CastEarthShieldAction : public CastBuffSpellAction
     {
     public:
         CastEarthShieldAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "earth shield") {}
@@ -60,43 +60,43 @@ namespace ai
         CastEarthShieldOnPartyAction(PlayerbotAI* ai) : BuffOnPartyAction(ai, "earth shield") {}
     };
 
-    class CastWaterShieldAction : public CastBuffSpellAction 
+    class CastWaterShieldAction : public CastBuffSpellAction
     {
     public:
         CastWaterShieldAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "water shield") {}
     };
 
-	class CastLightningShieldAction : public CastBuffSpellAction 
+	class CastLightningShieldAction : public CastBuffSpellAction
     {
 	public:
 		CastLightningShieldAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "lightning shield") {}
 	};
 
-    class CastEarthlivingWeaponAction : public CastEnchantItemAction 
+    class CastEarthlivingWeaponAction : public CastEnchantItemAction
     {
     public:
         CastEarthlivingWeaponAction(PlayerbotAI* ai) : CastEnchantItemAction(ai, "earthliving weapon") {}
     };
 
-    class CastRockbiterWeaponAction : public CastEnchantItemAction 
+    class CastRockbiterWeaponAction : public CastEnchantItemAction
     {
     public:
         CastRockbiterWeaponAction(PlayerbotAI* ai) : CastEnchantItemAction(ai, "rockbiter weapon") {}
     };
 
-    class CastFlametongueWeaponAction : public CastEnchantItemAction 
+    class CastFlametongueWeaponAction : public CastEnchantItemAction
     {
     public:
         CastFlametongueWeaponAction(PlayerbotAI* ai) : CastEnchantItemAction(ai, "flametongue weapon") {}
     };
 
-    class CastFrostbrandWeaponAction : public CastEnchantItemAction 
+    class CastFrostbrandWeaponAction : public CastEnchantItemAction
     {
     public:
         CastFrostbrandWeaponAction(PlayerbotAI* ai) : CastEnchantItemAction(ai, "frostbrand weapon") {}
     };
 
-    class CastWindfuryWeaponAction : public CastEnchantItemAction 
+    class CastWindfuryWeaponAction : public CastEnchantItemAction
     {
     public:
         CastWindfuryWeaponAction(PlayerbotAI* ai) : CastEnchantItemAction(ai, "windfury weapon") {}
@@ -320,13 +320,13 @@ namespace ai
         virtual bool isUseful() override { return CastMeleeSpellAction::isUseful() && !AI_VALUE2(bool, "has totem", name); }
     };
 
-    class CastFireNovaAction : public CastSpellAction 
+    class CastFireNovaAction : public CastSpellAction
     {
     public:
         CastFireNovaAction(PlayerbotAI* ai) : CastSpellAction(ai, "fire nova") {}
     };
 
-    class CastWindShearAction : public CastSpellAction 
+    class CastWindShearAction : public CastSpellAction
     {
     public:
         CastWindShearAction(PlayerbotAI* ai) : CastSpellAction(ai, "wind shear") {}
@@ -344,43 +344,43 @@ namespace ai
 		CastPurgeAction(PlayerbotAI* ai) : CastSpellAction(ai, "purge") {}
 	};
 
-	class CastStormstrikeAction : public CastMeleeSpellAction 
+	class CastStormstrikeAction : public CastMeleeSpellAction
     {
 	public:
 		CastStormstrikeAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "stormstrike") {}
 	};
 
-	class CastLavaLashAction : public CastMeleeSpellAction 
+	class CastLavaLashAction : public CastMeleeSpellAction
     {
 	public:
 		CastLavaLashAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "lava lash") {}
 	};
 
-    class CastWaterBreathingAction : public CastBuffSpellAction 
+    class CastWaterBreathingAction : public CastBuffSpellAction
     {
     public:
         CastWaterBreathingAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "water breathing") {}
     };
 
-    class CastWaterWalkingAction : public CastBuffSpellAction 
+    class CastWaterWalkingAction : public CastBuffSpellAction
     {
     public:
         CastWaterWalkingAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "water walking") {}
     };
 
-    class CastWaterBreathingOnPartyAction : public BuffOnPartyAction 
+    class CastWaterBreathingOnPartyAction : public BuffOnPartyAction
     {
     public:
         CastWaterBreathingOnPartyAction(PlayerbotAI* ai) : BuffOnPartyAction(ai, "water breathing") {}
     };
 
-    class CastWaterWalkingOnPartyAction : public BuffOnPartyAction 
+    class CastWaterWalkingOnPartyAction : public BuffOnPartyAction
     {
     public:
         CastWaterWalkingOnPartyAction(PlayerbotAI* ai) : BuffOnPartyAction(ai, "water walking") {}
     };
 
-    class CastCleanseSpiritAction : public CastCureSpellAction 
+    class CastCleanseSpiritAction : public CastCureSpellAction
     {
     public:
         CastCleanseSpiritAction(PlayerbotAI* ai) : CastCureSpellAction(ai, "cleanse spirit") {}
@@ -474,7 +474,7 @@ namespace ai
         CastCurePoisonOnPartyAction(PlayerbotAI* ai) : CurePartyMemberAction(ai, "cure poison", DISPEL_POISON) {}
     };
 
-    class CastCureDiseaseAction : public CastCureSpellAction 
+    class CastCureDiseaseAction : public CastCureSpellAction
     {
     public:
         CastCureDiseaseAction(PlayerbotAI* ai) : CastCureSpellAction(ai, "cure disease") {}
@@ -503,7 +503,7 @@ namespace ai
     {
     public:
         CastCallOfTheSpirits(PlayerbotAI* ai) : CastBuffSpellAction(ai, "call of the spirits") {}
-    };    
+    };
 
     class CastTotemicRecall : public CastBuffSpellAction
     {
@@ -582,7 +582,7 @@ namespace ai
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "elemental pve", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_DEAD, "elemental pve", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_REACTION, "elemental pve", strategiesRequired);
-            
+
             strategiesRequired = {"elemental", "aoe"};
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "aoe elemental pve", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "aoe elemental pve", strategiesRequired);
@@ -646,7 +646,7 @@ namespace ai
             strategiesRequired = { "restoration", "aoe" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "aoe restoration pve", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "aoe restoration pve", strategiesRequired);
-            
+
             strategiesRequired = { "restoration", "cc" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "cc restoration pve", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "cc restoration pve", strategiesRequired);
@@ -666,7 +666,7 @@ namespace ai
             strategiesRequired = { "restoration", "boost" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "boost restoration pve", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "boost restoration pve", strategiesRequired);
-        
+
             strategiesRequired = { "offheal" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "offheal pve", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "offheal pve", strategiesRequired);
@@ -767,7 +767,7 @@ namespace ai
             strategiesRequired = { "restoration", "boost" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "boost restoration pvp", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "boost restoration pvp", strategiesRequired);
-        
+
             strategiesRequired = { "offheal" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "offheal pvp", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "offheal pvp", strategiesRequired);
@@ -868,7 +868,7 @@ namespace ai
             strategiesRequired = { "restoration", "boost" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "boost restoration raid", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "boost restoration raid", strategiesRequired);
-        
+
             strategiesRequired = { "offheal" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "offheal raid", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "offheal raid", strategiesRequired);

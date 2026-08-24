@@ -148,21 +148,21 @@ std::vector<TrainerSpell const*> TrainableSpellsValue::Calculate()
                 trainableSpells.push_back(trainerSpell);
             }
         }
-    }   
+    }
 
     return trainableSpells;
 }
 
 std::string TrainableSpellsValue::Format()
 {
-    std::vector<std::string> vec;  
+    std::vector<std::string> vec;
     for (auto t : value) {
         SpellEntry const* spell = sServerFacade.LookupSpellInfo(t->spell);
         if (!spell)
             continue;
         vec.push_back(chat->formatSpell(spell));
-    } 
-    
+    }
+
     return sPlayerbotHelpMgr.makeList(vec, "[<part>]");
 }
 
@@ -210,6 +210,6 @@ uint32 TrainCostValue::Calculate()
 
     for (auto& spells : AI_VALUE2(std::vector<TrainerSpell const*>, "trainable spells", getQualifier()))
         TotalCost += spells->spellCost;
-   
+
     return TotalCost;
 }

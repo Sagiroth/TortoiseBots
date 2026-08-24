@@ -271,7 +271,7 @@ void PlayerbotFactory::Randomize(bool incremental, bool syncWithMaster)
     {
         sLog.outDetail("Initializing reputations...");
         InitReputations();
-        
+
     }
 
     pmo = sPerformanceMonitor.start(PERF_MON_RNDBOT, "PlayerbotFactory_Equip");
@@ -1380,7 +1380,7 @@ void PlayerbotFactory::InitPetSpells()
             {40, 17259},
             {48, 17260},
             {56, 17261},
-            {64, 27050},            
+            {64, 27050},
             // Cower
             {5,  1742 },
             {15, 1753 },
@@ -5455,7 +5455,7 @@ void PlayerbotFactory::LoadEnchantContainer()
 
                                             if (!CheckItemStats(sp, ap, tank))
                                                 continue;
-                                       
+
                                             gem_id = gemProto->ItemId;
                                             break;
                                         }
@@ -5555,7 +5555,7 @@ void PlayerbotFactory::InitGems() //WIP
                         {
                             if (ItemPrototype const* gemProto = sObjectMgr.GetItemPrototype(*itr))
                             {
-                                // We don't want the same gem twice on the same piece 
+                                // We don't want the same gem twice on the same piece
                                 bool already_placed = false;
                                 for (int i = 0; i < MAX_GEM_SOCKETS; i++)
                                     if (gem_placed[i] == gemProto->ItemId)
@@ -5592,12 +5592,12 @@ void PlayerbotFactory::InitGems() //WIP
                                             {
                                                 if (pEnchant->type[i] != ITEM_ENCHANTMENT_TYPE_STAT && pEnchant->type[i] != ITEM_ENCHANTMENT_TYPE_EQUIP_SPELL)
                                                     continue;
-                                                switch (pEnchant->type[i]) 
+                                                switch (pEnchant->type[i])
                                                 {
-                                                case ITEM_ENCHANTMENT_TYPE_STAT:                                                    
+                                                case ITEM_ENCHANTMENT_TYPE_STAT:
                                                         AddItemStats(pEnchant->spellid[i], sp, ap, tank);
-                                                break;                                                    
-                                                case ITEM_ENCHANTMENT_TYPE_EQUIP_SPELL:                                                   
+                                                break;
+                                                case ITEM_ENCHANTMENT_TYPE_EQUIP_SPELL:
                                                         const SpellEntry* const spellInfo = sServerFacade.LookupSpellInfo(pEnchant->spellid[i]);
                                                         if (!spellInfo)
                                                             continue;
@@ -5608,7 +5608,7 @@ void PlayerbotFactory::InitGems() //WIP
                                                                 continue;
 
                                                             AddItemSpellStats(spellInfo->EffectApplyAuraName[j], sp, ap, tank);
-                                                        }  
+                                                        }
                                                 break;
                                                 }
                                             }

@@ -62,7 +62,7 @@ bool PlayerLoginInfo::IsNearPlayer(const LoginSpace& space) const
     if (space.realPlayerInfos.empty())
         return false;
 
-    if (isNew && sPlayerbotAIConfig.instantRandomize) //We do not know where the bot will be teleported to on randomisation. 
+    if (isNew && sPlayerbotAIConfig.instantRandomize) //We do not know where the bot will be teleported to on randomisation.
         return true;
 
     for (auto& player : space.realPlayerInfos)
@@ -168,7 +168,7 @@ bool PlayerLoginInfo::SendHolder()
     if (holder)
         delete holder;
 
-    holder = nullptr; 
+    holder = nullptr;
 
     holder = new PlayerbotLoginQueryHolder(&sRandomPlayerbotMgr, 0, account, guid);
 
@@ -192,16 +192,16 @@ void PlayerLoginInfo::HandlePlayerBotLoginCallback(QueryResult* /*dummy*/, SqlQu
         holderState = HolderState::HOLDER_EMPTY;
         return;
     }
-  
+
     holderState = HolderState::HOLDER_RECEIVED;
 }
 
 void PlayerLoginInfo::ResetLoginState()
 {
-    if(loginState == LoginState::BOT_ON_LOGINQUEUE) 
+    if(loginState == LoginState::BOT_ON_LOGINQUEUE)
         loginState = LoginState::BOT_OFFLINE;
-    
-    if(loginState == LoginState::BOT_ON_LOGOUTQUEUE) 
+
+    if(loginState == LoginState::BOT_ON_LOGOUTQUEUE)
         loginState = LoginState::BOT_ONLINE;
 }
 
@@ -349,7 +349,7 @@ bool PlayerLoginInfo::LogoutBot()
     if (sObjectMgr.GetPlayer(ObjectGuid(HIGHGUID_PLAYER, guid)))
         return false;
 
-    loginState = LoginState::BOT_OFFLINE;    
+    loginState = LoginState::BOT_OFFLINE;
 
     if (sPlayerbotAIConfig.randomBotTimedOffline)
         sRandomPlayerbotMgr.SetValue(guid, "logout", 1, "", urand(sPlayerbotAIConfig.minRandomBotInWorldTime, sPlayerbotAIConfig.maxRandomBotInWorldTime));
@@ -381,7 +381,7 @@ void PlayerBotLoginMgr::Update(RealPlayers& realPlayers)
 
     if (botPool.empty())
     {
-        botPool = GetFuture(LoadBotsFromDb, futurePool, false);  
+        botPool = GetFuture(LoadBotsFromDb, futurePool, false);
         return;
     }
 
@@ -414,7 +414,7 @@ BotPool PlayerBotLoginMgr::LoadBotsFromDb()
     sLog.outDebug("PlayerbotLoginMgr: %d accounts found.", uint32(accounts.size()));
 
     result = CharacterDatabase.PQuery("SELECT account, guid, race, class, level, online, totaltime, map, position_x, position_y, position_z, orientation, (SELECT guildid FROM guild_member m WHERE m.guid = c.guid) guildId FROM characters c");
-         
+
     if (!result)
     {
         return botPool;
@@ -446,7 +446,7 @@ BotPool PlayerBotLoginMgr::LoadBotsFromDb()
             Player* player = info->GetPlayer();
 
             if (player)
-            {                
+            {
                 info->Update(player);
             }
         }
@@ -458,7 +458,7 @@ BotPool PlayerBotLoginMgr::LoadBotsFromDb()
 }
 
 void PlayerBotLoginMgr::SendHolders(const BotInfos& queue)
-{  
+{
     CharacterDatabase.AsyncPQuery(&RandomPlayerbotMgr::DatabasePing, sWorld.GetCurrentMSTime(), std::string("CharacterDatabase"), "select 1");
 
     for (auto& info : queue)
@@ -584,7 +584,7 @@ void PlayerBotLoginMgr::FillLoginSpace(BotPool* pool, LoginSpace& space, FillSte
 
         if (botInfo.GetLoginState() == LoginState::BOT_ONLINE || botInfo.GetLoginState() == LoginState::BOT_ON_LOGOUTQUEUE)
             space.currentSpace--;
-    }   
+    }
 }
 
 bool PlayerBotLoginMgr::CriteriaStillValid(const LoginCriterionFailType oldFailType, const LoginCriteria& criteria)
@@ -707,7 +707,7 @@ BotInfos PlayerBotLoginMgr::FillLoginLogoutQueue(BotPool* pool, const RealPlayer
 void PlayerBotLoginMgr::LoginLogoutBots(const BotInfos& queue)
 {
     for (auto& info : queue)
-    {        
+    {
         if (info->LoginBot())
         {
             onlineBots.push_back(info);
@@ -719,17 +719,17 @@ void PlayerBotLoginMgr::LoginLogoutBots(const BotInfos& queue)
     }
 }
 
-uint32 PlayerBotLoginMgr::GetMaxLevel() 
+uint32 PlayerBotLoginMgr::GetMaxLevel()
 {
     return std::max(sPlayerbotAIConfig.randomBotMinLevel, std::min(sRandomPlayerbotMgr.GetPlayersLevel() + sPlayerbotAIConfig.syncLevelMaxAbove, sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL)));
 }
 
-uint32 PlayerBotLoginMgr::GetMaxOnlineBotCount() 
+uint32 PlayerBotLoginMgr::GetMaxOnlineBotCount()
 {
     return sRandomPlayerbotMgr.GetValue(uint32(0), "bot_count");
 }
 
-uint32 PlayerBotLoginMgr::GetClassRaceBucketSize(uint8 cls, uint8 race) 
+uint32 PlayerBotLoginMgr::GetClassRaceBucketSize(uint8 cls, uint8 race)
 {
     uint32 prob = sPlayerbotAIConfig.classRaceProbability[cls][race];
 
@@ -742,7 +742,7 @@ uint32 PlayerBotLoginMgr::GetClassRaceBucketSize(uint8 cls, uint8 race)
     return GetMaxOnlineBotCount() * sPlayerbotAIConfig.classRaceProbability[cls][race] / sPlayerbotAIConfig.classRaceProbabilityTotal;
 }
 
-uint32 PlayerBotLoginMgr::GetLevelBucketSize(uint32 level) 
+uint32 PlayerBotLoginMgr::GetLevelBucketSize(uint32 level)
 {
     if (level > PLAYER_STRONG_MAX_LEVEL)
         return 0;
@@ -767,4 +767,3 @@ uint32 PlayerBotLoginMgr::GetLevelBucketSize(uint32 level)
 
     return GetMaxOnlineBotCount() * sPlayerbotAIConfig.levelProbability[level] / levelProbabilityTotal;
 }
-

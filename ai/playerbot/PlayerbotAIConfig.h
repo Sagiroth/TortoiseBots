@@ -31,7 +31,7 @@ enum class BotCheatMask : uint32
     attackspeed = 1 << 9,
     breath = 1 << 10,
     glyph = 1 << 11,
-    quest = 1 << 12,    
+    quest = 1 << 12,
     maxMask = 1 << 13
 };
 
@@ -48,7 +48,7 @@ enum class BotSelfBotLevel : uint32
     GM_ONLY = 1,
     ACTIVE_BY_COMMAND = 2,
     ALWAYS_ALLOWED = 3,
-    ACTIVE_BY_LOGIN = 4, 
+    ACTIVE_BY_LOGIN = 4,
     ALWAYS_ACTIVE = 5
 };
 

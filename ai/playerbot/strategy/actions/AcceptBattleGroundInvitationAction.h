@@ -37,7 +37,6 @@ namespace ai
       }
       virtual std::vector<std::string> GetUsedActions() { return {}; }
       virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
    };
 }
-

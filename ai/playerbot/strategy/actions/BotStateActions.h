@@ -5,7 +5,7 @@
 
 namespace ai
 {
-    class SetCombatStateAction : public Action 
+    class SetCombatStateAction : public Action
     {
     public:
         SetCombatStateAction(PlayerbotAI* ai, std::string name = "set combat state") : Action(ai, name) {}

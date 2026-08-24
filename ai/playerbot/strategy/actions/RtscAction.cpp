@@ -96,7 +96,7 @@ bool RTSCAction::Execute(Event& event)
 		return true;
 	}
     if (command.find("save ") == 0 || command == "move" || command == "move exact")
-	{	
+	{
 		SET_AI_VALUE(std::string, "RTSC next spell action", command);
 
 		return true;
@@ -177,10 +177,10 @@ bool RTSCAction::Execute(Event& event)
 						out << ((args.size() == 5 && !filePerBot) ? playerName.c_str() : "BOTNAME") << ",";
 
 					out << name.substr(std::string("RTSC saved location::").size()) << ",";
-					
+
 					out << std::fixed << std::setprecision(2);
 					out << point.print().c_str();
-					
+
 					sPlayerbotAIConfig.log(fileName, out.str().c_str());
 
 					cnt++;
@@ -230,7 +230,7 @@ bool RTSCAction::Execute(Event& event)
 
 				if (in.fail())
 					continue;
-				
+
 				uint32 cnt = 0;
 
 				do

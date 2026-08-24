@@ -448,4 +448,3 @@ void BotActionLog_LogDamage(Unit* attacker, Unit* victim, uint32 damage, uint32 
             spellId, damage, damageType ? damageType : "?");
     }
 }
-

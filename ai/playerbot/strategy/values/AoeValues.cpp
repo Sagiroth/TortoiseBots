@@ -14,7 +14,7 @@ std::list<ObjectGuid> AoeCountValue::FindMaxDensity(Player* bot, float range)
     if (bot)
     {
         std::list<ObjectGuid> units = *PlayerbotAIStorage::Instance().GetAI(bot)->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers");
-        
+
         for (std::list<ObjectGuid>::iterator i = units.begin(); i != units.end(); ++i)
         {
             Unit* unit = PlayerbotAIStorage::Instance().GetAI(bot)->GetUnit(*i);

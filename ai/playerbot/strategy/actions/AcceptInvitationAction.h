@@ -7,7 +7,7 @@
 
 namespace ai
 {
-    class AcceptInvitationAction : public Action 
+    class AcceptInvitationAction : public Action
     {
     public:
         AcceptInvitationAction(PlayerbotAI* ai) : Action(ai, "accept invitation") {}
@@ -40,7 +40,7 @@ namespace ai
                 bot->UninviteFromGroup();
                 return false;
             }
-            
+
             if (bot->IsAFK())
                 bot->ToggleAFK();
 
@@ -53,25 +53,33 @@ namespace ai
                 return false;
 
             bool adoptedHumanMaster = false;
-            if (TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()))
+            if (TortoiseBots::BotManager::Instance().IsBot(bot->GetObjectGuid()))
             {
                 adoptedHumanMaster = TortoiseBots::BotManager::Instance().BindBotMaster(
                     bot->GetObjectGuid(), inviter->GetObjectGuid());
                 if (!adoptedHumanMaster)
                 {
-                    sLog.outError("TortoiseBots: random bot %s accepted human %s but durable master bind failed",
+                    sLog.outError("TortoiseBots: module bot %s accepted master %s but durable master bind failed; keeping ownership unchanged",
                         bot->GetName(), inviter->GetName());
-                    ai->SetMaster(inviter);
+                    return false;
                 }
             }
 
             ai->ResetStrategies();
-            
+
             ai->ChangeStrategy("-lfg,-bg", BotState::BOT_STATE_NON_COMBAT);
             ai->Reset();
 
             if (adoptedHumanMaster)
-                ai->SetMovementStrategy("follow");
+            {
+                ai::Event followEvent("follow", "", inviter);
+                if (!ai->DoSpecificAction("follow chat shortcut", followEvent, true))
+                {
+                    sLog.outError("TortoiseBots: mature follow action failed after bot %s joined human %s",
+                        bot->GetName(), inviter->GetName());
+                    return false;
+                }
+            }
 
             sPlayerbotAIConfig.logEvent(ai, "AcceptInvitationAction", grp->GetLeaderName(), std::to_string(grp->GetMembersCount()));
 
@@ -122,7 +130,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {"reset raids", "update gear"}; }
         virtual std::vector<std::string> GetUsedValues() { return {"formation"}; }
-#endif 
+#endif
     };
 
 }

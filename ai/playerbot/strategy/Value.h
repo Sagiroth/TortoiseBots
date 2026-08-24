@@ -31,7 +31,7 @@ namespace ai
         virtual std::string GetHelpTypeName() { return ""; }
         virtual std::string GetHelpDescription() { return "This is a value."; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
     };
 
     template<class T>

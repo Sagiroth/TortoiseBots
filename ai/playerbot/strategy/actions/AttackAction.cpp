@@ -127,7 +127,7 @@ bool AttackAction::Attack(Player* requester, Unit* target)
         if (bot->IsMounted() && (sServerFacade.getDistance2d(bot, target) < 40.0f || bot->IsFlying()))
         {
             ai->Unmount();
-            
+
             if (bot->IsFlying())
             {
                 return true;
@@ -213,7 +213,7 @@ bool AttackAction::IsTargetValid(Player* requester, Unit* target)
 {
     if (!target)
     {
-        if (verbose) 
+        if (verbose)
         {
             ai->TellPlayerNoFacing(requester, "I have no target");
         }

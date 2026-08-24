@@ -8,11 +8,11 @@
 
 namespace ai
 {
-    class EnemyTooCloseForSpellTrigger : public Trigger 
+    class EnemyTooCloseForSpellTrigger : public Trigger
     {
     public:
         EnemyTooCloseForSpellTrigger(PlayerbotAI* ai) : Trigger(ai, "enemy too close for spell") {}
-        
+
         virtual bool IsActive() override
         {
             Unit* target = AI_VALUE(Unit*, "current target");
@@ -22,7 +22,7 @@ namespace ai
                     ai->HasStrategy("guard", BotState::BOT_STATE_COMBAT) ||
                     ai->HasStrategy("wander", BotState::BOT_STATE_COMBAT))
                     if(bot->GetClass() != CLASS_HUNTER || sServerFacade.getDistance2d(bot, target) > 5.0f)
-                        return false;                   
+                        return false;
 
                 const bool canMove = !PossibleAttackTargetsValue::HasBreakableCC(target, bot) && !PossibleAttackTargetsValue::HasUnBreakableCC(target, bot);
 
@@ -92,11 +92,11 @@ namespace ai
         }
     };
 
-    class EnemyTooCloseForShootTrigger : public Trigger 
+    class EnemyTooCloseForShootTrigger : public Trigger
     {
     public:
         EnemyTooCloseForShootTrigger(PlayerbotAI* ai) : Trigger(ai, "enemy too close for shoot") {}
-        
+
         virtual bool IsActive() override
         {
             Unit* target = AI_VALUE(Unit*, "current target");
@@ -163,11 +163,11 @@ namespace ai
         }
     };
 
-    class EnemyTooCloseForMeleeTrigger : public Trigger 
+    class EnemyTooCloseForMeleeTrigger : public Trigger
     {
     public:
         EnemyTooCloseForMeleeTrigger(PlayerbotAI* ai) : Trigger(ai, "enemy too close for melee", 3) {}
-        
+
         virtual bool IsActive() override
         {
             Unit* target = AI_VALUE(Unit*, "current target");
@@ -178,7 +178,7 @@ namespace ai
         }
     };
 
-    class EnemyInRangeTrigger : public Trigger 
+    class EnemyInRangeTrigger : public Trigger
     {
     public:
         EnemyInRangeTrigger(PlayerbotAI* ai, std::string name, float distance, bool enemyMustBePlayer = false, bool enemyTargetsBot = false)
@@ -186,7 +186,7 @@ namespace ai
         , distance(distance)
         , enemyMustBePlayer(enemyMustBePlayer)
         , enemyTargetsBot(enemyTargetsBot) {}
-        
+
         virtual bool IsActive() override
         {
             Unit* target = AI_VALUE(Unit*, "current target");
@@ -220,7 +220,7 @@ namespace ai
         EnemyIsCloseTrigger(PlayerbotAI* ai) : EnemyInRangeTrigger(ai, "enemy is close", sPlayerbotAIConfig.tooCloseDistance) {}
     };
 
-    class OutOfRangeTrigger : public Trigger 
+    class OutOfRangeTrigger : public Trigger
     {
     public:
         OutOfRangeTrigger(PlayerbotAI* ai, std::string name, float distance) : Trigger(ai, name)
@@ -245,7 +245,7 @@ namespace ai
     {
     public:
         EnemyOutOfMeleeTrigger(PlayerbotAI* ai) : OutOfRangeTrigger(ai, "enemy out of melee range", sPlayerbotAIConfig.meleeDistance) {}
-        
+
         virtual bool IsActive() override
         {
             Unit* target = AI_VALUE(Unit*, GetTargetName());
@@ -260,7 +260,7 @@ namespace ai
     {
     public:
         EnemyOutOfSpellRangeTrigger(PlayerbotAI* ai) : OutOfRangeTrigger(ai, "enemy out of spell range", ai->GetRange("spell")) {}
-        
+
         virtual bool IsActive() override
         {
             Unit* target = AI_VALUE(Unit*, GetTargetName());
@@ -276,7 +276,7 @@ namespace ai
     public:
         PartyMemberToHealOutOfSpellRangeTrigger(PlayerbotAI* ai) : OutOfRangeTrigger(ai, "party member to heal out of spell range", ai->GetRange("heal")) {}
         virtual std::string GetTargetName() override { return "party member to heal"; }
-        
+
         virtual bool IsActive() override
         {
             Unit* target = AI_VALUE(Unit*, GetTargetName());
@@ -287,7 +287,7 @@ namespace ai
         }
     };
 
-    class FarFromMasterTrigger : public Trigger 
+    class FarFromMasterTrigger : public Trigger
     {
     public:
         FarFromMasterTrigger(PlayerbotAI* ai, std::string name = "far from master", float distance = 12.0f, int checkInterval = 50) : Trigger(ai, name, checkInterval), distance(distance) {}

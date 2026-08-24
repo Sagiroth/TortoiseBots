@@ -155,7 +155,7 @@ Unit* PullTargetValue::Get()
     {
         unit = sObjectAccessor.GetUnit(*bot, guid);
     }
-    
+
     return unit;
 }
 

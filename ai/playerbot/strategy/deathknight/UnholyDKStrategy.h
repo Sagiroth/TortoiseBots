@@ -13,7 +13,7 @@ namespace ai
     private:
         void InitCombatTriggers(std::list<TriggerNode*> &triggers) override;
         NextAction** GetDefaultCombatActions() override;
-        
+
     };
 
     class UnholyDKAoeStrategy : public CombatStrategy

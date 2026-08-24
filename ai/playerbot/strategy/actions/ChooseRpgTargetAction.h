@@ -17,7 +17,7 @@ namespace ai
         std::unordered_map<ObjectGuid, float> GetTargets(Player* requester, bool debug = false);
 
         std::string GetRpgActionReason(ObjectGuid target) { auto reason = rgpActionReason.find(target); if (reason != rgpActionReason.end())  return reason->second; return ""; }
-    private:        
+    private:
         float getMaxRelevance(GuidPosition guidP);
         bool HasSameTarget(ObjectGuid guid, uint32 max, std::list<ObjectGuid>& nearGuids);
 

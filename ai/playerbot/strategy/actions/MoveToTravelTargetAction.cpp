@@ -28,10 +28,10 @@ bool MoveToTravelTargetAction::Execute(Event& event)
 
     WorldPosition botLocation(bot);
     WorldPosition location = *target->getPosition();
-    
+
     Group* group = bot->GetGroup();
     if (ai->IsGroupLeader() && !urand(0, 1) && !bot->IsInCombat())
-    {        
+    {
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
         {
             Player* member = ref->GetSource();
@@ -153,7 +153,7 @@ bool MoveToTravelTargetAction::Execute(Event& event)
         if (target->IsMaxRetry(true))
         {
             ai->TellDebug(ai->GetMaster(), "The target is cooling down because we failed to move to it a few times in a row.", "debug travel");
-            target->SetStatus(TravelStatus::TRAVEL_STATUS_COOLDOWN);      
+            target->SetStatus(TravelStatus::TRAVEL_STATUS_COOLDOWN);
             target->SetForced(false);
         }
     }
@@ -184,7 +184,7 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             }
         }
     }
-     
+
     return canMove;
 }
 
@@ -234,7 +234,7 @@ bool MoveToTravelTargetAction::isUseful()
 
     if (travelPos.isDungeon() && bot->GetGroup() && bot->GetGroup()->IsLeader(bot->getObjectGuid()) && sTravelMgr.MapTransDistance(bot, travelPos, true) < sPlayerbotAIConfig.sightDistance && !AI_VALUE2(bool, "group and", "near leader"))
         return false;
-     
+
     if (AI_VALUE(bool, "has available loot"))
     {
         LootObject lootObject = AI_VALUE(LootObjectStack*, "available loot")->GetLoot(sPlayerbotAIConfig.lootDistance);
@@ -248,4 +248,3 @@ bool MoveToTravelTargetAction::isUseful()
 
     return true;
 }
-

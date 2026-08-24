@@ -15,7 +15,7 @@ namespace ai
 	{
 	public:
 		CastJudgementAction(PlayerbotAI* ai) : CastMeleeDebuffSpellAction(ai, "judgement") { range = 10.0f; }
-		virtual bool isUseful() 
+		virtual bool isUseful()
 		{
 			return ai->HasAnyAuraOf(bot, "seal of justice", "seal of command", "seal of vengeance", "seal of blood", "seal of righteousness", "seal of light", "seal of wisdom", NULL);
 		}
@@ -647,8 +647,8 @@ namespace ai
     {
     public:
         CastBlessingOfProtectionOnPartyAction(PlayerbotAI* ai) : CastProtectSpellAction(ai, "blessing of protection") {}
-        bool isUseful() override 
-        { 
+        bool isUseful() override
+        {
             Unit* target = GetTarget();
             if(target && target->IsPlayer() && !ai->IsTank((Player*)target))
             {
@@ -765,7 +765,7 @@ namespace ai
             strategiesRequired = { "protection/tank", "blessing" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "blessing protection pve", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "blessing protection pve", strategiesRequired);
-        
+
             strategiesRequired = { "offheal" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "offheal pve", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "offheal pve", strategiesRequired);
@@ -878,7 +878,7 @@ namespace ai
             strategiesRequired = { "protection/tank", "blessing" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "blessing protection pvp", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "blessing protection pvp", strategiesRequired);
-        
+
             strategiesRequired = { "offheal" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "offheal pvp", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "offheal pvp", strategiesRequired);
@@ -991,7 +991,7 @@ namespace ai
             strategiesRequired = { "protection/tank", "blessing" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "blessing protection raid", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "blessing protection raid", strategiesRequired);
-        
+
             strategiesRequired = { "offheal" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "offheal raid", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "offheal raid", strategiesRequired);

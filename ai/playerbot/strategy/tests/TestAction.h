@@ -52,7 +52,7 @@ namespace ai
     private:
         std::vector<std::unique_ptr<TestMonitor>> monitors;
         std::vector<std::unique_ptr<TestCommand>> commands;
-        
+
         TestContext ctx;
    };
 }

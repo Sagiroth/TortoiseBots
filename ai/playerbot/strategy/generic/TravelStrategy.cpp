@@ -40,7 +40,7 @@ NextAction** TravelStrategy::GetDefaultNonCombatActions()
 void TravelStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     //The way these actions work:
-    //One of these request target actions will trigger and start fetching destinations. 
+    //One of these request target actions will trigger and start fetching destinations.
     //While fetching no other travel action will be usefull except choose travel target.
     //Choose travel target will wait for the fetching to complete and then set a new target.
     //If no target was found the request action is marked as no targets found and can no longer trigger until reset.
@@ -49,7 +49,7 @@ void TravelStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 
     //All the standard choose travel target actions using either a specific val trigger or a generic purpose trigger.
     const std::vector<std::tuple<std::string, TravelDestinationPurpose, float>> PurposeActions =
-    {        
+    {
         {"",TravelDestinationPurpose::AH, 6.95f},                                                //See isAllowed  90%
         {"",TravelDestinationPurpose::Vendor, 6.94f},                                                          // 90%
         {"",TravelDestinationPurpose::Repair, 6.93f},                                                          // 90%
@@ -132,7 +132,7 @@ void TravelStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 }
 
 void TravelOnceStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
-{   
+{
     triggers.push_back(new TriggerNode(
         "val::travel target traveling",
         NextAction::array(0, new NextAction("check mount state", 1), new NextAction("move to travel target", 1), NULL)));

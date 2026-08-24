@@ -320,7 +320,7 @@ namespace ai
     {
     public:
         PaladinManualAuraStrategy(PlayerbotAI* ai, std::string inName, std::string inTriggerName, std::string inActionName)
-        : Strategy(ai) 
+        : Strategy(ai)
         , name(inName)
         , triggerName(inTriggerName)
         , actionName(inActionName) {}
@@ -340,7 +340,7 @@ namespace ai
     {
     public:
         PaladinManualBlessingStrategy(PlayerbotAI* ai, std::string inName, std::string inTriggerName, std::string inActionName)
-        : Strategy(ai) 
+        : Strategy(ai)
         , name(inName)
         , triggerName(inTriggerName)
         , actionName(inActionName) {}

@@ -143,7 +143,7 @@ std::unordered_map<ObjectGuid, float> ChooseRpgTargetAction::GetTargets(Player* 
 
     for (auto& guid : targetList)
     {
-        GuidPosition guidP(guid, bot->GetMapId(), bot->GetInstanceId());        
+        GuidPosition guidP(guid, bot->GetMapId(), bot->GetInstanceId());
 
         if (!guidP)
             SkipRpgTarget("not found on map/instance.");
@@ -410,7 +410,7 @@ bool ChooseRpgTargetAction::Execute(Event& event)
 
     uint32 checked = 0;
     for (auto it = begin(targets); it != end(targets);)
-    {        
+    {
         if (it->second >= 0)
             checked++;
 

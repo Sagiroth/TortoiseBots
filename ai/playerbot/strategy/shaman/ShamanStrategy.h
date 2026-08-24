@@ -311,8 +311,8 @@ namespace ai
     class ShamanManualTotemStrategy : public Strategy
     {
     public:
-        ShamanManualTotemStrategy(PlayerbotAI* ai, std::string inName, std::string inTriggerName, std::string inActionName) 
-        : Strategy(ai) 
+        ShamanManualTotemStrategy(PlayerbotAI* ai, std::string inName, std::string inTriggerName, std::string inActionName)
+        : Strategy(ai)
         , name(inName)
         , triggerName(inTriggerName)
         , actionName(inActionName) {}

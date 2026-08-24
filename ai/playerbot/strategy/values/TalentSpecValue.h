@@ -15,6 +15,6 @@ namespace ai
         virtual std::string GetHelpTypeName() { return "talent spec"; }
         virtual std::string GetHelpDescription() { return "This value stores the current talent spec for the bot."; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
     };
 }

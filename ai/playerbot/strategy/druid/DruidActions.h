@@ -15,19 +15,19 @@ namespace ai
         CastFaerieFireFeralAction(PlayerbotAI* ai) : CastRangedDebuffSpellAction(ai, "faerie fire (feral)") {}
     };
 
-	class CastRejuvenationAction : public CastHealingSpellAction 
+	class CastRejuvenationAction : public CastHealingSpellAction
 	{
 	public:
 		CastRejuvenationAction(PlayerbotAI* ai) : CastHealingSpellAction(ai, "rejuvenation") {}
 	};
 
-	class CastRegrowthAction : public CastHealingSpellAction 
+	class CastRegrowthAction : public CastHealingSpellAction
 	{
 	public:
 		CastRegrowthAction(PlayerbotAI* ai) : CastHealingSpellAction(ai, "regrowth") {}
 	};
 
-    class CastHealingTouchAction : public CastHealingSpellAction 
+    class CastHealingTouchAction : public CastHealingSpellAction
 	{
     public:
         CastHealingTouchAction(PlayerbotAI* ai) : CastHealingSpellAction(ai, "healing touch") {}
@@ -56,7 +56,7 @@ namespace ai
 	public:
 		CastReviveAction(PlayerbotAI* ai) : ResurrectPartyMemberAction(ai, "revive") {}
 
-		virtual NextAction** getPrerequisites() 
+		virtual NextAction** getPrerequisites()
 		{
 			return NextAction::merge( NextAction::array(0, new NextAction("caster form"), NULL), ResurrectPartyMemberAction::getPrerequisites());
 		}
@@ -74,25 +74,25 @@ namespace ai
 	BUFF_PARTY_ACTION(CastMarkOfTheWildOnPartyAction, "mark of the wild");
 	GREATER_BUFF_PARTY_ACTION(CastGiftOfTheWildOnPartyAction, "gift of the wild");
 
-	class CastSurvivalInstinctsAction : public CastBuffSpellAction 
+	class CastSurvivalInstinctsAction : public CastBuffSpellAction
 	{
 	public:
 		CastSurvivalInstinctsAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "survival instincts") {}
 	};
 
-	class CastThornsAction : public CastBuffSpellAction 
+	class CastThornsAction : public CastBuffSpellAction
 	{
 	public:
 		CastThornsAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "thorns") {}
 	};
 
-    class CastThornsOnPartyAction : public BuffOnPartyAction 
+    class CastThornsOnPartyAction : public BuffOnPartyAction
 	{
     public:
         CastThornsOnPartyAction(PlayerbotAI* ai) : BuffOnPartyAction(ai, "thorns") {}
     };
 
-	class CastOmenOfClarityAction : public CastBuffSpellAction 
+	class CastOmenOfClarityAction : public CastBuffSpellAction
 	{
 	public:
 	    CastOmenOfClarityAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "omen of clarity") {}
@@ -256,7 +256,7 @@ namespace ai
 	public:
 		CastDireBearFormAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "dire bear form") {}
 
-		virtual NextAction** getAlternatives() 
+		virtual NextAction** getAlternatives()
 		{
 			return NextAction::merge(NextAction::array(0, new NextAction("bear form"), NULL), CastSpellAction::getAlternatives());
 		}
@@ -290,7 +290,7 @@ namespace ai
 	{
 	public:
 		CastTravelFormAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "travel form") {}
-		
+
 		virtual bool isUseful()
 		{
 			bool firstmount = bot->GetLevel() >=
@@ -496,7 +496,7 @@ namespace ai
     class CastFeralChargeBearAction : public CastReachTargetSpellAction
     {
     public:
-        CastFeralChargeBearAction(PlayerbotAI* ai) 
+        CastFeralChargeBearAction(PlayerbotAI* ai)
 #ifdef MANGOSBOT_TWO
         : CastReachTargetSpellAction(ai, "feral charge - bear", 1.5f) {}
 #else
@@ -715,7 +715,7 @@ namespace ai
             strategiesRequired = { "balance", "buff" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "buff balance pve", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "buff balance pve", strategiesRequired);
-            
+
             strategiesRequired = { "balance", "boost" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "boost balance pve", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "boost balance pve", strategiesRequired);

@@ -56,7 +56,7 @@ public:
 		return new ActionNode("howling blast",
 			/*P*/ NextAction::array(0, new NextAction("blood presence"), NULL),
 			/*A*/ NextAction::array(0, new NextAction("icy touch"), NULL),
-			/*C*/ NULL);	
+			/*C*/ NULL);
 		}
 };
 
@@ -67,8 +67,8 @@ FrostDKStrategy::FrostDKStrategy(PlayerbotAI* ai) : GenericDKStrategy(ai)
 
 NextAction** FrostDKStrategy::GetDefaultCombatActions()
 {
-	return NextAction::array(0, 
-			new NextAction("melee", ACTION_NORMAL), 
+	return NextAction::array(0,
+			new NextAction("melee", ACTION_NORMAL),
 			new NextAction("frost strike", ACTION_NORMAL + 5),
 			new NextAction("obliterate", ACTION_NORMAL + 4), NULL);
 }

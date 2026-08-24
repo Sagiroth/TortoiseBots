@@ -20,7 +20,7 @@ namespace ai
         void OnCancel() { resetFacing(guidP()); if (bot->GetTradeData()) bot->TradeCancel(true); };
 
         virtual GuidPosition guidP() { return AI_VALUE(GuidPosition, "rpg target"); }
-        virtual ObjectGuid guid() { return (ObjectGuid)guidP(); }        
+        virtual ObjectGuid guid() { return (ObjectGuid)guidP(); }
         virtual bool InRange() { return AI_VALUE2(float, "distance", "rpg target") <= INTERACTION_DISTANCE * 1.5; }
         void setDelay(bool waitForGroup);
     private:
@@ -54,7 +54,7 @@ namespace ai
         void DoDelay(){ SetDuration(ai->GetAIInternalUpdateDelay()); }
         virtual std::string ActionName() { return "none"; }
         virtual Event ActionEvent(Event event) { return event; }
-    };        
+    };
 
     class RpgStayAction : public RpgSubAction
     {
@@ -66,7 +66,7 @@ namespace ai
         virtual std::string GetRpgActionName() const override { return "idling near"; };
 
         virtual bool Execute(Event& event) override { rpg->BeforeExecute(); if (bot->GetPlayerMenu()) bot->GetPlayerMenu()->CloseGossip(); rpg->AfterExecute(); DoDelay(); return true; };
-    };   
+    };
 
     class RpgWorkAction : public RpgSubAction
     {
@@ -161,7 +161,7 @@ namespace ai
         virtual std::string ActionName() override { return "buy"; }
         virtual Event ActionEvent(Event event) override { return Event("rpg action", "vendor"); }
     };
-   
+
     class RpgSellAction : public RpgSubAction
     {
     public:
@@ -204,7 +204,7 @@ namespace ai
     private:
         virtual std::string ActionName() override { return "mail"; }
         virtual Event ActionEvent(Event event) override { return Event("rpg action", "take"); }
-       
+
         virtual bool Execute(Event& event) override { bool doAction = RpgSubAction::Execute(event); if (doAction) ai->DoSpecificAction("equip upgrades", event, true); return doAction; }
     };
 

@@ -35,7 +35,7 @@ namespace ai
 
             creators["trainable spell map"] = [](PlayerbotAI* ai) { return new TrainableSpellMapValue(ai); };
 
-          
+
 
             creators["entry travel purpose"] = [](PlayerbotAI* ai) { return new EntryTravelPurposeMapValue(ai); };
             creators["entry guidps"] = [](PlayerbotAI* ai) { return new EntryGuidpsValue(ai); };

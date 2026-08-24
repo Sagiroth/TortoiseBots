@@ -47,7 +47,7 @@ private:
     {
         return new ActionNode("lay on hands",
             /*P*/ NULL,
-            /*A*/ NextAction::array(0, new NextAction("divine shield"), 
+            /*A*/ NextAction::array(0, new NextAction("divine shield"),
                                        new NextAction("flash of light"), NULL),
             /*C*/ NULL);
     }
@@ -516,7 +516,7 @@ void PaladinOffhealRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& 
 
 void PaladinAuraStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-    
+
 }
 
 void PaladinAuraStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

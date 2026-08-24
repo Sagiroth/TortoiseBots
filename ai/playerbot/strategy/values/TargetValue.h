@@ -52,7 +52,7 @@ namespace ai
         virtual std::string GetHelpTypeName() { return "target"; }
         virtual std::string GetHelpDescription() { return "This value contains a [h:object|unit] which is the best target based on the current target strategy."; }
         virtual std::vector<std::string> GetUsedValues() { return { "possible attack targets" }; }
-#endif 
+#endif
     protected:
         Unit* FindTarget(FindTargetStrategy* strategy);
     };
@@ -66,7 +66,7 @@ namespace ai
         virtual std::string GetHelpTypeName() { return "rpg"; }
         virtual std::string GetHelpDescription() { return "This value contains the [h:object|objectGuid] of a [h:object|unit] or [h:object|gameObject] to move to and rpg with.\nThis value is manually set."; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
 
         virtual std::string Format() override
         {
@@ -79,7 +79,7 @@ namespace ai
     public:
         TravelTargetValue(PlayerbotAI* ai, std::string name = "travel target") : ManualSetValue<TravelTarget*>(ai, new TravelTarget(ai), name) {}
         virtual ~TravelTargetValue() override { delete value; }
-    };	
+    };
 
     class LeaderTravelTargetValue : public CalculatedValue<TravelTarget*>
     {

@@ -5,29 +5,29 @@
 #include "Maps/PathFinder.h"
 
 //THEORY
-// 
+//
 // Pathfinding in (c)mangos is based on detour recast an opensource nashmesh creation and pathfinding codebase.
 // This system is used for mob and npc pathfinding and in this codebase also for bots.
 // Because mobs and npc movement is based on following a player or a set path the pathfinder is limited to 296y.
 // This means that when trying to find a path from A to B distances beyond 296y will be a best guess often moving in a straight path.
 // Bots would get stuck moving from Northshire to Stormwind because there is no 296y path that doesn't go (initially) the wrong direction.
-// 
+//
 // To remedy this limitation without altering the pathfinder limits too much this node system was introduced.
-// 
+//
 //  <S> ---> [N1] ---> [N2] ---> [N3] ---> <E>
 //
 // Bot at <S> wants to move to <E>
 // [N1],[N2],[N3] are predefined nodes for wich we know we can move from [N1] to [N2] and from [N2] to [N3] but not from [N1] to [N3]
 // If we can move fom [S] to [N1] and from [N3] to [E] we have a complete route to travel.
-// 
+//
 // Termonology:
 // Node: a location on a map for which we know bots are likely to want to travel to or need to travel past to reach other nodes.
 // Link: the connection between two nodes. A link signifies that the bot can travel from one node to another. A link is one-directional.
 // Path: the waypointpath returned by the standard pathfinder to move from one node (or position) to another. A path can be imcomplete or empty which means there is no link.
 // Route: the list of nodes that give the shortest route from a node to a distant node. Routes are calculated using a standard A* search based on links.
-// 
+//
 // Nodes, links and paths are stored in db tables but will be generated if they are empty. See TravelNodeMap for more information about the generation proces.
-  
+
 enum class TravelNodePathType : uint8
 {
     none = 0,
@@ -45,7 +45,7 @@ namespace ai
 {
     class WorldPosition;
 
-    //A connection between two nodes. 
+    //A connection between two nodes.
     class TravelNodePath
     {
     public:
@@ -447,10 +447,10 @@ namespace ai
             PathType type;
             std::vector<WorldPosition> path;
         };
-        
+
         PathFindResult testPathToLoop(const WorldPosition& startPos, const WorldPosition& endPos, const Unit* bot, uint64 uid = 0, std::vector<WorldPosition> route = std::vector<WorldPosition>(), std::string type = "debug") const;
 
-        //Below are the steps to creating the content stored in the node, link and path tables. 
+        //Below are the steps to creating the content stored in the node, link and path tables.
         //Nodes are placed based on key locations based on objects/creatures in the world and paths are generated using the standardpathfinder.
 
         void generateNpcNodes();                  //Creates node at innkeepers, flightmasters, spirithealers and bosses.
@@ -474,7 +474,7 @@ namespace ai
         void generateHelperNodes();               //Call above method for all maps async.
 
         void removeLowNodes();                    //Remove any node in the overworld that can reach less than 4 nodes directly or indirectly.
-        void removeUselessPathMap(uint32 mapId);  //Remove any path which can be replaced by multiple paths of combined equivalent or shorter length. (Single paths get a 10% length increase to make it prefer multiple paths with a slight detour) 
+        void removeUselessPathMap(uint32 mapId);  //Remove any path which can be replaced by multiple paths of combined equivalent or shorter length. (Single paths get a 10% length increase to make it prefer multiple paths with a slight detour)
         void removeUselessPaths();                //Call above method for all maps async.
         void calculatePathCosts();                //Calculate distance, swim distance and expected max alliance, horde and mob level along the path.
         void generateTaxiPaths();                 //Create paths and links from all flightmasters along their taxi routes.
@@ -492,7 +492,7 @@ namespace ai
         TravelNode* addZoneLinkNode(TravelNode* startNode);
         TravelNode* addRandomExtNode(TravelNode* startNode);
 
-        void calcMapOffset();                      
+        void calcMapOffset();
         WorldPosition getMapOffset(uint32 mapId);
         WorldPosition GetMapOffset(uint32 mapId) { return getMapOffset(mapId); }
 

@@ -46,19 +46,19 @@ bool BuyAction::Execute(Event& event)
 
             VendorItemData const* tItems = pCreature->GetVendorItems();
             VendorItemData const* vItems = {};
-#ifndef MANGOSBOT_ZERO                
+#ifndef MANGOSBOT_ZERO
             vItems = pCreature->GetVendorTemplateItems();
 #endif
             if (!tItems && !vItems)
                 continue;
-            
+
             VendorItemList m_items_sorted;
-            
+
             if (tItems)
                 m_items_sorted.insert(m_items_sorted.begin(), tItems->m_items.begin(), tItems->m_items.end());
             if (vItems)
                 m_items_sorted.insert(m_items_sorted.begin(), vItems->m_items.begin(), vItems->m_items.end());
-            
+
 
             m_items_sorted.erase(std::remove_if(m_items_sorted.begin(), m_items_sorted.end(), [](VendorItem* i) {ItemPrototype const* proto = sObjectMgr.GetItemPrototype(i->item); return !proto; }), m_items_sorted.end());
 
@@ -73,12 +73,12 @@ bool BuyAction::Execute(Event& event)
                 if (!proto)
                     continue;
 
-                // reputation discount 
+                // reputation discount
                 uint32 price = uint32(floor(proto->BuyPrice * bot->GetReputationPriceDiscount(pCreature)));
 
                 auto pmo = sPerformanceMonitor.start(PERF_MON_VALUE, "IsWorthBuyingFromVendorToResellAtAH", ai);
 
-                // if item is worth selling to AH? 
+                // if item is worth selling to AH?
                 bool canFlipAH = ItemUsageValue::IsWorthBuyingFromVendorToResellAtAH(proto, tItem->maxcount > 0);
 
                 pmo.reset();
@@ -93,7 +93,7 @@ bool BuyAction::Execute(Event& event)
                 }
 #endif
 
-                for (uint32 n = 0; n < 10; ++n) //Buy 10 times or until no longer usefull/possible 
+                for (uint32 n = 0; n < 10; ++n) //Buy 10 times or until no longer usefull/possible
                 {
                     ItemUsage usage = AI_VALUE2(ItemUsage, "item usage", tItem->item);
 
@@ -117,7 +117,7 @@ bool BuyAction::Execute(Event& event)
                     if (!usageAllowed)
                         break;
 
-                    // Gold affordability 
+                    // Gold affordability
                     RESET_AI_VALUE2(uint32, "free money for", moneyKey);
                     uint32 money = AI_VALUE2(uint32, "free money for", moneyKey);
                     if (price > money)
@@ -170,7 +170,7 @@ bool BuyAction::Execute(Event& event)
                     RESET_AI_VALUE2(std::list<Item*>, "inventory items", ChatHelper::formatItem(proto));
                     RESET_AI_VALUE(std::vector<MountValue>, "mount list");
 
-                    if (usage == ItemUsage::ITEM_USAGE_EQUIP || usage == ItemUsage::ITEM_USAGE_BAD_EQUIP) //Equip upgrades and stop buying this time. 
+                    if (usage == ItemUsage::ITEM_USAGE_EQUIP || usage == ItemUsage::ITEM_USAGE_BAD_EQUIP) //Equip upgrades and stop buying this time.
                     {
                         RESET_AI_VALUE2(ItemUsage, "item usage", tItem->item);
                         ai->DoSpecificAction("equip upgrades", event, true);
@@ -255,11 +255,11 @@ bool BuyAction::Execute(Event& event)
         for (auto& [usage, boughtList] : bought)
         {
             for (auto& [id, count] : boughtList)
-            {                
+            {
                 ItemQualifier qualifier(id);
 
-                std::ostringstream out; 
-                
+                std::ostringstream out;
+
                 out << "Buying " << ChatHelper::formatItem(qualifier, count) << " ";
                 out << ItemUsageValue::ReasonForNeed(usage, qualifier, count, bot);
                 ai->TellPlayer(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
@@ -281,7 +281,7 @@ bool BuyAction::BuyItem(Player* requester, VendorItemData const* tItems, ObjectG
     for (uint32 slot = 0; slot < tItems->GetItemCount(); slot++)
     {
         if (tItems->GetItem(slot)->item == itemId)
-        {       
+        {
             uint32 botMoney = bot->GetMoney();
             if (ai->HasCheat(BotCheatMask::gold))
             {
@@ -324,7 +324,7 @@ bool BuyAction::BuyItem(Player* requester, VendorItemData const* tItems, ObjectG
                 }
                 return true;
             }
- 
+
             return false;
         }
     }

@@ -6,7 +6,7 @@
 
 namespace ai
 {
-    class AcceptAllQuestsAction : public QuestAction 
+    class AcceptAllQuestsAction : public QuestAction
     {
     public:
         AcceptAllQuestsAction(PlayerbotAI* ai, std::string name = "accept all quests") : QuestAction(ai, name) {}
@@ -24,10 +24,10 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return { "nearest npcs" ,  "nearest game objects no los" }; }
-#endif 
+#endif
     };
 
-    class AcceptQuestAction : public AcceptAllQuestsAction 
+    class AcceptQuestAction : public AcceptAllQuestsAction
     {
     public:
         AcceptQuestAction(PlayerbotAI* ai) : AcceptAllQuestsAction(ai, "accept quest") {}
@@ -42,10 +42,10 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return { }; }
         virtual std::vector<std::string> GetUsedValues() { return { "nearest npcs" ,  "nearest game objects no los" }; }
-#endif 
+#endif
     };
 
-    class AcceptQuestShareAction : public Action 
+    class AcceptQuestShareAction : public Action
     {
     public:
         AcceptQuestShareAction(PlayerbotAI* ai) : Action(ai, "accept quest share") {}
@@ -59,7 +59,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return { }; }
         virtual std::vector<std::string> GetUsedValues() { return { }; }
-#endif 
+#endif
     };
 
     class ConfirmQuestAction : public Action {
@@ -75,7 +75,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return { }; }
         virtual std::vector<std::string> GetUsedValues() { return { }; }
-#endif 
+#endif
     };
 
     class QuestDetailsAction : public Action {
@@ -91,6 +91,6 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return { }; }
         virtual std::vector<std::string> GetUsedValues() { return { }; }
-#endif 
+#endif
     };
 }

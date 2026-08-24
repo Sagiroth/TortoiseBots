@@ -39,7 +39,7 @@ namespace ai
         virtual std::string GetHelpTypeName() { return "movement"; }
         virtual std::string GetHelpDescription() { return "This value indicates whether the bot should wait for a trade to complete, a crafting cast or for the group to have enough health/mana before moving to rpg, grind or travel targets."; }
         virtual std::vector<std::string> GetUsedValues() { return {"group ready", "trigger active"}; }
-#endif 
+#endif
     };
 
     class ShouldHomeBindValue : public BoolCalculatedValue
@@ -154,7 +154,7 @@ namespace ai
     public:
         CanFightBossValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "can fight boss", 2) {}
         virtual bool Calculate() override { return bot->GetGroup() && bot->GetGroup()->GetMembersCount() > 3 && AI_VALUE2(bool, "group and", "can fight equal") && AI_VALUE2(bool, "group and", "following party") && !AI_VALUE2(bool, "group or", "should sell,can sell"); };
-    };        
+    };
 
     class ShouldDrinkValue : public BoolCalculatedValue
     {
@@ -190,7 +190,7 @@ namespace ai
                 minDistance += sPlayerbotAIConfig.followDistance;
             else
                 minDistance += sPlayerbotAIConfig.raidFollowDistance;
-            
+
             if (bot->IsWithinDist(master, minDistance))
                 return true;
 
@@ -293,7 +293,7 @@ namespace ai
             float hpMissingPct = 100.0f - bot->GetHealthPercent();
             float multiplier = bot->InBattleGround() ? 20000.0f : 27000.0f;
             float eatDuration = multiplier * (hpMissingPct / 100.0f);
-          
+
             if (!master)
                 return eatDuration;
 

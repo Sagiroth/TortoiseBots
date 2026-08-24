@@ -4,4 +4,3 @@
 
 #include "playerbot/PlayerbotAIConfig.h"
 using namespace ai;
-

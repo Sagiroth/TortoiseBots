@@ -17,6 +17,6 @@ namespace ai
         virtual std::string GetHelpTypeName() { return "spell"; }
         virtual std::string GetHelpDescription() { return "This value contains the spell id of the spell that the bot is currently casting."; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
     };
 }

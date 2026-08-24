@@ -451,7 +451,7 @@ std::string RandomPlayerbotFactory::CreateRandomBotName(NameRaceAndGender raceAn
     // Get random index
     uint32 idx = urand(0, it->second.size() - 1);
     std::string name = it->second[idx];
-    
+
     // Swap-remove for O(1)
     std::swap(it->second[idx], it->second.back());
     it->second.pop_back();
@@ -576,7 +576,7 @@ void RandomPlayerbotFactory::CreateRandomBots()
         uint32 maxAccountNum = 0;
 
         auto accountNrQr = LoginDatabase.PQuery("SELECT max(replace(lower(username), lower('%s'), '') + 1 - 1) maxAccountNr FROM account WHERE replace(lower(username), lower('%s'), '') != 0", sPlayerbotAIConfig.randomBotAccountPrefix.c_str(), sPlayerbotAIConfig.randomBotAccountPrefix.c_str());
-        
+
         if (!accountNrQr)
         {
             sLog.outError("Failed to find last %s account nr.", sPlayerbotAIConfig.randomBotAccountPrefix.c_str());
@@ -1452,4 +1452,3 @@ std::string RandomPlayerbotFactory::CreateRandomArenaTeamName()
     return aname;
 }
 #endif
-

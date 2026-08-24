@@ -251,7 +251,7 @@ ItemUsage ItemUsageValue::Calculate()
 
                 if (stacks < 1)
                     return ItemUsage::ITEM_USAGE_USE; //Buy some to get to 1 stack
-                else if (stacks < 2)       
+                else if (stacks < 2)
                     return ItemUsage::ITEM_USAGE_KEEP; //Keep the item if less than 2 stack
             }
         }
@@ -350,7 +350,7 @@ ItemUsage ItemUsageValue::Calculate()
     }
 
     // AMMO
-if ((proto->Class == ITEM_CLASS_PROJECTILE || 
+if ((proto->Class == ITEM_CLASS_PROJECTILE ||
      (proto->Class == ITEM_CLASS_WEAPON && proto->SubClass == ITEM_SUBCLASS_WEAPON_THROWN)) &&
     bot->CanUseItem(proto) == EQUIP_ERR_OK)
 {
@@ -465,7 +465,7 @@ if ((proto->Class == ITEM_CLASS_PROJECTILE ||
 
             uint32 minimumSellPrice = bot->GetMoney() / 1000;
 
-            if (maxSellPrice < minimumSellPrice) //Do not loot items less than 0.1% of bot's gold per stack. 
+            if (maxSellPrice < minimumSellPrice) //Do not loot items less than 0.1% of bot's gold per stack.
                 sellUsage = ItemUsage::ITEM_USAGE_NONE;
         }
 
@@ -489,7 +489,7 @@ if ((proto->Class == ITEM_CLASS_PROJECTILE ||
         uint32 sellPrice = proto->SellPrice * count;
 
         uint32 depositCost = GetAhDepositCost(proto, count);
-        
+
         uint32 ahPrice = ItemUsageValue::GetBotSellPrice(proto, bot) * count;
 
         if(proto->SellPrice == 0)
@@ -504,11 +504,11 @@ if ((proto->Class == ITEM_CLASS_PROJECTILE ||
         if (ahPrice - depositCost - sellPrice < bot->GetMoney() / 500)
             return sellUsage; //Do not move to AH for items with less than 0.2% of bots gold markup.
 
-        if(depositCost > ahMoney && AI_VALUE(uint8, "bag space") > 80) 
+        if(depositCost > ahMoney && AI_VALUE(uint8, "bag space") > 80)
             return sellUsage; //We simply do not have the money to put this on AH.
 
-        if(!item) 
-            return ItemUsage::ITEM_USAGE_AH;   //We can't determine if this item is soulboud (yet) or broken so we assume we can AH this.      
+        if(!item)
+            return ItemUsage::ITEM_USAGE_AH;   //We can't determine if this item is soulboud (yet) or broken so we assume we can AH this.
 
         bool soulBound = (proto->Bonding == BIND_WHEN_EQUIPPED) && item->IsSoulBound();
 
@@ -818,7 +818,7 @@ std::string ItemUsageValue::ReasonForNeed(ItemUsage usage, ItemQualifier qualifi
         if (newStatWeight && currentStatWeight)
             return BOT_TEXT2("for equiping as a replacement of %current (%cPower) because it is stronger (%nPower).", placeholders);
 
-        return BOT_TEXT2("for equiping as a replacement of %current because it has a higher level or quality.", placeholders);     
+        return BOT_TEXT2("for equiping as a replacement of %current because it has a higher level or quality.", placeholders);
     }
     case ItemUsage::ITEM_USAGE_BAD_EQUIP:
         return BOT_TEXT2("for equiping until I can find something better.", placeholders);
@@ -878,7 +878,7 @@ uint32 ItemUsageValue::GetAhDepositCost(ItemPrototype const* proto, uint32 count
 uint32 ItemUsageValue::ItemCreatedFrom(uint32 wantItemId)
 {
     switch (wantItemId) {
-    case 38631: //Runebladed Sword 
+    case 38631: //Runebladed Sword
         return 38607; //Battle-worn Sword
     default:
         return 0;
@@ -1112,7 +1112,7 @@ Item* ItemUsageValue::CurrentItemInSlot(ItemPrototype const* proto, Player* bot)
     if (result != EQUIP_ERR_OK)
         return nullptr;
 
-    return bot->GetItemByPos(dest);    
+    return bot->GetItemByPos(dest);
 }
 
 float ItemUsageValue::CurrentStacks(PlayerbotAI* ai, ItemPrototype const* proto)
@@ -1534,14 +1534,14 @@ uint32 ItemUsageValue::GetAHListingLowestBuyoutPricePerItem(ItemPrototype const*
         uint32 minBuyout = 0;
 
         for (auto& auction : sRandomPlayerbotMgr.GetAhPrices(proto->ItemId))
-        {            
+        {
             if (!minBuyout || minBuyout > auction.buyout)
             {
                 minBuyout = auction.buyout;
                 minPrice = (float)auction.buyout / (float)auction.itemCount;
             }
         }
-       
+
         return minBuyout;
         /*
         auto query = CharacterDatabase.PQuery(

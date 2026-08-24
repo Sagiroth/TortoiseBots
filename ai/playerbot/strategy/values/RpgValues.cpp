@@ -3,5 +3,3 @@
 #include "RpgValues.h"
 
 using namespace ai;
-
-

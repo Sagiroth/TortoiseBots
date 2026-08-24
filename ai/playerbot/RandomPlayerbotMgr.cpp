@@ -262,7 +262,7 @@ botPIDImpl::~botPIDImpl()
 {
 }
 
-RandomPlayerbotMgr::RandomPlayerbotMgr() 
+RandomPlayerbotMgr::RandomPlayerbotMgr()
 : PlayerbotHolder()
 , processTicks(0)
 , loginProgressBar(NULL)
@@ -357,7 +357,7 @@ inline void print_line(Unit* bot, const std::vector<std::pair<int, int>> line, b
     for (auto& p : line)
     {
         out << p.first << " " << p.second << (&p == &line.back() ? "" : ",");
-    }    
+    }
     out << ")\",";
     out << bot->getOrientation() << ",";
     out << std::to_string(bot->GetRace()) << ",";
@@ -677,10 +677,10 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
             urand(sPlayerbotAIConfig.randomBotCountChangeMinInterval, sPlayerbotAIConfig.randomBotCountChangeMaxInterval));
     }
 
-    std::list<uint32> availableBots = GetBots();    
+    std::list<uint32> availableBots = GetBots();
     uint32 availableBotCount = availableBots.size();
     uint32 onlineBotCount = GetPlayerbotsAmount();
-    
+
     SetAIInternalUpdateDelay(sPlayerbotAIConfig.randomBotUpdateInterval);
 
     auto pmo = sPerformanceMonitor.start(PERF_MON_RNDBOT,
@@ -748,7 +748,7 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
         for (auto bot : availableBots)
         {
             if (GetPlayerBot(bot))
-                continue;   
+                continue;
 
             if (!eventCache[bot].empty() && GetEventValue(bot, "login"))
             {
@@ -774,7 +774,7 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
     LoginFreeBots();
 
     //sLog.outString("[char %d, bot %d]", CharacterDatabase.m_threadBody->m_sqlQueue.size(), CharacterDatabase.m_threadBody->m_sqlQueue.size());
-   
+
     LogPlayerLocation();
 
     DelayedFacingFix();
@@ -1121,7 +1121,7 @@ bool RandomPlayerbotMgr::GetNamedLocation(std::string const& name, WorldLocation
 
 uint32 RandomPlayerbotMgr::AddRandomBots()
 {
-    uint32 maxAllowedBotCount = GetEventValue(0, "bot_count");    
+    uint32 maxAllowedBotCount = GetEventValue(0, "bot_count");
     uint32 currentAllowedBotCount = maxAllowedBotCount;
 
     uint32 maxLevel = sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL);
@@ -1129,7 +1129,7 @@ uint32 RandomPlayerbotMgr::AddRandomBots()
 
     if(sPlayerbotAIConfig.asyncBotLogin)
         return 0;
-  
+
     if (currentBots.size() < currentAllowedBotCount)
     {
         if (sPlayerbotAIConfig.syncLevelWithPlayers)
@@ -1143,7 +1143,7 @@ uint32 RandomPlayerbotMgr::AddRandomBots()
                 currentAvgLevel += bot->GetLevel();
                 botsAmount++;
             });
-                
+
 
             if(currentAvgLevel)
             {
@@ -1166,7 +1166,7 @@ uint32 RandomPlayerbotMgr::AddRandomBots()
     uint32 botProbe[7][7] = {};
 #define BOTPROBE(b, r) do { botProbe[(b)][(r)]++; } while (0)
 
-        currentAllowedBotCount = currentAllowedBotCount*2;      
+        currentAllowedBotCount = currentAllowedBotCount*2;
 
         CharacterDatabase.AllowAsyncTransactions();
         CharacterDatabase.BeginTransaction();
@@ -1375,7 +1375,7 @@ uint32 RandomPlayerbotMgr::AddRandomBots()
                                     sLog.outError("%d %s %ss needed to get %3.2f%% of total but only %d found.", totalWanted, chat.formatRace(race).c_str(), chat.formatClass(cls).c_str(), percentage, totalWanted - moreWanted);
                                 }
                             }
-                        
+
                     }
                 }
 
@@ -1394,7 +1394,7 @@ uint32 RandomPlayerbotMgr::AddRandomBots()
 #else
             sLog.outError("Not enough random bot accounts available. Need %d more!!", (uint32)ceil(currentAllowedBotCount / 9));
 #endif
-      
+
     }
 
     return currentBots.size();
@@ -1729,7 +1729,7 @@ void RandomPlayerbotMgr::CheckBgQueue()
                                 TeamId = 0;
                         }
 
-                        
+
 
                         sRandomPlayerbotMgr.ArenaBots[queueTypeId][bracketId][TeamId][tempT]++;
 
@@ -2313,7 +2313,7 @@ bool RandomPlayerbotMgr::ProcessBot(uint32 bot)
     bool botsAllowedInWorld = !sPlayerbotAIConfig.randomBotLoginWithPlayer || (!players.empty() && sWorld.GetActiveSessionCount() > 0);
 
     bool isValid = true;
-   
+
     if (sPlayerbotAIConfig.randomBotTimedLogout && !GetEventValue(bot, "add") && !sPlayerbotAIConfig.asyncBotLogin) // RandomBotInWorldTime is expired.
         isValid = false;
     else if(!botsAllowedInWorld)                                               // Logout if all players logged out
@@ -2339,7 +2339,7 @@ bool RandomPlayerbotMgr::ProcessBot(uint32 bot)
         if (!player)
         {
             return false;
-        }    
+        }
 
         LogoutPlayerBot(bot);
 
@@ -3068,7 +3068,7 @@ void RandomPlayerbotMgr::PrepareTeleportCache()
         allowedNpcFlags.push_back(UNIT_NPC_FLAG_INNKEEPER);
 
         for (auto flag : allowedNpcFlags)
-        {          
+        {
             if ((cInfo->npc_flags & flag) != 0)
             {
                 std::vector<std::pair<uint32, uint32>> ranges = RpgLocationsNear(WorldPosition(creatureData), areaNames);
@@ -3090,7 +3090,7 @@ void RandomPlayerbotMgr::PrepareTeleportCache()
 
     for (auto newPoint : newPoints)
         rpgLocsCacheLevel[newPoint.first.first][newPoint.first.second].push_back(newPoint.second);
-    
+
     for (auto innPoint : innPoints)
         innCacheLevel[innPoint.first.first][innPoint.first.second].push_back(std::make_pair(innPoint.second, innPoint.second));
 }
@@ -3596,7 +3596,7 @@ bool RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(ChatHandler* handler, cha
     }
 
     bool isRA = false;
-    
+
     if (handler->GetSession()) //Client command
         isRA = true;
     else if (static_cast<CliHandler*>(handler) && static_cast<CliHandler*>(handler)->GetAccountId()) //RA call with account.
@@ -3649,7 +3649,7 @@ bool RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(ChatHandler* handler, cha
         {
             sLog.outString("%s", msg.c_str());
             if(isRA)
-                handler->SendSysMessage(msg.c_str());      
+                handler->SendSysMessage(msg.c_str());
         }
 
         if (!messages.empty() && (prefix != "help" || param != "commands"))
@@ -4021,7 +4021,7 @@ void RandomPlayerbotMgr::PrintStats(uint32 requesterGuid)
         if (target)
         {
             TravelState state = target->GetTravelState();
-            stateCount[(uint8)state]++;            
+            stateCount[(uint8)state]++;
         }
     });
 
@@ -4547,7 +4547,7 @@ std::unordered_map<std::string, std::string> RandomPlayerbotMgr::GetCommandTexts
 std::list<std::string> RandomPlayerbotMgr::HandleHelp(std::string param)
 {
     std::list<std::string> messages;
-        
+
     if (param.empty())
     {
         messages.push_back("Type 'help commands for all available commands.");
@@ -4567,13 +4567,13 @@ std::list<std::string> RandomPlayerbotMgr::HandleHelp(std::string param)
         messages.push_back(commands);
         return messages;
     }
-    
-    
+
+
     std::string helpText = GetCommandTexts(param);
     if (!helpText.empty())
     {
         messages.push_back(helpText);
-    }  
+    }
     return messages;
 }
 
@@ -4882,7 +4882,7 @@ uint32 RandomPlayerbotMgr::GetOrCreateAccount(Player* master, std::string& error
             }
 
             error = "Failed to create account";
-            return 0;        
+            return 0;
         }
 
         uint32 charCount = sAccountMgr.GetCharactersCount(accountId);
@@ -4911,13 +4911,13 @@ void RandomPlayerbotMgr::OnBotDeleted(uint32 botGuid, uint32 accountId)
     #ifdef MANGOSBOT_TWO
         maxCharsPerAccount = 10;
     #endif
-    
+
         if (sAccountMgr.GetCharactersCount(accountId) == 0)
         {
             std::ostringstream prefix;
             prefix << sPlayerbotAIConfig.randomBotAccountPrefix;
             size_t prefixLen = prefix.str().length();
-            
+
             auto result = LoginDatabase.PQuery("SELECT username FROM account WHERE id = '%u'", accountId);
             if (result)
             {

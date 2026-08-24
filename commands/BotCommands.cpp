@@ -2,8 +2,6 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../runtime/BotManager.h"
 // pi-lens-ignore: clang:pp_file_not_found
-#include "../runtime/BotController.h"
-// pi-lens-ignore: clang:pp_file_not_found
 #include "../runtime/PlayerbotAIStorage.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../ai/playerbot/PlayerbotAI.h"
@@ -104,7 +102,11 @@ static bool ResolveOwnedBot(ChatHandler* handler, char const* args, Player*& bot
         return false;
 
     record = BotManager::Instance().FindBot(bot->GetObjectGuid());
-    return CanControl(Requester(handler), record);
+    if (!CanControl(Requester(handler), record))
+        return false;
+
+    return bot->GetSession() && bot->GetSession()->IsHeadless() &&
+        BotManager::Instance().IsBot(bot->GetObjectGuid());
 }
 
 static bool HandleList(ChatHandler* handler)
@@ -179,10 +181,17 @@ static bool HandleInvite(ChatHandler* handler, char const* args)
 
     // Let the native group handler create the invite. This emits the real
     // SMSG_GROUP_INVITE, which the module packet bridge feeds to PlayerbotAI.
+    auto* previousInvite = bot->GetGroupInvite();
     WorldPacket packet;
     packet << bot->GetName() << uint32(0);
     requester->GetSession()->HandleGroupInviteOpcode(packet);
-    handler->PSendSysMessage("Invited bot %s; waiting for mature PlayerbotAI to accept.", name.c_str());
+    if (bot->GetGroupInvite() == previousInvite)
+    {
+        handler->PSendSysMessage("The group invitation for %s was rejected by the native group handler.", name.c_str());
+        return true;
+    }
+
+    handler->PSendSysMessage("Invitation sent to bot %s; mature PlayerbotAI may accept it asynchronously.", name.c_str());
     return true;
 }
 
@@ -233,8 +242,6 @@ static bool HandleStay(ChatHandler* handler, char const* args)
         return true;
     }
 
-    if (BotController* controller = BotManager::Instance().GetController(bot->GetObjectGuid()))
-        controller->SetIntent(BotIntent::None);
     handler->PSendSysMessage("Bot %s will stay.", name.c_str());
     return true;
 }
@@ -264,7 +271,7 @@ static bool HandleMatureCommand(ChatHandler* handler, char const* args)
     if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
     {
         ai->HandleCommand(CHAT_MSG_WHISPER, command, *requester);
-        handler->PSendSysMessage("Queued mature command for %s: %s", resolvedName.c_str(), command.c_str());
+        handler->PSendSysMessage("Forwarded mature command for %s: %s; action success is not guaranteed.", resolvedName.c_str(), command.c_str());
     }
     else
         handler->PSendSysMessage("Bot %s has no mature PlayerbotAI yet.", resolvedName.c_str());
@@ -274,7 +281,9 @@ static bool HandleMatureCommand(ChatHandler* handler, char const* args)
 // pi-lens-ignore: clang:incomplete_member_access,clang:unknown_typename,clang:undeclared_var_use
 static bool HandleAdd(ChatHandler* handler, char const* args)
 {
-    if (!handler || !args || !*args)
+    if (!handler)
+        return false;
+    if (!args || !*args)
     {
         handler->PSendSysMessage("Usage: .bot add <characterName>");
         return true;
@@ -322,6 +331,12 @@ static bool HandleAdd(ChatHandler* handler, char const* args)
     ::ObjectGuid guid(HIGHGUID_PLAYER, data->uiGuid);
     uint32_t accountId = data->uiAccount;
     ::ObjectGuid masterGuid = requester->GetObjectGuid();
+
+    if (sObjectAccessor.FindPlayer(guid))
+    {
+        handler->PSendSysMessage("Character '%s' is already online and cannot be claimed as a Headless bot.", name.c_str());
+        return true;
+    }
 
     if (!requester->GetSession() ||
         (accountId != requester->GetSession()->GetAccountId() && requester->GetSession()->GetSecurity() < SEC_GAMEMASTER))
@@ -419,7 +434,7 @@ static bool HandleFollow(ChatHandler* handler, char const* args)
     if (BotManager::Instance().SetBotFollow(botGuid, masterGuid))
         handler->PSendSysMessage("Bot %s now following %s.", name.c_str(), requester->GetName());
     else
-        handler->PSendSysMessage("Bot %s not found.", name.c_str());
+        handler->PSendSysMessage("Bot %s could not enter mature follow mode; no success is reported.", name.c_str());
     return true;
 }
 
@@ -451,23 +466,23 @@ bool HandleChatCommand(ChatHandler* handler, char const* args)
     // Normalize cmd to lowercase
     for (char& c : cmd) c = tolower(c);
 
-    if (cmd == "add" || cmd == "login")
+    if (cmd == "add")
         return HandleAdd(handler, subArgs);
-    if (cmd == "remove" || cmd == "rm" || cmd == "logout")
+    if (cmd == "remove")
         return HandleRemove(handler, subArgs);
     if (cmd == "follow")
         return HandleFollow(handler, subArgs);
-    if (cmd == "invite" || cmd == "group")
+    if (cmd == "invite")
         return HandleInvite(handler, subArgs);
-    if (cmd == "uninvite" || cmd == "ungroup")
+    if (cmd == "uninvite")
         return HandleUninvite(handler, subArgs);
     if (cmd == "stay")
         return HandleStay(handler, subArgs);
-    if (cmd == "list" || cmd == "ls")
+    if (cmd == "list")
         return HandleList(handler);
-    if (cmd == "stats" || cmd == "status")
+    if (cmd == "stats")
         return HandleStats(handler);
-    if (cmd == "command" || cmd == "cmd")
+    if (cmd == "command")
         return HandleMatureCommand(handler, subArgs);
     if (cmd == "help" || cmd == "h")
     {

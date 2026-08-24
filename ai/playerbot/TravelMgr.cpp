@@ -260,7 +260,7 @@ bool QuestObjectiveTravelDestination::IsPossible(const PlayerTravelInfo& info) c
     //Check mob level
     if (GetEntry() > 0)
     {
-#ifdef MANGOSBOT_TWO        
+#ifdef MANGOSBOT_TWO
         switch (GetQuestId()) {
         case 12680: //Grand Theft Palomino
         case 12687: //Into the Realm of Shadows
@@ -311,7 +311,7 @@ bool QuestObjectiveTravelDestination::IsPossible(const PlayerTravelInfo& info) c
                 return false;
         }
 
-        //Do not try to do pvp quests in bg's (no way to travel there). 
+        //Do not try to do pvp quests in bg's (no way to travel there).
         if (GetQuestTemplate()->GetType() == QUEST_TYPE_PVP)
         {
             if (!IsOverWorld(info.getPosition()))
@@ -493,7 +493,7 @@ bool RpgTravelDestination::IsActive(Player* bot, const PlayerTravelInfo& info) c
     AiObjectContext* context = ai->GetAiObjectContext();
 
     if (!IsPossible(info))
-        return false;   
+        return false;
 
     //Once the target rpged with it is added to the ignore list. We can now move on.
     std::set<ObjectGuid>& ignoreList = AI_VALUE(std::set<ObjectGuid>&,"ignore rpg target");
@@ -504,17 +504,17 @@ bool RpgTravelDestination::IsActive(Player* bot, const PlayerTravelInfo& info) c
         {
             return false;
         }
-    }    
+    }
 
     return !GuidPosition(HIGHGUID_UNIT, GetEntry()).IsHostileTo(bot);
 }
 
-std::string RpgTravelDestination::GetTitle() const 
+std::string RpgTravelDestination::GetTitle() const
 {
     std::ostringstream out;
 
     switch (GetPurpose())
-    {    
+    {
     case TravelDestinationPurpose::Vendor:
         out << "sell items to";
         break;
@@ -530,7 +530,7 @@ std::string RpgTravelDestination::GetTitle() const
     case TravelDestinationPurpose::Trainer:
         out << "train a skill at";
         break;
-    case TravelDestinationPurpose::GenericRpg: 
+    case TravelDestinationPurpose::GenericRpg:
         out << "find"; //Named travel purpose.
         break;
     default:
@@ -593,7 +593,7 @@ bool ExploreTravelDestination::IsActive(Player* bot, const PlayerTravelInfo& inf
     uint32 val = (uint32)(1 << (area->exploreFlag % 32));
     uint32 currFields = bot->GetUInt32Value(PLAYER_EXPLORED_ZONES_1 + offset);
 
-    return !(currFields & val);    
+    return !(currFields & val);
 }
 
 bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
@@ -664,9 +664,9 @@ bool BossTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 
     if ((int32)cInfo->MaxLevel > info.GetLevel() + 3)
         return false;
-    
+
     const MapEntry* mapEntry = ClosetMapEntry(info.getPosition());
-    
+
     if (info.IsInGroup())
     {
         if (info.IsInRaid())
@@ -812,7 +812,7 @@ bool GatherTravelDestination::IsActive(Player* bot, const PlayerTravelInfo& info
     AiObjectContext* context = ai->GetAiObjectContext();
 
     if (!IsPossible(info))
-        return false;   
+        return false;
 
 
     if (GetPurpose() != TravelDestinationPurpose::GatherFishing)
@@ -851,7 +851,7 @@ std::string GatherTravelDestination::GetTitle() const {
         out << "fish";
     }
     else
-    {   
+    {
         switch (GetPurpose())
         {
             case TravelDestinationPurpose::GatherSkinning:
@@ -952,7 +952,7 @@ bool TravelTarget::IsConditionsActive(bool clear)
 
     if (!player || !PlayerbotAIStorage::Instance().GetAI(player)) //No ai so clear target.
         return false;
-        
+
     AiObjectContext* playerContext = PlayerbotAIStorage::Instance().GetAI(player)->GetAiObjectContext();
 
     if (!playerContext)
@@ -1121,7 +1121,7 @@ int32 TravelMgr::GetAreaLevel(uint32 area_id)
     }
 
     //Get exploration level
-    if (area->AreaLevel) 
+    if (area->AreaLevel)
     {
         areaLevels[area_id] = area->AreaLevel;
         return area->AreaLevel;
@@ -1192,7 +1192,7 @@ int32 TravelMgr::GetAreaLevel(uint32 area_id)
     {
         areaLevels[area_id] = 0; //Set a temporary value so it wont be counted.
         level = GetAreaLevel(area->zone);
-        areaLevels[area_id] = level;        
+        areaLevels[area_id] = level;
         return areaLevels[area_id];
     }
 
@@ -1217,7 +1217,7 @@ void TravelMgr::LoadAreaLevels()
 
         if (result)
         {
-            BarGoLink bar(result->GetRowCount());            
+            BarGoLink bar(result->GetRowCount());
 
             do
             {
@@ -1265,7 +1265,7 @@ void TravelMgr::SetMobAvoidArea()
     {
         if (!sMapStore.LookupEntry(i))
             continue;
-        
+
         uint32 mapId = sMapStore.LookupEntry(i)->MapID;
         calculations.push_back(std::async([this, mapId] { SetMobAvoidAreaMap(mapId); }));
         bar.step();
@@ -1281,7 +1281,7 @@ void TravelMgr::SetMobAvoidArea()
     sLog.outString(">> Modified navmap areas for %d maps.", sMapStore.GetNumRows());
 }
 
-void TravelMgr::SetMobAvoidAreaMap(uint32 mapId) 
+void TravelMgr::SetMobAvoidAreaMap(uint32 mapId)
 {
     PathFinder path(mapId, 0);
     FactionTemplateEntry const* humanFaction = sFactionTemplateStore.LookupEntry(1);
@@ -1347,7 +1347,7 @@ void TravelMgr::LoadQuestTravelTable()
     sLog.outString("Loading trainable spells.");
     GAI_VALUE(trainableSpellMap*, "trainable spell map");
     GAI_VALUE(std::vector<MountValue>, "full mount list");
-    
+
     sLog.outString("Loading object locations.");
 
     EntryGuidps guidpMap = GAI_VALUE(EntryGuidps, "entry guidps");
@@ -1485,7 +1485,7 @@ void TravelMgr::LoadQuestTravelTable()
             continue;
 
         AreaTableEntry const* area = point.GetArea();
-       
+
         if (!area)
             continue;
 
@@ -1534,9 +1534,9 @@ void TravelMgr::LoadQuestTravelTable()
     sPlayerbotAIConfig.openLog("deaths.csv", "w");
     sPlayerbotAIConfig.openLog("player_paths.csv", "w");
     sPlayerbotAIConfig.openLog("travel_destinations.csv", "w");
-    sPlayerbotAIConfig.openLog("deadzone.csv", "w"); 
+    sPlayerbotAIConfig.openLog("deadzone.csv", "w");
     sPlayerbotAIConfig.openLog("bot_test_results.log", "w", true);
-    
+
 
     if (sPlayerbotAIConfig.hasLog("activity_pid.csv"))
     {
@@ -1589,7 +1589,7 @@ void TravelMgr::LoadQuestTravelTable()
     sTravelNodeMap.saveNodeStore();
 
     LoadFishLocations();
-   
+
     //Creature/gos/zone export.
     if (sPlayerbotAIConfig.hasLog("creatures.csv"))
     {
@@ -1695,7 +1695,7 @@ void TravelMgr::LoadQuestTravelTable()
 
             out.str("");
             out.clear();
-            
+
             out << "ironforgeAreaSouthLimit" << ",";
             WorldPosition().printWKT(pos, out, 1);
             out << std::fixed;
@@ -1783,7 +1783,7 @@ void TravelMgr::LoadQuestTravelTable()
             out << std::fixed;
 
             sPlayerbotAIConfig.log("vmangoslines.csv", out.str().c_str());
-            
+
             mapId = 1;
 
             static float const teldrassilSouthLimit[] = {
@@ -1812,7 +1812,7 @@ void TravelMgr::LoadQuestTravelTable()
             out << std::fixed;
 
             sPlayerbotAIConfig.log("vmangoslines.csv", out.str().c_str());
-       
+
             static float const northMiddleLimit[] = {
                   -2280.00f,  4054.00f,
                   -2401.00f,  2365.00f,
@@ -2189,7 +2189,7 @@ void TravelMgr::LoadQuestTravelTable()
         std::unordered_map<std::string, std::vector<WorldPosition>> zoneLocs;
 
         std::vector<WorldPosition> Locs = {};
-        
+
         for (auto& cdp : WorldPosition().GetCreaturesNear())
         {
             WorldPosition point(cdp);
@@ -2198,8 +2198,8 @@ void TravelMgr::LoadQuestTravelTable()
             if (zoneLocs.find(name) == zoneLocs.end())
                 zoneLocs.insert_or_assign(name, Locs);
 
-            zoneLocs.at(name).push_back(point);            
-        }        
+            zoneLocs.at(name).push_back(point);
+        }
 
         for (auto& loc : zoneLocs)
         {
@@ -2210,8 +2210,8 @@ void TravelMgr::LoadQuestTravelTable()
                 continue;
 
             std::vector<WorldPosition> points = loc.second;;
-           
-            std::ostringstream out; 
+
+            std::ostringstream out;
 
             WorldPosition pos = WorldPosition(points, WP_MEAN_CENTROID);
 
@@ -2228,7 +2228,7 @@ void TravelMgr::LoadQuestTravelTable()
                 out << std::to_string(-1);
 
             out << "\n";
-            
+
             out << "\"area\"" << ",";
             out << points.begin()->GetMapId() << ",";
             out << points.begin()->GetAreaName() << ",";
@@ -2243,7 +2243,7 @@ void TravelMgr::LoadQuestTravelTable()
 
             sPlayerbotAIConfig.log("zones.csv", out.str().c_str());
         }
-    }    
+    }
 
     if (sPlayerbotAIConfig.hasLog("telecache.csv"))
     {
@@ -2279,7 +2279,7 @@ void TravelMgr::LoadQuestTravelTable()
         }
     }
 
-#ifndef MANGOSBOT_TWO    
+#ifndef MANGOSBOT_TWO
     sTerrainMgr.Update(60 * 60 * 24);
 #else
     for (uint32 i = 0; i < sMapStore.GetNumRows(); ++i)
@@ -2294,14 +2294,14 @@ void TravelMgr::LoadQuestTravelTable()
 
         WorldPosition::unloadMapAndVMaps(mapId);
     }
-#endif     
+#endif
 }
 
 void TravelMgr::GetPopulatedGrids()
 {
     sLog.outString("Finding populated grids.");
 
-    BarGoLink bar(sMapStore.GetNumRows());      
+    BarGoLink bar(sMapStore.GetNumRows());
 
     for (uint32 i = 0; i < sMapStore.GetNumRows(); ++i)
     {
@@ -2391,7 +2391,7 @@ void TravelMgr::LoadFishLocations()
         if (!zone)
             continue;
 
-        TravelDestination* dest = AddDestination<GatherTravelDestination>(zone, TravelDestinationPurpose::GatherFishing);                
+        TravelDestination* dest = AddDestination<GatherTravelDestination>(zone, TravelDestinationPurpose::GatherFishing);
 
         dest->AddPoint(point);
         fishMap.AddPoint(point);
@@ -2411,7 +2411,7 @@ void TravelMgr::GetFishLocations()
     std::vector<std::future<void>> calculations;
 
     for (int32 mapId = 1000; mapId >= 0; mapId--)
-    {       
+    {
         bool hashFishing = false;
         for (uint32 i = 0; i < sAreaStore.GetNumRows(); ++i)    // areaflag numbered from 0
         {
@@ -2438,7 +2438,7 @@ void TravelMgr::GetFishLocations()
         bar.step();
     }
 
-    BarGoLink bar1(calculations.size());   
+    BarGoLink bar1(calculations.size());
 
     for (uint32 i = 0; i < calculations.size(); i++)
     {
@@ -2506,7 +2506,7 @@ void TravelMgr::GetFishLocations(uint32 mapId)
                         //    sLog.outError("no area %d %f %f %f", mapId, fishSpot.getX(), fishSpot.getY(), fishSpot.getZ());
                             continue;
                         }
-                   
+
                         inWater = fishSpot.isInWater();
 
                         if (!inWater)
@@ -2553,7 +2553,7 @@ void TravelMgr::GetFishLocations(uint32 mapId)
                             continue;
                     }
 
-                    fishSpots[zone].push_back(fishPos);                    
+                    fishSpots[zone].push_back(fishPos);
                 }
             }
         }
@@ -2589,7 +2589,7 @@ void TravelMgr::SaveFishLocations()
 
     BarGoLink bar(fishPoints.size());
 
-    uint32 count = 0;    
+    uint32 count = 0;
 
     for (auto& fishPoint : fishPoints)
     {
@@ -2644,7 +2644,7 @@ DestinationList TravelMgr::GetDestinations(const PlayerTravelInfo& info, uint32 
 
                 if (dest->DistanceTo(center) == FLT_MAX) //Do not return destinations on maps you can't path to.
                     continue;
-                
+
                 retDests.push_back(dest);
             }
         }
@@ -2663,7 +2663,7 @@ void TravelMgr::GetPartitionsLock(bool getLock)
 
         return;
     }
-    
+
     sTravelMgr.availableDestinationWorkers++;
     sTravelMgr.getDestinationVar.notify_one();
 }
@@ -2788,7 +2788,7 @@ PartitionedTravelList TravelMgr::GetPartitions(const WorldPosition& center, cons
                     probeFarthest = uint32(distance);
                 continue;
             }
-            
+
             point = TravelPoint(dest, position, distance);
         }
 
@@ -2861,7 +2861,7 @@ void TravelMgr::AddMapTransfer(WorldPosition start, WorldPosition end, float por
 
     if (sMap == eMap)
         return;
-    
+
     //Calculate shortcuts.
     if(makeShortcuts)
         for (auto& mapTransfers : mapTransfersMap)
@@ -2889,11 +2889,11 @@ void TravelMgr::AddMapTransfer(WorldPosition start, WorldPosition end, float por
 
     //Add actual transfer.
     auto mapTransfers = mapTransfersMap.find(std::make_pair(start.GetMapId(), end.GetMapId()));
-    
+
     if (mapTransfers == mapTransfersMap.end())
         mapTransfersMap.insert({ { sMap, eMap }, {MapTransfer(start, end, portalDistance)} });
     else
-        mapTransfers->second.push_back(MapTransfer(start, end, portalDistance));        
+        mapTransfers->second.push_back(MapTransfer(start, end, portalDistance));
 };
 
 void TravelMgr::LoadMapTransfers()
@@ -2913,7 +2913,7 @@ std::vector<std::pair<WorldPosition, float>> TravelMgr::sqMapTransDistances(cons
     if (startMapId == endMapId)
         return { { start, 0.0f } };
 
-    auto mapTransfers = mapTransfersMap.find({ startMapId, endMapId });   
+    auto mapTransfers = mapTransfersMap.find({ startMapId, endMapId });
 
     if (mapTransfers == mapTransfersMap.end())
         return {};

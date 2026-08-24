@@ -56,4 +56,3 @@ bool HasStrategyValue::Calculate()
 
     return ai->HasStrategy(tokens.back(), state);
 }
-

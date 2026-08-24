@@ -10,12 +10,12 @@ using namespace ai;
 float MyThreatValue::Calculate()
 {
     Unit* target = AI_VALUE(Unit*, qualifier);
-    
+
     if (target->getObjectGuid() != lastTarget) //Reset history if we switched target.
         LogCalculatedValue::Reset();
 
     lastTarget = target->getObjectGuid();
-      
+
     return ThreatValue::GetThreat(bot, target);
 }
 

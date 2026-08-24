@@ -43,7 +43,7 @@ namespace ai
     };
 
     /*
-    class TricksOfTheTradeOnTankTrigger : public BuffOnTankTrigger 
+    class TricksOfTheTradeOnTankTrigger : public BuffOnTankTrigger
     {
     public:
         TricksOfTheTradeOnTankTrigger(PlayerbotAI* ai) : BuffOnTankTrigger(ai, "tricks of the trade", 1) {}
@@ -58,7 +58,7 @@ namespace ai
 #endif
 #ifdef CMANGOS
                 (ai->GetBot()->IsInGroup((Player*)GetTarget(), true) || ai->GetBot()->IsInGroup((Player*)GetTarget()))
-#endif               
+#endif
                 ;
         }
     };
@@ -85,7 +85,7 @@ namespace ai
     class NoStealthTrigger : public HasNoAuraTrigger
     {
     public:
-        NoStealthTrigger(PlayerbotAI* ai) : HasNoAuraTrigger(ai, "stealth") 
+        NoStealthTrigger(PlayerbotAI* ai) : HasNoAuraTrigger(ai, "stealth")
         {
             checkInterval = 2;
         }
@@ -120,7 +120,7 @@ namespace ai
         }
     };
 
-    class StealthTrigger : public Trigger 
+    class StealthTrigger : public Trigger
     {
     public:
         StealthTrigger(PlayerbotAI* ai) : Trigger(ai, "stealth") {}
@@ -245,7 +245,7 @@ namespace ai
     {
     public:
         ApplyPoisonTrigger(PlayerbotAI* ai, bool inMainHand, const std::vector<uint32>& inPoisonEnchantIds, std::string name = "apply poison")
-        : Trigger(ai, name, 5) 
+        : Trigger(ai, name, 5)
         , mainHand(inMainHand)
         , poisonEnchantIds(inPoisonEnchantIds) {}
 

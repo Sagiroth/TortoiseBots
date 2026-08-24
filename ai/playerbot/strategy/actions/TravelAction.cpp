@@ -15,10 +15,10 @@ using namespace ai;
 using namespace MaNGOS;
 
 bool TravelAction::Execute(Event& event)
-{    
+{
     TravelTarget * target = AI_VALUE(TravelTarget *, "travel target");
-    
-    target->CheckStatus();     
+
+    target->CheckStatus();
 
     SET_AI_VALUE2(time_t, "manual time", "next travel check", time(0) + 5);
 
@@ -43,7 +43,7 @@ bool TravelAction::isUseful()
     TravelTarget* target = AI_VALUE(TravelTarget*, "travel target");
     if (target->GetStatus() == TravelStatus::TRAVEL_STATUS_WORK)
         return true;
-    
+
     if (target->GetStatus() == TravelStatus::TRAVEL_STATUS_COOLDOWN)
         return true;
 

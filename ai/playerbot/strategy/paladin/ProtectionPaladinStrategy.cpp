@@ -551,7 +551,7 @@ NextAction** ProtectionPaladinStrategy::GetDefaultCombatActions()
 
 void ProtectionPaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-    PaladinStrategy::InitCombatTriggers(triggers);  
+    PaladinStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
         "has blessing of salvation",

@@ -9,7 +9,7 @@ class DisciplinePriestStrategyActionNodeFactory : public NamedObjectFactory<Acti
 public:
     DisciplinePriestStrategyActionNodeFactory()
     {
-        
+
     }
 
 private:

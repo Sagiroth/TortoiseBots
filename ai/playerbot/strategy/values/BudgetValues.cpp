@@ -14,7 +14,7 @@ uint32 RepairCostValue::RepairCost(const Item* item, bool fullCost)
     uint32 curDurability = item->GetUInt32Value(ITEM_FIELD_DURABILITY);
 
     uint32 LostDurability = maxDurability;
-        
+
     if (!fullCost)
     {
         LostDurability = LostDurability - curDurability;
@@ -45,7 +45,7 @@ uint32 RepairCostValue::Calculate()
     for (int i = EQUIPMENT_SLOT_START; i < INVENTORY_SLOT_ITEM_END; ++i)
     {
         uint16 pos = ((INVENTORY_SLOT_BAG_0 << 8) | i);
-        
+
         Item* item = bot->GetItemByPos(pos);
 
         if (!item)
@@ -75,7 +75,7 @@ uint32 MaxGearRepairCostValue::Calculate()
         uint32 curDurability = item->GetUInt32Value(ITEM_FIELD_DURABILITY);
 
         if (i >= EQUIPMENT_SLOT_END && curDurability >= maxDurability) //Only count items equiped or already damanged.
-            continue;        
+            continue;
 
         TotalCost += RepairCost(item, true);
     }
@@ -336,7 +336,7 @@ bool HasAllMoneyForValue::Calculate()
 }
 
 
-uint32 FreeMoneyForValue::Calculate() 
+uint32 FreeMoneyForValue::Calculate()
 {
     uint32 money = bot->GetMoney();
 

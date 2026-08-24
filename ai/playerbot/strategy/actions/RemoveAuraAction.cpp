@@ -12,6 +12,6 @@ bool RemoveAuraAction::Execute(Event& event)
     {
         spell = event.GetParam();
     }
-    
+
     return ai->RemoveAura(spell);
 }

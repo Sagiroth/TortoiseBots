@@ -73,13 +73,13 @@ void RogueStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "critical health",
-        NextAction::array(0, new NextAction("blind", ACTION_EMERGENCY + 2), 
-                             new NextAction("vanish", ACTION_EMERGENCY + 1), 
+        NextAction::array(0, new NextAction("blind", ACTION_EMERGENCY + 2),
+                             new NextAction("vanish", ACTION_EMERGENCY + 1),
                              new NextAction("vanish", ACTION_EMERGENCY), NULL)));
 
     triggers.push_back(new TriggerNode(
         "low health",
-        NextAction::array(0, new NextAction("evasion", ACTION_EMERGENCY), 
+        NextAction::array(0, new NextAction("evasion", ACTION_EMERGENCY),
                              new NextAction("feint", ACTION_EMERGENCY), NULL)));
 
     triggers.push_back(new TriggerNode(
@@ -418,7 +418,7 @@ void RogueStealthPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
 
     triggers.push_back(new TriggerNode(
         "enemy flagcarrier near",
-        NextAction::array(0, new NextAction("sprint", ACTION_HIGH), 
+        NextAction::array(0, new NextAction("sprint", ACTION_HIGH),
                              new NextAction("unstealth", ACTION_HIGH), NULL)));
 }
 
@@ -491,7 +491,7 @@ void RoguePoisonsPveStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& tri
 
 void RoguePoisonsRaidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-    
+
 }
 
 void RoguePoisonsRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -519,13 +519,13 @@ void RogueStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "low health",
-        NextAction::array(0, new NextAction("blind", ACTION_EMERGENCY + 2), 
-                             new NextAction("vanish", ACTION_EMERGENCY + 1), 
+        NextAction::array(0, new NextAction("blind", ACTION_EMERGENCY + 2),
+                             new NextAction("vanish", ACTION_EMERGENCY + 1),
                              new NextAction("vanish", ACTION_EMERGENCY), NULL)));
 
     triggers.push_back(new TriggerNode(
         "low health",
-        NextAction::array(0, new NextAction("evasion", ACTION_EMERGENCY), 
+        NextAction::array(0, new NextAction("evasion", ACTION_EMERGENCY),
                              new NextAction("feint", ACTION_EMERGENCY), NULL)));
 
     triggers.push_back(new TriggerNode(
@@ -955,13 +955,13 @@ void RogueStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
         triggers.push_back(new TriggerNode(
         "low health",
-        NextAction::array(0, new NextAction("blind", ACTION_EMERGENCY + 2), 
-                             new NextAction("vanish", ACTION_EMERGENCY + 1), 
+        NextAction::array(0, new NextAction("blind", ACTION_EMERGENCY + 2),
+                             new NextAction("vanish", ACTION_EMERGENCY + 1),
                              new NextAction("vanish", ACTION_EMERGENCY), NULL)));
 
     triggers.push_back(new TriggerNode(
         "low health",
-        NextAction::array(0, new NextAction("evasion", ACTION_EMERGENCY), 
+        NextAction::array(0, new NextAction("evasion", ACTION_EMERGENCY),
                              new NextAction("feint", ACTION_EMERGENCY), NULL)));
 
     triggers.push_back(new TriggerNode(

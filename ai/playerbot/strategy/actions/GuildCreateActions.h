@@ -8,7 +8,7 @@ namespace ai
 {
     class TravelTarget;
 
-    class BuyPetitionAction : public Action 
+    class BuyPetitionAction : public Action
     {
     public:
         BuyPetitionAction(PlayerbotAI* ai) : Action(ai, "buy petition") {}
@@ -17,7 +17,7 @@ namespace ai
         static bool canBuyPetition(Player* bot);
     };
 
-    class PetitionOfferAction : public Action 
+    class PetitionOfferAction : public Action
     {
     public:
         PetitionOfferAction(PlayerbotAI* ai, std::string name = "petition offer") : Action(ai, name) {}
@@ -25,7 +25,7 @@ namespace ai
         virtual bool isUseful() override { return sPlayerbotAIConfig.randomBotFormGuild && !bot->GetGuildId(); };
     };
 
-    class PetitionOfferNearbyAction : public PetitionOfferAction 
+    class PetitionOfferNearbyAction : public PetitionOfferAction
     {
     public:
         PetitionOfferNearbyAction(PlayerbotAI* ai) : PetitionOfferAction(ai, "petition offer nearby") {}
@@ -33,7 +33,7 @@ namespace ai
         virtual bool isUseful() override { return sPlayerbotAIConfig.randomBotFormGuild && !bot->GetGuildId() && AI_VALUE2(uint32, "item count", chat->formatQItem(5863)) && AI_VALUE(uint8, "petition signs") < sWorld.getConfig(CONFIG_UINT32_MIN_PETITION_SIGNS); };
     };
 
-    class PetitionTurnInAction : public ChooseTravelTargetAction 
+    class PetitionTurnInAction : public ChooseTravelTargetAction
     {
     public:
         PetitionTurnInAction(PlayerbotAI* ai) : ChooseTravelTargetAction(ai, "turn in petition") {}
@@ -41,7 +41,7 @@ namespace ai
         virtual bool isUseful() override;
     };
 
-    class BuyTabardAction : public ChooseTravelTargetAction 
+    class BuyTabardAction : public ChooseTravelTargetAction
     {
     public:
         BuyTabardAction(PlayerbotAI* ai) : ChooseTravelTargetAction(ai, "buy tabard") {}

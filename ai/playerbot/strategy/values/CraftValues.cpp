@@ -31,7 +31,7 @@ std::vector<uint32> CraftSpellsValue::Calculate()
 #endif
 
         if (pSpellInfo->Effect[0] != SPELL_EFFECT_CREATE_ITEM)
-            continue;      
+            continue;
 
         for (uint8 i = 0; i < MAX_EFFECT_INDEX; i++)
         {

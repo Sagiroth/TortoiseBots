@@ -99,7 +99,7 @@ bool FollowAction::CanDeadFollow(Unit* target)
     {
         return false;
     }
-    
+
     return true;
 }
 
@@ -133,7 +133,7 @@ bool FleeToMasterAction::Execute(Event& event)
     uint32 scale = 5;
     if (bot->GetGroup() && bot->GetGroup()->GetMembersCount() > 5)
         scale = bot->GetGroup()->GetMembersCount();
-        
+
 
     if (distance > sPlayerbotAIConfig.reactDistance && bot->IsInCombat())
     {
@@ -154,7 +154,7 @@ bool FleeToMasterAction::Execute(Event& event)
     else
         if (!urand(0, scale*6))
             ai->TellPlayerNoFacing(requester, BOT_TEXT("wait_travel_medium"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
-           
+
     SetDuration(3000U);
     return true;
 }
@@ -180,7 +180,7 @@ bool FleeToMasterAction::isUseful()
         return false;
 
     Unit* fTarget = AI_VALUE(Unit*, "master target");
-    
+
     if (!CanDeadFollow(fTarget))
         return false;
 
@@ -196,4 +196,3 @@ bool FleeToMasterAction::isUseful()
 
     return true;
 }
-

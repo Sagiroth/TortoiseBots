@@ -9,9 +9,9 @@ std::string LowercaseString(const std::string& string)
     std::string result = string;
     if (!string.empty())
     {
-        std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) 
-        { 
-            return std::tolower(c); 
+        std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c)
+        {
+            return std::tolower(c);
         });
     }
 
@@ -93,7 +93,7 @@ bool SetFocusHealTargetsAction::Execute(Event& event)
                 return true;
             }
             else if (param == "none" || param == "unset" || param == "clear")
-            {   
+            {
                 focusHealTargets.clear();
                 SET_AI_VALUE(std::list<ObjectGuid>, "focus heal targets", focusHealTargets);
                 ai->ChangeStrategy("-focus heal targets", BotState::BOT_STATE_COMBAT);

@@ -115,7 +115,7 @@ WorldPosition::WorldPosition(const std::vector<WorldPosition*>& list, const Worl
 }
 
 WorldPosition::WorldPosition(const std::vector<WorldPosition>& list, const WorldPositionConst conType)
-{    
+{
     uint32 size = list.size();
     if (size == 0)
         return;
@@ -129,7 +129,7 @@ WorldPosition::WorldPosition(const std::vector<WorldPosition>& list, const World
     {
         WorldPosition pos = WorldPosition(list, WP_CENTROID);
         set(pos.closestSq(list));
-    }    
+    }
 }
 
 float WorldPosition::distance(const WorldPosition& to) const
@@ -332,7 +332,7 @@ bool WorldPosition::IsInStaticLineOfSight(WorldPosition pos, float heightMod) co
     {
         return false;
     }
-    
+
     float srcX = x;
     float srcY = y;
     float srcZ = z + heightMod;
@@ -354,7 +354,7 @@ bool WorldPosition::canFly() const
     uint32 zoneid, areaid;
     getTerrain()->GetZoneAndAreaId(zoneid, areaid, getX(), getY(), getZ());
 
-#ifdef MANGOSBOT_ONE  
+#ifdef MANGOSBOT_ONE
     uint32 v_map = GetVirtualMapForMapAndZone(getMapId(), zoneid);
     MapEntry const* mapEntry = sMapStore.LookupEntry(v_map);
     if (!mapEntry || mapEntry->addon < 1 || !mapEntry->IsContinent())
@@ -395,7 +395,7 @@ float WorldPosition::projectOnSegment(const WorldPosition& p1, const WorldPositi
 
 G3D::Vector3 WorldPosition::getVector3() const
 {
-    return G3D::Vector3(x, y, z); 
+    return G3D::Vector3(x, y, z);
 }
 
 std::string WorldPosition::print(uint8 precision, bool onlyXyz) const
@@ -442,7 +442,7 @@ void WorldPosition::printWKT(const std::vector<WorldPosition>& points, std::ostr
 }
 
 WorldPosition WorldPosition::getDisplayLocation() const
-{ 
+{
     WorldPosition mapOffset = sTravelNodeMap.getMapOffset(getMapId());
     return offset(mapOffset);
 };
@@ -645,7 +645,7 @@ bool WorldPosition::SetOnTransport(GenericTransport* transport, int32 startHeigh
 {
     if (!transport)
         return false;
-    
+
     WorldPosition transPos(transport);
 
     transPos.SetTranpotHeightToFloor(transport->GetEntry());
@@ -786,7 +786,7 @@ std::vector<WorldPosition> WorldPosition::fromGridPair(const GridPair& gridPair,
 
         retVec.push_back(WorldPosition(mapId, g));
     }
-   
+
     return retVec;
 }
 
@@ -810,7 +810,7 @@ std::vector<WorldPosition> WorldPosition::fromCellPair(const CellPair& cellPair)
 }
 
 std::vector<WorldPosition> WorldPosition::gridFromCellPair(const CellPair& cellPair) const
-{    
+{
     Cell c(cellPair);
 
     return fromGridPair(GridPair(c.GridX(), c.GridY()), getMapId());
@@ -1081,7 +1081,7 @@ bool WorldPosition::setAtWaterSurface()
 
 bool WorldPosition::cropPathTo(std::vector<WorldPosition>& path, const float maxDistance) const
 {
-    float realMaxDistance = maxDistance ? maxDistance : sPlayerbotAIConfig.targetPosRecalcDistance; 
+    float realMaxDistance = maxDistance ? maxDistance : sPlayerbotAIConfig.targetPosRecalcDistance;
 
     if (path.empty())
         return false;
@@ -1193,9 +1193,9 @@ bool WorldPosition::ClosestCorrectPoint(float maxRange, float maxHeight, uint32 
     return dtStatusSucceed(dtResult) && polyRef != INVALID_POLYREF;
 }
 
-bool WorldPosition::GetReachableRandomPointOnGround(const Player* bot, const float radius, const bool randomRange) 
+bool WorldPosition::GetReachableRandomPointOnGround(const Player* bot, const float radius, const bool randomRange)
 {
-#ifndef MANGOSBOT_TWO         
+#ifndef MANGOSBOT_TWO
     return getMap(bot ? bot->GetInstanceId() : getFirstInstanceId())->GetReachableRandomPointOnGround(x, y, z, radius, randomRange);
 #else
     return getMap(bot ? bot->GetInstanceId() : getFirstInstanceId())->GetReachableRandomPointOnGround(bot->GetPhaseMask(), x, y, z, radius, randomRange);
@@ -1238,7 +1238,7 @@ std::vector<WorldPosition> WorldPosition::ComputePathToRandomPoint(const Player*
     pathfinder->setAreaCost(13, 20.0f);
 
     std::vector<WorldPosition> path = getPathStepFrom(start, pathfinder, bot);
-    
+
     if (path.size())
         set(path.back());
     else
@@ -1252,10 +1252,10 @@ uint32 WorldPosition::getUnitsAggro(const std::list<ObjectGuid>& units, const Pl
     uint32 count = 0;
     for (auto guid : units)
     {
-        Unit* unit = GuidPosition(guid,bot).GetUnit(bot->GetInstanceId()); 
-        
-        if (!unit) continue; 
-        
+        Unit* unit = GuidPosition(guid,bot).GetUnit(bot->GetInstanceId());
+
+        if (!unit) continue;
+
         if (this->sqDistance(unit) > unit->GetAttackDistance(bot) * unit->GetAttackDistance(bot))
             continue;
 

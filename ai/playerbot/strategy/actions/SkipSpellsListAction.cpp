@@ -20,7 +20,7 @@ bool SkipSpellsListAction::Execute(Event& event)
         return true;
     }
     else if (cmd.empty() || cmd == "?")
-    {   
+    {
         if (skipSpells.empty())
         {
             ai->TellPlayer(requester, "Ignored spell list is empty");
@@ -120,17 +120,17 @@ std::vector<std::string> SkipSpellsListAction::ParseSpells(const std::string& te
     std::vector<std::string> spells;
 
     size_t pos = 0;
-    while (pos != std::string::npos) 
+    while (pos != std::string::npos)
     {
         size_t nextPos = text.find(',', pos);
         std::string token = text.substr(pos, nextPos - pos);
         spells.push_back(token);
 
-        if (nextPos != std::string::npos) 
+        if (nextPos != std::string::npos)
         {
             pos = nextPos + 1;
         }
-        else 
+        else
         {
             break;
         }

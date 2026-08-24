@@ -11,7 +11,7 @@ namespace ai
 	public:
         PartyMemberToHeal(PlayerbotAI* ai, std::string name = "party member to heal") :
           PartyMemberValue(ai, name) {}
-    
+
     protected:
         virtual Unit* Calculate() override;
         bool CanHealPet(Pet* pet);

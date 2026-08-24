@@ -267,4 +267,3 @@ uint8 SpeedValue::Calculate()
 
     return (uint8) (100.0f * target->GetSpeedRate(MOVE_RUN));
 }
-

@@ -4,7 +4,7 @@
 
 namespace ai
 {
-    class WtsAction : public ChatCommandAction 
+    class WtsAction : public ChatCommandAction
     {
     public:
         WtsAction(PlayerbotAI* ai) : ChatCommandAction(ai, "wts") {}

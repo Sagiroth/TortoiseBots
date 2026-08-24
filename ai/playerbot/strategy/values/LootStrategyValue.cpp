@@ -39,7 +39,7 @@ bool LootStrategyValue::CanLoot(ItemQualifier& itemQualifier, PlayerbotAI* ai)
         return true;
 
     std::vector<std::string> strategies = StrSplit(AI_VALUE(std::string, "loot strategy"), ",");
-    
+
     for (std::string& strategy : strategies) //equip,quest,skill,disenchant,use,vendor,trash
     {
         if (strategy == "equip" && usage == ItemUsage::ITEM_USAGE_EQUIP)

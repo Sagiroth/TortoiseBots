@@ -46,7 +46,7 @@ namespace ai
         bool UseItem(Player* requester, uint32 itemId, GameObject* target);
         bool UseItem(Player* requester, uint32 itemId, Item* target);
         bool UseGameObject(Player* requester, Event& event, GameObject* gameObject);
-        
+
         //void TellConsumableUse(Player* requester, Item* item, std::string action, float percent);
 
         bool HasItemCooldown(uint32 itemId) const;
@@ -81,7 +81,7 @@ namespace ai
         virtual uint32 GetItemId() override { return  0; }
     };
 
-    class UseSpellItemAction : public UseAction 
+    class UseSpellItemAction : public UseAction
     {
     public:
         UseSpellItemAction(PlayerbotAI* ai, std::string name) : UseAction(ai, name) {}
@@ -178,7 +178,7 @@ namespace ai
         virtual bool Execute(Event& event) override;
 
         bool isUseful() override;
-    
+
         // Used when this action is executed as a reaction
         bool ShouldReactionInterruptMovement() const override { return true; }
     };
@@ -321,7 +321,7 @@ namespace ai
 
         virtual bool isUseful() override;
         virtual bool isPossible() override {return AI_VALUE2(uint32,"item count", "recipe") > 0; }
-      
+
         virtual bool Execute(Event& event) override;
 
         // Used when this action is executed as a reaction
@@ -365,12 +365,12 @@ namespace ai
         virtual bool isUseful() override { return UseItemIdAction::isUseful() && bot->GetSkillValue(202) >= 205 && bot->GetHealth() > 1000; }
 
         virtual uint32 GetItemId() override
-        { 
+        {
 #ifndef MANGOSBOT_ZERO
             if (bot->InArena())
                 return false;
 #endif
-            return (bot->GetLevel() >= 68) ? 23827 : 10646; 
+            return (bot->GetLevel() >= 68) ? 23827 : 10646;
         }
     };
 
@@ -487,7 +487,7 @@ namespace ai
 
             if (bot->GetSkillValue(129) < 1)
                 return false;
-              
+
             // Prevent tanks from bandaging in dungeons and raids
             if (ai->IsTank(bot) && ai->IsStateActive(BotState::BOT_STATE_COMBAT))
             {
@@ -574,12 +574,12 @@ namespace ai
         }
 
         virtual uint32 GetItemId() override
-        { 
+        {
             if (bot->GetSkillValue(202) >= 325)
                 return 23737;
             if (bot->GetSkillValue(202) >= 260)
                 return 15993;
-            return 4390; 
+            return 4390;
         }
     };
 

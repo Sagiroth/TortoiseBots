@@ -281,7 +281,7 @@ void TestRegistry::GenerateMovementTests(int maxTests, float minDist, float maxD
 }
 
 void TestRegistry::GenerateBossWalkTest()
-{    
+{
     DestinationList bossDestinations = sTravelMgr.GetDestinations(PlayerTravelInfo(), (uint32)TravelDestinationPurpose::Boss, {}, false);
 
      std::vector<std::string> instanceGroupTemplate = {
@@ -394,11 +394,11 @@ void TestRegistry::GenerateBossWalkTest()
                {"instance_entry",   mapName                                        },
                {"boss_destination", bossName                                       }
             });
-            
+
         }
     }
 
-    
+
 }
 
 bool TestRegistry::LookupNamedLocation(const std::string& name, GuidPosition& out)
@@ -522,7 +522,7 @@ void TestRegistry::EnsureTestsRegistered()
             {"expected_item_1", "17015"},
             {"expected_item_2", "18805"}
         });
-    
+
     /*
     std::vector<std::string> instanceGroupTemplate = {
         "# instance progression with large group and dead-mob observation",
@@ -545,7 +545,7 @@ void TestRegistry::EnsureTestsRegistered()
             {"dead_mobs_min", "0"},
             {"instance_entry", "zul'gurub"},
             {"boss_destination", "zg_boss1_room"}
-        }); 
+        });
      */
 
     std::vector<std::string> followTemplate = {

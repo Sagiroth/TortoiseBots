@@ -26,6 +26,6 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return { "nearest npcs", "item usage" }; }
-#endif 
+#endif
     };
 }

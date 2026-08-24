@@ -17,7 +17,7 @@ namespace ai
         uint8 GetProgressionLevel(uint32 itemLevel);
         uint8 GetMasterAverageProgressionLevel();
         uint8 GetMasterItemProgressionLevel(uint8 slot, uint8 avgProgressionLevel);
-       
+
         void EnchantItem(Item* item);
 
     private:

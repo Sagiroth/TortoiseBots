@@ -6,7 +6,7 @@
 
 namespace ai
 {
-    class StayActionBase : public MovementAction 
+    class StayActionBase : public MovementAction
     {
     public:
         StayActionBase(PlayerbotAI* ai, std::string name) : MovementAction(ai, name) {}
@@ -15,7 +15,7 @@ namespace ai
         bool Stay(Player* requester);
     };
 
-    class StayAction : public StayActionBase 
+    class StayAction : public StayActionBase
     {
     public:
         StayAction(PlayerbotAI* ai) : StayActionBase(ai, "stay") {}
@@ -23,7 +23,7 @@ namespace ai
         virtual bool isUseful() override;
     };
 
-    class SitAction : public StayActionBase 
+    class SitAction : public StayActionBase
     {
     public:
         SitAction(PlayerbotAI* ai) : StayActionBase(ai, "sit") {}

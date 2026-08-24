@@ -89,14 +89,14 @@ namespace ai
 		virtual bool IsActive() override;
 	};
 
-	class LoseAggroTrigger : public Trigger 
+	class LoseAggroTrigger : public Trigger
     {
 	public:
 		LoseAggroTrigger(PlayerbotAI* ai) : Trigger(ai, "lose aggro") {}
 		virtual bool IsActive() override;
 	};
 
-	class HasAggroTrigger : public Trigger 
+	class HasAggroTrigger : public Trigger
     {
 	public:
 	    HasAggroTrigger(PlayerbotAI* ai) : Trigger(ai, "have aggro") {}
@@ -464,7 +464,7 @@ namespace ai
         virtual bool IsActive() override;
     };
 
-    class TargetInSightTrigger : public Trigger 
+    class TargetInSightTrigger : public Trigger
     {
     public:
         TargetInSightTrigger(PlayerbotAI* ai) : Trigger(ai, "target in sight") {}
@@ -510,7 +510,7 @@ namespace ai
         RandomTrigger(PlayerbotAI* ai, std::string name, int probability = 7) : Trigger(ai, name)
         {
             this->probability = probability;
-            lastCheck = time(0);         
+            lastCheck = time(0);
         }
 
         virtual bool IsActive() override;
@@ -634,10 +634,10 @@ namespace ai
 		}
 	};
 
-	class ItemCountTrigger : public Trigger 
+	class ItemCountTrigger : public Trigger
     {
 	public:
-		ItemCountTrigger(PlayerbotAI* ai, std::string item, int count, int interval = 30) : Trigger(ai, item, interval) 
+		ItemCountTrigger(PlayerbotAI* ai, std::string item, int count, int interval = 30) : Trigger(ai, item, interval)
         {
 			this->item = item;
 			this->count = count;
@@ -669,7 +669,7 @@ namespace ai
         int auraTypeId;
 	};
 
-    class HasNoAuraTrigger : public Trigger 
+    class HasNoAuraTrigger : public Trigger
     {
     public:
         HasNoAuraTrigger(PlayerbotAI* ai, std::string spell) : Trigger(ai, spell) {}
@@ -968,7 +968,7 @@ namespace ai
         virtual bool IsActive() override { return !AI_VALUE(std::list<Item*>, "trinkets on use").empty(); }
     };
 
-    class HasAreaDebuffTrigger : public Trigger 
+    class HasAreaDebuffTrigger : public Trigger
     {
     public:
         HasAreaDebuffTrigger(PlayerbotAI* ai) : Trigger(ai, "has area debuff", 3) {}

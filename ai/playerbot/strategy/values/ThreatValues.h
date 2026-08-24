@@ -27,11 +27,11 @@ namespace ai
 	{
 	public:
         ThreatValue(PlayerbotAI* ai, std::string name = "threat") : Uint8CalculatedValue(ai, name), Qualified() {}
-    	virtual uint8 Calculate() override;
+	virtual uint8 Calculate() override;
         static float GetThreat(Player* player, Unit* target);
         static float GetTankThreat(PlayerbotAI* ai, Unit* target);
 
     protected:
-    	uint8 Calculate(Unit* target);
+	uint8 Calculate(Unit* target);
     };
 }

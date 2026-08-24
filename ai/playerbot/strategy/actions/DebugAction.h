@@ -10,7 +10,7 @@ namespace ai
         uint32 mapId;
         float x, y, z;
         std::string name;
-        
+
         PositionTarget() : valid(false), mapId(0), x(0), y(0), z(0) {}
     };
 
@@ -30,7 +30,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
 
         void FakeSpell(uint32 spellId, Unit* truecaster, Unit* caster, ObjectGuid target = ObjectGuid(), std::list<ObjectGuid> otherTargets = {}, std::list<ObjectGuid> missTargets = {}, WorldPosition source = WorldPosition(), WorldPosition dest = WorldPosition(), bool forceDest = false);
         void addAura(uint32 spellId, Unit* target);

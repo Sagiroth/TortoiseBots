@@ -201,7 +201,7 @@ bool SeeSpellAction::Execute(Event& event)
             SetFormationOffset(requester, spellPosition);
 
         SET_AI_VALUE2(WorldPosition, "RTSC saved location", locationName, spellPosition);
-        
+
         Creature* wpCreature = bot->SummonCreature(15631, spellPosition.getX(), spellPosition.getY(), spellPosition.getZ(), spellPosition.getO(), TEMPSPAWN_TIMED_DESPAWN, 2000.0f);
         wpCreature->SetObjectScale(0.5f);
         RESET_AI_VALUE(std::string, "RTSC next spell action");
@@ -209,7 +209,7 @@ bool SeeSpellAction::Execute(Event& event)
         return true;
     }
 
-    return false;        
+    return false;
 }
 
 bool SeeSpellAction::SelectSpell(Player* requester, WorldPosition& spellPosition)

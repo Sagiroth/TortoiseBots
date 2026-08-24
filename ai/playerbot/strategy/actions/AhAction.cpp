@@ -319,10 +319,10 @@ bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auct
             freeMoney[ItemUsage::ITEM_USAGE_SKILL] = freeMoney[ItemUsage::ITEM_USAGE_DISENCHANT] = (uint32)NeedMoneyFor::tradeskill;
             freeMoney[ItemUsage::ITEM_USAGE_AMMO] = (uint32)NeedMoneyFor::ammo;
             freeMoney[ItemUsage::ITEM_USAGE_QUEST] = freeMoney[ItemUsage::ITEM_USAGE_AH] = freeMoney[ItemUsage::ITEM_USAGE_VENDOR] = freeMoney[ItemUsage::ITEM_USAGE_FORCE_NEED] = freeMoney[ItemUsage::ITEM_USAGE_FORCE_GREED] = (uint32)NeedMoneyFor::anything;
-         
+
             ItemUsage usage = AI_VALUE2(ItemUsage, "item usage", ItemQualifier(auction).GetQualifier());
 
-            std::string reason = ItemUsageValue::ReasonForNeed(usage, auction, auction->itemCount, bot);            
+            std::string reason = ItemUsageValue::ReasonForNeed(usage, auction, auction->itemCount, bot);
 
             bidItems = BidItem(requester, auction, price, auctioneer, price == currentBuyoutPrice, reason);
 

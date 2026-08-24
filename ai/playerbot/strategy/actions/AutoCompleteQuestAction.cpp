@@ -10,7 +10,7 @@ bool AutoCompleteQuestAction::Execute(Event& event)
     // Static list of quest IDs to auto-complete
     static const std::vector<uint32> autoCompleteQuests = {
         0,     //Dummy quest : please remove when a classic quest is found that needs to be skipped.
-#ifdef MANGOSBOT_TWO  
+#ifdef MANGOSBOT_TWO
         25229, // a-few-good-gnomes: Bot uses motivatron but it does nothing in game.
         12641, // Death Comes From On High: Requires complex vehicle control.
 #endif

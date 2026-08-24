@@ -34,7 +34,7 @@ bool CustomStrategyEditAction::PrintHelp(Player* requester)
             Field* fields = results->Fetch();
             std::string name = fields[0].GetString();
             ai->TellPlayer(requester, name);
-        } 
+        }
         while (results->NextRow());
     }
 
@@ -57,7 +57,7 @@ bool CustomStrategyEditAction::Print(std::string name, Player* requester)
             uint32 idx = fields[0].GetUInt32();
             std::string action = fields[1].GetString();
             PrintActionLine(idx, action, requester);
-        } 
+        }
         while (results->NextRow());
     }
 

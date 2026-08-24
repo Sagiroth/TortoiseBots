@@ -19,7 +19,7 @@ class MemoryMonitor
             return instance;
         }
 
-	public:        
+	public:
         //Objecttype is the name of the class/struct.
         //Object is a pointer to the object or unique identifier.
         //level = 0 only count total number of objects, otherwise log the creation stack of any (object%level) = 0 object.

@@ -85,7 +85,7 @@ bool BuyPetitionAction::canBuyPetition(Player* bot)
         return false;
 
     if (bot->GetGuildIdInvited())
-        return false;    
+        return false;
 
     PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     AiObjectContext* context = ai->GetAiObjectContext();
@@ -189,7 +189,7 @@ bool PetitionOfferNearbyAction::Execute(Event& event)
 
         if (botAi)
         {
-            if (botAi->HasActivePlayerMaster()) //Do not invite alts of active players. 
+            if (botAi->HasActivePlayerMaster()) //Do not invite alts of active players.
                 continue;
         }
 
@@ -258,7 +258,7 @@ bool PetitionTurnInAction::Execute(Event& event)
             cl = urand(0, 17);
             br = urand(0, 7);
             st = urand(0, 180);
-            guild->SetEmblem(st, cl, br, bc, bg);           
+            guild->SetEmblem(st, cl, br, bc, bg);
 
             //LANG_GUILD_VETERAN -> can invite, private and initiate -> personal note.
             guild->SetRankRights(2, GR_RIGHT_GCHATLISTEN | GR_RIGHT_GCHATSPEAK | GR_RIGHT_INVITE | GR_RIGHT_EPNOTE);
@@ -269,7 +269,7 @@ bool PetitionTurnInAction::Execute(Event& event)
         return true;
     }
 
-    //Select a new target to travel to. 
+    //Select a new target to travel to.
     TravelTarget newTarget = TravelTarget(ai);
 
     ai->TellDebug(requester, "Handing in guild petition", "debug travel");
@@ -342,7 +342,7 @@ bool BuyTabardAction::Execute(Event& event)
             return false;
     }
 
-    return ai->DoSpecificAction("request named travel target::tabard", Event("can buy tabard"), true);  
+    return ai->DoSpecificAction("request named travel target::tabard", Event("can buy tabard"), true);
 };
 
 bool BuyTabardAction::isUseful()

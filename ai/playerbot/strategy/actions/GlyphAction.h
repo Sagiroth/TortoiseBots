@@ -10,7 +10,7 @@ namespace ai
        GlyphAction(PlayerbotAI* ai, std::string name = "set glyph") : Action(ai, name), Qualified() {}
         virtual bool Execute(Event& event) override;
         typedef void (GlyphAction::* ProcessGlyphAction)(uint32, uint8, std::ostringstream& msg);
-        void Iterate(Player* requester, ProcessGlyphAction action, const std::vector<uint32> glyphs, const std::vector<uint8> glyphSlots);  
+        void Iterate(Player* requester, ProcessGlyphAction action, const std::vector<uint32> glyphs, const std::vector<uint8> glyphSlots);
         void List(uint32 itemId, uint8 slotId, std::ostringstream& msg);
         void Set(uint32 itemId, uint8 wantedSlotId, std::ostringstream& msg);
         void Remove(uint32 itemId, uint8 removeSlotId, std::ostringstream& msg);
@@ -31,8 +31,8 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
-    };    
+#endif
+    };
 
     class AutoSetGlyphAction : public GlyphAction
     {
@@ -48,6 +48,6 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
     };
 }

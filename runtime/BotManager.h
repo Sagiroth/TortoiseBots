@@ -29,9 +29,6 @@ class WorldPacket;
 
 namespace TortoiseBots {
 
-class BotController;
-enum class BotIntent;
-
 enum class BotLifecycle
 {
     PendingAdd,
@@ -58,7 +55,6 @@ class PlayerbotAIAdapter;
 struct BotEntry
 {
     BotRecord record;
-    std::unique_ptr<BotController> controller;
     std::unique_ptr<PlayerbotAIAdapter> aiAdapter;
     BotEntry() = default;
     ~BotEntry();
@@ -101,20 +97,18 @@ public:
     std::vector<Player*> GetAllBots() const;
     uint32_t GetBotCount() const { return static_cast<uint32_t>(m_bots.size()); }
 
-    // Native follow intent and durable master ownership.
+    // Native follow command and durable master ownership.
 // pi-lens-ignore: clang:unknown_typename
     bool SetBotFollow(ObjectGuid botGuid, ObjectGuid masterGuid);
-    // Durable ownership seam for mature random-bot group adoption/release.
+    // Durable ownership seam for module-owned group adoption/release. Normal
+    // owners are Network players; a Headless owner is accepted only when it is
+    // another module-owned fixture in the same runtime.
     // This updates the BotRecord and live PlayerbotAI pointer without
     // replacing the existing Headless session.
 // pi-lens-ignore: clang:unknown_typename
     bool BindBotMaster(ObjectGuid botGuid, ObjectGuid masterGuid);
 // pi-lens-ignore: clang:unknown_typename
     bool ClearBotMaster(ObjectGuid botGuid);
-// pi-lens-ignore: clang:unknown_typename
-    BotController* GetController(ObjectGuid guid);
-// pi-lens-ignore: clang:unknown_typename
-    BotController const* GetController(ObjectGuid guid) const;
 
     // Deterministic regression check for AddBot -> immediate RemoveBot.
 // pi-lens-ignore: clang:unknown_typename
@@ -135,6 +129,8 @@ private:
     BotManager() = default;
     ~BotManager() = default;
 
+    bool IsLiveHeadlessBot(BotEntry const& entry, Player* player) const;
+    void FinishAutoTest(bool passed);
     void UpdateAutoTest(uint32_t diff);
     void UpdatePacketBridgeTest(uint32_t diff);
     void UpdateBots(uint32_t diff);
@@ -147,8 +143,9 @@ private:
 // pi-lens-ignore: clang:unknown_typename
     ObjectGuid m_autoTestGuid;
     uint32_t m_autoTestTicks = 0;
-    enum class AutoState { Idle, LoggingIn, InWorld, Saving, LoggingOut, Relogging, Done };
+    enum class AutoState { Idle, LoggingIn, InWorld, Saving, LoggingOut, Relogging, CleaningUp, Done };
     AutoState m_autoState = AutoState::Idle;
+    bool m_autoTestPassed = false;
 
     bool m_packetTestEnabled = false;
     uint32_t m_packetTestAccount = 0;

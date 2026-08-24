@@ -6,7 +6,7 @@
 
 namespace ai
 {
-   
+
     class CurrentCcTargetValue : public TargetValue, public Qualified
 	{
 	public:

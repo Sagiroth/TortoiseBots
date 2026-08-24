@@ -9,7 +9,7 @@ using namespace ai;
 class IsTargetOfHealingSpell : public SpellEntryPredicate
 {
 public:
-    virtual bool Check(SpellEntry const* spell) 
+    virtual bool Check(SpellEntry const* spell)
     {
         return PlayerbotAI::IsHealSpell(spell);
     }
@@ -47,9 +47,9 @@ Unit* PartyMemberToHeal::Calculate()
     {
         Unit* target = ai->GetUnit(bot->GetSelectionGuid());
         if (target &&
-            target->getObjectGuid() != bot->getObjectGuid() && 
+            target->getObjectGuid() != bot->getObjectGuid() &&
             sServerFacade.IsFriendlyTo(bot, target) &&
-            target->GetHealthPercent() < 100 && 
+            target->GetHealthPercent() < 100 &&
             Check(target))
         {
             needHeals.push_back(target);
@@ -95,7 +95,7 @@ Unit* PartyMemberToHeal::Calculate()
 
             uint8 health = (((player->GetHealth() - incomingDamage) * 100.0f) / player->GetMaxHealth());
             if (isTank || (health < sPlayerbotAIConfig.almostFullHealth && !IsTargetOfSpellCast(player, predicate)))
-            { 
+            {
                 needHeals.push_back(player);
             }
 
@@ -197,7 +197,7 @@ bool PartyMemberToHeal::Check(Unit* player)
 
     if (!player->IsInWorld())
         return false;
-                                                     
+
     if (sServerFacade.getDistance2d(bot, player) > maxDist)
         return false;
 

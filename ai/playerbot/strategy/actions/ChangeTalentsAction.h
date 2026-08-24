@@ -31,7 +31,7 @@ namespace ai
         static TalentSpec* GetBestPremadeSpec(Player* bot, int spec);
     };
 
-    class AutoSetTalentsAction : public ChangeTalentsAction 
+    class AutoSetTalentsAction : public ChangeTalentsAction
     {
     public:
         AutoSetTalentsAction(PlayerbotAI* ai) : ChangeTalentsAction(ai, "auto talents") {}

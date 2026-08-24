@@ -110,7 +110,7 @@ namespace ai
                 return true;
             }
 #else
-            if (cell.GridX() > 0 && cell.GridY() > 0 && !MMAP::MMapFactory::createOrGetMMapManager()->IsMMapIsLoaded(botPos.GetMapId(), cell.GridX(), cell.GridY()) 
+            if (cell.GridX() > 0 && cell.GridY() > 0 && !MMAP::MMapFactory::createOrGetMMapManager()->IsMMapIsLoaded(botPos.GetMapId(), cell.GridX(), cell.GridY())
                 && !MMAP::MMapFactory::createOrGetMMapManager()->loadMap(sWorld.GetDataPath(), botPos.GetMapId(), cell.GridX(), cell.GridY()))
             {
                 ai->TellDebug(ai->GetMaster(), "Stuck: In unloaded grid" + std::to_string(grid.x_coord) + "," + std::to_string(grid.y_coord), "debug stuck");
@@ -168,7 +168,7 @@ namespace ai
             WorldPosition botPos(bot);
 
             uint32 timeSinceCombatChange = AI_VALUE2(uint32, "time since last change", "combat::self target");
-           
+
             if (timeSinceCombatChange > 5 * MINUTE)
             {
                 ai->TellDebug(ai->GetMaster(), "Stuck: Combat did not change for " + std::to_string(timeSinceCombatChange) + " seconds.", "debug stuck");

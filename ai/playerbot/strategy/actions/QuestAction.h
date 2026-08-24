@@ -6,7 +6,7 @@
 
 namespace ai
 {
-    class QuestAction : public Action 
+    class QuestAction : public Action
     {
     public:
         QuestAction(PlayerbotAI* ai, std::string name = "quest") : Action(ai, name) {}
@@ -21,7 +21,7 @@ namespace ai
         bool ProcessQuests(ObjectGuid questGiver);
         bool ProcessQuests(WorldObject* questGiver);
     };
-    
+
     class QuestUpdateAddKillAction : public Action
     {
     public:

@@ -5,7 +5,7 @@
 
 namespace ai
 {
-	bool LeaveGroupAction::Leave(Player* player) 
+	bool LeaveGroupAction::Leave(Player* player)
     {
         if (!player)
             return false;
@@ -39,8 +39,9 @@ namespace ai
         if (freeBot)
         {
             if (!TortoiseBots::BotManager::Instance().ClearBotMaster(bot->GetObjectGuid()))
-                PlayerbotAIStorage::Instance().GetAI(bot)->SetMaster(nullptr);
-        }        
+                sLog.outError("TortoiseBots: failed to clear durable master for %s after leaving group",
+                    bot->GetName());
+        }
 
         if(!aiMaster)
             ai->ResetStrategies();
@@ -58,7 +59,7 @@ namespace ai
             return false;
 
         if (!bot->GetGroup())
-            return false;      
+            return false;
 
         Player* groupMaster = ai->GetGroupMaster();
 

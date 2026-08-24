@@ -84,7 +84,7 @@ bool SellAction::Sell(Player* requester, Item* item)
         ObjectGuid vendorguid = *i;
         Creature *pCreature = bot->GetNPCIfCanInteractWith(vendorguid,UNIT_NPC_FLAG_VENDOR);
         if (!pCreature)
-            continue;     
+            continue;
 
         if (!item->GetProto()->SellPrice)
         {

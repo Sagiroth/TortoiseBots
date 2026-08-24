@@ -22,7 +22,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {"available loot"}; }
-#endif 
+#endif
     };
 
     class AddAllLootAction : public ChatCommandAction
@@ -44,7 +44,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {"nearest game objects no los", "nearest corpses", "bag space"}; }
-#endif 
+#endif
     };
 
     class AddGatheringLootAction : public AddAllLootAction
@@ -64,6 +64,6 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {"nearest game objects no los", "bag space"}; }
-#endif 
+#endif
     };
 }

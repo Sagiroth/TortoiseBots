@@ -87,7 +87,7 @@ bool SmartDestroyItemAction::Execute(Event& event)
         bestToDestroy.push_back(ItemUsage::ITEM_USAGE_AH);
     }
 
-    //If we still need room 
+    //If we still need room
     bestToDestroy.push_back(ItemUsage::ITEM_USAGE_SKILL); //Items that might help tradeskill are more important than above but still expendable.
     bestToDestroy.push_back(ItemUsage::ITEM_USAGE_USE); //These are more likely to be useful 'soon' but still expendable.
 

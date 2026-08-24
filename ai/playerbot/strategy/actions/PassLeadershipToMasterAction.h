@@ -19,7 +19,7 @@ namespace ai
                 WorldPacket p(SMSG_GROUP_SET_LEADER, 8);
                 p << passLeaderTo->getObjectGuid();
                 bot->GetSession()->HandleGroupSetLeaderOpcode(p);
-                
+
                 if (!message.empty())
                     ai->TellPlayerNoFacing(passLeaderTo, message);
 
@@ -28,7 +28,7 @@ namespace ai
                     ai->ResetStrategies();
                     ai->Reset();
                 }
-                
+
                 return true;
             }
 
@@ -46,7 +46,7 @@ namespace ai
         std::string message;
     };
 
-    class GiveLeaderAction : public PassLeadershipToMasterAction 
+    class GiveLeaderAction : public PassLeadershipToMasterAction
     {
     public:
         GiveLeaderAction(PlayerbotAI* ai, std::string message = "Lead the way!") : PassLeadershipToMasterAction(ai, "give leader", message) {}
@@ -56,6 +56,6 @@ namespace ai
         virtual bool isUseful() override
         {
             return bot->GetGroup() && bot->GetGroup()->IsLeader(bot->getObjectGuid());
-        }        
-    };    
+        }
+    };
 }

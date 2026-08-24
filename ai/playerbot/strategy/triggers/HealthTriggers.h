@@ -7,7 +7,7 @@ namespace ai
     class ValueInRangeTrigger : public Trigger
     {
     public:
-        ValueInRangeTrigger(PlayerbotAI* ai, std::string name, float maxValue, float minValue) : Trigger(ai, name) 
+        ValueInRangeTrigger(PlayerbotAI* ai, std::string name, float maxValue, float minValue) : Trigger(ai, name)
         {
             this->maxValue = maxValue;
             this->minValue = minValue;
@@ -29,7 +29,7 @@ namespace ai
 	class HealthInRangeTrigger : public ValueInRangeTrigger
 	{
 	public:
-		HealthInRangeTrigger(PlayerbotAI* ai, std::string name, float maxValue, float minValue = 0, bool isTankRequired = false) : ValueInRangeTrigger(ai, name, maxValue, minValue) 
+		HealthInRangeTrigger(PlayerbotAI* ai, std::string name, float maxValue, float minValue = 0, bool isTankRequired = false) : ValueInRangeTrigger(ai, name, maxValue, minValue)
         {
             this->isTankRequired = isTankRequired;
         }
@@ -104,7 +104,7 @@ namespace ai
         bool IsActive() override;
     };
 
-    class TargetLowHealthTrigger : public HealthInRangeTrigger 
+    class TargetLowHealthTrigger : public HealthInRangeTrigger
     {
     public:
         TargetLowHealthTrigger(PlayerbotAI* ai, float value, float minValue = 0) : HealthInRangeTrigger(ai, "target low health", value, minValue) {}
@@ -117,7 +117,7 @@ namespace ai
         TargetCriticalHealthTrigger(PlayerbotAI* ai) : TargetLowHealthTrigger(ai, 20) {}
     };
 
-	class PartyMemberDeadTrigger : public Trigger 
+	class PartyMemberDeadTrigger : public Trigger
     {
 	public:
 		PartyMemberDeadTrigger(PlayerbotAI* ai) : Trigger(ai, "resurrect", 3) {}
@@ -125,7 +125,7 @@ namespace ai
 		virtual bool IsActive() override;
 	};
 
-    class DeadTrigger : public Trigger 
+    class DeadTrigger : public Trigger
     {
     public:
         DeadTrigger(PlayerbotAI* ai) : Trigger(ai, "dead") {}
@@ -133,11 +133,11 @@ namespace ai
         virtual bool IsActive() override;
     };
 
-    class AoeHealTrigger : public Trigger 
+    class AoeHealTrigger : public Trigger
     {
     public:
-    	AoeHealTrigger(PlayerbotAI* ai, std::string name, std::string type, int count) :
-    		Trigger(ai, name), type(type), count(count) {}
+	AoeHealTrigger(PlayerbotAI* ai, std::string name, std::string type, int count) :
+		Trigger(ai, name), type(type), count(count) {}
     public:
         virtual bool IsActive() override;
 

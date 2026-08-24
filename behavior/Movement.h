@@ -7,7 +7,7 @@ class ObjectGuid;
 namespace TortoiseBots {
 namespace Movement {
 
-// Thin, typed movement boundary — keeps MotionMaster calls out of BotController.
+// Thin, typed movement boundary — keeps MotionMaster calls in mature AI actions.
 // All methods are pure helpers; they do not decide *when* to move.
 //
 // Reimplemented behavior: cmangos FollowAction dead-zone + restart guard

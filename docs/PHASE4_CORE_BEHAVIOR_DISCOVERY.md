@@ -1,12 +1,14 @@
 # Phase 4 — Core Behavior Discovery (first playable vertical slice)
 
-**Status:** discovery only — no production code yet  
+**Status:** historical discovery archive — superseded by the current native module implementation
 **Date:** 2026-08-21  
 **Scope:** `human + owned bot` → follow / stay / assist / auto-attack / return-to-follow / clean remove  
 **Plan ref:** `docs/PLAN.md` §12, §26 — Phase 3 is closed (host seam, headless login, queued AddSession, reclaim) — do not modify Phase 3 architecture here  
 **Sources pinned:** `cmangos-playerbots@076045e` (`2026-08-16`), `mangoszero-server@1817ae1`, `shyalya-tortoise-wow@1f9497e` (vendored `cmangos-playerbots@c33dfac` via `r-o-sh@0af2567`), `cmangos-mangos-classic@9b682be`, `TortoiseWoWKnowledgeBase` baseline `172ee948e... @2026-08-12`, `Penqle/tortoise-wow` baseline via local `tortoise-docker-penqle/source` (`d07ec3fe`)
 
 > **Rule:** harvest behavior, not architecture. Every recommendation below keeps bot-specific meaning inside the `TortoiseBots` module; the core only knows `SessionTransport::Headless` / `IWorldUpdateListener`.
+
+> **Archive notice:** the proposed `BotController`/helper architecture in this document was not adopted. Current movement and gameplay are owned by mature `PlayerbotAI`; `BotManager` owns records and adapters, while `World` owns sessions. Use `docs/PLAN.md` and the current sections of `docs/HOST_API.md` as implementation authority.
 
 ---
 

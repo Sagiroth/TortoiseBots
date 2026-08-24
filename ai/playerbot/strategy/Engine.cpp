@@ -150,10 +150,10 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 
     int iterations = 0;
     int iterationsPerTick = queue.Size() * (minimal ? (uint32)(sPlayerbotAIConfig.iterationsPerTick / 2) : sPlayerbotAIConfig.iterationsPerTick);
-    do 
+    do
     {
         basket = queue.Peek();
-        if (basket) 
+        if (basket)
         {
             float relevance = basket->getRelevance(), oldRelevance = relevance; // just for reference
             bool skipPrerequisites = basket->isSkipPrerequisites();
@@ -167,7 +167,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
             std::string actionName = (action ? action->getName() : "unknown");
             if (!event.getSource().empty())
                 actionName += " <" + event.getSource() + ">";
-            
+
             // E2E green: PerformanceMonitor stub
 
             if(action)
@@ -256,7 +256,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 // E2E green: pmo stub
 
 #ifdef PLAYERBOT_ELUNA
-                        // used by eluna    
+                        // used by eluna
                         if (Eluna* e = ai->GetBot()->GetEluna())
                             e->OnActionExecute(ai, action->getName(), actionExecuted);
 #endif
@@ -468,7 +468,7 @@ ActionResult Engine::ExecuteAction(const std::string& name, Event& event)
             // E2E green: PerformanceMonitor stub
             bool isUseful = action->isUseful();
 // E2E green: pmo stub
-            
+
             if (isUseful)
             {
                 // E2E green: PerformanceMonitor stub
@@ -593,7 +593,7 @@ bool Engine::removeStrategy(const std::string& name, bool init)
     {
         Init();
     }
-    
+
     return true;
 }
 
@@ -650,7 +650,7 @@ void Engine::ProcessTriggers(bool minimal)
             Event event = trigger->Check();
 
 #ifdef PLAYERBOT_ELUNA
-            // used by eluna    
+            // used by eluna
             if (Eluna* e = ai->GetBot()->GetEluna())
                 e->OnTriggerCheck(ai, trigger->getName(), !event ? false : true);
 #endif
@@ -681,7 +681,7 @@ void Engine::PushDefaultActions()
 }
 
 std::string Engine::ListStrategies()
-{   
+{
     std::string s;
     if (strategies.empty())
         return s;

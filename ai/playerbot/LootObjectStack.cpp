@@ -272,7 +272,7 @@ bool LootObject::IsLootPossible(Player* bot)
                     }
                 }
             }
-            
+
             // herb-like quest objects
             if (skillId == SKILL_HERBALISM && reqSkillValue == 1)
             {
@@ -390,4 +390,3 @@ std::vector<LootObject> LootObjectStack::OrderByDistance(float maxDistance)
         result.push_back(i->second);
     return result;
 }
-

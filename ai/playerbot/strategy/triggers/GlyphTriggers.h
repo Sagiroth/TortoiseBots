@@ -17,5 +17,5 @@ namespace ai
 
             return RandomTrigger::IsActive();
         }
-    };   
+    };
 }

@@ -8,7 +8,7 @@
 
 namespace ai
 {
-    class CheckMountStateAction : public UseAction 
+    class CheckMountStateAction : public UseAction
     {
     public:
         CheckMountStateAction(PlayerbotAI* ai) : UseAction(ai, "check mount state") {}
@@ -26,7 +26,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {"mount list", "current mount speed"}; }
-#endif 
+#endif
 
         virtual bool Execute(Event& event) override;
         virtual bool isPossible() override { return true; }

@@ -242,7 +242,7 @@ namespace ai
     {
     public:
         WarlockManualPetStrategy(PlayerbotAI* ai, std::string inName, std::string inTriggerName, std::string inActionName)
-        : Strategy(ai) 
+        : Strategy(ai)
         , name(inName)
         , triggerName(inTriggerName)
         , actionName(inActionName) {}
@@ -262,7 +262,7 @@ namespace ai
     {
     public:
         WarlockManualCurseStrategy(PlayerbotAI* ai, std::string inName, std::string inTriggerName, std::string inActionName)
-        : Strategy(ai) 
+        : Strategy(ai)
         , name(inName)
         , triggerName(inTriggerName)
         , actionName(inActionName) {}

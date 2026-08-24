@@ -28,11 +28,11 @@ private:
     ACTION_NODE_A(strength_of_earth_totem, "strength of earth totem", "stoneskin totem");
 
     ACTION_NODE_A(windfury_totem, "windfury totem", "wrath of air totem");
-   
+
     ACTION_NODE_A(mana_spring_totem, "mana spring totem", "healing stream totem");
 };
 
-ElementalShamanStrategy::ElementalShamanStrategy(PlayerbotAI* ai) 
+ElementalShamanStrategy::ElementalShamanStrategy(PlayerbotAI* ai)
 : ShamanStrategy(ai)
 {
     actionNodeFactories.Add(std::make_unique<ElementalShamanStrategyActionNodeFactory>());

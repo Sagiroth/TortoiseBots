@@ -10,7 +10,7 @@ namespace ai
     {
     public:
         TimeSinceLastChangeValue(PlayerbotAI* ai, std::string name = "time since last change") : Uint32CalculatedValue(ai, name), Qualified() {}
-        
+
         virtual uint32 Calculate() override;
     };
 

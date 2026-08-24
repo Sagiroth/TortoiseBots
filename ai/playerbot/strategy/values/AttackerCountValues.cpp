@@ -120,7 +120,7 @@ uint8 BalancePercentValue::Calculate()
                 continue;
 
             uint32 level = creature->GetLevel();
-            switch (creature->GetCreatureInfo()->rank) 
+            switch (creature->GetCreatureInfo()->rank)
             {
                 case CREATURE_ELITE_RARE:
                 {

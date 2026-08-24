@@ -237,7 +237,7 @@ TestResult TestMonitor::Check(const std::string& monitorStr, Player* bot, TestCo
             placeholders["<distance wanted>"] = std::to_string(static_cast<uint32>(ctx.testStartPosition.distance(WorldPosition(ctx.destinationPosition)))) + "m";
 
         placeholders["<time elapsed>"] = std::to_string((WorldTimer::getMSTime() - ctx.testStartTime) / 1000) + "s";
-        
+
         if (!placeholders.empty())
         {
             PlayerbotTextMgr::ReplacePlaceholders(message, placeholders);
@@ -259,6 +259,6 @@ TestResult TestMonitor::Check(const std::string& monitorStr, Player* bot, TestCo
             return TestResult::IMPOSSIBLE;
         }
     }
-    
+
     return TestResult::PENDING;
 }

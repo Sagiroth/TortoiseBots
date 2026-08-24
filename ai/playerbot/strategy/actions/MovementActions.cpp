@@ -112,7 +112,7 @@ bool MovementAction::FlyDirect(const WorldPosition &startPosition, const WorldPo
         std::vector<WorldPosition> path;
         if (movePath.empty()) //Make a path starting at the end backwards to see if we can walk to some better place.
         {
-            path = endPosition.GetPathTo(startPosition, bot);            
+            path = endPosition.GetPathTo(startPosition, bot);
         }
         else
         {
@@ -532,7 +532,7 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
     if (lastMove.nextTeleport > now)
         return false;
 
-    lastMove.nextTeleport = now + sPlayerbotAIConfig.passiveDelay/1000; //For teleports/transports/ect 
+    lastMove.nextTeleport = now + sPlayerbotAIConfig.passiveDelay/1000; //For teleports/transports/ect
 
     std::vector<PathNodePoint>& path = lastMove.lastPath.GetPath();
 
@@ -678,7 +678,7 @@ bool MovementAction::WaitForTransport()
 
     PathNodePoint dockPoint = path.GetPath().front();
     PathNodePoint telePoint = *std::next(path.GetPath().begin());
-        
+
     if (!UseTransport(ai, dockPoint.entry, dockPoint.point, telePoint.point, sPlayerbotAIConfig.transportTeleportType > 0))
         return true;
 
@@ -686,7 +686,7 @@ bool MovementAction::WaitForTransport()
     return false;
 }
 
-TravelPath MovementAction::ResolveMovePath(const WorldPosition& startPosition, const WorldPosition& endPosition, Unit* mover, LastMovement& lastMove)    
+TravelPath MovementAction::ResolveMovePath(const WorldPosition& startPosition, const WorldPosition& endPosition, Unit* mover, LastMovement& lastMove)
 {
     float totalDistance = startPosition.distance(endPosition);
     float maxDistChange = totalDistance * 0.1f;
@@ -698,7 +698,7 @@ TravelPath MovementAction::ResolveMovePath(const WorldPosition& startPosition, c
     }
 
     bool needsLongPath = false;
-        
+
     if (startPosition.GetMapId() != endPosition.GetMapId())
         needsLongPath = true;
     else if (totalDistance > sPlayerbotAIConfig.sightDistance)
@@ -1133,7 +1133,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     if (FlyDirect(startPos, endPos, flyMovePosition, lastMove.lastPath))
         return true;
 
-    
+
     bool isWalking = false;
 
     TravelPath movePath = ResolveMovePath(startPos, endPos, mover, lastMove);
@@ -1143,7 +1143,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     if (movePath.empty())
         return false;
 
-     
+
     if (!bot->GetTransport())
         movePath.makeShortCut(startPos, sPlayerbotAIConfig.reactDistance, bot);
 
@@ -1161,7 +1161,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
 
     if (specialMovement)
         return HandleSpecialMovement(movePath);
-    
+
     if (bot->GetTransport()) //Transports needed to be handled before now.
         return false;
 
@@ -1182,7 +1182,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
             if (p.point == movePath.GetBack())
                 ai->AddAura(wpCreature, 1130);
         }
-    }   
+    }
 
     if (movePath.empty())
     {
@@ -1274,9 +1274,9 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     const float IF_AH_Z = 500.0f;
     const float IF_AH_MAP = 0.0f;  // Eastern Kingdoms
     const float CHECK_RADIUS = 150.0f;
-    
-    if (bot->GetMapId() == (uint32)IF_AH_MAP && 
-        startPos.sqDistance2d(WorldPosition(0, IF_AH_X, IF_AH_Y, 0)) < CHECK_RADIUS * CHECK_RADIUS && 
+
+    if (bot->GetMapId() == (uint32)IF_AH_MAP &&
+        startPos.sqDistance2d(WorldPosition(0, IF_AH_X, IF_AH_Y, 0)) < CHECK_RADIUS * CHECK_RADIUS &&
         !movePath.empty())
     {
         // Calculate total XY distance and total Z change in path
@@ -1284,7 +1284,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
         float totalZ = 0.0f;
         float maxZDelta = 0.0f;
         WorldPosition prevPos = startPos;
-        
+
         for (const auto& point : movePath.GetPointPath())
         {
             float dXY = sqrtf(prevPos.sqDistance2d(WorldPosition(0, point.x, point.y, 0)));
@@ -1294,17 +1294,17 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
             if (dZ > maxZDelta) maxZDelta = dZ;
             prevPos = point;
         }
-        
+
         // Check if Z change is abnormally large compared to XY (climbing through roof)
         // Normal walking should have Z/X ratio < 0.5, roof climbing can be > 2.0
         bool isAbnormalClimb = (totalZ > 5.0f && totalXY > 0.1f && totalZ / totalXY > 1.5f) || maxZDelta > 50.0f;
-        
+
         if (isAbnormalClimb)
         {
             bool isFromLastPath = (!lastMove.lastPath.empty() && lastMove.lastPath.GetPointPath().size() == movePath.GetPointPath().size());
-            
+
             sLog.outError("[BOT PATH BUG] %s near IF AH - abnormal upward path detected!", bot->GetName());
-            sLog.outError("[BOT PATH BUG] Bot pos: %.1f,%.1f,%.1f (map %d). Target: %.1f,%.1f,%.1f", 
+            sLog.outError("[BOT PATH BUG] Bot pos: %.1f,%.1f,%.1f (map %d). Target: %.1f,%.1f,%.1f",
                 bot->getPositionX(), bot->getPositionY(), bot->getPositionZ(), bot->GetMapId(),
                 movePath.GetBack().x, movePath.GetBack().y, movePath.GetBack().z);
             sLog.outError("[BOT PATH BUG] Path stats: %u points, XY=%.1f, Z_total=%.1f, maxZ_delta=%.1f, ratio=%.2f",
@@ -1313,7 +1313,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
                 isFromLastPath ? "REUSED from lastPath" : "FRESH route",
                 lastMove.lastPath.empty() ? "yes" : "no",
                 detailedMove ? "yes" : "no");
-            
+
             // Log first few path points
             char pathBuf[512];
             snprintf(pathBuf, sizeof(pathBuf), "[BOT PATH BUG] Path points: ");
@@ -1744,7 +1744,7 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
                             movePosition = WorldPosition(transport);
                             movePosition.setZ(bot->getPositionZ());
 
-                            WorldPosition botPos(bot);                           
+                            WorldPosition botPos(bot);
                             transport->AddPassenger(bot, true);
                             bot->NearTeleportTo(bot->m_movementInfo.pos.x, bot->m_movementInfo.pos.y, bot->m_movementInfo.pos.z, bot->m_movementInfo.pos.o);
                             MANGOS_ASSERT(botPos.fDist(bot) < 500.0f);
@@ -1917,7 +1917,7 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
         TravelNodePathType pathType;
         uint32 entry;
         WorldPosition telepos;
-                       
+
         movePosition = movePath.GetBack();
     }
 
@@ -2693,7 +2693,7 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE)
     {
         if (!bot->IsStopped() &&
-            sServerFacade.GetChaseTarget(bot) == obj && 
+            sServerFacade.GetChaseTarget(bot) == obj &&
             sServerFacade.GetChaseOffset(bot) == distance)
         {
             bot->SetTarget(obj); //Needed to keep chase going in combat.
@@ -2793,7 +2793,7 @@ void MovementAction::WaitForReach(const Movement::PointsArray& path)
     float distance = 0.0f;
     if(!path.empty())
     {
-        const Vector3* previousPoint = &path[0]; 
+        const Vector3* previousPoint = &path[0];
         for (auto it = path.begin() + 1; it != path.end(); ++it)
         {
             const Vector3& pathPoint = (*it);
@@ -2843,7 +2843,7 @@ bool MovementAction::Flee(Unit *target)
             return true;
         }
     }
-    
+
     const bool isHealer = ai->IsHeal(bot);
     const bool isTank = ai->IsTank(bot);
     const bool isDps = !isHealer && !isTank;
@@ -3392,7 +3392,7 @@ bool SetBehindTargetAction::isPossible()
                 return bot->getObjectGuid() != playerTarget->GetSelectionGuid();
             }
             // If the target is a NPC
-            else 
+            else
             {
                 return !(target->GetVictim() && (target->GetVictim()->getObjectGuid() == bot->getObjectGuid()));
             }
@@ -3416,7 +3416,7 @@ bool MoveOutOfCollisionAction::Execute(Event& event)
         gx = botPos.getX();
         gy = botPos.getY();
         gz = botPos.getZ();
-#ifndef MANGOSBOT_TWO  
+#ifndef MANGOSBOT_TWO
         if (bot->GetMap()->GetReachableRandomPointOnGround(gx, gy, gz, ai->GetRange("follow")))
 #else
         if (bot->GetMap()->GetReachableRandomPointOnGround(bot->GetPhaseMask(), gx, gy, gz, ai->GetRange("follow")))
@@ -3463,7 +3463,7 @@ bool MoveRandomAction::Execute(Event& event)
 }
 
 bool MoveRandomAction::isUseful()
-{    
+{
     return !ai->HasRealPlayerMaster() && ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid> >("nearest friendly players")->Get().size() > urand(25, 100);
 }
 
@@ -3816,7 +3816,7 @@ WorldPosition JumpAction::CalculateJumpParameters(const WorldPosition& src, Unit
     float const timeForMaxHeight = vSpeed / m_gravity;
     float velocity = sqrt(vSpeed * vSpeed + hSpeed * hSpeed);
     double jumpVerticalAngle = 48.f * M_PI / 180; // approximate
-    maxHeight = vSpeed * timeForMaxHeight - m_gravity * timeForMaxHeight * timeForMaxHeight / 2;   
+    maxHeight = vSpeed * timeForMaxHeight - m_gravity * timeForMaxHeight * timeForMaxHeight / 2;
 
     // jump in place
     if (hSpeed == 0.f)
@@ -4290,7 +4290,7 @@ bool JumpAction::DoJump(const WorldPosition &dest, const WorldPosition& highestP
 #else
     bot->m_movementInfo.AddMovementFlag(MOVEFLAG_FALLING);
 #endif
-    
+
     // client doesn't seem to show proper bigger jump with faster than real speeds
     if (vSpeed > (7.96f * 1.3f) || hSpeed > (bot->GetSpeed(MOVE_RUN) * 1.3f))
     {
@@ -4468,7 +4468,7 @@ WorldPosition JumpAction::GetPossibleJumpStartForInRange(const WorldPosition& sr
         gx = src.getX();
         gy = src.getY();
         gz = src.getZ();
-#ifndef MANGOSBOT_TWO  
+#ifndef MANGOSBOT_TWO
         if (jumper->GetMap()->GetReachableRandomPointOnGround(gx, gy, gz, distanceTo))
 #else
         if (jumper->GetMap()->GetReachableRandomPointOnGround(bot->GetPhaseMask(), gx, gy, gz, distanceTo))

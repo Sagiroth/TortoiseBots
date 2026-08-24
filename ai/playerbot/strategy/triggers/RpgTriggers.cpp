@@ -11,8 +11,8 @@
 
 using namespace ai;
 
-bool RpgTrigger::IsActive() 
-{ 
+bool RpgTrigger::IsActive()
+{
     if (!ai->HasRealPlayerMaster())
         return true;
 
@@ -499,7 +499,7 @@ bool RpgHomeBindTrigger::IsActive()
     WorldPosition newBind = (guidP.sqDistance2d(bot) > INTERACTION_DISTANCE * INTERACTION_DISTANCE) ? guidP : bot;
 
     //Do not update if there's almost not change.
-    if (newBind.fDist(currentBind) < INTERACTION_DISTANCE * 2) 
+    if (newBind.fDist(currentBind) < INTERACTION_DISTANCE * 2)
         return false;
 
     //Update if the new bind is closer to the group leaders bind than the old one.
@@ -606,7 +606,7 @@ bool RpgUseTrigger::IsActive()
         return true;
     default:
         return false;
-    }   
+    }
 }
 
 bool RpgQuestUseTrigger::IsActive()
@@ -615,7 +615,7 @@ bool RpgQuestUseTrigger::IsActive()
         return false;
 
     GuidPosition guidP(getGuidP());
-    
+
     switch (guidP.GetEntry())
     {
     case 190767: return AI_VALUE2(bool, "need quest objective", "12701"); //Only when we need "Inconspicuous mine car"
@@ -630,7 +630,7 @@ bool RpgAIChatTrigger::IsActive()
         return false;
 
     if (FarFromRpgTargetTrigger::IsActive())
-        return false;    
+        return false;
 
     if (!ai->HasStrategy("ai chat", BotState::BOT_STATE_NON_COMBAT) && sPlayerbotAIConfig.llmEnabled < 3)
         return false;
@@ -642,7 +642,7 @@ bool RpgAIChatTrigger::IsActive()
         return false;
 
     GuidPosition guidP(getGuidP());
- 
+
     if (guidP.IsPlayer())
     {
         Player* player = guidP.GetPlayer();
@@ -890,7 +890,7 @@ bool RpgSpellClickTrigger::IsActive()
         if (transportInfo && transportInfo->IsOnVehicle())
             return false;
     }
-#endif   
+#endif
 
     return ai->CanSpellClick(guidP);
 }

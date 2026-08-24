@@ -9,8 +9,8 @@ namespace ai
 	ENEMY_HEALER_ACTION(CastDeathCoilOnHealerAction, "death coil");
 	SPELL_ACTION(CastDeathCoilAction, "death coil");
     BUFF_ACTION(CastShadowWardAction, "shadow ward");
-	
-	class CastDemonSkinAction : public CastBuffSpellAction 
+
+	class CastDemonSkinAction : public CastBuffSpellAction
 	{
 	public:
 		CastDemonSkinAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "demon skin") {}
@@ -59,7 +59,7 @@ namespace ai
                         }
                     }
                 }
-                
+
                 return true;
             }
 
@@ -74,8 +74,8 @@ namespace ai
         std::string GetTargetName() override { return "party member to soulstone"; }
 
     private:
-        uint32 GetItemId() override 
-        { 
+        uint32 GetItemId() override
+        {
             uint32 itemId = 0;
             const uint32 level = bot->GetLevel();
             if (level >= 18 && level < 30)

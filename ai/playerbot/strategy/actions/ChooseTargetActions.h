@@ -21,7 +21,7 @@ namespace ai
     {
     public:
         DpsAssistAction(PlayerbotAI* ai) : AttackAction(ai, "dps assist") {}
-        std::string GetTargetName() override { return "dps target"; } 
+        std::string GetTargetName() override { return "dps target"; }
         bool isUseful() override;
     };
 
@@ -34,7 +34,7 @@ namespace ai
 
     class AttackAnythingAction : public AttackAction
     {
-    private:   
+    private:
     public:
         AttackAnythingAction(PlayerbotAI* ai) : AttackAction(ai, "attack anything") {}
         std::string GetTargetName() override { return "grind target"; }

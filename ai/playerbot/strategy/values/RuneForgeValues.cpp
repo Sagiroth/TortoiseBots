@@ -58,7 +58,7 @@ uint32 BestRuneForgeSpellValue::Calculate() {
     {
         if (ShouldRuneForgeValue::RuneForgeEnchantFromSpell(runeRazorice) == ShouldRuneForgeValue::CurrentRuneForgeEnchant(bot))
             return runeCinderglacier;
-        return runeRazorice;            
+        return runeRazorice;
     }
 
     bool isPvp = true;
@@ -73,7 +73,7 @@ uint32 BestRuneForgeSpellValue::Calculate() {
     bool isTank = ai->HasStrategy("tank", ai->GetState()) || spec == PlayerTalentSpec::TALENT_SPEC_DEATH_KNIGHT_BLOOD;
 
     std::vector<uint32> runeforgePriorityList;
-    
+
     if (isPvp) {
         runeforgePriorityList.push_back(runeSwordshattering);
         runeforgePriorityList.push_back(runeSpellshattering);
@@ -106,7 +106,7 @@ uint32 BestRuneForgeSpellValue::Calculate() {
     runeforgePriorityList.push_back(runeStoneskinGargoyle);
     runeforgePriorityList.push_back(runeSwordshattering);
     runeforgePriorityList.push_back(runeSpellshattering);
-    
+
     for (auto& wantRune : runeforgePriorityList)
     {
         if (std::find(available.begin(), available.end(), wantRune) == available.end())
@@ -121,7 +121,7 @@ uint32 BestRuneForgeSpellValue::Calculate() {
 bool ShouldRuneForgeValue::Calculate() {
     uint32 bestSpell = AI_VALUE(uint32, "best runeforge spell");
 
-    if (!bestSpell) 
+    if (!bestSpell)
         return false;
 
     uint32 bestEnchantId = RuneForgeEnchantFromSpell(bestSpell);
@@ -134,7 +134,7 @@ bool ShouldRuneForgeValue::Calculate() {
         return false;
 
     return currentEnchantId != bestEnchantId;
-} 
+}
 
 uint32 ShouldRuneForgeValue::RuneForgeEnchantFromSpell(uint32 spellId)
 {

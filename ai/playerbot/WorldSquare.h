@@ -274,7 +274,7 @@ namespace ai
 
                 uint32 currentPartition = GetCurrentPartition(point, distancePartitions);
 
-                if (currentPartition) //All squares fall within this partition 
+                if (currentPartition) //All squares fall within this partition
                 {
                     for (auto& [id, sq] : subSquares)
                     {
@@ -356,7 +356,7 @@ namespace ai
                 if(nextPoint)
                     return nextPoint;
             }
-            
+
             //Pick a random square to go 'far'.
             nextSq = &(std::next(subSquares.begin(), urand(0, subSquares.size() - 1))->second);
 
@@ -377,11 +377,11 @@ namespace ai
 
         const std::vector<WorldPosition*> GetPoints() const {
             std::vector<WorldPosition*> allPoints;
-            for (auto& [id, sq] : subSquares) 
-            {          
+            for (auto& [id, sq] : subSquares)
+            {
                 std::vector<WorldPosition*> subPoints = sq.GetPoints();
                 allPoints.insert(allPoints.end(), subPoints.begin(), subPoints.end());
-            } 
+            }
             return allPoints;
         }
 
@@ -402,7 +402,7 @@ namespace ai
         std::unordered_map<uint32, T> subSquares;
     };
 
-    //Contains all locations in a single cell. 
+    //Contains all locations in a single cell.
     class CellWpSquare : public WorldPointContainer
     {
     };

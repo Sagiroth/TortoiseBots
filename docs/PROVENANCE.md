@@ -57,7 +57,7 @@ Copied / ported / independently reimplemented:
 
 - Tame-beast behavior was independently reimplemented around the host's real `SPELL_EFFECT_TAMECREATURE` path; rename and abandon use the native `Pet`/`Player` APIs. The old WotLK pet-stable construction was not retained.
 - Lockpicking was ported to `ItemPrototype`, `LockEntry`, `ITEM_DYNFLAG_UNLOCKED`, the native Pick Lock spell, and the native trade-slot path. The old AzerothCore `ItemTemplate`/extended trade wrappers were not retained.
-- Random bots use a module-local, startup-loaded pool of pre-existing characters on the configured random-account prefix. `BotManager` remains the only Headless/session owner; account/character creation and donor login managers remain intentionally outside the module.
+- Random bots use a module-local, startup-loaded pool of pre-existing characters on the configured random-account prefix. `World` owns Headless/Network session lifetime; `BotManager` owns module records and AI adapters. Account/character creation and donor login managers remain intentionally outside the module.
 - Random-bot buy/sell multipliers are now cached per character with the mature Vanilla ranges, and named-location lookup uses the native `ai_playerbot_named_location` table instead of a compatibility no-op.
 - Empty optional item/equipment caches are accepted without synchronous world-thread cache generation. Populated mature caches still load normally.
 - Schema-only native migrations cover the tables queried by the active Vanilla/Turtle AI initializer and per-bot state. Mature datasets remain deployable separately.
@@ -84,7 +84,7 @@ This checkpoint is historical and is superseded by the final correctness pass
 below: the direct incoming diagnostic and Hunter direct-action diagnostic are
 not final acceptance evidence.
 
-Migration cleanup: removed `MinimalPlayerbotAI*`, `VerticalSlice*`, `cmangos-compat-shim.h.orig`, and all tracked `*.shyalya.bak` copies after retaining donor provenance above. `BotController` is now intent/diagnostic state only; `PlayerbotAI` is the sole gameplay update owner.
+Migration cleanup: removed `MinimalPlayerbotAI*`, `VerticalSlice*`, `cmangos-compat-shim.h.orig`, and all tracked `*.shyalya.bak` copies after retaining donor provenance above. The obsolete `BotController` has also been removed; `PlayerbotAI` is the sole gameplay update owner.
 
 Intentional gaps only: random account/character auto-creation, advanced WotLK fishing, and expansion-only source families remain outside the Vanilla/Turtle product surface. A real human-client journey was not claimed from the automated server-side packet fixture; the preserved runtime is left AI-enabled and ready for manual client playtesting.
 
@@ -98,7 +98,7 @@ Source repository: TortoiseBots `phase4-follow@e0da302058cb1e5021c92272bf22983b2
 Penqle core `playerbots-integration-gh@9487c5150a6553c665fafc1f4568669b8b00f011` (parent `133c6d19bf5898c1e4f5129b2890b1db89b17a07`, with `73f32c063e6c4481a0415690896025178ca8076f` as the original seam commit).
 
 Source files: `ai/playerbot/PlayerbotAI.{h,cpp}`,
-`runtime/{BotController,BotManager,PlayerbotAIAdapter}.*`,
+`runtime/{BotManager,PlayerbotAIAdapter}.*`,
 `host/BotPacketAdapter.*`, `commands/BotCommands.cpp`,
 `ai/playerbot/PlayerbotAIConfig.cpp`,
 `ai/playerbot/strategy/actions/CheckMountStateAction.cpp`,

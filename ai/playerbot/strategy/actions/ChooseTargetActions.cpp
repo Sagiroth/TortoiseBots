@@ -135,7 +135,7 @@ bool SelectNewTargetAction::Execute(Event& event)
         SET_AI_VALUE(Unit*, "old target", target);
         SET_AI_VALUE(Unit*, "current target", nullptr);
     }
-    
+
     // Stop attacking
     bot->SetSelectionGuid(ObjectGuid());
     ai->InterruptSpell();
@@ -169,7 +169,7 @@ bool SelectNewTargetAction::Execute(Event& event)
             return ai->DoSpecificAction("tank assist", event, true);
         }
     }
-    
+
     if (!moreAttackers)
     {
         // Stop pet attacking

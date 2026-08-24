@@ -1124,9 +1124,10 @@ bool BGLeaveAction::Execute(Event& event)
         leave << uint8(0) << uint8(0) << uint32(0) << uint16(0);
         bot->GetSession()->HandleLeaveBattlefieldOpcode(leave);
 
-        if (sRandomPlayerbotMgr.IsFreeBot(bot))
-            if (!TortoiseBots::BotManager::Instance().ClearBotMaster(bot->GetObjectGuid()))
-                ai->SetMaster(nullptr);
+        if (sRandomPlayerbotMgr.IsFreeBot(bot) &&
+            !TortoiseBots::BotManager::Instance().ClearBotMaster(bot->GetObjectGuid()))
+            sLog.outError("TortoiseBots: failed to clear durable master for %s after battleground leave",
+                bot->GetName());
 
         ai->ResetStrategies();
         ai->GetAiObjectContext()->GetValue<uint32>("bg type")->Set(0);
@@ -1162,9 +1163,10 @@ bool BGLeaveAction::Execute(Event& event)
     else
         bot->GetSession()->HandleBattleFieldPortOpcode(packet);
 
-    if (sRandomPlayerbotMgr.IsFreeBot(bot))
-        if (!TortoiseBots::BotManager::Instance().ClearBotMaster(bot->GetObjectGuid()))
-            ai->SetMaster(nullptr);
+    if (sRandomPlayerbotMgr.IsFreeBot(bot) &&
+        !TortoiseBots::BotManager::Instance().ClearBotMaster(bot->GetObjectGuid()))
+        sLog.outError("TortoiseBots: failed to clear durable master for %s after battleground transition",
+            bot->GetName());
 
     ai->ResetStrategies();
     ai->GetAiObjectContext()->GetValue<uint32>("bg type")->Set(0);
@@ -1285,8 +1287,8 @@ bool BGStatusAction::Execute(Event& event)
     BattleGroundQueueTypeId queueTypeId = bot->GetBattleGroundQueueTypeId(QueueSlot);
     BattleGroundTypeId _bgTypeId = sServerFacade.BGTemplateId(queueTypeId);
     BattleGroundBracketId bracketId;
-#ifndef MANGOSBOT_ZERO    
-    BattleGroundTypeId bgTypeId = BattleGroundTypeId((arenaByte >> 16) & 0xFFFFFFFF);    
+#ifndef MANGOSBOT_ZERO
+    BattleGroundTypeId bgTypeId = BattleGroundTypeId((arenaByte >> 16) & 0xFFFFFFFF);
     _bgTypeId = bgTypeId;
 #endif
 
@@ -1394,9 +1396,10 @@ bool BGStatusAction::Execute(Event& event)
         }
 
         // remove warsong strategy
-        if (sRandomPlayerbotMgr.IsFreeBot(bot))
-            if (!TortoiseBots::BotManager::Instance().ClearBotMaster(bot->GetObjectGuid()))
-                ai->SetMaster(nullptr);
+        if (sRandomPlayerbotMgr.IsFreeBot(bot) &&
+            !TortoiseBots::BotManager::Instance().ClearBotMaster(bot->GetObjectGuid()))
+            sLog.outError("TortoiseBots: failed to clear durable master for %s after battleground cleanup",
+                bot->GetName());
 
         ai->ChangeStrategy("-pvp", BotState::BOT_STATE_COMBAT);
         ai->ChangeStrategy("-warsong", BotState::BOT_STATE_COMBAT);

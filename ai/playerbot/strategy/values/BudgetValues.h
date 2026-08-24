@@ -80,7 +80,7 @@ namespace ai
         HasAllMoneyForValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "has all money for"), Qualified() {}
         virtual bool Calculate() override;
     };
-    
+
     class ShouldGetMoneyValue : public BoolCalculatedValue
     {
     public:
@@ -88,4 +88,3 @@ namespace ai
         virtual bool Calculate() override { return bot->GetLevel() > 6 && !AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::ammo); };
     };
 }
-

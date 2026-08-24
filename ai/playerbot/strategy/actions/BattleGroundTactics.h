@@ -55,7 +55,7 @@ public:
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
     virtual bool Execute(Event& event) override;
 private:
     bool SelectAvObjectiveAlliance(WorldLocation& objectiveLocation);
@@ -95,7 +95,7 @@ public:
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
     virtual bool Execute(Event& event) override;
 private:
     bool moveToCenter(BattleGround *bg);

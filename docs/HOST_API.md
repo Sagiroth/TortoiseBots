@@ -279,8 +279,8 @@ boundary is now Penqle's native `modules/<name>/` loader:
 - `src/TortoiseBotsModule.cpp` is the only loader-recursed source.
 - `host/BotHostAdapter`, `BotPlayerAdapter`, and `BotChatAdapter` register
   generic `WorldScript`, `PlayerScript`, and `AllCommandScript` hooks.
-- `runtime/BotManager` owns bot records, Headless sessions, controllers, and
-  `PlayerbotAIAdapter` instances. Donor `PlayerbotMgr.cpp`,
+- `World` owns Network and Headless session lifetime. `runtime/BotManager` owns
+  bot records and `PlayerbotAIAdapter` instances. Donor `PlayerbotMgr.cpp`,
   `RandomPlayerbotMgr.cpp`, and `PlayerbotLoginMgr.cpp` are not compiled.
 - Core asks only about generic transport/headless capabilities and lifecycle
   hooks; it does not expose bot identity or bot-specific player fields.
@@ -291,7 +291,9 @@ The current link/runtime checkpoint is recorded in `docs/PROVENANCE.md`. The
 runtime gate now also covers AI-enabled startup with the native auxiliary
 schema, Headless AI attachment, pending add/remove cancellation, save/logout,
 and relog. The random-bot service is bounded and only discovers pre-existing
-characters; it does not create accounts or own sessions outside `BotManager`.
+characters; it does not create accounts, and `World` remains the owner of
+Network/Headless session lifetime. `BotManager` owns only module records and
+AI adapters.
 The native compatibility layer also serves the named-location table and
 per-character AH buy/sell multipliers; random gear teleporting and account
 creation remain outside the current boundary.
@@ -337,18 +339,18 @@ without a casted object layout; the runtime emitted `Loading WorldBuffs`.
 
 ## 13. Final pre-playtest correctness pass — 2026-08-24
 
-The native module now owns one centralized movement transition helper on
-`PlayerbotAI`. Follow removes stale wander/stay state, wander removes
-follow/stay, and stay removes follow/wander; guard, free, and passive retain
-their mature shortcut relationships. `BotController` contains only bot/master
-GUIDs and intent/diagnostic state. `BotManager` never invokes controller
-movement; `PlayerbotAIAdapter` is the only gameplay update owner.
+The native module now uses one centralized movement transition helper on
+`PlayerbotAI` only for lifecycle/default recovery. Follow removes stale
+wander/stay state, wander removes follow/stay, and stay removes follow/wander;
+guard, free, and passive retain their mature shortcut relationships. The
+obsolete `BotController` has been removed; `PlayerbotAIAdapter` is the only
+gameplay update owner.
 
 Native `.bot stay` now invokes the mature `StayChatShortcutAction`, so it also
 records the current "return" and "stay" anchors. Native `.bot follow` uses
 the mature follow shortcut when a live master is available. On reconnect,
 `PlayerbotAIAdapter` rebinds the live master pointer and preserves the existing
-mature movement strategies; it consults no stale `BotController` intent.
+mature movement strategies; it consults no second native movement state.
 
 Random-bot adoption/release uses `BotManager::BindBotMaster` and
 `ClearBotMaster`, keeping `BotRecord.masterGuid`, `PlayerbotAI::master`, and

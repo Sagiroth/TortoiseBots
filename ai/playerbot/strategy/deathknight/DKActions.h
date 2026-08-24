@@ -159,7 +159,7 @@ namespace ai
 	public:
 		CastBloodStrikeAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "blood strike") {}
 	};
-	
+
 	class CastFrostStrikeAction : public CastMeleeSpellAction {
 	public:
 		CastFrostStrikeAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "frost strike") {}
@@ -274,7 +274,7 @@ namespace ai
 	public:
 		CastVampiricBloodAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "vampiric blood") {}
 	};
-	
+
 	class CastMindFreezeAction : public CastMeleeSpellAction {
 	public:
 		CastMindFreezeAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "mind freeze") {}

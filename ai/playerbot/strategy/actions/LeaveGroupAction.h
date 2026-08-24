@@ -11,7 +11,7 @@ namespace ai
         LeaveGroupAction(PlayerbotAI* ai, std::string name = "leave") : ChatCommandAction(ai, name) {}
 
         virtual bool Execute(Event& event) override
-        {            
+        {
             Player* master = event.GetOwner();
 
             return Leave(master);
@@ -22,7 +22,7 @@ namespace ai
         virtual bool Leave(Player* player);
     };
 
-    class PartyCommandAction : public LeaveGroupAction 
+    class PartyCommandAction : public LeaveGroupAction
     {
     public:
         PartyCommandAction(PlayerbotAI* ai) : LeaveGroupAction(ai, "party command") {}
@@ -47,7 +47,7 @@ namespace ai
         }
     };
 
-    class UninviteAction : public LeaveGroupAction 
+    class UninviteAction : public LeaveGroupAction
     {
     public:
         UninviteAction(PlayerbotAI* ai) : LeaveGroupAction(ai, "uninvite") {}
@@ -86,7 +86,7 @@ namespace ai
         }
     };
 
-    class LeaveFarAwayAction : public LeaveGroupAction 
+    class LeaveFarAwayAction : public LeaveGroupAction
     {
     public:
         LeaveFarAwayAction(PlayerbotAI* ai) : LeaveGroupAction(ai, "leave far away") {}

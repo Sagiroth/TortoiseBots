@@ -8,7 +8,7 @@
 class PlayerbotAI;
 
 namespace ai
-{      
+{
     //                              itemId, entry
     typedef std::unordered_multimap<uint32, int32> VendorMap;
 
@@ -27,7 +27,7 @@ namespace ai
             return "This value returns all creatures and game objects and the items they sell.";
         }
         virtual std::vector<std::string> GetUsedValues() { return {  }; }
-#endif 
+#endif
     };
 
     //Returns the entries that sell a specific item
@@ -46,7 +46,7 @@ namespace ai
             return "This value returns all vendors that sell a specific item.";
         }
         virtual std::vector<std::string> GetUsedValues() { return { "vendor map" }; }
-#endif 
+#endif
     };
 
     class VendorHasUsefulItemValue : public BoolCalculatedValue, public Qualified
@@ -63,7 +63,6 @@ namespace ai
             return "This value returns true if the specified vendor sells a usefull item.";
         }
         virtual std::vector<std::string> GetUsedValues() { return { "item usage" }; }
-#endif 
+#endif
     };
 }
-

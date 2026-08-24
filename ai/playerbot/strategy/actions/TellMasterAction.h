@@ -4,7 +4,7 @@
 
 namespace ai
 {
-    class TellMasterAction : public Action 
+    class TellMasterAction : public Action
     {
     public:
         TellMasterAction(PlayerbotAI* ai, std::string text) : Action(ai, "tell master"), text(text) {}
@@ -21,7 +21,7 @@ namespace ai
         std::string text;
     };
 
-    class OutOfReactRangeAction : public MovementAction 
+    class OutOfReactRangeAction : public MovementAction
     {
     public:
         OutOfReactRangeAction(PlayerbotAI* ai) : MovementAction(ai, "tell out of react range") {}

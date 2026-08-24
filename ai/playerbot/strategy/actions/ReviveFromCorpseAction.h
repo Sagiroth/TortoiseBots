@@ -4,14 +4,14 @@
 
 namespace ai
 {
-	class ReviveFromCorpseAction : public MovementAction 
+	class ReviveFromCorpseAction : public MovementAction
     {
 	public:
 		ReviveFromCorpseAction(PlayerbotAI* ai) : MovementAction(ai, "revive from corpse") {}
         virtual bool Execute(Event& event) override;
     };
 
-    class FindCorpseAction : public MovementAction 
+    class FindCorpseAction : public MovementAction
     {
     public:
         FindCorpseAction(PlayerbotAI* ai) : MovementAction(ai, "find corpse") {}

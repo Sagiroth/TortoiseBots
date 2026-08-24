@@ -175,7 +175,7 @@ std::list<GuidPosition> RangeFilterValue::Calculate()
 }
 
 std::list<GuidPosition> GosInSightValue::Calculate()
-{ 
+{
    std::string querried_object = "gos";
    std::string querried_distance = std::to_string(sPlayerbotAIConfig.sightDistance);
    std::string querried_relativity = "self";
@@ -245,8 +245,3 @@ std::list<GuidPosition> GoTrappedFilterValue::Calculate()
 
     return result;
 }
-
-
-
-
-

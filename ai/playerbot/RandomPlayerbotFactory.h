@@ -14,7 +14,7 @@ class Item;
 class RandomPlayerbotFactory
 {
     public:
-        
+
         enum class NameRaceAndGender : uint8
         {
             // Generic is the category used for human & undead

@@ -23,7 +23,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
 
     private:
         bool ExecuteCommand(Player* requester, const std::string& text, Unit* bank);

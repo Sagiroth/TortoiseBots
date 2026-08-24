@@ -144,7 +144,7 @@ TestResult CommandSetupSetDestination::Execute(const std::string& params, Player
     std::string dest = params;
     if (params.find("destination ") == 0)
         dest = params.substr(std::string("destination ").length());
-    
+
     GuidPosition loc;
     if (!TestRegistry::ParseLocation(dest, loc))
     {

@@ -87,7 +87,7 @@ bool CheckMountStateAction::Execute(Event& event)
     {
         if (ai->HasStrategy("debug mount", BotState::BOT_STATE_NON_COMBAT) && !IsMounted)
             ai->TellPlayerNoFacing(requester, "Mount. Unable to attack target and target is far or chaseable.");
-        
+
         return Mount(requester);
     }
 
@@ -393,7 +393,7 @@ float CheckMountStateAction::GetAttackDistance() const
 
 bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
 {
-    bool canFly = CanFly();   
+    bool canFly = CanFly();
 
     uint32 currentSpeed = AI_VALUE2(uint32, "current mount speed", "self target");
 

@@ -30,10 +30,15 @@ bool PlayerbotAIAdapter::Initialize()
         // AiFactory builds the engines before the native adapter knows the
         // owner. Re-apply the mature movement default at this seam so manual
         // same-account bots use Strategy/Trigger/Action follow rather than a
-        // controller-side movement implementation.
+        // module-side movement implementation.
         ai_->EnsureDefaultMovementStrategy(); // pi-lens-ignore: clang:all
     }
-    if (!ai_->GetAiObjectContext()) return false; // pi-lens-ignore: clang:all
+    if (!ai_->GetAiObjectContext()) // pi-lens-ignore: clang:all
+    {
+        delete ai_;
+        ai_ = nullptr;
+        return false;
+    }
     PlayerbotAIStorage::Instance().SetAI(bot_, ai_); // pi-lens-ignore: clang:all
     initialized_ = true;
     sLog.outString("TortoiseBots: PlayerbotAI attached for %s (%s) master %s", // pi-lens-ignore: clang:all

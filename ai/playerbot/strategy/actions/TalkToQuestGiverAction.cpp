@@ -30,13 +30,13 @@ bool TalkToQuestGiverAction::ProcessQuest(Player* requester, Quest const* quest,
     }
 
     if (sPlayerbotAIConfig.syncQuestWithPlayer)
-    {        
+    {
         if (requester && requester->GetQuestStatus(quest->GetQuestId()) == QUEST_STATUS_COMPLETE && (status == QUEST_STATUS_INCOMPLETE || status == QUEST_STATUS_FAILED))
         {
             isCompleted |= CompleteQuest(bot, quest->GetQuestId());
             status = bot->GetQuestStatus(quest->GetQuestId());
         }
-    }    
+    }
 
     switch (status)
     {
@@ -78,7 +78,7 @@ bool TalkToQuestGiverAction::TurnInQuest(Player* requester, Quest const* quest, 
     {
         return false;
     }
-    
+
     if (sPlayerbotAIConfig.globalSoundEffects)
     {
         bot->PlayDistanceSound(621);
@@ -94,7 +94,7 @@ bool TalkToQuestGiverAction::TurnInQuest(Player* requester, Quest const* quest, 
     {
         RewardSingleItem(quest, questGiver, out);
     }
-    else 
+    else
     {
         RewardMultipleItem(requester, quest, questGiver, out);
     }
@@ -105,7 +105,7 @@ bool TalkToQuestGiverAction::TurnInQuest(Player* requester, Quest const* quest, 
     return true;
 }
 
-void TalkToQuestGiverAction::RewardNoItem(Quest const* quest, WorldObject* questGiver, std::string& out) 
+void TalkToQuestGiverAction::RewardNoItem(Quest const* quest, WorldObject* questGiver, std::string& out)
 {
     std::map<std::string, std::string> args;
     args["%quest"] = chat->formatQuest(quest);

@@ -53,11 +53,11 @@ public:
             std::string strat = message.substr(message.find("=")+1, message.find(" ") - (message.find("=")+1));
 
             if (!strat.empty())
-            {             
+            {
                 if (ai->HasStrategy(strat,BotState::BOT_STATE_NON_COMBAT))
                     return ChatFilter::Filter(message);
             }
-            return message;            
+            return message;
         }
         if (message.find("@nonc=") == 0)
         {
@@ -157,7 +157,7 @@ public:
     virtual std::string GetHelpName() {
         return "role";
     }
-    virtual std::unordered_map<std::string,std::string> GetFilterExamples() 
+    virtual std::unordered_map<std::string,std::string> GetFilterExamples()
     {
         std::unordered_map<std::string, std::string> retMap;
         retMap["@tank"] = "All bots that have a tank spec.";
@@ -731,7 +731,7 @@ public:
                 return message;
 
             std::string pguild = message.substr(6, message.find(" "));
-            
+
             if (!pguild.empty())
             {
                 Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
@@ -817,7 +817,7 @@ public:
         {
             if (AI_VALUE(uint8, "durability") > 20)
                 return message;
-          
+
             return ChatFilter::Filter(message);
         }
         if (message.find("@outside") == 0)
@@ -833,7 +833,7 @@ public:
                 return message;
 
             return ChatFilter::Filter(message);
-        }      
+        }
         if (message.find("@bagfull") == 0)
         {
             if (AI_VALUE(uint8,"bag space") <= 99)
@@ -868,7 +868,7 @@ public:
         retMap["@use=[itemlink]"] = "All bots that have some use for this item.";
         retMap["@sell=[itemlink]"] = "All bots that will vendor or AH this item.";
         retMap["@need=[itemlink]"] = "All bots that will roll need on this item.";
-        retMap["@greed=[itemlink]"] = "All bots that will roll greed on this item.";        
+        retMap["@greed=[itemlink]"] = "All bots that will roll greed on this item.";
         return retMap;
     }
     virtual std::string GetHelpDescription() {
@@ -974,7 +974,7 @@ public:
 
             return message;
         }
-       
+
         return message;
     }
 };
@@ -1010,7 +1010,7 @@ public:
         {
             return ChatFilter::Filter(message);
         }
-        
+
         return message;
     }
 };
@@ -1110,7 +1110,7 @@ public:
     {
         if (message.find("@random=") == 0)
         {
-            std::string num = message.substr(message.find("=") + 1, message.find(" ") - message.find("=")-1);            
+            std::string num = message.substr(message.find("=") + 1, message.find(" ") - message.find("=")-1);
             if (urand(0, 100) < stoul(num))
                 return ChatFilter::Filter(message);
 
@@ -1240,7 +1240,7 @@ CompositeChatFilter::CompositeChatFilter(PlayerbotAI* ai) : ChatFilter(ai)
     filters.push_back(new RandomChatFilter(ai));
     filters.push_back(new GearChatFilter(ai));
     filters.push_back(new QuestChatFilter(ai));
-    
+
 }
 
 CompositeChatFilter::~CompositeChatFilter()
@@ -1263,4 +1263,3 @@ std::string CompositeChatFilter::Filter(std::string message)
 
     return message;
 }
-

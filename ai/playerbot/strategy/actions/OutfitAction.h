@@ -5,7 +5,7 @@
 
 namespace ai
 {
-    class OutfitAction : public EquipAction 
+    class OutfitAction : public EquipAction
     {
     public:
         OutfitAction(PlayerbotAI* ai) : EquipAction(ai, "outfit") {}

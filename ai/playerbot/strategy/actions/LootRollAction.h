@@ -21,10 +21,10 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return { "active rolls" }; }
-#endif 
+#endif
     };
 
-    class RollAction : public QueryItemUsageAction 
+    class RollAction : public QueryItemUsageAction
     {
     public:
         RollAction(PlayerbotAI* ai, std::string name = "roll") : QueryItemUsageAction(ai, name) {}
@@ -45,7 +45,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return { "item usage", "force item usage"}; }
-#endif 
+#endif
 
     protected:
         virtual ItemQualifier GetRollItem(ObjectGuid lootGuid, uint32 slot);
@@ -56,7 +56,7 @@ namespace ai
         bool RollAboutToExpire(ObjectGuid lootGuid);
     };
 
-    class LootRollAction : public RollAction 
+    class LootRollAction : public RollAction
     {
     public:
         LootRollAction(PlayerbotAI* ai, std::string name = "loot roll") : RollAction(ai, name) {}
@@ -72,10 +72,10 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return { "roll" }; }
         virtual std::vector<std::string> GetUsedValues() { return { "item usage", "force item usage" }; }
-#endif 
+#endif
     };
 
-    class AutoLootRollAction : public RollAction 
+    class AutoLootRollAction : public RollAction
     {
     public:
         AutoLootRollAction(PlayerbotAI* ai, std::string name = "auto loot roll") : RollAction(ai, name) {}
@@ -91,6 +91,6 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return { "roll" }; }
         virtual std::vector<std::string> GetUsedValues() { return { "item usage", "force item usage" }; }
-#endif 
+#endif
     };
 }

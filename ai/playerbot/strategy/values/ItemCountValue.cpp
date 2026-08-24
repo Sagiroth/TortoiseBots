@@ -23,7 +23,7 @@ uint32 ItemCountValue::Calculate()
     std::list<Item*> items = Find(ai, qualifier);
     for (Item* item : items)
         count += item->GetCount();
-    
+
     return count;
 }
 

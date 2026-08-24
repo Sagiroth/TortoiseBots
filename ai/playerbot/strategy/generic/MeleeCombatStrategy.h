@@ -8,7 +8,7 @@ namespace ai
     {
     public:
         MeleeCombatStrategy(PlayerbotAI* ai) : CombatStrategy(ai) {}
-        
+
         virtual int GetType() override { return STRATEGY_TYPE_COMBAT | STRATEGY_TYPE_MELEE; }
         uint32 GetType() const override { return STRATEGY_TYPE_COMBAT | STRATEGY_TYPE_MELEE; }
         virtual std::string getName() override { return "close"; }

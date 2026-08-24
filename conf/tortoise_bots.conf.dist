@@ -4,20 +4,25 @@
 
 [TortoiseBotsConf]
 
-# Optional lifecycle regression test. The character must already exist.
+# Optional lifecycle regression test. The character must already exist and
+# belong to the disposable TBPLAY account or have a TBPLAY-prefixed name. It
+# is one-shot for the process.
 TortoiseBots.AutoTest = 0
 TortoiseBots.AutoTest.AccountId = 0
 TortoiseBots.AutoTest.CharacterGuid = 0
 
-# Fresh packet/event bridge journey. Uses two existing same-account
-# characters, emits a native group invite/accept, exercises master incoming
-# and outgoing packet delivery, then removes both headless fixtures.
+# Fresh packet/event bridge journey. Uses two existing same-account,
+# characters on the disposable TBPLAY account (or TBPLAY-prefixed characters),
+# emits a native group invite/accept, exercises
+# Headless and Network-master outgoing delivery, then removes both fixtures.
+# Real-client incoming delivery is a separate manual gate.
 TortoiseBots.PacketBridgeTest = 0
 TortoiseBots.PacketBridgeTest.AccountId = 0
 TortoiseBots.PacketBridgeTest.MasterGuid = 0
 TortoiseBots.PacketBridgeTest.BotGuid = 0
 
-# Optional AddBot -> immediate RemoveBot queue regression test.
+# Optional AddBot -> immediate RemoveBot queue regression test. The character
+# must be a disposable TBPLAY-account or TBPLAY-prefixed fixture.
 TortoiseBots.PendingAddRemoveTest = 0
 TortoiseBots.PendingAddRemoveTest.AccountId = 0
 TortoiseBots.PendingAddRemoveTest.CharacterGuid = 0

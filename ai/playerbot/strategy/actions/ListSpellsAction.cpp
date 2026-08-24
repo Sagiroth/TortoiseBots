@@ -54,7 +54,7 @@ bool CompareSpells(std::pair<uint32, std::string>& s1, std::pair<uint32, std::st
 }
 
 std::list<std::pair<uint32, std::string> > ListSpellsAction::GetSpellList(std::string filter)
-{    
+{
     if (skillSpells.empty())
     {
         for (uint32 j = 0; j < sSkillLineAbilityStore.GetNumRows(); ++j)
@@ -285,4 +285,3 @@ bool ListSpellsAction::Execute(Event& event)
 
     return true;
 }
-

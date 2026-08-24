@@ -250,7 +250,7 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
 
                 if (summoner->GetTransport())
                     summoner->GetTransport()->AddPassenger(player, false);
-                    
+
                 if(ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT))
                     SET_AI_VALUE2(PositionEntry, "pos", "stay", PositionEntry(x, y, z, mapId));
                 if (ai->HasStrategy("guard", BotState::BOT_STATE_NON_COMBAT))
@@ -279,6 +279,6 @@ bool AcceptSummonAction::Execute(Event& event)
     response << uint8(1);
 #endif
     bot->GetSession()->HandleSummonResponseOpcode(response);
-    
+
     return true;
 }

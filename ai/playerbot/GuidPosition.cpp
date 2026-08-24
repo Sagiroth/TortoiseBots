@@ -150,7 +150,7 @@ const ReputationRank GuidPosition::GetReactionTo(const GuidPosition& other, uint
 #endif
             }
         }
-  
+
     return PlayerbotAI::GetFactionReaction(GetFactionTemplateEntry(), other.GetFactionTemplateEntry());
 }
 
@@ -204,7 +204,7 @@ bool GuidPosition::IsEventUnspawned()
     if (int16 event_id = GetGameEventId())
         if (!sGameEventMgr.IsActiveEvent(event_id))
             return true;
-    
+
     return false;
 }
 

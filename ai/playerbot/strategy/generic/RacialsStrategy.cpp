@@ -7,7 +7,7 @@ using namespace ai;
 void RacialsStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
 {
 	triggers.push_back(new TriggerNode(
-		"low health", 
+		"low health",
 		NextAction::array(0, new NextAction("gift of the naaru", 71.0f), NULL)));
 
     triggers.push_back(new TriggerNode(

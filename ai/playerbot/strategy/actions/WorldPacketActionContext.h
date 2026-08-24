@@ -35,7 +35,7 @@ namespace ai
     {
     public:
         WorldPacketActionContext()
-        {   
+        {
             creators["bg status check"] = [](PlayerbotAI* ai) { return new BGStatusCheckAction(ai); };
             creators["bg status"] = [](PlayerbotAI* ai) { return new BGStatusAction(ai); };
             creators["bg join"] = [](PlayerbotAI* ai) { return new BGJoinAction(ai); };

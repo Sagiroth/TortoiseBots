@@ -3,7 +3,7 @@
 #include "playerbot/strategy/generic/FollowMasterStrategy.h"
 
 namespace ai
-{   
+{
     class WanderStrategy : public FollowMasterStrategy
     {
     public:

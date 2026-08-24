@@ -13,7 +13,7 @@ class PlayerbotAI;
 
 namespace ai
 {
-    class PlayerbotAIAware 
+    class PlayerbotAIAware
     {
     public:
         PlayerbotAIAware(PlayerbotAI* const ai) : ai(ai), botAI(ai) { }

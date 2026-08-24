@@ -5,7 +5,7 @@ namespace ai
 {
 	class SpellTrigger;
 
-    class NeedCureTrigger : public SpellTrigger 
+    class NeedCureTrigger : public SpellTrigger
     {
     public:
         NeedCureTrigger(PlayerbotAI* ai, std::string spell, uint32 dispelType, int checkInterval = 3) : SpellTrigger(ai, spell, checkInterval), dispelType(dispelType) {}
@@ -16,21 +16,21 @@ namespace ai
         uint32 dispelType;
     };
 
-    class TargetAuraDispelTrigger : public NeedCureTrigger 
+    class TargetAuraDispelTrigger : public NeedCureTrigger
     {
     public:
         TargetAuraDispelTrigger(PlayerbotAI* ai, std::string spell, uint32 dispelType, int checkInterval = 3) : NeedCureTrigger(ai, spell, dispelType, checkInterval) {}
 		virtual std::string GetTargetName() override { return "current target"; }
     };
 
-    class PartyMemberNeedCureTrigger : public NeedCureTrigger 
+    class PartyMemberNeedCureTrigger : public NeedCureTrigger
     {
     public:
         PartyMemberNeedCureTrigger(PlayerbotAI* ai, std::string spell, uint32 dispelType) : NeedCureTrigger(ai, spell, dispelType) {}
 		virtual Value<Unit*>* GetTargetValue() override;
     };
 
-    class NeedWorldBuffTrigger : public Trigger 
+    class NeedWorldBuffTrigger : public Trigger
     {
     public:
         NeedWorldBuffTrigger(PlayerbotAI* ai) : Trigger(ai, "need world buff", 5) {}

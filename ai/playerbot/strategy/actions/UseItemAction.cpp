@@ -200,7 +200,7 @@ bool RequiresItemToUse(const ItemPrototype* itemProto, PlayerbotAI* ai, Player* 
     if (!ai->HasCheat(BotCheatMask::item))
         return true;
 
-    // Exception items                                  Jujus                                            Holy water    
+    // Exception items                                  Jujus                                            Holy water
     const std::unordered_set<uint32> itemExceptions = { 12450, 12451, 12455, 12457, 12458, 12459, 12460, 13180, 7189 };
     if (itemExceptions.find(itemProto->ItemId) != itemExceptions.end())
         return false;
@@ -535,7 +535,7 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
         // Check if valid targets
         bool validTarget = false;
         SpellCastTargets targets;
-        
+
         // Try to figure out which targets are allowed if the spell doesn't provide it
         uint32 spellTargets = spellInfo->Targets;
         if (spellTargets == 0)
@@ -545,7 +545,7 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
                 (proto->Class == ITEM_CLASS_CONSUMABLE && proto->SubClass == ITEM_SUBCLASS_SCROLL) || // Scrolls
                 (proto->Class == ITEM_CLASS_TRADE_GOODS && proto->SubClass == ITEM_SUBCLASS_EXPLOSIVES) || // Explosives
                 (spellData.SpellCategory == 150) || // First aid
-                (spellData.SpellCategory == 831)) // Soulstone 
+                (spellData.SpellCategory == 831)) // Soulstone
             {
                 spellTargets |= TARGET_FLAG_UNIT;
             }
@@ -558,7 +558,7 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
             }
 
             // No target
-            if (spellTargets == 0 && 
+            if (spellTargets == 0 &&
                 (spellInfo->EffectImplicitTargetA[0] == TARGET_NONE || // No target
                  spellInfo->EffectImplicitTargetA[0] == TARGET_UNIT_CASTER)) // Self Target
             {
@@ -581,7 +581,7 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
                 validTarget = true;
             }
         }
-        
+
         if (spellTargets & TARGET_FLAG_UNIT && !validTarget)
         {
             if (unit && IsTargetValidForItemUse(itemId, unit))
@@ -591,7 +591,7 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
                 validTarget = true;
             }
         }
-        
+
         if ((spellTargets & TARGET_FLAG_GAMEOBJECT || spellTargets & TARGET_FLAG_LOCKED) && !validTarget)
         {
             if (gameObject && gameObject->isSpawned())
@@ -634,7 +634,7 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
                 }
             }
         }
-        
+
         if (!validTarget)
         {
             targets.setUnitTarget(bot);
@@ -653,11 +653,11 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
             // Use triggered flag only for items with many spell casts and for not first cast
             BotUseItemSpell* spell = new BotUseItemSpell(bot, spellInfo, (successCasts > 0) ? TRIGGERED_OLD_TRIGGERED : TRIGGERED_NONE);
             spell->m_clientCast = true;
-            
+
 #ifdef MANGOSBOT_ONE
             // used in item_template.spell_2 with spell_id with SPELL_GENERIC_LEARN in spell_1
             if (spellInfo->Id == SPELL_ID_GENERIC_LEARN && proto->Spells[1].SpellTrigger == ITEM_SPELLTRIGGER_LEARN_SPELL_ID)
-                spell->m_currentBasePoints[EFFECT_INDEX_0] = proto->Spells[1].SpellId; 
+                spell->m_currentBasePoints[EFFECT_INDEX_0] = proto->Spells[1].SpellId;
 #endif
 #ifdef MANGOSBOT_TWO
             // used in item_template.spell_2 with spell_id with SPELL_GENERIC_LEARN in spell_1
@@ -925,7 +925,7 @@ bool UseAction::UseGameObject(Player* requester, Event& event, GameObject* gameO
     std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
     *packet << guid;
     bot->GetSession()->QueuePacket(packet.release());
-    
+
     std::ostringstream out; out << "Using " << chat->formatGameobject(gameObject);
     ai->TellPlayerNoFacing(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
     return true;
@@ -1204,7 +1204,7 @@ bool UseItemIdAction::isPossible()
             continue;
         }
 
-        spellCount++;        
+        spellCount++;
     }
 
     return spellCount;
@@ -1284,7 +1284,7 @@ bool UseHearthStoneAction::Execute(Event& event)
     return used;
 }
 
-bool UseHearthStoneAction::isUseful() 
+bool UseHearthStoneAction::isUseful()
 {
     uint32 spellId = 8690;
     if (!bot->HasItemCount(6948, 1)) //Hearthstone
@@ -1327,7 +1327,7 @@ bool UseRandomRecipeAction::Execute(Event& event)
 {
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
 
-    std::list<Item*> recipes = AI_VALUE2(std::list<Item*>, "inventory items", "recipe"); 
+    std::list<Item*> recipes = AI_VALUE2(std::list<Item*>, "inventory items", "recipe");
 
     std::string recipeName = "";
     for (auto& recipe : recipes)
@@ -1471,7 +1471,7 @@ bool UseRandomQuestItemAction::Execute(Event& event)
                         unitTarget = nullptr;
                         break;
                     }
-                }               
+                }
             }
         }
         */

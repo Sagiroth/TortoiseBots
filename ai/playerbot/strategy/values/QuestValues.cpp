@@ -74,7 +74,7 @@ EntryQuestRelationMap EntryQuestRelationMapValue::Calculate()
 			}
 		}
 
-		//Target entry of source item of quest. 
+		//Target entry of source item of quest.
 		if (quest->GetSrcItemId())
 		{
 			ItemRequiredTargetMapBounds bounds = sObjectMgr.GetItemRequiredTargetMapBounds(quest->GetSrcItemId());
@@ -91,20 +91,20 @@ EntryQuestRelationMap EntryQuestRelationMapValue::Calculate()
 	rMap[28605][12680] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Havenshire Stallion][Grand Theft Palomino]
 	rMap[28606][12680] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Havenshire Mare][Grand Theft Palomino]
 	rMap[28607][12680] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Havenshire Cotl][Grand Theft Palomino]
-	rMap[28653][12680] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Salanar the Horseman][Grand Theft Palomino]	
+	rMap[28653][12680] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Salanar the Horseman][Grand Theft Palomino]
 
-	rMap[28909][12687] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Dark Rider of Acherus][Into the Realm of Shadows]	
-	rMap[28782][12687] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Acherus Deathcharger][Into the Realm of Shadows]	
-	rMap[29501][12687] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Scourge Gryphon][Into the Realm of Shadows]	
-	
+	rMap[28909][12687] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Dark Rider of Acherus][Into the Realm of Shadows]
+	rMap[28782][12687] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Acherus Deathcharger][Into the Realm of Shadows]
+	rMap[29501][12687] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Scourge Gryphon][Into the Realm of Shadows]
+
 	rMap[28577][12678] |= (uint8)TravelDestinationPurpose::QuestObjective2; //[Citizen of Havenshire][If Chaos Drives, Let Suffering Hold The Reins]
 	rMap[28576][12678] |= (uint8)TravelDestinationPurpose::QuestObjective2; //[Citizen of Havenshire][If Chaos Drives, Let Suffering Hold The Reins]
 
-	rMap[28658][12698] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Gothic the Harvester][The Gift That Keeps On Giving]	
-	rMap[28819][12698] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Scarlet Miner][The Gift That Keeps On Giving]	
+	rMap[28658][12698] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Gothic the Harvester][The Gift That Keeps On Giving]
+	rMap[28819][12698] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Scarlet Miner][The Gift That Keeps On Giving]
 
-	rMap[-190767][12701] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Inconspicuous mine car][Massacre At Light's Point]	
-	rMap[28833][12701] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Scarlet Cannon][Massacre At Light's Point]	
+	rMap[-190767][12701] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Inconspicuous mine car][Massacre At Light's Point]
+	rMap[28833][12701] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Scarlet Cannon][Massacre At Light's Point]
 
 	rMap[28941][12722] |= (uint8)TravelDestinationPurpose::QuestObjective2; //[Citizen of New Avalon][Lambs To The Slaughter]
     rMap[28942][12722] |= (uint8)TravelDestinationPurpose::QuestObjective2; //[Citizen of Havenshire][Lambs To The Slaughter]
@@ -112,16 +112,16 @@ EntryQuestRelationMap EntryQuestRelationMapValue::Calculate()
 	rMap[28912][12727] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Koltira Deathweaver][Bloody Breakout]
 
 	rMap[28936][12754] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Scarlet Commander][Ambush At The Overlook]
-    rMap[29076][12754] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Scarlet Courier][Ambush At The Overlook]    
+    rMap[29076][12754] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Scarlet Courier][Ambush At The Overlook]
 
 
-	rMap[29102][12779] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[HearthglenCrusader][An End To All Things]    
-	rMap[29103][12779] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Tirisfal Crusader][An End To All Things]    
-	rMap[29104][12779] |= (uint8)TravelDestinationPurpose::QuestObjective2; //[Scarlet Ballista][An End To All Things]    
+	rMap[29102][12779] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[HearthglenCrusader][An End To All Things]
+	rMap[29103][12779] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Tirisfal Crusader][An End To All Things]
+	rMap[29104][12779] |= (uint8)TravelDestinationPurpose::QuestObjective2; //[Scarlet Ballista][An End To All Things]
 
-	rMap[29173][12801] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Highlord Darion Mograine][The Light of Dawn]    
-	rMap[29175][12801] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Highlord Tirion Fordring][The Light of Dawn]    
-	
+	rMap[29173][12801] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Highlord Darion Mograine][The Light of Dawn]
+	rMap[29175][12801] |= (uint8)TravelDestinationPurpose::QuestObjective1; //[Highlord Tirion Fordring][The Light of Dawn]
+
 #endif
 	return rMap;
 }
@@ -277,7 +277,7 @@ std::list<GuidPosition> ActiveQuestTakersValue::Calculate()
 		auto qt = q->second.find((uint8)TravelDestinationPurpose::QuestTaker);
 
 		if (qt == q->second.end())
-			continue;		
+			continue;
 
 		for (auto& [entry, guidps] : qt->second)
 		{
@@ -314,7 +314,7 @@ std::list<GuidPosition> ActiveQuestObjectivesValue::Calculate()
 		QuestStatusMap& questStatusMap = bot->getQuestStatusMap();
 
 	for (auto& [questId, questStatusData] : questStatusMap)
-	{		
+	{
 		Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
 
 		if (!quest || !quest->IsActive())
@@ -408,7 +408,7 @@ bool NeedForQuestValue::Calculate()
 				continue;
 
 			DestinationList destinations = sTravelMgr.GetDestinations(info, uint32(TravelDestinationPurpose::QuestAllObjective), {int32(questId)}, false, 0);
-			
+
 			for (auto destination : destinations)
 			{
                 if (entry == destination->GetEntry())
@@ -612,7 +612,7 @@ bool NeedQuestObjectiveValue::Calculate()
 	if (getQualifier().find(",") == std::string::npos) //Status of entire quest.
 		return true;
 
-#ifdef MANGOSBOT_TWO        
+#ifdef MANGOSBOT_TWO
 		switch (questId) {
 		case 12687: //Into the Realm of Shadows
 			return true; //No objectives for this quest.
@@ -671,12 +671,12 @@ bool CanUseItemOn::Calculate()
         case 39645:                                                                                                                 //Makeshift Cover
             return guidP.IsCreature() && guidP.GetEntry() == 28936;                                                                 //Scarlet Commander
             /*        case 39700:                                                                                                                 //Horn of the Frostbrood
-        
+
 			switch (AI_VALUE(TravelTarget*, "travel target")->GetEntry())
             case 29102: //HearthglenCrusader
             case 29103: //Tirisfal Crusader
             case 29104: //Scarlet Ballista
-		
+
             return !AI_VALUE2(bool, "trigger active", "in vehicle") && AI_VALUE2(bool, "need quest objective", "12779"); //Mount up!
 		*/
     }
@@ -727,7 +727,7 @@ bool HasNearbyQuestTakerValue::Calculate()
 	std::list<ObjectGuid> possibleTargets = AI_VALUE(std::list<ObjectGuid>, "possible rpg targets");
 
 	int32 travelEntry = AI_VALUE(TravelTarget*, "travel target")->GetEntry();
-	
+
 	for (auto& target : possibleTargets)
 	{
 		if (target.GetEntry() == travelEntry)

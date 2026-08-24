@@ -203,6 +203,21 @@ uint32 PlayerbotHolder::GetPlayerbotsAmount() const
 RandomPlayerbotMgr::RandomPlayerbotMgr() = default;
 RandomPlayerbotMgr::~RandomPlayerbotMgr() = default;
 
+void RandomPlayerbotMgr::SyncNativePlayers()
+{
+    players.clear();
+    for (Player* player : TortoiseBots::BotManager::Instance().GetAllBots())
+    {
+        if (!player || !player->GetSession() || !player->GetSession()->IsHeadless())
+            continue;
+
+        TortoiseBots::BotRecord* record =
+            TortoiseBots::BotManager::Instance().FindBot(player->GetObjectGuid());
+        if (record && record->random && player->IsInWorld())
+            players[player->GetObjectGuid().GetCounter()] = player;
+    }
+}
+
 void RandomPlayerbotMgr::UpdateAIInternal(uint32 /*elapsed*/, bool /*minimal*/)
 {
     // RandomBotService and BotManager are the only native update owners.

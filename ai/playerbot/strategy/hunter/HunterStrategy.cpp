@@ -560,7 +560,7 @@ void HunterStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "no pet",
-        NextAction::array(0, new NextAction("tame beast", ACTION_EMERGENCY), NULL)));    
+        NextAction::array(0, new NextAction("tame beast", ACTION_EMERGENCY), NULL)));
 }
 
 void HunterStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

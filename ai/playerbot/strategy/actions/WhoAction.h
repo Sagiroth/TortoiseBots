@@ -4,7 +4,7 @@
 
 namespace ai
 {
-    class WhoAction : public ChatCommandAction 
+    class WhoAction : public ChatCommandAction
     {
     public:
         WhoAction(PlayerbotAI* ai) : ChatCommandAction(ai, "who") {}

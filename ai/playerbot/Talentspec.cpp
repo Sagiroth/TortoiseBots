@@ -427,7 +427,7 @@ bool TalentSpec::isEarlierVersionOf(TalentSpec& newSpec)
 
 //Modifies current talents towards new talents up to a maximum of points.
 void TalentSpec::ShiftTalents(TalentSpec* currentSpec, Player* bot)
-{    
+{
 
     if (points >= bot->CalculateTalentsPoints()) //We have no more points to spend. Better reset and crop
     {

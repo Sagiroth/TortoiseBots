@@ -99,4 +99,3 @@ bool MarkRtiAction::Execute(Event& event)
 #endif
     return true;
 }
-

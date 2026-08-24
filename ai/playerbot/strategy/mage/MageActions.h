@@ -171,8 +171,8 @@ namespace ai
             return false;
         }
 
-        bool isPossible() override 
-        { 
+        bool isPossible() override
+        {
             if (!ai->HasCheat(BotCheatMask::item))
             {
                 const uint32 level = bot->GetLevel();
@@ -321,7 +321,7 @@ namespace ai
     public:
         CastConeOfColdAction(PlayerbotAI* ai) : CastMeleeAoeSpellAction(ai, "cone of cold", 10.0f) {}
     };
-    
+
     BUFF_ACTION(CastSummonWaterElementalAction, "summon water elemental");
 
     class CastDragonsBreathAction : public CastMeleeAoeSpellAction
@@ -358,7 +358,7 @@ namespace ai
     {
     public:
         MirrorImageAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "mirror image") {}
-    }; 
+    };
 
     class UseManaGemAction : public UseItemIdAction
     {

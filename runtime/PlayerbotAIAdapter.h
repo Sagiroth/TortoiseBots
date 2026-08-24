@@ -34,7 +34,7 @@ public:
 
     // Rebind only the live master pointer. Mature PlayerbotAI strategies are
     // authoritative across reconnect; the native adapter does not reconstruct
-    // movement from BotController intent or replace the Headless session.
+    // movement from a second native state holder or replace the Headless session.
     void RebindMaster(Player* master);
     void DetachMaster();
 

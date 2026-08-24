@@ -29,7 +29,7 @@ bool ItemsUsefulToGiveValue::IsTradingItem(uint32 entry)
 std::list<Item*> ItemsUsefulToGiveValue::Calculate()
 {
     GuidPosition guidP = AI_VALUE(GuidPosition, "rpg target");
-    
+
     Player* player = guidP.GetPlayer();
 
     if (!ai->IsSafe(player))

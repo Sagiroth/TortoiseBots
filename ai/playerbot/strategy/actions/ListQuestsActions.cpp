@@ -66,12 +66,12 @@ int ListQuestsAction::ListQuests(Player* requester, bool completed, bool silent,
     std::string yellow = "|cFFFFFF00";
     std::string green = "|cFF00FF00";
 
-    std::unordered_map<TravelDestinationPurpose, std::string> typeName = 
+    std::unordered_map<TravelDestinationPurpose, std::string> typeName =
     { {TravelDestinationPurpose::QuestGiver, "G"}, {TravelDestinationPurpose::QuestTaker,"T"}, {TravelDestinationPurpose::QuestObjective1,"1"}, {TravelDestinationPurpose::QuestObjective2,"2"}, {TravelDestinationPurpose::QuestObjective3,"3"}, {TravelDestinationPurpose::QuestObjective4,"4"} };
-    
+
     if (travelDetail != QUEST_TRAVEL_DETAIL_NONE)
         target = AI_VALUE(TravelTarget*,"travel target");
-   
+
     std::list<uint32> questIds;
 
     for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "group members"))
@@ -184,7 +184,7 @@ int ListQuestsAction::ListQuests(Player* requester, bool completed, bool silent,
         }
 
         ai->TellPlayer(requester, out);
-    }    
+    }
 
     return questIds.size();
 }

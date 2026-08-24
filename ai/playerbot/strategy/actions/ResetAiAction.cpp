@@ -57,7 +57,7 @@ void ResetAiAction::ResetValues()
                 value->Reset();
             else
                 value->Load(text);
-            
+
         } while (results->NextRow());
 
         if(fullReset)
@@ -136,7 +136,7 @@ bool ResetStratsAction::Execute(Event& event)
 {
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     ResetStrategies();
-   
+
     if (fullReset)
     {
         ai->TellError(requester, "Strategies reset to defaults");

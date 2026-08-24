@@ -139,7 +139,7 @@ bool GuardAction::isUseful()
             return false;
         }
     }
-            
+
     return true;
 }
 
@@ -190,7 +190,7 @@ bool ReturnToStayPositionAction::isPossible()
         if (distance > sPlayerbotAIConfig.reactDistance)
         {
             ai->TellError(GetMaster(), "The stay position is too far to return. I am going to stay where I am now");
-            
+
             // Set the stay position to current position
             stayPosition.Set(bot->getPositionX(), bot->getPositionY(), bot->getPositionZ(), bot->GetMapId());
             posMap["stay"] = stayPosition;
@@ -234,4 +234,3 @@ bool ReturnToPullPositionAction::isPossible()
 
     return false;
 }
-

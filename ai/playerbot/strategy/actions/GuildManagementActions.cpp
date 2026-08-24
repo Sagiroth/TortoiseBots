@@ -32,11 +32,11 @@ Player* GuidManageAction::GetPlayer(Event event)
 
         return nullptr;
     }
-        
+
     Player* master = GetMaster();
     if (master && master == event.GetOwner())
         guid = bot->GetSelectionGuid();
-    
+
     player = sObjectMgr.GetPlayer(guid);
 
     if (player)
@@ -46,7 +46,7 @@ Player* GuidManageAction::GetPlayer(Event event)
 
     if (player)
        return player;
-    
+
     return nullptr;
 }
 
@@ -84,7 +84,7 @@ bool GuildManageNearbyAction::Execute(Event& event)
 
 
         if(player->GetGuildId()) //Promote or demote nearby members based on chance.
-        {          
+        {
             MemberSlot* member = guild->GetMemberSlot(player->getObjectGuid());
             uint32 dCount = AI_VALUE(uint32, "death count");
 
@@ -127,11 +127,11 @@ bool GuildManageNearbyAction::Execute(Event& event)
         PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(player);
 
         if (botAi)
-        {            
+        {
             if (botAi->GetGuilderType() == GuilderType::SOLO) //Do not invite solo players.
                 continue;
-            
-            if (botAi->HasActivePlayerMaster() && !sRandomPlayerbotMgr.IsRandomBot(player)) //Do not invite alts of active players. 
+
+            if (botAi->HasActivePlayerMaster() && !sRandomPlayerbotMgr.IsRandomBot(player)) //Do not invite alts of active players.
                 continue;
 
             if (guild->GetMemberSize() >= botAi->GetMaxPreferedGuildSize() || guild->GetMemberSize() < botAi->GetMaxPreferedGuildSize() / 4)
@@ -214,7 +214,7 @@ bool GuildManageNearbyAction::Execute(Event& event)
                 else
                     bot->Say(line, (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
         }
-        
+
         if (ai->DoSpecificAction("guild invite", Event("guild management", guid), true))
         {
             if (sPlayerbotAIConfig.inviteChat)
@@ -247,8 +247,8 @@ bool GuildLeaveAction::Execute(Event& event)
         return false;
     }
 
-    Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId()); 
-    
+    Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
+
     if (guild->GetMemberSize() > sPlayerbotAIConfig.guildMaxBotLimit)
     {
         std::map<std::string, std::string> placeholders;

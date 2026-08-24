@@ -30,7 +30,7 @@ bool SetHomeAction::Execute(Event& event)
         {
             if (isRpgAction)
             {
-                Creature* creature = ai->GetCreature(selection);                   
+                Creature* creature = ai->GetCreature(selection);
                 bot->GetSession()->SendBindPoint(creature);
                 ai->TellPlayer(requester, "This inn is my new home", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
                 RESET_AI_VALUE(WorldPosition, "home bind");

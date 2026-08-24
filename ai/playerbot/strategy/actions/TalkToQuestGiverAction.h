@@ -6,7 +6,7 @@
 
 namespace ai
 {
-    class TalkToQuestGiverAction : public QuestAction 
+    class TalkToQuestGiverAction : public QuestAction
     {
     public:
         TalkToQuestGiverAction(PlayerbotAI* ai) : QuestAction(ai, "talk to quest giver") {}

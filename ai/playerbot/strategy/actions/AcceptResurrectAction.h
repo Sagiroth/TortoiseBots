@@ -28,7 +28,7 @@ namespace ai
 
             return false;
         }
-        
+
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "accept resurrect"; } //Must equal iternal name
         virtual std::string GetHelpDescription()
@@ -37,7 +37,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
     };
 
 }

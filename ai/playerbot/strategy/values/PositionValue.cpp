@@ -63,11 +63,10 @@ void SinglePositionValue::Set(PositionEntry value)
     pos = value;
     posMap[getQualifier()] = pos;
 }
-void SinglePositionValue::Reset() 
+void SinglePositionValue::Reset()
 {
     PositionMap& posMap = AI_VALUE(PositionMap&, "position");
     PositionEntry pos = posMap[getQualifier()];
     pos.Reset();
     posMap[getQualifier()] = pos;
 }
-

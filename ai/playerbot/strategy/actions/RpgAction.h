@@ -19,7 +19,7 @@ namespace ai
         typedef void (RpgAction::* RpgElement) (ObjectGuid guid);
         virtual bool AddIgnore(ObjectGuid guid);
         virtual bool RemIgnore(ObjectGuid guid);
-        virtual bool HasIgnore(ObjectGuid guid);   
+        virtual bool HasIgnore(ObjectGuid guid);
     };
 
     class CRpgAction : public RpgAction {

@@ -29,7 +29,7 @@ namespace ai
 
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "avoid aoe"; } //Must equal iternal name
-        virtual std::string GetHelpDescription() 
+        virtual std::string GetHelpDescription()
         {
             return "This strategy will make bots move away when they are in aoe.";
         }
@@ -48,7 +48,7 @@ namespace ai
     public:
         AvoidAoeStrategyMultiplier(PlayerbotAI* ai) : Multiplier(ai, "run away on area debuff") {}
         float GetValue(Action* action) override;
-        
+
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "run away on area debuff"; } //Must equal iternal name
         virtual std::string GetHelpDescription() {

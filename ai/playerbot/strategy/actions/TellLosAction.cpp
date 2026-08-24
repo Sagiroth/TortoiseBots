@@ -188,7 +188,7 @@ void TellLosAction::TellGameObjects(Player* requester, std::string title, const 
    bool bShowGuid = std::find_if(mods.begin(), mods.end(), [](const LosModifierStruct& el) { return el.typ == LosModifierType::ShowGuid; }) != mods.end();
 
    for (GameObject* go : gos)
-   {  
+   {
       std::ostringstream ss;
 
       ss << chat->formatGameobject(go);

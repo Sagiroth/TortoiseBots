@@ -18,7 +18,7 @@ void PlayerbotAIBase::UpdateAI(uint32 elapsed)
     // E2E green: PerformanceMonitor disabled
     // totalPmo.reset();
     // totalPmo = sPerformanceMonitor.start(PERF_MON_TOTAL, "PlayerbotAIBase::FullTick");
-    
+
     if (aiInternalUpdateDelay > elapsed)
         aiInternalUpdateDelay -= elapsed;
     else

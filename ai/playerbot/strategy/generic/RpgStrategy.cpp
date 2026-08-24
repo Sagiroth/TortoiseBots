@@ -29,7 +29,7 @@ void RpgStrategy::OnStrategyAdded(BotState state)
 {
     ai->ChangeStrategy("+rpg quest,+rpg vendor,+rpg explore,+rpg maintenance,+rpg player,+rpg bg,+rpg guild", state);
 }
-void RpgStrategy::OnStrategyRemoved(BotState state) 
+void RpgStrategy::OnStrategyRemoved(BotState state)
 {
     ai->ChangeStrategy("-rpg quest,-rpg vendor,-rpg explore,-rpg maintenance,-rpg player,-rpg bg,-rpg guild", state);
 }
@@ -79,7 +79,7 @@ void RpgStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
 
     triggers.push_back(new TriggerNode(
         "rpg ai chat",
-        NextAction::array(0, new NextAction("rpg ai chat", 1.003f), NULL)));   
+        NextAction::array(0, new NextAction("rpg ai chat", 1.003f), NULL)));
 }
 
 void RpgStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers)

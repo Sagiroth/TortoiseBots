@@ -126,7 +126,7 @@ std::list<ObjectGuid> AttackersValue::Calculate()
             return result;
         }
     }
-    
+
     calculatePos = bot;
 
     std::set<Unit*> targets;
@@ -178,7 +178,7 @@ void AttackersValue::AddTargetsOf(Group* group, std::set<Unit*>& targets, std::s
            sServerFacade.IsAlive(member) &&
            member->IsInWorld() &&
            !member->IsBeingTeleported() &&
-           (member->GetMapId() == bot->GetMapId()) && 
+           (member->GetMapId() == bot->GetMapId()) &&
            (sServerFacade.getDistance2d(bot, member) <= GetRange()))
         {
             AddTargetsOf(member, targets, invalidTargets, getOne);
@@ -436,7 +436,7 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
             {
                 return false;
             }
-        }        
+        }
     }
 
     if (IgnoreTarget(target, playerToCheckAgainst))
@@ -448,7 +448,7 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
 bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
 {
     if (!PlayerbotAIStorage::Instance().GetAI(playerToCheckAgainst))
-        return false; 
+        return false;
 
     PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(playerToCheckAgainst);
     AiObjectContext* context = ai->GetAiObjectContext();
@@ -543,7 +543,7 @@ std::string AttackersValue::Format()
         if (wo)
             out << wo->GetName();
         else
-            out << target;      
+            out << target;
     }
 
     return out.str();

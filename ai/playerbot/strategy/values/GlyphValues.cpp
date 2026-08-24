@@ -72,7 +72,7 @@ GlyphSlotType AvailableGlyphsValue::GetGlyphSlotTypeFromItemId(uint32 itemId)
 
     if (gp->TypeFlags == 0)
         return GlyphSlotType::MAJOR_SLOT;
-    
+
     if(gp->TypeFlags == 1)
        return GlyphSlotType::MINOR_SLOT;
 #endif
@@ -88,7 +88,7 @@ GlyphSlotType AvailableGlyphsValue::GetGlyphSlotTypeFromSlot(uint8 slotId, uint3
 
         if (!gs)
             continue;
-        
+
         if (!gs->Order)
             continue;
 

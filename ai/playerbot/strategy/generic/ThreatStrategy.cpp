@@ -19,8 +19,8 @@ float ThreatMultiplier::GetValue(Action* action)
         uint8 threat = AI_VALUE2(uint8, "threat", "aoe");
         if (threat >= 50)
             return 0.0f;
-    }    
-    
+    }
+
 
     if (ai->HasStrategy("debug threat", BotState::BOT_STATE_COMBAT))
     {

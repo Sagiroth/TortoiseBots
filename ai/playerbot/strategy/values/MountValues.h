@@ -48,7 +48,7 @@ namespace ai
         MountListValue(PlayerbotAI* ai) : CalculatedValue<std::vector<MountValue>>(ai, "mount list", 10) {}
         virtual std::vector<MountValue> Calculate() override;
         virtual std::string Format() override;
-    };   
+    };
 
     class MaxMountSpeedValue : public Uint32CalculatedValue, public Qualified
     {
@@ -74,7 +74,7 @@ namespace ai
     };
 
     class CanTrainMountValue : public BoolCalculatedValue
-    { 
+    {
     public:
         CanTrainMountValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "can train mount", 10) {}
 

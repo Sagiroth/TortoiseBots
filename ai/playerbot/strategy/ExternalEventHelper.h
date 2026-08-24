@@ -5,7 +5,7 @@
 
 namespace ai
 {
-    class ExternalEventHelper 
+    class ExternalEventHelper
     {
     public:
         ExternalEventHelper(AiObjectContext* aiObjectContext) : aiObjectContext(aiObjectContext) {}
@@ -68,10 +68,10 @@ namespace ai
             if (!trigger)
                 return true;
 
-            Event event = trigger->Check();            
+            Event event = trigger->Check();
             if (!event.getSource().empty())
                 return false;
-                        
+
             WorldPacket p(packet);
             trigger->ExternalEvent(p, owner);
 

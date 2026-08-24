@@ -80,7 +80,7 @@ bool GoAction::Execute(Event& event)
     for (const auto& option : goTos)
     {
         if (param.find(option.first) == 0 && param.size() > option.second)
-        {             
+        {
             std::string destination = param.substr(option.second);
             DestinationList dests;
             TravelDestination* dest = nullptr;
@@ -430,7 +430,7 @@ inline void TellDead(PlayerbotAI* ai, Player* requester)
             out << " walking to graveyard ";
 
             if (graveArea == botArea)
-            {                
+            {
                 out << WorldPosition(bot).distance(grave) << "y away";
             }
             else

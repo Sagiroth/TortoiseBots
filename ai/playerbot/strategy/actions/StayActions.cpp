@@ -23,7 +23,7 @@ bool StayActionBase::Stay(Player* requester)
 	{
 		if (verbose) ai->TellError(requester, "I can not stay, I'm flying!");
 		return false;
-	} 
+	}
 
     uint32 sitDelay = sPlayerbotAIConfig.sitDelay / 1000;
     time_t stayTime = AI_VALUE(time_t, "stay time");

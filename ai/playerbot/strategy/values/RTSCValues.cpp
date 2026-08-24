@@ -3,5 +3,3 @@
 #include "RTSCValues.h"
 
 using namespace ai;
-
-

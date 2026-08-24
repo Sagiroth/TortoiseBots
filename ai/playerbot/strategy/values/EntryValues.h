@@ -22,7 +22,7 @@ namespace ai
             return "This value contains the entries of the Molten Core runes.";
         }
         virtual std::vector<std::string> GetUsedValues() { return { }; }
-#endif 
+#endif
     };
 }
 
@@ -41,5 +41,5 @@ public:
         return "This value contains the entries of the Blackwing Lair Suppression Devices.";
     }
     virtual std::vector<std::string> GetUsedValues() { return { }; }
-#endif 
+#endif
 };

@@ -111,8 +111,8 @@ std::string PlayerbotHelpMgr::GetObjectLink(PlayerbotAIAware* object, std::strin
 
     if (className != "generic")
         return "[h:" + prefix + ":" + GetObjectName(object, className) + "|" + object->GetName() + "]";
-    
-    return "[h:" + prefix + "|" + object->GetName() + "]";   
+
+    return "[h:" + prefix + "|" + object->GetName() + "]";
 }
 
 void PlayerbotHelpMgr::LoadStrategies(std::string className, AiObjectContext* context)
@@ -439,7 +439,7 @@ void PlayerbotHelpMgr::GenerateTriggerHelp()
 
         if (botHelpText["list:" + className + " trigger"].m_templateText != " triggers : \n" + makeList(trigLinks))
             botHelpText["list:" + className + " trigger"].m_templateChanged = true;
-        botHelpText["list:" + className + " trigger"].m_templateText = className + " triggers : \n" + makeList(trigLinks);       
+        botHelpText["list:" + className + " trigger"].m_templateText = className + " triggers : \n" + makeList(trigLinks);
     }
 }
 
@@ -745,7 +745,7 @@ void PlayerbotHelpMgr::GenerateChatFilterHelp()
     if (botHelpText["object:chatfilter"].m_templateText != filterHelp)
         botHelpText["object:chatfilter"].m_templateChanged = true;
     botHelpText["object:chatfilter"].m_templateText = filterHelp;
-  
+
     delete filter;
 }
 
@@ -833,7 +833,7 @@ void PlayerbotHelpMgr::GenerateHelp()
     ai = new PlayerbotAI(bot);
 
     LoadAllStrategies();
-    
+
     GenerateStrategyHelp();
     GenerateTriggerHelp();
     GenerateActionHelp();
@@ -893,7 +893,7 @@ void PlayerbotHelpMgr::FormatHelpTopic(std::string& text)
         {
             std::string topicCode = oldLink.substr(3, oldLink.find("|") - 3);
             std::string topicName = oldLink.substr(oldLink.find("|") + 1);
-            topicName.pop_back();                                                                                      
+            topicName.pop_back();
             std::string newLink = ChatHelper::formatValue("command", topicCode, topicName, "0000FF00");
 
             text.replace(start_pos, oldLink.length(), newLink);

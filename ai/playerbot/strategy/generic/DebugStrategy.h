@@ -120,7 +120,7 @@ namespace ai
         virtual std::vector<std::string> GetRelatedStrategies() { return { "debug" , "threat" }; }
 #endif
     };
-    
+
     class DebugGrindStrategy : public Strategy
     {
     public:

@@ -8,7 +8,7 @@ namespace ai
 
     BUFF_ACTION_U(CastPreparationAction, "preparation", !bot->IsSpellReady(14177) || !bot->IsSpellReady(2983) || !bot->IsSpellReady(2094));
 
-    class CastShadowstepAction : public CastSpellAction 
+    class CastShadowstepAction : public CastSpellAction
     {
     public:
         CastShadowstepAction(PlayerbotAI* ai) : CastSpellAction(ai, "shadowstep") {}
@@ -43,9 +43,9 @@ namespace ai
     {
     public:
         CastStealthAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "stealth") {}
-        
+
         virtual std::string GetTargetName() override { return "self target"; }
-        
+
         virtual bool isUseful()
         {
             if (ai->HasAura("stealth", bot))
@@ -70,7 +70,7 @@ namespace ai
         }
     };
 
-    class RogueUnstealthAction : public Action 
+    class RogueUnstealthAction : public Action
     {
     public:
         RogueUnstealthAction(PlayerbotAI* ai) : Action(ai, "unstealth") {}
@@ -89,7 +89,7 @@ namespace ai
         }
     };
 
-    class CheckStealthAction : public Action 
+    class CheckStealthAction : public Action
     {
     public:
         CheckStealthAction(PlayerbotAI* ai) : Action(ai, "check stealth") {}
@@ -207,7 +207,7 @@ namespace ai
         std::string GetReachActionName() override { return "reach melee"; }
     };
 
-    class CastTricksOfTheTradeOnPartyAction : public BuffOnPartyAction 
+    class CastTricksOfTheTradeOnPartyAction : public BuffOnPartyAction
     {
     public:
         CastTricksOfTheTradeOnPartyAction(PlayerbotAI* ai) : BuffOnPartyAction(ai, "tricks of the trade") {}

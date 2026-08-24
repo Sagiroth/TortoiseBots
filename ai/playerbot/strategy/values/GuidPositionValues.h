@@ -32,7 +32,7 @@ namespace ai
             return "This value will returns only the ObjectGuids of specific entries.";
         }
         virtual std::vector<std::string> GetUsedValues() { return { }; }
-#endif 
+#endif
     };
 
     class GuidFilterValue : public GuidPositionListCalculatedValue, public Qualified
@@ -50,7 +50,7 @@ namespace ai
           return "This value will returns only the ObjectGuids of specific entries.";
        }
        virtual std::vector<std::string> GetUsedValues() { return { }; }
-#endif 
+#endif
 
     private:
        std::vector<std::string> QualifierToEntryList(const std::string& qualifier);
@@ -71,7 +71,7 @@ namespace ai
             return "This value will returns only the ObjectGuids within a specific range.";
         }
         virtual std::vector<std::string> GetUsedValues() { return { }; }
-#endif 
+#endif
     };
 
     class GoUsableFilterValue : public GuidPositionListCalculatedValue, public Qualified
@@ -89,7 +89,7 @@ namespace ai
             return "This value will returns only the ObjectGuids within a specific range.";
         }
         virtual std::vector<std::string> GetUsedValues() { return { }; }
-#endif 
+#endif
     };
 
     class GoTrappedFilterValue : public GuidPositionListCalculatedValue, public Qualified
@@ -107,7 +107,7 @@ namespace ai
             return "This value will returns only the ObjectGuids that are not trapped.";
         }
         virtual std::vector<std::string> GetUsedValues() { return { }; }
-#endif 
+#endif
     };
 
 

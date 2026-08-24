@@ -2,7 +2,7 @@
 #include "playerbot/strategy/Trigger.h"
 
 namespace ai
-{	
+{
     class PetitionTurnInTrigger : public Trigger {
     public:
         PetitionTurnInTrigger(PlayerbotAI* ai) :

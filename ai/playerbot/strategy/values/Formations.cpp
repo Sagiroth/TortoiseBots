@@ -198,7 +198,7 @@ namespace ai
 			float angle = GetFollowAngle();
 
             time_t now = time(0);
-            if (!lastChangeTime || now - lastChangeTime >= 3) 
+            if (!lastChangeTime || now - lastChangeTime >= 3)
             {
                 lastChangeTime = now;
                 dx = (urand(0, 10) / 10.0 - 0.5) * sPlayerbotAIConfig.tooCloseDistance;
@@ -374,13 +374,13 @@ namespace ai
     public:
         FarFormation(PlayerbotAI* ai) : FollowFormation(ai, "far") {}
         virtual std::string GetTargetName() override { return "master target"; }
-        virtual float GetAngle() override 
-        {             
+        virtual float GetAngle() override
+        {
             Unit* followTarget = AI_VALUE(Unit*, "follow target");
 
             float currentAngle = WorldPosition(followTarget).GetAngleTo(bot) - followTarget->getOrientation();
             float followAngle = currentAngle;
-            
+
             if(bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
                 followAngle = sServerFacade.GetChaseAngle(bot);
 
@@ -388,7 +388,7 @@ namespace ai
 
             if (delta > M_PI_F)
                 delta -= M_PI_F * 2.0f;
-            
+
             if (fabs(delta) > 0.2)
                 return followAngle + delta;
 
@@ -396,7 +396,7 @@ namespace ai
                 followAngle += M_PI_F * 2.0f;
 
             delta = (M_PI_F - followAngle) * 0.5;
-            
+
             if (fabs(delta) < 0.01)
                 delta = 0;
 

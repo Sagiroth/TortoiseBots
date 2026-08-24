@@ -3,7 +3,7 @@
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/Value.h"
 
-namespace ai 
+namespace ai
 {
     class RuneForgeSpellsValue : public CalculatedValue<std::vector<uint32>> {
     public:
@@ -28,4 +28,4 @@ namespace ai
         static uint32 RuneForgeEnchantFromSpell(uint32 spellId);
         static int32 CurrentRuneForgeEnchant(Player* bot);
     };
-} 
+}

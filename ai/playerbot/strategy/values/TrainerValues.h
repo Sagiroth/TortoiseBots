@@ -45,4 +45,3 @@ namespace ai
         virtual uint32 Calculate() override;
     };
 }
-

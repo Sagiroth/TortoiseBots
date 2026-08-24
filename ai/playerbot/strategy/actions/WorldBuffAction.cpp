@@ -7,7 +7,7 @@
 using namespace ai;
 
 bool WorldBuffAction::Execute(Event& event)
-{    
+{
     std::string text = event.GetParam();
 
     for (auto& wb : NeedWorldBuffs(bot))
@@ -26,7 +26,7 @@ std::vector<uint32> WorldBuffAction::NeedWorldBuffs(Unit* unit)
         return retVec;
 
     Player* plr = static_cast<Player*>(unit);
-   
+
     FactionTemplateEntry const* humanFaction = sFactionTemplateStore.LookupEntry(1);
     uint32 factionId = PlayerbotAI::GetFactionReaction(unit->GetFactionTemplateEntry(), humanFaction) >= REP_NEUTRAL ? 1 : 2;
 
@@ -58,4 +58,3 @@ std::vector<uint32> WorldBuffAction::NeedWorldBuffs(Unit* unit)
 
     return retVec;
 }
-

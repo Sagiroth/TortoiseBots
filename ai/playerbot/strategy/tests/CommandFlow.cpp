@@ -38,7 +38,7 @@ TestResult CommandFlowWait::Execute(const std::string& params, Player* bot, Play
         ctx.waitTime = 0;
         return TestResult::PASS;
     }
-    
+
     return TestResult::PENDING;
 }
 

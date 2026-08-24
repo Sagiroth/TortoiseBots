@@ -555,7 +555,7 @@ void DpsFeralDruidStealthPvpStrategy::InitNonCombatTriggers(std::list<TriggerNod
 
     triggers.push_back(new TriggerNode(
         "enemy flagcarrier near",
-        NextAction::array(0, new NextAction("dash", ACTION_HIGH), 
+        NextAction::array(0, new NextAction("dash", ACTION_HIGH),
                              new NextAction("unstealth", ACTION_HIGH), NULL)));
 }
 
@@ -1050,7 +1050,7 @@ void DpsFeralDruidStealthPvpStrategy::InitNonCombatTriggers(std::list<TriggerNod
 
     triggers.push_back(new TriggerNode(
         "enemy flagcarrier near",
-        NextAction::array(0, new NextAction("dash", ACTION_HIGH), 
+        NextAction::array(0, new NextAction("dash", ACTION_HIGH),
                              new NextAction("unstealth", ACTION_HIGH), NULL)));
 }
 
@@ -1549,7 +1549,7 @@ void DpsFeralDruidStealthPvpStrategy::InitNonCombatTriggers(std::list<TriggerNod
 
     triggers.push_back(new TriggerNode(
         "enemy flagcarrier near",
-        NextAction::array(0, new NextAction("dash", ACTION_HIGH), 
+        NextAction::array(0, new NextAction("dash", ACTION_HIGH),
                              new NextAction("unstealth", ACTION_HIGH), NULL)));
 }
 

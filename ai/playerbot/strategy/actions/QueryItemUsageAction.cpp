@@ -99,7 +99,7 @@ bool QueryItemUsageAction::Execute(Event& event)
         text.clear();
         reason = true;
     }
-    
+
     for (auto& stringQualifier : chat->parseItemQualifiers(text))
             qualifiers.push_back(ItemQualifier(stringQualifier));
 

@@ -11,7 +11,7 @@ bool CastRaiseDeadAction::isPossible()
 		return false;
 	if (AI_VALUE2(uint32, "item count", "corpse dust") > 0)
 		return true;
-		
+
 	for (auto guid : AI_VALUE(std::list<ObjectGuid>, "nearest corpses"))
 	{
 		Creature* creature = ai->GetCreature(guid);
@@ -112,7 +112,7 @@ bool RuneforgeAction::Execute(Event& event)
     if (runeforge && closestDistance <= INTERACTION_DISTANCE)
     {
         Item* weapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
-        
+
 
         uint32 spellDuration = sPlayerbotAIConfig.globalCoolDown;
 

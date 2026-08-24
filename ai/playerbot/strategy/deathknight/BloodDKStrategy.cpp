@@ -53,7 +53,7 @@ private:
 			/*A*/ NULL,
 			/*C*/ NULL);
 	}
-	
+
 };
 
 BloodDKStrategy::BloodDKStrategy(PlayerbotAI* ai) : GenericDKStrategy(ai)

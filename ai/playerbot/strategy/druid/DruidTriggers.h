@@ -1,16 +1,16 @@
 #pragma once
 #include "playerbot/strategy/triggers/GenericTriggers.h"
 
-namespace ai 
+namespace ai
 {
-    class MarkOfTheWildOnPartyTrigger : public BuffOnPartyTrigger 
+    class MarkOfTheWildOnPartyTrigger : public BuffOnPartyTrigger
     {
     public:
         MarkOfTheWildOnPartyTrigger(PlayerbotAI* ai) : BuffOnPartyTrigger(ai, "mark of the wild", 4) {}
         virtual bool IsActive() override { return BuffOnPartyTrigger::IsActive() && !ai->HasAura("gift of the wild", GetTarget()); }
     };
 
-    class MarkOfTheWildTrigger : public BuffTrigger 
+    class MarkOfTheWildTrigger : public BuffTrigger
     {
     public:
         MarkOfTheWildTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "mark of the wild", 4) {}
@@ -385,9 +385,9 @@ namespace ai
         RebirthTrigger(PlayerbotAI* ai) : SpellTargetTrigger(ai, "rebirth", "revive targets") {}
         std::string GetTargetName() override { return "party member to resurrect"; }
 
-        bool IsTargetValid(Unit* target) override 
-        { 
-            return SpellTargetTrigger::IsTargetValid(target) && target->IsDead(); 
+        bool IsTargetValid(Unit* target) override
+        {
+            return SpellTargetTrigger::IsTargetValid(target) && target->IsDead();
         }
     };
 
@@ -424,7 +424,7 @@ namespace ai
         {
             Unit* target = GetTarget();
             return target
-                && ai->IsTank((Player*)target)                                          //target is tank 
+                && ai->IsTank((Player*)target)                                          //target is tank
                 && target->IsAlive()                                                    //target is alive
                 && !ai->HasAura("lifebloom", target, true, true, -1, false, 2000, 8)    //target dont have max stacked aura or aura will expire soon
                 && ai->CanCastSpell("lifebloom", target, 0)                             //bot can cast spell

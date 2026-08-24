@@ -26,7 +26,7 @@ namespace ai
         void DestroyItem(FindItemVisitor* visitor, Player* requester);
     };
 
-    class SmartDestroyItemAction : public DestroyItemAction 
+    class SmartDestroyItemAction : public DestroyItemAction
     {
     public:
         SmartDestroyItemAction(PlayerbotAI* ai) : DestroyItemAction(ai, "smart destroy item") {}

@@ -18,7 +18,7 @@ public:
 		//creators["hysteria"] = &hysteria; boost party
 		//creators["dancing rune weapon"] = &dancing_rune_weapon; //cd
 		//creators["dark command"] = &dark_command; taunt
-		
+
 		//frost
 		//creators["chains of ice"] = &chains_of_ice;
 		//creators["icy clutch"] = &icy_clutch;
@@ -31,14 +31,14 @@ public:
 		//creators["hungering cold"] = &hungering_cold; snare
 		//creators["unbreakable armor"] = &unbreakable_armor; boost +cd
 		//creators["improved icy talons"] = &improved_icy_talons; boost party
-		
+
 		//unholy
 		//creators["death and decay"] = &death_and_decay;
 		//creators["raise dead"] = &raise_dead;
 		//creators["army of the dead"] = &army of the dead;
 		//creators["summon gargoyle"] = &army of the dead;
 		//creators["anti magic shell"] = &anti_magic_shell; cd
-		creators["anti magic zone"] = &anti_magic_zone; 
+		creators["anti magic zone"] = &anti_magic_zone;
 		//creators["ghoul frenzy"] = &ghoul_frenzy;
 		creators["corpse explosion"] = &corpse_explosion;
 		creators["bone shield"] = &bone_shield;
@@ -47,7 +47,7 @@ public:
 		creators["plague strike"] = &plague_strike;
 		creators["pestilence"] = &pestilence;
 		creators["icy touch"] = &icy_touch;
-	
+
     }
 private:
 	static ActionNode* death_coil(PlayerbotAI* ai)
@@ -133,7 +133,7 @@ private:
             /*P*/ NULL,
             /*A*/ NULL,
             /*C*/ NULL);
-   
+
     }
 };
 

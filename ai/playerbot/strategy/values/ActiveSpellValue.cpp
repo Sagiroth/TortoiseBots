@@ -17,4 +17,3 @@ uint32 ActiveSpellValue::Calculate()
 
     return 0;
 }
-

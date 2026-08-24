@@ -44,7 +44,7 @@ bool XpGainAction::Execute(Event& event)
     out << std::to_string(bot->GetUInt32Value(PLAYER_NEXT_LEVEL_XP));
 
     ai->TellDebug(requester, out.str(),"debug xp");
-    
+
     AI_VALUE(LootObjectStack*, "available loot")->Add(guid);
     ai->AccelerateRespawn(guid);
 

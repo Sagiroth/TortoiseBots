@@ -6,7 +6,7 @@
 #include "playerbot/WorldSquare.h"
 
 namespace ai
-{    
+{
     /*                uint32 zone, subzone;
     gameObject->getZoneAndAreaId(zone, subzone);
     // if subzone loot exist use it
@@ -40,7 +40,7 @@ namespace ai
 	public:
         FishLocationMapValue(PlayerbotAI* ai) : GuidPositionCalculatedValue(ai, "fish location map", 5) {};
         virtual GuidPosition Calculate() override;
-    };   
+    };
     */
 
     class CanFishValue : public BoolCalculatedValue
@@ -64,4 +64,3 @@ namespace ai
         virtual bool Calculate() override;
     };
 };
-

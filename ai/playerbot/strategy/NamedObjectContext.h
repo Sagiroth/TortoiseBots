@@ -23,7 +23,7 @@ namespace ai
         void Reset() { qualifier.clear(); }
 
         static std::string MultiQualify(const std::vector<std::string>& qualifiers, const std::string& separator, const std::string_view brackets = "{}")
-        { 
+        {
             std::stringstream out;
             for (uint8 i = 0; i < qualifiers.size(); i++)
             {
@@ -49,7 +49,7 @@ namespace ai
         }
 
         static std::vector<std::string> getMultiQualifiers(const std::string& qualifier1, const std::string& separator, const std::string_view brackets = "{}")
-        { 
+        {
             std::vector<std::string> result;
 
             std::string view = qualifier1;
@@ -57,8 +57,8 @@ namespace ai
             if(view.find(brackets[0]) == 0)
                 view = qualifier1.substr(1, qualifier1.size()-2);
 
-            size_t last = 0; 
-            size_t next = 0; 
+            size_t last = 0;
+            size_t next = 0;
 
             if (view.find(brackets[0]) == std::string::npos)
             {
@@ -88,7 +88,7 @@ namespace ai
                         next += separator.size();
                         continue;
                     }
-                    
+
                     sub += view[next];
 
                     next++;
@@ -113,9 +113,9 @@ namespace ai
                 }
 
                 // Loop through each character to check if it's a digit
-                for (size_t i = start; i < str.size(); ++i) 
+                for (size_t i = start; i < str.size(); ++i)
                 {
-                    if (!std::isdigit(str[i])) 
+                    if (!std::isdigit(str[i]))
                     {
                         // Non-numeric character found
                         valid = false;
@@ -126,9 +126,9 @@ namespace ai
 
             return valid;
         }
-        
+
         static int32 getMultiQualifierInt(const std::string& qualifier1, uint32 pos, const std::string& separator)
-        { 
+        {
             std::vector<std::string> qualifiers = getMultiQualifiers(qualifier1, separator);
             if (qualifiers.size() > pos && isValidNumberString(qualifiers[pos]))
             {
@@ -139,11 +139,11 @@ namespace ai
         }
 
         static std::string getMultiQualifierStr(const std::string& qualifier1, uint32 pos, const std::string& separator)
-        { 
+        {
             std::vector<std::string> qualifiers = getMultiQualifiers(qualifier1, separator);
             return (qualifiers.size() > pos) ? qualifiers[pos] : "";
         }
-    
+
     protected:
         std::string qualifier;
     };

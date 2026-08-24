@@ -112,11 +112,11 @@ bool CastSpellAction::isPossible()
     else
     {
         float dist = bot->getDistance(spellTarget, true, ai->IsRanged(bot) ? DIST_CALC_COMBAT_REACH : DIST_CALC_COMBAT_REACH_WITH_MELEE);
-        if (range == ATTACK_DISTANCE) 
+        if (range == ATTACK_DISTANCE)
         {
             canReach = bot->CanReachWithMeleeAttack(spellTarget);
         }
-        else 
+        else
         {
             canReach = dist <= (range + sPlayerbotAIConfig.contactDistance);
             if (!spellId)
@@ -141,7 +141,7 @@ bool CastSpellAction::isPossible()
     {
         return false;
     }
-    
+
     // Check if the spell can be casted
 	return ai->CanCastSpell(spellName, spellTarget, 0, nullptr, true);
 }

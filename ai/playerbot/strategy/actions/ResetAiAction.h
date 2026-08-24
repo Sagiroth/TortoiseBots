@@ -20,7 +20,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return { "reset strats" , "reset values" }; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
     protected:
         virtual void ResetStrategies();
         virtual void ResetValues();
@@ -70,7 +70,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {"reset ai"}; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
     };
 
     class ResetValuesAction : public ResetAiAction
@@ -89,7 +89,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return { "reset ai" }; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
     };
 
     class ResetAction : public Action
@@ -107,6 +107,6 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return { "reset ai" }; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
     };
 }

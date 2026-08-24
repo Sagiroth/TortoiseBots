@@ -24,7 +24,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return { "skip spells list" }; }
-#endif 
+#endif
 
     private:
         std::vector<std::string> ParseSpells(const std::string& text);

@@ -61,7 +61,7 @@ protected:
     virtual void OnBotLoginInternal(Player * const bot) = 0;
     virtual void OnBotDeleted(uint32 botGuid, uint32 accountId);
     virtual uint32 GetOrCreateAccount(Player* master, std::string& error);
-    void Cleanup();   
+    void Cleanup();
 private:
     typedef std::list<std::string> (PlayerbotHolder::*HolderCommandHandler)(Player* master, const std::string param, AccountTypes security);
     typedef std::string (PlayerbotHolder::*BotCommandHandler)(Player* bot, Player* master, const std::string param);
@@ -69,7 +69,7 @@ private:
     ObjectGuid GetSpoofGuid() const { return m_spoofGuid; }
 
     virtual std::vector<std::string> GetBotErrors(std::string botName) { return {}; }
- 
+
 
     std::list<std::string> HandleList(Player* master, const std::string param, AccountTypes security);
     std::list<std::string> HandleHelp(Player* master, const std::string param, AccountTypes security);

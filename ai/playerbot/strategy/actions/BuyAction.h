@@ -29,7 +29,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return { "equip upgrades" }; }
         virtual std::vector<std::string> GetUsedValues() { return { "nearest npcs", "item count", "item usage", "free money for"}; }
-#endif 
+#endif
     };
 
     class BuyBackAction : public BuyAction
@@ -49,6 +49,6 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return { "" }; }
         virtual std::vector<std::string> GetUsedValues() { return { "nearest npcs", "item count", "bag space"}; }
-#endif 
+#endif
     };
 }

@@ -4,7 +4,7 @@
 
 namespace ai
 {
-    class UseTrinketAction : public UseAction 
+    class UseTrinketAction : public UseAction
     {
     public:
 

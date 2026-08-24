@@ -28,7 +28,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {"current target", "old target", "available loot"}; }
-#endif 
+#endif
     };
 
     class AttackMyTargetAction : public AttackAction
@@ -49,7 +49,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {"attack target"}; }
-#endif 
+#endif
     };
 
     class AttackRTITargetAction : public AttackAction
@@ -70,7 +70,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {"rti target", "attack target"}; }
-#endif 
+#endif
     };
 
     class AttackDuelOpponentAction : public AttackAction
@@ -91,6 +91,6 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {"duel target"}; }
-#endif 
+#endif
     };
 }

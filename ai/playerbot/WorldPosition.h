@@ -95,7 +95,7 @@ namespace ai
         operator bool() const { return  x != 0 || y != 0 || z != 0; }
         bool operator==(const WorldPosition& p1) const { return mapId == p1.mapId && x == p1.x && y == p1.y && z == p1.z && o == p1.o; }
         bool operator!=(const WorldPosition& p1) const { return mapId != p1.mapId || x != p1.x || y != p1.y || z != p1.z || o != p1.o; }
-        
+
         WorldPosition& operator+=(const WorldPosition& p1) { x += p1.x; y += p1.y; z += p1.z; return *this; }
         WorldPosition& operator-=(const WorldPosition& p1) { x -= p1.x; y -= p1.y; z -= p1.z; return *this; }
 
@@ -111,7 +111,7 @@ namespace ai
         float operator*(const WorldPosition& p1) const { return (x * x) + (y * y) + (z * z); }
 
         float projectOnSegment(const WorldPosition& p1, const WorldPosition& p2) const;
-        
+
 
         //Getters
         uint32 getMapId() const { return mapId; }
@@ -206,7 +206,7 @@ namespace ai
 
         std::vector <WorldPosition*> GetNextPoint(std::vector<WorldPosition*> points, uint32 amount = 1) const;
         std::vector <WorldPosition> GetNextPoint(std::vector<WorldPosition> points, uint32 amount = 1) const;
-        
+
         template<class T>
         void GetNextPoint(std::vector <std::pair<T, WorldPosition*>>& data) const
         {
@@ -440,7 +440,7 @@ namespace ai
         uint32 entry;
 
         std::vector<GameObjectDataPair const*> data;
-    };    
+    };
 }
 
 namespace std

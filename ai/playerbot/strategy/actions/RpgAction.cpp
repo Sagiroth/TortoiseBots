@@ -10,7 +10,7 @@
 using namespace ai;
 
 bool RpgAction::Execute(Event& event)
-{    
+{
     GuidPosition guidP = AI_VALUE(GuidPosition, "rpg target");
 
     if (!guidP && ai->GetMaster())
@@ -39,7 +39,7 @@ bool RpgAction::isUseful()
 
 bool RpgAction::SetNextRpgAction()
 {
-    Strategy* rpgStrategy; 
+    Strategy* rpgStrategy;
     std::vector<Action*> actions;
     std::vector<uint32> relevances;
     std::list<TriggerNode*> triggerNodes;
@@ -109,7 +109,7 @@ bool RpgAction::SetNextRpgAction()
     if (ai->HasStrategy("debug rpg", BotState::BOT_STATE_NON_COMBAT))
     {
         std::vector<std::pair<Action*, uint32>> sortedActions;
-        
+
         for (int i = 0; i < actions.size(); i++)
             sortedActions.push_back(std::make_pair(actions[i], relevances[i]));
 

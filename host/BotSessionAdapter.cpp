@@ -27,10 +27,16 @@ WorldSession* BotSessionAdapter::CreateHeadlessSession(uint32 accountId, ObjectG
         return nullptr;
     }
 
-    // Basic validation: account must exist, character must exist and belong to that account.
-    // We intentionally do NOT enforce that the character is online/offline here; the normal
-    // HandlePlayerLogin alreadyOnline path handles human-reclaim vs duplicate bot login.
-    // For MVP we keep validation minimal and let LoadFromDB reject mismatches.
+    // Validate the durable character/account relationship before queuing a
+    // session. LoadFromDB also checks it, but failing before queue insertion
+    // avoids leaving a doomed Headless session for BotManager to clean up.
+    uint32 storedAccountId = sObjectMgr.GetPlayerAccountIdByGUID(characterGuid);
+    if (!storedAccountId || storedAccountId != accountId)
+    {
+        sLog.outError("TortoiseBots: CreateHeadlessSession — character %s belongs to account %u, not %u",
+            characterGuid.GetString().c_str(), storedAccountId, accountId);
+        return nullptr;
+    }
 
     // Transport identity is carried by SessionTransport, not by a synthetic
     // remote-address marker.
@@ -49,7 +55,10 @@ WorldSession* BotSessionAdapter::CreateHeadlessSession(uint32 accountId, ObjectG
     // Queue under the character identity, never in World::m_sessions which is
     // intentionally reserved for the one Network session per account.
     if (!sWorld.AddHeadlessSession(session, characterGuid))
+    {
+        delete session;
         return nullptr;
+    }
 
     sLog.outString("TortoiseBots: CreateHeadlessSession acct %u guid %s headless %u ptr %p — queued headless add (login deferred)", accountId, characterGuid.GetString().c_str(), session->IsHeadless(), (void*)session);
     // Do not call LoginPlayer here; BotManager waits until the session is

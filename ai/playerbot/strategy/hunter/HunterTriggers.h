@@ -55,7 +55,7 @@ namespace ai
     {
     public:
         AspectOfTheDragonhawkTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "aspect of the dragonhawk") {}
-    
+
         bool IsActive() override
         {
             return BuffTrigger::IsActive() && !ai->HasAura("aspect of the hawk", bot);
@@ -353,7 +353,7 @@ private:
         }
     };
 
-    class HunterNoPet : public Trigger 
+    class HunterNoPet : public Trigger
     {
     public:
         HunterNoPet(PlayerbotAI* ai) : Trigger(ai, "no pet", 1) {}
@@ -372,7 +372,7 @@ private:
         }
     };
 
-    class StealthedNearbyTrigger : public Trigger 
+    class StealthedNearbyTrigger : public Trigger
     {
     public:
         StealthedNearbyTrigger(PlayerbotAI* ai) : Trigger(ai, "stealthed nearby", 5) {}
@@ -386,4 +386,3 @@ private:
         }
     };
 }
-

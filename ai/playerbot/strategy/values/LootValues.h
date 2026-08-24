@@ -6,7 +6,7 @@
 #include "ItemUsageValue.h"
 
 namespace ai
-{ 
+{
     // Cheat class copy to hack into the loot system: GetLootTemplate() reinterpret_casts the real
     // LootTemplate to LootTemplateAccess to read its private Entries/Groups. For that cast to be
     // valid, this layout MUST match LootTemplate::LootGroup EXACTLY (see LootMgr.cpp). In
@@ -79,7 +79,7 @@ namespace ai
     };
 
     //DropMap[itemId] = {entry}
-    typedef std::unordered_multimap<uint32, int32> DropMap;    
+    typedef std::unordered_multimap<uint32, int32> DropMap;
 
     class ItemDropMapValue : public SingleCalculatedValue<DropMap*>
     {
@@ -95,7 +95,7 @@ namespace ai
             return "This value returns all items and the items they contain as loot.";
         }
         virtual std::vector<std::string> GetUsedValues() { return {  }; }
-#endif 
+#endif
     };
 
      //Returns the loot map of all entries
@@ -117,7 +117,7 @@ namespace ai
             return "This value returns all creatures and game objects and the items they drop.";
         }
         virtual std::vector<std::string> GetUsedValues() { return {  }; }
-#endif 
+#endif
     };
 
     //Returns the entries that drop a specific item
@@ -136,7 +136,7 @@ namespace ai
             return "This value returns all creatures or game objects that drop a specific item.";
         }
         virtual std::vector<std::string> GetUsedValues() { return { "drop map" }; }
-#endif 
+#endif
     };
 
     //Returns the items a specific entry can drop
@@ -154,7 +154,7 @@ namespace ai
             return "This value returns all the items dropped by a specific creature or game object.";
         }
         virtual std::vector<std::string> GetUsedValues() { return { }; }
-#endif 
+#endif
     };
 
     class LootChanceValue : public SingleCalculatedValue<float>, public Qualified
@@ -171,7 +171,7 @@ namespace ai
             return "This value returns the chance a specific creature or game object will drop a certain item.";
         }
         virtual std::vector<std::string> GetUsedValues() { return { }; }
-#endif 
+#endif
     };
 
     typedef std::unordered_map<ItemUsage, std::vector<uint32>> itemUsageMap;
@@ -190,7 +190,7 @@ namespace ai
             return "This value returns all the items a creature or game object drops and if the bot thinks this item is useful somehow.";
         }
         virtual std::vector<std::string> GetUsedValues() { return { "entry loot list", "item usage" }; }
-#endif 
+#endif
     };
 
     class HasUpgradeValue : public BoolCalculatedValue, public Qualified
@@ -207,7 +207,7 @@ namespace ai
             return "This value checks if a specific creature or game object drops an item that is an equipment upgrade for the bot.";
         }
         virtual std::vector<std::string> GetUsedValues() { return {"entry loot list"}; }
-#endif 
+#endif
     };
 
 
@@ -227,7 +227,7 @@ namespace ai
                 "Without a player bots are limited to 80% bag space and will only have space for items in existing stacks";
         }
         virtual std::vector<std::string> GetUsedValues() { return { "bag space" , "inventory items" }; }
-#endif 
+#endif
     };
 
     class ShouldLootObject : public BoolCalculatedValue, public Qualified
@@ -245,7 +245,7 @@ namespace ai
                 "It returns true if the object has unknown loot, gold or an item it is allowed to loot and can store in an empty space or a stack of similar items.";
         }
         virtual std::vector<std::string> GetUsedValues() { return { "stack space for item" }; }
-#endif 
+#endif
     };
 
     typedef std::unordered_multimap<ObjectGuid, uint32> LootRollMap;
@@ -266,7 +266,6 @@ namespace ai
                 "This value is filled and emptied when bots see and do rolls.";
         }
         virtual std::vector<std::string> GetUsedValues() { return { }; }
-#endif 
+#endif
     };
 }
-

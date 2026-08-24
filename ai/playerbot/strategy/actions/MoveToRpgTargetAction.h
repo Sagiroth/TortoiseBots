@@ -25,7 +25,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return { "rpg target" , "ignore rpg target" ,  "travel target" , "can move around" }; }
-#endif 
+#endif
     };
 
 }

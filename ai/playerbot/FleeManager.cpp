@@ -48,7 +48,7 @@ void FleeManager::calculatePossibleDestinations(std::list<FleePoint*> &points)
     float botPosX = startPosition.getX();
     float botPosY = startPosition.getY();
     float botPosZ = startPosition.getZ();
-    
+
     FleePoint start(PlayerbotAIStorage::Instance().GetAI(bot), botPosX, botPosY, botPosZ);
     calculateDistanceToCreatures(&start);
 

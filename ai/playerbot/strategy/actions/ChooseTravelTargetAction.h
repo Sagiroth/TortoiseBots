@@ -18,7 +18,7 @@ namespace ai
         virtual bool isUseful() override;
         static void ReportTravelTarget(Player* bot, Player* requester, TravelTarget* newTarget, TravelTarget* oldTarget);
     protected:
-        void setNewTarget(Player* requester, TravelTarget* newTarget, TravelTarget* oldTarget);        
+        void setNewTarget(Player* requester, TravelTarget* newTarget, TravelTarget* oldTarget);
 
         bool SetBestTarget(Player* requester, TravelTarget* target, PartitionedTravelList& travelPartitions, bool onlyActive = true);
     public:
@@ -35,7 +35,7 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return { "travel target", "group or", "should sell","can sell","can ah sell","should repair","can repair","following party","near leader","should get money","can fight equal","can fight elite","can fight boss","can free move","rpg target","attack target",}; }
-#endif 
+#endif
     };
 
     class ChooseGroupTravelTargetAction : public ChooseTravelTargetAction {
@@ -60,7 +60,7 @@ namespace ai
 
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;
-    };    
+    };
 
     class RequestTravelTargetAction : public Action, public Qualified {
     public:
@@ -101,6 +101,6 @@ namespace ai
         }
         virtual std::vector<std::string> GetUsedActions() { return {}; }
         virtual std::vector<std::string> GetUsedValues() { return {}; }
-#endif 
+#endif
     };
 }

@@ -11,13 +11,13 @@ namespace ai
         void Reset() { action = nullptr; duration = 0U; }
 
         bool Update(uint32 elapsed);
-        
+
         void SetAction(Action* inAction);
         Action* GetAction() const { return action; }
-        
+
         void SetEvent(const Event& inEvent) { event = Event(inEvent); }
         Event& GetEvent() { return event; }
-        
+
         uint32 GetDuration() const { return duration; }
         void SetDuration(uint32 inDuration) { duration = inDuration; }
         bool ShouldInterruptCast() const { return action ? action->ShouldReactionInterruptCast() : false; }

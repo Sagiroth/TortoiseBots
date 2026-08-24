@@ -1,6 +1,6 @@
 #pragma once
 
-namespace ai 
+namespace ai
 {
     template <class TValue, class TOwner>
     class LazyCalculatedValue
@@ -9,7 +9,7 @@ namespace ai
         typedef TValue (TOwner::*Calculator)();
 
     public:
-        LazyCalculatedValue(TOwner* owner, Calculator calculator) 
+        LazyCalculatedValue(TOwner* owner, Calculator calculator)
         {
             this->calculator = calculator;
             this->owner = owner;
@@ -26,7 +26,7 @@ namespace ai
             }
             return value;
         }
-        void Reset() 
+        void Reset()
         {
             calculated = false;
         }

@@ -278,12 +278,12 @@ namespace ai
             creators["horsemans call"] = [](PlayerbotAI* ai) { return new CastHorsemansCallAction(ai); };
 
             creators["scarlet cannon"] = [](PlayerbotAI* ai) { return new CastScarletCannonAction(ai); };
-            creators["electro - magnetic pulse"] = [](PlayerbotAI* ai) { return new CastElectroMagneticPulseAction(ai); };            
+            creators["electro - magnetic pulse"] = [](PlayerbotAI* ai) { return new CastElectroMagneticPulseAction(ai); };
             creators["skeletal gryphon escape"] = [](PlayerbotAI* ai) { return new CastSkeletalGryphonEscapeAction(ai); };
-            
+
             creators["frozen deathbolt"] = [](PlayerbotAI* ai) { return new CastFrozenDeathboltAction(ai); };
-            creators["devour humanoid"] = [](PlayerbotAI* ai) { return new CastDevourHumanoidAction(ai); };            
-            
+            creators["devour humanoid"] = [](PlayerbotAI* ai) { return new CastDevourHumanoidAction(ai); };
+
 
             //Rpg
             creators["rpg stay"] = [](PlayerbotAI* ai) { return new RpgStayAction(ai); };
@@ -382,6 +382,6 @@ namespace ai
 #ifdef GenerateBotTests
             creators["test"] = [](PlayerbotAI* ai) { return new TestAction(ai); };
 #endif
-        }    
+        }
     };
 };

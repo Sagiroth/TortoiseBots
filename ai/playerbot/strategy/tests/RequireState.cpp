@@ -104,5 +104,3 @@ TestResult RequireEquip::Execute(const std::string& params, Player* bot, Playerb
 
     return TestResult::PASS;
 }
-
-        

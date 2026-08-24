@@ -2178,21 +2178,26 @@ void PlayerbotAI::DoNextAction(bool min)
     //Remove bot masters not in our group.
     if (master && master != bot && !HasActivePlayerMaster() && (!group || group->GetLeaderGuid() != master->getObjectGuid()))
     {
-        master = IsRealPlayer() ? bot : nullptr;
-        if (master)
+        Player* replacementMaster = IsRealPlayer() ? bot : nullptr;
+        if (TortoiseBots::BotManager::Instance().IsBot(bot->GetObjectGuid()))
         {
-            if (!TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()) ||
-                !TortoiseBots::BotManager::Instance().BindBotMaster(
-                    bot->GetObjectGuid(), master->GetObjectGuid()))
-                SetMaster(master);
+            bool transitioned = replacementMaster
+                ? TortoiseBots::BotManager::Instance().BindBotMaster(
+                    bot->GetObjectGuid(), replacementMaster->GetObjectGuid())
+                : TortoiseBots::BotManager::Instance().ClearBotMaster(bot->GetObjectGuid());
+            if (!transitioned)
+                sLog.outError("TortoiseBots: durable master transition failed for %s; retaining the existing ownership state",
+                    bot->GetName());
+            else
+                master = replacementMaster;
         }
         else
         {
-            if (!TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()) ||
-                !TortoiseBots::BotManager::Instance().ClearBotMaster(bot->GetObjectGuid()))
-                SetMaster(nullptr);
+            master = replacementMaster;
+            SetMaster(master);
         }
-        ResetStrategies();
+        if (master == replacementMaster)
+            ResetStrategies();
     }
 
     // test BG master set
@@ -2285,31 +2290,37 @@ void PlayerbotAI::DoNextAction(bool min)
 
         if (newMaster && (!master || master != newMaster) && bot != newMaster)
         {
-            master = newMaster;
-            if (sRandomPlayerbotMgr.IsFreeBot(bot) &&
-                TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()))
+            bool masterChanged = true;
+            if (TortoiseBots::BotManager::Instance().IsBot(bot->GetObjectGuid()))
             {
-                if (!TortoiseBots::BotManager::Instance().BindBotMaster(
-                        bot->GetObjectGuid(), newMaster->GetObjectGuid()))
-                    SetMaster(newMaster);
+                masterChanged = TortoiseBots::BotManager::Instance().BindBotMaster(
+                    bot->GetObjectGuid(), newMaster->GetObjectGuid());
+                if (!masterChanged)
+                    sLog.outError("TortoiseBots: durable master adoption failed for bot %s; leaving its current master unchanged",
+                        bot->GetName());
             }
             else
                 SetMaster(newMaster);
-            ResetStrategies();
 
-            if (sRandomPlayerbotMgr.IsFreeBot(bot))
+            if (masterChanged)
             {
-                std::string defaultMovementStrategy = GetDefaultMovementStrategy();
-                ChangeStrategy("+" + defaultMovementStrategy, BotState::BOT_STATE_NON_COMBAT);
-            }
+                master = newMaster;
+                ResetStrategies();
 
-            if (GetMaster() == GetGroupMaster())
-            {
-                TellPlayer(master, BOT_TEXT("hello_follow"));
-            }
-            else
-            {
-                TellPlayer(master, BOT_TEXT("hello"));
+                if (sRandomPlayerbotMgr.IsFreeBot(bot))
+                {
+                    std::string defaultMovementStrategy = GetDefaultMovementStrategy();
+                    ChangeStrategy("+" + defaultMovementStrategy, BotState::BOT_STATE_NON_COMBAT);
+                }
+
+                if (GetMaster() == GetGroupMaster())
+                {
+                    TellPlayer(master, BOT_TEXT("hello_follow"));
+                }
+                else
+                {
+                    TellPlayer(master, BOT_TEXT("hello"));
+                }
             }
         }
     }
@@ -2338,8 +2349,10 @@ void PlayerbotAI::DoNextAction(bool min)
 
         if (!group && sRandomPlayerbotMgr.IsFreeBot(bot) && !IsRealPlayer())
         {
-            if (!TortoiseBots::BotManager::Instance().ClearBotMaster(bot->GetObjectGuid()))
-                PlayerbotAIStorage::Instance().GetAI(bot)->SetMaster(nullptr);
+            if (TortoiseBots::BotManager::Instance().IsBot(bot->GetObjectGuid()) &&
+                !TortoiseBots::BotManager::Instance().ClearBotMaster(bot->GetObjectGuid()))
+                sLog.outError("TortoiseBots: failed to clear durable master for %s after leaving its group",
+                    bot->GetName());
         }
 	}
 	else if (bot->m_movementInfo.HasMovementFlag(MOVEFLAG_WALK_MODE)) bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_WALK_MODE);

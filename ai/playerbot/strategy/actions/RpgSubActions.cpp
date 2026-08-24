@@ -33,8 +33,8 @@ void RpgHelper::AfterExecute(bool doDelay, bool waitForGroup, std::string nextAc
         goToDifferentTargetChance = 30;
 
     if (nextAction == "rpg" && urand(0, 100) < goToDifferentTargetChance)
-        nextAction = "rpg cancel"; 
-    
+        nextAction = "rpg cancel";
+
     SET_AI_VALUE(std::string, "next rpg action", nextAction);
 
     if(doDelay)
@@ -99,7 +99,7 @@ void RpgHelper::resetFacing(GuidPosition guidPosition)
 void RpgHelper::setDelay(bool waitForGroup)
 {
     if ((!ai->HasRealPlayerMaster() && !bot->GetGroup()) || (bot->GetGroup() && bot->GetGroup()->IsLeader(bot->getObjectGuid()) && waitForGroup))
-        ai->SetActionDuration(sPlayerbotAIConfig.rpgDelay);       
+        ai->SetActionDuration(sPlayerbotAIConfig.rpgDelay);
     else
         ai->SetActionDuration(sPlayerbotAIConfig.rpgDelay / 5);
 }
@@ -142,15 +142,15 @@ bool RpgEmoteAction::Execute(Event& event)
 
 bool RpgCancelAction::Execute(Event& event)
 {
-    rpg->OnCancel();  
+    rpg->OnCancel();
 
     if (!urand(0,3) || AI_VALUE(GuidPosition, "rpg target").GetEntry() != AI_VALUE(TravelTarget*, "travel target")->GetEntry() || AI_VALUE(TravelTarget*, "travel target")->GetStatus() != TravelStatus::TRAVEL_STATUS_WORK) //1 out of 4 to ignore current travel target after cancel.
-        AI_VALUE(std::set<ObjectGuid>&, "ignore rpg target").insert(AI_VALUE(GuidPosition, "rpg target")); 
+        AI_VALUE(std::set<ObjectGuid>&, "ignore rpg target").insert(AI_VALUE(GuidPosition, "rpg target"));
 
-    RESET_AI_VALUE(GuidPosition, "rpg target"); rpg->AfterExecute(false, false, ""); DoDelay(); 
+    RESET_AI_VALUE(GuidPosition, "rpg target"); rpg->AfterExecute(false, false, ""); DoDelay();
     RESET_AI_VALUE2(int32, "manual int", "rpg ai chat line");
     RESET_AI_VALUE2(std::string, "manual string", "llmcontext rpg");
-    
+
     return true;
 };
 
@@ -213,7 +213,7 @@ bool RpgTaxiAction::Execute(Event& event)
         sLog.outError("Bot %s cannot talk to flightmaster (%zu location available)", bot->GetName(), nodes.size());
         return false;
     }
-#ifdef MANGOSBOT_TWO                
+#ifdef MANGOSBOT_TWO
     bot->OnTaxiFlightEject(true);
 #endif
     if (!bot->ActivateTaxiPathTo({ entry->from, entry->to }, flightMaster, 0))
@@ -256,7 +256,7 @@ bool RpgDiscoverAction::Execute(Event& event)
 
     DoDelay();
 
-    return bot->GetSession()->SendLearnNewTaxiNode(flightMaster);    
+    return bot->GetSession()->SendLearnNewTaxiNode(flightMaster);
 }
 
 bool RpgHealAction::Execute(Event& event)
@@ -264,7 +264,7 @@ bool RpgHealAction::Execute(Event& event)
     bool retVal = false;
 
     rpg->BeforeExecute();
-    
+
     switch (bot->GetClass())
     {
     case CLASS_PRIEST:
@@ -306,7 +306,7 @@ bool RpgUseAction::isUseful()
                 return true;
 
             return false;
-        }            
+        }
     }
 
     return true;
@@ -397,9 +397,9 @@ bool RpgAIChatAction::SpeakLine()
             }
             else
             {
-                unit->MonsterSay(message.c_str(), lang, bot);               
+                unit->MonsterSay(message.c_str(), lang, bot);
             }
-            
+
             message = unit->GetName() + std::string(": ") + message;
         }
     }
@@ -593,7 +593,7 @@ bool RpgAIChatAction::Execute(Event& event)
 }
 
 void RpgAIChatAction::ManualChat(GuidPosition target, const std::string& line)
-{  
+{
     SET_AI_VALUE(GuidPosition, "rpg target", target);
 
     std::string llmContext = GAI_VALUE2(std::string, "global string", "llmcontext manual" + std::to_string(target.GetCounter()));
@@ -657,7 +657,7 @@ void RpgAIChatAction::ManualChat(GuidPosition target, const std::string& line)
     }
 
     SET_AI_VALUE(std::string, "manual string::llmcontext rpg", llmContext);
-        
+
 
     RequestNewLines();
 
@@ -843,7 +843,7 @@ bool RpgEnchantAction::Execute(Event& event)
                 }
             }
 
-            ai->SetActionDuration(sPlayerbotAIConfig.rpgDelay);            
+            ai->SetActionDuration(sPlayerbotAIConfig.rpgDelay);
         }
 
         rpg->AfterExecute(isTrading, true, isTrading ? "rpg enchant" : "rpg");
@@ -880,7 +880,7 @@ bool RpgDuelAction::Execute(Event& event)
     Player* player = guidP.GetPlayer();
 
     if (!player)
-        return false;   
+        return false;
 
     return ai->DoSpecificAction("cast", Event("rpg action", chat->formatWorldobject(player) + " 7266"), true);
 }
@@ -944,11 +944,11 @@ bool RpgSpellClickAction::Execute(Event& event)
     if (!guidP.IsCreatureOrVehicle())
 #endif
         return false;
-   
+
     bool result = ai->HandleSpellClick(guidP);
-    
+
     rpg->AfterExecute(result);
     DoDelay();
-    
+
     return result;
 }

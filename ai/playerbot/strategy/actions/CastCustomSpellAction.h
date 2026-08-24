@@ -56,7 +56,7 @@ namespace ai
 
         virtual bool castSpell(uint32 spellId, WorldObject* wo, Player* requester);
     };
-       
+
     class CraftRandomItemAction : public CastRandomSpellAction
     {
     public:
@@ -104,7 +104,7 @@ namespace ai
             ItemPrototype const* proto = item->GetProto();
 
             //Upgrade current equiped item enchantment.
-            if (item->GetBagSlot() == INVENTORY_SLOT_BAG_0) 
+            if (item->GetBagSlot() == INVENTORY_SLOT_BAG_0)
             {
                 if (HAS_AI_VALUE2("force item usage", proto->ItemId))
                     return 0;

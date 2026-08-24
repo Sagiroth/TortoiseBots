@@ -16,7 +16,7 @@
 void MemoryMonitor::Add(std::string objectType, uint64_t object, int level, std::string stack)
 {
     if(stack.empty())
-        objectnumbers[std::this_thread::get_id()][objectType]++; 
+        objectnumbers[std::this_thread::get_id()][objectType]++;
 
     if (level && (int)object % level == 0)
     {
@@ -31,8 +31,8 @@ void MemoryMonitor::Add(std::string objectType, uint64_t object, int level, std:
 
 void MemoryMonitor::Rem(std::string objectType, uint64_t object, int level)
 {
-    objectnumbers[std::this_thread::get_id()][objectType]--; 
-    
+    objectnumbers[std::this_thread::get_id()][objectType]--;
+
     if (level && (int)object % level == 0)
     {
         if (adds[std::this_thread::get_id()][objectType].find(object) != adds[std::this_thread::get_id()][objectType].end())
@@ -66,7 +66,7 @@ void MemoryMonitor::Print()
     for (auto& num : nums)
     {
         if(num.second > 1000000)
-            sLog.outString("%s : %.2fm (%.2fk)", num.first.c_str(), num.second / 1000000.0f, (objectnumbersHist.back()[num.first] - objectnumbersHist.front()[num.first]) / 1000.0f);            
+            sLog.outString("%s : %.2fm (%.2fk)", num.first.c_str(), num.second / 1000000.0f, (objectnumbersHist.back()[num.first] - objectnumbersHist.front()[num.first]) / 1000.0f);
         else if(num.second > 1000)
             sLog.outString("%s : %.2fk (%.2fk)", num.first.c_str(), num.second / 1000.0f, (objectnumbersHist.back()[num.first] - objectnumbersHist.front()[num.first]) / 1000.0f);
         else
@@ -121,7 +121,7 @@ void MemoryMonitor::LogCount(std::string filename)
         fflush(stdout);
         headers = true;
     }
-        
+
     //line = timestamp.c_str();
     line = std::to_string(static_cast<uint32>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch() - GetApplicationStartTime().time_since_epoch()).count()));
 
@@ -161,7 +161,7 @@ void MemoryMonitor::Browse()
                 for (auto& rem : rems) //loop over all threads of removed items.
                 {
                     for (auto& r : rem.second[typ.first]) //loop over all items of the same type.
-                        if (r.first == a.first) 
+                        if (r.first == a.first)
                         {
                             stillHere = false;
                             break;
@@ -178,11 +178,11 @@ void MemoryMonitor::Browse()
                 }
                 else //Item was removed. Clean it up.
                     notHere[typ.first].push_back(a.first);
-            }           
+            }
         }
 
     //Clean up removed items.
-    for (auto& thre : adds) 
+    for (auto& thre : adds)
     {
         for (auto& typ : thre.second)
         {

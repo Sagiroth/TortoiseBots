@@ -49,5 +49,3 @@ bool DoneFishingValue::Calculate()
 
     return true;
 }
-
-

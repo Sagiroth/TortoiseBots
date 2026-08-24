@@ -96,7 +96,7 @@ bool ChangeTalentsAction::Execute(Event& event)
                     {
                         if (paths.size() > 1)
                             out << "Found " << paths.size() << " possible specs to choose from. ";
-                        
+
                         TalentPath* path = PickPremadePath(paths, sRandomPlayerbotMgr.IsRandomBot(bot));
                         TalentSpec newSpec = *GetBestPremadeSpec(bot, path->id);
                         std::string specLink = newSpec.GetTalentLink();
@@ -179,11 +179,11 @@ std::vector<TalentPath*> ChangeTalentsAction::getPremadePaths(uint8 cls, std::st
 std::vector<TalentPath*> ChangeTalentsAction::getPremadePaths(Player* bot, TalentSpec* oldSpec)
 {
     std::vector<TalentPath*> ret;
-    
+
     for (auto& path : sPlayerbotAIConfig.classSpecs[bot->GetClass()].talentPath)
     {
         TalentSpec newSpec = *GetBestPremadeSpec(bot, path.id);
-        newSpec.CropTalents(bot);        
+        newSpec.CropTalents(bot);
         if (oldSpec->isEarlierVersionOf(newSpec))
         {
             ret.push_back(&path);
@@ -318,7 +318,7 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
         TalentSpec oldSpec(bot);
         int currentTree = oldSpec.highestTree();
         std::vector<TalentPath*> paths;
-        
+
         if (oldSpec.points)
             paths = getPremadePaths(bot, &oldSpec);
 
@@ -331,7 +331,7 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
 
             if (paths.empty() && role != BotRoles::BOT_ROLE_NONE)
                 paths = getPremadePaths(bot->GetClass(), "", BotRoles::BOT_ROLE_NONE);
-        }   
+        }
 
         if(paths.size() > 0 && oldSpec.GetTalentPoints() > 0)
         {
@@ -349,14 +349,14 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
             if (hasSameTree) //Remove specs that do not end up in the same tree.
             {
                 auto it = paths.begin();
-                while (it != paths.end()) 
+                while (it != paths.end())
                 {
                     TalentPath* path = *it;
-                    if (path->talentSpec.back().highestTree() != currentTree) 
+                    if (path->talentSpec.back().highestTree() != currentTree)
                     {
                         it = paths.erase(it);
                     }
-                    else 
+                    else
                     {
                         ++it;
                     }
@@ -400,7 +400,7 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
     return (specNo == 0) ? false : true;
 }
 
-//Returns a pre-made talent spec that best suits the bots current talents. 
+//Returns a pre-made talent spec that best suits the bots current talents.
 TalentSpec* ChangeTalentsAction::GetBestPremadeSpec(Player* bot, int specId)
 {
     TalentPath* path = getPremadePath(bot->GetClass(), specId);
@@ -441,4 +441,3 @@ bool AutoSetTalentsAction::Execute(Event& event)
 
     return true;
 }
-

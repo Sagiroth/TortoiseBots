@@ -5,7 +5,7 @@
 
 namespace ai
 {
-    class ResetInstancesAction : public Action 
+    class ResetInstancesAction : public Action
     {
     public:
         ResetInstancesAction(PlayerbotAI* ai) : Action(ai, "reset instances") {}

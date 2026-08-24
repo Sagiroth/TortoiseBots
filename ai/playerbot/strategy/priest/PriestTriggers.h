@@ -34,28 +34,28 @@ namespace ai
     CAN_CAST_TRIGGER(MindBlastTrigger, "mind blast");
     CAN_CAST_TRIGGER(SmiteTrigger, "smite");
 
-    class PowerWordFortitudeOnPartyTrigger : public BuffOnPartyTrigger 
+    class PowerWordFortitudeOnPartyTrigger : public BuffOnPartyTrigger
     {
     public:
         PowerWordFortitudeOnPartyTrigger(PlayerbotAI* ai) : BuffOnPartyTrigger(ai, "power word: fortitude", 4) {}
         virtual bool IsActive() override { return BuffOnPartyTrigger::IsActive() && !ai->HasAura("prayer of fortitude", GetTarget()); }
     };
 
-    class PowerWordFortitudeTrigger : public BuffTrigger 
+    class PowerWordFortitudeTrigger : public BuffTrigger
     {
     public:
         PowerWordFortitudeTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "power word: fortitude", 4) {}
         virtual bool IsActive() override { return BuffTrigger::IsActive() && !ai->HasAura("prayer of fortitude", GetTarget()); }
     };
 
-    class DivineSpiritOnPartyTrigger : public BuffOnPartyTrigger 
+    class DivineSpiritOnPartyTrigger : public BuffOnPartyTrigger
     {
     public:
         DivineSpiritOnPartyTrigger(PlayerbotAI* ai) : BuffOnPartyTrigger(ai, "divine spirit", 4) {}
         virtual bool IsActive() override { return BuffOnPartyTrigger::IsActive() && !ai->HasAura("prayer of spirit", GetTarget()); }
     };
 
-    class DivineSpiritTrigger : public BuffTrigger 
+    class DivineSpiritTrigger : public BuffTrigger
     {
     public:
         DivineSpiritTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "divine spirit", 4) {}
@@ -69,7 +69,7 @@ namespace ai
         virtual bool IsActive() override { return BuffOnPartyTrigger::IsActive() && !ai->HasAura("prayer of shadow protection", GetTarget()); }
     };
 
-    class ShadowProtectionTrigger : public BuffTrigger 
+    class ShadowProtectionTrigger : public BuffTrigger
     {
     public:
         ShadowProtectionTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "shadow protection", 4) {}
@@ -94,7 +94,7 @@ namespace ai
         PrayerOfShadowProtectionOnPartyTrigger(PlayerbotAI* ai) : GreaterBuffOnPartyTrigger(ai, "prayer of shadow protection", "shadow protection", 4) {}
     };
 
-    class BindingHealTrigger : public PartyMemberLowHealthTrigger 
+    class BindingHealTrigger : public PartyMemberLowHealthTrigger
     {
     public:
         BindingHealTrigger(PlayerbotAI* ai) : PartyMemberLowHealthTrigger(ai, "binding heal", sPlayerbotAIConfig.lowHealth, 0) {}

@@ -24,7 +24,7 @@ bool MoveToFishAction::isUseful()
 }
 
 bool MoveToFishAction::Execute(Event& event)
-{    
+{
     WorldPosition fishSpot;
 
     fishSpot = AI_VALUE2(WorldPosition, "custom position", "fish spot");
@@ -37,7 +37,7 @@ bool MoveToFishAction::Execute(Event& event)
         if (AI_VALUE(TravelTarget*, "travel target") != target) //Do not fish ontop of master.
             fishSpot = *sTravelMgr.GetFishSpot(bot, true);
     }
-    
+
     if (!fishSpot) //Get any fish spot.
     {
         fishSpot = *sTravelMgr.GetFishSpot(bot);
@@ -50,9 +50,9 @@ bool MoveToFishAction::Execute(Event& event)
 
         AI_VALUE(LastMovement&, "last movement").setPath(movePath);
     }
-    
+
     SET_AI_VALUE2(WorldPosition, "custom position", "fish spot", fishSpot);
-   
+
     if (fishSpot.distance(bot) < 1.0f)
         return false;
 

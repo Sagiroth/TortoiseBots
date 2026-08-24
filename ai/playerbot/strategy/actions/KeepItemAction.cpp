@@ -37,7 +37,7 @@ bool KeepItemAction::Execute(Event& event)
         for (auto& item : found)
             ids.insert(item->GetProto()->ItemId);
     }
-   
+
     if (ids.empty())
     {
         if (type == "?")

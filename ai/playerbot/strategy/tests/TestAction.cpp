@@ -48,7 +48,7 @@ TestAction::TestAction(PlayerbotAI* ai, std::string name)
     commands.push_back(std::make_unique<CommandFlowWait>());
     commands.push_back(std::make_unique<CommandFlowWaitDestination>());
     commands.push_back(std::make_unique<CommandFlowRepeat>());
-    
+
     monitors.push_back(std::make_unique<MonitorStateDead>());
     monitors.push_back(std::make_unique<MonitorStateTime>());
     monitors.push_back(std::make_unique<MonitorCombatHp>());
@@ -220,7 +220,7 @@ TestResult TestAction::ExecuteCommand(const std::string& line, std::string& mess
 }
 
 void TestAction::RunCleanup()
-{   
+{
     for (size_t i = static_cast<size_t>(std::max(0, ctx.pc)); i < ctx.script.size(); ++i)
     {
         std::string message;
@@ -228,7 +228,7 @@ void TestAction::RunCleanup()
         if (!dynamic_cast<TestCleanup*>(commands[i].get()))
             continue;
 
-        TestResult commandResult = ExecuteCommand(ctx.script[ctx.pc], message);        
+        TestResult commandResult = ExecuteCommand(ctx.script[ctx.pc], message);
     }
 }
 
@@ -306,7 +306,7 @@ void TestAction::ReportResult()
 
     RESET_AI_VALUE2(bool, "manual bool", "is running test");
 
-#ifdef GenerateBotTests 
+#ifdef GenerateBotTests
     if (ai->GetHolder())
         ai->GetHolder()->DepositTestResult(ctx.testName, resultStr);
 #endif
@@ -323,7 +323,7 @@ void TestAction::ReportResult()
         LogToConsole(logLine);
 
         if (ai->GetHolder())
-            ai->GetHolder()->DeleteBot(bot->getObjectGuid(), false);        
+            ai->GetHolder()->DeleteBot(bot->getObjectGuid(), false);
     }
 }
 
@@ -347,11 +347,11 @@ void TestAction::LogToFile(const std::string& msg)
 }
 
 void TestAction::DeactivateStrategy()
-{       
+{
     std::string strategyName = "test::" + ctx.testName;
     ai->ChangeStrategy("-" + strategyName, BotState::BOT_STATE_COMBAT);
     ai->ChangeStrategy("-" + strategyName, BotState::BOT_STATE_NON_COMBAT);
-            
+
     ctx.Reset();
 }
 

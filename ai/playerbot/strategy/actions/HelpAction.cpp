@@ -72,7 +72,7 @@ bool HelpAction::Execute(Event& event)
 
         return true;
     }
-    
+
     TellChatCommands(requester);
     TellStrategies(requester);
 

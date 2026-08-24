@@ -31,7 +31,7 @@ bool QueryQuestAction::Execute(Event& event)
             }
         }
     }
-    
+
     if (!questId)
         return false;
 
@@ -52,7 +52,7 @@ bool QueryQuestAction::Execute(Event& event)
             out << "|c00FF0000not completed|r ---";
             ai->TellPlayer(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
             TellObjectives(requester, questId);
-        }      
+        }
 
         return true;
     }

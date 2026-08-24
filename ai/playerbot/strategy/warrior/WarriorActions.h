@@ -31,7 +31,7 @@ namespace ai
     SPELL_ACTION(CastHeroicThrowAction, "heroic throw");
     SNARE_ACTION(CastHeroicThrowSnareAction, "heroic throw");
     RANGED_DEBUFF_ACTION(CastShatteringThrowAction, "shattering throw");
-    
+
     // arms talents
     MELEE_ACTION(CastMortalStrikeAction, "mortal strike");
     BUFF_ACTION(CastSweepingStrikesAction, "sweeping strikes");

@@ -76,7 +76,7 @@ bool FollowChatShortcutAction::Execute(Event& event)
     }
 
     if (sServerFacade.IsInCombat(bot))
-    {     
+    {
         WorldLocation loc = formation->GetLocation();
         if (Formation::IsNullLocation(loc) || loc.mapId == -1)
             return false;
@@ -124,7 +124,7 @@ bool GuardChatShortcutAction::Execute(Event& event)
 
     SetPosition(bot);
     SetPosition(bot, "guard");
-    MEM_AI_VALUE(WorldPosition, "master position")->Reset();  
+    MEM_AI_VALUE(WorldPosition, "master position")->Reset();
 
     PrintStrategies(ai, event);
 

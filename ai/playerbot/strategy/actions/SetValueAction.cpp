@@ -58,7 +58,7 @@ bool SetValueAction::Execute(Event& event)
             else if (type == 1)
                 ai->TellPlayer(requester, "Prefered group size set to allow others to invite.", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
             else
-                ai->TellPlayer(requester, "Prefered group size set to invite up to " + value, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);    
+                ai->TellPlayer(requester, "Prefered group size set to invite up to " + value, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
 
             return true;
             break;

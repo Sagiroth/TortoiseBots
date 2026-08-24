@@ -814,7 +814,7 @@ void LogAnalysis::AnalysePid()
     std::ifstream in(m_logsDir+"activity_pid.csv", std::ifstream::in);
 
     std::vector<uint32> activeBots, totalBots, avgDiff;
-    
+
     uint32 runTime, maxBots = 0, start=0;
 
     if (in.fail())
@@ -835,7 +835,7 @@ void LogAnalysis::AnalysePid()
 
         if (tokens.size() > 50)//Multiple servers running
             continue;
-        
+
         if (tokens[0] == "Timestamp") //Header line
             continue;
 
@@ -882,7 +882,7 @@ void LogAnalysis::AnalysePid()
 
     std::stringstream ss;
     ss << hour.count() << " Hours : " << mins.count() << " Minutes : " << secs.count() << " Seconds ";
-    
+
     std::ostringstream out;
 
     out << sPlayerbotAIConfig.GetTimestampStr()  << "," << "PID" << "," << ss.str().c_str() << "," << aDiff << "," << aBots << "," << maxBots;
@@ -914,7 +914,7 @@ void LogAnalysis::AnalyseEvents()
     eventMin["AttackAnythingAction"] = 1;
     eventMin["AutoSetTalentsAction"] = 1;
     eventMin["BGJoinAction"] = 1;
-    eventMin["CheckMountStateAction"] = 1;    
+    eventMin["CheckMountStateAction"] = 1;
     eventMin["EquipAction"] = 1;
     eventMin["LeaveGroupAction"] = 1;
     eventMin["QueryItemUsageAction"] = 1;
@@ -1064,7 +1064,7 @@ void LogAnalysis::AnalyseCounts()
     countType["AhAction"] = "Item sold on AH";
     countType["AhBidAction"] = "Item bid on AH";
     countType["MailAction"] = "Item bought on AH";
-    countType["TrainerAction"] = "Skill learned";   
+    countType["TrainerAction"] = "Skill learned";
     countType["AttackAnythingAction"] = "Mob attacked";
     countType["XpGainAction"] = "Mob killed";
 
@@ -1080,7 +1080,7 @@ void LogAnalysis::AnalyseCounts()
 
         Tokens tokens = StrSplit(line, ",");
 
-        if (tokens.size() == 10) //Some quest names have a "," so add an extra element. 
+        if (tokens.size() == 10) //Some quest names have a "," so add an extra element.
         {
             tokens[7] = tokens[7] + tokens[8];
             tokens[8] = tokens[9];
@@ -1096,9 +1096,9 @@ void LogAnalysis::AnalyseCounts()
         if (tokens[7].empty())
             continue;
 
-        counts[tokens[2]][tokens[7]]++;        
+        counts[tokens[2]][tokens[7]]++;
     } while (in.good());
-  
+
     for (auto& count : counts)
     {
 

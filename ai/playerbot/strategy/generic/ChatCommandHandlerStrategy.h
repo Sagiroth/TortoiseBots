@@ -11,7 +11,7 @@ namespace ai
 
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "chat"; } //Must equal internal name
-        virtual std::string GetHelpDescription() 
+        virtual std::string GetHelpDescription()
         {
             return "This strategy will make bots respond to various chat commands.";
         }

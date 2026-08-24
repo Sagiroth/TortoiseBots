@@ -25,7 +25,7 @@ bool MoveStyleAction::Execute(Event& event)
     else
     {
         value->Set(strategy);
-        
+
         {
             std::ostringstream out;
             out << "Move style set to: " << value->Get();
@@ -35,4 +35,3 @@ bool MoveStyleAction::Execute(Event& event)
 
     return true;
 }
-

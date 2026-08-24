@@ -11,7 +11,7 @@ namespace ai
 	public:
         PartyMemberToResurrect(PlayerbotAI* ai, std::string name = "party member to resurrect") :
           PartyMemberValue(ai,name) {}
-    
+
     protected:
         virtual Unit* Calculate() override;
 	};

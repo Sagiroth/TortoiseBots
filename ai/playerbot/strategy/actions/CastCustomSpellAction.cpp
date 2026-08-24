@@ -21,9 +21,9 @@ int FindLastSeparator(std::string text, std::string sep)
     return pos;
 }
 
-static inline void ltrim(std::string& s) 
+static inline void ltrim(std::string& s)
 {
-    s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) 
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch)
     {
         return !std::isspace(ch);
     }));
@@ -80,7 +80,7 @@ bool CastCustomSpellAction::Execute(Event& event)
 
         ltrim(text);
     }
-    
+
     if (!target)
     {
         if (requester && requester->GetSelectionGuid())
@@ -134,7 +134,7 @@ bool CastCustomSpellAction::Execute(Event& event)
     }
 
     // Don't use totem items for totem spells (except enchanting bars)
-    if (pSpellInfo->Totem[0] > 0 && 
+    if (pSpellInfo->Totem[0] > 0 &&
         pSpellInfo->Totem[0] != 5060 &&
         pSpellInfo->Totem[0] != 6218 &&
         pSpellInfo->Totem[0] != 6339 &&
@@ -205,7 +205,7 @@ bool CastCustomSpellAction::Execute(Event& event)
             ItemPrototype const* proto = sObjectMgr.GetItemPrototype(newItemId);
             replyArgs["%spell"] = ChatHelper::formatItem(proto);
         }
-    }    
+    }
 
     if (bot->GetTrader())
     {
@@ -283,9 +283,9 @@ bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string comm
         if (command.find("summon") != std::string::npos)
         {
             // Don't summon player when trying to summon warlock pet
-            if (command.find("imp") != std::string::npos || 
-                command.find("voidwalker") != std::string::npos || 
-                command.find("succubus") != std::string::npos || 
+            if (command.find("imp") != std::string::npos ||
+                command.find("voidwalker") != std::string::npos ||
+                command.find("succubus") != std::string::npos ||
                 command.find("felhunter") != std::string::npos ||
                 command.find("felguard") != std::string::npos ||
                 command.find("felsteed") != std::string::npos ||
@@ -358,7 +358,7 @@ bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string comm
                                 }
                             }
                         }
-                    }   
+                    }
                 }
 
                 if (target)
@@ -417,7 +417,7 @@ bool CastRandomSpellAction::Execute(Event& event)
 {
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     std::list<std::pair<uint32, std::string>> spellMap = GetSpellList();
-    
+
     Unit* target = nullptr;
     GameObject* got = nullptr;
 
@@ -438,7 +438,7 @@ bool CastRandomSpellAction::Execute(Event& event)
         {
             break;
         }
-    }    
+    }
 
     if (!got && !target && bot->GetSelectionGuid())
     {
@@ -521,7 +521,7 @@ bool CastRandomSpellAction::Execute(Event& event)
     bool allTheSame = true;
 
     for(auto& spell : spellList)
-    { 
+    {
         if (spell.first != spellList[0].first)
         {
             allTheSame = false;
@@ -569,7 +569,7 @@ bool CastRandomSpellAction::castSpell(uint32 spellId, WorldObject* wo, Player* r
             executed = true;
         }
     }
-    
+
     if (!executed && wo)
     {
         if (pSpellInfo->Targets & TARGET_FLAG_DEST_LOCATION)
@@ -621,7 +621,7 @@ bool CastRandomSpellAction::castSpell(uint32 spellId, WorldObject* wo, Player* r
     if (executed)
     {
         SetDuration(spellDuration);
-    }    
+    }
     return executed;
 }
 
@@ -766,5 +766,3 @@ bool DisenchantRandomItemAction::Execute(Event& event)
 
     return false;
 };
-
-

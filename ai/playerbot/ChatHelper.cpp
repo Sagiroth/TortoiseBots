@@ -498,7 +498,7 @@ std::string ChatHelper::formatWorldEntry(int32 entry)
         name = gInfo->name;
     else if (entry > 0 && cInfo)
         name = cInfo->name;
-    
+
     if(name.empty())
         name = "unknown:" + std::to_string(entry);
 
@@ -520,9 +520,9 @@ std::string ChatHelper::formatWorldEntry(int32 entry)
             name = *tname;
         }
     }
-    
+
     out << name;
-    
+
     out << "]|h|r";
     return out.str();
 }
@@ -719,7 +719,7 @@ std::string ChatHelper::formatFaction(uint32 factionId, Player* player)
         FactionState const* repState = player->GetReputationMgr().GetState(factionEntry);
 
         if (repState && repState->Flags & FACTION_FLAG_VISIBLE)
-        {                        
+        {
             ReputationRank rank = player->GetReputationMgr().GetRank(factionEntry);
             out << " " << formatReaction(rank, player) << " (" << player->GetReputationMgr().GetReputation(factionEntry) << ")";
 
@@ -824,7 +824,7 @@ std::list<int32> ChatHelper::parseWorldEntries(const std::string& text)
         int endPos = text.find(':', pos);     // end of window in text 22
         if (endPos == -1)     //break if error
             break;
-        std::string entryC = text.substr(pos, endPos - pos);     // get std::string within window i.e entry        
+        std::string entryC = text.substr(pos, endPos - pos);     // get std::string within window i.e entry
         uint32 entry = std::atol(entryC.c_str());     // convert ascii to float
 
         if (entry)
@@ -1260,7 +1260,7 @@ std::vector<std::string> ChatHelper::splitString(const std::string& text, const 
         return tokens;
     }
 
-    if (delimiter.empty()) 
+    if (delimiter.empty())
     {
         tokens.push_back(text);
         return tokens;
@@ -1286,20 +1286,20 @@ std::vector<std::string> ChatHelper::findSubstringsBetween(const std::string& in
     size_t startPos = 0;
     size_t endPos;
 
-    while ((startPos = input.find(start, startPos)) != std::string::npos) 
+    while ((startPos = input.find(start, startPos)) != std::string::npos)
     {
         startPos += start.length();
         endPos = input.find(end, startPos);
-        if (endPos == std::string::npos) 
+        if (endPos == std::string::npos)
         {
             break;
         }
 
-        if (includeDelimiters) 
+        if (includeDelimiters)
         {
             substrings.push_back(input.substr(startPos - start.length(), (endPos - (startPos - start.length())) + end.length()));
         }
-        else 
+        else
         {
             substrings.push_back(input.substr(startPos, endPos - startPos));
         }
@@ -1313,7 +1313,7 @@ std::vector<std::string> ChatHelper::findSubstringsBetween(const std::string& in
 void ChatHelper::replaceSubstring(std::string& str, const std::string& oldStr, const std::string& newStr)
 {
     size_t pos = str.find(oldStr);
-    while (pos != std::string::npos) 
+    while (pos != std::string::npos)
     {
         str.replace(pos, oldStr.length(), newStr);
         pos = str.find(oldStr, pos + newStr.length());

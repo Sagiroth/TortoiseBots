@@ -182,7 +182,7 @@ bool ImbueWithOilAction::isUseful()
 {
     if (bot->GetLevel() > 70)
         return false;
-    
+
     Item* weapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
     if (weapon && weapon->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT) == 0)
     {

@@ -28,7 +28,7 @@ std::list<CreatureDataPair const*> BgMastersValue::Calculate()
         for(auto creaturePair : WorldPosition().GetCreaturesNear(0, entry))
         {
             bmGuids.push_back(creaturePair);
-        }        
+        }
     }
 
     return bmGuids;
@@ -40,7 +40,7 @@ CreatureDataPair const* BgMasterValue::Calculate()
 
     if (!bmPair)
         bmPair = NearestBm(true);
-   
+
     return bmPair;
 }
 

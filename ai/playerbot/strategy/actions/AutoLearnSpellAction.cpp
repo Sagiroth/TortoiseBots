@@ -51,7 +51,7 @@ void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
     {
         if (bot->GetClass() == CLASS_HUNTER && bot->GetLevel() >= 10)
         {
-#if !defined(MANGOSBOT_TWO) // Beast training not available in WotLK 
+#if !defined(MANGOSBOT_TWO) // Beast training not available in WotLK
             bot->learnSpell(5149, false); //Beast training
 #endif
             bot->learnSpell(883, false); //Call pet
@@ -72,7 +72,7 @@ void AutoLearnSpellAction::LearnTrainerSpells(std::ostringstream* out)
         if (!co)
             continue;
 
-        if (co->TrainerType != TRAINER_TYPE_CLASS && 
+        if (co->TrainerType != TRAINER_TYPE_CLASS &&
             co->TrainerType != TRAINER_TYPE_TRADESKILLS &&
             co->TrainerType != TRAINER_TYPE_PETS)
             continue;
@@ -221,7 +221,7 @@ void AutoLearnSpellAction::LearnDroppedSpells(std::ostringstream* out)
     spellList[CLASS_HUNTER][60] = { 19801, 25296, 25294, 25295 };
     spellList[CLASS_ROGUE][60] = { 25300, 25347, 25302, 31016 };
     spellList[CLASS_PRIEST][48] = { 21562 };
-    // Spell 27683 Prayer of Shadow Protection https://www.wowhead.com/classic/spell=27683/prayer-of-shadow-protection book requires level 60, spell requires 56. 
+    // Spell 27683 Prayer of Shadow Protection https://www.wowhead.com/classic/spell=27683/prayer-of-shadow-protection book requires level 60, spell requires 56.
     // Went with the book requirement.
     spellList[CLASS_PRIEST][60] = { 25314, 25315, 25316,21564,27683 };
     spellList[CLASS_SHAMAN][60] = { 29228, 25359, 25357, 25361 };
@@ -233,7 +233,7 @@ void AutoLearnSpellAction::LearnDroppedSpells(std::ostringstream* out)
     spellList[CLASS_WARLOCK][60] = { 18540, 25311, 25309, 25307, 28610 };
     spellList[CLASS_DRUID][50] = { 21849 };
     spellList[CLASS_DRUID][60] = { 31018, 25297, 25299, 25298, 21850 };
-    
+
     for (const auto& levelSpells : spellList[bot->GetClass()])
     {
         if (bot->GetLevel() >= levelSpells.first)
@@ -390,7 +390,7 @@ bool AutoLearnSpellAction::IsValidSpell(uint32 spellId)
 #elif MANGOSBOT_ONE
     isSpellValid =
         // Paladin
-        spellId != 10321 &&       // Prevents Paladin from learning judgment training spell.   
+        spellId != 10321 &&       // Prevents Paladin from learning judgment training spell.
         // Hunter
         spellId != 530;     // Prevents hunter from learning Charm (Possess) (Spell is attached to a pet trainer)
 #elif MANGOSBOT_TWO

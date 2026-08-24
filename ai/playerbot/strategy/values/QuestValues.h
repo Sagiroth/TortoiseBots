@@ -5,7 +5,7 @@
 #include "playerbot/TravelMgr.h"
 
 namespace ai
-{          
+{
     class GuidPosition;
 
     class QuestObjectMgr : ObjectMgr
@@ -32,12 +32,12 @@ namespace ai
     //questGuidpMap[questId][QuestRelationFlag][entry] = {GuidPosition}
     typedef std::unordered_map<int32, std::list<GuidPosition>> questEntryGuidps;
     typedef std::unordered_map<uint32, questEntryGuidps> questRelationGuidps;
-    typedef std::unordered_map<uint32, questRelationGuidps> questGuidpMap;    
+    typedef std::unordered_map<uint32, questRelationGuidps> questGuidpMap;
 
     //questGiverMap[questId] = {GuidPosition}
     typedef std::unordered_map<uint32, std::list<GuidPosition>> questGiverMap;
-    
-    
+
+
     //Returns the quest relation Flags for all entries and quests
     class EntryQuestRelationMapValue : public SingleCalculatedValue<EntryQuestRelationMap>
     {
@@ -46,7 +46,7 @@ namespace ai
 
         virtual EntryQuestRelationMap Calculate() override;
     };
-        
+
     //Generic quest object finder
     class FindQuestObjectData
     {
@@ -65,7 +65,7 @@ namespace ai
 
         questGuidpMap data;
     };
-   
+
     //All objects to start, do or finish a quest.
     class QuestGuidpMapValue : public SingleCalculatedValue<questGuidpMap>
     {
@@ -73,8 +73,8 @@ namespace ai
         QuestGuidpMapValue(PlayerbotAI* ai) : SingleCalculatedValue(ai, "quest guidp map") {}
 
         virtual questGuidpMap Calculate() override;
-    };       
-    
+    };
+
     //All questgivers and their quests that are useful for a specific level
     class QuestGiversValue : public SingleCalculatedValue<questGiverMap>, public Qualified
 	{
@@ -82,15 +82,15 @@ namespace ai
         QuestGiversValue(PlayerbotAI* ai) : SingleCalculatedValue(ai, "quest givers"), Qualified() {}
         virtual questGiverMap Calculate() override;
     };
-    
+
     //All questgivers that have a quest for the bot.
     class ActiveQuestGiversValue : public CalculatedValue<std::list<GuidPosition>>
     {
     public:
         ActiveQuestGiversValue(PlayerbotAI* ai) : CalculatedValue(ai, "active quest givers", 5) {}
         virtual std::list<GuidPosition> Calculate() override;
-    };    
-    
+    };
+
     //All quest takers that the bot has a quest for.
     class ActiveQuestTakersValue : public CalculatedValue<std::list<GuidPosition>>
     {
@@ -114,7 +114,7 @@ namespace ai
         NeedForQuestValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "need for quest", 5), Qualified() {}
         virtual bool Calculate() override;
     };
-    
+
     //Free quest log slots
     class FreeQuestLogSlotValue : public Uint8CalculatedValue
     {
@@ -122,8 +122,8 @@ namespace ai
         FreeQuestLogSlotValue(PlayerbotAI* ai) : Uint8CalculatedValue(ai, "free quest log slots", 2) {}
         virtual uint8 Calculate() override;
     };
-    
-    //Dialog status npc 
+
+    //Dialog status npc
     class DialogStatusValue : public Uint32CalculatedValue, public Qualified
     {
     public:
@@ -161,7 +161,7 @@ namespace ai
             return dialogStatus == DIALOG_STATUS_CHAT;
 #else
             return dialogStatus == DIALOG_STATUS_LOW_LEVEL_AVAILABLE;
-#endif   
+#endif
         };
     };
 
@@ -182,11 +182,11 @@ namespace ai
         virtual bool Calculate() override
         {
             uint32 dialogStatus = AI_VALUE2(uint32, "dialog status", getQualifier());
-#ifdef MANGOSBOT_ZERO  
+#ifdef MANGOSBOT_ZERO
             return dialogStatus == DIALOG_STATUS_REWARD2;
 #else
             return dialogStatus == DIALOG_STATUS_REWARD2 || dialogStatus == DIALOG_STATUS_REWARD;
-#endif  
+#endif
         };
     };
 

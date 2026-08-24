@@ -55,7 +55,7 @@ namespace ai
 
                 if(event.GetSource() == "create group")
                     group->ConvertToRaid();
-                else 
+                else
                     return false;
             }
 
@@ -248,7 +248,7 @@ namespace ai
             }
         }
 
-        allowedClassNr = AllowedClassRoleNr(requester, stoi(param));  
+        allowedClassNr = AllowedClassRoleNr(requester, stoi(param));
 
         role = ai->IsTank(bot, false) ? BOT_ROLE_TANK : (ai->IsHeal(bot, false) ? BOT_ROLE_HEALER : BOT_ROLE_DPS);
         cls = (Classes)bot->GetClass();
@@ -257,7 +257,7 @@ namespace ai
             return false;
 
         if (allowedClassNr[cls].find(role) != allowedClassNr[cls].end() && allowedClassNr[cls][role] == 0)
-            return false;        
+            return false;
 
         if (bot->GetGroup())
         {
@@ -337,10 +337,10 @@ namespace ai
 
             if (botAi)
             {
-                if (botAi->GetGrouperType() == GrouperType::SOLO && !botAi->HasRealPlayerMaster()) //Do not invite solo players. 
+                if (botAi->GetGrouperType() == GrouperType::SOLO && !botAi->HasRealPlayerMaster()) //Do not invite solo players.
                     continue;
 
-                if (botAi->HasActivePlayerMaster()) //Do not invite alts of active players. 
+                if (botAi->HasActivePlayerMaster()) //Do not invite alts of active players.
                     continue;
             }
 

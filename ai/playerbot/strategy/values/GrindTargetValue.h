@@ -6,7 +6,7 @@
 
 namespace ai
 {
-   
+
     class GrindTargetValue : public TargetValue
 	{
 	public:

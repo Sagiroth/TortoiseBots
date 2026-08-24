@@ -173,7 +173,7 @@ public:
 
                 lines.back() = lines.back() + item;
             }
- 
+
             for (auto& line : lines)
                 ai->TellPlayer(requester, line, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
         }

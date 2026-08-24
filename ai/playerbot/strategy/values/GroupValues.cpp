@@ -143,7 +143,7 @@ bool GroupReadyValue::Calculate()
         }
         //We only wait for members that are in range otherwise we might be waiting for bots stuck in dead loops forever.
         if (ai->GetGroupMaster() && sServerFacade.getDistance2d(member, ai->GetGroupMaster()) > sPlayerbotAIConfig.sightDistance)
-            continue;        
+            continue;
 
         bool hasAttackers = AI_VALUE_LAZY(bool, "has attackers") || AI_VALUE_LAZY(bool, "has enemy player targets") || AI_VALUE_LAZY(Unit*, "dps target");
 

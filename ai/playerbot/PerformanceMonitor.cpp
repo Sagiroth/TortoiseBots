@@ -115,7 +115,7 @@ void PerformanceMonitor::PrintStats(bool perTick, bool fullStack, bool showMap)
                 for (auto& [stack, performanceData] : namedData)
                 {
                     std::vector<std::string> newStack = stack;
-                    
+
                     if (showMap)
                     {
                         if (metric != PERF_MON_TOTAL)
@@ -123,10 +123,10 @@ void PerformanceMonitor::PrintStats(bool perTick, bool fullStack, bool showMap)
                         else if (newStack[0].find(" I") != std::string::npos)
                             newStack[0] = newStack[0] + " " + std::to_string(mapId) + (instanceId ? " (" + std::to_string(instanceId) + ")" : "");
                         else if (newStack[0].find("PlayerbotAI::UpdateAI") == std::string::npos && newStack[0].find("PlayerbotAIBase::FullTick") == std::string::npos)
-                            newStack[0] = newStack[0] + " " + std::to_string(mapId) + (instanceId ? " (" + std::to_string(instanceId) + ")" : "");                           
+                            newStack[0] = newStack[0] + " " + std::to_string(mapId) + (instanceId ? " (" + std::to_string(instanceId) + ")" : "");
                         else
                             newStack[0] = newStack[0];
-                    }                    
+                    }
 
                     PerformanceData& pd = data[metric][newStack];
 
@@ -295,7 +295,7 @@ void PerformanceMonitor::Reset()
 }
 
 void PerformanceMonitor::Init(uint32 mapId, uint32 instanceId)
-{    
+{
     if (sPlayerbotAIConfig.perfMonEnabled)
     {
         mapsData[mapId][instanceId];

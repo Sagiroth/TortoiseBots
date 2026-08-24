@@ -296,7 +296,7 @@ bool NeedTravelPurposeValue::Calculate()
     case TravelDestinationPurpose::Mail:
         return AI_VALUE(bool, "can get mail") && AI_VALUE(bool, "should get mail");
     case TravelDestinationPurpose::Explore:
-        return ai->HasStrategy("explore", BotState::BOT_STATE_NON_COMBAT);    
+        return ai->HasStrategy("explore", BotState::BOT_STATE_NON_COMBAT);
     case TravelDestinationPurpose::GenericRpg:
     {
         uint32 rpgPhase = ai->GetFixedBotNumber(BotTypeNumber::RPG_PHASE_NUMBER, 60, 1);
@@ -379,7 +379,7 @@ bool ShouldTravelNamedValue::Calculate()
             return false;
 
         std::string motd = guild->GetMOTD();
-        if (motd.empty()) 
+        if (motd.empty())
             return false;
 
         // Parse guild MOTD for the meeting time.
@@ -473,7 +473,7 @@ bool ShouldTravelNamedValue::Calculate()
     return false;
 }
 
-bool TravelTargetActiveValue::Calculate() 
+bool TravelTargetActiveValue::Calculate()
 {
     return AI_VALUE(TravelTarget*, "travel target")->IsActive();
 };

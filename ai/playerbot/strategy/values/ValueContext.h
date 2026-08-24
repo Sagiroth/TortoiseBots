@@ -340,7 +340,7 @@ namespace ai
 
             creators["free move center"] = [](PlayerbotAI* ai) { return new FreeMoveCenterValue(ai); };
             creators["free move range"] = [](PlayerbotAI* ai) { return new FreeMoveRangeValue(ai); };
-            creators["can free move"] = [](PlayerbotAI* ai) { return new CanFreeMoveValue(ai); };           
+            creators["can free move"] = [](PlayerbotAI* ai) { return new CanFreeMoveValue(ai); };
 
             creators["can move around"] = [](PlayerbotAI* ai) { return new CanMoveAroundValue(ai); };
             creators["should home bind"] = [](PlayerbotAI* ai) { return new ShouldHomeBindValue(ai); };
@@ -453,11 +453,11 @@ namespace ai
             creators["travel target"] = [](PlayerbotAI* ai) { return new TravelTargetValue(ai); };
             creators["leader travel target"] = [](PlayerbotAI* ai) { return new LeaderTravelTargetValue(ai); };
 
-            creators["travel target ready"] = [](PlayerbotAI* ai) { return new TravelTargetReadyValue(ai); };            
-            creators["travel target active"] = [](PlayerbotAI* ai) { return new TravelTargetActiveValue(ai); };            
+            creators["travel target ready"] = [](PlayerbotAI* ai) { return new TravelTargetReadyValue(ai); };
+            creators["travel target active"] = [](PlayerbotAI* ai) { return new TravelTargetActiveValue(ai); };
             creators["travel target traveling"] = [](PlayerbotAI* ai) { return new TravelTargetTravelingValue(ai); };
             creators["travel target working"] = [](PlayerbotAI* ai) { return new TravelTargetWorkingValue(ai); };
-            
+
             creators["future travel destinations"] = [](PlayerbotAI* ai) { return new FutureTravelDestinationsValue(ai); };
             creators["no active travel destinations"] = [](PlayerbotAI* ai) { return new NoActiveTravelDestinationsValue(ai); };
             creators["need travel purpose"] = [](PlayerbotAI* ai) { return new NeedTravelPurposeValue(ai); };

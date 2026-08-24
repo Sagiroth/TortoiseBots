@@ -341,4 +341,3 @@ HunterAiObjectContext::HunterAiObjectContext(PlayerbotAI* ai) : AiObjectContext(
     actionContexts.Add(new ai::hunter::AiObjectContextInternal());
     triggerContexts.Add(new ai::hunter::TriggerFactoryInternal());
 }
-

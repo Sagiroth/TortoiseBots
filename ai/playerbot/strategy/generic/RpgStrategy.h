@@ -23,7 +23,7 @@ namespace ai
         virtual std::string GetHelpDescription() {
             return "This strategy makes bot move between npcs to automatically do various interaction.\n"
             "This is the main rpg strategy which make bots pickand move to various rpg targets.\n"
-            "The interactions included in this strategy are limited to emotesand wait.";            
+            "The interactions included in this strategy are limited to emotesand wait.";
         }
         virtual std::vector<std::string> GetRelatedStrategies() { return {"rpg quest", "rpg vendor", "rpg explore", "rpg maintenance", "rpg guild", "rpg bg", "rpg player", "rpg craft", "debug rpg"}; }
 #endif
