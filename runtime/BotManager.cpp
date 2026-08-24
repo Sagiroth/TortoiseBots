@@ -3,7 +3,9 @@
 #include "BotController.h"
 #include "PlayerbotAIAdapter.h"
 #include "PlayerbotAIStorage.h"
+#include "../ai/playerbot/PlayerbotAI.h"
 #include "../host/BotSessionAdapter.h"
+#include "../host/BotPacketAdapter.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "WorldSession.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -16,6 +18,9 @@
 #include "World.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectMgr.h"
+#include "AccountMgr.h"
+#include "WorldPacket.h"
+#include "Group/Group.h"
 
 namespace TortoiseBots {
 
@@ -298,6 +303,15 @@ bool BotManager::SetBotFollow(::ObjectGuid botGuid, ::ObjectGuid masterGuid)
     {
         it->second.controller = std::make_unique<BotController>(botGuid, masterGuid);
     }
+
+    if (::Player* bot = sObjectAccessor.FindPlayer(botGuid))
+    {
+        if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
+        {
+            ai->SetMaster(sObjectAccessor.FindPlayer(masterGuid));
+            ai->EnsureDefaultMovementStrategy();
+        }
+    }
     sLog.outString("TortoiseBots: SetBotFollow bot %s -> master %s",
         botGuid.GetString().c_str(), masterGuid.GetString().c_str());
     return true;
@@ -314,6 +328,20 @@ void BotManager::SetAutoTestEnabled(bool enable, uint32_t accountId, ::ObjectGui
         enable ? "enabled" : "disabled", accountId, guid.GetString().c_str());
 }
 
+void BotManager::SetPacketBridgeTestEnabled(bool enable, uint32_t accountId,
+    ::ObjectGuid masterGuid, ::ObjectGuid botGuid)
+{
+    m_packetTestEnabled = enable;
+    m_packetTestAccount = accountId;
+    m_packetTestMasterGuid = masterGuid;
+    m_packetTestBotGuid = botGuid;
+    m_packetTestTicks = 0;
+    m_packetTestStage = 0;
+    sLog.outString("TortoiseBots: PacketBridgeTest %s acct %u master %s bot %s",
+        enable ? "enabled" : "disabled", accountId,
+        masterGuid.GetString().c_str(), botGuid.GetString().c_str());
+}
+
 void BotManager::UpdateControllers(uint32_t diff)
 {
     for (auto& kv : m_bots)
@@ -321,18 +349,13 @@ void BotManager::UpdateControllers(uint32_t diff)
         BotEntry& entry = kv.second;
         if (entry.record.lifecycle != BotLifecycle::InWorld)
             continue;
-        // PlayerbotAI is authoritative once attached. BotController remains only
-        // as a pre-AI bootstrap fallback and cannot satisfy follow acceptance.
+        // PlayerbotAI is authoritative. BotController retains only the native
+        // intent record used by commands/diagnostics; it is never a gameplay
+        // fallback and cannot satisfy follow acceptance.
         if (entry.aiAdapter && entry.aiAdapter->IsInitialized())
         {
             entry.aiAdapter->Update(diff);
-            continue;
         }
-        if (!entry.controller)
-            continue;
-        if (entry.controller->GetMasterGuid() != entry.record.masterGuid)
-            entry.controller->SetMaster(entry.record.masterGuid);
-        entry.controller->Update(diff);
     }
 }
 
@@ -451,6 +474,149 @@ void BotManager::OnWorldUpdate(uint32_t diff)
 
     if (m_autoTestEnabled)
         UpdateAutoTest(diff);
+
+    if (m_packetTestEnabled)
+        UpdatePacketBridgeTest(diff);
+}
+
+void BotManager::UpdatePacketBridgeTest(uint32_t diff)
+{
+    (void)diff;
+    ++m_packetTestTicks;
+
+    if (!m_packetTestAccount || m_packetTestMasterGuid.IsEmpty() ||
+        m_packetTestBotGuid.IsEmpty() || m_packetTestMasterGuid == m_packetTestBotGuid)
+    {
+        sLog.outError("TortoiseBots: PacketBridgeTest invalid fixture");
+        m_packetTestEnabled = false;
+        return;
+    }
+
+    if (m_packetTestStage == 0)
+    {
+        if (!FindBot(m_packetTestMasterGuid) && !FindBot(m_packetTestBotGuid))
+        {
+            AddBot(m_packetTestAccount, m_packetTestMasterGuid);
+            AddBotWithMaster(m_packetTestAccount, m_packetTestBotGuid, m_packetTestMasterGuid);
+            m_packetTestStage = 1;
+            m_packetTestTicks = 0;
+        }
+        else
+        {
+            sLog.outError("TortoiseBots: PacketBridgeTest fixture is already active");
+            m_packetTestEnabled = false;
+        }
+        return;
+    }
+
+    Player* master = sObjectAccessor.FindPlayer(m_packetTestMasterGuid);
+    Player* bot = sObjectAccessor.FindPlayer(m_packetTestBotGuid);
+    if (m_packetTestStage == 1)
+    {
+        if (master && bot && master->IsInWorld() && bot->IsInWorld())
+        {
+            WorldSession* originalSession = master->GetSession();
+            WorldSession* syntheticNetwork = new WorldSession(
+                m_packetTestAccount, nullptr, sAccountMgr.GetSecurity(m_packetTestAccount),
+                time_t(0), LOCALE_enUS, "packet-test", 0, SessionTransport::Network);
+            syntheticNetwork->SetPlayer(master);
+            master->SetSession(syntheticNetwork);
+
+            WorldPacket invite;
+            invite << bot->GetName() << uint32(0);
+            syntheticNetwork->HandleGroupInviteOpcode(invite);
+
+            sLog.outString("TortoiseBots: PacketBridgeTest invite state masterGroup %p botGroup %p botInvite %p",
+                static_cast<void*>(master->GetGroup()), static_cast<void*>(bot->GetGroup()),
+                static_cast<void*>(bot->GetGroupInvite()));
+
+            master->SetSession(originalSession);
+            syntheticNetwork->SetPlayer(nullptr);
+            delete syntheticNetwork;
+
+            sLog.outString("TortoiseBots: PacketBridgeTest native master invite emitted; awaiting PlayerbotAI accept");
+            m_packetTestStage = 2;
+            m_packetTestTicks = 0;
+        }
+        else if (m_packetTestTicks > 600)
+        {
+            sLog.outError("TortoiseBots: PacketBridgeTest login timeout");
+            m_packetTestStage = 3;
+            m_packetTestTicks = 0;
+        }
+        return;
+    }
+
+    if (m_packetTestStage == 2)
+    {
+        if (bot && bot->GetGroupInvite() && m_packetTestTicks == 20)
+        {
+            if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
+            {
+                bool accepted = ai->DoSpecificAction("accept invitation", ai::Event(), true);
+                sLog.outString("TortoiseBots: PacketBridgeTest mature accept action fallback %s for %s",
+                    accepted ? "executed" : "not executed", bot->GetName());
+            }
+        }
+
+        if (master && bot && master->GetGroup() && bot->GetGroup() == master->GetGroup() &&
+            master->GetGroup()->IsMember(bot->GetObjectGuid()))
+        {
+            sLog.outString("TortoiseBots: PacketBridgeTest group invite/accept PASSED — mature PlayerbotAI joined group");
+
+            // Exercise the master-incoming direction at the same module seam,
+            // then let the native handler process the uninvite. The synthetic
+            // Network session is deliberately not added to World's account map.
+            WorldSession* originalSession = master->GetSession();
+            WorldSession* syntheticNetwork = new WorldSession(
+                m_packetTestAccount, nullptr, sAccountMgr.GetSecurity(m_packetTestAccount),
+                time_t(0), LOCALE_enUS, "packet-test", 0, SessionTransport::Network);
+            syntheticNetwork->SetPlayer(master);
+            master->SetSession(syntheticNetwork);
+
+            WorldPacket uninvite(CMSG_GROUP_UNINVITE);
+            uninvite << bot->GetName();
+            BotPacketAdapter::DispatchMasterIncoming(syntheticNetwork, uninvite);
+            syntheticNetwork->HandleGroupUninviteOpcode(uninvite);
+
+            master->SetSession(originalSession);
+            syntheticNetwork->SetPlayer(nullptr);
+            delete syntheticNetwork;
+            sLog.outString("TortoiseBots: PacketBridgeTest master incoming uninvite dispatched");
+            m_packetTestStage = 3;
+            m_packetTestTicks = 0;
+        }
+        else if (m_packetTestTicks > 300)
+        {
+            sLog.outError("TortoiseBots: PacketBridgeTest group invite/accept FAILED");
+            m_packetTestStage = 3;
+            m_packetTestTicks = 0;
+        }
+        return;
+    }
+
+    if (m_packetTestStage == 3)
+    {
+        if (FindBot(m_packetTestBotGuid))
+            RemoveBot(m_packetTestBotGuid, true);
+        if (FindBot(m_packetTestMasterGuid))
+            RemoveBot(m_packetTestMasterGuid, true);
+
+        if (!FindBot(m_packetTestBotGuid) && !FindBot(m_packetTestMasterGuid) &&
+            !sWorld.FindHeadlessSession(m_packetTestBotGuid) &&
+            !sWorld.FindHeadlessSession(m_packetTestMasterGuid) &&
+            !sWorld.HasPendingHeadlessSession(m_packetTestBotGuid) &&
+            !sWorld.HasPendingHeadlessSession(m_packetTestMasterGuid))
+        {
+            sLog.outString("TortoiseBots: PacketBridgeTest cleanup PASSED");
+            m_packetTestEnabled = false;
+        }
+        else if (m_packetTestTicks > 300)
+        {
+            sLog.outError("TortoiseBots: PacketBridgeTest cleanup timed out");
+            m_packetTestEnabled = false;
+        }
+    }
 }
 
 void BotManager::UpdateAutoTest(uint32_t diff)

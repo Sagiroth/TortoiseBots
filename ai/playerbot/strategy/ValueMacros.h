@@ -21,8 +21,14 @@
 
 #define SET_AI_VALUE(type, name, value) context->GetValue<type>(name)->Set(value)
 #define SET_AI_VALUE2(type, name, param, value) context->GetValue<type>(name, param)->Set(value)
-#define RESET_AI_VALUE(type, name) context->GetValue<type>(name)->Reset()
-#define RESET_AI_VALUE2(type, name, param) context->GetValue<type>(name, param)->Reset()
+#define RESET_AI_VALUE(type, name) do { \
+    if (auto* resetValue = context->GetValue<type>(name)) \
+        resetValue->Reset(); \
+} while (0)
+#define RESET_AI_VALUE2(type, name, param) do { \
+    if (auto* resetValue = context->GetValue<type>(name, param)) \
+        resetValue->Reset(); \
+} while (0)
 
 #define PAI_VALUE(type, name) PlayerbotAIStorage::Instance().GetAI(player)->GetAiObjectContext()->GetValue<type>(name)->Get()
 #define PAI_VALUE2(type, name, param) PlayerbotAIStorage::Instance().GetAI(player)->GetAiObjectContext()->GetValue<type>(name, param)->Get()

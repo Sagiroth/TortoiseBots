@@ -1,6 +1,6 @@
 # HOST_API — Tortoise WoW 1.18.1 Host Boundary Discovery (Phase 1)
 
-**Date:** 2026-08-20
+**Date:** 2026-08-24
 **Target core:** `Penqle/tortoise-wow` (online: <https://github.com/Penqle/tortoise-wow>) — snapshot packaged in a local `tortoise-docker-penqle/source` checkout (clean after PR #396)
 **Docker wrapper commit:** `d07ec3fe8fd5` / `9310e37 Tortoise WoW (Penqle, no-bots)` — local Docker packaging
 **Plan ref:** `docs/PLAN.md` (online: <https://github.com/tortoise-wow-stack/TortoiseBots/blob/main/docs/PLAN.md>) §9 / §26 — Phase 1 Host-boundary discovery
@@ -8,6 +8,12 @@
 **Reference checkouts (if present locally):** `playerbots-references/{cmangos-playerbots@076045e, mangoszero-server@1817ae1, shyalya-tortoise-wow@1f9497e, cmangos-mangos-classic@9b682be}` (online: <https://github.com/cmangos/playerbots>, <https://github.com/mangoszero/server>, <https://github.com/Shyalya/tortoise-wow>, <https://github.com/cmangos/mangos-classic>)
 
 > Goal: enumerate the **minimum events/capabilities the PlayerBots module actually needs** from the core, and identify where an existing general-purpose hook suffices vs where a genuinely new centralized seam is required. Design is based on the **actual current source tree**, not assumptions from CMaNGOS/MangosZero/Shyalya.
+
+> Current implementation note: the historical Phase 1 inventory below is
+> retained for provenance. The reproducible core seam used by the current
+> native module is `tortoise-wow` branch `playerbots-integration-gh` at
+> `73f32c063e6c4481a0415690896025178ca8076f` (`Add reproducible headless
+> module seam and static isolation`).
 
 ---
 
@@ -291,3 +297,33 @@ per-character AH buy/sell multipliers; random gear teleporting and account
 creation remain outside the current boundary.
 Expansion-only source families remain explicitly filtered rather than compiled
 through compatibility no-ops.
+
+## 12. Current packet/config/build seam — 2026-08-24
+
+The reproducible core requirement is `tortoise-wow` branch
+`playerbots-integration-gh` at
+`73f32c063e6c4481a0415690896025178ca8076f`. It contains the generic
+`SessionTransport`, GUID-keyed Headless registry/queue, same-account
+`1 Network + N Headless` lifecycle and reclaim behavior, generic ScriptMgr
+hooks, packet hooks, and the per-static-module object-target build mechanism.
+
+`host/BotPacketAdapter` is the only packet interpretation layer. Penqle calls
+`ServerScript::CanPacketSend` before socket output and
+`ServerScript::CanPacketReceive` before opcode dispatch. The adapter maps:
+
+- Headless sends → `PlayerbotAI::HandleBotOutgoingPacket`;
+- Network master sends → each owned AI's `HandleMasterOutgoingPacket`;
+- Network master receives → each owned AI's `HandleMasterIncomingPacket`.
+
+The module does not add bot-specific packet branches to core. The fresh
+`PacketBridgeTest` runtime journey exercised native group invite/accept and
+master incoming/outgoing delivery, then removed both Headless sessions cleanly.
+
+Static native modules are compiled as isolated `OBJECT` targets and folded
+into the combined `modules` archive. TortoiseBots definitions, include paths,
+and PCH are attached to `mod_tortoisebots_static`, not sibling static module
+sources.
+
+Penqle `Config::GetValues(prefix)` now enumerates actual ACE configuration
+keys safely. `AiPlayerbot.LoginCriteria.*` and `AiPlayerbot.WorldBuff.*` load
+without a casted object layout; the runtime emitted `Loading WorldBuffs`.

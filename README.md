@@ -40,6 +40,15 @@ be compiled accidentally.
   `tortoise_bots.conf`; random-bot autologin and account/character creation
   default to off. Enable random bots only with pre-existing configured random
   characters until the creation workflow is added.
+- The required generic Penqle seam is
+  `playerbots-integration-gh@73f32c063e6c4481a0415690896025178ca8076f`.
+- The fresh Docker packet journey passed native group invite/accept and
+  cleanup, with real Warrior, Mage, Priest, and Hunter class contexts. The
+  preserved runtime also contains disposable `TBPLAY` class fixtures for
+  manual client playtesting.
+
+The native `.bot` surface includes `add`, `remove`, `follow`, `invite`,
+`uninvite`, `stay`, `list`, `stats`, and same-account mature-AI `command`.
 
 The first product target is intentionally small and playable: log into one normal character, spawn your own alts as Headless bots, party with them, and level together.
 

@@ -16,13 +16,23 @@ namespace ai
         {
             Group* grp = bot->GetGroupInvite();
             if (!grp)
+            {
+                sLog.outString("TortoiseBots: AcceptInvitationAction %s has no group invite", bot->GetName());
                 return false;
+            }
 
             Player* inviter = sObjectMgr.GetPlayer(grp->GetLeaderGuid());
             if (!inviter)
+            {
+                sLog.outString("TortoiseBots: AcceptInvitationAction %s cannot resolve inviter guid %s",
+                    bot->GetName(), grp->GetLeaderGuid().GetString().c_str());
                 return false;
+            }
 
-			if (!ai->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE, false, inviter))
+			bool allowed = ai->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE, false, inviter);
+            sLog.outString("TortoiseBots: AcceptInvitationAction %s inviter %s security %u",
+                bot->GetName(), inviter->GetName(), allowed ? 1 : 0);
+			if (!allowed)
             {
                 WorldPacket data(SMSG_GROUP_DECLINE, 10);
                 data << bot->GetName();

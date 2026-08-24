@@ -29,19 +29,22 @@ AiObjectContext* AiFactory::createAiObjectContext(Player* player, PlayerbotAI* a
     {
         case CLASS_PRIEST:
         {
-            return new AiObjectContext(ai); // E2E: generic to avoid class context link
+            printf("TortoiseBots: AiFactory creating PriestAiObjectContext for %s\n", player->GetName());
+            return new ai::PriestAiObjectContext(ai);
             break;
         }
 
         case CLASS_MAGE:
         {
-            return new AiObjectContext(ai); // E2E: generic to avoid class context link
+            printf("TortoiseBots: AiFactory creating MageAiObjectContext for %s\n", player->GetName());
+            return new ai::MageAiObjectContext(ai);
             break;
         }
 
         case CLASS_WARLOCK:
         {
-            return new AiObjectContext(ai); // E2E: generic to avoid class context link
+            printf("TortoiseBots: AiFactory creating WarlockAiObjectContext for %s\n", player->GetName());
+            return new ai::WarlockAiObjectContext(ai);
             break;
         }
 
@@ -54,31 +57,36 @@ AiObjectContext* AiFactory::createAiObjectContext(Player* player, PlayerbotAI* a
 
         case CLASS_SHAMAN:
         {
-            return new AiObjectContext(ai); // E2E: generic to avoid class context link
+            printf("TortoiseBots: AiFactory creating ShamanAiObjectContext for %s\n", player->GetName());
+            return new ai::ShamanAiObjectContext(ai);
             break;
         }
 
         case CLASS_PALADIN:
         {
-            return new AiObjectContext(ai); // E2E: generic to avoid class context link
+            printf("TortoiseBots: AiFactory creating PaladinAiObjectContext for %s\n", player->GetName());
+            return new ai::PaladinAiObjectContext(ai);
             break;
         }
 
         case CLASS_DRUID:
         {
-            return new AiObjectContext(ai); // E2E: generic to avoid class context link
+            printf("TortoiseBots: AiFactory creating DruidAiObjectContext for %s\n", player->GetName());
+            return new ai::DruidAiObjectContext(ai);
             break;
         }
 
         case CLASS_HUNTER:
         {
-            return new AiObjectContext(ai); // E2E: generic to avoid class context link
+            printf("TortoiseBots: AiFactory creating HunterAiObjectContext for %s\n", player->GetName());
+            return new ai::HunterAiObjectContext(ai);
             break;
         }
 
         case CLASS_ROGUE:
         {
-            return new AiObjectContext(ai); // E2E: generic to avoid class context link
+            printf("TortoiseBots: AiFactory creating RogueAiObjectContext for %s\n", player->GetName());
+            return new ai::RogueAiObjectContext(ai);
             break;
         }
 

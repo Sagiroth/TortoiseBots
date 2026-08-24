@@ -25,6 +25,7 @@ public:
 
 class WorldSession;
 class Player;
+class WorldPacket;
 
 namespace TortoiseBots {
 
@@ -117,11 +118,17 @@ public:
     void SetAutoTestEnabled(bool enable, uint32_t accountId = 0, ObjectGuid guid = ObjectGuid());
     bool IsAutoTestEnabled() const { return m_autoTestEnabled; }
 
+    // Fresh runtime packet/event journey: two same-account Headless players,
+    // native group invite/accept, and all three packet bridge directions.
+    void SetPacketBridgeTestEnabled(bool enable, uint32_t accountId = 0,
+        ObjectGuid masterGuid = ObjectGuid(), ObjectGuid botGuid = ObjectGuid());
+
 private:
     BotManager() = default;
     ~BotManager() = default;
 
     void UpdateAutoTest(uint32_t diff);
+    void UpdatePacketBridgeTest(uint32_t diff);
     void UpdateControllers(uint32_t diff);
 
     std::unordered_map<uint32_t, BotEntry> m_bots; // key = guid counter
@@ -132,6 +139,13 @@ private:
     uint32_t m_autoTestTicks = 0;
     enum class AutoState { Idle, LoggingIn, InWorld, Saving, LoggingOut, Relogging, Done };
     AutoState m_autoState = AutoState::Idle;
+
+    bool m_packetTestEnabled = false;
+    uint32_t m_packetTestAccount = 0;
+    ObjectGuid m_packetTestMasterGuid;
+    ObjectGuid m_packetTestBotGuid;
+    uint32_t m_packetTestTicks = 0;
+    uint8_t m_packetTestStage = 0;
 };
 
 } // namespace TortoiseBots

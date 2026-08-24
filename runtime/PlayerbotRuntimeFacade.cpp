@@ -11,6 +11,7 @@
 #include "../ai/playerbot/PlayerbotFactory.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
 #include "../ai/playerbot/BotState.h"
+#include "../ai/playerbot/TravelMgr.h"
 #include "../runtime/PlayerbotAIStorage.h"
 #include "BotManager.h"
 
@@ -21,9 +22,13 @@
 #include "Database/DatabaseEnv.h"
 
 #include <mutex>
-#include <set>
+#include <algorithm>
+#include <map>
+#include <sstream>
 #include <string>
+#include <tuple>
 #include <unordered_map>
+#include <vector>
 
 namespace
 {
@@ -39,13 +44,42 @@ std::mutex s_valuesMutex;
 std::unordered_map<std::string, StoredValue> s_values;
 std::unordered_map<std::string, uint32> s_tradeDiscounts;
 
-void ReportUnsupportedRandomFeature(char const* feature)
+bool RandomTravelTeleport(Player* bot, uint32 purpose, bool activeOnly)
 {
-    static std::mutex reportMutex;
-    static std::set<std::string> reported;
-    std::lock_guard<std::mutex> lock(reportMutex);
-    if (reported.insert(feature).second)
-        sLog.outInfo("TortoiseBots: legacy random-bot feature '%s' is not available under native BotManager ownership", feature);
+    if (!bot || !bot->IsInWorld() || bot->IsBeingTeleported() || bot->InBattleGround())
+        return false;
+
+    if (activeOnly)
+    {
+        if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
+        {
+            if (!ai->AllowActivity())
+                return false;
+        }
+    }
+
+    ai::PlayerTravelInfo travelInfo(bot);
+    ai::WorldPosition center(bot);
+    std::vector<uint32> partitions = { 500, 2000, 5000, 10000, 50000 };
+    ai::PartitionedTravelList destinations = sTravelMgr.GetPartitions(
+        center, partitions, travelInfo, purpose, {}, false, 1000000.0f);
+
+    std::vector<ai::WorldPosition*> points;
+    for (auto const& partition : destinations)
+        for (auto const& point : partition.second)
+            if (std::get<1>(point))
+                points.push_back(std::get<1>(point));
+
+    if (points.empty())
+        return bot->TeleportToHomebind();
+
+    ai::WorldPosition* destination = points[urand(0, static_cast<uint32>(points.size() - 1))];
+    if (!destination || !bot->TeleportTo(*destination))
+        return false;
+
+    sLog.outDetail("TortoiseBots: native random travel moved %s to %s",
+        bot->GetName(), destination->print().c_str());
+    return true;
 }
 
 std::string ValueKey(uint32 guid, std::string const& name)
@@ -131,7 +165,9 @@ void PlayerbotHolder::ForEachPlayerbot(std::function<void(Player*)> callback) co
 
 void PlayerbotHolder::UpdateSessions(uint32 /*elapsed*/)
 {
-    ReportUnsupportedRandomFeature("PlayerbotHolder::UpdateSessions");
+    // Penqle's World owns generic network/headless session processing. The
+    // native BotManager only owns lifecycle records; it must not recreate the
+    // donor manager's second session loop here.
 }
 
 void PlayerbotHolder::LogoutAllBots()
@@ -143,7 +179,9 @@ void PlayerbotHolder::LogoutAllBots()
 
 void PlayerbotHolder::JoinChatChannels(Player* /*bot*/)
 {
-    ReportUnsupportedRandomFeature("PlayerbotHolder::JoinChatChannels");
+    // Channel membership is optional social behaviour. Native PlayerbotAI
+    // handles party/master traffic through the generic packet seam; there is
+    // no donor channel-manager loop in the native random service.
 }
 
 void PlayerbotHolder::OnBotLogin(Player* bot)
@@ -167,7 +205,7 @@ RandomPlayerbotMgr::~RandomPlayerbotMgr() = default;
 
 void RandomPlayerbotMgr::UpdateAIInternal(uint32 /*elapsed*/, bool /*minimal*/)
 {
-    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::UpdateAIInternal");
+    // RandomBotService and BotManager are the only native update owners.
 }
 
 void RandomPlayerbotMgr::OnBotLoginInternal(Player* bot)
@@ -387,27 +425,45 @@ InventoryResult RandomPlayerbotMgr::CanEquipUnseenItem(Player* player, uint8 slo
     return prototype ? player->CanEquipItem(slot, dest, prototype, nullptr, false) : EQUIP_ERR_ITEM_NOT_FOUND;
 }
 
-const CreatureDataPair* RandomPlayerbotMgr::GetCreatureDataByEntry(uint32 /*entry*/)
+const CreatureDataPair* RandomPlayerbotMgr::GetCreatureDataByEntry(uint32 entry)
 {
-    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::GetCreatureDataByEntry");
-    return nullptr;
+    if (!entry || !sObjectMgr.GetCreatureTemplate(entry))
+        return nullptr;
+
+    FindCreatureData worker(entry, nullptr);
+    sObjectMgr.DoCreatureData(worker);
+    return worker.GetResult();
 }
 
-uint32 RandomPlayerbotMgr::GetCreatureGuidByEntry(uint32 /*entry*/)
+uint32 RandomPlayerbotMgr::GetCreatureGuidByEntry(uint32 entry)
 {
-    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::GetCreatureGuidByEntry");
-    return 0;
+    CreatureDataPair const* data = GetCreatureDataByEntry(entry);
+    return data ? data->first : 0;
 }
 
-uint32 RandomPlayerbotMgr::GetBattleMasterEntry(Player* /*bot*/, BattleGroundTypeId /*bgTypeId*/, bool /*fake*/)
+uint32 RandomPlayerbotMgr::GetBattleMasterEntry(Player* /*bot*/, BattleGroundTypeId bgTypeId, bool /*fake*/)
 {
-    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::GetBattleMasterEntry");
-    return 0;
+    // Penqle keeps the inverse entry -> battleground map private to its
+    // BattleGroundMgr. This is an on-demand lookup used by the mature command
+    // path, not a tick query, and uses the same native table as that manager.
+    auto result = WorldDatabase.PQuery(
+        "SELECT entry FROM battlemaster_entry WHERE bg_template = '%u' LIMIT 1",
+        static_cast<uint32>(bgTypeId));
+    return result ? result->Fetch()[0].GetUInt32() : 0;
 }
 
-bool RandomPlayerbotMgr::IsPinnedBot(uint32 /*guidLow*/)
+bool RandomPlayerbotMgr::IsPinnedBot(uint32 guidLow)
 {
-    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::IsPinnedBot");
+    PlayerCacheData* data = sObjectMgr.GetPlayerDataByGUID(guidLow);
+    if (!data)
+        return false;
+
+    for (std::string pinned : sPlayerbotAIConfig.pinnedBotNames)
+    {
+        std::string cached = data->sName;
+        if (normalizePlayerName(pinned) && normalizePlayerName(cached) && pinned == cached)
+            return true;
+    }
     return false;
 }
 
@@ -418,14 +474,27 @@ bool RandomPlayerbotMgr::AddRandomBot(uint32 guid)
     return accountId && TortoiseBots::BotManager::Instance().AddRandomBot(accountId, objectGuid);
 }
 
-void RandomPlayerbotMgr::RandomTeleportForLevel(Player* /*bot*/, bool /*activeOnly*/)
+void RandomPlayerbotMgr::RandomTeleportForLevel(Player* bot, bool activeOnly)
 {
-    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::RandomTeleportForLevel");
+    if (!bot || !IsRandomBot(bot) || !sPlayerbotAIConfig.enableRandomTeleports)
+        return;
+
+    uint32 purpose = static_cast<uint32>(ai::TravelDestinationPurpose::Grind) |
+        static_cast<uint32>(ai::TravelDestinationPurpose::Explore) |
+        static_cast<uint32>(ai::TravelDestinationPurpose::GenericRpg);
+    if (RandomTravelTeleport(bot, purpose, activeOnly))
+        Refresh(bot);
 }
 
-void RandomPlayerbotMgr::RandomTeleportForRpg(Player* /*bot*/, bool /*activeOnly*/)
+void RandomPlayerbotMgr::RandomTeleportForRpg(Player* bot, bool activeOnly)
 {
-    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::RandomTeleportForRpg");
+    if (!bot || !IsRandomBot(bot) || !sPlayerbotAIConfig.enableRandomTeleports)
+        return;
+
+    uint32 purpose = static_cast<uint32>(ai::TravelDestinationPurpose::GenericRpg) |
+        static_cast<uint32>(ai::TravelDestinationPurpose::Explore);
+    if (RandomTravelTeleport(bot, purpose, activeOnly))
+        Refresh(bot);
 }
 
 void RandomPlayerbotMgr::ChangeStrategy(Player* player)
@@ -448,10 +517,38 @@ void RandomPlayerbotMgr::Revive(Player* player)
 
 void RandomPlayerbotMgr::PrintTeleportCache()
 {
-    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::PrintTeleportCache");
+    auto locations = WorldDatabase.Query("SELECT COUNT(*) FROM ai_playerbot_named_location");
+    uint32 namedLocations = locations ? locations->Fetch()[0].GetUInt32() : 0;
+    sLog.outString("TortoiseBots: native TravelMgr owns random travel points; named-location rows: %u", namedLocations);
 }
 
-void RandomPlayerbotMgr::PrintStats(uint32 /*requesterGuid*/)
+void RandomPlayerbotMgr::PrintStats(uint32 requesterGuid)
 {
-    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::PrintStats");
+    uint32 total = 0;
+    uint32 random = 0;
+    uint32 inWorld = 0;
+    uint32 withAi = 0;
+    std::map<uint32, uint32> classCounts;
+
+    for (Player* bot : TortoiseBots::BotManager::Instance().GetAllBots())
+    {
+        TortoiseBots::BotRecord* record = bot ? TortoiseBots::BotManager::Instance().FindBot(bot->GetObjectGuid()) : nullptr;
+        if (!bot || !record)
+            continue;
+        ++total;
+        random += record->random ? 1 : 0;
+        inWorld += bot->IsInWorld() ? 1 : 0;
+        withAi += PlayerbotAIStorage::Instance().GetAI(bot) ? 1 : 0;
+        ++classCounts[bot->GetClass()];
+    }
+
+    std::ostringstream out;
+    out << "Native random-bot stats: total=" << total
+        << " random=" << random << " inWorld=" << inWorld << " matureAI=" << withAi;
+    for (auto const& entry : classCounts)
+        out << " class" << entry.first << "=" << entry.second;
+    sLog.outString("%s", out.str().c_str());
+
+    if (Player* requester = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, requesterGuid)))
+        requester->SendMessageToPlayer(out.str());
 }

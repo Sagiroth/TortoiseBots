@@ -1,4 +1,4 @@
 {
-  "ignore": ["ai/**", "playerbots-references/**", "tortoise-wow/**", "tortoise-docker-penqle/**", "runtime/MinimalPlayerbotAI.cpp", "runtime/Stubs.cpp", "runtime/PlayerbotAIAdapter.cpp"],
+  "ignore": ["ai/**", "playerbots-references/**", "tortoise-wow/**", "tortoise-docker-penqle/**", "runtime/Stubs.cpp", "runtime/PlayerbotAIAdapter.cpp"],
   "exclude": ["ai/**"]
 }

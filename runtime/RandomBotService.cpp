@@ -9,6 +9,7 @@
 #include "Log.h"
 #include "Database/DatabaseEnv.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/RandomPlayerbotMgr.h"
 
 #include <algorithm>
 #include <ctime>
@@ -29,6 +30,7 @@ void RandomBotService::Initialize()
         return;
 
     m_initialized = true;
+    m_serviceElapsedMs = 0;
     if (!sPlayerbotAIConfig.enabled || !sPlayerbotAIConfig.randomBotAutologin)
     {
         sLog.outString("TortoiseBots: native random-bot service disabled by configuration");
@@ -51,6 +53,8 @@ void RandomBotService::LoadCandidates()
 {
     m_candidates.clear();
     m_ageMs.clear();
+    m_strategyAgeMs.clear();
+    m_randomizeAgeMs.clear();
     m_nextCandidate = 0;
 
     std::set<uint32> accountIds;
@@ -99,6 +103,8 @@ void RandomBotService::LoadCandidates()
     }
 
     m_ageMs.assign(m_candidates.size(), 0);
+    m_strategyAgeMs.assign(m_candidates.size(), 0);
+    m_randomizeAgeMs.assign(m_candidates.size(), 0);
 }
 
 uint32 RandomBotService::TargetCount() const
@@ -224,15 +230,49 @@ void RandomBotService::Update(uint32_t diff)
     if (!m_initialized || !sPlayerbotAIConfig.enabled || !sPlayerbotAIConfig.randomBotAutologin)
         return;
 
-    RemoveExpiredBots(diff);
-
-    if (m_updateTimerMs > diff)
-    {
-        m_updateTimerMs -= diff;
+    uint32_t cadence = std::max<uint32_t>(1000, sPlayerbotAIConfig.randomBotUpdateInterval);
+    m_serviceElapsedMs += diff;
+    if (m_serviceElapsedMs < cadence)
         return;
+
+    uint32_t elapsed = m_serviceElapsedMs;
+    m_serviceElapsedMs = 0;
+    RemoveExpiredBots(elapsed);
+
+    for (size_t i = 0; i < m_candidates.size(); ++i)
+    {
+        Candidate const& candidate = m_candidates[i];
+        BotRecord* record = BotManager::Instance().FindBot(candidate.characterGuid);
+        Player* player = sObjectAccessor.FindPlayer(candidate.characterGuid);
+        if (!record || !record->enteredWorld || !player)
+            continue;
+
+        // Recovery/expired-value work stays on the world thread and is bounded
+        // by the configured service cadence rather than a second AI loop.
+        sRandomPlayerbotMgr.ProcessBot(player);
+
+        m_strategyAgeMs[i] += elapsed;
+        uint32 strategyInterval = sPlayerbotAIConfig.minRandomBotChangeStrategyTime;
+        if (sPlayerbotAIConfig.maxRandomBotChangeStrategyTime > strategyInterval)
+            strategyInterval = urand(strategyInterval, sPlayerbotAIConfig.maxRandomBotChangeStrategyTime);
+        if (strategyInterval && m_strategyAgeMs[i] >= strategyInterval * 1000)
+        {
+            sRandomPlayerbotMgr.ChangeStrategy(player);
+            m_strategyAgeMs[i] = 0;
+        }
+
+        m_randomizeAgeMs[i] += elapsed;
+        uint32 randomizeInterval = sPlayerbotAIConfig.minRandomBotRandomizeTime;
+        if (sPlayerbotAIConfig.maxRandomBotRandomizeTime > randomizeInterval)
+            randomizeInterval = urand(randomizeInterval, sPlayerbotAIConfig.maxRandomBotRandomizeTime);
+        if (sPlayerbotAIConfig.randomGearUpgradeEnabled && randomizeInterval &&
+            m_randomizeAgeMs[i] >= randomizeInterval * 1000)
+        {
+            sRandomPlayerbotMgr.UpdateGearSpells(player);
+            m_randomizeAgeMs[i] = 0;
+        }
     }
 
-    m_updateTimerMs = std::max<uint32>(1000, sPlayerbotAIConfig.randomBotUpdateInterval);
     MaintainOnlinePool();
 }
 

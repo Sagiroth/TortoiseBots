@@ -24,18 +24,7 @@
 
 std::vector<std::string> ConfigAccess::GetValues(const std::string& name) const
 {
-    // The original cmangos implementation iterates m_entries
-    // (unordered_map populated by cmangos's own Config parser). Penqle's Config (which
-    // ConfigAccess is reinterpret_cast'd onto) has a totally different layout — that
-    // map doesn't exist at this offset, and iterating it segfaults.
-    //
-    // Bot uses GetValues for multi-value keys: LoginCriteria, WorldBuff. Both
-    // downstream call sites handle an empty result by skipping the optional feature.
-    // Returning empty here is safe; full multi-value parsing against Penqle's Config
-    // is a future enhancement (would need to iterate the underlying ACE_Configuration_Heap
-    // and pattern-match on the key prefix).
-    (void)name;
-    return {};
+    return m_config.GetValues(name);
 }
 
 INSTANTIATE_SINGLETON_1(PlayerbotAIConfig);
@@ -133,7 +122,7 @@ bool PlayerbotAIConfig::Initialize()
         return false;
     }
 
-    ConfigAccess* configA = reinterpret_cast<ConfigAccess*>(&config);
+    ConfigAccess configA(config);
 
     BarGoLink::SetOutputState(config.GetBoolDefault("AiPlayerbot.ShowProgressBars", false));
     globalCoolDown = (uint32) config.GetIntDefault("AiPlayerbot.GlobalCooldown", 500);
@@ -227,10 +216,18 @@ bool PlayerbotAIConfig::Initialize()
     allowGuildBots = config.GetBoolDefault("AiPlayerbot.AllowGuildBots", true);
     allowMultiAccountAltBots = config.GetBoolDefault("AiPlayerbot.AllowMultiAccountAltBots", true);
 
+#ifdef MANGOSBOT_ZERO
+    randomBotMapsAsString = config.GetStringDefault("AiPlayerbot.RandomBotMaps", "0,1");
+#else
     randomBotMapsAsString = config.GetStringDefault("AiPlayerbot.RandomBotMaps", "0,1,530,571");
+#endif
     LoadList<std::vector<uint32> >(randomBotMapsAsString, randomBotMaps);
     LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.RandomBotQuestItems", "6948,5175,5176,5177,5178,16309,12382,13704,11000,22754"), randomBotQuestItems);
+#ifdef MANGOSBOT_ZERO
+    LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.RandomBotSpellIds", ""), randomBotSpellIds);
+#else
     LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.RandomBotSpellIds", "54197"), randomBotSpellIds);
+#endif
 	LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.PvpProhibitedZoneIds", "2255,656,2361,2362,2363,976,35,2268,3425,392,541,1446,3828,3712,3738,3565,3539,3623,4152,3988,4658,4284,4418,4436,4275,4323"), pvpProhibitedZoneIds);
 
 #ifndef MANGOSBOT_ZERO
@@ -243,10 +240,10 @@ bool PlayerbotAIConfig::Initialize()
     LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.ImmuneSpellIds", ""), immuneSpellIds);
 
     botAutologin = BotAutoLogin(config.GetIntDefault("AiPlayerbot.BotAutologin", 0));
-    randomBotAutologin = config.GetBoolDefault("AiPlayerbot.RandomBotAutologin", true);
-    randomBotAutoCreate = config.GetBoolDefault("AiPlayerbot.RandomBotAutoCreate", true);
-    minRandomBots = config.GetIntDefault("AiPlayerbot.MinRandomBots", 50);
-    maxRandomBots = config.GetIntDefault("AiPlayerbot.MaxRandomBots", 200);
+    randomBotAutologin = config.GetBoolDefault("AiPlayerbot.RandomBotAutologin", false);
+    randomBotAutoCreate = config.GetBoolDefault("AiPlayerbot.RandomBotAutoCreate", false);
+    minRandomBots = config.GetIntDefault("AiPlayerbot.MinRandomBots", 0);
+    maxRandomBots = config.GetIntDefault("AiPlayerbot.MaxRandomBots", 0);
     randomBotUpdateInterval = config.GetIntDefault("AiPlayerbot.RandomBotUpdateInterval", 1 * 1000);
     randomBotCountChangeMinInterval = config.GetIntDefault("AiPlayerbot.RandomBotCountChangeMinInterval", 1 * 1800);
     randomBotCountChangeMaxInterval = config.GetIntDefault("AiPlayerbot.RandomBotCountChangeMaxInterval", 2 * 3600);
@@ -325,7 +322,11 @@ bool PlayerbotAIConfig::Initialize()
     botCheckAllAuctionListings = config.GetBoolDefault("AiPlayerbot.BotCheckAllAuctionListings", false);
     botsSaveEpics = config.GetBoolDefault("AiPlayerbot.BotsSaveEpics", true);
     //
+#ifdef MANGOSBOT_ZERO
+    randomBotJoinLfg = config.GetBoolDefault("AiPlayerbot.RandomBotJoinLfg", false);
+#else
     randomBotJoinLfg = config.GetBoolDefault("AiPlayerbot.RandomBotJoinLfg", true);
+#endif
     logRandomBotJoinLfg = config.GetBoolDefault("AiPlayerbot.LogRandomBotJoinLfg", false);
     randomBotJoinBG = config.GetBoolDefault("AiPlayerbot.RandomBotJoinBG", true);
     randomBotAutoJoinBG = config.GetBoolDefault("AiPlayerbot.RandomBotAutoJoinBG", false);
@@ -336,7 +337,7 @@ bool PlayerbotAIConfig::Initialize()
     summonAtInnkeepersEnabled = config.GetBoolDefault("AiPlayerbot.SummonAtInnkeepersEnabled", true);
     randomBotMinLevel = config.GetIntDefault("AiPlayerbot.RandomBotMinLevel", 1);
     randomBotMaxLevel = config.GetIntDefault("AiPlayerbot.RandomBotMaxLevel", 255);
-    randomBotLoginAtStartup = config.GetBoolDefault("AiPlayerbot.RandomBotLoginAtStartup", true);
+    randomBotLoginAtStartup = config.GetBoolDefault("AiPlayerbot.RandomBotLoginAtStartup", false);
     randomBotTeleLevel = config.GetIntDefault("AiPlayerbot.RandomBotTeleLevel", 5);
     openGoSpell = config.GetIntDefault("AiPlayerbot.OpenGoSpell", 6477);
 
@@ -368,7 +369,7 @@ bool PlayerbotAIConfig::Initialize()
 
     LoadListString<std::vector<std::string> >(config.GetStringDefault("AiPlayerbot.DefaultLoginCriteria", "maxbots,spareroom,offline"), defaultLoginCriteria);
 
-    std::vector<std::string> criteriaValues = configA->GetValues("AiPlayerbot.LoginCriteria");
+    std::vector<std::string> criteriaValues = configA.GetValues("AiPlayerbot.LoginCriteria");
     std::sort(criteriaValues.begin(), criteriaValues.end());
     loginCriteria.clear();
     for (auto& value : criteriaValues)
@@ -546,7 +547,7 @@ bool PlayerbotAIConfig::Initialize()
     worldBuffs.clear();
 
     //Get all config values starting with AiPlayerbot.WorldBuff
-    std::vector<std::string> values = configA->GetValues("AiPlayerbot.WorldBuff");
+    std::vector<std::string> values = configA.GetValues("AiPlayerbot.WorldBuff");
 
     if (values.size())
     {
@@ -585,7 +586,11 @@ bool PlayerbotAIConfig::Initialize()
     deleteRandomBotGuilds = config.GetBoolDefault("AiPlayerbot.DeleteRandomBotGuilds", false);
 
     //arena
+#ifdef MANGOSBOT_ZERO
+    randomBotArenaTeamCount = config.GetIntDefault("AiPlayerbot.RandomBotArenaTeamCount", 0);
+#else
     randomBotArenaTeamCount = config.GetIntDefault("AiPlayerbot.RandomBotArenaTeamCount", 20);
+#endif
     deleteRandomBotArenaTeams = config.GetBoolDefault("AiPlayerbot.DeleteRandomBotArenaTeams", false);
 
     //cosmetics (by lidocain)

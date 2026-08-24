@@ -71,14 +71,13 @@ enum class BotLoginCriteriaType : uint8
 
 class ConfigAccess
 {
-private:
-    std::string m_filename;
-    std::string m_envVarPrefix;
-    std::unordered_map<std::string, std::string> m_entries; // keys are converted to lower case.  values cannot be.
-
 public:
+    explicit ConfigAccess(Config& config) : m_config(config) {}
+
     std::vector<std::string> GetValues(const std::string& name) const;
-    std::mutex m_configLock;
+
+private:
+    Config& m_config;
 };
 
 struct ParsedUrl {
@@ -473,4 +472,3 @@ private:
 };
 
 #define sPlayerbotAIConfig MaNGOS::Singleton<PlayerbotAIConfig>::Instance()
-

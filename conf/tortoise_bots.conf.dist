@@ -9,6 +9,14 @@ TortoiseBots.AutoTest = 0
 TortoiseBots.AutoTest.AccountId = 0
 TortoiseBots.AutoTest.CharacterGuid = 0
 
+# Fresh packet/event bridge journey. Uses two existing same-account
+# characters, emits a native group invite/accept, exercises master incoming
+# and outgoing packet delivery, then removes both headless fixtures.
+TortoiseBots.PacketBridgeTest = 0
+TortoiseBots.PacketBridgeTest.AccountId = 0
+TortoiseBots.PacketBridgeTest.MasterGuid = 0
+TortoiseBots.PacketBridgeTest.BotGuid = 0
+
 # Optional AddBot -> immediate RemoveBot queue regression test.
 TortoiseBots.PendingAddRemoveTest = 0
 TortoiseBots.PendingAddRemoveTest.AccountId = 0

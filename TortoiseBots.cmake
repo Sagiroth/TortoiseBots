@@ -43,6 +43,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/host/BotHostAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/host/BotSessionAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/host/BotChatAdapter.cpp"
+    "${TORTOISEBOTS_ROOT}/host/BotPacketAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/host/BotPlayerAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/BotManager.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/BotController.cpp"
@@ -227,7 +228,13 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
 endif()
 
 if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "POST_TARGETS")
-  if(TORTOISE_CURRENT_MODULE_LINKAGE STREQUAL "static")
+  if(DEFINED TORTOISE_CURRENT_MODULE_TARGET
+     AND NOT "${TORTOISE_CURRENT_MODULE_TARGET}" STREQUAL "")
+    # Static modules are compiled in their own OBJECT target by Penqle's
+    # module system. This keeps the native module's definitions, include
+    # paths, and PCH local even though its objects are folded into `modules`.
+    set(TORTOISEBOTS_TARGET "${TORTOISE_CURRENT_MODULE_TARGET}")
+  elseif(TORTOISE_CURRENT_MODULE_LINKAGE STREQUAL "static")
     set(TORTOISEBOTS_TARGET modules)
   else()
     GetModuleProjectName("${TORTOISE_CURRENT_MODULE}" TORTOISEBOTS_TARGET)

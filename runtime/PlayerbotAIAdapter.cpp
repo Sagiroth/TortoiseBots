@@ -24,7 +24,15 @@ bool PlayerbotAIAdapter::Initialize()
         return false;
     ai_ = new PlayerbotAI(bot_); // pi-lens-ignore: clang:all
     if (!ai_) return false;
-    if (master_) ai_->SetMaster(master_); // pi-lens-ignore: clang:all
+    if (master_)
+    {
+        ai_->SetMaster(master_); // pi-lens-ignore: clang:all
+        // AiFactory builds the engines before the native adapter knows the
+        // owner. Re-apply the mature movement default at this seam so manual
+        // same-account bots use Strategy/Trigger/Action follow rather than a
+        // controller-side movement implementation.
+        ai_->EnsureDefaultMovementStrategy(); // pi-lens-ignore: clang:all
+    }
     if (!ai_->GetAiObjectContext()) return false; // pi-lens-ignore: clang:all
     PlayerbotAIStorage::Instance().SetAI(bot_, ai_); // pi-lens-ignore: clang:all
     initialized_ = true;

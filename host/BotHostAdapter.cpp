@@ -38,6 +38,18 @@ void BotHostAdapter::OnStartup()
             sLog.outError("TortoiseBots: AutoTest enabled without AccountId/CharacterGuid");
     }
 
+    if (sConfig.GetBoolDefault("TortoiseBots.PacketBridgeTest", false))
+    {
+        uint32 accountId = sConfig.GetIntDefault("TortoiseBots.PacketBridgeTest.AccountId", 0);
+        uint32 masterGuid = sConfig.GetIntDefault("TortoiseBots.PacketBridgeTest.MasterGuid", 0);
+        uint32 botGuid = sConfig.GetIntDefault("TortoiseBots.PacketBridgeTest.BotGuid", 0);
+        if (accountId && masterGuid && botGuid)
+            BotManager::Instance().SetPacketBridgeTestEnabled(true, accountId,
+                ObjectGuid(HIGHGUID_PLAYER, masterGuid), ObjectGuid(HIGHGUID_PLAYER, botGuid));
+        else
+            sLog.outError("TortoiseBots: PacketBridgeTest enabled without AccountId/MasterGuid/BotGuid");
+    }
+
     sLog.outString("TortoiseBots: native module loaded (AI %s)", configured ? "enabled" : "disabled");
 }
 

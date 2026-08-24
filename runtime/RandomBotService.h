@@ -40,8 +40,10 @@ private:
 
     std::vector<Candidate> m_candidates;
     std::vector<uint32_t> m_ageMs;
+    std::vector<uint32_t> m_strategyAgeMs;
+    std::vector<uint32_t> m_randomizeAgeMs;
     size_t m_nextCandidate = 0;
-    uint32_t m_updateTimerMs = 0;
+    uint32_t m_serviceElapsedMs = 0;
     uint32_t m_targetCount = 0;
     uint32_t m_humanSessions = 0;
     bool m_initialized = false;
