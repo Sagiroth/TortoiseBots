@@ -305,22 +305,14 @@ namespace ai
                 {
                     itemId = 8007;
                 }
-                else if (level >= 58 && level < 68)
+                else if (level >= 58)
                 {
                     itemId = 8008;
-                }
-                else if (level >= 68 && level < 77)
-                {
-                    itemId = 22044;
-                }
-                else if (level >= 77)
-                {
-                    itemId = 33312;
                 }
             }
             else
             {
-                const std::vector<uint32> manaGemIds = { 5514, 5513, 8007, 8008, 22044, 33312 };
+                const std::vector<uint32> manaGemIds = { 5514, 5513, 8007, 8008 };
                 for (const uint32 manaGemId : manaGemIds)
                 {
                     if (bot->HasItemCount(manaGemId, 1))

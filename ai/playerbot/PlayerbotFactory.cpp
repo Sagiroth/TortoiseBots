@@ -3347,8 +3347,6 @@ void PlayerbotFactory::InitReagents()
             items = { 17037, 17021 };
         if (bot->GetLevel() > 59)
             items = { 17038, 17026 };
-        if (bot->GetLevel() > 69)
-            items = { 22147, 22148 };
         break;
     case CLASS_PALADIN:
         regCount = 3;
