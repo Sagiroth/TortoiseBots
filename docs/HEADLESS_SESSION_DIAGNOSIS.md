@@ -6,6 +6,8 @@
 
 > This is **not** a TortoiseBots bug — it is a generic `World::m_sessions` assumption that is valid for `Network` clients but invalid for `Headless` character sessions. The file-watcher spam is the same root cause (re-queue on same account).
 
+> **Historical archive:** this diagnosis predates the current native session seam. The current implementation uses `World`-owned `Network`/`Headless` session collections and a module-owned `BotManager` record/AI adapter map; the old account-keyed collision model and `BotController` references below are retained only as investigation history. See `docs/HOST_API.md` §11–§12 for the active contract.
+
 ---
 
 ## 1. Exact reason `AddSession` disconnects Sagiroth

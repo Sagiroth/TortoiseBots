@@ -1,0 +1,22 @@
+#pragma once
+#include "playerbot/PlayerbotAI.h"
+#include "playerbot/strategy/AiObjectContext.h"
+#include "playerbot/strategy/Value.h"
+#include "TargetValue.h"
+
+namespace ai
+{
+
+    class GrindTargetValue : public TargetValue
+	{
+	public:
+        GrindTargetValue(PlayerbotAI* ai, std::string name = "grind target") : TargetValue(ai, name, 2) {}
+
+    public:
+        Unit* Calculate() override;
+
+    private:
+        int GetTargetingPlayerCount(Unit* unit);
+        Unit* FindTargetForGrinding(int assistCount);
+    };
+}

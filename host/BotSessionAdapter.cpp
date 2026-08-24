@@ -1,11 +1,20 @@
+// pi-lens-ignore: clang:pp_file_not_found,clang:unknown_typename,clang:undeclared_var_use,clang:incomplete_member_access,clang:init_conversion_failed,clang:excess_initializers,clang:typecheck_member_reference_struct_union,clang:expected_class_or_namespace,clang:ovl_no_viable_function_in_call,clang:fatal_too_many_errors,clang:unknown_type_name,clang:use_of_undeclared_identifier
 #include "BotSessionAdapter.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "WorldSession.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "World.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "AccountMgr.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectAccessor.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectMgr.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "Player.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "Log.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "Database/DatabaseEnv.h"
 
 namespace TortoiseBots {
@@ -18,14 +27,21 @@ WorldSession* BotSessionAdapter::CreateHeadlessSession(uint32 accountId, ObjectG
         return nullptr;
     }
 
-    // Basic validation: account must exist, character must exist and belong to that account.
-    // We intentionally do NOT enforce that the character is online/offline here; the normal
-    // HandlePlayerLogin alreadyOnline path handles human-reclaim vs duplicate bot login.
-    // For MVP we keep validation minimal and let LoadFromDB reject mismatches.
+    // Validate the durable character/account relationship before queuing a
+    // session. LoadFromDB also checks it, but failing before queue insertion
+    // avoids leaving a doomed Headless session for BotManager to clean up.
+    uint32 storedAccountId = sObjectMgr.GetPlayerAccountIdByGUID(characterGuid);
+    if (!storedAccountId || storedAccountId != accountId)
+    {
+        sLog.outError("TortoiseBots: CreateHeadlessSession — character %s belongs to account %u, not %u",
+            characterGuid.GetString().c_str(), storedAccountId, accountId);
+        return nullptr;
+    }
 
-    // Use a synthetic remote address for headless sessions.
-    std::string remoteAddr = "127.0.0.1";
-    uint32 binaryAddr = 0x7F000001; // 127.0.0.1
+    // Transport identity is carried by SessionTransport, not by a synthetic
+    // remote-address marker.
+    std::string remoteAddr;
+    uint32 binaryAddr = 0;
 
     // Use the account's stored security level. Test characters must be valid for
     // that level; the module never elevates an account for a fixture.
@@ -38,7 +54,11 @@ WorldSession* BotSessionAdapter::CreateHeadlessSession(uint32 accountId, ObjectG
 
     // Queue under the character identity, never in World::m_sessions which is
     // intentionally reserved for the one Network session per account.
-    sWorld.AddHeadlessSession(session, characterGuid);
+    if (!sWorld.AddHeadlessSession(session, characterGuid))
+    {
+        delete session;
+        return nullptr;
+    }
 
     sLog.outString("TortoiseBots: CreateHeadlessSession acct %u guid %s headless %u ptr %p — queued headless add (login deferred)", accountId, characterGuid.GetString().c_str(), session->IsHeadless(), (void*)session);
     // Do not call LoginPlayer here; BotManager waits until the session is

@@ -1,0 +1,24 @@
+#pragma once
+#include "playerbot/PlayerbotAI.h"
+#include "playerbot/strategy/AiObjectContext.h"
+#include "playerbot/strategy/Value.h"
+#include "playerbot/ServerFacade.h"
+#include "playerbot/playerbotDefs.h"
+
+namespace ai
+{
+    class IsFacingValue : public BoolCalculatedValue, public Qualified
+	{
+	public:
+        IsFacingValue(PlayerbotAI* ai, std::string name = "is facing") : BoolCalculatedValue(ai, name), Qualified() {}
+
+        virtual bool Calculate() override
+        {
+            Unit* target = AI_VALUE(Unit*, qualifier);
+            if (!target)
+                return false;
+
+            return sServerFacade.isInFront(bot, target, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT);
+        }
+    };
+}

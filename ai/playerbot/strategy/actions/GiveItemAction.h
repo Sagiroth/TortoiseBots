@@ -1,0 +1,53 @@
+#pragma once
+#include "playerbot/PlayerbotAI.h"
+#include "playerbot/strategy/Action.h"
+#include "../../runtime/PlayerbotAIStorage.h" // Headless storage shim
+
+namespace ai
+{
+    class GiveItemAction : public Action
+    {
+    public:
+        GiveItemAction(PlayerbotAI* ai, std::string name, std::string item) : Action(ai, name), item(item) {}
+        virtual bool Execute(Event& event) override;
+        virtual bool isUseful() override { return GetTarget() && AI_VALUE2(uint8, "mana", "self target") > sPlayerbotAIConfig.lowMana; }
+        virtual Unit* GetTarget() override;
+
+    protected:
+        std::string item;
+    };
+
+    class GiveFoodAction : public GiveItemAction
+    {
+    public:
+        GiveFoodAction(PlayerbotAI* ai) : GiveItemAction(ai, "give food", "conjured food") {}
+        virtual Unit* GetTarget() override;
+        virtual bool isUseful() override
+        {
+            Unit* target = GetTarget();
+            if (!target)
+                return false;
+
+            bool isBot = target->IsPlayer() && PlayerbotAIStorage::Instance().GetAI((Player*)target);
+
+            return !isBot || (isBot && !PlayerbotAIStorage::Instance().GetAI((Player*)target)->HasCheat(BotCheatMask::item));
+        }
+    };
+
+    class GiveWaterAction : public GiveItemAction
+    {
+    public:
+        GiveWaterAction(PlayerbotAI* ai) : GiveItemAction(ai, "give water", "conjured water") {}
+        virtual Unit* GetTarget() override;
+        virtual bool isUseful() override
+        {
+            Unit* target = GetTarget();
+            if (!target)
+                return false;
+
+            bool isBot = target->IsPlayer() && PlayerbotAIStorage::Instance().GetAI((Player*)target);
+
+            return !isBot || (isBot && !PlayerbotAIStorage::Instance().GetAI((Player*)target)->HasCheat(BotCheatMask::item));
+        }
+    };
+}

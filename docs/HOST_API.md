@@ -1,6 +1,6 @@
 # HOST_API — Tortoise WoW 1.18.1 Host Boundary Discovery (Phase 1)
 
-**Date:** 2026-08-20
+**Date:** 2026-08-24
 **Target core:** `Penqle/tortoise-wow` (online: <https://github.com/Penqle/tortoise-wow>) — snapshot packaged in a local `tortoise-docker-penqle/source` checkout (clean after PR #396)
 **Docker wrapper commit:** `d07ec3fe8fd5` / `9310e37 Tortoise WoW (Penqle, no-bots)` — local Docker packaging
 **Plan ref:** `docs/PLAN.md` (online: <https://github.com/tortoise-wow-stack/TortoiseBots/blob/main/docs/PLAN.md>) §9 / §26 — Phase 1 Host-boundary discovery
@@ -8,6 +8,12 @@
 **Reference checkouts (if present locally):** `playerbots-references/{cmangos-playerbots@076045e, mangoszero-server@1817ae1, shyalya-tortoise-wow@1f9497e, cmangos-mangos-classic@9b682be}` (online: <https://github.com/cmangos/playerbots>, <https://github.com/mangoszero/server>, <https://github.com/Shyalya/tortoise-wow>, <https://github.com/cmangos/mangos-classic>)
 
 > Goal: enumerate the **minimum events/capabilities the PlayerBots module actually needs** from the core, and identify where an existing general-purpose hook suffices vs where a genuinely new centralized seam is required. Design is based on the **actual current source tree**, not assumptions from CMaNGOS/MangosZero/Shyalya.
+
+> Current implementation note: the historical Phase 1 inventory below is
+> retained for provenance. The reproducible core seam used by the current
+> native module is `tortoise-wow` branch `playerbots-integration-gh` at
+> `9487c5150a6553c665fafc1f4568669b8b00f011` (`Drop stale PlayerBots include
+> path from module defaults`), based on `133c6d19bf5898c1e4f5129b2890b1db89b17a07`.
 
 ---
 
@@ -74,11 +80,11 @@ Per `PLAN.md` §9 — columns: need → existing general hook? → new core seam
 | 2 | **Player login** (human or bot character enters world) | **Partial** — `WorldSession::HandlePlayerLogin(LoginQueryHolder*)` (`CharacterHandler.cpp:561`) exists and already calls `ALL_SESSION_SCRIPTS(this, OnLogin(pCurr))` (`:1005`). `LoginQueryHolder::Initialize()` is reusable. | **No for notification; Yes for bot creation** | For *observing* login, `WorldSessionScript::OnLogin` is sufficient. For *creating* a bot login without a socket, need a headless factory (see #6). No new hook for observation. |
 | 3 | **Player logout / save / reload** | **Partial** — `WorldSession::LogoutPlayer(bool Save)` (`WorldSession.cpp:572`) does full save/cleanup. `WorldSessionScript` has **no** `OnLogout`. | **Optional — reuse or add `OnLogout`** | Module can track logout by owning the headless session lifecycle itself. Adding a symmetric `OnLogout` to `WorldSessionScript` is cheap (one line in `LogoutPlayer`) and useful for diagnostics, but not strictly required for MVP — bot logout is initiated by the module (`BotManager::LogoutBot`). |
 | 4 | **AddToWorld / RemoveFromWorld** | **No** dedicated script. `Map::Add`/`Remove` (`Map.cpp:1124`) and `Player::AddToWorld` semantics are internal. | **No** | Module does not need to intercept `AddToWorld`. Bot login already goes through `HandlePlayerLogin` → `Map::ExistingPlayerLogin`. Bot-specific post-enter logic (follow, formation) lives in module after `OnLogin`. |
-| 5 | **Player Update** (`Player::Update(diff)`) | **No** hook. `Player.cpp:1566` is called from `Map::Update`. No `PlayerScript::OnUpdate`. | **No** | Do not hook `Player::Update`. Instead drive bot decisions from the *single* world-tick hook (#1) by iterating `BotManager::GetBots()` and calling `BotController::Update(diff)`. This avoids scattering bot checks into `Player.cpp`/`Unit.cpp` (Rule 1). |
+| 5 | **Player Update** (`Player::Update(diff)`) | **No** hook. `Player.cpp:1566` is called from `Map::Update`. No `PlayerScript::OnUpdate`. | **No** | Do not hook `Player::Update`. Instead drive bot decisions from the *single* world-tick hook (#1) through `PlayerbotAIAdapter::Update(diff)`. `BotController` is intent/diagnostic state only and has no gameplay update loop. |
 | 6 | **Headless / synthetic session** (bot `Player` without a real `WorldSocket`) | **No seam, but partial tolerance** — `WorldSession` already tolerates `m_Socket==nullptr` in `SendPacket` (163), `Update` (383), `LogoutPlayer` (736). `NullSessionAnticheat` (`Anticheat.h:143`) is an existing null-transport precedent. `WorldSession` constructor still requires `WorldSocket*` (`WorldSession.h:308`). | **Yes — the key host seam (1 file + 1 factory)** | This is the *only* non-negotiable new core capability (PLAN Rule 5). Design below (§3). Must avoid `WorldSession::GetBot()` / `m_bot`. Prefer generic `HasNetworkTransport()` / `CanReceiveClientPackets()` (`WorldSession::GetSocket()==nullptr`) and a centralized `CreateHeadlessSession(...)` factory that creates a `WorldSession` with `nullptr` socket, `NullSessionAnticheat`, and null broadcaster. All bot-specific meaning stays in module. |
 | 7 | **Chat / command execution** (`.bot add / follow / whisper`) | **Partial** — `WorldSessionScript::OnPacket` and `OnWhispered` exist, but `ChatHandler::getCommandTable()` (`Chat.cpp:42`) is monolithic with no `AddCommand` registry. Chat opcode handling is in `Handlers/ChatHandler.cpp`. | **Lean — No core chat hook if module owns commands; one optional hook if integrating with core chat** | For MVP, keep `.bot` commands **entirely in the module** (PLAN §12): module parses `CHAT_MSG_SAY/WHISPER/PARTY` via `OnPacket` or by having `WorldSession::HandleMessagechatOpcode` call a single `sBotChatHandler->OnChat(player, msg, type)` if module present (one `if (sBotMgr)` check in `ChatHandler.cpp`). Better: module registers its own `ChatCommand` sub-table via a new `ChatHandler::RegisterModuleCommands` seam (single file, generic). Either is ≤1 hook. Do not duplicate full command tables into core. |
 | 8 | **Group membership / invite / leave / leader** | **No** script hook. `Group::AddMember/RemoveMember` (`Group.cpp:357,438`) and `Group::UpdatePlayerOnlineStatus` (1435) are direct. | **No** | Module can use existing `Group` API + `ObjectAccessor::FindPlayer` + `Player::GetGroup`/`InviteToGroup`/`UninviteFromGroup`. Polling group state each world tick is sufficient for MVP (5-player). No need to hook `Group.cpp`. |
-| 9 | **Movement** (follow, stay, formation, path) | **No** hook, but **no hook needed** — normal `Player`/`Unit` movement APIs exist: `Player::TeleportTo`, `MovePoint`, `MotionMaster`, `Map::IsValid`, `ObjectPosSelector`. | **No** | Bot movement is just AI calling normal movement APIs from `BotController::Update`. Do not add `if (isBot)` branches into `MovementHandler.cpp` or `Unit.cpp`. If pathfinding needs `mmaps`, reuse existing `DetourNavMesh`. |
+| 9 | **Movement** (follow, stay, formation, path) | **No** hook, but **no hook needed** — normal `Player`/`Unit` movement APIs exist: `Player::TeleportTo`, `MovePoint`, `MotionMaster`, `Map::IsValid`, `ObjectPosSelector`. | **No** | Bot movement is mature `PlayerbotAI` Strategy/Trigger/Action behavior driven through `PlayerbotAIAdapter::Update`. `BotController` is intent/diagnostic-only. Do not add `if (isBot)` branches into `MovementHandler.cpp` or `Unit.cpp`. If pathfinding needs `mmaps`, reuse existing `DetourNavMesh`. |
 | 10 | **Loot / rolls** | No script hook. `LootMgr`, `Group::GroupLoot/NeedBeforeGreed/MasterLoot/CountRollVote` exist. | **No** | MVP loot = simple rules (free-for-all or round-robin). Module can call existing `Loot`/`GroupLoot` APIs. No new seam. |
 | 11 | **Map / dungeon enter/leave, teleport, wipe recovery** | No dedicated hook. `Player::TeleportTo`, `Map::Remove`, `DungeonMap::Remove`, `TeleportToHomebind` exist. | **No** | Module reacts after the fact via world tick + `Player::IsBeingTeleported()` (`Player.h:2059`) + `IsInWorld()`/`FindMap()`. No hook needed for MVP. |
 | 12 | **Packet send / broadcast** (updates, chat, addon) | **Partial — already handles null socket** (`WorldSession::SendPacket` early-out). `Player::SendAddonMessage` (`Player.cpp:25414`), `World::SendWorldText`, `PacketBroadcast/PlayerBroadcaster` exist. | **No** | Bot sessions simply do not send packets. `SendPacket` no-op is correct. Addon transport (`TW_CHAT_MSG_WHISPER`) can later be used for module↔addon state query, but MVP needs no packet hook. |
@@ -264,3 +270,107 @@ Security is not altered by the module: `BotSessionAdapter` uses `sAccountMgr.Get
 ### Portability note
 
 The current Linux static-library bootstrap uses whole-archive linking plus the used factory registrar. A Windows/MSVC integration must use `/WHOLEARCHIVE:tortoise_bots.lib` (or replace the registrar with an explicit `TortoiseBots::Initialize()` call from the host).
+
+## 11. Current native module boundary — 2026-08-24
+
+The Phase 1 material above is historical design/discovery. The implemented
+boundary is now Penqle's native `modules/<name>/` loader:
+
+- `src/TortoiseBotsModule.cpp` is the only loader-recursed source.
+- `host/BotHostAdapter`, `BotPlayerAdapter`, and `BotChatAdapter` register
+  generic `WorldScript`, `PlayerScript`, and `AllCommandScript` hooks.
+- `World` owns Network and Headless session lifetime. `runtime/BotManager` owns
+  bot records and `PlayerbotAIAdapter` instances. Donor `PlayerbotMgr.cpp`,
+  `RandomPlayerbotMgr.cpp`, and `PlayerbotLoginMgr.cpp` are not compiled.
+- Core asks only about generic transport/headless capabilities and lifecycle
+  hooks; it does not expose bot identity or bot-specific player fields.
+- `BUILD_PLAYERBOTS=ON` selects the native TortoiseBots path. The old vendored
+  CMaNGOS tree requires `BUILD_LEGACY_PLAYERBOTS=ON` explicitly.
+
+The current link/runtime checkpoint is recorded in `docs/PROVENANCE.md`. The
+runtime gate now also covers AI-enabled startup with the native auxiliary
+schema, Headless AI attachment, pending add/remove cancellation, save/logout,
+and relog. The random-bot service is bounded and only discovers pre-existing
+characters; it does not create accounts, and `World` remains the owner of
+Network/Headless session lifetime. `BotManager` owns only module records and
+AI adapters.
+The native compatibility layer also serves the named-location table and
+per-character AH buy/sell multipliers; random gear teleporting and account
+creation remain outside the current boundary.
+Expansion-only source families remain explicitly filtered rather than compiled
+through compatibility no-ops.
+
+## 12. Current packet/config/build seam — 2026-08-24
+
+The reproducible core requirement is `tortoise-wow` branch
+`playerbots-integration-gh` at
+`9487c5150a6553c665fafc1f4568669b8b00f011` (parent
+`133c6d19bf5898c1e4f5129b2890b1db89b17a07`). It contains the generic
+`SessionTransport`, GUID-keyed Headless registry/queue, same-account
+`1 Network + N Headless` lifecycle and reclaim behavior, generic ScriptMgr
+hooks, packet hooks, and the per-static-module object-target build mechanism.
+
+`host/BotPacketAdapter` is the only packet interpretation layer. Penqle calls
+`ServerScript::CanPacketSend` before socket output and
+`ServerScript::CanPacketReceive` before opcode dispatch. The adapter maps:
+
+- Headless sends → `PlayerbotAI::HandleBotOutgoingPacket`;
+- Network master sends → each owned AI's `HandleMasterOutgoingPacket`;
+- Network master receives → each owned AI's `HandleMasterIncomingPacket`.
+
+The module does not add bot-specific packet branches to core. The fresh
+`PacketBridgeTest` runtime journey exercised Headless outgoing delivery,
+Network-master outgoing delivery, and automatic mature Trigger → Action group
+acceptance, then removed both Headless sessions cleanly. Incoming delivery is
+registered through the same generic `ServerScript::CanPacketReceive` hook and
+logs selected real-client opcodes; the final proof of that path is deliberately
+left to the manual Network-client journey rather than a synthetic adapter call.
+
+Static native modules are compiled as isolated `OBJECT` targets and folded
+into the combined `modules` archive. TortoiseBots definitions, include paths,
+and PCH are attached to `mod_tortoisebots_static`, not sibling static module
+sources. Core commits `133c6d19` and `9487c515` remove static-module include
+directories and the stale `src/game/PlayerBots` path from the combined archive
+target; its generated loader needs only common module includes.
+
+Penqle `Config::GetValues(prefix)` now enumerates actual ACE configuration
+keys safely. `AiPlayerbot.LoginCriteria.*` and `AiPlayerbot.WorldBuff.*` load
+without a casted object layout; the runtime emitted `Loading WorldBuffs`.
+
+## 13. Final pre-playtest correctness pass — 2026-08-24
+
+The native module now uses one centralized movement transition helper on
+`PlayerbotAI` only for lifecycle/default recovery. Follow removes stale
+wander/stay state, wander removes follow/stay, and stay removes follow/wander;
+guard, free, and passive retain their mature shortcut relationships. The
+obsolete `BotController` has been removed; `PlayerbotAIAdapter` is the only
+gameplay update owner.
+
+Native `.bot stay` now invokes the mature `StayChatShortcutAction`, so it also
+records the current "return" and "stay" anchors. Native `.bot follow` uses
+the mature follow shortcut when a live master is available. On reconnect,
+`PlayerbotAIAdapter` rebinds the live master pointer and preserves the existing
+mature movement strategies; it consults no second native movement state.
+
+Random-bot adoption/release uses `BotManager::BindBotMaster` and
+`ClearBotMaster`, keeping `BotRecord.masterGuid`, `PlayerbotAI::master`, and
+the module-owned Headless session relationship synchronized.
+
+The packet fixture is strict: it emits the native group invite and waits for
+the normal `SMSG_GROUP_INVITE → WorldPacketTrigger → AcceptInvitationAction`
+path to join the group. There is no direct `DoSpecificAction("accept invitation")`
+rescue and no direct incoming adapter injection. The fixture passed automatic
+group acceptance and cleanup after the final cached ON build.
+
+Human logout clears only the live raw master pointer from each matching
+Headless AI; the module retains `BotRecord.masterGuid`. A later Network login
+rebinds matching existing Headless bots without replacing their sessions and
+restores follow or stay intent. The canonical random timing loader key is
+`AiPlayerbot.MaxRandomBotRandomizeTime`, with the former typo retained only as
+a compatibility fallback.
+
+The value audit fixed concrete null assumptions in mount-speed aggregation and
+possible-adds evaluation. Temporary `AiFactory`/command/action `printf` or
+info-level diagnostics were removed or demoted; selected packet-hook and
+lifecycle errors remain operational diagnostics. The runtime is left with AI
+enabled and the packet fixture disabled for manual client playtesting.

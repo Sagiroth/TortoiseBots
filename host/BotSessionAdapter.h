@@ -1,6 +1,6 @@
+// pi-lens-ignore: clang:pp_file_not_found,clang:unknown_typename,clang:undeclared_var_use,clang:incomplete_member_access,clang:unknown_type_name,clang:use_of_undeclared_identifier,clang:unknown_type_name
 #pragma once
 
-// pi-lens-ignore: clang:pp_file_not_found
 #include "Common.h"
 #include "ObjectGuid.h"
 #include <string>
