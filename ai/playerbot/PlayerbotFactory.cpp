@@ -3207,7 +3207,10 @@ void PlayerbotFactory::InitMounts()
     // Turtle collection mounts are represented by a generic item spell and a
     // core-owned collection_mount mapping. Include eligible mapped spells in
     // the factory pool so randomized characters do not lose custom mounts
-    // merely because their item has no classic per-item mount spell.
+    // merely because their item has no classic per-item mount spell. Factory
+    // initialization intentionally teaches the mapped spell, matching the
+    // existing classic factory mount path; real item use remains owned by the
+    // core collection spell script.
     if (QueryResult* result = WorldDatabase.Query("SELECT itemId, spellId FROM collection_mount"))
     {
         do

@@ -87,7 +87,7 @@ Vanilla/Turtle product surface before adding more classes or dungeon behavior.
 | F-04 | P1 | Active native code retains later-expansion consumable IDs, item IDs, spell IDs, and level gates. | Resolved for the audited known-absent IDs; retained level-60 spell rows were revalidated against local core data. |
 | F-05 | P1 | The compatibility shim contains silent no-op/default implementations for movement, instance, chat-channel, transport, formation, emote, session-state, and loot semantics. | Explicit capability debt remains; it is documented and not claimed as complete Turtle behavior. |
 | F-06 | P1/P2 | Custom Goblin/High Elf starting areas are deliberately bypassed because local navigation data is incomplete. | Keep as an explicit limitation until custom MMAP/pathing is validated. |
-| F-07 | P1/P2 | Turtle collection mounts are not modeled by the factory/randomization path. | Resolved with core `collection_mount` lookup plus existing-inventory/full-list support; focused gameplay acceptance remains future work. |
+| F-07 | P1/P2 | Turtle collection mounts are not modeled by the factory/randomization path. | Partially resolved with core `collection_mount` lookup plus existing-inventory/full-list support; factory spell initialization follows the existing classic factory model, while item-use gameplay acceptance remains future work. |
 | F-08 | P2 | Turtle custom dungeon/zone encounter behavior is not represented by explicit strategies. | Add it as a separate behavior backlog, not as assumed Vanilla coverage. |
 | F-09 | P1/P2 | Talent validation is server-aware, but broad Turtle custom talent interactions remain data/acceptance-test debt. | Validate each class/spec against local DBC and server spell/aura data. |
 | F-10 | P2 | The configuration template is a large donor configuration surface, including random bots, economy, LFG/social behavior, gear progression, and LLM settings. | Split MVP config from deferred systems. |
@@ -134,7 +134,9 @@ action” wording in the finding bodies below.
 - Collection mounts now use the core `collection_mount` mapping in
   `MountValue`, `FullMountListValue`, inventory mount lookup, and factory
   mount selection. Eligibility is checked against the loaded item, spell,
-  required level, class, and race data.
+  required level, class, and race data. Factory initialization teaches the
+  mapped spell like the existing classic factory path; it does not claim to
+  simulate consuming a physical collection item.
 - The developer quest ledger is in `tools/` with portable log defaults. The
   CMake graph retains explicit Vanilla class directories and rejects future
   source filenames containing the audited Death Knight, glyph, vehicle,

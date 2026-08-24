@@ -117,7 +117,7 @@ Keep iteration fast:
 
 ```text
 coherent edit batch
--> one cached BUILD_PLAYERBOTS=ON build
+-> one cached native MODULE_TORTOISEBOTS build
 -> smallest relevant runtime/manual check
 -> continue
 ```

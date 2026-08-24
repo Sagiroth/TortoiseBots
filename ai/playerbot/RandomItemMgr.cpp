@@ -17,6 +17,39 @@
 
 char * strstri (const char* str1, const char* str2);
 
+namespace
+{
+    bool IsRandomGearCandidate(ItemPrototype const* proto, uint8 clazz)
+    {
+        if (!proto)
+            return false;
+
+        if (proto->Flags & (ITEM_FLAG_CONJURED | ITEM_FLAG_DEPRECATED | ITEM_FLAG_WRAPPER))
+            return false;
+
+        if (proto->StartQuest || proto->RequiredSkill || proto->RequiredSkillRank || proto->RequiredSpell ||
+            proto->RequiredHonorRank || proto->RequiredCityRank || proto->RequiredReputationFaction ||
+            proto->RequiredReputationRank)
+            return false;
+
+        if (proto->AllowableClass && (proto->AllowableClass & (1u << (clazz - 1))) == 0)
+            return false;
+
+        return proto->Name1.find("(Test)") == std::string::npos &&
+            proto->Name1.find("(TEST)") == std::string::npos &&
+            proto->Name1.find("(test)") == std::string::npos &&
+            proto->Name1.find("Test") == std::string::npos &&
+            proto->Name1.find("TEST") == std::string::npos &&
+            proto->Name1.find("Deprecated") == std::string::npos &&
+            proto->Name1.find("Unused") == std::string::npos &&
+            proto->Name1.find("Monster ") == std::string::npos &&
+            proto->Name1.find("[PH]") == std::string::npos &&
+            proto->Name1.find("(OLD)") == std::string::npos &&
+            proto->Name1.find("zzz") == std::string::npos &&
+            proto->Name1.find("ZZZ") == std::string::npos;
+    }
+}
+
 uint64 BotEquipKey::GetKey()
 {
     return level + 100 * clazz + 10000 * spec + 1000000 * slot + 100000000 * quality;
@@ -154,7 +187,12 @@ void RandomItemMgr::BuildRandomItemCache()
         // does not synchronously issue one INSERT per item on the world
         // thread. A populated cache still follows the mature load path.
         auto cacheCount = CharacterDatabase.PQuery("SELECT COUNT(*) FROM ai_playerbot_rnditem_cache");
-        if (cacheCount && cacheCount->Fetch()->GetUInt32() == 0)
+        if (!cacheCount)
+        {
+            sLog.outErrorDb("TortoiseBots: ai_playerbot_rnditem_cache is missing; skipping optional cache generation");
+            return;
+        }
+        if (cacheCount->Fetch()->GetUInt32() == 0)
         {
             sLog.outString("Random item cache is present but empty; skipping optional cache generation");
             return;
@@ -2853,7 +2891,12 @@ void RandomItemMgr::BuildEquipCache()
     else
     {
         auto cacheCount = CharacterDatabase.PQuery("SELECT COUNT(*) FROM ai_playerbot_equip_cache");
-        if (cacheCount && cacheCount->Fetch()->GetUInt32() == 0)
+        if (!cacheCount)
+        {
+            sLog.outErrorDb("TortoiseBots: ai_playerbot_equip_cache is missing; skipping optional cache generation");
+            return;
+        }
+        if (cacheCount->Fetch()->GetUInt32() == 0)
         {
             sLog.outString("Equipment cache is present but empty; skipping optional cache generation");
             return;
@@ -2901,6 +2944,9 @@ void RandomItemMgr::BuildEquipCache()
                             {
                                 ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
                                 if (!proto)
+                                    continue;
+
+                                if (!IsRandomGearCandidate(proto, clazz))
                                     continue;
 
                                 if (proto->Quality != key.quality)
