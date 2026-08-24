@@ -9,7 +9,7 @@ using namespace ai;
 bool ImbueWithStoneAction::Execute(Event& event)
 {
     Player* requester = event.GetOwner();
-    if (bot->IsInCombat() || bot->GetLevel() > 70)
+    if (bot->IsInCombat())
         return false;
 
     // remove stealth
@@ -84,9 +84,6 @@ bool ImbueWithStoneAction::isUseful()
 {
     bool allowMainhand = true;
 
-    if (bot->GetLevel() > 70)
-        return false;
-
     // Deny mainhand stone use if bot is a Shaman over 30 or grouped with one over 32.
     if (bot->GetClass() == CLASS_SHAMAN && bot->GetLevel() > 30)
         allowMainhand = false;
@@ -147,7 +144,7 @@ bool ImbueWithStoneAction::isUseful()
 bool ImbueWithOilAction::Execute(Event& event)
 {
     Player* requester = event.GetOwner();
-    if (bot->IsInCombat() || bot->GetLevel() > 70)
+    if (bot->IsInCombat())
         return false;
 
     // remove stealth
@@ -174,9 +171,6 @@ bool ImbueWithOilAction::Execute(Event& event)
 
 bool ImbueWithOilAction::isUseful()
 {
-    if (bot->GetLevel() > 70)
-        return false;
-
     Item* weapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
     if (weapon && weapon->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT) == 0)
     {

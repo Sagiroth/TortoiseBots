@@ -13,8 +13,6 @@
 
 namespace
 {
-constexpr uint32 SPELL_CONJURE_MANA_SAPPHIRE = 42985;
-constexpr uint32 SPELL_CONJURE_MANA_EMERALD = 27101;
 constexpr uint32 SPELL_CONJURE_MANA_RUBY = 10054;
 constexpr uint32 SPELL_CONJURE_MANA_CITRINE = 10053;
 constexpr uint32 SPELL_CONJURE_MANA_JADE = 3552;
@@ -95,11 +93,7 @@ void GenericMageStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
     // Mana Threshold Triggers
     Player* bot = botAI->GetBot();
-    if (bot->HasSpell(SPELL_CONJURE_MANA_SAPPHIRE))
-        triggers.push_back(new TriggerNode("high mana", { NextAction("use mana sapphire", 90.0f) }));
-    else if (bot->HasSpell(SPELL_CONJURE_MANA_EMERALD))
-        triggers.push_back(new TriggerNode("high mana", { NextAction("use mana emerald", 90.0f) }));
-    else if (bot->HasSpell(SPELL_CONJURE_MANA_RUBY))
+    if (bot->HasSpell(SPELL_CONJURE_MANA_RUBY))
         triggers.push_back(new TriggerNode("high mana", { NextAction("use mana ruby", 90.0f) }));
     else if (bot->HasSpell(SPELL_CONJURE_MANA_CITRINE))
         triggers.push_back(new TriggerNode("high mana", { NextAction("use mana citrine", 90.0f) }));

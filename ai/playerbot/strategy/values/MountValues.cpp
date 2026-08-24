@@ -1,4 +1,5 @@
 #include "MountValues.h"
+#include "MountManager.hpp"
 #include "playerbot/ChatHelper.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "BudgetValues.h"
@@ -54,6 +55,12 @@ uint32 MountValue::GetSpeed(uint32 spellId)
 
 uint32 MountValue::GetMountSpell(uint32 itemId)
 {
+    // Turtle collection mounts use a generic item spell (46499) and keep the
+    // actual mount spell in the core-owned collection_mount table. Consult
+    // that authoritative mapping before falling back to classic item spells.
+    if (std::optional<uint32> collectionSpell = sMountMgr.GetMountSpellId(itemId))
+        return *collectionSpell;
+
     const ItemPrototype* proto = sObjectMgr.GetItemPrototype(itemId);
 
     if (!proto)
@@ -72,6 +79,9 @@ uint32 MountValue::GetMountSpell(uint32 itemId)
 bool MountValue::IsValidLocation(Player* bot)
 {
     const SpellEntry* const spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellId);
+
+    if (!spellInfo)
+        return false;
 
     bool isAQ40Mounted = false;
 

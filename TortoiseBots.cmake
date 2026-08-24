@@ -24,13 +24,17 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
 
   # Optional module migrations are installed only with the module. The core
   # AutoUpdater applies them on startup without making bots a core dependency.
-  if(EXISTS "${TORTOISEBOTS_ROOT}/data/sql/world")
-    install(DIRECTORY "${TORTOISEBOTS_ROOT}/data/sql/world/"
-      DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/TortoiseBots/data/sql/world")
+  # AutoUpdater's module contract is case-sensitive on Linux and uses the
+  # configured target names World and Char by default. Keep the source and
+  # installed trees identical so a fresh install cannot silently skip these
+  # optional migrations.
+  if(EXISTS "${TORTOISEBOTS_ROOT}/data/sql/World")
+    install(DIRECTORY "${TORTOISEBOTS_ROOT}/data/sql/World/"
+      DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/TortoiseBots/data/sql/World")
   endif()
-  if(EXISTS "${TORTOISEBOTS_ROOT}/data/sql/char")
-    install(DIRECTORY "${TORTOISEBOTS_ROOT}/data/sql/char/"
-      DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/TortoiseBots/data/sql/character")
+  if(EXISTS "${TORTOISEBOTS_ROOT}/data/sql/Char")
+    install(DIRECTORY "${TORTOISEBOTS_ROOT}/data/sql/Char/"
+      DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/TortoiseBots/data/sql/Char")
   endif()
 
   set(TORTOISEBOTS_HOST_SRC
@@ -131,6 +135,15 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     if(NOT EXISTS "${TORTOISEBOTS_SOURCE}")
       message(FATAL_ERROR "TortoiseBots source listed but missing: ${TORTOISEBOTS_SOURCE}")
     endif()
+
+    # Keep the positive source graph mechanically hostile to donor expansion
+    # families. A future file with one of these names must be reviewed before
+    # it can enter the module through a directory glob.
+    string(TOUPPER "${TORTOISEBOTS_SOURCE}" TORTOISEBOTS_SOURCE_UPPER)
+    if(TORTOISEBOTS_SOURCE_UPPER MATCHES "DEATHKNIGHT|GLYPH|VEHICLE|KARAZHAN|ARENA|RTSC|BOSSAURA")
+      message(FATAL_ERROR "Expansion/test family is not allowed in TortoiseBots source graph: ${TORTOISEBOTS_SOURCE}")
+    endif()
+
     TW_ADD_SCRIPT("${TORTOISEBOTS_SOURCE}")
   endforeach()
 endif()
@@ -147,8 +160,10 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "POST_TARGETS")
 
   if(TARGET "${TORTOISEBOTS_TARGET}")
     set(TORTOISEBOTS_ROOT "${CMAKE_CURRENT_LIST_DIR}")
+    # BUILD_PLAYERBOTS is the core's legacy-vendor escape hatch. Native module
+    # selection is controlled by MODULE_TORTOISEBOTS, so do not force the
+    # legacy option on from inside this module.
     target_compile_definitions("${TORTOISEBOTS_TARGET}" PRIVATE
-      BUILD_PLAYERBOTS=1
       MANGOSBOT_ZERO=1
       CMANGOS=1)
     target_include_directories("${TORTOISEBOTS_TARGET}" PRIVATE

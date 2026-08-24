@@ -1271,14 +1271,6 @@ namespace ai
         }
     };
 
-    class RtscJumpTrigger : public Trigger
-    {
-    public:
-        RtscJumpTrigger(PlayerbotAI* ai) : Trigger(ai, "rtsc jump active") {}
-
-        bool IsActive() override;
-    };
-
     class AtWarTrigger : public Trigger
     {
     public:

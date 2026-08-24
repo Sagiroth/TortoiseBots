@@ -1127,51 +1127,32 @@ void TravelMgr::LoadAreaLevels()
     if (!areaLevels.empty())
         return;
 
-    WorldDatabase.PExecute("CREATE TABLE IF NOT EXISTS `ai_playerbot_zone_level` (`id` bigint(20) NOT NULL ,`level` bigint(20) NOT NULL,PRIMARY KEY(`id`))");
-
-    std::string query = "SELECT id, level FROM ai_playerbot_zone_level";
-
+    // The module migration owns this table. Do not create or bulk-populate it
+    // during world startup: a missing migration must be visible, and an empty
+    // cache should fall back to the in-memory area-level calculation instead of
+    // issuing one INSERT per DBC area on the world thread.
+    if (!WorldDatabase.PQuery("SHOW TABLES LIKE 'ai_playerbot_zone_level'"))
     {
-        auto result = WorldDatabase.PQuery("%s", query.c_str());
-
-        std::vector<uint32> loadedAreas;
-
-        if (result)
-        {
-            BarGoLink bar(result->GetRowCount());
-
-            do
-            {
-                Field* fields = result->Fetch();
-                bar.step();
-
-                areaLevels[fields[0].GetUInt32()] = fields[1].GetInt32();
-
-                loadedAreas.push_back(fields[0].GetUInt32());
-            } while (result->NextRow());
-
-            sLog.outString(">> Loaded " SIZEFMTD " area levels.", areaLevels.size());
-        }
-
-        BarGoLink bar(sAreaStore.GetNumRows());
-        WorldDatabase.BeginTransaction();
-        for (uint32 i = 0; i < sAreaStore.GetNumRows(); ++i)    // areaflag numbered from 0
-        {
-            bar.step();
-            if (AreaTableEntry const* area = sAreaStore.LookupEntry<AreaEntry>(i))
-            {
-                if (std::find(loadedAreas.begin(), loadedAreas.end(), area->ID) == loadedAreas.end())
-                {
-                    int32 level = sTravelMgr.GetAreaLevel(area->ID);
-
-                    WorldDatabase.PExecute("INSERT INTO `ai_playerbot_zone_level` (`id`, `level`) VALUES ('%d', '%d')", area->ID, level);
-                }
-            }
-        }
-        WorldDatabase.CommitTransaction();
-        if(areaLevels.size() > loadedAreas.size())
-            sLog.outString(">> Generated " SIZEFMTD " areas.", areaLevels.size()- loadedAreas.size());
+        sLog.outErrorDb("TortoiseBots: ai_playerbot_zone_level is missing; using uncached area levels");
+        return;
     }
+
+    auto result = WorldDatabase.PQuery("SELECT id, level FROM ai_playerbot_zone_level");
+    if (!result)
+    {
+        sLog.outString(">> No cached area levels found; using in-memory calculation.");
+        return;
+    }
+
+    BarGoLink bar(result->GetRowCount());
+    do
+    {
+        Field* fields = result->Fetch();
+        bar.step();
+        areaLevels[fields[0].GetUInt32()] = fields[1].GetInt32();
+    } while (result->NextRow());
+
+    sLog.outString(">> Loaded " SIZEFMTD " area levels.", areaLevels.size());
 }
 
 void TravelMgr::SetMobAvoidArea()
@@ -1484,15 +1465,20 @@ void TravelMgr::LoadQuestTravelTable()
         sPlayerbotAIConfig.log("activity_pid.csv", out.str().c_str());
     }
 
-    sLog.outString("Loading travel nodes.");
+    if (sPlayerbotAIConfig.generateTravelNodes)
+    {
+        sLog.outString("Loading travel nodes.");
 
-    sTravelNodeMap.loadNodeStore();
-
-    sTravelNodeMap.generateAll();
-
-    sTravelNodeMap.printMap();
-    sTravelNodeMap.printNodeStore();
-    sTravelNodeMap.saveNodeStore();
+        sTravelNodeMap.loadNodeStore();
+        sTravelNodeMap.generateAll();
+        sTravelNodeMap.printMap();
+        sTravelNodeMap.printNodeStore();
+        sTravelNodeMap.saveNodeStore();
+    }
+    else
+    {
+        sLog.outString("TravelNode cache generation disabled; using direct movement and quest destinations.");
+    }
 
     LoadFishLocations();
 

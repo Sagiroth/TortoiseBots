@@ -104,8 +104,8 @@ ItemUsage ItemUsageValue::Calculate()
         }
     }
 
-    //KEEP HEARTHSTONE/SCOURGESTONE
-    if (proto->ItemId == 6948 || proto->ItemId == 40582)
+    // Keep the Turtle hearthstone.
+    if (proto->ItemId == 6948)
         return ItemUsage::ITEM_USAGE_KEEP;
 
     //WARLOCKS GOT TO KEEP SOULSHARDS (keep at least 10)
@@ -801,13 +801,10 @@ uint32 ItemUsageValue::GetAhDepositCost(ItemPrototype const* proto, uint32 count
 
 uint32 ItemUsageValue::ItemCreatedFrom(uint32 wantItemId)
 {
-    switch (wantItemId) {
-    case 38631: //Runebladed Sword
-        return 38607; //Battle-worn Sword
-    default:
-        return 0;
-    }
-
+    // The former mapping was for a later expansion quest item pair that is
+    // absent from the local Turtle item data. Turtle quest relationships are
+    // read directly from the quest template instead.
+    (void)wantItemId;
     return 0;
 }
 
@@ -1704,13 +1701,6 @@ bool ItemUsageValue::IsWorthBuyingFromAhToResellAtAH(ItemPrototype const* proto,
     return pricePerItem <= GetBotAHSellMinPrice(proto) + ((GetBotAHSellMaxPrice(proto) - GetBotAHSellMinPrice(proto)) / 2);
 }
 
-double ItemUsageValue::GetRarityPriceMultiplier(ItemPrototype const* proto)
-{
-    float x = sRandomItemMgr.GetItemRarity(proto->ItemId);
-    if (x < 0.001) return 1.0f;
-    return 0.75 + exp((140 - x) / 50) / 6;
-}
-
 double ItemUsageValue::GetLevelPriceMultiplier(ItemPrototype const* proto)
 {
     float x = 0.1f + proto->ItemLevel;
@@ -1749,7 +1739,7 @@ uint32 ItemUsageValue::GetItemBaseValue(ItemPrototype const* proto, uint8 maxRea
     }
 
     //some items, which are not sold by vendors, have very low or very high vendor buy price, can't rely on it, need to adjust SellPrice
-    return static_cast<uint32>(proto->SellPrice * GetRarityPriceMultiplier(proto) * GetLevelPriceMultiplier(proto) * 1.5f);
+    return static_cast<uint32>(proto->SellPrice * GetLevelPriceMultiplier(proto) * 1.5f);
 }
 
 uint32 ItemUsageValue::GetBotBuyPrice(ItemPrototype const* proto, Player* bot)

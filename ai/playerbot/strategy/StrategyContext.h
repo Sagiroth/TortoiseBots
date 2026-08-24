@@ -34,7 +34,6 @@
 #include "generic/ReturnStrategy.h"
 #include "generic/RpgStrategy.h"
 #include "generic/TravelStrategy.h"
-#include "generic/RTSCStrategy.h"
 #include "generic/DebugStrategy.h"
 #include "generic/BattlegroundStrategy.h"
 #include "generic/MaintenanceStrategy.h"
@@ -131,8 +130,6 @@ namespace ai
             creators["debug xp"] = [](PlayerbotAI* ai) { return new DebugXpStrategy(ai); };
             creators["debug equip"] = [](PlayerbotAI* ai) { return new DebugEquipStrategy(ai); };
             creators["debug logname"] = [](PlayerbotAI* ai) { return new DebugLogNameStrategy(ai); };
-            creators["rtsc"] = [](PlayerbotAI* ai) { return new RTSCStrategy(ai); };
-            creators["rtsc jump"] = [](PlayerbotAI* ai) { return new RTSCSJumptrategy(ai); };
             creators["maintenance"] = [](PlayerbotAI* ai) { return new MaintenanceStrategy(ai); };
             creators["group"] = [](PlayerbotAI* ai) { return new GroupStrategy(ai); };
             creators["guild"] = [](PlayerbotAI* ai) { return new GuildStrategy(ai); };

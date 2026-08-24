@@ -3243,20 +3243,16 @@ void TravelNodeMap::saveNodeStore(bool force)
 
     hasToSave = false;
 
-    WorldDatabase.BeginTransaction();
-
-    WorldDatabase.PExecute("DELETE FROM ai_playerbot_travelnode");
-    WorldDatabase.PExecute("DELETE FROM ai_playerbot_travelnode_link");
-    WorldDatabase.PExecute("DELETE FROM ai_playerbot_travelnode_path");
-
-    WorldDatabase.CommitTransaction();
-
     std::unordered_map<TravelNode*, uint32> saveNodes;
     std::vector<TravelNode*> anodes = sTravelNodeMap.GetNodes();
 
     std::sort(anodes.begin(), anodes.end(), [](TravelNode* i, TravelNode* j) {return i->GetName() + std::to_string(i->GetMapId()) + std::to_string(i->getX()) < j->GetName() + std::to_string(j->GetMapId()) + std::to_string(j->getX()); });
 
     WorldDatabase.BeginTransaction();
+
+    WorldDatabase.PExecute("DELETE FROM ai_playerbot_travelnode");
+    WorldDatabase.PExecute("DELETE FROM ai_playerbot_travelnode_link");
+    WorldDatabase.PExecute("DELETE FROM ai_playerbot_travelnode_path");
 
     BarGoLink bar(anodes.size());
     for (uint32 i = 0; i < anodes.size(); i++)
@@ -3274,15 +3270,11 @@ void TravelNodeMap::saveNodeStore(bool force)
         bar.step();
     }
 
-    WorldDatabase.CommitTransaction();
-
     sLog.outString(">> Saved " SIZEFMTD " travelNodes.", anodes.size());
 
     {
         uint32 paths = 0, points = 0;
         BarGoLink bar(anodes.size());
-
-        WorldDatabase.BeginTransaction();
 
         for (uint32 i = 0; i < anodes.size(); i++)
         {
@@ -3298,10 +3290,13 @@ void TravelNodeMap::saveNodeStore(bool force)
             for (auto& link : links)
             {
                 TravelNodePath* path = link.second;
+                auto targetIt = saveNodes.find(link.first);
+                if (targetIt == saveNodes.end())
+                    continue;
 
                 WorldDatabase.PExecute("INSERT INTO `ai_playerbot_travelnode_link` (`node_id`, `to_node_id`,`type`,`object`,`distance`,`swim_distance`, `extra_cost`,`calculated`, `max_creature_0`,`max_creature_1`,`max_creature_2`) VALUES ('%d','%d', '%d', '%lu', '%f', '%f', '%f', '%d', '%d', '%d', '%d')"
                     , i
-                    , saveNodes.find(link.first)->second
+                    , targetIt->second
                     , uint8(path->getPathType())
                     , path->getPathObject()
                     , path->getDistance()
@@ -3321,7 +3316,7 @@ void TravelNodeMap::saveNodeStore(bool force)
                     WorldPosition point = ppath[j];
                     WorldDatabase.PExecute("INSERT INTO `ai_playerbot_travelnode_path` (`node_id`, `to_node_id`, `nr`, `map_id`, `x`, `y`, `z`) VALUES ('%d', '%d', '%d','%d', '%f', '%f', '%f')"
                         , i
-                        , saveNodes.find(link.first)->second
+                        , targetIt->second
                         , j
                         , point.GetMapId()
                         , point.getX()
@@ -3400,11 +3395,13 @@ void TravelNodeMap::loadNodeStore()
                 Field* fields = result->Fetch();
                 bar.step();
 
-                TravelNode* startNode = saveNodes.find(fields[0].GetUInt32())->second;
-                TravelNode* endNode = saveNodes.find(fields[1].GetUInt32())->second;
-
-                if (!startNode || !endNode)
+                auto startIt = saveNodes.find(fields[0].GetUInt32());
+                auto endIt = saveNodes.find(fields[1].GetUInt32());
+                if (startIt == saveNodes.end() || endIt == saveNodes.end())
                     continue;
+
+                TravelNode* startNode = startIt->second;
+                TravelNode* endNode = endIt->second;
 
                 startNode->setPathTo(endNode, TravelNodePath(fields[4].GetFloat(), fields[6].GetFloat(), fields[2].GetUInt8(), fields[3].GetUInt64(), fields[7].GetBool(), { fields[8].GetUInt8(),fields[9].GetUInt8(),fields[10].GetUInt8() }, fields[5].GetFloat()), true);
 
@@ -3436,10 +3433,15 @@ void TravelNodeMap::loadNodeStore()
                 Field* fields = result->Fetch();
                 bar.step();
 
-                TravelNode* startNode = saveNodes.find(fields[0].GetUInt32())->second;
-                TravelNode* endNode = saveNodes.find(fields[1].GetUInt32())->second;
+                auto startIt = saveNodes.find(fields[0].GetUInt32());
+                auto endIt = saveNodes.find(fields[1].GetUInt32());
+                if (startIt == saveNodes.end() || endIt == saveNodes.end())
+                    continue;
 
-                if (!startNode || !endNode || !startNode->hasPathTo(endNode))
+                TravelNode* startNode = startIt->second;
+                TravelNode* endNode = endIt->second;
+
+                if (!startNode->hasPathTo(endNode))
                     continue;
 
                 TravelNodePath* path = startNode->GetPathTo(endNode);

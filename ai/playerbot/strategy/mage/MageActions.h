@@ -168,17 +168,9 @@ namespace ai
                 {
                     spellId = 10053;
                 }
-                else if (level >= 58 && level < 68)
+                else if (level >= 58)
                 {
                     spellId = 10054;
-                }
-                else if (level >= 68 && level < 77)
-                {
-                    spellId = 27101;
-                }
-                else if (level >= 77)
-                {
-                    spellId = 42985;
                 }
 
                 return ai->CanCastSpell(spellId, bot, 0);

@@ -609,6 +609,7 @@ bool PlayerbotAIConfig::Initialize()
     autoLearnQuestSpells = config.GetBoolDefault("AiPlayerbot.AutoLearnQuestSpells", false);
     autoLearnDroppedSpells = config.GetBoolDefault("AiPlayerbot.AutoLearnDroppedSpells", false);
     autoDoQuests = config.GetBoolDefault("AiPlayerbot.AutoDoQuests", true);
+    generateTravelNodes = config.GetBoolDefault("AiPlayerbot.GenerateTravelNodes", false);
     syncLevelWithPlayers = config.GetBoolDefault("AiPlayerbot.SyncLevelWithPlayers", false);
     syncLevelMaxAbove = config.GetIntDefault("AiPlayerbot.SyncLevelMaxAbove", 5);
     syncLevelNoPlayer = config.GetIntDefault("AiPlayerbot.SyncLevelNoPlayer", randombotStartingLevel);
@@ -1263,7 +1264,9 @@ void PlayerbotAIConfig::LoadLLMDefaultPrompts(const std::string& fileName)
             continue;
         }
 
-        auto result = CharacterDatabase.PQuery("SELECT guid FROM characters WHERE name = '%s' LIMIT 1", name.c_str());
+        std::string safeName = name;
+        CharacterDatabase.escape_string(safeName);
+        auto result = CharacterDatabase.PQuery("SELECT guid FROM characters WHERE name = '%s' LIMIT 1", safeName.c_str());
         if (!result)
         {
             sLog.outError("Character '%s' not found in characters DB while loading '%s'.", name.c_str(), fileName.c_str());

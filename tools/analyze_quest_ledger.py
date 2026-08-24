@@ -19,8 +19,10 @@ import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-EVENTS_DEFAULT = "/home/ubuntu/cmake-build-debug/src/logs/bot_events.csv"
-DEATHS_DEFAULT = "/home/ubuntu/cmake-build-debug/src/logs/deaths.csv"
+# Keep the tool portable. Runtime log locations differ between local builds,
+# Docker, and deployed realms; callers can pass --events/--deaths explicitly.
+EVENTS_DEFAULT = "logs/bot_events.csv"
+DEATHS_DEFAULT = "logs/deaths.csv"
 
 BLACKLIST_RATE   = 0.25
 INVESTIGATE_RATE = 0.60

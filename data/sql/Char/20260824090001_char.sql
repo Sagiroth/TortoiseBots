@@ -11,28 +11,11 @@ CREATE TABLE IF NOT EXISTS `ai_playerbot_equip_cache` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
-CREATE TABLE IF NOT EXISTS `ai_playerbot_rarity_cache` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `item` mediumint NOT NULL,
-  `rarity` float NOT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
-
 CREATE TABLE IF NOT EXISTS `ai_playerbot_rnditem_cache` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `lvl` mediumint NOT NULL,
   `type` mediumint NOT NULL,
   `item` mediumint NOT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
-
-CREATE TABLE IF NOT EXISTS `ai_playerbot_tele_cache` (
-  `id` mediumint unsigned NOT NULL AUTO_INCREMENT,
-  `level` mediumint NOT NULL,
-  `map_id` mediumint NOT NULL,
-  `x` float NOT NULL,
-  `y` float NOT NULL,
-  `z` float NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
@@ -46,6 +29,38 @@ CREATE TABLE IF NOT EXISTS `ai_playerbot_item_info_cache` (
   `faction` mediumint DEFAULT NULL,
   `factionRepRank` mediumint DEFAULT NULL,
   `minLevel` mediumint DEFAULT NULL,
+  `scale_1` mediumint NOT NULL DEFAULT 0,
+  `scale_2` mediumint NOT NULL DEFAULT 0,
+  `scale_3` mediumint NOT NULL DEFAULT 0,
+  `scale_4` mediumint NOT NULL DEFAULT 0,
+  `scale_5` mediumint NOT NULL DEFAULT 0,
+  `scale_6` mediumint NOT NULL DEFAULT 0,
+  `scale_7` mediumint NOT NULL DEFAULT 0,
+  `scale_8` mediumint NOT NULL DEFAULT 0,
+  `scale_9` mediumint NOT NULL DEFAULT 0,
+  `scale_10` mediumint NOT NULL DEFAULT 0,
+  `scale_11` mediumint NOT NULL DEFAULT 0,
+  `scale_12` mediumint NOT NULL DEFAULT 0,
+  `scale_13` mediumint NOT NULL DEFAULT 0,
+  `scale_14` mediumint NOT NULL DEFAULT 0,
+  `scale_15` mediumint NOT NULL DEFAULT 0,
+  `scale_16` mediumint NOT NULL DEFAULT 0,
+  `scale_17` mediumint NOT NULL DEFAULT 0,
+  `scale_18` mediumint NOT NULL DEFAULT 0,
+  `scale_19` mediumint NOT NULL DEFAULT 0,
+  `scale_20` mediumint NOT NULL DEFAULT 0,
+  `scale_21` mediumint NOT NULL DEFAULT 0,
+  `scale_22` mediumint NOT NULL DEFAULT 0,
+  `scale_23` mediumint NOT NULL DEFAULT 0,
+  `scale_24` mediumint NOT NULL DEFAULT 0,
+  `scale_25` mediumint NOT NULL DEFAULT 0,
+  `scale_26` mediumint NOT NULL DEFAULT 0,
+  `scale_27` mediumint NOT NULL DEFAULT 0,
+  `scale_28` mediumint NOT NULL DEFAULT 0,
+  `scale_29` mediumint NOT NULL DEFAULT 0,
+  `scale_30` mediumint NOT NULL DEFAULT 0,
+  `scale_31` mediumint NOT NULL DEFAULT 0,
+  `scale_32` mediumint NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
@@ -67,19 +82,4 @@ CREATE TABLE IF NOT EXISTS `ai_playerbot_custom_strategy` (
   `action_line` varchar(1024) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `name` (`name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
-
-CREATE TABLE IF NOT EXISTS `ai_playerbot_random_bots` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `owner` bigint unsigned NOT NULL,
-  `bot` bigint unsigned NOT NULL,
-  `time` bigint NOT NULL,
-  `validIn` bigint DEFAULT NULL,
-  `event` varchar(45) DEFAULT NULL,
-  `value` bigint DEFAULT NULL,
-  `data` varchar(255) DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  KEY `owner` (`owner`),
-  KEY `bot` (`bot`),
-  KEY `event` (`event`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;

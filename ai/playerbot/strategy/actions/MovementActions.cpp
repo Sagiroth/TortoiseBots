@@ -2202,7 +2202,6 @@ bool JumpAction::Execute(ai::Event &event)
     bool jumpInPlace = false;
     bool jumpBackward = false;
     bool showLanding = false;
-    bool isRtsc = false;
     bool toPosition = false;
 
     // only show landing
@@ -2216,11 +2215,6 @@ bool JumpAction::Execute(ai::Event &event)
     {
         options = options.substr(9);
         toPosition = true;
-    }
-    // rtsc stuff
-    if (options == "rtsc")
-    {
-        isRtsc = true;
     }
     // handle options
     if (options.empty() || options == "i" || options == "inplace")
@@ -2255,7 +2249,7 @@ bool JumpAction::Execute(ai::Event &event)
     }
 
     // find jump position
-    if (options == "tome" || options == "follow" || options == "chase" || isRtsc || toPosition)
+    if (options == "tome" || options == "follow" || options == "chase" || toPosition)
     {
         if (options == "follow" && !(ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)))
             return false;
@@ -2274,31 +2268,6 @@ bool JumpAction::Execute(ai::Event &event)
                 return false;
 
             dest = WorldPosition(event.GetOwner());
-        }
-
-        if (isRtsc)
-        {
-            WorldPosition spellPosition = AI_VALUE2(WorldPosition, "RTSC saved location", "jump");
-            if(!spellPosition)
-            {
-                RESET_AI_VALUE2(WorldPosition, "RTSC saved location", "jump");
-                RESET_AI_VALUE2(WorldPosition, "RTSC saved location", "jump point");
-                ai->ChangeStrategy("-rtsc jump", BotState::BOT_STATE_NON_COMBAT);
-                return false;
-            }
-
-            // already have point - movement handled by rtsc jump command
-            WorldPosition jumpPosition = AI_VALUE2(WorldPosition, "RTSC saved location", "jump point");
-            if (jumpPosition)
-            {
-                jumpPoint = jumpPosition;
-                requiredSpeed = jumpPosition.getO();
-                jumpPoint.orientation = dest.getO();
-            }
-
-            dest = spellPosition;
-            distanceTo = sPlayerbotAIConfig.sightDistance;
-            distanceFrom = 10.f;
         }
 
         if (options == "follow")
@@ -2389,18 +2358,6 @@ bool JumpAction::Execute(ai::Event &event)
                     bot->Say(text, (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
                 }
 
-                // see spell action will handle the movement
-                if (isRtsc)
-                {
-                    WorldPosition jumpPosition = AI_VALUE2(WorldPosition, "RTSC saved location", "jump point");
-                    if (!jumpPosition)
-                    {
-                        jumpPoint.orientation = requiredSpeed;
-                        SET_AI_VALUE2(WorldPosition, "RTSC saved location", "jump point", jumpPoint);
-                        return true;
-                    }
-                }
-
                 if (showLanding)
                 {
                     Creature* wpCreature = bot->SummonCreature(2334, jumpPoint.getX(), jumpPoint.getY(), jumpPoint.getZ() - 1, bot->getOrientation(), TEMPSPAWN_TIMED_DESPAWN, 3000);
@@ -2439,12 +2396,6 @@ bool JumpAction::Execute(ai::Event &event)
                 sServerFacade.SetFacingTo(bot, pointAngle, true);
                 bool success = JumpTowards(jumpPoint, possibleLanding ? possibleLanding : dest, bot, requiredSpeed, possibleLanding);
 
-                if (isRtsc)
-                {
-                    RESET_AI_VALUE2(WorldPosition, "RTSC saved location", "jump");
-                    RESET_AI_VALUE2(WorldPosition, "RTSC saved location", "jump point");
-                    ai->ChangeStrategy("-rtsc jump", BotState::BOT_STATE_NON_COMBAT);
-                }
                 return success;
             }
         }

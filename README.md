@@ -31,8 +31,11 @@ retained, while donor-only expansion families are absent from the module tree.
 - Native Penqle module discovery, ScriptMgr adapters, module-local AI ownership,
   and the broad Vanilla/Turtle strategy/value/trigger/action source set are
   compiled and linked into `mangosd`.
-- `BUILD_PLAYERBOTS=OFF` with modules disabled and `BUILD_PLAYERBOTS=ON` with
-  `MODULE_TORTOISEBOTS=static` both pass the cached `mangosd` build.
+- `BUILD_PLAYERBOTS=OFF` with modules disabled and the explicit native
+  `MODULE_TORTOISEBOTS=static` configuration both pass the cached `mangosd`
+  build. The legacy `BUILD_PLAYERBOTS` switch is not the native module
+  selector and should remain off unless the separate legacy escape hatch is
+  deliberately being tested.
 - The local runtime stack starts the native module and reaches “World server is
   up and running”; AI remains disabled unless `aiplayerbot.conf` explicitly
   enables it.
@@ -40,6 +43,12 @@ retained, while donor-only expansion families are absent from the module tree.
   `tortoise_bots.conf`; random-bot autologin and account/character creation
   default to off. Enable random bots only with pre-existing configured random
   characters until the creation workflow is added.
+- Module SQL is installed under the core's case-sensitive `World/` and `Char/`
+  AutoUpdater folders. The additive `20260824090002_*` migrations repair
+  already-created cache/help tables without dropping data.
+- `tools/verify_turtle_surface.sh` is the cheap pre-build guard for migration
+  paths, removed donor/test families, known-absent IDs, and legacy-option
+  forcing.
 - The required generic Penqle seam is
   `playerbots-integration-gh@9487c5150a6553c665fafc1f4568669b8b00f011`.
 - The fresh Docker packet journey passed native group invite/accept and
@@ -78,12 +87,15 @@ The first product target is intentionally small and playable: log into one norma
 The native core build is enabled with:
 
 ```sh
-cmake -S <tortoise-wow> -B <build> -DMODULES=static -DMODULE_TORTOISEBOTS=static
+cmake -S <tortoise-wow> -B <build> -DMODULES=static -DMODULE_TORTOISEBOTS=static \
+  -DBUILD_LEGACY_PLAYERBOTS=OFF
 cmake --build <build> --target mangosd
 ```
 
-For the full native configuration also set `-DBUILD_PLAYERBOTS=ON`. The module
-build has no legacy vendored PlayerBots source path.
+Do not set `BUILD_PLAYERBOTS=ON` to select this module. That option belongs to
+the core's separate legacy PlayerBots escape hatch; native linkage is explicit
+through `MODULE_TORTOISEBOTS` and the module build has no legacy vendored
+PlayerBots source path.
 
 For normal source edits, keep this checkout as the working repository and use
 the sibling `tortoise-docker-penqle` checkout's persistent builder:
