@@ -132,8 +132,9 @@ Core reproducibility: check out `playerbots-integration-gh` at
 the stale `src/game/PlayerBots` common path, so unrelated static modules do not
 inherit a selected module's include directories; the selected OBJECT target
 still receives its own module settings. The configured
-Penqle remote rejected publication with HTTP 403, so this exact local commit
-must be applied from the writable core fork/PR before reproducing elsewhere.
+`Shyalya/tortoise-wow` fork rejected publication with HTTP 403, so this exact
+local commit must be applied from a writable core fork/PR before reproducing
+elsewhere.
 
 ## Narrow post-review cleanup pass — 2026-08-24
 
@@ -156,8 +157,31 @@ applies the default when no movement strategy exists. `BindBotMaster` and
 core fields or replace Headless sessions.
 
 Local validation: cached ON/static `mangosd` passed after the coherent edit
-batch; the final strict PacketBridgeTest passed automatic mature invite
-acceptance and cleanup with no direct accept-action fallback. The final binary
-was deployed with AI enabled, the fixture was then disabled, and the world
-reached ready state. The real-client journey remains intentionally unperformed
-in this pass.
+batch; the earlier AI-enabled image reached world-ready and supplied the
+pending add/remove and packet-bridge evidence. The final native image also
+built, linked, installed, and reached world-ready with the preserved database,
+but used the Docker wrapper's AI-off default, so it is not claimed as a fresh
+AI fixture run after the final synthetic-headless-master authorization. No
+database or Docker volume was reset. The real-client journey remains
+intentionally unperformed in this pass.
+
+## Final merge-hardening pass — 2026-08-24
+
+Feature: current-scope ownership cleanup, controller removal, explicit native
+source selection, optional-data startup safety, disposable-fixture guards, and
+diff hygiene.
+
+Source repository: TortoiseBots `phase4-follow@8eec3a1ea33fd04e42c05eb208f27967858cb0b0`.
+Required core remains `playerbots-integration-gh@9487c5150a6553c665fafc1f4568669b8b00f011`.
+
+Source files: `runtime/BotManager.*`, `runtime/PlayerbotAIAdapter.*`,
+`runtime/PlayerbotRuntimeFacade.cpp`, `commands/BotCommands.cpp`,
+`host/{BotHostAdapter,BotSessionAdapter}.cpp`, mature ownership-transition
+actions, `TortoiseBots.cmake`, `ai/playerbot/{TravelNode,RandomItemMgr}.cpp`,
+and current host/provenance documentation.
+
+Local validation: `git diff --check` passes; no active `BotController` or
+legacy core ownership symbols remain; the final native image built, linked,
+and installed successfully and its preserved Docker stack reached world-ready
+with module SQL migrations applied. The fresh AI-enabled rerun after the final
+authorization remains the next runtime gate.
