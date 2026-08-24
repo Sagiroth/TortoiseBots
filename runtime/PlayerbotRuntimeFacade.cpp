@@ -7,6 +7,11 @@
 
 #include "../ai/playerbot/RandomPlayerbotMgr.h"
 #include "../ai/playerbot/PlayerbotMgr.h"
+#include "../ai/playerbot/PlayerbotAI.h"
+#include "../ai/playerbot/PlayerbotFactory.h"
+#include "../ai/playerbot/PlayerbotAIConfig.h"
+#include "../ai/playerbot/BotState.h"
+#include "../runtime/PlayerbotAIStorage.h"
 #include "BotManager.h"
 
 #include "ObjectAccessor.h"
@@ -27,6 +32,7 @@ struct StoredValue
     uint32 value = 0;
     std::string data;
     int32 validIn = -1;
+    time_t expiresAt = 0;
 };
 
 std::mutex s_valuesMutex;
@@ -204,27 +210,37 @@ uint32 RandomPlayerbotMgr::GetValue(uint32 guid, std::string type)
 {
     std::lock_guard<std::mutex> lock(s_valuesMutex);
     auto it = s_values.find(ValueKey(guid, type));
-    return it == s_values.end() ? 0 : it->second.value;
+    if (it == s_values.end())
+        return 0;
+    if (it->second.expiresAt && time(nullptr) >= it->second.expiresAt)
+        return 0;
+    return it->second.value;
 }
 
 int32 RandomPlayerbotMgr::GetValueValidTime(uint32 guid, std::string event)
 {
     std::lock_guard<std::mutex> lock(s_valuesMutex);
     auto it = s_values.find(ValueKey(guid, event));
-    return it == s_values.end() ? 0 : it->second.validIn;
+    if (it == s_values.end() || !it->second.expiresAt)
+        return it == s_values.end() ? 0 : it->second.validIn;
+    time_t remaining = it->second.expiresAt - time(nullptr);
+    return remaining > 0 ? static_cast<int32>(remaining) : 0;
 }
 
 std::string RandomPlayerbotMgr::GetData(uint32 guid, std::string type)
 {
     std::lock_guard<std::mutex> lock(s_valuesMutex);
     auto it = s_values.find(ValueKey(guid, type));
-    return it == s_values.end() ? std::string() : it->second.data;
+    if (it == s_values.end() || (it->second.expiresAt && time(nullptr) >= it->second.expiresAt))
+        return std::string();
+    return it->second.data;
 }
 
 void RandomPlayerbotMgr::SetValue(uint32 guid, std::string type, uint32 value, std::string data, int32 validIn)
 {
     std::lock_guard<std::mutex> lock(s_valuesMutex);
-    s_values[ValueKey(guid, type)] = StoredValue{value, std::move(data), validIn};
+    time_t expiresAt = validIn > 0 ? time(nullptr) + validIn : 0;
+    s_values[ValueKey(guid, type)] = StoredValue{value, std::move(data), validIn, expiresAt};
 }
 
 void RandomPlayerbotMgr::SetValue(Player* bot, std::string type, uint32 value, std::string data, int32 validIn)
@@ -298,20 +314,38 @@ void RandomPlayerbotMgr::Remove(Player* bot)
         TortoiseBots::BotManager::Instance().RemoveBot(bot->GetObjectGuid(), true);
 }
 
-void RandomPlayerbotMgr::Refresh(Player* /*bot*/)
+void RandomPlayerbotMgr::Refresh(Player* bot)
 {
-    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::Refresh");
+    if (!bot || !IsRandomBot(bot))
+        return;
+
+    PlayerbotFactory factory(bot, bot->GetLevel());
+    factory.Refresh();
 }
 
-void RandomPlayerbotMgr::UpdateGearSpells(Player* /*bot*/)
+void RandomPlayerbotMgr::UpdateGearSpells(Player* bot)
 {
-    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::UpdateGearSpells");
+    if (!bot || !IsRandomBot(bot))
+        return;
+
+    PlayerbotFactory factory(bot, bot->GetLevel());
+    factory.UpgradeGearBest();
 }
 
-bool RandomPlayerbotMgr::ProcessBot(Player* /*player*/)
+bool RandomPlayerbotMgr::ProcessBot(Player* player)
 {
-    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::ProcessBot");
-    return false;
+    if (!player || !IsRandomBot(player) || !player->IsInWorld() || player->IsBeingTeleported())
+        return false;
+
+    if (!player->IsAlive())
+    {
+        Revive(player);
+        return true;
+    }
+
+    if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(player))
+        ai->GetAiObjectContext()->ClearExpiredValues();
+    return true;
 }
 
 bool RandomPlayerbotMgr::GetNamedLocation(std::string const& name, WorldLocation& location)
@@ -339,7 +373,9 @@ void RandomPlayerbotMgr::LoadNamedLocations()
 
 void RandomPlayerbotMgr::LoadBattleMastersCache()
 {
-    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::LoadBattleMastersCache");
+    // Vanilla battleground entries are loaded by the core BattleGroundMgr;
+    // the donor random manager's separate cache is not needed by the native
+    // action path.
 }
 
 InventoryResult RandomPlayerbotMgr::CanEquipUnseenItem(Player* player, uint8 slot, uint16& dest, uint32 item)
@@ -392,14 +428,22 @@ void RandomPlayerbotMgr::RandomTeleportForRpg(Player* /*bot*/, bool /*activeOnly
     ReportUnsupportedRandomFeature("RandomPlayerbotMgr::RandomTeleportForRpg");
 }
 
-void RandomPlayerbotMgr::ChangeStrategy(Player* /*player*/)
+void RandomPlayerbotMgr::ChangeStrategy(Player* player)
 {
-    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::ChangeStrategy");
+    if (!player)
+        return;
+
+    if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(player))
+    {
+        ai->ChangeStrategy(sPlayerbotAIConfig.randomBotCombatStrategies, BotState::BOT_STATE_COMBAT);
+        ai->ChangeStrategy(sPlayerbotAIConfig.randomBotNonCombatStrategies, BotState::BOT_STATE_NON_COMBAT);
+    }
 }
 
-void RandomPlayerbotMgr::Revive(Player* /*player*/)
+void RandomPlayerbotMgr::Revive(Player* player)
 {
-    ReportUnsupportedRandomFeature("RandomPlayerbotMgr::Revive");
+    if (player && player->IsInWorld() && !player->IsAlive())
+        player->RepopAtGraveyard();
 }
 
 void RandomPlayerbotMgr::PrintTeleportCache()
