@@ -94,7 +94,7 @@ Feature: movement-mode coherence, strict packet-trigger acceptance, human
 master reconnect rebinding, controller cleanup, canonical random timing key,
 and concrete PlayerbotAI value null-safety.
 
-Source repository: TortoiseBots `phase4-follow@f6a6c6b683a955d7747a0b4b91291631eb15a509`; required
+Source repository: TortoiseBots `phase4-follow@e0da302058cb1e5021c92272bf22983b2b5ad073`; required
 Penqle core `playerbots-integration-gh@9487c5150a6553c665fafc1f4568669b8b00f011` (parent `133c6d19bf5898c1e4f5129b2890b1db89b17a07`, with `73f32c063e6c4481a0415690896025178ca8076f` as the original seam commit).
 
 Source files: `ai/playerbot/PlayerbotAI.{h,cpp}`,
