@@ -51,7 +51,7 @@ bool IsUsableTeleportPoint(ai::WorldPosition const& point)
     float groundZ = INVALID_HEIGHT;
     float maxZ = terrain->GetWaterOrGroundLevel(point.getX(), point.getY(), point.getZ(), &groundZ, false);
     return groundZ > INVALID_HEIGHT && maxZ > INVALID_HEIGHT &&
-        point.getZ() >= groundZ - 2.0f && point.getZ() <= maxZ + 2.0f;
+        point.getZ() >= groundZ && point.getZ() <= maxZ + 2.0f;
 }
 
 bool TryRandomTeleport(::Player* bot, BotRecord const& record)
@@ -120,7 +120,7 @@ bool TryRandomTeleport(::Player* bot, BotRecord const& record)
         return false;
     }
 
-    bool ok = bot->TeleportTo(chosen->getMapId(), chosen->getX(), chosen->getY(), chosen->getZ(), chosen->getO(), 0);
+    bool ok = bot->TeleportTo(chosen->getMapId(), chosen->getX(), chosen->getY(), chosen->getZ(), bot->GetOrientation(), 0);
     if (ok)
         sLog.outString("TortoiseBots: random teleport bot %s level %u to map %u %.1f %.1f %.1f", bot->GetName(), bot->GetLevel(), chosen->getMapId(), chosen->getX(), chosen->getY(), chosen->getZ());
     else
