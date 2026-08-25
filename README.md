@@ -63,6 +63,14 @@ At a high level the core needs to provide:
 - generic player/world lifecycle hooks
 - generic packet hooks usable by native modules
 
+> [!IMPORTANT]
+> **Requires Penqle PR #411 until merged.**
+> Build against [`Penqle/tortoise-wow#411`](https://github.com/Penqle/tortoise-wow/pull/411)
+> branch `feature/headless-world-session` (`c37e28b`, based on `main` `61a8269`)
+> or wait for `main` to include it. Plain `Penqle/main` without #411 does not
+> provide `SessionTransport::Headless` / GUID-keyed lifecycle and the module
+> will fail to link. Matching module side is `TortoiseBots/integration/penqle-411-baseline` (`19d1934`).
+
 The intended boundary is:
 
 ```text

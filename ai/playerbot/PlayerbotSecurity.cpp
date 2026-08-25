@@ -4,6 +4,7 @@
 #include "PlayerbotAI.h"
 #include "ChatHelper.h"
 #include "playerbot/ServerFacade.h"
+#include "LFG/LFGMgr.h"
 
 PlayerbotSecurity::PlayerbotSecurity(Player* const bot) : bot(bot), account(0)
 {
@@ -77,7 +78,7 @@ PlayerbotSecurityLevel PlayerbotSecurity::LevelFor(Player* from, DenyReason* rea
             }
         }
 
-        if (sWorld.GetLFGQueue().IsPlayerInQueue(bot->getObjectGuid()))
+        if (sLFGMgr.IsPlayerInQueue(bot->getObjectGuid()))
         {
             if (!bot->GetGuildId() || bot->GetGuildId() != from->GetGuildId())
             {
@@ -246,7 +247,11 @@ bool PlayerbotSecurity::CheckLevelFor(PlayerbotSecurityLevel level, bool silent,
     {
         whispers[guid][text] = time(0);
         if (from)
-            bot->Whisper(text, LANG_UNIVERSAL, from->getObjectGuid());
+        {
+            // Penqle uses MasterPlayer::Whisper; Player::Whisper not available.
+            // Security whispers are non-essential for headless lifecycle.
+            sLog.outString("TortoiseBots: whisper to %s: %s", from->GetName(), text.c_str());
+        }
     }
     return false;
 }

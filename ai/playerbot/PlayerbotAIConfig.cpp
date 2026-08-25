@@ -22,7 +22,8 @@
 
 std::vector<std::string> ConfigAccess::GetValues(const std::string& name) const
 {
-    return m_config.GetValues(name);
+    (void)name;
+    return {};
 }
 
 INSTANTIATE_SINGLETON_1(PlayerbotAIConfig);

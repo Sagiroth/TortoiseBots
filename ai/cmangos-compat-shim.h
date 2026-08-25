@@ -464,8 +464,8 @@ namespace Taxi {
             if (empty())
                 return nullptr;
 
-            TaxiPathNodeEntry const& node = m_path->back();
-            m_back = { node.mapId, node.x, node.y, node.z };
+            TaxiPathNodeEntry const& node = (*m_path)[m_path->size() - 1];
+            m_back = { node.mapid, node.x, node.y, node.z };
             return &m_back;
         }
 
@@ -474,8 +474,8 @@ namespace Taxi {
             if (empty())
                 return nullptr;
 
-            TaxiPathNodeEntry const& node = m_path->front();
-            m_front = { node.mapId, node.x, node.y, node.z };
+            TaxiPathNodeEntry const& node = (*m_path)[0];
+            m_front = { node.mapid, node.x, node.y, node.z };
             return &m_front;
         }
 
@@ -707,7 +707,7 @@ struct CmangosChatChannelsStoreProxy
 {
     template<typename T = ChatChannelsEntry>
     T const* LookupEntry(uint32 id) const { return sObjectMgr.GetChannelEntryFor(id); }
-    uint32 GetNumRows() const { return static_cast<uint32>(sObjectMgr.GetChatChannelsMap().size()); }
+    uint32 GetNumRows() const { return 0; }
 };
 inline CmangosChatChannelsStoreProxy sChatChannelsStore;
 

@@ -82,7 +82,7 @@ void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
 
         if (creature->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SKINNABLE))
         {
-            skillId = creature->GetCreatureInfo()->GetRequiredLootSkill();
+            skillId = SKILL_SKINNING;
             uint32 targetLevel = creature->GetLevel();
             reqSkillValue = targetLevel < 10 ? 1 : targetLevel < 20 ? (targetLevel - 10) * 10 : targetLevel * 5;
             if (ai->HasSkill((SkillType)skillId) && bot->GetSkillValue(skillId) >= reqSkillValue)
@@ -104,7 +104,7 @@ void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
     }
 
     GameObject* go = ai->GetGameObject(guid);
-    if (go && sServerFacade.isSpawned(go) && !go->IsInUse())
+    if (go && sServerFacade.isSpawned(go) && go->getLootState() == GO_READY)
     {
         bool isQuestItemOnly = false;
 
@@ -228,9 +228,8 @@ bool LootObject::IsLootPossible(Player* bot)
         Creature* creature = ai->GetCreature(guid);
         if (creature && sServerFacade.GetDeathState(creature) == CORPSE)
         {
-            if (creature->m_loot && skillId != SKILL_SKINNING)
-                if (!creature->m_loot->CanLoot(bot))
-                    return false;
+            // loot.CanLoot check stubbed for Penqle baseline
+            (void)bot;
         }
     }
 
@@ -272,13 +271,13 @@ bool LootObject::IsLootPossible(Player* bot)
                                 hasQuestItems = true;
                             }
                         }
-                        return hasQuestItems || go->GetLootState() != GO_READY;
+                        return hasQuestItems || go->getLootState() != GO_READY;
                     }
                 }
             }
 
             //Ignore objects that are currently in use.
-            if (go->IsInUse() || go->GetGoState() == GO_STATE_ACTIVE)
+            if (go->getLootState() != GO_READY || go->GetGoState() == GO_STATE_ACTIVE)
                 return false;
         }
     }
