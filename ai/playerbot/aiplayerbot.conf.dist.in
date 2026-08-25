@@ -51,7 +51,7 @@ AiPlayerbot.RandomBotAccountPrefix = RNDBOT
 # GenericRpg destination from the persisted in-memory TravelMgr cache. The
 # cache is available when AutoDoQuests=1; with it disabled or no cache rows,
 # the feature fails closed. No DB scan, world scan, or cache generation is
-# performed here. Invalid coords or unavailable terrain/MMap retain logout
+# performed here. Invalid coords or unavailable terrain/navmesh retain logout
 # position. Only applied once on headless login via the generic PlayerScript
 # OnLogin hook, only for BotManager records marked random; owned/manual bots
 # unchanged. Pinned bots (sRandomBotFacade.IsPinnedBot) are skipped. Uses
