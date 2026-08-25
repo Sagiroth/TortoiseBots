@@ -514,15 +514,16 @@ namespace Taxi {
 #endif
 
 // === sScriptDevAIMgr (cmangos has ScriptDevAI; Penqle uses sScriptMgr) ===
-// Stub so symbol resolves; bot's calls are no-ops. The variadic template
-// absorbs whatever cmangos's OnGossipHello signature looks like in the
-// vendor tree — we don't care, we just need a callable returning false.
-// Penqle's own sScriptMgr is wired separately.
-struct CmangosScriptDevAIMgrStub {
-    template<typename... Args>
-    bool OnGossipHello(Args... /*args*/) { return false; }
+// Preserve the donor call shape while delegating to the core's real gossip
+// registry. This keeps creature gossip scripts visible to the bot instead of
+// silently converting every callback into false.
+struct CmangosScriptDevAIMgrAdapter {
+    bool OnGossipHello(Player* player, Creature* creature)
+    {
+        return sScriptMgr.OnGossipHello(player, creature);
+    }
 };
-inline CmangosScriptDevAIMgrStub sScriptDevAIMgr;
+inline CmangosScriptDevAIMgrAdapter sScriptDevAIMgr;
 
 // === BG_AB GO/banner additional defines (cmangos) ===
 #ifndef BG_AB_BANNER_ALLIANCE
