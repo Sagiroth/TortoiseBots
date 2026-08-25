@@ -30,8 +30,7 @@ instead of recreating the old tightly coupled `GetBot()` / `m_bot` /
 - [ ] Manual owned-bot gameplay acceptance
 - [ ] Manual 5-player dungeon acceptance
 
-The exact currently validated revisions and remaining integration work are
-tracked in [`docs/STATUS.md`](docs/STATUS.md).
+The exact currently validated revisions are tracked in Git history and summarized below.
 
 ---
 
@@ -60,7 +59,7 @@ At a high level the core needs to provide:
 > (`feature/headless-world-session`) or wait for `main` to include it.
 > Plain `Penqle/main` without #411 does not provide `SessionTransport::Headless`
 > / GUID-keyed lifecycle and the module will fail to link.
-> See [`docs/STATUS.md`](docs/STATUS.md) for the exact pinned SHAs.
+> Exact pinned SHAs are in Git history (see below).
 
 The intended boundary is:
 
@@ -278,8 +277,7 @@ Still pending:
 - broader Turtle class/spec/content testing
 - large random-bot population testing
 
-See [`docs/STATUS.md`](docs/STATUS.md) for the exact validation boundary and
-pinned core/module SHAs.
+See below for the validation boundary and pinned core/module SHAs.
 
 ---
 
@@ -302,12 +300,21 @@ core. Exact source lineage is recorded in [`docs/PROVENANCE.md`](docs/PROVENANCE
 
 ---
 
+## Licence
+
+* **TortoiseBots module** — GPL-2.0 (see donor headers in `ai/playerbot/`)
+* **Penqle/tortoise-wow** — AGPL-3.0 — combined binary is AGPL-3.0
+
+See [`LICENCE.md`](LICENCE.md) for full details and donor licences.
+
+---
+
 ## Documentation
 
-- [`docs/STATUS.md`](docs/STATUS.md) — current baseline and next work
 - [`docs/PLAN.md`](docs/PLAN.md) — architecture and roadmap
 - [`docs/HOST_API.md`](docs/HOST_API.md) — Penqle/module host contract
 - [`AGENTS.md`](AGENTS.md) — contributor and agent rules
 - [`docs/PROVENANCE.md`](docs/PROVENANCE.md) — donor/source lineage
+- [`LICENCE.md`](LICENCE.md) — upstream and donor licences
 
 Historical audit evidence remains in Git history and (if retained) under `docs/archive/`.

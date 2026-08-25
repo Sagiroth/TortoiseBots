@@ -4,7 +4,6 @@ Use this folder by purpose rather than reading every document on every task.
 
 | Document | Purpose | Read when |
 | --- | --- | --- |
-| [`STATUS.md`](STATUS.md) | Current tested baseline, open issues and immediate next work | Start here for any new task |
 | [`PLAN.md`](PLAN.md) | Durable architecture rules and roadmap | Planning or implementing PlayerBots work |
 | [`HOST_API.md`](HOST_API.md) | Current implemented core/module contract | Touching sessions, lifecycle, packets, commands, build/module integration or core seams |
 | [`PROVENANCE.md`](PROVENANCE.md) | Append-oriented source lineage and validation history | Porting/adapting donor behavior or checking attribution |
@@ -12,7 +11,7 @@ Use this folder by purpose rather than reading every document on every task.
 The active implementation path is:
 
 ```text
-STATUS -> PLAN -> relevant HOST_API/PROVENANCE detail
+PLAN -> relevant HOST_API/PROVENANCE detail
 ```
 
 Historical audit and handover records are not part of the active docs.

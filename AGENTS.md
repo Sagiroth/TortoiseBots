@@ -16,13 +16,12 @@ PlayerBots is rebuilt as a clean, optional module. The Tortoise core must remain
 
 For any PlayerBots work, read in this order:
 
-1. `docs/STATUS.md` — current tested baseline, open issues, immediate next work (resume point).
-2. `docs/PLAN.md` — durable architecture rules and roadmap.
-3. `docs/HOST_API.md` — when touching sessions, lifecycle, packets, commands, build/module integration, or any core seam.
-4. `docs/PROVENANCE.md` — when porting or changing donor-derived behavior.
-5. `docs/README.md` — documentation map.
+1. `docs/PLAN.md` — durable architecture rules and roadmap.
+2. `docs/HOST_API.md` — when touching sessions, lifecycle, packets, commands, build/module integration, or any core seam.
+3. `docs/PROVENANCE.md` — when porting or changing donor-derived behavior.
+4. `docs/README.md` — documentation map.
 
-`docs/STATUS.md` is the resume point. `docs/PLAN.md` is the architecture source of truth. `PLAYERBOTS_AUDIT.md` and `PLAYERBOTS_HANDOVER.md` are historical evidence — use only for a specific finding, otherwise use Git history.
+`docs/PLAN.md` is the architecture source of truth. Historical evidence (audit/handover) lives in Git history and `docs/archive/` if retained.
 
 This repo is self-contained. You do not need any checkout outside it to understand the architecture or to contribute. All required context is in `docs/` and this file.
 
@@ -42,7 +41,7 @@ Unless qualified otherwise, these terms mean `Penqle/tortoise-wow`: upstream, up
 
 1. `Penqle/tortoise-wow` pinned target core
 2. Turtle data / DBC / runtime evidence
-3. This repo's host contract (`docs/HOST_API.md`, `docs/STATUS.md`, `docs/PLAN.md`)
+3. This repo's host contract (`docs/HOST_API.md`, `docs/PLAN.md`)
 4. Shyalya and other donors as references only
 
 Git remote aliases are not authority — always identify a repo by `owner/repo`.

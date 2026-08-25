@@ -2,7 +2,7 @@
 
 > **Append-oriented historical record.** This file is the source-lineage and
 > validation ledger for imported/adapted behavior; it is not the current
-> roadmap. Start with [STATUS.md](STATUS.md) and [PLAN.md](PLAN.md).
+> roadmap. Start with [PLAN.md](PLAN.md).
 
 Record every substantial port/reimplementation here for attribution,
 licensing, reasoning and local validation.

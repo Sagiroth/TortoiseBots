@@ -5,8 +5,7 @@
 
 This file describes the current contract. Historical Phase 1 discovery and design
 proposals remain available in Git history and are not active implementation
-instructions. Read [STATUS.md](STATUS.md) for the current compatible revisions
-and open work.
+instructions.
 
 ## 1. Boundary rule
 
@@ -42,8 +41,8 @@ generic Headless capability proposed as draft PR [#411](https://github.com/Penql
 (`feature/headless-world-session` @ `c37e28b`, based on upstream `main`
 `61a8269`; merge-base `93a5faa`). Not yet merged; the pinned branch remains the validated baseline until #411 lands.
 
-When the core changes, update [STATUS.md](STATUS.md) with the exact tested pair
-instead of assuming compatibility from a branch name.
+When the core changes, record the exact tested core/module pair
+(e.g. in the commit message and README) instead of assuming compatibility from a branch name.
 
 ## 3. Session transport
 
@@ -295,7 +294,7 @@ For the validated local baseline (core `7353989c94399f80572a2f8ec2eb73c63a6c79f8
   registered and invalid literal `0` cleared by migration
   `20260825090000_world.sql`. 17 Turtle ScriptNames remain explicitly
   unverified content gaps — not host API gaps, not PlayerBots blockers, no fake
-  scripts were added. See [STATUS.md](STATUS.md) and
+  scripts were added. See Git history and
   [PLAYERBOTS_AUDIT.md](archive/PLAYERBOTS_AUDIT.md) for the list.
 
 Upstream Penqle status: validated local core checkpoint
