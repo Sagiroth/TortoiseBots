@@ -29,10 +29,10 @@ another PlayerBots implementation.
 
 ## Influences
 
-- [TortoiseWoW Knowledge Base](https://github.com/tortoise-wow-stack/TortoiseWoWKnowledgeBase) — expected behavior and acceptance criteria
 - [CMaNGOS PlayerBots](https://github.com/cmangos/playerbots) — mature combat, movement, and class behavior
 - [MangosZero](https://github.com/mangoszero/server) — lifecycle and native bot-system patterns
 - [Shyalya/tortoise-wow](https://github.com/Shyalya/tortoise-wow) — Turtle WoW 1.18.1 compatibility lessons
+- [mod-playerbots/mod-playerbots](https://github.com/mod-playerbots/mod-playerbots) — Azeroth Core 3.3.5a Playerbots module
 
 These projects are references for behavior and lessons, not architectures to
 copy.
