@@ -92,7 +92,7 @@ Vanilla/Turtle product surface before adding more classes or dungeon behavior.
 | F-08 | P2 | Turtle custom dungeon/zone encounter behavior is not represented by explicit strategies. | Verified external content gap: local SQL assigns `custom_dungeon_portal`, but pinned-core startup reports no such script; no module encounter behavior is advertised. |
 | F-09 | P1/P2 | Talent validation is server-aware, but broad Turtle custom talent interactions remain data/acceptance-test debt. | Final AI startup loaded `TalentSpecs` without validation errors; broad custom talent interactions still require class/spec acceptance coverage. |
 | F-10 | P2 | The configuration template is a large donor configuration surface, including random bots, economy, LFG/social behavior, gear progression, and LLM settings. | Accepted for this baseline as a compatibility template: random population and LLM behavior are off by default, and the retained deferred keys are not a claim of MVP support. A smaller split template remains an ergonomics follow-up. |
-| F-11 | P2/Accepted | The native command surface is intentionally narrower than the Shyalya behavior baseline. | Document partial compatibility and remove stale command registrations. |
+| F-11 | P2/Accepted | The native command surface is intentionally narrower than the Shyalya behavior baseline. | Partial compatibility is documented; the disposable runtime fixture now exercises owned-bot `list`, `stats`, and `follow` through the native `ChatHandler`, while real-client incoming delivery remains separate. |
 | F-12 | P2/Accepted | No PlayerBots client addon is present; only the normal Turtle addons and TortoiseGMManager are installed. | Fine for server-side `.bot` MVP; document addon/state-query work as future scope. |
 | F-13 | P2 | `file(GLOB)` still compiles every action/value/trigger/generic source added to those directories. | A CMake filename guard and repeatable surface script now fail on audited donor families; globs remain a deliberate maintainability trade-off. |
 | F-14 | P2 | The developer quest-ledger script contains hard-coded `/home/ubuntu` paths and is not a runtime module component. | Resolved: moved to `tools/` and made log defaults portable. |
@@ -876,7 +876,8 @@ running container, the core logged AutoUpdater processing from the configured
 applied both `20260824090003_*` migrations. AI startup reached world-ready
 with empty-cache fail-closed logs and direct travel fallback. The disposable
 TBPLAY fixtures produced `PendingAddRemoveTest PASSED`, the six-step
-`AutoTest` lifecycle PASSED, and `PacketBridgeTest group invite/accept PASSED`
+`AutoTest` lifecycle PASSED, `PacketBridgeTest native command surface PASSED`
+for `list`/`stats`/`follow`, and `PacketBridgeTest group invite/accept PASSED`
 followed by `PacketBridgeTest cleanup PASSED`.
 
 The closure pass modified module C++, SQL, CMake, README, and tooling files;
