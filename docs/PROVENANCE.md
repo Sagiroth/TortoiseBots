@@ -497,3 +497,47 @@ fixture rows/state were removed and `AutoTest` restored to `0`; the normal
 restart at `04:14:19.562258645Z` reached world-ready at `04:14:40.631920103Z`.
 No unrun gameplay acceptance is claimed for terrain movement/death, physical
 collection-mount use, taxi, loot, or real-client packet delivery.
+
+## Surface verifier fail-closed correction — 2026-08-25
+
+Feature: make `tools/verify_turtle_surface.sh` fail closed when its required
+ripgrep dependency is unavailable, so the surface/audit gate cannot report a
+false success after `rg` returns command-not-found.
+
+Source repository: TortoiseBots `audit/playerbots-turtle-1.18.1`
+
+Source commit: `9e9567c996d1cbf5c2c3f5949453499589600d4e` (implementation
+commit; the subsequent audit/provenance edit is documentation-only).
+
+Source files: `tools/verify_turtle_surface.sh`.
+
+Copied / ported / independently reimplemented: independently implemented as a
+single `command -v rg` prerequisite check before repository setup and all
+`rg`-based checks. No compatibility stub, replacement search implementation,
+or core change was added.
+
+Reason: with `set -e` and `if rg ...; then` conditions, a missing `rg` can be
+treated as an ordinary false condition and allow the final success message to
+be printed. The verifier must fail closed so its audit/provenance evidence is
+meaningful.
+
+Local validation:
+
+- Missing-ripgrep negative test:
+  `env -i PATH=/tmp/tortoisewow-no-ripgrep /bin/bash tools/verify_turtle_surface.sh`
+  exited `1` and printed
+  `TortoiseBots surface check failed: ripgrep (rg) is required to verify the
+  Turtle module surface`; it did not print `Tortoise WoW 1.18.1 module surface:
+  OK`.
+- Full verifier with ripgrep available:
+  `bash tools/verify_turtle_surface.sh` exited `0` and printed
+  `Tortoise WoW 1.18.1 module surface: OK` on the current source tree.
+- `git diff --check` exited `0` for the implementation correction.
+- No C++ build, Docker image rebuild, database migration, gameplay fixture, or
+  runtime test was run for this shell/docs-only change.
+
+The earlier closure entries that record the verifier as passed are retained as
+historical normal-environment evidence. They did not test the missing-rg path;
+the explicit negative and positive results above are the authoritative
+validation for this correction. F-03 and F-27 remain open core/data follow-ups;
+this change does not add scripts, stubs, or module-side replacements for them.

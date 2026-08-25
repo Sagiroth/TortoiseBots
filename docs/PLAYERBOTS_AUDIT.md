@@ -3,6 +3,7 @@
 - **Date:** 2026-08-24 (final verification 2026-08-25)
 - **Historical audit target:** TortoiseBots `13c0632f6a42f0f685de763c17f19c96bc392892`
 - **Closure implementation:** TortoiseBots `d672048e86b9effc36210d3e6d076741fbeccc7f` (final source snapshot; includes the traced closure, unreachable fish-generator removal, and final active fallback fixes)
+- **Verifier correction:** TortoiseBots `9e9567c996d1cbf5c2c3f5949453499589600d4e` (the surface verifier now fails closed when ripgrep is unavailable)
 - **Target core:** local `tortoise-wow` `9487c5150a6553c665fafc1f4568669b8b00f011` (`playerbots-integration-gh`)
 - **Client/data:** local Turtle WoW 1.18.1 package; the base `WoW.exe` reports client build 5875, while the local Turtle documentation/addon package identifies the patched client as build 7272.
 - **Authority:** local Tortoise core, local extracted DBC/maps/vmaps/mmaps, and local client files. The external wiki was not needed for this audit.
@@ -1070,6 +1071,32 @@ Performed read-only:
 - local reference checkout SHA inspection;
 - local Docker stack status and installed module path inspection;
 - forbidden-symbol and expansion-family searches.
+
+### Surface verifier prerequisite correction — 2026-08-25
+
+The earlier historical entries below that say
+`tools/verify_turtle_surface.sh` passed are normal-environment results. They
+did not exercise an environment without ripgrep and must not be read as
+evidence that the verifier was fail-closed when `rg` was unavailable.
+
+Source commit `9e9567c996d1cbf5c2c3f5949453499589600d4e` adds a prerequisite
+check before the first repository/path or `rg`-based check. The exact focused
+validation was:
+
+- Missing-ripgrep negative test:
+  `env -i PATH=/tmp/tortoisewow-no-ripgrep /bin/bash tools/verify_turtle_surface.sh`
+  exited `1` and printed only
+  `TortoiseBots surface check failed: ripgrep (rg) is required to verify the
+  Turtle module surface`; it did not print the final `module surface: OK`
+  success line.
+- Normal full verifier:
+  `bash tools/verify_turtle_surface.sh` exited `0` and printed
+  `Tortoise WoW 1.18.1 module surface: OK` on the current source tree with
+  ripgrep available.
+- `git diff --check` exited `0` for the correction.
+
+This was a shell/docs-only correction. No C++ build, Docker rebuild, database
+migration, gameplay fixture, or runtime claim was added or refreshed by it.
 
 The exact reviewed checkout was also built through the persistent bind-mounted
 builder:
