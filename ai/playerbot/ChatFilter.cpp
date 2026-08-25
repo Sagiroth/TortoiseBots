@@ -450,9 +450,9 @@ public:
             if (!isRti)
                 continue;
 
-            ObjectGuid rtiTarget = group->GetTargetIcon(RtiTargetValue::GetRtiIndex(rti.substr(1)));
-            if (bot->getObjectGuid() == rtiTarget)
-                return ChatFilter::Filter(message);
+            ObjectGuid rtiTarget; // GetTargetIcon not in Penqle
+            (void)group;
+            (void)rti;
 
             Unit* target = *ai->GetAiObjectContext()->GetValue<Unit*>("current target");
             if (!target)

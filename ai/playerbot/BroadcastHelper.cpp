@@ -1014,7 +1014,7 @@ bool BroadcastHelper::BroadcastSuggestToxicLinks(
         std::vector<uint32> incompleteQuests;
         for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
         {
-            uint32 questId = bot->GetQuestSlotQuestId(slot);
+            uint32 questId = bot->GetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_ID_OFFSET);
             if (!questId)
                 continue;
 

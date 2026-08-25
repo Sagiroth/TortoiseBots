@@ -42,7 +42,8 @@ namespace ai
             if (index == -1)
                 return NULL;
 
-            ObjectGuid guid = group->GetTargetIcon(index);
+            ObjectGuid guid; // Penqle has no GetTargetIcon; raid target via Group not supported in this baseline
+            (void)group; (void)index;
             if (!guid)
                 return NULL;
 
