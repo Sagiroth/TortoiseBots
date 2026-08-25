@@ -1,7 +1,7 @@
 # PLAN.md — TortoiseBots architecture and roadmap
 
 **Status:** Active architecture and roadmap
-**Target:** Tortoise WoW 1.18.1 / Penqle core
+**Target:** Tortoise WoW 1.18.1 core
 **Primary goal:** Useful PlayerBots for Turtle 1.18.1 without rebuilding the old tightly coupled PlayerBots core architecture.
 
 ## 1. Product goal
@@ -164,7 +164,7 @@ session; Headless callbacks resolve the character-GUID session.
 
 ### 4.2 Native module boundary
 
-Penqle loads the repository as:
+The core loads the repository as:
 
 ```text
 modules/TortoiseBots/
@@ -316,7 +316,7 @@ For the validated local baseline (core `7353989c94399f80572a2f8ec2eb73c63a6c79f8
   scripts were added. See Git history and
   [PLAYERBOTS_AUDIT.md](archive/PLAYERBOTS_AUDIT.md) for the 17 names.
 
-Upstream Penqle publication of the core checkpoint is pending — validated as a
+Upstream publication of the core checkpoint is pending — validated as a
 local pinned baseline, not a merged upstream PR.
 the exact core SHA and upstream status.
 

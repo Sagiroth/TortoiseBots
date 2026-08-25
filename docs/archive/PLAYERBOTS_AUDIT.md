@@ -88,7 +88,7 @@ Vanilla/Turtle product surface before adding more classes or dungeon behavior.
 
 | ID | Severity | Finding | Status |
 | --- | --- | --- | --- |
-| F-01 | P0 | Module SQL install path does not match the core's effective case-sensitive AutoUpdater configuration. | Resolved in `TortoiseBots.cmake` against Penqle's configured `world/character` names; preserved-stack AutoUpdater application verified. |
+| F-01 | P0 | Module SQL install path does not match the core's effective case-sensitive AutoUpdater configuration. | Resolved in `TortoiseBots.cmake` against the core's configured `world/character` names; preserved-stack AutoUpdater application verified. |
 | F-02 | P0 | The local core has a stale untracked module copy, and `BUILD_PLAYERBOTS=OFF` does not itself gate an explicitly enabled native module. | Native CMake forcing is resolved; the supported builder bind-mounts this checkout and CMake prints `/work/core/modules/TortoiseBots` plus the exact implementation snapshot `d672048e86b9effc36210d3e6d076741fbeccc7f`. A disposable tracked-core archive with no `modules/TortoiseBots` path configured and built successfully with `BUILD_PLAYERBOTS=OFF`, `BUILD_LEGACY_PLAYERBOTS=OFF`, and `MODULES=disabled`; only the stale direct-core workflow remains external follow-up. |
 | F-03 | P1 | Bot-specific legacy code remains in the core: LFT random-bot filling, bot command stubs, bot slots, and legacy module hooks. | Resolved in core commit `7353989c`; the tracked legacy tree remains an explicit unsupported escape hatch only. |
 | F-04 | P1 | Active native code retains later-expansion consumable IDs, item IDs, spell IDs, and level gates. | Resolved: audited absent spell/item branches, later flag/totem auras, invalid quest-item branches, post-60 level formulas, WotLK/TBC mana-gem IDs, and the level-70 Druid reagent branch are removed; retained level-60/Turtle rows were revalidated against local core data. |
@@ -125,7 +125,7 @@ action” wording in the finding bodies below.
 ### Resolved inside TortoiseBots
 
 - `TortoiseBots.cmake` installs `data/sql/world` and `data/sql/char` to the
-  configured `world/character` folders in Penqle's `mangosd.conf.dist.in`.
+  configured `world/character` folders in `mangosd.conf.dist.in`.
   It selects the native module through
   `MODULE_TORTOISEBOTS` and no longer injects the legacy
   `BUILD_PLAYERBOTS=1` define.
@@ -391,7 +391,7 @@ TortoiseBots.cmake:27-33
 .../modules/TortoiseBots/data/sql/character
 ```
 
-The effective Penqle deployment contract is case-sensitive and is defined by
+The effective core deployment contract is case-sensitive and is defined by
 the shipped `src/mangosd/mangosd.conf.dist.in`:
 
 ```text
@@ -565,7 +565,7 @@ semantics:
 | --- | --- | --- |
 | `:224-238` | Only the active ordinary triggered/untriggered distinction is retained; unused ignore-GCD/aura-scaling aliases are removed. | Donor callers needing those extra flags still require a core adapter. |
 | `:483-497` | `Taxi::Map` reads the live `Player::GetTaxi().GetTaxiPath()` route. | In-flight route reasoning is available. |
-| `:516-525` | ScriptDevAI-shaped gossip callback delegates to Penqle's `sScriptMgr.OnGossipHello(Player*, Creature*)`. | Core creature gossip is preserved through the generic registry; custom gossip still needs focused bot acceptance coverage. |
+| `:516-525` | ScriptDevAI-shaped gossip callback delegates to the core's `sScriptMgr.OnGossipHello(Player*, Creature*)`. | Core creature gossip is preserved through the generic registry; custom gossip still needs focused bot acceptance coverage. |
 | `:688-700` | Chat-channel store now delegates to `ObjectMgr::GetChannelEntryFor` and the loaded map. | The core owns the channel definitions; automatic bot channel-join behavior still lacks a focused runtime acceptance journey. |
 | `TravelNode.cpp::generateTransportNodes` | Empty-path elevator/animation generation is explicitly skipped because the core has no `TransportAnim` source. | Elevator travel remains unsupported rather than silently pretending to work. |
 | `:794-810` | Emote sound lookup returns null because no core `EmotesTextSound` loader exists. | Sound-dependent emote behavior is unavailable. |

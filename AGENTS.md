@@ -55,7 +55,7 @@ All references are remote, read-only, and optional. Clone only what you need for
 | Reference | URL | Purpose |
 | --- | --- | --- |
 | Knowledge Base | <https://github.com/tortoise-wow-stack/TortoiseWoWKnowledgeBase> | Behavioral spec, capability inventory, command reference, acceptance-test inspiration |
-| Penqle core | <https://github.com/Penqle/tortoise-wow> | Target core |
+| Upstream core | <https://github.com/Penqle/tortoise-wow> | Target core (`Penqle/tortoise-wow`) |
 | Shyalya fork | <https://github.com/Shyalya/tortoise-wow> | Turtle 1.18.1 compatibility evidence, known API differences, Turtle fixes |
 | CMaNGOS PlayerBots | <https://github.com/cmangos/playerbots> | Existing combat/movement/class/healing/CC/dungeon behavior |
 | CMaNGOS Classic | <https://github.com/cmangos/mangos-classic> | What CMaNGOS PlayerBots expects from its host |

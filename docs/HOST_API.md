@@ -1,6 +1,6 @@
 # HOST_API — current TortoiseBots host contract
 
-**Target:** Tortoise WoW 1.18.1 / Penqle core
+**Target:** Tortoise WoW 1.18.1 core
 **Purpose:** describe the implemented generic core/module boundary used by TortoiseBots.
 
 This file describes the current contract. Historical Phase 1 discovery and design
@@ -36,7 +36,7 @@ TortoiseBots tested code checkpoint: 07cf7976c546fac27083c7b46e73299c25b095f3
 Validated local core checkpoint:
 `7353989c94399f80572a2f8ec2eb73c63a6c79f8` (historical branch `cleanup/f03-f27-code-freeze`)
 
-Upstream Penqle status:
+Upstream status:
 generic Headless capability proposed as draft PR [#411](https://github.com/Penqle/tortoise-wow/pull/411)
 (`feature/headless-world-session` @ `c37e28b`, based on upstream `main`
 `61a8269`; merge-base `93a5faa`). Not yet merged; the pinned branch remains the validated baseline until #411 lands.
@@ -202,7 +202,7 @@ by the module/core boundary.
 
 ## 12. Native module/build contract
 
-Penqle consumes the repository at:
+The core consumes the repository at:
 
 ```text
 modules/TortoiseBots/
@@ -297,7 +297,7 @@ For the validated local baseline (core `7353989c94399f80572a2f8ec2eb73c63a6c79f8
   scripts were added. See Git history and
   [PLAYERBOTS_AUDIT.md](archive/PLAYERBOTS_AUDIT.md) for the list.
 
-Upstream Penqle status: validated local core checkpoint
+Upstream status: validated local core checkpoint
 `7353989c94399f80572a2f8ec2eb73c63a6c79f8` on branch
 `cleanup/f03-f27-code-freeze`; generic Headless subset proposed as draft PR
 [#411](https://github.com/Penqle/tortoise-wow/pull/411). Remaining F-27 names are
