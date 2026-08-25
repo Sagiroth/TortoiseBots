@@ -21,6 +21,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     ERROR_QUIET)
   if(NOT TORTOISEBOTS_GIT_RESULT EQUAL 0)
     set(TORTOISEBOTS_SOURCE_COMMIT "unknown")
+    set(TORTOISEBOTS_SOURCE_STATE "unknown")
   else()
     execute_process(
       COMMAND git -c "safe.directory=${TORTOISEBOTS_ROOT}" -C "${TORTOISEBOTS_ROOT}" status --porcelain --untracked-files=all
