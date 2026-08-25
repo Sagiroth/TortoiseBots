@@ -23,15 +23,14 @@ instead of recreating the old tightly coupled `GetBot()` / `m_bot` /
 - [x] Mature `PlayerbotAI` integrated
 - [x] All nine Vanilla classes included
 - [x] Vanilla/Turtle 1.18.1 cleanup and compatibility audit completed
-- [x] Headless session lifecycle validated against the local integration baseline
-- [x] PlayerBots-enabled and module-disabled builds validated locally
+- [x] Headless session lifecycle validated against the pinned baseline
+- [x] PlayerBots-enabled and module-disabled builds validated
 - [ ] Smoke test against the current Penqle modular core
 - [ ] Upstream the required generic Headless session API
 - [ ] Manual owned-bot gameplay acceptance
 - [ ] Manual 5-player dungeon acceptance
 
-The exact currently validated revisions and remaining integration work are
-tracked in [`docs/STATUS.md`](docs/STATUS.md).
+The exact currently validated revisions are tracked in Git history and summarized below.
 
 ---
 
@@ -43,7 +42,7 @@ core.
 
 ### Generic Headless sessions
 
-TortoiseBots needs the core (`tortoise-wow`) to support a `WorldSession` without a network client.
+TortoiseBots needs the core to support a `WorldSession` without a network client.
 
 At a high level the core needs to provide:
 
@@ -57,10 +56,10 @@ At a high level the core needs to provide:
 > [!IMPORTANT]
 > **Requires Penqle PR #411 until merged.**
 > Build against [`Penqle/tortoise-wow#411`](https://github.com/Penqle/tortoise-wow/pull/411)
-> branch `feature/headless-world-session` (`c37e28b`, based on `main` `61a8269`)
-> or wait for `main` to include it. Plain `Penqle/main` without #411 does not
-> provide `SessionTransport::Headless` / GUID-keyed lifecycle and the module
-> will fail to link. Matching module side is `TortoiseBots/integration/penqle-411-baseline` (`19d1934`).
+> (`feature/headless-world-session`) or wait for `main` to include it.
+> Plain `Penqle/main` without #411 does not provide `SessionTransport::Headless`
+> / GUID-keyed lifecycle and the module will fail to link.
+> Exact pinned SHAs are in Git history (see below).
 
 The intended boundary is:
 
@@ -159,19 +158,14 @@ One account
     +-- zero or more Headless character sessions
 ```
 
-Network sessions remain account-keyed.
-
-Headless sessions are keyed by character GUID.
+Network sessions remain account-keyed. Headless sessions are keyed by character GUID.
 
 This allows a connected player and owned alternate characters to coexist
 without fake account IDs or dedicated bot accounts.
 
-The core owns `WorldSession` lifetime.
+The core owns `WorldSession` lifetime. TortoiseBots owns bot records and AI.
 
-TortoiseBots owns bot records, controllers and AI.
-
-The detailed integration contract is documented in
-[`docs/HOST_API.md`](docs/HOST_API.md).
+The detailed integration contract is documented in [`docs/HOST_API.md`](docs/HOST_API.md).
 
 ---
 
@@ -193,9 +187,7 @@ The native command surface currently includes:
 ```
 
 `.bot command` forwards into the mature PlayerBots command system for the
-selected bot.
-
-Commands enforce normal account ownership or GM authority.
+selected bot. Commands enforce normal account ownership or GM authority.
 
 ---
 
@@ -267,17 +259,13 @@ corresponding feature has completed gameplay acceptance.
 
 ## Validation
 
-The local integration baseline has recorded evidence for:
+The pinned baseline has recorded evidence for:
 
-- module-enabled build
-- module-disabled build
+- module-enabled and module-disabled builds
 - module loading and world-ready startup
-- Headless character login
-- AI attachment
-- save / logout / relogin
+- Headless character login, AI attachment, save / logout / relogin
 - same-account human reclaim
-- native command dispatch
-- group invite handling
+- native command dispatch and group invite handling
 - Goblin and High Elf lifecycle fixtures
 - repeatable module migrations
 
@@ -289,7 +277,7 @@ Still pending:
 - broader Turtle class/spec/content testing
 - large random-bot population testing
 
-See [`docs/STATUS.md`](docs/STATUS.md) for the exact current validation boundary.
+See below for the validation boundary and pinned core/module SHAs.
 
 ---
 
@@ -308,18 +296,25 @@ Major donor/reference sources include:
 - [mod-playerbots](https://github.com/mod-playerbots/mod-playerbots)
 
 These repositories are behavior and compatibility references, not the target
-core.
+core. Exact source lineage is recorded in [`docs/PROVENANCE.md`](docs/PROVENANCE.md).
 
-Exact source lineage is recorded in
-[`docs/PROVENANCE.md`](docs/PROVENANCE.md).
+---
+
+## Licence
+
+* **TortoiseBots module** — GPL-2.0 (see donor headers in `ai/playerbot/`)
+* **Penqle/tortoise-wow** — AGPL-3.0 — combined binary is AGPL-3.0
+
+See [`LICENCE.md`](LICENCE.md) for full details and donor licences.
 
 ---
 
 ## Documentation
 
-- [`docs/STATUS.md`](docs/STATUS.md) — current baseline and next work
 - [`docs/PLAN.md`](docs/PLAN.md) — architecture and roadmap
 - [`docs/HOST_API.md`](docs/HOST_API.md) — Penqle/module host contract
 - [`AGENTS.md`](AGENTS.md) — contributor and agent rules
 - [`docs/PROVENANCE.md`](docs/PROVENANCE.md) — donor/source lineage
-- [`docs/PLAYERBOTS_AUDIT.md`](docs/PLAYERBOTS_AUDIT.md) — historical audit evidence
+- [`LICENCE.md`](LICENCE.md) — upstream and donor licences
+
+Historical audit evidence remains in Git history and (if retained) under `docs/archive/`.

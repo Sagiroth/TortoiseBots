@@ -2,7 +2,7 @@
 
 > **Historical audit snapshot.** This file preserves the deep PR #13 audit,
 > finding bodies, and validation evidence. It is not the current execution
-> plan. Start with [STATUS.md](STATUS.md) and [PLAN.md](PLAN.md); use this file
+> plan. Start with [PLAN.md](PLAN.md); use this file
 > when investigating a specific finding or historical claim.
 
 - **Date:** 2026-08-24 (final verification 2026-08-25)

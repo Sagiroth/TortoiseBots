@@ -4,9 +4,6 @@
 **Target:** Tortoise WoW 1.18.1 / Penqle core
 **Primary goal:** Useful PlayerBots for Turtle 1.18.1 without rebuilding the old tightly coupled PlayerBots core architecture.
 
-Read [STATUS.md](STATUS.md) first for the current tested baseline, open findings
-and immediate next work.
-
 ## 1. Product goal
 
 TortoiseBots should let a small number of human players use owned bots for
@@ -316,16 +313,16 @@ For the validated local baseline (core `7353989c94399f80572a2f8ec2eb73c63a6c79f8
   registered and invalid literal ScriptName `0` is cleared by migration
   `20260825090000_world.sql`; 17 Turtle ScriptNames remain explicitly
   unverified content gaps — not PlayerBots architecture blockers, no fake
-  scripts were added. See [STATUS.md](STATUS.md) and
-  [PLAYERBOTS_AUDIT.md](PLAYERBOTS_AUDIT.md) for the 17 names.
+  scripts were added. See Git history and
+  [PLAYERBOTS_AUDIT.md](archive/PLAYERBOTS_AUDIT.md) for the 17 names.
 
 Upstream Penqle publication of the core checkpoint is pending — validated as a
-local pinned baseline, not a merged upstream PR. See [STATUS.md](STATUS.md) for
+local pinned baseline, not a merged upstream PR.
 the exact core SHA and upstream status.
 
 ### 6.2 Known-good pair
 
-Recorded in [STATUS.md](STATUS.md):
+Recorded as:
 
 ```text
 TortoiseBots tested code checkpoint: 07cf7976c546fac27083c7b46e73299c25b095f3
@@ -333,7 +330,7 @@ Pinned core checkpoint:              7353989c94399f80572a2f8ec2eb73c63a6c79f8
 ```
 
 PR #15 adds documentation-only closure commits after the tested code checkpoint;
-they do not change tested behavior. Do not require STATUS.md to contain its own
+they do not change tested behavior.
 final commit SHA.
 
 ## 7. Manual gameplay phase
@@ -488,8 +485,8 @@ Use the smallest check that proves the current change.
 - build-gating change -> directly affected configurations;
 - phase/PR boundary -> one final relevant optional-build/runtime gate.
 
-Use the persistent builder from sibling `tortoise-docker-penqle`. Do not fall
-back to full Docker image rebuilds for normal source edits.
+Use your local build environment or Docker stack if you have one. Avoid
+full image rebuilds for normal source edits.
 
 A previous successful test remains evidence for unchanged code/behavior.
 Do not replay historical lifecycle fixtures merely for ceremony.
@@ -526,11 +523,10 @@ A first useful release is ready when:
 
 Use the documentation set by purpose:
 
-- [STATUS.md](STATUS.md) — current tested state and immediate next work;
 - [PLAN.md](PLAN.md) — durable architecture and roadmap;
 - [HOST_API.md](HOST_API.md) — implemented core/module contract;
 - [PROVENANCE.md](PROVENANCE.md) — append-oriented source lineage/validation;
-- [PLAYERBOTS_AUDIT.md](PLAYERBOTS_AUDIT.md) — historical audit evidence.
+- [PLAYERBOTS_AUDIT.md](archive/PLAYERBOTS_AUDIT.md) — historical audit evidence.
 
 Historical handovers and audit bodies are evidence, not active implementation
 instructions. Use Git history when older design proposals are needed.
