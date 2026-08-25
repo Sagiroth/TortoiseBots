@@ -22,8 +22,83 @@
 #include "Chat.h"
 #include "Group/Group.h"
 #include "../commands/BotCommands.h"
+#include "../ai/playerbot/PlayerbotAIConfig.h"
+#include "../ai/playerbot/TravelMgr.h"
+#include "../ai/playerbot/WorldPosition.h"
+#include "../ai/playerbot/strategy/values/TravelValues.h"
 
 namespace TortoiseBots {
+
+namespace {
+// One-shot headless RNDBOT scatter using persisted GenericRpg destinations.
+// Fail-closed: any validation miss retains original position. No DB scan,
+// no GenerateTravelNodes, no homebind update.
+bool TryRandomTeleport(::Player* bot, BotRecord const& record)
+{
+    if (!sPlayerbotAIConfig.enableRandomTeleports)
+        return false;
+    if (!bot || !bot->GetSession() || !bot->GetSession()->IsHeadless())
+        return false;
+    if (!record.random)
+        return false;
+    if (bot->IsBeingTeleported())
+        return false;
+    if (!bot->IsInWorld())
+        return false;
+    if (sRandomBotFacade.IsPinnedBot(bot->GetGUIDLow()))
+    {
+        sLog.outString("TortoiseBots: random teleport skipped pinned bot %s", bot->GetName());
+        return false;
+    }
+    ::PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+    if (!ai)
+    {
+        sLog.outString("TortoiseBots: random teleport no AI for bot %s, retaining position", bot->GetName());
+        return false;
+    }
+    ai::PlayerTravelInfo info(bot);
+    auto& travelMgr = MaNGOS::Singleton<ai::TravelMgr>::Instance();
+    auto dests = travelMgr.GetDestinations(info, (uint32)ai::TravelDestinationPurpose::GenericRpg, {}, true, 10000.0f);
+    if (dests.empty())
+    {
+        sLog.outString("TortoiseBots: random teleport no GenericRpg destinations for bot %s level %u (cache empty or no level match)", bot->GetName(), bot->GetLevel());
+        return false;
+    }
+    std::vector<ai::WorldPosition*> candidates;
+    candidates.reserve(64);
+    for (auto* dest : dests)
+    {
+        if (!dest) continue;
+        const auto& points = dest->GetPoints();
+        for (auto* p : points)
+        {
+            if (!p) continue;
+            if (!p->isOverworld()) continue;
+            if (!p->isValid()) continue;
+            if (!p->loadMapAndVMap(0)) continue;
+            if (!ai::TravelMgr::IsLocationLevelValid(*p, info, (uint32)ai::TravelDestinationPurpose::GenericRpg)) continue;
+            candidates.push_back(p);
+        }
+    }
+    if (candidates.empty())
+    {
+        sLog.outString("TortoiseBots: random teleport no valid overworld point for bot %s level %u", bot->GetName(), bot->GetLevel());
+        return false;
+    }
+    ai::WorldPosition* chosen = candidates[urand(0, (uint32)candidates.size() - 1)];
+    if (!chosen || !chosen->isValid() || !chosen->isOverworld() || !chosen->loadMapAndVMap(0))
+    {
+        sLog.outError("TortoiseBots: random teleport chosen point invalid for bot %s, retaining position", bot->GetName());
+        return false;
+    }
+    bool ok = bot->TeleportTo(chosen->getMapId(), chosen->getX(), chosen->getY(), chosen->getZ(), chosen->getO() ? chosen->getO() : bot->GetOrientation(), 0);
+    if (ok)
+        sLog.outString("TortoiseBots: random teleport bot %s level %u to map %u %.1f %.1f %.1f", bot->GetName(), bot->GetLevel(), chosen->getMapId(), chosen->getX(), chosen->getY(), chosen->getZ());
+    else
+        sLog.outError("TortoiseBots: random teleport TeleportTo failed for bot %s to map %u %.1f %.1f %.1f, retaining position", bot->GetName(), chosen->getMapId(), chosen->getX(), chosen->getY(), chosen->getZ());
+    return ok;
+}
+} // namespace
 
 BotEntry::~BotEntry() = default;
 
@@ -69,6 +144,9 @@ void BotManager::OnPlayerLogin(::Player* player)
         if (!entry.aiAdapter->Initialize())
             sLog.outError("TortoiseBots: PlayerbotAI attach failed for %s", player->GetName());
     }
+
+    // One-shot random scatter on headless login only; fail-closed, no DB mutation, no homebind
+    TryRandomTeleport(player, record);
 
     sLog.outString("TortoiseBots: bot %s entered world through native PlayerScript", player->GetName());
 }

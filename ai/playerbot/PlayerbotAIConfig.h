@@ -152,6 +152,9 @@ public:
     bool botsSaveEpics;
     //
     bool randomBotLoginAtStartup;
+    // Scatter random bots on headless login to a validated level-appropriate
+    // GenericRpg destination. Default off; fail-closed when travel cache empty.
+    bool enableRandomTeleports = false;
     bool logInGroupOnly, logValuesPerTick;
     bool fleeingEnabled;
     bool summonAtInnkeepersEnabled;
