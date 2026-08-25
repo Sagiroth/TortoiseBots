@@ -41,9 +41,9 @@ bool IsUsableTeleportPoint(ai::WorldPosition const& point)
     if (!point.isOverworld() || !point.isValid() || !point.loadMapAndVMap(0))
         return false;
 
-    // GetWaterOrGroundLevel loads the map grid and its VMAP data. Reject points
-    // with no terrain height or with a stale spawn Z instead of teleporting a
-    // bot into the ground or into the air.
+    // loadMapAndVMap above validates the navmesh; getTerrain and
+    // GetWaterOrGroundLevel load the map grid/VMAP and resolve terrain height.
+    // Reject stale spawn Z instead of teleporting a bot into the ground or air.
     TerrainInfo const* terrain = point.getTerrain();
     if (!terrain)
         return false;
