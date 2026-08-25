@@ -83,14 +83,14 @@ Vanilla/Turtle product surface before adding more classes or dungeon behavior.
 | ID | Severity | Finding | Status |
 | --- | --- | --- | --- |
 | F-01 | P0 | Module SQL install path does not match the core's effective case-sensitive AutoUpdater configuration. | Resolved in `TortoiseBots.cmake` against Penqle's configured `world/character` names; preserved-stack AutoUpdater application verified. |
-| F-02 | P0 | The local core has a stale untracked module copy, and `BUILD_PLAYERBOTS=OFF` does not itself gate an explicitly enabled native module. | Native CMake forcing is resolved; the supported builder bind-mounts this checkout and CMake now prints `/work/core/modules/TortoiseBots` plus exact clean verified implementation commit `53c054a26a0faff072dd54c42445d5273be91749`. The stale sibling copy and direct-core workflow remain external follow-up. |
+| F-02 | P0 | The local core has a stale untracked module copy, and `BUILD_PLAYERBOTS=OFF` does not itself gate an explicitly enabled native module. | Native CMake forcing is resolved; the supported builder bind-mounts this checkout and CMake now prints `/work/core/modules/TortoiseBots` plus the exact verified implementation snapshot `7e08fc810060e77839d4f38c813cc7eba9b05737`. The stale sibling copy and direct-core workflow remain external follow-up. |
 | F-03 | P1 | Bot-specific legacy code remains in the core: LFT random-bot filling, bot command stubs, bot slots, and legacy module hooks. | Open core-owned follow-up; no new module coupling was added. |
 | F-04 | P1 | Active native code retains later-expansion consumable IDs, item IDs, spell IDs, and level gates. | Resolved: audited absent spell/item branches, post-60 level formulas, WotLK/TBC mana-gem IDs, and the level-70 Druid reagent branch are removed; retained level-60/Turtle rows were revalidated against local core data. |
-| F-05 | P1 | The compatibility shim contains silent no-op/default implementations for movement, instance, chat-channel, transport, formation, emote, session-state, and loot semantics. | Partially resolved: active chase/follow inspection uses the native generator target, live taxi routes and loot targets use core APIs, loaded channel definitions are exposed through ObjectMgr, and supported movement paths avoid private donor state; remaining capability debt is explicit and not advertised as complete Turtle behavior. |
-| F-06 | P1/P2 | Custom Goblin/High Elf starting areas are deliberately bypassed because local navigation data is incomplete. | Keep as an explicit limitation until custom MMAP/pathing is validated. |
+| F-05 | P1 | The compatibility shim contains silent no-op/default implementations for movement, instance, chat-channel, transport, formation, emote, session-state, and loot semantics. | Partially resolved: active chase/follow inspection uses the native generator target, live taxi routes and loot targets use core APIs, dead instance/session/formation/loot-type scaffolding is removed, and unsupported elevator transport is explicit; remaining emote/trigger-cast/loot-roll semantics are not advertised as complete Turtle behavior. |
+| F-06 | P1/P2 | Custom Goblin/High Elf starting areas were deliberately bypassed because local navigation data was believed incomplete. | Module bypasses are removed: current core `playercreateinfo` rows and the runtime dataset contain terrain/MMAP data for both custom start regions. The exact High Elf tile has no VMap file, so focused in-game movement/death acceptance remains separate. |
 | F-07 | P1/P2 | Turtle collection mounts are not modeled by the factory/randomization path. | Partially resolved with core `collection_mount` lookup plus existing-inventory/full-list support; factory spell initialization follows the existing classic factory model, while item-use gameplay acceptance remains future work. |
 | F-08 | P2 | Turtle custom dungeon/zone encounter behavior is not represented by explicit strategies. | Verified external content gap: local SQL assigns `custom_dungeon_portal`, but pinned-core startup reports no such script; no module encounter behavior is advertised. |
-| F-09 | P1/P2 | Talent validation is server-aware, but broad Turtle custom talent interactions remain data/acceptance-test debt. | Final AI startup loaded `TalentSpecs` without validation errors; broad custom talent interactions still require class/spec acceptance coverage. |
+| F-09 | P1/P2 | Talent validation is server-aware, but broad Turtle custom talent interactions remain data/acceptance-test debt. | Validator correctness is improved: it now checks total points across all three trees, rejects missing prerequisites safely, and resets per-row rank metadata; broad custom talent interactions still require class/spec acceptance coverage. |
 | F-10 | P2 | The configuration template is a large donor configuration surface, including random bots, economy, LFG/social behavior, gear progression, and LLM settings. | Accepted for this baseline as a compatibility template: random population and LLM behavior are off by default, and the retained deferred keys are not a claim of MVP support. A smaller split template remains an ergonomics follow-up. |
 | F-11 | P2/Accepted | The native command surface is intentionally narrower than the Shyalya behavior baseline. | Partial compatibility is documented; the disposable runtime fixture now exercises owned-bot `list`, `stats`, and `follow` through the native `ChatHandler`, while real-client incoming delivery remains separate. |
 | F-12 | P2/Accepted | No PlayerBots client addon is present; only the normal Turtle addons and TortoiseGMManager are installed. | Fine for server-side `.bot` MVP; document addon/state-query work as future scope. |
@@ -192,17 +192,22 @@ valid Tortoise data until the core data itself changes.
   follow/chase target and current geometric angle/offset through the local
   core's public `MotionMaster::GetCurrent()`/targeted-generator contract;
   follow/chase decisions no longer compare against fabricated zero offsets.
-  The channel proxy now reads the core's loaded `ChatChannels` map, and taxi
-  route inspection reads `Player::GetTaxi().GetTaxiPath()`. Against the local
-  core, `GetTransportAnimInfo()` remains
-  absent/null, `MotionMaster::MoveInFormation` is a no-op compatibility
-  method, and no `EmotesTextSound` loader exists even though the client DBC is
-  present. The module uses its own formation math, direct taxi/travel paths,
-  target-aware native loot resolution, core-backed creature gossip, and generic session
-  transport for the supported MVP;
-  the remaining donor-only semantics require targeted core adapters/tests.
-- F-06 remains accepted: Goblin/High Elf custom starts use safe homebind or
-  direct movement because the local custom navigation data is incomplete.
+  The channel proxy reads the core's loaded `ChatChannels` map, and taxi route
+  inspection reads `Player::GetTaxi().GetTaxiPath()`. The module now omits the
+  dead donor instance/session/formation/loot-type scaffolding and reports
+  elevator transports as unsupported because the pinned core has no
+  `TransportAnim` loader. No `EmotesTextSound` loader exists even though the
+  client DBC is present, and trigger-cast flags/loot-roll state remain lossy.
+  The module uses its own formation math, direct taxi/travel paths,
+  target-aware native loot resolution, core-backed creature gossip, and
+  generic session transport for the supported MVP; the remaining donor-only
+  semantics require targeted core adapters/tests.
+- F-06's old bypass is removed after checking the actual target data: the core
+  `playercreateinfo` rows place Goblins at Blackstone Island and High Elves at
+  Thalassian Highlands. The runtime dataset has terrain/MMAP for both start
+  tiles; the exact High Elf tile has no VMap file. A focused bot
+  movement/death journey is still required before claiming complete
+  custom-zone gameplay.
   F-08 remains an external Turtle-content gap: the pinned core logs
   `Script not found: custom_dungeon_portal` for custom dungeon portal rows, so
   the module does not guess teleport destinations or claim encounter support.
@@ -215,10 +220,10 @@ valid Tortoise data until the core data itself changes.
 
 | Area | Verified local evidence | Current product conclusion |
 | --- | --- | --- |
-| Custom races and starts | Core `SharedDefines.h` defines Goblin `9` and High Elf `10`; local `playercreateinfo` data contains their legal class combinations; `PlayerbotAIConfig.cpp` and `TravelNode.cpp` recognize both. | Race legality is wired. The custom Blackstone Island/Thalassian Highlands starts are deliberately avoided because the available navigation data does not support them; bots use safe homebind/direct movement. |
+| Custom races and starts | Core `SharedDefines.h` defines Goblin `9` and High Elf `10`; local `playercreateinfo` data contains their legal class combinations; `PlayerbotAIConfig.cpp` and `TravelNode.cpp` recognize both. Runtime start tiles are `maps/0013245.map` + `mmaps/0013245.mmtile` for Goblin and `maps/0002536.map` + `mmaps/0002536.mmtile` for High Elf; `vmaps/000_25_36.vmtile` is absent. | Race legality and core-defined placement are wired. The previous module bypass is removed; custom-zone movement/death still needs focused runtime acceptance, especially on the High Elf tile without VMap. |
 | Custom and retained spells | Local core `Spell.dbc`/`tw_world_spell_template.sql` contain the retained Turtle IDs `42003`, `51322-51323`, `51442-51445`, `28610`, `28612`, `31016`, and `31018`; the audited absent IDs were removed from active module source. | No spell is retained solely because its numeric range looks plausible. Custom spell behavior beyond the verified IDs still needs class/spec acceptance coverage. |
 | Talents | `Talentspec.cpp` validates link syntax, class/rank limits, dependencies, tree-row ordering, and available points against loaded `Talent.dbc`/server stores; final AI startup logged `Loading TalentSpecs` without `Error with premade` or `No premade` failures. | The loader contract is valid, but broad Turtle reworked-talent interactions are not claimed complete without per-class/spec runtime acceptance. |
-| Locations and navigation | Core custom start coordinates and local map/MMAP availability were inspected; `TravelMgr` excludes the two player-only custom start ranges and startup uses direct movement with travel-node generation disabled. | Location lookup is core-data-driven where supported. Unsupported custom-zone navigation remains an explicit limitation, not a guessed path. |
+| Locations and navigation | Core custom start coordinates and local map/MMAP availability were inspected; `TravelMgr` no longer excludes either custom range and startup uses direct movement with travel-node generation disabled. | Location lookup is core-data-driven. Full movement/death acceptance remains open because the High Elf tile has no VMap. |
 | Collection mounts | Core `MountManager` loads `collection_mount`; core Turtle scripts consume its item-to-spell mapping. Module `MountValue`/factory lookup uses the same mapping; verified examples include `36550→36650`, `36551→36651`, `36666→58031`, `92080→57740`, and `92082→57723`. | Collection mounts are wired to the authoritative core mapping. Physical item-use remains core-owned; the module does not simulate consuming collection items. |
 | Custom dungeons and portals | Core SQL contains Turtle custom portal rows using `custom_dungeon_portal`; the pinned core startup emitted `Script not found: custom_dungeon_portal`. The module has no custom encounter strategy graph. | Custom dungeon teleport/encounter behavior is unverified and blocked by a core content/script gap. The module intentionally does not invent coordinates or claim support. |
 | Client assumptions | Local package contains the Turtle patched client layer and base `WoW.exe` lineage reports build `5875`; normal and software-forced Wine launches both rendered black with no observable login UI. | Server/module opcode assumptions are local-core-based, but no real-client `.bot` command journey is claimed until the client is observable. |
@@ -282,12 +287,11 @@ High Elf (`10`) and their faction masks. The local
 `PlayerbotAIConfig.cpp:300-329` matches those legal combinations, and
 `TravelNode.cpp:2170-2182` names both custom starting nodes.
 
-The module also consciously avoids sending randomized bots into the custom
-Blackstone Island and Thalassian Highlands starting areas because the local
-navigation data does not cover them (`TravelMgr.cpp:1244-1257`), and routes
-Goblin/High Elf corpse recovery through homebind instead of the excluded racial
-spawn (`ReleaseSpiritAction.h:190-209`). This is a sound defensive policy, but
-it is a product compromise rather than full custom-zone support.
+The module now follows the core-defined custom starts instead of applying a
+stale exclusion. The exact Goblin start has terrain/MMAP/VMAP data in the
+runtime dataset; the exact High Elf start has terrain/MMAP data but no VMap
+tile. `ReleaseSpiritAction` uses the core racial `PlayerInfo` row for both
+races, with homebind retained only when the core has no start row.
 
 The custom class mechanics checked in this audit also match local server data:
 
@@ -476,16 +480,13 @@ semantics:
 
 | Location | Substitute | Risk |
 | --- | --- | --- |
-| `:85-95` | `UNIT_FLAG_CLIENT_CONTROL_LOST` becomes zero; `movementFlagsMask` becomes all bits. | Control/movement checks can become no-ops or over-broad. |
-| `:110-120` and `WorldPosition.h:238-240` | Zero-valued `InstanceTemplate`; `getInstanceTemplate()` returns null. | Dungeon level/player-limit/reset logic cannot behave like the core. |
-| `:237-260` | CMaNGOS trigger-cast bitmasks collapse to `bool` true/false. | Ignore-GCD/aura-scaling distinctions are lost. |
-| `:483-497` | `Taxi::Map` reads the live `Player::GetTaxi().GetTaxiPath()` route. | In-flight route reasoning is available; transport-animation/elevator data remains unavailable. |
+| `:224-238` | Only the active ordinary triggered/untriggered distinction is retained; unused ignore-GCD/aura-scaling aliases are removed. | Donor callers needing those extra flags still require a core adapter. |
+| `:483-497` | `Taxi::Map` reads the live `Player::GetTaxi().GetTaxiPath()` route. | In-flight route reasoning is available. |
 | `:516-525` | ScriptDevAI-shaped gossip callback delegates to Penqle's `sScriptMgr.OnGossipHello(Player*, Creature*)`. | Core creature gossip is preserved through the generic registry; custom gossip still needs focused bot acceptance coverage. |
 | `:688-700` | Chat-channel store now delegates to `ObjectMgr::GetChannelEntryFor` and the loaded map. | The core owns the channel definitions; automatic bot channel-join behavior still lacks a focused runtime acceptance journey. |
-| `:721-733` | `TransportAnimation` is structural only. | Transport movement cannot be assumed correct. |
-| `:786-802` | Formation slot data is a stub. | Formation/squad semantics are not implemented by this compatibility layer. |
-| `:851-870` | Session states are synthetic ints; emote sound lookup returns null. | State/emote-dependent behavior can silently degrade. |
-| `:892-910` | Loot status flags and `NOT_GROUP_TYPE_LOOT` are synthetic values. | Loot/roll state needs real acceptance tests. |
+| `TravelNode.cpp::generateTransportNodes` | Empty-path elevator/animation generation is explicitly skipped because the core has no `TransportAnim` source. | Elevator travel remains unsupported rather than silently pretending to work. |
+| `:794-810` | Emote sound lookup returns null because no core `EmotesTextSound` loader exists. | Sound-dependent emote behavior is unavailable. |
+| `:814-830` | Loot status flags remain module-computed; the dead `NOT_GROUP_TYPE_LOOT`/checked-state scaffolding is removed. | Loot/roll state needs real acceptance tests. |
 
 `ServerFacade` now reads the active targeted-generator target through the core's
 public `MotionMaster::GetCurrent()` API and reports current geometric
@@ -500,30 +501,36 @@ Tortoise-compatible behavior merely because the module compiles.
 
 ## 4. Turtle-specific gaps and mismatches
 
-### F-06 — Custom starting areas are deliberately bypassed
+### F-06 — Custom starting areas required a current-data recheck
 
 The core SQL restores Goblin and High Elf `playercreateinfo` rows to custom
-zones (`20260620130000_world.sql:1-4`), but `TravelMgr.cpp:1244-1257` excludes
-those coordinate ranges because the local navigation data does not support
-them. `ReleaseSpiritAction.h:190-209` consequently sends those bots to
-homebind instead of their racial start.
+zones (`20260620130000_world.sql:1-4`). The old module exclusion and
+Goblin/High Elf homebind override were based on stale “no MMAP” assumptions and
+are now removed. The live runtime has terrain/MMAP for the exact start tiles:
 
-This is a good crash/stuck prevention rule, not a complete Turtle experience.
-Record it as an accepted limitation until the custom-zone MMAP/pathing data is
-available and tested.
+- Goblin Blackstone Island: map `1`, `(-233,-7177,16.52)`,
+  `maps/0013245.map`, `mmaps/0013245.mmtile`, and
+  `vmaps/001_32_45.vmtile`.
+- High Elf Thalassian Highlands: map `0`, `(3212.63,-2501.44,111.71)`,
+  `maps/0002536.map` and `mmaps/0002536.mmtile`; the exact VMap tile is
+  absent.
 
-### F-07 — Custom collection mounts are not part of factory behavior
+The module now follows core start rows and includes their quest/travel points.
+A focused runtime movement/death journey is still required before claiming
+complete custom-zone gameplay; no replacement coordinates were invented.
 
-The core has a `collection_mount` path and Turtle mount collection scripts,
-including spell 46499 (`tortoise-wow/sql/database_updates/world/20260714180156_world.sql`
-and `20260721013813_world.sql`). `PlayerbotFactory::InitMounts()` instead
-learns a hardcoded list of ordinary race mounts (`PlayerbotFactory.cpp:3135-3238`)
-and explicitly falls back to faction mounts for Goblin/High Elf.
+### F-07 — Custom collection mounts needed a core-backed factory path
 
-An existing character that already owns a Turtle mount may still use it, but
-randomized/factory-created characters will not model the collection system.
-This should be fixed through server mount/item data, not by adding more
-hardcoded spell IDs.
+The core has a `collection_mount` mapping and registers
+`spell_turtle_mount_collection` in `src/scripts/spells/spells_turtle.cpp`; item
+use remains core-owned. `MountValue`, `FullMountListValue`, inventory lookup,
+and `PlayerbotFactory::InitMounts()` now consult the same mapping and validate
+the mapped spell/item requirements. Verified live mappings include
+`36550→36650`, `36551→36651`, `36666→58031`, `92080→57740`, and `92082→57723`.
+
+The module no longer needs hardcoded custom mount spell IDs. Physical item-use
+and consume-on-learn behavior are core-script behavior and still need a focused
+headless acceptance journey; the module does not duplicate that script.
 
 ### F-08 — Turtle custom dungeons are not encounter-aware
 
@@ -545,11 +552,13 @@ against Turtle's reworked talent trees (`aiplayerbot.conf.dist.in:510-528`),
 and `Talentspec.cpp` validates every link against loaded `Talent.dbc`/server
 talent data before accepting it (`:45-105`). This is the correct direction.
 
-The remaining risk is coverage: there is no general data-driven class-profile
-layer for every Turtle custom talent interaction. The module currently adds
-explicit overrides for a few known mechanics and otherwise relies on mature
-Vanilla strategy names. Every class/spec should be validated against the
-local DBC and live server spell/aura behavior before being called supported.
+The validator now sums points across all three trees, initializes each DBC row's
+rank metadata independently, rejects missing prerequisite records safely, and
+uses a non-empty fallback name when a spell record is absent. The remaining risk
+is behavioral coverage: there is no general data-driven class-profile layer for
+every Turtle custom talent interaction. Every class/spec should still be
+validated against local DBC and live server spell/aura behavior before being
+called supported.
 
 ## 5. Product surface and client audit
 
@@ -829,9 +838,9 @@ opt-in migration with provenance.
 1. Make the local core's legacy LFT/chat/module paths a separate core PR or
    remove them from the deployable Tortoise product; keep
    `BUILD_LEGACY_PLAYERBOTS=OFF` for native-module work.
-2. Replace the highest-value compatibility fallbacks with real Tortoise
-   adapters and focused acceptance checks, starting with chase/movement,
-   transport/taxi, loot/roll, and session-state semantics.
+2. Replace the highest-value remaining compatibility fallbacks with real
+   Tortoise adapters and focused acceptance checks, starting with
+   trigger-cast, emote, loot/roll, and custom-zone movement semantics.
 3. Build acceptance coverage for Turtle custom starts, dungeons, and talent
    interactions from the local server data. The module must not infer support
    from a numeric ID alone.
@@ -860,9 +869,11 @@ cd ../tortoise-docker-penqle
 bash dev/build-playerbots
 ```
 
-The clean final configure printed the supported builder's bind-mounted module
-root `/work/core/modules/TortoiseBots`, implementation commit
-`53c054a26a0faff072dd54c42445d5273be91749`, and source state `clean`. The
+The final exact code snapshot is implementation commit
+`7e08fc810060e77839d4f38c813cc7eba9b05737`. The persistent builder's direct
+cached compile of that snapshot completed successfully, and the final
+documentation-only configure is checked separately by CMake's source identity
+diagnostic. The
 cached `BUILD_PLAYERBOTS=ON`, `BUILD_LEGACY_PLAYERBOTS=OFF`, static
 `MODULE_TORTOISEBOTS` build compiled and linked `mangosd` successfully. The
 best-effort install wrapper reported the expected missing `realmd` artifact,
@@ -887,13 +898,14 @@ for `list`/`stats`/`follow`, and `PacketBridgeTest group invite/accept PASSED`
 followed by `PacketBridgeTest cleanup PASSED`.
 
 The final timestamp-scoped restart of the updated binary (container start
-`2026-08-25T00:58:14.993992971Z`) reached `TortoiseBots: native module loaded
+`2026-08-25T01:41:31.245096072Z`) reached `TortoiseBots: native module loaded
 (AI enabled)` and `World server is up and running!`. It logged the expected
 empty equipment-cache and direct fish/travel fallbacks, emitted no
 `ai_playerbot_*` table DDL/DML, and retained the already identified core
-warning for the missing `custom_dungeon_portal` script. This restart did not
-exercise a real taxi or loot interaction; those two changes were validated by
-the native build and direct core API trace.
+warning for the missing `custom_dungeon_portal` script. `Loading TalentSpecs`
+completed with no `Error with premade` or `No premade` lines. This restart did
+not exercise a real taxi, loot, or custom-zone interaction; those changes were
+validated by the native build, direct core/data trace, and startup contracts.
 
 The closure pass modified module C++, SQL, CMake, README, and tooling files;
 it did not modify the sibling core, Dockerfile, compose file, or reference

@@ -276,10 +276,10 @@ mount lookup, later-expansion residue removal, and repeatable surface checks.
 
 Source repository: TortoiseBots `audit/playerbots-turtle-1.18.1`
 
-Source commit: `53c054a26a0faff072dd54c42445d5273be91749` (final verified
+Source commit: `7e08fc810060e77839d4f38c813cc7eba9b05737` (final verified
 implementation snapshot; the later provenance/docs update is documentation-only;
-core-backed gossip adapter, native taxi/loot adapters, native command fixture
-implementation; implementation `b76b5f4bf236b4d1bf370f0997e88cf30fd33695`, `fix: bound
+core-backed gossip/taxi/loot adapters, custom-start re-enable, talent validation
+fixes, dead-shim cleanup, and native command fixture implementation; implementation `b76b5f4bf236b4d1bf370f0997e88cf30fd33695`, `fix: bound
 engine action logging`), on top of `b863c6eedd3514a525f40e243bb8a61b2244fbe8` (`fix:
 remove unreachable engine test logging`), `89a5e645e1485bd2e35b4944e88fdadfc6c95d05`
 (`fix: remove remaining expansion-only item branches`), `887a6673675d06d716acc713aaeed8dca05d7e9f`
@@ -315,6 +315,16 @@ Copied / ported / independently reimplemented:
   target/current-motion contract; current follow/chase guards no longer depend
   on fabricated zero offsets or private donor fields. The chat-channel proxy
   delegates to the core's loaded `ObjectMgr` channel map.
+- The dead `InstanceTemplate`, synthetic session-state, formation-slot,
+  client-loot-type, group-roll, and donor `TransportAnimation` scaffolding was
+  removed. Empty-path elevator generation now logs and skips explicitly because
+  the pinned core has no transport-animation loader. Custom-start travel and
+  death handling now use the core's Goblin/High Elf start rows after the actual
+  runtime terrain/MMAP tiles were verified present. The exact High Elf VMap
+  tile is absent and remains an explicit acceptance concern.
+- Talent validation now sums all three trees, rejects missing prerequisites
+  without dereferencing absent records, and initializes each DBC row's rank
+  metadata independently.
 - SQL changes are module-owned schema and additive compatibility migrations;
   the final `20260824090003_*` cleanup explicitly drops only obsolete,
   module-owned donor cache tables; no character state or database reset is
@@ -385,13 +395,12 @@ Local validation:
   loot status checks pass the native loot target into the core's ownership and
   condition evaluator. No focused taxi/loot gameplay journey is claimed from
   this compile/core-trace change.
-- A forced CMake configure printed the supported builder's bind-mounted module
-  root `/work/core/modules/TortoiseBots` and exact commit
-  `53c054a26a0faff072dd54c42445d5273be91749` with source state `clean`; Git's
-  scoped safe-directory option avoids changing global configuration, and a
-  dirty checkout is now reported with an explicit `dirty` state rather than
-  being mistaken for an exact clean snapshot. This makes stale or locally
-  modified module selection observable.
+- A forced CMake configure prints the supported builder's bind-mounted module
+  root `/work/core/modules/TortoiseBots`, commit, and clean/dirty source state;
+  Git's scoped safe-directory option avoids changing global configuration, and
+  a dirty checkout is reported explicitly rather than being mistaken for an
+  exact clean snapshot. This makes stale or locally modified module selection
+  observable. The final implementation snapshot is `7e08fc8`.
 - The real Turtle client was launched under Wine through normal and
   software-forced rendering paths; both rendered black with no observable
   login UI in this environment, so no real-client `.bot` command journey is
@@ -403,3 +412,10 @@ Local validation:
   for the audited custom-content gap. Taxi/loot interactions were
   not replayed as a ceremony; their module changes were compile- and
   core-API-traced.
+- The updated runtime restart at `2026-08-25T01:41:31.245096072Z` reached
+  native AI module load and world-ready with no talent-spec validation errors,
+  no `ai_playerbot_*` table DDL/DML, and the expected missing-core
+  `custom_dungeon_portal` warning. The current runtime data checks found the
+  Goblin start `maps/0013245.map` + `mmaps/0013245.mmtile` and High Elf start
+  `maps/0002536.map` + `mmaps/0002536.mmtile`; `vmaps/000_25_36.vmtile` is not
+  present.
