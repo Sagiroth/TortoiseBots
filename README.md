@@ -1,45 +1,79 @@
 # TortoiseBots
 
-## What it is
+TortoiseBots is an optional native PlayerBots module for [**Tortoise WoW 1.18.1**](https://github.com/Penqle/tortoise-wow).
 
-TortoiseBots is an optional native PlayerBots module for Tortoise WoW 1.18.1.
-It lets players use owned headless bots while keeping the Tortoise core usable
-without the module.
+It brings mature PlayerBots behavior to the Tortoise/Penqle core while keeping
+PlayerBots out of normal core gameplay architecture.
 
-The module owns bot behavior. The core provides only small, generic host
-capabilities such as session, lifecycle, packet, and command integration.
+The project is built around one rule:
 
-## Why it exists
+> **Harvest behavior, not architecture.**
 
-The former PlayerBots implementation coupled bot ownership and bot-specific
-logic to normal core systems. TortoiseBots rebuilds that boundary around an
-optional module.
+TortoiseBots reuses mature PlayerBots combat, movement, class, group, loot,
+quest and travel behavior, but does not recreate the tightly coupled
+`GetBot()` / `m_bot` / `sPlayerBotMgr` architecture used by older integrations.
 
-The guiding rule is:
+---
 
-> Harvest behavior, not architecture.
+## Project status
 
-## Origin
+TortoiseBots currently provides a working native PlayerBots runtime with:
 
-This repository grew from the clean Tortoise core created after the legacy
-PlayerBots removal in [Penqle/tortoise-wow PR #396](https://github.com/Penqle/tortoise-wow/pull/396).
+- Headless character sessions
+- Same-account owned bots
+- Native bot lifecycle management
+- Mature `PlayerbotAI`
+- Strategy / Trigger / Action / Value engine
+- All nine Vanilla classes
+- Follow / stay / group behavior
+- Combat and class AI
+- Loot and quest behavior
+- Travel and taxi integration
+- Native `.bot` command surface
+- Packet bridge between normal Tortoise gameplay and PlayerbotAI
+- Turtle Goblin and High Elf compatibility
+- Turtle-specific spell / talent / race handling where validated against local data
+- Optional random-bot infrastructure
+- Native World / Character database migrations
 
-It is a module repository, not a replacement core and not a vendor drop of
-another PlayerBots implementation.
+The source tree has been cleaned to target **Vanilla/Turtle 1.18.1** rather than
+remaining a multi-expansion PlayerBots donor tree.
 
-## Influences
+Large TBC/WotLK/later-era families such as Death Knights, glyphs, vehicles,
+arenas and other unsupported expansion systems have been removed from the
+active product.
 
-- [CMaNGOS PlayerBots](https://github.com/cmangos/playerbots) — mature combat, movement, and class behavior
-- [MangosZero](https://github.com/mangoszero/server) — lifecycle and native bot-system patterns
-- [Shyalya/tortoise-wow](https://github.com/Shyalya/tortoise-wow) — Turtle WoW 1.18.1 compatibility lessons
-- [mod-playerbots/mod-playerbots](https://github.com/mod-playerbots/mod-playerbots) — Azeroth Core 3.3.5a Playerbots module
+See:
 
-These projects are references for behavior and lessons, not architectures to
-copy.
+- [PLAYERBOTS_AUDIT.md](docs/PLAYERBOTS_AUDIT.md)
+- [PLAYERBOTS_HANDOVER.md](docs/PLAYERBOTS_HANDOVER.md)
+- [PROVENANCE.md](docs/PROVENANCE.md)
 
-## Start here
+for the exact validation state and remaining known gaps.
 
-1. [AGENTS.md](AGENTS.md)
-2. [docs/PLAN.md](docs/PLAN.md)
-3. [docs/HOST_API.md](docs/HOST_API.md)
-4. [docs/README.md](docs/README.md)
+---
+
+# Architecture
+
+TortoiseBots is designed as an **optional native module**, not as a fork of the
+entire Tortoise core.
+
+```text
+Tortoise / Penqle core
+        |
+        | small generic host capabilities
+        v
+TortoiseBots native module
+        |
+        +-- BotManager
+        +-- PlayerbotAIAdapter
+        +-- PlayerbotAIStorage
+        +-- packet / player / chat adapters
+        +-- PlayerbotAI
+        +-- Engine
+        +-- Strategy
+        +-- Trigger
+        +-- Action
+        +-- Value
+        +-- class AI
+        +-- travel / quest / loot / group behavior
