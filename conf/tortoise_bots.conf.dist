@@ -14,8 +14,9 @@ TortoiseBots.AutoTest.CharacterGuid = 0
 # Fresh packet/event bridge journey. Uses two existing same-account,
 # characters on the disposable TBPLAY account (or TBPLAY-prefixed characters),
 # emits a native group invite/accept, exercises
-# Headless and Network-master outgoing delivery, then removes both fixtures.
-# Real-client incoming delivery is a separate manual gate.
+# Headless and Network-master outgoing delivery, dispatches native
+# .bot list/stats/follow through a synthetic ChatHandler, then removes both
+# fixtures. Real-client incoming delivery is a separate manual gate.
 TortoiseBots.PacketBridgeTest = 0
 TortoiseBots.PacketBridgeTest.AccountId = 0
 TortoiseBots.PacketBridgeTest.MasterGuid = 0

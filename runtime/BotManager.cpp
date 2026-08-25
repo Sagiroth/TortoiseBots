@@ -19,7 +19,9 @@
 #include "ObjectMgr.h"
 #include "AccountMgr.h"
 #include "WorldPacket.h"
+#include "Chat.h"
 #include "Group/Group.h"
+#include "../commands/BotCommands.h"
 
 namespace TortoiseBots {
 
@@ -678,6 +680,18 @@ void BotManager::UpdatePacketBridgeTest(uint32_t diff)
                 time_t(0), LOCALE_enUS, "packet-test", 0, SessionTransport::Network);
             syntheticNetwork->SetPlayer(master);
             master->SetSession(syntheticNetwork);
+
+            ChatHandler commandHandler(syntheticNetwork);
+            std::string followCommand = "follow " + std::string(bot->GetName());
+            bool commandSurfacePassed =
+                BotCommands::HandleChatCommand(&commandHandler, "list") &&
+                BotCommands::HandleChatCommand(&commandHandler, "stats") &&
+                BotCommands::HandleChatCommand(&commandHandler, followCommand.c_str()) &&
+                PlayerbotAIStorage::Instance().GetAI(bot) &&
+                PlayerbotAIStorage::Instance().GetAI(bot)->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT);
+
+            sLog.outString("TortoiseBots: PacketBridgeTest native command surface %s — list/stats/follow dispatched through ChatHandler",
+                commandSurfacePassed ? "PASSED" : "FAILED");
 
             WorldPacket invite;
             invite << bot->GetName() << uint32(0);
