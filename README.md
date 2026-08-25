@@ -1,5 +1,8 @@
 # Status
-WIP still pending smoke testing
+WIP, still pending local smoke test against Penqle core.
+
+# Dependencies
+WIP
 
 # TortoiseBots
 
