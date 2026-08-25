@@ -428,3 +428,63 @@ Local validation:
   cleanup. Its temporary `PacketBridgeTest` enablement was restored to `0`,
   and the normal restart at `2026-08-25T01:48:57.408768993Z` reached
   world-ready.
+
+## Final traced Turtle compatibility closure — 2026-08-25
+
+Feature: close the remaining module-owned Turtle 1.18.1 compatibility
+mismatches found by tracing active call sites against the pinned core: sparse
+store bounds, core-defined custom races, path-filter fail-closed behavior,
+native combat/interaction/auction/quest/skill semantics, later-ID cleanup,
+localized names, and factory class-spell initialization.
+
+Source repository: TortoiseBots `audit/playerbots-turtle-1.18.1`
+
+Source commit: `f594fc1a22f3d4ee23d74c3647cb63b6b22c7a33` (final source snapshot;
+the initial traced implementation is `0f97403df42ee98b5085040a9a066ddc64608623`,
+followed by `f594fc1` removing the unreachable fish-cache generator).
+
+Reference repositories and commits:
+
+- Local Penqle core: `tortoise-wow@9487c5150a6553c665fafc1f4568669b8b00f011`
+  (`playerbots-integration-gh`), used as the API/data authority; no core file
+  was modified by this commit.
+- Local CMaNGOS Classic PlayerBots host reference:
+  `cmangos-mangos-classic@9b682be617ac61c127c23aa60d7b4ffbc0ce37e6`,
+  specifically the `Player::learnClassLevelSpells` behavior used as intent for
+  the module-local factory learner. The host implementation was not copied
+  into the core.
+
+Source files: `ai/cmangos-compat-shim.h`,
+`ai/playerbot/{ChatHelper,PlayerbotAIConfig,PlayerbotFactory,TravelMgr,TravelNode,WorldPosition}.{cpp,h}`,
+`ai/playerbot/strategy/{Value.cpp,values,actions,triggers,druid,rogue,warrior}/*`,
+`runtime/PlayerbotRuntimeFacade.cpp`, and
+`tools/verify_turtle_surface.sh`.
+
+Copied / ported / independently reimplemented:
+
+- Store upper bounds, DBC race-name loading, locale-map formatting, path
+  fail-closed guards, native wrapper substitutions, and local heal prediction
+  are independently reimplemented against the pinned core APIs.
+- Class trainer/quest spell initialization is a module-local port of the
+  mature CMaNGOS behavior, narrowed to the core's `Quest`, `TrainerSpell`,
+  `SpellMgr`, talent, and class/race contracts. It does not add a
+  `PlayerBots`-specific core hook.
+- Absent expansion IDs and invalid Turtle branches are subtractive cleanup,
+  validated against local DBC/SQL; no expansion behavior was introduced.
+
+Reason: preserve mature Vanilla behavior while ensuring that Turtle custom
+IDs, Goblin/High Elf data, localized content, and native core semantics are
+not silently hidden behind donor-era constants or no-op compatibility methods.
+
+Local validation: `tools/verify_turtle_surface.sh`, `git diff --check`, and the
+cached persistent `BUILD_PLAYERBOTS=ON`, `BUILD_LEGACY_PLAYERBOTS=OFF`, static
+`mangosd` build/link passed at this source commit. The build compiled the
+module and linked the final `mangosd`; no core, Docker, reference checkout, or
+database reset was performed. Runtime restart evidence for this exact commit
+is recorded in the audit after installation: the preserved stack restarted at
+`2026-08-25T03:31:58.419176189Z` and reached world-ready at `03:32:24Z`, with
+native module load, TalentSpecs load, direct travel/fishing fallback, and no
+module-table DDL/DML. The restart also confirmed the pinned core's
+unregistered-content script warnings; no module replacement was invented. No
+unrun gameplay acceptance is claimed for custom-zone movement, physical
+collection-mount use, taxi, loot, or real-client packet delivery.

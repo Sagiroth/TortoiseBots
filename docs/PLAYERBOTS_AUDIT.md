@@ -1,8 +1,8 @@
 # TortoiseBots PlayerBots Audit
 
 - **Date:** 2026-08-24 (final verification 2026-08-25)
-- **Audit target:** TortoiseBots `13c0632f6a42f0f685de763c17f19c96bc392892`
-- **Closure pass:** TortoiseBots working tree after audit commit `7cdb0b4`; source changes are recorded below and will be committed with the remediation PR.
+- **Historical audit target:** TortoiseBots `13c0632f6a42f0f685de763c17f19c96bc392892`
+- **Closure implementation:** TortoiseBots `f594fc1a22f3d4ee23d74c3647cb63b6b22c7a33` (final source snapshot; includes `0f97403` traced closure and unreachable fish-generator removal)
 - **Target core:** local `tortoise-wow` `9487c5150a6553c665fafc1f4568669b8b00f011` (`playerbots-integration-gh`)
 - **Client/data:** local Turtle WoW 1.18.1 package; the base `WoW.exe` reports client build 5875, while the local Turtle documentation/addon package identifies the patched client as build 7272.
 - **Authority:** local Tortoise core, local extracted DBC/maps/vmaps/mmaps, and local client files. The external wiki was not needed for this audit.
@@ -83,9 +83,9 @@ Vanilla/Turtle product surface before adding more classes or dungeon behavior.
 | ID | Severity | Finding | Status |
 | --- | --- | --- | --- |
 | F-01 | P0 | Module SQL install path does not match the core's effective case-sensitive AutoUpdater configuration. | Resolved in `TortoiseBots.cmake` against Penqle's configured `world/character` names; preserved-stack AutoUpdater application verified. |
-| F-02 | P0 | The local core has a stale untracked module copy, and `BUILD_PLAYERBOTS=OFF` does not itself gate an explicitly enabled native module. | Native CMake forcing is resolved; the supported builder bind-mounts this checkout and CMake prints `/work/core/modules/TortoiseBots` plus the exact implementation snapshot `7e08fc810060e77839d4f38c813cc7eba9b05737`. A disposable tracked-core archive with no `modules/TortoiseBots` path configured and built successfully with `BUILD_PLAYERBOTS=OFF`, `BUILD_LEGACY_PLAYERBOTS=OFF`, and `MODULES=disabled`; only the stale direct-core workflow remains external follow-up. |
+| F-02 | P0 | The local core has a stale untracked module copy, and `BUILD_PLAYERBOTS=OFF` does not itself gate an explicitly enabled native module. | Native CMake forcing is resolved; the supported builder bind-mounts this checkout and CMake prints `/work/core/modules/TortoiseBots` plus the exact implementation snapshot `f594fc1a22f3d4ee23d74c3647cb63b6b22c7a33`. A disposable tracked-core archive with no `modules/TortoiseBots` path configured and built successfully with `BUILD_PLAYERBOTS=OFF`, `BUILD_LEGACY_PLAYERBOTS=OFF`, and `MODULES=disabled`; only the stale direct-core workflow remains external follow-up. |
 | F-03 | P1 | Bot-specific legacy code remains in the core: LFT random-bot filling, bot command stubs, bot slots, and legacy module hooks. | Open core-owned follow-up; no new module coupling was added. |
-| F-04 | P1 | Active native code retains later-expansion consumable IDs, item IDs, spell IDs, and level gates. | Resolved: audited absent spell/item branches, post-60 level formulas, WotLK/TBC mana-gem IDs, and the level-70 Druid reagent branch are removed; retained level-60/Turtle rows were revalidated against local core data. |
+| F-04 | P1 | Active native code retains later-expansion consumable IDs, item IDs, spell IDs, and level gates. | Resolved: audited absent spell/item branches, later flag/totem auras, invalid quest-item branches, post-60 level formulas, WotLK/TBC mana-gem IDs, and the level-70 Druid reagent branch are removed; retained level-60/Turtle rows were revalidated against local core data. |
 | F-05 | P1 | The compatibility shim contains silent no-op/default implementations for movement, instance, chat-channel, transport, formation, emote, session-state, and loot semantics. | Partially resolved: active chase/follow inspection uses the native generator target, live taxi routes and loot targets use core APIs, dead instance/session/formation/loot-type scaffolding is removed, and unsupported elevator transport is explicit; remaining emote/trigger-cast/loot-roll semantics are not advertised as complete Turtle behavior. |
 | F-06 | P1/P2 | Custom Goblin/High Elf starting areas were deliberately bypassed because local navigation data was believed incomplete. | Module bypasses are removed: current core `playercreateinfo` rows and the runtime dataset contain terrain/MMAP data for both custom start regions. The exact High Elf tile has no VMap file, so focused in-game movement/death acceptance remains separate. |
 | F-07 | P1/P2 | Turtle collection mounts are not modeled by the factory/randomization path. | Partially resolved with core `collection_mount` lookup plus existing-inventory/full-list support; factory spell initialization follows the existing classic factory model, while item-use gameplay acceptance remains future work. |
@@ -103,6 +103,12 @@ Vanilla/Turtle product surface before adding more classes or dungeon behavior.
 | F-19 | P1/P2 | The cleaned physical tree still compiles later-rank factory/boss-aura code and a custom RTSC/test surface; some of it is dead only because no context registers it. | Resolved for the audited residue: later branches, RTSC/BossAura files, and unreachable `Engine::testMode`/`test.log` writes are removed; local core data validates retained 28610/28612/31016/31018 level-60 rows. |
 | F-20 | P2 | README/provenance claims about schema-only packaging and cache-safe startup are now contradicted by the active code and the lowercase install path. | Resolved by this closure documentation and the packaging/startup changes. |
 | F-21 | P2 | The native migrations still create removed/inert donor tables (`random_bots`, `rpg_races`, `tele_cache`, and an uncalled rarity cache builder). | Resolved: dead tables and the dormant rarity builder were removed. |
+| F-22 | P1 | Compatibility store proxies use fixed classic-era upper bounds, silently excluding Turtle custom item, creature, gameobject, and faction IDs from numeric scans. | Resolved: bounds are derived from the loaded Tortoise stores and cached for scan loops; local data reaches item `1,985,406`, creature `2,509,000`, and gameobject `7,000,035`. |
+| F-23 | P1 | The module hard-codes an eight-race faction/name table, so Turtle Goblin/High Elf identity can be misclassified or rendered blank. | Resolved: faction comparison delegates to core `Player::TeamForRace`; race parsing/formatting loads names from the core `ChrRaces.dbc` store. |
+| F-24 | P1 | The pinned core's `PathInfo` area/avoidance/random-point methods are no-ops, so inherited mob avoidance and offline terrain-cache generation can report success without applying nav semantics. | Module mitigated: default mob avoidance is removed, travel/fish generation is forced off with an explicit startup error, and affected debug commands fail explicitly; the generic core path-filter seam remains open. |
+| F-25 | P1 | Additional active donor wrappers silently lose native behavior: melee attack switching, evade checks, combat reach, quest-source removal, skill unlearning, gossip text, auction stack counts/purchases, and interaction checks. | Module call sites now use the pinned core APIs or fail closed; remaining emote, released-loot/roll, WMO, and alternate-graveyard diagnostic seams stay in the F-05/core follow-up boundary. |
+| F-26 | P1 | Additional active no-op helpers affected factory spell initialization, localized names, item pre-cast validation, interrupt decisions, and heal-size estimates. | Resolved in `f594fc1` (initial traced implementation `0f97403`): class trainer/quest spell initialization is ported against core data, locale maps replace empty helpers, `CheckCast` replaces the always-success pre-check, spell state replaces the always-true interrupt helper, and heal effects use native damage calculation. |
+| F-27 | P1/P2 | The pinned core's live Turtle world data references script names that are not registered by the core build, so some custom/content behavior is absent independently of PlayerBots. | Open core/data follow-up: final startup reported `custom_dungeon_portal`, `spell_druid_wrath`, and additional unregistered names. TortoiseBots does not add guessed scripts or claim those content paths. |
 
 ## Closure pass — current module status
 
@@ -150,6 +156,12 @@ action” wording in the finding bodies below.
   and the level-70 Druid reagent branch. The old giant hardcoded random-gear
   unavailable-item set was removed; the active ItemPrototype/cache data is
   authoritative.
+- The final DBC/SQL sweep also removed absent WotLK Battle Shout `47436`,
+  absent totem exception `44452`, absent flag aura `34976`, absent quest-item
+  branches `52566`/`39253`/`39645`, absent blacklist quest `50000`, and the
+  invalid Warrior talent checks `30330`/`30335` (`30335` is a banner spell,
+  not the expected talent). The retained Turtle-specific `50003` quest and
+  `17117 -> 13016` item-use rule are backed by local data.
 - Collection mounts now use the core `collection_mount` mapping in
   `MountValue`, `FullMountListValue`, inventory mount lookup, and factory
   mount selection. Eligibility is checked against the loaded item, spell,
@@ -167,6 +179,37 @@ action” wording in the finding bodies below.
   Karazhan, Arena, RTSC, or BossAura families; the remaining directory globs
   are a deliberate bounded-graph trade-off. The repeatable
   `tools/verify_turtle_surface.sh` check covers the same SQL/dead-ID contracts.
+- Store iteration proxies no longer use donor-era constants such as `100000`
+  or `200000`. Their one-past-largest-ID bounds are derived from the loaded
+  Tortoise maps, so custom IDs outside the classic ranges remain visible to
+  factory, mount, loot, vendor, and travel scans.
+- Faction decisions and race text now use the core's race/faction contract for
+  Turtle Goblin and High Elf characters. The module no longer treats every
+  non-classic race as Horde merely because its local switch lacks a case; race
+  names are loaded from the core `ChrRaces.dbc` store rather than duplicated.
+- The module no longer invokes the pinned core's no-op `PathInfo` area filter:
+  default `avoid mobs` strategies are removed, travel/fish cache generation
+  fails closed, and avoidance/random-point debug commands report the missing
+  core capability. Persisted travel/fish data and direct movement/fishing
+  remain available.
+- The final wrapper sweep replaced active no-op call sites with native combat
+  attack/stop, `IsBehindTarget`, `GetCombatReach`, `Creature::IsInEvadeMode`,
+  `GetSkillRaceClassInfo`/`SetSkill`, native quest-source destruction, taxi
+  ejection, core `CanInteract`, and core broadcast-text lookup. Auction mirrors
+  now copy item stack/random-property data from the item instance, and AH guild
+  purchases use the validated core auction packet handler instead of a no-op
+  `UpdateBid` call.
+- The final initialization/presentation sweep removed the remaining active
+  donor no-ops: factory bots now receive valid core class trainer and class-quest
+  spells through a module-local port of the mature learner; chat links use the
+  core quest/creature/item locale maps; item casts call native `CheckCast`; spell
+  interruption follows the core spell lifecycle state; and heal prediction
+  calculates the actual core heal effects instead of reading a zero stub.
+
+F-22 through F-26 were discovered during the final custom-data and active
+call-site sweep rather than being silently folded into earlier “resolved”
+claims. They are included in the finding table so future Turtle data additions
+and core API changes have an explicit regression surface.
 
 The apparent later-rank IDs `28610`, `28612`, `31016`, and `31018` were not
 deleted based on their numeric range: the local core's Spell.dbc and
@@ -202,19 +245,30 @@ valid Tortoise data until the core data itself changes.
   target-aware native loot resolution, core-backed creature gossip, and
   generic session transport for the supported MVP; the remaining donor-only
   semantics require targeted core adapters/tests.
+- F-24 is the remaining generic path seam. The pinned core's `PathInfo.h`
+  explicitly implements `setArea`, `setAreaCost`, `getArea`, `getFlags`, and
+  `ComputePathToRandomPoint` as no-ops/stubs. The module therefore does not
+  claim mob avoidance or generated terrain-aware caches; it uses core path
+  calculation for ordinary movement and fails the optional/debug surfaces
+  that require those missing filters.
 - F-06's old bypass is removed after checking the actual target data: the core
   `playercreateinfo` rows place Goblins at Blackstone Island and High Elves at
   Thalassian Highlands. The runtime dataset has terrain/MMAP for both start
   tiles; the exact High Elf tile has no VMap file. A focused bot
   movement/death journey is still required before claiming complete
   custom-zone gameplay.
-  F-08 remains an external Turtle-content gap: the pinned core logs
-  `Script not found: custom_dungeon_portal` for custom dungeon portal rows, so
-  the module does not guess teleport destinations or claim encounter support.
-  F-09 remains a class/spec acceptance backlog for reworked talents; final
-  startup loaded the configured talent specs without errors. F-10 is intentionally broad compatibility
-  configuration, F-11 is a documented partial command surface, and F-12 has
-  no client addon by design.
+- F-08 remains an external Turtle-content gap: the pinned core logs `Script not
+  found: custom_dungeon_portal` for custom dungeon portal rows, so the module
+  does not guess teleport destinations or claim encounter support.
+- F-27 is a broader core/data registry gap confirmed by the final restart. The
+  pinned core also logged unregistered `spell_druid_wrath`, `go_airplane`,
+  `item_radio`, and custom NPC/duplicate script names from live
+  `*_template.script_name` rows. This requires core script registration or
+  deliberate data cleanup; the module does not synthesize replacements.
+- F-09 remains a class/spec acceptance backlog for reworked talents; final
+  startup loaded the configured talent specs without errors. F-10 is
+  intentionally broad compatibility configuration, F-11 is a documented
+  partial command surface, and F-12 has no client addon by design.
 
 ## Turtle data/client validation matrix
 
@@ -225,6 +279,7 @@ valid Tortoise data until the core data itself changes.
 | Talents | `Talentspec.cpp` validates link syntax, class/rank limits, dependencies, tree-row ordering, and available points against loaded `Talent.dbc`/server stores; final AI startup logged `Loading TalentSpecs` without `Error with premade` or `No premade` failures. | The loader contract is valid, but broad Turtle reworked-talent interactions are not claimed complete without per-class/spec runtime acceptance. |
 | Locations and navigation | Core custom start coordinates and local map/MMAP availability were inspected; `TravelMgr` no longer excludes either custom range and startup uses direct movement with travel-node generation disabled. | Location lookup is core-data-driven. Full movement/death acceptance remains open because the High Elf tile has no VMap. |
 | Collection mounts | Core `MountManager` loads `collection_mount`; core Turtle scripts consume its item-to-spell mapping. Module `MountValue`/factory lookup uses the same mapping; verified examples include `36550→36650`, `36551→36651`, `36666→58031`, `92080→57740`, and `92082→57723`. | Collection mounts are wired to the authoritative core mapping. Physical item-use remains core-owned; the module does not simulate consuming collection items. |
+| Custom-ID store ranges | The live World store contains 26,544 items (max `1,985,406`), 14,339 creatures (max `2,509,000`), and 21,196 gameobjects (max `7,000,035`). | Compatibility scans use loaded-store-derived bounds; they no longer truncate Turtle custom content at fixed classic-era limits. |
 | Custom dungeons and portals | Core SQL contains Turtle custom portal rows using `custom_dungeon_portal`; the pinned core startup emitted `Script not found: custom_dungeon_portal`. The module has no custom encounter strategy graph. | Custom dungeon teleport/encounter behavior is unverified and blocked by a core content/script gap. The module intentionally does not invent coordinates or claim support. |
 | Client assumptions | Local package contains the Turtle patched client layer and base `WoW.exe` lineage reports build `5875`; normal and software-forced Wine launches both rendered black with no observable login UI. | Server/module opcode assumptions are local-core-based, but no real-client `.bot` command journey is claimed until the client is observable. |
 
@@ -499,6 +554,104 @@ These are acceptable temporary module-local seams only if each is documented as
 unsupported and covered by a focused test. They must not be mistaken for
 Tortoise-compatible behavior merely because the module compiles.
 
+### F-22 — Fixed donor store bounds truncated Turtle IDs (P1)
+
+The original compatibility proxies returned fixed classic-era limits for sparse
+Tortoise maps: `100000` for item and creature stores, `200000` for gameobjects,
+`10000` for area triggers, and `1500`/`100` for faction stores. This was not
+just extra empty iteration. The live `tw_world` data contains 26,544 loaded
+items through `1,985,406`, 14,339 creatures through `2,509,000`, and 21,196
+gameobjects through `7,000,035`. Any factory, mount, loot, vendor, travel, or
+debug scan above the old limit silently missed valid Turtle content.
+
+The module now derives one-past-largest-ID bounds from the loaded `ObjectMgr`
+maps and caches each sparse-map calculation so existing numeric scans do not
+rescan the whole store on every loop condition. Native spell, taxi, skill, map,
+and chat-channel bounds remain backed by their existing core APIs. The cache is
+intentionally scoped to the loaded store lifetime; a reload that changes the
+record count refreshes it.
+
+### F-23 — Classic-only race identity tables misclassified Turtle races (P1)
+
+`IsAlliance(uint8)` and `ChatHelper` originally knew only the eight Vanilla
+race constants. The pinned core's `Player::TeamForRace()` resolves faction from
+the loaded `ChrRaces.dbc`, including Turtle Goblin and High Elf rows. The
+module now uses that core function for race opposition/faction text and loads
+core DBC race names for chat parsing/formatting. Mount-skill selection still
+uses the generic core `SKILL_RIDING` fallback for races without a classic racial
+riding skill; collection mount eligibility remains driven by the core item,
+spell, class, and race data.
+
+### F-24 — Core path filters are not implemented (P1)
+
+The pinned core's `src/game/Maps/PathFinder.h:75-89` documents that area costs,
+area lookup/flags, avoidance-area mutation, and random navmesh points are
+currently no-ops or stubs. The module had inherited callers in default
+`AvoidMobsStrategy`, travel-node generation, fish-location generation, and
+owner debug commands. Ordinary `PathInfo::calculate` movement remains a real
+core path operation, but those extra calls cannot be treated as equivalent to
+CMaNGOS nav-area behavior.
+
+The closure removes `avoid mobs` from the default combat/non-combat strategy,
+forces the two cache-generation options off with a startup error, removes the
+module calls into the no-op area API, and turns avoidance/random-point debug
+commands into explicit unsupported errors. A future core PR can add a generic
+path-filter interface; the module must not recreate it with private navmesh
+access or guessed terrain flags.
+
+### F-25 — Active donor wrappers needed semantic re-tracing (P1)
+
+The core compatibility additions are not all harmless aliases. The final sweep
+found active module paths that still called wrappers whose bodies were no-ops or
+classic defaults:
+
+- combat mode switching called no-op `MeleeAttackStart/Stop`, and range/behind
+  decisions used the approximate `GetCombinedCombatReach` and false
+  `IsFacingTargetsBack` results;
+- attacker filtering called a dummy combat manager, skill unlearning always
+  failed, quest dropping never removed source items, and taxi interruption did
+  nothing;
+- gossip text read empty `Text_0`/`Text_1` fields even though the core stores
+  valid `BroadcastTextID` values;
+- auction mirror entries reported one item regardless of stack size, while the
+  guild-share buyer called a no-op `AuctionEntry::UpdateBid` and announced a
+  purchase without changing the auction;
+- battleground/lightwell checks hard-coded `CanInteract` to true.
+
+The module now calls native `Unit::Attack/AttackStop`, `GetCombatReach`,
+`IsBehindTarget`, `Creature::IsInEvadeMode`, `GetSkillRaceClassInfo`/`SetSkill`,
+`DestroyItemCount`, `OnTaxiFlightEject`, `Player::CanInteract`, and
+`ObjectMgr::GetBroadcastText`. Auction mirrors read the live item instance and
+the guild-share path submits `CMSG_AUCTION_PLACE_BID` to the core handler and
+checks removal/stack state before reporting success. Remaining core-only
+fallbacks are limited to emote sound lookup, released-loot and roll-state
+details, WMO area overrides, and the alternate graveyard-map view; they are not
+used as silent claims of complete Turtle behavior.
+
+### F-26 — Active initialization and presentation helpers were still donor no-ops (P1)
+
+The final active-call-site sweep found five less-obvious semantic losses that
+were not covered by the movement/auction table above:
+
+- `PlayerbotFactory` called the core's legacy `learnClassLevelSpells` name,
+  which is a no-op outside the old vendored PlayerBots build. A levelled bot
+  could therefore receive only starting spells and local special-case spells.
+- `ChatHelper` called empty core locale compatibility methods for quest,
+  creature, and item names, so localized Turtle data was silently discarded.
+- `BotUseItemSpell` called an always-success `PreCastCheck`, while the pinned
+  core exposes the real public `Spell::CheckCast` contract.
+- interrupt actions called an always-true `CanBeInterrupted` shim, and heal
+  prediction read an always-zero `GetDamage` shim.
+
+`f594fc1` now contains the module-local port of the mature class trainer/quest learner,
+using core quest/trainer/spell/talent APIs and the loaded `Spell.dbc`/server
+data. Locale formatting uses `ObjectMgr`'s native locale maps. Item casts call
+`CheckCast(true)`, interrupts follow the core spell lifecycle state, and heal
+prediction sums the relevant core-calculated heal effects for the current
+target. No core file or Player-specific bot hook was added. The remaining
+cosmetic emote sound and loot roll/release limitations stay explicitly bounded
+in F-05.
+
 ## 4. Turtle-specific gaps and mismatches
 
 ### F-06 — Custom starting areas required a current-data recheck
@@ -544,6 +697,33 @@ there are no Turtle-custom encounter strategies in the current graph.
 Generic travel/target discovery may still find database content, but that is
 not the same as encounter behavior. Treat custom dungeons as a separate
 behavior backlog item rather than assuming the Vanilla donor logic covers them.
+
+### F-27 — Core data references unregistered scripts (P1/P2)
+
+The final preserved-data startup of core `9487c515` reached world-ready but
+reported these unregistered script names from live world data:
+
+```text
+custom_dungeon_portal
+duplicate_tirion_fordring
+go_airplane             go_curious_leaf
+item_radio              item_temporal_bronze_disc
+npc_alexandros_mograine npc_breanna_darrowmont
+npc_chieftain_icepaw    npc_chromie_dialogue
+npc_distance_trigger    npc_frostshiv
+npc_kitten              npc_lady_ripper
+npc_nasuna              npc_surgeon_go
+npc_teslinah            spell_druid_wrath
+```
+
+`rg` against the pinned core found no registered implementation for these
+names (apart from an unrelated `npc_teslinah` function with a different
+registration path). The first and last entries have direct impact on the
+already-open custom-dungeon and custom-spell claims; the remaining names are
+core Turtle content paths, not PlayerBots behavior. The module deliberately
+does not add scripts to compensate for missing core content. The core/data
+owner must either register the intended scripts or remove/replace the
+corresponding rows before those content paths can be considered supported.
 
 ### F-09 — Talent data is server-aware, but generation is still a risk
 
@@ -691,7 +871,7 @@ The module's table ownership is inconsistent:
 | --- | --- | --- |
 | Travel graph | `TravelNode.cpp:3248-3430` always uses `WorldDatabase`; the World migration owns all three tables. | The baseline schema was already World-owned for the travel graph; the closure keeps that ownership and removes the unrelated dead cache tables from Character. |
 | Zone levels | `TravelMgr.cpp:1204-1250` uses `WorldDatabase`, executes `CREATE TABLE IF NOT EXISTS`, then inserts one row for each loaded area. | `ai_playerbot_zone_level` is absent from the module world migration, so schema ownership is hidden in runtime code and startup mutates the world database. |
-| Fish locations | `TravelMgr.cpp:2138-2389` reads `ai_playerbot_named_location` and previously generated/saved a full fish-point cache when no rows were returned. | The closure makes this rebuild opt-in through `AiPlayerbot.GenerateFishLocations`; normal startup now returns a direct-fishing fallback without scanning grids or writing rows. |
+| Fish locations | `TravelMgr.cpp:2014-2082` reads `ai_playerbot_named_location`; the former grid generator required the core's missing `PathInfo::getArea()` implementation. | The closure fails `AiPlayerbot.GenerateFishLocations` closed with an explicit startup error and uses persisted points or direct fishing; the removed generator cannot scan grids or write rows on the pinned core. |
 | Item/equipment caches | `RandomItemMgr::Init` calls the cache builders at `RandomItemMgr.cpp:72-82`; missing tables fall through to generation paths such as `:128-215` and `:2825-2984`. | A missed migration can turn startup into a large per-item scan and one-INSERT-per-item workload on the world thread. |
 
 When AI is enabled, `BotHostAdapter::OnStartup` calls
@@ -839,8 +1019,9 @@ opt-in migration with provenance.
    remove them from the deployable Tortoise product; keep
    `BUILD_LEGACY_PLAYERBOTS=OFF` for native-module work.
 2. Replace the highest-value remaining compatibility fallbacks with real
-   Tortoise adapters and focused acceptance checks, starting with
-   trigger-cast, emote, loot/roll, and custom-zone movement semantics.
+   Tortoise adapters and focused acceptance checks, starting with the generic
+   path-filter seam, trigger-cast, emote, loot/roll, and custom-zone movement
+   semantics.
 3. Build acceptance coverage for Turtle custom starts, dungeons, and talent
    interactions from the local server data. The module must not infer support
    from a numeric ID alone.
@@ -870,7 +1051,7 @@ bash dev/build-playerbots
 ```
 
 The final exact code snapshot is implementation commit
-`7e08fc810060e77839d4f38c813cc7eba9b05737`. The persistent builder's direct
+`f594fc1a22f3d4ee23d74c3647cb63b6b22c7a33`. The persistent builder's direct
 cached compile of that snapshot completed successfully, and the final
 documentation-only configure is checked separately by CMake's source identity
 diagnostic. The
@@ -904,7 +1085,7 @@ TBPLAY fixtures produced `PendingAddRemoveTest PASSED`, the six-step
 for `list`/`stats`/`follow`, and `PacketBridgeTest group invite/accept PASSED`
 followed by `PacketBridgeTest cleanup PASSED`.
 
-The final timestamp-scoped restart of the updated binary (container start
+An earlier timestamp-scoped restart of the pre-`0f97403` closure binary (container start
 `2026-08-25T01:41:31.245096072Z`) reached `TortoiseBots: native module loaded
 (AI enabled)` and `World server is up and running!`. It logged the expected
 empty equipment-cache and direct fish/travel fallbacks, emitted no
@@ -920,6 +1101,17 @@ command surface, mature group invite/accept, and cleanup. The test config was
 restored to `TortoiseBots.PacketBridgeTest = 0`; the subsequent normal restart
 at `2026-08-25T01:48:57.408768993Z` reached world-ready with the expected
 TalentSpecs/travel/fishing startup lines and no packet fixture enabled.
+
+Final implementation evidence: after installing `f594fc1` through the
+persistent builder, the preserved stack restarted at
+`2026-08-25T03:31:58.419176189Z` and reached world-ready at
+`2026-08-25T03:32:24Z`. Startup logged `Loading TalentSpecs`, the empty
+weight-scale safeguard, direct travel/fishing fallback, native module load,
+and no `ai_playerbot_*` DDL/DML. The three packet/automation fixture flags
+remained `0`; no fixture journey was replayed. The restart confirmed the
+already-traced core/data registry gap with `Script not found` entries for
+`custom_dungeon_portal`, `spell_druid_wrath`, `go_airplane`, `item_radio`,
+and the listed custom NPC/duplicate names; no module replacement was invented.
 
 The closure pass modified module C++, SQL, CMake, README, and tooling files;
 it did not modify the sibling core, Dockerfile, compose file, or reference
