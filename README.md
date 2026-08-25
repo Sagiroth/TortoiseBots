@@ -1,8 +1,49 @@
 # Status
-WIP, still pending local smoke test against Penqle core.
 
+> **Work in progress — integration smoke testing pending.**
+
+TortoiseBots has completed its module-side Vanilla/Turtle cleanup and integration
+work, but the current release is **not yet considered plug-and-play against
+Penqle `main`**.
+
+Current status:
+
+- [x] Native TortoiseBots module implemented
+- [x] Mature PlayerBots AI integrated
+- [x] Vanilla/Turtle 1.18.1 cleanup and compatibility audit completed
+- [x] Headless session lifecycle implemented and previously runtime-validated
+- [x] Legacy PlayerBots-specific core coupling cleaned up in the validated local core
+- [x] PlayerBots-enabled and module-disabled builds validated against the local integration baseline
+- [ ] Smoke test against the current Penqle modular-core baseline
+- [ ] Publish/upstream the remaining required generic Penqle core changes
+- [ ] Manual owned-bot gameplay acceptance
+- [ ] Manual 5-player dungeon acceptance
+
+The next immediate step is to test the module against the current
+**Penqle modular core** and confirm the exact minimal upstream dependency set.
+
+Until that is complete, treat the project as **WIP** and use the exact tested
+core/module revisions documented in [`docs/STATUS.md`](docs/STATUS.md).
+
+TortoiseBots has completed its module-side Vanilla/Turtle cleanup and integration
+work, but the current release is **not yet considered plug-and-play against
+Penqle `main`**.
 # Dependencies
-WIP
+TortoiseBots targets:
+
+- **Tortoise WoW 1.18.1**
+- **[Penqle/tortoise-wow](https://github.com/Penqle/tortoise-wow)** as the canonical core
+- Penqle's native module system
+- Generic Headless-session / lifecycle / packet integration required by the module
+
+The intended supported architecture is:
+
+```text
+Penqle/tortoise-wow
+        |
+        | generic module + Headless host capabilities
+        v
+TortoiseBots
 
 # TortoiseBots
 
