@@ -2,473 +2,165 @@
 
 ## Project
 
-This workspace is for PlayerBots development targeting **Tortoise WoW 1.18.1**.
+This repository is **TortoiseBots** — an optional native PlayerBots module for **Tortoise WoW 1.18.1**.
 
-This repository is available online (private) at <https://github.com/tortoise-wow-stack/TortoiseBots> — but this AGENTS.md is intentionally agnostic to where the checkout lives. Before pulling/cloning anything, check whether a local copy already exists alongside this repository; only use the online URL if no local checkout is present.
+Public repo: <https://github.com/tortoise-wow-stack/TortoiseBots>
 
-PlayerBots is intentionally being rebuilt around a clean, optional module
-architecture.
+PlayerBots is rebuilt as a clean, optional module. The Tortoise core must remain usable without it.
 
-The Tortoise core must remain usable without PlayerBots.
-
-The primary architectural objective is:
-
-> Harvest mature PlayerBots behavior without inheriting mature PlayerBots
-> coupling.
+> Harvest mature PlayerBots behavior without inheriting mature PlayerBots coupling.
 
 ---
 
 ## Read first
 
-For PlayerBots work, read in this order:
+For any PlayerBots work, read in this order:
 
-1. `docs/STATUS.md` — current tested baseline, open issues, and immediate next work.
+1. `docs/STATUS.md` — current tested baseline, open issues, immediate next work (resume point).
 2. `docs/PLAN.md` — durable architecture rules and roadmap.
-3. `docs/HOST_API.md` when the task touches sessions, lifecycle, packets, commands, build/module integration, or a core seam.
-4. `docs/PROVENANCE.md` when porting or changing donor-derived behavior.
-5. `docs/README.md` when you need the documentation map.
+3. `docs/HOST_API.md` — when touching sessions, lifecycle, packets, commands, build/module integration, or any core seam.
+4. `docs/PROVENANCE.md` — when porting or changing donor-derived behavior.
+5. `docs/README.md` — documentation map.
 
-`docs/STATUS.md` is the current resume point and `docs/PLAN.md` is the durable
-execution/architecture source of truth. `PLAYERBOTS_AUDIT.md` and
-`PLAYERBOTS_HANDOVER.md` are historical evidence, not active implementation
-plans. Use them only for a specific finding/claim, and use Git history when an
-older design proposal is required.
+`docs/STATUS.md` is the resume point. `docs/PLAN.md` is the architecture source of truth. `PLAYERBOTS_AUDIT.md` and `PLAYERBOTS_HANDOVER.md` are historical evidence — use only for a specific finding, otherwise use Git history.
 
-When researching existing PlayerBots behavior, also read the
-Tortoise WoW Knowledge Base instructions first:
+This repo is self-contained. You do not need any checkout outside it to understand the architecture or to contribute. All required context is in `docs/` and this file.
 
-- First check whether a local checkout already exists alongside this repository (look for a sibling `TortoiseWoWKnowledgeBase` checkout).
-- Only if no local copy is present, use the online reference: <https://github.com/tortoise-wow-stack/TortoiseWoWKnowledgeBase/blob/main/AGENTS.md>
-
-Then use its `playerbots/` documentation as a behavioral/capability reference.
+If you have a local Tortoise core checkout, Docker stack, or Knowledge Base checkout alongside this repo, tell the agent explicitly when it is relevant. The agent must not assume any sibling directory exists or guess absolute paths.
 
 ---
 
 ## Canonical upstream
 
-The canonical upstream and target core for TortoiseBots is:
+The canonical upstream and target core is:
 
 <https://github.com/Penqle/tortoise-wow>
 
-Unless explicitly qualified otherwise, the following terms mean Penqle/tortoise-wow:
+Unless qualified otherwise, these terms mean `Penqle/tortoise-wow`: upstream, upstream core, target core, core main, core PR.
 
-- upstream
-- upstream core
-- target core
-- core main
-- core PR
-- core PRs
-- upstream publication
+`Shyalya/tortoise-wow` and other PlayerBots repos (`cmangos/playerbots`, `mod-playerbots`, `mangoszero/server`, `cmangos/mangos-classic`) are **read-only donor references**, not upstream. Source-of-truth order:
 
-Shyalya/tortoise-wow and the other PlayerBots repositories (cmangos/playerbots, mod-playerbots, mangoszero/server, cmangos/mangos-classic, and other historical implementations) are read-only reference/donor repositories, not the upstream core.
+1. `Penqle/tortoise-wow` pinned target core
+2. Turtle data / DBC / runtime evidence
+3. This repo's host contract (`docs/HOST_API.md`, `docs/STATUS.md`, `docs/PLAN.md`)
+4. Shyalya and other donors as references only
 
-Source-of-truth order for core integration:
-
-1. Penqle/tortoise-wow current/pinned target core
-2. local Turtle data / DBC / runtime evidence
-3. TortoiseBots current host contract/docs (HOST_API.md, STATUS.md, PLAN.md)
-4. Shyalya and other PlayerBots repositories as references only
-
-Shyalya is valuable for historical Turtle PlayerBots compatibility, API differences, known integration pain, mature behavior, and Turtle-specific fixes, but it is not authoritative for the current core API, current core branch, current upstream PR, current host baseline, or publication status.
-
-Git remote aliases are not authority. A local checkout may have `origin` pointing at Shyalya and `upstream` pointing at Penqle; always identify the repository by owner/repository when reasoning about integration or publication.
-
-## Reference repositories (check local first — then online)
-
-This repository is intentionally agnostic to absolute filesystem paths.
-
-**Before cloning/pulling anything, check whether a local read-only checkout already exists alongside this repository.** Common sibling locations to look for (names may vary, prefer relative discovery):
-
-- `playerbots-references/` (expected to contain `mangoszero-server`, `cmangos-playerbots`, `cmangos-mangos-classic`, `shyalya-tortoise-wow`)
-- `TortoiseWoWKnowledgeBase` (sibling checkout)
-- `tortoise-docker-penqle` (local Docker/runtime environment)
-
-Only if no local copy is found, use the online URLs below as the reference point. Do not hardcode absolute paths like `/mnt/...` — they vary per machine.
-
-Online references (use only if local not present):
-
-- Knowledge Base: <https://github.com/tortoise-wow-stack/TortoiseWoWKnowledgeBase>
-- `mangoszero-server`: <https://github.com/mangoszero/server>
-- `cmangos-playerbots`: <https://github.com/cmangos/playerbots>
-- `cmangos-mangos-classic`: <https://github.com/cmangos/mangos-classic>
-- `shyalya-tortoise-wow`: <https://github.com/Shyalya/tortoise-wow>
-- This project (private): <https://github.com/tortoise-wow-stack/TortoiseBots>
-- Penqle core: <https://github.com/Penqle/tortoise-wow>
-- Docker/runtime environment: <https://github.com/Sagiroth/tortoise-docker-penqle> (local sibling `tortoise-docker-penqle` if present)
-
-Local Penqle Docker/runtime environment (if present — check sibling checkout first):
-
-### Docker/runtime environment purpose
-
-Use `tortoise-docker-penqle` as the preferred local environment for:
-
-- building/running the Penqle server when that workflow is already supported there
-- starting/stopping the local server stack
-- runtime verification
-- server log inspection
-- database-backed behavior checks
-- reproducing login/session/world behavior
-- validating PlayerBots changes in a realistic local environment
-
-This Docker workspace is **not** a donor/reference PlayerBots repository.
-
-Treat it as the local execution/validation environment for the target core.
-
-### Docker workspace safety
-
-Unless the current task explicitly requires Docker/infrastructure changes:
-
-- do not edit Dockerfiles
-- do not edit compose files
-- do not change database initialization scripts
-- do not rebuild/reset databases destructively
-- do not remove volumes
-- do not wipe containers/images/volumes
-- do not alter unrelated runtime configuration
-
-Prefer using the existing documented Docker workflow as-is.
-
-Before running destructive Docker or database operations, stop and explain why
-they are required.
-
-Do not use commands equivalent to:
-
-```text
-docker compose down -v
-docker volume rm ...
-docker system prune ...
-DROP DATABASE ...
-TRUNCATE ...
-```
-
-unless explicitly requested by the user.
-
-If the Docker environment contains its own `AGENTS.md`, `README`, or operational
-instructions, read those before using it.
-
-When validating PlayerBots behavior, prefer this environment over inventing a
-new ad-hoc runtime setup.
-
-### Reference repositories are read-only
-
-These repositories are research material.
-
-Do not:
-
-- edit them
-- commit to them
-- rebase/reset them as part of implementation work
-- treat them as part of the target PlayerBots implementation
-- blindly copy their architecture into Tortoise
-- assume a local checkout is the implementation target
-
-Read/search/diff/history inspection is allowed.
-
-If a reference checkout is missing, do not fabricate its contents. If network
-access is available, the reference repositories listed in `PLAN.md` may be used
-instead.
-
-Before relying on a reference implementation for provenance, record the exact
-commit:
-
-```bash
-git -C "<reference-path>" rev-parse HEAD
-```
+Git remote aliases are not authority — always identify a repo by `owner/repo`.
 
 ---
 
-## What each reference is for
+## Reference repositories
 
-### TortoiseWoWKnowledgeBase
+All references are remote, read-only, and optional. Clone only what you need for the current question — do not vendor them into this repo.
 
-Use primarily as:
+| Reference | URL | Purpose |
+| --- | --- | --- |
+| Knowledge Base | <https://github.com/tortoise-wow-stack/TortoiseWoWKnowledgeBase> | Behavioral spec, capability inventory, command reference, acceptance-test inspiration |
+| Penqle core | <https://github.com/Penqle/tortoise-wow> | Target core |
+| Shyalya fork | <https://github.com/Shyalya/tortoise-wow> | Turtle 1.18.1 compatibility evidence, known API differences, Turtle fixes |
+| CMaNGOS PlayerBots | <https://github.com/cmangos/playerbots> | Mature combat/movement/class/healing/CC/dungeon behavior |
+| CMaNGOS Classic | <https://github.com/cmangos/mangos-classic> | What CMaNGOS PlayerBots expects from its host |
+| MangosZero | <https://github.com/mangoszero/server> | Lifecycle/session/group patterns |
+| mod-playerbots | <https://github.com/mod-playerbots/mod-playerbots> | Newer behavior reference |
+| Docker/runtime env | <https://github.com/Sagiroth/tortoise-docker-penqle> | Optional local runtime/validation environment |
 
-- behavioral specification
-- capability inventory
-- public command/reference behavior
-- ownership/security/failure reference
-- research index
-- acceptance-test inspiration
+Read `TortoiseWoWKnowledgeBase/AGENTS.md` before using its `playerbots/` docs. The Knowledge Base describes **what should happen**, not how to architect it.
 
-Read its `AGENTS.md` before using its PlayerBots material.
+Do not edit, commit to, or rebase reference repos. Do not blindly copy their architecture. Before relying on a commit for provenance, record its SHA (e.g. GitHub permalink or `git ls-remote <url> HEAD`).
 
-The Knowledge Base describes **what should happen**. It does not dictate the
-new module architecture.
+### What each reference is for — quick guide
 
-### `shyalya-tortoise-wow`
+- **TortoiseWoWKnowledgeBase** — public behavior, commands, ownership, security
+- **Shyalya** — Turtle spells/talents, session/movement/group/loot lessons, integration pain
+- **CMaNGOS PlayerBots** — richest behavior source for combat/movement/healing/CC/dungeons
+- **CMaNGOS Classic** — host API definitions and lifecycle semantics
+- **MangosZero** — smaller bot lifecycle, character creation, group handling
 
-Use primarily as:
+### Reference lookup strategy
 
-- Turtle WoW 1.18.1 compatibility evidence
-- known host/API incompatibilities
-- Turtle-specific fixes
-- talent/spell differences
-- session/movement/group/loot lessons
-- evidence of which integration points became painful
+Do not search every repo for every task:
 
-Do not reproduce its broad host-hook surface automatically.
+- **Public behavior / commands / ownership** → Knowledge Base → Shyalya → CMaNGOS PlayerBots
+- **Combat / class AI / healing / CC / movement** → Knowledge Base → CMaNGOS PlayerBots → Shyalya → MangosZero
+- **Session / lifecycle / bot login** → Current Tortoise core → MangosZero → Shyalya → CMaNGOS
+- **Turtle spells / talents / custom content** → Tortoise core/data → Knowledge Base → Shyalya → Vanilla refs
+- **Runtime / integration failures** → Current core source → Docker env (if you have one) → logs → references
 
-### `cmangos-playerbots`
-
-Use primarily as:
-
-- mature combat behavior
-- movement behavior
-- class strategies
-- healing/CC/interrupt logic
-- dungeon/raid behavior
-- accumulated bug fixes and edge cases
-
-Treat it as the richest behavior source, not as the architecture to transplant.
-
-### `cmangos-mangos-classic`
-
-Use when understanding what `cmangos-playerbots` expects from its host core:
-
-- API definitions
-- lifecycle behavior
-- session/player semantics
-- movement/group/map APIs
-- compile-time integration points
-
-Do not assume CMaNGOS host APIs should be recreated in Tortoise.
-
-### `mangoszero-server`
-
-Use primarily as:
-
-- MaNGOS-Zero-family lifecycle reference
-- bot character creation/login ideas
-- session handling
-- group handling
-- random-bot lifecycle
-- smaller/native bot-system patterns
-
-It is a reference implementation, not proof that its module boundary is the
-right one for Tortoise.
-
----
-
-## Reference lookup strategy
-
-Do not search every repository for every task.
-
-Choose references based on the question.
-
-### Public behavior / commands / ownership
-
-Start with:
-
-1. Knowledge Base
-2. Shyalya if Turtle-specific behavior matters
-3. CMaNGOS PlayerBots if implementation detail is needed
-
-### Combat / class AI / healing / CC / movement
-
-Start with:
-
-1. Knowledge Base for expected behavior where documented
-2. CMaNGOS PlayerBots for mature implementation
-3. Shyalya for Turtle-specific differences/fixes
-4. MangosZero only when it provides a useful alternative
-
-### Session / lifecycle / bot login
-
-Start with:
-
-1. Current Tortoise core
-2. MangosZero
-3. Shyalya
-4. CMaNGOS PlayerBots + CMaNGOS Classic only as additional references
-
-The current Tortoise architecture always has priority over making a donor
-port easier.
-
-### Turtle-specific spells / talents / custom content
-
-Start with:
-
-1. current Tortoise server data/code
-2. Knowledge Base
-3. Shyalya
-4. CMaNGOS/Vanilla references only for comparison
-
-Do not assume Vanilla 1.12 behavior is correct for Turtle 1.18.1.
-
-### Runtime / server behavior / integration failures
-
-Start with:
-
-1. current target source tree
-2. `tortoise-docker-penqle` Docker/runtime environment (sibling checkout, if present — online ref: <https://github.com/Sagiroth/tortoise-docker-penqle>)
-3. server logs / runtime state
-4. reference repositories only if the failure needs comparison
-
-Use the Docker environment to answer questions such as:
-
-- does the server start?
-- does the module load?
-- can a headless session log in?
-- does the character enter the world?
-- does logout/save/reconnect work?
-- does the database contain the expected runtime state?
-- does a behavior work in-game rather than only compile?
-
-Static inspection is not a substitute for runtime verification when the task
-depends on actual server behavior.
+The current Tortoise architecture always outranks making a donor port easier.
 
 ---
 
 ## Architecture invariants
 
-These rules are non-negotiable.
+Non-negotiable.
 
 ### Keep PlayerBots optional
 
-`BUILD_PLAYERBOTS=OFF` must remain a supported first-class build.
+`BUILD_PLAYERBOTS=OFF` must remain a supported first-class build. The core must build without this module. No PlayerBots runtime/config/SQL dependency may be required when bots are off.
 
-The core must build without the PlayerBots module checkout.
-
-No PlayerBots runtime/config/SQL dependency may be required when bots are off.
-
-The native module is selected explicitly through the target core's
-`MODULE_TORTOISEBOTS` setting. `BUILD_PLAYERBOTS` is not the native module
-selector, and `BUILD_LEGACY_PLAYERBOTS=OFF` is the normal setting for native
-module work.
+Native selection is via `MODULE_TORTOISEBOTS` in the target core. `BUILD_PLAYERBOTS` is not the native selector; `BUILD_LEGACY_PLAYERBOTS=OFF` is the normal setting for native work.
 
 ### Do not reintroduce legacy coupling
 
-Never recreate patterns such as:
+Never recreate:
 
-- `WorldSession::GetBot()`
-- `WorldSession::SetBot()`
-- `m_bot`
-- `sPlayerBotMgr`
-- `PlayerBotEntry` inside normal core gameplay code
-- scattered `if (IsBot())` / `if (GetBot())` checks
+- `WorldSession::GetBot()` / `SetBot()` / `m_bot` / `sPlayerBotMgr` / `PlayerBotEntry` in normal core code
+- Scattered `if (IsBot())` / `if (GetBot())` checks
 
-Normal gameplay systems should not need to know that a `Player` is controlled
-by a bot.
-
-**If implementing a PlayerBots feature requires adding bot-specific conditions
-to unrelated core gameplay systems, stop and explain why before proceeding.**
+Normal gameplay systems must not know a `Player` is bot-controlled. **If a feature requires bot-specific conditions in unrelated core systems, stop and explain why.**
 
 ### Prefer module-only changes
 
-Before modifying core code, determine:
+1. Can it live entirely inside the module?
+2. Does an existing `ScriptMgr`/event/lifecycle hook already expose it?
+3. Can the missing capability be expressed as a generic core concept?
 
-1. Can this be implemented entirely inside the module?
-2. Does an existing ScriptMgr/event/lifecycle hook already expose what is needed?
-3. Can the missing capability be expressed as a generic core concept rather
-   than a PlayerBots-specific concept?
-
-Only add a new core seam when the existing core cannot provide the required
-capability cleanly.
+Only add a new core seam when the existing core cannot provide the capability cleanly.
 
 ### Centralize host integration
 
-Any unavoidable PlayerBots/core integration must stay concentrated in the
-small approved host boundary.
+Unavoidable integration stays in the small approved host boundary. Do not spread hooks through `Player.cpp`, `Unit.cpp`, `Spell.cpp`, `WorldSession.cpp`, movement, groups, etc.
 
-Do not spread PlayerBots hooks through `Player.cpp`, `Unit.cpp`, `Spell.cpp`,
-`WorldSession.cpp`, movement, groups, etc.
-
-Aim for roughly:
-
-```text
-<= 5 directly PlayerBots-aware core files where practical
-```
-
-If the host integration starts growing toward roughly 8–10 files before the
-MVP works, treat that as an architectural warning and reassess.
+Aim for `<= 5` directly PlayerBots-aware core files. Approaching 8–10 before MVP is an architectural warning.
 
 ### Headless sessions
 
-Treat bot sessions as a session/transport concern.
+Bot sessions are a transport concern. Prefer generic concepts: `HasNetworkTransport()`, `CanReceiveClientPackets()`, network-backed vs headless session.
 
-Prefer concepts such as:
-
-- network-backed session
-- headless session
-- `HasNetworkTransport()`
-- `CanReceiveClientPackets()`
-
-Do not make generic core code ask whether a session belongs to a bot.
-
-The core may understand a generic headless/non-network session capability.
-
-The PlayerBots module should understand that a particular headless session is
-being used to control a bot.
+The core may understand generic headless/non-network capability. The module knows a particular headless session is a bot. Do not make core code ask "is this a bot session?".
 
 ### LLM isolation
 
-LLMs must never be required for:
-
-- combat
-- movement
-- healing
-- threat
-- interrupts
-- CC timing
-- any real-time game-loop decision
-
-LLM integration must be asynchronous and optional.
-
-If the LLM/network service is unavailable, normal bot gameplay must continue.
+LLMs must never be required for combat, movement, healing, threat, interrupts, or CC. LLM integration is asynchronous and optional. If the LLM is unavailable, bot gameplay continues.
 
 ---
 
-## Donor/reference PlayerBots rule
-
-CMaNGOS PlayerBots, MangosZero, Shyalya/r-o-sh, older PlayerBots
-implementations, and the Knowledge Base are reference material.
-
-General rule:
+## Donor/reference rule
 
 ```text
 harvest behavior, not architecture
 ```
 
-Do not vendor a donor PlayerBots tree into the Tortoise core.
-
-Do not blindly cherry-pick commits that introduce donor host coupling.
-
-Do not preserve a donor class/module structure merely because it makes
-copying easier.
+Do not vendor a donor tree into the core. Do not cherry-pick commits that expand host coupling. Do not preserve donor class structure just to make copying easier.
 
 For imported behavior:
 
-1. understand the observable behavior
-2. check the Knowledge Base where applicable
-3. inspect the most relevant reference implementation
-4. inspect Turtle-specific differences where applicable
-5. define the expected behavior / acceptance test
-6. implement or port it inside the new module
-7. test it
-8. record provenance
+1. Understand observable behavior
+2. Check Knowledge Base where applicable
+3. Inspect the most relevant donor
+4. Inspect Turtle differences
+5. Define expected behavior / acceptance test
+6. Implement inside the new module
+7. Test it
+8. Record provenance
 
-Prefer:
-
-```text
-study -> extract intent -> port/reimplement -> test
-```
-
-over a literal cherry-pick when donor dependencies or architecture differ.
-
-A cherry-pick is acceptable only when the commit is isolated, compatible,
-properly licensed/attributed, and does not expand core coupling.
+Prefer `study -> extract intent -> port/reimplement -> test` over literal cherry-picks. A cherry-pick is acceptable only when isolated, compatible, licensed, and not expanding coupling.
 
 ---
 
 ## Provenance
 
-Substantial copied or ported behavior must be recorded in:
-
-```text
-docs/PROVENANCE.md
-```
-
-Record at least:
+Record substantial copied/ported behavior in `docs/PROVENANCE.md`:
 
 ```text
 Feature:
@@ -480,246 +172,93 @@ Reason:
 Local validation:
 ```
 
-Preserve required upstream license/copyright notices.
-
-Do not silently copy large bodies of upstream or AI-generated code.
+Preserve upstream license/copyright notices. Do not silently copy large bodies of code.
 
 ---
 
 ## Scope discipline
 
-Prefer small vertical slices.
+Prefer small vertical slices. Do not create speculative abstractions, implement every class at once, start raid/BG/random-bot systems before the dungeon MVP, refactor unrelated core code, or optimize for 1000 bots before the small-party case works.
 
-Do not:
-
-- create speculative abstractions for future features
-- implement every class at once
-- start raid/BG/random-bot systems before the dungeon MVP
-- refactor unrelated core code while implementing PlayerBots
-- optimize for 1000 bots before the small-party use case works
-- add compatibility layers merely to make a donor code drop compile
-
-The first useful target is:
-
-```text
-human + owned bot
-```
-
-Then:
-
-```text
-2 humans + bots filling a 5-player dungeon group
-```
+First target: `human + owned bot` → then `2 humans + bots filling a 5-player dungeon`.
 
 ---
 
 ## Performance rules
 
-From the beginning:
+From the start: no DB query every bot tick, no full-world scan every tick, no synchronous external network calls on game/map threads, no rebuilding large strategy graphs every update, cache immutable spell/talent metadata, use event-driven invalidation, keep expensive diagnostics opt-in. Measure rather than guess.
 
-- no database query every bot tick
-- no full-world scan every bot tick
-- no synchronous external network calls in game/map threads
-- no rebuilding large strategy graphs every update
-- cache immutable spell/talent metadata where practical
-- use event-driven invalidation where appropriate
-- keep expensive diagnostics opt-in
-
-When performance work begins, measure rather than guess.
-
-Useful metrics include:
-
-- bot update time
-- total bot CPU
-- DB queries
-- path/movement requests
-- AI decisions/sec
-- memory per bot
+Useful metrics: bot update time, total bot CPU, DB queries, path/movement requests, AI decisions/sec, memory per bot.
 
 ---
 
-## Local changes and Git safety
+## Git safety
 
-Never reset, clean, overwrite, stage, or include unrelated user changes.
-
-Inspect:
-
-```bash
-git status --short
-```
-
-before and after work.
-
-Do not use destructive Git commands unless explicitly requested.
-
-Do not modify the local read-only reference repositories while implementing
-the target module.
+Never reset/clean/overwrite/stage/include unrelated user changes. Inspect `git status --short` before and after work. Do not use destructive Git commands unless explicitly requested.
 
 ---
 
 ## Validation
 
-Use the **smallest check that proves the current change**. Validation must not dominate implementation time.
+Use the **smallest check that proves the current change**. Do not let validation dominate implementation.
 
-Batch related edits before compiling. Do not rebuild after every file edit, every diagnostic observation, every docs change, or every manual test.
-
-### Default development loop
-
-For an active implementation slice:
+### Default loop
 
 ```text
-inspect
--> make a coherent batch of edits
--> one cached native MODULE_TORTOISEBOTS build if compiled code changed
--> run the smallest relevant runtime/manual check
--> continue implementing
+inspect -> coherent batch of edits -> one build if compiled code changed -> smallest runtime/manual check -> continue
 ```
 
-Repeat the build only if compiled code changed after the last successful build.
-
-A successful build remains valid evidence for unchanged code. A successful manual test remains valid evidence for unchanged behavior.
+A successful build/test remains evidence for unchanged code. Do not rebuild after every file or re-run the full matrix for unrelated edits.
 
 ### Validation cadence
 
-- **Docs/comments/config-only change:** no C++ build. Run only the smallest relevant text/config check plus `git diff --check`.
-- **Module-only C++ change:** run one cached native `MODULE_TORTOISEBOTS=static` build of the smallest affected target after the edit batch is coherent.
-- **Generic core-seam change:** while iterating, build the cached native module target only. Do **not** run the full optional-build/module matrix after every core edit.
-- **Optional-build/CMake/build-gating change:** run the directly affected configuration when needed to prove the change, then defer the full matrix until the slice is stable.
-- **Phase/PR/handover boundary:** run the full OFF/ON matrix **once**, after implementation has stabilized, plus coupling audits, `git diff --check`, and the required runtime gates.
-- Use cached builds by default. Use `--no-cache` only to diagnose a cache/image problem or when explicitly requested.
-- Rebuild the Docker image only when the runtime image genuinely needs new build output or build inputs changed. If the existing runtime can use the already-built binary, reuse it.
-- If the binary/image is unchanged, restart or reuse the existing stack instead of rebuilding.
-- If the user already manually validated a behavior and no code affecting that behavior changed afterward, **do not ask them to repeat the same test**.
-- Do not repeat login/logout/follow/shutdown acceptance scenarios merely for ceremony. Re-run them only when the changed code could plausibly regress them or at the final phase/PR gate.
+- **Docs/comments/config only** → text checks + `git diff --check`, no C++ build.
+- **Module-only C++** → one cached `MODULE_TORTOISEBOTS=static` build after the batch is coherent.
+- **Core-seam change** → cached module build while iterating; full ON/OFF matrix only when stable.
+- **Build-gating / CMake change** → directly affected configurations.
+- **Phase / PR / handover boundary** → full OFF/ON matrix once (`git diff --check` + coupling audits + required runtime gates).
 
-### Anti-churn rule
+Use cached builds by default. Rebuild images only when build inputs actually changed. Reuse existing binaries/stacks when unchanged. Do not ask the user to repeat a manual validation that already passed for unchanged code.
 
-If validation/recompilation is taking more time than implementing the current playable slice:
-
-1. stop,
-2. identify the single cheapest check that proves the current edit,
-3. run that check only,
-4. continue implementation.
-
-Do not turn every intermediate edit into a release-candidate validation cycle.
-
-Every code change still needs a targeted check and a clear report of what was, and was not, run.
-
-Useful audit:
+### Coupling audits
 
 ```bash
-rg -n \
-  'GetBot\(\)|SetBot\(|\bm_bot\b|sPlayerBotMgr|PlayerBotEntry|PB_STATE_' \
-  src
+rg -n 'GetBot\(\)|SetBot\(|\bm_bot\b|sPlayerBotMgr|PlayerBotEntry|PB_STATE_' src
+rg -n -i 'PlayerBot|BotService|BotSession|HeadlessSession' src/game
 ```
 
-Any result must be investigated.
-
-Also audit the approved host boundary periodically:
-
-```bash
-rg -n -i \
-  'PlayerBot|BotService|BotSession|HeadlessSession' \
-  src/game
-```
-
-Every result in normal core code must be explainable.
-
-A growing number of unrelated matches is an architecture regression.
-
-Do not delete legitimate:
-
-- `PlayerAI`
-- `PlayerControlledAI`
-- Discord bot code
-- gameplay entities/items/spells whose names naturally contain "Bot"
-- anticheat references to generic botting
+Every hit in normal core code must be explainable. Growing unrelated matches = regression. Do not flag legitimate `PlayerAI`, `PlayerControlledAI`, Discord bot code, or gameplay entities whose names naturally contain "Bot".
 
 ---
 
 ## Testing behavior
 
-Prefer deterministic validation/debug scenarios.
-
-Important areas include:
-
-- headless login
-- logout
-- duplicate login
-- human reconnect
-- player save/reload
-- server shutdown
-- follow
-- movement
-- target selection
-- threat
-- healing
-- interrupts
-- CC
-- death
-- wipe recovery
-- teleport/map transitions
-- dungeon regrouping
+Prefer deterministic debug scenarios. Key areas: headless login/logout, duplicate login, human reconnect, save/reload, shutdown, follow, movement, target selection, threat, healing, interrupts, CC, death, wipe recovery, teleport/map transitions, dungeon regrouping.
 
 Never claim behavior was tested if it was only inspected statically.
 
-### Runtime validation with the local Penqle Docker stack
+### Runtime validation (optional, when you have a running server)
 
-When a change affects runtime behavior and the Docker/runtime environment is available
-(a sibling `tortoise-docker-penqle` checkout may already exist alongside this repository),
-use that sibling checkout for the **smallest relevant verification**. For compilation/runtime
-validation, use the persistent builder provided by the sibling `tortoise-docker-penqle`
-checkout. Do not fall back to full Docker image rebuilds for normal source edits. Do not
-rebuild merely to restart an unchanged binary; reuse the running image and preserve its data.
+If you have a local core checkout or Docker stack and the user has pointed the agent at it, use the **smallest relevant check** for the behavior just changed:
 
-Prefer one focused gameplay check for the behavior just changed. Do not replay the whole
-historical acceptance matrix after each slice. Full regression journeys belong at phase/PR
-boundaries or after changes to the shared lifecycle/session seam.
+- server starts, module loads, bot logs in and enters world, follows/acts, logs out cleanly, human reconnect works, shutdown is clean, no unexpected DB/session errors.
 
-Before running it:
+Prefer one focused gameplay check per slice. Full regression belongs at phase/PR boundaries or after lifecycle/session seam changes.
 
-1. read any Docker workspace instructions
-2. inspect current container state
-3. avoid destructive resets
-4. preserve existing data unless the test explicitly requires otherwise
+If you have a Docker environment, read its own `AGENTS.md`/`README` before using it. Never run destructive operations (`docker compose down -v`, `docker volume rm`, `docker system prune`, `DROP DATABASE`, `TRUNCATE`) unless explicitly requested — explain why first.
 
-Record the actual commands used and the observed result.
-
-Examples of runtime evidence:
-
-- server starts successfully
-- PlayerBots module loads
-- bot character logs in
-- bot enters world
-- bot follows/acts
-- bot logs out cleanly
-- human reconnect works
-- server shutdown is clean
-- no unexpected DB/session errors appear in logs
-
-Never report "runtime tested" when only compilation or static inspection was
-performed.
+Examples of runtime evidence: server starts, module loads, bot enters world, follows, logs out, human reclaim works, shutdown clean, no DB/session errors. Never report "runtime tested" for static inspection alone.
 
 ---
 
 ## Reporting
 
-At the end of each PlayerBots task report:
+At the end of each task report:
 
-- files changed
-- core files changed
-- module files changed
-- new host hooks
-- why each core hook was necessary
-- tests/builds performed
-- Docker/runtime validation performed
-- observed behavior
-- relevant server/log evidence
-- remaining issues
-- architecture concerns
-- provenance for imported behavior
+- files changed (core vs module)
+- new host hooks and why each was necessary
+- tests/builds performed (and what was *not* run)
+- runtime validation performed and observed behavior + log evidence
+- remaining issues, architecture concerns, provenance for imported behavior
 
-If no build/test was run, say so explicitly.
-
-If a requested feature would violate an architecture invariant, stop and
-explain the conflict rather than quietly weakening the boundary.
+If no build/test was run, say so explicitly. If a requested feature would violate an invariant, stop and explain the conflict.

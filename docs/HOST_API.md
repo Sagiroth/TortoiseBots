@@ -30,18 +30,17 @@ code.
 The supported local host boundary is validated against:
 
 ```text
-Pinned Tortoise core checkpoint:     7353989c94399f80572a2f8ec2eb73c63a6c79f8 (local branch cleanup/f03-f27-code-freeze)
+Pinned Tortoise core checkpoint:     7353989c94399f80572a2f8ec2eb73c63a6c79f8 (historical pin; branch `cleanup/f03-f27-code-freeze`)
 TortoiseBots tested code checkpoint: 07cf7976c546fac27083c7b46e73299c25b095f3
 ```
 
 Validated local core checkpoint:
-`7353989c94399f80572a2f8ec2eb73c63a6c79f8` (local branch `cleanup/f03-f27-code-freeze`)
+`7353989c94399f80572a2f8ec2eb73c63a6c79f8` (historical branch `cleanup/f03-f27-code-freeze`)
 
 Upstream Penqle status:
 generic Headless capability proposed as draft PR [#411](https://github.com/Penqle/tortoise-wow/pull/411)
 (`feature/headless-world-session` @ `c37e28b`, based on upstream `main`
-`61a8269`; merge-base `93a5faa`). Not yet merged; the pinned local branch
-remains the validated baseline until #411 lands.
+`61a8269`; merge-base `93a5faa`). Not yet merged; the pinned branch remains the validated baseline until #411 lands.
 
 When the core changes, update [STATUS.md](STATUS.md) with the exact tested pair
 instead of assuming compatibility from a branch name.
@@ -269,7 +268,7 @@ to a real API, remove/disable it, or fail closed. Do not return fake success
 only to satisfy a donor interface.
 
 The completed audit removed or disabled several such compatibility surfaces;
-see [PLAYERBOTS_AUDIT.md](PLAYERBOTS_AUDIT.md) for evidence.
+see [PLAYERBOTS_AUDIT.md](archive/PLAYERBOTS_AUDIT.md) for evidence.
 
 ## 16. New core seam test
 
@@ -297,10 +296,10 @@ For the validated local baseline (core `7353989c94399f80572a2f8ec2eb73c63a6c79f8
   `20260825090000_world.sql`. 17 Turtle ScriptNames remain explicitly
   unverified content gaps — not host API gaps, not PlayerBots blockers, no fake
   scripts were added. See [STATUS.md](STATUS.md) and
-  [PLAYERBOTS_AUDIT.md](PLAYERBOTS_AUDIT.md) for the list.
+  [PLAYERBOTS_AUDIT.md](archive/PLAYERBOTS_AUDIT.md) for the list.
 
 Upstream Penqle status: validated local core checkpoint
-`7353989c94399f80572a2f8ec2eb73c63a6c79f8` on local branch
+`7353989c94399f80572a2f8ec2eb73c63a6c79f8` on branch
 `cleanup/f03-f27-code-freeze`; generic Headless subset proposed as draft PR
 [#411](https://github.com/Penqle/tortoise-wow/pull/411). Remaining F-27 names are
 Turtle content gaps, not host API gaps.

@@ -317,7 +317,7 @@ For the validated local baseline (core `7353989c94399f80572a2f8ec2eb73c63a6c79f8
   `20260825090000_world.sql`; 17 Turtle ScriptNames remain explicitly
   unverified content gaps — not PlayerBots architecture blockers, no fake
   scripts were added. See [STATUS.md](STATUS.md) and
-  [PLAYERBOTS_AUDIT.md](PLAYERBOTS_AUDIT.md) for the 17 names.
+  [PLAYERBOTS_AUDIT.md](archive/PLAYERBOTS_AUDIT.md) for the 17 names.
 
 Upstream Penqle publication of the core checkpoint is pending — validated as a
 local pinned baseline, not a merged upstream PR. See [STATUS.md](STATUS.md) for
@@ -488,8 +488,8 @@ Use the smallest check that proves the current change.
 - build-gating change -> directly affected configurations;
 - phase/PR boundary -> one final relevant optional-build/runtime gate.
 
-Use the persistent builder from sibling `tortoise-docker-penqle`. Do not fall
-back to full Docker image rebuilds for normal source edits.
+Use your local build environment or Docker stack if you have one. Avoid
+full image rebuilds for normal source edits.
 
 A previous successful test remains evidence for unchanged code/behavior.
 Do not replay historical lifecycle fixtures merely for ceremony.
@@ -530,7 +530,7 @@ Use the documentation set by purpose:
 - [PLAN.md](PLAN.md) — durable architecture and roadmap;
 - [HOST_API.md](HOST_API.md) — implemented core/module contract;
 - [PROVENANCE.md](PROVENANCE.md) — append-oriented source lineage/validation;
-- [PLAYERBOTS_AUDIT.md](PLAYERBOTS_AUDIT.md) — historical audit evidence.
+- [PLAYERBOTS_AUDIT.md](archive/PLAYERBOTS_AUDIT.md) — historical audit evidence.
 
 Historical handovers and audit bodies are evidence, not active implementation
 instructions. Use Git history when older design proposals are needed.

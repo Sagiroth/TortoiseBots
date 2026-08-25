@@ -13,7 +13,7 @@ Tested behavior checkpoints (behavior did not change after the code checkpoint):
 
 ```text
 TortoiseBots tested code checkpoint: 07cf7976c546fac27083c7b46e73299c25b095f3
-Pinned Tortoise core checkpoint:     7353989c94399f80572a2f8ec2eb73c63a6c79f8 (local branch cleanup/f03-f27-code-freeze)
+Pinned Tortoise core checkpoint:     7353989c94399f80572a2f8ec2eb73c63a6c79f8 (historical pin; branch `cleanup/f03-f27-code-freeze`)
 ```
 
 PR #15 adds documentation-only closure commits after the tested code checkpoint;
@@ -22,13 +22,12 @@ final commit SHA — the code checkpoint above remains the tested behavior
 reference.
 
 Validated local core checkpoint:
-`7353989c94399f80572a2f8ec2eb73c63a6c79f8` (local branch `cleanup/f03-f27-code-freeze`)
+`7353989c94399f80572a2f8ec2eb73c63a6c79f8` (historical branch `cleanup/f03-f27-code-freeze`)
 
 Upstream Penqle status:
 generic Headless capability proposed as draft PR [#411](https://github.com/Penqle/tortoise-wow/pull/411)
 (`feature/headless-world-session` @ `c37e28b`, based on upstream `main`
-`61a8269`; merge-base `93a5faa`). Not yet merged; the pinned local branch
-remains the validated baseline until #411 lands.
+`61a8269`; merge-base `93a5faa`). Not yet merged; the pinned branch remains the validated baseline until #411 lands.
 
 PR #13 merged the module-side Turtle 1.18.1 cleanup/audit closure into `main`.
 Later README/documentation commits do not replace the behavior baseline above.
@@ -153,7 +152,7 @@ listed GO/item/NPC/duplicate scripts) have no implementation or legitimate
 replacement in the pinned core/history. They remain explicitly unverified
 Turtle content gaps and are NOT considered PlayerBots architecture blockers;
 no empty scripts or guessed behavior were added. Full per-script evidence is
-in [PLAYERBOTS_AUDIT.md](PLAYERBOTS_AUDIT.md).
+in [PLAYERBOTS_AUDIT.md](archive/PLAYERBOTS_AUDIT.md).
 
 The original classification for each mismatch was:
 
@@ -235,7 +234,7 @@ These are future validation/product tasks, not hidden compatibility promises.
 - Keep host integration generic and centralized.
 - Prefer module-only changes.
 - Fail closed when a donor capability has no real Tortoise equivalent.
-- Use the persistent builder in sibling `tortoise-docker-penqle`.
+- Use your local build environment or Docker stack if you have one (tell the agent explicitly when it is relevant).
 - Validate the smallest thing affected by the current change.
 - Record substantial imported behavior in [PROVENANCE.md](PROVENANCE.md).
 
