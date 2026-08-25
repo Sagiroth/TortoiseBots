@@ -16,7 +16,7 @@ The architectural goal is not simply “port PlayerBots to Tortoise”. It is:
 ```text
 give Tortoise a clean optional bot platform
 +
-harvest mature PlayerBots behavior without inheriting mature coupling
+reuse existing PlayerBots behavior (primarily AzerothCore/mod-playerbots) without inheriting its coupling
 ```
 
 The core should not need to understand bot strategies, rotations, classes,
@@ -31,7 +31,7 @@ travel and gameplay contracts, use this order:
 2. current Turtle SQL / DBC / extracted data;
 3. observed runtime behavior and logs;
 4. Turtle-specific references such as Shyalya;
-5. Vanilla/CMaNGOS/mod-playerbots/MangosZero for comparison and mature behavior.
+5. Vanilla/CMaNGOS/mod-playerbots/MangosZero for comparison and existing behavior.
 
 Do not infer Turtle 1.18.1 behavior from Vanilla or donor code when the target
 core/data can answer the question.
@@ -119,14 +119,14 @@ The current ownership model is:
 | AI lifetime | `PlayerbotAIAdapter` |
 | AI lookup | `PlayerbotAIStorage` |
 | Gameplay decisions | `PlayerbotAI` |
-| Movement semantics | mature PlayerBots actions/strategies |
+| Movement semantics | Existing PlayerBots (primarily AzerothCore/mod-playerbots) actions/strategies |
 | Durable master identity | `BotRecord.masterGuid` |
 | Live master pointer | `PlayerbotAI` |
 | Packet bridge | `BotPacketAdapter` |
 | Player lifecycle bridge | `BotPlayerAdapter` |
 | Chat bridge | `BotChatAdapter` |
 | Native command surface | `BotCommands` |
-| Mature command language | `PlayerbotAI::HandleCommand` |
+| Existing command language | `PlayerbotAI::HandleCommand` |
 | Random population | `RandomBotService` |
 
 Do not introduce a second owner for movement, master identity, session lifetime
@@ -187,7 +187,7 @@ Bot behavior remains in module/runtime/AI code rather than the core.
 
 ### 4.3 PlayerBots runtime
 
-The active gameplay runtime uses the mature PlayerBots model:
+The active gameplay runtime uses the existing PlayerBots (primarily AzerothCore/mod-playerbots) model:
 
 ```text
 PlayerbotAI
@@ -256,7 +256,7 @@ Current native commands include:
 .bot help
 ```
 
-`.bot command` delegates to `PlayerbotAI::HandleCommand` for mature PlayerBots
+`.bot command` delegates to `PlayerbotAI::HandleCommand` for Existing PlayerBots (primarily AzerothCore/mod-playerbots)
 command behavior.
 
 Ownership must remain account/GM based. A bot command must never become a path
@@ -280,7 +280,7 @@ Preserve:
 - Turtle custom races and validated custom spell/talent behavior;
 - native Tortoise LFG/meeting-stone behavior;
 - native transport/taxi behavior;
-- mature generic gameplay behavior that genuinely applies to the target.
+- existing generic gameplay behavior that genuinely applies to the target.
 
 Do not re-add expansion systems merely because donor code contains them.
 Numeric IDs are not evidence by themselves: validate unknown Turtle IDs against
@@ -457,7 +457,7 @@ core's account/security model.
 Major reference pools include:
 
 - TortoiseWoW Knowledge Base — expected behavior/capability map;
-- CMaNGOS PlayerBots — mature class/combat/movement behavior;
+- CMaNGOS PlayerBots — existing class/combat/movement behavior;
 - Shyalya/Tortoise — Turtle compatibility lessons;
 - MangosZero — lifecycle patterns;
 - mod-playerbots — newer behavior reference.

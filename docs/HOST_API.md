@@ -125,7 +125,7 @@ Current adapters:
 | `BotSessionAdapter` | Headless session lifecycle |
 | `BotPlayerAdapter` | player lifecycle/reclaim attachment |
 | `BotChatAdapter` | native `.bot` command integration |
-| `BotPacketAdapter` | packet bridge into mature PlayerBots |
+| `BotPacketAdapter` | packet bridge into Existing PlayerBots (primarily AzerothCore/mod-playerbots) |
 
 The module should prefer an existing generic hook before requesting a new core
 seam.
@@ -149,7 +149,7 @@ The core listener is generic; it does not call a PlayerBots singleton.
 | AI lifetime | `PlayerbotAIAdapter` |
 | AI lookup | `PlayerbotAIStorage` |
 | Gameplay decisions | `PlayerbotAI` |
-| Movement semantics | mature PlayerBots actions/strategies |
+| Movement semantics | Existing PlayerBots (primarily AzerothCore/mod-playerbots) actions/strategies |
 | Durable master GUID | `BotRecord.masterGuid` |
 | Live master pointer | `PlayerbotAI` |
 
@@ -175,7 +175,7 @@ Network master incoming
 No bot-specific opcode branches belong in core packet handlers.
 
 The recorded fixture exercised Headless outgoing delivery, Network-master
-outgoing delivery and the mature group-invite Trigger -> Action acceptance
+outgoing delivery and the existing group-invite Trigger -> Action acceptance
 path. Real-client incoming delivery remains a separate manual-client acceptance
 boundary.
 
@@ -196,7 +196,7 @@ command
 help
 ```
 
-`.bot command` delegates to `PlayerbotAI::HandleCommand` for mature PlayerBots
+`.bot command` delegates to `PlayerbotAI::HandleCommand` for Existing PlayerBots (primarily AzerothCore/mod-playerbots)
 command behavior. Authorization uses the normal account/GM policy implemented
 by the module/core boundary.
 

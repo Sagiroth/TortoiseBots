@@ -31,7 +31,7 @@ combined work (AGPL §13).
 | Project | Licence | Notes |
 | --- | --- | --- |
 | `Shyalya/tortoise-wow` | GPL-2.0 | Turtle 1.18.1 donor baseline |
-| `cmangos/playerbots` | GPL-2.0 | Mature PlayerBots behavior |
+| `cmangos/playerbots` | GPL-2.0 | PlayerBots behavior (primarily AzerothCore/mod-playerbots) |
 | `cmangos/mangos-classic` | GPL-2.0 | Host API reference |
 | `mangoszero/server` | GPL-2.0 | Lifecycle patterns |
 | `mod-playerbots` (`AzerothCore`) | GPL-2.0+ / AGPL-3.0 (see its repo) | Newer behavior |

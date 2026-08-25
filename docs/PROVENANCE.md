@@ -16,7 +16,7 @@ licensing, reasoning and local validation.
 
 | Foundational Engine/AiObjectContext/Strategy/Trigger/Action/Value/ReactionEngine (Tortoise 1.18.1 baseline) | `Shyalya/tortoise-wow` (`playerbots-integration-gh` @ 1f9497e, vendored `cmangos/playerbots@c33dfac`) | `Shyalya` baseline provides the full `playerbot/strategy/Engine.{h,cpp}`, `AiObjectContext.{h,cpp}`, `AiObject.{h,cpp}`, `Strategy.{h,cpp}`, `Trigger.{h,cpp}`, `Action.{h,cpp}`, `Value.{h,cpp}`, `ReactionEngine.{h,cpp}`, `Queue/Event/Multiplier` etc, already translated for `MANGOSBOT_ZERO` (Vanilla 1.12/1.18.1) and `Penqle`'s `WorldLocation`/`Position`/`Map` APIs | `ai/playerbot/strategy/Engine.*`, `AiObjectContext.*`, `AiObject.*`, `Strategy.*`, `Trigger.*`, `Action.*`, `Value.*`, `ReactionEngine.*`, `Queue.*`, `Event.*`, `AiObject.*` (full `ai/playerbot` tree, 82 top-level + 14 strategy core + 113 generic) | Copied verbatim as the Tortoise/Vanilla translation reference for the foundational runtime; `cmangos-compat-shim.h` and `botpch.h` already handle `Penqle` `SpellEntry`/`ItemPrototype`/`MapStorage` translation, Vanilla `MANGOSBOT_ZERO` guards exclude `deathknight`/`TBC`/`WotLK` paths | Shyalya's `playerbots-integration-gh` is the only proven `1.18.1` PlayerBots that already runs on `Penqle`'s `WorldLocation` (`mapId/x/y/z/o`), `Transport`/`GenericTransport`, `GuidSet`/`AreaTableEntry` etc; using it as the baseline avoids reinventing `Penqle` API translation and keeps `Headless`/`IsHeadless()` as the only host seam | `ai/` now contains the full Shyalya `playerbot` tree (204 generic files after modern layer); `CMakeLists.txt` now builds the real `Engine`/`AiObjectContext`/`Strategy` stack instead of the stub `EngineStub`/`AiObjectContextStub`; native linkage uses explicit `MODULE_TORTOISEBOTS=static` and `MANGOSBOT_ZERO` |
 | Modern generic Base behavior (204 files, `Follow`/`Combat`/`Dead`/`Ranged`/`Melee` etc) | `mod-playerbots` `src/Ai/Base/Strategy` @ 5397110cba48 (merge #2661) + `Shyalya` `strategy/generic` @ 1f9497e | `mod-playerbots: src/Ai/Base/Strategy/*.{h,cpp}` (91 files, modern `FollowMasterStrategy` now `getDefaultActions()` + `InitTriggers` vs Shyalya's `InitNonCombatTriggers`/`InitCombatTriggers` + `NextAction::array`) / `shyalya: strategy/generic/*` (113 files, includes `BlackwingLair`/`Karazhan` dungeon strategies) | `ai/playerbot/strategy/generic/*` (204 files after modern layer; donor SHAs are retained here instead of backup copies) | Forward-ported the modern `mod-playerbots` generic set on top of Shyalya's Tortoise-translated generic; Vanilla/Tortoise `MANGOSBOT_ZERO` guards kept and expansion-only paths excluded | Modern class/combat/follow behavior remains attributable to the pinned donor commits; obsolete `*.shyalya.bak` copies were removed once this provenance record was complete |
-| Modern class factory + per-class Strategy subfolders (9 Vanilla classes) | `mod-playerbots` `src/Ai/Class/{Warrior,Mage,Priest,Druid,Hunter,Rogue,Paladin,Shaman,Warlock}/AiObjectContext.*` + `Strategy/*.{h,cpp}` @ 5397110 + `Shyalya` `strategy/{warrior,mage,priest,...}/` @ 1f9497e | `mod-playerbots: src/Ai/Class/Warrior/{WarriorAiObjectContext.*,Strategy/*.cpp}` etc / `shyalya: strategy/warrior/{WarriorAiObjectContext.*,Arms/Fury/Protection/Tank...Strategy}` etc | `ai/playerbot/strategy/{warrior,mage,priest,druid,hunter,rogue,paladin,shaman,warlock}/*` | Forward-ported the nine Vanilla class contexts and strategy families; `AiFactory` now instantiates each native class context rather than silently falling back to the generic context | Fresh runtime attached real Warrior, Mage, Priest, and Hunter contexts; Warrior/Mage/Priest completed packet group journeys and Hunter completed via the deterministic mature-action diagnostic path |
+| Modern class factory + per-class Strategy subfolders (9 Vanilla classes) | `mod-playerbots` `src/Ai/Class/{Warrior,Mage,Priest,Druid,Hunter,Rogue,Paladin,Shaman,Warlock}/AiObjectContext.*` + `Strategy/*.{h,cpp}` @ 5397110 + `Shyalya` `strategy/{warrior,mage,priest,...}/` @ 1f9497e | `mod-playerbots: src/Ai/Class/Warrior/{WarriorAiObjectContext.*,Strategy/*.cpp}` etc / `shyalya: strategy/warrior/{WarriorAiObjectContext.*,Arms/Fury/Protection/Tank...Strategy}` etc | `ai/playerbot/strategy/{warrior,mage,priest,druid,hunter,rogue,paladin,shaman,warlock}/*` | Forward-ported the nine Vanilla class contexts and strategy families; `AiFactory` now instantiates each native class context rather than silently falling back to the generic context | Fresh runtime attached real Warrior, Mage, Priest, and Hunter contexts; Warrior/Mage/Priest completed packet group journeys and Hunter completed via the deterministic existing-action diagnostic path |
 
 Notes (updated 2026-08-22 — large-batch forward-port):
 
@@ -40,7 +40,7 @@ Source files: `TortoiseBots.cmake`, `src/TortoiseBotsModule.cpp`, `host/*`, `run
 
 Copied / ported / independently reimplemented: behavior was ported/adapted from local `shyalya-tortoise-wow@1f9497e0f42bfc1055841bb6ebdc7caa3515de0b`, `cmangos-playerbots@076045efa835da9aab7caa943bca752aebe1baad`, and `mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70`; host lifecycle and BotManager ownership were independently reimplemented around generic `SessionTransport`/Headless APIs.
 
-Reason: use mature combat/class/travel behavior without compiling donor manager, random-manager, login-manager, or second-session ownership into the target core.
+Reason: use existing combat/class/travel behavior without compiling donor manager, random-manager, login-manager, or second-session ownership into the target core.
 
 Local validation: static `modules` target and `mangosd` link passed with `BUILD_PLAYERBOTS=ON`, `BUILD_LEGACY_PLAYERBOTS=OFF`, `MODULE_TORTOISEBOTS=static`; the complementary `BUILD_PLAYERBOTS=OFF`, `MODULES=disabled` `mangosd` build passed; the local Penqle runtime reached `TortoiseBots: native module loaded (AI enabled)` and `World server is up and running` after applying the three pending non-destructive world migrations required by the preserved database. Generated flags prove TortoiseBots definitions/includes/PCH are on `mod_tortoisebots_static`, not the combined `modules` target.
 
@@ -63,9 +63,9 @@ Copied / ported / independently reimplemented:
 - Tame-beast behavior was independently reimplemented around the host's real `SPELL_EFFECT_TAMECREATURE` path; rename and abandon use the native `Pet`/`Player` APIs. The old WotLK pet-stable construction was not retained.
 - Lockpicking was ported to `ItemPrototype`, `LockEntry`, `ITEM_DYNFLAG_UNLOCKED`, the native Pick Lock spell, and the native trade-slot path. The old AzerothCore `ItemTemplate`/extended trade wrappers were not retained.
 - Random bots use a module-local, startup-loaded pool of pre-existing characters on the configured random-account prefix. `World` owns Headless/Network session lifetime; `BotManager` owns module records and AI adapters. Account/character creation and donor login managers remain intentionally outside the module.
-- Random-bot buy/sell multipliers are now cached per character with the mature Vanilla ranges, and named-location lookup uses the native `ai_playerbot_named_location` table instead of a compatibility no-op.
-- Empty optional item/equipment caches are accepted without synchronous world-thread cache generation. Populated mature caches still load normally.
-- Schema-only native migrations cover the tables queried by the active Vanilla/Turtle AI initializer and per-bot state. Mature datasets remain deployable separately.
+- Random-bot buy/sell multipliers are now cached per character with the Existing Vanilla ranges, and named-location lookup uses the native `ai_playerbot_named_location` table instead of a compatibility no-op.
+- Empty optional item/equipment caches are accepted without synchronous world-thread cache generation. Populated existing caches still load normally.
+- Schema-only native migrations cover the tables queried by the active Vanilla/Turtle AI initializer and per-bot state. Existing datasets remain deployable separately.
 
 Reason: complete coherent Vanilla/Turtle families without reintroducing donor manager/session ownership or making optional AI startup depend on a large synchronous cache write.
 
@@ -82,21 +82,21 @@ Account/character auto-creation remains the intentional random-bot product
 gap; existing random characters, bounded login/logout, native TravelMgr
 relocation, AI strategy rotation/recovery, gear refresh, and AH/economy pricing
 are supported. Core `BattleGroundMgr` remains authoritative for Vanilla and
-Turtle battleground entries; the mature value compatibility view reads the
+Turtle battleground entries; the existing value compatibility view reads the
 same native `battlemaster_entry` table once at AI startup and does not own
 battleground state.
 
 ## Packet/config/static-isolation and playtest gate — 2026-08-24
 
-Feature: generic packet/event bridge, safe multi-value configuration, isolated native static-module settings, mature command surface, random-bot debt cleanup, and fresh class journeys.
+Feature: generic packet/event bridge, safe multi-value configuration, isolated native static-module settings, existing command surface, random-bot debt cleanup, and fresh class journeys.
 
 Source repository: TortoiseBots `phase4-follow@3484208`; required Penqle core `playerbots-integration-gh@9487c5150a6553c665fafc1f4568669b8b00f011` (parent `133c6d19bf5898c1e4f5129b2890b1db89b17a07`).
 
 Source files: `host/BotPacketAdapter.*`, `runtime/BotManager.*`, `runtime/PlayerbotAIAdapter.cpp`, `runtime/PlayerbotRuntimeFacade.cpp`, `runtime/RandomBotService.*`, `commands/BotCommands.cpp`, `ai/playerbot/PlayerbotAIConfig.*`, `ai/playerbot/strategy/ValueMacros.h`, `ai/playerbot/AiFactory.cpp`, `TortoiseBots.cmake`, `conf/tortoise_bots.conf.dist`, and Penqle `modules/CMakeLists.txt`/`Config`.
 
-Copied / ported / independently reimplemented: the packet calls preserve the mature `PlayerbotAI` handlers but the mapping and ownership are independently implemented through `PlayerbotAIStorage` and `BotManager`; Penqle `Config::GetValues` is a generic core API over ACE configuration enumeration; static isolation is a generic per-static-module OBJECT-target mechanism.
+Copied / ported / independently reimplemented: the packet calls preserve the existing `PlayerbotAI` handlers but the mapping and ownership are independently implemented through `PlayerbotAIStorage` and `BotManager`; Penqle `Config::GetValues` is a generic core API over ACE configuration enumeration; static isolation is a generic per-static-module OBJECT-target mechanism.
 
-Historical runtime evidence: fresh AI-enabled Docker runs emitted bot outgoing `SMSG_GROUP_INVITE`, master outgoing `SMSG_PARTY_COMMAND_RESULT`, and a synthetic master-incoming diagnostic, with mature group invite/accept success and cleanup. The same journey instantiated real `WarriorAiObjectContext`, `MageAiObjectContext`, `PriestAiObjectContext`, and `HunterAiObjectContext`; the Hunter no-network diagnostic used the mature `accept invitation` action directly after packet delivery because activity scheduling is intentionally not treated as human-client evidence. `Loading WorldBuffs` proves the real multi-value config reader. This evidence is retained for provenance, not final incoming-hook acceptance.
+Historical runtime evidence: fresh AI-enabled Docker runs emitted bot outgoing `SMSG_GROUP_INVITE`, master outgoing `SMSG_PARTY_COMMAND_RESULT`, and a synthetic master-incoming diagnostic, with existing group invite/accept success and cleanup. The same journey instantiated real `WarriorAiObjectContext`, `MageAiObjectContext`, `PriestAiObjectContext`, and `HunterAiObjectContext`; the Hunter no-network diagnostic used the existing `accept invitation` action directly after packet delivery because activity scheduling is intentionally not treated as human-client evidence. `Loading WorldBuffs` proves the real multi-value config reader. This evidence is retained for provenance, not final incoming-hook acceptance.
 
 This checkpoint is historical and is superseded by the final correctness pass
 below: the direct incoming diagnostic and Hunter direct-action diagnostic are
@@ -129,14 +129,14 @@ Source files: `ai/playerbot/PlayerbotAI.{h,cpp}`,
 
 Copied / ported / independently reimplemented: movement transition
 centralization and reconnect rebinding are independent module work around the
-existing mature `FollowMasterStrategy`/`ChatShortcutActions` semantics; the
+existing existing `FollowMasterStrategy`/`ChatShortcutActions` semantics; the
 strict fixture is an independent runtime assertion over the existing packet
 bridge; the null-safety changes are local defensive corrections.
 
 Local validation: cached `BUILD_PLAYERBOTS=ON`, static native `mangosd` passed;
 cached `BUILD_PLAYERBOTS=OFF`, `BUILD_LEGACY_PLAYERBOTS=OFF`, and
 `MODULES=disabled` `mangosd` passed. The final AI-enabled Docker binary reached
-world-ready, and the strict packet fixture passed automatic mature group
+world-ready, and the strict packet fixture passed automatic existing group
 invite/accept plus cleanup without a direct accept-action fallback. The
 fixture intentionally does not synthesize `CanPacketReceive`; a real client
 incoming event remains the manual playtest gate. No client login was automated
@@ -160,7 +160,7 @@ elsewhere.
 
 ## Narrow post-review cleanup pass — 2026-08-24
 
-Feature: mature `.bot stay` anchors, mature-AI-authoritative reconnect,
+Feature: existing `.bot stay` anchors, existing-AI-authoritative reconnect,
 durable random-bot master bind/clear, and corrected packet-fixture wording.
 
 Source files: `commands/BotCommands.cpp`, `runtime/BotManager.{h,cpp}`,
@@ -172,8 +172,8 @@ Source files: `commands/BotCommands.cpp`, `runtime/BotManager.{h,cpp}`,
 status/host-boundary documentation.
 
 Copied / ported / independently reimplemented: native commands now reuse the
-existing mature `StayChatShortcutAction`/`FollowChatShortcutAction` actions;
-reconnect treats the existing mature strategy set as authoritative and only
+existing existing `StayChatShortcutAction`/`FollowChatShortcutAction` actions;
+reconnect treats the existing existing strategy set as authoritative and only
 applies the default when no movement strategy exists. `BindBotMaster` and
 `ClearBotMaster` are small module-local lifecycle operations; they do not add
 core fields or replace Headless sessions.
@@ -198,7 +198,7 @@ Required core remains `playerbots-integration-gh@9487c5150a6553c665fafc1f4568669
 
 Source files: `runtime/BotManager.*`, `runtime/PlayerbotAIAdapter.*`,
 `runtime/PlayerbotRuntimeFacade.cpp`, `commands/BotCommands.cpp`,
-`host/{BotHostAdapter,BotSessionAdapter}.cpp`, mature ownership-transition
+`host/{BotHostAdapter,BotSessionAdapter}.cpp`, existing ownership-transition
 actions, `host/BotPacketAdapter.cpp`, asynchronous packet delivery in
 `ai/playerbot/PlayerbotAI.cpp`, the active compatibility shims,
 `TortoiseBots.cmake`, `ai/playerbot/{TravelNode,RandomItemMgr}.cpp`, and
@@ -311,7 +311,7 @@ and range-trigger files, `ai/playerbot/aiplayerbot.conf.dist.in`,
 Copied / ported / independently reimplemented:
 
 - No new upstream gameplay was copied in this pass.
-- Existing mature behavior was kept where the local core data validates it;
+- Existing existing behavior was kept where the local core data validates it;
   the factory collection-mount selection is an independent module adapter over
   the core `collection_mount` table and `MountManager` contract.
 - Removed RTSC/SeeSpell/BossAura and later-ID branches are subtractive cleanup,
@@ -429,7 +429,7 @@ Local validation:
   `maps/0002536.map` + `mmaps/0002536.mmtile`; `vmaps/000_25_36.vmtile` is not
   present.
 - The updated disposable packet fixture at `2026-08-25T01:48:13.297552013Z`
-  passed native `list`/`stats`/`follow`, mature group invite/accept, and
+  passed native `list`/`stats`/`follow`, existing group invite/accept, and
   cleanup. Its temporary `PacketBridgeTest` enablement was restored to `0`,
   and the normal restart at `2026-08-25T01:48:57.408768993Z` reached
   world-ready.
@@ -474,13 +474,13 @@ Copied / ported / independently reimplemented:
   fail-closed guards, native wrapper substitutions, and local heal prediction
   are independently reimplemented against the pinned core APIs.
 - Class trainer/quest spell initialization is a module-local port of the
-  mature CMaNGOS behavior, narrowed to the core's `Quest`, `TrainerSpell`,
+  existing CMaNGOS behavior, narrowed to the core's `Quest`, `TrainerSpell`,
   `SpellMgr`, talent, and class/race contracts. It does not add a
   `PlayerBots`-specific core hook.
 - Absent expansion IDs and invalid Turtle branches are subtractive cleanup,
   validated against local DBC/SQL; no expansion behavior was introduced.
 
-Reason: preserve mature Vanilla behavior while ensuring that Turtle custom
+Reason: preserve Existing Vanilla behavior while ensuring that Turtle custom
 IDs, Goblin/High Elf data, localized content, and native core semantics are
 not silently hidden behind donor-era constants or no-op compatibility methods.
 

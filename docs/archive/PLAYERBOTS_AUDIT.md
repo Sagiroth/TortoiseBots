@@ -208,7 +208,7 @@ action” wording in the finding bodies below.
   `UpdateBid` call.
 - The final initialization/presentation sweep removed the remaining active
   donor no-ops: factory bots now receive valid core class trainer and class-quest
-  spells through a module-local port of the mature learner; chat links use the
+  spells through a module-local port of the existing learner; chat links use the
   core quest/creature/item locale maps; item casts call native `CheckCast`; spell
   interruption follows the core spell lifecycle state; and heal prediction
   calculates the actual core heal effects instead of reading a zero stub.
@@ -342,7 +342,7 @@ adapters. `host/BotHostAdapter.cpp`, `host/BotPlayerAdapter.cpp`,
 `host/BotPacketAdapter.cpp`, and `host/BotChatAdapter.cpp` are a compact,
 recognizable boundary.
 
-The mature module does contain internal `PlayerbotAI::GetBot()` calls. Those
+The existing module does contain internal `PlayerbotAI::GetBot()` calls. Those
 return the `Player*` owned by an AI object and are not the forbidden
 `WorldSession` bot-identity API; they should remain module-internal.
 
@@ -671,7 +671,7 @@ were not covered by the movement/auction table above:
 - interrupt actions called an always-true `CanBeInterrupted` shim, and heal
   prediction read an always-zero `GetDamage` shim.
 
-`d672048` now contains the module-local port of the mature class trainer/quest learner,
+`d672048` now contains the module-local port of the existing class trainer/quest learner,
 using core quest/trainer/spell/talent APIs and the loaded `Spell.dbc`/server
 data. Locale formatting uses `ObjectMgr`'s native locale maps. Item casts call
 `CheckCast(true)`, interrupts follow the core spell lifecycle state, and heal
@@ -718,7 +718,7 @@ headless acceptance journey; the module does not duplicate that script.
 The core's local migrations document Turtle-split dungeon zones and custom
 graveyard coverage (`20260730120100_world.sql:1-48` and the related
 `sql/tools/graveyards_turtle_dungeons.sql`). The native module's explicit
-dungeon strategy registrations are the mature Vanilla raid set, with
+dungeon strategy registrations are the Existing Vanilla raid set, with
 `DungeonStrategy.h` listing Onyxia's Lair and Molten Core as related strategies;
 there are no Turtle-custom encounter strategies in the current graph.
 
@@ -772,7 +772,7 @@ called supported.
 
 ### F-10 — Configuration is much larger than the current product
 
-`ai/playerbot/aiplayerbot.conf.dist.in` is 4,937 lines. It exposes mature donor
+`ai/playerbot/aiplayerbot.conf.dist.in` is 4,937 lines. It exposes existing donor
 families for:
 
 - random population and auto-login;
@@ -816,7 +816,7 @@ command registrations to imply otherwise.
 The local client has `Turtle_General`, `Turtle_GroupUI`, and
 `TortoiseGMManager`, but no `TortoiseBots` or `PlayerBots` addon. The native
 module has a packet bridge (`BotPacketAdapter.cpp`) for server-side AI event
-delivery and inherited `CHAT_MSG_ADDON` code in mature `PlayerbotAI`, but it
+delivery and inherited `CHAT_MSG_ADDON` code in existing `PlayerbotAI`, but it
 does not provide a Turtle client addon, addon prefix contract, or bot state
 query UI.
 
@@ -933,7 +933,7 @@ the module's current offline rebuild switches are `GenerateTravelNodes` and
 
 RTSC is not just a harmless movement strategy. It is registered as a normal
 chat action (`ai/playerbot/strategy/actions/ChatActionContext.h:188-200`) and
-the mature security layer grants an account owner `ALLOW_ALL`
+the existing security layer grants an account owner `ALLOW_ALL`
 (`ai/playerbot/PlayerbotSecurity.cpp:20-29`). The action accepts a filename
 from the command and calls:
 
@@ -1158,7 +1158,7 @@ validated by the native build, direct core/data trace, and startup contracts.
 
 On the same updated binary, the disposable packet fixture at container start
 `2026-08-25T01:48:13.297552013Z` passed the native `list`/`stats`/`follow`
-command surface, mature group invite/accept, and cleanup. The test config was
+command surface, existing group invite/accept, and cleanup. The test config was
 restored to `TortoiseBots.PacketBridgeTest = 0`; the subsequent normal restart
 at `2026-08-25T01:48:57.408768993Z` reached world-ready with the expected
 TalentSpecs/travel/fishing startup lines and no packet fixture enabled.
@@ -1212,7 +1212,7 @@ cmangos/mangos-classic     9b682be617ac61c127c23aa60d7b4ffbc0ce37e6
 ```
 
 The correct policy remains: harvest behavior, not architecture. The current
-audit supports retaining mature Vanilla behavior while removing the remaining
+audit supports retaining Existing Vanilla behavior while removing the remaining
 later-expansion data, stale host paths, and silent compatibility assumptions.
 
 ## 11. Final F-03/F-27 integration closure — 2026-08-25

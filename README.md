@@ -3,7 +3,7 @@
 TortoiseBots is an optional native PlayerBots module for
 [Tortoise WoW 1.18.1](https://github.com/Penqle/tortoise-wow).
 
-It brings mature PlayerBots combat, movement, class, group, loot, quest and
+It brings existing PlayerBots (primarily AzerothCore/mod-playerbots) combat, movement, class, group, loot, quest and
 travel behavior to Tortoise WoW while keeping bot-specific logic outside the
 core.
 
@@ -17,15 +17,15 @@ instead of recreating the old tightly coupled `GetBot()` / `m_bot` /
 
 ## Status
 
-> **WIP — Penqle integration smoke testing and upstream host API work are still pending.**
+> **WIP — upstream core integration and Headless API work still pending.**
 
 - [x] Native TortoiseBots module implemented
-- [x] Mature `PlayerbotAI` integrated
+- [x] Existing `PlayerbotAI` integrated
 - [x] All nine Vanilla classes included
 - [x] Vanilla/Turtle 1.18.1 cleanup and compatibility audit completed
 - [x] Headless session lifecycle validated against the pinned baseline
 - [x] PlayerBots-enabled and module-disabled builds validated
-- [ ] Smoke test against the current Penqle modular core
+- [ ] Smoke test against the current upstream modular core
 - [ ] Upstream the required generic Headless session API
 - [ ] Manual owned-bot gameplay acceptance
 - [ ] Manual 5-player dungeon acceptance
@@ -34,11 +34,9 @@ The exact currently validated revisions are tracked in Git history and summarize
 
 ---
 
-## Penqle dependencies
+## Core dependencies
 
-TortoiseBots targets
-[Penqle/tortoise-wow](https://github.com/Penqle/tortoise-wow) as its canonical
-core.
+TortoiseBots targets [tortoise-wow](https://github.com/Penqle/tortoise-wow) (`Penqle/tortoise-wow`) as its canonical upstream core.
 
 ### Generic Headless sessions
 
@@ -115,7 +113,7 @@ TortoiseBots
         +-- PlayerbotAIAdapter
         +-- PlayerbotAIStorage
         +-- host adapters
-        +-- mature PlayerbotAI
+        +-- Existing PlayerbotAI (primarily AzerothCore)
         +-- Strategy / Trigger / Action / Value
 ```
 
@@ -171,7 +169,7 @@ The native command surface currently includes:
 .bot help
 ```
 
-`.bot command` forwards into the mature PlayerBots command system for the
+`.bot command` forwards into the existing PlayerBots (primarily AzerothCore/mod-playerbots) command system for the
 selected bot. Commands enforce normal account ownership or GM authority.
 
 ---
