@@ -95,7 +95,7 @@ dependency.
 - Turtle Goblin / High Elf and Turtle spell / talent / mount handling where validated
 - Bounded random bots for existing characters only
 
-Targets Vanilla/Turtle 1.18.1 — Death Knights, glyphs, vehicles and arenas are not included.
+Targets Vanilla/Turtle 1.18.1 — Any future expansions elements are removed.
 
 ---
 
