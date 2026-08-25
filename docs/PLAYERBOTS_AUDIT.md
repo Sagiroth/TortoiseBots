@@ -100,7 +100,7 @@ Vanilla/Turtle product surface before adding more classes or dungeon behavior.
 | F-16 | P1 | World/character table ownership is inconsistent, one runtime table is created outside migrations, and missing travel tables can trigger full map/path generation plus destructive cache rewrites. | Module ownership/startup behavior is resolved: travel-node and fish-location rebuilds are opt-in, cache generation fails closed, fresh SQL and preserved-stack startup are verified. |
 | F-17 | P0 | Owner-accessible RTSC file save/load accepts unrestricted filenames and can escape `LogsDir`. | Resolved by removing RTSC/SeeSpell from the module graph and command contexts. |
 | F-18 | P1 | Custom strategy editing interpolates player-controlled strings into raw SQL through `DirectPExecute`. | Resolved with length checks and escaping in edit, load, and persisted bot-state paths. |
-| F-19 | P1/P2 | The cleaned physical tree still compiles later-rank factory/boss-aura code and a custom RTSC/test surface; some of it is dead only because no context registers it. | Resolved for the audited residue; local core data validates retained 28610/28612/31016/31018 level-60 rows. |
+| F-19 | P1/P2 | The cleaned physical tree still compiles later-rank factory/boss-aura code and a custom RTSC/test surface; some of it is dead only because no context registers it. | Resolved for the audited residue: later branches, RTSC/BossAura files, and unreachable `Engine::testMode`/`test.log` writes are removed; local core data validates retained 28610/28612/31016/31018 level-60 rows. |
 | F-20 | P2 | README/provenance claims about schema-only packaging and cache-safe startup are now contradicted by the active code and the lowercase install path. | Resolved by this closure documentation and the packaging/startup changes. |
 | F-21 | P2 | The native migrations still create removed/inert donor tables (`random_bots`, `rpg_races`, `tele_cache`, and an uncalled rarity cache builder). | Resolved: dead tables and the dormant rarity builder were removed. |
 
@@ -137,6 +137,11 @@ action” wording in the finding bodies below.
 - RTSC, SeeSpell, BossAura, and the associated packet/file registrations are
   physically removed. Custom strategy names/action lines are length-bounded
   and escaped on edit, load, and persisted bot-state paths.
+- Engine action logging is also bounded with `vsnprintf`, so long but valid
+  owner-controlled action names cannot overflow the fixed diagnostic buffer.
+- The unreachable engine `testMode` branch and its working-directory
+  `test.log` writes are removed; normal trigger evaluation and BotActionLog
+  output are now the only active engine paths.
 - The known-absent local IDs found in the second pass are gone from active
   source: later consumable/poison/bandage/oil/stone items, missing hearthstone
   fallback data, missing gathering spell IDs, and the later Mage mana gem
