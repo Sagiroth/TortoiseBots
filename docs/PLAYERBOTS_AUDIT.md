@@ -87,7 +87,7 @@ Vanilla/Turtle product surface before adding more classes or dungeon behavior.
 | F-03 | P1 | Bot-specific legacy code remains in the core: LFT random-bot filling, bot command stubs, bot slots, and legacy module hooks. | Open core-owned follow-up; no new module coupling was added. |
 | F-04 | P1 | Active native code retains later-expansion consumable IDs, item IDs, spell IDs, and level gates. | Resolved: audited absent spell/item branches, later flag/totem auras, invalid quest-item branches, post-60 level formulas, WotLK/TBC mana-gem IDs, and the level-70 Druid reagent branch are removed; retained level-60/Turtle rows were revalidated against local core data. |
 | F-05 | P1 | The compatibility shim contains silent no-op/default implementations for movement, instance, chat-channel, transport, formation, emote, session-state, and loot semantics. | Resolved for active module paths: chase/follow, taxi, gossip, loot status, and emotes now use core/client contracts or explicit fallbacks; dead donor surfaces and unsupported elevator generation are removed. Only optional diagnostic fields absent from the core remain documented. |
-| F-06 | P1/P2 | Custom Goblin/High Elf starting areas were deliberately bypassed because local navigation data was believed incomplete. | Module bypasses are removed: current core `playercreateinfo` rows and the runtime dataset contain terrain/MMAP data for both custom start regions. The exact High Elf tile has no VMap file, so focused in-game movement/death acceptance remains separate. |
+| F-06 | P1/P2 | Custom Goblin/High Elf starting areas were deliberately bypassed because local navigation data was believed incomplete. | P1 start-row/module bypass resolved: current core `playercreateinfo` rows and the runtime dataset contain terrain/MMAP data, and disposable Goblin/High Elf headless lifecycle fixtures both logged in, saved, relogged, and cleaned up at those starts. Direct movement/death acceptance remains P2 because the exact High Elf tile has no VMap file. |
 | F-07 | P1/P2 | Turtle collection mounts are not modeled by the factory/randomization path. | P1 module mapping resolved with core `collection_mount` lookup plus item/spell/class/race validation; custom races use collection data only. Physical item-use remains a core-owned acceptance boundary. |
 | F-08 | P2 | Turtle custom dungeon/zone encounter behavior is not represented by explicit strategies. | Verified external content gap: local SQL assigns `custom_dungeon_portal`, but pinned-core startup reports no such script; no module encounter behavior is advertised. |
 | F-09 | P1/P2 | Talent validation is server-aware, but broad Turtle custom talent interactions remain data/acceptance-test debt. | P1 validator correctness resolved: it checks total points across all three trees, rejects missing prerequisites safely, and resets per-row rank metadata; remaining broad class/spec interaction coverage is P2. |
@@ -265,7 +265,10 @@ valid Tortoise data until the core data itself changes.
   Thalassian Highlands. The runtime dataset has terrain/MMAP for both start
   tiles; the exact High Elf tile has no VMap file. A focused bot
   movement/death journey is still required before claiming complete
-  custom-zone gameplay.
+  custom-zone gameplay. Disposable `Tbgoblin` (guid 7) and `Tbhelf` (guid 8)
+  fixtures then passed native AutoTest login, save, logout, relogin, and
+  cleanup from those exact core rows; all fixture rows and generated state were
+  removed afterward.
 - F-08 remains an external Turtle-content gap: the pinned core logs `Script not
   found: custom_dungeon_portal` for custom dungeon portal rows, so the module
   does not guess teleport destinations or claim encounter support.
@@ -283,7 +286,7 @@ valid Tortoise data until the core data itself changes.
 
 | Area | Verified local evidence | Current product conclusion |
 | --- | --- | --- |
-| Custom races and starts | Core `SharedDefines.h` defines Goblin `9` and High Elf `10`; local `playercreateinfo` data contains their legal class combinations; `PlayerbotAIConfig.cpp` and `TravelNode.cpp` recognize both. Runtime start tiles are `maps/0013245.map` + `mmaps/0013245.mmtile` for Goblin and `maps/0002536.map` + `mmaps/0002536.mmtile` for High Elf; `vmaps/000_25_36.vmtile` is absent. | Race legality and core-defined placement are wired. The previous module bypass is removed; custom-zone movement/death still needs focused runtime acceptance, especially on the High Elf tile without VMap. |
+| Custom races and starts | Core `SharedDefines.h` defines Goblin `9` and High Elf `10`; local `playercreateinfo` data contains their legal class combinations; `PlayerbotAIConfig.cpp` and `TravelNode.cpp` recognize both. Runtime start tiles are `maps/0013245.map` + `mmaps/0013245.mmtile` for Goblin and `maps/0002536.map` + `mmaps/0002536.mmtile` for High Elf; `vmaps/000_25_36.vmtile` is absent. Disposable `Tbgoblin`/`Tbhelf` fixtures passed native headless login/save/logout/relogin cleanup. | Race legality, core-defined placement, and headless lifecycle at both custom starts are verified. Direct terrain movement/death remains a P2 acceptance gate, especially on the High Elf tile without VMap. |
 | Custom and retained spells | Local core `Spell.dbc`/`tw_world_spell_template.sql` contain the retained Turtle IDs `42003`, `51322-51323`, `51442-51445`, `28610`, `28612`, `31016`, and `31018`; the audited absent IDs were removed from active module source. | No spell is retained solely because its numeric range looks plausible. Custom spell behavior beyond the verified IDs still needs class/spec acceptance coverage. |
 | Talents | `Talentspec.cpp` validates link syntax, class/rank limits, dependencies, tree-row ordering, and available points against loaded `Talent.dbc`/server stores; final AI startup logged `Loading TalentSpecs` without `Error with premade` or `No premade` failures. | The loader contract is valid, but broad Turtle reworked-talent interactions are not claimed complete without per-class/spec runtime acceptance. |
 | Locations and navigation | Core custom start coordinates and local map/MMAP availability were inspected; `TravelMgr` no longer excludes either custom range and startup uses direct movement with travel-node generation disabled. | Location lookup is core-data-driven. Full movement/death acceptance remains open because the High Elf tile has no VMap. |
@@ -1138,6 +1141,18 @@ remained `0`; no fixture journey was replayed. The restart confirmed the
 already-traced core/data registry gap with `Script not found` entries for
 `custom_dungeon_portal`, `spell_druid_wrath`, `go_airplane`, `item_radio`,
 and the listed custom NPC/duplicate names; no module replacement was invented.
+
+Custom-start acceptance evidence: disposable `Tbgoblin` (guid 7, Goblin,
+Blackstone `map 1 / zone 5536 / -233,-7177,16.52`) passed AutoTest login,
+native AI attachment, save, logout, relogin, and cleanup between
+`04:10:16.382Z` and `04:10:49.840Z`. Disposable `Tbhelf` (guid 8, High Elf,
+Thalassian `map 0 / zone 5225 / 3212.63,-2501.44,111.71`) passed the same
+journey between `04:12:11.086Z` and `04:12:44.559Z`. The test generated no
+fixture rows after cleanup; `TortoiseBots.AutoTest` was restored to `0`.
+The final normal restart at `2026-08-25T04:14:19.562258645Z` reached
+world-ready at `04:14:40.631920103Z` with the fixture disabled. This proves
+custom-start headless lifecycle, not full terrain movement/death or physical
+mount use.
 
 The closure pass modified module C++, SQL, CMake, README, and tooling files;
 it did not modify the sibling core, Dockerfile, compose file, or reference

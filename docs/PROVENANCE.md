@@ -489,6 +489,11 @@ is recorded in the audit after installation: the preserved stack restarted at
 `2026-08-25T04:01:47.286072886Z`, with
 native module load, TalentSpecs load, direct travel/fishing fallback, and no
 module-table DDL/DML. The restart also confirmed the pinned core's
-unregistered-content script warnings; no module replacement was invented. No
-unrun gameplay acceptance is claimed for custom-zone movement, physical
+unregistered-content script warnings; no module replacement was invented.
+Disposable custom-start fixtures then passed native AutoTest: Goblin guid 7
+passed from `04:10:16.382Z` through cleanup at `04:10:49.840Z`, and High Elf
+guid 8 passed from `04:12:11.086Z` through cleanup at `04:12:44.559Z`. The
+fixture rows/state were removed and `AutoTest` restored to `0`; the normal
+restart at `04:14:19.562258645Z` reached world-ready at `04:14:40.631920103Z`.
+No unrun gameplay acceptance is claimed for terrain movement/death, physical
 collection-mount use, taxi, loot, or real-client packet delivery.
