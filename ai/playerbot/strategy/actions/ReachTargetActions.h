@@ -61,7 +61,7 @@ namespace ai
                     chaseDist = std::max(chaseDist - sPlayerbotAIConfig.contactDistance, 0.0f);
                 }
 
-                if (MoveStyleValue::WaitForEnemy(ai) && target->m_movementInfo.HasMovementFlag(movementFlagsMask) &&
+                if (MoveStyleValue::WaitForEnemy(ai) && target->m_movementInfo.HasMovementFlag(MOVEFLAG_MASK_MOVING) &&
                         sServerFacade.isInFront(target, bot, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT) &&
                         sServerFacade.IsDistanceGreaterThan(distanceToTarget, sPlayerbotAIConfig.tooCloseDistance))
                 {

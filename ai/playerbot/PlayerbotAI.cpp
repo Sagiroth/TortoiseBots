@@ -7603,10 +7603,6 @@ bool PlayerbotAI::CanMove()
     {
         return false;
     }
-    if (bot->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_CLIENT_CONTROL_LOST))
-    {
-        return false;
-    }
     if (IsJumping())
     {
         return false;
@@ -7621,10 +7617,6 @@ bool PlayerbotAI::CanMove()
 
 #ifdef CMANGOS
     if (currentMotion == TAXI_MOTION_TYPE)
-    {
-        return false;
-    }
-    if (currentMotion == FALL_MOTION_TYPE)
     {
         return false;
     }

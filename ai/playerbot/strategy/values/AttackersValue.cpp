@@ -22,8 +22,8 @@ std::list<ObjectGuid> AttackersValue::Calculate()
     if (bot->IsFlying() && WorldPosition(bot).currentHeight() > 10.0f)
         return result;
 
-    // lost control, e.g. BG ended
-    if (bot->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_CLIENT_CONTROL_LOST))
+    // Lost control, e.g. a battleground ended.
+    if (bot->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL))
         return result;
 
     if (ai->HasStrategy("focus rti targets", BotState::BOT_STATE_COMBAT))

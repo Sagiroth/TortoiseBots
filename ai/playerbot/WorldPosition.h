@@ -235,9 +235,6 @@ namespace ai
         const MapEntry* GetMapEntry() const { return getMapEntry(); }
         uint32 getFirstInstanceId() const { for (auto& map : sMapMgr.Maps()) { if (map.second->GetId() == getMapId()) return map.second->GetInstanceId(); }; return 0; }
 
-        // Penqle has no sObjectMgr.GetInstanceTemplate; stub returns nullptr.
-        // Real implementation if any caller needs it.
-        InstanceTemplate const* getInstanceTemplate() { return nullptr; }
         Map* getMap(uint32 instanceId) const { if (!*this) return nullptr; loadMapAndVMap(instanceId); return sMapMgr.FindMap(mapId, instanceId ? instanceId : (getMapEntry()->Instanceable() ? getFirstInstanceId() : 0)); }
         const TerrainInfo* getTerrain() const { return getMap(getFirstInstanceId()) ? getMap(getFirstInstanceId())->GetTerrain() : sTerrainMgr.LoadTerrain(getMapId()); }
         const TerrainInfo* GetTerrain() const { return getTerrain(); }

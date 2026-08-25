@@ -11,38 +11,9 @@ INSTANTIATE_SINGLETON_1(ai::SharedObjectContext);
 // LootAccess methods read from the wrapped Loot* (proper accessor-based
 // access; the original layout-cheat reinterpret_cast pattern was removed).
 
-// Empty static fallbacks used when LootAccess wraps a null Loot* (defensive).
-static const std::set<ObjectGuid> s_emptyGuidSet;
-static const LootItemList s_emptyLootItems;
-
-std::set<ObjectGuid> const& LootAccess::playersLooting() const
-{
-	if (!loot)
-		return s_emptyGuidSet;
-	return loot->GetLootingPlayers();
-}
-
 LootType LootAccess::lootType() const
 {
 	return loot ? loot->loot_type : LOOT_CORPSE;
-}
-
-uint32 LootAccess::gold() const
-{
-	return loot ? loot->gold : 0;
-}
-
-std::set<ObjectGuid> const& LootAccess::playersOpened() const
-{
-	// Penqle has no per-player "released the corpse" tracking; return empty set.
-	return s_emptyGuidSet;
-}
-
-LootItemList const& LootAccess::lootItems() const
-{
-	if (!loot)
-		return s_emptyLootItems;
-	return loot->items;
 }
 
 std::vector<LootItem*> LootAccess::GetLootContentFor(Player* /*player*/) const
@@ -476,9 +447,6 @@ bool ShouldLootObject::Calculate()
 		return false;
 
 	LootAccess lootAccess(objLoot2);
-
-	if (lootAccess.lootMethod() != NOT_GROUP_TYPE_LOOT && !lootAccess.isChecked()) //Open loot once to start rolls.
-		return true;
 
 	for (auto& lItem : lootAccess.GetLootContentFor(bot))
 	{

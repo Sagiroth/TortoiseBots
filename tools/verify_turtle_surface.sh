@@ -52,6 +52,13 @@ grep -q 'GetChannelEntryFor' ai/cmangos-compat-shim.h \
     || fail "chat-channel compatibility proxy is not backed by core data"
 grep -q 'GenerateFishLocations", false' ai/playerbot/PlayerbotAIConfig.cpp \
     || fail "fish-location generation is not disabled by default"
+grep -q 'GetTaxi().GetTaxiPath' ai/playerbot/strategy/actions/GoAction.cpp \
+    || fail "taxi position reporting is not backed by the native PlayerTaxi route"
+
+if rg -n 'IsInBlackstoneOrThalassian|GetTransportAnimInfo|TransportAnimation|FormationSlotData|WorldSessionStateStub|InstanceTemplate' \
+    ai; then
+    fail "removed or unsupported compatibility surface is still active in the module"
+fi
 
 for id in \
     27023 27025 27045 27051 27101 27151 27152 27153 34600 \

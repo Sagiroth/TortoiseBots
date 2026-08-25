@@ -2384,8 +2384,6 @@ void TravelNodeMap::generateTransportNodes()
             if (data->displayId == 808) //Remove plunger
                 continue;
 
-            TransportAnimation const* animation = sTransportMgr.GetTransportAnimInfo(entry);
-
             uint32 pathId = data->moTransport.taxiPathId;
             float moveSpeed = data->moTransport.moveSpeed;
             if (pathId >= sTaxiPathNodesByPath.size())
@@ -2396,119 +2394,13 @@ void TravelNodeMap::generateTransportNodes()
             std::vector<WorldPosition> ppath;
             TravelNode* prevNode = nullptr;
 
-            //Elevators/Trams
             if (path.empty())
             {
-                if (animation)
-                {
-                    TransportPathContainer aPath = animation->Path;
-                    float timeStart;
-
-                    for (auto& transport : WorldPosition().GetGameObjectsNear(0, entry))
-                    {
-                        GuidPosition guidP(transport);
-                        prevNode = nullptr;
-                        WorldPosition basePos(guidP);
-                        WorldPosition lPos = WorldPosition();
-
-                        for (auto& p : aPath)
-                        {
-                            float dx = cos(basePos.getO()) * p.second->X - sin(basePos.getO()) * p.second->Y;
-                            float dy = sin(basePos.getO()) * p.second->X + cos(basePos.getO()) * p.second->Y;
-
-                            WorldPosition pos = WorldPosition(basePos.GetMapId(), basePos.getX() + dx, basePos.getY() + dy, basePos.getZ() + p.second->Z, basePos.getO());
-
-                            if (prevNode)
-                            {
-                                ppath.push_back(pos);
-                            }
-
-                            if (pos.distance(lPos) == 0)
-                            {
-                                TravelNode* node = sTravelNodeMap.addNode(pos, data->name, true, true, true, entry);
-
-                                WorldPosition exitPos = pos;
-
-                                if (data->displayId == 3831) //Subway
-                                    exitPos.setZ(exitPos.getZ() - 10.0f);
-                                if (data->displayId == 807) //Vator
-                                    exitPos.setZ(exitPos.getZ() - 1.25f);
-                                if (data->displayId == 455) //Undervator
-                                    exitPos.setZ(exitPos.getZ() - 0.46f);
-
-                                makeDockNode(node, exitPos, "entry", entry);
-
-                                if (!prevNode)
-                                {
-                                    ppath.push_back(pos);
-                                    timeStart = p.second->TimeSeg;
-                                }
-                                else
-                                {
-                                    float totalTime = (p.second->TimeSeg - timeStart) / 1000.0f;
-
-                                    TravelNodePath travelPath(0.1f, totalTime, (uint8)TravelNodePathType::transport, entry, true);
-                                    prevNode->setPathTo(node, travelPath);
-                                    ppath.clear();
-                                    ppath.push_back(pos);
-                                    timeStart = p.second->TimeSeg;
-                                }
-
-                                prevNode = node;
-                            }
-
-                            lPos = pos;
-                        }
-
-                        if (prevNode)
-                        {
-                            for (auto& p : aPath)
-                            {
-                                float dx = cos(basePos.getO()) * p.second->X - sin(basePos.getO()) * p.second->Y;
-                                float dy = sin(basePos.getO()) * p.second->X + cos(basePos.getO()) * p.second->Y;
-                                WorldPosition pos = WorldPosition(basePos.GetMapId(), basePos.getX() + dx, basePos.getY() + dy, basePos.getZ() + p.second->Z, basePos.getO());
-
-                                ppath.push_back(pos);
-
-                                if (pos.distance(lPos) == 0)
-                                {
-                                    TravelNode* node = sTravelNodeMap.addNode(pos, data->name, true, true, true, entry);
-
-                                    WorldPosition exitPos = pos;
-
-                                    if (data->displayId == 3831) //Subway
-                                        exitPos.setZ(exitPos.getZ() - 10.0f);
-                                    if (data->displayId == 807) //Vator
-                                        exitPos.setZ(exitPos.getZ() - 1.24f);
-                                    if (data->displayId == 455) //Undervator
-                                        exitPos.setZ(exitPos.getZ() - 0.46f);
-
-                                    makeDockNode(node, exitPos, "entry", entry);
-
-                                    if (node != prevNode) {
-                                        if (p.second->TimeSeg < timeStart)
-                                            timeStart = 0;
-
-                                        float totalTime = (p.second->TimeSeg - timeStart) / 1000.0f;
-
-                                        TravelNodePath travelPath(0.1f, totalTime, (uint8)TravelNodePathType::transport, entry, true);
-                                        travelPath.setPath(ppath);
-                                        prevNode->setPathTo(node, travelPath);
-                                        ppath.clear();
-                                        ppath.push_back(pos);
-                                        timeStart = p.second->TimeSeg;
-                                    }
-                                }
-
-                                lPos = pos;
-                            }
-                        }
-
-                        ppath.clear();
-                    }
-                }
+                sLog.outDebug("Skipping transport entry %u: the Tortoise core exposes no transport animation path.", entry);
+                continue;
             }
-            else //Boats/Zepelins
+
+            // Boats/Zepelins
             {
                 //Loop over the path and connect stop locations.
                 for (auto& p : path)
