@@ -44,6 +44,35 @@ Then use its `playerbots/` documentation as a behavioral/capability reference.
 
 ---
 
+## Canonical upstream
+
+The canonical upstream and target core for TortoiseBots is:
+
+https://github.com/Penqle/tortoise-wow
+
+Unless explicitly qualified otherwise, the following terms mean Penqle/tortoise-wow:
+
+- upstream
+- upstream core
+- target core
+- core main
+- core PR
+- core PRs
+- upstream publication
+
+Shyalya/tortoise-wow and the other PlayerBots repositories (cmangos/playerbots, mod-playerbots, mangoszero/server, cmangos/mangos-classic, and other historical implementations) are read-only reference/donor repositories, not the upstream core.
+
+Source-of-truth order for core integration:
+
+1. Penqle/tortoise-wow current/pinned target core
+2. local Turtle data / DBC / runtime evidence
+3. TortoiseBots current host contract/docs (HOST_API.md, STATUS.md, PLAN.md)
+4. Shyalya and other PlayerBots repositories as references only
+
+Shyalya is valuable for historical Turtle PlayerBots compatibility, API differences, known integration pain, mature behavior, and Turtle-specific fixes, but it is not authoritative for the current core API, current core branch, current upstream PR, current host baseline, or publication status.
+
+Git remote aliases are not authority. A local checkout may have `origin` pointing at Shyalya and `upstream` pointing at Penqle; always identify the repository by owner/repository when reasoning about integration or publication.
+
 ## Reference repositories (check local first — then online)
 
 This repository is intentionally agnostic to absolute filesystem paths.
@@ -81,7 +110,7 @@ Use `tortoise-docker-penqle` as the preferred local environment for:
 - reproducing login/session/world behavior
 - validating PlayerBots changes in a realistic local environment
 
-This Docker workspace is **not** an upstream PlayerBots reference repository.
+This Docker workspace is **not** a donor/reference PlayerBots repository.
 
 Treat it as the local execution/validation environment for the target core.
 
@@ -136,7 +165,7 @@ Do not:
 Read/search/diff/history inspection is allowed.
 
 If a reference checkout is missing, do not fabricate its contents. If network
-access is available, the upstream repositories listed in `PLAN.md` may be used
+access is available, the reference repositories listed in `PLAN.md` may be used
 instead.
 
 Before relying on a reference implementation for provenance, record the exact
@@ -252,7 +281,7 @@ Start with:
 3. Shyalya
 4. CMaNGOS PlayerBots + CMaNGOS Classic only as additional references
 
-The current Tortoise architecture always has priority over making an upstream
+The current Tortoise architecture always has priority over making a donor
 port easier.
 
 ### Turtle-specific spells / talents / custom content
@@ -389,7 +418,7 @@ If the LLM/network service is unavailable, normal bot gameplay must continue.
 
 ---
 
-## Upstream PlayerBots rule
+## Donor/reference PlayerBots rule
 
 CMaNGOS PlayerBots, MangosZero, Shyalya/r-o-sh, older PlayerBots
 implementations, and the Knowledge Base are reference material.
@@ -400,18 +429,18 @@ General rule:
 harvest behavior, not architecture
 ```
 
-Do not vendor an upstream PlayerBots tree into the Tortoise core.
+Do not vendor a donor PlayerBots tree into the Tortoise core.
 
-Do not blindly cherry-pick commits that introduce upstream host coupling.
+Do not blindly cherry-pick commits that introduce donor host coupling.
 
-Do not preserve an upstream class/module structure merely because it makes
+Do not preserve a donor class/module structure merely because it makes
 copying easier.
 
 For imported behavior:
 
 1. understand the observable behavior
 2. check the Knowledge Base where applicable
-3. inspect the most relevant upstream implementation
+3. inspect the most relevant reference implementation
 4. inspect Turtle-specific differences where applicable
 5. define the expected behavior / acceptance test
 6. implement or port it inside the new module
@@ -424,7 +453,7 @@ Prefer:
 study -> extract intent -> port/reimplement -> test
 ```
 
-over a literal cherry-pick when upstream dependencies or architecture differ.
+over a literal cherry-pick when donor dependencies or architecture differ.
 
 A cherry-pick is acceptable only when the commit is isolated, compatible,
 properly licensed/attributed, and does not expand core coupling.
@@ -468,7 +497,7 @@ Do not:
 - start raid/BG/random-bot systems before the dungeon MVP
 - refactor unrelated core code while implementing PlayerBots
 - optimize for 1000 bots before the small-party use case works
-- add compatibility layers merely to make an upstream code drop compile
+- add compatibility layers merely to make a donor code drop compile
 
 The first useful target is:
 
