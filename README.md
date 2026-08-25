@@ -41,15 +41,6 @@ TortoiseBots targets
 [Penqle/tortoise-wow](https://github.com/Penqle/tortoise-wow) as its canonical
 core.
 
-It requires two core capabilities:
-
-### Native module system
-
-Already upstream in Penqle through:
-
-- [PR #403 — Added Module system](https://github.com/Penqle/tortoise-wow/pull/403)
-- [PR #404 — Added module system to main](https://github.com/Penqle/tortoise-wow/pull/404)
-
 ### Generic Headless sessions
 
 TortoiseBots needs Penqle to support a `WorldSession` without a network client.
