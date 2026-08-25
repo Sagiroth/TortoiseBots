@@ -276,8 +276,10 @@ mount lookup, later-expansion residue removal, and repeatable surface checks.
 
 Source repository: TortoiseBots `audit/playerbots-turtle-1.18.1`
 
-Source commit: `be7ffb2d485b63ba365a599153b70c813f6b01d2` (final verified audit
-head; core-backed gossip adapter; native command fixture implementation; implementation `b76b5f4bf236b4d1bf370f0997e88cf30fd33695`, `fix: bound
+Source commit: `53c054a26a0faff072dd54c42445d5273be91749` (final verified
+implementation snapshot; the later provenance/docs update is documentation-only;
+core-backed gossip adapter, native taxi/loot adapters, native command fixture
+implementation; implementation `b76b5f4bf236b4d1bf370f0997e88cf30fd33695`, `fix: bound
 engine action logging`), on top of `b863c6eedd3514a525f40e243bb8a61b2244fbe8` (`fix:
 remove unreachable engine test logging`), `89a5e645e1485bd2e35b4944e88fdadfc6c95d05`
 (`fix: remove remaining expansion-only item branches`), `887a6673675d06d716acc713aaeed8dca05d7e9f`
@@ -378,11 +380,18 @@ Local validation:
 - The compatibility shim's ScriptDevAI-shaped gossip callback now delegates to
   Penqle's `sScriptMgr` creature-gossip registry; it no longer unconditionally
   returns false and discards core gossip behavior.
+- The compatibility shim's taxi view now reads the live core
+  `Player::GetTaxi().GetTaxiPath()` route for in-flight position reasoning, and
+  loot status checks pass the native loot target into the core's ownership and
+  condition evaluator. No focused taxi/loot gameplay journey is claimed from
+  this compile/core-trace change.
 - A forced CMake configure printed the supported builder's bind-mounted module
   root `/work/core/modules/TortoiseBots` and exact commit
-  `be7ffb2d485b63ba365a599153b70c813f6b01d2`; Git's scoped safe-directory
-  option avoids changing global configuration. This makes stale direct-core
-  module selection observable.
+  `53c054a26a0faff072dd54c42445d5273be91749` with source state `clean`; Git's
+  scoped safe-directory option avoids changing global configuration, and a
+  dirty checkout is now reported with an explicit `dirty` state rather than
+  being mistaken for an exact clean snapshot. This makes stale or locally
+  modified module selection observable.
 - The real Turtle client was launched under Wine through normal and
   software-forced rendering paths; both rendered black with no observable
   login UI in this environment, so no real-client `.bot` command journey is
