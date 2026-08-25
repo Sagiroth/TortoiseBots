@@ -48,7 +48,7 @@ Then use its `playerbots/` documentation as a behavioral/capability reference.
 
 The canonical upstream and target core for TortoiseBots is:
 
-https://github.com/Penqle/tortoise-wow
+<https://github.com/Penqle/tortoise-wow>
 
 Unless explicitly qualified otherwise, the following terms mean Penqle/tortoise-wow:
 
