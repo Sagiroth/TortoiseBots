@@ -3,13 +3,13 @@
 TortoiseBots is an optional native PlayerBots module for
 [Tortoise WoW 1.18.1](https://github.com/Penqle/tortoise-wow).
 
-It brings mature PlayerBots combat, movement, class, group, loot, quest and
+It brings existing PlayerBots (primarily AzerothCore/mod-playerbots) combat, movement, class, group, loot, quest and
 travel behavior to Tortoise WoW while keeping bot-specific logic outside the
 core.
 
 > **Harvest behavior, not architecture.**
 
-TortoiseBots uses Penqle's native module system and a small generic host API
+TortoiseBots uses the upstream native module system and a small generic host API
 instead of recreating the old tightly coupled `GetBot()` / `m_bot` /
 `sPlayerBotMgr` architecture.
 
@@ -17,15 +17,15 @@ instead of recreating the old tightly coupled `GetBot()` / `m_bot` /
 
 ## Status
 
-> **WIP — Penqle integration smoke testing and upstream host API work are still pending.**
+> **WIP — upstream core integration and Headless API work still pending.**
 
 - [x] Native TortoiseBots module implemented
-- [x] Mature `PlayerbotAI` integrated
+- [x] Existing `PlayerbotAI` integrated
 - [x] All nine Vanilla classes included
 - [x] Vanilla/Turtle 1.18.1 cleanup and compatibility audit completed
 - [x] Headless session lifecycle validated against the pinned baseline
 - [x] PlayerBots-enabled and module-disabled builds validated
-- [ ] Smoke test against the current Penqle modular core
+- [ ] Smoke test against the current upstream modular core
 - [ ] Upstream the required generic Headless session API
 - [ ] Manual owned-bot gameplay acceptance
 - [ ] Manual 5-player dungeon acceptance
@@ -34,11 +34,9 @@ The exact currently validated revisions are tracked in Git history and summarize
 
 ---
 
-## Penqle dependencies
+## Core dependencies
 
-TortoiseBots targets
-[Penqle/tortoise-wow](https://github.com/Penqle/tortoise-wow) as its canonical
-core.
+TortoiseBots targets [tortoise-wow](https://github.com/Penqle/tortoise-wow) (`Penqle/tortoise-wow`) as its canonical upstream core.
 
 ### Generic Headless sessions
 
@@ -54,10 +52,10 @@ At a high level the core needs to provide:
 - generic packet hooks usable by native modules
 
 > [!IMPORTANT]
-> **Requires Penqle PR #411 until merged.**
-> Build against [`Penqle/tortoise-wow#411`](https://github.com/Penqle/tortoise-wow/pull/411)
+> **Requires upstream PR #411 until merged.**
+> Build against [`tortoise-wow#411`(https://github.com/Penqle/tortoise-wow/pull/411)
 > (`feature/headless-world-session`) or wait for `main` to include it.
-> Plain `Penqle/main` without #411 does not provide `SessionTransport::Headless`
+> Plain `upstream/main` without #411 does not provide `SessionTransport::Headless`
 > / GUID-keyed lifecycle and the module will fail to link.
 > Exact pinned SHAs are in Git history (see below).
 
@@ -79,7 +77,7 @@ The core should expose **Headless sessions**, not PlayerBots concepts.
 
 TortoiseBots should **not** require a bot-specific fork of the core.
 
-Removal of Penqle's historical built-in PlayerBots subsystem
+Removal of the historical built-in PlayerBots subsystem
 ([PR #396](https://github.com/Penqle/tortoise-wow/pull/396)) is desirable for a
 clean core, but it is not itself the functional TortoiseBots host API
 dependency.
@@ -105,7 +103,7 @@ TortoiseBots is a native optional module, not a replacement core and not a
 vendored PlayerBots core fork.
 
 ```text
-Penqle / Tortoise core
+Upstream / Tortoise core
         |
         | generic Headless / lifecycle / packet / command hooks
         v
@@ -115,7 +113,7 @@ TortoiseBots
         +-- PlayerbotAIAdapter
         +-- PlayerbotAIStorage
         +-- host adapters
-        +-- mature PlayerbotAI
+        +-- Existing PlayerbotAI (primarily AzerothCore)
         +-- Strategy / Trigger / Action / Value
 ```
 
@@ -171,14 +169,14 @@ The native command surface currently includes:
 .bot help
 ```
 
-`.bot command` forwards into the mature PlayerBots command system for the
+`.bot command` forwards into the existing PlayerBots (primarily AzerothCore/mod-playerbots) command system for the
 selected bot. Commands enforce normal account ownership or GM authority.
 
 ---
 
 ## Module layout
 
-TortoiseBots is consumed through Penqle's native module system:
+TortoiseBots is consumed as `tortoise-wow/modules/TortoiseBots/`:
 
 ```text
 tortoise-wow/
@@ -194,7 +192,7 @@ behavior/    Module-owned helpers
 commands/    Native .bot commands
 conf/        Module configuration
 data/sql/    Module migrations
-host/        Penqle <-> TortoiseBots boundary
+host/        Core <-> TortoiseBots boundary
 runtime/     Bot lifecycle and AI ownership
 src/         Native module entrypoint
 tools/       Audit and development tooling
@@ -297,7 +295,7 @@ See [`LICENCE.md`](LICENCE.md) for full details and donor licences.
 ## Documentation
 
 - [`docs/PLAN.md`](docs/PLAN.md) — architecture and roadmap
-- [`docs/HOST_API.md`](docs/HOST_API.md) — Penqle/module host contract
+- [`docs/HOST_API.md`](docs/HOST_API.md) — core/module host contract
 - [`AGENTS.md`](AGENTS.md) — contributor and agent rules
 - [`docs/PROVENANCE.md`](docs/PROVENANCE.md) — donor/source lineage
 - [`LICENCE.md`](LICENCE.md) — upstream and donor licences

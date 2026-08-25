@@ -9,14 +9,14 @@ licensing, reasoning and local validation.
 
 | Feature | Source project | Source commit | Source files | Ported / reimplemented | Reason | Local validation |
 | --- | --- | --- | --- | --- | ---: | --- |
-| SessionTransport Headless pattern (`SessionTransport::Headless`, `IsHeadless()`, `HasNetworkTransport()`, `InitHeadlessSession()` with `NullSessionAnticheat`) | `Shyalya/tortoise-wow` (vendored `cmangos/playerbots` via `r-o-sh/tortoise-wow:playerbots-integration-gh`) and `Penqle/tortoise-wow` core's existing `NullSessionAnticheat` | `shyalya-tortoise-wow@1f9497e` (checkpoint `0af2567` 2026-05-10, vendored `cmangos/playerbots@c33dfac`) / `Anticheat/Anticheat.h:143` (`NullSessionAnticheat`) | `Anticheat/Anticheat.h:143-209` (`NullSessionAnticheat`, `NullAnticheatLib`), `shyalya` host hooks for bot sessions (80-file surface) | Reimplemented as generic transport enum, not copied — core now distinguishes `Network` vs `Headless` via `SessionTransport`, module interprets `IsHeadless() == true` as bot. `InitHeadlessSession()` directly assigns `NullSessionAnticheat` (existing core precedent) | Harvest the null-transport precedent without inheriting Shyalya's 80-file host surface; keep host integration ≤5 files | `rg` audits for `GetBot/m_bot` remain clean; `BUILD_PLAYERBOTS=ON/OFF` matrix builds; Docker runtime spike: headless session survives `World::Update` (not deleted as disconnected), `HandlePlayerLogin` succeeds after queued `AddSession` + deferred `LoginPlayer`, bot enters world and re-enters after logout |
+| SessionTransport Headless pattern (`SessionTransport::Headless`, `IsHeadless()`, `HasNetworkTransport()`, `InitHeadlessSession()` with `NullSessionAnticheat`) | `Shyalya/tortoise-wow` (vendored `cmangos/playerbots` via `r-o-sh/tortoise-wow:playerbots-integration-gh`) and `tortoise-wow` core's existing `NullSessionAnticheat` | `shyalya-tortoise-wow@1f9497e` (checkpoint `0af2567` 2026-05-10, vendored `cmangos/playerbots@c33dfac`) / `Anticheat/Anticheat.h:143` (`NullSessionAnticheat`) | `Anticheat/Anticheat.h:143-209` (`NullSessionAnticheat`, `NullAnticheatLib`), `shyalya` host hooks for bot sessions (80-file surface) | Reimplemented as generic transport enum, not copied — core now distinguishes `Network` vs `Headless` via `SessionTransport`, module interprets `IsHeadless() == true` as bot. `InitHeadlessSession()` directly assigns `NullSessionAnticheat` (existing core precedent) | Harvest the null-transport precedent without inheriting Shyalya's 80-file host surface; keep host integration ≤5 files | `rg` audits for `GetBot/m_bot` remain clean; `BUILD_PLAYERBOTS=ON/OFF` matrix builds; Docker runtime spike: headless session survives `World::Update` (not deleted as disconnected), `HandlePlayerLogin` succeeds after queued `AddSession` + deferred `LoginPlayer`, bot enters world and re-enters after logout |
 | `IWorldUpdateListener` generic world-tick registry (`RegisterWorldUpdateListener`, `GetPendingWorldListenerFactories`, `RegisterPendingWorldListeners` in `World::Update`) | `HardcodedEvents`/`ZoneScriptMgr::Update` pattern in `Penqle/tortoise-wow` + `DiscordBot::RegisterHandlers` precedent in same core | `World.cpp:2448` (`World::Update`), `HardcodedEvents.h`, `ZoneScriptMgr.cpp:117` (`Update`), `World.cpp:2343` (`DiscordBot::RegisterHandlers`) | `World.h:889`, `World.cpp:2448`, `HardcodedEvents.h`, `ZoneScriptMgr` | Reimplemented as generic `IWorldUpdateListener` with explicit registration and pending-factory static initializers (no weak symbols, no `sBotHost` global) — inspirited by `DiscordBot`'s service registration but made generic | Bot AI must run on the world thread once per tick; no existing `WorldScript::OnUpdate` exists in MaNGOS `ScriptMgr`, so a single generic call site in `World::Update` is the correct seam | `World::Update` now calls listeners after `UpdateSessions`; `BotHostAdapter` receives tick, `BotManager` drives lifecycle; `rg -i PlayerBot` in `src/game` only shows `InitHeadlessSession` bridge |
 | `BUILD_PLAYERBOTS` optional-module CMake wiring | `cmangos/mangos-classic` (`cmake/options.cmake: BUILD_PLAYERBOTS OFF`) and `mangoszero/server` (`CMakeLists.txt: PLAYERBOTS OFF`) | `cmangos-mangos-classic@9b682be`, `mangoszero-server@1817ae1` | `CMakeLists.txt`, `src/CMakeLists.txt`, `src/game/CMakeLists.txt`, `src/mangosd/CMakeLists.txt` | Reimplemented as explicit `option(BUILD_PLAYERBOTS OFF)` with `add_subdirectory(modules/TortoiseBots)` only when `ON`, and `target_link_libraries(mangosd tortoise_bots)` via `CMP0079` + `whole-archive` on Linux — no `FetchContent` auto-download, no `ENABLE_PLAYERBOTS` scattered defines | Keep `BUILD_PLAYERBOTS=OFF` first-class and `src/modules/TortoiseBots` absent/present matrix clean; harvest the option pattern without the `FetchContent` auto-clone | Matrix: `absent+OFF` OK, `present+OFF` OK (module present but not built), `present+ON` OK (module linked); `rg` audits clean |
 | Headless queued-session lifecycle (`WorldSession::Update`, `CharacterScreenIdleKick`, queued add/remove) | `Shyalya`'s `NullSessionAnticheat` + `WorldSession::Update` null-socket handling (`WorldSession.cpp:163,383,736` already tolerates `m_Socket==nullptr` but deletes headless via `return false`) | `WorldSession.cpp:306,334,378`, `Handlers/CharacterHandler.cpp:548`, `World.cpp:283`, `LockedQueue.h` | Reimplemented: explicit `SessionTransport`, a one-pass `m_headlessLoginPending` keepalive, deferred `LoginPlayer` after queued `AddSession`, and generic pending-session inspection/cancellation. `BotManager` retains `Removing` records until cleanup. | The queued path must survive the first `UpdateSessions` pass without requiring synchronous insertion; immediate removal must cancel the queue entry instead of orphaning it. | Queued runtime spike passed; `PendingAddRemoveTest PASSED` with no active/pending session, player, or record; graceful shutdown clears both online flags. |
 
-| Foundational Engine/AiObjectContext/Strategy/Trigger/Action/Value/ReactionEngine (Tortoise 1.18.1 baseline) | `Shyalya/tortoise-wow` (`playerbots-integration-gh` @ 1f9497e, vendored `cmangos/playerbots@c33dfac`) | `Shyalya` baseline provides the full `playerbot/strategy/Engine.{h,cpp}`, `AiObjectContext.{h,cpp}`, `AiObject.{h,cpp}`, `Strategy.{h,cpp}`, `Trigger.{h,cpp}`, `Action.{h,cpp}`, `Value.{h,cpp}`, `ReactionEngine.{h,cpp}`, `Queue/Event/Multiplier` etc, already translated for `MANGOSBOT_ZERO` (Vanilla 1.12/1.18.1) and `Penqle`'s `WorldLocation`/`Position`/`Map` APIs | `ai/playerbot/strategy/Engine.*`, `AiObjectContext.*`, `AiObject.*`, `Strategy.*`, `Trigger.*`, `Action.*`, `Value.*`, `ReactionEngine.*`, `Queue.*`, `Event.*`, `AiObject.*` (full `ai/playerbot` tree, 82 top-level + 14 strategy core + 113 generic) | Copied verbatim as the Tortoise/Vanilla translation reference for the foundational runtime; `cmangos-compat-shim.h` and `botpch.h` already handle `Penqle` `SpellEntry`/`ItemPrototype`/`MapStorage` translation, Vanilla `MANGOSBOT_ZERO` guards exclude `deathknight`/`TBC`/`WotLK` paths | Shyalya's `playerbots-integration-gh` is the only proven `1.18.1` PlayerBots that already runs on `Penqle`'s `WorldLocation` (`mapId/x/y/z/o`), `Transport`/`GenericTransport`, `GuidSet`/`AreaTableEntry` etc; using it as the baseline avoids reinventing `Penqle` API translation and keeps `Headless`/`IsHeadless()` as the only host seam | `ai/` now contains the full Shyalya `playerbot` tree (204 generic files after modern layer); `CMakeLists.txt` now builds the real `Engine`/`AiObjectContext`/`Strategy` stack instead of the stub `EngineStub`/`AiObjectContextStub`; native linkage uses explicit `MODULE_TORTOISEBOTS=static` and `MANGOSBOT_ZERO` |
+| Foundational Engine/AiObjectContext/Strategy/Trigger/Action/Value/ReactionEngine (Tortoise 1.18.1 baseline) | `Shyalya/tortoise-wow` (`playerbots-integration-gh` @ 1f9497e, vendored `cmangos/playerbots@c33dfac`) | `Shyalya` baseline provides the full `playerbot/strategy/Engine.{h,cpp}`, `AiObjectContext.{h,cpp}`, `AiObject.{h,cpp}`, `Strategy.{h,cpp}`, `Trigger.{h,cpp}`, `Action.{h,cpp}`, `Value.{h,cpp}`, `ReactionEngine.{h,cpp}`, `Queue/Event/Multiplier` etc, already translated for `MANGOSBOT_ZERO` (Vanilla 1.12/1.18.1) and core `WorldLocation`/`Position`/`Map` APIs | `ai/playerbot/strategy/Engine.*`, `AiObjectContext.*`, `AiObject.*`, `Strategy.*`, `Trigger.*`, `Action.*`, `Value.*`, `ReactionEngine.*`, `Queue.*`, `Event.*`, `AiObject.*` (full `ai/playerbot` tree, 82 top-level + 14 strategy core + 113 generic) | Copied verbatim as the Tortoise/Vanilla translation reference for the foundational runtime; `cmangos-compat-shim.h` and `botpch.h` already handle core `SpellEntry`/`ItemPrototype`/`MapStorage` translation, Vanilla `MANGOSBOT_ZERO` guards exclude `deathknight`/`TBC`/`WotLK` paths | Shyalya's `playerbots-integration-gh` is the only proven `1.18.1` PlayerBots that already runs on core `WorldLocation` (`mapId/x/y/z/o`), `Transport`/`GenericTransport`, `GuidSet`/`AreaTableEntry` etc; using it as the baseline avoids reinventing `Penqle` API translation and keeps `Headless`/`IsHeadless()` as the only host seam | `ai/` now contains the full Shyalya `playerbot` tree (204 generic files after modern layer); `CMakeLists.txt` now builds the real `Engine`/`AiObjectContext`/`Strategy` stack instead of the stub `EngineStub`/`AiObjectContextStub`; native linkage uses explicit `MODULE_TORTOISEBOTS=static` and `MANGOSBOT_ZERO` |
 | Modern generic Base behavior (204 files, `Follow`/`Combat`/`Dead`/`Ranged`/`Melee` etc) | `mod-playerbots` `src/Ai/Base/Strategy` @ 5397110cba48 (merge #2661) + `Shyalya` `strategy/generic` @ 1f9497e | `mod-playerbots: src/Ai/Base/Strategy/*.{h,cpp}` (91 files, modern `FollowMasterStrategy` now `getDefaultActions()` + `InitTriggers` vs Shyalya's `InitNonCombatTriggers`/`InitCombatTriggers` + `NextAction::array`) / `shyalya: strategy/generic/*` (113 files, includes `BlackwingLair`/`Karazhan` dungeon strategies) | `ai/playerbot/strategy/generic/*` (204 files after modern layer; donor SHAs are retained here instead of backup copies) | Forward-ported the modern `mod-playerbots` generic set on top of Shyalya's Tortoise-translated generic; Vanilla/Tortoise `MANGOSBOT_ZERO` guards kept and expansion-only paths excluded | Modern class/combat/follow behavior remains attributable to the pinned donor commits; obsolete `*.shyalya.bak` copies were removed once this provenance record was complete |
-| Modern class factory + per-class Strategy subfolders (9 Vanilla classes) | `mod-playerbots` `src/Ai/Class/{Warrior,Mage,Priest,Druid,Hunter,Rogue,Paladin,Shaman,Warlock}/AiObjectContext.*` + `Strategy/*.{h,cpp}` @ 5397110 + `Shyalya` `strategy/{warrior,mage,priest,...}/` @ 1f9497e | `mod-playerbots: src/Ai/Class/Warrior/{WarriorAiObjectContext.*,Strategy/*.cpp}` etc / `shyalya: strategy/warrior/{WarriorAiObjectContext.*,Arms/Fury/Protection/Tank...Strategy}` etc | `ai/playerbot/strategy/{warrior,mage,priest,druid,hunter,rogue,paladin,shaman,warlock}/*` | Forward-ported the nine Vanilla class contexts and strategy families; `AiFactory` now instantiates each native class context rather than silently falling back to the generic context | Fresh runtime attached real Warrior, Mage, Priest, and Hunter contexts; Warrior/Mage/Priest completed packet group journeys and Hunter completed via the deterministic mature-action diagnostic path |
+| Modern class factory + per-class Strategy subfolders (9 Vanilla classes) | `mod-playerbots` `src/Ai/Class/{Warrior,Mage,Priest,Druid,Hunter,Rogue,Paladin,Shaman,Warlock}/AiObjectContext.*` + `Strategy/*.{h,cpp}` @ 5397110 + `Shyalya` `strategy/{warrior,mage,priest,...}/` @ 1f9497e | `mod-playerbots: src/Ai/Class/Warrior/{WarriorAiObjectContext.*,Strategy/*.cpp}` etc / `shyalya: strategy/warrior/{WarriorAiObjectContext.*,Arms/Fury/Protection/Tank...Strategy}` etc | `ai/playerbot/strategy/{warrior,mage,priest,druid,hunter,rogue,paladin,shaman,warlock}/*` | Forward-ported the nine Vanilla class contexts and strategy families; `AiFactory` now instantiates each native class context rather than silently falling back to the generic context | Fresh runtime attached real Warrior, Mage, Priest, and Hunter contexts; Warrior/Mage/Priest completed packet group journeys and Hunter completed via the deterministic existing-action diagnostic path |
 
 Notes (updated 2026-08-22 — large-batch forward-port):
 
@@ -24,15 +24,15 @@ Notes (updated 2026-08-22 — large-batch forward-port):
 - Host seam remains generic and minimal: `SessionTransport`, `IsHeadless()`, `HasNetworkTransport()`, `IWorldUpdateListener` (≤5 host files, verified via `rg -n -i 'PlayerBot|BotService|Headless' src/game` only shows `InitHeadlessSession`). No `IsBot()`/`GetBot()`/`m_bot`/`sPlayerBotMgr` reintroduced. Same-account `1 Network + N Headless` GUID-driven lifecycle and human reclaim are preserved via `BotManager` + `BotSessionAdapter`.
 - Upstream licenses (GPL-2.0 for MaNGOS/CMaNGOS/Shyalya, GPL-2.0 for `mod-playerbots`) are preserved; headers retain original copyright/license and this file records donor SHAs/source files before migration copies were deleted. No `AzerothCore` `PlayerbotMgr`/`BotSession` ownership model is reintroduced.
 - The broad donor tree is now wired into the active CMake source set: real `PlayerbotAI`/`AiFactory`, generic behavior, all nine Vanilla class folders, Value/Trigger/Action families, Travel, grouping, loot, quests, dungeon/raid and PvP families are compiled as one coherent batch rather than left dead in-tree. `MANGOSBOT_ZERO` filters expansion-only folders. Fresh runtime probes now cover the packet bridge and Warrior/Mage/Priest/Hunter class attachment/group journeys.
-| Follow (dead-zone 1.5y, MoveFollow behind M_PI, public native target/moving-state restart guard, CanFollow guards) | `cmangos/playerbots` + `mangoszero/server` | `cmangos-playerbots@076045e` / `mangoszero-server@1817ae1` | `cmangos: playerbot/strategy/actions/FollowActions.cpp:36-90`; `mangoszero: src/modules/Bots/playerbot/strategy/actions/MovementActions.cpp:440-560`; local `ServerFacade.cpp` adapter over Penqle `MotionMaster::GetCurrent()` | The real PlayerbotAI path uses `FollowMasterStrategy`/`FollowAction`; the Tortoise adapter reads the public native targeted-generator target and moving state instead of pretending Penqle's private angle/offset fields are available. `BotController` retains only an intent/diagnostic record and is never a gameplay fallback after AI attachment | Keep 1.5y jitter-free follow without a second movement owner or re-entrant generator replacement | Cached ON/static build; preserved AI-enabled runtime packet journey exercised `follow chat shortcut`, group invite/accept, and cleanup without a movement-state crash |
+| Follow (dead-zone 1.5y, MoveFollow behind M_PI, public native target/moving-state restart guard, CanFollow guards) | `cmangos/playerbots` + `mangoszero/server` | `cmangos-playerbots@076045e` / `mangoszero-server@1817ae1` | `cmangos: playerbot/strategy/actions/FollowActions.cpp:36-90`; `mangoszero: src/modules/Bots/playerbot/strategy/actions/MovementActions.cpp:440-560`; local `ServerFacade.cpp` adapter over core `MotionMaster::GetCurrent()` | The real PlayerbotAI path uses `FollowMasterStrategy`/`FollowAction`; the Tortoise adapter reads the public native targeted-generator target and moving state instead of pretending core's private angle/offset fields are available. `BotController` retains only an intent/diagnostic record and is never a gameplay fallback after AI attachment | Keep 1.5y jitter-free follow without a second movement owner or re-entrant generator replacement | Cached ON/static build; preserved AI-enabled runtime packet journey exercised `follow chat shortcut`, group invite/accept, and cleanup without a movement-state crash |
 | Warrior vertical slice | Shyalya `playerbots-integration-gh` + modern `mod-playerbots` | `1f9497e` / `5397110` | Focused `Engine`/`Queue`/`Trigger`/`Action`/`Value` primitives, generic `FollowMasterStrategy`/assist/combat/non-combat/dead strategies, and Warrior Arms/Fury/Protection strategy files | Ported/adapted focused family; unrelated expansion systems remain excluded by the CMake source set | Make one owned Tortoise bot use strategy-driven follow and combat before widening the donor tree | Cached Docker build: `Built target tortoise_bots`, `Built target mangosd`; runtime: same-account Headless Sagiroth + Dudette, `dps assist`, successful Warrior Heroic Strike spell 78, encounter end/follow resume, clean removal; `PlayerbotAIStorage` logout use-after-free fixed and revalidated |
-| Broad Vanilla/Turtle source-set checkpoint | Shyalya `playerbots-integration-gh` + modern `mod-playerbots` | `1f9497e` / `5397110` | `CMakeLists.txt` globs the real `PlayerbotAI`, generic, nine Vanilla class, Value/Trigger/Action, Travel, grouping, loot, quest, dungeon/raid, BG/PvP and economy families; `MANGOSBOT_ZERO` excludes Death Knight and other expansion-only paths | Adapted Penqle naming and data shapes in the module-local compatibility layer; native loot ownership, area names/flags, channel wrappers and const loot-list views replace unsafe CMaNGOS member assumptions | Compile and stabilize the broad family without adding core `GetBot`/`m_bot` ownership | The first broad Docker pass reached the module compilation stage and exposed a small remaining Penqle API family in `PlayerbotAI.cpp`; the correct Penqle `module-system` host snapshot must also carry the documented generic Headless/session seams before a broad runtime claim is made |
+| Broad Vanilla/Turtle source-set checkpoint | Shyalya `playerbots-integration-gh` + modern `mod-playerbots` | `1f9497e` / `5397110` | `CMakeLists.txt` globs the real `PlayerbotAI`, generic, nine Vanilla class, Value/Trigger/Action, Travel, grouping, loot, quest, dungeon/raid, BG/PvP and economy families; `MANGOSBOT_ZERO` excludes Death Knight and other expansion-only paths | Adapted core naming and data shapes in the module-local compatibility layer; native loot ownership, area names/flags, channel wrappers and const loot-list views replace unsafe CMaNGOS member assumptions | Compile and stabilize the broad family without adding core `GetBot`/`m_bot` ownership | The first broad Docker pass reached the module compilation stage and exposed a small remaining core API family in `PlayerbotAI.cpp`; the correct upstream `module-system` host snapshot must also carry the documented generic Headless/session seams before a broad runtime claim is made |
 
 ## Native module-system checkpoint — 2026-08-24
 
 Feature: Native module packaging, module-local runtime support, and broad Vanilla/Turtle source selection
 
-Source repository: local Penqle `tortoise-wow` sibling plus local TortoiseBots checkout
+Source repository: local `tortoise-wow` checkout plus local TortoiseBots checkout
 
 Source commit: core `73f32c063e6c4481a0415690896025178ca8076f` on branch `playerbots-integration-gh`; TortoiseBots `3484208` (`Finish native PlayerBots integration and playtest bridge`). This checkpoint is superseded by core `9487c5150a6553c665fafc1f4568669b8b00f011`; the core commits `133c6d19` and `9487c515` keep static-module include paths target-local and remove the stale `src/game/PlayerBots` common path.
 
@@ -40,9 +40,9 @@ Source files: `TortoiseBots.cmake`, `src/TortoiseBotsModule.cpp`, `host/*`, `run
 
 Copied / ported / independently reimplemented: behavior was ported/adapted from local `shyalya-tortoise-wow@1f9497e0f42bfc1055841bb6ebdc7caa3515de0b`, `cmangos-playerbots@076045efa835da9aab7caa943bca752aebe1baad`, and `mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70`; host lifecycle and BotManager ownership were independently reimplemented around generic `SessionTransport`/Headless APIs.
 
-Reason: use mature combat/class/travel behavior without compiling donor manager, random-manager, login-manager, or second-session ownership into the target core.
+Reason: use existing combat/class/travel behavior without compiling donor manager, random-manager, login-manager, or second-session ownership into the target core.
 
-Local validation: static `modules` target and `mangosd` link passed with `BUILD_PLAYERBOTS=ON`, `BUILD_LEGACY_PLAYERBOTS=OFF`, `MODULE_TORTOISEBOTS=static`; the complementary `BUILD_PLAYERBOTS=OFF`, `MODULES=disabled` `mangosd` build passed; the local Penqle runtime reached `TortoiseBots: native module loaded (AI enabled)` and `World server is up and running` after applying the three pending non-destructive world migrations required by the preserved database. Generated flags prove TortoiseBots definitions/includes/PCH are on `mod_tortoisebots_static`, not the combined `modules` target.
+Local validation: static `modules` target and `mangosd` link passed with `BUILD_PLAYERBOTS=ON`, `BUILD_LEGACY_PLAYERBOTS=OFF`, `MODULE_TORTOISEBOTS=static`; the complementary `BUILD_PLAYERBOTS=OFF`, `MODULES=disabled` `mangosd` build passed; the local runtime reached `TortoiseBots: native module loaded (AI enabled)` and `World server is up and running` after applying the three pending non-destructive world migrations required by the preserved database. Generated flags prove TortoiseBots definitions/includes/PCH are on `mod_tortoisebots_static`, not the combined `modules` target.
 
 Explicit gaps at that earlier checkpoint: `AutoMaintenanceOnLevelupAction`, advanced `FishingAction`, `InventoryAction`/`TellEmblemsAction`, `NonCombatActions`, guardian-oriented `PetsAction`, `TellPvpStatsAction`, extended trade reporting, donor `TradeValues.cpp`, and expansion-only LFG/glyph/Karazhan/vehicle/Arena registrations remained excluded where they required WotLK/AzerothCore APIs or unsupported host data. Native loot, quest, inventory operations, travel, trade, class combat, pet-taming, and lockpicking paths are now compiled; no empty gameplay stubs were added.
 
@@ -52,7 +52,7 @@ Architecture note: core integration is generic Headless transport/session lifecy
 
 Feature: Pet taming/control, lockpicking, bounded random-bot lifecycle, AH/economy pricing, named-location travel lookup, cache-safe startup, and native module SQL packaging
 
-Source repository: local `TortoiseBots` checkout; host/runtime seam in the local Penqle `tortoise-wow` sibling
+Source repository: local `TortoiseBots` checkout; host/runtime seam in the local `tortoise-wow` checkout
 
 Source commit: TortoiseBots native stabilization work after `6a78b5c`; behavior references `shyalya-tortoise-wow@1f9497e0f42bfc1055841bb6ebdc7caa3515de0b`, `cmangos-playerbots@076045efa835da9aab7c943bca752aebe1baad`, and `mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70`; required core seam `9487c5150a6553c665fafc1f4568669b8b00f011` on `playerbots-integration-gh`
 
@@ -63,9 +63,9 @@ Copied / ported / independently reimplemented:
 - Tame-beast behavior was independently reimplemented around the host's real `SPELL_EFFECT_TAMECREATURE` path; rename and abandon use the native `Pet`/`Player` APIs. The old WotLK pet-stable construction was not retained.
 - Lockpicking was ported to `ItemPrototype`, `LockEntry`, `ITEM_DYNFLAG_UNLOCKED`, the native Pick Lock spell, and the native trade-slot path. The old AzerothCore `ItemTemplate`/extended trade wrappers were not retained.
 - Random bots use a module-local, startup-loaded pool of pre-existing characters on the configured random-account prefix. `World` owns Headless/Network session lifetime; `BotManager` owns module records and AI adapters. Account/character creation and donor login managers remain intentionally outside the module.
-- Random-bot buy/sell multipliers are now cached per character with the mature Vanilla ranges, and named-location lookup uses the native `ai_playerbot_named_location` table instead of a compatibility no-op.
-- Empty optional item/equipment caches are accepted without synchronous world-thread cache generation. Populated mature caches still load normally.
-- Schema-only native migrations cover the tables queried by the active Vanilla/Turtle AI initializer and per-bot state. Mature datasets remain deployable separately.
+- Random-bot buy/sell multipliers are now cached per character with the Existing Vanilla ranges, and named-location lookup uses the native `ai_playerbot_named_location` table instead of a compatibility no-op.
+- Empty optional item/equipment caches are accepted without synchronous world-thread cache generation. Populated existing caches still load normally.
+- Schema-only native migrations cover the tables queried by the active Vanilla/Turtle AI initializer and per-bot state. Existing datasets remain deployable separately.
 
 Reason: complete coherent Vanilla/Turtle families without reintroducing donor manager/session ownership or making optional AI startup depend on a large synchronous cache write.
 
@@ -82,21 +82,21 @@ Account/character auto-creation remains the intentional random-bot product
 gap; existing random characters, bounded login/logout, native TravelMgr
 relocation, AI strategy rotation/recovery, gear refresh, and AH/economy pricing
 are supported. Core `BattleGroundMgr` remains authoritative for Vanilla and
-Turtle battleground entries; the mature value compatibility view reads the
+Turtle battleground entries; the existing value compatibility view reads the
 same native `battlemaster_entry` table once at AI startup and does not own
 battleground state.
 
 ## Packet/config/static-isolation and playtest gate — 2026-08-24
 
-Feature: generic packet/event bridge, safe multi-value configuration, isolated native static-module settings, mature command surface, random-bot debt cleanup, and fresh class journeys.
+Feature: generic packet/event bridge, safe multi-value configuration, isolated native static-module settings, existing command surface, random-bot debt cleanup, and fresh class journeys.
 
-Source repository: TortoiseBots `phase4-follow@3484208`; required Penqle core `playerbots-integration-gh@9487c5150a6553c665fafc1f4568669b8b00f011` (parent `133c6d19bf5898c1e4f5129b2890b1db89b17a07`).
+Source repository: TortoiseBots `phase4-follow@3484208`; required upstream core `playerbots-integration-gh@9487c5150a6553c665fafc1f4568669b8b00f011` (parent `133c6d19bf5898c1e4f5129b2890b1db89b17a07`).
 
-Source files: `host/BotPacketAdapter.*`, `runtime/BotManager.*`, `runtime/PlayerbotAIAdapter.cpp`, `runtime/PlayerbotRuntimeFacade.cpp`, `runtime/RandomBotService.*`, `commands/BotCommands.cpp`, `ai/playerbot/PlayerbotAIConfig.*`, `ai/playerbot/strategy/ValueMacros.h`, `ai/playerbot/AiFactory.cpp`, `TortoiseBots.cmake`, `conf/tortoise_bots.conf.dist`, and Penqle `modules/CMakeLists.txt`/`Config`.
+Source files: `host/BotPacketAdapter.*`, `runtime/BotManager.*`, `runtime/PlayerbotAIAdapter.cpp`, `runtime/PlayerbotRuntimeFacade.cpp`, `runtime/RandomBotService.*`, `commands/BotCommands.cpp`, `ai/playerbot/PlayerbotAIConfig.*`, `ai/playerbot/strategy/ValueMacros.h`, `ai/playerbot/AiFactory.cpp`, `TortoiseBots.cmake`, `conf/tortoise_bots.conf.dist`, and core `modules/CMakeLists.txt`/`Config`.
 
-Copied / ported / independently reimplemented: the packet calls preserve the mature `PlayerbotAI` handlers but the mapping and ownership are independently implemented through `PlayerbotAIStorage` and `BotManager`; Penqle `Config::GetValues` is a generic core API over ACE configuration enumeration; static isolation is a generic per-static-module OBJECT-target mechanism.
+Copied / ported / independently reimplemented: the packet calls preserve the existing `PlayerbotAI` handlers but the mapping and ownership are independently implemented through `PlayerbotAIStorage` and `BotManager`; Core `Config::GetValues` is a generic core API over ACE configuration enumeration; static isolation is a generic per-static-module OBJECT-target mechanism.
 
-Historical runtime evidence: fresh AI-enabled Docker runs emitted bot outgoing `SMSG_GROUP_INVITE`, master outgoing `SMSG_PARTY_COMMAND_RESULT`, and a synthetic master-incoming diagnostic, with mature group invite/accept success and cleanup. The same journey instantiated real `WarriorAiObjectContext`, `MageAiObjectContext`, `PriestAiObjectContext`, and `HunterAiObjectContext`; the Hunter no-network diagnostic used the mature `accept invitation` action directly after packet delivery because activity scheduling is intentionally not treated as human-client evidence. `Loading WorldBuffs` proves the real multi-value config reader. This evidence is retained for provenance, not final incoming-hook acceptance.
+Historical runtime evidence: fresh AI-enabled Docker runs emitted bot outgoing `SMSG_GROUP_INVITE`, master outgoing `SMSG_PARTY_COMMAND_RESULT`, and a synthetic master-incoming diagnostic, with existing group invite/accept success and cleanup. The same journey instantiated real `WarriorAiObjectContext`, `MageAiObjectContext`, `PriestAiObjectContext`, and `HunterAiObjectContext`; the Hunter no-network diagnostic used the existing `accept invitation` action directly after packet delivery because activity scheduling is intentionally not treated as human-client evidence. `Loading WorldBuffs` proves the real multi-value config reader. This evidence is retained for provenance, not final incoming-hook acceptance.
 
 This checkpoint is historical and is superseded by the final correctness pass
 below: the direct incoming diagnostic and Hunter direct-action diagnostic are
@@ -117,7 +117,7 @@ master reconnect rebinding, controller cleanup, canonical random timing key,
 and concrete PlayerbotAI value null-safety.
 
 Source repository: TortoiseBots `phase4-follow@e0da302058cb1e5021c92272bf22983b2b5ad073`; required
-Penqle core `playerbots-integration-gh@9487c5150a6553c665fafc1f4568669b8b00f011` (parent `133c6d19bf5898c1e4f5129b2890b1db89b17a07`, with `73f32c063e6c4481a0415690896025178ca8076f` as the original seam commit).
+upstream core `playerbots-integration-gh@9487c5150a6553c665fafc1f4568669b8b00f011` (parent `133c6d19bf5898c1e4f5129b2890b1db89b17a07`, with `73f32c063e6c4481a0415690896025178ca8076f` as the original seam commit).
 
 Source files: `ai/playerbot/PlayerbotAI.{h,cpp}`,
 `runtime/{BotManager,PlayerbotAIAdapter}.*`,
@@ -129,14 +129,14 @@ Source files: `ai/playerbot/PlayerbotAI.{h,cpp}`,
 
 Copied / ported / independently reimplemented: movement transition
 centralization and reconnect rebinding are independent module work around the
-existing mature `FollowMasterStrategy`/`ChatShortcutActions` semantics; the
+existing existing `FollowMasterStrategy`/`ChatShortcutActions` semantics; the
 strict fixture is an independent runtime assertion over the existing packet
 bridge; the null-safety changes are local defensive corrections.
 
 Local validation: cached `BUILD_PLAYERBOTS=ON`, static native `mangosd` passed;
 cached `BUILD_PLAYERBOTS=OFF`, `BUILD_LEGACY_PLAYERBOTS=OFF`, and
 `MODULES=disabled` `mangosd` passed. The final AI-enabled Docker binary reached
-world-ready, and the strict packet fixture passed automatic mature group
+world-ready, and the strict packet fixture passed automatic existing group
 invite/accept plus cleanup without a direct accept-action fallback. The
 fixture intentionally does not synthesize `CanPacketReceive`; a real client
 incoming event remains the manual playtest gate. No client login was automated
@@ -160,7 +160,7 @@ elsewhere.
 
 ## Narrow post-review cleanup pass — 2026-08-24
 
-Feature: mature `.bot stay` anchors, mature-AI-authoritative reconnect,
+Feature: existing `.bot stay` anchors, existing-AI-authoritative reconnect,
 durable random-bot master bind/clear, and corrected packet-fixture wording.
 
 Source files: `commands/BotCommands.cpp`, `runtime/BotManager.{h,cpp}`,
@@ -172,8 +172,8 @@ Source files: `commands/BotCommands.cpp`, `runtime/BotManager.{h,cpp}`,
 status/host-boundary documentation.
 
 Copied / ported / independently reimplemented: native commands now reuse the
-existing mature `StayChatShortcutAction`/`FollowChatShortcutAction` actions;
-reconnect treats the existing mature strategy set as authoritative and only
+existing existing `StayChatShortcutAction`/`FollowChatShortcutAction` actions;
+reconnect treats the existing existing strategy set as authoritative and only
 applies the default when no movement strategy exists. `BindBotMaster` and
 `ClearBotMaster` are small module-local lifecycle operations; they do not add
 core fields or replace Headless sessions.
@@ -198,7 +198,7 @@ Required core remains `playerbots-integration-gh@9487c5150a6553c665fafc1f4568669
 
 Source files: `runtime/BotManager.*`, `runtime/PlayerbotAIAdapter.*`,
 `runtime/PlayerbotRuntimeFacade.cpp`, `commands/BotCommands.cpp`,
-`host/{BotHostAdapter,BotSessionAdapter}.cpp`, mature ownership-transition
+`host/{BotHostAdapter,BotSessionAdapter}.cpp`, existing ownership-transition
 actions, `host/BotPacketAdapter.cpp`, asynchronous packet delivery in
 `ai/playerbot/PlayerbotAI.cpp`, the active compatibility shims,
 `TortoiseBots.cmake`, `ai/playerbot/{TravelNode,RandomItemMgr}.cpp`, and
@@ -296,7 +296,7 @@ and stale tooling paths`), `2afd2d1` (`fix: match effective core SQL paths
 and migration history`), and the preceding
 `9db49df` and `3a96923` remediation commits.
 
-Required target core: local Penqle `tortoise-wow`
+Required target core: local `tortoise-wow`
 `playerbots-integration-gh@9487c5150a6553c665fafc1f4568669b8b00f011`.
 
 Source files: `TortoiseBots.cmake`, `README.md`,
@@ -311,7 +311,7 @@ and range-trigger files, `ai/playerbot/aiplayerbot.conf.dist.in`,
 Copied / ported / independently reimplemented:
 
 - No new upstream gameplay was copied in this pass.
-- Existing mature behavior was kept where the local core data validates it;
+- Existing existing behavior was kept where the local core data validates it;
   the factory collection-mount selection is an independent module adapter over
   the core `collection_mount` table and `MountManager` contract.
 - Removed RTSC/SeeSpell/BossAura and later-ID branches are subtractive cleanup,
@@ -397,7 +397,7 @@ Local validation:
   `ChatHandler`, followed by group invite/accept and cleanup. This is runtime
   command-path evidence, not a real-client incoming-packet claim.
 - The compatibility shim's ScriptDevAI-shaped gossip callback now delegates to
-  Penqle's `sScriptMgr` creature-gossip registry; it no longer unconditionally
+  core `sScriptMgr` creature-gossip registry; it no longer unconditionally
   returns false and discards core gossip behavior.
 - The compatibility shim's taxi view now reads the live core
   `Player::GetTaxi().GetTaxiPath()` route for in-flight position reasoning, and
@@ -429,7 +429,7 @@ Local validation:
   `maps/0002536.map` + `mmaps/0002536.mmtile`; `vmaps/000_25_36.vmtile` is not
   present.
 - The updated disposable packet fixture at `2026-08-25T01:48:13.297552013Z`
-  passed native `list`/`stats`/`follow`, mature group invite/accept, and
+  passed native `list`/`stats`/`follow`, existing group invite/accept, and
   cleanup. Its temporary `PacketBridgeTest` enablement was restored to `0`,
   and the normal restart at `2026-08-25T01:48:57.408768993Z` reached
   world-ready.
@@ -453,7 +453,7 @@ collection-mount fallbacks).
 
 Reference repositories and commits:
 
-- Local Penqle core: `tortoise-wow@9487c5150a6553c665fafc1f4568669b8b00f011`
+- Local core: `tortoise-wow@9487c5150a6553c665fafc1f4568669b8b00f011`
   (`playerbots-integration-gh`), used as the API/data authority; no core file
   was modified by this commit.
 - Local CMaNGOS Classic PlayerBots host reference:
@@ -474,13 +474,13 @@ Copied / ported / independently reimplemented:
   fail-closed guards, native wrapper substitutions, and local heal prediction
   are independently reimplemented against the pinned core APIs.
 - Class trainer/quest spell initialization is a module-local port of the
-  mature CMaNGOS behavior, narrowed to the core's `Quest`, `TrainerSpell`,
+  existing CMaNGOS behavior, narrowed to the core's `Quest`, `TrainerSpell`,
   `SpellMgr`, talent, and class/race contracts. It does not add a
   `PlayerBots`-specific core hook.
 - Absent expansion IDs and invalid Turtle branches are subtractive cleanup,
   validated against local DBC/SQL; no expansion behavior was introduced.
 
-Reason: preserve mature Vanilla behavior while ensuring that Turtle custom
+Reason: preserve Existing Vanilla behavior while ensuring that Turtle custom
 IDs, Goblin/High Elf data, localized content, and native core semantics are
 not silently hidden behind donor-era constants or no-op compatibility methods.
 
@@ -552,7 +552,7 @@ this change does not add scripts, stubs, or module-side replacements for them.
 Feature: remove the remaining legacy PlayerBots-specific core product surface
 and reconcile the locally provable Turtle ScriptName mismatches.
 
-Source repository: local Penqle `tortoise-wow` core plus its local Turtle SQL;
+Source repository: local `tortoise-wow` core plus its local Turtle SQL;
 TortoiseBots module checkout for the optional-module build.
 
 Source commit: core

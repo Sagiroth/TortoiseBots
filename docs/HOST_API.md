@@ -1,6 +1,6 @@
 # HOST_API — current TortoiseBots host contract
 
-**Target:** Tortoise WoW 1.18.1 / Penqle core
+**Target:** Tortoise WoW 1.18.1 core
 **Purpose:** describe the implemented generic core/module boundary used by TortoiseBots.
 
 This file describes the current contract. Historical Phase 1 discovery and design
@@ -36,7 +36,7 @@ TortoiseBots tested code checkpoint: 07cf7976c546fac27083c7b46e73299c25b095f3
 Validated local core checkpoint:
 `7353989c94399f80572a2f8ec2eb73c63a6c79f8` (historical branch `cleanup/f03-f27-code-freeze`)
 
-Upstream Penqle status:
+Upstream status:
 generic Headless capability proposed as draft PR [#411](https://github.com/Penqle/tortoise-wow/pull/411)
 (`feature/headless-world-session` @ `c37e28b`, based on upstream `main`
 `61a8269`; merge-base `93a5faa`). Not yet merged; the pinned branch remains the validated baseline until #411 lands.
@@ -125,7 +125,7 @@ Current adapters:
 | `BotSessionAdapter` | Headless session lifecycle |
 | `BotPlayerAdapter` | player lifecycle/reclaim attachment |
 | `BotChatAdapter` | native `.bot` command integration |
-| `BotPacketAdapter` | packet bridge into mature PlayerBots |
+| `BotPacketAdapter` | packet bridge into Existing PlayerBots (primarily AzerothCore/mod-playerbots) |
 
 The module should prefer an existing generic hook before requesting a new core
 seam.
@@ -149,7 +149,7 @@ The core listener is generic; it does not call a PlayerBots singleton.
 | AI lifetime | `PlayerbotAIAdapter` |
 | AI lookup | `PlayerbotAIStorage` |
 | Gameplay decisions | `PlayerbotAI` |
-| Movement semantics | mature PlayerBots actions/strategies |
+| Movement semantics | Existing PlayerBots (primarily AzerothCore/mod-playerbots) actions/strategies |
 | Durable master GUID | `BotRecord.masterGuid` |
 | Live master pointer | `PlayerbotAI` |
 
@@ -175,7 +175,7 @@ Network master incoming
 No bot-specific opcode branches belong in core packet handlers.
 
 The recorded fixture exercised Headless outgoing delivery, Network-master
-outgoing delivery and the mature group-invite Trigger -> Action acceptance
+outgoing delivery and the existing group-invite Trigger -> Action acceptance
 path. Real-client incoming delivery remains a separate manual-client acceptance
 boundary.
 
@@ -196,13 +196,13 @@ command
 help
 ```
 
-`.bot command` delegates to `PlayerbotAI::HandleCommand` for mature PlayerBots
+`.bot command` delegates to `PlayerbotAI::HandleCommand` for Existing PlayerBots (primarily AzerothCore/mod-playerbots)
 command behavior. Authorization uses the normal account/GM policy implemented
 by the module/core boundary.
 
 ## 12. Native module/build contract
 
-Penqle consumes the repository at:
+The core consumes the repository at:
 
 ```text
 modules/TortoiseBots/
@@ -280,42 +280,6 @@ Before adding another core seam, establish that:
 If the design would make PlayerBots-specific checks spread through normal
 core gameplay code, redesign it.
 
-## 17. Integration closure (F-03/F-27) and remaining content gaps
+## 17. Historical closure
 
-For the validated local baseline (core `7353989c94399f80572a2f8ec2eb73c63a6c79f8`):
-
-- **F-03 — closed for the supported local integration:** legacy LFT filler, stale
-  command/stub surface, bot slots, hardwired RNDBOT filters, stale include paths
-  and bot-named diagnostics removed. Supported selection is `MODULE_TORTOISEBOTS`
-  with `BUILD_LEGACY_PLAYERBOTS=OFF`; the tracked `src/modules/PlayerBots` tree
-  remains only as an unsupported historical escape hatch (retained disabled, not
-  deleted).
-- **F-27 — locally proven where source proves it:** `npc_teslinah` is now
-  registered and invalid literal `0` cleared by migration
-  `20260825090000_world.sql`. 17 Turtle ScriptNames remain explicitly
-  unverified content gaps — not host API gaps, not PlayerBots blockers, no fake
-  scripts were added. See Git history and
-  [PLAYERBOTS_AUDIT.md](archive/PLAYERBOTS_AUDIT.md) for the list.
-
-Upstream Penqle status: validated local core checkpoint
-`7353989c94399f80572a2f8ec2eb73c63a6c79f8` on branch
-`cleanup/f03-f27-code-freeze`; generic Headless subset proposed as draft PR
-[#411](https://github.com/Penqle/tortoise-wow/pull/411). Remaining F-27 names are
-Turtle content gaps, not host API gaps.
-
-## 18. Validation boundary
-
-The audited baseline includes evidence for PlayerBots-on and module-absent
-builds, world-ready startup, Headless login/save/logout/relogin, pending
-add/remove cleanup, graceful shutdown, human reclaim, packet/group fixtures,
-Goblin/High Elf lifecycle fixtures and repeatable migrations.
-
-That evidence does not claim complete dungeon gameplay, every Turtle class/spec
-interaction, every custom script, real-client packet delivery or large
-random-bot populations.
-
-## 19. Portability
-
-The recorded build/runtime validation is Linux-focused. Other toolchains,
-especially MSVC static-module linkage, remain unverified until built and run on
-that target.
+F-03/F-27 closure and validation boundary are recorded in `PLAN.md` §6.1 and `PROVENANCE.md`; see `archive/PLAYERBOTS_AUDIT.md` for full evidence. This contract covers only the current host API.
