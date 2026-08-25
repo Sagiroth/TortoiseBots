@@ -21,11 +21,14 @@
 #include "WorldPacket.h"
 #include "Chat.h"
 #include "Group/Group.h"
+#include "Maps/GridMap.h"
 #include "../commands/BotCommands.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
 #include "../ai/playerbot/TravelMgr.h"
 #include "../ai/playerbot/WorldPosition.h"
 #include "../ai/playerbot/strategy/values/TravelValues.h"
+
+#include <algorithm>
 
 namespace TortoiseBots {
 
@@ -33,6 +36,24 @@ namespace {
 // One-shot headless RNDBOT scatter using persisted GenericRpg destinations.
 // Fail-closed: any validation miss retains original position. No DB scan,
 // no GenerateTravelNodes, no homebind update.
+bool IsUsableTeleportPoint(ai::WorldPosition const& point)
+{
+    if (!point.isOverworld() || !point.isValid() || !point.loadMapAndVMap(0))
+        return false;
+
+    // GetWaterOrGroundLevel loads the map grid and its VMAP data. Reject points
+    // with no terrain height or with a stale spawn Z instead of teleporting a
+    // bot into the ground or into the air.
+    TerrainInfo const* terrain = point.getTerrain();
+    if (!terrain)
+        return false;
+
+    float groundZ = INVALID_HEIGHT;
+    float maxZ = terrain->GetWaterOrGroundLevel(point.getX(), point.getY(), point.getZ(), &groundZ, false);
+    return groundZ > INVALID_HEIGHT && maxZ > INVALID_HEIGHT &&
+        point.getZ() >= groundZ - 2.0f && point.getZ() <= maxZ + 2.0f;
+}
+
 bool TryRandomTeleport(::Player* bot, BotRecord const& record)
 {
     if (!sPlayerbotAIConfig.enableRandomTeleports)
@@ -64,34 +85,42 @@ bool TryRandomTeleport(::Player* bot, BotRecord const& record)
         sLog.outString("TortoiseBots: random teleport no GenericRpg destinations for bot %s level %u (cache empty or no level match)", bot->GetName(), bot->GetLevel());
         return false;
     }
-    std::vector<ai::WorldPosition*> candidates;
-    candidates.reserve(64);
-    for (auto* dest : dests)
+
+    // Probe a bounded random subset. Destination points can be numerous, and
+    // loading terrain/MMAP for every point would turn login into a world stall.
+    constexpr uint32 maxDestinationAttempts = 32;
+    constexpr uint32 maxPointAttempts = 8;
+    ai::WorldPosition* chosen = nullptr;
+    uint32 destinationAttempts = std::min<uint32>(maxDestinationAttempts, dests.size());
+    for (uint32 destinationAttempt = 0; destinationAttempt < destinationAttempts && !chosen; ++destinationAttempt)
     {
-        if (!dest) continue;
-        const auto& points = dest->GetPoints();
-        for (auto* p : points)
+        ai::TravelDestination* destination = dests[urand(0, static_cast<uint32>(dests.size() - 1))];
+        if (!destination)
+            continue;
+
+        auto points = destination->GetPoints();
+        uint32 pointAttempts = std::min<uint32>(maxPointAttempts, points.size());
+        for (uint32 pointAttempt = 0; pointAttempt < pointAttempts; ++pointAttempt)
         {
-            if (!p) continue;
-            if (!p->isOverworld()) continue;
-            if (!p->isValid()) continue;
-            if (!p->loadMapAndVMap(0)) continue;
-            if (!ai::TravelMgr::IsLocationLevelValid(*p, info, (uint32)ai::TravelDestinationPurpose::GenericRpg)) continue;
-            candidates.push_back(p);
+            ai::WorldPosition* point = points[urand(0, static_cast<uint32>(points.size() - 1))];
+            if (!point || !ai::TravelMgr::IsLocationLevelValid(*point, info,
+                (uint32)ai::TravelDestinationPurpose::GenericRpg))
+                continue;
+            if (IsUsableTeleportPoint(*point))
+            {
+                chosen = point;
+                break;
+            }
         }
     }
-    if (candidates.empty())
+
+    if (!chosen)
     {
         sLog.outString("TortoiseBots: random teleport no valid overworld point for bot %s level %u", bot->GetName(), bot->GetLevel());
         return false;
     }
-    ai::WorldPosition* chosen = candidates[urand(0, (uint32)candidates.size() - 1)];
-    if (!chosen || !chosen->isValid() || !chosen->isOverworld() || !chosen->loadMapAndVMap(0))
-    {
-        sLog.outError("TortoiseBots: random teleport chosen point invalid for bot %s, retaining position", bot->GetName());
-        return false;
-    }
-    bool ok = bot->TeleportTo(chosen->getMapId(), chosen->getX(), chosen->getY(), chosen->getZ(), chosen->getO() ? chosen->getO() : bot->GetOrientation(), 0);
+
+    bool ok = bot->TeleportTo(chosen->getMapId(), chosen->getX(), chosen->getY(), chosen->getZ(), chosen->getO(), 0);
     if (ok)
         sLog.outString("TortoiseBots: random teleport bot %s level %u to map %u %.1f %.1f %.1f", bot->GetName(), bot->GetLevel(), chosen->getMapId(), chosen->getX(), chosen->getY(), chosen->getZ());
     else

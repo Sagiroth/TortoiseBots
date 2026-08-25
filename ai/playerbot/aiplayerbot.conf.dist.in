@@ -48,13 +48,14 @@ AiPlayerbot.RandomBotMaxLevel = 60
 AiPlayerbot.RandomBotAccountPrefix = RNDBOT
 
 # Scatter RNDBOT headless logins to a validated level-appropriate overworld
-# GenericRpg destination from the persisted in-memory TravelMgr cache. No DB
-# scan, no world scan, no cache generation. Fail-closed (retain logout
-# position) when cache empty, coords invalid, or terrain/MMap unavailable.
-# Only applied once on headless login via the generic PlayerScript OnLogin
-# hook, only for BotManager records marked random; owned/manual bots unchanged.
-# Pinned bots (sRandomBotFacade.IsPinnedBot) are skipped. Uses core
-# Player::TeleportTo on the world thread; no homebind update. Default 0 = off.
+# GenericRpg destination from the persisted in-memory TravelMgr cache. The
+# cache is available when AutoDoQuests=1; with it disabled or no cache rows,
+# the feature fails closed. No DB scan, world scan, or cache generation is
+# performed here. Invalid coords or unavailable terrain/MMap retain logout
+# position. Only applied once on headless login via the generic PlayerScript
+# OnLogin hook, only for BotManager records marked random; owned/manual bots
+# unchanged. Pinned bots (sRandomBotFacade.IsPinnedBot) are skipped. Uses
+# core Player::TeleportTo on the world thread; no homebind update. Default 0.
 AiPlayerbot.EnableRandomTeleports = 0
 
 # Disable core mangos map/bot optimizations which hinders bot activity
