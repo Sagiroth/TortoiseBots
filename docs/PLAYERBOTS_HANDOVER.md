@@ -7,10 +7,14 @@
 **Branch:** audit/playerbots-turtle-1.18.1
 **Pull request:** [TortoiseBots PR #13](https://github.com/tortoise-wow-stack/TortoiseBots/pull/13)
 
-This document is the resume point for the next agent or developer. It records
-what was inspected, what was changed, what was actually validated, and what is
-still outside the PlayerBots module boundary. It is intentionally more
-operational than the full audit in [PLAYERBOTS_AUDIT.md](PLAYERBOTS_AUDIT.md).
+> **Historical record.** PR #13 is merged. This file preserves the audit-phase
+> handover and validation evidence; it is no longer the current resume point.
+> Start with [STATUS.md](STATUS.md) and [PLAN.md](PLAN.md).
+
+This document records what was inspected, what changed, what was actually
+validated, and what remained outside the PlayerBots module boundary at the end
+of the PR #13 audit. It is intentionally more operational than the full audit
+in [PLAYERBOTS_AUDIT.md](PLAYERBOTS_AUDIT.md).
 
 ## Current conclusion
 

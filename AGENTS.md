@@ -22,14 +22,17 @@ The primary architectural objective is:
 
 For PlayerBots work, read in this order:
 
-1. `docs/PLAN.md` (canonical online copy: <https://github.com/tortoise-wow-stack/TortoiseBots/blob/main/docs/PLAN.md> — check for a local copy first; it may already exist alongside this repository)
-2. `docs/HOST_API.md` if it exists
-3. The relevant files under `docs/`
-4. `docs/README.md` when you need the active documentation map
+1. `docs/STATUS.md` — current tested baseline, open issues, and immediate next work.
+2. `docs/PLAN.md` — durable architecture rules and roadmap.
+3. `docs/HOST_API.md` when the task touches sessions, lifecycle, packets, commands, build/module integration, or a core seam.
+4. `docs/PROVENANCE.md` when porting or changing donor-derived behavior.
+5. `docs/README.md` when you need the documentation map.
 
-`docs/PLAN.md` is the execution source of truth. Historical investigation
-notes that are no longer active are not part of the working documentation set;
-use Git history or the provenance records when historical context is required.
+`docs/STATUS.md` is the current resume point and `docs/PLAN.md` is the durable
+execution/architecture source of truth. `PLAYERBOTS_AUDIT.md` and
+`PLAYERBOTS_HANDOVER.md` are historical evidence, not active implementation
+plans. Use them only for a specific finding/claim, and use Git history when an
+older design proposal is required.
 
 When researching existing PlayerBots behavior, also read the
 Tortoise WoW Knowledge Base instructions first:

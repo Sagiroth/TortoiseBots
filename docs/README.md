@@ -1,15 +1,25 @@
 # TortoiseBots documentation
 
-This folder contains the active architecture, implementation, status, audit,
-and provenance records for the optional TortoiseBots module.
+Use this folder by purpose rather than reading every document on every task.
 
-| Document | Purpose |
-|---|---|
-| [`PLAN.md`](PLAN.md) | Canonical architecture rules and roadmap |
-| [`HOST_API.md`](HOST_API.md) | Current generic core/session host contract |
-| [`PLAYERBOTS_HANDOVER.md`](PLAYERBOTS_HANDOVER.md) | Current operational status and next decisions |
-| [`PLAYERBOTS_AUDIT.md`](PLAYERBOTS_AUDIT.md) | Detailed findings, evidence, and open boundaries |
-| [`PROVENANCE.md`](PROVENANCE.md) | Source lineage and validation record for imported or adapted behavior |
+| Document | Purpose | Read when |
+| --- | --- | --- |
+| [`STATUS.md`](STATUS.md) | Current tested baseline, open issues and immediate next work | Start here for any new task |
+| [`PLAN.md`](PLAN.md) | Durable architecture rules and roadmap | Planning or implementing PlayerBots work |
+| [`HOST_API.md`](HOST_API.md) | Current implemented core/module contract | Touching sessions, lifecycle, packets, commands, build/module integration or core seams |
+| [`PROVENANCE.md`](PROVENANCE.md) | Append-oriented source lineage and validation history | Porting/adapting donor behavior or checking attribution |
+| [`PLAYERBOTS_AUDIT.md`](PLAYERBOTS_AUDIT.md) | Historical deep-audit findings and evidence | Investigating a specific audit finding or old validation claim |
+| [`PLAYERBOTS_HANDOVER.md`](PLAYERBOTS_HANDOVER.md) | Historical PR #13 audit handover | Only when reconstructing that completed audit phase |
 
-Read [`AGENTS.md`](../AGENTS.md) for the required lookup order and repository
-working rules.
+The active implementation path is:
+
+```text
+STATUS -> PLAN -> relevant HOST_API/PROVENANCE detail
+```
+
+The audit and handover are evidence records, not the current execution plan.
+Older design proposals that were removed from the active docs remain available
+through Git history.
+
+Read [`AGENTS.md`](../AGENTS.md) for repository working, validation and safety
+rules.

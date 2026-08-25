@@ -1,208 +1,143 @@
-# PLAN.md — Decoupled PlayerBots Module for Tortoise WoW 1.18.1
+# PLAN.md — TortoiseBots architecture and roadmap
 
 **Status:** Active architecture and roadmap
-**Target core:** `Penqle/tortoise-wow` after the legacy PlayerBots cleanup (PR #396)  
-**Primary goal:** Build useful PlayerBots for Turtle WoW 1.18.1 while keeping the Tortoise core as clean and bot-agnostic as reasonably possible.  
-**Initial player scenario:** A small number of human players can use bots to complete normal world content and 5-player dungeons.  
-**Long-term scenario:** Dungeons, raids, travel/questing, battlegrounds, optional random bots, and contextual conversation.
+**Target:** Tortoise WoW 1.18.1 / Penqle core
+**Primary goal:** Useful PlayerBots for Turtle 1.18.1 without rebuilding the old tightly coupled PlayerBots core architecture.
 
----
+Read [STATUS.md](STATUS.md) first for the current tested baseline, open findings
+and immediate next work.
 
-# 1. Why this project exists
+## 1. Product goal
 
-The old PlayerBots implementation was tightly coupled to the core:
+TortoiseBots should let a small number of human players use owned bots for
+normal world content and 5-player dungeons, then grow deliberately into broader
+class, dungeon, raid, battleground, random-bot and optional conversation
+features.
 
-- `WorldSession::GetBot()`
-- `m_bot`
-- `sPlayerBotMgr`
-- PlayerBots-specific branches inside normal gameplay code
-- PlayerBots-specific socket/session exceptions
-- CMake/config/SQL wiring spread across the core
-
-PR #396 removes that legacy implementation and gives us a clean starting point.
-
-Do **not** recreate the same architecture.
-
-The objective is to build a PlayerBots system that behaves much more like a module:
+The architectural goal is not simply “port PlayerBots to Tortoise”. It is:
 
 ```text
-Penqle/tortoise-wow
-        |
-        | small, stable host interface
-        v
-tortoise-wow-playerbots
-        |
-        +-- bot runtime
-        +-- movement
-        +-- combat
-        +-- group coordination
-        +-- class behavior
-        +-- Turtle 1.18.1 data
-        +-- optional LLM/chat layer
+give Tortoise a clean optional bot platform
++
+harvest mature PlayerBots behavior without inheriting mature coupling
 ```
 
-The core should not need to understand bot strategies, classes, commands, rotations, personalities, travel logic, dungeon logic, or LLM behavior.
+The core should not need to understand bot strategies, rotations, classes,
+travel logic, dungeon logic, personalities or LLM behavior.
 
----
+## 2. Source of truth
 
-# 2. Non-negotiable architecture rules
+For Turtle-specific spells, items, races, locations, scripts, start rows,
+travel and gameplay contracts, use this order:
 
-These rules take priority over feature speed.
+1. current pinned Tortoise core;
+2. current Turtle SQL / DBC / extracted data;
+3. observed runtime behavior and logs;
+4. Turtle-specific references such as Shyalya;
+5. Vanilla/CMaNGOS/mod-playerbots/MangosZero for comparison and mature behavior.
 
-## Rule 1 — No scattered bot checks in core
+Do not infer Turtle 1.18.1 behavior from Vanilla or donor code when the target
+core/data can answer the question.
 
-Never rebuild patterns such as:
+The TortoiseWoW Knowledge Base is a behavioral/capability reference, not an
+instruction to recreate its implementation architecture.
 
-```cpp
-if (player->GetSession()->GetBot())
-```
+## 3. Non-negotiable architecture
 
-or:
+### 3.1 PlayerBots stays optional
 
-```cpp
-if (isBot)
-```
+The Tortoise core must build and run without this module checkout.
 
-throughout `Player`, `Unit`, `Spell`, `WorldSession`, movement, groups, etc.
-
-If normal core code starts accumulating bot-specific branches, stop and redesign the boundary.
-
----
-
-## Rule 2 — Bots OFF must be a first-class build
-
-The normal Tortoise core must build and run without the PlayerBots module.
-
-Desired configuration:
+Native module selection is explicit through:
 
 ```text
-BUILD_PLAYERBOTS=OFF
+MODULE_TORTOISEBOTS=static   # or shared where supported
 ```
 
-by default.
-
-The PlayerBots module must not be required for an ordinary server build.
-
-Do not promise bit-for-bit identical binaries unless this is actually verified. The practical requirement is:
-
-- no runtime PlayerBots dependency
-- no PlayerBots config requirement
-- no PlayerBots SQL requirement
-- no module repository required
-- normal server behavior remains unchanged
-
----
-
-## Rule 3 — Prefer existing extension hooks
-
-Before adding any core hook, inspect the current Tortoise script/event infrastructure.
-
-Prefer existing mechanisms such as:
-
-- world lifecycle hooks
-- player login/logout hooks
-- chat hooks
-- command registration
-- group events
-- map/world updates
-- ScriptMgr-style extension points
-
-Do **not** add a custom PlayerBots hook if an existing general-purpose extension point already provides the required event.
-
----
-
-## Rule 4 — New core integration must be centralized
-
-If the core genuinely lacks a required extension point, add the smallest possible host seam.
-
-All PlayerBots-specific integration must be concentrated in a very small number of clearly named bridge/factory files.
-
-Target:
+The legacy vendored PlayerBots path is separate and should remain disabled:
 
 ```text
-core files directly aware of PlayerBots integration: <= 5 if practical
+BUILD_LEGACY_PLAYERBOTS=OFF
 ```
 
-Treat exceeding roughly 8–10 host files before the MVP works as an architectural warning.
+No PlayerBots runtime/config/SQL dependency may become mandatory for a normal
+server build.
 
-Do not create dozens of host-hook modifications like the previous CMaNGOS graft.
+### 3.2 No legacy bot identity in normal core gameplay
 
----
+Do not reintroduce:
 
-## Rule 5 — Session differences are transport differences, not gameplay differences
-
-Bots will probably require a player/session without a normal network socket.
-
-This is the hardest integration seam and must be handled deliberately.
-
-Do **not** reintroduce:
-
-```cpp
+```text
 WorldSession::GetBot()
+WorldSession::SetBot()
 m_bot
-"<BOT>"
-bot-specific socket exceptions scattered through WorldSession
+sPlayerBotMgr
+PlayerBotEntry
+scattered if (IsBot()) / if (GetBot()) gameplay branches
 ```
 
-Instead investigate a centralized abstraction such as:
+Normal `Player`, `Unit`, `Spell`, movement, group and map code should not need to
+know that a player is controlled by TortoiseBots.
+
+If a feature requires bot-specific logic in unrelated core gameplay code, stop
+and redesign the boundary before continuing.
+
+### 3.3 Headless is a transport/session capability
+
+The core may understand generic concepts such as:
 
 ```text
-normal network session
-headless/synthetic session
-```
-
-or an explicit factory:
-
-```text
-CreateNetworkSession(...)
-CreateHeadlessSession(...)
-```
-
-Core logic should ask about the capability it actually needs, for example:
-
-```text
+Network session
+Headless session
 HasNetworkTransport()
 CanReceiveClientPackets()
 ```
 
-rather than asking:
+The module interprets a Headless session as a PlayerBots-controlled character.
+The core should not ask whether the session belongs to a bot.
 
-```text
-IsBot()
-```
+### 3.4 Prefer module-only changes
 
-Any behavior that is truly bot-specific belongs in the module.
+Before modifying core code, ask:
 
----
+1. Can the behavior live entirely inside TortoiseBots?
+2. Does an existing ScriptMgr/lifecycle/packet/command hook already expose what
+   is needed?
+3. If not, can the missing capability be expressed as a genuinely generic core
+   concept?
 
-## Rule 6 — Bot behavior belongs in the module
+Only add a core seam when the current core cannot expose the behavior cleanly.
+Keep unavoidable host integration centralized and small.
 
-The module owns:
+### 3.5 One owner per responsibility
 
-- bot identity/runtime ownership
-- master/owner relationship
-- commands
-- strategies
-- actions
-- triggers
-- class behavior
-- combat decisions
-- follow/formation logic
-- loot decisions
-- travel
-- quest behavior
-- dungeon/raid encounter behavior
-- random bot systems
-- LLM conversation
-- bot-specific diagnostics
+The current ownership model is:
 
-The core must not own these concepts.
+| Responsibility | Owner |
+| --- | --- |
+| Network session lifetime | Tortoise `World` |
+| Headless session lifetime | Tortoise `World` |
+| Pending Headless login queue | Tortoise `World` |
+| Bot records / lifecycle state | `BotManager` |
+| AI lifetime | `PlayerbotAIAdapter` |
+| AI lookup | `PlayerbotAIStorage` |
+| Gameplay decisions | `PlayerbotAI` |
+| Movement semantics | mature PlayerBots actions/strategies |
+| Durable master identity | `BotRecord.masterGuid` |
+| Live master pointer | `PlayerbotAI` |
+| Packet bridge | `BotPacketAdapter` |
+| Player lifecycle bridge | `BotPlayerAdapter` |
+| Chat bridge | `BotChatAdapter` |
+| Native command surface | `BotCommands` |
+| Mature command language | `PlayerbotAI::HandleCommand` |
+| Random population | `RandomBotService` |
 
----
+Do not introduce a second owner for movement, master identity, session lifetime
+or AI state.
 
-## Rule 7 — LLMs never participate in the real-time combat tick
+### 3.6 LLMs stay outside real-time gameplay
 
-Combat must work with:
+Combat, movement, healing, threat, interrupts and CC must work with:
 
 ```text
 zero internet
@@ -210,984 +145,313 @@ zero LLM
 zero external service
 ```
 
-LLM functionality is optional and asynchronous.
+LLM/chat features, when used, must be optional and asynchronous.
 
-Good LLM responsibilities:
+## 4. Implemented architecture
 
-- conversational responses
-- personality
-- party banter
-- natural-language command interpretation
-- explaining quests/items
-- contextual comments
-
-Bad LLM responsibilities:
-
-- deciding whether to heal this tick
-- interrupt timing
-- threat calculation
-- movement every frame
-- blocking a map/world thread while waiting for HTTP
-
----
-
-# 3. Source material and how to use it
-
-We have several valuable sources, but they serve different purposes.
-
-## A. TortoiseWoWKnowledgeBase — behavior/specification oracle
-
-Repository:
+### 4.1 Session invariant
 
 ```text
-https://github.com/tortoise-wow-stack/TortoiseWoWKnowledgeBase
+one account
+    +-- at most one active Network session
+    +-- zero or more active Headless character sessions
 ```
 
-Agent guide:
+Network sessions are account-keyed. Headless sessions are character-GUID keyed.
+A human Network login retains normal duplicate-login semantics; human reclaim
+of an owned Headless character takes precedence over bot control.
+
+The login holder carries account ID, character GUID and transport type rather
+than retaining a raw session pointer. Network callbacks resolve the account
+session; Headless callbacks resolve the character-GUID session.
+
+### 4.2 Native module boundary
+
+Penqle loads the repository as:
 
 ```text
-https://github.com/tortoise-wow-stack/TortoiseWoWKnowledgeBase/blob/main/AGENTS.md
+modules/TortoiseBots/
 ```
 
-PlayerBots knowledge:
+`src/TortoiseBotsModule.cpp` is intentionally the only loader-recursed source.
+The real source graph is registered by `TortoiseBots.cmake`.
+
+The host layer is concentrated in:
 
 ```text
-https://github.com/tortoise-wow-stack/TortoiseWoWKnowledgeBase/tree/main/playerbots
+host/BotHostAdapter
+host/BotSessionAdapter
+host/BotPlayerAdapter
+host/BotChatAdapter
+host/BotPacketAdapter
 ```
 
-The knowledge base currently states that its PlayerBots capability baseline is pinned to:
+Bot behavior remains in module/runtime/AI code rather than the core.
+
+### 4.3 PlayerBots runtime
+
+The active gameplay runtime uses the mature PlayerBots model:
 
 ```text
-172ee948e591f8bf1b53ea6389e3102186339f6e
+PlayerbotAI
+Engine
+AiObjectContext
+Strategy
+Trigger
+Action
+Value
 ```
 
-and routes bot work through:
+The obsolete native `BotController` gameplay owner is gone.
+`PlayerbotAIAdapter` is the AI update owner.
+
+The source graph currently contains the nine Vanilla classes:
 
 ```text
-playerbots/index.md
-playerbots/capability-map.md
+Warrior
+Paladin
+Hunter
+Rogue
+Priest
+Shaman
+Mage
+Warlock
+Druid
 ```
 
-with focused documentation for:
+Large TBC/WotLK/later donor families were removed from the product tree rather
+than merely hidden behind build exclusions.
 
-- console commands
-- chat commands
-- audience filters
-- addon transport
-- actions / strategies
-- configuration
-- ownership / security / failures
-- lifecycle
+### 4.4 Packet bridge
 
-### Important
+`BotPacketAdapter` is the module packet interpretation layer.
 
-Treat the knowledge base as:
+Conceptually:
 
 ```text
-behavioral specification
-capability inventory
-test oracle
-research index
+Headless outgoing packet
+    -> PlayerbotAI::HandleBotOutgoingPacket
+
+Network master outgoing packet
+    -> owned AIs HandleMasterOutgoingPacket
+
+Network master incoming packet
+    -> owned AIs HandleMasterIncomingPacket
 ```
 
-Do **not** treat it as an instruction to reproduce the old internal architecture.
+The core exposes generic packet hooks; it does not contain bot-specific opcode
+branches.
 
-Its distinction between public behavior and internal implementation is valuable.
+### 4.5 Native command surface
 
-For each feature we build, use the knowledge base to answer:
+Current native commands include:
 
 ```text
-What should the user be able to do?
-What is the expected observable behavior?
-What permissions/ownership rules exist?
-What failure behavior is expected?
+.bot add
+.bot remove
+.bot follow
+.bot invite
+.bot uninvite
+.bot stay
+.bot list
+.bot stats
+.bot command
+.bot help
 ```
 
-Then implement that behavior through the new module architecture.
+`.bot command` delegates to `PlayerbotAI::HandleCommand` for mature PlayerBots
+command behavior.
 
-The knowledge base must remain a development/research dependency, not a runtime dependency.
+Ownership must remain account/GM based. A bot command must never become a path
+for controlling another player's character.
 
----
+### 4.6 Random bots
 
-## B. CMaNGOS PlayerBots — mature behavior reference
+`RandomBotService` is bounded and module-owned. The current baseline discovers
+pre-existing random-bot characters; it does not create accounts/characters.
 
-Use:
+Random account/character generation is a later feature, not a cleanup task.
+
+## 5. Vanilla/Turtle product boundary
+
+The active tree is intentionally a Vanilla/Turtle 1.18.1 product slice.
+
+Preserve:
+
+- all nine Vanilla classes;
+- Vanilla raids and WSG/AB/AV behavior that remains applicable;
+- Turtle custom races and validated custom spell/talent behavior;
+- native Tortoise LFG/meeting-stone behavior;
+- native transport/taxi behavior;
+- mature generic gameplay behavior that genuinely applies to the target.
+
+Do not re-add expansion systems merely because donor code contains them.
+Numeric IDs are not evidence by themselves: validate unknown Turtle IDs against
+the target data.
+
+`tools/verify_turtle_surface.sh` is a regression guard for known prohibited
+families/IDs. It is not a substitute for semantic review of new Turtle data.
+
+## 6. Current milestone
+
+The module-side port, cleanup and deep compatibility audit are complete for the
+current baseline. The next work is deliberately outside another broad module
+cleanup.
+
+### 6.1 F-03 — clean legacy PlayerBots core coupling
+
+The pinned core still has a legacy PlayerBots surface around LFT filling,
+commands/stubs, bot slots and the old `src/modules/PlayerBots` implementation.
+
+Resolve this in the core with the following target:
 
 ```text
-https://github.com/cmangos/playerbots
+Tortoise core
+    -> generic capabilities only
+TortoiseBots
+    -> single supported PlayerBots implementation
 ```
 
-Primarily as:
+Classify each remaining core item as:
 
-- accumulated behavior knowledge
-- class AI reference
-- movement reference
-- dungeon/raid behavior reference
-- source of bug fixes and edge cases
+- genuinely generic and worth keeping;
+- generic but poorly named/owned;
+- legacy PlayerBots-only and removable;
+- useful behavior that belongs behind a generic provider/hook;
+- obsolete legacy module/build surface.
 
-Do not vendor the whole repository into Tortoise again.
+Do not solve F-03 by adding more TortoiseBots compatibility shims.
 
-Do not assume its host architecture is appropriate for Tortoise.
+### 6.2 F-27 — reconcile Turtle ScriptName data with core registration
 
----
+The audited world data references script names that the pinned core does not
+register.
 
-## C. Shyalya / r-o-sh Turtle port — Turtle compatibility reference
-
-Use the Turtle PlayerBots forks to understand:
-
-- API incompatibilities encountered during the port
-- Turtle-specific spell/talent differences
-- required compatibility shims
-- bugs already discovered in 1.18.1
-- bot session problems
-- group/loot/movement issues
-- Turtle-specific fixes
-
-Use these repositories as evidence of what Turtle requires.
-
-Do **not** automatically copy their ~80 host-hook architecture.
-
----
-
-## D. MangosZero Bots — lifecycle / MaNGOS-Zero reference
-
-Use MangosZero particularly for:
-
-- player/session lifecycle ideas
-- alt-character bot ownership
-- random-bot lifecycle
-- bot creation/login
-- group handling
-- MaNGOS-Zero-compatible patterns
-
-Do not assume `src/modules/Bots` is already cleanly decoupled.
-
-It is a source pool and architectural reference, not the final architecture.
-
----
-
-# 4. Selective harvesting rule
-
-We want to reuse years of learned behavior without inheriting years of coupling.
-
-The rule is:
+For every startup mismatch, trace:
 
 ```text
-harvest behavior, not architecture
+SQL/data row
+    -> exact ScriptName
+    -> implementation present?
+    -> registered?
+    -> data row correct for this revision?
 ```
 
-For every feature imported from another bot implementation:
+Resolve as one of:
 
-1. Identify the user-visible behavior.
-2. Find the relevant knowledge-base description if available.
-3. Inspect the newest relevant upstream implementation.
-4. Inspect Turtle/Shyalya differences where relevant.
-5. Write or define an acceptance test.
-6. Port/reimplement the minimum behavior inside the new module.
-7. Do not add a new core hook unless absolutely necessary.
-8. Record provenance.
+- registration fix;
+- data correction;
+- genuinely missing Turtle implementation;
+- explicitly unverified because intended semantics cannot yet be proven.
 
-Do not blindly cherry-pick incompatible commits.
+Never create empty/no-op scripts simply to silence warnings.
 
-A literal `git cherry-pick` is acceptable only when:
+### 6.3 Re-pin after core/data work
 
-- the commit is isolated
-- it applies entirely inside the module or module-owned files
-- it does not bring core coupling with it
-- its license/provenance is understood
-- tests verify the intended behavior
-
-Otherwise:
+When F-03/F-27 are stable, record a new known-good pair in [STATUS.md](STATUS.md):
 
 ```text
-study -> extract intent -> reimplement/port -> test
+TortoiseBots @ <sha>
+Tortoise core @ <sha>
 ```
 
-is preferred.
+Run only the integration checks affected by that work, then freeze broad
+architecture/cleanup changes.
 
----
+## 7. Manual gameplay phase
 
-# 5. Provenance / licensing discipline
+After the core/data boundary is clean, development should become gameplay-led.
 
-Because this may eventually be useful to other people:
+### 7.1 Owned-bot acceptance
 
-For every substantial port, create a lightweight provenance record.
+Validate in the real client/runtime:
 
-Suggested file:
+- add/login;
+- follow/stay;
+- combat and target selection;
+- loot;
+- death/resurrection;
+- logout/relogin;
+- human reclaim;
+- teleport/map transition.
+
+Fix observed defects rather than starting another global audit.
+
+### 7.2 Five-player dungeon milestone
+
+Primary useful-release target:
 
 ```text
-docs/PROVENANCE.md
+human player + four bots -> playable 5-player dungeon
 ```
 
-Record:
-
-```text
-Feature:
-Source project:
-Source commit:
-Source files:
-Ported/reimplemented:
-Reason:
-Local tests:
-```
-
-Preserve upstream copyright/license notices where required.
-
-Before distributing copied code, verify the licenses of all source projects being harvested and comply with their requirements.
-
-Do not let an AI silently copy large bodies of code without attribution.
-
----
-
-# 6. Proposed repository/module layout
-
-Preferred long-term model:
-
-```text
-Penqle/tortoise-wow
-└── src/modules/
-    └── PlayerBots/     <-- separate repository checkout
-```
-
-Possible separate repository name:
-
-```text
-tortoise-wow-playerbots
-```
-
-The core should be able to exist without this directory.
-
-Current native CMake behavior:
-
-```text
-BUILD_LEGACY_PLAYERBOTS=OFF
-MODULE_TORTOISEBOTS=disabled (or no module checkout)
-    -> native module is ignored/not required
-
-MODULE_TORTOISEBOTS=static (or shared)
-    -> require the TortoiseBots module checkout
-    -> build/register the native module
-```
-
-`BUILD_PLAYERBOTS` is retained by the target core only for its separate legacy
-PlayerBots escape hatch. It is not the native TortoiseBots selector.
-
-Do not make the module repository a mandatory dependency of Tortoise.
-
-Whether this is implemented as:
-
-- optional git submodule
-- separate clone into `src/modules/PlayerBots`
-- another supported module-loading mechanism
-
-should be decided after inspecting the existing build system.
-
-Prefer the least intrusive option.
-
----
-
-# 7. Proposed internal module architecture
-
-Do not build everything immediately.
-
-Use this as direction, not mandatory boilerplate.
-
-```text
-src/modules/TortoiseBots/
-│
-├── CMakeLists.txt
-├── README.md
-├── config/
-│   └── playerbots.conf.dist
-│
-├── host/
-│   ├── Module.cpp
-│   ├── BotHostAdapter.*
-│   └── BotSessionAdapter.*
-│
-├── runtime/
-│   ├── BotManager.*
-│   ├── BotController.*
-│   ├── BotContext.*
-│   └── BotOwnership.*
-│
-├── perception/
-│   ├── CombatState.*
-│   ├── PartyState.*
-│   ├── ThreatState.*
-│   └── NearbyObjects.*
-│
-├── behavior/
-│   ├── movement/
-│   ├── combat/
-│   ├── group/
-│   ├── loot/
-│   └── interaction/
-│
-├── classes/
-│   ├── warrior/
-│   ├── priest/
-│   ├── mage/
-│   └── ...
-│
-├── turtle/
-│   ├── spells/
-│   ├── talents/
-│   └── content/
-│
-├── commands/
-│
-├── diagnostics/
-│
-└── llm/
-    └── optional async integration
-```
-
-Avoid building an enormous generic framework before a real bot works.
-
-Prefer small modules with clear responsibilities.
-
----
-
-# 8. Phase 0 — Establish the clean baseline
-
-Do this only after PR #396 is merged or after working from an equivalent clean commit.
-
-## Tasks
-
-1. Record exact Penqle core commit.
-2. Confirm legacy PlayerBots code is gone.
-3. Build the normal server with PlayerBots absent.
-4. Run existing project tests/checks.
-5. Record baseline build commands and results.
-
-Suggested checks:
-
-```bash
-rg -n -i \
-  'sPlayerBotMgr|PlayerBotEntry|PB_STATE_|GetBot\(\)|SetBot\(|\bm_bot\b' \
-  src .
-```
-
-Expected:
-
-```text
-no legacy PlayerBots implementation
-```
-
-Legitimate `PlayerAI` / `PlayerControlledAI` must remain.
-
-## Deliverable
-
-Record the baseline in `docs/PROVENANCE.md` and the current audit or handover
-when a phase boundary is reached. Include:
-
-- core commit
-- build command
-- test command
-- baseline result
-
-## Stop condition
-
-Do not start module implementation if the clean core does not build.
-
----
-
-# 9. Phase 1 — Host-boundary discovery
-
-This phase is intentionally design-first.
-
-Do **not** begin by porting bot AI.
-
-## Goal
-
-Find the minimum events/capabilities the module actually needs.
-
-## Inspect existing core for
-
-- ScriptMgr / script registration
-- player login/logout events
-- player AddToWorld/RemoveFromWorld events
-- world update event
-- player update event
-- chat hooks
-- command registration
-- group events
-- movement notifications
-- map events
-- packet hooks
-- object lookup APIs
-- character DB loading APIs
-- normal session creation/login path
-
-## Produce a host capability table
-
-Create:
-
-```text
-docs/HOST_API.md
-```
-
-Example:
-
-| Need | Existing hook? | New core seam required? | Why |
-| --- | --- | --- | --- |
-| World tick | yes/no | yes/no | |
-| Bot login | yes/no | yes/no | |
-| Bot logout | yes/no | yes/no | |
-| Chat command | yes/no | yes/no | |
-| Group join | yes/no | yes/no | |
-| Headless session | yes/no | likely | |
-| Movement | yes/no | yes/no | |
-| Loot | normal API | no | |
-
-## Key objective
-
-Try to get the required core integration down to:
-
-```text
-existing general hooks
-+
-one centralized headless-session integration
-+
-only genuinely missing lifecycle hooks
-```
-
-## Stop condition
-
-If the proposed design requires patching 20+ core files before a bot can even log in:
-
-```text
-STOP
-REDESIGN
-```
-
----
-
-# 10. Phase 2 — Build the empty module
-
-Create the PlayerBots module with no meaningful AI yet.
-
-## Requirements
-
-- `BUILD_PLAYERBOTS=OFF` default for the legacy escape hatch
-- Tortoise builds without the module directory
-- Tortoise builds with module present but OFF
-- module builds when `MODULE_TORTOISEBOTS=static` is explicitly enabled
-- module registers/unregisters cleanly
-- optional config loads only when enabled
-
-First diagnostic behavior can simply log:
-
-```text
-PlayerBots module loaded
-PlayerBots module unloaded
-```
-
-Do not add player logic yet.
-
-## CI/build matrix
-
-At minimum:
-
-```text
-Core + module absent + OFF
-Core + module present + OFF
-Core + module present + ON
-```
-
-Later add Windows/macOS if supported by the project.
-
----
-
-# 11. Phase 3 — Solve the headless session properly
-
-This is the most important technical spike.
-
-## Goal
-
-Create one bot-controlled Player through the normal character-loading machinery without a real client socket.
-
-## Requirements
-
-The solution must not require normal gameplay code to ask whether the player is a bot.
-
-Centralize all special behavior in:
-
-```text
-BotSessionAdapter
-headless session factory
-or equivalent
-```
-
-## Investigate carefully
-
-- authentication assumptions
-- account ownership
-- socket lifetime
-- packet queue assumptions
-- anticheat initialization
-- disconnect behavior
-- player saving
-- account online state
-- character online state
-- duplicate-login protection
-- logout cleanup
-- reconnect behavior
-- shutdown cleanup
-
-## Preferred semantic model
-
-The core understands:
-
-```text
-network-backed session
-headless session
-```
-
-One account may have at most one active Network session and may have multiple
-active Headless character sessions. Network sessions remain account-keyed;
-Headless sessions are character-identity-keyed and do not consume Network
-population, queue, or realm-limit capacity.
-
-The module understands:
-
-```text
-this headless session is a bot
-```
-
-## Acceptance test
-
-One configured character can:
-
-1. load through the server
-2. enter the world
-3. remain alive for several minutes
-4. save
-5. leave world
-6. log out
-7. be loaded again
-8. server shutdown cleanly
-
-No combat required yet.
-
----
-
-# 12. Phase 4 — First playable vertical slice
-
-Do not build random world bots.
-
-Do not build raids.
-
-Do not build every class.
-
-Goal:
-
-```text
-one human
-+
-one owned bot
-```
-
-## MVP capabilities
-
-Implement:
-
-```text
-.bot add <character>
-.bot remove <character>
-follow
-stay
-assist
-attack
-stop
-basic loot
-save/logout
-```
-
-If module command registration exists, keep commands entirely in the module.
-
-## Bot behavior
-
-Start with one simple class.
-
-Choose whichever class gives the fastest useful test, for example:
-
-```text
-Warrior DPS
-or
-Mage DPS
-```
-
-Implement only:
-
-- follow owner
-- face target
-- maintain usable distance
-- auto attack / basic rotation
-- stop when target dies
-- return to owner
-- loot under simple rules
-
-## Acceptance scenario
-
-For at least 30 minutes:
-
-- summon bot
-- kill normal world mobs
-- move through terrain
-- loot
-- dismiss bot
-- resummon bot
-- logout/relogin human
-- no crash
-- no stuck session
-- no database corruption
-
----
-
-# 13. Phase 5 — Small-party dungeon MVP
-
-This is the first major product milestone.
-
-Target scenario:
-
-```text
-2 human players
-+
-bots filling remaining 5-player party roles
-```
-
-Do not optimize for 1000 bots.
-
-## Add
-
-- role assignment
-- tank target selection
-- healer health thresholds
-- DPS assist
-- threat awareness
-- group follow
-- simple formation
-- combat resurrection rules if applicable
-- drink/eat/rest
-- basic buffing
-- dispel/interrupt framework
-- loot rules
-- wipe recovery
-- regroup
-
-## Initial supported role set
-
-Prefer one known-good composition before class breadth:
-
-```text
-1 tank implementation
-1 healer implementation
-1–2 DPS implementations
-```
-
-Example:
+Exercise:
+
+- tank pulls and threat;
+- healer behavior;
+- DPS behavior;
+- interrupts and CC;
+- loot;
+- quest interactions;
+- doors/gossip;
+- wipe/corpse recovery;
+- regrouping;
+- instance transitions.
+
+Representative first role/class set:
 
 ```text
 Warrior tank
 Priest healer
 Mage DPS
+Rogue DPS
+Hunter DPS
 ```
 
-## Milestone
+Expand to the remaining classes/specs as concrete failures or missing behavior
+appear.
 
-Complete a representative low/mid-level 5-player dungeon with humans + bots.
+### 7.3 Turtle-specific acceptance
 
-The bot code does not need to be clever yet.
+Then deliberately exercise:
 
-It needs to be:
+- Goblin and High Elf gameplay beyond lifecycle;
+- Turtle class/talent/spell changes;
+- custom dungeons/portals;
+- collection mounts;
+- custom quests/travel;
+- custom battleground/zone behavior only where target data confirms it.
 
-```text
-predictable
-safe
-not embarrassing
-recoverable
-```
+## 8. Later roadmap
 
----
+Only after the 5-player dungeon experience is reliable:
 
-# 14. Phase 6 — Create the behavior harvesting pipeline
+1. broader all-class/spec acceptance;
+2. more Turtle dungeon/raid strategies;
+3. battleground validation;
+4. random account/character generation;
+5. AH/economy/population behavior;
+6. client addon/state UI;
+7. performance work for larger bot populations;
+8. optional asynchronous conversation/LLM features.
 
-Only after the new architecture works should we aggressively mine mature PlayerBots behavior.
+Do not optimize for hundreds/thousands of bots before the small-party product
+is proven useful.
 
-Maintain the capability table in this plan and record source lineage in
-`docs/PROVENANCE.md`.
+## 9. Performance rules
 
-Suggested table:
+From the beginning:
 
-| Capability | Priority | KB reference | Upstream source | Turtle source | Status | Tests |
-| --- | ---: | --- | --- | --- | --- | --- |
-| Heal critical ally | P0 | ... | cmangos | Shyalya | todo | |
-| Polymorph marked target | P1 | ... | cmangos | Shyalya | todo | |
-| Interrupt caster | P0 | ... | cmangos | Shyalya | todo | |
-| Avoid reflect target | P2 | ... | cmangos | ... | todo | |
-| Buff party | P1 | ... | cmangos | ... | todo | |
+- no DB query every bot tick;
+- no full-world scan every bot tick;
+- no synchronous network calls on game/map threads;
+- no rebuilding large strategy graphs every update;
+- cache immutable spell/talent metadata where practical;
+- use event-driven invalidation where useful;
+- keep expensive diagnostics opt-in;
+- measure before optimizing.
 
-## AI workflow for each capability
-
-The local AI should:
-
-1. Read `TortoiseWoWKnowledgeBase/AGENTS.md`.
-2. Read the relevant `playerbots/` documentation.
-3. Identify the observable behavior.
-4. Inspect the pinned Shyalya source if required.
-5. Inspect the newest CMaNGOS implementation for later fixes.
-6. Inspect MangosZero if it provides a cleaner compatible solution.
-7. Summarize the behavior before editing.
-8. Identify whether any new host dependency is required.
-9. Prefer a module-only implementation.
-10. Add test/diagnostic coverage.
-11. Record provenance.
-12. Implement one capability per focused commit where practical.
-
-This is where AI assistance becomes extremely valuable.
-
----
-
-# 15. Phase 7 — Turtle-native spell and talent layer
-
-Do not assume vanilla 1.12 class behavior equals Turtle 1.18.1.
-
-Create a Turtle-specific data/compatibility layer.
-
-## Goals
-
-Bot decisions should be based on actual server data where practical:
-
-- known spells
-- DBC/server spell data
-- Turtle talent trees
-- player level
-- learned ranks
-- forms/stances
-- custom Turtle abilities
-
-Avoid blindly hardcoding old Wowhead/Vanilla spell lists.
-
-## Structure
-
-Conceptually:
-
-```text
-turtle/
-├── SpellCapabilities
-├── TalentProfiles
-├── ClassRoles
-└── Overrides
-```
-
-Use generated/data-driven rules where it reduces duplication, but keep explicit overrides for weird Turtle behavior.
-
-## AI use
-
-AI can help:
-
-- compare Turtle spell/talent data with Vanilla
-- generate candidate class profiles
-- identify missing ranks
-- translate old strategy logic
-- propose tests
-
-Do not automatically accept generated rotations without in-game validation.
-
----
-
-# 16. Phase 8 — Capability compatibility with the knowledge base
-
-The knowledge base documents an existing public PlayerBots surface.
-
-We do **not** need to clone it all immediately.
-
-However, maintaining familiar commands can make adoption much easier.
-
-Prioritize compatibility where cheap:
-
-```text
-.bot add
-.bot remove
-.bot command surfaces
-chat-directed commands
-ownership rules
-basic strategy controls
-```
-
-Use the knowledge base capability map to define:
-
-```text
-implemented
-compatible
-partially compatible
-not planned
-```
-
-Do not expose internal implementation names as public commands just because old PlayerBots did internally.
-
-Keep the new public API intentional.
-
----
-
-# 17. Phase 9 — Diagnostics before complexity
-
-Build diagnostics early.
-
-We will need to understand:
-
-```text
-why did this bot choose this target?
-why did it not heal?
-why is it stuck?
-what action won?
-what movement goal is active?
-what role does it think it has?
-```
-
-Add an opt-in action log / decision trace in the module.
-
-Example fields:
-
-```text
-bot guid/name
-time
-state
-target
-role
-decision
-reason
-action
-result
-duration
-```
-
-Keep it disabled by default.
-
-Diagnostics must not cause heavy per-tick database writes.
-
-Prefer in-memory/ring-buffer logging with optional file output.
-
----
-
-# 18. Phase 10 — Contextual conversation / LLM
-
-Only after normal bot gameplay is stable.
-
-## Architecture
-
-```text
-game thread
-   |
-   | enqueue event
-   v
-LLM conversation queue
-   |
-   | async response
-   v
-safe chat output
-```
-
-No blocking game thread.
-
-## LLM receives structured context
-
-Examples:
-
-```text
-party members
-current zone
-current quest
-recent deaths
-recent loot
-current target
-bot personality
-recent conversation
-```
-
-Do not dump arbitrary server memory.
-
-## Natural-language commands
-
-Eventually allow:
-
-```text
-"wait here"
-"heal me instead"
-"focus the caster"
-"don't pull anything"
-"let's go back to town"
-```
-
-The LLM should translate these into stable internal command intents.
-
-The LLM must not directly manipulate server objects.
-
-Use:
-
-```text
-LLM -> validated intent -> normal BotController command
-```
-
-## Failure model
-
-If LLM is unavailable:
-
-```text
-combat still works
-movement still works
-commands still work
-only conversational extras disappear
-```
-
----
-
-# 19. Later roadmap
-
-Only after the 5-player dungeon MVP is reliable.
-
-Suggested order:
-
-1. More classes/specs
-2. Better CC / interrupts / dispels
-3. Dungeon encounter behaviors
-4. Travel
-5. Questing
-6. Party automation
-7. Raid roles
-8. Raid encounter behaviors
-9. Battlegrounds
-10. Random world population
-11. Auction/economy bots if desired
-12. Addon integration / remote state query compatibility
-13. Advanced LLM personality/memory
-
-Do not start with random 1000-bot population.
-
-That solves a different scaling problem from:
-
-```text
-two humans want competent party/raid companions
-```
-
----
-
-# 20. Performance rules
-
-From day one:
-
-- no database query every bot tick
-- no full-world scans every bot tick
-- no synchronous network calls
-- no rebuilding huge strategy graphs every tick
-- cache immutable spell/talent metadata
-- use event-driven invalidation where practical
-- put expensive diagnostics behind flags
-- profile before adding large random-bot populations
-
-Track:
+Useful future metrics:
 
 ```text
 bot update time
@@ -1198,258 +462,97 @@ AI decisions/sec
 memory per bot
 ```
 
----
-
-# 21. Security / ownership rules
-
-Owned bots must not become a path for controlling another player's characters.
-
-Define ownership before public commands expand.
+## 10. Security and ownership
 
 At minimum:
 
-- character belongs to requesting account, OR explicit supported policy
-- duplicate login is rejected safely
-- human login takes precedence over its bot session
-- bot commands verify owner/group authority
-- guild/group chat must not become arbitrary remote control
-- debug/admin operations require explicit privilege
+- owned character belongs to the requesting account or an explicitly supported
+  ownership policy;
+- duplicate login remains safe;
+- human login/reclaim takes precedence over bot control;
+- bot commands verify owner/group/GM authority;
+- chat surfaces must not become arbitrary remote-control channels;
+- debug/admin features require explicit privilege.
 
-Use the knowledge base's security/failure documentation as a behavior reference.
+Do not copy permissive donor behavior without reviewing it against the target
+core's account/security model.
 
-Do not copy old permissive behavior without reviewing it.
+## 11. Provenance and donor use
 
----
+Major reference pools include:
 
-# 22. Tests and verification
+- TortoiseWoW Knowledge Base — expected behavior/capability map;
+- CMaNGOS PlayerBots — mature class/combat/movement behavior;
+- Shyalya/Tortoise — Turtle compatibility lessons;
+- MangosZero — lifecycle patterns;
+- mod-playerbots — newer behavior reference.
 
-## Build tests
-
-Always retain:
-
-```text
-Bots OFF
-Bots ON
-```
-
-## Module-removal test
-
-A strong decoupling test:
-
-1. remove/rename `src/modules/PlayerBots`
-2. set `BUILD_LEGACY_PLAYERBOTS=OFF` and `MODULE_TORTOISEBOTS=disabled`
-3. build Tortoise
-
-Expected:
+General rule:
 
 ```text
-clean build
+study -> extract intent -> port/reimplement -> validate
 ```
 
-## Core-coupling audit
+A literal cherry-pick is appropriate only when the change is isolated,
+compatible, licensed/attributed correctly and does not expand host coupling.
 
-Regularly run a search such as:
+Record substantial copied/ported/reimplemented behavior in
+[PROVENANCE.md](PROVENANCE.md) with source repository, commit, source files,
+reason and local validation.
 
-```bash
-rg -n -i \
-  'PlayerBot|BotService|BotSession|HeadlessSession' \
-  src/game
-```
+## 12. Validation policy
 
-Every match must be explainable as part of the small approved host boundary.
+Use the smallest check that proves the current change.
 
-A growing number of unrelated matches is a design regression.
+- docs/comments/config only -> text/static checks, no C++ build;
+- module-only C++ -> one cached native module build after a coherent batch;
+- core seam -> cached ON iteration, broader matrix only when stable;
+- build-gating change -> directly affected configurations;
+- phase/PR boundary -> one final relevant optional-build/runtime gate.
 
-Explicitly reject reintroduction of:
+Use the persistent builder from sibling `tortoise-docker-penqle`. Do not fall
+back to full Docker image rebuilds for normal source edits.
 
-```text
-GetBot()
-SetBot()
-m_bot
-sPlayerBotMgr
-PlayerBotEntry in core gameplay code
-```
+A previous successful test remains evidence for unchanged code/behavior.
+Do not replay historical lifecycle fixtures merely for ceremony.
 
-## Behavior tests
+## 13. Definition of done
 
-Prefer deterministic test/debug scenarios for:
+### Architecture baseline
 
-- login/logout
-- follow
-- target selection
-- heal selection
-- threat
-- interrupt
-- CC
-- death
-- wipe recovery
-- dungeon transitions
-- teleport
-- human reconnect
-- server shutdown
+The architecture baseline is healthy when:
 
----
+- core builds without the module;
+- native module builds only when explicitly selected;
+- legacy PlayerBots remains disabled/removed from the supported product path;
+- host integration is generic and centralized;
+- no `GetBot()`-style gameplay API exists;
+- Headless lifecycle remains character-GUID keyed and World-owned;
+- same-account Network + Headless lifecycle remains safe;
+- imported behavior has provenance;
+- current known-good core/module pair is documented.
 
-# 23. Definition of Done — architecture MVP
+### First useful release
 
-The architecture MVP is complete when:
+A first useful release is ready when:
 
-- [ ] Legacy PlayerBots remain removed from Penqle core.
-- [ ] `BUILD_PLAYERBOTS=OFF` is the default.
-- [ ] Native module linkage is controlled only by explicit `MODULE_TORTOISEBOTS` selection.
-- [ ] Core builds with no module checkout present.
-- [ ] Module builds only when explicitly enabled.
-- [ ] Existing generic hooks are used wherever possible.
-- [ ] New host integration is centralized and documented.
-- [ ] No `WorldSession::GetBot()`-style API exists.
-- [ ] No generic gameplay subsystem needs to know whether a Player is a bot.
-- [ ] Headless session lifecycle is centralized.
-- [ ] One owned bot can log in and log out safely.
-- [ ] One owned bot can follow and fight normal mobs.
-- [ ] Bot can save/reload correctly.
-- [ ] Server shuts down without leaked bot sessions.
-- [ ] Diagnostics explain basic bot decisions.
-- [ ] Provenance process exists before upstream code is harvested.
+- a human can reliably use owned bots in normal world content;
+- a human-led 5-player dungeon party is playable;
+- tank/healer/DPS roles perform basic responsibilities;
+- bots follow, recover and regroup reliably;
+- core remains cleanly optional with bots disabled;
+- important gameplay failures have deterministic diagnostics/tests;
+- installation/build/runtime workflow is documented for another developer.
 
----
+## 14. Working documentation
 
-# 24. Definition of Done — first useful release
+Use the documentation set by purpose:
 
-The first genuinely useful release is complete when:
+- [STATUS.md](STATUS.md) — current tested state and immediate next work;
+- [PLAN.md](PLAN.md) — durable architecture and roadmap;
+- [HOST_API.md](HOST_API.md) — implemented core/module contract;
+- [PROVENANCE.md](PROVENANCE.md) — append-oriented source lineage/validation;
+- [PLAYERBOTS_AUDIT.md](PLAYERBOTS_AUDIT.md) — historical audit evidence.
 
-- [ ] 2 human players can fill a 5-player group with bots.
-- [ ] At least one tank, one healer, and one DPS implementation are usable.
-- [ ] Bots follow reliably through a dungeon.
-- [ ] Bots perform basic tank/heal/DPS responsibilities.
-- [ ] Bots recover from combat and regroup.
-- [ ] Core remains cleanly buildable with bots disabled.
-- [ ] No significant PlayerBots logic has leaked into normal core gameplay code.
-- [ ] Important behaviors have tests/diagnostic scenarios.
-- [ ] Imported behavior has provenance.
-- [ ] Installation is documented for another user.
-
----
-
-# 25. Instructions for the local AI agent
-
-When implementing this plan:
-
-## Before editing
-
-1. Read this entire `PLAN.md`.
-2. Read repository `AGENTS.md` / contributor instructions.
-3. If using the knowledge base, read its `AGENTS.md` first.
-4. Inspect existing Tortoise extension hooks.
-5. Inspect the relevant source before proposing a new core hook.
-6. Preserve unrelated local changes.
-
-## During implementation
-
-Prefer:
-
-```text
-small vertical slices
-module-only changes
-tests/diagnostics
-explicit architecture decisions
-```
-
-Avoid:
-
-```text
-large speculative frameworks
-bulk vending upstream PlayerBots
-dozens of host patches
-bot checks scattered through core
-blind cherry-picks
-silent AI code copying
-```
-
-## Before each core modification ask
-
-```text
-Can this be done entirely inside the module?
-
-Does an existing generic hook already exist?
-
-Can the required core capability be generalized as an actual core concept
-(e.g. headless session) rather than "bot special case"?
-
-Will this create a future need for GetBot()/IsBot() checks elsewhere?
-```
-
-If the answer to the last question is yes, redesign.
-
-## At the end of each phase report
-
-- files changed
-- core files changed
-- module files changed
-- new host hooks
-- why each host hook is necessary
-- tests/build commands run
-- behavior demonstrated
-- remaining problems
-- architecture concerns
-- provenance for imported logic
-
-Never claim a phase is complete without showing the verification result.
-
----
-
-# 26. First task to execute
-
-Do **not** start writing combat AI.
-
-The first implementation task is:
-
-```text
-PHASE 1 — Host-boundary discovery
-```
-
-Specifically:
-
-1. Inspect current Penqle/Tortoise extension infrastructure after PR #396.
-2. List every existing lifecycle/script hook relevant to PlayerBots.
-3. Trace normal WorldSession creation/login/logout.
-4. Determine the minimum clean design for a headless session.
-5. Produce `docs/HOST_API.md`.
-6. Propose the minimum required core edits.
-7. Stop for architecture review before implementing the PlayerBots module.
-
-The desired output is a design based on the actual current source tree, not assumptions from CMaNGOS, MangosZero, AzerothCore, or Shyalya.
-
----
-
-# 27. Guiding principle
-
-The long-term goal is not:
-
-```text
-"port PlayerBots to Tortoise"
-```
-
-It is:
-
-```text
-"give Tortoise a clean optional bot platform,
-then selectively teach it the best behavior we can recover from years
-of PlayerBots implementations and Turtle-specific knowledge."
-```
-
-That difference should guide every architectural decision.
-
-## Current implementation note — 2026-08-24
-
-The active cleanup branch is now a Vanilla/Turtle 1.18.1 product slice. The
-module CMake graph is positive and bounded: nine Vanilla classes, generic
-combat/group/travel behavior, Vanilla raids, WSG/AB/AV tactics, and the
-Tortoise custom spell paths confirmed in the target core. Core-owned
-LFG/meeting-stone, transport/taxi, and battleground queue concepts remain
-available; the module does not recreate the donor automatic dungeon queue.
-Expansion-only donor families and obsolete manager/login/test compatibility
-trees are absent from the physical source graph; explicit class directories
-and filename guards keep the remaining directory globs reviewable.
-`RandomBotFacade` is a narrow
-behavior adapter; `BotManager` remains the owner of module bot records and
-headless lifecycle.
+Historical handovers and audit bodies are evidence, not active implementation
+instructions. Use Git history when older design proposals are needed.

@@ -1,5 +1,10 @@
 # TortoiseBots PlayerBots Audit
 
+> **Historical audit snapshot.** This file preserves the deep PR #13 audit,
+> finding bodies, and validation evidence. It is not the current execution
+> plan. Start with [STATUS.md](STATUS.md) and [PLAN.md](PLAN.md); use this file
+> when investigating a specific finding or historical claim.
+
 - **Date:** 2026-08-24 (final verification 2026-08-25)
 - **Historical audit target:** TortoiseBots `13c0632f6a42f0f685de763c17f19c96bc392892`
 - **Closure implementation:** TortoiseBots `d672048e86b9effc36210d3e6d076741fbeccc7f` (final source snapshot; includes the traced closure, unreachable fish-generator removal, and final active fallback fixes)
