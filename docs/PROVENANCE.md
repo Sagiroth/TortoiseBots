@@ -546,3 +546,59 @@ historical normal-environment evidence. They did not test the missing-rg path;
 the explicit negative and positive results above are the authoritative
 validation for this correction. F-03 and F-27 remain open core/data follow-ups;
 this change does not add scripts, stubs, or module-side replacements for them.
+
+## F-03/F-27 core integration closure — 2026-08-25
+
+Feature: remove the remaining legacy PlayerBots-specific core product surface
+and reconcile the locally provable Turtle ScriptName mismatches.
+
+Source repository: local Penqle `tortoise-wow` core plus its local Turtle SQL;
+TortoiseBots module checkout for the optional-module build.
+
+Source commit: core
+`7353989c94399f80572a2f8ec2eb73c63a6c79f8` on
+`cleanup/f03-f27-code-freeze`; TortoiseBots code checkpoint
+`07cf7976c546fac27083c7b46e73299c25b095f3` on the same-named branch, followed
+by the final documentation commit.
+
+Source files: core `CMakeLists.txt`, `src/game/{CMakeLists.txt,Chat,Handlers,
+LFT,Objects,ScriptMgr.h,SessionTransport.h,SharedDefines.h,Spells,World*,
+vmap}`, `src/mangosd/{CMakeLists.txt,Master.cpp,mangosd.conf.dist.in}`,
+`src/scripts/{CMakeLists.txt,miscellaneous/random_scripts_1.cpp,
+spells/spell_druid.cpp}`, `tools/vmap_assembler/CMakeLists.txt`, and
+`sql/database_updates/world/20260825090000_world.sql`; module
+`ai/playerbot/PlayerbotHelpMgr.cpp` and
+`ai/playerbot/strategy/actions/DebugAction.cpp`.
+
+Copied / ported / independently reimplemented:
+
+- No upstream behavior was copied.
+- F-03 is subtractive core cleanup plus replacement of account-name checks with
+  the existing generic `Script_IsMachineDriven` capability. No new PlayerBots
+  host seam was introduced.
+- F-27 `npc_teslinah` is a registration of the existing local callback; it is
+  not a new implementation. The `script_name='0'` migration is an independent
+  data correction for an invalid placeholder. The remaining unregistered
+  Turtle names were deliberately not implemented because their behavior is not
+  established by the pinned core/history.
+
+Reason: keep Tortoise core generic and optional, make TortoiseBots the only
+supported PlayerBots implementation, and avoid converting missing Turtle
+content into fake success paths.
+
+Local validation:
+
+- Cached native ON/static `mangosd` build passed with
+  `BUILD_LEGACY_PLAYERBOTS=OFF`.
+- Cached native module build passed with `BUILD_PLAYERBOTS=OFF`,
+  `BUILD_LEGACY_PLAYERBOTS=OFF`, and `MODULE_TORTOISEBOTS=static`.
+- Cached module-disabled build passed with `BUILD_PLAYERBOTS=OFF`,
+  `BUILD_LEGACY_PLAYERBOTS=OFF`, and `MODULES=disabled`.
+- Preserved Docker runtime applied migration
+  `20260825090000_world` (hash
+  `9DD6905D83E17F6D0BD08CABC5618BBD2A5AD513`), loaded the native module, and
+  reached `World server is up and running`.
+- Runtime query found zero literal `script_name='0'` rows across all seven
+  ScriptMgr registry tables and retained two `npc_teslinah` rows.
+- Startup no longer reports `0` or `npc_teslinah`; the remaining 17 warnings
+  are recorded as unverified content gaps in `PLAYERBOTS_AUDIT.md`.

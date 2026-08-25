@@ -319,3 +319,56 @@ upstream notices where substantial behavior is copied or reimplemented.
 
 The safest next change is therefore a small, evidence-backed follow-up after
 the core/data blockers are assigned—not a new broad donor import.
+
+## Final closure update — 2026-08-25
+
+The handover above is the historical PR #13 resume point. The scoped core/data
+follow-up is now complete as far as the pinned local source and data prove.
+
+Exact pair and branches:
+
+- Initial TortoiseBots worktree: `234c976248098f0076a8817a3a1c417938cc92dd`.
+  The existing workspace fast-forwarded it to
+  `6a9bbdc322a900309ccbbdbfd05a49f0a81b91bf` during the task.
+- TortoiseBots code checkpoint: `07cf7976c546fac27083c7b46e73299c25b095f3`;
+  final docs are committed afterward on `cleanup/f03-f27-code-freeze`.
+- Core: `7353989c94399f80572a2f8ec2eb73c63a6c79f8` on
+  `cleanup/f03-f27-code-freeze`.
+- Required legacy setting: `BUILD_LEGACY_PLAYERBOTS=OFF`.
+- Native selector: `MODULE_TORTOISEBOTS=static`; `BUILD_PLAYERBOTS` is retained
+  only as a deprecated compatibility flag and does not select the module.
+
+F-03 is resolved in the core commit: legacy LFT random-bot filling, stale bot
+commands/stubs, bot slots, hardwired RNDBOT checks, stale include paths, and
+bot-named core diagnostics are gone. The tracked `src/modules/PlayerBots` tree
+remains disabled and unsupported for historical inspection only. The stale
+untracked core `modules/TortoiseBots` copy was moved recoverably to
+`/tmp/TortoiseBots-core-stale-20260825`; the builder uses the checked-out
+TortoiseBots repository as its sole module source.
+
+F-27 is resolved only where behavior is provable: `npc_teslinah` now registers
+its existing local `QuestAccept_npc_teslinah` callback, and migration
+`20260825090000_world.sql` removes invalid literal ScriptName `0` values. The
+remaining 17 ScriptNames have no implementation or legitimate replacement in
+the pinned core/history and remain explicit unverified Turtle content gaps.
+No empty script classes, no-op success paths, or guessed portal/spell/item/NPC
+behavior were added. See the final per-name table in
+[PLAYERBOTS_AUDIT.md](PLAYERBOTS_AUDIT.md).
+
+Validation performed:
+
+- native ON/static `mangosd` build and link passed;
+- native `MODULE_TORTOISEBOTS=static` build with `BUILD_PLAYERBOTS=OFF` passed;
+- module-disabled `BUILD_PLAYERBOTS=OFF`, `BUILD_LEGACY_PLAYERBOTS=OFF` build
+  passed;
+- preserved-data restart applied the new migration, loaded the native module,
+  and reached world-ready;
+- runtime queries confirmed zero `script_name='0'` rows in all seven registry
+  tables and two retained `npc_teslinah` rows;
+- no database reset, volume removal, image rebuild, real-client journey, or
+  manual gameplay campaign was performed.
+
+The architecture is now frozen for broad cleanup. The next work is the manual
+owned-bot and five-player dungeon checklist, driven by observed gameplay
+defects. The remaining custom Turtle ScriptName warnings must stay visible in
+startup logs until their actual implementations or data ownership are proven.
