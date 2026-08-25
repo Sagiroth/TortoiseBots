@@ -587,9 +587,33 @@ inline CmangosScriptDevAIMgrAdapter sScriptDevAIMgr;
 #endif
 
 // === GetSpellCastResultString (cmangos free function) ===
-// Penqle does not expose the donor's localized result-name table. Keep the
-// failure text explicit instead of returning an empty string to the owner.
-inline char const* GetSpellCastResultString(SpellCastResult /*res*/) { return "spell cast failed"; }
+// Penqle does not expose the donor's localized result-name table. Preserve the
+// useful failure reason for the owner instead of collapsing every core result
+// into one generic message.
+inline char const* GetSpellCastResultString(SpellCastResult res)
+{
+    switch (res)
+    {
+    case SPELL_FAILED_NOT_READY: return "spell not ready";
+    case SPELL_FAILED_REQUIRES_SPELL_FOCUS: return "requires spell focus";
+    case SPELL_FAILED_REQUIRES_AREA: return "cannot cast here";
+    case SPELL_FAILED_EQUIPPED_ITEM_CLASS:
+    case SPELL_FAILED_EQUIPPED_ITEM_CLASS_MAINHAND:
+    case SPELL_FAILED_EQUIPPED_ITEM_CLASS_OFFHAND: return "requires item or weapon";
+    case SPELL_FAILED_NOT_INFRONT:
+    case SPELL_FAILED_UNIT_NOT_INFRONT: return "must face the target";
+    case SPELL_FAILED_NOT_STANDING: return "must be standing";
+    case SPELL_FAILED_MOVING: return "cannot cast while moving";
+    case SPELL_FAILED_OUT_OF_RANGE: return "target is out of range";
+    case SPELL_FAILED_LINE_OF_SIGHT: return "target is not in line of sight";
+    case SPELL_FAILED_NO_POWER: return "not enough power";
+    case SPELL_FAILED_AFFECTING_COMBAT: return "cannot cast in combat";
+    case SPELL_FAILED_NOT_MOUNTED: return "must be mounted";
+    case SPELL_FAILED_PREVENTED_BY_MECHANIC: return "prevented by a mechanic";
+    case SPELL_FAILED_BAD_TARGETS: return "invalid target";
+    default: return "spell cast failed";
+    }
+}
 
 // === TARGET_FLAG_LOCKED / SPELL_STATE_TARGETING (cmangos) ===
 #ifndef TARGET_FLAG_LOCKED
@@ -803,10 +827,6 @@ inline AreaEntry const* GetAreaEntryByMapId(uint32 mapId) {
 // === GetSpellStore (cmangos) → sSpellMgr (Penqle) ===
 // cmangos exposes a global GetSpellStore() returning the DBC store as a POINTER.
 inline CmangosSpellTemplateProxy* GetSpellStore() { return &sSpellTemplate; }
-
-// === EmotesTextSoundEntry / FindTextSoundEmoteFor (cmangos) — DBC stubs ===
-struct EmotesTextSoundEntry { uint32 SoundId = 0; };
-inline EmotesTextSoundEntry const* FindTextSoundEmoteFor(uint32 /*textEmoteId*/, uint32 /*race*/, uint32 /*gender*/) { return nullptr; }
 
 // === GetApplicationStartTime (cmangos) — free function returning startup timestamp ===
 inline std::chrono::system_clock::time_point GetApplicationStartTime() {

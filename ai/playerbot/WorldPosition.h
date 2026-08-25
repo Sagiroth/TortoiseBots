@@ -323,9 +323,10 @@ namespace ai
         bool isEnemyHomeZoneFor(Team team) const;
         bool IsEnemyHomeZoneFor(Team team) const { return isEnemyHomeZoneFor(team); }
         std::string getAreaName(const bool fullName = true, const bool zoneName = false) const;
-        // Penqle's TerrainInfo has no AreaNameInfo or GetAreaName method.
-        // Stub to empty string (loses WMO area-override lookup; would need a Penqle-side equivalent).
-        std::string getAreaOverride() const { return ""; }
+        // Penqle does not expose CMaNGOS' WMO AreaNameInfo override. Use the
+        // core terrain area as a truthful fallback instead of silently
+        // returning an empty subzone placeholder.
+        std::string getAreaOverride() const { return getAreaName(false, false); }
         int32 getAreaLevel() const;
         int32 GetAreaLevel() const { return getAreaLevel(); }
 

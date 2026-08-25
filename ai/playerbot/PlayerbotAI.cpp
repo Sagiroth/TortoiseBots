@@ -2375,13 +2375,10 @@ bool PlayerbotAI::DoSpecificAction(const std::string& name, Event event, bool si
 
 bool PlayerbotAI::PlaySound(uint32 emote)
 {
-    if (EmotesTextSoundEntry const* soundEntry = FindTextSoundEmoteFor(emote, bot->GetRace(), bot->GetGender()))
-    {
-        bot->PlayDistanceSound(soundEntry->SoundId);
-        return true;
-    }
-
-    return false;
+    // The pinned core does not load the donor EmotesTextSound table. A text
+    // emote packet is still a real client/core contract and lets the client
+    // select the race/gender animation and associated sound from its DBC.
+    return PlayEmote(emote);
 }
 
 bool PlayerbotAI::PlayEmote(uint32 emote)
@@ -2392,7 +2389,7 @@ bool PlayerbotAI::PlayEmote(uint32 emote)
     data << ((master && (sServerFacade.getDistance2d(bot, master) < 30.0f) && urand(0, 1)) ? master->getObjectGuid() : (bot->GetSelectionGuid() && urand(0, 1)) ? bot->GetSelectionGuid() : ObjectGuid());
     bot->GetSession()->HandleTextEmoteOpcode(data);
 
-    return false;
+    return true;
 }
 
 bool PlayerbotAI::ContainsStrategy(StrategyType type)

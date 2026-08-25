@@ -19,6 +19,30 @@
 
 using namespace ai;
 
+namespace
+{
+std::vector<std::pair<uint32, uint32>> const& CollectionMounts()
+{
+    static std::vector<std::pair<uint32, uint32>> mounts;
+    static bool loaded = false;
+    if (loaded)
+        return mounts;
+
+    loaded = true;
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT itemId, spellId FROM collection_mount"));
+    if (!result)
+        return mounts;
+
+    do
+    {
+        Field* fields = result->Fetch();
+        mounts.emplace_back(fields[0].GetUInt32(), fields[1].GetUInt32());
+    } while (result->NextRow());
+
+    return mounts;
+}
+}
+
 #define PLAYER_SKILL_INDEX(x)       (PLAYER_SKILL_INFO_1_1 + ((x)*3))
 
 uint32 PlayerbotFactory::tradeSkills[] =
@@ -3292,30 +3316,12 @@ void PlayerbotFactory::InitMounts()
         fast = { 23241, 23242, 23243 };
         break;
     default:
-        // Turtle carries races this switch never knew - Goblin (9) and High
-        // Elf (10) - and on a vanilla build the Draenei and Blood Elf cases
-        // below are preprocessed away as well. Any race that falls through
-        // leaves every list empty, and the draw further down then reads past
-        // the end of an empty vector, because size() - 1 on an unsigned type
-        // is not -1 but the largest value there is. What comes back is either
-        // a spell id out of thin air - which learnSpell duly reports as not
-        // existing - or a segfault.
-        //
-        // Their own mounts cannot be named here: Turtle gives nearly every
-        // mount item the same generic spell and restricts it by faction mask
-        // instead, so there is no per-race spell to list. The faction's
-        // ordinary mounts are the honest fallback. Not lore, but a bot that
-        // rides rather than walks to sixty.
-        if (bot->GetTeam() == ALLIANCE)
-        {
-            slow = { 470, 6648, 458, 472 };
-            fast = { 23228, 23227, 23229 };
-        }
-        else
-        {
-            slow = { 6654, 6653, 580 };
-            fast = { 23250, 23252, 23251 };
-        }
+        // Turtle/custom races do not have a safe racial spell list in this
+        // donor-era switch. Leave the lists empty and rely only on the
+        // authoritative collection_mount rows below, whose item class/race
+        // masks are checked against the actual core character data.
+        sLog.outDetail("Bot %d (%u) has no donor racial mount list; using core collection mounts only.",
+            bot->GetGUIDLow(), bot->GetRace());
         break;
     }
 
@@ -3326,30 +3332,24 @@ void PlayerbotFactory::InitMounts()
     // initialization intentionally teaches the mapped spell, matching the
     // existing classic factory mount path; real item use remains owned by the
     // core collection spell script.
-    if (QueryResult* result = WorldDatabase.Query("SELECT itemId, spellId FROM collection_mount"))
+    for (auto const& [itemId, spellId] : CollectionMounts())
     {
-        do
-        {
-            Field* fields = result->Fetch();
-            uint32 itemId = fields[0].GetUInt32();
-            uint32 spellId = fields[1].GetUInt32();
-            ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
-            SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(spellId);
+        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+        SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(spellId);
 
-            if (!proto || !spellInfo || MountValue::GetSpeed(spellId) == 0)
-                continue;
-            if (proto->RequiredLevel > bot->GetLevel())
-                continue;
-            if (proto->AllowableClass && (proto->AllowableClass & bot->GetClassMask()) == 0)
-                continue;
-            if (proto->AllowableRace && (proto->AllowableRace & bot->GetRaceMask()) == 0)
-                continue;
+        if (!proto || !spellInfo || MountValue::GetSpeed(spellId) == 0)
+            continue;
+        if (proto->RequiredLevel > bot->GetLevel())
+            continue;
+        if (proto->AllowableClass && (proto->AllowableClass & bot->GetClassMask()) == 0)
+            continue;
+        if (proto->AllowableRace && (proto->AllowableRace & bot->GetRaceMask()) == 0)
+            continue;
 
-            if (MountValue::GetSpeed(spellId) >= 100)
-                fast.push_back(spellId);
-            else
-                slow.push_back(spellId);
-        } while (result->NextRow());
+        if (MountValue::GetSpeed(spellId) >= 100)
+            fast.push_back(spellId);
+        else
+            slow.push_back(spellId);
     }
 
     mounts[bot->GetRace()][0] = slow;

@@ -59,6 +59,18 @@ if rg -n 'addStrategy\("avoid mobs"\)|addStrategies\([^\n]*"avoid mobs"' ai/play
     fail "default AI still enables unsupported mob-avoidance behavior"
 fi
 
+if rg -n 'EmotesTextSoundEntry|FindTextSoundEmoteFor|getAreaOverride\(\) const \{ return ""' \
+    ai; then
+    fail "module still hides emote/area presentation behind an empty compatibility stub"
+fi
+
+if rg -n 'NONE_PERMISSION' ai/playerbot/strategy/values/LootValues.cpp; then
+    fail "loot status still asks the core for its intentionally empty NONE_PERMISSION view"
+fi
+
+grep -q 'CheckCast(true)' ai/playerbot/strategy/actions/UseItemAction.cpp \
+    || fail "item casts are not using the native core pre-cast contract"
+
 grep -q 'GetMotionMaster()->GetCurrent' ai/playerbot/ServerFacade.cpp \
     || fail "chase inspection fell back to a non-native victim/default path"
 grep -q 'GetChannelEntryFor' ai/cmangos-compat-shim.h \

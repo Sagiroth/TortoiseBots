@@ -32,12 +32,12 @@ std::vector<LootItem*> LootAccess::GetLootContentFor(Player* /*player*/) const
 
 // Get loot status for a specified player.
 // cmangos returned bitflags reflecting "has gold / not fully looted / contains FFA / etc."
-// We map to Penqle's coarser model: any items remaining = NOT_FULLY_LOOTED, gold > 0 = CONTAIN_GOLD.
-// FFA / released-items flags use LootItem::freeForAll() / isReleased() (which we aliased; isReleased
-// always returns false in Penqle).
+// Derive the status from the core's public loot fields and group round-robin
+// contract; do not route through the core's intentionally empty loot-view
+// permission sentinel.
 uint32 LootAccess::GetLootStatusFor(Player const* player) const
 {
-	if (!loot)
+	if (!loot || !player)
 		return 0;
 
 	uint32 status = 0;
@@ -45,13 +45,20 @@ uint32 LootAccess::GetLootStatusFor(Player const* player) const
 	if (loot->gold != 0)
 		status |= LOOT_STATUS_CONTAIN_GOLD;
 
-	for (auto const& lootItem : loot->items)
+	WorldObject const* lootTarget = loot->GetLootTarget();
+	Group* group = const_cast<Player*>(player)->GetGroup();
+	ObjectGuid lootGuid = lootTarget ? lootTarget->GetObjectGuid() : ObjectGuid();
+	for (uint32 slot = 0; slot < loot->items.size(); ++slot)
 	{
-		// Use the core loot target so condition and ownership checks see the same
-		// object that the native loot handler validated.
-		LootSlotType slotType = lootItem.GetSlotTypeForSharedLoot(
-			NONE_PERMISSION, const_cast<Player*>(player), loot->GetLootTarget());
-		if (slotType == MAX_LOOT_SLOT_TYPE)
+		LootItem const& lootItem = loot->items[slot];
+		if (lootItem.is_looted || !lootItem.AllowedForPlayer(player, lootTarget))
+			continue;
+
+		// Match the core's GROUP_PERMISSION view: an under-threshold item is
+		// hidden from non-round-robin members until the designated looter
+		// releases it. An active roll is still unfinished loot for everyone.
+		if (group && !lootItem.freeforall && loot->roundRobinPlayer &&
+			loot->roundRobinPlayer != player->GetObjectGuid() && lootItem.is_underthreshold)
 			continue;
 
 		status |= LOOT_STATUS_NOT_FULLY_LOOTED;
@@ -59,8 +66,11 @@ uint32 LootAccess::GetLootStatusFor(Player const* player) const
 		if (lootItem.freeForAll())
 			status |= LOOT_STATUS_CONTAIN_FFA;
 
-		if (lootItem.isReleased())
-			status |= LOOT_STATUS_CONTAIN_RELEASED_ITEMS;
+		// The core exposes active rolls through Group::GetActiveRoll rather than
+		// Loot::GetRollForSlot. Keep an active roll explicitly unfinished even
+		// when another core path has already toggled the item blocked bit.
+		if (group && lootGuid && group->GetActiveRoll(lootGuid, slot))
+			status |= LOOT_STATUS_NOT_FULLY_LOOTED;
 	}
 	return status;
 }
