@@ -30,7 +30,10 @@ rg -n 'BUILD_PLAYERBOTS|AiPlayerbot' source
 
 **Result:** Clean. `PlayerAI` (`src/game/AI/PlayerAI.h:36`) and `PlayerControlledAI` (`AI/PlayerAI.h:58`) remain — these are legitimate mind-control/charm AI, not PlayerBots. No `BUILD_PLAYERBOTS` CMake option exists yet. This is the desired baseline per `PLAN.md` §8.
 
-**Filesystem note (flattened 2026-08-20):** Per user request the former `docs/TortoiseBots/` nesting was flattened to just `docs/` (and the earlier `docs/playerbots/` duplication removed). `DISCOVERY.md` now lives alongside the active specs (`HOST_API.md`, `BASELINE.md`, etc.) as a clearly-marked historical archive. Also cleaned: stray `/playerbots/` line and `missi/playerbots/ng` typo in `AGENTS.md`.
+**Filesystem note:** The former `docs/TortoiseBots/` and `docs/playerbots/`
+nesting was flattened to `docs/`. Historical investigation notes that were
+superseded by the active contract were removed; current source lineage remains
+in `PROVENANCE.md`.
 
 ---
 
@@ -228,7 +231,7 @@ No SQL or config required when `OFF`.
 ## 8. Provenance & References
 
 - This document is the deliverable for `PLAN.md` §9 / §26. It is a *design* based on source inspection, not on CMaNGOS/MangosZero/Shyalya architecture.
-- Source material consulted per `AGENTS.md` reference strategy: current Tortoise core (primary), then `DISCOVERY.md` (§1-10) for upstream chain, then `playerbots-references/` for confirmation (commits recorded in §0).
+- Source material consulted per `AGENTS.md` reference strategy: current Tortoise core (primary), then `playerbots-references/` for confirmation (commits recorded in §0).
 - Upstream behavior (CMaNGOS playerbots, MangosZero Bots, Shyalya Turtle fixes) was **not** used to define host seams — those will be harvested in Phase 6 (`PLAN.md` §14) via the `study → extract intent → reimplement → test` pipeline with `docs/PROVENANCE.md`.
 
 ---

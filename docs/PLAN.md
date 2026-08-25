@@ -1,6 +1,6 @@
 # PLAN.md — Decoupled PlayerBots Module for Tortoise WoW 1.18.1
 
-**Status:** Proposed / experimental  
+**Status:** Active architecture and roadmap
 **Target core:** `Penqle/tortoise-wow` after the legacy PlayerBots cleanup (PR #396)  
 **Primary goal:** Build useful PlayerBots for Turtle WoW 1.18.1 while keeping the Tortoise core as clean and bot-agnostic as reasonably possible.  
 **Initial player scenario:** A small number of human players can use bots to complete normal world content and 5-player dungeons.  
@@ -579,11 +579,8 @@ Legitimate `PlayerAI` / `PlayerControlledAI` must remain.
 
 ## Deliverable
 
-```text
-docs/BASELINE.md
-```
-
-Containing:
+Record the baseline in `docs/PROVENANCE.md` and the current audit or handover
+when a phase boundary is reached. Include:
 
 - core commit
 - build command
@@ -919,11 +916,8 @@ recoverable
 
 Only after the new architecture works should we aggressively mine mature PlayerBots behavior.
 
-Create:
-
-```text
-docs/BEHAVIOR_BACKLOG.md
-```
+Maintain the capability table in this plan and record source lineage in
+`docs/PROVENANCE.md`.
 
 Suggested table:
 
@@ -1030,12 +1024,6 @@ implemented
 compatible
 partially compatible
 not planned
-```
-
-Create:
-
-```text
-docs/COMPATIBILITY.md
 ```
 
 Do not expose internal implementation names as public commands just because old PlayerBots did internally.

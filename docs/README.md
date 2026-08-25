@@ -1,15 +1,15 @@
-# docs — TortoiseBots Module Specs
+# TortoiseBots documentation
 
-This folder is the **active spec surface** for the TortoiseBots optional module (per `PLAN.md`).
+This folder contains the active architecture, implementation, status, audit,
+and provenance records for the optional TortoiseBots module.
 
-| Doc | Purpose |
+| Document | Purpose |
 |---|---|
-| `HOST_API.md` | Phase 1 host-boundary discovery — minimum core seams required (the review gate before any module code) |
-| `BASELINE.md` | Phase 0 clean-canvas verification (to be added) |
-| `PROVENANCE.md` | Upstream behavior harvest log (from Phase 6 onward) |
-| `BEHAVIOR_BACKLOG.md` | Prioritized capability backlog (Phase 6) |
-| `COMPATIBILITY.md` | KB capability-map compatibility matrix |
+| [`PLAN.md`](PLAN.md) | Canonical architecture rules and roadmap |
+| [`HOST_API.md`](HOST_API.md) | Current generic core/session host contract |
+| [`PLAYERBOTS_HANDOVER.md`](PLAYERBOTS_HANDOVER.md) | Current operational status and next decisions |
+| [`PLAYERBOTS_AUDIT.md`](PLAYERBOTS_AUDIT.md) | Detailed findings, evidence, and open boundaries |
+| [`PROVENANCE.md`](PROVENANCE.md) | Source lineage and validation record for imported or adapted behavior |
 
-**Historical archive:** `DISCOVERY.md` (2026-08-20) is a read-only upstream research snapshot (Shyalya/CMaNGOS/MangosZero fork chain, 87-commit delta). It is *not* the active plan — `PLAN.md` (this folder) is. Former `docs/playerbots/` and `docs/TortoiseBots/` nesting was flattened to just `docs/` as requested.
-
-See `AGENTS.md` § “Read first” for the lookup order.
+Read [`AGENTS.md`](../AGENTS.md) for the required lookup order and repository
+working rules.

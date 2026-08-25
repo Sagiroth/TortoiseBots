@@ -25,10 +25,11 @@ For PlayerBots work, read in this order:
 1. `docs/PLAN.md` (canonical online copy: <https://github.com/tortoise-wow-stack/TortoiseBots/blob/main/docs/PLAN.md> — check for a local copy first; it may already exist alongside this repository)
 2. `docs/HOST_API.md` if it exists
 3. The relevant files under `docs/`
-4. `docs/DISCOVERY.md` only when historical/upstream context is needed
+4. `docs/README.md` when you need the active documentation map
 
-Do not use `DISCOVERY.md` as the active implementation plan. `docs/PLAN.md` is the
-execution source of truth.
+`docs/PLAN.md` is the execution source of truth. Historical investigation
+notes that are no longer active are not part of the working documentation set;
+use Git history or the provenance records when historical context is required.
 
 When researching existing PlayerBots behavior, also read the
 Tortoise WoW Knowledge Base instructions first:
@@ -298,6 +299,11 @@ The core must build without the PlayerBots module checkout.
 
 No PlayerBots runtime/config/SQL dependency may be required when bots are off.
 
+The native module is selected explicitly through the target core's
+`MODULE_TORTOISEBOTS` setting. `BUILD_PLAYERBOTS` is not the native module
+selector, and `BUILD_LEGACY_PLAYERBOTS=OFF` is the normal setting for native
+module work.
+
 ### Do not reintroduce legacy coupling
 
 Never recreate patterns such as:
@@ -532,7 +538,7 @@ For an active implementation slice:
 ```text
 inspect
 -> make a coherent batch of edits
--> one cached BUILD_PLAYERBOTS=ON build if compiled code changed
+-> one cached native MODULE_TORTOISEBOTS build if compiled code changed
 -> run the smallest relevant runtime/manual check
 -> continue implementing
 ```
@@ -544,8 +550,8 @@ A successful build remains valid evidence for unchanged code. A successful manua
 ### Validation cadence
 
 - **Docs/comments/config-only change:** no C++ build. Run only the smallest relevant text/config check plus `git diff --check`.
-- **Module-only C++ change:** run one cached `BUILD_PLAYERBOTS=ON` build of the smallest affected target after the edit batch is coherent.
-- **Generic core-seam change:** while iterating, build the cached `BUILD_PLAYERBOTS=ON` target only. Do **not** run OFF/ON after every core edit.
+- **Module-only C++ change:** run one cached native `MODULE_TORTOISEBOTS=static` build of the smallest affected target after the edit batch is coherent.
+- **Generic core-seam change:** while iterating, build the cached native module target only. Do **not** run the full optional-build/module matrix after every core edit.
 - **Optional-build/CMake/build-gating change:** run the directly affected configuration when needed to prove the change, then defer the full matrix until the slice is stable.
 - **Phase/PR/handover boundary:** run the full OFF/ON matrix **once**, after implementation has stabilized, plus coupling audits, `git diff --check`, and the required runtime gates.
 - Use cached builds by default. Use `--no-cache` only to diagnose a cache/image problem or when explicitly requested.
