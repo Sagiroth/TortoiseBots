@@ -297,6 +297,7 @@ Source files: `TortoiseBots.cmake`, `README.md`,
   the edited strategy/action/value/context files, `data/sql/{world,char}/*`,
 `ai/playerbot/{ServerFacade.cpp,cmangos-compat-shim.h}`, the follow/movement
 and range-trigger files, `ai/playerbot/aiplayerbot.conf.dist.in`,
+`runtime/BotManager.cpp`, `conf/tortoise_bots.conf.dist`,
 `tools/{analyze_quest_ledger.py,verify_turtle_surface.sh}`, and
 `docs/PLAYERBOTS_AUDIT.md`.
 
