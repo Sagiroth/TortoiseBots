@@ -1,3 +1,6 @@
+# Status
+WIP still pending smoke testing
+
 # TortoiseBots
 
 TortoiseBots is an optional native PlayerBots module for [Tortoise WoW 1.18.1](https://github.com/Penqle/tortoise-wow).
