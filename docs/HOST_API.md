@@ -35,14 +35,13 @@ TortoiseBots tested code checkpoint: 07cf7976c546fac27083c7b46e73299c25b095f3
 ```
 
 Validated local core checkpoint:
-`7353989c94399f80572a2f8ec2eb73c63a6c79f8`
+`7353989c94399f80572a2f8ec2eb73c63a6c79f8` (local branch `cleanup/f03-f27-code-freeze`)
 
 Upstream Penqle status:
-pending / not yet represented by a merged upstream Penqle PR. The core branch
-`cleanup/f03-f27-code-freeze` exists only as a local pinned integration
-baseline; no published Penqle branch or PR was found for this commit at review
-time (Penqle `main` inspected at `61a8269151721f6467eddb05e7bed37704d0fc0b`,
-merge-base `93a5faa375083fc49d73fc02bda0f5a214880009`).
+generic Headless capability proposed as draft PR [#411](https://github.com/Penqle/tortoise-wow/pull/411)
+(`feature/headless-world-session` @ `c37e28b`, based on upstream `main`
+`61a8269`; merge-base `93a5faa`). Not yet merged; the pinned local branch
+remains the validated baseline until #411 lands.
 
 When the core changes, update [STATUS.md](STATUS.md) with the exact tested pair
 instead of assuming compatibility from a branch name.
@@ -227,7 +226,8 @@ the native module selector.
 
 Static module compile definitions/includes/PCH are isolated to the
 TortoiseBots module target before it is folded into the combined modules
-archive.
+archive (local integration baseline; not yet upstream in #411 — separate
+follow-up).
 
 ## 13. Configuration and database contract
 
@@ -301,9 +301,9 @@ For the validated local baseline (core `7353989c94399f80572a2f8ec2eb73c63a6c79f8
 
 Upstream Penqle status: validated local core checkpoint
 `7353989c94399f80572a2f8ec2eb73c63a6c79f8` on local branch
-`cleanup/f03-f27-code-freeze`; not yet published as a merged upstream Penqle PR.
-Upstreaming is separate follow-up. Remaining F-27 names are Turtle content gaps,
-not host API gaps.
+`cleanup/f03-f27-code-freeze`; generic Headless subset proposed as draft PR
+[#411](https://github.com/Penqle/tortoise-wow/pull/411). Remaining F-27 names are
+Turtle content gaps, not host API gaps.
 
 ## 18. Validation boundary
 

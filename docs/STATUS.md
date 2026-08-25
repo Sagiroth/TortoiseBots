@@ -22,15 +22,13 @@ final commit SHA — the code checkpoint above remains the tested behavior
 reference.
 
 Validated local core checkpoint:
-`7353989c94399f80572a2f8ec2eb73c63a6c79f8`
+`7353989c94399f80572a2f8ec2eb73c63a6c79f8` (local branch `cleanup/f03-f27-code-freeze`)
 
 Upstream Penqle status:
-pending / not yet represented by a merged upstream Penqle PR. The core branch
-`cleanup/f03-f27-code-freeze` exists only as a local pinned integration
-baseline; no published Penqle branch or PR was found for this commit at review
-time (Penqle `main` inspected at `61a8269151721f6467eddb05e7bed37704d0fc0b`,
-merge-base `93a5faa375083fc49d73fc02bda0f5a214880009`; core is 281 commits ahead
-of that base, diverged and not yet upstream).
+generic Headless capability proposed as draft PR [#411](https://github.com/Penqle/tortoise-wow/pull/411)
+(`feature/headless-world-session` @ `c37e28b`, based on upstream `main`
+`61a8269`; merge-base `93a5faa`). Not yet merged; the pinned local branch
+remains the validated baseline until #411 lands.
 
 PR #13 merged the module-side Turtle 1.18.1 cleanup/audit closure into `main`.
 Later README/documentation commits do not replace the behavior baseline above.
