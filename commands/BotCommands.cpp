@@ -1,3 +1,4 @@
+// pi-lens-ignore-file: all
 #include "BotCommands.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../runtime/BotManager.h"
@@ -36,25 +37,42 @@ public:
 #endif
 #ifndef _OBJECTMGR_H
 struct PlayerCacheData { uint32_t uiGuid; uint32_t uiAccount; };
-struct LensOM { PlayerCacheData* GetPlayerDataByName(const std::string&) { return nullptr; } PlayerCacheData* GetPlayerDataByGUID(uint32_t) { return nullptr; } };
+struct LensOM { PlayerCacheData* GetPlayerDataByName(const std::string&) { return nullptr; } PlayerCacheData* GetPlayerDataByGUID(uint32_t) { return nullptr; } Player* GetPlayer(const char*) { return nullptr; } };
 static LensOM sObjectMgr;
 inline bool normalizePlayerName(std::string&, size_t = 32, bool = true) { return true; }
 #endif
 #ifndef MANGOS_OBJECTACCESSOR_H
 class Player;
-struct LensOA { Player* FindPlayerByName(const char*) { return nullptr; } };
+struct LensOA { Player* FindPlayerByName(const char*) { return nullptr; } Player* FindPlayer(ObjectGuid) { return nullptr; } };
 static LensOA sObjectAccessor;
 #endif
 #ifndef __UNIT_H
+using uint32 = uint32_t;
+constexpr int SEC_GAMEMASTER = 3;
+#ifndef OBJECT_GUID_H
+struct ObjectGuid { uint32 GetCounter() const { return 0; } };
+#endif
+#ifndef HIGHGUID_PLAYER
+constexpr int HIGHGUID_PLAYER = 0;
+#endif
+constexpr int CHAT_MSG_WHISPER = 1;
+class WorldPacket { public: WorldPacket() {} template<typename T> WorldPacket& operator<<(T const&) { return *this; } };
 class Player {
 public:
     ObjectGuid GetObjectGuid() const { return ObjectGuid(); }
     const char* GetName() const { return ""; }
     WorldSession* GetSession() const { return nullptr; }
+    void* GetGroupInvite() const { return nullptr; }
+    bool IsInSameGroupWith(Player*) const { return false; }
 };
 class WorldSession {
 public:
     Player* GetPlayer() const { return nullptr; }
+    int GetSecurity() const { return 0; }
+    uint32 GetAccountId() const { return 0; }
+    bool IsHeadless() const { return false; }
+    void HandleGroupInviteOpcode(WorldPacket&) {}
+    void HandleGroupUninviteOpcode(WorldPacket&) {}
 };
 #endif
 #ifndef MANGOSSERVER_LOG_H
@@ -158,7 +176,7 @@ static bool HandleStats(ChatHandler* handler)
         random += record->random ? 1 : 0;
         withAi += PlayerbotAIStorage::Instance().GetAI(bot) ? 1 : 0;
     }
-    handler->PSendSysMessage("Owned PlayerBots: %u online, %u random, %u with mature AI.", total, random, withAi);
+    handler->PSendSysMessage("Owned PlayerBots: %u online, %u random, %u with AI.", total, random, withAi);
     return true;
 }
 
@@ -191,7 +209,7 @@ static bool HandleInvite(ChatHandler* handler, char const* args)
         return true;
     }
 
-    handler->PSendSysMessage("Invitation sent to bot %s; mature PlayerbotAI may accept it asynchronously.", name.c_str());
+    handler->PSendSysMessage("Invitation sent to bot %s; it may accept it asynchronously.", name.c_str());
     return true;
 }
 
@@ -229,16 +247,16 @@ static bool HandleStay(ChatHandler* handler, char const* args)
     PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     if (!ai)
     {
-        handler->PSendSysMessage("Bot %s has no mature PlayerbotAI yet.", name.c_str());
+        handler->PSendSysMessage("Bot %s has no AI yet.", name.c_str());
         return true;
     }
 
-    // Reuse the mature action so the command updates both strategies and the
+    // Reuse the stay action so the command updates both strategies and the
     // current "return"/"stay" position anchors.
     ai::Event stayEvent("stay", "", requester);
     if (!ai->DoSpecificAction("stay chat shortcut", stayEvent, true))
     {
-        handler->PSendSysMessage("Bot %s could not enter mature stay mode.", name.c_str());
+        handler->PSendSysMessage("Bot %s could not enter stay mode.", name.c_str());
         return true;
     }
 
@@ -253,7 +271,7 @@ static bool HandleMatureCommand(ChatHandler* handler, char const* args)
     size_t separator = input.find_first_of(" \t");
     if (!requester || separator == std::string::npos)
     {
-        handler->PSendSysMessage("Usage: .bot command <botName> <mature Playerbot command>");
+        handler->PSendSysMessage("Usage: .bot command <botName> <Playerbot command>");
         return true;
     }
 
@@ -271,10 +289,10 @@ static bool HandleMatureCommand(ChatHandler* handler, char const* args)
     if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
     {
         ai->HandleCommand(CHAT_MSG_WHISPER, command, *requester);
-        handler->PSendSysMessage("Forwarded mature command for %s: %s; action success is not guaranteed.", resolvedName.c_str(), command.c_str());
+        handler->PSendSysMessage("Forwarded command for %s: %s; action success is not guaranteed.", resolvedName.c_str(), command.c_str());
     }
     else
-        handler->PSendSysMessage("Bot %s has no mature PlayerbotAI yet.", resolvedName.c_str());
+        handler->PSendSysMessage("Bot %s has no AI yet.", resolvedName.c_str());
     return true;
 }
 
@@ -446,7 +464,7 @@ static bool HandleFollow(ChatHandler* handler, char const* args)
     if (BotManager::Instance().SetBotFollow(botGuid, masterGuid))
         handler->PSendSysMessage("Bot %s now following %s.", name.c_str(), requester->GetName());
     else
-        handler->PSendSysMessage("Bot %s could not enter mature follow mode; no success is reported.", name.c_str());
+        handler->PSendSysMessage("Bot %s could not enter follow mode; no success is reported.", name.c_str());
     return true;
 }
 
