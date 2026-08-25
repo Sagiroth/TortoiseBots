@@ -302,8 +302,8 @@ core. Exact source lineage is recorded in [`docs/PROVENANCE.md`](docs/PROVENANCE
 
 ## Licence
 
-* **TortoiseBots module** — GPL-2.0 (see donor headers in `ai/playerbot/`)
-* **Penqle/tortoise-wow** — AGPL-3.0 — combined binary is AGPL-3.0
+- **TortoiseBots module** — GPL-2.0 (see donor headers in `ai/playerbot/`)
+- **Penqle/tortoise-wow** — AGPL-3.0 — combined binary is AGPL-3.0
 
 See [`LICENCE.md`](LICENCE.md) for full details and donor licences.
 
