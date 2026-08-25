@@ -37,19 +37,6 @@ another PlayerBots implementation.
 These projects are references for behavior and lessons, not architectures to
 copy.
 
-## Initial scope
-
-The first target is a human player using owned bots for normal world content,
-with small-party dungeon support as the next step. Optional conversation or
-LLM features must never be required for real-time gameplay.
-
-## Development
-
-The module is selected by the target core's native module system with
-`MODULE_TORTOISEBOTS=static` or `shared`. Keep the legacy
-`BUILD_LEGACY_PLAYERBOTS` path disabled. See the active documentation for the
-build, host-boundary, and runtime workflow.
-
 ## Start here
 
 1. [AGENTS.md](AGENTS.md)
