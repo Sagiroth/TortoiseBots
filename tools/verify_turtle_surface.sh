@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-cd "$ROOT_DIR"
-
 fail() {
     echo "TortoiseBots surface check failed: $*" >&2
     exit 1
 }
+
+command -v rg >/dev/null 2>&1 \
+    || fail "ripgrep (rg) is required to verify the Turtle module surface"
+
+ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$ROOT_DIR"
 
 test -f data/sql/world/20260824090000_world.sql || fail "world migration is missing"
 test -f data/sql/char/20260824090001_char.sql || fail "character migration is missing"
