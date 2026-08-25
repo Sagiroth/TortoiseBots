@@ -396,3 +396,10 @@ Local validation:
   software-forced rendering paths; both rendered black with no observable
   login UI in this environment, so no real-client `.bot` command journey is
   claimed.
+- The final timestamp-scoped preserved-data restart of the updated binary
+  reached native AI module load and world-ready. It showed the expected direct
+  travel/fishing and empty-cache safeguards, emitted no `ai_playerbot_*` table
+  DDL/DML, and retained the known core `custom_dungeon_portal` script warning
+  for the audited custom-content gap. Taxi/loot interactions were
+  not replayed as a ceremony; their module changes were compile- and
+  core-API-traced.

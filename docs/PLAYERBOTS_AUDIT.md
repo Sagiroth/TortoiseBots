@@ -886,6 +886,15 @@ TBPLAY fixtures produced `PendingAddRemoveTest PASSED`, the six-step
 for `list`/`stats`/`follow`, and `PacketBridgeTest group invite/accept PASSED`
 followed by `PacketBridgeTest cleanup PASSED`.
 
+The final timestamp-scoped restart of the updated binary (container start
+`2026-08-25T00:58:14.993992971Z`) reached `TortoiseBots: native module loaded
+(AI enabled)` and `World server is up and running!`. It logged the expected
+empty equipment-cache and direct fish/travel fallbacks, emitted no
+`ai_playerbot_*` table DDL/DML, and retained the already identified core
+warning for the missing `custom_dungeon_portal` script. This restart did not
+exercise a real taxi or loot interaction; those two changes were validated by
+the native build and direct core API trace.
+
 The closure pass modified module C++, SQL, CMake, README, and tooling files;
 it did not modify the sibling core, Dockerfile, compose file, or reference
 checkouts. The only database mutations were additive module migrations and
