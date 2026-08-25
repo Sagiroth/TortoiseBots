@@ -46,6 +46,19 @@ if rg -n 'BUILD_PLAYERBOTS[[:space:]]*=[[:space:]]*1' TortoiseBots.cmake; then
     fail "native module forces the legacy BUILD_PLAYERBOTS option"
 fi
 
+if rg -n 'Get(MaxEntry|NumRows)\(\) const \{ return (10000|100000|1500|200000);' \
+    ai/cmangos-compat-shim.h; then
+    fail "store compatibility proxy still uses a fixed donor-era upper bound"
+fi
+
+if rg -n 'setAreaCost|\.setArea\(' ai/playerbot; then
+    fail "module still calls the pinned core's no-op PathInfo area-filter API"
+fi
+
+if rg -n 'addStrategy\("avoid mobs"\)|addStrategies\([^\n]*"avoid mobs"' ai/playerbot/AiFactory.cpp; then
+    fail "default AI still enables unsupported mob-avoidance behavior"
+fi
+
 grep -q 'GetMotionMaster()->GetCurrent' ai/playerbot/ServerFacade.cpp \
     || fail "chase inspection fell back to a non-native victim/default path"
 grep -q 'GetChannelEntryFor' ai/cmangos-compat-shim.h \
@@ -64,7 +77,7 @@ for id in \
     27023 27025 27045 27051 27101 27151 27152 27153 34600 \
     42985 49055 49056 49057 49058 49059 49060 49061 49062 49063 \
     49064 49065 49066 49067 49071 49383 54403 \
-    21990 21991 22044 22103 22147 22148 22521 22522 23528 23529 33312 \
+    21990 21991 22044 22103 22147 22148 22521 22522 23528 23529 30330 33312 34976 39253 39645 44452 47436 52566 \
     23827 28420 28421 30311 30312 30313 30314 30315 30316 30317 \
     30318 36889 36892 37807 37845 37864 38607 38631 39192 39193 \
     39548 39549 40582 43230 43231 43232 43233 43234 43235 47132 47904; do

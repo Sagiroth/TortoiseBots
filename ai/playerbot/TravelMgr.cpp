@@ -1155,73 +1155,6 @@ void TravelMgr::LoadAreaLevels()
     sLog.outString(">> Loaded " SIZEFMTD " area levels.", areaLevels.size());
 }
 
-void TravelMgr::SetMobAvoidArea()
-{
-    sLog.outString("-Apply mob avoidance maps");
-
-    std::vector<std::future<void>> calculations;
-
-    BarGoLink bar(sMapStore.GetNumRows());
-
-    for (uint32 i = 0; i < sMapStore.GetNumRows(); ++i)
-    {
-        if (!sMapStore.LookupEntry(i))
-            continue;
-
-        uint32 mapId = sMapStore.LookupEntry(i)->MapID;
-        calculations.push_back(std::async([this, mapId] { SetMobAvoidAreaMap(mapId); }));
-        bar.step();
-    }
-
-    BarGoLink bar2(calculations.size());
-    for (uint32 i = 0; i < calculations.size(); i++)
-    {
-        calculations[i].wait();
-        bar2.step();
-    }
-
-    sLog.outString(">> Modified navmap areas for %d maps.", sMapStore.GetNumRows());
-}
-
-void TravelMgr::SetMobAvoidAreaMap(uint32 mapId)
-{
-    PathFinder path(mapId, 0);
-    FactionTemplateEntry const* humanFaction = sFactionTemplateStore.LookupEntry(1);
-    FactionTemplateEntry const* orcFaction = sFactionTemplateStore.LookupEntry(2);
-
-    std::vector<CreatureDataPair const*> creatures = WorldPosition(mapId, 1,1).GetCreaturesNear();
-
-    for (auto& creaturePair : creatures)
-    {
-        CreatureData const cData = creaturePair->second;
-        CreatureInfo const* cInfo = sObjectMgr.GetCreatureTemplate(cData.creature_id[0]);
-
-        if (!cInfo)
-            continue;
-
-        WorldPosition point = WorldPosition(cData.position.mapId, cData.position.x, cData.position.y, cData.position.z, cData.position.orientation);
-
-        if (cInfo->npc_flags > 0)
-            continue;
-
-        FactionTemplateEntry const* factionEntry = sFactionTemplateStore.LookupEntry(cInfo->Faction);
-        ReputationRank reactionHum = PlayerbotAI::GetFactionReaction(humanFaction, factionEntry);
-        ReputationRank reactionOrc = PlayerbotAI::GetFactionReaction(orcFaction, factionEntry);
-
-        if (reactionHum >= REP_NEUTRAL || reactionOrc >= REP_NEUTRAL)
-            continue;
-
-        if (!point.GetTerrain())
-            continue;
-
-        if (!point.loadMapAndVMap(0))
-            continue;
-
-        path.setArea(point.GetMapId(), point.getX(), point.getY(), point.getZ(), 12, 50.0f);
-        path.setArea(point.GetMapId(), point.getX(), point.getY(), point.getZ(), 13, 20.0f);
-    }
-}
-
 void TravelMgr::LoadQuestTravelTable()
 {
     if (!sTravelMgr.destinationMap.empty())
@@ -1401,43 +1334,12 @@ void TravelMgr::LoadQuestTravelTable()
     sPlayerbotAIConfig.openLog("bot_events.csv", "w");
     sPlayerbotAIConfig.openLog("travel_map.csv", "w");
     sPlayerbotAIConfig.openLog("quest_map.csv", "w");
-    sPlayerbotAIConfig.openLog("activity_pid.csv", "w");
     sPlayerbotAIConfig.openLog("deaths.csv", "w");
     sPlayerbotAIConfig.openLog("player_paths.csv", "w");
     sPlayerbotAIConfig.openLog("travel_destinations.csv", "w");
     sPlayerbotAIConfig.openLog("deadzone.csv", "w");
     sPlayerbotAIConfig.openLog("bot_test_results.log", "w", true);
 
-
-    if (sPlayerbotAIConfig.hasLog("activity_pid.csv"))
-    {
-        std::ostringstream out;
-        out << "Timestamp,";
-
-        out << "sWorld.GetCurrentDiff(),";
-        out << "sWorld.GetAverageDiff(),";
-        out << "sWorld.GetMaxDiff(),";
-        out << "virtualMemUsedByMe" << ",";
-        out << "activityPercentage,";
-        out << "activityPercentageMod,";
-        out << "activeBots,";
-        out << "playerBots.size(),";
-        out << "totalLevel,";
-        out << "avarageLevel1-9,";
-        out << "avarageLevel10-19,";
-        out << "avarageLevel20-29,";
-        out << "avarageLevel30-39,";
-        out << "avarageLevel40-49,";
-        out << "avarageLevel50-59,";
-        out << "avarageLevel60,";
-
-        out << "totalGold,";
-        out << "avarageGold,";
-        out << "totalavarageGearScore,";
-        out << "avarageGearScore";
-
-        sPlayerbotAIConfig.log("activity_pid.csv", out.str().c_str());
-    }
 
     if (sPlayerbotAIConfig.generateTravelNodes)
     {
@@ -2171,6 +2073,12 @@ void TravelMgr::LoadFishLocations()
 
 void TravelMgr::GetFishLocations()
 {
+    if (!sPlayerbotAIConfig.generateFishLocations)
+    {
+        sLog.outError("TortoiseBots: fish-location generation is unavailable with the pinned core PathInfo area query; use persisted locations or direct fishing.");
+        return;
+    }
+
     sLog.outString("Generating Fish locations.");
 
     BarGoLink bar(1000);
@@ -2216,6 +2124,9 @@ void TravelMgr::GetFishLocations()
 
 void TravelMgr::GetFishLocations(uint32 mapId)
 {
+    if (!sPlayerbotAIConfig.generateFishLocations)
+        return;
+
     WorldPosition ironForge(0, -4832.27, -1069.64, 502.268);
     TravelNode* ironForgeNode = sTravelNodeMap.GetNode(ironForge);
     WorldPosition orgrimmar(1, 1845.49, -4395.95, 5.19264);

@@ -36,7 +36,7 @@ namespace ai
             }
 
             // do not use with WSG flag
-            return !ai->HasAura(23333, bot) && !ai->HasAura(23335, bot) && !ai->HasAura(34976, bot);
+            return !ai->HasAura(23333, bot) && !ai->HasAura(23335, bot);
         }
 
         virtual bool Execute(Event& event)
@@ -137,7 +137,7 @@ namespace ai
         virtual bool isUseful()
         {
             // do not use with WSG flag or EYE flag
-            return !ai->HasAura(23333, bot) && !ai->HasAura(23335, bot) && !ai->HasAura(34976, bot);
+            return !ai->HasAura(23333, bot) && !ai->HasAura(23335, bot);
         }
 
         virtual bool Execute(Event& event)

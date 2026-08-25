@@ -289,9 +289,17 @@ void RandomBotFacade::LoadAuctionPrices()
         auto bounds = auctionHouse->GetAuctionsBounds_locked();
         for (auto it = bounds.first; it != bounds.second; ++it)
         {
-            if (!it->second || !it->second->buyout || !it->second->itemCount)
+            if (!it->second || !it->second->buyout)
                 continue;
-            ahMirror[it->second->itemTemplate].push_back(*it->second);
+
+            Item* item = sAuctionMgr.GetAItem(it->second->itemGuidLow);
+            if (!item || !item->GetCount())
+                continue;
+
+            AuctionEntry snapshot = *it->second;
+            snapshot.itemCount = item->GetCount();
+            snapshot.itemRandomPropertyId = item->GetItemRandomPropertyId();
+            ahMirror[snapshot.itemTemplate].push_back(snapshot);
         }
     }
 }

@@ -126,10 +126,10 @@ class ServerFacade
         bool isInFront(Unit *unit, WorldObject const* target, float distance,  float arc /*= M_PI_F*/)
         {
 #ifdef MANGOS
-            return unit->HasInArc(target, M_PI_F / 2); // isInFront stub
+            return unit && target && unit->IsWithinDistInMap(target, distance, false) && unit->HasInArc(target, arc);
 #endif
 #ifdef CMANGOS
-            return unit->HasInArc(target, M_PI_F / 2); // isInFront stub
+            return unit && target && unit->IsWithinDistInMap(target, distance, false) && unit->HasInArc(target, arc);
 #endif
         }
 

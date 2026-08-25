@@ -181,7 +181,7 @@ void PlayerbotFactory::Randomize(bool incremental, bool syncWithMaster)
         }
 
         InitQuests(specialQuestIds);
-        bot->learnQuestRewardedSpells();
+        bot->LearnQuestRewardedSpells();
 
         // clear inventory and set level after getting xp and quest rewards
         ClearInventory();
@@ -522,7 +522,6 @@ void PlayerbotFactory::InitPet()
             pet->InitPetCreateSpells();
             pet->LearnPetPassives();
             pet->CastPetAuras(true);
-            pet->CastOwnerTalentAuras();
             pet->UpdateAllStats();
             bot->SetPet(pet);
             bot->SetPetGuid(pet->getObjectGuid());
@@ -1360,9 +1359,8 @@ void PlayerbotFactory::ClearSkills()
 
 void PlayerbotFactory::ClearSpells()
 {
-#ifdef MANGOS
     std::list<uint32> spells;
-    for(PlayerSpellMap::iterator itr = bot->GetSpellMap().begin(); itr != bot->GetSpellMap().end(); ++itr)
+    for (PlayerSpellMap::const_iterator itr = bot->GetSpellMap().begin(); itr != bot->GetSpellMap().end(); ++itr)
     {
         uint32 spellId = itr->first;
 		if (itr->second.state == PLAYERSPELL_REMOVED || itr->second.disabled || IsPassiveSpell(spellId))
@@ -1371,14 +1369,8 @@ void PlayerbotFactory::ClearSpells()
         spells.push_back(spellId);
     }
 
-    for (std::list<uint32>::iterator i = spells.begin(); i != spells.end(); ++i)
-    {
-        bot->removeSpell(*i, false, false);
-    }
-#endif
-#ifdef CMANGOS
-    bot->resetSpells();
-#endif
+    for (uint32 spellId : spells)
+        bot->RemoveSpell(spellId, false, false);
 }
 
 void PlayerbotFactory::ResetQuests()
@@ -2872,11 +2864,134 @@ void PlayerbotFactory::SetRandomSkill(uint16 id)
         bot->SetSkill(id, value, maxValue);
 }
 
+void PlayerbotFactory::InitClassLevelSpells()
+{
+    ChrClassesEntry const* classEntry = sChrClassesStore.LookupEntry(bot->GetClass());
+    if (!classEntry)
+        return;
+
+    // The legacy Player::learnClassLevelSpells helper is compiled only for
+    // the old vendored PlayerBots target and is intentionally a no-op in the
+    // optional Tortoise core. Port its behavior here, using the core's live
+    // quest, trainer, spell, talent, and class/race APIs instead of restoring
+    // a PlayerBots-specific core dependency.
+    for (auto const& questEntry : sObjectMgr.GetQuestTemplates())
+    {
+        Quest const* quest = questEntry.second.get();
+        if (!quest || !quest->GetRequiredClasses() ||
+            !bot->SatisfyQuestClass(quest, false) ||
+            !bot->SatisfyQuestRace(quest, false) ||
+            !bot->SatisfyQuestLevel(quest, false))
+            continue;
+
+        // This is the factory's level-60 initialization path, so include
+        // high-level class quest rewards as the mature implementation does.
+        bot->LearnQuestRewardedSpells(quest);
+    }
+
+    std::set<std::pair<bool, uint32>> processedTrainers;
+    auto learnTrainerSpells = [this, classFamily = classEntry->spellfamily](TrainerSpellData const* trainerSpells)
+    {
+        if (!trainerSpells)
+            return;
+
+        for (auto const& spellEntry : trainerSpells->spellList)
+        {
+            TrainerSpell const* trainerSpell = &spellEntry.second;
+            SpellEntry const* teachingSpell = sServerFacade.LookupSpellInfo(trainerSpell->spell);
+            if (!teachingSpell || teachingSpell->Effect[0] != SPELL_EFFECT_LEARN_SPELL)
+                continue;
+
+            uint32 learnedSpellId = teachingSpell->EffectTriggerSpell[0];
+            SpellEntry const* learnedSpell = sServerFacade.LookupSpellInfo(learnedSpellId);
+            if (!learnedSpell)
+                continue;
+
+            uint32 reqLevel = 0;
+            if (!bot->IsSpellFitByClassAndRace(learnedSpellId, &reqLevel))
+                continue;
+
+            TrainerSpellState state = bot->GetTrainerSpellState(trainerSpell, reqLevel);
+            // A first-rank talent can appear in trainer data for a class that
+            // already owns that talent spell; preserve the donor behavior that
+            // allows the valid rank to be initialized without accepting other
+            // red trainer entries.
+            uint32 firstRank = sSpellMgr.GetFirstSpellInChain(learnedSpellId);
+            bool validTalent = GetTalentSpellCost(firstRank) && bot->HasSpell(firstRank) &&
+                reqLevel <= bot->GetLevel();
+
+            if (state != TRAINER_SPELL_GREEN && !validTalent)
+                continue;
+
+            if (teachingSpell->SpellFamilyName != classFamily)
+            {
+                SkillLineAbilityMapBounds bounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySpellId(learnedSpellId);
+                if (bounds.first == bounds.second)
+                    continue;
+
+                SkillLineAbilityEntry const* skillInfo = bounds.first->second;
+                if (!skillInfo)
+                    continue;
+
+                switch (skillInfo->skillId)
+                {
+                case SKILL_SUBTLETY:
+                case SKILL_BEAST_MASTERY:
+                case SKILL_SURVIVAL:
+                case SKILL_DEFENSE:
+                case SKILL_DUAL_WIELD:
+                case SKILL_FERAL_COMBAT:
+                case SKILL_PROTECTION:
+                case SKILL_PLATE_MAIL:
+                case SKILL_DEMONOLOGY:
+                case SKILL_ENHANCEMENT:
+                case SKILL_MAIL:
+                case SKILL_HOLY2:
+                case SKILL_LOCKPICKING:
+                    break;
+                default:
+                    continue;
+                }
+            }
+
+            if (!bot->IsSpellFitByClassAndRace(learnedSpellId) ||
+                !SpellMgr::IsSpellValid(teachingSpell, bot, false))
+                continue;
+
+            for (uint32 effect = 0; effect < MAX_EFFECT_INDEX; ++effect)
+            {
+                if (teachingSpell->Effect[effect] != SPELL_EFFECT_LEARN_SPELL ||
+                    !teachingSpell->EffectTriggerSpell[effect])
+                    continue;
+
+                bot->LearnSpell(teachingSpell->EffectTriggerSpell[effect], false);
+            }
+        }
+    };
+
+    for (auto const& creatureEntry : sObjectMgr.GetCreatureInfoMap())
+    {
+        CreatureInfo const* creature = creatureEntry.second.get();
+        if (!creature || creature->TrainerType != TRAINER_TYPE_CLASS ||
+            creature->TrainerClass != bot->GetClass())
+            continue;
+
+        if (creature->TrainerTemplateId)
+        {
+            if (processedTrainers.insert({ true, creature->TrainerTemplateId }).second)
+                learnTrainerSpells(sObjectMgr.GetNpcTrainerTemplateSpells(creature->TrainerTemplateId));
+        }
+
+        if (processedTrainers.insert({ false, creature->Entry }).second)
+            learnTrainerSpells(sObjectMgr.GetNpcTrainerSpells(creature->Entry));
+    }
+}
+
 void PlayerbotFactory::InitAvailableSpells()
 {
     auto pmo = sPerformanceMonitor.start(PERF_MON_RNDBOT, "PlayerbotFactory_Spells1");
-    bot->learnDefaultSpells();
-    bot->learnClassLevelSpells(true);
+    bot->LearnDefaultSpells();
+    InitClassLevelSpells();
 
     if (bot->GetClass() == CLASS_PALADIN)
     {

@@ -188,14 +188,15 @@ ChatHelper::ChatHelper(PlayerbotAI* ai) : PlayerbotAIAware(ai)
     specs[CLASS_WARRIOR][2] = "protection";
 
 
-    races[RACE_DWARF] = "Dwarf";
-    races[RACE_GNOME] = "Gnome";
-    races[RACE_HUMAN] = "Human";
-    races[RACE_NIGHTELF] = "Night Elf";
-    races[RACE_ORC] = "Orc";
-    races[RACE_TAUREN] = "Tauren";
-    races[RACE_TROLL] = "Troll";
-    races[RACE_UNDEAD] = "Undead";
+    // Race names are client DBC data, not a second module-owned table. This
+    // keeps Turtle's Goblin/High Elf names and any future core-defined race
+    // available to both parsing and formatting without expansion branches.
+    for (uint32 id = 0; id < sChrRacesStore.GetNumRows(); ++id)
+    {
+        ChrRacesEntry const* race = sChrRacesStore.LookupEntry(id);
+        if (race && race->name[LOCALE_enUS])
+            races[race->RaceID] = race->name[LOCALE_enUS];
+    }
 }
 
 std::string ChatHelper::formatMoney(uint32 copper)
@@ -423,7 +424,12 @@ std::string ChatHelper::formatQuest(Quest const* quest)
     std::ostringstream out;
     int loc_idx = sPlayerbotTextMgr.GetLocalePriority();
     std::string title = quest->GetTitle();
-    sObjectMgr.GetQuestLocaleStrings(quest->GetQuestId(), loc_idx, &title);
+    if (loc_idx >= 0)
+    {
+        if (QuestLocale const* locale = sObjectMgr.GetQuestLocale(quest->GetQuestId()))
+            if (static_cast<size_t>(loc_idx) < locale->Title.size() && !locale->Title[loc_idx].empty())
+                title = locale->Title[loc_idx];
+    }
     out << "|cFFFFFF00|Hquest:" << quest->GetQuestId() << ':' << quest->GetQuestLevel() << "|h[" << title << "]|h|r";
     return out.str();
 }
@@ -499,12 +505,9 @@ std::string ChatHelper::formatWorldEntry(int32 entry)
     }
     if (loc_idx >= 0 && entry > 0)
     {
-        char const* tname = "";
-        sObjectMgr.GetCreatureLocaleStrings(entry, loc_idx, &tname);
-        if (*tname)
-        {
-            name = *tname;
-        }
+        if (CreatureLocale const* locale = sObjectMgr.GetCreatureLocale(entry))
+            if (static_cast<size_t>(loc_idx) < locale->Name.size() && !locale->Name[loc_idx].empty())
+                name = locale->Name[loc_idx];
     }
 
     out << name;
@@ -531,10 +534,9 @@ std::string ChatHelper::formatItem(ItemQualifier& itemQualifier, int count, int 
     std::string name = proto->Name1;
     if (loc_idx >= 0)
     {
-        std::string tname;
-        sObjectMgr.GetItemLocaleStrings(itemQualifier.GetId(), loc_idx, &tname);
-        if (!tname.empty())
-            name = tname;
+        if (ItemLocale const* locale = sObjectMgr.GetItemLocale(itemQualifier.GetId()))
+            if (static_cast<size_t>(loc_idx) < locale->Name.size() && !locale->Name[loc_idx].empty())
+                name = locale->Name[loc_idx];
     }
 
     if (itemQualifier.GetRandomPropertyId())

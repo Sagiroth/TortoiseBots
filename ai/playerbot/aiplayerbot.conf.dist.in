@@ -387,14 +387,16 @@ AiPlayerbot.AutoLearnDroppedSpells = 0
 
 # Generate and persist the full TravelNode/navmesh cache at AI startup.
 # This can load every map and perform a large database rebuild. Leave disabled
-# unless a precomputed travel graph is intentionally being generated offline.
+# unless a core path-filter implementation is available; the pinned Tortoise
+# core currently disables this option and uses direct movement instead.
 # Default: 0 (disabled)
 # AiPlayerbot.GenerateTravelNodes = 1
 
 # Generate and persist fish-location points when no FISH_LOCATION rows exist.
 # This scans populated grids and writes a potentially large cache to World.
 # Leave disabled for normal startup; deploy a precomputed named-location cache
-# or enable only for an intentional offline rebuild.
+# or enable only after the core supplies terrain-area queries; the pinned
+# Tortoise core currently disables this option and uses direct fishing.
 # Default: 0 (disabled)
 # AiPlayerbot.GenerateFishLocations = 1
 

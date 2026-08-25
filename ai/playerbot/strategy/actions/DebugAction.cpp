@@ -1015,7 +1015,7 @@ void DebugAction::FakeSpell(uint32 spellId, Unit* truecaster, Unit* caster, Obje
     {
         uint32 castFlags = CAST_FLAG_UNKNOWN2;
 
-        if (spellInfo && spellInfo->HasAttribute(SPELL_ATTR_USES_RANGED_SLOT))
+        if (spellInfo && (spellInfo->Attributes & SPELL_ATTR_USES_RANGED_SLOT))
             castFlags |= CAST_FLAG_AMMO;                        // arrows/bullets visual
 
         WorldPacket data(SMSG_SPELL_START, (8 + 8 + 4 + 2 + 4));
@@ -1052,7 +1052,7 @@ void DebugAction::FakeSpell(uint32 spellId, Unit* truecaster, Unit* caster, Obje
 
 
 
-        if (spellInfo && spellInfo->HasAttribute(SPELL_ATTR_USES_RANGED_SLOT))
+        if (spellInfo && (spellInfo->Attributes & SPELL_ATTR_USES_RANGED_SLOT))
             castFlags |= CAST_FLAG_AMMO;                        // arrows/bullets visual
         WorldPacket data(SMSG_SPELL_GO, 53);                    // guess size
 
@@ -1153,39 +1153,16 @@ void DebugAction::addAura(uint32 spellId, Unit* target)
 
 bool DebugAction::HandleAvoidScan(Event& event, Player* requester, const std::string& text)
 {
-    PathFinder path(requester);
-    for (float x = -100.0f; x < 100.0f; x += 2.0f)
-        for (float y = -100.0f; y < 100.0f; y += 2.0f)
-        {
-            WorldPosition p(requester);
-            p.setX(p.getX() + x);
-            p.setY(p.getY() + y);
-            p.setZ(p.GetHeight(bot->GetInstanceId()));
-            Creature* wpCreature = requester->SummonCreature(2334, p.getX(), p.getY(), p.getZ(), 0.0, TEMPSPAWN_TIMED_DESPAWN, 20000.0f);
-            if(path.GetArea(p.GetMapId(), p.getX(), p.getY(), p.getZ()) == 12)
-                ai->AddAura(wpCreature, 246);
-            if (path.GetArea(p.GetMapId(), p.getX(), p.getY(), p.getZ()) == 13)
-                ai->AddAura(wpCreature, 1130);
-        }
-    return true;
+    ai->TellError(requester, "Avoidance scan is unavailable: the pinned Tortoise core does not expose nav area queries.",
+        PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true);
+    return false;
 }
 
 bool DebugAction::HandleAvoidAdd(Event& event, Player* requester, const std::string& text)
 {
-    PathFinder pathfinder(bot);
-    WorldPosition point(requester);
-    uint32 area, radius;
-    std::vector<std::string> args = { "12", "5" };
-    if (text.length() > std::string("avoid add").size())
-    {
-        args = ChatHelper::splitString(text.substr(std::string("avoid add").size() + 1), " ");
-        if (args.size() == 1)
-            args.push_back("5");
-    }
-    area = stoi(args[0]);
-    radius = stoi(args[1]);
-    pathfinder.setArea(point.GetMapId(), point.getX(), point.getY(), point.getZ(), area, radius);
-    return true;
+    ai->TellError(requester, "Avoidance areas are unavailable: the pinned Tortoise core does not expose a path area filter.",
+        PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true);
+    return false;
 }
 
 bool DebugAction::HandleMount(Event& event, Player* requester, const std::string& text)
@@ -1195,8 +1172,6 @@ bool DebugAction::HandleMount(Event& event, Player* requester, const std::string
     out << (bot->IsTaxiFlying() ? ", taxi flying" : ", not taxi flying");
     out << ", mount speed: " << AI_VALUE2(uint32, "current mount speed", "self target");
     out << ", mount id: " << bot->GetMountID();
-    if(bot->GetMountInfo())
-        out << ", mount info: " << bot->GetMountInfo()->Name;
     ai->TellPlayerNoFacing(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false);
     return true;
 }
@@ -1513,13 +1488,13 @@ bool DebugAction::HandleMotion(Event& event, Player* requester, const std::strin
         else if (cmd == "follow")
             mm->MoveFollow(motionTarget, 5, 0);
         else if (cmd == "dist")
-            mm->DistanceYourself(10);
+            ai->TellError(requester, "Distance movement is not available in the Tortoise core.");
         else if (cmd == "update")
             mm->UpdateMotion(10);
         else if (cmd == "chase")
             mm->MoveChase(motionTarget, 5, 0);
         else if (cmd == "fall")
-            mm->MoveFall();
+            ai->TellError(requester, "Forced falling movement is not available in the Tortoise core.");
         else if (cmd == "formation")
             ai->TellError(requester, "Formation movement is not available in the Tortoise core.");
 
@@ -1929,39 +1904,9 @@ bool DebugAction::HandlePathable(Event& event, Player* requester, const std::str
 
 bool DebugAction::HandleRandomSpot(Event& event, Player* requester, const std::string& text)
 {
-    uint32 radius = 10;
-    if(text.length() > std::string("randomspot").size())
-        radius = stoi(text.substr(std::string("randomspot").size()+1));
-
-    WorldPosition botPos(bot);
-
-    PathFinder pathfinder(bot);
-
-    if (bot->GetTransport())
-        botPos.CalculatePassengerOffset(bot->GetTransport());
-
-    pathfinder.ComputePathToRandomPoint(botPos.GetVector3(), radius);
-    PointsArray points = pathfinder.GetPath();
-    std::vector<WorldPosition> path = botPos.fromPointsArray(points);
-
-    if (path.empty())
-        return false;
-
-    Creature* wpCreature = bot->SummonCreature(6, path.back().getX(), path.back().getY(), path.back().getZ(), 0, TEMPSPAWN_TIMED_DESPAWN, 10000.0f);
-    wpCreature->SetObjectScale(0.5f);
-
-    if (bot->GetTransport())
-        bot->GetTransport()->AddPassenger(wpCreature,true);
-
-
-    for (auto& p : path)
-    {
-        Creature* wpCreature = bot->SummonCreature(2334, p.getX(), p.getY(), p.getZ(), 0, TEMPSPAWN_TIMED_DESPAWN, 10000.0f);
-        ai->AddAura(wpCreature, 246);
-        if (bot->GetTransport())
-            bot->GetTransport()->AddPassenger(wpCreature,true);
-    }
-    return true;
+    ai->TellError(requester, "Random path points are unavailable: the pinned Tortoise core does not expose navmesh random-point generation.",
+        PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true);
+    return false;
 }
 
 bool DebugAction::HandlePrintMap(Event& event, Player* requester, const std::string& text)
@@ -5128,9 +5073,6 @@ bool DebugAction::HandleNodes(Event& event, Player* requester, const std::string
         float dist = pos.distance(*startNode->getPosition());
 
         std::unique_ptr<PathFinder> pathfinder = std::make_unique<PathFinder>(bot);
-        pathfinder->setAreaCost(NAV_AREA_WATER, 10.0f);
-        pathfinder->setAreaCost(12, 5.0f);
-        pathfinder->setAreaCost(13, 20.0f);
         pathfinder->calculate(pos.GetVector3(), startNode->getPosition()->GetVector3(), false);
 
         PointsArray points = pathfinder->GetPath();

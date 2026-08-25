@@ -299,37 +299,10 @@ bool PlayerbotAIConfig::Initialize()
     useFixedClassRaceCounts = config.GetBoolDefault("AiPlayerbot.ClassRace.UseFixedClassRaceCounts", false);
     auto isAvailableRace = [](uint8 cls, uint8 race)
     {
-        switch (cls)
-        {
-            case CLASS_WARRIOR:
-                return race == RACE_HUMAN || race == RACE_NIGHTELF || race == RACE_GNOME || race == RACE_DWARF ||
-                    race == RACE_ORC || race == RACE_UNDEAD || race == RACE_TAUREN || race == RACE_TROLL ||
-                    race == RACE_GOBLIN || race == RACE_HIGH_ELF;
-            case CLASS_PALADIN:
-                return race == RACE_HUMAN || race == RACE_DWARF || race == RACE_HIGH_ELF;
-            case CLASS_ROGUE:
-                return race == RACE_HUMAN || race == RACE_DWARF || race == RACE_NIGHTELF || race == RACE_GNOME ||
-                    race == RACE_ORC || race == RACE_UNDEAD || race == RACE_TROLL || race == RACE_GOBLIN ||
-                    race == RACE_HIGH_ELF;
-            case CLASS_PRIEST:
-                return race == RACE_HUMAN || race == RACE_DWARF || race == RACE_NIGHTELF || race == RACE_TROLL ||
-                    race == RACE_UNDEAD || race == RACE_HIGH_ELF;
-            case CLASS_MAGE:
-                return race == RACE_HUMAN || race == RACE_GNOME || race == RACE_UNDEAD || race == RACE_TROLL ||
-                    race == RACE_GOBLIN || race == RACE_HIGH_ELF;
-            case CLASS_WARLOCK:
-                return race == RACE_HUMAN || race == RACE_GNOME || race == RACE_UNDEAD || race == RACE_ORC ||
-                    race == RACE_GOBLIN;
-            case CLASS_SHAMAN:
-                return race == RACE_ORC || race == RACE_TAUREN || race == RACE_TROLL;
-            case CLASS_HUNTER:
-                return race == RACE_HUMAN || race == RACE_DWARF || race == RACE_NIGHTELF || race == RACE_ORC ||
-                    race == RACE_TAUREN || race == RACE_TROLL || race == RACE_GOBLIN || race == RACE_HIGH_ELF;
-            case CLASS_DRUID:
-                return race == RACE_NIGHTELF || race == RACE_TAUREN;
-            default:
-                return false;
-        }
+        // Character creation is the authoritative class/race contract. This
+        // includes Turtle rows such as Goblin and High Elf and avoids making
+        // the bot module maintain a second expansion-specific matrix.
+        return sObjectMgr.GetPlayerInfo(race, cls) != nullptr;
     };
 
     for (uint32 race = 1; race < MAX_RACES; ++race)
@@ -611,6 +584,12 @@ bool PlayerbotAIConfig::Initialize()
     autoDoQuests = config.GetBoolDefault("AiPlayerbot.AutoDoQuests", true);
     generateTravelNodes = config.GetBoolDefault("AiPlayerbot.GenerateTravelNodes", false);
     generateFishLocations = config.GetBoolDefault("AiPlayerbot.GenerateFishLocations", false);
+    if (generateTravelNodes || generateFishLocations)
+    {
+        sLog.outError("TortoiseBots: travel/fish cache generation is disabled because the pinned core PathInfo has no area query or avoidance filter; use persisted caches or direct movement/fishing.");
+        generateTravelNodes = false;
+        generateFishLocations = false;
+    }
     syncLevelWithPlayers = config.GetBoolDefault("AiPlayerbot.SyncLevelWithPlayers", false);
     syncLevelMaxAbove = config.GetIntDefault("AiPlayerbot.SyncLevelMaxAbove", 5);
     syncLevelNoPlayer = config.GetIntDefault("AiPlayerbot.SyncLevelNoPlayer", randombotStartingLevel);

@@ -595,7 +595,6 @@ void RpgAIChatAction::ManualChat(GuidPosition target, const std::string& line)
     {
         llmContext.clear();
         SET_GAI_VALUE2(std::string, "global string", "llmcontext manual" + std::to_string(target.GetCounter()), llmContext);
-        bot->SendMessageToPlayer("<conversation restarted>");
         return;
     }
     else if (line == "undo")
@@ -606,7 +605,6 @@ void RpgAIChatAction::ManualChat(GuidPosition target, const std::string& line)
 
         llmContext = llmContext.substr(0, std::max(lastBot,lastUnit));
         SET_GAI_VALUE2(std::string, "global string", "llmcontext manual" + std::to_string(target.GetCounter()), llmContext);
-        bot->SendMessageToPlayer("<last message remove>");
         return;
     }
     else if (line == "impersonate")

@@ -32,7 +32,7 @@ namespace ai
                     return false;
                 }
 
-                float const combatReach = bot->GetCombinedCombatReach(target, false);
+                float const combatReach = bot->GetCombatReach(target, false, 0.0f);
                 float const minDistance = ai->GetRange("spell") + combatReach;
                 float const targetDistance = sServerFacade.getDistance2d(bot, target) + combatReach;
 
@@ -108,7 +108,7 @@ namespace ai
                     return false;
                 }
 
-                float const combatReach = bot->GetCombinedCombatReach(target, false);
+                float const combatReach = bot->GetCombatReach(target, false, 0.0f);
                 float const minShootDistance = ai->GetRange("shoot") + combatReach;
                 float const targetDistance = sServerFacade.getDistance2d(bot, target) + combatReach;
 

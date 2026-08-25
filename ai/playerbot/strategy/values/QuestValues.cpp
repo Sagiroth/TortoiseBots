@@ -614,12 +614,6 @@ bool CanUseItemOn::Calculate()
     {
         case 17117:                                                                                                                 //Rat Catcher's Flute
             return guidP.IsCreature() && guidP.GetEntry() == 13016;                                                                 //Deeprun Rat
-        case 52566:                                                                                                                 //Motivate-a-Tron (currently broken?)
-            return guidP.IsCreature() && guidP.GetEntry() == 39623;                                                                 //Gnome Citizen
-        case 39253:                                                                                                                 //Gift of the Harester
-            return guidP.IsCreature() && guidP.GetEntry() == 28819;                                                                 //Scarlet Miner
-        case 39645:                                                                                                                 //Makeshift Cover
-            return guidP.IsCreature() && guidP.GetEntry() == 28936;                                                                 //Scarlet Commander
     }
 
 	if (guidP.IsUnit())

@@ -1063,10 +1063,6 @@ std::vector<WorldPosition> WorldPosition::getPathFromPath(const std::vector<Worl
     else
         pathfinder = std::make_unique<PathFinder>(getMapId(), instanceId);
 
-    pathfinder->setAreaCost(NAV_AREA_WATER, 10.0f);
-    pathfinder->setAreaCost(12, 5.0f);
-    pathfinder->setAreaCost(13, 20.0f);
-
     //Limit the pathfinding attempts
     for (uint32 i = 0; i < maxAttempt; i++)
     {
@@ -1131,7 +1127,38 @@ bool WorldPosition::ClosestCorrectPoint(float maxRange, float maxHeight, uint32 
 
 bool WorldPosition::GetReachableRandomPointOnGround(const Player* bot, const float radius, const bool randomRange)
 {
-    return getMap(bot ? bot->GetInstanceId() : getFirstInstanceId())->GetReachableRandomPointOnGround(x, y, z, radius, randomRange);
+    if (radius <= 0.0f)
+        return false;
+
+    Map* map = getMap(bot ? bot->GetInstanceId() : getFirstInstanceId());
+    if (!map)
+        return false;
+
+    WorldPosition const start = *this;
+    uint32 const attempts = 8;
+    for (uint32 attempt = 0; attempt < attempts; ++attempt)
+    {
+        float const angle = rand_norm_f() * 2.0f * M_PI_F;
+        float const distance = randomRange ? radius * rand_norm_f() : radius;
+
+        WorldPosition candidate = start;
+        candidate.x += cos(angle) * distance;
+        candidate.y += sin(angle) * distance;
+        candidate.z = map->GetHeight(candidate.x, candidate.y, start.z, true);
+
+        // The core has no navmesh random-point query. Height plus static VMap
+        // line of sight is the strongest generic terrain contract available to
+        // the module; the caller still performs ordinary core pathfinding.
+        if (!std::isfinite(candidate.z) || candidate.z <= INVALID_HEIGHT || !candidate.isValid())
+            continue;
+        if (!start.IsInStaticLineOfSight(candidate))
+            continue;
+
+        *this = candidate;
+        return true;
+    }
+
+    return false;
 }
 
 bool WorldPosition::isUnderground() const
@@ -1164,10 +1191,6 @@ std::vector<WorldPosition> WorldPosition::ComputePathToRandomPoint(const Player*
     y += range * sin(angle);
 
     std::unique_ptr<PathFinder> pathfinder = std::make_unique<PathFinder>(bot);
-
-    pathfinder->setAreaCost(NAV_AREA_WATER, 10.0f);
-    pathfinder->setAreaCost(12, 5.0f);
-    pathfinder->setAreaCost(13, 20.0f);
 
     std::vector<WorldPosition> path = getPathStepFrom(start, pathfinder, bot);
 

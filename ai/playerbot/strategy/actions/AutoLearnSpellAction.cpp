@@ -60,7 +60,7 @@ void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
 
 void AutoLearnSpellAction::LearnTrainerSpells(std::ostringstream* out)
 {
-    bot->learnDefaultSpells();
+    bot->LearnDefaultSpells();
 
     for (uint32 id = 0; id < sCreatureStorage.GetMaxEntry(); ++id)
     {

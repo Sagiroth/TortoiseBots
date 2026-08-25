@@ -211,7 +211,17 @@ void ChatReplyAction::GetAIChatPlaceholders(std::map<std::string, std::string>& 
         for (auto& gossip = pMenuBounds.first; gossip != pMenuBounds.second; gossip++)
         {
             const GossipText* gos = sObjectMgr.GetGossipText(gossip->second.text_id);
-            gossipText += " " + gos->Options->Text_0;
+            if (gos)
+            {
+                std::string text = gos->Options->Text_0;
+                if (text.empty() && gos->Options->BroadcastTextID)
+                {
+                    int locale = observer->GetSession() ? observer->GetSession()->GetSessionDbcLocale() : LOCALE_enUS;
+                    if (char const* broadcast = sObjectMgr.GetBroadcastText(gos->Options->BroadcastTextID, locale, observer->GetGender()))
+                        text = broadcast;
+                }
+                gossipText += " " + text;
+            }
         }
 
         uint32 textId = observer->GetGossipTextId(creature);
@@ -220,7 +230,16 @@ void ChatReplyAction::GetAIChatPlaceholders(std::map<std::string, std::string>& 
         {
             const GossipText* gos = sObjectMgr.GetGossipText(textId);
             if (gos)
-                gossipText += " " + gos->Options->Text_0;
+            {
+                std::string text = gos->Options->Text_0;
+                if (text.empty() && gos->Options->BroadcastTextID)
+                {
+                    int locale = observer->GetSession() ? observer->GetSession()->GetSessionDbcLocale() : LOCALE_enUS;
+                    if (char const* broadcast = sObjectMgr.GetBroadcastText(gos->Options->BroadcastTextID, locale, observer->GetGender()))
+                        text = broadcast;
+                }
+                gossipText += " " + text;
+            }
         }
 
         for (auto& gossip = pMenuItemBounds.first; gossip != pMenuItemBounds.second; gossip++)

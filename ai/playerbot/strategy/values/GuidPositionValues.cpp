@@ -234,12 +234,9 @@ std::list<GuidPosition> GoTrappedFilterValue::Calculate()
         {
             if (!guid.GetGameObjectInfo()->GetLinkedGameObjectEntry())
                 result.push_back(guid);
-            else
-            {
-                GameObject* go = guid.GetGameObject(bot->GetInstanceId());
-                if (go && !go->GetLinkedTrap())
-                    result.push_back(guid);
-            }
+            // The pinned core exposes the linked template entry but not the
+            // linked trap instance. Fail closed rather than treating every
+            // linked object as usable while its trap may still be present.
         }
     }
 

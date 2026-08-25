@@ -81,6 +81,7 @@ private:
     void SetRandomSkill(uint16 id);
     void InitReputations();
     void InitSpells();
+    void InitClassLevelSpells();
     void ClearSpells();
     void ClearSkills();
     bool InitLevelOne();

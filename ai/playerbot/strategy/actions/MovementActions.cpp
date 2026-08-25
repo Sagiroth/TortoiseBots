@@ -2052,7 +2052,7 @@ bool SetBehindTargetAction::Execute(Event& event)
 
     float angle = GetFollowAngle() / 3 + target->getOrientation() + M_PI / 2.0f;
 
-    float distance = bot->GetCombinedCombatReach(target, true) * 0.8f;
+    float distance = bot->GetCombatReach(target, true, 0.0f) * 0.8f;
     float x = target->getPositionX() + cos(target->getOrientation()) * -1.0f * distance,
         y = target->getPositionY() + sin(target->getOrientation()) * -1.0f * distance,
         z = target->getPositionZ();
@@ -2084,7 +2084,7 @@ bool SetBehindTargetAction::isUseful()
         return false;
 
     Unit* target = AI_VALUE(Unit*, "current target");
-    if (target && !bot->IsFacingTargetsBack(target))
+    if (target && !bot->IsBehindTarget(target, false))
     {
         // Don't move behind if the target is too far away
         const float distance = bot->getDistance(target, false);
@@ -2130,12 +2130,10 @@ bool MoveOutOfCollisionAction::Execute(Event& event)
     uint32 tries = 1;
     for (; tries < 10; ++tries)
     {
-        gx = botPos.getX();
-        gy = botPos.getY();
-        gz = botPos.getZ();
-        if (bot->GetMap()->GetReachableRandomPointOnGround(gx, gy, gz, ai->GetRange("follow")))
+        WorldPosition randomPoint = botPos;
+        if (randomPoint.GetReachableRandomPointOnGround(bot, ai->GetRange("follow")))
         {
-            return MoveTo(bot->GetMapId(), gx, gy, gz);
+            return MoveTo(bot->GetMapId(), randomPoint.getX(), randomPoint.getY(), randomPoint.getZ());
         }
     }
 
@@ -2281,9 +2279,8 @@ bool JumpAction::Execute(ai::Event &event)
             if (!followTarget || !ai->IsSafe(followTarget))
                 return false;
 
-            if ((bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE ||
-            bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE) &&
-            (bot->GetMotionMaster()->GetCurrent()->GetCurrentTarget() != followTarget ||
+            if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE &&
+            (sServerFacade.GetChaseTarget(bot) != followTarget ||
             /*bot->InBattleGround() ||*/
             bot->GetTransport()))
                 return false;
@@ -2311,9 +2308,8 @@ bool JumpAction::Execute(ai::Event &event)
             if (!chaseTarget || !ai->IsSafe(chaseTarget))
                 return false;
 
-            if ((bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE ||
-            bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE) &&
-            (bot->GetMotionMaster()->GetCurrent()->GetCurrentTarget() != chaseTarget ||
+            if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE &&
+            (sServerFacade.GetChaseTarget(bot) != chaseTarget ||
             /*bot->InBattleGround() ||*/
             bot->GetTransport()))
                 return false;
@@ -3091,12 +3087,14 @@ WorldPosition JumpAction::GetPossibleJumpStartForInRange(const WorldPosition& sr
     uint32 startTime = WorldTimer::getMSTime();
     for (; tries < 500; ++tries)
     {
-        gx = src.getX();
-        gy = src.getY();
-        gz = src.getZ();
-        if (jumper->GetMap()->GetReachableRandomPointOnGround(gx, gy, gz, distanceTo))
+        WorldPosition randomPoint = src;
+        Player const* jumperPlayer = jumper && jumper->IsPlayer() ? static_cast<Player const*>(jumper) : nullptr;
+        if (randomPoint.GetReachableRandomPointOnGround(jumperPlayer, distanceTo))
         {
-            WorldPosition p(jumper->GetMapId(), gx, gy, gz);
+            WorldPosition p = randomPoint;
+            gx = p.getX();
+            gy = p.getY();
+            gz = p.getZ();
             ++attempts;
             if (attempts >= 100)
                 break;

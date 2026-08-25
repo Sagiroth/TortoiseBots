@@ -5130,8 +5130,9 @@ void PlayerbotAI::DurabilityLoss(Item* item, double percent)
 
 bool IsAlliance(uint8 race)
 {
-    return race == RACE_HUMAN || race == RACE_DWARF || race == RACE_NIGHTELF ||
-           race == RACE_GNOME;
+    // The core owns race faction data, including Turtle's Goblin/High Elf
+    // rows. Do not duplicate the classic eight-race table here.
+    return Player::TeamForRace(race) == ALLIANCE;
 }
 
 uint32 PlayerbotAI::GetFixedBotNumber(BotTypeNumber typeNumber, uint32 maxNum, float cyclePerMin, bool ignoreGuid)
@@ -5596,7 +5597,7 @@ bool PlayerbotAI::IsOpposing(Player* player)
 
 bool PlayerbotAI::IsOpposing(uint8 race1, uint8 race2)
 {
-    return (IsAlliance(race1) && !IsAlliance(race2)) || (!IsAlliance(race1) && IsAlliance(race2));
+    return Player::TeamForRace(race1) != Player::TeamForRace(race2);
 }
 
 void PlayerbotAI::RemoveShapeshift()

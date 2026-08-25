@@ -27,6 +27,8 @@
 #include <chrono>
 #include <random>
 #include <vector>
+#include <algorithm>
+#include <limits>
 
 // === Type renames ===
 // Mature strategy code uses GenericTransport for the core's ordinary
@@ -122,19 +124,53 @@ struct CmangosSpellTemplateProxy
 inline CmangosSpellTemplateProxy sSpellTemplate;
 
 // Singleton-like wrapper for cmangos's sItemStorage. Forwards to sObjectMgr.GetItemPrototype().
-// Iteration-upper-bound stubs (this proxy + CmangosCreatureStorageProxy,
-// CmangosGOStorageProxy, CmangosFactionStoreProxy, CmangosAreaTriggerStoreProxy
-// below): cmangos's stores expose GetMaxEntry/GetNumRows; Penqle's don't have
-// a tight maximum. The bot module only uses these as upper bounds for
-// `for (i=0; i<max; ++i) LookupEntry(i)` scans where LookupEntry returns
-// nullptr for unknown ids — so a generous overestimate is safe (a few thousand
-// wasted lookups during one-shot init). Bump if a future caller actually
-// depends on a tight bound.
+// CMaNGOS' stores expose a one-past-the-largest-ID GetMaxEntry(). Some of the
+// Tortoise stores are sparse maps instead, so a fixed donor-era bound is not
+// safe: Turtle custom entries are well above the classic ranges. Cache the
+// derived upper bound while the loaded store has the same size. These stores
+// are loaded before the bot module and are not mutated by the bot update loop;
+// a reload that changes the number of records naturally refreshes the bound.
+template<typename Store>
+class CmangosMapUpperBoundCache
+{
+public:
+    uint32 Get(Store const& store) const
+    {
+        size_t const size = store.size();
+        if (size != m_size)
+        {
+            uint32 upperBound = 0;
+            for (auto const& entry : store)
+            {
+                if (entry.first == std::numeric_limits<uint32>::max())
+                {
+                    upperBound = entry.first;
+                    break;
+                }
+
+                upperBound = std::max(upperBound, entry.first + 1);
+            }
+
+            m_size = size;
+            m_upperBound = upperBound;
+        }
+
+        return m_upperBound;
+    }
+
+private:
+    mutable size_t m_size = std::numeric_limits<size_t>::max();
+    mutable uint32 m_upperBound = 0;
+};
+
 struct CmangosItemStorageProxy
 {
     template<typename T = ItemPrototype>
     T const* LookupEntry(uint32 id) const { return sObjectMgr.GetItemPrototype(id); }
-    uint32 GetMaxEntry() const { return 100000; }
+    uint32 GetMaxEntry() const { return m_upperBound.Get(sObjectMgr.GetItemPrototypeMap()); }
+
+private:
+    mutable CmangosMapUpperBoundCache<ItemPrototypeMap> m_upperBound;
 };
 inline CmangosItemStorageProxy sItemStorage;
 
@@ -154,7 +190,10 @@ struct CmangosFactionTemplateStoreProxy
 {
     template<typename T = FactionTemplateEntry>
     T const* LookupEntry(uint32 id) const { return sObjectMgr.GetFactionTemplateEntry(id); }
-    uint32 GetNumRows() const { return 1500; } // upper bound stub
+    uint32 GetNumRows() const { return m_upperBound.Get(sObjectMgr.GetFactionTemplateMap()); }
+
+private:
+    mutable CmangosMapUpperBoundCache<FactionTemplatesMap> m_upperBound;
 };
 inline CmangosFactionTemplateStoreProxy sFactionTemplateStore;
 
@@ -232,7 +271,10 @@ struct CmangosFactionStoreProxy
 {
     template<typename T = FactionEntry>
     T const* LookupEntry(uint32 id) const { return sObjectMgr.GetFactionEntry(id); }
-    uint32 GetNumRows() const { return 100; } // stub upper-bound
+    uint32 GetNumRows() const { return m_upperBound.Get(sObjectMgr.GetFactionMap()); }
+
+private:
+    mutable CmangosMapUpperBoundCache<FactionsMap> m_upperBound;
 };
 inline CmangosFactionStoreProxy sFactionStore;
 
@@ -241,7 +283,10 @@ struct CmangosCreatureStorageProxy
 {
     template<typename T = CreatureInfo>
     T const* LookupEntry(uint32 id) const { return sObjectMgr.GetCreatureTemplate(id); }
-    uint32 GetMaxEntry() const { return 100000; }
+    uint32 GetMaxEntry() const { return m_upperBound.Get(sObjectMgr.GetCreatureInfoMap()); }
+
+private:
+    mutable CmangosMapUpperBoundCache<CreatureInfoMap> m_upperBound;
 };
 inline CmangosCreatureStorageProxy sCreatureStorage;
 
@@ -390,7 +435,10 @@ struct CmangosAreaTriggerStoreProxy
 {
     template<typename T = AreaTriggerEntry>
     T const* LookupEntry(uint32 id) const { return sObjectMgr.GetAreaTrigger(id); }
-    uint32 GetNumRows() const { return 10000; } // upper bound stub
+    uint32 GetNumRows() const { return m_upperBound.Get(sObjectMgr.GetAreaTriggersMap()); }
+
+private:
+    mutable CmangosMapUpperBoundCache<ObjectMgr::AreaTriggerMap> m_upperBound;
 };
 inline CmangosAreaTriggerStoreProxy sAreaTriggerStore;
 
@@ -644,7 +692,7 @@ struct CmangosGOStorageProxy
 {
     template<typename T = GameObjectInfo>
     T const* LookupEntry(uint32 id) const { return sObjectMgr.GetGameObjectInfo(id); }
-    uint32 GetMaxEntry() const { return 200000; }
+    uint32 GetMaxEntry() const { return sObjectMgr.GetMaxGameObjectInfoEntry() + 1; }
 };
 inline CmangosGOStorageProxy sGOStorage;
 

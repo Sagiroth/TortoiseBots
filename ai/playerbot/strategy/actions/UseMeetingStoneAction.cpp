@@ -224,7 +224,7 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
 
                 if (player->IsTaxiFlying())
                 {
-                    player->TaxiFlightInterrupt();
+                    player->OnTaxiFlightEject(true);
                     player->GetMotionMaster()->MovementExpired();
                 }
 

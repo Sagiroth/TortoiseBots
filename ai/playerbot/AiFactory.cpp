@@ -269,7 +269,9 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
     int tab = GetPlayerSpecTab(player);
 
     combatEngine->addStrategies("mount", NULL);
-    combatEngine->addStrategy("avoid mobs");
+    // The pinned Tortoise PathInfo exposes no area-cost/avoidance filter. Do
+    // not install the mature AvoidMobs strategy whose setArea() calls would
+    // otherwise report success while changing no path state.
 
     // A battleground is precisely where "pvp" is needed: it is the strategy
     // whose "enemy player near" trigger lets the bot take an enemy player as a
@@ -855,7 +857,8 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
     }
 
     nonCombatEngine->addStrategies("wbuff", NULL);
-    nonCombatEngine->addStrategy("avoid mobs");
+    // Mob avoidance remains disabled until the core supplies a real path
+    // filter; see SetAvoidAreaAction and the audit's core follow-up.
 
     if(sPlayerbotAIConfig.llmEnabled == 2)
         nonCombatEngine->addStrategy("ai chat");

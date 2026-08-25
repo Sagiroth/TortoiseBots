@@ -385,7 +385,7 @@ bool BGTactics::CheckFlagAv()
         if (!sServerFacade.isSpawned(go) || go->IsInUse() || go->GetGoState() != GO_STATE_READY)
             continue;
 
-        if (!true /*CanInteract stub*/)
+        if (!bot->CanInteract(go))
             continue;
 
         if (!bot->IsWithinDistInMap(go, INTERACTION_DISTANCE))

@@ -5,6 +5,18 @@
 
 using namespace ai;
 
+namespace
+{
+bool CanInterruptCurrentSpell(Spell const* spell)
+{
+    // The core has no CanBeInterrupted() helper, but its spell state is the
+    // same lifecycle contract used by the mature implementation: preparing,
+    // casting, and delayed spells can still be interrupted. Finished/idle
+    // spells are not current interrupt targets.
+    return spell && spell->getState() <= SPELL_STATE_DELAYED;
+}
+}
+
 CastSpellAction::CastSpellAction(PlayerbotAI* ai, std::string spell)
 : Action(ai, spell)
 , range(ai->GetRange("spell"))
@@ -411,7 +423,7 @@ bool InterruptCurrentSpellAction::isUseful()
     for (int type = CURRENT_MELEE_SPELL; type < CURRENT_CHANNELED_SPELL; type++)
     {
         Spell* currentSpell = bot->GetCurrentSpell((CurrentSpellTypes)type);
-        if (currentSpell && currentSpell->CanBeInterrupted())
+        if (CanInterruptCurrentSpell(currentSpell))
             return true;
     }
     return false;
@@ -423,7 +435,7 @@ bool InterruptCurrentSpellAction::Execute(Event& event)
     for (int type = CURRENT_MELEE_SPELL; type < CURRENT_CHANNELED_SPELL; type++)
     {
         Spell* currentSpell = bot->GetCurrentSpell((CurrentSpellTypes)type);
-        if (currentSpell && currentSpell->CanBeInterrupted())
+        if (CanInterruptCurrentSpell(currentSpell))
         {
             bot->InterruptSpell((CurrentSpellTypes)type);
             ai->SpellInterrupted(currentSpell->m_spellInfo->Id);

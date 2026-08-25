@@ -432,7 +432,7 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
         const Creature* creature = dynamic_cast<Creature*>(target);
         if (creature)
         {
-            if (creature->GetCombatManager().IsInEvadeMode())
+            if (creature->IsInEvadeMode())
             {
                 return false;
             }

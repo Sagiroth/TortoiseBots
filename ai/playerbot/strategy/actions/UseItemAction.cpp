@@ -36,7 +36,7 @@ SpellCastResult BotUseItemSpell::ForceSpellStart(SpellCastTargets const* targets
     //
     // Fix: drop the manual SpellEvent queue. Let `prepare()` be the sole
     // owner of the Spell + SpellEvent lifecycle. The `m_targets` assignment
-    // is kept BEFORE PreCastCheck because lock-check / reagent-check read
+    // is kept BEFORE the pre-cast check because lock-check / reagent-check read
     // m_targets. On the failure path we must `Delete()` ourselves since no
     // SpellEvent owns this Spell yet.
     m_targets = *targets;
@@ -44,7 +44,11 @@ SpellCastResult BotUseItemSpell::ForceSpellStart(SpellCastTargets const* targets
     if (triggeredByAura)
         m_triggeredByAuraSpell = triggeredByAura->GetSpellProto();
 
-    SpellCastResult result = PreCastCheck();
+    // The pinned core exposes its real pre-cast validation publicly as
+    // CheckCast(). The inherited PreCastCheck compatibility method is a
+    // donor-only always-success stub and would let invalid item casts reach
+    // prepare() before the core rejected them a tick later.
+    SpellCastResult result = CheckCast(true);
     bool failed = result != SPELL_CAST_OK;
     if (result == SPELL_FAILED_BAD_TARGETS && OpenLockCheck())
     {

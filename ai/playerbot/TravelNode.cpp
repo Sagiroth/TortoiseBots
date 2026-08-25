@@ -2972,55 +2972,13 @@ void TravelNodeMap::calculatePathCosts()
 
 void TravelNodeMap::generatePaths(bool helpers)
 {
-    sTravelMgr.SetMobAvoidArea();
-
-    sLog.outString("-Calculating walkable paths");
-    generateWalkPaths();
-
-    if (helpers)
-    {
-        sLog.outString("-Generating helper nodes");
-        generateHelperNodes();
-    }
-
-    sLog.outString("-Removing useless nodes");
-    removeLowNodes();
-    sLog.outString("-Removing useless paths");
-    removeUselessPaths();
-
-    printMap();
-
-    sLog.outString("-Calculating path costs");
-    calculatePathCosts();
-    sLog.outString("-Generating taxi paths");
-    generateTaxiPaths();
+    (void)helpers;
+    sLog.outError("TortoiseBots: travel-node generation is unavailable with the pinned core PathInfo area filter; use persisted nodes or direct movement.");
 }
 
 void TravelNodeMap::generateAll()
 {
-    if (hasToGen || hasToFullGen)
-        LoadMaps();
-
-    if (hasToFullGen)
-        generateNodes();
-
-    sLog.outString("-Calculating mapoffset");
-    calcMapOffset();
-
-    sLog.outString("-Generating maptransfers");
-    sTravelMgr.LoadMapTransfers();
-
-    if (hasToGen || hasToFullGen)
-    {
-        generatePaths(false);
-        hasToGen = false;
-        hasToFullGen = false;
-        hasToSave = true;
-    }
-
-    sLog.outString("-Calculating coverage"); //This prevents crashes when bots from multiple maps try to calculate this on the fly.
-    for (auto& node : getNodes())
-        node->hasRouteTo(node);
+    sLog.outError("TortoiseBots: travel-node generation is unavailable with the pinned core PathInfo area filter; use persisted nodes or direct movement.");
 }
 
 void TravelNodeMap::printMap()
@@ -3545,10 +3503,6 @@ TravelNodeMap::PathFindResult TravelNodeMap::testPathToLoop(const WorldPosition&
     }
 
     std::unique_ptr<PathFinder> pathfinder = std::make_unique<PathFinder>(bot);
-
-    pathfinder->setAreaCost(NAV_AREA_WATER, 10.0f);
-    pathfinder->setAreaCost(12, 5.0f);
-    pathfinder->setAreaCost(13, 20.0f);
 
     PointsArray points;
     PathType pathType;

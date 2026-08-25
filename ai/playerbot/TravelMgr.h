@@ -434,8 +434,6 @@ namespace ai
 		WorldPosition* GetFishSpot(WorldPosition start, bool onlyNearestGrid = false);
 
 		EntryDestinationMap GetExploreLocs() const { return destinationMap.at(TravelDestinationPurpose::Explore); };
-		void SetMobAvoidArea();
-
 		DestinationList GetDestinations(const PlayerTravelInfo& info, uint32 purposeFlag = (uint32)TravelDestinationPurpose::None, const std::vector<int32>& entries = {}, bool onlyPossible = true, float maxDistance = 10000.0f) const;
 		void GetPartitionsLock(bool getLock = true);
 		static bool IsLocationLevelValid(const WorldPosition& position, const PlayerTravelInfo& info, uint32 purposeFlag = (uint32)TravelDestinationPurpose::None);
@@ -455,8 +453,6 @@ namespace ai
 		void LoadAreaLevels();
 	private:
 		void Clear();
-		void SetMobAvoidAreaMap(uint32 mapId);
-
 		void SetNullTravelTarget(Player* player) const;
 		void AddMapTransfer(WorldPosition start, WorldPosition end, float portalDistance = 0.1f, bool makeShortcuts = true);
 
