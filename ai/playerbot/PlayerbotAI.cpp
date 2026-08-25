@@ -7096,7 +7096,7 @@ void PlayerbotAI::ProcessDelayedPackets()
             !PlayerbotAIStorage::Instance().GetAI(bot))
             continue;
 
-        bot->GetSession()->QueuePacket(std::move(queued.packet));
+        bot->GetSession()->QueuePacket(queued.packet.release());
     }
 }
 

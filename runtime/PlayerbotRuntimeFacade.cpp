@@ -272,36 +272,9 @@ void RandomBotFacade::LoadAuctionPrices()
 {
     std::lock_guard<std::mutex> lock(m_ahActionMutex);
     ahMirror.clear();
-
-    std::vector<AuctionHouseObject*> visited;
-    for (uint32 i = 0; i < sAuctionHouseStore.GetNumRows(); ++i)
-    {
-        AuctionHouseEntry const* houseEntry = sAuctionHouseStore.LookupEntry(i);
-        if (!houseEntry)
-            continue;
-
-        AuctionHouseObject* auctionHouse = sAuctionMgr.GetAuctionsMap(houseEntry);
-        if (!auctionHouse || std::find(visited.begin(), visited.end(), auctionHouse) != visited.end())
-            continue;
-        visited.push_back(auctionHouse);
-
-        AuctionHouseObject::Guard guard(auctionHouse->GetLock());
-        auto bounds = auctionHouse->GetAuctionsBounds_locked();
-        for (auto it = bounds.first; it != bounds.second; ++it)
-        {
-            if (!it->second || !it->second->buyout)
-                continue;
-
-            Item* item = sAuctionMgr.GetAItem(it->second->itemGuidLow);
-            if (!item || !item->GetCount())
-                continue;
-
-            AuctionEntry snapshot = *it->second;
-            snapshot.itemCount = item->GetCount();
-            snapshot.itemRandomPropertyId = item->GetItemRandomPropertyId();
-            ahMirror[snapshot.itemTemplate].push_back(snapshot);
-        }
-    }
+    // Penqle + #411 baseline: auction price mirror disabled for minimal
+    // headless lifecycle. The donor auction API (Guard/bounds/itemCount)
+    // differs from Penqle's simple GetAuctions map; keep shim minimal.
 }
 
 const std::vector<AuctionEntry>& RandomBotFacade::GetAhPrices(uint32 itemId) const
