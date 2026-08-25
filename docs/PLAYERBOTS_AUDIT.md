@@ -90,7 +90,7 @@ Vanilla/Turtle product surface before adding more classes or dungeon behavior.
 | --- | --- | --- | --- |
 | F-01 | P0 | Module SQL install path does not match the core's effective case-sensitive AutoUpdater configuration. | Resolved in `TortoiseBots.cmake` against Penqle's configured `world/character` names; preserved-stack AutoUpdater application verified. |
 | F-02 | P0 | The local core has a stale untracked module copy, and `BUILD_PLAYERBOTS=OFF` does not itself gate an explicitly enabled native module. | Native CMake forcing is resolved; the supported builder bind-mounts this checkout and CMake prints `/work/core/modules/TortoiseBots` plus the exact implementation snapshot `d672048e86b9effc36210d3e6d076741fbeccc7f`. A disposable tracked-core archive with no `modules/TortoiseBots` path configured and built successfully with `BUILD_PLAYERBOTS=OFF`, `BUILD_LEGACY_PLAYERBOTS=OFF`, and `MODULES=disabled`; only the stale direct-core workflow remains external follow-up. |
-| F-03 | P1 | Bot-specific legacy code remains in the core: LFT random-bot filling, bot command stubs, bot slots, and legacy module hooks. | Open core-owned follow-up; no new module coupling was added. |
+| F-03 | P1 | Bot-specific legacy code remains in the core: LFT random-bot filling, bot command stubs, bot slots, and legacy module hooks. | Resolved in core commit `7353989c`; the tracked legacy tree remains an explicit unsupported escape hatch only. |
 | F-04 | P1 | Active native code retains later-expansion consumable IDs, item IDs, spell IDs, and level gates. | Resolved: audited absent spell/item branches, later flag/totem auras, invalid quest-item branches, post-60 level formulas, WotLK/TBC mana-gem IDs, and the level-70 Druid reagent branch are removed; retained level-60/Turtle rows were revalidated against local core data. |
 | F-05 | P1 | The compatibility shim contains silent no-op/default implementations for movement, instance, chat-channel, transport, formation, emote, session-state, and loot semantics. | Resolved for active module paths: chase/follow, taxi, gossip, loot status, and emotes now use core/client contracts or explicit fallbacks; dead donor surfaces and unsupported elevator generation are removed. Only optional diagnostic fields absent from the core remain documented. |
 | F-06 | P1/P2 | Custom Goblin/High Elf starting areas were deliberately bypassed because local navigation data was believed incomplete. | P1 start-row/module bypass resolved: current core `playercreateinfo` rows and the runtime dataset contain terrain/MMAP data, and disposable Goblin/High Elf headless lifecycle fixtures both logged in, saved, relogged, and cleaned up at those starts. Direct movement/death acceptance remains P2 because the exact High Elf tile has no VMap file. |
@@ -114,7 +114,7 @@ Vanilla/Turtle product surface before adding more classes or dungeon behavior.
 | F-24 | P1 | The pinned core's `PathInfo` area/avoidance/random-point methods are no-ops, so inherited mob avoidance and offline terrain-cache generation can report success without applying nav semantics. | Module-side behavior resolved: default avoidance and all cache/debug callers are removed or fail closed; ordinary movement remains on the core path contract. A generic core path-filter seam is optional external follow-up, not a hidden module claim. |
 | F-25 | P1 | Additional active donor wrappers silently lose native behavior: melee attack switching, evade checks, combat reach, quest-source removal, skill unlearning, gossip text, auction stack counts/purchases, and interaction checks. | Resolved for active module call sites in `d672048`; WMO area overrides and alternate-graveyard enumeration remain diagnostic-only core capability notes. |
 | F-26 | P1 | Additional active no-op helpers affected factory spell initialization, localized names, item pre-cast validation, interrupt decisions, and heal-size estimates. | Resolved in `d672048` (initial traced implementation `0f97403`): class trainer/quest spell initialization is ported against core data, locale maps replace empty helpers, `CheckCast` replaces the always-success pre-check, spell state replaces the always-true interrupt helper, and heal effects use native damage calculation. |
-| F-27 | P1/P2 | The pinned core's live Turtle world data references script names that are not registered by the core build, so some custom/content behavior is absent independently of PlayerBots. | Open core/data follow-up: final startup reported `custom_dungeon_portal`, `spell_druid_wrath`, and additional unregistered names. TortoiseBots does not add guessed scripts or claim those content paths. |
+| F-27 | P1/P2 | The pinned core's live Turtle world data references script names that are not registered by the core build, so some custom/content behavior is absent independently of PlayerBots. | Partially resolved as locally provable: `npc_teslinah` and invalid `0` are fixed; 17 names remain explicit unverified content gaps. |
 
 ## Closure pass — current module status
 
@@ -1214,3 +1214,94 @@ cmangos/mangos-classic     9b682be617ac61c127c23aa60d7b4ffbc0ce37e6
 The correct policy remains: harvest behavior, not architecture. The current
 audit supports retaining mature Vanilla behavior while removing the remaining
 later-expansion data, stale host paths, and silent compatibility assumptions.
+
+## 11. Final F-03/F-27 integration closure — 2026-08-25
+
+This section supersedes the pre-core-cleanup status above without rewriting the
+historical module audit.
+
+### Exact integration pair
+
+- Starting TortoiseBots worktree: `234c976248098f0076a8817a3a1c417938cc92dd`.
+  The checkout was fast-forwarded by the existing workspace workflow to
+  `6a9bbdc322a900309ccbbdbfd05a49f0a81b91bf` while this task was in progress;
+  the final branch is based on that newer documentation commit.
+- Starting pinned core: `9487c5150a6553c665fafc1f4568669b8b00f011`.
+- Final core: `7353989c94399f80572a2f8ec2eb73c63a6c79f8`, branch
+  `cleanup/f03-f27-code-freeze`.
+- TortoiseBots code checkpoint: `07cf7976c546fac27083c7b46e73299c25b095f3`;
+  the final documentation checkpoint is the subsequent commit on the same
+  branch.
+- Turtle data/migration state: core migration
+  `20260825090000_world.sql`, applied by the preserved runtime as module
+  migration hash `9DD6905D83E17F6D0BD08CABC5618BBD2A5AD513`.
+
+### F-03 resolution
+
+The core now removes the legacy LFT random-bot filler and its bot-only queue
+teleport/role paths, stale `.bot`/`.rndbot`/`.ahbot`/`.perfmon` registrations and
+stubs, bot-specific `ModuleSlots`, the `PlayerbotStubs.cpp` compatibility unit,
+hardwired `RNDBOT` gameplay filters, and stale PlayerBots include paths. Core
+spell/unit code no longer calls bot-named action-log symbols. The existing
+`SessionTransport`, headless-session registry, and generic `PlayerScript`/role
+hooks remain; no new host seam was added.
+
+`BUILD_PLAYERBOTS` is now a deprecated no-op compatibility flag. Native module
+selection is exclusively `MODULE_TORTOISEBOTS`; `BUILD_LEGACY_PLAYERBOTS` is an
+explicit unsupported historical escape hatch. The tracked
+`src/modules/PlayerBots` tree remains for historical inspection only and is not
+part of the supported build. A separate stale untracked core copy of
+`modules/TortoiseBots` was moved recoverably to
+`/tmp/TortoiseBots-core-stale-20260825`; the builder uses this checkout as its
+sole module source.
+
+### F-27 per-ScriptName resolution
+
+| ScriptName | Local evidence | Resolution |
+| --- | --- | --- |
+| `custom_dungeon_portal` | GameObject rows exist in `20260508192404_world.sql`; no implementation or registration exists in the pinned core/history. | **D/E — unverified missing Turtle content.** No guessed teleport script added. |
+| `spell_druid_wrath` | `20260721231140_world.sql` assigns it to the Wrath ranks; the core has the Eclipse aura implementation but no `spell_druid_wrath` implementation or registration. | **D/E — unverified missing Turtle spell behavior.** No fake spell class added. |
+| `go_airplane` | Two GameObject rows exist; the similarly named `npc_flying_machine` is a different creature script contract. | **D/E — unverified missing content.** |
+| `go_curious_leaf` | One GameObject row exists; no matching implementation. | **D/E — unverified missing content.** |
+| `item_radio` | Item `51021` exists; the core has a different `go_radio` GameObject script, not an item implementation. | **D/E — unverified missing item behavior.** |
+| `item_temporal_bronze_disc` | Item `80008` exists; no matching implementation. | **D/E — unverified missing item behavior.** |
+| `npc_alexandros_mograine` | Creature `2000091` exists; no implementation or registration. | **D/E — unverified missing Turtle content.** |
+| `npc_breanna_darrowmont` | Creature `60670` uses EventAI plus the missing ScriptName; no C++ implementation exists. | **D/E — unverified missing content; EventAI data retained.** |
+| `npc_chieftain_icepaw` | Creature `61121` uses EventAI plus the missing ScriptName; no C++ implementation exists. | **D/E — unverified missing content; EventAI data retained.** |
+| `npc_chromie_dialogue` | Creature `91003` exists; no implementation or registration. | **D/E — unverified missing Turtle content.** |
+| `npc_distance_trigger` | Creature `81264` uses NullAI plus the missing ScriptName; no C++ implementation exists. | **D/E — unverified missing content; no no-op replacement added.** |
+| `npc_frostshiv` | Creature `60674` uses EventAI plus the missing ScriptName; no C++ implementation exists. | **D/E — unverified missing content; EventAI data retained.** |
+| `npc_kitten` | Creature `9939` exists; no implementation or registration. | **D/E — unverified missing Turtle content.** |
+| `npc_lady_ripper` | Creature `60673` uses EventAI plus the missing ScriptName; no C++ implementation exists. | **D/E — unverified missing content; EventAI data retained.** |
+| `npc_nasuna` | Creature `60677` uses EventAI plus the missing ScriptName; no C++ implementation exists. | **D/E — unverified missing content; EventAI data retained.** |
+| `npc_surgeon_go` | Creature `81033` uses EventAI plus the missing ScriptName; no C++ implementation exists. | **D/E — unverified missing content; EventAI data retained.** |
+| `npc_teslinah` | Existing `QuestAccept_npc_teslinah` callback in `random_scripts_1.cpp` was not registered. | **A — registered as `npc_teslinah`; startup warning cleared.** |
+| `duplicate_tirion_fordring` | Creature `2000090` exists; no implementation or registration. | **D/E — unverified missing Turtle content.** |
+| `0` | Live data contained literal placeholder ScriptNames in creature/GameObject/item/spell/scripted-trigger/map tables. | **C — cleared by the new migration; startup warning cleared.** |
+
+The preserved-data restart reached world-ready and loaded the native module.
+There are no remaining `Script not found: 0` or `npc_teslinah` warnings. The
+remaining startup warnings are exactly the 17 unverified names listed above
+except those two resolved entries. They remain explicit Turtle content gaps,
+not PlayerBots architecture blockers, and must not be hidden by empty scripts
+or guessed behavior.
+
+### Validation for this closure
+
+- Cached native ON build, `BUILD_LEGACY_PLAYERBOTS=OFF`,
+  `MODULE_TORTOISEBOTS=static`: passed and linked `mangosd`.
+- Cached native module build with `BUILD_PLAYERBOTS=OFF`,
+  `BUILD_LEGACY_PLAYERBOTS=OFF`, `MODULE_TORTOISEBOTS=static`: passed and
+  linked `mangosd`; configure output showed TortoiseBots selected by the module
+  selector.
+- Cached module-disabled build with `BUILD_PLAYERBOTS=OFF`,
+  `BUILD_LEGACY_PLAYERBOTS=OFF`, `MODULES=disabled`: passed and linked
+  `mangosd`.
+- `git diff --check` passed in both repositories.
+- Preserved Docker stack restart passed without database reset, volume removal,
+  or image rebuild. AutoUpdater applied the one new world migration; the
+  startup reached `World server is up and running` and logged
+  `TortoiseBots: native module loaded (AI enabled)`.
+- Runtime database query confirmed zero literal `script_name='0'` rows in all
+  seven ScriptMgr registry tables and two retained `npc_teslinah` rows.
+- No real-client or gameplay campaign was run in this integration pass.

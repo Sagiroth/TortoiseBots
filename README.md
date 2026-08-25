@@ -44,16 +44,30 @@ large TBC/WotLK/later-era families such as Death Knights, glyphs, vehicles,
 arenas and other unsupported expansion systems are not part of the active
 module graph.
 
-Two core/data follow-ups remain before broad gameplay expansion:
+F-03/F-27 core/data closure is complete for the validated local baseline
+(core `7353989c94399f80572a2f8ec2eb73c63a6c79f8`, local branch
+`cleanup/f03-f27-code-freeze`):
 
-- **F-03:** legacy PlayerBots/LFT/chat/module coupling still exists in the
-  target core and needs a separate core cleanup.
-- **F-27:** Turtle world data references several script names that the pinned
-  core does not register; each mismatch must be resolved by the correct
-  core/data owner rather than hidden behind module stubs.
+- **F-03 — closed for the supported local integration:** legacy supported-path
+  coupling removed (LFT filler, stale command/stub surface, bot slots, hardwired
+  RNDBOT filters, stale include paths and bot-named diagnostics);
+  `BUILD_LEGACY_PLAYERBOTS` remains an unsupported historical escape hatch and
+  `MODULE_TORTOISEBOTS` is the supported selector. The historical
+  `src/modules/PlayerBots` tree is retained disabled, not deleted.
+- **F-27 — locally proven where source proves it:** `npc_teslinah` is now
+  registered and invalid literal ScriptName `0` is cleared by migration
+  `20260825090000_world.sql`; 17 Turtle ScriptNames remain explicitly
+  unverified content gaps — not PlayerBots architecture blockers, no fake
+  scripts were added.
 
-See [docs/STATUS.md](docs/STATUS.md) for the current working state and next
-steps.
+Broad architecture cleanup is frozen — do not start another generic donor
+cleanup. Current next step is manual owned-bot and 5-player dungeon gameplay
+acceptance, with the remaining content gaps visible. Upstream Penqle
+publication of the core checkpoint is pending (validated local checkpoint, not
+yet a merged upstream PR).
+
+See [docs/STATUS.md](docs/STATUS.md) for the exact checkpoints and upstream
+status.
 
 ## Architecture
 

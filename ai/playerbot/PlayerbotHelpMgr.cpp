@@ -800,12 +800,10 @@ void PlayerbotHelpMgr::GenerateHelp()
 {
     coverageMap.clear();
 
-    // remote_ip MUST be "disconnected/bot" so PlayerbotAI::IsRealPlayer() returns false.
+    // This session is a local help-generation fixture, not a network session.
     WorldSession* session = new WorldSession(0, NULL, SEC_PLAYER,
 
     0, LOCALE_enUS, "disconnected/bot", 0);
-
-    session->SetNoAnticheat();
 
     Player* bot = new Player(session);
 

@@ -27,13 +27,22 @@ code.
 
 ## 2. Compatible baseline
 
-The audited module baseline was validated against:
+The supported local host boundary is validated against:
 
 ```text
-Tortoise core branch: playerbots-integration-gh
-Tortoise core SHA:    9487c5150a6553c665fafc1f4568669b8b00f011
-parent:               133c6d19bf5898c1e4f5129b2890b1db89b17a07
+Pinned Tortoise core checkpoint:     7353989c94399f80572a2f8ec2eb73c63a6c79f8 (local branch cleanup/f03-f27-code-freeze)
+TortoiseBots tested code checkpoint: 07cf7976c546fac27083c7b46e73299c25b095f3
 ```
+
+Validated local core checkpoint:
+`7353989c94399f80572a2f8ec2eb73c63a6c79f8`
+
+Upstream Penqle status:
+pending / not yet represented by a merged upstream Penqle PR. The core branch
+`cleanup/f03-f27-code-freeze` exists only as a local pinned integration
+baseline; no published Penqle branch or PR was found for this commit at review
+time (Penqle `main` inspected at `61a8269151721f6467eddb05e7bed37704d0fc0b`,
+merge-base `93a5faa375083fc49d73fc02bda0f5a214880009`).
 
 When the core changes, update [STATUS.md](STATUS.md) with the exact tested pair
 instead of assuming compatibility from a branch name.
@@ -273,17 +282,28 @@ Before adding another core seam, establish that:
 If the design would make PlayerBots-specific checks spread through normal
 core gameplay code, redesign it.
 
-## 17. Remaining external work
+## 17. Integration closure (F-03/F-27) and remaining content gaps
 
-Two audited issues remain outside the module closure:
+For the validated local baseline (core `7353989c94399f80572a2f8ec2eb73c63a6c79f8`):
 
-- **F-03:** legacy PlayerBots/LFT/chat/module concepts still exist in the pinned
-  core and need a separate cleanup.
-- **F-27:** Turtle world data references script names the pinned core does not
-  register; resolve each mismatch from exact source/data rather than adding
-  empty TortoiseBots scripts.
+- **F-03 — closed for the supported local integration:** legacy LFT filler, stale
+  command/stub surface, bot slots, hardwired RNDBOT filters, stale include paths
+  and bot-named diagnostics removed. Supported selection is `MODULE_TORTOISEBOTS`
+  with `BUILD_LEGACY_PLAYERBOTS=OFF`; the tracked `src/modules/PlayerBots` tree
+  remains only as an unsupported historical escape hatch (retained disabled, not
+  deleted).
+- **F-27 — locally proven where source proves it:** `npc_teslinah` is now
+  registered and invalid literal `0` cleared by migration
+  `20260825090000_world.sql`. 17 Turtle ScriptNames remain explicitly
+  unverified content gaps — not host API gaps, not PlayerBots blockers, no fake
+  scripts were added. See [STATUS.md](STATUS.md) and
+  [PLAYERBOTS_AUDIT.md](PLAYERBOTS_AUDIT.md) for the list.
 
-See [STATUS.md](STATUS.md) for current work order.
+Upstream Penqle status: validated local core checkpoint
+`7353989c94399f80572a2f8ec2eb73c63a6c79f8` on local branch
+`cleanup/f03-f27-code-freeze`; not yet published as a merged upstream Penqle PR.
+Upstreaming is separate follow-up. Remaining F-27 names are Turtle content gaps,
+not host API gaps.
 
 ## 18. Validation boundary
 
