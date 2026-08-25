@@ -88,29 +88,14 @@ dependency.
 
 ## Features
 
-Current module functionality includes:
+- Same-account bots (`.bot add` / `remove`) with human reclaim
+- Party: follow / stay / invite via `.bot` (group AI)
+- Class AI for all 9 Vanilla classes — basic combat / heal / tank
+- Loot, quest and travel / taxi handling
+- Turtle Goblin / High Elf and Turtle spell / talent / mount handling where validated
+- Bounded random bots for existing characters only
 
-- Headless character sessions
-- Same-account owned bots
-- Human reclaim of bot-controlled characters
-- Native bot lifecycle management
-- Mature `PlayerbotAI`
-- Engine / Strategy / Trigger / Action / Value architecture
-- All nine Vanilla classes
-- Follow / stay / group behavior
-- Combat and class AI
-- Loot and quest behavior
-- Travel and taxi integration
-- Native `.bot` commands
-- Packet integration between Tortoise and PlayerBots
-- Turtle Goblin and High Elf compatibility
-- Turtle-aware race, spell, talent and mount handling where validated
-- Native World / Character migrations
-- Bounded random-bot support for existing characters
-
-The active source tree targets Vanilla/Turtle 1.18.1. Expansion-era systems such
-as Death Knights, glyphs, vehicles and arenas are not part of the supported
-module graph.
+Targets Vanilla/Turtle 1.18.1 — Death Knights, glyphs, vehicles and arenas are not included.
 
 ---
 
