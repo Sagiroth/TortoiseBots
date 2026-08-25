@@ -410,6 +410,10 @@ AutoUpdater application is still a separate runtime check.
 
 ### F-02 — Two different module trees are present locally (P0)
 
+The following records the historical pre-closure build ambiguity; the current
+source-selection diagnostic and module-absent proof in the closure section are
+authoritative.
+
 The target repository is clean at `13c0632`, but the local core checkout at
 `9487c515` has an untracked `modules/TortoiseBots/` directory. It differs
 substantially from this repository:
@@ -879,6 +883,10 @@ generation is supported, and add a schema test that exercises both empty and
 populated optional datasets.
 
 ### F-16 — Database ownership and startup cache generation are not cleanly bounded (P1)
+
+The table and failure sequence below are historical baseline evidence. The
+current migration/startup contract is the resolved behavior described in the
+closure section and final validation record.
 
 The module's table ownership is inconsistent:
 
