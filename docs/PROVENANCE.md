@@ -435,13 +435,16 @@ Feature: close the remaining module-owned Turtle 1.18.1 compatibility
 mismatches found by tracing active call sites against the pinned core: sparse
 store bounds, core-defined custom races, path-filter fail-closed behavior,
 native combat/interaction/auction/quest/skill semantics, later-ID cleanup,
-localized names, and factory class-spell initialization.
+localized names, factory class-spell initialization, native text-emote fallback,
+loot status/roll state, and collection-mount caching.
 
 Source repository: TortoiseBots `audit/playerbots-turtle-1.18.1`
 
-Source commit: `f594fc1a22f3d4ee23d74c3647cb63b6b22c7a33` (final source snapshot;
+Source commit: `d672048e86b9effc36210d3e6d076741fbeccc7f` (final source snapshot;
 the initial traced implementation is `0f97403df42ee98b5085040a9a066ddc64608623`,
-followed by `f594fc1` removing the unreachable fish-cache generator).
+followed by `f594fc1` removing the unreachable fish-cache generator and
+`d672048` closing the remaining active emote, loot, locale, spell-error, and
+collection-mount fallbacks).
 
 Reference repositories and commits:
 
@@ -482,7 +485,8 @@ cached persistent `BUILD_PLAYERBOTS=ON`, `BUILD_LEGACY_PLAYERBOTS=OFF`, static
 module and linked the final `mangosd`; no core, Docker, reference checkout, or
 database reset was performed. Runtime restart evidence for this exact commit
 is recorded in the audit after installation: the preserved stack restarted at
-`2026-08-25T03:31:58.419176189Z` and reached world-ready at `03:32:24Z`, with
+`2026-08-25T04:01:18.842808942Z` and reached world-ready at
+`2026-08-25T04:01:47.286072886Z`, with
 native module load, TalentSpecs load, direct travel/fishing fallback, and no
 module-table DDL/DML. The restart also confirmed the pinned core's
 unregistered-content script warnings; no module replacement was invented. No
