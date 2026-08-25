@@ -276,8 +276,8 @@ mount lookup, later-expansion residue removal, and repeatable surface checks.
 
 Source repository: TortoiseBots `audit/playerbots-turtle-1.18.1`
 
-Source commit: `952dff4be1676584a5ced71368b19574fa1139e9` (final verified audit
-head; native command fixture implementation; implementation `b76b5f4bf236b4d1bf370f0997e88cf30fd33695`, `fix: bound
+Source commit: `8da287730310b6a4eaaad1aea10680dcca2a8cfc` (final verified audit
+head; core-backed gossip adapter; native command fixture implementation; implementation `b76b5f4bf236b4d1bf370f0997e88cf30fd33695`, `fix: bound
 engine action logging`), on top of `b863c6eedd3514a525f40e243bb8a61b2244fbe8` (`fix:
 remove unreachable engine test logging`), `89a5e645e1485bd2e35b4944e88fdadfc6c95d05`
 (`fix: remove remaining expansion-only item branches`), `887a6673675d06d716acc713aaeed8dca05d7e9f`
@@ -375,6 +375,9 @@ Local validation:
   `list`, `stats`, and owned-bot `follow` were dispatched through a synthetic
   `ChatHandler`, followed by group invite/accept and cleanup. This is runtime
   command-path evidence, not a real-client incoming-packet claim.
+- The compatibility shim's ScriptDevAI-shaped gossip callback now delegates to
+  Penqle's `sScriptMgr` creature-gossip registry; it no longer unconditionally
+  returns false and discards core gossip behavior.
 - A forced CMake configure printed the supported builder's bind-mounted module
   root `/work/core/modules/TortoiseBots` and exact commit
   `4cb56b19a8219981d60a12b4bd1cf6ca176774b5`; Git's scoped safe-directory

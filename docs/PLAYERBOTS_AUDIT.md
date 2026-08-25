@@ -196,7 +196,8 @@ valid Tortoise data until the core data itself changes.
   absent/null, `MotionMaster::MoveInFormation` is a no-op compatibility
   method, and no `EmotesTextSound` loader exists even though the client DBC is
   present. The module uses its own formation math, direct taxi/travel paths,
-  native loot resolution, and generic session transport for the supported MVP;
+  native loot resolution, core-backed creature gossip, and generic session
+  transport for the supported MVP;
   the remaining donor-only semantics require targeted core adapters/tests.
 - F-06 remains accepted: Goblin/High Elf custom starts use safe homebind or
   direct movement because the local custom navigation data is incomplete.
@@ -477,7 +478,7 @@ semantics:
 | `:110-120` and `WorldPosition.h:238-240` | Zero-valued `InstanceTemplate`; `getInstanceTemplate()` returns null. | Dungeon level/player-limit/reset logic cannot behave like the core. |
 | `:237-260` | CMaNGOS trigger-cast bitmasks collapse to `bool` true/false. | Ignore-GCD/aura-scaling distinctions are lost. |
 | `:483-497` | `Taxi::Map` is always empty. | In-flight taxi state and path reasoning are unavailable. |
-| `:516-525` | ScriptDevAI gossip callback is a false-returning no-op. | Donor gossip behavior can silently disappear. |
+| `:516-525` | ScriptDevAI-shaped gossip callback delegates to Penqle's `sScriptMgr.OnGossipHello(Player*, Creature*)`. | Core creature gossip is preserved through the generic registry; custom gossip still needs focused bot acceptance coverage. |
 | `:688-700` | Chat-channel store now delegates to `ObjectMgr::GetChannelEntryFor` and the loaded map. | The core owns the channel definitions; automatic bot channel-join behavior still lacks a focused runtime acceptance journey. |
 | `:721-733` | `TransportAnimation` is structural only. | Transport movement cannot be assumed correct. |
 | `:786-802` | Formation slot data is a stub. | Formation/squad semantics are not implemented by this compatibility layer. |
