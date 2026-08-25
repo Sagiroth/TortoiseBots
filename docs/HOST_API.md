@@ -280,42 +280,6 @@ Before adding another core seam, establish that:
 If the design would make PlayerBots-specific checks spread through normal
 core gameplay code, redesign it.
 
-## 17. Integration closure (F-03/F-27) and remaining content gaps
+## 17. Historical closure
 
-For the validated local baseline (core `7353989c94399f80572a2f8ec2eb73c63a6c79f8`):
-
-- **F-03 — closed for the supported local integration:** legacy LFT filler, stale
-  command/stub surface, bot slots, hardwired RNDBOT filters, stale include paths
-  and bot-named diagnostics removed. Supported selection is `MODULE_TORTOISEBOTS`
-  with `BUILD_LEGACY_PLAYERBOTS=OFF`; the tracked `src/modules/PlayerBots` tree
-  remains only as an unsupported historical escape hatch (retained disabled, not
-  deleted).
-- **F-27 — locally proven where source proves it:** `npc_teslinah` is now
-  registered and invalid literal `0` cleared by migration
-  `20260825090000_world.sql`. 17 Turtle ScriptNames remain explicitly
-  unverified content gaps — not host API gaps, not PlayerBots blockers, no fake
-  scripts were added. See Git history and
-  [PLAYERBOTS_AUDIT.md](archive/PLAYERBOTS_AUDIT.md) for the list.
-
-Upstream status: validated local core checkpoint
-`7353989c94399f80572a2f8ec2eb73c63a6c79f8` on branch
-`cleanup/f03-f27-code-freeze`; generic Headless subset proposed as draft PR
-[#411](https://github.com/Penqle/tortoise-wow/pull/411). Remaining F-27 names are
-Turtle content gaps, not host API gaps.
-
-## 18. Validation boundary
-
-The audited baseline includes evidence for PlayerBots-on and module-absent
-builds, world-ready startup, Headless login/save/logout/relogin, pending
-add/remove cleanup, graceful shutdown, human reclaim, packet/group fixtures,
-Goblin/High Elf lifecycle fixtures and repeatable migrations.
-
-That evidence does not claim complete dungeon gameplay, every Turtle class/spec
-interaction, every custom script, real-client packet delivery or large
-random-bot populations.
-
-## 19. Portability
-
-The recorded build/runtime validation is Linux-focused. Other toolchains,
-especially MSVC static-module linkage, remain unverified until built and run on
-that target.
+F-03/F-27 closure and validation boundary are recorded in `PLAN.md` §6.1 and `PROVENANCE.md`; see `archive/PLAYERBOTS_AUDIT.md` for full evidence. This contract covers only the current host API.
