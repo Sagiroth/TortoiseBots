@@ -276,8 +276,9 @@ mount lookup, later-expansion residue removal, and repeatable surface checks.
 
 Source repository: TortoiseBots `audit/playerbots-turtle-1.18.1`
 
-Source commit: `b76b5f4bf236b4d1bf370f0997e88cf30fd33695` (`fix: bound engine
-action logging`), on top of `b863c6eedd3514a525f40e243bb8a61b2244fbe8` (`fix:
+Source commit: `4cb56b19a8219981d60a12b4bd1cf6ca176774b5` (final verified audit
+head; implementation `b76b5f4bf236b4d1bf370f0997e88cf30fd33695`, `fix: bound
+engine action logging`), on top of `b863c6eedd3514a525f40e243bb8a61b2244fbe8` (`fix:
 remove unreachable engine test logging`), `89a5e645e1485bd2e35b4944e88fdadfc6c95d05`
 (`fix: remove remaining expansion-only item branches`), `887a6673675d06d716acc713aaeed8dca05d7e9f`
 (`build: report native module source identity`), `9605a73c9bc16f0bf4fb4e84bba974a70f68c735`
@@ -371,7 +372,7 @@ Local validation:
   long owner-controlled action names from overrunning its fixed log buffer.
 - A forced CMake configure printed the supported builder's bind-mounted module
   root `/work/core/modules/TortoiseBots` and exact commit
-  `89a5e645e1485bd2e35b4944e88fdadfc6c95d05`; Git's scoped safe-directory
+  `4cb56b19a8219981d60a12b4bd1cf6ca176774b5`; Git's scoped safe-directory
   option avoids changing global configuration. This makes stale direct-core
   module selection observable.
 - The real Turtle client was launched under Wine through normal and
