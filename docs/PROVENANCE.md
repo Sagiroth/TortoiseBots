@@ -344,6 +344,10 @@ Local validation:
   phase reported only the sibling builder's absent `realmd` artifact.
 - Cached `bash ../tortoise-docker-penqle/dev/build-off` completed the
   `BUILD_PLAYERBOTS=OFF`, `MODULES=disabled` `mangosd` build successfully.
+- A disposable `git archive` of the tracked target core, with no
+  `modules/TortoiseBots` checkout, configured as `modules: disabled (no
+  modules found)` and built/linked `mangosd` successfully with both PlayerBots
+  options off. The temporary archive/build directories were removed.
 - The final incremental ON rebuild after the cache fail-closed and data-derived
   eligibility edits also linked successfully; the same optional `realmd`
   install warning remained.

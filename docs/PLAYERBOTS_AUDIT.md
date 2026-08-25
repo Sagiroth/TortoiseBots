@@ -83,7 +83,7 @@ Vanilla/Turtle product surface before adding more classes or dungeon behavior.
 | ID | Severity | Finding | Status |
 | --- | --- | --- | --- |
 | F-01 | P0 | Module SQL install path does not match the core's effective case-sensitive AutoUpdater configuration. | Resolved in `TortoiseBots.cmake` against Penqle's configured `world/character` names; preserved-stack AutoUpdater application verified. |
-| F-02 | P0 | The local core has a stale untracked module copy, and `BUILD_PLAYERBOTS=OFF` does not itself gate an explicitly enabled native module. | Native CMake forcing is resolved; the supported builder bind-mounts this checkout and CMake now prints `/work/core/modules/TortoiseBots` plus the exact verified implementation snapshot `7e08fc810060e77839d4f38c813cc7eba9b05737`. The stale sibling copy and direct-core workflow remain external follow-up. |
+| F-02 | P0 | The local core has a stale untracked module copy, and `BUILD_PLAYERBOTS=OFF` does not itself gate an explicitly enabled native module. | Native CMake forcing is resolved; the supported builder bind-mounts this checkout and CMake prints `/work/core/modules/TortoiseBots` plus the exact implementation snapshot `7e08fc810060e77839d4f38c813cc7eba9b05737`. A disposable tracked-core archive with no `modules/TortoiseBots` path configured and built successfully with `BUILD_PLAYERBOTS=OFF`, `BUILD_LEGACY_PLAYERBOTS=OFF`, and `MODULES=disabled`; only the stale direct-core workflow remains external follow-up. |
 | F-03 | P1 | Bot-specific legacy code remains in the core: LFT random-bot filling, bot command stubs, bot slots, and legacy module hooks. | Open core-owned follow-up; no new module coupling was added. |
 | F-04 | P1 | Active native code retains later-expansion consumable IDs, item IDs, spell IDs, and level gates. | Resolved: audited absent spell/item branches, post-60 level formulas, WotLK/TBC mana-gem IDs, and the level-70 Druid reagent branch are removed; retained level-60/Turtle rows were revalidated against local core data. |
 | F-05 | P1 | The compatibility shim contains silent no-op/default implementations for movement, instance, chat-channel, transport, formation, emote, session-state, and loot semantics. | Partially resolved: active chase/follow inspection uses the native generator target, live taxi routes and loot targets use core APIs, dead instance/session/formation/loot-type scaffolding is removed, and unsupported elevator transport is explicit; remaining emote/trigger-cast/loot-roll semantics are not advertised as complete Turtle behavior. |
@@ -880,6 +880,13 @@ best-effort install wrapper reported the expected missing `realmd` artifact,
 then copied the built `mangosd` to the install volume; this does not invalidate
 the successful ON build. The complementary cached `BUILD_PLAYERBOTS=OFF`,
 `MODULES=disabled` build also completed successfully.
+
+The stronger module-removal gate also passed: a `git archive` of the pinned
+core was extracted into a disposable builder directory with no untracked
+`modules/TortoiseBots` checkout. CMake reported `modules: disabled (no modules
+found)`, and that source tree built and linked `mangosd` successfully with
+`BUILD_PLAYERBOTS=OFF`, `BUILD_LEGACY_PLAYERBOTS=OFF`, and `MODULES=disabled`.
+The temporary source/build directories were removed afterward.
 
 Fresh-schema SQL evidence: a disposable MariaDB 11.4 container applied
 `data/sql/world/{20260824090000,20260824090002,20260824090003}_*.sql` and
