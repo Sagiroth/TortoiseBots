@@ -9,20 +9,31 @@ provenance records.
 
 ## Known-good baseline
 
-The current integration checkpoint is:
+Tested behavior checkpoints (behavior did not change after the code checkpoint):
 
 ```text
-TortoiseBots code:           07cf7976c546fac27083c7b46e73299c25b095f3
-Pinned Tortoise core:        7353989c94399f80572a2f8ec2eb73c63a6c79f8
-TortoiseBots branch:         cleanup/f03-f27-code-freeze
-Core branch:                 cleanup/f03-f27-code-freeze
+TortoiseBots tested code checkpoint: 07cf7976c546fac27083c7b46e73299c25b095f3
+Pinned Tortoise core checkpoint:     7353989c94399f80572a2f8ec2eb73c63a6c79f8 (local branch cleanup/f03-f27-code-freeze)
 ```
+
+PR #15 adds documentation-only closure commits after the tested code checkpoint;
+they do not change tested behavior. Do not require this file to contain its own
+final commit SHA — the code checkpoint above remains the tested behavior
+reference.
+
+Validated local core checkpoint:
+`7353989c94399f80572a2f8ec2eb73c63a6c79f8`
+
+Upstream Penqle status:
+pending / not yet represented by a merged upstream Penqle PR. The core branch
+`cleanup/f03-f27-code-freeze` exists only as a local pinned integration
+baseline; no published Penqle branch or PR was found for this commit at review
+time (Penqle `main` inspected at `61a8269151721f6467eddb05e7bed37704d0fc0b`,
+merge-base `93a5faa375083fc49d73fc02bda0f5a214880009`; core is 281 commits ahead
+of that base, diverged and not yet upstream).
 
 PR #13 merged the module-side Turtle 1.18.1 cleanup/audit closure into `main`.
 Later README/documentation commits do not replace the behavior baseline above.
-
-The final documentation commit on the TortoiseBots branch will supersede the
-code checkpoint above; use its full SHA for the final pair.
 
 ## Current architecture
 
@@ -110,11 +121,12 @@ validate only behavior affected by the current change.
 
 ### F-03 — legacy PlayerBots coupling in the core
 
-Resolved in core commit `7353989c94399f80572a2f8ec2eb73c63a6c79f8`. The cleanup
-removed the legacy LFT filler, stale command/stub surface, bot slots, hardwired
-RNDBOT filters, stale include paths, and bot-named core diagnostics. The
-tracked `src/modules/PlayerBots` tree remains only as an explicit unsupported
-historical escape hatch:
+Closed for the supported local integration baseline at core commit
+`7353989c94399f80572a2f8ec2eb73c63a6c79f8`. The cleanup removed the legacy LFT
+filler, stale command/stub surface, bot slots, hardwired RNDBOT filters, stale
+include paths, and bot-named core diagnostics. The tracked
+`src/modules/PlayerBots` tree remains only as an explicit unsupported
+historical escape hatch (retained disabled, not deleted):
 
 - `BUILD_LEGACY_PLAYERBOTS=OFF` is required for supported builds
 - native selection is controlled only by `MODULE_TORTOISEBOTS`
@@ -141,8 +153,9 @@ those warnings.
 The remaining 17 names (`custom_dungeon_portal`, `spell_druid_wrath`, and the
 listed GO/item/NPC/duplicate scripts) have no implementation or legitimate
 replacement in the pinned core/history. They remain explicitly unverified
-Turtle content gaps; no empty scripts or guessed behavior were added. Full
-per-script evidence is in [PLAYERBOTS_AUDIT.md](PLAYERBOTS_AUDIT.md).
+Turtle content gaps and are NOT considered PlayerBots architecture blockers;
+no empty scripts or guessed behavior were added. Full per-script evidence is
+in [PLAYERBOTS_AUDIT.md](PLAYERBOTS_AUDIT.md).
 
 The original classification for each mismatch was:
 
@@ -155,11 +168,12 @@ Do not create empty scripts merely to silence the remaining warnings.
 
 ## After F-03 / F-27
 
-The core/data work is stable for the evidence available locally:
+The core/data work is stable for the evidence available locally. Broad
+architecture cleanup is frozen — do not start another generic donor cleanup.
+Fixes should now be driven by observed gameplay defects.
 
-1. record the final documentation SHA for the exact pair here;
-2. keep the architecture frozen unless manual gameplay exposes a defect;
-3. move to manual gameplay acceptance with the remaining content gaps visible.
+Next: manual gameplay acceptance with the remaining content gaps visible (see
+Manual gameplay phase below).
 
 ## Manual gameplay phase
 

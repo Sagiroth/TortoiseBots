@@ -292,71 +292,49 @@ the target data.
 `tools/verify_turtle_surface.sh` is a regression guard for known prohibited
 families/IDs. It is not a substitute for semantic review of new Turtle data.
 
-## 6. Current milestone
+## 6. Current milestone — gameplay acceptance
 
-The module-side port, cleanup and deep compatibility audit are complete for the
-current baseline. The next work is deliberately outside another broad module
-cleanup.
+Broad architecture cleanup is frozen. Do not start another generic donor cleanup.
 
-### 6.1 F-03 — clean legacy PlayerBots core coupling
+1. preserve architecture freeze
+2. owned-bot manual acceptance (add/follow/combat/loot/death/relogin/teleport)
+3. human + bots 5-player dungeon (tank/healer/DPS/interrupts/CC/loot/wipe recovery)
+4. fix observed gameplay defects — not speculative completeness work
+5. broaden class/Turtle coverage deliberately based on real failures
 
-The pinned core still has a legacy PlayerBots surface around LFT filling,
-commands/stubs, bot slots and the old `src/modules/PlayerBots` implementation.
+### 6.1 F-03/F-27 integration closure (completed for local baseline)
 
-Resolve this in the core with the following target:
+For the validated local baseline (core `7353989c94399f80572a2f8ec2eb73c63a6c79f8`):
 
-```text
-Tortoise core
-    -> generic capabilities only
-TortoiseBots
-    -> single supported PlayerBots implementation
-```
+- **F-03 — closed for the supported local integration:** legacy supported-path
+  coupling removed (LFT filler, stale command/stub surface, bot slots, hardwired
+  RNDBOT filters, stale include paths and bot-named diagnostics).
+  `BUILD_LEGACY_PLAYERBOTS` remains an unsupported historical escape hatch and
+  `MODULE_TORTOISEBOTS` is the supported selector. The historical
+  `src/modules/PlayerBots` tree is retained disabled for inspection, not deleted.
+- **F-27 — locally proven where source proves it:** `npc_teslinah` is now
+  registered and invalid literal ScriptName `0` is cleared by migration
+  `20260825090000_world.sql`; 17 Turtle ScriptNames remain explicitly
+  unverified content gaps — not PlayerBots architecture blockers, no fake
+  scripts were added. See [STATUS.md](STATUS.md) and
+  [PLAYERBOTS_AUDIT.md](PLAYERBOTS_AUDIT.md) for the 17 names.
 
-Classify each remaining core item as:
+Upstream Penqle publication of the core checkpoint is pending — validated as a
+local pinned baseline, not a merged upstream PR. See [STATUS.md](STATUS.md) for
+the exact core SHA and upstream status.
 
-- genuinely generic and worth keeping;
-- generic but poorly named/owned;
-- legacy PlayerBots-only and removable;
-- useful behavior that belongs behind a generic provider/hook;
-- obsolete legacy module/build surface.
+### 6.2 Known-good pair
 
-Do not solve F-03 by adding more TortoiseBots compatibility shims.
-
-### 6.2 F-27 — reconcile Turtle ScriptName data with core registration
-
-The audited world data references script names that the pinned core does not
-register.
-
-For every startup mismatch, trace:
+Recorded in [STATUS.md](STATUS.md):
 
 ```text
-SQL/data row
-    -> exact ScriptName
-    -> implementation present?
-    -> registered?
-    -> data row correct for this revision?
+TortoiseBots tested code checkpoint: 07cf7976c546fac27083c7b46e73299c25b095f3
+Pinned core checkpoint:              7353989c94399f80572a2f8ec2eb73c63a6c79f8
 ```
 
-Resolve as one of:
-
-- registration fix;
-- data correction;
-- genuinely missing Turtle implementation;
-- explicitly unverified because intended semantics cannot yet be proven.
-
-Never create empty/no-op scripts simply to silence warnings.
-
-### 6.3 Re-pin after core/data work
-
-When F-03/F-27 are stable, record a new known-good pair in [STATUS.md](STATUS.md):
-
-```text
-TortoiseBots @ <sha>
-Tortoise core @ <sha>
-```
-
-Run only the integration checks affected by that work, then freeze broad
-architecture/cleanup changes.
+PR #15 adds documentation-only closure commits after the tested code checkpoint;
+they do not change tested behavior. Do not require STATUS.md to contain its own
+final commit SHA.
 
 ## 7. Manual gameplay phase
 
