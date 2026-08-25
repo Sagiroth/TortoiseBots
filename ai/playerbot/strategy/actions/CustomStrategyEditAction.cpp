@@ -44,11 +44,17 @@ bool CustomStrategyEditAction::PrintHelp(Player* requester)
 
 bool CustomStrategyEditAction::Print(std::string name, Player* requester)
 {
+    if (name.size() > 255)
+        return false;
+
+    std::string safeName = name;
+    CharacterDatabase.escape_string(safeName);
+
     std::ostringstream out; out << "=== " << name << " ===";
     ai->TellPlayer(requester, out.str());
 
     uint32 owner = (uint32)ai->GetBot()->GetGUIDLow();
-    auto results = CharacterDatabase.PQuery("SELECT idx, action_line FROM ai_playerbot_custom_strategy WHERE name = '%s' and owner = '%u' order by idx", name.c_str(), owner);
+    auto results = CharacterDatabase.PQuery("SELECT idx, action_line FROM ai_playerbot_custom_strategy WHERE name = '%s' and owner = '%u' order by idx", safeName.c_str(), owner);
     if (results)
     {
         do
@@ -66,22 +72,30 @@ bool CustomStrategyEditAction::Print(std::string name, Player* requester)
 
 bool CustomStrategyEditAction::Edit(std::string name, uint32 idx, std::string command, Player* requester)
 {
+    if (name.empty() || name.size() > 255 || command.size() > 1024)
+        return false;
+
+    std::string safeName = name;
+    std::string safeCommand = command;
+    CharacterDatabase.escape_string(safeName);
+    CharacterDatabase.escape_string(safeCommand);
+
     uint32 owner = (uint32)ai->GetBot()->GetGUIDLow();
-    auto results = CharacterDatabase.PQuery("SELECT action_line FROM ai_playerbot_custom_strategy WHERE name = '%s' and owner = '%u' and idx = '%u'", name.c_str(), owner, idx);
+    auto results = CharacterDatabase.PQuery("SELECT action_line FROM ai_playerbot_custom_strategy WHERE name = '%s' and owner = '%u' and idx = '%u'", safeName.c_str(), owner, idx);
     if (results)
     {
         if (command.empty())
         {
-            CharacterDatabase.DirectPExecute("DELETE FROM ai_playerbot_custom_strategy WHERE name = '%s' and owner = '%u' and idx = '%u'", name.c_str(), owner, idx);
+            CharacterDatabase.DirectPExecute("DELETE FROM ai_playerbot_custom_strategy WHERE name = '%s' and owner = '%u' and idx = '%u'", safeName.c_str(), owner, idx);
         }
         else
         {
-            CharacterDatabase.DirectPExecute("UPDATE ai_playerbot_custom_strategy SET action_line = '%s' WHERE name = '%s' and owner = '%u' and idx = '%u'", command.c_str(), name.c_str(), owner, idx);
+            CharacterDatabase.DirectPExecute("UPDATE ai_playerbot_custom_strategy SET action_line = '%s' WHERE name = '%s' and owner = '%u' and idx = '%u'", safeCommand.c_str(), safeName.c_str(), owner, idx);
         }
     }
     else
     {
-        CharacterDatabase.DirectPExecute("INSERT INTO ai_playerbot_custom_strategy (name, owner, idx, action_line) VALUES ('%s', '%u', '%u', '%s')", name.c_str(), owner, idx, command.c_str());
+        CharacterDatabase.DirectPExecute("INSERT INTO ai_playerbot_custom_strategy (name, owner, idx, action_line) VALUES ('%s', '%u', '%u', '%s')", safeName.c_str(), owner, idx, safeCommand.c_str());
     }
 
     PrintActionLine(idx, command, requester);

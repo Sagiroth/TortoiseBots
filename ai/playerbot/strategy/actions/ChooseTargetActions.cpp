@@ -9,7 +9,7 @@
 bool DpsAssistAction::isUseful()
 {
     // if carry flag, do not start fight
-    if (bot->HasAura(23333) || bot->HasAura(23335) || bot->HasAura(34976))
+    if (bot->HasAura(23333) || bot->HasAura(23335))
         return false;
 
     return true;
@@ -105,7 +105,7 @@ bool AttackEnemyFlagCarrierAction::isUseful()
     // but never actually attacked once they caught up. The check belongs on
     // the TARGET (confirming it's genuinely still an active flag carrier),
     // not on the attacker.
-    return target && sServerFacade.IsDistanceLessOrEqualThan(sServerFacade.getDistance2d(bot, target), 75.0f) && (target->HasAura(23333) || target->HasAura(23335) || target->HasAura(34976));
+    return target && sServerFacade.IsDistanceLessOrEqualThan(sServerFacade.getDistance2d(bot, target), 75.0f) && (target->HasAura(23333) || target->HasAura(23335));
 }
 
 bool SelectNewTargetAction::Execute(Event& event)

@@ -174,12 +174,8 @@ bool MoveToRpgTargetAction::Execute(Event& event)
     if (unit && unit->IsMoving() && bot->getDistance(unit) < INTERACTION_DISTANCE * 2 && unit->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE)
     {
 
-        Creature* creature = static_cast<Creature*>(unit);
-
-
-        if (creature)
-            if (uint32 pauseTimer = creature->GetInteractionPauseTimer())
-                creature->GetMotionMaster()->PauseWaypoints(pauseTimer);
+        // The pinned core does not expose waypoint pause state; leave the
+        // creature's native movement generator untouched.
     }
         couldMove = MoveTo(mapId, x, y, z, false, false);
 

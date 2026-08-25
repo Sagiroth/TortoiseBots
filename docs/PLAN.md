@@ -457,16 +457,20 @@ tortoise-wow-playerbots
 
 The core should be able to exist without this directory.
 
-Conceptual CMake behavior:
+Current native CMake behavior:
 
 ```text
-BUILD_PLAYERBOTS=OFF
-    -> module is ignored/not required
+BUILD_LEGACY_PLAYERBOTS=OFF
+MODULE_TORTOISEBOTS=disabled (or no module checkout)
+    -> native module is ignored/not required
 
-BUILD_PLAYERBOTS=ON
-    -> require src/modules/TortoiseBots/CMakeLists.txt
-    -> build/register module
+MODULE_TORTOISEBOTS=static (or shared)
+    -> require the TortoiseBots module checkout
+    -> build/register the native module
 ```
+
+`BUILD_PLAYERBOTS` is retained by the target core only for its separate legacy
+PlayerBots escape hatch. It is not the native TortoiseBots selector.
 
 Do not make the module repository a mandatory dependency of Tortoise.
 
@@ -669,10 +673,10 @@ Create the PlayerBots module with no meaningful AI yet.
 
 ## Requirements
 
-- `BUILD_PLAYERBOTS=OFF` default
+- `BUILD_PLAYERBOTS=OFF` default for the legacy escape hatch
 - Tortoise builds without the module directory
 - Tortoise builds with module present but OFF
-- module builds with `BUILD_PLAYERBOTS=ON`
+- module builds when `MODULE_TORTOISEBOTS=static` is explicitly enabled
 - module registers/unregisters cleanly
 - optional config loads only when enabled
 
@@ -1245,7 +1249,7 @@ Bots ON
 A strong decoupling test:
 
 1. remove/rename `src/modules/PlayerBots`
-2. set `BUILD_PLAYERBOTS=OFF`
+2. set `BUILD_LEGACY_PLAYERBOTS=OFF` and `MODULE_TORTOISEBOTS=disabled`
 3. build Tortoise
 
 Expected:
@@ -1304,6 +1308,7 @@ The architecture MVP is complete when:
 
 - [ ] Legacy PlayerBots remain removed from Penqle core.
 - [ ] `BUILD_PLAYERBOTS=OFF` is the default.
+- [ ] Native module linkage is controlled only by explicit `MODULE_TORTOISEBOTS` selection.
 - [ ] Core builds with no module checkout present.
 - [ ] Module builds only when explicitly enabled.
 - [ ] Existing generic hooks are used wherever possible.
@@ -1449,12 +1454,14 @@ That difference should guide every architectural decision.
 ## Current implementation note — 2026-08-24
 
 The active cleanup branch is now a Vanilla/Turtle 1.18.1 product slice. The
-module CMake graph is positive and explicit: nine Vanilla classes, generic
+module CMake graph is positive and bounded: nine Vanilla classes, generic
 combat/group/travel behavior, Vanilla raids, WSG/AB/AV tactics, and the
 Tortoise custom spell paths confirmed in the target core. Core-owned
 LFG/meeting-stone, transport/taxi, and battleground queue concepts remain
 available; the module does not recreate the donor automatic dungeon queue.
 Expansion-only donor families and obsolete manager/login/test compatibility
-trees are absent from the physical source graph. `RandomBotFacade` is a narrow
+trees are absent from the physical source graph; explicit class directories
+and filename guards keep the remaining directory globs reviewable.
+`RandomBotFacade` is a narrow
 behavior adapter; `BotManager` remains the owner of module bot records and
 headless lifecycle.

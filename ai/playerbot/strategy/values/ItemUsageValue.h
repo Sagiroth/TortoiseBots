@@ -108,7 +108,6 @@ namespace ai
         static std::unordered_set<uint32> m_allItemIdsSoldByAnyVendors;
         static std::unordered_set<uint32> m_itemIdsSoldByAnyVendorsWithLimitedMaxCount;
 
-        static double GetRarityPriceMultiplier(ItemPrototype const* proto);
         static double GetLevelPriceMultiplier(ItemPrototype const* proto);
 
     public:

@@ -218,95 +218,105 @@ bool GuildShareAhBuyAction::Execute(Event& event)
 
     struct AuctionCandidate
     {
-        AuctionEntry* auction;
+        uint32 auctionId;
+        uint32 itemGuid;
         uint32 itemId;
         uint32 buyout;
         uint32 count;
         bool isFinishedItem;
     };
 
-    AuctionCandidate bestCandidate = { nullptr, 0, 0, 0, false };
+    AuctionCandidate bestCandidate = { 0, 0, 0, 0, 0, false };
     uint32 bestPricePerItem = std::numeric_limits<uint32>::max();
 
     // Runs on the world thread, but the ahbot thread adds and removes auctions
     // from underneath us, so the iteration needs the lock. It is a short scan
     // of map lookups only - no DB, no mail - so holding it is cheap.
-    AuctionHouseObject::Guard ahGuard(auctionHouse->GetLock());
-    AuctionHouseObject::AuctionEntryMapBounds bounds = auctionHouse->GetAuctionsBounds_locked();
-    for (auto itr = bounds.first; itr != bounds.second; ++itr)
     {
-        AuctionEntry* auction = itr->second;
-        if (!auction || auction->buyout == 0)
-            continue; // Skip auctions with no buyout
-
-        if (auction->owner == bot->GetGUIDLow())
-            continue;
-
-        Item* item = sAuctionMgr.GetAItem(auction->itemGuidLow);
-        if (!item)
-            continue;
-
-        uint32 auctionItemId = item->GetProto()->ItemId;
-        uint32 auctionCount = item->GetCount();
-
-        auto it = neededItems.find(auctionItemId);
-        if (it == neededItems.end())
-            continue;
-
-        // Don't buy more than we actually need
-        if (auctionCount > it->second)
-            continue;
-
-        if (auction->buyout > availableBudget)
-            continue;
-
-        ItemPosCountVec dest;
-        InventoryResult msg = bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, auctionItemId, auctionCount);
-        if (msg != EQUIP_ERR_OK)
-            continue;
-
-        bool isFinished = finishedItemIds.count(auctionItemId) > 0;
-        uint32 pricePerItem = auction->buyout / auctionCount;
-
-        // Prioritize items over crafting materials
-        if (bestCandidate.auction)
+        AuctionHouseObject::Guard ahGuard(auctionHouse->GetLock());
+        AuctionHouseObject::AuctionEntryMapBounds bounds = auctionHouse->GetAuctionsBounds_locked();
+        for (auto itr = bounds.first; itr != bounds.second; ++itr)
         {
-            if (bestCandidate.isFinishedItem && !isFinished)
+            AuctionEntry* auction = itr->second;
+            if (!auction || auction->buyout == 0)
+                continue; // Skip auctions with no buyout
+
+            if (auction->owner == bot->GetGUIDLow())
                 continue;
 
-            if (!bestCandidate.isFinishedItem && isFinished)
+            Item* item = sAuctionMgr.GetAItem(auction->itemGuidLow);
+            if (!item)
+                continue;
+
+            uint32 auctionItemId = item->GetProto()->ItemId;
+            uint32 auctionCount = item->GetCount();
+
+            auto it = neededItems.find(auctionItemId);
+            if (it == neededItems.end())
+                continue;
+
+            // Don't buy more than we actually need
+            if (auctionCount > it->second)
+                continue;
+
+            if (auction->buyout > availableBudget)
+                continue;
+
+            ItemPosCountVec dest;
+            InventoryResult msg = bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, auctionItemId, auctionCount);
+            if (msg != EQUIP_ERR_OK)
+                continue;
+
+            bool isFinished = finishedItemIds.count(auctionItemId) > 0;
+            uint32 pricePerItem = auction->buyout / auctionCount;
+
+            // Prioritize items over crafting materials
+            if (bestCandidate.auctionId)
+            {
+                if (bestCandidate.isFinishedItem && !isFinished)
+                    continue;
+
+                if (!bestCandidate.isFinishedItem && isFinished)
+                {
+                    bestPricePerItem = pricePerItem;
+                    bestCandidate = { auction->Id, auction->itemGuidLow, auctionItemId, auction->buyout, auctionCount, isFinished };
+                    continue;
+                }
+            }
+
+            if (pricePerItem < bestPricePerItem)
             {
                 bestPricePerItem = pricePerItem;
-                bestCandidate = { auction, auctionItemId, auction->buyout, auctionCount, isFinished };
-                continue;
+                bestCandidate = { auction->Id, auction->itemGuidLow, auctionItemId, auction->buyout, auctionCount, isFinished };
             }
-        }
-
-        if (pricePerItem < bestPricePerItem)
-        {
-            bestPricePerItem = pricePerItem;
-            bestCandidate = { auction, auctionItemId, auction->buyout, auctionCount, isFinished };
         }
     }
 
-    if (bestCandidate.auction)
+    if (bestCandidate.auctionId)
     {
-        AuctionEntry* auction = bestCandidate.auction;
+        // Use the same validated core handler as a real client. The old
+        // AuctionEntry::UpdateBid compatibility method is a no-op, so it
+        // falsely reported a purchase without charging gold or delivering
+        // mail.
+        WorldPacket packet(CMSG_AUCTION_PLACE_BID, 8 + 4 + 4);
+        packet << auctioneer->GetObjectGuid() << bestCandidate.auctionId << bestCandidate.buyout;
+        bot->GetSession()->HandleAuctionPlaceBid(packet);
 
-        auction->UpdateBid(auction->buyout, bot);
+        bought = auctionHouse->GetAuction(bestCandidate.auctionId) == nullptr &&
+            sAuctionMgr.GetAItem(bestCandidate.itemGuid) == nullptr;
 
         ItemPrototype const* proto = sObjectMgr.GetItemPrototype(bestCandidate.itemId);
         std::ostringstream out;
-        out << "Bought " << bestCandidate.count << "x ";
+        out << (bought ? "Bought " : "Could not buy ") << bestCandidate.count << "x ";
         if (proto)
             out << proto->Name1;
         else
             out << "item #" << bestCandidate.itemId;
-        out << " from AH for guild share list (" << (bestCandidate.buyout / 10000) << "g)";
+        out << (bought ? " from AH for guild share list (" : " from AH for guild share list; core rejected purchase (")
+            << (bestCandidate.buyout / 10000) << "g)";
 
         ai->TellPlayerNoFacing(GetMaster(), out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
 
-        bought = true;
     }
 
     sRandomBotFacade.m_ahActionMutex.unlock();

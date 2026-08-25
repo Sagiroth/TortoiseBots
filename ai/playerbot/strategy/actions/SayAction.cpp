@@ -12,11 +12,11 @@
 
 using namespace ai;
 
-std::unordered_set<std::string> noReplyMsgs = { "all ?", "attack", "attack rti", "bank", "c", "co ?", "de ?", "dead ?", "do accept invitation", "faction", "flee", "follow", "give leader", "guard", "guild leave", "help", "home", "items", "join", "jump", "leave", "lfg", "loot", "los", "nc ?", "pet aggressive", "pet defensive", "pet passive", "pet follow", "pet stay", "pet attack", "pet dismiss", "pet call", "pull", "pull rti", "quests", "quests co", "quests in", "quests all", "react ?", "release", "repair", "reset", "reset ai", "reset strats", "revive", "roll feedback", "rtsc", "rtsc cancel", "rtsc select", "skill", "spells", "stats", "stay", "summon", "talents", "talk", "trainer" "trainer learn", "u go", "who", "where" };
+std::unordered_set<std::string> noReplyMsgs = { "all ?", "attack", "attack rti", "bank", "c", "co ?", "de ?", "dead ?", "do accept invitation", "faction", "flee", "follow", "give leader", "guard", "guild leave", "help", "home", "items", "join", "jump", "leave", "lfg", "loot", "los", "nc ?", "pet aggressive", "pet defensive", "pet passive", "pet follow", "pet stay", "pet attack", "pet dismiss", "pet call", "pull", "pull rti", "quests", "quests co", "quests in", "quests all", "react ?", "release", "repair", "reset", "reset ai", "reset strats", "revive", "roll feedback", "skill", "spells", "stats", "stay", "summon", "talents", "talk", "trainer" "trainer learn", "u go", "who", "where" };
 
 std::unordered_set<std::string> noReplyMsgParts = {  };
 
-std::unordered_set<std::string> noReplyMsgStarts = { "@", "accept [", "accept |", "all +", "all -", "b [", "b |", "bank -", "bank [", "bank |", "boost target ", "buff target ", "cast ", "co +", "co -", "cs ", "d [", "d |", "dead +", "dead -", "destroy [", "destroy |", "drop ", "e [", "e |", "emote ", "faction ", "focus heal ", "follow target ", "go npc ", "go zone ", "items ", "jump ", "keep ", "mail ", "nc +", "nc -", "outfit ", "pet autocast ", "q [", "q |", "r [", "r |", "ra ", "range ", "react +", "react -", "repair [", "repair |", "revive target ", "rti ", "rtsc go ", "rtsc save ", "rtsc unsave ", "s [", "s |", "sendmail [", "sendmail |", "share [", "share |", "skill ", "skill unlearn ", "ss ", "t ", "talents ", "u [", "u |", " ue [", "ue |", "wait for attack time " };
+std::unordered_set<std::string> noReplyMsgStarts = { "@", "accept [", "accept |", "all +", "all -", "b [", "b |", "bank -", "bank [", "bank |", "boost target ", "buff target ", "cast ", "co +", "co -", "cs ", "d [", "d |", "dead +", "dead -", "destroy [", "destroy |", "drop ", "e [", "e |", "emote ", "faction ", "focus heal ", "follow target ", "go npc ", "go zone ", "items ", "jump ", "keep ", "mail ", "nc +", "nc -", "outfit ", "pet autocast ", "q [", "q |", "r [", "r |", "ra ", "range ", "react +", "react -", "repair [", "repair |", "revive target ", "rti ", "s [", "s |", "sendmail [", "sendmail |", "share [", "share |", "skill ", "skill unlearn ", "ss ", "t ", "talents ", "u [", "u |", " ue [", "ue |", "wait for attack time " };
 
 SayAction::SayAction(PlayerbotAI* ai) : Action(ai, "say"), Qualified()
 {
@@ -211,7 +211,17 @@ void ChatReplyAction::GetAIChatPlaceholders(std::map<std::string, std::string>& 
         for (auto& gossip = pMenuBounds.first; gossip != pMenuBounds.second; gossip++)
         {
             const GossipText* gos = sObjectMgr.GetGossipText(gossip->second.text_id);
-            gossipText += " " + gos->Options->Text_0;
+            if (gos)
+            {
+                std::string text = gos->Options->Text_0;
+                if (text.empty() && gos->Options->BroadcastTextID)
+                {
+                    int locale = observer->GetSession() ? observer->GetSession()->GetSessionDbcLocale() : LOCALE_enUS;
+                    if (char const* broadcast = sObjectMgr.GetBroadcastText(gos->Options->BroadcastTextID, locale, observer->GetGender()))
+                        text = broadcast;
+                }
+                gossipText += " " + text;
+            }
         }
 
         uint32 textId = observer->GetGossipTextId(creature);
@@ -220,7 +230,16 @@ void ChatReplyAction::GetAIChatPlaceholders(std::map<std::string, std::string>& 
         {
             const GossipText* gos = sObjectMgr.GetGossipText(textId);
             if (gos)
-                gossipText += " " + gos->Options->Text_0;
+            {
+                std::string text = gos->Options->Text_0;
+                if (text.empty() && gos->Options->BroadcastTextID)
+                {
+                    int locale = observer->GetSession() ? observer->GetSession()->GetSessionDbcLocale() : LOCALE_enUS;
+                    if (char const* broadcast = sObjectMgr.GetBroadcastText(gos->Options->BroadcastTextID, locale, observer->GetGender()))
+                        text = broadcast;
+                }
+                gossipText += " " + text;
+            }
         }
 
         for (auto& gossip = pMenuItemBounds.first; gossip != pMenuItemBounds.second; gossip++)

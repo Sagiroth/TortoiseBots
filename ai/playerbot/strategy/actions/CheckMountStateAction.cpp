@@ -274,7 +274,7 @@ bool CheckMountStateAction::isUseful()
         return false;
 
     // Do not use with BG Flags, except forms like "Travel Form" and "Ghost Wolf"
-    if (bot->HasAura(23333) || bot->HasAura(23335) || bot->HasAura(34976))
+    if (bot->HasAura(23333) || bot->HasAura(23335))
 {
     if (!bot->HasSpell(783) && !bot->HasSpell(2645))
         return false;

@@ -71,7 +71,6 @@
 #include "PassLeadershipToMasterAction.h"
 #include "CheatAction.h"
 #include "GuildManagementActions.h"
-#include "RtscAction.h"
 #include "BattleGroundJoinAction.h"
 #include "MoveStyleAction.h"
 #include "ValueActions.h"
@@ -193,7 +192,6 @@ namespace ai
             creators["flag"] = [](PlayerbotAI* ai) { return new FlagAction(ai); };
             creators["give leader"] = [](PlayerbotAI* ai) { return new GiveLeaderAction(ai); };
             creators["cheat"] = [](PlayerbotAI* ai) { return new CheatAction(ai); };
-            creators["rtsc"] = [](PlayerbotAI* ai) { return new RTSCAction(ai); };
             creators["ah"] = [](PlayerbotAI* ai) { return new AhAction(ai); };
             creators["ah bid"] = [](PlayerbotAI* ai) { return new AhBidAction(ai); };
             creators["wait for attack time"] = [](PlayerbotAI* ai) { return new SetWaitForAttackTimeAction(ai); };

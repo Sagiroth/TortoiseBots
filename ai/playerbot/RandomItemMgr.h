@@ -178,7 +178,6 @@ class RandomItemMgr
         bool CanEquipWeapon(uint8 clazz, ItemPrototype const* proto);
         bool ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, ItemPrototype const* proto);
         bool CheckItemSpec(uint8 spec, ItemSpecType itSpec);
-        float GetItemRarity(uint32 itemId);
         uint32 GetQuestIdForItem(uint32 itemId);
         std::vector<uint32> GetQuestIdsForItem(uint32 itemId);
         std::string GetPlayerSpecName(Player* player);
@@ -191,7 +190,6 @@ class RandomItemMgr
         void BuildFoodCache();
         void BuildPotionCache();
         void BuildTradeCache();
-        void BuildRarityCache();
         void LoadRandomEnchantments();
         bool CanEquipItem(BotEquipKey key, ItemPrototype const* proto);
         bool CanEquipItemNew(ItemPrototype const* proto);
@@ -207,7 +205,6 @@ class RandomItemMgr
         std::map<uint32, std::map<uint32, std::vector<uint32> > > potionCache;
         std::map<uint32, std::map<uint32, std::vector<uint32> > > foodCache;
         std::map<uint32, std::vector<uint32> > tradeCache;
-        std::map<uint32, float> rarityCache;
         std::map<uint32, WeightScale> m_weightScales;
         std::map<std::string, uint32 > weightStatLink;
         std::map<uint32, std::string > ItemStatLink;

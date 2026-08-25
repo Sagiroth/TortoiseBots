@@ -84,7 +84,6 @@
 #include "GuildValues.h"
 #include "TradeValues.h"
 #include "RpgValues.h"
-#include "RTSCValues.h"
 #include "VendorValues.h"
 #include "TrainerValues.h"
 #include "AttackersValue.h"
@@ -407,10 +406,6 @@ namespace ai
             creators["items useful to give"] = [](PlayerbotAI* ai) { return new ItemsUsefulToGiveValue(ai); };
             creators["items useful to enchant"] = [](PlayerbotAI* ai) { return new ItemsUsefulToEnchantValue(ai); };
 
-            creators["see spell location"] = [](PlayerbotAI* ai) { return new SeeSpellLocationValue(ai); };
-            creators["RTSC selected"] = [](PlayerbotAI* ai) { return new RTSCSelectedValue(ai); };
-            creators["RTSC next spell action"] = [](PlayerbotAI* ai) { return new RTSCNextSpellActionValue(ai); };
-            creators["RTSC saved location"] = [](PlayerbotAI* ai) { return new RTSCSavedLocationValue(ai); };
 
             creators["trainable spells"] = [](PlayerbotAI* ai) { return new TrainableSpellsValue(ai); };
             creators["available trainers"] = [](PlayerbotAI* ai) { return new AvailableTrainersValue(ai); };

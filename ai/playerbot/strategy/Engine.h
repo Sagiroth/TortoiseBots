@@ -130,7 +130,6 @@ namespace ai
         Action* lastExecutedAction;
 
     public:
-		bool testMode;
         bool initMode = true;
     };
 }

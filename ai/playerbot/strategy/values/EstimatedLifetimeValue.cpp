@@ -117,13 +117,11 @@ float EstimatedGroupDpsValue::GetBasicDps(uint32 level)
     {
         basic_dps = 300 + (level - 55) * 50;
     }
-    else if (level <= 70)
-    {
-        basic_dps = 550 + (level - 60) * 65;
-    }
     else
     {
-        basic_dps = 1200 + (level - 70) * 200;
+        // Tortoise's player level cap is 60; keep impossible higher levels at
+        // the level-60 estimate instead of carrying expansion-era formulas.
+        basic_dps = 550;
     }
     return basic_dps;
 }
@@ -144,13 +142,10 @@ float EstimatedGroupDpsValue::GetBasicGs(uint32 level)
     {
         basic_gs = std::max(1u, (level + 5) * 14u);
     }
-    else if (level <= 70)
-    {
-        basic_gs = std::max(1u, (85u + (level - 60) * 3u) * 14u);
-    }
     else
     {
-        basic_gs = std::max(1u, (155u + (level - 70) * 4u) * 14u);
+        // Same level-60 cap as the DPS estimate above.
+        basic_gs = 65u * 14u;
     }
     return basic_gs;
 }

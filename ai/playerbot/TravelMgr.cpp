@@ -1127,133 +1127,32 @@ void TravelMgr::LoadAreaLevels()
     if (!areaLevels.empty())
         return;
 
-    WorldDatabase.PExecute("CREATE TABLE IF NOT EXISTS `ai_playerbot_zone_level` (`id` bigint(20) NOT NULL ,`level` bigint(20) NOT NULL,PRIMARY KEY(`id`))");
-
-    std::string query = "SELECT id, level FROM ai_playerbot_zone_level";
-
+    // The module migration owns this table. Do not create or bulk-populate it
+    // during world startup: a missing migration must be visible, and an empty
+    // cache should fall back to the in-memory area-level calculation instead of
+    // issuing one INSERT per DBC area on the world thread.
+    if (!WorldDatabase.PQuery("SHOW TABLES LIKE 'ai_playerbot_zone_level'"))
     {
-        auto result = WorldDatabase.PQuery("%s", query.c_str());
-
-        std::vector<uint32> loadedAreas;
-
-        if (result)
-        {
-            BarGoLink bar(result->GetRowCount());
-
-            do
-            {
-                Field* fields = result->Fetch();
-                bar.step();
-
-                areaLevels[fields[0].GetUInt32()] = fields[1].GetInt32();
-
-                loadedAreas.push_back(fields[0].GetUInt32());
-            } while (result->NextRow());
-
-            sLog.outString(">> Loaded " SIZEFMTD " area levels.", areaLevels.size());
-        }
-
-        BarGoLink bar(sAreaStore.GetNumRows());
-        WorldDatabase.BeginTransaction();
-        for (uint32 i = 0; i < sAreaStore.GetNumRows(); ++i)    // areaflag numbered from 0
-        {
-            bar.step();
-            if (AreaTableEntry const* area = sAreaStore.LookupEntry<AreaEntry>(i))
-            {
-                if (std::find(loadedAreas.begin(), loadedAreas.end(), area->ID) == loadedAreas.end())
-                {
-                    int32 level = sTravelMgr.GetAreaLevel(area->ID);
-
-                    WorldDatabase.PExecute("INSERT INTO `ai_playerbot_zone_level` (`id`, `level`) VALUES ('%d', '%d')", area->ID, level);
-                }
-            }
-        }
-        WorldDatabase.CommitTransaction();
-        if(areaLevels.size() > loadedAreas.size())
-            sLog.outString(">> Generated " SIZEFMTD " areas.", areaLevels.size()- loadedAreas.size());
+        sLog.outErrorDb("TortoiseBots: ai_playerbot_zone_level is missing; using uncached area levels");
+        return;
     }
-}
 
-void TravelMgr::SetMobAvoidArea()
-{
-    sLog.outString("-Apply mob avoidance maps");
-
-    std::vector<std::future<void>> calculations;
-
-    BarGoLink bar(sMapStore.GetNumRows());
-
-    for (uint32 i = 0; i < sMapStore.GetNumRows(); ++i)
+    auto result = WorldDatabase.PQuery("SELECT id, level FROM ai_playerbot_zone_level");
+    if (!result)
     {
-        if (!sMapStore.LookupEntry(i))
-            continue;
+        sLog.outString(">> No cached area levels found; using in-memory calculation.");
+        return;
+    }
 
-        uint32 mapId = sMapStore.LookupEntry(i)->MapID;
-        calculations.push_back(std::async([this, mapId] { SetMobAvoidAreaMap(mapId); }));
+    BarGoLink bar(result->GetRowCount());
+    do
+    {
+        Field* fields = result->Fetch();
         bar.step();
-    }
+        areaLevels[fields[0].GetUInt32()] = fields[1].GetInt32();
+    } while (result->NextRow());
 
-    BarGoLink bar2(calculations.size());
-    for (uint32 i = 0; i < calculations.size(); i++)
-    {
-        calculations[i].wait();
-        bar2.step();
-    }
-
-    sLog.outString(">> Modified navmap areas for %d maps.", sMapStore.GetNumRows());
-}
-
-void TravelMgr::SetMobAvoidAreaMap(uint32 mapId)
-{
-    PathFinder path(mapId, 0);
-    FactionTemplateEntry const* humanFaction = sFactionTemplateStore.LookupEntry(1);
-    FactionTemplateEntry const* orcFaction = sFactionTemplateStore.LookupEntry(2);
-
-    std::vector<CreatureDataPair const*> creatures = WorldPosition(mapId, 1,1).GetCreaturesNear();
-
-    for (auto& creaturePair : creatures)
-    {
-        CreatureData const cData = creaturePair->second;
-        CreatureInfo const* cInfo = sObjectMgr.GetCreatureTemplate(cData.creature_id[0]);
-
-        if (!cInfo)
-            continue;
-
-        WorldPosition point = WorldPosition(cData.position.mapId, cData.position.x, cData.position.y, cData.position.z, cData.position.orientation);
-
-        if (cInfo->npc_flags > 0)
-            continue;
-
-        FactionTemplateEntry const* factionEntry = sFactionTemplateStore.LookupEntry(cInfo->Faction);
-        ReputationRank reactionHum = PlayerbotAI::GetFactionReaction(humanFaction, factionEntry);
-        ReputationRank reactionOrc = PlayerbotAI::GetFactionReaction(orcFaction, factionEntry);
-
-        if (reactionHum >= REP_NEUTRAL || reactionOrc >= REP_NEUTRAL)
-            continue;
-
-        if (!point.GetTerrain())
-            continue;
-
-        if (!point.loadMapAndVMap(0))
-            continue;
-
-        path.setArea(point.GetMapId(), point.getX(), point.getY(), point.getZ(), 12, 50.0f);
-        path.setArea(point.GetMapId(), point.getX(), point.getY(), point.getZ(), 13, 20.0f);
-    }
-}
-
-// Custom player-only starting zones with no MMAP support: Blackstone Island (Goblin, map 1)
-// and Thalassian Highlands (High Elf, map 0). Native bot placement avoids these zones.
-// This is a plain coordinate check
-// (bounds taken from the zones' own NPC spawns) rather than a zone-ID lookup because this
-// function runs once at startup over every quest-relevant spawn in the game, and
-// GetZoneAndAreaId can force-load grid data per call - doing that here deadlocked the server.
-static bool IsInBlackstoneOrThalassian(uint32 mapId, float x, float y)
-{
-    if (mapId == 1 && x > -500.0f && x < 350.0f && y > -7850.0f && y < -7100.0f)
-        return true;
-    if (mapId == 0 && x > 3000.0f && x < 3800.0f && y > -2800.0f && y < -2250.0f)
-        return true;
-    return false;
+    sLog.outString(">> Loaded " SIZEFMTD " area levels.", areaLevels.size());
 }
 
 void TravelMgr::LoadQuestTravelTable()
@@ -1315,13 +1214,6 @@ void TravelMgr::LoadQuestTravelTable()
             {
                 for (auto& guidP : guidpMap.at(entry))
                 {
-                    // Never send bots to custom player-only starting zones (no MMAP support).
-                    // This loop runs over every quest-relevant spawn in
-                    // the game, and GetZoneAndAreaId can force-load grid data per call, which
-                    // deadlocked the server when tried at this stage of the boot sequence.
-                    if (IsInBlackstoneOrThalassian(guidP.GetMapId(), guidP.getX(), guidP.getY()))
-                        continue;
-
                     pointsMap.insert(std::make_pair(guidP.GetRawValue(), guidP));
 
                     for (auto tLoc : locs)
@@ -1378,10 +1270,6 @@ void TravelMgr::LoadQuestTravelTable()
 
         for (auto& guidP : guidpMap.at(entry))
         {
-            // Never send bots to custom player-only starting zones (no MMAP support).
-            if (IsInBlackstoneOrThalassian(guidP.GetMapId(), guidP.getX(), guidP.getY()))
-                continue;
-
             pointsMap.insert(std::make_pair(guidP.GetRawValue(), guidP));
 
             for (auto tLoc : dests)
@@ -1446,7 +1334,6 @@ void TravelMgr::LoadQuestTravelTable()
     sPlayerbotAIConfig.openLog("bot_events.csv", "w");
     sPlayerbotAIConfig.openLog("travel_map.csv", "w");
     sPlayerbotAIConfig.openLog("quest_map.csv", "w");
-    sPlayerbotAIConfig.openLog("activity_pid.csv", "w");
     sPlayerbotAIConfig.openLog("deaths.csv", "w");
     sPlayerbotAIConfig.openLog("player_paths.csv", "w");
     sPlayerbotAIConfig.openLog("travel_destinations.csv", "w");
@@ -1454,45 +1341,20 @@ void TravelMgr::LoadQuestTravelTable()
     sPlayerbotAIConfig.openLog("bot_test_results.log", "w", true);
 
 
-    if (sPlayerbotAIConfig.hasLog("activity_pid.csv"))
+    if (sPlayerbotAIConfig.generateTravelNodes)
     {
-        std::ostringstream out;
-        out << "Timestamp,";
+        sLog.outString("Loading travel nodes.");
 
-        out << "sWorld.GetCurrentDiff(),";
-        out << "sWorld.GetAverageDiff(),";
-        out << "sWorld.GetMaxDiff(),";
-        out << "virtualMemUsedByMe" << ",";
-        out << "activityPercentage,";
-        out << "activityPercentageMod,";
-        out << "activeBots,";
-        out << "playerBots.size(),";
-        out << "totalLevel,";
-        out << "avarageLevel1-9,";
-        out << "avarageLevel10-19,";
-        out << "avarageLevel20-29,";
-        out << "avarageLevel30-39,";
-        out << "avarageLevel40-49,";
-        out << "avarageLevel50-59,";
-        out << "avarageLevel60,";
-
-        out << "totalGold,";
-        out << "avarageGold,";
-        out << "totalavarageGearScore,";
-        out << "avarageGearScore";
-
-        sPlayerbotAIConfig.log("activity_pid.csv", out.str().c_str());
+        sTravelNodeMap.loadNodeStore();
+        sTravelNodeMap.generateAll();
+        sTravelNodeMap.printMap();
+        sTravelNodeMap.printNodeStore();
+        sTravelNodeMap.saveNodeStore();
     }
-
-    sLog.outString("Loading travel nodes.");
-
-    sTravelNodeMap.loadNodeStore();
-
-    sTravelNodeMap.generateAll();
-
-    sTravelNodeMap.printMap();
-    sTravelNodeMap.printNodeStore();
-    sTravelNodeMap.saveNodeStore();
+    else
+    {
+        sLog.outString("TravelNode cache generation disabled; using direct movement and quest destinations.");
+    }
 
     LoadFishLocations();
 
@@ -2161,6 +2023,12 @@ void TravelMgr::LoadFishLocations()
 
     if (!result)
     {
+        if (!sPlayerbotAIConfig.generateFishLocations)
+        {
+            sLog.outString("No persisted fish locations; generation is disabled, using direct fishing fallback.");
+            return;
+        }
+
         sTravelNodeMap.setHasToGen();
         GetFishLocations();
         sTravelNodeMap.setHasToGen(false);
@@ -2205,174 +2073,13 @@ void TravelMgr::LoadFishLocations()
 
 void TravelMgr::GetFishLocations()
 {
-    sLog.outString("Generating Fish locations.");
-
-    BarGoLink bar(1000);
-
-    std::vector<std::future<void>> calculations;
-
-    for (int32 mapId = 1000; mapId >= 0; mapId--)
-    {
-        bool hashFishing = false;
-        for (uint32 i = 0; i < sAreaStore.GetNumRows(); ++i)    // areaflag numbered from 0
-        {
-            AreaTableEntry const* area = sAreaStore.LookupEntry<AreaEntry>(i);
-
-            if (!area)
-                continue;
-
-            if (area->MapId != mapId)
-                continue;
-
-            if (!sObjectMgr.GetFishingBaseSkillLevel(area->ID))
-                continue;
-
-            hashFishing = true;
-            break;
-        }
-
-        if (!hashFishing)
-            continue;
-
-        calculations.push_back(std::async([this, mapId] { GetFishLocations(mapId); }));
-
-        bar.step();
-    }
-
-    BarGoLink bar1(calculations.size());
-
-    for (uint32 i = 0; i < calculations.size(); i++)
-    {
-        calculations[i].wait();
-        bar1.step();
-    }
+    sLog.outError("TortoiseBots: fish-location generation is unavailable with the pinned core PathInfo area query; use persisted locations or direct fishing.");
 }
 
 void TravelMgr::GetFishLocations(uint32 mapId)
 {
-    WorldPosition ironForge(0, -4832.27, -1069.64, 502.268);
-    TravelNode* ironForgeNode = sTravelNodeMap.GetNode(ironForge);
-    WorldPosition orgrimmar(1, 1845.49, -4395.95, 5.19264);
-
-    PathFinder path(mapId,0);
-
-    const int8 subCellPerGrid = 64;
-    const float sizeOfSubCell = SIZE_OF_GRIDS / subCellPerGrid;
-
-    std::unordered_map<uint32, std::vector<AsyncGuidPosition>> fishSpots;
-
-    for (uint8 gridx = 0; gridx < 64; ++gridx)
-    {
-        for (uint8 gridy = 0; gridy < 64; ++gridy)
-        {
-            if (!populatedGrids[mapId][gridx][gridy])
-                continue;
-
-            GridPair grid(gridx, gridy);
-
-            WorldPosition gridPos(mapId, grid);
-
-            for (uint8 cellx = 0; cellx < subCellPerGrid; cellx++)
-            {
-                for (uint8 celly = 0; celly < subCellPerGrid; celly++)
-                {
-                    //Get spot in water.
-                    WorldPosition waterSpot = gridPos + WorldPosition(mapId, sizeOfSubCell * cellx, sizeOfSubCell * celly);
-
-                    waterSpot.setZ(waterSpot.GetHeight(true));
-
-                    if (!waterSpot.isInWater())
-                        continue;
-
-                    //Get nearby location on ground.
-                    WorldPosition fishSpot;
-                    float botAngle = urand(0, 360);
-                    bool inWater = true;
-                    for (float angle = 0.0f; angle < 360.0f; angle += 45.0f)
-                    {
-                        fishSpot = waterSpot + WorldPosition(mapId, cos((angle + botAngle) / 180.0f * M_PI_F) * 10, sin((angle + botAngle) / 180.0f * M_PI_F) * 10);
-
-                        fishSpot.setZ(fishSpot.GetHeight(false));
-
-                        if (!fishSpot.GetTerrain())
-                            continue;
-
-                        if (fabs(fishSpot.getZ() - waterSpot.getZ()) > 10.0f)
-                            continue;
-
-                        uint32 area = path.GetArea(mapId, fishSpot.getX(), fishSpot.getY(), fishSpot.getZ());
-
-                        if (!area || area == NAV_AREA_GROUND_STEEP)
-                        {
-                        //    sLog.outError("no area %d %f %f %f", mapId, fishSpot.getX(), fishSpot.getY(), fishSpot.getZ());
-                            continue;
-                        }
-
-                        inWater = fishSpot.isInWater();
-
-                        if (!inWater)
-                            break;
-                    }
-
-                    if (inWater)
-                        continue;
-
-                    AsyncGuidPosition fishPos(GuidPosition(0, fishSpot));
-                    fishPos.setO(fishPos.GetAngleTo(waterSpot));
-
-                    fishPos.FetchArea();
-                    uint32 zone = GetFishZone(fishPos);
-
-                    if (!zone)
-                        continue;
-
-                    std::vector<WorldPosition> startPath;
-                    std::vector<WorldPosition> endPath;
-
-                    if (fishPos.GetMapId() == 0 && sTravelNodeMap.GetRoute(ironForge, fishPos, startPath, endPath, nullptr).isEmpty())
-                        continue;
-
-                    if (fishPos.GetMapId() == 1 && sTravelNodeMap.GetRoute(orgrimmar, fishPos, startPath, endPath, nullptr).isEmpty())
-                        continue;
-
-                    if (fishPos.GetMapId() > 1)
-                    {
-                        bool noPath = true;
-                        for (auto& node : sTravelNodeMap.GetNodes(fishPos))
-                        {
-                            if (!node->hasRouteTo(ironForgeNode))
-                                continue;
-
-                            if (!sTravelNodeMap.GetFullPath(*node->getPosition(), fishPos).empty())
-                            {
-                                noPath = false;
-                                break;
-                            }
-                        }
-
-                        if (noPath)
-                            continue;
-                    }
-
-                    fishSpots[zone].push_back(fishPos);
-                }
-            }
-        }
-    }
-
-    getDestinationMutex.lock();
-    for (auto& [zone, spots] : fishSpots)
-    {
-        TravelDestination* dest = AddDestination<GatherTravelDestination>(zone, TravelDestinationPurpose::GatherFishing);
-
-        for (auto& spot : spots)
-        {
-            WorldPosition* point = &fishPoints.emplace_back(spot);
-            dest->AddPoint(point);
-            fishMap.AddPoint(point);
-        }
-    }
-    getDestinationMutex.unlock();
+    (void)mapId;
+    sLog.outError("TortoiseBots: fish-location generation is unavailable with the pinned core PathInfo area query; use persisted locations or direct fishing.");
 }
 
 void TravelMgr::SaveFishLocations()

@@ -204,7 +204,9 @@ Could the module drive bots from its own thread via `std::thread` + `World::GetM
 ## 6. Stop Condition Check
 
 - Proposed host-aware files **before MVP works**: 2 mandatory + 1 bridge = **3** — well under the `STOP/REDESIGN` threshold of ~20 files, and under the 8–10 warning.
-- `BUILD_PLAYERBOTS=OFF` remains the default — core builds without `src/modules/TortoiseBots` and without any new hook enabled (the `if (sBotHost)` guard is null when module absent).
+- `BUILD_PLAYERBOTS=OFF` remains the default for the legacy escape hatch. The
+  core builds without `src/modules/TortoiseBots` when native modules are absent
+  or `MODULE_TORTOISEBOTS=disabled`; native linkage is independently explicit.
 - No `GetBot()` / `m_bot` / `sPlayerBotMgr` reintroduced.
 
 **Decision:** Proceed to **Phase 2 — Empty Module** (PLAN §10) after review, then **Phase 3 — Headless Session Spike** (PLAN §11) implementing the factory above and running the 7-step acceptance test.
@@ -284,8 +286,9 @@ boundary is now Penqle's native `modules/<name>/` loader:
   are absent; the module's `RandomBotFacade` is only a narrow behavior adapter.
 - Core asks only about generic transport/headless capabilities and lifecycle
   hooks; it does not expose bot identity or bot-specific player fields.
-- `BUILD_PLAYERBOTS=ON` selects the native TortoiseBots path; this repository
-  does not carry a legacy vendored PlayerBots build path.
+- `MODULE_TORTOISEBOTS=static` selects the native TortoiseBots path; this
+  repository does not carry a legacy vendored PlayerBots build path. Keep
+  `BUILD_LEGACY_PLAYERBOTS=OFF` for native-module builds.
 
 The current link/runtime checkpoint is recorded in `docs/PROVENANCE.md`. The
 runtime gate now also covers AI-enabled startup with the native auxiliary

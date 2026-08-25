@@ -1109,7 +1109,7 @@ namespace ai
                 if (((1 << spell->Dispel) & disMask) || ((1 << spell->Dispel) & poisMask))
                     return true;
 
-                if (!spell->HasAttribute(SPELL_ATTR_NO_IMMUNITIES) && itr.second->HasMechanicMask(bleedType))
+                if (itr.second->HasMechanicMask(bleedType))
                     return true;
             }
             return false;
@@ -1269,14 +1269,6 @@ namespace ai
         {
             return ai->HasAuraToDispel(bot, DISPEL_POISON);
         }
-    };
-
-    class RtscJumpTrigger : public Trigger
-    {
-    public:
-        RtscJumpTrigger(PlayerbotAI* ai) : Trigger(ai, "rtsc jump active") {}
-
-        bool IsActive() override;
     };
 
     class AtWarTrigger : public Trigger

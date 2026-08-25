@@ -32,7 +32,7 @@ namespace ai
                     return false;
                 }
 
-                float const combatReach = bot->GetCombinedCombatReach(target, false);
+                float const combatReach = bot->GetCombatReach(target, false, 0.0f);
                 float const minDistance = ai->GetRange("spell") + combatReach;
                 float const targetDistance = sServerFacade.getDistance2d(bot, target) + combatReach;
 
@@ -108,7 +108,7 @@ namespace ai
                     return false;
                 }
 
-                float const combatReach = bot->GetCombinedCombatReach(target, false);
+                float const combatReach = bot->GetCombatReach(target, false, 0.0f);
                 float const minShootDistance = ai->GetRange("shoot") + combatReach;
                 float const targetDistance = sServerFacade.getDistance2d(bot, target) + combatReach;
 
@@ -346,7 +346,10 @@ namespace ai
             Formation* formation = AI_VALUE(Formation*, "formation");
 
             //Already using proper formation.
-            if (sServerFacade.GetChaseTarget(bot) && sServerFacade.GetChaseTarget(bot)->getObjectGuid() == followTarget->getObjectGuid() && formation->GetAngle() == sServerFacade.GetChaseAngle(bot) && formation->GetOffset() == sServerFacade.GetChaseOffset(bot))
+            if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE &&
+                sServerFacade.GetChaseTarget(bot) &&
+                sServerFacade.GetChaseTarget(bot)->getObjectGuid() == followTarget->getObjectGuid() &&
+                !bot->IsStopped())
                 return false;
 
             if (!ai->IsStateActive(BotState::BOT_STATE_COMBAT))

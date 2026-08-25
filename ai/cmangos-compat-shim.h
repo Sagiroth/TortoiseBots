@@ -27,6 +27,8 @@
 #include <chrono>
 #include <random>
 #include <vector>
+#include <algorithm>
+#include <limits>
 
 // === Type renames ===
 // Mature strategy code uses GenericTransport for the core's ordinary
@@ -82,19 +84,6 @@ typedef AreaTriggerEntry AreaTrigger;
 enum DistanceCalculation { DIST_CALC_NONE = 0, DIST_CALC_BOUNDING_RADIUS = 1, DIST_CALC_COMBAT_REACH = 2 };
 #endif
 
-// cmangos has UNIT_FLAG_CLIENT_CONTROL_LOST. Penqle may use a different name
-// or omit it entirely. Define as 0 so the bit-flag operations parse, even if
-// they're effectively no-ops at runtime
-#ifndef UNIT_FLAG_CLIENT_CONTROL_LOST
-#define UNIT_FLAG_CLIENT_CONTROL_LOST 0
-#endif
-
-// cmangos has movementFlagsMask as "all movement flags" sentinel. Penqle uses
-// MOVEMENTFLAG_MASK_MOVING or specific flag combos. Define as all bits.
-#ifndef movementFlagsMask
-constexpr uint32 movementFlagsMask = 0xFFFFFFFFu;
-#endif
-
 // cmangos has BarGoLink (console progress bar). Penqle has no equivalent.
 // Define as a complete stub class so the bot's BarGoLink pointer dereferences
 // and method calls compile (no-op at runtime).
@@ -105,18 +94,6 @@ public:
     void step() {}
     void Step() {}
     static void SetOutputState(bool /*state*/) {}
-};
-
-// cmangos has InstanceTemplate (sObjectMgr.GetInstanceTemplate). Penqle has
-// no equivalent class. Define a minimal stub with the fields the bot reads,
-// all zero; bot's getInstanceTemplate() returns nullptr in WorldPosition.h
-// so the fields are never read at runtime.
-struct InstanceTemplate {
-    uint32 levelMin = 0;
-    uint32 levelMax = 0;
-    uint32 maxPlayers = 0;
-    uint32 reset_delay = 0;
-    uint32 parent = 0;
 };
 
 // === DBC store aliases ===
@@ -147,19 +124,53 @@ struct CmangosSpellTemplateProxy
 inline CmangosSpellTemplateProxy sSpellTemplate;
 
 // Singleton-like wrapper for cmangos's sItemStorage. Forwards to sObjectMgr.GetItemPrototype().
-// Iteration-upper-bound stubs (this proxy + CmangosCreatureStorageProxy,
-// CmangosGOStorageProxy, CmangosFactionStoreProxy, CmangosAreaTriggerStoreProxy
-// below): cmangos's stores expose GetMaxEntry/GetNumRows; Penqle's don't have
-// a tight maximum. The bot module only uses these as upper bounds for
-// `for (i=0; i<max; ++i) LookupEntry(i)` scans where LookupEntry returns
-// nullptr for unknown ids — so a generous overestimate is safe (a few thousand
-// wasted lookups during one-shot init). Bump if a future caller actually
-// depends on a tight bound.
+// CMaNGOS' stores expose a one-past-the-largest-ID GetMaxEntry(). Some of the
+// Tortoise stores are sparse maps instead, so a fixed donor-era bound is not
+// safe: Turtle custom entries are well above the classic ranges. Cache the
+// derived upper bound while the loaded store has the same size. These stores
+// are loaded before the bot module and are not mutated by the bot update loop;
+// a reload that changes the number of records naturally refreshes the bound.
+template<typename Store>
+class CmangosMapUpperBoundCache
+{
+public:
+    uint32 Get(Store const& store) const
+    {
+        size_t const size = store.size();
+        if (size != m_size)
+        {
+            uint32 upperBound = 0;
+            for (auto const& entry : store)
+            {
+                if (entry.first == std::numeric_limits<uint32>::max())
+                {
+                    upperBound = entry.first;
+                    break;
+                }
+
+                upperBound = std::max(upperBound, entry.first + 1);
+            }
+
+            m_size = size;
+            m_upperBound = upperBound;
+        }
+
+        return m_upperBound;
+    }
+
+private:
+    mutable size_t m_size = std::numeric_limits<size_t>::max();
+    mutable uint32 m_upperBound = 0;
+};
+
 struct CmangosItemStorageProxy
 {
     template<typename T = ItemPrototype>
     T const* LookupEntry(uint32 id) const { return sObjectMgr.GetItemPrototype(id); }
-    uint32 GetMaxEntry() const { return 100000; }
+    uint32 GetMaxEntry() const { return m_upperBound.Get(sObjectMgr.GetItemPrototypeMap()); }
+
+private:
+    mutable CmangosMapUpperBoundCache<ItemPrototypeMap> m_upperBound;
 };
 inline CmangosItemStorageProxy sItemStorage;
 
@@ -179,7 +190,10 @@ struct CmangosFactionTemplateStoreProxy
 {
     template<typename T = FactionTemplateEntry>
     T const* LookupEntry(uint32 id) const { return sObjectMgr.GetFactionTemplateEntry(id); }
-    uint32 GetNumRows() const { return 1500; } // upper bound stub
+    uint32 GetNumRows() const { return m_upperBound.Get(sObjectMgr.GetFactionTemplateMap()); }
+
+private:
+    mutable CmangosMapUpperBoundCache<FactionTemplatesMap> m_upperBound;
 };
 inline CmangosFactionTemplateStoreProxy sFactionTemplateStore;
 
@@ -187,11 +201,6 @@ inline CmangosFactionTemplateStoreProxy sFactionTemplateStore;
 // cmangos has ITEM_FLAG_HAS_LOOT (lootable item). Penqle uses ITEM_FLAG_HAS_LOOT or ITEM_FLAG_OPENABLE.
 #ifndef ITEM_FLAG_HAS_LOOT
 #define ITEM_FLAG_HAS_LOOT ITEM_FLAG_LOOTABLE
-#endif
-
-// cmangos has SPELL_ATTR_NO_IMMUNITIES; Penqle uses SPELL_ATTR_EX_NO_IMMUNITIES or similar.
-#ifndef SPELL_ATTR_NO_IMMUNITIES
-#define SPELL_ATTR_NO_IMMUNITIES 0
 #endif
 
 // === Type renames (cmangos→Penqle struct name diffs) ===
@@ -234,53 +243,16 @@ inline bool IsPositiveSpell(SpellEntry const* spellInfo) { return spellInfo && s
 inline bool IsPositiveSpell(SpellEntry const* spellInfo, WorldObject const* caster, WorldObject const* victim) { return spellInfo && spellInfo->IsPositiveSpell(caster, victim); }
 
 // === TRIGGERED_* spell-cast flags ===
-// cmangos's CastSpell takes a TriggerCastFlags bitmask (TRIGGERED_OLD_TRIGGERED, etc.).
-// Penqle uses bool triggered. Provide #defines so bot's symbolic constants compile;
-// the actual values are arbitrary because Penqle's CastSpell ignores the bitmask
-// (it'll pass the int as bool, which defaults to falsy for 0).
-// Penqle expects `bool triggered`, not a bitmask. Use `false` for unflagged casts and
-// `true` for any "triggered" cast. This is lossy (we can't represent IGNORE_GCD/IGNORE_AURA_SCALING
-// distinctly) but matches Penqle's API. NOTE: must be `bool` typed so private template-trap
-// overloads (in Object.h) don't catch them.
+// cmangos's CastSpell takes a TriggerCastFlags bitmask while Penqle takes a
+// bool. The active module call sites only need the ordinary triggered/untriggered
+// distinction; keep those two aliases bool-typed so the core's overloads select
+// the native API rather than private template traps.
 #ifndef TRIGGERED_NONE
 #define TRIGGERED_NONE false
 #endif
 #ifndef TRIGGERED_OLD_TRIGGERED
 #define TRIGGERED_OLD_TRIGGERED true
 #endif
-#ifndef TRIGGERED_FULL_MASK
-#define TRIGGERED_FULL_MASK true
-#endif
-#ifndef TRIGGERED_IGNORE_GCD
-#define TRIGGERED_IGNORE_GCD true
-#endif
-#ifndef TRIGGERED_IGNORE_AURA_SCALING
-#define TRIGGERED_IGNORE_AURA_SCALING true
-#endif
-
-// === ClientLootType (cmangos has it in Loot/LootMgr.h; Penqle's LootMgr.h doesn't) ===
-// Bot's LootValues.h references this enum. Stub copy from cmangos.
-enum ClientLootType
-{
-    CLIENT_LOOT_NONE            = 0,
-    CLIENT_LOOT_CORPSE          = 1,
-    CLIENT_LOOT_PICKPOCKETING   = 2,
-    CLIENT_LOOT_FISHING         = 3,
-    CLIENT_LOOT_DISENCHANTING   = 4,
-    CLIENT_LOOT_FISHINGFAIL     = 5,
-    CLIENT_LOOT_INSIGNIA        = 6,
-    CLIENT_LOOT_FISHINGHOLE     = 8,
-};
-
-// === GroupLootRoll / GroupLootRollMap (cmangos types not in Penqle) ===
-// Bot's LootValues.h has a GroupLootRollMap field. Stub class so the field declaration parses.
-class GroupLootRoll;  // opaque
-typedef std::unordered_map<uint32, GroupLootRoll*> GroupLootRollMap;
-
-// === TimePoint (cmangos using; not in Penqle) ===
-// Bot uses TimePoint for loot creation timestamps.
-#include <chrono>
-using TimePoint = std::chrono::system_clock::time_point;
 
 // === BG_AV_NODE_STATUS_ defines ===
 // cmangos has these in BattleGroundAV.h; Penqle may use different naming.
@@ -299,7 +271,10 @@ struct CmangosFactionStoreProxy
 {
     template<typename T = FactionEntry>
     T const* LookupEntry(uint32 id) const { return sObjectMgr.GetFactionEntry(id); }
-    uint32 GetNumRows() const { return 100; } // stub upper-bound
+    uint32 GetNumRows() const { return m_upperBound.Get(sObjectMgr.GetFactionMap()); }
+
+private:
+    mutable CmangosMapUpperBoundCache<FactionsMap> m_upperBound;
 };
 inline CmangosFactionStoreProxy sFactionStore;
 
@@ -308,7 +283,10 @@ struct CmangosCreatureStorageProxy
 {
     template<typename T = CreatureInfo>
     T const* LookupEntry(uint32 id) const { return sObjectMgr.GetCreatureTemplate(id); }
-    uint32 GetMaxEntry() const { return 100000; }
+    uint32 GetMaxEntry() const { return m_upperBound.Get(sObjectMgr.GetCreatureInfoMap()); }
+
+private:
+    mutable CmangosMapUpperBoundCache<CreatureInfoMap> m_upperBound;
 };
 inline CmangosCreatureStorageProxy sCreatureStorage;
 
@@ -379,16 +357,6 @@ inline bool IsAreaAuraEffect(uint32 effect) {
         || effect == SPELL_EFFECT_APPLY_AREA_AURA_OWNER;
 }
 
-// === LootItem cmangos-only fields ===
-// cmangos has lootItemType + LOOTITEM_TYPE_*; Penqle has only the basic LootItem.
-// Add stubs to compile bot's checks; behavior degraded (everything looks "normal").
-enum LootItemType {
-    LOOTITEM_TYPE_NORMAL = 0,
-    LOOTITEM_TYPE_QUEST = 1,
-    LOOTITEM_TYPE_FFA = 2,
-    LOOTITEM_TYPE_CONDITIONNAL = 3,
-};
-
 // === NAV_AREA_* / NAV_* (cmangos navmesh area types) ===
 #ifndef NAV_AREA_WATER
 #define NAV_AREA_WATER 7
@@ -414,11 +382,6 @@ enum LootItemType {
 // === MINIMUM_LOOTING_TIME ===
 #ifndef MINIMUM_LOOTING_TIME
 #define MINIMUM_LOOTING_TIME 1000
-#endif
-
-// === FALL_MOTION_TYPE (cmangos motion type) → use a high stub value ===
-#ifndef FALL_MOTION_TYPE
-#define FALL_MOTION_TYPE 100
 #endif
 
 // === AuctionHouseType (cmangos enum) ===
@@ -472,7 +435,10 @@ struct CmangosAreaTriggerStoreProxy
 {
     template<typename T = AreaTriggerEntry>
     T const* LookupEntry(uint32 id) const { return sObjectMgr.GetAreaTrigger(id); }
-    uint32 GetNumRows() const { return 10000; } // upper bound stub
+    uint32 GetNumRows() const { return m_upperBound.Get(sObjectMgr.GetAreaTriggersMap()); }
+
+private:
+    mutable CmangosMapUpperBoundCache<ObjectMgr::AreaTriggerMap> m_upperBound;
 };
 inline CmangosAreaTriggerStoreProxy sAreaTriggerStore;
 
@@ -480,19 +446,43 @@ inline CmangosAreaTriggerStoreProxy sAreaTriggerStore;
 typedef ClassRoles LfgRoles;
 typedef RolesPriority LfgRolePriority;
 
-// === Taxi namespace stub (cmangos has Taxi::Map for in-flight spline tracking) ===
-// Penqle has no equivalent; bot uses GetTaxiPathSpline() which we stub to return nullptr/empty.
+// === Taxi route view (cmangos has Taxi::Map for in-flight spline tracking) ===
+// Penqle exposes the active route through Player::GetTaxi().GetTaxiPath(). Keep
+// the donor-facing view local to the module while reading that live core path.
 namespace Taxi {
     struct PathNode {
         uint32 mapId = 0; float x = 0, y = 0, z = 0;
     };
     class Map {
     public:
-        Map() {}
-        Map(void*) {}  // accept the void* from Player::GetTaxiPathSpline stub
-        bool empty() const { return true; }
-        PathNode const* back() const { return nullptr; }
-        PathNode const* front() const { return nullptr; }
+        explicit Map(TaxiPathNodeList const& path) : m_path(&path) {}
+
+        bool empty() const { return !m_path || m_path->empty(); }
+
+        PathNode const* back() const
+        {
+            if (empty())
+                return nullptr;
+
+            TaxiPathNodeEntry const& node = m_path->back();
+            m_back = { node.mapId, node.x, node.y, node.z };
+            return &m_back;
+        }
+
+        PathNode const* front() const
+        {
+            if (empty())
+                return nullptr;
+
+            TaxiPathNodeEntry const& node = m_path->front();
+            m_front = { node.mapId, node.x, node.y, node.z };
+            return &m_front;
+        }
+
+    private:
+        TaxiPathNodeList const* m_path;
+        mutable PathNode m_front;
+        mutable PathNode m_back;
     };
 }
 
@@ -514,15 +504,16 @@ namespace Taxi {
 #endif
 
 // === sScriptDevAIMgr (cmangos has ScriptDevAI; Penqle uses sScriptMgr) ===
-// Stub so symbol resolves; bot's calls are no-ops. The variadic template
-// absorbs whatever cmangos's OnGossipHello signature looks like in the
-// vendor tree — we don't care, we just need a callable returning false.
-// Penqle's own sScriptMgr is wired separately.
-struct CmangosScriptDevAIMgrStub {
-    template<typename... Args>
-    bool OnGossipHello(Args... /*args*/) { return false; }
+// Preserve the donor call shape while delegating to the core's real gossip
+// registry. This keeps creature gossip scripts visible to the bot instead of
+// silently converting every callback into false.
+struct CmangosScriptDevAIMgrAdapter {
+    bool OnGossipHello(Player* player, Creature* creature)
+    {
+        return sScriptMgr.OnGossipHello(player, creature);
+    }
 };
-inline CmangosScriptDevAIMgrStub sScriptDevAIMgr;
+inline CmangosScriptDevAIMgrAdapter sScriptDevAIMgr;
 
 // === BG_AB GO/banner additional defines (cmangos) ===
 #ifndef BG_AB_BANNER_ALLIANCE
@@ -595,8 +586,34 @@ inline CmangosScriptDevAIMgrStub sScriptDevAIMgr;
 #define BG_AV_GO_GY_BANNER_SNOWFALL 180062
 #endif
 
-// === GetSpellCastResultString stub (cmangos free function) ===
-inline char const* GetSpellCastResultString(SpellCastResult /*res*/) { return ""; }
+// === GetSpellCastResultString (cmangos free function) ===
+// Penqle does not expose the donor's localized result-name table. Preserve the
+// useful failure reason for the owner instead of collapsing every core result
+// into one generic message.
+inline char const* GetSpellCastResultString(SpellCastResult res)
+{
+    switch (res)
+    {
+    case SPELL_FAILED_NOT_READY: return "spell not ready";
+    case SPELL_FAILED_REQUIRES_SPELL_FOCUS: return "requires spell focus";
+    case SPELL_FAILED_REQUIRES_AREA: return "cannot cast here";
+    case SPELL_FAILED_EQUIPPED_ITEM_CLASS:
+    case SPELL_FAILED_EQUIPPED_ITEM_CLASS_MAINHAND:
+    case SPELL_FAILED_EQUIPPED_ITEM_CLASS_OFFHAND: return "requires item or weapon";
+    case SPELL_FAILED_NOT_INFRONT:
+    case SPELL_FAILED_UNIT_NOT_INFRONT: return "must face the target";
+    case SPELL_FAILED_NOT_STANDING: return "must be standing";
+    case SPELL_FAILED_MOVING: return "cannot cast while moving";
+    case SPELL_FAILED_OUT_OF_RANGE: return "target is out of range";
+    case SPELL_FAILED_LINE_OF_SIGHT: return "target is not in line of sight";
+    case SPELL_FAILED_NO_POWER: return "not enough power";
+    case SPELL_FAILED_AFFECTING_COMBAT: return "cannot cast in combat";
+    case SPELL_FAILED_NOT_MOUNTED: return "must be mounted";
+    case SPELL_FAILED_PREVENTED_BY_MECHANIC: return "prevented by a mechanic";
+    case SPELL_FAILED_BAD_TARGETS: return "invalid target";
+    default: return "spell cast failed";
+    }
+}
 
 // === TARGET_FLAG_LOCKED / SPELL_STATE_TARGETING (cmangos) ===
 #ifndef TARGET_FLAG_LOCKED
@@ -614,11 +631,7 @@ inline char const* GetSpellCastResultString(SpellCastResult /*res*/) { return ""
 #define MAX_GOSSIP_TEXT_OPTIONS 8
 #endif
 
-// === HasPersistentAuraEffect / CAST_FLAG_PERSISTENT_AA / FACTION_GROUP_MASK ===
-inline bool HasPersistentAuraEffect(SpellEntry const* /*spellInfo*/) { return false; }
-#ifndef CAST_FLAG_PERSISTENT_AA
-#define CAST_FLAG_PERSISTENT_AA 0x40
-#endif
+// === FACTION_GROUP_MASK ===
 #ifndef FACTION_GROUP_MASK_ALLIANCE
 #define FACTION_GROUP_MASK_ALLIANCE 0x4
 #endif
@@ -686,16 +699,15 @@ inline CmangosSkillLineAbilityStoreProxy sSkillLineAbilityStore;
 #define sAreaStore sAreaStorage
 
 // === sChatChannelsStore proxy ===
-// Tortoise keeps ChatChannels in ObjectMgr::m_chatChannelsMap (private) with
-// ChatChannelsEntry { id, name[8] } — cmangos had { ChannelID, pattern[8] }. For E2E we
-// don't need bots to auto-join channels; stub the store as empty so JoinChatChannels is a
-// no-op. This keeps the PCH compiling without accessing private ObjectMgr internals or
-// inventing a pattern[] field that doesn't exist in this core.
+// Tortoise exposes the loaded ChatChannels data through ObjectMgr accessors.
+// Use that source instead of returning an empty donor-shaped store: the native
+// client/core already owns the channel definitions and JoinChatChannels can
+// make an informed decision from them.
 struct CmangosChatChannelsStoreProxy
 {
     template<typename T = ChatChannelsEntry>
-    T const* LookupEntry(uint32 /*id*/) const { return nullptr; }
-    uint32 GetNumRows() const { return 0; }
+    T const* LookupEntry(uint32 id) const { return sObjectMgr.GetChannelEntryFor(id); }
+    uint32 GetNumRows() const { return static_cast<uint32>(sObjectMgr.GetChatChannelsMap().size()); }
 };
 inline CmangosChatChannelsStoreProxy sChatChannelsStore;
 
@@ -704,7 +716,7 @@ struct CmangosGOStorageProxy
 {
     template<typename T = GameObjectInfo>
     T const* LookupEntry(uint32 id) const { return sObjectMgr.GetGameObjectInfo(id); }
-    uint32 GetMaxEntry() const { return 200000; }
+    uint32 GetMaxEntry() const { return sObjectMgr.GetMaxGameObjectInfoEntry() + 1; }
 };
 inline CmangosGOStorageProxy sGOStorage;
 
@@ -718,20 +730,6 @@ struct CmangosTaxiNodesStoreProxy
 };
 inline CmangosTaxiNodesStoreProxy sTaxiNodesStore;
 
-// === TransportAnimation stub (cmangos has TransportAnim.dbc; Penqle doesn't) ===
-struct TransportAnimationNode {
-    uint32 TimeIndex = 0;
-    uint32 TimeSeg = 0;
-    float X = 0, Y = 0, Z = 0;
-};
-struct TransportAnimation {
-    // cmangos uses a time-keyed map of pointers (so iterators yield (uint32, TransportAnimationNode*) pairs).
-    std::map<uint32, TransportAnimationNode*> Path;
-    uint32 TotalTime = 0;
-};
-typedef std::map<uint32, TransportAnimationNode*> TransportPathContainer;
-// Note: Penqle has its own sTransportMgr; we extend TransportMgr inline (see Transports/TransportMgr.h).
-
 // === sLootMgr shim (cmangos global; Penqle has LootStore but no equivalent singleton) ===
 // Bot calls sLootMgr.GetLoot(player[, guid]) to fetch the loot the player is currently looking at.
 // Penqle stores the Loot object directly on the looted entity (Creature/GameObject/Item/Corpse),
@@ -740,7 +738,7 @@ typedef std::map<uint32, TransportAnimationNode*> TransportPathContainer;
 // before sending CMSG_LOOT_RELEASE, so bots kneeled on an open corpse forever ("crouch loop").
 // Mirrors the core resolution in Handlers/LootHandler.cpp (no distance gate: StoreLoot is reacting
 // to a server loot response, so the target is already validated).
-struct CmangosLootMgrStub
+struct CmangosLootMgrAdapter
 {
     Loot* GetLoot(Player* player, ObjectGuid guid = ObjectGuid()) const
     {
@@ -777,29 +775,11 @@ struct CmangosLootMgrStub
         return nullptr;
     }
 };
-inline CmangosLootMgrStub sLootMgr;
+inline CmangosLootMgrAdapter sLootMgr;
 
 // === Map::GetHitPosition forwarder (cmangos name) ===
 // Penqle uses GetLosHitPosition. The bot module's call sites were patched at
 // the source level (TravelMgr.cpp / WorldPosition.h).
-
-// === FormationSlotData / SpawnGroupFormationSlotType (cmangos formation system) ===
-// Penqle has no formation system; these are stubs; flesh out if we want bot squads.
-struct FormationSlotData {
-    uint32 slotId = 0;
-    FormationSlotData() = default;
-    // bot calls make_shared<FormationSlotData>(int, ObjectGuid, nullptr, uint32).
-    // Stub ctor accepts those 4 args; only slotId tracked.
-    FormationSlotData(int /*idx*/, ObjectGuid const& /*guid*/, void* /*nullptr*/, uint32 slotId_)
-        : slotId(slotId_) {}
-};
-typedef std::shared_ptr<FormationSlotData> FormationSlotDataSPtr;
-namespace SpawnGroupFormationSlotType {
-    constexpr uint32 SPAWN_GROUP_FORMATION_SLOT_TYPE_STATIC = 0;
-    constexpr uint32 SPAWN_GROUP_FORMATION_SLOT_TYPE_SCRIPT = 1;
-}
-using SpawnGroupFormationSlotType::SPAWN_GROUP_FORMATION_SLOT_TYPE_STATIC;
-using SpawnGroupFormationSlotType::SPAWN_GROUP_FORMATION_SLOT_TYPE_SCRIPT;
 
 // === Free-function helpers (cmangos style) wrapping Penqle SpellEntry methods ===
 // cmangos exposes these as free functions; Penqle wraps them in SpellEntry::method.
@@ -848,27 +828,6 @@ inline AreaEntry const* GetAreaEntryByMapId(uint32 mapId) {
 // cmangos exposes a global GetSpellStore() returning the DBC store as a POINTER.
 inline CmangosSpellTemplateProxy* GetSpellStore() { return &sSpellTemplate; }
 
-// === WORLD_SESSION_STATE_* hoisted into global scope ===
-// Tortoise's WorldSession has no WorldSessionState enum (it uses SessionTransport/m_transport).
-// Bot's PlayerbotAI.cpp compares against WORLD_SESSION_STATE_*; stub as plain ints.
-enum WorldSessionStateStub { WORLD_SESSION_STATE_CREATED = 0, WORLD_SESSION_STATE_READY = 1, WORLD_SESSION_STATE_OFFLINE = 2, WORLD_SESSION_STATE_REMOVING = 3 };
-#ifndef WORLD_SESSION_STATE_CREATED
-#define WORLD_SESSION_STATE_CREATED WorldSessionStateStub::WORLD_SESSION_STATE_CREATED
-#endif
-#ifndef WORLD_SESSION_STATE_READY
-#define WORLD_SESSION_STATE_READY WorldSessionStateStub::WORLD_SESSION_STATE_READY
-#endif
-#ifndef WORLD_SESSION_STATE_OFFLINE
-#define WORLD_SESSION_STATE_OFFLINE WorldSessionStateStub::WORLD_SESSION_STATE_OFFLINE
-#endif
-#ifndef WORLD_SESSION_STATE_REMOVING
-#define WORLD_SESSION_STATE_REMOVING WorldSessionStateStub::WORLD_SESSION_STATE_REMOVING
-#endif
-
-// === EmotesTextSoundEntry / FindTextSoundEmoteFor (cmangos) — DBC stubs ===
-struct EmotesTextSoundEntry { uint32 SoundId = 0; };
-inline EmotesTextSoundEntry const* FindTextSoundEmoteFor(uint32 /*textEmoteId*/, uint32 /*race*/, uint32 /*gender*/) { return nullptr; }
-
 // === GetApplicationStartTime (cmangos) — free function returning startup timestamp ===
 inline std::chrono::system_clock::time_point GetApplicationStartTime() {
     static auto s_start = std::chrono::system_clock::now();
@@ -901,13 +860,6 @@ enum LootStatusFlags : uint32 {
     LOOT_STATUS_CONTAIN_FFA            = 0x08,
     LOOT_STATUS_CONTAIN_RELEASED_ITEMS = 0x10,
 };
-#endif
-
-// === LootMethod sentinel (cmangos has NOT_GROUP_TYPE_LOOT for "no group loot") ===
-// Penqle uses NOT_GROUP_TYPE_LOOT or FREE_FOR_ALL — but the enum values may differ.
-// Stub as 0xFF so the comparison `lootMethod != NOT_GROUP_TYPE_LOOT` always hits.
-#ifndef NOT_GROUP_TYPE_LOOT
-constexpr uint32 NOT_GROUP_TYPE_LOOT = 0xFF;
 #endif
 
 // === SPELL_ATTR_ON_NEXT_SWING aliases ===

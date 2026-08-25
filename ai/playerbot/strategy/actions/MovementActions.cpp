@@ -1194,7 +1194,7 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
 
             if (player->IsTaxiFlying()) //Move to where the player is flying to.
             {
-                const Taxi::Map tMap = player->GetTaxiPathSpline();
+                const Taxi::Map tMap(player->GetTaxi().GetTaxiPath());
                 if (!tMap.empty())
                 {
                     auto tEnd = tMap.back();
@@ -1288,7 +1288,11 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
     if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
     {
         Unit* currentTarget = sServerFacade.GetChaseTarget(bot);
-        if (currentTarget && currentTarget->getObjectGuid() == target->getObjectGuid() && sServerFacade.GetChaseAngle(bot) == angle && sServerFacade.GetChaseOffset(bot) == distance)
+        // The Penqle generator intentionally keeps its requested angle and
+        // offset private. The public target/current-motion contract is enough
+        // to let the native generator continue; repeatedly replacing it while
+        // it is moving causes jitter and defeats the follow dead-zone.
+        if (currentTarget && currentTarget->getObjectGuid() == target->getObjectGuid() && !bot->IsStopped())
             return false;
     }
 
@@ -1412,8 +1416,7 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE)
     {
         if (!bot->IsStopped() &&
-            sServerFacade.GetChaseTarget(bot) == obj &&
-            sServerFacade.GetChaseOffset(bot) == distance)
+            sServerFacade.GetChaseTarget(bot) == obj)
         {
             bot->SetTarget(obj); //Needed to keep chase going in combat.
             bot->Attack((Unit*)obj, false); //Needed to keep chase going in combat.
@@ -1687,8 +1690,7 @@ bool MovementAction::Flee(Unit *target)
 
         if (mm->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE)
         {
-            // Penqle's ChaseMovementGenerator is templated; ServerFacade returns safe defaults.
-            if (sServerFacade.GetChaseTarget(bot) == target && sServerFacade.GetChaseOffset(bot) == distance)
+            if (sServerFacade.GetChaseTarget(bot) == target && !bot->IsStopped())
                 return true;
         }
 
@@ -2050,7 +2052,7 @@ bool SetBehindTargetAction::Execute(Event& event)
 
     float angle = GetFollowAngle() / 3 + target->getOrientation() + M_PI / 2.0f;
 
-    float distance = bot->GetCombinedCombatReach(target, true) * 0.8f;
+    float distance = bot->GetCombatReach(target, true, 0.0f) * 0.8f;
     float x = target->getPositionX() + cos(target->getOrientation()) * -1.0f * distance,
         y = target->getPositionY() + sin(target->getOrientation()) * -1.0f * distance,
         z = target->getPositionZ();
@@ -2082,7 +2084,7 @@ bool SetBehindTargetAction::isUseful()
         return false;
 
     Unit* target = AI_VALUE(Unit*, "current target");
-    if (target && !bot->IsFacingTargetsBack(target))
+    if (target && !bot->IsBehindTarget(target, false))
     {
         // Don't move behind if the target is too far away
         const float distance = bot->getDistance(target, false);
@@ -2128,12 +2130,10 @@ bool MoveOutOfCollisionAction::Execute(Event& event)
     uint32 tries = 1;
     for (; tries < 10; ++tries)
     {
-        gx = botPos.getX();
-        gy = botPos.getY();
-        gz = botPos.getZ();
-        if (bot->GetMap()->GetReachableRandomPointOnGround(gx, gy, gz, ai->GetRange("follow")))
+        WorldPosition randomPoint = botPos;
+        if (randomPoint.GetReachableRandomPointOnGround(bot, ai->GetRange("follow")))
         {
-            return MoveTo(bot->GetMapId(), gx, gy, gz);
+            return MoveTo(bot->GetMapId(), randomPoint.getX(), randomPoint.getY(), randomPoint.getZ());
         }
     }
 
@@ -2202,7 +2202,6 @@ bool JumpAction::Execute(ai::Event &event)
     bool jumpInPlace = false;
     bool jumpBackward = false;
     bool showLanding = false;
-    bool isRtsc = false;
     bool toPosition = false;
 
     // only show landing
@@ -2216,11 +2215,6 @@ bool JumpAction::Execute(ai::Event &event)
     {
         options = options.substr(9);
         toPosition = true;
-    }
-    // rtsc stuff
-    if (options == "rtsc")
-    {
-        isRtsc = true;
     }
     // handle options
     if (options.empty() || options == "i" || options == "inplace")
@@ -2255,7 +2249,7 @@ bool JumpAction::Execute(ai::Event &event)
     }
 
     // find jump position
-    if (options == "tome" || options == "follow" || options == "chase" || isRtsc || toPosition)
+    if (options == "tome" || options == "follow" || options == "chase" || toPosition)
     {
         if (options == "follow" && !(ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)))
             return false;
@@ -2276,31 +2270,6 @@ bool JumpAction::Execute(ai::Event &event)
             dest = WorldPosition(event.GetOwner());
         }
 
-        if (isRtsc)
-        {
-            WorldPosition spellPosition = AI_VALUE2(WorldPosition, "RTSC saved location", "jump");
-            if(!spellPosition)
-            {
-                RESET_AI_VALUE2(WorldPosition, "RTSC saved location", "jump");
-                RESET_AI_VALUE2(WorldPosition, "RTSC saved location", "jump point");
-                ai->ChangeStrategy("-rtsc jump", BotState::BOT_STATE_NON_COMBAT);
-                return false;
-            }
-
-            // already have point - movement handled by rtsc jump command
-            WorldPosition jumpPosition = AI_VALUE2(WorldPosition, "RTSC saved location", "jump point");
-            if (jumpPosition)
-            {
-                jumpPoint = jumpPosition;
-                requiredSpeed = jumpPosition.getO();
-                jumpPoint.orientation = dest.getO();
-            }
-
-            dest = spellPosition;
-            distanceTo = sPlayerbotAIConfig.sightDistance;
-            distanceFrom = 10.f;
-        }
-
         if (options == "follow")
         {
             if (!ai->HasRealPlayerMaster())
@@ -2310,9 +2279,8 @@ bool JumpAction::Execute(ai::Event &event)
             if (!followTarget || !ai->IsSafe(followTarget))
                 return false;
 
-            if ((bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE ||
-            bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE) &&
-            (bot->GetMotionMaster()->GetCurrent()->GetCurrentTarget() != followTarget ||
+            if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE &&
+            (sServerFacade.GetChaseTarget(bot) != followTarget ||
             /*bot->InBattleGround() ||*/
             bot->GetTransport()))
                 return false;
@@ -2340,9 +2308,8 @@ bool JumpAction::Execute(ai::Event &event)
             if (!chaseTarget || !ai->IsSafe(chaseTarget))
                 return false;
 
-            if ((bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE ||
-            bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE) &&
-            (bot->GetMotionMaster()->GetCurrent()->GetCurrentTarget() != chaseTarget ||
+            if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE &&
+            (sServerFacade.GetChaseTarget(bot) != chaseTarget ||
             /*bot->InBattleGround() ||*/
             bot->GetTransport()))
                 return false;
@@ -2389,18 +2356,6 @@ bool JumpAction::Execute(ai::Event &event)
                     bot->Say(text, (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
                 }
 
-                // see spell action will handle the movement
-                if (isRtsc)
-                {
-                    WorldPosition jumpPosition = AI_VALUE2(WorldPosition, "RTSC saved location", "jump point");
-                    if (!jumpPosition)
-                    {
-                        jumpPoint.orientation = requiredSpeed;
-                        SET_AI_VALUE2(WorldPosition, "RTSC saved location", "jump point", jumpPoint);
-                        return true;
-                    }
-                }
-
                 if (showLanding)
                 {
                     Creature* wpCreature = bot->SummonCreature(2334, jumpPoint.getX(), jumpPoint.getY(), jumpPoint.getZ() - 1, bot->getOrientation(), TEMPSPAWN_TIMED_DESPAWN, 3000);
@@ -2439,12 +2394,6 @@ bool JumpAction::Execute(ai::Event &event)
                 sServerFacade.SetFacingTo(bot, pointAngle, true);
                 bool success = JumpTowards(jumpPoint, possibleLanding ? possibleLanding : dest, bot, requiredSpeed, possibleLanding);
 
-                if (isRtsc)
-                {
-                    RESET_AI_VALUE2(WorldPosition, "RTSC saved location", "jump");
-                    RESET_AI_VALUE2(WorldPosition, "RTSC saved location", "jump point");
-                    ai->ChangeStrategy("-rtsc jump", BotState::BOT_STATE_NON_COMBAT);
-                }
                 return success;
             }
         }
@@ -3138,12 +3087,14 @@ WorldPosition JumpAction::GetPossibleJumpStartForInRange(const WorldPosition& sr
     uint32 startTime = WorldTimer::getMSTime();
     for (; tries < 500; ++tries)
     {
-        gx = src.getX();
-        gy = src.getY();
-        gz = src.getZ();
-        if (jumper->GetMap()->GetReachableRandomPointOnGround(gx, gy, gz, distanceTo))
+        WorldPosition randomPoint = src;
+        Player const* jumperPlayer = jumper && jumper->IsPlayer() ? static_cast<Player const*>(jumper) : nullptr;
+        if (randomPoint.GetReachableRandomPointOnGround(jumperPlayer, distanceTo))
         {
-            WorldPosition p(jumper->GetMapId(), gx, gy, gz);
+            WorldPosition p = randomPoint;
+            gx = p.getX();
+            gy = p.getY();
+            gz = p.getZ();
             ++attempts;
             if (attempts >= 100)
                 break;

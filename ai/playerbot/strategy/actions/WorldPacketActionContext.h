@@ -25,7 +25,6 @@
 #include "GuildAcceptAction.h"
 #include "PetitionSignAction.h"
 #include "BattleGroundJoinAction.h"
-#include "SeeSpellAction.h"
 #include "UnlockTradedItemAction.h"
 
 namespace ai
@@ -79,7 +78,6 @@ namespace ai
             creators["guild accept"] = [](PlayerbotAI* ai) { return new GuildAcceptAction(ai); };
             creators["inventory change failure"] = [](PlayerbotAI* ai) { return new InventoryChangeFailureAction(ai); };
             creators["petition sign"] = [](PlayerbotAI* ai) { return new PetitionSignAction(ai); };
-            creators["see spell"] = [](PlayerbotAI* ai) { return new SeeSpellAction(ai); };
             creators["unlock traded item"] = [](PlayerbotAI* ai) { return new UnlockTradedItemAction(ai); };
         }
     };

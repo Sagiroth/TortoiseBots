@@ -139,8 +139,7 @@ bool CastCustomSpellAction::Execute(Event& event)
         pSpellInfo->Totem[0] != 16207 &&
         pSpellInfo->Totem[0] != 22461 &&
         pSpellInfo->Totem[0] != 22462 &&
-        pSpellInfo->Totem[0] != 22463 &&
-        pSpellInfo->Totem[0] != 44452)
+        pSpellInfo->Totem[0] != 22463)
     {
         itemTarget = nullptr;
     }

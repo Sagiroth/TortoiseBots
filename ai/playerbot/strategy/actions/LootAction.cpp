@@ -61,7 +61,6 @@ bool LootAction::Execute(Event& event)
 
 enum ProfessionSpells
 {
-    ENGINEERING                  = 49383,
     HERB_GATHERING               = 2366,
     MINING                       = 2575,
     SKINNING                      = 8613
@@ -161,11 +160,11 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
         switch (skill)
         {
         case SKILL_ENGINEERING:
-            return ai->HasSkill(SKILL_ENGINEERING) ? ai->CastSpell(ENGINEERING, creature) : false;
+            return false;
         case SKILL_HERBALISM:
-            return ai->HasSkill(SKILL_HERBALISM) ? ai->CastSpell(32605, creature) : false;
+            return ai->HasSkill(SKILL_HERBALISM) ? ai->CastSpell(HERB_GATHERING, creature) : false;
         case SKILL_MINING:
-            return ai->HasSkill(SKILL_MINING) ? ai->CastSpell(32606, creature) : false;
+            return ai->HasSkill(SKILL_MINING) ? ai->CastSpell(MINING, creature) : false;
         default:
             return ai->HasSkill(SKILL_SKINNING) ? ai->CastSpell(SKINNING, creature) : false;
         }

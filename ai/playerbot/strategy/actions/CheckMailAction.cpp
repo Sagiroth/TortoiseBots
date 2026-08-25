@@ -42,7 +42,6 @@ bool CheckMailAction::Execute(Event& event)
     for (std::list<uint32>::iterator i = ids.begin(); i != ids.end(); ++i)
     {
         uint32 id = *i;
-        bot->SendMailResult(id, MAIL_DELETED, MAIL_OK);
         CharacterDatabase.PExecute("DELETE FROM mail WHERE id = '%u'", id);
         CharacterDatabase.PExecute("DELETE FROM mail_items WHERE mail_id = '%u'", id);
         bot->RemoveMail(id);

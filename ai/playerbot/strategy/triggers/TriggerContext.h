@@ -259,7 +259,6 @@ namespace ai
             creators["rpg gossip talk"] = [](PlayerbotAI* ai) { return new RpgGossipTalkTrigger(ai); };
 
             creators["random jump"] = [](PlayerbotAI* ai) { return new RandomJumpTrigger(ai); };
-            creators["rtsc jump active"] = [](PlayerbotAI* ai) { return new RtscJumpTrigger(ai); };
 
 
             // racials

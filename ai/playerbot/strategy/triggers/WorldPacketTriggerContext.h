@@ -52,7 +52,6 @@ namespace ai
             creators["levelup"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "levelup"); };
             creators["xpgain"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "xpgain"); };
             creators["honorgain"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "honorgain"); };
-            creators["see spell"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "see spell"); };
             creators["release spirit"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "release spirit"); };
             creators["revive from corpse"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "revive from corpse"); };
             creators["receive emote"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "receive emote"); };

@@ -233,7 +233,7 @@ namespace ai
             {
                 uint32 itemId = 0;
                 const uint32 level = bot->GetLevel();
-                const std::vector<uint32> manaGemIds = { 5514, 5513, 8007, 8008, 22044, 33312 };
+                const std::vector<uint32> manaGemIds = { 5514, 5513, 8007, 8008 };
                 for (const uint32 manaGemId : manaGemIds)
                 {
                     if (bot->HasItemCount(manaGemId, 1))

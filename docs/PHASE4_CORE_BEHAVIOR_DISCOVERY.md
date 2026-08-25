@@ -18,7 +18,7 @@ A playable bot is five things, not a framework:
 
 1. **A tick that is not a framework.** The legacy `PlayerbotAI::UpdateAI` is throttled by `reactDelay` (100 ms), `passiveDelay` (4000 ms) and a `globalCoolDown` (500 ms) and driven from the world/map thread. TortoiseBots already has the correct seam for this: `IWorldUpdateListener::OnWorldUpdate(diff)` called once per `World::Update` frame. The whole MVP can run from that single tick — no per-`Player::Update` hook, no background thread touching `Player`/`Map`.
 2. **A persistent intent, not a transient action.** `follow` is the only persistent movement intent worth keeping. `stay` is "follow with a saved anchor". `attack` is a *temporary* intent that suspends the persistent one and returns to it when the target dies or becomes invalid. Everything else (formations, guard, wander, travel) is deferred.
-3. **One distance rule.** `followDistance = 1.5y` (CMaNGOS config, `PlayerbotAIConfig.cpp:140`), not `30y`. The bot starts a `MoveFollow` when its 2-d distance to the follow target exceeds that `followDistance` and the target is not taxi-flying/dead/self. It stops when already chasing that target at the same angle/offset (see `FollowAction::isUseful`, `FollowActions.cpp:89`). That tight loop is the whole MVP: nothing else fixes "bot lags 30 yards behind".
+3. **One distance rule.** `followDistance = 1.5y` (CMaNGOS config, `PlayerbotAIConfig.cpp:140`), not `30y`. The bot starts a `MoveFollow` when its 2-d distance to the follow target exceeds that `followDistance` and the target is not taxi-flying/dead/self. It does not replace an already-moving native follow generator targeting the same unit (see `FollowAction::isUseful`, `FollowActions.cpp:86-93`). That tight loop is the whole MVP: nothing else fixes "bot lags 30 yards behind".
 4. **One target rule.** MVP bots do not invent targets. They *assist* the owner. If the master's current selection/attack target is a valid hostile within `sightDistance` (75 y, `aiplayerbot.conf.dist.in`), the bot adopts it. Otherwise no target. Validation is `PossibleAttackTargetsValue::IsValid` (alive, in-world, same map, not friendly, not untargetable, within range, LOS where required). That rule alone covers every acceptance case the task lists (master changes target, master clears target, target dies, target unreachable).
 5. **One combat rule.** When a target exists, the bot stops following, faces it, sets selection, optionally sends pet to `COMMAND_ATTACK`, and calls `bot->Attack(victim, !isRanged || dist<5)` — vanilla `Unit::Attack` that arms auto-attack. Melee approach is `MoveChase`/`reach melee` triggered by `enemy out of melee` (from `MeleeCombatStrategy`). When the target dies or `invalid target` fires, the bot calls `AttackStop`, clears `current target`, adds the corpse to `available loot` (legacy `SelectNewTargetAction`), and resumes follow. No rotation, no spells.
 
@@ -85,8 +85,8 @@ Legacy parsed **137 chat trigger keys** and **129 destination commands**, `AiPla
 
 ### 4.1 Follow
 
-* **Distance:** `followDistance = 1.5y` (source `PlayerbotAIConfig.cpp:140`, `sightDistance=75.0f:122`, `reactDistance=150.0f:126`). This is the dead-zone: inside it, the bot does not move (CMaNGOS `FollowAction::isUseful` explicitly early-returns `false` when already chasing the same target at same angle/offset and `distance <= sightDistance`). MangosZero's `Follow` uses the same `sPlayerbotAIConfig.followDistance` gate (`MovementActions.cpp:552`). Legacy 30 y "follow" was for random/remote travel — not for owned follow.
-* **Restart guard:** do not re-issue `MoveFollow` if `GetChaseTarget()==followTarget && GetChaseAngle()==formation->GetAngle() && GetChaseOffset()==formation->GetOffset()` — prevents jitter (`FollowActions.cpp:86`).
+* **Distance:** `followDistance = 1.5y` (source `PlayerbotAIConfig.cpp:140`, `sightDistance=75.0f:122`, `reactDistance=150.0f:126`). This is the dead-zone: inside it, the bot does not replace an already-moving native follow generator targeting the same unit (the module cannot inspect Penqle's private requested angle/offset fields). MangosZero's `Follow` uses the same `sPlayerbotAIConfig.followDistance` gate (`MovementActions.cpp:552`). Legacy 30 y "follow" was for random/remote travel — not for owned follow.
+* **Restart guard:** use the public `MotionMaster::GetCurrent()` targeted-generator target plus the active moving state; do not compare against fabricated zero offsets or private donor fields (`FollowActions.cpp:86-93`).
 * **Preconditions:** `!CanMove() → false`, `target is taxi-flying → false`, `target==self → false`, `rpg target active → false`, `!IsSameMap || sightDistance exceeded → true (needs follow)` (`FollowActions.cpp:36`).
 * **History lesson:** `a07286a9 Follow: Allow follow across maps`, `78bebbeb` ping-pong follow test, `b6f31474` bots trying to move around targets from long distance → pathfinder miss, `93ea35c8` rpg-vs-travel oscillation, `90910934` wander stopping near master. Common theme: follow must be *strictly tied to the master's position/orientation*, not to a stale cached path.
 
@@ -381,7 +381,7 @@ Each slice must leave `BUILD_PLAYERBOTS=OFF` green and an observable in-game che
 
 ### Slice 1 — Follow (visible win) — 1 day
 
-* Implement `Movement::Follow(master, 1.5f, angle)` with `FollowAction::isUseful` restart guard + `MotionMaster::MoveFollow`/`MovePoint` fallback, and `BotController` intent `Follow` default.
+* Implement `Movement::Follow(master, 1.5f, angle)` with the public-target/moving-state `FollowAction::isUseful` guard + `MotionMaster::MoveFollow`/`MovePoint` fallback, and `BotController` intent `Follow` default.
 * `IsInWorld` / `IsBeingTeleported` / taxi / `CanMove` early-outs.
 * Test: `.bot add` → bot follows at ~1.5 y. Owner runs continuously → bot tracks without jitter. Owner stops → bot stops within a step. Cross-map teleport (e.g. `.go xyz`) with bot on same map far → bot uses `MoveFollow` (or `TeleportTo` shortcut if `>150y` and not in combat). No flying/path special cases.
 
@@ -634,7 +634,7 @@ The behavior layer must not import the *temporary* bootstrap mechanism:
 
 ### 1. Five most important things legacy PlayerBots taught us about basic bot behavior
 
-1. **Follow is a dead-zone, not a chase.** `1.5 y` plus a restart guard (same chase target/angle/offset) is what stops jitter — not a smarter path. The failures were all jitter and oscillation, not navmesh misses.
+1. **Follow is a dead-zone, not a chase.** `1.5 y` plus a restart guard on the same active native target/moving state is what stops jitter — not a smarter path. The failures were all jitter and oscillation, not navmesh misses.
 2. **Assist is selection, not scanning.** For owned bots, the only target-creation rule worth keeping is "adopt master's current selection if valid hostile within 75 y; otherwise none." Every broad scan is deferred cost.
 3. **Validation is the behavior.** The most fixed surface since May was the `IsValid` predicate (`friendly/dead/flag/range/LOS/immune/thorns`) — not combat rotations. Slice 3 before Slice 4 for a reason.
 4. **Combat is two operations plus bookkeeping.** `bot->Attack(victim, melee)` / `AttackStop` plus the five-line bookkeeping (selection, facing, pet command, loot push on death, `invalid target` clear) is the real combat model. Everything else is multipliers.

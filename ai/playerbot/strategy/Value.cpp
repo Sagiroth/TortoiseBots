@@ -8,7 +8,8 @@ using namespace ai;
 
 std::string ObjectGuidCalculatedValue::Format()
 {
-    return "<none>"; // E2E green stub
+    ObjectGuid guid = Get();
+    return guid ? std::to_string(guid.GetRawValue()) : "<none>";
 }
 
 std::string ObjectGuidListCalculatedValue::Format()
@@ -18,7 +19,7 @@ std::string ObjectGuidListCalculatedValue::Format()
     for (std::list<ObjectGuid>::iterator i = guids.begin(); i != guids.end(); ++i)
     {
         GuidPosition guid = GuidPosition(*i, bot);
-        out << "<pos>" << ","; // E2E green stub
+        out << guid.print() << ",";
     }
     out << "}";
     return out.str();
@@ -26,9 +27,8 @@ std::string ObjectGuidListCalculatedValue::Format()
 
 std::string GuidPositionCalculatedValue::Format()
 {
-    std::ostringstream out;
     GuidPosition guidP = this->Calculate();
-    return "<pos>"; // E2E green stub
+    return guidP ? guidP.print() : "<none>";
 }
 
 std::string GuidPositionListCalculatedValue::Format()
@@ -38,7 +38,7 @@ std::string GuidPositionListCalculatedValue::Format()
     for (std::list<GuidPosition>::iterator i = guids.begin(); i != guids.end(); ++i)
     {
         GuidPosition guidP = *i;
-        out << "<pos>" << ","; // E2E green stub
+        out << guidP.print() << ",";
     }
     out << "}";
     return out.str();
@@ -46,7 +46,8 @@ std::string GuidPositionListCalculatedValue::Format()
 
 std::string GuidPositionManualSetValue::Format()
 {
-    return "<pos>"; // E2E green stub
+    GuidPosition guidP = Get();
+    return guidP ? guidP.print() : "<none>";
 }
 
 Unit* UnitCalculatedValue::Get()

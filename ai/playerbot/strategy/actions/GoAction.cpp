@@ -177,7 +177,7 @@ inline void TellPosition(PlayerbotAI* ai, Player* requester)
     if (bot->IsTaxiFlying())
     {
         out << "On a flight path";
-        const Taxi::Map tMap = bot->GetTaxiPathSpline();
+        const Taxi::Map tMap(bot->GetTaxi().GetTaxiPath());
         if (!tMap.empty())
         {
             auto tEnd = tMap.back();

@@ -17,7 +17,6 @@ using namespace ai;
 Engine::Engine(PlayerbotAI* ai, AiObjectContext *factory, BotState state) : PlayerbotAIAware(ai), aiObjectContext(factory), state(state)
 {
     lastRelevance = 0.0f;
-    testMode = false;
     lastExecutedAction = nullptr;
 }
 
@@ -124,12 +123,6 @@ void Engine::Init()
         MultiplyAndPush(strategy->getDefaultActions(), 0.0f, false, Event(), "default");
     }
 
-	if (testMode)
-	{
-        FILE* file = fopen("test.log", "w");
-        fprintf(file, "\n");
-        fclose(file);
-	}
 }
 
 bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
@@ -642,7 +635,7 @@ void Engine::ProcessTriggers(bool minimal)
         if (!trigger)
             continue;
 
-        if (testMode || trigger->IsAlreadyTriggered() || trigger->needCheck())
+        if (trigger->IsAlreadyTriggered() || trigger->needCheck())
         {
             if (minimal && node->getFirstRelevance() < 100)
                 continue;
@@ -821,7 +814,7 @@ void Engine::LogAction(const char* format, ...)
 
     va_list ap;
     va_start(ap, format);
-    vsprintf(buf, format, ap);
+    vsnprintf(buf, sizeof(buf), format, ap);
     va_end(ap);
     lastAction += "|";
     lastAction += buf;
@@ -832,34 +825,24 @@ void Engine::LogAction(const char* format, ...)
         lastAction = (pos == std::string::npos ? "" : lastAction.substr(pos));
     }
 
-    if (testMode)
-    {
-        FILE* file = fopen("test.log", "a");
-        fprintf(file, "%s",buf);
-        fprintf(file, "\n");
-        fclose(file);
-    }
-    else
-    {
-        Player* bot = ai->GetBot();
-        if (sPlayerbotAIConfig.logInGroupOnly && !bot->GetGroup())
-            return;
+    Player* bot = ai->GetBot();
+    if (sPlayerbotAIConfig.logInGroupOnly && !bot->GetGroup())
+        return;
 
-        sLog.outDetail( "%s %s", bot->GetName(), buf);
+    sLog.outDetail( "%s %s", bot->GetName(), buf);
 
-        // BotActionLog tee: every PUSH/A/Tick line also lands in the bot's
-        // per-bot file under logs/bots/ when AiPlayerbot.EnableActionLog=1.
-        // Tag heuristic extracts the first colon-prefix from `buf` so the
-        // per-bot log gets useful tags (PUSH / A / T / etc.) instead of
-        // a single "ACTION".
-        const char* tag = "ENGINE";
-        if (strncmp(buf, "PUSH:", 5) == 0)             tag = "PUSH";
-        else if (strncmp(buf, "A:", 2) == 0)           tag = "ACTION";
-        else if (strncmp(buf, "T:", 2) == 0)           tag = "TRIGGER_REASON";
-        else if (strncmp(buf, "--- AI Tick", 11) == 0) tag = "TICK";
-        else if (strncmp(buf, "no actions", 10) == 0)  tag = "NO_ACTION";
-        ai::botdiag::BotActionLog::Write(ai, tag, "%s", buf);
-    }
+    // BotActionLog tee: every PUSH/A/Tick line also lands in the bot's
+    // per-bot file under logs/bots/ when AiPlayerbot.EnableActionLog=1.
+    // Tag heuristic extracts the first colon-prefix from `buf` so the
+    // per-bot log gets useful tags (PUSH / A / T / etc.) instead of
+    // a single "ACTION".
+    const char* tag = "ENGINE";
+    if (strncmp(buf, "PUSH:", 5) == 0)             tag = "PUSH";
+    else if (strncmp(buf, "A:", 2) == 0)           tag = "ACTION";
+    else if (strncmp(buf, "T:", 2) == 0)           tag = "TRIGGER_REASON";
+    else if (strncmp(buf, "--- AI Tick", 11) == 0) tag = "TICK";
+    else if (strncmp(buf, "no actions", 10) == 0)  tag = "NO_ACTION";
+    ai::botdiag::BotActionLog::Write(ai, tag, "%s", buf);
 }
 
 void Engine::ChangeStrategy(const std::string& names)
@@ -939,9 +922,6 @@ void Engine::PrintStrategies(Player* requester, const std::string& engineType)
 
 void Engine::LogValues()
 {
-    if (testMode)
-        return;
-
     Player* bot = ai->GetBot();
     if (sPlayerbotAIConfig.logInGroupOnly && !bot->GetGroup())
         return;

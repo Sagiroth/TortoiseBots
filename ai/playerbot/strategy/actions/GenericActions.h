@@ -47,7 +47,7 @@ namespace ai
                 if (!(go->GetEntry() == 181106 || go->GetEntry() == 181165 || go->GetEntry() == 181102 || go->GetEntry() == 181105))
                     continue;
 
-                if (!sServerFacade.isSpawned(go) || go->GetGoState() != GO_STATE_READY || !true /*CanInteract stub*/)
+                if (!sServerFacade.isSpawned(go) || go->GetGoState() != GO_STATE_READY || !bot->CanInteract(go))
                     continue;
 
                 if (Unit* owner = go->GetOwner())

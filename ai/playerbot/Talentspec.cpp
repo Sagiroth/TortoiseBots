@@ -45,12 +45,19 @@ uint32 TalentSpec::PointstoLevel(int points) const
 //Check the talentspec for errors.
 bool TalentSpec::CheckTalents(uint32 freeTalentPoints, std::ostringstream* out)
 {
+    auto spellName = [](uint32 spellId)
+    {
+        if (SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(spellId))
+            return std::string(spellInfo->SpellName[0]);
+        return std::string("spell ") + std::to_string(spellId);
+    };
+
     for (auto& entry : talents)
     {
         if (entry.rank > entry.maxRank)
         {
-            SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(entry.talentInfo->RankID[0]);
-            *out << "spec is not for this class. " << spellInfo->SpellName[0] << " has " << (entry.rank - entry.maxRank) << " points above max rank.";
+            *out << "spec is not for this class. " << spellName(entry.talentInfo->RankID[0])
+                 << " has " << (entry.rank - entry.maxRank) << " points above max rank.";
             return false;
         }
 
@@ -58,47 +65,54 @@ bool TalentSpec::CheckTalents(uint32 freeTalentPoints, std::ostringstream* out)
         {
             TalentEntry const* talentInfo = sTalentStore.LookupEntry(entry.talentInfo->DependsOn);
             if (!talentInfo)
-                continue;
+            {
+                *out << "spec has missing prerequisite talent " << entry.talentInfo->DependsOn
+                     << " for " << spellName(entry.talentInfo->RankID[0]) << ".";
+                return false;
+            }
 
             bool found = false;
-            SpellEntry const* spellInfodep;
+            uint32 dependencySpellId = talentInfo->RankID[0];
 
             for (auto& dep : talents)
                 if (dep.talentInfo->TalentID == entry.talentInfo->DependsOn)
                 {
-                    spellInfodep = sServerFacade.LookupSpellInfo(dep.talentInfo->RankID[0]);
+                    dependencySpellId = dep.talentInfo->RankID[0];
                     if (dep.rank >= (int)entry.talentInfo->DependsOnRank)
                         found = true;
                 }
             if (!found)
             {
-                SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(entry.talentInfo->RankID[0]);
-                *out << "spec is is invalid. Talent:" << spellInfo->SpellName[0] << " needs: " << spellInfodep->SpellName[0] << " at rank: " << entry.talentInfo->DependsOnRank;
+                *out << "spec is invalid. Talent: " << spellName(entry.talentInfo->RankID[0])
+                     << " needs: " << spellName(dependencySpellId)
+                     << " at rank: " << entry.talentInfo->DependsOnRank;
                 return false;
             }
         }
     }
 
+    int totalPoints = 0;
     for (int i = 0; i < 3; i++)
     {
         std::vector<TalentListEntry> talentTree = GetTalentTree(i);
-        int points = 0;
+        int treePoints = 0;
 
         for (auto& entry : talentTree)
         {
-            if (entry.rank > 0 && (int)(entry.talentInfo->Row * 5) > points)
+            if (entry.rank > 0 && (int)(entry.talentInfo->Row * 5) > treePoints)
             {
-                SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(entry.talentInfo->RankID[0]);
-                *out << "spec is is invalid. Talent " << spellInfo->SpellName[0] << " is selected with only " << points << " in row below it.";
+                *out << "spec is invalid. Talent " << spellName(entry.talentInfo->RankID[0])
+                     << " is selected with only " << treePoints << " points in lower rows.";
                 return false;
             }
-            points += entry.rank;
+            treePoints += entry.rank;
         }
+        totalPoints += treePoints;
     }
 
-    if (points > freeTalentPoints)
+    if (totalPoints > (int)freeTalentPoints)
     {
-        *out << "spec is for a higher level. (" << PointstoLevel(points) << ")";
+        *out << "spec is for a higher level. (" << PointstoLevel(totalPoints) << ")";
         return false;
     }
 
@@ -143,8 +157,6 @@ void TalentSpec::SetPublicNote(Player* bot)
 
 //Returns a base talentlist for a class.
 void TalentSpec::GetTalents(uint32 classMask) {
-    TalentListEntry entry;
-
     for (uint32 i = 0; i < sTalentStore.GetNumRows(); ++i)
     {
         TalentEntry const* talentInfo = sTalentStore.LookupEntry(i);
@@ -158,8 +170,10 @@ void TalentSpec::GetTalents(uint32 classMask) {
         if ((classMask & talentTabInfo->ClassMask) == 0)
             continue;
 
+        TalentListEntry entry{};
         entry.entry = i;
         entry.rank = 0;
+        entry.maxRank = 0;
         entry.talentInfo = talentInfo;
         entry.talentTabInfo = talentTabInfo;
 
@@ -171,6 +185,10 @@ void TalentSpec::GetTalents(uint32 classMask) {
 
             entry.maxRank = rank + 1;
         }
+
+        if (entry.maxRank == 0)
+            continue;
+
         talents.push_back(entry);
     }
     SortTalents(talents, SORT_BY_DEFAULT);

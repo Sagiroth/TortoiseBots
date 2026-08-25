@@ -27,8 +27,10 @@ bool DropQuestAction::Execute(Event& event)
         {
             bot->SetQuestSlot(slot, 0);
 
-            // we ignore unequippable quest items in this case, its' still be equipped
-            bot->TakeQuestSourceItem(logQuest, false);
+            // The core has no TakeQuestSourceItem wrapper. Remove the quest's
+            // declared source item through the native inventory API instead.
+            if (quest->GetSrcItemId() && quest->GetSrcItemCount())
+                bot->DestroyItemCount(quest->GetSrcItemId(), quest->GetSrcItemCount(), false);
             entry = logQuest;
 
             bot->SetQuestStatus(entry, QUEST_STATUS_NONE);

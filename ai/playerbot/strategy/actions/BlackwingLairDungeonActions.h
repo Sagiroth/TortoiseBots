@@ -106,7 +106,7 @@ namespace ai
                 return false;
 
             // Core rogue stealth logic had some WSG/EYE flag checks, added in here too just in case
-            return !ai->HasAura(23333, bot) && !ai->HasAura(23335, bot) && !ai->HasAura(34976, bot);
+            return !ai->HasAura(23333, bot) && !ai->HasAura(23335, bot);
         }
     };
 

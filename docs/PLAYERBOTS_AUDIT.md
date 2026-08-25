@@ -1,0 +1,1211 @@
+# TortoiseBots PlayerBots Audit
+
+- **Date:** 2026-08-24 (final verification 2026-08-25)
+- **Historical audit target:** TortoiseBots `13c0632f6a42f0f685de763c17f19c96bc392892`
+- **Closure implementation:** TortoiseBots `d672048e86b9effc36210d3e6d076741fbeccc7f` (final source snapshot; includes the traced closure, unreachable fish-generator removal, and final active fallback fixes)
+- **Verifier correction:** TortoiseBots `9e9567c996d1cbf5c2c3f5949453499589600d4e` (the surface verifier now fails closed when ripgrep is unavailable)
+- **Target core:** local `tortoise-wow` `9487c5150a6553c665fafc1f4568669b8b00f011` (`playerbots-integration-gh`)
+- **Client/data:** local Turtle WoW 1.18.1 package; the base `WoW.exe` reports client build 5875, while the local Turtle documentation/addon package identifies the patched client as build 7272.
+- **Authority:** local Tortoise core, local extracted DBC/maps/vmaps/mmaps, and local client files. The external wiki was not needed for this audit.
+
+## Executive verdict
+
+The current TortoiseBots repository is a substantial and mostly coherent
+Vanilla/Turtle behavior harvest. The cleanup commit genuinely removed the
+physical Death Knight, Karazhan, glyph, vehicle, Arena, donor-manager/login,
+and test families from the native source graph. The native host layer also uses
+generic `WorldScript`, `PlayerScript`, `ServerScript`, and `AllCommandScript`
+seams rather than reintroducing `GetBot()`, `m_bot`, or `sPlayerBotMgr` into the
+module repository.
+
+The detailed findings below describe the pre-remediation baseline named above.
+The closure pass in this branch resolves the module-owned P0/P1 packaging,
+schema, startup, security, data-ID, collection-mount, and donor-residue
+issues. It does not pretend that the separate local core's legacy
+`LFTBotFill`/`src/modules/PlayerBots` code or every compatibility fallback has
+been rewritten by a module-only PR; those remain explicit core integration and
+capability follow-ups.
+
+At the audited baseline, four integration problems were blockers before
+expansion. They are now handled as follows:
+
+1. Module SQL now installs into the core's exact case-sensitive configured
+   `world/` and `character/` paths. `mangosd.conf.dist.in` explicitly sets
+   those names; `AutoUpdater.cpp`'s uppercase values are fallback defaults
+   only. Fresh isolated SQL application and preserved-stack migration
+   processing are verified below.
+2. The native CMake file no longer forces the legacy `BUILD_PLAYERBOTS=1`
+   define. The local core checkout still contains both a stale, untracked
+   `modules/TortoiseBots/` copy and a tracked legacy
+   `src/modules/PlayerBots/` escape hatch; that remains a core-repository
+   source-selection concern and is called out as external follow-up.
+3. The shipped module schema now includes the active cache columns, owns zone
+   levels in `World`, and removes runtime table creation/population. Travel
+   graph generation is opt-in and its cache save is transactional.
+4. RTSC/SeeSpell file behavior and the related dead BossAura/test surface have
+   been removed. Custom strategy editing now validates lengths and escapes
+   both write and load paths.
+
+The native module still has deliberate compatibility/configuration breadth and
+capability fallbacks, but the audited known-absent item/spell IDs and the giant
+hardcoded random-gear blacklist are gone. Remaining level-60 later-rank spell
+IDs are retained only where the local Tortoise Spell.dbc and SQL explicitly
+contain them at `spellLevel=60`; the closure notes these validations rather
+than classifying IDs by number alone.
+
+Turtle-specific support is mixed:
+
+- Goblin/High Elf race/class legality, custom starting data, and the bot
+  workarounds for their player-only starting zones are handled deliberately.
+- Turtle Druid Eclipse and Holy Paladin Daybreak spell IDs match local server
+  data.
+- Turtle collection mount lookup is now wired through the core's
+  `collection_mount` mapping for existing and factory-created bots. Custom
+  dungeon/zone encounter behavior and broad custom spell/talent acceptance
+  coverage remain explicit backlog items.
+
+**Recommendation:** keep the native architecture, fix the packaging and
+source-of-truth blockers, then reduce the module to a clearly documented
+Vanilla/Turtle product surface before adding more classes or dungeon behavior.
+
+## Severity
+
+- **P0 — blocker:** can make the reviewed module not be the module built or can
+  prevent required module data from loading.
+- **P1 — high:** violates the intended boundary or can silently produce
+  expansion-era/wrong-Turtle behavior.
+- **P2 — medium:** intentional scope gap, donor surface, or behavior debt that
+  should be resolved before calling the module production-ready.
+- **Accepted:** deliberate current limitation, provided it remains documented
+  and tested as a limitation.
+
+## Findings summary
+
+| ID | Severity | Finding | Status |
+| --- | --- | --- | --- |
+| F-01 | P0 | Module SQL install path does not match the core's effective case-sensitive AutoUpdater configuration. | Resolved in `TortoiseBots.cmake` against Penqle's configured `world/character` names; preserved-stack AutoUpdater application verified. |
+| F-02 | P0 | The local core has a stale untracked module copy, and `BUILD_PLAYERBOTS=OFF` does not itself gate an explicitly enabled native module. | Native CMake forcing is resolved; the supported builder bind-mounts this checkout and CMake prints `/work/core/modules/TortoiseBots` plus the exact implementation snapshot `d672048e86b9effc36210d3e6d076741fbeccc7f`. A disposable tracked-core archive with no `modules/TortoiseBots` path configured and built successfully with `BUILD_PLAYERBOTS=OFF`, `BUILD_LEGACY_PLAYERBOTS=OFF`, and `MODULES=disabled`; only the stale direct-core workflow remains external follow-up. |
+| F-03 | P1 | Bot-specific legacy code remains in the core: LFT random-bot filling, bot command stubs, bot slots, and legacy module hooks. | Open core-owned follow-up; no new module coupling was added. |
+| F-04 | P1 | Active native code retains later-expansion consumable IDs, item IDs, spell IDs, and level gates. | Resolved: audited absent spell/item branches, later flag/totem auras, invalid quest-item branches, post-60 level formulas, WotLK/TBC mana-gem IDs, and the level-70 Druid reagent branch are removed; retained level-60/Turtle rows were revalidated against local core data. |
+| F-05 | P1 | The compatibility shim contains silent no-op/default implementations for movement, instance, chat-channel, transport, formation, emote, session-state, and loot semantics. | Resolved for active module paths: chase/follow, taxi, gossip, loot status, and emotes now use core/client contracts or explicit fallbacks; dead donor surfaces and unsupported elevator generation are removed. Only optional diagnostic fields absent from the core remain documented. |
+| F-06 | P1/P2 | Custom Goblin/High Elf starting areas were deliberately bypassed because local navigation data was believed incomplete. | P1 start-row/module bypass resolved: current core `playercreateinfo` rows and the runtime dataset contain terrain/MMAP data, and disposable Goblin/High Elf headless lifecycle fixtures both logged in, saved, relogged, and cleaned up at those starts. Direct movement/death acceptance remains P2 because the exact High Elf tile has no VMap file. |
+| F-07 | P1/P2 | Turtle collection mounts are not modeled by the factory/randomization path. | P1 module mapping resolved with core `collection_mount` lookup plus item/spell/class/race validation; custom races use collection data only. Physical item-use remains a core-owned acceptance boundary. |
+| F-08 | P2 | Turtle custom dungeon/zone encounter behavior is not represented by explicit strategies. | Verified external content gap: local SQL assigns `custom_dungeon_portal`, but pinned-core startup reports no such script; no module encounter behavior is advertised. |
+| F-09 | P1/P2 | Talent validation is server-aware, but broad Turtle custom talent interactions remain data/acceptance-test debt. | P1 validator correctness resolved: it checks total points across all three trees, rejects missing prerequisites safely, and resets per-row rank metadata; remaining broad class/spec interaction coverage is P2. |
+| F-10 | P2 | The configuration template is a large donor configuration surface, including random bots, economy, LFG/social behavior, gear progression, and LLM settings. | Accepted for this baseline as a compatibility template: random population and LLM behavior are off by default, and the retained deferred keys are not a claim of MVP support. A smaller split template remains an ergonomics follow-up. |
+| F-11 | P2/Accepted | The native command surface is intentionally narrower than the Shyalya behavior baseline. | Partial compatibility is documented; the disposable runtime fixture now exercises owned-bot `list`, `stats`, and `follow` through the native `ChatHandler`, while real-client incoming delivery remains separate. |
+| F-12 | P2/Accepted | No PlayerBots client addon is present; only the normal Turtle addons and TortoiseGMManager are installed. | Fine for server-side `.bot` MVP; document addon/state-query work as future scope. |
+| F-13 | P2 | `file(GLOB)` still compiles every action/value/trigger/generic source added to those directories. | A CMake filename guard and repeatable surface script now fail on audited donor families; globs remain a deliberate maintainability trade-off. |
+| F-14 | P2 | The developer quest-ledger script contains hard-coded `/home/ubuntu` paths and is not a runtime module component. | Resolved: moved to `tools/` and made log defaults portable. |
+| F-15 | P1 | The optional cache schema is incomplete: `ai_playerbot_item_info_cache` lacks the `scale_1`–`scale_32` columns written by `RandomItemMgr`; help-generation schema also has a latent `template_changed` mismatch. | Resolved in the Char/World migrations. |
+| F-16 | P1 | World/character table ownership is inconsistent, one runtime table is created outside migrations, and missing travel tables can trigger full map/path generation plus destructive cache rewrites. | Module ownership/startup behavior is resolved: travel-node and fish-location rebuilds are opt-in, cache generation fails closed, fresh SQL and preserved-stack startup are verified. |
+| F-17 | P0 | Owner-accessible RTSC file save/load accepts unrestricted filenames and can escape `LogsDir`. | Resolved by removing RTSC/SeeSpell from the module graph and command contexts. |
+| F-18 | P1 | Custom strategy editing interpolates player-controlled strings into raw SQL through `DirectPExecute`. | Resolved with length checks and escaping in edit, load, and persisted bot-state paths. |
+| F-19 | P1/P2 | The cleaned physical tree still compiles later-rank factory/boss-aura code and a custom RTSC/test surface; some of it is dead only because no context registers it. | Resolved for the audited residue: later branches, RTSC/BossAura files, and unreachable `Engine::testMode`/`test.log` writes are removed; local core data validates retained 28610/28612/31016/31018 level-60 rows. |
+| F-20 | P2 | README/provenance claims about schema-only packaging and cache-safe startup are now contradicted by the active code and the lowercase install path. | Resolved by this closure documentation and the packaging/startup changes. |
+| F-21 | P2 | The native migrations still create removed/inert donor tables (`random_bots`, `rpg_races`, `tele_cache`, and an uncalled rarity cache builder). | Resolved: dead tables and the dormant rarity builder were removed. |
+| F-22 | P1 | Compatibility store proxies use fixed classic-era upper bounds, silently excluding Turtle custom item, creature, gameobject, and faction IDs from numeric scans. | Resolved: bounds are derived from the loaded Tortoise stores and cached for scan loops; local data reaches item `1,985,406`, creature `2,509,000`, and gameobject `7,000,035`. |
+| F-23 | P1 | The module hard-codes an eight-race faction/name table, so Turtle Goblin/High Elf identity can be misclassified or rendered blank. | Resolved: faction comparison delegates to core `Player::TeamForRace`; race parsing/formatting loads names from the core `ChrRaces.dbc` store. |
+| F-24 | P1 | The pinned core's `PathInfo` area/avoidance/random-point methods are no-ops, so inherited mob avoidance and offline terrain-cache generation can report success without applying nav semantics. | Module-side behavior resolved: default avoidance and all cache/debug callers are removed or fail closed; ordinary movement remains on the core path contract. A generic core path-filter seam is optional external follow-up, not a hidden module claim. |
+| F-25 | P1 | Additional active donor wrappers silently lose native behavior: melee attack switching, evade checks, combat reach, quest-source removal, skill unlearning, gossip text, auction stack counts/purchases, and interaction checks. | Resolved for active module call sites in `d672048`; WMO area overrides and alternate-graveyard enumeration remain diagnostic-only core capability notes. |
+| F-26 | P1 | Additional active no-op helpers affected factory spell initialization, localized names, item pre-cast validation, interrupt decisions, and heal-size estimates. | Resolved in `d672048` (initial traced implementation `0f97403`): class trainer/quest spell initialization is ported against core data, locale maps replace empty helpers, `CheckCast` replaces the always-success pre-check, spell state replaces the always-true interrupt helper, and heal effects use native damage calculation. |
+| F-27 | P1/P2 | The pinned core's live Turtle world data references script names that are not registered by the core build, so some custom/content behavior is absent independently of PlayerBots. | Open core/data follow-up: final startup reported `custom_dungeon_portal`, `spell_druid_wrath`, and additional unregistered names. TortoiseBots does not add guessed scripts or claim those content paths. |
+
+## Closure pass — current module status
+
+The following is the current result after tracing the findings against the
+local core and local Turtle data. It supersedes the historical “Required
+action” wording in the finding bodies below.
+
+### Resolved inside TortoiseBots
+
+- `TortoiseBots.cmake` installs `data/sql/world` and `data/sql/char` to the
+  configured `world/character` folders in Penqle's `mangosd.conf.dist.in`.
+  It selects the native module through
+  `MODULE_TORTOISEBOTS` and no longer injects the legacy
+  `BUILD_PLAYERBOTS=1` define.
+- The supported persistent builder proves source selection at configure time:
+  it bind-mounts this checkout over the core module path and reports the exact
+  module commit. A direct core checkout that ignores that overlay remains an
+  external packaging/source-of-truth concern, not an implicit native-module
+  dependency.
+- The additive World/Character migrations now own `ai_playerbot_zone_level`,
+  `template_changed`, and `scale_1` through `scale_32`; the `20260824090003_*`
+  migrations remove the explicitly obsolete module-owned donor tables without
+  touching character state.
+- Travel startup no longer creates or bulk-populates tables. Travel-node
+  generation is disabled by default through `AiPlayerbot.GenerateTravelNodes`,
+  malformed node references are skipped, and an opt-in cache save uses one
+  transaction instead of leaving a deliberately partial cache between stages.
+  Fish-location generation is also disabled by default through
+  `AiPlayerbot.GenerateFishLocations`; a missing/empty persisted fish cache now
+  logs a direct-fallback decision instead of scanning populated grids and
+  writing WorldDatabase rows during startup.
+- RTSC, SeeSpell, BossAura, and the associated packet/file registrations are
+  physically removed. Custom strategy names/action lines are length-bounded
+  and escaped on edit, load, and persisted bot-state paths.
+- Engine action logging is also bounded with `vsnprintf`, so long but valid
+  owner-controlled action names cannot overflow the fixed diagnostic buffer.
+- The unreachable engine `testMode` branch and its working-directory
+  `test.log` writes are removed; normal trigger evaluation and BotActionLog
+  output are now the only active engine paths.
+- The known-absent local IDs found in the second pass are gone from active
+  source: later consumable/poison/bandage/oil/stone items, missing hearthstone
+  fallback data, missing gathering spell IDs, and the later Mage mana gem
+  branches. The final pass also removed the absent `22044`, `22147`, and
+  `22148` items, the non-mana `33312` branch, the post-60 lifetime formulas,
+  and the level-70 Druid reagent branch. The old giant hardcoded random-gear
+  unavailable-item set was removed; the active ItemPrototype/cache data is
+  authoritative.
+- The final DBC/SQL sweep also removed absent WotLK Battle Shout `47436`,
+  absent totem exception `44452`, absent flag aura `34976`, absent quest-item
+  branches `52566`/`39253`/`39645`, absent blacklist quest `50000`, and the
+  invalid Warrior talent checks `30330`/`30335` (`30335` is a banner spell,
+  not the expected talent). The retained Turtle-specific `50003` quest and
+  `17117 -> 13016` item-use rule are backed by local data.
+- Collection mounts now use the core `collection_mount` mapping in
+  `MountValue`, `FullMountListValue`, inventory mount lookup, and factory
+  mount selection. Eligibility is checked against the loaded item, spell,
+  required level, class, and race data. Factory initialization teaches the
+  mapped spell like the existing classic factory path; custom races do not
+  receive an invented faction fallback, and the module does not claim to
+  simulate consuming a physical collection item.
+- The optional LLM generator is inert by default: `LLMEnabled` falls back to
+  `0`, prompt-file loading is gated behind explicit enablement, and the
+  current generator returns the no-response fallback without making a network
+  call. The quest-ledger tooling now points at the native module path rather
+  than the removed `src/modules/PlayerBots` tree.
+- The developer quest ledger is in `tools/` with portable log defaults. The
+  CMake graph uses explicit Vanilla class directories and rejects future
+  source filenames containing the audited Death Knight, glyph, vehicle,
+  Karazhan, Arena, RTSC, or BossAura families; the remaining directory globs
+  are a deliberate bounded-graph trade-off. The repeatable
+  `tools/verify_turtle_surface.sh` check covers the same SQL/dead-ID contracts.
+- Store iteration proxies no longer use donor-era constants such as `100000`
+  or `200000`. Their one-past-largest-ID bounds are derived from the loaded
+  Tortoise maps, so custom IDs outside the classic ranges remain visible to
+  factory, mount, loot, vendor, and travel scans.
+- Faction decisions and race text now use the core's race/faction contract for
+  Turtle Goblin and High Elf characters. The module no longer treats every
+  non-classic race as Horde merely because its local switch lacks a case; race
+  names are loaded from the core `ChrRaces.dbc` store rather than duplicated.
+- The module no longer invokes the pinned core's no-op `PathInfo` area filter:
+  default `avoid mobs` strategies are removed, travel/fish cache generation
+  fails closed, and avoidance/random-point debug commands report the missing
+  core capability. Persisted travel/fish data and direct movement/fishing
+  remain available.
+- The final wrapper sweep replaced active no-op call sites with native combat
+  attack/stop, `IsBehindTarget`, `GetCombatReach`, `Creature::IsInEvadeMode`,
+  `GetSkillRaceClassInfo`/`SetSkill`, native quest-source destruction, taxi
+  ejection, core `CanInteract`, and core broadcast-text lookup. Auction mirrors
+  now copy item stack/random-property data from the item instance, and AH guild
+  purchases use the validated core auction packet handler instead of a no-op
+  `UpdateBid` call.
+- The final initialization/presentation sweep removed the remaining active
+  donor no-ops: factory bots now receive valid core class trainer and class-quest
+  spells through a module-local port of the mature learner; chat links use the
+  core quest/creature/item locale maps; item casts call native `CheckCast`; spell
+  interruption follows the core spell lifecycle state; and heal prediction
+  calculates the actual core heal effects instead of reading a zero stub.
+- Emote actions now fall back to the native text-emote packet when the pinned
+  core has no direct `EmotesTextSound` loader, so the client remains the
+  race/gender sound authority. Loot-status calculation uses native item
+  ownership, round-robin state, and `Group::GetActiveRoll`; it no longer asks
+  the core for its intentionally empty `NONE_PERMISSION` loot view.
+
+F-22 through F-26 were discovered during the final custom-data and active
+call-site sweep rather than being silently folded into earlier “resolved”
+claims. They are included in the finding table so future Turtle data additions
+and core API changes have an explicit regression surface.
+
+The apparent later-rank IDs `28610`, `28612`, `31016`, and `31018` were not
+deleted based on their numeric range: the local core's Spell.dbc and
+`tw_world_spell_template.sql` contain those exact level-60 records, so they are
+valid Tortoise data until the core data itself changes.
+
+### Explicitly open core/product boundaries
+
+- F-03 is core-owned and now precisely bounded. The local core still compiles
+  `src/game/LFT/LFTBotFill.cpp` (`src/game/CMakeLists.txt:135`), which recognizes
+  `RNDBOT` accounts and inserts them into the normal LFT queue; it still
+  registers `.bot`, `.rndbot`, `.ahbot`, and `.perfmon` in `Chat.cpp:1001-1007`
+  with fallback handlers in `PlayerbotStubs.cpp:34-45`; and it retains the
+  two bot-named reservations in `ModuleSlots.h:21-26`. The tracked
+  `src/modules/PlayerBots` tree remains behind the separate legacy option.
+  These are not hidden native-module dependencies: `BUILD_LEGACY_PLAYERBOTS=OFF`
+  and the explicit `MODULE_TORTOISEBOTS` path build the reviewed module, while
+  the generic `Script_IsAIControlled`/Headless/ScriptMgr seams are the approved
+  integration boundary. Removing the legacy core product surface requires a
+  separate core PR, which this module PR does not fabricate.
+- F-05 is resolved for active module paths, while a few optional donor fields
+  remain explicit capability notes. `ServerFacade` now reads the active
+  follow/chase target and current geometric angle/offset through the local
+  core's public `MotionMaster::GetCurrent()`/targeted-generator contract;
+  follow/chase decisions no longer compare against fabricated zero offsets.
+  The channel proxy reads the core's loaded `ChatChannels` map, and taxi route
+  inspection reads `Player::GetTaxi().GetTaxiPath()`. The module now omits the
+  dead donor instance/session/formation/loot-type scaffolding and reports
+  elevator transports as unsupported because the pinned core has no
+  `TransportAnim` loader. Direct emote sound and released-item metadata are
+  not exposed by the core; the module uses the client text-emote path and
+  native group roll state instead of claiming those donor fields exist. The
+  trigger-cast shim intentionally retains only the ordinary triggered versus
+  untriggered distinction because that is the complete active call-site need.
+  The module uses its own formation math, direct taxi/travel paths,
+  target-aware native loot resolution, core-backed creature gossip, and
+  generic session transport for the supported MVP; the remaining donor-only
+  semantics require targeted core adapters/tests.
+- F-24 is the remaining generic path seam. The pinned core's `PathInfo.h`
+  explicitly implements `setArea`, `setAreaCost`, `getArea`, `getFlags`, and
+  `ComputePathToRandomPoint` as no-ops/stubs. The module therefore does not
+  claim mob avoidance or generated terrain-aware caches; it uses core path
+  calculation for ordinary movement and fails the optional/debug surfaces
+  that require those missing filters.
+- F-06's old bypass is removed after checking the actual target data: the core
+  `playercreateinfo` rows place Goblins at Blackstone Island and High Elves at
+  Thalassian Highlands. The runtime dataset has terrain/MMAP for both start
+  tiles; the exact High Elf tile has no VMap file. A focused bot
+  movement/death journey is still required before claiming complete
+  custom-zone gameplay. Disposable `Tbgoblin` (guid 7) and `Tbhelf` (guid 8)
+  fixtures then passed native AutoTest login, save, logout, relogin, and
+  cleanup from those exact core rows; all fixture rows and generated state were
+  removed afterward.
+- F-08 remains an external Turtle-content gap: the pinned core logs `Script not
+  found: custom_dungeon_portal` for custom dungeon portal rows, so the module
+  does not guess teleport destinations or claim encounter support.
+- F-27 is a broader core/data registry gap confirmed by the final restart. The
+  pinned core also logged unregistered `spell_druid_wrath`, `go_airplane`,
+  `item_radio`, and custom NPC/duplicate script names from live
+  `*_template.script_name` rows. This requires core script registration or
+  deliberate data cleanup; the module does not synthesize replacements.
+- F-09 remains a class/spec acceptance backlog for reworked talents; final
+  startup loaded the configured talent specs without errors. F-10 is
+  intentionally broad compatibility configuration, F-11 is a documented
+  partial command surface, and F-12 has no client addon by design.
+
+## Turtle data/client validation matrix
+
+| Area | Verified local evidence | Current product conclusion |
+| --- | --- | --- |
+| Custom races and starts | Core `SharedDefines.h` defines Goblin `9` and High Elf `10`; local `playercreateinfo` data contains their legal class combinations; `PlayerbotAIConfig.cpp` and `TravelNode.cpp` recognize both. Runtime start tiles are `maps/0013245.map` + `mmaps/0013245.mmtile` for Goblin and `maps/0002536.map` + `mmaps/0002536.mmtile` for High Elf; `vmaps/000_25_36.vmtile` is absent. Disposable `Tbgoblin`/`Tbhelf` fixtures passed native headless login/save/logout/relogin cleanup. | Race legality, core-defined placement, and headless lifecycle at both custom starts are verified. Direct terrain movement/death remains a P2 acceptance gate, especially on the High Elf tile without VMap. |
+| Custom and retained spells | Local core `Spell.dbc`/`tw_world_spell_template.sql` contain the retained Turtle IDs `42003`, `51322-51323`, `51442-51445`, `28610`, `28612`, `31016`, and `31018`; the audited absent IDs were removed from active module source. | No spell is retained solely because its numeric range looks plausible. Custom spell behavior beyond the verified IDs still needs class/spec acceptance coverage. |
+| Talents | `Talentspec.cpp` validates link syntax, class/rank limits, dependencies, tree-row ordering, and available points against loaded `Talent.dbc`/server stores; final AI startup logged `Loading TalentSpecs` without `Error with premade` or `No premade` failures. | The loader contract is valid, but broad Turtle reworked-talent interactions are not claimed complete without per-class/spec runtime acceptance. |
+| Locations and navigation | Core custom start coordinates and local map/MMAP availability were inspected; `TravelMgr` no longer excludes either custom range and startup uses direct movement with travel-node generation disabled. | Location lookup is core-data-driven. Full movement/death acceptance remains open because the High Elf tile has no VMap. |
+| Collection mounts | Core `MountManager` loads `collection_mount`; core Turtle scripts consume its item-to-spell mapping. Module `MountValue`/factory lookup uses the same mapping; verified examples include `36550→36650`, `36551→36651`, `36666→58031`, `92080→57740`, and `92082→57723`. | Collection mounts are wired to the authoritative core mapping. Physical item-use remains core-owned; the module does not simulate consuming collection items. |
+| Custom-ID store ranges | The live World store contains 26,544 items (max `1,985,406`), 14,339 creatures (max `2,509,000`), and 21,196 gameobjects (max `7,000,035`). | Compatibility scans use loaded-store-derived bounds; they no longer truncate Turtle custom content at fixed classic-era limits. |
+| Custom dungeons and portals | Core SQL contains Turtle custom portal rows using `custom_dungeon_portal`; the pinned core startup emitted `Script not found: custom_dungeon_portal`. The module has no custom encounter strategy graph. | Custom dungeon teleport/encounter behavior is unverified and blocked by a core content/script gap. The module intentionally does not invent coordinates or claim support. |
+| Client assumptions | Local package contains the Turtle patched client layer and base `WoW.exe` lineage reports build `5875`; normal and software-forced Wine launches both rendered black with no observable login UI. | Server/module opcode assumptions are local-core-based, but no real-client `.bot` command journey is claimed until the client is observable. |
+
+## 1. What is clean and correct
+
+### 1.1 Native source cleanup succeeded
+
+Target commit `322120e` removed the physical donor families and large manager
+trees. The current tracked native tree has nine class directories only:
+
+```text
+druid hunter mage paladin priest rogue shaman warlock warrior
+```
+
+The positive class selection is visible in `TortoiseBots.cmake:90-105`.
+The native graph does not include `strategy/deathknight`, glyph, vehicle,
+Karazhan, Arena, or `strategy/tests` source files. The cleanup provenance is
+recorded in `docs/PROVENANCE.md` and the deletion history is in commit
+`322120e`.
+
+This is a real success. The remaining 1,017 tracked files under
+`ai/playerbot/` are harvested behavior and framework code, not proof that the
+removed expansion families are still compiled.
+
+### 1.2 The reviewed module does not recreate the old ownership API
+
+The target repository has no matches for the forbidden core/session ownership
+patterns:
+
+```text
+WorldSession::GetBot()
+WorldSession::SetBot()
+m_bot
+sPlayerBotMgr
+PlayerBotEntry
+PB_STATE_
+```
+
+`host/BotSessionAdapter.cpp` treats `SessionTransport::Headless` as the
+transport capability, and `runtime/BotManager` owns module records and AI
+adapters. `host/BotHostAdapter.cpp`, `host/BotPlayerAdapter.cpp`,
+`host/BotPacketAdapter.cpp`, and `host/BotChatAdapter.cpp` are a compact,
+recognizable boundary.
+
+The mature module does contain internal `PlayerbotAI::GetBot()` calls. Those
+return the `Player*` owned by an AI object and are not the forbidden
+`WorldSession` bot-identity API; they should remain module-internal.
+
+The local core itself is a different matter; see F-03.
+
+### 1.3 Several Turtle-specific paths are correctly grounded in local data
+
+The core's `SharedDefines.h:39-70` defines the Turtle races Goblin (`9`) and
+High Elf (`10`) and their faction masks. The local
+`tw_world_playercreateinfo.sql` has the corresponding class combinations:
+
+- Goblin: Warrior, Hunter, Rogue, Mage, Warlock.
+- High Elf: Warrior, Paladin, Hunter, Rogue, Priest, Mage.
+
+`PlayerbotAIConfig.cpp:300-329` matches those legal combinations, and
+`TravelNode.cpp:2170-2182` names both custom starting nodes.
+
+The module now follows the core-defined custom starts instead of applying a
+stale exclusion. The exact Goblin start has terrain/MMAP/VMAP data in the
+runtime dataset; the exact High Elf start has terrain/MMAP data but no VMap
+tile. `ReleaseSpiritAction` uses the core racial `PlayerInfo` row for both
+races, with homebind retained only when the core has no start row.
+
+The custom class mechanics checked in this audit also match local server data:
+
+- Druid Eclipse: module triggers use 51442/51443 and recognize talent/proc
+  51444; local `tw_world_spell_template.sql` defines Nature Eclipse, Arcane
+  Eclipse, and Eclipse, with the companion 51445 record.
+- Holy Paladin Daybreak: module checks the 51322 buff and distinguishes the
+  related 50931/51323 records; local `tw_world_spell_template.sql` defines the
+  same server-side records.
+- Priest Spirit Tap: the module distinguishes the passive talent ranks from
+  proc buff 15271; local spell data includes the custom 42003 rank record.
+
+These are valid Turtle adaptations, not WotLK leftovers.
+
+## 2. Blockers and core integration problems
+
+### F-01 — SQL install path case mismatch (P0)
+
+The reviewed repository currently installs migrations as:
+
+```cmake
+TortoiseBots.cmake:27-33
+.../modules/TortoiseBots/data/sql/world
+.../modules/TortoiseBots/data/sql/character
+```
+
+The effective Penqle deployment contract is case-sensitive and is defined by
+the shipped `src/mangosd/mangosd.conf.dist.in`:
+
+```text
+Database.AutoUpdate.CharUpdateName = "character"
+Database.AutoUpdate.WorldUpdateName = "world"
+```
+
+`AutoUpdater.cpp:497-512` has uppercase `Char`/`World` fallback values only
+when those settings are absent. Linux paths are case-sensitive.
+
+The local running image was inspected read-only and contains:
+
+```text
+/opt/turtle/modules/TortoiseBots/data/sql/world/20260824090000_world.sql
+/opt/turtle/modules/TortoiseBots/data/sql/character/20260824090001_char.sql
+```
+
+The local running image confirms the configured lowercase names. The target
+CMake and source directories now follow that exact contract; the stale
+untracked core copy remains a separate source-selection risk.
+
+**Closure evidence:** the isolated MariaDB 11.4 migration check applies both
+World and Character migration pairs twice successfully. Preserved-stack
+AutoUpdater application is still a separate runtime check.
+
+### F-02 — Two different module trees are present locally (P0)
+
+The following records the historical pre-closure build ambiguity; the current
+source-selection diagnostic and module-absent proof in the closure section are
+authoritative.
+
+The target repository is clean at `13c0632`, but the local core checkout at
+`9487c515` has an untracked `modules/TortoiseBots/` directory. It differs
+substantially from this repository:
+
+- the core copy still has `runtime/BotController.cpp`;
+- it still has `ai/World/WorldState.h`, donor login/manager-era files, and old
+  compatibility source;
+- its CMake file has the old explicit/filtered graph and different SQL install
+  destinations;
+- the reviewed repository has already removed those files and uses the
+  cleaned positive graph.
+
+The dev compose workflow intentionally overlays the reviewed repository onto
+the core at `/work/core/modules/TortoiseBots`
+(`tortoise-docker-penqle/docker-compose.dev.yml:3-5,44-49`). A direct CMake
+build from the core checkout, an image build, or a future sync that omits this
+overlay can therefore compile the stale copy instead.
+
+There is a second gating ambiguity. The core's `BUILD_PLAYERBOTS` option is
+only consulted by the legacy escape-hatch block
+(`tortoise-wow/CMakeLists.txt:697-710`). When the native module is explicitly
+selected through `MODULE_TORTOISEBOTS`, the reviewed `TortoiseBots.cmake`
+unconditionally adds `BUILD_PLAYERBOTS=1` to its target
+(`TortoiseBots.cmake:148-153`). Therefore `BUILD_PLAYERBOTS=OFF` plus an
+explicitly enabled native module is not a true OFF configuration. The current
+dev OFF script avoids this only because it also sets `MODULES=disabled`.
+
+**Required action:** make one source-of-truth workflow. Either remove the
+untracked copy after resolving ownership, or have the build system consume a
+checked-out module path explicitly. Make `BUILD_PLAYERBOTS=OFF` disable the
+native module even when module linkage is requested, or rename the option and
+make the module linkage the single documented switch. Add a build diagnostic
+that prints the module root and current module commit/hash. The final product
+must never rely on an accidental bind-mount overlay or an implicit flag
+combination to select the reviewed code.
+
+### F-03 — PlayerBots knowledge has leaked into the core (P1)
+
+The native module boundary is cleaner than the legacy design, but the local
+core is not bot-agnostic yet:
+
+- `src/game/LFT/LFTBotFill.cpp` is compiled by
+  `src/game/CMakeLists.txt:135`. It identifies `RNDBOT` accounts, calls
+  `Script_IsAIControlled`, seeds/withdraws bots from the LFT queue, and
+  accepts bot offers inside a normal core queue.
+- `src/game/Chat/Chat.cpp:1001-1007` registers `.bot`, `.rndbot`, `.ahbot`,
+  and `.perfmon` unconditionally.
+- `src/game/PlayerbotStubs.cpp:34-45` provides “not built” handlers for those
+  commands. The reviewed native module implements `.bot` through
+  `AllCommandScript`, but it does not implement the old `.rndbot`, `.ahbot`, or
+  `.perfmon` `ChatHandler` methods. Those command names therefore remain stale
+  core UI and report “not built” even when the native module is enabled.
+- `src/game/ModuleSlots.h:21-26` reserves bot-specific slots that the reviewed
+  `BotManager` does not use.
+- `src/modules/PlayerBots/` is still a tracked 1,019-file legacy module. Its
+  CMake path is an explicit `BUILD_LEGACY_PLAYERBOTS` escape hatch
+  (`tortoise-wow/CMakeLists.txt:697-710`), but it contains the old
+  `GetBot()`/`PlayerbotMgr` ownership model and expansion families. Turning it
+  on is incompatible with the architecture being audited.
+
+The generic script query names (`Script_IsAIControlled`,
+`Script_IsMachineDriven`, role hooks) are a reasonable generalized seam. The
+LFT implementation and legacy command/slot surface are not generalized; they
+are PlayerBots-specific concepts in core code.
+
+**Required action:** keep `BUILD_LEGACY_PLAYERBOTS=OFF`, remove or quarantine
+the old module from the normal source distribution, move LFT bot filling behind
+a generic queue-provider seam or into the native module, and remove stale
+command symbols once the native command surface is authoritative. Re-run the
+core coupling audit over all of `src/`, not only `src/game/`.
+
+## 3. Expansion and donor residue in the active native graph
+
+The physical expansion directories are gone, but some later-era data remains
+in compiled source. These are not all reachable at level 60, which is why they
+can survive a successful build; they are still wrong as a product baseline.
+
+### F-04 — Later-era consumables and gates (P1)
+
+The following bullets are historical baseline evidence; the closure status and
+current-source checks above are authoritative for the final module.
+
+Representative active paths:
+
+- `PlayerbotAI.h:156-177` and `ImbueAction.h:34-38` prioritize
+  `SUPER_HEALING_POTION=37807`, `CRYSTAL_HEALING_POTION=47132`,
+  `FEL_REGENERATION_POTION=37864`, and
+  `MAJOR_DREAMLESS_SLEEP_POTION=37845`.
+- `PlayerbotAI.h:189-220` and `PlayerbotAI.cpp:7304-7314` retain Fel and
+  Adamantite sharpening/weightstone and later wizard-oil display IDs.
+- `PlayerbotFactory.h:138-200` includes Fel/Adamantite stones, Netherweave
+  bandages, and Instant/Deadly Poison VIII/IX item IDs.
+- `ImbueAction.cpp:12,87,150,177` uses `GetLevel() > 70` guards. The core
+  client/product cap is `PLAYER_MAX_LEVEL 60` (`tortoise-wow/src/game/Database/DBCEnums.h:25-39`).
+- `UseItemAction.h:187-219` contains level 61/63/68/71 healthstone branches;
+  `UseItemAction.h:345-355` selects Super Sapper Charge at level 68; and
+  `UseItemAction.cpp:1178-1187` uses spell 54403 for the later Scourgestone
+  fallback.
+- `MageActions.h:160-184,305-330` contains level 68/77 branches and later
+  spell IDs. These branches are unreachable on a normal level-60 Tortoise
+  realm, but they are still expansion code in the native graph.
+- `PlayerbotFactory.cpp:3300-3332` has a level `>69` reagent branch.
+- `EstimatedLifetimeValue.cpp:120-155` keeps level 61-70/80 DPS and gear-score
+  formulas.
+- `PlayerbotAI.cpp:3749,3795,3862,4001,4128` carries later-rank spell IDs
+  `27023`, `27025`, `34600`, `49055`, `49056`, `49066`, and `49067` in neutral
+  and out-of-control spell lists. They were not found in the local
+  `spell_template` SQL and should be checked against the actual extracted
+  `Spell.dbc` before being retained.
+
+The local core's large `item_display_info` namespace contains many later-era
+display records because the client data namespace is broader than the
+level-60 item product. That is not proof that the corresponding items are
+valid Tortoise items. Product code should validate item IDs through the loaded
+`item_template`/server data, not through numeric presence in a display table.
+
+The second-pass local DBC check makes several spell residues more concrete:
+the local `Spell.dbc` contains the verified Turtle IDs 42003, 51322-51323, and
+51442-51445, but does not contain the later list entries 27023, 27025, 27045,
+27101, 27151-27153, 34600, 42985, 49055-49067, 49071, 49383, or 54403.
+Those branches are either unreachable under the level-60 cap or silently
+inert, but they should not remain presented as supported spell behavior.
+
+**Required action:** remove later-era constants from the active tables; make
+consumable selection query `ItemPrototype`/server data and level/riding/skill
+requirements; replace impossible level gates with the target core's actual cap
+or delete them. Keep a small documented whitelist for genuine Turtle custom
+IDs.
+
+### F-05 — Compatibility shim can silently change behavior (P1)
+
+This section records the baseline shim risks that motivated the closure. The
+active-call-site resolution is summarized above and in F-25/F-26.
+
+`ai/cmangos-compat-shim.h` is not merely a naming adapter. It contains
+behavioral substitutes that compile donor code while deliberately losing
+semantics:
+
+| Location | Substitute | Risk |
+| --- | --- | --- |
+| `:224-238` | Only the active ordinary triggered/untriggered distinction is retained; unused ignore-GCD/aura-scaling aliases are removed. | Donor callers needing those extra flags still require a core adapter. |
+| `:483-497` | `Taxi::Map` reads the live `Player::GetTaxi().GetTaxiPath()` route. | In-flight route reasoning is available. |
+| `:516-525` | ScriptDevAI-shaped gossip callback delegates to Penqle's `sScriptMgr.OnGossipHello(Player*, Creature*)`. | Core creature gossip is preserved through the generic registry; custom gossip still needs focused bot acceptance coverage. |
+| `:688-700` | Chat-channel store now delegates to `ObjectMgr::GetChannelEntryFor` and the loaded map. | The core owns the channel definitions; automatic bot channel-join behavior still lacks a focused runtime acceptance journey. |
+| `TravelNode.cpp::generateTransportNodes` | Empty-path elevator/animation generation is explicitly skipped because the core has no `TransportAnim` source. | Elevator travel remains unsupported rather than silently pretending to work. |
+| `:794-810` | Emote sound lookup returns null because no core `EmotesTextSound` loader exists. | Sound-dependent emote behavior is unavailable. |
+| `:814-830` | Loot status flags remain module-computed; the dead `NOT_GROUP_TYPE_LOOT`/checked-state scaffolding is removed. | Loot/roll state needs real acceptance tests. |
+
+`ServerFacade` now reads the active targeted-generator target through the core's
+public `MotionMaster::GetCurrent()` API and reports current geometric
+angle/offset values. The core keeps the generator's requested private
+angle/offset fields inaccessible, so the module's active follow/chase guards
+use the public target plus moving-state contract instead of pretending those
+private values are available.
+
+These are acceptable temporary module-local seams only if each is documented as
+unsupported and covered by a focused test. They must not be mistaken for
+Tortoise-compatible behavior merely because the module compiles.
+
+### F-22 — Fixed donor store bounds truncated Turtle IDs (P1)
+
+The original compatibility proxies returned fixed classic-era limits for sparse
+Tortoise maps: `100000` for item and creature stores, `200000` for gameobjects,
+`10000` for area triggers, and `1500`/`100` for faction stores. This was not
+just extra empty iteration. The live `tw_world` data contains 26,544 loaded
+items through `1,985,406`, 14,339 creatures through `2,509,000`, and 21,196
+gameobjects through `7,000,035`. Any factory, mount, loot, vendor, travel, or
+debug scan above the old limit silently missed valid Turtle content.
+
+The module now derives one-past-largest-ID bounds from the loaded `ObjectMgr`
+maps and caches each sparse-map calculation so existing numeric scans do not
+rescan the whole store on every loop condition. Native spell, taxi, skill, map,
+and chat-channel bounds remain backed by their existing core APIs. The cache is
+intentionally scoped to the loaded store lifetime; a reload that changes the
+record count refreshes it.
+
+### F-23 — Classic-only race identity tables misclassified Turtle races (P1)
+
+`IsAlliance(uint8)` and `ChatHelper` originally knew only the eight Vanilla
+race constants. The pinned core's `Player::TeamForRace()` resolves faction from
+the loaded `ChrRaces.dbc`, including Turtle Goblin and High Elf rows. The
+module now uses that core function for race opposition/faction text and loads
+core DBC race names for chat parsing/formatting. Mount-skill selection still
+uses the generic core `SKILL_RIDING` fallback for races without a classic racial
+riding skill; collection mount eligibility remains driven by the core item,
+spell, class, and race data.
+
+### F-24 — Core path filters are not implemented (P1)
+
+The pinned core's `src/game/Maps/PathFinder.h:75-89` documents that area costs,
+area lookup/flags, avoidance-area mutation, and random navmesh points are
+currently no-ops or stubs. The module had inherited callers in default
+`AvoidMobsStrategy`, travel-node generation, fish-location generation, and
+owner debug commands. Ordinary `PathInfo::calculate` movement remains a real
+core path operation, but those extra calls cannot be treated as equivalent to
+CMaNGOS nav-area behavior.
+
+The closure removes `avoid mobs` from the default combat/non-combat strategy,
+forces the two cache-generation options off with a startup error, removes the
+module calls into the no-op area API, and turns avoidance/random-point debug
+commands into explicit unsupported errors. A future core PR can add a generic
+path-filter interface; the module must not recreate it with private navmesh
+access or guessed terrain flags.
+
+### F-25 — Active donor wrappers needed semantic re-tracing (P1)
+
+The core compatibility additions are not all harmless aliases. The final sweep
+found active module paths that still called wrappers whose bodies were no-ops or
+classic defaults:
+
+- combat mode switching called no-op `MeleeAttackStart/Stop`, and range/behind
+  decisions used the approximate `GetCombinedCombatReach` and false
+  `IsFacingTargetsBack` results;
+- attacker filtering called a dummy combat manager, skill unlearning always
+  failed, quest dropping never removed source items, and taxi interruption did
+  nothing;
+- gossip text read empty `Text_0`/`Text_1` fields even though the core stores
+  valid `BroadcastTextID` values;
+- auction mirror entries reported one item regardless of stack size, while the
+  guild-share buyer called a no-op `AuctionEntry::UpdateBid` and announced a
+  purchase without changing the auction;
+- battleground/lightwell checks hard-coded `CanInteract` to true.
+
+The module now calls native `Unit::Attack/AttackStop`, `GetCombatReach`,
+`IsBehindTarget`, `Creature::IsInEvadeMode`, `GetSkillRaceClassInfo`/`SetSkill`,
+`DestroyItemCount`, `OnTaxiFlightEject`, `Player::CanInteract`, and
+`ObjectMgr::GetBroadcastText`. Auction mirrors read the live item instance and
+the guild-share path submits `CMSG_AUCTION_PLACE_BID` to the core handler and
+checks removal/stack state before reporting success. Remaining core-only
+fallbacks are limited to emote sound lookup, released-loot and roll-state
+details, WMO area overrides, and the alternate graveyard-map view; they are not
+used as silent claims of complete Turtle behavior.
+
+### F-26 — Active initialization and presentation helpers were still donor no-ops (P1)
+
+The final active-call-site sweep found five less-obvious semantic losses that
+were not covered by the movement/auction table above:
+
+- `PlayerbotFactory` called the core's legacy `learnClassLevelSpells` name,
+  which is a no-op outside the old vendored PlayerBots build. A levelled bot
+  could therefore receive only starting spells and local special-case spells.
+- `ChatHelper` called empty core locale compatibility methods for quest,
+  creature, and item names, so localized Turtle data was silently discarded.
+- `BotUseItemSpell` called an always-success `PreCastCheck`, while the pinned
+  core exposes the real public `Spell::CheckCast` contract.
+- interrupt actions called an always-true `CanBeInterrupted` shim, and heal
+  prediction read an always-zero `GetDamage` shim.
+
+`d672048` now contains the module-local port of the mature class trainer/quest learner,
+using core quest/trainer/spell/talent APIs and the loaded `Spell.dbc`/server
+data. Locale formatting uses `ObjectMgr`'s native locale maps. Item casts call
+`CheckCast(true)`, interrupts follow the core spell lifecycle state, and heal
+prediction sums the relevant core-calculated heal effects for the current
+target. No core file or Player-specific bot hook was added. The remaining
+cosmetic emote sound and loot roll/release limitations stay explicitly bounded
+in F-05.
+
+## 4. Turtle-specific gaps and mismatches
+
+### F-06 — Custom starting areas required a current-data recheck
+
+The core SQL restores Goblin and High Elf `playercreateinfo` rows to custom
+zones (`20260620130000_world.sql:1-4`). The old module exclusion and
+Goblin/High Elf homebind override were based on stale “no MMAP” assumptions and
+are now removed. The live runtime has terrain/MMAP for the exact start tiles:
+
+- Goblin Blackstone Island: map `1`, `(-233,-7177,16.52)`,
+  `maps/0013245.map`, `mmaps/0013245.mmtile`, and
+  `vmaps/001_32_45.vmtile`.
+- High Elf Thalassian Highlands: map `0`, `(3212.63,-2501.44,111.71)`,
+  `maps/0002536.map` and `mmaps/0002536.mmtile`; the exact VMap tile is
+  absent.
+
+The module now follows core start rows and includes their quest/travel points.
+A focused runtime movement/death journey is still required before claiming
+complete custom-zone gameplay; no replacement coordinates were invented.
+
+### F-07 — Custom collection mounts needed a core-backed factory path
+
+The core has a `collection_mount` mapping and registers
+`spell_turtle_mount_collection` in `src/scripts/spells/spells_turtle.cpp`; item
+use remains core-owned. `MountValue`, `FullMountListValue`, inventory lookup,
+and `PlayerbotFactory::InitMounts()` now consult the same mapping and validate
+the mapped spell/item requirements. Verified live mappings include
+`36550→36650`, `36551→36651`, `36666→58031`, `92080→57740`, and `92082→57723`.
+
+The module no longer needs hardcoded custom mount spell IDs. Physical item-use
+and consume-on-learn behavior are core-script behavior and still need a focused
+headless acceptance journey; the module does not duplicate that script.
+
+### F-08 — Turtle custom dungeons are not encounter-aware
+
+The core's local migrations document Turtle-split dungeon zones and custom
+graveyard coverage (`20260730120100_world.sql:1-48` and the related
+`sql/tools/graveyards_turtle_dungeons.sql`). The native module's explicit
+dungeon strategy registrations are the mature Vanilla raid set, with
+`DungeonStrategy.h` listing Onyxia's Lair and Molten Core as related strategies;
+there are no Turtle-custom encounter strategies in the current graph.
+
+Generic travel/target discovery may still find database content, but that is
+not the same as encounter behavior. Treat custom dungeons as a separate
+behavior backlog item rather than assuming the Vanilla donor logic covers them.
+
+### F-27 — Core data references unregistered scripts (P1/P2)
+
+The final preserved-data startup of core `9487c515` reached world-ready but
+reported these unregistered script names from live world data:
+
+```text
+custom_dungeon_portal
+duplicate_tirion_fordring
+go_airplane             go_curious_leaf
+item_radio              item_temporal_bronze_disc
+npc_alexandros_mograine npc_breanna_darrowmont
+npc_chieftain_icepaw    npc_chromie_dialogue
+npc_distance_trigger    npc_frostshiv
+npc_kitten              npc_lady_ripper
+npc_nasuna              npc_surgeon_go
+npc_teslinah            spell_druid_wrath
+```
+
+`rg` against the pinned core found no registered implementation for these
+names (apart from an unrelated `npc_teslinah` function with a different
+registration path). The first and last entries have direct impact on the
+already-open custom-dungeon and custom-spell claims; the remaining names are
+core Turtle content paths, not PlayerBots behavior. The module deliberately
+does not add scripts to compensate for missing core content. The core/data
+owner must either register the intended scripts or remove/replace the
+corresponding rows before those content paths can be considered supported.
+
+### F-09 — Talent data is server-aware, but generation is still a risk
+
+The config comments state that the hand-built level-60 specs were generated
+against Turtle's reworked talent trees (`aiplayerbot.conf.dist.in:510-528`),
+and `Talentspec.cpp` validates every link against loaded `Talent.dbc`/server
+talent data before accepting it (`:45-105`). This is the correct direction.
+
+The validator now sums points across all three trees, initializes each DBC row's
+rank metadata independently, rejects missing prerequisite records safely, and
+uses a non-empty fallback name when a spell record is absent. The remaining risk
+is behavioral coverage: there is no general data-driven class-profile layer for
+every Turtle custom talent interaction. Every class/spec should still be
+validated against local DBC and live server spell/aura behavior before being
+called supported.
+
+## 5. Product surface and client audit
+
+### F-10 — Configuration is much larger than the current product
+
+`ai/playerbot/aiplayerbot.conf.dist.in` is 4,937 lines. It exposes mature donor
+families for:
+
+- random population and auto-login;
+- gear progression and auction/economy behavior;
+- guild/social broadcasts and LFG chat;
+- dozens of debug/maintenance paths;
+- optional LLM prompts and network settings.
+
+The native runtime intentionally defaults random-bot activation and account /
+character creation off (`aiplayerbot.conf.dist.in:14-48`,
+`runtime/RandomBotService.cpp:1-80`). The LLM `Generate()` path is currently
+disabled and returns the existing no-response fallback
+(`PlayerbotLLMInterface.cpp:376-383`), so it is not currently blocking combat.
+
+The large template remains an operator-facing compatibility surface. The
+native defaults keep random population and LLM behavior off, and the current
+LLM generator returns the no-response fallback without making a network call.
+This audit accepts the retained keys as deferred compatibility configuration;
+it does not advertise every inherited setting as supported MVP behavior. A
+smaller split template is an ergonomics follow-up.
+
+### F-11 — Current server command surface is intentionally narrow
+
+The native `.bot` handler currently supports:
+
+```text
+add remove follow invite uninvite stay list stats command
+```
+
+(`commands/BotCommands.cpp:454-507`). The Knowledge Base baseline describes a
+much broader Shyalya-fork surface (`.rndbot`, chat triggers, `@` filters,
+addon/TCP state queries), but those docs are a behavior reference for a
+different fork, not proof that this native module should expose them now.
+
+This is acceptable for the current human + owned-bot MVP. Mark it explicitly
+as “partial compatibility” rather than allowing the stale core `.rndbot`/AHBot
+command registrations to imply otherwise.
+
+### F-12 — No PlayerBots client addon is present
+
+The local client has `Turtle_General`, `Turtle_GroupUI`, and
+`TortoiseGMManager`, but no `TortoiseBots` or `PlayerBots` addon. The native
+module has a packet bridge (`BotPacketAdapter.cpp`) for server-side AI event
+delivery and inherited `CHAT_MSG_ADDON` code in mature `PlayerbotAI`, but it
+does not provide a Turtle client addon, addon prefix contract, or bot state
+query UI.
+
+This is not a blocker for server-side `.bot add/follow/stay` work. It is a
+clear future boundary: any addon must use the local Turtle addon transport and
+client build, not assume modern client APIs or an expansion-era addon API.
+
+The base `WoW.exe` reporting build 5875 is expected for a Vanilla 1.12.1
+client lineage; the Turtle launcher/MPQ package is what supplies the local
+1.18.1 product layer. The server/module uses core opcode constants rather than
+hardcoding a modern client build, which is the correct approach.
+
+## 6. Build graph and maintainability risks
+
+### F-13 — Positive class list, negative behavior graph
+
+The class directories are explicit, but generic/actions/triggers/values are
+still globbed (`TortoiseBots.cmake:112-117`). That means a future donor file
+named `Arena...`, `Fishing...`, `Glyph...`, or an expansion-specific helper
+added to one of those directories will enter the build automatically.
+
+The cleanup currently depends on physical deletion. Add a CI audit that fails
+when forbidden families or later-level constants appear, or replace the broad
+globs with generated/checked-in positive manifests. Keep a whitelist for
+documented Turtle custom IDs so the guard does not reject valid custom content.
+
+### F-14 — Research tooling is mixed into the module tree
+
+`ai/playerbot/scripts/analyze_quest_ledger.py` is not compiled by CMake, but it
+has hard-coded developer paths at `:22-23`:
+
+```text
+/home/ubuntu/cmake-build-debug/src/logs/bot_events.csv
+/home/ubuntu/cmake-build-debug/src/logs/deaths.csv
+```
+
+Move it to a tooling/research directory or make the defaults relative to the
+runtime log directory. It should not be treated as part of the deployable
+TortoiseBots product.
+
+## 7. Second-pass findings
+
+The second pass concentrated on contracts that a clean source-tree sweep can
+miss: the exact database schema, startup side effects, owner-command security,
+and code that is compiled but not reachable through the normal context
+registries.
+
+### F-15 — Optional cache schema does not match active writers (P1)
+
+The character migration creates `ai_playerbot_item_info_cache` with only the
+metadata columns (`data/sql/char/20260824090001_char.sql:39-50`). Once a
+non-empty weight-scale dataset is supplied, `RandomItemMgr::BuildItemInfoCache`
+(`ai/playerbot/RandomItemMgr.cpp:743-797`) reaches its writer and inserts
+`scale_1` through `scale_32` (`:1298-1326`). None of those 32 columns exists in
+the shipped table, so an operator who enables the optional gear-weight data
+gets failing cache writes during AI startup.
+
+The default empty weight-scale migration currently masks this defect because
+the initializer returns when `m_weightScales[1]` has no stats. That is not a
+valid schema contract; the first real Turtle gear dataset will expose it.
+
+There is a second, latent mismatch in the optional `GenerateBotHelp` build:
+`PlayerbotHelpMgr::SaveTemplates` writes `template_changed`
+(`ai/playerbot/PlayerbotHelpMgr.cpp:785-801`), but the world migration's help
+table has no such column (`data/sql/world/20260824090000_world.sql:52-67`).
+The normal CMake path does not define `GenerateBotHelp`, so this is not the
+default startup failure, but it is still a shipped schema that cannot support
+the feature it names.
+
+**Required action:** derive the migrations from the active query/write
+contract, add the scale columns or remove the writer, decide whether help
+generation is supported, and add a schema test that exercises both empty and
+populated optional datasets.
+
+### F-16 — Database ownership and startup cache generation are not cleanly bounded (P1)
+
+The table and failure sequence below are historical baseline evidence. The
+current migration/startup contract is the resolved behavior described in the
+closure section and final validation record.
+
+The module's table ownership is inconsistent:
+
+| Contract | Evidence | Problem |
+| --- | --- | --- |
+| Travel graph | `TravelNode.cpp:3248-3430` always uses `WorldDatabase`; the World migration owns all three tables. | The baseline schema was already World-owned for the travel graph; the closure keeps that ownership and removes the unrelated dead cache tables from Character. |
+| Zone levels | `TravelMgr.cpp:1204-1250` uses `WorldDatabase`, executes `CREATE TABLE IF NOT EXISTS`, then inserts one row for each loaded area. | `ai_playerbot_zone_level` is absent from the module world migration, so schema ownership is hidden in runtime code and startup mutates the world database. |
+| Fish locations | `TravelMgr.cpp:2014-2082` reads `ai_playerbot_named_location`; the former grid generator required the core's missing `PathInfo::getArea()` implementation. | The closure fails `AiPlayerbot.GenerateFishLocations` closed with an explicit startup error and uses persisted points or direct fishing; the removed generator cannot scan grids or write rows on the pinned core. |
+| Item/equipment caches | `RandomItemMgr::Init` calls the cache builders at `RandomItemMgr.cpp:72-82`; missing tables fall through to generation paths such as `:128-215` and `:2825-2984`. | A missed migration can turn startup into a large per-item scan and one-INSERT-per-item workload on the world thread. |
+
+When AI is enabled, `BotHostAdapter::OnStartup` calls
+`PlayerbotAIConfig::Initialize` (`host/BotHostAdapter.cpp:47-49`), which loads
+area levels, factories, caches, texts, talents, quest travel, battleground
+metadata, and auction data (`ai/playerbot/PlayerbotAIConfig.cpp:756-790`).
+This is acceptable only when the database contract is complete and the writes
+are bounded.
+
+The failure mode is especially bad when F-01 prevents the module tables from
+being applied. `TravelNodeMap::loadNodeStore` treats a failed table query as a
+full-generation condition (`ai/playerbot/TravelNode.cpp:3344-3388`), and
+`generateAll` then loads maps and generates paths (`:3184-3205`). A later save
+deletes all travel nodes, links, and path points and repopulates them in
+separate transactions (`:3316-3439`). A crash between those commits can leave
+the cache empty or partial.
+
+**Required action:** put every table in exactly the database its code uses,
+remove duplicate wrong-database tables, migrate `ai_playerbot_zone_level`
+explicitly or make it a deliberate non-persistent cache, and never silently
+fall back from a missing migration to full map/fish generation on a live world
+thread. Use a versioned/staged cache rebuild if travel persistence is retained;
+the module's current offline rebuild switches are `GenerateTravelNodes` and
+`GenerateFishLocations`.
+
+### F-17 — Owner-authorized RTSC command can write outside the log directory (P0)
+
+RTSC is not just a harmless movement strategy. It is registered as a normal
+chat action (`ai/playerbot/strategy/actions/ChatActionContext.h:188-200`) and
+the mature security layer grants an account owner `ALLOW_ALL`
+(`ai/playerbot/PlayerbotSecurity.cpp:20-29`). The action accepts a filename
+from the command and calls:
+
+- `sPlayerbotAIConfig.openLog(args[2], "w", true)` for `rtsc file save`
+  (`ai/playerbot/strategy/actions/RtscAction.cpp:120-154`);
+- `std::ifstream(m_logsDir + fileName)` for `rtsc file load`
+  (`RtscAction.cpp:221-234`).
+
+`openLog` simply concatenates `LogsDir` and the caller's string
+(`ai/playerbot/PlayerbotAIConfig.cpp:993-1021`). A filename containing `../`
+can therefore escape the configured log directory and overwrite a file that
+the mangosd OS account can write. The command is reachable through the native
+`.bot command` forwarding path, so this is not limited to a server operator.
+
+**Required action:** remove RTSC from the owned-player command surface for the
+MVP, or make it GM-only and restrict filenames to a validated basename below a
+dedicated diagnostics directory. Do not pass user input to `fopen`/`ifstream`
+as a path.
+
+### F-18 — Custom strategy editing interpolates raw player input into SQL (P1)
+
+The `cs` action is registered in `ChatActionContext` and takes a strategy name
+and action line from chat. `CustomStrategyEditAction::Edit` inserts, updates,
+or deletes those strings with `CharacterDatabase.DirectPExecute`
+(`ai/playerbot/strategy/actions/CustomStrategyEditAction.cpp:45-84`). The core
+implementation formats the query with `vsnprintf` and executes it directly
+(`tortoise-wow/src/shared/Database/Database.cpp:466-484`); it does not escape
+the `%s` arguments.
+
+An apostrophe in a legitimate custom action can break the query, and crafted
+input can alter the SQL literal or affect more rows belonging to the same
+owner. This is a module-level data-integrity/security problem, not a Turtle
+content difference.
+
+**Required action:** use a prepared statement or the core's proper escaping
+helper, cap name/action lengths, and add a regression case containing quotes,
+backslashes, and command separators.
+
+### F-19 — More compiled donor/test residue remains after the physical cleanup (P1/P2)
+
+The bullets below describe the historical pre-closure tree and are retained for
+provenance; the current source graph and F-19 status row supersede them.
+
+The second pass found additional expansion-era or diagnostic material beyond
+the first pass's consumable list:
+
+- `PlayerbotFactory::InitAvailableSpells` learns `31016` Eviscerate Rank 9,
+  `31018` Ferocious Bite Rank 6, `28612` Conjure Food Rank 7, and `28610`
+  Shadow Ward Rank 4 for a level-60 factory bot
+  (`ai/playerbot/PlayerbotFactory.cpp:2897-2978`). The local core spell SQL
+  confirms those names/ranks at `tw_world_spell_template.sql:21850,
+  21852,22780,22782`; they are later-rank donor data, not a neutral Vanilla
+  baseline.
+- `BossAuraTriggers.h:15-35` retains rank IDs `27045`, `27151-27153`,
+  `48943/48945/48947`, and `49071`. `BossAuraTriggers.cpp` and
+  `BossAuraActions.cpp` are compiled by the broad trigger/action globs (the
+  exact ON build compiled both), but their headers and creators are absent
+  from the normal `ActionContext`/`TriggerContext` registries. They are dead
+  donor code in the binary until some future registration makes them live.
+- `RtscAction`/`RTSCStrategy` and spell `30758` (“Aedm”) remain active
+  diagnostic/test behavior. The RTSC file surface is separately a P0 issue in
+  F-17.
+- `AutoLearnSpellAction.cpp:195-208` duplicates the later-rank factory
+  learning list, including `31016` and `31018`, so deleting only the factory
+  branch would not remove the expansion assumption.
+- The existing F-04 list should also include the factory's later pet/consumable
+  ranks, Rogue poison VIII/IX (`RogueActions.h:439,457`), and the TBC item
+  exclusion list in `PlayerbotFactory.cpp:1974-1989`.
+
+The presence of a numeric row in the core's broad DBC/SQL namespace does not
+make it part of the Turtle level-60 product. Each retained ID needs a reason:
+Vanilla, a verified Turtle custom mechanic, or a deliberate inert compatibility
+case. Everything else should be deleted or moved behind a clearly named,
+non-default compatibility/data layer.
+
+### F-20 — Documentation and provenance overstate the current contract (P2)
+
+`docs/PROVENANCE.md` says the native migrations are schema-only and cover the
+tables queried by the active initializer, and that empty caches avoid a large
+synchronous cache write. F-15 and F-16 show both statements are incomplete.
+`README.md:39-42` also presents the installed migrations as ready-to-use,
+while F-01 shows that the reviewed CMake destination does not match the core's
+default AutoUpdater folder names.
+
+The documentation should be corrected after the migration and startup
+contract is fixed. Otherwise a new developer will reproduce the same stale
+runtime image/schema assumptions that this audit found.
+
+### F-21 — Migration contains tables with no active owner (P2)
+
+The cleanup removed the donor random-population and older travel/cache
+managers, but the two native migrations still create several tables that have
+no active use in the reviewed source:
+
+- `ai_playerbot_random_bots` is present in
+  `data/sql/char/20260824090001_char.sql:72-85`, but no target source queries
+  it after the random manager cleanup;
+- `ai_playerbot_rpg_races` is present in the world migration at `:80-88`, but
+  no active source references it;
+- `ai_playerbot_tele_cache` is present at `data/sql/char/20260824090001_char.sql:29-37`,
+  but the reviewed module has no query for it;
+- `ai_playerbot_rarity_cache` has a builder in `RandomItemMgr.cpp:3301-3436`,
+  but `RandomItemMgr::Init` explicitly leaves `BuildRarityCache()` commented
+  out (`:72-82`).
+
+These tables are not harmful merely because they are empty, but they make the
+module look more complete than its active graph and keep donor-era database
+contracts alive. They also make schema audits harder because a table can exist
+without any runtime owner.
+
+**Required action:** keep the native migration limited to tables with an active
+reader/writer, or put deferred/donor datasets under a separately named and
+opt-in migration with provenance.
+
+## 8. Remaining work after the closure pass
+
+1. Make the local core's legacy LFT/chat/module paths a separate core PR or
+   remove them from the deployable Tortoise product; resolve the F-27
+   unregistered core script rows; keep `BUILD_LEGACY_PLAYERBOTS=OFF` for
+   native-module work.
+2. If navigation behavior needs mob avoidance or generated terrain caches,
+   add a generic core path-filter seam; the module already fails those optional
+   callers closed.
+3. Build acceptance coverage for Turtle custom starts, dungeons, and talent
+   interactions from the local server data. The module must not infer support
+   from a numeric ID alone.
+4. Optionally split the broad inherited configuration into an MVP file and
+   explicitly deferred random-population/economy/LLM/social files.
+5. Add a client addon only after the server command/state contract is stable;
+   validate it against the local Turtle client and addon transport.
+
+## 9. Validation and limitations of this audit
+
+Performed read-only:
+
+- repository status/history and source-graph inventory;
+- local core and module CMake/source comparison;
+- local core API, SQL, DBC/data, and custom-content inspection;
+- local Turtle client/addon directory and executable metadata inspection;
+- local reference checkout SHA inspection;
+- local Docker stack status and installed module path inspection;
+- forbidden-symbol and expansion-family searches.
+
+### Surface verifier prerequisite correction — 2026-08-25
+
+The earlier historical entries below that say
+`tools/verify_turtle_surface.sh` passed are normal-environment results. They
+did not exercise an environment without ripgrep and must not be read as
+evidence that the verifier was fail-closed when `rg` was unavailable.
+
+Source commit `9e9567c996d1cbf5c2c3f5949453499589600d4e` adds a prerequisite
+check before the first repository/path or `rg`-based check. The exact focused
+validation was:
+
+- Missing-ripgrep negative test:
+  `env -i PATH=/tmp/tortoisewow-no-ripgrep /bin/bash tools/verify_turtle_surface.sh`
+  exited `1` and printed only
+  `TortoiseBots surface check failed: ripgrep (rg) is required to verify the
+  Turtle module surface`; it did not print the final `module surface: OK`
+  success line.
+- Normal full verifier:
+  `bash tools/verify_turtle_surface.sh` exited `0` and printed
+  `Tortoise WoW 1.18.1 module surface: OK` on the current source tree with
+  ripgrep available.
+- `git diff --check` exited `0` for the correction.
+
+This was a shell/docs-only correction. No C++ build, Docker rebuild, database
+migration, gameplay fixture, or runtime claim was added or refreshed by it.
+
+The exact reviewed checkout was also built through the persistent bind-mounted
+builder:
+
+```text
+cd ../tortoise-docker-penqle
+bash dev/build-playerbots
+```
+
+The final exact code snapshot is implementation commit
+`d672048e86b9effc36210d3e6d076741fbeccc7f`. The persistent builder's direct
+cached compile of that snapshot completed successfully, and the final
+documentation-only configure is checked separately by CMake's source identity
+diagnostic. The
+cached `BUILD_PLAYERBOTS=ON`, `BUILD_LEGACY_PLAYERBOTS=OFF`, static
+`MODULE_TORTOISEBOTS` build compiled and linked `mangosd` successfully. The
+best-effort install wrapper reported the expected missing `realmd` artifact,
+then copied the built `mangosd` to the install volume; this does not invalidate
+the successful ON build. The complementary cached `BUILD_PLAYERBOTS=OFF`,
+`MODULES=disabled` build also completed successfully.
+
+The stronger module-removal gate also passed: a `git archive` of the pinned
+core was extracted into a disposable builder directory with no untracked
+`modules/TortoiseBots` checkout. CMake reported `modules: disabled (no modules
+found)`, and that source tree built and linked `mangosd` successfully with
+`BUILD_PLAYERBOTS=OFF`, `BUILD_LEGACY_PLAYERBOTS=OFF`, and `MODULES=disabled`.
+The temporary source/build directories were removed afterward.
+
+Fresh-schema SQL evidence: a disposable MariaDB 11.4 container applied
+`data/sql/world/{20260824090000,20260824090002,20260824090003}_*.sql` and
+`data/sql/char/{20260824090001,20260824090002,20260824090003}_*.sql` twice.
+All statements succeeded; the final schemas contained 32 `scale_*` columns,
+`template_changed`, the zone-level table, and zero obsolete donor tables.
+
+Preserved-stack evidence: after copying only the current module SQL into the
+running container, the core logged AutoUpdater processing from the configured
+`/opt/turtle/modules/TortoiseBots/data/sql/character` and `/world` paths and
+applied both `20260824090003_*` migrations. AI startup reached world-ready
+with empty-cache fail-closed logs and direct travel fallback. The disposable
+TBPLAY fixtures produced `PendingAddRemoveTest PASSED`, the six-step
+`AutoTest` lifecycle PASSED, `PacketBridgeTest native command surface PASSED`
+for `list`/`stats`/`follow`, and `PacketBridgeTest group invite/accept PASSED`
+followed by `PacketBridgeTest cleanup PASSED`.
+
+An earlier timestamp-scoped restart of the pre-`0f97403` closure binary (container start
+`2026-08-25T01:41:31.245096072Z`) reached `TortoiseBots: native module loaded
+(AI enabled)` and `World server is up and running!`. It logged the expected
+empty equipment-cache and direct fish/travel fallbacks, emitted no
+`ai_playerbot_*` table DDL/DML, and retained the already identified core
+warning for the missing `custom_dungeon_portal` script. `Loading TalentSpecs`
+completed with no `Error with premade` or `No premade` lines. This restart did
+not exercise a real taxi, loot, or custom-zone interaction; those changes were
+validated by the native build, direct core/data trace, and startup contracts.
+
+On the same updated binary, the disposable packet fixture at container start
+`2026-08-25T01:48:13.297552013Z` passed the native `list`/`stats`/`follow`
+command surface, mature group invite/accept, and cleanup. The test config was
+restored to `TortoiseBots.PacketBridgeTest = 0`; the subsequent normal restart
+at `2026-08-25T01:48:57.408768993Z` reached world-ready with the expected
+TalentSpecs/travel/fishing startup lines and no packet fixture enabled.
+
+Final implementation evidence: after installing `d672048` through the
+persistent builder, the preserved stack restarted at
+`2026-08-25T04:01:18.842808942Z` and reached world-ready at
+`2026-08-25T04:01:47.286072886Z`. Startup logged `Loading TalentSpecs`, the empty
+weight-scale safeguard, direct travel/fishing fallback, native module load,
+and no `ai_playerbot_*` DDL/DML. The three packet/automation fixture flags
+remained `0`; no fixture journey was replayed. The restart confirmed the
+already-traced core/data registry gap with `Script not found` entries for
+`custom_dungeon_portal`, `spell_druid_wrath`, `go_airplane`, `item_radio`,
+and the listed custom NPC/duplicate names; no module replacement was invented.
+
+Custom-start acceptance evidence: disposable `Tbgoblin` (guid 7, Goblin,
+Blackstone `map 1 / zone 5536 / -233,-7177,16.52`) passed AutoTest login,
+native AI attachment, save, logout, relogin, and cleanup between
+`04:10:16.382Z` and `04:10:49.840Z`. Disposable `Tbhelf` (guid 8, High Elf,
+Thalassian `map 0 / zone 5225 / 3212.63,-2501.44,111.71`) passed the same
+journey between `04:12:11.086Z` and `04:12:44.559Z`. The test generated no
+fixture rows after cleanup; `TortoiseBots.AutoTest` was restored to `0`.
+The final normal restart at `2026-08-25T04:14:19.562258645Z` reached
+world-ready at `04:14:40.631920103Z` with the fixture disabled. This proves
+custom-start headless lifecycle, not full terrain movement/death or physical
+mount use.
+
+The closure pass modified module C++, SQL, CMake, README, and tooling files;
+it did not modify the sibling core, Dockerfile, compose file, or reference
+checkouts. The only database mutations were additive module migrations and
+cleanup of duplicate migration rows created by the audit harness, plus normal
+disposable-fixture save/logout activity; no database reset or volume wipe was
+performed. The real Turtle client was launched under Wine through both the
+normal and software-forced rendering paths, but both rendered a black window
+with no observable login UI in this environment. Therefore no real-client
+`.bot` command journey is claimed. The optional install wrapper's only failure
+was the sibling builder's absent `realmd` binary after the successful
+`mangosd` link.
+
+## 10. Provenance
+
+The native behavior lineage is recorded in `docs/PROVENANCE.md`. The audited
+donors available locally were:
+
+```text
+Shyalya/tortoise-wow       1f9497e0f42bfc1055841bb6ebdc7caa3515de0b
+cmangos/playerbots         076045efa835da9aab7c943bca752aebe1baad
+mod-playerbots             5397110cba484a9b7209bc9f632652e9d4bd6a70
+mangoszero/server          1817ae11974a3285f8c963d1d19463c1411a422d
+cmangos/mangos-classic     9b682be617ac61c127c23aa60d7b4ffbc0ce37e6
+```
+
+The correct policy remains: harvest behavior, not architecture. The current
+audit supports retaining mature Vanilla behavior while removing the remaining
+later-expansion data, stale host paths, and silent compatibility assumptions.

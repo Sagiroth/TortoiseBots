@@ -11,38 +11,9 @@ INSTANTIATE_SINGLETON_1(ai::SharedObjectContext);
 // LootAccess methods read from the wrapped Loot* (proper accessor-based
 // access; the original layout-cheat reinterpret_cast pattern was removed).
 
-// Empty static fallbacks used when LootAccess wraps a null Loot* (defensive).
-static const std::set<ObjectGuid> s_emptyGuidSet;
-static const LootItemList s_emptyLootItems;
-
-std::set<ObjectGuid> const& LootAccess::playersLooting() const
-{
-	if (!loot)
-		return s_emptyGuidSet;
-	return loot->GetLootingPlayers();
-}
-
 LootType LootAccess::lootType() const
 {
 	return loot ? loot->loot_type : LOOT_CORPSE;
-}
-
-uint32 LootAccess::gold() const
-{
-	return loot ? loot->gold : 0;
-}
-
-std::set<ObjectGuid> const& LootAccess::playersOpened() const
-{
-	// Penqle has no per-player "released the corpse" tracking; return empty set.
-	return s_emptyGuidSet;
-}
-
-LootItemList const& LootAccess::lootItems() const
-{
-	if (!loot)
-		return s_emptyLootItems;
-	return loot->items;
 }
 
 std::vector<LootItem*> LootAccess::GetLootContentFor(Player* /*player*/) const
@@ -61,12 +32,12 @@ std::vector<LootItem*> LootAccess::GetLootContentFor(Player* /*player*/) const
 
 // Get loot status for a specified player.
 // cmangos returned bitflags reflecting "has gold / not fully looted / contains FFA / etc."
-// We map to Penqle's coarser model: any items remaining = NOT_FULLY_LOOTED, gold > 0 = CONTAIN_GOLD.
-// FFA / released-items flags use LootItem::freeForAll() / isReleased() (which we aliased; isReleased
-// always returns false in Penqle).
+// Derive the status from the core's public loot fields and group round-robin
+// contract; do not route through the core's intentionally empty loot-view
+// permission sentinel.
 uint32 LootAccess::GetLootStatusFor(Player const* player) const
 {
-	if (!loot)
+	if (!loot || !player)
 		return 0;
 
 	uint32 status = 0;
@@ -74,12 +45,20 @@ uint32 LootAccess::GetLootStatusFor(Player const* player) const
 	if (loot->gold != 0)
 		status |= LOOT_STATUS_CONTAIN_GOLD;
 
-	for (auto const& lootItem : loot->items)
+	WorldObject const* lootTarget = loot->GetLootTarget();
+	Group* group = const_cast<Player*>(player)->GetGroup();
+	ObjectGuid lootGuid = lootTarget ? lootTarget->GetObjectGuid() : ObjectGuid();
+	for (uint32 slot = 0; slot < loot->items.size(); ++slot)
 	{
-		// Penqle's GetSlotTypeForSharedLoot takes (PermissionTypes, Player*).
-		// Pass NONE_PERMISSION — bot uses this status only for "is anything left to loot?" checks.
-		LootSlotType slotType = lootItem.GetSlotTypeForSharedLoot(NONE_PERMISSION, const_cast<Player*>(player));
-		if (slotType == MAX_LOOT_SLOT_TYPE)
+		LootItem const& lootItem = loot->items[slot];
+		if (lootItem.is_looted || !lootItem.AllowedForPlayer(player, lootTarget))
+			continue;
+
+		// Match the core's GROUP_PERMISSION view: an under-threshold item is
+		// hidden from non-round-robin members until the designated looter
+		// releases it. An active roll is still unfinished loot for everyone.
+		if (group && !lootItem.freeforall && loot->roundRobinPlayer &&
+			loot->roundRobinPlayer != player->GetObjectGuid() && lootItem.is_underthreshold)
 			continue;
 
 		status |= LOOT_STATUS_NOT_FULLY_LOOTED;
@@ -87,8 +66,11 @@ uint32 LootAccess::GetLootStatusFor(Player const* player) const
 		if (lootItem.freeForAll())
 			status |= LOOT_STATUS_CONTAIN_FFA;
 
-		if (lootItem.isReleased())
-			status |= LOOT_STATUS_CONTAIN_RELEASED_ITEMS;
+		// The core exposes active rolls through Group::GetActiveRoll rather than
+		// Loot::GetRollForSlot. Keep an active roll explicitly unfinished even
+		// when another core path has already toggled the item blocked bit.
+		if (group && lootGuid && group->GetActiveRoll(lootGuid, slot))
+			status |= LOOT_STATUS_NOT_FULLY_LOOTED;
 	}
 	return status;
 }
@@ -475,9 +457,6 @@ bool ShouldLootObject::Calculate()
 		return false;
 
 	LootAccess lootAccess(objLoot2);
-
-	if (lootAccess.lootMethod() != NOT_GROUP_TYPE_LOOT && !lootAccess.isChecked()) //Open loot once to start rolls.
-		return true;
 
 	for (auto& lItem : lootAccess.GetLootContentFor(bot))
 	{

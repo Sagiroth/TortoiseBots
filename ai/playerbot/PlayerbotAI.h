@@ -170,10 +170,6 @@ enum HealingItemDisplayId
    DISCOLORED_HEALING_POTION = 15736,
    MINOR_HEALING_POTION = 15710,
    VOLATILE_HEALING_POTION = 24212,
-   SUPER_HEALING_POTION = 37807,
-   CRYSTAL_HEALING_POTION = 47132,
-   FEL_REGENERATION_POTION = 37864,
-   MAJOR_DREAMLESS_SLEEP_POTION = 37845,
 };
 
 enum RoguePoisonDisplayId
@@ -195,8 +191,6 @@ enum SharpeningStoneDisplayId
    DENSE_SHARPENING_DISPLAYID = 24677,
    CONSECRATED_SHARPENING_DISPLAYID = 24674,    // will not be used because bot can not know if it will face undead targets
    ELEMENTAL_SHARPENING_DISPLAYID = 21072,
-   FEL_SHARPENING_DISPLAYID = 39192,
-   ADAMANTITE_SHARPENING_DISPLAYID = 39193,
 };
 
 enum WeightStoneDisplayId
@@ -206,8 +200,6 @@ enum WeightStoneDisplayId
    HEAVY_WEIGHTSTONE_DISPLAYID = 24685,
    SOLID_WEIGHTSTONE_DISPLAYID = 24686,
    DENSE_WEIGHTSTONE_DISPLAYID = 24687,
-   FEL_WEIGHTSTONE_DISPLAYID = 39548,
-   ADAMANTITE_WEIGHTSTONE_DISPLAYID = 39549,
 };
 
 // m_zero
@@ -217,8 +209,7 @@ enum WizardOilDisplayId
     LESSER_WIZARD_OIL = 33450,
     BRILLIANT_WIZARD_OIL = 33452,
     WIZARD_OIL = 33451,
-    SUPERIOR_WIZARD_OIL = 47904,
-    /// Blessed Wizard Oil = 26865,//scourge inv
+    /// Blessed Wizard Oil is not part of the active consumable set.
 };
 // m_zero
 enum ManaOilDisplayId
@@ -226,13 +217,6 @@ enum ManaOilDisplayId
     MINOR_MANA_OIL = 33453,
     LESSER_MANA_OIL = 33454,
     BRILLIANT_MANA_OIL = 33455,
-    SUPERIOR_MANA_OIL = 36862,
-};
-
-enum ShieldWardDisplayId
-{
-   LESSER_WARD_OFSHIELDING = 38759,
-   GREATER_WARD_OFSHIELDING = 38760,
 };
 
 enum class BotTypeNumber : uint8

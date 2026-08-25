@@ -335,8 +335,8 @@ bool RpgTrainTrigger::IsActive()
         return false;
     }
 
-    FactionTemplateEntry const* factionTemplate = sFactionTemplateStore.LookupEntry(cInfo->Faction);
-    float fDiscountMod = bot->GetReputationPriceDiscount(factionTemplate);
+    Creature* trainer = guidP.GetCreature(bot->GetInstanceId());
+    float fDiscountMod = trainer ? bot->GetReputationPriceDiscount(trainer) : 1.0f;
 
     TrainerSpellMap trainer_spells;
     if (cSpells)

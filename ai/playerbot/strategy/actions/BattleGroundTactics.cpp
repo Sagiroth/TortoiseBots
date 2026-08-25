@@ -2976,7 +2976,7 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
         // is out of range, so with the operands the other way round every
         // Warsong bot produced one per tick regardless of distance - 15000+ a
         // session - while only the continue was ever gated on bgType.
-        if (bgType != BATTLEGROUND_WS && !true /*CanInteract stub*/)
+        if (bgType != BATTLEGROUND_WS && !bot->CanInteract(go))
             continue;
 
         if (flagRange)

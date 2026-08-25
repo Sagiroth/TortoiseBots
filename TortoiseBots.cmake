@@ -8,6 +8,35 @@
 if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
   set(TORTOISEBOTS_ROOT "${CMAKE_CURRENT_LIST_DIR}")
 
+  # Make source selection observable. The Penqle development builder mounts
+  # this checkout over the core's optional module path; a direct core build
+  # must not silently fall back to an unrelated stale copy.
+  set(TORTOISEBOTS_SOURCE_COMMIT "unknown")
+  set(TORTOISEBOTS_SOURCE_STATE "clean")
+  execute_process(
+    COMMAND git -c "safe.directory=${TORTOISEBOTS_ROOT}" -C "${TORTOISEBOTS_ROOT}" rev-parse HEAD
+    RESULT_VARIABLE TORTOISEBOTS_GIT_RESULT
+    OUTPUT_VARIABLE TORTOISEBOTS_SOURCE_COMMIT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+  if(NOT TORTOISEBOTS_GIT_RESULT EQUAL 0)
+    set(TORTOISEBOTS_SOURCE_COMMIT "unknown")
+    set(TORTOISEBOTS_SOURCE_STATE "unknown")
+  else()
+    execute_process(
+      COMMAND git -c "safe.directory=${TORTOISEBOTS_ROOT}" -C "${TORTOISEBOTS_ROOT}" status --porcelain --untracked-files=all
+      RESULT_VARIABLE TORTOISEBOTS_STATUS_RESULT
+      OUTPUT_VARIABLE TORTOISEBOTS_SOURCE_STATUS
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      ERROR_QUIET)
+    if(NOT TORTOISEBOTS_STATUS_RESULT EQUAL 0)
+      set(TORTOISEBOTS_SOURCE_STATE "unknown")
+    elseif(NOT "${TORTOISEBOTS_SOURCE_STATUS}" STREQUAL "")
+      set(TORTOISEBOTS_SOURCE_STATE "dirty")
+    endif()
+  endif()
+  message(STATUS "TortoiseBots source: ${TORTOISEBOTS_ROOT} commit ${TORTOISEBOTS_SOURCE_COMMIT} (${TORTOISEBOTS_SOURCE_STATE})")
+
   # PlayerbotAIConfig reads its mature configuration beside mangosd.conf.
   set(TORTOISEBOTS_AI_CONFIG "${CMAKE_CURRENT_BINARY_DIR}/aiplayerbot.conf")
   configure_file(
@@ -24,6 +53,11 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
 
   # Optional module migrations are installed only with the module. The core
   # AutoUpdater applies them on startup without making bots a core dependency.
+  # AutoUpdater's module contract is case-sensitive on Linux. Penqle's
+  # effective mangosd.conf.dist names these configured folders `world` and
+  # `character`; the uppercase names in AutoUpdater.cpp are only fallback
+  # defaults when those settings are absent. Keep the module aligned with the
+  # shipped core configuration so a fresh install cannot silently skip SQL.
   if(EXISTS "${TORTOISEBOTS_ROOT}/data/sql/world")
     install(DIRECTORY "${TORTOISEBOTS_ROOT}/data/sql/world/"
       DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/TortoiseBots/data/sql/world")
@@ -131,6 +165,15 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     if(NOT EXISTS "${TORTOISEBOTS_SOURCE}")
       message(FATAL_ERROR "TortoiseBots source listed but missing: ${TORTOISEBOTS_SOURCE}")
     endif()
+
+    # Keep the positive source graph mechanically hostile to donor expansion
+    # families. A future file with one of these names must be reviewed before
+    # it can enter the module through a directory glob.
+    string(TOUPPER "${TORTOISEBOTS_SOURCE}" TORTOISEBOTS_SOURCE_UPPER)
+    if(TORTOISEBOTS_SOURCE_UPPER MATCHES "DEATHKNIGHT|GLYPH|VEHICLE|KARAZHAN|ARENA|RTSC|BOSSAURA")
+      message(FATAL_ERROR "Expansion/test family is not allowed in TortoiseBots source graph: ${TORTOISEBOTS_SOURCE}")
+    endif()
+
     TW_ADD_SCRIPT("${TORTOISEBOTS_SOURCE}")
   endforeach()
 endif()
@@ -147,8 +190,10 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "POST_TARGETS")
 
   if(TARGET "${TORTOISEBOTS_TARGET}")
     set(TORTOISEBOTS_ROOT "${CMAKE_CURRENT_LIST_DIR}")
+    # BUILD_PLAYERBOTS is the core's legacy-vendor escape hatch. Native module
+    # selection is controlled by MODULE_TORTOISEBOTS, so do not force the
+    # legacy option on from inside this module.
     target_compile_definitions("${TORTOISEBOTS_TARGET}" PRIVATE
-      BUILD_PLAYERBOTS=1
       MANGOSBOT_ZERO=1
       CMANGOS=1)
     target_include_directories("${TORTOISEBOTS_TARGET}" PRIVATE

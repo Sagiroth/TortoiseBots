@@ -201,21 +201,13 @@ namespace ai
                 {
                     return 5510;
                 }
-                else if(level >= 48 && level < 61)
+                else if(level >= 48 && level <= 60)
                 {
                     return 9421;
                 }
-                else if(level >= 61 && level < 63)
-                {
-                    return 22103;
-                }
-                else if(level >= 63 && level < 71)
-                {
-                    return 36889;
-                }
                 else
                 {
-                    return 36892;
+                    return 0;
                 }
             }
 
@@ -351,7 +343,7 @@ namespace ai
 
         virtual uint32 GetItemId() override
         {
-            return (bot->GetLevel() >= 68) ? 23827 : 10646;
+            return 10646;
         }
     };
 
