@@ -76,9 +76,10 @@ uint32 LootAccess::GetLootStatusFor(Player const* player) const
 
 	for (auto const& lootItem : loot->items)
 	{
-		// Penqle's GetSlotTypeForSharedLoot takes (PermissionTypes, Player*).
-		// Pass NONE_PERMISSION — bot uses this status only for "is anything left to loot?" checks.
-		LootSlotType slotType = lootItem.GetSlotTypeForSharedLoot(NONE_PERMISSION, const_cast<Player*>(player));
+		// Use the core loot target so condition and ownership checks see the same
+		// object that the native loot handler validated.
+		LootSlotType slotType = lootItem.GetSlotTypeForSharedLoot(
+			NONE_PERMISSION, const_cast<Player*>(player), loot->GetLootTarget());
 		if (slotType == MAX_LOOT_SLOT_TYPE)
 			continue;
 

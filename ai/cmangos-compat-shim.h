@@ -480,19 +480,43 @@ inline CmangosAreaTriggerStoreProxy sAreaTriggerStore;
 typedef ClassRoles LfgRoles;
 typedef RolesPriority LfgRolePriority;
 
-// === Taxi namespace stub (cmangos has Taxi::Map for in-flight spline tracking) ===
-// Penqle has no equivalent; bot uses GetTaxiPathSpline() which we stub to return nullptr/empty.
+// === Taxi route view (cmangos has Taxi::Map for in-flight spline tracking) ===
+// Penqle exposes the active route through Player::GetTaxi().GetTaxiPath(). Keep
+// the donor-facing view local to the module while reading that live core path.
 namespace Taxi {
     struct PathNode {
         uint32 mapId = 0; float x = 0, y = 0, z = 0;
     };
     class Map {
     public:
-        Map() {}
-        Map(void*) {}  // accept the void* from Player::GetTaxiPathSpline stub
-        bool empty() const { return true; }
-        PathNode const* back() const { return nullptr; }
-        PathNode const* front() const { return nullptr; }
+        explicit Map(TaxiPathNodeList const& path) : m_path(&path) {}
+
+        bool empty() const { return !m_path || m_path->empty(); }
+
+        PathNode const* back() const
+        {
+            if (empty())
+                return nullptr;
+
+            TaxiPathNodeEntry const& node = m_path->back();
+            m_back = { node.mapId, node.x, node.y, node.z };
+            return &m_back;
+        }
+
+        PathNode const* front() const
+        {
+            if (empty())
+                return nullptr;
+
+            TaxiPathNodeEntry const& node = m_path->front();
+            m_front = { node.mapId, node.x, node.y, node.z };
+            return &m_front;
+        }
+
+    private:
+        TaxiPathNodeList const* m_path;
+        mutable PathNode m_front;
+        mutable PathNode m_back;
     };
 }
 

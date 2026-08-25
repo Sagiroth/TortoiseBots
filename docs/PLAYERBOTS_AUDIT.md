@@ -86,7 +86,7 @@ Vanilla/Turtle product surface before adding more classes or dungeon behavior.
 | F-02 | P0 | The local core has a stale untracked module copy, and `BUILD_PLAYERBOTS=OFF` does not itself gate an explicitly enabled native module. | Native CMake forcing is resolved; the supported builder bind-mounts this checkout and CMake now prints `/work/core/modules/TortoiseBots` plus exact verified commit `be7ffb2d485b63ba365a599153b70c813f6b01d2`. The stale sibling copy and direct-core workflow remain external follow-up. |
 | F-03 | P1 | Bot-specific legacy code remains in the core: LFT random-bot filling, bot command stubs, bot slots, and legacy module hooks. | Open core-owned follow-up; no new module coupling was added. |
 | F-04 | P1 | Active native code retains later-expansion consumable IDs, item IDs, spell IDs, and level gates. | Resolved: audited absent spell/item branches, post-60 level formulas, WotLK/TBC mana-gem IDs, and the level-70 Druid reagent branch are removed; retained level-60/Turtle rows were revalidated against local core data. |
-| F-05 | P1 | The compatibility shim contains silent no-op/default implementations for movement, instance, chat-channel, transport, formation, emote, session-state, and loot semantics. | Partially resolved: active chase/follow inspection now uses the native generator target, loaded channel definitions are exposed through ObjectMgr, and supported movement paths avoid private donor state; remaining capability debt is explicit and not advertised as complete Turtle behavior. |
+| F-05 | P1 | The compatibility shim contains silent no-op/default implementations for movement, instance, chat-channel, transport, formation, emote, session-state, and loot semantics. | Partially resolved: active chase/follow inspection uses the native generator target, live taxi routes and loot targets use core APIs, loaded channel definitions are exposed through ObjectMgr, and supported movement paths avoid private donor state; remaining capability debt is explicit and not advertised as complete Turtle behavior. |
 | F-06 | P1/P2 | Custom Goblin/High Elf starting areas are deliberately bypassed because local navigation data is incomplete. | Keep as an explicit limitation until custom MMAP/pathing is validated. |
 | F-07 | P1/P2 | Turtle collection mounts are not modeled by the factory/randomization path. | Partially resolved with core `collection_mount` lookup plus existing-inventory/full-list support; factory spell initialization follows the existing classic factory model, while item-use gameplay acceptance remains future work. |
 | F-08 | P2 | Turtle custom dungeon/zone encounter behavior is not represented by explicit strategies. | Verified external content gap: local SQL assigns `custom_dungeon_portal`, but pinned-core startup reports no such script; no module encounter behavior is advertised. |
@@ -162,9 +162,10 @@ action” wording in the finding bodies below.
   call. The quest-ledger tooling now points at the native module path rather
   than the removed `src/modules/PlayerBots` tree.
 - The developer quest ledger is in `tools/` with portable log defaults. The
-  CMake graph retains explicit Vanilla class directories and rejects future
+  CMake graph uses explicit Vanilla class directories and rejects future
   source filenames containing the audited Death Knight, glyph, vehicle,
-  Karazhan, Arena, RTSC, or BossAura families. The repeatable
+  Karazhan, Arena, RTSC, or BossAura families; the remaining directory globs
+  are a deliberate bounded-graph trade-off. The repeatable
   `tools/verify_turtle_surface.sh` check covers the same SQL/dead-ID contracts.
 
 The apparent later-rank IDs `28610`, `28612`, `31016`, and `31018` were not
@@ -191,12 +192,13 @@ valid Tortoise data until the core data itself changes.
   follow/chase target and current geometric angle/offset through the local
   core's public `MotionMaster::GetCurrent()`/targeted-generator contract;
   follow/chase decisions no longer compare against fabricated zero offsets.
-  The channel proxy now reads the core's loaded `ChatChannels` map. Against
-  the local core, `GetTaxiPathSpline()` and `GetTransportAnimInfo()` remain
+  The channel proxy now reads the core's loaded `ChatChannels` map, and taxi
+  route inspection reads `Player::GetTaxi().GetTaxiPath()`. Against the local
+  core, `GetTransportAnimInfo()` remains
   absent/null, `MotionMaster::MoveInFormation` is a no-op compatibility
   method, and no `EmotesTextSound` loader exists even though the client DBC is
   present. The module uses its own formation math, direct taxi/travel paths,
-  native loot resolution, core-backed creature gossip, and generic session
+  target-aware native loot resolution, core-backed creature gossip, and generic session
   transport for the supported MVP;
   the remaining donor-only semantics require targeted core adapters/tests.
 - F-06 remains accepted: Goblin/High Elf custom starts use safe homebind or
@@ -477,7 +479,7 @@ semantics:
 | `:85-95` | `UNIT_FLAG_CLIENT_CONTROL_LOST` becomes zero; `movementFlagsMask` becomes all bits. | Control/movement checks can become no-ops or over-broad. |
 | `:110-120` and `WorldPosition.h:238-240` | Zero-valued `InstanceTemplate`; `getInstanceTemplate()` returns null. | Dungeon level/player-limit/reset logic cannot behave like the core. |
 | `:237-260` | CMaNGOS trigger-cast bitmasks collapse to `bool` true/false. | Ignore-GCD/aura-scaling distinctions are lost. |
-| `:483-497` | `Taxi::Map` is always empty. | In-flight taxi state and path reasoning are unavailable. |
+| `:483-497` | `Taxi::Map` reads the live `Player::GetTaxi().GetTaxiPath()` route. | In-flight route reasoning is available; transport-animation/elevator data remains unavailable. |
 | `:516-525` | ScriptDevAI-shaped gossip callback delegates to Penqle's `sScriptMgr.OnGossipHello(Player*, Creature*)`. | Core creature gossip is preserved through the generic registry; custom gossip still needs focused bot acceptance coverage. |
 | `:688-700` | Chat-channel store now delegates to `ObjectMgr::GetChannelEntryFor` and the loaded map. | The core owns the channel definitions; automatic bot channel-join behavior still lacks a focused runtime acceptance journey. |
 | `:721-733` | `TransportAnimation` is structural only. | Transport movement cannot be assumed correct. |

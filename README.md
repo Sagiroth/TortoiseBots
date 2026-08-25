@@ -23,8 +23,9 @@ Current development is in **Phase 4 stabilization**.
 
 The module is packaged through Penqle's native `modules/<name>/` loader. Only
 `src/TortoiseBotsModule.cpp` lives below the loader's recursive `src/` tree;
-the positive Vanilla/Turtle source graph is selected explicitly by
-`TortoiseBots.cmake`. Core-owned LFG/meeting-stone and transport concepts are
+the positive Vanilla/Turtle source graph is bounded by explicit class
+directories and filename guards in `TortoiseBots.cmake`. Core-owned
+LFG/meeting-stone and transport concepts are
 retained, while donor-only expansion families are absent from the module tree.
 
 - Phase 3 headless lifecycle/session foundation is implemented.

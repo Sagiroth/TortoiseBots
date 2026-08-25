@@ -1194,7 +1194,7 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
 
             if (player->IsTaxiFlying()) //Move to where the player is flying to.
             {
-                const Taxi::Map tMap = player->GetTaxiPathSpline();
+                const Taxi::Map tMap(player->GetTaxi().GetTaxiPath());
                 if (!tMap.empty())
                 {
                     auto tEnd = tMap.back();
