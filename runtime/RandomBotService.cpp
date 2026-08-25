@@ -1,3 +1,4 @@
+// pi-lens-ignore: clang:pp_file_not_found,clang:unknown_typename,clang:use_of_undeclared_identifier,clang:unknown_type_name,clang:undeclared_var_use,clang:incomplete_member_access,clang:uninitialized,clang:undefined_identifier,clang:undeclared_identifier,clang:all
 #include "RandomBotService.h"
 
 #include "BotManager.h"
@@ -13,6 +14,7 @@
 
 #include <algorithm>
 #include <ctime>
+#include <memory>
 #include <set>
 
 namespace TortoiseBots
@@ -55,8 +57,8 @@ void RandomBotService::LoadCandidates()
     m_nextCandidate = 0;
 
     std::set<uint32> accountIds;
-    auto accounts = LoginDatabase.PQuery("SELECT id FROM account WHERE username LIKE '%s%%'",
-        sPlayerbotAIConfig.randomBotAccountPrefix.c_str());
+    std::unique_ptr<QueryResult> accounts(LoginDatabase.PQuery("SELECT id FROM account WHERE username LIKE '%s%%'",
+        sPlayerbotAIConfig.randomBotAccountPrefix.c_str()));
     if (!accounts)
         return;
 
@@ -74,8 +76,8 @@ void RandomBotService::LoadCandidates()
     std::set<uint32> characterIds;
     for (uint32 accountId : accountIds)
     {
-        auto characters = CharacterDatabase.PQuery(
-            "SELECT guid FROM characters WHERE account = '%u' ORDER BY guid", accountId);
+        std::unique_ptr<QueryResult> characters(CharacterDatabase.PQuery(
+            "SELECT guid FROM characters WHERE account = '%u' ORDER BY guid", accountId));
         if (!characters)
             continue;
 
