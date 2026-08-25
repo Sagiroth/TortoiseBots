@@ -907,6 +907,13 @@ completed with no `Error with premade` or `No premade` lines. This restart did
 not exercise a real taxi, loot, or custom-zone interaction; those changes were
 validated by the native build, direct core/data trace, and startup contracts.
 
+On the same updated binary, the disposable packet fixture at container start
+`2026-08-25T01:48:13.297552013Z` passed the native `list`/`stats`/`follow`
+command surface, mature group invite/accept, and cleanup. The test config was
+restored to `TortoiseBots.PacketBridgeTest = 0`; the subsequent normal restart
+at `2026-08-25T01:48:57.408768993Z` reached world-ready with the expected
+TalentSpecs/travel/fishing startup lines and no packet fixture enabled.
+
 The closure pass modified module C++, SQL, CMake, README, and tooling files;
 it did not modify the sibling core, Dockerfile, compose file, or reference
 checkouts. The only database mutations were additive module migrations and

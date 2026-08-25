@@ -419,3 +419,8 @@ Local validation:
   Goblin start `maps/0013245.map` + `mmaps/0013245.mmtile` and High Elf start
   `maps/0002536.map` + `mmaps/0002536.mmtile`; `vmaps/000_25_36.vmtile` is not
   present.
+- The updated disposable packet fixture at `2026-08-25T01:48:13.297552013Z`
+  passed native `list`/`stats`/`follow`, mature group invite/accept, and
+  cleanup. Its temporary `PacketBridgeTest` enablement was restored to `0`,
+  and the normal restart at `2026-08-25T01:48:57.408768993Z` reached
+  world-ready.
