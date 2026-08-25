@@ -5300,11 +5300,9 @@ bool DebugAction::HandleTransanal(Event& event, Player* requester, const std::st
                 if (hitPoints.empty())
                     continue;
 
-                // remote_ip MUST be "disconnected/bot" so PlayerbotAI::IsRealPlayer() returns false.
+                // This is a local synthetic player used only by the diagnostic.
                 WorldSession* session = new WorldSession(0, NULL, SEC_PLAYER,
                     0, LOCALE_enUS, "disconnected/bot", 0);
-
-                    session->SetNoAnticheat();
 
                     Player* tempPlayer = new Player(session);
 
