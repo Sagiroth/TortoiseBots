@@ -1042,12 +1042,12 @@ opt-in migration with provenance.
 ## 8. Remaining work after the closure pass
 
 1. Make the local core's legacy LFT/chat/module paths a separate core PR or
-   remove them from the deployable Tortoise product; keep
-   `BUILD_LEGACY_PLAYERBOTS=OFF` for native-module work.
-2. Replace the highest-value remaining compatibility fallbacks with real
-   Tortoise adapters and focused acceptance checks, starting with the generic
-   path-filter seam, trigger-cast, emote, loot/roll, and custom-zone movement
-   semantics.
+   remove them from the deployable Tortoise product; resolve the F-27
+   unregistered core script rows; keep `BUILD_LEGACY_PLAYERBOTS=OFF` for
+   native-module work.
+2. If navigation behavior needs mob avoidance or generated terrain caches,
+   add a generic core path-filter seam; the module already fails those optional
+   callers closed.
 3. Build acceptance coverage for Turtle custom starts, dungeons, and talent
    interactions from the local server data. The module must not infer support
    from a numeric ID alone.
