@@ -1,114 +1,103 @@
-# Status
+# TortoiseBots
 
-> **Work in progress — integration smoke testing pending.**
+TortoiseBots is an optional native PlayerBots module for
+[Tortoise WoW 1.18.1](https://github.com/Penqle/tortoise-wow).
 
-TortoiseBots has completed its module-side Vanilla/Turtle cleanup and integration
-work, but the current release is **not yet considered plug-and-play against
-Penqle `main`**.
+It brings mature PlayerBots combat, movement, class, group, loot, quest and
+travel behavior to Tortoise WoW while keeping bot-specific gameplay logic out
+of the core.
 
-Current status:
+> **Harvest behavior, not architecture.**
+
+The project deliberately avoids the old tightly coupled PlayerBots model built
+around core concepts such as `GetBot()`, `m_bot` and `sPlayerBotMgr`.
+
+---
+
+## Status
+
+> **WIP — pending smoke testing against the current Penqle modular core.**
+
+The module-side Vanilla/Turtle port, cleanup and compatibility audit are
+complete for the current local integration baseline.
 
 - [x] Native TortoiseBots module implemented
-- [x] Mature PlayerBots AI integrated
-- [x] Vanilla/Turtle 1.18.1 cleanup and compatibility audit completed
+- [x] Mature `PlayerbotAI` integrated
+- [x] All nine Vanilla classes included
 - [x] Headless session lifecycle implemented and previously runtime-validated
+- [x] Vanilla/Turtle 1.18.1 cleanup and compatibility audit completed
 - [x] Legacy PlayerBots-specific core coupling cleaned up in the validated local core
-- [x] PlayerBots-enabled and module-disabled builds validated against the local integration baseline
+- [x] PlayerBots-enabled and module-disabled builds validated locally
 - [ ] Smoke test against the current Penqle modular-core baseline
-- [ ] Publish/upstream the remaining required generic Penqle core changes
+- [ ] Upstream the remaining required generic Penqle core changes
 - [ ] Manual owned-bot gameplay acceptance
 - [ ] Manual 5-player dungeon acceptance
 
-The next immediate step is to test the module against the current
-**Penqle modular core** and confirm the exact minimal upstream dependency set.
+The next immediate step is to validate TortoiseBots against the current
+**Penqle modular core** and confirm the smallest generic host dependency set
+that needs to be upstreamed.
 
-Until that is complete, treat the project as **WIP** and use the exact tested
-core/module revisions documented in [`docs/STATUS.md`](docs/STATUS.md).
+Until then, treat the project as WIP and use the exact tested revisions recorded
+in [`docs/STATUS.md`](docs/STATUS.md).
 
-TortoiseBots has completed its module-side Vanilla/Turtle cleanup and integration
-work, but the current release is **not yet considered plug-and-play against
-Penqle `main`**.
-# Dependencies
+---
+
+## Dependencies
+
 TortoiseBots targets:
 
 - **Tortoise WoW 1.18.1**
-- **[Penqle/tortoise-wow](https://github.com/Penqle/tortoise-wow)** as the canonical core
+- **[Penqle/tortoise-wow](https://github.com/Penqle/tortoise-wow)** as the canonical upstream/core
 - Penqle's native module system
-- Generic Headless-session / lifecycle / packet integration required by the module
+- Generic Headless session, lifecycle and packet hooks
 
-The intended supported architecture is:
+The intended relationship is:
 
 ```text
 Penqle/tortoise-wow
         |
-        | generic module + Headless host capabilities
+        | generic module + Headless host API
         v
 TortoiseBots
+```
 
-# TortoiseBots
+TortoiseBots should **not** require a bot-specific Penqle fork.
 
-TortoiseBots is an optional native PlayerBots module for [Tortoise WoW 1.18.1](https://github.com/Penqle/tortoise-wow).
+Any remaining core changes are intended to be generic capabilities that other
+PlayerBots implementations could use as well.
 
-It brings mature PlayerBots behavior to the Tortoise/Penqle core while keeping
-bot gameplay logic out of normal core systems.
+The legacy hard-wired PlayerBots implementation is not a dependency of
+TortoiseBots and should remain disabled or removed from the supported core path.
 
-> **Harvest behavior, not architecture.**
+---
 
-The project reuses mature PlayerBots combat, movement, class, group, loot,
-quest and travel behavior without recreating the old `GetBot()` / `m_bot` /
-`sPlayerBotMgr` coupling model.
+## Features
 
-## Current status
+The current module includes:
 
-The module-side Vanilla/Turtle cleanup and deep Turtle 1.18.1 compatibility
-audit are complete for the current baseline.
-
-Working pieces include:
-
-- Headless character sessions and same-account owned bots
+- Headless character sessions
+- Same-account owned bots
+- Human reclaim of bot-controlled characters
 - Native bot lifecycle management
-- Mature `PlayerbotAI` with Engine / Strategy / Trigger / Action / Value
+- Mature `PlayerbotAI`
+- Engine / Strategy / Trigger / Action / Value architecture
 - All nine Vanilla classes
-- Follow / stay / group behavior
+- Follow / stay / grouping behavior
 - Combat and class AI
-- Loot, quest, travel and taxi integration
-- Native `.bot` command surface
-- Packet bridge between Tortoise and `PlayerbotAI`
-- Turtle Goblin and High Elf compatibility
-- Turtle-specific spell, talent, race and collection-mount handling where
-  validated against the target core/data
+- Loot and quest behavior
+- Travel and taxi integration
+- Native `.bot` commands
+- Packet bridge between Tortoise and PlayerBots
+- Turtle Goblin and High Elf support
+- Turtle-aware spell, race, talent and collection-mount handling where validated
 - Native World / Character migrations
-- Bounded random-bot support for pre-existing characters
+- Bounded random-bot support for existing characters
 
-The physical source tree has been reduced to a Vanilla/Turtle product surface;
-large TBC/WotLK/later-era families such as Death Knights, glyphs, vehicles,
-arenas and other unsupported expansion systems are not part of the active
-module graph.
+The source tree has been reduced to a Vanilla/Turtle product surface. Large
+TBC/WotLK/later-era families such as Death Knights, glyphs, vehicles and arenas
+are not part of the active module graph.
 
-F-03/F-27 core/data closure is complete for the validated local baseline
-(core `7353989c94399f80572a2f8ec2eb73c63a6c79f8`, local branch
-`cleanup/f03-f27-code-freeze`):
-
-- **F-03 — closed for the supported local integration:** legacy supported-path
-  coupling removed (LFT filler, stale command/stub surface, bot slots, hardwired
-  RNDBOT filters, stale include paths and bot-named diagnostics);
-  `BUILD_LEGACY_PLAYERBOTS` remains an unsupported historical escape hatch and
-  `MODULE_TORTOISEBOTS` is the supported selector. The historical
-  `src/modules/PlayerBots` tree is retained disabled, not deleted.
-- **F-27 — locally proven where source proves it:** `npc_teslinah` is now
-  registered and invalid literal ScriptName `0` is cleared by migration
-  `20260825090000_world.sql`; 17 Turtle ScriptNames remain explicitly
-  unverified content gaps — not PlayerBots architecture blockers, no fake
-  scripts were added.
-
-Broad architecture cleanup is frozen — do not start another generic donor
-cleanup. Current next step is manual owned-bot and 5-player dungeon gameplay
-acceptance, with the remaining content gaps visible. Upstream Penqle
-publication of the core checkpoint is pending (validated local checkpoint, not
-yet a merged upstream PR).
-
-See [docs/STATUS.md](docs/STATUS.md) for the exact checkpoints and upstream
-status.
+---
 
 ## Architecture
 
@@ -116,9 +105,9 @@ TortoiseBots is a native optional module, not a replacement core and not a
 vendored PlayerBots core fork.
 
 ```text
-Tortoise / Penqle core
+Penqle / Tortoise core
         |
-        | generic Headless / lifecycle / packet / command seams
+        | generic Headless / lifecycle / packet / command hooks
         v
 TortoiseBots
         |
@@ -128,12 +117,12 @@ TortoiseBots
         +-- host adapters
         +-- mature PlayerbotAI
         +-- Strategy / Trigger / Action / Value
-        +-- Vanilla/Turtle class and gameplay behavior
+        +-- Vanilla/Turtle gameplay behavior
 ```
 
 ### Session model
 
-Owned bots use normal Tortoise characters through Headless `WorldSession`s.
+Owned bots are normal Tortoise characters using Headless `WorldSession`s.
 
 ```text
 One account
@@ -141,44 +130,54 @@ One account
     +-- zero or more Headless character sessions
 ```
 
-Network sessions remain account-keyed. Headless sessions are keyed by character
-GUID. This preserves ordinary account ownership while allowing a connected
-human and owned alternate characters to coexist.
+Network sessions remain account-keyed.
 
-The core owns `WorldSession` lifetime. The module owns bot records and AI.
+Headless sessions are keyed by character GUID.
+
+This allows a connected human and owned alternate characters to coexist without
+requiring fake account IDs or separate bot accounts.
+
+The core owns `WorldSession` lifetime.
+
+TortoiseBots owns bot records and AI.
 
 ### Runtime ownership
 
 | Responsibility | Owner |
 | --- | --- |
 | Network / Headless session lifetime | Tortoise `World` |
-| Bot lifecycle records | `BotManager` |
+| Bot records | `BotManager` |
 | AI lifetime | `PlayerbotAIAdapter` |
 | AI lookup | `PlayerbotAIStorage` |
 | Gameplay decisions | `PlayerbotAI` |
-| Movement semantics | mature PlayerBots actions/strategies |
-| Durable master identity | `BotRecord.masterGuid` |
-| Live master pointer | `PlayerbotAI` |
+| Movement | PlayerBots actions / strategies |
+| Master identity | `BotRecord.masterGuid` |
 | Packet integration | `BotPacketAdapter` |
 | Player lifecycle integration | `BotPlayerAdapter` |
 | Chat integration | `BotChatAdapter` |
-| Native `.bot` commands | `BotCommands` |
-| Mature command language | `PlayerbotAI::HandleCommand` |
+| Native commands | `BotCommands` |
 | Random population | `RandomBotService` |
 
-The core should not need bot-specific fields or scattered `if (isBot)` gameplay
-branches.
+The core owns sessions.
+
+The module owns bot meaning and behavior.
+
+---
 
 ## Core integration
 
-The compatible core exposes generic capabilities used by the module:
+The compatible Penqle core exposes generic capabilities such as:
 
-- `SessionTransport::Network` / `SessionTransport::Headless`
-- GUID-keyed Headless session registration and pending login queueing
+- `SessionTransport::Network`
+- `SessionTransport::Headless`
+- GUID-keyed Headless session registration
+- pending Headless login handling
 - generic world/player lifecycle hooks
 - generic packet send/receive hooks
 - native module loading
-- generic command/script integration
+- generic command/script hooks
+
+Normal gameplay code should not need PlayerBots-specific state.
 
 Do not reintroduce legacy patterns such as:
 
@@ -190,12 +189,14 @@ sPlayerBotMgr
 PlayerBotEntry
 ```
 
-The implemented host contract and compatible core baseline are documented in
-[docs/HOST_API.md](docs/HOST_API.md).
+The full host contract is documented in
+[`docs/HOST_API.md`](docs/HOST_API.md).
+
+---
 
 ## Native module layout
 
-Penqle loads TortoiseBots as a native module under:
+Penqle consumes TortoiseBots as:
 
 ```text
 tortoise-wow/
@@ -203,29 +204,30 @@ tortoise-wow/
     └── TortoiseBots/
 ```
 
-`src/TortoiseBotsModule.cpp` is intentionally the only loader-recursed source.
-The actual implementation is registered explicitly from `TortoiseBots.cmake`.
-This keeps the native source graph bounded and prevents donor families from
-entering the build accidentally.
-
 Important directories:
 
 ```text
-ai/          Mature PlayerBots AI and Tortoise compatibility
+ai/          PlayerBots AI and Tortoise compatibility
 behavior/    Module-owned helpers
-commands/    Native .bot command surface
+commands/    Native .bot commands
 conf/        Module configuration
-data/sql/    Module-owned migrations
-host/        Tortoise <-> PlayerBots integration boundary
+data/sql/    Module migrations
+host/        Penqle <-> PlayerBots boundary
 runtime/     Bot lifecycle and AI ownership
-src/         Native module entrypoint only
+src/         Native module entrypoint
 tools/       Audit / developer tooling
-docs/        Current architecture, status, audit and provenance
+docs/        Architecture, status and provenance
 ```
+
+`src/TortoiseBotsModule.cpp` is intentionally small.
+
+The wider source graph is registered explicitly through `TortoiseBots.cmake`.
+
+---
 
 ## Build selection
 
-The native module is selected by Penqle's module system:
+Normal native selection:
 
 ```text
 BUILD_LEGACY_PLAYERBOTS=OFF
@@ -233,17 +235,22 @@ MODULES=static
 MODULE_TORTOISEBOTS=static
 ```
 
-`BUILD_LEGACY_PLAYERBOTS` is the separate legacy escape hatch and should remain
-disabled for normal TortoiseBots work.
+`MODULE_TORTOISEBOTS` selects this module.
 
-For local development, use the persistent builder in the sibling
-`tortoise-docker-penqle` checkout. Normal source edits should use the existing
-incremental CMake/ccache build rather than rebuilding the full Docker image.
-See [AGENTS.md](AGENTS.md) for the working rules.
+`BUILD_LEGACY_PLAYERBOTS` refers to the old historical PlayerBots path and
+should remain disabled for normal TortoiseBots builds.
+
+For local development, use the persistent builder from
+`tortoise-docker-penqle` rather than rebuilding the full Docker image after
+normal source edits.
+
+See [`AGENTS.md`](AGENTS.md) for development and validation rules.
+
+---
 
 ## Commands
 
-The native command surface currently includes:
+Native commands currently include:
 
 ```text
 .bot add
@@ -258,20 +265,25 @@ The native command surface currently includes:
 .bot help
 ```
 
-`.bot command` forwards into the mature PlayerBots command handling for the
-selected bot. Commands enforce account ownership or GM authority.
+`.bot command` forwards commands into the mature PlayerBots command system for
+the selected bot.
+
+Authorization is based on normal account ownership or GM authority.
+
+---
 
 ## Configuration and data
 
-TortoiseBots installs two configuration surfaces:
+TortoiseBots provides:
 
-- `conf/tortoise_bots.conf.dist` — native module/runtime configuration
-- `ai/playerbot/aiplayerbot.conf.dist.in` — mature PlayerBots behavior settings
+```text
+conf/tortoise_bots.conf.dist
+ai/playerbot/aiplayerbot.conf.dist.in
+```
 
-The inherited PlayerBots configuration is broader than the currently validated
-product surface. Random population, economy, social and LLM-related settings
-must not be read as proof that every corresponding gameplay path has been
-accepted on Turtle 1.18.1.
+The inherited PlayerBots configuration contains more options than the currently
+validated Turtle product surface. The presence of a config key is not itself a
+support guarantee.
 
 Module SQL lives under:
 
@@ -280,66 +292,110 @@ data/sql/world/
 data/sql/char/
 ```
 
-Migrations are installed through the native module system. Runtime code should
-fail visibly when required data is unavailable rather than silently inventing
-schema or pretending unsupported behavior succeeded.
+Schema is installed through the native module migration system.
 
-## Validation boundary
+Runtime code should fail visibly when required data is missing rather than
+silently inventing schema or pretending unsupported behavior succeeded.
 
-The audited baseline includes evidence for:
+---
+
+## Current integration gaps
+
+The validated local core baseline has already removed the supported-path legacy
+PlayerBots coupling.
+
+Two locally provable Turtle ScriptName issues were also corrected:
+
+- `npc_teslinah` registration
+- invalid literal ScriptName `0`
+
+Seventeen additional Turtle ScriptNames remain unverified because the current
+core does not contain a proven implementation or replacement.
+
+These are treated as **Turtle content gaps**, not PlayerBots architecture
+blockers. No fake or no-op scripts are added to hide them.
+
+The exact current integration state is tracked in
+[`docs/STATUS.md`](docs/STATUS.md).
+
+---
+
+## Validation
+
+The current local baseline has recorded evidence for:
 
 - native PlayerBots-enabled build
 - PlayerBots-disabled / module-absent build
-- module load and world-ready startup
-- Headless login, AI attachment, save/logout/relogin and cleanup
-- same-account reclaim lifecycle
+- module loading
+- world-ready startup
+- Headless login
+- AI attachment
+- save / logout / relogin
+- same-account reclaim
 - native command dispatch
-- natural group invite / mature AI acceptance
-- disposable Goblin and High Elf lifecycle fixtures
+- natural group invite / AI acceptance
+- Goblin lifecycle fixture
+- High Elf lifecycle fixture
 - repeatable module migrations
 
-This does **not** claim every gameplay path is complete. In particular, full
-manual dungeon acceptance, broad Turtle class/spec interactions, real-client
-command delivery, some custom-content paths and large random-bot populations
-still need targeted validation.
+This does **not** mean every gameplay path is complete.
+
+Still pending:
+
+- current Penqle modular-core smoke test
+- full owned-bot manual gameplay acceptance
+- full 5-player dungeon acceptance
+- broad Turtle class/spec/talent testing
+- some custom-content paths
+- large random-bot population testing
+
+---
 
 ## Source of truth
 
-For Turtle-specific spells, items, races, locations, scripts and start rows,
-use this order:
+For Turtle-specific behavior, use this order:
 
-1. current pinned Tortoise core
+1. [Penqle/tortoise-wow](https://github.com/Penqle/tortoise-wow)
 2. current Turtle server data / DBC
 3. observed runtime behavior and logs
 4. Turtle-specific reference implementations
 5. Vanilla / donor repositories for comparison only
 
 Do not infer Turtle behavior from Vanilla 1.12 or expansion-era PlayerBots code
-when the target core/data can answer the question.
+when the target core/data already provides the answer.
 
-## Source lineage
+---
+
+## References and lineage
 
 Major behavior/reference sources include:
 
-- [TortoiseWoW Knowledge Base](https://github.com/tortoise-wow-stack/TortoiseWoWKnowledgeBase) — expected behavior and acceptance ideas
-- [CMaNGOS PlayerBots](https://github.com/cmangos/playerbots) — mature combat, movement and class behavior
-- [Shyalya/tortoise-wow](https://github.com/Shyalya/tortoise-wow) — Turtle 1.18.1 compatibility lessons
-- [MangosZero](https://github.com/mangoszero/server) — lifecycle and native bot-system patterns
-- [mod-playerbots](https://github.com/mod-playerbots/mod-playerbots) — newer behavior reference
+- [TortoiseWoW Knowledge Base](https://github.com/tortoise-wow-stack/TortoiseWoWKnowledgeBase)
+- [CMaNGOS PlayerBots](https://github.com/cmangos/playerbots)
+- [Shyalya/tortoise-wow](https://github.com/Shyalya/tortoise-wow)
+- [MangosZero](https://github.com/mangoszero/server)
+- [mod-playerbots](https://github.com/mod-playerbots/mod-playerbots)
 
-Exact donor commits, source files and copied/ported/reimplemented behavior are
-recorded in [docs/PROVENANCE.md](docs/PROVENANCE.md).
+These are donor/reference repositories.
+
+The canonical upstream/core is
+[Penqle/tortoise-wow](https://github.com/Penqle/tortoise-wow).
+
+Exact donor commits and copied, ported or reimplemented behavior are tracked in
+[`docs/PROVENANCE.md`](docs/PROVENANCE.md).
+
+---
 
 ## Documentation
 
 Start here:
 
-1. [AGENTS.md](AGENTS.md) — working rules for contributors and coding agents
-2. [docs/STATUS.md](docs/STATUS.md) — current baseline, validation and next work
-3. [docs/PLAN.md](docs/PLAN.md) — current architecture and roadmap
-4. [docs/HOST_API.md](docs/HOST_API.md) — implemented core/module contract
-5. [docs/PROVENANCE.md](docs/PROVENANCE.md) — source lineage and validation history
-6. [docs/PLAYERBOTS_AUDIT.md](docs/PLAYERBOTS_AUDIT.md) — historical audit evidence
+1. [`docs/STATUS.md`](docs/STATUS.md) — current tested baseline and next work
+2. [`docs/PLAN.md`](docs/PLAN.md) — architecture and roadmap
+3. [`docs/HOST_API.md`](docs/HOST_API.md) — Penqle/module integration contract
+4. [`AGENTS.md`](AGENTS.md) — contributor and coding-agent rules
+5. [`docs/PROVENANCE.md`](docs/PROVENANCE.md) — lineage and validation history
+6. [`docs/PLAYERBOTS_AUDIT.md`](docs/PLAYERBOTS_AUDIT.md) — historical audit evidence
 
-The audit and old handover are historical evidence, not the active execution
+Historical audit and handover documents are evidence, not the active execution
 plan.
