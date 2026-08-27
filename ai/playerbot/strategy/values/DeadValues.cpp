@@ -34,7 +34,7 @@ GuidPosition GraveyardValue::Calculate()
         }
     }
 
-    WorldSafeLocsEntry const* ClosestGrave = bot->GetMap()->GetGraveyardManager().GetClosestGraveYard(
+    WorldSafeLocsEntry const* ClosestGrave = sObjectMgr.GetClosestGraveYard(
         refPosition.getX(),
         refPosition.getY(),
         refPosition.getZ(),
@@ -59,64 +59,10 @@ GuidPosition GraveyardValue::Calculate()
 
 WorldSafeLocsEntry const* GraveyardValue::GetAnotherAppropriateClosestGraveyard() const
 {
-    // near
-    float distNear = std::numeric_limits<float>::max();
-    WorldSafeLocsEntry const* entryNear = nullptr;
-
-    // far
-    WorldSafeLocsEntry const* entryFar = nullptr;
-
-    Corpse* corpse = bot->GetCorpse();
-    if (!corpse)
-        return nullptr;
-
-    uint32 botMapId = corpse->GetMapId();
-    uint32 botZoneId = corpse->getZoneId();
-
-    for (auto mapValues : sWorld.GetGraveyardManager().GetGraveyardMap())
-    {
-        uint32 locId = mapValues.first;
-        GraveYardData const& graveyardData = mapValues.second;
-
-        //skip non-neutral or hostile graveyards
-        if (graveyardData.team != bot->GetTeam() && graveyardData.team != TEAM_BOTH_ALLOWED)
-            continue;
-
-        WorldSafeLocsEntry const* graveyardCoreEntry = sWorldSafeLocsStore.LookupEntry(graveyardData.safeLocId);
-        if (!graveyardCoreEntry)
-            continue;
-
-        //skip different maps (no need for other continents)
-        if (graveyardCoreEntry->map_id != botMapId)
-            continue;
-
-        uint32 graveyardZoneId = sTerrainMgr.getZoneId(graveyardCoreEntry->map_id, graveyardCoreEntry->x, graveyardCoreEntry->y, graveyardCoreEntry->z);
-        auto graveyardAreaEntry = GetAreaEntryByAreaID(graveyardZoneId);
-
-        //skip same zone
-        if (graveyardZoneId == botZoneId)
-            continue;
-
-        if (!graveyardAreaEntry)
-            continue;
-
-        //skip higher level zones
-        if (bot->GetLevel() + 5 < (uint32)graveyardAreaEntry->AreaLevel)
-            continue;
-
-        float dist = WorldPosition(corpse).sqDistance(graveyardCoreEntry);
-
-        if (dist < distNear)
-        {
-            distNear = dist;
-            entryNear = graveyardCoreEntry;
-        }
-    }
-
-    if (entryNear)
-        return entryNear;
-
-    return entryFar;
+    // The Penqle core exposes closest-graveyard lookup but not an iterable
+    // graveyard registry. The old donor loop also never populated its fallback
+    // entry, so fail closed rather than walking private core state.
+    return nullptr;
 }
 
 GuidPosition BestGraveyardValue::Calculate()
