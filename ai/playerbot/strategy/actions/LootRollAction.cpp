@@ -167,15 +167,10 @@ bool RollAction::Execute(Event& event)
 ItemQualifier RollAction::GetRollItem(ObjectGuid lootGuid, uint32 slot)
 {
     if (Loot* loot = sLootMgr.GetLoot(bot, lootGuid))
-        if (LootItem* item = loot->GetLootItemInSlot(slot))
+        if (LootItem* item = loot->LootItemInSlot(slot, bot->GetGUIDLow()))
             return ItemQualifier(item);
 
-    // The loot object is only reachable while the bot has the corpse open.
-    // The group's roll carries the same item and lasts the whole countdown.
-    if (Group* group = bot->GetGroup())
-        if (Roll const* roll = group->GetActiveRoll(lootGuid, slot))
-            return ItemQualifier(roll->itemid, roll->itemRandomPropId);
-
+    // The core keeps active roll state private; do not infer an item or vote.
     return ItemQualifier();
 }
 
@@ -239,7 +234,7 @@ RollVote RollAction::CalculateRollVote(ItemQualifier& itemQualifier)
 bool RollAction::RollOnItemInSlot(RollVote vote, ObjectGuid lootGuid, uint32 slot)
 {
     Group* group = bot->GetGroup();
-    if (!group || !group->GetActiveRoll(lootGuid, slot))
+    if (!group)
         return false;
 
     if (vote != ROLL_NEED && vote != ROLL_GREED && vote != ROLL_PASS)
@@ -247,7 +242,8 @@ bool RollAction::RollOnItemInSlot(RollVote vote, ObjectGuid lootGuid, uint32 slo
 
     // Same entry point the client uses via CMSG_LOOT_ROLL. The core checks
     // eligibility and resolves the roll once everyone has voted.
-    group->CountRollVote(bot, lootGuid, slot, vote);
+    if (!group->CountRollVote(bot, lootGuid, slot, vote))
+        return false;
 
     LootRollMap lootRolls = AI_VALUE(LootRollMap, "active rolls");
 
@@ -268,24 +264,9 @@ bool RollAction::HumansStillDeciding(ObjectGuid lootGuid, uint32 slot, bool& hum
     if (!group)
         return false;
 
-    Roll const* roll = group->GetActiveRoll(lootGuid, slot);
-    if (!roll)
-        return false;
-
-    bool waiting = false;
-    for (auto const& vote : roll->playerVote)
-    {
-        Player* voter = sObjectMgr.GetPlayer(vote.first);
-        if (!voter || PlayerbotAIStorage::Instance().GetAI(voter))
-            continue;
-
-        if (vote.second == ROLL_NEED)
-            humanNeeds = true;
-        else if (vote.second == ROLL_NOT_EMITED_YET)
-            waiting = true;
-    }
-
-    return waiting;
+    // Active roll votes are private in the core. Continue without trying to
+    // inspect human votes; CountRollVote still validates the bot's own vote.
+    return false;
 }
 
 // Half the countdown is gone. Past that the bot votes regardless, so one

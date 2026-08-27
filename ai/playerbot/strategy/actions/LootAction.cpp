@@ -141,7 +141,7 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
             WorldPacket data(SMSG_EMOTE, 4 + 8);
             data << uint32(EMOTE_ONESHOT_LOOT);
             data << bot->getObjectGuid();
-            bot->GetSession()->SendPacket(data);
+            bot->GetSession()->SendPacket(&data);
         }
 
         return true;
@@ -174,7 +174,7 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
     if (go && sServerFacade.getDistance2d(bot, go) > INTERACTION_DISTANCE)
         return false;
 
-    if (go && (go->IsInUse() || go->GetGoState() == GO_STATE_ACTIVE))
+    if (go && (go->getLootState() == GO_ACTIVATED || go->GetGoState() == GO_STATE_ACTIVE))
         return false;
 
     if (lootObject.skillId == SKILL_MINING)
@@ -428,7 +428,7 @@ bool StoreLootAction::Execute(Event& event)
         if (!proto)
             continue;
 
-        LootItem* lootItem = loot->GetLootItemInSlot(itemindex);
+        LootItem* lootItem = loot->LootItemInSlot(itemindex, bot->GetGUIDLow());
 
         if (!lootItem)
             continue;
