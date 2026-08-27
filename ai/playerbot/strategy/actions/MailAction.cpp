@@ -2,10 +2,19 @@
 #include "Mail/Mail.h"
 #include "playerbot/playerbot.h"
 #include "MailAction.h"
+#include "MapNodes/MasterPlayer.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/Helpers.h"
 
 using namespace ai;
+
+namespace
+{
+MasterPlayer* GetMailOwner(Player* bot)
+{
+    return bot && bot->GetSession() ? bot->GetSession()->GetMasterPlayer() : nullptr;
+}
+}
 
 std::map<std::string, MailProcessor*> MailAction::processors;
 
@@ -22,6 +31,10 @@ public:
     bool Process(Player* requester, int index, Mail* mail, PlayerbotAI* ai, Event& event) override
     {
         Player* bot = ai->GetBot();
+        MasterPlayer* mailOwner = GetMailOwner(bot);
+        if (!mailOwner)
+            return false;
+
         time_t cur_time = time(0);
         int days = (cur_time - mail->deliver_time) / 3600 / 24;
         std::ostringstream out;
@@ -39,7 +52,7 @@ public:
         {
             for (MailItemInfoVec::iterator i = mail->items.begin(); i != mail->items.end(); ++i)
             {
-                Item* item = bot->GetMItem(i->item_guid);
+                Item* item = mailOwner->GetMItem(i->item_guid);
                 int count = item ? item->GetCount() : 1;
                 ItemPrototype const *proto = sObjectMgr.GetItemPrototype(i->item_template);
                 if (proto)
@@ -86,6 +99,9 @@ public:
     bool Process(Player* requester, int index, Mail* mail, PlayerbotAI* ai, Event& event) override
     {
         Player* bot = ai->GetBot();
+        if (!GetMailOwner(bot))
+            return false;
+
         if (!CheckBagSpace(bot))
         {
             ai->TellError(requester, "Not enough bag space");
@@ -127,7 +143,7 @@ public:
                 WorldPacket packet;
                 packet << mailbox;
                 packet << mail->messageID;
-                Item* item = bot->GetMItem(*i);
+                Item* item = GetMailOwner(bot)->GetMItem(*i);
 
                 if (item)
                 {
@@ -296,9 +312,13 @@ bool MailAction::Execute(Event& event)
     if (!processor->Before(requester, ai))
         return false;
 
+    MasterPlayer* mailOwner = GetMailOwner(bot);
+    if (!mailOwner)
+        return false;
+
     std::vector<Mail*> mailList;
     time_t cur_time = time(0);
-    for (PlayerMails::iterator itr = bot->GetMailBegin(); itr != bot->GetMailEnd(); ++itr)
+    for (PlayerMails::iterator itr = mailOwner->GetMailBegin(); itr != mailOwner->GetMailEnd(); ++itr)
     {
         if ((*itr)->state == MAIL_STATE_DELETED || cur_time < (*itr)->deliver_time)
             continue;
