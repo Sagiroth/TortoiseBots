@@ -254,12 +254,8 @@ Unit* PartyMemberToProtect::Calculate()
         if (!unit)
             continue;
 
+        // Penqle's CreatureAI has no ranged-unit marker; use melee spacing.
         bool isRanged = false;
-        if (unit->AI())
-        {
-            if (unit->AI()->IsRangedUnit())
-                isRanged = true;
-        }
 
         Unit* pVictim = unit->GetVictim();
         if (!pVictim || !pVictim->IsPlayer())
