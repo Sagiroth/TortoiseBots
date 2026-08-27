@@ -138,7 +138,7 @@ bool PlayerHasFlag::IsActive()
             if (!bg)
                 return false;
 
-            if (bot->getObjectGuid() == bg->GetFlagCarrierGuid(TEAM_INDEX_ALLIANCE) || bot->getObjectGuid() == bg->GetFlagCarrierGuid(TEAM_INDEX_HORDE))
+            if (bot->getObjectGuid() == bg->GetAllianceFlagPickerGuid() || bot->getObjectGuid() == bg->GetHordeFlagPickerGuid())
             {
                 return true;
             }
@@ -184,12 +184,12 @@ bool EnemyTeamHasFlag::IsActive()
 
             if (bot->GetTeam() == HORDE)
             {
-                if (!bg->GetFlagCarrierGuid(TEAM_INDEX_HORDE).IsEmpty())
+                if (!bg->GetHordeFlagPickerGuid().IsEmpty())
                     return true;
             }
             else
             {
-                if (!bg->GetFlagCarrierGuid(TEAM_INDEX_ALLIANCE).IsEmpty())
+                if (!bg->GetAllianceFlagPickerGuid().IsEmpty())
                     return true;
             }
         }

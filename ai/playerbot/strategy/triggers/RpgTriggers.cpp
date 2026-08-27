@@ -408,7 +408,7 @@ bool RpgHealTrigger::IsActive()
     if (!unit)
         return false;
 
-    if (!unit->IsFriend(bot))
+    if (!sServerFacade.IsFriendlyTo(unit, bot))
         return false;
 
     if (unit->IsDead() || unit->GetHealthPercent() >= 100)
@@ -811,7 +811,7 @@ bool RpgGossipTalkTrigger::IsActive()
     if (!guidP.IsCreature())
         return false;
 
-    GossipMenuItemsMapBounds pMenuItemBounds = sObjectMgr.GetGossipMenuItemsMapBounds(guidP.GetCreatureTemplate()->GossipMenuId);
+    GossipMenuItemsMapBounds pMenuItemBounds = sObjectMgr.GetGossipMenuItemsMapBounds(guidP.GetCreatureTemplate()->gossip_menu_id);
     if (pMenuItemBounds.first == pMenuItemBounds.second)
         return false;
 
