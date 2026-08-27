@@ -349,25 +349,26 @@ state. Created GUIDs enter the existing Headless candidate/login path.
 
 ## 19. Battleground auto-queue (optional, default-off)
 
-`BattlegroundQueueService` provides bounded autonomous WSG/AB/AV participation
+`BattlegroundQueueService` provides bounded, demand-aware WSG/AB/AV participation
 for live Headless random bots through the existing native
 `WorldSession::HandleBattlemasterJoinOpcode` (guid 1337) for join and the existing
 native `WorldSession::HandleBattleFieldPortOpcode` action 0 (`CMSG_BATTLEFIELD_PORT`
 mapId+0, fail-closed `GetBattleGroundTemplate`/`GetMapId` validation) for
-master-reclaim leave. The core remains the owner of queue state, invites, and
-port events; the module never mutates `m_BattleGroundQueues`, never calls
-`BattleGroundQueue::RemovePlayer` directly, never owns a second queue, starts a
-worker thread, or writes queue structures. Candidates are selected in memory and
-checked for the native level bracket, queue slots, alive/idle state,
-deserter/taxi/combat status, and active human master; reconcile is guarded by
-`InBattleGround`, `(guid, queueType)` ownership, `HasActivePlayerMaster` and
-`InBattleGroundQueueForBattleGroundQueueType` with fail-closed map validation.
-AV is always queued solo and success is verified after the native handler;
-WSG/AB group joins require every member to be a service-owned Headless bot. A
-service-owned `(guid, queueType)` set makes master-reclaim cleanup precise.
-Cadence and per-interval budget are clamped and the setting defaults off
-(`RandomBotBgEnabled=0`). No demand-aware filling; that needs a separate core
-observation seam.
+master-reclaim leave. Demand is read from the copy-only generic
+`BattleGroundMgr::GetQueuedParticipants` snapshot (core PR #416): no human
+waiting participant means no bot is queued, and a non-empty bucket selects its
+queue type/bracket and underrepresented team. The core remains the owner of
+queue state, invites, and port events; the module never mutates
+`m_BattleGroundQueues`, calls `BattleGroundQueue::RemovePlayer` directly, owns a
+second queue, starts a worker thread, or writes queue structures. Candidates are
+selected in memory and checked for the native level bracket, queue slots,
+alive/idle state, deserter/taxi/combat status, and active human master;
+reconcile is guarded by `InBattleGround`, `(guid, queueType)` ownership,
+`HasActivePlayerMaster` and `InBattleGroundQueueForBattleGroundQueueType` with
+fail-closed map validation. AV is always queued solo and success is verified
+after the native handler; WSG/AB group joins require every member to be a
+service-owned Headless bot. Cadence and per-interval budget are clamped and the
+setting defaults off (`RandomBotBgEnabled=0`). Requires core PRs #411 and #416.
 
 ## 20. New core seam test
 
