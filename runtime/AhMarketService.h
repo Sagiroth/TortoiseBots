@@ -1,4 +1,3 @@
-// pi-lens-ignore: clang:all
 #pragma once
 
 #include <cstdint>
