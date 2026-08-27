@@ -19,7 +19,7 @@ static bool IsNpcNearby(Player* bot, uint32 npcEntry)
             continue;
 
         if (unit->GetEntry() == npcEntry &&
-            bot->getDistance(unit) <= INTERACTION_DISTANCE)
+            bot->GetDistance(unit) <= INTERACTION_DISTANCE)
             return true;
     }
     return false;
@@ -39,7 +39,7 @@ static bool IsNearDMNorthDoor(Player* bot)
             continue;
 
         if (go->GetEntry() == GO_DM_NORTH_DOOR &&
-            bot->getDistance(go) <= INTERACTION_DISTANCE)
+            bot->GetDistance(go) <= INTERACTION_DISTANCE)
             return true;
     }
     return false;
@@ -92,7 +92,7 @@ static bool IsNearSongflower(Player* bot)
         if (!go || !IsSongflowerEntry(go->GetEntry()))
             continue;
 
-        if (bot->getDistance(go) <= INTERACTION_DISTANCE)
+        if (bot->GetDistance(go) <= INTERACTION_DISTANCE)
             return true;
     }
     return false;
@@ -112,7 +112,7 @@ static bool IsNearBonfire(Player* bot)
             continue;
 
         if (go->GetEntry() == GO_BONFIRE_FERALAS &&
-            bot->getDistance(go) <= INTERACTION_DISTANCE)
+            bot->GetDistance(go) <= INTERACTION_DISTANCE)
             return true;
     }
     return false;
@@ -223,7 +223,7 @@ static bool IsInStepZone(Player* bot, WorldBuffTravelStep step)
 {
     uint32 zoneId = 0;
     uint32 areaId = 0;
-    bot->getZoneAndAreaId(zoneId, areaId);
+    bot->GetZoneAndAreaId(zoneId, areaId);
 
     bool horde = IsHordeFaction(bot);
 
