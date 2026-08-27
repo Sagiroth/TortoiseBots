@@ -11,6 +11,15 @@
 
 using namespace ai;
 
+namespace
+{
+uint32 GetAuctionItemCount(AuctionEntry const& auction)
+{
+    Item* item = sAuctionMgr.GetAItem(auction.itemGuidLow);
+    return item ? item->GetCount() : 0;
+}
+}
+
 std::unordered_map<uint32, std::unordered_set<uint32>> ItemUsageValue::m_reagentItemIdsForCraftingSkills;
 std::unordered_set<uint32> ItemUsageValue::m_allReagentItemIdsForCraftingSkills;
 std::vector<uint32> ItemUsageValue::m_allReagentItemIdsForCraftingSkillsVector;
@@ -1408,7 +1417,9 @@ uint32 ItemUsageValue::GetAHMedianBuyoutPricePerItem(ItemPrototype const* proto)
 
         for (auto& auction : sRandomBotFacade.GetAhPrices(proto->ItemId))
         {
-            prices.push_back((float)auction.buyout / (float)auction.itemCount);
+            uint32 itemCount = GetAuctionItemCount(auction);
+            if (itemCount)
+                prices.push_back((float)auction.buyout / (float)itemCount);
         }
 
         if (prices.empty())
@@ -1431,10 +1442,11 @@ uint32 ItemUsageValue::GetAHListingLowestBuyoutPricePerItem(ItemPrototype const*
 
         for (auto& auction : sRandomBotFacade.GetAhPrices(proto->ItemId))
         {
-            if (!minBuyout || minBuyout > auction.buyout)
+            uint32 itemCount = GetAuctionItemCount(auction);
+            if (itemCount && (!minBuyout || minBuyout > auction.buyout))
             {
                 minBuyout = auction.buyout;
-                minPrice = (float)auction.buyout / (float)auction.itemCount;
+                minPrice = (float)auction.buyout / (float)itemCount;
             }
         }
 
@@ -1779,20 +1791,24 @@ uint32 ItemUsageValue::DesiredPricePerItem(Player* bot, const ItemPrototype* pro
 
     lowestPrice.Id = 0;
 
-    std::vector<AuctionEntry> auctions;
+    uint32 lowestItemCount = 0;
 
     for (auto& auction : sRandomBotFacade.GetAhPrices(proto->ItemId))
     {
-        float pricePerItem = float(auction.buyout) / float(auction.itemCount);
-
-        if (auction.itemCount != count)
+        uint32 itemCount = GetAuctionItemCount(auction);
+        if (itemCount != count)
             continue;
 
-        if (lowestPrice.Id == 0 || pricePerItem < float(lowestPrice.buyout) / float(lowestPrice.itemCount))
+        float pricePerItem = float(auction.buyout) / float(itemCount);
+        if (lowestPrice.Id == 0 || pricePerItem < float(lowestPrice.buyout) / float(lowestItemCount))
+        {
             lowestPrice = auction;
+            lowestItemCount = itemCount;
+        }
     }
 
-    uint32 lowestBuyoutItemPricePerItem = float(lowestPrice.buyout) / float(lowestPrice.itemCount);
+    uint32 lowestBuyoutItemPricePerItem = lowestItemCount ?
+        static_cast<uint32>(float(lowestPrice.buyout) / float(lowestItemCount)) : 0;
 
     uint32 maxAhPrice = GetBotAHSellMaxPrice(proto);
     uint32 minAhPrice = GetBotAHSellMinPrice(proto);
@@ -1807,7 +1823,7 @@ uint32 ItemUsageValue::DesiredPricePerItem(Player* bot, const ItemPrototype* pro
 
     uint32 desiredPricePerItem = minAhPrice + static_cast<uint32>((maxAhPrice - minAhPrice) * priceModifier / 100);
 
-    if (lowestBuyoutItemPricePerItem > 0 && lowestPrice.owner != bot->GetDbGuid())
+    if (lowestBuyoutItemPricePerItem > 0 && lowestPrice.owner != bot->GetGUIDLow())
     {
         uint32 undercutByMoney = std::max(static_cast<uint32>(1), static_cast<uint32>(lowestBuyoutItemPricePerItem * frand(0.0f, 0.1f)));
 
