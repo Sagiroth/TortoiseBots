@@ -38,19 +38,19 @@ Validated local core checkpoint:
 
 Upstream status:
 generic Headless capability is proposed in PR [#411](https://github.com/Penqle/tortoise-wow/pull/411)
-(`feature/headless-world-session` @ `24586ba`, based on upstream `main`
+(`feature/headless-world-session` @ `5c180a1`, based on upstream `main`
 `61a8269`). It is not yet merged; the module-facing `World` façade and
 `SessionTransport` contract are the tested surface.
 
 Generic participant primitives are proposed in PR [#416](https://github.com/Penqle/tortoise-wow/pull/416)
-(`feature/generic-participant-primitives` @ `3ec9f5d`), refreshed on top of
+(`feature/generic-participant-primitives` @ `872b24d`), refreshed on top of
 the amended #411 implementation. It is not yet merged.
 
 Compile-verified integration snapshot:
 
 ```text
-Core:         3ec9f5ddce6c09e9bd13db24a83f2306b0c07402
-TortoiseBots: 9a4e5233a836a8e6a722c4938e288e6def73dd54
+Core:         872b24df3de0d229aa4e9db8abfc4b7fecd83570
+TortoiseBots: 8c720207f1e626887cb7072eb891f3a28b4a79f6
 ```
 
 The exact tested core/module pair must be recorded whenever the core changes;
