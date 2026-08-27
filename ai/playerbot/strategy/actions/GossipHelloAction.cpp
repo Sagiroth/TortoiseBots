@@ -34,7 +34,7 @@ bool GossipHelloAction::Execute(Event& event)
 		return false;
 	}
 
-	GossipMenuItemsMapBounds pMenuItemBounds = sObjectMgr.GetGossipMenuItemsMapBounds(pCreature->GetCreatureInfo()->GossipMenuId);
+	GossipMenuItemsMapBounds pMenuItemBounds = sObjectMgr.GetGossipMenuItemsMapBounds(pCreature->GetCreatureInfo()->gossip_menu_id);
 	if (pMenuItemBounds.first == pMenuItemBounds.second)
 		return false;
 
@@ -87,7 +87,7 @@ void GossipHelloAction::TellGossipText(Player* requester, uint32 textId)
     if (!textId)
         return;
 
-    GossipText const* text = sObjectMgr.GetGossipText(textId);
+    NpcText const* text = sObjectMgr.GetNpcText(textId);
     if (text)
     {
         for (int i = 0; i < MAX_GOSSIP_TEXT_OPTIONS; i++)
