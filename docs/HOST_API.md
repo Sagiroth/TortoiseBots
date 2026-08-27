@@ -351,16 +351,23 @@ state. Created GUIDs enter the existing Headless candidate/login path.
 
 `BattlegroundQueueService` provides bounded autonomous WSG/AB/AV participation
 for live Headless random bots through the existing native
-`WorldSession::HandleBattlemasterJoinOpcode` command path (guid 1337). The
-core remains the owner of queue state, invites, and port events; the module
-never owns a second queue, starts a worker thread, or writes queue structures.
-Candidates are selected in memory and checked for the native level bracket,
-faction, queue slots, alive/idle state, deserter/taxi/combat status, and active
-human master. AV is always queued solo and success is verified after the native
-handler; WSG/AB group joins require every member to be a service-owned Headless
-bot. A service-owned `(guid, queueType)` set makes master-reclaim cleanup
-precise. Cadence and per-interval budget are clamped and the setting defaults
-off (`RandomBotBgEnabled=0`).
+`WorldSession::HandleBattlemasterJoinOpcode` (guid 1337) for join and the existing
+native `WorldSession::HandleBattleFieldPortOpcode` action 0 (`CMSG_BATTLEFIELD_PORT`
+mapId+0, fail-closed `GetBattleGroundTemplate`/`GetMapId` validation) for
+master-reclaim leave. The core remains the owner of queue state, invites, and
+port events; the module never mutates `m_BattleGroundQueues`, never calls
+`BattleGroundQueue::RemovePlayer` directly, never owns a second queue, starts a
+worker thread, or writes queue structures. Candidates are selected in memory and
+checked for the native level bracket, queue slots, alive/idle state,
+deserter/taxi/combat status, and active human master; reconcile is guarded by
+`InBattleGround`, `(guid, queueType)` ownership, `HasActivePlayerMaster` and
+`InBattleGroundQueueForBattleGroundQueueType` with fail-closed map validation.
+AV is always queued solo and success is verified after the native handler;
+WSG/AB group joins require every member to be a service-owned Headless bot. A
+service-owned `(guid, queueType)` set makes master-reclaim cleanup precise.
+Cadence and per-interval budget are clamped and the setting defaults off
+(`RandomBotBgEnabled=0`). No demand-aware filling; that needs a separate core
+observation seam.
 
 ## 20. New core seam test
 

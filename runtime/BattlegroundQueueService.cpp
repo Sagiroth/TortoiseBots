@@ -344,15 +344,13 @@ void BattlegroundQueueService::ReconcileMasterQueue()
 {
     if (!sPlayerbotAIConfig.enabled || !sPlayerbotAIConfig.randomBotBgEnabled)
         return;
-    // Maintain in-memory ownership set: prune entries for bots that left
-    // queue natively, logged out, or were removed externally.
     PruneOwnedQueueSet();
-    // Remove bots queued autonomously if their human master becomes active
-    // before invite. Only touches GUIDs owned by this service (in-memory set)
-    // so manually/native queued entries are never cancelled. Uses native
-    // BattleGroundQueue ownership (no second queue):
-    // RemoveBattleGroundQueueId + BattleGroundQueue::RemovePlayer +
-    // ScheduleQueueUpdate + STATUS_NONE packet. Scanned each Update tick.
+    // Reconcile service-owned queued bots whose human master became active
+    // before invite. Only touches (guid, queueType) pairs owned by this service
+    // so manual/native queues are never cancelled. Uses the existing native
+    // WorldSession::HandleBattleFieldPortOpcode action=0 leave path (no new core
+    // seam, no queue internals from module, no second queue/thread). Fail-closed
+    // map validation via GetBattleGroundTemplate/GetMapId before sending.
     std::vector<Player*> snapshot = BotManager::Instance().GetAllBots();
     for (Player* bot : snapshot)
     {
@@ -362,6 +360,9 @@ void BattlegroundQueueService::ReconcileMasterQueue()
             continue;
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
         if (!ai || !ai->HasActivePlayerMaster())
+            continue;
+        WorldSession* sess = bot->GetSession();
+        if (!sess)
             continue;
         for (uint32 i = 1; i < MAX_BATTLEGROUND_QUEUE_TYPES; ++i)
         {
@@ -377,21 +378,15 @@ void BattlegroundQueueService::ReconcileMasterQueue()
             BattleGround* bg = sBattleGroundMgr.GetBattleGroundTemplate(bgType);
             if (!bg)
                 continue;
-            uint32 queueSlot = bot->GetBattleGroundQueueIndex(q);
-            if (queueSlot >= PLAYER_MAX_BATTLEGROUND_QUEUES)
-                continue;
-            WorldPacket data;
-            sBattleGroundMgr.BuildBattleGroundStatusPacket(&data, bg, queueSlot, STATUS_NONE, 0, 0);
-            bot->RemoveBattleGroundQueueId(q);
-            BattleGroundQueue& bgQueue = sBattleGroundMgr.m_BattleGroundQueues[q];
-            bgQueue.RemovePlayer(bot->GetObjectGuid(), true);
-            BattleGroundBracketId bracket = bot->GetBattleGroundBracketIdFromLevel(bgType);
-            if (bracket != BG_BRACKET_ID_NONE)
-                sBattleGroundMgr.ScheduleQueueUpdate(q, bgType, bracket);
-            if (bot->GetSession())
-                bot->GetSession()->SendPacket(&data);
-            sLog.outString("TortoiseBots: BG auto-queue reconcile %s queued but master %s active -> left queue %u", bot->GetName(), ai->GetMaster() ? ai->GetMaster()->GetName() : "?", q);
-            m_ownedQueuedGuids.erase(key);
+            uint32 mapId = bg->GetMapId();
+            if (!mapId)
+                continue; // fail-closed: no valid map for this bg type
+            WorldPacket packet(CMSG_BATTLEFIELD_PORT, 8);
+            packet << mapId << uint8(0);
+            sess->HandleBattleFieldPortOpcode(packet);
+            if (!bot->InBattleGroundQueueForBattleGroundQueueType(q))
+                m_ownedQueuedGuids.erase(key);
+            sLog.outString("TortoiseBots: BG auto-queue reconcile %s queued but master %s active -> left queue %u (native port 0)", bot->GetName(), ai->GetMaster() ? ai->GetMaster()->GetName() : "?", q);
         }
     }
     PruneOwnedQueueSet();

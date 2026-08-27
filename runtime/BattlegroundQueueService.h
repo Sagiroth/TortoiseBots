@@ -11,11 +11,15 @@ namespace TortoiseBots
 
 // Default-off autonomous WSG/AB/AV queue participation for live Headless
 // random bots. Reuses the proven manual BattleGroundJoinAction path via
-// WorldSession::HandleBattlemasterJoinOpcode (guid 1337 bypass). The core's
-// BattleGroundMgr/BattleGroundQueue owns invite/queue updates; the existing
-// PlayerbotAI SMSG_BATTLEFIELD_STATUS -> BGStatusAction -> HandleBattleFieldPortOpcode
-// path accepts invites and sets +pvp strategies. No second queue, thread,
-// arena, vehicle, expansion, DB tick scan, LFT, AH, or auto-create.
+// WorldSession::HandleBattlemasterJoinOpcode (guid 1337 bypass) for join and
+// the existing native WorldSession::HandleBattleFieldPortOpcode action=0
+// (CMSG_BATTLEFIELD_PORT mapId+0, fail-closed GetMapId) for master-reclaim
+// leave; the core's BattleGroundMgr/BattleGroundQueue owns invite/queue
+// updates and port events, with InBattleGround and (guid,queueType) ownership
+// + HasActivePlayerMaster guards. The existing PlayerbotAI SMSG_BATTLEFIELD_STATUS
+// -> BGStatusAction -> HandleBattleFieldPortOpcode path accepts invites and sets
+// +pvp strategies. No second queue, thread, arena, vehicle, expansion, DB tick
+// scan, queue internals from module, LFT, AH, or auto-create.
 class BattlegroundQueueService
 {
 public:
