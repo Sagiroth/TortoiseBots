@@ -269,7 +269,48 @@ only to satisfy a donor interface.
 The completed audit removed or disabled several such compatibility surfaces;
 see [PLAYERBOTS_AUDIT.md](archive/PLAYERBOTS_AUDIT.md) for evidence.
 
-## 16. Random-bot auto-create (optional, default-off)
+## 16. LFT queue integration (optional, default-off)
+
+The LFT fill is a default-off bounded policy that observes the native queue
+without owning it. Core owns `m_queue`/`m_offers`/`m_playerOffers` and
+all offer/group semantics; the module never mutates private maps, never
+owns a second queue, and never uses addon-string hacks or DB scans.
+
+Generic core seam inventory (world-thread only):
+`LFTManager::GetQueuedPlayers` (copy), `QueuePlayer`/`LeaveQueue`,
+`IsQueued`/`IsInOffer`/`GetOfferId`/`GetQueueSize`,
+`Script_GetAllowedRoles` (intersected with class mask), and
+`AcceptOffer` (generic, implementation-neutral acceptance for machine-driven
+participants that reuses native `HandleOfferAccept`/`CompleteOffer` timers,
+packets and cancellation/requeue — added in `c4148ec`).
+Service actually calls (world-thread only): `GetQueuedPlayers` (copy),
+`QueuePlayer`/`LeaveQueue`, `IsQueued`/`IsInOffer`,
+`Script_GetAllowedRoles` (intersected with class mask), and
+`AcceptOffer`; `GetOfferId`/`GetQueueSize` are available seams not used by the
+service.
+
+`BotLftRoleAdapter` (`PlayerScript::GetAllowedRoles`) answers only for
+autonomous fill-owned Headless bots (module-owned `RNDBOT` with no active
+master and a pending fill entry or forced role) via `AiFactory::GetPlayerRoles`
+spec → `LFT_ROLE` mask; `0` means no opinion and falls back to class.
+Human-owned bots keep their manual role semantics.
+
+`LftBotFillService` (driven by `LftFillAdapter` world tick) identifies
+human-waiting instances from `GetQueuedPlayers`, simulates `1/1/3` missing
+roles per team/hardcore partition, filters live `RNDBOT` Headless candidates
+in-memory (level window, team, hardcore, group/state), queues at most
+`RandomBotLftMaxFillsPerInterval` per `RandomBotLftUpdateInterval` (bounded
+`5s..60s` / `1..5`), and when a native offer includes a service bot detects
+`IsInOffer` and calls generic `AcceptOffer` only for module-owned Headless
+bots (humans still explicitly accept via addon). Reconciliation clears
+`SetForcedRole(0)` on every pending exit/completion/stale path and runs
+even when `MaxFillsPerInterval=0`; no private-map exposure or second queue.
+
+Config: `AiPlayerbot.RandomBotLftEnabled=0`,
+`AiPlayerbot.RandomBotLftUpdateInterval=15000`,
+`AiPlayerbot.RandomBotLftMaxFillsPerInterval=1`.
+
+## 17. Random-bot auto-create (optional, default-off)
 
 `RandomBotService` discovers existing `RNDBOT*` characters; with
 `AiPlayerbot.RandomBotAutoCreate=1` (default `0`, one character per
@@ -294,7 +335,7 @@ collisions (`CHAR_CREATE_NAME_IN_USE`/`CHAR_NAME_RESERVED`/`CHAR_NAME_PROFANE`/
 account is not permanently poisoned by a single bad name or temporary balance
 state. Created GUIDs enter the existing Headless candidate/login path.
 
-## 17. New core seam test
+## 18. New core seam test
 
 Before adding another core seam, establish that:
 

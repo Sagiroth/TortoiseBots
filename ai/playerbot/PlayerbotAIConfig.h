@@ -187,6 +187,13 @@ public:
     // or no destination. Persisted ai_playerbot_zone_level is tried first
     // (with parent fallback) then immutable DBC AreaLevel/parent.
     bool enableRandomTeleports = false;
+    // Default-off bounded LFT fill: observe native queue (GetQueuedPlayers),
+    // identify human groups/instances and missing 1/1/3 roles, filter in-memory
+    // Headless random candidates by level/team/hardcore/state/role (AiFactory/
+    // Script_GetAllowedRoles) and call core QueuePlayer through native offers.
+    bool randomBotLftEnabled = false;
+    uint32 randomBotLftUpdateInterval = 15000;
+    uint32 randomBotLftMaxFillsPerInterval = 1;
     bool logInGroupOnly, logValuesPerTick;
     bool fleeingEnabled;
     bool summonAtInnkeepersEnabled;

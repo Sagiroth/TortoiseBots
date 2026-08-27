@@ -278,6 +278,9 @@ bool PlayerbotAIConfig::Initialize()
     randomBotLoginAtStartup = config.GetBoolDefault("AiPlayerbot.RandomBotLoginAtStartup", false);
     randomBotAutoCreate = config.GetBoolDefault("AiPlayerbot.RandomBotAutoCreate", false);
     enableRandomTeleports = config.GetBoolDefault("AiPlayerbot.EnableRandomTeleports", false);
+    randomBotLftEnabled = config.GetBoolDefault("AiPlayerbot.RandomBotLftEnabled", false);
+    randomBotLftUpdateInterval = config.GetIntDefault("AiPlayerbot.RandomBotLftUpdateInterval", 15000);
+    randomBotLftMaxFillsPerInterval = config.GetIntDefault("AiPlayerbot.RandomBotLftMaxFillsPerInterval", 1);
     openGoSpell = config.GetIntDefault("AiPlayerbot.OpenGoSpell", 6477);
 
     randomChangeMultiplier = config.GetFloatDefault("AiPlayerbot.RandomChangeMultiplier", 1.0);

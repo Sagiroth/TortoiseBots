@@ -111,6 +111,18 @@ AiPlayerbot.RandomBotAutoCreate = 0
 # the world thread; no homebind update. Default 0.
 AiPlayerbot.EnableRandomTeleports = 0
 
+# Default-off bounded fill of human-waiting LFT queues with live random Headless bots.
+# Observes native queue (LFTManager::GetQueuedPlayers) without mutating private maps or
+# owning a second queue; identifies human groups/instances and missing 1 tank / 1 healer / 3 dps roles,
+# filters in-memory Headless random candidates by level/team/hardcore/group/state/role (AiFactory/
+# Script_GetAllowedRoles) and calls core QueuePlayer through native offers/cancellation.
+# Rate-limited and reconciled when humans fill/leave. No DB per tick, no addon hacks.
+# Requires core seam QueuePlayer/LeaveQueue/IsQueued/IsInOffer/GetQueuedPlayers/Script_GetAllowedRoles (7529c2a)
+# and Headless (#411). Default 0.
+#AiPlayerbot.RandomBotLftEnabled = 0
+#AiPlayerbot.RandomBotLftUpdateInterval = 15000
+#AiPlayerbot.RandomBotLftMaxFillsPerInterval = 1
+
 # Disable core mangos map/bot optimizations which hinders bot activity
 # Works best together with AiPlayerbot.DisableActivityPriorities = 1
 # (0-1), default 0
