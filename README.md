@@ -17,7 +17,7 @@ instead of recreating the old tightly coupled `GetBot()` / `m_bot` /
 
 ## Status
 
-> **WIP — upstream core integration and Headless API work still pending.**
+> **WIP — local integration is complete; upstream core and module PRs are awaiting merge.**
 
 - [x] Native TortoiseBots module implemented
 - [x] Existing `PlayerbotAI` integrated
@@ -25,12 +25,14 @@ instead of recreating the old tightly coupled `GetBot()` / `m_bot` /
 - [x] Vanilla/Turtle 1.18.1 cleanup and compatibility audit completed
 - [x] Headless session lifecycle validated against the pinned baseline
 - [x] PlayerBots-enabled and module-disabled builds validated
-- [ ] Smoke test against the current upstream modular core
-- [ ] Upstream the required generic Headless session API
+- [x] Local Docker build and startup against integrated `#396 + #411 + #416` core
+- [x] TortoiseBots feature stack #37–#42 assembled
+- [ ] Upstream core PRs #411 and #416 merged
 - [ ] Manual owned-bot gameplay acceptance
 - [ ] Manual 5-player dungeon acceptance
 
-The exact currently validated revisions are tracked in Git history and summarized below.
+The local integration checkpoint is complete. Upstream merge status and exact
+source revisions remain tracked in Git history and Docker `SOURCE_IDENTITY`.
 
 ---
 
@@ -53,11 +55,15 @@ At a high level the core needs to provide:
 
 > [!IMPORTANT]
 > **Requires upstream PR #411 until merged.**
-> Build against [`tortoise-wow#411`(https://github.com/Penqle/tortoise-wow/pull/411)
+> Build against [`tortoise-wow#411`](https://github.com/Penqle/tortoise-wow/pull/411)
 > (`feature/headless-world-session`) or wait for `main` to include it.
 > Plain `upstream/main` without #411 does not provide `SessionTransport::Headless`
 > / GUID-keyed lifecycle and the module will fail to link.
 > Exact pinned SHAs are in Git history (see below).
+>
+> TortoiseBots also uses PR #416 for generic character creation and the
+> participant primitives used by the auto-create, LFT and BG features. PR #416
+> is stacked on #411 and should merge after it.
 
 The intended boundary is:
 
@@ -78,9 +84,11 @@ The core should expose **Headless sessions**, not PlayerBots concepts.
 TortoiseBots should **not** require a bot-specific fork of the core.
 
 Removal of the historical built-in PlayerBots subsystem
-([PR #396](https://github.com/Penqle/tortoise-wow/pull/396)) is desirable for a
-clean core, but it is not itself the functional TortoiseBots host API
-dependency.
+([PR #396](https://github.com/Penqle/tortoise-wow/pull/396)) is optional from
+the TortoiseBots API perspective. It is recommended for a clean core because
+it removes the obsolete runtime and schema dependency; TortoiseBots does not
+use any code removed by that PR. The local Docker integration was tested with
+#396 present.
 
 ---
 
@@ -91,7 +99,15 @@ dependency.
 - Class AI for all 9 Vanilla classes — basic combat / heal / tank
 - Loot, quest and travel / taxi handling
 - Turtle Goblin / High Elf and Turtle spell / talent / mount handling where validated
-- Bounded random bots for existing characters only
+- Bounded random-bot login and teleport for existing characters (TortoiseBots #37)
+- Optional pinned random-bot pool (TortoiseBots #38)
+- Optional RNDBOT auto-create (TortoiseBots #39)
+- Optional LFT autofill (TortoiseBots #40)
+- Optional AH market population (TortoiseBots #41)
+- Optional BG autoqueue (TortoiseBots #42)
+
+The stacked feature services are configuration-gated and remain off by default
+unless their corresponding settings are enabled.
 
 Targets Vanilla/Turtle 1.18.1 — Any future expansions elements are removed.
 
@@ -238,6 +254,22 @@ The inherited PlayerBots configuration is broader than the currently validated
 Turtle gameplay surface. The existence of a setting does not by itself mean the
 corresponding feature has completed gameplay acceptance.
 
+The current stacked feature toggles include:
+
+```text
+AiPlayerbot.Enabled
+AiPlayerbot.EnableRandomTeleports
+AiPlayerbot.PinnedBots
+AiPlayerbot.RandomBotAutoCreate
+AiPlayerbot.RandomBotLftEnabled
+AiPlayerbot.AhMarketEnabled
+AiPlayerbot.RandomBotBgEnabled
+```
+
+For the Docker workflow, `AI_PLAYERBOT_ENABLED=1` renders
+`AiPlayerbot.Enabled = 1`; the remaining feature toggles are intentionally
+disabled by default.
+
 ---
 
 ## Validation
@@ -252,15 +284,25 @@ The pinned baseline has recorded evidence for:
 - Goblin and High Elf lifecycle fixtures
 - repeatable module migrations
 
+The current local integrated checkpoint additionally records:
+
+- native Docker build with `BUILD_PLAYERBOTS=OFF`, `MODULES=static` and
+  `MODULE_TORTOISEBOTS=static`
+- module migration discovery and schema presence
+- AI Playerbot initialization and `TortoiseBots: native module loaded (AI enabled)`
+- world-ready startup without fatal startup errors
+- listening realm and world TCP ports
+
 Still pending:
 
-- smoke test against the current Penqle modular core
+- upstream merge of core PRs #411 and #416
 - manual owned-bot gameplay acceptance
 - full 5-player dungeon acceptance
 - broader Turtle class/spec/content testing
 - large random-bot population testing
 
-See below for the validation boundary and pinned core/module SHAs.
+The current local Docker source records exact synchronized core/module
+revisions in `SOURCE_IDENTITY`.
 
 ---
 
