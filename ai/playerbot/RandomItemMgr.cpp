@@ -1100,7 +1100,7 @@ void RandomItemMgr::BuildItemInfoCache()
                 cacheInfo->source = ITEM_SOURCE_VENDOR;
                 cacheInfo->sourceIds.push_back(vendor);
 
-                FactionTemplateEntry const* factionEntry = sFactionTemplateStore.LookupEntry(cInfo->Faction);
+                FactionTemplateEntry const* factionEntry = sFactionTemplateStore.LookupEntry(cInfo->faction);
                 if (PlayerbotAI::friendToAlliance(factionEntry))
                     isAlly = true;
                 if (PlayerbotAI::friendToHorde(factionEntry))
@@ -1108,7 +1108,7 @@ void RandomItemMgr::BuildItemInfoCache()
 
                 // check faction conditions
                 VendorItemData const* vItems = sObjectMgr.GetNpcVendorItemList(vendor);
-                VendorItemData const* tItems = sObjectMgr.GetNpcVendorTemplateItemList(cInfo->VendorTemplateId);
+                VendorItemData const* tItems = sObjectMgr.GetNpcVendorTemplateItemList(cInfo->vendor_id);
 
                 if (vItems || tItems)
                 {
@@ -2500,7 +2500,7 @@ std::vector<uint32> RandomItemMgr::GetUpgradeList(Player* player, uint32 specId,
         // skip pvp items
         if (info->source == ITEM_SOURCE_PVP)
         {
-            if (!player->GetHonorRankInfo().rank)
+            if (!player->GetHonorMgr().GetRank().rank)
                 continue;
         }
 
@@ -2555,7 +2555,7 @@ bool RandomItemMgr::CanBuyFromVendor(Player *player, uint32 itemId, uint32 creat
 
     VendorItemList vendorItems;
     VendorItemData const* vItems = sObjectMgr.GetNpcVendorItemList(creatureId);
-    VendorItemData const* tItems = sObjectMgr.GetNpcVendorTemplateItemList(cInfo->VendorTemplateId);
+    VendorItemData const* tItems = sObjectMgr.GetNpcVendorTemplateItemList(cInfo->vendor_id);
 
     if (!vItems && !tItems)
     {
@@ -2576,7 +2576,7 @@ bool RandomItemMgr::CanBuyFromVendor(Player *player, uint32 itemId, uint32 creat
             {
                 // when no faction required but rank > 0 will be used faction id from the vendor faction template to compare the rank
                 if (!pProto->RequiredReputationFaction && pProto->RequiredReputationRank > 0 &&
-                    ReputationRank(pProto->RequiredReputationRank) > player->GetReputationRank(sFactionTemplateStore.LookupEntry(cInfo->Faction)->faction))
+                    ReputationRank(pProto->RequiredReputationRank) > player->GetReputationRank(sFactionTemplateStore.LookupEntry(cInfo->faction)->faction))
                     return false;
 
                 if (crItem->conditionId && !sObjectMgr.IsConditionSatisfied(crItem->conditionId, player, player->GetMap(), nullptr, CONDITION_FROM_VENDOR))
@@ -2792,13 +2792,13 @@ uint32 RandomItemMgr::GetLiveStatWeight(Player* player, uint32 itemId, uint32 sp
         return 0;
 
     // skip missing pvp ranks
-    if (info->pvpRank && player->GetHonorHighestRankInfo().rank < info->pvpRank)
+    if (info->pvpRank && player->GetHonorMgr().GetHighestRank().rank < info->pvpRank)
         return 0;
-    if (info->pvpRank && info->pvpRank < 16 && player->GetHonorHighestRankInfo().rank == 18)
+    if (info->pvpRank && info->pvpRank < 16 && player->GetHonorMgr().GetHighestRank().rank == 18)
         return 0;
 
     // skip non pvp items for some specs
-    if (info->pvpRank < 16 && player->GetHonorHighestRankInfo().rank == 18)
+    if (info->pvpRank < 16 && player->GetHonorMgr().GetHighestRank().rank == 18)
     {
         ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
         if (proto && !(
