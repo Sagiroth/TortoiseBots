@@ -234,7 +234,7 @@ private:
             float distance = AI_VALUE2(float, "distance", "current target");
             return target && ai->HasStrategy("close", BotState::BOT_STATE_COMBAT) &&
                 (target->GetVictim() != bot ||
-                target->IsImmobilizedState() ||
+                IsImmobilizedStateCompat(target) ||
                 (target->GetSpeed(MOVE_RUN) <= (bot->GetSpeed(MOVE_RUN) / 2) && !((!bot->GetPet() || bot->GetPet()->IsDead()) && target->IsCreature() && target->GetHealthPercent() < 50.f && target->GetHealth() < bot->GetHealth())) ||
                 distance > 8.0f);
         }
@@ -253,7 +253,7 @@ private:
 
             Unit* target = AI_VALUE(Unit*, "current target");
             return target && ((target->GetSpeed(MOVE_RUN) > (bot->GetSpeed(MOVE_RUN) / 2)) || ((!bot->GetPet() || bot->GetPet()->IsDead()) && target->GetHealthPercent() < 50.f && target->IsCreature() && target->GetHealth() < bot->GetHealth())) &&
-                !target->IsImmobilizedState() &&
+                !IsImmobilizedStateCompat(target) &&
                 ai->HasStrategy("ranged", BotState::BOT_STATE_COMBAT) &&
                 target->GetVictim() == bot &&
                 sServerFacade.IsDistanceLessOrEqualThan(AI_VALUE2(float, "distance", "current target"), 8.0f);
@@ -295,11 +295,11 @@ private:
                 return false;
 
             float distanceTo = AI_VALUE2(float, "distance", GetTargetName());
-            if (target->GetSelectionGuid() != bot->getObjectGuid() && sServerFacade.IsDistanceGreaterOrEqualThan(distanceTo, 8.0f))
+            if (target->GetVictim() != bot->getObjectGuid() && sServerFacade.IsDistanceGreaterOrEqualThan(distanceTo, 8.0f))
                 return true;
 
             // victim
-            if (target->GetSelectionGuid() == bot->getObjectGuid())
+            if (target->GetVictim() == bot->getObjectGuid())
             {
                 if (sServerFacade.IsDistanceGreaterOrEqualThan(distanceTo, 15.0f))
                     return true;

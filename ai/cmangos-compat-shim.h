@@ -61,6 +61,11 @@ inline uint32 GetRequiredLootSkillCompat(CreatureInfo const* creature)
     return creature && creature->skinning_loot_id ? SKILL_SKINNING : SKILL_NONE;
 }
 
+inline bool IsImmobilizedStateCompat(Unit const* unit)
+{
+    return unit && (unit->IsRooted() || unit->HasUnitState(UNIT_STAT_STUNNED) || unit->HasAuraType(SPELL_AURA_MOD_ROOT));
+}
+
 // === Type renames ===
 // Mature strategy code uses GenericTransport for the core's ordinary
 // Transport type. Keep the alias local to the module; it is not a vehicle API.
