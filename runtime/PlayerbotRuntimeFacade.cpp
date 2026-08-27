@@ -212,7 +212,7 @@ void RandomBotFacade::Refresh(Player* bot)
 
 void RandomBotFacade::UpdateGearSpells(Player* bot)
 {
-    if (!bot || !IsRandomBot(bot))
+    if (!bot || !IsRandomBot(bot) || !PlayerbotAIStorage::Instance().GetAI(bot))
         return;
 
     PlayerbotFactory factory(bot, bot->GetLevel());

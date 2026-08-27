@@ -216,7 +216,7 @@ void BotManager::OnPlayerLogin(::Player* player)
     // Prompt PlayerbotFactory enrichment for random bots where factory supports it.
     // CharacterCreation creates level 1 starter kit; factory's InitEquipment intentionally
     // no-ops for <5. For any auto-created level >=5 (future higher-level pool or manual
-    // leveling), trigger gear/spell/talent enrichment immediately on world-thread login
+    // leveling), trigger gear enrichment immediately on world-thread login
     // rather than waiting ~6h for RandomBotService's randomize interval. Safe and synchronous;
     // the existing randomGearUpgradeEnabled setting controls this (default enabled), no core changes.
     if (record.random && sPlayerbotAIConfig.randomGearUpgradeEnabled && player->GetLevel() >= 5)
