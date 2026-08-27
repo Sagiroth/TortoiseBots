@@ -45,7 +45,7 @@ AiPlayerbot.RandomBotMaxLevel = 60
 
 # Existing random-bot accounts to discover by prefix. Native service discovers
 # them at startup; with RandomBotAutoCreate=1 it also auto-creates the deficit
-# toward Min/Max via the generic core CharacterCreation seam (94dfa7e).
+# toward Min/Max via the generic core CharacterCreation seam (core PR #412/7084557, final 7084557).
 AiPlayerbot.RandomBotAccountPrefix = RNDBOT
 
 # Bounded idempotent RNDBOT population (feature 01). Default OFF.
@@ -54,7 +54,7 @@ AiPlayerbot.RandomBotAccountPrefix = RNDBOT
 # one character per RandomBotUpdateInterval (no per-tick DB scans, no blocking
 # loop). Accounts are allocated via AccountMgr.CreateAccount with a random
 # password (hashed via CalculateShaPassHash, never logged), characters via
-# CharacterCreation::CreateCharacter on the world thread (requires core 94dfa7e
+# CharacterCreation::CreateCharacter on the world thread (requires core PR #412/7084557, final 7084557
 # Handlers/CharacterCreation.h). Valid race/class is the intersection of DBC
 # ChrRaces/ChrClasses (NOT_PLAYABLE filtered) and PlayerInfo/playercreateinfo;
 # DBC-missing combos are never selected and an empty intersection disables
@@ -69,7 +69,11 @@ AiPlayerbot.RandomBotAccountPrefix = RNDBOT
 # retryable with ~60s backoff (log throttled) and do not permanently exclude
 # healthy accounts, while name collisions are retried silently and remain
 # retryable. LoginDatabase allocation failures are throttled to one log per
-# ~60s and retried after the interval. After a fresh-account permanent failure,
+# ~60s and retried after the interval. A successful CreateAccount whose id is not
+# yet visible is remembered as exactly one pending name and retried with
+# bounded/log-throttled cadence while continuing existing-account creation
+# without allocating another fresh account (log once after prolonged unresolved
+# period, no duplication/spin, no 20-orphan loop). After a fresh-account permanent failure,
 # further fresh RNDBOT account allocation is disabled for this process (log once)
 # while valid existing accounts remain eligible. Successful creates are appended
 # to the normal Headless login (AddRandomBot -> LoginPlayer) and post-login

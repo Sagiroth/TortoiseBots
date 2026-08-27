@@ -280,9 +280,11 @@ synchronous `CharacterCreation::CreateCharacter` seam (core PR #412, final
 7084557). Core owns account/character persistence and validation; the module
 never writes `account`/`characters` rows directly, uses no DB worker or donor
 creation loop, and does no per-tick `LIKE` scan. Because account creation is
-queued asynchronously, the service remembers a successful account name whose
-id is not immediately visible, retries that same name later, and does not
-allocate orphan accounts. DBC `ChrRaces`/`ChrClasses` and `PlayerInfo`
+queued asynchronously, the service remembers exactly one successful account name
+whose id is not immediately visible, retries that same name with bounded/log-
+throttled cadence while continuing the existing-account selection path and
+without allocating another fresh account (log once after prolonged unresolved
+period), and does not allocate orphan accounts. DBC `ChrRaces`/`ChrClasses` and `PlayerInfo`
 (`playercreateinfo`) are intersected before selection; permanent failures are
 remembered, transient failures back off, and created GUIDs enter the existing
 Headless candidate/login path.

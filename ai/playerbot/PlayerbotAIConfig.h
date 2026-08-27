@@ -156,7 +156,7 @@ public:
     // characters, create only the deficit toward the configured Min/Max target
     // (default OFF). Uses AccountMgr.CreateAccount (random password, hashed)
     // and the generic CharacterCreation::CreateCharacter synchronous
-    // world-thread seam (core PR #412/7084557, final 94dfa7e). Throttled to at
+    // world-thread seam (core PR #412/7084557, final 7084557). Throttled to at
     // most one character per RandomBotUpdateInterval, no per-tick DB scans.
     // Valid race/class is the intersection of DBC ChrRaces/ChrClasses
     // (NOT_PLAYABLE filtered) and PlayerInfo (playercreateinfo); DBC-missing
@@ -170,9 +170,11 @@ public:
     // retryable (reset only on Initialize/restart). LoginDatabase allocation
     // failures are throttled to one log per ~60s and retried after the
     // interval. AccountMgr::CreateAccount queues an async login-DB INSERT
-    // (core PR #412/7084557), so a successful CreateAccount whose id is not
-    // yet visible is remembered as a pending name and retried next cadence
-    // (one check per interval, no duplication/spin, no 20-orphan loop). After
+    // (core PR #412/7084557, final 7084557), so a successful CreateAccount whose id is not
+    // yet visible is remembered as exactly one pending name and retried with
+    // bounded/log-throttled cadence while continuing the existing-account
+    // selection path and without allocating another fresh account (log once after
+    // prolonged unresolved period, no duplication/spin, no 20-orphan loop). After
     // a fresh-account permanent failure, further fresh RNDBOT account
     // allocation is disabled for this process (log once) while valid existing
     // accounts remain eligible. Created GUIDs are appended to the existing

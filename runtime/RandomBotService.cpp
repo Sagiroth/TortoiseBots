@@ -21,7 +21,7 @@
 #elif __has_include("CharacterCreation.h")
 #include "CharacterCreation.h"
 #else
-// Feature 01 requires core PR #412/7084557 (final 94dfa7e)
+// Feature 01 requires core PR #412/7084557 (final 7084557)
 // src/game/Handlers/CharacterCreation.h. If this fires, the module is built
 // against a core without the generic synchronous CharacterCreation seam.
 #error "TortoiseBots feature 01 requires core PR #412/7084557 (Handlers/CharacterCreation.h not found)"
@@ -90,6 +90,9 @@ void RandomBotService::Initialize()
     m_accountAllocNextRetry = 0;
     m_charCreateErrorNextRetry = 0;
     m_pendingAccountName.clear();
+    m_pendingNextRetry = 0;
+    m_pendingSince = 0;
+    m_pendingStaleLogged = false;
     if (!sPlayerbotAIConfig.enabled)
     {
         sLog.outString("TortoiseBots: native random-bot service disabled by configuration");
@@ -166,8 +169,9 @@ void RandomBotService::LoadCandidates()
     }
 
     // Rotate the stable DB order so the first startup does not always select
-    // the same low GUIDs. The candidate pool itself remains immutable until a
-    // process restart, so there is no query or full-world scan per tick.
+    // the same low GUIDs. The candidate pool is seeded from the DB at startup
+    // and grows only via bounded auto-create appends; there is no per-tick
+    // query or full-world scan.
     if (!m_candidates.empty())
     {
         size_t offset = static_cast<size_t>(std::time(nullptr)) % m_candidates.size();
@@ -415,40 +419,64 @@ bool RandomBotService::TryAutoCreate()
 
     bool allowTwoSide = sWorld.getConfig(CONFIG_BOOL_ALLOW_TWO_SIDE_ACCOUNTS) != 0;
 
-    // Pending-account resolution for async AccountMgr::CreateAccount
-    // (core PR #412/7084557 queues login-DB INSERT). After AOR_OK but
-    // GetId still 0, m_pendingAccountName holds the exact name. Stop
-    // allocating more accounts and retry resolving that same name once per
-    // cadence (no spin, no duplication). Existing cadence/backoff state
-    // already bounds this path to one check per RandomBotUpdateInterval.
+    // Pending-account handling for async AccountMgr::CreateAccount
+    // (core PR #412/7084557, final 7084557 queues login-DB INSERT): keep
+    // exactly one pending fresh account name after AOR_OK with no visible id,
+    // retry that same name with bounded/log-throttled cadence (60s) while
+    // continuing the existing-account selection path and without allocating
+    // another fresh account; log once after prolonged unresolved period (~300s).
+    time_t now = time(nullptr);
     if (!m_pendingAccountName.empty())
     {
-        uint32 pendingId = sAccountMgr.GetId(m_pendingAccountName);
-        if (!pendingId)
-            return false;
-        // Visible now — add to pool and proceed to one character creation.
-        std::string resolvedName = m_pendingAccountName;
-        m_pendingAccountName.clear();
-        m_accountAllocNextRetry = 0;
-        if (std::find(m_rndBotAccountIds.begin(), m_rndBotAccountIds.end(), pendingId) == m_rndBotAccountIds.end())
-            m_rndBotAccountIds.push_back(pendingId);
-        else
-            sLog.outString("TortoiseBots: auto-create pending account %s (%u) already in pool, proceeding to character",
-                resolvedName.c_str(), pendingId);
-        AutoCreateCharResult pendingRes = TryCreateCharacterOnAccount(pendingId, validAll);
-        if (pendingRes == AutoCreateCharResult::Success)
-            return true;
-        if (pendingRes == AutoCreateCharResult::TransientError)
-            return false;
-        if (pendingRes == AutoCreateCharResult::Permanent)
+        bool shouldRetry = !m_pendingNextRetry || now >= m_pendingNextRetry;
+        if (shouldRetry)
         {
-            m_failedAutoCreateAccounts.insert(pendingId);
-            m_freshAutoCreateDisabled = true;
-            sLog.outError("TortoiseBots: auto-create pending account %s (%u) permanently failed, disabling further fresh RNDBOT account allocation for this process (existing accounts remain eligible)",
-                resolvedName.c_str(), pendingId);
-            return false;
+            uint32 pendingId = sAccountMgr.GetId(m_pendingAccountName);
+            if (pendingId)
+            {
+                std::string resolvedName = m_pendingAccountName;
+                m_pendingAccountName.clear();
+                m_pendingSince = 0;
+                m_pendingNextRetry = 0;
+                m_pendingStaleLogged = false;
+                m_accountAllocNextRetry = 0;
+                if (std::find(m_rndBotAccountIds.begin(), m_rndBotAccountIds.end(), pendingId) == m_rndBotAccountIds.end())
+                    m_rndBotAccountIds.push_back(pendingId);
+                else
+                    sLog.outString("TortoiseBots: auto-create pending account %s (%u) already in pool, proceeding to character",
+                        resolvedName.c_str(), pendingId);
+                AutoCreateCharResult pendingRes = TryCreateCharacterOnAccount(pendingId, validAll);
+                if (pendingRes == AutoCreateCharResult::Success)
+                    return true;
+                if (pendingRes == AutoCreateCharResult::TransientError)
+                    return false;
+                if (pendingRes == AutoCreateCharResult::Permanent)
+                {
+                    m_failedAutoCreateAccounts.insert(pendingId);
+                    m_freshAutoCreateDisabled = true;
+                    sLog.outError("TortoiseBots: auto-create pending account %s (%u) permanently failed, disabling further fresh RNDBOT account allocation for this process (existing accounts remain eligible)",
+                        resolvedName.c_str(), pendingId);
+                    return false;
+                }
+                return false;
+            }
+            m_pendingNextRetry = now + 60;
+            if (!m_pendingStaleLogged && m_pendingSince && now - m_pendingSince >= 300)
+            {
+                sLog.outError("TortoiseBots: auto-create pending account %s unresolved for %ld seconds, continuing with existing accounts (one pending kept, no new allocation)",
+                    m_pendingAccountName.c_str(), long(now - m_pendingSince));
+                m_pendingStaleLogged = true;
+            }
         }
-        return false;
+        else if (!m_pendingStaleLogged && m_pendingSince && now - m_pendingSince >= 300)
+        {
+            sLog.outError("TortoiseBots: auto-create pending account %s unresolved for %ld seconds, continuing with existing accounts (one pending kept, no new allocation)",
+                m_pendingAccountName.c_str(), long(now - m_pendingSince));
+            m_pendingStaleLogged = true;
+        }
+        // Unresolved pending does not freeze existing-account creation; fall
+        // through to the existing-account selection path below. Fresh-account
+        // allocation is still blocked while pending remains.
     }
 
     // Try existing accounts in deterministic order. Permanently failed accounts
@@ -512,6 +540,9 @@ bool RandomBotService::TryAutoCreate()
         // TransientName – try next account same cadence, do not remember.
     }
 
+    // Do not allocate another fresh account while one pending remains unresolved.
+    if (!m_pendingAccountName.empty())
+        return false;
     if (m_freshAutoCreateDisabled)
         return false;
     if (m_accountAllocNextRetry && time(nullptr) < m_accountAllocNextRetry)
@@ -546,12 +577,16 @@ bool RandomBotService::TryAutoCreate()
             }
             else
             {
-                // Async login-DB INSERT (core PR #412/7084557): AccountMgr
-                // queues the INSERT, so GetId may still return 0 on this
-                // world thread. Remember the exact name, stop allocating more
-                // accounts this cadence, and retry resolving it next cadence.
-                // Never create up to 20 orphans or spin.
+                // Async login-DB INSERT (core PR #412/7084557, final 7084557):
+                // AccountMgr queues the INSERT, so GetId may still return 0
+                // on this world thread. Remember exactly one pending name,
+                // retry it with bounded/log-throttled cadence while continuing
+                // existing-account creation, and never allocate another fresh
+                // account or spin. Log once after prolonged unresolved period.
                 m_pendingAccountName = username;
+                m_pendingSince = time(nullptr);
+                m_pendingNextRetry = m_pendingSince + 60;
+                m_pendingStaleLogged = false;
                 return false;
             }
         }
@@ -893,6 +928,9 @@ void RandomBotService::Shutdown()
     m_accountAllocNextRetry = 0;
     m_charCreateErrorNextRetry = 0;
     m_pendingAccountName.clear();
+    m_pendingNextRetry = 0;
+    m_pendingSince = 0;
+    m_pendingStaleLogged = false;
 }
 
 } // namespace TortoiseBots
