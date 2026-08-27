@@ -86,6 +86,9 @@ void RandomBotService::Initialize()
     m_rndBotAccountIds.clear();
     m_failedAutoCreateAccounts.clear();
     m_freshAutoCreateDisabled = false;
+    m_autoCreateNoValidData = false;
+    m_accountAllocNextRetry = 0;
+    m_charCreateErrorNextRetry = 0;
     if (!sPlayerbotAIConfig.enabled)
     {
         sLog.outString("TortoiseBots: native random-bot service disabled by configuration");
@@ -249,6 +252,8 @@ RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAcc
         sLog.outError("TortoiseBots: auto-create account %u has no valid race/class for its team, skipping", accountId);
         return AutoCreateCharResult::Permanent;
     }
+    if (m_charCreateErrorNextRetry && time(nullptr) < m_charCreateErrorNextRetry)
+        return AutoCreateCharResult::TransientError;
 
     // Up to 5 name attempts per account per cadence. Transient name collisions
     // (NAME_IN_USE/RESERVED/CHAR_CREATE_FAILED or local normalize miss) are
@@ -284,7 +289,11 @@ RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAcc
 
         if (!sObjectMgr.GetPlayerInfo(race, cls))
         {
-            sLog.outError("TortoiseBots: auto-create race %u class %u has no PlayerInfo", uint32(race), uint32(cls));
+            if (!m_autoCreateNoValidData)
+            {
+                sLog.outError("TortoiseBots: auto-create race %u class %u has no PlayerInfo (playercreateinfo), disabling for this process", uint32(race), uint32(cls));
+                m_autoCreateNoValidData = true;
+            }
             return AutoCreateCharResult::Permanent;
         }
 
@@ -303,7 +312,19 @@ RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAcc
         if (outcome.result == CHAR_CREATE_NAME_IN_USE || outcome.result == CHAR_NAME_RESERVED || outcome.result == CHAR_CREATE_FAILED)
         {
             // Transient name collision – try another name silently.
+            // CHAR_CREATE_FAILED is DBC-missing; validAll is pre-filtered
+            // with ChrRaces/ChrClasses so this is rare – treat as name-like
+            // transient to avoid permanently excluding a healthy account.
             continue;
+        }
+        if (outcome.result == CHAR_CREATE_ERROR)
+        {
+            if (!m_charCreateErrorNextRetry || time(nullptr) >= m_charCreateErrorNextRetry)
+            {
+                sLog.outError("TortoiseBots: auto-create transient failure (CHAR_CREATE_ERROR) for %s race %u class %u on account %u, backing off", norm.c_str(), uint32(race), uint32(cls), accountId);
+                m_charCreateErrorNextRetry = time(nullptr) + 60;
+            }
+            return AutoCreateCharResult::TransientError;
         }
         if (outcome.result == CHAR_CREATE_PVP_TEAMS_VIOLATION)
         {
@@ -359,16 +380,35 @@ bool RandomBotService::TryAutoCreate()
         perRealmLimit = 50;
     uint32 accountLimit = std::min(perAccountLimit, perRealmLimit);
 
-    // Valid race/class from PlayerInfo (covers Goblin/High Elf when Turtle data present).
+    if (m_autoCreateNoValidData)
+        return false;
+    if (m_charCreateErrorNextRetry && time(nullptr) < m_charCreateErrorNextRetry)
+        return false;
+
     std::vector<std::pair<uint8_t,uint8_t>> validAll;
     validAll.reserve(64);
     for (uint32_t race = 1; race < MAX_RACES; ++race)
+    {
+        ChrRacesEntry const* raceEntry = sChrRacesStore.LookupEntry(race);
+        if (!raceEntry || raceEntry->HasFlag(CHRRACES_FLAGS_NOT_PLAYABLE))
+            continue;
         for (uint32_t cls = 1; cls < MAX_CLASSES; ++cls)
-            if (sObjectMgr.GetPlayerInfo(race, cls))
-                validAll.emplace_back(uint8_t(race), uint8_t(cls));
+        {
+            ChrClassesEntry const* classEntry = sChrClassesStore.LookupEntry(cls);
+            if (!classEntry)
+                continue;
+            if (!sObjectMgr.GetPlayerInfo(race, cls))
+                continue;
+            validAll.emplace_back(uint8_t(race), uint8_t(cls));
+        }
+    }
     if (validAll.empty())
     {
-        sLog.outError("TortoiseBots: auto-create no valid PlayerInfo race/class");
+        if (!m_autoCreateNoValidData)
+        {
+            sLog.outError("TortoiseBots: auto-create no valid race/class (DBC/PlayerInfo missing), disabling for this process");
+            m_autoCreateNoValidData = true;
+        }
         return false;
     }
 
@@ -430,13 +470,14 @@ bool RandomBotService::TryAutoCreate()
             m_failedAutoCreateAccounts.insert(accId);
             continue;
         }
+        if (res == AutoCreateCharResult::TransientError)
+            return false;
         // TransientName – try next account same cadence, do not remember.
     }
 
-    // No existing account succeeded – allocate a new RNDBOT account unless a
-    // previous fresh-account permanent failure disabled this path for the
-    // process lifetime (log once, still allow existing accounts to fill).
     if (m_freshAutoCreateDisabled)
+        return false;
+    if (m_accountAllocNextRetry && time(nullptr) < m_accountAllocNextRetry)
         return false;
 
     std::string prefix = sPlayerbotAIConfig.randomBotAccountPrefix;
@@ -445,7 +486,7 @@ bool RandomBotService::TryAutoCreate()
 
     uint32 newAccountId = 0;
     std::string newUsername;
-    // Bound attempts: at most 20 usernames per interval, random password.
+    bool hadAllocDbError = false;
     for (int attempt = 0; attempt < 20 && !newAccountId; ++attempt)
     {
         uint32 suffix = urand(1000, 999999);
@@ -468,8 +509,8 @@ bool RandomBotService::TryAutoCreate()
             }
             else
             {
-                sLog.outError("TortoiseBots: auto-create account %s created but GetId failed", username.c_str());
-                return false;
+                hadAllocDbError = true;
+                continue;
             }
         }
         else if (res == AOR_NAME_ALREDY_EXIST)
@@ -478,20 +519,29 @@ bool RandomBotService::TryAutoCreate()
         }
         else
         {
-            sLog.outError("TortoiseBots: auto-create CreateAccount %s failed %d, trying next", username.c_str(), int(res));
+            hadAllocDbError = true;
             continue;
         }
     }
     if (!newAccountId)
     {
-        sLog.outError("TortoiseBots: auto-create could not allocate RNDBOT account after attempts");
+        if (!m_accountAllocNextRetry || time(nullptr) >= m_accountAllocNextRetry)
+        {
+            if (hadAllocDbError)
+                sLog.outError("TortoiseBots: auto-create could not allocate RNDBOT account after attempts (LoginDatabase failure), backing off");
+            else
+                sLog.outError("TortoiseBots: auto-create could not allocate RNDBOT account after attempts, backing off");
+            m_accountAllocNextRetry = time(nullptr) + 60;
+        }
         return false;
     }
+    m_accountAllocNextRetry = 0;
 
-    // New account is empty – any faction allowed, use full valid list.
     AutoCreateCharResult freshRes = TryCreateCharacterOnAccount(newAccountId, validAll);
     if (freshRes == AutoCreateCharResult::Success)
         return true;
+    if (freshRes == AutoCreateCharResult::TransientError)
+        return false;
     if (freshRes == AutoCreateCharResult::Permanent)
     {
         m_failedAutoCreateAccounts.insert(newAccountId);
@@ -499,9 +549,6 @@ bool RandomBotService::TryAutoCreate()
         sLog.outError("TortoiseBots: auto-create fresh account %s (%u) permanently failed, disabling further fresh RNDBOT account allocation for this process (existing accounts remain eligible)", newUsername.c_str(), newAccountId);
         return false;
     }
-    // TransientName on fresh account – keep it for next interval but do not
-    // yet disable fresh allocation; next cadence will retry existing + fresh
-    // before allocating another.
     return false;
 }
 
@@ -800,6 +847,9 @@ void RandomBotService::Shutdown()
     m_rndBotAccountIds.clear();
     m_failedAutoCreateAccounts.clear();
     m_freshAutoCreateDisabled = false;
+    m_autoCreateNoValidData = false;
+    m_accountAllocNextRetry = 0;
+    m_charCreateErrorNextRetry = 0;
 }
 
 } // namespace TortoiseBots

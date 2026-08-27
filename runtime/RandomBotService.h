@@ -5,6 +5,7 @@
 #include <set>
 #include <string>
 
+// pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectGuid.h"
 
 namespace TortoiseBots
@@ -43,7 +44,7 @@ private:
     uint32_t TargetCount() const;
     uint32_t DesiredTargetCount() const;
     bool TryAutoCreate();
-    enum class AutoCreateCharResult { Success, TransientName, Permanent };
+    enum class AutoCreateCharResult { Success, TransientName, TransientError, Permanent };
     AutoCreateCharResult TryCreateCharacterOnAccount(uint32_t accountId, std::vector<std::pair<uint8_t, uint8_t>> const& validForAccount);
     // Returns TEAM_NONE if empty/unknown, otherwise ALLIANCE/HORDE (67/469). Sets isMixed
     // when cached candidates contain both factions (must be excluded).
@@ -76,6 +77,13 @@ private:
     // allocating additional empty RNDBOT accounts for this process (log once);
     // existing accounts remain eligible.
     bool m_freshAutoCreateDisabled = false;
+    // Process-lifetime disable when no valid DBC/PlayerInfo race/class remains
+    // (missing CharRaces/CharClasses or playercreateinfo) – log once.
+    bool m_autoCreateNoValidData = false;
+    // Bounded retry backoff for allocation/creation transient failures.
+    // Throttled to at most one error line per interval; retry after expiry.
+    time_t m_accountAllocNextRetry = 0;
+    time_t m_charCreateErrorNextRetry = 0;
 };
 
 } // namespace TortoiseBots

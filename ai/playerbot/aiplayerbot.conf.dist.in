@@ -55,19 +55,24 @@ AiPlayerbot.RandomBotAccountPrefix = RNDBOT
 # loop). Accounts are allocated via AccountMgr.CreateAccount with a random
 # password (hashed via CalculateShaPassHash, never logged), characters via
 # CharacterCreation::CreateCharacter on the world thread (requires core 94dfa7e
-# Handlers/CharacterCreation.h). Valid PlayerInfo race/class/start data only
-# (fail-closed); duplicate names/accounts are avoided via UNIQUE checks.
-# Existing accounts with mixed-faction cached candidates are deterministically
-# excluded (derived from all cached RNDBOT characters for that account) and
-# the service tries the next eligible account in the same cadence, so one
-# failed account does not block the deficit. Permanently failed accounts
+# Handlers/CharacterCreation.h). Valid race/class is the intersection of DBC
+# ChrRaces/ChrClasses (NOT_PLAYABLE filtered) and PlayerInfo/playercreateinfo;
+# DBC-missing combos are never selected and an empty intersection disables
+# auto-create for this process (log once). Duplicate names/accounts are avoided
+# via UNIQUE checks. Existing accounts with mixed-faction cached candidates are
+# deterministically excluded (derived from all cached RNDBOT characters for that
+# account) and the service tries the next eligible account in the same cadence,
+# so one failed account does not block the deficit. Permanently failed accounts
 # (mixed, disabled, faction violation, limit, or other materialization errors)
 # are logged once and never retried every RandomBotUpdateInterval (reset only
-# on Initialize/restart); transient name collisions are retried silently and
-# remain retryable. After a fresh-account permanent failure, further fresh
-# RNDBOT account allocation is disabled for this process (log once) while
-# valid existing accounts remain eligible. Successful creates are appended to
-# the normal Headless login (AddRandomBot -> LoginPlayer) and post-login
+# on Initialize/restart); transient CHAR_CREATE_ERROR/DB-count failures are
+# retryable with ~60s backoff (log throttled) and do not permanently exclude
+# healthy accounts, while name collisions are retried silently and remain
+# retryable. LoginDatabase allocation failures are throttled to one log per
+# ~60s and retried after the interval. After a fresh-account permanent failure,
+# further fresh RNDBOT account allocation is disabled for this process (log once)
+# while valid existing accounts remain eligible. Successful creates are appended
+# to the normal Headless login (AddRandomBot -> LoginPlayer) and post-login
 # PlayerbotFactory gear enrichment (already in RandomBotService.Update) handle
 # them. No raw INSERT, no DB worker, no AddAsyncTask.
 AiPlayerbot.RandomBotAutoCreate = 0
