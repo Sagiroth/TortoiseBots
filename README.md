@@ -3,6 +3,10 @@
 TortoiseBots is an optional native PlayerBots module for
 [Tortoise WoW 1.18.1](https://github.com/Penqle/tortoise-wow).
 
+> **Addon:** press buttons instead of typing `.bot` — see the companion client addon
+> **[tortoise-wow-stack/TortoiseBotsManager](https://github.com/tortoise-wow-stack/TortoiseBotsManager)**
+> (`/tbm` panel: list owned bots, summon/spawn, follow/stay, group, pull). Requires this module on the server.
+
 It brings existing PlayerBots (primarily AzerothCore/mod-playerbots) combat, movement, class, group, loot, quest and
 travel behavior to Tortoise WoW while keeping bot-specific logic outside the
 core.
@@ -188,8 +192,14 @@ The native command surface currently includes:
 `.bot command` forwards into the existing PlayerBots (primarily AzerothCore/mod-playerbots) command system for the
 selected bot. Commands enforce normal account ownership or GM authority.
 
----
+### Client addon
 
+The companion addon **[TortoiseBots Manager](https://github.com/tortoise-wow-stack/TortoiseBotsManager)**
+(`Interface 11200`, `/tbm`) is a button UI for the same `.bot` surface: roster of owned bots,
+online/starting/offline state, `Spawn` / `Summon` / `Follow` / `Stay` / `Invite` / `Pull`.
+It is optional and pure client — install `Interface/AddOns/TortoiseBots/` from that repo; it requires this module on the server.
+
+---
 ## Module layout
 
 TortoiseBots is consumed as `tortoise-wow/modules/TortoiseBots/`:
