@@ -1,4 +1,3 @@
-// pi-lens-ignore: clang:pp_file_not_found,clang:unknown_typename,clang:use_of_undeclared_identifier,clang:unknown_type_name,clang:undeclared_var_use,clang:incomplete_member_access,clang:uninitialized,clang:undefined_identifier,clang:undeclared_identifier,clang:all,misc-include-cleaner
 #include "BattlegroundQueueService.h"
 
 // pi-lens-ignore: clang:pp_file_not_found
@@ -33,20 +32,12 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "LFT/LFTMgr.h"
 #ifndef MANGOSSERVER_LFTMGR_H
-enum LFTRoles { LFT_ROLE_TANK = 0x01, LFT_ROLE_HEALER = 0x02, LFT_ROLE_DAMAGE = 0x04 };
-class LFTManager
-{
-public:
-    bool IsQueued(ObjectGuid const&) const { return false; }
-    bool IsInOffer(ObjectGuid const&) const { return false; }
-};
-static LFTManager sLFTMgr;
+#error "TortoiseBots BG auto-queue requires the existing Penqle LFT lifecycle API"
 #endif
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Maps/Map.h"
 
 #include <algorithm>
-// pi-lens-ignore: all
 #include <vector>
 
 namespace TortoiseBots
