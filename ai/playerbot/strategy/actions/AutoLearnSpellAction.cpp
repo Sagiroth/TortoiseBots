@@ -49,11 +49,11 @@ void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
     {
         if (bot->GetClass() == CLASS_HUNTER && bot->GetLevel() >= 10)
         {
-            bot->learnSpell(5149, false); //Beast training
-            bot->learnSpell(883, false); //Call pet
-            bot->learnSpell(982, false); //Revive pet
-            bot->learnSpell(6991, false); //Feed pet
-            bot->learnSpell(1515, false); //Tame beast
+            bot->LearnSpell(5149, false); // Beast training
+            bot->LearnSpell(883, false); // Call pet
+            bot->LearnSpell(982, false); // Revive pet
+            bot->LearnSpell(6991, false); // Feed pet
+            bot->LearnSpell(1515, false); // Tame beast
         }
     }
 }
@@ -68,20 +68,20 @@ void AutoLearnSpellAction::LearnTrainerSpells(std::ostringstream* out)
         if (!co)
             continue;
 
-        if (co->TrainerType != TRAINER_TYPE_CLASS &&
-            co->TrainerType != TRAINER_TYPE_TRADESKILLS &&
-            co->TrainerType != TRAINER_TYPE_PETS)
+        if (co->trainer_type != TRAINER_TYPE_CLASS &&
+            co->trainer_type != TRAINER_TYPE_TRADESKILLS &&
+            co->trainer_type != TRAINER_TYPE_PETS)
             continue;
 
-        if (co->TrainerType == TRAINER_TYPE_PETS && bot->GetClass() == CLASS_HUNTER)
+        if (co->trainer_type == TRAINER_TYPE_PETS && bot->GetClass() == CLASS_HUNTER)
             continue;
 
-        if ((co->TrainerType == TRAINER_TYPE_CLASS || co->TrainerType == TRAINER_TYPE_PETS) && co->TrainerClass != bot->GetClass())
+        if ((co->trainer_type == TRAINER_TYPE_CLASS || co->trainer_type == TRAINER_TYPE_PETS) && co->trainer_class != bot->GetClass())
             continue;
 
-        uint32 trainerId = co->TrainerTemplateId;
+        uint32 trainerId = co->trainer_id;
         if (!trainerId)
-            trainerId = co->Entry;
+            trainerId = co->entry;
 
         TrainerSpellData const* trainer_spells = sObjectMgr.GetNpcTrainerTemplateSpells(trainerId);
         if (!trainer_spells)
@@ -99,12 +99,12 @@ void AutoLearnSpellAction::LearnTrainerSpells(std::ostringstream* out)
 
             uint32 reqLevel = 0;
 
-            reqLevel = tSpell->isProvidedReqLevel ? tSpell->reqLevel : std::max(reqLevel, tSpell->reqLevel);
-            TrainerSpellState state = bot->GetTrainerSpellState(tSpell, reqLevel);
+            reqLevel = tSpell->reqLevel;
+            TrainerSpellState state = bot->GetTrainerSpellState(tSpell);
             if (state != TRAINER_SPELL_GREEN)
                 continue;
 
-            if (co->TrainerType == TRAINER_TYPE_TRADESKILLS)
+            if (co->trainer_type == TRAINER_TYPE_TRADESKILLS)
             {
                 SpellEntry const* spell = sServerFacade.LookupSpellInfo(tSpell->spell);
                 if (spell)
@@ -215,7 +215,7 @@ void AutoLearnSpellAction::LearnDroppedSpells(std::ostringstream* out)
             {
                 if (!bot->HasSpell(spellId))
                 {
-                    bot->learnSpell(spellId, false);
+                    bot->LearnSpell(spellId, false);
                 }
             }
         }
@@ -284,7 +284,7 @@ bool AutoLearnSpellAction::LearnSpell(uint32 spellId, std::ostringstream* out)
         if (!proto)
             return false;
         if (!learned && !bot->HasSpell(spellId)) {
-            bot->learnSpell(spellId, false);
+            bot->LearnSpell(spellId, false);
             *out << formatSpell(proto) << ", ";
 
             learned = bot->HasSpell(spellId);
@@ -311,7 +311,7 @@ bool AutoLearnSpellAction::LearnSpellFromSpell(uint32 spellId, std::ostringstrea
             {
                 if (!bot->HasSpell(learnedSpell))
                 {
-                    bot->learnSpell(learnedSpell, false);
+                    bot->LearnSpell(learnedSpell, false);
                     SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(learnedSpell);
                     *out << formatSpell(spellInfo) << ", ";
                     learned = true;
