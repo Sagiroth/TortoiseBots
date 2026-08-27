@@ -2748,8 +2748,6 @@ void PlayerbotFactory::UpdateTradeSkills()
 
 void PlayerbotFactory::InitSkills()
 {
-    bot->UpdateSkillsForLevel();
-
 // Riding skills requirements are different
     if (bot->GetLevel() >= 60)
         bot->SetSkill(SKILL_RIDING, 150, 150);
