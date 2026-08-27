@@ -483,7 +483,7 @@ bool DeflectSpellTrigger::IsActive()
     if (!target->IsNonMeleeSpellCasted(true))
         return false;
 
-    if (!target->HasTarget(bot->getObjectGuid()))
+    if (target->GetTargetGuid() != bot->getObjectGuid())
         return false;
 
     uint32 spellid = context->GetValue<uint32>("spell id", spell)->Get();
@@ -797,7 +797,7 @@ bool ReturnToStayPositionTrigger::IsActive()
     PositionEntry stayPosition = AI_VALUE(PositionMap&, "position")["stay"];
     if (stayPosition.isSet())
     {
-        const float distance = bot->getDistance(stayPosition.x, stayPosition.y, stayPosition.z);
+        const float distance = bot->GetDistance(stayPosition.x, stayPosition.y, stayPosition.z);
         return distance > ai->GetRange("follow");
     }
 
@@ -809,7 +809,7 @@ bool ReturnToPullPositionTrigger::IsActive()
     PositionEntry pullPosition = AI_VALUE(PositionMap&, "position")["pull"];
     if (pullPosition.isSet())
     {
-        const float distance = bot->getDistance(pullPosition.x, pullPosition.y, pullPosition.z);
+        const float distance = bot->GetDistance(pullPosition.x, pullPosition.y, pullPosition.z);
         return distance > ai->GetRange("follow");
     }
 
@@ -856,7 +856,7 @@ bool TargetOfAttacker::IsActive()
 bool TargetOfAttackerInRange::IsActive()
 {
     const Unit* closestAttacker = AI_VALUE(Unit*, "closest attacker targeting me");
-    return closestAttacker && bot->getDistance(closestAttacker, true, DIST_CALC_COMBAT_REACH) <= (distance - sPlayerbotAIConfig.contactDistance);
+    return closestAttacker && bot->GetCombatDistance(closestAttacker) <= (distance - sPlayerbotAIConfig.contactDistance);
 }
 
 bool TargetOfCastedAuraTypeTrigger::IsActive()
