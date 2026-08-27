@@ -314,7 +314,7 @@ bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string comm
                                     target = member;
                                 }
 
-                                if (member->getDistance(bot) <= sPlayerbotAIConfig.reactDistance)
+                                if (member->GetDistance(bot) <= sPlayerbotAIConfig.reactDistance)
                                 {
                                     membersAroundSummoner++;
                                 }
@@ -344,7 +344,7 @@ bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string comm
                                             target = member;
                                         }
 
-                                        if (ai->IsSafe(member) && member->getDistance(bot) <= sPlayerbotAIConfig.reactDistance)
+                                        if (ai->IsSafe(member) && member->GetDistance(bot) <= sPlayerbotAIConfig.reactDistance)
                                         {
                                             membersAroundSummoner++;
                                         }
@@ -369,7 +369,7 @@ bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string comm
                             data << bot->getObjectGuid();
                             data << uint32(bot->getZoneId());
                             data << uint32(MAX_PLAYER_SUMMON_DELAY * IN_MILLISECONDS);
-                            target->GetSession()->SendPacket(data);
+                            target->GetSession()->SendPacket(&data);
                         }
                         else
                         {
