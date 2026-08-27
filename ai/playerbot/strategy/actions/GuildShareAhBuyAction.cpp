@@ -100,7 +100,7 @@ uint32 GuildShareAhBuyAction::CountMailboxItems(uint32 itemId)
     if (!master)
         return 0;
 
-    for (PlayerMails::iterator itr = master->GetMailBegin(); itr != master->GetMailEnd(); ++itr
+    for (PlayerMails::iterator itr = master->GetMailBegin(); itr != master->GetMailEnd(); ++itr)
     {
         Mail* mail = *itr;
         if (!mail || mail->state == MAIL_STATE_DELETED || curTime < mail->deliver_time)
