@@ -78,14 +78,11 @@ bool TryRandomTeleport(::Player* bot, BotRecord const& record)
         return false;
     }
     auto& travelMgr = MaNGOS::Singleton<ai::TravelMgr>::Instance();
-    // Fail closed when persisted area-level cache is empty/missing. Do not call lazy
-    // GetAreaLevel()/IsLocationLevelValid() which scan creature data and mutate areaLevels
-    // on the world thread. Use only validated cached levels via const helper.
-    if (!travelMgr.HasCachedAreaLevels())
-    {
-        sLog.outString("TortoiseBots: random teleport no cached area levels for bot %s level %u (ai_playerbot_zone_level empty/missing), retaining position", bot->GetName(), bot->GetLevel());
-        return false;
-    }
+    // Use bounded validated levels: persisted ai_playerbot_zone_level first (with
+    // parent-zone cached fallback), then immutable DBC AreaTable AreaLevel / parent
+    // AreaLevel. No creature scan, no DB write, no lazy GetAreaLevel mutation.
+    // An empty stock-install table therefore still allows DBC-validated scatter
+    // while an entirely unvalidated point/area still fails closed.
     ai::PlayerTravelInfo info(bot);
     // Fetch without level filtering (onlyPossible=false) and without distance bias (maxDistance=0)
     // to avoid lazy IsPossible scans and to scatter across all level-appropriate zones, not just near logout pos.
@@ -109,7 +106,7 @@ bool TryRandomTeleport(::Player* bot, BotRecord const& record)
     //   botLevel-5 <= creatureLevel <= botLevel (see RandomPlayerbotMgr::PrepareTeleportCache query delta in [0,5])
     //   and local Grind lower bound approx botLevel-12. Symmetric ±5 is the minimal conservative window
     //   that prevents both 60->Elwynn and 10->Winterspring mismatches without new config; enforced on
-    //   validated cached area levels only (TryGetCachedAreaLevel), never via lazy GetAreaLevel/IsLocationLevelValid.
+    //   bounded validated levels (TryGetValidatedAreaLevel: cached + DBC AreaLevel/parent), never via lazy GetAreaLevel/IsLocationLevelValid.
     int32 botLevel = (int32)bot->GetLevel();
     int32 lower = botLevel - 5;
     if (lower < 1) lower = 1;
@@ -128,13 +125,15 @@ bool TryRandomTeleport(::Player* bot, BotRecord const& record)
             ai::WorldPosition* point = points[urand(0, static_cast<uint32>(points.size() - 1))];
             if (!point)
                 continue;
+            // Reject unresolved area flag rather than silently using linkedZone fallback
+            // from GetByAreaFlagAndMap. Allow safe parent-zone cached lookup via helper.
+            if (point->getAreaFlag() == 0)
+                continue;
             AreaTableEntry const* area = point->GetArea();
             if (!area)
                 continue;
             int32 areaLevel;
-            if (!travelMgr.TryGetCachedAreaLevel(area->ID, areaLevel))
-                continue;
-            if (areaLevel <= 0)
+            if (!travelMgr.TryGetValidatedAreaLevel(area->ID, areaLevel))
                 continue;
             if (areaLevel < lower || areaLevel > upper)
                 continue;

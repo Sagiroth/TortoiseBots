@@ -1122,6 +1122,43 @@ int32 TravelMgr::GetAreaLevel(uint32 area_id)
     return areaLevels[area_id];
 }
 
+bool TravelMgr::TryGetValidatedAreaLevel(uint32 areaId, int32& outLevel) const
+{
+    auto it = areaLevels.find(areaId);
+    if (it != areaLevels.end() && it->second > 0)
+    {
+        outLevel = it->second;
+        return true;
+    }
+    AreaTableEntry const* area = GetAreaEntryByAreaID(areaId);
+    if (!area)
+        return false;
+    if (area->zone)
+    {
+        auto pit = areaLevels.find(area->zone);
+        if (pit != areaLevels.end() && pit->second > 0)
+        {
+            outLevel = pit->second;
+            return true;
+        }
+    }
+    if (area->AreaLevel > 0)
+    {
+        outLevel = area->AreaLevel;
+        return true;
+    }
+    if (area->zone)
+    {
+        if (AreaTableEntry const* parent = GetAreaEntryByAreaID(area->zone))
+            if (parent->AreaLevel > 0)
+            {
+                outLevel = parent->AreaLevel;
+                return true;
+            }
+    }
+    return false;
+}
+
 void TravelMgr::LoadAreaLevels()
 {
     if (!areaLevels.empty())
@@ -1131,6 +1168,10 @@ void TravelMgr::LoadAreaLevels()
     // during world startup: a missing migration must be visible, and an empty
     // cache should fall back to the in-memory area-level calculation instead of
     // issuing one INSERT per DBC area on the world thread.
+    // Login scatter uses TryGetValidatedAreaLevel which adds a bounded DBC
+    // AreaTable AreaLevel / parent fallback, so an empty ai_playerbot_zone_level
+    // on a stock install does not make EnableRandomTeleports permanently no-op
+    // while still avoiding creature scans and DB writes.
     if (!WorldDatabase.PQuery("SHOW TABLES LIKE 'ai_playerbot_zone_level'"))
     {
         sLog.outErrorDb("TortoiseBots: ai_playerbot_zone_level is missing; using uncached area levels");

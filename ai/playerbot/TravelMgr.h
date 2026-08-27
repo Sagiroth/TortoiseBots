@@ -461,6 +461,10 @@ namespace ai
 			outLevel = it->second;
 			return true;
 		}
+		// Bounded validated level for login scatter: cached table first (with parent-zone
+		// cached fallback), then immutable DBC AreaTable AreaLevel / parent AreaLevel.
+		// No creature scan, no DB write, no lazy GetAreaLevel mutation.
+		bool TryGetValidatedAreaLevel(uint32 areaId, int32& outLevel) const;
 	private:
 		void Clear();
 		void SetNullTravelTarget(Player* player) const;

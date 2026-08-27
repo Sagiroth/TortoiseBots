@@ -153,7 +153,9 @@ public:
     //
     bool randomBotLoginAtStartup;
     // Scatter random bots on headless login to a validated level-appropriate
-    // GenericRpg destination. Default off; fail-closed when travel cache empty.
+    // GenericRpg destination. Default off; fail-closed when no validated level
+    // or no destination. Persisted ai_playerbot_zone_level is tried first
+    // (with parent fallback) then immutable DBC AreaLevel/parent.
     bool enableRandomTeleports = false;
     bool logInGroupOnly, logValuesPerTick;
     bool fleeingEnabled;
