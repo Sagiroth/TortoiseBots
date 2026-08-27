@@ -62,31 +62,47 @@ std::string NormalizeInstanceToken(std::string const& raw)
 
 DungeonLevelRange const* FindDungeonLevelRange(std::string const& raw)
 {
-    // Source: Turtle WoW LFGDungeons.dbc, minLevel/maxLevel fields. The
-    // addon sends free-form names, so aliases are normalized to this table.
+    // Source: Soromeister/LFT v0.0.3.3 LFT.allDungeons (authoritative queue availability).
+    // Exact codes/names/minLevel/maxLevel from the addon; unknown/corrupt ranges fail closed.
+    // Keys are NormalizeInstanceToken(raw) = alnum lowercased, so addon codes and normalized
+    // display names both resolve. No DBC fallback, no invented Turtle-only ranges beyond this list.
     static std::unordered_map<std::string, DungeonLevelRange> const ranges = {
-        {"ragefirechasm", {13, 22}}, {"rfc", {13, 22}}, {"ragefire", {13, 22}},
-        {"wailingcaverns", {15, 28}}, {"wc", {15, 28}}, {"wailing", {15, 28}},
-        {"deadmines", {15, 28}}, {"dm", {15, 28}},
-        {"shadowfangkeep", {18, 32}}, {"sfk", {18, 32}}, {"shadowfang", {18, 32}},
-        {"blackfathomdeeps", {20, 34}}, {"bfd", {20, 34}},
-        {"stockades", {22, 34}}, {"stockade", {22, 34}}, {"stocks", {22, 34}},
-        {"gnomeregan", {24, 40}}, {"gnomer", {24, 40}},
-        {"razorfenkraul", {24, 40}}, {"rfk", {24, 40}},
-        {"scarletmonastery", {29, 48}}, {"sm", {29, 48}}, {"scarlet", {29, 48}},
-        {"razorfendowns", {33, 47}}, {"rfd", {33, 47}},
-        {"uldaman", {38, 53}}, {"uld", {38, 53}},
-        {"zulfarak", {43, 54}}, {"zulfarrak", {43, 54}}, {"zf", {43, 54}},
-        {"maraudon", {40, 58}}, {"mara", {40, 58}},
-        {"sunkentemple", {44, 60}}, {"sunken", {44, 60}}, {"st", {44, 60}}, {"temple", {44, 60}},
-        {"blackrockdepths", {48, 60}}, {"brd", {48, 60}},
-        {"lowerblackrockspire", {52, 60}}, {"lowerblackrock", {52, 60}}, {"lbrs", {52, 60}},
-        {"diremauleast", {54, 60}}, {"diremaule", {54, 60}}, {"dme", {54, 60}},
-        {"diremaulwest", {56, 60}}, {"dmw", {56, 60}},
-        {"diremaulnorth", {56, 60}}, {"dmn", {56, 60}},
-        {"stratholme", {56, 60}}, {"strat", {56, 60}},
-        {"scholomance", {56, 60}}, {"scholo", {56, 60}},
-        {"upperblackrockspire", {56, 60}}, {"upperblackrock", {56, 60}}, {"ubrs", {56, 60}}
+        {"ragefirechasm", {13, 18}}, {"rfc", {13, 18}},
+        {"wailingcaverns", {17, 24}}, {"wc", {17, 24}},
+        {"thedeadmines", {17, 24}}, {"deadmines", {17, 24}}, {"dm", {17, 24}},
+        {"shadowfangkeep", {22, 30}}, {"sfk", {22, 30}},
+        {"thestockade", {22, 30}}, {"stockade", {22, 30}}, {"stocks", {22, 30}},
+        {"blackfathomdeeps", {23, 32}}, {"bfd", {23, 32}},
+        {"scarletmonasterygraveyard", {27, 36}}, {"smgy", {27, 36}},
+        {"scarletmonasterylibrary", {28, 39}}, {"smlib", {28, 39}},
+        {"gnomeregan", {29, 38}}, {"gnomer", {29, 38}},
+        {"razorfenkraul", {29, 38}}, {"rfk", {29, 38}},
+        {"thecrescentgrove", {32, 38}}, {"crescentgrove", {32, 38}}, {"tcg", {32, 38}},
+        {"scarletmonasteryarmory", {32, 41}}, {"smarmory", {32, 41}},
+        {"scarletmonasterycathedral", {35, 45}}, {"smcath", {35, 45}},
+        {"razorfendowns", {36, 46}}, {"rfd", {36, 46}},
+        {"uldaman", {40, 51}}, {"ulda", {40, 51}},
+        {"gilneascity", {42, 50}}, {"gilneas", {42, 50}},
+        {"zulfarrak", {44, 54}}, {"zulfarak", {44, 54}}, {"zf", {44, 54}},
+        {"maraudonorange", {47, 55}}, {"maraorange", {47, 55}},
+        {"maraudonpurple", {45, 55}}, {"marapurple", {45, 55}},
+        {"maraudonprincess", {47, 55}}, {"maraprincess", {47, 55}},
+        {"templeofatalhakkar", {50, 60}}, {"st", {50, 60}},
+        {"hateforgequarry", {50, 60}}, {"hfq", {50, 60}},
+        {"blackrockdepths", {52, 60}}, {"brd", {52, 60}},
+        {"blackrockdepthsarena", {52, 60}}, {"brdarena", {52, 60}},
+        {"blackrockdepthsemperor", {54, 60}}, {"brdemp", {54, 60}},
+        {"lowerblackrockspire", {55, 60}}, {"lbrs", {55, 60}},
+        {"diremauleast", {55, 60}}, {"dme", {55, 60}},
+        {"diremaulnorth", {57, 60}}, {"dmn", {57, 60}},
+        {"diremaultribute", {57, 60}}, {"dmt", {57, 60}},
+        {"diremaulwest", {57, 60}}, {"dmw", {57, 60}},
+        {"scholomance", {58, 60}}, {"scholo", {58, 60}},
+        {"stratholmeundeaddistrict", {58, 60}}, {"stratud", {58, 60}},
+        {"stratholmescarletbastion", {58, 60}}, {"stratlive", {58, 60}},
+        {"karazhancrypt", {58, 60}}, {"kc", {58, 60}},
+        {"cavernsoftimeblackmorass", {60, 60}}, {"cotbm", {60, 60}},
+        {"stormwindvault", {60, 60}}, {"swv", {60, 60}}
     };
 
     std::string token = NormalizeInstanceToken(raw);
@@ -244,7 +260,7 @@ void LftBotFillService::AcceptPendingOffers()
         // Extra safety: ensure it's still pending fill-owned (not a manually queued bot)
         if (m_pending.find(guidLow) == m_pending.end())
             continue;
-        // World-thread only generic core API (c4148ec). Reuses native offer accept.
+        // World-thread only generic core API (a2bd178, PR #413 final). Reuses native offer accept.
         bool ok = sLFTMgr.AcceptOffer(guid);
         if (ok)
             sLog.outString("TortoiseBots: LFT fill bot %s (%s) accepted offer (pending %u)", bot->GetName(), guid.GetString().c_str(), (uint32)m_pending.size());

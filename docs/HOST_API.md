@@ -280,10 +280,11 @@ called only for module-owned Headless participants; humans still accept
 through the native addon path.
 
 Candidates are filtered in memory by team, hardcore state, group/live state,
-role, and the authoritative Turtle `data/dbc/LFGDungeons.dbc` dungeon
-`minLevel`/`maxLevel` range. Instance names are normalized through the small
-module alias table; unknown, corrupt, and unsupported custom ranges fail
-closed and are logged once. There is no average-human +/-5 approximation,
+role, and the authoritative `Soromeister/LFT` v0.0.3.3 `LFT.allDungeons`
+dungeon `code`/`minLevel`/`maxLevel` range (exact code and normalized display-name
+aliases; see `runtime/LftBotFillService.cpp:FindDungeonLevelRange`).
+Instance names are normalized through the small module alias table; unknown,
+corrupt, and absent (Turtle-only/custom) ranges fail closed and are logged once. There is no average-human +/-5 approximation,
 role hook, private-map access, addon-string injection, or DB query per tick.
 Forced roles are cleared on pending exit paths, and reconciliation runs even
 when the fill budget is zero.
