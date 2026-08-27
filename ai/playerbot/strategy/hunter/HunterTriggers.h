@@ -295,11 +295,11 @@ private:
                 return false;
 
             float distanceTo = AI_VALUE2(float, "distance", GetTargetName());
-            if (target->GetVictim() != bot->getObjectGuid() && sServerFacade.IsDistanceGreaterOrEqualThan(distanceTo, 8.0f))
+            if (target->GetVictim() != bot && sServerFacade.IsDistanceGreaterOrEqualThan(distanceTo, 8.0f))
                 return true;
 
             // victim
-            if (target->GetVictim() == bot->getObjectGuid())
+            if (target->GetVictim() == bot)
             {
                 if (sServerFacade.IsDistanceGreaterOrEqualThan(distanceTo, 15.0f))
                     return true;
