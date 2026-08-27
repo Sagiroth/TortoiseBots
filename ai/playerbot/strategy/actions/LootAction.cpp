@@ -516,7 +516,7 @@ bool StoreLootAction::IsLootAllowed(ItemQualifier& itemQualifier, PlayerbotAI *a
 
     for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
     {
-        uint32 entry = ai->GetBot()->GetQuestSlotQuestId(slot);
+        uint32 entry = GetQuestSlotIdCompat(ai->GetBot(), slot);
         Quest const* quest = sObjectMgr.GetQuestTemplate(entry);
         if (!quest)
             continue;

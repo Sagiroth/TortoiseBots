@@ -204,7 +204,7 @@ ItemUsage ItemUsageValue::Calculate()
             && (proto->ItemLevel == 1 || proto->ItemLevel >= bot->GetLevel());
 
         bool isAppropriateConsumable = isAppropriateConsumableLevel
-            && (IsHpFoodOrDrink(proto) || IsHealingPotion(proto) || (IsBandage(proto) && !botHasHealingSpells) || (bot->HasMana() && (IsManaFoodOrDrink(proto) || IsManaPotion(proto))));
+            && (IsHpFoodOrDrink(proto) || IsHealingPotion(proto) || (IsBandage(proto) && !botHasHealingSpells) || (bot->GetPowerType() == POWER_MANA && (IsManaFoodOrDrink(proto) || IsManaPotion(proto))));
 
         if (isAppropriateConsumable && bot->CanUseItem(proto) == EQUIP_ERR_OK)
         {
@@ -815,7 +815,7 @@ bool ItemUsageValue::IsNeededForQuest(Player* player, uint32 itemId, bool ignore
 
     for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
     {
-        uint32 entry = player->GetQuestSlotQuestId(slot);
+        uint32 entry = GetQuestSlotIdCompat(player, slot);
         Quest const* quest = sObjectMgr.GetQuestTemplate(entry);
         if (!quest)
             continue;

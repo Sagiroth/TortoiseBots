@@ -977,7 +977,7 @@ uint32 GuildShareQuestRewardItemValue::Calculate()
 
     for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
     {
-        uint32 questId = bot->GetQuestSlotQuestId(slot);
+        uint32 questId = GetQuestSlotIdCompat(bot, slot);
         if (!questId)
             continue;
 
@@ -1287,10 +1287,10 @@ bool CanBuyTabard::Calculate()
 	AreaTableEntry const* areaEntry = GetAreaEntryByAreaID(sServerFacade.GetAreaId(bot));
 	if (areaEntry)
 	{
-		if (areaEntry->zone)
-			areaEntry = GetAreaEntryByAreaID(areaEntry->zone);
+		if (areaEntry->ZoneId)
+			areaEntry = GetAreaEntryByAreaID(areaEntry->ZoneId);
 
-		if (areaEntry && areaEntry->flags & AREA_FLAG_CAPITAL)
+		if (areaEntry && areaEntry->Flags & AREA_FLAG_CAPITAL)
 			inCity = true;
 	}
 

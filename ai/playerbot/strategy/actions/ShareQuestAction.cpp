@@ -24,7 +24,7 @@ bool ShareQuestAction::Execute(Event& event)
     // remove all quest entries for 'entry' from quest log
     for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
     {
-        uint32 logQuest = bot->GetQuestSlotQuestId(slot);
+        uint32 logQuest = GetQuestSlotIdCompat(bot, slot);
         if (logQuest == entry)
         {
             WorldPacket p;
@@ -45,7 +45,7 @@ bool AutoShareQuestAction::Execute(Event& event)
 
     for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
     {
-        uint32 logQuest = bot->GetQuestSlotQuestId(slot);
+        uint32 logQuest = GetQuestSlotIdCompat(bot, slot);
         Quest const* quest = sObjectMgr.GetQuestTemplate(logQuest);
 
         if (!quest)

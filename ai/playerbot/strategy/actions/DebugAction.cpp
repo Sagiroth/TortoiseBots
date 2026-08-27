@@ -1188,7 +1188,7 @@ bool DebugAction::HandleArea(Event& event, Player* requester, const std::string&
     AreaTableEntry const* area = point.GetArea();
     std::ostringstream out;
     out << point.GetAreaName(true, false);
-    out << "," << area->team << " (" << (area->team != FACTION_GROUP_MASK_ALLIANCE ? (area->team != FACTION_GROUP_MASK_HORDE ? "neutral" : "horde") : "alliance") << ")";
+    out << "," << area->Team << " (" << (area->Team != FACTION_GROUP_MASK_ALLIANCE ? (area->Team != FACTION_GROUP_MASK_HORDE ? "neutral" : "horde") : "alliance") << ")";
     ai->TellPlayerNoFacing(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false);
     return true;
 }
@@ -2021,7 +2021,7 @@ bool DebugAction::HandleQuest(Event& event, Player* requester, const std::string
         int count = 0;
         for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
         {
-            uint32 questId = bot->GetQuestSlotQuestId(slot);
+            uint32 questId = GetQuestSlotIdCompat(bot, slot);
             if (!questId)
                 continue;
 
@@ -2107,7 +2107,7 @@ bool DebugAction::HandleQuest(Event& event, Player* requester, const std::string
 
         for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
         {
-            uint32 logQuestId = bot->GetQuestSlotQuestId(slot);
+            uint32 logQuestId = GetQuestSlotIdCompat(bot, slot);
             if (!logQuestId)
                 continue;
 
@@ -2225,12 +2225,12 @@ bool DebugAction::HandleQuest(Event& event, Player* requester, const std::string
 
         for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
         {
-            uint32 logQuestId = bot->GetQuestSlotQuestId(slot);
+            uint32 logQuestId = GetQuestSlotIdCompat(bot, slot);
             if (!logQuestId || logQuestId != questId)
                 continue;
 
-            bot->SetQuestSlot(slot, 0);
-            bot->SetQuestSlotState(slot, QUEST_STATE_NONE);
+            SetQuestSlotCompat(bot, slot, 0);
+            SetQuestSlotStateCompat(bot, slot, QUEST_STATE_NONE);
 
             std::ostringstream out;
             out << "Quest " << questId << " dropped.";
@@ -2265,11 +2265,11 @@ bool DebugAction::HandleQuest(Event& event, Player* requester, const std::string
         // Find empty slot
         for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
         {
-            if (bot->GetQuestSlotQuestId(slot))
+            if (GetQuestSlotIdCompat(bot, slot))
                 continue;
 
-            bot->SetQuestSlot(slot, questId);
-            bot->SetQuestSlotState(slot, QUEST_STATE_NONE);
+            SetQuestSlotCompat(bot, slot, questId);
+            SetQuestSlotStateCompat(bot, slot, QUEST_STATE_NONE);
 
             std::ostringstream out;
             out << "Quest " << questId << " (" << pQuest->GetTitle() << ") added.";
@@ -2346,7 +2346,7 @@ bool DebugAction::HandleQuest(Event& event, Player* requester, const std::string
         QuestStatus status = QUEST_STATUS_NONE;
         for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
         {
-            if (bot->GetQuestSlotQuestId(slot) == questId)
+            if (GetQuestSlotIdCompat(bot, slot) == questId)
             {
                 inLog = true;
                 status = bot->GetQuestStatus(questId);
@@ -2424,9 +2424,9 @@ PositionTarget DebugAction::ParseLocation(const std::string& param, Player* bot)
     {
         result.valid = true;
         result.mapId = tele->mapId;
-        result.x = tele->position_x;
-        result.y = tele->position_y;
-        result.z = tele->position_z;
+        result.x = tele->x;
+        result.y = tele->y;
+        result.z = tele->z;
         result.name = param;
         return result;
     }
@@ -2474,9 +2474,9 @@ bool DebugAction::HandlePosition(Event& event, Player* requester, const std::str
         if (area)
         {
             out << " (" << area->Name << ")";
-            if (area->zone)
+            if (area->ZoneId)
             {
-                const AreaTableEntry* zone = GetAreaEntryByAreaID(area->zone);
+                const AreaTableEntry* zone = GetAreaEntryByAreaID(area->ZoneId);
                 if (zone)
                     out << " Zone: " << zone->Name;
             }
@@ -3036,7 +3036,7 @@ bool DebugAction::HandlePosition(Event& event, Player* requester, const std::str
         uint32 area = sServerFacade.GetAreaId(bot);
         if (const AreaTableEntry* areaEntry = GetAreaEntryByAreaID(area))
         {
-            if (AreaTableEntry const* zoneEntry = areaEntry->zone ? GetAreaEntryByAreaID(areaEntry->zone) : areaEntry)
+            if (AreaTableEntry const* zoneEntry = areaEntry->ZoneId ? GetAreaEntryByAreaID(areaEntry->ZoneId) : areaEntry)
                 out << " |" << zoneEntry->Name << "|";
         }
         ai->TellPlayer(requester, out.str());
@@ -3145,11 +3145,11 @@ bool DebugAction::HandleNPC(Event& event, Player* requester, const std::string& 
 
     if (guidP.GetArea() && guidP.GetAreaLevel())
         out << " level: " << guidP.GetAreaLevel();
-    if (guidP.GetArea()->zone && GetAreaEntryByAreaID(guidP.GetArea()->zone))
+    if (guidP.GetArea()->ZoneId && GetAreaEntryByAreaID(guidP.GetArea()->ZoneId))
     {
-        out << " z:" << GetAreaEntryByAreaID(guidP.GetArea()->zone)->Name;
-        if (sTravelMgr.GetAreaLevel(guidP.GetArea()->zone))
-            out << " level: " << sTravelMgr.GetAreaLevel(guidP.GetArea()->zone);
+        out << " z:" << GetAreaEntryByAreaID(guidP.GetArea()->ZoneId)->Name;
+        if (sTravelMgr.GetAreaLevel(guidP.GetArea()->ZoneId))
+            out << " level: " << sTravelMgr.GetAreaLevel(guidP.GetArea()->ZoneId);
     }
 
     out << "] ";
@@ -3201,10 +3201,10 @@ bool DebugAction::HandleNPC(Event& event, Player* requester, const std::string& 
 
 
     std::ostringstream out2;
-    FactionTemplateEntry const* requestFaction = sFactionTemplateStore.LookupEntry(requester->GetFaction());
+    FactionTemplateEntry const* requestFaction = sFactionTemplateStore.LookupEntry(requester->GetFactionTemplateId());
     FactionTemplateEntry const* objectFaction = nullptr;
-    if(guidP.GetCreatureTemplate() && guidP.GetCreatureTemplate()->Faction)
-        objectFaction = sFactionTemplateStore.LookupEntry(guidP.GetCreatureTemplate()->Faction);
+    if(guidP.GetCreatureTemplate() && guidP.GetCreatureTemplate()->faction)
+        objectFaction = sFactionTemplateStore.LookupEntry(guidP.GetCreatureTemplate()->faction);
     FactionTemplateEntry const* humanFaction = sFactionTemplateStore.LookupEntry(1);
     FactionTemplateEntry const* orcFaction = sFactionTemplateStore.LookupEntry(2);
 
@@ -3225,7 +3225,7 @@ bool DebugAction::HandleNPC(Event& event, Player* requester, const std::string& 
         ReputationRank reactionHum = PlayerbotAI::GetFactionReaction(humanFaction, objectFaction);
         ReputationRank reactionOrc = PlayerbotAI::GetFactionReaction(orcFaction, objectFaction);
 
-        out2 << " faction:" << guidP.GetCreatureTemplate()->Faction << " reaction me: " << rep[reactionRequest] << ",alliance: " << rep[reactionHum] << " ,horde: " << rep[reactionOrc];
+        out2 << " faction:" << guidP.GetCreatureTemplate()->faction << " reaction me: " << rep[reactionRequest] << ",alliance: " << rep[reactionHum] << " ,horde: " << rep[reactionOrc];
     }
 
     ai->TellPlayerNoFacing(requester, out2);
@@ -3280,7 +3280,7 @@ bool DebugAction::HandleGO(Event& event, Player* requester, const std::string& t
 
     std::ostringstream out2;
 
-    FactionTemplateEntry const* requestFaction = sFactionTemplateStore.LookupEntry(requester->GetFaction());
+    FactionTemplateEntry const* requestFaction = sFactionTemplateStore.LookupEntry(requester->GetFactionTemplateId());
     FactionTemplateEntry const* objectFaction = sFactionTemplateStore.LookupEntry(guidP.GetGameObjectInfo()->faction);
     FactionTemplateEntry const* humanFaction = sFactionTemplateStore.LookupEntry(1);
     FactionTemplateEntry const* orcFaction = sFactionTemplateStore.LookupEntry(2);

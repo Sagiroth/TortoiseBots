@@ -30,6 +30,32 @@
 #include <algorithm>
 #include <limits>
 
+// === Small public-field adapters ===
+// The core keeps quest-log slot helpers private. Use the same field layout
+// through the public Object accessors instead of widening the core surface.
+inline uint32 GetQuestSlotIdCompat(Player const* player, uint16 slot)
+{
+    return player && slot < MAX_QUEST_LOG_SIZE
+        ? player->GetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_ID_OFFSET)
+        : 0;
+}
+
+inline void SetQuestSlotCompat(Player* player, uint16 slot, uint32 questId)
+{
+    if (!player || slot >= MAX_QUEST_LOG_SIZE)
+        return;
+
+    player->SetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_ID_OFFSET, questId);
+    player->SetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_COUNT_STATE_OFFSET, 0);
+    player->SetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_TIME_OFFSET, 0);
+}
+
+inline void SetQuestSlotStateCompat(Player* player, uint16 slot, uint8 state)
+{
+    if (player && slot < MAX_QUEST_LOG_SIZE)
+        player->SetByteFlag(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_COUNT_STATE_OFFSET, 3, state);
+}
+
 // === Type renames ===
 // Mature strategy code uses GenericTransport for the core's ordinary
 // Transport type. Keep the alias local to the module; it is not a vehicle API.

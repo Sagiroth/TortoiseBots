@@ -601,7 +601,7 @@ namespace ai
             if (sServerFacade.IsInCombat(bot))
                 return false;
 
-            if (!bot->HasMana())
+            if (bot->GetPowerType() != POWER_MANA)
                 return false;
 
             if (ai->HasCheat(BotCheatMask::item))

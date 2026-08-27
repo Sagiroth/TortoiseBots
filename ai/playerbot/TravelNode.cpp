@@ -78,9 +78,9 @@ void TravelNodePath::calculateCost(bool distanceOnly)
 
                         if (maxLevelCreature[0] < cInfo->level_max && !aFriend && !hFriend)
                             maxLevelCreature[0] = cInfo->level_max;
-                        if (maxLevelCreature[1] < cInfo->MaxLevel && aFriend && !hFriend)
+                        if (maxLevelCreature[1] < cInfo->level_max && aFriend && !hFriend)
                             maxLevelCreature[1] = cInfo->level_max;
-                        if (maxLevelCreature[2] < cInfo->MaxLevel && !aFriend && hFriend)
+                        if (maxLevelCreature[2] < cInfo->level_max && !aFriend && hFriend)
                             maxLevelCreature[2] = cInfo->level_max;
                     }
                 }

@@ -266,7 +266,7 @@ bool QuestObjectiveTravelDestination::IsPossible(const PlayerTravelInfo& info) c
 
         if (!skipKillableCheck && !forceThisQuest)
         {
-            if (cInfo && (int)cInfo->MaxLevel - (int)info.GetLevel() > 4)
+            if (cInfo && (int)cInfo->level_max - (int)info.GetLevel() > 4)
                 return false;
 
             //Do not try to hand-in dungeon/elite quests in instances without a group.
@@ -545,12 +545,12 @@ bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 
     int32 maxLevel = std::max(botLevel * (0.5f + levelMod), botLevel - 5.0f + levelBoost);
 
-    if ((int32)cInfo->MaxLevel > maxLevel) //@lvl5 max = 3, @lvl60 max = 57
+    if ((int32)cInfo->level_max > maxLevel) //@lvl5 max = 3, @lvl60 max = 57
         return false;
 
     int32 minLevel = std::max(botLevel * (0.4f + levelMod), botLevel - 12.0f + levelBoost);
 
-    if ((int32)cInfo->MaxLevel < minLevel) //@lvl5 min = 3, @lvl60 max = 50
+    if ((int32)cInfo->level_max < minLevel) //@lvl5 min = 3, @lvl60 max = 50
         return false;
 
     if (cInfo->MinLootGold == 0)
@@ -591,7 +591,7 @@ bool BossTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 
     CreatureInfo const* cInfo = sObjectMgr.GetCreatureTemplate(GetEntry());
 
-    if ((int32)cInfo->MaxLevel > info.GetLevel() + 3)
+    if ((int32)cInfo->level_max > info.GetLevel() + 3)
         return false;
 
     const MapEntry* mapEntry = ClosetMapEntry(info.getPosition());
@@ -688,7 +688,7 @@ bool GatherTravelDestination::IsPossible(const PlayerTravelInfo& info) const
             return false;
 
         skillId = cInfo->GetRequiredLootSkill();
-        uint32 targetLevel = cInfo->MaxLevel;
+        uint32 targetLevel = cInfo->level_max;
         reqSkillValue = targetLevel < 10 ? 1 : targetLevel < 20 ? (targetLevel - 10) * 10 : targetLevel * 5;
     }
     else
@@ -1057,7 +1057,7 @@ int32 TravelMgr::GetAreaLevel(uint32 area_id)
     {
         AreaTableEntry const* subArea = GetAreaEntryByAreaID(i);
 
-        if (!subArea || subArea->zone != area->Id)
+        if (!subArea || subArea->ZoneId != area->Id)
             continue;
 
         int32 subLevel = GetAreaLevel(subArea->Id);
@@ -1109,10 +1109,10 @@ int32 TravelMgr::GetAreaLevel(uint32 area_id)
     }
 
     //Use parent zone value.
-    if (area->zone)
+    if (area->ZoneId)
     {
         areaLevels[area_id] = 0; //Set a temporary value so it wont be counted.
-        level = GetAreaLevel(area->zone);
+        level = GetAreaLevel(area->ZoneId);
         areaLevels[area_id] = level;
         return areaLevels[area_id];
     }
@@ -1133,9 +1133,9 @@ bool TravelMgr::TryGetValidatedAreaLevel(uint32 areaId, int32& outLevel) const
     AreaTableEntry const* area = GetAreaEntryByAreaID(areaId);
     if (!area)
         return false;
-    if (area->zone)
+    if (area->ZoneId)
     {
-        auto pit = areaLevels.find(area->zone);
+        auto pit = areaLevels.find(area->ZoneId);
         if (pit != areaLevels.end() && pit->second > 0)
         {
             outLevel = pit->second;
@@ -1147,9 +1147,9 @@ bool TravelMgr::TryGetValidatedAreaLevel(uint32 areaId, int32& outLevel) const
         outLevel = area->AreaLevel;
         return true;
     }
-    if (area->zone)
+    if (area->ZoneId)
     {
-        if (AreaTableEntry const* parent = GetAreaEntryByAreaID(area->zone))
+        if (AreaTableEntry const* parent = GetAreaEntryByAreaID(area->ZoneId))
             if (parent->AreaLevel > 0)
             {
                 outLevel = parent->AreaLevel;

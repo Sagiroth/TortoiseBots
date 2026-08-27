@@ -721,7 +721,7 @@ bool ChatReplyAction::HandleToxicLinksReply(Player* bot, ChatChannelSource chatC
     std::vector<uint32> incompleteQuests;
     for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
     {
-        uint32 questId = bot->GetQuestSlotQuestId(slot);
+        uint32 questId = GetQuestSlotIdCompat(bot, slot);
         if (!questId)
             continue;
 

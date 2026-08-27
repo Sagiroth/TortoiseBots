@@ -18,14 +18,14 @@ bool DropQuestAction::Execute(Event& event)
     // remove all quest entries for 'entry' from quest log
     for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
     {
-        uint32 logQuest = bot->GetQuestSlotQuestId(slot);
+        uint32 logQuest = GetQuestSlotIdCompat(bot, slot);
         Quest const* quest = sObjectMgr.GetQuestTemplate(logQuest);
         if (!quest)
             continue;
 
         if (logQuest == entry || link.find(quest->GetTitle()) != std::string::npos || link == "all")
         {
-            bot->SetQuestSlot(slot, 0);
+            SetQuestSlotCompat(bot, slot, 0);
 
             // The core has no TakeQuestSourceItem wrapper. Remove the quest's
             // declared source item through the native inventory API instead.
@@ -109,7 +109,7 @@ void CleanQuestLogAction::DropQuestType(Player* requester, uint8 &numQuest, uint
 
     for (uint8 slot : slots)
     {
-        uint32 questId = bot->GetQuestSlotQuestId(slot);
+        uint32 questId = GetQuestSlotIdCompat(bot, slot);
 
         if (!questId)
             continue;

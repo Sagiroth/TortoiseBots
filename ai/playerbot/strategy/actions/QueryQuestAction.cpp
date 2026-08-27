@@ -18,7 +18,7 @@ bool QueryQuestAction::Execute(Event& event)
     {
         for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
         {
-            uint32 logQuest = bot->GetQuestSlotQuestId(slot);
+            uint32 logQuest = GetQuestSlotIdCompat(bot, slot);
 
             Quest const* quest = sObjectMgr.GetQuestTemplate(logQuest);
             if (!quest)
@@ -37,7 +37,7 @@ bool QueryQuestAction::Execute(Event& event)
 
     for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
     {
-        if (questId != bot->GetQuestSlotQuestId(slot))
+        if (questId != GetQuestSlotIdCompat(bot, slot))
             continue;
 
         std::ostringstream out;

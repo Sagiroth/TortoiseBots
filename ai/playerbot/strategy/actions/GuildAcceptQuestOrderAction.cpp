@@ -39,7 +39,7 @@ bool GuildAcceptQuestOrderAction::Execute(Event& event)
 
         for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
         {
-            uint32 questId = bot->GetQuestSlotQuestId(slot);
+            uint32 questId = GetQuestSlotIdCompat(bot, slot);
             if (!questId)
                 continue;
 
