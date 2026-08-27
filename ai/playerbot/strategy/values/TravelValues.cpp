@@ -100,7 +100,7 @@ EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
         }
 
 
-        if (cInfo->MinLootGold > 0)
+        if (cInfo->gold_min > 0)
         {
             purpose |= (uint32)TravelDestinationPurpose::Grind;
         }
@@ -138,7 +138,7 @@ EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
                 purpose |= (uint32)TravelDestinationPurpose::Boss;
         }
 
-        if (cInfo->SkinningLootId && cInfo->GetRequiredLootSkill() == SKILL_SKINNING)
+        if (cInfo->skinning_loot_id && GetRequiredLootSkillCompat(cInfo) == SKILL_SKINNING)
         {
             purpose |= (uint32)TravelDestinationPurpose::GatherSkinning;
         }
@@ -212,10 +212,10 @@ uint32 EntryTravelPurposeMapValue::SkillIdToGatherEntry(int32 entry)
     {
         CreatureInfo const* cInfo = sCreatureStorage.LookupEntry<CreatureInfo>(entry);
 
-        if (!cInfo->SkinningLootId)
+        if (!cInfo->skinning_loot_id)
             return 0;
 
-        return cInfo->GetRequiredLootSkill();
+        return GetRequiredLootSkillCompat(cInfo);
     }
     else
     {

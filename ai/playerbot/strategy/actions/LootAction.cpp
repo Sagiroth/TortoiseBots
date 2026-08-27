@@ -149,7 +149,7 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
 
     if (creature)
     {
-        SkillType skill = (SkillType)creature->GetCreatureInfo()->GetRequiredLootSkill();
+        SkillType skill = (SkillType)GetRequiredLootSkillCompat(creature->GetCreatureInfo());
         sLog.outDebug("[BOT LOOT] %s: gather/skin path skill=%u reqValue=%u", bot->GetName(), skill, lootObject.reqSkillValue);
         if (!CanOpenLock(skill, lootObject.reqSkillValue))
         {

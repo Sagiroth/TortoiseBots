@@ -3,7 +3,6 @@
 
 #include <iomanip>
 #include <regex>
-#include <filesystem>
 
 #include "ObjectMgr.h"
 #include "PlayerbotAI.h"
@@ -2060,49 +2059,8 @@ void TravelNodeMap::manageNodes(Unit* bot, bool mapFull)
 
 void TravelNodeMap::LoadMaps()
 {
-    sLog.outError("Trying to load all maps and tiles for node generation. Please ignore any maps that could not be loaded.");
-    for (uint32 i = 0; i < sMapStore.GetNumRows(); ++i)
-    {
-        if (!sMapStore.LookupEntry(i))
-            continue;
-
-        uint32 mapId = sMapStore.LookupEntry(i)->MapID;
-        if (mapId == 0 || mapId == 1)
-        {
-            MMAP::MMapFactory::createOrGetMMapManager()->loadAllMapTiles(sWorld.GetDataPath(), mapId);
-        }
-        else
-        {
-            MMAP::MMapFactory::createOrGetMMapManager()->loadMapInstance(sWorld.GetDataPath(), mapId, 0);
-        }
-    }
-
-    for (uint32 i = 0; i < sMapStore.GetNumRows(); ++i)
-    {
-        if (!sMapStore.LookupEntry(i))
-            continue;
-
-        uint32 mapId = sMapStore.LookupEntry(i)->MapID;
-
-        for (const auto& entry : std::filesystem::directory_iterator(sWorld.GetDataPath() + "mmaps"))
-        {
-            if (entry.path().extension() == ".mmtile")
-            {
-                auto filename = entry.path().filename();
-                auto fileNameString = filename.c_str();
-                // trying to avoid string copy
-                uint32 fileMapId = (fileNameString[0] - '0') * 100 + (fileNameString[1] - '0') * 10 + (fileNameString[2] - '0');
-                if (fileMapId != mapId)
-                    continue;
-
-                uint32 x = (fileNameString[3] - '0') * 10 + (fileNameString[4] - '0');
-                uint32 y = (fileNameString[5] - '0') * 10 + (fileNameString[6] - '0');
-
-                if (!MMAP::MMapFactory::createOrGetMMapManager()->IsMMapIsLoaded(mapId, x, y))
-                    MMAP::MMapFactory::createOrGetMMapManager()->loadMap(sWorld.GetDataPath(), mapId, x, y);
-            }
-        }
-    }
+    // Full-map node generation is disabled in the native module. Individual
+    // path requests load only the required navmesh data through WorldPosition.
 }
 
 void TravelNodeMap::generateNpcNodes()

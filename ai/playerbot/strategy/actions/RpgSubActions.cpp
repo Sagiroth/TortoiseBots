@@ -91,7 +91,7 @@ void RpgHelper::resetFacing(GuidPosition guidPosition)
 
     if (data)
     {
-        unit->SetFacingTo(data->position.orientation);
+        unit->SetFacingTo(data->position.o);
     }
 }
 

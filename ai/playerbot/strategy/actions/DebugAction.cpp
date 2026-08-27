@@ -1240,7 +1240,7 @@ bool DebugAction::HandleGY(Event& event, Player* requester, const std::string& t
         if (!sMapStore.LookupEntry(i))
             continue;
 
-        uint32 mapId = sMapStore.LookupEntry(i)->MapID;
+        uint32 mapId = sMapStore.LookupEntry(i)->id;
 
         Map* map = sMapMgr.FindMap(mapId);
 

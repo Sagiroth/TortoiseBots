@@ -56,6 +56,11 @@ inline void SetQuestSlotStateCompat(Player* player, uint16 slot, uint8 state)
         player->SetByteFlag(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_COUNT_STATE_OFFSET, 3, state);
 }
 
+inline uint32 GetRequiredLootSkillCompat(CreatureInfo const* creature)
+{
+    return creature && creature->skinning_loot_id ? SKILL_SKINNING : SKILL_NONE;
+}
+
 // === Type renames ===
 // Mature strategy code uses GenericTransport for the core's ordinary
 // Transport type. Keep the alias local to the module; it is not a vehicle API.

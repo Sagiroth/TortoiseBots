@@ -490,7 +490,7 @@ std::string RpgTravelDestination::GetTitle() const
 
 AreaTableEntry const* ZoneTravelDestination::GetArea() const
 {
-    for (uint32 areaid = 0; areaid <= sAreaStore.GetNumRows(); ++areaid)
+    for (uint32 areaid = 0; areaid < sAreaStore.GetNumRows(); ++areaid)
     {
         AreaTableEntry const* areaEntry = sAreaStore.LookupEntry<AreaEntry>(areaid);
         if (areaEntry && areaEntry->Id == GetEntry())
@@ -519,11 +519,11 @@ bool ExploreTravelDestination::IsActive(Player* bot, const PlayerTravelInfo& inf
 
     AreaTableEntry const* area = GetArea();
 
-    if (area->exploreFlag == 0xffff)
+    if (area->ExploreFlag == 0xffff)
         return false;
-    int offset = area->exploreFlag / 32;
+    int offset = area->ExploreFlag / 32;
 
-    uint32 val = (uint32)(1 << (area->exploreFlag % 32));
+    uint32 val = (uint32)(1 << (area->ExploreFlag % 32));
     uint32 currFields = bot->GetUInt32Value(PLAYER_EXPLORED_ZONES_1 + offset);
 
     return !(currFields & val);
@@ -553,7 +553,7 @@ bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
     if ((int32)cInfo->level_max < minLevel) //@lvl5 min = 3, @lvl60 max = 50
         return false;
 
-    if (cInfo->MinLootGold == 0)
+    if (cInfo->gold_min == 0)
         return false;
 
     if (cInfo->rank > CREATURE_ELITE_NORMAL && !info.GetBoolValue("can fight elite"))
@@ -687,7 +687,7 @@ bool GatherTravelDestination::IsPossible(const PlayerTravelInfo& info) const
         if (!cInfo)
             return false;
 
-        skillId = cInfo->GetRequiredLootSkill();
+        skillId = GetRequiredLootSkillCompat(cInfo);
         uint32 targetLevel = cInfo->level_max;
         reqSkillValue = targetLevel < 10 ? 1 : targetLevel < 20 ? (targetLevel - 10) * 10 : targetLevel * 5;
     }
@@ -1053,7 +1053,7 @@ int32 TravelMgr::GetAreaLevel(uint32 area_id)
     uint32 cnt = 0;
 
     //Get sub-area's
-    for (uint32 i = 0; i <= sAreaStore.GetNumRows(); i++)
+    for (uint32 i = 0; i < sAreaStore.GetNumRows(); i++)
     {
         AreaTableEntry const* subArea = GetAreaEntryByAreaID(i);
 
@@ -1337,7 +1337,7 @@ void TravelMgr::LoadQuestTravelTable()
         if (!area)
             continue;
 
-        if (!area->exploreFlag)
+        if (!area->ExploreFlag)
             continue;
 
         point.FetchArea();
@@ -1412,7 +1412,7 @@ void TravelMgr::LoadQuestTravelTable()
             if (!cInfo)
                 continue;
 
-            WorldPosition point = WorldPosition(cData.position.mapId, cData.position.x, cData.position.y, cData.position.z, cData.position.orientation);
+            WorldPosition point = WorldPosition(cData.position.mapId, cData.position.x, cData.position.y, cData.position.z, cData.position.o);
 
             std::string name = cInfo->name;
             name.erase(remove(name.begin(), name.end(), ','), name.end());
@@ -1884,7 +1884,7 @@ void TravelMgr::LoadQuestTravelTable()
             if (!data)
                 continue;
 
-            WorldPosition point = WorldPosition(gData.position.mapId, gData.position.x, gData.position.y, gData.position.z, gData.position.orientation);
+            WorldPosition point = WorldPosition(gData.position.mapId, gData.position.x, gData.position.y, gData.position.z, gData.position.o);
 
             std::string name = data->name;
             name.erase(remove(name.begin(), name.end(), ','), name.end());
@@ -2014,7 +2014,7 @@ void TravelMgr::GetPopulatedGrids()
         if (!sMapStore.LookupEntry(i))
             continue;
 
-        uint32 mapId = sMapStore.LookupEntry(i)->MapID;
+        uint32 mapId = sMapStore.LookupEntry(i)->id;
 
         GetPopulatedGrids(mapId);
     }
