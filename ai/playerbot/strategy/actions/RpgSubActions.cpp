@@ -167,7 +167,7 @@ bool RpgTaxiAction::Execute(Event& event)
     for (uint32 i = 0; i < sTaxiPathStore.GetNumRows(); ++i)
     {
         TaxiPathEntry const* entry = sTaxiPathStore.LookupEntry(i);
-        if (entry && entry->from == node && (bot->m_taxi.IsTaximaskNodeKnown(entry->to) || bot->IsTaxiCheater()))
+        if (entry && entry->from == node && (bot->GetTaxi().IsTaximaskNodeKnown(entry->to) || bot->IsTaxiCheater()))
         {
             // Only destinations usable by the bot's own faction. Previously
             // the sole check was whether the flight point is KNOWN - but with

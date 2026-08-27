@@ -3900,7 +3900,7 @@ bool DebugAction::HandleTaxi(Event& event, Player* requester, const std::string&
 {
     for (uint32 i = 1; i < sTaxiNodesStore.GetNumRows(); ++i)
     {
-        if (!bot->m_taxi.IsTaximaskNodeKnown(i))
+        if (!bot->GetTaxi().IsTaximaskNodeKnown(i))
             continue;
 
         TaxiNodesEntry const* taxiNode = sTaxiNodesStore.LookupEntry(i);

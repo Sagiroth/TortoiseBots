@@ -116,7 +116,7 @@ bool MovementAction::UseTaxi(PlayerbotAI* ai, uint32 entry, bool needNpc)
             return false;
         }
 
-        if (unit && !bot->m_taxi.IsTaximaskNodeKnown(tEntry->from))
+        if (unit && !bot->GetTaxi().IsTaximaskNodeKnown(tEntry->from))
         {
             bot->GetSession()->SendLearnNewTaxiNode(unit);
 

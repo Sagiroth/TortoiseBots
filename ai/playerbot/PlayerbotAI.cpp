@@ -1355,7 +1355,7 @@ void PlayerbotAI::Reset(bool full)
     if (bot->IsTaxiFlying())
     {
 #ifdef MANGOS
-        bot->m_taxi.ClearTaxiDestinations();
+        bot->GetTaxi().ClearTaxiDestinations();
 #endif
         bot->StopMoving();    }
 

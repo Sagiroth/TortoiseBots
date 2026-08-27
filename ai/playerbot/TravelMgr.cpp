@@ -1091,14 +1091,14 @@ int32 TravelMgr::GetAreaLevel(uint32 area_id)
         if (!cInfo)
             continue;
 
-        FactionTemplateEntry const* factionEntry = sFactionTemplateStore.LookupEntry(cInfo->Faction);
+        FactionTemplateEntry const* factionEntry = sFactionTemplateStore.LookupEntry(cInfo->faction);
         ReputationRank reactionHum = PlayerbotAI::GetFactionReaction(humanFaction, factionEntry);
         ReputationRank reactionOrc = PlayerbotAI::GetFactionReaction(orcFaction, factionEntry);
 
         if (reactionHum > REP_NEUTRAL || reactionOrc > REP_NEUTRAL)
             continue;
 
-        level += cInfo->MaxLevel;
+        level += cInfo->level_max;
         cnt++;
     }
 
@@ -1421,9 +1421,9 @@ void TravelMgr::LoadQuestTravelTable()
             std::ostringstream out;
             out << name << ",";
             point.printWKT(out);
-            out << cInfo->MaxLevel << ",";
+            out << cInfo->level_max << ",";
             out << cInfo->rank << ",";
-            out << cInfo->Faction << ",";
+            out << cInfo->faction << ",";
             out << cInfo->npc_flags << ",";
             out << point.GetAreaName() << ",";
             out << std::fixed;

@@ -313,7 +313,7 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
     }
 
     //Spec was not found or not sufficient
-    if (bot->CalculateTalentsPoints() > 0 || (!specNo && specLink.empty()))
+    if (GetTotalTalentPoints_TB(bot) > 0 || (!specNo && specLink.empty()))
     {
         TalentSpec oldSpec(bot);
         int currentTree = oldSpec.highestTree();
@@ -324,7 +324,7 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
 
         if (paths.size() == 0) //No spec like the old one found. Pick any.
         {
-            if (bot->CalculateTalentsPoints() > 0)
+            if (GetTotalTalentPoints_TB(bot) > 0)
                 *out << "No specs like the current spec found.";
 
             paths = getPremadePaths(bot->GetClass(), "", role);
@@ -409,7 +409,7 @@ TalentSpec* ChangeTalentsAction::GetBestPremadeSpec(Player* bot, int specId)
 
     for (auto& spec : path->talentSpec)
     {
-        if (spec.points >= bot->CalculateTalentsPoints())
+        if (spec.points >= GetTotalTalentPoints_TB(bot))
             return &spec;
     }
     if (path->talentSpec.size())
@@ -430,7 +430,7 @@ bool AutoSetTalentsAction::Execute(Event& event)
         return false;
     }
 
-    if (bot->CalculateTalentsPoints() <= 0)
+    if (GetTotalTalentPoints_TB(bot) <= 0)
     {
         return false;
     }

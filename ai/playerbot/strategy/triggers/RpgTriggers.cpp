@@ -45,14 +45,14 @@ bool RpgTaxiTrigger::IsActive()
     if (!node)
         return false;
 
-    if (!bot->m_taxi.IsTaximaskNodeKnown(node))
+    if (!bot->GetTaxi().IsTaximaskNodeKnown(node))
         return false;
 
     std::vector<uint32> nodes;
     for (uint32 i = 0; i < sTaxiPathStore.GetNumRows(); ++i)
     {
         TaxiPathEntry const* entry = sTaxiPathStore.LookupEntry(i);
-        if (entry && entry->from == node && (bot->m_taxi.IsTaximaskNodeKnown(entry->to) || bot->IsTaxiCheater()))
+        if (entry && entry->from == node && (bot->GetTaxi().IsTaximaskNodeKnown(entry->to) || bot->IsTaxiCheater()))
         {
             return true;
         }
@@ -78,7 +78,7 @@ bool RpgDiscoverTrigger::IsActive()
 
     uint32 node = sObjectMgr.GetNearestTaxiNode(guidP.getX(), guidP.getY(), guidP.getZ(), guidP.GetMapId(), bot->GetTeam());
 
-    if (bot->m_taxi.IsTaximaskNodeKnown(node))
+    if (bot->GetTaxi().IsTaximaskNodeKnown(node))
         return false;
 
     return true;
@@ -271,10 +271,10 @@ bool RpgRepairTrigger::IsActive()
 bool RpgTrainTrigger::IsTrainerOf(CreatureInfo const* cInfo, Player* pPlayer)
 {
 
-    switch (cInfo->TrainerType)
+    switch (cInfo->trainer_type)
     {
     case TRAINER_TYPE_CLASS:
-        if (pPlayer->GetClass() != cInfo->TrainerClass)
+        if (pPlayer->GetClass() != cInfo->trainer_class)
         {
             return false;
         }
@@ -286,10 +286,10 @@ bool RpgTrainTrigger::IsTrainerOf(CreatureInfo const* cInfo, Player* pPlayer)
         }
         break;
     case TRAINER_TYPE_MOUNTS:
-        if (cInfo->TrainerRace && pPlayer->GetRace() != cInfo->TrainerRace)
+        if (cInfo->trainer_race && pPlayer->GetRace() != cInfo->trainer_race)
         {
             // Allowed to train if exalted
-            if (FactionTemplateEntry const* faction_template = sFactionTemplateStore.LookupEntry(cInfo->Faction))
+            if (FactionTemplateEntry const* faction_template = sFactionTemplateStore.LookupEntry(cInfo->faction))
             {
                 if (pPlayer->GetReputationRank(faction_template->faction) == REP_EXALTED)
                     return true;
@@ -298,7 +298,7 @@ bool RpgTrainTrigger::IsTrainerOf(CreatureInfo const* cInfo, Player* pPlayer)
         }
         break;
     case TRAINER_TYPE_TRADESKILLS:
-        if (cInfo->TrainerSpell && !pPlayer->HasSpell(cInfo->TrainerSpell))
+        if (cInfo->trainer_spell && !pPlayer->HasSpell(cInfo->trainer_spell))
         {
             return false;
         }
@@ -327,7 +327,7 @@ bool RpgTrainTrigger::IsActive()
     // check present spell in trainer spell list
     TrainerSpellData const* cSpells = sObjectMgr.GetNpcTrainerSpells(guidP.GetEntry());
 
-    uint32 trainerId = cInfo->TrainerTemplateId;
+    uint32 trainerId = cInfo->trainer_id;
     TrainerSpellData const* tSpells = trainerId ? sObjectMgr.GetNpcTrainerTemplateSpells(trainerId) : nullptr;
 
     if (!cSpells && !tSpells)
@@ -353,8 +353,8 @@ bool RpgTrainTrigger::IsActive()
 
         uint32 reqLevel = 0;
 
-        reqLevel = tSpell->isProvidedReqLevel ? tSpell->reqLevel : std::max(reqLevel, tSpell->reqLevel);
-        TrainerSpellState state = bot->GetTrainerSpellState(tSpell, reqLevel);
+        reqLevel = tSpell->reqLevel;
+        TrainerSpellState state = bot->GetTrainerSpellState(tSpell);
         if (state != TRAINER_SPELL_GREEN)
             continue;
 
@@ -363,37 +363,9 @@ bool RpgTrainTrigger::IsActive()
         if (!pSpellInfo)
             continue;
 
-        if (tSpell->learnedSpell)
-        {
-            bool learned = true;
-            if (bot->HasSpell(tSpell->learnedSpell))
-            {
-                learned = false;
-            }
-            else
-            {
-                for (int j = 0; j < 3; ++j)
-                {
-                    if (pSpellInfo->Effect[j] == SPELL_EFFECT_LEARN_SPELL)
-                    {
-                        learned = false;
-                        uint32 learnedSpell = pSpellInfo->EffectTriggerSpell[j];
-
-                        if (!bot->HasSpell(learnedSpell))
-                        {
-                            learned = true;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (!learned)
-                continue;
-        }
-
         NeedMoneyFor budgetType = NeedMoneyFor::spells;
 
-        switch (cInfo->TrainerType)
+        switch (cInfo->trainer_type)
         {
         case TRAINER_TYPE_CLASS:
             budgetType = NeedMoneyFor::spells;
