@@ -133,8 +133,9 @@ void RandomBotService::ResolvePinnedBots()
         return;
     }
 
-    // One-time, deferred until DB is usable: characters.name -> guid lookup.
-    // No per-tick SELECT.
+    // One-time, deferred until DB is usable: `characters.name` -> guid lookup
+    // using the database's stored collation (separate from the teleport
+    // facade's normalized comparison). No per-tick SELECT.
     for (std::string const& rawName : sPlayerbotAIConfig.pinnedBotNames)
     {
         if (rawName.empty())
@@ -212,7 +213,8 @@ void RandomBotService::RemoveExpiredBots(uint32_t diff)
         if (!record || !record->enteredWorld)
             continue;
 
-        // Pinned bots are exempt from timed logout.
+        // Pinned bots are exempt from timed logout/teleport but still gated by
+        // RandomBotLoginWithPlayer=1 (see MaintainOnlinePool).
         if (IsPinnedGuid(candidate.characterGuid.GetCounter()))
         {
             m_ageMs[i] = 0;

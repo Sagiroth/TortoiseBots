@@ -48,8 +48,11 @@ AiPlayerbot.RandomBotMaxLevel = 60
 AiPlayerbot.RandomBotAccountPrefix = RNDBOT
 
 # Optional pinned RNDBOT names that remain online when possible. Comma-separated
-# character names; resolved once at startup to GUIDs in the discovered RNDBOT
-# pool, prioritized within MaxRandomBots and exempt from timed logout/teleport.
+# character names matched using the database's stored `characters.name` collation
+# (separate from the teleport facade's normalized comparison); resolved once at
+# startup to GUIDs in the discovered RNDBOT pool, prioritized within
+# MaxRandomBots and exempt from timed logout/teleport but still gated by
+# RandomBotLoginWithPlayer=1 (entire pool stays offline until a human is present).
 # Names that do not exist or are not in the RNDBOT pool are logged and ignored.
 # No new table, no PID, no core changes. Default empty (disabled).
 #AiPlayerbot.PinnedBots =

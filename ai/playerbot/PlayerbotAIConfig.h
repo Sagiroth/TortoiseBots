@@ -175,8 +175,10 @@ public:
     int32 gearProgressionSystemItems[MAX_GEAR_PROGRESSION_LEVEL][MAX_CLASSES][4][SLOT_EMPTY];
     std::string commandPrefix, commandSeparator;
     std::string randomBotAccountPrefix;
-    // Character names that stay online and are never teleported away.
-    // Resolved to live bot records by the native random-bot service.
+    // Character names matched using the database's stored `characters.name`
+    // collation; pinned bots stay online and are exempt from timed
+    // logout/teleport but still gated by RandomBotLoginWithPlayer=1.
+    // Resolved once to GUIDs in the discovered RNDBOT pool.
     std::list<std::string> pinnedBotNames;
 
 	bool RandombotsWalkingRPG;

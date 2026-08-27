@@ -238,9 +238,11 @@ bool PlayerbotAIConfig::Initialize()
     minRandomBotReviveTime = config.GetIntDefault("AiPlayerbot.MinRandomBotReviveTime", 60);
     maxRandomBotReviveTime = config.GetIntDefault("AiPlayerbot.MaxRandomReviveTime", 300);
 
-    // Comma separated character names. A pinned bot is kept logged in and is
-    // exempt from the random relocation the manager applies to everyone else,
-    // so its run can be followed from one level to the next.
+    // Comma separated character names matched using the database's stored
+    // `characters.name` collation (not the teleport facade's normalized
+    // comparison). A pinned bot is kept logged in and is exempt from timed
+    // logout/teleport but still gated by RandomBotLoginWithPlayer=1, so its
+    // run can be followed from one level to the next when the pool is active.
     {
         std::string names = config.GetStringDefault("AiPlayerbot.PinnedBots", "");
         std::stringstream ss(names);
