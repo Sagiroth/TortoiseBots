@@ -48,7 +48,7 @@ uint8 ThreatValue::Calculate()
 
     Unit* target = AI_VALUE(Unit*, qualifier);
 
-    if (target && target->IsFriend(bot))
+    if (target && sServerFacade.IsFriendlyTo(target, bot))
         target = target->GetVictim();
 
     return Calculate(target);
@@ -62,7 +62,7 @@ float ThreatValue::GetThreat(Player* player, Unit* target)
     if (dynamic_cast<Player*>(target) && (dynamic_cast<Player*>(target))->IsBeingTeleported())
         return 0;
 
-    if (target->IsFriend(player))
+    if (sServerFacade.IsFriendlyTo(target, player))
         target = target->GetVictim();
 
     if (target->getObjectGuid().IsPlayer())
@@ -78,7 +78,7 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
     if (!target)
         return 0;
 
-    if (target->IsFriend(ai->GetBot()))
+    if (sServerFacade.IsFriendlyTo(target, ai->GetBot()))
         target = target->GetVictim();
 
     if (target->getObjectGuid().IsPlayer())
@@ -112,7 +112,7 @@ uint8 ThreatValue::Calculate(Unit* target)
     if (!target)
         return 0;
 
-    if (target->IsFriend(bot))
+    if (sServerFacade.IsFriendlyTo(target, bot))
         target = target->GetVictim();
 
     if (!target)
