@@ -1235,53 +1235,8 @@ bool DebugAction::HandleMonsterTalk(Event& event, Player* requester, const std::
 
 bool DebugAction::HandleGY(Event& event, Player* requester, const std::string& text)
 {
-    for (uint32 i = 0; i < sMapStore.GetNumRows(); ++i)
-    {
-        if (!sMapStore.LookupEntry(i))
-            continue;
-
-        uint32 mapId = sMapStore.LookupEntry(i)->id;
-
-        Map* map = sMapMgr.FindMap(mapId);
-
-        if (!map)
-            continue;
-
-        // Penqle exposes GraveyardManagerStub on Map.
-        Map::GraveyardManagerStub* gy = &map->GetGraveyardManager();
-
-        if (!gy)
-            continue;
-
-        for (uint32 x = 0; x < TOTAL_NUMBER_OF_CELLS_PER_MAP; x++)
-        {
-            for (uint32 y = 0; y < TOTAL_NUMBER_OF_CELLS_PER_MAP; y++)
-            {
-                CellPair c(x, y);
-
-                WorldPosition pos(mapId, c);
-
-                if (!pos.isValid())
-                {
-                    continue;
-                }
-
-                pos.setZ(pos.GetHeight(bot->GetInstanceId()));
-
-                const uint32 zoneId = sTerrainMgr.getZoneId(mapId, pos.getX(), pos.getY(), pos.getZ());
-                const uint32 areaId = sTerrainMgr.GetAreaId(mapId, pos.getX(), pos.getY(), pos.getZ());
-
-                WorldSafeLocsEntry const* graveyard = nullptr;
-                if (areaId != 0)
-                {
-                    WorldSafeLocsEntry const* ClosestGrave;
-                    ClosestGrave = gy->GetClosestGraveYard(pos.getX(), pos.getY(), pos.getZ(), mapId, ALLIANCE);
-                    ClosestGrave = gy->GetClosestGraveYard(pos.getX(), pos.getY(), pos.getZ(), mapId, HORDE);
-                }
-            }
-        }
-    }
-    return true;
+    ai->TellError(requester, "Graveyard diagnostic is unavailable in the Tortoise core.");
+    return false;
 }
 
 bool DebugAction::HandleGrid(Event& event, Player* requester, const std::string& text)
@@ -1293,7 +1248,7 @@ bool DebugAction::HandleGrid(Event& event, Player* requester, const std::string&
 
     out << "Map: " << botPos.GetMapId() << " " << botPos.GetAreaName() << " Grid: " << botPos.getGridPair().x_coord << "," << botPos.getGridPair().y_coord << " [" << loaded << "] Cell: " << botPos.getCellPair().x_coord << "," << botPos.getCellPair().y_coord;
 
-    bot->Whisper(out.str().c_str(), LANG_UNIVERSAL, event.GetOwner()->getObjectGuid());
+    ai->TellPlayer(requester, out.str());
 
     return true;
 }
@@ -1484,7 +1439,7 @@ bool DebugAction::HandleMotion(Event& event, Player* requester, const std::strin
         else if (cmd == "flee")
             mm->MoveFleeing(motionTarget, 10);
         else if (cmd == "followmain")
-            mm->MoveFollow(motionTarget, 5, 0, true, true);
+            mm->MoveFollow(motionTarget, 5.0f, 0.0f);
         else if (cmd == "follow")
             mm->MoveFollow(motionTarget, 5, 0);
         else if (cmd == "dist")
@@ -1598,7 +1553,7 @@ bool DebugAction::HandlePointOnTrans(Event& event, Player* requester, const std:
     bot->SetTransport(nullptr);
 
     Creature* wpCreature = bot->SummonCreature(2334, pointOnTrans.getX(), pointOnTrans.getY(), pointOnTrans.getZ(), 0, TEMPSPAWN_TIMED_DESPAWN, 10000.0f);
-    transport->AddPassenger(wpCreature, true);
+    transport->AddPassenger(wpCreature);
     wpCreature->NearTeleportTo(pointOnTrans.getX(), pointOnTrans.getY(), pointOnTrans.getZ(), wpCreature->getOrientation());
     ai->AddAura(wpCreature, 246);
     bot->SetTransport(botTrans);
@@ -1647,7 +1602,7 @@ bool DebugAction::HandlePointOnTrans(Event& event, Player* requester, const std:
             bot->SetTransport(nullptr);
 
             Creature* wpCreature = bot->SummonCreature(2334, pos.getX(), pos.getY(), pos.getZ(), 0, TEMPSPAWN_TIMED_DESPAWN, 10000.0f);
-            transport->AddPassenger(wpCreature, true);
+            transport->AddPassenger(wpCreature);
             wpCreature->NearTeleportTo(pos.getX(), pos.getY(), pos.getZ(), wpCreature->getOrientation());
             ai->AddAura(wpCreature, 246);
 
@@ -1661,7 +1616,7 @@ bool DebugAction::HandlePointOnTrans(Event& event, Player* requester, const std:
             if (!(pathfinder->getPathType() & PATHFIND_NORMAL))
                 continue;
 
-            std::vector<WorldPosition> path = pos.fromPointsArray(pathfinder->GetPath());
+            std::vector<WorldPosition> path = pos.fromPointsArray(pathfinder->getPath());
 
             if (path.size() < 2 || path.front().distance(path[1]) > 10.0f)
                 continue;
@@ -1762,7 +1717,7 @@ bool DebugAction::HandleOnTrans(Event& event, Player* requester, const std::stri
     else
     {
         ai->TellPlayer(requester, "Found point on transport, trying to walk there.");
-        transport->AddPassenger(bot, true);
+        transport->AddPassenger(bot);
 
         ai->StopMoving();
 
@@ -1783,7 +1738,7 @@ bool DebugAction::HandleOnTrans(Event& event, Player* requester, const std::stri
         {
             Creature* wpCreature = bot->SummonCreature(2334, p.getX(), p.getY(), p.getZ(), 0, TEMPSPAWN_TIMED_DESPAWN, 10000.0f);
 
-            transport->AddPassenger(wpCreature, true);
+            transport->AddPassenger(wpCreature);
 
             wpCreature->NearTeleportTo(p.getX(), p.getY(), p.getZ(), wpCreature->getOrientation());
 
@@ -1797,7 +1752,7 @@ bool DebugAction::HandleOnTrans(Event& event, Player* requester, const std::stri
     bot->GetMotionMaster()->Clear();
 
     std::vector<G3D::Vector3> pointPath = transPos.toPointsArray(path);
-    bot->GetMotionMaster()->MovePath(pointPath, FORCED_MOVEMENT_RUN, false, false);
+    bot->GetMotionMaster()->MovePoint(0, pointPath.back().x, pointPath.back().y, pointPath.back().z);
 
     return true;
 }
@@ -1836,7 +1791,7 @@ bool DebugAction::HandleOffTrans(Event& event, Player* requester, const std::str
 
     std::vector<G3D::Vector3> pointPath = exitPos.toPointsArray(path);
 
-    bot->GetMotionMaster()->MovePath(pointPath, FORCED_MOVEMENT_RUN, false, false);
+    bot->GetMotionMaster()->MovePoint(0, pointPath.back().x, pointPath.back().y, pointPath.back().z);
 
     return true;
 }
@@ -1969,7 +1924,7 @@ bool DebugAction::HandleLogoutTime(Event& event, Player* requester, const std::s
 
     out << "Logout in: " << hr << ":" << min << ":" << time;
 
-    bot->Whisper(out.str().c_str(), LANG_UNIVERSAL, event.GetOwner()->getObjectGuid());
+    ai->TellPlayer(requester, out.str());
 
     return true;
 }
@@ -1985,7 +1940,7 @@ bool DebugAction::HandleLevel(Event& event, Player* requester, const std::string
 
     out << "Level: " << level << ", xp:" << xp << "/" << nextLevelXp << " :" || flevel;
 
-    bot->Whisper(out.str().c_str(), LANG_UNIVERSAL, event.GetOwner()->getObjectGuid());
+    ai->TellPlayer(requester, out.str());
 
     return true;
 }
@@ -2567,7 +2522,7 @@ bool DebugAction::HandlePosition(Event& event, Player* requester, const std::str
             Player* master = ai->GetMaster();
             if (master)
             {
-                float dist = bot->getDistance(master);
+                float dist = bot->GetDistance(master);
                 std::ostringstream out;
                 out << "Distance to master: " << dist << " yards";
                 ai->TellPlayer(requester, out.str());
@@ -3359,7 +3314,7 @@ bool DebugAction::HandleGO(Event& event, Player* requester, const std::string& t
         if (state == GO_STATE_ACTIVE_ALTERNATIVE)
             out << "GO_STATE_ACTIVE_ALTERNATIVE";
 
-        out << (object->IsInUse() ? ", in use" : ", not in use");
+        out << (object->getLootState() == GO_ACTIVATED ? ", in use" : ", not in use");
 
         LootState lootState = object->getLootState();
 
@@ -3398,7 +3353,7 @@ bool DebugAction::HandleFind(Event& event, Player* requester, const std::string&
     uint32 entry = stoi(link);
 
     Creature* creature = nullptr;
-    MaNGOS::NearestCreatureEntryWithLiveStateInObjectRangeCheck creature_check(*bot, entry, true, false, 1000.0f, true);
+    MaNGOS::NearestCreatureEntryWithLiveStateInObjectRangeCheck creature_check(*bot, entry, true, 1000.0f);
     MaNGOS::CreatureLastSearcher<MaNGOS::NearestCreatureEntryWithLiveStateInObjectRangeCheck> searcher(creature, creature_check);
     Cell::VisitGridObjects(bot, searcher, 1000.0f);
 
@@ -3408,7 +3363,7 @@ bool DebugAction::HandleFind(Event& event, Player* requester, const std::string&
     out << "Found: ";
     out << chat->formatWorldobject(creature);
     out << " at distance ";
-    out << bot->getDistance(creature);
+    out << bot->GetDistance(creature);
 
     ai->TellPlayerNoFacing(requester, out);
 
@@ -3435,7 +3390,7 @@ bool DebugAction::HandleItem(Event& event, Player* requester, const std::string&
 
     uint32 itemId = *items.begin();
 
-    Item* item = bot->GetItemByEntry(itemId);
+    Item* item = FindItemByEntryCompat(bot, itemId);
 
     ItemQualifier qualifier;
     ItemPrototype const* proto;
@@ -4300,7 +4255,7 @@ bool DebugAction::HandleFSpell(Event& event, Player* requester, const std::strin
         data << uint32(0);
         data << uint16(2);
         data << requester->getObjectGuid();
-        bot->SendMessageToSet(data, true);
+        bot->SendMessageToSet(&data, true);
     }
 
     {
@@ -4314,7 +4269,7 @@ bool DebugAction::HandleFSpell(Event& event, Player* requester, const std::strin
         data << uint8(0);
         data << uint16(2);
         data << requester->getObjectGuid();
-        bot->SendMessageToSet(data, true);
+        bot->SendMessageToSet(&data, true);
     }
 
     return true;
@@ -4323,7 +4278,7 @@ bool DebugAction::HandleFSpell(Event& event, Player* requester, const std::strin
 bool DebugAction::HandleSpell(Event& event, Player* requester, const std::string& text)
 {
     uint32 spellEffect = stoi(text.substr(6));
-    requester->GetSession()->SendPlaySpellVisual(bot->getObjectGuid(), spellEffect);
+    bot->SendPlaySpellVisual(spellEffect);
     return true;
 }
 
@@ -4433,12 +4388,12 @@ bool DebugAction::HandleVSpellMap(Event& event, Player* requester, const std::st
     for (auto dat : datMap)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        bot->SendMessageToSet(dat, true);
+        bot->SendMessageToSet(&dat, true);
     }
     for (auto dat : datMap)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        bot->SendMessageToSet(dat, true);
+        bot->SendMessageToSet(&dat, true);
     }
 
     return true;
@@ -4477,12 +4432,12 @@ bool DebugAction::HandleISpellMap(Event& event, Player* requester, const std::st
     for (auto dat : datMap)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        bot->SendMessageToSet(dat, true);
+        bot->SendMessageToSet(&dat, true);
     }
     for (auto dat : datMap)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        bot->SendMessageToSet(dat, true);
+        bot->SendMessageToSet(&dat, true);
     }
 
     return true;
@@ -4700,7 +4655,7 @@ bool DebugAction::HandleMSpellMap(Event& event, Player* requester, const std::st
                 if (!target)
                     target = requester;
 
-                requester->GetSession()->SendPlaySpellVisual(caster->getObjectGuid(), 5036);
+                caster->SendPlaySpellVisual(5036);
                 FakeSpell(effect, realCaster, caster, target->getObjectGuid(), hits, miss, WorldPosition(caster), WorldPosition(target));
 
                 std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -5075,7 +5030,7 @@ bool DebugAction::HandleNodes(Event& event, Player* requester, const std::string
         std::unique_ptr<PathFinder> pathfinder = std::make_unique<PathFinder>(bot);
         pathfinder->calculate(pos.GetVector3(), startNode->getPosition()->GetVector3(), false);
 
-        PointsArray points = pathfinder->GetPath();
+        PointsArray points = pathfinder->getPath();
         bool hasFullPath = false;
         if (!points.empty())
         {
@@ -5275,7 +5230,7 @@ bool DebugAction::HandleTransanal(Event& event, Player* requester, const std::st
 
                             float hx = x, hy = y, hz = z - 50;
 
-                            bool hasHit = map->GetHitPosition(testPos.getX(), testPos.getY(), testPos.getZ(), hx, hy, hz, 0.0f);
+                            bool hasHit = map->GetLosHitPosition(testPos.getX(), testPos.getY(), testPos.getZ(), hx, hy, hz, 0.0f);
 
                             if (!hasHit)
                                 continue;
@@ -5311,7 +5266,6 @@ bool DebugAction::HandleTransanal(Event& event, Player* requester, const std::st
                         0,
                         0,
                         0, // hairColor,
-                        0,
                         0);
                     tempPlayer->AddToWorld();
                     tempPlayer->SetMap(map);
@@ -5345,7 +5299,7 @@ bool DebugAction::HandleTransanal(Event& event, Player* requester, const std::st
                             if (found[end])
                                 continue;
 
-                            std::unique_ptr<PathFinder> pathfinder = std::make_unique<PathFinder>(tempPlayer, true);
+                            std::unique_ptr<PathFinder> pathfinder = std::make_unique<PathFinder>(tempPlayer);
 
                             WorldPosition tStart = start, tEnd = end;
                             tStart.CalculatePassengerOffset(transport);
@@ -5358,10 +5312,10 @@ bool DebugAction::HandleTransanal(Event& event, Player* requester, const std::st
                             if (pathfinder->getPathType() != PATHFIND_NORMAL)
                                 continue;
 
-                            if (pathfinder->GetPath().size() < 3)
+                            if (pathfinder->getPath().size() < 3)
                                 continue;
 
-                            std::vector<WorldPosition> path = start.fromPointsArray(pathfinder->GetPath());
+                            std::vector<WorldPosition> path = start.fromPointsArray(pathfinder->getPath());
 
                             std::set<uint32> inLayer;
 
@@ -5523,7 +5477,7 @@ bool DebugAction::HandleUpdownspace(Event& event, Player* requester, const std::
     VMAP::VMapFactory::createOrGetVMapManager()->getObjectHitPos(bot->GetMapId(), botX, botY, startZ, destX_down, destY_down, destZ_down, vmapDestX_down, vmapDestY_down, vmapDestZ_down, 0);
     bool vmapHitDown = (vmapDestX_down != botX || vmapDestY_down != botY || fabs(vmapDestZ_down - (startZ - 50.0f)) > 0.1f);
 
-    bool combinedHitDown = bot->GetMap()->GetHitPosition(botX, botY, startZ, destX_down, destY_down, destZ_down, 0);
+    bool combinedHitDown = bot->GetMap()->GetLosHitPosition(botX, botY, startZ, destX_down, destY_down, destZ_down, 0);
 
     if (vmapHitDown)
         out << "VMAP DOWN hit at z: " << vmapDestZ_down << "\n";
@@ -5545,7 +5499,7 @@ bool DebugAction::HandleUpdownspace(Event& event, Player* requester, const std::
     VMAP::VMapFactory::createOrGetVMapManager()->getObjectHitPos(bot->GetMapId(), botX, botY, startZ, destX_up, destY_up, destZ_up, vmapDestX_up, vmapDestY_up, vmapDestZ_up, 0);
     bool vmapHitUp = (vmapDestX_up != botX || vmapDestY_up != botY || fabs(vmapDestZ_up - (startZ + 50.0f)) > 0.1f);
 
-    bool combinedHitUp = bot->GetMap()->GetHitPosition(botX, botY, startZ, destX_up, destY_up, destZ_up, 0);
+    bool combinedHitUp = bot->GetMap()->GetLosHitPosition(botX, botY, startZ, destX_up, destY_up, destZ_up, 0);
 
     if (vmapHitUp)
         out << "VMAP UP hit at z: " << vmapDestZ_up << "\n";
@@ -5604,7 +5558,7 @@ bool DebugAction::HandlePatharound(Event& event, Player* requester, const std::s
             continue;
         }
 
-        std::vector<WorldPosition> path = botPos.fromPointsArray(pathfinder.GetPath());
+        std::vector<WorldPosition> path = botPos.fromPointsArray(pathfinder.getPath());
 
         if (path.size() < 2 || path.front().distance(path[1]) > 10.0f)
         {
