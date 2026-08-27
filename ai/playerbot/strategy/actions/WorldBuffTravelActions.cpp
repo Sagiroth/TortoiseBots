@@ -188,7 +188,7 @@ void WorldBuffTravelApplyAction::ApplyBuffToSelfAndRealPlayers(uint32 spellId)
         if (member->GetMapId() != bot->GetMapId())
             continue;
 
-        if (bot->getDistance(member) > 100.0f)
+        if (bot->GetDistance(member) > 100.0f)
             continue;
 
         PlayerbotAI::AddAura(member, spellId);
@@ -297,7 +297,7 @@ bool WorldBuffTravelApplyAction::TrySummonFarAwayMembers(WorldBuffTravelStep ste
         }
 
         bool differentMap = member->GetMapId() != bot->GetMapId();
-        bool farAway = !differentMap && bot->getDistance(member) > PORTAL_REGROUP_DISTANCE;
+        bool farAway = !differentMap && bot->GetDistance(member) > PORTAL_REGROUP_DISTANCE;
 
         if (!needsSummonByStep && !differentMap && !farAway)
             continue;
@@ -766,7 +766,7 @@ bool WorldBuffTravelDMTakePortalAction::Execute(Event& event)
     GameObject* portalGO = FindNearbyPortalGO(ai, bot, gos, keyword);
     if (portalGO)
     {
-        float dist = bot->getDistance(portalGO);
+        float dist = bot->GetDistance(portalGO);
         if (dist > INTERACTION_DISTANCE)
             return MoveTo(portalGO->GetMapId(), portalGO->getPositionX(),
                 portalGO->getPositionY(), portalGO->getPositionZ());
@@ -835,7 +835,7 @@ bool WorldBuffTravelTakePortalAction::Execute(Event& event)
     GameObject* portalGO = FindNearbyPortalGO(ai, bot, gos, keyword);
     if (portalGO)
     {
-        float dist = bot->getDistance(portalGO);
+        float dist = bot->GetDistance(portalGO);
         if (dist > INTERACTION_DISTANCE)
             return MoveTo(portalGO->GetMapId(), portalGO->getPositionX(),
                 portalGO->getPositionY(), portalGO->getPositionZ());

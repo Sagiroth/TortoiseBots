@@ -90,7 +90,7 @@ bool SummonAction::Execute(Event& event)
         return true;
     }
 
-    if(bot->GetMapId() == requester->GetMapId() && !WorldPosition(bot).canPathTo(requester, bot) && bot->getDistance(requester) < sPlayerbotAIConfig.sightDistance) //We can't walk to requester so fine to short-range teleport.
+    if(bot->GetMapId() == requester->GetMapId() && !WorldPosition(bot).canPathTo(requester, bot) && bot->GetDistance(requester) < sPlayerbotAIConfig.sightDistance) //We can't walk to requester so fine to short-range teleport.
         return Teleport(requester, requester, bot);
 
     if (bot->IsTaxiFlying())
@@ -224,7 +224,7 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
 
                 if (player->IsTaxiFlying())
                 {
-                    player->OnTaxiFlightEject(true);
+                    player->CleanupFlagsOnTaxiPathFinished();
                     player->GetMotionMaster()->MovementExpired();
                 }
 

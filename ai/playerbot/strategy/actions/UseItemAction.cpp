@@ -111,7 +111,7 @@ bool BotUseItemSpell::OpenLockCheck()
                         return false;
 
                     // check if its in use only when cast is finished (called from spell::cast() with strict = false)
-                    if (go->IsInUse())
+                    if (go->getLootState() == GO_ACTIVATED)
                         return false;
 
                     if (go->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_IN_USE))
@@ -259,7 +259,7 @@ bool UseAction::Execute(Event& event)
             GameObject* go = ai->GetGameObject(goGUID);
             if (go)
             {
-                const float distance = bot->getDistance(go);
+                const float distance = bot->GetDistance(go);
                 if (distance < closest)
                 {
                     targetGameObject = go;
@@ -303,7 +303,7 @@ bool UseAction::Execute(Event& event)
             itemID = items[0];
             if (items.size() > 1)
             {
-                targetItem = bot->GetItemByEntry(items[1]);
+                targetItem = FindItemByEntryCompat(bot, items[1]);
             }
         }
 
@@ -320,7 +320,7 @@ bool UseAction::Execute(Event& event)
             GameObject* go = ai->GetGameObject(goGUID);
             if (go && std::string(go->GetName()).find(useName))
             {
-                const float distance = bot->getDistance(go);
+                const float distance = bot->GetDistance(go);
                 if (distance < closest)
                 {
                     targetGameObject = go;
@@ -766,14 +766,14 @@ bool UseAction::UseGameObject(Player* requester, Event& event, GameObject* gameO
     }
 
     ObjectGuid guid = gameObject->getObjectGuid();
-    if (!sServerFacade.isSpawned(gameObject) || gameObject->IsInUse() || gameObject->GetGoState() != GO_STATE_READY)
+    if (!sServerFacade.isSpawned(gameObject) || gameObject->getLootState() == GO_ACTIVATED || gameObject->GetGoState() != GO_STATE_READY)
     {
         std::ostringstream out; out << "I can't use " << chat->formatGameobject(gameObject);
         ai->TellPlayerNoFacing(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
         return false;
     }
 
-    if (bot->getDistance(gameObject) > INTERACTION_DISTANCE)
+    if (bot->GetDistance(gameObject) > INTERACTION_DISTANCE)
     {
         std::ostringstream out; out << "I'm too far away from " << chat->formatGameobject(gameObject);
         ai->TellPlayerNoFacing(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);

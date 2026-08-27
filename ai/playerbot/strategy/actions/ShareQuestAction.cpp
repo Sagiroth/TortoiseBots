@@ -60,7 +60,7 @@ bool AutoShareQuestAction::Execute(Event& event)
             if (!player || player == bot || !player->IsInWorld() || !ai->IsSafe(player))         // skip self
                 continue;
 
-            if (bot->getDistance(player) > 10)
+            if (bot->GetDistance(player) > 10)
                 continue;
 
             if (!player->SatisfyQuestStatus(quest, false))

@@ -2785,9 +2785,6 @@ bool JumpAction::IsNotMagmaSlime(const WorldPosition &dest, Unit *jumper)
 {
     if (const TerrainInfo* terrain = dest.GetTerrain())
     {
-        if (!false)
-            return true;
-
         GridMapLiquidData data;
         if (terrain->getLiquidStatus(dest.getX(), dest.getY(), dest.getZ(), MAP_ALL_LIQUIDS, &data) == LIQUID_MAP_NO_WATER)
             return true;
