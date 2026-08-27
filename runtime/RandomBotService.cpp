@@ -28,9 +28,14 @@
 #endif
 
 #include <algorithm>
+#include <cstdio>
 #include <ctime>
 #include <memory>
+#include <random>
 #include <set>
+#if __has_include(<openssl/rand.h>)
+#include <openssl/rand.h>
+#endif
 
 namespace TortoiseBots
 {
@@ -53,17 +58,46 @@ std::string GenerateRndBotName()
 
 std::string GenerateRandomPassword()
 {
-    // 12 chars alphanumeric, well within MAX_ACCOUNT_STR (16). No credential
-    // exposure: not derived from username, hashed via CalculateShaPassHash;
-    // random, not "secure" in any cryptographic sense.
     static const char charset[] =
         "abcdefghijklmnopqrstuvwxyz"
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         "0123456789";
+    constexpr size_t kLen = 12;
+    constexpr size_t kCharsetSize = sizeof(charset) - 1;
+    static_assert(kLen <= MAX_ACCOUNT_STR, "password must fit MAX_ACCOUNT_STR");
+    // Never log/store plaintext outside immediate AccountMgr::CreateAccount call;
+    // core hashes via CalculateShaPassHash. Prefer secure OS/stdlib RNG over game urand.
     std::string pw;
-    pw.reserve(12);
-    for (int i = 0; i < 12; ++i)
-        pw.push_back(charset[urand(0, 61)]);
+    pw.reserve(kLen);
+    try
+    {
+        std::random_device rd;
+        std::uniform_int_distribution<size_t> dist(0, kCharsetSize - 1);
+        for (size_t i = 0; i < kLen; ++i)
+            pw.push_back(charset[dist(rd)]);
+        if (pw.size() == kLen)
+            return pw;
+    }
+    catch (...)
+    {
+    }
+#if __has_include(<openssl/rand.h>)
+    {
+        unsigned char buf[kLen];
+        if (RAND_bytes(buf, static_cast<int>(kLen)) == 1)
+        {
+            pw.clear();
+            for (size_t i = 0; i < kLen; ++i)
+                pw.push_back(charset[buf[i] % kCharsetSize]);
+            if (pw.size() == kLen)
+                return pw;
+        }
+    }
+#endif
+    // Safe bounded fallback: game MTRand, still within length/charset bounds.
+    pw.clear();
+    for (size_t i = 0; i < kLen; ++i)
+        pw.push_back(charset[urand(0, uint32(kCharsetSize - 1))]);
     return pw;
 }
 } // namespace
@@ -387,15 +421,16 @@ bool RandomBotService::TryAutoCreate()
     if (sWorld.IsShutdowning())
         return false;
 
-    uint32 desired = DesiredTargetCount();
+    // Snapshot DesiredTargetCount once at Initialize when auto-create is
+    // enabled; repeated cadence calls must not re-roll time()%range or ratchet
+    // m_targetCount toward MaxRandomBots. m_targetCount is the stable target.
+    // Handles bounds via Desired at Initialize and deficit via size check below;
+    // non-auto path still uses TargetCount() snapshot in Initialize.
+    uint32 desired = m_targetCount;
     if (!desired)
         return false;
     if (m_candidates.size() >= desired)
         return false;
-    // Keep target in sync when auto-create is active (original TargetCount
-    // capped to candidates and would stay 0 on a fresh DB).
-    if (m_targetCount < desired)
-        m_targetCount = desired;
 
     // One bounded attempt per cadence (caller is throttled to
     // RandomBotUpdateInterval, >=1s). No per-tick LIKE scan.
@@ -575,15 +610,18 @@ bool RandomBotService::TryAutoCreate()
     if (prefix.empty())
         prefix = "RNDBOT";
 
+    constexpr size_t kSuffixDigits = 6; // fixed-width "000000".."999999" so long prefix cannot make every suffix identical after truncation
+    std::string safePrefix = prefix.substr(0, MAX_ACCOUNT_STR > kSuffixDigits ? MAX_ACCOUNT_STR - kSuffixDigits : 0);
+
     uint32 newAccountId = 0;
     std::string newUsername;
     bool hadAllocDbError = false;
     for (int attempt = 0; attempt < 20 && !newAccountId; ++attempt)
     {
         uint32 suffix = urand(1000, 999999);
-        std::string username = prefix + std::to_string(suffix);
-        if (username.size() > MAX_ACCOUNT_STR)
-            username = username.substr(0, MAX_ACCOUNT_STR);
+        char suffixBuf[16];
+        std::snprintf(suffixBuf, sizeof(suffixBuf), "%06u", suffix);
+        std::string username = safePrefix + suffixBuf;
         if (sAccountMgr.GetId(username) != 0)
             continue;
         std::string password = GenerateRandomPassword();

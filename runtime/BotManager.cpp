@@ -1,4 +1,3 @@
-// pi-lens-ignore: clang:pp_file_not_found,clang:unknown_typename,clang:use_of_undeclared_identifier,clang:unknown_type_name,clang:undeclared_var_use,clang:incomplete_member_access,clang:uninitialized,clang:undefined_identifier,clang:undeclared_identifier,clang:all
 #include "BotManager.h"
 #include "PlayerbotAIAdapter.h"
 #include "PlayerbotAIStorage.h"
@@ -213,6 +212,15 @@ void BotManager::OnPlayerLogin(::Player* player)
 
     // One-shot random scatter on headless login only; fail-closed, no DB mutation, no homebind
     TryRandomTeleport(player, record);
+
+    // Prompt PlayerbotFactory enrichment for random bots where factory supports it.
+    // CharacterCreation creates level 1 starter kit; factory's InitEquipment intentionally
+    // no-ops for <5. For any auto-created level >=5 (future higher-level pool or manual
+    // leveling), trigger gear/spell/talent enrichment immediately on world-thread login
+    // rather than waiting ~6h for RandomBotService's randomize interval. Safe, synchronous,
+    // default-off via randomGearUpgradeEnabled, no core changes.
+    if (record.random && sPlayerbotAIConfig.randomGearUpgradeEnabled && player->GetLevel() >= 5)
+        sRandomBotFacade.UpdateGearSpells(player);
 
     sLog.outString("TortoiseBots: bot %s entered world through native PlayerScript", player->GetName());
 }

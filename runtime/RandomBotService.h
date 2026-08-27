@@ -58,6 +58,10 @@ private:
     std::vector<uint32_t> m_randomizeAgeMs;
     size_t m_nextCandidate = 0;
     uint32_t m_serviceElapsedMs = 0;
+    // Stable target: snapshot of DesiredTargetCount once at Initialize when
+    // auto-create is enabled (no per-cadence re-roll/ratchet toward Max). For
+    // non-auto, snapshot of TargetCount (capped). Handles bounds and deficit
+    // via size check in TryAutoCreate.
     uint32_t m_targetCount = 0;
     uint32_t m_humanSessions = 0;
     bool m_initialized = false;
