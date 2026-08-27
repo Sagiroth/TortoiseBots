@@ -26,7 +26,7 @@
 #include "LFTMgr.h"
 #endif
 #ifndef MANGOSSERVER_LFTMGR_H
-#error "TortoiseBots AhMarketService requires core PR #413 (LFT/LFTMgr.h with sLFTMgr.IsQueued/IsInOffer). Update Tortoise core or remove AhMarketService from the build."
+#error "TortoiseBots AhMarketService requires core PR #416 (LFT/LFTMgr.h with sLFTMgr.IsQueued/IsInOffer). Update Tortoise core or remove AhMarketService from the build."
 #endif
 
 #include <list>
@@ -104,7 +104,7 @@ bool AhMarketService::IsBotAvailableForMarket(Player* bot) const
         if (ai->HasActivePlayerMaster())
             return false;
     // LFT queued / in-offer — world-thread read-only, no m_queue mutation.
-    // Hard dependency on core PR #413 LFT queue seam (LFT/LFTMgr.h); build fails
+    // Hard dependency on core PR #416 LFT queue seam (LFT/LFTMgr.h); build fails
     // via #error if absent — no silent fallback, no fake queue behavior.
     if (sLFTMgr.IsQueued(bot->GetObjectGuid()) || sLFTMgr.IsInOffer(bot->GetObjectGuid()))
         return false;

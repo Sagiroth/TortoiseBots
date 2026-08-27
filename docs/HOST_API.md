@@ -313,7 +313,7 @@ cooldown bound world-thread work. Failed attempts are also rate-limited.
 Fail-closed eligibility (world-thread read-only, no `m_queue` mutation): bots
 with an active `PlayerbotAI` player master (`HasActivePlayerMaster`), any
 grouped/manual-use bot (`Player::GetGroup`), LFT queued/in-offer
-(`sLFTMgr.IsQueued`/`IsInOffer`, hard-requires core PR #413 `LFT/LFTMgr.h` — build fails with `#error` if absent, no silent fallback),
+(`sLFTMgr.IsQueued`/`IsInOffer`, hard-requires core PR #416 `LFT/LFTMgr.h` — build fails with `#error` if absent, no silent fallback),
 or inside a battleground/instance (`InBattleGround`/`InBattleGroundQueue`/
 `Map::IsDungeon`/`IsBattleGround`) are never selected, posted, or teleported;
 per-bot AH action stays independent and never pulls owned/party bots from players.

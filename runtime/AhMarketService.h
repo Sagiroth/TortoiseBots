@@ -36,11 +36,11 @@ namespace TortoiseBots
 // (interval*2) and bounded batch (1..5 teleports/posts per tick) are preserved.
 // Cross-feature safety (fail-closed): bots with an active PlayerbotAI player
 // master, any grouped/manual-use bot (Player::GetGroup), LFT queued/in-offer
-// (sLFTMgr.IsQueued/IsInOffer via core #413, read-only, no queue mutation),
+// (sLFTMgr.IsQueued/IsInOffer via core #416, read-only, no queue mutation),
 // or inside a battleground/instance are never selected, posted, or teleported
 // — market cannot pull a BG/dungeon/LFT/group/owned bot out of content.
 // Per-bot AH action stays independent and never pulls owned/party bots from
-// players. LFT guard hard-requires core PR #413 LFT queue seam (LFT/LFTMgr.h
+// players. LFT guard hard-requires core PR #416 LFT queue seam (LFT/LFTMgr.h
 // IsQueued/IsInOffer); build fails with #error if absent — no silent fallback.
 class AhMarketService
 {
