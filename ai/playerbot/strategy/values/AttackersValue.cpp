@@ -481,14 +481,6 @@ bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
     if (!enemyPlayer)
     {
         bool isDummy = false;
-
-
-        if (WorldPosition(playerToCheckAgainst).isOverworld() && target->AI() && target->AI()->IsPreventingDeath())
-        {
-
-            isDummy = true;
-        }
-
         uint32 entry = target->GetEntry();
 
 #define TRAINING_DUMMY_NPC_ENTRY1 190013
