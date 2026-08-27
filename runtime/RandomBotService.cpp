@@ -141,7 +141,7 @@ void RandomBotService::ResolvePinnedBots()
             continue;
         std::string escaped = rawName;
         CharacterDatabase.escape_string(escaped);
-        auto result = CharacterDatabase.PQuery("SELECT guid FROM characters WHERE name = '%s' LIMIT 1", escaped.c_str());
+        std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery("SELECT guid FROM characters WHERE name = '%s' LIMIT 1", escaped.c_str()));
         if (!result)
         {
             sLog.outString("TortoiseBots: pinned bot '%s' not found as character", rawName.c_str());

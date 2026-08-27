@@ -47,6 +47,13 @@ AiPlayerbot.RandomBotMaxLevel = 60
 # creates accounts or characters.
 AiPlayerbot.RandomBotAccountPrefix = RNDBOT
 
+# Optional pinned RNDBOT names that remain online when possible. Comma-separated
+# character names; resolved once at startup to GUIDs in the discovered RNDBOT
+# pool, prioritized within MaxRandomBots and exempt from timed logout/teleport.
+# Names that do not exist or are not in the RNDBOT pool are logged and ignored.
+# No new table, no PID, no core changes. Default empty (disabled).
+#AiPlayerbot.PinnedBots =
+
 # Scatter RNDBOT headless logins to a validated level-appropriate overworld
 # GenericRpg destination. Level is validated via persisted ai_playerbot_zone_level
 # first (with parent-zone cached fallback) then immutable DBC AreaTable AreaLevel
