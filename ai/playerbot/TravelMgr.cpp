@@ -490,7 +490,7 @@ std::string RpgTravelDestination::GetTitle() const
 
 AreaTableEntry const* ZoneTravelDestination::GetArea() const
 {
-    for (uint32 areaid = 0; areaid < sAreaStore.GetNumRows(); ++areaid)
+    for (uint32 areaid = 0; areaid < sAreaStore.GetMaxEntry(); ++areaid)
     {
         AreaTableEntry const* areaEntry = sAreaStore.LookupEntry<AreaEntry>(areaid);
         if (areaEntry && areaEntry->Id == GetEntry())
@@ -1053,7 +1053,7 @@ int32 TravelMgr::GetAreaLevel(uint32 area_id)
     uint32 cnt = 0;
 
     //Get sub-area's
-    for (uint32 i = 0; i < sAreaStore.GetNumRows(); i++)
+    for (uint32 i = 0; i < sAreaStore.GetMaxEntry(); i++)
     {
         AreaTableEntry const* subArea = GetAreaEntryByAreaID(i);
 

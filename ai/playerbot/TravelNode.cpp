@@ -120,12 +120,12 @@ float TravelNodePath::getCost(Unit* unit, uint32 cGold)
         {
             uint32 triggerId = getPathObject();
             AreaTriggerEntry const* atEntry = sAreaTriggerStore.LookupEntry(pathObject);
-            AreaTrigger const* at = sObjectMgr.GetAreaTrigger(pathObject);
+            AreaTriggerTeleport const* at = sObjectMgr.GetAreaTriggerTeleport(pathObject);
             if (atEntry && at && atEntry->mapid == bot->GetMapId())
             {
                 Map* map = WorldPosition(atEntry->mapid, atEntry->box_x, atEntry->box_y, atEntry->box_z).GetMap(bot->GetInstanceId());
                 if (map)
-                    if (at && at->conditionId && !sObjectMgr.IsConditionSatisfied(at->conditionId, bot, map, nullptr, (ConditionSource)CONDITION_FROM_AREATRIGGER_TELEPORT))
+                    if (at && at->requiredCondition && !sObjectMgr.IsConditionSatisfied(at->requiredCondition, bot, map, nullptr, (ConditionSource)CONDITION_FROM_AREATRIGGER_TELEPORT))
                         return -1;
             }
         }
@@ -260,11 +260,11 @@ bool TravelNode::isAreaTriggerTarget(uint32 areaTriggerId)
         if (!atEntry)
             continue;
 
-        AreaTrigger const* at = sObjectMgr.GetAreaTrigger(i);
+        AreaTriggerTeleport const* at = sObjectMgr.GetAreaTriggerTeleport(i);
         if (!at)
             continue;
 
-        WorldPosition outPos = WorldPosition(at->target_mapId, at->target_X, at->target_Y, at->target_Z, at->target_Orientation);
+        WorldPosition outPos = WorldPosition(at->destination.mapId, at->destination.x, at->destination.y, at->destination.z, at->destination.o);
 
         if (*getPosition() == outPos)
             return true;
@@ -1144,11 +1144,11 @@ void TravelPath::ClipPath(PlayerbotAI* ai, Unit* mover, bool ignoreEnemyTargets)
             if (unit->GetLevel() > mover->GetLevel() + 5)
                 continue;
 
-            float range = unit->GetAttackDistance(mover);
+            float range = unit->GetCombatReach(mover, false, 0.0f);
             if (WorldPosition(unit).sqDistance(p->point) > range * range)
                 continue;
 
-            if (!unit->CanAttackOnSight(mover) || !unit->IsWithinLOSInMap(mover))
+            if (!unit->IsHostileTo(mover) || !unit->IsWithinLOSInMap(mover))
                 continue;
 
             endP = p;
@@ -2169,13 +2169,13 @@ void TravelNodeMap::generateAreaTriggerNodes()
         if (!atEntry)
             continue;
 
-        AreaTrigger const* at = sObjectMgr.GetAreaTrigger(i);
+        AreaTriggerTeleport const* at = sObjectMgr.GetAreaTriggerTeleport(i);
         if (!at)
             continue;
 
         WorldPosition inPos = WorldPosition(atEntry->mapid, atEntry->x, atEntry->y, atEntry->z - 4.0f, 0);
 
-        WorldPosition outPos = WorldPosition(at->target_mapId, at->target_X, at->target_Y, at->target_Z, at->target_Orientation);
+        WorldPosition outPos = WorldPosition(at->destination.mapId, at->destination.x, at->destination.y, at->destination.z, at->destination.o);
 
         std::string nodeName;
 
@@ -2197,13 +2197,13 @@ void TravelNodeMap::generateAreaTriggerNodes()
         if (!atEntry)
             continue;
 
-        AreaTrigger const* at = sObjectMgr.GetAreaTrigger(i);
+        AreaTriggerTeleport const* at = sObjectMgr.GetAreaTriggerTeleport(i);
         if (!at)
             continue;
 
         WorldPosition inPos = WorldPosition(atEntry->mapid, atEntry->x, atEntry->y, atEntry->z - 4.0f, 0);
 
-        WorldPosition outPos = WorldPosition(at->target_mapId, at->target_X, at->target_Y, at->target_Z, at->target_Orientation);
+        WorldPosition outPos = WorldPosition(at->destination.mapId, at->destination.x, at->destination.y, at->destination.z, at->destination.o);
 
         std::string nodeName;
 
@@ -2361,8 +2361,9 @@ void TravelNodeMap::generateTransportNodes()
             // Boats/Zepelins
             {
                 //Loop over the path and connect stop locations.
-                for (auto& p : path)
+                for (size_t pathIndex = 0; pathIndex < path.size(); ++pathIndex)
                 {
+                    auto& p = path[pathIndex];
                     WorldPosition pos = WorldPosition(p->mapid, p->x, p->y, p->z, 0);
 
                     if (prevNode)
@@ -2405,8 +2406,9 @@ void TravelNodeMap::generateTransportNodes()
                 if (prevNode)
                 {
                     //Continue from start until first stop and connect to end.
-                    for (auto& p : path)
+                    for (size_t pathIndex = 0; pathIndex < path.size(); ++pathIndex)
                     {
+                        auto& p = path[pathIndex];
                         WorldPosition pos = WorldPosition(p->mapid, p->x, p->y, p->z, 0);
 
                         //if (data->displayId == 3015)
@@ -2778,11 +2780,14 @@ void TravelNodeMap::generateTaxiPaths()
 
         std::vector<WorldPosition> ppath;
 
-        if (startNode->fDist(WorldPosition(nodes.front()->mapid, nodes.front()->x, nodes.front()->y, nodes.front()->z, 0.0)) > 0.1f)
+        if (startNode->fDist(WorldPosition(nodes[0]->mapid, nodes[0]->x, nodes[0]->y, nodes[0]->z, 0.0)) > 0.1f)
             ppath.push_back(*startNode->getPosition());
 
-        for (auto& n : nodes)
+        for (size_t nodeIndex = 0; nodeIndex < nodes.size(); ++nodeIndex)
+        {
+            auto const& n = nodes[nodeIndex];
             ppath.push_back(WorldPosition(n->mapid, n->x, n->y, n->z, 0.0));
+        }
 
         if (endNode->fDist(ppath.back()) > 0.1f)
             ppath.push_back(*endNode->getPosition());
@@ -3472,7 +3477,7 @@ TravelNodeMap::PathFindResult TravelNodeMap::testPathToLoop(const WorldPosition&
         pathfinder->calculate(currentPos.GetVector3(), endPos.GetVector3(), false);
 
         pathType = pathfinder->getPathType();
-        points = pathfinder->GetPath();
+        points = pathfinder->getPath();
 
         std::vector<WorldPosition> subPath = currentPos.fromPointsArray(points);
 
