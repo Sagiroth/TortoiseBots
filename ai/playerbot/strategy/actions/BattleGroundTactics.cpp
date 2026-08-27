@@ -2119,7 +2119,7 @@ bool BGTactics::Execute(Event& event)
     std::vector<BattleBotPath*> const* vPaths;
     std::vector<uint32> const* vFlagIds;
 
-    BattleGroundTypeId bgType = bg->GetTypeId();
+    BattleGroundTypeId bgType = bg->GetTypeID();
 
     switch (bgType)
     {
@@ -2235,7 +2235,7 @@ bool BGTactics::moveToStart(bool force)
     if (!force && bg->GetStatus() != STATUS_WAIT_JOIN)
         return false;
 
-    BattleGroundTypeId bgType = bg->GetTypeId();
+    BattleGroundTypeId bgType = bg->GetTypeID();
 
     if (bgType == BATTLEGROUND_WS)
     {
@@ -2310,7 +2310,7 @@ bool BGTactics::selectObjective(bool reset)
     if (pos.isSet() && !reset)
         return false;
 
-    BattleGroundTypeId bgType = bg->GetTypeId();
+    BattleGroundTypeId bgType = bg->GetTypeID();
 
     switch (bgType)
     {
@@ -2510,7 +2510,7 @@ bool BGTactics::selectObjective(bool reset)
             float probabilityToKeepSameObjective = 1.0f; // Start at 100% then lower over time
 
             GameObject* lastObj = botSelectedObjectives[botGUID];
-            float const lastObjDist = bot->getDistance(lastObj);
+            float const lastObjDist = bot->GetDistance(lastObj);
 
             if (lastObjDist < 50.00f) // if we are close, stick to the objective a bit longer
             {
@@ -2591,7 +2591,7 @@ bool BGTactics::moveToObjective()
     if (!bg)
         return false;
 
-    BattleGroundTypeId bgType = bg->GetTypeId();
+    BattleGroundTypeId bgType = bg->GetTypeID();
 
     ai::PositionEntry pos = context->GetValue<ai::PositionMap&>("position")->Get()["bg objective"];
     if (!pos.isSet())
@@ -2611,7 +2611,7 @@ bool BGTactics::moveToObjective()
                 return true;*/
 
         // don't try to move if already close
-        if (sqrt(bot->getDistance(pos.x, pos.y, pos.z, DIST_CALC_NONE)) < 5.0f)
+        if (bot->GetDistance(pos.x, pos.y, pos.z, SizeFactor::None) < 5.0f)
         {
             resetObjective();
 
@@ -2636,7 +2636,7 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
     if (!bg)
         return false;
 
-    BattleGroundTypeId bgType = bg->GetTypeId();
+    BattleGroundTypeId bgType = bg->GetTypeID();
 
     ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
     ai::PositionEntry pos = context->GetValue<ai::PositionMap&>("position")->Get()["bg objective"];
@@ -2669,7 +2669,7 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
 
         {
             BattleBotWaypoint& lastPoint = ((*pPath)[pPath->size() - 1]);
-            float const distanceFromPathEndToTarget = sqrt(Position(pos.x, pos.y, pos.z, 0.f).GetDistance(Position(lastPoint.x, lastPoint.y, lastPoint.z, 0.f)));
+            float const distanceFromPathEndToTarget = WorldPosition(pos.mapId, pos.x, pos.y, pos.z).distance(WorldPosition(pos.mapId, lastPoint.x, lastPoint.y, lastPoint.z));
             if (closestDistanceToTarget > distanceFromPathEndToTarget)
             {
                 float closestDistanceFromMeToPoint = FLT_MAX;
@@ -2677,7 +2677,7 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
                 for (uint32 i = 0; i < pPath->size(); i++)
                 {
                     BattleBotWaypoint& waypoint = ((*pPath)[i]);
-                    float const distanceFromMeToPoint = sqrt(bot->getDistance(waypoint.x, waypoint.y, waypoint.z, DIST_CALC_NONE));
+                    float const distanceFromMeToPoint = bot->GetDistance(waypoint.x, waypoint.y, waypoint.z, SizeFactor::None);
                     if (distanceFromMeToPoint < maxDistanceToPoint && closestDistanceFromMeToPoint > distanceFromMeToPoint)
                     {
                         reverse = false;
@@ -2702,7 +2702,7 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
 
         {
             BattleBotWaypoint& firstPoint = ((*pPath)[0]);
-            float const distanceFromPathBeginToTarget = sqrt(Position(pos.x, pos.y, pos.z, 0).GetDistance(Position(firstPoint.x, firstPoint.y, firstPoint.z, 0.f)));
+            float const distanceFromPathBeginToTarget = WorldPosition(pos.mapId, pos.x, pos.y, pos.z).distance(WorldPosition(pos.mapId, firstPoint.x, firstPoint.y, firstPoint.z));
             if (closestDistanceToTarget > distanceFromPathBeginToTarget)
             {
                 float closestDistanceFromMeToPoint = FLT_MAX;
@@ -2710,7 +2710,7 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
                 for (uint32 i = 0; i < pPath->size(); i++)
                 {
                     BattleBotWaypoint& waypoint = ((*pPath)[i]);
-                    float const distanceFromMeToPoint = sqrt(bot->getDistance(waypoint.x, waypoint.y, waypoint.z, DIST_CALC_NONE));
+                    float const distanceFromMeToPoint = bot->GetDistance(waypoint.x, waypoint.y, waypoint.z, SizeFactor::None);
                     if (distanceFromMeToPoint < maxDistanceToPoint && closestDistanceFromMeToPoint > distanceFromMeToPoint)
                     {
                         reverse = true;
@@ -2816,7 +2816,7 @@ bool BGTactics::startNewPathBegin(std::vector<BattleBotPath*> const& vPaths)
     if (!bg)
         return false;
 
-    BattleGroundTypeId bgType = bg->GetTypeId();
+    BattleGroundTypeId bgType = bg->GetTypeID();
 
     struct AvailablePath
     {
@@ -2835,7 +2835,7 @@ bool BGTactics::startNewPathBegin(std::vector<BattleBotPath*> const& vPaths)
             continue;
 
         BattleBotWaypoint* pStart = &((*pPath)[0]);
-        if (sqrt(bot->getDistance(pStart->x, pStart->y, pStart->z, DIST_CALC_NONE)) < INTERACTION_DISTANCE)
+        if (bot->GetDistance(pStart->x, pStart->y, pStart->z, SizeFactor::None) < INTERACTION_DISTANCE)
             availablePaths.emplace_back(AvailablePath(pPath, false));
 
         // Some paths are not allowed backwards.
@@ -2843,7 +2843,7 @@ bool BGTactics::startNewPathBegin(std::vector<BattleBotPath*> const& vPaths)
             continue;
 
         BattleBotWaypoint* pEnd = &((*pPath)[(*pPath).size() - 1]);
-        if (sqrt(bot->getDistance(pEnd->x, pEnd->y, pEnd->z, DIST_CALC_NONE)) < INTERACTION_DISTANCE)
+        if (bot->GetDistance(pEnd->x, pEnd->y, pEnd->z, SizeFactor::None) < INTERACTION_DISTANCE)
             availablePaths.emplace_back(AvailablePath(pPath, true));
     }
 
@@ -2866,7 +2866,7 @@ bool BGTactics::startNewPathFree(std::vector<BattleBotPath*> const& vPaths)
     if (!bg)
         return false;
 
-    BattleGroundTypeId bgType = bg->GetTypeId();
+    BattleGroundTypeId bgType = bg->GetTypeID();
 
     BattleBotPath* pClosestPath = nullptr;
     uint32 closestPoint = 0;
@@ -2883,7 +2883,7 @@ bool BGTactics::startNewPathFree(std::vector<BattleBotPath*> const& vPaths)
         for (uint32 i = 0; i < pPath->size(); i++)
         {
             BattleBotWaypoint& waypoint = ((*pPath)[i]);
-            float const distanceToPoint = sqrt(bot->getDistance(waypoint.x, waypoint.y, waypoint.z, DIST_CALC_NONE));
+            float const distanceToPoint = bot->GetDistance(waypoint.x, waypoint.y, waypoint.z, SizeFactor::None);
             if (distanceToPoint < closestDistance)
             {
                 pClosestPath = pPath;
@@ -2909,7 +2909,7 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
     if (!bg)
         return false;
 
-    BattleGroundTypeId bgType = bg->GetTypeId();
+    BattleGroundTypeId bgType = bg->GetTypeID();
 
     if (bgType == BATTLEGROUND_AV)
     {
@@ -2969,14 +2969,14 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
         if (f == vFlagIds.end())
             continue;
 
-        if (!sServerFacade.isSpawned(go) || go->IsInUse() || go->GetGoState() != GO_STATE_READY)
+        if (!sServerFacade.isSpawned(go) || go->getLootState() != GO_READY || go->GetGoState() != GO_STATE_READY)
             continue;
 
         // Test the cheap side first: CanInteract logs a core error when the bot
         // is out of range, so with the operands the other way round every
         // Warsong bot produced one per tick regardless of distance - 15000+ a
         // session - while only the continue was ever gated on bgType.
-        if (bgType != BATTLEGROUND_WS && !bot->CanInteract(go))
+        if (bgType != BATTLEGROUND_WS && !bot->CanInteractWithGameObject(go))
             continue;
 
         if (flagRange)
@@ -3010,7 +3010,7 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
 
             Spell *spell = new Spell(bot, spellInfo, false);
             spell->m_targets.setGOTarget(go);
-            spell->SpellStart(&spell->m_targets);
+            spell->prepare(spell->m_targets);
             ai->WaitForSpellCast(spell);
 
             //WorldPacket data(CMSG_GAMEOBJ_USE);
@@ -3078,7 +3078,8 @@ bool BGTactics::flagTaken()
     if (!bg)
         return false;
 
-    return !bg->GetFlagCarrierGuid(GetTeamIndexByTeamId(bg->GetOtherTeam(bot->GetTeam()))).IsEmpty();
+    ObjectGuid const& flagCarrier = bot->GetTeam() == ALLIANCE ? bg->GetHordeFlagPickerGuid() : bg->GetAllianceFlagPickerGuid();
+    return !flagCarrier.IsEmpty();
 }
 
 bool BGTactics::teamFlagTaken()
@@ -3087,7 +3088,8 @@ bool BGTactics::teamFlagTaken()
     if (!bg)
         return false;
 
-    return !bg->GetFlagCarrierGuid(GetTeamIndexByTeamId(bot->GetTeam())).IsEmpty();
+    ObjectGuid const& flagCarrier = bot->GetTeam() == ALLIANCE ? bg->GetAllianceFlagPickerGuid() : bg->GetHordeFlagPickerGuid();
+    return !flagCarrier.IsEmpty();
 }
 
 bool BGTactics::protectFC()
@@ -3109,7 +3111,7 @@ bool BGTactics::useBuff()
     if (!bg)
         return false;
 
-    BattleGroundTypeId bgType = bg->GetTypeId();
+    BattleGroundTypeId bgType = bg->GetTypeID();
 
     std::list<ObjectGuid> closeObjects = AI_VALUE(std::list<ObjectGuid>, "nearest game objects no los");
 
