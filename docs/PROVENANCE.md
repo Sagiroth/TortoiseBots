@@ -602,3 +602,40 @@ Local validation:
   ScriptMgr registry tables and retained two `npc_teslinah` rows.
 - Startup no longer reports `0` or `npc_teslinah`; the remaining 17 warnings
   are recorded as unverified content gaps in `PLAYERBOTS_AUDIT.md`.
+
+## Penqle #411/#416 compatibility and stack checkpoint — 2026-08-26
+
+Feature: align the complete optional TortoiseBots stack with the Penqle
+Headless/session surface from #411 and the generic character/LFT/BG surface
+from #416, without adding PlayerBots concepts to core.
+
+Source repositories and commits: Penqle/tortoise-wow #411
+`c37e28b632dee3c73896240c1b399fdbb7c35ef8`; generic core PR #416
+`5261e5317c3115aa8a0b61d8eb9d85a79766be95`; TortoiseBots stack heads #37
+`c2893d3cb3b561988cbc163009d58b91194ac5f9` through #42
+`2abd4f7eea50c740597681b32b5af9bdab58e427`.
+
+Source files: module-local `ai/playerbot/*`, `runtime/*`, `host/*`,
+`commands/*`, and feature configuration/documentation. Core #416 adds only
+bot-neutral public lifecycle/snapshot interfaces and a generic
+`Player::GetHomeBindLocation()` getter over existing character state.
+
+Copied / ported / independently reimplemented: donor API calls were replaced
+with the target core's public APIs (native distances, loot/mail, gossip,
+trainer, transport/spline, battleground, and packet handlers). Missing
+behavior was fail-closed or routed through existing module facades; no private
+BG/LFT/AH state, fake queue fallback, raw character SQL, or PlayerBots-aware
+core coupling was added. The BG service now consumes #416's copy-only demand
+snapshot and queues only for observed human demand.
+
+Reason: preserve module ownership and core optionality while making the broad
+Vanilla/Turtle donor behavior compile against the actual Penqle API shape.
+
+Local validation: `git diff --check`, Turtle surface audit, parent-diff audits,
+GitHub `CLEAN/MERGEABLE` audit for #37–#42, and cached integrated module target
+passed. Full native ON/static `mangosd` linked with `BUILD_PLAYERBOTS=OFF`,
+`BUILD_LEGACY_PLAYERBOTS=OFF`, `MODULES=static`,
+`MODULE_TORTOISEBOTS=static`; complementary `MODULE_TORTOISEBOTS=OFF`
+mangosd also linked. The installed ON binary accepted `--version`. No live
+server/gameplay smoke test was run; this remains pre-merge evidence until the
+actual Penqle #411/#416 commits are merged and rebuilt.
