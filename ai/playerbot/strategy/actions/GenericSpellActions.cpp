@@ -123,7 +123,7 @@ bool CastSpellAction::isPossible()
     }
     else
     {
-        float dist = bot->getDistance(spellTarget, true, ai->IsRanged(bot) ? DIST_CALC_COMBAT_REACH : DIST_CALC_COMBAT_REACH_WITH_MELEE);
+        float dist = bot->GetDistance(spellTarget, ai->IsRanged(bot) ? SizeFactor::CombatReach : SizeFactor::CombatReachWithMelee);
         if (range == ATTACK_DISTANCE)
         {
             canReach = bot->CanReachWithMeleeAutoAttack(spellTarget);
@@ -237,13 +237,13 @@ bool CastPetSpellAction::isPossible()
         if (pet->HasSpell(spellId) && pet->IsSpellReady(spellId))
         {
             // Check if the pet is not too far from the owner
-            if (bot->getDistance(pet) <= sPlayerbotAIConfig.sightDistance)
+            if (bot->GetDistance(pet) <= sPlayerbotAIConfig.sightDistance)
             {
                 bool canReach = false;
                 const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(spellId);
                 if (pSpellInfo)
                 {
-                    const float dist = pet->getDistance(spellTarget, true, DIST_CALC_COMBAT_REACH);
+                    const float dist = pet->GetDistance(spellTarget, SizeFactor::CombatReach);
                     canReach = dist <= (range + sPlayerbotAIConfig.contactDistance);
 
                     if (pSpellInfo->rangeIndex != SPELL_RANGE_IDX_COMBAT && pSpellInfo->rangeIndex != SPELL_RANGE_IDX_SELF_ONLY && pSpellInfo->rangeIndex != SPELL_RANGE_IDX_ANYWHERE)
@@ -648,10 +648,7 @@ bool CastItemTargetAction::Execute(Event& event)
         if (item)
         {
             spell->SetCastItem(item);
-            item->SetUsedInSpell(true);
         }
-
-        spell->m_clientCast = true;
 
         bool result = (spell->ForceSpellStart(&targets) == SPELL_CAST_OK);
 

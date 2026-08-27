@@ -446,7 +446,7 @@ bool SetPetAction::Execute(Event& event)
                 constexpr uint32 PET_IMP = 416;
                 constexpr uint32 PHASE_SHIFT = 4511;
                 if (bot->GetClass() == CLASS_WARLOCK &&
-                    pet->AI() && pet->AI()->HasReactState(REACT_PASSIVE) &&
+                    pet->HasReactState(REACT_PASSIVE) &&
                     pet->GetEntry() == PET_IMP && pet->HasAura(PHASE_SHIFT))
                 {
                     ai->TellPlayer(requester, "Pet has Phase Shift active, cannot attack");
