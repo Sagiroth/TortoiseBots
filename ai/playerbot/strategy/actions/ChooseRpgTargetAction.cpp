@@ -177,7 +177,7 @@ std::unordered_map<ObjectGuid, float> ChooseRpgTargetAction::GetTargets(Player* 
             //Ignore game objects that are not spawned or being used by others.
             GameObject* go = guidP.GetGameObject(bot->GetInstanceId());
             if (!go || !sServerFacade.isSpawned(go)
-                || go->IsInUse()
+                || go->getLootState() != GO_READY
                 || go->GetGoState() != GO_STATE_READY)
                 SkipRpgTarget("Go is not spawned, ready or is in use.");
 
