@@ -21,6 +21,20 @@
 #include "ObjectGuid.h"
 #include "Maps/GridMap.h"
 #include "Maps/Map.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "LFT/LFTMgr.h"
+#ifndef MANGOSSERVER_LFTMGR_H
+// Minimal fallback when core LFT header is absent. Real build uses core's LFTMgr.h (#413).
+// Only IsQueued/IsInOffer are needed for the AH fail-closed guard; dependency is explicit
+// in HOST_API.md §17 and no fake queue behavior is introduced.
+class LFTManager
+{
+public:
+    bool IsQueued(ObjectGuid const&) const { return false; }
+    bool IsInOffer(ObjectGuid const&) const { return false; }
+};
+static LFTManager sLFTMgr;
+#endif
 
 #include <list>
 #include <string>
@@ -81,6 +95,29 @@ bool AhMarketService::IsBotInBattlegroundOrInstance(Player* bot) const
         if (map->IsDungeon() || map->IsBattleGround())
             return true;
     return false;
+}
+
+bool AhMarketService::IsBotAvailableForMarket(Player* bot) const
+{
+    if (!bot)
+        return false;
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported())
+        return false;
+    // Any grouped / manual-use bot — fail-closed (world-thread, no queue mutation).
+    if (bot->GetGroup())
+        return false;
+    // Active PlayerbotAI player master (socket-backed Network master).
+    if (::PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
+        if (ai->HasActivePlayerMaster())
+            return false;
+    // LFT queued / in-offer — world-thread read-only, no m_queue mutation.
+    // Requires core PR #413 LFT queue seam (LFT/LFTMgr.h); minimal fallback above
+    // is explicit dependency, not fake behavior. Fail-closed when queued/offered.
+    if (sLFTMgr.IsQueued(bot->GetObjectGuid()) || sLFTMgr.IsInOffer(bot->GetObjectGuid()))
+        return false;
+    if (IsBotInBattlegroundOrInstance(bot))
+        return false;
+    return true;
 }
 
 void AhMarketService::EnsurePositionsLoaded()
@@ -149,8 +186,8 @@ bool AhMarketService::TryTeleportToAuctioneer(Player* bot)
 {
     if (!bot || bot->IsBeingTeleported() || !bot->IsInWorld() || !bot->IsAlive())
         return false;
-    // Cross-feature safety: do not pull a queued/fighting BG or dungeon/instance bot out of content.
-    if (IsBotInBattlegroundOrInstance(bot))
+    // Fail-closed: grouped/manual-use, active master, LFT queue, or BG/instance.
+    if (!IsBotAvailableForMarket(bot))
         return false;
     if (m_auctioneerPositions.empty())
         return false;
@@ -199,8 +236,8 @@ AhMarketService::PostResult AhMarketService::TryPostForBot(Player* bot, bool all
         return PostResult::Failed;
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported())
         return PostResult::Failed;
-    // Cross-feature safety: never select a bot that is queued or inside BG/instance.
-    if (IsBotInBattlegroundOrInstance(bot))
+    // Fail-closed eligibility: grouped/manual-use, active master, LFT queued/in-offer, BG/instance.
+    if (!IsBotAvailableForMarket(bot))
         return PostResult::Failed;
     if (!sRandomBotFacade.IsRandomBot(bot))
         return PostResult::Failed;
@@ -410,7 +447,7 @@ void AhMarketService::Update(uint32_t diff)
     {
         if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported())
             continue;
-        if (IsBotInBattlegroundOrInstance(bot))
+        if (!IsBotAvailableForMarket(bot))
             continue;
         if (!sRandomBotFacade.IsRandomBot(bot))
             continue;

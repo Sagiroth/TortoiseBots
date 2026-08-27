@@ -300,16 +300,28 @@ inventory items, `AhAction` pricing/usage values, `GetAuctionDeposit`,
 `GetCheckedAuctionHouseForAuctioneer`, and
 `WorldSession::HandleAuctionSellItem`. Core owns auction/item persistence,
 deposits, limits, and ownership transfer. The service never writes auction
-rows, fabricates items, or runs the donor `ahbot` thread/tables.
+rows, fabricates items, or runs the donor `ahbot` thread/tables. No DB scan
+per tick, no tick auction scan, no thread, no direct auction writes.
 
 Auctioneer creature positions are captured once from the core object store,
 validated for overworld/map/terrain/VMap ground and faction (no MMAP/pathfinding),
 and used for a bounded teleport fallback before the native sell handler is invoked.
 Active event-gated snapshot positions are not revalidated until restart/data reload.
 A shared `try_lock`, 5..3600-second cadence, 1..5 batch cap, and per-bot attempt
-cooldown bound world-thread work. Failed attempts are also rate-limited. No per-tick
-AH/DB scan or new core seam is required. `AiPlayerbot.AhMarketEnabled=0` remains the
-default; the feature also requires `RandomBotAutologin=1`.
+cooldown bound world-thread work. Failed attempts are also rate-limited.
+
+Fail-closed eligibility (world-thread read-only, no `m_queue` mutation): bots
+with an active `PlayerbotAI` player master (`HasActivePlayerMaster`), any
+grouped/manual-use bot (`Player::GetGroup`), LFT queued/in-offer
+(`sLFTMgr.IsQueued`/`IsInOffer`, requires core PR #413 `LFT/LFTMgr.h` — minimal
+fallback header only if needed, dependency explicit, no fake queue behavior),
+or inside a battleground/instance (`InBattleGround`/`InBattleGroundQueue`/
+`Map::IsDungeon`/`IsBattleGround`) are never selected, posted, or teleported;
+per-bot AH action stays independent and never pulls owned/party bots from players.
+
+No per-tick AH/DB scan or new AH-specific core seam is required.
+`AiPlayerbot.AhMarketEnabled=0` remains the default; the feature also requires
+`RandomBotAutologin=1`.
 
 ## 18. Random-bot auto-create (optional, default-off)
 

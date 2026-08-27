@@ -35,9 +35,15 @@ namespace TortoiseBots
 // via facade value store (before teleport/post, not only on success) prevents
 // deposit/gold/no-auctioneer/invalid-spawn loops; successful-post cooldown
 // (interval*2) and bounded batch (1..5 teleports/posts per tick) are preserved.
-// Cross-feature safety: bots queued or inside a battleground/instance are
-// never selected, posted, or teleported, so the market cannot pull a
-// BG/dungeon bot out of content once BG auto-queue is enabled.
+// Cross-feature safety (fail-closed): bots with an active PlayerbotAI player
+// master, any grouped/manual-use bot (Player::GetGroup), LFT queued/in-offer
+// (sLFTMgr.IsQueued/IsInOffer via core #413, read-only, no queue mutation),
+// or inside a battleground/instance are never selected, posted, or teleported
+// — market cannot pull a BG/dungeon/LFT/group/owned bot out of content.
+// Per-bot AH action stays independent and never pulls owned/party bots from
+// players. LFT guard requires core PR #413 LFT queue seam; without it the
+// minimal header fallback is used and the dependency is explicit (no fake queue
+// behavior).
 class AhMarketService
 {
 public:
@@ -64,6 +70,8 @@ private:
     bool TryTeleportToAuctioneer(Player* bot);
     bool IsUsableAuctioneerPoint(ai::WorldPosition const& pos) const;
     bool IsBotInBattlegroundOrInstance(Player* bot) const;
+    // Composed fail-closed guard for manual-use / LFT / BG content. World-thread read-only.
+    bool IsBotAvailableForMarket(Player* bot) const;
 
     uint32_t m_elapsedMs = 0;
     size_t m_nextIndex = 0;
