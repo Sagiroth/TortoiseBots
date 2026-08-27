@@ -17,7 +17,7 @@
 #include "Log.h"
 #include "LFT/LFTMgr.h"
 #ifndef MANGOSSERVER_LFTMGR_H
-#error "TortoiseBots LFT fill requires Penqle core #413 (LFTMgr.h)"
+#error "TortoiseBots LFT fill requires Penqle core #416 (LFTMgr.h)"
 #endif
 
 #include <algorithm>
@@ -259,7 +259,7 @@ void LftBotFillService::AcceptPendingOffers()
         // Extra safety: ensure it's still pending fill-owned (not a manually queued bot)
         if (m_pending.find(guidLow) == m_pending.end())
             continue;
-        // World-thread only generic core API (a2bd178, PR #413 final). Reuses native offer accept.
+        // World-thread only generic core API (PR #416). Reuses native offer accept.
         bool ok = sLFTMgr.AcceptOffer(guid);
         if (ok)
             sLog.outString("TortoiseBots: LFT fill bot %s (%s) accepted offer (pending %u)", bot->GetName(), guid.GetString().c_str(), (uint32)m_pending.size());

@@ -271,8 +271,8 @@ see [PLAYERBOTS_AUDIT.md](archive/PLAYERBOTS_AUDIT.md) for evidence.
 
 ## 16. LFT queue integration (optional, default-off)
 
-`LftBotFillService` observes the copy-only generic LFT API from core PR #413
-(final `a2bd178`) and never owns `m_queue`, offers, groups, or a second queue.
+`LftBotFillService` observes the copy-only generic LFT API from core PR #416
+and never owns `m_queue`, offers, groups, or a second queue.
 The service actually uses only `GetQueuedPlayers`, `QueuePlayer`, `LeaveQueue`,
 `IsQueued`, `IsInOffer`, and `AcceptOffer`; core retains all offer,
 acceptance, cancellation, and group-formation semantics. `AcceptOffer` is

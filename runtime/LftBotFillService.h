@@ -12,7 +12,7 @@ namespace TortoiseBots
 {
 
 // Default-off bounded fill of human-waiting LFT queues with live random Headless bots.
-// The service observes the copy-only native queue API from core #413 (final a2bd178),
+// The service observes the copy-only native queue API from core #416,
 // identifies human groups/instances and missing 1 tank / 1 healer / 3 dps roles,
 // then filters in-memory Headless random candidates by the authoritative
 // Soromeister/LFT v0.0.3.3 LFT.allDungeons minLevel/maxLevel range,
