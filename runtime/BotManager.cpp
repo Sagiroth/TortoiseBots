@@ -139,7 +139,7 @@ bool TryRandomTeleport(::Player* bot, BotRecord const& record)
             if (point->IsEnemyHomeZoneFor(info.GetTeam()))
                 continue;
             int32 areaLevel;
-            if (!travelMgr.TryGetValidatedAreaLevel(area->ID, areaLevel))
+            if (!travelMgr.TryGetValidatedAreaLevel(area->Id, areaLevel))
                 continue;
             if (areaLevel < lower || areaLevel > upper)
                 continue;

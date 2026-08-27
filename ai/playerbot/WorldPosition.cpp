@@ -485,7 +485,7 @@ int32 WorldPosition::getAreaLevel() const
         return 1;
 
     if(GetArea())
-        return sTravelMgr.GetAreaLevel(GetArea()->ID);
+        return sTravelMgr.GetAreaLevel(GetArea()->Id);
 
     return 0;
 }

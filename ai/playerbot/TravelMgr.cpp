@@ -493,7 +493,7 @@ AreaTableEntry const* ZoneTravelDestination::GetArea() const
     for (uint32 areaid = 0; areaid <= sAreaStore.GetNumRows(); ++areaid)
     {
         AreaTableEntry const* areaEntry = sAreaStore.LookupEntry<AreaEntry>(areaid);
-        if (areaEntry && areaEntry->ID == GetEntry())
+        if (areaEntry && areaEntry->Id == GetEntry())
         {
             return areaEntry;
         }
@@ -1057,10 +1057,10 @@ int32 TravelMgr::GetAreaLevel(uint32 area_id)
     {
         AreaTableEntry const* subArea = GetAreaEntryByAreaID(i);
 
-        if (!subArea || subArea->zone != area->ID)
+        if (!subArea || subArea->zone != area->Id)
             continue;
 
-        int32 subLevel = GetAreaLevel(subArea->ID);
+        int32 subLevel = GetAreaLevel(subArea->Id);
 
         if (!subLevel)
             continue;
@@ -1344,7 +1344,7 @@ void TravelMgr::LoadQuestTravelTable()
 
         pointsMap.insert_or_assign(point.GetRawValue(), point);
 
-        loc = AddDestination<ExploreTravelDestination>(area->ID, TravelDestinationPurpose::Explore);
+        loc = AddDestination<ExploreTravelDestination>(area->Id, TravelDestinationPurpose::Explore);
         loc->AddPoint(&pointsMap.at(point.GetRawValue()));
     }
 
