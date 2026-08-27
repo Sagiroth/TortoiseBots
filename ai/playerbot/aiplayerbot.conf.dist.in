@@ -134,17 +134,15 @@ AiPlayerbot.AhMarketEnabled = 0
 AiPlayerbot.AhMarketInterval = 120
 AiPlayerbot.AhMarketBatchSize = 1
 
-# Demand-aware WSG/AB/AV queue participation for live Headless RNDBOTs. Default off.
-# Uses the copy-only BattleGroundMgr::GetQueuedParticipants snapshot (Penqle #415)
-# to match online, non-invited human demand by queue type/bracket and select the
-# underrepresented faction; no blind periodic queueing or queue-internal access.
-# Joins/leaves use native WorldSession handlers and BattleGroundMgr ownership.
-# Candidates are in-memory and checked for level/state, LFT/dungeon conflicts,
-# groups, masters, deserter/taxi/combat, and native queue capacity. WSG/AB group
-# joins require service-owned Headless members; AV is always solo. Cadence is
-# 5s..10m and budget 0..10. No second queue/thread, DB scan, arena, vehicle, or
-# expansion BG behavior. Requires frozen Headless #411, LFT #413, and BG demand
-# snapshot #415; missing APIs fail at compile time rather than silently filling.
+# Autonomous WSG/AB/AV queue participation for live Headless RNDBOTs. Default off.
+# Uses the native BattleGroundJoinAction/WorldSession handler path and leaves
+# queue/invite ownership to BattleGroundMgr. Candidates are in-memory and checked
+# for faction, level bracket, alive/idle/not queued/not in a BG, no deserter/taxi,
+# and no active human master. WSG/AB group joins require every member to be a
+# service-owned Headless bot; AV is always queued solo. Cadence is 5s..10m and
+# the per-interval budget is 0..10. No second queue/thread, DB scan, arena,
+# vehicle, or expansion BG behavior. Master-reclaim reconciliation only removes
+# queue entries owned by this service. Requires frozen Headless #411.
 #AiPlayerbot.RandomBotBgEnabled = 0
 #AiPlayerbot.RandomBotBgQueueInterval = 30000
 #AiPlayerbot.RandomBotBgMaxQueuePerInterval = 1
