@@ -37,12 +37,24 @@ Validated local core checkpoint:
 `7353989c94399f80572a2f8ec2eb73c63a6c79f8` (historical branch `cleanup/f03-f27-code-freeze`)
 
 Upstream status:
-generic Headless capability proposed as draft PR [#411](https://github.com/Penqle/tortoise-wow/pull/411)
-(`feature/headless-world-session` @ `c37e28b`, based on upstream `main`
-`61a8269`; merge-base `93a5faa`). Not yet merged; the pinned branch remains the validated baseline until #411 lands.
+generic Headless capability is proposed in PR [#411](https://github.com/Penqle/tortoise-wow/pull/411)
+(`feature/headless-world-session` @ `24586ba`, based on upstream `main`
+`61a8269`). It is not yet merged; the module-facing `World` façade and
+`SessionTransport` contract are the tested surface.
 
-When the core changes, record the exact tested core/module pair
-(e.g. in the commit message and README) instead of assuming compatibility from a branch name.
+Generic participant primitives are proposed in PR [#416](https://github.com/Penqle/tortoise-wow/pull/416)
+(`feature/generic-participant-primitives` @ `3ec9f5d`), refreshed on top of
+the amended #411 implementation. It is not yet merged.
+
+Compile-verified integration snapshot:
+
+```text
+Core:         3ec9f5ddce6c09e9bd13db24a83f2306b0c07402
+TortoiseBots: 9a4e5233a836a8e6a722c4938e288e6def73dd54
+```
+
+The exact tested core/module pair must be recorded whenever the core changes;
+do not infer compatibility from a branch name.
 
 ## 3. Session transport
 
