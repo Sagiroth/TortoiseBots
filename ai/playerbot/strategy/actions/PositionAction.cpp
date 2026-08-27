@@ -121,7 +121,7 @@ bool GuardAction::isUseful()
         if (!target)
             return true;
 
-        if (target->GetTarget() == bot) //Try pulling target to guard position
+        if (target->GetVictim() == bot) //Try pulling target to guard position
             return true;
 
         if (!ai->IsRanged(bot)) //Melee bots stay in melee.
@@ -214,7 +214,7 @@ bool ReturnToPullPositionAction::isPossible()
             Unit* target = strategy->GetTarget();
             if (target)
             {
-                if (target->GetTarget() == bot)
+                if (target->GetVictim() == bot)
                 {
                     const float distance = bot->getDistance(stayPosition.x, stayPosition.y, stayPosition.z);
                     if (distance > sPlayerbotAIConfig.reactDistance)

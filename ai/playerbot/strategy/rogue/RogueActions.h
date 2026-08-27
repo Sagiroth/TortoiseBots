@@ -378,8 +378,8 @@ namespace ai
 
                                     if (spell->ForceSpellStart(&targets) == SPELL_CAST_OK)
                                     {
-                                        bot->RemoveSpellCooldown(*spellInfo, false);
-                                        bot->AddCooldown(*spellInfo, poisonProto, false);
+                                        bot->RemoveSpellCooldown(spellInfo->Id, false);
+                                        bot->AddSpellAndCategoryCooldowns(spellInfo, poisonProto->ItemId);
                                         SetDuration(3000);
                                     }
                                     else

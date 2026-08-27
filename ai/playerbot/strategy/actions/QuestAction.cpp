@@ -177,7 +177,7 @@ bool QuestAction::ProcessQuests(WorldObject* questGiver)
 
     bot->SetSelectionGuid(guid);
     bot->PrepareQuestMenu(guid);
-    QuestMenu& questMenu = bot->GetPlayerMenu()->GetQuestMenu();
+    QuestMenu& questMenu = bot->PlayerTalkClass->GetQuestMenu();
 
     bool hasAccept = false;
     for (uint32 i = 0; i < questMenu.MenuItemCount(); ++i)

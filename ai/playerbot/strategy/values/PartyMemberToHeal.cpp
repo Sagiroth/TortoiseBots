@@ -19,7 +19,7 @@ uint32 getIncomingdamage(Unit const* pTarget)
 {
     uint32 damage = 0;
     for (auto const& pAttacker : pTarget->GetAttackers())
-        if (pAttacker->CanReachWithMeleeAttack(pTarget))
+        if (pAttacker->CanReachWithMeleeAutoAttack(pTarget))
             damage += uint32((pAttacker->GetFloatValue(UNIT_FIELD_MINDAMAGE) + pAttacker->GetFloatValue(UNIT_FIELD_MAXDAMAGE)) / 2);
 
     return damage;

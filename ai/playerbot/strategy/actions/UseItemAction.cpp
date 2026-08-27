@@ -671,8 +671,8 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
                 {
                     if (!HasItemCooldown(itemId))
                     {
-                        bot->RemoveSpellCooldown(*spellInfo, false);
-                        bot->AddCooldown(*spellInfo, proto, false);
+                        bot->RemoveSpellCooldown(spellInfo->Id, false);
+                        bot->AddSpellAndCategoryCooldowns(spellInfo, proto->ItemId);
                     }
                 }
 

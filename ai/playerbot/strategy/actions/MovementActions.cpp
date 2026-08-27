@@ -463,7 +463,7 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
 
     for (auto it = std::next(nextStep); it != path.end(); ++it)
     {
-        time += (nextStep->point.distance(bot) / bot->GetSpeedInMotion()) * 1000;
+        time += (nextStep->point.distance(bot) / bot->GetSpeed(MOVE_RUN)) * 1000;
 
         nextStep = it;
 

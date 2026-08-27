@@ -1,13 +1,22 @@
 #pragma once
 
 #include "strategy/AiObject.h"
-#include <boost/functional/hash.hpp>
 #include "GuidPosition.h"
+#include <functional>
+#include <utility>
 #include "strategy/values/TravelValues.h"
 #include "WorldSquare.h"
 
 namespace ai
 {
+	struct MapTransferKeyHash
+	{
+		std::size_t operator()(std::pair<uint32, uint32> const& key) const noexcept
+		{
+			return std::hash<uint32>{}(key.first) ^ (std::hash<uint32>{}(key.second) << 1);
+		}
+	};
+
 	class GuidePosition;
 
 	class MapTransfer
@@ -501,7 +510,7 @@ namespace ai
 
 		std::vector<std::tuple<uint32, int, int>> badMmap;
 
-		std::unordered_map<std::pair<uint32, uint32>, std::vector<MapTransfer>, boost::hash<std::pair<uint32, uint32>>> mapTransfersMap;
+		std::unordered_map<std::pair<uint32, uint32>, std::vector<MapTransfer>, MapTransferKeyHash> mapTransfersMap;
 	};
 }
 

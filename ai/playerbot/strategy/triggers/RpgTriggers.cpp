@@ -829,10 +829,10 @@ bool RpgGossipTalkTrigger::IsActive()
         bot->PrepareGossipMenu(creature, creature->GetDefaultGossipMenuId());
     }
 
-    if (!bot->GetPlayerMenu())
+    if (!bot->PlayerTalkClass)
         return false;
 
-    GossipMenu& menu = bot->GetPlayerMenu()->GetGossipMenu();
+    GossipMenu& menu = bot->PlayerTalkClass->GetGossipMenu();
 
     if (!menu.MenuItemCount())
         return false;

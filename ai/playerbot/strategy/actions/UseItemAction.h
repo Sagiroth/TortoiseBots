@@ -131,8 +131,8 @@ namespace ai
                             const SpellEntry* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellData.SpellId);
                             if (spellInfo)
                             {
-                                bot->RemoveSpellCooldown(*spellInfo, false);
-                                bot->AddCooldown(*spellInfo, proto, false);
+                                bot->RemoveSpellCooldown(spellInfo->Id, false);
+                                bot->AddSpellAndCategoryCooldowns(spellInfo, proto->ItemId);
                                 break;
                             }
                         }
@@ -242,8 +242,8 @@ namespace ai
                             const SpellEntry* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellData.SpellId);
                             if (spellInfo)
                             {
-                                bot->RemoveSpellCooldown(*spellInfo, false);
-                                bot->AddCooldown(*spellInfo, proto, false);
+                                bot->RemoveSpellCooldown(spellInfo->Id, false);
+                                bot->AddSpellAndCategoryCooldowns(spellInfo, proto->ItemId);
                                 break;
                             }
                         }
@@ -609,8 +609,8 @@ namespace ai
                 if (bot->IsNonMeleeSpellCasted(true))
                     return false;
 
-                bot->clearUnitState(UNIT_STAT_CHASE);
-                bot->clearUnitState(UNIT_STAT_FOLLOW);
+                bot->ClearUnitState(UNIT_STAT_CHASE);
+                bot->ClearUnitState(UNIT_STAT_FOLLOW);
 
                 if (ai->GetBot()->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
                 {
@@ -624,7 +624,7 @@ namespace ai
                     return false;
                 }
 
-                bot->addUnitState(UNIT_STAND_STATE_SIT);
+                bot->AddUnitState(UNIT_STAND_STATE_SIT);
                 ai->InterruptSpell();
 
                 float drinkDuration = AI_VALUE(float, "drink duration");
@@ -637,7 +637,7 @@ namespace ai
 
                 ai->CastSpell(24355, bot);
                 SetDuration(drinkDuration);
-                bot->RemoveSpellCooldown(*pSpellInfo);
+                bot->RemoveSpellCooldown(pSpellInfo->Id);
 
                 // Eat and drink at the same time
 
@@ -647,7 +647,7 @@ namespace ai
                     if (pSpellInfo2)
                     {
                         ai->AddAura(bot, 24005);
-                        bot->RemoveSpellCooldown(*pSpellInfo2);
+                        bot->RemoveSpellCooldown(pSpellInfo2->Id);
                     }
                 }
 
@@ -686,8 +686,8 @@ namespace ai
                 if (bot->IsNonMeleeSpellCasted(true))
                     return false;
 
-                bot->clearUnitState(UNIT_STAT_CHASE);
-                bot->clearUnitState(UNIT_STAT_FOLLOW);
+                bot->ClearUnitState(UNIT_STAT_CHASE);
+                bot->ClearUnitState(UNIT_STAT_FOLLOW);
 
                 if (ai->GetBot()->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
                 {
@@ -701,7 +701,7 @@ namespace ai
                     return false;
                 }
 
-                bot->addUnitState(UNIT_STAND_STATE_SIT);
+                bot->AddUnitState(UNIT_STAND_STATE_SIT);
                 ai->InterruptSpell();
 
                 float eatDuration = AI_VALUE(float, "eat duration");
@@ -714,7 +714,7 @@ namespace ai
 
                 ai->CastSpell(24005, bot);
                 SetDuration(eatDuration);
-                bot->RemoveSpellCooldown(*pSpellInfo);
+                bot->RemoveSpellCooldown(pSpellInfo->Id);
 
                 // Eat and drink at the same time
                 if (AI_VALUE(bool, "should drink"))
@@ -723,7 +723,7 @@ namespace ai
                     if (pSpellInfo2)
                     {
                         ai->AddAura(bot, 24355);
-                        bot->RemoveSpellCooldown(*pSpellInfo2);
+                        bot->RemoveSpellCooldown(pSpellInfo2->Id);
                     }
                 }
 

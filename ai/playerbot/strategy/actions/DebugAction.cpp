@@ -3361,7 +3361,7 @@ bool DebugAction::HandleGO(Event& event, Player* requester, const std::string& t
 
         out << (object->IsInUse() ? ", in use" : ", not in use");
 
-        LootState lootState = object->GetLootState();
+        LootState lootState = object->getLootState();
 
         out << " lootState:";
 

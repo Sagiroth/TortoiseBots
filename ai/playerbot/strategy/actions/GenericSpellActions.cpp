@@ -126,7 +126,7 @@ bool CastSpellAction::isPossible()
         float dist = bot->getDistance(spellTarget, true, ai->IsRanged(bot) ? DIST_CALC_COMBAT_REACH : DIST_CALC_COMBAT_REACH_WITH_MELEE);
         if (range == ATTACK_DISTANCE)
         {
-            canReach = bot->CanReachWithMeleeAttack(spellTarget);
+            canReach = bot->CanReachWithMeleeAutoAttack(spellTarget);
         }
         else
         {
@@ -662,8 +662,8 @@ bool CastItemTargetAction::Execute(Event& event)
         {
             if (!HasSpellCooldown(itemId))
             {
-                bot->RemoveSpellCooldown(*spellInfo, false);
-                bot->AddCooldown(*spellInfo, proto, false);
+                bot->RemoveSpellCooldown(spellInfo->Id, false);
+                bot->AddSpellAndCategoryCooldowns(spellInfo, proto->ItemId);
             }
         }
 

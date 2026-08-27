@@ -66,7 +66,7 @@ bool GossipHelloAction::Execute(Event& event)
 
         TellGossipMenus(requester);
 	}
-	else if (!bot->GetPlayerMenu())
+	else if (!bot->PlayerTalkClass)
 	{
 	    ai->TellPlayerNoFacing(requester, "I need to talk first");
 	    return false;
@@ -110,10 +110,10 @@ void GossipHelloAction::TellGossipText(Player* requester, uint32 textId)
 
 void GossipHelloAction::TellGossipMenus(Player* requester)
 {
-    if (!bot->GetPlayerMenu())
+    if (!bot->PlayerTalkClass)
         return;
 
-     GossipMenu& menu = bot->GetPlayerMenu()->GetGossipMenu();
+     GossipMenu& menu = bot->PlayerTalkClass->GetGossipMenu();
 
      if (requester)
      {
@@ -136,7 +136,7 @@ void GossipHelloAction::TellGossipMenus(Player* requester)
 
 bool GossipHelloAction::ProcessGossip(Player* requester, ObjectGuid creatureGuid, int menuToSelect)
 {
-    GossipMenu& menu = bot->GetPlayerMenu()->GetGossipMenu();
+    GossipMenu& menu = bot->PlayerTalkClass->GetGossipMenu();
 
     bool noFeedback = (menuToSelect == -1);
 

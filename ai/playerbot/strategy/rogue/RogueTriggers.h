@@ -183,7 +183,7 @@ namespace ai
             }
 
             // use sprint on players
-            if (enemyPlayer && !bot->CanReachWithMeleeAttack(enemyPlayer))
+            if (enemyPlayer && !bot->CanReachWithMeleeAutoAttack(enemyPlayer))
             {
                 return true;
             }

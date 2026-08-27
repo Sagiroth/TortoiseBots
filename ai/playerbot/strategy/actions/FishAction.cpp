@@ -147,7 +147,7 @@ bool UseFishingBobberAction::Execute(Event& event)
         if (obj->GetOwnerGuid() != bot->getObjectGuid())
             continue;
 
-        if (obj->GetLootState() != GO_READY)
+        if (obj->getLootState() != GO_READY)
         {
             time_t bobberActiveTime = obj->GetRespawnTime() - FISHING_BOBBER_READY_TIME;
             if (bobberActiveTime > time(0))

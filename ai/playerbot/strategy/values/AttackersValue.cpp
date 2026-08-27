@@ -551,7 +551,7 @@ std::list<ObjectGuid> AttackersTargetingMeValue::Calculate()
     for (const ObjectGuid& attackerGuid : attackers)
     {
         Unit* attacker = ai->GetUnit(attackerGuid);
-        if (attacker && (attacker->GetTarget() == bot || attacker->GetVictim() == bot))
+        if (attacker && (attacker->GetVictim() == bot || attacker->GetVictim() == bot))
         {
             result.push_back(attackerGuid);
         }

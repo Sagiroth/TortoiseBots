@@ -49,7 +49,7 @@ uint8 ThreatValue::Calculate()
     Unit* target = AI_VALUE(Unit*, qualifier);
 
     if (target && target->IsFriend(bot))
-        target = target->GetTarget();
+        target = target->GetVictim();
 
     return Calculate(target);
 }
@@ -63,7 +63,7 @@ float ThreatValue::GetThreat(Player* player, Unit* target)
         return 0;
 
     if (target->IsFriend(player))
-        target = target->GetTarget();
+        target = target->GetVictim();
 
     if (target->getObjectGuid().IsPlayer())
         return 0;
@@ -79,7 +79,7 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
         return 0;
 
     if (target->IsFriend(ai->GetBot()))
-        target = target->GetTarget();
+        target = target->GetVictim();
 
     if (target->getObjectGuid().IsPlayer())
         return 0;
@@ -113,7 +113,7 @@ uint8 ThreatValue::Calculate(Unit* target)
         return 0;
 
     if (target->IsFriend(bot))
-        target = target->GetTarget();
+        target = target->GetVictim();
 
     if (!target)
         return 0;
