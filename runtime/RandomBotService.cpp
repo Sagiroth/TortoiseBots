@@ -135,7 +135,9 @@ void RandomBotService::ResolvePinnedBots()
 
     // One-time, deferred until DB is usable: `characters.name` -> guid lookup
     // using the database's stored collation (separate from the teleport
-    // facade's normalized comparison). No per-tick SELECT.
+    // facade's normalized comparison). PQuery null means not found or lookup
+    // failed (does not distinguish); m_pinnedResolved avoids retry until
+    // restart. No per-tick SELECT.
     for (std::string const& rawName : sPlayerbotAIConfig.pinnedBotNames)
     {
         if (rawName.empty())
@@ -145,7 +147,7 @@ void RandomBotService::ResolvePinnedBots()
         std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery("SELECT guid FROM characters WHERE name = '%s' LIMIT 1", escaped.c_str()));
         if (!result)
         {
-            sLog.outString("TortoiseBots: pinned bot '%s' not found as character", rawName.c_str());
+            sLog.outString("TortoiseBots: pinned bot '%s' was not found or the lookup failed (no retry until restart)", rawName.c_str());
             continue;
         }
         Field* fields = result->Fetch();
@@ -213,7 +215,9 @@ void RandomBotService::RemoveExpiredBots(uint32_t diff)
         if (!record || !record->enteredWorld)
             continue;
 
-        // Pinned bots are exempt from timed logout/teleport but still gated by
+        // Pinned bots are exempt from timed logout (native login teleport is
+        // skipped separately via sRandomBotFacade::IsPinnedBot's normalized
+        // name match, best-effort) but still gated by
         // RandomBotLoginWithPlayer=1 (see MaintainOnlinePool).
         if (IsPinnedGuid(candidate.characterGuid.GetCounter()))
         {

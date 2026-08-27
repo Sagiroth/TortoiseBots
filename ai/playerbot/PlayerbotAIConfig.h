@@ -176,8 +176,9 @@ public:
     std::string commandPrefix, commandSeparator;
     std::string randomBotAccountPrefix;
     // Character names matched using the database's stored `characters.name`
-    // collation; pinned bots stay online and are exempt from timed
-    // logout/teleport but still gated by RandomBotLoginWithPlayer=1.
+    // collation; pinned bots stay online and are exempt from timed logout
+    // (native login teleport is skipped separately via the facade's normalized
+    // name match, best-effort) but still gated by RandomBotLoginWithPlayer=1.
     // Resolved once to GUIDs in the discovered RNDBOT pool.
     std::list<std::string> pinnedBotNames;
 
