@@ -158,7 +158,7 @@ static bool SummonPlayerToSummoner(Player* summoner, Player* target, PlayerbotAI
         data << summoner->getObjectGuid();
         data << uint32(summoner->getZoneId());
         data << uint32(MAX_PLAYER_SUMMON_DELAY * IN_MILLISECONDS);
-        target->GetSession()->SendPacket(data);
+        target->GetSession()->SendPacket(&data);
     }
     else
     {
