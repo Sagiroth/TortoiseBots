@@ -1307,7 +1307,7 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
             return false;
     }
 
-    mm.MoveFollow(target, distance, angle, true, sPlayerbotAIConfig.boostFollow);
+    mm.MoveFollow(target, distance, angle);
     return true;
 }
 
@@ -1959,7 +1959,7 @@ bool FleeWithPetAction::Execute(Event& event)
         UnitAI* creatureAI = ((Creature*)pet)->AI();
         if (creatureAI)
         {
-            creatureAI->SetReactState(REACT_PASSIVE);
+            pet->SetReactState(REACT_PASSIVE);
             pet->AttackStop();
         }
     }
