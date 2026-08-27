@@ -369,6 +369,15 @@ public:
     bool respawnModForPlayerBots, respawnModForInstances;
 
     bool randomBotLoginWithPlayer;
+    // Autonomous BG queue for WSG/AB/AV. Default off. Bounded cadence and
+    // max-per-interval, in-memory Headless/random selection, faction/level
+    // bracket/state/deserter/taxi/combat/queue checks, native handler
+    // ownership/invites/queue updates via HandleBattlemasterJoinOpcode (guid
+    // 1337 bypass) + SMSG_BATTLEFIELD_STATUS/BGStatusAction invite path.
+    // No second queue/thread/arena/vehicle/expansion or DB tick scans.
+    bool randomBotBgEnabled = false;
+    uint32 randomBotBgQueueInterval = 30000;
+    uint32 randomBotBgMaxQueuePerInterval = 1;
 
     bool jumpInBg;
     bool jumpWithPlayer;

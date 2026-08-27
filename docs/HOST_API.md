@@ -133,8 +133,8 @@ seam.
 ## 8. World update
 
 Bot AI runs on the normal world/game thread. The core exposes a generic world
-update listener mechanism, and `BotHostAdapter` drives `BotManager` / AI updates
-from that tick.
+update listener mechanism, and `BotHostAdapter` drives `BotManager` / AI,
+`AhMarketService`, and `BattlegroundQueueService` updates from that tick.
 
 The core listener is generic; it does not call a PlayerBots singleton.
 
@@ -347,7 +347,22 @@ collisions (`CHAR_CREATE_NAME_IN_USE`/`CHAR_NAME_RESERVED`/`CHAR_NAME_PROFANE`/
 account is not permanently poisoned by a single bad name or temporary balance
 state. Created GUIDs enter the existing Headless candidate/login path.
 
-## 19. New core seam test
+## 19. Battleground auto-queue (optional, default-off)
+
+`BattlegroundQueueService` provides bounded autonomous WSG/AB/AV participation
+for live Headless random bots through the existing native
+`WorldSession::HandleBattlemasterJoinOpcode` command path (guid 1337). The
+core remains the owner of queue state, invites, and port events; the module
+never owns a second queue, starts a worker thread, or writes queue structures.
+Candidates are selected in memory and checked for the native level bracket,
+faction, queue slots, alive/idle state, deserter/taxi/combat status, and active
+human master. AV is always queued solo and success is verified after the native
+handler; WSG/AB group joins require every member to be a service-owned Headless
+bot. A service-owned `(guid, queueType)` set makes master-reclaim cleanup
+precise. Cadence and per-interval budget are clamped and the setting defaults
+off (`RandomBotBgEnabled=0`).
+
+## 20. New core seam test
 
 Before adding another core seam, establish that:
 
@@ -358,6 +373,6 @@ Before adding another core seam, establish that:
 If the design would make PlayerBots-specific checks spread through normal
 core gameplay code, redesign it.
 
-## 20. Historical closure
+## 21. Historical closure
 
 F-03/F-27 closure and validation boundary are recorded in `PLAN.md` §6.1 and `PROVENANCE.md`; see `archive/PLAYERBOTS_AUDIT.md` for full evidence. This contract covers only the current host API.
