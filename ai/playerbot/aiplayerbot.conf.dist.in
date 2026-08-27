@@ -52,14 +52,21 @@ AiPlayerbot.RandomBotAccountPrefix = RNDBOT
 # When 1, the service reuses existing RNDBOT% accounts/characters and creates
 # only the deficit toward the configured Min/Max target, throttled to at most
 # one character per RandomBotUpdateInterval (no per-tick DB scans, no blocking
-# loop). Accounts are allocated via AccountMgr.CreateAccount, characters via
-# CharacterCreation::CreateCharacter on the world thread (requires core 94dfa7e
-# Handlers/CharacterCreation.h). Valid PlayerInfo race/class/start data only
-# (fail-closed); duplicate names/accounts are avoided via UNIQUE checks.
-# Successful creates are appended to the candidate pool so the normal Headless
-# login (AddRandomBot -> LoginPlayer) and post-login PlayerbotFactory gear
-# enrichment (already in RandomBotService.Update) handle them. No raw INSERT,
-# no DB worker, no AddAsyncTask.
+# loop). Accounts are allocated via AccountMgr.CreateAccount with a securely
+# generated random password (hashed via CalculateShaPassHash, never logged),
+# characters via CharacterCreation::CreateCharacter on the world thread
+# (requires core 94dfa7e Handlers/CharacterCreation.h). Valid PlayerInfo
+# race/class/start data only (fail-closed); duplicate names/accounts are
+# avoided via UNIQUE checks. Existing accounts with mixed-faction cached
+# candidates are deterministically excluded (derived from all cached RNDBOT
+# characters for that account) and the service tries the next eligible account
+# in the same cadence, so one failed account does not block the deficit.
+# Permanent CHAR_CREATE_DISABLED / faction-limit errors are logged once per
+# cadence and the account is skipped (no 5-per-cadence spam, no misleading
+# "retrying" logs). Successful creates are appended to the candidate pool so
+# the normal Headless login (AddRandomBot -> LoginPlayer) and post-login
+# PlayerbotFactory gear enrichment (already in RandomBotService.Update) handle
+# them. No raw INSERT, no DB worker, no AddAsyncTask.
 AiPlayerbot.RandomBotAutoCreate = 0
 
 # Optional pinned RNDBOT names that remain online when possible. Comma-separated

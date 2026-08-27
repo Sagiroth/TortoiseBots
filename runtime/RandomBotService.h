@@ -43,6 +43,10 @@ private:
     uint32_t TargetCount() const;
     uint32_t DesiredTargetCount() const;
     bool TryAutoCreate();
+    bool TryCreateCharacterOnAccount(uint32_t accountId, std::vector<std::pair<uint8_t, uint8_t>> const& validForAccount);
+    // Returns TEAM_NONE if empty/unknown, otherwise ALLIANCE/HORDE (67/469). Sets isMixed
+    // when cached candidates contain both factions (must be excluded).
+    uint32_t GetAccountAllowedTeam(uint32_t accountId, bool& isMixed) const;
     void ResolvePinnedBots();
     bool IsPinnedGuid(uint32 guidLow) const { return m_pinnedGuids.find(guidLow) != m_pinnedGuids.end(); }
 

@@ -154,12 +154,15 @@ public:
     bool randomBotLoginAtStartup;
     // Bounded idempotent RNDBOT population: reuse existing RNDBOT% accounts/
     // characters, create only the deficit toward the configured Min/Max target
-    // (default OFF). Uses AccountMgr.CreateAccount and the generic
-    // CharacterCreation::CreateCharacter synchronous world-thread seam (core
-    // 94dfa7e). Throttled to at most one character per RandomBotUpdateInterval,
-    // no per-tick DB scans, fail-closed on invalid PlayerInfo. Created GUIDs
-    // are appended to the existing candidate pool so the normal Headless login
-    // path handles them; no raw INSERT, no DB worker, no blocking loop.
+    // (default OFF). Uses AccountMgr.CreateAccount (random password, hashed)
+    // and the generic CharacterCreation::CreateCharacter synchronous
+    // world-thread seam (core 94dfa7e). Throttled to at most one character per
+    // RandomBotUpdateInterval, no per-tick DB scans, fail-closed on invalid
+    // PlayerInfo; mixed-faction cached accounts are excluded deterministically
+    // and permanent disabled/faction errors are logged once per cadence.
+    // Created GUIDs are appended to the existing candidate pool so the normal
+    // Headless login path handles them; no raw INSERT, no DB worker, no
+    // blocking loop.
     bool randomBotAutoCreate = false;
     // Scatter random bots on headless login to a validated level-appropriate
     // GenericRpg destination. Default off; fail-closed when no validated level

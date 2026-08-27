@@ -50,6 +50,21 @@ std::string GenerateRndBotName()
         name.push_back(letters[urand(0, 25)]);
     return name;
 }
+
+std::string GenerateRandomPassword()
+{
+    // 12 chars alphanumeric, well within MAX_ACCOUNT_STR (16). No credential
+    // exposure: not derived from username, hashed via CalculateShaPassHash.
+    static const char charset[] =
+        "abcdefghijklmnopqrstuvwxyz"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "0123456789";
+    std::string pw;
+    pw.reserve(12);
+    for (int i = 0; i < 12; ++i)
+        pw.push_back(charset[urand(0, 61)]);
+    return pw;
+}
 } // namespace
 
 RandomBotService& RandomBotService::Instance()
@@ -185,6 +200,131 @@ uint32 RandomBotService::DesiredTargetCount() const
     return configuredTarget;
 }
 
+// Deterministic allowed team from all cached candidates for this account.
+// TEAM_NONE = empty or unknown (any faction allowed). Sets isMixed=true when
+// the cached candidates contain both factions (incompatible under
+// ALLOW_TWO_SIDE_ACCOUNTS=0) – caller must exclude that account.
+uint32_t RandomBotService::GetAccountAllowedTeam(uint32_t accountId, bool& isMixed) const
+{
+    bool hasAlliance = false;
+    bool hasHorde = false;
+    isMixed = false;
+    for (Candidate const& c : m_candidates)
+    {
+        if (c.accountId != accountId)
+            continue;
+        PlayerCacheData const* data = sObjectMgr.GetPlayerDataByGUID(c.characterGuid.GetCounter());
+        if (!data || !data->uiRace)
+            continue;
+        Team t = Player::TeamForRace(data->uiRace);
+        if (t == ALLIANCE)
+            hasAlliance = true;
+        else if (t == HORDE)
+            hasHorde = true;
+        if (hasAlliance && hasHorde)
+        {
+            isMixed = true;
+            return TEAM_NONE;
+        }
+    }
+    if (hasAlliance && hasHorde)
+    {
+        isMixed = true;
+        return TEAM_NONE;
+    }
+    if (hasAlliance)
+        return ALLIANCE;
+    if (hasHorde)
+        return HORDE;
+    return TEAM_NONE;
+}
+
+bool RandomBotService::TryCreateCharacterOnAccount(uint32_t accountId, std::vector<std::pair<uint8_t, uint8_t>> const& validForAccount)
+{
+    if (validForAccount.empty())
+    {
+        sLog.outError("TortoiseBots: auto-create account %u has no valid race/class for its team, skipping", accountId);
+        return false;
+    }
+
+    // Up to 5 name attempts per account per cadence; name collisions are
+    // retried silently, permanent faction/disabled errors break to try next
+    // account instead of spamming 5 logs.
+    for (int nameAttempt = 0; nameAttempt < 5; ++nameAttempt)
+    {
+        std::string name = GenerateRndBotName();
+        std::string norm = name;
+        if (!normalizePlayerName(norm))
+            continue;
+        if (sObjectMgr.GetPlayerGuidByName(norm))
+            continue;
+
+        auto pr = validForAccount[urand(0, uint32(validForAccount.size() - 1))];
+        uint8 race = pr.first;
+        uint8 cls = pr.second;
+
+        CharacterCreateInfo info;
+        info.name = norm;
+        info.race = race;
+        info.class_ = cls;
+        info.gender = urand(0, 1) ? GENDER_FEMALE : GENDER_MALE;
+        info.skin = uint8(urand(0, 7));
+        info.face = uint8(urand(0, 7));
+        info.hairStyle = uint8(urand(0, 7));
+        info.hairColor = uint8(urand(0, 7));
+        info.facialHair = uint8(urand(0, 7));
+        info.outfitId = 0;
+        info.challengeMask = 0;
+
+        if (!sObjectMgr.GetPlayerInfo(race, cls))
+        {
+            sLog.outError("TortoiseBots: auto-create race %u class %u has no PlayerInfo", uint32(race), uint32(cls));
+            return false;
+        }
+
+        CharacterCreateOutcome outcome = CharacterCreation::CreateCharacter(accountId, info);
+        if (outcome.result == CHAR_CREATE_SUCCESS)
+        {
+            m_candidates.push_back({accountId, outcome.guid});
+            m_ageMs.push_back(0);
+            m_strategyAgeMs.push_back(0);
+            m_randomizeAgeMs.push_back(0);
+            sLog.outString("TortoiseBots: auto-create created character %s (%s) race %u class %u on account %u",
+                norm.c_str(), outcome.guid.GetString().c_str(), uint32(race), uint32(cls), accountId);
+            return true;
+        }
+
+        if (outcome.result == CHAR_CREATE_NAME_IN_USE || outcome.result == CHAR_NAME_RESERVED || outcome.result == CHAR_CREATE_FAILED)
+        {
+            // Name collision – try another name silently; no per-attempt spam.
+            continue;
+        }
+        if (outcome.result == CHAR_CREATE_PVP_TEAMS_VIOLATION)
+        {
+            sLog.outError("TortoiseBots: auto-create account %u team violation for race %u (mixed or wrong faction), skipping account", accountId, uint32(race));
+            return false;
+        }
+        if (outcome.result == CHAR_CREATE_ACCOUNT_LIMIT || outcome.result == CHAR_CREATE_SERVER_LIMIT)
+        {
+            sLog.outString("TortoiseBots: auto-create account %u at limit (%u), trying next account", accountId, uint32(outcome.result));
+            return false;
+        }
+        if (outcome.result == CHAR_CREATE_DISABLED)
+        {
+            sLog.outError("TortoiseBots: auto-create race %u class %u disabled (team disabled or not playable), skipping account %u", uint32(race), uint32(cls), accountId);
+            return false;
+        }
+        // Generic fail-closed – log once, try next account.
+        sLog.outError("TortoiseBots: auto-create for %s race %u class %u on account %u failed %u, trying next account", norm.c_str(), uint32(race), uint32(cls), accountId, uint32(outcome.result));
+        return false;
+    }
+
+    // Exhausted name attempts without permanent error – not a per-cadence spam,
+    // one line per account.
+    sLog.outString("TortoiseBots: auto-create on account %u: no free name after 5 attempts, trying next account", accountId);
+    return false;
+}
+
 bool RandomBotService::TryAutoCreate()
 {
     if (!sPlayerbotAIConfig.randomBotAutoCreate)
@@ -207,8 +347,6 @@ bool RandomBotService::TryAutoCreate()
     // One bounded attempt per cadence (caller is throttled to
     // RandomBotUpdateInterval, >=1s). No per-tick LIKE scan.
 
-    // Choose or create account.
-    uint32 chosenAccountId = 0;
     uint32 perAccountLimit = sWorld.getConfig(CONFIG_UINT32_CHARACTERS_PER_ACCOUNT);
     if (!perAccountLimit)
         perAccountLimit = 10;
@@ -217,192 +355,121 @@ bool RandomBotService::TryAutoCreate()
         perRealmLimit = 50;
     uint32 accountLimit = std::min(perAccountLimit, perRealmLimit);
 
-    // Count candidates per known account (in-memory, no DB).
+    // Valid race/class from PlayerInfo (covers Goblin/High Elf when Turtle data present).
+    std::vector<std::pair<uint8_t,uint8_t>> validAll;
+    validAll.reserve(64);
+    for (uint32_t race = 1; race < MAX_RACES; ++race)
+        for (uint32_t cls = 1; cls < MAX_CLASSES; ++cls)
+            if (sObjectMgr.GetPlayerInfo(race, cls))
+                validAll.emplace_back(uint8_t(race), uint8_t(cls));
+    if (validAll.empty())
+    {
+        sLog.outError("TortoiseBots: auto-create no valid PlayerInfo race/class");
+        return false;
+    }
+
+    bool allowTwoSide = sWorld.getConfig(CONFIG_BOOL_ALLOW_TWO_SIDE_ACCOUNTS) != 0;
+
+    // Try existing accounts in deterministic order, skipping full/mixed, and
+    // trying the next account on any permanent failure so one bad account
+    // does not block the deficit.
     for (uint32 accId : m_rndBotAccountIds)
     {
         uint32 cnt = 0;
         for (Candidate const& c : m_candidates)
             if (c.accountId == accId)
                 ++cnt;
-        if (cnt < accountLimit)
+        if (cnt >= accountLimit)
+            continue;
+
+        bool isMixed = false;
+        uint32_t allowed = GetAccountAllowedTeam(accId, isMixed);
+        if (isMixed)
         {
-            chosenAccountId = accId;
-            break;
+            sLog.outError("TortoiseBots: auto-create account %u has mixed-faction RNDBOT characters, excluding from auto-create", accId);
+            continue;
         }
+
+        std::vector<std::pair<uint8_t,uint8_t>> validForAccount = validAll;
+        if (allowed != uint32_t(TEAM_NONE) && !allowTwoSide)
+        {
+            std::vector<std::pair<uint8_t,uint8_t>> filtered;
+            filtered.reserve(validAll.size());
+            for (auto const& pr : validAll)
+                if (Player::TeamForRace(pr.first) == allowed)
+                    filtered.push_back(pr);
+            if (!filtered.empty())
+                validForAccount.swap(filtered);
+            else
+            {
+                sLog.outError("TortoiseBots: auto-create account %u team %u has no valid race/class, skipping", accId, uint32_t(allowed));
+                continue;
+            }
+        }
+
+        if (TryCreateCharacterOnAccount(accId, validForAccount))
+            return true;
+        // Permanent or name-exhausted failure – try next account in same cadence.
     }
 
-    if (!chosenAccountId)
+    // No existing account succeeded – allocate a new RNDBOT account.
+    std::string prefix = sPlayerbotAIConfig.randomBotAccountPrefix;
+    if (prefix.empty())
+        prefix = "RNDBOT";
+
+    uint32 newAccountId = 0;
+    std::string newUsername;
+    // Bound attempts: at most 20 usernames per interval, random password.
+    for (int attempt = 0; attempt < 20 && !newAccountId; ++attempt)
     {
-        // Allocate new RNDBOT account via core AccountMgr (unique, hashed).
-        std::string prefix = sPlayerbotAIConfig.randomBotAccountPrefix;
-        if (prefix.empty())
-            prefix = "RNDBOT";
-        // Bound attempts: at most 20 usernames per interval.
-        for (int attempt = 0; attempt < 20 && !chosenAccountId; ++attempt)
+        uint32 suffix = urand(1000, 999999);
+        std::string username = prefix + std::to_string(suffix);
+        if (username.size() > MAX_ACCOUNT_STR)
+            username = username.substr(0, MAX_ACCOUNT_STR);
+        if (sAccountMgr.GetId(username) != 0)
+            continue;
+        std::string password = GenerateRandomPassword();
+        AccountOpResult res = sAccountMgr.CreateAccount(username, password);
+        if (res == AOR_OK)
         {
-            uint32 suffix = urand(1000, 999999);
-            std::string username = prefix + std::to_string(suffix);
-            if (username.size() > MAX_ACCOUNT_STR)
-                username = username.substr(0, MAX_ACCOUNT_STR);
-            if (sAccountMgr.GetId(username) != 0)
-                continue;
-            // Password = username for RNDBOT (donor compat) or random if configured.
-            std::string password = username;
-            AccountOpResult res = sAccountMgr.CreateAccount(username, password);
-            if (res == AOR_OK)
+            uint32 id = sAccountMgr.GetId(username);
+            if (id)
             {
-                uint32 newId = sAccountMgr.GetId(username);
-                if (newId)
-                {
-                    chosenAccountId = newId;
-                    m_rndBotAccountIds.push_back(newId);
-                    sLog.outString("TortoiseBots: auto-create created RNDBOT account %s (%u)", username.c_str(), newId);
-                }
-                else
-                {
-                    sLog.outError("TortoiseBots: auto-create account %s created but GetId failed", username.c_str());
-                    return false;
-                }
-            }
-            else if (res == AOR_NAME_ALREDY_EXIST)
-            {
-                continue;
+                newAccountId = id;
+                newUsername = username;
+                m_rndBotAccountIds.push_back(id);
+                sLog.outString("TortoiseBots: auto-create created RNDBOT account %s (%u)", username.c_str(), id);
             }
             else
             {
-                sLog.outError("TortoiseBots: auto-create CreateAccount %s failed %d", username.c_str(), int(res));
+                sLog.outError("TortoiseBots: auto-create account %s created but GetId failed", username.c_str());
                 return false;
             }
         }
-        if (!chosenAccountId)
+        else if (res == AOR_NAME_ALREDY_EXIST)
         {
-            sLog.outError("TortoiseBots: auto-create could not allocate RNDBOT account after attempts");
-            return false;
-        }
-    }
-
-    // Choose valid race/class from PlayerInfo (covers Goblin/High Elf when Turtle data present).
-    std::vector<std::pair<uint8,uint8>> valid;
-    valid.reserve(64);
-    for (uint32 race = 1; race < MAX_RACES; ++race)
-        for (uint32 cls = 1; cls < MAX_CLASSES; ++cls)
-            if (sObjectMgr.GetPlayerInfo(race, cls))
-                valid.emplace_back(uint8(race), uint8(cls));
-    if (valid.empty())
-    {
-        sLog.outError("TortoiseBots: auto-create no valid PlayerInfo race/class");
-        return false;
-    }
-
-    // If account already has characters, constrain to same faction when two-side is disallowed.
-    Team requiredTeam = TEAM_NONE;
-    bool needTeam = false;
-    // Find any existing candidate on this account to infer team.
-    for (Candidate const& c : m_candidates)
-    {
-        if (c.accountId != chosenAccountId)
             continue;
-        if (PlayerCacheData const* data = sObjectMgr.GetPlayerDataByGUID(c.characterGuid.GetCounter()))
-        {
-            uint8 r = data->uiRace;
-            if (r)
-            {
-                requiredTeam = Player::TeamForRace(r);
-                needTeam = true;
-                break;
-            }
         }
-    }
-    // If needTeam, filter valid to that team.
-    std::vector<std::pair<uint8,uint8>> teamValid;
-    if (needTeam && requiredTeam != TEAM_NONE && !sWorld.getConfig(CONFIG_BOOL_ALLOW_TWO_SIDE_ACCOUNTS))
-    {
-        for (auto const& pr : valid)
-            if (Player::TeamForRace(pr.first) == requiredTeam)
-                teamValid.push_back(pr);
-        if (!teamValid.empty())
-            valid.swap(teamValid);
         else
-            sLog.outString("TortoiseBots: auto-create account %u team %u has no valid race/class for that team, using any", chosenAccountId, uint32(requiredTeam));
+        {
+            sLog.outError("TortoiseBots: auto-create CreateAccount %s failed %d, trying next", username.c_str(), int(res));
+            continue;
+        }
     }
-
-    // Try up to 5 names per interval; one CharacterCreation call per attempt (world thread, synchronous).
-    for (int nameAttempt = 0; nameAttempt < 5; ++nameAttempt)
+    if (!newAccountId)
     {
-        std::string name = GenerateRndBotName();
-        // Let CharacterCreation do normalize/CheckPlayerName; pre-check for quick skip.
-        std::string norm = name;
-        if (!normalizePlayerName(norm))
-            continue;
-        if (sObjectMgr.GetPlayerGuidByName(norm))
-            continue;
-
-        uint8 race = valid[urand(0, uint32(valid.size() - 1))].first;
-        uint8 cls = valid[urand(0, uint32(valid.size() - 1))].second;
-        // Re-pick consistent pair: need race/class paired, not independent.
-        auto pr = valid[urand(0, uint32(valid.size() - 1))];
-        race = pr.first;
-        cls = pr.second;
-
-        CharacterCreateInfo info;
-        info.name = norm;
-        info.race = race;
-        info.class_ = cls;
-        info.gender = urand(0, 1) ? GENDER_FEMALE : GENDER_MALE;
-        info.skin = uint8(urand(0, 7));
-        info.face = uint8(urand(0, 7));
-        info.hairStyle = uint8(urand(0, 7));
-        info.hairColor = uint8(urand(0, 7));
-        info.facialHair = uint8(urand(0, 7));
-        info.outfitId = 0;
-        info.challengeMask = 0;
-
-        // Fail-closed if no PlayerInfo (already filtered) – CreateCharacter will also fail.
-        if (!sObjectMgr.GetPlayerInfo(race, cls))
-        {
-            sLog.outError("TortoiseBots: auto-create race %u class %u has no PlayerInfo", uint32(race), uint32(cls));
-            return false;
-        }
-
-        CharacterCreateOutcome outcome = CharacterCreation::CreateCharacter(chosenAccountId, info);
-        if (outcome.result == CHAR_CREATE_SUCCESS)
-        {
-            // Append to candidate pool so normal Headless login handles it.
-            m_candidates.push_back({chosenAccountId, outcome.guid});
-            m_ageMs.push_back(0);
-            m_strategyAgeMs.push_back(0);
-            m_randomizeAgeMs.push_back(0);
-            sLog.outString("TortoiseBots: auto-create created character %s (%s) race %u class %u on account %u",
-                norm.c_str(), outcome.guid.GetString().c_str(), uint32(race), uint32(cls), chosenAccountId);
-            return true;
-        }
-
-        if (outcome.result == CHAR_CREATE_NAME_IN_USE || outcome.result == CHAR_NAME_RESERVED || outcome.result == CHAR_CREATE_FAILED)
-        {
-            sLog.outString("TortoiseBots: auto-create name %s failed %u, retrying", norm.c_str(), uint32(outcome.result));
-            continue;
-        }
-        if (outcome.result == CHAR_CREATE_PVP_TEAMS_VIOLATION)
-        {
-            sLog.outString("TortoiseBots: auto-create race %u violates account %u team, retrying", uint32(race), chosenAccountId);
-            continue;
-        }
-        if (outcome.result == CHAR_CREATE_ACCOUNT_LIMIT || outcome.result == CHAR_CREATE_SERVER_LIMIT)
-        {
-            sLog.outString("TortoiseBots: auto-create account %u limit %u, will try new account next interval", chosenAccountId, uint32(outcome.result));
-            return false;
-        }
-        if (outcome.result == CHAR_CREATE_DISABLED)
-        {
-            sLog.outString("TortoiseBots: auto-create race %u class %u disabled, retrying", uint32(race), uint32(cls));
-            continue;
-        }
-        // Generic fail-closed.
-        sLog.outError("TortoiseBots: auto-create for %s race %u class %u failed %u", norm.c_str(), uint32(race), uint32(cls), uint32(outcome.result));
+        sLog.outError("TortoiseBots: auto-create could not allocate RNDBOT account after attempts");
         return false;
     }
 
-    sLog.outError("TortoiseBots: auto-create could not find free name after attempts on account %u", chosenAccountId);
+    // New account is empty – any faction allowed, use full valid list.
+    if (TryCreateCharacterOnAccount(newAccountId, validAll))
+        return true;
+
+    // Character creation on the fresh account failed (e.g., disabled team).
+    // Keep the empty account for future intervals but do not spam retry;
+    // the error was already logged inside TryCreateCharacterOnAccount.
+    sLog.outString("TortoiseBots: auto-create on new account %s (%u) failed, will retry next interval", newUsername.c_str(), newAccountId);
     return false;
 }
 

@@ -33,7 +33,7 @@ See `AGENTS.md` §Architecture invariants for the 5 rules (optional module, no `
 * **Runtime:** `PlayerbotAI` + `Engine/Strategy/Trigger/Action/Value`, 9 Vanilla classes (Warrior–Druid), `PlayerbotAIAdapter` owns AI.
 * **Packet bridge:** `BotPacketAdapter` — Headless outgoing → `HandleBotOutgoingPacket`, master outgoing/incoming → `HandleMaster*`.
 * **Commands:** `.bot add/remove/follow/invite/uninvite/stay/list/stats/command/help` (`.bot command` → `PlayerbotAI::HandleCommand`), account/GM-gated.
-* **Random bots:** `RandomBotService`, bounded, discovers existing `RNDBOT*` characters only.
+* **Random bots:** `RandomBotService`, bounded, discovers existing `RNDBOT*` characters; with `AiPlayerbot.RandomBotAutoCreate=1` (default `0`, one per `RandomBotUpdateInterval`, world-thread `CharacterCreation`, no raw SQL/DB worker) it also creates the deficit toward `MinRandomBots`/`MaxRandomBots` via `AccountMgr::CreateAccount` (random password, hashed) and generic `CharacterCreation::CreateCharacter` (core `94dfa7e`).
 
 Details: `HOST_API.md`.
 
