@@ -11,6 +11,7 @@
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/values/Stances.h"
 #include "Movement/TargetedMovementGenerator.h"
+#include "Movement/spline/MoveSplineInit.h"
 #include "playerbot/TravelMgr.h"
 #include "Transports/Transport.h"
 #include "playerbot/strategy/generic/CombatStrategy.h"
@@ -19,7 +20,7 @@ using namespace ai;
 
 void MovementAction::CreateWp(Player* wpOwner, float x, float y, float z, float o, uint32 entry, bool important)
 {
-    float dist = wpOwner->getDistance(x, y, z);
+    float dist = wpOwner->GetDistance(x, y, z);
     float delay = 1000.0f * dist / wpOwner->GetSpeed(MOVE_RUN) + sPlayerbotAIConfig.reactDelay;
 
     //if(!important)
@@ -130,7 +131,7 @@ bool MovementAction::UseTaxi(PlayerbotAI* ai, uint32 entry, bool needNpc)
         bot->SetMoney(botMoney + tEntry->price);
     }
 
-    bot->OnTaxiFlightEject(true);
+    bot->CleanupFlagsOnTaxiPathFinished();
 
     ai->Unmount();
 
@@ -162,7 +163,7 @@ bool MovementAction::MoveOnTransport(PlayerbotAI* ai, GenericTransport* transpor
     if (doTeleport)
     {
         bot->GetMap()->PlayerRelocation(bot, transPos.getX(), transPos.getY(), transPos.getZ(), bot->getOrientation());
-        transport->AddPassenger(bot, true);
+        transport->AddPassenger(bot);
         // Boarding is the one leg of travel nothing recorded. setNewTarget writes an
         // event for every destination a bot picks - taker, giver, objective - but the
         // vessel it needs to get there was invisible in the log, so "do bots use boats
@@ -184,7 +185,7 @@ bool MovementAction::MoveOnTransport(PlayerbotAI* ai, GenericTransport* transpor
     }
     else
     {
-        transport->AddPassenger(bot, true);
+        transport->AddPassenger(bot);
         sPlayerbotAIConfig.logEvent(ai, "BoardTransport", transport->GetName(), std::to_string(transport->GetEntry()));
 
         ai->StopMoving();
@@ -206,7 +207,7 @@ bool MovementAction::MoveOnTransport(PlayerbotAI* ai, GenericTransport* transpor
         {
             Creature* wpCreature = bot->SummonCreature(2334, p.getX(), p.getY(), p.getZ(), 0, TEMPSPAWN_TIMED_DESPAWN, 10000.0f);
 
-            transport->AddPassenger(wpCreature, true);
+            transport->AddPassenger(wpCreature);
 
             wpCreature->NearTeleportTo(p.getX(), p.getY(), p.getZ(), wpCreature->getOrientation());
 
@@ -220,7 +221,10 @@ bool MovementAction::MoveOnTransport(PlayerbotAI* ai, GenericTransport* transpor
     bot->GetMotionMaster()->Clear();
 
     std::vector<G3D::Vector3> pointPath = transPos.toPointsArray(path);
-    bot->GetMotionMaster()->MovePath(pointPath, FORCED_MOVEMENT_RUN, false, false);
+    Movement::MoveSplineInit init(*bot, "MoveOnTransport");
+    init.MovebyPath(pointPath);
+    init.SetTransport(transport->GetGUIDLow());
+    init.Launch();
 
     return true;
 }
@@ -263,7 +267,9 @@ bool MovementAction::MoveOffTransport(PlayerbotAI* ai, WorldPosition exitPos, bo
     bot->GetMotionMaster()->Clear();
 
     std::vector<G3D::Vector3> pointPath = exitPos.toPointsArray(path);
-    bot->GetMotionMaster()->MovePath(pointPath, FORCED_MOVEMENT_RUN, false, false);
+    Movement::MoveSplineInit init(*bot, "MoveOffTransport");
+    init.MovebyPath(pointPath);
+    init.Launch();
 
     return true;
 }
@@ -698,7 +704,7 @@ void MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
 
     std::vector<WorldPosition> path = movePath.GetPointPath();
 
-    if (!generatePath || !bot->IsFreeFlying())
+    if (!generatePath || !bot->IsFlying())
     {
         WorldPosition movePosition = path.back();
 
@@ -738,7 +744,12 @@ void MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
                 bot->GetTransport()->CalculatePassengerOffset(p.x, p.y, p.z);
         }
 
-        mm.MovePath(pointPath, moveMode, false, false);
+        Movement::MoveSplineInit init(*bot, "DispatchMovement");
+        init.MovebyPath(pointPath);
+        init.SetWalk(moveMode == FORCED_MOVEMENT_WALK);
+        if (bot->GetTransport())
+            init.SetTransport(bot->GetTransport()->GetGUIDLow());
+        init.Launch();
     }
     else
     {
@@ -896,7 +907,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     if (bot == mover)
     {
         bot->HandleEmoteState(0);
-        if (!bot->IsStandState())
+        if (!bot->GetStandState() != UNIT_STAND_STATE_STAND)
             bot->SetStandState(UNIT_STAND_STATE_STAND);
 
         if (bot->IsNonMeleeSpellCasted(true, false, true))
@@ -1108,7 +1119,7 @@ bool MovementAction::IsMovingAllowed(Unit* target)
 
 bool MovementAction::IsMovingAllowed(uint32 mapId, float x, float y, float z)
 {
-    float distance = bot->getDistance(x, y, z);
+    float distance = bot->GetDistance(x, y, z);
     if (!bot->InBattleGround() && distance > sPlayerbotAIConfig.reactDistance)
         return false;
 
@@ -1173,7 +1184,7 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
 
     float tDist = botPos.fDist(tarPos);
 
-    if (tDist > sPlayerbotAIConfig.sightDistance || (target->IsFlying() && !bot->IsFreeFlying()) || target->IsTaxiFlying())
+    if (tDist > sPlayerbotAIConfig.sightDistance || (target->IsFlying() && !bot->IsFlying()) || target->IsTaxiFlying())
     {
         if (target->getObjectGuid().IsPlayer())
         {
@@ -1231,7 +1242,7 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
                     //Use standard pathfinder to find a route.
                     WorldPosition prevPoint = botPos;
                     pathfinder.calculate(moveToPos.GetVector3(), tarPos.GetVector3());
-                    Movement::PointsArray const& pathPoints = pathfinder.GetPath();
+                    Movement::PointsArray const& pathPoints = pathfinder.getPath();
                     if (pathPoints.size() >= 2)
                     {
                         for (uint32 i = 1; i < pathPoints.size() - 1; i++)
@@ -1260,7 +1271,7 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
     }
 
     bot->HandleEmoteState(0);
-    if (!bot->IsStandState())
+    if (!bot->GetStandState() != UNIT_STAND_STATE_STAND)
         bot->SetStandState(UNIT_STAND_STATE_STAND);
 
     if (bot->IsNonMeleeSpellCasted(true))
@@ -1338,7 +1349,7 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     UpdateMovementState();
 
     bot->HandleEmoteState(0);
-    if (!bot->IsStandState())
+    if (!bot->GetStandState() != UNIT_STAND_STATE_STAND)
         bot->SetStandState(UNIT_STAND_STATE_STAND);
 
 
@@ -1400,7 +1411,11 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
             mm.Clear(false, true);
 
             std::vector<G3D::Vector3> pointsArray = WorldPosition().toPointsArray(path);
-            mm.MovePath(pointsArray, FORCED_MOVEMENT_RUN, false, false);
+            Movement::MoveSplineInit init(*bot, "ChaseTo");
+            init.MovebyPath(pointsArray);
+            if (bot->GetTransport())
+                init.SetTransport(bot->GetTransport()->GetGUIDLow());
+            init.Launch();
             sLog.outDetail("[BOT CHASE] %s -> %s: dist=%.1f target=%.1f pts=%u wait=%.2f (MovePath)",
                 bot->GetName(), obj->GetName(), distanceToTarget, distance, (uint32)path.size(), distance / bot->GetSpeed(MOVE_RUN));
             WaitForReach(distance);
@@ -1418,7 +1433,7 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
         if (!bot->IsStopped() &&
             sServerFacade.GetChaseTarget(bot) == obj)
         {
-            bot->SetTarget(obj); //Needed to keep chase going in combat.
+            bot->SetTargetGuid(obj->getObjectGuid()); //Needed to keep chase going in combat.
             bot->Attack((Unit*)obj, false); //Needed to keep chase going in combat.
             return true;
         }
@@ -1443,7 +1458,7 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     if (!endPosition.isValid()) return false;
     if (angle > 20) angle = 0;
 
-    bot->SetTarget(obj); //Needed to keep chase going in combat.
+    bot->SetTargetGuid(obj->getObjectGuid()); //Needed to keep chase going in combat.
     bot->Attack((Unit*)obj, false); //Needed to keep chase going in combat.
 
     mm.MoveChase((Unit*)obj, distance, angle);
@@ -2061,7 +2076,7 @@ bool SetBehindTargetAction::Execute(Event& event)
     // prevent going into terrain
     float ox, oy, oz;
     target->GetPosition(ox, oy, oz);
-    target->GetMap()->GetHitPosition(ox, oy, oz + bot->GetCollisionHeight(), x, y, z, -0.5f);
+    target->GetMap()->GetLosHitPosition(ox, oy, oz + bot->GetCollisionHeight(), x, y, z, -0.5f);
 
     const bool isLos = target->IsWithinLOS(x, y, z + bot->GetCollisionHeight(), true);
     bool moved = MoveTo(bot->GetMapId(), x, y, z);
@@ -2087,7 +2102,7 @@ bool SetBehindTargetAction::isUseful()
     if (target && !bot->IsBehindTarget(target, false))
     {
         // Don't move behind if the target is too far away
-        const float distance = bot->getDistance(target, false);
+        const float distance = bot->GetDistance(target);
         return distance <= 15.0f;
     }
 
@@ -2487,7 +2502,7 @@ WorldPosition JumpAction::CalculateJumpParameters(const WorldPosition& src, Unit
         float fx = ox;
         float fy = oy;
         float fz = oz + maxHeight + jumper->GetCollisionHeight();
-        if (jumper->GetMap()->GetHitPosition(ox, oy, oz, fx, fy, fz, -0.5f))
+        if (jumper->GetMap()->GetLosHitPosition(ox, oy, oz, fx, fy, fz, -0.5f))
         {
             // hit object above
             goodLanding = false;
@@ -2537,10 +2552,10 @@ WorldPosition JumpAction::CalculateJumpParameters(const WorldPosition& src, Unit
             fz += jumper->GetCollisionHeight();
 
         // add some collision distances
-        fx += jumper->GetCollisionWidth() * vcos;
-        fy += jumper->GetCollisionWidth() * vsin;
+        fx += jumper->GetObjectBoundingRadius() * vcos;
+        fy += jumper->GetObjectBoundingRadius() * vsin;
 
-        foundCollision = jumper->GetMap()->GetHitPosition(ox, oy, oz, fx, fy, fz, -0.5f);
+        foundCollision = jumper->GetMap()->GetLosHitPosition(ox, oy, oz, fx, fy, fz, -0.5f);
 
         if (!foundCollision)
         {
@@ -2548,15 +2563,15 @@ WorldPosition JumpAction::CalculateJumpParameters(const WorldPosition& src, Unit
             if (ascending)
                 fz += jumper->GetCollisionHeight();
 
-            fx += jumper->GetCollisionWidth() * vcos;
-            fy += jumper->GetCollisionWidth() * vsin;
+            fx += jumper->GetObjectBoundingRadius() * vcos;
+            fy += jumper->GetObjectBoundingRadius() * vsin;
 
-            foundCollision = jumper->GetMap()->GetHitPosition(ox, oy, oz + 0.5f, fx, fy, fz, -0.5f);
+            foundCollision = jumper->GetMap()->GetLosHitPosition(ox, oy, oz + 0.5f, fx, fy, fz, -0.5f);
 
             if (!foundCollision)
             {
-                fx -= jumper->GetCollisionWidth() * vcos;
-                fy -= jumper->GetCollisionWidth() * vsin;
+                fx -= jumper->GetObjectBoundingRadius() * vcos;
+                fy -= jumper->GetObjectBoundingRadius() * vsin;
                 if (ascending)
                     fz -= jumper->GetCollisionHeight();
             }
@@ -2594,7 +2609,7 @@ WorldPosition JumpAction::CalculateJumpParameters(const WorldPosition& src, Unit
                 goodLanding = false;
                 // reduce landing height by collision height
                 float fz_mod = fz - CONTACT_DISTANCE - jumper->GetCollisionHeight();
-                jumper->GetMap()->GetHitPosition(fx, fy, fz, fx, fy, fz_mod, -0.5f);
+                jumper->GetMap()->GetLosHitPosition(fx, fy, fz, fx, fy, fz_mod, -0.5f);
                 fz = fz_mod;
                 //fz = fz - CONTACT_DISTANCE - jumper->GetCollisionHeight();
             }
@@ -2770,7 +2785,7 @@ bool JumpAction::IsNotMagmaSlime(const WorldPosition &dest, Unit *jumper)
 {
     if (const TerrainInfo* terrain = dest.GetTerrain())
     {
-        if (!terrain->CanCheckLiquidLevel(dest.getX(), dest.getY()))
+        if (!false)
             return true;
 
         GridMapLiquidData data;
@@ -2887,7 +2902,7 @@ bool JumpAction::DoJump(const WorldPosition &dest, const WorldPosition& highestP
     ai->InterruptSpell(false);
     ai->StopMoving();
     ai->SetJumpDestination(landing);
-    bot->SetFallInformation(0, maxHeight);
+    bot->SetFallInformation(maxHeight);
 
     bool slowJump = false;// !jumpBackward && hSpeed == bot->GetSpeed(MOVE_WALK);
     // TODO calculate slow jump (jump + move forward)
@@ -2906,7 +2921,7 @@ bool JumpAction::DoJump(const WorldPosition &dest, const WorldPosition& highestP
     float vcos = jumpInPlace ? 1 : cos(angle);
 
     // write jump info
-    uint32 curTime = sWorld.GetCurrentMSTime();
+    uint32 curTime = WorldTimer::getMSTime();
     uint32 jumpTime = curTime + sWorld.GetAverageDiff() * 2 + uint32(timeToLand * static_cast<float>(IN_MILLISECONDS));
     ai->SetJumpTime(jumpTime);
     bot->m_movementInfo.jump.zspeed = -vSpeed;
@@ -2929,7 +2944,7 @@ bool JumpAction::DoJump(const WorldPosition &dest, const WorldPosition& highestP
         data << bot->m_movementInfo.jump.sinAngle;
         data << bot->m_movementInfo.jump.xyspeed;
         data << bot->m_movementInfo.jump.zspeed;
-        bot->GetMover()->SendMessageToSetExcept(data, bot);
+        bot->GetMover()->SendMessageToSetExcept(&data, bot);
     }
     else
     {
