@@ -147,7 +147,7 @@ float CloseToHazardTrigger::GetDistanceToHazard(const ObjectGuid& hazzardGuid)
         GameObject* gameObjectHazard = ai->GetGameObject(hazzardGuid);
         if (gameObjectHazard)
         {
-            return bot->getDistance(gameObjectHazard) + gameObjectHazard->GetObjectBoundingRadius();
+            return bot->GetDistance(gameObjectHazard) + gameObjectHazard->GetObjectBoundingRadius();
         }
     }
     else if (hazzardGuid.IsCreature())
@@ -155,7 +155,7 @@ float CloseToHazardTrigger::GetDistanceToHazard(const ObjectGuid& hazzardGuid)
         Creature* creatureHazard = ai->GetCreature(hazzardGuid);
         if (creatureHazard)
         {
-            return bot->getDistance(creatureHazard, true, DIST_CALC_COMBAT_REACH);
+            return bot->GetCombatDistance(creatureHazard);
         }
     }
 
@@ -198,7 +198,7 @@ bool EnvironmentalHazardTrigger::IsActive()
             // false-triggering, while still reacting before the literal damage radius for
             // genuinely bigger hazards.
             float reactRadius = goInfo->trap.radius + 2.0f;
-            float distance = bot->getDistance(go) + go->GetObjectBoundingRadius();
+            float distance = bot->GetDistance(go) + go->GetObjectBoundingRadius();
             if (distance <= reactRadius)
                 closeToHazard = true;
 
@@ -226,8 +226,8 @@ std::list<ObjectGuid> CloseToCreatureHazardTrigger::GetPossibleHazards()
     std::list<ObjectGuid> possibleHazards;
 
     std::list<Unit*> creatures;
-    MaNGOS::AllCreaturesOfEntryInRangeCheck u_check(bot, creatureID, hazardRadius);
-    MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRangeCheck> searcher(creatures, u_check);
+    MaNGOS::AllCreaturesOfEntryInRange u_check(bot, creatureID, hazardRadius);
+    MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRange> searcher(creatures, u_check);
     Cell::VisitAllObjects(bot, searcher, hazardRadius);
     for (Unit* unit : creatures)
     {
@@ -278,8 +278,8 @@ bool CloseToCreatureTrigger::IsActive()
 
         // Iterate through the near creatures
         std::list<Unit*> creatures;
-        MaNGOS::AllCreaturesOfEntryInRangeCheck u_check(bot, creatureID, range);
-        MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRangeCheck> searcher(creatures, u_check);
+        MaNGOS::AllCreaturesOfEntryInRange u_check(bot, creatureID, range);
+        MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRange> searcher(creatures, u_check);
         Cell::VisitAllObjects(bot, searcher, range);
         for (Unit* unit : creatures)
         {
