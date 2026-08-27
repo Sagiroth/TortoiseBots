@@ -55,7 +55,7 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
             out << sPlayerbotAIConfig.GetTimestampStr() << "+00,";
             out << bot->GetName() << ",\"" << u->GetName() << "\"," << u->GetEntry() << ",";
             out << (int)sServerFacade.IsHostileTo(bot, u) << "," << (int)sServerFacade.IsFriendlyTo(bot, u) << ",";
-            out << bot->getDistance(u) << ",\"" << reason << "\"";
+            out << bot->GetDistance(u) << ",\"" << reason << "\"";
             sPlayerbotAIConfig.log("grind_target.csv", out.str().c_str());
         }
     };
@@ -162,7 +162,7 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
             continue;
         }
 
-        if (creature && creature->IsCritter() && urand(0, 10))
+        if (creature && creature->GetCreatureType() == CREATURE_TYPE_CRITTER && urand(0, 10))
         {
             logGrind(unit, "ignored (ignore critters).");
             continue;
