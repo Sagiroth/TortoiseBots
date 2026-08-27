@@ -110,9 +110,10 @@ bool MountValue::IsValidLocation(Player* bot)
     }
 
     // Ignore map check if spell have AreaId. AreaId already checked and this prevent special mount spells
+    MapEntry const* mapEntry = sMapStorage.LookupEntry<MapEntry>(bot->GetMapId());
     if (bot->GetTypeId() == TYPEID_PLAYER &&
         !isAQ40Mounted &&   // [-ZERO] && !m_spellInfo->AreaId)
-        !bot->GetMap()->IsMountAllowed())
+        (!mapEntry || !mapEntry->IsMountAllowed()))
     {
         return false;  //SPELL_FAILED_NO_MOUNTS_ALLOWED;
     }
