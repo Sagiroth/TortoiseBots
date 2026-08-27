@@ -71,7 +71,7 @@ bool PullEndTrigger::IsActive()
             }
             else
             {
-                float distanceToPullTarget = target->getDistance(ai->GetBot());
+                float distanceToPullTarget = target->GetDistance(ai->GetBot());
 
 
                 if (distanceToPullTarget <= ATTACK_DISTANCE || target->IsNonMeleeSpellCasted(true) || (ai->IsRanged(bot) && distanceToPullTarget <= ai->GetRange("spell")))
@@ -82,7 +82,7 @@ bool PullEndTrigger::IsActive()
                         PositionEntry pullPosition = posMap["pull"];
                         if (pullPosition.isSet())
                         {
-                            distanceToPullTarget = bot->getDistance(pullPosition.x, pullPosition.y, pullPosition.z);
+                            distanceToPullTarget = bot->GetDistance(pullPosition.x, pullPosition.y, pullPosition.z);
                             return distanceToPullTarget <= ai->GetRange("follow");
                         }
                     }
