@@ -22,6 +22,9 @@
 #include "Database/DatabaseEnv.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Battlegrounds/BattleGroundMgr.h"
+#ifndef __BATTLEGROUNDMGR_H
+#error "TortoiseBots BG auto-queue requires the Penqle queued-participant demand snapshot API"
+#endif
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Battlegrounds/BattleGround.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -33,24 +36,89 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "LFT/LFTMgr.h"
 #ifndef MANGOSSERVER_LFTMGR_H
-enum LFTRoles { LFT_ROLE_TANK = 0x01, LFT_ROLE_HEALER = 0x02, LFT_ROLE_DAMAGE = 0x04 };
-class LFTManager
-{
-public:
-    bool IsQueued(ObjectGuid const&) const { return false; }
-    bool IsInOffer(ObjectGuid const&) const { return false; }
-};
-static LFTManager sLFTMgr;
+#error "TortoiseBots BG auto-queue requires Penqle core #413 LFTManager APIs"
 #endif
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Maps/Map.h"
 
 #include <algorithm>
-// pi-lens-ignore: all
 #include <vector>
 
 namespace TortoiseBots
 {
+
+namespace
+{
+struct HumanBgDemand
+{
+    BattleGroundQueueTypeId queueType;
+    BattleGroundTypeId bgType;
+    BattleGroundBracketId bracket;
+    Team underrepresentedTeam = TEAM_NONE;
+};
+
+bool IsHumanWaitingParticipant(BattleGroundQueue::QueuedParticipantInfo const& info)
+{
+    if (!info.online || info.isInvited)
+        return false;
+
+    ::Player* player = sObjectAccessor.FindPlayer(info.guid);
+    if (!player || !player->IsInWorld() || !player->GetSession())
+        return false;
+    if (player->GetSession()->IsHeadless())
+        return false;
+    return !BotManager::Instance().IsRandomBot(info.guid);
+}
+
+std::vector<HumanBgDemand> GetHumanBgDemands()
+{
+    std::vector<HumanBgDemand> demands;
+    for (uint32 queueIndex = 1; queueIndex < MAX_BATTLEGROUND_QUEUE_TYPES; ++queueIndex)
+    {
+        BattleGroundQueueTypeId queueType = BattleGroundQueueTypeId(queueIndex);
+        BattleGroundTypeId bgType = sServerFacade.BGTemplateId(queueType);
+        if (bgType != BATTLEGROUND_WS && bgType != BATTLEGROUND_AB && bgType != BATTLEGROUND_AV)
+            continue;
+
+        BattleGround* templateBg = sBattleGroundMgr.GetBattleGroundTemplate(bgType);
+        if (!templateBg)
+            continue;
+
+        for (uint32 bracketIndex = 0; bracketIndex < MAX_BATTLEGROUND_BRACKETS; ++bracketIndex)
+        {
+            BattleGroundBracketId bracket = BattleGroundBracketId(bracketIndex);
+            std::vector<BattleGroundQueue::QueuedParticipantInfo> participants =
+                sBattleGroundMgr.GetQueuedParticipants(queueType, bracket);
+            uint32 alliance = 0;
+            uint32 horde = 0;
+            for (auto const& participant : participants)
+            {
+                if (participant.bgTypeId != bgType || participant.bracketId != bracket ||
+                    !IsHumanWaitingParticipant(participant))
+                    continue;
+                if (participant.team == ALLIANCE)
+                    ++alliance;
+                else if (participant.team == HORDE)
+                    ++horde;
+            }
+
+            if (!alliance && !horde)
+                continue;
+
+            HumanBgDemand demand;
+            demand.queueType = queueType;
+            demand.bgType = bgType;
+            demand.bracket = bracket;
+            if (alliance < horde)
+                demand.underrepresentedTeam = ALLIANCE;
+            else if (horde < alliance)
+                demand.underrepresentedTeam = HORDE;
+            demands.push_back(demand);
+        }
+    }
+    return demands;
+}
+}
 
 BattlegroundQueueService& BattlegroundQueueService::Instance()
 {
@@ -218,36 +286,21 @@ void BattlegroundQueueService::PruneOwnedQueueSet()
     }
 }
 
-bool BattlegroundQueueService::TryQueue(::Player* bot)
+bool BattlegroundQueueService::TryQueue(::Player* bot, uint32 queueTypeValue)
 {
     if (!IsEligible(bot))
         return false;
 
-    // Collect eligible WSG/AB/AV queue types for this bot's level bracket.
-    std::vector<BattleGroundQueueTypeId> eligible;
-    for (uint32 i = 1; i < MAX_BATTLEGROUND_QUEUE_TYPES; ++i)
-    {
-        BattleGroundQueueTypeId q = BattleGroundQueueTypeId(i);
-        BattleGroundTypeId bgType = sServerFacade.BGTemplateId(q);
-        if (bgType != BATTLEGROUND_WS && bgType != BATTLEGROUND_AB && bgType != BATTLEGROUND_AV)
-            continue;
-        BattleGround* bg = sBattleGroundMgr.GetBattleGroundTemplate(bgType);
-        if (!bg)
-            continue;
-        if (!bot->GetBGAccessByLevel(bgType))
-            continue;
-        if (bot->InBattleGroundQueueForBattleGroundQueueType(q))
-            continue;
-        eligible.push_back(q);
-    }
-
-    if (eligible.empty())
+    if (queueTypeValue >= MAX_BATTLEGROUND_QUEUE_TYPES)
+        return false;
+    BattleGroundQueueTypeId queueType = BattleGroundQueueTypeId(queueTypeValue);
+    BattleGroundTypeId bgType = sServerFacade.BGTemplateId(queueType);
+    if (bgType != BATTLEGROUND_WS && bgType != BATTLEGROUND_AB && bgType != BATTLEGROUND_AV)
         return false;
 
-    BattleGroundQueueTypeId queueType = eligible[urand(0, eligible.size() - 1)];
-    BattleGroundTypeId bgType = sServerFacade.BGTemplateId(queueType);
     BattleGround* bg = sBattleGroundMgr.GetBattleGroundTemplate(bgType);
-    if (!bg)
+    if (!bg || !bot->GetBGAccessByLevel(bgType) ||
+        bot->InBattleGroundQueueForBattleGroundQueueType(queueType))
         return false;
 
     uint32 instanceId = 0;
@@ -420,8 +473,13 @@ void BattlegroundQueueService::Update(uint32_t diff)
     if (maxPerInterval > 10)
         maxPerInterval = 10;
 
-    // In-memory live Headless/random candidate selection: snapshot of
-    // BotManager's live players, no DB scan, no world scan, no second queue.
+    // Observe actual human demand through the core's copy-only snapshot. No
+    // demand means no autonomous queueing; the service never fills blindly.
+    std::vector<HumanBgDemand> demands = GetHumanBgDemands();
+    if (demands.empty())
+        return;
+
+    // In-memory live Headless/random candidate selection: no DB or world scan.
     std::vector<Player*> candidates;
     for (Player* p : BotManager::Instance().GetAllBots())
         if (IsEligible(p))
@@ -430,7 +488,7 @@ void BattlegroundQueueService::Update(uint32_t diff)
     if (candidates.empty())
         return;
 
-    // Randomize order so the same low guids are not always selected.
+    // Randomize order so the same low GUIDs are not always selected.
     for (size_t i = candidates.size() - 1; i > 0; --i)
     {
         size_t j = urand(0, static_cast<uint32>(i));
@@ -444,13 +502,26 @@ void BattlegroundQueueService::Update(uint32_t diff)
             break;
         if (!IsEligible(bot))
             continue;
-        if (TryQueue(bot))
-            ++queued;
+
+        for (HumanBgDemand const& demand : demands)
+        {
+            if (bot->GetBattleGroundBracketIdFromLevel(demand.bgType) != demand.bracket)
+                continue;
+            if (demand.underrepresentedTeam != TEAM_NONE &&
+                bot->GetTeam() != demand.underrepresentedTeam)
+                continue;
+            if (TryQueue(bot, uint32(demand.queueType)))
+            {
+                ++queued;
+                break;
+            }
+        }
     }
 
     if (queued)
-        sLog.outString("TortoiseBots: BG auto-queue tick queued %u/%u (eligible %u, interval %u ms)",
-            queued, maxPerInterval, static_cast<uint32>(candidates.size()), interval);
+        sLog.outString("TortoiseBots: BG auto-queue tick queued %u/%u for human demand (eligible %u, demand buckets %u, interval %u ms)",
+            queued, maxPerInterval, static_cast<uint32>(candidates.size()),
+            static_cast<uint32>(demands.size()), interval);
 }
 
 void BattlegroundQueueService::Shutdown()

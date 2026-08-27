@@ -9,17 +9,14 @@ class Group;
 namespace TortoiseBots
 {
 
-// Default-off autonomous WSG/AB/AV queue participation for live Headless
-// random bots. Reuses the proven manual BattleGroundJoinAction path via
-// WorldSession::HandleBattlemasterJoinOpcode (guid 1337 bypass) for join and
-// the existing native WorldSession::HandleBattleFieldPortOpcode action=0
-// (CMSG_BATTLEFIELD_PORT mapId+0, fail-closed GetMapId) for master-reclaim
-// leave; the core's BattleGroundMgr/BattleGroundQueue owns invite/queue
-// updates and port events, with InBattleGround and (guid,queueType) ownership
-// + HasActivePlayerMaster guards. The existing PlayerbotAI SMSG_BATTLEFIELD_STATUS
-// -> BGStatusAction -> HandleBattleFieldPortOpcode path accepts invites and sets
-// +pvp strategies. No second queue, thread, arena, vehicle, expansion, DB tick
-// scan, queue internals from module, LFT, AH, or auto-create.
+// Default-off demand-aware WSG/AB/AV queue participation for live Headless
+// random bots. The service uses the core's copy-only queued-participant demand
+// snapshot to match a human-waiting queue type/bracket and underrepresented team.
+// It joins through WorldSession::HandleBattlemasterJoinOpcode (guid 1337 bypass)
+// and leaves through HandleBattleFieldPortOpcode action=0; core owns queue,
+// invites, and port events. InBattleGround, LFT, group, master, and owned-pair
+// guards remain module policy without exposing queue internals. No blind
+// periodic queueing, second queue, thread, arena, vehicle, expansion, or DB scan.
 class BattlegroundQueueService
 {
 public:
@@ -34,7 +31,7 @@ private:
     ~BattlegroundQueueService() = default;
 
     bool IsEligible(::Player* bot) const;
-    bool TryQueue(::Player* bot);
+    bool TryQueue(::Player* bot, uint32 queueType);
     void ReconcileMasterQueue();
     bool IsGroupFullyBotOwned(::Group* group) const;
     bool HasLiveNonBotMember(::Group* group) const;

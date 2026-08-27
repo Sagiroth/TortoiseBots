@@ -366,8 +366,13 @@ AV is always queued solo and success is verified after the native handler;
 WSG/AB group joins require every member to be a service-owned Headless bot. A
 service-owned `(guid, queueType)` set makes master-reclaim cleanup precise.
 Cadence and per-interval budget are clamped and the setting defaults off
-(`RandomBotBgEnabled=0`). No demand-aware filling; that needs a separate core
-observation seam.
+(`RandomBotBgEnabled=0`). Demand is read from the copy-only generic
+`BattleGroundMgr::GetQueuedParticipants` snapshot (Penqle PR #415), filtered to
+online non-invited network participants by GUID lookup, matching bracket and
+queue type, with bots selected for the underrepresented team. The snapshot is
+world-thread-only because core queue writers are world-thread-owned; the module
+never reads queue internals. Without #415 this service fails at compile time
+rather than reverting to blind periodic queueing.
 
 ## 20. New core seam test
 
