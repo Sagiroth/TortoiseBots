@@ -156,24 +156,28 @@ public:
     // characters, create only the deficit toward the configured Min/Max target
     // (default OFF). Uses AccountMgr.CreateAccount (random password, hashed)
     // and the generic CharacterCreation::CreateCharacter synchronous
-    // world-thread seam (core 94dfa7e). Throttled to at most one character per
-    // RandomBotUpdateInterval, no per-tick DB scans. Valid race/class is the
-    // intersection of DBC ChrRaces/ChrClasses (NOT_PLAYABLE filtered) and
-    // PlayerInfo (playercreateinfo); DBC-missing combos are never selected and
-    // an empty intersection disables auto-create for this process (log once).
-    // Mixed-faction cached accounts and other permanently failed accounts
-    // (disabled, faction violation, limit, materialization) are logged once
-    // and never retried every RandomBotUpdateInterval; transient
-    // CHAR_CREATE_ERROR/DB-count failures are retryable with ~60s backoff
-    // (log throttled) and do not permanently exclude healthy accounts, while
-    // name collisions remain silently retryable (reset only on Initialize/
-    // restart). LoginDatabase allocation failures are throttled to one log per
-    // ~60s and retried after the interval. After a fresh-account permanent
-    // failure, further fresh RNDBOT account allocation is disabled for this
-    // process (log once) while valid existing accounts remain eligible.
-    // Created GUIDs are appended to the existing candidate pool so the normal
-    // Headless login path handles them; no raw INSERT, no DB worker, no
-    // blocking loop.
+    // world-thread seam (core PR #412/7084557, final 94dfa7e). Throttled to at
+    // most one character per RandomBotUpdateInterval, no per-tick DB scans.
+    // Valid race/class is the intersection of DBC ChrRaces/ChrClasses
+    // (NOT_PLAYABLE filtered) and PlayerInfo (playercreateinfo); DBC-missing
+    // combos are never selected and an empty intersection disables auto-create
+    // for this process (log once). Mixed-faction cached accounts and other
+    // permanently failed accounts (disabled, faction violation, limit,
+    // materialization) are logged once and never retried every
+    // RandomBotUpdateInterval; transient CHAR_CREATE_ERROR/DB-count failures
+    // are retryable with ~60s backoff (log throttled) and do not permanently
+    // exclude healthy accounts, while name collisions remain silently
+    // retryable (reset only on Initialize/restart). LoginDatabase allocation
+    // failures are throttled to one log per ~60s and retried after the
+    // interval. AccountMgr::CreateAccount queues an async login-DB INSERT
+    // (core PR #412/7084557), so a successful CreateAccount whose id is not
+    // yet visible is remembered as a pending name and retried next cadence
+    // (one check per interval, no duplication/spin, no 20-orphan loop). After
+    // a fresh-account permanent failure, further fresh RNDBOT account
+    // allocation is disabled for this process (log once) while valid existing
+    // accounts remain eligible. Created GUIDs are appended to the existing
+    // candidate pool so the normal Headless login path handles them; no raw
+    // INSERT, no DB worker, no blocking loop.
     bool randomBotAutoCreate = false;
     // Scatter random bots on headless login to a validated level-appropriate
     // GenericRpg destination. Default off; fail-closed when no validated level

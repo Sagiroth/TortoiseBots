@@ -269,7 +269,25 @@ only to satisfy a donor interface.
 The completed audit removed or disabled several such compatibility surfaces;
 see [PLAYERBOTS_AUDIT.md](archive/PLAYERBOTS_AUDIT.md) for evidence.
 
-## 16. New core seam test
+## 16. Random-bot auto-create (optional, default-off)
+
+`RandomBotService` discovers existing `RNDBOT*` characters; with
+`AiPlayerbot.RandomBotAutoCreate=1` (default `0`, one character per
+`RandomBotUpdateInterval`, world-thread) it creates the bounded deficit toward
+`MinRandomBots`/`MaxRandomBots` through `AccountMgr::CreateAccount` (random
+12-character alphanumeric password, hashed and never logged) and the generic
+synchronous `CharacterCreation::CreateCharacter` seam (core PR #412, final
+7084557). Core owns account/character persistence and validation; the module
+never writes `account`/`characters` rows directly, uses no DB worker or donor
+creation loop, and does no per-tick `LIKE` scan. Because account creation is
+queued asynchronously, the service remembers a successful account name whose
+id is not immediately visible, retries that same name later, and does not
+allocate orphan accounts. DBC `ChrRaces`/`ChrClasses` and `PlayerInfo`
+(`playercreateinfo`) are intersected before selection; permanent failures are
+remembered, transient failures back off, and created GUIDs enter the existing
+Headless candidate/login path.
+
+## 17. New core seam test
 
 Before adding another core seam, establish that:
 
@@ -280,6 +298,6 @@ Before adding another core seam, establish that:
 If the design would make PlayerBots-specific checks spread through normal
 core gameplay code, redesign it.
 
-## 17. Historical closure
+## 18. Historical closure
 
 F-03/F-27 closure and validation boundary are recorded in `PLAN.md` §6.1 and `PROVENANCE.md`; see `archive/PLAYERBOTS_AUDIT.md` for full evidence. This contract covers only the current host API.

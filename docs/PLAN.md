@@ -33,7 +33,7 @@ See `AGENTS.md` §Architecture invariants for the 5 rules (optional module, no `
 * **Runtime:** `PlayerbotAI` + `Engine/Strategy/Trigger/Action/Value`, 9 Vanilla classes (Warrior–Druid), `PlayerbotAIAdapter` owns AI.
 * **Packet bridge:** `BotPacketAdapter` — Headless outgoing → `HandleBotOutgoingPacket`, master outgoing/incoming → `HandleMaster*`.
 * **Commands:** `.bot add/remove/follow/invite/uninvite/stay/list/stats/command/help` (`.bot command` → `PlayerbotAI::HandleCommand`), account/GM-gated.
-* **Random bots:** `RandomBotService`, bounded, discovers existing `RNDBOT*` characters; with `AiPlayerbot.RandomBotAutoCreate=1` (default `0`, one per `RandomBotUpdateInterval`, world-thread `CharacterCreation`, no raw SQL/DB worker) it also creates the deficit toward `MinRandomBots`/`MaxRandomBots` via `AccountMgr::CreateAccount` (random password, hashed) and generic `CharacterCreation::CreateCharacter` (core `94dfa7e`).
+* **Random bots:** `RandomBotService`, bounded, discovers existing `RNDBOT*` characters; with `AiPlayerbot.RandomBotAutoCreate=1` (default `0`, one per `RandomBotUpdateInterval`, world-thread `CharacterCreation`, no raw SQL/DB worker) it also creates the deficit toward `MinRandomBots`/`MaxRandomBots` via `AccountMgr::CreateAccount` (random password, hashed) and generic `CharacterCreation::CreateCharacter` (core PR #412/7084557, final 94dfa7e). AccountMgr async INSERT is handled via pending-name retry (one check per cadence, no orphan accounts).
 
 Details: `HOST_API.md`.
 

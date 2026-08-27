@@ -19,8 +19,8 @@ public:
     // Load the configured random-account character pool once. With
     // AiPlayerbot.RandomBotAutoCreate=1 the service also creates the bounded
     // deficit toward the configured target via AccountMgr/CharacterCreation
-    // on the world thread (core 94dfa7e). BotManager remains the sole
-    // Headless-session owner.
+    // on the world thread (core PR #412/7084557, final 94dfa7e). BotManager
+    // remains the sole Headless-session owner.
     void Initialize();
     void Update(uint32_t diff);
     void Shutdown();
@@ -84,6 +84,13 @@ private:
     // Throttled to at most one error line per interval; retry after expiry.
     time_t m_accountAllocNextRetry = 0;
     time_t m_charCreateErrorNextRetry = 0;
+    // Minimal pending-account state for AccountMgr::CreateAccount async
+    // login-DB INSERT visibility (core PR #412/7084557): after AOR_OK but
+    // GetId still 0, remember the exact name, stop allocating more accounts,
+    // and retry resolving that same name on later cadences (one check per
+    // RandomBotUpdateInterval, no spin/duplication). Cleared once the id is
+    // visible, then one character creation is attempted.
+    std::string m_pendingAccountName;
 };
 
 } // namespace TortoiseBots
