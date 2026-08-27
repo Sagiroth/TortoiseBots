@@ -172,11 +172,13 @@ bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auct
     if (!auctionHouse)
         return false;
 
-    // The ahbot thread adds, removes and deletes auctions while this runs, so
-    // never carry a raw AuctionEntry* across the scan. Work from a snapshot and
-    // keep auction ids around instead; GetAuction() resolves them under the
-    // lock when a live entry is actually needed.
-    std::vector<AuctionSnapshot> map = auctionHouse->GetAuctionsSnapshot();
+    // Copy entries before scanning; live entries are resolved by id when needed.
+    std::vector<AuctionEntry> map;
+    for (auto const& entry : *auctionHouse->GetAuctions())
+    {
+        if (entry.second)
+            map.push_back(*entry.second);
+    }
 
     if (map.empty())
         return false;
@@ -376,7 +378,7 @@ bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auct
         if (!cost)
             continue;
 
-        uint32 power = curAuction.itemCount;
+        uint32 power = AuctionItemCount(&curAuction);
         power *= 1000;
         power /= cost;
 

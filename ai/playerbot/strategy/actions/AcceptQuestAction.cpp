@@ -67,7 +67,7 @@ bool AcceptQuestAction::Execute(Event& event)
                 guid = unit->getObjectGuid().GetRawValue();
                 break;
             }
-            if (unit && text == "*" && bot->getDistance(unit) <= INTERACTION_DISTANCE)
+            if (unit && text == "*" && bot->GetDistance(unit) <= INTERACTION_DISTANCE)
                 hasAccept |= QuestAction::ProcessQuests(unit);
         }
         std::list<ObjectGuid> gos = AI_VALUE(std::list<ObjectGuid>, "nearest game objects no los");
@@ -79,7 +79,7 @@ bool AcceptQuestAction::Execute(Event& event)
                 guid = go->getObjectGuid().GetRawValue();
                 break;
             }
-            if (go && text == "*" && bot->getDistance(go) <= INTERACTION_DISTANCE)
+            if (go && text == "*" && bot->GetDistance(go) <= INTERACTION_DISTANCE)
                 hasAccept |= QuestAction::ProcessQuests(go);
         }
     }
@@ -154,14 +154,7 @@ bool AcceptQuestShareAction::Execute(Event& event)
 
         if( qInfo->GetSrcSpell() > 0 )
         {
-            bot->CastSpell( bot, qInfo->GetSrcSpell(),
-#ifdef MANGOS
-                    true
-#endif
-#ifdef CMANGOS
-                    (uint32)0
-#endif
-            );
+            bot->CastSpell(bot, qInfo->GetSrcSpell(), true);
         }
 
         ai->TellPlayer(requester, BOT_TEXT("quest_accept"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
@@ -199,14 +192,7 @@ bool ConfirmQuestAction::Execute(Event& event)
 
         if( qInfo->GetSrcSpell() > 0 )
         {
-            bot->CastSpell( bot, qInfo->GetSrcSpell(),
-#ifdef MANGOS
-                    true
-#endif
-#ifdef CMANGOS
-                    (uint32)0
-#endif
-            );
+            bot->CastSpell(bot, qInfo->GetSrcSpell(), true);
         }
 
         ai->TellPlayer(requester, BOT_TEXT("quest_accept"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
@@ -249,14 +235,7 @@ bool QuestDetailsAction::Execute(Event& event)
 
         if (qInfo->GetSrcSpell() > 0)
         {
-            bot->CastSpell(bot, qInfo->GetSrcSpell(),
-#ifdef MANGOS
-                true
-#endif
-#ifdef CMANGOS
-                (uint32)0
-#endif
-            );
+            bot->CastSpell(bot, qInfo->GetSrcSpell(), true);
         }
 
         ai->TellPlayer(requester, BOT_TEXT("quest_accept"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
