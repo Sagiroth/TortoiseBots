@@ -50,7 +50,7 @@ bool PossibleTargetsValue::AcceptUnit(Unit* unit)
 
 void PossibleTargetsValue::FindPossibleTargets(Player* player, std::list<Unit*>& targets, float range)
 {
-    MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck u_check(player, range);
+    MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck u_check(player, player, range);
     MaNGOS::UnitListSearcher<MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck> searcher(targets, u_check);
     Cell::VisitAllObjects(player, searcher, range);
 }
