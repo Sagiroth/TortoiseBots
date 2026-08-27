@@ -21,19 +21,13 @@
 #include "ObjectGuid.h"
 #include "Maps/GridMap.h"
 #include "Maps/Map.h"
-// pi-lens-ignore: clang:pp_file_not_found
+#if __has_include("LFT/LFTMgr.h")
 #include "LFT/LFTMgr.h"
+#elif __has_include("LFTMgr.h")
+#include "LFTMgr.h"
+#endif
 #ifndef MANGOSSERVER_LFTMGR_H
-// Minimal fallback when core LFT header is absent. Real build uses core's LFTMgr.h (#413).
-// Only IsQueued/IsInOffer are needed for the AH fail-closed guard; dependency is explicit
-// in HOST_API.md §17 and no fake queue behavior is introduced.
-class LFTManager
-{
-public:
-    bool IsQueued(ObjectGuid const&) const { return false; }
-    bool IsInOffer(ObjectGuid const&) const { return false; }
-};
-static LFTManager sLFTMgr;
+#error "TortoiseBots AhMarketService requires core PR #413 (LFT/LFTMgr.h with sLFTMgr.IsQueued/IsInOffer). Update Tortoise core or remove AhMarketService from the build."
 #endif
 
 #include <list>
@@ -111,8 +105,8 @@ bool AhMarketService::IsBotAvailableForMarket(Player* bot) const
         if (ai->HasActivePlayerMaster())
             return false;
     // LFT queued / in-offer — world-thread read-only, no m_queue mutation.
-    // Requires core PR #413 LFT queue seam (LFT/LFTMgr.h); minimal fallback above
-    // is explicit dependency, not fake behavior. Fail-closed when queued/offered.
+    // Hard dependency on core PR #413 LFT queue seam (LFT/LFTMgr.h); build fails
+    // via #error if absent — no silent fallback, no fake queue behavior.
     if (sLFTMgr.IsQueued(bot->GetObjectGuid()) || sLFTMgr.IsInOffer(bot->GetObjectGuid()))
         return false;
     if (IsBotInBattlegroundOrInstance(bot))

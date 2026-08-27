@@ -41,9 +41,8 @@ namespace TortoiseBots
 // or inside a battleground/instance are never selected, posted, or teleported
 // — market cannot pull a BG/dungeon/LFT/group/owned bot out of content.
 // Per-bot AH action stays independent and never pulls owned/party bots from
-// players. LFT guard requires core PR #413 LFT queue seam; without it the
-// minimal header fallback is used and the dependency is explicit (no fake queue
-// behavior).
+// players. LFT guard hard-requires core PR #413 LFT queue seam (LFT/LFTMgr.h
+// IsQueued/IsInOffer); build fails with #error if absent — no silent fallback.
 class AhMarketService
 {
 public:
