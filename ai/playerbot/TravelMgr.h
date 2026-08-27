@@ -451,6 +451,16 @@ namespace ai
 
 		int32 GetAreaLevel(uint32 area_id);
 		void LoadAreaLevels();
+		// Cached-only lookup for module login scatter: does not trigger lazy DB/creature scans or mutate areaLevels.
+		bool HasCachedAreaLevels() const { return !areaLevels.empty(); }
+		bool TryGetCachedAreaLevel(uint32 areaId, int32& outLevel) const
+		{
+			auto it = areaLevels.find(areaId);
+			if (it == areaLevels.end())
+				return false;
+			outLevel = it->second;
+			return true;
+		}
 	private:
 		void Clear();
 		void SetNullTravelTarget(Player* player) const;

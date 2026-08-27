@@ -77,12 +77,22 @@ bool TryRandomTeleport(::Player* bot, BotRecord const& record)
         sLog.outString("TortoiseBots: random teleport no AI for bot %s, retaining position", bot->GetName());
         return false;
     }
-    ai::PlayerTravelInfo info(bot);
     auto& travelMgr = MaNGOS::Singleton<ai::TravelMgr>::Instance();
-    auto dests = travelMgr.GetDestinations(info, (uint32)ai::TravelDestinationPurpose::GenericRpg, {}, true, 10000.0f);
+    // Fail closed when persisted area-level cache is empty/missing. Do not call lazy
+    // GetAreaLevel()/IsLocationLevelValid() which scan creature data and mutate areaLevels
+    // on the world thread. Use only validated cached levels via const helper.
+    if (!travelMgr.HasCachedAreaLevels())
+    {
+        sLog.outString("TortoiseBots: random teleport no cached area levels for bot %s level %u (ai_playerbot_zone_level empty/missing), retaining position", bot->GetName(), bot->GetLevel());
+        return false;
+    }
+    ai::PlayerTravelInfo info(bot);
+    // Fetch without level filtering (onlyPossible=false) and without distance bias (maxDistance=0)
+    // to avoid lazy IsPossible scans and to scatter across all level-appropriate zones, not just near logout pos.
+    auto dests = travelMgr.GetDestinations(info, (uint32)ai::TravelDestinationPurpose::GenericRpg, {}, false, 0);
     if (dests.empty())
     {
-        sLog.outString("TortoiseBots: random teleport no GenericRpg destinations for bot %s level %u (cache empty or no level match)", bot->GetName(), bot->GetLevel());
+        sLog.outString("TortoiseBots: random teleport no GenericRpg destinations for bot %s level %u (cache empty)", bot->GetName(), bot->GetLevel());
         return false;
     }
 
@@ -92,6 +102,19 @@ bool TryRandomTeleport(::Player* bot, BotRecord const& record)
     constexpr uint32 maxPointAttempts = 8;
     ai::WorldPosition* chosen = nullptr;
     uint32 destinationAttempts = std::min<uint32>(maxDestinationAttempts, dests.size());
+    // Level window rationale (both bounds, no speculative config):
+    //  Upper +5 from local RpgTravelDestination::IsPossible (destAreaLevel > botLevel+5 => reject) and
+    //   quest level gate (questLevel > botLevel+5 => reject).
+    //  Lower -5 from donor AiPlayerbot.RandomBotTeleLevel=5 window where creature avg satisfies
+    //   botLevel-5 <= creatureLevel <= botLevel (see RandomPlayerbotMgr::PrepareTeleportCache query delta in [0,5])
+    //   and local Grind lower bound approx botLevel-12. Symmetric ±5 is the minimal conservative window
+    //   that prevents both 60->Elwynn and 10->Winterspring mismatches without new config; enforced on
+    //   validated cached area levels only (TryGetCachedAreaLevel), never via lazy GetAreaLevel/IsLocationLevelValid.
+    int32 botLevel = (int32)bot->GetLevel();
+    int32 lower = botLevel - 5;
+    if (lower < 1) lower = 1;
+    int32 upper = botLevel + 5;
+    if (upper > 60) upper = 60;
     for (uint32 destinationAttempt = 0; destinationAttempt < destinationAttempts && !chosen; ++destinationAttempt)
     {
         ai::TravelDestination* destination = dests[urand(0, static_cast<uint32>(dests.size() - 1))];
@@ -103,8 +126,17 @@ bool TryRandomTeleport(::Player* bot, BotRecord const& record)
         for (uint32 pointAttempt = 0; pointAttempt < pointAttempts; ++pointAttempt)
         {
             ai::WorldPosition* point = points[urand(0, static_cast<uint32>(points.size() - 1))];
-            if (!point || !ai::TravelMgr::IsLocationLevelValid(*point, info,
-                (uint32)ai::TravelDestinationPurpose::GenericRpg))
+            if (!point)
+                continue;
+            AreaTableEntry const* area = point->GetArea();
+            if (!area)
+                continue;
+            int32 areaLevel;
+            if (!travelMgr.TryGetCachedAreaLevel(area->ID, areaLevel))
+                continue;
+            if (areaLevel <= 0)
+                continue;
+            if (areaLevel < lower || areaLevel > upper)
                 continue;
             if (IsUsableTeleportPoint(*point))
             {
