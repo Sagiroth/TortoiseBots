@@ -532,7 +532,7 @@ std::vector<GuildShareItemEntry> GuildShareListValue::Calculate()
     if (!guild)
         return result;
 
-    std::string ginfo = guild->GetGINFO();
+    std::string ginfo = guild->GetInfo();
     if (ginfo.empty())
         return result;
 
