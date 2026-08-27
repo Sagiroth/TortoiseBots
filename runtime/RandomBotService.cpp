@@ -154,6 +154,22 @@ void RandomBotService::ResolvePinnedBots()
             sLog.outString("TortoiseBots: pinned bot '%s' resolved to invalid guid", rawName.c_str());
             continue;
         }
+        // Bounded, resolution-only check: a name that exists in `characters`
+        // but is not in the discovered RNDBOT pool is logged and ignored.
+        // Without this, such names were silently ignored later in the
+        // prioritized pool pass, which mismatched the documented behavior.
+        bool inPool = false;
+        for (Candidate const& candidate : m_candidates)
+            if (candidate.characterGuid.GetCounter() == guidLow)
+            {
+                inPool = true;
+                break;
+            }
+        if (!inPool)
+        {
+            sLog.outString("TortoiseBots: pinned bot '%s' (guid %u) not in RNDBOT pool, ignoring", rawName.c_str(), guidLow);
+            continue;
+        }
         m_pinnedGuids.insert(guidLow);
         sLog.outString("TortoiseBots: pinned bot '%s' resolved to guid %u", rawName.c_str(), guidLow);
     }
