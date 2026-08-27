@@ -63,14 +63,17 @@ AiPlayerbot.RandomBotAccountPrefix = RNDBOT
 # deterministically excluded (derived from all cached RNDBOT characters for that
 # account) and the service tries the next eligible account in the same cadence,
 # so one failed account does not block the deficit. Permanently failed accounts
-# (mixed, disabled, faction violation, limit, or other materialization errors)
-# are logged once and never retried every RandomBotUpdateInterval (reset only
-# on Initialize/restart); transient CHAR_CREATE_ERROR/DB-count failures are
-# retryable with ~60s backoff (log throttled) and do not permanently exclude
-# healthy accounts, while name collisions are retried silently and remain
-# retryable. LoginDatabase allocation failures are throttled to one log per
-# ~60s and retried after the interval. A successful CreateAccount whose id is not
-# yet visible is remembered as exactly one pending name and retried with
+# (mixed, limit, or other materialization errors) are logged once and never
+# retried every RandomBotUpdateInterval (reset only on Initialize/restart);
+# transient CHAR_CREATE_ERROR/DB-count failures and dynamic
+# CHAR_CREATE_DISABLED/CHAR_CREATE_PVP_TEAMS_VIOLATION (faction-balance/
+# creation-disabled) are retryable with ~60s backoff (log throttled) and do not
+# permanently exclude healthy accounts, while name collisions
+# (NAME_IN_USE/RESERVED/PROFANE) are retried silently and remain retryable.
+# LoginDatabase allocation failures are throttled to one log per ~60s and retried
+# after the interval. A successful CreateAccount whose id is not yet visible
+# (LoginDatabase async after AllowAsyncTransactions, not core PR #412) is
+# remembered as exactly one pending name and retried with
 # bounded/log-throttled cadence while continuing existing-account creation
 # without allocating another fresh account (log once after prolonged unresolved
 # period, no duplication/spin, no 20-orphan loop). After a fresh-account permanent failure,

@@ -279,15 +279,21 @@ see [PLAYERBOTS_AUDIT.md](archive/PLAYERBOTS_AUDIT.md) for evidence.
 synchronous `CharacterCreation::CreateCharacter` seam (core PR #412, final
 7084557). Core owns account/character persistence and validation; the module
 never writes `account`/`characters` rows directly, uses no DB worker or donor
-creation loop, and does no per-tick `LIKE` scan. Because account creation is
-queued asynchronously, the service remembers exactly one successful account name
-whose id is not immediately visible, retries that same name with bounded/log-
-throttled cadence while continuing the existing-account selection path and
-without allocating another fresh account (log once after prolonged unresolved
-period), and does not allocate orphan accounts. DBC `ChrRaces`/`ChrClasses` and `PlayerInfo`
-(`playercreateinfo`) are intersected before selection; permanent failures are
-remembered, transient failures back off, and created GUIDs enter the existing
-Headless candidate/login path.
+creation loop, and does no per-tick `LIKE` scan. Because `LoginDatabase` queues
+account creation asynchronously after `AllowAsyncTransactions` (not core PR #412),
+the service remembers exactly one successful account name whose id is not
+immediately visible, retries that same name with bounded/log-throttled cadence
+while continuing the existing-account selection path and without allocating
+another fresh account (log once after prolonged unresolved period), and does not
+allocate orphan accounts. DBC `ChrRaces`/`ChrClasses` and `PlayerInfo`
+(`playercreateinfo`) are intersected before selection; permanent failures (mixed,
+limit, materialization) are remembered, transient failures (`CHAR_CREATE_ERROR`,
+dynamic `CHAR_CREATE_DISABLED`/`PVP_TEAMS_VIOLATION` via faction-balance, and
+`LoginDatabase` allocation) back off with 60s throttling, and transient name
+collisions (`CHAR_CREATE_NAME_IN_USE`/`CHAR_NAME_RESERVED`/`CHAR_NAME_PROFANE`/
+`CHAR_CREATE_FAILED`) are retried silently with another candidate, so a healthy
+account is not permanently poisoned by a single bad name or temporary balance
+state. Created GUIDs enter the existing Headless candidate/login path.
 
 ## 17. New core seam test
 

@@ -39,8 +39,8 @@ namespace
 {
 std::string GenerateRndBotName()
 {
-    // 4..8 chars, first upper, rest lower, passes CheckPlayerName.
-    // Prefix Rnd ensures recognizable but not donor-styled; uniqueness via DB.
+    // 5..8 chars, first upper rest lower, random letters, passes CheckPlayerName.
+    // No fixed prefix; uniqueness via DB (GetPlayerGuidByName + core NAME_IN_USE).
     static const char letters[] = "abcdefghijklmnopqrstuvwxyz";
     std::string name;
     name.reserve(8);
@@ -261,11 +261,18 @@ RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAcc
         return AutoCreateCharResult::TransientError;
 
     // Up to 5 name attempts per account per cadence. Transient name collisions
-    // (NAME_IN_USE/RESERVED/CHAR_CREATE_FAILED or local normalize miss) are
+    // (NAME_IN_USE/RESERVED/PROFANE/CHAR_CREATE_FAILED or local normalize miss) are
     // retried silently and do not mark the account permanently failed. Permanent
-    // materialization errors (DISABLED, PVP_TEAMS_VIOLATION, ACCOUNT/SERVER_LIMIT,
-    // or other) are logged once and the caller must remember the account as
-    // permanently failed so it is never retried every RandomBotUpdateInterval.
+    // materialization errors (ACCOUNT/SERVER_LIMIT or other) are logged once and
+    // the caller must remember the account as permanently failed so it is never
+    // retried every RandomBotUpdateInterval. CHAR_CREATE_DISABLED and
+    // CHAR_CREATE_PVP_TEAMS_VIOLATION are treated as transient 60s backoff
+    // (dynamic creation-disabled/faction-balance, not permanent): core result
+    // does not distinguish static NOT_PLAYABLE from dynamic IsFactionImbalanced /
+    // CHARACTERS_CREATING_DISABLED, and validAll is already DBC/PlayerInfo and
+    // team-filtered, so remaining DISABLED/PVP is likely transient server state
+    // that must not permanently poison a healthy account (bounded via
+    // m_charCreateErrorNextRetry).
     for (int nameAttempt = 0; nameAttempt < 5; ++nameAttempt)
     {
         std::string name = GenerateRndBotName();
@@ -314,12 +321,13 @@ RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAcc
             return AutoCreateCharResult::Success;
         }
 
-        if (outcome.result == CHAR_CREATE_NAME_IN_USE || outcome.result == CHAR_NAME_RESERVED || outcome.result == CHAR_CREATE_FAILED)
+        if (outcome.result == CHAR_CREATE_NAME_IN_USE || outcome.result == CHAR_NAME_RESERVED || outcome.result == CHAR_NAME_PROFANE || outcome.result == CHAR_CREATE_FAILED)
         {
-            // Transient name collision – try another name silently.
-            // CHAR_CREATE_FAILED is DBC-missing; validAll is pre-filtered
-            // with ChrRaces/ChrClasses so this is rare – treat as name-like
-            // transient to avoid permanently excluding a healthy account.
+            // Transient name candidate failure – try another name silently.
+            // CHAR_NAME_PROFANE is a name-candidate rejection (profane regex) like
+            // RESERVED/NAME_IN_USE; CHAR_CREATE_FAILED is DBC-missing. validAll is
+            // pre-filtered with ChrRaces/ChrClasses so FAILED is rare – treat as
+            // name-like transient to avoid permanently excluding a healthy account.
             continue;
         }
         if (outcome.result == CHAR_CREATE_ERROR)
@@ -333,8 +341,15 @@ RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAcc
         }
         if (outcome.result == CHAR_CREATE_PVP_TEAMS_VIOLATION)
         {
-            sLog.outError("TortoiseBots: auto-create account %u team violation for race %u (mixed or wrong faction), skipping account", accountId, uint32(race));
-            return AutoCreateCharResult::Permanent;
+            // Dynamic faction-balance / ALLOW_TWO_SIDE state: transient backoff, not permanent.
+            // validAll is team-filtered and mixed accounts are already excluded, so PVP is likely
+            // transient server ALLOW_TWO_SIDE/faction state. Use bounded 60s backoff to avoid poisoning.
+            if (!m_charCreateErrorNextRetry || time(nullptr) >= m_charCreateErrorNextRetry)
+            {
+                sLog.outError("TortoiseBots: auto-create transient PVP team violation for account %u race %u (faction balance), backing off", accountId, uint32(race));
+                m_charCreateErrorNextRetry = time(nullptr) + 60;
+            }
+            return AutoCreateCharResult::TransientError;
         }
         if (outcome.result == CHAR_CREATE_ACCOUNT_LIMIT || outcome.result == CHAR_CREATE_SERVER_LIMIT)
         {
@@ -343,8 +358,16 @@ RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAcc
         }
         if (outcome.result == CHAR_CREATE_DISABLED)
         {
-            sLog.outError("TortoiseBots: auto-create race %u class %u disabled (team disabled or not playable), skipping account %u", uint32(race), uint32(cls), accountId);
-            return AutoCreateCharResult::Permanent;
+            // Dynamic creation-disabled / faction-imbalance state: transient backoff, not permanent.
+            // Core does not distinguish static NOT_PLAYABLE from dynamic IsFactionImbalanced /
+            // CHARACTERS_CREATING_DISABLED mask; validAll already excludes NOT_PLAYABLE via DBC,
+            // so remaining DISABLED is likely transient balance/disabled state.
+            if (!m_charCreateErrorNextRetry || time(nullptr) >= m_charCreateErrorNextRetry)
+            {
+                sLog.outError("TortoiseBots: auto-create transient disabled race %u class %u (creation disabled/faction balance) for account %u, backing off", uint32(race), uint32(cls), accountId);
+                m_charCreateErrorNextRetry = time(nullptr) + 60;
+            }
+            return AutoCreateCharResult::TransientError;
         }
         // Generic fail-closed – permanent for this process, log once.
         sLog.outError("TortoiseBots: auto-create for %s race %u class %u on account %u failed %u, excluding account", norm.c_str(), uint32(race), uint32(cls), accountId, uint32(outcome.result));
@@ -419,8 +442,8 @@ bool RandomBotService::TryAutoCreate()
 
     bool allowTwoSide = sWorld.getConfig(CONFIG_BOOL_ALLOW_TWO_SIDE_ACCOUNTS) != 0;
 
-    // Pending-account handling for async AccountMgr::CreateAccount
-    // (core PR #412/7084557, final 7084557 queues login-DB INSERT): keep
+    // Pending-account handling for LoginDatabase async AccountMgr::CreateAccount
+    // (LoginDatabase queues INSERT after AllowAsyncTransactions, not core PR #412): keep
     // exactly one pending fresh account name after AOR_OK with no visible id,
     // retry that same name with bounded/log-throttled cadence (60s) while
     // continuing the existing-account selection path and without allocating
@@ -577,7 +600,7 @@ bool RandomBotService::TryAutoCreate()
             }
             else
             {
-                // Async login-DB INSERT (core PR #412/7084557, final 7084557):
+                // Async LoginDatabase INSERT (AllowAsyncTransactions; not core PR #412):
                 // AccountMgr queues the INSERT, so GetId may still return 0
                 // on this world thread. Remember exactly one pending name,
                 // retry it with bounded/log-throttled cadence while continuing

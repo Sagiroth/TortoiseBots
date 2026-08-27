@@ -69,9 +69,13 @@ private:
     // happens inside CharacterCreation validation.
     std::vector<uint32_t> m_rndBotAccountIds;
     // Process-lifetime auto-create failure state: permanently failed accounts
-    // (mixed, disabled, faction violation, limit, or other materialization
-    // errors) are logged once and never retried. Transient name collisions
-    // are not recorded here and remain retryable. Reset only on Initialize.
+    // (mixed, limit, or other materialization errors) are logged once and
+    // never retried. Transient name collisions (NAME_IN_USE/RESERVED/PROFANE)
+    // are not recorded here and remain retryable; CHAR_CREATE_DISABLED and
+    // CHAR_CREATE_PVP_TEAMS_VIOLATION are treated as transient 60s backoff
+    // (dynamic creation-disabled/faction-balance, not permanent) via
+    // m_charCreateErrorNextRetry to avoid poisoning a healthy account.
+    // Reset only on Initialize.
     std::set<uint32_t> m_failedAutoCreateAccounts;
     // After a fresh-account permanent character-creation failure, stop
     // allocating additional empty RNDBOT accounts for this process (log once);
@@ -85,7 +89,7 @@ private:
     time_t m_accountAllocNextRetry = 0;
     time_t m_charCreateErrorNextRetry = 0;
     // Minimal pending-account state for AccountMgr::CreateAccount async
-    // login-DB INSERT visibility (core PR #412/7084557, final 7084557): after
+    // login-DB INSERT visibility (LoginDatabase async after AllowAsyncTransactions, not core PR #412): after
     // AOR_OK but GetId still 0, remember exactly one pending fresh account
     // name, retry that same name with bounded/log-throttled cadence while
     // continuing the existing-account selection path and without allocating

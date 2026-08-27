@@ -162,15 +162,16 @@ public:
     // (NOT_PLAYABLE filtered) and PlayerInfo (playercreateinfo); DBC-missing
     // combos are never selected and an empty intersection disables auto-create
     // for this process (log once). Mixed-faction cached accounts and other
-    // permanently failed accounts (disabled, faction violation, limit,
-    // materialization) are logged once and never retried every
-    // RandomBotUpdateInterval; transient CHAR_CREATE_ERROR/DB-count failures
-    // are retryable with ~60s backoff (log throttled) and do not permanently
-    // exclude healthy accounts, while name collisions remain silently
+    // permanently failed accounts (limit, materialization) are logged once and
+    // never retried every RandomBotUpdateInterval; transient CHAR_CREATE_ERROR/
+    // DB-count failures and dynamic CHAR_CREATE_DISABLED/CHAR_CREATE_PVP_TEAMS_VIOLATION
+    // (faction-balance/creation-disabled, not NOT_PLAYABLE) are retryable with
+    // ~60s backoff (log throttled) and do not permanently exclude healthy accounts,
+    // while name collisions (NAME_IN_USE/RESERVED/PROFANE) remain silently
     // retryable (reset only on Initialize/restart). LoginDatabase allocation
     // failures are throttled to one log per ~60s and retried after the
-    // interval. AccountMgr::CreateAccount queues an async login-DB INSERT
-    // (core PR #412/7084557, final 7084557), so a successful CreateAccount whose id is not
+    // interval. AccountMgr::CreateAccount queues an async LoginDatabase INSERT
+    // (AllowAsyncTransactions; not core PR #412), so a successful CreateAccount whose id is not
     // yet visible is remembered as exactly one pending name and retried with
     // bounded/log-throttled cadence while continuing the existing-account
     // selection path and without allocating another fresh account (log once after
