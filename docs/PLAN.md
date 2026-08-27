@@ -73,7 +73,7 @@ Core:         7353989c94399f80572a2f8ec2eb73c63a6c79f8
 
 First roles: Warrior tank, Priest healer, Mage/Rogue/Hunter DPS. Expand from failures.
 
-Then Turtle-specific: Goblin/High Elf, class/talent changes, custom portals, collection mounts.
+Then Turtle-specific: Goblin/High Elf, class/talent changes, collection mounts.
 
 ## 8. Later roadmap
 
