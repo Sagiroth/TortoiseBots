@@ -2446,7 +2446,7 @@ void TravelNodeMap::generateZoneMeanNodes()
         for (auto& dest : dests)
         {
             for (auto p : dest->GetPoints())
-                if (!p.IsUnderWater())
+                if (!p->IsUnderWater())
                     points.push_back(p);
 
             if (points.empty())
