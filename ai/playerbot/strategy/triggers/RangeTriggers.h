@@ -27,7 +27,7 @@ namespace ai
                 const bool canMove = !PossibleAttackTargetsValue::HasBreakableCC(target, bot) && !PossibleAttackTargetsValue::HasUnBreakableCC(target, bot);
 
                 // Don't move if the target is targeting you and you can't add distance between you and the target
-                if (target->GetTarget() == bot && canMove && target->GetSpeedInMotion() > (bot->GetSpeedInMotion() * 0.65))
+                if (target->GetVictim() == bot && canMove && target->GetSpeed(MOVE_RUN) > (bot->GetSpeed(MOVE_RUN) * 0.65))
                 {
                     return false;
                 }
@@ -61,7 +61,7 @@ namespace ai
                 // Casters have no minimum range — only flee if the mob is actually targeting/attacking this bot.
                 // Hunters are excluded: their ranged weapons have a ~8 yd minimum range so they must
                 // maintain distance even when the mob is focused on someone else.
-                if (bot->GetClass() != CLASS_HUNTER && !isVictim && target->GetTarget() != bot)
+                if (bot->GetClass() != CLASS_HUNTER && !isVictim && target->GetVictim() != bot)
                     return false;
 
                 //if (isBoss || isRaid)
@@ -103,7 +103,7 @@ namespace ai
             if (target)
             {
                 // Don't move if the target is targeting you and you can't add distance between you and the target
-                if (target->GetTarget() == bot && !target->IsRooted() && target->GetSpeedInMotion() > (bot->GetSpeedInMotion() * 0.65))
+                if (target->GetVictim() == bot && !target->IsRooted() && target->GetSpeed(MOVE_RUN) > (bot->GetSpeed(MOVE_RUN) * 0.65))
                 {
                     return false;
                 }
@@ -197,7 +197,7 @@ namespace ai
                     return false;
                 }
 
-                if (enemyTargetsBot && target->GetTarget() != bot)
+                if (enemyTargetsBot && target->GetVictim() != bot)
                 {
                     return false;
                 }
@@ -252,7 +252,7 @@ namespace ai
             if (!target)
                 return false;
 
-            return !bot->CanReachWithMeleeAttack(target) || !bot->IsWithinLOSInMap(target, true);
+            return !bot->CanReachWithMeleeAutoAttack(target) || !bot->IsWithinLOSInMap(target, true);
         }
     };
 
@@ -267,7 +267,7 @@ namespace ai
             if (!target)
                 return false;
 
-            return target && (bot->GetDistance(target, true, DIST_CALC_COMBAT_REACH) > (distance - sPlayerbotAIConfig.contactDistance)) || !bot->IsWithinLOSInMap(target, true);
+            return target && (bot->GetDistance(target, SizeFactor::CombatReach) > (distance - sPlayerbotAIConfig.contactDistance)) || !bot->IsWithinLOSInMap(target, true);
         }
     };
 
@@ -283,7 +283,7 @@ namespace ai
             if (!target)
                 return false;
 
-            return target && (bot->GetDistance(target, true, DIST_CALC_COMBAT_REACH) > (distance - sPlayerbotAIConfig.contactDistance)) || !bot->IsWithinLOSInMap(target, true);
+            return target && (bot->GetDistance(target, SizeFactor::CombatReach) > (distance - sPlayerbotAIConfig.contactDistance)) || !bot->IsWithinLOSInMap(target, true);
         }
     };
 
@@ -360,7 +360,7 @@ namespace ai
             if (!target)
                 return true;
 
-            if (target->GetTarget() == bot) //Try pulling target to follow position
+            if (target->GetVictim() == bot) //Try pulling target to follow position
                 return true;
 
             if (!ai->IsRanged(bot)) //Melee bots stay in melee.

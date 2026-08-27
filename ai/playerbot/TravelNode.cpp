@@ -2364,14 +2364,14 @@ void TravelNodeMap::generateTransportNodes()
                 for (size_t pathIndex = 0; pathIndex < path.size(); ++pathIndex)
                 {
                     auto& p = path[pathIndex];
-                    WorldPosition pos = WorldPosition(p->mapid, p->x, p->y, p->z, 0);
+                    WorldPosition pos = WorldPosition(p.mapid, p.x, p.y, p.z, 0);
 
                     if (prevNode)
                     {
                         ppath.push_back(pos);
                     }
 
-                    if (p->delay > 0)
+                    if (p.delay > 0)
                     {
                         TravelNode* node = sTravelNodeMap.addNode(pos, data->name, true, true, true, entry);
 
@@ -2409,7 +2409,7 @@ void TravelNodeMap::generateTransportNodes()
                     for (size_t pathIndex = 0; pathIndex < path.size(); ++pathIndex)
                     {
                         auto& p = path[pathIndex];
-                        WorldPosition pos = WorldPosition(p->mapid, p->x, p->y, p->z, 0);
+                        WorldPosition pos = WorldPosition(p.mapid, p.x, p.y, p.z, 0);
 
                         //if (data->displayId == 3015)
                         //    pos.setZ(pos.getZ() + 6.0f);
@@ -2418,7 +2418,7 @@ void TravelNodeMap::generateTransportNodes()
 
                         ppath.push_back(pos);
 
-                        if (p->delay > 0)
+                        if (p.delay > 0)
                         {
                             TravelNode* node = sTravelNodeMap.GetNode(pos, NULL, 5.0f);
 
@@ -2446,7 +2446,7 @@ void TravelNodeMap::generateZoneMeanNodes()
         for (auto& dest : dests)
         {
             for (auto p : dest->GetPoints())
-                if (!p->IsUnderWater())
+                if (!p.IsUnderWater())
                     points.push_back(p);
 
             if (points.empty())
@@ -2780,13 +2780,13 @@ void TravelNodeMap::generateTaxiPaths()
 
         std::vector<WorldPosition> ppath;
 
-        if (startNode->fDist(WorldPosition(nodes[0]->mapid, nodes[0]->x, nodes[0]->y, nodes[0]->z, 0.0)) > 0.1f)
+        if (startNode->fDist(WorldPosition(nodes[0].mapid, nodes[0].x, nodes[0].y, nodes[0].z, 0.0)) > 0.1f)
             ppath.push_back(*startNode->getPosition());
 
         for (size_t nodeIndex = 0; nodeIndex < nodes.size(); ++nodeIndex)
         {
             auto const& n = nodes[nodeIndex];
-            ppath.push_back(WorldPosition(n->mapid, n->x, n->y, n->z, 0.0));
+            ppath.push_back(WorldPosition(n.mapid, n.x, n.y, n.z, 0.0));
         }
 
         if (endNode->fDist(ppath.back()) > 0.1f)
