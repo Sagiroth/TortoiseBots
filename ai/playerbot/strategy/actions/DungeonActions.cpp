@@ -18,7 +18,7 @@ bool MoveAwayFromHazard::Execute(Event& event)
     for (const HazardPosition& hazard : hazards)
     {
         const WorldPosition& hazardPosition = hazard.first;
-        const float distance = bot->getDistance(hazardPosition.getX(), hazardPosition.getY(), hazardPosition.getZ());
+        const float distance = bot->GetDistance(hazardPosition.getX(), hazardPosition.getY(), hazardPosition.getZ());
         if (distance < closestHazardDistance)
         {
             closestHazardDistance = distance;
@@ -126,8 +126,8 @@ bool MoveAwayFromCreature::Execute(Event& event)
 
     // Iterate through the near creatures
     std::list<Unit*> units;
-    MaNGOS::AllCreaturesOfEntryInRangeCheck u_check(bot, creatureID, range);
-    MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRangeCheck> searcher(units, u_check);
+    MaNGOS::AllCreaturesOfEntryInRange u_check(bot, creatureID, range);
+    MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRange> searcher(units, u_check);
     Cell::VisitAllObjects(bot, searcher, range);
     for (Unit* unit : units)
     {
@@ -137,7 +137,7 @@ bool MoveAwayFromCreature::Execute(Event& event)
             creatures.push_back(creature);
 
             // Get the closest creature to the bot
-            const float distance = bot->getDistance(creature);
+            const float distance = bot->GetDistance(creature);
             if (distance < closestCreatureDistance)
             {
                 closestCreatureDistance = distance;
@@ -252,7 +252,7 @@ bool MoveAwayFromCreature::HasCreaturesNearby(const WorldPosition& point, const 
 {
     for (const Creature* creature : creatures)
     {
-        const float distance = creature->getDistance(point.getX(), point.getY(), point.getZ());
+        const float distance = creature->GetDistance(point.getX(), point.getY(), point.getZ());
         if (distance <= range)
         {
             return true;
