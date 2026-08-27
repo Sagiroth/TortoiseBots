@@ -92,18 +92,13 @@ void GossipHelloAction::TellGossipText(Player* requester, uint32 textId)
     {
         for (int i = 0; i < MAX_GOSSIP_TEXT_OPTIONS; i++)
         {
-            std::string text0 = text->Options[i].Text_0;
-            if (text0.empty() && text->Options[i].BroadcastTextID)
-            {
-                int locale = requester && requester->GetSession() ? requester->GetSession()->GetSessionDbcLocale() : LOCALE_enUS;
-                char const* broadcast = sObjectMgr.GetBroadcastText(text->Options[i].BroadcastTextID, locale,
-                    bot->GetGender());
-                if (broadcast)
-                    text0 = broadcast;
-            }
-            if (!text0.empty()) ai->TellPlayerNoFacing(requester, text0);
-            std::string text1 = text->Options[i].Text_1;
-            if (!text1.empty()) ai->TellPlayerNoFacing(requester, text1);
+            uint32 broadcastId = text->Options[i].BroadcastTextID;
+            if (!broadcastId)
+                continue;
+
+            int locale = requester && requester->GetSession() ? requester->GetSession()->GetSessionDbcLocale() : LOCALE_enUS;
+            if (char const* broadcast = sObjectMgr.GetBroadcastText(broadcastId, locale, bot->GetGender()))
+                ai->TellPlayerNoFacing(requester, broadcast);
         }
     }
 }

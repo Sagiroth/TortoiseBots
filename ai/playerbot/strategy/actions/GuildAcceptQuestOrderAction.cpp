@@ -102,7 +102,7 @@ bool GuildAcceptQuestOrderAction::Execute(Event& event)
     for (auto& guid : npcs)
     {
         Unit* unit = ai->GetUnit(guid);
-        if (!unit || bot->getDistance(unit) > INTERACTION_DISTANCE)
+        if (!unit || bot->GetDistance(unit) > INTERACTION_DISTANCE)
             continue;
 
         if (!unit->HasQuest(order.questId))
@@ -135,7 +135,7 @@ bool GuildAcceptQuestOrderAction::Execute(Event& event)
     for (auto& guid : gos)
     {
         GameObject* go = ai->GetGameObject(guid);
-        if (!go || bot->getDistance(go) > INTERACTION_DISTANCE)
+        if (!go || bot->GetDistance(go) > INTERACTION_DISTANCE)
             continue;
 
         if (!go->HasQuest(order.questId))
