@@ -54,7 +54,8 @@ std::string GenerateRndBotName()
 std::string GenerateRandomPassword()
 {
     // 12 chars alphanumeric, well within MAX_ACCOUNT_STR (16). No credential
-    // exposure: not derived from username, hashed via CalculateShaPassHash.
+    // exposure: not derived from username, hashed via CalculateShaPassHash;
+    // random, not "secure" in any cryptographic sense.
     static const char charset[] =
         "abcdefghijklmnopqrstuvwxyz"
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -83,6 +84,8 @@ void RandomBotService::Initialize()
     m_pinnedGuids.clear();
     m_pinnedResolved = false;
     m_rndBotAccountIds.clear();
+    m_failedAutoCreateAccounts.clear();
+    m_freshAutoCreateDisabled = false;
     if (!sPlayerbotAIConfig.enabled)
     {
         sLog.outString("TortoiseBots: native random-bot service disabled by configuration");
@@ -239,17 +242,20 @@ uint32_t RandomBotService::GetAccountAllowedTeam(uint32_t accountId, bool& isMix
     return TEAM_NONE;
 }
 
-bool RandomBotService::TryCreateCharacterOnAccount(uint32_t accountId, std::vector<std::pair<uint8_t, uint8_t>> const& validForAccount)
+RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAccount(uint32_t accountId, std::vector<std::pair<uint8_t, uint8_t>> const& validForAccount)
 {
     if (validForAccount.empty())
     {
         sLog.outError("TortoiseBots: auto-create account %u has no valid race/class for its team, skipping", accountId);
-        return false;
+        return AutoCreateCharResult::Permanent;
     }
 
-    // Up to 5 name attempts per account per cadence; name collisions are
-    // retried silently, permanent faction/disabled errors break to try next
-    // account instead of spamming 5 logs.
+    // Up to 5 name attempts per account per cadence. Transient name collisions
+    // (NAME_IN_USE/RESERVED/CHAR_CREATE_FAILED or local normalize miss) are
+    // retried silently and do not mark the account permanently failed. Permanent
+    // materialization errors (DISABLED, PVP_TEAMS_VIOLATION, ACCOUNT/SERVER_LIMIT,
+    // or other) are logged once and the caller must remember the account as
+    // permanently failed so it is never retried every RandomBotUpdateInterval.
     for (int nameAttempt = 0; nameAttempt < 5; ++nameAttempt)
     {
         std::string name = GenerateRndBotName();
@@ -279,7 +285,7 @@ bool RandomBotService::TryCreateCharacterOnAccount(uint32_t accountId, std::vect
         if (!sObjectMgr.GetPlayerInfo(race, cls))
         {
             sLog.outError("TortoiseBots: auto-create race %u class %u has no PlayerInfo", uint32(race), uint32(cls));
-            return false;
+            return AutoCreateCharResult::Permanent;
         }
 
         CharacterCreateOutcome outcome = CharacterCreation::CreateCharacter(accountId, info);
@@ -291,38 +297,36 @@ bool RandomBotService::TryCreateCharacterOnAccount(uint32_t accountId, std::vect
             m_randomizeAgeMs.push_back(0);
             sLog.outString("TortoiseBots: auto-create created character %s (%s) race %u class %u on account %u",
                 norm.c_str(), outcome.guid.GetString().c_str(), uint32(race), uint32(cls), accountId);
-            return true;
+            return AutoCreateCharResult::Success;
         }
 
         if (outcome.result == CHAR_CREATE_NAME_IN_USE || outcome.result == CHAR_NAME_RESERVED || outcome.result == CHAR_CREATE_FAILED)
         {
-            // Name collision – try another name silently; no per-attempt spam.
+            // Transient name collision – try another name silently.
             continue;
         }
         if (outcome.result == CHAR_CREATE_PVP_TEAMS_VIOLATION)
         {
             sLog.outError("TortoiseBots: auto-create account %u team violation for race %u (mixed or wrong faction), skipping account", accountId, uint32(race));
-            return false;
+            return AutoCreateCharResult::Permanent;
         }
         if (outcome.result == CHAR_CREATE_ACCOUNT_LIMIT || outcome.result == CHAR_CREATE_SERVER_LIMIT)
         {
-            sLog.outString("TortoiseBots: auto-create account %u at limit (%u), trying next account", accountId, uint32(outcome.result));
-            return false;
+            sLog.outString("TortoiseBots: auto-create account %u at limit (%u), excluding from auto-create", accountId, uint32(outcome.result));
+            return AutoCreateCharResult::Permanent;
         }
         if (outcome.result == CHAR_CREATE_DISABLED)
         {
             sLog.outError("TortoiseBots: auto-create race %u class %u disabled (team disabled or not playable), skipping account %u", uint32(race), uint32(cls), accountId);
-            return false;
+            return AutoCreateCharResult::Permanent;
         }
-        // Generic fail-closed – log once, try next account.
-        sLog.outError("TortoiseBots: auto-create for %s race %u class %u on account %u failed %u, trying next account", norm.c_str(), uint32(race), uint32(cls), accountId, uint32(outcome.result));
-        return false;
+        // Generic fail-closed – permanent for this process, log once.
+        sLog.outError("TortoiseBots: auto-create for %s race %u class %u on account %u failed %u, excluding account", norm.c_str(), uint32(race), uint32(cls), accountId, uint32(outcome.result));
+        return AutoCreateCharResult::Permanent;
     }
 
-    // Exhausted name attempts without permanent error – not a per-cadence spam,
-    // one line per account.
-    sLog.outString("TortoiseBots: auto-create on account %u: no free name after 5 attempts, trying next account", accountId);
-    return false;
+    // Exhausted name attempts – transient, not a permanent exclusion.
+    return AutoCreateCharResult::TransientName;
 }
 
 bool RandomBotService::TryAutoCreate()
@@ -370,23 +374,33 @@ bool RandomBotService::TryAutoCreate()
 
     bool allowTwoSide = sWorld.getConfig(CONFIG_BOOL_ALLOW_TWO_SIDE_ACCOUNTS) != 0;
 
-    // Try existing accounts in deterministic order, skipping full/mixed, and
-    // trying the next account on any permanent failure so one bad account
-    // does not block the deficit.
+    // Try existing accounts in deterministic order. Permanently failed accounts
+    // (mixed, disabled, faction violation, limit) are remembered in
+    // m_failedAutoCreateAccounts, logged once, and never retried every
+    // RandomBotUpdateInterval. Transient name collisions are not remembered
+    // and remain retryable next cadence.
     for (uint32 accId : m_rndBotAccountIds)
     {
+        if (m_failedAutoCreateAccounts.find(accId) != m_failedAutoCreateAccounts.end())
+            continue;
+
         uint32 cnt = 0;
         for (Candidate const& c : m_candidates)
             if (c.accountId == accId)
                 ++cnt;
         if (cnt >= accountLimit)
+        {
+            sLog.outError("TortoiseBots: auto-create account %u at character limit (%u), excluding from auto-create", accId, accountLimit);
+            m_failedAutoCreateAccounts.insert(accId);
             continue;
+        }
 
         bool isMixed = false;
         uint32_t allowed = GetAccountAllowedTeam(accId, isMixed);
         if (isMixed)
         {
             sLog.outError("TortoiseBots: auto-create account %u has mixed-faction RNDBOT characters, excluding from auto-create", accId);
+            m_failedAutoCreateAccounts.insert(accId);
             continue;
         }
 
@@ -402,17 +416,29 @@ bool RandomBotService::TryAutoCreate()
                 validForAccount.swap(filtered);
             else
             {
-                sLog.outError("TortoiseBots: auto-create account %u team %u has no valid race/class, skipping", accId, uint32_t(allowed));
+                sLog.outError("TortoiseBots: auto-create account %u team %u has no valid race/class, excluding from auto-create", accId, uint32_t(allowed));
+                m_failedAutoCreateAccounts.insert(accId);
                 continue;
             }
         }
 
-        if (TryCreateCharacterOnAccount(accId, validForAccount))
+        AutoCreateCharResult res = TryCreateCharacterOnAccount(accId, validForAccount);
+        if (res == AutoCreateCharResult::Success)
             return true;
-        // Permanent or name-exhausted failure – try next account in same cadence.
+        if (res == AutoCreateCharResult::Permanent)
+        {
+            m_failedAutoCreateAccounts.insert(accId);
+            continue;
+        }
+        // TransientName – try next account same cadence, do not remember.
     }
 
-    // No existing account succeeded – allocate a new RNDBOT account.
+    // No existing account succeeded – allocate a new RNDBOT account unless a
+    // previous fresh-account permanent failure disabled this path for the
+    // process lifetime (log once, still allow existing accounts to fill).
+    if (m_freshAutoCreateDisabled)
+        return false;
+
     std::string prefix = sPlayerbotAIConfig.randomBotAccountPrefix;
     if (prefix.empty())
         prefix = "RNDBOT";
@@ -463,13 +489,19 @@ bool RandomBotService::TryAutoCreate()
     }
 
     // New account is empty – any faction allowed, use full valid list.
-    if (TryCreateCharacterOnAccount(newAccountId, validAll))
+    AutoCreateCharResult freshRes = TryCreateCharacterOnAccount(newAccountId, validAll);
+    if (freshRes == AutoCreateCharResult::Success)
         return true;
-
-    // Character creation on the fresh account failed (e.g., disabled team).
-    // Keep the empty account for future intervals but do not spam retry;
-    // the error was already logged inside TryCreateCharacterOnAccount.
-    sLog.outString("TortoiseBots: auto-create on new account %s (%u) failed, will retry next interval", newUsername.c_str(), newAccountId);
+    if (freshRes == AutoCreateCharResult::Permanent)
+    {
+        m_failedAutoCreateAccounts.insert(newAccountId);
+        m_freshAutoCreateDisabled = true;
+        sLog.outError("TortoiseBots: auto-create fresh account %s (%u) permanently failed, disabling further fresh RNDBOT account allocation for this process (existing accounts remain eligible)", newUsername.c_str(), newAccountId);
+        return false;
+    }
+    // TransientName on fresh account – keep it for next interval but do not
+    // yet disable fresh allocation; next cadence will retry existing + fresh
+    // before allocating another.
     return false;
 }
 
@@ -766,6 +798,8 @@ void RandomBotService::Shutdown()
     m_pinnedGuids.clear();
     m_pinnedResolved = false;
     m_rndBotAccountIds.clear();
+    m_failedAutoCreateAccounts.clear();
+    m_freshAutoCreateDisabled = false;
 }
 
 } // namespace TortoiseBots

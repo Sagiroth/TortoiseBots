@@ -43,7 +43,8 @@ private:
     uint32_t TargetCount() const;
     uint32_t DesiredTargetCount() const;
     bool TryAutoCreate();
-    bool TryCreateCharacterOnAccount(uint32_t accountId, std::vector<std::pair<uint8_t, uint8_t>> const& validForAccount);
+    enum class AutoCreateCharResult { Success, TransientName, Permanent };
+    AutoCreateCharResult TryCreateCharacterOnAccount(uint32_t accountId, std::vector<std::pair<uint8_t, uint8_t>> const& validForAccount);
     // Returns TEAM_NONE if empty/unknown, otherwise ALLIANCE/HORDE (67/469). Sets isMixed
     // when cached candidates contain both factions (must be excluded).
     uint32_t GetAccountAllowedTeam(uint32_t accountId, bool& isMixed) const;
@@ -66,6 +67,15 @@ private:
     // auto-created). No per-tick LIKE scan; one bounded DB COUNT per creation
     // happens inside CharacterCreation validation.
     std::vector<uint32_t> m_rndBotAccountIds;
+    // Process-lifetime auto-create failure state: permanently failed accounts
+    // (mixed, disabled, faction violation, limit, or other materialization
+    // errors) are logged once and never retried. Transient name collisions
+    // are not recorded here and remain retryable. Reset only on Initialize.
+    std::set<uint32_t> m_failedAutoCreateAccounts;
+    // After a fresh-account permanent character-creation failure, stop
+    // allocating additional empty RNDBOT accounts for this process (log once);
+    // existing accounts remain eligible.
+    bool m_freshAutoCreateDisabled = false;
 };
 
 } // namespace TortoiseBots

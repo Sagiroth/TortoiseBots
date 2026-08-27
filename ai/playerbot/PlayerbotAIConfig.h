@@ -158,11 +158,15 @@ public:
     // and the generic CharacterCreation::CreateCharacter synchronous
     // world-thread seam (core 94dfa7e). Throttled to at most one character per
     // RandomBotUpdateInterval, no per-tick DB scans, fail-closed on invalid
-    // PlayerInfo; mixed-faction cached accounts are excluded deterministically
-    // and permanent disabled/faction errors are logged once per cadence.
-    // Created GUIDs are appended to the existing candidate pool so the normal
-    // Headless login path handles them; no raw INSERT, no DB worker, no
-    // blocking loop.
+    // PlayerInfo; mixed-faction cached accounts and other permanently failed
+    // accounts (disabled, faction violation, limit, materialization) are
+    // logged once and never retried every RandomBotUpdateInterval (transient
+    // name collisions remain retryable; reset only on Initialize/restart).
+    // After a fresh-account permanent failure, further fresh RNDBOT account
+    // allocation is disabled for this process (log once) while valid existing
+    // accounts remain eligible. Created GUIDs are appended to the existing
+    // candidate pool so the normal Headless login path handles them; no raw
+    // INSERT, no DB worker, no blocking loop.
     bool randomBotAutoCreate = false;
     // Scatter random bots on headless login to a validated level-appropriate
     // GenericRpg destination. Default off; fail-closed when no validated level
