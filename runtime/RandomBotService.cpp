@@ -33,6 +33,8 @@ void RandomBotService::Initialize()
 
     m_initialized = true;
     m_serviceElapsedMs = 0;
+    m_pinnedGuids.clear();
+    m_pinnedResolved = false;
     if (!sPlayerbotAIConfig.enabled || !sPlayerbotAIConfig.randomBotAutologin)
     {
         sLog.outString("TortoiseBots: native random-bot service disabled by configuration");
@@ -121,6 +123,48 @@ uint32 RandomBotService::TargetCount() const
     return std::min<uint32>(configuredTarget, static_cast<uint32>(m_candidates.size()));
 }
 
+void RandomBotService::ResolvePinnedBots()
+{
+    if (m_pinnedResolved)
+        return;
+    if (sPlayerbotAIConfig.pinnedBotNames.empty())
+    {
+        m_pinnedResolved = true;
+        return;
+    }
+
+    // One-time, deferred until DB is usable: characters.name -> guid lookup.
+    // No per-tick SELECT.
+    for (std::string const& rawName : sPlayerbotAIConfig.pinnedBotNames)
+    {
+        if (rawName.empty())
+            continue;
+        std::string escaped = rawName;
+        CharacterDatabase.escape_string(escaped);
+        auto result = CharacterDatabase.PQuery("SELECT guid FROM characters WHERE name = '%s' LIMIT 1", escaped.c_str());
+        if (!result)
+        {
+            sLog.outString("TortoiseBots: pinned bot '%s' not found as character", rawName.c_str());
+            continue;
+        }
+        Field* fields = result->Fetch();
+        uint32 guidLow = fields[0].GetUInt32();
+        if (!guidLow)
+        {
+            sLog.outString("TortoiseBots: pinned bot '%s' resolved to invalid guid", rawName.c_str());
+            continue;
+        }
+        m_pinnedGuids.insert(guidLow);
+        sLog.outString("TortoiseBots: pinned bot '%s' resolved to guid %u", rawName.c_str(), guidLow);
+    }
+
+    m_pinnedResolved = true;
+    if (m_pinnedGuids.empty())
+        sLog.outString("TortoiseBots: no pinned bots resolved from %u configured names", static_cast<uint32>(sPlayerbotAIConfig.pinnedBotNames.size()));
+    else
+        sLog.outString("TortoiseBots: %u pinned bot(s) cached", static_cast<uint32>(m_pinnedGuids.size()));
+}
+
 void RandomBotService::OnHumanLogin()
 {
     ++m_humanSessions;
@@ -151,6 +195,13 @@ void RandomBotService::RemoveExpiredBots(uint32_t diff)
         BotRecord* record = BotManager::Instance().FindBot(candidate.characterGuid);
         if (!record || !record->enteredWorld)
             continue;
+
+        // Pinned bots are exempt from timed logout.
+        if (IsPinnedGuid(candidate.characterGuid.GetCounter()))
+        {
+            m_ageMs[i] = 0;
+            continue;
+        }
 
         m_ageMs[i] += diff;
         if (!sPlayerbotAIConfig.randomBotTimedLogout || !sPlayerbotAIConfig.maxRandomBotInWorldTime)
@@ -192,6 +243,48 @@ void RandomBotService::MaintainOnlinePool()
         return;
 
     uint32 added = 0;
+
+    // Pinned bots are prioritized within the cap, not additive beyond it.
+    if (!m_pinnedGuids.empty())
+    {
+        for (uint32 pinnedGuid : m_pinnedGuids)
+        {
+            if (online >= m_targetCount || added >= perInterval)
+                break;
+
+            Candidate const* pinnedCandidate = nullptr;
+            for (Candidate const& c : m_candidates)
+                if (c.characterGuid.GetCounter() == pinnedGuid)
+                {
+                    pinnedCandidate = &c;
+                    break;
+                }
+
+            if (!pinnedCandidate)
+                continue;
+
+            if (BotManager::Instance().IsBot(pinnedCandidate->characterGuid))
+                continue;
+
+            if (Player* player = sObjectAccessor.FindPlayer(pinnedCandidate->characterGuid))
+            {
+                if (!player->GetSession() || !player->GetSession()->IsHeadless())
+                    continue;
+            }
+            if (sWorld.FindHeadlessSession(pinnedCandidate->characterGuid) ||
+                sWorld.HasPendingHeadlessSession(pinnedCandidate->characterGuid))
+                continue;
+
+            if (BotManager::Instance().AddRandomBot(pinnedCandidate->accountId, pinnedCandidate->characterGuid))
+            {
+                ++online;
+                ++added;
+                sLog.outString("TortoiseBots: pinned random bot %s queued on account %u (prioritized)",
+                    pinnedCandidate->characterGuid.GetString().c_str(), pinnedCandidate->accountId);
+            }
+        }
+    }
+
     size_t attempts = 0;
     while (online < m_targetCount && added < perInterval && attempts < m_candidates.size())
     {
@@ -236,6 +329,8 @@ void RandomBotService::Update(uint32_t diff)
 
     uint32_t elapsed = m_serviceElapsedMs;
     m_serviceElapsedMs = 0;
+    if (!m_pinnedResolved)
+        ResolvePinnedBots();
     RemoveExpiredBots(elapsed);
 
     for (size_t i = 0; i < m_candidates.size(); ++i)
@@ -288,6 +383,8 @@ void RandomBotService::Shutdown()
 
     m_started = false;
     m_initialized = false;
+    m_pinnedGuids.clear();
+    m_pinnedResolved = false;
 }
 
 } // namespace TortoiseBots

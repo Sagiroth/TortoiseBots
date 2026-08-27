@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <vector>
+#include <set>
+#include <string>
 
 #include "ObjectGuid.h"
 
@@ -37,6 +39,8 @@ private:
     void MaintainOnlinePool();
     void RemoveExpiredBots(uint32_t diff);
     uint32_t TargetCount() const;
+    void ResolvePinnedBots();
+    bool IsPinnedGuid(uint32 guidLow) const { return m_pinnedGuids.find(guidLow) != m_pinnedGuids.end(); }
 
     std::vector<Candidate> m_candidates;
     std::vector<uint32_t> m_ageMs;
@@ -48,6 +52,8 @@ private:
     uint32_t m_humanSessions = 0;
     bool m_initialized = false;
     bool m_started = false;
+    std::set<uint32> m_pinnedGuids;
+    bool m_pinnedResolved = false;
 };
 
 } // namespace TortoiseBots
