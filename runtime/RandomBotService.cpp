@@ -20,10 +20,10 @@
 #elif __has_include("CharacterCreation.h")
 #include "CharacterCreation.h"
 #else
-// Feature 01 requires core PR #412/7084557 (final 7084557)
+// Feature 01 requires core PR #416
 // src/game/Handlers/CharacterCreation.h. If this fires, the module is built
 // against a core without the generic synchronous CharacterCreation seam.
-#error "TortoiseBots feature 01 requires core PR #412/7084557 (Handlers/CharacterCreation.h not found)"
+#error "TortoiseBots feature 01 requires core PR #416 (Handlers/CharacterCreation.h not found)"
 #endif
 
 #include <algorithm>
@@ -477,7 +477,7 @@ bool RandomBotService::TryAutoCreate()
     bool allowTwoSide = sWorld.getConfig(CONFIG_BOOL_ALLOW_TWO_SIDE_ACCOUNTS) != 0;
 
     // Pending-account handling for LoginDatabase async AccountMgr::CreateAccount
-    // (LoginDatabase queues INSERT after AllowAsyncTransactions, not core PR #412): keep
+    // (LoginDatabase queues INSERT after AllowAsyncTransactions, separate from core PR #416): keep
     // exactly one pending fresh account name after AOR_OK with no visible id,
     // retry that same name with bounded/log-throttled cadence (60s) while
     // continuing the existing-account selection path and without allocating
@@ -637,7 +637,7 @@ bool RandomBotService::TryAutoCreate()
             }
             else
             {
-                // Async LoginDatabase INSERT (AllowAsyncTransactions; not core PR #412):
+                // Async LoginDatabase INSERT (AllowAsyncTransactions; separate from core PR #416):
                 // AccountMgr queues the INSERT, so GetId may still return 0
                 // on this world thread. Remember exactly one pending name,
                 // retry it with bounded/log-throttled cadence while continuing

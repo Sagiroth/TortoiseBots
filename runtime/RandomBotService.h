@@ -19,7 +19,7 @@ public:
     // Load the configured random-account character pool once. With
     // AiPlayerbot.RandomBotAutoCreate=1 the service also creates the bounded
     // deficit toward the configured target via AccountMgr/CharacterCreation
-    // on the world thread (core PR #412/7084557, final 7084557). BotManager
+    // on the world thread (core PR #416). BotManager
     // remains the sole Headless-session owner.
     void Initialize();
     void Update(uint32_t diff);
@@ -93,7 +93,7 @@ private:
     time_t m_accountAllocNextRetry = 0;
     time_t m_charCreateErrorNextRetry = 0;
     // Minimal pending-account state for AccountMgr::CreateAccount async
-    // login-DB INSERT visibility (LoginDatabase async after AllowAsyncTransactions, not core PR #412): after
+    // login-DB INSERT visibility (LoginDatabase async after AllowAsyncTransactions, separate from core PR #416): after
     // AOR_OK but GetId still 0, remember exactly one pending fresh account
     // name, retry that same name with bounded/log-throttled cadence while
     // continuing the existing-account selection path and without allocating

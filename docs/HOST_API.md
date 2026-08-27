@@ -276,11 +276,10 @@ see [PLAYERBOTS_AUDIT.md](archive/PLAYERBOTS_AUDIT.md) for evidence.
 `RandomBotUpdateInterval`, world-thread) it creates the bounded deficit toward
 `MinRandomBots`/`MaxRandomBots` through `AccountMgr::CreateAccount` (random
 12-character alphanumeric password, hashed and never logged) and the generic
-synchronous `CharacterCreation::CreateCharacter` seam (core PR #412, final
-7084557). Core owns account/character persistence and validation; the module
+synchronous `CharacterCreation::CreateCharacter` seam (core PR #416). Core owns account/character persistence and validation; the module
 never writes `account`/`characters` rows directly, uses no DB worker or donor
 creation loop, and does no per-tick `LIKE` scan. Because `LoginDatabase` queues
-account creation asynchronously after `AllowAsyncTransactions` (not core PR #412),
+account creation asynchronously after `AllowAsyncTransactions` (separate from core PR #416),
 the service remembers exactly one successful account name whose id is not
 immediately visible, retries that same name with bounded/log-throttled cadence
 while continuing the existing-account selection path and without allocating

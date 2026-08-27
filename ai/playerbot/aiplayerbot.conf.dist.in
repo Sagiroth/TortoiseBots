@@ -45,7 +45,7 @@ AiPlayerbot.RandomBotMaxLevel = 60
 
 # Existing random-bot accounts to discover by prefix. Native service discovers
 # them at startup; with RandomBotAutoCreate=1 it also auto-creates the deficit
-# toward Min/Max via the generic core CharacterCreation seam (core PR #412/7084557, final 7084557).
+# toward Min/Max via the generic core CharacterCreation seam (core PR #416).
 AiPlayerbot.RandomBotAccountPrefix = RNDBOT
 
 # Bounded idempotent RNDBOT population (feature 01). Default OFF.
@@ -54,7 +54,7 @@ AiPlayerbot.RandomBotAccountPrefix = RNDBOT
 # one character per RandomBotUpdateInterval (no per-tick DB scans, no blocking
 # loop). Accounts are allocated via AccountMgr.CreateAccount with a random
 # password (hashed via CalculateShaPassHash, never logged), characters via
-# CharacterCreation::CreateCharacter on the world thread (requires core PR #412/7084557, final 7084557
+# CharacterCreation::CreateCharacter on the world thread (requires core PR #416
 # Handlers/CharacterCreation.h). Valid race/class is the intersection of DBC
 # ChrRaces/ChrClasses (NOT_PLAYABLE filtered) and PlayerInfo/playercreateinfo;
 # DBC-missing combos are never selected and an empty intersection disables
@@ -72,7 +72,7 @@ AiPlayerbot.RandomBotAccountPrefix = RNDBOT
 # (NAME_IN_USE/RESERVED/PROFANE) are retried silently and remain retryable.
 # LoginDatabase allocation failures are throttled to one log per ~60s and retried
 # after the interval. A successful CreateAccount whose id is not yet visible
-# (LoginDatabase async after AllowAsyncTransactions, not core PR #412) is
+# (LoginDatabase async after AllowAsyncTransactions, separate from core PR #416) is
 # remembered as exactly one pending name and retried with
 # bounded/log-throttled cadence while continuing existing-account creation
 # without allocating another fresh account (log once after prolonged unresolved
