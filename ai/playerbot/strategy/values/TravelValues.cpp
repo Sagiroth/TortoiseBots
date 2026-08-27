@@ -73,7 +73,7 @@ EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
         if (!cInfo)
             continue;
 
-        if (cInfo->ExtraFlags & CREATURE_EXTRA_FLAG_INVISIBLE)
+        if (cInfo->flags_extra & CREATURE_EXTRA_FLAG_INVISIBLE)
             continue;
 
         DestinationPurose purpose = 0;

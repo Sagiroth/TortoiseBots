@@ -116,15 +116,12 @@ std::vector<TrainerSpell const*> TrainableSpellsValue::Calculate()
 
             for (auto& [trainerSpell, trainers] : trainerSpellList)
             {
-                uint32 reqLevel = 0;
-
-                reqLevel = trainerSpell->isProvidedReqLevel ? trainerSpell->reqLevel : std::max(reqLevel, trainerSpell->reqLevel);
-                TrainerSpellState state = bot->GetTrainerSpellState(trainerSpell, reqLevel);
+                TrainerSpellState state = bot->GetTrainerSpellState(trainerSpell);
                 if (state != TRAINER_SPELL_GREEN)
                     continue;
 
                 //Skip initial profession training.
-                if (bot->GetLevel() < 10 && sSpellMgr.IsProfessionSpell(trainerSpell->learnedSpell) && sSpellMgr.GetSpellRank(trainerSpell->learnedSpell) == 1)
+                if (bot->GetLevel() < 10 && sSpellMgr.IsProfessionSpell(trainerSpell->spell) && sSpellMgr.GetSpellRank(trainerSpell->spell) == 1)
                     continue;
 
                 trainableSpells.push_back(trainerSpell);
