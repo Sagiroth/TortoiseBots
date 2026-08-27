@@ -78,6 +78,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/runtime/BotManager.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/RandomBotService.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/LftBotFillService.cpp"
+    "${TORTOISEBOTS_ROOT}/runtime/AhMarketService.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/PlayerbotAIStorage.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/PlayerbotAIAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/PlayerbotRuntimeFacade.cpp"

@@ -293,7 +293,25 @@ Config: `AiPlayerbot.RandomBotLftEnabled=0`,
 `AiPlayerbot.RandomBotLftUpdateInterval=15000`,
 `AiPlayerbot.RandomBotLftMaxFillsPerInterval=1`.
 
-## 17. Random-bot auto-create (optional, default-off)
+## 17. AH market population (optional, default-off)
+
+`AhMarketService` uses only the native auction transaction path: real bot
+inventory items, `AhAction` pricing/usage values, `GetAuctionDeposit`,
+`GetCheckedAuctionHouseForAuctioneer`, and
+`WorldSession::HandleAuctionSellItem`. Core owns auction/item persistence,
+deposits, limits, and ownership transfer. The service never writes auction
+rows, fabricates items, or runs the donor `ahbot` thread/tables.
+
+Auctioneer creature positions are captured once from the core object store,
+validated for overworld/map/terrain/VMap ground and faction (no MMAP/pathfinding),
+and used for a bounded teleport fallback before the native sell handler is invoked.
+Active event-gated snapshot positions are not revalidated until restart/data reload.
+A shared `try_lock`, 5..3600-second cadence, 1..5 batch cap, and per-bot attempt
+cooldown bound world-thread work. Failed attempts are also rate-limited. No per-tick
+AH/DB scan or new core seam is required. `AiPlayerbot.AhMarketEnabled=0` remains the
+default; the feature also requires `RandomBotAutologin=1`.
+
+## 18. Random-bot auto-create (optional, default-off)
 
 `RandomBotService` discovers existing `RNDBOT*` characters; with
 `AiPlayerbot.RandomBotAutoCreate=1` (default `0`, one character per
@@ -318,7 +336,7 @@ collisions (`CHAR_CREATE_NAME_IN_USE`/`CHAR_NAME_RESERVED`/`CHAR_NAME_PROFANE`/
 account is not permanently poisoned by a single bad name or temporary balance
 state. Created GUIDs enter the existing Headless candidate/login path.
 
-## 18. New core seam test
+## 19. New core seam test
 
 Before adding another core seam, establish that:
 
@@ -329,6 +347,6 @@ Before adding another core seam, establish that:
 If the design would make PlayerBots-specific checks spread through normal
 core gameplay code, redesign it.
 
-## 18. Historical closure
+## 20. Historical closure
 
 F-03/F-27 closure and validation boundary are recorded in `PLAN.md` §6.1 and `PROVENANCE.md`; see `archive/PLAYERBOTS_AUDIT.md` for full evidence. This contract covers only the current host API.

@@ -269,6 +269,15 @@ bool PlayerbotAIConfig::Initialize()
     LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.VendorOverAHItemIds", ""), vendorOverAHItemIds);
     botCheckAllAuctionListings = config.GetBoolDefault("AiPlayerbot.BotCheckAllAuctionListings", false);
     botsSaveEpics = config.GetBoolDefault("AiPlayerbot.BotsSaveEpics", true);
+    // Default-off bounded AH market population. Interval is seconds, batch is
+    // max auctions per tick (hard capped at 5 in service). No AH scan or DB
+    // query per tick; uses legitimate inventory + native HandleAuctionSellItem.
+    ahMarketEnabled = config.GetBoolDefault("AiPlayerbot.AhMarketEnabled", false);
+    ahMarketInterval = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketInterval", 120);
+    if (ahMarketInterval < 5) ahMarketInterval = 5;
+    if (ahMarketInterval > 3600) ahMarketInterval = 3600;
+    ahMarketBatchSize = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketBatchSize", 1);
+    if (ahMarketBatchSize > 5) ahMarketBatchSize = 5;
     //
     logInGroupOnly = config.GetBoolDefault("AiPlayerbot.LogInGroupOnly", true);
     logValuesPerTick = config.GetBoolDefault("AiPlayerbot.LogValuesPerTick", false);

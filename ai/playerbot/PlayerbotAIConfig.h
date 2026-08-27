@@ -150,6 +150,10 @@ public:
     std::list<uint32> vendorOverAHItemIds;
     bool botCheckAllAuctionListings;
     bool botsSaveEpics;
+    // Default-off bounded AH market population (module-only, native transaction path).
+    bool ahMarketEnabled = false;
+    uint32 ahMarketInterval = 120; // seconds between market ticks
+    uint32 ahMarketBatchSize = 1;  // max auctions posted per tick
     //
     bool randomBotLoginAtStartup;
     // Bounded idempotent RNDBOT population: reuse existing RNDBOT% accounts/

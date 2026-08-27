@@ -123,6 +123,17 @@ AiPlayerbot.EnableRandomTeleports = 0
 #AiPlayerbot.RandomBotLftUpdateInterval = 15000
 #AiPlayerbot.RandomBotLftMaxFillsPerInterval = 1
 
+# Bounded AH market population through the native bot/session auction path. Default off.
+# When enabled, online random Headless bots use real inventory items, pricing, deposits,
+# account limits, and HandleAuctionSellItem. Auctioneer spawns are loaded once and
+# validated before a bounded TeleportTo fallback; no fake items, direct auction writes,
+# donor AhBot thread, per-tick AH/DB scan, or second owner. Interval is 5..3600 seconds
+# (default 120), batch is 1..5 (default 1), and the shared AH try_lock is respected.
+# Requires RandomBotAutologin=1. Failed attempts are rate-limited per bot.
+AiPlayerbot.AhMarketEnabled = 0
+AiPlayerbot.AhMarketInterval = 120
+AiPlayerbot.AhMarketBatchSize = 1
+
 # Disable core mangos map/bot optimizations which hinders bot activity
 # Works best together with AiPlayerbot.DisableActivityPriorities = 1
 # (0-1), default 0

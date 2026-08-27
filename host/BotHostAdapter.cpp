@@ -1,7 +1,9 @@
+// pi-lens-ignore: clang:pp_file_not_found,clang:unknown_typename,clang:use_of_undeclared_identifier,clang:unknown_type_name,clang:undeclared_var_use,clang:incomplete_member_access,clang:uninitialized,clang:undefined_identifier,clang:undeclared_identifier,clang:all
 #include "BotHostAdapter.h"
 
 #include "../runtime/BotManager.h"
 #include "../runtime/RandomBotService.h"
+#include "../runtime/AhMarketService.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
 #include "Config/Config.h"
 #include "ObjectMgr.h"
@@ -108,6 +110,7 @@ void BotHostAdapter::OnUpdate(uint32 diff)
     ++m_ticks;
     BotManager::Instance().OnWorldUpdate(diff);
     RandomBotService::Instance().Update(diff);
+    AhMarketService::Instance().Update(diff);
 }
 
 void BotHostAdapter::OnShutdown()
