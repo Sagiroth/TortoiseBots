@@ -374,8 +374,6 @@ namespace ai
                                 if (spellInfo)
                                 {
                                     BotUseItemSpell* spell = new BotUseItemSpell(bot, spellInfo, (count > 0) ? TRIGGERED_OLD_TRIGGERED : TRIGGERED_NONE);
-                                    spell->m_clientCast = true;
-
                                     if (spell->ForceSpellStart(&targets) == SPELL_CAST_OK)
                                     {
                                         bot->RemoveSpellCooldown(spellInfo->Id, false);
@@ -397,7 +395,7 @@ namespace ai
                 }
                 else
                 {
-                    Item* poisonItem = bot->GetItemByEntry(poisonItemId);
+                    Item* poisonItem = FindItemByEntryCompat(bot, poisonItemId);
                     if (poisonItem)
                     {
                         ai->ImbueItem(poisonItem, weaponSlot);

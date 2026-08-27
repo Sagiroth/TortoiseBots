@@ -66,6 +66,26 @@ inline bool IsImmobilizedStateCompat(Unit const* unit)
     return unit && (unit->IsRooted() || unit->HasUnitState(UNIT_STAT_STUNNED) || unit->HasAuraType(SPELL_AURA_MOD_ROOT));
 }
 
+inline Item* FindItemByEntryCompat(Player* player, uint32 itemEntry)
+{
+    if (!player)
+        return nullptr;
+
+    for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            if (item->GetEntry() == itemEntry)
+                return item;
+
+    for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; ++slot)
+        if (Bag* bag = dynamic_cast<Bag*>(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot)))
+            for (uint32 bagSlot = 0; bagSlot < bag->GetBagSize(); ++bagSlot)
+                if (Item* item = bag->GetItemByPos(bagSlot))
+                    if (item->GetEntry() == itemEntry)
+                        return item;
+
+    return nullptr;
+}
+
 // === Type renames ===
 // Mature strategy code uses GenericTransport for the core's ordinary
 // Transport type. Keep the alias local to the module; it is not a vehicle API.
