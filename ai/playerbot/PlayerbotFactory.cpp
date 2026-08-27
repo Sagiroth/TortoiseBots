@@ -191,7 +191,7 @@ void PlayerbotFactory::Randomize(bool incremental, bool syncWithMaster)
     {
         ClearInventory();
         ResetQuests();
-        bot->resetTalents(true);
+        bot->ResetTalents(true);
         CancelAuras();
     }
     if (isRealRandomBot)
@@ -502,7 +502,7 @@ void PlayerbotFactory::InitPet()
             if (!co->isTameable())
                 continue;
 
-            if ((int)co->MinLevel > (int)bot->GetLevel())
+            if ((int)co->level_min > (int)bot->GetLevel())
                 continue;
 
 			ids.push_back(id);
@@ -534,7 +534,7 @@ void PlayerbotFactory::InitPet()
 
             pet->SetOwnerGuid(bot->getObjectGuid());
             pet->SetGuidValue(UNIT_FIELD_CREATEDBY, bot->getObjectGuid());
-            pet->setFaction(bot->GetFaction());
+            pet->SetFactionTemplateId(bot->GetFactionTemplateId());
             pet->SetLevel(bot->GetLevel());
             pet->InitStatsForLevel(bot->GetLevel());
             pet->SetLoyaltyLevel(BEST_FRIEND);
@@ -542,7 +542,7 @@ void PlayerbotFactory::InitPet()
             pet->GetCharmInfo()->SetPetNumber(pet->getObjectGuid().GetEntry(), true);
             pet->GetMap()->Add((Creature*)pet);
             pet->AIM_Initialize();
-            pet->AI()->SetReactState(REACT_DEFENSIVE);
+            pet->SetReactState(REACT_DEFENSIVE);
             pet->InitPetCreateSpells();
             pet->LearnPetPassives();
             pet->CastPetAuras(true);
@@ -550,8 +550,8 @@ void PlayerbotFactory::InitPet()
             bot->SetPet(pet);
             bot->SetPetGuid(pet->getObjectGuid());
 
-            sLog.outDebug(  "Bot %s: assign pet %d (%d level)", bot->GetName(), co->Entry, bot->GetLevel());
-            pet->SavePetToDB(PET_SAVE_AS_CURRENT, bot);
+            sLog.outDebug(  "Bot %s: assign pet %d (%d level)", bot->GetName(), co->entry, bot->GetLevel());
+            pet->SavePetToDB(PET_SAVE_AS_CURRENT);
             bot->PetSpellInitialize();
             break;
         }
@@ -566,7 +566,7 @@ void PlayerbotFactory::InitPet()
         pet->SetPower(POWER_HAPPINESS, HAPPINESS_LEVEL_SIZE * 2);
         pet->SetHealth(pet->GetMaxHealth());
         pet->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED);
-        pet->AI()->SetReactState(REACT_DEFENSIVE);
+        pet->SetReactState(REACT_DEFENSIVE);
     }
     else
     {
@@ -574,7 +574,7 @@ void PlayerbotFactory::InitPet()
         return;
     }
 
-    for (PetSpellMap::const_iterator itr = pet->m_spells.begin(); itr != pet->m_spells.end(); ++itr)
+    for (PetSpellMap::const_iterator itr = pet->m_petSpells.begin(); itr != pet->m_petSpells.end(); ++itr)
     {
         if(itr->second.state == PETSPELL_REMOVED)
             continue;
@@ -1078,7 +1078,7 @@ void PlayerbotFactory::InitPetSpells()
             if (!ci)
                 return PET_UNKNOWN;
 
-            switch (ci->Family)
+            switch (ci->beast_family)
             {
                 case 1: return PET_WOLF;
                 case 2: return PET_CAT;
@@ -1118,7 +1118,7 @@ void PlayerbotFactory::InitPetSpells()
                 {
                     if (!pet->HasSpell(spellID))
                     {
-                        pet->learnSpell(spellID);
+                        pet->LearnSpell(spellID);
                     }
 
                     if (!IsPassiveSpell(spellID))
@@ -1157,7 +1157,7 @@ void PlayerbotFactory::InitPetSpells()
         }
         if (growlSpellId && !pet->HasSpell(growlSpellId))
         {
-            pet->learnSpell(growlSpellId);
+            pet->LearnSpell(growlSpellId);
         }
 
         // Natural Armor
@@ -1180,7 +1180,7 @@ void PlayerbotFactory::InitPetSpells()
         }
         if (naturalArmorSpellId && !pet->HasSpell(naturalArmorSpellId))
         {
-            pet->learnSpell(naturalArmorSpellId);
+            pet->LearnSpell(naturalArmorSpellId);
         }
 
         // Great Stamina
@@ -1209,7 +1209,7 @@ void PlayerbotFactory::InitPetSpells()
         }
         if (greatStaminaSpellId && !pet->HasSpell(greatStaminaSpellId))
         {
-            pet->learnSpell(greatStaminaSpellId);
+            pet->LearnSpell(greatStaminaSpellId);
         }
 
         // Resistances
@@ -1229,7 +1229,7 @@ void PlayerbotFactory::InitPetSpells()
             for (const auto& res : resistances)
             {
                 if (!pet->HasSpell(res.spellId))
-                    pet->learnSpell(res.spellId);
+                    pet->LearnSpell(res.spellId);
             }
         }
     }
@@ -1364,7 +1364,7 @@ void PlayerbotFactory::InitPetSpells()
 
                 if (pet->GetLevel() >= levelRequired)
                 {
-                    pet->learnSpell(spellID);
+                    pet->LearnSpell(spellID);
                 }
             }
         }
@@ -1399,28 +1399,12 @@ void PlayerbotFactory::ClearSpells()
 
 void PlayerbotFactory::ResetQuests()
 {
-    ObjectMgr::QuestMap const& questTemplates = sObjectMgr.GetQuestTemplates();
-    for (ObjectMgr::QuestMap::const_iterator i = questTemplates.begin(); i != questTemplates.end(); ++i)
-    {
-        Quest const* quest = i->second.get();
-        uint32 entry = quest->GetQuestId();
+    // Remove active quests through the public core operation so quest items,
+    // timers, status, and the visible quest log stay consistent.
+    for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
+        bot->RemoveQuestAtSlot(slot);
 
-        // remove all quest entries for 'entry' from quest log
-        for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
-        {
-            uint32 quest = bot->GetQuestSlotQuestId(slot);
-            if (quest == entry)
-            {
-                bot->SetQuestSlot(slot, 0);
-            }
-        }
-
-        // reset rewarded for restart repeatable quest
-        bot->getQuestStatusMap().erase(entry);
-        //bot->GetQuestStatusMap()[entry].m_rewarded = false;
-        //bot->GetQuestStatusMap()[entry].m_status = QUEST_STATUS_NONE;
-    }
-    //bot->UpdateForQuestWorldObjects();
+    bot->getQuestStatusMap().clear();
     CharacterDatabase.PExecute("DELETE FROM character_queststatus WHERE guid = '%u'", bot->GetGUIDLow());
 }
 
@@ -1460,7 +1444,7 @@ void PlayerbotFactory::InitReputations()
     {
         FactionEntry const* factionEntry = sFactionStore.LookupEntry(faction);
 
-        if (!factionEntry || !factionEntry->HasReputation())
+        if (!factionEntry || !factionEntry->CanHaveReputation())
             continue;
 
         bot->GetReputationMgr().SetReputation(factionEntry, 42000);
@@ -2399,7 +2383,7 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
                                 // overwrite random generated property
                                 pItem->SetItemRandomProperties(randomEnchBestId);
                                 // update for inspect
-                                bot->SetVisibleItemSlot(pItem->GetSlot(), pItem);
+                                bot->TransmogSetVisibleItemSlot(pItem->GetSlot(), pItem);
                             }
                             pItem->SetOwnerGuid(bot->getObjectGuid());
                             EnchantItem(pItem);
@@ -2688,12 +2672,12 @@ void PlayerbotFactory::InitTradeSkills()
         if (!co)
             continue;
 
-        if (co->TrainerType != TRAINER_TYPE_TRADESKILLS)
+        if (co->trainer_type != TRAINER_TYPE_TRADESKILLS)
             continue;
 
-        uint32 trainerId = co->TrainerTemplateId;
+        uint32 trainerId = co->trainer_id;
         if (!trainerId)
-            trainerId = co->Entry;
+            trainerId = co->entry;
 
         TrainerSpellData const* trainer_spells = sObjectMgr.GetNpcTrainerTemplateSpells(trainerId);
         if (!trainer_spells)
@@ -2709,9 +2693,7 @@ void PlayerbotFactory::InitTradeSkills()
             if (!tSpell)
                 continue;
 
-            uint32 reqLevel = 0;
-            reqLevel = tSpell->isProvidedReqLevel ? tSpell->reqLevel : std::max(reqLevel, tSpell->reqLevel);
-            TrainerSpellState state = bot->GetTrainerSpellState(tSpell, reqLevel);
+            TrainerSpellState state = bot->GetTrainerSpellState(tSpell);
             if (state != TRAINER_SPELL_GREEN)
                 continue;
 
@@ -2739,21 +2721,16 @@ void PlayerbotFactory::InitTradeSkills()
                 }
             }
 
-            if (tSpell->learnedSpell)
+            bool learned = false;
+            for (int j = 0; j < 3; ++j)
             {
-                bool learned = false;
-                for (int j = 0; j < 3; ++j)
+                if (proto->Effect[j] == SPELL_EFFECT_LEARN_SPELL && proto->EffectTriggerSpell[j])
                 {
-                    if (proto->Effect[j] == SPELL_EFFECT_LEARN_SPELL)
-                    {
-                        uint32 learnedSpell = proto->EffectTriggerSpell[j];
-                        bot->learnSpell(learnedSpell, false);
-                        learned = true;
-                    }
+                    bot->LearnSpell(proto->EffectTriggerSpell[j], false);
+                    learned = true;
                 }
-                if (!learned) bot->learnSpell(tSpell->learnedSpell, false);
             }
-            else
+            if (!learned)
                 ai->CastSpell(tSpell->spell, bot);
         }
     }
@@ -2771,7 +2748,7 @@ void PlayerbotFactory::UpdateTradeSkills()
 
 void PlayerbotFactory::InitSkills()
 {
-    bot->UpdateSkillsForLevel(true);
+    bot->UpdateSkillsForLevel();
 
 // Riding skills requirements are different
     if (bot->GetLevel() >= 60)
@@ -2935,7 +2912,7 @@ void PlayerbotFactory::InitClassLevelSpells()
             if (!bot->IsSpellFitByClassAndRace(learnedSpellId, &reqLevel))
                 continue;
 
-            TrainerSpellState state = bot->GetTrainerSpellState(trainerSpell, reqLevel);
+            TrainerSpellState state = bot->GetTrainerSpellState(trainerSpell);
             // A first-rank talent can appear in trainer data for a class that
             // already owns that talent spell; preserve the donor behavior that
             // allows the valid rank to be initialized without accepting other
@@ -2996,18 +2973,18 @@ void PlayerbotFactory::InitClassLevelSpells()
     for (auto const& creatureEntry : sObjectMgr.GetCreatureInfoMap())
     {
         CreatureInfo const* creature = creatureEntry.second.get();
-        if (!creature || creature->TrainerType != TRAINER_TYPE_CLASS ||
-            creature->TrainerClass != bot->GetClass())
+        if (!creature || creature->trainer_type != TRAINER_TYPE_CLASS ||
+            creature->trainer_class != bot->GetClass())
             continue;
 
-        if (creature->TrainerTemplateId)
+        if (creature->trainer_id)
         {
-            if (processedTrainers.insert({ true, creature->TrainerTemplateId }).second)
-                learnTrainerSpells(sObjectMgr.GetNpcTrainerTemplateSpells(creature->TrainerTemplateId));
+            if (processedTrainers.insert({ true, creature->trainer_id }).second)
+                learnTrainerSpells(sObjectMgr.GetNpcTrainerTemplateSpells(creature->trainer_id));
         }
 
-        if (processedTrainers.insert({ false, creature->Entry }).second)
-            learnTrainerSpells(sObjectMgr.GetNpcTrainerSpells(creature->Entry));
+        if (processedTrainers.insert({ false, creature->entry }).second)
+            learnTrainerSpells(sObjectMgr.GetNpcTrainerSpells(creature->entry));
     }
 }
 
@@ -3022,20 +2999,20 @@ void PlayerbotFactory::InitAvailableSpells()
         // judgement missing
         if(!bot->HasSpell(20271))
         {
-            bot->learnSpell(20271, false);
+            bot->LearnSpell(20271, false);
         }
     }
 
     // add polymorph pig/turtle
     if (bot->GetClass() == CLASS_MAGE && bot->GetLevel() >= 60)
     {
-        bot->learnSpell(28271, false);
-        bot->learnSpell(28272, false);
+        bot->LearnSpell(28271, false);
+        bot->LearnSpell(28272, false);
     }
 
     // add inferno
     if (bot->GetClass() == CLASS_WARLOCK && !bot->HasSpell(1122) && bot->GetLevel() >= 50)
-        bot->learnSpell(1122, false);
+        bot->LearnSpell(1122, false);
 
     // Druid forms nobody teaches. Bear and Aquatic come from the quest "Body and
     // Heart" and appear on no trainer at all, so a bot never sees them - on the
@@ -3048,11 +3025,11 @@ void PlayerbotFactory::InitAvailableSpells()
     if (bot->GetClass() == CLASS_DRUID)
     {
         if (bot->GetLevel() >= 10 && !bot->HasSpell(5487))
-            bot->learnSpell(5487, false);   // Bear Form
+            bot->LearnSpell(5487, false);   // Bear Form
         if (bot->GetLevel() >= 16 && !bot->HasSpell(1066))
-            bot->learnSpell(1066, false);   // Aquatic Form
+            bot->LearnSpell(1066, false);   // Aquatic Form
         if (bot->GetLevel() >= 40 && !bot->HasSpell(9634))
-            bot->learnSpell(9634, false);   // Dire Bear Form
+            bot->LearnSpell(9634, false);   // Dire Bear Form
     }
 
     // add book spells
@@ -3119,7 +3096,7 @@ void PlayerbotFactory::InitAvailableSpells()
         for (auto spellId : bookSpells)
         {
             if (!bot->HasSpell(spellId))
-                bot->learnSpell(spellId, false);
+                bot->LearnSpell(spellId, false);
         }
     }
 }
@@ -3134,7 +3111,7 @@ void PlayerbotFactory::InitSpecialSpells()
         SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellId);
 
         if(spellInfo)
-            bot->learnSpell(spellId, false);
+            bot->LearnSpell(spellId, false);
     }
 }
 
@@ -3367,7 +3344,7 @@ void PlayerbotFactory::InitMounts()
         uint32 spell = available[urand(0, available.size() - 1)];
         if (spell)
         {
-            bot->learnSpell(spell, false);
+            bot->LearnSpell(spell, false);
             sLog.outDetail("Bot %d (%d) learned %s mount %d", bot->GetGUIDLow(), bot->GetLevel(), type == 0 ? "slow" : "fast", spell);
         }
     }
@@ -3381,7 +3358,7 @@ void PlayerbotFactory::InitPotions()
     {
         uint32 effect = effects[i];
 
-        if (effect == SPELL_EFFECT_ENERGIZE && !bot->HasMana()) //Do not give manapots to non-mana users.
+        if (effect == SPELL_EFFECT_ENERGIZE && bot->GetPowerType() != POWER_MANA) // Do not give manapots to non-mana users.
             continue;
 
         FindPotionVisitor visitor(bot, effect);
@@ -3411,7 +3388,7 @@ void PlayerbotFactory::InitFood()
     {
         uint32 category = categories[i];
 
-        if (category == 59 && !bot->HasMana()) //Do not give drinks to non-mana users.
+        if (category == 59 && bot->GetPowerType() != POWER_MANA) // Do not give drinks to non-mana users.
             continue;
 
         FindFoodVisitor visitor(bot, category);
@@ -3911,6 +3888,6 @@ void PlayerbotFactory::InitTaxiNodes()
         if (taxiNodeLevel.MapId != startMap && taxiNodeLevel.Level + 20 > bot->GetLevel() && urand(0, 4)) //Limit nodes on other map.
             continue;
 
-        bot->m_taxi.SetTaximaskNode(taxiNodeLevel.Index);
+        bot->GetTaxi().SetTaximaskNode(taxiNodeLevel.Index);
     }
 }
