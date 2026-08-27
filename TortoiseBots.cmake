@@ -74,7 +74,6 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/host/BotChatAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/host/BotPacketAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/host/BotPlayerAdapter.cpp"
-    "${TORTOISEBOTS_ROOT}/host/BotLftRoleAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/host/LftFillAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/BotManager.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/RandomBotService.cpp"

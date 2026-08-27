@@ -16,30 +16,13 @@
 #include "World.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Log.h"
-// pi-lens-ignore: clang:pp_file_not_found
 #include "LFT/LFTMgr.h"
 #ifndef MANGOSSERVER_LFTMGR_H
-// Minimal stub for pi-lens when core header is absent. Real build uses core's LFTMgr.h (7529c2a + c4148ec).
-enum LFTRoles { LFT_ROLE_TANK = 0x01, LFT_ROLE_HEALER = 0x02, LFT_ROLE_DAMAGE = 0x04 };
-class LFTManager
-{
-public:
-    bool QueuePlayer(Player*, std::vector<std::string> const&, uint8) { return false; }
-    bool LeaveQueue(ObjectGuid const&) { return false; }
-    bool LeaveQueue(Player*) { return false; }
-    bool IsQueued(ObjectGuid const&) const { return false; }
-    bool IsInOffer(ObjectGuid const&) const { return false; }
-    bool AcceptOffer(Player*) { return false; }
-    bool AcceptOffer(ObjectGuid const&) { return false; }
-    uint32 GetOfferId(ObjectGuid const&) const { return 0; }
-    size_t GetQueueSize() const { return 0; }
-    struct QueuedInfo { ObjectGuid guid; std::string name; std::string className; uint32 level = 0; uint32 team = 0; bool isHardcore = false; std::vector<std::string> instances; uint8 roleMask = 0; uint8 assignedRole = 0; time_t joinTime = 0; };
-    std::vector<QueuedInfo> GetQueuedPlayers() const { return {}; }
-};
-static LFTManager sLFTMgr;
+#error "TortoiseBots LFT fill requires Penqle core #413 (LFTMgr.h)"
 #endif
 
 #include <algorithm>
+#include <cctype>
 #include <set>
 #include <unordered_set>
 
@@ -60,7 +43,67 @@ uint8 PickRole(uint8 mask, uint8 tanks, uint8 healers, uint8 dps)
     if ((mask & LFT_ROLE_DAMAGE) && dps < 3) return LFT_ROLE_DAMAGE;
     return 0;
 }
+
+struct DungeonLevelRange
+{
+    uint8 minLevel;
+    uint8 maxLevel;
+};
+
+std::string NormalizeInstanceToken(std::string const& raw)
+{
+    std::string normalized;
+    normalized.reserve(raw.size());
+    for (unsigned char character : raw)
+        if (std::isalnum(character))
+            normalized.push_back(static_cast<char>(std::tolower(character)));
+    return normalized;
 }
+
+DungeonLevelRange const* FindDungeonLevelRange(std::string const& raw)
+{
+    // Source: Turtle WoW LFGDungeons.dbc, minLevel/maxLevel fields. The
+    // addon sends free-form names, so aliases are normalized to this table.
+    static std::unordered_map<std::string, DungeonLevelRange> const ranges = {
+        {"ragefirechasm", {13, 22}}, {"rfc", {13, 22}}, {"ragefire", {13, 22}},
+        {"wailingcaverns", {15, 28}}, {"wc", {15, 28}}, {"wailing", {15, 28}},
+        {"deadmines", {15, 28}}, {"dm", {15, 28}},
+        {"shadowfangkeep", {18, 32}}, {"sfk", {18, 32}}, {"shadowfang", {18, 32}},
+        {"blackfathomdeeps", {20, 34}}, {"bfd", {20, 34}},
+        {"stockades", {22, 34}}, {"stockade", {22, 34}}, {"stocks", {22, 34}},
+        {"gnomeregan", {24, 40}}, {"gnomer", {24, 40}},
+        {"razorfenkraul", {24, 40}}, {"rfk", {24, 40}},
+        {"scarletmonastery", {29, 48}}, {"sm", {29, 48}}, {"scarlet", {29, 48}},
+        {"razorfendowns", {33, 47}}, {"rfd", {33, 47}},
+        {"uldaman", {38, 53}}, {"uld", {38, 53}},
+        {"zulfarak", {43, 54}}, {"zulfarrak", {43, 54}}, {"zf", {43, 54}},
+        {"maraudon", {40, 58}}, {"mara", {40, 58}},
+        {"sunkentemple", {44, 60}}, {"sunken", {44, 60}}, {"st", {44, 60}}, {"temple", {44, 60}},
+        {"blackrockdepths", {48, 60}}, {"brd", {48, 60}},
+        {"lowerblackrockspire", {52, 60}}, {"lowerblackrock", {52, 60}}, {"lbrs", {52, 60}},
+        {"diremauleast", {54, 60}}, {"diremaule", {54, 60}}, {"dme", {54, 60}},
+        {"diremaulwest", {56, 60}}, {"dmw", {56, 60}},
+        {"diremaulnorth", {56, 60}}, {"dmn", {56, 60}},
+        {"stratholme", {56, 60}}, {"strat", {56, 60}},
+        {"scholomance", {56, 60}}, {"scholo", {56, 60}},
+        {"upperblackrockspire", {56, 60}}, {"upperblackrock", {56, 60}}, {"ubrs", {56, 60}}
+    };
+
+    std::string token = NormalizeInstanceToken(raw);
+    auto it = ranges.find(token);
+    if (it == ranges.end() || it->second.minLevel == 0 ||
+        it->second.minLevel > it->second.maxLevel || it->second.maxLevel > 60)
+    {
+        static std::set<std::string> loggedUnknown;
+        if (loggedUnknown.insert(raw).second)
+            sLog.outError("TortoiseBots: LFT fill has no valid authoritative level range for instance '%s'; skipping", raw.c_str());
+        return nullptr;
+    }
+
+    return &it->second;
+}
+}
+
 
 LftBotFillService& LftBotFillService::Instance()
 {
@@ -83,11 +126,6 @@ void LftBotFillService::Initialize()
     }
     sLog.outString("TortoiseBots: LFT fill enabled interval %u max %u (observe GetQueuedPlayers, native QueuePlayer/offers, reconcile)",
         sPlayerbotAIConfig.randomBotLftUpdateInterval, sPlayerbotAIConfig.randomBotLftMaxFillsPerInterval);
-}
-
-bool LftBotFillService::IsPending(uint32 guidLow) const
-{
-    return m_pending.find(guidLow) != m_pending.end();
 }
 
 bool LftBotFillService::IsEligibleCandidate(Player* bot) const
@@ -204,7 +242,7 @@ void LftBotFillService::AcceptPendingOffers()
         if (!IsModuleOwnedHeadlessBot(bot))
             continue;
         // Extra safety: ensure it's still pending fill-owned (not a manually queued bot)
-        if (!IsPending(guidLow))
+        if (m_pending.find(guidLow) == m_pending.end())
             continue;
         // World-thread only generic core API (c4148ec). Reuses native offer accept.
         bool ok = sLFTMgr.AcceptOffer(guid);
@@ -399,15 +437,13 @@ void LftBotFillService::Update(uint32_t diff)
             if (needTank == 0 && needHeal == 0 && needDps == 0)
                 continue;
 
-            // Level window from humans in this partition
-            uint32 sumLevel = 0;
-            for (auto const& h : part.humans) sumLevel += h.level;
-            uint32 avgLevel = part.humans.empty() ? 0 : sumLevel / part.humans.size();
-            uint32 low = avgLevel > 5 ? avgLevel - 5 : 1;
-            uint32 high = avgLevel + 5;
-            if (high > 60) high = 60;
-            if (low < 10) low = 10;
-            if (low > high) low = high;
+            // Use the authoritative instance range, never the waiting humans'
+            // average level. Unknown or corrupt/custom instances fail closed.
+            DungeonLevelRange const* range = FindDungeonLevelRange(instance);
+            if (!range)
+                continue;
+            uint32 low = range->minLevel;
+            uint32 high = range->maxLevel;
 
             std::vector<uint8> neededRoles;
             for (uint8 i = 0; i < needTank; ++i) neededRoles.push_back(LFT_ROLE_TANK);
@@ -469,9 +505,9 @@ void LftBotFillService::Update(uint32_t diff)
 
                 ++filledThisTick;
                 const char* roleStr = (needRole == LFT_ROLE_TANK ? "tank" : (needRole == LFT_ROLE_HEALER ? "heal" : "dps"));
-                sLog.outString("TortoiseBots: LFT fill queued bot %s (%s) level %u team %u %s for instance %s role %s (avg %u window %u-%u, pending %u)",
+                sLog.outString("TortoiseBots: LFT fill queued bot %s (%s) level %u team %u %s for instance %s role %s (authoritative range %u-%u, pending %u)",
                     chosen->GetName(), chosen->GetObjectGuid().GetString().c_str(), chosen->GetLevel(), chosen->GetTeam(),
-                    chosen->IsHardcore() ? "hardcore" : "softcore", instance.c_str(), roleStr, avgLevel, low, high, (uint32)m_pending.size());
+                    chosen->IsHardcore() ? "hardcore" : "softcore", instance.c_str(), roleStr, low, high, (uint32)m_pending.size());
             }
         }
     }

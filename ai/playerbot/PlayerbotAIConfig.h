@@ -189,8 +189,9 @@ public:
     bool enableRandomTeleports = false;
     // Default-off bounded LFT fill: observe native queue (GetQueuedPlayers),
     // identify human groups/instances and missing 1/1/3 roles, filter in-memory
-    // Headless random candidates by level/team/hardcore/state/role (AiFactory/
-    // Script_GetAllowedRoles) and call core QueuePlayer through native offers.
+    // Headless random candidates by authoritative LFGDungeons.dbc range,
+    // team/hardcore/state/role (AiFactory), and call core QueuePlayer through
+    // native offers. Unknown ranges fail closed; no role hook or DB tick scan.
     bool randomBotLftEnabled = false;
     uint32 randomBotLftUpdateInterval = 15000;
     uint32 randomBotLftMaxFillsPerInterval = 1;

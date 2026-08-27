@@ -112,13 +112,13 @@ AiPlayerbot.RandomBotAutoCreate = 0
 AiPlayerbot.EnableRandomTeleports = 0
 
 # Default-off bounded fill of human-waiting LFT queues with live random Headless bots.
-# Observes native queue (LFTManager::GetQueuedPlayers) without mutating private maps or
-# owning a second queue; identifies human groups/instances and missing 1 tank / 1 healer / 3 dps roles,
-# filters in-memory Headless random candidates by level/team/hardcore/group/state/role (AiFactory/
-# Script_GetAllowedRoles) and calls core QueuePlayer through native offers/cancellation.
-# Rate-limited and reconciled when humans fill/leave. No DB per tick, no addon hacks.
-# Requires core seam QueuePlayer/LeaveQueue/IsQueued/IsInOffer/GetQueuedPlayers/Script_GetAllowedRoles (7529c2a)
-# and Headless (#411). Default 0.
+# Uses core #413 QueuePlayer/LeaveQueue/IsQueued/IsInOffer/AcceptOffer/
+# GetQueuedPlayers; core owns private queues, offers, cancellation and groups.
+# Candidates use AiFactory roles and the authoritative Turtle
+# data/dbc/LFGDungeons.dbc minLevel/maxLevel range table, not an average-human
+# +/-5 approximation. Unknown/corrupt/custom ranges fail closed and log once.
+# Rate-limited/reconciled; no role hook, addon-string injection, private-map access,
+# second queue, or DB query per tick. Requires #411 Headless and #413. Default 0.
 #AiPlayerbot.RandomBotLftEnabled = 0
 #AiPlayerbot.RandomBotLftUpdateInterval = 15000
 #AiPlayerbot.RandomBotLftMaxFillsPerInterval = 1
