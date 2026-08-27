@@ -62,6 +62,10 @@ bool TryRandomTeleport(::Player* bot, BotRecord const& record)
         return false;
     if (!record.random)
         return false;
+    // Match the existing RPG travel safety gate: low-level bots must not be
+    // scattered into NPC travel routes before they can survive the journey.
+    if (bot->GetLevel() < 5)
+        return false;
     if (bot->IsBeingTeleported())
         return false;
     if (!bot->IsInWorld())
@@ -89,7 +93,7 @@ bool TryRandomTeleport(::Player* bot, BotRecord const& record)
     auto dests = travelMgr.GetDestinations(info, (uint32)ai::TravelDestinationPurpose::GenericRpg, {}, false, 0);
     if (dests.empty())
     {
-        sLog.outString("TortoiseBots: random teleport no GenericRpg destinations for bot %s level %u (cache empty)", bot->GetName(), bot->GetLevel());
+        sLog.outString("TortoiseBots: random teleport no GenericRpg destinations for bot %s level %u", bot->GetName(), bot->GetLevel());
         return false;
     }
 
@@ -131,6 +135,8 @@ bool TryRandomTeleport(::Player* bot, BotRecord const& record)
                 continue;
             AreaTableEntry const* area = point->GetArea();
             if (!area)
+                continue;
+            if (point->IsEnemyHomeZoneFor(info.GetTeam()))
                 continue;
             int32 areaLevel;
             if (!travelMgr.TryGetValidatedAreaLevel(area->ID, areaLevel))
