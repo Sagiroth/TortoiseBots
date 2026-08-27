@@ -210,17 +210,12 @@ void ChatReplyAction::GetAIChatPlaceholders(std::map<std::string, std::string>& 
 
         for (auto& gossip = pMenuBounds.first; gossip != pMenuBounds.second; gossip++)
         {
-            const GossipText* gos = sObjectMgr.GetGossipText(gossip->second.text_id);
-            if (gos)
+            NpcText const* gos = sObjectMgr.GetNpcText(gossip->second.text_id);
+            if (gos && gos->Options[0].BroadcastTextID)
             {
-                std::string text = gos->Options->Text_0;
-                if (text.empty() && gos->Options->BroadcastTextID)
-                {
-                    int locale = observer->GetSession() ? observer->GetSession()->GetSessionDbcLocale() : LOCALE_enUS;
-                    if (char const* broadcast = sObjectMgr.GetBroadcastText(gos->Options->BroadcastTextID, locale, observer->GetGender()))
-                        text = broadcast;
-                }
-                gossipText += " " + text;
+                int locale = observer->GetSession() ? observer->GetSession()->GetSessionDbcLocale() : LOCALE_enUS;
+                if (char const* broadcast = sObjectMgr.GetBroadcastText(gos->Options[0].BroadcastTextID, locale, observer->GetGender()))
+                    gossipText += " " + std::string(broadcast);
             }
         }
 
@@ -228,17 +223,12 @@ void ChatReplyAction::GetAIChatPlaceholders(std::map<std::string, std::string>& 
 
         if (textId)
         {
-            const GossipText* gos = sObjectMgr.GetGossipText(textId);
-            if (gos)
+            NpcText const* gos = sObjectMgr.GetNpcText(textId);
+            if (gos && gos->Options[0].BroadcastTextID)
             {
-                std::string text = gos->Options->Text_0;
-                if (text.empty() && gos->Options->BroadcastTextID)
-                {
-                    int locale = observer->GetSession() ? observer->GetSession()->GetSessionDbcLocale() : LOCALE_enUS;
-                    if (char const* broadcast = sObjectMgr.GetBroadcastText(gos->Options->BroadcastTextID, locale, observer->GetGender()))
-                        text = broadcast;
-                }
-                gossipText += " " + text;
+                int locale = observer->GetSession() ? observer->GetSession()->GetSessionDbcLocale() : LOCALE_enUS;
+                if (char const* broadcast = sObjectMgr.GetBroadcastText(gos->Options[0].BroadcastTextID, locale, observer->GetGender()))
+                    gossipText += " " + std::string(broadcast);
             }
         }
 

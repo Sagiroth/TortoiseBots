@@ -70,40 +70,12 @@ bool TrainerAction::Iterate(Player* requester, Creature* creature, TrainerSpellA
         if (state != TRAINER_SPELL_GREEN)
             continue;
 
+        hasTrainable = true;
         uint32 spellId = tSpell->spell;
         const SpellEntry *const pSpellInfo =  sServerFacade.LookupSpellInfo(spellId);
         if (!pSpellInfo)
             continue;
 
-        if (tSpell->learnedSpell)
-        {
-            bool learned = true;
-            if (bot->HasSpell(tSpell->learnedSpell))
-            {
-                learned = false;
-            }
-            else
-            {
-                for (int j = 0; j < 3; ++j)
-                {
-                    if (pSpellInfo->Effect[j] == SPELL_EFFECT_LEARN_SPELL)
-                    {
-                        learned = false;
-                        uint32 learnedSpell = pSpellInfo->EffectTriggerSpell[j];
-
-                        if (!bot->HasSpell(learnedSpell))
-                        {
-                            learned = true;
-                            hasTrainable = true;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (!learned)
-                continue;
-        }
 
         if (!spells.empty() && spells.find(tSpell->spell) == spells.end())
             continue;
