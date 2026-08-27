@@ -46,7 +46,7 @@ private:
     bool TryAutoCreate();
     enum class AutoCreateCharResult { Success, TransientName, TransientError, Permanent };
     AutoCreateCharResult TryCreateCharacterOnAccount(uint32_t accountId, std::vector<std::pair<uint8_t, uint8_t>> const& validForAccount);
-    // Returns TEAM_NONE if empty/unknown, otherwise ALLIANCE/HORDE (67/469). Sets isMixed
+    // Returns TEAM_NONE if empty/unknown, otherwise HORDE/ALLIANCE (67/469). Sets isMixed
     // when cached candidates contain both factions (must be excluded).
     uint32_t GetAccountAllowedTeam(uint32_t accountId, bool& isMixed) const;
     void ResolvePinnedBots();
