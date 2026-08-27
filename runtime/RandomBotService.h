@@ -15,9 +15,11 @@ class RandomBotService
 public:
     static RandomBotService& Instance();
 
-    // Load the configured random-account character pool once. This service
-    // never creates accounts/characters and never owns a session directly;
-    // BotManager remains the sole Headless-session owner.
+    // Load the configured random-account character pool once. With
+    // AiPlayerbot.RandomBotAutoCreate=1 the service also creates the bounded
+    // deficit toward the configured target via AccountMgr/CharacterCreation
+    // on the world thread (core 94dfa7e). BotManager remains the sole
+    // Headless-session owner.
     void Initialize();
     void Update(uint32_t diff);
     void Shutdown();
@@ -39,6 +41,8 @@ private:
     void MaintainOnlinePool();
     void RemoveExpiredBots(uint32_t diff);
     uint32_t TargetCount() const;
+    uint32_t DesiredTargetCount() const;
+    bool TryAutoCreate();
     void ResolvePinnedBots();
     bool IsPinnedGuid(uint32 guidLow) const { return m_pinnedGuids.find(guidLow) != m_pinnedGuids.end(); }
 
@@ -54,6 +58,10 @@ private:
     bool m_started = false;
     std::set<uint32> m_pinnedGuids;
     bool m_pinnedResolved = false;
+    // Idempotent creation: known RNDBOT account ids (from LoadCandidates and
+    // auto-created). No per-tick LIKE scan; one bounded DB COUNT per creation
+    // happens inside CharacterCreation validation.
+    std::vector<uint32_t> m_rndBotAccountIds;
 };
 
 } // namespace TortoiseBots
