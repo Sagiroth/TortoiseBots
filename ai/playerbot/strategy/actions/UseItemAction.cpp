@@ -54,7 +54,6 @@ SpellCastResult BotUseItemSpell::ForceSpellStart(SpellCastTargets const* targets
     {
         failed = false;
         m_IsTriggeredSpell = true;
-        m_ignoreCastTime = true;
     }
 
     if (result == SPELL_FAILED_REAGENTS && itemCheats)
@@ -147,7 +146,10 @@ bool BotUseItemSpell::OpenLockCheck()
 
                 // check lock compatibility
                 SpellEffectIndex effIdx = SpellEffectIndex(i);
-                SpellCastResult res = CanOpenLock(effIdx, lockId, m_effectSkillInfo[effIdx].skillId, m_effectSkillInfo[effIdx].reqSkillValue, m_effectSkillInfo[effIdx].skillValue);
+                SkillType skillId = SKILL_NONE;
+                int32 reqSkillValue = 0;
+                int32 skillValue = 0;
+                SpellCastResult res = CanOpenLock(effIdx, lockId, skillId, reqSkillValue, skillValue);
                 if (res == SPELL_FAILED_BAD_TARGETS)
                     return true;
             }

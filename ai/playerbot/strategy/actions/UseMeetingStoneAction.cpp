@@ -249,7 +249,7 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
                     player->SendHeartBeat();
 
                 if (summoner->GetTransport())
-                    summoner->GetTransport()->AddPassenger(player, false);
+                    summoner->GetTransport()->AddPassenger(player);
 
                 if(ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT))
                     SET_AI_VALUE2(PositionEntry, "pos", "stay", PositionEntry(x, y, z, mapId));
