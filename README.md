@@ -58,16 +58,20 @@ At a high level the core needs to provide:
 - generic packet hooks usable by native modules
 
 > [!IMPORTANT]
-> **Requires upstream PR #411 until merged.**
-> Build against [`tortoise-wow#411`](https://github.com/Penqle/tortoise-wow/pull/411)
-> (`feature/headless-world-session`) or wait for `main` to include it.
-> Plain `upstream/main` without #411 does not provide `SessionTransport::Headless`
-> / GUID-keyed lifecycle and the module will fail to link.
-> Exact pinned SHAs are in Git history (see below).
+> The current compatibility target is the stacked core work in PRs
+> [#411](https://github.com/Penqle/tortoise-wow/pull/411) and
+> [#416](https://github.com/Penqle/tortoise-wow/pull/416), which are still
+> awaiting upstream merge. Build against the synchronized revisions recorded
+> in `docs/HOST_API.md`, not an unrelated `main` checkout.
 >
-> TortoiseBots also uses PR #416 for generic character creation and the
-> participant primitives used by the auto-create, LFT and BG features. PR #416
-> is stacked on #411 and should merge after it.
+> PR #411 supplies the generic Network/Headless transport and the
+> GUID-keyed, `World`-owned Headless session lifecycle. PR #416 is refreshed
+> on top of #411 and supplies generic character-creation, LFT, battleground,
+> group-target, and participant primitives. #416 adds no second session model.
+>
+> The module-facing contract is intentionally the `World` façade and
+> `SessionTransport` queries. The core does not know that a Headless session
+> is a bot.
 
 The intended boundary is:
 
@@ -78,10 +82,17 @@ Penqle/tortoise-wow
         v
 TortoiseBots
         |
-        | bot lifecycle + AI + gameplay behavior
+        | bot lifecycle + AI + gameplay policy
         v
 PlayerbotAI
 ```
+
+The session distinction is deliberately split by responsibility:
+
+- `World::m_sessions` remains the account-keyed Network registry;
+- `HeadlessSessionMgr` owns pending/active GUID-keyed Headless sessions;
+- `WorldSession` remains the shared concrete player-session type;
+- TortoiseBots owns bot records, ownership, AI adapters, and decisions.
 
 The core should expose **Headless sessions**, not PlayerBots concepts.
 
@@ -153,7 +164,9 @@ PlayerBotEntry
 
 ## Session model
 
-Owned bots are normal Tortoise characters using Headless `WorldSession`s.
+Owned bots are ordinary Tortoise characters using Headless `WorldSession`s.
+Headless means “no network transport”; it does not mean a second gameplay
+object or a second authentication protocol.
 
 ```text
 One account
@@ -161,14 +174,37 @@ One account
     +-- zero or more Headless character sessions
 ```
 
-Network sessions remain account-keyed. Headless sessions are keyed by character GUID.
+Network sessions remain account-keyed. Headless sessions are keyed by
+character GUID and owned by `World` through `HeadlessSessionMgr`.
 
-This allows a connected player and owned alternate characters to coexist
-without fake account IDs or dedicated bot accounts.
+The normal character-loading and player lifecycle are reused after trusted
+server-side Headless creation. The module never inserts bots into the normal
+account-session map and never treats a client-provided GUID as ownership proof.
+
+`WorldSession` is intentionally shared because `Player`, map, group, save,
+chat, and lifecycle code already consume `WorldSession*`. A separate
+`HeadlessWorldSession` subclass would add casts and duplicated lifecycle code
+without adding network security. Transport is selected by the server through
+`SessionTransport::Network` or `SessionTransport::Headless`.
 
 The core owns `WorldSession` lifetime. TortoiseBots owns bot records and AI.
 
 The detailed integration contract is documented in [`docs/HOST_API.md`](docs/HOST_API.md).
+
+### Existing PlayerbotAI compatibility
+
+The module preserves the existing PlayerBots behavior layer, primarily from
+AzerothCore/mod-playerbots, while adapting its host calls to Tortoise's
+Vanilla/Turtle core. The #411/#416 host changes do not replace the AI,
+strategies, actions, triggers, values, class contexts, or dungeon behavior.
+
+The expected migration is a core rebase, transport-predicate cleanup
+(`HasNetworkTransport()` instead of raw socket/sentinel checks), and focused
+build/runtime verification. It is not a rewrite of combat or movement AI.
+
+The module remains responsible for bot ownership and policy. The core remains
+responsible for generic character/session/participant lifecycle and does not
+know that a Headless session is a PlayerBot.
 
 ---
 

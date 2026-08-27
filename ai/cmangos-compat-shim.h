@@ -983,7 +983,7 @@ inline bool IsAutoRepeatRangedSpell(SpellEntry const* spellInfo) {
 // single behavior-facing owner, while BotManager remains the session owner.
 // === Headless transport helpers ===
 inline bool isRealPlayer_Helper(Player* p) {
-    return p && p->GetSession() && p->GetSession()->GetSocket() != nullptr;
+    return p && p->GetSession() && p->GetSession()->HasNetworkTransport();
 }
 inline bool IsInGroup_Helper(Player* a, Player* b, bool sameGroup=false) { if (!a || !b) return false; Group* g = a->GetGroup(); if (!g) return false; if (sameGroup) { Group* og = b->GetGroup(); return g == og; } return g->IsMember(b->GetObjectGuid()); }
 inline bool IsRealPlayer_Helper(Player* p) { return isRealPlayer_Helper(p); }

@@ -11,6 +11,7 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/PlayerbotHelpMgr.h"
 #include "Transports/Transport.h"
+#include "SessionTransport.h"
 #include "Maps/PathFinder.h"
 #include "playerbot/PlayerbotLLMInterface.h"
 
@@ -5255,9 +5256,10 @@ bool DebugAction::HandleTransanal(Event& event, Player* requester, const std::st
                 if (hitPoints.empty())
                     continue;
 
-                // This is a local synthetic player used only by the diagnostic.
+                // This is a local headless player used only by the diagnostic.
                 WorldSession* session = new WorldSession(0, NULL, SEC_PLAYER,
-                    0, LOCALE_enUS, "disconnected/bot", 0);
+                    0, LOCALE_enUS, "local-headless-fixture", 0, SessionTransport::Headless);
+                session->InitHeadlessSession();
 
                     Player* tempPlayer = new Player(session);
 

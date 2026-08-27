@@ -6,6 +6,7 @@
 
 #include "Database/DatabaseEnv.h"
 #include "PlayerbotAI.h"
+#include "SessionTransport.h"
 
 #ifdef GenerateBotHelp
 #include <iomanip>
@@ -800,10 +801,10 @@ void PlayerbotHelpMgr::GenerateHelp()
 {
     coverageMap.clear();
 
-    // This session is a local help-generation fixture, not a network session.
+    // This session is a local headless fixture, not a network session.
     WorldSession* session = new WorldSession(0, NULL, SEC_PLAYER,
-
-    0, LOCALE_enUS, "disconnected/bot", 0);
+        0, LOCALE_enUS, "local-headless-fixture", 0, SessionTransport::Headless);
+    session->InitHeadlessSession();
 
     Player* bot = new Player(session);
 

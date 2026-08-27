@@ -868,7 +868,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(player);
         Player* master = ai ? ai->GetMaster() : nullptr;
 
-        if (master && master->GetSession() && master->GetSession()->GetSocket() != nullptr)
+        if (master && master->GetSession() && master->GetSession()->HasNetworkTransport())
         {
             const char* wanderFollow = sPlayerbotAIConfig.useWanderAsDefaultFollowStrategy ? "wander" : "follow";
             nonCombatEngine->addStrategies("racials", "nc", "food", wanderFollow, "default", "quest", "loot", "gather", "duel", "emote", "buff", "mount", NULL);
@@ -925,7 +925,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
                 nonCombatEngine->addStrategy("rpg");
             }
 
-            if(!master || (master->GetSession() && master->GetSession()->GetSocket() == nullptr))
+            if(!master || (master->GetSession() && !master->GetSession()->HasNetworkTransport()))
             {
                 nonCombatEngine->addStrategy("maintenance");
             }
@@ -952,7 +952,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
                             nonCombatEngine->addStrategy("rpg");
                         }
 
-                        if (!master || (master->GetSession() && master->GetSession()->GetSocket() == nullptr))
+                        if (!master || (master->GetSession() && !master->GetSession()->HasNetworkTransport()))
                         {
                             nonCombatEngine->addStrategy("maintenance");
                         }

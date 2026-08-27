@@ -980,7 +980,7 @@ void BotManager::UpdateAutoTest(uint32_t diff)
                         std::string playerInfo = p ? (p->IsInWorld() ? "IsInWorld" : "not InWorld") : "FindPlayer null";
                         sLog.outString("TortoiseBots: AutoTest LoggingIn tick %u sess %s (%p) acct %u loading %u player %s pending %u", m_autoTestTicks, sessInfo.c_str(), (void*)sess, rec->accountId, loading, playerInfo.c_str(), rec->lifecycle == BotLifecycle::PendingLogin);
                         if (sess)
-                            sLog.outString("TortoiseBots:   sess details transport %u m_Socket %p IsHeadless %u", (uint32_t)sess->GetTransport(), (void*)sess->GetSocket(), sess->IsHeadless());
+                            sLog.outString("TortoiseBots:   sess details transport %u network %u headless %u", (uint32_t)sess->GetTransport(), sess->HasNetworkTransport(), sess->IsHeadless());
                     }
                     if (m_autoTestTicks > 400)
                     {
