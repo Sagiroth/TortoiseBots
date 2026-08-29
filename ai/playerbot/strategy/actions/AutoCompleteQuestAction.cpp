@@ -24,7 +24,7 @@ bool AutoCompleteQuestAction::Execute(Event& event)
     // Check the bot's quest log for any active quests from the list
     for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
     {
-        uint32 questId = bot->GetQuestSlotQuestId(slot);
+        uint32 questId = GetQuestSlotIdCompat(bot, slot);
         if (!questId)
             continue;
 

@@ -157,13 +157,13 @@ bool AttackAction::Attack(Player* requester, Unit* target)
                 if (!isWaitingForAttack && (!ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) || AI_VALUE2(float, "distance", "current target") < ai->GetRange("spell")))
                 {
                     // Reset the pet state if no master
-                    if (creatureAI->GetReactState() == REACT_PASSIVE && !ai->GetMaster())
+                    if (pet->GetReactState() == REACT_PASSIVE && !ai->GetMaster())
                     {
-                        creatureAI->SetReactState(REACT_DEFENSIVE);
+                        pet->SetReactState(REACT_DEFENSIVE);
                     }
 
                     // Don't send the pet to attack if set to passive
-                    if (creatureAI->GetReactState() != REACT_PASSIVE)
+                    if (pet->GetReactState() != REACT_PASSIVE)
                     {
                         creatureAI->AttackStart(target);
                     }

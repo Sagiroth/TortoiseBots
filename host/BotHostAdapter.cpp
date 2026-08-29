@@ -2,6 +2,8 @@
 
 #include "../runtime/BotManager.h"
 #include "../runtime/RandomBotService.h"
+#include "../runtime/AhMarketService.h"
+#include "../runtime/BattlegroundQueueService.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
 #include "Config/Config.h"
 #include "ObjectMgr.h"
@@ -65,6 +67,7 @@ void BotHostAdapter::OnStartup()
 {
     bool configured = sPlayerbotAIConfig.Initialize();
     RandomBotService::Instance().Initialize();
+    BattlegroundQueueService::Instance().Initialize();
 
     if (sConfig.GetBoolDefault("TortoiseBots.PendingAddRemoveTest", false))
     {
@@ -108,10 +111,13 @@ void BotHostAdapter::OnUpdate(uint32 diff)
     ++m_ticks;
     BotManager::Instance().OnWorldUpdate(diff);
     RandomBotService::Instance().Update(diff);
+    AhMarketService::Instance().Update(diff);
+    BattlegroundQueueService::Instance().Update(diff);
 }
 
 void BotHostAdapter::OnShutdown()
 {
+    BattlegroundQueueService::Instance().Shutdown();
     RandomBotService::Instance().Shutdown();
     sLog.outString("TortoiseBots: native module shutting down after %u world ticks", m_ticks);
 }

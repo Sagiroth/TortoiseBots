@@ -141,7 +141,7 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
             WorldPacket data(SMSG_EMOTE, 4 + 8);
             data << uint32(EMOTE_ONESHOT_LOOT);
             data << bot->getObjectGuid();
-            bot->GetSession()->SendPacket(data);
+            bot->GetSession()->SendPacket(&data);
         }
 
         return true;
@@ -149,7 +149,7 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
 
     if (creature)
     {
-        SkillType skill = (SkillType)creature->GetCreatureInfo()->GetRequiredLootSkill();
+        SkillType skill = (SkillType)GetRequiredLootSkillCompat(creature->GetCreatureInfo());
         sLog.outDebug("[BOT LOOT] %s: gather/skin path skill=%u reqValue=%u", bot->GetName(), skill, lootObject.reqSkillValue);
         if (!CanOpenLock(skill, lootObject.reqSkillValue))
         {
@@ -174,7 +174,7 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
     if (go && sServerFacade.getDistance2d(bot, go) > INTERACTION_DISTANCE)
         return false;
 
-    if (go && (go->IsInUse() || go->GetGoState() == GO_STATE_ACTIVE))
+    if (go && (go->getLootState() == GO_ACTIVATED || go->GetGoState() == GO_STATE_ACTIVE))
         return false;
 
     if (lootObject.skillId == SKILL_MINING)
@@ -189,7 +189,7 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
             if (go->ActivateToQuest(bot))
             {
                 std::list<uint32> lootItems = GAI_VALUE2(std::list<uint32>, "entry loot list", -1*int32(go->GetEntry()));
-                isForQuest = !lootItems.empty() || go->GetLootState() != GO_READY;
+                isForQuest = !lootItems.empty() || go->getLootState() != GO_READY;
             }
         }
 
@@ -428,7 +428,7 @@ bool StoreLootAction::Execute(Event& event)
         if (!proto)
             continue;
 
-        LootItem* lootItem = loot->GetLootItemInSlot(itemindex);
+        LootItem* lootItem = loot->LootItemInSlot(itemindex, bot->GetGUIDLow());
 
         if (!lootItem)
             continue;
@@ -516,7 +516,7 @@ bool StoreLootAction::IsLootAllowed(ItemQualifier& itemQualifier, PlayerbotAI *a
 
     for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
     {
-        uint32 entry = ai->GetBot()->GetQuestSlotQuestId(slot);
+        uint32 entry = GetQuestSlotIdCompat(ai->GetBot(), slot);
         Quest const* quest = sObjectMgr.GetQuestTemplate(entry);
         if (!quest)
             continue;

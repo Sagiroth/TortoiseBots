@@ -51,7 +51,7 @@ bool RewardAction::Execute(Event& event)
 
 bool RewardAction::Reward(Player* requester, uint32 itemId, Object* questGiver)
 {
-    QuestMenu& questMenu = bot->GetPlayerMenu()->GetQuestMenu();
+    QuestMenu& questMenu = bot->PlayerTalkClass->GetQuestMenu();
     for (uint32 iI = 0; iI < questMenu.MenuItemCount(); ++iI)
     {
         QuestMenuItem const& qItem = questMenu.GetItem(iI);

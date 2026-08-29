@@ -150,8 +150,55 @@ public:
     std::list<uint32> vendorOverAHItemIds;
     bool botCheckAllAuctionListings;
     bool botsSaveEpics;
+    // Default-off bounded AH market population (module-only, native transaction path).
+    bool ahMarketEnabled = false;
+    uint32 ahMarketInterval = 120; // seconds between market ticks
+    uint32 ahMarketBatchSize = 1;  // max auctions posted per tick
     //
     bool randomBotLoginAtStartup;
+    // Bounded idempotent RNDBOT population: reuse existing RNDBOT% accounts/
+    // characters, create only the deficit toward the configured Min/Max target
+    // (default OFF). Uses AccountMgr.CreateAccount (random password, hashed)
+    // and the generic CharacterCreation::CreateCharacter synchronous
+    // world-thread seam (core PR #416). Throttled to at
+    // most one character per RandomBotUpdateInterval, no per-tick DB scans.
+    // Valid race/class is the intersection of DBC ChrRaces/ChrClasses
+    // (NOT_PLAYABLE filtered) and PlayerInfo (playercreateinfo); DBC-missing
+    // combos are never selected and an empty intersection disables auto-create
+    // for this process (log once). Mixed-faction cached accounts and other
+    // permanently failed accounts (limit, materialization) are logged once and
+    // never retried every RandomBotUpdateInterval; transient CHAR_CREATE_ERROR/
+    // DB-count failures and dynamic CHAR_CREATE_DISABLED/CHAR_CREATE_PVP_TEAMS_VIOLATION
+    // (faction-balance/creation-disabled, not NOT_PLAYABLE) are retryable with
+    // ~60s backoff (log throttled) and do not permanently exclude healthy accounts,
+    // while name collisions (NAME_IN_USE/RESERVED/PROFANE) remain silently
+    // retryable (reset only on Initialize/restart). LoginDatabase allocation
+    // failures are throttled to one log per ~60s and retried after the
+    // interval. AccountMgr::CreateAccount queues an async LoginDatabase INSERT
+    // (AllowAsyncTransactions; separate from core PR #416), so a successful CreateAccount whose id is not
+    // yet visible is remembered as exactly one pending name and retried with
+    // bounded/log-throttled cadence while continuing the existing-account
+    // selection path and without allocating another fresh account (log once after
+    // prolonged unresolved period, no duplication/spin, no 20-orphan loop). After
+    // a fresh-account permanent failure, further fresh RNDBOT account
+    // allocation is disabled for this process (log once) while valid existing
+    // accounts remain eligible. Created GUIDs are appended to the existing
+    // candidate pool so the normal Headless login path handles them; no raw
+    // INSERT, no DB worker, no blocking loop.
+    bool randomBotAutoCreate = false;
+    // Scatter random bots on headless login to a validated level-appropriate
+    // GenericRpg destination. Default off; fail-closed when no validated level
+    // or no destination. Persisted ai_playerbot_zone_level is tried first
+    // (with parent fallback) then immutable DBC AreaLevel/parent.
+    bool enableRandomTeleports = false;
+    // Default-off bounded LFT fill: observe native queue (GetQueuedPlayers),
+    // identify human groups/instances and missing 1/1/3 roles, filter in-memory
+    // Headless random candidates by authoritative Soromeister/LFT ranges,
+    // team/hardcore/state/role (AiFactory), and call core QueuePlayer through
+    // native offers. Unknown ranges fail closed; no role hook or DB tick scan.
+    bool randomBotLftEnabled = false;
+    uint32 randomBotLftUpdateInterval = 15000;
+    uint32 randomBotLftMaxFillsPerInterval = 1;
     bool logInGroupOnly, logValuesPerTick;
     bool fleeingEnabled;
     bool summonAtInnkeepersEnabled;
@@ -170,8 +217,11 @@ public:
     int32 gearProgressionSystemItems[MAX_GEAR_PROGRESSION_LEVEL][MAX_CLASSES][4][SLOT_EMPTY];
     std::string commandPrefix, commandSeparator;
     std::string randomBotAccountPrefix;
-    // Character names that stay online and are never teleported away.
-    // Resolved to live bot records by the native random-bot service.
+    // Character names matched using the database's stored `characters.name`
+    // collation; pinned bots stay online and are exempt from timed logout
+    // (native login teleport is skipped separately via the facade's normalized
+    // name match, best-effort) but still gated by RandomBotLoginWithPlayer=1.
+    // Resolved once to GUIDs in the discovered RNDBOT pool.
     std::list<std::string> pinnedBotNames;
 
 	bool RandombotsWalkingRPG;
@@ -319,6 +369,15 @@ public:
     bool respawnModForPlayerBots, respawnModForInstances;
 
     bool randomBotLoginWithPlayer;
+    // Autonomous BG queue for WSG/AB/AV. Default off. Bounded cadence and
+    // max-per-interval, in-memory Headless/random selection, faction/level
+    // bracket/state/deserter/taxi/combat/queue checks, native handler
+    // ownership/invites/queue updates via HandleBattlemasterJoinOpcode (guid
+    // 1337 bypass) + SMSG_BATTLEFIELD_STATUS/BGStatusAction invite path.
+    // No second queue/thread/arena/vehicle/expansion or DB tick scans.
+    bool randomBotBgEnabled = false;
+    uint32 randomBotBgQueueInterval = 30000;
+    uint32 randomBotBgMaxQueuePerInterval = 1;
 
     bool jumpInBg;
     bool jumpWithPlayer;

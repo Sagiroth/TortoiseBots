@@ -209,7 +209,7 @@ bool GuildManageNearbyAction::Execute(Event& event)
                 {
                     WorldPacket data;
                     ChatHandler::BuildChatPacket(data, bot->GetGroup()->IsRaidGroup() ? CHAT_MSG_RAID : CHAT_MSG_PARTY, line.c_str(), LANG_UNIVERSAL, CHAT_TAG_NONE, bot->getObjectGuid(), bot->GetName());
-                    bot->GetGroup()->BroadcastPacket(data,true);
+                    bot->GetGroup()->BroadcastPacket(&data, true);
                 }
                 else
                     bot->Say(line, (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));

@@ -30,6 +30,62 @@
 #include <algorithm>
 #include <limits>
 
+// === Small public-field adapters ===
+// The core keeps quest-log slot helpers private. Use the same field layout
+// through the public Object accessors instead of widening the core surface.
+inline uint32 GetQuestSlotIdCompat(Player const* player, uint16 slot)
+{
+    return player && slot < MAX_QUEST_LOG_SIZE
+        ? player->GetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_ID_OFFSET)
+        : 0;
+}
+
+inline void SetQuestSlotCompat(Player* player, uint16 slot, uint32 questId)
+{
+    if (!player || slot >= MAX_QUEST_LOG_SIZE)
+        return;
+
+    player->SetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_ID_OFFSET, questId);
+    player->SetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_COUNT_STATE_OFFSET, 0);
+    player->SetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_TIME_OFFSET, 0);
+}
+
+inline void SetQuestSlotStateCompat(Player* player, uint16 slot, uint8 state)
+{
+    if (player && slot < MAX_QUEST_LOG_SIZE)
+        player->SetByteFlag(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_COUNT_STATE_OFFSET, 3, state);
+}
+
+inline uint32 GetRequiredLootSkillCompat(CreatureInfo const* creature)
+{
+    return creature && creature->skinning_loot_id ? SKILL_SKINNING : SKILL_NONE;
+}
+
+inline bool IsImmobilizedStateCompat(Unit const* unit)
+{
+    return unit && (unit->IsRooted() || unit->HasUnitState(UNIT_STAT_STUNNED) || unit->HasAuraType(SPELL_AURA_MOD_ROOT));
+}
+
+inline Item* FindItemByEntryCompat(Player* player, uint32 itemEntry)
+{
+    if (!player)
+        return nullptr;
+
+    for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            if (item->GetEntry() == itemEntry)
+                return item;
+
+    for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; ++slot)
+        if (Bag* bag = dynamic_cast<Bag*>(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot)))
+            for (uint32 bagSlot = 0; bagSlot < bag->GetBagSize(); ++bagSlot)
+                if (Item* item = bag->GetItemByPos(bagSlot))
+                    if (item->GetEntry() == itemEntry)
+                        return item;
+
+    return nullptr;
+}
+
 // === Type renames ===
 // Mature strategy code uses GenericTransport for the core's ordinary
 // Transport type. Keep the alias local to the module; it is not a vehicle API.
@@ -927,7 +983,7 @@ inline bool IsAutoRepeatRangedSpell(SpellEntry const* spellInfo) {
 // single behavior-facing owner, while BotManager remains the session owner.
 // === Headless transport helpers ===
 inline bool isRealPlayer_Helper(Player* p) {
-    return p && p->GetSession() && p->GetSession()->GetSocket() != nullptr;
+    return p && p->GetSession() && p->GetSession()->HasNetworkTransport();
 }
 inline bool IsInGroup_Helper(Player* a, Player* b, bool sameGroup=false) { if (!a || !b) return false; Group* g = a->GetGroup(); if (!g) return false; if (sameGroup) { Group* og = b->GetGroup(); return g == og; } return g->IsMember(b->GetObjectGuid()); }
 inline bool IsRealPlayer_Helper(Player* p) { return isRealPlayer_Helper(p); }

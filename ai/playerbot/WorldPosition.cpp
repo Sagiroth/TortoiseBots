@@ -23,7 +23,7 @@ using namespace MaNGOS;
 WorldPosition::WorldPosition(const uint32 mapId, const GuidPosition& guidP, uint32 instanceId)
 {
     if (guidP.mapId !=0 || guidP.x != 0 || guidP.y != 0 || guidP.z !=0) {
-        set(WorldPosition(guidP.mapId, guidP.x, guidP.y, guidP.z, guidP.orientation));
+        set(WorldPosition(guidP.mapId, guidP.x, guidP.y, guidP.z, guidP.o));
         return;
     }
 
@@ -99,7 +99,7 @@ WorldPosition::WorldPosition(const std::vector<WorldPosition*>& list, const Worl
     else if (conType == WP_RANDOM)
         set(*list[urand(0, size - 1)]);
     else if (conType == WP_CENTROID)
-        set(std::accumulate(list.begin(), list.end(), WorldLocation(list[0]->GetMapId(), 0, 0, 0, 0), [size](WorldLocation i, WorldPosition* j) {i.x += j->getX() / size; i.y += j->getY() / size; i.z += j->getZ() / size; i.orientation += j->getO() / size; return i; }));
+        set(std::accumulate(list.begin(), list.end(), WorldLocation(list[0]->GetMapId(), 0, 0, 0, 0), [size](WorldLocation i, WorldPosition* j) {i.x += j->getX() / size; i.y += j->getY() / size; i.z += j->getZ() / size; i.o += j->getO() / size; return i; }));
     else if (conType == WP_MEAN_CENTROID)
     {
         WorldPosition pos = WorldPosition(list, WP_CENTROID);
@@ -117,7 +117,7 @@ WorldPosition::WorldPosition(const std::vector<WorldPosition>& list, const World
     else if (conType == WP_RANDOM)
         set(list[urand(0, size - 1)]);
     else if (conType == WP_CENTROID)
-        set(std::accumulate(list.begin(), list.end(), WorldLocation(list[0].GetMapId(), 0, 0, 0, 0), [size](WorldLocation i, WorldPosition j) {i.x += j.getX() / size; i.y += j.getY() / size; i.z += j.getZ() / size; i.orientation += j.getO() / size; return i; }));
+        set(std::accumulate(list.begin(), list.end(), WorldLocation(list[0].GetMapId(), 0, 0, 0, 0), [size](WorldLocation i, WorldPosition j) {i.x += j.getX() / size; i.y += j.getY() / size; i.z += j.getZ() / size; i.o += j.getO() / size; return i; }));
     else if (conType == WP_MEAN_CENTROID)
     {
         WorldPosition pos = WorldPosition(list, WP_CENTROID);
@@ -370,7 +370,7 @@ std::string WorldPosition::print(uint8 precision, bool onlyXyz) const
     out << ';' << z;
 
     if (!onlyXyz)
-        out << ';' << orientation;
+        out << ';' << o;
 
     return out.str();
 }
@@ -456,7 +456,7 @@ std::string WorldPosition::getAreaName(const bool fullName, const bool zoneName)
 
     if (fullName)
     {
-        uint16 zoneId = area->zone;
+        uint16 zoneId = area->ZoneId;
 
         while (zoneId > 0)
         {
@@ -472,7 +472,7 @@ std::string WorldPosition::getAreaName(const bool fullName, const bool zoneName)
             else
                 areaName = subAreaName + " " + areaName;
 
-            zoneId = parentArea->zone;
+            zoneId = parentArea->ZoneId;
         }
     }
 
@@ -485,7 +485,7 @@ int32 WorldPosition::getAreaLevel() const
         return 1;
 
     if(GetArea())
-        return sTravelMgr.GetAreaLevel(GetArea()->ID);
+        return sTravelMgr.GetAreaLevel(GetArea()->Id);
 
     return 0;
 }
@@ -495,10 +495,10 @@ bool WorldPosition::HasAreaFlag(const AreaFlags flag) const
     AreaTableEntry const* areaEntry = GetArea();
     if (areaEntry)
     {
-        if (areaEntry->zone)
-            areaEntry = GetAreaEntryByAreaID(areaEntry->zone);
+        if (areaEntry->ZoneId)
+            areaEntry = GetAreaEntryByAreaID(areaEntry->ZoneId);
 
-        if (areaEntry && areaEntry->flags & flag)
+        if (areaEntry && areaEntry->Flags & flag)
             return true;
     }
 
@@ -510,11 +510,11 @@ bool WorldPosition::HasFaction(const Team team) const
     AreaTableEntry const* areaEntry = GetArea();
     if (areaEntry)
     {
-        if (areaEntry->team == 2 && team == ALLIANCE)
+        if (areaEntry->Team == 2 && team == ALLIANCE)
             return true;
-        if (areaEntry->team == 4 && team == HORDE)
+        if (areaEntry->Team == 4 && team == HORDE)
             return true;
-        if (areaEntry->team == 6)
+        if (areaEntry->Team == 6)
             return true;
     }
     return false;
@@ -523,9 +523,13 @@ bool WorldPosition::HasFaction(const Team team) const
 std::set<GenericTransport*> WorldPosition::getTransports(uint32 entry)
 {
     std::set<GenericTransport*> transports;
-    for (auto transport : getMap(getFirstInstanceId())->GetTransports()) //Boats&Zeppelins.
-        if (!entry || transport->GetEntry() == entry)
+    HashMapHolder<Transport>::ReadGuard guard(HashMapHolder<Transport>::GetLock());
+    for (auto const& transportEntry : HashMapHolder<Transport>::GetContainer()) // Boats & zeppelins.
+    {
+        GenericTransport* transport = transportEntry.second;
+        if (transport && transport->GetMapId() == getMapId() && (!entry || transport->GetEntry() == entry))
             transports.insert(transport);
+    }
 
     if (transports.empty() || !entry) //Elevators&rams
     {
@@ -546,12 +550,12 @@ std::set<GenericTransport*> WorldPosition::getTransports(uint32 entry)
 
 void WorldPosition::CalculatePassengerPosition(GenericTransport* transport)
 {
-    transport->CalculatePassengerPosition(x, y, z, &orientation);
+    transport->CalculatePassengerPosition(x, y, z, &o);
 }
 
 void WorldPosition::CalculatePassengerOffset(GenericTransport* transport)
 {
-    transport->CalculatePassengerOffset(x, y, z, &orientation);
+    transport->CalculatePassengerOffset(x, y, z, &o);
 }
 
 bool WorldPosition::isOnTransport(GenericTransport* transport)
@@ -829,7 +833,7 @@ bool WorldPosition::isVmapLoaded(uint32 /*mapId*/, int /*x*/, int /*y*/)
 
 bool WorldPosition::isMmapLoaded(uint32 mapId, uint32 instanceId, int x, int y)
 {
-    return MMAP::MMapFactory::createOrGetMMapManager()->IsMMapIsLoaded(mapId, x, y);
+    return MMAP::MMapFactory::createOrGetMMapManager()->GetNavMesh(mapId) != nullptr;
 }
 
 bool WorldPosition::loadMapAndVMap(uint32 mapId, uint32 instanceId, int x, int y)
@@ -852,14 +856,8 @@ bool WorldPosition::loadMapAndVMap(uint32 mapId, uint32 instanceId, int x, int y
 
     if (!hasMmap)
     {
-        if (mapId == 0 || mapId == 1)
-            isLoaded = MMAP::MMapFactory::createOrGetMMapManager()->loadMap(sWorld.GetDataPath(), mapId, x, y);
-        else
-        {
-            MMAP::MMapFactory::createOrGetMMapManager()->loadMapInstance(sWorld.GetDataPath(), mapId, instanceId);
-            isLoaded = MMAP::MMapFactory::createOrGetMMapManager()->loadMap(sWorld.GetDataPath(), mapId, x, y);
-        }
-
+        // Penqle owns one navmesh per map; instances do not need a separate load.
+        isLoaded = MMAP::MMapFactory::createOrGetMMapManager()->loadMap(mapId, x, y);
 
         //if (!isLoaded)
         //    sTravelMgr.AddBadMmap(mapId, x, y);
@@ -1061,7 +1059,11 @@ std::vector<WorldPosition> WorldPosition::getPathFromPath(const std::vector<Worl
     if (bot && instanceId == bot->GetInstanceId())
         pathfinder = std::make_unique<PathFinder>(bot);
     else
-        pathfinder = std::make_unique<PathFinder>(getMapId(), instanceId);
+    {
+        if (!bot)
+            return {};
+        pathfinder = std::make_unique<PathFinder>(bot);
+    }
 
     //Limit the pathfinding attempts
     for (uint32 i = 0; i < maxAttempt; i++)
@@ -1095,7 +1097,7 @@ bool WorldPosition::ClosestCorrectPoint(float maxRange, float maxHeight, uint32 
 
     MANGOS_ASSERT(mmap);
 
-    dtNavMeshQuery const* query = mmap->GetNavMeshQuery(getMapId(), instanceId);
+    dtNavMeshQuery const* query = mmap->GetNavMeshQuery(getMapId());
 
     MANGOS_ASSERT(query && query->getAttachedNavMesh());
 
@@ -1211,7 +1213,8 @@ uint32 WorldPosition::getUnitsAggro(const std::list<ObjectGuid>& units, const Pl
 
         if (!unit) continue;
 
-        if (this->sqDistance(unit) > unit->GetAttackDistance(bot) * unit->GetAttackDistance(bot))
+        float attackDistance = unit->GetCombatReach(bot, false, 0.0f);
+        if (this->sqDistance(unit) > attackDistance * attackDistance)
             continue;
 
         count++;

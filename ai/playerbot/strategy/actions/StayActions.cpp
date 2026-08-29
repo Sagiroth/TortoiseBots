@@ -37,8 +37,8 @@ bool StayActionBase::Stay(Player* requester)
         return false;
 
     ai->StopMoving();
-	bot->clearUnitState(UNIT_STAT_CHASE);
-	bot->clearUnitState(UNIT_STAT_FOLLOW);
+    bot->ClearUnitState(UNIT_STAT_CHASE);
+    bot->ClearUnitState(UNIT_STAT_FOLLOW);
 
     return true;
 }

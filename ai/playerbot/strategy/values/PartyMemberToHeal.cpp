@@ -19,7 +19,7 @@ uint32 getIncomingdamage(Unit const* pTarget)
 {
     uint32 damage = 0;
     for (auto const& pAttacker : pTarget->GetAttackers())
-        if (pAttacker->CanReachWithMeleeAttack(pTarget))
+        if (pAttacker->CanReachWithMeleeAutoAttack(pTarget))
             damage += uint32((pAttacker->GetFloatValue(UNIT_FIELD_MINDAMAGE) + pAttacker->GetFloatValue(UNIT_FIELD_MAXDAMAGE)) / 2);
 
     return damage;
@@ -254,12 +254,8 @@ Unit* PartyMemberToProtect::Calculate()
         if (!unit)
             continue;
 
+        // Penqle's CreatureAI has no ranged-unit marker; use melee spacing.
         bool isRanged = false;
-        if (unit->AI())
-        {
-            if (unit->AI()->IsRangedUnit())
-                isRanged = true;
-        }
 
         Unit* pVictim = unit->GetVictim();
         if (!pVictim || !pVictim->IsPlayer())

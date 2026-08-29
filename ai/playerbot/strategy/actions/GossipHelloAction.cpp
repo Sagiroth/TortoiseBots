@@ -34,7 +34,7 @@ bool GossipHelloAction::Execute(Event& event)
 		return false;
 	}
 
-	GossipMenuItemsMapBounds pMenuItemBounds = sObjectMgr.GetGossipMenuItemsMapBounds(pCreature->GetCreatureInfo()->GossipMenuId);
+	GossipMenuItemsMapBounds pMenuItemBounds = sObjectMgr.GetGossipMenuItemsMapBounds(pCreature->GetCreatureInfo()->gossip_menu_id);
 	if (pMenuItemBounds.first == pMenuItemBounds.second)
 		return false;
 
@@ -66,7 +66,7 @@ bool GossipHelloAction::Execute(Event& event)
 
         TellGossipMenus(requester);
 	}
-	else if (!bot->GetPlayerMenu())
+	else if (!bot->PlayerTalkClass)
 	{
 	    ai->TellPlayerNoFacing(requester, "I need to talk first");
 	    return false;
@@ -87,33 +87,28 @@ void GossipHelloAction::TellGossipText(Player* requester, uint32 textId)
     if (!textId)
         return;
 
-    GossipText const* text = sObjectMgr.GetGossipText(textId);
+    NpcText const* text = sObjectMgr.GetNpcText(textId);
     if (text)
     {
         for (int i = 0; i < MAX_GOSSIP_TEXT_OPTIONS; i++)
         {
-            std::string text0 = text->Options[i].Text_0;
-            if (text0.empty() && text->Options[i].BroadcastTextID)
-            {
-                int locale = requester && requester->GetSession() ? requester->GetSession()->GetSessionDbcLocale() : LOCALE_enUS;
-                char const* broadcast = sObjectMgr.GetBroadcastText(text->Options[i].BroadcastTextID, locale,
-                    bot->GetGender());
-                if (broadcast)
-                    text0 = broadcast;
-            }
-            if (!text0.empty()) ai->TellPlayerNoFacing(requester, text0);
-            std::string text1 = text->Options[i].Text_1;
-            if (!text1.empty()) ai->TellPlayerNoFacing(requester, text1);
+            uint32 broadcastId = text->Options[i].BroadcastTextID;
+            if (!broadcastId)
+                continue;
+
+            int locale = requester && requester->GetSession() ? requester->GetSession()->GetSessionDbcLocale() : LOCALE_enUS;
+            if (char const* broadcast = sObjectMgr.GetBroadcastText(broadcastId, locale, bot->GetGender()))
+                ai->TellPlayerNoFacing(requester, broadcast);
         }
     }
 }
 
 void GossipHelloAction::TellGossipMenus(Player* requester)
 {
-    if (!bot->GetPlayerMenu())
+    if (!bot->PlayerTalkClass)
         return;
 
-     GossipMenu& menu = bot->GetPlayerMenu()->GetGossipMenu();
+     GossipMenu& menu = bot->PlayerTalkClass->GetGossipMenu();
 
      if (requester)
      {
@@ -136,7 +131,7 @@ void GossipHelloAction::TellGossipMenus(Player* requester)
 
 bool GossipHelloAction::ProcessGossip(Player* requester, ObjectGuid creatureGuid, int menuToSelect)
 {
-    GossipMenu& menu = bot->GetPlayerMenu()->GetGossipMenu();
+    GossipMenu& menu = bot->PlayerTalkClass->GetGossipMenu();
 
     bool noFeedback = (menuToSelect == -1);
 

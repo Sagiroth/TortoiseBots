@@ -32,15 +32,15 @@ bool ReachAreaTriggerAction::Execute(Event& event)
         return true;
     }
 
-    if (bot->GetMapId() != atEntry->mapId || bot->getDistance(atEntry->x, atEntry->y, atEntry->z) > sPlayerbotAIConfig.sightDistance)
+    if (bot->GetMapId() != atEntry->mapid || bot->GetDistance(atEntry->x, atEntry->y, atEntry->z) > sPlayerbotAIConfig.sightDistance)
     {
         ai->TellError(requester, "I won't follow: too far away");
         return true;
     }
 
     MotionMaster &mm = *bot->GetMotionMaster();
-	mm.MovePoint(atEntry->mapId, atEntry->x, atEntry->y, atEntry->z, FORCED_MOVEMENT_RUN);
-    const float distance = sqrt(bot->getDistance(atEntry->x, atEntry->y, atEntry->z, DIST_CALC_NONE));
+	mm.MovePoint(atEntry->mapid, atEntry->x, atEntry->y, atEntry->z, FORCED_MOVEMENT_RUN);
+    const float distance = bot->GetDistance(atEntry->x, atEntry->y, atEntry->z, SizeFactor::None);
     const float duration = 1000.0f * distance / bot->GetSpeed(MOVE_RUN) + sPlayerbotAIConfig.reactDelay;
     ai->TellError(requester, "Wait for me");
     SetDuration(duration);

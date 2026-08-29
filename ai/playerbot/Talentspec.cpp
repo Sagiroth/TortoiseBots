@@ -132,11 +132,11 @@ void TalentSpec::ApplyTalents(Player* bot, std::ostringstream* out)
 
             if (bot->HasSpell(spellId) && entry.rank - 1 != rank)
             {
-                bot->removeSpell(spellId, false, false);
+                bot->RemoveSpell(spellId, false, false);
             }
             else if (!bot->HasSpell(spellId) && entry.rank - 1 == rank)
             {
-                bot->learnSpell(spellId, false);
+                bot->LearnSpell(spellId, false);
             }
         }
 
@@ -397,7 +397,8 @@ std::string TalentSpec::formatSpec(uint8 cls)
 //Removes talentpoints to match the level
 void TalentSpec::CropTalents(Player* bot)
 {
-    if (points <= bot->CalculateTalentsPoints())
+    uint32 totalTalentPoints = GetTotalTalentPoints_TB(bot);
+    if (points <= totalTalentPoints)
         return;
 
     SortTalents(talents, SORT_BY_POINTS_TREE);
@@ -406,8 +407,8 @@ void TalentSpec::CropTalents(Player* bot)
 
     for (auto& entry : talents)
     {
-        if (points + entry.rank > (int)bot->CalculateTalentsPoints())
-            entry.rank = std::max(0, (int)(bot->CalculateTalentsPoints() - points));
+        if (points + entry.rank > (int)totalTalentPoints)
+            entry.rank = std::max(0, (int)(totalTalentPoints - points));
         points += entry.rank;
     }
 
@@ -446,8 +447,8 @@ bool TalentSpec::isEarlierVersionOf(TalentSpec& newSpec)
 //Modifies current talents towards new talents up to a maximum of points.
 void TalentSpec::ShiftTalents(TalentSpec* currentSpec, Player* bot)
 {
-
-    if (points >= bot->CalculateTalentsPoints()) //We have no more points to spend. Better reset and crop
+    uint32 totalTalentPoints = GetTotalTalentPoints_TB(bot);
+    if (points >= totalTalentPoints) //We have no more points to spend. Better reset and crop
     {
         CropTalents(bot);
         return;
@@ -471,8 +472,8 @@ void TalentSpec::ShiftTalents(TalentSpec* currentSpec, Player* bot)
 
     for (auto& entry : deltaList)
     {
-        if (entry.rank + points > bot->CalculateTalentsPoints()) //Running out of points. Only apply what we have left.
-            entry.rank = std::max(0, int(bot->CalculateTalentsPoints() - points));
+        if (entry.rank + points > totalTalentPoints) //Running out of points. Only apply what we have left.
+            entry.rank = std::max(0, int(totalTalentPoints - points));
 
         for (auto& subentry : talents)
             if (entry.entry == subentry.entry)

@@ -36,7 +36,7 @@ bool SendMailAction::Execute(Event& event)
     ItemIds ids = chat->parseItems(text);
     if (ids.size() > 1)
     {
-        bot->Whisper("You can not request more than one item", LANG_UNIVERSAL, tellTo->getObjectGuid());
+        ai->TellPlayer(tellTo, "You can not request more than one item");
         return false;
     }
 
@@ -48,7 +48,7 @@ bool SendMailAction::Execute(Event& event)
 
         if (randomBot)
         {
-            bot->Whisper("I cannot send money", LANG_UNIVERSAL, tellTo->getObjectGuid());
+            ai->TellPlayer(tellTo, "I cannot send money");
             return false;
         }
 
@@ -99,7 +99,7 @@ bool SendMailAction::Execute(Event& event)
             {
                 std::ostringstream out;
                 out << "Cannot send " << ChatHelper::formatItem(item);
-                bot->Whisper(out.str(), LANG_UNIVERSAL, tellTo->getObjectGuid());
+                ai->TellPlayer(tellTo, out.str());
                 continue;
             }
 
@@ -116,7 +116,7 @@ bool SendMailAction::Execute(Event& event)
                 {
                     std::ostringstream out;
                     out << ChatHelper::formatItem(item) << ": it is not for sale";
-                    bot->Whisper(out.str(), LANG_UNIVERSAL, tellTo->getObjectGuid());
+                    ai->TellPlayer(tellTo, out.str());
                     return false;
                 }
                 draft.SetCOD(price);
@@ -124,7 +124,7 @@ bool SendMailAction::Execute(Event& event)
             draft.SendMailTo(MailReceiver(receiver), MailSender(bot));
 
             std::ostringstream out; out << "Sent mail to " << receiver->GetName();
-            bot->Whisper(out.str(), LANG_UNIVERSAL, tellTo->getObjectGuid());
+            ai->TellPlayer(tellTo, out.str());
             return true;
         }
     }

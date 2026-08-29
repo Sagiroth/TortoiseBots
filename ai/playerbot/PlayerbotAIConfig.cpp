@@ -238,9 +238,13 @@ bool PlayerbotAIConfig::Initialize()
     minRandomBotReviveTime = config.GetIntDefault("AiPlayerbot.MinRandomBotReviveTime", 60);
     maxRandomBotReviveTime = config.GetIntDefault("AiPlayerbot.MaxRandomReviveTime", 300);
 
-    // Comma separated character names. A pinned bot is kept logged in and is
-    // exempt from the random relocation the manager applies to everyone else,
-    // so its run can be followed from one level to the next.
+    // Comma separated character names matched using the database's stored
+    // `characters.name` collation (not the teleport facade's normalized
+    // comparison). A pinned bot is kept logged in and is exempt from timed
+    // logout (native login teleport is skipped separately via the facade's
+    // normalized name match, best-effort) but still gated by
+    // RandomBotLoginWithPlayer=1, so its run can be followed from one level
+    // to the next when the pool is active.
     {
         std::string names = config.GetStringDefault("AiPlayerbot.PinnedBots", "");
         std::stringstream ss(names);
@@ -265,6 +269,15 @@ bool PlayerbotAIConfig::Initialize()
     LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.VendorOverAHItemIds", ""), vendorOverAHItemIds);
     botCheckAllAuctionListings = config.GetBoolDefault("AiPlayerbot.BotCheckAllAuctionListings", false);
     botsSaveEpics = config.GetBoolDefault("AiPlayerbot.BotsSaveEpics", true);
+    // Default-off bounded AH market population. Interval is seconds, batch is
+    // max auctions per tick (hard capped at 5 in service). No AH scan or DB
+    // query per tick; uses legitimate inventory + native HandleAuctionSellItem.
+    ahMarketEnabled = config.GetBoolDefault("AiPlayerbot.AhMarketEnabled", false);
+    ahMarketInterval = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketInterval", 120);
+    if (ahMarketInterval < 5) ahMarketInterval = 5;
+    if (ahMarketInterval > 3600) ahMarketInterval = 3600;
+    ahMarketBatchSize = (uint32)config.GetIntDefault("AiPlayerbot.AhMarketBatchSize", 1);
+    if (ahMarketBatchSize > 5) ahMarketBatchSize = 5;
     //
     logInGroupOnly = config.GetBoolDefault("AiPlayerbot.LogInGroupOnly", true);
     logValuesPerTick = config.GetBoolDefault("AiPlayerbot.LogValuesPerTick", false);
@@ -272,6 +285,11 @@ bool PlayerbotAIConfig::Initialize()
     summonAtInnkeepersEnabled = config.GetBoolDefault("AiPlayerbot.SummonAtInnkeepersEnabled", true);
     randomBotMaxLevel = config.GetIntDefault("AiPlayerbot.RandomBotMaxLevel", DEFAULT_MAX_LEVEL);
     randomBotLoginAtStartup = config.GetBoolDefault("AiPlayerbot.RandomBotLoginAtStartup", false);
+    randomBotAutoCreate = config.GetBoolDefault("AiPlayerbot.RandomBotAutoCreate", false);
+    enableRandomTeleports = config.GetBoolDefault("AiPlayerbot.EnableRandomTeleports", false);
+    randomBotLftEnabled = config.GetBoolDefault("AiPlayerbot.RandomBotLftEnabled", false);
+    randomBotLftUpdateInterval = config.GetIntDefault("AiPlayerbot.RandomBotLftUpdateInterval", 15000);
+    randomBotLftMaxFillsPerInterval = config.GetIntDefault("AiPlayerbot.RandomBotLftMaxFillsPerInterval", 1);
     openGoSpell = config.GetIntDefault("AiPlayerbot.OpenGoSpell", 6477);
 
     randomChangeMultiplier = config.GetFloatDefault("AiPlayerbot.RandomChangeMultiplier", 1.0);
@@ -292,6 +310,16 @@ bool PlayerbotAIConfig::Initialize()
     bExplicitDbStoreSave = config.GetBoolDefault("AiPlayerbot.ExplicitDbStoreSave", false);
 
     randomBotLoginWithPlayer = config.GetBoolDefault("AiPlayerbot.RandomBotLoginWithPlayer", false);
+    // Autonomous WSG/AB/AV queue. Default off. Uses proven
+    // BattleGroundJoinAction/BGStatusAction path via
+    // WorldSession::HandleBattlemasterJoinOpcode (guid 1337 bypass) and
+    // BattleGroundMgr ownership for invite/queue updates. Bounded cadence
+    // and max-per-interval, in-memory Headless/random selection, faction/
+    // level bracket/state/deserter/taxi/combat/queue checks, no second
+    // queue/thread/arena/vehicle/expansion or DB tick scans.
+    randomBotBgEnabled = config.GetBoolDefault("AiPlayerbot.RandomBotBgEnabled", false);
+    randomBotBgQueueInterval = config.GetIntDefault("AiPlayerbot.RandomBotBgQueueInterval", 30000);
+    randomBotBgMaxQueuePerInterval = config.GetIntDefault("AiPlayerbot.RandomBotBgMaxQueuePerInterval", 1);
 
     sLog.outString("Loading Race/Class probabilities");
 

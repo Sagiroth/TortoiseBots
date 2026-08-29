@@ -28,11 +28,11 @@ float ThreatMultiplier::GetValue(Action* action)
         {
             if (AI_VALUE2(bool, "trigger active", "high threat"))
             {
-                ai->GetMaster()->GetSession()->SendPlaySpellVisual(ai->GetBot()->getObjectGuid(), 6372);
+                ai->GetBot()->SendPlaySpellVisual(6372);
             }
             else if (AI_VALUE2(bool, "trigger active", "medium threat"))
             {
-                ai->GetMaster()->GetSession()->SendPlaySpellVisual(ai->GetBot()->getObjectGuid(), 5036);
+                ai->GetBot()->SendPlaySpellVisual(5036);
             }
         }
     }

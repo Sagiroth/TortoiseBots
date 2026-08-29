@@ -34,14 +34,14 @@ bool QuestAction::Execute(Event& event)
     for (std::list<ObjectGuid>::iterator i = npcs.begin(); i != npcs.end(); i++)
     {
         Unit* unit = ai->GetUnit(*i);
-        if (unit && bot->getDistance(unit) <= INTERACTION_DISTANCE)
+        if (unit && bot->GetDistance(unit) <= INTERACTION_DISTANCE)
             result |= ProcessQuests(unit);
     }
     std::list<ObjectGuid> gos = AI_VALUE(std::list<ObjectGuid>, "nearest game objects no los");
     for (std::list<ObjectGuid>::iterator i = gos.begin(); i != gos.end(); i++)
     {
         GameObject* go = ai->GetGameObject(*i);
-        if (go && bot->getDistance(go) <= INTERACTION_DISTANCE)
+        if (go && bot->GetDistance(go) <= INTERACTION_DISTANCE)
             result |= ProcessQuests(go);
     }
 
@@ -177,7 +177,7 @@ bool QuestAction::ProcessQuests(WorldObject* questGiver)
 
     bot->SetSelectionGuid(guid);
     bot->PrepareQuestMenu(guid);
-    QuestMenu& questMenu = bot->GetPlayerMenu()->GetQuestMenu();
+    QuestMenu& questMenu = bot->PlayerTalkClass->GetQuestMenu();
 
     bool hasAccept = false;
     for (uint32 i = 0; i < questMenu.MenuItemCount(); ++i)

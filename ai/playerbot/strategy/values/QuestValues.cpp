@@ -195,7 +195,7 @@ std::list<GuidPosition> ActiveQuestGiversValue::Calculate()
 
 			if (creatureInfo)
 			{
-				if (!ai->IsFriendlyTo(creatureInfo->Faction))
+				if (!ai->IsFriendlyTo(creatureInfo->faction))
 					continue;
 			}
 
@@ -249,7 +249,7 @@ std::list<GuidPosition> ActiveQuestTakersValue::Calculate()
 
 				if (info)
 				{
-					if (!ai->IsFriendlyTo(info->Faction))
+					if (!ai->IsFriendlyTo(info->faction))
 						continue;
 				}
 			}
@@ -388,7 +388,7 @@ uint8 FreeQuestLogSlotValue::Calculate()
 	uint8 numQuest = 0;
 	for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
 	{
-		uint32 questId = bot->GetQuestSlotQuestId(slot);
+		uint32 questId = GetQuestSlotIdCompat(bot, slot);
 
 		if (!questId)
 			continue;

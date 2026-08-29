@@ -799,37 +799,10 @@ void PlayerbotHelpMgr::SaveTemplates()
 void PlayerbotHelpMgr::GenerateHelp()
 {
     coverageMap.clear();
-
-    // This session is a local help-generation fixture, not a network session.
-    WorldSession* session = new WorldSession(0, NULL, SEC_PLAYER,
-
-    0, LOCALE_enUS, "disconnected/bot", 0);
-
-    Player* bot = new Player(session);
-
-    bot->Create(sObjectMgr.GeneratePlayerLowGuid(), "test", 1, 1, 0,
-        0, // skinColor,
-        0,
-        0,
-        0, // hairColor,
-        0, 0);
-
-    ai = new PlayerbotAI(bot);
-
-    LoadAllStrategies();
-
-    GenerateStrategyHelp();
-    GenerateTriggerHelp();
-    GenerateActionHelp();
-    GenerateValueHelp();
-    GenerateChatFilterHelp();
-
-    PrintCoverage();
-
-    SaveTemplates();
-
-    delete ai;
-    delete bot;
+    // Diagnostic fixture disabled: core now owns Headless session lifecycle and
+    // module must not construct synthetic Headless WorldSessions. Skipping.
+    sLog.outString("TortoiseBots: GenerateHelp skipped — synthetic Headless fixture disabled (core owns sessions)");
+    return;
 }
 #endif
 
@@ -900,7 +873,7 @@ void PlayerbotHelpMgr::FormatHelpTopics()
 
         for (uint8 i = 1; i < MAX_LOCALE; ++i)
         {
-            FormatHelpTopic(helpText.second.m_text_locales[sObjectMgr.GetStorageLocaleIndexFor(LocaleConstant(i))]);
+            FormatHelpTopic(helpText.second.m_text_locales[sObjectMgr.GetIndexForLocale(LocaleConstant(i))]);
         }
     }
 }
@@ -923,7 +896,7 @@ void PlayerbotHelpMgr::LoadBotHelpTexts()
 
             for (uint8 i = 1; i < MAX_LOCALE; ++i)
             {
-                text_locale[sObjectMgr.GetStorageLocaleIndexFor(LocaleConstant(i))] = fields[i + 2].GetString();
+                text_locale[sObjectMgr.GetIndexForLocale(LocaleConstant(i))] = fields[i + 2].GetString();
             }
 
             botHelpText[name] = BotHelpEntry(templateText, text, text_locale);

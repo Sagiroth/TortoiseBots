@@ -3,7 +3,6 @@
 
 #include <iomanip>
 #include <regex>
-#include <filesystem>
 
 #include "ObjectMgr.h"
 #include "PlayerbotAI.h"
@@ -66,7 +65,7 @@ void TravelNodePath::calculateCost(bool distanceOnly)
 
                     if (cInfo)
                     {
-                        FactionTemplateEntry const* factionEntry = sFactionTemplateStore.LookupEntry(cInfo->Faction);
+                        FactionTemplateEntry const* factionEntry = sFactionTemplateStore.LookupEntry(cInfo->faction);
 
                         if (aReact.find(factionEntry) == aReact.end())
                             aReact.insert(std::make_pair(factionEntry, PlayerbotAI::friendToAlliance(factionEntry)));
@@ -76,12 +75,12 @@ void TravelNodePath::calculateCost(bool distanceOnly)
                             hReact.insert(std::make_pair(factionEntry, PlayerbotAI::friendToHorde(factionEntry)));
                         hFriend = hReact.find(factionEntry)->second;
 
-                        if (maxLevelCreature[0] < cInfo->MaxLevel && !aFriend && !hFriend)
-                            maxLevelCreature[0] = cInfo->MaxLevel;
-                        if (maxLevelCreature[1] < cInfo->MaxLevel && aFriend && !hFriend)
-                            maxLevelCreature[1] = cInfo->MaxLevel;
-                        if (maxLevelCreature[2] < cInfo->MaxLevel && !aFriend && hFriend)
-                            maxLevelCreature[2] = cInfo->MaxLevel;
+                        if (maxLevelCreature[0] < cInfo->level_max && !aFriend && !hFriend)
+                            maxLevelCreature[0] = cInfo->level_max;
+                        if (maxLevelCreature[1] < cInfo->level_max && aFriend && !hFriend)
+                            maxLevelCreature[1] = cInfo->level_max;
+                        if (maxLevelCreature[2] < cInfo->level_max && !aFriend && hFriend)
+                            maxLevelCreature[2] = cInfo->level_max;
                     }
                 }
 
@@ -121,12 +120,12 @@ float TravelNodePath::getCost(Unit* unit, uint32 cGold)
         {
             uint32 triggerId = getPathObject();
             AreaTriggerEntry const* atEntry = sAreaTriggerStore.LookupEntry(pathObject);
-            AreaTrigger const* at = sObjectMgr.GetAreaTrigger(pathObject);
+            AreaTriggerTeleport const* at = sObjectMgr.GetAreaTriggerTeleport(pathObject);
             if (atEntry && at && atEntry->mapid == bot->GetMapId())
             {
                 Map* map = WorldPosition(atEntry->mapid, atEntry->box_x, atEntry->box_y, atEntry->box_z).GetMap(bot->GetInstanceId());
                 if (map)
-                    if (at && at->conditionId && !sObjectMgr.IsConditionSatisfied(at->conditionId, bot, map, nullptr, (ConditionSource)CONDITION_FROM_AREATRIGGER_TELEPORT))
+                    if (at && at->requiredCondition && !sObjectMgr.IsConditionSatisfied(at->requiredCondition, bot, map, nullptr, (ConditionSource)CONDITION_FROM_AREATRIGGER_TELEPORT))
                         return -1;
             }
         }
@@ -160,7 +159,7 @@ float TravelNodePath::getCost(Unit* unit, uint32 cGold)
                 if (!bot->IsTaxiCheater() && taxiPath->price > cGold)
                     return -1;
 
-                if (!bot->IsTaxiCheater() && !bot->m_taxi.IsTaximaskNodeKnown(taxiPath->to))
+                if (!bot->IsTaxiCheater() && !bot->GetTaxi().IsTaximaskNodeKnown(taxiPath->to))
                     return -1;
 
                 TaxiNodesEntry const* startTaxiNode = sTaxiNodesStore.LookupEntry(taxiPath->from);
@@ -261,11 +260,11 @@ bool TravelNode::isAreaTriggerTarget(uint32 areaTriggerId)
         if (!atEntry)
             continue;
 
-        AreaTrigger const* at = sObjectMgr.GetAreaTrigger(i);
+        AreaTriggerTeleport const* at = sObjectMgr.GetAreaTriggerTeleport(i);
         if (!at)
             continue;
 
-        WorldPosition outPos = WorldPosition(at->target_mapId, at->target_X, at->target_Y, at->target_Z, at->target_Orientation);
+        WorldPosition outPos = WorldPosition(at->destination.mapId, at->destination.x, at->destination.y, at->destination.z, at->destination.o);
 
         if (*getPosition() == outPos)
             return true;
@@ -1145,11 +1144,11 @@ void TravelPath::ClipPath(PlayerbotAI* ai, Unit* mover, bool ignoreEnemyTargets)
             if (unit->GetLevel() > mover->GetLevel() + 5)
                 continue;
 
-            float range = unit->GetAttackDistance(mover);
+            float range = unit->GetCombatReach(mover, false, 0.0f);
             if (WorldPosition(unit).sqDistance(p->point) > range * range)
                 continue;
 
-            if (!unit->CanAttackOnSight(mover) || !unit->IsWithinLOSInMap(mover))
+            if (!unit->IsHostileTo(mover) || !unit->IsWithinLOSInMap(mover))
                 continue;
 
             endP = p;
@@ -2060,49 +2059,8 @@ void TravelNodeMap::manageNodes(Unit* bot, bool mapFull)
 
 void TravelNodeMap::LoadMaps()
 {
-    sLog.outError("Trying to load all maps and tiles for node generation. Please ignore any maps that could not be loaded.");
-    for (uint32 i = 0; i < sMapStore.GetNumRows(); ++i)
-    {
-        if (!sMapStore.LookupEntry(i))
-            continue;
-
-        uint32 mapId = sMapStore.LookupEntry(i)->MapID;
-        if (mapId == 0 || mapId == 1)
-        {
-            MMAP::MMapFactory::createOrGetMMapManager()->loadAllMapTiles(sWorld.GetDataPath(), mapId);
-        }
-        else
-        {
-            MMAP::MMapFactory::createOrGetMMapManager()->loadMapInstance(sWorld.GetDataPath(), mapId, 0);
-        }
-    }
-
-    for (uint32 i = 0; i < sMapStore.GetNumRows(); ++i)
-    {
-        if (!sMapStore.LookupEntry(i))
-            continue;
-
-        uint32 mapId = sMapStore.LookupEntry(i)->MapID;
-
-        for (const auto& entry : std::filesystem::directory_iterator(sWorld.GetDataPath() + "mmaps"))
-        {
-            if (entry.path().extension() == ".mmtile")
-            {
-                auto filename = entry.path().filename();
-                auto fileNameString = filename.c_str();
-                // trying to avoid string copy
-                uint32 fileMapId = (fileNameString[0] - '0') * 100 + (fileNameString[1] - '0') * 10 + (fileNameString[2] - '0');
-                if (fileMapId != mapId)
-                    continue;
-
-                uint32 x = (fileNameString[3] - '0') * 10 + (fileNameString[4] - '0');
-                uint32 y = (fileNameString[5] - '0') * 10 + (fileNameString[6] - '0');
-
-                if (!MMAP::MMapFactory::createOrGetMMapManager()->IsMMapIsLoaded(mapId, x, y))
-                    MMAP::MMapFactory::createOrGetMMapManager()->loadMap(sWorld.GetDataPath(), mapId, x, y);
-            }
-        }
-    }
+    // Full-map node generation is disabled in the native module. Individual
+    // path requests load only the required navmesh data through WorldPosition.
 }
 
 void TravelNodeMap::generateNpcNodes()
@@ -2142,10 +2100,10 @@ void TravelNodeMap::generateNpcNodes()
         }
         else if (cInfo->rank == 1 && !guidP.isOverworld())
         {
-            if (bossMap.find(cInfo->Entry) == bossMap.end())
-                bossMap[cInfo->Entry] = guidP;
-            else if (bossMap[cInfo->Entry])
-                bossMap[cInfo->Entry] = GuidPosition();
+            if (bossMap.find(cInfo->entry) == bossMap.end())
+                bossMap[cInfo->entry] = guidP;
+            else if (bossMap[cInfo->entry])
+                bossMap[cInfo->entry] = GuidPosition();
         }
     }
 
@@ -2211,13 +2169,13 @@ void TravelNodeMap::generateAreaTriggerNodes()
         if (!atEntry)
             continue;
 
-        AreaTrigger const* at = sObjectMgr.GetAreaTrigger(i);
+        AreaTriggerTeleport const* at = sObjectMgr.GetAreaTriggerTeleport(i);
         if (!at)
             continue;
 
         WorldPosition inPos = WorldPosition(atEntry->mapid, atEntry->x, atEntry->y, atEntry->z - 4.0f, 0);
 
-        WorldPosition outPos = WorldPosition(at->target_mapId, at->target_X, at->target_Y, at->target_Z, at->target_Orientation);
+        WorldPosition outPos = WorldPosition(at->destination.mapId, at->destination.x, at->destination.y, at->destination.z, at->destination.o);
 
         std::string nodeName;
 
@@ -2239,13 +2197,13 @@ void TravelNodeMap::generateAreaTriggerNodes()
         if (!atEntry)
             continue;
 
-        AreaTrigger const* at = sObjectMgr.GetAreaTrigger(i);
+        AreaTriggerTeleport const* at = sObjectMgr.GetAreaTriggerTeleport(i);
         if (!at)
             continue;
 
         WorldPosition inPos = WorldPosition(atEntry->mapid, atEntry->x, atEntry->y, atEntry->z - 4.0f, 0);
 
-        WorldPosition outPos = WorldPosition(at->target_mapId, at->target_X, at->target_Y, at->target_Z, at->target_Orientation);
+        WorldPosition outPos = WorldPosition(at->destination.mapId, at->destination.x, at->destination.y, at->destination.z, at->destination.o);
 
         std::string nodeName;
 
@@ -2403,16 +2361,17 @@ void TravelNodeMap::generateTransportNodes()
             // Boats/Zepelins
             {
                 //Loop over the path and connect stop locations.
-                for (auto& p : path)
+                for (size_t pathIndex = 0; pathIndex < path.size(); ++pathIndex)
                 {
-                    WorldPosition pos = WorldPosition(p->mapid, p->x, p->y, p->z, 0);
+                    auto& p = path[pathIndex];
+                    WorldPosition pos = WorldPosition(p.mapid, p.x, p.y, p.z, 0);
 
                     if (prevNode)
                     {
                         ppath.push_back(pos);
                     }
 
-                    if (p->delay > 0)
+                    if (p.delay > 0)
                     {
                         TravelNode* node = sTravelNodeMap.addNode(pos, data->name, true, true, true, entry);
 
@@ -2447,9 +2406,10 @@ void TravelNodeMap::generateTransportNodes()
                 if (prevNode)
                 {
                     //Continue from start until first stop and connect to end.
-                    for (auto& p : path)
+                    for (size_t pathIndex = 0; pathIndex < path.size(); ++pathIndex)
                     {
-                        WorldPosition pos = WorldPosition(p->mapid, p->x, p->y, p->z, 0);
+                        auto& p = path[pathIndex];
+                        WorldPosition pos = WorldPosition(p.mapid, p.x, p.y, p.z, 0);
 
                         //if (data->displayId == 3015)
                         //    pos.setZ(pos.getZ() + 6.0f);
@@ -2458,7 +2418,7 @@ void TravelNodeMap::generateTransportNodes()
 
                         ppath.push_back(pos);
 
-                        if (p->delay > 0)
+                        if (p.delay > 0)
                         {
                             TravelNode* node = sTravelNodeMap.GetNode(pos, NULL, 5.0f);
 
@@ -2820,11 +2780,14 @@ void TravelNodeMap::generateTaxiPaths()
 
         std::vector<WorldPosition> ppath;
 
-        if (startNode->fDist(WorldPosition(nodes.front()->mapid, nodes.front()->x, nodes.front()->y, nodes.front()->z, 0.0)) > 0.1f)
+        if (startNode->fDist(WorldPosition(nodes[0].mapid, nodes[0].x, nodes[0].y, nodes[0].z, 0.0)) > 0.1f)
             ppath.push_back(*startNode->getPosition());
 
-        for (auto& n : nodes)
-            ppath.push_back(WorldPosition(n->mapid, n->x, n->y, n->z, 0.0));
+        for (size_t nodeIndex = 0; nodeIndex < nodes.size(); ++nodeIndex)
+        {
+            auto const& n = nodes[nodeIndex];
+            ppath.push_back(WorldPosition(n.mapid, n.x, n.y, n.z, 0.0));
+        }
 
         if (endNode->fDist(ppath.back()) > 0.1f)
             ppath.push_back(*endNode->getPosition());
@@ -3514,7 +3477,7 @@ TravelNodeMap::PathFindResult TravelNodeMap::testPathToLoop(const WorldPosition&
         pathfinder->calculate(currentPos.GetVector3(), endPos.GetVector3(), false);
 
         pathType = pathfinder->getPathType();
-        points = pathfinder->GetPath();
+        points = pathfinder->getPath();
 
         std::vector<WorldPosition> subPath = currentPos.fromPointsArray(points);
 

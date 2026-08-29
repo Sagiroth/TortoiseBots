@@ -12,7 +12,8 @@ licensing, reasoning and local validation.
 | SessionTransport Headless pattern (`SessionTransport::Headless`, `IsHeadless()`, `HasNetworkTransport()`, `InitHeadlessSession()` with `NullSessionAnticheat`) | `Shyalya/tortoise-wow` (vendored `cmangos/playerbots` via `r-o-sh/tortoise-wow:playerbots-integration-gh`) and `tortoise-wow` core's existing `NullSessionAnticheat` | `shyalya-tortoise-wow@1f9497e` (checkpoint `0af2567` 2026-05-10, vendored `cmangos/playerbots@c33dfac`) / `Anticheat/Anticheat.h:143` (`NullSessionAnticheat`) | `Anticheat/Anticheat.h:143-209` (`NullSessionAnticheat`, `NullAnticheatLib`), `shyalya` host hooks for bot sessions (80-file surface) | Reimplemented as generic transport enum, not copied — core now distinguishes `Network` vs `Headless` via `SessionTransport`, module interprets `IsHeadless() == true` as bot. `InitHeadlessSession()` directly assigns `NullSessionAnticheat` (existing core precedent) | Harvest the null-transport precedent without inheriting Shyalya's 80-file host surface; keep host integration ≤5 files | `rg` audits for `GetBot/m_bot` remain clean; `BUILD_PLAYERBOTS=ON/OFF` matrix builds; Docker runtime spike: headless session survives `World::Update` (not deleted as disconnected), `HandlePlayerLogin` succeeds after queued `AddSession` + deferred `LoginPlayer`, bot enters world and re-enters after logout |
 | `IWorldUpdateListener` generic world-tick registry (`RegisterWorldUpdateListener`, `GetPendingWorldListenerFactories`, `RegisterPendingWorldListeners` in `World::Update`) | `HardcodedEvents`/`ZoneScriptMgr::Update` pattern in `Penqle/tortoise-wow` + `DiscordBot::RegisterHandlers` precedent in same core | `World.cpp:2448` (`World::Update`), `HardcodedEvents.h`, `ZoneScriptMgr.cpp:117` (`Update`), `World.cpp:2343` (`DiscordBot::RegisterHandlers`) | `World.h:889`, `World.cpp:2448`, `HardcodedEvents.h`, `ZoneScriptMgr` | Reimplemented as generic `IWorldUpdateListener` with explicit registration and pending-factory static initializers (no weak symbols, no `sBotHost` global) — inspirited by `DiscordBot`'s service registration but made generic | Bot AI must run on the world thread once per tick; no existing `WorldScript::OnUpdate` exists in MaNGOS `ScriptMgr`, so a single generic call site in `World::Update` is the correct seam | `World::Update` now calls listeners after `UpdateSessions`; `BotHostAdapter` receives tick, `BotManager` drives lifecycle; `rg -i PlayerBot` in `src/game` only shows `InitHeadlessSession` bridge |
 | `BUILD_PLAYERBOTS` optional-module CMake wiring | `cmangos/mangos-classic` (`cmake/options.cmake: BUILD_PLAYERBOTS OFF`) and `mangoszero/server` (`CMakeLists.txt: PLAYERBOTS OFF`) | `cmangos-mangos-classic@9b682be`, `mangoszero-server@1817ae1` | `CMakeLists.txt`, `src/CMakeLists.txt`, `src/game/CMakeLists.txt`, `src/mangosd/CMakeLists.txt` | Reimplemented as explicit `option(BUILD_PLAYERBOTS OFF)` with `add_subdirectory(modules/TortoiseBots)` only when `ON`, and `target_link_libraries(mangosd tortoise_bots)` via `CMP0079` + `whole-archive` on Linux — no `FetchContent` auto-download, no `ENABLE_PLAYERBOTS` scattered defines | Keep `BUILD_PLAYERBOTS=OFF` first-class and `src/modules/TortoiseBots` absent/present matrix clean; harvest the option pattern without the `FetchContent` auto-clone | Matrix: `absent+OFF` OK, `present+OFF` OK (module present but not built), `present+ON` OK (module linked); `rg` audits clean |
-| Headless queued-session lifecycle (`WorldSession::Update`, `CharacterScreenIdleKick`, queued add/remove) | `Shyalya`'s `NullSessionAnticheat` + `WorldSession::Update` null-socket handling (`WorldSession.cpp:163,383,736` already tolerates `m_Socket==nullptr` but deletes headless via `return false`) | `WorldSession.cpp:306,334,378`, `Handlers/CharacterHandler.cpp:548`, `World.cpp:283`, `LockedQueue.h` | Reimplemented: explicit `SessionTransport`, a one-pass `m_headlessLoginPending` keepalive, deferred `LoginPlayer` after queued `AddSession`, and generic pending-session inspection/cancellation. `BotManager` retains `Removing` records until cleanup. | The queued path must survive the first `UpdateSessions` pass without requiring synchronous insertion; immediate removal must cancel the queue entry instead of orphaning it. | Queued runtime spike passed; `PendingAddRemoveTest PASSED` with no active/pending session, player, or record; graceful shutdown clears both online flags. |
+| Headless queued-session lifecycle (`WorldSession::Update`, `CharacterScreenIdleKick`, queued add/remove) | `Shyalya`'s `NullSessionAnticheat` + `WorldSession::Update` null-socket handling (`WorldSession.cpp:163,383,736` already tolerates `m_Socket==nullptr` but deletes headless via `return false`) | `WorldSession.cpp:306,334,378`, `Handlers/CharacterHandler.cpp:548`, `World.cpp:283`, `LockedQueue.h` | `WorldSession.cpp`, `Handlers/CharacterHandler.cpp`, `World.cpp`, `LockedQueue.h` | Reimplemented: explicit `SessionTransport`, a one-pass `m_headlessLoginPending` keepalive, deferred `LoginPlayer` after queued `AddSession`, and generic pending-session inspection/cancellation. `BotManager` retains `Removing` records until cleanup. | The queued path must survive the first `UpdateSessions` pass without requiring synchronous insertion; immediate removal must cancel the queue entry instead of orphaning it. | Queued runtime spike passed; `PendingAddRemoveTest PASSED` with no active/pending session, player, or record; graceful shutdown clears both online flags. |
+| World-owned Headless lifecycle façade (`StartHeadlessSession` / `StopHeadlessSession` / `GetHeadlessSessionState`) | `Penqle/tortoise-wow` PR #411 refactor plus TortoiseBots packet transport identity correction | `1e7994934b864558e257dd1f375fbbdbbcebe95e` plus rebased #416 `58bcb1cf8ea7110561120ed47c3c9203f9338c5b`; TortoiseBots `73ce12958b933cb4e74f5ccaddb21819e7ed3573` | `HeadlessSessionMgr.{h,cpp}`, `World.{h,cpp}`, `WorldSession.{h,cpp}`, `Handlers/CharacterHandler.cpp`, `PlayerLoginQueryHolder.h`, `host/BotPacketAdapter.cpp` | Moved Headless validation, shared login dispatch, callback identity, update, reclaim, removal, and shutdown into the World-owned manager; migrated TortoiseBots to the three-call interface; kept packet dispatch keyed to transport identity rather than socket presence | Keep one concrete `WorldSession`, character-GUID Headless ownership, normal Network auth, bot-neutral core ownership, and valid synthetic Network packet fixtures | Docker core-only and synchronized static module builds reached `[100%] Built target mangosd`; `tools/verify_turtle_surface.sh` passed; runtime `PendingAddRemoveTest PASSED`, AutoTest save/logout/relogin/cleanup PASSED, and PacketBridgeTest command-surface PASSED, while its synthetic group invite/accept check FAILED; no real-client path was run |
 
 | Foundational Engine/AiObjectContext/Strategy/Trigger/Action/Value/ReactionEngine (Tortoise 1.18.1 baseline) | `Shyalya/tortoise-wow` (`playerbots-integration-gh` @ 1f9497e, vendored `cmangos/playerbots@c33dfac`) | `Shyalya` baseline provides the full `playerbot/strategy/Engine.{h,cpp}`, `AiObjectContext.{h,cpp}`, `AiObject.{h,cpp}`, `Strategy.{h,cpp}`, `Trigger.{h,cpp}`, `Action.{h,cpp}`, `Value.{h,cpp}`, `ReactionEngine.{h,cpp}`, `Queue/Event/Multiplier` etc, already translated for `MANGOSBOT_ZERO` (Vanilla 1.12/1.18.1) and core `WorldLocation`/`Position`/`Map` APIs | `ai/playerbot/strategy/Engine.*`, `AiObjectContext.*`, `AiObject.*`, `Strategy.*`, `Trigger.*`, `Action.*`, `Value.*`, `ReactionEngine.*`, `Queue.*`, `Event.*`, `AiObject.*` (full `ai/playerbot` tree, 82 top-level + 14 strategy core + 113 generic) | Copied verbatim as the Tortoise/Vanilla translation reference for the foundational runtime; `cmangos-compat-shim.h` and `botpch.h` already handle core `SpellEntry`/`ItemPrototype`/`MapStorage` translation, Vanilla `MANGOSBOT_ZERO` guards exclude `deathknight`/`TBC`/`WotLK` paths | Shyalya's `playerbots-integration-gh` is the only proven `1.18.1` PlayerBots that already runs on core `WorldLocation` (`mapId/x/y/z/o`), `Transport`/`GenericTransport`, `GuidSet`/`AreaTableEntry` etc; using it as the baseline avoids reinventing `Penqle` API translation and keeps `Headless`/`IsHeadless()` as the only host seam | `ai/` now contains the full Shyalya `playerbot` tree (204 generic files after modern layer); `CMakeLists.txt` now builds the real `Engine`/`AiObjectContext`/`Strategy` stack instead of the stub `EngineStub`/`AiObjectContextStub`; native linkage uses explicit `MODULE_TORTOISEBOTS=static` and `MANGOSBOT_ZERO` |
 | Modern generic Base behavior (204 files, `Follow`/`Combat`/`Dead`/`Ranged`/`Melee` etc) | `mod-playerbots` `src/Ai/Base/Strategy` @ 5397110cba48 (merge #2661) + `Shyalya` `strategy/generic` @ 1f9497e | `mod-playerbots: src/Ai/Base/Strategy/*.{h,cpp}` (91 files, modern `FollowMasterStrategy` now `getDefaultActions()` + `InitTriggers` vs Shyalya's `InitNonCombatTriggers`/`InitCombatTriggers` + `NextAction::array`) / `shyalya: strategy/generic/*` (113 files, includes `BlackwingLair`/`Karazhan` dungeon strategies) | `ai/playerbot/strategy/generic/*` (204 files after modern layer; donor SHAs are retained here instead of backup copies) | Forward-ported the modern `mod-playerbots` generic set on top of Shyalya's Tortoise-translated generic; Vanilla/Tortoise `MANGOSBOT_ZERO` guards kept and expansion-only paths excluded | Modern class/combat/follow behavior remains attributable to the pinned donor commits; obsolete `*.shyalya.bak` copies were removed once this provenance record was complete |
@@ -21,7 +22,7 @@ licensing, reasoning and local validation.
 Notes (updated 2026-08-22 — large-batch forward-port):
 
 - Foundational runtime is now substantially real (not a stub): `ai/playerbot` contains the full Shyalya `playerbot` tree (Tortoise `1.18.1` translation, `MANGOSBOT_ZERO`) plus the modern `mod-playerbots@5397110` generic and nine class contexts. The obsolete `*.shyalya.bak` and `.orig` migration copies were removed after donor SHAs and source paths were recorded above. `CMakeLists.txt` builds the real `Engine`/`AiObjectContext`/`Strategy`/`Trigger`/`Action`/`Value`/`ReactionEngine`/`AiFactory` stack; `deathknight`/`WotLK` remains excluded via `MANGOSBOT_ZERO`.
-- Host seam remains generic and minimal: `SessionTransport`, `IsHeadless()`, `HasNetworkTransport()`, `IWorldUpdateListener` (≤5 host files, verified via `rg -n -i 'PlayerBot|BotService|Headless' src/game` only shows `InitHeadlessSession`). No `IsBot()`/`GetBot()`/`m_bot`/`sPlayerBotMgr` reintroduced. Same-account `1 Network + N Headless` GUID-driven lifecycle and human reclaim are preserved via `BotManager` + `BotSessionAdapter`.
+- Host seam remains generic and minimal: `SessionTransport`, `IsHeadless()`, `HasNetworkTransport()`, `IWorldUpdateListener` (≤5 host files, verified via `rg -n -i 'PlayerBot|BotService|Headless' src/game` only shows the generic Headless manager/session code). No `IsBot()`/`GetBot()`/`m_bot`/`sPlayerBotMgr` reintroduced. Same-account `1 Network + N Headless` lifecycle is core-owned behind Start/Stop/State; `BotManager` retains only records and AI.
 - Upstream licenses (GPL-2.0 for MaNGOS/CMaNGOS/Shyalya, GPL-2.0 for `mod-playerbots`) are preserved; headers retain original copyright/license and this file records donor SHAs/source files before migration copies were deleted. No `AzerothCore` `PlayerbotMgr`/`BotSession` ownership model is reintroduced.
 - The broad donor tree is now wired into the active CMake source set: real `PlayerbotAI`/`AiFactory`, generic behavior, all nine Vanilla class folders, Value/Trigger/Action families, Travel, grouping, loot, quests, dungeon/raid and PvP families are compiled as one coherent batch rather than left dead in-tree. `MANGOSBOT_ZERO` filters expansion-only folders. Fresh runtime probes now cover the packet bridge and Warrior/Mage/Priest/Hunter class attachment/group journeys.
 | Follow (dead-zone 1.5y, MoveFollow behind M_PI, public native target/moving-state restart guard, CanFollow guards) | `cmangos/playerbots` + `mangoszero/server` | `cmangos-playerbots@076045e` / `mangoszero-server@1817ae1` | `cmangos: playerbot/strategy/actions/FollowActions.cpp:36-90`; `mangoszero: src/modules/Bots/playerbot/strategy/actions/MovementActions.cpp:440-560`; local `ServerFacade.cpp` adapter over core `MotionMaster::GetCurrent()` | The real PlayerbotAI path uses `FollowMasterStrategy`/`FollowAction`; the Tortoise adapter reads the public native targeted-generator target and moving state instead of pretending core's private angle/offset fields are available. `BotController` retains only an intent/diagnostic record and is never a gameplay fallback after AI attachment | Keep 1.5y jitter-free follow without a second movement owner or re-entrant generator replacement | Cached ON/static build; preserved AI-enabled runtime packet journey exercised `follow chat shortcut`, group invite/accept, and cleanup without a movement-state crash |
@@ -602,3 +603,79 @@ Local validation:
   ScriptMgr registry tables and retained two `npc_teslinah` rows.
 - Startup no longer reports `0` or `npc_teslinah`; the remaining 17 warnings
   are recorded as unverified content gaps in `PLAYERBOTS_AUDIT.md`.
+
+## Penqle #411/#416 compatibility and stack checkpoint — 2026-08-26
+
+Feature: align the complete optional TortoiseBots stack with the Penqle
+Headless/session surface from #411 and the generic character/LFT/BG surface
+from #416, without adding PlayerBots concepts to core.
+
+Source repositories and commits: Penqle/tortoise-wow #411
+`c37e28b632dee3c73896240c1b399fdbb7c35ef8`; generic core PR #416
+`5261e5317c3115aa8a0b61d8eb9d85a79766be95`; TortoiseBots stack heads #37
+`c2893d3cb3b561988cbc163009d58b91194ac5f9` through #42
+`2abd4f7eea50c740597681b32b5af9bdab58e427`.
+
+Source files: module-local `ai/playerbot/*`, `runtime/*`, `host/*`,
+`commands/*`, and feature configuration/documentation. Core #416 adds only
+bot-neutral public lifecycle/snapshot interfaces and a generic
+`Player::GetHomeBindLocation()` getter over existing character state.
+
+Copied / ported / independently reimplemented: donor API calls were replaced
+with the target core's public APIs (native distances, loot/mail, gossip,
+trainer, transport/spline, battleground, and packet handlers). Missing
+behavior was fail-closed or routed through existing module facades; no private
+BG/LFT/AH state, fake queue fallback, raw character SQL, or PlayerBots-aware
+core coupling was added. The BG service now consumes #416's copy-only demand
+snapshot and queues only for observed human demand.
+
+Reason: preserve module ownership and core optionality while making the broad
+Vanilla/Turtle donor behavior compile against the actual Penqle API shape.
+
+Local validation: `git diff --check`, Turtle surface audit, parent-diff audits,
+GitHub `CLEAN/MERGEABLE` audit for #37–#42, and cached integrated module target
+passed. Full native ON/static `mangosd` linked with `BUILD_PLAYERBOTS=OFF`,
+`BUILD_LEGACY_PLAYERBOTS=OFF`, `MODULES=static`,
+`MODULE_TORTOISEBOTS=static`; complementary `MODULE_TORTOISEBOTS=OFF`
+mangosd also linked. The installed ON binary accepted `--version`. No live
+server/gameplay smoke test was run; this remains pre-merge evidence until the
+actual Penqle #411/#416 commits are merged and rebuilt.
+
+## Cleaned merge candidate — 2026-08-29
+
+Feature: remove the accidental PR #43 dependency and migrate the complete
+module stack to the manager-owned Headless lifecycle.
+
+Source repositories and commits:
+
+- Penqle/tortoise-wow PR #411 candidate `f62cd95b63439ebdc7915053016ffa2753f98121`
+  (rebased on upstream `main` `05912a49f7cd8f12afff04b3c37e6f852f981268`).
+- Penqle/tortoise-wow PR #416 candidate
+  `5368fda0d884b4ff91960772ebf8e3f65f991850`, based on the cleaned #411
+  candidate.
+- TortoiseBots tested code `c9643eb14eed09c21aea087950ffef5460f239b0`;
+  subsequent changes in this branch are documentation-only.
+
+The final module branch was reconstructed from the PR #42 tip. PR #43's
+pullback/summon implementation is not present. The module now calls only the
+generic core `StartHeadlessSession` / `StopHeadlessSession` /
+`GetHeadlessSessionState` façade; it does not construct, dispatch, promote,
+log out, or delete Headless `WorldSession` objects.
+
+Local validation:
+
+- `git diff --check` passed for the cleaned core and module candidates.
+- `tools/verify_turtle_surface.sh` passed.
+- Docker native static build passed with `BUILD_PLAYERBOTS=OFF`,
+  `MODULES=static`, and `MODULE_TORTOISEBOTS=static`, reaching
+  `[100%] Built target mangosd`.
+- Complementary module-disabled build passed with `BUILD_PLAYERBOTS=OFF`,
+  `MODULES=disabled`, and `MODULE_TORTOISEBOTS=disabled`, reaching
+  `[100%] Built target mangosd`.
+- The enabled image loaded `TortoiseBots (AI enabled)` and reached
+  `World server is up and running!` without fatal startup errors.
+- The temporary runtime stack was stopped without resetting or removing
+  database volumes.
+
+No real-client login, reconnect/reclaim, stale-callback adversarial probe, or
+live LFT/BG/AH gameplay acceptance is claimed by this checkpoint.

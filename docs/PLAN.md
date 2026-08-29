@@ -29,11 +29,16 @@ See `AGENTS.md` §Architecture invariants for the 5 rules (optional module, no `
 ## 4. Implemented architecture (summary)
 
 * **Session invariant:** `one account → at most one Network (account-keyed) + N Headless (GUID-keyed)`, World-owned, human reclaim wins. See `HOST_API.md` §3–4.
+* **Headless lifecycle seam:** callers use only `World::StartHeadlessSession(accountId, characterGuid, locale, tag)`, `StopHeadlessSession(characterGuid, save)`, and `GetHeadlessSessionState(characterGuid)`; allocation, validation, async dispatch, callback identity, update, reclaim, deletion, and shutdown remain core-owned.
+* **Account state:** Headless sessions update character online state while never writing `LoginDatabase` account `online`/`current_realm`; Network authentication and logout retain the normal account-state path.
 * **Module boundary:** `modules/TortoiseBots/` — `TortoiseBotsModule.cpp` is the only loader file, `TortoiseBots.cmake` lists the real graph; host in `host/Bot*Adapter` (`Host/Session/Player/Chat/Packet`).
 * **Runtime:** `PlayerbotAI` + `Engine/Strategy/Trigger/Action/Value`, 9 Vanilla classes (Warrior–Druid), `PlayerbotAIAdapter` owns AI.
 * **Packet bridge:** `BotPacketAdapter` — Headless outgoing → `HandleBotOutgoingPacket`, master outgoing/incoming → `HandleMaster*`.
 * **Commands:** `.bot add/remove/follow/invite/uninvite/stay/list/stats/command/help` (`.bot command` → `PlayerbotAI::HandleCommand`), account/GM-gated.
-* **Random bots:** `RandomBotService`, bounded, discovers existing `RNDBOT*` characters only.
+* **Random bots:** `RandomBotService`, bounded, discovers existing `RNDBOT*` characters; with `AiPlayerbot.RandomBotAutoCreate=1` (default `0`, one per `RandomBotUpdateInterval`, world-thread `CharacterCreation`, no raw SQL/DB worker) it also creates the deficit toward `MinRandomBots`/`MaxRandomBots` via `AccountMgr::CreateAccount` (random password, hashed) and generic `CharacterCreation::CreateCharacter` (core PR #416). LoginDatabase async INSERT (AllowAsyncTransactions, separate from core PR #416) is handled via pending-name retry (one pending, bounded/log-throttled retry while continuing existing-account creation, no orphan accounts); transient name collisions include `CHAR_NAME_PROFANE` and dynamic `CHAR_CREATE_DISABLED`/`PVP_TEAMS_VIOLATION` (faction balance) use 60s backoff, not permanent poisoning.
+* **LFT fill:** `LftBotFillService` is default-off and bounded; it uses the generic core LFT participant/offer APIs, fills human-waiting role deficits with live Headless random bots, auto-accepts only module-owned machine offers, and leaves queue/group ownership in core.
+* **Auction market:** `AhMarketService` is default-off and bounded; it uses real bot inventory, validated auctioneer positions, native auction transactions, and no donor market thread or direct auction writes.
+* **BG auto-queue:** `BattlegroundQueueService` is default-off and bounded for WSG/AB/AV, consumes the generic #416 queued-participant snapshot so it fills only observed human demand, uses native queue ownership, validates brackets/state, forces AV solo, tracks service-owned queue pairs, and reconciles master reclaim.
 
 Details: `HOST_API.md`.
 
@@ -58,9 +63,10 @@ Freeze: no more broad donor cleanup.
 ### 6.2 Known-good pair
 
 ```text
-TortoiseBots: 07cf7976c546fac27083c7b46e73299c25b095f3
-Core:         7353989c94399f80572a2f8ec2eb73c63a6c79f8
-```text
+TortoiseBots: c9643eb
+Core #411:   f62cd95
+Core #416:   5368fda (rebased on cleaned Core #411)
+```
 
 ## 7. Manual gameplay phase
 
@@ -70,11 +76,11 @@ Core:         7353989c94399f80572a2f8ec2eb73c63a6c79f8
 
 First roles: Warrior tank, Priest healer, Mage/Rogue/Hunter DPS. Expand from failures.
 
-Then Turtle-specific: Goblin/High Elf, class/talent changes, custom portals, collection mounts.
+Then Turtle-specific: Goblin/High Elf, class/talent changes, collection mounts.
 
 ## 8. Later roadmap
 
-After 5-player is reliable: all classes/specs, more Turtle strategies, BGs, random account creation, AH/economy, addon UI, perf for larger pops, optional async LLM. Don't scale to 1000s before small party works.
+After 5-player is reliable: all classes/specs, more Turtle strategies, broader BG/AH/random-population tuning, addon UI, perf for larger pops, optional async LLM. The bounded default-off LFT fill, AH market, BG auto-queue, and RNDBOT auto-create slices are implemented now; don't scale to 1000s before the small party works.
 
 ## 9. Performance, security, provenance
 

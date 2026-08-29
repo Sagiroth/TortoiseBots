@@ -74,7 +74,7 @@ CreatureDataPair const* BgMasterValue::NearestBm(bool allowDead)
         if (!bmTemplate)
             continue;
 
-        FactionTemplateEntry const* bmFactionEntry = sFactionTemplateStore.LookupEntry(bmTemplate->Faction);
+        FactionTemplateEntry const* bmFactionEntry = sFactionTemplateStore.LookupEntry(bmTemplate->faction);
 
         //Is the unit hostile?
         if (ai->getReaction(bmFactionEntry) < REP_NEUTRAL)
@@ -86,9 +86,9 @@ CreatureDataPair const* BgMasterValue::NearestBm(bool allowDead)
             continue;
 
         //Is the area hostile?
-        if (area->team == 4 && bot->GetTeam() == ALLIANCE)
+        if (area->Team == 4 && bot->GetTeam() == ALLIANCE)
             continue;
-        if (area->team == 2 && bot->GetTeam() == HORDE)
+        if (area->Team == 2 && bot->GetTeam() == HORDE)
             continue;
 
         if (!allowDead)
@@ -168,11 +168,11 @@ Unit* FlagCarrierValue::Calculate()
             if (!bg)
                 return nullptr;
 
-            if ((!sameTeam && bot->GetTeam() == HORDE || (sameTeam && bot->GetTeam() == ALLIANCE)) && !bg->GetFlagCarrierGuid(TEAM_INDEX_HORDE).IsEmpty())
-                carrier = bg->GetBgMap()->GetPlayer(bg->GetFlagCarrierGuid(TEAM_INDEX_HORDE));
+            if ((!sameTeam && bot->GetTeam() == HORDE || (sameTeam && bot->GetTeam() == ALLIANCE)) && !bg->GetHordeFlagPickerGuid().IsEmpty())
+                carrier = bg->GetBgMap()->GetPlayer(bg->GetHordeFlagPickerGuid());
 
-            if ((!sameTeam && bot->GetTeam() == ALLIANCE || (sameTeam && bot->GetTeam() == HORDE)) && !bg->GetFlagCarrierGuid(TEAM_INDEX_ALLIANCE).IsEmpty())
-                carrier = bg->GetBgMap()->GetPlayer(bg->GetFlagCarrierGuid(TEAM_INDEX_ALLIANCE));
+            if ((!sameTeam && bot->GetTeam() == ALLIANCE || (sameTeam && bot->GetTeam() == HORDE)) && !bg->GetAllianceFlagPickerGuid().IsEmpty())
+                carrier = bg->GetBgMap()->GetPlayer(bg->GetAllianceFlagPickerGuid());
 
             if (carrier)
             {

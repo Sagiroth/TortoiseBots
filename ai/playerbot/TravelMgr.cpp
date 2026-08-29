@@ -266,7 +266,7 @@ bool QuestObjectiveTravelDestination::IsPossible(const PlayerTravelInfo& info) c
 
         if (!skipKillableCheck && !forceThisQuest)
         {
-            if (cInfo && (int)cInfo->MaxLevel - (int)info.GetLevel() > 4)
+            if (cInfo && (int)cInfo->level_max - (int)info.GetLevel() > 4)
                 return false;
 
             //Do not try to hand-in dungeon/elite quests in instances without a group.
@@ -490,10 +490,10 @@ std::string RpgTravelDestination::GetTitle() const
 
 AreaTableEntry const* ZoneTravelDestination::GetArea() const
 {
-    for (uint32 areaid = 0; areaid <= sAreaStore.GetNumRows(); ++areaid)
+    for (uint32 areaid = 0; areaid < sAreaStore.GetMaxEntry(); ++areaid)
     {
         AreaTableEntry const* areaEntry = sAreaStore.LookupEntry<AreaEntry>(areaid);
-        if (areaEntry && areaEntry->ID == GetEntry())
+        if (areaEntry && areaEntry->Id == GetEntry())
         {
             return areaEntry;
         }
@@ -519,11 +519,11 @@ bool ExploreTravelDestination::IsActive(Player* bot, const PlayerTravelInfo& inf
 
     AreaTableEntry const* area = GetArea();
 
-    if (area->exploreFlag == 0xffff)
+    if (area->ExploreFlag == 0xffff)
         return false;
-    int offset = area->exploreFlag / 32;
+    int offset = area->ExploreFlag / 32;
 
-    uint32 val = (uint32)(1 << (area->exploreFlag % 32));
+    uint32 val = (uint32)(1 << (area->ExploreFlag % 32));
     uint32 currFields = bot->GetUInt32Value(PLAYER_EXPLORED_ZONES_1 + offset);
 
     return !(currFields & val);
@@ -545,15 +545,15 @@ bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 
     int32 maxLevel = std::max(botLevel * (0.5f + levelMod), botLevel - 5.0f + levelBoost);
 
-    if ((int32)cInfo->MaxLevel > maxLevel) //@lvl5 max = 3, @lvl60 max = 57
+    if ((int32)cInfo->level_max > maxLevel) //@lvl5 max = 3, @lvl60 max = 57
         return false;
 
     int32 minLevel = std::max(botLevel * (0.4f + levelMod), botLevel - 12.0f + levelBoost);
 
-    if ((int32)cInfo->MaxLevel < minLevel) //@lvl5 min = 3, @lvl60 max = 50
+    if ((int32)cInfo->level_max < minLevel) //@lvl5 min = 3, @lvl60 max = 50
         return false;
 
-    if (cInfo->MinLootGold == 0)
+    if (cInfo->gold_min == 0)
         return false;
 
     if (cInfo->rank > CREATURE_ELITE_NORMAL && !info.GetBoolValue("can fight elite"))
@@ -591,7 +591,7 @@ bool BossTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 
     CreatureInfo const* cInfo = sObjectMgr.GetCreatureTemplate(GetEntry());
 
-    if ((int32)cInfo->MaxLevel > info.GetLevel() + 3)
+    if ((int32)cInfo->level_max > info.GetLevel() + 3)
         return false;
 
     const MapEntry* mapEntry = ClosetMapEntry(info.getPosition());
@@ -687,8 +687,8 @@ bool GatherTravelDestination::IsPossible(const PlayerTravelInfo& info) const
         if (!cInfo)
             return false;
 
-        skillId = cInfo->GetRequiredLootSkill();
-        uint32 targetLevel = cInfo->MaxLevel;
+        skillId = GetRequiredLootSkillCompat(cInfo);
+        uint32 targetLevel = cInfo->level_max;
         reqSkillValue = targetLevel < 10 ? 1 : targetLevel < 20 ? (targetLevel - 10) * 10 : targetLevel * 5;
     }
     else
@@ -1053,14 +1053,14 @@ int32 TravelMgr::GetAreaLevel(uint32 area_id)
     uint32 cnt = 0;
 
     //Get sub-area's
-    for (uint32 i = 0; i <= sAreaStore.GetNumRows(); i++)
+    for (uint32 i = 0; i < sAreaStore.GetMaxEntry(); i++)
     {
         AreaTableEntry const* subArea = GetAreaEntryByAreaID(i);
 
-        if (!subArea || subArea->zone != area->ID)
+        if (!subArea || subArea->ZoneId != area->Id)
             continue;
 
-        int32 subLevel = GetAreaLevel(subArea->ID);
+        int32 subLevel = GetAreaLevel(subArea->Id);
 
         if (!subLevel)
             continue;
@@ -1091,14 +1091,14 @@ int32 TravelMgr::GetAreaLevel(uint32 area_id)
         if (!cInfo)
             continue;
 
-        FactionTemplateEntry const* factionEntry = sFactionTemplateStore.LookupEntry(cInfo->Faction);
+        FactionTemplateEntry const* factionEntry = sFactionTemplateStore.LookupEntry(cInfo->faction);
         ReputationRank reactionHum = PlayerbotAI::GetFactionReaction(humanFaction, factionEntry);
         ReputationRank reactionOrc = PlayerbotAI::GetFactionReaction(orcFaction, factionEntry);
 
         if (reactionHum > REP_NEUTRAL || reactionOrc > REP_NEUTRAL)
             continue;
 
-        level += cInfo->MaxLevel;
+        level += cInfo->level_max;
         cnt++;
     }
 
@@ -1109,10 +1109,10 @@ int32 TravelMgr::GetAreaLevel(uint32 area_id)
     }
 
     //Use parent zone value.
-    if (area->zone)
+    if (area->ZoneId)
     {
         areaLevels[area_id] = 0; //Set a temporary value so it wont be counted.
-        level = GetAreaLevel(area->zone);
+        level = GetAreaLevel(area->ZoneId);
         areaLevels[area_id] = level;
         return areaLevels[area_id];
     }
@@ -1120,6 +1120,43 @@ int32 TravelMgr::GetAreaLevel(uint32 area_id)
     areaLevels[area_id] = -1;
 
     return areaLevels[area_id];
+}
+
+bool TravelMgr::TryGetValidatedAreaLevel(uint32 areaId, int32& outLevel) const
+{
+    auto it = areaLevels.find(areaId);
+    if (it != areaLevels.end() && it->second > 0)
+    {
+        outLevel = it->second;
+        return true;
+    }
+    AreaTableEntry const* area = GetAreaEntryByAreaID(areaId);
+    if (!area)
+        return false;
+    if (area->ZoneId)
+    {
+        auto pit = areaLevels.find(area->ZoneId);
+        if (pit != areaLevels.end() && pit->second > 0)
+        {
+            outLevel = pit->second;
+            return true;
+        }
+    }
+    if (area->AreaLevel > 0)
+    {
+        outLevel = area->AreaLevel;
+        return true;
+    }
+    if (area->ZoneId)
+    {
+        if (AreaTableEntry const* parent = GetAreaEntryByAreaID(area->ZoneId))
+            if (parent->AreaLevel > 0)
+            {
+                outLevel = parent->AreaLevel;
+                return true;
+            }
+    }
+    return false;
 }
 
 void TravelMgr::LoadAreaLevels()
@@ -1131,6 +1168,10 @@ void TravelMgr::LoadAreaLevels()
     // during world startup: a missing migration must be visible, and an empty
     // cache should fall back to the in-memory area-level calculation instead of
     // issuing one INSERT per DBC area on the world thread.
+    // Login scatter uses TryGetValidatedAreaLevel which adds a bounded DBC
+    // AreaTable AreaLevel / parent fallback, so an empty ai_playerbot_zone_level
+    // on a stock install does not make EnableRandomTeleports permanently no-op
+    // while still avoiding creature scans and DB writes.
     if (!WorldDatabase.PQuery("SHOW TABLES LIKE 'ai_playerbot_zone_level'"))
     {
         sLog.outErrorDb("TortoiseBots: ai_playerbot_zone_level is missing; using uncached area levels");
@@ -1296,14 +1337,14 @@ void TravelMgr::LoadQuestTravelTable()
         if (!area)
             continue;
 
-        if (!area->exploreFlag)
+        if (!area->ExploreFlag)
             continue;
 
         point.FetchArea();
 
         pointsMap.insert_or_assign(point.GetRawValue(), point);
 
-        loc = AddDestination<ExploreTravelDestination>(area->ID, TravelDestinationPurpose::Explore);
+        loc = AddDestination<ExploreTravelDestination>(area->Id, TravelDestinationPurpose::Explore);
         loc->AddPoint(&pointsMap.at(point.GetRawValue()));
     }
 
@@ -1371,7 +1412,7 @@ void TravelMgr::LoadQuestTravelTable()
             if (!cInfo)
                 continue;
 
-            WorldPosition point = WorldPosition(cData.position.mapId, cData.position.x, cData.position.y, cData.position.z, cData.position.orientation);
+            WorldPosition point = WorldPosition(cData.position.mapId, cData.position.x, cData.position.y, cData.position.z, cData.position.o);
 
             std::string name = cInfo->name;
             name.erase(remove(name.begin(), name.end(), ','), name.end());
@@ -1380,9 +1421,9 @@ void TravelMgr::LoadQuestTravelTable()
             std::ostringstream out;
             out << name << ",";
             point.printWKT(out);
-            out << cInfo->MaxLevel << ",";
+            out << cInfo->level_max << ",";
             out << cInfo->rank << ",";
-            out << cInfo->Faction << ",";
+            out << cInfo->faction << ",";
             out << cInfo->npc_flags << ",";
             out << point.GetAreaName() << ",";
             out << std::fixed;
@@ -1843,7 +1884,7 @@ void TravelMgr::LoadQuestTravelTable()
             if (!data)
                 continue;
 
-            WorldPosition point = WorldPosition(gData.position.mapId, gData.position.x, gData.position.y, gData.position.z, gData.position.orientation);
+            WorldPosition point = WorldPosition(gData.position.mapId, gData.position.x, gData.position.y, gData.position.z, gData.position.o);
 
             std::string name = data->name;
             name.erase(remove(name.begin(), name.end(), ','), name.end());
@@ -1973,7 +2014,7 @@ void TravelMgr::GetPopulatedGrids()
         if (!sMapStore.LookupEntry(i))
             continue;
 
-        uint32 mapId = sMapStore.LookupEntry(i)->MapID;
+        uint32 mapId = sMapStore.LookupEntry(i)->id;
 
         GetPopulatedGrids(mapId);
     }

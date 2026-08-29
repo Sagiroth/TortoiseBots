@@ -21,11 +21,11 @@ trainableSpellMap* TrainableSpellMapValue::Calculate()
         if (!creatureInfo)
             continue;
 
-        if (!creatureInfo->TrainerType && !creatureInfo->TrainerClass)
+        if (!creatureInfo->trainer_type && !creatureInfo->trainer_class)
             continue;
 
-        if(creatureInfo->TrainerTemplateId)
-            trainerTemplateIds[creatureInfo->TrainerTemplateId].push_back(creatureInfo);
+        if(creatureInfo->trainer_id)
+            trainerTemplateIds[creatureInfo->trainer_id].push_back(creatureInfo);
         else
             trainerTemplateIds[id].push_back(creatureInfo);
     }
@@ -41,13 +41,13 @@ trainableSpellMap* TrainableSpellMapValue::Calculate()
 
         CreatureInfo const* firstTrainer = trainers.front();
 
-        TrainerType trainerType = (TrainerType)firstTrainer->TrainerType;
+        TrainerType trainerType = (TrainerType)firstTrainer->trainer_type;
 
-        uint32 spellRequirement;
+        uint32 spellRequirement = 0;
         if (trainerType == TRAINER_TYPE_CLASS || trainerType == TRAINER_TYPE_PETS)
-            spellRequirement = firstTrainer->TrainerClass;
+            spellRequirement = firstTrainer->trainer_class;
         else if (trainerType == TRAINER_TYPE_MOUNTS)
-            spellRequirement = firstTrainer->TrainerRace;
+            spellRequirement = firstTrainer->trainer_race;
 
         for (auto& [id, trainerSpell] : trainer_spells->spellList)
         {
@@ -69,12 +69,6 @@ trainableSpellMap* TrainableSpellMapValue::Calculate()
                 if (otherTrainerSpell->reqLevel != trainerSpell.reqLevel)
                     continue;
 
-                if (otherTrainerSpell->learnedSpell != trainerSpell.learnedSpell)
-                    continue;
-
-                if (otherTrainerSpell->conditionId != trainerSpell.conditionId)
-                    continue;
-
                 sameTrainerSpell = otherTrainerSpell;
                 break;
             }
@@ -86,14 +80,14 @@ trainableSpellMap* TrainableSpellMapValue::Calculate()
                 else
                 {
                     // exist, already checked at loading
-                    SpellEntry const* spell = sSpellTemplate.LookupEntry<SpellEntry>(trainerSpell.learnedSpell);
+                    SpellEntry const* spell = sSpellTemplate.LookupEntry<SpellEntry>(trainerSpell.spell);
 
                     spellRequirement = spell->EffectMiscValue[1];
                 }
             }
 
             for (auto& trainer : trainers)
-                (*spellMap)[trainerType][spellRequirement][sameTrainerSpell].push_back(trainer->Entry);
+                (*spellMap)[trainerType][spellRequirement][sameTrainerSpell].push_back(trainer->entry);
         }
     }
 
@@ -122,15 +116,12 @@ std::vector<TrainerSpell const*> TrainableSpellsValue::Calculate()
 
             for (auto& [trainerSpell, trainers] : trainerSpellList)
             {
-                uint32 reqLevel = 0;
-
-                reqLevel = trainerSpell->isProvidedReqLevel ? trainerSpell->reqLevel : std::max(reqLevel, trainerSpell->reqLevel);
-                TrainerSpellState state = bot->GetTrainerSpellState(trainerSpell, reqLevel);
+                TrainerSpellState state = bot->GetTrainerSpellState(trainerSpell);
                 if (state != TRAINER_SPELL_GREEN)
                     continue;
 
                 //Skip initial profession training.
-                if (bot->GetLevel() < 10 && sSpellMgr.IsProfessionSpell(trainerSpell->learnedSpell) && sSpellMgr.GetSpellRank(trainerSpell->learnedSpell) == 1)
+                if (bot->GetLevel() < 10 && sSpellMgr.IsProfessionSpell(trainerSpell->spell) && sSpellMgr.GetSpellRank(trainerSpell->spell) == 1)
                     continue;
 
                 trainableSpells.push_back(trainerSpell);

@@ -2,6 +2,7 @@
 #include "BotCommands.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../runtime/BotManager.h"
+#include "../host/BotSessionAdapter.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../runtime/PlayerbotAIStorage.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -23,6 +24,16 @@
 #include "Log.h"
 #include <cstring>
 #include <string>
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Group/Group.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Maps/Map.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Objects/Unit.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Objects/Creature.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "../ai/playerbot/strategy/generic/PullStrategy.h"
 // Lens fallback stubs — core headers absent in static analysis. Real build uses
 // the mangosd headers via -I src/game. Guards use the same macros as the
 // real headers so the stubs are never active in a real build.
@@ -70,7 +81,7 @@ public:
     Player* GetPlayer() const { return nullptr; }
     int GetSecurity() const { return 0; }
     uint32 GetAccountId() const { return 0; }
-    bool IsHeadless() const { return false; }
+    bool HasNetworkTransport() const { return false; }
     void HandleGroupInviteOpcode(WorldPacket&) {}
     void HandleGroupUninviteOpcode(WorldPacket&) {}
 };
@@ -104,6 +115,11 @@ static bool CanControl(Player* requester, BotRecord const* record)
     return requester->GetSession()->GetSecurity() >= SEC_GAMEMASTER ||
         record->accountId == requester->GetSession()->GetAccountId();
 }
+static bool IsLiveHeadlessState(ObjectGuid guid)
+{
+    HeadlessSessionState state = BotSessionAdapter::GetHeadlessSessionState(guid);
+    return state == HeadlessSessionState::Active || state == HeadlessSessionState::Loading;
+}
 
 static bool ResolveOwnedBot(ChatHandler* handler, char const* args, Player*& bot, BotRecord*& record, std::string& name)
 {
@@ -123,8 +139,8 @@ static bool ResolveOwnedBot(ChatHandler* handler, char const* args, Player*& bot
     if (!CanControl(Requester(handler), record))
         return false;
 
-    return bot->GetSession() && bot->GetSession()->IsHeadless() &&
-        BotManager::Instance().IsBot(bot->GetObjectGuid());
+    return BotManager::Instance().IsBot(bot->GetObjectGuid()) &&
+        IsLiveHeadlessState(bot->GetObjectGuid());
 }
 
 static bool HandleList(ChatHandler* handler)
@@ -363,8 +379,8 @@ static bool HandleAdd(ChatHandler* handler, char const* args)
         return true;
     }
 
-    ::WorldSession* sess = BotManager::Instance().AddBotWithMaster(accountId, guid, masterGuid);
-    if (sess)
+    bool ok = BotManager::Instance().AddBotWithMaster(accountId, guid, masterGuid);
+    if (ok)
         handler->PSendSysMessage("Bot %s queued for login; it will follow %s after entering the world.",
             name.c_str(), requester->GetName());
     else
@@ -416,7 +432,7 @@ static bool HandleRemove(ChatHandler* handler, char const* args)
         return true;
     }
     if (BotManager::Instance().RemoveBot(guid, true))
-        handler->PSendSysMessage("Removal requested for bot %s; Headless cleanup completes asynchronously.", name.c_str());
+        handler->PSendSysMessage("Bot %s removal requested; core cleanup completes at NotFound.", name.c_str());
     else
         handler->PSendSysMessage("Bot %s not found or not removable.", name.c_str());
     return true;
@@ -467,6 +483,7 @@ static bool HandleFollow(ChatHandler* handler, char const* args)
         handler->PSendSysMessage("Bot %s could not enter follow mode; no success is reported.", name.c_str());
     return true;
 }
+
 
 // pi-lens-ignore: clang:incomplete_member_access,clang:unknown_typename
 bool HandleChatCommand(ChatHandler* handler, char const* args)

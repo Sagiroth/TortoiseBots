@@ -54,7 +54,6 @@ SpellCastResult BotUseItemSpell::ForceSpellStart(SpellCastTargets const* targets
     {
         failed = false;
         m_IsTriggeredSpell = true;
-        m_ignoreCastTime = true;
     }
 
     if (result == SPELL_FAILED_REAGENTS && itemCheats)
@@ -111,7 +110,7 @@ bool BotUseItemSpell::OpenLockCheck()
                         return false;
 
                     // check if its in use only when cast is finished (called from spell::cast() with strict = false)
-                    if (go->IsInUse())
+                    if (go->getLootState() == GO_ACTIVATED)
                         return false;
 
                     if (go->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_IN_USE))
@@ -147,7 +146,10 @@ bool BotUseItemSpell::OpenLockCheck()
 
                 // check lock compatibility
                 SpellEffectIndex effIdx = SpellEffectIndex(i);
-                SpellCastResult res = CanOpenLock(effIdx, lockId, m_effectSkillInfo[effIdx].skillId, m_effectSkillInfo[effIdx].reqSkillValue, m_effectSkillInfo[effIdx].skillValue);
+                SkillType skillId = SKILL_NONE;
+                int32 reqSkillValue = 0;
+                int32 skillValue = 0;
+                SpellCastResult res = CanOpenLock(effIdx, lockId, skillId, reqSkillValue, skillValue);
                 if (res == SPELL_FAILED_BAD_TARGETS)
                     return true;
             }
@@ -259,7 +261,7 @@ bool UseAction::Execute(Event& event)
             GameObject* go = ai->GetGameObject(goGUID);
             if (go)
             {
-                const float distance = bot->getDistance(go);
+                const float distance = bot->GetDistance(go);
                 if (distance < closest)
                 {
                     targetGameObject = go;
@@ -303,7 +305,7 @@ bool UseAction::Execute(Event& event)
             itemID = items[0];
             if (items.size() > 1)
             {
-                targetItem = bot->GetItemByEntry(items[1]);
+                targetItem = FindItemByEntryCompat(bot, items[1]);
             }
         }
 
@@ -320,7 +322,7 @@ bool UseAction::Execute(Event& event)
             GameObject* go = ai->GetGameObject(goGUID);
             if (go && std::string(go->GetName()).find(useName))
             {
-                const float distance = bot->getDistance(go);
+                const float distance = bot->GetDistance(go);
                 if (distance < closest)
                 {
                     targetGameObject = go;
@@ -639,15 +641,11 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
 
             // Use triggered flag only for items with many spell casts and for not first cast
             BotUseItemSpell* spell = new BotUseItemSpell(bot, spellInfo, (successCasts > 0) ? TRIGGERED_OLD_TRIGGERED : TRIGGERED_NONE);
-            spell->m_clientCast = true;
-
-
             // Spend the item if used in the spell
             if (itemUsed)
             {
                 spell->SetCastItem(itemUsed);
-                itemUsed->SetUsedInSpell(true);
-            }
+                    }
 
             // Stop the movement for casted items
             const bool isCastedSpell = spell->GetCastedTime() > 0 || IsChanneledSpell(spellInfo);
@@ -671,8 +669,8 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
                 {
                     if (!HasItemCooldown(itemId))
                     {
-                        bot->RemoveSpellCooldown(*spellInfo, false);
-                        bot->AddCooldown(*spellInfo, proto, false);
+                        bot->RemoveSpellCooldown(spellInfo->Id, false);
+                        bot->AddSpellAndCategoryCooldowns(spellInfo, proto->ItemId);
                     }
                 }
 
@@ -766,14 +764,14 @@ bool UseAction::UseGameObject(Player* requester, Event& event, GameObject* gameO
     }
 
     ObjectGuid guid = gameObject->getObjectGuid();
-    if (!sServerFacade.isSpawned(gameObject) || gameObject->IsInUse() || gameObject->GetGoState() != GO_STATE_READY)
+    if (!sServerFacade.isSpawned(gameObject) || gameObject->getLootState() == GO_ACTIVATED || gameObject->GetGoState() != GO_STATE_READY)
     {
         std::ostringstream out; out << "I can't use " << chat->formatGameobject(gameObject);
         ai->TellPlayerNoFacing(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
         return false;
     }
 
-    if (bot->getDistance(gameObject) > INTERACTION_DISTANCE)
+    if (bot->GetDistance(gameObject) > INTERACTION_DISTANCE)
     {
         std::ostringstream out; out << "I'm too far away from " << chat->formatGameobject(gameObject);
         ai->TellPlayerNoFacing(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);

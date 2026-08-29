@@ -175,7 +175,7 @@ bool FleeToMasterAction::isUseful()
 
     Unit* target = AI_VALUE(Unit*, "current target");
 
-    if (target && ai->GetGroupMaster()->HasTarget(target->getObjectGuid()))
+    if (target && ai->GetGroupMaster()->GetTargetGuid() == target->getObjectGuid())
         return false;
 
     if (!(ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||

@@ -481,14 +481,6 @@ bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
     if (!enemyPlayer)
     {
         bool isDummy = false;
-
-
-        if (WorldPosition(playerToCheckAgainst).isOverworld() && target->AI() && target->AI()->IsPreventingDeath())
-        {
-
-            isDummy = true;
-        }
-
         uint32 entry = target->GetEntry();
 
 #define TRAINING_DUMMY_NPC_ENTRY1 190013
@@ -551,7 +543,7 @@ std::list<ObjectGuid> AttackersTargetingMeValue::Calculate()
     for (const ObjectGuid& attackerGuid : attackers)
     {
         Unit* attacker = ai->GetUnit(attackerGuid);
-        if (attacker && (attacker->GetTarget() == bot || attacker->GetVictim() == bot))
+        if (attacker && (attacker->GetVictim() == bot || attacker->GetVictim() == bot))
         {
             result.push_back(attackerGuid);
         }

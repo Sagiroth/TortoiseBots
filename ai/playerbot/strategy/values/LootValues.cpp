@@ -47,7 +47,6 @@ uint32 LootAccess::GetLootStatusFor(Player const* player) const
 
 	WorldObject const* lootTarget = loot->GetLootTarget();
 	Group* group = const_cast<Player*>(player)->GetGroup();
-	ObjectGuid lootGuid = lootTarget ? lootTarget->GetObjectGuid() : ObjectGuid();
 	for (uint32 slot = 0; slot < loot->items.size(); ++slot)
 	{
 		LootItem const& lootItem = loot->items[slot];
@@ -63,14 +62,10 @@ uint32 LootAccess::GetLootStatusFor(Player const* player) const
 
 		status |= LOOT_STATUS_NOT_FULLY_LOOTED;
 
-		if (lootItem.freeForAll())
+		if (lootItem.freeforall)
 			status |= LOOT_STATUS_CONTAIN_FFA;
 
-		// The core exposes active rolls through Group::GetActiveRoll rather than
-		// Loot::GetRollForSlot. Keep an active roll explicitly unfinished even
-		// when another core path has already toggled the item blocked bit.
-		if (group && lootGuid && group->GetActiveRoll(lootGuid, slot))
-			status |= LOOT_STATUS_NOT_FULLY_LOOTED;
+		// The status above already marks blocked and rolling items unfinished.
 	}
 	return status;
 }
@@ -110,11 +105,11 @@ LootTemplateAccess const* DropMapValue::GetLootTemplate(ObjectGuid guid, LootTyp
 		if (info)
 		{
 			if (type == LOOT_CORPSE)
-				lTemplate = LootTemplates_Creature.GetLootFor(info->LootId);
-			else if (type == LOOT_PICKPOCKETING && info->PickpocketLootId)
-				lTemplate = LootTemplates_Pickpocketing.GetLootFor(info->PickpocketLootId);
-			else if (type == LOOT_SKINNING && info->SkinningLootId)
-				lTemplate = LootTemplates_Skinning.GetLootFor(info->SkinningLootId);
+				lTemplate = LootTemplates_Creature.GetLootFor(info->loot_id);
+			else if (type == LOOT_PICKPOCKETING && info->pickpocket_loot_id)
+				lTemplate = LootTemplates_Pickpocketing.GetLootFor(info->pickpocket_loot_id);
+			else if (type == LOOT_SKINNING && info->skinning_loot_id)
+				lTemplate = LootTemplates_Skinning.GetLootFor(info->skinning_loot_id);
 		}
 	}
 	else if (guid.IsGameObject())
@@ -408,10 +403,10 @@ bool ShouldLootObject::Calculate()
 	if (!object)
 		return false;
 
-	// Penqle has m_loot only on Creature/GameObject; check via cast.
+	// Loot is stored directly on Creature/GameObject; check via cast.
 	Loot* objLoot = nullptr;
-	if (object->IsCreature()) objLoot = ((Creature*)object)->m_loot;
-	else if (object->IsGameObject()) objLoot = ((GameObject*)object)->m_loot;
+	if (object->IsCreature()) objLoot = &((Creature*)object)->loot;
+	else if (object->IsGameObject()) objLoot = &((GameObject*)object)->loot;
 	if (!objLoot)
     {
 		if (!object->IsGameObject())
@@ -445,11 +440,10 @@ bool ShouldLootObject::Calculate()
 		return true;
     }
 
-	// Dispatch via cast to access m_loot (lives on Creature/GameObject only).
 	Loot* objLoot2 = nullptr;
-	if (object->IsCreature()) objLoot2 = ((Creature*)object)->m_loot;
-	else if (object->IsGameObject()) objLoot2 = ((GameObject*)object)->m_loot;
-	if (objLoot2 && objLoot2->GetGoldAmount() > 0)
+	if (object->IsCreature()) objLoot2 = &((Creature*)object)->loot;
+	else if (object->IsGameObject()) objLoot2 = &((GameObject*)object)->loot;
+	if (objLoot2 && objLoot2->gold > 0)
 		return true;
 
 	// LootAccess wraps a Loot* now.
@@ -495,11 +489,8 @@ void ActiveRolls::CleanUp(Player* bot, LootRollMap& rollMap, ObjectGuid guid, ui
 			continue;
 		}
 
-		// Ask the group, not the loot object: this core keeps rolls in
-		// Group::RollId and Loot::GetRollForSlot is a stub returning nullptr,
-		// which used to wipe every entry the moment it was added.
-		Group* group = bot->GetGroup();
-		if (!group || !group->GetActiveRoll(roll->first, roll->second))
+		Loot* loot = sLootMgr.GetLoot(bot, roll->first);
+		if (!loot || roll->second >= loot->items.size() || loot->items[roll->second].is_looted)
 		{
 			roll = rollMap.erase(roll);
 			continue;
@@ -533,7 +524,7 @@ std::string ActiveRolls::Format()
 		Loot* loot = sLootMgr.GetLoot(bot, roll.first);
 		if (loot)
 		{
-			LootItem* item = loot->GetLootItemInSlot(roll.second);
+			LootItem* item = roll.second < loot->items.size() ? &loot->items[roll.second] : nullptr;
 
 			if (item)
 			{

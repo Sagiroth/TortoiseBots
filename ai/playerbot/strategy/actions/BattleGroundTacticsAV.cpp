@@ -72,7 +72,7 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
     {
         if (Creature* pDrek = bot->GetMap()->GetCreature(bg->GetSingleCreatureGuid(BG_AV_BOSS_H, 0)))
         {
-            objectiveLocation = WorldLocation(pDrek->GetMapId(), pDrek->getPosition());
+            pDrek->GetPosition(objectiveLocation);
             return true;
         }
     }
@@ -103,7 +103,7 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
             {
                 if (WorldLocation icebloodGarrison; sRandomBotFacade.getNamedLocation("AV_ICEBLOOD_GARRISON_WAITING_ALLIANCE", icebloodGarrison))
                 {
-                    uint32 attackCount = getDefendersCount(Position(icebloodGarrison.x, icebloodGarrison.y, icebloodGarrison.z, icebloodGarrison.orientation), 10.0f, false);
+                    uint32 attackCount = getDefendersCount(Position(icebloodGarrison.x, icebloodGarrison.y, icebloodGarrison.z, icebloodGarrison.o), 10.0f, false);
 
                     // Prepare to attack Captain
                     if (attackCount < 5 && !sServerFacade.IsInCombat(pGalvangar))
@@ -112,7 +112,7 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
                     }
                     else
                     {
-                        objectiveLocation = WorldLocation(pGalvangar->GetMapId(), pGalvangar->getPosition());
+                        pGalvangar->GetPosition(objectiveLocation);
                     }
 
                     return true;
@@ -153,7 +153,7 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
         {
             if (bot->IsWithinDist(neutralMineBoss, VISIBILITY_DISTANCE_LARGE) && neutralMineBoss->GetDeathState() != DEAD && bg->IsActiveEvent(BG_AV_MINE_BOSSES_SOUTH, TEAM_INDEX_NEUTRAL))
             {
-                objectiveLocation = WorldLocation(neutralMineBoss->GetMapId(), neutralMineBoss->getPosition());
+                neutralMineBoss->GetPosition(objectiveLocation);
                 return true;
             }
         }
@@ -162,7 +162,7 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
         {
             if (bot->IsWithinDist(hordeMineBoss, VISIBILITY_DISTANCE_LARGE) && hordeMineBoss->GetDeathState() != DEAD && bg->IsActiveEvent(BG_AV_MINE_BOSSES_SOUTH, TEAM_INDEX_HORDE))
             {
-                objectiveLocation = WorldLocation(hordeMineBoss->GetMapId(), hordeMineBoss->getPosition());
+                hordeMineBoss->GetPosition(objectiveLocation);
                 return true;
             }
         }
@@ -216,7 +216,7 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
     {
         if (Creature* pVanndar = bot->GetMap()->GetCreature(bg->GetSingleCreatureGuid(BG_AV_BOSS_A, 0)))
         {
-            objectiveLocation = WorldLocation(pVanndar->GetMapId(), pVanndar->getPosition());
+            pVanndar->GetPosition(objectiveLocation);
             return true;
         }
     }
@@ -247,7 +247,7 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
             {
                 if (WorldLocation stoneheartOutpost; sRandomBotFacade.getNamedLocation("AV_STONEHEART_OUTPOST_WAITING_HORDE", stoneheartOutpost))
                 {
-                    uint32 attackCount = getDefendersCount(Position(stoneheartOutpost.x, stoneheartOutpost.y, stoneheartOutpost.z, stoneheartOutpost.orientation), 10.0f, false);
+                    uint32 attackCount = getDefendersCount(Position(stoneheartOutpost.x, stoneheartOutpost.y, stoneheartOutpost.z, stoneheartOutpost.o), 10.0f, false);
 
                     // Prepare to attack Captain
                     if (attackCount < 5 && !sServerFacade.IsInCombat(pBalinda))
@@ -256,7 +256,7 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
                     }
                     else
                     {
-                        objectiveLocation = WorldLocation(pBalinda->GetMapId(), pBalinda->getPosition());
+                        pBalinda->GetPosition(objectiveLocation);
                     }
 
                     return true;
@@ -298,7 +298,7 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
         {
             if (bot->IsWithinDist(neutralMineBoss, VISIBILITY_DISTANCE_GIGANTIC) && neutralMineBoss->GetDeathState() != DEAD && bg->IsActiveEvent(BG_AV_MINE_BOSSES_NORTH, TEAM_INDEX_NEUTRAL))
             {
-                objectiveLocation = WorldLocation(neutralMineBoss->GetMapId(), neutralMineBoss->getPosition());
+                neutralMineBoss->GetPosition(objectiveLocation);
                 return true;
             }
         }
@@ -307,7 +307,7 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
         {
             if (bot->IsWithinDist(allianceMineBoss, VISIBILITY_DISTANCE_GIGANTIC) && allianceMineBoss->GetDeathState() != DEAD && bg->IsActiveEvent(BG_AV_MINE_BOSSES_NORTH, TEAM_INDEX_ALLIANCE))
             {
-                objectiveLocation = WorldLocation(allianceMineBoss->GetMapId(), allianceMineBoss->getPosition());
+                allianceMineBoss->GetPosition(objectiveLocation);
                 return true;
             }
         }
@@ -365,7 +365,7 @@ bool BGTactics::CheckFlagAv()
         return false;
     }
 
-    BattleGroundTypeId bgType = bg->GetTypeId();
+    BattleGroundTypeId bgType = bg->GetTypeID();
 
     if (bgType != BATTLEGROUND_AV)
     {
@@ -382,10 +382,10 @@ bool BGTactics::CheckFlagAv()
         if (f == FlagEntries.end())
             continue;
 
-        if (!sServerFacade.isSpawned(go) || go->IsInUse() || go->GetGoState() != GO_STATE_READY)
+        if (!sServerFacade.isSpawned(go) || go->getLootState() != GO_READY || go->GetGoState() != GO_STATE_READY)
             continue;
 
-        if (!bot->CanInteract(go))
+        if (!bot->CanInteractWithGameObject(go))
             continue;
 
         if (!bot->IsWithinDistInMap(go, INTERACTION_DISTANCE))
@@ -406,7 +406,7 @@ bool BGTactics::CheckFlagAv()
 
         Spell* spell = new Spell(bot, spellInfo, false);
         spell->m_targets.setGOTarget(go);
-        spell->SpellStart(&spell->m_targets);
+        spell->prepare(spell->m_targets);
         ai->WaitForSpellCast(spell);
 
         //WorldPacket data(CMSG_GAMEOBJ_USE);

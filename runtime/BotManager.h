@@ -26,13 +26,13 @@ public:
 class WorldSession;
 class Player;
 class WorldPacket;
+class Unit;
 
 namespace TortoiseBots {
 
 enum class BotLifecycle
 {
     PendingAdd,
-    PendingLogin,
     InWorld,
     Removing,
 };
@@ -73,12 +73,12 @@ public:
     void OnPlayerLogout(Player* player);
     void ReleaseToClient(Player* player);
 
-    // Manual control for testing
+    // Manual control for testing — bool success; core owns Headless session
 // pi-lens-ignore: clang:unknown_typename
-    WorldSession* AddBot(uint32_t accountId, ObjectGuid guid, ObjectGuid masterGuid = ObjectGuid());
-    WorldSession* AddRandomBot(uint32_t accountId, ObjectGuid guid);
+    bool AddBot(uint32_t accountId, ObjectGuid guid, ObjectGuid masterGuid = ObjectGuid());
+    bool AddRandomBot(uint32_t accountId, ObjectGuid guid);
 // pi-lens-ignore: clang:unknown_typename
-    WorldSession* AddBotWithMaster(uint32_t accountId, ObjectGuid guid, ObjectGuid masterGuid);
+    bool AddBotWithMaster(uint32_t accountId, ObjectGuid guid, ObjectGuid masterGuid);
 // pi-lens-ignore: clang:unknown_typename
     bool RemoveBot(ObjectGuid guid, bool save = true);
 // pi-lens-ignore: clang:unknown_typename
@@ -137,6 +137,7 @@ private:
     void DetachOwnedBots(Player* master);
     void RebindOwnedBots(Player* master);
 
+
     std::unordered_map<uint32_t, BotEntry> m_bots; // key = guid counter
     bool m_autoTestEnabled = false;
     uint32_t m_autoTestAccount = 0;
@@ -154,5 +155,4 @@ private:
     uint32_t m_packetTestTicks = 0;
     uint8_t m_packetTestStage = 0;
 };
-
 } // namespace TortoiseBots

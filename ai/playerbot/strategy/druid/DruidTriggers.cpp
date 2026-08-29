@@ -13,7 +13,7 @@ bool EntanglingRootsKiteTrigger::IsActive()
     if (AI_VALUE(uint8, "attackers count") > 3)
         return false;
 
-	if (!GetTarget()->HasMana())
+	if (GetTarget()->GetPowerType() != POWER_MANA)
 		return false;
 
     std::list<ObjectGuid> attackers = context->GetValue<std::list<ObjectGuid>>("attackers")->Get();

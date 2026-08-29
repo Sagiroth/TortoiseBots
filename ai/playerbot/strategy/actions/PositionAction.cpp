@@ -121,7 +121,7 @@ bool GuardAction::isUseful()
         if (!target)
             return true;
 
-        if (target->GetTarget() == bot) //Try pulling target to guard position
+        if (target->GetVictim() == bot) //Try pulling target to guard position
             return true;
 
         if (!ai->IsRanged(bot)) //Melee bots stay in melee.
@@ -186,7 +186,7 @@ bool ReturnToStayPositionAction::isPossible()
     PositionEntry stayPosition = posMap["stay"];
     if (stayPosition.isSet())
     {
-        const float distance = bot->getDistance(stayPosition.x, stayPosition.y, stayPosition.z);
+        const float distance = bot->GetDistance(stayPosition.x, stayPosition.y, stayPosition.z);
         if (distance > sPlayerbotAIConfig.reactDistance)
         {
             ai->TellError(GetMaster(), "The stay position is too far to return. I am going to stay where I am now");
@@ -214,9 +214,9 @@ bool ReturnToPullPositionAction::isPossible()
             Unit* target = strategy->GetTarget();
             if (target)
             {
-                if (target->GetTarget() == bot)
+                if (target->GetVictim() == bot)
                 {
-                    const float distance = bot->getDistance(stayPosition.x, stayPosition.y, stayPosition.z);
+                    const float distance = bot->GetDistance(stayPosition.x, stayPosition.y, stayPosition.z);
                     if (distance > sPlayerbotAIConfig.reactDistance)
                     {
                         ai->TellError(GetMaster(), "The pull position is too far to return. I am going to pull where I am now");

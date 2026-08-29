@@ -137,7 +137,7 @@ Unit* EnemyPlayerValue::Calculate()
         Unit* firstTarget = ai->GetUnit(enemyPlayers.front());
         if (firstTarget)
         {
-            bestEnemyPlayerDistance = firstTarget->getDistance(bot, false);
+            bestEnemyPlayerDistance = firstTarget->GetDistance(bot);
             bestEnemyPlayerHealth = firstTarget->GetHealth();
             bestEnemyPlayer = firstTarget;
         }
@@ -158,7 +158,7 @@ Unit* EnemyPlayerValue::Calculate()
                 if (isMelee)
                 {
                     // Score best enemy player based on lowest distance
-                    const float distanceToEnemyPlayer = target->getDistance(bot, false);
+                    const float distanceToEnemyPlayer = target->GetDistance(bot);
                     if (distanceToEnemyPlayer < bestEnemyPlayerDistance)
                     {
                         bestEnemyPlayerDistance = distanceToEnemyPlayer;
@@ -194,7 +194,7 @@ float EnemyPlayerValue::GetMaxAttackDistance(Player* bot)
         if (!bg)
             return 40.0f;
 
-        BattleGroundTypeId bgType = bg->GetTypeId();
+        BattleGroundTypeId bgType = bg->GetTypeID();
 
         if (bgType == BATTLEGROUND_AV)
         {

@@ -581,33 +581,23 @@ public:
     // tick. -1 means "uninitialized" so the first observation always logs.
     int scboteLastCombatLogged = -1;
 
-    //Checks if the bot is really a player. Players always have themselves as master.
-    //
-    // Sentinel comparison: bot sessions are tagged as either "disconnected/bot"
-    // (the historical cmangos sentinel — what we pass to the WorldSession ctor)
-    // or "<BOT>" (what `WorldSession::WorldSession` actually overwrites the
-    // address to when sock==null at line 101 of WorldSession.cpp, regardless
-    // of what remote_ip we pass). We must check BOTH because the ctor's
-    // null-socket branch ignores the remote_ip parameter. Without the second
-    // check, every bot was misclassified as a real player → HandleTeleportAck
-    // early-return → cross-map far-teleport never completes → bot stuck mid-
-    // teleport forever (every a bot / cross-continent bot). See     // 2026-05-07 root-cause investigation.
+    // A network transport, rather than an address or socket sentinel, identifies
+    // a real client. Headless sessions intentionally have no network transport.
     bool IsRealPlayer()
     {
-        // Headless check: real player has a network session, bot has headless
-        return bot && bot->GetSession() && bot->GetSession()->GetSocket() != nullptr;
+        return bot && bot->GetSession() && bot->GetSession()->HasNetworkTransport();
     }
     bool IsRealPlayer(Unit* unit)
     {
         if (!unit->IsPlayer()) return false;
         Player* pl = (Player*)unit;
-        return pl->GetSession() && pl->GetSession()->GetSocket() != nullptr;
+        return pl->GetSession() && pl->GetSession()->HasNetworkTransport();
     }
     bool IsSelfMaster() { return master ? (master == bot) : false; }
     //Bot has a master that is a player.
-    bool HasRealPlayerMaster() { return master && master->GetSession() && master->GetSession()->GetSocket() != nullptr; }
+    bool HasRealPlayerMaster() { return master && master->GetSession() && master->GetSession()->HasNetworkTransport(); }
     //Bot has a master that is actively playing.
-    bool HasActivePlayerMaster() const { return master && master->GetSession() && master->GetSession()->GetSocket() != nullptr; }
+    bool HasActivePlayerMaster() const { return master && master->GetSession() && master->GetSession()->HasNetworkTransport(); }
     //Checks if the bot is summoned as alt of a player
     bool IsAlt() { return HasRealPlayerMaster() && !TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()); }
     //Get the group leader or the master of the bot.

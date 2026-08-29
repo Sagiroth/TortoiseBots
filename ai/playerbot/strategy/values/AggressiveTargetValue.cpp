@@ -54,10 +54,10 @@ Unit* AggressiveTargetValue::Calculate()
         if (!bot->IsWithinLOSInMap(unit))
             continue;
 
-        if (bot->getDistance(unit) > aggroRange)
+        if (bot->GetDistance(unit) > aggroRange)
             continue;
 
-        float newdistance = bot->getDistance(unit);
+        float newdistance = bot->GetDistance(unit);
         if (!result || (newdistance < distance))
         {
             distance = newdistance;

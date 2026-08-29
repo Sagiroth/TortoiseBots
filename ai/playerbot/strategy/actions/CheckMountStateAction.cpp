@@ -30,7 +30,7 @@ bool CheckMountStateAction::Execute(Event& event)
     bool farFromMaster = false;
 
     if(groupMaster)
-        farFromMaster = bot->GetMapId() != groupMaster->GetMapId() || bot->getDistance(groupMaster) > sPlayerbotAIConfig.sightDistance;
+        farFromMaster = bot->GetMapId() != groupMaster->GetMapId() || bot->GetDistance(groupMaster) > sPlayerbotAIConfig.sightDistance;
 
     bool canAttackTarget = false;
     bool shouldChaseTarget = false;
@@ -292,7 +292,8 @@ bool CheckMountStateAction::isUseful()
         }
     }
 
-    if (!bot->GetMap()->IsMountAllowed() && bot->GetMapId() != 531)
+    MapEntry const* mapEntry = sMapStorage.LookupEntry<MapEntry>(bot->GetMapId());
+    if ((!mapEntry || !mapEntry->IsMountAllowed()) && bot->GetMapId() != 531)
         return false;
 
     if (AI_VALUE(std::vector<MountValue>, "mount list").empty())
@@ -447,7 +448,7 @@ bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
 
         if (mount.IsItem())
         {
-            if (!bot->GetItemByEntry(mount.GetItemProto()->ItemId))
+            if (!FindItemByEntryCompat(bot, mount.GetItemProto()->ItemId))
             {
                 if (ai->HasStrategy("debug mount", BotState::BOT_STATE_NON_COMBAT))
                     ai->TellPlayerNoFacing(requester, "Bot does not have this mount.", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false);

@@ -147,7 +147,7 @@ std::list<GameObject*> TellLosAction::FilterGameObjects(Player* requester, const
 
             for (GameObject* obj : gameobjects)
             {
-               float distance = requester->getDistance(obj);
+               float distance = requester->GetDistance(obj);
                distanceObjectPairs.emplace_back(distance, obj);
             }
 
@@ -195,7 +195,7 @@ void TellLosAction::TellGameObjects(Player* requester, std::string title, const 
 
       if (bShowRange)
       {
-         float distance = requester->getDistance(go);
+         float distance = requester->GetDistance(go);
 
          ss << " " << distance << "m";
       }

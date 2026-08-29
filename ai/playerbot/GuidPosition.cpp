@@ -16,7 +16,7 @@ GuidPosition::GuidPosition(std::string qualifier)
 
     uint64 g;
     char p;
-    b >> this->mapId >> p >> this->x >> p >> this->y >> p >> this->z >> p >> this->orientation;
+    b >> this->mapId >> p >> this->x >> p >> this->y >> p >> this->z >> p >> this->o;
 
     //if (b.tellp() == std::streampos(0))
     //    return;
@@ -46,7 +46,7 @@ GuidPosition::GuidPosition(CreationMask type, const std::string& qualifier, cons
         GameTele const* tele = sObjectMgr.GetGameTele(qualifier);
         if (tele)
         {
-            set(WorldPosition(tele->mapId, tele->position_x, tele->position_y, tele->position_z, referencePos.orientation));
+            set(WorldPosition(tele->mapId, tele->x, tele->y, tele->z, referencePos.o));
             GuidPosition::Set(0);
             return;
         }
@@ -57,7 +57,7 @@ std::string GuidPosition::to_string() const
 {
     std::ostringstream b;
     char p = '|';
-    b << this->GetMapId() << p << this->x << p << this->y << p << this->z << p << this->orientation << p << GetRawValue();
+    b << this->GetMapId() << p << this->x << p << this->y << p << this->z << p << this->o << p << GetRawValue();
     return b.str();
 }
 
@@ -110,7 +110,7 @@ const FactionTemplateEntry* GuidPosition::GetFactionTemplateEntry() const
     if (IsPlayer() && GetPlayer())
         return GetPlayer()->GetFactionTemplateEntry();
     if (IsCreature()  && GetCreatureTemplate())
-        return sFactionTemplateStore.LookupEntry(GetCreatureTemplate()->Faction);
+        return sFactionTemplateStore.LookupEntry(GetCreatureTemplate()->faction);
     if (IsGameObject() && GetGameObjectInfo())
         return sFactionTemplateStore.LookupEntry(GetGameObjectInfo()->faction);
 
@@ -122,7 +122,7 @@ const ReputationRank GuidPosition::GetReactionTo(const GuidPosition& other, uint
     if(other.IsUnit() && other.GetUnit(instanceId))
         if (other.GetUnit(instanceId)->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED))
         {
-            if (const Player* unitPlayer = other.GetUnit(instanceId)->GetControllingPlayer())
+            if (const Player* unitPlayer = other.GetUnit(instanceId)->GetCharmerOrOwnerPlayerOrPlayerItself())
             {
                 if (unitPlayer->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_CONTESTED_PVP) && GetFactionTemplateEntry()->IsContestedGuardFaction())
                     return REP_HOSTILE;
@@ -200,7 +200,7 @@ std::string GuidPosition::print()
     out << ';' << x;
     out << ';' << y;
     out << ';' << z;
-    out << ';' << orientation;
+    out << ';' << o;
 
     return out.str();
 }

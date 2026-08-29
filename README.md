@@ -3,6 +3,10 @@
 TortoiseBots is an optional native PlayerBots module for
 [Tortoise WoW 1.18.1](https://github.com/Penqle/tortoise-wow).
 
+> **Addon:** press buttons instead of typing `.bot` — see the companion client addon
+> **[tortoise-wow-stack/TortoiseBotsManager](https://github.com/tortoise-wow-stack/TortoiseBotsManager)**
+> (`/tbm` panel: list owned bots, summon/spawn, follow/stay, group, pull). Requires this module on the server.
+
 It brings existing PlayerBots (primarily AzerothCore/mod-playerbots) combat, movement, class, group, loot, quest and
 travel behavior to Tortoise WoW while keeping bot-specific logic outside the
 core.
@@ -17,7 +21,7 @@ instead of recreating the old tightly coupled `GetBot()` / `m_bot` /
 
 ## Status
 
-> **WIP — upstream core integration and Headless API work still pending.**
+> **WIP — local integration is complete; the core lifecycle refactor is local-only and upstream PRs are awaiting merge.**
 
 - [x] Native TortoiseBots module implemented
 - [x] Existing `PlayerbotAI` integrated
@@ -25,12 +29,14 @@ instead of recreating the old tightly coupled `GetBot()` / `m_bot` /
 - [x] Vanilla/Turtle 1.18.1 cleanup and compatibility audit completed
 - [x] Headless session lifecycle validated against the pinned baseline
 - [x] PlayerBots-enabled and module-disabled builds validated
-- [ ] Smoke test against the current upstream modular core
-- [ ] Upstream the required generic Headless session API
+- [x] Local Docker build and startup against integrated `#396 + #411 + #416` core
+- [x] TortoiseBots feature stack #37–#42 assembled
+- [ ] Upstream core PRs #411 and #416 merged
 - [ ] Manual owned-bot gameplay acceptance
 - [ ] Manual 5-player dungeon acceptance
 
-The exact currently validated revisions are tracked in Git history and summarized below.
+The local integration checkpoint is complete. Upstream merge status and exact
+source revisions remain tracked in Git history and Docker `SOURCE_IDENTITY`.
 
 ---
 
@@ -42,22 +48,36 @@ TortoiseBots targets [tortoise-wow](https://github.com/Penqle/tortoise-wow) (`Pe
 
 TortoiseBots needs the core to support a `WorldSession` without a network client.
 
-At a high level the core needs to provide:
+The core exposes the lifecycle as three World calls:
 
-- Network and Headless session types
-- character-GUID keyed Headless session management
-- deferred Headless character login
-- normal `World` ownership of Headless session lifetime
-- generic player/world lifecycle hooks
-- generic packet hooks usable by native modules
+- `World::StartHeadlessSession(accountId, characterGuid, locale, tag)` validates the request, constructs the shared session, registers it by character GUID, and dispatches the normal async character-login bundle.
+- `World::StopHeadlessSession(characterGuid, save)` cancels a pending request or logs out and removes an active Headless session.
+- `World::GetHeadlessSessionState(characterGuid)` reports `NotFound`, `Pending`, `Loading`, or `Active`.
+
+The manager hides allocation, initialization, pending maps, login dispatch,
+callback identity, reclamation, deletion, update, and shutdown from callers.
 
 > [!IMPORTANT]
-> **Requires upstream PR #411 until merged.**
-> Build against [`tortoise-wow#411`(https://github.com/Penqle/tortoise-wow/pull/411)
-> (`feature/headless-world-session`) or wait for `main` to include it.
-> Plain `upstream/main` without #411 does not provide `SessionTransport::Headless`
-> / GUID-keyed lifecycle and the module will fail to link.
-> Exact pinned SHAs are in Git history (see below).
+> The current compatibility target is the stacked core work in PRs
+> [#411](https://github.com/Penqle/tortoise-wow/pull/411) and
+> [#416](https://github.com/Penqle/tortoise-wow/pull/416), which are still
+> awaiting upstream merge. Build against the synchronized revisions recorded
+> in `docs/HOST_API.md`, not an unrelated `main` checkout.
+>
+> For local use before upstream merge, the core checkout must contain both
+> PRs (merge/rebase #411 first, then #416). A plain Penqle `main` checkout is
+> not a compatible host for this module version.
+>
+> PR #411 supplies the generic Network/Headless transport and the
+> GUID-keyed, `World`-owned Headless session lifecycle. Its local refactor is
+> recorded in `docs/HOST_API.md`; upstream merge is still pending. PR #416 is
+> rebased on that refactor and supplies generic character-creation, LFT,
+> battleground, group-target, and participant primitives. #416 adds no second
+> session model.
+>
+> The module-facing contract is intentionally the three `World` lifecycle
+> calls plus generic `SessionTransport` queries. The core does not know that a
+> Headless session is a bot.
 
 The intended boundary is:
 
@@ -68,19 +88,29 @@ Penqle/tortoise-wow
         v
 TortoiseBots
         |
-        | bot lifecycle + AI + gameplay behavior
+        | bot lifecycle + AI + gameplay policy
         v
 PlayerbotAI
 ```
+
+The session distinction is deliberately split by responsibility:
+
+- `World::m_sessions` remains the account-keyed Network registry;
+- `HeadlessSessionMgr` owns pending/active GUID-keyed Headless sessions;
+- `WorldSession` remains the shared concrete player-session type;
+- TortoiseBots owns bot records, AI adapters, and gameplay decisions, never
+  `WorldSession` lifetime or pending/login state.
 
 The core should expose **Headless sessions**, not PlayerBots concepts.
 
 TortoiseBots should **not** require a bot-specific fork of the core.
 
 Removal of the historical built-in PlayerBots subsystem
-([PR #396](https://github.com/Penqle/tortoise-wow/pull/396)) is desirable for a
-clean core, but it is not itself the functional TortoiseBots host API
-dependency.
+([PR #396](https://github.com/Penqle/tortoise-wow/pull/396)) is optional from
+the TortoiseBots API perspective. It is recommended for a clean core because
+it removes the obsolete runtime and schema dependency; TortoiseBots does not
+use any code removed by that PR. The local Docker integration was tested with
+#396 present.
 
 ---
 
@@ -91,7 +121,15 @@ dependency.
 - Class AI for all 9 Vanilla classes — basic combat / heal / tank
 - Loot, quest and travel / taxi handling
 - Turtle Goblin / High Elf and Turtle spell / talent / mount handling where validated
-- Bounded random bots for existing characters only
+- Bounded random-bot login and teleport for existing characters (TortoiseBots #37)
+- Optional pinned random-bot pool (TortoiseBots #38)
+- Optional RNDBOT auto-create (TortoiseBots #39)
+- Optional LFT autofill (TortoiseBots #40)
+- Optional AH market population (TortoiseBots #41)
+- Optional BG autoqueue (TortoiseBots #42)
+
+The stacked feature services are configuration-gated and remain off by default
+unless their corresponding settings are enabled.
 
 Targets Vanilla/Turtle 1.18.1 — Any future expansions elements are removed.
 
@@ -133,7 +171,9 @@ PlayerBotEntry
 
 ## Session model
 
-Owned bots are normal Tortoise characters using Headless `WorldSession`s.
+Owned bots are ordinary Tortoise characters using Headless `WorldSession`s.
+Headless means “no network transport”; it does not mean a second gameplay
+object or a second authentication protocol.
 
 ```text
 One account
@@ -141,14 +181,40 @@ One account
     +-- zero or more Headless character sessions
 ```
 
-Network sessions remain account-keyed. Headless sessions are keyed by character GUID.
+Network sessions remain account-keyed. Headless sessions are keyed by
+character GUID and owned by `World` through `HeadlessSessionMgr`.
 
-This allows a connected player and owned alternate characters to coexist
-without fake account IDs or dedicated bot accounts.
+The normal character-loading and player lifecycle are reused after trusted
+server-side Headless creation. The module calls only Start/Stop/State and never
+inserts bots into the normal account-session map, promotes pending sessions,
+dispatches login, logs out a session directly, or treats a client-provided GUID
+as ownership proof.
 
-The core owns `WorldSession` lifetime. TortoiseBots owns bot records and AI.
+`WorldSession` is intentionally shared because `Player`, map, group, save,
+chat, and lifecycle code already consume `WorldSession*`. A separate
+`HeadlessWorldSession` subclass would add casts and duplicated lifecycle code
+without adding network security. Transport is selected by the server through
+`SessionTransport::Network` or `SessionTransport::Headless`.
+
+The core owns `WorldSession` lifetime. TortoiseBots owns bot records, AI, and
+gameplay policy.
 
 The detailed integration contract is documented in [`docs/HOST_API.md`](docs/HOST_API.md).
+
+### Existing PlayerbotAI compatibility
+
+The module preserves the existing PlayerBots behavior layer, primarily from
+AzerothCore/mod-playerbots, while adapting its host calls to Tortoise's
+Vanilla/Turtle core. The #411/#416 host changes do not replace the AI,
+strategies, actions, triggers, values, class contexts, or dungeon behavior.
+
+The implemented migration keeps `HasNetworkTransport()` for human/network
+decisions and moves all Headless lifecycle transitions behind the three-call
+core interface. It is not a rewrite of combat or movement AI.
+
+The module remains responsible for bot ownership and policy. The core remains
+responsible for generic character/session/participant lifecycle and does not
+know that a Headless session is a PlayerBot.
 
 ---
 
@@ -172,8 +238,14 @@ The native command surface currently includes:
 `.bot command` forwards into the existing PlayerBots (primarily AzerothCore/mod-playerbots) command system for the
 selected bot. Commands enforce normal account ownership or GM authority.
 
----
+### Client addon
 
+The companion addon **[TortoiseBots Manager](https://github.com/tortoise-wow-stack/TortoiseBotsManager)**
+(`Interface 11200`, `/tbm`) is a button UI for the same `.bot` surface: roster of owned bots,
+online/starting/offline state, `Spawn` / `Summon` / `Follow` / `Stay` / `Invite` / `Pull`.
+It is optional and pure client — install `Interface/AddOns/TortoiseBots/` from that repo; it requires this module on the server.
+
+---
 ## Module layout
 
 TortoiseBots is consumed as `tortoise-wow/modules/TortoiseBots/`:
@@ -238,6 +310,22 @@ The inherited PlayerBots configuration is broader than the currently validated
 Turtle gameplay surface. The existence of a setting does not by itself mean the
 corresponding feature has completed gameplay acceptance.
 
+The current stacked feature toggles include:
+
+```text
+AiPlayerbot.Enabled
+AiPlayerbot.EnableRandomTeleports
+AiPlayerbot.PinnedBots
+AiPlayerbot.RandomBotAutoCreate
+AiPlayerbot.RandomBotLftEnabled
+AiPlayerbot.AhMarketEnabled
+AiPlayerbot.RandomBotBgEnabled
+```
+
+For the Docker workflow, `AI_PLAYERBOT_ENABLED=1` renders
+`AiPlayerbot.Enabled = 1`; the remaining feature toggles are intentionally
+disabled by default.
+
 ---
 
 ## Validation
@@ -252,15 +340,25 @@ The pinned baseline has recorded evidence for:
 - Goblin and High Elf lifecycle fixtures
 - repeatable module migrations
 
+The current local integrated checkpoint additionally records:
+
+- native Docker build with `BUILD_PLAYERBOTS=OFF`, `MODULES=static` and
+  `MODULE_TORTOISEBOTS=static`
+- module migration discovery and schema presence
+- AI Playerbot initialization and `TortoiseBots: native module loaded (AI enabled)`
+- world-ready startup without fatal startup errors
+- listening realm and world TCP ports
+
 Still pending:
 
-- smoke test against the current Penqle modular core
+- upstream merge of core PRs #411 and #416
 - manual owned-bot gameplay acceptance
 - full 5-player dungeon acceptance
 - broader Turtle class/spec/content testing
 - large random-bot population testing
 
-See below for the validation boundary and pinned core/module SHAs.
+The current local Docker source records exact synchronized core/module
+revisions in `SOURCE_IDENTITY`.
 
 ---
 

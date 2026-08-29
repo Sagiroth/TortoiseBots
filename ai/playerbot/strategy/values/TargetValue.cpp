@@ -131,10 +131,7 @@ WorldPosition LastLongMoveValue::Calculate()
 
 WorldPosition HomeBindValue::Calculate()
 {
-    float x, y, z;
-    uint32 mapId;
-    bot->GetHomebindLocation(x, y, z, mapId);
-    return WorldPosition(mapId, x, y, z, 0.0);
+    return WorldPosition(bot->GetHomeBindLocation());
 }
 
 std::string HomeBindValue::Format()
@@ -189,7 +186,7 @@ Unit* ClosestAttackerTargetingMeTargetValue::Calculate()
         Unit* attacker = ai->GetUnit(attackerGuid);
         if (attacker)
         {
-            const float distance = bot->getDistance(attacker, true, DIST_CALC_COMBAT_REACH);
+            const float distance = bot->GetCombatDistance(attacker);
             if (distance < closest)
             {
                 closest = distance;

@@ -6,6 +6,7 @@
 #include "AuctionHouse/AuctionHouseMgr.h"
 #include "Guild/GuildMgr.h"
 #include "Mail/Mail.h"
+#include "MapNodes/MasterPlayer.h"
 
 using namespace ai;
 
@@ -95,8 +96,11 @@ uint32 GuildShareAhBuyAction::CountMailboxItems(uint32 itemId)
 {
     uint32 count = 0;
     time_t curTime = time(nullptr);
+    MasterPlayer* master = bot->GetSession() ? bot->GetSession()->GetMasterPlayer() : nullptr;
+    if (!master)
+        return 0;
 
-    for (PlayerMails::iterator itr = bot->GetMailBegin(); itr != bot->GetMailEnd(); ++itr)
+    for (PlayerMails::iterator itr = master->GetMailBegin(); itr != master->GetMailEnd(); ++itr)
     {
         Mail* mail = *itr;
         if (!mail || mail->state == MAIL_STATE_DELETED || curTime < mail->deliver_time)
@@ -109,7 +113,7 @@ uint32 GuildShareAhBuyAction::CountMailboxItems(uint32 itemId)
         {
             if (itemItr->item_template == itemId)
             {
-                Item* mailItem = bot->GetMItem(itemItr->item_guid);
+                Item* mailItem = master->GetMItem(itemItr->item_guid);
                 count += mailItem ? mailItem->GetCount() : 1;
             }
         }
@@ -229,15 +233,9 @@ bool GuildShareAhBuyAction::Execute(Event& event)
     AuctionCandidate bestCandidate = { 0, 0, 0, 0, 0, false };
     uint32 bestPricePerItem = std::numeric_limits<uint32>::max();
 
-    // Runs on the world thread, but the ahbot thread adds and removes auctions
-    // from underneath us, so the iteration needs the lock. It is a short scan
-    // of map lookups only - no DB, no mail - so holding it is cheap.
+    for (auto const& auctionEntry : *auctionHouse->GetAuctions())
     {
-        AuctionHouseObject::Guard ahGuard(auctionHouse->GetLock());
-        AuctionHouseObject::AuctionEntryMapBounds bounds = auctionHouse->GetAuctionsBounds_locked();
-        for (auto itr = bounds.first; itr != bounds.second; ++itr)
-        {
-            AuctionEntry* auction = itr->second;
+            AuctionEntry* auction = auctionEntry.second;
             if (!auction || auction->buyout == 0)
                 continue; // Skip auctions with no buyout
 
@@ -289,7 +287,6 @@ bool GuildShareAhBuyAction::Execute(Event& event)
                 bestPricePerItem = pricePerItem;
                 bestCandidate = { auction->Id, auction->itemGuidLow, auctionItemId, auction->buyout, auctionCount, isFinished };
             }
-        }
     }
 
     if (bestCandidate.auctionId)

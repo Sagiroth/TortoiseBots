@@ -49,7 +49,7 @@ namespace ai
                 return true;
             }
 
-            if (owner->GetSession() && owner->GetSession()->GetSocket() != nullptr)
+            if (owner->GetSession() && owner->GetSession()->HasNetworkTransport())
             {
                 HandleCommand("c", command, owner);
                 HandleCommand("t", command, owner);

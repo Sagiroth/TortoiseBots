@@ -153,9 +153,9 @@ namespace ai
             // prevent going into terrain
             float ox, oy, oz;
             followTarget->GetPosition(ox, oy, oz);
-            followTarget->GetMap()->GetHitPosition(ox, oy, oz + bot->GetCollisionHeight(), x, y, z, -0.5f);
+            followTarget->GetMap()->GetLosHitPosition(ox, oy, oz + bot->GetCollisionHeight(), x, y, z, -0.5f);
 
-            if (!bot->IsFlying() && !bot->IsFreeFlying() && !bot->IsSwimming())
+            if (!bot->IsFlying() && !bot->IsSwimming())
             {
                 z += CONTACT_DISTANCE;
                 bot->UpdateAllowedPositionZ(x, y, z);
@@ -197,7 +197,7 @@ namespace ai
             //if (ground <= INVALID_HEIGHT)
             //    return Formation::NullLocation;
 
-            if (!bot->IsFlying() && !bot->IsFreeFlying())
+            if (!bot->IsFlying())
             {
                 z += CONTACT_DISTANCE;
                 bot->UpdateAllowedPositionZ(x, y, z);
@@ -237,7 +237,7 @@ namespace ai
             if (ground <= INVALID_HEIGHT)
                 return Formation::NullLocation;
 
-            if (!bot->IsFlying() && !bot->IsFreeFlying())
+            if (!bot->IsFlying())
             {
                 z += CONTACT_DISTANCE;
                 bot->UpdateAllowedPositionZ(x, y, z);
@@ -669,7 +669,7 @@ WorldLocation MoveFormation::MoveSingleLine(std::vector<Player*> line, float dif
             if (ground <= INVALID_HEIGHT)
                 return Formation::NullLocation;
 
-            if (!bot->IsFlying() && !bot->IsFreeFlying())
+            if (!bot->IsFlying())
             {
                 lz += CONTACT_DISTANCE;
                 bot->UpdateAllowedPositionZ(lx, ly, lz);

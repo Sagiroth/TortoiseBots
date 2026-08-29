@@ -33,7 +33,7 @@ Unit* PullNearestTargetAction::FindPullTarget(PlayerbotAI* ai)
         if (!AttackersValue::IsValid(unit, bot, nullptr, false))
             continue;
 
-        const float distance = unit->getDistance(bot);
+        const float distance = unit->GetDistance(bot);
         if (distance < bestDistance)
         {
             bestDistance = distance;
@@ -67,7 +67,7 @@ bool PullRequestAction::Execute(Event& event)
     }
 
     const float maxPullDistance = sPlayerbotAIConfig.reactDistance * 3;
-    const float distanceToPullTarget = target->getDistance(ai->GetBot());
+    const float distanceToPullTarget = target->GetDistance(ai->GetBot());
     if (distanceToPullTarget > maxPullDistance)
     {
         ai->TellPlayerNoFacing(requester, "The target is too far away");
@@ -150,8 +150,8 @@ bool PullStartAction::Execute(Event& event)
                 UnitAI* creatureAI = ((Creature*)pet)->AI();
                 if (creatureAI)
                 {
-                    strategy->SetPetReactState(creatureAI->GetReactState());
-                    creatureAI->SetReactState(REACT_PASSIVE);
+                    strategy->SetPetReactState(pet->GetReactState());
+                    pet->SetReactState(REACT_PASSIVE);
                 }
             }
 
@@ -179,7 +179,7 @@ bool PullAction::Execute(Event& event)
         if (target)
         {
             // Check if we are on pull range
-            const float distanceToTarget = target->getDistance(bot);
+            const float distanceToTarget = target->GetDistance(bot);
             if (distanceToTarget <= strategy->GetRange())
             {
                 if (sServerFacade.isMoving(bot))
@@ -266,7 +266,7 @@ bool PullEndAction::Execute(Event& event)
             UnitAI* creatureAI = ((Creature*)pet)->AI();
             if (creatureAI)
             {
-                creatureAI->SetReactState(strategy->GetPetReactState());
+                pet->SetReactState(strategy->GetPetReactState());
             }
         }
 

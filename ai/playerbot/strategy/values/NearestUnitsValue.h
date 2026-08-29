@@ -54,7 +54,7 @@ namespace ai
     protected:
         void FindUnits(std::list<Unit*>& targets) override
         {
-            MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck u_check(bot, range);
+            MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck u_check(bot, bot, range);
             MaNGOS::UnitListSearcher<MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck> searcher(targets, u_check);
             Cell::VisitAllObjects(bot, searcher, range);
         }
