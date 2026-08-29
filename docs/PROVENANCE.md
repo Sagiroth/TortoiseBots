@@ -640,3 +640,42 @@ passed. Full native ON/static `mangosd` linked with `BUILD_PLAYERBOTS=OFF`,
 mangosd also linked. The installed ON binary accepted `--version`. No live
 server/gameplay smoke test was run; this remains pre-merge evidence until the
 actual Penqle #411/#416 commits are merged and rebuilt.
+
+## Cleaned merge candidate — 2026-08-29
+
+Feature: remove the accidental PR #43 dependency and migrate the complete
+module stack to the manager-owned Headless lifecycle.
+
+Source repositories and commits:
+
+- Penqle/tortoise-wow PR #411 candidate `f62cd95b63439ebdc7915053016ffa2753f98121`
+  (rebased on upstream `main` `05912a49f7cd8f12afff04b3c37e6f852f981268`).
+- Penqle/tortoise-wow PR #416 candidate
+  `5368fda0d884b4ff91960772ebf8e3f65f991850`, based on the cleaned #411
+  candidate.
+- TortoiseBots tested code `c9643eb14eed09c21aea087950ffef5460f239b0`;
+  final documentation pin update `e46403f20684390880df461dc17a6008cc237dad`.
+
+The final module branch was reconstructed from the PR #42 tip. PR #43's
+pullback/summon implementation is not present. The module now calls only the
+generic core `StartHeadlessSession` / `StopHeadlessSession` /
+`GetHeadlessSessionState` façade; it does not construct, dispatch, promote,
+log out, or delete Headless `WorldSession` objects.
+
+Local validation:
+
+- `git diff --check` passed for the cleaned core and module candidates.
+- `tools/verify_turtle_surface.sh` passed.
+- Docker native static build passed with `BUILD_PLAYERBOTS=OFF`,
+  `MODULES=static`, and `MODULE_TORTOISEBOTS=static`, reaching
+  `[100%] Built target mangosd`.
+- Complementary module-disabled build passed with `BUILD_PLAYERBOTS=OFF`,
+  `MODULES=disabled`, and `MODULE_TORTOISEBOTS=disabled`, reaching
+  `[100%] Built target mangosd`.
+- The enabled image loaded `TortoiseBots (AI enabled)` and reached
+  `World server is up and running!` without fatal startup errors.
+- The temporary runtime stack was stopped without resetting or removing
+  database volumes.
+
+No real-client login, reconnect/reclaim, stale-callback adversarial probe, or
+live LFT/BG/AH gameplay acceptance is claimed by this checkpoint.
