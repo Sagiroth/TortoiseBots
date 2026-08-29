@@ -6,7 +6,6 @@
 
 #include "Database/DatabaseEnv.h"
 #include "PlayerbotAI.h"
-#include "SessionTransport.h"
 
 #ifdef GenerateBotHelp
 #include <iomanip>
@@ -800,37 +799,10 @@ void PlayerbotHelpMgr::SaveTemplates()
 void PlayerbotHelpMgr::GenerateHelp()
 {
     coverageMap.clear();
-
-    // This session is a local headless fixture, not a network session.
-    WorldSession* session = new WorldSession(0, NULL, SEC_PLAYER,
-        0, LOCALE_enUS, "local-headless-fixture", 0, SessionTransport::Headless);
-    session->InitHeadlessSession();
-
-    Player* bot = new Player(session);
-
-    bot->Create(sObjectMgr.GeneratePlayerLowGuid(), "test", 1, 1, 0,
-        0, // skinColor,
-        0,
-        0,
-        0, // hairColor,
-        0, 0);
-
-    ai = new PlayerbotAI(bot);
-
-    LoadAllStrategies();
-
-    GenerateStrategyHelp();
-    GenerateTriggerHelp();
-    GenerateActionHelp();
-    GenerateValueHelp();
-    GenerateChatFilterHelp();
-
-    PrintCoverage();
-
-    SaveTemplates();
-
-    delete ai;
-    delete bot;
+    // Diagnostic fixture disabled: core now owns Headless session lifecycle and
+    // module must not construct synthetic Headless WorldSessions. Skipping.
+    sLog.outString("TortoiseBots: GenerateHelp skipped — synthetic Headless fixture disabled (core owns sessions)");
+    return;
 }
 #endif
 

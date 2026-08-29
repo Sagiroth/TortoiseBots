@@ -29,28 +29,29 @@ code.
 The supported local host boundary is validated against:
 
 ```text
-Pinned Tortoise core checkpoint:     7353989c94399f80572a2f8ec2eb73c63a6c79f8 (historical pin; branch `cleanup/f03-f27-code-freeze`)
-TortoiseBots tested code checkpoint: 07cf7976c546fac27083c7b46e73299c25b095f3
+Pinned Tortoise core checkpoint:     1e7994934b864558e257dd1f375fbbdbbcebe95e (local PR411 refactor)
+TortoiseBots tested code checkpoint: 73ce12958b933cb4e74f5ccaddb21819e7ed3573
 ```
 
 Validated local core checkpoint:
-`7353989c94399f80572a2f8ec2eb73c63a6c79f8` (historical branch `cleanup/f03-f27-code-freeze`)
+`1e7994934b864558e257dd1f375fbbdbbcebe95e` (`local/refactor-pr411-headless-manager`).
 
 Upstream status:
-generic Headless capability is proposed in PR [#411](https://github.com/Penqle/tortoise-wow/pull/411)
-(`feature/headless-world-session` @ `5c180a1`, based on upstream `main`
-`61a8269`). It is not yet merged; the module-facing `World` façade and
-`SessionTransport` contract are the tested surface.
+generic Headless capability remains proposed in PR [#411](https://github.com/Penqle/tortoise-wow/pull/411)
+(`local/refactor-pr411-headless-manager` @ `1e79949`, based on
+`fork/feature/headless-world-session` @ `b4de20e`). It is not yet merged.
+The module-facing surface is the three `World` lifecycle calls plus
+`SessionTransport` queries.
 
-Generic participant primitives are proposed in PR [#416](https://github.com/Penqle/tortoise-wow/pull/416)
-(`feature/generic-participant-primitives` @ `872b24d`), refreshed on top of
-the amended #411 implementation. It is not yet merged.
+Generic participant primitives remain proposed in PR [#416](https://github.com/Penqle/tortoise-wow/pull/416).
+They are rebased separately in `local/rebase-pr416-on-pr411` @ `58bcb1c`,
+on top of the PR411 refactor, and remain logically separate.
 
 Compile-verified integration snapshot:
 
 ```text
-Core:         872b24df3de0d229aa4e9db8abfc4b7fecd83570
-TortoiseBots: 8c720207f1e626887cb7072eb891f3a28b4a79f6
+Core:         58bcb1cf8ea7110561120ed47c3c9203f9338c5b
+TortoiseBots: 73ce12958b933cb4e74f5ccaddb21819e7ed3573
 ```
 
 The exact tested core/module pair must be recorded whenever the core changes;
@@ -84,45 +85,59 @@ one account
 ```
 
 Network sessions are account-keyed. Headless sessions are character-GUID keyed.
-`World` owns both Network and Headless `WorldSession` lifetime.
+`World` owns both Network and Headless `WorldSession` lifetime; the
+`HeadlessSessionMgr` is the only Headless owner.
 
-The generic Headless lifecycle supports queue/register, GUID lookup, pending
-inspection/cancellation, removal and shutdown cleanup. Headless sessions do not
-become extra real Network sessions for the normal account-session map.
+The module-facing lifecycle is:
 
-TortoiseBots owns lifecycle records and AI adapters, not `WorldSession*`
-lifetime.
+```text
+World::StartHeadlessSession(accountId, characterGuid, locale, tag)
+World::StopHeadlessSession(characterGuid, save)
+World::GetHeadlessSessionState(characterGuid)
+```
+
+Start performs account, character, lock, ownership, duplicate, and live-player
+validation before constructing or dispatching anything. Stop hides pending
+cancellation, logout, deletion, and character-online cleanup. State hides the
+pending/active maps and reports `NotFound`, `Pending`, `Loading`, or `Active`.
+
+Headless sessions never enter the account-keyed Network map and never own
+`LoginDatabase` account `online` or `current_realm` state.
 
 ## 5. Async login dispatch
 
-Async login state carries identity instead of a retained raw session pointer:
+Async login state carries immutable identity instead of a retained raw session
+pointer:
 
 ```text
 accountId
 characterGuid
 SessionTransport
+request generation/token
 ```
 
-Completion resolves the appropriate registry:
+Completion resolves the appropriate registry and requires every identity field
+to match:
 
 ```text
 Network  -> account-keyed session
-Headless -> character-GUID-keyed session
+Headless -> character-GUID-keyed manager entry
 ```
 
-This keeps one Network master plus multiple Headless characters unambiguous.
-`BotSessionAdapter` queues the Headless session and then uses the normal
-Tortoise character-login path rather than duplicating player loading or map
-entry.
+The core dispatches exactly one normal `LoginQueryHolder` bundle per accepted
+Start request and then calls the shared character materializer. TortoiseBots
+does not queue, promote, or dispatch login.
 
 ## 6. Human reclaim
 
 A real Network session takes precedence when the same character returns under
-human control. The core performs normal session/player lifecycle work;
+human control. The core performs normal session/player lifecycle work only
+after proving the existing Headless entry, transport, character, and account
+match. It then detaches and deletes that manager-owned Headless session;
 TortoiseBots releases or rebinds its record/AI state as appropriate.
 
-The durable master relationship remains module-owned. The core only owns the
-generic session/player lifecycle.
+The durable master relationship remains module-owned. The core owns the
+generic session/player lifecycle and the reclaim transfer.
 
 ## 7. Native lifecycle hooks
 
@@ -154,9 +169,10 @@ The core listener is generic; it does not call a PlayerBots singleton.
 
 | Responsibility | Owner |
 | --- | --- |
-| Network `WorldSession` lifetime | Tortoise `World` |
-| Headless `WorldSession` lifetime | Tortoise `World` |
-| Pending Headless queue | Tortoise `World` |
+| Network `WorldSession` lifetime | Core `World` |
+| Headless `WorldSession` lifetime | `World::HeadlessSessionMgr` |
+| Pending Headless requests | `World::HeadlessSessionMgr` |
+| Headless validation and async callback identity | `World::HeadlessSessionMgr` |
 | Bot record lifecycle | `BotManager` |
 | AI lifetime | `PlayerbotAIAdapter` |
 | AI lookup | `PlayerbotAIStorage` |

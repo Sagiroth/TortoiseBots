@@ -16,7 +16,7 @@ BotPlayerAdapter::BotPlayerAdapter()
 
 void BotPlayerAdapter::OnLogin(Player* player)
 {
-    if (player && player->GetSession() && !player->GetSession()->IsHeadless())
+    if (player && player->GetSession() && player->GetSession()->HasNetworkTransport())
         RandomBotService::Instance().OnHumanLogin();
     BotManager::Instance().OnPlayerLogin(player);
 }

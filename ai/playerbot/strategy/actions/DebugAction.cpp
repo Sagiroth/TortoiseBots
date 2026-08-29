@@ -11,7 +11,6 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/PlayerbotHelpMgr.h"
 #include "Transports/Transport.h"
-#include "SessionTransport.h"
 #include "Maps/PathFinder.h"
 #include "playerbot/PlayerbotLLMInterface.h"
 
@@ -5256,192 +5255,13 @@ bool DebugAction::HandleTransanal(Event& event, Player* requester, const std::st
                 if (hitPoints.empty())
                     continue;
 
-                // This is a local headless player used only by the diagnostic.
-                WorldSession* session = new WorldSession(0, NULL, SEC_PLAYER,
-                    0, LOCALE_enUS, "local-headless-fixture", 0, SessionTransport::Headless);
-                session->InitHeadlessSession();
+                // Diagnostic fixture disabled: core owns Headless sessions, module must not
+                // construct synthetic Headless WorldSessions. Skipping this rotation.
+                {
+                    sLog.outError("TortoiseBots: transanal diagnostic skipped synthetic Headless fixture (core owns sessions)");
+                    continue;
+                }
 
-                    Player* tempPlayer = new Player(session);
-
-                    tempPlayer->Create(sObjectMgr.GeneratePlayerLowGuid(), "test", 1, 1, 0,
-                        0, // skinColor,
-                        0,
-                        0,
-                        0, // hairColor,
-                        0);
-                    tempPlayer->AddToWorld();
-                    tempPlayer->SetMap(map);
-                    tempPlayer->SetTransport(transport);
-                    tempPlayer->SetPosition(transPos.getX(), transPos.getY(), transPos.getZ(), 0);
-
-                    std::vector<WorldPosition> rhitPoints = hitPoints;
-
-                    std::reverse(rhitPoints.begin(), rhitPoints.end());
-
-                    std::vector<std::vector<WorldPosition>> layers;
-                    std::unordered_map<WorldPosition, uint32> found;
-
-                    sLog.outString("hitting done");
-
-                    BarGoLink bar1(hitPoints.size());
-
-                    layers.push_back(hitPoints);
-
-                    for (auto& start : hitPoints)
-                    {
-                        if (found[start])
-                            continue;
-
-                        bar1.step();
-                        for (auto& end : rhitPoints)
-                        {
-                            if (end == start)
-                                continue;
-
-                            if (found[end])
-                                continue;
-
-                            std::unique_ptr<PathFinder> pathfinder = std::make_unique<PathFinder>(tempPlayer);
-
-                            WorldPosition tStart = start, tEnd = end;
-                            tStart.CalculatePassengerOffset(transport);
-                            tEnd.CalculatePassengerOffset(transport);
-                            //tStart.CalculatePassengerPosition(transport);
-                            //tEnd.CalculatePassengerPosition(transport);
-
-                            pathfinder->calculate(tStart.GetVector3(), tEnd.GetVector3(), false);
-
-                            if (pathfinder->getPathType() != PATHFIND_NORMAL)
-                                continue;
-
-                            if (pathfinder->getPath().size() < 3)
-                                continue;
-
-                            std::vector<WorldPosition> path = start.fromPointsArray(pathfinder->getPath());
-
-                            std::set<uint32> inLayer;
-
-                            std::vector<WorldPosition> realPath = {start, end};
-
-                            for (auto& p : path)
-                            {
-                                if (p == start)
-                                    continue;
-
-                                if (p == end)
-                                    continue;
-
-                                if (std::find(realPath.begin(), realPath.end(), p) != realPath.end())
-                                    continue;
-
-                                WorldPosition rp = p;
-                                rp.CalculatePassengerPosition(transport);
-                                //rp.CalculatePassengerOffset(transport);
-
-                                WorldPosition realHp;
-
-                                for (auto& hp : hitPoints)
-                                {
-                                    if (rp.distance(hp) < 2)
-                                    {
-                                        realHp = hp;
-                                        break;
-                                    }
-                                }
-
-                                if (realHp)
-                                {
-                                    if (found[realHp])
-                                        inLayer.insert(found[realHp]);
-                                    else
-                                        realPath.push_back(realHp);
-                                }
-                            }
-
-                            if (realPath.size() < 3)
-                                continue;
-
-                            if (inLayer.empty())
-                            {
-                                layers.push_back(realPath);
-                                for (auto& hp : realPath)
-                                    found[hp] = layers.size();
-                            }
-                            else
-                            {
-                                std::vector<std::vector<WorldPosition>> newLayers = {hitPoints, realPath};
-
-                                for (uint32 i = 1; i < layers.size(); i++)
-                                {
-                                    if (inLayer.find(i) != inLayer.end())
-                                        newLayers[1].insert(newLayers[1].end(), layers[i].begin(), layers[i].end());
-                                    else
-                                        newLayers.push_back(layers[i]);
-                                }
-
-                                layers = newLayers;
-                                found.clear();
-
-                                for (uint32 i = 1; i < layers.size(); i++)
-                                {
-                                    for (auto& p : layers[i])
-                                    {
-                                        found[p] = i;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    int layerNr = 0;
-                    for (auto& layer : layers)
-                    {
-                        float minZ = FLT_MAX, maxZ = -FLT_MAX;
-                        for (auto& p : layer)
-                        {
-                            float relZ = p.getZ() - transPos.getZ();
-                            if (relZ < minZ)
-                                minZ = relZ;
-                            if (relZ > maxZ)
-                                maxZ = relZ;
-                        }
-
-                        std::ostringstream out;
-
-                        out << transport->GetEntry() << ",";
-                        out << transportName << ",";
-                        out << rotation << ",";
-                        out << transport->getOrientation() << ",";
-                        out << rotation << ",";
-                        out << layerNr << ",";
-                        out << minZ << ",";
-                        out << maxZ << ",";
-
-                        out << "\"MULTILINESTRING(";
-                        bool first = true;
-                        for (auto& p : layer)
-                        {
-                            float relX = p.getX() * 10 + shiftx * 1100;
-                            float relY = p.getY() * 10 + shifty * 1100;
-                            float relZ = p.getZ() * 10;
-                            if (!first)
-                                out << ",";
-                            out << "(" << relX << " " << relY << " " << relZ << ",";
-                            out << relX + relZ * 0.2 << " " << relY + relZ + 0.8 << " " << relZ << ")";
-                            first = false;
-                        }
-                        out << ")\"";
-
-                        sPlayerbotAIConfig.log("transportanalysis.csv", out.str().c_str());
-
-                        layerNr++;
-                    }
-
-                    sLog.outString("pathfinding done");
-
-                    tempPlayer->RemoveFromWorld();
-                    delete tempPlayer;
-                    delete session;
             }
 
             transport->Update(100, 100);

@@ -21,7 +21,7 @@ instead of recreating the old tightly coupled `GetBot()` / `m_bot` /
 
 ## Status
 
-> **WIP — local integration is complete; upstream core and module PRs are awaiting merge.**
+> **WIP — local integration is complete; the core lifecycle refactor is local-only and upstream PRs are awaiting merge.**
 
 - [x] Native TortoiseBots module implemented
 - [x] Existing `PlayerbotAI` integrated
@@ -48,14 +48,14 @@ TortoiseBots targets [tortoise-wow](https://github.com/Penqle/tortoise-wow) (`Pe
 
 TortoiseBots needs the core to support a `WorldSession` without a network client.
 
-At a high level the core needs to provide:
+The core exposes the lifecycle as three World calls:
 
-- Network and Headless session types
-- character-GUID keyed Headless session management
-- deferred Headless character login
-- normal `World` ownership of Headless session lifetime
-- generic player/world lifecycle hooks
-- generic packet hooks usable by native modules
+- `World::StartHeadlessSession(accountId, characterGuid, locale, tag)` validates the request, constructs the shared session, registers it by character GUID, and dispatches the normal async character-login bundle.
+- `World::StopHeadlessSession(characterGuid, save)` cancels a pending request or logs out and removes an active Headless session.
+- `World::GetHeadlessSessionState(characterGuid)` reports `NotFound`, `Pending`, `Loading`, or `Active`.
+
+The manager hides allocation, initialization, pending maps, login dispatch,
+callback identity, reclamation, deletion, update, and shutdown from callers.
 
 > [!IMPORTANT]
 > The current compatibility target is the stacked core work in PRs
@@ -65,13 +65,15 @@ At a high level the core needs to provide:
 > in `docs/HOST_API.md`, not an unrelated `main` checkout.
 >
 > PR #411 supplies the generic Network/Headless transport and the
-> GUID-keyed, `World`-owned Headless session lifecycle. PR #416 is refreshed
-> on top of #411 and supplies generic character-creation, LFT, battleground,
-> group-target, and participant primitives. #416 adds no second session model.
+> GUID-keyed, `World`-owned Headless session lifecycle. Its local refactor is
+> recorded in `docs/HOST_API.md`; upstream merge is still pending. PR #416 is
+> rebased on that refactor and supplies generic character-creation, LFT,
+> battleground, group-target, and participant primitives. #416 adds no second
+> session model.
 >
-> The module-facing contract is intentionally the `World` façade and
-> `SessionTransport` queries. The core does not know that a Headless session
-> is a bot.
+> The module-facing contract is intentionally the three `World` lifecycle
+> calls plus generic `SessionTransport` queries. The core does not know that a
+> Headless session is a bot.
 
 The intended boundary is:
 
@@ -92,7 +94,8 @@ The session distinction is deliberately split by responsibility:
 - `World::m_sessions` remains the account-keyed Network registry;
 - `HeadlessSessionMgr` owns pending/active GUID-keyed Headless sessions;
 - `WorldSession` remains the shared concrete player-session type;
-- TortoiseBots owns bot records, ownership, AI adapters, and decisions.
+- TortoiseBots owns bot records, AI adapters, and gameplay decisions, never
+  `WorldSession` lifetime or pending/login state.
 
 The core should expose **Headless sessions**, not PlayerBots concepts.
 
@@ -178,8 +181,10 @@ Network sessions remain account-keyed. Headless sessions are keyed by
 character GUID and owned by `World` through `HeadlessSessionMgr`.
 
 The normal character-loading and player lifecycle are reused after trusted
-server-side Headless creation. The module never inserts bots into the normal
-account-session map and never treats a client-provided GUID as ownership proof.
+server-side Headless creation. The module calls only Start/Stop/State and never
+inserts bots into the normal account-session map, promotes pending sessions,
+dispatches login, logs out a session directly, or treats a client-provided GUID
+as ownership proof.
 
 `WorldSession` is intentionally shared because `Player`, map, group, save,
 chat, and lifecycle code already consume `WorldSession*`. A separate
@@ -187,7 +192,8 @@ chat, and lifecycle code already consume `WorldSession*`. A separate
 without adding network security. Transport is selected by the server through
 `SessionTransport::Network` or `SessionTransport::Headless`.
 
-The core owns `WorldSession` lifetime. TortoiseBots owns bot records and AI.
+The core owns `WorldSession` lifetime. TortoiseBots owns bot records, AI, and
+gameplay policy.
 
 The detailed integration contract is documented in [`docs/HOST_API.md`](docs/HOST_API.md).
 
@@ -198,9 +204,9 @@ AzerothCore/mod-playerbots, while adapting its host calls to Tortoise's
 Vanilla/Turtle core. The #411/#416 host changes do not replace the AI,
 strategies, actions, triggers, values, class contexts, or dungeon behavior.
 
-The expected migration is a core rebase, transport-predicate cleanup
-(`HasNetworkTransport()` instead of raw socket/sentinel checks), and focused
-build/runtime verification. It is not a rewrite of combat or movement AI.
+The implemented migration keeps `HasNetworkTransport()` for human/network
+decisions and moves all Headless lifecycle transitions behind the three-call
+core interface. It is not a rewrite of combat or movement AI.
 
 The module remains responsible for bot ownership and policy. The core remains
 responsible for generic character/session/participant lifecycle and does not

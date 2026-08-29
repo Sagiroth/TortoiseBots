@@ -29,6 +29,8 @@ See `AGENTS.md` §Architecture invariants for the 5 rules (optional module, no `
 ## 4. Implemented architecture (summary)
 
 * **Session invariant:** `one account → at most one Network (account-keyed) + N Headless (GUID-keyed)`, World-owned, human reclaim wins. See `HOST_API.md` §3–4.
+* **Headless lifecycle seam:** callers use only `World::StartHeadlessSession(accountId, characterGuid, locale, tag)`, `StopHeadlessSession(characterGuid, save)`, and `GetHeadlessSessionState(characterGuid)`; allocation, validation, async dispatch, callback identity, update, reclaim, deletion, and shutdown remain core-owned.
+* **Account state:** Headless sessions update character online state while never writing `LoginDatabase` account `online`/`current_realm`; Network authentication and logout retain the normal account-state path.
 * **Module boundary:** `modules/TortoiseBots/` — `TortoiseBotsModule.cpp` is the only loader file, `TortoiseBots.cmake` lists the real graph; host in `host/Bot*Adapter` (`Host/Session/Player/Chat/Packet`).
 * **Runtime:** `PlayerbotAI` + `Engine/Strategy/Trigger/Action/Value`, 9 Vanilla classes (Warrior–Druid), `PlayerbotAIAdapter` owns AI.
 * **Packet bridge:** `BotPacketAdapter` — Headless outgoing → `HandleBotOutgoingPacket`, master outgoing/incoming → `HandleMaster*`.
@@ -61,9 +63,10 @@ Freeze: no more broad donor cleanup.
 ### 6.2 Known-good pair
 
 ```text
-TortoiseBots: 07cf7976c546fac27083c7b46e73299c25b095f3
-Core:         7353989c94399f80572a2f8ec2eb73c63a6c79f8
-```text
+TortoiseBots: 73ce129
+Core #411:   1e79949
+Core #416:   58bcb1c (rebased on Core #411)
+```
 
 ## 7. Manual gameplay phase
 

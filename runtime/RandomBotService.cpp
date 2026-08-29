@@ -1,6 +1,7 @@
 #include "RandomBotService.h"
 
 #include "BotManager.h"
+#include "../host/BotSessionAdapter.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
@@ -859,8 +860,7 @@ void RandomBotService::MaintainOnlinePool()
                 if (!player->GetSession() || !player->GetSession()->IsHeadless())
                     continue;
             }
-            if (sWorld.FindHeadlessSession(pinnedCandidate->characterGuid) ||
-                sWorld.HasPendingHeadlessSession(pinnedCandidate->characterGuid))
+            if (BotSessionAdapter::GetHeadlessSessionState(pinnedCandidate->characterGuid) != HeadlessSessionState::NotFound)
                 continue;
 
             if (BotManager::Instance().AddRandomBot(pinnedCandidate->accountId, pinnedCandidate->characterGuid))
@@ -891,8 +891,7 @@ void RandomBotService::MaintainOnlinePool()
             if (!player->GetSession() || !player->GetSession()->IsHeadless())
                 continue;
         }
-        if (sWorld.FindHeadlessSession(candidate.characterGuid) ||
-            sWorld.HasPendingHeadlessSession(candidate.characterGuid))
+        if (BotSessionAdapter::GetHeadlessSessionState(candidate.characterGuid) != HeadlessSessionState::NotFound)
             continue;
 
         if (BotManager::Instance().AddRandomBot(candidate.accountId, candidate.characterGuid))
