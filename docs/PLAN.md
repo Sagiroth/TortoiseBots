@@ -63,9 +63,9 @@ Freeze: no more broad donor cleanup.
 ### 6.2 Known-good pair
 
 ```text
-TortoiseBots: c9643eb
-Core #411:   f62cd95
-Core #416:   5368fda (rebased on cleaned Core #411)
+TortoiseBots: b9c7784
+Core #411:   8037fc8
+Core #416:   e63161c (rebased on corrected Core #411)
 ```
 
 ## 7. Manual gameplay phase

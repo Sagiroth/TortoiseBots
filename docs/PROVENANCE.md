@@ -679,3 +679,32 @@ Local validation:
 
 No real-client login, reconnect/reclaim, stale-callback adversarial probe, or
 live LFT/BG/AH gameplay acceptance is claimed by this checkpoint.
+
+## Corrected core review follow-up — 2026-08-29
+
+Core review fixes were applied after the previous candidate:
+
+- removed the stale `src/game/PlayerBots` include from module build glue;
+- restored full GPL headers on the new generic core headers;
+- preserved the normal Network character-list count during extracted
+  character creation and removed the unintended account-limit behavior;
+- used `SessionTransport::Headless` for the transient character-creation
+  helper;
+- reattached the Player to the replacement Network session before destroying
+  the manager-owned Headless session.
+
+Corrected candidates:
+
+```text
+Core #411:   8037fc8cc4c8c5734aafb9dc43858205bcf9051f
+Core #416:   e63161c2da7f13ab25687ea389026aa2e3c97647
+Module:      b9c7784accb8c719e8d7aadd2f6a9e0bda8d07a2
+```
+
+The corrected pair passed the native static and module-disabled Docker builds.
+The corrected enabled image loaded TortoiseBots and reached
+`World server is up and running!` without fatal startup errors. No database
+volume reset was performed.
+
+Real-client login/reconnect/reclaim and live LFT/BG/AH gameplay remain
+unclaimed manual acceptance gates.
