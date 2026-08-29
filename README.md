@@ -64,6 +64,10 @@ callback identity, reclamation, deletion, update, and shutdown from callers.
 > awaiting upstream merge. Build against the synchronized revisions recorded
 > in `docs/HOST_API.md`, not an unrelated `main` checkout.
 >
+> For local use before upstream merge, the core checkout must contain both
+> PRs (merge/rebase #411 first, then #416). A plain Penqle `main` checkout is
+> not a compatible host for this module version.
+>
 > PR #411 supplies the generic Network/Headless transport and the
 > GUID-keyed, `World`-owned Headless session lifecycle. Its local refactor is
 > recorded in `docs/HOST_API.md`; upstream merge is still pending. PR #416 is

@@ -654,7 +654,7 @@ Source repositories and commits:
   `5368fda0d884b4ff91960772ebf8e3f65f991850`, based on the cleaned #411
   candidate.
 - TortoiseBots tested code `c9643eb14eed09c21aea087950ffef5460f239b0`;
-  final documentation pin update `e46403f20684390880df461dc17a6008cc237dad`.
+  subsequent changes in this branch are documentation-only.
 
 The final module branch was reconstructed from the PR #42 tip. PR #43's
 pullback/summon implementation is not present. The module now calls only the
