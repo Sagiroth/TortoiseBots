@@ -29,29 +29,29 @@ code.
 The supported local host boundary is validated against:
 
 ```text
-Pinned Tortoise core checkpoint:     1e7994934b864558e257dd1f375fbbdbbcebe95e (local PR411 refactor)
-TortoiseBots tested code checkpoint: 73ce12958b933cb4e74f5ccaddb21819e7ed3573
+Core candidate (#411 + #416): 5368fda0d884b4ff91960772ebf8e3f65f991850
+TortoiseBots tested code:      c9643eb14eed09c21aea087950ffef5460f239b0
 ```
 
 Validated local core checkpoint:
-`1e7994934b864558e257dd1f375fbbdbbcebe95e` (`local/refactor-pr411-headless-manager`).
+`5368fda0d884b4ff91960772ebf8e3f65f991850` (`cleanup/pr416-merge`).
+It is based on the refreshed upstream `main` at `05912a49f7cd8f12afff04b3c37e6f852f981268`.
 
 Upstream status:
 generic Headless capability remains proposed in PR [#411](https://github.com/Penqle/tortoise-wow/pull/411)
-(`local/refactor-pr411-headless-manager` @ `1e79949`, based on
-`fork/feature/headless-world-session` @ `b4de20e`). It is not yet merged.
+(`cleanup/pr411-merge` @ `f62cd95`, based on refreshed upstream `main`). It is not yet merged.
 The module-facing surface is the three `World` lifecycle calls plus
 `SessionTransport` queries.
 
 Generic participant primitives remain proposed in PR [#416](https://github.com/Penqle/tortoise-wow/pull/416).
-They are rebased separately in `local/rebase-pr416-on-pr411` @ `58bcb1c`,
-on top of the PR411 refactor, and remain logically separate.
+The cleaned candidate is `cleanup/pr416-merge` @ `5368fda`, based on the
+cleaned #411 candidate, and remains logically separate.
 
 Compile-verified integration snapshot:
 
 ```text
-Core:         58bcb1cf8ea7110561120ed47c3c9203f9338c5b
-TortoiseBots: 73ce12958b933cb4e74f5ccaddb21819e7ed3573
+Core:         5368fda0d884b4ff91960772ebf8e3f65f991850
+TortoiseBots: c9643eb14eed09c21aea087950ffef5460f239b0
 ```
 
 The exact tested core/module pair must be recorded whenever the core changes;
