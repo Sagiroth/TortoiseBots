@@ -34,7 +34,7 @@ See `AGENTS.md` §Architecture invariants for the 5 rules (optional module, no `
 * **Module boundary:** `modules/TortoiseBots/` — `TortoiseBotsModule.cpp` is the only loader file, `TortoiseBots.cmake` lists the real graph; host in `host/Bot*Adapter` (`Host/Session/Player/Chat/Packet`).
 * **Runtime:** `PlayerbotAI` + `Engine/Strategy/Trigger/Action/Value`, 9 Vanilla classes (Warrior–Druid), `PlayerbotAIAdapter` owns AI.
 * **Packet bridge:** `BotPacketAdapter` — Headless outgoing → `HandleBotOutgoingPacket`, master outgoing/incoming → `HandleMaster*`.
-* **Player convenience:** `.bot pullback` and `.bot summon` are short-lived, player-owned behaviours in `PlayerConvenience`; `BotManager` remains lifecycle/AI ownership only. A convenience request is accepted asynchronously and fails closed if its bot, target or master becomes invalid.
+* **Player convenience:** `.bot summon` is a short-lived, player-owned transition in `PlayerConvenience`; `.bot pullback` dispatches the established PlayerbotAI pull/return strategy. `BotManager` remains lifecycle/AI ownership only. A convenience request is accepted asynchronously and fails closed if its bot, target or master becomes invalid.
 * **Commands:** `.bot add/remove/follow/invite/uninvite/stay/guard/free/ready/attack/formation/list/stats/status/pullback/summon/command/help` (`.bot command` → `PlayerbotAI::HandleCommand`), account/GM-gated.
 * **Random bots:** `RandomBotService`, bounded, discovers existing `RNDBOT*` characters; with `AiPlayerbot.RandomBotAutoCreate=1` (default `0`, one per `RandomBotUpdateInterval`, world-thread `CharacterCreation`, no raw SQL/DB worker) it also creates the deficit toward `MinRandomBots`/`MaxRandomBots` via `AccountMgr::CreateAccount` (random password, hashed) and generic `CharacterCreation::CreateCharacter` (core PR #416). LoginDatabase async INSERT (AllowAsyncTransactions, separate from core PR #416) is handled via pending-name retry (one pending, bounded/log-throttled retry while continuing existing-account creation, no orphan accounts); transient name collisions include `CHAR_NAME_PROFANE` and dynamic `CHAR_CREATE_DISABLED`/`PVP_TEAMS_VIOLATION` (faction balance) use 60s backoff, not permanent poisoning.
 * **LFT fill:** `LftBotFillService` is default-off and bounded; it uses the generic core LFT participant/offer APIs, fills human-waiting role deficits with live Headless random bots, auto-accepts only module-owned machine offers, and leaves queue/group ownership in core.
@@ -60,21 +60,26 @@ Freeze: no more broad donor cleanup.
 ### 6.1 Player-owned convenience rule
 
 Summon and pullback are first-class player experience features, not reasons to
-put movement, combat or teleport state machines in `BotManager`. Their small
-module interface lives in `behavior/PlayerConvenience`:
+put movement, combat or teleport state machines in `BotManager`. Summon keeps
+only its short-lived transition in `behavior/PlayerConvenience`; pullback
+dispatches the existing `PullRequestAction`/`PullStrategy` path, which owns
+target checks, movement, spell choice, return and cleanup:
 
 ```text
-request pullback
 request summon
 query pending convenience work
 world-thread update
 ```
 
 `BotManager` remains the sole owner of Headless lifecycle, bot records and
-durable master binding. `PlayerConvenience` must use `SetBotFollow`/the mature
-AI path rather than editing `BotRecord.masterGuid` or the AI's live master
-pointer. Every pending operation must self-cancel on missing, reclaimed,
-non-Headless, dead, teleporting or incompatible actors.
+durable master binding. A permitted requester who invokes summon or pullback
+is rebound through `BotManager::BindBotMaster` before the action is accepted,
+so a same-account character or GM is never told that an operation is queued
+only for it to cancel because of a stale master GUID. Summon restores its
+movement through `SetBotFollow` after arrival; pullback leaves movement to the
+mature pull strategy. Neither path edits `BotRecord.masterGuid` or the AI's
+live master pointer directly. Every pending summon must self-cancel on missing,
+reclaimed, non-Headless, dead, teleporting or incompatible actors.
 
 ### 6.2 Merge-ready acceptance additions
 
@@ -97,9 +102,9 @@ fixture, real-client, and default-off optional-service sequence.
   teleport rejection; duplicate-request rejection; completed teleport resumes
   durable follow; logout/reclaim during the delay cancels without a stale
   record or movement command.
-* **Pullback:** a selected owned tank approaches/pulls/returns/holds; no second
-  convenience operation can claim that bot; invalid target, combat, map change,
-  logout/reclaim and timeout all cancel safely; ordinary mature follow resumes.
+* **Pullback:** a selected owned tank uses the mature `PullRequestAction` and
+  `pull back` strategy to validate the target, pull, return and clean up. The
+  module must not issue direct movement generators or duplicate those states.
 
 These are runtime gates, not claims based on static inspection.
 
