@@ -161,7 +161,8 @@ seam.
 
 Bot AI runs on the normal world/game thread. The core exposes a generic world
 update listener mechanism, and `BotHostAdapter` drives `BotManager` / AI,
-`AhMarketService`, and `BattlegroundQueueService` updates from that tick.
+module-owned `PlayerConvenience`, `AhMarketService`, and
+`BattlegroundQueueService` updates from that tick.
 
 The core listener is generic; it does not call a PlayerBots singleton.
 
@@ -178,6 +179,7 @@ The core listener is generic; it does not call a PlayerBots singleton.
 | AI lookup | `PlayerbotAIStorage` |
 | Gameplay decisions | `PlayerbotAI` |
 | Movement semantics | Existing PlayerBots (primarily AzerothCore/mod-playerbots) actions/strategies |
+| Short-lived player convenience state | `PlayerConvenience` |
 | Durable master GUID | `BotRecord.masterGuid` |
 | Live master pointer | `PlayerbotAI` |
 
@@ -218,8 +220,16 @@ follow
 invite
 uninvite
 stay
+guard
+free
+ready
+attack
+formation
+pullback
+summon
 list
 stats
+status
 command
 help
 ```

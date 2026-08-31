@@ -49,6 +49,55 @@ if rg -n 'BUILD_PLAYERBOTS[[:space:]]*=[[:space:]]*1' TortoiseBots.cmake; then
     fail "native module forces the legacy BUILD_PLAYERBOTS option"
 fi
 
+# Player-facing convenience transitions have their own module. BotManager owns
+# only Headless lifecycle, bot records and AI attachment; do not let short-lived
+# movement/combat state machines grow back into the lifecycle owner.
+test -f behavior/PlayerConvenience.cpp || fail "player-convenience module is missing"
+test -f behavior/PlayerConvenience.h || fail "player-convenience interface is missing"
+grep -q 'behavior/PlayerConvenience.cpp' TortoiseBots.cmake \
+    || fail "player-convenience module is absent from the native source graph"
+if rg -n 'RequestPullback|RequestSummon|UpdatePullbacks|UpdateSummons|m_pullbacks|m_summons|PullbackState|SummonState' \
+    runtime/BotManager.cpp runtime/BotManager.h; then
+    fail "player convenience behavior leaked into BotManager lifecycle ownership"
+fi
+if rg -n 'BindBotMaster|record->masterGuid[[:space:]]*=' behavior/PlayerConvenience.cpp; then
+    fail "player convenience mutates durable master binding directly"
+fi
+grep -q 'SetBotFollow' behavior/PlayerConvenience.cpp \
+    || fail "summon completion no longer restores follow through the mature path"
+
+# The core's Headless manager owns construction, login dispatch, pending state,
+# reclaim and destruction. The module must use only the generic World façade.
+grep -q 'StartHeadlessSession' host/BotSessionAdapter.cpp \
+    || fail "bot session adapter does not start through the World façade"
+grep -q 'StopHeadlessSession' host/BotSessionAdapter.cpp \
+    || fail "bot session adapter does not stop through the World façade"
+grep -q 'GetHeadlessSessionState' host/BotSessionAdapter.cpp \
+    || fail "bot session adapter does not query core Headless state"
+if rg -n 'AddHeadlessSession|FindHeadlessSession|HasPendingHeadlessSession|CancelPendingHeadlessSession|RemoveHeadlessSession|CreateHeadlessSession|LogoutHeadlessSession' \
+    host runtime commands; then
+    fail "module bypasses the generic Headless lifecycle façade"
+fi
+
+# Vetted player controls must stay mapped to fixed mature actions. Do not turn
+# the public shell into an unrestricted forwarding path while adding aliases.
+for control in guard free ready attack formation status; do
+    grep -q "cmd == \"$control\"" commands/BotCommands.cpp \
+        || fail "public player control is missing: $control"
+done
+grep -q 'guard chat shortcut' commands/BotCommands.cpp \
+    || fail "guard is no longer mapped to its mature shortcut action"
+grep -q 'free chat shortcut' commands/BotCommands.cpp \
+    || fail "free is no longer mapped to its mature shortcut action"
+grep -q '"ready check"' commands/BotCommands.cpp \
+    || fail "ready is no longer mapped to the mature ready-check action"
+grep -q '"attack my target"' commands/BotCommands.cpp \
+    || fail "attack is no longer mapped to the mature selected-target action"
+grep -q 'DoSpecificAction("formation"' commands/BotCommands.cpp \
+    || fail "formation is no longer mapped to the mature formation action"
+grep -q 'formation == "shield"' commands/BotCommands.cpp \
+    || fail "formation no longer uses the reviewed finite enum"
+
 if rg -n 'Get(MaxEntry|NumRows)\(\) const \{ return (10000|100000|1500|200000);' \
     ai/cmangos-compat-shim.h; then
     fail "store compatibility proxy still uses a fixed donor-era upper bound"

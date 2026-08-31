@@ -1,5 +1,6 @@
 #include "BotHostAdapter.h"
 
+#include "../behavior/PlayerConvenience.h"
 #include "../runtime/BotManager.h"
 #include "../runtime/RandomBotService.h"
 #include "../runtime/AhMarketService.h"
@@ -110,6 +111,7 @@ void BotHostAdapter::OnUpdate(uint32 diff)
 {
     ++m_ticks;
     BotManager::Instance().OnWorldUpdate(diff);
+    PlayerConvenience::Instance().Update(diff);
     RandomBotService::Instance().Update(diff);
     AhMarketService::Instance().Update(diff);
     BattlegroundQueueService::Instance().Update(diff);

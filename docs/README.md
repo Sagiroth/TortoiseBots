@@ -6,6 +6,8 @@ Use this folder by purpose rather than reading every document on every task.
 | --- | --- | --- |
 | [`PLAN.md`](PLAN.md) | Durable architecture rules and roadmap | Planning or implementing PlayerBots work |
 | [`HOST_API.md`](HOST_API.md) | Current implemented core/module contract | Touching sessions, lifecycle, packets, commands, build/module integration or core seams |
+| [`MERGE_ACCEPTANCE.md`](MERGE_ACCEPTANCE.md) | Exact post-#411/#416 validation sequence | Validating a merged core/module pair or handing off runtime work |
+| [`PLAYER_CONTROL.md`](PLAYER_CONTROL.md) | Public owned-bot command and addon contract | Exposing or changing player-facing bot controls |
 | [`PROVENANCE.md`](PROVENANCE.md) | Append-oriented source lineage and validation history | Porting/adapting donor behavior or checking attribution |
 
 The active implementation path is:

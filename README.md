@@ -229,14 +229,27 @@ The native command surface currently includes:
 .bot invite
 .bot uninvite
 .bot stay
+.bot guard
+.bot free
+.bot ready
+.bot attack
+.bot formation
 .bot list
 .bot stats
+.bot status
+.bot pullback
+.bot summon
 .bot command
 .bot help
 ```
 
 `.bot command` forwards into the existing PlayerBots (primarily AzerothCore/mod-playerbots) command system for the
 selected bot. Commands enforce normal account ownership or GM authority.
+
+`pullback` and `summon` are player-owned convenience behaviours. They accept
+work asynchronously and fail closed if the bot, master or target becomes
+invalid; their full runtime acceptance remains pending the merged Headless
+core PRs.
 
 ### Client addon
 
