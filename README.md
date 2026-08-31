@@ -246,10 +246,10 @@ The native command surface currently includes:
 `.bot command` forwards into the existing PlayerBots (primarily AzerothCore/mod-playerbots) command system for the
 selected bot. Commands enforce normal account ownership or GM authority.
 
-`pullback` and `summon` are player-owned convenience behaviours. They accept
-work asynchronously and fail closed if the bot, master or target becomes
-invalid; their full runtime acceptance remains pending the merged Headless
-core PRs.
+`pullback` dispatches the mature PlayerbotAI pull/return strategy; `summon` is
+a player-owned asynchronous transition which restores follow on arrival. Both
+fail closed when their actors become invalid; their full runtime acceptance
+remains pending the merged Headless core PRs.
 
 ### Client addon
 

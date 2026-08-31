@@ -33,8 +33,10 @@ validating a fixed catalog entry. It must not copy the inherited chat parser,
 reimplement strategies, or grow gameplay state inside `BotManager`.
 
 `BotManager` continues to own bot records, Headless lifecycle and durable
-master binding. `PlayerConvenience` owns only short-lived summon/pullback
-transitions.
+master binding. `PlayerConvenience` owns only the short-lived summon
+transition. Pullback is dispatched to the existing PlayerbotAI pull/return
+strategy, rather than reproducing movement or combat state in the control
+layer.
 
 ## First public catalog
 
@@ -52,7 +54,7 @@ the command/packet path.
 | Visibility | status | Module lifecycle/AI/strategy snapshot | Exposed read-only; suitable for an addon status panel. |
 | Support | focus-heal selected, buff selected, revive selected | `focus heal`, `buff target`, `revive target` | Expose only after target validation is deterministic. |
 | Formation | choose formation | `formation` | Exposed as `default`, `melee`, `queue`, `chaos`, `circle`, `line`, `shield`, `arrow`, `near`, or `far`; no free text/custom formation. |
-| Convenience | pullback, summon | `PlayerConvenience` | Already exposed; acceptance remains a merged-core runtime gate. |
+| Convenience | pullback, summon | Mature pull strategy; `PlayerConvenience` summon transition | Already exposed; acceptance remains a merged-core runtime gate. |
 
 ### Deferred support controls
 

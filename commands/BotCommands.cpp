@@ -8,6 +8,8 @@
 #include "../runtime/PlayerbotAIStorage.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../ai/playerbot/PlayerbotAI.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "../ai/playerbot/strategy/generic/PullStrategy.h"
 
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Chat.h"
@@ -23,9 +25,12 @@
 #include "WorldPacket.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Log.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Group/Group.h"
 #include <cctype>
 #include <cstring>
 #include <string>
+#include <vector>
 // Lens fallback stubs — core headers absent in static analysis. Real build uses
 // the mangosd headers via -I src/game. Guards use the same macros as the
 // real headers so the stubs are never active in a real build.
@@ -624,17 +629,6 @@ static bool HandleFollow(ChatHandler* handler, char const* args)
         handler->PSendSysMessage("Bot %s could not enter follow mode; no success is reported.", name.c_str());
     return true;
 }
-// pi-lens-ignore: clang:pp_file_not_found,clang:unknown_typename
-#include "Group/Group.h"
-// pi-lens-ignore: clang:pp_file_not_found
-#include "Maps/Map.h"
-// pi-lens-ignore: clang:pp_file_not_found
-#include "Objects/Unit.h"
-// pi-lens-ignore: clang:pp_file_not_found
-#include "Objects/Creature.h"
-// pi-lens-ignore: clang:pp_file_not_found
-#include "../ai/playerbot/strategy/generic/PullStrategy.h"
-
 // pi-lens-ignore: clang:incomplete_member_access,clang:unknown_typename,clang:undeclared_var_use
 static bool HandlePullback(ChatHandler* handler, char const* args)
 {
@@ -655,78 +649,9 @@ static bool HandlePullback(ChatHandler* handler, char const* args)
         handler->PSendSysMessage("You must be alive and not on a taxi to use pullback.");
         return true;
     }
-    ObjectGuid sel = requester->GetSelectionGuid();
-    if (sel.IsEmpty())
-    {
-        handler->PSendSysMessage("You have no target. Select an enemy first.");
-        return true;
-    }
-    Unit* target = nullptr;
-    if (sel.IsPlayer())
-        target = sObjectAccessor.FindPlayer(sel);
-    else
-    {
-        Map* map = requester->GetMap();
-        if (map)
-        {
-            // Mangos map has GetCreature / GetUnit variants
-            // Try common APIs
-            if (Creature* c = map->GetCreature(sel))
-                target = c;
-            else if (Unit* u = map->GetUnit(sel))
-                target = u;
-        }
-        if (!target)
-        {
-            // Fallback via AI lookup using any bot AI
-            for (Player* bot : BotManager::Instance().GetAllBots())
-            {
-                if (PlayerbotAI* aiTmp = PlayerbotAIStorage::Instance().GetAI(bot))
-                {
-                    if (Unit* u = aiTmp->GetUnit(sel))
-                    {
-                        target = u;
-                        break;
-                    }
-                }
-            }
-        }
-        // Last fallback: try to find creature via sObjectAccessor global
-        if (!target)
-        {
-            // sObjectAccessor.FindCreature not always available; try player accessor for creature counter
-            // Keep as is - will report not found
-        }
-    }
-    if (!target)
-    {
-        handler->PSendSysMessage("Target not found (must be in same map and visible).");
-        return true;
-    }
-    if (!target->IsAlive())
-    {
-        handler->PSendSysMessage("Target is dead.");
-        return true;
-    }
-    if (target->IsInCombat())
-    {
-        handler->PSendSysMessage("Target is already in combat.");
-        return true;
-    }
-    if (!requester->IsHostileTo(target) && !target->IsHostileTo(requester))
-    {
-        // Allow if hostile to bot at least; but for POC require hostile to requester
-        // Keep permissive: check either
-        bool hostileToAnyBot = false;
-        for (Player* bot : BotManager::Instance().GetBotsForMaster(requester->GetObjectGuid()))
-            if (bot->IsHostileTo(target)) { hostileToAnyBot = true; break; }
-        if (!hostileToAnyBot && !requester->IsHostileTo(target))
-        {
-            handler->PSendSysMessage("Target is not hostile.");
-            return true;
-        }
-    }
-    // Find tank bot in party (assume 1 tank)
+    // PullRequestAction owns target validation, the pull position, movement,
+    // spell selection, return, and terminal cleanup. The command only finds a
+    // player-controlled tank and asks that mature path to handle the request.
     std::vector<Player*> candidates;
     Group* group = requester->GetGroup();
     if (group)
@@ -741,8 +666,8 @@ static bool HandlePullback(ChatHandler* handler, char const* args)
             BotRecord* rec = BotManager::Instance().FindBot(mg);
             if (!rec || !CanControl(requester, rec)) continue;
             if (member->IsInCombat()) continue;
-            if (PlayerConvenience::Instance().IsBusy(mg)) continue;
             if (!PlayerbotAI::IsTank(member, true)) continue;
+            if (!PullStrategy::Get(PlayerbotAIStorage::Instance().GetAI(member))) continue;
             candidates.push_back(member);
         }
     }
@@ -753,8 +678,8 @@ static bool HandlePullback(ChatHandler* handler, char const* args)
         {
             if (!bot->IsInWorld() || !bot->IsAlive() || bot->GetMap() != requester->GetMap()) continue;
             if (bot->IsInCombat()) continue;
-            if (PlayerConvenience::Instance().IsBusy(bot->GetObjectGuid())) continue;
             if (!PlayerbotAI::IsTank(bot, true)) continue;
+            if (!PullStrategy::Get(PlayerbotAIStorage::Instance().GetAI(bot))) continue;
             candidates.push_back(bot);
         }
     }
@@ -766,68 +691,29 @@ static bool HandlePullback(ChatHandler* handler, char const* args)
     Player* tank = candidates[0];
     if (candidates.size() > 1)
         handler->PSendSysMessage("Multiple tank bots found, using %s.", tank->GetName());
-    // Check tank not in combat and distance 100y from tank
-    if (tank->IsInCombat())
-    {
-        handler->PSendSysMessage("Tank %s is already in combat.", tank->GetName());
-        return true;
-    }
-    float distTankToTarget = tank->GetDistance(target);
-    if (distTankToTarget > 100.0f)
-    {
-        handler->PSendSysMessage("Target too far from tank %s (%.1fy > 100y).", tank->GetName(), distTankToTarget);
-        return true;
-    }
-    // Also check anchor map match
-    if (tank->GetMapId() != requester->GetMapId())
-    {
-        handler->PSendSysMessage("Tank and you are on different maps.");
-        return true;
-    }
-    // Decide ranged vs melee
-    bool isRanged = false;
-    float desiredDist = 14.0f;
     PlayerbotAI* tankAI = PlayerbotAIStorage::Instance().GetAI(tank);
-    if (tankAI)
+    if (!tankAI)
     {
-        // Try PullStrategy path for proper weapon/range
-        if (PullStrategy* strat = PullStrategy::Get(tankAI))
-        {
-            if (strat->CanDoPullAction(target))
-            {
-                isRanged = true;
-                float r = strat->GetRange();
-                if (r > 5.0f) desiredDist = r * 0.75f;
-                else desiredDist = tankAI->GetRange("shoot") * 0.75f;
-                if (desiredDist < 10.0f) desiredDist = 25.0f;
-            }
-            else
-            {
-                // Check generic shoot availability as fallback
-                const char* tries[] = {"shoot", "shoot bow", "shoot gun", "shoot crossbow", "throw", nullptr};
-                for (int i = 0; tries[i]; ++i)
-                    if (tankAI->CanCastSpell(tries[i], target, true, nullptr, true))
-                    { isRanged = true; desiredDist = tankAI->GetRange("shoot") > 5 ? tankAI->GetRange("shoot")*0.75f : 26.0f; break; }
-            }
-        }
-        else
-        {
-            const char* tries[] = {"shoot", "shoot bow", "shoot gun", "shoot crossbow", "throw", nullptr};
-            for (int i = 0; tries[i]; ++i)
-                if (tankAI->CanCastSpell(tries[i], target, true, nullptr, true))
-                { isRanged = true; desiredDist = tankAI->GetRange("shoot") > 5 ? tankAI->GetRange("shoot")*0.75f : 26.0f; break; }
-        }
-    }
-    if (!isRanged) desiredDist = 12.0f; // body pull inside aggroDistance 22
-
-    if (!PlayerConvenience::Instance().RequestPullback(requester, tank, target, isRanged, desiredDist))
-    {
-        handler->PSendSysMessage("Pullback already active for %s or failed to queue.", tank->GetName());
+        handler->PSendSysMessage("Tank %s has no AI yet.", tank->GetName());
         return true;
     }
-    handler->PSendSysMessage("Pullback: tank %s %s -> %s (%.1fy, %s) anchor %.0f,%.0f",
-        tank->GetName(), isRanged ? "shoot" : "body", target->GetName(), distTankToTarget, isRanged ? "ranged" : "melee",
-        requester->getPositionX(), requester->getPositionY());
+
+    BotRecord* record = BotManager::Instance().FindBot(tank->GetObjectGuid());
+    if (!record || (record->masterGuid != requester->GetObjectGuid() &&
+        !BotManager::Instance().BindBotMaster(tank->GetObjectGuid(), requester->GetObjectGuid())))
+    {
+        handler->PSendSysMessage("Tank %s could not be assigned to you for pullback.", tank->GetName());
+        return true;
+    }
+
+    ai::Event event("pullback", "", requester);
+    if (!tankAI->DoSpecificAction("pull my target", event, true))
+    {
+        handler->PSendSysMessage("Tank %s could not start a pull for your selected target.", tank->GetName());
+        return true;
+    }
+
+    handler->PSendSysMessage("Pullback requested: tank %s is using its native pull strategy.", tank->GetName());
     return true;
 }
 
@@ -914,14 +800,18 @@ static bool HandleSummon(ChatHandler* handler, char const* args)
         handler->PSendSysMessage("Bot '%s' already has a pending convenience action.", name.c_str());
         return true;
     }
-    // Optional: check instance restrictions - for POC allow everywhere, but block if in BG/Arena?
-    // Allow summon in dungeons/raids; if bot is in a different instance, TeleportTo will move it.
+    if (record->masterGuid != requester->GetObjectGuid() &&
+        !BotManager::Instance().BindBotMaster(bot->GetObjectGuid(), requester->GetObjectGuid()))
+    {
+        handler->PSendSysMessage("Bot '%s' could not be assigned to you for summon.", name.c_str());
+        return true;
+    }
     if (!PlayerConvenience::Instance().RequestSummon(requester, bot))
     {
         handler->PSendSysMessage("Failed to summon bot '%s' (already pending or error).", name.c_str());
         return true;
     }
-    handler->PSendSysMessage("Summoning %s to your location (5y) via portal (3s) and will follow.", name.c_str());
+    handler->PSendSysMessage("Summoning %s to a safe position near you (3s); it will follow on arrival.", name.c_str());
     return true;
 }
 
