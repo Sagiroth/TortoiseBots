@@ -394,12 +394,24 @@ core. Exact source lineage is recorded in [`docs/PROVENANCE.md`](docs/PROVENANCE
 
 ---
 
+## Project scope and affiliation
+
+This repository contains server-module source code only. It does not distribute
+game-client binaries or extracted game data/assets, provide hosting, or operate
+a game service. It is not affiliated with or endorsed by Blizzard Entertainment
+or Turtle WoW. World of Warcraft and related marks belong to their respective
+owners.
+
 ## Licence
 
-- **TortoiseBots module** — GPL-2.0 (see donor headers in `ai/playerbot/`)
-- **Penqle/tortoise-wow** — AGPL-3.0 — combined binary is AGPL-3.0
+TortoiseBots combines original and donor-derived code. Applicable terms must be
+determined from the donor and per-file notices; do not assume every file uses
+the same GPL-2.0 variant. The target `Penqle/tortoise-wow` core is AGPL-3.0,
+and a combined build must satisfy every component's compatible licence terms.
 
-See [`LICENCE.md`](LICENCE.md) for full details and donor licences.
+See [`LICENCE.md`](LICENCE.md) for the licence summary and
+[`docs/LICENSE_AUDIT.md`](docs/LICENSE_AUDIT.md) for the donor compatibility
+audit and release gate.
 
 ---
 
