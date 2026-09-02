@@ -16,7 +16,9 @@ to mutate core-owned session/group/queue state.
 
 All controls require the existing account-owner or GM authorization. A request
 may be accepted asynchronously; the UI must report *queued* or *rejected*, not
-claim a gameplay action succeeded before the mature AI completes it.
+claim a gameplay action succeeded before the mature AI accepts it. New gameplay
+requests resolve scope from the requester's normal WoW target; roster checkbox
+selection is never consulted by gameplay.
 
 ## Implementation rule
 
@@ -38,23 +40,24 @@ transition. Pullback is dispatched to the existing PlayerbotAI pull/return
 strategy, rather than reproducing movement or combat state in the control
 layer.
 
-## First public catalog
-
-These controls are backed by existing action/trigger names in
-`ChatCommandHandlerStrategy` and `ChatShortcutActions`. Guard/free/ready/attack
-and the fixed formation enum are exposed now through those named actions; the
-remaining rows are candidates after the merged-core owned-bot journey proves
-the command/packet path.
-
 | Control family | Public intent | Existing behaviour | Delivery notes |
 | --- | --- | --- | --- |
-| Movement | follow, stay | Existing native commands | Already exposed; retain durable master binding for follow. |
-| Position | guard, free | `guard` / `free` chat shortcuts | Exposed; no new strategy implementation. |
-| Party combat | attack selected, ready check | `attack` / `ready` | Exposed. The mature action validates selection, hostility, state and range; the native shell does not promise combat success. |
-| Visibility | status | Module lifecycle/AI/strategy snapshot | Exposed read-only; suitable for an addon status panel. |
-| Support | focus-heal selected, buff selected, revive selected | `focus heal`, `buff target`, `revive target` | Expose only after target validation is deterministic. |
-| Formation | choose formation | `formation` | Exposed as `default`, `melee`, `queue`, `chaos`, `circle`, `line`, `shield`, `arrow`, `near`, or `far`; no free text/custom formation. |
-| Convenience | pullback, summon | Mature pull strategy; `PlayerConvenience` summon transition | Already exposed; acceptance remains a merged-core runtime gate. |
+| Movement | follow, stay, come, stop | Existing follow/stay shortcuts, native combat stop | Dynamic scope: targeted owned bot or all controllable party bots. |
+| Combat | attack | `attack my target` | Uses the requester's current enemy target and server-side party fan-out. |
+| Pull | pull, pullback | `PullStrategy` / `pull my target` | Executor resolver selects a tank-capable bot; no custom pull state machine. |
+| RTI | focus skull | `rti` value + `attack rti target` | Uses the existing Skull default and group raid-target icon. |
+| Crowd control | cc moon | Existing `rti cc` value and class CC strategies/triggers | Server selects a capable executor, or honors an explicitly targeted owned bot. |
+| Policy | aoe on/off | Existing `dps aoe` strategy | Scope-resolved strategy toggle; CC/RTI avoidance remains mature-AI-owned. |
+| Lifecycle | login, logout, invite, kick, summon | Headless lifecycle and native group/convenience handlers | Roster-only; multi-select is filtered to eligible server-owned rows. |
+| Visibility | roster snapshot, status | Module roster storage and diagnostics | `.bot roster` is authoritative for offline and online owned rows. |
+
+The native action shell emits one structured `TBM:ACTION_ACK` or
+`TBM:ACTION_ERR` result for addon requests. It suppresses incidental mature-AI
+chat where the existing `silent` strategy permits; legacy CLI commands retain
+their existing human-readable responses.
+
+The authoritative roster is stored server-side in the module-owned character
+database table. SavedVariables may retain only addon presentation preferences.
 
 ### Deferred support controls
 

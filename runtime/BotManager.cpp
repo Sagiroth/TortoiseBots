@@ -28,6 +28,8 @@
 #include "../ai/playerbot/WorldPosition.h"
 #include "../ai/playerbot/strategy/values/TravelValues.h"
 
+#include "Database/DatabaseEnv.h"
+
 #include <algorithm>
 
 namespace TortoiseBots {
@@ -396,6 +398,84 @@ bool BotManager::AddBotWithMaster(uint32_t accountId, ::ObjectGuid guid, ::Objec
     sLog.outString("TortoiseBots: AddBot %s on acct %u master %s (PendingAdd, StartHeadlessSession)",
         guid.GetString().c_str(), accountId, masterGuid.GetString().c_str());
     return true;
+}
+
+bool BotManager::RegisterOwnedCharacter(uint32_t ownerAccountId, uint32_t characterAccountId,
+    ::ObjectGuid characterGuid, ::ObjectGuid masterGuid)
+{
+    if (!ownerAccountId || characterGuid.IsEmpty())
+        return false;
+
+    bool stored = CharacterDatabase.PExecute(
+        "REPLACE INTO `tortoise_bots_owned_character` "
+        "(`character_guid`, `owner_account_id`, `character_account_id`, `master_guid`) "
+        "VALUES ('%u', '%u', '%u', '%u')",
+        characterGuid.GetCounter(), ownerAccountId, characterAccountId,
+        masterGuid.IsEmpty() ? 0 : masterGuid.GetCounter());
+    if (!stored)
+    {
+        sLog.outError("TortoiseBots: could not persist ownership for character %s (owner account %u)",
+            characterGuid.GetString().c_str(), ownerAccountId);
+        return false;
+    }
+
+    if (BotRecord* record = FindBot(characterGuid))
+        record->ownerAccountId = ownerAccountId;
+    return true;
+}
+
+bool BotManager::GetOwnedCharacter(::ObjectGuid characterGuid, OwnedCharacter& result)
+{
+    std::unique_ptr<QueryResult> query(CharacterDatabase.PQuery(
+        "SELECT `owner_account_id`, `character_account_id`, `character_guid`, `master_guid` "
+        "FROM `tortoise_bots_owned_character` WHERE `character_guid` = '%u' LIMIT 1",
+        characterGuid.GetCounter()));
+    if (!query)
+        return false;
+
+    Field* fields = query->Fetch();
+    result.ownerAccountId = fields[0].GetUInt32();
+    result.characterAccountId = fields[1].GetUInt32();
+    result.characterGuid = ::ObjectGuid(HIGHGUID_PLAYER, fields[2].GetUInt32());
+    result.masterGuid = ::ObjectGuid(HIGHGUID_PLAYER, fields[3].GetUInt32());
+    return true;
+}
+
+std::vector<OwnedCharacter> BotManager::GetOwnedCharacters(uint32_t ownerAccountId)
+{
+    std::vector<OwnedCharacter> result;
+    if (!ownerAccountId)
+        return result;
+
+    std::unique_ptr<QueryResult> query(CharacterDatabase.PQuery(
+        "SELECT o.`owner_account_id`, o.`character_account_id`, o.`character_guid`, o.`master_guid`, "
+        "c.`name`, c.`class`, c.`online`, c.`map`, c.`zone`, c.`position_x`, c.`position_y`, c.`position_z` "
+        "FROM `tortoise_bots_owned_character` o "
+        "LEFT JOIN `characters` c ON c.`guid` = o.`character_guid` "
+        "WHERE o.`owner_account_id` = '%u' ORDER BY c.`name`, o.`character_guid`",
+        ownerAccountId));
+    if (!query)
+        return result;
+
+    do
+    {
+        Field* fields = query->Fetch();
+        OwnedCharacter row;
+        row.ownerAccountId = fields[0].GetUInt32();
+        row.characterAccountId = fields[1].GetUInt32();
+        row.characterGuid = ::ObjectGuid(HIGHGUID_PLAYER, fields[2].GetUInt32());
+        row.masterGuid = ::ObjectGuid(HIGHGUID_PLAYER, fields[3].GetUInt32());
+        row.name = fields[4].GetString();
+        row.classId = static_cast<uint8_t>(fields[5].GetUInt32());
+        row.characterOnline = fields[6].GetUInt32() != 0;
+        row.mapId = fields[7].GetUInt32();
+        row.zoneId = fields[8].GetUInt32();
+        row.positionX = fields[9].GetFloat();
+        row.positionY = fields[10].GetFloat();
+        row.positionZ = fields[11].GetFloat();
+        result.push_back(std::move(row));
+    } while (query->NextRow());
+    return result;
 }
 
 bool BotManager::RemoveBot(::ObjectGuid guid, bool save)
