@@ -57,8 +57,10 @@ The native action shell emits one structured `TBM:ACTION_ACK` or
 chat where the existing `silent` strategy permits; legacy CLI commands retain
 their existing human-readable responses.
 
-The authoritative roster is stored server-side in the module-owned character
-database table. SavedVariables may retain only addon presentation preferences.
+The authoritative roster is resolved server-side from the requester's
+undeleted account characters plus explicit cross-account ownership rows in the
+module-owned character database table. SavedVariables may retain only addon
+presentation preferences.
 
 ### Deferred support controls
 

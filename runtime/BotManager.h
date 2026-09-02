@@ -105,8 +105,9 @@ public:
     bool RemoveBot(ObjectGuid guid, bool save = true);
 
     // Durable manual ownership is separate from the transient Headless record.
-    // The owner account is the account that may control/relogin the character;
-    // characterAccountId remains the account used by the core login path.
+    // GetOwnedCharacters includes every undeleted same-account character plus
+    // any explicit cross-account ownership rows, so offline alts remain
+    // discoverable before their first Headless login.
     bool RegisterOwnedCharacter(uint32_t ownerAccountId, uint32_t characterAccountId,
         ObjectGuid characterGuid, ObjectGuid masterGuid);
     bool GetOwnedCharacter(ObjectGuid characterGuid, OwnedCharacter& result);

@@ -447,13 +447,19 @@ std::vector<OwnedCharacter> BotManager::GetOwnedCharacters(uint32_t ownerAccount
     if (!ownerAccountId)
         return result;
 
+    // Same-account characters are owned candidates even before their first
+    // Headless login; explicit rows extend the roster to GM-owned accounts.
     std::unique_ptr<QueryResult> query(CharacterDatabase.PQuery(
-        "SELECT o.`owner_account_id`, o.`character_account_id`, o.`character_guid`, o.`master_guid`, "
-        "c.`name`, c.`class`, c.`online`, c.`map`, c.`zone`, c.`position_x`, c.`position_y`, c.`position_z` "
-        "FROM `tortoise_bots_owned_character` o "
-        "LEFT JOIN `characters` c ON c.`guid` = o.`character_guid` "
-        "WHERE o.`owner_account_id` = '%u' ORDER BY c.`name`, o.`character_guid`",
-        ownerAccountId));
+        "SELECT COALESCE(o.`owner_account_id`, c.`account`), c.`account`, c.`guid`, "
+        "COALESCE(o.`master_guid`, 0), c.`name`, c.`class`, c.`online`, c.`map`, "
+        "c.`zone`, c.`position_x`, c.`position_y`, c.`position_z` "
+        "FROM `characters` c "
+        "LEFT JOIN `tortoise_bots_owned_character` o "
+        "ON o.`character_guid` = c.`guid` AND o.`owner_account_id` = '%u' "
+        "WHERE c.`deleteDate` IS NULL "
+        "AND (c.`account` = '%u' OR o.`character_guid` IS NOT NULL) "
+        "ORDER BY c.`name`, c.`guid`",
+        ownerAccountId, ownerAccountId));
     if (!query)
         return result;
 

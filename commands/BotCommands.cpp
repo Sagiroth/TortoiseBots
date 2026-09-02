@@ -866,9 +866,9 @@ static bool HandleRoster(ChatHandler* handler)
     }
 
     uint32 accountId = requester->GetSession()->GetAccountId();
-    // Backfill records created before the durable roster migration.  Only
-    // same-account manual records are imported; GM visibility never grants
-    // ownership to the GM account and random bots stay outside this roster.
+    // Backfill runtime records created before the durable roster migration.
+    // The roster query also exposes undeleted same-account characters, while
+    // explicit cross-account rows remain limited to the owning GM account.
     for (Player* bot : BotManager::Instance().GetAllBots())
     {
         BotRecord* record = bot ? BotManager::Instance().FindBot(bot->GetObjectGuid()) : nullptr;
@@ -884,6 +884,13 @@ static bool HandleRoster(ChatHandler* handler)
 
     std::vector<OwnedCharacter> rows = BotManager::Instance().GetOwnedCharacters(
         requester->GetSession()->GetAccountId());
+    for (auto it = rows.begin(); it != rows.end(); )
+    {
+        if (it->characterGuid == requester->GetObjectGuid())
+            it = rows.erase(it);
+        else
+            ++it;
+    }
     handler->PSendSysMessage("TBM:ROSTER_BEGIN|%u", static_cast<uint32>(rows.size()));
     for (OwnedCharacter const& row : rows)
     {

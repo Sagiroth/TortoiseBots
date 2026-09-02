@@ -240,10 +240,12 @@ command
 help
 ```
 
-`.bot roster` reads the module-owned durable character table and emits the
-structured `TBM:ROSTER_BEGIN`, `TBM:ROSTER`, and `TBM:ROSTER_END` system-message
-stream. It is the source of truth for offline and online owned rows; the
-runtime `BotManager` records remain transient Headless lifecycle state.
+`.bot roster` reads the requester's undeleted account characters and any
+explicit cross-account ownership rows from the module-owned durable table. It
+emits the structured `TBM:ROSTER_BEGIN`, `TBM:ROSTER`, and `TBM:ROSTER_END`
+system-message stream. It is the source of truth for offline and online owned
+rows; the runtime `BotManager` records remain transient Headless lifecycle
+state.
 
 `.bot action` builds one request context from the requester's normal target and
 group. Dynamic actions resolve to the targeted controllable owned bot or the
