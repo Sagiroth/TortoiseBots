@@ -44,7 +44,8 @@ layer.
 | --- | --- | --- | --- |
 | Movement | follow, stay, come, stop | Existing follow/stay shortcuts, native combat stop | Dynamic scope: targeted owned bot or all controllable party bots. |
 | Combat | attack | `attack my target` | Uses the requester's current enemy target and server-side party fan-out. |
-| Pull | pull, pullback | `PullStrategy` / `pull my target` | Executor resolver selects a tank-capable bot; no custom pull state machine. |
+| Pull | pull | `PullStrategy` / `pull my target` | Selects a tank executor and disables the existing `pull back` strategy for an ordinary pull. |
+| Pullback | pullback | `PullStrategy` + `PullBackStrategy` / `pull my target` | Selects a tank executor and enables the existing return-to-pull-position behavior. |
 | RTI | focus skull | `rti` value + `attack rti target` | Uses the existing Skull default and group raid-target icon. |
 | Crowd control | cc moon | Existing `rti cc` value and class CC strategies/triggers | Server selects a capable executor, or honors an explicitly targeted owned bot. |
 | Policy | aoe on/off | Existing `dps aoe` strategy | Scope-resolved strategy toggle; CC/RTI avoidance remains mature-AI-owned. |

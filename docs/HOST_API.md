@@ -247,10 +247,12 @@ runtime `BotManager` records remain transient Headless lifecycle state.
 
 `.bot action` builds one request context from the requester's normal target and
 group. Dynamic actions resolve to the targeted controllable owned bot or the
-controllable party bots. Pull, pullback, and CC resolve a suitable executor
-server-side. Addon requests receive one structured `TBM:ACTION_ACK` or
-`TBM:ACTION_ERR`; incidental mature-AI chat is suppressed where the existing
-silent strategy supports it.
+controllable party bots. Pull and Pullback both use the mature `PullStrategy`
+but select different existing policy state: ordinary Pull removes `pull back`,
+while Pullback enables its return-to-pull-position trigger. CC resolves a
+suitable executor server-side. Addon requests receive one structured
+`TBM:ACTION_ACK` or `TBM:ACTION_ERR`; incidental mature-AI chat is suppressed
+where the existing silent strategy supports it.
 
 `.bot command` delegates to `PlayerbotAI::HandleCommand` for Existing PlayerBots
 (primarily AzerothCore/mod-playerbots) command behavior. Authorization uses

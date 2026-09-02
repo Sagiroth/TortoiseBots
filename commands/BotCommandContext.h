@@ -46,6 +46,10 @@ std::vector<Player*> ResolveDynamicScope(BotCommandContext const& context);
 // bot. A selected bot is considered first only when the request also resolves
 // a valid enemy target; otherwise a live tank-capable party bot is selected.
 Player* ResolvePullExecutor(BotCommandContext const& context, bool allowSelected = true);
+// Select the existing mature pull policy for the next requested pull. Ordinary
+// Pull removes `pull back`; Pullback enables it so PullEnd can return to the
+// stored pull position. No custom movement state is introduced.
+bool ConfigurePullMode(PlayerbotAI* ai, bool pullback);
 // Resolve exactly one CC executor. Explicitly targeted bots never fall back to
 // another executor when they lack the mature CC capability.
 Player* ResolveCcExecutor(BotCommandContext const& context, Unit* target);

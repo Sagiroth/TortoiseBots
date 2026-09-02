@@ -204,6 +204,20 @@ Player* ResolvePullExecutor(BotCommandContext const& context, bool allowSelected
     return nullptr;
 }
 
+bool ConfigurePullMode(PlayerbotAI* ai, bool pullback)
+{
+    if (!ai)
+        return false;
+
+    ai->ChangeStrategy((pullback ? "+" : "-") + std::string("pull back"),
+        BotState::BOT_STATE_ALL);
+    return pullback
+        ? (ai->HasStrategy("pull back", BotState::BOT_STATE_COMBAT) ||
+            ai->HasStrategy("pull back", BotState::BOT_STATE_NON_COMBAT))
+        : (!ai->HasStrategy("pull back", BotState::BOT_STATE_COMBAT) &&
+            !ai->HasStrategy("pull back", BotState::BOT_STATE_NON_COMBAT));
+}
+
 namespace {
 
 bool IsCcCandidate(BotCommandContext const& context, Player* bot, Unit* target)

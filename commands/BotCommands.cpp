@@ -679,8 +679,6 @@ static bool HandlePullback(ChatHandler* handler, char const* args)
         handler->PSendSysMessage("No tank bot found in your party (needs a bot with tank role).");
         return true;
     }
-    if (context.partyBots.size() > 1 && tank != context.selectedBot)
-        handler->PSendSysMessage("Multiple tank bots found, using %s.", tank->GetName());
 
     PlayerbotAI* tankAI = PlayerbotAIStorage::Instance().GetAI(tank);
     if (!tankAI)
@@ -689,11 +687,17 @@ static bool HandlePullback(ChatHandler* handler, char const* args)
         return true;
     }
 
+
     BotRecord* record = BotManager::Instance().FindBot(tank->GetObjectGuid());
     if (!record || (record->masterGuid != requester->GetObjectGuid() &&
         !BotManager::Instance().BindBotMaster(tank->GetObjectGuid(), requester->GetObjectGuid())))
     {
         handler->PSendSysMessage("Tank %s could not be assigned to you for pullback.", tank->GetName());
+        return true;
+    }
+    if (!ConfigurePullMode(tankAI, true))
+    {
+        handler->PSendSysMessage("Tank %s has no pullback strategy available.", tank->GetName());
         return true;
     }
 
@@ -967,7 +971,6 @@ static bool ParseAction(std::string input, std::string& intent, std::string& opt
     if (first != "attack" && first != "stop" && first != "pull" &&
         first != "pullback" && first != "come" && first != "stay" &&
         first != "follow" && first != "aoe")
-        return false;
 
     if (first == "aoe")
     {
@@ -1048,6 +1051,17 @@ static bool HandleAction(ChatHandler* handler, char const* args)
         }
 
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(executor);
+        // Pull and Pullback share the mature request action; the existing
+        // `pull back` strategy is the only semantic switch between them.
+        bool pullback = intent == "pullback";
+        if (!ConfigurePullMode(ai, pullback))
+        {
+            char const* message = pullback
+                ? "The mature pullback strategy is unavailable."
+                : "The mature ordinary-pull strategy is unavailable.";
+            SendActionError(handler, intent, "pull-policy", message);
+            return true;
+        }
         if (!ExecuteQuietAction(ai, "pull my target", ai::Event(intent, "", requester)))
         {
             SendActionError(handler, intent, "failed", "The native pull strategy rejected the target.");
