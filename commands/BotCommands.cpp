@@ -23,6 +23,8 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Player.h"
 // pi-lens-ignore: clang:pp_file_not_found
+#include "Group.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "WorldSession.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "WorldPacket.h"
@@ -245,6 +247,15 @@ static bool HandleInvite(ChatHandler* handler, char const* args)
     {
         handler->PSendSysMessage("That character cannot be invited as your bot.");
         return true;
+    }
+
+    // If the bot is still in another stale group, leave it so the invite can proceed.
+    if (Group* oldGroup = bot->GetGroup())
+    {
+        if (oldGroup != requester->GetGroup())
+        {
+            oldGroup->RemoveMember(bot->GetObjectGuid(), 0);
+        }
     }
 
     // Let the native group handler create the invite. This emits the real
