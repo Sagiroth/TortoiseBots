@@ -1200,8 +1200,8 @@ static bool HandleAction(ChatHandler* handler, char const* args)
             ai::PositionEntry pos = posMap["stay"];
             pos.Set(WorldPosition(requester));
             posMap["stay"] = pos;
-            accepted = ExecuteQuietAction(ai, "move to position",
-                ai::Event("move to position", "stay", requester));
+            accepted = ExecuteQuietAction(ai, "return to stay position",
+                ai::Event("return to stay position", "stay", requester));
         }
         else if (intent == "ready")
         {
