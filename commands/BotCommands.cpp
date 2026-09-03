@@ -12,6 +12,7 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../ai/playerbot/strategy/generic/PullStrategy.h"
 #include "../ai/playerbot/strategy/values/RtiTargetValue.h"
+#include "../ai/playerbot/strategy/values/PositionValue.h"
 
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Chat.h"

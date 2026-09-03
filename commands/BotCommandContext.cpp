@@ -233,9 +233,9 @@ static std::string GetBotCcSpell(PlayerbotAI* ai, Unit* target)
 
     Creature* creature = target->ToCreature();
     CreatureInfo const* cInfo = creature ? creature->GetCreatureInfo() : nullptr;
-    uint32 creatureType = cInfo ? cInfo->Type : 0;
+    uint32 creatureType = cInfo ? cInfo->type : 0;
 
-    uint8 cls = bot->getClass();
+    uint8 cls = bot->GetClass();
     if (cls == CLASS_MAGE)
     {
         // Polymorph works on Beast, Humanoid, Critter
