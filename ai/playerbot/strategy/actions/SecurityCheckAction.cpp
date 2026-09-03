@@ -13,6 +13,9 @@ bool SecurityCheckAction::isUseful()
 
 bool SecurityCheckAction::Execute(Event& event)
 {
+    if (ai->HasActivePlayerMaster())
+        return false;
+
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     Group* group = bot->GetGroup();
     if (group)
