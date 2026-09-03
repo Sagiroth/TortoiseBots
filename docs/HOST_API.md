@@ -216,6 +216,12 @@ TortoiseBots owns the native `.bot` surface. Current commands include:
 ```text
 add
 remove
+logout
+roster
+action attack|stop|pull|pullback|come|stay|follow
+action focus skull
+action cc moon
+action aoe [on|off]
 follow
 invite
 uninvite
@@ -234,9 +240,26 @@ command
 help
 ```
 
-`.bot command` delegates to `PlayerbotAI::HandleCommand` for Existing PlayerBots (primarily AzerothCore/mod-playerbots)
-command behavior. Authorization uses the normal account/GM policy implemented
-by the module/core boundary.
+`.bot roster` reads the requester's undeleted account characters and any
+explicit cross-account ownership rows from the module-owned durable table. It
+emits the structured `TBM:ROSTER_BEGIN`, `TBM:ROSTER`, and `TBM:ROSTER_END`
+system-message stream. It is the source of truth for offline and online owned
+rows; the runtime `BotManager` records remain transient Headless lifecycle
+state.
+
+`.bot action` builds one request context from the requester's normal target and
+group. Dynamic actions resolve to the targeted controllable owned bot or the
+controllable party bots. Pull and Pullback both use the mature `PullStrategy`
+but select different existing policy state: ordinary Pull removes `pull back`,
+while Pullback enables its return-to-pull-position trigger. CC resolves a
+suitable executor server-side. Addon requests receive one structured
+`TBM:ACTION_ACK` or `TBM:ACTION_ERR`; incidental mature-AI chat is suppressed
+where the existing silent strategy supports it.
+
+`.bot command` delegates to `PlayerbotAI::HandleCommand` for Existing PlayerBots
+(primarily AzerothCore/mod-playerbots) command behavior. Authorization uses
+the normal account/GM policy implemented by the module/core boundary. Legacy
+named commands remain available for CLI and macro compatibility.
 
 ## 12. Native module/build contract
 

@@ -9,6 +9,10 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Unit.h"
 // pi-lens-ignore: clang:pp_file_not_found
+#include "GameObject.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Map.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "WorldSession.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Log.h"
@@ -67,6 +71,9 @@ bool PlayerConvenience::RequestSummon(Player* requester, Player* bot)
         destZ = requester->getPositionZ();
     }
 
+    constexpr uint32 kSummonPortalEntry = 179944; // Meeting Stone Summoning Portal (Spells\Ritual_Portal.mdx)
+    GameObject* portal = requester->SummonGameObject(kSummonPortalEntry, destX, destY, destZ, requester->getOrientation(), 0.0f, 0.0f, 0.0f, 0.0f, 5, false);
+
     SummonState state;
     state.botGuid = bot->GetObjectGuid();
     state.masterGuid = requester->GetObjectGuid();
@@ -75,6 +82,8 @@ bool PlayerConvenience::RequestSummon(Player* requester, Player* bot)
     state.destZ = destZ;
     state.destO = requester->getOrientation();
     state.destMap = requester->GetMapId();
+    if (portal)
+        state.portalGuid = portal->GetObjectGuid();
     m_summons.emplace(key, state);
 
     sLog.outString("TortoiseBots: Summon requested bot %s to %.1f,%.1f,%.1f map %u by %s",
@@ -95,6 +104,19 @@ void PlayerConvenience::Update(uint32 diff)
 
 void PlayerConvenience::UpdateSummons(uint32 diff)
 {
+    auto cleanupPortal = [](SummonState& s, Player* master) {
+        if (!s.portalGuid.IsEmpty())
+        {
+            Map* map = master ? master->GetMap() : nullptr;
+            if (map)
+            {
+                if (GameObject* go = map->GetGameObject(s.portalGuid))
+                    go->Delete();
+            }
+            s.portalGuid.Clear();
+        }
+    };
+
     for (auto it = m_summons.begin(); it != m_summons.end(); )
     {
         SummonState& state = it->second;
@@ -107,6 +129,7 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
             master->IsTaxiFlying() ||
             master->GetMapId() != state.destMap)
         {
+            cleanupPortal(state, master);
             it = m_summons.erase(it);
             continue;
         }
@@ -116,18 +139,28 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
         {
             sLog.outString("TortoiseBots: Summon cancelled for bot %s because its master changed",
                 state.botGuid.GetString().c_str());
+            cleanupPortal(state, master);
             it = m_summons.erase(it);
             continue;
         }
 
         if (state.phase == SummonState::Phase::AwaitingArrival)
         {
+            if (bot->GetSession() && bot->GetSession()->IsHeadless())
+            {
+                if (bot->IsBeingTeleportedNear())
+                    bot->ExecuteTeleportNear();
+                else if (bot->IsBeingTeleportedFar())
+                    bot->GetSession()->HandleMoveWorldportAckOpcode();
+            }
+
             if (!bot->IsInWorld() || bot->IsBeingTeleported())
             {
                 if (state.elapsedMs > kSummonArrivalTimeoutMs)
                 {
                     sLog.outError("TortoiseBots: Summon arrival timed out for bot %s",
                         state.botGuid.GetString().c_str());
+                    cleanupPortal(state, master);
                     it = m_summons.erase(it);
                 }
                 else
@@ -139,6 +172,7 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
             {
                 sLog.outString("TortoiseBots: Summon cancelled bot %s became incompatible before follow restore",
                     bot->GetName());
+                cleanupPortal(state, master);
                 it = m_summons.erase(it);
                 continue;
             }
@@ -147,18 +181,21 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
             {
                 sLog.outError("TortoiseBots: Summon follow restore failed for bot %s",
                     state.botGuid.GetString().c_str());
+                cleanupPortal(state, master);
                 it = m_summons.erase(it);
                 continue;
             }
 
             sLog.outString("TortoiseBots: Summon completed for bot %s with follow restored to %s",
                 bot->GetName(), master->GetName());
+            cleanupPortal(state, master);
             it = m_summons.erase(it);
             continue;
         }
 
         if (!bot->IsInWorld())
         {
+            cleanupPortal(state, master);
             it = m_summons.erase(it);
             continue;
         }
@@ -167,6 +204,7 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
         {
             sLog.outString("TortoiseBots: Summon cancelled bot %s became incompatible before teleport",
                 bot->GetName());
+            cleanupPortal(state, master);
             it = m_summons.erase(it);
             continue;
         }
@@ -179,11 +217,22 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
         if (bot->IsInCombat())
         {
             sLog.outString("TortoiseBots: Summon aborted bot %s still in combat", bot->GetName());
+            cleanupPortal(state, master);
             it = m_summons.erase(it);
             continue;
         }
 
+        cleanupPortal(state, master);
+        bot->GetMotionMaster()->Clear(false);
+        bot->StopMoving();
         bot->TeleportTo(state.destMap, state.destX, state.destY, state.destZ, state.destO, 0);
+        if (bot->GetSession() && bot->GetSession()->IsHeadless())
+        {
+            if (bot->IsBeingTeleportedNear())
+                bot->ExecuteTeleportNear();
+            else if (bot->IsBeingTeleportedFar())
+                bot->GetSession()->HandleMoveWorldportAckOpcode();
+        }
         state.phase = SummonState::Phase::AwaitingArrival;
         state.elapsedMs = 0;
         sLog.outString("TortoiseBots: Summon teleport requested for bot %s to master %s",

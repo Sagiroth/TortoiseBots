@@ -39,6 +39,7 @@ private:
         float destO = 0.0f;
         uint32 destMap = 0;
         uint32 elapsedMs = 0;
+        ObjectGuid portalGuid;
 
         enum class Phase { Delaying, AwaitingArrival } phase = Phase::Delaying;
     };

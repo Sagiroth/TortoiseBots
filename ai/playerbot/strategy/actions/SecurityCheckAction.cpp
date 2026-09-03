@@ -13,6 +13,10 @@ bool SecurityCheckAction::isUseful()
 
 bool SecurityCheckAction::Execute(Event& event)
 {
+    // The anti-ninja check is strictly for autonomous world/random bots, not player-owned bots.
+    if (!sRandomBotFacade.IsRandomBot(bot))
+        return false;
+
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     Group* group = bot->GetGroup();
     if (group)

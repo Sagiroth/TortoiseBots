@@ -39,16 +39,38 @@ enum class BotLifecycle
 
 struct BotRecord
 {
-    uint32_t accountId = 0;
+    uint32_t accountId = 0; // character account used by the Headless login
 // pi-lens-ignore: clang:unknown_typename
     ObjectGuid characterGuid;
 // pi-lens-ignore: clang:unknown_typename
-    ObjectGuid masterGuid; // owner/master for Follow
+    ObjectGuid masterGuid; // live owner/master for Follow
+    // Durable owner account. Zero denotes an unowned/random runtime record and
+    // retains the historical accountId fallback for diagnostics.
+    uint32_t ownerAccountId = 0;
     uint32_t ticksInWorld = 0;
     bool enteredWorld = false;
     bool random = false;
     // pi-lens-ignore: no-bit-fields
     BotLifecycle lifecycle = BotLifecycle::PendingAdd;
+};
+
+struct OwnedCharacter
+{
+    uint32_t ownerAccountId = 0;
+    uint32_t characterAccountId = 0;
+// pi-lens-ignore: clang:unknown_typename
+    ObjectGuid characterGuid;
+// pi-lens-ignore: clang:unknown_typename
+    ObjectGuid masterGuid;
+    std::string name;
+    uint8_t classId = 0;
+    bool characterOnline = false; // informational only; Headless state is authoritative
+    uint32_t mapId = 0;
+    uint32_t zoneId = 0;
+    uint32_t areaId = 0;
+    float positionX = 0.0f;
+    float positionY = 0.0f;
+    float positionZ = 0.0f;
 };
 
 class PlayerbotAIAdapter;
@@ -81,6 +103,16 @@ public:
     bool AddBotWithMaster(uint32_t accountId, ObjectGuid guid, ObjectGuid masterGuid);
 // pi-lens-ignore: clang:unknown_typename
     bool RemoveBot(ObjectGuid guid, bool save = true);
+
+    // Durable manual ownership is separate from the transient Headless record.
+    // GetOwnedCharacters includes every undeleted same-account character plus
+    // any explicit cross-account ownership rows, so offline alts remain
+    // discoverable before their first Headless login.
+    bool RegisterOwnedCharacter(uint32_t ownerAccountId, uint32_t characterAccountId,
+        ObjectGuid characterGuid, ObjectGuid masterGuid);
+    bool GetOwnedCharacter(ObjectGuid characterGuid, OwnedCharacter& result);
+    std::vector<OwnedCharacter> GetOwnedCharacters(uint32_t ownerAccountId);
+
 // pi-lens-ignore: clang:unknown_typename
     BotRecord* FindBot(ObjectGuid guid);
     // pi-lens-ignore: clang:unknown_typename
