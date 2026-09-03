@@ -146,6 +146,14 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
 
         if (state.phase == SummonState::Phase::AwaitingArrival)
         {
+            if (bot->GetSession() && bot->GetSession()->IsHeadless())
+            {
+                if (bot->IsBeingTeleportedNear())
+                    bot->ExecuteTeleportNear();
+                else if (bot->IsBeingTeleportedFar())
+                    bot->GetSession()->HandleMoveWorldportAckOpcode();
+            }
+
             if (!bot->IsInWorld() || bot->IsBeingTeleported())
             {
                 if (state.elapsedMs > kSummonArrivalTimeoutMs)
@@ -215,7 +223,16 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
         }
 
         cleanupPortal(state, master);
+        bot->GetMotionMaster()->Clear(false);
+        bot->StopMoving();
         bot->TeleportTo(state.destMap, state.destX, state.destY, state.destZ, state.destO, 0);
+        if (bot->GetSession() && bot->GetSession()->IsHeadless())
+        {
+            if (bot->IsBeingTeleportedNear())
+                bot->ExecuteTeleportNear();
+            else if (bot->IsBeingTeleportedFar())
+                bot->GetSession()->HandleMoveWorldportAckOpcode();
+        }
         state.phase = SummonState::Phase::AwaitingArrival;
         state.elapsedMs = 0;
         sLog.outString("TortoiseBots: Summon teleport requested for bot %s to master %s",
