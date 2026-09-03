@@ -376,10 +376,48 @@ static bool HandleFormation(ChatHandler* handler, char const* args)
 {
     Player* requester = Requester(handler);
     std::string input = Trim(args ? args : "");
-    size_t separator = input.find_first_of(" \t");
-    if (!requester || separator == std::string::npos)
+    if (!requester || input.empty())
     {
-        handler->PSendSysMessage("Usage: .bot formation <bot name> <default|melee|queue|chaos|circle|line|shield|arrow|near|far>");
+        handler->PSendSysMessage("Usage: .bot formation [botName] <default|melee|queue|chaos|circle|line|shield|arrow|near|far>");
+        return true;
+    }
+
+    size_t separator = input.find_first_of(" \t");
+    std::string firstToken = input.substr(0, separator);
+    for (char& c : firstToken)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+    // Single formation name without bot name applies to dynamic scope
+    if (separator == std::string::npos && IsPublicFormation(firstToken))
+    {
+        BotCommandContext context = BuildContext(requester);
+        std::vector<Player*> scope = ResolveDynamicScope(context);
+        if (scope.empty())
+        {
+            handler->PSendSysMessage("No live owned party bots are controllable.");
+            return true;
+        }
+
+        uint32 succeeded = 0;
+        for (Player* bot : scope)
+        {
+            PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+            if (!ai) continue;
+            ai::Event event("formation", firstToken, requester);
+            if (ai->DoSpecificAction("formation", event, true))
+                ++succeeded;
+        }
+
+        if (context.selectedBot && scope.size() == 1)
+            handler->PSendSysMessage("Bot %s formation set to %s.", context.selectedBot->GetName(), firstToken.c_str());
+        else
+            handler->PSendSysMessage("Party formation set to %s (%u bots updated).", firstToken.c_str(), succeeded);
+        return true;
+    }
+
+    if (separator == std::string::npos)
+    {
+        handler->PSendSysMessage("Usage: .bot formation [botName] <default|melee|queue|chaos|circle|line|shield|arrow|near|far>");
         return true;
     }
 
@@ -977,7 +1015,9 @@ static bool ParseAction(std::string input, std::string& intent, std::string& opt
 
     if (first != "attack" && first != "stop" && first != "pull" &&
         first != "pullback" && first != "come" && first != "stay" &&
-        first != "follow" && first != "aoe")
+        first != "follow" && first != "aoe" && first != "hold" &&
+        first != "comestay" && first != "ready")
+        return false;
 
     if (first == "aoe")
     {
@@ -998,7 +1038,7 @@ static bool HandleAction(ChatHandler* handler, char const* args)
     std::string option;
     if (!requester || !ParseAction(Trim(args ? args : ""), intent, option))
     {
-        SendActionError(handler, intent, "invalid", "Usage: .bot action attack|stop|pull|pullback|come|stay|follow|focus skull|cc moon|aoe [on|off]");
+        SendActionError(handler, intent, "invalid", "Usage: .bot action attack|stop|pull|pullback|come|stay|hold|follow|focus skull|cc moon|aoe [on|off]|ready");
         return true;
     }
     if (!requester->IsInWorld() || !requester->IsAlive() || requester->IsBeingTeleported())
@@ -1118,6 +1158,23 @@ static bool HandleAction(ChatHandler* handler, char const* args)
         else if (intent == "stay")
         {
             accepted = ExecuteQuietAction(ai, "stay chat shortcut",
+                ai::Event(intent, "", requester));
+        }
+        else if (intent == "hold" || intent == "comestay")
+        {
+            ai->Reset();
+            ai->ChangeStrategy("+stay,-follow,-wander,-passive", BotState::BOT_STATE_NON_COMBAT);
+            ai->ChangeStrategy("+stay,-follow,-wander,-passive", BotState::BOT_STATE_COMBAT);
+            ai::PositionMap& posMap = ai->GetAiObjectContext()->GetValue<ai::PositionMap&>("position")->Get();
+            ai::PositionEntry pos = posMap["stay"];
+            pos.Set(WorldPosition(requester));
+            posMap["stay"] = pos;
+            accepted = ExecuteQuietAction(ai, "move to position",
+                ai::Event("move to position", "stay", requester));
+        }
+        else if (intent == "ready")
+        {
+            accepted = ExecuteQuietAction(ai, "ready check",
                 ai::Event(intent, "", requester));
         }
         else if (intent == "aoe")
