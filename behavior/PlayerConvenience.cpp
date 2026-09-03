@@ -11,6 +11,8 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "GameObject.h"
 // pi-lens-ignore: clang:pp_file_not_found
+#include "Map.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "WorldSession.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Log.h"
@@ -102,11 +104,15 @@ void PlayerConvenience::Update(uint32 diff)
 
 void PlayerConvenience::UpdateSummons(uint32 diff)
 {
-    auto cleanupPortal = [](SummonState& s) {
+    auto cleanupPortal = [](SummonState& s, Player* master) {
         if (!s.portalGuid.IsEmpty())
         {
-            if (GameObject* go = sObjectAccessor.FindGameObject(s.portalGuid))
-                go->Delete();
+            Map* map = master ? master->GetMap() : nullptr;
+            if (map)
+            {
+                if (GameObject* go = map->GetGameObject(s.portalGuid))
+                    go->Delete();
+            }
             s.portalGuid.Clear();
         }
     };
@@ -123,7 +129,7 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
             master->IsTaxiFlying() ||
             master->GetMapId() != state.destMap)
         {
-            cleanupPortal(state);
+            cleanupPortal(state, master);
             it = m_summons.erase(it);
             continue;
         }
@@ -133,7 +139,7 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
         {
             sLog.outString("TortoiseBots: Summon cancelled for bot %s because its master changed",
                 state.botGuid.GetString().c_str());
-            cleanupPortal(state);
+            cleanupPortal(state, master);
             it = m_summons.erase(it);
             continue;
         }
@@ -146,7 +152,7 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
                 {
                     sLog.outError("TortoiseBots: Summon arrival timed out for bot %s",
                         state.botGuid.GetString().c_str());
-                    cleanupPortal(state);
+                    cleanupPortal(state, master);
                     it = m_summons.erase(it);
                 }
                 else
@@ -158,7 +164,7 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
             {
                 sLog.outString("TortoiseBots: Summon cancelled bot %s became incompatible before follow restore",
                     bot->GetName());
-                cleanupPortal(state);
+                cleanupPortal(state, master);
                 it = m_summons.erase(it);
                 continue;
             }
@@ -167,21 +173,21 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
             {
                 sLog.outError("TortoiseBots: Summon follow restore failed for bot %s",
                     state.botGuid.GetString().c_str());
-                cleanupPortal(state);
+                cleanupPortal(state, master);
                 it = m_summons.erase(it);
                 continue;
             }
 
             sLog.outString("TortoiseBots: Summon completed for bot %s with follow restored to %s",
                 bot->GetName(), master->GetName());
-            cleanupPortal(state);
+            cleanupPortal(state, master);
             it = m_summons.erase(it);
             continue;
         }
 
         if (!bot->IsInWorld())
         {
-            cleanupPortal(state);
+            cleanupPortal(state, master);
             it = m_summons.erase(it);
             continue;
         }
@@ -190,7 +196,7 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
         {
             sLog.outString("TortoiseBots: Summon cancelled bot %s became incompatible before teleport",
                 bot->GetName());
-            cleanupPortal(state);
+            cleanupPortal(state, master);
             it = m_summons.erase(it);
             continue;
         }
@@ -203,12 +209,12 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
         if (bot->IsInCombat())
         {
             sLog.outString("TortoiseBots: Summon aborted bot %s still in combat", bot->GetName());
-            cleanupPortal(state);
+            cleanupPortal(state, master);
             it = m_summons.erase(it);
             continue;
         }
 
-        cleanupPortal(state);
+        cleanupPortal(state, master);
         bot->TeleportTo(state.destMap, state.destX, state.destY, state.destZ, state.destO, 0);
         state.phase = SummonState::Phase::AwaitingArrival;
         state.elapsedMs = 0;
