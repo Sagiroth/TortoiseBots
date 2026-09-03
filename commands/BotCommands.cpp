@@ -1337,7 +1337,7 @@ bool HandleChatCommand(ChatHandler* handler, char const* args)
         return HandleMatureCommand(handler, subArgs);
     if (cmd == "help" || cmd == "h")
     {
-        handler->PSendSysMessage("Bot commands: add/remove/logout/roster/action/follow/invite/uninvite/stay/guard/free/ready/attack/formation/list/stats/status/pullback/summon/command");
+        handler->PSendSysMessage("TortoiseBots: Enabled");
         return true;
     }
 
