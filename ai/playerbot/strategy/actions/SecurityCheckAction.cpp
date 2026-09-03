@@ -13,7 +13,8 @@ bool SecurityCheckAction::isUseful()
 
 bool SecurityCheckAction::Execute(Event& event)
 {
-    if (ai->HasActivePlayerMaster())
+    // The anti-ninja check is strictly for autonomous world/random bots, not player-owned bots.
+    if (!sRandomBotFacade.IsRandomBot(bot))
         return false;
 
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
