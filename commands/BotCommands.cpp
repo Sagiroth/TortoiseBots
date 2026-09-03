@@ -1150,7 +1150,7 @@ static bool HandleAction(ChatHandler* handler, char const* args)
             ai->Reset(false);
             accepted = true;
         }
-        else if (intent == "follow" || intent == "come")
+        else if (intent == "follow")
         {
             accepted = ExecuteQuietAction(ai, "follow chat shortcut",
                 ai::Event(intent, "", requester));
@@ -1160,7 +1160,7 @@ static bool HandleAction(ChatHandler* handler, char const* args)
             accepted = ExecuteQuietAction(ai, "stay chat shortcut",
                 ai::Event(intent, "", requester));
         }
-        else if (intent == "hold" || intent == "comestay")
+        else if (intent == "come" || intent == "hold" || intent == "comestay")
         {
             ai->Reset();
             ai->ChangeStrategy("+stay,-follow,-wander,-passive", BotState::BOT_STATE_NON_COMBAT);
