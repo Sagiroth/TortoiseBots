@@ -1067,21 +1067,40 @@ static bool HandleAction(ChatHandler* handler, char const* args)
             if (!moonGuid.IsEmpty())
                 ccTarget = requester->GetMap()->GetUnit(moonGuid);
         }
+        if (!ccTarget && context.enemyTarget)
+        {
+            ccTarget = context.enemyTarget;
+        }
         if (!ccTarget)
         {
-            SendActionError(handler, intent, "no-mark", "Mark a live target with Moon first.");
+            SendActionError(handler, intent, "no-mark", "Mark a live target with Moon or select an enemy target first.");
             return true;
         }
 
-        Player* executor = ResolveCcExecutor(context, ccTarget);
+        std::string ccSpell;
+        Player* executor = ResolveCcExecutor(context, ccTarget, &ccSpell);
         if (!executor)
         {
-            SendActionError(handler, intent, "no-cc", "No owned bot can maintain CC on the Moon target.");
+            SendActionError(handler, intent, "no-cc", "No owned bot can CC this target (check target type/range).");
             return true;
         }
 
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(executor);
-        ExecuteQuietNextAction(ai);
+        if (ai)
+        {
+            // Break stay so caster can step into spell range if needed
+            ai->ChangeStrategy("-stay", BotState::BOT_STATE_NON_COMBAT);
+            ai->ChangeStrategy("-stay", BotState::BOT_STATE_COMBAT);
+
+            // Register RTI CC assignment on the executor so it maintains CC throughout combat
+            ExecuteQuietAction(ai, "rti", ai::Event("cc moon", "cc moon", requester));
+
+            // Face target, select target, and cast CC spell immediately
+            executor->SetSelectionGuid(ccTarget->GetObjectGuid());
+            sServerFacade.SetFacingTo(executor, ccTarget);
+            ai->CastSpell(ccSpell, ccTarget);
+        }
+
         SendActionAck(handler, intent, context.selectedBot == executor
             ? "bot:" + std::string(executor->GetName()) : "party", 1, executor->GetName());
         return true;
@@ -1109,6 +1128,11 @@ static bool HandleAction(ChatHandler* handler, char const* args)
             SendActionError(handler, intent, "pull-policy", message);
             return true;
         }
+
+        // Pulling requires tank movement: break stay!
+        ai->ChangeStrategy("-stay", BotState::BOT_STATE_NON_COMBAT);
+        ai->ChangeStrategy("-stay", BotState::BOT_STATE_COMBAT);
+
         if (!ExecuteQuietAction(ai, "pull my target", ai::Event(intent, "", requester)))
         {
             SendActionError(handler, intent, "failed", "The native pull strategy rejected the target.");
@@ -1139,8 +1163,12 @@ static bool HandleAction(ChatHandler* handler, char const* args)
         {
             // AttackMyTargetAction intentionally reads requester's selection,
             // preserving the mature target validation and combat path.
+            // Break stay so bots can move to the target!
+            ai->ChangeStrategy("-stay", BotState::BOT_STATE_NON_COMBAT);
+            ai->ChangeStrategy("-stay", BotState::BOT_STATE_COMBAT);
             accepted = ExecuteQuietAction(ai, "attack my target",
                 ai::Event("action attack", "", requester));
+            ExecuteQuietNextAction(ai, true);
         }
         else if (intent == "stop")
         {
@@ -1152,6 +1180,9 @@ static bool HandleAction(ChatHandler* handler, char const* args)
         }
         else if (intent == "follow")
         {
+            // Explicit follow order breaks stay and commands bots to follow!
+            ai->ChangeStrategy("-stay,+follow", BotState::BOT_STATE_NON_COMBAT);
+            ai->ChangeStrategy("-stay,+follow", BotState::BOT_STATE_COMBAT);
             accepted = ExecuteQuietAction(ai, "follow chat shortcut",
                 ai::Event(intent, "", requester));
         }

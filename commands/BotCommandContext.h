@@ -52,7 +52,7 @@ Player* ResolvePullExecutor(BotCommandContext const& context, bool allowSelected
 bool ConfigurePullMode(PlayerbotAI* ai, bool pullback);
 // Resolve exactly one CC executor. Explicitly targeted bots never fall back to
 // another executor when they lack the mature CC capability.
-Player* ResolveCcExecutor(BotCommandContext const& context, Unit* target);
+Player* ResolveCcExecutor(BotCommandContext const& context, Unit* target, std::string* outSpell = nullptr);
 
 // Execute a mature action while suppressing only its transient chat output.
 // The pre-existing non-combat `silent` strategy is restored exactly on scope

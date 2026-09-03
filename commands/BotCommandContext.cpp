@@ -13,6 +13,8 @@
 #include "WorldSession.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Group/Group.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Creature.h"
 
 #include <algorithm>
 
@@ -220,41 +222,106 @@ bool ConfigurePullMode(PlayerbotAI* ai, bool pullback)
 
 namespace {
 
-bool IsCcCandidate(BotCommandContext const& context, Player* bot, Unit* target)
+static std::string GetBotCcSpell(PlayerbotAI* ai, Unit* target)
 {
-    if (!context.requester || !bot || !target || !IsLiveHeadlessBot(bot))
-        return false;
+    if (!ai || !target)
+        return "";
 
-    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
-    if (!ai || (!ai->HasStrategy("cc", BotState::BOT_STATE_COMBAT) &&
-        !ai->HasStrategy("cc", BotState::BOT_STATE_NON_COMBAT)))
-        return false;
+    Player* bot = ai->GetBot();
+    if (!bot || !bot->IsInWorld() || !bot->IsAlive())
+        return "";
 
-    // The mature AI has no generic CC action. Setting the existing RTI-CC
-    // value and checking its resolved target is the narrow capability seam;
-    // class strategies still choose the actual spell.
-    if (!ExecuteQuietAction(ai, "rti",
-        ai::Event("cc moon", "cc moon", context.requester)))
-        return false;
+    Creature* creature = target->ToCreature();
+    CreatureInfo const* cInfo = creature ? creature->GetCreatureInfo() : nullptr;
+    uint32 creatureType = cInfo ? cInfo->Type : 0;
 
-    ai::Value<Unit*>* ccTarget = ai->GetAiObjectContext()->GetValue<Unit*>("rti cc target");
-    return ccTarget && ccTarget->Get() == target;
+    uint8 cls = bot->getClass();
+    if (cls == CLASS_MAGE)
+    {
+        // Polymorph works on Beast, Humanoid, Critter
+        if (!creature || creatureType == CREATURE_TYPE_BEAST ||
+            creatureType == CREATURE_TYPE_HUMANOID ||
+            creatureType == CREATURE_TYPE_CRITTER)
+        {
+            if (ai->CanCastSpell("polymorph", target, 0, nullptr, true, true, true))
+                return "polymorph";
+        }
+    }
+    else if (cls == CLASS_WARLOCK)
+    {
+        if (creature && (creatureType == CREATURE_TYPE_DEMON || creatureType == CREATURE_TYPE_ELEMENTAL))
+        {
+            if (ai->CanCastSpell("banish", target, 0, nullptr, true, true, true))
+                return "banish";
+        }
+        if (ai->CanCastSpell("fear", target, 0, nullptr, true, true, true))
+            return "fear";
+    }
+    else if (cls == CLASS_PRIEST)
+    {
+        if (creature && creatureType == CREATURE_TYPE_UNDEAD)
+        {
+            if (ai->CanCastSpell("shackle undead", target, 0, nullptr, true, true, true))
+                return "shackle undead";
+        }
+    }
+    else if (cls == CLASS_DRUID)
+    {
+        if (creature && (creatureType == CREATURE_TYPE_BEAST || creatureType == CREATURE_TYPE_DRAGONKIN))
+        {
+            if (ai->CanCastSpell("hibernate", target, 0, nullptr, true, true, true))
+                return "hibernate";
+        }
+        if (ai->CanCastSpell("entangling roots", target, 0, nullptr, true, true, true))
+            return "entangling roots";
+    }
+    else if (cls == CLASS_ROGUE)
+    {
+        if (creature && creatureType == CREATURE_TYPE_HUMANOID && !creature->IsInCombat())
+        {
+            if (ai->CanCastSpell("sap", target, 0, nullptr, true, true, true))
+                return "sap";
+        }
+    }
+
+    return "";
 }
 
 } // namespace
 
-Player* ResolveCcExecutor(BotCommandContext const& context, Unit* target)
+Player* ResolveCcExecutor(BotCommandContext const& context, Unit* target, std::string* outSpell)
 {
     if (!target)
         return nullptr;
 
-    if (context.selectedBot)
-        return IsCcCandidate(context, context.selectedBot, target) ? context.selectedBot : nullptr;
+    if (context.selectedBot && IsLiveHeadlessBot(context.selectedBot))
+    {
+        PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(context.selectedBot);
+        if (ai)
+        {
+            std::string spell = GetBotCcSpell(ai, target);
+            if (!spell.empty())
+            {
+                if (outSpell) *outSpell = spell;
+                return context.selectedBot;
+            }
+        }
+        return nullptr;
+    }
 
     for (Player* bot : context.partyBots)
     {
-        if (IsCcCandidate(context, bot, target))
+        if (!IsLiveHeadlessBot(bot))
+            continue;
+        PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+        if (!ai)
+            continue;
+        std::string spell = GetBotCcSpell(ai, target);
+        if (!spell.empty())
+        {
+            if (outSpell) *outSpell = spell;
             return bot;
+        }
     }
 
     return nullptr;
