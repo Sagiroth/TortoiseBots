@@ -95,12 +95,12 @@ bool AttackRTITargetAction::Execute(Event& event)
 
 bool AttackMyTargetAction::isUseful()
 {
-    return !ai->ContainsStrategy(STRATEGY_TYPE_HEAL) || ai->HasStrategy("offdps", BotState::BOT_STATE_COMBAT);
+    return true;
 }
 
 bool AttackRTITargetAction::isUseful()
 {
-    return !ai->ContainsStrategy(STRATEGY_TYPE_HEAL) || ai->HasStrategy("offdps", BotState::BOT_STATE_COMBAT);
+    return true;
 }
 
 bool AttackAction::Attack(Player* requester, Unit* target)

@@ -86,8 +86,7 @@ bool FollowAction::isUseful()
 
     if (followTarget && bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE &&
         sServerFacade.GetChaseTarget(bot) &&
-        sServerFacade.GetChaseTarget(bot)->getObjectGuid() == followTarget->getObjectGuid() &&
-        !bot->IsStopped())
+        sServerFacade.GetChaseTarget(bot)->getObjectGuid() == followTarget->getObjectGuid())
     {
         return false;
     }

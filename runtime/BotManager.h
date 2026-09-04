@@ -30,6 +30,8 @@ class Unit;
 
 namespace TortoiseBots {
 
+bool NormalizeHeadlessGmPresentation(::Player* bot);
+
 enum class BotLifecycle
 {
     PendingAdd,

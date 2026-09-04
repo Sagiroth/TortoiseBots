@@ -3,6 +3,7 @@
 #include "GenericTriggers.h"
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/strategy/generic/PullStrategy.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/values/AoeValues.h"
 
@@ -806,14 +807,17 @@ bool ReturnToStayPositionTrigger::IsActive()
 
 bool ReturnToPullPositionTrigger::IsActive()
 {
-    PositionEntry pullPosition = AI_VALUE(PositionMap&, "position")["pull"];
-    if (pullPosition.isSet())
-    {
-        const float distance = bot->GetDistance(pullPosition.x, pullPosition.y, pullPosition.z);
-        return distance > ai->GetRange("follow");
-    }
+    PullStrategy const* strategy = PullStrategy::Get(ai);
+    Unit* target = strategy ? strategy->GetTarget() : nullptr;
+    if (!strategy || !strategy->HasPullStarted() || !target ||
+        (!target->IsInCombat() && sServerFacade.GetThreatManager(target).getThreat(bot) <= 0.0f) ||
+        !ai->HasStrategy("pull back", BotState::BOT_STATE_COMBAT))
+        return false;
 
-    return false;
+    PositionMap& posMap = AI_VALUE(PositionMap&, "position");
+    PositionEntry pullPosition = posMap["pull"];
+    return pullPosition.isSet() && pullPosition.mapId == bot->GetMapId() &&
+           bot->GetDistance(pullPosition.x, pullPosition.y, pullPosition.z) > sPlayerbotAIConfig.followDistance;
 }
 
 bool NoBuffAndComboPointsAvailableTrigger::IsActive()

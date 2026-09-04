@@ -400,6 +400,12 @@ void CastShootAction::UpdateWeaponInfo()
 
         // Check the ammunition
         needsAmmo = (GetSpellName() != "shoot") ? (AI_VALUE2(uint32, "item count", "ammo") <= 0) : false;
+        if (!needsAmmo && bot->GetUInt32Value(PLAYER_AMMO_ID) == 0)
+        {
+            std::list<Item*> ammo = AI_VALUE2(std::list<Item*>, "inventory items", "ammo");
+            if (!ammo.empty() && ammo.front())
+                bot->SetAmmo(ammo.front()->GetEntry());
+        }
     }
     else
     {

@@ -58,41 +58,6 @@ bool IsUsableTeleportPoint(ai::WorldPosition const& point)
         point.getZ() >= groundZ && point.getZ() <= maxZ + 2.0f;
 }
 
-// A Headless session must never render an owned bot as an account-level GM.
-// Its Network owner retains all account privileges; this only normalizes the
-// separately logged-in bot character after the core restores saved GM flags.
-bool NormalizeHeadlessGmPresentation(::Player* bot)
-{
-    if (!bot || !bot->GetSession() || !bot->GetSession()->IsHeadless())
-        return false;
-
-    uint32 const gmFlags = PLAYER_EXTRA_GM_ON | PLAYER_EXTRA_GM_ACCEPT_TICKETS |
-        PLAYER_EXTRA_GM_INVISIBLE | PLAYER_EXTRA_GM_CHAT |
-        PLAYER_EXTRA_GM_DISABLE_SOCIAL;
-    uint32 const flags = bot->GetExtraFlags();
-    if (!(flags & gmFlags) && (flags & PLAYER_EXTRA_ACCEPT_WHISPERS) &&
-        bot->IsGMVisible())
-    {
-        return false;
-    }
-
-    if (flags & PLAYER_EXTRA_GM_ON)
-        bot->SetGameMaster(false);
-    if (flags & PLAYER_EXTRA_GM_CHAT)
-        bot->SetGMChat(false);
-    if (flags & PLAYER_EXTRA_GM_ACCEPT_TICKETS)
-        bot->SetAcceptTicket(false);
-    if (flags & PLAYER_EXTRA_GM_DISABLE_SOCIAL)
-        bot->SetGMSocials(true);
-    if (!(flags & PLAYER_EXTRA_ACCEPT_WHISPERS))
-        bot->SetAcceptWhispers(true);
-
-    // Persist only the bot's presentation flags. The owner's account rank and
-    // its Network session are untouched.
-    bot->SetGMVisible(true);
-    return true;
-}
-
 bool TryRandomTeleport(::Player* bot, BotRecord const& record)
 {
     if (!sPlayerbotAIConfig.enableRandomTeleports)
@@ -204,6 +169,41 @@ bool TryRandomTeleport(::Player* bot, BotRecord const& record)
     return ok;
 }
 } // namespace
+
+// A Headless session must never render an owned bot as an account-level GM.
+// Its Network owner retains all account privileges; this only normalizes the
+// separately logged-in bot character after the core restores saved GM flags.
+bool NormalizeHeadlessGmPresentation(::Player* bot)
+{
+    if (!bot || !bot->GetSession() || !bot->GetSession()->IsHeadless())
+        return false;
+
+    uint32 const gmFlags = PLAYER_EXTRA_GM_ON | PLAYER_EXTRA_GM_ACCEPT_TICKETS |
+        PLAYER_EXTRA_GM_INVISIBLE | PLAYER_EXTRA_GM_CHAT |
+        PLAYER_EXTRA_GM_DISABLE_SOCIAL;
+    uint32 const flags = bot->GetExtraFlags();
+    if (!(flags & gmFlags) && (flags & PLAYER_EXTRA_ACCEPT_WHISPERS) &&
+        bot->IsGMVisible() && !bot->IsGameMaster() && bot->GetInvincibilityHpThreshold() == 0)
+    {
+        return false;
+    }
+
+    bot->SetInvincibilityHpThreshold(0);
+    bot->SetGameMaster(false);
+    if (flags & PLAYER_EXTRA_GM_CHAT)
+        bot->SetGMChat(false);
+    if (flags & PLAYER_EXTRA_GM_ACCEPT_TICKETS)
+        bot->SetAcceptTicket(false);
+    if (flags & PLAYER_EXTRA_GM_DISABLE_SOCIAL)
+        bot->SetGMSocials(true);
+    if (!(flags & PLAYER_EXTRA_ACCEPT_WHISPERS))
+        bot->SetAcceptWhispers(true);
+
+    // Persist only the bot's presentation flags. The owner's account rank and
+    // its Network session are untouched.
+    bot->SetGMVisible(true);
+    return true;
+}
 
 BotEntry::~BotEntry() = default;
 
