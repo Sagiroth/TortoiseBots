@@ -59,8 +59,7 @@ callback identity, reclamation, deletion, update, and shutdown from callers.
 
 > [!IMPORTANT]
 > The current compatibility target is the stacked core work in PRs
-> [#411](https://github.com/Penqle/tortoise-wow/pull/411) and
-> [#416](https://github.com/Penqle/tortoise-wow/pull/416), which are still
+> [#438](https://github.com/Penqle/tortoise-wow/pull/438) and which is still
 > awaiting upstream merge. Build against the synchronized revisions recorded
 > in `docs/HOST_API.md`, not an unrelated `main` checkout.
 >
