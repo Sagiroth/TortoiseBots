@@ -91,6 +91,7 @@ public:
 
     void OnWorldUpdate(uint32_t diff);
     void OnPlayerLogin(Player* player);
+    void OnMasterMapChanged(Player* player);
     void OnPlayerBeforeLogout(Player* player);
     void OnPlayerLogout(Player* player);
     void ReleaseToClient(Player* player);

@@ -258,6 +258,18 @@ static bool HandleInvite(ChatHandler* handler, char const* args)
         }
     }
 
+    // Match the mature PlayerBots invite path: a full normal group must become
+    // a raid before inviting another controlled bot.  Native handlers retain
+    // ownership of the actual invitation and acceptance transitions.
+    Group* requesterGroup = requester->GetGroup();
+    if (requesterGroup && requesterGroup->isBGGroup())
+        requesterGroup = requester->GetOriginalGroup();
+    if (requesterGroup && !requesterGroup->IsRaidGroup() &&
+        requesterGroup->GetMembersCount() > 4)
+    {
+        requesterGroup->ConvertToRaid();
+    }
+
     // Let the native group handler create the invite. This emits the real
     // SMSG_GROUP_INVITE, which the module packet bridge feeds to PlayerbotAI.
     auto* previousInvite = bot->GetGroupInvite();
@@ -269,8 +281,23 @@ static bool HandleInvite(ChatHandler* handler, char const* args)
         handler->PSendSysMessage("The group invitation for %s was rejected by the native group handler.", name.c_str());
         return true;
     }
+    // The packet path remains queued for ordinary AI processing, but do not
+    // make the first group formation wait for an unrelated AI tick. Reuse the
+    // mature action, which still validates security and accepts through the
+    // core's native group handler. If it cannot run yet, the queued packet is
+    // the safe asynchronous fallback.
+    bool joinedImmediately = false;
+    if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
+    {
+        ai::Event inviteEvent("group invite", "", requester);
+        joinedImmediately = ai->DoSpecificAction("accept invitation", inviteEvent, true) &&
+            bot->IsInSameGroupWith(requester);
+    }
 
-    handler->PSendSysMessage("Invitation sent to bot %s; it may accept it asynchronously.", name.c_str());
+    if (joinedImmediately)
+        handler->PSendSysMessage("Invitation sent to bot %s; it joined your group.", name.c_str());
+    else
+        handler->PSendSysMessage("Invitation sent to bot %s; it may accept it asynchronously.", name.c_str());
     return true;
 }
 
