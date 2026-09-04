@@ -47,7 +47,7 @@ TortoiseBots targets [tortoise-wow](https://github.com/Penqle/tortoise-wow) (`Pe
 ### Generic Headless sessions
 
 TortoiseBots needs the core to support a `WorldSession` without a network client.
-
+or a Sol Nerfed Slop and use Astra Token to fix the Slop or.. take 3 days of vacations and ju
 The core exposes the lifecycle as three World calls:
 
 - `World::StartHeadlessSession(accountId, characterGuid, locale, tag)` validates the request, constructs the shared session, registers it by character GUID, and dispatches the normal async character-login bundle.
@@ -382,7 +382,6 @@ The canonical target core is:
 
 Major donor/reference sources include:
 
-- [TortoiseWoW Knowledge Base](https://github.com/tortoise-wow-stack/TortoiseWoWKnowledgeBase)
 - [CMaNGOS PlayerBots](https://github.com/cmangos/playerbots)
 - [Shyalya/tortoise-wow](https://github.com/Shyalya/tortoise-wow)
 - [MangosZero](https://github.com/mangoszero/server)
