@@ -100,6 +100,7 @@ Start performs account, character, lock, ownership, duplicate, and live-player
 validation before constructing or dispatching anything. Stop hides pending
 cancellation, logout, deletion, and character-online cleanup. State hides the
 pending/active maps and reports `NotFound`, `Pending`, `Loading`, or `Active`.
+An active Headless session whose materialized player remains out of world for five seconds, while neither loading nor teleporting, is stopped and its character-online state is cleared. This generic recovery prevents a failed map or instance transfer from blocking a later Network reclaim.
 
 Headless sessions never enter the account-keyed Network map and never own
 `LoginDatabase` account `online` or `current_realm` state.

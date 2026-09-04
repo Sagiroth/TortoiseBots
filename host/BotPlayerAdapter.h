@@ -12,6 +12,7 @@ public:
     BotPlayerAdapter();
 
     void OnLogin(Player* player) override;
+    void OnMapChanged(Player* player) override;
     void OnBeforeLogout(Player* player) override;
     void OnLogout(Player* player) override;
 };

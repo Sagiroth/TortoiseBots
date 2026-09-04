@@ -9,6 +9,7 @@ namespace TortoiseBots {
 BotPlayerAdapter::BotPlayerAdapter()
     : PlayerScript("tortoisebots_players", {
         PLAYERHOOK_ON_LOGIN,
+        PLAYERHOOK_ON_MAP_CHANGED,
         PLAYERHOOK_ON_BEFORE_LOGOUT,
         PLAYERHOOK_ON_LOGOUT })
 {
@@ -19,6 +20,11 @@ void BotPlayerAdapter::OnLogin(Player* player)
     if (player && player->GetSession() && player->GetSession()->HasNetworkTransport())
         RandomBotService::Instance().OnHumanLogin();
     BotManager::Instance().OnPlayerLogin(player);
+}
+
+void BotPlayerAdapter::OnMapChanged(Player* player)
+{
+    BotManager::Instance().OnMasterMapChanged(player);
 }
 
 void BotPlayerAdapter::OnBeforeLogout(Player* player)

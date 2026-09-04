@@ -5,6 +5,7 @@
 #include "../ai/playerbot/RandomBotFacade.h"
 #include "../host/BotSessionAdapter.h"
 #include "../commands/BotCommands.h"
+#include "../behavior/PlayerConvenience.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "WorldSession.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -22,6 +23,7 @@
 #include "Chat.h"
 #include "Group/Group.h"
 #include "Maps/GridMap.h"
+#include "Map.h"
 #include "../commands/BotCommands.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
 #include "../ai/playerbot/TravelMgr.h"
@@ -54,6 +56,41 @@ bool IsUsableTeleportPoint(ai::WorldPosition const& point)
     float maxZ = terrain->GetWaterOrGroundLevel(point.getX(), point.getY(), point.getZ(), &groundZ, false);
     return groundZ > INVALID_HEIGHT && maxZ > INVALID_HEIGHT &&
         point.getZ() >= groundZ && point.getZ() <= maxZ + 2.0f;
+}
+
+// A Headless session must never render an owned bot as an account-level GM.
+// Its Network owner retains all account privileges; this only normalizes the
+// separately logged-in bot character after the core restores saved GM flags.
+bool NormalizeHeadlessGmPresentation(::Player* bot)
+{
+    if (!bot || !bot->GetSession() || !bot->GetSession()->IsHeadless())
+        return false;
+
+    uint32 const gmFlags = PLAYER_EXTRA_GM_ON | PLAYER_EXTRA_GM_ACCEPT_TICKETS |
+        PLAYER_EXTRA_GM_INVISIBLE | PLAYER_EXTRA_GM_CHAT |
+        PLAYER_EXTRA_GM_DISABLE_SOCIAL;
+    uint32 const flags = bot->GetExtraFlags();
+    if (!(flags & gmFlags) && (flags & PLAYER_EXTRA_ACCEPT_WHISPERS) &&
+        bot->IsGMVisible())
+    {
+        return false;
+    }
+
+    if (flags & PLAYER_EXTRA_GM_ON)
+        bot->SetGameMaster(false);
+    if (flags & PLAYER_EXTRA_GM_CHAT)
+        bot->SetGMChat(false);
+    if (flags & PLAYER_EXTRA_GM_ACCEPT_TICKETS)
+        bot->SetAcceptTicket(false);
+    if (flags & PLAYER_EXTRA_GM_DISABLE_SOCIAL)
+        bot->SetGMSocials(true);
+    if (!(flags & PLAYER_EXTRA_ACCEPT_WHISPERS))
+        bot->SetAcceptWhispers(true);
+
+    // Persist only the bot's presentation flags. The owner's account rank and
+    // its Network session are untouched.
+    bot->SetGMVisible(true);
+    return true;
 }
 
 bool TryRandomTeleport(::Player* bot, BotRecord const& record)
@@ -194,6 +231,8 @@ void BotManager::OnPlayerLogin(::Player* player)
     if (it == m_bots.end())
         return;
 
+    NormalizeHeadlessGmPresentation(player);
+
     BotEntry& entry = it->second;
     BotRecord& record = entry.record;
     if (record.enteredWorld)
@@ -226,6 +265,44 @@ void BotManager::OnPlayerLogin(::Player* player)
         sRandomBotFacade.UpdateGearSpells(player);
 
     sLog.outString("TortoiseBots: bot %s entered world through native PlayerScript", player->GetName());
+}
+
+void BotManager::OnMasterMapChanged(::Player* master)
+{
+    if (!master || !master->GetSession() || !master->GetSession()->HasNetworkTransport() ||
+        !master->IsInWorld() || !master->GetMap() || master->GetMap()->IsDungeon())
+    {
+        return;
+    }
+
+    for (auto const& pair : m_bots)
+    {
+        BotRecord const& record = pair.second.record;
+        if (record.lifecycle == BotLifecycle::Removing ||
+            record.masterGuid != master->GetObjectGuid())
+        {
+            continue;
+        }
+
+        ::Player* bot = sObjectAccessor.FindPlayer(record.characterGuid);
+        if (!bot || !bot->GetSession() || !bot->GetSession()->IsHeadless() ||
+            !bot->IsInWorld() || !bot->GetMap() || !bot->GetMap()->IsDungeon())
+        {
+            continue;
+        }
+
+        if (PlayerConvenience::Instance().RequestSummon(master, bot))
+        {
+            sLog.outString("TortoiseBots: returning bot %s after master %s left a dungeon",
+                bot->GetName(), master->GetName());
+        }
+        else
+        {
+            sLog.outError("TortoiseBots: bot %s remained in a dungeon after master %s left; "
+                "the native summon preconditions rejected its return",
+                bot->GetName(), master->GetName());
+        }
+    }
 }
 
 void BotManager::OnPlayerBeforeLogout(::Player* player)
@@ -875,6 +952,24 @@ void BotManager::UpdatePacketBridgeTest(uint32_t diff)
     {
         if (master && bot && master->IsInWorld() && bot->IsInWorld())
         {
+            // Recreate the GM-invisible state a GM account would restore on a
+            // Headless character, then require the bot-login normalization to
+            // remove every GM-facing flag before command processing continues.
+            bot->SetGMVisible(false);
+            uint32 const botGmFlags = PLAYER_EXTRA_GM_ON |
+                PLAYER_EXTRA_GM_ACCEPT_TICKETS | PLAYER_EXTRA_GM_INVISIBLE |
+                PLAYER_EXTRA_GM_CHAT | PLAYER_EXTRA_GM_DISABLE_SOCIAL;
+            bool headlessPresentationPassed = NormalizeHeadlessGmPresentation(bot) &&
+                bot->IsGMVisible() && !bot->IsGameMaster() &&
+                !(bot->GetExtraFlags() & botGmFlags);
+            if (!headlessPresentationPassed)
+            {
+                sLog.outError("TortoiseBots: PacketBridgeTest headless GM presentation FAILED");
+                m_packetTestStage = 3;
+                m_packetTestTicks = 0;
+                return;
+            }
+
             WorldSession* originalSession = master->GetSession();
             WorldSession* syntheticNetwork = new WorldSession(
                 m_packetTestAccount, nullptr, sAccountMgr.GetSecurity(m_packetTestAccount),
@@ -884,6 +979,7 @@ void BotManager::UpdatePacketBridgeTest(uint32_t diff)
 
             ChatHandler commandHandler(syntheticNetwork);
             std::string followCommand = "follow " + std::string(bot->GetName());
+            std::string inviteCommand = "invite " + std::string(bot->GetName());
             bool commandSurfacePassed =
                 BotCommands::HandleChatCommand(&commandHandler, "list") &&
                 BotCommands::HandleChatCommand(&commandHandler, "stats") &&
@@ -894,15 +990,24 @@ void BotManager::UpdatePacketBridgeTest(uint32_t diff)
             sLog.outString("TortoiseBots: PacketBridgeTest native command surface %s — list/stats/follow dispatched through ChatHandler",
                 commandSurfacePassed ? "PASSED" : "FAILED");
 
-            WorldPacket invite;
-            invite << bot->GetName() << uint32(0);
-            syntheticNetwork->HandleGroupInviteOpcode(invite);
+            bool immediateInvitePassed =
+                BotCommands::HandleChatCommand(&commandHandler, inviteCommand.c_str()) &&
+                master->GetGroup() && bot->GetGroup() == master->GetGroup() &&
+                master->GetGroup()->IsMember(bot->GetObjectGuid());
 
             master->SetSession(originalSession);
             syntheticNetwork->SetPlayer(nullptr);
             delete syntheticNetwork;
 
-            sLog.outString("TortoiseBots: PacketBridgeTest native master invite emitted; awaiting PlayerbotAI accept");
+            if (!immediateInvitePassed)
+            {
+                sLog.outError("TortoiseBots: PacketBridgeTest immediate native invite FAILED");
+                m_packetTestStage = 3;
+                m_packetTestTicks = 0;
+                return;
+            }
+
+            sLog.outString("TortoiseBots: PacketBridgeTest immediate native invite PASSED");
             m_packetTestStage = 2;
             m_packetTestTicks = 0;
         }
@@ -940,13 +1045,43 @@ void BotManager::UpdatePacketBridgeTest(uint32_t diff)
             master->SetSession(originalSession);
             syntheticNetwork->SetPlayer(nullptr);
             delete syntheticNetwork;
-            sLog.outString("TortoiseBots: PacketBridgeTest native uninvite cleanup applied; live incoming hook remains client-gated");
-            m_packetTestStage = 3;
+
+            Map* botMap = bot->GetMap();
+            if (!botMap)
+            {
+                sLog.outError("TortoiseBots: PacketBridgeTest missing bot map before stranded-session check");
+                m_packetTestStage = 3;
+                m_packetTestTicks = 0;
+                return;
+            }
+            botMap->Remove(bot, false);
+            sLog.outString("TortoiseBots: PacketBridgeTest forced an out-of-world Headless bot");
+            m_packetTestStage = 4;
             m_packetTestTicks = 0;
         }
         else if (m_packetTestTicks > 300)
         {
             sLog.outError("TortoiseBots: PacketBridgeTest group invite/accept FAILED");
+            m_packetTestStage = 3;
+            m_packetTestTicks = 0;
+        }
+        return;
+    }
+
+    if (m_packetTestStage == 4)
+    {
+        bool released = BotSessionAdapter::GetHeadlessSessionState(m_packetTestBotGuid) ==
+            HeadlessSessionState::NotFound;
+        bool materialized = sObjectAccessor.FindPlayerNotInWorld(m_packetTestBotGuid) != nullptr;
+        if (released && !materialized)
+        {
+            sLog.outString("TortoiseBots: PacketBridgeTest stranded Headless recovery PASSED");
+            m_packetTestStage = 3;
+            m_packetTestTicks = 0;
+        }
+        else if (m_packetTestTicks > 300)
+        {
+            sLog.outError("TortoiseBots: PacketBridgeTest stranded Headless recovery FAILED");
             m_packetTestStage = 3;
             m_packetTestTicks = 0;
         }
