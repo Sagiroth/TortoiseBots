@@ -4,7 +4,7 @@
 
 This repository is **TortoiseBots** — an optional native PlayerBots module for **Tortoise WoW 1.18.1**.
 
-Public repo: <https://github.com/tortoise-wow-stack/TortoiseBots>
+Public repo: <https://github.com/Sagiroth/TortoiseBots>
 
 PlayerBots is rebuilt as a clean, optional module. The Tortoise core must remain usable without it.
 
@@ -25,7 +25,7 @@ For any PlayerBots work, read in this order:
 
 This repo is self-contained. You do not need any checkout outside it to understand the architecture or to contribute. All required context is in `docs/` and this file.
 
-If you have a local Tortoise core checkout, Docker stack, or Knowledge Base checkout alongside this repo, tell the agent explicitly when it is relevant. The agent must not assume any sibling directory exists or guess absolute paths.
+If you have a local Tortoise core checkout or Docker stack alongside this repo, tell the agent explicitly when it is relevant. The agent must not assume any sibling directory exists or guess absolute paths.
 
 ---
 
@@ -54,7 +54,6 @@ All references are remote, read-only, and optional. Clone only what you need for
 
 | Reference | URL | Purpose |
 | --- | --- | --- |
-| Knowledge Base | <https://github.com/tortoise-wow-stack/TortoiseWoWKnowledgeBase> | Behavioral spec, capability inventory, command reference, acceptance-test inspiration |
 | Upstream core | <https://github.com/Penqle/tortoise-wow> | Target core (`Penqle/tortoise-wow`) |
 | Shyalya fork | <https://github.com/Shyalya/tortoise-wow> | Turtle 1.18.1 compatibility evidence, known API differences, Turtle fixes |
 | CMaNGOS PlayerBots | <https://github.com/cmangos/playerbots> | Existing combat/movement/class/healing/CC/dungeon behavior |
@@ -63,13 +62,10 @@ All references are remote, read-only, and optional. Clone only what you need for
 | mod-playerbots | <https://github.com/mod-playerbots/mod-playerbots> | Newer behavior reference |
 | Docker/runtime env | <https://github.com/Sagiroth/tortoise-docker-penqle> | Optional local runtime/validation environment |
 
-Read `TortoiseWoWKnowledgeBase/AGENTS.md` before using its `playerbots/` docs. The Knowledge Base describes **what should happen**, not how to architect it.
-
 Do not edit, commit to, or rebase reference repos. Do not blindly copy their architecture. Before relying on a commit for provenance, record its SHA (e.g. GitHub permalink or `git ls-remote <url> HEAD`).
 
 ### What each reference is for — quick guide
 
-- **TortoiseWoWKnowledgeBase** — public behavior, commands, ownership, security
 - **Shyalya** — Turtle spells/talents, session/movement/group/loot lessons, integration pain
 - **CMaNGOS PlayerBots** — richest behavior source for combat/movement/healing/CC/dungeons
 - **CMaNGOS Classic** — host API definitions and lifecycle semantics
@@ -79,10 +75,10 @@ Do not edit, commit to, or rebase reference repos. Do not blindly copy their arc
 
 Do not search every repo for every task:
 
-- **Public behavior / commands / ownership** → Knowledge Base → Shyalya → CMaNGOS PlayerBots
-- **Combat / class AI / healing / CC / movement** → Knowledge Base → CMaNGOS PlayerBots → Shyalya → MangosZero
+- **Public behavior / commands / ownership** → Shyalya → CMaNGOS PlayerBots
+- **Combat / class AI / healing / CC / movement** → CMaNGOS PlayerBots → Shyalya → MangosZero
 - **Session / lifecycle / bot login** → Current Tortoise core → MangosZero → Shyalya → CMaNGOS
-- **Turtle spells / talents / custom content** → Tortoise core/data → Knowledge Base → Shyalya → Vanilla refs
+- **Turtle spells / talents / custom content** → Tortoise core/data → Shyalya → Vanilla refs
 - **Runtime / integration failures** → Current core source → Docker env (if you have one) → logs → references
 
 The current Tortoise architecture always outranks making a donor port easier.
@@ -145,7 +141,7 @@ Do not vendor a donor tree into the core. Do not cherry-pick commits that expand
 For imported behavior:
 
 1. Understand observable behavior
-2. Check Knowledge Base where applicable
+2. Check donor behavior where applicable
 3. Inspect the most relevant donor
 4. Inspect Turtle differences
 5. Define expected behavior / acceptance test

@@ -38,7 +38,6 @@ alone to resolve an incompatible or unclear donor grant.
 | `cmangos/mangos-classic` | GPL-2.0 at pinned repository root | Host API reference; determine only/or-later if code is copied |
 | `mangoszero/server` | GPL-3.0 at pinned repository root | Lifecycle reference/reimplementation |
 | `mod-playerbots` (`AzerothCore`) | GPL-2.0 at pinned repository root; sampled ported headers grant GPL-2.0-or-later | Newer behavior; verify every copied/ported file |
-| `TortoiseWoWKnowledgeBase` | per-repo (see its `LICENSE`) | Docs/behavioral spec only |
 
 Upstream licences are preserved — see each referenced repository for its full
 licence text.
