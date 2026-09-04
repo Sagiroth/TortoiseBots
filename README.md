@@ -3,7 +3,7 @@
 Optional native PlayerBots module for [Tortoise WoW 1.18.1](https://github.com/Penqle/tortoise-wow).
 It runs donor PlayerBots behavior (Shyalya/cmangos Turtle baseline plus mod-playerbots) through a small generic core API. Bot logic lives here; session and character lifecycle stays in the core.
 
-> Companion addon (optional button UI for the main actions and roster): [TortoiseBotsManager](https://github.com/Sagiroth/TortoiseBotsManager) (`/tbm`). Requires this module on the server.
+> Companion addon (highly recommended to pair with): [TortoiseBotsManager](https://github.com/Sagiroth/TortoiseBotsManager) (`/tbm`). Requires this module on the server.
 
 ## Requirements
 
