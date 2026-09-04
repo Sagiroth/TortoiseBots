@@ -4,7 +4,7 @@ TortoiseBots is an optional native PlayerBots module for
 [Tortoise WoW 1.18.1](https://github.com/Penqle/tortoise-wow).
 
 > **Addon:** press buttons instead of typing `.bot` — see the companion client addon
-> **[tortoise-wow-stack/TortoiseBotsManager](https://github.com/tortoise-wow-stack/TortoiseBotsManager)**
+> **[tortoise-wow-stack/TortoiseBotsManager](https://github.com/Sagiroth/TortoiseBotsManager)**
 > (`/tbm` panel: list owned bots, summon/spawn, follow/stay, group, pull). Requires this module on the server.
 
 It brings existing PlayerBots (primarily AzerothCore/mod-playerbots) combat, movement, class, group, loot, quest and
@@ -16,27 +16,6 @@ core.
 TortoiseBots uses the upstream native module system and a small generic host API
 instead of recreating the old tightly coupled `GetBot()` / `m_bot` /
 `sPlayerBotMgr` architecture.
-
----
-
-## Status
-
-> **WIP — local integration is complete; the core lifecycle refactor is local-only and upstream PRs are awaiting merge.**
-
-- [x] Native TortoiseBots module implemented
-- [x] Existing `PlayerbotAI` integrated
-- [x] All nine Vanilla classes included
-- [x] Vanilla/Turtle 1.18.1 cleanup and compatibility audit completed
-- [x] Headless session lifecycle validated against the pinned baseline
-- [x] PlayerBots-enabled and module-disabled builds validated
-- [x] Local Docker build and startup against integrated `#396 + #411 + #416` core
-- [x] TortoiseBots feature stack #37–#42 assembled
-- [ ] Upstream core PRs #411 and #416 merged
-- [ ] Manual owned-bot gameplay acceptance
-- [ ] Manual 5-player dungeon acceptance
-
-The local integration checkpoint is complete. Upstream merge status and exact
-source revisions remain tracked in Git history and Docker `SOURCE_IDENTITY`.
 
 ---
 
