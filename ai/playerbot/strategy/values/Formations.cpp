@@ -614,6 +614,12 @@ bool SetFormationAction::Execute(Event& event)
 
     std::ostringstream str; str << "Formation set to: " << formation;
     ai->TellPlayer(requester, str);
+
+    if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
+    {
+        bot->GetMotionMaster()->Clear();
+    }
+
     return true;
 }
 

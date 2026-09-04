@@ -91,7 +91,14 @@ bool PullRequestAction::Execute(Event& event)
     PositionMap& posMap = AI_VALUE(PositionMap&, "position");
     PositionEntry pullPosition = posMap["pull"];
 
-    pullPosition.Set(bot->getPositionX(), bot->getPositionY(), bot->getPositionZ(), bot->GetMapId());
+    if (requester && requester->IsInWorld() && requester->GetMapId() == bot->GetMapId())
+    {
+        pullPosition.Set(requester->getPositionX(), requester->getPositionY(), requester->getPositionZ(), requester->GetMapId());
+    }
+    else
+    {
+        pullPosition.Set(bot->getPositionX(), bot->getPositionY(), bot->getPositionZ(), bot->GetMapId());
+    }
     posMap["pull"] = pullPosition;
 
     strategy->RequestPull(target);
@@ -194,7 +201,13 @@ bool PullAction::Execute(Event& event)
 
                 // Execute the pull action
                 SET_AI_VALUE(Unit*, "current target", GetTarget());
-                if (ai->DoSpecificAction(actionName, event, true))
+                if (actionName == "reach pull")
+                {
+                    bot->Attack(target, true);
+                    strategy->RequestPull(target); // extend pull timer to walk back
+                    return true;
+                }
+                else if (ai->DoSpecificAction(actionName, event, true))
                 {
                     strategy->RequestPull(target); //extend pull timer to walk back.
                     return true;
@@ -220,6 +233,9 @@ bool PullAction::isPossible()
     PullStrategy* strategy = PullStrategy::Get(ai);
     if (strategy)
     {
+        if (strategy->GetPullActionName() == "reach pull")
+            return true;
+
         std::string spellName = strategy->GetSpellName();
         Unit* target = strategy->GetTarget();
         if (!spellName.empty() && target)

@@ -63,7 +63,7 @@ std::list<ObjectGuid> AttackersValue::Calculate()
             if (!botAi)
                 continue;
 
-            std::string valueName = "attackers" + !qualifier.empty() ? "::" + qualifier : "";
+            std::string valueName = "attackers" + (!qualifier.empty() ? "::" + qualifier : "");
 
             // Ignore bots without the value.
             if (!PHAS_AI_VALUE(valueName))

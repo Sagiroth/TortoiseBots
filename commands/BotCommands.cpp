@@ -1095,7 +1095,28 @@ static bool HandleAction(ChatHandler* handler, char const* args)
     }
     std::vector<Player*> scope;
     if (intent == "focus skull")
+    {
+        if (context.group && context.enemyTarget)
+        {
+            context.group->SetTargetIcon(static_cast<uint8>(RtiTargetValue::GetRtiIndex("skull")), context.enemyTarget->GetObjectGuid());
+        }
+        else if (context.group)
+        {
+            int skullIndex = RtiTargetValue::GetRtiIndex("skull");
+            ObjectGuid skullGuid = context.group->GetTargetIcon(static_cast<uint8>(skullIndex));
+            if (skullGuid.IsEmpty())
+            {
+                SendActionError(handler, intent, "no-target", "Select an enemy target or mark a target with Skull first.");
+                return true;
+            }
+        }
+        else if (!context.enemyTarget)
+        {
+            SendActionError(handler, intent, "no-target", "Select an enemy target or mark a target with Skull first.");
+            return true;
+        }
         scope = context.partyBots;
+    }
     else if (intent == "cc moon")
     {
         Unit* ccTarget = nullptr;
@@ -1109,6 +1130,8 @@ static bool HandleAction(ChatHandler* handler, char const* args)
         if (!ccTarget && context.enemyTarget)
         {
             ccTarget = context.enemyTarget;
+            if (context.group)
+                context.group->SetTargetIcon(static_cast<uint8>(RtiTargetValue::GetRtiIndex("moon")), ccTarget->GetObjectGuid());
         }
         if (!ccTarget)
         {
@@ -1127,9 +1150,9 @@ static bool HandleAction(ChatHandler* handler, char const* args)
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(executor);
         if (ai)
         {
-            // Break stay so caster can step into spell range if needed
+            // Break stay and follow in combat so caster can step into spell range if needed
             ai->ChangeStrategy("-stay", BotState::BOT_STATE_NON_COMBAT);
-            ai->ChangeStrategy("-stay", BotState::BOT_STATE_COMBAT);
+            ai->ChangeStrategy("-stay,-follow", BotState::BOT_STATE_COMBAT);
 
             // Register RTI CC assignment on the executor so it maintains CC throughout combat
             ExecuteQuietAction(ai, "rti", ai::Event("cc moon", "cc moon", requester));
@@ -1170,13 +1193,14 @@ static bool HandleAction(ChatHandler* handler, char const* args)
 
         // Pulling requires tank movement: break stay!
         ai->ChangeStrategy("-stay", BotState::BOT_STATE_NON_COMBAT);
-        ai->ChangeStrategy("-stay", BotState::BOT_STATE_COMBAT);
+        ai->ChangeStrategy("-stay,-follow", BotState::BOT_STATE_COMBAT);
 
         if (!ExecuteQuietAction(ai, "pull my target", ai::Event(intent, "", requester)))
         {
             SendActionError(handler, intent, "failed", "The native pull strategy rejected the target.");
             return true;
         }
+        ExecuteQuietNextAction(ai, true);
 
         SendActionAck(handler, intent, context.selectedBot == executor
             ? "bot:" + std::string(executor->GetName()) : "party", 1, executor->GetName());
@@ -1202,9 +1226,9 @@ static bool HandleAction(ChatHandler* handler, char const* args)
         {
             // AttackMyTargetAction intentionally reads requester's selection,
             // preserving the mature target validation and combat path.
-            // Break stay so bots can move to the target!
+            // Break stay and follow in combat so bots can move to and fight the target!
             ai->ChangeStrategy("-stay", BotState::BOT_STATE_NON_COMBAT);
-            ai->ChangeStrategy("-stay", BotState::BOT_STATE_COMBAT);
+            ai->ChangeStrategy("-stay,-follow", BotState::BOT_STATE_COMBAT);
             accepted = ExecuteQuietAction(ai, "attack my target",
                 ai::Event("action attack", "", requester));
             ExecuteQuietNextAction(ai, true);
@@ -1215,13 +1239,15 @@ static bool HandleAction(ChatHandler* handler, char const* args)
             // then use the mature narrow reset/target cleanup.
             bot->CombatStopWithPets(true);
             ai->Reset(false);
+            bot->GetMotionMaster()->Clear();
             accepted = true;
         }
         else if (intent == "follow")
         {
             // Explicit follow order breaks stay and commands bots to follow!
             ai->ChangeStrategy("-stay,+follow", BotState::BOT_STATE_NON_COMBAT);
-            ai->ChangeStrategy("-stay,+follow", BotState::BOT_STATE_COMBAT);
+            ai->ChangeStrategy("-stay,-guard,-wander", BotState::BOT_STATE_COMBAT);
+            bot->GetMotionMaster()->Clear();
             accepted = ExecuteQuietAction(ai, "follow chat shortcut",
                 ai::Event(intent, "", requester));
         }
@@ -1260,10 +1286,13 @@ static bool HandleAction(ChatHandler* handler, char const* args)
         }
         else if (intent == "focus skull")
         {
+            ai->ChangeStrategy("-stay", BotState::BOT_STATE_NON_COMBAT);
+            ai->ChangeStrategy("-stay,-follow", BotState::BOT_STATE_COMBAT);
             bool set = ExecuteQuietAction(ai, "rti",
                 ai::Event("focus skull", "skull", requester));
             accepted = set && ExecuteQuietAction(ai, "attack rti target",
                 ai::Event("focus skull", "", requester));
+            ExecuteQuietNextAction(ai, true);
         }
 
         if (accepted)

@@ -1,5 +1,6 @@
 // pi-lens-ignore: clang:pp_file_not_found,clang:unknown_typename,clang:use_of_undeclared_identifier,clang:unknown_type_name,clang:undeclared_var_use,clang:incomplete_member_access,clang:uninitialized,clang:undefined_identifier,clang:undeclared_identifier,clang:all
 #include "PlayerbotAIAdapter.h"
+#include "BotManager.h"
 #include "PlayerbotAIStorage.h"
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/AiFactory.h"
@@ -21,6 +22,7 @@ PlayerbotAIAdapter::~PlayerbotAIAdapter()
 bool PlayerbotAIAdapter::Initialize()
 {
     if (!bot_ || !bot_->IsInWorld() || initialized_) return false; // pi-lens-ignore: clang:all
+    NormalizeHeadlessGmPresentation(bot_);
     if (!sPlayerbotAIConfig.enabled)
         return false;
     ai_ = new PlayerbotAI(bot_); // pi-lens-ignore: clang:all

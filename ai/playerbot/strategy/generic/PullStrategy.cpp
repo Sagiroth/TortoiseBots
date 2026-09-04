@@ -53,12 +53,39 @@ std::string PullStrategy::GetPullActionName() const
         }
     }
 
+    if (modPullActionName == "shoot")
+    {
+        const Item* rangedWeapon = ai->GetBot()->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED);
+        if (!rangedWeapon)
+            return "reach pull";
+
+        const ItemPrototype* proto = rangedWeapon->GetProto();
+        if (proto && proto->SubClass != ITEM_SUBCLASS_WEAPON_THROWN && proto->SubClass != ITEM_SUBCLASS_WEAPON_WAND)
+        {
+            if (ai->GetBot()->GetUInt32Value(PLAYER_AMMO_ID) == 0)
+            {
+                std::list<Item*> ammo = ai->GetAiObjectContext()->GetValue<std::list<Item*>>("inventory items", "ammo")->Get();
+                if (!ammo.empty() && ammo.front())
+                {
+                    ai->GetBot()->SetAmmo(ammo.front()->GetEntry());
+                }
+                else
+                {
+                    return "reach pull";
+                }
+            }
+        }
+    }
+
     return modPullActionName;
 }
 
 std::string PullStrategy::GetSpellName() const
 {
     std::string spellName = GetPullActionName();
+    if (spellName == "reach pull")
+        return "";
+
     if (spellName == "shoot")
     {
         const Item* equippedWeapon = ai->GetBot()->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED);
@@ -103,6 +130,9 @@ std::string PullStrategy::GetSpellName() const
 
 float PullStrategy::GetRange() const
 {
+    if (GetPullActionName() == "reach pull")
+        return ATTACK_DISTANCE;
+
     float range;
 
     // Try to get the pull action range
@@ -191,14 +221,15 @@ void PullStrategy::SetTarget(Unit* target)
 
 bool PullStrategy::CanDoPullAction(Unit* target)
 {
-    // Check if the bot can perform the pull action
-
-    // check if has ranged weapon
-    if (ai->GetBot()->GetClass() != CLASS_DRUID && ai->GetBot()->GetClass() != CLASS_PALADIN && !ai->GetBot()->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED))
+    Player* bot = ai->GetBot();
+    if (!bot || !target || !target->IsInWorld() || target->GetMapId() != bot->GetMapId())
         return false;
 
-    bool canPull = false;
     const std::string& pullAction = GetPullActionName();
+    if (pullAction == "reach pull")
+        return true;
+
+    bool canPull = false;
     if (!pullAction.empty())
     {
         // Temporarily set the pull target to be used by the can do specific action method

@@ -348,8 +348,7 @@ namespace ai
             //Already using proper formation.
             if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE &&
                 sServerFacade.GetChaseTarget(bot) &&
-                sServerFacade.GetChaseTarget(bot)->getObjectGuid() == followTarget->getObjectGuid() &&
-                !bot->IsStopped())
+                sServerFacade.GetChaseTarget(bot)->getObjectGuid() == followTarget->getObjectGuid())
                 return false;
 
             if (!ai->IsStateActive(BotState::BOT_STATE_COMBAT))

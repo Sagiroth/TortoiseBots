@@ -58,41 +58,29 @@ bool ShouldPullTrigger::IsActive()
 bool PullEndTrigger::IsActive()
 {
     const PullStrategy* strategy = PullStrategy::Get(ai);
-    if (strategy && strategy->HasPullStarted())
-    {
-        Unit* target = strategy->GetTarget();
-        if (target)
-        {
-            // Check if the pull is taking too long
-            const time_t secondsSincePullStarted = time(0) - strategy->GetPullStartTime();
-            if (secondsSincePullStarted >= strategy->GetMaxPullTime())
-            {
-                return true;
-            }
-            else
-            {
-                float distanceToPullTarget = target->GetDistance(ai->GetBot());
+    if (!strategy || !strategy->HasPullStarted())
+        return false;
 
+    Unit* target = strategy->GetTarget();
+    if (!target || !target->IsInWorld() || !target->IsAlive())
+        return true;
 
-                if (distanceToPullTarget <= ATTACK_DISTANCE || target->IsNonMeleeSpellCasted(true) || (ai->IsRanged(bot) && distanceToPullTarget <= ai->GetRange("spell")))
-                {
-                    if (ai->HasStrategy("pull back", BotState::BOT_STATE_COMBAT))
-                    {
-                        PositionMap& posMap = AI_VALUE(PositionMap&, "position");
-                        PositionEntry pullPosition = posMap["pull"];
-                        if (pullPosition.isSet())
-                        {
-                            distanceToPullTarget = bot->GetDistance(pullPosition.x, pullPosition.y, pullPosition.z);
-                            return distanceToPullTarget <= ai->GetRange("follow");
-                        }
-                    }
+    const time_t secondsSincePullStarted = time(0) - strategy->GetPullStartTime();
+    if (secondsSincePullStarted >= strategy->GetMaxPullTime())
+        return true;
 
-                    // Check if the pulled target has approached the bot
-                    return true;
-                }
-            }
-        }
-    }
+    float distanceToPullTarget = target->GetDistance(bot);
+    if (distanceToPullTarget > ATTACK_DISTANCE && !target->IsNonMeleeSpellCasted(true) &&
+        (!ai->IsRanged(bot) || distanceToPullTarget > ai->GetRange("spell")))
+        return false;
 
-    return false;
+    if (!ai->HasStrategy("pull back", BotState::BOT_STATE_COMBAT))
+        return true;
+
+    PositionMap& posMap = AI_VALUE(PositionMap&, "position");
+    PositionEntry pullPosition = posMap["pull"];
+    if (!pullPosition.isSet() || pullPosition.mapId != bot->GetMapId())
+        return true;
+
+    return bot->GetDistance(pullPosition.x, pullPosition.y, pullPosition.z) <= ai->GetRange("follow");
 }

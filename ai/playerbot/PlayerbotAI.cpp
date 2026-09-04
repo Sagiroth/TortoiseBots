@@ -2135,7 +2135,8 @@ void PlayerbotAI::DoNextAction(bool min)
 
                 if (GetMaster() == GetGroupMaster())
                 {
-                    TellPlayer(master, BOT_TEXT("hello_follow"));
+                    if (!HasStrategy("silent", BotState::BOT_STATE_NON_COMBAT) && master)
+                        bot->TextEmote("is following " + std::string(master->GetName()) + ".");
                 }
                 else
                 {

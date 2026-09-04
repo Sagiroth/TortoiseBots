@@ -75,6 +75,9 @@ bool FollowChatShortcutAction::Execute(Event& event)
         posMap["follow"] = pos;
     }
 
+    Unit* followTarget = AI_VALUE(Unit*, "follow target");
+    std::string targetName = followTarget ? followTarget->GetName() : (requester ? requester->GetName() : "");
+
     if (sServerFacade.IsInCombat(bot))
     {
         WorldLocation loc = formation->GetLocation();
@@ -83,12 +86,14 @@ bool FollowChatShortcutAction::Execute(Event& event)
 
         if (MoveTo(loc.mapId, loc.x, loc.y, loc.z, false, false))
         {
-            ai->TellPlayerNoFacing(requester, BOT_TEXT("following"));
+            if (!ai->HasStrategy("silent", BotState::BOT_STATE_NON_COMBAT) && !targetName.empty())
+                bot->TextEmote("is following " + targetName + ".");
             return true;
         }
     }
 
-    ai->TellPlayerNoFacing(requester, BOT_TEXT("following"));
+    if (!ai->HasStrategy("silent", BotState::BOT_STATE_NON_COMBAT) && !targetName.empty())
+        bot->TextEmote("is following " + targetName + ".");
     return true;
 }
 

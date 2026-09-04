@@ -907,7 +907,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     if (bot == mover)
     {
         bot->HandleEmoteState(0);
-        if (!bot->GetStandState() != UNIT_STAND_STATE_STAND)
+        if (bot->GetStandState() != UNIT_STAND_STATE_STAND)
             bot->SetStandState(UNIT_STAND_STATE_STAND);
 
         if (bot->IsNonMeleeSpellCasted(true, false, true))
@@ -1271,7 +1271,7 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
     }
 
     bot->HandleEmoteState(0);
-    if (!bot->GetStandState() != UNIT_STAND_STATE_STAND)
+    if (bot->GetStandState() != UNIT_STAND_STATE_STAND)
         bot->SetStandState(UNIT_STAND_STATE_STAND);
 
     if (bot->IsNonMeleeSpellCasted(true))
@@ -1302,8 +1302,8 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
         // The Penqle generator intentionally keeps its requested angle and
         // offset private. The public target/current-motion contract is enough
         // to let the native generator continue; repeatedly replacing it while
-        // it is moving causes jitter and defeats the follow dead-zone.
-        if (currentTarget && currentTarget->getObjectGuid() == target->getObjectGuid() && !bot->IsStopped())
+        // following causes jitter and defeats the follow dead-zone.
+        if (currentTarget && currentTarget->getObjectGuid() == target->getObjectGuid())
             return false;
     }
 
@@ -1349,7 +1349,7 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     UpdateMovementState();
 
     bot->HandleEmoteState(0);
-    if (!bot->GetStandState() != UNIT_STAND_STATE_STAND)
+    if (bot->GetStandState() != UNIT_STAND_STATE_STAND)
         bot->SetStandState(UNIT_STAND_STATE_STAND);
 
 
