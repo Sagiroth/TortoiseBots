@@ -1,7 +1,11 @@
 #include "BotPlayerAdapter.h"
 
+#include "../behavior/PlayerConvenience.h"
 #include "../runtime/BotManager.h"
 #include "../runtime/RandomBotService.h"
+#include "Log.h"
+#include "Map.h"
+#include "Player.h"
 #include "WorldSession.h"
 
 namespace TortoiseBots {
@@ -24,7 +28,32 @@ void BotPlayerAdapter::OnLogin(Player* player)
 
 void BotPlayerAdapter::OnMapChanged(Player* player)
 {
-    BotManager::Instance().OnMasterMapChanged(player);
+    if (!player || !player->GetSession() || !player->GetSession()->HasNetworkTransport() ||
+        !player->IsInWorld() || !player->GetMap() || player->GetMap()->IsDungeon())
+    {
+        return;
+    }
+
+    // This is a player-convenience transition, not lifecycle work. BotManager
+    // supplies a live owned-bot snapshot; PlayerConvenience owns the queued
+    // summon and its cancellation/completion state.
+    for (Player* bot : BotManager::Instance().GetBotsForMaster(player->GetObjectGuid()))
+    {
+        if (!bot || !bot->GetMap() || !bot->GetMap()->IsDungeon())
+            continue;
+
+        if (PlayerConvenience::Instance().RequestSummon(player, bot))
+        {
+            sLog.outString("TortoiseBots: returning bot %s after master %s left a dungeon",
+                bot->GetName(), player->GetName());
+        }
+        else
+        {
+            sLog.outError("TortoiseBots: bot %s remained in a dungeon after master %s left; "
+                "the native summon preconditions rejected its return",
+                bot->GetName(), player->GetName());
+        }
+    }
 }
 
 void BotPlayerAdapter::OnBeforeLogout(Player* player)
