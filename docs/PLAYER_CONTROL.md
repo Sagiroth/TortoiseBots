@@ -43,7 +43,7 @@ layer.
 | Control family | Public intent | Existing behaviour | Delivery notes |
 | --- | --- | --- | --- |
 | Movement | follow, stay, come, stop | Existing follow/stay shortcuts, native combat stop | Dynamic scope: targeted owned bot or all controllable party bots. |
-| Combat | attack | `attack my target` | Uses the requester's current enemy target and server-side party fan-out. |
+| Combat | attack, interrupt | `attack my target`; existing class interrupt actions | Attack uses the requester's current enemy target and server-side party fan-out. Interrupt selects one ready capable bot and queues reach through the mature AI when needed. |
 | Pull | pull | `PullStrategy` / `pull my target` | Selects a tank executor and disables the existing `pull back` strategy for an ordinary pull. |
 | Pullback | pullback | `PullStrategy` + `PullBackStrategy` / `pull my target` | Selects a tank executor and enables the existing return-to-pull-position behavior. |
 | RTI | focus skull | `rti` value + `attack rti target` | Uses the existing Skull default and group raid-target icon. |

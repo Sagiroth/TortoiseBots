@@ -219,7 +219,7 @@ add
 remove
 logout
 roster
-action attack|stop|pull|pullback|come|stay|follow
+action attack|interrupt|stop|pull|pullback|come|stay|follow
 action focus skull
 action cc moon
 action aoe [on|off]
@@ -250,7 +250,10 @@ state.
 
 `.bot action` builds one request context from the requester's normal target and
 group. Dynamic actions resolve to the targeted controllable owned bot or the
-controllable party bots. Pull and Pullback both use the mature `PullStrategy`
+controllable party bots. Interrupt is an executor action: it probes the mature
+class/pet action graph for a ready interrupt whose spell data can interrupt the
+target's active cast, then executes it or queues the existing reach action.
+Pull and Pullback both use the mature `PullStrategy`
 but select different existing policy state: ordinary Pull removes `pull back`,
 while Pullback enables its return-to-pull-position trigger. CC resolves a
 suitable executor server-side. Addon requests receive one structured

@@ -50,6 +50,12 @@ Player* ResolvePullExecutor(BotCommandContext const& context, bool allowSelected
 // Pull removes `pull back`; Pullback enables it so PullEnd can return to the
 // stored pull position. No custom movement state is introduced.
 bool ConfigurePullMode(PlayerbotAI* ai, bool pullback);
+// Resolve one live executor with a currently usable interrupt action. The
+// action name comes from the mature class/pet action graph, not a duplicated
+// class-to-spell table. Explicitly targeted bots never fall back to another
+// executor when they cannot interrupt.
+Player* ResolveInterruptExecutor(BotCommandContext const& context, Unit* target,
+    std::string* outAction = nullptr);
 // Resolve exactly one CC executor. Explicitly targeted bots never fall back to
 // another executor when they lack the mature CC capability.
 Player* ResolveCcExecutor(BotCommandContext const& context, Unit* target, std::string* outSpell = nullptr);

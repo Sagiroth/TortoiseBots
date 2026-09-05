@@ -917,6 +917,85 @@ static void SendActionAck(ChatHandler* handler, std::string const& intent,
         ProtocolSafe(intent).c_str(), safeScope.c_str(), count, safeExecutor.c_str());
 }
 
+static bool ExecuteInterruptAction(ChatHandler* handler, BotCommandContext const& context,
+    Player* requester)
+{
+    Unit* target = context.enemyTarget;
+    if (!target)
+    {
+        SendActionError(handler, "interrupt", "no-target", "Select a live enemy target first.");
+        return true;
+    }
+
+    if (!target->IsNonMeleeSpellCasted(true))
+    {
+        SendActionError(handler, "interrupt", "not-casting", "The target is not casting an interruptible spell.");
+        return true;
+    }
+
+    std::string actionName;
+    Player* executor = ResolveInterruptExecutor(context, target, &actionName);
+    if (!executor || actionName.empty())
+    {
+        SendActionError(handler, "interrupt", "no-interrupt",
+            "No owned bot has a ready interrupt for this target.");
+        return true;
+    }
+
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(executor);
+    if (!ai)
+    {
+        SendActionError(handler, "interrupt", "no-ai", "The selected interrupt bot has no AI.");
+        return true;
+    }
+
+    // Interrupt is an executor command, but it still needs to put the chosen
+    // bot in combat and break a stale hold/follow mode so its mature action can
+    // either cast immediately or move into range for the next AI tick.
+    ai->ChangeStrategy("-stay", BotState::BOT_STATE_NON_COMBAT);
+    ai->ChangeStrategy("-stay,-follow", BotState::BOT_STATE_COMBAT);
+    executor->SetSelectionGuid(target->GetObjectGuid());
+    ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Set(target);
+    executor->Attack(target, !ai->IsRanged(executor) ||
+        sServerFacade.getDistance2d(executor, target) < 5.0f);
+    ai->OnCombatStarted();
+
+    ai::Event event("action interrupt", "", requester);
+    bool accepted = ExecuteQuietAction(ai, actionName, event);
+    if (!accepted)
+    {
+        // Engine::ExecuteAction intentionally does not run action
+        // prerequisites. Queue the existing reach action explicitly when the
+        // interrupt is valid but the executor is outside its range; once the
+        // bot reaches the target, its normal interrupt trigger will cast it.
+        float spellRange = 0.0f;
+        bool ranged = ai->GetSpellRange(actionName, &spellRange) &&
+            spellRange > ATTACK_DISTANCE + CONTACT_DISTANCE;
+        std::string reachAction = ranged ? "reach spell" : "reach melee";
+        if (!ExecuteQuietAction(ai, reachAction, event))
+        {
+            SendActionError(handler, "interrupt", "failed",
+                "The mature interrupt action could not be started.");
+            return true;
+        }
+
+        // Use a normal (non-minimal) tick so the class interrupt trigger is
+        // eligible while the reach movement is in progress.
+        ExecuteQuietNextAction(ai, false);
+        accepted = true;
+    }
+    else
+    {
+        ExecuteQuietNextAction(ai, true);
+    }
+
+    SendActionAck(handler, "interrupt",
+        context.selectedBot == executor
+            ? "bot:" + std::string(executor->GetName()) : "party",
+        1, executor->GetName());
+    return accepted;
+}
+
 static std::string RosterLocation(uint32 mapId, uint32 zoneId, uint32 areaId)
 {
     uint32 displayAreaId = areaId ? areaId : zoneId;
@@ -1052,7 +1131,7 @@ static bool ParseAction(std::string input, std::string& intent, std::string& opt
         return true;
     }
 
-    if (first != "attack" && first != "stop" && first != "pull" &&
+    if (first != "attack" && first != "interrupt" && first != "stop" && first != "pull" &&
         first != "pullback" && first != "come" && first != "stay" &&
         first != "follow" && first != "aoe" && first != "hold" &&
         first != "comestay" && first != "ready")
@@ -1077,7 +1156,7 @@ static bool HandleAction(ChatHandler* handler, char const* args)
     std::string option;
     if (!requester || !ParseAction(Trim(args ? args : ""), intent, option))
     {
-        SendActionError(handler, intent, "invalid", "Usage: .bot action attack|stop|pull|pullback|come|stay|hold|follow|focus skull|cc moon|aoe [on|off]|ready");
+        SendActionError(handler, intent, "invalid", "Usage: .bot action attack|interrupt|stop|pull|pullback|come|stay|hold|follow|focus skull|cc moon|aoe [on|off]|ready");
         return true;
     }
     if (!requester->IsInWorld() || !requester->IsAlive() || requester->IsBeingTeleported())
@@ -1088,11 +1167,14 @@ static bool HandleAction(ChatHandler* handler, char const* args)
 
     BotCommandContext context = BuildContext(requester);
     bool tactical = intent == "pull" || intent == "pullback";
-    if ((intent == "attack" || tactical) && !context.enemyTarget)
+    if ((intent == "attack" || intent == "interrupt" || tactical) && !context.enemyTarget)
     {
         SendActionError(handler, intent, "no-target", "Select a live non-bot target first.");
         return true;
     }
+    if (intent == "interrupt")
+        return ExecuteInterruptAction(handler, context, requester);
+
     std::vector<Player*> scope;
     if (intent == "focus skull")
     {
@@ -1333,7 +1415,7 @@ bool HandleChatCommand(ChatHandler* handler, char const* args)
     while (*args == ' ' || *args == '\t') ++args;
     if (!*args)
     {
-        handler->PSendSysMessage("Usage: .bot add/remove/logout/roster/action/follow/invite/uninvite/stay/guard/free/ready/attack/formation/list/stats/status/pullback/summon/command");
+        handler->PSendSysMessage("Usage: .bot add/remove/logout/roster/action/follow/invite/uninvite/stay/guard/free/ready/attack/interrupt/formation/list/stats/status/pullback/summon/command");
         return true;
     }
 

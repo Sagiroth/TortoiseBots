@@ -709,3 +709,38 @@ volume reset was performed.
 
 Real-client login/reconnect/reclaim and live LFT/BG/AH gameplay remain
 unclaimed manual acceptance gates.
+
+## Interrupt action shell — 2026-09-05
+
+Feature: player-facing `.bot action interrupt` with server-side executor
+selection and addon control.
+
+Source repositories and commits:
+
+- `mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70`, representative
+  class interrupt strategy/action registrations under `src/Ai/Class/*` and
+  `src/Ai/Base/Actions`/`Triggers`.
+- `Shyalya/tortoise-wow@1f9497e0f42bfc1055841bb6ebdc7caa3515de0b` and
+  `cmangos/playerbots@076045efa835da9aab7c943bca752aebe1baad`, used as
+  behavior comparisons only.
+
+Source files: `commands/BotCommandContext.{h,cpp}`,
+`commands/BotCommands.cpp`, and the companion manager's
+`Constants.lua`, `UI.lua`, `README.md`, and `tests/regression.lua`.
+
+Copied / ported / independently reimplemented: no donor code was copied.
+The module adds a thin capability probe over already compiled Vanilla/Turtle
+class and pet actions (`counterspell`, `silence`, `spell lock`, `kick`,
+`pummel`, `shield bash`, `bash`, `hammer of justice`, `repentance`, `earth
+shock`, and `death coil`). It validates the target's active cast and the
+actual spell's interrupt metadata, chooses one owned executor, and delegates
+casting/reach movement to existing PlayerbotAI actions. The addon sends one
+`.bot action interrupt` intent and consumes the existing structured ACK/ERR
+transport.
+
+Reason: make interrupt a portable executor command without adding a second
+combat engine, a class-to-spell policy table, or any core bot coupling.
+
+Local validation: addon regression checks passed; cached native static
+`mangosd` module build passed after the new command/context code; the native
+runtime action path remains a real-client/gameplay acceptance gate.
