@@ -39,14 +39,14 @@ Lifecycle (names are character names):
 
 - `add <name>` — claim an offline same-account character, persist ownership, queue Headless login. The bot follows you on entry.
 - `remove <name>` / `logout <name>` — stop the Headless session asynchronously (`logout` requires the bot to be online). Neither deletes the durable ownership row, so `roster` keeps listing the character.
-- `roster` — durable owned characters including offline ones (excludes yourself), emitted as the `TBM:ROSTER_*` stream for the addon.
+- `roster` — durable owned characters including offline ones (excludes yourself), emitted as the `TBM:ROSTER_*` stream for the addon. A separate `TBM:CC_ASSIGN_*` stream reports each live bot's current CC mark.
 - `list` — online controllable bots. `stats` — counts of the same set. `status <online bot name>` — lifecycle, movement strategy, AI presence, owner.
 
 Party (each acts on one online owned bot):
 
 - `follow <name>` `stay <name>` `guard <name>` `free <name>` `ready <name>` `attack <name>` `pullback` (`pull-back` alias) `summon <name>` `invite <name>` `uninvite <name>`
 - `formation [name] <default|melee|queue|chaos|circle|line|shield|arrow|near|far>` — formation name required, bot name optional.
-- `action <intent>` where intent is `attack` `interrupt` `stop` `pull` `pullback` `come` `stay` `follow` `hold` `comestay` `ready` `aoe [on|off]` `focus skull` `cc moon`. `interrupt` selects one owned bot with a ready mature interrupt and the current target actively casting.
+- `action <intent>` where intent is `attack` `interrupt` `stop` `pull` `pullback` `come` `stay` `follow` `hold` `comestay` `ready` `aoe [on|off]` `focus skull` `cc <mark>`. The CC mark is one of `star`, `circle`, `diamond`, `triangle`, `moon`, `square`, `cross`, or `skull`; `cc moon` remains the usual quick alias. Target an owned bot to assign that bot, or target an enemy/raid mark to let the server choose a capable executor. `interrupt` selects one owned bot with a ready mature interrupt and the current target actively casting.
 
 Passthrough and help:
 

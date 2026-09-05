@@ -744,3 +744,42 @@ combat engine, a class-to-spell policy table, or any core bot coupling.
 Local validation: addon regression checks passed; cached native static
 `mangosd` module build passed after the new command/context code; the native
 runtime action path remains a real-client/gameplay acceptance gate.
+
+## Per-bot CC mark assignment — 2026-09-05
+
+Feature: generalized `cc <raid-mark>` assignment with a bot-scoped addon picker
+and Party-tab visibility for the current assignment.
+
+Source repositories and commits:
+
+- `mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70`, `RtiAction`,
+  `RtiCcValue`, `RtiCcTargetValue`, `CcTargetValue`, and CC trigger behavior.
+- `MicroBot/CCP` v4.16 plus the local reverse-engineering notes in
+  `playerbots-references/MicroBot Data/CCP-addon-reverse-engineer.md` and
+  `microbot-wikidot-synthesis.md`, used for the per-companion `ccmark` UX and
+  command semantics. MicroBot server code is closed; no binary or core patch
+  was copied.
+
+Source files: `commands/BotCommands.cpp`, `README.md`, `docs/HOST_API.md`,
+`docs/PLAYER_CONTROL.md`, and the manager's `Constants.lua`, `Roster.lua`,
+`Comms.lua`, `UI.lua`, `README.md`, `TortoiseBotsManager.toc`, and
+`tests/regression.lua`.
+
+Copied / ported / independently reimplemented: the module keeps the donor's
+per-AI mark preference and mature CC target/trigger path, but independently
+validates the eight Vanilla raid-mark names, persists the selected bot's
+`rti cc` value through the existing `PlayerbotDbStore`, and emits a separate
+`TBM:CC_ASSIGN_*` snapshot. CC executor discovery now queries explicit
+capability metadata on the mature action graph, covering the registered Mage,
+Warlock, Priest, Druid, Rogue, Hunter, and Paladin CC actions instead of a
+parallel class table. The addon uses normal target selection, a compact
+raid-icon picker, and server-owned assignment display; it does not add a core
+bot-aware `Group::SetTargetIcon` seam.
+
+Reason: support Circle-to-Warlock / Moon-to-Mage style assignments while
+preserving the global core raid-icon slots and the Actions-vs-Roster boundary.
+
+Validation: `lua5.1 tests/regression.lua .`,
+`tools/verify_turtle_surface.sh`, and the cached Docker builder's native
+`mangosd` target passed. Runtime logout/relogin persistence and real-client CC
+reapplication remain manual acceptance gates.

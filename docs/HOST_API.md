@@ -221,7 +221,7 @@ logout
 roster
 action attack|interrupt|stop|pull|pullback|come|stay|follow
 action focus skull
-action cc moon
+action cc <raid-mark>  # star/circle/diamond/triangle/moon/square/cross/skull
 action aoe [on|off]
 follow
 invite
@@ -243,10 +243,13 @@ help
 
 `.bot roster` reads the requester's undeleted account characters and any
 explicit cross-account ownership rows from the module-owned durable table. It
-emits the structured `TBM:ROSTER_BEGIN`, `TBM:ROSTER`, and `TBM:ROSTER_END`
-system-message stream. It is the source of truth for offline and online owned
-rows; the runtime `BotManager` records remain transient Headless lifecycle
-state.
+emits the stable six-field `TBM:ROSTER_BEGIN`, `TBM:ROSTER`, and
+`TBM:ROSTER_END` system-message stream, followed by a separate
+`TBM:CC_ASSIGN_BEGIN`, `TBM:CC_ASSIGN`, `TBM:CC_ASSIGN_END` stream for live
+AI assignments. Keeping CC metadata separate means an older addon can still
+consume the roster unchanged. The roster remains the source of truth for
+offline and online owned rows; runtime `BotManager` records remain transient
+Headless lifecycle state.
 
 `.bot action` builds one request context from the requester's normal target and
 group. Dynamic actions resolve to the targeted controllable owned bot or the
@@ -256,7 +259,15 @@ target's active cast, then executes it or queues the existing reach action.
 Pull and Pullback both use the mature `PullStrategy`
 but select different existing policy state: ordinary Pull removes `pull back`,
 while Pullback enables its return-to-pull-position trigger. CC resolves a
-suitable executor server-side. Addon requests receive one structured
+requested raid mark and a suitable executor server-side. Targeting an owned bot
+sets that bot's persistent `rti cc` preference; targeting an enemy (or an
+existing group mark) lets the server select a capable executor and immediately
+attempt the mature CC action. Executor discovery walks the registered mature
+CC actions, so Hunter traps/beast control, Paladin Turn Undead, Rogue Sap, and
+the other class actions remain eligible without a second class policy table.
+Assignment is persisted even when the current marked creature is not legal for
+the selected bot; the immediate cast is best-effort and normal AI fallback
+remains available. Addon requests receive one structured
 `TBM:ACTION_ACK` or `TBM:ACTION_ERR`; incidental mature-AI chat is suppressed
 where the existing silent strategy supports it.
 

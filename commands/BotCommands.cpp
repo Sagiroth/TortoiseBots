@@ -10,6 +10,8 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../ai/playerbot/PlayerbotAI.h"
 // pi-lens-ignore: clang:pp_file_not_found
+#include "../ai/playerbot/PlayerbotDbStore.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "../ai/playerbot/strategy/generic/PullStrategy.h"
 #include "../ai/playerbot/strategy/values/RtiTargetValue.h"
 #include "../ai/playerbot/strategy/values/PositionValue.h"
@@ -35,6 +37,7 @@
 #include <cctype>
 #include <cstring>
 #include <string>
+#include <utility>
 #include <vector>
 // Lens fallback stubs — core headers absent in static analysis. Real build uses
 // the mangosd headers via -I src/game. Guards use the same macros as the
@@ -95,6 +98,9 @@ static Log sLog;
 
 namespace TortoiseBots {
 namespace BotCommands {
+
+static bool IsRaidTargetMark(std::string const& mark);
+static std::string CurrentCcMark(PlayerbotAI* ai);
 
 static std::string Trim(std::string value)
 {
@@ -1048,6 +1054,7 @@ static bool HandleRoster(ChatHandler* handler)
             ++it;
     }
     handler->PSendSysMessage("TBM:ROSTER_BEGIN|%u", static_cast<uint32>(rows.size()));
+    std::vector<std::pair<std::string, std::string>> ccAssignments;
     for (OwnedCharacter const& row : rows)
     {
         Player* player = sObjectAccessor.FindPlayer(row.characterGuid);
@@ -1058,6 +1065,7 @@ static bool HandleRoster(ChatHandler* handler)
         uint32 zoneId = row.zoneId;
         uint32 areaId = row.areaId;
         uint32 grouped = 0;
+        std::string ccMark = "-";
 
         // Runtime Headless state, not characters.online, is authoritative.
         // A Network player with the same GUID is never reported as an active bot.
@@ -1070,6 +1078,9 @@ static bool HandleRoster(ChatHandler* handler)
             zoneId = player->GetZoneId();
             areaId = player->GetAreaId();
             grouped = requester->GetGroup() && requester->GetGroup()->IsMember(row.characterGuid) ? 1u : 0u;
+            ccMark = CurrentCcMark(PlayerbotAIStorage::Instance().GetAI(player));
+            if (ccMark != "-")
+                ccAssignments.emplace_back(name, ccMark);
         }
 
         handler->PSendSysMessage("TBM:ROSTER|%u|%s|%u|%s|%u|%s",
@@ -1078,6 +1089,11 @@ static bool HandleRoster(ChatHandler* handler)
             ProtocolSafe(RosterLocation(mapId, zoneId, areaId)).c_str());
     }
     handler->PSendSysMessage("TBM:ROSTER_END");
+    handler->PSendSysMessage("TBM:CC_ASSIGN_BEGIN|%u", static_cast<uint32>(ccAssignments.size()));
+    for (auto const& assignment : ccAssignments)
+        handler->PSendSysMessage("TBM:CC_ASSIGN|%s|%s", ProtocolSafe(assignment.first).c_str(),
+            ProtocolSafe(assignment.second).c_str());
+    handler->PSendSysMessage("TBM:CC_ASSIGN_END");
     return true;
 }
 
@@ -1123,7 +1139,11 @@ static bool ParseAction(std::string input, std::string& intent, std::string& opt
     {
         size_t secondSeparator = remainder.find_first_of(" \t");
         std::string mark = remainder.substr(0, secondSeparator);
-        if ((first == "focus" && mark != "skull") || (first == "cc" && mark != "moon") ||
+        for (char& character : mark)
+            character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+        if ((first == "focus" && mark != "skull") ||
+            (first == "cc" && !IsRaidTargetMark(mark)) ||
+            mark.empty() ||
             (secondSeparator != std::string::npos &&
                 !Trim(remainder.substr(secondSeparator + 1)).empty()))
             return false;
@@ -1149,6 +1169,20 @@ static bool ParseAction(std::string input, std::string& intent, std::string& opt
     return true;
 }
 
+static bool IsRaidTargetMark(std::string const& mark)
+{
+    return RtiTargetValue::GetRtiIndex(mark) >= 0;
+}
+
+static std::string CurrentCcMark(PlayerbotAI* ai)
+{
+    if (!ai || !ai->GetAiObjectContext())
+        return "-";
+
+    std::string mark = ai->GetAiObjectContext()->GetValue<std::string>("rti cc")->Get();
+    return IsRaidTargetMark(mark) ? mark : "-";
+}
+
 static bool HandleAction(ChatHandler* handler, char const* args)
 {
     Player* requester = Requester(handler);
@@ -1156,7 +1190,7 @@ static bool HandleAction(ChatHandler* handler, char const* args)
     std::string option;
     if (!requester || !ParseAction(Trim(args ? args : ""), intent, option))
     {
-        SendActionError(handler, intent, "invalid", "Usage: .bot action attack|interrupt|stop|pull|pullback|come|stay|hold|follow|focus skull|cc moon|aoe [on|off]|ready");
+        SendActionError(handler, intent, "invalid", "Usage: .bot action attack|interrupt|stop|pull|pullback|come|stay|hold|follow|focus skull|cc <mark>|aoe [on|off]|ready");
         return true;
     }
     if (!requester->IsInWorld() || !requester->IsAlive() || requester->IsBeingTeleported())
@@ -1199,50 +1233,93 @@ static bool HandleAction(ChatHandler* handler, char const* args)
         }
         scope = context.partyBots;
     }
-    else if (intent == "cc moon")
+    else if (intent.compare(0, 3, "cc ") == 0)
     {
-        Unit* ccTarget = nullptr;
-        if (context.group && requester->GetMap())
+        std::string ccMark = intent.substr(3);
+        int markIndex = RtiTargetValue::GetRtiIndex(ccMark);
+        Unit* ccTarget = context.enemyTarget;
+
+        // Selecting an enemy is the most explicit request: make that unit the
+        // requested raid mark. If the player selected a bot instead, preserve
+        // the existing group mark and use it as the assignment target.
+        if (ccTarget)
         {
-            int moonIndex = RtiTargetValue::GetRtiIndex("moon");
-            ObjectGuid moonGuid = context.group->GetTargetIcon(static_cast<uint8>(moonIndex));
-            if (!moonGuid.IsEmpty())
-                ccTarget = requester->GetMap()->GetUnit(moonGuid);
-        }
-        if (!ccTarget && context.enemyTarget)
-        {
-            ccTarget = context.enemyTarget;
             if (context.group)
-                context.group->SetTargetIcon(static_cast<uint8>(RtiTargetValue::GetRtiIndex("moon")), ccTarget->GetObjectGuid());
+                context.group->SetTargetIcon(static_cast<uint8>(markIndex), ccTarget->GetObjectGuid());
         }
-        if (!ccTarget)
+        else if (context.group && requester->GetMap())
         {
-            SendActionError(handler, intent, "no-mark", "Mark a live target with Moon or select an enemy target first.");
-            return true;
+            ObjectGuid markGuid = context.group->GetTargetIcon(static_cast<uint8>(markIndex));
+            if (!markGuid.IsEmpty())
+                ccTarget = requester->GetMap()->GetUnit(markGuid);
         }
 
-        std::string ccSpell;
-        Player* executor = ResolveCcExecutor(context, ccTarget, &ccSpell);
-        if (!executor)
+        if (ccTarget && (!ccTarget->IsInWorld() || !ccTarget->IsAlive()))
+            ccTarget = nullptr;
+
+        Player* executor = nullptr;
+        std::string ccAction;
+        if (context.selectedBot && IsLiveHeadlessBot(context.selectedBot))
         {
-            SendActionError(handler, intent, "no-cc", "No owned bot can CC this target (check target type/range).");
-            return true;
+            // A selected bot is an assignment request. It may be configured
+            // before an enemy is marked; when a live target is available, keep
+            // the mature capability probe for an immediate attempt, but never
+            // reject the assignment just because this current creature is not
+            // legal for that bot's CC spell.
+            executor = context.selectedBot;
+            if (ccTarget)
+            {
+                ResolveCcExecutor(context, ccTarget, ccMark, &ccAction);
+            }
+        }
+        else
+        {
+            if (!ccTarget)
+            {
+                SendActionError(handler, intent, "no-target",
+                    "Select an enemy target or an owned bot with an existing raid mark.");
+                return true;
+            }
+
+            executor = ResolveCcExecutor(context, ccTarget, ccMark, &ccAction);
+            if (!executor)
+            {
+                SendActionError(handler, intent, "no-cc",
+                    "No owned bot can CC this target (check class, target type, and spell state).");
+                return true;
+            }
         }
 
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(executor);
-        if (ai)
+        if (!ai)
         {
-            // Break stay and follow in combat so caster can step into spell range if needed
+            SendActionError(handler, intent, "no-ai", "The selected CC bot has no AI.");
+            return true;
+        }
+
+        // RtiCcValue is a per-bot preference. Persist it through the existing
+        // mature AI store so the assignment survives AI recreation/relogin.
+        if (!ExecuteQuietAction(ai, "rti", ai::Event(intent, "cc " + ccMark, requester)))
+        {
+            SendActionError(handler, intent, "failed", "The mature CC assignment was rejected.");
+            return true;
+        }
+        sPlayerbotDbStore.Save(ai);
+
+        if (ccTarget && !ccAction.empty())
+        {
+            // Break stay/follow in combat so a ranged executor can reach the
+            // target. The mature AI remains responsible for subsequent casts.
             ai->ChangeStrategy("-stay", BotState::BOT_STATE_NON_COMBAT);
             ai->ChangeStrategy("-stay,-follow", BotState::BOT_STATE_COMBAT);
-
-            // Register RTI CC assignment on the executor so it maintains CC throughout combat
-            ExecuteQuietAction(ai, "rti", ai::Event("cc moon", "cc moon", requester));
-
-            // Face target, select target, and cast CC spell immediately
             executor->SetSelectionGuid(ccTarget->GetObjectGuid());
+            ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Set(ccTarget);
             sServerFacade.SetFacingTo(executor, ccTarget);
-            ai->CastSpell(ccSpell, ccTarget);
+            ai::Event ccEvent(intent, "cc " + ccMark, requester);
+            if (!ExecuteQuietAction(ai, ccAction, ccEvent))
+                ExecuteQuietNextAction(ai, false);
+            else
+                ExecuteQuietNextAction(ai, true);
         }
 
         SendActionAck(handler, intent, context.selectedBot == executor
