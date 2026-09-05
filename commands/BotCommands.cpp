@@ -1359,7 +1359,9 @@ static bool HandleAction(ChatHandler* handler, char const* args)
             SendActionError(handler, intent, "failed", "The native pull strategy rejected the target.");
             return true;
         }
-        ExecuteQuietNextAction(ai, true);
+        // Pull start/action are normal movement-priority actions.  A minimal
+        // step filters them out and leaves the tank waiting for a later tick.
+        ExecuteQuietNextAction(ai, false);
 
         SendActionAck(handler, intent, context.selectedBot == executor
             ? "bot:" + std::string(executor->GetName()) : "party", 1, executor->GetName());
@@ -1390,7 +1392,10 @@ static bool HandleAction(ChatHandler* handler, char const* args)
             ai->ChangeStrategy("-stay,-follow", BotState::BOT_STATE_COMBAT);
             accepted = ExecuteQuietAction(ai, "attack my target",
                 ai::Event("action attack", "", requester));
-            ExecuteQuietNextAction(ai, true);
+            // Caster rotations and party heals are below the minimal-action
+            // cutoff.  Run a normal first combat decision after committing the
+            // explicit target so ranged bots engage alongside melee bots.
+            ExecuteQuietNextAction(ai, false);
         }
         else if (intent == "stop")
         {

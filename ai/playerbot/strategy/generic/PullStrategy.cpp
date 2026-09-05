@@ -28,6 +28,7 @@ PullStrategy::PullStrategy(PlayerbotAI* ai, std::string pullAction, std::string 
 , pullActionName(pullAction)
 , preActionName(prePullAction)
 , pendingToStart(false)
+, pullActionCompleted(false)
 , pullStartTime(0)
 , petReactState(REACT_DEFENSIVE)
 {
@@ -252,8 +253,17 @@ void PullStrategy::OnPullStarted()
     pendingToStart = false;
 }
 
+void PullStrategy::OnPullActionCompleted()
+{
+    pendingToStart = false;
+    pullActionCompleted = true;
+    pullStartTime = time(0);
+}
+
 void PullStrategy::OnPullEnded()
 {
+    pendingToStart = false;
+    pullActionCompleted = false;
     pullStartTime = 0;
     SetTarget(nullptr);
 }
@@ -264,6 +274,7 @@ void PullStrategy::RequestPull(Unit* target, bool resetTime)
     pendingToStart = true;
     if(resetTime)
     {
+        pullActionCompleted = false;
         pullStartTime = time(0);
     }
 }

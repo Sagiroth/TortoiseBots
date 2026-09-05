@@ -203,13 +203,15 @@ bool PullAction::Execute(Event& event)
                 SET_AI_VALUE(Unit*, "current target", GetTarget());
                 if (actionName == "reach pull")
                 {
-                    bot->Attack(target, true);
-                    strategy->RequestPull(target); // extend pull timer to walk back
+                    if (!bot->Attack(target, true))
+                        return false;
+
+                    strategy->OnPullActionCompleted();
                     return true;
                 }
                 else if (ai->DoSpecificAction(actionName, event, true))
                 {
-                    strategy->RequestPull(target); //extend pull timer to walk back.
+                    strategy->OnPullActionCompleted();
                     return true;
                 }
                 else

@@ -783,3 +783,40 @@ Validation: `lua5.1 tests/regression.lua .`,
 `tools/verify_turtle_surface.sh`, and the cached Docker builder's native
 `mangosd` target passed. Runtime logout/relogin persistence and real-client CC
 reapplication remain manual acceptance gates.
+
+## Explicit combat engagement and pull completion — 2026-09-05
+
+Feature: reliable party attack engagement for ranged/healing bots and explicit
+pull-versus-pullback completion semantics.
+
+Source repositories and commits:
+
+- `cmangos/playerbots@076045efa835da9aab7c943bca752aebe1baad`,
+  `AttackAction`, `PullAction`, `PullStrategy`, pull triggers, and return-position
+  actions, used as the behavioral baseline.
+- `mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70`,
+  modern explicit/prioritized target handling, used as a behavior comparison.
+
+Source files: `ai/playerbot/strategy/actions/AttackAction.cpp`,
+`PositionAction.cpp`, `PullActions.cpp`, `generic/PullStrategy.{h,cpp}`,
+`triggers/{GenericTriggers,PullTriggers}.cpp`,
+`values/InvalidTargetValue.cpp`, and `commands/BotCommands.cpp`.
+
+Copied / ported / independently reimplemented: the mature class rotations,
+pull action selection, and movement actions remain in place. The local fix
+independently invalidates cached target values when a player commits an attack,
+allows that explicit target through the pre-threat validity window, runs a
+normal first AI decision, and records when the selected melee/ranged pull
+action actually succeeds. Pullback then returns to the requester position
+captured at command time and retains that anchor until arrival; ordinary pull
+hands control to normal combat after the pull action succeeds.
+
+Reason: melee auto-attack created threat immediately and masked stale target
+state, while ranged bots discarded the command target before their first spell
+and the invalid-target action could starve healer actions. The donor pull state
+also reused `RequestPull` after success, rearming its start phase, and could
+erase the return anchor on timeout before the tank arrived.
+
+Local validation: `tools/verify_turtle_surface.sh`, `git diff --check`, and the
+Docker release build of the native `mangosd` target passed. Focused real-client
+attack/pullback acceptance remains a manual gate.
