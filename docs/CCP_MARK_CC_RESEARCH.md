@@ -123,6 +123,16 @@ The public command path is the limiting layer:
   [TortoiseBotsManager/UI.lua:83-97](../../TortoiseBotsManager/UI.lua#L83-L97),
   [TortoiseBotsManager/README.md:65-70](../../TortoiseBotsManager/README.md#L65-L70)).
 
+The implementation follow-up replaces the former class-specific resolver with
+capability metadata on mature `Action` objects. Registered CC actions expose
+their owned spell through `IsCrowdControlAction()` / `GetCrowdControlSpellName()`;
+the command layer walks `AiObjectContext::GetSupportedActions()` and probes the
+candidate action/spell legality. This includes Hunter trap/beast CC, Paladin
+Turn Undead, and Rogue Sap without copying a class-to-spell table. A selected
+bot's mark is persisted even when the currently marked creature is not legal
+for that bot; the immediate cast is opportunistic and normal AI fallback remains
+available.
+
 There is an immediate but non-product diagnostic path today:
 `.bot command <WarlockName> rti cc circle` forwards the mature command to one
 owned bot ([BotCommands.cpp:501-531](../commands/BotCommands.cpp#L501-L531)).
@@ -150,12 +160,21 @@ group systems.
 | Warlock owns Circle while Mage owns Moon | **AI-feasible; public UX missing** | `rti cc` and icon lookup accept Circle/Moon independently; public parser only accepts Moon. |
 | Each bot keeps recasting its assigned mark | **Supported by mature AI while valid** | `cc target`, current-CC, reach, and class CC strategies are already wired. |
 | Strictly never CC another target | **Not guaranteed by mark preference alone** | Missing/out-of-range/illegal preferred target can invoke normal CC selection fallback. |
-| Assignment survives bot AI recreation | **Persistence path exists but needs explicit save semantics** | Values implement Save/Load and DB store can serialize them ([PlayerbotDbStore.cpp:16-62](../ai/playerbot/PlayerbotDbStore.cpp#L16-L62)); the `rti` command itself does not call DB save. |
+| Assignment survives bot AI recreation | **Supported by the draft** | Values implement Save/Load and the CC action path explicitly saves the updated AI through `PlayerbotDbStore` ([PlayerbotDbStore.cpp:16-62](../ai/playerbot/PlayerbotDbStore.cpp#L16-L62)). |
 | Separate per-bot target icons in Penqle core | **Not available and unnecessary** | Core has only global icon slots; keep preference state in module AI. |
 
-## Smallest viable product slice
+## Review follow-up — 2026-09-05
 
-If implemented later, the cleanest slice is:
+The draft was checked after review. Executor discovery now queries the mature
+action graph rather than a narrowed Mage/Warlock/Priest/Druid/Rogue table;
+selected-bot assignments are no longer rejected because of the current target's
+creature type; the picker reports `bot:<name>` scopes correctly; and the Party
+CC icon occupies a lower-right slot below the centered role buttons. The native
+and Lua regression/build checks were rerun after these corrections.
+
+## Implemented product slice
+
+The draft implements the cleanest slice:
 
 1. Generalize the native intent from `cc moon` to `cc <mark>` over a fixed
    allow-list of the eight RTI names. Keep `cc moon` as a compatibility alias.

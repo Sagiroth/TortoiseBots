@@ -24,6 +24,7 @@ namespace ai
         const std::string& GetSpellName() const { return spellName; }
         void SetSpellName(const std::string& name, std::string spellIDContextName = "spell id", bool force = false);
 
+        Value<Unit*>* GetTargetValue() override;
         Unit* GetTarget() override;
         virtual std::string GetTargetName() override { return "current target"; }
         virtual std::string GetTargetQualifier() { return ""; }
@@ -421,6 +422,8 @@ namespace ai
     {
     public:
         CastCrowdControlSpellAction(PlayerbotAI* ai, std::string spell) : CastRangedDebuffSpellAction(ai, spell) {}
+        bool IsCrowdControlAction() const override { return true; }
+        std::string GetCrowdControlSpellName() const override { return GetSpellName(); }
 
     private:
         virtual std::string GetReachActionName() override { return "reach spell"; }

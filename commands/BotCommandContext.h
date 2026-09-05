@@ -57,8 +57,11 @@ bool ConfigurePullMode(PlayerbotAI* ai, bool pullback);
 Player* ResolveInterruptExecutor(BotCommandContext const& context, Unit* target,
     std::string* outAction = nullptr);
 // Resolve exactly one CC executor. Explicitly targeted bots never fall back to
-// another executor when they lack the mature CC capability.
-Player* ResolveCcExecutor(BotCommandContext const& context, Unit* target, std::string* outSpell = nullptr);
+// another executor when they lack the mature CC capability. Capability comes
+// from the mature action graph; the optional output identifies the selected
+// action for an immediate attempt.
+Player* ResolveCcExecutor(BotCommandContext const& context, Unit* target, std::string const& mark,
+    std::string* outAction = nullptr);
 
 // Execute a mature action while suppressing only its transient chat output.
 // The pre-existing non-combat `silent` strategy is restored exactly on scope

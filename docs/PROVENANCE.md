@@ -769,7 +769,10 @@ Copied / ported / independently reimplemented: the module keeps the donor's
 per-AI mark preference and mature CC target/trigger path, but independently
 validates the eight Vanilla raid-mark names, persists the selected bot's
 `rti cc` value through the existing `PlayerbotDbStore`, and emits a separate
-`TBM:CC_ASSIGN_*` snapshot. The addon uses normal target selection, a compact
+`TBM:CC_ASSIGN_*` snapshot. CC executor discovery now queries explicit
+capability metadata on the mature action graph, covering the registered Mage,
+Warlock, Priest, Druid, Rogue, Hunter, and Paladin CC actions instead of a
+parallel class table. The addon uses normal target selection, a compact
 raid-icon picker, and server-owned assignment display; it does not add a core
 bot-aware `Group::SetTargetIcon` seam.
 

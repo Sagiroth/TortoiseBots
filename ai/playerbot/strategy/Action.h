@@ -97,6 +97,11 @@ namespace ai
         virtual Unit* GetTarget();
         virtual Value<Unit*>* GetTargetValue();
         virtual std::string GetTargetName() { return "self target"; }
+        // Public capability metadata lets module-owned control surfaces query
+        // the mature action graph without maintaining a parallel class table.
+        // Concrete CC actions opt in and expose the spell they own.
+        virtual bool IsCrowdControlAction() const { return false; }
+        virtual std::string GetCrowdControlSpellName() const { return {}; }
         void MakeVerbose(bool enabled) { verbose = enabled; }
 
         void setRelevance(float relevance1) { relevance = relevance1; };

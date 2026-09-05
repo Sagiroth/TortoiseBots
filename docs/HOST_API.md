@@ -262,7 +262,12 @@ while Pullback enables its return-to-pull-position trigger. CC resolves a
 requested raid mark and a suitable executor server-side. Targeting an owned bot
 sets that bot's persistent `rti cc` preference; targeting an enemy (or an
 existing group mark) lets the server select a capable executor and immediately
-attempt the mature CC action. Addon requests receive one structured
+attempt the mature CC action. Executor discovery walks the registered mature
+CC actions, so Hunter traps/beast control, Paladin Turn Undead, Rogue Sap, and
+the other class actions remain eligible without a second class policy table.
+Assignment is persisted even when the current marked creature is not legal for
+the selected bot; the immediate cast is best-effort and normal AI fallback
+remains available. Addon requests receive one structured
 `TBM:ACTION_ACK` or `TBM:ACTION_ERR`; incidental mature-AI chat is suppressed
 where the existing silent strategy supports it.
 

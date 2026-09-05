@@ -187,8 +187,10 @@ namespace ai
     {
     public:
         CastSapAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "sap") {}
+        bool IsCrowdControlAction() const override { return true; }
+        std::string GetCrowdControlSpellName() const override { return "sap"; }
 
-        virtual Value<Unit*>* GetTargetValue()
+        Value<Unit*>* GetTargetValue() override
         {
             return context->GetValue<Unit*>("cc target", getName());
         }

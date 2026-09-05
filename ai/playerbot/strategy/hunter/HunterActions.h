@@ -268,7 +268,7 @@ public:
         virtual std::string GetTrapTargetName() { return "current target"; }
 
         // The trap spell that will be used
-        std::string GetTrapSpellName() { return trapSpell; }
+        std::string GetTrapSpellName() const { return trapSpell; }
 
         std::string GetReachActionName() override { return "reach melee"; }
         std::string GetTargetQualifier() override { return GetTrapSpellName(); }
@@ -306,6 +306,8 @@ private:
     {
     public:
         TrapOnCcTargetAction(PlayerbotAI* ai, std::string spell) : TrapOnTargetAction(ai, spell) {}
+        bool IsCrowdControlAction() const override { return true; }
+        std::string GetCrowdControlSpellName() const override { return GetTrapSpellName(); }
         std::string GetTrapTargetName() override { return "cc target"; }
     };
 

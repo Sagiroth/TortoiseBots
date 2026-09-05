@@ -3,6 +3,7 @@
 #include "../host/BotSessionAdapter.h"
 #include "../runtime/PlayerbotAIStorage.h"
 #include "../ai/playerbot/PlayerbotAI.h"
+#include "../ai/playerbot/strategy/Action.h"
 #include "../ai/playerbot/strategy/generic/PullStrategy.h"
 
 // pi-lens-ignore: clang:pp_file_not_found
@@ -13,10 +14,8 @@
 #include "WorldSession.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Group/Group.h"
-// pi-lens-ignore: clang:pp_file_not_found
-#include "Creature.h"
-
 #include <algorithm>
+#include <set>
 
 namespace TortoiseBots {
 namespace BotCommands {
@@ -306,74 +305,54 @@ Player* ResolveInterruptExecutor(BotCommandContext const& context, Unit* target,
 
 namespace {
 
-static std::string GetBotCcSpell(PlayerbotAI* ai, Unit* target)
+static std::string FindCcAction(PlayerbotAI* ai, Unit* target, std::string const& mark)
 {
-    if (!ai || !target)
-        return "";
+    if (!ai || !target || !target->IsInWorld() || !target->IsAlive())
+        return {};
 
-    Player* bot = ai->GetBot();
-    if (!bot || !bot->IsInWorld() || !bot->IsAlive())
-        return "";
+    ai::AiObjectContext* context = ai->GetAiObjectContext();
+    if (!context)
+        return {};
 
-    Creature* creature = target->ToCreature();
-    CreatureInfo const* cInfo = creature ? creature->GetCreatureInfo() : nullptr;
-    uint32 creatureType = cInfo ? cInfo->type : 0;
+    ai::Value<std::string>* markValue = context->GetValue<std::string>("rti cc");
+    if (!markValue)
+        return {};
 
-    uint8 cls = bot->GetClass();
-    if (cls == CLASS_MAGE)
+    // CcTargetValue reads the bot's rti cc preference. Temporarily querying
+    // with the requested mark lets the mature action graph answer capability
+    // without a duplicate class/spell policy table.
+    std::string previousMark = markValue->Get();
+    markValue->Set(mark);
+
+    std::set<std::string> actionNames;
+    context->GetSupportedActions(actionNames);
+    for (std::string const& actionName : actionNames)
     {
-        // Polymorph works on Beast, Humanoid, Critter
-        if (!creature || creatureType == CREATURE_TYPE_BEAST ||
-            creatureType == CREATURE_TYPE_HUMANOID ||
-            creatureType == CREATURE_TYPE_CRITTER)
-        {
-            if (ai->CanCastSpell("polymorph", target, 0, nullptr, true, true, true))
-                return "polymorph";
-        }
-    }
-    else if (cls == CLASS_WARLOCK)
-    {
-        if (creature && (creatureType == CREATURE_TYPE_DEMON || creatureType == CREATURE_TYPE_ELEMENTAL))
-        {
-            if (ai->CanCastSpell("banish", target, 0, nullptr, true, true, true))
-                return "banish";
-        }
-        if (ai->CanCastSpell("fear", target, 0, nullptr, true, true, true))
-            return "fear";
-    }
-    else if (cls == CLASS_PRIEST)
-    {
-        if (creature && creatureType == CREATURE_TYPE_UNDEAD)
-        {
-            if (ai->CanCastSpell("shackle undead", target, 0, nullptr, true, true, true))
-                return "shackle undead";
-        }
-    }
-    else if (cls == CLASS_DRUID)
-    {
-        if (creature && (creatureType == CREATURE_TYPE_BEAST || creatureType == CREATURE_TYPE_DRAGONKIN))
-        {
-            if (ai->CanCastSpell("hibernate", target, 0, nullptr, true, true, true))
-                return "hibernate";
-        }
-        if (ai->CanCastSpell("entangling roots", target, 0, nullptr, true, true, true))
-            return "entangling roots";
-    }
-    else if (cls == CLASS_ROGUE)
-    {
-        if (creature && creatureType == CREATURE_TYPE_HUMANOID && !creature->IsInCombat())
-        {
-            if (ai->CanCastSpell("sap", target, 0, nullptr, true, true, true))
-                return "sap";
-        }
+        ai::Action* action = context->GetAction(actionName);
+        if (!action || !action->IsCrowdControlAction())
+            continue;
+
+        std::string spell = action->GetCrowdControlSpellName();
+        if (spell.empty() || !ai->HasSpell(spell))
+            continue;
+
+        bool possible = action->isPossible();
+        bool spellLegal = ai->CanCastSpell(spell, target, 0, nullptr, true, true, true);
+        if (!possible && !spellLegal)
+            continue;
+
+        markValue->Set(previousMark);
+        return actionName;
     }
 
-    return "";
+    markValue->Set(previousMark);
+    return {};
 }
 
 } // namespace
 
-Player* ResolveCcExecutor(BotCommandContext const& context, Unit* target, std::string* outSpell)
+Player* ResolveCcExecutor(BotCommandContext const& context, Unit* target, std::string const& mark,
+    std::string* outAction)
 {
     if (!target)
         return nullptr;
@@ -383,10 +362,10 @@ Player* ResolveCcExecutor(BotCommandContext const& context, Unit* target, std::s
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(context.selectedBot);
         if (ai)
         {
-            std::string spell = GetBotCcSpell(ai, target);
-            if (!spell.empty())
+            std::string action = FindCcAction(ai, target, mark);
+            if (!action.empty())
             {
-                if (outSpell) *outSpell = spell;
+                if (outAction) *outAction = action;
                 return context.selectedBot;
             }
         }
@@ -400,10 +379,10 @@ Player* ResolveCcExecutor(BotCommandContext const& context, Unit* target, std::s
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
         if (!ai)
             continue;
-        std::string spell = GetBotCcSpell(ai, target);
-        if (!spell.empty())
+        std::string action = FindCcAction(ai, target, mark);
+        if (!action.empty())
         {
-            if (outSpell) *outSpell = spell;
+            if (outAction) *outAction = action;
             return bot;
         }
     }

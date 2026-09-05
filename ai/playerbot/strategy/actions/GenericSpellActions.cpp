@@ -217,11 +217,19 @@ void CastSpellAction::SetSpellName(const std::string& name, std::string spellIDC
     }
 }
 
-Unit* CastSpellAction::GetTarget()
+Value<Unit*>* CastSpellAction::GetTargetValue()
 {
     std::string targetName = GetTargetName();
     std::string targetNameQualifier = GetTargetQualifier();
-    return targetNameQualifier.empty() ? AI_VALUE(Unit*, targetName) : AI_VALUE2(Unit*, targetName, targetNameQualifier);
+    return targetNameQualifier.empty()
+        ? context->GetValue<Unit*>(targetName)
+        : context->GetValue<Unit*>(targetName, targetNameQualifier);
+}
+
+Unit* CastSpellAction::GetTarget()
+{
+    Value<Unit*>* targetValue = GetTargetValue();
+    return targetValue ? targetValue->Get() : nullptr;
 }
 
 bool CastPetSpellAction::isPossible()

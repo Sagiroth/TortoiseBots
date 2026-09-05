@@ -1258,22 +1258,18 @@ static bool HandleAction(ChatHandler* handler, char const* args)
             ccTarget = nullptr;
 
         Player* executor = nullptr;
-        std::string ccSpell;
+        std::string ccAction;
         if (context.selectedBot && IsLiveHeadlessBot(context.selectedBot))
         {
             // A selected bot is an assignment request. It may be configured
             // before an enemy is marked; when a live target is available, keep
-            // the mature capability check and immediate-cast behavior.
+            // the mature capability probe for an immediate attempt, but never
+            // reject the assignment just because this current creature is not
+            // legal for that bot's CC spell.
             executor = context.selectedBot;
             if (ccTarget)
             {
-                executor = ResolveCcExecutor(context, ccTarget, &ccSpell);
-                if (!executor)
-                {
-                    SendActionError(handler, intent, "no-cc",
-                        "The selected bot cannot CC this target (check class, target type, and spell state).");
-                    return true;
-                }
+                ResolveCcExecutor(context, ccTarget, ccMark, &ccAction);
             }
         }
         else
@@ -1285,7 +1281,7 @@ static bool HandleAction(ChatHandler* handler, char const* args)
                 return true;
             }
 
-            executor = ResolveCcExecutor(context, ccTarget, &ccSpell);
+            executor = ResolveCcExecutor(context, ccTarget, ccMark, &ccAction);
             if (!executor)
             {
                 SendActionError(handler, intent, "no-cc",
@@ -1310,15 +1306,17 @@ static bool HandleAction(ChatHandler* handler, char const* args)
         }
         sPlayerbotDbStore.Save(ai);
 
-        if (ccTarget && !ccSpell.empty())
+        if (ccTarget && !ccAction.empty())
         {
             // Break stay/follow in combat so a ranged executor can reach the
             // target. The mature AI remains responsible for subsequent casts.
             ai->ChangeStrategy("-stay", BotState::BOT_STATE_NON_COMBAT);
             ai->ChangeStrategy("-stay,-follow", BotState::BOT_STATE_COMBAT);
             executor->SetSelectionGuid(ccTarget->GetObjectGuid());
+            ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Set(ccTarget);
             sServerFacade.SetFacingTo(executor, ccTarget);
-            if (!ai->CastSpell(ccSpell, ccTarget))
+            ai::Event ccEvent(intent, "cc " + ccMark, requester);
+            if (!ExecuteQuietAction(ai, ccAction, ccEvent))
                 ExecuteQuietNextAction(ai, false);
             else
                 ExecuteQuietNextAction(ai, true);

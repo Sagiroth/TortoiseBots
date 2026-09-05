@@ -585,7 +585,9 @@ namespace ai
     {
     public:
         CastTurnUndeadAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "turn undead") {}
-        virtual Value<Unit*>* GetTargetValue() { return context->GetValue<Unit*>("cc target", getName()); }
+        bool IsCrowdControlAction() const override { return true; }
+        std::string GetCrowdControlSpellName() const override { return "turn undead"; }
+        Value<Unit*>* GetTargetValue() override { return context->GetValue<Unit*>("cc target", getName()); }
     };
 
 	class CastBlessingOfSacrificeAction : public BuffOnPartyAction

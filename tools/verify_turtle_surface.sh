@@ -98,6 +98,22 @@ grep -q 'DoSpecificAction("formation"' commands/BotCommands.cpp \
 grep -q 'formation == "shield"' commands/BotCommands.cpp \
     || fail "formation no longer uses the reviewed finite enum"
 
+# CC executor selection must come from the mature action graph, not a second
+# class-to-spell table that can silently omit a Vanilla-capable class.
+grep -q 'GetSupportedActions' commands/BotCommandContext.cpp \
+    || fail "CC executor selection no longer queries the mature action graph"
+if rg -n 'GetBotCcSpell|cls[[:space:]]*==[[:space:]]*CLASS_' commands/BotCommandContext.cpp; then
+    fail "CC executor selection regressed to a hard-coded class table"
+fi
+for cc_marker_file in \
+    ai/playerbot/strategy/actions/GenericSpellActions.h \
+    ai/playerbot/strategy/hunter/HunterActions.h \
+    ai/playerbot/strategy/paladin/PaladinActions.h \
+    ai/playerbot/strategy/rogue/RogueActions.h; do
+    rg -q 'IsCrowdControlAction' "$cc_marker_file" \
+        || fail "mature CC action marker is missing from $cc_marker_file"
+done
+
 if rg -n 'Get(MaxEntry|NumRows)\(\) const \{ return (10000|100000|1500|200000);' \
     ai/cmangos-compat-shim.h; then
     fail "store compatibility proxy still uses a fixed donor-era upper bound"
