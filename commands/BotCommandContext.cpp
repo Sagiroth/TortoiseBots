@@ -222,6 +222,90 @@ bool ConfigurePullMode(PlayerbotAI* ai, bool pullback)
 
 namespace {
 
+// These are the Vanilla/Turtle interrupt actions already registered by the
+// nine class contexts (or by a warlock's pet context). We deliberately probe
+// the action graph and spell data instead of encoding class/spec assumptions:
+// talent changes, Turtle spell ranks, and pet choice remain AI-owned.
+char const* const kInterruptActions[] = {
+    "counterspell",
+    "silence",
+    "spell lock",
+    "kick",
+    "pummel",
+    "shield bash",
+    "bash",
+    "hammer of justice",
+    "repentance",
+    "earth shock",
+    "death coil",
+};
+
+std::string FindInterruptAction(PlayerbotAI* ai, Unit* target)
+{
+    if (!ai || !target || !target->IsInWorld() || !target->IsAlive() ||
+        !target->IsNonMeleeSpellCasted(true))
+    {
+        return {};
+    }
+
+    for (char const* action : kInterruptActions)
+    {
+        // IsInterruptableSpellCasting validates that the target is casting and
+        // that this actual spell has an interrupt/silence effect. CanCastSpell
+        // then filters out missing, cooling-down, stance, resource, and target
+        // legality failures. Range is intentionally ignored here: the command
+        // can queue the mature reach action below when the executor is distant.
+        if (ai->HasSpell(action) &&
+            ai->IsInterruptableSpellCasting(target, action, true) &&
+            ai->CanCastSpell(action, target, 0, nullptr, true, true, true))
+        {
+            return action;
+        }
+    }
+
+    return {};
+}
+
+} // namespace
+
+Player* ResolveInterruptExecutor(BotCommandContext const& context, Unit* target,
+    std::string* outAction)
+{
+    if (!target || !target->IsInWorld() || !target->IsAlive() ||
+        !target->IsNonMeleeSpellCasted(true))
+    {
+        return nullptr;
+    }
+
+    auto tryBot = [&](Player* bot) -> Player*
+    {
+        if (!IsLiveHeadlessBot(bot) || bot->GetMap() != target->GetMap())
+            return nullptr;
+
+        PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+        std::string action = FindInterruptAction(ai, target);
+        if (action.empty())
+            return nullptr;
+
+        if (outAction)
+            *outAction = action;
+        return bot;
+    };
+
+    if (context.selectedBot)
+        return tryBot(context.selectedBot);
+
+    for (Player* bot : context.partyBots)
+    {
+        if (Player* executor = tryBot(bot))
+            return executor;
+    }
+
+    return nullptr;
+}
+
+namespace {
+
 static std::string GetBotCcSpell(PlayerbotAI* ai, Unit* target)
 {
     if (!ai || !target)

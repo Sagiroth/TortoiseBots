@@ -46,7 +46,7 @@ Party (each acts on one online owned bot):
 
 - `follow <name>` `stay <name>` `guard <name>` `free <name>` `ready <name>` `attack <name>` `pullback` (`pull-back` alias) `summon <name>` `invite <name>` `uninvite <name>`
 - `formation [name] <default|melee|queue|chaos|circle|line|shield|arrow|near|far>` — formation name required, bot name optional.
-- `action <intent>` where intent is `attack` `stop` `pull` `pullback` `come` `stay` `follow` `hold` `comestay` `ready` `aoe [on|off]` `focus skull` `cc moon`.
+- `action <intent>` where intent is `attack` `interrupt` `stop` `pull` `pullback` `come` `stay` `follow` `hold` `comestay` `ready` `aoe [on|off]` `focus skull` `cc moon`. `interrupt` selects one owned bot with a ready mature interrupt and the current target actively casting.
 
 Passthrough and help:
 
