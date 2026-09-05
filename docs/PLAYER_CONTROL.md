@@ -47,7 +47,7 @@ layer.
 | Pull | pull | `PullStrategy` / `pull my target` | Selects a tank executor and disables the existing `pull back` strategy for an ordinary pull. |
 | Pullback | pullback | `PullStrategy` + `PullBackStrategy` / `pull my target` | Selects a tank executor and enables the existing return-to-pull-position behavior. |
 | RTI | focus skull | `rti` value + `attack rti target` | Uses the existing Skull default and group raid-target icon. |
-| Crowd control | cc moon | Existing `rti cc` value and class CC strategies/triggers | Server selects a capable executor, or honors an explicitly targeted owned bot. |
+| Crowd control | cc `<raid-mark>` | Existing `rti cc` value and class CC strategies/triggers | Eight raid marks are accepted. Target an owned bot to assign it; target an enemy or existing mark for automatic executor selection. |
 | Policy | aoe on/off | Existing `dps aoe` strategy | Scope-resolved strategy toggle; CC/RTI avoidance remains mature-AI-owned. |
 | Lifecycle | login, logout, invite, kick, summon | Headless lifecycle and native group/convenience handlers | Roster-only; multi-select is filtered to eligible server-owned rows. |
 | Visibility | roster snapshot, status | Module roster storage and diagnostics | `.bot roster` is authoritative for offline and online owned rows. |
@@ -56,6 +56,12 @@ The native action shell emits one structured `TBM:ACTION_ACK` or
 `TBM:ACTION_ERR` result for addon requests. It suppresses incidental mature-AI
 chat where the existing `silent` strategy permits; legacy CLI commands retain
 their existing human-readable responses.
+
+CC assignment is intentionally mark-based rather than GUID-based. The player
+marks enemies with the normal group raid icons; each bot stores the icon it is
+responsible for in its `rti cc` value. A separate assignment snapshot exposes
+the live value so the addon can show the matching raid-icon texture beside the
+bot without changing the stable roster row protocol.
 
 The authoritative roster is resolved server-side from the requester's
 undeleted account characters plus explicit cross-account ownership rows in the
