@@ -5,7 +5,6 @@
 #include "../ai/playerbot/RandomBotFacade.h"
 #include "../host/BotSessionAdapter.h"
 #include "../commands/BotCommands.h"
-#include "../behavior/PlayerConvenience.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "WorldSession.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -265,44 +264,6 @@ void BotManager::OnPlayerLogin(::Player* player)
         sRandomBotFacade.UpdateGearSpells(player);
 
     sLog.outString("TortoiseBots: bot %s entered world through native PlayerScript", player->GetName());
-}
-
-void BotManager::OnMasterMapChanged(::Player* master)
-{
-    if (!master || !master->GetSession() || !master->GetSession()->HasNetworkTransport() ||
-        !master->IsInWorld() || !master->GetMap() || master->GetMap()->IsDungeon())
-    {
-        return;
-    }
-
-    for (auto const& pair : m_bots)
-    {
-        BotRecord const& record = pair.second.record;
-        if (record.lifecycle == BotLifecycle::Removing ||
-            record.masterGuid != master->GetObjectGuid())
-        {
-            continue;
-        }
-
-        ::Player* bot = sObjectAccessor.FindPlayer(record.characterGuid);
-        if (!bot || !bot->GetSession() || !bot->GetSession()->IsHeadless() ||
-            !bot->IsInWorld() || !bot->GetMap() || !bot->GetMap()->IsDungeon())
-        {
-            continue;
-        }
-
-        if (PlayerConvenience::Instance().RequestSummon(master, bot))
-        {
-            sLog.outString("TortoiseBots: returning bot %s after master %s left a dungeon",
-                bot->GetName(), master->GetName());
-        }
-        else
-        {
-            sLog.outError("TortoiseBots: bot %s remained in a dungeon after master %s left; "
-                "the native summon preconditions rejected its return",
-                bot->GetName(), master->GetName());
-        }
-    }
 }
 
 void BotManager::OnPlayerBeforeLogout(::Player* player)
