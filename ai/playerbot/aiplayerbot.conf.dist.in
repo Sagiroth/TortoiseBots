@@ -621,16 +621,14 @@ AiPlayerbot.ClassRaceProb.11.6 = 34    # Tauren druid chance
 
 # Hand-built level 60 specs, one per role where the class has one, with a
 # levelling path every five levels so low level bots start in the main tree.
-# The stock links are vanilla ones and every single one of them is rejected
-# against Turtle's reworked talent trees.
 
 # --- Klasse 1 ---
 # Hand-built level 60 talent specs, one per role where a class has one,
 # each with a levelling path every five levels so low level bots start in
 # the main tree rather than the secondary one.
 #
-# The stock links are vanilla ones and every single one of them is rejected
-# against Turtle's reworked talent trees.
+# These links are generated for the Tortoise talent tables and should be
+# regenerated when the core's talent rate or tree data changes.
 #
 # Generated for Rate.Talent = 1, which is what mangosd.conf.dist ships, so
 # level 60 carries 51 of the 61 points each build was designed with. Running
@@ -1101,8 +1099,11 @@ AiPlayerbot.RandomBotCombatStrategies = +dps,+dps assist,-threat
 AiPlayerbot.RandomBotNonCombatStrategies = +grind,+loot,+custom::say,+tfish,+wander,+rpg craft
 #AiPlayerbot.RandomBotReactStrategies =
 #AiPlayerbot.RandomBotDeadStrategies =
-AiPlayerbot.CombatStrategies = +custom::say,+dps,+dps assist,-threat
-AiPlayerbot.NonCombatStrategies = +grind,+loot,+custom::say,+return,+delayed roll,+tfish,+wander,+rpg craft,+quest
+# Keep these empty so the spec/role defaults above remain authoritative for
+# player-owned bots. Add explicit overrides only when intentionally changing a
+# bot's role or autonomous behavior.
+AiPlayerbot.CombatStrategies = ""
+AiPlayerbot.NonCombatStrategies = ""
 #AiPlayerbot.ReactStrategies =
 #AiPlayerbot.DeadStrategies =
 

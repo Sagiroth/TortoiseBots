@@ -35,7 +35,11 @@ namespace ai
     HEAL_ACTION(CastRenewAction, "renew");
     HEAL_HOT_PARTY_ACTION(CastRenewOnPartyAction, "renew");
 
-    BUFF_ACTION(CastPrayerOfHealingAction, "prayer of healing");
+    // Prayer of Healing targets an injured party member and heals that
+    // member's nearby group. Use the mature AOE-heal target/reach path rather
+    // than the self-targeting buff action, so a separated party can be
+    // regrouped before the cast.
+    AOE_HEAL_ACTION(CastPrayerOfHealingAction, "prayer of healing");
     AOE_HEAL_ACTION(CastLightwellAction, "lightwell");
 
     SPELL_ACTION(CastSmiteAction, "smite");

@@ -196,7 +196,24 @@ namespace ai
 
         virtual bool IsActive() override
         {
-            return bot->IsSpellReady(11958);    //cold snap not on cooldown
+            const uint32 coldSnapId = AI_VALUE2(uint32, "spell id", "cold snap");
+            if (!coldSnapId || !bot->IsSpellReady(coldSnapId))
+                return false;
+
+            // Cold Snap is useful only when it can actually reset a Frost
+            // cooldown. SpellIdValue selects the highest rank the bot knows,
+            // so optional/talent spells remain naturally unavailable.
+            static const char* frostCooldowns[] = {
+                "frost nova", "cone of cold", "ice barrier", "ice block", "frost ward"
+            };
+            for (const char* spell : frostCooldowns)
+            {
+                const uint32 spellId = AI_VALUE2(uint32, "spell id", spell);
+                if (spellId && !bot->IsSpellReady(spellId))
+                    return true;
+            }
+
+            return false;
         }
     };
 

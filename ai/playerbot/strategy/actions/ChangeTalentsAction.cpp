@@ -420,6 +420,12 @@ TalentSpec* ChangeTalentsAction::GetBestPremadeSpec(Player* bot, int specId)
 
 bool AutoSetTalentsAction::Execute(Event& event)
 {
+    // "auto talents" is used by startup and level-up automation. An owned
+    // character has a human-configured build; only an explicit "talents ..."
+    // command should be allowed to change it.
+    if (ai->IsOwnedBot())
+        return false;
+
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     sPlayerbotAIConfig.logEvent(ai, "AutoSetTalentsAction", std::to_string(bot->GetLevelPlayedTime()), std::to_string(bot->GetTotalPlayedTime()));
 

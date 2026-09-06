@@ -141,8 +141,6 @@ namespace ai
                 creators["battle stance"] = [](PlayerbotAI* ai) { return new BattleStanceTrigger(ai); };
                 creators["defensive stance"] = [](PlayerbotAI* ai) { return new DefensiveStanceTrigger(ai); };
                 creators["berserker stance"] = [](PlayerbotAI* ai) { return new BerserkerStanceTrigger(ai); };
-                // TurtleWoW Prot Warrior DT 3/3 auto-Berserker swap:
-                creators["defensive tactics berserker stance"] = [](PlayerbotAI* ai) { return new DefensiveTacticsBerserkerStanceTrigger(ai); };
                 creators["shield block"] = [](PlayerbotAI* ai) { return new ShieldBlockTrigger(ai); };
                 creators["sunder armor"] = [](PlayerbotAI* ai) { return new SunderArmorDebuffTrigger(ai); };
                 creators["demoralizing shout"] = [](PlayerbotAI* ai) { return new DemoralizingShoutDebuffTrigger(ai); };

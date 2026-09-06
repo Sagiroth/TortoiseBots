@@ -116,6 +116,11 @@ int AiFactory::GetPlayerSpecTab(const Player* bot)
         case CLASS_WARRIOR:
             tab = 2;
             break;
+        case CLASS_ROGUE:
+            // Combat has the baseline Sinister Strike rotation. Assassination
+            // needs the Backstab-only path and is not useful before talents.
+            tab = 1;
+            break;
         case CLASS_SHAMAN:
             tab = 1;
             break;

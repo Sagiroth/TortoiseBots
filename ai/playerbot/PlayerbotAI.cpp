@@ -246,10 +246,16 @@ PlayerbotAI::PlayerbotAI(Player* bot) :
 
     masterOutgoingPacketHandlers.AddHandler(SMSG_PARTY_COMMAND_RESULT, "party command");
 
-    if (!HasRealPlayerMaster() && bot->GetFreeTalentPoints() > 0)
+    if (!HasRealPlayerMaster() && !IsOwnedBot() && bot->GetFreeTalentPoints() > 0)
     {
         DoSpecificAction("auto talents");
     }
+}
+
+bool PlayerbotAI::IsOwnedBot() const
+{
+    return bot && TortoiseBots::BotManager::Instance().IsBot(bot->GetObjectGuid()) &&
+        !sRandomBotFacade.IsFreeBot(bot);
 }
 
 PlayerbotAI::~PlayerbotAI()
@@ -865,6 +871,18 @@ void PlayerbotAI::UpdateTalentSpec(PlayerTalentSpec spec)
                 }
 
                 case CLASS_PRIEST:
+                {
+                    talentsTab = 1;
+                    break;
+                }
+
+                case CLASS_WARRIOR:
+                {
+                    talentsTab = 2;
+                    break;
+                }
+
+                case CLASS_ROGUE:
                 {
                     talentsTab = 1;
                     break;

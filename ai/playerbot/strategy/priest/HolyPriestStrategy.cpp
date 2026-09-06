@@ -154,6 +154,12 @@ void HolyPriestAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
 {
     PriestAoeStrategy::InitCombatTriggers(triggers);
 
+    // Vanilla/Tortoise Prayer of Healing is the available group-heal
+    // fallback; later Circle of Healing/Prayer of Mending abilities are not
+    // part of this target spell surface.
+    triggers.push_back(new TriggerNode(
+        "medium aoe heal",
+        NextAction::array(0, new NextAction("prayer of healing", ACTION_MEDIUM_HEAL), NULL)));
 }
 
 void HolyPriestAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

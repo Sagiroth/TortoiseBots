@@ -986,3 +986,49 @@ Local validation: `git diff --check`, `tools/verify_turtle_surface.sh`, and
 `tools/verify_penqle_host_contract.sh` passed. No Docker/server/client gameplay
 run was performed; death, resurrection, and post-revive regroup remain manual
 acceptance gates.
+
+## Golden-party class compatibility audit — 2026-09-06
+
+Feature: keep owned characters' saved talent builds intact and close a small
+set of Vanilla/Tortoise strategy wiring defects found during the pre-playtest
+class audit.
+
+Source repositories and data:
+
+- Tortoise 1.18.1 `Spell.dbc`, `Talent.dbc`, `TalentTab.dbc`, and
+  `tw_world_spell_template.sql` were the authority for spell/talent IDs and
+  availability.
+- `mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70` was consulted for
+  baseline Combat Rogue/Mage/Priest intent, including party-targeted Prayer of
+  Healing; no later-expansion class subsystem was copied.
+- Shyalya's Turtle PlayerBots fork was used only as a comparison point. Its
+  Cold Snap ID check and unconditional Defensive Tactics stance swap were not
+  treated as compatibility evidence.
+
+Copied / ported / independently reimplemented: module-owned bots now skip the
+automatic `auto talents` action used during attachment and level-up, while an
+explicit `talents ...` command remains available. The shipped alt-bot strategy
+overrides are empty like the current donor defaults, so role/spec strategies
+remain authoritative. Prayer of Healing now uses the existing AOE-heal target
+and reach action and is wired into Holy's AOE strategy. The unverified
+Tortoise-specific Defensive Tactics Berserker swap was removed because its
+high-health trigger fought the normal Defensive Stance trigger (and was not
+safe without the learned talent and shield). Cold Snap uses the learned named
+spell and only fires when a known Frost cooldown is waiting; the low-level
+Mana Gem helper now fails closed instead of reading an uninitialized ID.
+Untalented low-level Rogues use the Combat fallback so the baseline Sinister
+Strike rotation is available.
+
+Reason: attachment-time talent mutation could rewrite an existing human build;
+the inherited strategy config could replace Protection/Holy defaults with DPS
+siblings; and several small Vanilla paths either used the wrong spell ID,
+selected a self target for a group heal, or performed a stance swap without
+the required Turtle talent/equipment.
+
+Local validation: Tortoise premade links for classes 1/4/5/8 were checked
+against the current talent DBC (all generated links passed structural checks),
+then `git diff --check`, `tools/verify_turtle_surface.sh`, and
+`tools/verify_penqle_host_contract.sh --core ../tortoise-wow` were run for the
+implementation. No Docker/server/client gameplay run was performed; talent
+preservation, class rotations, CC/AOE interaction, and dungeon healing remain
+manual acceptance gates.
