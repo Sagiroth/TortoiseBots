@@ -860,3 +860,36 @@ Local validation: `git diff --check`, `tools/verify_turtle_surface.sh`, and
 `tools/verify_penqle_host_contract.sh` passed after the coherent edit batch.
 No Docker/server/client gameplay run was performed; Pull/Pullback completion,
 interrupt timing, pet behavior, and CC reapplication remain manual gates.
+
+## Golden-party healer target reach — 2026-09-06
+
+Feature: keep injured or dispellable party members discoverable until the
+mature heal/cure action can run its existing reach prerequisite.
+
+Source repository and commit:
+
+- `mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70`,
+  `Ai/Base/Value/PartyMemberToHeal.cpp` and
+  `Ai/Base/Value/PartyMemberToDispel.cpp`, used for the target-selection
+  distance intent.
+
+Copied / ported / independently reimplemented: the Tortoise values retain
+their existing group, map, life-state, pet, and Vanilla spell checks. The heal
+value now keeps candidates within twice the configured heal range so its
+registered `reach party member to heal` prerequisite can close the gap; the
+dispel value leaves range enforcement to the cure action while it queues that
+same reach path. Incoming-damage prediction is clamped at zero so a lethal
+preheal estimate cannot wrap unsigned health and suppress an emergency heal.
+The unregistered forward-ported Priest strategy files also no longer carry the
+expansion-only `divine hymn`/`hymn of hope` nodes; their group-heal fallbacks use
+the registered Vanilla actions instead.
+
+Reason: filtering at cast range made out-of-range party healing/dispelling
+unreachable even though the mature action graph already owns movement and the
+actual cast-range legality check. No command-side healer or new target-selection
+system was added.
+
+Local validation: `git diff --check`, `tools/verify_turtle_surface.sh`, and
+`tools/verify_penqle_host_contract.sh` passed. No Docker/server/client gameplay
+run was performed; the Golden Party healing, mana, dispel, and recovery checks
+remain manual acceptance gates.
