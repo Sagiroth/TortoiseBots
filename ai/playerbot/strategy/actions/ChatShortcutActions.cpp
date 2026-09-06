@@ -39,11 +39,18 @@ bool FollowChatShortcutAction::Execute(Event& event)
         return false;
 
     ai->Reset();
-    ai->ChangeStrategy("+follow,-passive,-stay,-wander,", BotState::BOT_STATE_NON_COMBAT);
-    ai->ChangeStrategy("-stay,-guard,-wander", BotState::BOT_STATE_COMBAT);
+    // Keep the owner-controlled movement mode coherent in every engine. The
+    // shortcut still owns formation/return-anchor bookkeeping below, while
+    // PlayerbotAI owns the cross-state strategy transition.
+    ai->SetMovementStrategy("follow");
 
-    if(ai->HasStrategy("passive", BotState::BOT_STATE_COMBAT)) //Remove flee
-        ai->ChangeStrategy("-passive,-follow", BotState::BOT_STATE_COMBAT);
+    // A summon or ownership rebind can change the master immediately before
+    // this action runs. Recompute the derived targets instead of following a
+    // cached player from the previous master for one value-cache interval.
+    if (ai::Value<Unit*>* masterTarget = context->GetValue<Unit*>("master target"))
+        masterTarget->Reset();
+    if (ai::Value<Unit*>* followTargetValue = context->GetValue<Unit*>("follow target"))
+        followTargetValue->Reset();
 
     ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
     ai::PositionEntry pos = posMap["return"];
@@ -104,8 +111,9 @@ bool StayChatShortcutAction::Execute(Event& event)
         return false;
 
     ai->Reset();
-    ai->ChangeStrategy("+stay,-follow,-wander,-passive", BotState::BOT_STATE_NON_COMBAT);
-    ai->ChangeStrategy("+stay,-follow,-wander,-passive", BotState::BOT_STATE_COMBAT);
+    // Keep Stay in the reaction engine as well as combat/non-combat so a
+    // later state transition cannot resurrect an obsolete Follow strategy.
+    ai->SetMovementStrategy("stay");
 
     SetPosition(bot);
     SetPosition(bot, "stay");
