@@ -3,6 +3,7 @@
 #include "TargetValue.h"
 
 #include "playerbot/ServerFacade.h"
+#include "PossibleAttackTargetsValue.h"
 #include "RtiTargetValue.h"
 #include "Objects/Unit.h"
 #include "LastMovementValue.h"
@@ -24,6 +25,20 @@ Unit* TargetValue::FindTarget(FindTargetStrategy* strategy)
     }
 
     return strategy->GetResult();
+}
+
+Unit* TargetValue::GetExplicitAttackTarget()
+{
+    ObjectGuid guid = AI_VALUE(ObjectGuid, "attack target");
+    if (guid.IsEmpty())
+        return nullptr;
+
+    Unit* target = ai->GetUnit(guid);
+    if (!target || !PossibleAttackTargetsValue::IsValid(target, bot,
+            sPlayerbotAIConfig.sightDistance, false, false))
+        return nullptr;
+
+    return target;
 }
 
 bool FindNonCcTargetStrategy::IsCcTarget(Unit* attacker)

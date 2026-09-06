@@ -8,6 +8,13 @@ using namespace ai;
 
 Unit* DpsTargetValue::Calculate()
 {
+    // Keep an explicit player-command target ahead of normal assist/RTI
+    // selection.  Without this, the first normal combat tick can choose a
+    // different group attacker (for example a lower-health mob), causing
+    // dps-assist to replace the target the owner just ordered the bot to hit.
+    if (Unit* explicitTarget = GetExplicitAttackTarget())
+        return explicitTarget;
+
     Unit* rti = RtiTargetValue::Calculate();
     if (rti) return rti;
 
@@ -43,6 +50,9 @@ protected:
 
 Unit* DpsAoeTargetValue::Calculate()
 {
+    if (Unit* explicitTarget = GetExplicitAttackTarget())
+        return explicitTarget;
+
     Unit* rti = RtiTargetValue::Calculate();
     if (rti) return rti;
 
