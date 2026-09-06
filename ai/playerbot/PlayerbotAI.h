@@ -603,6 +603,10 @@ public:
     bool HasActivePlayerMaster() const { return master && master->GetSession() && master->GetSession()->HasNetworkTransport(); }
     //Checks if the bot is summoned as alt of a player
     bool IsAlt() { return HasRealPlayerMaster() && !TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()); }
+    // Module-owned characters keep their saved build and class defaults. This
+    // identity is available before the adapter binds the transient master
+    // pointer, which is important while PlayerbotAI constructs its engines.
+    bool IsOwnedBot() const;
     //Get the group leader or the master of the bot.
     Player* GetGroupMaster() { return bot->InBattleGround() ? master : bot->GetGroup() ? (sObjectMgr.GetPlayer(bot->GetGroup()->GetLeaderGuid()) ? sObjectMgr.GetPlayer(bot->GetGroup()->GetLeaderGuid()) : master) : master; }
 

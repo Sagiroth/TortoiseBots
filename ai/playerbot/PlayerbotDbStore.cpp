@@ -5,6 +5,8 @@
 #include "PlayerbotDbStore.h"
 #include <cstdlib>
 #include <iostream>
+#include <utility>
+#include <vector>
 
 #include "LootObjectStack.h"
 #include "strategy/values/Formations.h"
@@ -21,23 +23,43 @@ void PlayerbotDbStore::Load(PlayerbotAI *ai, std::string preset)
     auto results = CharacterDatabase.PQuery("SELECT `key`,`value` FROM `ai_playerbot_db_store` WHERE `guid` = '%lu' AND `preset` = '%s'", guid, preset.c_str());
     if (results)
     {
-        ai->ClearStrategies(BotState::BOT_STATE_COMBAT);
-        ai->ClearStrategies(BotState::BOT_STATE_NON_COMBAT);
-        ai->ChangeStrategy("+chat", BotState::BOT_STATE_COMBAT);
-        ai->ChangeStrategy("+chat", BotState::BOT_STATE_NON_COMBAT);
+        struct StoredRow
+        {
+            std::string key;
+            std::string value;
+        };
 
-        std::list<std::string> values;
+        std::vector<StoredRow> rows;
+        bool hasStrategySnapshot = false;
         do
         {
             Field* fields = results->Fetch();
-            std::string key = fields[0].GetString();
-            std::string value = fields[1].GetString();
-            if (key == "value") values.push_back(value);
-            else if (key == "co") ai->ChangeStrategy(value, BotState::BOT_STATE_COMBAT);
-            else if (key == "nc") ai->ChangeStrategy(value, BotState::BOT_STATE_NON_COMBAT);
-            else if (key == "dead") ai->ChangeStrategy(value, BotState::BOT_STATE_DEAD);
-            else if (key == "react") ai->ChangeStrategy(value, BotState::BOT_STATE_REACTION);
+            StoredRow row{ fields[0].GetString(), fields[1].GetString() };
+            hasStrategySnapshot = hasStrategySnapshot ||
+                row.key == "co" || row.key == "nc" || row.key == "dead" || row.key == "react";
+            rows.push_back(std::move(row));
         } while (results->NextRow());
+
+        // A value-only preset is possible after a talent topology change. Do
+        // not clear the freshly rebuilt defaults in that case. Complete
+        // snapshots retain the historical clear-and-replay behavior.
+        if (hasStrategySnapshot)
+        {
+            ai->ClearStrategies(BotState::BOT_STATE_COMBAT);
+            ai->ClearStrategies(BotState::BOT_STATE_NON_COMBAT);
+            ai->ChangeStrategy("+chat", BotState::BOT_STATE_COMBAT);
+            ai->ChangeStrategy("+chat", BotState::BOT_STATE_NON_COMBAT);
+        }
+
+        std::list<std::string> values;
+        for (StoredRow const& row : rows)
+        {
+            if (row.key == "value") values.push_back(row.value);
+            else if (hasStrategySnapshot && row.key == "co") ai->ChangeStrategy(row.value, BotState::BOT_STATE_COMBAT);
+            else if (hasStrategySnapshot && row.key == "nc") ai->ChangeStrategy(row.value, BotState::BOT_STATE_NON_COMBAT);
+            else if (hasStrategySnapshot && row.key == "dead") ai->ChangeStrategy(row.value, BotState::BOT_STATE_DEAD);
+            else if (hasStrategySnapshot && row.key == "react") ai->ChangeStrategy(row.value, BotState::BOT_STATE_REACTION);
+        }
 
         ai->GetAiObjectContext()->Load(values);
     }
@@ -78,6 +100,17 @@ void PlayerbotDbStore::Reset(PlayerbotAI *ai, std::string preset)
     CharacterDatabase.escape_string(preset);
 
     CharacterDatabase.PExecute("DELETE FROM `ai_playerbot_db_store` WHERE `guid` = '%lu' AND `preset` = '%s'", guid, preset.c_str());
+}
+
+void PlayerbotDbStore::InvalidateStrategySnapshots(PlayerbotAI *ai)
+{
+    if (!ai || !ai->GetBot())
+        return;
+
+    uint64 guid = ai->GetBot()->getObjectGuid().GetRawValue();
+    CharacterDatabase.PExecute(
+        "DELETE FROM `ai_playerbot_db_store` WHERE `guid` = '%lu' AND `key` IN ('co','nc','dead','react')",
+        guid);
 }
 
 void PlayerbotDbStore::SaveValue(uint64 guid, std::string preset, std::string key, std::string value)

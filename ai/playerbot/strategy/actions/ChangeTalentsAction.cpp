@@ -10,6 +10,7 @@ bool ChangeTalentsAction::Execute(Event& event)
 {
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     std::ostringstream out;
+    const std::string previousTalentLink = TalentSpec(bot).GetTalentLink();
     TalentSpec botSpec(bot);
     uint8 cls = bot->GetClass();
     std::string param = event.GetParam();
@@ -77,7 +78,6 @@ bool ChangeTalentsAction::Execute(Event& event)
                     sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specLink", 1, specLink);
                 }
 
-                ai->UpdateTalentSpec();
             }
             else
             {
@@ -108,8 +108,6 @@ bool ChangeTalentsAction::Execute(Event& event)
                             out << "Apply spec " << "|h|cffffffff" << path->name << " " << newSpec.formatSpec(cls);
                             sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specNo", path->id + 1);
                             sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specLink", 0);
-
-                            ai->UpdateTalentSpec();
                         }
                     }
                 }
@@ -152,6 +150,19 @@ bool ChangeTalentsAction::Execute(Event& event)
 
         out << " Link: ";
         out << botSpec.GetTalentLink();
+    }
+
+    // A topology change affects both the cached spec value and the strategy
+    // placeholders selected by AiFactory. Queries/listing and failed or
+    // no-op mutations keep the existing graph untouched. A complete persisted
+    // strategy snapshot is spec-dependent, so invalidate its strategy rows
+    // before the normal reset. PlayerbotDbStore retains independent value rows
+    // and the reset rebuilds defaults for the newly learned topology.
+    if (TalentSpec(bot).GetTalentLink() != previousTalentLink)
+    {
+        sPlayerbotDbStore.InvalidateStrategySnapshots(ai);
+        ai->UpdateTalentSpec();
+        ai->ResetStrategies();
     }
 
     ai->TellPlayer(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
@@ -383,7 +394,6 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
             newSpec.ApplyTalents(bot, out);
             if (PlayerbotAIStorage::Instance().GetAI(bot))
                 PlayerbotAIStorage::Instance().GetAI(bot)->UpdateTalentSpec();
-
             if (paths.size() > 1)
                 *out << "Found " << paths.size() << " possible specs to choose from. ";
 
@@ -420,6 +430,12 @@ TalentSpec* ChangeTalentsAction::GetBestPremadeSpec(Player* bot, int specId)
 
 bool AutoSetTalentsAction::Execute(Event& event)
 {
+    // "auto talents" is used by startup and level-up automation. An owned
+    // character has a human-configured build; only an explicit "talents ..."
+    // command should be allowed to change it.
+    if (ai->IsOwnedBot())
+        return false;
+
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     sPlayerbotAIConfig.logEvent(ai, "AutoSetTalentsAction", std::to_string(bot->GetLevelPlayedTime()), std::to_string(bot->GetTotalPlayedTime()));
 

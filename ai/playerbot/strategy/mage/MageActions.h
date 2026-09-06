@@ -132,7 +132,7 @@ namespace ai
     class CastConjureManaGemAction : public Action
     {
     public:
-        CastConjureManaGemAction(PlayerbotAI* ai) : Action(ai, "conjure mana gem") {}
+        CastConjureManaGemAction(PlayerbotAI* ai) : Action(ai, "conjure mana gem"), spellId(0) {}
 
         bool Execute(Event& event) override
         {
@@ -156,6 +156,7 @@ namespace ai
             if (!ai->HasCheat(BotCheatMask::item))
             {
                 const uint32 level = bot->GetLevel();
+                spellId = 0;
                 if (level >= 28 && level < 38)
                 {
                     spellId = 759;
@@ -172,6 +173,9 @@ namespace ai
                 {
                     spellId = 10054;
                 }
+
+                if (!spellId)
+                    return false;
 
                 return ai->CanCastSpell(spellId, bot, 0);
             }

@@ -143,22 +143,6 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
     triggers.push_back(new TriggerNode(
         "bloodrage",
         NextAction::array(0, new NextAction("bloodrage", ACTION_NORMAL + 5), NULL)));
-
-    // Defensive Tactics 3/3 auto-Berserker swap (Prot 5/2, TalentID 91):
-    // At max rank, DT keeps 180% of Defiance's +30% threat boost when in
-    // non-Defensive stances (verified vs spell_template). Berserker Stance
-    // also adds +10% damage. So when survival isn't at risk (HP > 70%, in
-    // combat), the bot maximizes both threat and DPS by being in Berserker.
-    //
-    // The trigger only fires when HP > 70% AND in combat AND not already in
-    // Berserker. When HP drops below 70%, this trigger stops firing and
-    // the existing "defensive stance" buff trigger (in BuffStrategy) takes
-    // over.
-    //
-    // Priority NORMAL+1: above default, below health/threat triggers.
-    triggers.push_back(new TriggerNode(
-        "defensive tactics berserker stance",
-        NextAction::array(0, new NextAction("berserker stance", ACTION_NORMAL + 1), NULL)));
 }
 
 void ProtectionWarriorStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

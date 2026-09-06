@@ -986,3 +986,70 @@ Local validation: `git diff --check`, `tools/verify_turtle_surface.sh`, and
 `tools/verify_penqle_host_contract.sh` passed. No Docker/server/client gameplay
 run was performed; death, resurrection, and post-revive regroup remain manual
 acceptance gates.
+
+## Golden-party class compatibility audit — 2026-09-06
+
+Feature: keep owned characters' saved talent builds intact and close a small
+set of Vanilla/Tortoise strategy wiring defects found during the pre-playtest
+class audit.
+
+Source repositories and data:
+
+- Tortoise 1.18.1 `Spell.dbc`, `Talent.dbc`, `TalentTab.dbc`, and
+  `tw_world_spell_template.sql` were the authority for spell/talent IDs and
+  availability.
+- `mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70` was consulted for
+  baseline Combat Rogue/Mage/Priest intent, including party-targeted Prayer of
+  Healing; no later-expansion class subsystem was copied.
+- Shyalya's Turtle PlayerBots fork was used only as a comparison point. Its
+  Cold Snap ID check and unconditional Defensive Tactics stance swap were not
+  treated as compatibility evidence.
+
+Copied / ported / independently reimplemented: module-owned bots now skip the
+automatic `auto talents` action used during attachment and level-up, while an
+explicit `talents ...` command remains available. The shipped alt-bot strategy
+overrides are empty like the current donor defaults, so role/spec strategies
+remain authoritative. Prayer of Healing now uses the existing AOE-heal target
+and reach action and is wired into Holy's AOE strategy. The unverified
+Tortoise-specific Defensive Tactics Berserker swap was removed because its
+high-health trigger fought the normal Defensive Stance trigger (and was not
+safe without the learned talent and shield). Cold Snap uses the learned named
+spell and only fires when a known Frost cooldown is waiting; the low-level
+Mana Gem helper now fails closed instead of reading an uninitialized ID.
+Untalented low-level Rogues use the Combat fallback so the baseline Sinister
+Strike rotation is available.
+
+The follow-up talent-command path compares the learned talent topology before
+and after a command. Only a changed topology updates the cached spec and calls
+the existing `ResetStrategies()` once; query/list, invalid, and no-op commands
+do not rebuild engines. Because the store persists complete `co`/`nc`/`dead`/
+`react` strategy snapshots rather than deltas, a changed topology deletes those
+strategy rows for every preset before the reset. Independent `value` rows are
+retained, and loading a value-only preset leaves the newly rebuilt defaults in
+place; future strategy saves create a fresh snapshot for the new build.
+
+Reason: attachment-time talent mutation could rewrite an existing human build;
+the inherited strategy config could replace Protection/Holy defaults with DPS
+siblings; and several small Vanilla paths either used the wrong spell ID,
+selected a self target for a group heal, or performed a stance swap without
+the required Turtle talent/equipment.
+
+Local validation: Tortoise premade links for classes 1/4/5/8 were checked
+against the current talent DBC (all generated links passed structural checks),
+then `git diff --check`, `tools/verify_turtle_surface.sh`, and
+`tools/verify_penqle_host_contract.sh --core ../tortoise-wow` were run for the
+implementation. No Docker/server/client gameplay run was performed; talent
+preservation, class rotations, CC/AOE interaction, and dungeon healing remain
+manual acceptance gates.
+
+The Prayer of Healing trigger intentionally keeps the existing caster-centred
+`AoeHealValue` activation count. The spell itself is target-centred, so a party
+cluster 30–40 yards from the Priest can conservatively defer the group-heal
+trigger; ordinary single-target healing/reach remains available and brings the
+Priest into range. This is a manual edge-case check, not a reason to change the
+generic value for every healer class.
+
+`IsOwnedBot()` uses the module record plus `!BotManager::IsRandomBot()`. A
+configured free-alt/always-online character is still an owned character and
+therefore remains protected from automatic talent mutation; only the random
+population identity opts into autonomous talent behavior.
