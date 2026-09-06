@@ -1022,8 +1022,11 @@ Strike rotation is available.
 The follow-up talent-command path compares the learned talent topology before
 and after a command. Only a changed topology updates the cached spec and calls
 the existing `ResetStrategies()` once; query/list, invalid, and no-op commands
-do not rebuild engines. The reset keeps the established `autoLoad` behavior
-for persisted user strategy customisations.
+do not rebuild engines. Because the store persists complete `co`/`nc`/`dead`/
+`react` strategy snapshots rather than deltas, a changed topology deletes those
+strategy rows for every preset before the reset. Independent `value` rows are
+retained, and loading a value-only preset leaves the newly rebuilt defaults in
+place; future strategy saves create a fresh snapshot for the new build.
 
 Reason: attachment-time talent mutation could rewrite an existing human build;
 the inherited strategy config could replace Protection/Holy defaults with DPS

@@ -154,11 +154,13 @@ bool ChangeTalentsAction::Execute(Event& event)
 
     // A topology change affects both the cached spec value and the strategy
     // placeholders selected by AiFactory. Queries/listing and failed or
-    // no-op mutations keep the existing graph untouched. ResetStrategies()
-    // reloads persisted user customisations using its normal autoLoad
-    // semantics, so this does not silently discard intentional strategy edits.
+    // no-op mutations keep the existing graph untouched. A complete persisted
+    // strategy snapshot is spec-dependent, so invalidate its strategy rows
+    // before the normal reset. PlayerbotDbStore retains independent value rows
+    // and the reset rebuilds defaults for the newly learned topology.
     if (TalentSpec(bot).GetTalentLink() != previousTalentLink)
     {
+        sPlayerbotDbStore.InvalidateStrategySnapshots(ai);
         ai->UpdateTalentSpec();
         ai->ResetStrategies();
     }
