@@ -289,6 +289,7 @@ namespace ai
             creators["next rpg action"] = [](PlayerbotAI* ai) { return new NextRpgActionValue(ai); };
             creators["talk target"] = [](PlayerbotAI* ai) { return new TalkTargetValue(ai); };
             creators["attack target"] = [](PlayerbotAI* ai) { return new AttackTargetValue(ai); };
+            creators["explicit attack target"] = [](PlayerbotAI* ai) { return new ExplicitAttackTargetValue(ai); };
             creators["pull target"] = [](PlayerbotAI* ai) { return new PullTargetValue(ai); };
             creators["follow target"] = [](PlayerbotAI* ai) { return new FollowTargetValue(ai); };
             creators["manual follow target"] = [](PlayerbotAI* ai) { return new ManualFollowTargetValue(ai); };

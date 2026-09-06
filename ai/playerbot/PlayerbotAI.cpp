@@ -996,6 +996,11 @@ void PlayerbotAI::OnCombatEnded()
 {
     if (!IsStateActive(BotState::BOT_STATE_NON_COMBAT))
     {
+        // The command-only priority is scoped to one combat engagement. The
+        // normal combat-end reaction can run without a full Reset(), so clear
+        // it here when the target dies or otherwise becomes invalid.
+        RESET_AI_VALUE(ObjectGuid,"explicit attack target");
+
         // Reset the combat start timestamp
         aiObjectContext->GetValue<time_t>("combat start time")->Set(0);
 
@@ -1107,6 +1112,7 @@ void PlayerbotAI::OnDeath()
         SET_AI_VALUE(Unit*, "enemy player target", nullptr);
         SET_AI_VALUE(Unit*, "pull target", nullptr);
         SET_AI_VALUE(ObjectGuid, "attack target", ObjectGuid());
+        SET_AI_VALUE(ObjectGuid, "explicit attack target", ObjectGuid());
         SET_AI_VALUE(LootObject, "loot target", LootObject());
         SET_AI_VALUE(time_t, "combat start time", 0);
         SET_AI_VALUE2(bool, "manual bool", "enemies near corpse", false);
@@ -1304,6 +1310,7 @@ void PlayerbotAI::Reset(bool full)
     RESET_AI_VALUE(Unit*,"current target");
     RESET_AI_VALUE(Unit*,"pull target");
     RESET_AI_VALUE(ObjectGuid,"attack target");
+    RESET_AI_VALUE(ObjectGuid,"explicit attack target");
     RESET_AI_VALUE(GuidPosition,"rpg target");
     RESET_AI_VALUE(LootObject,"loot target");
     RESET_AI_VALUE(time_t,"combat start time");
@@ -2020,6 +2027,7 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
     {
         if (aiObjectContext->GetValue<Unit*>("current target")->Get() != NULL ||
             aiObjectContext->GetValue<ObjectGuid>("attack target")->Get() != ObjectGuid() ||
+            aiObjectContext->GetValue<ObjectGuid>("explicit attack target")->Get() != ObjectGuid() ||
             aiObjectContext->GetValue<Unit*>("dps target")->Get() != NULL)
         {
             Reset();

@@ -115,6 +115,13 @@ namespace ai
         AttackTargetValue(PlayerbotAI* ai, std::string name = "attack target") : ManualSetValue<ObjectGuid>(ai, ObjectGuid(), name) {}
     };
 
+    class ExplicitAttackTargetValue : public ManualSetValue<ObjectGuid>
+    {
+    public:
+        ExplicitAttackTargetValue(PlayerbotAI* ai, std::string name = "explicit attack target")
+            : ManualSetValue<ObjectGuid>(ai, ObjectGuid(), name) {}
+    };
+
     class PullTargetValue : public UnitManualSetValue
     {
     public:

@@ -29,7 +29,7 @@ Unit* TargetValue::FindTarget(FindTargetStrategy* strategy)
 
 Unit* TargetValue::GetExplicitAttackTarget()
 {
-    ObjectGuid guid = AI_VALUE(ObjectGuid, "attack target");
+    ObjectGuid guid = AI_VALUE(ObjectGuid, "explicit attack target");
     if (guid.IsEmpty())
         return nullptr;
 

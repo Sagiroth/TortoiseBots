@@ -16,6 +16,7 @@ void CommitExplicitAttackTarget(PlayerbotAI* ai, ObjectGuid guid)
 {
     AiObjectContext* context = ai->GetAiObjectContext();
     context->GetValue<ObjectGuid>("attack target")->Set(guid);
+    context->GetValue<ObjectGuid>("explicit attack target")->Set(guid);
 
     // Target and attacker values may have been evaluated earlier in this same
     // second while the bot was following.  Invalidate them now so the first
@@ -50,6 +51,10 @@ bool AttackMyTargetAction::Execute(Event& event)
            bot ? bot->GetName() : "(null)",
            requester ? requester->GetName() : "(null)",
            event.GetOwner() ? event.GetOwner()->GetName() : "(null)");
+
+    // A new explicit command supersedes any previous command-only priority.
+    // Autonomous AttackAction callers do not touch this marker.
+    context->GetValue<ObjectGuid>("explicit attack target")->Set(ObjectGuid());
 
     if(requester)
     {
@@ -96,6 +101,7 @@ bool AttackRTITargetAction::Execute(Event& event)
 {
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     Unit* rtiTarget = AI_VALUE(Unit*, "rti target");
+    context->GetValue<ObjectGuid>("explicit attack target")->Set(ObjectGuid());
 
     if (rtiTarget && rtiTarget->IsInWorld() && rtiTarget->GetMapId() == bot->GetMapId())
     {

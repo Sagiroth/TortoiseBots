@@ -693,6 +693,7 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
 
     RESET_AI_VALUE(GuidPosition, "rpg target");
     RESET_AI_VALUE(ObjectGuid, "attack target");
+    RESET_AI_VALUE(ObjectGuid, "explicit attack target");
     RESET_AI_VALUE(bool, "travel target active");
 
     ai->TellPlayer(GetMaster(), std::string("Traveling to ") + name + " for world buffs");
