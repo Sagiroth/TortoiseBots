@@ -40,23 +40,11 @@ bool CanControlBot(Player* requester, BotRecord const* record)
 
 bool IsLiveHeadlessBot(Player* bot, BotRecord const* suppliedRecord)
 {
-    if (!bot || !bot->IsInWorld() || !bot->GetSession())
-        return false;
-
-    BotRecord* record = suppliedRecord
-        ? const_cast<BotRecord*>(suppliedRecord)
-        : BotManager::Instance().FindBot(bot->GetObjectGuid());
-    if (!record || record->lifecycle == BotLifecycle::Removing)
-        return false;
-
-    WorldSession* session = bot->GetSession();
-    if (!session->IsHeadless() || session->HasNetworkTransport())
-        return false;
-
-    // A player row can still say online for a human session or a stale crash.
-    // Only the core-owned Headless state makes a module bot controllable.
-    return BotSessionAdapter::GetHeadlessSessionState(record->characterGuid) ==
-        HeadlessSessionState::Active;
+    (void)suppliedRecord;
+    // BotManager is the single readiness gate. A live Player and an Active
+    // Headless state are not enough unless the adapter also registered a
+    // usable PlayerbotAI for that exact object.
+    return BotManager::Instance().IsControllableBot(bot);
 }
 
 namespace {
@@ -102,7 +90,10 @@ void ExecuteQuietNextAction(PlayerbotAI* ai, bool minimal)
     if (!ai)
         return;
     ScopedSilentStrategy silent(ai);
-    ai->DoNextAction(minimal);
+    // This helper is reached only from a human-facing module command. Give
+    // that command one full AI decision even if the bot's cached population
+    // activity verdict says it is currently inactive.
+    ai->DoNextAction(minimal, true);
 }
 
 BotCommandContext BuildContext(Player* requester)

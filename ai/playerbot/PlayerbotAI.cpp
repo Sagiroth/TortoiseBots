@@ -2001,11 +2001,15 @@ void PlayerbotAI::ChangeEngine(BotState type)
 }
 
 
-void PlayerbotAI::DoNextAction(bool min)
+void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
 {
     SC_PHASE("DoNextAction.entry", bot ? bot->GetName() : "(null)");
+    const bool previousActivityOverride = explicitActivityOverride;
+    explicitActivityOverride = previousActivityOverride || forceActivity;
+
     if (!bot->IsInWorld() || bot->IsBeingTeleported() || (GetMaster() && GetMaster()->IsBeingTeleported()))
     {
+        explicitActivityOverride = previousActivityOverride;
         SetAIInternalUpdateDelay(sPlayerbotAIConfig.globalCoolDown);
         return;
     }
@@ -2029,7 +2033,10 @@ void PlayerbotAI::DoNextAction(bool min)
     SC_PHASE("DoNextAction.afterEngine", bot ? bot->GetName() : "(null)");
 
     if (!bot->IsInWorld()) //Teleport out of bg
+    {
+        explicitActivityOverride = previousActivityOverride;
         return;
+    }
 
     if (minimal)
     {
@@ -2037,6 +2044,7 @@ void PlayerbotAI::DoNextAction(bool min)
             bot->ToggleAFK();
 
         SetAIInternalUpdateDelay(sPlayerbotAIConfig.passiveDelay);
+        explicitActivityOverride = previousActivityOverride;
         return;
     }
     else if (bot->IsAFK())
@@ -2177,8 +2185,11 @@ void PlayerbotAI::DoNextAction(bool min)
 
     if (bot->IsTaxiFlying())
     {
+        explicitActivityOverride = previousActivityOverride;
         return;
     }
+
+    explicitActivityOverride = previousActivityOverride;
 }
 
 void PlayerbotAI::ReInitCurrentEngine()
@@ -5557,6 +5568,9 @@ bool PlayerbotAI::AllowActive(ActivityType activityType)
 
 bool PlayerbotAI::AllowActivity(ActivityType activityType, bool checkNow)
 {
+    if (explicitActivityOverride)
+        return true;
+
     if (!allowActiveCheckTimer[activityType])
         allowActiveCheckTimer[activityType] = time(NULL);
 

@@ -123,6 +123,10 @@ public:
     // population identity inside BotManager.
     bool IsRandomBot(ObjectGuid guid) const;
 
+    // A bot is controllable only after the Headless session is active and the
+    // adapter has registered a usable PlayerbotAI for the live Player.
+    bool IsControllableBot(Player* player) const;
+
     // Snapshot of in-world bots owned by a master. Callers never receive the
     // manager's records or session pointers, only live Player identities.
     std::vector<Player*> GetBotsForMaster(ObjectGuid masterGuid) const;

@@ -43,6 +43,10 @@ public:
 
     PlayerbotAI* GetAI() const { return ai_; }
     bool IsInitialized() const { return initialized_; }
+    // A non-null AI pointer is not enough: the adapter must still own the
+    // expected in-world bot, have a usable action engine/context, and remain
+    // registered in the module-local storage used by command callers.
+    bool IsUsable() const;
 
 private:
     Player* bot_;

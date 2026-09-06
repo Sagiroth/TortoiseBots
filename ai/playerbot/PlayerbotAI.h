@@ -357,7 +357,10 @@ public:
     void HandleMasterOutgoingPacket(const WorldPacket& packet);
 	void HandleTeleportAck();
     void ChangeEngine(BotState type);
-    void DoNextAction(bool minimal = false);
+    // Run one engine decision. Module-owned human commands can force this
+    // single decision to use the full activity path without changing the
+    // normal autonomous/random-bot throttle.
+    void DoNextAction(bool minimal = false, bool forceActivity = false);
     bool CanDoSpecificAction(const std::string& name, bool isUseful = true, bool isPossible = true);
     virtual bool DoSpecificAction(const std::string& name, ai::Event event = ai::Event(), bool silent = false);
     void ChangeStrategy(const std::string& name, BotState type);
@@ -754,6 +757,7 @@ protected:
     static std::set<std::string> unsecuredCommands;
     bool allowActive[MAX_ACTIVITY_TYPE];
     time_t allowActiveCheckTimer[MAX_ACTIVITY_TYPE];
+    bool explicitActivityOverride = false;
     bool inCombat = false;
     bool isMoving = false;
     bool isWaiting = false;

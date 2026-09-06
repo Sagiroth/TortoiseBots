@@ -79,6 +79,21 @@ if rg -n 'AddHeadlessSession|FindHeadlessSession|HasPendingHeadlessSession|Cance
     fail "module bypasses the generic Headless lifecycle façade"
 fi
 
+# A controllable snapshot requires the full module readiness chain, not just
+# an in-world Player and a Headless transport.
+grep -q 'IsUsable' runtime/PlayerbotAIAdapter.h runtime/PlayerbotAIAdapter.cpp \
+    || fail "AI adapter readiness is not exposed"
+grep -q 'IsControllableBot' runtime/BotManager.h runtime/BotManager.cpp \
+    || fail "BotManager has no centralized controllable-bot gate"
+grep -q 'entry.aiAdapter->IsUsable' runtime/BotManager.cpp \
+    || fail "BotManager does not require a usable adapter for live bots"
+grep -q 'forceActivity' ai/playerbot/PlayerbotAI.h ai/playerbot/PlayerbotAI.cpp \
+    || fail "explicit command activity override is missing"
+grep -q 'explicitActivityOverride' ai/playerbot/PlayerbotAI.cpp \
+    || fail "activity override is not scoped to one explicit decision"
+grep -q 'minimal tick defers low-relevance queue' ai/playerbot/strategy/Engine.cpp \
+    || fail "minimal engine path can revisit the same ineligible queue head"
+
 # Vetted player controls must stay mapped to fixed mature actions. Do not turn
 # the public shell into an unrestricted forwarding path while adding aliases.
 for control in guard free ready attack formation status; do
