@@ -237,9 +237,6 @@ void BotManager::OnPlayerLogin(::Player* player)
     if (record.enteredWorld)
         return;
 
-    record.enteredWorld = true;
-    record.lifecycle = BotLifecycle::InWorld;
-
     if (!entry.aiAdapter)
     {
         ::Player* masterPlayer = nullptr;
@@ -247,9 +244,34 @@ void BotManager::OnPlayerLogin(::Player* player)
             masterPlayer = sObjectAccessor.FindPlayer(record.masterGuid);
 
         entry.aiAdapter = std::make_unique<PlayerbotAIAdapter>(player, masterPlayer);
-        if (!entry.aiAdapter->Initialize())
-            sLog.outError("TortoiseBots: PlayerbotAI attach failed for %s", player->GetName());
     }
+
+    if (!entry.aiAdapter->IsInitialized() && !entry.aiAdapter->Initialize())
+    {
+        sLog.outError("TortoiseBots: PlayerbotAI attach failed for %s; stopping the Headless session",
+            player->GetName());
+        record.enteredWorld = false;
+        record.lifecycle = BotLifecycle::Removing;
+        entry.aiAdapter->Shutdown();
+        BotSessionAdapter::StopHeadlessSession(record.characterGuid, true);
+        return;
+    }
+
+    // Do not publish an in-world/controllable record until the adapter has
+    // registered the exact AI instance that owns this live Player.
+    if (!entry.aiAdapter->IsUsable())
+    {
+        sLog.outError("TortoiseBots: PlayerbotAI attach for %s is not usable; stopping the Headless session",
+            player->GetName());
+        record.enteredWorld = false;
+        record.lifecycle = BotLifecycle::Removing;
+        entry.aiAdapter->Shutdown();
+        BotSessionAdapter::StopHeadlessSession(record.characterGuid, true);
+        return;
+    }
+
+    record.enteredWorld = true;
+    record.lifecycle = BotLifecycle::InWorld;
 
     // One-shot random scatter on headless login only; fail-closed, no DB mutation, no homebind
     TryRandomTeleport(player, record);
@@ -608,11 +630,27 @@ bool BotManager::IsLiveHeadlessBot(BotEntry const& entry, ::Player* player) cons
         return false;
 
     ::WorldSession* session = player->GetSession();
-    if (!session || session->HasNetworkTransport())
+    if (!session || !session->IsHeadless() || session->HasNetworkTransport())
         return false;
+    if (!entry.aiAdapter || !entry.aiAdapter->IsUsable())
+        return false;
+
     // Core owns Headless session; module bookkeeping is via BotRecord + AI.
     HeadlessSessionState state = BotSessionAdapter::GetHeadlessSessionState(entry.record.characterGuid);
     return state == HeadlessSessionState::Active || state == HeadlessSessionState::Loading;
+}
+
+bool BotManager::IsControllableBot(::Player* player) const
+{
+    if (!player)
+        return false;
+
+    auto it = m_bots.find(player->GetObjectGuid().GetCounter());
+    if (it == m_bots.end() || !IsLiveHeadlessBot(it->second, player))
+        return false;
+
+    return BotSessionAdapter::GetHeadlessSessionState(it->second.record.characterGuid) ==
+        HeadlessSessionState::Active;
 }
 
 bool BotManager::BindBotMaster(::ObjectGuid botGuid, ::ObjectGuid masterGuid)
@@ -773,7 +811,7 @@ void BotManager::UpdateBots(uint32_t diff)
         BotEntry& entry = kv.second;
         if (entry.record.lifecycle != BotLifecycle::InWorld)
             continue;
-        if (entry.aiAdapter && entry.aiAdapter->IsInitialized())
+        if (entry.aiAdapter && entry.aiAdapter->IsUsable())
         {
             entry.aiAdapter->Update(diff);
         }
@@ -786,7 +824,8 @@ void BotManager::OnWorldUpdate(uint32_t diff)
     // Module only tracks BotRecord and polls adapter state. No pending promotion.
     for (auto it = m_bots.begin(); it != m_bots.end(); )
     {
-        BotRecord& rec = it->second.record;
+        BotEntry& entry = it->second;
+        BotRecord& rec = entry.record;
         ::Player* p = sObjectAccessor.FindPlayer(rec.characterGuid);
         HeadlessSessionState state = BotSessionAdapter::GetHeadlessSessionState(rec.characterGuid);
 
@@ -825,13 +864,30 @@ void BotManager::OnWorldUpdate(uint32_t diff)
             if (p->IsInWorld())
             {
                 if (!rec.enteredWorld)
-                {
                     OnPlayerLogin(p);
+
+                // OnPlayerLogin owns the only promotion to InWorld. In
+                // particular, do not overwrite Removing after an AI attach
+                // failure just because the Player object is still present.
+                if (rec.lifecycle == BotLifecycle::Removing)
+                {
+                    ++it;
+                    continue;
                 }
+
+                if (rec.lifecycle != BotLifecycle::InWorld ||
+                    !entry.aiAdapter || !entry.aiAdapter->IsUsable())
+                {
+                    sLog.outError("TortoiseBots: Bot %s lost usable PlayerbotAI; stopping the Headless session",
+                        rec.characterGuid.GetString().c_str());
+                    rec.enteredWorld = false;
+                    rec.lifecycle = BotLifecycle::Removing;
+                    BotSessionAdapter::StopHeadlessSession(rec.characterGuid, true);
+                    ++it;
+                    continue;
+                }
+
                 rec.enteredWorld = true;
-                // Promote bookkeeping only; core determines Active vs Loading.
-                if (state == HeadlessSessionState::Active || state == HeadlessSessionState::Loading)
-                    rec.lifecycle = BotLifecycle::InWorld;
                 ++rec.ticksInWorld;
             }
             ++it;

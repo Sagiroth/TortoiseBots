@@ -187,6 +187,13 @@ The core listener is generic; it does not call a PlayerBots singleton.
 A second owner for session lifetime, AI state, movement or master identity is an
 architecture warning.
 
+`BotRecord::InWorld` is bookkeeping, not command readiness. `BotManager` only
+publishes a bot through its controllable/live snapshots when the Player has an
+active module-owned Headless session, the `PlayerbotAIAdapter` is usable, and
+the same `PlayerbotAI` is registered in `PlayerbotAIStorage`. An attach failure
+marks the record for removal and stops the Headless session instead of leaving
+an apparently online but inert bot.
+
 ## 10. Packet bridge
 
 The core exposes generic packet send/receive hooks. `BotPacketAdapter` is the

@@ -152,7 +152,14 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
             bool skipPrerequisites = basket->isSkipPrerequisites();
             Event event = basket->getEvent();
             if (minimal && (relevance < 100))
-                continue;
+            {
+                // Queue::Peek returns the highest relevance basket, so every
+                // remaining basket is also below the minimal cutoff. Defer the
+                // queue intact rather than repeatedly peeking the same entry
+                // until the iteration budget is exhausted.
+                LogAction("minimal tick defers low-relevance queue");
+                break;
+            }
             // NOTE: queue.Pop() deletes basket
             ActionNode* actionNode = queue.Pop();
             Action* action = InitializeAction(actionNode);

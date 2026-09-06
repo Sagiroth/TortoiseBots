@@ -52,7 +52,7 @@ bool PlayerbotAIAdapter::Initialize()
 
 void PlayerbotAIAdapter::Update(uint32_t diff)
 {
-    if (!initialized_ || !ai_ || !bot_ || !bot_->IsInWorld()) return; // pi-lens-ignore: clang:all
+    if (!IsUsable()) return; // pi-lens-ignore: clang:all
     try
     {
         ai_->UpdateAI(diff); // pi-lens-ignore: clang:all
@@ -65,6 +65,14 @@ void PlayerbotAIAdapter::Update(uint32_t diff)
         sLog.outError("TortoiseBots: dropped malformed packet while updating bot %s",
             bot_->GetName()); // pi-lens-ignore: clang:all
     }
+}
+
+bool PlayerbotAIAdapter::IsUsable() const
+{
+    return initialized_ && bot_ && bot_->IsInWorld() && ai_ &&
+        ai_->GetBot() == bot_ && ai_->GetAiObjectContext() &&
+        ai_->GetCurrentEngine() &&
+        PlayerbotAIStorage::Instance().GetAI(bot_) == ai_;
 }
 
 void PlayerbotAIAdapter::RebindMaster(Player* master)

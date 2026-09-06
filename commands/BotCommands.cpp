@@ -848,6 +848,11 @@ static bool HandleSummon(ChatHandler* handler, char const* args)
         handler->PSendSysMessage("Bot '%s' is not in world.", name.c_str());
         return true;
     }
+    if (!IsLiveHeadlessBot(bot, record))
+    {
+        handler->PSendSysMessage("Character '%s' has no ready PlayerbotAI and cannot be controlled.", name.c_str());
+        return true;
+    }
     if (!bot->IsAlive())
     {
         handler->PSendSysMessage("Bot '%s' is dead and cannot be summoned (resurrect first).", name.c_str());
