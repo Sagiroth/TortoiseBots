@@ -23,10 +23,14 @@ public:
 
         AiObjectContext* context = ai->GetAiObjectContext();
 
-        if (!ai->CanCastSpell(spell, creature, true, nullptr, false, true))
+        // A bot assigned to this raid mark may still need to close distance.
+        // Keep the normal legality/resource checks, but let the mature reach
+        // prerequisite handle range for that one assigned target.
+        const bool assignedTarget = AI_VALUE(Unit*, "rti cc target") == creature;
+        if (!ai->CanCastSpell(spell, creature, true, nullptr, assignedTarget, true))
             return;
 
-        if (AI_VALUE(Unit*,"rti cc target") == creature)
+        if (assignedTarget)
         {
             result = creature;
             return;

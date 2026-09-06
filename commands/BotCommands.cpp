@@ -389,6 +389,17 @@ static bool HandleNamedAction(ChatHandler* handler, char const* args, char const
     return true;
 }
 
+// Tactical requests must be able to leave a prior stay/follow hold. The
+// movement and combat behavior itself remains owned by PlayerbotAI.
+static void RelaxTacticalMovement(PlayerbotAI* ai)
+{
+    if (!ai)
+        return;
+
+    ai->ChangeStrategy("-stay", BotState::BOT_STATE_NON_COMBAT);
+    ai->ChangeStrategy("-stay,-follow", BotState::BOT_STATE_COMBAT);
+}
+
 static bool HandleGuard(ChatHandler* handler, char const* args)
 {
     return HandleNamedAction(handler, args, "guard", "guard chat shortcut", "will guard this position");
@@ -784,12 +795,15 @@ static bool HandlePullback(ChatHandler* handler, char const* args)
         return true;
     }
 
+    RelaxTacticalMovement(tankAI);
     ai::Event event("pullback", "", requester);
-    if (!tankAI->DoSpecificAction("pull my target", event, true))
+    if (!ExecuteQuietAction(tankAI, "pull my target", event))
     {
         handler->PSendSysMessage("Tank %s could not start a pull for your selected target.", tank->GetName());
         return true;
     }
+
+    ExecuteQuietNextAction(tankAI, false);
 
     handler->PSendSysMessage("Pullback requested: tank %s is using its native pull strategy.", tank->GetName());
     return true;
@@ -960,39 +974,46 @@ static bool ExecuteInterruptAction(ChatHandler* handler, BotCommandContext const
         return true;
     }
 
-    // Interrupt is an executor command, but it still needs to put the chosen
-    // bot in combat and break a stale hold/follow mode so its mature action can
-    // either cast immediately or move into range for the next AI tick.
-    ai->ChangeStrategy("-stay", BotState::BOT_STATE_NON_COMBAT);
-    ai->ChangeStrategy("-stay,-follow", BotState::BOT_STATE_COMBAT);
+    // Interrupt is an executor command, so break a stale hold/follow mode while
+    // leaving movement and combat decisions to the mature action graph.
+    RelaxTacticalMovement(ai);
     executor->SetSelectionGuid(target->GetObjectGuid());
     ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Set(target);
-    executor->Attack(target, !ai->IsRanged(executor) ||
-        sServerFacade.getDistance2d(executor, target) < 5.0f);
-    ai->OnCombatStarted();
 
     ai::Event event("action interrupt", "", requester);
     bool accepted = ExecuteQuietAction(ai, actionName, event);
     if (!accepted)
     {
-        // Engine::ExecuteAction intentionally does not run action
-        // prerequisites. Queue the existing reach action explicitly when the
-        // interrupt is valid but the executor is outside its range; once the
-        // bot reaches the target, its normal interrupt trigger will cast it.
-        float spellRange = 0.0f;
-        bool ranged = ai->GetSpellRange(actionName, &spellRange) &&
-            spellRange > ATTACK_DISTANCE + CONTACT_DISTANCE;
-        std::string reachAction = ranged ? "reach spell" : "reach melee";
-        if (!ExecuteQuietAction(ai, reachAction, event))
+        if (!target->IsInWorld() || !target->IsAlive())
+        {
+            SendActionError(handler, "interrupt", "no-target",
+                "The selected interrupt target is no longer available.");
+            return true;
+        }
+        if (!target->IsNonMeleeSpellCasted(true))
+        {
+            SendActionError(handler, "interrupt", "not-casting",
+                "The target finished casting before the interrupt could start.");
+            return true;
+        }
+
+        // Direct execution deliberately bypasses prerequisites. Queue the
+        // same mature action on the active engine instead, allowing its
+        // existing reach prerequisite to move and then cast without a
+        // command-side melee/ranged table.
+        // This request came from the networked owner. Keep its queued
+        // continuation eligible even if a later population tick is minimal.
+        if (!QueueMatureAction(ai, actionName, event, ACTION_PASSTROUGH))
         {
             SendActionError(handler, "interrupt", "failed",
                 "The mature interrupt action could not be started.");
             return true;
         }
 
-        // Use a normal (non-minimal) tick so the class interrupt trigger is
-        // eligible while the reach movement is in progress.
-        ExecuteQuietNextAction(ai, false);
+        // Do not wrap this tick in ScopedSilentStrategy: changing the
+        // non-combat strategy rebuilds that engine and would discard the
+        // queued action/continuation before the reach prerequisite can run.
+        ai->DoNextAction(false, true);
         accepted = true;
     }
     else
@@ -1315,14 +1336,30 @@ static bool HandleAction(ChatHandler* handler, char const* args)
         {
             // Break stay/follow in combat so a ranged executor can reach the
             // target. The mature AI remains responsible for subsequent casts.
-            ai->ChangeStrategy("-stay", BotState::BOT_STATE_NON_COMBAT);
-            ai->ChangeStrategy("-stay,-follow", BotState::BOT_STATE_COMBAT);
+            RelaxTacticalMovement(ai);
             executor->SetSelectionGuid(ccTarget->GetObjectGuid());
             ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Set(ccTarget);
             sServerFacade.SetFacingTo(executor, ccTarget);
             ai::Event ccEvent(intent, "cc " + ccMark, requester);
             if (!ExecuteQuietAction(ai, ccAction, ccEvent))
-                ExecuteQuietNextAction(ai, false);
+            {
+                // Direct execution deliberately bypasses prerequisites. Keep
+                // the mature CC action queued so its existing reach
+                // prerequisite can move and then cast without a command-side
+                // class/range table.
+                // Keep this explicit owner request eligible through later
+                // minimal ticks while the mature reach chain is in progress.
+                if (!QueueMatureAction(ai, ccAction, ccEvent, ACTION_PASSTROUGH))
+                {
+                    SendActionError(handler, intent, "failed",
+                        "The mature CC action could not be started.");
+                    return true;
+                }
+                // Keep the queued prerequisite chain intact for the first
+                // movement/cast decision; the quiet helper would rebuild the
+                // non-combat engine and drop it.
+                ai->DoNextAction(false, true);
+            }
             else
                 ExecuteQuietNextAction(ai, true);
         }
@@ -1356,8 +1393,7 @@ static bool HandleAction(ChatHandler* handler, char const* args)
         }
 
         // Pulling requires tank movement: break stay!
-        ai->ChangeStrategy("-stay", BotState::BOT_STATE_NON_COMBAT);
-        ai->ChangeStrategy("-stay,-follow", BotState::BOT_STATE_COMBAT);
+        RelaxTacticalMovement(ai);
 
         if (!ExecuteQuietAction(ai, "pull my target", ai::Event(intent, "", requester)))
         {
@@ -1393,8 +1429,7 @@ static bool HandleAction(ChatHandler* handler, char const* args)
             // AttackMyTargetAction intentionally reads requester's selection,
             // preserving the mature target validation and combat path.
             // Break stay and follow in combat so bots can move to and fight the target!
-            ai->ChangeStrategy("-stay", BotState::BOT_STATE_NON_COMBAT);
-            ai->ChangeStrategy("-stay,-follow", BotState::BOT_STATE_COMBAT);
+            RelaxTacticalMovement(ai);
             accepted = ExecuteQuietAction(ai, "attack my target",
                 ai::Event("action attack", "", requester));
             // Caster rotations and party heals are below the minimal-action
@@ -1455,8 +1490,7 @@ static bool HandleAction(ChatHandler* handler, char const* args)
         }
         else if (intent == "focus skull")
         {
-            ai->ChangeStrategy("-stay", BotState::BOT_STATE_NON_COMBAT);
-            ai->ChangeStrategy("-stay,-follow", BotState::BOT_STATE_COMBAT);
+            RelaxTacticalMovement(ai);
             bool set = ExecuteQuietAction(ai, "rti",
                 ai::Event("focus skull", "skull", requester));
             accepted = set && ExecuteQuietAction(ai, "attack rti target",
