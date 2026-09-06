@@ -255,7 +255,7 @@ PlayerbotAI::PlayerbotAI(Player* bot) :
 bool PlayerbotAI::IsOwnedBot() const
 {
     return bot && TortoiseBots::BotManager::Instance().IsBot(bot->GetObjectGuid()) &&
-        !sRandomBotFacade.IsFreeBot(bot);
+        !TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid());
 }
 
 PlayerbotAI::~PlayerbotAI()

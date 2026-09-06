@@ -10,6 +10,7 @@ bool ChangeTalentsAction::Execute(Event& event)
 {
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     std::ostringstream out;
+    const std::string previousTalentLink = TalentSpec(bot).GetTalentLink();
     TalentSpec botSpec(bot);
     uint8 cls = bot->GetClass();
     std::string param = event.GetParam();
@@ -77,7 +78,6 @@ bool ChangeTalentsAction::Execute(Event& event)
                     sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specLink", 1, specLink);
                 }
 
-                ai->UpdateTalentSpec();
             }
             else
             {
@@ -108,8 +108,6 @@ bool ChangeTalentsAction::Execute(Event& event)
                             out << "Apply spec " << "|h|cffffffff" << path->name << " " << newSpec.formatSpec(cls);
                             sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specNo", path->id + 1);
                             sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specLink", 0);
-
-                            ai->UpdateTalentSpec();
                         }
                     }
                 }
@@ -152,6 +150,17 @@ bool ChangeTalentsAction::Execute(Event& event)
 
         out << " Link: ";
         out << botSpec.GetTalentLink();
+    }
+
+    // A topology change affects both the cached spec value and the strategy
+    // placeholders selected by AiFactory. Queries/listing and failed or
+    // no-op mutations keep the existing graph untouched. ResetStrategies()
+    // reloads persisted user customisations using its normal autoLoad
+    // semantics, so this does not silently discard intentional strategy edits.
+    if (TalentSpec(bot).GetTalentLink() != previousTalentLink)
+    {
+        ai->UpdateTalentSpec();
+        ai->ResetStrategies();
     }
 
     ai->TellPlayer(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
@@ -383,7 +392,6 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
             newSpec.ApplyTalents(bot, out);
             if (PlayerbotAIStorage::Instance().GetAI(bot))
                 PlayerbotAIStorage::Instance().GetAI(bot)->UpdateTalentSpec();
-
             if (paths.size() > 1)
                 *out << "Found " << paths.size() << " possible specs to choose from. ";
 

@@ -1019,6 +1019,12 @@ Mana Gem helper now fails closed instead of reading an uninitialized ID.
 Untalented low-level Rogues use the Combat fallback so the baseline Sinister
 Strike rotation is available.
 
+The follow-up talent-command path compares the learned talent topology before
+and after a command. Only a changed topology updates the cached spec and calls
+the existing `ResetStrategies()` once; query/list, invalid, and no-op commands
+do not rebuild engines. The reset keeps the established `autoLoad` behavior
+for persisted user strategy customisations.
+
 Reason: attachment-time talent mutation could rewrite an existing human build;
 the inherited strategy config could replace Protection/Holy defaults with DPS
 siblings; and several small Vanilla paths either used the wrong spell ID,
@@ -1032,3 +1038,15 @@ then `git diff --check`, `tools/verify_turtle_surface.sh`, and
 implementation. No Docker/server/client gameplay run was performed; talent
 preservation, class rotations, CC/AOE interaction, and dungeon healing remain
 manual acceptance gates.
+
+The Prayer of Healing trigger intentionally keeps the existing caster-centred
+`AoeHealValue` activation count. The spell itself is target-centred, so a party
+cluster 30–40 yards from the Priest can conservatively defer the group-heal
+trigger; ordinary single-target healing/reach remains available and brings the
+Priest into range. This is a manual edge-case check, not a reason to change the
+generic value for every healer class.
+
+`IsOwnedBot()` uses the module record plus `!BotManager::IsRandomBot()`. A
+configured free-alt/always-online character is still an owned character and
+therefore remains protected from automatic talent mutation; only the random
+population identity opts into autonomous talent behavior.
