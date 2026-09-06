@@ -1001,7 +1001,9 @@ static bool ExecuteInterruptAction(ChatHandler* handler, BotCommandContext const
         // same mature action on the active engine instead, allowing its
         // existing reach prerequisite to move and then cast without a
         // command-side melee/ranged table.
-        if (!QueueMatureAction(ai, actionName, event, ACTION_INTERRUPT))
+        // This request came from the networked owner. Keep its queued
+        // continuation eligible even if a later population tick is minimal.
+        if (!QueueMatureAction(ai, actionName, event, ACTION_PASSTROUGH))
         {
             SendActionError(handler, "interrupt", "failed",
                 "The mature interrupt action could not be started.");
@@ -1345,7 +1347,9 @@ static bool HandleAction(ChatHandler* handler, char const* args)
                 // the mature CC action queued so its existing reach
                 // prerequisite can move and then cast without a command-side
                 // class/range table.
-                if (!QueueMatureAction(ai, ccAction, ccEvent, ACTION_INTERRUPT))
+                // Keep this explicit owner request eligible through later
+                // minimal ticks while the mature reach chain is in progress.
+                if (!QueueMatureAction(ai, ccAction, ccEvent, ACTION_PASSTROUGH))
                 {
                     SendActionError(handler, intent, "failed",
                         "The mature CC action could not be started.");
