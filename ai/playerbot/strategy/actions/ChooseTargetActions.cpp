@@ -5,6 +5,7 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/strategy/generic/PullStrategy.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
+#include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 
 bool DpsAssistAction::isUseful()
 {
@@ -78,6 +79,9 @@ bool ai::AttackAnythingAction::Execute(Event& event)
                     }
                 }
 
+                // This is autonomous/grind state, not a human command. Do
+                // not let it inherit an old command-only priority marker.
+                context->GetValue<ObjectGuid>("explicit attack target")->Set(ObjectGuid());
                 context->GetValue<ObjectGuid>("attack target")->Set(grindTarget->getObjectGuid());
                 ai->StopMoving();
             }
@@ -127,6 +131,15 @@ bool SelectNewTargetAction::Execute(Event& event)
     if (attackTarget && find(possible.begin(), possible.end(), attackTarget) == possible.end())
     {
         SET_AI_VALUE(ObjectGuid, "attack target", ObjectGuid());
+    }
+
+    ObjectGuid explicitAttackTarget = AI_VALUE(ObjectGuid, "explicit attack target");
+    Unit* explicitTarget = explicitAttackTarget ? ai->GetUnit(explicitAttackTarget) : nullptr;
+    if (explicitAttackTarget && (!explicitTarget ||
+        !PossibleAttackTargetsValue::IsValid(explicitTarget, bot,
+            sPlayerbotAIConfig.sightDistance, false, false)))
+    {
+        SET_AI_VALUE(ObjectGuid, "explicit attack target", ObjectGuid());
     }
 
     // Save the old target and clear the current target

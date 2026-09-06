@@ -820,3 +820,10 @@ erase the return anchor on timeout before the tank arrived.
 Local validation: `tools/verify_turtle_surface.sh`, `git diff --check`, and the
 Docker release build of the native `mangosd` target passed. Focused real-client
 attack/pullback acceptance remains a manual gate.
+
+The follow-up explicit-engagement fix also adapts the donor prioritized-target
+intent in the shared Tortoise target values: a valid command-only `explicit
+attack target` remains ahead of DPS/AoE/tank assist selection until the command
+target is no longer valid. Ordinary autonomous `attack target` state remains
+outside that priority path. No donor target-value or command layer was copied
+wholesale.

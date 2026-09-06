@@ -43,6 +43,9 @@ protected:
 
 Unit* TankTargetValue::Calculate()
 {
+    if (Unit* explicitTarget = GetExplicitAttackTarget())
+        return explicitTarget;
+
     Unit* rti = RtiTargetValue::Calculate();
     if (rti) return rti;
 

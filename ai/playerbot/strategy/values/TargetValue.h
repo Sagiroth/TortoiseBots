@@ -55,6 +55,11 @@ namespace ai
 #endif
     protected:
         Unit* FindTarget(FindTargetStrategy* strategy);
+        // A human attack command stores its target separately from the
+        // transient current/dps/tank values.  Target selectors use this helper
+        // to preserve that commitment while the normal combat engine catches
+        // up and creates threat.
+        Unit* GetExplicitAttackTarget();
     };
 
     class RpgTargetValue : public ManualSetValue<GuidPosition>
@@ -108,6 +113,13 @@ namespace ai
     {
     public:
         AttackTargetValue(PlayerbotAI* ai, std::string name = "attack target") : ManualSetValue<ObjectGuid>(ai, ObjectGuid(), name) {}
+    };
+
+    class ExplicitAttackTargetValue : public ManualSetValue<ObjectGuid>
+    {
+    public:
+        ExplicitAttackTargetValue(PlayerbotAI* ai, std::string name = "explicit attack target")
+            : ManualSetValue<ObjectGuid>(ai, ObjectGuid(), name) {}
     };
 
     class PullTargetValue : public UnitManualSetValue

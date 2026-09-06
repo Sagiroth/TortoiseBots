@@ -167,6 +167,7 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
     RESET_AI_VALUE(GuidPosition,"rpg target");
     RESET_AI_VALUE(std::set<ObjectGuid>&, "ignore rpg target");
     RESET_AI_VALUE(ObjectGuid,"attack target");
+    RESET_AI_VALUE(ObjectGuid,"explicit attack target");
     RESET_AI_VALUE(bool, "travel target active");
     context->ClearValues("no active travel destinations");
     SET_AI_VALUE2(std::string, "manual string", "future travel detail", std::string());
