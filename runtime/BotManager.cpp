@@ -811,6 +811,28 @@ void BotManager::UpdateBots(uint32_t diff)
         BotEntry& entry = kv.second;
         if (entry.record.lifecycle != BotLifecycle::InWorld)
             continue;
+
+        // Headless players have no client to acknowledge a core near/far
+        // teleport. The donor PlayerbotMgr drove this acknowledgement from its
+        // session loop; this module owns that loop now, so do the same before
+        // the normal AI usability gate. FindPlayer() intentionally excludes a
+        // far-teleporting player, while the public NotInWorld lookup retains
+        // the object long enough for HandleTeleportAck() to finish the move.
+        ::Player* player = sObjectAccessor.FindPlayerNotInWorld(entry.record.characterGuid);
+        if (player && player->GetSession() && player->GetSession()->IsHeadless() &&
+            player->IsBeingTeleported() && entry.aiAdapter && entry.aiAdapter->IsInitialized())
+        {
+            // A far teleport can spend one tick in the core's pending queue
+            // before ExecuteTeleportFar raises the ACK semaphore. Keep the
+            // AI paused for that tick, but only acknowledge an actual near/far
+            // transfer; acknowledging the pending marker would reset state
+            // before the destination has been installed.
+            PlayerbotAI* ai = entry.aiAdapter->GetAI();
+            if ((player->IsBeingTeleportedNear() || player->IsBeingTeleportedFar()) && ai)
+                ai->HandleTeleportAck();
+            continue;
+        }
+
         if (entry.aiAdapter && entry.aiAdapter->IsUsable())
         {
             entry.aiAdapter->Update(diff);

@@ -259,7 +259,7 @@ namespace ai
 
     protected:
         virtual std::string GetTargetName() override { return "party member to resurrect"; }
-        virtual std::string GetReachActionName() override { return "reach party member to heal"; }
+        virtual std::string GetReachActionName() override { return "reach party member to resurrect"; }
 	};
     //---------------------------------------------------------------------------------------------------------------------
 
