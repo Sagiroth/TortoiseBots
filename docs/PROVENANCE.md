@@ -893,3 +893,38 @@ Local validation: `git diff --check`, `tools/verify_turtle_surface.sh`, and
 `tools/verify_penqle_host_contract.sh` passed. No Docker/server/client gameplay
 run was performed; the Golden Party healing, mana, dispel, and recovery checks
 remain manual acceptance gates.
+
+## Owned-party movement state — 2026-09-06
+
+Feature: keep owner-controlled Follow/Stay/Come transitions coherent across
+the PlayerbotAI reaction, combat, and non-combat engines, and fail a summon
+cleanly when the core rejects its teleport.
+
+Source repositories and commits:
+
+- TortoiseBots' existing `PlayerbotAI::SetMovementStrategy` implementation,
+  introduced in `f6a6c6b683a955d7747a0b4b91291631eb15a509`, is the local owner of
+  cross-engine movement state.
+- `mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70`,
+  `Ai/Base/Actions/ChatShortcutActions.cpp`, was consulted for the mature
+  shortcut/anchor intent only.
+
+Copied / ported / independently reimplemented: Follow and Stay shortcuts now
+delegate their existing strategy changes through the local central setter,
+while retaining formation, return-anchor, and position bookkeeping. Come/Hold
+uses the same setter. The tactical relaxation helper clears a reaction-level
+Stay copy introduced by that transition. Follow refreshes cached master/follow
+targets after an ownership rebind. `PlayerConvenience` now removes a pending
+summon immediately when `TeleportTo` rejects the request rather than treating
+the unchanged position as arrival.
+
+Reason: the public shortcuts previously changed only combat/non-combat state,
+leaving a reaction-level Follow/Stay strategy or stale master-derived target to
+fight the next command. The summon path could also enter its arrival phase
+after a rejected teleport. No new movement controller or core bot seam was
+added.
+
+Local validation: `git diff --check`, `tools/verify_turtle_surface.sh`, and
+`tools/verify_penqle_host_contract.sh` passed for the movement change. No
+Docker/server/client gameplay run was performed; Follow/Stay/Come/Summon and
+repeated Golden Party transitions remain manual acceptance gates.

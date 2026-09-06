@@ -396,8 +396,27 @@ static void RelaxTacticalMovement(PlayerbotAI* ai)
     if (!ai)
         return;
 
+    // Stay is now kept in all three engines by the central movement setter;
+    // remove its reaction copy as well or it can survive a tactical request
+    // and be mistaken for an active hold during the next transition.
+    ai->ChangeStrategy("-stay", BotState::BOT_STATE_REACTION);
     ai->ChangeStrategy("-stay", BotState::BOT_STATE_NON_COMBAT);
     ai->ChangeStrategy("-stay,-follow", BotState::BOT_STATE_COMBAT);
+}
+
+static bool BindMovementMaster(Player* requester, Player* bot)
+{
+    if (!requester || !bot)
+        return false;
+
+    BotRecord* record = BotManager::Instance().FindBot(bot->GetObjectGuid());
+    if (!record)
+        return false;
+
+    // Rebind even when the durable GUID already matches: the live AI pointer
+    // may have been cleared by a reconnect, and FollowTargetValue caches the
+    // old pointer until its next calculation.
+    return BotManager::Instance().BindBotMaster(bot->GetObjectGuid(), requester->GetObjectGuid());
 }
 
 static bool HandleGuard(ChatHandler* handler, char const* args)
@@ -1448,9 +1467,11 @@ static bool HandleAction(ChatHandler* handler, char const* args)
         }
         else if (intent == "follow")
         {
-            // Explicit follow order breaks stay and commands bots to follow!
-            ai->ChangeStrategy("-stay,+follow", BotState::BOT_STATE_NON_COMBAT);
-            ai->ChangeStrategy("-stay,-guard,-wander", BotState::BOT_STATE_COMBAT);
+            // FollowChatShortcutAction owns the cross-engine movement
+            // transition; this narrow clear only discards a stale movement
+            // generator left by the preceding tactical action.
+            if (!BindMovementMaster(requester, bot))
+                continue;
             bot->GetMotionMaster()->Clear();
             accepted = ExecuteQuietAction(ai, "follow chat shortcut",
                 ai::Event(intent, "", requester));
@@ -1463,8 +1484,10 @@ static bool HandleAction(ChatHandler* handler, char const* args)
         else if (intent == "come" || intent == "hold" || intent == "comestay")
         {
             ai->Reset();
-            ai->ChangeStrategy("+stay,-follow,-wander,-passive", BotState::BOT_STATE_NON_COMBAT);
-            ai->ChangeStrategy("+stay,-follow,-wander,-passive", BotState::BOT_STATE_COMBAT);
+            // Use the same owner-controlled transition as the mature Stay
+            // shortcut; the captured stay position below remains Come's
+            // regroup anchor.
+            ai->SetMovementStrategy("stay");
             ai::PositionMap& posMap = ai->GetAiObjectContext()->GetValue<ai::PositionMap&>("position")->Get();
             ai::PositionEntry pos = posMap["stay"];
             pos.Set(WorldPosition(requester));

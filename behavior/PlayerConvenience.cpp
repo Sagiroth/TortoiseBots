@@ -225,7 +225,16 @@ void PlayerConvenience::UpdateSummons(uint32 diff)
         cleanupPortal(state, master);
         bot->GetMotionMaster()->Clear(false);
         bot->StopMoving();
-        bot->TeleportTo(state.destMap, state.destX, state.destY, state.destZ, state.destO, 0);
+        if (!bot->TeleportTo(state.destMap, state.destX, state.destY, state.destZ, state.destO, 0))
+        {
+            // Do not enter the arrival phase when the core rejected the
+            // teleport. Otherwise the next tick would treat the unchanged
+            // in-world position as a successful summon and restore Follow.
+            sLog.outError("TortoiseBots: Summon teleport rejected for bot %s",
+                bot->GetName());
+            it = m_summons.erase(it);
+            continue;
+        }
         if (bot->GetSession() && bot->GetSession()->IsHeadless())
         {
             if (bot->IsBeingTeleportedNear())
