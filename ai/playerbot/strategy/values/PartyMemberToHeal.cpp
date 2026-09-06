@@ -32,9 +32,19 @@ bool compareByHealth(const Unit *u1, const Unit *u2)
 
 bool compareByMissingHealth(const Unit* u1, const Unit* u2, bool incomingDamage = false)
 {
-    uint32 hp1 = u1->GetHealth() - (incomingDamage ? getIncomingdamage(u1) : 0);
+    uint32 hp1 = u1->GetHealth();
+    if (incomingDamage)
+    {
+        uint32 damage1 = getIncomingdamage(u1);
+        hp1 = damage1 >= hp1 ? 0 : hp1 - damage1;
+    }
     uint32 hpmax1 = u1->GetMaxHealth();
-    uint32 hp2 = u2->GetHealth() - (incomingDamage ? getIncomingdamage(u2) : 0);
+    uint32 hp2 = u2->GetHealth();
+    if (incomingDamage)
+    {
+        uint32 damage2 = getIncomingdamage(u2);
+        hp2 = damage2 >= hp2 ? 0 : hp2 - damage2;
+    }
     uint32 hpmax2 = u2->GetMaxHealth();
     return (hpmax1 - hp1) > (hpmax2 - hp2);
 }
@@ -93,7 +103,11 @@ Unit* PartyMemberToHeal::Calculate()
             if (ai->HasStrategy("preheal", BotState::BOT_STATE_COMBAT))
                 incomingDamage = getIncomingdamage(player);
 
-            uint8 health = (((player->GetHealth() - incomingDamage) * 100.0f) / player->GetMaxHealth());
+            const uint32 currentHealth = player->GetHealth();
+            const uint32 effectiveHealth = incomingDamage >= currentHealth
+                ? 0
+                : currentHealth - incomingDamage;
+            uint8 health = ((effectiveHealth * 100.0f) / player->GetMaxHealth());
             if (isTank || (health < sPlayerbotAIConfig.almostFullHealth && !IsTargetOfSpellCast(player, predicate)))
             {
                 needHeals.push_back(player);
@@ -181,10 +195,13 @@ bool PartyMemberToHeal::Check(Unit* player)
 {
     bool isBg = bot->InBattleGround();
 
-    // Battlegrounds get their own figure rather than a blanket halving: the two
-    // situations want different distances, and halving whatever the open-world
-    // value happens to be ties them together for no reason.
+    // The cast action owns the exact range check and its reach prerequisite owns
+    // movement. Keep an injured member in the candidate set until that
+    // prerequisite has had a chance to close the gap; filtering at cast range
+    // here makes the reach action unreachable. The donor uses the same two-times
+    // heal envelope for this value.
     float maxDist = isBg ? sPlayerbotAIConfig.healDistanceBg : ai->GetRange("heal");
+    maxDist *= 2.0f;
 
     if (!player)
         return false;

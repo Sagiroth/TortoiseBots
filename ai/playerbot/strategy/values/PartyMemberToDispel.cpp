@@ -18,7 +18,11 @@ public:
         if (pet && (pet->getPetType() == MINI_PET || pet->getPetType() == SUMMON_PET))
             return false;
 
-        return sServerFacade.IsAlive(unit) && sServerFacade.getDistance2d(ai->GetBot(), unit) <= ai->GetRange("spell") && ai->HasAuraToDispel(unit, dispelType);
+        // Keep the target visible to the mature cure action while it queues
+        // its existing reach prerequisite. Rejecting units at cast range here
+        // meant a dispel request could never start movement toward a nearby
+        // party member who was just outside spell range.
+        return sServerFacade.IsAlive(unit) && ai->HasAuraToDispel(unit, dispelType);
     }
 
 private:

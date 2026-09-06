@@ -30,7 +30,7 @@ void HealPriestStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new TriggerNode(
             "group heal setting",
             {
-                NextAction("power word: shield on not full", ACTION_MEDIUM_HEAL + 7)
+                NextAction("power word: shield on party", ACTION_MEDIUM_HEAL + 7)
             }
         )
     );
@@ -39,9 +39,8 @@ void HealPriestStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new TriggerNode(
             "medium group heal setting",
             {
-                NextAction("divine hymn", ACTION_CRITICAL_HEAL + 7),
-                NextAction("power word: shield on not full", ACTION_CRITICAL_HEAL + 5),
-                NextAction("prayer of healing on party", ACTION_CRITICAL_HEAL + 4)
+                NextAction("power word: shield on party", ACTION_CRITICAL_HEAL + 5),
+                NextAction("prayer of healing", ACTION_CRITICAL_HEAL + 4)
             }
         )
     );
