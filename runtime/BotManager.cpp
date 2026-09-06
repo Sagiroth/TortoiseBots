@@ -637,7 +637,7 @@ bool BotManager::IsLiveHeadlessBot(BotEntry const& entry, ::Player* player) cons
 
     // Core owns Headless session; module bookkeeping is via BotRecord + AI.
     HeadlessSessionState state = BotSessionAdapter::GetHeadlessSessionState(entry.record.characterGuid);
-    return state == HeadlessSessionState::Active;
+    return state == HeadlessSessionState::Active || state == HeadlessSessionState::Loading;
 }
 
 bool BotManager::IsControllableBot(::Player* player) const
@@ -646,7 +646,11 @@ bool BotManager::IsControllableBot(::Player* player) const
         return false;
 
     auto it = m_bots.find(player->GetObjectGuid().GetCounter());
-    return it != m_bots.end() && IsLiveHeadlessBot(it->second, player);
+    if (it == m_bots.end() || !IsLiveHeadlessBot(it->second, player))
+        return false;
+
+    return BotSessionAdapter::GetHeadlessSessionState(it->second.record.characterGuid) ==
+        HeadlessSessionState::Active;
 }
 
 bool BotManager::BindBotMaster(::ObjectGuid botGuid, ::ObjectGuid masterGuid)
