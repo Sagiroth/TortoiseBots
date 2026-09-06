@@ -928,3 +928,61 @@ Local validation: `git diff --check`, `tools/verify_turtle_surface.sh`, and
 `tools/verify_penqle_host_contract.sh` passed for the movement change. No
 Docker/server/client gameplay run was performed; Follow/Stay/Come/Summon and
 repeated Golden Party transitions remain manual acceptance gates.
+
+## Headless teleport acknowledgement — 2026-09-06
+
+Feature: complete near/far Player teleports for module-owned Headless bots
+before their normal AI update resumes.
+
+Source repositories and commits:
+
+- `mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70`,
+  `Bot/PlayerbotMgr.cpp`, whose session loop calls
+  `PlayerbotAI::HandleTeleportAck()` for teleporting bots.
+- Tortoise `tortoise-wow` core's public `ObjectAccessor::FindPlayerNotInWorld`
+  and `WorldSession` teleport-ack methods, used without a new core seam.
+
+Copied / ported / independently reimplemented: `BotManager::UpdateBots` now
+performs the donor manager's acknowledgement at the module world-thread
+boundary, using the public not-in-world lookup because a far-teleporting Player
+is intentionally absent from `FindPlayer`. The module also keeps AI paused for
+the core's one-tick pending-far-teleport marker and waits for the near/far ACK
+semaphore before acknowledging. Normal AI updates remain behind the existing
+usability gate and are skipped during the transition.
+
+Reason: Headless sessions have no client to send `MSG_MOVE_TELEPORT_ACK` or
+worldport ACK packets. Without this module-owned replacement, following an
+instance area trigger or another far movement could leave the Player in
+teleport limbo and stop all subsequent movement/combat decisions.
+
+Local validation: `git diff --check`, `tools/verify_turtle_surface.sh`, and
+`tools/verify_penqle_host_contract.sh` passed. No Docker/server/client gameplay
+run was performed; instance entry and cross-map movement remain manual gates.
+
+## Party resurrection reach — 2026-09-06
+
+Feature: keep a dead owned-party member selectable until the mature resurrection
+action can reach the corpse and cast a Vanilla resurrection spell.
+
+Source repository and commit:
+
+- `mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70`,
+  `Ai/Base/Value/PartyMemberToResurrect.cpp` and
+  `Ai/Base/Actions/ReachTargetActions.*`, used for the separation between
+  corpse selection and cast-range movement.
+
+Copied / ported / independently reimplemented: Tortoise keeps its existing
+  group, map, corpse-state, resurrection-request, and duplicate-cast checks.
+  The value no longer rejects a corpse solely for being outside spell range;
+  the registered `reach party member to resurrect` prerequisite now owns that
+  movement, and `ResurrectPartyMemberAction` requests it explicitly.
+
+Reason: an out-of-range corpse disappeared before the existing cast action could
+  queue movement, and the old prerequisite targeted the living-heal value rather
+  than the corpse value. No new resurrection controller or expansion-only spell
+  behavior was introduced.
+
+Local validation: `git diff --check`, `tools/verify_turtle_surface.sh`, and
+`tools/verify_penqle_host_contract.sh` passed. No Docker/server/client gameplay
+run was performed; death, resurrection, and post-revive regroup remain manual
+acceptance gates.

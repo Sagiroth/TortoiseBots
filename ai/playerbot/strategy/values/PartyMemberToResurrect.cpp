@@ -37,7 +37,12 @@ public:
 				return false;
 		}
 
-        return player && !player->IsRessurectRequested() && sServerFacade.getDistance2d(ai->GetBot(), player) <= ai->GetRange("spell") && sServerFacade.GetDeathState(player) == CORPSE && !value->IsTargetOfSpellCast(player, predicate);
+        // Leave range handling to the resurrection action's reach prerequisite.
+        // Filtering here made a corpse disappear before the mature movement
+        // action could close to spell range.
+        return player && !player->IsRessurectRequested() &&
+            sServerFacade.GetDeathState(player) == CORPSE &&
+            !value->IsTargetOfSpellCast(player, predicate);
     }
 
 private:

@@ -226,6 +226,14 @@ namespace ai
         virtual std::string GetTargetName() override { return "party member to heal"; }
     };
 
+    class ReachPartyMemberToResurrectAction : public ReachTargetAction
+    {
+    public:
+        ReachPartyMemberToResurrectAction(PlayerbotAI* ai)
+            : ReachTargetAction(ai, "reach party member to resurrect", ai->GetRange("spell")) {}
+        virtual std::string GetTargetName() override { return "party member to resurrect"; }
+    };
+
     class ReachPartyMemberForTotemAction : public ReachTargetAction
     {
     public:
