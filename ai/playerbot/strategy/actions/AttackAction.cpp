@@ -10,6 +10,26 @@
 
 using namespace ai;
 
+namespace
+{
+void CommitExplicitAttackTarget(PlayerbotAI* ai, ObjectGuid guid)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    context->GetValue<ObjectGuid>("attack target")->Set(guid);
+
+    // Target and attacker values may have been evaluated earlier in this same
+    // second while the bot was following.  Invalidate them now so the first
+    // combat decision sees the command target instead of clearing it as stale.
+    context->GetValue<bool>("invalid target", "current target")->Reset();
+    context->GetValue<std::list<ObjectGuid>>("attackers")->Reset();
+    context->GetValue<std::list<ObjectGuid>>("attackers", 1)->Reset();
+    context->GetValue<std::list<ObjectGuid>>("possible attack targets")->Reset();
+    context->GetValue<Unit*>("dps target")->Reset();
+    context->GetValue<Unit*>("tank target")->Reset();
+    context->GetValue<bool>("has attackers")->Reset();
+}
+}
+
 bool AttackAction::Execute(Event& event)
 {
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
@@ -50,7 +70,7 @@ bool AttackMyTargetAction::Execute(Event& event)
 
             if (Attack(requester, tgt))
             {
-                SET_AI_VALUE(ObjectGuid, "attack target", guid);
+                CommitExplicitAttackTarget(ai, guid);
                 SC_LOG("attack-cmd OK bot=%s tgt=%s",
                        bot ? bot->GetName() : "(null)",
                        tgt ? tgt->GetName() : "(null)");
@@ -81,7 +101,7 @@ bool AttackRTITargetAction::Execute(Event& event)
     {
         if (Attack(requester, rtiTarget))
         {
-            SET_AI_VALUE(ObjectGuid, "attack target", rtiTarget->getObjectGuid());
+            CommitExplicitAttackTarget(ai, rtiTarget->getObjectGuid());
             return true;
         }
     }

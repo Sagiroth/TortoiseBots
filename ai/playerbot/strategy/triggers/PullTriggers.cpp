@@ -61,26 +61,31 @@ bool PullEndTrigger::IsActive()
     if (!strategy || !strategy->HasPullStarted())
         return false;
 
+    const time_t secondsSincePullStarted = time(0) - strategy->GetPullStartTime();
+    const bool pullback = ai->HasStrategy("pull back", BotState::BOT_STATE_COMBAT);
+
+    if (pullback && strategy->HasPullActionCompleted())
+    {
+        PositionMap& posMap = AI_VALUE(PositionMap&, "position");
+        PositionEntry pullPosition = posMap["pull"];
+        if (!pullPosition.isSet() || pullPosition.mapId != bot->GetMapId())
+            return true;
+
+        // Do not discard the return anchor just because the target died,
+        // changed victim, or the normal pull timeout elapsed while returning.
+        return bot->GetDistance(pullPosition.x, pullPosition.y, pullPosition.z) <=
+            ai->GetRange("follow");
+    }
+
     Unit* target = strategy->GetTarget();
     if (!target || !target->IsInWorld() || !target->IsAlive())
         return true;
 
-    const time_t secondsSincePullStarted = time(0) - strategy->GetPullStartTime();
     if (secondsSincePullStarted >= strategy->GetMaxPullTime())
         return true;
 
-    float distanceToPullTarget = target->GetDistance(bot);
-    if (distanceToPullTarget > ATTACK_DISTANCE && !target->IsNonMeleeSpellCasted(true) &&
-        (!ai->IsRanged(bot) || distanceToPullTarget > ai->GetRange("spell")))
-        return false;
-
-    if (!ai->HasStrategy("pull back", BotState::BOT_STATE_COMBAT))
-        return true;
-
-    PositionMap& posMap = AI_VALUE(PositionMap&, "position");
-    PositionEntry pullPosition = posMap["pull"];
-    if (!pullPosition.isSet() || pullPosition.mapId != bot->GetMapId())
-        return true;
-
-    return bot->GetDistance(pullPosition.x, pullPosition.y, pullPosition.z) <= ai->GetRange("follow");
+    // An ordinary pull hands control back to combat as soon as its pull action
+    // succeeds.  Before that, retain the request while the tank closes to its
+    // class-specific melee/ranged pull distance.
+    return strategy->HasPullActionCompleted();
 }

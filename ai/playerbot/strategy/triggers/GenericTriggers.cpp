@@ -808,9 +808,7 @@ bool ReturnToStayPositionTrigger::IsActive()
 bool ReturnToPullPositionTrigger::IsActive()
 {
     PullStrategy const* strategy = PullStrategy::Get(ai);
-    Unit* target = strategy ? strategy->GetTarget() : nullptr;
-    if (!strategy || !strategy->HasPullStarted() || !target ||
-        (!target->IsInCombat() && sServerFacade.GetThreatManager(target).getThreat(bot) <= 0.0f) ||
+    if (!strategy || !strategy->HasPullActionCompleted() ||
         !ai->HasStrategy("pull back", BotState::BOT_STATE_COMBAT))
         return false;
 

@@ -30,7 +30,9 @@ namespace ai
         void RequestPull(Unit* target, bool resetTime = true);
         bool IsPullPendingToStart() const { return pendingToStart; }
         bool HasPullStarted() const { return pullStartTime > 0; }
+        bool HasPullActionCompleted() const { return pullActionCompleted; }
         void OnPullStarted();
+        void OnPullActionCompleted();
         void OnPullEnded();
         ReactStates GetPetReactState() const { return petReactState; }
         void SetPetReactState(ReactStates reactState) { petReactState = reactState; }
@@ -47,6 +49,7 @@ namespace ai
         std::string pullActionName; //shoot
         std::string preActionName;
         bool pendingToStart;
+        bool pullActionCompleted;
         time_t pullStartTime;
         ReactStates petReactState;
     };
