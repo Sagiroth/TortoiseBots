@@ -1017,7 +1017,11 @@ void PlayerbotAI::OnCombatEnded()
         // The command-only priority is scoped to one combat engagement. The
         // normal combat-end reaction can run without a full Reset(), so clear
         // it here when the target dies or otherwise becomes invalid.
-        RESET_AI_VALUE(ObjectGuid,"explicit attack target");
+        if (aiObjectContext)
+        {
+            if (auto* explicitAttackTarget = aiObjectContext->GetValue<ObjectGuid>("explicit attack target"))
+                explicitAttackTarget->Reset();
+        }
 
         // Reset the combat start timestamp
         aiObjectContext->GetValue<time_t>("combat start time")->Set(0);
