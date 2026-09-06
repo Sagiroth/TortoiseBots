@@ -3,6 +3,7 @@
 #include "../host/BotSessionAdapter.h"
 #include "../runtime/PlayerbotAIStorage.h"
 #include "../ai/playerbot/PlayerbotAI.h"
+#include "../ai/playerbot/strategy/Engine.h"
 #include "../ai/playerbot/strategy/Action.h"
 #include "../ai/playerbot/strategy/generic/PullStrategy.h"
 
@@ -94,6 +95,22 @@ void ExecuteQuietNextAction(PlayerbotAI* ai, bool minimal)
     // that command one full AI decision even if the bot's cached population
     // activity verdict says it is currently inactive.
     ai->DoNextAction(minimal, true);
+}
+
+bool QueueMatureAction(PlayerbotAI* ai, std::string const& action,
+    ai::Event const& event, float relevance)
+{
+    if (!ai || !ai->GetCurrentEngine())
+        return false;
+
+    // If the bot is already in core combat, keep the queued action on the
+    // combat engine. This avoids PlayerbotAI's stale non-combat target cleanup
+    // from clearing the command target before the interrupt/CC prerequisite
+    // gets a turn, without sending a melee attack or inventing combat state.
+    if (ai->GetBot() && sServerFacade.IsInCombat(ai->GetBot()))
+        ai->OnCombatStarted();
+
+    return ai->GetCurrentEngine()->QueueAction(action, relevance, event);
 }
 
 BotCommandContext BuildContext(Player* requester)
@@ -233,7 +250,8 @@ char const* const kInterruptActions[] = {
 std::string FindInterruptAction(PlayerbotAI* ai, Unit* target)
 {
     if (!ai || !target || !target->IsInWorld() || !target->IsAlive() ||
-        !target->IsNonMeleeSpellCasted(true))
+        !target->IsNonMeleeSpellCasted(true) ||
+        sServerFacade.getDistance2d(ai->GetBot(), target) > sPlayerbotAIConfig.sightDistance)
     {
         return {};
     }
@@ -245,7 +263,8 @@ std::string FindInterruptAction(PlayerbotAI* ai, Unit* target)
         // then filters out missing, cooling-down, stance, resource, and target
         // legality failures. Range is intentionally ignored here: the command
         // can queue the mature reach action below when the executor is distant.
-        if (ai->HasSpell(action) &&
+        if (ai->GetAiObjectContext()->GetAction(action) &&
+            ai->HasSpell(action) &&
             ai->IsInterruptableSpellCasting(target, action, true) &&
             ai->CanCastSpell(action, target, 0, nullptr, true, true, true))
         {
@@ -301,6 +320,9 @@ static std::string FindCcAction(PlayerbotAI* ai, Unit* target, std::string const
     if (!ai || !target || !target->IsInWorld() || !target->IsAlive())
         return {};
 
+    if (sServerFacade.getDistance2d(ai->GetBot(), target) > sPlayerbotAIConfig.sightDistance)
+        return {};
+
     ai::AiObjectContext* context = ai->GetAiObjectContext();
     if (!context)
         return {};
@@ -325,6 +347,9 @@ static std::string FindCcAction(PlayerbotAI* ai, Unit* target, std::string const
 
         std::string spell = action->GetCrowdControlSpellName();
         if (spell.empty() || !ai->HasSpell(spell))
+            continue;
+
+        if (!action->isUseful())
             continue;
 
         bool possible = action->isPossible();

@@ -83,6 +83,10 @@ namespace ai
     public:
 	    virtual bool DoNextAction(Unit*, int depth, bool minimal, bool isStunned);
 	    ActionResult ExecuteAction(const std::string& name, Event& event);
+        // Queue a named mature action on this engine so its normal
+        // prerequisite/continuation chain runs on the next AI tick. This is
+        // intentionally a thin queue entry, not a second movement/combat path.
+        bool QueueAction(const std::string& name, float relevance, const Event& event);
         bool CanExecuteAction(const std::string& name, bool isUseful = true, bool isPossible = true);
 
     public:

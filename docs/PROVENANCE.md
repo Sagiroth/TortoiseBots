@@ -827,3 +827,36 @@ attack target` remains ahead of DPS/AoE/tank assist selection until the command
 target is no longer valid. Ordinary autonomous `attack target` state remains
 outside that priority path. No donor target-value or command layer was copied
 wholesale.
+
+## Tactical action prerequisite handoff — 2026-09-06
+
+Feature: align legacy Pullback with the Actions pull path and preserve mature
+reach-then-cast behavior for explicit Interrupt and CC requests.
+
+Source repositories and commits:
+
+- `mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70`, used to confirm
+  that interrupt/CC spell actions own their reach prerequisites and that
+  command targeting should not invent a second movement policy.
+- `Shyalya/tortoise-wow@1f9497e0f42bfc1055841bb6ebdc7caa3515de0b`, used only as
+  the Turtle/Vanilla behavior comparison for the existing PullStrategy and
+  class action graph.
+
+Source files: `commands/BotCommands.cpp`, `commands/BotCommandContext.*`, and
+`ai/playerbot/strategy/Engine.*`.
+
+Copied / ported / independently reimplemented: no donor code was copied. The
+module now shares its existing stay/follow relaxation and first normal tick
+between legacy and structured Pullback. When a direct tactical cast is out of
+range, a thin module-owned queue entry lets the active mature Engine execute
+the action's existing prerequisite/continuation chain; no class-to-range table
+or command-side movement controller was added.
+
+Reason: legacy Pullback could leave a tank held in stay/follow and wait for a
+later tick, while direct Interrupt/CC execution bypassed prerequisites and
+could lose the reach-then-cast action after the command returned.
+
+Local validation: `git diff --check`, `tools/verify_turtle_surface.sh`, and
+`tools/verify_penqle_host_contract.sh` passed after the coherent edit batch.
+No Docker/server/client gameplay run was performed; Pull/Pullback completion,
+interrupt timing, pet behavior, and CC reapplication remain manual gates.

@@ -69,6 +69,10 @@ Player* ResolveCcExecutor(BotCommandContext const& context, Unit* target, std::s
 bool ExecuteQuietAction(PlayerbotAI* ai, std::string const& action, ai::Event const& event);
 // Run one normal AI step without exposing incidental bot chat to the owner.
 void ExecuteQuietNextAction(PlayerbotAI* ai, bool minimal = false);
+// Put a named mature action on the active engine so its existing prerequisite
+// and continuation chain can handle reach-then-cast requests.
+bool QueueMatureAction(PlayerbotAI* ai, std::string const& action,
+    ai::Event const& event, float relevance);
 
 // Durable ownership snapshots are exposed through BotManager. This helper
 // centralizes the state labels used by the structured roster protocol.

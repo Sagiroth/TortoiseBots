@@ -501,6 +501,22 @@ ActionResult Engine::ExecuteAction(const std::string& name, Event& event)
     return actionResult;
 }
 
+bool Engine::QueueAction(const std::string& name, float relevance, const Event& event)
+{
+    ActionNode* actionNode = CreateActionNode(name);
+    if (!actionNode)
+        return false;
+
+    if (!InitializeAction(actionNode))
+    {
+        delete actionNode;
+        return false;
+    }
+
+    queue.Push(new ActionBasket(actionNode, relevance, false, event));
+    return true;
+}
+
 bool Engine::CanExecuteAction(const std::string& name, bool isUseful, bool isPossible)
 {
     bool result = true;
