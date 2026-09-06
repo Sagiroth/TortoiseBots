@@ -337,8 +337,27 @@ static std::string FindCcAction(PlayerbotAI* ai, Unit* target, std::string const
     std::string previousMark = markValue->Get();
     markValue->Set(mark);
 
+    auto resetProbeValues = [&](std::string const& spell)
+    {
+        if (ai::Value<Unit*>* rtiTarget = context->GetValue<Unit*>("rti cc target"))
+            rtiTarget->Reset();
+        if (!spell.empty())
+        {
+            if (ai::Value<Unit*>* ccTarget = context->GetValue<Unit*>("cc target", spell))
+                ccTarget->Reset();
+        }
+    };
+
+    // Setting a manual value does not invalidate calculated dependents in
+    // this older value graph. Reset the shared mark target before probing and
+    // remember every spell-qualified CC value touched by the probe so none of
+    // the temporary mark's result can be reused after restoration.
+    resetProbeValues(std::string());
+
     std::set<std::string> actionNames;
     context->GetSupportedActions(actionNames);
+    std::set<std::string> probedSpells;
+    std::string selectedAction;
     for (std::string const& actionName : actionNames)
     {
         ai::Action* action = context->GetAction(actionName);
@@ -349,6 +368,9 @@ static std::string FindCcAction(PlayerbotAI* ai, Unit* target, std::string const
         if (spell.empty() || !ai->HasSpell(spell))
             continue;
 
+        probedSpells.insert(spell);
+        resetProbeValues(spell);
+
         if (!action->isUseful())
             continue;
 
@@ -357,12 +379,16 @@ static std::string FindCcAction(PlayerbotAI* ai, Unit* target, std::string const
         if (!possible && !spellLegal)
             continue;
 
-        markValue->Set(previousMark);
-        return actionName;
+        selectedAction = actionName;
+        break;
     }
 
     markValue->Set(previousMark);
-    return {};
+    resetProbeValues(std::string());
+    for (std::string const& spell : probedSpells)
+        resetProbeValues(spell);
+
+    return selectedAction;
 }
 
 } // namespace
