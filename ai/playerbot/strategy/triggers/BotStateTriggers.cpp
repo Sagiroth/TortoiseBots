@@ -27,19 +27,17 @@ bool CombatEndTrigger::IsActive()
         if (strategy && strategy->HasTarget())
             return false;
 
-        // Don't end combat if current target is alive and hostile or actively engaged
+        // Don't end combat if current target is alive and hostile
         Unit* currentTarget = AI_VALUE(Unit*, "current target");
-        if (currentTarget && sServerFacade.IsAlive(currentTarget) && (sServerFacade.IsHostileTo(currentTarget, bot) || bot->GetVictim() == currentTarget))
+        if (currentTarget && sServerFacade.IsAlive(currentTarget) && sServerFacade.IsHostileTo(currentTarget, bot))
             return false;
 
-        // Don't end combat if explicit attack target is set and alive and valid to attack
-        ObjectGuid attackGuid = AI_VALUE(ObjectGuid, "explicit attack target");
-        if (attackGuid.IsEmpty())
-            attackGuid = AI_VALUE(ObjectGuid, "attack target");
+        // Don't end combat if explicit attack target is set and alive
+        ObjectGuid attackGuid = AI_VALUE(ObjectGuid, "attack target");
         if (!attackGuid.IsEmpty())
         {
             Unit* attackTarget = ai->GetUnit(attackGuid);
-            if (attackTarget && sServerFacade.IsAlive(attackTarget) && (sServerFacade.IsHostileTo(attackTarget, bot) || bot->IsValidAttackTarget(attackTarget)))
+            if (attackTarget && sServerFacade.IsAlive(attackTarget) && sServerFacade.IsHostileTo(attackTarget, bot))
                 return false;
         }
 
