@@ -158,3 +158,26 @@ Two scout claims corrected by direct source check.
 - Heal urgency/dispel/rez mapped (PartyMemberToHeal tiers, incoming adjustment,
   anti-double-heal reservation, dispel order, rez conflict guard); no rank
   optimizer exists (highest-known unless mana-save) — C-PRI follow-up in M5/M6.
+
+## M5 slice-audit evidence (2026-09-07, branch migration/m5-slices)
+
+Five read-only slice audits (one re-dispatched after a placeholder response).
+No ports: implementation needs compile+runtime, both unavailable here.
+
+- WarProt: full rotation inventoried; tank alias→placeholder→protection-pve
+  activation; legacy Tank file inert. Gaps: CC-only interrupts, missing
+  vigilance/ranged-pull/intervene, sunder>5 risk, TBC-legality checks each.
+- PriestHoly: bucket ladder + PoH group AoE + dispel/rez/mana/shadow ladders;
+  rank=highest-known CONFIRMED, no optimizer. Donor gaps all TBC (correctly
+  absent). SW:Death kept — verify Turtle backport; prayer-of-spirit likewise.
+- Mage: proc-blind core (WotLK N/A); fire-locked fallback; loop-guards verified
+  on all vectors. TBC re-adopt list (ice lance/arcane blast/spellsteal/
+  invisibility/water elemental) needs per-item Turtle legality.
+- Rogue: thresholds + opener guards + fallbacks verified; no pooling/reservation
+  (Turtle-applicable donor-mature — queued); expose-armor wire-or-remove.
+- Hunter: active ZERO-vanilla stack verified (dead-zone, traps, aspects, ammo);
+  specs pass-through; feed-pet STUB; distracting/wyvern dead regs. PET-CC FIX
+  applied (pet respects CC strip). Inert Generic files (disengage+flee) must
+  never be registered — recorded as guard, files untouched.
+- Party runtime (human+4bots, rotating slots, dungeon with pulls/CC/interrupts/
+  loot/recovery) remains the M5 gate; exact user steps deferred to pre-runtime.
