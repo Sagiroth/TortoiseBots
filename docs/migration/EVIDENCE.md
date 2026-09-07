@@ -133,3 +133,28 @@ Three read-only audits plus parent verification of every fixed native contract.
   D2 (TARGET_FLAG_LOCKED) deferred for DBC-mask evidence. D6 left (defensible).
   IsSpellReady narrowness, isMoving approximation, distance hysteresis, collapsed
   flags, SEC mapping, quest writers — all classified by-design with rationale.
+
+## M4 party-tactics evidence (2026-09-07, branch migration/m4-party)
+
+Three read-only audits plus parent verification of every touched path.
+Two scout claims corrected by direct source check.
+
+- Targets: explicit-command > RTI > role scan (Dps/TankTargetValue); lazy
+  invalidation (world/map/selection/desync/death/own-death); reach prerequisite
+  rebuilt per tick from spell+target (no stored Unit, no cross-cast staleness).
+- CC: PossibleAttackTargets strips breakable/unbreakable CC before selection;
+  FindTarget consumes the stripped list. The reported AoE-anchor hole does not
+  exist (candidate set pre-stripped); residual splash is spell-choice scope.
+- Pull: Tortoise completion marker + anchor pullback improve on donor
+  timeout-only; owner-disappears bounded by 15s cap in both trees.
+- Interrupt/CC commands: capability probe → revalidate → direct exec → queued
+  PASSTHROUGH=100 fallback with mature reach → forced tick. No side engine,
+  no class table. CORRECTION: main-engine queue DOES expire (Engine.cpp:407).
+- Guard/Free fix: shortcuts bypassed the central setter (NC+C only), leaving
+  reaction-follow stale. Now routed via SetMovementStrategy; Reset and guard
+  position bookkeeping preserved. (One dropped Reset() caught + restored pre-commit.)
+- Formation: value swap + single FOLLOW clear + MoveFollow dedup = no churn.
+- Summon binding-order wart noted, unchanged (needs runtime harm proof).
+- Heal urgency/dispel/rez mapped (PartyMemberToHeal tiers, incoming adjustment,
+  anti-double-heal reservation, dispel order, rez conflict guard); no rank
+  optimizer exists (highest-known unless mana-save) — C-PRI follow-up in M5/M6.

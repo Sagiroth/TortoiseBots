@@ -132,8 +132,9 @@ bool GuardChatShortcutAction::Execute(Event& event)
         return false;
 
     ai->Reset();
-    ai->ChangeStrategy("+guard,-follow,-wander,-passive", BotState::BOT_STATE_NON_COMBAT);
-    ai->ChangeStrategy("+guard,-follow,-wander,-passive", BotState::BOT_STATE_COMBAT);
+    // M4: route through the central setter so the REACTION engine cannot keep
+    // a stale follow while combat/non-combat guard (same sets, plus reaction).
+    ai->SetMovementStrategy("guard");
 
     SetPosition(bot);
     SetPosition(bot, "guard");
@@ -152,8 +153,8 @@ bool FreeChatShortcutAction::Execute(Event& event)
         return false;
 
     ai->Reset();
-    ai->ChangeStrategy("+free,-passive", BotState::BOT_STATE_NON_COMBAT);
-    ai->ChangeStrategy("+free,-passive", BotState::BOT_STATE_COMBAT);
+    // M4: central setter, as above — a stale reaction follow must not survive.
+    ai->SetMovementStrategy("free");
 
     PrintStrategies(ai, event);
 
