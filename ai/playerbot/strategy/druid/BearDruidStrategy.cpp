@@ -19,7 +19,6 @@ public:
         creators["maul"] = &maul;
         creators["bash"] = &bash;
         creators["swipe (bear)"] = &swipe_bear;
-        creators["lacerate"] = &lacerate;
         creators["taunt spell"] = &growl; // Empty ActionNode needed to register as taunt spell
     }
 
@@ -74,16 +73,6 @@ private:
         );
     }
 
-    static ActionNode* lacerate([[maybe_unused]] PlayerbotAI* botAI)
-    {
-        return new ActionNode(
-            "lacerate",
-            /*P*/ {},
-            /*A*/ { NextAction("maul") },
-            /*C*/ {}
-        );
-    }
-
     static ActionNode* growl([[maybe_unused]] PlayerbotAI* botAI)
     {
         return new ActionNode(
@@ -130,9 +119,6 @@ void BearDruidStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     ));
     triggers.push_back(new TriggerNode(
         "faerie fire (feral)", { NextAction("faerie fire (feral)", 17.0f) }
-    ));
-    triggers.push_back(new TriggerNode(
-        "lacerate", { NextAction("lacerate", 16.0f) }
     ));
     triggers.push_back(new TriggerNode(
         "demoralizing roar", { NextAction("demoralizing roar", 15.5f) }
