@@ -81,3 +81,29 @@ P26 multi-party soak with budgets. All `pending`.
   Measurement pending server run.
 - A log label never converts an attempt into a successful heal/interrupt; A05/A07/A08
   remain pending real-client observation.
+
+## M2 engine-mapping evidence (2026-09-07, branch migration/m2-engine)
+
+Three read-only mapping scouts (generic 53 files, 9 class dirs, queue/trigger/reaction spec)
+plus parent verification of Strategy.h/Strategy.cpp/CombatStrategy.h.
+
+- Dual-hook verdict: no strategy implements both forms with content. Generic files are
+  legacy-list-only; modern vector hooks are `{}` everywhere (explicit blockers only in
+  CombatStrategy.h/NonCombatStrategy.h). Class dirs are single-form-or-placeholder
+  (spec bare names contribute zero hooks; rotation attaches via strategiesToUpdate).
+  Intra-legacy same-names across states are by-design per-state registration; the
+  dispatcher calls exactly one state branch per Init. No hook retired.
+- Tie: `Queue::Pop` strict-`>` first-max-wins (Queue.cpp:35-61); queue identity is
+  name-only, so an equal-relevance changed-target push keeps the older basket/event.
+- Minimal `break` vs donor `continue`: Tortoise defers the queue intact (bounded);
+  donor re-peeks to budget exhaustion. Deliberate fix, preserved.
+- Parity (donor-identical, no change): trigger latch/cadence/Check/Reset pump,
+  RemoveExpired rule (ExpireActionTime=5000 default), PushAgain +0.02/+0.01/+0.03
+  offsets, ReactionEngine body (>100U active, no preemption, interrupt-on-discovery
+  only), UpdateAI reaction gating, SetActionDuration routing.
+- Donor-only machinery NOT ported (no proven need): failure-retry/generation guards,
+  testMode gate, PerfMon spans, forceActivity/teleport/AFK wrapper extras are
+  Tortoise-side and preserved.
+- Runtime proof of the required M2 case list (two-triggers-one-action, expired target,
+  reset-during-execution, Stay→Follow, repeated pulls, no-action tick, minimal
+  emergency) needs a server run; the M1 checker grammar covers trail-shape only.

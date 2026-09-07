@@ -23,9 +23,18 @@ Donor checkouts are read-only. No builds, no docker, no gameplay run yet in this
 | Milestone | Branch | PR | Status |
 | --- | --- | --- | --- |
 | M0 baseline | `migration/m0-baseline` | https://github.com/Sagiroth/TortoiseBots/pull/70 (draft) | census committed; awaiting review; DO NOT MERGE without authorization |
-| M1 diagnostics | `migration/m1-diagnostics` (stacked on M0 until merge) | (pending — open stacked draft PR) | code + checker self-test done; production-log + cost gates pending |
+| M1 diagnostics | `migration/m1-diagnostics` (stacked on M0 until merge) | https://github.com/Sagiroth/TortoiseBots/pull/71 (draft, stacked on #70) | code + checker self-test done; production-log + cost gates pending |
 
 M2–M10 branches not yet created. No merges authorized.
+## M2 gates (plan §4)
+
+- [x] M2 enabler: `S:init done` anchor at every Engine::Init (commit on this branch)
+- [x] Dual-hook verdict (see M2-DUALHOOK-NODUP): complementary by design, zero true duplicates in 53 generic + 9 class dirs; neither entry point retired
+- [x] Tie semantics documented (first-max-wins; equal-relevance keeps older basket)
+- [x] Minimal-break divergence verified as deliberate bounded fix (donor continue busy-loops)
+- [x] Lifecycle parity: trigger latch/cadence, expiry rule, PushAgain offsets, reaction gating, UpdateAI — all donor-identical; no defect, no behavior change
+- [x] Deferred-reinit preservation intact (ChangeStrategy signature guard + Reset deferral; BGTactics WSG comment case documented in code)
+- [ ] Runtime proof of required cases (server run); stacked draft M2 PR next
 
 ## Packet ownership (plan §7, §14)
 
@@ -63,7 +72,7 @@ guards re-run OK. Runtime gates all pending by rule.
 - [x] Disabled-cost analysis: Open() gates on EnableActionLog (BotActionLog.cpp:95); disabled Write = mutex + map miss + flag branch; measurement pending server run
 - [ ] Production-log validation: checker run against real `logs/bots/*.log` from disposable fixture (needs server run — NOT docker-blocked for user, pending)
 - [ ] Bad-spell-choice end-to-end explanation intent→result (needs runtime trail)
-- [ ] Stacked draft M1 PR opened (base: migration/m0-baseline)
+- [x] Stacked draft M1 PR opened: https://github.com/Sagiroth/TortoiseBots/pull/71 (base: migration/m0-baseline)
 
 ## Open blockers (all honest, none silent)
 
