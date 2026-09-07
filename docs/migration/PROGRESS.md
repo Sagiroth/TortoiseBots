@@ -31,9 +31,10 @@ Donor checkouts are read-only. No builds, no docker, no gameplay run yet in this
 | M6 classes | `migration/m6-classes` (stacked) | https://github.com/Sagiroth/TortoiseBots/pull/76 (draft, stacked on #75) | 4 audits + 2 fixes; runtime proof pending |
 | M7 world | `migration/m7-world` (stacked) | https://github.com/Sagiroth/TortoiseBots/pull/77 (draft, stacked on #76) | 8 audits + 3 fixes; journey proof pending |
 | M8 content | `migration/m8-content` (stacked) | https://github.com/Sagiroth/TortoiseBots/pull/78 (draft, stacked on #77) | 3 audits + 2 wiring fixes; encounter proof pending |
-| M9 services | `migration/m9-services` (stacked) | (pending) | 3 audits running (AH-market/groups/sched-soak); audit-only |
+| M9 services | `migration/m9-services` (stacked) | https://github.com/Sagiroth/TortoiseBots/pull/79 (draft, stacked on #78) | 3 audits + 2 fixes; service proof pending |
+| M10 closure | `migration/m10-closure` (stacked) | (pending) | 3 audits running (controls/trade-config/addon-closure); then F26 + runbook |
 
-M10 branch not yet created. No merges authorized.
+All milestones branched. No merges authorized.
 
 ## M2 gates (plan §4)
 
@@ -101,7 +102,22 @@ M10 branch not yet created. No merges authorized.
 - [x] F13: group/guild flows mapped; hardcore/level-gate gaps; task-loop surface queued to M10 design
 - [x] F14: demand-only verified; LFT conf comment FIXED (hardcoded table, not DBC); kit-based roles + autonomous policy queued
 - [x] F25: no-arbitrator verdict (emergent guards); retry absent; restart orphans; measurement plan written
-- [ ] Service runtime proof (P09-P18, P25-P26); stacked draft M9 PR next
+- [ ] Service runtime proof (P09-P18, P25-P26); M9 PR: https://github.com/Sagiroth/TortoiseBots/pull/79
+
+## M10 gates (plan §4)
+
+- [x] F16/F17/F18: uncovered-command list; preset gaps; F18 BLOCKED verdict (no seam, no false implementation)
+- [x] F19/F20: native-routed transactions (mail send gap); GetValues FIXED module-only via native GetRootSections/GetKeys; tweakValue/guildMaxBotLimit noted
+- [x] F21: 5 server-without-UI gaps; discovery stub; ledger tally 102 rows, zero overclaims; 3 hygiene flags fixed
+- [x] F26: KARAZHAN narrowing spec (no edit); RUNBOOK.md + KNOWN_LIMITATIONS.md; release table below; stacked M10 PR next
+
+## Release capability table (F26 — audit state, NOT a parity claim)
+
+- Source-complete: M0–M3 contracts, M4 tactics map, 9/9 class audits, F01–F08/F11–F13/F22–F23 audits, F24 maps, F09/F14/F15/F25 policy audits, F16–F21 control audits.
+- Code-fixed (uncompiled): M1 trail, M2 anchor, M3 coord+shim×4, M4 guard/free, M5 pet-CC+immunity, M6 pve-blessings, M7 blacklist+taxi×2, M8 naxx×2, M9 lowest-price, M10 GetValues.
+- Blocked: F18 self-bot, F10 synthetic market (core seam), F06-D1 (compile), D2 (DBC data), all runtime proof.
+- Excluded: DungeonClear, DK/glyph/vehicle/arena, Eye/Isle, LLM generation, WotLK/TBC-only, guild vaults.
+- Deploying any of this requires: build matrix, guard scripts, disposable-fixture journeys, user playtest gates, explicit merge authorization per PR.
 
 ## Packet ownership (plan §7, §14)
 | Stage | Packets | Owner milestone | State |

@@ -17,13 +17,38 @@
 #include <iomanip>
 #include <boost/algorithm/string.hpp>
 #include <regex>
+#include <set>
 #include <fstream>
 #include <sstream>
 
 std::vector<std::string> ConfigAccess::GetValues(const std::string& name) const
 {
-    (void)name;
-    return {};
+    // M10: enumerate real repeated keys (AiPlayerbot.WorldBuff, .2, .0.0.40)
+    // through the native section/key walk. Dotted-family rule: the key must
+    // equal the prefix or continue with '.'. First-match rule mirrors
+    // single-key reads (GetValueHelper scans sections in order).
+    std::vector<std::string> values;
+    std::vector<std::string> sections;
+    m_config.GetRootSections(sections);
+    std::set<std::string> seen;
+    for (std::string const& section : sections)
+    {
+        std::vector<std::string> keys;
+        m_config.GetKeys(section.c_str(), keys);
+        for (std::string const& key : keys)
+        {
+            if (key.compare(0, name.size(), name) != 0)
+                continue;
+            if (key.size() != name.size() && key[name.size()] != '.')
+                continue;
+            if (!seen.insert(key).second)
+                continue;
+            ACE_TString value;
+            if (m_config.GetValueHelper(key.c_str(), value))
+                values.emplace_back(value.c_str());
+        }
+    }
+    return values;
 }
 
 INSTANTIATE_SINGLETON_1(PlayerbotAIConfig);
