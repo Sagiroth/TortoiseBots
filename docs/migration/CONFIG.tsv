@@ -1,0 +1,7 @@
+key	shipped_default	cpp_fallback	persisted_override	reload	loader_consumer	mode	bounds	migration_alias	unsupported_reason	status
+AiPlayerbot.RandomBotAutoCreate	0	—	—	—	PlayerbotAIConfig + RandomBotService	autonomous-world	0/1	—	—	pending (census)
+AiPlayerbot.WorldBuff* (repeated)	see conf.dist.in:997-1010	INERT: ConfigAccess::GetValues returns {} (PlayerbotAIConfig.cpp:23-26)	—	—	PlayerbotAIConfig.cpp:443-451 loader dead	worldbuff	—	—	loader gap, fix in F20	pending (blocked: needs real enumeration)
+AiPlayerbot.AutoDoQuests	—	—	—	—	AiFactory defaults before overrides	owned/autonomous	—	—	—	pending (census)
+Quest sync directions (both)	differ T/S vs M	—	—	—	—	—	—	—	donor defaults differ; explicit off/on semantics	pending (census)
+RandomBotNonCombatStrategies	empty override does not remove factory defaults	—	—	—	AiFactory.cpp	—	—	—	—	pending (census)
+AH/LFT/BG service switches	default-off, still required scope	—	—	—	services	—	—	—	disabled default is not exclusion	pending (census)
