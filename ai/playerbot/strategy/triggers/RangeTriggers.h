@@ -267,8 +267,7 @@ namespace ai
             if (!target)
                 return false;
 
-            const float spellRange = ai->GetRange("spell");
-            return (bot->GetDistance(target, SizeFactor::CombatReach) > (spellRange - sPlayerbotAIConfig.contactDistance)) || !bot->IsWithinLOSInMap(target, true);
+            return target && (bot->GetDistance(target, SizeFactor::CombatReach) > (distance - sPlayerbotAIConfig.contactDistance)) || !bot->IsWithinLOSInMap(target, true);
         }
     };
 

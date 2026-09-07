@@ -96,9 +96,6 @@ namespace ai
 
         virtual bool isUseful() override
         {
-            if (!CastSpellAction::isUseful())
-                return false;
-
             Unit* target = GetTarget();
             if (!target)
                 return false;
@@ -119,8 +116,10 @@ namespace ai
                 }
             }
 
-            Aura* aura = ai->GetAura("sunder armor", target);
-            return !aura || aura->GetStackAmount() < 5 || aura->GetAuraDuration() <= 6000;
+            if (isTank && !target->IsPlayer())
+                return true;
+
+            return !ai->HasAura("sunder armor", target, true);
         }
     };
 
