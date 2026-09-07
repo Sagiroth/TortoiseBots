@@ -184,7 +184,7 @@ namespace ai
     class ReachMeleeAction : public ReachTargetAction
 	{
     public:
-        ReachMeleeAction(PlayerbotAI* ai) : ReachTargetAction(ai, "reach melee") {}
+        ReachMeleeAction(PlayerbotAI* ai) : ReachTargetAction(ai, "reach melee", sPlayerbotAIConfig.meleeDistance) {}
         bool RequiresAttackableTarget() const override { return true; }
     };
 
