@@ -107,3 +107,29 @@ plus parent verification of Strategy.h/Strategy.cpp/CombatStrategy.h.
 - Runtime proof of the required M2 case list (two-triggers-one-action, expired target,
   reset-during-execution, Stay→Follow, repeated pulls, no-action tick, minimal
   emergency) needs a server run; the M1 checker grammar covers trail-shape only.
+
+## M3 spell/talent/shim evidence (2026-09-07, branch migration/m3-spells)
+
+Three read-only audits plus parent verification of every fixed native contract.
+
+- Coordinate fix: `CastSpell(x,y,z)` ignored `prepare()` and returned true. Now
+  returns false on rejection; CastCustomSpellAction callers fall through to
+  self-cast fallback instead of announcing phantom ground casts.
+- Rank parity: Tortoise/ donor rank blocks functionally identical (pet-field and
+  IsHighRank alias noise only). Mana-save numeric walk is real-but-bounded risk,
+  unreachable at default saveMana 1.0; chain data inspectable in
+  tw_world_spell_chain.sql, Rank labels need client DBC extraction.
+- isUseful stage: donor HasSpell/vehicle gates fail faster; Tortoise defers to
+  isPossible with the SAME winner (holy-shock→holy-light, regrowth→touch,
+  repentance→shield→light fallbacks quoted). Kept permissive; revisit only on
+  trail-measured reach waste.
+- Staleness: spell-id value 5s TTL + context Reset cover values; action-member
+  spellId has no TTL. Worst case bounded + self-healing; no change without compile.
+- Talents: largest-tree + pre-10 defaults; bear/cat forced-role-first at primary
+  site; owned builds preserved (IsOwnedBot guards); rebuild via snapshots+reset.
+  Gaps: RacialsStrategy classic-only (Goblin/High Elf racials absent); secondary
+  feral sites use Primal-Fury/coin-flip.
+- Shim D1/D3/D4/D5 fixed, each with quoted native header + exhaustive caller list.
+  D2 (TARGET_FLAG_LOCKED) deferred for DBC-mask evidence. D6 left (defensible).
+  IsSpellReady narrowness, isMoving approximation, distance hysteresis, collapsed
+  flags, SEC mapping, quest writers — all classified by-design with rationale.

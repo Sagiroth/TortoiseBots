@@ -4796,13 +4796,14 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
             return false;
         }
     }
-
-    // M1 trail (observe only): this overload currently ignores the preparation
-    // result and reports success. The outcome-contract fix belongs to M3; this
-    // line exists so the rejected-ground-cast case is visible in the log.
+    // M3 outcome contract: a rejected ground cast is a failed action, matching
+    // the unit/GO overloads. Callers (CastCustomSpellAction) fall through to
+    // their fallbacks instead of announcing a phantom cast.
     botdiag::BotActionLog::LogCastStart(this, spellId, bot->getObjectGuid(), (uint32)GetSpellCastTime(pSpellInfo, bot, spell));
     SpellCastResult coordPrep = spell->prepare(targets);
-    botdiag::BotActionLog::LogCastResult(this, spellId, coordPrep, "PREPARE-coord-ignored");
+    botdiag::BotActionLog::LogCastResult(this, spellId, coordPrep, "PREPARE-coord");
+    if (coordPrep != SPELL_CAST_OK)
+        return false;
 
     if (pSpellInfo->Effect[0] == SPELL_EFFECT_OPEN_LOCK ||
         pSpellInfo->Effect[0] == SPELL_EFFECT_SKINNING)

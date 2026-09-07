@@ -24,8 +24,11 @@ Donor checkouts are read-only. No builds, no docker, no gameplay run yet in this
 | --- | --- | --- | --- |
 | M0 baseline | `migration/m0-baseline` | https://github.com/PiotrZadka/TortoiseBots/pull/70 (draft) | census committed; awaiting review; DO NOT MERGE without authorization |
 | M1 diagnostics | `migration/m1-diagnostics` (stacked on M0 until merge) | https://github.com/PiotrZadka/TortoiseBots/pull/71 (draft, stacked on #70) | code + checker self-test done; production-log + cost gates pending |
+| M2 engine | `migration/m2-engine` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/72 (draft, stacked on #71) | mapping + verdict done; runtime proof pending |
+| M3 spells | `migration/m3-spells` (stacked) | (pending) | coordinate fix done; 3 audits running |
 
-M2–M10 branches not yet created. No merges authorized.
+M4–M10 branches not yet created. No merges authorized.
+
 ## M2 gates (plan §4)
 
 - [x] M2 enabler: `S:init done` anchor at every Engine::Init (commit on this branch)
@@ -35,6 +38,13 @@ M2–M10 branches not yet created. No merges authorized.
 - [x] Lifecycle parity: trigger latch/cadence, expiry rule, PushAgain offsets, reaction gating, UpdateAI — all donor-identical; no defect, no behavior change
 - [x] Deferred-reinit preservation intact (ChangeStrategy signature guard + Reset deferral; BGTactics WSG comment case documented in code)
 - [ ] Runtime proof of required cases (server run); stacked draft M2 PR next
+## M3 gates (plan §4)
+
+- [x] Coordinate-cast outcome fix (rejected ground cast returns false; callers fall through)
+- [x] SpellId rank audit: donor-identical rank logic; permissive-isUseful KEPT (fallback chains depend on it); 5s TTL staleness bound, no code change
+- [x] Talent audit: largest-tree inference + owned-build preservation verified; gaps recorded (no Goblin/High Elf racials; secondary bear/cat sites) — F07/C-DRU follow-ups
+- [x] Shim audit: D1/D3/D4/D5 fixed with quoted native contracts (all consumers verified); D2 deferred with data requirement; rest classified harmless/by-design
+- [ ] Runtime proof (gear/travel/unlearn/cast observations); stacked draft M3 PR next
 
 ## Packet ownership (plan §7, §14)
 

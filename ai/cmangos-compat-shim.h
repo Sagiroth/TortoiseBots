@@ -472,8 +472,11 @@ enum AuctionHouseType {
 #endif
 
 // === CREATURE_EXTRA_FLAG_INVISIBLE ===
+// M3: native bit is 0x80 (always-invisible trigger creatures). 0x40000 is
+// ONLY_VISIBLE_TO_FRIENDLY (Creature.h:59,70) — the old value both routed
+// travel to invisible triggers and hid legitimate faction vendors.
 #ifndef CREATURE_EXTRA_FLAG_INVISIBLE
-#define CREATURE_EXTRA_FLAG_INVISIBLE 0x00040000
+#define CREATURE_EXTRA_FLAG_INVISIBLE 0x00000080
 #endif
 
 // === TARGET_FLAG_GAMEOBJECT (cmangos) ===
@@ -543,8 +546,11 @@ namespace Taxi {
 }
 
 // === Other small defines ===
+// M3: native has no UNIQUE_EQUIPPABLE bit; the equip-time semantic is
+// ITEM_FLAG_UNIQUE_EQUIPPED = 0x00080000 (ItemPrototype.h:92, enforced in
+// Player.cpp). Testing bit 0 made the gear filter dead code.
 #ifndef ITEM_FLAG_UNIQUE_EQUIPPABLE
-#define ITEM_FLAG_UNIQUE_EQUIPPABLE 0
+#define ITEM_FLAG_UNIQUE_EQUIPPABLE 0x00080000
 #endif
 #ifndef LOOT_SLOT_NORMAL
 #define LOOT_SLOT_NORMAL 0
@@ -552,11 +558,18 @@ namespace Taxi {
 #ifndef ROLL_DISENCHANT
 #define ROLL_DISENCHANT 4
 #endif
+// M3: native Spell.h has no channeling state (PREPARING=1, CASTING=2,
+// FINISHED=3, IDLE=4, DELAYED=5); channeled spells report CASTING. 3 meant
+// FINISHED — a spurious one-tick not-useful match. Kept defined (callers
+// reference it) but neutralized; see SpellCastUsefulValue.
 #ifndef SPELL_STATE_CHANNELING
-#define SPELL_STATE_CHANNELING 3
+#define SPELL_STATE_CHANNELING SPELL_STATE_CASTING
 #endif
+// M3: native unlearn bit is SKILL_FLAG_UNLEARNABLE = 0x20; 0x10 is
+// SKILL_FLAG_ALWAYS_MAX_VALUE (DBCEnums.h:118-122). The old value refused
+// profession unlearns while offering non-unlearnable skills.
 #ifndef SKILL_FLAG_CAN_UNLEARN
-#define SKILL_FLAG_CAN_UNLEARN 0x10
+#define SKILL_FLAG_CAN_UNLEARN 0x20
 #endif
 
 // === sScriptDevAIMgr (cmangos has ScriptDevAI; Penqle uses sScriptMgr) ===
