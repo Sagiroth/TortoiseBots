@@ -272,3 +272,25 @@ Three read-only audits; parent verified every fix. No ports.
   backoff absent; solo-idle triple-eligibility + restart orphans recorded;
   per-tick cleanliness verified by inspection; measurement plan written with
   stages/metrics/assertions, numbers pending runtime.
+
+## M10 closure evidence (2026-09-07, branch migration/m10-closure)
+
+Three read-only audits; parent verified the GetValues fix. No ports.
+
+- Controls: uncovered donor commands listed (holder/maintenance/ops/modern);
+  selectors limited to selectedBot/partyBots; bulk single-ACK; F17 gaps
+  (no .bot preset ops, no version/migration diagnostics); F18 BLOCKED with
+  seam verdict (PlayerAI is not a control seam).
+- Trade/config: native-routed except GuildBank stub; mail send/COD/return
+  absent; GetValues FIXED via native GetRootSections/GetKeys + dotted-family
+  + first-match rules (module-only, no core change; complete Config.h chain
+  verified). Operator surface is whisper-only debug/help/log (no reload/
+  status/test). tweakValue unconsumed; guildMaxBotLimit key mismatch noted.
+- Addon: 5 server-without-UI gaps; discovery stub fail-open; mature-forward
+  hidden. Ledger tally: 102 rows, zero tested-without-evidence overclaims;
+  placeholder/dup/malformed rows fixed. KARAZHAN narrowing specified
+  (exempt Lower/Upper/Crypt paths; no edit without file review + build).
+- F26: this stack is AUDIT + targeted-fix state, not parity. Full parity
+  requires compile, disposable journeys, user playtest, and the blocked/
+  deferred items above. No scope silently reduced: every applicable row has
+  a disposition; blocked/deferred stay open.
