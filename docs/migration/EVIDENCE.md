@@ -50,3 +50,34 @@ P16 guild flow; P17 LFT missing role/timeout; P18 BG demand + match; P19 bulk mi
 P20 preset migration; P21 self-bot/free-alt/always-online; P22 world-buff config reload;
 P23 clean install + data import; P24 dungeon/raid without DungeonClear; P25 simultaneous services + takeover;
 P26 multi-party soak with budgets. All `pending`.
+
+## M1 decision-trail evidence (2026-09-07, branch migration/m1-diagnostics)
+
+### Emitter grammar (implemented, uncompiled — no docker builds per user constraint)
+
+- `Engine::DoNextAction`: TICK carries `state=` + `strats=`; T/PUSH/A lines carry
+  `src=` (+ `base=`/`eff=` on A lines); non-1.0 multiplier factors logged as MULT lines.
+- `PlayerbotAI::CastSpell` unit/GO/coordinate overloads: CAST_START + CAST_OK/FAIL
+  `phase=PREPARE*`; 7 CAST_GATE early-exit reasons (self-harmful, pet-redirect,
+  flying, stand-or-facing-delay, moving-jump-fall, moving-no-master, loot-impossible).
+- Coordinate overload result still ignored by design (M3 owns the fix); now logged
+  as `phase=PREPARE-coord-ignored` so rejected ground casts are visible.
+- All behavior paths preserved (diff review: every early-return intact; the one
+  dropped `return false` introduced mid-edit was restored before commit).
+
+### Checker
+
+- `tools/check_decision_trail.py --self-test`: PASS (grammar + UNKNOWN, stale-retry?,
+  multiplier-zero, cast-fail/gate signatures + malformed-line detection).
+- Production-log run pending server execution; `--strict` gates M1 runtime closure.
+
+### Findings
+
+- No module-visible EFFECT-phase completion signal exists (free-function hooks in
+  BotActionLog.cpp have no callers; core owns spell effects). Generic core
+  completion/failure proposal deferred to M3/M10 with this evidence — not dropped.
+- Disabled cost: `Open()` returns null when `EnableActionLog=0` (BotActionLog.cpp:95);
+  disabled Write = mutex + map miss + flag branch (+ one spell-map lookup for LogCast*).
+  Measurement pending server run.
+- A log label never converts an attempt into a successful heal/interrupt; A05/A07/A08
+  remain pending real-client observation.
