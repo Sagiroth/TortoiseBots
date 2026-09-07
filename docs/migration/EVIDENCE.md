@@ -380,3 +380,18 @@ Three read-only audits; parent verified the GetValues fix. No ports.
   the shipped `mangosd` binary contains both `void zone too close` and
   `move away from void zone` registrations. Silent-drop closed at the
   wiring level; encounter competence still gated on a real 4H run.
+
+## 4H void-zone acceptance script (pending runtime)
+
+Setup: human + bot party inside Naxxramas at the Four Horsemen, trail on
+(`AiPlayerbot.EnableActionLog=1`), Lady Blaumeux alive and casting.
+1. Wait for a void zone summon near a bot. Expect trail:
+   `T:void zone too close src=` then `PUSH:move away from void zone`
+   then `A:move away from void zone - OK`.
+2. Observe the bot leave the zone; expect no `CAST_GATE`/`A:*-FAILED`
+   storm and no re-entry within the same summon lifetime.
+3. If the trigger never fires while a bot stands in a visible void zone,
+   capture map/position/entry (expect 16697) + trail — radius retune input.
+4. If it fires with no void zone nearby, capture target entry + distance —
+   false-positive input (entry or radius wrong).
+Pass = avoidance with no stall; fail artifacts listed above tune the wiring.
