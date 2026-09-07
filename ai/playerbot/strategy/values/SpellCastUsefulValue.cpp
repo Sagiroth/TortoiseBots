@@ -86,5 +86,5 @@ bool SpellReadyValue::Calculate()
     if (!spellid)
         return false;
 
-    return bot->IsSpellReady(spellid);
+    return sServerFacade.IsSpellReady(bot, spellid);
 }

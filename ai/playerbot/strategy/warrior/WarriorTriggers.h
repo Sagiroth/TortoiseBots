@@ -63,7 +63,7 @@ namespace ai
         {
             // Check for spell cooldown
             uint32 spellid = AI_VALUE2(uint32, "spell id", "berserker rage");
-            if (spellid && bot->IsSpellReady(spellid))
+            if (spellid && sServerFacade.IsSpellReady(bot, spellid))
             {
                 return TargetOfFearCastTrigger::IsActive();
             }

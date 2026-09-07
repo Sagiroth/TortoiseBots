@@ -355,7 +355,7 @@ bool SpellNoCooldownTrigger::IsActive()
     if (!spellId)
         return false;
 
-    return bot->IsSpellReady(spellId);
+    return sServerFacade.IsSpellReady(bot, spellId);
 }
 
 bool RandomTrigger::IsActive()
@@ -991,7 +991,7 @@ bool SpellTargetTrigger::IsTargetValid(Unit* target)
 bool SpellTargetTrigger::IsSpellReady()
 {
     uint32 spellId = AI_VALUE2(uint32, "spell id", spell);
-    return spellId && bot->IsSpellReady(spellId);
+    return spellId && sServerFacade.IsSpellReady(bot, spellId);
 }
 
 bool ItemTargetTrigger::IsTargetValid(Unit* target)
