@@ -26,9 +26,10 @@ Donor checkouts are read-only. No builds, no docker, no gameplay run yet in this
 | M1 diagnostics | `migration/m1-diagnostics` (stacked on M0 until merge) | https://github.com/Sagiroth/TortoiseBots/pull/71 (draft, stacked on #70) | code + checker self-test done; production-log + cost gates pending |
 | M2 engine | `migration/m2-engine` (stacked) | https://github.com/Sagiroth/TortoiseBots/pull/72 (draft, stacked on #71) | mapping + verdict done; runtime proof pending |
 | M3 spells | `migration/m3-spells` (stacked) | https://github.com/Sagiroth/TortoiseBots/pull/73 (draft, stacked on #72) | coordinate fix + shim D1/D3/D4/D5; runtime proof pending |
-| M4 party | `migration/m4-party` (stacked) | (pending) | 3 audits running (targets, heal/interrupt, movement/commands) |
+| M4 party | `migration/m4-party` (stacked) | https://github.com/Sagiroth/TortoiseBots/pull/74 (draft, stacked on #73) | Guard/Free fix + party audits; runtime proof pending |
+| M5 slices | `migration/m5-slices` (stacked) | (pending) | 5 slice audits running (WarProt/PriestHoly/Mage/Rogue/Hunter); audit-only, no ports without compile |
 
-M5–M10 branches not yet created. No merges authorized.
+M6–M10 branches not yet created. No merges authorized.
 
 ## M2 gates (plan §4)
 
@@ -53,11 +54,17 @@ M5–M10 branches not yet created. No merges authorized.
 - [x] Targets: explicit > RTI > scan; lazy invalidation mapped; reach rebuilt per-tick (no stale); CC strip by construction (anchor-hole report corrected)
 - [x] Interrupt/CC command paths probe mature graph, revalidate, no side engine; RemoveExpired contradiction resolved (both engines expire)
 - [x] Guard/Free fix: central setter closes stale-reaction-follow hole; formation handoff verified clean; pull ownership distinct; summon wart noted-not-changed
-- [ ] Runtime party proof (A02/A03/A06/A08/A09/A10); stacked draft M4 PR next
+- [ ] Runtime party proof (A02/A03/A06/A08/A09/A10); M4 PR: https://github.com/Sagiroth/TortoiseBots/pull/74
+
+## M5 gates (plan §4)
+
+- [x] 5 slice audits landed (WarProt/PriestHoly/Mage/Rogue/Hunter): inventories + donor gaps + Turtle data checks, all audit-only
+- [x] Pet-CC fix: AttackAction pet AttackStart now respects the CC strip (mirrors selection; skull-ignore-RTI honored)
+- [x] Inert-file traps recorded (hunter Generic disengage, rogue Dps, warrior Tank, mage dead scorch reg): never registered; disposition = never-activate guard, not deletion
+- [x] C-packet rows for 5 slices; remaining specs/classes queued to M6
+- [ ] Party runtime proof (human+4bots dungeon); stacked draft M5 PR next
 
 ## Packet ownership (plan §7, §14)
-
-
 | Stage | Packets | Owner milestone | State |
 | --- | --- | --- | --- |
 | Inventory and foundation | M0–M3; F01, F20, F22 discovery | M0 (census), then M1/M2/M3 | M0 committed (PR #70 draft); M1 next |
