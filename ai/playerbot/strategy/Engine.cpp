@@ -146,6 +146,14 @@ void Engine::Init()
         MultiplyAndPush(strategy->getDefaultActions(), 0.0f, false, Event(), "default");
     }
 
+    // M2 anchor: one line per graph rebuild so topology changes (and only
+    // topology changes) are visible in the trail. Proves the no-op
+    // property: a ChangeStrategy that leaves the signature unchanged runs
+    // no rebuild and emits no anchor.
+    LogAction("S:init done state=%s strats=%s triggers=%u multipliers=%u",
+        BotStateName(state), StrategySignature().c_str(),
+        (unsigned)triggers.size(), (unsigned)multipliers.size());
+
 }
 
 bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
