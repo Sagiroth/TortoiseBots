@@ -252,3 +252,23 @@ Three read-only audits; parent verified every fix. No DungeonClear contact.
   tables mapped; death/spirit rules; interference guards hold. SV (id5) and
   BR arena (id4) have zero tactics; Eye/Isle correctly absent. Autonomous
   BG queue absent by design (demand-only).
+
+## M9 services evidence (2026-09-07, branch migration/m9-services)
+
+Three read-only audits; parent verified every fix. No ports.
+
+- AH: personal sell/bid/buy intact via session handlers but price-blind;
+  lowest-buyout now true per-unit min. Full market = 12-capability gap vs
+  SAH; companion core seam specified (paged snapshot + Guard for F09 races;
+  MarketPost/Bid/Expire reusing native persistence/mail for F10 synthetic
+  supply). No direct map/DB writes in module; no fake parity.
+- Groups/guilds: formation→accept→leave→release + charter→orders flows
+  mapped; durable vs transient ownership distinguished; hardcore/level-gate
+  gaps; modern task-loop surface queued.
+- LFT: demand-only verified; role = talent-enum (kit check queued);
+  autonomous grouping absent by design; conf comment corrected to hardcoded
+  addon table.
+- Scheduling: NO central arbitrator — emergent fail-closed guards; F25 retry/
+  backoff absent; solo-idle triple-eligibility + restart orphans recorded;
+  per-tick cleanliness verified by inspection; measurement plan written with
+  stages/metrics/assertions, numbers pending runtime.

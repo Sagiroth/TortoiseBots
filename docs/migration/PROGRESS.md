@@ -30,9 +30,10 @@ Donor checkouts are read-only. No builds, no docker, no gameplay run yet in this
 | M5 slices | `migration/m5-slices` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/75 (draft, stacked on #74) | 5 audits + pet-CC fix; runtime proof pending |
 | M6 classes | `migration/m6-classes` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/76 (draft, stacked on #75) | 4 audits + 2 fixes; runtime proof pending |
 | M7 world | `migration/m7-world` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/77 (draft, stacked on #76) | 8 audits + 3 fixes; journey proof pending |
-| M8 content | `migration/m8-content` (stacked) | (pending) | 3 audits running (dungeon/Turtle/BG); audit-only, no DungeonClear |
+| M8 content | `migration/m8-content` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/78 (draft, stacked on #77) | 3 audits + 2 wiring fixes; encounter proof pending |
+| M9 services | `migration/m9-services` (stacked) | (pending) | 3 audits running (AH-market/groups/sched-soak); audit-only |
 
-M9–M10 branches not yet created. No merges authorized.
+M10 branch not yet created. No merges authorized.
 
 ## M2 gates (plan §4)
 
@@ -92,7 +93,15 @@ M9–M10 branches not yet created. No merges authorized.
 - [x] Raid audit: thin generic + 4 object/hazard behaviors; Onyxia empty; 4H teardown + Naxx enter/leave FIXED (string-only, both sides verified); void-zone creators still missing (needs new classes — deferred)
 - [x] Turtle map: 30 mechanic rows, zero bespoke tactics, generic-only participation; LFT aliases for 4 maps; KARAZHAN guard blocks all 15 Kara files (narrowing queued)
 - [x] BG audit: WSG/AB/AV objective play mapped; SV + BR zero tactics; Eye/Isle correctly absent; no DungeonClear dependency anywhere
-- [ ] Encounter/match runtime proof; stacked draft M8 PR next
+- [ ] Encounter/match runtime proof; M8 PR: https://github.com/PiotrZadka/TortoiseBots/pull/78
+
+## M9 gates (plan §4)
+
+- [x] F09/F10: personal paths intact; lowest-buyout per-unit FIX; full-market 12-gap table; companion core seam SPEC (snapshot/Guard/Post/Bid/Expire)
+- [x] F13: group/guild flows mapped; hardcore/level-gate gaps; task-loop surface queued to M10 design
+- [x] F14: demand-only verified; LFT conf comment FIXED (hardcoded table, not DBC); kit-based roles + autonomous policy queued
+- [x] F25: no-arbitrator verdict (emergent guards); retry absent; restart orphans; measurement plan written
+- [ ] Service runtime proof (P09-P18, P25-P26); stacked draft M9 PR next
 
 ## Packet ownership (plan §7, §14)
 | Stage | Packets | Owner milestone | State |
