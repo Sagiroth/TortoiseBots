@@ -27,7 +27,7 @@ commits on the branch. Prior per-milestone rows are kept below for archaeology.
 
 | Milestone | Branch | PR | Status |
 | --- | --- | --- | --- |
-| M0–M10 (all) | `migration/behavior-migration` (16 commits from `main`) | https://github.com/PiotrZadka/TortoiseBots/pull/83 (draft → `main`) | open; module build running (BUILD_PLAYERBOTS=ON, static) |
+| M0–M10 (all) | `migration/behavior-migration` (19 commits from `main`) | https://github.com/PiotrZadka/TortoiseBots/pull/83 (draft → `main`) | open; ON+DISABLED matrix BUILT ✓; runtime gates pending |
 
 | M0 baseline | `migration/m0-baseline` | #70 (closed, superseded by #83) | merged into singular branch |
 | M1 diagnostics | `migration/m1-diagnostics` | #71 (closed, superseded by #83) | merged into singular branch |
