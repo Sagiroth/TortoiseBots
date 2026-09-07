@@ -27,9 +27,10 @@ Donor checkouts are read-only. No builds, no docker, no gameplay run yet in this
 | M2 engine | `migration/m2-engine` (stacked) | https://github.com/Sagiroth/TortoiseBots/pull/72 (draft, stacked on #71) | mapping + verdict done; runtime proof pending |
 | M3 spells | `migration/m3-spells` (stacked) | https://github.com/Sagiroth/TortoiseBots/pull/73 (draft, stacked on #72) | coordinate fix + shim D1/D3/D4/D5; runtime proof pending |
 | M4 party | `migration/m4-party` (stacked) | https://github.com/Sagiroth/TortoiseBots/pull/74 (draft, stacked on #73) | Guard/Free fix + party audits; runtime proof pending |
-| M5 slices | `migration/m5-slices` (stacked) | (pending) | 5 slice audits running (WarProt/PriestHoly/Mage/Rogue/Hunter); audit-only, no ports without compile |
+| M5 slices | `migration/m5-slices` (stacked) | https://github.com/Sagiroth/TortoiseBots/pull/75 (draft, stacked on #74) | 5 audits + pet-CC fix; runtime proof pending |
+| M6 classes | `migration/m6-classes` (stacked) | (pending) | 4 class audits running (Pal/Sham/Dru/Wlk); audit-only |
 
-M6–M10 branches not yet created. No merges authorized.
+M7–M10 branches not yet created. No merges authorized.
 
 ## M2 gates (plan §4)
 
@@ -62,7 +63,15 @@ M6–M10 branches not yet created. No merges authorized.
 - [x] Pet-CC fix: AttackAction pet AttackStart now respects the CC strip (mirrors selection; skull-ignore-RTI honored)
 - [x] Inert-file traps recorded (hunter Generic disengage, rogue Dps, warrior Tank, mage dead scorch reg): never registered; disposition = never-activate guard, not deletion
 - [x] C-packet rows for 5 slices; remaining specs/classes queued to M6
-- [ ] Party runtime proof (human+4bots dungeon); stacked draft M5 PR next
+- [ ] Party runtime proof (human+4bots dungeon); M5 PR: https://github.com/Sagiroth/TortoiseBots/pull/75
+
+## M6 gates (plan §4)
+
+- [x] 4 class audits landed (Pal/Sham/Dru/Wlk): inventories + donor gaps + data checks
+- [x] Paladin Pve-combat blessing fix (PvP tables → pve; all four actions registered)
+- [x] Pet guard extended with damage-immunity gate (banish/invulnerable; warlock audit caught it)
+- [x] Nine-class matrix: all 9 covered (5 in M5 + 4 in M6); DK excluded by design; no tree silently falls back (placeholders verified zero-hook + update-wired)
+- [ ] Spec/role runtime rotation proof (all classes); stacked draft M6 PR next
 
 ## Packet ownership (plan §7, §14)
 | Stage | Packets | Owner milestone | State |
@@ -74,7 +83,7 @@ M6–M10 branches not yet created. No merges authorized.
 | Queues/content | F14/F15; F24 + M6 matrix | M6/M8 | not started |
 | Controls and operations | F16–F18; F21; F20/F22/F23 throughout | M7/M10 | not started |
 | Completion | F25 soak, F26/M10 | M9/M10 | not started |
-| Class packets | C-WAR C-PRI C-MAG C-ROG C-HUN C-PAL C-SHA C-DRU C-WLK | M5 (first slices) → M6 | not started |
+| Class packets | C-WAR C-PRI C-MAG C-ROG C-HUN (M5 audited) + C-PAL C-SHA C-DRU C-WLK (M6 auditing) | M5 (first slices) → M6 | audits done/in-flight; implementation queued behind compile+runtime |
 
 ## M0 gates (plan §4)
 

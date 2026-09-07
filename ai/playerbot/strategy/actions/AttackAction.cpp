@@ -195,11 +195,13 @@ bool AttackAction::Attack(Player* requester, Unit* target)
                         // M5: keep the pet off CC'd targets. A manual attack or
                         // assist onto a freshly-CC-assigned mob must not drag
                         // the pet in. Mirrors the PossibleAttackTargets strip
-                        // (CC applies unless the RTI mark says to ignore it).
+                        // (CC applies unless the RTI mark says to ignore it)
+                        // plus the damage-immunity gate (banish/invulnerable).
                         bool ccProtected = !PossibleAttackTargetsValue::HasIgnoreCCRti(target, bot) &&
                             (PossibleAttackTargetsValue::HasBreakableCC(target, bot) ||
                              PossibleAttackTargetsValue::HasUnBreakableCC(target, bot));
-                        if (!ccProtected)
+                        bool damageImmune = PossibleAttackTargetsValue::IsImmuneToDamage(target, bot);
+                        if (!ccProtected && !damageImmune)
                             creatureAI->AttackStart(target);
                     }
                 }

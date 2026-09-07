@@ -181,3 +181,25 @@ No ports: implementation needs compile+runtime, both unavailable here.
   never be registered — recorded as guard, files untouched.
 - Party runtime (human+4bots, rotating slots, dungeon with pulls/CC/interrupts/
   loot/recovery) remains the M5 gate; exact user steps deferred to pre-runtime.
+
+## M6 class-audit evidence (2026-09-07, branch migration/m6-classes)
+
+Four read-only audits; parent verified every fix. No ports.
+
+- Paladin: dual-arch (old vector + new list) with priority arbitration, blessing
+  role tables, fallback chains. FIX: Pve-combat blessing used PvP tables
+  (copy-paste; Raid-combat already uses pve). Gaps: ArtOfWar dead trigger,
+  untalented single-action fizzles, CC eligibility delegated to generic value.
+- Shaman: OLD+NEW parallel implementations; shock without interrupt branch;
+  totem rank tables + exclusions; chain-heal AoE-only; earth-shield raid-only;
+  reincarnation unhandled. Leaks: range-mismatch churn, HaveAnyTotem no-owner
+  suppression, triggers-while-moving, air-totem double registration.
+- Druid: forced-alias arbitration reconciled across layers (role-first in
+  factory, Primal-Fury fallback, THICK_HIDE/cat-form triggers). Gaps:
+  lifebloom/starfall re-adopt, dangling triggers, prowl gates, bear charge.
+- Warlock: Life-Tap double-guarded; no DoT lifetime guard; shard create/destroy
+  triggers are dead wiring (no creators); pet spell-lock stack. Caught the
+  banish hole in the M5 pet guard → extended with IsImmuneToDamage.
+- Matrix: 9/9 classes audited. No applicable tree falls back to an unrelated
+  strategy (placeholders contribute zero hooks; rotation attaches via update
+  wiring). Raid-specific role checks deferred to M8.
