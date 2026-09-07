@@ -1021,8 +1021,6 @@ void PlayerbotAI::OnCombatEnded()
         {
             if (auto* explicitAttackTarget = aiObjectContext->GetValue<ObjectGuid>("explicit attack target"))
                 explicitAttackTarget->Reset();
-            if (auto* attackTarget = aiObjectContext->GetValue<ObjectGuid>("attack target"))
-                attackTarget->Reset();
         }
 
         // Reset the combat start timestamp

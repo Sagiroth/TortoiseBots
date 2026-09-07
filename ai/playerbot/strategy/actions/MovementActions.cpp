@@ -1365,8 +1365,7 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
         return MoveTo(targetPosition.GetMapId(), targetPosition.getX(), targetPosition.getY(), targetPosition.getZ());
 
     const Vector3 directionToTarget = (targetPoint - botPoint).directionOrZero();
-    const float walkDistance = std::max(0.0f, distanceToTarget - distance);
-    const Vector3 endPoint = botPoint + (directionToTarget * walkDistance);
+    const Vector3 endPoint = botPoint + (directionToTarget * std::min(distance, distanceToTarget));
     WorldPosition endPosition(obj->GetMapId(), endPoint.x, endPoint.y, endPoint.z);
     endPosition.setZ(endPosition.GetHeight());
 
@@ -1515,10 +1514,10 @@ void MovementAction::WaitForReach(float distance)
     if (duration > sPlayerbotAIConfig.maxWaitForMove)
         duration = sPlayerbotAIConfig.maxWaitForMove;
 
-    Unit* target = AI_VALUE(Unit*, "current target");
-    Unit* player = AI_VALUE(Unit*, "enemy player target");
+    /*Unit* target = *ai->GetAiObjectContext()->GetValue<Unit*>("current target");
+    Unit* player = *ai->GetAiObjectContext()->GetValue<Unit*>("enemy player target");
     if ((player || target) && duration > sPlayerbotAIConfig.globalCoolDown)
-        duration = sPlayerbotAIConfig.globalCoolDown;
+        duration = sPlayerbotAIConfig.globalCoolDown;*/
 
     if (duration < 0.0f)
         duration = 0.0f;
