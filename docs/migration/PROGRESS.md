@@ -23,7 +23,7 @@ Donor checkouts are read-only. No builds, no docker, no gameplay run yet in this
 | Milestone | Branch | PR | Status |
 | --- | --- | --- | --- |
 | M0 baseline | `migration/m0-baseline` | https://github.com/Sagiroth/TortoiseBots/pull/70 (draft) | census committed; awaiting review; DO NOT MERGE without authorization |
-| M1 diagnostics | `migration/m1-diagnostics` (stacked on M0 until merge) | (pending) | next |
+| M1 diagnostics | `migration/m1-diagnostics` (stacked on M0 until merge) | (pending — open stacked draft PR) | code + checker self-test done; production-log + cost gates pending |
 
 M2–M10 branches not yet created. No merges authorized.
 
@@ -42,39 +42,44 @@ M2–M10 branches not yet created. No merges authorized.
 
 ## M0 gates (plan §4)
 
-- [x] Revisions + working-tree state recorded (above)
-- [x] Capability ledger rows for every feature family with disposition (42-line CAPABILITIES.tsv: 10 verified-T rows, 8 modern-correction M- rows, 13 Shyalya S- rows, 10 Tortoise-graph T- rows)
-- [x] Graph inventory: ~111 generic strategies, ~250 actions, ~225 triggers, ~270 values, ~17 multipliers, 9 class contexts, ~20 .bot verbs, 4 services, holder 12 + bot 42-key donor tables
-- [x] Nine class factory entries traced (`AiFactory.cpp:22-82`, all 9 Vanilla contexts + generic fallback; DK dir empty, no case → base fallback)
-- [x] Engine dual-representation confirmed (`Engine.cpp:112-134`, state-aware + vector hooks, dual defaults)
-- [x] Queue name-identity confirmed (`Queue.cpp:10-33`)
-- [x] SpellId mana-save numeric-order branch confirmed (`SpellIdValue.cpp:169-181`)
-- [x] `ConfigAccess::GetValues` empty-body confirmed (`PlayerbotAIConfig.cpp:23-26`, WorldBuff load inert)
-- [x] `LoadAuctionPrices` clear-only confirmed (`PlayerbotRuntimeFacade.cpp:271-278`)
-- [x] `GuildBankAction` false-return ZERO path confirmed (`GuildBankAction.cpp:11-39`)
-- [x] Turtle Karazhan scope confirmed native (Lower/Upper halls + Crypt scripts in core; CMake `KARAZHAN` denylist needs narrowing review — M0/M8 finding, not changed yet)
-- [x] Modern donor corrections: NO src/ahbot, NO AhAction, NO median/lowest helper, NO LLM generator, 10 class dirs (9+Dk)
-- [x] Dungeon-clear exclusion confirmed at `modules/mod-dungeon-clear/**` with full `.dc` surface (never in ledger)
-- [x] Guard scripts re-run 2026-09-07: `verify_turtle_surface.sh` OK, `verify_penqle_host_contract.sh --core ../tortoise-wow` OK (core c12bb16e)
-- [ ] Test fixtures + source/data pair reproducible (config full-key inventory landed from census; fixture skeletons pending M1)
-- [ ] Unresolved name/activation ambiguities filed as issues (census done; activation proof needs M1/M2 runtime graph dump)
-- [ ] Draft M0 PR opened with scope/validation/pending gates
+M0 committed on `migration/m0-baseline`, draft PR #70 open. Census complete (4/4 scouts),
+guards re-run OK. Runtime gates all pending by rule.
+- [x] Capability ledger (CAPABILITIES.tsv) + graph inventory (~111 strategies, ~250 actions, ~225 triggers, ~270 values, 9 class contexts, 4 services)
+- [x] `ConfigAccess::GetValues` empty, `LoadAuctionPrices` clear-only, `GuildBankAction` ZERO-false, Engine dual hooks, Queue name-identity, SpellId numeric branch
+- [x] Turtle Karazhan native scope; CMake `KARAZHAN` denylist narrowing flagged for M0/M8 (unchanged)
+- [x] Modern corrections (no src/ahbot/AhAction/price-helper/LLM; 9+Dk dirs); dungeon-clear exclusion at `modules/mod-dungeon-clear/**`
+- [x] Guards re-run OK; draft M0 PR #70 open
+- [ ] Activation proof needs M1/M2 runtime graph dump
+
+## M1 gates (plan §4)
+
+- [x] Trail carries bot/state/decision identity: TICK `state=` + `strats=` (Engine.cpp BotStateName + StrategySignature)
+- [x] Trigger/action/target + base/effective relevance on T/PUSH/A lines; per-multiplier factors (MULT lines, not just zeroing)
+- [x] Usefulness/possibility rejections distinguishable: USELESS vs IMPOSSIBLE vs FAILED vs UNKNOWN with src/base/eff
+- [x] Prerequisite/alternative/continuation visible via PUSH `(prereq|alt|cont|again)` + PREREQ lines
+- [x] Spell attempt + native preparation result: CAST_START + CAST_FAIL/OK `phase=PREPARE*` on unit/GO/coordinate overloads; 7 CAST_GATE early-exit reasons
+- [x] Checker `tools/check_decision_trail.py --self-test` passes (grammar + all 4 M1 signatures + malformed detection)
+- [x] M1 finding: no module-visible EFFECT-phase completion signal exists (free hooks have no callers); generic core proposal deferred with evidence, not silently dropped
+- [x] Disabled-cost analysis: Open() gates on EnableActionLog (BotActionLog.cpp:95); disabled Write = mutex + map miss + flag branch; measurement pending server run
+- [ ] Production-log validation: checker run against real `logs/bots/*.log` from disposable fixture (needs server run — NOT docker-blocked for user, pending)
+- [ ] Bad-spell-choice end-to-end explanation intent→result (needs runtime trail)
+- [ ] Stacked draft M1 PR opened (base: migration/m0-baseline)
 
 ## Open blockers (all honest, none silent)
 
-1. Census complete (4/4 scouts). Activation proof needs M1/M2 runtime graph dump.
+1. No builds available in this environment (user: no docker checks) — M1 C++ diffs are logging-only on existing APIs, reviewed line-by-line; compile + production-log gates pending server run.
 2. Runtime gates: no client observation yet — all A01–A16/P01–P26 remain pending by rule.
 3. No gameplay certification claimed anywhere.
 
 ## Decisions
 
-- M0 branch `migration/m0-baseline` created from `main`; user `docs/README.md` index edit preserved uncommitted.
-- `docs/migration/` ledger directory created by this migration (new durable artifacts per plan §14).
-- Integrator rule (plan §7): shared Engine/Strategy/AiFactory/host changes go through one owner (this session) once M2 starts.
-- Class implementers may parallelize only after M2/M3 stabilize; not yet.
+- M0 branch `migration/m0-baseline` from `main`; M1 stacks `migration/m1-diagnostics` on M0 until merge. User `docs/README.md` index edit preserved uncommitted.
+- Integrator rule (plan §7): shared Engine/Strategy/AiFactory/host changes go through one owner (this session).
+- M1 C++ is logging-only (no behavior change) except zero new branches on cast success paths; the one dropped-return mistake was caught in diff review and restored before commit.
+- No donor code imported in M1; telemetry is module-owned.
 
 ## Exact next action
 
-1. Commit M0 ledgers on `migration/m0-baseline`; open draft M0 PR (no merge without authorization), link here.
-2. Start M1 on `migration/m1-diagnostics` (stacked if M0 unmerged): decision telemetry + deterministic engine harness.
-3. Real-client scenarios A01–A16 stay pending until user playtest; provide exact steps at M4/M5.
+1. Commit M1 (Engine + PlayerbotAI trail, checker, ledgers); push; open stacked draft PR (base: migration/m0-baseline).
+2. Start M2 on `migration/m2-engine` (stacked): trigger/queue/strategy lifecycle specification + tests.
+3. Real-client scenarios stay pending until user playtest; exact steps at M4/M5.

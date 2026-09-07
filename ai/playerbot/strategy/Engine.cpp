@@ -13,6 +13,19 @@
 #endif
 
 using namespace ai;
+// M1 decision trail: short engine-state label so TICK lines identify which of
+// the four engines (combat/non-combat/dead/reaction) emitted a decision.
+static const char* BotStateName(BotState state)
+{
+    switch (state)
+    {
+        case BotState::BOT_STATE_COMBAT: return "combat";
+        case BotState::BOT_STATE_NON_COMBAT: return "non-combat";
+        case BotState::BOT_STATE_DEAD: return "dead";
+        case BotState::BOT_STATE_REACTION: return "reaction";
+        default: return "all";
+    }
+}
 
 Engine::Engine(PlayerbotAI* ai, AiObjectContext *factory, BotState state) : PlayerbotAIAware(ai), aiObjectContext(factory), state(state)
 {
@@ -137,7 +150,7 @@ void Engine::Init()
 
 bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 {
-    LogAction("--- AI Tick ---");
+    LogAction("--- AI Tick --- state=%s strats=%s", BotStateName(state), StrategySignature().c_str());
     if (sPlayerbotAIConfig.logValuesPerTick)
         LogValues();
 
@@ -210,7 +223,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         ai->GetBot()->Say(out.str(), (ai->GetBot()->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
                     }
                 }
-                LogAction("A:%s - UNKNOWN", actionNode->getName().c_str());
+                LogAction("A:%s - UNKNOWN src=%s base=%.3f", actionNode->getName().c_str(), event.getSource().c_str(), relevance);
             }
             else
             {
@@ -229,9 +242,17 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         for (std::list<Multiplier*>::iterator i = multipliers.begin(); i != multipliers.end(); i++)
                         {
                             Multiplier* multiplier = *i;
-                            relevance *= multiplier->GetValue(action);
+                            // M1 decision trail: record each multiplier that changes a
+                            // candidate's relevance (factor != 1), not just the one
+                            // that zeroes it. Silent factors are the usual reason a
+                            // sensible rotation looks arbitrary in hindsight.
+                            float beforeMult = relevance;
+                            float factor = multiplier->GetValue(action);
+                            relevance *= factor;
 
                             action->setRelevance(relevance);
+                            if (factor != 1.0f)
+                                LogAction("A:%s - MULT %s x%.3f (%.3f->%.3f)", action->getName().c_str(), multiplier->getName().c_str(), factor, beforeMult, relevance);
                             if (!relevance)
                             {
                                 LogAction("Multiplier %s made action %s useless", multiplier->getName().c_str(), action->getName().c_str());
@@ -250,7 +271,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 
                     if (!skipPrerequisites)
                     {
-                        LogAction("A:%s - PREREQ", action->getName().c_str());
+                        LogAction("A:%s - PREREQ src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
                         if (MultiplyAndPush(actionNode->getPrerequisites(), relevance + 0.02, false, event, "prereq"))
                         {
                             PushAgain(actionNode, relevance + 0.01, event);
@@ -276,7 +297,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 
                         if (actionExecuted)
                         {
-                            LogAction("A:%s - OK", action->getName().c_str());
+                            LogAction("A:%s - OK src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
                             MultiplyAndPush(actionNode->getContinuers(), 0, false, event, "cont");
                             lastRelevance = relevance;
                             delete actionNode;
@@ -284,7 +305,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         }
                         else
                         {
-                            LogAction("A:%s - FAILED", action->getName().c_str());
+                            LogAction("A:%s - FAILED src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
                             MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.03, false, event, "alt");
                         }
                     }
@@ -312,7 +333,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                                 ai->GetBot()->Say(out.str(), (ai->GetBot()->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
                             }
                         }
-                        LogAction("A:%s - IMPOSSIBLE", action->getName().c_str());
+                        LogAction("A:%s - IMPOSSIBLE src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
                         MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.03, false, event, "alt");
                     }
                 }
@@ -341,7 +362,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         }
                     }
                     lastRelevance = relevance;
-                    LogAction("A:%s - USELESS", action->getName().c_str());
+                    LogAction("A:%s - USELESS src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
                 }
             }
             delete actionNode;
@@ -445,7 +466,7 @@ bool Engine::MultiplyAndPush(NextAction** actions, float forceRelevance, bool sk
 
                 if (shouldPush)
                 {
-                    LogAction("PUSH:%s - %f (%s)", actionNode->getName().c_str(), k, pushType);
+                    LogAction("PUSH:%s - %f (%s) src=%s", actionNode->getName().c_str(), k, pushType, event.getSource().c_str());
                     queue.Push(new ActionBasket(actionNode, k, skipPrerequisites, event));
                     pushed = true;
                 }
@@ -696,7 +717,7 @@ void Engine::ProcessTriggers(bool minimal)
                 continue;
 
             MultiplyAndPush(node->getHandlers(), 0.0f, false, event, "trigger");
-            LogAction("T:%s", trigger->getName().c_str());
+            LogAction("T:%s src=%s", trigger->getName().c_str(), event.getSource().c_str());
         }
     }
 
