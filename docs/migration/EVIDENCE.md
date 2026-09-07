@@ -349,5 +349,18 @@ Three read-only audits; parent verified the GetValues fix. No ports.
   removed names were removed in the same commit.
 - Denylist widening does not collide with the KARAZHAN narrowing spec
   (different name families; JEWEL/EMBLEM/HEROIC deliberately excluded).
-- Build impact: the successful ON image predates this merge. A rebuild on
-  the merged tip is required (running) before claiming current-tip compiles.
+- Build impact: the earlier ON image predated the merge; the rebuild on the
+  merged tip (see matrix results below) supersedes it — current tip compiles.
+
+## Build matrix results (2026-09-07, final)
+
+- ON, merged tip (branch `migration/behavior-migration` @ b1552ecb basis
+  incl. owner cleanup #82): image BUILT. All migration code + cleanup
+  compiles and links. (One earlier defect — private predicates — fixed.)
+- DISABLED (`MODULE_TORTOISEBOTS=disabled`): image BUILT; binary probe
+  shows 0 tortoisebots symbols, no `aiplayerbot.conf`, no modules etc —
+  core builds and ships without the module. Optional-module invariant HOLDS.
+- Correction history (kept for honesty): a defaults-only run was first
+  misread as OFF, but compose defaults keep MODULE_TORTOISEBOTS=static;
+  the per-module flag, not MODULES, gates inclusion. True-disabled run
+  above supersedes it.
