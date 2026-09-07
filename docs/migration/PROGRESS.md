@@ -22,10 +22,19 @@ Donor checkouts are read-only. No builds, no docker, no gameplay run yet in this
 
 | Milestone | Branch | PR | Status |
 | --- | --- | --- | --- |
-| M0 baseline | `migration/m0-baseline` | (pending — open draft once census lands) | in progress |
+| M0 baseline | `migration/m0-baseline` | https://github.com/PiotrZadka/TortoiseBots/pull/70 (draft) | census committed; awaiting review; DO NOT MERGE without authorization |
+| M1 diagnostics | `migration/m1-diagnostics` (stacked on M0 until merge) | (pending) | next |
 
-M1–M10 branches not yet created. No PRs opened yet. No merges authorized.
-| M0 baseline | `migration/m0-baseline` | (pending — open draft once census lands) | census complete, verifiers pass; commit + draft PR next |
+M2–M10 branches not yet created. No merges authorized.
+
+## Packet ownership (plan §7, §14)
+
+| Stage | Packets | Owner milestone | State |
+| --- | --- | --- | --- |
+| Inventory and foundation | M0–M3; F01, F20, F22 discovery | M0 (census), then M1/M2/M3 | M0 committed (PR #70 draft); M1 next |
+| First owned-party acceptance | M4–M5; F02, F05–F08; F16–F17 | M4/M5 | not started |
+| Autonomous world | F03–F04; F11–F12; F13 | M7 | not started |
+| Economy | F06/F19 → F09 → F10; with F11–F12/F25 | M7/M9 | not started |
 | Queues/content | F14/F15; F24 + M6 matrix | M6/M8 | not started |
 | Controls and operations | F16–F18; F21; F20/F22/F23 throughout | M7/M10 | not started |
 | Completion | F25 soak, F26/M10 | M9/M10 | not started |
