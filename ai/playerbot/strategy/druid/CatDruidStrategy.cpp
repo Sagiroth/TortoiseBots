@@ -133,13 +133,6 @@ void CatDruidStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     );
     triggers.push_back(
         new TriggerNode(
-            "combo points 5 available", {
-                NextAction("maim", 23.0f)
-            }
-        )
-    );
-    triggers.push_back(
-        new TriggerNode(
             "ferocious bite execute", {
                 NextAction("ferocious bite", 24.0f)
             }

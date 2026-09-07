@@ -14,7 +14,6 @@ class FeralDruidStrategyActionNodeFactory : public NamedObjectFactory<ActionNode
 public:
     FeralDruidStrategyActionNodeFactory()
     {
-        creators["survival instincts"] = &survival_instincts;
         creators["thorns"] = &thorns;
         creators["cure poison"] = &cure_poison;
         creators["cure poison on party"] = &cure_poison_on_party;
@@ -23,14 +22,6 @@ public:
     }
 
 private:
-    static ActionNode* survival_instincts([[maybe_unused]] PlayerbotAI* botAI)
-    {
-        return new ActionNode("survival instincts",
-                              /*P*/ {},
-                              /*A*/ { NextAction("barkskin") },
-                              /*C*/ {});
-    }
-
     static ActionNode* thorns([[maybe_unused]] PlayerbotAI* botAI)
     {
         return new ActionNode("thorns",
@@ -85,8 +76,6 @@ void FeralDruidStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "enemy out of melee", { NextAction("reach melee", 21.0f) }));
-    triggers.push_back(new TriggerNode(
-        "low health", { NextAction("survival instincts", 91.0f) }));
     triggers.push_back(new TriggerNode("player has flag",
                                        { NextAction("dash", 92.0f) }));
     triggers.push_back(new TriggerNode("enemy flagcarrier near",
