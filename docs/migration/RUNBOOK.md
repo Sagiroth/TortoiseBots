@@ -2,22 +2,14 @@
 
 ## Branches and PRs (all draft, DO NOT MERGE without explicit authorization)
 
-| Milestone | Branch (stacked) | PR |
-| --- | --- | --- |
-| M0 baseline | `migration/m0-baseline` (from `main`) | #70 → `main` |
-| M1 diagnostics | `migration/m1-diagnostics` | #71 → M0 |
-| M2 engine | `migration/m2-engine` | #72 → M1 |
-| M3 spells | `migration/m3-spells` | #73 → M2 |
-| M4 party | `migration/m4-party` | #74 → M3 |
-| M5 slices | `migration/m5-slices` | #75 → M4 |
-| M6 classes | `migration/m6-classes` | #76 → M5 |
-| M7 world | `migration/m7-world` | #77 → M6 |
-| M8 content | `migration/m8-content` | #78 → M7 |
-| M9 services | `migration/m9-services` | #79 → M8 |
-| M10 closure | `migration/m10-closure` | #80 → M9 |
+CONSOLIDATED: one branch, one PR (stacked #70–#80 closed as superseded).
 
-Merge order after authorization: #70, then rebase #71 onto `main`, repeat
-down the stack. Each PR description carries scope/validation/pending gates.
+| Milestone | Branch | PR |
+| --- | --- | --- |
+| M0–M10 (all) | `migration/behavior-migration` (16 commits from `main`) | #83 → `main` |
+
+Per-milestone history is preserved as individual commits; review per commit
+or per milestone diff. The PR description carries scope/validation/gates.
 
 ## Build and guard gates (operator runs these; agent could not)
 
