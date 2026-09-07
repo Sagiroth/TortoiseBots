@@ -242,7 +242,7 @@ bool CastPetSpellAction::isPossible()
     if (pet && ai->IsSafe(pet))
     {
         const uint32& spellId = GetSpellID();
-        if (pet->HasSpell(spellId) && pet->IsSpellReady(spellId))
+        if (pet->HasSpell(spellId) && !pet->HasSpellCooldown(spellId))
         {
             // Check if the pet is not too far from the owner
             if (bot->GetDistance(pet) <= sPlayerbotAIConfig.sightDistance)

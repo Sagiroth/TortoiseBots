@@ -105,7 +105,7 @@ namespace ai
     protected:
         bool MultiplyAndPush(NextAction** actions, float forceRelevance, bool skipPrerequisites, const Event& event, const char* pushType);
         bool MultiplyAndPush(const std::vector<NextAction>& actions, float forceRelevance, bool skipPrerequisites, const Event& event, const char* pushType);
-        void Reset();
+        bool Reset();
         void ProcessTriggers(bool minimal);
         void PushDefaultActions();
         void PushAgain(ActionNode* actionNode, float relevance, const Event& event);
@@ -132,6 +132,8 @@ namespace ai
         ActionExecutionListeners actionExecutionListeners;
         BotState state;
         Action* lastExecutedAction;
+        bool inDoNextAction = false;
+        bool reinitPending = false;
 
     public:
         bool initMode = true;

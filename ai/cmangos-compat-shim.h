@@ -965,9 +965,6 @@ inline bool IsAutoRepeatRangedSpell(SpellEntry const* spellInfo) {
 #ifndef IsRaidGroup
 #define IsRaidGroup isRaidGroup
 #endif
-#ifndef IsSpellReady
-#define IsSpellReady HasSpellCooldown
-#endif
 #ifndef getDistance2d
 #define getDistance2d GetDistance2d
 #endif

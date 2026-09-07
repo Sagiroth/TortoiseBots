@@ -6,7 +6,7 @@ namespace ai
 {
     BUFF_ACTION(CastColdBloodAction, "cold blood");
 
-    BUFF_ACTION_U(CastPreparationAction, "preparation", !bot->IsSpellReady(14177) || !bot->IsSpellReady(2983) || !bot->IsSpellReady(2094));
+    BUFF_ACTION_U(CastPreparationAction, "preparation", !sServerFacade.IsSpellReady(bot, 14177) || !sServerFacade.IsSpellReady(bot, 2983) || !sServerFacade.IsSpellReady(bot, 2094));
 
 	class CastEvasionAction : public CastBuffSpellAction
 	{

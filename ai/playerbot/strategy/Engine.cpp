@@ -75,8 +75,15 @@ Engine::~Engine(void)
     strategies.clear();
 }
 
-void Engine::Reset()
+bool Engine::Reset()
 {
+    if (inDoNextAction)
+    {
+        reinitPending = true;
+        LogAction("S:reinit deferred");
+        return false;
+    }
+
     ActionNode* action = NULL;
     do
     {
@@ -98,11 +105,14 @@ void Engine::Reset()
         delete multiplier;
     }
     multipliers.clear();
+
+    return true;
 }
 
 void Engine::Init()
 {
-    Reset();
+    if (!Reset())
+        return;
 
     for (std::map<std::string, Strategy*>::iterator i = strategies.begin(); i != strategies.end(); i++)
     {
@@ -133,6 +143,9 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 
     bool actionExecuted = false;
     ActionBasket* basket = NULL;
+
+    bool const wasInDoNextAction = inDoNextAction;
+    inDoNextAction = true;
 
     time_t currentTime = time(0);
     aiObjectContext->Update();
@@ -228,7 +241,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                     }
 
                     ActionBasket* peekAction = queue.Peek();
-                    if (false /* oldRelevance */ && relevance < relevance && peekAction && peekAction->getRelevance() > relevance) //Relevance changed. Try again.
+                    if (relevance < oldRelevance && peekAction && peekAction->getRelevance() > relevance) //Relevance changed. Try again.
                     {
                         modifiedActions.push_back(action);
                         PushAgain(actionNode, relevance, event);
@@ -363,6 +376,14 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
         LogAction("no actions executed");
 
     queue.RemoveExpired();
+
+    inDoNextAction = wasInDoNextAction;
+    if (!inDoNextAction && reinitPending)
+    {
+        reinitPending = false;
+        Init();
+    }
+
     return actionExecuted;
 }
 
