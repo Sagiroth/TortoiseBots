@@ -13,9 +13,10 @@ never closes a gate.
 3. **F06-D1 admission permission**: Penqle has no `CanLoot`; late per-slot skip
    holds correctness, wasted movement remains. Needs compilable env.
 4. **M3-SHIM-D2 TARGET_FLAG_LOCKED**: needs Spell DBC Targets-mask evidence.
-5. **All runtime proof**: no builds available in this environment (operator
-   constraint); every C++ change is logging-only or contract-quoted and
-   line-reviewed, but uncompiled.
+5. **Runtime client proof**: code compiles and links in the Docker build
+   matrix (ON + DISABLED verified), but live client/server gameplay
+   observation (A01–A16, P01–P26) remains pending. Compilation proves
+   build-level correctness, not gameplay acceptance.
 
 ## Deferred to compilable environment (specified, not started)
 

@@ -53,7 +53,7 @@ P26 multi-party soak with budgets. All `pending`.
 
 ## M1 decision-trail evidence (2026-09-07, branch migration/m1-diagnostics)
 
-### Emitter grammar (implemented, uncompiled — no docker builds per user constraint)
+### Emitter grammar (implemented and compiled in ON + DISABLED build matrix)
 
 - `Engine::DoNextAction`: TICK carries `state=` + `strats=`; T/PUSH/A lines carry
   `src=` (+ `base=`/`eff=` on A lines); non-1.0 multiplier factors logged as MULT lines.
@@ -68,7 +68,9 @@ P26 multi-party soak with budgets. All `pending`.
 ### Checker
 
 - `tools/check_decision_trail.py --self-test`: PASS (grammar + UNKNOWN, stale-retry?,
-  multiplier-zero, cast-fail/gate signatures + malformed-line detection).
+  multiplier-zero, cast-fail/gate signatures + malformed-line detection + R1 spaced-source fixtures).
+- R1 parser defect resolved: event sources containing spaces parsed cleanly on T, PUSH, and A lines;
+  numeric `base` and `eff` values preserved.
 - Production-log run pending server execution; `--strict` gates M1 runtime closure.
 
 ### Findings
