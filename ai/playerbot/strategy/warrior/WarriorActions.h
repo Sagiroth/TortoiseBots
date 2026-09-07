@@ -108,9 +108,9 @@ namespace ai
                 uint32 mortalStrike = AI_VALUE2(uint32, "spell id", "mortal strike");
                 uint32 shieldSlam = AI_VALUE2(uint32, "spell id", "shield slam");
 
-                if ((bloodThirst && bot->IsSpellReady(bloodThirst)) ||
-                    (mortalStrike && bot->IsSpellReady(mortalStrike)) ||
-                    (shieldSlam && bot->IsSpellReady(shieldSlam)))
+                if ((bloodThirst && sServerFacade.IsSpellReady(bot, bloodThirst)) ||
+                    (mortalStrike && sServerFacade.IsSpellReady(bot, mortalStrike)) ||
+                    (shieldSlam && sServerFacade.IsSpellReady(bot, shieldSlam)))
                 {
                     return false;
                 }

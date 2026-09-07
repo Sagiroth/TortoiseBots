@@ -277,7 +277,7 @@ bool CastSpellAction::isPossible()
     }
 
     bool hasSpell = ai->HasSpell(spellId);
-    bool isReady = bot->IsSpellReady(spellId);
+    bool isReady = sServerFacade.IsSpellReady(bot, spellId);
     SpellCastResult checkResult = SPELL_CAST_OK;
     bool canCast = ai->CanCastSpell(spellName, spellTarget, 0, nullptr, true, false, false, &checkResult);
 
@@ -383,7 +383,7 @@ bool CastPetSpellAction::isPossible()
     if (pet && ai->IsSafe(pet))
     {
         const uint32& spellId = GetSpellID();
-        if (pet->HasSpell(spellId) && pet->IsSpellReady(spellId))
+        if (pet->HasSpell(spellId) && !pet->HasSpellCooldown(spellId))
         {
             // Check if the pet is not too far from the owner
             if (bot->GetDistance(pet) <= sPlayerbotAIConfig.sightDistance)
