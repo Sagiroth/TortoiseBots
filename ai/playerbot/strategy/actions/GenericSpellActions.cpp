@@ -1,6 +1,5 @@
 
 #include "playerbot/playerbot.h"
-#include "playerbot/BotActionLog.h"
 #include "GenericActions.h"
 #include "UseItemAction.h"
 
@@ -15,124 +14,6 @@ bool CanInterruptCurrentSpell(Spell const* spell)
     // casting, and delayed spells can still be interrupted. Finished/idle
     // spells are not current interrupt targets.
     return spell && spell->getState() <= SPELL_STATE_DELAYED;
-}
-
-const char* GetSpellCastResultSymbolic(SpellCastResult res)
-{
-    switch (res)
-    {
-#define CASE_RES(x) case x: return #x;
-        CASE_RES(SPELL_CAST_OK)
-        CASE_RES(SPELL_FAILED_AFFECTING_COMBAT)
-        CASE_RES(SPELL_FAILED_ALREADY_AT_FULL_HEALTH)
-        CASE_RES(SPELL_FAILED_ALREADY_AT_FULL_POWER)
-        CASE_RES(SPELL_FAILED_ALREADY_HAVE_CHARM)
-        CASE_RES(SPELL_FAILED_ALREADY_HAVE_SUMMON)
-        CASE_RES(SPELL_FAILED_ALREADY_OPEN)
-        CASE_RES(SPELL_FAILED_AURA_BOUNCED)
-        CASE_RES(SPELL_FAILED_AUTOTRACK_INTERRUPTED)
-        CASE_RES(SPELL_FAILED_BAD_IMPLICIT_TARGETS)
-        CASE_RES(SPELL_FAILED_BAD_TARGETS)
-        CASE_RES(SPELL_FAILED_CANT_BE_CHARMED)
-        CASE_RES(SPELL_FAILED_CANT_STEALTH)
-        CASE_RES(SPELL_FAILED_CASTER_AURASTATE)
-        CASE_RES(SPELL_FAILED_CASTER_DEAD)
-        CASE_RES(SPELL_FAILED_CHARMED)
-        CASE_RES(SPELL_FAILED_CHEST_IN_USE)
-        CASE_RES(SPELL_FAILED_CONFUSED)
-        CASE_RES(SPELL_FAILED_DONT_REPORT)
-        CASE_RES(SPELL_FAILED_EQUIPPED_ITEM)
-        CASE_RES(SPELL_FAILED_EQUIPPED_ITEM_CLASS)
-        CASE_RES(SPELL_FAILED_EQUIPPED_ITEM_CLASS_MAINHAND)
-        CASE_RES(SPELL_FAILED_EQUIPPED_ITEM_CLASS_OFFHAND)
-        CASE_RES(SPELL_FAILED_ERROR)
-        CASE_RES(SPELL_FAILED_FIZZLE)
-        CASE_RES(SPELL_FAILED_FLEEING)
-        CASE_RES(SPELL_FAILED_FOOD_LOWLEVEL)
-        CASE_RES(SPELL_FAILED_HIGHLEVEL)
-        CASE_RES(SPELL_FAILED_IMMUNE)
-        CASE_RES(SPELL_FAILED_INTERRUPTED)
-        CASE_RES(SPELL_FAILED_INTERRUPTED_COMBAT)
-        CASE_RES(SPELL_FAILED_ITEM_ALREADY_ENCHANTED)
-        CASE_RES(SPELL_FAILED_ITEM_GONE)
-        CASE_RES(SPELL_FAILED_ITEM_NOT_FOUND)
-        CASE_RES(SPELL_FAILED_ITEM_NOT_READY)
-        CASE_RES(SPELL_FAILED_LEVEL_REQUIREMENT)
-        CASE_RES(SPELL_FAILED_LINE_OF_SIGHT)
-        CASE_RES(SPELL_FAILED_LOWLEVEL)
-        CASE_RES(SPELL_FAILED_LOW_CASTLEVEL)
-        CASE_RES(SPELL_FAILED_MAINHAND_EMPTY)
-        CASE_RES(SPELL_FAILED_MOVING)
-        CASE_RES(SPELL_FAILED_NEED_AMMO)
-        CASE_RES(SPELL_FAILED_NEED_AMMO_POUCH)
-        CASE_RES(SPELL_FAILED_NEED_EXOTIC_AMMO)
-        CASE_RES(SPELL_FAILED_NOPATH)
-        CASE_RES(SPELL_FAILED_NOT_BEHIND)
-        CASE_RES(SPELL_FAILED_NOT_FISHABLE)
-        CASE_RES(SPELL_FAILED_NOT_HERE)
-        CASE_RES(SPELL_FAILED_NOT_INFRONT)
-        CASE_RES(SPELL_FAILED_NOT_IN_CONTROL)
-        CASE_RES(SPELL_FAILED_NOT_KNOWN)
-        CASE_RES(SPELL_FAILED_NOT_MOUNTED)
-        CASE_RES(SPELL_FAILED_NOT_READY)
-        CASE_RES(SPELL_FAILED_NOT_SHAPESHIFT)
-        CASE_RES(SPELL_FAILED_NOT_STANDING)
-        CASE_RES(SPELL_FAILED_NOT_TRADEABLE)
-        CASE_RES(SPELL_FAILED_NO_AMMO)
-        CASE_RES(SPELL_FAILED_NO_CHARGES_REMAIN)
-        CASE_RES(SPELL_FAILED_NO_CHAMPION)
-        CASE_RES(SPELL_FAILED_NO_COMBO_POINTS)
-        CASE_RES(SPELL_FAILED_NO_DUELING)
-        CASE_RES(SPELL_FAILED_NO_ENDURANCE)
-        CASE_RES(SPELL_FAILED_NO_FISH)
-        CASE_RES(SPELL_FAILED_NO_ITEMS_WHILE_SHAPESHIFTED)
-        CASE_RES(SPELL_FAILED_NO_MOUNTS_ALLOWED)
-        CASE_RES(SPELL_FAILED_NO_PET)
-        CASE_RES(SPELL_FAILED_NO_POWER)
-        CASE_RES(SPELL_FAILED_ONLY_ABOVEWATER)
-        CASE_RES(SPELL_FAILED_ONLY_DAYTIME)
-        CASE_RES(SPELL_FAILED_ONLY_INDOORS)
-        CASE_RES(SPELL_FAILED_ONLY_MOUNTED)
-        CASE_RES(SPELL_FAILED_ONLY_NIGHTTIME)
-        CASE_RES(SPELL_FAILED_ONLY_OUTDOORS)
-        CASE_RES(SPELL_FAILED_ONLY_SHAPESHIFT)
-        CASE_RES(SPELL_FAILED_ONLY_STEALTHED)
-        CASE_RES(SPELL_FAILED_ONLY_UNDERWATER)
-        CASE_RES(SPELL_FAILED_OUT_OF_RANGE)
-        CASE_RES(SPELL_FAILED_PACIFIED)
-        CASE_RES(SPELL_FAILED_POSSESSED)
-        CASE_RES(SPELL_FAILED_REAGENTS)
-        CASE_RES(SPELL_FAILED_REQUIRES_AREA)
-        CASE_RES(SPELL_FAILED_REQUIRES_SPELL_FOCUS)
-        CASE_RES(SPELL_FAILED_ROOTED)
-        CASE_RES(SPELL_FAILED_SILENCED)
-        CASE_RES(SPELL_FAILED_SPELL_IN_PROGRESS)
-        CASE_RES(SPELL_FAILED_SPELL_LEARNED)
-        CASE_RES(SPELL_FAILED_STUNNED)
-        CASE_RES(SPELL_FAILED_TARGETS_DEAD)
-        CASE_RES(SPELL_FAILED_TARGET_AFFECTING_COMBAT)
-        CASE_RES(SPELL_FAILED_TARGET_AURASTATE)
-        CASE_RES(SPELL_FAILED_TARGET_DUELING)
-        CASE_RES(SPELL_FAILED_TARGET_ENEMY)
-        CASE_RES(SPELL_FAILED_TARGET_ENRAGED)
-        CASE_RES(SPELL_FAILED_TARGET_FRIENDLY)
-        CASE_RES(SPELL_FAILED_TARGET_IS_PLAYER)
-        CASE_RES(SPELL_FAILED_TARGET_NOT_DEAD)
-        CASE_RES(SPELL_FAILED_TARGET_NOT_IN_PARTY)
-        CASE_RES(SPELL_FAILED_TARGET_NOT_LOOTED)
-        CASE_RES(SPELL_FAILED_TARGET_NOT_PLAYER)
-        CASE_RES(SPELL_FAILED_TARGET_NO_POCKETS)
-        CASE_RES(SPELL_FAILED_TARGET_NO_WEAPONS)
-        CASE_RES(SPELL_FAILED_TOO_CLOSE)
-        CASE_RES(SPELL_FAILED_TOO_MANY_OF_ITEM)
-        CASE_RES(SPELL_FAILED_TOTEMS)
-        CASE_RES(SPELL_FAILED_TRY_AGAIN)
-        CASE_RES(SPELL_FAILED_UNIT_NOT_BEHIND)
-        CASE_RES(SPELL_FAILED_UNIT_NOT_INFRONT)
-        CASE_RES(SPELL_FAILED_WRONG_PET_FOOD)
-#undef CASE_RES
-        default: return "SPELL_FAILED_UNKNOWN";
-    }
 }
 }
 
@@ -233,25 +114,16 @@ bool CastSpellAction::isPossible()
 
     Unit* spellTarget = GetTarget();
     if (!spellTarget)
-    {
-        sLog.outString("TortoiseBots DIAG: bot=%s spell=%s id=%u TARGET_NULL",
-            bot->GetName(), spellName.c_str(), spellId);
-        ai::botdiag::BotActionLog::Write(ai, "SPELL_FAIL", "spell=%s id=%u TARGET_NULL",
-            spellName.c_str(), spellId);
         return false;
-    }
 
     bool canReach = false;
-    float dist = -1.0f;
-    float max_range = 0.0f, min_range = 0.0f;
-
     if (spellTarget == bot)
     {
         canReach = true;
     }
     else
     {
-        dist = bot->GetDistance(spellTarget, ai->IsRanged(bot) ? SizeFactor::CombatReach : SizeFactor::CombatReachWithMelee);
+        float dist = bot->GetDistance(spellTarget, ai->IsRanged(bot) ? SizeFactor::CombatReach : SizeFactor::CombatReachWithMelee);
         if (range == ATTACK_DISTANCE)
         {
             canReach = bot->CanReachWithMeleeAutoAttack(spellTarget);
@@ -259,44 +131,31 @@ bool CastSpellAction::isPossible()
         else
         {
             canReach = dist <= (range + sPlayerbotAIConfig.contactDistance);
-            if (spellId)
+            if (!spellId)
+                return false;
+
+            const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(spellId);
+            if (!pSpellInfo)
+                return false;
+
+            if (range != ATTACK_DISTANCE && pSpellInfo->rangeIndex != SPELL_RANGE_IDX_COMBAT && pSpellInfo->rangeIndex != SPELL_RANGE_IDX_SELF_ONLY && pSpellInfo->rangeIndex != SPELL_RANGE_IDX_ANYWHERE)
             {
-                const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(spellId);
-                if (pSpellInfo)
+                float max_range, min_range;
+                if (ai->GetSpellRange(GetSpellName(), &max_range, &min_range))
                 {
-                    if (range != ATTACK_DISTANCE && pSpellInfo->rangeIndex != SPELL_RANGE_IDX_COMBAT && pSpellInfo->rangeIndex != SPELL_RANGE_IDX_SELF_ONLY && pSpellInfo->rangeIndex != SPELL_RANGE_IDX_ANYWHERE)
-                    {
-                        if (ai->GetSpellRange(GetSpellName(), &max_range, &min_range))
-                        {
-                            canReach = dist < max_range && dist >= min_range;
-                        }
-                    }
+                    canReach = dist < max_range && dist >= min_range;
                 }
             }
         }
     }
 
-    bool hasSpell = ai->HasSpell(spellId);
-    bool isReady = sServerFacade.IsSpellReady(bot, spellId);
-    SpellCastResult checkResult = SPELL_CAST_OK;
-    bool canCast = ai->CanCastSpell(spellName, spellTarget, 0, nullptr, true, false, false, &checkResult);
-
-    if (!canReach || !canCast)
+    if(!canReach)
     {
-        const char* resStr = GetSpellCastResultSymbolic(checkResult);
-        std::string targetGuidStr = spellTarget->GetObjectGuid().GetString();
-        const char* targetName = spellTarget->GetName();
-
-        sLog.outString("TortoiseBots DIAG: bot=%s spell=%s id=%u target=%s[%s] dist=%.2f actionRange=%.2f resolvedRange=[%.2f..%.2f] hasSpell=%d isReady=%d canReach=%d checkCast=%d(%s)",
-            bot->GetName(), spellName.c_str(), spellId, targetName, targetGuidStr.c_str(), dist, range, min_range, max_range, (int)hasSpell, (int)isReady, (int)canReach, (int)checkResult, resStr);
-
-        ai::botdiag::BotActionLog::Write(ai, "SPELL_FAIL", "spell=%s id=%u target=%s[%s] dist=%.2f actionRange=%.2f resolvedRange=[%.2f..%.2f] hasSpell=%d isReady=%d canReach=%d checkCast=%d(%s)",
-            spellName.c_str(), spellId, targetName, targetGuidStr.c_str(), dist, range, min_range, max_range, (int)hasSpell, (int)isReady, (int)canReach, (int)checkResult, resStr);
-
         return false;
     }
 
-    return true;
+    // Check if the spell can be casted
+	return ai->CanCastSpell(spellName, spellTarget, 0, nullptr, true);
 }
 
 bool CastSpellAction::isUseful()
