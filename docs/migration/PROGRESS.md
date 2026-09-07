@@ -32,9 +32,9 @@ Donor checkouts are read-only. No builds, no docker, no gameplay run yet in this
 | M7 world | `migration/m7-world` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/77 (draft, stacked on #76) | 8 audits + 3 fixes; journey proof pending |
 | M8 content | `migration/m8-content` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/78 (draft, stacked on #77) | 3 audits + 2 wiring fixes; encounter proof pending |
 | M9 services | `migration/m9-services` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/79 (draft, stacked on #78) | 3 audits + 2 fixes; service proof pending |
-| M10 closure | `migration/m10-closure` (stacked) | (pending) | 3 audits running (controls/trade-config/addon-closure); then F26 + runbook |
+| M10 closure | `migration/m10-closure` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/80 (draft, stacked on #79) | F26 audit state; runbook + limits shipped |
 
-All milestones branched. No merges authorized.
+All milestones branched (PRs #70–#80, 11 drafts, stacked). No merges authorized.
 
 ## M2 gates (plan §4)
 
