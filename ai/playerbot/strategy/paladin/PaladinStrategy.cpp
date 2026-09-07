@@ -607,19 +607,19 @@ void PaladinBlessingPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& tri
 {
     triggers.push_back(new TriggerNode(
         "greater blessing on party",
-        NextAction::array(0, new NextAction("pvp greater blessing on party", ACTION_NORMAL + 3), NULL)));
+        NextAction::array(0, new NextAction("pve greater blessing on party", ACTION_NORMAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "blessing on party",
-        NextAction::array(0, new NextAction("pvp blessing on party", ACTION_NORMAL + 2), NULL)));
+        NextAction::array(0, new NextAction("pve blessing on party", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "greater blessing",
-        NextAction::array(0, new NextAction("pvp greater blessing", ACTION_NORMAL + 1), NULL)));
+        NextAction::array(0, new NextAction("pve greater blessing", ACTION_NORMAL + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "blessing",
-        NextAction::array(0, new NextAction("pvp blessing", ACTION_NORMAL), NULL)));
+        NextAction::array(0, new NextAction("pve blessing", ACTION_NORMAL), NULL)));
 }
 
 void PaladinBlessingPveStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

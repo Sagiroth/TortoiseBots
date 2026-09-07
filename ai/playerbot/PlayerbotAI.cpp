@@ -22,6 +22,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "PlayerbotAI.h"
 #include "BotDiagnostics.h"
+#include "BotActionLog.h"
 #include "playerbot/PlayerbotFactory.h"
 #include "PlayerbotSecurity.h"
 #include "Group/Group.h"
@@ -4293,6 +4294,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
         if (fallbackSpellInfo && CheckSpellTargetAlignment(fallbackSpellInfo, bot) != SPELL_CAST_OK)
         {
             sLog.outDetail("PlayerbotAI::CastSpell: %s target resolved to self for harmful spell %u - refusing to self-cast", bot->GetName(), spellId);
+            botdiag::BotActionLog::Write(this, "CAST_GATE", "spell=%u targetGuid=0x%llx reason=self-harmful-refused", spellId, (unsigned long long)target->getObjectGuid().GetRawValue());
             return false;
         }
     }
@@ -4300,6 +4302,9 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
     Pet* pet = bot->GetPet();
     if (pet && pet->HasSpell(spellId))
     {
+        // M1 trail: pet-owned ability leaves the unit-cast path here; the
+        // pet overload owns the actual attempt/result from this point.
+        botdiag::BotActionLog::Write(this, "CAST_GATE", "spell=%u targetGuid=0x%llx reason=pet-redirect", spellId, (unsigned long long)target->getObjectGuid().GetRawValue());
         return CastPetSpell(spellId, target);
     }
 
@@ -4309,7 +4314,10 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
     MotionMaster &mm = *bot->GetMotionMaster();
 
     if (bot->IsFlying() || bot->IsTaxiFlying())
+    {
+        botdiag::BotActionLog::Write(this, "CAST_GATE", "spell=%u targetGuid=0x%llx reason=flying", spellId, (unsigned long long)target->getObjectGuid().GetRawValue());
         return false;
+    }
 
 	//bot->ClearUnitState(UNIT_STAT_CHASE);
 	//bot->ClearUnitState(UNIT_STAT_FOLLOW);
@@ -4351,6 +4359,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
             *outSpellDuration = sPlayerbotAIConfig.globalCoolDown;
         }
 
+        botdiag::BotActionLog::Write(this, "CAST_GATE", "spell=%u targetGuid=0x%llx reason=stand-or-facing-delay", spellId, (unsigned long long)target->getObjectGuid().GetRawValue());
         return false;
     }
 
@@ -4427,6 +4436,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
         if (IsJumping() || bot->IsFalling())
         {
             spell->cancel();
+            botdiag::BotActionLog::Write(this, "CAST_GATE", "spell=%u targetGuid=0x%llx reason=moving-jump-fall", spellId, (unsigned long long)target->getObjectGuid().GetRawValue());
             return false;
         }
 
@@ -4441,6 +4451,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
             }
 
             spell->cancel();
+            botdiag::BotActionLog::Write(this, "CAST_GATE", "spell=%u targetGuid=0x%llx reason=moving-no-master", spellId, (unsigned long long)target->getObjectGuid().GetRawValue());
             return false;
         }
     }
@@ -4479,7 +4490,12 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
     }
 
 
+    // M1 trail: attempt plus native preparation result. PREPARE ok means the
+    // core accepted the cast, not that effects landed — no module-visible
+    // completion signal exists yet (see M1 findings in docs/migration).
+    botdiag::BotActionLog::LogCastStart(this, spellId, target->getObjectGuid(), (uint32)GetSpellCastTime(pSpellInfo, bot, spell));
     SpellCastResult spellSuccess = spell->prepare(targets);
+    botdiag::BotActionLog::LogCastResult(this, spellId, spellSuccess, "PREPARE");
 
     if (pSpellInfo->Effect[0] == SPELL_EFFECT_OPEN_LOCK ||
         pSpellInfo->Effect[0] == SPELL_EFFECT_SKINNING)
@@ -4490,6 +4506,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
             if (!loot.IsLootPossible(bot))
             {
                 spell->cancel();
+                botdiag::BotActionLog::Write(this, "CAST_GATE", "spell=%u targetGuid=0x%llx reason=loot-impossible", spellId, (unsigned long long)target->getObjectGuid().GetRawValue());
                 //delete spell;
                 return false;
             }
@@ -4638,7 +4655,9 @@ bool PlayerbotAI::CastSpell(uint32 spellId, GameObject* goTarget, Item* itemTarg
         }
     }
 
+    botdiag::BotActionLog::LogCastStart(this, spellId, goTarget->getObjectGuid(), (uint32)GetSpellCastTime(pSpellInfo, bot, spell));
     SpellCastResult spellSuccess = spell->prepare(targets);
+    botdiag::BotActionLog::LogCastResult(this, spellId, spellSuccess, "PREPARE-go");
     if (spellSuccess != SPELL_CAST_OK)
         return false;
 
@@ -4777,8 +4796,14 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
             return false;
         }
     }
-
-    spell->prepare(targets);
+    // M3 outcome contract: a rejected ground cast is a failed action, matching
+    // the unit/GO overloads. Callers (CastCustomSpellAction) fall through to
+    // their fallbacks instead of announcing a phantom cast.
+    botdiag::BotActionLog::LogCastStart(this, spellId, bot->getObjectGuid(), (uint32)GetSpellCastTime(pSpellInfo, bot, spell));
+    SpellCastResult coordPrep = spell->prepare(targets);
+    botdiag::BotActionLog::LogCastResult(this, spellId, coordPrep, "PREPARE-coord");
+    if (coordPrep != SPELL_CAST_OK)
+        return false;
 
     if (pSpellInfo->Effect[0] == SPELL_EFFECT_OPEN_LOCK ||
         pSpellInfo->Effect[0] == SPELL_EFFECT_SKINNING)

@@ -76,28 +76,6 @@ void SuggestWhatToDoAction::instance()
         instances["Temple of Atal'Hakkar"] = 55;
         instances["Lower Blackrock Spire"] = 57;
 
-        instances["Hellfire Citadel"] = 65;
-        instances["Coilfang Reservoir"] = 65;
-        instances["Auchindoun"] = 65;
-        instances["Cavens of Time"] = 68;
-        instances["Tempest Keep"] = 69;
-        instances["Magister's Terrace"] = 70;
-
-        instances["Utgarde Keep"] = 75;
-        instances["The Nexus"] = 75;
-        instances["Ahn'kahet: The Old Kingdom"] = 75;
-        instances["Azjol-Nerub"] = 75;
-        instances["Drak'Tharon Keep"] = 75;
-        instances["Violet Hold"] = 80;
-        instances["Gundrak"] = 77;
-        instances["Halls of Stone"] = 77;
-        instances["Halls of Lightning"] = 77;
-        instances["Oculus"] = 77;
-        instances["Utgarde Pinnacle"] = 77;
-        instances["Trial of the Champion"] = 80;
-        instances["Forge of Souls"] = 80;
-        instances["Pit of Saron"] = 80;
-        instances["Halls of Reflection"] = 80;
     }
 
     std::vector<std::string> allowedInstances;

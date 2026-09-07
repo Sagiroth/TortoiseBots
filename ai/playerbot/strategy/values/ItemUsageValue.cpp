@@ -1437,20 +1437,34 @@ uint32 ItemUsageValue::GetAHListingLowestBuyoutPricePerItem(ItemPrototype const*
 {
     if (sPlayerbotAIConfig.shouldQueryAHListingsOutsideOfAH)
     {
+        // M9: track the minimum by PER-UNIT price and return it. The old code
+        // compared listing totals but the function promises per-item.
+        // REVIEW-FIX: keep a positive sentinel — a found listing with a
+        // sub-copper unit price still returns 1, never the 0 of "no listing",
+        // so AreCurrentAHListingsTooCheap and resale paths can tell the two
+        // apart exactly as before (old code returned the positive total).
         float minPrice = 0;
-        uint32 minBuyout = 0;
+        bool found = false;
 
         for (auto& auction : sRandomBotFacade.GetAhPrices(proto->ItemId))
         {
             uint32 itemCount = GetAuctionItemCount(auction);
-            if (itemCount && (!minBuyout || minBuyout > auction.buyout))
+            if (itemCount)
             {
-                minBuyout = auction.buyout;
-                minPrice = (float)auction.buyout / (float)itemCount;
+                float unitPrice = (float)auction.buyout / (float)itemCount;
+                if (!found || unitPrice < minPrice)
+                {
+                    minPrice = unitPrice;
+                    found = true;
+                }
             }
         }
 
-        return minBuyout;
+        if (!found)
+            return 0;
+        if (minPrice > 0 && minPrice < 1)
+            return 1;
+        return (uint32)minPrice;
         /*
         auto query = CharacterDatabase.PQuery(
             "SELECT buyoutprice / item_count"

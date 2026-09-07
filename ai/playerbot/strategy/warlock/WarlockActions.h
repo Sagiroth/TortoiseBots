@@ -393,12 +393,6 @@ namespace ai
         CastConflagrateAction(PlayerbotAI* ai) : CastSpellAction(ai, "conflagrate") {}
     };
 
-    class CastIncinerateAction : public CastSpellAction
-    {
-    public:
-        CastIncinerateAction(PlayerbotAI* ai) : CastSpellAction(ai, "incinerate") {}
-    };
-
     class CastFearAction : public CastRangedDebuffSpellAction
     {
     public:

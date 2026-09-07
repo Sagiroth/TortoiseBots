@@ -233,19 +233,6 @@ namespace ai
         }
     };
 
-    class LacerateTrigger : public DebuffTrigger
-    {
-    public:
-        LacerateTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "lacerate") {}
-
-    private:
-        bool IsActive() override
-        {
-            Unit* target = GetTarget();
-            return target && !ai->HasAura("lacerate", target, true) && !HasMaxDebuffs();
-        }
-    };
-
     class InStealthTrigger : public HasAuraTrigger
     {
     public:
