@@ -364,3 +364,14 @@ Three read-only audits; parent verified the GetValues fix. No ports.
   misread as OFF, but compose defaults keep MODULE_TORTOISEBOTS=static;
   the per-module flag, not MODULES, gates inclusion. True-disabled run
   above supersedes it.
+
+## Void-zone wiring (2026-09-07, singular branch)
+
+- Implemented `FourHorsemanVoidZoneTrigger : CloseToCreatureHazardTrigger`
+  (entry 16697 from core `boss_four_horsemen.cpp:567`, 90s TEMPSUMMON) and
+  `FourHorsemanMoveAwayFromVoidZoneAction : MoveAwayFromHazard`, both
+  registered. The strategy's existing `void zone too close` node now
+  resolves instead of silent-skipping.
+- Radius 10.0f is a stated conservative estimate (no DBC/script radius in
+  evidence); duration 90 matches the summon lifetime. Retune from T: lines
+  after the first real 4H run. Encounter competence still needs runtime.

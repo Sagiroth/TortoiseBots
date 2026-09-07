@@ -27,4 +27,14 @@ namespace ai
     public:
         FourHorsemanEndFightTrigger(PlayerbotAI* ai) : EndBossFightTrigger(ai, "end four horseman fight", "four horseman", 16062) {}
     };
+
+    // 4H void zone: Lady Blaumeux summons creature 16697 (90s TEMPSUMMON,
+    // boss_four_horsemen.cpp:567). Radius is a conservative estimate —
+    // no DBC/script radius in evidence; tune from the trail (T: lines)
+    // after the first 4H run. Matches the lava-bomb hazard pattern.
+    class FourHorsemanVoidZoneTrigger : public CloseToCreatureHazardTrigger
+    {
+    public:
+        FourHorsemanVoidZoneTrigger(PlayerbotAI* ai) : CloseToCreatureHazardTrigger(ai, "void zone too close", 16697, 10.0f, 90) {}
+    };
 }
