@@ -288,7 +288,6 @@ namespace ai
                 creators["life tap"] = [](PlayerbotAI* ai) { return new CastLifeTapAction(ai); };
                 creators["fear"] = [](PlayerbotAI* ai) { return new CastFearAction(ai); };
                 creators["fear on cc"] = [](PlayerbotAI* ai) { return new CastFearOnCcAction(ai); };
-                creators["incinerate"] = [](PlayerbotAI* ai) { return new CastIncinerateAction(ai); };
                 creators["conflagrate"] = [](PlayerbotAI* ai) { return new CastConflagrateAction(ai); };
                 creators["amplify curse"] = [](PlayerbotAI* ai) { return new CastAmplifyCurseAction(ai); };
                 creators["shadowburn"] = [](PlayerbotAI* ai) { return new CastShadowburnAction(ai); };

@@ -29,4 +29,10 @@ namespace ai
     public:
         FourHorsemanDisableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable four horseman fight strategy", "-four horseman") {}
     };
+
+    class FourHorsemanMoveAwayFromVoidZoneAction : public MoveAwayFromHazard
+    {
+    public:
+        FourHorsemanMoveAwayFromVoidZoneAction(PlayerbotAI* ai) : MoveAwayFromHazard(ai, "move away from void zone") {}
+    };
 }

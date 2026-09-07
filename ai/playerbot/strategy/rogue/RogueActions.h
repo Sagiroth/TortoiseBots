@@ -117,12 +117,6 @@ namespace ai
 		CastFeintAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "feint") {}
 	};
 
-	class CastDismantleAction : public CastSpellAction
-	{
-	public:
-		CastDismantleAction(PlayerbotAI* ai) : CastSpellAction(ai, "dismantle") {}
-	};
-
 	class CastDistractAction : public CastSpellAction
 	{
 	public:

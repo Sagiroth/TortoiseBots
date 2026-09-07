@@ -380,6 +380,8 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
         }
 
         bool didTaxi = UseTaxi(ai, nextStep->entry, false);
+        if (!didTaxi)
+            return false; // Retain this leg: the taxi was rejected, retry later.
 
         for (auto& step : path)
         {

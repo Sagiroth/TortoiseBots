@@ -7,6 +7,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/BotDiagnostics.h" // SC_LOG for attack-command diagnostic trace
 #include "playerbot/strategy/generic/CombatStrategy.h"
+#include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 
 using namespace ai;
 
@@ -191,7 +192,17 @@ bool AttackAction::Attack(Player* requester, Unit* target)
                     // Don't send the pet to attack if set to passive
                     if (pet->GetReactState() != REACT_PASSIVE)
                     {
-                        creatureAI->AttackStart(target);
+                        // M5: keep the pet off CC'd targets. A manual attack or
+                        // assist onto a freshly-CC-assigned mob must not drag
+                        // the pet in. Mirrors the PossibleAttackTargets strip
+                        // (CC applies unless the RTI mark says to ignore it)
+                        // plus the damage-immunity gate (banish/invulnerable).
+                        bool ccProtected = !PossibleAttackTargetsValue::HasIgnoreCCRti(target, bot) &&
+                            (PossibleAttackTargetsValue::HasBreakableCC(target, bot) ||
+                             PossibleAttackTargetsValue::HasUnBreakableCC(target, bot));
+                        bool damageImmune = PossibleAttackTargetsValue::IsImmuneToDamage(target, bot);
+                        if (!ccProtected && !damageImmune)
+                            creatureAI->AttackStart(target);
                     }
                 }
             }

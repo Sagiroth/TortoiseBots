@@ -1,0 +1,7 @@
+schema_dataset	producer	consumer	authoritative_revision	generation_import	cache_lifetime	missing_data_behavior	status
+travel nodes/links/paths	(disabled generators)	TravelMgr/TravelNode	—	REQUIRED workflow (F05/F22); current runtime node/fish generation explicitly disabled	—	declared reduced capability	pending (census)
+item/equip caches	—	RandomItemMgr/PlayerbotFactory	—	—	—	missing cache = limitation, not cert	pending (census)
+spell/talent data	target DBC/SQL	SpellIdValue/Talentspec	—	—	invalidate after spell/talent/equip/pet change	—	pending (census)
+ahbot_category SQL (modern external)	external ahbot	modern consumer only	—	n/a (no modern ahbot tree)	—	n/a	pending (ModernDonorCensus confirms external dep)
+module SQL (T data/sql)	—	—	effective schema after migrations (not just CREATE TABLE)	—	—	empty tables unaccepted	pending (census)
+names/text/help/zone-level/fish/event datasets	—	various	—	offline or bounded native generation	—	precise remedy on missing/stale	pending (census)

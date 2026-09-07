@@ -306,6 +306,7 @@ namespace ai
 
             creators["start four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanStartFightTrigger(ai); };
             creators["end four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanEndFightTrigger(ai); };
+            creators["void zone too close"] = [](PlayerbotAI* ai) { return new FourHorsemanVoidZoneTrigger(ai); };
 
         }
     };

@@ -3459,12 +3459,11 @@ bool DebugAction::HandleItem(Event& event, Player* requester, const std::string&
             { 15, "Dagger" }, { 16, "Thrown" }, { 17, "Spear" }, { 18, "Crossbow" }, { 19, "Wand" }, { 20, "Fishing Pole" }
         }},
         { ITEM_CLASS_GEM, {
-            { 0, "Red" }, { 1, "Blue" }, { 2, "Yellow" }, { 3, "Purple" }, { 4, "Green" }, { 5, "Orange" },
-            { 6, "Meta" }, { 7, "Simple" }, { 8, "Prismatic" }
+            { 0, "Gem" }
         }},
         { ITEM_CLASS_ARMOR, {
             { 0, "Miscellaneous" }, { 1, "Cloth" }, { 2, "Leather" }, { 3, "Mail" }, { 4, "Plate" }, { 5, "Buckler" },
-            { 6, "Shield" }, { 7, "Libram" }, { 8, "Idol" }, { 9, "Totem" }, { 10, "Sigil" }
+            { 6, "Shield" }, { 7, "Libram" }, { 8, "Idol" }, { 9, "Totem" }
         }},
         { ITEM_CLASS_REAGENT, {
             { 0, "Reagent" }
@@ -3475,8 +3474,7 @@ bool DebugAction::HandleItem(Event& event, Player* requester, const std::string&
         { ITEM_CLASS_TRADE_GOODS, {
             { 0, "Trade Goods" }, { 1, "Parts" }, { 2, "Explosives" }, { 3, "Devices" },
             { 5, "Cloth" }, { 6, "Leather" }, { 7, "Metal & Stone" }, { 8, "Meat" }, { 9, "Herb" },
-            { 10, "Elemental" }, { 11, "Other" }, { 12, "Enchanting" }, { 13, "Material" },
-            { 14, "Armor Enchantment" }, { 15, "Weapon Enchantment" }
+            { 10, "Elemental" }, { 11, "Other" }, { 12, "Enchanting" }, { 13, "Material" }
         }},
         { ITEM_CLASS_GENERIC, {
             { 0, "Generic" }

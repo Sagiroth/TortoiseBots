@@ -17,6 +17,11 @@ namespace ai
         static bool IsPossibleTarget(Unit* target, Player* player, float range, bool ignoreCC);
         static bool HasBreakableCC(Unit* target, Player* player);
         static bool HasUnBreakableCC(Unit* target, Player* player);
+        // Public for the AttackAction pet guard, which mirrors the candidate
+        // strip (CC unless RTI-ignored, plus damage immunity) so pets stay
+        // off CC'd/banished targets on manual attacks.
+        static bool IsImmuneToDamage(Unit* target, Player* player);
+        static bool HasIgnoreCCRti(Unit* target, Player* player);
         virtual std::string Format() override;
 
 #ifdef GenerateBotHelp
@@ -32,8 +37,6 @@ namespace ai
 	private:
 		void RemoveNonThreating(std::list<ObjectGuid>& targets, bool getOne);
 
-        static bool IsImmuneToDamage(Unit* target, Player* player);
-        static bool HasIgnoreCCRti(Unit* target, Player* player);
         static bool IsTapped(Unit* target, Player* player);
     };
 
