@@ -29,9 +29,10 @@ Donor checkouts are read-only. No builds, no docker, no gameplay run yet in this
 | M4 party | `migration/m4-party` (stacked) | https://github.com/Sagiroth/TortoiseBots/pull/74 (draft, stacked on #73) | Guard/Free fix + party audits; runtime proof pending |
 | M5 slices | `migration/m5-slices` (stacked) | https://github.com/Sagiroth/TortoiseBots/pull/75 (draft, stacked on #74) | 5 audits + pet-CC fix; runtime proof pending |
 | M6 classes | `migration/m6-classes` (stacked) | https://github.com/Sagiroth/TortoiseBots/pull/76 (draft, stacked on #75) | 4 audits + 2 fixes; runtime proof pending |
-| M7 world | `migration/m7-world` (stacked) | (pending) | batch A running (quests/RPG/travel); then items, population, data/chat |
+| M7 world | `migration/m7-world` (stacked) | https://github.com/Sagiroth/TortoiseBots/pull/77 (draft, stacked on #76) | 8 audits + 3 fixes; journey proof pending |
+| M8 content | `migration/m8-content` (stacked) | (pending) | 3 audits running (dungeon/Turtle/BG); audit-only, no DungeonClear |
 
-M8–M10 branches not yet created. No merges authorized.
+M9–M10 branches not yet created. No merges authorized.
 
 ## M2 gates (plan §4)
 
@@ -84,7 +85,14 @@ M8–M10 branches not yet created. No merges authorized.
 - [x] F08 audit: 3-layer coverage mapped; feed stub = parity (all trees cheat); recovery candidates scoped; no stable import
 - [x] F01/F11/F12 audit: mode table + precedence; gaps G1-G5, L1-L12 recorded (M9 implementation scope)
 - [x] F22/F23 audit: schema-only ships, clean-install safe, owned data preserved; buff/chat at parity (both inert); GetValues also starves LoginCriteria
-- [ ] Journey runtime proof (P01-P08, P22-P23); stacked draft M7 PR next
+- [ ] Journey runtime proof (P01-P08, P22-P23); M7 PR: https://github.com/Sagiroth/TortoiseBots/pull/77
+
+## M8 gates (plan §4)
+
+- [x] Raid audit: thin generic + 4 object/hazard behaviors; Onyxia empty; 4H teardown + Naxx enter/leave FIXED (string-only, both sides verified); void-zone creators still missing (needs new classes — deferred)
+- [x] Turtle map: 30 mechanic rows, zero bespoke tactics, generic-only participation; LFT aliases for 4 maps; KARAZHAN guard blocks all 15 Kara files (narrowing queued)
+- [x] BG audit: WSG/AB/AV objective play mapped; SV + BR zero tactics; Eye/Isle correctly absent; no DungeonClear dependency anywhere
+- [ ] Encounter/match runtime proof; stacked draft M8 PR next
 
 ## Packet ownership (plan §7, §14)
 | Stage | Packets | Owner milestone | State |

@@ -232,3 +232,23 @@ Eight read-only audits (one blacklist fix, two taxi fixes). No ports.
 - Data: clean-install safe everywhere; owned data never dropped; datasets need
   operator import workflow (F22). Buff/chat at exact parity (both inert via
   GetValues/Generate stubs); LoginCriteria also starved — F20 fix covers both.
+
+## M8 content evidence (2026-09-07, branch migration/m8-content)
+
+Three read-only audits; parent verified every fix. No DungeonClear contact.
+
+- Raids: MC rune-movement/GO IDs match Turtle core (douse needs no item
+  core-side — bot item requirement may fail closed; noted); BWL suppression
+  GO/aura match but bot path is rogue-only while core allows any class;
+  Onyxia fight strategy EMPTY (generic participation only); 4H teardown name
+  fixed + Naxx enter/leave wired (all names verified registered); void-zone
+  trigger/action have no creators (new classes needed — deferred to compilable
+  env); most bosses in every raid have zero tactics. No encounter claims.
+- Turtle: 6 dungeon dirs + SV inventoried (30 mechanic rows with NPC/spell
+  IDs); zero bespoke bot tactics; LFT demand-fill aliases cover 4 maps
+  (no Lower/Upper Kara, no SV). KARAZHAN CMake guard would reject valid Turtle
+  Kara files verbatim — narrowing queued for M10 (needs file-by-file review).
+- BGs: WSG flag play, AB node assault/defense with stickiness, AV objective
+  tables mapped; death/spirit rules; interference guards hold. SV (id5) and
+  BR arena (id4) have zero tactics; Eye/Isle correctly absent. Autonomous
+  BG queue absent by design (demand-only).
