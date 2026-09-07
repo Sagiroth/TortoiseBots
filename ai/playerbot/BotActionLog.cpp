@@ -321,7 +321,10 @@ void BotActionLog::LogCastResult(PlayerbotAI* ai, uint32 spellId, uint8 result, 
 {
     SpellEntry const* info = sSpellMgr.GetSpellEntry(spellId);
     const char* spellName = info ? info->SpellName[0].c_str() : "?";
-    Write(ai, result == 0 ? "CAST_OK" : "CAST_FAIL",
+    // REVIEW-FIX (M1 review): SPELL_CAST_OK is 0xFF on this core
+    // (SpellDefines.h), not 0 — 0x00 is SPELL_FAILED_AFFECTING_COMBAT.
+    // Comparing against the symbol keeps the tag truthful.
+    Write(ai, result == SPELL_CAST_OK ? "CAST_OK" : "CAST_FAIL",
           "spell=%s(%u) result=%u phase=%s",
           spellName, spellId, (unsigned)result, phase ? phase : "?");
 }

@@ -1439,6 +1439,10 @@ uint32 ItemUsageValue::GetAHListingLowestBuyoutPricePerItem(ItemPrototype const*
     {
         // M9: track the minimum by PER-UNIT price and return it. The old code
         // compared listing totals but the function promises per-item.
+        // REVIEW-FIX: keep a positive sentinel — a found listing with a
+        // sub-copper unit price still returns 1, never the 0 of "no listing",
+        // so AreCurrentAHListingsTooCheap and resale paths can tell the two
+        // apart exactly as before (old code returned the positive total).
         float minPrice = 0;
         bool found = false;
 
@@ -1456,7 +1460,11 @@ uint32 ItemUsageValue::GetAHListingLowestBuyoutPricePerItem(ItemPrototype const*
             }
         }
 
-        return found ? (uint32)minPrice : 0;
+        if (!found)
+            return 0;
+        if (minPrice > 0 && minPrice < 1)
+            return 1;
+        return (uint32)minPrice;
         /*
         auto query = CharacterDatabase.PQuery(
             "SELECT buyoutprice / item_count"
