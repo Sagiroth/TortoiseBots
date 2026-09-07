@@ -313,3 +313,20 @@ Three read-only audits; parent verified the GetValues fix. No ports.
   the working tree (denylist widening, subclass-label pruning, druid/
   rogue/warlock deletions). Not authored, committed, or reverted here;
   stack rebases wait for owner confirmation.
+
+## Build evidence (2026-09-07, singular branch)
+
+- ON matrix (`BUILD_PLAYERBOTS=ON MODULES=static
+  MODULE_TORTOISEBOTS=static`, pristine branch-tip basis + core
+  c12bb16e): image `tortoise-wow-penqle:local` BUILT successfully.
+  Full module graph compiles, including trail, coord fix, shim,
+  GetValues, Guard/Free, pet guard, blessings, taxi, Naxx wiring.
+  Binary probe: `ai::` symbols + `aiplayerbot.conf` present.
+- One real defect caught by the compiler (missed by all reviewers):
+  pet-guard predicates were private; published in
+  PossibleAttackTargetsValue.h (fix commit on the branch).
+- CORRECTION 2026-09-07: the so-called OFF run (defaults) did NOT disable
+  the module — identical image hash because MODULES=static (compose
+  default) + source/modules/TortoiseBots presence drives inclusion, and
+  BUILD_PLAYERBOTS does not gate it. A true absent-matrix build
+  (MODULES=disabled) is running to prove the optional-module invariant.
