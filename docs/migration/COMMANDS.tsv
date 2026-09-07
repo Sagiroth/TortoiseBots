@@ -1,0 +1,7 @@
+donor_syntax	donor_selector	donor_permissions	target_equivalent	backing_action	delayed_request_ownership	ui_exposure	status	notes
+.bot add (owned lifecycle)	owner account	target: .bot add	T: BotCommands	—	Roster tab	pending	census pending (ConfigDataCommandCensus scout)
+.bot remove/logout/roster/action	owner account	target: same names	T: BotCommands	—	Roster/Actions tabs	pending	census pending
+.bot command <text>	owner/GM	target: delegation to PlayerbotAI::HandleCommand	—	—	Actions tab (advanced)	pending	census pending
+save ai / load ai / reset ai	inherited	Expose/document/validate inherited path (F17)	TA ResetAiAction + PlayerbotDbStore	—	—	pending	plan §11: not absent for lack of .bot save alias
+playerbots> bot|gtask|rndbot|pmon|debug|account (modern)	console/мгp	target: map semantics not spelling (F16)	—	—	—	pending	ModernDonorCensus: Script/PlayerbotCommandScript.cpp
+Shyalya holder table/selectors (S PlayerbotMgr)	varies	target: command-to-capability ledger (F16)	—	—	—	pending	ShyalyaDonorCensus scout running
