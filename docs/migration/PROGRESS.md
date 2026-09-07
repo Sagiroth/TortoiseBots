@@ -20,21 +20,29 @@ Donor checkouts are read-only. No builds, no docker, no gameplay run yet in this
 
 ## Milestone branches/PRs
 
+CONSOLIDATED (per owner instruction 2026-09-07): the full stack lives on ONE
+branch and ONE draft PR. Stacked drafts #70–#80 are closed as superseded
+(identical commits). Per-milestone history is preserved as 16 individual
+commits on the branch. Prior per-milestone rows are kept below for archaeology.
+
 | Milestone | Branch | PR | Status |
 | --- | --- | --- | --- |
-| M0 baseline | `migration/m0-baseline` | https://github.com/PiotrZadka/TortoiseBots/pull/70 (draft) | census committed; awaiting review; DO NOT MERGE without authorization |
-| M1 diagnostics | `migration/m1-diagnostics` (stacked on M0 until merge) | https://github.com/PiotrZadka/TortoiseBots/pull/71 (draft, stacked on #70) | code + checker self-test done; production-log + cost gates pending |
-| M2 engine | `migration/m2-engine` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/72 (draft, stacked on #71) | mapping + verdict done; runtime proof pending |
-| M3 spells | `migration/m3-spells` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/73 (draft, stacked on #72) | coordinate fix + shim D1/D3/D4/D5; runtime proof pending |
-| M4 party | `migration/m4-party` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/74 (draft, stacked on #73) | Guard/Free fix + party audits; runtime proof pending |
-| M5 slices | `migration/m5-slices` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/75 (draft, stacked on #74) | 5 audits + pet-CC fix; runtime proof pending |
-| M6 classes | `migration/m6-classes` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/76 (draft, stacked on #75) | 4 audits + 2 fixes; runtime proof pending |
-| M7 world | `migration/m7-world` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/77 (draft, stacked on #76) | 8 audits + 3 fixes; journey proof pending |
-| M8 content | `migration/m8-content` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/78 (draft, stacked on #77) | 3 audits + 2 wiring fixes; encounter proof pending |
-| M9 services | `migration/m9-services` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/79 (draft, stacked on #78) | 3 audits + 2 fixes; service proof pending |
-| M10 closure | `migration/m10-closure` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/80 (draft, stacked on #79) | F26 audit state; runbook + limits shipped |
+| M0–M10 (all) | `migration/behavior-migration` (16 commits from `main`) | https://github.com/PiotrZadka/TortoiseBots/pull/83 (draft → `main`) | open; module build running (BUILD_PLAYERBOTS=ON, static) |
 
-All milestones branched (PRs #70–#80, 11 drafts, stacked). No merges authorized.
+| M0 baseline | `migration/m0-baseline` | #70 (closed, superseded by #83) | merged into singular branch |
+| M1 diagnostics | `migration/m1-diagnostics` | #71 (closed, superseded by #83) | merged into singular branch |
+| M2 engine | `migration/m2-engine` | #72 (closed, superseded by #83) | merged into singular branch |
+| M3 spells | `migration/m3-spells` | #73 (closed, superseded by #83) | merged into singular branch |
+| M4 party | `migration/m4-party` | #74 (closed, superseded by #83) | merged into singular branch |
+| M5 slices | `migration/m5-slices` | #75 (closed, superseded by #83) | merged into singular branch |
+| M6 classes | `migration/m6-classes` | #76 (closed, superseded by #83) | merged into singular branch |
+| M7 world | `migration/m7-world` | #77 (closed, superseded by #83) | merged into singular branch |
+| M8 content | `migration/m8-content` | #78 (closed, superseded by #83) | merged into singular branch |
+| M9 services | `migration/m9-services` | #79 (closed, superseded by #83) | merged into singular branch |
+| M10 closure | `migration/m10-closure` | #80 (closed, superseded by #83) | merged into singular branch |
+
+Build basis: pristine worktree at branch tip + tortoise-wow c12bb16e.
+No merges authorized.
 
 ## M2 gates (plan §4)
 
