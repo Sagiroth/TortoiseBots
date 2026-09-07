@@ -14,15 +14,11 @@ bool BloodrageBuffTrigger::IsActive()
 bool SunderArmorDebuffTrigger::IsActive()
 {
     Unit* target = GetTarget();
-    if (!target || !target->IsAlive())
+    if (!target)
         return false;
 
-    if (bot->GetPower(POWER_RAGE) < 15)
-        return false;
+    if (ai->IsTank(bot) && !target->IsPlayer())
+        return true;
 
-    Aura* aura = ai->GetAura("sunder armor", target);
-    if (!aura || aura->GetStackAmount() < 5 || aura->GetAuraDuration() <= 6000)
-        return !HasMaxDebuffs();
-
-    return false;
+    return !ai->HasAura("sunder armor", target, true) && !HasMaxDebuffs();
 }

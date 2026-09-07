@@ -14,6 +14,7 @@ public:
     TankWarriorStrategyActionNodeFactory()
     {
         creators["charge"] = &charge;
+        creators["sunder armor"] = &sunder_armor;
         creators["last stand"] = &last_stand;
         creators["taunt"] = &taunt;
         creators["taunt spell"] = &taunt;
@@ -26,6 +27,16 @@ private:
             "last stand",
             /*P*/ {},
             /*A*/ { NextAction("intimidating shout") },
+            /*C*/ {}
+        );
+    }
+
+    static ActionNode* sunder_armor(PlayerbotAI* /*botAI*/)
+    {
+        return new ActionNode(
+            "sunder armor",
+            /*P*/ {},
+            /*A*/ { NextAction("melee") },
             /*C*/ {}
         );
     }

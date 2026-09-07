@@ -10,6 +10,7 @@ public:
     ProtectionWarriorStrategyActionNodeFactory()
     {
         creators["charge"] = &charge;
+        creators["sunder armor"] = &sunder_armor;
         creators["last stand"] = &last_stand;
         creators["taunt"] = &taunt;
         creators["berserker rage fear"] = &berserker_rage_fear;
@@ -17,6 +18,8 @@ public:
 
 private:
     ACTION_NODE_A(charge, "charge", "reach melee");
+
+    ACTION_NODE_A(sunder_armor, "sunder armor", "melee");
 
     ACTION_NODE_A(last_stand, "last stand", "intimidating shout");
 
