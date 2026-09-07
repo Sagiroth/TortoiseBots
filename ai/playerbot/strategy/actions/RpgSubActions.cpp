@@ -199,22 +199,30 @@ bool RpgTaxiAction::Execute(Event& event)
 
     TaxiPathEntry const* entry = sTaxiPathStore.LookupEntry(path);
     if (!entry)
+    {
+        bot->SetMoney(money);
         return false;
+    }
 
     TaxiNodesEntry const* nodeFrom = sTaxiNodesStore.LookupEntry(entry->from);
     TaxiNodesEntry const* nodeTo = sTaxiNodesStore.LookupEntry(entry->to);
     if (!nodeFrom || !nodeTo)
+    {
+        bot->SetMoney(money);
         return false;
+    }
 
     Creature* flightMaster = bot->GetNPCIfCanInteractWith(guidP, UNIT_NPC_FLAG_FLIGHTMASTER);
     if (!flightMaster)
     {
         sLog.outError("Bot %s cannot talk to flightmaster (%zu location available)", bot->GetName(), nodes.size());
+        bot->SetMoney(money);
         return false;
     }
     if (!bot->ActivateTaxiPathTo({ entry->from, entry->to }, flightMaster, 0))
     {
         sLog.outError("Bot %s cannot fly %u (%zu location available)", bot->GetName(), path, nodes.size());
+        bot->SetMoney(money);
         return false;
     }
 

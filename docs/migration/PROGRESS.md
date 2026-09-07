@@ -28,9 +28,10 @@ Donor checkouts are read-only. No builds, no docker, no gameplay run yet in this
 | M3 spells | `migration/m3-spells` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/73 (draft, stacked on #72) | coordinate fix + shim D1/D3/D4/D5; runtime proof pending |
 | M4 party | `migration/m4-party` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/74 (draft, stacked on #73) | Guard/Free fix + party audits; runtime proof pending |
 | M5 slices | `migration/m5-slices` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/75 (draft, stacked on #74) | 5 audits + pet-CC fix; runtime proof pending |
-| M6 classes | `migration/m6-classes` (stacked) | (pending) | 4 class audits running (Pal/Sham/Dru/Wlk); audit-only |
+| M6 classes | `migration/m6-classes` (stacked) | https://github.com/PiotrZadka/TortoiseBots/pull/76 (draft, stacked on #75) | 4 audits + 2 fixes; runtime proof pending |
+| M7 world | `migration/m7-world` (stacked) | (pending) | batch A running (quests/RPG/travel); then items, population, data/chat |
 
-M7–M10 branches not yet created. No merges authorized.
+M8–M10 branches not yet created. No merges authorized.
 
 ## M2 gates (plan §4)
 
@@ -71,7 +72,19 @@ M7–M10 branches not yet created. No merges authorized.
 - [x] Paladin Pve-combat blessing fix (PvP tables → pve; all four actions registered)
 - [x] Pet guard extended with damage-immunity gate (banish/invulnerable; warlock audit caught it)
 - [x] Nine-class matrix: all 9 covered (5 in M5 + 4 in M6); DK excluded by design; no tree silently falls back (placeholders verified zero-hook + update-wired)
-- [ ] Spec/role runtime rotation proof (all classes); stacked draft M6 PR next
+- [ ] Spec/role runtime rotation proof (all classes); M6 PR: https://github.com/PiotrZadka/TortoiseBots/pull/76
+
+## M7 gates (plan §4)
+
+- [x] F01/F02/F03 quest audit: paths complete; blacklist parity restored (50000); escort absent both sides (parity); sync-ForPlayer undocumented (conf gap)
+- [x] F04 audit: Shyalya corrections queued (crowd/RNG/patrol/taxi-cheat); avoid-list absent + avoid-area fail-closed + spell-click absent (no core support)
+- [x] F05 fixes: rejected-leg retained; RPG-taxi 100k leak plugged (4 restores); generators force-off verified; empty-table degradation mapped
+- [x] F06 audit: path map + H1-H7 hazards recorded; D1 = host gap (no native CanLoot; late skip holds) deferred to compilable env
+- [x] F07 audit: idempotent steady-state verified; modern managers correctly absent; no change
+- [x] F08 audit: 3-layer coverage mapped; feed stub = parity (all trees cheat); recovery candidates scoped; no stable import
+- [x] F01/F11/F12 audit: mode table + precedence; gaps G1-G5, L1-L12 recorded (M9 implementation scope)
+- [x] F22/F23 audit: schema-only ships, clean-install safe, owned data preserved; buff/chat at parity (both inert); GetValues also starves LoginCriteria
+- [ ] Journey runtime proof (P01-P08, P22-P23); stacked draft M7 PR next
 
 ## Packet ownership (plan §7, §14)
 | Stage | Packets | Owner milestone | State |

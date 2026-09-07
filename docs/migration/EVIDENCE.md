@@ -203,3 +203,32 @@ Four read-only audits; parent verified every fix. No ports.
 - Matrix: 9/9 classes audited. No applicable tree falls back to an unrelated
   strategy (placeholders contribute zero hooks; rotation attaches via update
   wiring). Raid-specific role checks deferred to M8.
+
+## M7 world-utility evidence (2026-09-07, branch migration/m7-world)
+
+Eight read-only audits (one blacklist fix, two taxi fixes). No ports.
+
+- Quests: owner-assisted + autonomous journeys complete in source; cheats
+  cheat-gated both sides; blacklist parity restored (Malkovich 50000);
+  SyncQuestForPlayer missing from conf template (gap); escort/scripted driver
+  absent both sides (parity, record honestly); full-log handling lossy.
+- RPG: Shyalya crowd/RNG/patrol/taxi-cheat corrections identified, queued for
+  compilable env (behavioral, need build). Avoid-list absent, avoid-area
+  fail-closed, spell-click absent with zero Turtle core support found.
+- Travel: purposes/costs/failed-edges/faction gates mapped; MinimalMove now
+  retains rejected legs; RpgTaxi restores funding on all 4 reject paths;
+  generators force-off (no PathInfo area query); empty tables degrade safely.
+- Loot: full path map; H1-H7 hazards recorded as known limits; D1 admission
+  permission is a host gap (Penqle has AllowedForPlayer per-item but no
+  CanLoot; late skip prevents theft) — deferred, not bypassed.
+- Gear: steady-state idempotent, first-init single-shot, full-randomize
+  uncalled; modern item managers correctly not ported.
+- Professions/pets: 3-layer coverage; feed stub is donor parity (all three
+  cheat identically) — real-food is enhancement scope, not migration debt;
+  stabling absent-by-design; train-pet gap; relog/travel via native+triggers.
+- Population: mode table + precedence recorded; first-init pipeline (G1/G2),
+  distribution weights (G5), event machine + clock-shift (L2/L6/L7), dynamic
+  target (L1), revive/teleport scheduling (L4/L5) all MISSING — M9 scope.
+- Data: clean-install safe everywhere; owned data never dropped; datasets need
+  operator import workflow (F22). Buff/chat at exact parity (both inert via
+  GetValues/Generate stubs); LoginCriteria also starved — F20 fix covers both.
