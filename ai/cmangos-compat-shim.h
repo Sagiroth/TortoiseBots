@@ -561,7 +561,7 @@ namespace Taxi {
 // M3: native Spell.h has no channeling state (PREPARING=1, CASTING=2,
 // FINISHED=3, IDLE=4, DELAYED=5); channeled spells report CASTING. 3 meant
 // FINISHED — a spurious one-tick not-useful match. Kept defined (callers
-// reference it) but neutralized; see SpellCastUsefulValue.
+// reference it) but neutralized; consumed in SpellCastUsefulValue.
 #ifndef SPELL_STATE_CHANNELING
 #define SPELL_STATE_CHANNELING SPELL_STATE_CASTING
 #endif

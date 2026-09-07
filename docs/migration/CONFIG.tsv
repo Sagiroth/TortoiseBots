@@ -6,4 +6,4 @@ Quest sync directions (both)	differ T/S vs M	—	—	—	—	—	—	—	donor d
 RandomBotNonCombatStrategies	empty override does not remove factory defaults	—	—	—	AiFactory.cpp	—	—	—	—	pending (census)
 AH/LFT/BG service switches	default-off, still required scope	—	—	—	services	—	—	—	disabled default is not exclusion	pending (census)
 AiPlayerbot.WorldBuff* (repeated)	commented examples (22888 etc.)	none loaded (GetValues {})	—	live on reload boundary	T: PlayerbotAIConfig.cpp:443-475 loader; F23 synthetic policy	worldbuff	—	—	loader FIXED in M10 (native prefix walk)	fixed-M10 (runtime proof pending)
-TortoiseBots.* test fixtures (AutoTest/PacketBridgeTest/PendingAddRemoveTest)	0	—	—	one-shot	BotHostAdapter + BotManager journeys	operator	—	—	—	verified paths, not re-run here	pending-runtime
+TortoiseBots.* test fixtures (AutoTest/PacketBridgeTest/PendingAddRemoveTest)	0	—	—	one-shot	BotHostAdapter + BotManager journeys; verified paths, not re-run here	operator	—	—	—	pending-runtime
