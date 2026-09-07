@@ -294,3 +294,22 @@ Three read-only audits; parent verified the GetValues fix. No ports.
   requires compile, disposable journeys, user playtest, and the blocked/
   deferred items above. No scope silently reduced: every applicable row has
   a disposition; blocked/deferred stay open.
+
+## Independent review responses (2026-09-07, three reviewer agents)
+
+- ReviewEngineCast: CAST_OK inversion CONFIRMED + FIXED (tag now uses the
+  0xFF symbol; 0x00 failure no longer logs as success). All other items
+  PASS (returns, braces, varargs, BotState coverage, multiplier semantics,
+  coord paths, no extra behavior change).
+- ReviewShimConfig: keys-vs-values CONFIRMED + FIXED (loader parses keys);
+  sub-copper sentinel CONFIRMED + FIXED (1c floor); shim mappings all PASS
+  against native headers; conf edit PASS comment-only.
+- ReviewBehavior: 6/7 PASS. Void-zone FAIL stands as recorded deferred gap:
+  the 4H node resolves to null and Engine skips it silently (verified
+  ProcessTriggers null-continue, no crash); generic hazard plumbing is
+  entry-driven with no void-zone producer, so no string swap would help.
+  New trigger/action classes need a compilable environment.
+- NOTE: external uncommitted Vanilla-purity edits appeared mid-review in
+  the working tree (denylist widening, subclass-label pruning, druid/
+  rogue/warlock deletions). Not authored, committed, or reverted here;
+  stack rebases wait for owner confirmation.
