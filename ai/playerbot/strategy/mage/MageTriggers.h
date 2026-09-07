@@ -141,8 +141,8 @@ namespace ai
 
         virtual bool IsActive() override
         {
-            return !bot->IsSpellReady(133)      //fireball
-                && !bot->IsSpellReady(2948);    //scorch
+            return !sServerFacade.IsSpellReady(bot, 133)      //fireball
+                && !sServerFacade.IsSpellReady(bot, 2948);    //scorch
         }
     };
 
@@ -197,7 +197,7 @@ namespace ai
         virtual bool IsActive() override
         {
             const uint32 coldSnapId = AI_VALUE2(uint32, "spell id", "cold snap");
-            if (!coldSnapId || !bot->IsSpellReady(coldSnapId))
+            if (!coldSnapId || !sServerFacade.IsSpellReady(bot, coldSnapId))
                 return false;
 
             // Cold Snap is useful only when it can actually reset a Frost
@@ -209,7 +209,7 @@ namespace ai
             for (const char* spell : frostCooldowns)
             {
                 const uint32 spellId = AI_VALUE2(uint32, "spell id", spell);
-                if (spellId && !bot->IsSpellReady(spellId))
+                if (spellId && !sServerFacade.IsSpellReady(bot, spellId))
                     return true;
             }
 

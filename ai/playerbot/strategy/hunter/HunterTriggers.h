@@ -287,7 +287,7 @@ private:
 
         virtual bool IsActive() override
         {
-            if (!bot->HasSpell(19434) || !bot->IsSpellReady(19434))
+            if (!bot->HasSpell(19434) || !sServerFacade.IsSpellReady(bot, 19434))
                 return false;
 
             Unit* target = GetTarget();

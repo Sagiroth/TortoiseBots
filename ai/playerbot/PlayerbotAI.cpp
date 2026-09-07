@@ -3817,7 +3817,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
     }
 
     Pet* pet = bot->GetPet();
-    if (pet && pet->HasSpell(spellid) && pet->IsSpellReady(spellid))
+    if (pet && pet->HasSpell(spellid) && !pet->HasSpellCooldown(spellid))
     {
         if (checkResult)
         {
@@ -3855,7 +3855,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
         return false;
     }
 
-    if (!bot->IsSpellReady(spellid))
+    if (!sServerFacade.IsSpellReady(bot, spellid))
     {
         if (checkResult)
         {
@@ -4023,7 +4023,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, GameObject* goTarget, uint8 effec
     }
 
     Pet* pet = bot->GetPet();
-    if (pet && pet->HasSpell(spellid) && pet->IsSpellReady(spellid))
+    if (pet && pet->HasSpell(spellid) && !pet->HasSpellCooldown(spellid))
     {
         if (checkResult)
         {
@@ -4058,7 +4058,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, GameObject* goTarget, uint8 effec
         return false;
     }
 
-    if (!bot->IsSpellReady(spellid))
+    if (!sServerFacade.IsSpellReady(bot, spellid))
     {
         if (checkResult)
         {
@@ -4150,7 +4150,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, float x, float y, float z, uint8 
     }
 
     Pet* pet = bot->GetPet();
-    if (pet && pet->HasSpell(spellid) && pet->IsSpellReady(spellid))
+    if (pet && pet->HasSpell(spellid) && !pet->HasSpellCooldown(spellid))
     {
         if (checkResult)
         {
