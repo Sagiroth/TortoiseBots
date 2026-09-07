@@ -30,11 +30,13 @@ from collections import Counter, defaultdict
 LINE_RE = re.compile(r"^\[(?P<ts>[^\]]+)\] \[(?P<tag>[^\]]+)\] (?P<body>.*)$")
 
 TICK_RE = re.compile(r"^--- AI Tick --- state=(?P<state>\S+) strats=(?P<strats>.*)$")
-TRIGGER_RE = re.compile(r"^T:(?P<trigger>.*) src=(?P<src>\S+)$")
-PUSH_RE = re.compile(r"^PUSH:(?P<action>.+) - (?P<rel>-?[\d.]+) \((?P<kind>\w+)\) src=(?P<src>.*)$")
+TRIGGER_RE = re.compile(r"^T:(?P<trigger>.+?) src=(?P<src>.*)$")
+PUSH_RE = re.compile(r"^PUSH:(?P<action>.+?) - (?P<rel>-?[\d.]+) \((?P<kind>\w+)\) src=(?P<src>.*)$")
 ACTION_RE = re.compile(
-    r"^A:(?P<action>.+) - (?P<outcome>UNKNOWN|PREREQ|OK|FAILED|IMPOSSIBLE|USELESS)"
-    r"( src=(?P<src>\S*))?( base=(?P<base>-?[\d.]+))?( eff=(?P<eff>-?[\d.]+))?$"
+    r"^A:(?P<action>.+?) - (?P<outcome>UNKNOWN|PREREQ|OK|FAILED|IMPOSSIBLE|USELESS)"
+    r"(?: src=(?P<src>.*?))?"
+    r"(?: base=(?P<base>-?[\d.]+))?"
+    r"(?: eff=(?P<eff>-?[\d.]+))?$"
 )
 MULT_RE = re.compile(
     r"^A:(?P<action>.+) - MULT (?P<mult>.+) x(?P<factor>-?[\d.]+) "
@@ -183,7 +185,31 @@ def self_test():
     bad = ["no brackets here", "[2026-09-07] [ACTION] A:heal - SORTA src=x"]
     malformed2, _, _ = check_lines(bad)
     assert len(malformed2) == 2, malformed2
-    print("self-test: all assertions passed (grammar + 4 signatures + malformed detection)")
+
+    # R1 regression check: event sources with spaces and all outcome states
+    spaced_fixture = [
+        "[2026-09-07 12:00:00.010] [TRIGGER_REASON] T:enemy too close for spell src=enemy too close for spell",
+        "[2026-09-07 12:00:00.011] [PUSH] PUSH:frost nova - 70.000000 (trigger) src=enemy too close for spell",
+        "[2026-09-07 12:00:00.013] [ACTION] A:fireball - OK src=enemy too close for spell base=45.000 eff=45.000",
+        "[2026-09-07 12:00:00.014] [ACTION] A:greater heal - PREREQ src=party member low health base=80.000 eff=80.000",
+        "[2026-09-07 12:00:00.015] [ACTION] A:curse of agony - IMPOSSIBLE src=target immune base=20.000 eff=0.000",
+        "[2026-09-07 12:00:00.016] [ACTION] A:shoot - USELESS src=out of ammo base=15.000 eff=0.000",
+        "[2026-09-07 12:00:00.017] [ACTION] A:frostbolt - UNKNOWN src=some strange trigger base=12.340",
+    ]
+    malformed3, stats3, findings3 = check_lines(spaced_fixture)
+    assert not malformed3, malformed3
+    assert stats3["outcomes"] == {"OK": 1, "PREREQ": 1, "IMPOSSIBLE": 1, "USELESS": 1, "UNKNOWN": 1}, stats3["outcomes"]
+
+    # Direct field capture checks
+    tm = TRIGGER_RE.match("T:enemy too close for spell src=enemy too close for spell")
+    assert tm and tm.group("trigger") == "enemy too close for spell" and tm.group("src") == "enemy too close for spell"
+    pm = PUSH_RE.match("PUSH:frost nova - 70.000000 (trigger) src=enemy too close for spell")
+    assert pm and pm.group("action") == "frost nova" and pm.group("src") == "enemy too close for spell"
+    am = ACTION_RE.match("A:fireball - OK src=enemy too close for spell base=45.000 eff=45.000")
+    assert am and am.group("action") == "fireball" and am.group("src") == "enemy too close for spell"
+    assert float(am.group("base")) == 45.0 and float(am.group("eff")) == 45.0
+
+    print("self-test: all assertions passed (grammar + 4 signatures + malformed detection + R1 spaced sources)")
 
 
 def main(argv):
