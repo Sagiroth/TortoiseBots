@@ -10,7 +10,6 @@ class DpsFeralDruidStrategyActionNodeFactory : public NamedObjectFactory<ActionN
 public:
     DpsFeralDruidStrategyActionNodeFactory()
     {
-        creators["survival instincts"] = &survival_instincts;
         creators["omen of clarity"] = &omen_of_clarity;
         creators["shred"] = &shred;
         creators["mangle (cat)"] = &mangle_cat;
@@ -18,7 +17,6 @@ public:
     }
 
 private:
-    ACTION_NODE_A(survival_instincts, "survival instincts", "barskin");
 
     ACTION_NODE_P(omen_of_clarity, "omen of clarity", "caster form");
 

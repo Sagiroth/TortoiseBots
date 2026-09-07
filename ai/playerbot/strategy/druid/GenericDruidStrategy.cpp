@@ -92,7 +92,6 @@ void DruidBoostStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
     if (tab == DRUID_TAB_BALANCE)
     {
-        triggers.push_back(new TriggerNode("force of nature", { NextAction("force of nature", 29.0f) }));
         triggers.push_back(new TriggerNode("new pet", { NextAction("set pet stance", 60.0f) }));
     }
 
@@ -154,7 +153,6 @@ void DruidAoeStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     {
         triggers.push_back(new TriggerNode("hurricane channel check", { NextAction("cancel channel", 22.0f) }));
         triggers.push_back(new TriggerNode("medium aoe", { NextAction("hurricane", 23.0f) }));
-        triggers.push_back(new TriggerNode("enemy within melee", { NextAction("typhoon", 40.0f) }));
         triggers.push_back(new TriggerNode("insect swarm on attacker", { NextAction("insect swarm on attacker", 5.2f) }));
         triggers.push_back(new TriggerNode("moonfire on attacker", { NextAction("moonfire on attacker", 5.1f) }));
     }
