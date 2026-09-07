@@ -70,7 +70,7 @@ def check_lines(lines):
     useless_mults = Counter()
     cast_fails = Counter()
     cast_gates = Counter()
-    coord_ignored = 0
+    coord_rejected = 0
     # stale retry: consecutive FAILED per action with no OK between
     failed_streak = defaultdict(int)
 
@@ -122,8 +122,8 @@ def check_lines(lines):
             elif tag == "CAST_FAIL":
                 cast_fails[(cm.group("id"), cm.group("phase"))] += 1
                 findings.append((n, "cast-fail", "%s phase=%s" % (cm.group("id"), cm.group("phase"))))
-                if cm.group("phase") == "PREPARE-coord-ignored":
-                    coord_ignored += 1
+                if cm.group("phase") == "PREPARE-coord":
+                    coord_rejected += 1
         elif tag == "CAST_START":
             if not CAST_START_RE.match(body):
                 malformed.append((n, line))
@@ -146,7 +146,7 @@ def check_lines(lines):
         "multiplier_zeroes": dict(useless_mults),
         "cast_fails": dict(("%s/%s" % k, v) for k, v in cast_fails.items()),
         "cast_gates": dict(cast_gates),
-        "coord_ignored": coord_ignored,
+        "coord_rejected": coord_rejected,
     }
     return malformed, stats, findings
 
@@ -168,7 +168,7 @@ def self_test():
 [2026-09-07 12:00:01.014] [ACTION] Multiplier threat made action heal useless
 [2026-09-07 12:00:01.015] [CAST_FAIL] spell=Heal(2050) result=1 phase=PREPARE
 [2026-09-07 12:00:01.016] [CAST_GATE] spell=133 targetGuid=0x1234 reason=moving-no-master
-[2026-09-07 12:00:01.017] [CAST_FAIL] spell=Blizzard(10) result=2 phase=PREPARE-coord-ignored
+[2026-09-07 12:00:01.017] [CAST_FAIL] spell=Blizzard(10) result=2 phase=PREPARE-coord
 [2026-09-07 12:00:01.018] [STATE] reason=tick hp=100% mp=50% combat=1 alive=1 level=60 pos=0.0,0.0,0.0,0.0 map=0 zone=0 target=Foo targetGuid=0x1234
 """.splitlines()
     malformed, stats, findings = check_lines(fixture)
@@ -177,7 +177,7 @@ def self_test():
     assert stats["unknowns"] == {"frobnicate": 1}, stats["unknowns"]
     assert stats["multiplier_factors"] == 1, stats
     assert stats["cast_gates"] == {"moving-no-master": 1}, stats["cast_gates"]
-    assert stats["coord_ignored"] == 1, stats
+    assert stats["coord_rejected"] == 1, stats
     kinds = {k for _, k, _ in findings}
     assert {"unknown-action", "stale-retry?", "multiplier-zero", "cast-fail", "cast-gate"} <= kinds, kinds
     bad = ["no brackets here", "[2026-09-07] [ACTION] A:heal - SORTA src=x"]
@@ -206,8 +206,8 @@ def main(argv):
     print("lines=%d outcomes=%s" % (len(lines), stats["outcomes"]))
     print("unknowns=%s multiplier_factors=%d multiplier_zeroes=%s" % (
         stats["unknowns"], stats["multiplier_factors"], stats["multiplier_zeroes"]))
-    print("cast_fails=%s cast_gates=%s coord_ignored=%d" % (
-        stats["cast_fails"], stats["cast_gates"], stats["coord_ignored"]))
+    print("cast_fails=%s cast_gates=%s coord_rejected=%d" % (
+        stats["cast_fails"], stats["cast_gates"], stats["coord_rejected"]))
     for n, kind, detail in findings[:50]:
         print("line %d [%s] %s" % (n, kind, detail))
     if len(findings) > 50:
