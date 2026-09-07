@@ -176,7 +176,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     # families. A future file with one of these names must be reviewed before
     # it can enter the module through a directory glob.
     string(TOUPPER "${TORTOISEBOTS_SOURCE}" TORTOISEBOTS_SOURCE_UPPER)
-    if(TORTOISEBOTS_SOURCE_UPPER MATCHES "DEATHKNIGHT|GLYPH|VEHICLE|KARAZHAN|ARENA|RTSC|BOSSAURA")
+    if(TORTOISEBOTS_SOURCE_UPPER MATCHES "DEATHKNIGHT|GLYPH|VEHICLE|KARAZHAN|ARENA|RTSC|BOSSAURA|OUTLAND|NORTHREND")
       message(FATAL_ERROR "Expansion/test family is not allowed in TortoiseBots source graph: ${TORTOISEBOTS_SOURCE}")
     endif()
 

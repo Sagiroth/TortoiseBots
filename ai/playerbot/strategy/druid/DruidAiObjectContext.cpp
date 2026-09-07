@@ -236,7 +236,6 @@ namespace ai
                 creators["claw"] = [](PlayerbotAI* ai) { return new SpellCanBeCastedTrigger(ai, "claw"); };
                 creators["rip"] = [](PlayerbotAI* ai) { return new RipTrigger(ai, 3); };
                 creators["enrage"] = [](PlayerbotAI* ai) { return new EnrageTrigger(ai); };
-                creators["lacerate"] = [](PlayerbotAI* ai) { return new LacerateTrigger(ai); };
                 creators["unstealth"] = [](PlayerbotAI* ai) { return new DruidUnstealthTrigger(ai); };
                 creators["in stealth"] = [](PlayerbotAI* ai) { return new InStealthTrigger(ai); };
                 creators["no stealth"] = [](PlayerbotAI* ai) { return new NoStealthTrigger(ai); };
@@ -289,7 +288,6 @@ namespace ai
                 creators["ferocious bite"] = [](PlayerbotAI* ai) { return new CastFerociousBiteAction(ai); };
                 creators["rip"] = [](PlayerbotAI* ai) { return new CastRipAction(ai); };
                 creators["cower"] = [](PlayerbotAI* ai) { return new CastCowerAction(ai); };
-                creators["survival instincts"] = [](PlayerbotAI* ai) { return new CastSurvivalInstinctsAction(ai); };
                 creators["thorns"] = [](PlayerbotAI* ai) { return new CastThornsAction(ai); };
                 creators["thorns on party"] = [](PlayerbotAI* ai) { return new CastThornsOnPartyAction(ai); };
                 creators["cure poison"] = [](PlayerbotAI* ai) { return new CastCurePoisonAction(ai); };
@@ -312,7 +310,6 @@ namespace ai
                 creators["rebirth"] = [](PlayerbotAI* ai) { return new CastRebirthAction(ai); };
                 creators["revive"] = [](PlayerbotAI* ai) { return new CastReviveAction(ai); };
                 creators["barskin"] = [](PlayerbotAI* ai) { return new CastBarskinAction(ai); };
-                creators["lacerate"] = [](PlayerbotAI* ai) { return new CastLacerateAction(ai); };
                 creators["hurricane"] = [](PlayerbotAI* ai) { return new CastHurricaneAction(ai); };
                 creators["innervate"] = [](PlayerbotAI* ai) { return new CastInnervateAction(ai); };
                 creators["tranquility"] = [](PlayerbotAI* ai) { return new CastTranquilityAction(ai); };

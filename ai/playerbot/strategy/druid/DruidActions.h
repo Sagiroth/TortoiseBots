@@ -74,12 +74,6 @@ namespace ai
 	BUFF_PARTY_ACTION(CastMarkOfTheWildOnPartyAction, "mark of the wild");
 	GREATER_BUFF_PARTY_ACTION(CastGiftOfTheWildOnPartyAction, "gift of the wild");
 
-	class CastSurvivalInstinctsAction : public CastBuffSpellAction
-	{
-	public:
-		CastSurvivalInstinctsAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "survival instincts") {}
-	};
-
 	class CastThornsAction : public CastBuffSpellAction
 	{
 	public:
@@ -521,12 +515,6 @@ namespace ai
     {
     public:
         CastSwipeBearAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "swipe") {}
-    };
-
-    class CastLacerateAction : public CastMeleeSpellAction
-    {
-    public:
-        CastLacerateAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "lacerate") {}
     };
 
     class CastBashOnEnemyHealerAction : public CastSpellOnEnemyHealerAction
