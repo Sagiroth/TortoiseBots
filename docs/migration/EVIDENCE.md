@@ -330,3 +330,24 @@ Three read-only audits; parent verified the GetValues fix. No ports.
   default) + source/modules/TortoiseBots presence drives inclusion, and
   BUILD_PLAYERBOTS does not gate it. A true absent-matrix build
   (MODULES=disabled) is running to prove the optional-module invariant.
+
+## Owner cleanup merge #82 (2026-09-07, on singular branch as f34cd184)
+
+- Owner merged `cleanup/remove-expansion-leftovers-20260907` (b9150f54)
+  into `migration/behavior-migration`, past my c8444464; my evidence commit
+  rebased cleanly on top (no conflicts; disjoint files). Unrelated tree
+  edits from earlier in the day were reverted by their owner, not by me.
+- Content (all DBC-verified by owner): druid Lacerate/Survival
+  Instincts/Maim/FoN/Typhoon removals, rogue Dismantle, warlock Incinerate,
+  TBC/WotLK SuggestWhatToDo rows, item-subclass label trims, denylist
+  += OUTLAND|NORTHREND.
+- Gap impact (my audit rows now partially superseded): C-DRU dangling
+  typhoon/FoN/maim + simplified-lacerate items CLOSED by deletion;
+  warlock Incinerate registration question CLOSED; TBC instance-row
+  cleanup aligns with M8 exclusion scope. Verified zero dangling
+  references (case-insensitive grep over ai/): strategies referencing the
+  removed names were removed in the same commit.
+- Denylist widening does not collide with the KARAZHAN narrowing spec
+  (different name families; JEWEL/EMBLEM/HEROIC deliberately excluded).
+- Build impact: the successful ON image predates this merge. A rebuild on
+  the merged tip is required (running) before claiming current-tip compiles.
