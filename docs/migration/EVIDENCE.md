@@ -375,3 +375,8 @@ Three read-only audits; parent verified the GetValues fix. No ports.
 - Radius 10.0f is a stated conservative estimate (no DBC/script radius in
   evidence); duration 90 matches the summon lifetime. Retune from T: lines
   after the first real 4H run. Encounter competence still needs runtime.
+
+- COMPILE PROOF 2026-09-07: ON-matrix image rebuilt on the wiring tip and
+  the shipped `mangosd` binary contains both `void zone too close` and
+  `move away from void zone` registrations. Silent-drop closed at the
+  wiring level; encounter competence still gated on a real 4H run.
