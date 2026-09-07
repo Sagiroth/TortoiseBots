@@ -18,7 +18,7 @@ GenericPriestStrategy::GenericPriestStrategy(PlayerbotAI* botAI) : RangedCombatS
 
 void GenericPriestStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
-    CombatStrategy::InitTriggers(triggers);
+    RangedCombatStrategy::InitTriggers(triggers);
 
     triggers.push_back(new TriggerNode("medium threat", { NextAction("fade", 55.0f) }));
     triggers.push_back(new TriggerNode("critical health", { NextAction("desperate prayer",
