@@ -284,4 +284,25 @@ namespace ai
         RainOfFireChannelCheckTrigger(PlayerbotAI* ai) : Trigger(ai, "rain of fire channel check") {}
         bool IsActive() override;
     };
+
+    class DarkHarvestTrigger : public SpellCanBeCastedTrigger
+    {
+    public:
+        DarkHarvestTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "dark harvest") {}
+        bool IsActive() override;
+    };
+
+    class DarkHarvestChannelCheckTrigger : public Trigger
+    {
+    public:
+        DarkHarvestChannelCheckTrigger(PlayerbotAI* ai) : Trigger(ai, "dark harvest channel check") {}
+        bool IsActive() override;
+    };
+
+    class PowerOverwhelmingTrigger : public SpellCanBeCastedTrigger
+    {
+    public:
+        PowerOverwhelmingTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "power overwhelming") {}
+        bool IsActive() override;
+    };
 }
