@@ -6,7 +6,6 @@
 #include "playerbot/strategy/generic/PullStrategy.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/values/AoeValues.h"
-#include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "playerbot/strategy/actions/AttackAction.h"
 
 #include <regex>
