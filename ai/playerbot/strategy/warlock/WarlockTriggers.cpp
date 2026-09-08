@@ -245,3 +245,69 @@ bool RainOfFireChannelCheckTrigger::IsActive()
     }
     return false;
 }
+
+namespace
+{
+uint8 OwnAfflictionDotsOn(ai::PlayerbotAI* ai, Unit* target)
+{
+    // Mirrors the core Dark Harvest filter (spell_warlock.cpp
+    // IsDarkHarvestAfflictionPeriodicAura): own periodic damage/leech from
+    // the Affliction family. Drain Life/Soul are channels, not auras, so
+    // only the four DoT auras count here.
+    static const char* dots[] = { "corruption", "siphon life", "curse of agony", "curse of doom" };
+    uint8 count = 0;
+    for (const char* dot : dots)
+        if (ai->HasAura(dot, target, false, true))
+            ++count;
+    return count;
+}
+}
+
+bool DarkHarvestTrigger::IsActive()
+{
+    // Turtle 52550: channeled DoT that accelerates own Affliction ticks AND
+    // refunds its 30s cooldown when the target dies mid-channel. Starting it
+    // with fewer than two own DoTs rolling wastes the window, so gate on it.
+    if (!SpellCanBeCastedTrigger::IsActive())
+        return false;
+
+    Unit* target = GetTarget();
+    if (!target || !target->IsAlive())
+        return false;
+
+    return OwnAfflictionDotsOn(ai, target) >= 2;
+}
+
+bool DarkHarvestChannelCheckTrigger::IsActive()
+{
+    if (Spell* spell = bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
+    {
+        if (spell->m_spellInfo && spell->m_spellInfo->Id == 52550)
+        {
+            // A dying target refunds the cooldown: keep channeling it. Cancel
+            // only when a LIVE target has lost every own DoT.
+            Unit* target = AI_VALUE(Unit*, "current target");
+            if (!target || !target->IsAlive())
+                return false;
+            return OwnAfflictionDotsOn(ai, target) == 0;
+        }
+    }
+    return false;
+}
+
+bool PowerOverwhelmingTrigger::IsActive()
+{
+    // Turtle 51714: pet burst (CC break + damage buff) costing the demon a
+    // share of base health over the duration. Core CanCastSpell covers
+    // cooldown/mana/range; the pet must be alive and healthy enough that the
+    // health price cannot finish it, and a live enemy must justify burst.
+    if (!SpellCanBeCastedTrigger::IsActive())
+        return false;
+
+    Unit* pet = AI_VALUE(Unit*, "pet target");
+    if (!pet || !pet->IsAlive() || !pet->HealthAbovePct(60))
+        return false;
+
+    Unit* target = GetTarget();
+    return target && target->IsAlive();
+}
