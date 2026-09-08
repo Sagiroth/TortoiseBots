@@ -88,6 +88,7 @@ namespace ai
         MoonfireTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "moonfire") {}
         virtual bool IsActive() override { return DebuffTrigger::IsActive() && !GetTarget()->IsRooted(); }
     };
+    CAN_CAST_TRIGGER(WrathTrigger, "wrath");
 
     class FaerieFireTrigger : public DebuffTrigger
     {
@@ -347,6 +348,8 @@ namespace ai
     public:
         FerociousBiteTrigger(PlayerbotAI* ai) : ComboPointsAvailableTrigger(ai, 5) {}
     };
+
+    BOOST_TRIGGER(BerserkTrigger, "berserk");
 
     class RebirthTrigger : public SpellTargetTrigger
     {
