@@ -267,6 +267,29 @@ private:
     CAN_CAST_TRIGGER(MongooseBiteCastTrigger, "mongoose bite");
     BOOST_TRIGGER(BestialWrathBoostTrigger, "bestial wrath");
 
+    class KillCommandTrigger : public SpellCanBeCastedTrigger
+    {
+    public:
+        KillCommandTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "kill command") {}
+        bool IsActive() override
+        {
+            // Turtle 41827 has casterAuraState 6 (crit window): core
+            // CanCastSpell enforces the window, so no DBC guessing here.
+            // The damage is dealt by the pet (80% pet AP), hence the live-pet
+            // gate; core resolves explicit -> selected -> pet-victim target.
+            if (!SpellCanBeCastedTrigger::IsActive())
+                return false;
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            return pet && pet->IsAlive();
+        }
+    };
+
+    class CarveTrigger : public SpellCanBeCastedTrigger
+    {
+    public:
+        CarveTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "carve") {}
+    };
+
 
     class ViperStingTrigger : public DebuffTrigger
     {

@@ -101,6 +101,13 @@ void SurvivalHunterRaidStrategy::InitDeadTriggers(std::list<TriggerNode*>& trigg
 void SurvivalHunterAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     HunterAoeStrategy::InitCombatTriggers(triggers);
+
+    // Carve shares its cooldown category with Multi-Shot (both 10s): rank
+    // below multi-shot (ACTION_HIGH) so the ranged shot wins the tie and
+    // Carve covers the melee case. Core serializes the shared CD.
+    triggers.push_back(new TriggerNode(
+        "carve",
+        NextAction::array(0, new NextAction("carve", ACTION_HIGH - 1), NULL)));
 }
 
 void SurvivalHunterAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
