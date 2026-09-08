@@ -93,7 +93,9 @@ void HolyPaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     // and benefits more from the Daybreak +healing-received bonus.
     triggers.push_back(new TriggerNode(
         "party member has daybreak",
-        NextAction::array(0, new NextAction("holy light on party", ACTION_HIGH + 5), NULL)));
+        NextAction::array(0, new NextAction("holy light on party", ACTION_HIGH + 5),
+                             new NextAction("flash of light on party", ACTION_HIGH + 4),
+                             new NextAction("holy shock on party", ACTION_HIGH + 3), NULL)));
 }
 
 void HolyPaladinStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

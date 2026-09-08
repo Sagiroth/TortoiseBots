@@ -325,7 +325,20 @@ bool ExorcismTrigger::IsActive()
 {
     if (SpellNoCooldownTrigger::IsActive())
     {
-        return AI_VALUE2(uint8, "mana", "self target") > sPlayerbotAIConfig.mediumMana;
+        if (AI_VALUE2(uint8, "mana", "self target") > sPlayerbotAIConfig.mediumMana)
+        {
+            // Art of War makes Exorcism instant: always worth casting.
+            // Otherwise Exorcism only affects undead/demon targets; core
+            // rejects other types, so firing there wastes mana and the GCD.
+            if (ai->HasAura("the art of war", bot))
+                return true;
+
+            if (Creature* target = dynamic_cast<Creature*>(GetTarget()))
+            {
+                uint32 type = target->GetCreatureType();
+                return type == CREATURE_TYPE_UNDEAD || type == CREATURE_TYPE_DEMON;
+            }
+        }
     }
 
     return false;
