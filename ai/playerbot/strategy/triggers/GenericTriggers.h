@@ -634,6 +634,13 @@ namespace ai
 		}
 	};
 
+	class PetAttackTrigger : public Trigger
+	{
+	public:
+		PetAttackTrigger(PlayerbotAI* ai) : Trigger(ai, "pet attack") {}
+		virtual bool IsActive() override;
+	};
+
 	class ItemCountTrigger : public Trigger
     {
 	public:

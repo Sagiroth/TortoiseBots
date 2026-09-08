@@ -197,6 +197,7 @@ namespace ai
             creators["wait for attack time"] = [](PlayerbotAI* ai) { return new SetWaitForAttackTimeAction(ai); };
             creators["self resurrect"] = [](PlayerbotAI* ai) { return new SelfResurrectAction(ai); };
             creators["pet"] = [](PlayerbotAI* ai) { return new SetPetAction(ai); };
+            creators["pet attack"] = [](PlayerbotAI* ai) { return new PetAttackAction(ai); };
             creators["tame"] = [](PlayerbotAI* ai) { return new TameAction(ai); };
             creators["unlock"] = [](PlayerbotAI* ai) { return new UnlockItemAction(ai); };
             creators["unlock item"] = [](PlayerbotAI* ai) { return new UnlockItemAction(ai); };

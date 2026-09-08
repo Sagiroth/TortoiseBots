@@ -298,7 +298,7 @@ void DestructionWarlockCcRaidStrategy::InitNonCombatTriggers(std::list<TriggerNo
 
 void DestructionWarlockPetStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-    WarlockPetStrategy::InitNonCombatTriggers(triggers);
+    WarlockPetStrategy::InitCombatTriggers(triggers);
 }
 
 void DestructionWarlockPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

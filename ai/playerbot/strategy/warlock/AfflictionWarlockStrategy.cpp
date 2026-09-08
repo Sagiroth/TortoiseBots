@@ -17,12 +17,24 @@ void AfflictionWarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
     WarlockStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
+        "low health",
+        NextAction::array(0, new NextAction("drain life", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "medium health",
+        NextAction::array(0, new NextAction("drain life", ACTION_NORMAL + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "low mana",
         NextAction::array(0, new NextAction("dark pact", ACTION_HIGH + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "siphon life",
         NextAction::array(0, new NextAction("siphon life", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "immolate",
+        NextAction::array(0, new NextAction("immolate", ACTION_NORMAL), NULL)));
 }
 
 void AfflictionWarlockStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -118,7 +130,7 @@ void AfflictionWarlockAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
 
     triggers.push_back(new TriggerNode(
         "siphon life on attacker",
-        NextAction::array(0, new NextAction("siphon life on attacker", ACTION_HIGH + 3), NULL)));
+        NextAction::array(0, new NextAction("siphon life on attacker", ACTION_HIGH - 1), NULL)));
 }
 
 void AfflictionWarlockAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -306,7 +318,7 @@ void AfflictionWarlockCcRaidStrategy::InitNonCombatTriggers(std::list<TriggerNod
 
 void AfflictionWarlockPetStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-    WarlockPetStrategy::InitNonCombatTriggers(triggers);
+    WarlockPetStrategy::InitCombatTriggers(triggers);
 }
 
 void AfflictionWarlockPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
