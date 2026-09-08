@@ -61,6 +61,14 @@ void RestorationShamanStrategy::InitCombatTriggers(std::list<TriggerNode*> &trig
         NextAction::array(0, new NextAction("healing wave on party", ACTION_CRITICAL_HEAL + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "spirit link on party tank",
+        NextAction::array(0, new NextAction("spirit link on party tank", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "ancestral swiftness heal",
+        NextAction::array(0, new NextAction("healing wave on party", ACTION_HIGH + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "low health",
         NextAction::array(0, new NextAction("healing wave", ACTION_CRITICAL_HEAL), NULL)));
 
@@ -482,6 +490,13 @@ void RestorationShamanBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerN
 void RestorationShamanBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ShamanBoostStrategy::InitCombatTriggers(triggers);
+
+    // Turtle 16188: instant-casts the next Nature spell <10s. The aura
+    // persists until consumed, so holding it is harmless; the heal-pairing
+    // trigger spends it on Healing Wave when a party member needs it.
+    triggers.push_back(new TriggerNode(
+        "ancestral swiftness",
+        NextAction::array(0, new NextAction("ancestral swiftness", ACTION_HIGH), NULL)));
 }
 
 void RestorationShamanBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

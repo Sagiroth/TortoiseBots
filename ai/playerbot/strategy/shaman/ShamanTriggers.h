@@ -255,6 +255,44 @@ namespace ai
         LightningShieldTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "lightning shield") {}
     };
 
+    class LightningStrikeTrigger : public SpellCanBeCastedTrigger
+    {
+    public:
+        LightningStrikeTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "lightning strike") {}
+        bool IsActive() override
+        {
+            // Turtle 51387 releases the active shield (lightning/water/earth
+            // per imbue-shield pairing). Require a shield aura so the strike
+            // never fires bare; core owns charge consumption.
+            if (!SpellCanBeCastedTrigger::IsActive())
+                return false;
+            return ai->HasAura("lightning shield", bot) || ai->HasAura("water shield", bot) ||
+                ai->HasAura("earth shield", bot);
+        }
+    };
+
+    class SpiritLinkOnPartyTankTrigger : public BuffOnTankTrigger
+    {
+    public:
+        SpiritLinkOnPartyTankTrigger(PlayerbotAI* ai) : BuffOnTankTrigger(ai, "spirit link") {}
+        bool IsActive() override
+        {
+            // 10min redistribution link: keep one copy group-wide (mirror the
+            // earth-shield dupe guard) and only link a live tank in combat.
+            Group* group = bot->GetGroup();
+            if (group)
+            {
+                for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+                    if (ai->HasAura("spirit link", ref->GetSource(), false, true))
+                        return false;
+            }
+            return BuffOnTankTrigger::IsActive() && ai->IsStateActive(BotState::BOT_STATE_COMBAT);
+        }
+    };
+
+    BUFF_TRIGGER(AncestralSwiftnessTrigger, "ancestral swiftness");
+    HAS_AURA_TRIGGER(AncestralSwiftnessAuraTrigger, "ancestral swiftness");
+
     class WaterShieldTrigger : public BuffTrigger
     {
     public:
@@ -423,4 +461,5 @@ namespace ai
     CAN_CAST_TRIGGER(ChainLightningTrigger, "chain lightning");
 
     CAN_CAST_TRIGGER(StormstrikeTrigger, "stormstrike");
+    BUFF_TRIGGER(ElementalMasteryTrigger, "elemental mastery");
 }

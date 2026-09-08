@@ -152,6 +152,10 @@ void ElementalShamanAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& tri
     triggers.push_back(new TriggerNode(
         "ranged light aoe",
         NextAction::array(0, new NextAction("chain lightning", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "ranged medium aoe",
+        NextAction::array(0, new NextAction("earthquake", ACTION_HIGH + 1), NULL)));
 }
 
 void ElementalShamanAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -427,6 +431,11 @@ void ElementalShamanBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerNod
 void ElementalShamanBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ShamanBoostStrategy::InitCombatTriggers(triggers);
+
+    // Turtle 16166: damage + mana-reduction buff, 3min. DBC-driven.
+    triggers.push_back(new TriggerNode(
+        "elemental mastery",
+        NextAction::array(0, new NextAction("elemental mastery", ACTION_HIGH), NULL)));
 }
 
 void ElementalShamanBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
