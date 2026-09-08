@@ -15,6 +15,7 @@ namespace ai
     BUFF_TRIGGER_A(InnerFireTrigger, "inner fire");
     BUFF_TRIGGER_A(ShadowformTrigger, "shadowform");
     BUFF_TRIGGER(InnerFocusTrigger, "inner focus");
+    BUFF_TRIGGER(AscendanceTrigger, "ascendance");
     CC_TRIGGER(ShackleUndeadTrigger, "shackle undead");
     INTERRUPT_TRIGGER(SilenceTrigger, "silence");
     INTERRUPT_HEALER_TRIGGER(SilenceEnemyHealerTrigger, "silence");

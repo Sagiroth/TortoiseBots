@@ -320,6 +320,10 @@ void PriestCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("shackle undead", ACTION_INTERRUPT), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "chastise",
+        NextAction::array(0, new NextAction("chastise", ACTION_INTERRUPT), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "enemy five yards",
         NextAction::array(0, new NextAction("psychic scream", ACTION_INTERRUPT), NULL)));
 }
