@@ -239,6 +239,7 @@ namespace ai
                 creators["spell lock enemy healer"] = [](PlayerbotAI* ai) { return new SpellLockEnemyHealerTrigger(ai); };
                 creators["soulstone"] = [](PlayerbotAI* ai) { return new SoulstoneTrigger(ai); };
                 creators["shadow ward"] = [](PlayerbotAI* ai) { return new ShadowWardTrigger(ai); };
+                creators["rain of fire channel check"] = [](PlayerbotAI* ai) { return new RainOfFireChannelCheckTrigger(ai); };
             }
         };
 
@@ -309,6 +310,9 @@ namespace ai
                 creators["update raid strats"] = [](PlayerbotAI* ai) { return new UpdateWarlockRaidStrategiesAction(ai); };
                 creators["soulstone"] = [](PlayerbotAI* ai) { return new CastSoulstoneAction(ai); };
                 creators["shadow ward"] = [](PlayerbotAI* ai) { return new CastShadowWardAction(ai); };
+                creators["torment"] = [](PlayerbotAI* ai) { return new CastTormentAction(ai); };
+                creators["blood pact"] = [](PlayerbotAI* ai) { return new CastBloodPactAction(ai); };
+                creators["firebolt"] = [](PlayerbotAI* ai) { return new CastFireboltAction(ai); };
             }
         };
     };

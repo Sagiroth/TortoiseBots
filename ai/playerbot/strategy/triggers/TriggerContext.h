@@ -126,6 +126,7 @@ namespace ai
             creators["corpse near"] = [](PlayerbotAI* ai) { return new CorpseNearTrigger(ai); };
             creators["party member dead"] = [](PlayerbotAI* ai) { return new PartyMemberDeadTrigger(ai); };
             creators["no pet"] = [](PlayerbotAI* ai) { return new NoPetTrigger(ai); };
+            creators["pet attack"] = [](PlayerbotAI* ai) { return new PetAttackTrigger(ai); };
             creators["has attackers"] = [](PlayerbotAI* ai) { return new HasAttackersTrigger(ai); };
             creators["no possible targets"] = [](PlayerbotAI* ai) { return new NoPossibleTargetsTrigger(ai); };
             creators["possible adds"] = [](PlayerbotAI* ai) { return new PossibleAddsTrigger(ai); };

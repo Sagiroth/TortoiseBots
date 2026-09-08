@@ -277,4 +277,11 @@ namespace ai
         std::string GetTargetName() override { return "party member to soulstone"; }
         uint32 GetItemId() override;
     };
+
+    class RainOfFireChannelCheckTrigger : public Trigger
+    {
+    public:
+        RainOfFireChannelCheckTrigger(PlayerbotAI* ai) : Trigger(ai, "rain of fire channel check") {}
+        bool IsActive() override;
+    };
 }
