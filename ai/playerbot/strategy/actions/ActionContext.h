@@ -19,6 +19,7 @@
 #include "ChooseRpgTargetAction.h"
 #include "ChooseTravelTargetAction.h"
 #include "DelayAction.h"
+#include "CancelChannelAction.h"
 #include "GiveItemAction.h"
 #include "GreetAction.h"
 #include "ImbueAction.h"
@@ -168,6 +169,7 @@ namespace ai
             creators["outfit"] = [](PlayerbotAI* ai) { return new OutfitAction(ai); };
             creators["random bot update"] = [](PlayerbotAI* ai) { return new RandomBotUpdateAction(ai); };
             creators["delay"] = [](PlayerbotAI* ai) { return new DelayAction(ai); };
+            creators["cancel channel"] = [](PlayerbotAI* ai) { return new CancelChannelAction(ai); };
             creators["greet"] = [](PlayerbotAI* ai) { return new GreetAction(ai); };
             creators["check values"] = [](PlayerbotAI* ai) { return new CheckValuesAction(ai); };
             creators["set avoid area"] = [](PlayerbotAI* ai) { return new SetAvoidAreaAction(ai); };
@@ -308,6 +310,8 @@ namespace ai
             creators["stoneform"] = [](PlayerbotAI* ai) { return new CastStoneformAction(ai); };
             creators["perception"] = [](PlayerbotAI* ai) { return new CastPerceptionAction(ai); };
             creators["will of the forsaken"] = [](PlayerbotAI* ai) { return new CastWillOfTheForsakenAction(ai); };
+            creators["mana tap"] = [](PlayerbotAI* ai) { return new CastManaTapAction(ai); };
+            creators["arcane torrent"] = [](PlayerbotAI* ai) { return new CastArcaneTorrentAction(ai); };
 
             creators["use id"] = [](PlayerbotAI* ai) { return new UseItemIdAction(ai); };
             creators["move to"] = [](PlayerbotAI* ai) { return new MoveToAction(ai); };
