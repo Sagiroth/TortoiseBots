@@ -8,7 +8,7 @@ Master Strike weapon nuke	none (Turtle-custom)	tortoise-wow spell_warrior.cpp:35
 PW:S Weakened Soul guard	mod-playerbots@b949b50	Ai/Class/Priest/PriestActions.cpp:39-94	HasAnyAuraOf WS guard	PriestActions.h	adapt	donor has multiple tier actions; local has two	6788 refusal in shield self+party actions
 Chastise CC	shyalya@83a61bc	strategy/priest/PriestStrategy.cpp:892-894	chastise in CC	PriestStrategy.cpp	adapt	local trigger is SNARE-based; Shyalya fires as CC	INTERRUPT trigger in PriestCcStrategy
 Chastise friendly haste	tortoise-wow spell_priest.cpp:426-448	spell_priest_chastise OnCheckCast	friendly haste	none (manual cast)	adapt	no auto trigger to avoid mis-buffing	core raid/level/health guards, situational/manual
-Enlighten proc	tortoise-wow spell_priest.cpp:308-355,640-700	passive proc	none (server-owned)	keep	—	no bot surface needed
+Enlighten proc	tortoise-wow	spell_priest.cpp:308-355,640-700	passive proc	none (server-owned)	keep	—	no bot surface needed
 Arcane Blast stacks/Missile Barrage/Frostfire	mod-playerbots@b949b50 (WotLK)	various	—	none	reject	no local spell/template evidence	do not import by name
 Devastate/Shockwave/Spell Reflection/Heroic Throw/Rampage/Bladestorm	mod-playerbots@b949b50 (later)	various	—	none	reject	later-expansion names, no Turtle rows	do not import
 Binding Heal/Circle of Healing/Penance/Power Word barrier	mod-playerbots@b949b50 (WotLK)	various	—	none	reject	no Turtle acquisition	do not import
@@ -21,18 +21,19 @@ Carve/Lacerate placement	Turtle core	spell_hunter.cpp + SpellMgr exclusivity	are
 Chimera/Kill/Steady/Explosive/Black Arrow/Silencing/Misdirection/Dragonhawk/Viper-aspect	mod-playerbots (WotLK)	Ai/Class/Hunter	various	none	reject	no Turtle DBC/script/SQL evidence	must not port by name
 Mutilate/Hunger for Blood/Fan of Knives/Killing Spree/Tricks/Cloak/Deadly Throw	mod-playerbots (WotLK)	Ai/Class/Rogue	various	none	reject	post-vanilla, no Turtle rows	must not port by name
 Dark Harvest channel pattern	TortoiseBots#92 (RainOfFireChannelCheckTrigger)	warlock triggers	channel check	WarlockTriggers.h/.cpp	adapt	start needs 2+ DoTs (CD refund on death inverts cancel logic)	dying targets keep channeling
-Power Overwhelming pet targeting	tortoise-wow spell_warlock.cpp:1722-1737	pet fallback	WarlockActions.h	adapt	core falls back to pet only when untargeted	action targets pet explicitly
-Holy Shock split	tortoise-wow spell_paladin.cpp + shyalya mirror	dual heal/damage	existing split	none	keep	callers must pair trigger target with matching action
-Exorcism correctness	tortoise-wow CheckCast (undead/demon-only)	mana-only gate	PaladinTriggers.cpp	adapt	vanilla-correct gating, conservative vs players	Art of War OR creature type
-Bear/Cat NEW stack	mod-playerbots@5397110 forward-port	NEW Bear/Cat/Resto files	none	reject (unwired)	editing NEW files is runtime no-op until context wiring lands	stay on OLD stack
-Eclipse IDs	tortoise-wow spell_druid.cpp:860-907	51442/51443/51444	BalanceDruidStrategy	keep	donor solar/lunar IDs must not port	OLD triggers already correct
-Savage Bite	none (no Turtle evidence)	—	none	reject	likely Savage Roar confusion	do not implement
-Tree of Life form	tortoise-wow spell_druid.cpp:570+	45705	none	defer	form-restriction audit first	unresolved
-Earthquake splash	tortoise-wow spell_shaman.cpp:1495-1544	primary-safe splash	ElementalShamanStrategy	adapt	density triggers carry CC safety	medium-aoe HIGH+1
-Spirit Link tank pair	TortoiseBots local earth-shield tank pair	BuffOnTank pair	ShamanActions/Triggers	adapt	group dupe guard mirrored	tank recipient
-Ancestral Swiftness pairing	tortoise-wow DBC (no script)	next-spell instant	ShamanStrategies	adapt	aura persists until consumed	TwoTriggers consumer into HW
-Bloodlust local semantics	tortoise-wow DBC (no script)	self frenzy + party proc	EnhancementShamanStrategy	adapt	not Wrath haste; was registered-never-wired	legacy boost HIGH
-Heroism/Totem of Wrath/Lava Burst/Maelstrom/Riptide/Wind Shear	mod-playerbots (Wrath)	various	none	reject	no Turtle evidence	must not port by nameEnvenom upkeep	TortoiseBots local slice-and-dice trigger	NoBuff+CP trigger	SliceAndDiceTrigger	RogueTriggers.h	adapt	maintenance slot beside slice, CP-scaled duration	Assassination HIGH+1
+Power Overwhelming pet targeting	tortoise-wow	spell_warlock.cpp:1722-1737	pet fallback	WarlockActions.h	adapt	core falls back to pet only when untargeted	action targets pet explicitly
+Holy Shock split	tortoise-wow	spell_paladin.cpp + shyalya mirror	dual heal/damage	existing split	keep	none	callers must pair trigger target with matching action
+Exorcism correctness	tortoise-wow	CheckCast (undead/demon-only)	mana-only gate	PaladinTriggers.cpp	adapt	vanilla-correct gating, conservative vs players	Art of War OR creature type
+Bear/Cat NEW stack	mod-playerbots@5397110 forward-port	NEW Bear/Cat/Resto files	none	none	reject (unwired)	editing NEW files is runtime no-op until context wiring lands	stay on OLD stack
+Eclipse IDs	tortoise-wow	spell_druid.cpp:860-907	51442/51443/51444	BalanceDruidStrategy	keep	donor solar/lunar IDs must not port	OLD triggers already correct
+Savage Bite	none (no Turtle evidence)	—	none	none	reject	likely Savage Roar confusion	do not implement
+Tree of Life form	tortoise-wow	spell_druid.cpp:570+	45705	none	defer	form-restriction audit first	unresolved
+Earthquake splash	tortoise-wow	spell_shaman.cpp:1495-1544	primary-safe splash	ElementalShamanStrategy	adapt	density triggers carry CC safety	medium-aoe HIGH+1
+Spirit Link tank pair	TortoiseBots local	earth-shield tank pair	BuffOnTank pair	ShamanActions/Triggers	adapt	group dupe guard mirrored	tank recipient
+Ancestral Swiftness pairing	tortoise-wow	DBC (no script)	next-spell instant	ShamanStrategies	adapt	aura persists until consumed	TwoTriggers consumer into HW
+Bloodlust local semantics	tortoise-wow	DBC (no script)	self frenzy + party proc	EnhancementShamanStrategy	adapt	not Wrath haste; was registered-never-wired	legacy boost HIGH
+Heroism/Totem of Wrath/Lava Burst/Maelstrom/Riptide/Wind Shear	mod-playerbots (Wrath)	various	none	none	reject	no Turtle evidence	must not port by name
+Envenom upkeep	TortoiseBots local slice-and-dice trigger	NoBuff+CP trigger	SliceAndDiceTrigger	RogueTriggers.h	adapt	maintenance slot beside slice, CP-scaled duration	Assassination HIGH+1
 Shadow of Death slot	tortoise-wow spell_rogue.cpp:559-619	CP snapshot + banked detonate	ShadowOfDeathTrigger	RogueTriggers.cpp	adapt	5CP + durable-target gate	Subtlety HIGH+1
 Mark for Death opener	tortoise-wow spell_rogue.cpp:202-233	party AP buff	MarkForDeathTrigger	RogueTriggers.cpp	adapt	fresh-target gate	Subtlety HIGH
 Smoke Bomb defensive	tortoise-wow DBC (no script)	self miss-cloud	critical health (generic)	SubtletyRogueStrategy	adapt	DBC-only, spec-scoped defensive	Subtlety EMERGENCY
