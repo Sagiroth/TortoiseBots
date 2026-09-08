@@ -30,6 +30,22 @@ namespace ai
     MELEE_ACTION(CastMortalStrikeAction, "mortal strike");
     BUFF_ACTION(CastSweepingStrikesAction, "sweeping strikes");
 
+    class CastMasterStrikeAction : public CastMeleeSpellAction
+    {
+    public:
+        CastMasterStrikeAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "master strike") {}
+
+        bool isPossible() override
+        {
+            // Turtle 54023 dispatches to a weapon-matched helper in core
+            // (spell_warrior_master_strike). The spell template already
+            // requires a weapon, but a missing main hand would otherwise burn
+            // the 30s cooldown as a silent no-op.
+            if (!CastMeleeSpellAction::isPossible())
+                return false;
+            return bot->GetWeaponForAttack(BASE_ATTACK, true, true) != nullptr;
+        }
+    };
     // fury
     MELEE_ACTION(CastCleaveAction, "cleave");
     MELEE_ACTION(CastExecuteAction, "execute");

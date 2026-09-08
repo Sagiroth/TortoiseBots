@@ -33,6 +33,18 @@ public:
         creators["intervene"] = &intervene;
         */
 
+        // Selectively enforced stance prerequisites (Warrior census): only
+        // the tank-correctness set (defensive: taunt/revenge/shield block/
+        // shield wall) and the interrupt/mobility set (berserker: pummel/
+        // intercept). Charge/mock/overpower/retaliation/mortal stay unforced
+        // to avoid rage-dance churn; whirlwind keeps its Arms-scoped node.
+        creators["pummel"] = &pummel;
+        creators["intercept"] = &intercept;
+        creators["taunt"] = &taunt;
+        creators["revenge"] = &revenge;
+        creators["shield block"] = &shield_block;
+        creators["shield wall"] = &shield_wall;
+
         creators["berserker rage"] = &berserker_rage;
     }
 
@@ -70,6 +82,18 @@ private:
     ACTION_NODE_P(intervene, "intervene", "defensive stance");
 
     */
+
+    ACTION_NODE_P(pummel, "pummel", "berserker stance");
+
+    ACTION_NODE_P(intercept, "intercept", "berserker stance");
+
+    ACTION_NODE_P(taunt, "taunt", "defensive stance");
+
+    ACTION_NODE_P(revenge, "revenge", "defensive stance");
+
+    ACTION_NODE_P(shield_block, "shield block", "defensive stance");
+
+    ACTION_NODE_P(shield_wall, "shield wall", "defensive stance");
 
     ACTION_NODE_P(berserker_rage, "berserker rage", "berserker stance");
 };

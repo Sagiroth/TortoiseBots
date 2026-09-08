@@ -169,6 +169,7 @@ namespace ai
                 creators["intercept and far enemy"] = [](PlayerbotAI* ai) { return new TwoTriggers(ai, "enemy is out of melee", "intercept can cast"); };
                 creators["intercept and rage"] = [](PlayerbotAI* ai) { return new TwoTriggers(ai, "intercept and far enemy", "light rage available"); };
                 creators["recklessness"] = [](PlayerbotAI* ai) { return new RecklessnessTrigger(ai); };
+                creators["master strike"] = [](PlayerbotAI* ai) { return new MasterStrikeTrigger(ai); };
                 creators["slam"] = [](PlayerbotAI* ai) { return new SlamTrigger(ai); };
             }
         };
@@ -219,7 +220,7 @@ namespace ai
                 creators["whirlwind"] = [](PlayerbotAI* ai) { return new CastWhirlwindAction(ai); };
                 creators["pummel"] = [](PlayerbotAI* ai) { return new CastPummelAction(ai); };
                 creators["pummel on enemy healer"] = [](PlayerbotAI* ai) { return new CastPummelOnEnemyHealerAction(ai); };
-                creators["recklessness"] = [](PlayerbotAI* ai) { return new CastRecklessnessAction(ai); };
+                creators["master strike"] = [](PlayerbotAI* ai) { return new CastMasterStrikeAction(ai); };
                 creators["piercing howl"] = [](PlayerbotAI* ai) { return new CastPiercingHowlAction(ai); };
                 creators["intervene"] = [](PlayerbotAI* ai) { return new CastInterveneAction(ai); };
                 creators["thunder clap on snare target"] = [](PlayerbotAI* ai) { return new CastThunderClapSnareAction(ai); };
