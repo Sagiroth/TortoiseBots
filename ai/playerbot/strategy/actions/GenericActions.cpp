@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "GenericActions.h"
+#include "AttackAction.h"
 #include <map>
 #include "playerbot/PlayerbotFactory.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
@@ -565,20 +566,18 @@ bool SetPetAction::Execute(Event& event)
     return false;
 }
 
+bool PetAttackAction::isUseful()
+{
+    Pet* pet = bot->GetPet();
+    Unit* target = GetTarget();
+    return AttackAction::CanPetAttack(ai, pet, target);
+}
+
 bool PetAttackAction::Execute(Event& event)
 {
     Pet* pet = bot->GetPet();
-    if (!pet || !pet->IsAlive())
-        return false;
-
-    if (pet->GetReactState() == REACT_PASSIVE)
-        return false;
-
-    Unit* target = AI_VALUE(Unit*, "current target");
-    if (!target || !target->IsAlive())
-        return false;
-
-    if (!bot->IsValidAttackTarget(target))
+    Unit* target = GetTarget();
+    if (!AttackAction::CanPetAttack(ai, pet, target))
         return false;
 
     constexpr uint32 PET_IMP = 416;
@@ -588,12 +587,6 @@ bool PetAttackAction::Execute(Event& event)
     {
         pet->RemoveAurasDueToSpell(PHASE_SHIFT);
     }
-
-    bool ccProtected = !PossibleAttackTargetsValue::HasIgnoreCCRti(target, bot) &&
-        (PossibleAttackTargetsValue::HasBreakableCC(target, bot) ||
-         PossibleAttackTargetsValue::HasUnBreakableCC(target, bot));
-    if (ccProtected || PossibleAttackTargetsValue::IsImmuneToDamage(target, bot))
-        return false;
 
     const ObjectGuid& petGuid = pet->getObjectGuid();
     const ObjectGuid targetGuid = target->GetObjectGuid();

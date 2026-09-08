@@ -39,7 +39,7 @@ bool LifeTapTrigger::IsActive()
 	if (mana <= sPlayerbotAIConfig.lowMana)
 	{
 		const uint32 health = AI_VALUE2(uint8, "health", "self target");
-		if (health > 50)
+		if (health > sPlayerbotAIConfig.lowHealth)
 		{
 			return true;
 		}
