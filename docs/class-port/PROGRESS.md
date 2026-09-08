@@ -456,3 +456,18 @@ No issues closed; no pushes/PRs published (needs execution-session authority).
 - Imbue upkeep verified coherent (windfury+rockbiter fallback, lightning
   shield maintained non-combat; combat shield upkeep added batch 11+).
 - Checks: diff clean, presets 297/0, wiring 0/0, surface + host OK.
+
+## Batch 24 — DONOR_MAP structural repair (done, committed d868e3aa on cp/shared-foundation, chain rebased)
+- Column-count audit found DONOR_MAP.tsv mixed widths {8,14,7}: eleven data
+  rows had merged donor_sha+donor_file fields (7 cols), one line fused two
+  rows (14 cols: Heroism reject + Envenom upkeep), three rows lacked
+  local_owner. Fixed minimally: split merged fields, separated fused rows,
+  inserted owner "none" where the row already states no local surface, and
+  swapped the Holy Shock disposition/incompatibility pair (only order yielding
+  valid values; no mechanics changed). Shadow of Death needed no split (was
+  already a valid merged-source row; a first-pass split to 9 cols was
+  reverted). Result: 39 data rows, uniform 8 cols.
+- Committed on cp/shared-foundation; rebased cp/warrior→cp/shaman (all clean,
+  README stash round-tripped). Tip-vs-old-tip diff is exactly the TSV fix.
+- Checks: TSV widths {8}/{16}/{8}, diff clean, wiring 0/0, presets 297/0,
+  surface + host OK. No docker build (user-owned review).
