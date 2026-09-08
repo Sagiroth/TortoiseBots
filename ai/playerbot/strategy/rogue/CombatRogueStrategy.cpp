@@ -14,6 +14,10 @@ void CombatRogueStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("riposte", ACTION_HIGH + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "surprise attack",
+        NextAction::array(0, new NextAction("surprise attack", ACTION_HIGH + 3), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "slice and dice",
         NextAction::array(0, new NextAction("slice and dice", ACTION_HIGH + 2), NULL)));
 
@@ -220,11 +224,6 @@ void CombatRogueBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>&
 void CombatRogueBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     RogueBoostStrategy::InitCombatTriggers(triggers);
-}
-
-void CombatRogueBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
-{
-    RogueBoostStrategy::InitNonCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
         "adrenaline rush",
@@ -233,6 +232,11 @@ void CombatRogueBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& tr
     triggers.push_back(new TriggerNode(
         "blade flurry",
         NextAction::array(0, new NextAction("blade flurry", ACTION_HIGH + 4), NULL)));
+}
+
+void CombatRogueBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    RogueBoostStrategy::InitNonCombatTriggers(triggers);
 }
 
 void CombatRogueBoostPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
