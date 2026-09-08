@@ -9,6 +9,10 @@ using namespace ai;
 void BeastMasteryHunterStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     HunterStrategy::InitCombatTriggers(triggers);
+
+    triggers.push_back(new TriggerNode(
+        "kill command",
+        NextAction::array(0, new NextAction("kill command", ACTION_NORMAL + 4), NULL)));
 }
 
 void BeastMasteryHunterStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
