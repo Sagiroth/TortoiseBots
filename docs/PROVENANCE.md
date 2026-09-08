@@ -1053,3 +1053,38 @@ generic value for every healer class.
 configured free-alt/always-online character is still an owned character and
 therefore remains protected from automatic talent mutation; only the random
 population identity opts into autonomous talent behavior.
+
+## Combat: Target deduplication and AoE density clustering hardening (Issue #91) — 2026-09-08
+
+Feature: Deduplicate hostile units in `AttackersValue` and harden `AoeCountValue::FindMaxDensity()` against false AoE clustering.
+
+Source repository: `playerbots-references/shyalya-tortoise-wow` (API oracle for Turtle runtime) and `playerbots-references/mod-playerbots` (behavior donor for target uniqueness and non-threat filtering).
+
+Source files:
+- `AttackersValue.cpp`: `AttackersValue::Calculate()`
+- `AoeValues.cpp`: `AoeCountValue::FindMaxDensity()`, `AoePositionValue::Calculate()`
+
+Copied / ported / independently reimplemented:
+- In `AttackersValue::Calculate()`:
+  - Resolved target duplication when `sPlayerbotAIConfig.shareTargets` is active: bot-specific targets (`current target`, `old target`, `attack target`, `pull target`) are collected into a `std::set<ObjectGuid>` before merging to prevent duplicate insertions for the same mob.
+  - The merged list is validated and filtered through a distinctness filter (`std::set<ObjectGuid> seen`), enforcing the invariant that `attackers` contains strictly distinct hostile units.
+  - The `getOne` qualifier (`attackers::1`) is now evaluated early and respected in the `shareTargets` path.
+  - The fallback local target calculation path also guarantees distinctness via `seen.insert(target->getObjectGuid())`.
+- In `AoeValues.cpp`:
+  - `AoeCountValue::FindMaxDensity()` deduplicates incoming unit GUIDs into `std::set<ObjectGuid> uniqueUnits` before distance loops.
+  - Cluster groups are stored in `std::map<ObjectGuid, std::set<ObjectGuid>> groups`, guaranteeing that duplicate creature GUIDs can never inflate cluster density.
+  - `AoePositionValue::Calculate()` initializes bounding-box coordinates with a `first` guard, preventing reads of uninitialized stack variables when the first unit in a group is null.
+
+Reason: Fix engine bug where single-mob pulls duplicated targets across shared party member lists, inflating density up to 3–4 and causing bots of all classes to prematurely cast expensive AoE abilities (Rain of Fire, Cleave, Thunder Clap, Blizzard).
+
+Local validation:
+- `tools/verify_turtle_surface.sh`: OK
+- `tools/verify_penqle_host_contract.sh --core ../tortoise-wow`: OK
+- Standalone regression test suites (`tools/test_attackers_aoe_density.py` and `tools/test_attackers_aoe_density.cpp`): 6/6 tests PASS, proving:
+  1. 1 mob with duplicate target references yields count = 1, density = 1, AoE inactive.
+  2. 2 mobs with duplicate references yield count = 2 != 3+, AoE inactive.
+  3. Real clustered 3 mobs yield count = 3, AoE eligible (>= 3).
+  4. 3 spread mobs (> 2 * aoeRadius) yield density = 1, AoE inactive.
+  5. Defensive FindMaxDensity with raw duplicate inputs returns count = 1.
+  6. `attackers::1` qualifier returns exactly 1 distinct attacker.
+
