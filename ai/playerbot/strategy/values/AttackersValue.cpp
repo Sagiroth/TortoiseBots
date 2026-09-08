@@ -38,6 +38,13 @@ std::list<ObjectGuid> AttackersValue::Calculate()
         return result;
     }
 
+    // Check if we only need one attacker
+    bool getOne = false;
+    if (!qualifier.empty())
+    {
+        getOne = atoi(qualifier.c_str()) != 0;
+    }
+
     if (sPlayerbotAIConfig.shareTargets)
     {
         // Try to get the value from nearby friendly bots.
@@ -93,7 +100,7 @@ std::list<ObjectGuid> AttackersValue::Calculate()
             std::vector<std::string> specificTargetNames = { "current target","old target","attack target","pull target" };
             Unit* target;
 
-            //Remove bot specific targets of the other bot.
+            // Remove bot specific targets of the other bot.
             for (auto& targetName : specificTargetNames)
             {
                 target = (targetName == "attack target") ? ai->GetUnit(PAI_VALUE(ObjectGuid, targetName)) : PAI_VALUE(Unit*, targetName);
@@ -101,7 +108,7 @@ std::list<ObjectGuid> AttackersValue::Calculate()
                     result.remove(target->getObjectGuid());
             }
 
-            //Add bot specific targets of this bot.
+            // Append bot specific targets of this bot in natural priority order.
             for (auto& targetName : specificTargetNames)
             {
                 target = (targetName == "attack target") ? ai->GetUnit(AI_VALUE(ObjectGuid, targetName)) : AI_VALUE(Unit*, targetName);
@@ -109,35 +116,32 @@ std::list<ObjectGuid> AttackersValue::Calculate()
                     result.push_back(target->getObjectGuid());
             }
 
-            //Validate these targets.
-            std::list<ObjectGuid> filter;
+            // Validate these targets and enforce the invariant of distinct hostile units,
+            // preserving original sequence (first-seen stable deduplication).
+            std::list<ObjectGuid> distinctResult;
+            std::set<ObjectGuid> seen;
 
             for (auto& guid : result)
             {
-                target = ai->GetUnit(guid);
+                if (!seen.insert(guid).second)
+                    continue;
 
-                if (!IsValid(target, bot, bot))
-                    filter.push_back(guid);
+                target = ai->GetUnit(guid);
+                if (IsValid(target, bot, bot))
+                {
+                    distinctResult.push_back(guid);
+                    if (getOne)
+                        break;
+                }
             }
 
-            for(auto& guid : filter)
-                result.remove(guid);
-
-            return result;
+            return distinctResult;
         }
     }
 
     calculatePos = bot;
 
     std::set<Unit*> targets;
-
-    // Check if we only need one attacker
-    bool getOne = false;
-    if (!qualifier.empty())
-    {
-        getOne = stoi(qualifier);
-    }
-
     std::set<ObjectGuid> invalidTargets;
 
     // Add the targets of the bot
@@ -158,13 +162,18 @@ std::list<ObjectGuid> AttackersValue::Calculate()
             AddTargetsOf(master, targets, invalidTargets, getOne);
     }
 
-    // Convert the targets to guids
+    // Convert the targets to guids, ensuring distinctness
+    std::list<ObjectGuid> distinctResult;
+    std::set<ObjectGuid> seen;
     for (Unit* target : targets)
     {
-        result.push_back(target->getObjectGuid());
+        if (target && seen.insert(target->getObjectGuid()).second)
+        {
+            distinctResult.push_back(target->getObjectGuid());
+        }
     }
 
-    return result;
+    return distinctResult;
 }
 
 void AttackersValue::AddTargetsOf(Group* group, std::set<Unit*>& targets, std::set<ObjectGuid>& invalidTargets, bool getOne)
