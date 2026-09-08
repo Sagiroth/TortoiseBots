@@ -14,6 +14,14 @@ NextAction** FrostMageStrategy::GetDefaultCombatActions()
 void FrostMageStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     MageStrategy::InitCombatTriggers(triggers);
+
+    triggers.push_back(new TriggerNode(
+        "icicles channel check",
+        NextAction::array(0, new NextAction("cancel channel", ACTION_HIGH + 3), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "icicles",
+        NextAction::array(0, new NextAction("icicles", ACTION_HIGH), NULL)));
 }
 
 void FrostMageStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
