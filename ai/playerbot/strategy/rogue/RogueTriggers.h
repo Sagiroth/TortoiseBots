@@ -10,6 +10,29 @@ namespace ai
     };
 
     CAN_CAST_TRIGGER_A(RiposteCastTrigger, "riposte");
+    CAN_CAST_TRIGGER_A(SurpriseAttackTrigger, "surprise attack");
+    CAN_CAST_TRIGGER(BackstabTrigger, "backstab");
+    CAN_CAST_TRIGGER(NoxiousAssaultTrigger, "noxious assault");
+
+    class EnvenomTrigger : public NoBuffAndComboPointsAvailableTrigger
+    {
+    public:
+        EnvenomTrigger(PlayerbotAI* ai, uint8 comboPoints = 3) : NoBuffAndComboPointsAvailableTrigger(ai, "envenom", comboPoints) {}
+    };
+
+    class ShadowOfDeathTrigger : public SpellCanBeCastedTrigger
+    {
+    public:
+        ShadowOfDeathTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "shadow of death") {}
+        bool IsActive() override;
+    };
+
+    class MarkForDeathTrigger : public SpellCanBeCastedTrigger
+    {
+    public:
+        MarkForDeathTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "mark for death") {}
+        bool IsActive() override;
+    };
 
     class SliceAndDiceTrigger : public NoBuffAndComboPointsAvailableTrigger
     {
