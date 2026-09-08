@@ -666,6 +666,21 @@ AiPlayerbot.PremadeSpecLink.1.1.50 = --253051023205512221
 AiPlayerbot.PremadeSpecLink.1.1.55 = 2--2530510232055122231
 AiPlayerbot.PremadeSpecLink.1.1.60 = 34--2530510232055122231
 
+AiPlayerbot.PremadeSpecName.1.2 = arms
+AiPlayerbot.PremadeSpecProb.1.2 = 100
+AiPlayerbot.PremadeSpecLink.1.2.10 = 01
+AiPlayerbot.PremadeSpecLink.1.2.15 = 05001
+AiPlayerbot.PremadeSpecLink.1.2.20 = 05105
+AiPlayerbot.PremadeSpecLink.1.2.25 = 0522511
+AiPlayerbot.PremadeSpecLink.1.2.30 = 052253121
+AiPlayerbot.PremadeSpecLink.1.2.35 = 0522531233
+AiPlayerbot.PremadeSpecLink.1.2.40 = 052253123323
+AiPlayerbot.PremadeSpecLink.1.2.45 = 052253123325110001
+AiPlayerbot.PremadeSpecLink.1.2.50 = 052253123325130201-01
+AiPlayerbot.PremadeSpecLink.1.2.55 = 052253123325130201-0501
+AiPlayerbot.PremadeSpecLink.1.2.60 = 052253123325130201-050501
+
+
 # --- class 2 ---
 AiPlayerbot.PremadeSpecName.2.0 = holy
 AiPlayerbot.PremadeSpecProb.2.0 = 100
@@ -674,7 +689,7 @@ AiPlayerbot.PremadeSpecLink.2.0.15 = 051
 AiPlayerbot.PremadeSpecLink.2.0.20 = 053201
 AiPlayerbot.PremadeSpecLink.2.0.25 = 0532030201
 AiPlayerbot.PremadeSpecLink.2.0.30 = 05320302033
-AiPlayerbot.PremadeSpecLink.2.0.35 = 0532030203521
+AiPlayerbot.PremadeSpecLink.2.0.35 = 05320302035201
 AiPlayerbot.PremadeSpecLink.2.0.40 = 05320302035251
 AiPlayerbot.PremadeSpecLink.2.0.45 = 0532030203525132
 AiPlayerbot.PremadeSpecLink.2.0.50 = 05320302035251351-1
@@ -735,6 +750,21 @@ AiPlayerbot.PremadeSpecLink.3.1.50 = -055521325012325
 AiPlayerbot.PremadeSpecLink.3.1.55 = 4-0555213250123251
 AiPlayerbot.PremadeSpecLink.3.1.60 = 5022-0555213250123251
 
+AiPlayerbot.PremadeSpecName.3.2 = survival
+AiPlayerbot.PremadeSpecProb.3.2 = 100
+AiPlayerbot.PremadeSpecLink.3.2.10 = --1
+AiPlayerbot.PremadeSpecLink.3.2.15 = --33
+AiPlayerbot.PremadeSpecLink.3.2.20 = --3503
+AiPlayerbot.PremadeSpecLink.3.2.25 = --350323
+AiPlayerbot.PremadeSpecLink.3.2.30 = --350323023
+AiPlayerbot.PremadeSpecLink.3.2.35 = --350323025111
+AiPlayerbot.PremadeSpecLink.3.2.40 = --350323025112301
+AiPlayerbot.PremadeSpecLink.3.2.45 = --3503230251123033
+AiPlayerbot.PremadeSpecLink.3.2.50 = --3503230251123033104
+AiPlayerbot.PremadeSpecLink.3.2.55 = 03--35032302511230331051
+AiPlayerbot.PremadeSpecLink.3.2.60 = 05003--35032302511230331051
+
+
 # --- class 4 ---
 AiPlayerbot.PremadeSpecName.4.0 = combat
 AiPlayerbot.PremadeSpecProb.4.0 = 100
@@ -762,6 +792,21 @@ AiPlayerbot.PremadeSpecLink.4.1.45 = 00532310523331122
 AiPlayerbot.PremadeSpecLink.4.1.50 = 005323105233311251-1
 AiPlayerbot.PremadeSpecLink.4.1.55 = 005323105233311251-5001
 AiPlayerbot.PremadeSpecLink.4.1.60 = 005323105233311251-50033
+
+AiPlayerbot.PremadeSpecName.4.2 = subtlety
+AiPlayerbot.PremadeSpecProb.4.2 = 100
+AiPlayerbot.PremadeSpecLink.4.2.10 = --1
+AiPlayerbot.PremadeSpecLink.4.2.15 = --501
+AiPlayerbot.PremadeSpecLink.4.2.20 = --5033
+AiPlayerbot.PremadeSpecLink.4.2.25 = --5033032
+AiPlayerbot.PremadeSpecLink.4.2.30 = --5033033301
+AiPlayerbot.PremadeSpecLink.4.2.35 = --503303331122
+AiPlayerbot.PremadeSpecLink.4.2.40 = --50330333112202111
+AiPlayerbot.PremadeSpecLink.4.2.45 = --51330333112202112201
+AiPlayerbot.PremadeSpecLink.4.2.50 = --52332333112202112221
+AiPlayerbot.PremadeSpecLink.4.2.55 = 005--52332333112202112221
+AiPlayerbot.PremadeSpecLink.4.2.60 = 00532--52332333112202112221
+
 
 # --- class 5 ---
 AiPlayerbot.PremadeSpecName.5.0 = holy
@@ -791,6 +836,21 @@ AiPlayerbot.PremadeSpecLink.5.1.50 = 20503--05225000102501251
 AiPlayerbot.PremadeSpecLink.5.1.55 = 2050402011--05225000102501251
 AiPlayerbot.PremadeSpecLink.5.1.60 = 20504020133--05225000102501251
 
+AiPlayerbot.PremadeSpecName.5.2 = discipline
+AiPlayerbot.PremadeSpecProb.5.2 = 100
+AiPlayerbot.PremadeSpecLink.5.2.10 = 1
+AiPlayerbot.PremadeSpecLink.5.2.15 = 2301
+AiPlayerbot.PremadeSpecLink.5.2.20 = 23051
+AiPlayerbot.PremadeSpecLink.5.2.25 = 2305500001
+AiPlayerbot.PremadeSpecLink.5.2.30 = 23055000132
+AiPlayerbot.PremadeSpecLink.5.2.35 = 23055022133
+AiPlayerbot.PremadeSpecLink.5.2.40 = 23055022133302
+AiPlayerbot.PremadeSpecLink.5.2.45 = 23055022133303112
+AiPlayerbot.PremadeSpecLink.5.2.50 = 230550221333031151-1
+AiPlayerbot.PremadeSpecLink.5.2.55 = 230550221333031151-321
+AiPlayerbot.PremadeSpecLink.5.2.60 = 230550221333031151-3251
+
+
 # --- class 7 ---
 AiPlayerbot.PremadeSpecName.7.0 = restoration
 AiPlayerbot.PremadeSpecProb.7.0 = 100
@@ -818,6 +878,21 @@ AiPlayerbot.PremadeSpecLink.7.1.45 = 2-5005303105023151
 AiPlayerbot.PremadeSpecLink.7.1.50 = 52-5005303105023151
 AiPlayerbot.PremadeSpecLink.7.1.55 = 5502-5005303105023151
 AiPlayerbot.PremadeSpecLink.7.1.60 = 550331-5005303105023151
+
+AiPlayerbot.PremadeSpecName.7.2 = elemental
+AiPlayerbot.PremadeSpecProb.7.2 = 100
+AiPlayerbot.PremadeSpecLink.7.2.10 = 1
+AiPlayerbot.PremadeSpecLink.7.2.15 = 51
+AiPlayerbot.PremadeSpecLink.7.2.20 = 5501
+AiPlayerbot.PremadeSpecLink.7.2.25 = 55033
+AiPlayerbot.PremadeSpecLink.7.2.30 = 5513313
+AiPlayerbot.PremadeSpecLink.7.2.35 = 55133135
+AiPlayerbot.PremadeSpecLink.7.2.40 = 551331350203
+AiPlayerbot.PremadeSpecLink.7.2.45 = 551331350203212
+AiPlayerbot.PremadeSpecLink.7.2.50 = 5513313502032125
+AiPlayerbot.PremadeSpecLink.7.2.55 = 55133135020321251--4
+AiPlayerbot.PremadeSpecLink.7.2.60 = 55133135020321251--54
+
 
 # --- class 8 ---
 AiPlayerbot.PremadeSpecName.8.0 = arcane
@@ -868,7 +943,7 @@ AiPlayerbot.PremadeSpecLink.9.0.15 = 51
 AiPlayerbot.PremadeSpecLink.9.0.20 = 55001
 AiPlayerbot.PremadeSpecLink.9.0.25 = 5500222
 AiPlayerbot.PremadeSpecLink.9.0.30 = 55002230022
-AiPlayerbot.PremadeSpecLink.9.0.35 = 5500223002232
+AiPlayerbot.PremadeSpecLink.9.0.35 = 55002230022311
 AiPlayerbot.PremadeSpecLink.9.0.40 = 55002230022321013
 AiPlayerbot.PremadeSpecLink.9.0.45 = 550022300223210151-02
 AiPlayerbot.PremadeSpecLink.9.0.50 = 550022300223210151-052
@@ -909,7 +984,7 @@ AiPlayerbot.PremadeSpecLink.11.0.15 = 500001
 AiPlayerbot.PremadeSpecLink.11.0.20 = 500002301
 AiPlayerbot.PremadeSpecLink.11.0.25 = 50000230312
 AiPlayerbot.PremadeSpecLink.11.0.30 = 500002303125
-AiPlayerbot.PremadeSpecLink.11.0.35 = 50000230312532
+AiPlayerbot.PremadeSpecLink.11.0.35 = 500002303125311
 AiPlayerbot.PremadeSpecLink.11.0.40 = 50000230312533112
 AiPlayerbot.PremadeSpecLink.11.0.45 = 5000023031253311331
 AiPlayerbot.PremadeSpecLink.11.0.50 = 50000230312533113321--3

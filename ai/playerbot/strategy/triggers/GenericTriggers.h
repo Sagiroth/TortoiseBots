@@ -456,6 +456,12 @@ namespace ai
         NoTargetTrigger(PlayerbotAI* ai) : Trigger(ai, "no target") {}
         virtual bool IsActive() override;
     };
+    class MasterTargetActiveTrigger : public Trigger
+    {
+    public:
+        MasterTargetActiveTrigger(PlayerbotAI* ai) : Trigger(ai, "master target active") {}
+        virtual bool IsActive() override;
+    };
 
     class InvalidTargetTrigger : public Trigger
     {
@@ -1144,6 +1150,10 @@ namespace ai
 
         virtual bool IsActive() override
         {
+            // No action creator exists for races that never learn the spell;
+            // refuse early so unequipped bots do not queue a null action.
+            if (!AI_VALUE2(uint32, "spell id", "mana tap"))
+                return false;
             Unit* target = AI_VALUE(Unit*, "current target");
             return target && AI_VALUE2(bool, "has mana", "current target");
         }
@@ -1156,6 +1166,8 @@ namespace ai
 
         virtual bool IsActive() override
         {
+            if (!AI_VALUE2(uint32, "spell id", "arcane torrent"))
+                return false;
             Unit* target = AI_VALUE(Unit*, "current target");
             return InterruptSpellTrigger::IsActive() && target && AI_VALUE2(float, "distance", "current target") <= 8.0f;
         }

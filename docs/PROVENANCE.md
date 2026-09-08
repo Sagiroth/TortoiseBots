@@ -1132,3 +1132,146 @@ Copied / ported / independently reimplemented:
   - Implemented `RainOfFireChannelCheckTrigger`: detects active channeled Rain of Fire and activates if clustered enemies drop below 2 (`aoe count < 2`), triggering `cancel channel` (`ACTION_HIGH + 3`) to immediately save mana.
   - Lowered multi-dotting priorities in AoE strategies (`corruption on attacker`, `siphon life on attacker`, `curse of agony on attacker`) to `ACTION_HIGH - 1` (19.0f), allowing `rain of fire` (`ACTION_HIGH`, 20.0f) to reliably cast against 3+ grouped mobs.
 
+
+## Class port Batch 1-3 (2026-09-08, uncommitted)
+Feature: Talent prerequisite correctness + Arcane Power safety + Warrior Master Strike + Priest shields/Chastise
+Source repository:
+- `playerbots-references/mod-playerbots` @ b949b50 (mature behavior donor)
+- `playerbots-references/shyalya-tortoise-wow` @ 83a61bc (Turtle runtime reference)
+- `tortoise-wow` @ 9f778a73 (effective spell/template/script source)
+Source files:
+- `ai/playerbot/Talentspec.cpp`, `ai/playerbot/aiplayerbot.conf.dist.in`, `tools/talents/validate_presets.py`
+- `ai/playerbot/strategy/mage/MageTriggers.h/.cpp`, `ai/playerbot/strategy/mage/MageActions.h`
+- `ai/playerbot/strategy/warrior/WarriorActions.h`, `WarriorTriggers.h`, `WarriorAiObjectContext.cpp`, `ArmsWarriorStrategy.cpp`, `FuryWarriorStrategy.cpp`
+- `ai/playerbot/strategy/priest/PriestActions.h`, `PriestStrategy.cpp`
+- Core evidence: `src/game/Objects/Player.cpp` LearnTalent, `src/scripts/spells/spell_mage.cpp` (arcane power/rupture/icicles), `spell_warrior.cpp` (master strike), `spell_priest.cpp` (chastise/enlighten), `sql/base/tw_world_spell_template.sql`, `data/dbc/Talent.dbc`
+Copied / ported / independently reimplemented:
+- Talent DependsOnRank zero-based fix + DependsOnSpell talent check (independent fix from core semantics; validator mirrors ReadTalents).
+- Arcane Power 70% mana gate (independent Turtle safety; donor Wrath behavior unsafe, not ported).
+- Master Strike action/trigger (independent Turtle implementation; no donor counterpart).
+- Weakened Soul 6788 guard (ported intent from mod-playerbots PriestActions.cpp).
+- Hostile Chastise CC wiring (ported intent from Shyalya PriestStrategy CC).
+Reason: P1 shared correctness + first class packets per CLASS_BEHAVIOR_PORT_PLAN.md.
+Local validation: validate_presets.py 242 links 0 failures; git diff --check; verify_turtle_surface.sh OK; verify_penqle_host_contract.sh OK. No docker build (user-owned review).
+
+## Class port Batches 5-7 (2026-09-08, uncommitted)
+Feature: shared cancel-channel registration + Mage Icicles/evocation checks + Hunter KC/Carve/Lacerate + Rogue generator/Surprise/Noxious/boost fix
+Source repository:
+- `playerbots-references/mod-playerbots` (donor intent; WotLK names rejected)
+- `playerbots-references/shyalya-tortoise-wow` @ 83a61bc (Turtle runtime parity)
+- `tortoise-wow` @ 9f778a73 (spell_hunter.cpp, spell_rogue.cpp, spell_mage.cpp, Unit.cpp aura states, SpellMgr exclusivity, spell_template)
+Source files:
+- `ai/playerbot/strategy/actions/ActionContext.h` (cancel-channel creator)
+- `ai/playerbot/strategy/mage/MageActions.h`, `MageTriggers.h/.cpp`, `MageAiObjectContext.cpp`, `FrostMageStrategy.cpp`, `MageStrategy.cpp`
+- `ai/playerbot/strategy/hunter/HunterActions.h`, `HunterTriggers.h`, `HunterAiObjectContext.cpp`, `BeastMasteryHunterStrategy.cpp`, `SurvivalHunterStrategy.cpp`
+- `ai/playerbot/strategy/rogue/RogueActions.h`, `RogueTriggers.h/.cpp`, `RogueAiObjectContext.cpp`, `CombatRogueStrategy.cpp`, `AssassinationRogueStrategy.cpp`
+Copied / ported / independently reimplemented:
+- CancelChannelAction registration (re-enables existing #92 RoF fix + druid/hunter/mage trees; class already vendored, zero creators found).
+- Icicles/evocation channel checks (adapted from #92 RainOfFireChannelCheckTrigger pattern).
+- Kill Command crit window via core CanCastSpell (casterAuraState 6), not DBC guessing; donor buff-model rejected.
+- Carve below Multi-Shot (shared 10s category); Lacerate manual-only (Serpent churn avoidance).
+- Surprise Attack reactive gate (mirrors local RiposteCastTrigger); Noxious Assault Combo-gated strike.
+- CombatBoost adrenaline/blade flurry moved to combat triggers (was non-combat dead wiring).
+Reason: Mage/Hunter/Rogue packets per CLASS_BEHAVIOR_PORT_PLAN.md.
+Local validation: git diff --check; validate_presets.py 242 links 0 failures; verify_turtle_surface.sh OK; verify_penqle_host_contract.sh OK. No docker build (user-owned review).
+
+## Class port Batches 8-11 (2026-09-08, uncommitted)
+Feature: Warlock DH/PO + Paladin HS/Bulwark/Exorcism + Druid Berserk/Swiftmend + Shaman 5 talents/Bloodlust
+Source repository:
+- `playerbots-references/mod-playerbots` (donor intent; WotLK names rejected)
+- `playerbots-references/shyalya-tortoise-wow` @ 83a61bc (Turtle runtime parity)
+- `tortoise-wow` @ 9f778a73 (spell_warlock.cpp, spell_paladin.cpp, spell_druid.cpp, spell_shaman.cpp, spell_template)
+Source files: warlock/, paladin/, druid/, shaman/ strategy dirs (actions/triggers/contexts/spec strategies listed in PROGRESS.md Batches 8-11).
+Copied / ported / independently reimplemented:
+- Dark Harvest 2-DoT gate + inverted cancel (independent; CD refund mechanic).
+- Power Overwhelming explicit pet targeting (independent; core fallback analysis).
+- Holy Strike/Bulwark actions (independent; verified template rows); Exorcism creature-type gate (vanilla-correct).
+- Druid Berserk boost + Swiftmend HoT-gated pair (independent); NEW-stack rejection, Savage Bite rejection, Tree deferral (evidence-based).
+- Shaman EQ/LS/Spirit Link/AS-pair/Bloodlust wiring (independent); totem churn claims rechecked and rebutted with source.
+Reason: Warlock/Paladin/Druid/Shaman packets per CLASS_BEHAVIOR_PORT_PLAN.md.
+Local validation: git diff --check; validate_presets.py 242 links 0 failures; verify_turtle_surface.sh OK; verify_penqle_host_contract.sh OK. No docker build (user-owned review).
+
+## Class port Batch 12 (2026-09-08, uncommitted)
+Feature: five missing talent presets + generator + stance creator registration
+Source repository:
+- `tortoise-docker-penqle/data/dbc/Talent.dbc` + `TalentTab.dbc` (tree topology)
+- `tortoise-wow/sql/base/tw_world_spell_template.sql` (talent spell names)
+- `tortoise-wow` core (LearnTalent zero-based DependsOnRank semantics)
+Source files: `tools/talents/dump_trees.py`, `tools/talents/build_missing_presets.py`, `ai/playerbot/aiplayerbot.conf.dist.in` (+5 specs), `ai/playerbot/strategy/warrior/WarriorStrategy.cpp`.
+Copied / ported / independently reimplemented:
+- Preset generator (independent; explicit acquisition orders, 297/297 links validate). Placements decoded from DBC, not skill-tab inference.
+- Stance creator registration (independent correction of census misread; nodes were live, creators commented).
+Reason: TALENT_BUILDS completion (27/27 specs) + Warrior tank/interrupt correctness.
+Local validation: validate_presets.py 297 links 0 failures; git diff --check; verify_turtle_surface.sh OK; verify_penqle_host_contract.sh OK. No docker build (user-owned review).
+
+## Class port Batches 12-13 (2026-09-08, uncommitted)
+Feature: 5 missing presets + stance creators + 90-row family coverage
+Source repository: Talent/TalentTab DBC + spell_template (names/topology).
+Source files: `tools/talents/dump_trees.py`, `tools/talents/build_missing_presets.py`, `aiplayerbot.conf.dist.in` (+55 links), `strategy/warrior/WarriorStrategy.cpp`, `docs/class-port/*`.
+Copied / ported / independently reimplemented: generator + builds (independent); stance creators (correction of census misread, nodes pre-existing live).
+Reason: TALENT_BUILDS 27/27 + coverage completion.
+Local validation: 297/297 links 0 failures; TSV column audit (90x16); diff --check; surface + host OK. No docker build (user-owned review).
+
+## Class port Batch 14 (2026-09-08, uncommitted)
+Feature: deferred Rogue four (Envenom/SoD/MfD/Smoke) + Ascendance
+Source repository: `tortoise-wow` spell_template + Talent.dbc + spell_rogue.cpp.
+Source files: rogue/ actions/triggers/context/Assassination/Subtlety strategies; priest/ actions/triggers/context/Holy boost.
+Copied / ported / independently reimplemented: finisher/support slot decisions (independent from decoded mechanics); repaired two edit-placement breaks with diff verification.
+Reason: close deferred Turtle-talent gaps per census.
+Local validation: git diff --check; validate_presets.py 297/0; verify_turtle_surface.sh OK. No docker build (user-owned review).
+
+## Class port Batch 15 (2026-09-08, uncommitted)
+Feature: wiring audit gate + Ret/ready-check/master-target fixes + Elemental Mastery + naaru removal
+Source repository: `tortoise-wow` (Engine::Init dual-path evidence); `playerbots-references/mod-playerbots` (bare-AoE donor semantics, deliberately not ported).
+Source files: `tools/verify_action_trigger_wiring.py`; RetributionPaladinStrategy.cpp; WorldPacketActionContext.h; GenericTriggers.h/.cpp + TriggerContext.h; RacialsStrategy.cpp; shaman Elemental files.
+Copied / ported / independently reimplemented: audit tool (independent); typo/registration fixes (independent); MasterTargetActiveTrigger (independent, from MasterTargetValue semantics).
+Reason: reachability gate for all 28 profiles (a queued name without creator is a silent no-op).
+Local validation: wiring gate exit 0 (live-missing=0); diff --check; presets 297/0; surface + host OK. No docker build (user-owned review).
+
+## Class port Batch 16 (2026-09-08, uncommitted)
+Feature: Tree of Life wiring + Conflagrate verification
+Source repository: `tortoise-wow` spell_druid.cpp:570-579 + spell_warlock.cpp:475-510 + 45705 template row.
+Source files: `strategy/druid/RestorationDruidStrategy.cpp` (tree maintain); Conflagrate paths unchanged (verified, not modified).
+Copied / ported / independently reimplemented: Tree maintain (independent; restriction audit first).
+Reason: close Tree design gap; verify Destruction policy.
+Local validation: wiring gate 0; diff --check; presets 297/0; surface + host OK. No docker build (user-owned review).
+
+## Class port Batch 17 (2026-09-08, uncommitted)
+Feature: Wolf aspect manual action + coverage integrity
+Source files: hunter/ actions+context; docs/class-port/SPELL_COVERAGE.tsv.
+Reason: last unresolved family row; oscillation analysis withheld automation.
+Local validation: wiring gate 0; diff --check; presets 297/0; surface + host OK. No docker build (user-owned review).
+
+## Class port Batch 18 (2026-09-08, uncommitted)
+Feature: Hunter pet attack parity + Wolf manual action
+Source files: `strategy/hunter/HunterStrategy.cpp` (pet attack mirror of WarlockPetStrategy); HunterActions.h + HunterAiObjectContext.cpp (Wolf).
+Reason: close Hunter pet-control gap with owned #92 machinery; Wolf without oscillation risk.
+Local validation: wiring gate 0; diff --check; presets 297/0; surface + host OK. No docker build (user-owned review).
+
+## Class port Batch 19 (2026-09-08, uncommitted)
+Feature: Daybreak fallback consumers + documented non-gates
+Source files: `strategy/paladin/HolyPaladinStrategy.cpp` (FoL/HS fallbacks).
+Reason: consume the Daybreak window when HL is unsuitable; Bloodlust-gate and Kick-reserve withheld for lack of evidence (documented).
+Local validation: diff --check; presets 297/0; wiring 0; surface + host OK. No docker build (user-owned review).
+
+## Class port Batches 19-20 (2026-09-08, uncommitted)
+Feature: Daybreak fallbacks + full-diff review repairs + namespace-aware wiring gate
+Source files: HolyPaladinStrategy.cpp; reviewer-found repairs across rogue/warrior/shaman/paladin/packet/generic/druid/warlock files; tools/verify_action_trigger_wiring.py.
+Reason: consume Daybreak window robustly; eliminate silent no-ops module-wide.
+Local validation: wiring gate 0/0; diff --check; presets 297/0; surface + host OK. No docker build (user-owned review).
+
+## Class port Batch 21 (2026-09-08, uncommitted)
+Feature: review-pass repairs + 7 gate-found fixes + Viper manual action
+Source files: rogue/warrior/shaman/paladin/packet/generic/druid/warlock/hunter strategy files; tools/verify_action_trigger_wiring.py (namespace buckets + node check).
+Reason: eliminate silent no-ops; keep manual paths for oscillation-constrained aspects.
+Local validation: wiring gate 0/0; diff --check; presets 297/0; surface + host OK. No docker build (user-owned review).
+
+## Class port Batch 22 (2026-09-08, uncommitted)
+Feature: full working-diff self-review + repairs
+Reason: edit-tool range edits silently dropped creator lines; systematic review is the backstop without compilation.
+Local validation: raw git diff per file vs HEAD; wiring gate 0/0; diff --check; presets 297/0; surface + host OK. No docker build (user-owned review).
+
+## Class port Batch 23 (2026-09-08, uncommitted)
+Feature: preset/dispatch integration audit (read-only)
+Reason: prove new presets resolve end-to-end without code changes.
+Local validation: code-read evidence (config loader, factory roll, AiFactory tabs, update maps); full battery green. No docker build (user-owned review).

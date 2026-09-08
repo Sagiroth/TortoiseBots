@@ -54,13 +54,12 @@ bool TalentSpec::CheckTalents(uint32 freeTalentPoints, std::ostringstream* out)
 
     for (auto& entry : talents)
     {
-        if (entry.rank > entry.maxRank)
+        if (entry.rank < 0 || entry.rank > entry.maxRank)
         {
             *out << "spec is not for this class. " << spellName(entry.talentInfo->RankID[0])
-                 << " has " << (entry.rank - entry.maxRank) << " points above max rank.";
+                 << " has invalid rank " << entry.rank << " (max " << entry.maxRank << ").";
             return false;
         }
-
         if (entry.rank > 0 && entry.talentInfo->DependsOn)
         {
             TalentEntry const* talentInfo = sTalentStore.LookupEntry(entry.talentInfo->DependsOn);
@@ -74,18 +73,52 @@ bool TalentSpec::CheckTalents(uint32 freeTalentPoints, std::ostringstream* out)
             bool found = false;
             uint32 dependencySpellId = talentInfo->RankID[0];
 
+            // Core Player::LearnTalent treats DependsOnRank as the first acceptable
+            // zero-based rank-array index, so allocated points must exceed it.
+            // Turtle 1.18.1 core: for (i = DependsOnRank; i < MAX_TALENT_RANK; ++i)
+            // HasSpell(RankID[i]). A one-based point count therefore requires
+            // dep.rank > DependsOnRank (i.e. >= DependsOnRank + 1).
             for (auto& dep : talents)
                 if (dep.talentInfo->TalentID == entry.talentInfo->DependsOn)
                 {
                     dependencySpellId = dep.talentInfo->RankID[0];
-                    if (dep.rank >= (int)entry.talentInfo->DependsOnRank)
+                    if (dep.rank > (int)entry.talentInfo->DependsOnRank)
                         found = true;
                 }
             if (!found)
             {
                 *out << "spec is invalid. Talent: " << spellName(entry.talentInfo->RankID[0])
                      << " needs: " << spellName(dependencySpellId)
-                     << " at rank: " << entry.talentInfo->DependsOnRank;
+                     << " at rank: " << (entry.talentInfo->DependsOnRank + 1);
+                return false;
+            }
+        }
+
+        if (entry.rank > 0 && entry.talentInfo->DependsOnSpell)
+        {
+            // Core also requires HasSpell(DependsOnSpell). When the required spell
+            // is itself a talent rank, the preset must allocate that talent.
+            // Trainer/quest spells are learned outside talent links and are
+            // validated at apply time, not here.
+            bool spellIsTalent = false;
+            bool spellTalentFound = false;
+            for (auto& dep : talents)
+            {
+                for (int rank = 0; rank < MAX_TALENT_RANK; ++rank)
+                {
+                    uint32 rankSpell = dep.talentInfo->RankID[rank];
+                    if (rankSpell && rankSpell == entry.talentInfo->DependsOnSpell)
+                    {
+                        spellIsTalent = true;
+                        if (dep.rank > rank)
+                            spellTalentFound = true;
+                    }
+                }
+            }
+            if (spellIsTalent && !spellTalentFound)
+            {
+                *out << "spec is invalid. Talent: " << spellName(entry.talentInfo->RankID[0])
+                     << " needs spell: " << spellName(entry.talentInfo->DependsOnSpell);
                 return false;
             }
         }

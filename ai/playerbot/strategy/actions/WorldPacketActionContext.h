@@ -72,7 +72,7 @@ namespace ai
             creators["tell cast failed"] = [](PlayerbotAI* ai) { return new TellCastFailedAction(ai); };
             creators["accept duel"] = [](PlayerbotAI* ai) { return new AcceptDuelAction(ai); };
             creators["ready check"] = [](PlayerbotAI* ai) { return new ReadyCheckAction(ai); };
-            creators["ready check finished"] = [](PlayerbotAI* ai) { return new FinishReadyCheckAction(ai); };
+            creators["finish ready check"] = [](PlayerbotAI* ai) { return new FinishReadyCheckAction(ai); };
             creators["uninvite"] = [](PlayerbotAI* ai) { return new UninviteAction(ai); };
             creators["security check"] = [](PlayerbotAI* ai) { return new SecurityCheckAction(ai); };
             creators["guild accept"] = [](PlayerbotAI* ai) { return new GuildAcceptAction(ai); };

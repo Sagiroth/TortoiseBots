@@ -242,6 +242,19 @@ bool NoTargetTrigger::IsActive()
 	return !AI_VALUE(Unit*, "current target") || AI_VALUE2(bool, "invalid target", "current target");
 }
 
+bool MasterTargetActiveTrigger::IsActive()
+{
+    // The follow strategy uses this to decide when to dps-assist the master.
+    // "master target" is the master player (MasterTargetValue); active means
+    // the master is alive and engaged with a live victim.
+    Unit* master = AI_VALUE(Unit*, "master target");
+    if (!master || !master->IsAlive())
+        return false;
+
+    Unit* victim = master->GetVictim();
+    return victim && victim->IsAlive();
+}
+
 bool MyAttackerCountTrigger::IsActive()
 {
     return AI_VALUE2(bool, "combat", "self target") && AI_VALUE(uint8, "my attacker count") >= amount;
