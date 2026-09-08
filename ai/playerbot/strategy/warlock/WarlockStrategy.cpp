@@ -35,10 +35,6 @@ void WarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("sacrifice", ACTION_EMERGENCY), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "life tap",
-        NextAction::array(0, new NextAction("life tap", ACTION_HIGH + 3), NULL)));
-
-    triggers.push_back(new TriggerNode(
         "shadow trance",
         NextAction::array(0, new NextAction("shadow bolt", ACTION_HIGH + 2), NULL)));
 
@@ -53,6 +49,10 @@ void WarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "corruption",
         NextAction::array(0, new NextAction("corruption", ACTION_NORMAL + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "life tap",
+        NextAction::array(0, new NextAction("life tap", ACTION_NORMAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "no mana",
@@ -177,12 +177,16 @@ void WarlockAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     AoeStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
-        "corruption on attacker",
-        NextAction::array(0, new NextAction("corruption on attacker", ACTION_HIGH + 1), NULL)));
+        "rain of fire channel check",
+        NextAction::array(0, new NextAction("cancel channel", ACTION_HIGH + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "ranged medium aoe",
         NextAction::array(0, new NextAction("rain of fire", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "corruption on attacker",
+        NextAction::array(0, new NextAction("corruption on attacker", ACTION_HIGH - 1), NULL)));
 }
 
 void WarlockAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -402,17 +406,20 @@ void WarlockCcRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trigg
 
 void WarlockPetStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-
+    triggers.push_back(new TriggerNode(
+        "pet attack",
+        NextAction::array(0, new NextAction("pet attack", ACTION_HIGH + 2), NULL)));
 }
 
 void WarlockPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("blood pact", ACTION_NORMAL), NULL)));
 }
 
 void WarlockPetPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-
 }
 
 void WarlockPetPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -428,7 +435,9 @@ void WarlockPetPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trigg
 
 void WarlockPetPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-
+    triggers.push_back(new TriggerNode(
+        "has aggro",
+        NextAction::array(0, new NextAction("torment", ACTION_HIGH), NULL)));
 }
 
 void WarlockPetPveStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -444,7 +453,6 @@ void WarlockPetPveStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trigg
 
 void WarlockPetRaidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-
 }
 
 void WarlockPetRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -460,7 +468,7 @@ void WarlockCursesStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
     {
         triggers.push_back(new TriggerNode(
             "no curse on attacker",
-            NextAction::array(0, new NextAction("curse of agony on attacker", ACTION_HIGH + 1), NULL)));
+            NextAction::array(0, new NextAction("curse of agony on attacker", ACTION_HIGH - 1), NULL)));
     }
 
     triggers.push_back(new TriggerNode(

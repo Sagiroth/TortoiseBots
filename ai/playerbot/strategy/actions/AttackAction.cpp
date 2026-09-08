@@ -130,6 +130,41 @@ bool AttackRTITargetAction::isUseful()
     return true;
 }
 
+bool AttackAction::CanPetAttack(PlayerbotAI* ai, Pet* pet, Unit* target)
+{
+    if (!ai || !pet || !pet->IsAlive())
+        return false;
+
+    if (!target || !target->IsAlive())
+        return false;
+
+    Player* bot = ai->GetBot();
+    if (!bot || !bot->IsValidAttackTarget(target))
+        return false;
+
+    // Don't send the pet to attack if waiting for attack
+    if (WaitForAttackStrategy::ShouldWait(ai))
+        return false;
+
+    // Don't send the pet to attack if staying and target is outside spell range
+    if (ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) &&
+        bot->GetDistance(target) >= ai->GetRange("spell"))
+        return false;
+
+    // Don't send the pet to attack if set to passive
+    if (pet->GetReactState() == REACT_PASSIVE)
+        return false;
+
+    // Keep pet off CC'd targets unless RTI mark says to ignore it, plus damage immunity gate
+    bool ccProtected = !PossibleAttackTargetsValue::HasIgnoreCCRti(target, bot) &&
+        (PossibleAttackTargetsValue::HasBreakableCC(target, bot) ||
+         PossibleAttackTargetsValue::HasUnBreakableCC(target, bot));
+    if (ccProtected || PossibleAttackTargetsValue::IsImmuneToDamage(target, bot))
+        return false;
+
+    return true;
+}
+
 bool AttackAction::Attack(Player* requester, Unit* target)
 {
     MotionMaster &mm = *bot->GetMotionMaster();
@@ -173,40 +208,22 @@ bool AttackAction::Attack(Player* requester, Unit* target)
         SET_AI_VALUE(Unit*, "current target", target);
         AI_VALUE(LootObjectStack*, "available loot")->Add(guid);
 
-        const bool isWaitingForAttack = WaitForAttackStrategy::ShouldWait(ai);
         Pet* pet = bot->GetPet();
         if (pet)
         {
-            UnitAI* creatureAI = ((Creature*)pet)->AI();
-            if (creatureAI)
+            if (pet->GetReactState() == REACT_PASSIVE && !ai->GetMaster())
             {
-                // Don't send the pet to attack if the bot is waiting for attack
-                if (!isWaitingForAttack && (!ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) || AI_VALUE2(float, "distance", "current target") < ai->GetRange("spell")))
-                {
-                    // Reset the pet state if no master
-                    if (pet->GetReactState() == REACT_PASSIVE && !ai->GetMaster())
-                    {
-                        pet->SetReactState(REACT_DEFENSIVE);
-                    }
+                pet->SetReactState(REACT_DEFENSIVE);
+            }
 
-                    // Don't send the pet to attack if set to passive
-                    if (pet->GetReactState() != REACT_PASSIVE)
-                    {
-                        // M5: keep the pet off CC'd targets. A manual attack or
-                        // assist onto a freshly-CC-assigned mob must not drag
-                        // the pet in. Mirrors the PossibleAttackTargets strip
-                        // (CC applies unless the RTI mark says to ignore it)
-                        // plus the damage-immunity gate (banish/invulnerable).
-                        bool ccProtected = !PossibleAttackTargetsValue::HasIgnoreCCRti(target, bot) &&
-                            (PossibleAttackTargetsValue::HasBreakableCC(target, bot) ||
-                             PossibleAttackTargetsValue::HasUnBreakableCC(target, bot));
-                        bool damageImmune = PossibleAttackTargetsValue::IsImmuneToDamage(target, bot);
-                        if (!ccProtected && !damageImmune)
-                            creatureAI->AttackStart(target);
-                    }
-                }
+            UnitAI* creatureAI = ((Creature*)pet)->AI();
+            if (creatureAI && CanPetAttack(ai, pet, target))
+            {
+                creatureAI->AttackStart(target);
             }
         }
+
+        const bool isWaitingForAttack = WaitForAttackStrategy::ShouldWait(ai);
 
         if (ai->CanMove() && !sServerFacade.isInFront(bot, target, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
         {

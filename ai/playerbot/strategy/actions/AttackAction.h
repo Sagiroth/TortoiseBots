@@ -15,6 +15,8 @@ namespace ai
         virtual bool Execute(Event& event) override;
         virtual bool isPossible() override { return !bot->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL); }; //Override movement stay.
 
+        static bool CanPetAttack(PlayerbotAI* ai, Pet* pet, Unit* target);
+
     protected:
         bool Attack(Player* requester, Unit* target);
         bool IsTargetValid(Player* requester, Unit* target);

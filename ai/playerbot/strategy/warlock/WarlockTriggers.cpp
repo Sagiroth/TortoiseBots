@@ -39,7 +39,7 @@ bool LifeTapTrigger::IsActive()
 	if (mana <= sPlayerbotAIConfig.lowMana)
 	{
 		const uint32 health = AI_VALUE2(uint8, "health", "self target");
-		if (health >= sPlayerbotAIConfig.lowHealth)
+		if (health > sPlayerbotAIConfig.lowHealth)
 		{
 			return true;
 		}
@@ -59,9 +59,9 @@ bool DrainSoulTrigger::IsActive()
 			// Check if it has enough bag space
 			if (AI_VALUE(uint8, "bag space") > 0)
 			{
-                // Check if target health is less than 15%
+                // Check if target health is less than 25% (was 15%)
                 const uint32 targetHealth = AI_VALUE2(uint8, "health", "current target");
-                if (targetHealth <= 15)
+                if (targetHealth <= 25)
                 {
                     return true;
                 }
@@ -227,4 +227,21 @@ uint32 SoulstoneTrigger::GetItemId()
     }
 
     return itemId;
+}
+
+bool RainOfFireChannelCheckTrigger::IsActive()
+{
+    if (Spell* spell = bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
+    {
+        if (spell->m_spellInfo)
+        {
+            uint32 id = spell->m_spellInfo->Id;
+            if (id == 5740 || id == 6219 || id == 11677 || id == 11678 || id == 27212)
+            {
+                uint8 aoeCount = AI_VALUE(uint8, "aoe count");
+                return aoeCount < 2;
+            }
+        }
+    }
+    return false;
 }

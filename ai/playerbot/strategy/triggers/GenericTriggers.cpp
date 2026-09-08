@@ -6,6 +6,7 @@
 #include "playerbot/strategy/generic/PullStrategy.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/values/AoeValues.h"
+#include "playerbot/strategy/actions/AttackAction.h"
 
 #include <regex>
 
@@ -1095,4 +1096,17 @@ bool AtWarTrigger::IsActive()
     }
 
     return false;
+}
+
+bool PetAttackTrigger::IsActive()
+{
+    Pet* pet = bot->GetPet();
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!AttackAction::CanPetAttack(ai, pet, target))
+        return false;
+
+    if (pet->GetVictim() == target && pet->GetCharmInfo() && pet->GetCharmInfo()->IsCommandAttack())
+        return false;
+
+    return true;
 }

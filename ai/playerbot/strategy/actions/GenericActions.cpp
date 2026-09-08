@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "GenericActions.h"
+#include "AttackAction.h"
 #include <map>
 #include "playerbot/PlayerbotFactory.h"
 
@@ -562,4 +563,48 @@ bool SetPetAction::Execute(Event& event)
     }
 
     return false;
+}
+
+bool PetAttackAction::isUseful()
+{
+    Pet* pet = bot->GetPet();
+    Unit* target = GetTarget();
+    return AttackAction::CanPetAttack(ai, pet, target);
+}
+
+bool PetAttackAction::Execute(Event& event)
+{
+    Pet* pet = bot->GetPet();
+    Unit* target = GetTarget();
+    if (!pet || !target)
+        return false;
+
+    if (pet->GetReactState() == REACT_PASSIVE && !ai->GetMaster())
+    {
+        pet->SetReactState(REACT_DEFENSIVE);
+    }
+
+    if (!AttackAction::CanPetAttack(ai, pet, target))
+        return false;
+
+    constexpr uint32 PET_IMP = 416;
+    constexpr uint32 PHASE_SHIFT = 4511;
+    if (bot->GetClass() == CLASS_WARLOCK &&
+        pet->GetEntry() == PET_IMP && pet->HasAura(PHASE_SHIFT))
+    {
+        pet->RemoveAurasDueToSpell(PHASE_SHIFT);
+    }
+
+    const ObjectGuid& petGuid = pet->getObjectGuid();
+    const ObjectGuid targetGuid = target->GetObjectGuid();
+    const uint8 flag = ACT_COMMAND;
+    const uint32 spellId = COMMAND_ATTACK;
+    const uint32 command = (flag << 24) | spellId;
+
+    WorldPacket data(CMSG_PET_ACTION);
+    data << petGuid;
+    data << command;
+    data << targetGuid;
+    bot->GetSession()->HandlePetAction(data);
+    return true;
 }

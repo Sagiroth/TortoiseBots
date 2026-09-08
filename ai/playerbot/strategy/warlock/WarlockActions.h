@@ -115,6 +115,10 @@ namespace ai
 	{
 	public:
 		CastDrainLifeAction(PlayerbotAI* ai) : CastSpellAction(ai, "drain life") {}
+		bool isUseful() override
+		{
+			return CastSpellAction::isUseful() && AI_VALUE2(uint8, "health", "self target") < sPlayerbotAIConfig.almostFullHealth;
+		}
 	};
 
     class CastCurseOfExhaustionAction : public CastRangedDebuffSpellAction
@@ -251,6 +255,32 @@ namespace ai
         virtual std::string GetTargetName() override { return "enemy healer target"; }
         virtual std::string GetTargetQualifier() override { return GetSpellName(); }
         virtual std::string getName() override { return GetSpellName() + " on enemy healer"; }
+    };
+
+    class CastTormentAction : public CastPetSpellAction
+    {
+    public:
+        CastTormentAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "torment") {}
+        bool isUseful() override
+        {
+            Unit* target = GetTarget();
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            return target && pet && target->GetVictim() != pet;
+        }
+    };
+
+    class CastBloodPactAction : public CastPetSpellAction
+    {
+    public:
+        CastBloodPactAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "blood pact") {}
+        std::string GetTargetName() override { return "self target"; }
+        bool isUseful() override { return !ai->HasAura("blood pact", bot); }
+    };
+
+    class CastFireboltAction : public CastPetSpellAction
+    {
+    public:
+        CastFireboltAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "firebolt") {}
     };
 
 	class CastSummonImpAction : public CastBuffSpellAction
