@@ -315,7 +315,7 @@ void DemonologyWarlockCcRaidStrategy::InitNonCombatTriggers(std::list<TriggerNod
 
 void DemonologyWarlockPetStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-    WarlockPetStrategy::InitNonCombatTriggers(triggers);
+    WarlockPetStrategy::InitCombatTriggers(triggers);
 }
 
 void DemonologyWarlockPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

@@ -156,4 +156,11 @@ namespace ai
         SetPetAction(PlayerbotAI* ai) : Action(ai, "pet") {}
         bool Execute(Event& event) override;
     };
+
+    class PetAttackAction : public Action
+    {
+    public:
+        PetAttackAction(PlayerbotAI* ai) : Action(ai, "pet attack") {}
+        bool Execute(Event& event) override;
+    };
 }

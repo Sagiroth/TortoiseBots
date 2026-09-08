@@ -1088,3 +1088,46 @@ Local validation:
   5. Defensive FindMaxDensity with raw duplicate inputs returns count = 1.
   6. `attackers::1` qualifier returns exactly 1 distinct attacker.
 
+## Class: Warlock Combat AI Overhaul (Issue #92) — 2026-09-08
+
+Feature: Overhaul Warlock combat rotations, priorities, health/mana sustain, pet combat behavior, and AoE channel safeguards.
+
+Source repository:
+- `playerbots-references/mod-playerbots`: Behavior donor for `PetAttackTrigger`, `PetAttackAction`, and `RainOfFireChannelCheckTrigger`.
+- `playerbots-references/shyalya-tortoise-wow`: Oracle for Turtle 1.18.1 engine integration and pet spell autocast semantics.
+
+Source files:
+- `ai/playerbot/strategy/warlock/WarlockStrategy.cpp`
+- `ai/playerbot/strategy/warlock/AfflictionWarlockStrategy.cpp`
+- `ai/playerbot/strategy/warlock/DestructionWarlockStrategy.cpp`
+- `ai/playerbot/strategy/warlock/DemonologyWarlockStrategy.cpp`
+- `ai/playerbot/strategy/warlock/WarlockActions.h`
+- `ai/playerbot/strategy/warlock/WarlockTriggers.h`
+- `ai/playerbot/strategy/warlock/WarlockTriggers.cpp`
+- `ai/playerbot/strategy/warlock/WarlockAiObjectContext.cpp`
+- `ai/playerbot/strategy/actions/GenericActions.h`
+- `ai/playerbot/strategy/actions/GenericActions.cpp`
+- `ai/playerbot/strategy/actions/ActionContext.h`
+- `ai/playerbot/strategy/actions/ChatActionContext.h`
+- `ai/playerbot/strategy/triggers/GenericTriggers.h`
+- `ai/playerbot/strategy/triggers/GenericTriggers.cpp`
+- `ai/playerbot/strategy/triggers/TriggerContext.h`
+
+Copied / ported / independently reimplemented:
+- Life Tap Rebalancing & Safety Floor:
+  - Rebalanced `life tap` priority in `WarlockStrategy::InitCombatTriggers` from `ACTION_HIGH + 3` (43.0f) to `ACTION_NORMAL` (30.0f). Prevents Life Tap from locking out primary combat DoTs (`curse of agony` at 32.0f, `corruption` at 31.0f) and AoE spells.
+  - Hardened `LifeTapTrigger::IsActive()` and `CastLifeTapAction::isUseful()` with a strict safety threshold (`health > 50`), completely breaking the death spiral where bots repeatedly tapped themselves down to `lowHealth` (25-30%) and then panicked.
+- Pet Combat Integration:
+  - Implemented `PetAttackTrigger` and `PetAttackAction` using `CMSG_PET_ACTION` / `ACT_COMMAND` + `COMMAND_ATTACK`, respecting CC immunity, breakable CC, and passive stance. Registered in `GenericTriggers` and `GenericActions` for all pet classes.
+  - Fixed dormant pet triggers in `WarlockPetStrategy::InitCombatTriggers` (`pet attack` at `ACTION_HIGH + 2`, `has aggro` -> `torment` at `ACTION_HIGH`).
+  - Added non-combat `blood pact` party buff trigger for Imp.
+  - Implemented `CastTormentAction`, `CastBloodPactAction`, and `CastFireboltAction` derived from `CastPetSpellAction`.
+  - Fixed copy-paste bug across all three spec strategies (`AfflictionWarlockPetStrategy`, `DestructionWarlockPetStrategy`, `DemonologyWarlockPetStrategy`) where `InitCombatTriggers` inadvertently called `InitNonCombatTriggers` instead of `WarlockPetStrategy::InitCombatTriggers`.
+- Affliction Sustain & Leveling Rotation:
+  - Added `Drain Life` sustain triggers to `AfflictionWarlockStrategy`: `low health` (< 40%) -> `drain life` (`ACTION_HIGH`), `medium health` (< 70%) -> `drain life` (`ACTION_NORMAL + 2`), with `isUseful()` safety guard (< `almostFullHealth`).
+  - Added early leveling `immolate` trigger (`ACTION_NORMAL`) to `AfflictionWarlockStrategy`.
+  - Adjusted `DrainSoulTrigger::IsActive()` target health threshold from <= 15% to <= 25%, ensuring group kills register channel ticks in time to reap soul shards.
+- AoE Rotation & Channel Interruption:
+  - Implemented `RainOfFireChannelCheckTrigger`: detects active channeled Rain of Fire and activates if clustered enemies drop below 2 (`aoe count < 2`), triggering `cancel channel` (`ACTION_HIGH + 3`) to immediately save mana.
+  - Lowered multi-dotting priorities in AoE strategies (`corruption on attacker`, `siphon life on attacker`, `curse of agony on attacker`) to `ACTION_HIGH - 1` (39.0f), allowing `rain of fire` (`ACTION_HIGH`, 40.0f) to reliably cast against 3+ grouped mobs.
+
