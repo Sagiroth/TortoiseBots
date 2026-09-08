@@ -185,6 +185,7 @@ namespace ai
                 creators["shadowform"] = [](PlayerbotAI* ai) { return new ShadowformTrigger(ai); };
                 creators["power infusion"] = [](PlayerbotAI* ai) { return new PowerInfusionTrigger(ai); };
                 creators["inner focus"] = [](PlayerbotAI* ai) { return new InnerFocusTrigger(ai); };
+                creators["ascendance"] = [](PlayerbotAI* ai) { return new AscendanceTrigger(ai); };
                 creators["shadow protection"] = [](PlayerbotAI* ai) { return new ShadowProtectionTrigger(ai); };
                 creators["shadow protection on party"] = [](PlayerbotAI* ai) { return new ShadowProtectionOnPartyTrigger(ai); };
                 creators["prayer of shadow protection on party"] = [](PlayerbotAI* ai) { return new PrayerOfShadowProtectionOnPartyTrigger(ai); };
@@ -217,6 +218,7 @@ namespace ai
             {
                 creators["power infusion"] = [](PlayerbotAI* ai) { return new CastPowerInfusionAction(ai); };
                 creators["inner focus"] = [](PlayerbotAI* ai) { return new CastInnerFocusAction(ai); };
+                creators["ascendance"] = [](PlayerbotAI* ai) { return new CastAscendanceAction(ai); };
                 creators["shadow word: pain"] = [](PlayerbotAI* ai) { return new CastPowerWordPainAction(ai); };
                 creators["shadow word: pain on attacker"] = [](PlayerbotAI* ai) { return new CastPowerWordPainOnAttackerAction(ai); };
                 creators["devouring plague"] = [](PlayerbotAI* ai) { return new CastDevouringPlagueAction(ai); };

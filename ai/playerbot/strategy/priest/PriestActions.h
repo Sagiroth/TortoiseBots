@@ -7,8 +7,33 @@ namespace ai
     BUFF_ACTION(CastPowerWordFortitudeAction, "power word: fortitude");
     BUFF_PARTY_ACTION(CastPowerWordFortitudeOnPartyAction, "power word: fortitude");
     GREATER_BUFF_PARTY_ACTION(CastPrayerOfFortitudeOnPartyAction, "prayer of fortitude");
-    BUFF_ACTION(CastPowerWordShieldAction, "power word: shield");
-    HEAL_PARTY_ACTION(CastPowerWordShieldOnPartyAction, "power word: shield");
+    class CastPowerWordShieldAction : public CastBuffSpellAction
+    {
+    public:
+        CastPowerWordShieldAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "power word: shield") {}
+        bool isUseful() override
+        {
+            // Turtle Weakened Soul (6788) is applied by the shield itself
+            // (spell_priest.cpp). Recasting while it persists wastes mana and
+            // the GCD; the heal ladder must fall through to direct heals.
+            Unit* target = GetTarget();
+            if (target && ai->HasAura(6788, target))
+                return false;
+            return CastBuffSpellAction::isUseful();
+        }
+    };
+    class CastPowerWordShieldOnPartyAction : public HealPartyMemberAction
+    {
+    public:
+        CastPowerWordShieldOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "power word: shield") {}
+        bool isUseful() override
+        {
+            Unit* target = GetTarget();
+            if (target && ai->HasAura(6788, target))
+                return false;
+            return HealPartyMemberAction::isUseful();
+        }
+    };
     BUFF_ACTION(CastInnerFireAction, "inner fire");
     CURE_ACTION(CastDispelMagicAction, "dispel magic");
     CURE_PARTY_ACTION(CastDispelMagicOnPartyAction, "dispel magic", DISPEL_MAGIC);
@@ -22,6 +47,10 @@ namespace ai
 
     // disc talents
     BUFF_ACTION(CastInnerFocusAction, "inner focus");
+
+    // holy talents (Turtle): Ascendance 52962 is the Holy capstone (needs
+    // Spirit of Redemption). Self healing-throughput cooldown, DBC-driven.
+    BUFF_ACTION(CastAscendanceAction, "ascendance");
 
     // holy
     HEAL_ACTION(CastLesserHealAction, "lesser heal");
