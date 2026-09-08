@@ -178,6 +178,9 @@ namespace ai
                 creators["fire spells locked"] = [](PlayerbotAI* ai) { return new FireSpellsLocked(ai); };
                 creators["cold snap"] = [](PlayerbotAI* ai) { return new ColdSnapTrigger(ai); };
                 creators["ice barrier"] = [](PlayerbotAI* ai) { return new IceBarrierTrigger(ai); };
+                creators["icicles"] = [](PlayerbotAI* ai) { return new IciclesTrigger(ai); };
+                creators["icicles channel check"] = [](PlayerbotAI* ai) { return new IciclesChannelCheckTrigger(ai); };
+                creators["evocation channel check"] = [](PlayerbotAI* ai) { return new EvocationChannelCheckTrigger(ai); };
                 creators["no improved scorch"] = [](PlayerbotAI* ai) { return new NoImprovedScorchDebuffTrigger(ai); };
                 creators["no fire vulnerability"] = [](PlayerbotAI* ai) { return new NoFireVulnerabilityTrigger(ai); };
                 creators["no food"] = [](PlayerbotAI* ai) { return new NoFoodTrigger(ai); };
@@ -231,6 +234,7 @@ namespace ai
                 creators["arcane explosion"] = [](PlayerbotAI* ai) { return new CastArcaneExplosionAction(ai); };
                 creators["cone of cold"] = [](PlayerbotAI* ai) { return new CastConeOfColdAction(ai); };
                 creators["cold snap"] = [](PlayerbotAI* ai) { return new CastColdSnapAction(ai); };
+                creators["icicles"] = [](PlayerbotAI* ai) { return new CastIciclesAction(ai); };
                 creators["blast wave"] = [](PlayerbotAI* ai) { return new CastBlastWaveAction(ai); };
                 creators["update pve strats"] = [](PlayerbotAI* ai) { return new UpdateMagePveStrategiesAction(ai); };
                 creators["update pvp strats"] = [](PlayerbotAI* ai) { return new UpdateMagePvpStrategiesAction(ai); };

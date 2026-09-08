@@ -111,6 +111,7 @@ namespace ai
     {
     public:
         ArcanePowerTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "arcane power") {}
+        virtual bool IsActive() override;
     };
 
     class PresenceOfMindTrigger : public BuffTrigger
@@ -132,6 +133,27 @@ namespace ai
     {
     public:
         IceBarrierTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "ice barrier", 5) {}
+    };
+
+    class IciclesTrigger : public SpellCanBeCastedTrigger
+    {
+    public:
+        IciclesTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "icicles") {}
+        bool IsActive() override;
+    };
+
+    class IciclesChannelCheckTrigger : public Trigger
+    {
+    public:
+        IciclesChannelCheckTrigger(PlayerbotAI* ai) : Trigger(ai, "icicles channel check") {}
+        bool IsActive() override;
+    };
+
+    class EvocationChannelCheckTrigger : public Trigger
+    {
+    public:
+        EvocationChannelCheckTrigger(PlayerbotAI* ai) : Trigger(ai, "evocation channel check") {}
+        bool IsActive() override;
     };
 
     class FireSpellsLocked : public Trigger

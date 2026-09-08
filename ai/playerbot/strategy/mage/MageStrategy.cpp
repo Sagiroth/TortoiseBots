@@ -71,6 +71,9 @@ void MageStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("evocation", ACTION_HIGH + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "evocation channel check",
+        NextAction::array(0, new NextAction("cancel channel", ACTION_HIGH + 4), NULL)));
+    triggers.push_back(new TriggerNode(
         "target critical health",
         NextAction::array(0, new NextAction("fire blast", ACTION_HIGH + 2), NULL)));
 
