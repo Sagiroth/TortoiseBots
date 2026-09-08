@@ -7,6 +7,7 @@
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/values/AoeValues.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#include "playerbot/strategy/actions/AttackAction.h"
 
 #include <regex>
 
@@ -1101,26 +1102,11 @@ bool AtWarTrigger::IsActive()
 bool PetAttackTrigger::IsActive()
 {
     Pet* pet = bot->GetPet();
-    if (!pet || !pet->IsAlive())
-        return false;
-
-    if (pet->GetReactState() == REACT_PASSIVE)
-        return false;
-
     Unit* target = AI_VALUE(Unit*, "current target");
-    if (!target || !target->IsAlive())
-        return false;
-
-    if (!bot->IsValidAttackTarget(target))
+    if (!AttackAction::CanPetAttack(ai, pet, target))
         return false;
 
     if (pet->GetVictim() == target && pet->GetCharmInfo() && pet->GetCharmInfo()->IsCommandAttack())
-        return false;
-
-    bool ccProtected = !PossibleAttackTargetsValue::HasIgnoreCCRti(target, bot) &&
-        (PossibleAttackTargetsValue::HasBreakableCC(target, bot) ||
-         PossibleAttackTargetsValue::HasUnBreakableCC(target, bot));
-    if (ccProtected || PossibleAttackTargetsValue::IsImmuneToDamage(target, bot))
         return false;
 
     return true;
