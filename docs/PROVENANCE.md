@@ -1115,11 +1115,11 @@ Source files:
 
 Copied / ported / independently reimplemented:
 - Life Tap Rebalancing & Safety Floor:
-  - Rebalanced `life tap` priority in `WarlockStrategy::InitCombatTriggers` from `ACTION_HIGH + 3` (43.0f) to `ACTION_NORMAL` (30.0f). Prevents Life Tap from locking out primary combat DoTs (`curse of agony` at 32.0f, `corruption` at 31.0f) and AoE spells.
+  - Rebalanced `life tap` priority in `WarlockStrategy::InitCombatTriggers` from `ACTION_HIGH + 3` (23.0f) to `ACTION_NORMAL` (10.0f). Prevents Life Tap from locking out primary combat DoTs (`curse of agony` at 12.0f, `corruption` at 11.0f) and AoE spells.
   - Guarded `LifeTapTrigger::IsActive()` and `CastLifeTapAction::isUseful()` with a configurable safety threshold (`health > sPlayerbotAIConfig.lowHealth`), breaking the death spiral while respecting server-configured bot health thresholds.
 - Pet Combat Integration:
   - Implemented `PetAttackTrigger` and `PetAttackAction` using `CMSG_PET_ACTION` / `ACT_COMMAND` + `COMMAND_ATTACK`, registered in `GenericTriggers` and `GenericActions` for all pet classes.
-  - Extracted shared engagement validation into `AttackAction::CanPetAttack(ai, pet, target)` to ensure both `AttackAction` and the new pet-command path strictly respect `WaitForAttackStrategy::ShouldWait`, combat `stay` range limits, passive stance, breakable/unbreakable CC, and damage immunity.
+  - Extracted side-effect-free shared engagement validation into `AttackAction::CanPetAttack(ai, pet, target)` to ensure both `AttackAction` and the new pet-command path strictly respect `WaitForAttackStrategy::ShouldWait`, combat `stay` range limits, passive stance, breakable/unbreakable CC, and damage immunity. Passive-to-defensive stance normalization is preserved strictly in execution paths (`AttackAction::Attack` and `PetAttackAction::Execute`).
   - Fixed dormant pet triggers in `WarlockPetStrategy::InitCombatTriggers` (`pet attack` at `ACTION_HIGH + 2`, `has aggro` -> `torment` at `ACTION_HIGH`).
   - Added non-combat `blood pact` party buff trigger for Imp.
   - Implemented `CastTormentAction`, `CastBloodPactAction`, and `CastFireboltAction` derived from `CastPetSpellAction`.
@@ -1130,5 +1130,5 @@ Copied / ported / independently reimplemented:
   - Adjusted `DrainSoulTrigger::IsActive()` target health threshold from <= 15% to <= 25%, ensuring group kills register channel ticks in time to reap soul shards.
 - AoE Rotation & Channel Interruption:
   - Implemented `RainOfFireChannelCheckTrigger`: detects active channeled Rain of Fire and activates if clustered enemies drop below 2 (`aoe count < 2`), triggering `cancel channel` (`ACTION_HIGH + 3`) to immediately save mana.
-  - Lowered multi-dotting priorities in AoE strategies (`corruption on attacker`, `siphon life on attacker`, `curse of agony on attacker`) to `ACTION_HIGH - 1` (39.0f), allowing `rain of fire` (`ACTION_HIGH`, 40.0f) to reliably cast against 3+ grouped mobs.
+  - Lowered multi-dotting priorities in AoE strategies (`corruption on attacker`, `siphon life on attacker`, `curse of agony on attacker`) to `ACTION_HIGH - 1` (19.0f), allowing `rain of fire` (`ACTION_HIGH`, 20.0f) to reliably cast against 3+ grouped mobs.
 

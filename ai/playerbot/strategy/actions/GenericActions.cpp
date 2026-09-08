@@ -4,7 +4,6 @@
 #include "AttackAction.h"
 #include <map>
 #include "playerbot/PlayerbotFactory.h"
-#include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 
 using namespace ai;
 
@@ -577,6 +576,14 @@ bool PetAttackAction::Execute(Event& event)
 {
     Pet* pet = bot->GetPet();
     Unit* target = GetTarget();
+    if (!pet || !target)
+        return false;
+
+    if (pet->GetReactState() == REACT_PASSIVE && !ai->GetMaster())
+    {
+        pet->SetReactState(REACT_DEFENSIVE);
+    }
+
     if (!AttackAction::CanPetAttack(ai, pet, target))
         return false;
 

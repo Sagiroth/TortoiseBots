@@ -151,12 +151,6 @@ bool AttackAction::CanPetAttack(PlayerbotAI* ai, Pet* pet, Unit* target)
         bot->GetDistance(target) >= ai->GetRange("spell"))
         return false;
 
-    // Reset the pet state if no master
-    if (pet->GetReactState() == REACT_PASSIVE && !ai->GetMaster())
-    {
-        pet->SetReactState(REACT_DEFENSIVE);
-    }
-
     // Don't send the pet to attack if set to passive
     if (pet->GetReactState() == REACT_PASSIVE)
         return false;
@@ -217,6 +211,11 @@ bool AttackAction::Attack(Player* requester, Unit* target)
         Pet* pet = bot->GetPet();
         if (pet)
         {
+            if (pet->GetReactState() == REACT_PASSIVE && !ai->GetMaster())
+            {
+                pet->SetReactState(REACT_DEFENSIVE);
+            }
+
             UnitAI* creatureAI = ((Creature*)pet)->AI();
             if (creatureAI && CanPetAttack(ai, pet, target))
             {
