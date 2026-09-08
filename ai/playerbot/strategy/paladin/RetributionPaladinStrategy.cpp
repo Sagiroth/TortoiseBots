@@ -16,7 +16,7 @@ public:
         creators["repentance"] = &repentance;
         creators["repentance on enemy healer"] = &repentance_on_enemy_healer;
         creators["repentance on snare target"] = &repentance_on_snare_target;
-        creators["repentance of shield"] = &repentance_or_shield;
+        creators["repentance or shield"] = &repentance_or_shield;
         creators["judgement"] = &judgement;
     }
 
@@ -89,6 +89,10 @@ void RetributionPaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& tri
     triggers.push_back(new TriggerNode(
         "judgement",
         NextAction::array(0, new NextAction("judgement", ACTION_NORMAL + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "holy strike",
+        NextAction::array(0, new NextAction("holy strike", ACTION_NORMAL + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "crusader strike",
