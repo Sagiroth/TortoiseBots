@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a problem with TortoiseBots.
+title: "[Bug]: "
+labels:
+  - bug
+
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: What does this relate to?
+      options:
+        - Combat or class behavior
+        - Movement or travel
+        - Bot login, logout, or ownership
+        - Dungeon, LFT, battleground, or random bots
+        - Auction house or economy
+        - Commands or addon
+        - Build or configuration
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Include what you expected to happen.
+      placeholder: |
+        Expected:
+        Actual:
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: How can we reproduce it?
+      placeholder: |
+        1. Do this...
+        2. Then do this...
+        3. The problem happens...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or setup
+      description: Optional. Include the commit, branch, client, or configuration if known.
+      placeholder: TortoiseBots commit, branch, or server setup
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots, logs, or other evidence
+      description: Optional. Drag screenshots here or paste relevant logs.
