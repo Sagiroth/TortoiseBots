@@ -136,19 +136,21 @@ namespace ai
     };
 
     // Module-owned transition tracking (issue #84, P2). The donor keys this
-    // off core generation counters absent from Penqle core, so the Engine
-    // derives the same signal from map id + position continuity instead:
-    // a bot that was unreachable and is back, on a new map, or jumped an
-    // impossible distance between ticks has transitioned, and queued work
-    // from before is stale. Walking across zone lines moves continuously
-    // and never trips the jump detector.
+    // off core generation counters absent from Penqle core. The primary
+    // signal is a generation counter the teleport ack path bumps
+    // (PlayerbotAI::HandleTeleportAck): the ack tick skips AI updates, so
+    // engines only ever see before/after - even a 5-yard same-map hop
+    // drains. Map id + 3D position continuity backstops transfers the ack
+    // path never sees. Walking across zone lines moves continuously and
+    // never trips the jump detector.
     class TransitionTracker
     {
     public:
-        enum Event { NONE, AWAY, ARRIVED, MAP_CHANGED, JUMPED };
+        enum Event { NONE, AWAY, ARRIVED, MAP_CHANGED, JUMPED, TRANSITION };
         static float constexpr JumpThresholdYd = 100.0f;
 
-        Event Update(bool inWorld, bool teleporting, uint32_t mapId, float x, float y, float z)
+        Event Update(bool inWorld, bool teleporting, uint32_t mapId, float x, float y, float z,
+            uint64_t transitionGen)
         {
             if (!inWorld || teleporting)
             {
@@ -157,43 +159,57 @@ namespace ai
             }
             if (!initialized)
             {
-                Snapshot(mapId, x, y, z);
+                Snapshot(mapId, x, y, z, transitionGen);
                 initialized = true;
                 wasAway = false;
                 return NONE;
             }
+            // Explicit ack-path signal first: covers short same-map hops the
+            // position detector cannot distinguish from normal movement.
+            if (transitionGen != lastGen)
+            {
+                Snapshot(mapId, x, y, z, transitionGen);
+                wasAway = false;
+                return TRANSITION;
+            }
             if (wasAway)
             {
-                Snapshot(mapId, x, y, z);
+                Snapshot(mapId, x, y, z, transitionGen);
                 wasAway = false;
                 return ARRIVED;
             }
             if (mapId != lastMap)
             {
-                Snapshot(mapId, x, y, z);
+                Snapshot(mapId, x, y, z, transitionGen);
                 return MAP_CHANGED;
             }
-            float dx = x - lastX, dy = y - lastY;
-            if (dx * dx + dy * dy > JumpThresholdYd * JumpThresholdYd)
+            float dx = x - lastX, dy = y - lastY, dz = z - lastZ;
+            if (dx * dx + dy * dy + dz * dz > JumpThresholdYd * JumpThresholdYd)
             {
-                Snapshot(mapId, x, y, z);
+                Snapshot(mapId, x, y, z, transitionGen);
                 return JUMPED;
             }
-            Snapshot(mapId, x, y, z);
+            Snapshot(mapId, x, y, z, transitionGen);
             return NONE;
         }
+
+        // Marks the tracker away when the walk observes a transition
+        // mid-stride, so arrival drains even if the generation bump was
+        // somehow missed.
+        void NoteAway() { wasAway = true; }
 
         uint32_t LastMap() const { return lastMap; }
 
     private:
-        void Snapshot(uint32_t mapId, float x, float y, float z)
+        void Snapshot(uint32_t mapId, float x, float y, float z, uint64_t transitionGen)
         {
-            lastMap = mapId; lastX = x; lastY = y; lastZ = z;
+            lastMap = mapId; lastX = x; lastY = y; lastZ = z; lastGen = transitionGen;
         }
 
         bool initialized = false;
         bool wasAway = false;
         uint32_t lastMap = 0;
         float lastX = 0.0f, lastY = 0.0f, lastZ = 0.0f;
+        uint64_t lastGen = 0;
     };
 }

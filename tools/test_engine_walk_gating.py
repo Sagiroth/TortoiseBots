@@ -73,7 +73,24 @@ class WalkGatingTest(unittest.TestCase):
         self.assertIn("ClearActionFailures(action, event)", fn)
         self.assertNotIn("IsFailureBackedOff", fn)
 
+    def test_teleport_ack_bumps_generation(self):
+        ai_src = (ENGINE.parent.parent / "PlayerbotAI.cpp").read_text()
+        start = ai_src.index("void PlayerbotAI::HandleTeleportAck()")
+        fn = ai_src[start:start + 800]
+        self.assertIn("++transitionGeneration", fn)
 
+    def test_tick_consumes_generation_before_triggers(self):
+        body = walk_body()
+        gen = body.index("GetTransitionGeneration()")
+        trig = body.index("ProcessTriggers")
+        self.assertLess(gen, trig,
+                        "transition signal must be consumed before triggers run")
+
+    def test_mid_walk_guard_marks_tracker_away(self):
+        body = walk_body()
+        guard = body.index("transition mid-walk")
+        window = body[max(0, guard - 600):guard]
+        self.assertIn("transitions.NoteAway()", window)
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(WalkGatingTest)
     result = unittest.TextTestRunner(verbosity=1).run(suite)

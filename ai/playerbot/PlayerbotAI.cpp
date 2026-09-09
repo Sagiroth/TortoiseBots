@@ -1270,6 +1270,10 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
 
 void PlayerbotAI::HandleTeleportAck()
 {
+    // Issue #84 (P2): the single choke point every BotManager-driven ack
+    // flows through (UpdateBots skips AI updates this tick). Engines compare
+    // this counter to drain stale queues on arrival, however short the hop.
+    ++transitionGeneration;
     if (IsRealPlayer() && bot->IsBeingTeleportedFar())
         return;
 

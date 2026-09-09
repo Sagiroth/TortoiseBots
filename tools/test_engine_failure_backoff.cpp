@@ -106,46 +106,74 @@ int main()
     // 8. Steady presence never drains, including zone-line walking.
     {
         TransitionTracker t;
-        CHECK(t.Update(true, false, 0, 0.0f, 0.0f, 0.0f) == TransitionTracker::NONE);
-        CHECK(t.Update(true, false, 0, 5.0f, 0.0f, 0.0f) == TransitionTracker::NONE);
-        CHECK(t.Update(true, false, 0, 40.0f, 30.0f, 5.0f) == TransitionTracker::NONE);
+        CHECK(t.Update(true, false, 0, 0.0f, 0.0f, 0.0f, 0) == TransitionTracker::NONE);
+        CHECK(t.Update(true, false, 0, 5.0f, 0.0f, 0.0f, 0) == TransitionTracker::NONE);
+        CHECK(t.Update(true, false, 0, 40.0f, 30.0f, 5.0f, 0) == TransitionTracker::NONE);
         CHECK(t.LastMap() == 0);
     }
 
     // 9. Teleport away and back on the same map drains on arrival.
     {
         TransitionTracker t;
-        CHECK(t.Update(true, false, 1, 0.0f, 0.0f, 0.0f) == TransitionTracker::NONE);
-        CHECK(t.Update(true, true, 1, 0.0f, 0.0f, 0.0f) == TransitionTracker::AWAY);
-        CHECK(t.Update(true, true, 1, 0.0f, 0.0f, 0.0f) == TransitionTracker::AWAY);
-        CHECK(t.Update(true, false, 1, 500.0f, 500.0f, 0.0f) == TransitionTracker::ARRIVED);
-        CHECK(t.Update(true, false, 1, 501.0f, 500.0f, 0.0f) == TransitionTracker::NONE);
+        CHECK(t.Update(true, false, 1, 0.0f, 0.0f, 0.0f, 0) == TransitionTracker::NONE);
+        CHECK(t.Update(true, true, 1, 0.0f, 0.0f, 0.0f, 0) == TransitionTracker::AWAY);
+        CHECK(t.Update(true, true, 1, 0.0f, 0.0f, 0.0f, 0) == TransitionTracker::AWAY);
+        CHECK(t.Update(true, false, 1, 500.0f, 500.0f, 0.0f, 1) == TransitionTracker::TRANSITION);
+        CHECK(t.Update(true, false, 1, 501.0f, 500.0f, 0.0f, 1) == TransitionTracker::NONE);
     }
 
     // 10. Leaving the world and returning drains even without teleport flags.
     {
         TransitionTracker t;
-        CHECK(t.Update(true, false, 1, 0.0f, 0.0f, 0.0f) == TransitionTracker::NONE);
-        CHECK(t.Update(false, false, 1, 0.0f, 0.0f, 0.0f) == TransitionTracker::AWAY);
-        CHECK(t.Update(true, false, 1, 10.0f, 0.0f, 0.0f) == TransitionTracker::ARRIVED);
+        CHECK(t.Update(true, false, 1, 0.0f, 0.0f, 0.0f, 0) == TransitionTracker::NONE);
+        CHECK(t.Update(false, false, 1, 0.0f, 0.0f, 0.0f, 0) == TransitionTracker::AWAY);
+        CHECK(t.Update(true, false, 1, 10.0f, 0.0f, 0.0f, 0) == TransitionTracker::ARRIVED);
     }
 
     // 11. Map change drains and re-baselines.
     {
         TransitionTracker t;
-        CHECK(t.Update(true, false, 0, 0.0f, 0.0f, 0.0f) == TransitionTracker::NONE);
-        CHECK(t.Update(true, false, 1, 0.0f, 0.0f, 0.0f) == TransitionTracker::MAP_CHANGED);
+        CHECK(t.Update(true, false, 0, 0.0f, 0.0f, 0.0f, 0) == TransitionTracker::NONE);
+        CHECK(t.Update(true, false, 1, 0.0f, 0.0f, 0.0f, 0) == TransitionTracker::MAP_CHANGED);
         CHECK(t.LastMap() == 1);
-        CHECK(t.Update(true, false, 1, 1.0f, 0.0f, 0.0f) == TransitionTracker::NONE);
+        CHECK(t.Update(true, false, 1, 1.0f, 0.0f, 0.0f, 0) == TransitionTracker::NONE);
     }
 
     // 12. Impossible jump on the same map drains; sub-threshold never does.
     {
         TransitionTracker t;
-        CHECK(t.Update(true, false, 0, 0.0f, 0.0f, 0.0f) == TransitionTracker::NONE);
-        CHECK(t.Update(true, false, 0, 99.0f, 0.0f, 0.0f) == TransitionTracker::NONE);
-        CHECK(t.Update(true, false, 0, 500.0f, 0.0f, 0.0f) == TransitionTracker::JUMPED);
-        CHECK(t.Update(true, false, 0, 501.0f, 0.0f, 0.0f) == TransitionTracker::NONE);
+        CHECK(t.Update(true, false, 0, 0.0f, 0.0f, 0.0f, 0) == TransitionTracker::NONE);
+        CHECK(t.Update(true, false, 0, 99.0f, 0.0f, 0.0f, 0) == TransitionTracker::NONE);
+        CHECK(t.Update(true, false, 0, 500.0f, 0.0f, 0.0f, 0) == TransitionTracker::JUMPED);
+        CHECK(t.Update(true, false, 0, 501.0f, 0.0f, 0.0f, 0) == TransitionTracker::NONE);
+    }
+
+    // 13. Short same-map teleport with AI updates skipped during ack: the
+    // engine never sees AWAY, only before/after 30 yards apart - yet the
+    // ack-path generation bump still drains. This is the P2 review case.
+    {
+        TransitionTracker t;
+        CHECK(t.Update(true, false, 0, 0.0f, 0.0f, 0.0f, 0) == TransitionTracker::NONE);
+        // ... teleport happens, ack tick skips AI updates, no Update() calls ...
+        CHECK(t.Update(true, false, 0, 30.0f, 0.0f, 0.0f, 1) == TransitionTracker::TRANSITION);
+        CHECK(t.Update(true, false, 0, 31.0f, 0.0f, 0.0f, 1) == TransitionTracker::NONE);
+    }
+
+    // 14. Vertical displacement counts: same x/y, 150yd drop drains.
+    {
+        TransitionTracker t;
+        CHECK(t.Update(true, false, 0, 0.0f, 0.0f, 100.0f, 0) == TransitionTracker::NONE);
+        CHECK(t.Update(true, false, 0, 0.0f, 0.0f, 60.0f, 0) == TransitionTracker::NONE);
+        CHECK(t.Update(true, false, 0, 0.0f, 0.0f, -100.0f, 0) == TransitionTracker::JUMPED);
+    }
+
+    // 15. Mid-walk NoteAway marks arrival even with no other signal.
+    {
+        TransitionTracker t;
+        CHECK(t.Update(true, false, 0, 0.0f, 0.0f, 0.0f, 0) == TransitionTracker::NONE);
+        t.NoteAway();
+        CHECK(t.Update(true, false, 0, 1.0f, 0.0f, 0.0f, 0) == TransitionTracker::ARRIVED);
+        CHECK(t.Update(true, false, 0, 2.0f, 0.0f, 0.0f, 0) == TransitionTracker::NONE);
     }
 
     std::printf("PASS tools/test_engine_failure_backoff (%d checks)\n", checks);

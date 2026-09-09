@@ -238,8 +238,10 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
     ActionBasket* basket = NULL;
 
     // Issue #84 (P2): never run queued work while phased out of the world.
-    // Arrival after any absence, a new map, or an impossible position jump
-    // drains stale queued work locally: no Reset()/Init() interplay,
+    // The ack path bumps the AI's transition generation (ticks are skipped
+    // while teleporting), so arrival drains even for short same-map hops the
+    // position detector cannot see. Map id + 3D continuity backstop transfers
+    // the ack path never sees. Drain is local: no Reset()/Init() interplay,
     // strategies and triggers are untouched. Walking across zone lines
     // moves continuously and never drains.
     Player* const tickBot = ai->GetBot();
@@ -248,7 +250,8 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
     uint32_t const tickMapId = tickBot->GetMapId();
     TransitionTracker::Event const transition = transitions.Update(tickBot->IsInWorld(),
         tickBot->IsBeingTeleported(), tickMapId,
-        tickBot->GetPositionX(), tickBot->GetPositionY(), tickBot->GetPositionZ());
+        tickBot->GetPositionX(), tickBot->GetPositionY(), tickBot->GetPositionZ(),
+        ai->GetTransitionGeneration());
     if (transition == TransitionTracker::AWAY)
         return false;
     if (transition != TransitionTracker::NONE)
@@ -274,10 +277,12 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
     do
     {
         // Issue #84: an action can teleport the bot (hearth, taxi, summon).
-        // Stop the walk at that ownership boundary; the next tick drains or
-        // resumes once the bot lands. No reinit: queue stays for arrival.
+        // Stop the walk at that ownership boundary and mark the tracker away
+        // so arrival drains even if the generation bump was somehow missed.
+        // No reinit: queue stays for arrival.
         if (!tickBot->IsInWorld() || tickBot->IsBeingTeleported() || tickBot->GetMapId() != tickMapId)
         {
+            transitions.NoteAway();
             LogAction("transition mid-walk: stopping %s queue", BotStateName(state));
             break;
         }
