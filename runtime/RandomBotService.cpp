@@ -909,6 +909,8 @@ void RandomBotService::Update(uint32_t diff)
     if (!m_initialized || !sPlayerbotAIConfig.enabled)
         return;
 
+    sRandomBotFacade.RefreshAuctionPrices(diff);
+
     uint32_t cadence = std::max<uint32_t>(1000, sPlayerbotAIConfig.randomBotUpdateInterval);
     m_serviceElapsedMs += diff;
     if (m_serviceElapsedMs < cadence)

@@ -1281,3 +1281,52 @@ Local validation: code-read evidence (config loader, factory roll, AiFactory tab
   - New header-only policy unit `ai/playerbot/strategy/ActionFailureBackoff.h` (pure std, no core types) wired into `Engine::{FailureKey,AllowBackgroundRetry,IsFailureBackedOff,RecordFailure,ClearActionFailures,RefreshFailureContext,DrainQueue}`; backoff gate sits before prerequisites/possibility so backed-off actions (including `!isPossible`) cost no work; explicit `ExecuteAction` path clears backoff (acts without delay by design). Gating additionally exempts owned bots (`IsOwnedBot`) per the issue's unowned-only scope.
   - Config `AiPlayerbot.FailedActionRetry{Base,Max,CacheTtl,CacheMaxEntries}` with Shyalya defaults (250/2000/30000/64); zero base/max disables.
   - Regression: `tools/test_engine_failure_backoff.cpp` (g++-compiled, 55 checks: growth/cap/saturation, success-clear, TTL prune, stalest-first eviction, disable, key separation, transition state machine incl. skipped-tick short teleport + 3D jump + NoteAway) + `tools/test_engine_walk_gating.py` (9 checks: gate ordering, drain paths, explicit-command clearing, ack bump, generation consumption, away marking).
+
+## Economy: Native Auction Read Model and Personal Settlement (Issue #87) — 2026-09-09
+
+Feature: Native auction read model with unit-price accuracy, bounded multi-faction cache, market-informed pricing, personal auction cancellation, and mail settlement safety.
+
+Source repository:
+- `playerbots-references/shyalya-tortoise-wow` @ `83a61bc3edb66983256f64ffa89a8c8b61146571`: Reference for auction price mirroring intent and `ItemUsageValue` market appraisal queries (`GetAHMedianBuyoutPricePerItem`, `GetAHListingLowestBuyoutPricePerItem`).
+- `tortoise-wow` @ `bot-helpers` (`9f778a73`): Canonical core auction structures (`sAuctionHouseStore`, `AuctionHouseObject::GetAuctions()`, `sAuctionMgr.GetAItem()`, `WorldSession::HandleAuctionRemoveItem()`) and mail settlement APIs (`WorldSession::HandleMailTakeMoney`, `WorldSession::HandleMailTakeItem`).
+
+Source files:
+- `ai/playerbot/RandomBotFacade.h`
+- `runtime/PlayerbotRuntimeFacade.cpp`
+- `runtime/RandomBotService.cpp`
+- `runtime/AhMarketService.cpp`
+- `ai/playerbot/PlayerbotAIConfig.h`
+- `ai/playerbot/PlayerbotAIConfig.cpp`
+- `ai/playerbot/aiplayerbot.conf.dist.in`
+- `ai/playerbot/strategy/values/ItemUsageValue.h`
+- `ai/playerbot/strategy/values/ItemUsageValue.cpp`
+- `ai/playerbot/strategy/actions/AhAction.h`
+- `ai/playerbot/strategy/actions/AhAction.cpp`
+- `ai/playerbot/strategy/actions/ChatActionContext.h`
+- `ai/playerbot/strategy/triggers/ChatTriggerContext.h`
+- `ai/playerbot/strategy/generic/ChatCommandHandlerStrategy.cpp`
+- `ai/playerbot/strategy/actions/CheckMailAction.cpp`
+- `ai/playerbot/strategy/actions/MailAction.cpp`
+
+Copied / ported / independently reimplemented:
+- Read model snapshotting & caching:
+  - Reimplemented `RandomBotFacade::LoadAuctionPrices()` to iterate core `sAuctionHouseStore`, deduplicate visited `AuctionHouseObject` instances across faction IDs, resolve item counts via `sAuctionMgr.GetAItem()`, and populate an in-memory mirror bounded to 64 lowest unit-price entries per item template.
+  - Added periodic world-thread refresh (`RefreshAuctionPrices`) throttled by `AiPlayerbot.AuctionPriceRefreshInterval` (default 60s, configurable 5-3600s), wired into `RandomBotService::Update`.
+  - Added faction-scoped queries (`GetAhPrices(itemId, houseFaction)` and `GetAhPrices(itemId, Player* bot)`) respecting two-sided auction house rules (`AiPlayerbot.TwoSidedAuctionHouses`) or faction boundaries (Alliance sees Alliance+Neutral, Horde sees Horde+Neutral).
+- Unit-price precision and appraisal:
+  - `GetAHMedianBuyoutPricePerItem`, `GetAHListingLowestBuyoutPricePerItem`, and `DesiredPricePerItem` calculate unit buyout as `(float)buyout / (float)count`. If unit price is in `(0, 1)`, a positive sentinel of 1 copper is preserved so low-value stack listings are not rounded to 0 and mistaken for unlisted items.
+  - Market posting in `AhMarketService` and `AhAction` queries `DesiredPricePerItem(bot, proto, count, undercutPercent)` before falling back to vendor price multiplier.
+- Lifecycle actions & safety:
+  - Implemented `AhCancelAction` (`ah cancel <id|item-name|all>`), dispatching canonical `WorldSession::HandleAuctionRemoveItem` packets with proper deposit forfeiture / item return semantics. Registered in trigger/action contexts and chat command handler.
+  - Guarded `AhBidAction` against same-account bidding (`auction->ownerAccount == bot->GetSession()->GetAccountId()`).
+  - Fixed mail settlement in `CheckMailAction.cpp`: excluded auction mails (`MAIL_STATIONERY_AUCTION` and non-normal message types) from unsolicited deletion, preventing loss of pending auction proceeds or returned items.
+  - Fixed mail claiming in `MailAction.cpp` (`TakeMailProcessor`): money and items are claimed sequentially, and `RemoveMail` is called only after both money and items have been completely collected, eliminating gold/item destruction.
+
+Reason: Fix Issue #87. Previously, `LoadAuctionPrices` was a clear-only stub causing all appraisal sites to return 0 and fall back to vendor sell prices. Bots could not cancel auctions, same-account bidding was unguarded, and mail handling contained bugs that could delete auction mails or destroy mail contents.
+
+Local validation:
+- Standalone C++ verification harness `tools/test_auction_read_model.cpp` (59 checks, 100% pass): tested empty mirror fallback, single-lot and multi-stack unit pricing, sub-copper preservation, 64-entry bounding, Alliance/Horde/Neutral scoping, two-sided config override, same-account bid rejection, cancel lifecycle, outbid refund conservation, buyout transfer conservation, deposit rules, hardcore dead-bot auction handling, and zero gold/item leakage.
+- `python3 tools/verify_action_trigger_wiring.py` (exit code 0, live-missing=0).
+- `bash tools/verify_tortoise_surface.sh` (exit code 0).
+- `bash tools/verify_penqle_host_contract.sh --core ../tortoise-wow` (exit code 0).
+- Docker native static builder `./dev/build-playerbots` passed (`[100%] Built target mangosd`).

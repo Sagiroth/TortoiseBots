@@ -14,6 +14,9 @@
 #include "../runtime/PlayerbotAIStorage.h"
 
 #include "AuctionHouse/AuctionHouseMgr.h"
+#include "Database/DBCStores.h"
+#include "World.h"
+#include "Item.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Objects/Player.h"
@@ -272,9 +275,86 @@ void RandomBotFacade::LoadAuctionPrices()
 {
     std::lock_guard<std::mutex> lock(m_ahActionMutex);
     ahMirror.clear();
-    // Penqle + #411 baseline: auction price mirror disabled for minimal
-    // headless lifecycle. The donor auction API (Guard/bounds/itemCount)
-    // differs from Penqle's simple GetAuctions map; keep shim minimal.
+
+    // Iterate all DBC auction house entries, deduplicating by object pointer
+    // (cross-faction mode collapses all entries to one object).
+    std::vector<AuctionHouseObject*> visited;
+    for (uint32 i = 0; i < sAuctionHouseStore.GetNumRows(); ++i)
+    {
+        AuctionHouseEntry const* houseEntry = sAuctionHouseStore.LookupEntry(i);
+        if (!houseEntry)
+            continue;
+
+        AuctionHouseObject* auctionHouse = sAuctionMgr.GetAuctionsMap(houseEntry);
+        if (!auctionHouse)
+            continue;
+        if (std::find(visited.begin(), visited.end(), auctionHouse) != visited.end())
+            continue;
+        visited.push_back(auctionHouse);
+
+        AuctionHouseObject::AuctionEntryMap const* auctions = auctionHouse->GetAuctions();
+        if (!auctions)
+            continue;
+
+        for (auto const& pair : *auctions)
+        {
+            AuctionEntry const* entry = pair.second;
+            if (!entry)
+                continue;
+
+            // Only consider buyout listings for unit-price appraisal
+            if (!entry->buyout)
+                continue;
+
+            Item const* item = sAuctionMgr.GetAItem(entry->itemGuidLow);
+            if (!item || !item->GetCount())
+                continue;
+
+            // Bounded per-item listings: keep up to 64 lowest-unit-price entries
+            // per item template so memory and appraisal sorting stay bounded.
+            constexpr size_t kMaxAuctionsPerItem = 64;
+            auto& listings = ahMirror[entry->itemTemplate];
+            if (listings.size() < kMaxAuctionsPerItem)
+            {
+                listings.push_back(*entry);
+            }
+            else
+            {
+                float currentUnitPrice = float(entry->buyout) / float(item->GetCount());
+                size_t maxIdx = 0;
+                float maxUnitPrice = 0.0f;
+                for (size_t idx = 0; idx < listings.size(); ++idx)
+                {
+                    Item const* existingItem = sAuctionMgr.GetAItem(listings[idx].itemGuidLow);
+                    uint32 existingCount = existingItem ? existingItem->GetCount() : 1;
+                    float existingUnitPrice = float(listings[idx].buyout) / float(existingCount);
+                    if (existingUnitPrice > maxUnitPrice)
+                    {
+                        maxUnitPrice = existingUnitPrice;
+                        maxIdx = idx;
+                    }
+                }
+                if (currentUnitPrice < maxUnitPrice)
+                {
+                    listings[maxIdx] = *entry;
+                }
+            }
+        }
+    }
+}
+
+void RandomBotFacade::RefreshAuctionPrices(uint32 diff)
+{
+    static uint32 elapsed = 0;
+    elapsed += diff;
+    uint32 intervalMs = sPlayerbotAIConfig.auctionPriceRefreshInterval * 1000;
+    if (intervalMs < 5000)
+        intervalMs = 5000;
+    if (elapsed >= intervalMs)
+    {
+        elapsed = 0;
+        LoadAuctionPrices();
+    }
 }
 
 const std::vector<AuctionEntry>& RandomBotFacade::GetAhPrices(uint32 itemId) const
@@ -282,6 +362,41 @@ const std::vector<AuctionEntry>& RandomBotFacade::GetAhPrices(uint32 itemId) con
     static const std::vector<AuctionEntry> empty;
     auto it = ahMirror.find(itemId);
     return it == ahMirror.end() ? empty : it->second;
+}
+
+std::vector<AuctionEntry> RandomBotFacade::GetAhPrices(uint32 itemId, uint32 houseFaction) const
+{
+    std::vector<AuctionEntry> result;
+    auto it = ahMirror.find(itemId);
+    if (it == ahMirror.end())
+        return result;
+
+    bool twoSide = sWorld.getConfig(CONFIG_BOOL_ALLOW_TWO_SIDE_INTERACTION_AUCTION);
+    for (auto const& entry : it->second)
+    {
+        if (twoSide)
+        {
+            result.push_back(entry);
+            continue;
+        }
+
+        uint32 team = entry.auctionHouseEntry ? AuctionHouseMgr::GetAuctionHouseTeam(entry.auctionHouseEntry) : 0;
+        // team == 0 is neutral AH (accessible to all factions)
+        if (team == 0 || team == houseFaction || houseFaction == 0)
+        {
+            result.push_back(entry);
+        }
+    }
+
+    return result;
+}
+
+std::vector<AuctionEntry> RandomBotFacade::GetAhPrices(uint32 itemId, Player* bot) const
+{
+    if (!bot)
+        return GetAhPrices(itemId, (uint32)0);
+
+    return GetAhPrices(itemId, bot->GetTeam());
 }
 
 InventoryResult RandomBotFacade::CanEquipUnseenItem(Player* player, uint8 slot, uint16& dest, uint32 item)

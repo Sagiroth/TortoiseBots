@@ -194,6 +194,7 @@ namespace ai
             creators["cheat"] = [](PlayerbotAI* ai) { return new CheatAction(ai); };
             creators["ah"] = [](PlayerbotAI* ai) { return new AhAction(ai); };
             creators["ah bid"] = [](PlayerbotAI* ai) { return new AhBidAction(ai); };
+            creators["ah cancel"] = [](PlayerbotAI* ai) { return new AhCancelAction(ai); };
             creators["wait for attack time"] = [](PlayerbotAI* ai) { return new SetWaitForAttackTimeAction(ai); };
             creators["self resurrect"] = [](PlayerbotAI* ai) { return new SelfResurrectAction(ai); };
             creators["pet"] = [](PlayerbotAI* ai) { return new SetPetAction(ai); };

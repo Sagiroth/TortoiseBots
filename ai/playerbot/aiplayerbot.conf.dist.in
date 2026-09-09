@@ -1242,6 +1242,9 @@ AiPlayerbot.RandomBotsMaxLoginsPerInterval = 30
 # (0-1) Whether bot should check ALL auction house listings when browsing (by default only checks a small amount)
 # AiPlayerbot.BotCheckAllAuctionListings = 0
 #
+# (seconds) Interval between auction house price mirror refreshes (5-3600)
+# AiPlayerbot.AuctionPriceRefreshInterval = 60
+#
 #######################################
 
 # rpg jump is a strategy that makes bot do random jumps

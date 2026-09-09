@@ -150,6 +150,7 @@ public:
     std::list<uint32> vendorOverAHItemIds;
     bool botCheckAllAuctionListings;
     bool botsSaveEpics;
+    uint32 auctionPriceRefreshInterval = 60; // seconds between price mirror refreshes
     // Default-off bounded AH market population (module-only, native transaction path).
     bool ahMarketEnabled = false;
     uint32 ahMarketInterval = 120; // seconds between market ticks

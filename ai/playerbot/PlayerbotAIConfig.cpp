@@ -306,6 +306,9 @@ bool PlayerbotAIConfig::Initialize()
     LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.VendorOverAHItemIds", ""), vendorOverAHItemIds);
     botCheckAllAuctionListings = config.GetBoolDefault("AiPlayerbot.BotCheckAllAuctionListings", false);
     botsSaveEpics = config.GetBoolDefault("AiPlayerbot.BotsSaveEpics", true);
+    auctionPriceRefreshInterval = (uint32)config.GetIntDefault("AiPlayerbot.AuctionPriceRefreshInterval", 60);
+    if (auctionPriceRefreshInterval < 5) auctionPriceRefreshInterval = 5;
+    if (auctionPriceRefreshInterval > 3600) auctionPriceRefreshInterval = 3600;
     // Default-off bounded AH market population. Interval is seconds, batch is
     // max auctions per tick (hard capped at 5 in service). No AH scan or DB
     // query per tick; uses legitimate inventory + native HandleAuctionSellItem.

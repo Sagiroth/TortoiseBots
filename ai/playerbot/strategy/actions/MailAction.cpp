@@ -109,6 +109,7 @@ public:
         }
 
         ObjectGuid mailbox = FindMailbox(ai);
+        bool moneyTaken = false;
         if (mail->money)
         {
             std::ostringstream out;
@@ -126,9 +127,10 @@ public:
             packet << mailbox;
             packet << mail->messageID;
             bot->GetSession()->HandleMailTakeMoney(packet);
-            RemoveMail(bot, mail->messageID, mailbox);
+            moneyTaken = true;
         }
-        else if (mail->has_items)
+
+        if (mail->has_items)
         {
             std::list<uint32> guids;
             for (MailItemInfoVec::iterator i = mail->items.begin(); i != mail->items.end(); ++i)
@@ -161,10 +163,16 @@ public:
 
                 bot->GetSession()->HandleMailTakeItem(packet);
             }
+        }
 
+        // Only delete the mail if both money and items have been taken (or if it was an empty notification mail)
+        MasterPlayer* mailOwner = GetMailOwner(bot);
+        Mail* currentMail = mailOwner ? mailOwner->GetMail(mail->messageID) : nullptr;
+        if (currentMail && currentMail->money == 0 && currentMail->items.empty() && !ai->HasActivePlayerMaster())
+        {
             RemoveMail(bot, mail->messageID, mailbox);
         }
-        else if (mail->sender < 10 && !ai->HasActivePlayerMaster()) //Remove empty mails from auctionhouse.
+        else if (mail->sender < 10 && !ai->HasActivePlayerMaster() && !mail->money && !mail->has_items)
         {
             RemoveMail(bot, mail->messageID, mailbox);
         }

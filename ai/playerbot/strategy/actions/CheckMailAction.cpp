@@ -30,6 +30,10 @@ bool CheckMailAction::Execute(Event& event)
         if (!mail || mail->state == MAIL_STATE_DELETED)
             continue;
 
+        // Skip auction mail - auction payouts and won items must be collected via MailAction, never deleted!
+        if (mail->stationery == MAIL_STATIONERY_AUCTION || mail->messageType != MAIL_NORMAL)
+            continue;
+
         Player* owner = sObjectMgr.GetPlayer(ObjectGuid(HIGHGUID_PLAYER, mail->sender));
         if (!owner)
             continue;

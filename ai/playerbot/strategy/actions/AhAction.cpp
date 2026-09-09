@@ -93,9 +93,13 @@ bool AhAction::ExecuteCommand(Player* requester, std::string text, Unit* auction
 
             if (!pricePerItemCache[proto->ItemId])
             {
-                uint32 basePerItem = ItemUsageValue::GetBotSellPrice(proto, bot);
-                uint32 initialPricePercentage = urand(75, 100);
-                uint32 pricePerItem = (basePerItem * initialPricePercentage) / 100;
+                uint32 pricePerItem = ItemUsageValue::DesiredPricePerItem(bot, proto, item->GetCount(), urand(40, 60));
+                if (!pricePerItem)
+                {
+                    uint32 basePerItem = ItemUsageValue::GetBotSellPrice(proto, bot);
+                    uint32 initialPricePercentage = urand(75, 100);
+                    pricePerItem = (basePerItem * initialPricePercentage) / 100;
+                }
                 if (!pricePerItem)
                     pricePerItem = 1;
                 pricePerItemCache[proto->ItemId] = pricePerItem;
@@ -223,7 +227,7 @@ bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auct
             if (!auction)
                 continue;
 
-            if (auction->owner == bot->GetGUIDLow())
+            if (auction->owner == bot->GetGUIDLow() || auction->ownerAccount == bot->GetSession()->GetAccountId())
                 continue;
 
             if (!AuctionItemCount(auction))
@@ -356,7 +360,7 @@ bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auct
 
     for (auto curAuction : map)
     {
-        if (curAuction.owner == bot->GetGUIDLow())
+        if (curAuction.owner == bot->GetGUIDLow() || curAuction.ownerAccount == bot->GetSession()->GetAccountId())
             continue;
 
         ItemPrototype const* proto = sObjectMgr.GetItemPrototype(curAuction.itemTemplate);
@@ -449,5 +453,93 @@ bool AhBidAction::BidItem(Player* requester, AuctionEntry* auction, uint32 price
         ai->TellPlayerNoFacing(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
         return true;
     }
+    return false;
+}
+
+bool AhCancelAction::ExecuteCommand(Player* requester, std::string text, Unit* auctioneer)
+{
+    AuctionHouseEntry const* auctionHouseEntry = bot->GetSession()->GetCheckedAuctionHouseForAuctioneer(auctioneer->getObjectGuid());
+    if (!auctionHouseEntry)
+        return false;
+
+    AuctionHouseObject* auctionHouse = sAuctionMgr.GetAuctionsMap(auctionHouseEntry);
+    if (!auctionHouse)
+        return false;
+
+    bool cancelAll = (text.empty() || text == "all");
+    uint32 targetAuctionId = 0;
+    if (!cancelAll && std::all_of(text.begin(), text.end(), ::isdigit))
+    {
+        targetAuctionId = std::stoul(text);
+    }
+
+    std::vector<AuctionEntry*> toCancel;
+    for (auto const& pair : *auctionHouse->GetAuctions())
+    {
+        AuctionEntry* entry = pair.second;
+        if (!entry || entry->owner != bot->GetGUIDLow())
+            continue;
+
+        if (targetAuctionId && entry->Id == targetAuctionId)
+        {
+            toCancel.push_back(entry);
+            break;
+        }
+
+        if (cancelAll)
+        {
+            toCancel.push_back(entry);
+            continue;
+        }
+
+        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(entry->itemTemplate);
+        if (proto && !proto->Name1.empty() && strstri(proto->Name1, text.c_str()))
+        {
+            toCancel.push_back(entry);
+        }
+    }
+
+    if (toCancel.empty())
+    {
+        ai->TellPlayerNoFacing(requester, "No matching auctions found to cancel.");
+        return false;
+    }
+
+    bool anyCancelled = false;
+    for (auto* entry : toCancel)
+    {
+        if (CancelAuctionEntry(requester, entry, auctioneer))
+            anyCancelled = true;
+    }
+
+    return anyCancelled;
+}
+
+bool AhCancelAction::CancelAuctionEntry(Player* requester, AuctionEntry* auction, Unit* auctioneer)
+{
+    if (!auction || !auctioneer)
+        return false;
+
+    uint32 auctionId = auction->Id;
+    uint32 itemTemplate = auction->itemTemplate;
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemTemplate);
+
+    WorldPacket packet;
+    packet << auctioneer->getObjectGuid();
+    packet << auctionId;
+
+    bot->GetSession()->HandleAuctionRemoveItem(packet);
+
+    AuctionHouseEntry const* ahEntry = bot->GetSession()->GetCheckedAuctionHouseForAuctioneer(auctioneer->getObjectGuid());
+    AuctionHouseObject* ahObj = ahEntry ? sAuctionMgr.GetAuctionsMap(ahEntry) : nullptr;
+    if (ahObj && !ahObj->GetAuction(auctionId))
+    {
+        std::string itemName = proto ? proto->Name1 : "Item";
+        std::ostringstream out;
+        out << "Cancelled auction for " << itemName << " (id: " << auctionId << ", returned via mail)";
+        ai->TellPlayerNoFacing(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+        return true;
+    }
+
     return false;
 }

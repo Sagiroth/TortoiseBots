@@ -50,4 +50,25 @@ namespace ai
         virtual bool ExecuteCommand(Player* requester, std::string text, Unit* auctioneer);
         bool BidItem(Player* requester, AuctionEntry* auction, uint32 price, Unit* auctioneer, bool isBuyout, std::string reason = "");
     };
+
+    class AhCancelAction : public AhAction
+    {
+    public:
+        AhCancelAction(PlayerbotAI* ai) : AhAction(ai, "ah cancel") {}
+
+#ifdef GenerateBotHelp
+        virtual std::string GetHelpName() { return "ah cancel"; }
+        virtual std::string GetHelpDescription()
+        {
+            return "This command will make bots cancel their own auctions at a nearby auction house.\n"
+                "Usage: ah cancel [itemlink|all|<auctionId>]\n"
+                "Example: ah cancel all\n";
+        }
+        virtual std::vector<std::string> GetUsedActions() { return {}; }
+        virtual std::vector<std::string> GetUsedValues() { return { "nearest npcs" }; }
+#endif
+    private:
+        virtual bool ExecuteCommand(Player* requester, std::string text, Unit* auctioneer) override;
+        bool CancelAuctionEntry(Player* requester, AuctionEntry* auction, Unit* auctioneer);
+    };
 }
