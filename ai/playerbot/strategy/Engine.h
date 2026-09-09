@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Action.h"
+#include "ActionFailureBackoff.h"
 #include "Queue.h"
 #include "Trigger.h"
 #include "Multiplier.h"
@@ -112,6 +113,18 @@ namespace ai
         ActionNode* CreateActionNode(const std::string& name);
         virtual Action* InitializeAction(ActionNode* actionNode);
         virtual bool ListenAndExecute(Action* action, Event& event);
+        // Issue #84: bounded failure backoff + transition invalidation.
+        // Only autonomous background work is throttled; owner commands,
+        // reactions and combat go through untouched (AllowBackgroundRetry).
+        bool AllowBackgroundRetry(Action* action, Event& event) const;
+        std::string FailureKey(Action* action, Event& event, ActionResult result) const;
+        bool IsFailureBackedOff(Action* action, Event& event) const;
+        void RecordFailure(Action* action, Event& event, ActionResult result);
+        void ClearActionFailures(Action* action, Event& event);
+        void RefreshFailureContext();
+        // Pop and delete every queued node without touching strategies,
+        // triggers or multipliers (no Reset()/Init() interplay).
+        void DrainQueue();
 
     private:
         void LogAction(const char* format, ...);
@@ -134,6 +147,12 @@ namespace ai
         Action* lastExecutedAction;
         bool inDoNextAction = false;
         bool reinitPending = false;
+        // Issue #84 state. Per-engine failure memory plus the transition
+        // tracker used to invalidate stale work on arrival (any map).
+        ActionFailureBackoff actionFailures;
+        TransitionTracker transitions;
+        float failX = 0.0f, failY = 0.0f, failZ = 0.0f;
+        uint32_t failMoney = 0, failHealth = 0, failMana = 0;
 
     public:
         bool initMode = true;

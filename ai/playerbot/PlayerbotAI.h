@@ -607,6 +607,10 @@ public:
     // identity is available before the adapter binds the transient master
     // pointer, which is important while PlayerbotAI constructs its engines.
     bool IsOwnedBot() const;
+    // Issue #84 (P2): module-owned teleport signal. Bumped on every
+    // HandleTeleportAck; engines consume it to drain stale queues even when
+    // the ack tick skips AI updates (short same-map teleports included).
+    uint64_t GetTransitionGeneration() const { return transitionGeneration; }
     //Get the group leader or the master of the bot.
     Player* GetGroupMaster() { return bot->InBattleGround() ? master : bot->GetGroup() ? (sObjectMgr.GetPlayer(bot->GetGroup()->GetLeaderGuid()) ? sObjectMgr.GetPlayer(bot->GetGroup()->GetLeaderGuid()) : master) : master; }
 
@@ -769,6 +773,8 @@ protected:
     WorldPosition jumpDestination;
     uint32 jumpTime;
     bool fallAfterJump;
+    // Issue #84 (P2): bumped by HandleTeleportAck, consumed by engines.
+    uint64_t transitionGeneration = 0;
     uint32 faceTargetUpdateDelay;
     bool isPlayerFriend = false;
     bool isMovingToTransport = false;

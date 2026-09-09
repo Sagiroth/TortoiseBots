@@ -238,6 +238,15 @@ bool PlayerbotAIConfig::Initialize()
 
     iterationsPerTick = config.GetIntDefault("AiPlayerbot.IterationsPerTick", 100);
 
+    // Issue #84: donor Shyalya defaults (base 250ms doubling to 2s cap,
+    // 30s TTL, 64 entries). Zero base/max disables the backoff entirely.
+    failedActionRetryBaseMs = uint32(std::max(0, std::min(2000, config.GetIntDefault("AiPlayerbot.FailedActionRetryBase", 250))));
+    failedActionRetryMaxMs = uint32(std::max(0, std::min(10000, config.GetIntDefault("AiPlayerbot.FailedActionRetryMax", 2000))));
+    if (failedActionRetryBaseMs && failedActionRetryMaxMs)
+        failedActionRetryMaxMs = std::max(failedActionRetryBaseMs, failedActionRetryMaxMs);
+    failedActionCacheTtlMs = uint32(std::max(1000, std::min(300000, config.GetIntDefault("AiPlayerbot.FailedActionCacheTtl", 30000))));
+    failedActionCacheMaxEntries = uint32(std::max(1, std::min(256, config.GetIntDefault("AiPlayerbot.FailedActionCacheMaxEntries", 64))));
+
     allowGuildBots = config.GetBoolDefault("AiPlayerbot.AllowGuildBots", true);
     allowMultiAccountAltBots = config.GetBoolDefault("AiPlayerbot.AllowMultiAccountAltBots", true);
 

@@ -121,6 +121,78 @@ bool Engine::Reset()
 
     return true;
 }
+std::string Engine::FailureKey(Action* action, Event& event, ActionResult result) const
+{
+    uint64_t targetGuid = 0;
+    if (Unit* target = action->GetTarget())
+        targetGuid = target->GetObjectGuid().GetRawValue();
+    // RPG actions expose self as target; distinguish their destination too.
+    uint64_t destGuid = aiObjectContext->GetValue<GuidPosition>("rpg target")->Get().GetRawValue();
+    return ActionFailureBackoff::Key(action->getName(), event.getSource(), targetGuid, destGuid,
+        static_cast<uint32_t>(result));
+}
+
+bool Engine::AllowBackgroundRetry(Action* action, Event& event) const
+{
+    Player* const bot = ai->GetBot();
+    return sPlayerbotAIConfig.failedActionRetryBaseMs && sPlayerbotAIConfig.failedActionRetryMaxMs &&
+        state == BotState::BOT_STATE_NON_COMBAT && bot && bot->IsAlive() && !bot->IsInCombat() &&
+        !ai->HasRealPlayerMaster() && !ai->IsRealPlayer() && !ai->IsOwnedBot() &&
+        !action->IsReaction() && !event.getOwner() && event.getPacket().empty() &&
+        action->getRelevance() < ACTION_HIGH;
+}
+
+bool Engine::IsFailureBackedOff(Action* action, Event& event) const
+{
+    if (!AllowBackgroundRetry(action, event))
+        return false;
+    return actionFailures.IsBackedOff(FailureKey(action, event, ACTION_RESULT_FAILED),
+        WorldTimer::getMSTime()) ||
+        actionFailures.IsBackedOff(FailureKey(action, event, ACTION_RESULT_IMPOSSIBLE),
+        WorldTimer::getMSTime());
+}
+
+void Engine::RecordFailure(Action* action, Event& event, ActionResult result)
+{
+    if (!AllowBackgroundRetry(action, event))
+        return;
+    actionFailures.Record(FailureKey(action, event, result), WorldTimer::getMSTime(),
+        sPlayerbotAIConfig.failedActionRetryBaseMs, sPlayerbotAIConfig.failedActionRetryMaxMs,
+        sPlayerbotAIConfig.failedActionCacheMaxEntries, sPlayerbotAIConfig.failedActionCacheTtlMs);
+}
+
+void Engine::ClearActionFailures(Action* action, Event& event)
+{
+    actionFailures.Clear(FailureKey(action, event, ACTION_RESULT_FAILED),
+        FailureKey(action, event, ACTION_RESULT_IMPOSSIBLE));
+}
+
+void Engine::RefreshFailureContext()
+{
+    Player* const bot = ai->GetBot();
+    if (!bot)
+        return;
+    // Any physical or resource change can unstick a failure: moved, looted,
+    // healed, regained mana. Map changes clear through the transition path.
+    if (failX != bot->GetPositionX() || failY != bot->GetPositionY() || failZ != bot->GetPositionZ() ||
+        failMoney != bot->GetMoney() || failHealth != bot->GetHealth() ||
+        failMana != bot->GetPower(POWER_MANA))
+        actionFailures.ClearAll();
+    failX = bot->GetPositionX(); failY = bot->GetPositionY(); failZ = bot->GetPositionZ();
+    failMoney = bot->GetMoney(); failHealth = bot->GetHealth(); failMana = bot->GetPower(POWER_MANA);
+    actionFailures.Prune(WorldTimer::getMSTime(), sPlayerbotAIConfig.failedActionCacheTtlMs);
+}
+
+void Engine::DrainQueue()
+{
+    ActionNode* node = NULL;
+    do
+    {
+        node = queue.Pop();
+        if (!node) break;
+        delete node;
+    } while (true);
+}
 
 void Engine::Init()
 {
@@ -165,6 +237,31 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
     bool actionExecuted = false;
     ActionBasket* basket = NULL;
 
+    // Issue #84 (P2): never run queued work while phased out of the world.
+    // The ack path bumps the AI's transition generation (ticks are skipped
+    // while teleporting), so arrival drains even for short same-map hops the
+    // position detector cannot see. Map id + 3D continuity backstop transfers
+    // the ack path never sees. Drain is local: no Reset()/Init() interplay,
+    // strategies and triggers are untouched. Walking across zone lines
+    // moves continuously and never drains.
+    Player* const tickBot = ai->GetBot();
+    if (!tickBot)
+        return false;
+    uint32_t const tickMapId = tickBot->GetMapId();
+    TransitionTracker::Event const transition = transitions.Update(tickBot->IsInWorld(),
+        tickBot->IsBeingTeleported(), tickMapId,
+        tickBot->GetPositionX(), tickBot->GetPositionY(), tickBot->GetPositionZ(),
+        ai->GetTransitionGeneration());
+    if (transition == TransitionTracker::AWAY)
+        return false;
+    if (transition != TransitionTracker::NONE)
+    {
+        LogAction("transition %d on map %u: draining %s queue", (int)transition, tickMapId, BotStateName(state));
+        DrainQueue();
+        actionFailures.ClearAll();
+    }
+    RefreshFailureContext();
+
     bool const wasInDoNextAction = inDoNextAction;
     inDoNextAction = true;
 
@@ -179,6 +276,16 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
     int iterationsPerTick = queue.Size() * (minimal ? (uint32)(sPlayerbotAIConfig.iterationsPerTick / 2) : sPlayerbotAIConfig.iterationsPerTick);
     do
     {
+        // Issue #84: an action can teleport the bot (hearth, taxi, summon).
+        // Stop the walk at that ownership boundary and mark the tracker away
+        // so arrival drains even if the generation bump was somehow missed.
+        // No reinit: queue stays for arrival.
+        if (!tickBot->IsInWorld() || tickBot->IsBeingTeleported() || tickBot->GetMapId() != tickMapId)
+        {
+            transitions.NoteAway();
+            LogAction("transition mid-walk: stopping %s queue", BotStateName(state));
+            break;
+        }
         basket = queue.Peek();
         if (basket)
         {
@@ -268,6 +375,18 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                             }
                         }
                     }
+                    // Issue #84 (P1): the backoff gate runs before
+                    // prerequisites and the possibility check. A backing-off
+                    // background action is dropped here (not executed, no
+                    // alternatives, no prereq work). Its trigger re-fires
+                    // while the cause persists, so execution resumes on
+                    // expiry without queue churn.
+                    if (IsFailureBackedOff(action, event))
+                    {
+                        LogAction("A:%s - BACKOFF src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
+                        delete actionNode;
+                        continue;
+                    }
 
                     ActionBasket* peekAction = queue.Peek();
                     if (relevance < oldRelevance && peekAction && peekAction->getRelevance() > relevance) //Relevance changed. Try again.
@@ -306,6 +425,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         if (actionExecuted)
                         {
                             LogAction("A:%s - OK src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
+                            ClearActionFailures(action, event);
                             MultiplyAndPush(actionNode->getContinuers(), 0, false, event, "cont");
                             lastRelevance = relevance;
                             delete actionNode;
@@ -314,6 +434,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         else
                         {
                             LogAction("A:%s - FAILED src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
+                            RecordFailure(action, event, ACTION_RESULT_FAILED);
                             MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.03, false, event, "alt");
                         }
                     }
@@ -342,6 +463,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                             }
                         }
                         LogAction("A:%s - IMPOSSIBLE src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
+                        RecordFailure(action, event, ACTION_RESULT_IMPOSSIBLE);
                         MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.03, false, event, "alt");
                     }
                 }
@@ -515,6 +637,10 @@ ActionResult Engine::ExecuteAction(const std::string& name, Event& event)
         Action* action = InitializeAction(actionNode);
         if (action)
         {
+            // Issue #84: an explicit command acts without delay, even when
+            // the same background action is backing off. No backoff gate on
+            // this path by design.
+            ClearActionFailures(action, event);
             // E2E green: PerformanceMonitor stub
             bool isUseful = action->isUseful();
 // E2E green: pmo stub

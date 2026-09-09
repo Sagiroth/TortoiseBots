@@ -1091,6 +1091,15 @@ AiPlayerbot.PremadeSpecLink.11.2.60 = 5002012--5050013355213521
 # Max AI iterations per tick
 #AiPlayerbot.IterationsPerTick = 10
 
+# Bounded failure backoff for autonomous background work (issue #84).
+# Repeated failures wait base, 2x, 4x, 8x, 16x up to the max before the
+# action may run again. Combat, reactions, owner commands and owned bots
+# are never throttled. Set base or max to 0 to disable entirely.
+#AiPlayerbot.FailedActionRetryBase = 250
+#AiPlayerbot.FailedActionRetryMax = 2000
+#AiPlayerbot.FailedActionCacheTtl = 30000
+#AiPlayerbot.FailedActionCacheMaxEntries = 64
+
 # Allow/deny bots from your guild
 AiPlayerbot.AllowGuildBots = 1
 
