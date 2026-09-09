@@ -1,6 +1,7 @@
 #include "RandomBotService.h"
 
 #include "BotManager.h"
+#include "GearSeedingGuard.h"
 #include "../host/BotSessionAdapter.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
@@ -959,7 +960,18 @@ void RandomBotService::Update(uint32_t diff)
         if (sPlayerbotAIConfig.randomGearUpgradeEnabled && randomizeInterval &&
             m_randomizeAgeMs[i] >= randomizeInterval * 1000)
         {
-            sRandomBotFacade.UpdateGearSpells(player);
+            // Same fresh-bot-only rule as login seeding (GearSeedingGuard.h):
+            // never overwrite earned gear on a timer tick. The login path
+            // normally seeds first; this is a backstop for pool bots that
+            // somehow entered the world unseeded.
+            uint32 timerGuidLow = player->GetGUIDLow();
+            bool freshTimerBot = TortoiseBots::NeedsInitialGearSeeding(
+                player->GetTotalPlayedTime(), sRandomBotFacade.GetValue(timerGuidLow, "seeded"));
+            if (player->GetLevel() >= 5 && freshTimerBot)
+            {
+                sRandomBotFacade.UpdateGearSpells(player);
+                sRandomBotFacade.SetValue(timerGuidLow, "seeded", 1);
+            }
             m_randomizeAgeMs[i] = 0;
         }
     }

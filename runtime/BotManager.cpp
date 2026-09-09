@@ -1,6 +1,7 @@
 #include "BotManager.h"
 #include "PlayerbotAIAdapter.h"
 #include "PlayerbotAIStorage.h"
+#include "GearSeedingGuard.h"
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "../ai/playerbot/RandomBotFacade.h"
 #include "../host/BotSessionAdapter.h"
@@ -276,14 +277,24 @@ void BotManager::OnPlayerLogin(::Player* player)
     // One-shot random scatter on headless login only; fail-closed, no DB mutation, no homebind
     TryRandomTeleport(player, record);
 
-    // Prompt PlayerbotFactory enrichment for random bots where factory supports it.
-    // CharacterCreation creates level 1 starter kit; factory's InitEquipment intentionally
-    // no-ops for <5. For any auto-created level >=5 (future higher-level pool or manual
-    // leveling), trigger gear enrichment immediately on world-thread login
-    // rather than waiting ~6h for RandomBotService's randomize interval. Safe and synchronous;
-    // the existing randomGearUpgradeEnabled setting controls this (default enabled), no core changes.
-    if (record.random && sPlayerbotAIConfig.randomGearUpgradeEnabled && player->GetLevel() >= 5)
+    // Initial gear seeding is for fresh pool bots only, never earned progression.
+    // See GearSeedingGuard.h for the dual-heuristic rule. Stamp after the
+    // attempt, not before: a crash between stamp and equip must not matter, and
+    // a bot that received no enrichment simply progresses on earned drops.
+    // CharacterCreation creates level 1 starter kit; factory's InitEquipment
+    // intentionally no-ops for <5. For any auto-created level >=5 (future
+    // higher-level pool or manual leveling), trigger gear enrichment immediately
+    // on world-thread login rather than waiting ~6h for RandomBotService's
+    // randomize interval. Safe and synchronous; the existing
+    // randomGearUpgradeEnabled setting controls this (default enabled).
+    uint32 botGuidLow = player->GetGUIDLow();
+    bool freshBot = TortoiseBots::NeedsInitialGearSeeding(
+        player->GetTotalPlayedTime(), sRandomBotFacade.GetValue(botGuidLow, "seeded"));
+    if (record.random && sPlayerbotAIConfig.randomGearUpgradeEnabled && player->GetLevel() >= 5 && freshBot)
+    {
         sRandomBotFacade.UpdateGearSpells(player);
+        sRandomBotFacade.SetValue(botGuidLow, "seeded", 1);
+    }
 
     sLog.outString("TortoiseBots: bot %s entered world through native PlayerScript", player->GetName());
 }
