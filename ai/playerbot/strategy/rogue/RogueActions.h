@@ -253,12 +253,12 @@ namespace ai
         CastMarkForDeathAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "mark for death") {}
     };
 
-    class CastSmokeBombAction : public CastMeleeSpellAction
+    class CastSmokeBombAction : public CastBuffSpellAction
     {
     public:
         // Tortoise 51969: self-centered miss-chance cloud. Defensive slot on
         // critical health; DBC-driven, no core script.
-        CastSmokeBombAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "smoke bomb") {}
+        CastSmokeBombAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "smoke bomb") {}
     };
 
     class CastRuptureAction : public CastMeleeDebuffSpellAction

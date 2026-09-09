@@ -1157,7 +1157,7 @@ Local validation: validate_presets.py 242 links 0 failures; git diff --check; ve
 ## Class port Batches 5-7 (2026-09-08, uncommitted)
 Feature: shared cancel-channel registration + Mage Icicles/evocation checks + Hunter KC/Carve/Lacerate + Rogue generator/Surprise/Noxious/boost fix
 Source repository:
-- `playerbots-references/mod-playerbots` (donor intent; WotLK names rejected)
+- `playerbots-references/mod-playerbots` @ b949b50 (donor intent; WotLK names rejected)
 - `playerbots-references/shyalya-tortoise-wow` @ 83a61bc (Tortoise runtime parity)
 - `tortoise-wow` @ 9f778a73 (spell_hunter.cpp, spell_rogue.cpp, spell_mage.cpp, Unit.cpp aura states, SpellMgr exclusivity, spell_template)
 Source files:
@@ -1178,7 +1178,7 @@ Local validation: git diff --check; validate_presets.py 242 links 0 failures; ve
 ## Class port Batches 8-11 (2026-09-08, uncommitted)
 Feature: Warlock DH/PO + Paladin HS/Bulwark/Exorcism + Druid Berserk/Swiftmend + Shaman 5 talents/Bloodlust
 Source repository:
-- `playerbots-references/mod-playerbots` (donor intent; WotLK names rejected)
+- `playerbots-references/mod-playerbots` @ b949b50 (donor intent; WotLK names rejected)
 - `playerbots-references/shyalya-tortoise-wow` @ 83a61bc (Tortoise runtime parity)
 - `tortoise-wow` @ 9f778a73 (spell_warlock.cpp, spell_paladin.cpp, spell_druid.cpp, spell_shaman.cpp, spell_template)
 Source files: warlock/, paladin/, druid/, shaman/ strategy dirs (actions/triggers/contexts/spec strategies listed in PROGRESS.md Batches 8-11).
