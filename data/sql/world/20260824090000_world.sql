@@ -1,5 +1,5 @@
 -- Native TortoiseBots schema for optional PlayerBots behavior caches.
--- Keep this migration schema-only: servers may load the mature Vanilla/Turtle
+-- Keep this migration schema-only: servers may load the mature Vanilla/Tortoise
 -- datasets separately, while an empty cache still leaves manual bots usable.
 
 CREATE TABLE IF NOT EXISTS `ai_playerbot_weightscales` (

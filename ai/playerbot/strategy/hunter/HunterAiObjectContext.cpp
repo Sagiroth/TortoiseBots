@@ -223,6 +223,8 @@ namespace ai
                 creators["viper sting"] = [](PlayerbotAI* ai) { return new ViperStingTrigger(ai); };
                 creators["aimed shot"] = [](PlayerbotAI* ai) { return new AimedShotTrigger(ai); };
                 creators["bestial wrath"] = [](PlayerbotAI* ai) { return new BestialWrathBoostTrigger(ai); };
+                creators["kill command"] = [](PlayerbotAI* ai) { return new KillCommandTrigger(ai); };
+                creators["carve"] = [](PlayerbotAI* ai) { return new CarveTrigger(ai); };
                 creators["no pet"] = [](PlayerbotAI* ai) { return new HunterNoPet(ai); };
                 creators["stealthed nearby"] = [](PlayerbotAI* ai) { return new StealthedNearbyTrigger(ai); };
             }
@@ -257,6 +259,8 @@ namespace ai
                 creators["readiness"] = [](PlayerbotAI* ai) { return new CastReadinessAction(ai); };
                 creators["aspect of the monkey"] = [](PlayerbotAI* ai) { return new CastAspectOfTheMonkeyAction(ai); };
                 creators["aspect of the hawk"] = [](PlayerbotAI* ai) { return new CastAspectOfTheHawkAction(ai); };
+                creators["aspect of the wolf"] = [](PlayerbotAI* ai) { return new CastAspectOfTheWolfAction(ai); };
+                creators["aspect of the viper"] = [](PlayerbotAI* ai) { return new CastAspectOfTheViperAction(ai); };
                 creators["aspect of the wild"] = [](PlayerbotAI* ai) { return new CastAspectOfTheWildAction(ai); };
                 creators["aspect of the pack"] = [](PlayerbotAI* ai) { return new CastAspectOfThePackAction(ai); };
                 creators["aspect of the cheetah"] = [](PlayerbotAI* ai) { return new CastAspectOfTheCheetahAction(ai); };
@@ -278,6 +282,9 @@ namespace ai
                 creators["counterattack"] = [](PlayerbotAI* ai) { return new CastCounterattackAction(ai); };
                 creators["wyvern sting"] = [](PlayerbotAI* ai) { return new WyvernStingSnareAction(ai); };
                 creators["mongoose bite"] = [](PlayerbotAI* ai) { return new MongooseBiteAction(ai); };
+                creators["kill command"] = [](PlayerbotAI* ai) { return new CastKillCommandAction(ai); };
+                creators["lacerate"] = [](PlayerbotAI* ai) { return new CastLacerateAction(ai); };
+                creators["carve"] = [](PlayerbotAI* ai) { return new CastCarveAction(ai); };
                 creators["readiness"] = [](PlayerbotAI* ai) { return new CastReadinessAction(ai); };
                 creators["tame beast"] = [](PlayerbotAI* ai) { return new TameBeastAction(ai); };
                 creators["flare"] = [](PlayerbotAI* ai) { return new CastFlareAction(ai); };

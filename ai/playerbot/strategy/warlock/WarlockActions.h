@@ -31,6 +31,30 @@ namespace ai
 		CastDrainSoulAction(PlayerbotAI* ai) : CastSpellAction(ai, "drain soul") {}
 	};
 
+	class CastDarkHarvestAction : public CastSpellAction
+	{
+	public:
+		CastDarkHarvestAction(PlayerbotAI* ai) : CastSpellAction(ai, "dark harvest") {}
+	};
+
+	class CastPowerOverwhelmingAction : public CastSpellAction
+	{
+	public:
+		CastPowerOverwhelmingAction(PlayerbotAI* ai) : CastSpellAction(ai, "power overwhelming") {}
+		std::string GetTargetName() override { return "pet target"; }
+
+		bool isUseful() override
+		{
+			// The demon takes % base health as damage over the duration:
+			// refuse a burst that would finish off a dying pet. The trigger
+			// holds the same floor for the evaluation-to-execution gap.
+			Unit* pet = AI_VALUE(Unit*, "pet target");
+			if (!pet || !pet->IsAlive())
+				return false;
+			return CastSpellAction::isUseful();
+		}
+	};
+
     class CastShadowburnAction : public CastSpellAction
     {
     public:
@@ -409,6 +433,13 @@ namespace ai
     {
     public:
         CastRainOfFireAction(PlayerbotAI* ai) : CastSpellAction(ai, "rain of fire") {}
+    };
+    class CastInfernoAction : public CastSpellAction
+    {
+    public:
+        // Inferno (1122) summons an infernal with a stun; the InfernoTrigger
+        // gates attackers, spell knowledge, and the infernal stone.
+        CastInfernoAction(PlayerbotAI* ai) : CastSpellAction(ai, "inferno") {}
     };
 
     class CastImmolateAction : public CastRangedDebuffSpellAction

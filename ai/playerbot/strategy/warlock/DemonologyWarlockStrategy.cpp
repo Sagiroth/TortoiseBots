@@ -32,6 +32,10 @@ ai::NextAction** DemonologyWarlockStrategy::GetDefaultCombatActions()
 void DemonologyWarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     WarlockStrategy::InitCombatTriggers(triggers);
+
+    triggers.push_back(new TriggerNode(
+        "power overwhelming",
+        NextAction::array(0, new NextAction("power overwhelming", ACTION_NORMAL + 3), NULL)));
 }
 
 void DemonologyWarlockStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

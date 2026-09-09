@@ -2,7 +2,7 @@
 
 **Status:** Active architecture and roadmap
 **Target:** Tortoise WoW 1.18.1 core
-**Primary goal:** Useful PlayerBots for Turtle 1.18.1 without rebuilding the old tightly coupled core.
+**Primary goal:** Useful PlayerBots for Tortoise 1.18.1 Core from Penqle without rebuilding the old tightly coupled core.
 
 ## 1. Product goal
 
@@ -15,9 +15,9 @@ Core stays unaware of strategies, rotations, travel, or LLM.
 ## 2. Source of truth
 
 1. pinned Tortoise core
-2. Turtle SQL/DBC/extracted data
+2. Tortoise SQL/DBC/extracted data
 3. runtime behavior/logs
-4. Shyalya for Turtle-specific reference
+4. Shyalya for Tortoise-specific reference
 5. Vanilla/CMaNGOS/mod-playerbots/MangosZero for comparison
 
 Knowledge Base = behavior spec, not architecture.
@@ -43,9 +43,9 @@ See `AGENTS.md` §Architecture invariants for the 5 rules (optional module, no `
 
 Details: `HOST_API.md`.
 
-## 5. Vanilla/Turtle boundary
+## 5. Vanilla/Tortoise boundary
 
-Keep: 9 Vanilla classes, applicable raids/WSG/AB/AV, Turtle Goblin/High Elf + validated spells/talents, native LFG/taxi, applicable generic behavior. Don't re-add expansion systems (DK/glyph/vehicle/Arena) — `tools/verify_turtle_surface.sh` guards IDs.
+Keep: 9 Vanilla classes, applicable raids/WSG/AB/AV, Tortoise Goblin/High Elf + validated spells/talents, native LFG/taxi, applicable generic behavior. Don't re-add expansion systems (DK/glyph/vehicle/Arena) — `tools/verify_tortoise_surface.sh` guards IDs.
 
 ## 6. Current milestone — gameplay acceptance
 
@@ -55,7 +55,7 @@ Freeze: no more broad donor cleanup.
 2. owned-bot acceptance (add/follow/combat/loot/death/relogin/teleport)
 3. human+ bots 5-player dungeon (tank/heal/DPS/interrupts/CC/loot/wipe recovery)
 4. fix observed defects only
-5. broaden class/Turtle coverage from real failures
+5. broaden class/Tortoise coverage from real failures
 
 ### 6.1 Player-owned convenience rule
 
@@ -128,11 +128,11 @@ Core #416:   e63161c (rebased on corrected Core #411)
 
 First roles: Warrior tank, Priest healer, Mage/Rogue/Hunter DPS. Expand from failures.
 
-Then Turtle-specific: Goblin/High Elf, class/talent changes, collection mounts.
+Then Tortoise-specific: Goblin/High Elf, class/talent changes, collection mounts.
 
 ## 8. Later roadmap
 
-After 5-player is reliable: all classes/specs, more Turtle strategies, broader BG/AH/random-population tuning, addon UI, perf for larger pops, optional async LLM. The bounded default-off LFT fill, AH market, BG auto-queue, and RNDBOT auto-create slices are implemented now; don't scale to 1000s before the small party works.
+After 5-player is reliable: all classes/specs, more Tortoise strategies, broader BG/AH/random-population tuning, addon UI, perf for larger pops, optional async LLM. The bounded default-off LFT fill, AH market, BG auto-queue, and RNDBOT auto-create slices are implemented now; don't scale to 1000s before the small party works.
 
 ## 9. Performance, security, provenance
 

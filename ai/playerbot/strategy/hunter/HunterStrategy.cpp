@@ -539,6 +539,12 @@ void HunterManualAspectStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& 
 
 void HunterPetStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    // Shared PetAttackTrigger/Action gate on CC, immunity, stay range and
+    // wait-for-attack (see WarlockPetStrategy); hunter pets engage with it.
+    triggers.push_back(new TriggerNode(
+        "pet attack",
+        NextAction::array(0, new NextAction("pet attack", ACTION_HIGH + 2), NULL)));
+
     triggers.push_back(new TriggerNode(
         "hunters pet low health",
         NextAction::array(0, new NextAction("mend pet", ACTION_HIGH), NULL)));

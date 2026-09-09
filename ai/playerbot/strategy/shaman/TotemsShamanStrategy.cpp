@@ -17,7 +17,7 @@ constexpr uint32 SPELL_GROUNDING_TOTEM = 8177;
 constexpr uint32 SPELL_WINDFURY_TOTEM = 8512;
 }
 
-// These combat strategies set the corresponding Vanilla/Turtle totems on the
+// These combat strategies set the corresponding Vanilla/Tortoise totems on the
 // bar and cast them when they are missing.
 
 // Earth Totems

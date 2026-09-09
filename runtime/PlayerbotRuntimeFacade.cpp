@@ -1,4 +1,4 @@
-// Small adapters for mature Vanilla/Turtle strategy code.
+// Small adapters for mature Vanilla/Tortoise strategy code.
 //
 // These functions translate behavior-facing queries to the native owners. They
 // do not own sessions, players, AI instances, or random-bot population.

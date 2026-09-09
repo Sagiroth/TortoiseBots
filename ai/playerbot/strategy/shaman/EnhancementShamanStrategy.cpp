@@ -55,6 +55,10 @@ void EnhancementShamanStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         NextAction::array(0, new NextAction("stormstrike", ACTION_NORMAL + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "lightning strike",
+        NextAction::array(0, new NextAction("lightning strike", ACTION_NORMAL + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "shock",
         NextAction::array(0, new NextAction("earth shock", ACTION_NORMAL), NULL)));
 }
@@ -377,6 +381,12 @@ void EnhancementShamanBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& 
     triggers.push_back(new TriggerNode(
         "shaman weapon",
         NextAction::array(0, new NextAction("windfury weapon", ACTION_HIGH), NULL)));
+
+    // Lightning Strike consumes shield charges in combat; without upkeep the
+    // trigger goes quiet once the opening shield fades. Mirror non-combat.
+    triggers.push_back(new TriggerNode(
+        "lightning shield",
+        NextAction::array(0, new NextAction("lightning shield", ACTION_NORMAL), NULL)));
 }
 
 void EnhancementShamanBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -431,6 +441,12 @@ void EnhancementShamanBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerN
 void EnhancementShamanBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ShamanBoostStrategy::InitCombatTriggers(triggers);
+
+    // Tortoise 45509: self attack/cast-speed frenzy; party melee crits spread
+    // the haste via core. BoostTrigger gates combat + missing aura.
+    triggers.push_back(new TriggerNode(
+        "bloodlust",
+        NextAction::array(0, new NextAction("bloodlust", ACTION_HIGH), NULL)));
 }
 
 void EnhancementShamanBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

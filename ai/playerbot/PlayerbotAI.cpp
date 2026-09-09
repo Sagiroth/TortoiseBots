@@ -5194,7 +5194,7 @@ void PlayerbotAI::DurabilityLoss(Item* item, double percent)
 
 bool IsAlliance(uint8 race)
 {
-    // The core owns race faction data, including Turtle's Goblin/High Elf
+    // The core owns race faction data, including Tortoise's Goblin/High Elf
     // rows. Do not duplicate the classic eight-race table here.
     return Player::TeamForRace(race) == ALLIANCE;
 }

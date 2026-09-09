@@ -252,6 +252,12 @@ void HolyPriestBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& 
 void HolyPriestBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     PriestBoostStrategy::InitCombatTriggers(triggers);
+
+    // Tortoise 52962 Holy capstone: CC purge plus healing throughput. Holy-only
+    // boost beside power infusion / inner focus from the shared tree.
+    triggers.push_back(new TriggerNode(
+        "ascendance",
+        NextAction::array(0, new NextAction("ascendance", ACTION_HIGH), NULL)));
 }
 
 void HolyPriestBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

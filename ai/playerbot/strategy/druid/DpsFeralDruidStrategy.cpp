@@ -344,6 +344,10 @@ void DpsFeralDruidBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*
 void DpsFeralDruidBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     DruidBoostStrategy::InitCombatTriggers(triggers);
+
+    triggers.push_back(new TriggerNode(
+        "berserk",
+        NextAction::array(0, new NextAction("berserk", ACTION_HIGH + 2), NULL)));
 }
 
 void DpsFeralDruidBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

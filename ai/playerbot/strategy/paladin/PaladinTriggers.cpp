@@ -6,7 +6,7 @@
 
 using namespace ai;
 
-// TurtleWoW Holy Paladin: Daybreak target finder predicate.
+// Tortoise Holy Paladin: Daybreak target finder predicate.
 // Match a party member who has the Daybreak buff (spell 51322 specifically;
 // other "Daybreak" entries 50931 / 51323 are different mechanics — talent
 // passive and old vanilla effect respectively) AND HP < 95% (so the heal
@@ -325,7 +325,20 @@ bool ExorcismTrigger::IsActive()
 {
     if (SpellNoCooldownTrigger::IsActive())
     {
-        return AI_VALUE2(uint8, "mana", "self target") > sPlayerbotAIConfig.mediumMana;
+        if (AI_VALUE2(uint8, "mana", "self target") > sPlayerbotAIConfig.mediumMana)
+        {
+            // Art of War makes Exorcism instant: always worth casting.
+            // Otherwise Exorcism only affects undead/demon targets; core
+            // rejects other types, so firing there wastes mana and the GCD.
+            if (ai->HasAura("the art of war", bot))
+                return true;
+
+            if (Creature* target = dynamic_cast<Creature*>(GetTarget()))
+            {
+                uint32 type = target->GetCreatureType();
+                return type == CREATURE_TYPE_UNDEAD || type == CREATURE_TYPE_DEMON;
+            }
+        }
     }
 
     return false;

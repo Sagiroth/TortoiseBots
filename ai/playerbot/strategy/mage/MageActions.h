@@ -254,6 +254,44 @@ namespace ai
     {
     public:
         CastArcanePowerAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "arcane power") {}
+
+        bool isPossible() override
+        {
+            // Tortoise 12042 kills below 10% mana and cannot be cancelled.
+            // Mirror the trigger floor so a queued action still refuses when
+            // mana fell between trigger evaluation and execution.
+            if (!CastBuffSpellAction::isPossible())
+                return false;
+            if (!AI_VALUE2(bool, "has mana", "self target"))
+                return false;
+            return AI_VALUE2(uint8, "mana", "self target") >= 70;
+        }
+
+        bool isUseful() override
+        {
+            if (!CastBuffSpellAction::isUseful())
+                return false;
+            if (!AI_VALUE2(bool, "has mana", "self target"))
+                return false;
+            return AI_VALUE2(uint8, "mana", "self target") >= 70;
+        }
+    };
+
+    class CastIciclesAction : public CastSpellAction
+    {
+    public:
+        CastIciclesAction(PlayerbotAI* ai) : CastSpellAction(ai, "icicles") {}
+
+        bool isPossible() override
+        {
+            // Tortoise 52516 roots the caster for the channel; incoming damage
+            // has a 75% shatter chance for 30% of base health. Refuse when the
+            // bot is already under direct attack so the trigger safety cannot
+            // be bypassed between evaluation and execution.
+            if (!CastSpellAction::isPossible())
+                return false;
+            return AI_VALUE(uint8, "my attacker count") == 0;
+        }
     };
 
     class CastPresenceOfMindAction : public CastBuffSpellAction

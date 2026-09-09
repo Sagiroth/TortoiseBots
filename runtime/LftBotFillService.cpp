@@ -64,7 +64,7 @@ DungeonLevelRange const* FindDungeonLevelRange(std::string const& raw)
     // Source: Soromeister/LFT v0.0.3.3 LFT.allDungeons (authoritative queue availability).
     // Exact codes/names/minLevel/maxLevel from the addon; unknown/corrupt ranges fail closed.
     // Keys are NormalizeInstanceToken(raw) = alnum lowercased, so addon codes and normalized
-    // display names both resolve. No DBC fallback, no invented Turtle-only ranges beyond this list.
+    // display names both resolve. No DBC fallback, no invented Tortoise-only ranges beyond this list.
     static std::unordered_map<std::string, DungeonLevelRange> const ranges = {
         {"ragefirechasm", {13, 18}}, {"rfc", {13, 18}},
         {"wailingcaverns", {17, 24}}, {"wc", {17, 24}},

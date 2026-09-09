@@ -386,6 +386,17 @@ namespace ai
     public:
         CastWarStompAction(PlayerbotAI* ai) : CastSpellAction(ai, "war stomp") {}
     };
+    class CastManaTapAction : public CastSpellAction
+    {
+    public:
+        CastManaTapAction(PlayerbotAI* ai) : CastSpellAction(ai, "mana tap") {}
+    };
+
+    class CastArcaneTorrentAction : public CastSpellAction
+    {
+    public:
+        CastArcaneTorrentAction(PlayerbotAI* ai) : CastSpellAction(ai, "arcane torrent") {}
+    };
 
     //cc breakers
 

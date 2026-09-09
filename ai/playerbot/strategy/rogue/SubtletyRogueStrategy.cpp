@@ -44,8 +44,20 @@ void SubtletyRogueStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
         NextAction::array(0, new NextAction("slice and dice", ACTION_HIGH + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "shadow of death",
+        NextAction::array(0, new NextAction("shadow of death", ACTION_HIGH + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "mark for death",
+        NextAction::array(0, new NextAction("mark for death", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "3 combo",
         NextAction::array(0, new NextAction("rupture", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("smoke bomb", ACTION_EMERGENCY), NULL)));
 
     triggers.push_back(new TriggerNode(
         "not behind target",

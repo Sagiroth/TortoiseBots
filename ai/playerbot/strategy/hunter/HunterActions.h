@@ -75,6 +75,24 @@ public:
     public:
         CastAspectOfTheHawkAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "aspect of the hawk") {}
     };
+    class CastAspectOfTheWolfAction : public CastBuffSpellAction
+    {
+    public:
+        // Tortoise 45650: melee-AP aspect for the Survival melee kit. Deliberately
+        // NOT auto-maintained: the shared Hawk upkeep would fight it (both
+        // BuffTriggers fire when the other is up) and oscillate stances every
+        // tick. Manual/explicit use until aspect arbitration exists.
+        CastAspectOfTheWolfAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "aspect of the wolf") {}
+    };
+
+    class CastAspectOfTheViperAction : public CastBuffSpellAction
+    {
+    public:
+        // Tortoise 45651: mana-regen aspect. Manual like Wolf: auto-maintain
+        // would fight the Hawk upkeep (mutually exclusive aspects). A level
+        // gate with hysteresis belongs to a future aspect-arbitration pass.
+        CastAspectOfTheViperAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "aspect of the viper") {}
+    };
 
     class CastAspectOfTheWildAction : public CastBuffSpellAction
     {
@@ -216,6 +234,9 @@ public:
     MELEE_ACTION(CastCounterattackAction, "counterattack");
     SNARE_ACTION(WyvernStingSnareAction, "wyvern sting");
     MELEE_ACTION(MongooseBiteAction, "mongoose bite");
+    SPELL_ACTION(CastKillCommandAction, "kill command");
+    MELEE_ACTION(CastLacerateAction, "lacerate");
+    MELEE_ACTION(CastCarveAction, "carve");
 
     class TameBeastAction : public CastSpellAction
     {

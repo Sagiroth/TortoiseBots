@@ -55,7 +55,7 @@ uint32 MountValue::GetSpeed(uint32 spellId)
 
 uint32 MountValue::GetMountSpell(uint32 itemId)
 {
-    // Turtle collection mounts use a generic item spell (46499) and keep the
+    // Tortoise collection mounts use a generic item spell (46499) and keep the
     // actual mount spell in the core-owned collection_mount table. Consult
     // that authoritative mapping before falling back to classic item spells.
     if (std::optional<uint32> collectionSpell = sMountMgr.GetMountSpellId(itemId))

@@ -208,6 +208,7 @@ namespace ai
                 creators["faerie fire"] = [](PlayerbotAI* ai) { return new FaerieFireTrigger(ai); };
                 creators["insect swarm"] = [](PlayerbotAI* ai) { return new InsectSwarmTrigger(ai); };
                 creators["moonfire"] = [](PlayerbotAI* ai) { return new MoonfireTrigger(ai); };
+                creators["wrath"] = [](PlayerbotAI* ai) { return new WrathTrigger(ai); };
                 creators["leveling moonfire"] = [](PlayerbotAI* ai) { return new LevelingMoonfireTrigger(ai); };
                 creators["leveling rejuvenation"] = [](PlayerbotAI* ai) { return new LevelingRejuvenationTrigger(ai); };
                 creators["nature's grasp"] = [](PlayerbotAI* ai) { return new NaturesGraspTrigger(ai); };
@@ -243,6 +244,7 @@ namespace ai
                 creators["powershift"] = [](PlayerbotAI* ai) { return new PowershiftTrigger(ai); };
                 creators["rebirth"] = [](PlayerbotAI* ai) { return new RebirthTrigger(ai); };
                 creators["innervate"] = [](PlayerbotAI* ai) { return new InnervateTrigger(ai); };
+                creators["berserk"] = [](PlayerbotAI* ai) { return new BerserkTrigger(ai); };
                 creators["clearcasting"] = [](PlayerbotAI* ai) { return new ClearcastingTrigger(ai); };
             }
         };
@@ -307,6 +309,8 @@ namespace ai
                 creators["regrowth on party"] = [](PlayerbotAI* ai) { return new CastRegrowthOnPartyAction(ai); };
                 creators["rejuvenation on party"] = [](PlayerbotAI* ai) { return new CastRejuvenationOnPartyAction(ai); };
                 creators["healing touch on party"] = [](PlayerbotAI* ai) { return new CastHealingTouchOnPartyAction(ai); };
+                creators["swiftmend"] = [](PlayerbotAI* ai) { return new CastSwiftmendAction(ai); };
+                creators["swiftmend on party"] = [](PlayerbotAI* ai) { return new CastSwiftmendOnPartyAction(ai); };
                 creators["rebirth"] = [](PlayerbotAI* ai) { return new CastRebirthAction(ai); };
                 creators["revive"] = [](PlayerbotAI* ai) { return new CastReviveAction(ai); };
                 creators["barskin"] = [](PlayerbotAI* ai) { return new CastBarskinAction(ai); };

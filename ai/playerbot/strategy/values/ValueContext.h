@@ -60,7 +60,7 @@
 #include "LastSpellCastTimeValue.h"
 #include "CombatStartTimeValue.h"
 #include "ManaSaveLevelValue.h"
-#include "LfgValues.h" // Vanilla/Turtle meeting-stone and group role support.
+#include "LfgValues.h" // Vanilla/Tortoise meeting-stone and group role support.
 #include "PvpValues.h"
 #include "EnemyHealerTargetValue.h"
 #include "Formations.h"

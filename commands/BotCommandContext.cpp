@@ -229,10 +229,10 @@ bool ConfigurePullMode(PlayerbotAI* ai, bool pullback)
 
 namespace {
 
-// These are the Vanilla/Turtle interrupt actions already registered by the
+// These are the Vanilla/Tortoise interrupt actions already registered by the
 // nine class contexts (or by a warlock's pet context). We deliberately probe
 // the action graph and spell data instead of encoding class/spec assumptions:
-// talent changes, Turtle spell ranks, and pet choice remain AI-owned.
+// talent changes, Tortoise spell ranks, and pet choice remain AI-owned.
 char const* const kInterruptActions[] = {
     "counterspell",
     "silence",

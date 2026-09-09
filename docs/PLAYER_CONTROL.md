@@ -94,7 +94,7 @@ security review and acceptance case exists:
 * direct travel, taxi, teleport, auction, bank, mail, trade, craft, guild and
   LFT controls;
 * random-population, AH-market and battleground service operations;
-* any command requiring free-form text whose valid Turtle/data contract is not
+* any command requiring free-form text whose valid Tortoise/data contract is not
   represented in the public interface.
 
 `.bot command <bot> <text>` is a transitional advanced path, not the player

@@ -189,7 +189,7 @@ ChatHelper::ChatHelper(PlayerbotAI* ai) : PlayerbotAIAware(ai)
 
 
     // Race names are client DBC data, not a second module-owned table. This
-    // keeps Turtle's Goblin/High Elf names and any future core-defined race
+    // keeps Tortoise's Goblin/High Elf names and any future core-defined race
     // available to both parsing and formatting without expansion branches.
     for (uint32 id = 0; id < sChrRacesStore.GetNumRows(); ++id)
     {

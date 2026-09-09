@@ -188,7 +188,7 @@ namespace ai
             travelTarget->SetExpireIn(1000);
 
             // Use the core's racial start row for every supported race, including
-            // Turtle's Goblin/High Elf starts. Their local map/vmap/mmap tiles are
+            // Tortoise's Goblin/High Elf starts. Their local map/vmap/mmap tiles are
             // present in the target runtime dataset, so the custom starts are not
             // silently replaced with a different faction's homebind.
             PlayerInfo const* defaultPlayerInfo = sObjectMgr.GetPlayerInfo(bot->GetRace(), bot->GetClass());

@@ -57,7 +57,7 @@ void HolyPaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "party member almost full health",
         NextAction::array(0, new NextAction("flash of light on party", ACTION_LIGHT_HEAL), NULL)));
 
-    // TurtleWoW build override: Seal of Wisdom over Seal of Light
+    // Tortoise build override: Seal of Wisdom over Seal of Light
     // (party mana-regen utility via Judgement of Wisdom; Seal of Light's
     // direct heal-on-swing is redundant with our 5 healing buttons)
     triggers.push_back(new TriggerNode(
@@ -68,7 +68,7 @@ void HolyPaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "enemy is close",
         NextAction::array(0, new NextAction("judgement", ACTION_NORMAL), NULL)));
 
-    // TurtleWoW melee-weave engine: Crusader Strike on cooldown when in melee.
+    // Tortoise melee-weave engine: Crusader Strike on cooldown when in melee.
     // 5/5 Blessed Strikes gives CS a chance to reset Holy Shock's cooldown,
     // and Holy Judgement makes the next Holy Light cast faster, so every CS
     // contributes to the heal chain. This is THE defining add for the Holy
@@ -93,7 +93,9 @@ void HolyPaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     // and benefits more from the Daybreak +healing-received bonus.
     triggers.push_back(new TriggerNode(
         "party member has daybreak",
-        NextAction::array(0, new NextAction("holy light on party", ACTION_HIGH + 5), NULL)));
+        NextAction::array(0, new NextAction("holy light on party", ACTION_HIGH + 5),
+                             new NextAction("flash of light on party", ACTION_HIGH + 4),
+                             new NextAction("holy shock on party", ACTION_HIGH + 3), NULL)));
 }
 
 void HolyPaladinStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

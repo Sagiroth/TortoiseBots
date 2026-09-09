@@ -40,7 +40,7 @@ Unless qualified otherwise, these terms mean `Penqle/tortoise-wow`: upstream, up
 `Shyalya/tortoise-wow` and other PlayerBots repos (`cmangos/playerbots`, `mod-playerbots`, `mangoszero/server`, `cmangos/mangos-classic`) are **read-only donor references**, not upstream. Source-of-truth order:
 
 1. `Penqle/tortoise-wow` pinned target core
-2. Turtle data / DBC / runtime evidence
+2. Tortoise data / DBC / runtime evidence
 3. This repo's host contract (`docs/HOST_API.md`, `docs/PLAN.md`)
 4. Shyalya and other donors as references only
 
@@ -55,7 +55,7 @@ All references are remote, read-only, and optional. Clone only what you need for
 | Reference | URL | Purpose |
 | --- | --- | --- |
 | Upstream core | <https://github.com/Penqle/tortoise-wow> | Target core (`Penqle/tortoise-wow`) |
-| Shyalya fork | <https://github.com/Shyalya/tortoise-wow> | Turtle 1.18.1 compatibility evidence, known API differences, Turtle fixes |
+| Shyalya fork | <https://github.com/Shyalya/tortoise-wow> | Tortoise 1.18.1 compatibility evidence, known API differences, Tortoise fixes |
 | CMaNGOS PlayerBots | <https://github.com/cmangos/playerbots> | Existing combat/movement/class/healing/CC/dungeon behavior |
 | CMaNGOS Classic | <https://github.com/cmangos/mangos-classic> | What CMaNGOS PlayerBots expects from its host |
 | MangosZero | <https://github.com/mangoszero/server> | Lifecycle/session/group patterns |
@@ -66,7 +66,7 @@ Do not edit, commit to, or rebase reference repos. Do not blindly copy their arc
 
 ### What each reference is for — quick guide
 
-- **Shyalya** — Turtle spells/talents, session/movement/group/loot lessons, integration pain
+- **Shyalya** — Tortoise spells/talents, session/movement/group/loot lessons, integration pain
 - **CMaNGOS PlayerBots** — richest behavior source for combat/movement/healing/CC/dungeons
 - **CMaNGOS Classic** — host API definitions and lifecycle semantics
 - **MangosZero** — smaller bot lifecycle, character creation, group handling
@@ -78,7 +78,7 @@ Do not search every repo for every task:
 - **Public behavior / commands / ownership** → Shyalya → CMaNGOS PlayerBots
 - **Combat / class AI / healing / CC / movement** → CMaNGOS PlayerBots → Shyalya → MangosZero
 - **Session / lifecycle / bot login** → Current Tortoise core → MangosZero → Shyalya → CMaNGOS
-- **Turtle spells / talents / custom content** → Tortoise core/data → Shyalya → Vanilla refs
+- **Tortoise spells / talents / custom content** → Tortoise core/data → Shyalya → Vanilla refs
 - **Runtime / integration failures** → Current core source → Docker env (if you have one) → logs → references
 
 The current Tortoise architecture always outranks making a donor port easier.
@@ -143,7 +143,7 @@ For imported behavior:
 1. Understand observable behavior
 2. Check donor behavior where applicable
 3. Inspect the most relevant donor
-4. Inspect Turtle differences
+4. Inspect Tortoise differences
 5. Define expected behavior / acceptance test
 6. Implement inside the new module
 7. Test it

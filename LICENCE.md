@@ -33,7 +33,7 @@ alone to resolve an incompatible or unclear donor grant.
 
 | Project | Licence | Notes |
 | --- | --- | --- |
-| `Shyalya/tortoise-wow` | AGPL-3.0 at pinned repository root | Turtle 1.18.1 donor baseline; verify retained upstream notices per copied file |
+| `Shyalya/tortoise-wow` | AGPL-3.0 at pinned repository root | Tortoise 1.18.1 donor baseline; verify retained upstream notices per copied file |
 | `cmangos/playerbots` | No root licence file found at pinned commit | PlayerBots behavior; resolve through file notices and upstream history |
 | `cmangos/mangos-classic` | GPL-2.0 at pinned repository root | Host API reference; determine only/or-later if code is copied |
 | `mangoszero/server` | GPL-3.0 at pinned repository root | Lifecycle reference/reimplementation |

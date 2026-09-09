@@ -51,6 +51,35 @@ namespace ai
         CastHealingTouchOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "healing touch") {}
     };
 
+    class CastSwiftmendAction : public CastHealingSpellAction
+    {
+    public:
+        CastSwiftmendAction(PlayerbotAI* ai) : CastHealingSpellAction(ai, "swiftmend") {}
+        bool isUseful() override
+        {
+            // Tortoise 18562 requires a live Rejuvenation/Regrowth aura on the
+            // target and consumes the shortest one. Refuse without a HoT so
+            // the emergency slot falls through to Regrowth/Healing Touch.
+            Unit* target = GetTarget();
+            if (target && !ai->HasAura("rejuvenation", target) && !ai->HasAura("regrowth", target))
+                return false;
+            return CastHealingSpellAction::isUseful();
+        }
+    };
+
+    class CastSwiftmendOnPartyAction : public HealPartyMemberAction
+    {
+    public:
+        CastSwiftmendOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "swiftmend") {}
+        bool isUseful() override
+        {
+            Unit* target = GetTarget();
+            if (target && !ai->HasAura("rejuvenation", target) && !ai->HasAura("regrowth", target))
+                return false;
+            return HealPartyMemberAction::isUseful();
+        }
+    };
+
 	class CastReviveAction : public ResurrectPartyMemberAction
 	{
 	public:

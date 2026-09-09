@@ -113,7 +113,7 @@ ItemUsage ItemUsageValue::Calculate()
         }
     }
 
-    // Keep the Turtle hearthstone.
+    // Keep the Tortoise hearthstone.
     if (proto->ItemId == 6948)
         return ItemUsage::ITEM_USAGE_KEEP;
 
@@ -811,7 +811,7 @@ uint32 ItemUsageValue::GetAhDepositCost(ItemPrototype const* proto, uint32 count
 uint32 ItemUsageValue::ItemCreatedFrom(uint32 wantItemId)
 {
     // The former mapping was for a later expansion quest item pair that is
-    // absent from the local Turtle item data. Turtle quest relationships are
+    // absent from the local Tortoise item data. Tortoise quest relationships are
     // read directly from the quest template instead.
     (void)wantItemId;
     return 0;

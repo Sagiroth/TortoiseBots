@@ -1,0 +1,24 @@
+class	preset/role	level	point_budget	talent_allocations	learning_order	unlocked_abilities	rationale
+Priest	holy	35	26	05320302035201 (fixed from 0532030203521)	monotonic 10-60 checkpoints	Divine Favor deferred to 40, Holy Shock taken at 35	core DependsOnRank+1: 456 needs 457 rank1
+Warlock	affliction	35	26	55002230022311 (fixed from 5500223002232)	monotonic checkpoints	Rapid Deterioration 1 + Siphon Life 1 at 35 (was 2+0)	same budget, prerequisite-first
+Druid	balance	35	26	500002303125311 (fixed from 50000230312532)	monotonic checkpoints	Owlkin Frenzy 1 + Moonkin Form 1 at 35 (was 2+0)	same budget, prerequisite-first
+Mage	arcane/fire/frost	10-60	1-51	existing three presets	5-level checkpoints	presets exist; dependency/progression validated by tools/talents/validate_presets.py	validator: 242 links 0 failures at rate 1
+Warrior	fury/protection	10-60	1-51	existing two presets	5-level checkpoints	Arms preset MISSING (audit)	needs new Arms build; Protection/Fury need path audit
+Hunter	beast-mastery/marksmanship	10-60	1-51	existing two presets	5-level checkpoints	Survival preset MISSING	needs new Survival melee build
+Rogue	combat/assassination	10-60	1-51	existing two presets	5-level checkpoints	Subtlety preset MISSING	needs new Subtlety build
+Priest	holy/protection/shadow	10-60	1-51	existing holy+shadow?	5-level checkpoints	Discipline preset MISSING	needs Tortoise Discipline role rationale first
+Shaman	enhancement/restoration	10-60	1-51	existing two presets	5-level checkpoints	Elemental preset MISSING	needs new Elemental build
+Druid	balance/feral/restoration	10-60	1-51	existing balance+feral+restoration?	5-level checkpoints	Bear/Cat need SEPARATE entries	one Feral preset covers two roles; split or justify
+Warlock	affliction/demonology/destruction	10-60	1-51	existing three presets	5-level checkpoints	Affliction L35 fixed above	all three exist; full audit pending
+Paladin	holy/protection/retribution	10-60	1-51	existing three presets	5-level checkpoints	Holy Shock before Divine Favor order	validate learning order explicitly
+Warrior	arms	60	51	arms 40: TM5 Defl5 Rend2 Charge2 TC3 MS1 OP2 DeepW3 2H3 Impale2 MoA5 SS1 BA3 Slam2 Mortal1; fury dip 11: Cruelty5 UW5 PH1	TM→Defl→Rend/Charge/MS→TC/OP→DeepW/2H→Impale/MoA→SS/Mortal→BA/Slam→Cruelty→UW/PH	Mortal Strike 40, Sweeping Strikes, Master Strike row2	Arms 2H DPS; PH snare; fury crit dip; prot tree untouched
+Warrior	arms	10-55	1-46	same chain, truncated per level	monotonic 5-level checkpoints from builder	Mortal at 45 (31 pts, needs 30 below)	signature path prioritized; validated by tools/talents/validate_presets.py
+Hunter	survival	60	51	surv 43: Slay3 Res5 Entrap3 Sav2 WC3 Plan2 Surv5 Carve1 Det1 Nettle2 Sure3 Killer3 TrapMast3 Lac1 LR5 Untamed1; BM dip 8: EndTrain5 Thick3	Slay→Res→traps→Carve→Nettle/Sure→Killer/TrapM/Lac→LR→Untamed→BM dip	Lacerate needs Carve; Untamed needs TrapMast3	Tortoise melee kit; BM dip for pet; MM tree untouched
+Hunter	survival	10-55	1-46	same chain, truncated per level	monotonic checkpoints	Carve at 35, Lacerate at 50	validates clean
+Rogue	subtlety	60	51	subt 41: Camou5 Expose2 Gouge3 Ambush3 Elusive2 Serr3 Init3 Ghostly3 Smoke1 Hem1 Cloak2 BJ2 Dirty2 Prep1 Shadow1 Bloody2 Honor2 Tricks2 Mark1; assa dip 10: Malice5 Ruthless3 Murder2	Hemorrhage core → Ghostly/Smoke → Prep/Shadow → Bloody → Mark → assa crit dip	Mark needs Prep; Bloody needs Hem; Blind Haze skipped (situational)	dagger control; Cold Blood n/a (assa); validated clean
+Rogue	subtlety	10-55	1-46	same chain, truncated per level	monotonic checkpoints	Hem at 30, Mark at 45	validates clean
+Priest	discipline	60	51	disc 40: Wand2 Pierce3 Silent5 Unbreak5 Fort2 InnerFire2 Focus1 Shield3 Medit3 Searing3 MStr3 Enlighten1 Resurgent1 ForceWill5 Chastise1; holy dip 11: Renew3 HolyFocus2 Divinity5 Fury1	Wand→ mitigation/shield core → Inner Focus → Enlighten/Resurgent → ForceWill/Chastise → holy dip	Chastise needs Enlighten; Resurgent needs Shield3	Tortoise Disc rationale: holy-damage/support + shield + Enlighten/Chastise; healer-role variant usable; NOT Wrath shield-healer
+Priest	discipline	10-55	1-46	same chain, truncated per level	monotonic checkpoints	Enlighten at 45, Chastise at 50	validates clean
+Shaman	elemental	60	51	elem 42: Conv5 Concuss5 Grasp1 Ward3 Devast3 Focus1 Reverb3 Thunder5 FireTot2 Flame3 Reach2 EM1 Fury2 LightMast5 EQ1; resto dip 9: HW5 Focus4	Conv/Concuss → shocks/totems → Thunder → EM → LightMast → EQ → resto dip	EQ needs EM; LightMast needs Thunder5	caster DPS; enh tree untouched; validated clean
+Shaman	elemental	10-55	1-46	same chain, truncated per level	monotonic checkpoints	EM at 40, EQ at 45	validates clean
+Druid	feral (shared Bear/Cat)	60	51	single Feral 11.1 chain	existing order	Bear + Cat behavior split at runtime, not in talents	one Feral tree serves two jobs: forced role (tank→Bear, dps→Cat) + form maintain triggers arbitrate; separate allocations unjustified — shared build with documented rationale per plan

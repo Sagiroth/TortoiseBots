@@ -34,12 +34,14 @@ void RestorationDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
 
     triggers.push_back(new TriggerNode(
         "critical health",
-        NextAction::array(0, new NextAction("regrowth", ACTION_CRITICAL_HEAL + 1),
+        NextAction::array(0, new NextAction("swiftmend", ACTION_CRITICAL_HEAL + 2),
+                             new NextAction("regrowth", ACTION_CRITICAL_HEAL + 1),
                              new NextAction("healing touch", ACTION_CRITICAL_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member critical health",
-        NextAction::array(0, new NextAction("regrowth on party", ACTION_CRITICAL_HEAL + 1),
+        NextAction::array(0, new NextAction("swiftmend on party", ACTION_CRITICAL_HEAL + 2),
+                             new NextAction("regrowth on party", ACTION_CRITICAL_HEAL + 1),
                              new NextAction("healing touch on party", ACTION_CRITICAL_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
@@ -219,6 +221,14 @@ void RestorationDruidBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
     triggers.push_back(new TriggerNode(
         "innervate",
         NextAction::array(0, new NextAction("innervate", ACTION_HIGH), NULL)));
+
+    // Tortoise Tree of Life (45705): spirit-scaling heal modifier + party aura
+    // + polymorph immunity at the cost of movement speed. No spell lockouts
+    // beyond standard shapeshift rules (core-enforced); emergency exits go
+    // through the shared caster-form node. Maintain like Bear/Cat forms.
+    triggers.push_back(new TriggerNode(
+        "tree form",
+        NextAction::array(0, new NextAction("tree form", ACTION_HIGH), NULL)));
 }
 
 void RestorationDruidBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

@@ -73,6 +73,9 @@ void ArmsWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("mortal strike", ACTION_NORMAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "master strike",
+        NextAction::array(0, new NextAction("master strike", ACTION_NORMAL + 4), NULL)));
+    triggers.push_back(new TriggerNode(
         "whirlwind",
         NextAction::array(0, new NextAction("whirlwind", ACTION_NORMAL + 2), NULL)));
 

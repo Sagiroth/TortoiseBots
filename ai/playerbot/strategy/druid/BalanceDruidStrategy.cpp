@@ -59,7 +59,7 @@ void BalanceDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "faerie fire",
         NextAction::array(0, new NextAction("faerie fire", ACTION_NORMAL + 3), NULL)));
 
-    // TurtleWoW Balance redesign: Eclipse rotation swap.
+    // Tortoise Balance redesign: Eclipse rotation swap.
     // The capstone Eclipse talent (51444) procs Arcane Eclipse buff on Wrath
     // crit (boosts Arcane = Starfire), and Nature Eclipse buff on Starfire
     // crit (boosts Nature = Wrath). Each ~10-sec window with a 30-sec

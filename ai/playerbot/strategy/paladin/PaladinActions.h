@@ -54,6 +54,23 @@ namespace ai
 		CastCrusaderStrikeAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "crusader strike") {}
 	};
 
+	class CastHolyStrikeAction : public CastMeleeSpellAction
+	{
+	public:
+		// Tortoise ranks R1-8 (679..10333): melee strike with Mending Light
+		// sustain and Judgement-duration refresh. Core owns targeting.
+		CastHolyStrikeAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "holy strike") {}
+	};
+
+	class CastBulwarkAction : public CastMeleeSpellAction
+	{
+	public:
+		// Tortoise Bulwark of the Righteous R1-2 (51346/51565): shield bash
+		// plus damage-reduction buff. Core enforces the shield equip
+		// requirement; CanCastSpell keeps it out of reach otherwise.
+		CastBulwarkAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "bulwark of the righteous") {}
+	};
+
     class CastSealSpellAction : public CastBuffSpellAction
     {
     public:

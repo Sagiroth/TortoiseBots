@@ -237,9 +237,14 @@ namespace ai
                 creators["no felhunter"] = [](PlayerbotAI* ai) { return new NoFelhunterTrigger(ai); };
                 creators["spell lock"] = [](PlayerbotAI* ai) { return new SpellLockTrigger(ai); };
                 creators["spell lock enemy healer"] = [](PlayerbotAI* ai) { return new SpellLockEnemyHealerTrigger(ai); };
+                creators["spell lock on enemy healer"] = [](PlayerbotAI* ai) { return new SpellLockEnemyHealerTrigger(ai); };
                 creators["soulstone"] = [](PlayerbotAI* ai) { return new SoulstoneTrigger(ai); };
+                creators["soul link"] = [](PlayerbotAI* ai) { return new SoulLinkTrigger(ai); };
                 creators["shadow ward"] = [](PlayerbotAI* ai) { return new ShadowWardTrigger(ai); };
                 creators["rain of fire channel check"] = [](PlayerbotAI* ai) { return new RainOfFireChannelCheckTrigger(ai); };
+                creators["dark harvest"] = [](PlayerbotAI* ai) { return new DarkHarvestTrigger(ai); };
+                creators["dark harvest channel check"] = [](PlayerbotAI* ai) { return new DarkHarvestChannelCheckTrigger(ai); };
+                creators["power overwhelming"] = [](PlayerbotAI* ai) { return new PowerOverwhelmingTrigger(ai); };
             }
         };
 
@@ -286,6 +291,7 @@ namespace ai
                 creators["banish"] = [](PlayerbotAI* ai) { return new CastBanishAction(ai); };
                 creators["banish on cc"] = [](PlayerbotAI* ai) { return new CastBanishOnCcAction(ai); };
                 creators["rain of fire"] = [](PlayerbotAI* ai) { return new CastRainOfFireAction(ai); };
+                creators["inferno"] = [](PlayerbotAI* ai) { return new CastInfernoAction(ai); };
                 creators["life tap"] = [](PlayerbotAI* ai) { return new CastLifeTapAction(ai); };
                 creators["fear"] = [](PlayerbotAI* ai) { return new CastFearAction(ai); };
                 creators["fear on cc"] = [](PlayerbotAI* ai) { return new CastFearOnCcAction(ai); };
@@ -296,6 +302,8 @@ namespace ai
                 creators["death coil on enemy healer"] = [](PlayerbotAI* ai) { return new CastDeathCoilOnHealerAction(ai); };
                 creators["death coil on snare target"] = [](PlayerbotAI* ai) { return new CastDeathCoilSnareAction(ai); };
                 creators["dark pact"] = [](PlayerbotAI* ai) { return new CastDarkPactAction(ai); };
+                creators["dark harvest"] = [](PlayerbotAI* ai) { return new CastDarkHarvestAction(ai); };
+                creators["power overwhelming"] = [](PlayerbotAI* ai) { return new CastPowerOverwhelmingAction(ai); };
                 creators["howl of terror"] = [](PlayerbotAI* ai) { return new CastHowlOfTerrorAction(ai); };
                 creators["searing pain"] = [](PlayerbotAI* ai) { return new CastSearingPainAction(ai); };
                 creators["soul fire"] = [](PlayerbotAI* ai) { return new CastSoulFireAction(ai); };

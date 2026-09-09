@@ -67,7 +67,7 @@ void ShadowPriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "inner focus",
         NextAction::array(0, new NextAction("inner focus", ACTION_HIGH + 1), NULL)));
 
-    // TurtleWoW Shadow redesign awareness:
+    // Tortoise Shadow redesign awareness:
     //
     // Shadow Weaving rebuild: when target is missing the Shadow Vulnerability
     // debuff (e.g. just after a target swap / boss phase change), prioritize

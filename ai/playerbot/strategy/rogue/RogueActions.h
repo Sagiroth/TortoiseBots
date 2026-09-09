@@ -228,6 +228,39 @@ namespace ai
         CastExposeArmorAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "expose armor") {}
     };
 
+    class CastEnvenomAction : public CastMeleeSpellAction
+    {
+    public:
+        // Tortoise 52531: poison effectiveness/application buff finisher,
+        // duration scales with CP. Maintenance slot beside slice and dice;
+        // the trigger requires CP plus a missing aura.
+        CastEnvenomAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "envenom") {}
+    };
+
+    class CastShadowOfDeathAction : public CastMeleeSpellAction
+    {
+    public:
+        // Tortoise 52710: delayed-detonation finisher snapshotting CP. The
+        // trigger requires full CP plus a durable target.
+        CastShadowOfDeathAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "shadow of death") {}
+    };
+
+    class CastMarkForDeathAction : public CastMeleeSpellAction
+    {
+    public:
+        // Tortoise 52538: undodgeable strike plus party AP buff. Opener slot on
+        // durable targets; the trigger gates target health.
+        CastMarkForDeathAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "mark for death") {}
+    };
+
+    class CastSmokeBombAction : public CastBuffSpellAction
+    {
+    public:
+        // Tortoise 51969: self-centered miss-chance cloud. Defensive slot on
+        // critical health; DBC-driven, no core script.
+        CastSmokeBombAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "smoke bomb") {}
+    };
+
     class CastRuptureAction : public CastMeleeDebuffSpellAction
     {
     public:
@@ -261,6 +294,21 @@ namespace ai
     {
     public:
         CastRiposteAction(PlayerbotAI* ai) : CastComboAction(ai, "riposte") {}
+    };
+
+    class CastSurpriseAttackAction : public CastComboAction
+    {
+    public:
+        CastSurpriseAttackAction(PlayerbotAI* ai) : CastComboAction(ai, "surprise attack") {}
+    };
+
+    class CastNoxiousAssaultAction : public CastComboAction
+    {
+    public:
+        // Tortoise 52714: +30% AP strike that also fires main- and off-hand
+        // poisons (core OnAfterHit). Combo-gated like other strikes; poison
+        // presence only scales value, absence must not block the strike.
+        CastNoxiousAssaultAction(PlayerbotAI* ai) : CastComboAction(ai, "noxious assault") {}
     };
 
     class CastGougeAction : public CastComboAction

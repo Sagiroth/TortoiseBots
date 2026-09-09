@@ -120,7 +120,7 @@ typedef AreaTriggerEntry AreaTrigger;
 #define ITEM_CLASS_MISC ITEM_CLASS_JUNK
 #endif
 
-// The bot module uses the Vanilla/Turtle level cap for fixed-size tables.
+// The bot module uses the Vanilla/Tortoise level cap for fixed-size tables.
 // Penqle exposes MAX_LEVEL/STRONG_MAX_LEVEL but not this exact name.
 #ifndef DEFAULT_MAX_LEVEL
 #define DEFAULT_MAX_LEVEL 60
@@ -182,7 +182,7 @@ inline CmangosSpellTemplateProxy sSpellTemplate;
 // Singleton-like wrapper for cmangos's sItemStorage. Forwards to sObjectMgr.GetItemPrototype().
 // CMaNGOS' stores expose a one-past-the-largest-ID GetMaxEntry(). Some of the
 // Tortoise stores are sparse maps instead, so a fixed donor-era bound is not
-// safe: Turtle custom entries are well above the classic ranges. Cache the
+// safe: Tortoise custom entries are well above the classic ranges. Cache the
 // derived upper bound while the loaded store has the same size. These stores
 // are loaded before the bot module and are not mutated by the bot update loop;
 // a reload that changes the number of records naturally refreshes the bound.

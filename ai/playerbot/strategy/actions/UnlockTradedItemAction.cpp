@@ -1,4 +1,4 @@
-// Vanilla/Turtle trade lockpicking action.
+// Vanilla/Tortoise trade lockpicking action.
 
 #include "playerbot/playerbot.h"
 #include "UnlockTradedItemAction.h"
