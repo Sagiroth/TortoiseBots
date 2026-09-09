@@ -1,6 +1,6 @@
 # Contributing to TortoiseBots
 
-Thanks for helping make PlayerBots better for Turtle WoW. Bug reports,
+Thanks for helping make PlayerBots better for Tortoise WoW. Bug reports,
 feature ideas, documentation improvements, testing, and code contributions are
 all welcome.
 
