@@ -1330,3 +1330,55 @@ Local validation:
 - `bash tools/verify_tortoise_surface.sh` (exit code 0).
 - `bash tools/verify_penqle_host_contract.sh --core ../tortoise-wow` (exit code 0).
 - Docker native static builder `./dev/build-playerbots` passed (`[100%] Built target mangosd`).
+
+## Issue #88: Economy Synthetic AH Supply and Buyer Engine with Work Budgets — 2026-09-09
+
+Feature: Time/operation-budgeted synthetic auction house generation and buyer engine, isolated synthetic inventory, item overrides and bans (`ahbot_items`), spend caps, same-account/outbid-self exclusions, and live telemetry/commands.
+
+Source references:
+- `playerbots-references/shyalya-tortoise-wow` @ `83a61bc3edb66983256f64ffa89a8c8b61146571`: Reference for ahbot generation sources, loot templates, and `ahbot_items` schema concept.
+- `tortoise-wow` @ `bot-helpers` (`9f778a73`): Core auction house lifecycle, `sAuctionHouseStore`, `AuctionHouseObject`, `sAuctionMgr.GenerateAuctionID()`, and headless session auction packet handling.
+
+Source files:
+- `data/sql/char/20260906090000_char.sql`
+- `ai/playerbot/PlayerbotAIConfig.h`
+- `ai/playerbot/PlayerbotAIConfig.cpp`
+- `ai/playerbot/aiplayerbot.conf.dist.in`
+- `runtime/AhMarketService.h`
+- `runtime/AhMarketService.cpp`
+- `commands/BotCommands.cpp`
+- `tools/test_synthetic_ah.cpp`
+
+Copied / ported / independently reimplemented:
+- Work budgets and phased state machine:
+  - Implemented modular execution cycle (`Idle` -> `Gather` -> `Overrides` -> `Post` -> `Buy` -> `Expire` -> `Idle`) running within strict per-slice limits: `ahMarketBudgetUs` (default 2000 us) and `ahMarketMaxOperations` (default 32 ops).
+  - Telemetry tracking slice durations, total listed/bought/expired counts, and budget overruns.
+- Synthetic supply generation and pricing:
+  - Generation sources cover creature loot templates (ranks 0..4), gathering professions (skinning, fishing, disenchanting, mining/herbs/chests), vendor inventories, and crafting recipes (`SPELL_EFFECT_CREATE_ITEM`).
+  - Strict quality caps (`ahMarketMaxQuality`, default 4 / Epic), level caps (`ahMarketMaxLevel`, default 60), dynamic realm level clamping, and bound-item exclusion.
+  - Value-based pricing bands with configurable variance (`ahMarketVariance`) and bid margins (`ahMarketBidMin`, `ahMarketBidMax`).
+- Synthetic inventory isolation:
+  - Synthetic items and auctions are tagged with `SYNTHETIC_OWNER_GUID = 0` and `SYNTHETIC_OWNER_ACCOUNT = 0`.
+  - Synthetic items are tracked in `m_syntheticAuctions` and `m_syntheticItemGuids`.
+  - Assertable property `AssertSyntheticIsolation(player, itemGuidLow)`: synthetic item LowGuids are never placed in real player or bot bags.
+  - Unsold synthetic auctions expire cleanly by deleting from `item_instance` and memory without sending mail.
+  - Purchases of synthetic items transfer items to buyers while money is sunk without paying non-existent sellers.
+- Buyer engine and exclusions:
+  - Evaluates auctions against fair market value and willingness threshold (`ahMarketBuyValue`, default 80%).
+  - Enforces per-bot spend caps (`ahMarketMaxSpendPerBot`).
+  - Excludes bidding on own auctions (`owner == buyer`), same-account listings (`ownerAccount == buyerAccount`), and outbidding self (`bidder == buyer`).
+  - Buyer bots teleport to matching faction auctioneers and place bids/buyouts through canonical `HandleAuctionPlaceBid`.
+- Overrides, blacklisting and live commands:
+  - `ahbot_items` DB table (`20260906090000_char.sql`) provides per-item price overrides and blacklisting (`add_chance = 0` or `value = 0`).
+  - In-game `.bot ah` / `.ahbot` commands: `status`, `reload`, `rebuild [all]`, `item <id> [value [chance [min [max]]]]`, and `item <id> reset` with administrator security checks.
+
+Reason: Complete Issue #88. Complements the read model and personal settlement of PR #113 (Issue #87) by providing synthetic supply and demand for low-population realms without lag spikes, gold inflation, or item duplication.
+
+Local validation:
+- Standalone C++ verification harness `tools/test_synthetic_ah.cpp` (49 checks, 100% pass): verified phase transitions, work budget slicing, generation filtering and caps, pricing bands and variance, synthetic inventory isolation assertions, buyer engine policies and exclusions, override/ban behavior, safe expiration, and currency/item conservation.
+- Standalone read model test `tools/test_auction_read_model.cpp` (59 checks, 100% pass).
+- `python3 tools/verify_action_trigger_wiring.py` (exit code 0, live-missing=0).
+- `bash tools/verify_tortoise_surface.sh` (exit code 0).
+- `bash tools/verify_penqle_host_contract.sh --core ../tortoise-wow` (exit code 0).
+- Docker native static builder `./dev/build-playerbots` passed (`[100%] Built target mangosd`).
+

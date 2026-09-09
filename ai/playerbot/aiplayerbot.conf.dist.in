@@ -135,6 +135,30 @@ AiPlayerbot.AhMarketEnabled = 0
 AiPlayerbot.AhMarketInterval = 120
 AiPlayerbot.AhMarketBatchSize = 1
 
+# Synthetic AH Supply and Buyer Engine with Work Budgets (Issue #88).
+# Optional background service generating realistic synthetic market supply
+# and buyer participation for low-population realms. Strictly bounded by
+# per-tick time budgets and operation count caps so tick latency is unaffected.
+# Synthetic inventory is isolated and tagged, never entering real inventories.
+AiPlayerbot.AhMarketSyntheticSupply = 0
+AiPlayerbot.AhMarketBuyer = 0
+AiPlayerbot.AhMarketBudgetUs = 2000
+AiPlayerbot.AhMarketMaxOperations = 32
+AiPlayerbot.AhMarketChanceSell = 10
+AiPlayerbot.AhMarketChanceBuy = 10
+AiPlayerbot.AhMarketBuyValue = 80
+AiPlayerbot.AhMarketMaxSpendPerBot = 0
+AiPlayerbot.AhMarketMaxQuality = 4
+AiPlayerbot.AhMarketMaxLevel = 60
+AiPlayerbot.AhMarketDynamicLevel = 0
+AiPlayerbot.AhMarketLevelRefresh = 600
+AiPlayerbot.AhMarketVariance = 10
+AiPlayerbot.AhMarketBidMin = 75
+AiPlayerbot.AhMarketBidMax = 90
+AiPlayerbot.AhMarketTimeMin = 8
+AiPlayerbot.AhMarketTimeMax = 24
+AiPlayerbot.AhMarketValueVendor = 1
+
 # Demand-aware WSG/AB/AV queue participation for live Headless RNDBOTs. Default off.
 # Uses the native BattleGroundJoinAction/WorldSession handler path and the
 # copy-only BattleGroundMgr queued-participant snapshot from core #416. No
