@@ -464,7 +464,20 @@ bool ShouldTravelNamedValue::Calculate()
         if (AI_VALUE2(uint32, "train cost", trainerType) == 0) //Has nothing to train
             return false;
 
-        if (!AI_VALUE2(bool, "has all money for", (uint32)budgetType))
+        // Partial-purse rule: travel when at least the cheapest trainable spell
+        // fits the free-money budget. The old "has all money for" check demanded
+        // the full batch price up front, so bots never visited until they could
+        // buy everything. TrainerAction still skips individual spells that are
+        // too expensive once there.
+        uint32 minSpellCost = UINT32_MAX;
+        for (TrainerSpell const* trainable : AI_VALUE2(std::vector<TrainerSpell const*>, "trainable spells", trainerType))
+            if (trainable && trainable->spellCost < minSpellCost)
+                minSpellCost = trainable->spellCost;
+
+        if (minSpellCost == UINT32_MAX)
+            return false;
+
+        if (AI_VALUE2(uint32, "free money for", (uint32)budgetType) < minSpellCost)
             return false;
 
         return true;

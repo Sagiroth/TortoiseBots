@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "XpGainAction.h"
 #include "playerbot/LootObjectStack.h"
+#include "playerbot/TravelMgr.h"
 #ifdef MANGOS
 #include "luaEngine.h"
 #endif
@@ -69,19 +70,21 @@ bool XpGainAction::Execute(Event& event)
     if (guid)
         victim = ai->GetUnit(guid);
 
-    // Capture level-ups from both base XP (already applied by server) and bonus XP (applied below).
-    // The server's Player::GiveXP fires before this action runs, so levelBefore may already be
-    // higher than what we saw at packet receipt — compare after GiveXP to catch any remaining jumps.
+    // Earned progression: dinging never mints gear. SMSG_LEVELUP_INFO already
+    // drives "auto talents" through the packet handlers, so just expire the
+    // travel target here — new spells/talents may make trainer travel relevant.
     uint32 levelBefore = bot->GetLevel();
     GiveXP(bonusXpgain, victim);
     uint32 levelAfter = bot->GetLevel();
 
-    if (levelAfter > levelBefore && levelAfter >= 5 &&
-        sRandomBotFacade.IsRandomBot(bot) && !PlayerbotAIStorage::Instance().GetAI(bot)->HasRealPlayerMaster())
+    if (levelAfter > levelBefore)
     {
-        sLog.outBasic("Bot #%d <%s> levelled %d->%d (Execute hook), triggering gear update",
+        sLog.outBasic("Bot #%d <%s> levelled %d->%d (Execute hook), expiring travel target",
             bot->GetGUIDLow(), bot->GetName(), levelBefore, levelAfter);
-        sRandomBotFacade.UpdateGearSpells(bot);
+        TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
+        sTravelMgr.SetNullTravelTarget(travelTarget);
+        travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
+        travelTarget->SetExpireIn(1000);
     }
 
     return false;

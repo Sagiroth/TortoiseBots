@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "AutoLearnSpellAction.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/TravelMgr.h"
 #include "Objects/Item.h"
 #include <Mail/Mail.h>
 
@@ -35,6 +36,17 @@ bool AutoLearnSpellAction::Execute(Event& event)
 void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
 {
     BroadcastHelper::BroadcastLevelup(ai, bot);
+
+    if (!ai->HasActivePlayerMaster())
+    {
+        TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
+        if (travelTarget)
+        {
+            sTravelMgr.SetNullTravelTarget(travelTarget);
+            travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
+            travelTarget->SetExpireIn(1000);
+        }
+    }
 
     if (sPlayerbotAIConfig.autoLearnQuestSpells)
         LearnQuestSpells(out);

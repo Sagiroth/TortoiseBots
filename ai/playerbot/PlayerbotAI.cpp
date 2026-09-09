@@ -2168,6 +2168,12 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
             if (masterChanged)
             {
                 master = newMaster;
+                // Bot members were skipped above, so a changed master here is a
+                // real player taking ownership: halt autonomous loops now. Full
+                // reset purges travel/grind targets; StopMoving cancels the
+                // current path so the bot tethers to its owner immediately.
+                Reset(true);
+                bot->StopMoving();
                 ResetStrategies();
 
                 if (sRandomBotFacade.IsFreeBot(bot))
