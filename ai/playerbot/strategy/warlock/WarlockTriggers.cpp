@@ -248,7 +248,7 @@ bool RainOfFireChannelCheckTrigger::IsActive()
 
 namespace
 {
-uint8 OwnAfflictionDotsOn(ai::PlayerbotAI* ai, Unit* target)
+uint8 OwnAfflictionDotsOn(PlayerbotAI* ai, Unit* target)
 {
     // Mirrors the core Dark Harvest filter (spell_warlock.cpp
     // IsDarkHarvestAfflictionPeriodicAura): own periodic damage/leech from
