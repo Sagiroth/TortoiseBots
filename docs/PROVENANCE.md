@@ -1381,3 +1381,51 @@ Local validation:
 - `bash tools/verify_tortoise_surface.sh` (exit code 0).
 - `bash tools/verify_penqle_host_contract.sh --core ../tortoise-wow` (exit code 0).
 - Docker native static builder `./dev/build-playerbots` passed (`[100%] Built target mangosd`).
+
+## 2026-09-09 — Travel route selection policies and navigation data import (Issue #86)
+
+Target commit / PR: `feat/issue-86-travel-routes`
+
+Source donor:
+- `playerbots-references/shyalya-tortoise-wow/modules/mod-playerbots/src/playerbot/TravelRoutePolicy.h`
+- `playerbots-references/shyalya-tortoise-wow/tests/architecture/TravelRoutePolicyTest.cpp`
+- `playerbots-references/shyalya-tortoise-wow/modules/mod-playerbots/src/playerbot/TravelNode.cpp`
+- `playerbots-references/shyalya-tortoise-wow/modules/mod-playerbots/src/playerbot/TravelMgr.cpp`
+- `playerbots-references/shyalya-tortoise-wow/modules/mod-playerbots/sql/world/classic/ai_playerbot_travel_nodes.sql`
+- `playerbots-references/shyalya-tortoise-wow/modules/mod-playerbots/sql/world/classic/ai_playerbot_named_location.sql`
+
+Files touched:
+- `ai/playerbot/TravelRoutePolicy.h`
+- `ai/playerbot/TravelNode.cpp`
+- `ai/playerbot/TravelMgr.h`
+- `ai/playerbot/TravelMgr.cpp`
+- `tools/import_travel_nodes.py`
+- `tools/test_travel_route_policy.cpp`
+- `docs/PROVENANCE.md`
+
+Copied / ported / independently reimplemented:
+- Route weighting and travel policies (`TravelRoutePolicy.h`):
+  - `GetTaxiRouteCost`: applies `PLAYERBOT_TAXI_ROUTE_DIVISOR` (450 * 8 = 3600) in `generateTaxiPaths` so discovered and affordable flight points are strongly preferred over continent-scale walking or swimming.
+  - `GetWalkTravelTime`: models walking vs swimming with a 120-yard safe swim grace for short river crossings, combined with a 4.0x multiplier on sustained swimming so bots prioritize roads, bridges, and ferries over lengthy water crossings.
+  - `GetStableRouteCostMultiplier`: deterministic pseudo-random 1.0..1.25 cost multiplier (up to 25% variation) keyed to party leader GUID (or bot GUID low) and spatial quantization. Ensures party members stay together while preventing different parties from marching single-file in identical lines.
+  - `GetStableTravelSelectionSeed` / `MixTravelRouteSeed`: deterministic 32-bit avalanche hashing for party destination and point shuffling in `TravelMgr::GetPartitions`.
+- Graph loading and startup decoupling:
+  - Disentangled the historical conflation of online navmesh generation with DB cache loading in `TravelMgr::LoadQuestTravelTable()`. Persisted node, link, and path caches are loaded unconditionally from MariaDB (`ai_playerbot_travelnode`, `ai_playerbot_travelnode_link`, `ai_playerbot_travelnode_path`). If tables are empty, the system logs and degrades gracefully to direct movement and quest destinations.
+  - Restored the post-load graph linking pass in `TravelNodeMap::generateAll()` (`calcMapOffset()`, `LoadMapTransfers()` for instance/portal triggers from `AreaTrigger.dbc`, `generateTaxiPaths()` for flight routes from `TaxiPath.dbc` / `TaxiNodes.dbc`, and reachability coverage warming).
+- Navigation and fish location offline tooling (`tools/import_travel_nodes.py`):
+  - Ingests and validates travel graph dumps (1,839 nodes, 6,200 links, 414,126 path points) and named fishing locations (54,038 spots).
+  - Validates coordinate bounds and map IDs across all Classic/Tortoise WoW maps.
+  - Produces clean, sanitized, high-performance replacement SQL migrations compatible with the canonical world schema (`20260824090000_world.sql`) and supports direct application via `--apply`.
+- Route unreachable diagnostics:
+  - Added explicit diagnostic logs (`sLog.outDetail`) when destination nodes are unreachable due to disconnected components, exhausted open lists, or missing start/end node associations, eliminating silent failure.
+
+Reason: Groundwork for Issue #86 (keep #86 open for in-game client verification of live travel behavior). Enables autonomous bots to navigate intelligently via flight paths and roads while avoiding hazardous swimming and unnatural single-file party marching, backed by a supported offline import tool and graceful fallback.
+
+Local validation:
+- Standalone test suite `tools/test_travel_route_policy.cpp` (6 checks, 100% pass).
+- Standalone regression test suites `tools/test_auction_read_model.cpp` (59 checks) and `tools/test_synthetic_ah.cpp` (53 checks).
+- Offline import tool verification `python3 tools/import_travel_nodes.py --validate-only` (0 errors, 0 warnings across 1,839 nodes, 6,200 links, 414,126 path points, and 54,038 fish locations).
+- `python3 tools/verify_action_trigger_wiring.py` (exit code 0, live-missing=0).
+- `bash tools/verify_tortoise_surface.sh` (exit code 0).
+- `bash tools/verify_penqle_host_contract.sh --core ../tortoise-wow` (exit code 0).
+- Docker native static builder `./dev/build-playerbots` passed (`[100%] Built target mangosd`).

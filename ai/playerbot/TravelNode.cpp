@@ -1,5 +1,6 @@
 #include "TravelNode.h"
 #include "playerbot/TravelMgr.h"
+#include "playerbot/TravelRoutePolicy.h"
 
 #include <iomanip>
 #include <regex>
@@ -207,7 +208,7 @@ float TravelNodePath::getCost(Unit* unit, uint32 cGold)
     if (getPathType() != TravelNodePathType::walk)
         timeCost = extraCost * modifier;
     else
-        timeCost = (runDistance / speed + swimDistance / swimSpeed) * modifier;
+        timeCost = GetWalkTravelTime(runDistance, swimDistance, speed, swimSpeed) * modifier;
 
     return timeCost;
 }
@@ -1623,6 +1624,8 @@ TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Uni
 
     if (open.size() == 0 && !start->hasRouteTo(goal))
     {
+        sLog.outDetail("TortoiseBots: Travel route unreachable from '%s' to '%s': no connected route",
+            start->getName().c_str(), goal->getName().c_str());
         for (auto node : portNodes) delete node;
         return TravelNodeRoute();
     }
@@ -1674,6 +1677,19 @@ TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Uni
             if (linkCost <= 0)
                 continue;
 
+            if (bot)
+            {
+                uint32 routeSeed = bot->GetGUIDLow();
+                if (Group* group = bot->GetGroup())
+                    routeSeed = group->GetLeaderGuid().GetCounter();
+
+                WorldPosition const* from = currentNode->dataNode->getPosition();
+                WorldPosition const* to = linkNode->getPosition();
+                linkCost *= GetStableRouteCostMultiplier(routeSeed,
+                    from->GetMapId(), from->getX(), from->getY(),
+                    to->GetMapId(), to->getX(), to->getY());
+            }
+
             childNode = &m_stubs.insert(std::make_pair(linkNode, TravelNodeStub(linkNode))).first->second;
 
             g = currentNode->m_g + linkCost; // stance from start + distance between the two nodes
@@ -1705,6 +1721,9 @@ TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Uni
         }
     }
 
+    sLog.outDetail("TortoiseBots: Travel route unreachable from '%s' to '%s': open list exhausted",
+        start->getName().c_str(), goal->getName().c_str());
+
     for (auto node : portNodes) delete node;
 
     return TravelNodeRoute();
@@ -1724,7 +1743,13 @@ TravelNodeRoute TravelNodeMap::getRoute(WorldPosition startPos, WorldPosition en
     std::vector<TravelNode*> startNodes = getNodes(startPos, -1, transportEntry), endNodes = getNodes(endPos);
 
     if (startNodes.empty() || endNodes.empty())
+    {
+        sLog.outDetail("TortoiseBots: Travel route unreachable from (map %u, %.1f, %.1f, %.1f) to (map %u, %.1f, %.1f, %.1f): %s",
+            startPos.getMapId(), startPos.getX(), startPos.getY(), startPos.getZ(),
+            endPos.getMapId(), endPos.getX(), endPos.getY(), endPos.getZ(),
+            startNodes.empty() ? "no nearby start nodes" : "no nearby end nodes");
         return TravelNodeRoute();
+    }
 
     uint32 startNr = std::min(5, (int)startNodes.size());
     uint32 endNr = std::min(5, (int)endNodes.size());
@@ -1876,6 +1901,10 @@ TravelNodeRoute TravelNodeMap::getRoute(WorldPosition startPos, WorldPosition en
             }
         }
     }
+
+    sLog.outDetail("TortoiseBots: Travel route unreachable from (map %u, %.1f, %.1f, %.1f) to (map %u, %.1f, %.1f, %.1f): no navigable node combination",
+        startPos.getMapId(), startPos.getX(), startPos.getY(), startPos.getZ(),
+        endPos.getMapId(), endPos.getX(), endPos.getY(), endPos.getZ());
 
     return TravelNodeRoute();
 }
@@ -2792,7 +2821,7 @@ void TravelNodeMap::generateTaxiPaths()
         if (endNode->fDist(ppath.back()) > 0.1f)
             ppath.push_back(*endNode->getPosition());
 
-        float totalTime = startPos.GetPathLength(ppath) / (450 * 8.0f);
+        float totalTime = GetTaxiRouteCost(startPos.GetPathLength(ppath));
 
         TravelNodePath travelPath(0.1f, totalTime, (uint8)TravelNodePathType::flightPath, i, true);
         travelPath.setPath(ppath);
@@ -2941,7 +2970,32 @@ void TravelNodeMap::generatePaths(bool helpers)
 
 void TravelNodeMap::generateAll()
 {
-    sLog.outError("TortoiseBots: travel-node generation is unavailable with the pinned core PathInfo area filter; use persisted nodes or direct movement.");
+    if (m_nodes.empty())
+        return;
+
+    if (hasToGen || hasToFullGen)
+    {
+        sLog.outError("TortoiseBots: travel-node generation is unavailable with the pinned core PathInfo area filter; use persisted nodes or direct movement.");
+        hasToGen = false;
+        hasToFullGen = false;
+    }
+
+    sLog.outString("-Calculating mapoffset");
+    calcMapOffset();
+
+    sLog.outString("-Generating maptransfers");
+    sTravelMgr.LoadMapTransfers();
+
+    // The bundled graph can use flight IDs from a different DBC layout.
+    // Refresh native IDs AND geometry before coverage/route queries, not
+    // only when generating walking paths. This does not dirty the SQL cache
+    // or reset bots; the small native flight pass runs once per startup.
+    sLog.outString("-Generating taxi paths");
+    generateTaxiPaths();
+
+    sLog.outString("-Calculating coverage"); // This prevents crashes when bots from multiple maps try to calculate this on the fly.
+    for (auto& node : GetNodes())
+        node->hasRouteTo(node);
 }
 
 void TravelNodeMap::printMap()

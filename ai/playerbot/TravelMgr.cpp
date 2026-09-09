@@ -1,4 +1,5 @@
 #include "playerbot/TravelMgr.h"
+#include "playerbot/TravelRoutePolicy.h"
 #include <numeric>
 #include <iomanip>
 
@@ -25,6 +26,9 @@ PlayerTravelInfo::PlayerTravelInfo(Player* player)
 
     team = player->GetTeam();
     level = player->GetLevel();
+    identitySeed = player->GetGUIDLow();
+    if (Group* group = player->GetGroup())
+        identitySeed = group->GetLeaderGuid().GetCounter();
     currentSkill[SKILL_MINING] = player->GetSkillValue(SKILL_MINING);
     currentSkill[SKILL_HERBALISM] = player->GetSkillValue(SKILL_HERBALISM);
     currentSkill[SKILL_FISHING] = player->GetSkillValue(SKILL_FISHING);
@@ -1382,20 +1386,14 @@ void TravelMgr::LoadQuestTravelTable()
     sPlayerbotAIConfig.openLog("bot_test_results.log", "w", true);
 
 
-    if (sPlayerbotAIConfig.generateTravelNodes)
-    {
-        sLog.outString("Loading travel nodes.");
+    sLog.outString("Loading travel nodes.");
 
-        sTravelNodeMap.loadNodeStore();
-        sTravelNodeMap.generateAll();
-        sTravelNodeMap.printMap();
-        sTravelNodeMap.printNodeStore();
+    sTravelNodeMap.loadNodeStore();
+    sTravelNodeMap.generateAll();
+    sTravelNodeMap.printMap();
+    sTravelNodeMap.printNodeStore();
+    if (sPlayerbotAIConfig.generateTravelNodes)
         sTravelNodeMap.saveNodeStore();
-    }
-    else
-    {
-        sLog.outString("TravelNode cache generation disabled; using direct movement and quest destinations.");
-    }
 
     LoadFishLocations();
 
@@ -2287,7 +2285,8 @@ PartitionedTravelList TravelMgr::GetPartitions(const WorldPosition& center, cons
 
 
 
-    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+    unsigned seed = GetStableTravelSelectionSeed(info.GetIdentitySeed(), purposeFlag,
+        center.GetMapId(), center.getX(), center.getY());
     std::shuffle(destinations.begin(), destinations.end(), std::default_random_engine(seed));
 
     // TEMPORARY counters. Quest takers are offered to a bot and nothing comes
@@ -2312,7 +2311,8 @@ PartitionedTravelList TravelMgr::GetPartitions(const WorldPosition& center, cons
 
         MANGOS_ASSERT(pointRange.second.size());
         std::vector<WorldPosition*> points = pointRange.second;
-        std::shuffle(points.begin(), points.end(), std::default_random_engine(seed));
+        unsigned const pointSeed = MixTravelRouteSeed(seed ^ pointRange.first);
+        std::shuffle(points.begin(), points.end(), std::default_random_engine(pointSeed));
 
         for (auto& position : points)
         {
