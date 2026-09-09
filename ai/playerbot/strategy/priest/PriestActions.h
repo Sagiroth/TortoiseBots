@@ -13,7 +13,7 @@ namespace ai
         CastPowerWordShieldAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "power word: shield") {}
         bool isUseful() override
         {
-            // Turtle Weakened Soul (6788) is applied by the shield itself
+            // Tortoise Weakened Soul (6788) is applied by the shield itself
             // (spell_priest.cpp). Recasting while it persists wastes mana and
             // the GCD; the heal ladder must fall through to direct heals.
             Unit* target = GetTarget();
@@ -48,7 +48,7 @@ namespace ai
     // disc talents
     BUFF_ACTION(CastInnerFocusAction, "inner focus");
 
-    // holy talents (Turtle): Ascendance 52962 is the Holy capstone (needs
+    // holy talents (Tortoise): Ascendance 52962 is the Holy capstone (needs
     // Spirit of Redemption). Self healing-throughput cooldown, DBC-driven.
     BUFF_ACTION(CastAscendanceAction, "ascendance");
 

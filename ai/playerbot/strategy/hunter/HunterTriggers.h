@@ -273,7 +273,7 @@ private:
         KillCommandTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "kill command") {}
         bool IsActive() override
         {
-            // Turtle 41827 has casterAuraState 6 (crit window): core
+            // Tortoise 41827 has casterAuraState 6 (crit window): core
             // CanCastSpell enforces the window, so no DBC guessing here.
             // The damage is dealt by the pet (80% pet AP), hence the live-pet
             // gate; core resolves explicit -> selected -> pet-victim target.

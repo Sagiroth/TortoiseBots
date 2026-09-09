@@ -491,7 +491,7 @@ void RestorationShamanBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>&
 {
     ShamanBoostStrategy::InitCombatTriggers(triggers);
 
-    // Turtle 16188: instant-casts the next Nature spell <10s. The aura
+    // Tortoise 16188: instant-casts the next Nature spell <10s. The aura
     // persists until consumed, so holding it is harmless; the heal-pairing
     // trigger spends it on Healing Wave when a party member needs it.
     triggers.push_back(new TriggerNode(

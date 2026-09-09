@@ -261,7 +261,7 @@ namespace ai
         LightningStrikeTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "lightning strike") {}
         bool IsActive() override
         {
-            // Turtle 51387 releases the active shield (lightning/water/earth
+            // Tortoise 51387 releases the active shield (lightning/water/earth
             // per imbue-shield pairing). Require a shield aura so the strike
             // never fires bare; core owns charge consumption.
             if (!SpellCanBeCastedTrigger::IsActive())

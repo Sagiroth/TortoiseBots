@@ -71,7 +71,7 @@ Gameplay acceptance requires real-client evidence; tests/builds alone do not clo
   same-raid/level/≥80% health + haste reward); no automatic friendly trigger
   to avoid mis-buffing. File: `strategy/priest/PriestStrategy.cpp`.
 - Checks: diff clean, presets 0 failures, surface OK. No docker build.
-- Remaining Priest: Discipline Turtle role rationale + preset, Holy preset
+- Remaining Priest: Discipline Tortoise role rationale + preset, Holy preset
   validation, Shadowform restriction matrix, group-heal scenarios, Ascendance
   acquisition/mechanics proof (needs Talent.dbc + spell effect decode).
 
@@ -92,7 +92,7 @@ Gameplay acceptance requires real-client evidence; tests/builds alone do not clo
 | 12 | Rogue Subtlety | partial (SoD + Mark + Smoke batch14; preset batch12) | pending | scenarios remain |
 | 13 | Hunter Beast Mastery | partial (Kill Command wired batch6; KC is BM capstone per Talent.dbc) | pending | pet cmds + scenarios remain |
 | 14 | Hunter Marksmanship | partial (pre-existing; KC shared when learned) | pending | proc ordering + scenarios remain |
-| 15 | Hunter Survival (Turtle) | partial (Carve auto + Lacerate manual batch6; preset batch12) | pending | sting precedence + scenarios remain |
+| 15 | Hunter Survival (Tortoise) | partial (Carve auto + Lacerate manual batch6; preset batch12) | pending | sting precedence + scenarios remain |
 | 16 | Warlock Affliction | partial (Dark Harvest wired batch8; #92 preserved) | pending | Conflagrate n/a; curse/sacrifice/scenarios remain |
 | 17 | Warlock Demonology | partial (Power Overwhelming wired batch8) | pending | sacrifice policy + scenarios remain |
 | 18 | Warlock Destruction | partial (pre-existing; DH/PO shared when learned) | pending | Conflagrate policy + scenarios remain |
@@ -215,8 +215,8 @@ Gameplay acceptance requires real-client evidence; tests/builds alone do not clo
 - Census (Luna DruidCensus): OLD stack (Tank/Dps-Feral + Balance + Resto) is
   live; NEW Bear/Cat/Resto forward-port is UNWIRED (do not edit NEW files and
   expect runtime effects). Eclipse already correct in OLD Balance (HIGH+3 both
-  directions, Turtle 51442/51443 — donor solar/lunar IDs must not port).
-  Savage Bite has no Turtle evidence: not implemented (likely Savage Roar
+  directions, Tortoise 51442/51443 — donor solar/lunar IDs must not port).
+  Savage Bite has no Tortoise evidence: not implemented (likely Savage Roar
   confusion). Tree of Life deferred: form-restriction audit needed first.
 - Added BerserkTrigger (BoostTrigger; action already registered but never
   fired) wired into TankFeral + DpsFeral boost HIGH+2 (core branches
@@ -267,7 +267,7 @@ Gameplay acceptance requires real-client evidence; tests/builds alone do not clo
   3), BL = Enh capstone, EQ = Elem capstone (needs EM), Chastise = Disc
   capstone (needs Enlighten), Ascendance 52962 = Holy Priest capstone (needs
   Spirit of Redemption; still no core script — remains unresolved).
-  Discipline rationale (TALENT_BUILDS): Turtle holy-damage/support + shield +
+  Discipline rationale (TALENT_BUILDS): Tortoise holy-damage/support + shield +
   Enlighten/Chastise, healer-role variant usable; not Wrath shield-healer.
   Bear/Cat share one Feral preset by runtime forced-role arbitration
   (documented rationale; no invented tree).
@@ -316,7 +316,7 @@ Gameplay acceptance requires real-client evidence; tests/builds alone do not clo
   (follow-master dps-assist dead — implemented from MasterTargetValue:
   master alive + live victim); restored batch-11-deleted CastBloodlustAction
   before it broke compilation; removed obsolete draenei "gift of the naaru"
-  node (no draenei on Turtle; was an unresolvable NextAction for every
+  node (no draenei on Tortoise; was an unresolvable NextAction for every
   low-health bot).
 - Audited and classified the rest: PossibleAdsStrategy never added (dead
   strategy, kept); "stay line" unreachable continuer; "set pet stance"/"new
@@ -369,7 +369,7 @@ Gameplay acceptance requires real-client evidence; tests/builds alone do not clo
 - Live-client human-led party acceptance for #93/#94 (user-owned).
 
 ## Evidence summary (implementation-verified | gameplay-accepted)
-All 28 profiles partial (every spec has wired Turtle behavior with documented
+All 28 profiles partial (every spec has wired Tortoise behavior with documented
 follow-ups; none fully verified). Gameplay acceptance: PENDING for all (no
 real-client runs; user owns docker/client review).
 No issues closed; no pushes/PRs published (needs execution-session authority).

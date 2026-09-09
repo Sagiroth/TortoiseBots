@@ -222,7 +222,7 @@ void RestorationDruidBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
         "innervate",
         NextAction::array(0, new NextAction("innervate", ACTION_HIGH), NULL)));
 
-    // Turtle Tree of Life (45705): spirit-scaling heal modifier + party aura
+    // Tortoise Tree of Life (45705): spirit-scaling heal modifier + party aura
     // + polymorph immunity at the cost of movement speed. No spell lockouts
     // beyond standard shapeshift rules (core-enforced); emergency exits go
     // through the shared caster-form node. Maintain like Bear/Cat forms.

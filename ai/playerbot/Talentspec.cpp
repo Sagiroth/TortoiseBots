@@ -75,7 +75,7 @@ bool TalentSpec::CheckTalents(uint32 freeTalentPoints, std::ostringstream* out)
 
             // Core Player::LearnTalent treats DependsOnRank as the first acceptable
             // zero-based rank-array index, so allocated points must exceed it.
-            // Turtle 1.18.1 core: for (i = DependsOnRank; i < MAX_TALENT_RANK; ++i)
+            // Tortoise 1.18.1 core: for (i = DependsOnRank; i < MAX_TALENT_RANK; ++i)
             // HasSpell(RankID[i]). A one-based point count therefore requires
             // dep.rank > DependsOnRank (i.e. >= DependsOnRank + 1).
             for (auto& dep : talents)

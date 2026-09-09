@@ -257,7 +257,7 @@ namespace ai
 
         bool isPossible() override
         {
-            // Turtle 12042 kills below 10% mana and cannot be cancelled.
+            // Tortoise 12042 kills below 10% mana and cannot be cancelled.
             // Mirror the trigger floor so a queued action still refuses when
             // mana fell between trigger evaluation and execution.
             if (!CastBuffSpellAction::isPossible())
@@ -284,7 +284,7 @@ namespace ai
 
         bool isPossible() override
         {
-            // Turtle 52516 roots the caster for the channel; incoming damage
+            // Tortoise 52516 roots the caster for the channel; incoming damage
             // has a 75% shatter chance for 30% of base health. Refuse when the
             // bot is already under direct attack so the trigger safety cannot
             // be bypassed between evaluation and execution.

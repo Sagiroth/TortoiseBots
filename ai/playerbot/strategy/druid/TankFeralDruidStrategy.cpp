@@ -326,7 +326,7 @@ void TankFeralDruidBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& tr
 {
     DruidBoostStrategy::InitCombatTriggers(triggers);
 
-    // Turtle 45708 branches Bear/DireBear -> 45709 (+20% max health) and
+    // Tortoise 45708 branches Bear/DireBear -> 45709 (+20% max health) and
     // Cat -> 45710; core migrates the buff across form swaps. BoostTrigger
     // already requires combat + missing aura; core owns form legality.
     triggers.push_back(new TriggerNode(

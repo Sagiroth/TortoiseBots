@@ -6,7 +6,7 @@ using namespace ai;
 
 void RacialsStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
 {
-    // No draenei on Turtle WoW: gift of the naaru removed (was an unresolvable
+    // No draenei on Tortoise WoW: gift of the naaru removed (was an unresolvable
     // NextAction). Tauren war stomp below is the live AoE racial here.
     triggers.push_back(new TriggerNode(
         "melee medium aoe",

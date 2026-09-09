@@ -36,7 +36,7 @@ namespace ai
         CastChainHealAction(PlayerbotAI* ai) : CastAoeHealSpellAction(ai, "chain heal") {}
     };
 
-    // Turtle/Tortoise keeps the classic-era Earth Shield and Water Shield
+    // Tortoise keeps the classic-era Earth Shield and Water Shield
     // variants as native player spells.
     class CastEarthShieldAction : public CastBuffSpellAction
     {
@@ -309,7 +309,7 @@ namespace ai
     class CastLightningStrikeAction : public CastMeleeSpellAction
     {
     public:
-        // Turtle 51387: weapon strike plus empowered active-shield release
+        // Tortoise 51387: weapon strike plus empowered active-shield release
         // (nature ranks 51386/52419/52421, shield script 52679). Core owns
         // charge consumption; the trigger requires an active shield.
         CastLightningStrikeAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "lightning strike") {}
@@ -318,7 +318,7 @@ namespace ai
     class CastEarthquakeAction : public CastSpellAction
     {
     public:
-        // Turtle 48306-8: primary damage plus splash-around-primary and a
+        // Tortoise 48306-8: primary damage plus splash-around-primary and a
         // 4s aftershock. Density/CC gating comes from the generic AoE
         // triggers; core excludes the primary from its own splash.
         CastEarthquakeAction(PlayerbotAI* ai) : CastSpellAction(ai, "earthquake") {}
@@ -327,14 +327,14 @@ namespace ai
     class CastSpiritLinkOnPartyTankAction : public BuffOnTankAction
     {
     public:
-        // Turtle 51363: 10min damage-redistribution link on the tank.
+        // Tortoise 51363: 10min damage-redistribution link on the tank.
         CastSpiritLinkOnPartyTankAction(PlayerbotAI* ai) : BuffOnTankAction(ai, "spirit link") {}
     };
 
     class CastAncestralSwiftnessAction : public CastBuffSpellAction
     {
     public:
-        // Turtle 16188: next Nature cast <10s becomes instant (damage
+        // Tortoise 16188: next Nature cast <10s becomes instant (damage
         // reduced); healing unaffected. Pair with Healing Wave via the
         // active-aura consumer trigger.
         CastAncestralSwiftnessAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "ancestral swiftness") {}

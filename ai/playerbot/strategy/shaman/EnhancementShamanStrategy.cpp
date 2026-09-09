@@ -442,7 +442,7 @@ void EnhancementShamanBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>&
 {
     ShamanBoostStrategy::InitCombatTriggers(triggers);
 
-    // Turtle 45509: self attack/cast-speed frenzy; party melee crits spread
+    // Tortoise 45509: self attack/cast-speed frenzy; party melee crits spread
     // the haste via core. BoostTrigger gates combat + missing aura.
     triggers.push_back(new TriggerNode(
         "bloodlust",

@@ -78,7 +78,7 @@ public:
     class CastAspectOfTheWolfAction : public CastBuffSpellAction
     {
     public:
-        // Turtle 45650: melee-AP aspect for the Survival melee kit. Deliberately
+        // Tortoise 45650: melee-AP aspect for the Survival melee kit. Deliberately
         // NOT auto-maintained: the shared Hawk upkeep would fight it (both
         // BuffTriggers fire when the other is up) and oscillate stances every
         // tick. Manual/explicit use until aspect arbitration exists.
@@ -88,7 +88,7 @@ public:
     class CastAspectOfTheViperAction : public CastBuffSpellAction
     {
     public:
-        // Turtle 45651: mana-regen aspect. Manual like Wolf: auto-maintain
+        // Tortoise 45651: mana-regen aspect. Manual like Wolf: auto-maintain
         // would fight the Hawk upkeep (mutually exclusive aspects). A level
         // gate with hysteresis belongs to a future aspect-arbitration pass.
         CastAspectOfTheViperAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "aspect of the viper") {}

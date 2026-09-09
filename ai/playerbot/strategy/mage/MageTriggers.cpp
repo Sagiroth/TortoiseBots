@@ -43,7 +43,7 @@ bool NoImprovedScorchDebuffTrigger::IsActive()
 
 bool ArcanePowerTrigger::IsActive()
 {
-    // Turtle 1.18.1 Arcane Power (12042) drains max mana every second for its
+    // Tortoise 1.18.1 Arcane Power (12042) drains max mana every second for its
     // full duration and kills the caster below 10% mana. The aura has
     // SPELL_ATTR_CANT_CANCEL ("cannot be cancelled"), so no ongoing rescue by
     // aura removal is possible. Gate activation conservatively; the action
@@ -70,7 +70,7 @@ bool ArcanePowerTrigger::IsActive()
 
 bool IciclesTrigger::IsActive()
 {
-    // Turtle 52516 (ranks 52516/51991/51995/51997) roots the caster while
+    // Tortoise 52516 (ranks 52516/51991/51995/51997) roots the caster while
     // channeling icicle bolts at the target; incoming damage shatters the
     // prison 75% of the time for 30% of base health (spell_mage.cpp
     // spell_mage_icicles_root). Only start the channel on a durable target

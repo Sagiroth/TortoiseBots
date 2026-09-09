@@ -265,7 +265,7 @@ uint8 OwnAfflictionDotsOn(PlayerbotAI* ai, Unit* target)
 
 bool DarkHarvestTrigger::IsActive()
 {
-    // Turtle 52550: channeled DoT that accelerates own Affliction ticks AND
+    // Tortoise 52550: channeled DoT that accelerates own Affliction ticks AND
     // refunds its 30s cooldown when the target dies mid-channel. Starting it
     // with fewer than two own DoTs rolling wastes the window, so gate on it.
     if (!SpellCanBeCastedTrigger::IsActive())
@@ -297,7 +297,7 @@ bool DarkHarvestChannelCheckTrigger::IsActive()
 
 bool PowerOverwhelmingTrigger::IsActive()
 {
-    // Turtle 51714: pet burst (CC break + damage buff) costing the demon a
+    // Tortoise 51714: pet burst (CC break + damage buff) costing the demon a
     // share of base health over the duration. Core CanCastSpell covers
     // cooldown/mana/range; the pet must be alive and healthy enough that the
     // health price cannot finish it, and a live enemy must justify burst.

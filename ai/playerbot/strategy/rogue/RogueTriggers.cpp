@@ -22,7 +22,7 @@ bool RiposteCastTrigger::IsActive()
 
 bool SurpriseAttackTrigger::IsActive()
 {
-	// Turtle 52511 requires the reactive dodge target (core OnCheckCast
+	// Tortoise 52511 requires the reactive dodge target (core OnCheckCast
 	// enforces REACTIVE_ROGUE_DODGE); mirror the Riposte melee sanity so a
 	// queued proc is not wasted on a ranged target.
 	Unit* target = GetTarget();
@@ -40,7 +40,7 @@ bool SurpriseAttackTrigger::IsActive()
 
 bool ShadowOfDeathTrigger::IsActive()
 {
-	// Turtle 52710 banks a share of damage dealt during the sigil, capped by
+	// Tortoise 52710 banks a share of damage dealt during the sigil, capped by
 	// AP x CP/2, then detonates. Only spend the 60s cooldown and full CP bar
 	// on a target durable enough to pay it back.
 	if (!SpellCanBeCastedTrigger::IsActive())
@@ -54,7 +54,7 @@ bool ShadowOfDeathTrigger::IsActive()
 
 bool MarkForDeathTrigger::IsActive()
 {
-	// Turtle 52538: 3min party-support opener. Gate on a fresh, durable
+	// Tortoise 52538: 3min party-support opener. Gate on a fresh, durable
 	// target so the buff window covers a real fight, not a dying add.
 	if (!SpellCanBeCastedTrigger::IsActive())
 		return false;

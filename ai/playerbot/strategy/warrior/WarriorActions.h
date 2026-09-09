@@ -37,7 +37,7 @@ namespace ai
 
         bool isPossible() override
         {
-            // Turtle 54023 dispatches to a weapon-matched helper in core
+            // Tortoise 54023 dispatches to a weapon-matched helper in core
             // (spell_warrior_master_strike). The spell template already
             // requires a weapon, but a missing main hand would otherwise burn
             // the 30s cooldown as a silent no-op.

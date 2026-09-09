@@ -57,7 +57,7 @@ namespace ai
         CastSwiftmendAction(PlayerbotAI* ai) : CastHealingSpellAction(ai, "swiftmend") {}
         bool isUseful() override
         {
-            // Turtle 18562 requires a live Rejuvenation/Regrowth aura on the
+            // Tortoise 18562 requires a live Rejuvenation/Regrowth aura on the
             // target and consumes the shortest one. Refuse without a HoT so
             // the emergency slot falls through to Regrowth/Healing Touch.
             Unit* target = GetTarget();

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Dump Turtle talent trees per class with positions, rank spells, names, prereqs.
+"""Dump Tortoise talent trees per class with positions, rank spells, names, prereqs.
 
 Usage: python3 tools/talents/dump_trees.py --dbc <dbc-dir> --class <id> [--tree <page>]
 Prints one line per talent: page row col talentId maxRank [depId:needRank] [reqSpell] rankSpellIds... name

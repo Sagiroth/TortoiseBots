@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate PremadeSpec talent links against Turtle Talent/TalentTab DBC.
+"""Validate PremadeSpec talent links against Tortoise Talent/TalentTab DBC.
 
 Mirrors TortoiseBots TalentSpec::GetTalents/SortTalents/ReadTalents/CheckTalents:
   - class talents filtered by TalentTab ClassMask, sorted by (tabPage,row,col)

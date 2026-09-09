@@ -432,7 +432,7 @@ void ElementalShamanBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
 {
     ShamanBoostStrategy::InitCombatTriggers(triggers);
 
-    // Turtle 16166: damage + mana-reduction buff, 3min. DBC-driven.
+    // Tortoise 16166: damage + mana-reduction buff, 3min. DBC-driven.
     triggers.push_back(new TriggerNode(
         "elemental mastery",
         NextAction::array(0, new NextAction("elemental mastery", ACTION_HIGH), NULL)));

@@ -253,7 +253,7 @@ void HolyPriestBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
 {
     PriestBoostStrategy::InitCombatTriggers(triggers);
 
-    // Turtle 52962 Holy capstone: CC purge plus healing throughput. Holy-only
+    // Tortoise 52962 Holy capstone: CC purge plus healing throughput. Holy-only
     // boost beside power infusion / inner focus from the shared tree.
     triggers.push_back(new TriggerNode(
         "ascendance",

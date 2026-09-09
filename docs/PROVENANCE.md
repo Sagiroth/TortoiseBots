@@ -28,11 +28,11 @@ Notes (updated 2026-08-22 — large-batch forward-port):
 - The broad donor tree is now wired into the active CMake source set: real `PlayerbotAI`/`AiFactory`, generic behavior, all nine Vanilla class folders, Value/Trigger/Action families, Travel, grouping, loot, quests, dungeon/raid and PvP families are compiled as one coherent batch rather than left dead in-tree. `MANGOSBOT_ZERO` filters expansion-only folders. Fresh runtime probes now cover the packet bridge and Warrior/Mage/Priest/Hunter class attachment/group journeys.
 | Follow (dead-zone 1.5y, MoveFollow behind M_PI, public native target/moving-state restart guard, CanFollow guards) | `cmangos/playerbots` + `mangoszero/server` | `cmangos-playerbots@076045e` / `mangoszero-server@1817ae1` | `cmangos: playerbot/strategy/actions/FollowActions.cpp:36-90`; `mangoszero: src/modules/Bots/playerbot/strategy/actions/MovementActions.cpp:440-560`; local `ServerFacade.cpp` adapter over core `MotionMaster::GetCurrent()` | The real PlayerbotAI path uses `FollowMasterStrategy`/`FollowAction`; the Tortoise adapter reads the public native targeted-generator target and moving state instead of pretending core's private angle/offset fields are available. `BotController` retains only an intent/diagnostic record and is never a gameplay fallback after AI attachment | Keep 1.5y jitter-free follow without a second movement owner or re-entrant generator replacement | Cached ON/static build; preserved AI-enabled runtime packet journey exercised `follow chat shortcut`, group invite/accept, and cleanup without a movement-state crash |
 | Warrior vertical slice | Shyalya `playerbots-integration-gh` + modern `mod-playerbots` | `1f9497e` / `5397110` | Focused `Engine`/`Queue`/`Trigger`/`Action`/`Value` primitives, generic `FollowMasterStrategy`/assist/combat/non-combat/dead strategies, and Warrior Arms/Fury/Protection strategy files | Ported/adapted focused family; unrelated expansion systems remain excluded by the CMake source set | Make one owned Tortoise bot use strategy-driven follow and combat before widening the donor tree | Cached Docker build: `Built target tortoise_bots`, `Built target mangosd`; runtime: same-account Headless Sagiroth + Dudette, `dps assist`, successful Warrior Heroic Strike spell 78, encounter end/follow resume, clean removal; `PlayerbotAIStorage` logout use-after-free fixed and revalidated |
-| Broad Vanilla/Turtle source-set checkpoint | Shyalya `playerbots-integration-gh` + modern `mod-playerbots` | `1f9497e` / `5397110` | `CMakeLists.txt` globs the real `PlayerbotAI`, generic, nine Vanilla class, Value/Trigger/Action, Travel, grouping, loot, quest, dungeon/raid, BG/PvP and economy families; `MANGOSBOT_ZERO` excludes Death Knight and other expansion-only paths | Adapted core naming and data shapes in the module-local compatibility layer; native loot ownership, area names/flags, channel wrappers and const loot-list views replace unsafe CMaNGOS member assumptions | Compile and stabilize the broad family without adding core `GetBot`/`m_bot` ownership | The first broad Docker pass reached the module compilation stage and exposed a small remaining core API family in `PlayerbotAI.cpp`; the correct upstream `module-system` host snapshot must also carry the documented generic Headless/session seams before a broad runtime claim is made |
+| Broad Vanilla/Tortoise source-set checkpoint | Shyalya `playerbots-integration-gh` + modern `mod-playerbots` | `1f9497e` / `5397110` | `CMakeLists.txt` globs the real `PlayerbotAI`, generic, nine Vanilla class, Value/Trigger/Action, Travel, grouping, loot, quest, dungeon/raid, BG/PvP and economy families; `MANGOSBOT_ZERO` excludes Death Knight and other expansion-only paths | Adapted core naming and data shapes in the module-local compatibility layer; native loot ownership, area names/flags, channel wrappers and const loot-list views replace unsafe CMaNGOS member assumptions | Compile and stabilize the broad family without adding core `GetBot`/`m_bot` ownership | The first broad Docker pass reached the module compilation stage and exposed a small remaining core API family in `PlayerbotAI.cpp`; the correct upstream `module-system` host snapshot must also carry the documented generic Headless/session seams before a broad runtime claim is made |
 
 ## Native module-system checkpoint — 2026-08-24
 
-Feature: Native module packaging, module-local runtime support, and broad Vanilla/Turtle source selection
+Feature: Native module packaging, module-local runtime support, and broad Vanilla/Tortoise source selection
 
 Source repository: local `tortoise-wow` checkout plus local TortoiseBots checkout
 
@@ -50,7 +50,7 @@ Explicit gaps at that earlier checkpoint: `AutoMaintenanceOnLevelupAction`, adva
 
 Architecture note: core integration is generic Headless transport/session lifecycle plus ScriptMgr hooks. `MODULE_TORTOISEBOTS=static` selects the native module and does not pull the legacy vendored CMaNGOS tree; `BUILD_LEGACY_PLAYERBOTS` is a separate explicit escape hatch.
 
-## Native runtime and Vanilla/Turtle behavior checkpoint — 2026-08-24
+## Native runtime and Vanilla/Tortoise behavior checkpoint — 2026-08-24
 
 Feature: Pet taming/control, lockpicking, bounded random-bot lifecycle, AH/economy pricing, named-location travel lookup, cache-safe startup, and native module SQL packaging
 
@@ -67,9 +67,9 @@ Copied / ported / independently reimplemented:
 - Random bots use a module-local, startup-loaded pool of pre-existing characters on the configured random-account prefix. `World` owns Headless/Network session lifetime; `BotManager` owns module records and AI adapters. Account/character creation and donor login managers remain intentionally outside the module.
 - Random-bot buy/sell multipliers are now cached per character with the Existing Vanilla ranges, and named-location lookup uses the native `ai_playerbot_named_location` table instead of a compatibility no-op.
 - Empty optional item/equipment caches are accepted without synchronous world-thread cache generation. Populated existing caches still load normally.
-- Schema-only native migrations cover the tables queried by the active Vanilla/Turtle AI initializer and per-bot state. Existing datasets remain deployable separately.
+- Schema-only native migrations cover the tables queried by the active Vanilla/Tortoise AI initializer and per-bot state. Existing datasets remain deployable separately.
 
-Reason: complete coherent Vanilla/Turtle families without reintroducing donor manager/session ownership or making optional AI startup depend on a large synchronous cache write.
+Reason: complete coherent Vanilla/Tortoise families without reintroducing donor manager/session ownership or making optional AI startup depend on a large synchronous cache write.
 
 Local validation: ON/static `mangosd` build passed after the cache, config, SQL-install, installed-module-path, economy, recovery, packet, command, and class-context changes; OFF/disabled `mangosd` build passed and the ON/static configuration was restored. Docker runtime with AI enabled loaded the module, attached real Warrior/Mage/Priest/Hunter contexts, passed packet-bridge group invite/accept and cleanup journeys, and retained the earlier save/logout/relog spike evidence. The preserved DB was not reset; only additive missing schema migrations and disposable `TBPLAY` class fixtures were added. Random pool startup correctly reported zero candidates because no `RNDBOT*` accounts exist in the fixture.
 
@@ -79,12 +79,12 @@ core LFG/meeting-stone behavior remains available; the module retains only
 applicable group-role helpers and does not recreate the donor automatic queue.
 The donor `PetsAction` guardian-control wrapper and post-Vanilla fishing
 wrapper remain excluded because native pet, fishing, travel, loot, and
-profession paths provide the applicable Vanilla/Turtle behavior.
+profession paths provide the applicable Vanilla/Tortoise behavior.
 Account/character auto-creation remains the intentional random-bot product
 gap; existing random characters, bounded login/logout, native TravelMgr
 relocation, AI strategy rotation/recovery, gear refresh, and AH/economy pricing
 are supported. Core `BattleGroundMgr` remains authoritative for Vanilla and
-Turtle battleground entries; the existing value compatibility view reads the
+Tortoise battleground entries; the existing value compatibility view reads the
 same native `battlemaster_entry` table once at AI startup and does not own
 battleground state.
 
@@ -107,7 +107,7 @@ not final acceptance evidence.
 Migration cleanup: removed `MinimalPlayerbotAI*`, `VerticalSlice*`, `cmangos-compat-shim.h.orig`, and all tracked `*.shyalya.bak` copies after retaining donor provenance above. The obsolete `BotController` has also been removed; `PlayerbotAI` is the sole gameplay update owner.
 
 Intentional gaps only: random account/character auto-creation and the
-post-Vanilla fishing wrapper remain outside the Vanilla/Turtle product
+post-Vanilla fishing wrapper remain outside the Vanilla/Tortoise product
 surface. A real human-client journey was not claimed from the automated
 server-side packet fixture; the preserved runtime is left AI-enabled and
 ready for manual client playtesting.
@@ -216,7 +216,7 @@ containing the packet safety catch was intentionally stopped at the user's
 request, so a fresh post-catch AI runtime pass remains unclaimed. No database
 or Docker volume was reset.
 
-## Vanilla/Turtle source cleanup — 2026-08-24
+## Vanilla/Tortoise source cleanup — 2026-08-24
 
 Feature: subtractive product cleanup from the multi-expansion donor tree.
 
@@ -242,7 +242,7 @@ core LFG/meeting-stone/group-role concepts. The former
 `BotManager` and `RandomBotService` remain the ownership boundaries.
 
 Reason: make the physical tree, active registrations, configuration, and
-compatibility surface read as one Vanilla/Turtle product rather than a donor
+compatibility surface read as one Vanilla/Tortoise product rather than a donor
 tree hidden behind subtractive CMake filters.
 
 Local validation: the persistent sibling builder's cached `BUILD_PLAYERBOTS=ON`
@@ -255,7 +255,7 @@ gameplay test was run, as requested.
 
 ## Surgical dead-code follow-up — 2026-08-24
 
-Feature: residual Vanilla/Turtle cleanup after the main donor-tree removal.
+Feature: residual Vanilla/Tortoise cleanup after the main donor-tree removal.
 
 Source repository: TortoiseBots `cleanup/vanilla-turtle`.
 
@@ -274,9 +274,9 @@ Local validation: targeted static checks and one cached persistent
 `BUILD_PLAYERBOTS=ON` native `mangosd` build; no runtime restart or gameplay
 test was performed.
 
-## Turtle audit closure pass — 2026-08-24/25
+## Tortoise audit closure pass — 2026-08-24/25
 
-Feature: close the module-owned Turtle WoW 1.18.1 audit findings without
+Feature: close the module-owned Tortoise WoW 1.18.1 audit findings without
 reintroducing core ownership coupling: effective configured SQL packaging, additive
 schema repair, fail-closed startup caches, owner-input SQL safety, collection
 mount lookup, later-expansion residue removal, and repeatable surface checks.
@@ -292,7 +292,7 @@ remove unreachable engine test logging`), `89a5e645e1485bd2e35b4944e88fdadfc6c95
 (`fix: remove remaining expansion-only item branches`), `887a6673675d06d716acc713aaeed8dca05d7e9f`
 (`build: report native module source identity`), `9605a73c9bc16f0bf4fb4e84bba974a70f68c735`
 (`fix: disable fish cache rebuild on startup`), `a6ea16605fde1b77e396ca588e0b34ddb1978bd5`
-(`fix: align movement and channel shims with Turtle core`),
+(`fix: align movement and channel shims with Tortoise core`),
 `7fa875a6c6bc51534b4a5a3f2f373f3dd7446208` (`fix: quarantine optional LLM
 and stale tooling paths`), `2afd2d1` (`fix: match effective core SQL paths
 and migration history`), and the preceding
@@ -412,7 +412,7 @@ Local validation:
   a dirty checkout is reported explicitly rather than being mistaken for an
   exact clean snapshot. This makes stale or locally modified module selection
   observable. The final implementation snapshot is `7e08fc8`.
-- The real Turtle client was launched under Wine through normal and
+- The real Tortoise client was launched under Wine through normal and
   software-forced rendering paths; both rendered black with no observable
   login UI in this environment, so no real-client `.bot` command journey is
   claimed.
@@ -436,9 +436,9 @@ Local validation:
   and the normal restart at `2026-08-25T01:48:57.408768993Z` reached
   world-ready.
 
-## Final traced Turtle compatibility closure — 2026-08-25
+## Final traced Tortoise compatibility closure — 2026-08-25
 
-Feature: close the remaining module-owned Turtle 1.18.1 compatibility
+Feature: close the remaining module-owned Tortoise 1.18.1 compatibility
 mismatches found by tracing active call sites against the pinned core: sparse
 store bounds, core-defined custom races, path-filter fail-closed behavior,
 native combat/interaction/auction/quest/skill semantics, later-ID cleanup,
@@ -479,10 +479,10 @@ Copied / ported / independently reimplemented:
   existing CMaNGOS behavior, narrowed to the core's `Quest`, `TrainerSpell`,
   `SpellMgr`, talent, and class/race contracts. It does not add a
   `PlayerBots`-specific core hook.
-- Absent expansion IDs and invalid Turtle branches are subtractive cleanup,
+- Absent expansion IDs and invalid Tortoise branches are subtractive cleanup,
   validated against local DBC/SQL; no expansion behavior was introduced.
 
-Reason: preserve Existing Vanilla behavior while ensuring that Turtle custom
+Reason: preserve Existing Vanilla behavior while ensuring that Tortoise custom
 IDs, Goblin/High Elf data, localized content, and native core semantics are
 not silently hidden behind donor-era constants or no-op compatibility methods.
 
@@ -534,7 +534,7 @@ Local validation:
   `env -i PATH=/tmp/tortoisewow-no-ripgrep /bin/bash tools/verify_turtle_surface.sh`
   exited `1` and printed
   `TortoiseBots surface check failed: ripgrep (rg) is required to verify the
-  Turtle module surface`; it did not print `Tortoise WoW 1.18.1 module surface:
+  Tortoise module surface`; it did not print `Tortoise WoW 1.18.1 module surface:
   OK`.
 - Full verifier with ripgrep available:
   `bash tools/verify_turtle_surface.sh` exited `0` and printed
@@ -552,9 +552,9 @@ this change does not add scripts, stubs, or module-side replacements for them.
 ## F-03/F-27 core integration closure — 2026-08-25
 
 Feature: remove the remaining legacy PlayerBots-specific core product surface
-and reconcile the locally provable Turtle ScriptName mismatches.
+and reconcile the locally provable Tortoise ScriptName mismatches.
 
-Source repository: local `tortoise-wow` core plus its local Turtle SQL;
+Source repository: local `tortoise-wow` core plus its local Tortoise SQL;
 TortoiseBots module checkout for the optional-module build.
 
 Source commit: core
@@ -581,11 +581,11 @@ Copied / ported / independently reimplemented:
 - F-27 `npc_teslinah` is a registration of the existing local callback; it is
   not a new implementation. The `script_name='0'` migration is an independent
   data correction for an invalid placeholder. The remaining unregistered
-  Turtle names were deliberately not implemented because their behavior is not
+  Tortoise names were deliberately not implemented because their behavior is not
   established by the pinned core/history.
 
 Reason: keep Tortoise core generic and optional, make TortoiseBots the only
-supported PlayerBots implementation, and avoid converting missing Turtle
+supported PlayerBots implementation, and avoid converting missing Tortoise
 content into fake success paths.
 
 Local validation:
@@ -631,9 +631,9 @@ core coupling was added. The BG service now consumes #416's copy-only demand
 snapshot and queues only for observed human demand.
 
 Reason: preserve module ownership and core optionality while making the broad
-Vanilla/Turtle donor behavior compile against the actual Penqle API shape.
+Vanilla/Tortoise donor behavior compile against the actual Penqle API shape.
 
-Local validation: `git diff --check`, Turtle surface audit, parent-diff audits,
+Local validation: `git diff --check`, Tortoise surface audit, parent-diff audits,
 GitHub `CLEAN/MERGEABLE` audit for #37–#42, and cached integrated module target
 passed. Full native ON/static `mangosd` linked with `BUILD_PLAYERBOTS=OFF`,
 `BUILD_LEGACY_PLAYERBOTS=OFF`, `MODULES=static`,
@@ -729,7 +729,7 @@ Source files: `commands/BotCommandContext.{h,cpp}`,
 `Constants.lua`, `UI.lua`, `README.md`, and `tests/regression.lua`.
 
 Copied / ported / independently reimplemented: no donor code was copied.
-The module adds a thin capability probe over already compiled Vanilla/Turtle
+The module adds a thin capability probe over already compiled Vanilla/Tortoise
 class and pet actions (`counterspell`, `silence`, `spell lock`, `kick`,
 `pummel`, `shield bash`, `bash`, `hammer of justice`, `repentance`, `earth
 shock`, and `death coil`). It validates the target's active cast and the
@@ -839,7 +839,7 @@ Source repositories and commits:
   that interrupt/CC spell actions own their reach prerequisites and that
   command targeting should not invent a second movement policy.
 - `Shyalya/tortoise-wow@1f9497e0f42bfc1055841bb6ebdc7caa3515de0b`, used only as
-  the Turtle/Vanilla behavior comparison for the existing PullStrategy and
+  the Tortoise/Vanilla behavior comparison for the existing PullStrategy and
   class action graph.
 
 Source files: `commands/BotCommands.cpp`, `commands/BotCommandContext.*`, and
@@ -1001,7 +1001,7 @@ Source repositories and data:
 - `mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70` was consulted for
   baseline Combat Rogue/Mage/Priest intent, including party-targeted Prayer of
   Healing; no later-expansion class subsystem was copied.
-- Shyalya's Turtle PlayerBots fork was used only as a comparison point. Its
+- Shyalya's Tortoise PlayerBots fork was used only as a comparison point. Its
   Cold Snap ID check and unconditional Defensive Tactics stance swap were not
   treated as compatibility evidence.
 
@@ -1032,7 +1032,7 @@ Reason: attachment-time talent mutation could rewrite an existing human build;
 the inherited strategy config could replace Protection/Holy defaults with DPS
 siblings; and several small Vanilla paths either used the wrong spell ID,
 selected a self target for a group heal, or performed a stance swap without
-the required Turtle talent/equipment.
+the required Tortoise talent/equipment.
 
 Local validation: Tortoise premade links for classes 1/4/5/8 were checked
 against the current talent DBC (all generated links passed structural checks),
@@ -1058,7 +1058,7 @@ population identity opts into autonomous talent behavior.
 
 Feature: Deduplicate hostile units in `AttackersValue` and harden `AoeCountValue::FindMaxDensity()` against false AoE clustering.
 
-Source repository: `playerbots-references/shyalya-tortoise-wow` (API oracle for Turtle runtime) and `playerbots-references/mod-playerbots` (behavior donor for target uniqueness and non-threat filtering).
+Source repository: `playerbots-references/shyalya-tortoise-wow` (API oracle for Tortoise runtime) and `playerbots-references/mod-playerbots` (behavior donor for target uniqueness and non-threat filtering).
 
 Source files:
 - `AttackersValue.cpp`: `AttackersValue::Calculate()`
@@ -1094,7 +1094,7 @@ Feature: Overhaul Warlock combat rotations, priorities, health/mana sustain, pet
 
 Source repository:
 - `playerbots-references/mod-playerbots`: Behavior donor for `PetAttackTrigger`, `PetAttackAction`, and `RainOfFireChannelCheckTrigger`.
-- `playerbots-references/shyalya-tortoise-wow`: Oracle for Turtle 1.18.1 engine integration and pet spell autocast semantics.
+- `playerbots-references/shyalya-tortoise-wow`: Oracle for Tortoise 1.18.1 engine integration and pet spell autocast semantics.
 
 Source files:
 - `ai/playerbot/strategy/warlock/WarlockStrategy.cpp`
@@ -1137,7 +1137,7 @@ Copied / ported / independently reimplemented:
 Feature: Talent prerequisite correctness + Arcane Power safety + Warrior Master Strike + Priest shields/Chastise
 Source repository:
 - `playerbots-references/mod-playerbots` @ b949b50 (mature behavior donor)
-- `playerbots-references/shyalya-tortoise-wow` @ 83a61bc (Turtle runtime reference)
+- `playerbots-references/shyalya-tortoise-wow` @ 83a61bc (Tortoise runtime reference)
 - `tortoise-wow` @ 9f778a73 (effective spell/template/script source)
 Source files:
 - `ai/playerbot/Talentspec.cpp`, `ai/playerbot/aiplayerbot.conf.dist.in`, `tools/talents/validate_presets.py`
@@ -1147,8 +1147,8 @@ Source files:
 - Core evidence: `src/game/Objects/Player.cpp` LearnTalent, `src/scripts/spells/spell_mage.cpp` (arcane power/rupture/icicles), `spell_warrior.cpp` (master strike), `spell_priest.cpp` (chastise/enlighten), `sql/base/tw_world_spell_template.sql`, `data/dbc/Talent.dbc`
 Copied / ported / independently reimplemented:
 - Talent DependsOnRank zero-based fix + DependsOnSpell talent check (independent fix from core semantics; validator mirrors ReadTalents).
-- Arcane Power 70% mana gate (independent Turtle safety; donor Wrath behavior unsafe, not ported).
-- Master Strike action/trigger (independent Turtle implementation; no donor counterpart).
+- Arcane Power 70% mana gate (independent Tortoise safety; donor Wrath behavior unsafe, not ported).
+- Master Strike action/trigger (independent Tortoise implementation; no donor counterpart).
 - Weakened Soul 6788 guard (ported intent from mod-playerbots PriestActions.cpp).
 - Hostile Chastise CC wiring (ported intent from Shyalya PriestStrategy CC).
 Reason: P1 shared correctness + first class packets per CLASS_BEHAVIOR_PORT_PLAN.md.
@@ -1158,7 +1158,7 @@ Local validation: validate_presets.py 242 links 0 failures; git diff --check; ve
 Feature: shared cancel-channel registration + Mage Icicles/evocation checks + Hunter KC/Carve/Lacerate + Rogue generator/Surprise/Noxious/boost fix
 Source repository:
 - `playerbots-references/mod-playerbots` (donor intent; WotLK names rejected)
-- `playerbots-references/shyalya-tortoise-wow` @ 83a61bc (Turtle runtime parity)
+- `playerbots-references/shyalya-tortoise-wow` @ 83a61bc (Tortoise runtime parity)
 - `tortoise-wow` @ 9f778a73 (spell_hunter.cpp, spell_rogue.cpp, spell_mage.cpp, Unit.cpp aura states, SpellMgr exclusivity, spell_template)
 Source files:
 - `ai/playerbot/strategy/actions/ActionContext.h` (cancel-channel creator)
@@ -1179,7 +1179,7 @@ Local validation: git diff --check; validate_presets.py 242 links 0 failures; ve
 Feature: Warlock DH/PO + Paladin HS/Bulwark/Exorcism + Druid Berserk/Swiftmend + Shaman 5 talents/Bloodlust
 Source repository:
 - `playerbots-references/mod-playerbots` (donor intent; WotLK names rejected)
-- `playerbots-references/shyalya-tortoise-wow` @ 83a61bc (Turtle runtime parity)
+- `playerbots-references/shyalya-tortoise-wow` @ 83a61bc (Tortoise runtime parity)
 - `tortoise-wow` @ 9f778a73 (spell_warlock.cpp, spell_paladin.cpp, spell_druid.cpp, spell_shaman.cpp, spell_template)
 Source files: warlock/, paladin/, druid/, shaman/ strategy dirs (actions/triggers/contexts/spec strategies listed in PROGRESS.md Batches 8-11).
 Copied / ported / independently reimplemented:
@@ -1217,7 +1217,7 @@ Feature: deferred Rogue four (Envenom/SoD/MfD/Smoke) + Ascendance
 Source repository: `tortoise-wow` spell_template + Talent.dbc + spell_rogue.cpp.
 Source files: rogue/ actions/triggers/context/Assassination/Subtlety strategies; priest/ actions/triggers/context/Holy boost.
 Copied / ported / independently reimplemented: finisher/support slot decisions (independent from decoded mechanics); repaired two edit-placement breaks with diff verification.
-Reason: close deferred Turtle-talent gaps per census.
+Reason: close deferred Tortoise-talent gaps per census.
 Local validation: git diff --check; validate_presets.py 297/0; verify_turtle_surface.sh OK. No docker build (user-owned review).
 
 ## Class port Batch 15 (2026-09-08, uncommitted)
