@@ -2821,7 +2821,7 @@ void TravelNodeMap::generateTaxiPaths()
         if (endNode->fDist(ppath.back()) > 0.1f)
             ppath.push_back(*endNode->getPosition());
 
-        float totalTime = startPos.GetPathLength(ppath) / (450 * 8.0f);
+        float totalTime = GetTaxiRouteCost(startPos.GetPathLength(ppath));
 
         TravelNodePath travelPath(0.1f, totalTime, (uint8)TravelNodePathType::flightPath, i, true);
         travelPath.setPath(ppath);

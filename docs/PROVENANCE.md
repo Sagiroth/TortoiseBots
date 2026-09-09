@@ -1405,7 +1405,7 @@ Files touched:
 
 Copied / ported / independently reimplemented:
 - Route weighting and travel policies (`TravelRoutePolicy.h`):
-  - `GetTaxiRouteCost`: applies `PLAYERBOT_TAXI_ROUTE_DIVISOR` (450 * 8 = 3600) so discovered and affordable flight points are strongly preferred over continent-scale walking or swimming.
+  - `GetTaxiRouteCost`: applies `PLAYERBOT_TAXI_ROUTE_DIVISOR` (450 * 8 = 3600) in `generateTaxiPaths` so discovered and affordable flight points are strongly preferred over continent-scale walking or swimming.
   - `GetWalkTravelTime`: models walking vs swimming with a 120-yard safe swim grace for short river crossings, combined with a 4.0x multiplier on sustained swimming so bots prioritize roads, bridges, and ferries over lengthy water crossings.
   - `GetStableRouteCostMultiplier`: deterministic pseudo-random 1.0..1.25 cost multiplier (up to 25% variation) keyed to party leader GUID (or bot GUID low) and spatial quantization. Ensures party members stay together while preventing different parties from marching single-file in identical lines.
   - `GetStableTravelSelectionSeed` / `MixTravelRouteSeed`: deterministic 32-bit avalanche hashing for party destination and point shuffling in `TravelMgr::GetPartitions`.
@@ -1419,7 +1419,7 @@ Copied / ported / independently reimplemented:
 - Route unreachable diagnostics:
   - Added explicit diagnostic logs (`sLog.outDetail`) when destination nodes are unreachable due to disconnected components, exhausted open lists, or missing start/end node associations, eliminating silent failure.
 
-Reason: Complete Issue #86. Enables autonomous bots to navigate intelligently via flight paths and roads while avoiding hazardous swimming and unnatural single-file party marching, backed by a supported offline import tool and graceful fallback.
+Reason: Groundwork for Issue #86 (keep #86 open for in-game client verification of live travel behavior). Enables autonomous bots to navigate intelligently via flight paths and roads while avoiding hazardous swimming and unnatural single-file party marching, backed by a supported offline import tool and graceful fallback.
 
 Local validation:
 - Standalone test suite `tools/test_travel_route_policy.cpp` (6 checks, 100% pass).
