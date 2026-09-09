@@ -1,4 +1,4 @@
-// Vanilla/Turtle trade lockpicking action.
+// Vanilla/Tortoise trade lockpicking action.
 
 #ifndef PLAYERBOTS_UNLOCKTRADEDITEMACTION_H
 #define PLAYERBOTS_UNLOCKTRADEDITEMACTION_H

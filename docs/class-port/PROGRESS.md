@@ -32,7 +32,7 @@ Gameplay acceptance requires real-client evidence; tests/builds alone do not clo
   "cannot be cancelled"); safety is prevention-only, threshold documented.
   Files: `strategy/mage/MageTriggers.h/.cpp`, `strategy/mage/MageActions.h`.
 - Checks: `git diff --check` clean, `validate_presets.py` 0 failures,
-  `verify_turtle_surface.sh` OK, `verify_penqle_host_contract.sh` OK (core
+  `verify_tortoise_surface.sh` OK, `verify_penqle_host_contract.sh` OK (core
   9f778a73). No docker build per user instruction (deferred to user review).
 - Next: native cached module build via `./dev/build-playerbots` (user-owned),
   then class packets.

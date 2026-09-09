@@ -59,7 +59,7 @@ bool PlayerConvenience::RequestSummon(Player* requester, Player* bot)
     float destZ = requester->getPositionZ();
 
     // The visual portal used by the first implementation was not part of the
-    // Turtle data contract. Reuse the mature summon action's conservative
+    // Tortoise data contract. Reuse the mature summon action's conservative
     // ground/line-of-sight policy instead, then fall back to the master's
     // exact position when there is no safe nearby point.
     requester->UpdateGroundPositionZ(destX, destY, destZ);

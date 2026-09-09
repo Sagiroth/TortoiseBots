@@ -7,7 +7,7 @@ fail() {
 }
 
 command -v rg >/dev/null 2>&1 \
-    || fail "ripgrep (rg) is required to verify the Turtle module surface"
+    || fail "ripgrep (rg) is required to verify the Tortoise module surface"
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT_DIR"
@@ -176,4 +176,4 @@ for path in \
     test ! -e "$path" || fail "removed donor/test file remains: $path"
 done
 
-echo "Tortoise WoW 1.18.1 module surface: OK"
+echo "Tortoise 1.18.1 Core module surface: OK"

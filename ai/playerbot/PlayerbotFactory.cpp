@@ -103,7 +103,7 @@ void PlayerbotFactory::Init()
             continue;
 
         // The taximask is eight words and AppendTaximaskTo puts exactly those
-        // eight on the wire, so 256 is a protocol limit, not a tunable. Turtle
+        // eight on the wire, so 256 is a protocol limit, not a tunable. Tortoise
         // numbers its two Landing Pod nodes 508 and 509, which land on field 15
         // of an eight-field mask - seven words past it, straight into
         // m_TaxiDestinations. SetTaximaskNode bounds-checks that now, but there
@@ -1980,7 +1980,7 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
     lockedItems.push_back(17782); // Talisman of Binding Shard
     lockedItems.push_back(12947); // Alex's Ring of Audacity
 
-        // Item availability is derived from the active Turtle item cache.
+        // Item availability is derived from the active Tortoise item cache.
 
     for(uint8 slot = 0; slot < EQUIPMENT_SLOT_END; ++slot)
     {
@@ -3192,7 +3192,7 @@ void PlayerbotFactory::InitAmmo()
     if (!subClass)
         return;
 
-    // TurtleWoW: thrown weapons are single repairable items (Stackable=1), not 200-stack ammo.
+    // Tortoise: thrown weapons are single repairable items (Stackable=1), not 200-stack ammo.
     // Give exactly 1 and return so we don't fill the bot's bags with 200 individual knives.
     if (subClass == ITEM_SUBCLASS_THROWN)
     {
@@ -3291,7 +3291,7 @@ void PlayerbotFactory::InitMounts()
         fast = { 23241, 23242, 23243 };
         break;
     default:
-        // Turtle/custom races do not have a safe racial spell list in this
+        // Tortoise/custom races do not have a safe racial spell list in this
         // donor-era switch. Leave the lists empty and rely only on the
         // authoritative collection_mount rows below, whose item class/race
         // masks are checked against the actual core character data.
@@ -3300,7 +3300,7 @@ void PlayerbotFactory::InitMounts()
         break;
     }
 
-    // Turtle collection mounts are represented by a generic item spell and a
+    // Tortoise collection mounts are represented by a generic item spell and a
     // core-owned collection_mount mapping. Include eligible mapped spells in
     // the factory pool so randomized characters do not lose custom mounts
     // merely because their item has no classic per-item mount spell. Factory

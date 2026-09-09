@@ -10,7 +10,7 @@ Architecture authority: `../PLAN.md`. Host contract: `../HOST_API.md`.
 | Implementation | `TortoiseBots` | `migration/m0-baseline` (base `main`) | `e00857800c98abfba5a277dee080550a265e8e71` |
 | Target core | `tortoise-wow` | `tortoise-bots` | `c12bb16ede94ae461495e9f62380c3d92c9f3278` |
 | Gameplay donor | `playerbots-references/mod-playerbots` | detached | `5397110cba484a9b7209bc9f632652e9d4bd6a70` |
-| Turtle runtime donor | `playerbots-references/shyalya-tortoise-wow` | detached | `49d183a086d0a51be14972deb5d707716dfabe6a` |
+| Tortoise runtime donor | `playerbots-references/shyalya-tortoise-wow` | detached | `49d183a086d0a51be14972deb5d707716dfabe6a` |
 
 Working tree at M0 start: `TortoiseBots/docs/README.md` modified (plan index entry, preserved, uncommitted);
 core `src/shared/revision.h` untracked (left untouched). Core `tortoise-bots` is 7 commits
@@ -71,7 +71,7 @@ No merges authorized.
 
 ## M5 gates (plan §4)
 
-- [x] 5 slice audits landed (WarProt/PriestHoly/Mage/Rogue/Hunter): inventories + donor gaps + Turtle data checks, all audit-only
+- [x] 5 slice audits landed (WarProt/PriestHoly/Mage/Rogue/Hunter): inventories + donor gaps + Tortoise data checks, all audit-only
 - [x] Pet-CC fix: AttackAction pet AttackStart now respects the CC strip (mirrors selection; skull-ignore-RTI honored)
 - [x] Inert-file traps recorded (hunter Generic disengage, rogue Dps, warrior Tank, mage dead scorch reg): never registered; disposition = never-activate guard, not deletion
 - [x] C-packet rows for 5 slices; remaining specs/classes queued to M6
@@ -100,7 +100,7 @@ No merges authorized.
 ## M8 gates (plan §4)
 
 - [x] Raid audit: thin generic + 4 object/hazard behaviors; Onyxia empty; 4H teardown + Naxx enter/leave FIXED (string-only, both sides verified); void-zone creators still missing (needs new classes — deferred)
-- [x] Turtle map: 30 mechanic rows, zero bespoke tactics, generic-only participation; LFT aliases for 4 maps; KARAZHAN guard blocks all 15 Kara files (narrowing queued)
+- [x] Tortoise map: 30 mechanic rows, zero bespoke tactics, generic-only participation; LFT aliases for 4 maps; KARAZHAN guard blocks all 15 Kara files (narrowing queued)
 - [x] BG audit: WSG/AB/AV objective play mapped; SV + BR zero tactics; Eye/Isle correctly absent; no DungeonClear dependency anywhere
 - [ ] Encounter/match runtime proof; M8 PR: https://github.com/Sagiroth/TortoiseBots/pull/78
 
@@ -145,7 +145,7 @@ M0 committed on `migration/m0-baseline`, draft PR #70 open. Census complete (4/4
 guards re-run OK. Runtime gates all pending by rule.
 - [x] Capability ledger (CAPABILITIES.tsv) + graph inventory (~111 strategies, ~250 actions, ~225 triggers, ~270 values, 9 class contexts, 4 services)
 - [x] `ConfigAccess::GetValues` empty, `LoadAuctionPrices` clear-only, `GuildBankAction` ZERO-false, Engine dual hooks, Queue name-identity, SpellId numeric branch
-- [x] Turtle Karazhan native scope; CMake `KARAZHAN` denylist narrowing flagged for M0/M8 (unchanged)
+- [x] Tortoise Karazhan native scope; CMake `KARAZHAN` denylist narrowing flagged for M0/M8 (unchanged)
 - [x] Modern corrections (no src/ahbot/AhAction/price-helper/LLM; 9+Dk dirs); dungeon-clear exclusion at `modules/mod-dungeon-clear/**`
 - [x] Guards re-run OK; draft M0 PR #70 open
 - [ ] Activation proof needs M1/M2 runtime graph dump

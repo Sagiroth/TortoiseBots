@@ -188,7 +188,7 @@ namespace ai
         virtual bool IsActive() override { return !ai->HasAura("cat form", bot); }
     };
 
-    // TurtleWoW Balance redesign: Eclipse capstone (talent 320, spell 51444).
+    // Tortoise Balance redesign: Eclipse capstone (talent 320, spell 51444).
     // Wrath crit → "Arcane Eclipse" buff (spell 51443) → boosts Arcane damage
     //   → bot pivots to spam Starfire during the ~10 sec window.
     // Starfire crit → "Nature Eclipse" buff (spell 51442) → boosts Nature damage

@@ -15,8 +15,8 @@ Status values: `pending` | `pass` | `fail` | `blocked(reason)`.
 | GetValues empty | T `PlayerbotAIConfig.cpp:23-26` | confirmed gap |
 | Auction mirror clear-only | T `runtime/PlayerbotRuntimeFacade.cpp:271-278` | confirmed gap |
 | GuildBank false ZERO | T `strategy/actions/GuildBankAction.cpp:11-39` | confirmed |
-| Turtle Karazhan native | CORE `ScriptLoader.cpp:291,305`, `src/scripts/dungeons/{karazhan_crypt,lower_karazhan_halls,upper_karazhan_halls}` | confirmed native scope |
-| Guard scripts | `tools/verify_turtle_surface.sh`, `tools/verify_penqle_host_contract.sh --core ../tortoise-wow` | re-run pending in M0 PR validation |
+| Tortoise Karazhan native | CORE `ScriptLoader.cpp:291,305`, `src/scripts/dungeons/{karazhan_crypt,lower_karazhan_halls,upper_karazhan_halls}` | confirmed native scope |
+| Guard scripts | `tools/verify_tortoise_surface.sh`, `tools/verify_penqle_host_contract.sh --core ../tortoise-wow` | re-run pending in M0 PR validation |
 
 ## Shared acceptance scenarios A01–A16 (all pending)
 
@@ -171,12 +171,12 @@ No ports: implementation needs compile+runtime, both unavailable here.
   vigilance/ranged-pull/intervene, sunder>5 risk, TBC-legality checks each.
 - PriestHoly: bucket ladder + PoH group AoE + dispel/rez/mana/shadow ladders;
   rank=highest-known CONFIRMED, no optimizer. Donor gaps all TBC (correctly
-  absent). SW:Death kept — verify Turtle backport; prayer-of-spirit likewise.
+  absent). SW:Death kept — verify Tortoise backport; prayer-of-spirit likewise.
 - Mage: proc-blind core (WotLK N/A); fire-locked fallback; loop-guards verified
   on all vectors. TBC re-adopt list (ice lance/arcane blast/spellsteal/
-  invisibility/water elemental) needs per-item Turtle legality.
+  invisibility/water elemental) needs per-item Tortoise legality.
 - Rogue: thresholds + opener guards + fallbacks verified; no pooling/reservation
-  (Turtle-applicable donor-mature — queued); expose-armor wire-or-remove.
+  (Tortoise-applicable donor-mature — queued); expose-armor wire-or-remove.
 - Hunter: active ZERO-vanilla stack verified (dead-zone, traps, aspects, ammo);
   specs pass-through; feed-pet STUB; distracting/wyvern dead regs. PET-CC FIX
   applied (pet respects CC strip). Inert Generic files (disengage+flee) must
@@ -216,7 +216,7 @@ Eight read-only audits (one blacklist fix, two taxi fixes). No ports.
   absent both sides (parity, record honestly); full-log handling lossy.
 - RPG: Shyalya crowd/RNG/patrol/taxi-cheat corrections identified, queued for
   compilable env (behavioral, need build). Avoid-list absent, avoid-area
-  fail-closed, spell-click absent with zero Turtle core support found.
+  fail-closed, spell-click absent with zero Tortoise core support found.
 - Travel: purposes/costs/failed-edges/faction gates mapped; MinimalMove now
   retains rejected legs; RpgTaxi restores funding on all 4 reject paths;
   generators force-off (no PathInfo area query); empty tables degrade safely.
@@ -239,16 +239,16 @@ Eight read-only audits (one blacklist fix, two taxi fixes). No ports.
 
 Three read-only audits; parent verified every fix. No DungeonClear contact.
 
-- Raids: MC rune-movement/GO IDs match Turtle core (douse needs no item
+- Raids: MC rune-movement/GO IDs match Tortoise core (douse needs no item
   core-side — bot item requirement may fail closed; noted); BWL suppression
   GO/aura match but bot path is rogue-only while core allows any class;
   Onyxia fight strategy EMPTY (generic participation only); 4H teardown name
   fixed + Naxx enter/leave wired (all names verified registered); void-zone
   trigger/action have no creators (new classes needed — deferred to compilable
   env); most bosses in every raid have zero tactics. No encounter claims.
-- Turtle: 6 dungeon dirs + SV inventoried (30 mechanic rows with NPC/spell
+- Tortoise: 6 dungeon dirs + SV inventoried (30 mechanic rows with NPC/spell
   IDs); zero bespoke bot tactics; LFT demand-fill aliases cover 4 maps
-  (no Lower/Upper Kara, no SV). KARAZHAN CMake guard would reject valid Turtle
+  (no Lower/Upper Kara, no SV). KARAZHAN CMake guard would reject valid Tortoise
   Kara files verbatim — narrowing queued for M10 (needs file-by-file review).
 - BGs: WSG flag play, AB node assault/defense with stickiness, AV objective
   tables mapped; death/spirit rules; interference guards hold. SV (id5) and

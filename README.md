@@ -1,6 +1,6 @@
 # TortoiseBots
 
-Independent native PlayerBots module for canonical Turtle WoW 1.18.1 (`Penqle/tortoise-wow`).
+Independent native PlayerBots module for canonical Tortoise 1.18.1 Core from Penqle (`Penqle/tortoise-wow`).
 
 `TortoiseBots` delivers native AI companions through a decoupled C++ architecture: bot AI, combat strategies, and lifecycle management live entirely within this module, while session transport and character state remain cleanly owned by the core server via generic headless sessions (`SessionTransport::Headless`). The core builds and operates 100% cleanly without the module (`MODULES=disabled`).
 

@@ -15,7 +15,7 @@ or per milestone diff. The PR description carries scope/validation/gates.
 
 ```bash
 # read-only gates (no server needed)
-bash tools/verify_turtle_surface.sh
+bash tools/verify_tortoise_surface.sh
 bash tools/verify_penqle_host_contract.sh --core /explicit/path/to/tortoise-wow
 python3 tools/check_decision_trail.py --self-test
 # module build matrix per docs/MERGE_ACCEPTANCE.md (ON/OFF/absent)
@@ -37,7 +37,7 @@ python3 tools/check_decision_trail.py --self-test
 - Journeys: P01–P08 (quest/world), P09–P13 (market), P14–P18
   (population/LFT/BG), P19–P26 (commands/presets/modes/soak).
 - Dungeon: human + 4 bots with deliberate pulls, CC, interrupts, loot,
-  wipe recovery (M5); Turtle maps + raids per M8 rows (P24).
+  wipe recovery (M5); Tortoise maps + raids per M8 rows (P24).
 
 ## Service operation (all default-off; required scope even when off)
 

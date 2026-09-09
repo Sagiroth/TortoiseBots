@@ -13,7 +13,7 @@ licensing, reasoning and local validation.
 | `IWorldUpdateListener` generic world-tick registry (`RegisterWorldUpdateListener`, `GetPendingWorldListenerFactories`, `RegisterPendingWorldListeners` in `World::Update`) | `HardcodedEvents`/`ZoneScriptMgr::Update` pattern in `Penqle/tortoise-wow` + `DiscordBot::RegisterHandlers` precedent in same core | `World.cpp:2448` (`World::Update`), `HardcodedEvents.h`, `ZoneScriptMgr.cpp:117` (`Update`), `World.cpp:2343` (`DiscordBot::RegisterHandlers`) | `World.h:889`, `World.cpp:2448`, `HardcodedEvents.h`, `ZoneScriptMgr` | Reimplemented as generic `IWorldUpdateListener` with explicit registration and pending-factory static initializers (no weak symbols, no `sBotHost` global) — inspirited by `DiscordBot`'s service registration but made generic | Bot AI must run on the world thread once per tick; no existing `WorldScript::OnUpdate` exists in MaNGOS `ScriptMgr`, so a single generic call site in `World::Update` is the correct seam | `World::Update` now calls listeners after `UpdateSessions`; `BotHostAdapter` receives tick, `BotManager` drives lifecycle; `rg -i PlayerBot` in `src/game` only shows `InitHeadlessSession` bridge |
 | `BUILD_PLAYERBOTS` optional-module CMake wiring | `cmangos/mangos-classic` (`cmake/options.cmake: BUILD_PLAYERBOTS OFF`) and `mangoszero/server` (`CMakeLists.txt: PLAYERBOTS OFF`) | `cmangos-mangos-classic@9b682be`, `mangoszero-server@1817ae1` | `CMakeLists.txt`, `src/CMakeLists.txt`, `src/game/CMakeLists.txt`, `src/mangosd/CMakeLists.txt` | Reimplemented as explicit `option(BUILD_PLAYERBOTS OFF)` with `add_subdirectory(modules/TortoiseBots)` only when `ON`, and `target_link_libraries(mangosd tortoise_bots)` via `CMP0079` + `whole-archive` on Linux — no `FetchContent` auto-download, no `ENABLE_PLAYERBOTS` scattered defines | Keep `BUILD_PLAYERBOTS=OFF` first-class and `src/modules/TortoiseBots` absent/present matrix clean; harvest the option pattern without the `FetchContent` auto-clone | Matrix: `absent+OFF` OK, `present+OFF` OK (module present but not built), `present+ON` OK (module linked); `rg` audits clean |
 | Headless queued-session lifecycle (`WorldSession::Update`, `CharacterScreenIdleKick`, queued add/remove) | `Shyalya`'s `NullSessionAnticheat` + `WorldSession::Update` null-socket handling (`WorldSession.cpp:163,383,736` already tolerates `m_Socket==nullptr` but deletes headless via `return false`) | `WorldSession.cpp:306,334,378`, `Handlers/CharacterHandler.cpp:548`, `World.cpp:283`, `LockedQueue.h` | `WorldSession.cpp`, `Handlers/CharacterHandler.cpp`, `World.cpp`, `LockedQueue.h` | Reimplemented: explicit `SessionTransport`, a one-pass `m_headlessLoginPending` keepalive, deferred `LoginPlayer` after queued `AddSession`, and generic pending-session inspection/cancellation. `BotManager` retains `Removing` records until cleanup. | The queued path must survive the first `UpdateSessions` pass without requiring synchronous insertion; immediate removal must cancel the queue entry instead of orphaning it. | Queued runtime spike passed; `PendingAddRemoveTest PASSED` with no active/pending session, player, or record; graceful shutdown clears both online flags. |
-| World-owned Headless lifecycle façade (`StartHeadlessSession` / `StopHeadlessSession` / `GetHeadlessSessionState`) | `Penqle/tortoise-wow` PR #411 refactor plus TortoiseBots packet transport identity correction | `1e7994934b864558e257dd1f375fbbdbbcebe95e` plus rebased #416 `58bcb1cf8ea7110561120ed47c3c9203f9338c5b`; TortoiseBots `73ce12958b933cb4e74f5ccaddb21819e7ed3573` | `HeadlessSessionMgr.{h,cpp}`, `World.{h,cpp}`, `WorldSession.{h,cpp}`, `Handlers/CharacterHandler.cpp`, `PlayerLoginQueryHolder.h`, `host/BotPacketAdapter.cpp` | Moved Headless validation, shared login dispatch, callback identity, update, reclaim, removal, and shutdown into the World-owned manager; migrated TortoiseBots to the three-call interface; kept packet dispatch keyed to transport identity rather than socket presence | Keep one concrete `WorldSession`, character-GUID Headless ownership, normal Network auth, bot-neutral core ownership, and valid synthetic Network packet fixtures | Docker core-only and synchronized static module builds reached `[100%] Built target mangosd`; `tools/verify_turtle_surface.sh` passed; runtime `PendingAddRemoveTest PASSED`, AutoTest save/logout/relogin/cleanup PASSED, and PacketBridgeTest command-surface PASSED, while its synthetic group invite/accept check FAILED; no real-client path was run |
+| World-owned Headless lifecycle façade (`StartHeadlessSession` / `StopHeadlessSession` / `GetHeadlessSessionState`) | `Penqle/tortoise-wow` PR #411 refactor plus TortoiseBots packet transport identity correction | `1e7994934b864558e257dd1f375fbbdbbcebe95e` plus rebased #416 `58bcb1cf8ea7110561120ed47c3c9203f9338c5b`; TortoiseBots `73ce12958b933cb4e74f5ccaddb21819e7ed3573` | `HeadlessSessionMgr.{h,cpp}`, `World.{h,cpp}`, `WorldSession.{h,cpp}`, `Handlers/CharacterHandler.cpp`, `PlayerLoginQueryHolder.h`, `host/BotPacketAdapter.cpp` | Moved Headless validation, shared login dispatch, callback identity, update, reclaim, removal, and shutdown into the World-owned manager; migrated TortoiseBots to the three-call interface; kept packet dispatch keyed to transport identity rather than socket presence | Keep one concrete `WorldSession`, character-GUID Headless ownership, normal Network auth, bot-neutral core ownership, and valid synthetic Network packet fixtures | Docker core-only and synchronized static module builds reached `[100%] Built target mangosd`; `tools/verify_tortoise_surface.sh` passed; runtime `PendingAddRemoveTest PASSED`, AutoTest save/logout/relogin/cleanup PASSED, and PacketBridgeTest command-surface PASSED, while its synthetic group invite/accept check FAILED; no real-client path was run |
 | Out-of-world Headless expiry and owner dungeon-exit recovery | Current generic Headless lifecycle and local observed instance-portal failure | Local reimplementation | `HeadlessSessionMgr.{h,cpp}`, `BotManager.*`, `BotPlayerAdapter.*` | Independently reimplemented; no donor code copied | A non-teleporting Headless player outside the world must not retain `characters.online=1` or block Network reclaim; a Network owner leaving a dungeon requests the existing safe summon for owned bots left inside | Cached module-enabled and module-disabled builds passed; real-client portal/reclaim check pending |
 
 | Foundational Engine/AiObjectContext/Strategy/Trigger/Action/Value/ReactionEngine (Tortoise 1.18.1 baseline) | `Shyalya/tortoise-wow` (`playerbots-integration-gh` @ 1f9497e, vendored `cmangos/playerbots@c33dfac`) | `Shyalya` baseline provides the full `playerbot/strategy/Engine.{h,cpp}`, `AiObjectContext.{h,cpp}`, `AiObject.{h,cpp}`, `Strategy.{h,cpp}`, `Trigger.{h,cpp}`, `Action.{h,cpp}`, `Value.{h,cpp}`, `ReactionEngine.{h,cpp}`, `Queue/Event/Multiplier` etc, already translated for `MANGOSBOT_ZERO` (Vanilla 1.12/1.18.1) and core `WorldLocation`/`Position`/`Map` APIs | `ai/playerbot/strategy/Engine.*`, `AiObjectContext.*`, `AiObject.*`, `Strategy.*`, `Trigger.*`, `Action.*`, `Value.*`, `ReactionEngine.*`, `Queue.*`, `Event.*`, `AiObject.*` (full `ai/playerbot` tree, 82 top-level + 14 strategy core + 113 generic) | Copied verbatim as the Tortoise/Vanilla translation reference for the foundational runtime; `cmangos-compat-shim.h` and `botpch.h` already handle core `SpellEntry`/`ItemPrototype`/`MapStorage` translation, Vanilla `MANGOSBOT_ZERO` guards exclude `deathknight`/`TBC`/`WotLK` paths | Shyalya's `playerbots-integration-gh` is the only proven `1.18.1` PlayerBots that already runs on core `WorldLocation` (`mapId/x/y/z/o`), `Transport`/`GenericTransport`, `GuidSet`/`AreaTableEntry` etc; using it as the baseline avoids reinventing `Penqle` API translation and keeps `Headless`/`IsHeadless()` as the only host seam | `ai/` now contains the full Shyalya `playerbot` tree (204 generic files after modern layer); `CMakeLists.txt` now builds the real `Engine`/`AiObjectContext`/`Strategy` stack instead of the stub `EngineStub`/`AiObjectContextStub`; native linkage uses explicit `MODULE_TORTOISEBOTS=static` and `MANGOSBOT_ZERO` |
@@ -220,7 +220,7 @@ or Docker volume was reset.
 
 Feature: subtractive product cleanup from the multi-expansion donor tree.
 
-Source repository: TortoiseBots `cleanup/vanilla-turtle` working branch.
+Source repository: TortoiseBots `cleanup/vanilla-tortoise` working branch.
 
 Source commit: `322120ef1fe9b848cfe520ad58f6ff698fa801e9` (the cleanup commit;
 this follow-up metadata commit records its exact SHA).
@@ -257,7 +257,7 @@ gameplay test was run, as requested.
 
 Feature: residual Vanilla/Tortoise cleanup after the main donor-tree removal.
 
-Source repository: TortoiseBots `cleanup/vanilla-turtle`.
+Source repository: TortoiseBots `cleanup/vanilla-tortoise`.
 
 Source commit: `3213a058931ec7b88c87322cb11f02df4ffed8e1` (follow-up cleanup
 commit; this metadata commit records its exact SHA).
@@ -281,7 +281,7 @@ reintroducing core ownership coupling: effective configured SQL packaging, addit
 schema repair, fail-closed startup caches, owner-input SQL safety, collection
 mount lookup, later-expansion residue removal, and repeatable surface checks.
 
-Source repository: TortoiseBots `audit/playerbots-turtle-1.18.1`
+Source repository: TortoiseBots `audit/playerbots-tortoise-1.18.1`
 
 Source commit: `7e08fc810060e77839d4f38c813cc7eba9b05737` (final verified
 implementation snapshot; the later provenance/docs update is documentation-only;
@@ -307,7 +307,7 @@ Source files: `TortoiseBots.cmake`, `README.md`,
 `ai/playerbot/{ServerFacade.cpp,cmangos-compat-shim.h}`, the follow/movement
 and range-trigger files, `ai/playerbot/aiplayerbot.conf.dist.in`,
 `runtime/BotManager.cpp`, `conf/tortoise_bots.conf.dist`,
-`tools/{analyze_quest_ledger.py,verify_turtle_surface.sh}`, and
+`tools/{analyze_quest_ledger.py,verify_tortoise_surface.sh}`, and
 `docs/PLAYERBOTS_AUDIT.md`.
 
 Copied / ported / independently reimplemented:
@@ -344,7 +344,7 @@ not hidden inside this module PR.
 
 Local validation:
 
-- `tools/verify_turtle_surface.sh` passed.
+- `tools/verify_tortoise_surface.sh` passed.
 - `git diff --check` passed before commit.
 - Cached `bash ../tortoise-docker-penqle/dev/build-playerbots` completed the
   static native module and `mangosd` link successfully. Its best-effort install
@@ -445,7 +445,7 @@ native combat/interaction/auction/quest/skill semantics, later-ID cleanup,
 localized names, factory class-spell initialization, native text-emote fallback,
 loot status/roll state, and collection-mount caching.
 
-Source repository: TortoiseBots `audit/playerbots-turtle-1.18.1`
+Source repository: TortoiseBots `audit/playerbots-tortoise-1.18.1`
 
 Source commit: `d672048e86b9effc36210d3e6d076741fbeccc7f` (final source snapshot;
 the initial traced implementation is `0f97403df42ee98b5085040a9a066ddc64608623`,
@@ -468,7 +468,7 @@ Source files: `ai/cmangos-compat-shim.h`,
 `ai/playerbot/{ChatHelper,PlayerbotAIConfig,PlayerbotFactory,TravelMgr,TravelNode,WorldPosition}.{cpp,h}`,
 `ai/playerbot/strategy/{Value.cpp,values,actions,triggers,druid,rogue,warrior}/*`,
 `runtime/PlayerbotRuntimeFacade.cpp`, and
-`tools/verify_turtle_surface.sh`.
+`tools/verify_tortoise_surface.sh`.
 
 Copied / ported / independently reimplemented:
 
@@ -486,7 +486,7 @@ Reason: preserve Existing Vanilla behavior while ensuring that Tortoise custom
 IDs, Goblin/High Elf data, localized content, and native core semantics are
 not silently hidden behind donor-era constants or no-op compatibility methods.
 
-Local validation: `tools/verify_turtle_surface.sh`, `git diff --check`, and the
+Local validation: `tools/verify_tortoise_surface.sh`, `git diff --check`, and the
 cached persistent `BUILD_PLAYERBOTS=ON`, `BUILD_LEGACY_PLAYERBOTS=OFF`, static
 `mangosd` build/link passed at this source commit. The build compiled the
 module and linked the final `mangosd`; no core, Docker, reference checkout, or
@@ -507,16 +507,16 @@ collection-mount use, taxi, loot, or real-client packet delivery.
 
 ## Surface verifier fail-closed correction — 2026-08-25
 
-Feature: make `tools/verify_turtle_surface.sh` fail closed when its required
+Feature: make `tools/verify_tortoise_surface.sh` fail closed when its required
 ripgrep dependency is unavailable, so the surface/audit gate cannot report a
 false success after `rg` returns command-not-found.
 
-Source repository: TortoiseBots `audit/playerbots-turtle-1.18.1`
+Source repository: TortoiseBots `audit/playerbots-tortoise-1.18.1`
 
 Source commit: `9e9567c996d1cbf5c2c3f5949453499589600d4e` (implementation
 commit; the subsequent audit/provenance edit is documentation-only).
 
-Source files: `tools/verify_turtle_surface.sh`.
+Source files: `tools/verify_tortoise_surface.sh`.
 
 Copied / ported / independently reimplemented: independently implemented as a
 single `command -v rg` prerequisite check before repository setup and all
@@ -531,13 +531,13 @@ meaningful.
 Local validation:
 
 - Missing-ripgrep negative test:
-  `env -i PATH=/tmp/tortoisewow-no-ripgrep /bin/bash tools/verify_turtle_surface.sh`
+  `env -i PATH=/tmp/tortoisewow-no-ripgrep /bin/bash tools/verify_tortoise_surface.sh`
   exited `1` and printed
   `TortoiseBots surface check failed: ripgrep (rg) is required to verify the
   Tortoise module surface`; it did not print `Tortoise WoW 1.18.1 module surface:
   OK`.
 - Full verifier with ripgrep available:
-  `bash tools/verify_turtle_surface.sh` exited `0` and printed
+  `bash tools/verify_tortoise_surface.sh` exited `0` and printed
   `Tortoise WoW 1.18.1 module surface: OK` on the current source tree.
 - `git diff --check` exited `0` for the implementation correction.
 - No C++ build, Docker image rebuild, database migration, gameplay fixture, or
@@ -666,7 +666,7 @@ log out, or delete Headless `WorldSession` objects.
 Local validation:
 
 - `git diff --check` passed for the cleaned core and module candidates.
-- `tools/verify_turtle_surface.sh` passed.
+- `tools/verify_tortoise_surface.sh` passed.
 - Docker native static build passed with `BUILD_PLAYERBOTS=OFF`,
   `MODULES=static`, and `MODULE_TORTOISEBOTS=static`, reaching
   `[100%] Built target mangosd`.
@@ -780,7 +780,7 @@ Reason: support Circle-to-Warlock / Moon-to-Mage style assignments while
 preserving the global core raid-icon slots and the Actions-vs-Roster boundary.
 
 Validation: `lua5.1 tests/regression.lua .`,
-`tools/verify_turtle_surface.sh`, and the cached Docker builder's native
+`tools/verify_tortoise_surface.sh`, and the cached Docker builder's native
 `mangosd` target passed. Runtime logout/relogin persistence and real-client CC
 reapplication remain manual acceptance gates.
 
@@ -817,7 +817,7 @@ and the invalid-target action could starve healer actions. The donor pull state
 also reused `RequestPull` after success, rearming its start phase, and could
 erase the return anchor on timeout before the tank arrived.
 
-Local validation: `tools/verify_turtle_surface.sh`, `git diff --check`, and the
+Local validation: `tools/verify_tortoise_surface.sh`, `git diff --check`, and the
 Docker release build of the native `mangosd` target passed. Focused real-client
 attack/pullback acceptance remains a manual gate.
 
@@ -856,7 +856,7 @@ Reason: legacy Pullback could leave a tank held in stay/follow and wait for a
 later tick, while direct Interrupt/CC execution bypassed prerequisites and
 could lose the reach-then-cast action after the command returned.
 
-Local validation: `git diff --check`, `tools/verify_turtle_surface.sh`, and
+Local validation: `git diff --check`, `tools/verify_tortoise_surface.sh`, and
 `tools/verify_penqle_host_contract.sh` passed after the coherent edit batch.
 No Docker/server/client gameplay run was performed; Pull/Pullback completion,
 interrupt timing, pet behavior, and CC reapplication remain manual gates.
@@ -889,7 +889,7 @@ unreachable even though the mature action graph already owns movement and the
 actual cast-range legality check. No command-side healer or new target-selection
 system was added.
 
-Local validation: `git diff --check`, `tools/verify_turtle_surface.sh`, and
+Local validation: `git diff --check`, `tools/verify_tortoise_surface.sh`, and
 `tools/verify_penqle_host_contract.sh` passed. No Docker/server/client gameplay
 run was performed; the Golden Party healing, mana, dispel, and recovery checks
 remain manual acceptance gates.
@@ -924,7 +924,7 @@ fight the next command. The summon path could also enter its arrival phase
 after a rejected teleport. No new movement controller or core bot seam was
 added.
 
-Local validation: `git diff --check`, `tools/verify_turtle_surface.sh`, and
+Local validation: `git diff --check`, `tools/verify_tortoise_surface.sh`, and
 `tools/verify_penqle_host_contract.sh` passed for the movement change. No
 Docker/server/client gameplay run was performed; Follow/Stay/Come/Summon and
 repeated Golden Party transitions remain manual acceptance gates.
@@ -955,7 +955,7 @@ worldport ACK packets. Without this module-owned replacement, following an
 instance area trigger or another far movement could leave the Player in
 teleport limbo and stop all subsequent movement/combat decisions.
 
-Local validation: `git diff --check`, `tools/verify_turtle_surface.sh`, and
+Local validation: `git diff --check`, `tools/verify_tortoise_surface.sh`, and
 `tools/verify_penqle_host_contract.sh` passed. No Docker/server/client gameplay
 run was performed; instance entry and cross-map movement remain manual gates.
 
@@ -982,7 +982,7 @@ Reason: an out-of-range corpse disappeared before the existing cast action could
   than the corpse value. No new resurrection controller or expansion-only spell
   behavior was introduced.
 
-Local validation: `git diff --check`, `tools/verify_turtle_surface.sh`, and
+Local validation: `git diff --check`, `tools/verify_tortoise_surface.sh`, and
 `tools/verify_penqle_host_contract.sh` passed. No Docker/server/client gameplay
 run was performed; death, resurrection, and post-revive regroup remain manual
 acceptance gates.
@@ -1036,7 +1036,7 @@ the required Tortoise talent/equipment.
 
 Local validation: Tortoise premade links for classes 1/4/5/8 were checked
 against the current talent DBC (all generated links passed structural checks),
-then `git diff --check`, `tools/verify_turtle_surface.sh`, and
+then `git diff --check`, `tools/verify_tortoise_surface.sh`, and
 `tools/verify_penqle_host_contract.sh --core ../tortoise-wow` were run for the
 implementation. No Docker/server/client gameplay run was performed; talent
 preservation, class rotations, CC/AOE interaction, and dungeon healing remain
@@ -1078,7 +1078,7 @@ Copied / ported / independently reimplemented:
 Reason: Fix engine bug where single-mob pulls duplicated targets across shared party member lists, inflating density up to 3–4 and causing bots of all classes to prematurely cast expensive AoE abilities (Rain of Fire, Cleave, Thunder Clap, Blizzard).
 
 Local validation:
-- `tools/verify_turtle_surface.sh`: OK
+- `tools/verify_tortoise_surface.sh`: OK
 - `tools/verify_penqle_host_contract.sh --core ../tortoise-wow`: OK
 - Standalone regression test suites (`tools/test_attackers_aoe_density.py` and `tools/test_attackers_aoe_density.cpp`): 6/6 tests PASS, proving:
   1. 1 mob with duplicate target references yields count = 1, density = 1, AoE inactive.
@@ -1152,7 +1152,7 @@ Copied / ported / independently reimplemented:
 - Weakened Soul 6788 guard (ported intent from mod-playerbots PriestActions.cpp).
 - Hostile Chastise CC wiring (ported intent from Shyalya PriestStrategy CC).
 Reason: P1 shared correctness + first class packets per CLASS_BEHAVIOR_PORT_PLAN.md.
-Local validation: validate_presets.py 242 links 0 failures; git diff --check; verify_turtle_surface.sh OK; verify_penqle_host_contract.sh OK. No docker build (user-owned review).
+Local validation: validate_presets.py 242 links 0 failures; git diff --check; verify_tortoise_surface.sh OK; verify_penqle_host_contract.sh OK. No docker build (user-owned review).
 
 ## Class port Batches 5-7 (2026-09-08, uncommitted)
 Feature: shared cancel-channel registration + Mage Icicles/evocation checks + Hunter KC/Carve/Lacerate + Rogue generator/Surprise/Noxious/boost fix
@@ -1173,7 +1173,7 @@ Copied / ported / independently reimplemented:
 - Surprise Attack reactive gate (mirrors local RiposteCastTrigger); Noxious Assault Combo-gated strike.
 - CombatBoost adrenaline/blade flurry moved to combat triggers (was non-combat dead wiring).
 Reason: Mage/Hunter/Rogue packets per CLASS_BEHAVIOR_PORT_PLAN.md.
-Local validation: git diff --check; validate_presets.py 242 links 0 failures; verify_turtle_surface.sh OK; verify_penqle_host_contract.sh OK. No docker build (user-owned review).
+Local validation: git diff --check; validate_presets.py 242 links 0 failures; verify_tortoise_surface.sh OK; verify_penqle_host_contract.sh OK. No docker build (user-owned review).
 
 ## Class port Batches 8-11 (2026-09-08, uncommitted)
 Feature: Warlock DH/PO + Paladin HS/Bulwark/Exorcism + Druid Berserk/Swiftmend + Shaman 5 talents/Bloodlust
@@ -1189,7 +1189,7 @@ Copied / ported / independently reimplemented:
 - Druid Berserk boost + Swiftmend HoT-gated pair (independent); NEW-stack rejection, Savage Bite rejection, Tree deferral (evidence-based).
 - Shaman EQ/LS/Spirit Link/AS-pair/Bloodlust wiring (independent); totem churn claims rechecked and rebutted with source.
 Reason: Warlock/Paladin/Druid/Shaman packets per CLASS_BEHAVIOR_PORT_PLAN.md.
-Local validation: git diff --check; validate_presets.py 242 links 0 failures; verify_turtle_surface.sh OK; verify_penqle_host_contract.sh OK. No docker build (user-owned review).
+Local validation: git diff --check; validate_presets.py 242 links 0 failures; verify_tortoise_surface.sh OK; verify_penqle_host_contract.sh OK. No docker build (user-owned review).
 
 ## Class port Batch 12 (2026-09-08, uncommitted)
 Feature: five missing talent presets + generator + stance creator registration
@@ -1202,7 +1202,7 @@ Copied / ported / independently reimplemented:
 - Preset generator (independent; explicit acquisition orders, 297/297 links validate). Placements decoded from DBC, not skill-tab inference.
 - Stance creator registration (independent correction of census misread; nodes were live, creators commented).
 Reason: TALENT_BUILDS completion (27/27 specs) + Warrior tank/interrupt correctness.
-Local validation: validate_presets.py 297 links 0 failures; git diff --check; verify_turtle_surface.sh OK; verify_penqle_host_contract.sh OK. No docker build (user-owned review).
+Local validation: validate_presets.py 297 links 0 failures; git diff --check; verify_tortoise_surface.sh OK; verify_penqle_host_contract.sh OK. No docker build (user-owned review).
 
 ## Class port Batches 12-13 (2026-09-08, uncommitted)
 Feature: 5 missing presets + stance creators + 90-row family coverage
@@ -1218,7 +1218,7 @@ Source repository: `tortoise-wow` spell_template + Talent.dbc + spell_rogue.cpp.
 Source files: rogue/ actions/triggers/context/Assassination/Subtlety strategies; priest/ actions/triggers/context/Holy boost.
 Copied / ported / independently reimplemented: finisher/support slot decisions (independent from decoded mechanics); repaired two edit-placement breaks with diff verification.
 Reason: close deferred Tortoise-talent gaps per census.
-Local validation: git diff --check; validate_presets.py 297/0; verify_turtle_surface.sh OK. No docker build (user-owned review).
+Local validation: git diff --check; validate_presets.py 297/0; verify_tortoise_surface.sh OK. No docker build (user-owned review).
 
 ## Class port Batch 15 (2026-09-08, uncommitted)
 Feature: wiring audit gate + Ret/ready-check/master-target fixes + Elemental Mastery + naaru removal

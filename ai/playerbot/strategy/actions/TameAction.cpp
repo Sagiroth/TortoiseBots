@@ -1,4 +1,4 @@
-// Vanilla/Turtle pet-taming command.
+// Vanilla/Tortoise pet-taming command.
 // The host owns the authoritative tame-beast spell effect; this action selects
 // a nearby tameable creature and invokes that normal spell path instead of
 // constructing Pet objects or owning pet lifecycle outside the core.

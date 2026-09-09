@@ -325,18 +325,18 @@ Schema belongs in migrations, not surprise runtime DDL. Missing optional data
 should fail closed or use an explicit supported fallback. Expensive travel/cache
 generation must not start implicitly on the world thread.
 
-The inherited AI config is broader than the currently accepted Turtle product;
+The inherited AI config is broader than the currently accepted Tortoise product;
 a config key existing is not itself a support claim.
 
-## 14. Turtle data contract
+## 14. Tortoise data contract
 
-Turtle-specific legality/content should come from the target core/data where
+Tortoise-specific legality/content should come from the target core/data where
 possible:
 
 - race/class legality from core player data;
 - race/team identity from core data;
 - start locations from `playercreateinfo`;
-- Turtle spells/talents/items from local DBC/SQL;
+- Tortoise spells/talents/items from local DBC/SQL;
 - collection mounts from the target mapping;
 - LFG/meeting-stone and taxi behavior from native core APIs.
 
@@ -367,7 +367,7 @@ role, and the authoritative `Soromeister/LFT` v0.0.3.3 `LFT.allDungeons`
 dungeon `code`/`minLevel`/`maxLevel` range (exact code and normalized display-name
 aliases; see `runtime/LftBotFillService.cpp:FindDungeonLevelRange`).
 Instance names are normalized through the small module alias table; unknown,
-corrupt, and absent (Turtle-only/custom) ranges fail closed and are logged once. There is no average-human +/-5 approximation,
+corrupt, and absent (Tortoise-only/custom) ranges fail closed and are logged once. There is no average-human +/-5 approximation,
 role hook, private-map access, addon-string injection, or DB query per tick.
 Forced roles are cleared on pending exit paths, and reconciliation runs even
 when the fill budget is zero.

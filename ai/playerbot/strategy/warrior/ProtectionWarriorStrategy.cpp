@@ -115,7 +115,7 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         "disarm",
         NextAction::array(0, new NextAction("disarm", ACTION_NORMAL), NULL)));
 
-    // TurtleWoW build additions:
+    // Tortoise build additions:
     //
     // Concussion Blow capstone (Prot 6/1, TalentID 92): 5-sec stun + 100%
     // armor pen + rage gen on cast. Defining caster-interrupt + threat

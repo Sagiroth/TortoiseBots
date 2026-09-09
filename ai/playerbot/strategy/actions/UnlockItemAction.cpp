@@ -1,4 +1,4 @@
-// Vanilla/Turtle lockpicking action.
+// Vanilla/Tortoise lockpicking action.
 // Spell::CanOpenLock remains authoritative for the final skill/lock check;
 // this action only selects a real locked inventory item and starts Pick Lock.
 

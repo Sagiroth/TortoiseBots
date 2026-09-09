@@ -106,7 +106,7 @@ namespace ai
         std::string GetTargetName() override { return "self target"; }
     };
 
-    // TurtleWoW Shadow Priest: Spirit Tap proc-window awareness.
+    // Tortoise Shadow Priest: Spirit Tap proc-window awareness.
     // Spirit Tap talent 201 (5/5) procs on Mind Blast crit OR target kill,
     // applying buff "Spirit Tap" (spell 15271) for ~30 sec. The buff gives
     // +100% Spirit + 50% mana regen while casting.
@@ -131,7 +131,7 @@ namespace ai
         }
     };
 
-    // TurtleWoW Shadow Priest: Shadow Weaving stack-aware tracking.
+    // Tortoise Shadow Priest: Shadow Weaving stack-aware tracking.
     // Shadow Weaving talent 212 (5/5) applies "Shadow Vulnerability" debuff
     // (spell 15258) on the target via Shadow spell hits. Stacks up to 5x at
     // +3% Shadow damage taken per stack (= +15% at full stacks).

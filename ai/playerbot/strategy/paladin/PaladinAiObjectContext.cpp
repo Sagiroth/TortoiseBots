@@ -289,7 +289,7 @@ namespace ai
                 creators["crusader strike"] = [](PlayerbotAI* ai) { return new CrusaderStrikeTrigger(ai); };
                 creators["holy strike"] = [](PlayerbotAI* ai) { return new HolyStrikeTrigger(ai); };
                 creators["bulwark of the righteous"] = [](PlayerbotAI* ai) { return new BulwarkTrigger(ai); };
-                // TurtleWoW Holy Paladin Daybreak target-prioritization:
+                // Tortoise Holy Paladin Daybreak target-prioritization:
                 creators["party member has daybreak"] = [](PlayerbotAI* ai) { return new PartyMemberHasDaybreakTrigger(ai); };
             }
         };
@@ -299,7 +299,7 @@ namespace ai
         public:
             ValueFactoryInternal()
             {
-                // TurtleWoW Holy Paladin Daybreak target-prioritization:
+                // Tortoise Holy Paladin Daybreak target-prioritization:
                 creators["party member with daybreak"] = [](PlayerbotAI* ai) { return new PartyMemberWithDaybreakValue(ai); };
             }
         };

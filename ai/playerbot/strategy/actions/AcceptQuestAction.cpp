@@ -24,11 +24,11 @@ bool AcceptAllQuestsAction::ProcessQuest(Player* requester, Quest const* quest, 
         return false;
 
     // Tortoise-wow rogue-only quests with excessive walking and poor reward.
-    static const std::unordered_set<uint32> turtleOnlyBlacklist = {
+    static const std::unordered_set<uint32> tortoiseOnlyBlacklist = {
         50000, // Professor Malkovich
         50003, // Professor Papucho
     };
-    if (turtleOnlyBlacklist.count(quest->GetQuestId()))
+    if (tortoiseOnlyBlacklist.count(quest->GetQuestId()))
         return false;
 
     if (AcceptQuest(requester, quest, questGiver->getObjectGuid()))

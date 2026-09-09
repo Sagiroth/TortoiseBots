@@ -169,7 +169,7 @@ bool PlayerbotAIConfig::Initialize()
     sightDistance = config.GetFloatDefault("AiPlayerbot.SightDistance", 75.0f);
     spellDistance = config.GetFloatDefault("AiPlayerbot.SpellDistance", 25.0f);
     shootDistance = config.GetFloatDefault("AiPlayerbot.ShootDistance", 25.0f);
-    // 125 was three times the reach of any heal in this Vanilla/Turtle realm, and it fed
+    // 125 was three times the reach of any heal in this Vanilla/Tortoise realm, and it fed
     // target selection, the out-of-range trigger and the approach action alike -
     // so a healer sixty yards away believed it was in position, never closed the
     // gap, and every cast failed.
@@ -357,7 +357,7 @@ bool PlayerbotAIConfig::Initialize()
     auto isAvailableRace = [](uint8 cls, uint8 race)
     {
         // Character creation is the authoritative class/race contract. This
-        // includes Turtle rows such as Goblin and High Elf and avoids making
+        // includes Tortoise rows such as Goblin and High Elf and avoids making
         // the bot module maintain a second expansion-specific matrix.
         return sObjectMgr.GetPlayerInfo(race, cls) != nullptr;
     };
@@ -678,9 +678,9 @@ bool PlayerbotAIConfig::Initialize()
     llmMaxSimultaniousGenerations = config.GetIntDefault("AiPlayerbot.LLMMaxSimultaniousGenerations", 100);
 
 
-    llmPrePrompt = config.GetStringDefault("AiPlayerbot.LLMPrePrompt", "You are a roleplaying character in Vanilla/Turtle WoW 1.18.1. Your name is <bot name>. The <other type> <other name> is speaking to you <channel name> and is an <other gender> <other race> <other class> of level <other level>. You are level <bot level> and play as a <bot gender> <bot race> <bot class> that is currently in <bot subzone> <bot zone>. Answer as a roleplaying character. Limit responses to 100 characters.");
+    llmPrePrompt = config.GetStringDefault("AiPlayerbot.LLMPrePrompt", "You are a roleplaying character in Tortoise 1.18.1 Core from Penqle. Your name is <bot name>. The <other type> <other name> is speaking to you <channel name> and is an <other gender> <other race> <other class> of level <other level>. You are level <bot level> and play as a <bot gender> <bot race> <bot class> that is currently in <bot subzone> <bot zone>. Answer as a roleplaying character. Limit responses to 100 characters.");
 
-    llmPreRpgPrompt = config.GetStringDefault("AiPlayerbot.LLMRpgPrompt", "In Vanilla/Turtle WoW 1.18.1 in <bot zone> <bot subzone> stands <bot type> <bot name> a level <bot level> <bot gender> <bot race> <bot class>."
+    llmPreRpgPrompt = config.GetStringDefault("AiPlayerbot.LLMRpgPrompt", "In Tortoise 1.18.1 Core from Penqle in <bot zone> <bot subzone> stands <bot type> <bot name> a level <bot level> <bot gender> <bot race> <bot class>."
         " Standing nearby is <unit type> <unit name> <unit subname> a level <unit level> <unit gender> <unit race> <unit faction> <unit class>. Answer as a roleplaying character. Limit responses to 100 characters.");
 
 
@@ -1260,7 +1260,7 @@ void PlayerbotAIConfig::LoadTalentSpecs()
     else
     {
         if (maxSpecLevel < DEFAULT_MAX_LEVEL && randomBotMaxLevel < DEFAULT_MAX_LEVEL)
-            sLog.outErrorDb("!!!!!!!!!!! randomBotMaxLevel and the talent specs are below the Vanilla/Turtle level cap. Please check the configuration.");
+            sLog.outErrorDb("!!!!!!!!!!! randomBotMaxLevel and the talent specs are below the Vanilla/Tortoise level cap. Please check the configuration.");
 
     }
 }

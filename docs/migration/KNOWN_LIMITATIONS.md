@@ -43,4 +43,4 @@ never closes a gate.
 - Death Knight, glyphs, vehicles, Arena mechanics, Eye/Isle maps (expansion).
 - Working LLM generation (disabled in both donors; non-LLM chat required).
 - WotLK/TBC-only spells and mechanics (per-class audit lists).
-- Guild vaults (no native Turtle storage; ZERO-false both sides).
+- Guild vaults (no native Tortoise storage; ZERO-false both sides).
