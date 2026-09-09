@@ -6,6 +6,8 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../behavior/PlayerConvenience.h"
 // pi-lens-ignore: clang:pp_file_not_found
+#include "../runtime/AhMarketService.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "../runtime/PlayerbotAIStorage.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../ai/playerbot/PlayerbotAI.h"
@@ -36,6 +38,7 @@
 #include "Group/Group.h"
 #include <cctype>
 #include <cstring>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -1549,6 +1552,134 @@ static bool HandleAction(ChatHandler* handler, char const* args)
     return true;
 }
 
+static bool HandleAhBot(ChatHandler* handler, char const* args)
+{
+    if (!handler)
+        return false;
+
+    Player* requester = Requester(handler);
+    if (requester && !IsBotAdministrator(requester))
+    {
+        handler->PSendSysMessage("You do not have permission to manage the AH bot.");
+        return true;
+    }
+
+    std::string argStr = args ? args : "";
+    argStr = Trim(argStr);
+    if (argStr.empty() || argStr == "help")
+    {
+        handler->PSendSysMessage("AHBot commands:");
+        handler->PSendSysMessage("  .bot ah status - Display synthetic AH engine status and telemetry");
+        handler->PSendSysMessage("  .bot ah reload - Reload price overrides and bans from ahbot_items");
+        handler->PSendSysMessage("  .bot ah rebuild [all] - Restart market pass (all = expire active unbid synthetic items)");
+        handler->PSendSysMessage("  .bot ah item <id> - View override for item");
+        handler->PSendSysMessage("  .bot ah item <id> reset - Remove override for item");
+        handler->PSendSysMessage("  .bot ah item <id> <value> [chance] [min] [max] - Set override (0 0 = blacklist)");
+        return true;
+    }
+
+    std::stringstream ss(argStr);
+    std::string subCmd;
+    ss >> subCmd;
+    for (char& c : subCmd) c = tolower(c);
+
+    if (subCmd == "status")
+    {
+        std::string status = AhMarketService::Instance().GetStatus();
+        handler->PSendSysMessage("%s", status.c_str());
+        return true;
+    }
+
+    if (subCmd == "reload")
+    {
+        AhMarketService::Instance().ReloadOverrides();
+        handler->PSendSysMessage("AHBot overrides reloaded from database.");
+        return true;
+    }
+
+    if (subCmd == "rebuild")
+    {
+        std::string mode;
+        ss >> mode;
+        for (char& c : mode) c = tolower(c);
+        bool all = (mode == "all");
+        AhMarketService::Instance().RebuildMarket(all);
+        if (all)
+            handler->PSendSysMessage("AHBot market rebuild scheduled (expiring active unbid synthetic listings).");
+        else
+            handler->PSendSysMessage("AHBot market rebuild scheduled.");
+        return true;
+    }
+
+    if (subCmd == "item")
+    {
+        uint32_t itemId = 0;
+        if (!(ss >> itemId) || itemId == 0)
+        {
+            handler->PSendSysMessage("Usage: .bot ah item <id> [value [chance [min [max]]]] | reset");
+            return true;
+        }
+
+        std::string nextToken;
+        if (!(ss >> nextToken))
+        {
+            if (AhMarketService::Instance().IsItemBlacklisted(itemId))
+            {
+                handler->PSendSysMessage("AHBot item %u is blacklisted/banned.", itemId);
+            }
+            else
+            {
+                handler->PSendSysMessage("AHBot item %u has no blacklist or has an active price override.", itemId);
+            }
+            return true;
+        }
+
+        for (char& c : nextToken) c = tolower(c);
+        if (nextToken == "reset")
+        {
+            AhMarketService::Instance().ResetItemOverride(itemId);
+            handler->PSendSysMessage("AHBot item %u override reset.", itemId);
+            return true;
+        }
+
+        uint32_t value = 0;
+        try {
+            value = std::stoul(nextToken);
+        } catch (...) {
+            handler->PSendSysMessage("Invalid value '%s' for item override.", nextToken.c_str());
+            return true;
+        }
+
+        uint32_t chance = 100;
+        uint32_t minAmount = 1;
+        uint32_t maxAmount = 1;
+
+        if (ss >> chance)
+        {
+            if (ss >> minAmount)
+            {
+                if (!(ss >> maxAmount))
+                    maxAmount = minAmount;
+            }
+        }
+
+        AhMarketService::Instance().SetItemOverride(itemId, value, chance, minAmount, maxAmount);
+        if (value == 0 && chance == 0)
+        {
+            handler->PSendSysMessage("AHBot item %u blacklisted (value=0, chance=0).", itemId);
+        }
+        else
+        {
+            handler->PSendSysMessage("AHBot item %u override set: value=%u copper, chance=%u%%, amount=%u..%u.",
+                itemId, value, chance, minAmount, maxAmount);
+        }
+        return true;
+    }
+
+    handler->PSendSysMessage("Unknown AHBot command '%s'. Try .bot ah help", subCmd.c_str());
+    return true;
+}
+
 // pi-lens-ignore: clang:incomplete_member_access,clang:unknown_typename
 bool HandleChatCommand(ChatHandler* handler, char const* args)
 {
@@ -1559,7 +1690,7 @@ bool HandleChatCommand(ChatHandler* handler, char const* args)
     while (*args == ' ' || *args == '\t') ++args;
     if (!*args)
     {
-        handler->PSendSysMessage("Usage: .bot add/remove/logout/roster/action/follow/invite/uninvite/stay/guard/free/ready/attack/interrupt/formation/list/stats/status/pullback/summon/command");
+        handler->PSendSysMessage("Usage: .bot add/remove/logout/roster/action/follow/invite/uninvite/stay/guard/free/ready/attack/interrupt/formation/list/stats/status/pullback/summon/command/ah");
         return true;
     }
 
@@ -1577,6 +1708,8 @@ bool HandleChatCommand(ChatHandler* handler, char const* args)
     // Normalize cmd to lowercase
     for (char& c : cmd) c = tolower(c);
 
+    if (cmd == "ah" || cmd == "ahbot")
+        return HandleAhBot(handler, subArgs);
     if (cmd == "action")
         return HandleAction(handler, subArgs);
     if (cmd == "add")
@@ -1632,6 +1765,13 @@ bool TryHandleBotCommand(ChatHandler* handler, char const* text)
 {
     if (!handler || !text)
         return false;
+    // Check for ".ahbot" alias
+    if (strncmp(text, "ahbot", 5) == 0 && (text[5] == '\0' || text[5] == ' ' || text[5] == '\t'))
+    {
+        const char* args = text + 5;
+        while (*args == ' ' || *args == '\t') ++args;
+        return HandleAhBot(handler, args);
+    }
     // text is the full command after '.' — e.g., "bot add Dudette"
     // We only handle "bot ..." here; return false to let normal handler continue.
     if (strncmp(text, "bot", 3) != 0)
