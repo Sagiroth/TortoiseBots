@@ -1,4 +1,5 @@
 #include "BattlegroundQueueService.h"
+#include "BotActivityLease.h"
 
 // pi-lens-ignore: clang:pp_file_not_found
 #include "BotManager.h"
@@ -183,6 +184,9 @@ bool BattlegroundQueueService::IsEligible(::Player* bot) const
     if (Map* map = bot->GetMap())
         if (map->IsDungeon() || map->IsBattleGround())
             return false;
+    // Lease arbitration (issue #89): host guards above stay authoritative.
+    if (!BotActivityLeaseManager::Instance().IsAvailableForBackground(bot->GetGUIDLow()))
+        return false;
     // Must have at least one WSG/AB/AV type accessible by level.
     bool hasEligibleType = false;
     for (uint32 i = 1; i < MAX_BATTLEGROUND_QUEUE_TYPES; ++i)
@@ -269,12 +273,27 @@ void BattlegroundQueueService::PruneOwnedQueueSet()
                 liveQueued.insert(EncodeOwnedKey(p->GetObjectGuid().GetCounter(), uint32_t(q)));
         }
     }
+    std::vector<uint64_t> pruned;
     for (auto it = m_ownedQueuedGuids.begin(); it != m_ownedQueuedGuids.end(); )
     {
         if (liveQueued.find(*it) == liveQueued.end())
+        {
+            pruned.push_back(*it);
             it = m_ownedQueuedGuids.erase(it);
+        }
         else
             ++it;
+    }
+    // Release the BgQueued lease only when the guid holds no other live
+    // owned queue entry (leases are per-bot, ownership is per queueType).
+    for (uint64_t key : pruned)
+    {
+        uint32_t guidLow = uint32_t(key >> 32);
+        bool stillOwned = false;
+        for (uint64_t live : m_ownedQueuedGuids)
+            if (uint32_t(live >> 32) == guidLow) { stillOwned = true; break; }
+        if (!stillOwned)
+            BotActivityLeaseManager::Instance().Release(guidLow, BotActivity::BgQueued);
     }
 }
 
@@ -319,6 +338,31 @@ bool BattlegroundQueueService::TryQueue(::Player* bot, uint32 queueTypeValue)
         }
     }
 
+    // Atomic all-or-nothing BgQueued acquisition (30-minute lease, issue #89).
+    // A Trading/LFT/PlayerMaster member aborts the whole group queue with
+    // rollback so no partial queueing occurs.
+    std::vector<uint32_t> leaseGuids;
+    leaseGuids.push_back(bot->GetObjectGuid().GetCounter());
+    if (joinAsGroup)
+    {
+        if (Group* grp = bot->GetGroup())
+            for (auto const& slot : grp->GetMemberSlots())
+                if (slot.guid.GetCounter() != bot->GetObjectGuid().GetCounter())
+                    leaseGuids.push_back(slot.guid.GetCounter());
+    }
+    std::vector<uint32_t> acquired;
+    for (uint32_t guidLow : leaseGuids)
+    {
+        if (!BotActivityLeaseManager::Instance().TryAcquire(guidLow, BotActivity::BgQueued, 1800000))
+        {
+            for (uint32_t done : acquired)
+                BotActivityLeaseManager::Instance().Release(done, BotActivity::BgQueued);
+            return false;
+        }
+        acquired.push_back(guidLow);
+    }
+    // Leases held for the atomic group attempt; core rejection below rolls back.
+
     // Native command path via WorldSession::HandleBattlemasterJoinOpcode
     // with guid 1337 bypass (core queued-via-command check) so no nearby
     // battlemaster unit is required. Uses direct handler to avoid headless
@@ -333,6 +377,8 @@ bool BattlegroundQueueService::TryQueue(::Player* bot, uint32 queueTypeValue)
     if (!mapId)
     {
         sLog.outString("TortoiseBots: BG auto-queue no map for bgType %u for bot %s", bgType, bot->GetName());
+        for (uint32_t done : acquired)
+            BotActivityLeaseManager::Instance().Release(done, BotActivity::BgQueued);
         return false;
     }
     packet << guid << mapId << instanceId << joinAsGroup;
@@ -356,9 +402,10 @@ bool BattlegroundQueueService::TryQueue(::Player* bot, uint32 queueTypeValue)
     if (!bot->InBattleGroundQueueForBattleGroundQueueType(queueType))
     {
         sLog.outString("TortoiseBots: BG auto-queue %s (%s) not queued (core rejected joinAsGroup=%u)", bot->GetName(), name, joinAsGroup);
+        for (uint32_t done : acquired)
+            BotActivityLeaseManager::Instance().Release(done, BotActivity::BgQueued);
         return false;
     }
-
     // In-memory ownership as (guidLow, queueType) pairs: track only GUIDs
     // the core actually queued for this queueType so an excluded
     // bracket/offline group member is never mistaken for a service-owned
@@ -375,6 +422,16 @@ bool BattlegroundQueueService::TryQueue(::Player* bot, uint32 queueTypeValue)
                 if (member && member->InBattleGroundQueueForBattleGroundQueueType(queueType))
                     m_ownedQueuedGuids.insert(EncodeOwnedKey(slot.guid.GetCounter(), uint32_t(queueType)));
             }
+        // Release leases for group members the core did not actually queue
+        // (excluded bracket/offline) so no ghost BgQueued lingers to timeout.
+        for (uint32_t guidLow : acquired)
+        {
+            bool owned = false;
+            for (uint64_t key : m_ownedQueuedGuids)
+                if (uint32_t(key >> 32) == guidLow) { owned = true; break; }
+            if (!owned)
+                BotActivityLeaseManager::Instance().Release(guidLow, BotActivity::BgQueued);
+        }
     }
 
     sLog.outString("TortoiseBots: BG auto-queue %s (%s) level %u team %u guid %s%s",
@@ -428,8 +485,12 @@ void BattlegroundQueueService::ReconcileMasterQueue()
             packet << mapId << uint8(0);
             sess->HandleBattleFieldPortOpcode(packet);
             if (!bot->InBattleGroundQueueForBattleGroundQueueType(q))
+            {
                 m_ownedQueuedGuids.erase(key);
-            sLog.outString("TortoiseBots: BG auto-queue reconcile %s queued but master %s active -> left queue %u (native port 0)", bot->GetName(), ai->GetMaster() ? ai->GetMaster()->GetName() : "?", q);
+                // Defensive lease release; no-op if ClaimForMaster already
+                // moved the bot to PlayerMaster via active eviction.
+                BotActivityLeaseManager::Instance().Release(bot->GetObjectGuid().GetCounter(), BotActivity::BgQueued);
+            }
         }
     }
     PruneOwnedQueueSet();
@@ -518,9 +579,44 @@ void BattlegroundQueueService::Shutdown()
 {
     if (!m_initialized)
         return;
+    for (uint64_t key : m_ownedQueuedGuids)
+        BotActivityLeaseManager::Instance().Release(uint32_t(key >> 32), BotActivity::BgQueued);
     m_ownedQueuedGuids.clear();
     m_initialized = false;
     m_elapsedMs = 0;
+}
+
+void BattlegroundQueueService::OnLeaseEvicted(uint32_t guidLow)
+{
+    if (!guidLow)
+        return;
+    ObjectGuid guid(HIGHGUID_PLAYER, guidLow);
+    Player* bot = sObjectAccessor.FindPlayer(guid);
+    // Cancel every owned native queue entry for this guid via the existing
+    // native leave path, then prune ownership. Never touches the lease map.
+    for (uint32 i = 1; i < MAX_BATTLEGROUND_QUEUE_TYPES; ++i)
+    {
+        BattleGroundQueueTypeId q = BattleGroundQueueTypeId(i);
+        uint64_t key = EncodeOwnedKey(guidLow, uint32_t(q));
+        if (m_ownedQueuedGuids.find(key) == m_ownedQueuedGuids.end())
+            continue;
+        BattleGroundTypeId bgType = sServerFacade.BGTemplateId(q);
+        if (bgType != BATTLEGROUND_WS && bgType != BATTLEGROUND_AB && bgType != BATTLEGROUND_AV)
+            continue;
+        if (bot && bot->InBattleGroundQueueForBattleGroundQueueType(q))
+        {
+            BattleGround* bg = sBattleGroundMgr.GetBattleGroundTemplate(bgType);
+            uint32 mapId = bg ? bg->GetMapId() : 0;
+            if (mapId)
+            {
+                WorldPacket packet(CMSG_BATTLEFIELD_PORT, 8);
+                packet << mapId << uint8(0);
+                if (WorldSession* sess = bot->GetSession())
+                    sess->HandleBattleFieldPortOpcode(packet);
+            }
+        }
+        m_ownedQueuedGuids.erase(key);
+    }
 }
 
 } // namespace TortoiseBots

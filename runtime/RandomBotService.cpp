@@ -1,4 +1,5 @@
 #include "RandomBotService.h"
+#include "BotActivityLease.h"
 
 #include "BotManager.h"
 #include "GearSeedingGuard.h"
@@ -804,6 +805,7 @@ void RandomBotService::RemoveExpiredBots(uint32_t diff)
         sLog.outString("TortoiseBots: native random bot %s reached its online lifetime; removing",
             candidate.characterGuid.GetString().c_str());
         BotManager::Instance().RemoveBot(candidate.characterGuid, true);
+        BotActivityLeaseManager::Instance().Release(candidate.characterGuid.GetCounter(), BotActivity::Grinding);
         m_ageMs[i] = 0;
     }
 }
@@ -816,7 +818,10 @@ void RandomBotService::MaintainOnlinePool()
     {
         for (Candidate const& candidate : m_candidates)
             if (BotManager::Instance().IsRandomBot(candidate.characterGuid))
+            {
                 BotManager::Instance().RemoveBot(candidate.characterGuid, true);
+                BotActivityLeaseManager::Instance().Release(candidate.characterGuid.GetCounter(), BotActivity::Grinding);
+            }
         return;
     }
 
@@ -863,11 +868,13 @@ void RandomBotService::MaintainOnlinePool()
             }
             if (BotSessionAdapter::GetHeadlessSessionState(pinnedCandidate->characterGuid) != HeadlessSessionState::NotFound)
                 continue;
-
             if (BotManager::Instance().AddRandomBot(pinnedCandidate->accountId, pinnedCandidate->characterGuid))
             {
                 ++online;
                 ++added;
+                // Indefinite Grinding lease for autonomous random bots; structured
+                // work (LFT/BG/Trading) or a human master preempts it.
+                BotActivityLeaseManager::Instance().TryAcquire(pinnedCandidate->characterGuid.GetCounter(), BotActivity::Grinding, 0);
                 sLog.outString("TortoiseBots: pinned random bot %s queued on account %u (prioritized)",
                     pinnedCandidate->characterGuid.GetString().c_str(), pinnedCandidate->accountId);
             }
@@ -899,6 +906,7 @@ void RandomBotService::MaintainOnlinePool()
         {
             ++online;
             ++added;
+            BotActivityLeaseManager::Instance().TryAcquire(candidate.characterGuid.GetCounter(), BotActivity::Grinding, 0);
             sLog.outString("TortoiseBots: native random bot %s queued on account %u",
                 candidate.characterGuid.GetString().c_str(), candidate.accountId);
         }
@@ -988,6 +996,7 @@ void RandomBotService::Shutdown()
     {
         if (BotManager::Instance().IsRandomBot(candidate.characterGuid))
             BotManager::Instance().RemoveBot(candidate.characterGuid, true);
+        BotActivityLeaseManager::Instance().Release(candidate.characterGuid.GetCounter(), BotActivity::Grinding);
     }
 
     m_started = false;

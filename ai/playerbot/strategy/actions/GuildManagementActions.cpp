@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "GuildManagementActions.h"
 #include "playerbot/ServerFacade.h"
+#include "runtime/BotActivityLease.h"
 
 using namespace ai;
 
@@ -228,6 +229,11 @@ bool GuildManageNearbyAction::Execute(Event& event)
 
 bool GuildManageNearbyAction::isUseful()
 {
+    // Lease gate (issue #89): Idle/Grinding/PlayerMaster only.
+    TortoiseBots::BotActivity activity = TortoiseBots::BotActivityLeaseManager::Instance().GetActivity(bot->GetGUIDLow());
+    if (activity != TortoiseBots::BotActivity::Idle && activity != TortoiseBots::BotActivity::Grinding &&
+        activity != TortoiseBots::BotActivity::PlayerMaster)
+        return false;
     if (!bot->GetGuildId())
         return false;
 

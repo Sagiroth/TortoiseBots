@@ -1,4 +1,5 @@
 #include "AhMarketService.h"
+#include "BotActivityLease.h"
 
 // pi-lens-ignore: clang:pp_file_not_found
 #include "BotManager.h"
@@ -121,6 +122,15 @@ bool AhMarketService::IsBotAvailableForMarket(Player* bot) const
         return false;
     return true;
 }
+void AhMarketService::OnLeaseEvicted(uint32_t guidLow)
+{
+    if (!guidLow)
+        return;
+    // Clear the per-bot attempt cooldown so the bot rejoins the normal
+    // market cadence instead of sitting out an evicted attempt.
+    sRandomBotFacade.SetValue(guidLow, "ahMarketLastPost", 0, "", 0);
+}
+
 
 void AhMarketService::EnsurePositionsLoaded()
 {
@@ -817,6 +827,10 @@ bool AhMarketService::BuyAuctionCandidate(AuctionEntry* auction, AuctionHouseObj
             continue;
         if (!sRandomBotFacade.IsRandomBot(bot))
             continue;
+        // Lease arbitration: never pull a queued/trading/master-claimed bot
+        // into a buyer bid. Host guards above stay authoritative.
+        if (!BotActivityLeaseManager::Instance().IsAvailableForBackground(bot->GetGUIDLow()))
+            continue;
         if (auction->owner == bot->GetGUIDLow())
             continue;
         if (auction->ownerAccount == bot->GetSession()->GetAccountId())
@@ -1265,6 +1279,12 @@ void AhMarketService::Update(uint32_t diff)
             continue;
         if (!PlayerbotAIStorage::Instance().GetAI(bot))
             continue;
+        // Lease arbitration (issue #89): host guards above stay authoritative.
+        // Trading holders stay eligible so a teleported bot keeps its lease
+        // across travel ticks until Posted/Failed or the 2-minute timeout.
+        BotActivity activity = BotActivityLeaseManager::Instance().GetActivity(bot->GetGUIDLow());
+        if (activity != BotActivity::Idle && activity != BotActivity::Grinding && activity != BotActivity::Trading)
+            continue;
         eligible.push_back(bot);
     }
     if (eligible.empty())
@@ -1286,13 +1306,22 @@ void AhMarketService::Update(uint32_t diff)
     {
         size_t idx = (start + offset) % eligible.size();
         Player* bot = eligible[idx];
+        uint32_t guidLow = bot->GetGUIDLow();
+        // 2-minute Trading lease covers teleport travel + posting.
+        if (!BotActivityLeaseManager::Instance().TryAcquire(guidLow, BotActivity::Trading, 120000))
+            continue;
         bool allowTeleport = teleported < batch;
         PostResult res = TryPostForBot(bot, allowTeleport);
         ++attempted;
         if (res == PostResult::Posted)
+        {
             ++posted;
+            BotActivityLeaseManager::Instance().Release(guidLow, BotActivity::Trading);
+        }
         else if (res == PostResult::Teleported)
             ++teleported;
+        else
+            BotActivityLeaseManager::Instance().Release(guidLow, BotActivity::Trading);
     }
 
     if (posted || teleported)

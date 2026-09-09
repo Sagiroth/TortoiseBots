@@ -29,6 +29,11 @@ public:
     void Update(uint32_t diff);
     void Shutdown();
 
+    // Activity-lease eviction hook (issue #89): synchronously leaves the
+    // native LFT queue, clears the forced role, and drops pending tracking.
+    // Must not touch the lease map; the manager owns the transition.
+    void OnLeaseEvicted(uint32_t guidLow);
+
 private:
     LftBotFillService() = default;
     ~LftBotFillService() = default;
