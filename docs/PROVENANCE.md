@@ -1275,3 +1275,8 @@ Local validation: raw git diff per file vs HEAD; wiring gate 0/0; diff --check; 
 Feature: preset/dispatch integration audit (read-only)
 Reason: prove new presets resolve end-to-end without code changes.
 Local validation: code-read evidence (config loader, factory roll, AiFactory tabs, update maps); full battery green. No docker build (user-owned review).
+- Engine Bounded Failure Backoff + Transition Invalidation (issue #84):
+  - Ported failure-cache intent from `playerbots-references/shyalya-tortoise-wow` (`Engine.cpp` failure key/backoff/TTL/eviction, background-only gating, position-change clearing). Did NOT port its core-coupled transition generations (`GetMapWorkGeneration`/`GetTransitionGeneration` absent from Penqle core); transitions tracked module-side via `GetMapId` snapshots, `IsBeingTeleported`/`IsInWorld` guards, and local queue drain (no `Reset()`/`Init()` interplay, strategies/triggers untouched).
+  - New header-only policy unit `ai/playerbot/strategy/ActionFailureBackoff.h` (pure std, no core types) wired into `Engine::{FailureKey,AllowBackgroundRetry,IsFailureBackedOff,RecordFailure,ClearActionFailures,RefreshFailureContext,DrainQueue}`; explicit `ExecuteAction` path clears backoff (acts without delay by design). Gating additionally exempts owned bots (`IsOwnedBot`) per the issue's unowned-only scope.
+  - Config `AiPlayerbot.FailedActionRetry{Base,Max,CacheTtl,CacheMaxEntries}` with Shyalya defaults (250/2000/30000/64); zero base/max disables.
+  - Regression: `tools/test_engine_failure_backoff.cpp` (g++-compiled, 26 checks: growth/cap/saturation, success-clear, TTL prune, stalest-first eviction, disable, key separation).

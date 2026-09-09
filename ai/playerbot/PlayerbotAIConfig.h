@@ -342,6 +342,11 @@ public:
 
     BotSelfBotLevel selfBotLevel;
     uint32 iterationsPerTick;
+    // Issue #84: bounded failure backoff tuning. Zero base/max disables.
+    uint32 failedActionRetryBaseMs;
+    uint32 failedActionRetryMaxMs;
+    uint32 failedActionCacheTtlMs;
+    uint32 failedActionCacheMaxEntries;
 
     std::string autoPickReward;
     bool autoEquipUpgradeLoot;
