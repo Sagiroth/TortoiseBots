@@ -237,23 +237,25 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
     bool actionExecuted = false;
     ActionBasket* basket = NULL;
 
-    // Issue #84: never run queued work while phased out of the world, and
-    // invalidate stale work on map transitions. Queue drain is local: no
-    // Reset()/Init() interplay, strategies and triggers are untouched.
+    // Issue #84 (P2): never run queued work while phased out of the world.
+    // Arrival after any absence, a new map, or an impossible position jump
+    // drains stale queued work locally: no Reset()/Init() interplay,
+    // strategies and triggers are untouched. Walking across zone lines
+    // moves continuously and never drains.
     Player* const tickBot = ai->GetBot();
-    if (!tickBot || !tickBot->IsInWorld() || tickBot->IsBeingTeleported())
+    if (!tickBot)
         return false;
     uint32_t const tickMapId = tickBot->GetMapId();
-    if (!mapInit || tickMapId != lastMapId)
+    TransitionTracker::Event const transition = transitions.Update(tickBot->IsInWorld(),
+        tickBot->IsBeingTeleported(), tickMapId,
+        tickBot->GetPositionX(), tickBot->GetPositionY(), tickBot->GetPositionZ());
+    if (transition == TransitionTracker::AWAY)
+        return false;
+    if (transition != TransitionTracker::NONE)
     {
-        if (mapInit)
-        {
-            LogAction("map transition %u -> %u: draining %s queue", lastMapId, tickMapId, BotStateName(state));
-            DrainQueue();
-            actionFailures.ClearAll();
-        }
-        lastMapId = tickMapId;
-        mapInit = true;
+        LogAction("transition %d on map %u: draining %s queue", (int)transition, tickMapId, BotStateName(state));
+        DrainQueue();
+        actionFailures.ClearAll();
     }
     RefreshFailureContext();
 
@@ -368,6 +370,18 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                             }
                         }
                     }
+                    // Issue #84 (P1): the backoff gate runs before
+                    // prerequisites and the possibility check. A backing-off
+                    // background action is dropped here (not executed, no
+                    // alternatives, no prereq work). Its trigger re-fires
+                    // while the cause persists, so execution resumes on
+                    // expiry without queue churn.
+                    if (IsFailureBackedOff(action, event))
+                    {
+                        LogAction("A:%s - BACKOFF src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
+                        delete actionNode;
+                        continue;
+                    }
 
                     ActionBasket* peekAction = queue.Peek();
                     if (relevance < oldRelevance && peekAction && peekAction->getRelevance() > relevance) //Relevance changed. Try again.
@@ -393,16 +407,6 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 
                     if (isPossible && relevance)
                     {
-                        // Issue #84: a backing-off background action is dropped
-                        // (not executed, no alternatives). Its trigger re-fires
-                        // while the cause persists, so execution resumes on
-                        // expiry without queue churn.
-                        if (IsFailureBackedOff(action, event))
-                        {
-                            LogAction("A:%s - BACKOFF src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
-                            delete actionNode;
-                            continue;
-                        }
                         // E2E green: PerformanceMonitor stub
                         actionExecuted = ListenAndExecute(action, event);
 // E2E green: pmo stub

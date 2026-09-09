@@ -134,4 +134,66 @@ namespace ai
         std::map<std::string, ActionFailureState> failures;
         uint32_t lastPruneMs = 0;
     };
+
+    // Module-owned transition tracking (issue #84, P2). The donor keys this
+    // off core generation counters absent from Penqle core, so the Engine
+    // derives the same signal from map id + position continuity instead:
+    // a bot that was unreachable and is back, on a new map, or jumped an
+    // impossible distance between ticks has transitioned, and queued work
+    // from before is stale. Walking across zone lines moves continuously
+    // and never trips the jump detector.
+    class TransitionTracker
+    {
+    public:
+        enum Event { NONE, AWAY, ARRIVED, MAP_CHANGED, JUMPED };
+        static float constexpr JumpThresholdYd = 100.0f;
+
+        Event Update(bool inWorld, bool teleporting, uint32_t mapId, float x, float y, float z)
+        {
+            if (!inWorld || teleporting)
+            {
+                wasAway = true;
+                return AWAY;
+            }
+            if (!initialized)
+            {
+                Snapshot(mapId, x, y, z);
+                initialized = true;
+                wasAway = false;
+                return NONE;
+            }
+            if (wasAway)
+            {
+                Snapshot(mapId, x, y, z);
+                wasAway = false;
+                return ARRIVED;
+            }
+            if (mapId != lastMap)
+            {
+                Snapshot(mapId, x, y, z);
+                return MAP_CHANGED;
+            }
+            float dx = x - lastX, dy = y - lastY;
+            if (dx * dx + dy * dy > JumpThresholdYd * JumpThresholdYd)
+            {
+                Snapshot(mapId, x, y, z);
+                return JUMPED;
+            }
+            Snapshot(mapId, x, y, z);
+            return NONE;
+        }
+
+        uint32_t LastMap() const { return lastMap; }
+
+    private:
+        void Snapshot(uint32_t mapId, float x, float y, float z)
+        {
+            lastMap = mapId; lastX = x; lastY = y; lastZ = z;
+        }
+
+        bool initialized = false;
+        bool wasAway = false;
+        uint32_t lastMap = 0;
+        float lastX = 0.0f, lastY = 0.0f, lastZ = 0.0f;
+    };
 }

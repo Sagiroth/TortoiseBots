@@ -1,9 +1,6 @@
 // Standalone regression test for issue #84: ActionFailureBackoff policy math.
-// Self-contained (mocks nothing - the header is pure std). Build:
-//   g++ -std=c++17 -Wall -Wextra -I ai/playerbot/strategy \
-//       tools/test_engine_failure_backoff.cpp -o /tmp/test_backoff && /tmp/test_backoff
-
-#include <cassert>
+// Self-contained (mocks nothing - the header is pure std). Build and run:
+//   g++ -std=c++17 -Wall -Wextra -I ai/playerbot/strategy tools/test_engine_failure_backoff.cpp -o /tmp/test_backoff && /tmp/test_backoff
 #include <cstdio>
 #include <string>
 
@@ -102,6 +99,53 @@ int main()
         std::string c = ActionFailureBackoff::Key("go", "s", 1, 2, IMPOSSIBLE);
         CHECK(a != b1);
         CHECK(a != c);
+    }
+
+    using ai::TransitionTracker;
+
+    // 8. Steady presence never drains, including zone-line walking.
+    {
+        TransitionTracker t;
+        CHECK(t.Update(true, false, 0, 0.0f, 0.0f, 0.0f) == TransitionTracker::NONE);
+        CHECK(t.Update(true, false, 0, 5.0f, 0.0f, 0.0f) == TransitionTracker::NONE);
+        CHECK(t.Update(true, false, 0, 40.0f, 30.0f, 5.0f) == TransitionTracker::NONE);
+        CHECK(t.LastMap() == 0);
+    }
+
+    // 9. Teleport away and back on the same map drains on arrival.
+    {
+        TransitionTracker t;
+        CHECK(t.Update(true, false, 1, 0.0f, 0.0f, 0.0f) == TransitionTracker::NONE);
+        CHECK(t.Update(true, true, 1, 0.0f, 0.0f, 0.0f) == TransitionTracker::AWAY);
+        CHECK(t.Update(true, true, 1, 0.0f, 0.0f, 0.0f) == TransitionTracker::AWAY);
+        CHECK(t.Update(true, false, 1, 500.0f, 500.0f, 0.0f) == TransitionTracker::ARRIVED);
+        CHECK(t.Update(true, false, 1, 501.0f, 500.0f, 0.0f) == TransitionTracker::NONE);
+    }
+
+    // 10. Leaving the world and returning drains even without teleport flags.
+    {
+        TransitionTracker t;
+        CHECK(t.Update(true, false, 1, 0.0f, 0.0f, 0.0f) == TransitionTracker::NONE);
+        CHECK(t.Update(false, false, 1, 0.0f, 0.0f, 0.0f) == TransitionTracker::AWAY);
+        CHECK(t.Update(true, false, 1, 10.0f, 0.0f, 0.0f) == TransitionTracker::ARRIVED);
+    }
+
+    // 11. Map change drains and re-baselines.
+    {
+        TransitionTracker t;
+        CHECK(t.Update(true, false, 0, 0.0f, 0.0f, 0.0f) == TransitionTracker::NONE);
+        CHECK(t.Update(true, false, 1, 0.0f, 0.0f, 0.0f) == TransitionTracker::MAP_CHANGED);
+        CHECK(t.LastMap() == 1);
+        CHECK(t.Update(true, false, 1, 1.0f, 0.0f, 0.0f) == TransitionTracker::NONE);
+    }
+
+    // 12. Impossible jump on the same map drains; sub-threshold never does.
+    {
+        TransitionTracker t;
+        CHECK(t.Update(true, false, 0, 0.0f, 0.0f, 0.0f) == TransitionTracker::NONE);
+        CHECK(t.Update(true, false, 0, 99.0f, 0.0f, 0.0f) == TransitionTracker::NONE);
+        CHECK(t.Update(true, false, 0, 500.0f, 0.0f, 0.0f) == TransitionTracker::JUMPED);
+        CHECK(t.Update(true, false, 0, 501.0f, 0.0f, 0.0f) == TransitionTracker::NONE);
     }
 
     std::printf("PASS tools/test_engine_failure_backoff (%d checks)\n", checks);

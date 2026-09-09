@@ -147,11 +147,10 @@ namespace ai
         Action* lastExecutedAction;
         bool inDoNextAction = false;
         bool reinitPending = false;
-        // Issue #84 state. Per-engine failure memory plus the map/position
-        // snapshot used to invalidate stale work on transitions.
+        // Issue #84 state. Per-engine failure memory plus the transition
+        // tracker used to invalidate stale work on arrival (any map).
         ActionFailureBackoff actionFailures;
-        bool mapInit = false;
-        uint32_t lastMapId = 0;
+        TransitionTracker transitions;
         float failX = 0.0f, failY = 0.0f, failZ = 0.0f;
         uint32_t failMoney = 0, failHealth = 0, failMana = 0;
 
