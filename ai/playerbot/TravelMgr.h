@@ -55,6 +55,7 @@ namespace ai
 		const WorldPosition& getPosition() const { return position; }
 		Team GetTeam() const { return team; }
 		uint32 GetLevel() const  { return level; }
+		uint32 GetIdentitySeed() const { return identitySeed; }
 		uint16 GetCurrentSkill(SkillType skillType) const  { return currentSkill[skillType]; }
 		uint16 GetSkillMax(SkillType skillType) const { return skillMax[skillType]; }
 		bool IsInRaid() const { return groupSize > 5; }
@@ -73,6 +74,7 @@ namespace ai
 		WorldPosition position;
 		Team team = TEAM_NONE;
 		uint32 level = 0;
+		uint32 identitySeed = 0;
 		uint16 currentSkill[MAX_SKILL_TYPE] = {0};
 		uint16 skillMax[MAX_SKILL_TYPE] = { 0 };
 		uint8 groupSize = 0;
