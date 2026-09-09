@@ -24,4 +24,3 @@ inline bool NeedsInitialGearSeeding(std::uint32_t playedTimeSeconds, std::uint32
     return playedTimeSeconds == 0 && seededMark == 0;
 }
 }
-

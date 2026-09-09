@@ -82,6 +82,12 @@ void PlayerbotAIAdapter::RebindMaster(Player* master)
         return;
 
     ai_->SetMaster(master); // pi-lens-ignore: clang:all
+    if (master && master->GetSession() && !master->GetSession()->IsHeadless())
+    {
+        ai_->Reset(true);
+        if (bot_)
+            bot_->StopMoving();
+    }
     // Mature strategy state survives a master pointer disconnect. Only repair
     // a bot with no movement strategy at all; never let a stale native intent
     // overwrite mature follow/stay/wander/guard/free/passive commands.

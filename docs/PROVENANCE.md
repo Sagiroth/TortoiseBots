@@ -1392,24 +1392,27 @@ Source references:
 - `tortoise-wow` core `Player::GiveLevel`: unconditionally sends `SMSG_LEVELUP_INFO`, which already drives `auto talents` through the packet handlers — no new talent plumbing needed.
 
 Source files:
+- `ai/playerbot/strategy/actions/AutoLearnSpellAction.cpp`
 - `ai/playerbot/strategy/actions/XpGainAction.cpp`
 - `ai/playerbot/strategy/values/TravelValues.cpp`
 - `ai/playerbot/PlayerbotAI.cpp`
 - `runtime/BotManager.cpp`
+- `runtime/PlayerbotAIAdapter.cpp`
 - `runtime/RandomBotService.cpp`
 - `runtime/GearSeedingGuard.h`
 - `tools/test_progression_loop.cpp`
 
 Copied / ported / independently reimplemented:
-- Dinging expires the travel target (trainer re-evaluation) instead of minting gear; `auto talents` arrives via the existing levelup packet path (asserted, not rebuilt).
+- Dinging expires the travel target (trainer re-evaluation) via `AutoLearnSpellAction::LearnSpells` and `XpGainAction` instead of minting gear; `auto talents` arrives via the existing levelup packet path.
 - `NeedsInitialGearSeeding(playedTime, seededMark)`: seed only when both are zero. Veterans survive restarts via played time; repeats are suppressed via the stamp. Stamp is written after the attempt, never before.
 - Trainer travel requires `free money for <budget> >= min trainable spell cost`; per-spell affordability at the trainer itself is unchanged (`TrainerAction` still skips overpriced spells).
-- Master adoption (bot members are skipped, so a changed master is a real player) runs `Reset(true)` + `StopMoving()` before `ResetStrategies()`. Master-loss fallback path intentionally untouched.
+- Master adoption (`PlayerbotAI.cpp` group adoption and `PlayerbotAIAdapter.cpp` rebind) runs `Reset(true)` + `StopMoving()` to purge orphan travel/grind goals and tether immediately.
 
 Reason: Complete Issue #85 reqs 1-4: earned gear/trainer progression, restart persistence, immediate owner control on recruitment.
 
 Local validation:
-- Standalone harness `tools/test_progression_loop.cpp` (all checks pass): full seeding truth table including the restart-amnesia cell (played > 0, stamp wiped).
+- Standalone harness `tools/test_progression_loop.cpp` (all checks pass): full seeding truth table and partial-purse trainer gating.
 - `python3 tools/verify_action_trigger_wiring.py` (live-missing=0).
-- Neighbor suites `test_travel_route_policy` (6/6) re-run green.
-- Native builder + live-client leveling observation still pending (no docker per standing instruction).
+- `bash tools/verify_tortoise_surface.sh` (exit code 0).
+- `bash tools/verify_penqle_host_contract.sh --core ../tortoise-wow` (exit code 0).
+- Docker native static builder `./dev/build-playerbots` passed (`[100%] Built target mangosd`).
