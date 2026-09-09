@@ -67,6 +67,7 @@ public:
     void PrintTeleportCache();
     void LoadBattleMastersCache();
     void LoadAuctionPrices();
+    void RefreshAuctionPrices(uint32 diff);
 
     static InventoryResult CanEquipUnseenItem(Player* player, uint8 slot, uint16& dest, uint32 item);
     const std::map<Team, std::map<BattleGroundTypeId, std::list<uint32>>>& GetBattleMastersCache() const
@@ -75,6 +76,8 @@ public:
     }
 
     const std::vector<AuctionEntry>& GetAhPrices(uint32 itemId) const;
+    std::vector<AuctionEntry> GetAhPrices(uint32 itemId, uint32 houseFaction) const;
+    std::vector<AuctionEntry> GetAhPrices(uint32 itemId, Player* bot) const;
     std::mutex m_ahActionMutex;
 
 private:

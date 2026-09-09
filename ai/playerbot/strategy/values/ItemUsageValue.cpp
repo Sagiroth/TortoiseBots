@@ -1409,13 +1409,14 @@ bool ItemUsageValue::IsItemUsedToCraftAnything(ItemPrototype const* proto)
     return m_allReagentItemIdsForCraftingSkills.count(proto->ItemId) > 0;
 }
 
-uint32 ItemUsageValue::GetAHMedianBuyoutPricePerItem(ItemPrototype const* proto)
+uint32 ItemUsageValue::GetAHMedianBuyoutPricePerItem(ItemPrototype const* proto, Player* bot)
 {
     if (sPlayerbotAIConfig.shouldQueryAHListingsOutsideOfAH)
     {
         std::vector<float> prices;
 
-        for (auto& auction : sRandomBotFacade.GetAhPrices(proto->ItemId))
+        std::vector<AuctionEntry> listings = sRandomBotFacade.GetAhPrices(proto->ItemId, bot);
+        for (auto& auction : listings)
         {
             uint32 itemCount = GetAuctionItemCount(auction);
             if (itemCount)
@@ -1427,13 +1428,16 @@ uint32 ItemUsageValue::GetAHMedianBuyoutPricePerItem(ItemPrototype const* proto)
 
         size_t n = prices.size() / 2;
         std::nth_element(prices.begin(), prices.begin() + n, prices.end());
-        return prices[n];
+        float median = prices[n];
+        if (median > 0 && median < 1)
+            return 1;
+        return static_cast<uint32>(median);
     }
 
     return 0;
 }
 
-uint32 ItemUsageValue::GetAHListingLowestBuyoutPricePerItem(ItemPrototype const* proto)
+uint32 ItemUsageValue::GetAHListingLowestBuyoutPricePerItem(ItemPrototype const* proto, Player* bot)
 {
     if (sPlayerbotAIConfig.shouldQueryAHListingsOutsideOfAH)
     {
@@ -1446,7 +1450,8 @@ uint32 ItemUsageValue::GetAHListingLowestBuyoutPricePerItem(ItemPrototype const*
         float minPrice = 0;
         bool found = false;
 
-        for (auto& auction : sRandomBotFacade.GetAhPrices(proto->ItemId))
+        std::vector<AuctionEntry> listings = sRandomBotFacade.GetAhPrices(proto->ItemId, bot);
+        for (auto& auction : listings)
         {
             uint32 itemCount = GetAuctionItemCount(auction);
             if (itemCount)
@@ -1807,7 +1812,8 @@ uint32 ItemUsageValue::DesiredPricePerItem(Player* bot, const ItemPrototype* pro
 
     uint32 lowestItemCount = 0;
 
-    for (auto& auction : sRandomBotFacade.GetAhPrices(proto->ItemId))
+    std::vector<AuctionEntry> listings = sRandomBotFacade.GetAhPrices(proto->ItemId, bot);
+    for (auto& auction : listings)
     {
         uint32 itemCount = GetAuctionItemCount(auction);
         if (itemCount != count)
@@ -1830,7 +1836,7 @@ uint32 ItemUsageValue::DesiredPricePerItem(Player* bot, const ItemPrototype* pro
     if (!maxAhPrice)
     {
         minAhPrice = lowestBuyoutItemPricePerItem;
-        maxAhPrice = GetAHMedianBuyoutPricePerItem(proto) * 1.5f;
+        maxAhPrice = GetAHMedianBuyoutPricePerItem(proto, bot) * 1.5f;
         if (!maxAhPrice)
             maxAhPrice = minAhPrice * 1.5f;
     }

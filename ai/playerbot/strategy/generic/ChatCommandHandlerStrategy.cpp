@@ -101,6 +101,7 @@ ChatCommandHandlerStrategy::ChatCommandHandlerStrategy(PlayerbotAI* ai) : PassTr
     supported.push_back("guild leader");
     supported.push_back("ah");
     supported.push_back("ah bid");
+    supported.push_back("ah cancel");
     supported.push_back("keep");
     supported.push_back("bg free");
     supported.push_back("cast");

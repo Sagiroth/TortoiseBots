@@ -349,18 +349,21 @@ AhMarketService::PostResult AhMarketService::TryPostForBot(Player* bot, bool all
         if (deposit > bot->GetMoney())
             continue;
 
-        // Price via actual sell multiplier (GetBuyMultiplier/GetSellMultiplier via ItemUsageValue::GetBotSellPrice)
-        // Reuses sRandomItemMgr weight indirectly through usage, and sRandomBotFacade multiplier.
-        uint32 basePerItem = ai::ItemUsageValue::GetBotSellPrice(proto, bot);
-        if (!basePerItem)
-            basePerItem = proto->SellPrice ? proto->SellPrice : 1;
-        uint32 pct = urand(75, 100);
-        uint32 pricePerItem = (basePerItem * pct) / 100;
-        if (!pricePerItem)
-            pricePerItem = 1;
+        // Price via market read model if available, falling back to bot sell multiplier
         uint32 count = item->GetCount();
         if (!count)
             count = 1;
+        uint32 pricePerItem = ai::ItemUsageValue::DesiredPricePerItem(bot, proto, count, urand(40, 60));
+        if (!pricePerItem)
+        {
+            uint32 basePerItem = ai::ItemUsageValue::GetBotSellPrice(proto, bot);
+            if (!basePerItem)
+                basePerItem = proto->SellPrice ? proto->SellPrice : 1;
+            uint32 pct = urand(75, 100);
+            pricePerItem = (basePerItem * pct) / 100;
+        }
+        if (!pricePerItem)
+            pricePerItem = 1;
         uint32 totalPrice = pricePerItem * count;
         if (!totalPrice)
             totalPrice = 1;
