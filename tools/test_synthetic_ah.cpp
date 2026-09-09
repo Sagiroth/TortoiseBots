@@ -579,6 +579,13 @@ struct MockAhMarketService
         AuctionEntry* auction = ahObjectAlliance.GetAuction(auctionId);
         if (!auction) return false;
 
+        // Never expire or delete an auction with active bids (protects committed gold)
+        if (auction->bid != 0)
+        {
+            ++totalProtectedBids;
+            return false;
+        }
+
         if (auction->owner == SYNTHETIC_OWNER_GUID)
         {
             // Safe cleanup: delete item from db, no mail sent
@@ -857,7 +864,7 @@ int main()
         CHECK(service.IsSyntheticAuction(auctionId));
         CHECK(service.IsSyntheticItem(itemGuid));
 
-        // Safe expire
+        // Safe expire of unbid listing
         bool expired = service.SafelyExpireAuction(auctionId);
         CHECK(expired);
         CHECK(service.totalExpired == 1);
@@ -865,6 +872,39 @@ int main()
         CHECK(!service.IsSyntheticItem(itemGuid));
         CHECK(service.ahObjectAlliance.GetAuction(auctionId) == nullptr);
         CHECK(service.dbItemInstances.find(itemGuid) == service.dbItemInstances.end());
+
+        // Test 6b: Bid-on synthetic listing is protected and NOT deleted on rebuild-all
+        uint32 bidItemGuid = service.nextItemGuid++;
+        Item* bidItem = new Item{ bidItemGuid, protoSword.ItemId, 1, &protoSword };
+        service.dbItemInstances[bidItemGuid] = bidItem;
+
+        uint32 bidAucId = service.nextAuctionId++;
+        AuctionEntry* bidAuc = new AuctionEntry();
+        bidAuc->Id = bidAucId;
+        bidAuc->itemGuidLow = bidItemGuid;
+        bidAuc->itemTemplate = protoSword.ItemId;
+        bidAuc->itemCount = 1;
+        bidAuc->owner = SYNTHETIC_OWNER_GUID;
+        bidAuc->ownerAccount = SYNTHETIC_OWNER_ACCOUNT;
+        bidAuc->startbid = 500;
+        bidAuc->bid = 600; // Active bid placed!
+        bidAuc->bidder = 999;
+        bidAuc->buyout = 5000;
+        bidAuc->auctionHouseEntry = &service.ahAlliance;
+        service.ahObjectAlliance.AddAuction(bidAuc);
+        service.syntheticAuctions.insert(bidAucId);
+        service.syntheticItemGuids.insert(bidItemGuid);
+
+        // Attempting to expire during rebuild all must fail-safe and protect the listing
+        bool bidExpired = service.SafelyExpireAuction(bidAucId);
+        CHECK(!bidExpired);
+        CHECK(service.totalProtectedBids == 1);
+        CHECK(service.IsSyntheticAuction(bidAucId));
+        CHECK(service.ahObjectAlliance.GetAuction(bidAucId) != nullptr);
+
+        // Cleanup test objects
+        delete bidAuc;
+        delete bidItem;
     }
 
     std::cout << "\nAll " << checks << " checks PASSED successfully!\n";

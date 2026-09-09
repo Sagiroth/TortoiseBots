@@ -508,11 +508,11 @@ bool AhMarketService::ResetItemOverride(uint32_t itemId)
     return true;
 }
 
-void AhMarketService::RebuildMarket(bool includeBids)
+void AhMarketService::RebuildMarket(bool all)
 {
-    m_pendingRebuild = includeBids ? 2 : 1;
+    m_pendingRebuild = all ? 2 : 1;
     m_phase = Phase::Idle;
-    sLog.outString("TortoiseBots: AhMarket scheduled market rebuild (includeBids=%u)", includeBids ? 1 : 0);
+    sLog.outString("TortoiseBots: AhMarket scheduled market rebuild (all=%u)", all ? 1 : 0);
 }
 
 std::string AhMarketService::GetStatus() const
@@ -917,11 +917,22 @@ void AhMarketService::StepPhase()
     {
         case Phase::Idle:
         {
-            if (m_pendingRebuild)
+            if (m_pendingRebuild == 2)
             {
                 m_scanHouse = 0;
                 m_scanCursor = 0;
                 m_phase = Phase::Expire;
+                return;
+            }
+            if (m_pendingRebuild == 1)
+            {
+                m_pendingRebuild = 0;
+                RefreshDynamicLevel();
+                m_stock.clear();
+                m_sourceIndex = 0;
+                m_picksRemaining = -1;
+                m_rollsRemaining = 0;
+                m_phase = Phase::Gather;
                 return;
             }
 
@@ -1174,8 +1185,11 @@ void AhMarketService::StepExpire()
     if (!IsSyntheticAuction(auction))
         return;
 
-    bool includeBids = (m_pendingRebuild == 2);
-    if (!includeBids && auction->bid != 0)
+    // Active bids represent committed player or bot currency.
+    // Never expire or delete an auction that has an active bid, even during
+    // admin rebuild-all. The listing must run its natural course to either
+    // victory (SendAuctionWonMail) or outbid refund so money is preserved.
+    if (auction->bid != 0)
     {
         ++m_totalProtectedBids;
         return;
@@ -1292,4 +1306,3 @@ void AhMarketService::Update(uint32_t diff)
 }
 
 } // namespace TortoiseBots
-

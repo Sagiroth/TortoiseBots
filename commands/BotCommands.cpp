@@ -1571,7 +1571,7 @@ static bool HandleAhBot(ChatHandler* handler, char const* args)
         handler->PSendSysMessage("AHBot commands:");
         handler->PSendSysMessage("  .bot ah status - Display synthetic AH engine status and telemetry");
         handler->PSendSysMessage("  .bot ah reload - Reload price overrides and bans from ahbot_items");
-        handler->PSendSysMessage("  .bot ah rebuild [all] - Restart market pass (all = expire active synthetic items)");
+        handler->PSendSysMessage("  .bot ah rebuild [all] - Restart market pass (all = expire active unbid synthetic items)");
         handler->PSendSysMessage("  .bot ah item <id> - View override for item");
         handler->PSendSysMessage("  .bot ah item <id> reset - Remove override for item");
         handler->PSendSysMessage("  .bot ah item <id> <value> [chance] [min] [max] - Set override (0 0 = blacklist)");
@@ -1605,7 +1605,7 @@ static bool HandleAhBot(ChatHandler* handler, char const* args)
         bool all = (mode == "all");
         AhMarketService::Instance().RebuildMarket(all);
         if (all)
-            handler->PSendSysMessage("AHBot market rebuild scheduled (including expiring active synthetic listings).");
+            handler->PSendSysMessage("AHBot market rebuild scheduled (expiring active unbid synthetic listings).");
         else
             handler->PSendSysMessage("AHBot market rebuild scheduled.");
         return true;

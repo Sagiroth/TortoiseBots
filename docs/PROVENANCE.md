@@ -1381,4 +1381,3 @@ Local validation:
 - `bash tools/verify_tortoise_surface.sh` (exit code 0).
 - `bash tools/verify_penqle_host_contract.sh --core ../tortoise-wow` (exit code 0).
 - Docker native static builder `./dev/build-playerbots` passed (`[100%] Built target mangosd`).
-

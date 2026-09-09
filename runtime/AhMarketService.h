@@ -51,7 +51,7 @@ public:
 
     // Rebuild / reload / command interfaces
     void ReloadOverrides();
-    void RebuildMarket(bool includeBids);
+    void RebuildMarket(bool all = false);
     std::string GetStatus() const;
 
     bool SetItemOverride(uint32_t itemId, uint32_t value, uint32_t addChance, uint32_t minAmount, uint32_t maxAmount);
