@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest an improvement to TortoiseBots.
+title: "[Feature]: "
+labels:
+  - enhancement
+
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: What does this relate to?
+      options:
+        - Combat or class behavior
+        - Movement or travel
+        - Bot control or ownership
+        - Dungeon, LFT, battleground, or random bots
+        - Auction house or economy
+        - Commands or addon
+        - Build or documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: request
+    attributes:
+      label: What would you like to see?
+      description: Describe the problem or desired improvement in your own words.
+      placeholder: |
+        I would like...
+        This would help because...
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional information
+      description: Optional. Add examples, screenshots, links, or mockups.
