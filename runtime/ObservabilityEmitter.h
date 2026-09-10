@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common.h"
+#include <cstdint>
 #include <map>
 #include <mutex>
 #include <string>
@@ -86,10 +87,18 @@ private:
     void AddStateTime(size_t stateIndex, uint32 diff);
     void EmitSnapshotCycle(std::vector<Player*> const& activeBots, uint32 diff);
 
+    // Storage-only handle: this header stays free of <winsock2.h>/<sys/socket.h>, the same
+    // way m_destAddr below stays a void* rather than a struct sockaddr_in*. std::uintptr_t
+    // is wide enough to hold a Windows SOCKET (which is pointer-sized, not int-sized, and
+    // truncating it silently accepts the wrong descriptor on rare unlucky values) and an
+    // ordinary POSIX fd equally.
+    using SocketHandle = std::uintptr_t;
+    static constexpr SocketHandle kInvalidSocket = static_cast<SocketHandle>(-1);
+
     bool m_enabled;
     std::string m_host;
     uint32 m_port;
-    int m_socketFd;
+    SocketHandle m_socketFd;
     void* m_destAddr; // struct sockaddr_in*
 
     // Guards socket teardown against a concurrent sender; emission and state
