@@ -7,6 +7,8 @@ import (
 	"tortoise-observability/internal/model"
 )
 
+func newTestTracker() *issueTracker { return newIssueTracker(0) }
+
 func movingBot(x float64) model.BotSnapshot {
 	return model.BotSnapshot{
 		Name: "Tester", GUID: 1, Class: "warrior", Role: "dps",
@@ -15,8 +17,15 @@ func movingBot(x float64) model.BotSnapshot {
 	}
 }
 
+func anomalyBot(action string) model.BotSnapshot {
+	return model.BotSnapshot{
+		Name: "Looper", GUID: 7, Class: "mage", Role: "dps",
+		MapID: 0, ZoneID: 12, X: 0, Y: 0, State: "combat", LastAction: action,
+	}
+}
+
 func TestStuckEpisodeLifecycle(t *testing.T) {
-	tr := newIssueTracker()
+	tr := newTestTracker()
 	base := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
 
 	tr.Observe([]model.BotSnapshot{movingBot(0)}, base)
@@ -46,7 +55,7 @@ func TestStuckEpisodeLifecycle(t *testing.T) {
 }
 
 func TestPersistentSeverity(t *testing.T) {
-	tr := newIssueTracker()
+	tr := newTestTracker()
 	base := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
 
 	tr.Observe([]model.BotSnapshot{movingBot(0)}, base)
@@ -59,7 +68,7 @@ func TestPersistentSeverity(t *testing.T) {
 }
 
 func TestDeadLongEpisode(t *testing.T) {
-	tr := newIssueTracker()
+	tr := newTestTracker()
 	base := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
 
 	dead := movingBot(0)
@@ -74,7 +83,7 @@ func TestDeadLongEpisode(t *testing.T) {
 }
 
 func TestAnomalyEpisodeExpires(t *testing.T) {
-	tr := newIssueTracker()
+	tr := newTestTracker()
 	base := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
 
 	tr.TouchAnomaly(model.AnomalyPayload{
@@ -85,22 +94,92 @@ func TestAnomalyEpisodeExpires(t *testing.T) {
 		t.Fatalf("action loop episode not opened: %d", got)
 	}
 
-	// Within TTL it stays open even with no fresh snapshots.
-	tr.Observe(nil, base.Add(30*time.Second))
+	// Within TTL, still doing the same action -> stays open.
+	tr.Observe([]model.BotSnapshot{anomalyBot("fireball")}, base.Add(30*time.Second))
 	if got := len(tr.Snapshot().Active); got != 1 {
 		t.Fatalf("action loop episode expired too early: %d", got)
 	}
 
 	// Past TTL it closes.
-	tr.Observe(nil, base.Add(3*time.Minute))
+	tr.Observe([]model.BotSnapshot{anomalyBot("fireball")}, base.Add(3*time.Minute))
 	snap := tr.Snapshot()
 	if len(snap.Active) != 0 || len(snap.Resolved) != 1 {
 		t.Fatalf("action loop episode did not expire: %+v", snap)
 	}
 }
 
+func TestContradictedUnreachableClosesEarly(t *testing.T) {
+	tr := newTestTracker()
+	base := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+
+	tr.TouchAnomaly(model.AnomalyPayload{
+		Type: "UNREACHABLE_TARGET", GUID: 7, Bot: "Looper", Class: "mage", Level: 10,
+		ZoneID: 12, Target: "Boar",
+	}, base)
+
+	// Bot is no longer in combat, so the unreachable episode is over even
+	// though the TTL has not elapsed.
+	free := anomalyBot("")
+	free.State = "idle"
+	free.Target = ""
+	tr.Observe([]model.BotSnapshot{free}, base.Add(30*time.Second))
+	if got := len(tr.Snapshot().Active); got != 0 {
+		t.Fatalf("contradicted unreachable episode stayed open: %d", got)
+	}
+}
+
+func TestUnreachableStaysWhileRefreshed(t *testing.T) {
+	tr := newTestTracker()
+	base := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+
+	tr.TouchAnomaly(model.AnomalyPayload{
+		Type: "UNREACHABLE_TARGET", GUID: 7, Bot: "Looper", Class: "mage", Level: 10,
+		ZoneID: 12, Target: "Boar",
+	}, base)
+	// Emitter re-reports while the target is still unreachable.
+	tr.TouchAnomaly(model.AnomalyPayload{
+		Type: "UNREACHABLE_TARGET", GUID: 7, Bot: "Looper", Class: "mage", Level: 10,
+		ZoneID: 12, Target: "Boar",
+	}, base.Add(90*time.Second))
+
+	fighting := anomalyBot("fireball")
+	fighting.Target = "Boar"
+	tr.Observe([]model.BotSnapshot{fighting}, base.Add(150*time.Second))
+	if got := len(tr.Snapshot().Active); got != 1 {
+		t.Fatalf("refreshed unreachable episode did not stay open: %d", got)
+	}
+}
+
+func TestMinIssueAgeHidesShortEpisodes(t *testing.T) {
+	tr := newIssueTracker(5 * time.Minute)
+	base := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+
+	// Stuck for 2 minutes: tracked internally but not surfaced.
+	tr.Observe([]model.BotSnapshot{movingBot(0)}, base)
+	tr.Observe([]model.BotSnapshot{movingBot(0)}, base.Add(2*time.Minute))
+	if got := len(tr.Snapshot().Active); got != 0 {
+		t.Fatalf("short episode surfaced: %d", got)
+	}
+
+	// Still stuck at 6 minutes: now surfaced.
+	tr.Observe([]model.BotSnapshot{movingBot(0)}, base.Add(6*time.Minute))
+	if got := len(tr.Snapshot().Active); got != 1 {
+		t.Fatalf("long episode hidden: %d", got)
+	}
+
+	// A short episode that clears before the minimum age is discarded, not
+	// archived as resolved.
+	short := newIssueTracker(5 * time.Minute)
+	short.Observe([]model.BotSnapshot{movingBot(0)}, base)
+	short.Observe([]model.BotSnapshot{movingBot(0)}, base.Add(2*time.Minute))
+	short.Observe([]model.BotSnapshot{movingBot(100)}, base.Add(2*time.Minute+time.Second))
+	if got := len(short.Snapshot().Resolved); got != 0 {
+		t.Fatalf("short episode was archived: %d", got)
+	}
+}
+
 func TestTrackerResetKeepsResolved(t *testing.T) {
-	tr := newIssueTracker()
+	tr := newTestTracker()
 	base := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
 
 	// Open a stuck issue, then clear it by moving again.

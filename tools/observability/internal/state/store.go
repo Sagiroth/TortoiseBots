@@ -36,6 +36,7 @@ type Config struct {
 	BotTTL      time.Duration // staleness threshold for the roster
 	RosterTTL   time.Duration // wipe the roster after this without a snapshot
 	PendingTTL  time.Duration // abandon incomplete cycles after this
+	IssueMinAge time.Duration // only surface issues that persist this long
 }
 
 type botEntry struct {
@@ -90,6 +91,9 @@ func New(cfg Config, anomalies *ringbuf.RingBuffer) *Store {
 	if cfg.PendingTTL <= 0 {
 		cfg.PendingTTL = defaultPendingTTL
 	}
+	if cfg.IssueMinAge <= 0 {
+		cfg.IssueMinAge = DefaultIssueMinAge
+	}
 	if anomalies == nil {
 		anomalies = ringbuf.New(1000)
 	}
@@ -99,7 +103,7 @@ func New(cfg Config, anomalies *ringbuf.RingBuffer) *Store {
 		bots:      make(map[uint32]*botEntry),
 		pending:   make(map[uint64]*pendingCycle),
 		anomalies: anomalies,
-		issues:    newIssueTracker(),
+		issues:    newIssueTracker(cfg.IssueMinAge),
 	}
 }
 

@@ -50,6 +50,7 @@ func main() {
 	dbUser := flag.String("db-user", getEnv("DB_USER", "mangos"), "MariaDB / MySQL user")
 	dbPass := flag.String("db-pass", getEnv("DB_PASSWORD", "mangos"), "MariaDB / MySQL password")
 	dbName := flag.String("db-name", getEnv("DB_LOGIN", "tw_logon"), "MariaDB / MySQL realmd database name")
+	issueMinAgeSec := flag.Int("issue-min-age-sec", getEnvInt("ISSUE_MIN_AGE_SEC", 300), "Only surface bot issues that persist at least this many seconds")
 	devNoAuth := flag.Bool("dev-no-auth", false, "Disable Game Master authentication check for local dev testing")
 	flag.Parse()
 
@@ -59,7 +60,9 @@ func main() {
 
 	// 1. Authoritative state store (roster snapshots, server status, anomalies)
 	anomalies := ringbuf.New(1000)
-	store := state.New(state.Config{}, anomalies)
+	store := state.New(state.Config{
+		IssueMinAge: time.Duration(*issueMinAgeSec) * time.Second,
+	}, anomalies)
 
 	// 2. Prometheus metrics
 	metricsRegistry := metrics.New()

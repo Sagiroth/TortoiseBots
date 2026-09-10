@@ -17,8 +17,11 @@ const (
 	issuePersistentAfter = 10 * time.Minute
 	issueStuckAfter      = 60 * time.Second
 	issueDeadAfter       = 2 * time.Minute
-	issueAnomalyTTL      = 2 * time.Minute
-	issueResolvedMax     = 200
+	issueAnomalyTTL     = 2 * time.Minute
+	issueResolvedMax    = 200
+	// DefaultIssueMinAge is how long a problem must persist before it is shown.
+	// Internal tracking starts immediately; shorter episodes are discarded.
+	DefaultIssueMinAge = 5 * time.Minute
 )
 
 type issueKey struct {
@@ -44,13 +47,18 @@ type activeIssue struct {
 // bounded: only currently-active episodes plus a small resolved history.
 type issueTracker struct {
 	mu        sync.Mutex
+	minAge    time.Duration
 	active    map[issueKey]*activeIssue
 	detectors map[uint32]*botDetector
 	resolved  []model.Issue
 }
 
-func newIssueTracker() *issueTracker {
+func newIssueTracker(minAge time.Duration) *issueTracker {
+	if minAge < 0 {
+		minAge = 0
+	}
 	return &issueTracker{
+		minAge:    minAge,
 		active:    make(map[issueKey]*activeIssue),
 		detectors: make(map[uint32]*botDetector),
 	}
@@ -61,6 +69,26 @@ func issueSeverity(d time.Duration) string {
 		return "persistent"
 	}
 	return "watch"
+}
+
+// contradicts reports whether the live snapshot shows the issue condition is
+// no longer true, so stale episodes close before their TTL.
+//
+// ACTION_LOOP is left to the emitter's own re-emission plus the TTL: a bot can
+// fail one action while executing others, so the last action is not a reliable
+// "loop ended" signal. UNREACHABLE_TARGET is snapshot-confirmable: it persists
+// only while the bot is still in combat with the same target.
+func contradicts(typ string, issue model.Issue, b model.BotSnapshot) bool {
+	if typ != "UNREACHABLE_TARGET" {
+		return false
+	}
+	if b.State != "combat" {
+		return true
+	}
+	if issue.Target != "" && b.Target != "" && b.Target != issue.Target {
+		return true
+	}
+	return false
 }
 
 // Observe reconciles snapshot-derived conditions (stuck, dead) with the active
@@ -144,14 +172,26 @@ func (t *issueTracker) Observe(bots []model.BotSnapshot, now time.Time) {
 		}
 	}
 
-	// Close anything no longer present, or anomaly-driven episodes whose TTL
-	// lapsed without a refresh.
+	// Close anything no longer present, contradicted by the live snapshot, or
+	// whose anomaly TTL lapsed.
 	for key, ai := range t.active {
 		if _, ok := present[key]; ok {
 			continue
 		}
-		if !ai.expiresAt.IsZero() && now.Before(ai.expiresAt) {
-			continue
+		if !ai.expiresAt.IsZero() {
+			b, inSnapshot := meta[key.guid]
+			if !inSnapshot {
+				// Bot left the world; the episode is over.
+				t.closeLocked(key, ai, now)
+				continue
+			}
+			if contradicts(key.typ, ai.issue, b) {
+				t.closeLocked(key, ai, now)
+				continue
+			}
+			if now.Before(ai.expiresAt) {
+				continue
+			}
 		}
 		t.closeLocked(key, ai, now)
 	}
@@ -193,11 +233,17 @@ func (t *issueTracker) TouchAnomaly(a model.AnomalyPayload, now time.Time) {
 	}
 }
 
+// closeLocked ends an episode. Episodes that never reached the minimum age are
+// dropped entirely: a brief hiccup is not an incident worth surfacing.
 func (t *issueTracker) closeLocked(key issueKey, ai *activeIssue, now time.Time) {
-	issue := ai.issue
-	issue.DurationSec = now.Sub(ai.startedAt).Seconds()
-	issue.Severity = issueSeverity(now.Sub(ai.startedAt))
+	duration := now.Sub(ai.startedAt)
 	delete(t.active, key)
+	if duration < t.minAge {
+		return
+	}
+	issue := ai.issue
+	issue.DurationSec = duration.Seconds()
+	issue.Severity = issueSeverity(duration)
 	t.resolved = append(t.resolved, issue)
 	if len(t.resolved) > issueResolvedMax {
 		t.resolved = t.resolved[len(t.resolved)-issueResolvedMax:]
@@ -205,7 +251,8 @@ func (t *issueTracker) closeLocked(key issueKey, ai *activeIssue, now time.Time)
 }
 
 // Snapshot returns active issues (longest first), recently resolved ones
-// (newest first), and per-type active counts.
+// (newest first), and per-type active counts. Only episodes older than the
+// minimum age are surfaced.
 func (t *issueTracker) Snapshot() model.IssueSnapshot {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -213,6 +260,9 @@ func (t *issueTracker) Snapshot() model.IssueSnapshot {
 	active := make([]model.Issue, 0, len(t.active))
 	counts := make(map[string]int)
 	for key, ai := range t.active {
+		if ai.issue.DurationSec < t.minAge.Seconds() {
+			continue
+		}
 		active = append(active, ai.issue)
 		counts[key.typ]++
 	}
