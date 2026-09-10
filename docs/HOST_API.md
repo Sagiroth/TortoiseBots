@@ -154,6 +154,7 @@ Current adapters:
 | `BotPlayerAdapter` | player lifecycle/reclaim attachment |
 | `BotChatAdapter` | native `.bot` command integration |
 | `BotPacketAdapter` | packet bridge into Existing PlayerBots (primarily AzerothCore/mod-playerbots) |
+| `BotPacketPump` | module-owned queue + world-tick drain for synthesized client packets |
 
 The module should prefer an existing generic hook before requesting a new core
 seam.
@@ -211,6 +212,14 @@ Network master incoming
 ```
 
 No bot-specific opcode branches belong in core packet handlers.
+
+Synthesized client packets (gameobject use, open/use item, chat) cannot use the
+core receive queues: headless sessions never drain them. They are queued in
+`BotPacketPump` and dispatched once per world tick after AI updates, under the
+`BotManager` update guard. The pump is a delivery mechanism, not an observation
+bridge, and deliberately bypasses the core `ProcessPackets` wrapper (script
+receive hooks, flood accounting, per-update cap) like the module's existing
+direct handler calls.
 
 The recorded fixture exercised Headless outgoing delivery, Network-master
 outgoing delivery and the existing group-invite Trigger -> Action acceptance

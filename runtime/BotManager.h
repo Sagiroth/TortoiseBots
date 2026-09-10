@@ -177,6 +177,20 @@ private:
 
 
     std::unordered_map<uint32_t, BotEntry> m_bots; // key = guid counter
+    // Reentrancy guard for AI-driven removal. PlayerbotAI::UpdateAIInternal can
+    // request its own removal (stunned/idle logout path) while its Update is on
+    // the stack inside UpdateBots. Stopping the Headless session synchronously
+    // there deletes the PlayerbotAI (`this`) via the logout hooks and erases
+    // the BotEntry mid-update (SIGSEGV on return into UpdateBots). While the
+    // guard is set, RemoveBot only marks Removing and queues the request; the
+    // queue drains after the update loop leaves every AI stack.
+    bool m_inBotUpdate = false;
+    struct PendingBotRemoval
+    {
+        ObjectGuid characterGuid;
+        bool save = true;
+    };
+    std::vector<PendingBotRemoval> m_pendingBotRemovals;
     bool m_autoTestEnabled = false;
     uint32_t m_autoTestAccount = 0;
 // pi-lens-ignore: clang:unknown_typename

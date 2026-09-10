@@ -2,6 +2,7 @@
 #include "WorldBuffTravelActions.h"
 #include "ChooseTravelTargetAction.h"
 #include "playerbot/TravelMgr.h"
+#include "host/BotPacketPump.h"
 
 
 using namespace ai;
@@ -774,7 +775,7 @@ bool WorldBuffTravelDMTakePortalAction::Execute(Event& event)
 
         std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
         *packet << portalGO->getObjectGuid();
-        bot->GetSession()->QueuePacket(packet.release());
+        TortoiseBots::BotPacketPump::Enqueue(bot, packet.release());
 
         ai->TellPlayer(GetMaster(), std::string("Taking the portal to ") + keyword + "!");
         context->GetValue<uint8>("world buff travel step")->Set(
@@ -843,7 +844,7 @@ bool WorldBuffTravelTakePortalAction::Execute(Event& event)
 
         std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
         *packet << portalGO->getObjectGuid();
-        bot->GetSession()->QueuePacket(packet.release());
+        TortoiseBots::BotPacketPump::Enqueue(bot, packet.release());
 
         ai->TellPlayer(GetMaster(), "Taking the portal home!");
         context->GetValue<uint8>("world buff travel step")->Set(

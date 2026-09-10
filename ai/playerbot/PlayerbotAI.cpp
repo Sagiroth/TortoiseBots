@@ -10,6 +10,7 @@
 #include "playerbot/AiFactory.h"
 
 #include "../../runtime/ObservabilityEmitter.h"
+#include "host/BotPacketPump.h"
 
 #include "Movement/MovementGenerator.h"
 #include "Maps/GridNotifiers.h"
@@ -3077,7 +3078,7 @@ bool PlayerbotAI::SayToGuild(std::string msg, bool likePlayer)
 
                         std::unique_ptr<WorldPacket> packetPtr(new WorldPacket(packet_template));
 
-                        bot->GetSession()->QueuePacket(packetPtr.release());
+                        TortoiseBots::BotPacketPump::Enqueue(bot, packetPtr.release());
                         return true;
                     }
                     break;
@@ -3140,7 +3141,7 @@ bool PlayerbotAI::SayToParty(std::string msg, bool likePlayer)
 
                 std::unique_ptr<WorldPacket> packetPtr(new WorldPacket(packet_template));
 
-                bot->GetSession()->QueuePacket(packetPtr.release());
+                TortoiseBots::BotPacketPump::Enqueue(bot, packetPtr.release());
                 return true;
             }
         }
@@ -3200,7 +3201,7 @@ bool PlayerbotAI::Yell(std::string msg, bool likePlayer)
 
             std::unique_ptr<WorldPacket> packetPtr(new WorldPacket(packet_template));
 
-            bot->GetSession()->QueuePacket(packetPtr.release());
+            TortoiseBots::BotPacketPump::Enqueue(bot, packetPtr.release());
             return true;
         }
     }
@@ -3236,7 +3237,7 @@ bool PlayerbotAI::Say(std::string msg, bool likePlayer)
 
             std::unique_ptr<WorldPacket> packetPtr(new WorldPacket(packet_template));
 
-            bot->GetSession()->QueuePacket(packetPtr.release());
+            TortoiseBots::BotPacketPump::Enqueue(bot, packetPtr.release());
             return true;
         }
     }
@@ -7215,7 +7216,7 @@ void PlayerbotAI::ProcessDelayedPackets()
             !PlayerbotAIStorage::Instance().GetAI(bot))
             continue;
 
-        bot->GetSession()->QueuePacket(queued.packet.release());
+        TortoiseBots::BotPacketPump::Enqueue(bot, queued.packet.release());
     }
 }
 
@@ -7592,10 +7593,10 @@ void PlayerbotAI::ImbueItem(Item* item, uint16 targetFlag, ObjectGuid targetGUID
       *packet << targetGUID.WriteAsPacked();
 
 #ifdef CMANGOS
-   bot->GetSession()->QueuePacket(packet.release());
+   TortoiseBots::BotPacketPump::Enqueue(bot, packet.release());
 #endif
 #ifdef MANGOS
-   bot->GetSession()->QueuePacket(packet);
+   TortoiseBots::BotPacketPump::Enqueue(bot, packet);
 #endif
 }
 

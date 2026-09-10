@@ -12,6 +12,7 @@
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/strategy/values/ItemCountValue.h"
 #include "playerbot/TravelMgr.h"
+#include "host/BotPacketPump.h"
 
 using namespace ai;
 
@@ -898,7 +899,7 @@ bool UseAction::UseGameObject(Player* requester, Event& event, GameObject* gameO
 
     std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
     *packet << guid;
-    bot->GetSession()->QueuePacket(packet.release());
+    TortoiseBots::BotPacketPump::Enqueue(bot, packet.release());
 
     std::ostringstream out; out << "Using " << chat->formatGameobject(gameObject);
     ai->TellPlayerNoFacing(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
@@ -976,7 +977,7 @@ bool UseAction::OpenItem(Player* requester, Item* item)
         std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_OPEN_ITEM, 2));
         *packet << item->GetBagSlot();
         *packet << item->GetSlot();
-        bot->GetSession()->QueuePacket(packet.release()); // queue the packet to get around race condition
+        TortoiseBots::BotPacketPump::Enqueue(bot, packet.release());
         return true;
 }
 
