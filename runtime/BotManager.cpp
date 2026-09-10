@@ -835,9 +835,18 @@ void BotManager::SetPacketBridgeTestEnabled(bool enable, uint32_t accountId,
 
 void BotManager::UpdateBots(uint32_t diff)
 {
-    for (auto& kv : m_bots)
+    std::vector<uint32_t> guids;
+    guids.reserve(m_bots.size());
+    for (auto const& kv : m_bots)
+        guids.push_back(kv.first);
+
+    for (uint32_t guidLow : guids)
     {
-        BotEntry& entry = kv.second;
+        auto it = m_bots.find(guidLow);
+        if (it == m_bots.end())
+            continue;
+
+        BotEntry& entry = it->second;
         if (entry.record.lifecycle != BotLifecycle::InWorld)
             continue;
 

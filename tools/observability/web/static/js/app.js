@@ -3,7 +3,7 @@
   'use strict';
 
   // Zone registry matching bundled webp maps and DBC area IDs
-  const ZONE_CONFIG = {
+  let ZONE_CONFIG = {
     12: { name: 'Elwynn Forest', map: 0, file: 'elwynn.webp' },
     14: { name: 'Durotar', map: 1, file: 'durotar.webp' },
     17: { name: 'The Barrens', map: 1, file: 'barrens.webp' },
@@ -537,9 +537,34 @@
     });
   }
 
+  function initZoneSelector() {
+    fetch('/data/zone_maps.json')
+      .then(r => r.json())
+      .then(cfg => {
+        if (!cfg || Object.keys(cfg).length === 0) return;
+        ZONE_CONFIG = cfg;
+        if (el.zoneSelect) {
+          el.zoneSelect.innerHTML = '';
+          const sorted = Object.entries(ZONE_CONFIG).sort((a, b) => a[1].name.localeCompare(b[1].name));
+          sorted.forEach(([id, z]) => {
+            const opt = document.createElement('option');
+            opt.value = id;
+            opt.textContent = z.name;
+            if (parseInt(id, 10) === state.currentZoneId) opt.selected = true;
+            el.zoneSelect.appendChild(opt);
+          });
+        }
+        loadZoneMap(state.currentZoneId);
+      })
+      .catch(() => {
+        // Fallback to static options in index.html
+      });
+  }
+
   window.dashboardSelectBot = selectBot;
 
   // Initialize
+  initZoneSelector();
   loadZoneMap(state.currentZoneId);
   fetchAnomalies();
   initWebSocket();

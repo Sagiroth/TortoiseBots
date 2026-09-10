@@ -66,6 +66,7 @@ private:
     void SendDatagram(std::string const& payload);
 
     bool m_enabled;
+    std::string m_host;
     uint32 m_port;
     int m_socketFd;
     void* m_destAddr; // struct sockaddr_in*

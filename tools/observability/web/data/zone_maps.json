@@ -1,0 +1,507 @@
+{
+  "14": {
+    "name": "Durotar",
+    "map": 1,
+    "file": "durotar.webp"
+  },
+  "215": {
+    "name": "Mulgore",
+    "map": 1,
+    "file": "mulgore.webp"
+  },
+  "17": {
+    "name": "Barrens",
+    "map": 1,
+    "file": "barrens.webp"
+  },
+  "0": {
+    "name": "Azeroth",
+    "map": 0,
+    "file": "azeroth.webp"
+  },
+  "36": {
+    "name": "Alterac",
+    "map": 0,
+    "file": "alterac.webp"
+  },
+  "45": {
+    "name": "Arathi",
+    "map": 0,
+    "file": "arathi.webp"
+  },
+  "3": {
+    "name": "Badlands",
+    "map": 0,
+    "file": "badlands.webp"
+  },
+  "4": {
+    "name": "BlastedLands",
+    "map": 0,
+    "file": "blastedlands.webp"
+  },
+  "85": {
+    "name": "Tirisfal",
+    "map": 0,
+    "file": "tirisfal.webp"
+  },
+  "130": {
+    "name": "Silverpine",
+    "map": 0,
+    "file": "silverpine.webp"
+  },
+  "28": {
+    "name": "WesternPlaguelands",
+    "map": 0,
+    "file": "westernplaguelands.webp"
+  },
+  "139": {
+    "name": "EasternPlaguelands",
+    "map": 0,
+    "file": "easternplaguelands.webp"
+  },
+  "267": {
+    "name": "Hilsbrad",
+    "map": 0,
+    "file": "hilsbrad.webp"
+  },
+  "47": {
+    "name": "Hinterlands",
+    "map": 0,
+    "file": "hinterlands.webp"
+  },
+  "1": {
+    "name": "DunMorogh",
+    "map": 0,
+    "file": "dunmorogh.webp"
+  },
+  "51": {
+    "name": "SearingGorge",
+    "map": 0,
+    "file": "searinggorge.webp"
+  },
+  "46": {
+    "name": "BurningSteppes",
+    "map": 0,
+    "file": "burningsteppes.webp"
+  },
+  "12": {
+    "name": "Elwynn",
+    "map": 0,
+    "file": "elwynn.webp"
+  },
+  "41": {
+    "name": "DeadwindPass",
+    "map": 0,
+    "file": "deadwindpass.webp"
+  },
+  "10": {
+    "name": "Duskwood",
+    "map": 0,
+    "file": "duskwood.webp"
+  },
+  "38": {
+    "name": "LochModan",
+    "map": 0,
+    "file": "lochmodan.webp"
+  },
+  "44": {
+    "name": "Redridge",
+    "map": 0,
+    "file": "redridge.webp"
+  },
+  "33": {
+    "name": "Stranglethorn",
+    "map": 0,
+    "file": "stranglethorn.webp"
+  },
+  "8": {
+    "name": "SwampOfSorrows",
+    "map": 0,
+    "file": "swampofsorrows.webp"
+  },
+  "40": {
+    "name": "Westfall",
+    "map": 0,
+    "file": "westfall.webp"
+  },
+  "11": {
+    "name": "Wetlands",
+    "map": 0,
+    "file": "wetlands.webp"
+  },
+  "141": {
+    "name": "Teldrassil",
+    "map": 1,
+    "file": "teldrassil.webp"
+  },
+  "148": {
+    "name": "Darkshore",
+    "map": 1,
+    "file": "darkshore.webp"
+  },
+  "331": {
+    "name": "Ashenvale",
+    "map": 1,
+    "file": "ashenvale.webp"
+  },
+  "400": {
+    "name": "ThousandNeedles",
+    "map": 1,
+    "file": "thousandneedles.webp"
+  },
+  "406": {
+    "name": "StonetalonMountains",
+    "map": 1,
+    "file": "stonetalonmountains.webp"
+  },
+  "405": {
+    "name": "Desolace",
+    "map": 1,
+    "file": "desolace.webp"
+  },
+  "357": {
+    "name": "Feralas",
+    "map": 1,
+    "file": "feralas.webp"
+  },
+  "15": {
+    "name": "Dustwallow",
+    "map": 1,
+    "file": "dustwallow.webp"
+  },
+  "440": {
+    "name": "Tanaris",
+    "map": 1,
+    "file": "tanaris.webp"
+  },
+  "16": {
+    "name": "Aszhara",
+    "map": 1,
+    "file": "aszhara.webp"
+  },
+  "361": {
+    "name": "Felwood",
+    "map": 1,
+    "file": "felwood.webp"
+  },
+  "490": {
+    "name": "UngoroCrater",
+    "map": 1,
+    "file": "ungorocrater.webp"
+  },
+  "493": {
+    "name": "Moonglade",
+    "map": 1,
+    "file": "moonglade.webp"
+  },
+  "1377": {
+    "name": "Silithus",
+    "map": 1,
+    "file": "silithus.webp"
+  },
+  "618": {
+    "name": "Winterspring",
+    "map": 1,
+    "file": "winterspring.webp"
+  },
+  "1519": {
+    "name": "Stormwind",
+    "map": 0,
+    "file": "stormwind.webp"
+  },
+  "1637": {
+    "name": "Orgrimmar",
+    "map": 1,
+    "file": "orgrimmar.webp"
+  },
+  "1537": {
+    "name": "Ironforge",
+    "map": 0,
+    "file": "ironforge.webp"
+  },
+  "1638": {
+    "name": "ThunderBluff",
+    "map": 1,
+    "file": "thunderbluff.webp"
+  },
+  "1657": {
+    "name": "Darnassus",
+    "map": 1,
+    "file": "darnassus.webp"
+  },
+  "1497": {
+    "name": "Undercity",
+    "map": 0,
+    "file": "undercity.webp"
+  },
+  "2597": {
+    "name": "AlteracValley",
+    "map": 30,
+    "file": "alteracvalley.webp"
+  },
+  "3277": {
+    "name": "WarsongGulch",
+    "map": 489,
+    "file": "warsonggulch.webp"
+  },
+  "3358": {
+    "name": "ArathiBasin",
+    "map": 529,
+    "file": "arathibasin.webp"
+  },
+  "876": {
+    "name": "GMIsland",
+    "map": 1,
+    "file": "gmisland.webp"
+  },
+  "616": {
+    "name": "Hyjal",
+    "map": 1,
+    "file": "hyjal.webp"
+  },
+  "4012": {
+    "name": "ScarletEnclave",
+    "map": 0,
+    "file": "scarletenclave.webp"
+  },
+  "5023": {
+    "name": "Sunnyglade",
+    "map": 27,
+    "file": "sunnyglade.webp"
+  },
+  "409": {
+    "name": "Lapidis",
+    "map": 0,
+    "file": "lapidis.webp"
+  },
+  "408": {
+    "name": "Gillijim",
+    "map": 0,
+    "file": "gillijim.webp"
+  },
+  "5121": {
+    "name": "TelAbim",
+    "map": 1,
+    "file": "telabim.webp"
+  },
+  "2040": {
+    "name": "AlahThalas",
+    "map": 0,
+    "file": "alahthalas.webp"
+  },
+  "5179": {
+    "name": "Gilneas",
+    "map": 0,
+    "file": "gilneas.webp"
+  },
+  "5024": {
+    "name": "Icepoint",
+    "map": 1,
+    "file": "icepoint.webp"
+  },
+  "5536": {
+    "name": "BlackstoneIsland",
+    "map": 1,
+    "file": "blackstoneisland.webp"
+  },
+  "5225": {
+    "name": "ThalassianHighlands",
+    "map": 0,
+    "file": "thalassianhighlands.webp"
+  },
+  "1581": {
+    "name": "DeadminesEntrance",
+    "map": 0,
+    "file": "deadminesentrance.webp"
+  },
+  "718": {
+    "name": "WailingCaverns",
+    "map": 43,
+    "file": "wailingcaverns.webp"
+  },
+  "2100": {
+    "name": "Maraudon",
+    "map": 349,
+    "file": "maraudon.webp"
+  },
+  "721": {
+    "name": "Gnomeregan",
+    "map": 90,
+    "file": "gnomeregan.webp"
+  },
+  "25": {
+    "name": "BlackrockMountain",
+    "map": 0,
+    "file": "blackrockmountain.webp"
+  },
+  "796": {
+    "name": "ScarletMonasteryEntrance",
+    "map": 0,
+    "file": "scarletmonasteryentrance.webp"
+  },
+  "1337": {
+    "name": "Uldaman",
+    "map": 70,
+    "file": "uldaman.webp"
+  },
+  "3478": {
+    "name": "AhnQirajEntrance",
+    "map": 1,
+    "file": "ahnqirajentrance.webp"
+  },
+  "5130": {
+    "name": "WinterVeilVale",
+    "map": 813,
+    "file": "winterveilvale.webp"
+  },
+  "2437": {
+    "name": "Ragefire",
+    "map": 389,
+    "file": "ragefire.webp"
+  },
+  "1176": {
+    "name": "ZulFarrak",
+    "map": 209,
+    "file": "zulfarrak.webp"
+  },
+  "1477": {
+    "name": "TheTempleOfAtalHakkar",
+    "map": 109,
+    "file": "thetempleofatalhakkar.webp"
+  },
+  "719": {
+    "name": "BlackFathomDeeps",
+    "map": 48,
+    "file": "blackfathomdeeps.webp"
+  },
+  "717": {
+    "name": "TheStockade",
+    "map": 34,
+    "file": "thestockade.webp"
+  },
+  "2717": {
+    "name": "MoltenCore",
+    "map": 409,
+    "file": "moltencore.webp"
+  },
+  "1977": {
+    "name": "ZulGurub",
+    "map": 309,
+    "file": "zulgurub.webp"
+  },
+  "2557": {
+    "name": "DireMaul",
+    "map": 429,
+    "file": "diremaul.webp"
+  },
+  "1584": {
+    "name": "BlackrockDepths",
+    "map": 230,
+    "file": "blackrockdepths.webp"
+  },
+  "3429": {
+    "name": "RuinsofAhnQiraj",
+    "map": 509,
+    "file": "ruinsofahnqiraj.webp"
+  },
+  "2159": {
+    "name": "OnyxiasLair",
+    "map": 249,
+    "file": "onyxiaslair.webp"
+  },
+  "1583": {
+    "name": "BlackrockSpire",
+    "map": 229,
+    "file": "blackrockspire.webp"
+  },
+  "2677": {
+    "name": "BlackwingLair",
+    "map": 469,
+    "file": "blackwinglair.webp"
+  },
+  "5138": {
+    "name": "TheDeadmines",
+    "map": 36,
+    "file": "thedeadmines.webp"
+  },
+  "722": {
+    "name": "RazorfenDowns",
+    "map": 129,
+    "file": "razorfendowns.webp"
+  },
+  "491": {
+    "name": "RazorfenKraul",
+    "map": 47,
+    "file": "razorfenkraul.webp"
+  },
+  "5136": {
+    "name": "ScarletMonastery",
+    "map": 189,
+    "file": "scarletmonastery.webp"
+  },
+  "5135": {
+    "name": "ScarletMonastery2f",
+    "map": 189,
+    "file": "scarletmonastery2f.webp"
+  },
+  "5153": {
+    "name": "ScarletMonastery3f",
+    "map": 189,
+    "file": "scarletmonastery3f.webp"
+  },
+  "5163": {
+    "name": "ScarletMonastery4f",
+    "map": 189,
+    "file": "scarletmonastery4f.webp"
+  },
+  "2057": {
+    "name": "Scholomance",
+    "map": 289,
+    "file": "scholomance.webp"
+  },
+  "209": {
+    "name": "ShadowfangKeep",
+    "map": 33,
+    "file": "shadowfangkeep.webp"
+  },
+  "2017": {
+    "name": "Stratholme",
+    "map": 329,
+    "file": "stratholme.webp"
+  },
+  "3428": {
+    "name": "AhnQiraj",
+    "map": 531,
+    "file": "ahnqiraj.webp"
+  },
+  "5147": {
+    "name": "AhnQiraj2f",
+    "map": 531,
+    "file": "ahnqiraj2f.webp"
+  },
+  "3457": {
+    "name": "UpperKarazhan",
+    "map": 814,
+    "file": "upperkarazhan.webp"
+  },
+  "2257": {
+    "name": "DeeprunTram",
+    "map": 369,
+    "file": "deepruntram.webp"
+  },
+  "3456": {
+    "name": "Naxxramas",
+    "map": 533,
+    "file": "naxxramas.webp"
+  },
+  "5148": {
+    "name": "Naxxramas2f",
+    "map": 533,
+    "file": "naxxramas2f.webp"
+  },
+  "5557": {
+    "name": "UpperKarazhan2f",
+    "map": 814,
+    "file": "upperkarazhan2f.webp"
+  }
+}

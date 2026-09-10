@@ -139,9 +139,10 @@ func main() {
 	// 6. Router Setup
 	mux := http.NewServeMux()
 
-	// Static files: /static/* and /maps/*
+	// Static files: /static/*, /maps/*, and /data/*
 	mux.Handle("/static/", http.FileServer(http.FS(web.FS)))
 	mux.Handle("/maps/", http.FileServer(http.FS(web.FS)))
+	mux.Handle("/data/", http.FileServer(http.FS(web.FS)))
 
 	// Prometheus Scrape Endpoint
 	mux.Handle("/metrics", promhttp.Handler())

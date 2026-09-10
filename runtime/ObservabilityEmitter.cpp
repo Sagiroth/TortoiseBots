@@ -14,10 +14,12 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
 #include <sstream>
 #include <iomanip>
 
@@ -136,6 +138,15 @@ void ObservabilityEmitter::Initialize()
     if (m_port == 0)
         m_port = 9195;
 
+    m_host = sConfig.GetStringDefault("AiPlayerbot.ObservabilityHost", "");
+    if (m_host.empty())
+    {
+        if (char const* envHost = std::getenv("OBSERVABILITY_HOST"))
+            m_host = envHost;
+    }
+    if (m_host.empty())
+        m_host = "127.0.0.1";
+
     m_socketFd = socket(AF_INET, SOCK_DGRAM, 0);
     if (m_socketFd < 0)
     {
@@ -152,10 +163,27 @@ void ObservabilityEmitter::Initialize()
     std::memset(addr, 0, sizeof(*addr));
     addr->sin_family = AF_INET;
     addr->sin_port = htons(static_cast<uint16>(m_port));
-    inet_pton(AF_INET, "127.0.0.1", &addr->sin_addr);
+
+    if (inet_pton(AF_INET, m_host.c_str(), &addr->sin_addr) != 1)
+    {
+        struct addrinfo hints{}, *res = nullptr;
+        hints.ai_family = AF_INET;
+        hints.ai_socktype = SOCK_DGRAM;
+        if (getaddrinfo(m_host.c_str(), nullptr, &hints, &res) == 0 && res)
+        {
+            addr->sin_addr = reinterpret_cast<struct sockaddr_in*>(res->ai_addr)->sin_addr;
+            freeaddrinfo(res);
+        }
+        else
+        {
+            sLog.outError("TortoiseBots: Observability failed to resolve host '%s', falling back to 127.0.0.1", m_host.c_str());
+            m_host = "127.0.0.1";
+            inet_pton(AF_INET, "127.0.0.1", &addr->sin_addr);
+        }
+    }
     m_destAddr = addr;
 
-    sLog.outString("TortoiseBots: Observability telemetry active on 127.0.0.1:%u", m_port);
+    sLog.outString("TortoiseBots: Observability telemetry active on %s:%u", m_host.c_str(), m_port);
 }
 
 void ObservabilityEmitter::Shutdown()
