@@ -224,9 +224,23 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "POST_TARGETS")
       "${CMAKE_SOURCE_DIR}/src/game/Movement/spline"
       "${CMAKE_SOURCE_DIR}/src/game/Transports"
       "${CMAKE_SOURCE_DIR}/src/game/vmap")
-    if(COMMAND target_precompile_headers)
+    # TortoiseBots headers assume the compatibility precompiled header
+    # (ai/botpch.h) is in scope. Honor the core's PCH option: use it when
+    # precompiled headers are enabled, and force-include the same header when
+    # USE_PCH=OFF (or a consumer disabled PCH globally) so the module stays
+    # self-contained instead of depending on how the core was configured.
+    set(TORTOISEBOTS_PCH_HEADER "${TORTOISEBOTS_ROOT}/ai/botpch.h")
+    if(USE_PCH AND COMMAND target_precompile_headers AND NOT CMAKE_DISABLE_PRECOMPILE_HEADERS)
       target_precompile_headers("${TORTOISEBOTS_TARGET}" PRIVATE
-        "${TORTOISEBOTS_ROOT}/ai/botpch.h")
+        "${TORTOISEBOTS_PCH_HEADER}")
+    else()
+      if(MSVC)
+        target_compile_options("${TORTOISEBOTS_TARGET}" PRIVATE
+          "/FI${TORTOISEBOTS_PCH_HEADER}")
+      else()
+        target_compile_options("${TORTOISEBOTS_TARGET}" PRIVATE
+          "-include" "${TORTOISEBOTS_PCH_HEADER}")
+      endif()
     endif()
   endif()
 endif()
