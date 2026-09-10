@@ -33,8 +33,6 @@ class BotPacketPump
 public:
     // Takes ownership of `packet` (drop-in for WorldSession::QueuePacket).
     static void Enqueue(Player* bot, WorldPacket* packet);
-    // Copies `packet`; the pump stamps packet time at drain.
-    static void Enqueue(Player* bot, WorldPacket const& packet);
     // Dispatch queued packets for the current tick. World thread only.
     static void Drain();
 };

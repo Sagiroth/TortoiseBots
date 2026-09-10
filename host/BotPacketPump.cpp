@@ -167,14 +167,6 @@ void BotPacketPump::Enqueue(Player* bot, WorldPacket* packet)
     g_queue.push_back(std::move(entry));
 }
 
-void BotPacketPump::Enqueue(Player* bot, WorldPacket const& packet)
-{
-    if (!bot)
-        return;
-
-    Enqueue(bot, new WorldPacket(packet));
-}
-
 void BotPacketPump::Drain()
 {
     if (g_queue.empty())
