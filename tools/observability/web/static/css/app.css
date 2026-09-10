@@ -443,6 +443,29 @@ body {
   margin-top: 12px;
 }
 
+.zone-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.zone-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.zone-row:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.04);
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
 .stacked-bar {
   display: flex;
   height: 14px;

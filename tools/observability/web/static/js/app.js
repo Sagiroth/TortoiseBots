@@ -49,9 +49,10 @@
 
   const HIST_MAX = 300; // 2s samples -> 10 minutes
 
+  // WoW class colors (https://wowpedia.fandom.com/wiki/Class_colors)
   const CLASS_COLORS = {
     warrior: '#c79c6e', paladin: '#f58cba', hunter: '#abd473', rogue: '#fff569',
-    priest: '#e8e8e8', shaman: '#0070de', mage: '#69ccf0', warlock: '#9482c9',
+    priest: '#ffffff', shaman: '#0070de', mage: '#69ccf0', warlock: '#9482c9',
     druid: '#ff7d0a', unknown: '#8b949e'
   };
 
@@ -124,6 +125,8 @@
     // Dashboard composition
     classBreakdown: document.getElementById('class-breakdown'),
     roleTotals: document.getElementById('role-totals'),
+    fleetHealth: document.getElementById('fleet-health'),
+    zoneList: document.getElementById('zone-list'),
     macroSegCombat: document.getElementById('macro-seg-combat'),
     macroSegMoving: document.getElementById('macro-seg-moving'),
     macroSegResting: document.getElementById('macro-seg-resting'),
@@ -186,23 +189,27 @@
   }
 
   // Sidebar Tab Navigation
+  function switchTab(tab) {
+    state.activeTab = tab;
+    el.menuItems.forEach(m => m.classList.toggle('active', m.dataset.tab === tab));
+    el.tabViews.forEach(v => {
+      v.style.display = v.id === `tab-${tab}` ? 'block' : 'none';
+    });
+    if (tab === 'map') renderMap();
+    if (tab === 'roster') renderRoster();
+    if (tab === 'dashboard') {
+      renderDashboardCharts();
+      renderComposition();
+      renderFleetHealth();
+      renderMacroBar(state.server.states);
+    }
+  }
+
   el.menuItems.forEach(item => {
     item.addEventListener('click', (e) => {
       e.preventDefault();
       const tab = item.dataset.tab;
-      if (!tab) return;
-      state.activeTab = tab;
-      el.menuItems.forEach(m => m.classList.toggle('active', m.dataset.tab === tab));
-      el.tabViews.forEach(v => {
-        v.style.display = v.id === `tab-${tab}` ? 'block' : 'none';
-      });
-      if (tab === 'map') renderMap();
-      if (tab === 'roster') renderRoster();
-      if (tab === 'dashboard') {
-        renderDashboardCharts();
-        renderComposition();
-        renderMacroBar(state.server.states);
-      }
+      if (tab) switchTab(tab);
     });
   });
 
@@ -334,7 +341,7 @@
     const humans = state.history.humans;
     const padTop = 12, padBottom = 16;
 
-    if (bots.length < 2) {
+    if (bots.length === 0) {
       ctx.fillStyle = '#484f58';
       ctx.font = '12px Inter';
       ctx.fillText('Collecting telemetry...', 12, h / 2);
@@ -344,26 +351,29 @@
 
     const maxVal = Math.max(10, ...bots, ...humans) * 1.15;
     const yFor = v => padTop + (h - padTop - padBottom) * (1 - v / maxVal);
-    const stepX = w / (bots.length - 1);
+    const stepX = bots.length > 1 ? w / (bots.length - 1) : 0;
+    const xFor = i => bots.length > 1 ? i * stepX : w / 2;
 
     drawGrid(ctx, w, h, padTop, padBottom, maxVal);
 
     // Bots: filled area + line
-    ctx.beginPath();
-    ctx.moveTo(0, h - padBottom);
-    bots.forEach((v, i) => ctx.lineTo(i * stepX, yFor(v)));
-    ctx.lineTo(w, h - padBottom);
-    ctx.closePath();
-    const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, 'rgba(88, 166, 255, 0.28)');
-    grad.addColorStop(1, 'rgba(88, 166, 255, 0.0)');
-    ctx.fillStyle = grad;
-    ctx.fill();
+    if (bots.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(xFor(0), h - padBottom);
+      bots.forEach((v, i) => ctx.lineTo(xFor(i), yFor(v)));
+      ctx.lineTo(xFor(bots.length - 1), h - padBottom);
+      ctx.closePath();
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, 'rgba(88, 166, 255, 0.28)');
+      grad.addColorStop(1, 'rgba(88, 166, 255, 0.0)');
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
 
     ctx.beginPath();
     bots.forEach((v, i) => {
-      if (i === 0) ctx.moveTo(0, yFor(v));
-      else ctx.lineTo(i * stepX, yFor(v));
+      if (i === 0) ctx.moveTo(xFor(i), yFor(v));
+      else ctx.lineTo(xFor(i), yFor(v));
     });
     ctx.strokeStyle = '#58a6ff';
     ctx.lineWidth = 2;
@@ -372,12 +382,21 @@
     // Players line
     ctx.beginPath();
     humans.forEach((v, i) => {
-      if (i === 0) ctx.moveTo(0, yFor(v));
-      else ctx.lineTo(i * stepX, yFor(v));
+      if (i === 0) ctx.moveTo(xFor(i), yFor(v));
+      else ctx.lineTo(xFor(i), yFor(v));
     });
     ctx.strokeStyle = '#2ea043';
     ctx.lineWidth = 2;
     ctx.stroke();
+
+    if (bots.length === 1) {
+      [[bots[0], '#58a6ff'], [humans[0], '#2ea043']].forEach(([v, color]) => {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(xFor(0), yFor(v || 0), 3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
 
     // End labels
     const last = bots.length - 1;
@@ -402,7 +421,7 @@
     const series = state.history.diff;
     const padTop = 8, padBottom = 14;
 
-    if (series.length < 2) {
+    if (series.length === 0) {
       ctx.fillStyle = '#484f58';
       ctx.font = '11px Inter';
       ctx.fillText('Collecting telemetry...', 12, h / 2);
@@ -411,7 +430,8 @@
 
     const maxVal = Math.max(100, ...series) * 1.1;
     const yFor = v => padTop + (h - padTop - padBottom) * (1 - v / maxVal);
-    const stepX = w / (series.length - 1);
+    const stepX = series.length > 1 ? w / (series.length - 1) : 0;
+    const xFor = i => series.length > 1 ? i * stepX : w / 2;
 
     drawGrid(ctx, w, h, padTop, padBottom, maxVal);
 
@@ -424,12 +444,19 @@
 
     ctx.beginPath();
     series.forEach((v, i) => {
-      if (i === 0) ctx.moveTo(0, yFor(v));
-      else ctx.lineTo(i * stepX, yFor(v));
+      if (i === 0) ctx.moveTo(xFor(i), yFor(v));
+      else ctx.lineTo(xFor(i), yFor(v));
     });
     ctx.strokeStyle = '#f0883e';
     ctx.lineWidth = 1.5;
     ctx.stroke();
+
+    if (series.length === 1) {
+      ctx.fillStyle = '#f0883e';
+      ctx.beginPath();
+      ctx.arc(xFor(0), yFor(series[0]), 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     const last = series[series.length - 1];
     if (el.tickNow) {
@@ -476,6 +503,63 @@
         return `<span class="badge ${badge}">${byRole[role] || 0} ${role.toUpperCase()}</span>`;
       }).join('');
     }
+  }
+
+  // Fleet health + zone distribution from the authoritative roster.
+  function renderFleetHealth() {
+    if (!el.fleetHealth) return;
+
+    const bots = state.bots;
+    if (bots.length === 0) {
+      el.fleetHealth.innerHTML = '<div class="empty-hint">Waiting for bot roster...</div>';
+      if (el.zoneList) el.zoneList.innerHTML = '';
+      return;
+    }
+
+    let hpSum = 0, dead = 0, low = 0, inCombat = 0;
+    const zones = new Map();
+    bots.forEach(b => {
+      const pct = b.max_hp ? b.hp / b.max_hp : 1;
+      hpSum += pct;
+      if (b.state === 'dead' || b.hp === 0) dead++;
+      else if (pct < 0.35) low++;
+      if (b.state === 'combat') inCombat++;
+      zones.set(b.zone, (zones.get(b.zone) || 0) + 1);
+    });
+
+    const avg = Math.round((hpSum / bots.length) * 100);
+    const color = avg > 60 ? '#2ea043' : avg > 35 ? '#d29922' : '#f85149';
+
+    el.fleetHealth.innerHTML = `
+      <div class="comp-row">
+        <span class="comp-name">Avg HP</span>
+        <span class="comp-bar-bg"><span class="comp-bar" style="width: ${avg}%; background: ${color};"></span></span>
+        <span class="comp-count">${avg}%</span>
+      </div>
+      <div class="role-row">
+        <span class="badge badge-error">${inCombat} IN COMBAT</span>
+        <span class="badge badge-warn">${low} LOW HP</span>
+        <span class="badge badge-info">${dead} DEAD</span>
+      </div>`;
+
+    if (el.zoneList) {
+      const top = [...zones.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+      el.zoneList.innerHTML = top.map(([zid, n]) =>
+        `<div class="zone-row" data-zone="${zid}"><span>${esc(getZoneName(zid))}</span><span class="comp-count">${n}</span></div>`
+      ).join('');
+      el.zoneList.querySelectorAll('.zone-row').forEach(row => {
+        row.addEventListener('click', () => openZone(parseInt(row.dataset.zone, 10)));
+      });
+    }
+  }
+
+  function openZone(zoneId) {
+    if (ZONE_CONFIG[zoneId]) {
+      state.currentZoneId = zoneId;
+      if (el.zoneSelect) el.zoneSelect.value = zoneId;
+      loadZoneMap(zoneId);
+    }
+    switchTab('map');
   }
 
   function renderMacroBar(r) {
@@ -830,6 +914,7 @@
         updateDashboardMetrics();
         if (state.activeTab === 'map') renderMap();
         if (state.activeTab === 'roster') renderRoster();
+        if (state.activeTab === 'dashboard') renderFleetHealth();
       })
       .catch(() => {});
   }
@@ -893,6 +978,7 @@
 
       if (state.activeTab === 'map') renderMap();
       if (state.activeTab === 'roster') renderRoster();
+      if (state.activeTab === 'dashboard') renderFleetHealth();
 
       if (state.bots.length !== prevCount) {
         appendConsoleLog(time, 'roster', `Snapshot #${esc(state.snapshotSeq)}: ${state.bots.length} bots active.`);
