@@ -1,6 +1,7 @@
 #include "BotHostAdapter.h"
 
 #include "../behavior/PlayerConvenience.h"
+#include "../runtime/BotActivityLease.h"
 #include "../runtime/BotManager.h"
 #include "../runtime/RandomBotService.h"
 #include "../runtime/AhMarketService.h"
@@ -106,10 +107,11 @@ void BotHostAdapter::OnStartup()
 
     sLog.outString("TortoiseBots: native module loaded (AI %s)", configured ? "enabled" : "disabled");
 }
-
 void BotHostAdapter::OnUpdate(uint32 diff)
 {
     ++m_ticks;
+    // Expire stale leases before services select candidates (issue #89).
+    BotActivityLeaseManager::Instance().Update(diff);
     BotManager::Instance().OnWorldUpdate(diff);
     PlayerConvenience::Instance().Update(diff);
     RandomBotService::Instance().Update(diff);
@@ -121,6 +123,7 @@ void BotHostAdapter::OnShutdown()
 {
     BattlegroundQueueService::Instance().Shutdown();
     RandomBotService::Instance().Shutdown();
+    BotActivityLeaseManager::Instance().Clear();
     sLog.outString("TortoiseBots: native module shutting down after %u world ticks", m_ticks);
 }
 

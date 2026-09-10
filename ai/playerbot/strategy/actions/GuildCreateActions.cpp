@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "GuildCreateActions.h"
+#include "runtime/BotActivityLease.h"
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/TravelMgr.h"
@@ -54,9 +55,13 @@ bool BuyPetitionAction::Execute(Event& event)
 
     return false;
 }
-
 bool BuyPetitionAction::isUseful()
 {
+    // Lease gate (issue #89): Idle/Grinding/PlayerMaster only.
+    TortoiseBots::BotActivity activity = TortoiseBots::BotActivityLeaseManager::Instance().GetActivity(bot->GetGUIDLow());
+    if (activity != TortoiseBots::BotActivity::Idle && activity != TortoiseBots::BotActivity::Grinding &&
+        activity != TortoiseBots::BotActivity::PlayerMaster)
+        return false;
     return canBuyPetition(bot);
 };
 
@@ -277,6 +282,11 @@ bool PetitionTurnInAction::Execute(Event& event)
 
 bool PetitionTurnInAction::isUseful()
 {
+    // Lease gate (issue #89): Idle/Grinding/PlayerMaster only.
+    TortoiseBots::BotActivity activity = TortoiseBots::BotActivityLeaseManager::Instance().GetActivity(bot->GetGUIDLow());
+    if (activity != TortoiseBots::BotActivity::Idle && activity != TortoiseBots::BotActivity::Grinding &&
+        activity != TortoiseBots::BotActivity::PlayerMaster)
+        return false;
     if (!sPlayerbotAIConfig.randomBotFormGuild)
         return false;
 
@@ -328,6 +338,11 @@ bool BuyTabardAction::Execute(Event& event)
 
 bool BuyTabardAction::isUseful()
 {
+    // Lease gate (issue #89): Idle/Grinding/PlayerMaster only.
+    TortoiseBots::BotActivity activity = TortoiseBots::BotActivityLeaseManager::Instance().GetActivity(bot->GetGUIDLow());
+    if (activity != TortoiseBots::BotActivity::Idle && activity != TortoiseBots::BotActivity::Grinding &&
+        activity != TortoiseBots::BotActivity::PlayerMaster)
+        return false;
     if (!ai->HasStrategy("travel", BotState::BOT_STATE_NON_COMBAT))
         return false;
 

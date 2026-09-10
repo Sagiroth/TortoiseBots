@@ -26,6 +26,10 @@ public:
     void Update(uint32_t diff);
     void Shutdown();
 
+    // Activity-lease eviction hook (issue #89): cancels owned native BG queue
+    // entries and prunes ownership. Must not touch the lease map.
+    void OnLeaseEvicted(uint32_t guidLow);
+
 private:
     BattlegroundQueueService() = default;
     ~BattlegroundQueueService() = default;

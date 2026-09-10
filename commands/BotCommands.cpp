@@ -2,6 +2,7 @@
 #include "BotCommands.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../runtime/BotManager.h"
+#include "../runtime/BotActivityLease.h"
 #include "BotCommandContext.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "../behavior/PlayerConvenience.h"
@@ -240,6 +241,37 @@ static bool HandleStatus(ChatHandler* handler, char const* args)
         record->masterGuid == requester->GetObjectGuid() ? "you" : "another player");
     return true;
 }
+static bool HandleLease(ChatHandler* handler, char const* args)
+{
+    std::string sub = Trim(args ? args : "");
+    for (char& c : sub) c = tolower(c);
+    if (!sub.empty() && sub != "status")
+    {
+        handler->PSendSysMessage("Usage: .bot lease [status]");
+        return true;
+    }
+    uint32_t grinding, trading, lft, bg, master;
+    BotActivityLeaseManager::Instance().GetActivityCounts(grinding, trading, lft, bg, master);
+    uint32_t tracked = grinding + trading + lft + bg + master;
+    uint32_t online = BotManager::Instance().GetBotCount();
+    uint32_t idle = online > tracked ? online - tracked : 0;
+    handler->PSendSysMessage("Leases: Idle %u, Grinding %u, Trading %u, LftQueued %u, BgQueued %u, PlayerMaster %u (online %u, tracked %u).",
+        idle, grinding, trading, lft, bg, master, online, tracked);
+
+    std::vector<ActivityLeaseInfo> leases = BotActivityLeaseManager::Instance().GetActiveLeases();
+    for (ActivityLeaseInfo const& info : leases)
+    {
+        uint32_t remaining = BotActivityLeaseManager::Instance().GetRemainingMs(info.guidLow);
+        if (info.lease.maxDurationMs)
+            handler->PSendSysMessage("Lease %u: %s, %u ms remaining.", info.guidLow,
+                BotActivityName(info.lease.activity), remaining);
+        else
+            handler->PSendSysMessage("Lease %u: %s, indefinite.", info.guidLow,
+                BotActivityName(info.lease.activity));
+    }
+    return true;
+}
+
 
 static bool HandleInvite(ChatHandler* handler, char const* args)
 {
@@ -1690,7 +1722,7 @@ bool HandleChatCommand(ChatHandler* handler, char const* args)
     while (*args == ' ' || *args == '\t') ++args;
     if (!*args)
     {
-        handler->PSendSysMessage("Usage: .bot add/remove/logout/roster/action/follow/invite/uninvite/stay/guard/free/ready/attack/interrupt/formation/list/stats/status/pullback/summon/command/ah");
+        handler->PSendSysMessage("Usage: .bot add/remove/logout/roster/action/follow/invite/uninvite/stay/guard/free/ready/attack/interrupt/formation/list/stats/status/lease/pullback/summon/command/ah");
         return true;
     }
 
@@ -1744,6 +1776,8 @@ bool HandleChatCommand(ChatHandler* handler, char const* args)
         return HandleStats(handler);
     if (cmd == "status")
         return HandleStatus(handler, subArgs);
+    if (cmd == "lease")
+        return HandleLease(handler, subArgs);
     if (cmd == "pullback" || cmd == "pull-back")
         return HandlePullback(handler, subArgs);
     if (cmd == "summon")

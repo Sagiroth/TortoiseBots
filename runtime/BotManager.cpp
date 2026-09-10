@@ -1,4 +1,5 @@
 #include "BotManager.h"
+#include "BotActivityLease.h"
 #include "PlayerbotAIAdapter.h"
 #include "PlayerbotAIStorage.h"
 #include "GearSeedingGuard.h"
@@ -378,6 +379,7 @@ void BotManager::RebindOwnedBots(::Player* master)
         else if (PlayerbotAIStorage::Instance().GetAI(bot))
             sLog.outError("TortoiseBots: cannot rebind master for %s because the module AI adapter is unavailable",
                 bot->GetName());
+        BotActivityLeaseManager::Instance().ClaimForMaster(entry.record.characterGuid.GetCounter());
 
         sLog.outString("TortoiseBots: rebound master %s to existing Headless bot %s; mature movement preserved",
             master->GetName(), bot->GetName());
@@ -397,7 +399,12 @@ void BotManager::ReleaseToClient(::Player* player)
         it->second.aiAdapter->Shutdown();
 
     sLog.outString("TortoiseBots: releasing module control of %s to a network client", player->GetName());
+    uint32_t guidLow = player->GetObjectGuid().GetCounter();
     m_bots.erase(it);
+    // Human reclaim owns the character now: evict any background lease with
+    // active cleanup, then drop the master lock so no ghost lease lingers.
+    BotActivityLeaseManager::Instance().ClaimForMaster(guidLow);
+    BotActivityLeaseManager::Instance().ReleaseMaster(guidLow);
 }
 
 bool BotManager::RunPendingAddRemoveTest(uint32_t accountId, ::ObjectGuid guid)
@@ -466,6 +473,8 @@ bool BotManager::AddBotWithMaster(uint32_t accountId, ::ObjectGuid guid, ::Objec
     entry.record.masterGuid = masterGuid;
     entry.record.lifecycle = BotLifecycle::PendingAdd;
     m_bots.emplace(key, std::move(entry));
+    if (!masterGuid.IsEmpty())
+        BotActivityLeaseManager::Instance().ClaimForMaster(key);
     sLog.outString("TortoiseBots: AddBot %s on acct %u master %s (PendingAdd, StartHeadlessSession)",
         guid.GetString().c_str(), accountId, masterGuid.GetString().c_str());
     return true;
@@ -564,6 +573,10 @@ bool BotManager::RemoveBot(::ObjectGuid guid, bool save)
 
     BotRecord& rec = it->second.record;
     rec.lifecycle = BotLifecycle::Removing;
+    // Grinding is indefinite with no timeout: clear it on logout so no ghost
+    // lease lingers. Other activities are service-owned (LFT/BG/Trading via
+    // Reconcile/Prune, PlayerMaster via Clear/ReleaseToClient).
+    BotActivityLeaseManager::Instance().Release(key, BotActivity::Grinding);
 
     // Request core to stop the headless session while record remains so
     // PlayerScript logout hooks can shut down AI.
@@ -714,6 +727,10 @@ bool BotManager::BindBotMaster(::ObjectGuid botGuid, ::ObjectGuid masterGuid)
     it->second.record.masterGuid = masterGuid;
     if (ai)
         it->second.aiAdapter->RebindMaster(master);
+    // Human claim wins (issue #89): evict any background lease with active
+    // cleanup, then lock to PlayerMaster. Non-binding whispers never reach
+    // here; only master-binding paths (.bot add, invite, follow) do.
+    BotActivityLeaseManager::Instance().ClaimForMaster(botGuid.GetCounter());
 
     return true;
 }
@@ -753,6 +770,7 @@ bool BotManager::ClearBotMaster(::ObjectGuid botGuid)
     it->second.record.masterGuid = ObjectGuid();
     if (ai)
         it->second.aiAdapter->DetachMaster();
+    BotActivityLeaseManager::Instance().ReleaseMaster(botGuid.GetCounter());
 
     return true;
 }
@@ -869,13 +887,19 @@ void BotManager::OnWorldUpdate(uint32_t diff)
             {
                 sLog.outString("TortoiseBots: Bot %s reclaimed by network during removal — releasing",
                     rec.characterGuid.GetString().c_str());
+                uint32_t guidLow = rec.characterGuid.GetCounter();
                 it = m_bots.erase(it);
+                BotActivityLeaseManager::Instance().ClaimForMaster(guidLow);
+                BotActivityLeaseManager::Instance().ReleaseMaster(guidLow);
                 continue;
             }
             if (state == HeadlessSessionState::NotFound)
             {
                 sLog.outString("TortoiseBots: Bot %s removal complete (NotFound)", rec.characterGuid.GetString().c_str());
+                uint32_t guidLow = rec.characterGuid.GetCounter();
                 it = m_bots.erase(it);
+                BotActivityLeaseManager::Instance().ClaimForMaster(guidLow);
+                BotActivityLeaseManager::Instance().ReleaseMaster(guidLow);
                 continue;
             }
             // Still pending/loading/active → keep record until NotFound.
@@ -891,7 +915,10 @@ void BotManager::OnWorldUpdate(uint32_t diff)
             {
                 sLog.outString("TortoiseBots: Bot %s reclaimed by network session acct %u — releasing",
                     rec.characterGuid.GetString().c_str(), playerSess->GetAccountId());
+                uint32_t guidLow = rec.characterGuid.GetCounter();
                 it = m_bots.erase(it);
+                BotActivityLeaseManager::Instance().ClaimForMaster(guidLow);
+                BotActivityLeaseManager::Instance().ReleaseMaster(guidLow);
                 continue;
             }
             if (p->IsInWorld())
@@ -934,7 +961,10 @@ void BotManager::OnWorldUpdate(uint32_t diff)
             {
                 sLog.outError("TortoiseBots: Bot %s login ended without a session (NotFound)",
                     rec.characterGuid.GetString().c_str());
+                uint32_t guidLow = rec.characterGuid.GetCounter();
                 it = m_bots.erase(it);
+                BotActivityLeaseManager::Instance().ClaimForMaster(guidLow);
+                BotActivityLeaseManager::Instance().ReleaseMaster(guidLow);
                 continue;
             }
             // Still Pending/Loading → keep waiting; core will drive to Active.
@@ -946,7 +976,10 @@ void BotManager::OnWorldUpdate(uint32_t diff)
         {
             sLog.outString("TortoiseBots: Bot %s session ended (NotFound) — releasing",
                 rec.characterGuid.GetString().c_str());
+            uint32_t guidLow = rec.characterGuid.GetCounter();
             it = m_bots.erase(it);
+            BotActivityLeaseManager::Instance().ClaimForMaster(guidLow);
+            BotActivityLeaseManager::Instance().ReleaseMaster(guidLow);
             continue;
         }
         ++it;

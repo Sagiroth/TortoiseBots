@@ -49,11 +49,15 @@ public:
 
     void Update(uint32_t diff);
 
+    // Activity-lease eviction hook (issue #89): clears per-bot attempt
+    // cooldown so an evicted bot does not sit out its normal market cadence.
+    // Must not touch the lease map; the manager owns the transition.
+    void OnLeaseEvicted(uint32_t guidLow);
+
     // Rebuild / reload / command interfaces
     void ReloadOverrides();
     void RebuildMarket(bool all = false);
     std::string GetStatus() const;
-
     bool SetItemOverride(uint32_t itemId, uint32_t value, uint32_t addChance, uint32_t minAmount, uint32_t maxAmount);
     bool ResetItemOverride(uint32_t itemId);
 
