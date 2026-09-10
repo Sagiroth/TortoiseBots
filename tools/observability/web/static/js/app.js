@@ -134,6 +134,13 @@
     return `${m}m`;
   }
 
+  // Look up human-readable zone name from ZONE_CONFIG
+  function getZoneName(zoneId) {
+    if (!zoneId && zoneId !== 0) return '-';
+    const zone = ZONE_CONFIG[zoneId];
+    return zone ? zone.name : `Zone ${zoneId}`;
+  }
+
   // Log to Console Card
   function appendConsoleLog(time, tag, text, level = 'info') {
     if (!el.consoleBody) return;
@@ -377,21 +384,17 @@
       });
     }
 
-    // Draw bot dots
+    // Draw bot markers (directional triangles)
     zoneBots.forEach(b => {
       const dot = document.createElement('div');
       dot.className = 'bot-dot';
       dot.style.left = `${b.pct_x}%`;
       dot.style.top = `${b.pct_y}%`;
-      dot.style.backgroundColor = b.role === 'tank' ? 'var(--color-tank)' : b.role === 'healer' ? 'var(--color-healer)' : 'var(--color-dps)';
-      dot.style.boxShadow = `0 0 6px ${dot.style.backgroundColor}`;
-
-      // Heading cone
-      const cone = document.createElement('div');
-      cone.className = 'bot-heading-cone';
+      const roleColor = b.role === 'tank' ? 'var(--color-tank)' : b.role === 'healer' ? 'var(--color-healer)' : 'var(--color-dps)';
+      dot.style.backgroundColor = roleColor;
+      // Rotate triangle to face the bot's orientation
       const deg = (b.o || 0) * (180 / Math.PI);
-      cone.style.transform = `rotate(${-deg}deg)`;
-      dot.appendChild(cone);
+      dot.style.transform = `translate(-50%, -50%) rotate(${-deg}deg)`;
 
       dot.addEventListener('mouseenter', (e) => {
         if (!el.mapTooltip) return;
@@ -402,6 +405,7 @@
           <strong style="color: #fff;">${b.name}</strong> (${b.class || 'Unknown'} Lvl ${b.level})<br>
           <span style="color: var(--text-muted);">Role:</span> ${b.role.toUpperCase()}<br>
           <span style="color: var(--text-muted);">Status:</span> ${b.state || 'idle'}<br>
+          <span style="color: var(--text-muted);">Zone:</span> ${getZoneName(b.zone)}<br>
           <span style="color: var(--text-muted);">Target:</span> ${b.target || 'None'}
         `;
       });
@@ -489,9 +493,9 @@
           <div style="font-size: 0.7rem; margin-bottom: 2px;">${b.hp}/${b.max_hp} (${hpPct}%)</div>
           <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${hpPct}%; background: var(--accent-green-bright);"></div></div>
         </td>
-        <td><span class="badge ${b.state === 'combat' ? 'badge-error' : 'badge-info'}">${b.state}</span></td>
+        <td><span class="badge ${b.state === 'combat' ? 'badge-error' : b.state === 'dead' ? 'badge-warn' : 'badge-info'}">${b.state || 'idle'}</span></td>
         <td style="color: #f85149;">${b.target || '-'}</td>
-        <td class="mono" style="font-size: 0.8rem;">Zone ${b.zone}</td>
+        <td class="mono" style="font-size: 0.8rem;">${getZoneName(b.zone)}</td>
       `;
       el.rosterTable.appendChild(tr);
     });
@@ -525,8 +529,9 @@
     if (el.anomaliesCount) el.anomaliesCount.textContent = state.anomalies.length;
 
     const filtered = state.anomalies.filter(a => {
+      const sev = (a.severity || '').toLowerCase();
       if (state.anomalyTypeFilter !== 'all' && a.type !== state.anomalyTypeFilter) return false;
-      if (state.anomalySeverityFilter !== 'all' && a.severity !== state.anomalySeverityFilter) return false;
+      if (state.anomalySeverityFilter !== 'all' && sev !== state.anomalySeverityFilter) return false;
       return true;
     });
 
@@ -538,15 +543,16 @@
     el.anomaliesTable.innerHTML = '';
     filtered.slice().reverse().forEach(a => {
       const tr = document.createElement('tr');
-      const timeStr = a.timestamp ? new Date(a.timestamp).toLocaleTimeString() : '-';
-      const sevBadge = a.severity === 'error' ? 'badge-error' : a.severity === 'warn' ? 'badge-warn' : 'badge-info';
+      const timeStr = a.time_str || (a.ts ? new Date(a.ts * 1000).toLocaleTimeString() : '-');
+      const sev = (a.severity || 'info').toLowerCase();
+      const sevBadge = sev === 'error' ? 'badge-error' : sev === 'warn' ? 'badge-warn' : 'badge-info';
 
       tr.innerHTML = `
         <td class="mono" style="font-size: 0.75rem; color: var(--text-muted);">${timeStr}</td>
-        <td><span class="badge ${sevBadge}">${a.severity}</span></td>
+        <td><span class="badge ${sevBadge}">${sev.toUpperCase()}</span></td>
         <td class="mono" style="font-size: 0.8rem; font-weight: 600;">${a.type}</td>
-        <td style="color: #fff; font-weight: 600;">${a.bot_name || '-'}</td>
-        <td class="mono" style="font-size: 0.75rem;">${a.zone_id || '-'}</td>
+        <td style="color: #fff; font-weight: 600;">${a.bot || '-'}</td>
+        <td class="mono" style="font-size: 0.75rem;">${getZoneName(a.zone)}</td>
         <td style="color: var(--text-muted);">${a.details || a.last_action || '-'}</td>
         <td style="color: #f85149;">${a.target || '-'}</td>
       `;
@@ -616,38 +622,42 @@
   function handleStreamMessage(msg) {
     const time = new Date().toLocaleTimeString();
 
-    if (msg.event === 'PULSE') {
+    if (msg.event === 'heartbeat') {
+      const d = msg.data;
+      if (!d) return;
       state.server.online = true;
-      state.server.uptime = msg.uptime || 0;
-      state.server.diff = msg.diff_ms || 0;
-      state.server.humans = msg.humans || 0;
-      state.server.bots = msg.bots || 0;
+      state.server.uptime = d.uptime || 0;
+      state.server.diff = d.diff || 0;
+      state.server.humans = d.humans || 0;
+      state.server.bots = d.bots || 0;
       updateDashboardMetrics();
-      appendConsoleLog(time, 'pulse', `Heartbeat diff=${msg.diff_ms}ms, Players=${msg.humans}, Bots=${msg.bots}`);
-    } else if (msg.event === 'BOT_SNAPSHOT') {
-      const bot = msg.bot;
-      if (!bot) return;
-      const idx = state.bots.findIndex(b => b.guid === bot.guid);
-      if (idx >= 0) {
-        state.bots[idx] = bot;
-      } else {
-        state.bots.push(bot);
+      // State ratios are embedded in the heartbeat payload
+      if (d.states) {
+        updateMacroRatios(d.states);
       }
+      appendConsoleLog(time, 'pulse', `Heartbeat diff=${d.diff}ms, Players=${d.humans}, Bots=${d.bots}`);
+    } else if (msg.event === 'bots') {
+      const bots = msg.data;
+      if (!Array.isArray(bots)) return;
+      // Merge/upsert incoming bot snapshots by GUID
+      bots.forEach(bot => {
+        const idx = state.bots.findIndex(b => b.guid === bot.guid);
+        if (idx >= 0) {
+          state.bots[idx] = bot;
+        } else {
+          state.bots.push(bot);
+        }
+      });
       updateDashboardMetrics();
       if (state.activeTab === 'map') renderMap();
       if (state.activeTab === 'roster') renderRoster();
-      appendConsoleLog(time, 'doing', `<span class="log-bot">${bot.name}</span> (${bot.role}): status=${bot.state || 'idle'} target=${bot.target || 'none'}`);
-    } else if (msg.event === 'ANOMALY') {
-      const a = msg.anomaly;
+    } else if (msg.event === 'anomaly') {
+      const a = msg.data;
       if (a) {
         state.anomalies.push(a);
         renderAnomalies();
-        appendConsoleLog(time, a.type, `<span class="log-bot">${a.bot_name || 'Bot'}</span>: ${a.details || a.last_action}`, a.severity);
-      }
-    } else if (msg.event === 'STATE_RATIOS') {
-      const r = msg.ratios;
-      if (r) {
-        updateMacroRatios(r);
+        const sev = (a.severity || 'info').toLowerCase();
+        appendConsoleLog(time, a.type, `<span class="log-bot">${a.bot || 'Bot'}</span>: ${a.details || a.last_action}`, sev);
       }
     }
   }
@@ -673,5 +683,11 @@
   fetchBots();
   fetchAnomalies();
   initWebSocket();
+
+  // Periodic full-refresh to keep bot list authoritative and remove stale entries
+  setInterval(() => {
+    fetchBots();
+    fetchAnomalies();
+  }, 5000);
 
 })();
