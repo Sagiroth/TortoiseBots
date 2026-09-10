@@ -4,7 +4,7 @@ import "time"
 
 // ProtocolVersion is bumped whenever the C++ -> Go datagram layout changes in
 // a way the daemon must understand. It is carried in every datagram.
-const ProtocolVersion = 2
+const ProtocolVersion = 3
 
 // Anomaly types accepted from the game server. Anything else is rejected so
 // that Prometheus label cardinality stays bounded.
@@ -12,6 +12,7 @@ var AcceptedAnomalyTypes = map[string]bool{
 	"BOT_STUCK":          true,
 	"ACTION_LOOP":        true,
 	"UNREACHABLE_TARGET": true,
+	"BOT_DEATH":          true,
 }
 
 // BotSnapshot represents an active bot's live state in the world.
@@ -31,9 +32,11 @@ type BotSnapshot struct {
 	Y        float64 `json:"y"`
 	Z        float64 `json:"z"`
 	O        float64 `json:"o"`
-	Target   string  `json:"target"`
-	Strategy string  `json:"strategy"`
-	State    string  `json:"state"` // "combat", "moving", "resting", "dead", "idle"
+	Target      string `json:"target"`
+	Strategy    string `json:"strategy"`
+	State       string `json:"state"` // "combat", "moving", "resting", "dead", "idle"
+	LastAction  string `json:"last_action,omitempty"`
+	LastTrigger string `json:"last_trigger,omitempty"`
 
 	// Calculated 2D projection percentages on the active zone map. Projected
 	// distinguishes a real (0,0) edge coordinate from "no mapping available".
@@ -118,9 +121,35 @@ type ServerStatus struct {
 
 // SnapshotPayload is the coherent roster handed to REST and WebSocket clients.
 type SnapshotPayload struct {
-	Seq    uint64         `json:"seq"`
-	Server ServerStatus   `json:"server"`
-	Bots   []BotSnapshot  `json:"bots"`
+	Seq    uint64        `json:"seq"`
+	Server ServerStatus  `json:"server"`
+	Bots   []BotSnapshot `json:"bots"`
+	Issues IssueSnapshot `json:"issues"`
+}
+
+// Issue is one persistent bot problem tracked as an episode (open while the
+// condition lasts, closed and archived when it clears).
+type Issue struct {
+	GUID        uint32  `json:"guid"`
+	Bot         string  `json:"bot"`
+	Class       string  `json:"class"`
+	Level       uint32  `json:"level"`
+	Type        string  `json:"type"`     // STUCK, DEAD_LONG, ACTION_LOOP, UNREACHABLE_TARGET
+	Severity    string  `json:"severity"` // watch, persistent
+	DurationSec float64 `json:"duration_sec"`
+	Action      string  `json:"action,omitempty"`
+	Trigger     string  `json:"trigger,omitempty"`
+	Target      string  `json:"target,omitempty"`
+	Details     string  `json:"details,omitempty"`
+	MapID       uint32  `json:"map"`
+	ZoneID      uint32  `json:"zone"`
+}
+
+// IssueSnapshot is the issue view attached to each roster snapshot.
+type IssueSnapshot struct {
+	Active       []Issue        `json:"active"`
+	Resolved     []Issue        `json:"resolved"`
+	CountsByType map[string]int `json:"counts_by_type"`
 }
 
 // Position represents 3D coordinates.
@@ -135,9 +164,10 @@ type AnomalyPayload struct {
 	ID         int64     `json:"id,omitempty"`
 	TS         int64     `json:"ts"`
 	TimeStr    string    `json:"time_str,omitempty"`
-	Type       string    `json:"type"`     // "BOT_STUCK", "ACTION_LOOP", "UNREACHABLE_TARGET"
+	Type       string    `json:"type"`     // "BOT_STUCK", "ACTION_LOOP", "UNREACHABLE_TARGET", "BOT_DEATH"
 	Severity   string    `json:"severity"` // "WARN", "ERROR", "INFO"
 	Bot        string    `json:"bot"`
+	GUID       uint32    `json:"guid"`
 	Class      string    `json:"class"`
 	Level      uint32    `json:"level"`
 	MapID      uint32    `json:"map"`

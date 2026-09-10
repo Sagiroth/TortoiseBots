@@ -119,7 +119,9 @@ func (l *Listener) janitorLoop() {
 			online := l.store.IsOnline()
 
 			if removed {
-				l.hub.Broadcast("snapshot", l.store.Snapshot())
+				snap := l.store.Snapshot()
+				l.metricsReg.RecordIssues(snap.Issues)
+				l.hub.Broadcast("snapshot", snap)
 			}
 			if online != lastOnline {
 				lastOnline = online
@@ -127,6 +129,15 @@ func (l *Listener) janitorLoop() {
 			}
 		}
 	}
+}
+
+// publishSnapshot records metrics (including issue counts) and broadcasts the
+// coherent roster+issues snapshot.
+func (l *Listener) publishSnapshot() {
+	snap := l.store.Snapshot()
+	l.metricsReg.RecordSnapshot()
+	l.metricsReg.RecordIssues(snap.Issues)
+	l.hub.Broadcast("snapshot", snap)
 }
 
 func (l *Listener) processPacket(data []byte) {
@@ -146,8 +157,7 @@ func (l *Listener) processPacket(data []byte) {
 		}
 
 		if l.store.ApplyHeartbeat(&hb) {
-			l.metricsReg.RecordSnapshot()
-			l.hub.Broadcast("snapshot", l.store.Snapshot())
+			l.publishSnapshot()
 		}
 		l.metricsReg.RecordHeartbeat(&hb)
 		l.hub.Broadcast("heartbeat", hb)
@@ -163,8 +173,7 @@ func (l *Listener) processPacket(data []byte) {
 		}
 
 		if l.store.ApplyBatch(&batch) {
-			l.metricsReg.RecordSnapshot()
-			l.hub.Broadcast("snapshot", l.store.Snapshot())
+			l.publishSnapshot()
 		}
 
 	default:

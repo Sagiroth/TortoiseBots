@@ -44,8 +44,17 @@
     wsConnected: false,
     snapshotSeq: 0,
     lastHeartbeatAt: 0,
-    lastSnapshotAt: 0
+    lastSnapshotAt: 0,
+    issues: { active: [], resolved: [], counts_by_type: {} },
+    issueTypeFilter: 'all',
+    issueDurationFilter: 0,
+    issueHistory: { t: [], series: {} }
   };
+
+  const ISSUE_TYPES = ['STUCK', 'DEAD_LONG', 'ACTION_LOOP', 'UNREACHABLE_TARGET'];
+  const ISSUE_LABELS = { STUCK: 'Stuck', DEAD_LONG: 'Dead long', ACTION_LOOP: 'Action loop', UNREACHABLE_TARGET: 'Unreachable' };
+  const ISSUE_COLORS = { STUCK: '#d29922', DEAD_LONG: '#8b949e', ACTION_LOOP: '#f85149', UNREACHABLE_TARGET: '#a371f7' };
+  const ISSUE_HISTORY_MAX = 300;
 
   const HIST_MAX = 300; // 2s samples -> 10 minutes
 
@@ -111,17 +120,22 @@
     severityFilter: document.getElementById('anomaly-severity-filter'),
     clearAnomalies: document.getElementById('clear-anomalies'),
 
-    // Macro states
-    stateCombat: document.getElementById('state-combat'),
-    stateCombatTxt: document.getElementById('state-combat-txt'),
-    stateMoving: document.getElementById('state-moving'),
-    stateMovingTxt: document.getElementById('state-moving-txt'),
-    stateResting: document.getElementById('state-resting'),
-    stateRestingTxt: document.getElementById('state-resting-txt'),
-    stateIdle: document.getElementById('state-idle'),
-    stateIdleTxt: document.getElementById('state-idle-txt'),
-    stateDead: document.getElementById('state-dead'),
-    stateDeadTxt: document.getElementById('state-dead-txt'),
+    // Issues
+    issueActive: document.getElementById('issue-active'),
+    issuePersistent: document.getElementById('issue-persistent'),
+    issueWatch: document.getElementById('issue-watch'),
+    issueResolved: document.getElementById('issue-resolved'),
+    issueDeaths: document.getElementById('issue-deaths'),
+    issuesTable: document.getElementById('issues-table-body'),
+    issueTypeFilter: document.getElementById('issue-type-filter'),
+    issueDurationFilter: document.getElementById('issue-duration-filter'),
+    issuesResolved: document.getElementById('issues-resolved'),
+    issueZones: document.getElementById('issue-zones'),
+    issueChart: document.getElementById('issue-chart'),
+    issueLegend: document.getElementById('issue-legend'),
+    issuesCount: document.getElementById('issues-count'),
+    metricIssues: document.getElementById('metric-issues'),
+    metricIssuesSub: document.getElementById('metric-issues-sub'),
 
     // Dashboard composition
     classBreakdown: document.getElementById('class-breakdown'),
@@ -188,6 +202,7 @@
     });
     if (tab === 'map') renderMap();
     if (tab === 'roster') renderRoster();
+    if (tab === 'issues') renderIssues();
     if (tab === 'dashboard') {
       renderDashboardCharts();
       renderComposition();
@@ -208,6 +223,7 @@
     el.refreshBtn.addEventListener('click', () => {
       fetchBots(true);
       fetchAnomalies();
+      fetchIssues(true);
     });
   }
 
@@ -621,7 +637,6 @@
 
     updateSnapshotAge();
     setStatusPill();
-    if (state.activeTab === 'states') updateMacroRatios(s.states);
     if (state.activeTab === 'dashboard') renderMacroBar(s.states);
   }
 
@@ -662,9 +677,12 @@
       });
     }
 
+    const issuesByGuid = issueSet();
     zoneBots.forEach(b => {
+      const issue = issuesByGuid[b.guid];
       const dot = document.createElement('div');
       dot.className = 'bot-dot';
+      if (issue) dot.classList.add(issue.severity === 'persistent' ? 'issue-persistent' : 'issue-watch');
       dot.style.left = `${b.pct_x}%`;
       dot.style.top = `${b.pct_y}%`;
       dot.style.backgroundColor = classColor(b.class);
@@ -673,12 +691,16 @@
 
       dot.addEventListener('mouseenter', (e) => {
         if (!el.mapTooltip) return;
+        const issueLine = issue
+          ? `<br><span style="color: var(--accent-red);">Issue:</span> ${esc(ISSUE_LABELS[issue.type] || issue.type)} (${esc(fmtDuration(issue.duration_sec))})`
+          : '';
         el.mapTooltip.innerHTML = `
           <strong style="color: #fff;">${esc(b.name)}</strong> (${esc(b.class)} Lvl ${esc(b.level)})<br>
           <span style="color: var(--text-muted);">Role:</span> ${esc((b.role || '').toUpperCase())}<br>
           <span style="color: var(--text-muted);">Status:</span> ${esc(b.state || 'idle')}<br>
           <span style="color: var(--text-muted);">Zone:</span> ${esc(getZoneName(b.zone))}<br>
           <span style="color: var(--text-muted);">Target:</span> ${esc(b.target || 'None')}
+          ${issueLine}
         `;
         el.mapTooltip.style.display = 'block';
 
@@ -753,8 +775,19 @@
       <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; font-size: 0.8rem; display: flex; flex-direction: column; gap: 6px;">
         <div><span style="color: var(--text-muted);">Status:</span> <strong>${esc(b.state)}</strong></div>
         <div><span style="color: var(--text-muted);">Target:</span> <strong style="color: #f85149;">${esc(b.target || 'None')}</strong></div>
+        <div><span style="color: var(--text-muted);">Last action:</span> <span class="mono" style="font-size: 0.75rem;">${esc(b.last_action || '-')}</span></div>
+        <div><span style="color: var(--text-muted);">Trigger:</span> <span class="mono" style="font-size: 0.75rem;">${esc(b.last_trigger || '-')}</span></div>
         <div><span style="color: var(--text-muted);">Strategy:</span> <span class="mono" style="font-size: 0.75rem;">${esc(b.strategy || 'default')}</span></div>
       </div>
+      ${(state.issues.active.filter(i => i.guid === b.guid).length > 0) ? `
+      <div style="margin-top: 14px;">
+        <div class="section-label" style="margin: 0 0 8px;">ACTIVE ISSUES</div>
+        ${state.issues.active.filter(i => i.guid === b.guid).map(i => `
+          <div class="issue-chip ${i.severity}">
+            <span>${esc(ISSUE_LABELS[i.type] || i.type)}</span>
+            <span class="mono">${esc(fmtDuration(i.duration_sec))}</span>
+          </div>`).join('')}
+      </div>` : ''}
     `;
   }
 
@@ -780,14 +813,19 @@
       return;
     }
 
+    const issuesByGuid = issueSet();
     el.rosterTable.innerHTML = '';
     filtered.forEach(b => {
       const tr = document.createElement('tr');
       const hpPct = b.max_hp ? Math.round((b.hp / b.max_hp) * 100) : 100;
       const roleBadge = b.role === 'tank' ? 'badge-info' : b.role === 'healer' ? 'badge-success' : 'badge-error';
+      const issue = issuesByGuid[b.guid];
+      const issueBadge = issue
+        ? ` <span class="badge ${issue.severity === 'persistent' ? 'badge-error' : 'badge-warn'}" title="${esc(ISSUE_LABELS[issue.type] || issue.type)}">${esc(fmtDuration(issue.duration_sec))}</span>`
+        : '';
 
       tr.innerHTML = `
-        <td style="font-weight: 600; cursor: pointer; color: #58a6ff;" data-guid="${esc(b.guid)}">${esc(b.name)}</td>
+        <td style="font-weight: 600; cursor: pointer; color: #58a6ff;" data-guid="${esc(b.guid)}">${esc(b.name)}${issueBadge}</td>
         <td>${esc(b.class)}</td>
         <td><span class="badge ${roleBadge}">${esc((b.role || '').toUpperCase())}</span></td>
         <td>${esc(b.level)}</td>
@@ -889,6 +927,14 @@
     });
   }
 
+  function fetchIssues(force = false) {
+    if (state.wsConnected && !force) return;
+    fetch('/api/v1/issues')
+      .then(r => r.json())
+      .then(data => applyIssues(data))
+      .catch(() => {});
+  }
+
   // REST fallback used by the Refresh button and while the socket is down.
   function fetchBots(force = false) {
     if (state.wsConnected && !force) return;
@@ -957,6 +1003,7 @@
       state.bots = Array.isArray(data.bots) ? data.bots : [];
       state.lastSnapshotAt = Date.now();
       applyServerStatus(data.server);
+      applyIssues(data.issues);
       updateDashboardMetrics();
 
       // Keep a selected bot's drawer fresh; close it if the bot departed.
@@ -1000,25 +1047,220 @@
       if (a) {
         state.anomalies.push(a);
         renderAnomalies();
+        if (state.activeTab === 'issues') renderIssues();
         const sev = (a.severity || 'info').toLowerCase();
         appendConsoleLog(time, a.type, `<span class="log-bot">${esc(a.bot || 'Bot')}</span>: ${esc(a.details || a.last_action || '')}`, sev);
       }
     }
   }
 
-  function updateMacroRatios(r) {
-    if (!r) return;
-    const toPct = (val) => `${Math.round((val || 0) * 100)}%`;
-    if (el.stateCombat) el.stateCombat.style.width = toPct(r.combat);
-    if (el.stateCombatTxt) el.stateCombatTxt.textContent = toPct(r.combat);
-    if (el.stateMoving) el.stateMoving.style.width = toPct(r.moving);
-    if (el.stateMovingTxt) el.stateMovingTxt.textContent = toPct(r.moving);
-    if (el.stateResting) el.stateResting.style.width = toPct(r.resting);
-    if (el.stateRestingTxt) el.stateRestingTxt.textContent = toPct(r.resting);
-    if (el.stateIdle) el.stateIdle.style.width = toPct(r.idle);
-    if (el.stateIdleTxt) el.stateIdleTxt.textContent = toPct(r.idle);
-    if (el.stateDead) el.stateDead.style.width = toPct(r.dead);
-    if (el.stateDeadTxt) el.stateDeadTxt.textContent = toPct(r.dead);
+  // ---- Persistent issues --------------------------------------------------
+
+  function fmtDuration(sec) {
+    sec = Math.max(0, Math.round(sec || 0));
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60);
+    if (m < 60) return `${m}m ${String(sec % 60).padStart(2, '0')}s`;
+    return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+  }
+
+  function issueSet() {
+    const set = {};
+    state.issues.active.forEach(i => { set[i.guid] = i; });
+    return set;
+  }
+
+  function applyIssues(issues) {
+    if (!issues) return;
+    state.issues = {
+      active: Array.isArray(issues.active) ? issues.active : [],
+      resolved: Array.isArray(issues.resolved) ? issues.resolved : [],
+      counts_by_type: issues.counts_by_type || {}
+    };
+    pushIssueHistory();
+    updateIssueBadges();
+    if (state.activeTab === 'issues') renderIssues();
+    if (state.activeTab === 'map') renderMap();
+    if (state.activeTab === 'roster') renderRoster();
+    if (state.activeTab === 'dashboard') updateDashboardMetrics();
+  }
+
+  function pushIssueHistory() {
+    state.issueHistory.t.push(Date.now());
+    ISSUE_TYPES.forEach(t => {
+      if (!state.issueHistory.series[t]) state.issueHistory.series[t] = [];
+      state.issueHistory.series[t].push(state.issues.counts_by_type[t] || 0);
+    });
+    if (state.issueHistory.t.length > ISSUE_HISTORY_MAX) {
+      state.issueHistory.t.shift();
+      ISSUE_TYPES.forEach(t => state.issueHistory.series[t].shift());
+    }
+  }
+
+  function updateIssueBadges() {
+    const active = state.issues.active.length;
+    const persistent = state.issues.active.filter(i => i.severity === 'persistent').length;
+    if (el.issuesCount) {
+      el.issuesCount.textContent = active;
+      el.issuesCount.className = 'badge ' + (persistent > 0 ? 'badge-error' : active > 0 ? 'badge-warn' : 'badge-info');
+    }
+    if (el.metricIssues) {
+      el.metricIssues.textContent = active;
+      el.metricIssues.style.color = persistent > 0 ? '#f85149' : active > 0 ? '#d29922' : '#fff';
+    }
+    if (el.metricIssuesSub) el.metricIssuesSub.textContent = `${persistent} persistent`;
+  }
+
+  function renderIssues() {
+    const active = state.issues.active;
+    if (el.issueActive) el.issueActive.textContent = active.length;
+    if (el.issuePersistent) el.issuePersistent.textContent = active.filter(i => i.severity === 'persistent').length;
+    if (el.issueWatch) el.issueWatch.textContent = active.filter(i => i.severity === 'watch').length;
+    if (el.issueResolved) el.issueResolved.textContent = state.issues.resolved.length;
+    if (el.issueDeaths) el.issueDeaths.textContent = state.anomalies.filter(a => a.type === 'BOT_DEATH').length;
+
+    renderIssueTable();
+    renderIssueZones();
+    renderIssueChart();
+    renderResolvedList();
+  }
+
+  function renderIssueTable() {
+    if (!el.issuesTable) return;
+    const minDur = state.issueDurationFilter;
+    const filtered = state.issues.active
+      .filter(i => (state.issueTypeFilter === 'all' || i.type === state.issueTypeFilter) && i.duration_sec >= minDur)
+      .sort((a, b) => b.duration_sec - a.duration_sec);
+
+    if (filtered.length === 0) {
+      el.issuesTable.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px;">No matching issues.</td></tr>`;
+      return;
+    }
+
+    el.issuesTable.innerHTML = '';
+    filtered.forEach(i => {
+      const tr = document.createElement('tr');
+      const sevBadge = i.severity === 'persistent' ? 'badge-error' : 'badge-warn';
+      tr.innerHTML = `
+        <td style="font-weight:600;color:#58a6ff;cursor:pointer;" data-guid="${esc(i.guid)}">${esc(i.bot)}</td>
+        <td>${esc(i.class || '-')}</td>
+        <td><span class="badge ${sevBadge}">${esc(ISSUE_LABELS[i.type] || i.type)}</span></td>
+        <td class="mono" style="color:${i.severity === 'persistent' ? '#f85149' : '#d29922'};">${esc(fmtDuration(i.duration_sec))}</td>
+        <td class="mono" style="font-size:0.75rem;">${esc(i.action || '-')}</td>
+        <td class="mono" style="font-size:0.75rem;color:var(--text-muted);">${esc(i.trigger || '-')}</td>
+        <td class="mono" style="font-size:0.75rem;">${esc(getZoneName(i.zone))}</td>
+        <td style="color:#f85149;">${esc(i.target || '-')}</td>`;
+      tr.querySelector('td[data-guid]').addEventListener('click', () => focusBot(i.guid));
+      el.issuesTable.appendChild(tr);
+    });
+  }
+
+  function renderIssueZones() {
+    if (!el.issueZones) return;
+    const zones = new Map();
+    state.issues.active.forEach(i => zones.set(i.zone, (zones.get(i.zone) || 0) + 1));
+    if (zones.size === 0) {
+      el.issueZones.innerHTML = '<div class="empty-hint">No active issues.</div>';
+      return;
+    }
+    const entries = [...zones.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+    const max = entries[0][1] || 1;
+    el.issueZones.innerHTML = entries.map(([zid, n]) =>
+      `<div class="comp-row"><span class="comp-name" style="width:110px;">${esc(getZoneName(zid))}</span><span class="comp-bar-bg"><span class="comp-bar" style="width:${Math.round((n / max) * 100)}%;background:#f85149;"></span></span><span class="comp-count">${n}</span></div>`
+    ).join('');
+  }
+
+  function renderIssueChart() {
+    const prepared = prepCanvas(el.issueChart);
+    if (!prepared) return;
+    const { ctx, w, h } = prepared;
+    const hist = state.issueHistory;
+    const len = hist.t.length;
+
+    if (el.issueLegend) {
+      el.issueLegend.innerHTML = ISSUE_TYPES.map(t =>
+        `<div class="legend-item"><span class="legend-color" style="background:${ISSUE_COLORS[t]};"></span>${esc(ISSUE_LABELS[t])}</div>`
+      ).join('');
+    }
+
+    if (len === 0) {
+      ctx.fillStyle = '#484f58';
+      ctx.font = '12px Inter';
+      ctx.fillText('Collecting issue history...', 12, h / 2);
+      return;
+    }
+
+    let maxVal = 1;
+    for (let i = 0; i < len; i++) {
+      let sum = 0;
+      ISSUE_TYPES.forEach(t => { sum += (hist.series[t] || [])[i] || 0; });
+      if (sum > maxVal) maxVal = sum;
+    }
+    maxVal = Math.ceil(maxVal * 1.2);
+
+    const padTop = 10, padBottom = 12;
+    const yFor = v => padTop + (h - padTop - padBottom) * (1 - v / maxVal);
+    const stepX = len > 1 ? w / (len - 1) : 0;
+    const xFor = i => len > 1 ? i * stepX : w / 2;
+
+    drawGrid(ctx, w, h, padTop, padBottom, maxVal);
+
+    let lower = new Array(len).fill(0);
+    ISSUE_TYPES.forEach(t => {
+      const series = hist.series[t] || [];
+      const upper = lower.map((v, i) => v + (series[i] || 0));
+      ctx.beginPath();
+      for (let i = 0; i < len; i++) {
+        const x = xFor(i), y = yFor(upper[i]);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      for (let i = len - 1; i >= 0; i--) ctx.lineTo(xFor(i), yFor(lower[i]));
+      ctx.closePath();
+      ctx.fillStyle = hexToRgba(ISSUE_COLORS[t], 0.5);
+      ctx.fill();
+
+      ctx.beginPath();
+      for (let i = 0; i < len; i++) {
+        const x = xFor(i), y = yFor(upper[i]);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = ISSUE_COLORS[t];
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      lower = upper;
+    });
+  }
+
+  function renderResolvedList() {
+    if (!el.issuesResolved) return;
+    const list = state.issues.resolved.slice(0, 12);
+    if (list.length === 0) {
+      el.issuesResolved.innerHTML = '<div class="empty-hint">No resolved episodes yet.</div>';
+      return;
+    }
+    el.issuesResolved.innerHTML = list.map(i =>
+      `<div class="resolved-row"><span class="badge badge-info">${esc(ISSUE_LABELS[i.type] || i.type)}</span><strong style="color:#fff;">${esc(i.bot)}</strong><span style="color:var(--text-muted);">${esc(getZoneName(i.zone))}</span><span class="mono" style="margin-left:auto;color:#2ea043;">${esc(fmtDuration(i.duration_sec))}</span></div>`
+    ).join('');
+  }
+
+  function focusBot(guid) {
+    state.selectedBotGuid = guid;
+    selectBot(guid);
+    switchTab('map');
+  }
+
+  if (el.issueTypeFilter) {
+    el.issueTypeFilter.addEventListener('change', (e) => {
+      state.issueTypeFilter = e.target.value;
+      renderIssueTable();
+    });
+  }
+  if (el.issueDurationFilter) {
+    el.issueDurationFilter.addEventListener('change', (e) => {
+      state.issueDurationFilter = parseInt(e.target.value, 10) || 0;
+      renderIssueTable();
+    });
   }
 
   // Local watchdog: the daemon cannot tell us it died, so the client decides
@@ -1042,6 +1284,7 @@
   initZoneSelector();
   fetchBots();
   fetchAnomalies();
+  fetchIssues();
   initWebSocket();
 
 })();

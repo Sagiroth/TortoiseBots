@@ -200,6 +200,10 @@ func main() {
 		writeJSON(w, store.Snapshot().Bots)
 	}))
 
+	mux.HandleFunc("/api/v1/issues", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, store.Issues())
+	}))
+
 	mux.HandleFunc("/api/v1/anomalies", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodDelete:

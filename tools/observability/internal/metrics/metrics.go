@@ -22,6 +22,7 @@ type Registry struct {
 	botActiveCount *prometheus.GaugeVec
 	anomaliesTotal *prometheus.CounterVec
 	stateRatio     *prometheus.GaugeVec
+	issuesActive   *prometheus.GaugeVec
 	snapshotsTotal prometheus.Counter
 }
 
@@ -51,6 +52,10 @@ func New() *Registry {
 			Name: "tortoisebots_state_ratio",
 			Help: "Rolling-window ratio of time spent in macro states (0.0 - 1.0)",
 		}, []string{"state"}),
+		issuesActive: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "tortoisebots_issues_active",
+			Help: "Active bot issue episodes grouped by type",
+		}, []string{"type"}),
 		snapshotsTotal: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "tortoisebots_snapshots_total",
 			Help: "Complete bot roster snapshots published by the daemon",
@@ -111,6 +116,13 @@ func (r *Registry) RecordSnapshot() {
 	r.snapshotsTotal.Inc()
 }
 
+func (r *Registry) RecordIssues(snap model.IssueSnapshot) {
+	r.issuesActive.Reset()
+	for typ, n := range snap.CountsByType {
+		r.issuesActive.WithLabelValues(typ).Set(float64(n))
+	}
+}
+
 func (r *Registry) IsOnline() bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -131,6 +143,7 @@ func (r *Registry) markOffline() {
 	r.tickDuration.Set(0)
 	r.playersOnline.Set(0)
 	r.botActiveCount.Reset()
+	r.issuesActive.Reset()
 	for _, state := range []string{"combat", "moving", "resting", "dead", "idle"} {
 		r.stateRatio.WithLabelValues(state).Set(0)
 	}

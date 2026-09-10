@@ -72,6 +72,7 @@ type Store struct {
 	heartbeatAt time.Time
 
 	anomalies *ringbuf.RingBuffer
+	issues    *issueTracker
 }
 
 // New creates an empty store. The ring buffer is owned by the caller and is
@@ -98,6 +99,7 @@ func New(cfg Config, anomalies *ringbuf.RingBuffer) *Store {
 		bots:      make(map[uint32]*botEntry),
 		pending:   make(map[uint64]*pendingCycle),
 		anomalies: anomalies,
+		issues:    newIssueTracker(),
 	}
 }
 
@@ -193,9 +195,21 @@ func (s *Store) ApplyBatch(b *model.BotBatchPayload) bool {
 	return true
 }
 
-// AddAnomaly stores an anomaly and returns the persisted record.
+// AddAnomaly stores an anomaly and returns the persisted record. Anomaly types
+// that represent sustained problems also open/refresh an issue episode.
 func (s *Store) AddAnomaly(a model.AnomalyPayload) model.AnomalyPayload {
-	return s.anomalies.Add(a)
+	saved := s.anomalies.Add(a)
+
+	s.mu.Lock()
+	now := s.now()
+	s.mu.Unlock()
+	s.issues.TouchAnomaly(saved, now)
+	return saved
+}
+
+// Issues returns active and recently resolved problem episodes.
+func (s *Store) Issues() model.IssueSnapshot {
+	return s.issues.Snapshot()
 }
 
 // Anomalies exposes the shared ring buffer for REST queries.
@@ -218,6 +232,7 @@ func (s *Store) Evict() bool {
 	}
 	if s.lastSnapshotAt.IsZero() || now.Sub(s.lastSnapshotAt) > s.cfg.RosterTTL {
 		s.bots = make(map[uint32]*botEntry)
+		s.issues.Reset()
 		return true
 	}
 	return false
@@ -259,6 +274,7 @@ func (s *Store) Snapshot() model.SnapshotPayload {
 		Seq:    s.lastSeq,
 		Server: s.statusLocked(now),
 		Bots:   bots,
+		Issues: s.issues.Snapshot(),
 	}
 }
 
@@ -291,6 +307,7 @@ func (s *Store) publishLocked(seq uint64, bots []model.BotSnapshot, now time.Tim
 	s.lastSeq = seq
 	s.lastSnapshotAt = now
 	s.snapshotsPublished++
+	s.issues.Observe(bots, now)
 }
 
 func appendTrail(trail []model.Coordinate, snap model.BotSnapshot, limit int) []model.Coordinate {
@@ -333,6 +350,7 @@ func (s *Store) beginSessionLocked(session uint64) {
 	s.heartbeat = nil
 	s.heartbeatAt = time.Time{}
 	s.lastSnapshotAt = time.Time{}
+	s.issues.Reset()
 }
 
 func (s *Store) prunePendingLocked(now time.Time) {

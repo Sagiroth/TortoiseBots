@@ -37,9 +37,10 @@
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         <span>Bots</span>
       </a>
-      <a class="menu-item" data-tab="states">
-        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-        <span>Macro States</span>
+      <a class="menu-item" data-tab="issues">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <span>Issues</span>
+        <span id="issues-count" class="badge badge-error" style="margin-left: auto; padding: 1px 6px;">0</span>
       </a>
 
       <div class="menu-category">Server</div>
@@ -124,6 +125,12 @@
           <div class="telemetry-card metric-stat">
             <div id="metric-uptime" class="metric-big-num" style="font-size: 1.5rem;">0m</div>
             <div class="metric-label">Uptime</div>
+          </div>
+
+          <div class="telemetry-card metric-stat" title="Active persistent bot issues. Red = at least one running 10+ minutes.">
+            <div id="metric-issues" class="metric-big-num" style="font-size: 1.5rem;">0</div>
+            <div class="metric-label">Issues</div>
+            <div class="metric-sub" id="metric-issues-sub">0 persistent</div>
           </div>
         </div>
 
@@ -262,55 +269,74 @@
         </div>
       </section>
 
-      <!-- TAB 4: MACRO STATES -->
-      <section id="tab-states" class="tab-view" style="display: none;">
-        <div class="telemetry-card" style="padding: 24px;">
-          <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff; margin-bottom: 8px;">Macro State Distribution</h2>
-          <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 24px;">
-            Rolling 3-minute time distribution across all active bots.
+      <!-- TAB 4: ISSUES -->
+      <section id="tab-issues" class="tab-view" style="display: none;">
+        <div style="margin-bottom: 20px;">
+          <h1 style="font-size: 1.5rem; font-weight: 700; color: #fff; margin-bottom: 4px;">Persistent Issues</h1>
+          <p style="color: var(--text-muted); font-size: 0.85rem;">
+            Bots with problems that keep happening. Highlighted after 10 minutes so you can investigate whether it is terrain, a missing step, or a bug.
           </p>
+        </div>
 
-          <div style="display: flex; flex-direction: column; gap: 16px;">
-            <div>
-              <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 0.85rem;">
-                <span>Combat</span>
-                <strong id="state-combat-txt" class="mono" style="color: var(--accent-red);">0%</strong>
-              </div>
-              <div class="progress-bar-bg" style="height: 8px;"><div id="state-combat" class="progress-bar-fill" style="width: 0%; background: var(--accent-red);"></div></div>
+        <div class="metrics-row">
+          <div class="telemetry-card metric-stat"><div id="issue-active" class="metric-big-num">0</div><div class="metric-label">Active</div></div>
+          <div class="telemetry-card metric-stat"><div id="issue-persistent" class="metric-big-num" style="color: #f85149;">0</div><div class="metric-label">Persistent ≥10m</div></div>
+          <div class="telemetry-card metric-stat"><div id="issue-watch" class="metric-big-num" style="color: #d29922;">0</div><div class="metric-label">Watch ≥1m</div></div>
+          <div class="telemetry-card metric-stat"><div id="issue-resolved" class="metric-big-num" style="color: #2ea043;">0</div><div class="metric-label">Recent Resolved</div></div>
+          <div class="telemetry-card metric-stat"><div id="issue-deaths" class="metric-big-num" style="color: #c9d1d9;">0</div><div class="metric-label">Deaths (session)</div></div>
+        </div>
+
+        <div class="dashboard-grid" style="grid-template-columns: 1.6fr 1fr;">
+          <div class="telemetry-card chart-container" style="height: 280px;">
+            <div class="chart-header">
+              <div class="section-label" style="margin: 0;">ACTIVE ISSUES OVER TIME</div>
+              <div class="chart-legend" id="issue-legend"></div>
             </div>
+            <div class="chart-box"><canvas id="issue-chart"></canvas></div>
+          </div>
+          <div class="telemetry-card">
+            <div class="section-label" style="margin: 0 0 12px;">ISSUES BY ZONE</div>
+            <div id="issue-zones" class="composition-list"><div class="empty-hint">No active issues.</div></div>
+          </div>
+        </div>
 
-            <div>
-              <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 0.85rem;">
-                <span>Movement / Pathing (Chase, Follow, Travel)</span>
-                <strong id="state-moving-txt" class="mono" style="color: var(--accent-blue-bright);">0%</strong>
-              </div>
-              <div class="progress-bar-bg" style="height: 8px;"><div id="state-moving" class="progress-bar-fill" style="width: 0%; background: var(--accent-blue-bright);"></div></div>
-            </div>
-
-            <div>
-              <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 0.85rem;">
-                <span>Resting (Food, Drink, Regeneration)</span>
-                <strong id="state-resting-txt" class="mono" style="color: var(--accent-green-bright);">0%</strong>
-              </div>
-              <div class="progress-bar-bg" style="height: 8px;"><div id="state-resting" class="progress-bar-fill" style="width: 0%; background: var(--accent-green-bright);"></div></div>
-            </div>
-
-            <div>
-              <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 0.85rem;">
-                <span>Idle (Standing, Waiting)</span>
-                <strong id="state-idle-txt" class="mono" style="color: var(--text-muted);">0%</strong>
-              </div>
-              <div class="progress-bar-bg" style="height: 8px;"><div id="state-idle" class="progress-bar-fill" style="width: 0%; background: var(--text-muted);"></div></div>
-            </div>
-
-            <div>
-              <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 0.85rem;">
-                <span>Dead / Ghost (Corpse Retrieval)</span>
-                <strong id="state-dead-txt" class="mono" style="color: #6b7280;">0%</strong>
-              </div>
-              <div class="progress-bar-bg" style="height: 8px;"><div id="state-dead" class="progress-bar-fill" style="width: 0%; background: #4b5563;"></div></div>
+        <div class="telemetry-card">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap;">
+            <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff;">Active Issues</h2>
+            <div style="display: flex; gap: 12px; align-items: center;">
+              <select id="issue-type-filter" class="btn" style="padding: 6px 12px;">
+                <option value="all">All Types</option>
+                <option value="STUCK">Stuck</option>
+                <option value="DEAD_LONG">Dead (long)</option>
+                <option value="ACTION_LOOP">Action Loop</option>
+                <option value="UNREACHABLE_TARGET">Unreachable</option>
+              </select>
+              <select id="issue-duration-filter" class="btn" style="padding: 6px 12px;">
+                <option value="0">Any duration</option>
+                <option value="60">≥ 1 min</option>
+                <option value="300">≥ 5 min</option>
+                <option value="600">≥ 10 min</option>
+              </select>
             </div>
           </div>
+          <div style="overflow-x: auto;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Bot</th><th>Class</th><th>Type</th><th>Duration</th>
+                  <th>Last Action</th><th>Trigger</th><th>Zone</th><th>Target</th>
+                </tr>
+              </thead>
+              <tbody id="issues-table-body">
+                <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">No active issues.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="telemetry-card" style="margin-top: 20px;">
+          <div class="section-label" style="margin: 0 0 12px;">RECENTLY RESOLVED</div>
+          <div id="issues-resolved" class="resolved-list"></div>
         </div>
       </section>
 
@@ -325,6 +351,7 @@
                 <option value="BOT_STUCK">BOT_STUCK</option>
                 <option value="ACTION_LOOP">ACTION_LOOP</option>
                 <option value="UNREACHABLE_TARGET">UNREACHABLE_TARGET</option>
+                <option value="BOT_DEATH">BOT_DEATH</option>
               </select>
               <select id="anomaly-severity-filter" class="btn" style="padding: 6px 12px;">
                 <option value="all">All Severities</option>
