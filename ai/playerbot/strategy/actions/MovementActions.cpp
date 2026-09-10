@@ -15,6 +15,7 @@
 #include "playerbot/TravelMgr.h"
 #include "Transports/Transport.h"
 #include "playerbot/strategy/generic/CombatStrategy.h"
+#include "host/BotPacketPump.h"
 
 using namespace ai;
 
@@ -600,7 +601,7 @@ bool MovementAction::HandleSpecialMovement(TravelPath& path)
 
             std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
             *packet << *i;
-            bot->GetSession()->QueuePacket(packet.release());
+            TortoiseBots::BotPacketPump::Enqueue(bot, packet.release());
             return true;
         }
 

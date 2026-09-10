@@ -6,6 +6,7 @@
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "../ai/playerbot/RandomBotFacade.h"
 #include "../host/BotSessionAdapter.h"
+#include "../host/BotPacketPump.h"
 #include "../commands/BotCommands.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "WorldSession.h"
@@ -920,6 +921,12 @@ void BotManager::UpdateBots(uint32_t diff)
             entry.aiAdapter->Update(diff);
         }
     }
+
+    // C' packet pump: dispatch synthesized client packets after every AI
+    // update and while the removal guard is still set, so a handler that
+    // removes its bot defers into the pending-removal drain below instead of
+    // stopping the Headless session with an AI frame on the stack.
+    BotPacketPump::Drain();
 
     m_inBotUpdate = false;
 
