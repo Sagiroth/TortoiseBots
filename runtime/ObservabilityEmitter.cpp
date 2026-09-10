@@ -12,12 +12,18 @@
 #include "Timer.h"
 #include "MotionMaster.h"
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
+#else
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
 #include <fcntl.h>
+#endif
 #include <cmath>
 #include <cstring>
 #include <cstdlib>
@@ -259,9 +265,14 @@ void ObservabilityEmitter::Initialize()
         return;
     }
 
+#ifdef _WIN32
+    u_long nonBlocking = 1;
+    ioctlsocket(fd, FIONBIO, &nonBlocking);
+#else
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags >= 0)
         fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+#endif
 
     struct sockaddr_in* addr = new struct sockaddr_in();
     std::memset(addr, 0, sizeof(*addr));
@@ -301,7 +312,11 @@ void ObservabilityEmitter::Shutdown()
         std::lock_guard<std::mutex> lock(m_socketMutex);
         if (m_socketFd >= 0)
         {
+#ifdef _WIN32
+            closesocket(m_socketFd);
+#else
             close(m_socketFd);
+#endif
             m_socketFd = -1;
         }
         if (m_destAddr)
@@ -336,8 +351,15 @@ void ObservabilityEmitter::SendDatagram(std::string const& payload)
     if (m_socketFd < 0 || !m_destAddr)
         return;
 
+#ifdef _WIN32
+    // No MSG_DONTWAIT on Winsock; the socket was put in non-blocking mode above, which is
+    // what the flag is here for. sendto takes an int length and returns int.
+    int res = sendto(m_socketFd, payload.c_str(), static_cast<int>(payload.length()), 0,
+                     reinterpret_cast<struct sockaddr*>(m_destAddr), sizeof(struct sockaddr_in));
+#else
     ssize_t res = sendto(m_socketFd, payload.c_str(), payload.length(), MSG_DONTWAIT,
                          reinterpret_cast<struct sockaddr*>(m_destAddr), sizeof(struct sockaddr_in));
+#endif
     if (res < 0)
     {
         static time_t lastLog = 0;
@@ -345,7 +367,11 @@ void ObservabilityEmitter::SendDatagram(std::string const& payload)
         if (now - lastLog >= 10)
         {
             lastLog = now;
+#ifdef _WIN32
+            sLog.outError("TortoiseBots: Observability sendto failed (payload len=%zu, error=%d)", payload.length(), WSAGetLastError());
+#else
             sLog.outError("TortoiseBots: Observability sendto failed (payload len=%zu, errno=%d)", payload.length(), errno);
+#endif
         }
     }
 }
