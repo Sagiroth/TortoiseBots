@@ -1,6 +1,11 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
+  /* Tell the browser this page is already dark. Without this, Chrome's
+     "Auto Dark Mode" darkens light backgrounds and turns white class bars
+     (e.g. priest) black. */
+  color-scheme: dark;
+
   --bg-app: #090d13;
   --bg-sidebar: #0e131b;
   --bg-header: #0e131b;
@@ -690,11 +695,13 @@ body {
   clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
   cursor: pointer;
   z-index: 10;
+  /* Dark halo keeps white (priest) markers visible on light map textures. */
+  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.9));
 }
 
 .bot-dot:hover {
   z-index: 20;
-  filter: brightness(1.5);
+  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.9)) brightness(1.4);
 }
 
 .map-legend {

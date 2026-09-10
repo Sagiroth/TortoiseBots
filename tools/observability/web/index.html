@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
   <title>TortoiseBots — Server & Bot Observability</title>
   <link rel="stylesheet" href="/static/css/app.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%232ea043%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><polygon points=%2212 2 2 7 12 12 22 7 12 2%22/><polyline points=%222 17 12 22 22 17%22/><polyline points=%222 12 12 17 22 12%22/></svg>">
@@ -156,19 +157,12 @@
             <div id="role-totals" class="role-row"></div>
 
             <div class="section-label" style="margin: 20px 0 10px;">MACRO STATES · 3 MIN ROLLING</div>
-            <div class="stacked-bar">
-              <div id="macro-seg-combat" class="stacked-seg" style="background: var(--accent-red);" title="Combat"></div>
-              <div id="macro-seg-moving" class="stacked-seg" style="background: var(--accent-blue-bright);" title="Moving"></div>
-              <div id="macro-seg-resting" class="stacked-seg" style="background: var(--accent-green-bright);" title="Resting"></div>
-              <div id="macro-seg-idle" class="stacked-seg" style="background: #6e7681;" title="Idle"></div>
-              <div id="macro-seg-dead" class="stacked-seg" style="background: #4b5563;" title="Dead"></div>
-            </div>
-            <div class="stacked-legend">
-              <span><i style="background: var(--accent-red);"></i>Combat <b id="macro-txt-combat">0%</b></span>
-              <span><i style="background: var(--accent-blue-bright);"></i>Moving <b id="macro-txt-moving">0%</b></span>
-              <span><i style="background: var(--accent-green-bright);"></i>Resting <b id="macro-txt-resting">0%</b></span>
-              <span><i style="background: #6e7681;"></i>Idle <b id="macro-txt-idle">0%</b></span>
-              <span><i style="background: #4b5563;"></i>Dead <b id="macro-txt-dead">0%</b></span>
+            <div class="composition-list">
+              <div class="comp-row"><span class="comp-name">Combat</span><span class="comp-bar-bg"><span id="macro-bar-combat" class="comp-bar" style="background: #f85149; width: 0%;"></span></span><span id="macro-pct-combat" class="comp-count">0%</span></div>
+              <div class="comp-row"><span class="comp-name">Moving</span><span class="comp-bar-bg"><span id="macro-bar-moving" class="comp-bar" style="background: #58a6ff; width: 0%;"></span></span><span id="macro-pct-moving" class="comp-count">0%</span></div>
+              <div class="comp-row"><span class="comp-name">Resting</span><span class="comp-bar-bg"><span id="macro-bar-resting" class="comp-bar" style="background: #2ea043; width: 0%;"></span></span><span id="macro-pct-resting" class="comp-count">0%</span></div>
+              <div class="comp-row"><span class="comp-name">Idle</span><span class="comp-bar-bg"><span id="macro-bar-idle" class="comp-bar" style="background: #9aa4b2; width: 0%;"></span></span><span id="macro-pct-idle" class="comp-count">0%</span></div>
+              <div class="comp-row"><span class="comp-name">Dead</span><span class="comp-bar-bg"><span id="macro-bar-dead" class="comp-bar" style="background: #c9d1d9; width: 0%;"></span></span><span id="macro-pct-dead" class="comp-count">0%</span></div>
             </div>
 
             <div class="section-label" style="margin: 20px 0 10px;">FLEET HEALTH</div>

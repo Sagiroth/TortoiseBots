@@ -100,9 +100,17 @@ func main() {
 	// 6. HTTP router
 	mux := http.NewServeMux()
 
-	mux.Handle("/static/", http.FileServer(http.FS(web.FS)))
-	mux.Handle("/maps/", http.FileServer(http.FS(web.FS)))
-	mux.Handle("/data/", http.FileServer(http.FS(web.FS)))
+	// Embedded assets change with each deploy; disallow cache reuse so a
+	// dashboard refresh always picks up the current UI.
+	noCache := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+			next.ServeHTTP(w, r)
+		})
+	}
+	mux.Handle("/static/", noCache(http.FileServer(http.FS(web.FS))))
+	mux.Handle("/maps/", noCache(http.FileServer(http.FS(web.FS))))
+	mux.Handle("/data/", noCache(http.FileServer(http.FS(web.FS))))
 	mux.Handle("/metrics", promhttp.Handler())
 
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {

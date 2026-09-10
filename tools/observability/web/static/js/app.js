@@ -57,7 +57,8 @@
   };
 
   function classColor(cls) {
-    return CLASS_COLORS[cls] || CLASS_COLORS.unknown;
+    const key = String(cls || '').toLowerCase().trim();
+    return CLASS_COLORS[key] || CLASS_COLORS.unknown;
   }
 
   function hexToRgba(hex, alpha) {
@@ -127,16 +128,6 @@
     roleTotals: document.getElementById('role-totals'),
     fleetHealth: document.getElementById('fleet-health'),
     zoneList: document.getElementById('zone-list'),
-    macroSegCombat: document.getElementById('macro-seg-combat'),
-    macroSegMoving: document.getElementById('macro-seg-moving'),
-    macroSegResting: document.getElementById('macro-seg-resting'),
-    macroSegIdle: document.getElementById('macro-seg-idle'),
-    macroSegDead: document.getElementById('macro-seg-dead'),
-    macroTxtCombat: document.getElementById('macro-txt-combat'),
-    macroTxtMoving: document.getElementById('macro-txt-moving'),
-    macroTxtResting: document.getElementById('macro-txt-resting'),
-    macroTxtIdle: document.getElementById('macro-txt-idle'),
-    macroTxtDead: document.getElementById('macro-txt-dead'),
 
     // Chart & Console
     activityChart: document.getElementById('activity-chart'),
@@ -493,7 +484,7 @@
     el.classBreakdown.innerHTML = entries.map(([cls, n]) => `
       <div class="comp-row">
         <span class="comp-name">${esc(cls)}</span>
-        <span class="comp-bar-bg"><span class="comp-bar" style="width: ${Math.round((n / max) * 100)}%; background: ${CLASS_COLORS[cls] || CLASS_COLORS.unknown};"></span></span>
+        <span class="comp-bar-bg"><span class="comp-bar" style="width: ${Math.round((n / max) * 100)}%; background: ${classColor(cls)};"></span></span>
         <span class="comp-count">${n}</span>
       </div>`).join('');
 
@@ -516,27 +507,18 @@
       return;
     }
 
-    let hpSum = 0, dead = 0, low = 0, inCombat = 0;
+    let dead = 0, low = 0, inCombat = 0;
     const zones = new Map();
     bots.forEach(b => {
       const pct = b.max_hp ? b.hp / b.max_hp : 1;
-      hpSum += pct;
       if (b.state === 'dead' || b.hp === 0) dead++;
       else if (pct < 0.35) low++;
       if (b.state === 'combat') inCombat++;
       zones.set(b.zone, (zones.get(b.zone) || 0) + 1);
     });
 
-    const avg = Math.round((hpSum / bots.length) * 100);
-    const color = avg > 60 ? '#2ea043' : avg > 35 ? '#d29922' : '#f85149';
-
     el.fleetHealth.innerHTML = `
-      <div class="comp-row">
-        <span class="comp-name">Avg HP</span>
-        <span class="comp-bar-bg"><span class="comp-bar" style="width: ${avg}%; background: ${color};"></span></span>
-        <span class="comp-count">${avg}%</span>
-      </div>
-      <div class="role-row">
+      <div class="role-row" style="margin-top: 0;">
         <span class="badge badge-error">${inCombat} IN COMBAT</span>
         <span class="badge badge-warn">${low} LOW HP</span>
         <span class="badge badge-info">${dead} DEAD</span>
@@ -564,16 +546,11 @@
 
   function renderMacroBar(r) {
     if (!r) return;
-    const rows = [
-      [r.combat, el.macroSegCombat, el.macroTxtCombat],
-      [r.moving, el.macroSegMoving, el.macroTxtMoving],
-      [r.resting, el.macroSegResting, el.macroTxtResting],
-      [r.idle, el.macroSegIdle, el.macroTxtIdle],
-      [r.dead, el.macroSegDead, el.macroTxtDead]
-    ];
-    rows.forEach(([val, seg, txt]) => {
-      const pct = Math.round((val || 0) * 100);
-      if (seg) seg.style.width = `${pct}%`;
+    ['combat', 'moving', 'resting', 'idle', 'dead'].forEach(key => {
+      const pct = Math.round((r[key] || 0) * 100);
+      const bar = document.getElementById(`macro-bar-${key}`);
+      const txt = document.getElementById(`macro-pct-${key}`);
+      if (bar) bar.style.width = `${pct}%`;
       if (txt) txt.textContent = `${pct}%`;
     });
   }
