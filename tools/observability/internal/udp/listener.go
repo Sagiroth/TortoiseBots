@@ -1,3 +1,5 @@
+// Package udp ingests telemetry datagrams from the game server and feeds the
+// authoritative state store. Ingestion never blocks on WebSocket clients.
 package udp
 
 import (
@@ -5,44 +7,38 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"sync"
 	"time"
 
 	zoneproject "tortoise-observability/internal/map"
 	"tortoise-observability/internal/metrics"
 	"tortoise-observability/internal/model"
-	"tortoise-observability/internal/ringbuf"
+	"tortoise-observability/internal/state"
 )
 
+// Hub is the broadcast surface the listener needs.
 type Hub interface {
-	Broadcast(msgType string, payload interface{})
+	Broadcast(event string, payload interface{})
 }
 
+// Listener owns the UDP socket and the janitor that evicts stale state.
 type Listener struct {
-	addr        string
-	conn        *net.UDPConn
-	ringBuf     *ringbuf.RingBuffer
-	metricsReg  *metrics.Registry
-	zoneProj    *zoneproject.Engine
-	hub         Hub
-	stopChan    chan struct{}
-
-	// Live bot trails: botGUID -> []model.Coordinate (last 10 positions)
-	trailMu     sync.RWMutex
-	trails      map[uint32][]model.Coordinate
-	lastBots    []model.BotSnapshot
-	lastHeartbeat *model.HeartbeatPayload
+	addr       string
+	conn       *net.UDPConn
+	store      *state.Store
+	metricsReg *metrics.Registry
+	zoneProj   *zoneproject.Engine
+	hub        Hub
+	stopChan   chan struct{}
 }
 
-func NewListener(port int, rb *ringbuf.RingBuffer, mr *metrics.Registry, zp *zoneproject.Engine, hub Hub) *Listener {
+func NewListener(host string, port int, store *state.Store, mr *metrics.Registry, zp *zoneproject.Engine, hub Hub) *Listener {
 	return &Listener{
-		addr:       fmt.Sprintf("0.0.0.0:%d", port),
-		ringBuf:    rb,
+		addr:       fmt.Sprintf("%s:%d", host, port),
+		store:      store,
 		metricsReg: mr,
 		zoneProj:   zp,
 		hub:        hub,
 		stopChan:   make(chan struct{}),
-		trails:     make(map[uint32][]model.Coordinate),
 	}
 }
 
@@ -58,12 +54,16 @@ func (l *Listener) Start() error {
 	}
 	l.conn = conn
 
-	// 64 KB receive buffer
-	_ = l.conn.SetReadBuffer(64 * 1024)
+	// Datagram bursts can carry a full roster of bots; a large receive buffer
+	// keeps a busy world tick from overflowing the kernel queue.
+	if err := l.conn.SetReadBuffer(1 << 20); err != nil {
+		log.Printf("[UDP] Could not raise receive buffer: %v", err)
+	}
 
 	log.Printf("[UDP] Listening for TortoiseBots telemetry on %s", l.addr)
 
 	go l.readLoop()
+	go l.janitorLoop()
 	return nil
 }
 
@@ -96,18 +96,42 @@ func (l *Listener) readLoop() {
 			}
 		}
 
-		if n <= 0 {
-			continue
+		if n > 0 {
+			l.processPacket(buf[:n])
 		}
+	}
+}
 
-		payload := buf[:n]
-		l.processPacket(payload)
+// janitorLoop is the single place that expires soft state: bots that were not
+// refreshed by a snapshot, incomplete cycles, and the online/offline edge.
+// It also re-broadcasts the roster when eviction changed it.
+func (l *Listener) janitorLoop() {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	lastOnline := l.store.IsOnline()
+	for {
+		select {
+		case <-l.stopChan:
+			return
+		case <-ticker.C:
+			removed := l.store.Evict()
+			online := l.store.IsOnline()
+
+			if removed {
+				l.hub.Broadcast("snapshot", l.store.Snapshot())
+			}
+			if online != lastOnline {
+				lastOnline = online
+				l.hub.Broadcast("status", l.store.Status())
+			}
+		}
 	}
 }
 
 func (l *Listener) processPacket(data []byte) {
-	// Quick peek for type field
 	var header struct {
+		V    int    `json:"v"`
 		Type string `json:"type"`
 	}
 	if err := json.Unmarshal(data, &header); err != nil {
@@ -121,22 +145,12 @@ func (l *Listener) processPacket(data []byte) {
 			return
 		}
 
-		l.trailMu.Lock()
-		l.lastHeartbeat = &hb
-
-		if len(hb.BotList) > 0 {
-			for i := range hb.BotList {
-				l.projectAndTrail(&hb.BotList[i])
-			}
-			l.lastBots = hb.BotList
+		if l.store.ApplyHeartbeat(&hb) {
+			l.metricsReg.RecordSnapshot()
+			l.hub.Broadcast("snapshot", l.store.Snapshot())
 		}
-		l.trailMu.Unlock()
-
 		l.metricsReg.RecordHeartbeat(&hb)
-
-		if l.hub != nil {
-			l.hub.Broadcast("heartbeat", hb)
-		}
+		l.hub.Broadcast("heartbeat", hb)
 
 	case "BOT_BATCH":
 		var batch model.BotBatchPayload
@@ -144,73 +158,35 @@ func (l *Listener) processPacket(data []byte) {
 			return
 		}
 
-		l.trailMu.Lock()
-		// If first batch, replace or update
-		if batch.BatchIndex == 0 {
-			l.lastBots = make([]model.BotSnapshot, 0, len(batch.Bots)*batch.TotalBatches)
-		}
 		for i := range batch.Bots {
-			bot := &batch.Bots[i]
-			l.projectAndTrail(bot)
-			l.lastBots = append(l.lastBots, *bot)
+			l.project(&batch.Bots[i])
 		}
-		l.trailMu.Unlock()
 
-		if l.hub != nil {
-			l.hub.Broadcast("bots", batch.Bots)
+		if l.store.ApplyBatch(&batch) {
+			l.metricsReg.RecordSnapshot()
+			l.hub.Broadcast("snapshot", l.store.Snapshot())
 		}
 
 	default:
-		// Anomaly event
 		var anomaly model.AnomalyPayload
 		if err := json.Unmarshal(data, &anomaly); err != nil {
 			return
 		}
-
-		saved := l.ringBuf.Add(anomaly)
-		l.metricsReg.RecordAnomaly(&saved)
-
-		if l.hub != nil {
-			l.hub.Broadcast("anomaly", saved)
+		if !model.AcceptedAnomalyTypes[anomaly.Type] {
+			return
 		}
+
+		saved := l.store.AddAnomaly(anomaly)
+		l.metricsReg.RecordAnomaly(&saved)
+		l.hub.Broadcast("anomaly", saved)
 	}
 }
 
-func (l *Listener) projectAndTrail(bot *model.BotSnapshot) {
-	if px, py, ok := l.zoneProj.Project(bot.MapID, bot.ZoneID, bot.X, bot.Y); ok {
+func (l *Listener) project(bot *model.BotSnapshot) {
+	px, py, ok := l.zoneProj.Project(bot.MapID, bot.ZoneID, bot.X, bot.Y)
+	bot.Projected = ok
+	if ok {
 		bot.PctX = px
 		bot.PctY = py
 	}
-
-	coord := model.Coordinate{
-		X:    bot.X,
-		Y:    bot.Y,
-		PctX: bot.PctX,
-		PctY: bot.PctY,
-	}
-	trail := l.trails[bot.GUID]
-	trail = append(trail, coord)
-	if len(trail) > 10 {
-		trail = trail[len(trail)-10:]
-	}
-	l.trails[bot.GUID] = trail
-	bot.Trail = trail
-}
-
-func (l *Listener) GetLastBots() []model.BotSnapshot {
-	l.trailMu.RLock()
-	defer l.trailMu.RUnlock()
-	res := make([]model.BotSnapshot, len(l.lastBots))
-	copy(res, l.lastBots)
-	return res
-}
-
-func (l *Listener) GetLastHeartbeat() *model.HeartbeatPayload {
-	l.trailMu.RLock()
-	defer l.trailMu.RUnlock()
-	if l.lastHeartbeat == nil {
-		return nil
-	}
-	hb := *l.lastHeartbeat
-	return &hb
 }

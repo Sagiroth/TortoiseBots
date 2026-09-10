@@ -9,7 +9,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -20,50 +19,11 @@ import (
 	"tortoise-observability/internal/metrics"
 	"tortoise-observability/internal/model"
 	"tortoise-observability/internal/ringbuf"
+	"tortoise-observability/internal/state"
 	"tortoise-observability/internal/udp"
+	"tortoise-observability/internal/ws"
 	"tortoise-observability/web"
 )
-
-// WebSocket client hub
-type ClientHub struct {
-	mu      sync.RWMutex
-	clients map[*websocket.Conn]bool
-}
-
-func (h *ClientHub) Broadcast(msgType string, payload interface{}) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-
-	if len(h.clients) == 0 {
-		return
-	}
-
-	msg := map[string]interface{}{
-		"event": msgType,
-		"data":  payload,
-	}
-	bytes, err := json.Marshal(msg)
-	if err != nil {
-		return
-	}
-
-	for conn := range h.clients {
-		_ = conn.WriteMessage(websocket.TextMessage, bytes)
-	}
-}
-
-func (h *ClientHub) Add(conn *websocket.Conn) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.clients[conn] = true
-}
-
-func (h *ClientHub) Remove(conn *websocket.Conn) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	delete(h.clients, conn)
-	_ = conn.Close()
-}
 
 func getEnv(key, fallback string) string {
 	if val := os.Getenv(key); val != "" {
@@ -83,6 +43,7 @@ func getEnvInt(key string, fallback int) int {
 
 func main() {
 	httpPort := flag.Int("http-port", getEnvInt("HTTP_PORT", 8095), "HTTP server port")
+	udpHost := flag.String("udp-host", getEnv("UDP_HOST", "127.0.0.1"), "UDP telemetry listen address")
 	udpPort := flag.Int("udp-port", getEnvInt("UDP_PORT", 9195), "UDP telemetry listener port")
 	dbHost := flag.String("db-host", getEnv("DB_HOST", "127.0.0.1"), "MariaDB / MySQL host")
 	dbPort := flag.Int("db-port", getEnvInt("DB_PORT", 3306), "MariaDB / MySQL port")
@@ -96,13 +57,14 @@ func main() {
 	log.Println(" Tortoise WoW — Bot & Server Observability Platform")
 	log.Println("=====================================================")
 
-	// 1. Initialize Ring Buffer
-	ringBuffer := ringbuf.New(1000)
+	// 1. Authoritative state store (roster snapshots, server status, anomalies)
+	anomalies := ringbuf.New(1000)
+	store := state.New(state.Config{}, anomalies)
 
-	// 2. Initialize Prometheus Metrics
+	// 2. Prometheus metrics
 	metricsRegistry := metrics.New()
 
-	// 3. Initialize Zone Map Projection Engine
+	// 3. Zone map projection engine
 	zoneData, err := web.FS.ReadFile("data/zones.json")
 	if err != nil {
 		log.Fatalf("Failed to read embedded zone coordinate data: %v", err)
@@ -113,7 +75,7 @@ func main() {
 	}
 	log.Printf("[Map] Initialized coordinate projection engine with %d zones", len(projectionEngine.GetAllZones()))
 
-	// 4. Initialize Auth Service
+	// 4. realmd authentication
 	authService, err := auth.NewService(auth.Config{
 		DBHost:     *dbHost,
 		DBPort:     *dbPort,
@@ -123,36 +85,30 @@ func main() {
 		SecretKey:  getEnv("SESSION_SECRET", "tortoise-observability-salt-secret"),
 	})
 	if err != nil {
-		log.Printf("[Auth] Warning: failed to connect to database (%v); auth will reject logins unless DB becomes reachable", err)
-	} else {
-		log.Printf("[Auth] Realmd MySQL authentication ready against %s:%d/%s", *dbHost, *dbPort, *dbName)
+		log.Fatalf("Failed to initialize auth service: %v", err)
 	}
+	log.Printf("[Auth] Realmd MySQL authentication ready against %s:%d/%s", *dbHost, *dbPort, *dbName)
 
-	// 5. WebSocket Hub & UDP Telemetry Listener
-	hub := &ClientHub{clients: make(map[*websocket.Conn]bool)}
-	udpListener := udp.NewListener(*udpPort, ringBuffer, metricsRegistry, projectionEngine, hub)
+	// 5. WebSocket hub and UDP ingestion
+	hub := ws.NewHub()
+	udpListener := udp.NewListener(*udpHost, *udpPort, store, metricsRegistry, projectionEngine, hub)
 	if err := udpListener.Start(); err != nil {
 		log.Fatalf("Failed to start UDP listener: %v", err)
 	}
 	defer udpListener.Stop()
 
-	// 6. Router Setup
+	// 6. HTTP router
 	mux := http.NewServeMux()
 
-	// Static files: /static/*, /maps/*, and /data/*
 	mux.Handle("/static/", http.FileServer(http.FS(web.FS)))
 	mux.Handle("/maps/", http.FileServer(http.FS(web.FS)))
 	mux.Handle("/data/", http.FileServer(http.FS(web.FS)))
-
-	// Prometheus Scrape Endpoint
 	mux.Handle("/metrics", promhttp.Handler())
 
-	// Auth Handlers
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
-		loginHtml, _ := web.FS.ReadFile("login.html")
+		loginHTML, _ := web.FS.ReadFile("login.html")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(loginHtml)
+		_, _ = w.Write(loginHTML)
 	})
 
 	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
@@ -174,10 +130,7 @@ func main() {
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"success": false,
-				"error":   err.Error(),
-			})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
 			return
 		}
 
@@ -197,15 +150,13 @@ func main() {
 		http.Redirect(w, r, "/login", http.StatusFound)
 	})
 
-	// Auth Middleware
 	requireAuth := func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			if *devNoAuth {
 				next(w, r)
 				return
 			}
-			_, err := authService.GetSessionFromRequest(r)
-			if err != nil {
+			if _, err := authService.GetSessionFromRequest(r); err != nil {
 				if strings.HasPrefix(r.URL.Path, "/api/") {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusUnauthorized)
@@ -219,12 +170,10 @@ func main() {
 		}
 	}
 
-	// Dashboard SPA Route
-	indexHtml, _ := web.FS.ReadFile("index.html")
+	indexHTML, _ := web.FS.ReadFile("index.html")
 	dashboardHandler := requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(indexHtml)
+		_, _ = w.Write(indexHTML)
 	})
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -235,37 +184,37 @@ func main() {
 		http.NotFound(w, r)
 	})
 
-	// REST API: Anomalies
-	mux.HandleFunc("/api/v1/anomalies", requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		limit := 1000
-		if lStr := r.URL.Query().Get("limit"); lStr != "" {
-			if parsed, err := strconv.Atoi(lStr); err == nil && parsed > 0 {
-				limit = parsed
-			}
-		}
-		tFilter := r.URL.Query().Get("type")
-		sFilter := r.URL.Query().Get("severity")
-
-		list := ringBuffer.GetRecent(limit, tFilter, sFilter)
-		if list == nil {
-			list = []model.AnomalyPayload{}
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(list)
+	mux.HandleFunc("/api/v1/status", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, store.Status())
 	}))
 
-	// REST API: Bots
 	mux.HandleFunc("/api/v1/bots", requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		bots := udpListener.GetLastBots()
-		if bots == nil {
-			bots = []model.BotSnapshot{}
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(bots)
+		writeJSON(w, store.Snapshot().Bots)
 	}))
 
-	// WebSocket Stream Endpoint
+	mux.HandleFunc("/api/v1/anomalies", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodDelete:
+			store.Anomalies().Clear()
+			w.WriteHeader(http.StatusNoContent)
+		case http.MethodGet:
+			limit := 1000
+			if lStr := r.URL.Query().Get("limit"); lStr != "" {
+				if parsed, err := strconv.Atoi(lStr); err == nil && parsed > 0 {
+					limit = parsed
+				}
+			}
+			list := store.Anomalies().GetRecent(limit,
+				r.URL.Query().Get("type"), r.URL.Query().Get("severity"))
+			if list == nil {
+				list = []model.AnomalyPayload{}
+			}
+			writeJSON(w, list)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}))
+
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true },
 	}
@@ -278,30 +227,12 @@ func main() {
 			}
 		}
 
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			log.Printf("[WS] Upgrade error: %v", err)
-			return
-		}
-		hub.Add(conn)
-
-		// Send initial state immediately
-		if lastHb := udpListener.GetLastHeartbeat(); lastHb != nil {
-			_ = conn.WriteJSON(map[string]interface{}{
-				"event": "heartbeat",
-				"data":  lastHb,
-			})
-		}
-
-		// Keep connection open and read discard
-		go func() {
-			defer hub.Remove(conn)
-			for {
-				if _, _, err := conn.ReadMessage(); err != nil {
-					break
-				}
-			}
-		}()
+		// Bootstrap the client from the same store the live stream uses, so
+		// REST polling is no longer required for correctness.
+		hub.Serve(w, r, upgrader,
+			ws.Event{Name: "snapshot", Data: store.Snapshot()},
+			ws.Event{Name: "status", Data: store.Status()},
+		)
 	})
 
 	serverAddr := fmt.Sprintf("0.0.0.0:%d", *httpPort)
@@ -319,4 +250,9 @@ func main() {
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("HTTP server failed: %v", err)
 	}
+}
+
+func writeJSON(w http.ResponseWriter, payload interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(payload)
 }

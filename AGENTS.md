@@ -187,6 +187,21 @@ Useful metrics: bot update time, total bot CPU, DB queries, path/movement reques
 
 ---
 
+## Observability subsystem
+
+`tools/observability` is a standalone Go daemon (Prometheus + web dashboard) fed by `runtime/ObservabilityEmitter.{h,cpp}` over non-blocking UDP. It is optional and config-gated; core stays ignorant of it.
+
+Rules that keep its state honest:
+
+- The daemon has exactly one authoritative store (`internal/state`). REST, WebSocket, and Prometheus all read it.
+- The emitter sends self-contained snapshot cycles: one `HEARTBEAT` + `BOT_BATCH` chunks sharing a `seq`. Publish a roster only from a complete cycle; clients replace their roster wholesale instead of merging deltas.
+- Every datagram also carries a `session` epoch (server process start). The daemon resets sequence/roster state when it changes, so a server restart that resets `seq` cannot be locked out as "old cycles".
+- Bound and prune every emitter table (bot tracking, action failures, anomaly cooldowns) on each snapshot. Macro-state ratios are windowed, never lifetime totals.
+- Anomaly types are a closed set (`model.AcceptedAnomalyTypes`) so Prometheus label cardinality stays bounded.
+- Bump `kProtocolVersion` in `ObservabilityEmitter.cpp` and `model.ProtocolVersion` in `internal/model/types.go` together.
+
+---
+
 ## Git safety
 
 Never reset/clean/overwrite/stage/include unrelated user changes. Inspect `git status --short` before and after work. Do not use destructive Git commands unless explicitly requested.
@@ -209,6 +224,7 @@ A successful build/test remains evidence for unchanged code. Do not rebuild afte
 
 - **Docs/comments/config only** → text checks + `git diff --check`, no C++ build.
 - **Module-only C++** → one cached `MODULE_TORTOISEBOTS=static` build after the batch is coherent.
+- **Observability tool (Go)** → `docker run --rm -v "$PWD/tools/observability:/src" -w /src golang:1.22-alpine sh -c 'go vet ./... && go test ./...'` (no host Go toolchain). Live check: server logs `Observability telemetry active`, `/metrics` shows `mangos_server_online 1` and rising `tortoisebots_snapshots_total`.
 - **Core-seam change** → cached module build while iterating; full ON/OFF matrix only when stable.
 - **Build-gating / CMake change** → directly affected configurations.
 - **Phase / PR / handover boundary** → full OFF/ON matrix once (`git diff --check` + coupling audits + required runtime gates).

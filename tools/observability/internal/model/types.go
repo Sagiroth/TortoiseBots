@@ -2,6 +2,18 @@ package model
 
 import "time"
 
+// ProtocolVersion is bumped whenever the C++ -> Go datagram layout changes in
+// a way the daemon must understand. It is carried in every datagram.
+const ProtocolVersion = 2
+
+// Anomaly types accepted from the game server. Anything else is rejected so
+// that Prometheus label cardinality stays bounded.
+var AcceptedAnomalyTypes = map[string]bool{
+	"BOT_STUCK":          true,
+	"ACTION_LOOP":        true,
+	"UNREACHABLE_TARGET": true,
+}
+
 // BotSnapshot represents an active bot's live state in the world.
 type BotSnapshot struct {
 	Name     string  `json:"name"`
@@ -23,11 +35,13 @@ type BotSnapshot struct {
 	Strategy string  `json:"strategy"`
 	State    string  `json:"state"` // "combat", "moving", "resting", "dead", "idle"
 
-	// Calculated 2D projection percentages on the active zone map
-	PctX float64 `json:"pct_x,omitempty"`
-	PctY float64 `json:"pct_y,omitempty"`
+	// Calculated 2D projection percentages on the active zone map. Projected
+	// distinguishes a real (0,0) edge coordinate from "no mapping available".
+	Projected bool    `json:"projected"`
+	PctX      float64 `json:"pct_x"`
+	PctY      float64 `json:"pct_y"`
 
-	// Breadcrumb trail (last 10 positions)
+	// Projected breadcrumb trail (server-maintained, newest last)
 	Trail []Coordinate `json:"trail,omitempty"`
 }
 
@@ -38,7 +52,8 @@ type Coordinate struct {
 	PctY float64 `json:"pct_y"`
 }
 
-// StateRatios holds the percentage time spent across bot macro states.
+// StateRatios holds the share of time spent across bot macro states. Values
+// are a rolling-window ratio (0.0 - 1.0), not a lifetime average.
 type StateRatios struct {
 	Combat  float64 `json:"combat"`
 	Moving  float64 `json:"moving"`
@@ -54,24 +69,58 @@ type ClassRoleCount struct {
 }
 
 // HeartbeatPayload is received periodically over UDP from the C++ module.
+// It opens a snapshot cycle identified by Seq; BOT_BATCH datagrams carrying
+// the same Seq complete that cycle.
 type HeartbeatPayload struct {
+	V           int              `json:"v"`
+	Session     uint64           `json:"session"`
+	Seq         uint64           `json:"seq"`
 	TS          int64            `json:"ts"`
 	Type        string           `json:"type"`
 	Uptime      uint32           `json:"uptime"`
 	TickDiffMs  float64          `json:"diff"`
+	WindowSecs  uint32           `json:"window_secs,omitempty"`
 	HumansCount uint32           `json:"humans"`
 	BotsCount   uint32           `json:"bots"`
 	States      StateRatios      `json:"states"`
 	Counts      []ClassRoleCount `json:"counts,omitempty"`
-	BotList     []BotSnapshot    `json:"bot_list,omitempty"`
 }
 
-// BotBatchPayload delivers chunked bot states to prevent UDP fragmentation issues.
+// BotBatchPayload delivers one chunk of a snapshot cycle. A cycle is only
+// published once every index in [0, TotalBatches) has been received.
 type BotBatchPayload struct {
+	V            int           `json:"v"`
+	Session      uint64        `json:"session"`
+	Seq          uint64        `json:"seq"`
+	TS           int64         `json:"ts"`
 	Type         string        `json:"type"`
 	BatchIndex   int           `json:"batch_index"`
 	TotalBatches int           `json:"total_batches"`
 	Bots         []BotSnapshot `json:"bots"`
+}
+
+// ServerStatus is the daemon's single authoritative view of the game server
+// and the freshness of the last complete roster snapshot.
+type ServerStatus struct {
+	Online              bool        `json:"online"`
+	Stale               bool        `json:"stale"`
+	Seq                 uint64      `json:"seq"`
+	Uptime              uint32      `json:"uptime"`
+	TickDiffMs          float64     `json:"diff"`
+	WindowSecs          uint32      `json:"window_secs,omitempty"`
+	Humans              uint32      `json:"humans"`
+	Bots                uint32      `json:"bots"`
+	States              StateRatios `json:"states"`
+	LastHeartbeatAgeSec float64     `json:"last_heartbeat_age_sec"`
+	LastSnapshotAgeSec  float64     `json:"last_snapshot_age_sec"`
+	SnapshotsPublished  uint64      `json:"snapshots_published"`
+}
+
+// SnapshotPayload is the coherent roster handed to REST and WebSocket clients.
+type SnapshotPayload struct {
+	Seq    uint64         `json:"seq"`
+	Server ServerStatus   `json:"server"`
+	Bots   []BotSnapshot  `json:"bots"`
 }
 
 // Position represents 3D coordinates.

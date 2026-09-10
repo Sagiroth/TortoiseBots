@@ -1,4 +1,7 @@
-// Tortoise WoW Observability Dashboard — Telemetry & Bot Management
+// Tortoise WoW Observability Dashboard
+// State model: the WebSocket "snapshot" event is authoritative for the roster.
+// Heartbeats update server gauges, "status" reports online/stale transitions,
+// and a local watchdog marks the stream offline if pulses stop.
 (function() {
   'use strict';
 
@@ -10,6 +13,8 @@
     3277: { name: 'Warsong Gulch', map: 489, file: 'warsonggulch.webp' }
   };
 
+  const OFFLINE_AFTER_MS = 10000;
+
   const state = {
     activeTab: 'dashboard',
     currentZoneId: 12,
@@ -17,6 +22,7 @@
     anomalies: [],
     server: {
       online: false,
+      stale: true,
       uptime: 0,
       diff: 0,
       humans: 0,
@@ -24,38 +30,59 @@
       states: { combat: 0, moving: 0, resting: 0, dead: 0, idle: 0 }
     },
     history: {
-      timestamps: [],
+      t: [],
       bots: [],
-      humans: []
+      humans: [],
+      diff: []
     },
+    counts: [],
     showTrails: true,
     roleFilter: 'all',
-    searchQuery: '',
     selectedBotGuid: null,
     anomalyTypeFilter: 'all',
     anomalySeverityFilter: 'all',
-    wsConnected: false
+    wsConnected: false,
+    snapshotSeq: 0,
+    lastHeartbeatAt: 0,
+    lastSnapshotAt: 0
   };
+
+  const HIST_MAX = 300; // 2s samples -> 10 minutes
+
+  const CLASS_COLORS = {
+    warrior: '#c79c6e', paladin: '#f58cba', hunter: '#abd473', rogue: '#fff569',
+    priest: '#e8e8e8', shaman: '#0070de', mage: '#69ccf0', warlock: '#9482c9',
+    druid: '#ff7d0a', unknown: '#8b949e'
+  };
+
+  function classColor(cls) {
+    return CLASS_COLORS[cls] || CLASS_COLORS.unknown;
+  }
+
+  function hexToRgba(hex, alpha) {
+    const h = hex.replace('#', '');
+    const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+    const n = parseInt(full, 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+  }
 
   // DOM Elements
   const el = {
     statusPill: document.getElementById('status-pill'),
-    statusDot: document.getElementById('status-dot'),
+    statusLabel: document.getElementById('status-label'),
     topBotsVal: document.getElementById('top-bots-val'),
-    subHumansVal: document.getElementById('sub-humans-val'),
-    subBotsVal: document.getElementById('sub-bots-val'),
+    playersVal: document.getElementById('players-val'),
     metricBotsOnline: document.getElementById('metric-bots-online'),
     metricHumansOnline: document.getElementById('metric-humans-online'),
     metricUptime: document.getElementById('metric-uptime'),
+    snapshotAgeVal: document.getElementById('snapshot-age-val'),
     gaugeTickVal: document.getElementById('gauge-tick-val'),
     gaugeTickBar: document.getElementById('gauge-tick-bar'),
-    gaugeLoadVal: document.getElementById('gauge-load-val'),
-    gaugeLoadBar: document.getElementById('gauge-load-bar'),
-    
+
     // Tabs & Navigation
     menuItems: document.querySelectorAll('.sidebar-menu .menu-item[data-tab]'),
     tabViews: document.querySelectorAll('.tab-view'),
-    
+
     // Map
     zoneFilterInput: document.getElementById('zone-filter-input'),
     zoneFilterCount: document.getElementById('zone-filter-count'),
@@ -64,6 +91,7 @@
     mapOverlay: document.getElementById('map-overlay'),
     mapCanvas: document.getElementById('map-canvas'),
     mapTooltip: document.getElementById('map-tooltip'),
+    mapLegend: document.getElementById('map-legend'),
     toggleTrails: document.getElementById('toggle-trails'),
     botDrawer: document.getElementById('bot-drawer'),
     drawerContent: document.getElementById('drawer-content'),
@@ -93,12 +121,69 @@
     stateDead: document.getElementById('state-dead'),
     stateDeadTxt: document.getElementById('state-dead-txt'),
 
+    // Dashboard composition
+    classBreakdown: document.getElementById('class-breakdown'),
+    roleTotals: document.getElementById('role-totals'),
+    macroSegCombat: document.getElementById('macro-seg-combat'),
+    macroSegMoving: document.getElementById('macro-seg-moving'),
+    macroSegResting: document.getElementById('macro-seg-resting'),
+    macroSegIdle: document.getElementById('macro-seg-idle'),
+    macroSegDead: document.getElementById('macro-seg-dead'),
+    macroTxtCombat: document.getElementById('macro-txt-combat'),
+    macroTxtMoving: document.getElementById('macro-txt-moving'),
+    macroTxtResting: document.getElementById('macro-txt-resting'),
+    macroTxtIdle: document.getElementById('macro-txt-idle'),
+    macroTxtDead: document.getElementById('macro-txt-dead'),
+
     // Chart & Console
     activityChart: document.getElementById('activity-chart'),
+    tickChart: document.getElementById('tick-chart'),
+    tickNow: document.getElementById('tick-now'),
     consoleBody: document.getElementById('console-body'),
     consoleRate: document.getElementById('console-rate'),
     refreshBtn: document.getElementById('refresh-btn')
   };
+
+  // All dynamic values rendered via innerHTML must pass through this.
+  function esc(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function formatUptime(seconds) {
+    if (!seconds) return '0m';
+    const m = Math.floor(seconds / 60);
+    const h = Math.floor(m / 60);
+    const remM = m % 60;
+    if (h > 0) return `${h}h ${remM}m`;
+    return `${m}m`;
+  }
+
+  function getZoneName(zoneId) {
+    if (zoneId === null || zoneId === undefined) return '-';
+    const zone = ZONE_CONFIG[zoneId];
+    return zone ? zone.name : `Zone ${zoneId}`;
+  }
+
+  function appendConsoleLog(time, tag, text, level = 'info') {
+    if (!el.consoleBody) return;
+    const line = document.createElement('div');
+    line.className = 'log-line';
+    const tagClass = level === 'warn' ? 'warn' : level === 'error' ? 'error' : '';
+    // text may contain intentional markup from callers; all telemetry-derived
+    // strings are escaped before they reach this point.
+    line.innerHTML = `<span class="log-time">[${esc(time)}]</span> <span class="log-tag ${tagClass}">[${esc(tag)}]</span> ${text}`;
+    el.consoleBody.appendChild(line);
+    while (el.consoleBody.children.length > 200) {
+      el.consoleBody.removeChild(el.consoleBody.firstChild);
+    }
+    el.consoleBody.scrollTop = el.consoleBody.scrollHeight;
+  }
 
   // Sidebar Tab Navigation
   el.menuItems.forEach(item => {
@@ -113,46 +198,19 @@
       });
       if (tab === 'map') renderMap();
       if (tab === 'roster') renderRoster();
-      if (tab === 'dashboard') renderActivityChart();
+      if (tab === 'dashboard') {
+        renderDashboardCharts();
+        renderComposition();
+        renderMacroBar(state.server.states);
+      }
     });
   });
 
   if (el.refreshBtn) {
     el.refreshBtn.addEventListener('click', () => {
-      fetchBots();
+      fetchBots(true);
       fetchAnomalies();
     });
-  }
-
-  // Format uptime
-  function formatUptime(seconds) {
-    if (!seconds) return '0m';
-    const m = Math.floor(seconds / 60);
-    const h = Math.floor(m / 60);
-    const remM = m % 60;
-    if (h > 0) return `${h}h ${remM}m`;
-    return `${m}m`;
-  }
-
-  // Look up human-readable zone name from ZONE_CONFIG
-  function getZoneName(zoneId) {
-    if (!zoneId && zoneId !== 0) return '-';
-    const zone = ZONE_CONFIG[zoneId];
-    return zone ? zone.name : `Zone ${zoneId}`;
-  }
-
-  // Log to Console Card
-  function appendConsoleLog(time, tag, text, level = 'info') {
-    if (!el.consoleBody) return;
-    const line = document.createElement('div');
-    line.className = 'log-line';
-    const tagClass = level === 'warn' ? 'warn' : level === 'error' ? 'error' : '';
-    line.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-tag ${tagClass}">[${tag}]</span> ${text}`;
-    el.consoleBody.appendChild(line);
-    while (el.consoleBody.children.length > 200) {
-      el.consoleBody.removeChild(el.consoleBody.firstChild);
-    }
-    el.consoleBody.scrollTop = el.consoleBody.scrollHeight;
   }
 
   // Zone Selector & Filtering
@@ -195,9 +253,7 @@
       .catch(() => {});
 
     if (el.zoneFilterInput) {
-      el.zoneFilterInput.addEventListener('input', (e) => {
-        populateZoneSelect(e.target.value);
-      });
+      el.zoneFilterInput.addEventListener('input', (e) => populateZoneSelect(e.target.value));
     }
 
     if (el.zoneSelect) {
@@ -224,126 +280,288 @@
     });
   }
 
-  // Activity Timeline Sparkline
-  function renderActivityChart() {
-    const canvas = el.activityChart;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+  // Chart helpers -----------------------------------------------------------
+
+  function prepCanvas(canvas) {
+    if (!canvas || !canvas.parentElement) return null;
     const w = canvas.parentElement.clientWidth;
     const h = canvas.parentElement.clientHeight;
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
+    if (w <= 0 || h <= 0) return null;
+    const dpr = window.devicePixelRatio || 1;
+    if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
     }
-
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
+    return { ctx, w, h };
+  }
 
-    // Draw subtle grid lines
+  function drawGrid(ctx, w, h, padTop, padBottom, maxVal) {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
     ctx.lineWidth = 1;
-    for (let y = 0; y <= h; y += h / 4) {
+    for (let i = 0; i <= 4; i++) {
+      const y = padTop + (h - padTop - padBottom) * (i / 4);
       ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(w, y);
       ctx.stroke();
     }
+    ctx.fillStyle = '#6e7681';
+    ctx.font = '10px "JetBrains Mono", monospace';
+    ctx.fillText(String(Math.round(maxVal)), 3, padTop + 9);
+    ctx.fillText('0', 3, h - padBottom - 2);
+  }
 
-    const data = state.history.bots;
-    if (data.length < 2) {
+  function drawTimeAxis(ctx, w, h) {
+    ctx.fillStyle = '#6e7681';
+    ctx.font = '10px "JetBrains Mono", monospace';
+    ctx.fillText('10m ago', 3, h - 2);
+    ctx.textAlign = 'right';
+    ctx.fillText('now', w - 2, h - 2);
+    ctx.textAlign = 'left';
+  }
+
+  // Population timeline (bots + players), one sample per heartbeat.
+  function renderActivityChart() {
+    const canvas = el.activityChart;
+    const prepared = prepCanvas(canvas);
+    if (!prepared) return;
+    const { ctx, w, h } = prepared;
+
+    const bots = state.history.bots;
+    const humans = state.history.humans;
+    const padTop = 12, padBottom = 16;
+
+    if (bots.length < 2) {
       ctx.fillStyle = '#484f58';
       ctx.font = '12px Inter';
-      ctx.fillText('Waiting for activity telemetry...', 20, h / 2);
+      ctx.fillText('Collecting telemetry...', 12, h / 2);
+      drawTimeAxis(ctx, w, h);
       return;
     }
 
-    const maxVal = Math.max(10, Math.max(...data, ...state.history.humans) * 1.15);
-    const stepX = w / (data.length - 1);
+    const maxVal = Math.max(10, ...bots, ...humans) * 1.15;
+    const yFor = v => padTop + (h - padTop - padBottom) * (1 - v / maxVal);
+    const stepX = w / (bots.length - 1);
 
-    // Draw Bots filled area
+    drawGrid(ctx, w, h, padTop, padBottom, maxVal);
+
+    // Bots: filled area + line
     ctx.beginPath();
-    ctx.moveTo(0, h);
-    data.forEach((val, idx) => {
-      const x = idx * stepX;
-      const y = h - (val / maxVal) * (h - 20) - 10;
-      if (idx === 0) ctx.lineTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.lineTo(w, h);
+    ctx.moveTo(0, h - padBottom);
+    bots.forEach((v, i) => ctx.lineTo(i * stepX, yFor(v)));
+    ctx.lineTo(w, h - padBottom);
     ctx.closePath();
     const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, 'rgba(88, 166, 255, 0.25)');
+    grad.addColorStop(0, 'rgba(88, 166, 255, 0.28)');
     grad.addColorStop(1, 'rgba(88, 166, 255, 0.0)');
     ctx.fillStyle = grad;
     ctx.fill();
 
-    // Draw Bots stroke
     ctx.beginPath();
-    data.forEach((val, idx) => {
-      const x = idx * stepX;
-      const y = h - (val / maxVal) * (h - 20) - 10;
-      if (idx === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+    bots.forEach((v, i) => {
+      if (i === 0) ctx.moveTo(0, yFor(v));
+      else ctx.lineTo(i * stepX, yFor(v));
     });
     ctx.strokeStyle = '#58a6ff';
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Draw Players stroke
+    // Players line
     ctx.beginPath();
-    state.history.humans.forEach((val, idx) => {
-      const x = idx * stepX;
-      const y = h - (val / maxVal) * (h - 20) - 10;
-      if (idx === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+    humans.forEach((v, i) => {
+      if (i === 0) ctx.moveTo(0, yFor(v));
+      else ctx.lineTo(i * stepX, yFor(v));
     });
     ctx.strokeStyle = '#2ea043';
     ctx.lineWidth = 2;
     ctx.stroke();
+
+    // End labels
+    const last = bots.length - 1;
+    ctx.font = '10px "JetBrains Mono", monospace';
+    ctx.fillStyle = '#58a6ff';
+    ctx.textAlign = 'right';
+    ctx.fillText(String(bots[last]), w - 3, yFor(bots[last]) - 4);
+    ctx.fillStyle = '#2ea043';
+    ctx.fillText(String(humans[last]), w - 3, yFor(humans[last]) - 4);
+    ctx.textAlign = 'left';
+
+    drawTimeAxis(ctx, w, h);
   }
 
-  // Update Top Stats & Gauge Rings
+  // World tick timeline with nominal (50ms) and lag (100ms) references.
+  function renderTickChart() {
+    const canvas = el.tickChart;
+    const prepared = prepCanvas(canvas);
+    if (!prepared) return;
+    const { ctx, w, h } = prepared;
+
+    const series = state.history.diff;
+    const padTop = 8, padBottom = 14;
+
+    if (series.length < 2) {
+      ctx.fillStyle = '#484f58';
+      ctx.font = '11px Inter';
+      ctx.fillText('Collecting telemetry...', 12, h / 2);
+      return;
+    }
+
+    const maxVal = Math.max(100, ...series) * 1.1;
+    const yFor = v => padTop + (h - padTop - padBottom) * (1 - v / maxVal);
+    const stepX = w / (series.length - 1);
+
+    drawGrid(ctx, w, h, padTop, padBottom, maxVal);
+
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = 'rgba(46, 160, 67, 0.5)';
+    ctx.beginPath(); ctx.moveTo(0, yFor(50)); ctx.lineTo(w, yFor(50)); ctx.stroke();
+    ctx.strokeStyle = 'rgba(248, 81, 73, 0.5)';
+    ctx.beginPath(); ctx.moveTo(0, yFor(100)); ctx.lineTo(w, yFor(100)); ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.beginPath();
+    series.forEach((v, i) => {
+      if (i === 0) ctx.moveTo(0, yFor(v));
+      else ctx.lineTo(i * stepX, yFor(v));
+    });
+    ctx.strokeStyle = '#f0883e';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    const last = series[series.length - 1];
+    if (el.tickNow) {
+      el.tickNow.textContent = `${last} ms (nominal 50, lag >100)`;
+      el.tickNow.style.color = last > 100 ? '#f85149' : last > 70 ? '#d29922' : 'var(--text-muted)';
+    }
+  }
+
+  function renderDashboardCharts() {
+    renderActivityChart();
+    renderTickChart();
+  }
+
+  // Bots by class (heartbeat counts), with role totals.
+  function renderComposition() {
+    if (!el.classBreakdown) return;
+    const counts = state.counts || [];
+    if (counts.length === 0) {
+      el.classBreakdown.innerHTML = '<div class="empty-hint">Waiting for bot telemetry...</div>';
+      if (el.roleTotals) el.roleTotals.innerHTML = '';
+      return;
+    }
+
+    const byClass = new Map();
+    const byRole = { tank: 0, healer: 0, dps: 0 };
+    counts.forEach(c => {
+      byClass.set(c.class, (byClass.get(c.class) || 0) + c.count);
+      byRole[c.role] = (byRole[c.role] || 0) + c.count;
+    });
+
+    const entries = [...byClass.entries()].sort((a, b) => b[1] - a[1]);
+    const max = entries[0][1] || 1;
+
+    el.classBreakdown.innerHTML = entries.map(([cls, n]) => `
+      <div class="comp-row">
+        <span class="comp-name">${esc(cls)}</span>
+        <span class="comp-bar-bg"><span class="comp-bar" style="width: ${Math.round((n / max) * 100)}%; background: ${CLASS_COLORS[cls] || CLASS_COLORS.unknown};"></span></span>
+        <span class="comp-count">${n}</span>
+      </div>`).join('');
+
+    if (el.roleTotals) {
+      el.roleTotals.innerHTML = ['tank', 'healer', 'dps'].map(role => {
+        const badge = role === 'tank' ? 'badge-info' : role === 'healer' ? 'badge-success' : 'badge-error';
+        return `<span class="badge ${badge}">${byRole[role] || 0} ${role.toUpperCase()}</span>`;
+      }).join('');
+    }
+  }
+
+  function renderMacroBar(r) {
+    if (!r) return;
+    const rows = [
+      [r.combat, el.macroSegCombat, el.macroTxtCombat],
+      [r.moving, el.macroSegMoving, el.macroTxtMoving],
+      [r.resting, el.macroSegResting, el.macroTxtResting],
+      [r.idle, el.macroSegIdle, el.macroTxtIdle],
+      [r.dead, el.macroSegDead, el.macroTxtDead]
+    ];
+    rows.forEach(([val, seg, txt]) => {
+      const pct = Math.round((val || 0) * 100);
+      if (seg) seg.style.width = `${pct}%`;
+      if (txt) txt.textContent = `${pct}%`;
+    });
+  }
+
+  function updateSnapshotAge() {
+    if (!el.snapshotAgeVal) return;
+    if (!state.lastSnapshotAt) {
+      el.snapshotAgeVal.textContent = '–';
+      el.snapshotAgeVal.className = 'metric-big-num snapshot-offline';
+      return;
+    }
+    const age = (Date.now() - state.lastSnapshotAt) / 1000;
+    el.snapshotAgeVal.textContent = age < 10 ? `${age.toFixed(1)}s` : `${Math.round(age)}s`;
+    el.snapshotAgeVal.className = 'metric-big-num ' +
+      (age < 6 ? 'snapshot-fresh' : age < 10 ? 'snapshot-stale' : 'snapshot-offline');
+  }
+
+  function pushHistory() {
+    const s = state.server;
+    state.history.t.push(Date.now());
+    state.history.bots.push(s.online ? s.bots : 0);
+    state.history.humans.push(s.online ? s.humans : 0);
+    state.history.diff.push(s.diff || 0);
+    if (state.history.t.length > HIST_MAX) {
+      state.history.t.shift();
+      state.history.bots.shift();
+      state.history.humans.shift();
+      state.history.diff.shift();
+    }
+  }
+
+  function setStatusPill() {
+    if (!el.statusPill) return;
+    const s = state.server;
+    let cls = 'status-pill offline';
+    if (s.online && !s.stale) {
+      cls = 'status-pill online';
+    } else if (s.online) {
+      cls = 'status-pill stale';
+    }
+    el.statusPill.className = cls;
+    if (el.statusLabel) {
+      el.statusLabel.innerHTML = `Tortoise · ${esc(s.online ? (s.stale ? 'snapshot stale' : 'running') : 'offline')} · <strong id="top-bots-val">${s.bots}</strong> Bots`;
+      el.topBotsVal = document.getElementById('top-bots-val');
+    } else if (el.topBotsVal) {
+      el.topBotsVal.textContent = s.bots;
+    }
+  }
+
   function updateDashboardMetrics() {
     const s = state.server;
-    const botCount = state.bots.length > 0 ? state.bots.length : s.bots;
+    // While the server is offline the last count is history, not live state.
+    const botCount = s.online ? s.bots : 0;
 
-    if (el.topBotsVal) el.topBotsVal.textContent = botCount;
-    if (el.subBotsVal) el.subBotsVal.textContent = `${botCount} Bots`;
-    if (el.subHumansVal) el.subHumansVal.textContent = `${s.humans} Players`;
+    if (el.playersVal) el.playersVal.textContent = s.online ? s.humans : 0;
     if (el.metricBotsOnline) el.metricBotsOnline.textContent = botCount;
-    if (el.metricHumansOnline) el.metricHumansOnline.textContent = s.humans;
-    if (el.metricUptime) el.metricUptime.textContent = formatUptime(s.uptime);
+    if (el.metricHumansOnline) el.metricHumansOnline.textContent = s.online ? s.humans : 0;
+    if (el.metricUptime) el.metricUptime.textContent = s.online ? formatUptime(s.uptime) : '0m';
 
-    // Tick ms gauge
-    const diff = s.diff || 50;
-    if (el.gaugeTickVal) el.gaugeTickVal.textContent = `${diff}ms`;
+    const diff = s.diff || 0;
+    if (el.gaugeTickVal) el.gaugeTickVal.textContent = s.online ? `${diff}ms` : '–';
     if (el.gaugeTickBar) {
-      const maxDiff = 200;
-      const pct = Math.min(1, diff / maxDiff);
+      const pct = Math.min(1, diff / 200);
       const circumference = 188.5;
       el.gaugeTickBar.style.strokeDashoffset = circumference - (circumference * pct);
       el.gaugeTickBar.style.stroke = diff > 100 ? '#f85149' : diff > 70 ? '#d29922' : '#2ea043';
     }
 
-    // Load gauge
-    const load = (diff / 100).toFixed(2);
-    if (el.gaugeLoadVal) el.gaugeLoadVal.textContent = load;
-    if (el.gaugeLoadBar) {
-      const circumference = 188.5;
-      const pct = Math.min(1, parseFloat(load));
-      el.gaugeLoadBar.style.strokeDashoffset = circumference - (circumference * pct);
-    }
-
-    // Update activity history
-    const now = new Date().toLocaleTimeString();
-    state.history.timestamps.push(now);
-    state.history.bots.push(botCount);
-    state.history.humans.push(s.humans);
-    if (state.history.bots.length > 30) {
-      state.history.timestamps.shift();
-      state.history.bots.shift();
-      state.history.humans.shift();
-    }
-    if (state.activeTab === 'dashboard') renderActivityChart();
+    updateSnapshotAge();
+    setStatusPill();
+    if (state.activeTab === 'states') updateMacroRatios(s.states);
+    if (state.activeTab === 'dashboard') renderMacroBar(s.states);
   }
 
   // 2D Map Rendering
@@ -362,12 +580,11 @@
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     const zoneBots = state.bots.filter(b => {
-      if (b.zone !== state.currentZoneId) return false;
+      if (b.zone !== state.currentZoneId || !b.projected) return false;
       if (state.roleFilter !== 'all' && b.role !== state.roleFilter) return false;
       return true;
     });
 
-    // Draw trails
     if (state.showTrails) {
       zoneBots.forEach(b => {
         if (!b.trail || b.trail.length < 2) return;
@@ -378,21 +595,19 @@
           if (idx === 0) ctx.moveTo(px, py);
           else ctx.lineTo(px, py);
         });
-        ctx.strokeStyle = b.role === 'tank' ? 'rgba(56, 139, 253, 0.4)' : b.role === 'healer' ? 'rgba(46, 160, 67, 0.4)' : 'rgba(248, 81, 73, 0.4)';
+        ctx.strokeStyle = hexToRgba(classColor(b.class), 0.45);
         ctx.lineWidth = 2;
         ctx.stroke();
       });
     }
 
-    // Draw bot markers (directional triangles)
     zoneBots.forEach(b => {
       const dot = document.createElement('div');
       dot.className = 'bot-dot';
       dot.style.left = `${b.pct_x}%`;
       dot.style.top = `${b.pct_y}%`;
-      const roleColor = b.role === 'tank' ? 'var(--color-tank)' : b.role === 'healer' ? 'var(--color-healer)' : 'var(--color-dps)';
-      dot.style.backgroundColor = roleColor;
-      // Rotate triangle to face the bot's orientation
+      dot.style.backgroundColor = classColor(b.class);
+      dot.title = `${b.name} · ${b.class}`;
       const deg = (b.o || 0) * (180 / Math.PI);
       dot.style.transform = `translate(-50%, -50%) rotate(${-deg}deg)`;
 
@@ -402,11 +617,11 @@
         el.mapTooltip.style.left = `${e.clientX + 12}px`;
         el.mapTooltip.style.top = `${e.clientY + 12}px`;
         el.mapTooltip.innerHTML = `
-          <strong style="color: #fff;">${b.name}</strong> (${b.class || 'Unknown'} Lvl ${b.level})<br>
-          <span style="color: var(--text-muted);">Role:</span> ${b.role.toUpperCase()}<br>
-          <span style="color: var(--text-muted);">Status:</span> ${b.state || 'idle'}<br>
-          <span style="color: var(--text-muted);">Zone:</span> ${getZoneName(b.zone)}<br>
-          <span style="color: var(--text-muted);">Target:</span> ${b.target || 'None'}
+          <strong style="color: #fff;">${esc(b.name)}</strong> (${esc(b.class)} Lvl ${esc(b.level)})<br>
+          <span style="color: var(--text-muted);">Role:</span> ${esc((b.role || '').toUpperCase())}<br>
+          <span style="color: var(--text-muted);">Status:</span> ${esc(b.state || 'idle')}<br>
+          <span style="color: var(--text-muted);">Zone:</span> ${esc(getZoneName(b.zone))}<br>
+          <span style="color: var(--text-muted);">Target:</span> ${esc(b.target || 'None')}
         `;
       });
 
@@ -417,41 +632,58 @@
       dot.addEventListener('click', () => selectBot(b.guid));
       el.mapOverlay.appendChild(dot);
     });
+
+    renderMapLegend(zoneBots);
+  }
+
+  function renderMapLegend(zoneBots) {
+    if (!el.mapLegend) return;
+    const present = [...new Set(zoneBots.map(b => b.class))].sort();
+    if (present.length === 0) {
+      el.mapLegend.innerHTML = '<span style="color: var(--text-muted); font-size: 0.75rem;">No bots in this zone</span>';
+      return;
+    }
+    el.mapLegend.innerHTML = present.map(cls =>
+      `<span><i style="background: ${classColor(cls)};"></i>${esc(cls.charAt(0).toUpperCase() + cls.slice(1))}</span>`
+    ).join('');
   }
 
   function selectBot(guid) {
     state.selectedBotGuid = guid;
     const b = state.bots.find(x => x.guid === guid);
-    if (!b || !el.botDrawer || !el.drawerContent) return;
+    if (!b || !el.botDrawer || !el.drawerContent) {
+      if (el.botDrawer) el.botDrawer.style.display = 'none';
+      return;
+    }
 
     el.botDrawer.style.display = 'block';
     const hpPct = b.max_hp ? Math.round((b.hp / b.max_hp) * 100) : 100;
     const powerPct = b.max_power ? Math.round((b.power / b.max_power) * 100) : 0;
 
     el.drawerContent.innerHTML = `
-      <div style="font-size: 1.15rem; font-weight: 700; color: #fff; margin-bottom: 4px;">${b.name}</div>
+      <div style="font-size: 1.15rem; font-weight: 700; color: #fff; margin-bottom: 4px;">${esc(b.name)}</div>
       <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 16px;">
-        Level ${b.level} ${b.class} · <span class="badge badge-info">${b.role.toUpperCase()}</span>
+        Level ${esc(b.level)} ${esc(b.class)} · <span class="badge badge-info">${esc((b.role || '').toUpperCase())}</span>
       </div>
 
       <div style="margin-bottom: 14px;">
         <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 4px;">
-          <span>Health</span><strong>${b.hp} / ${b.max_hp} (${hpPct}%)</strong>
+          <span>Health</span><strong>${esc(b.hp)} / ${esc(b.max_hp)} (${hpPct}%)</strong>
         </div>
         <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${hpPct}%; background: var(--accent-green-bright);"></div></div>
       </div>
 
       <div style="margin-bottom: 16px;">
         <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 4px;">
-          <span>Mana / Energy</span><strong>${b.power} / ${b.max_power}</strong>
+          <span>Mana / Energy</span><strong>${esc(b.power)} / ${esc(b.max_power)}</strong>
         </div>
         <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${powerPct}%; background: var(--accent-blue-bright);"></div></div>
       </div>
 
       <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; font-size: 0.8rem; display: flex; flex-direction: column; gap: 6px;">
-        <div><span style="color: var(--text-muted);">Status:</span> <strong>${b.state}</strong></div>
-        <div><span style="color: var(--text-muted);">Target:</span> <strong style="color: #f85149;">${b.target || 'None'}</strong></div>
-        <div><span style="color: var(--text-muted);">Strategy:</span> <span class="mono" style="font-size: 0.75rem;">${b.strategy || 'default'}</span></div>
+        <div><span style="color: var(--text-muted);">Status:</span> <strong>${esc(b.state)}</strong></div>
+        <div><span style="color: var(--text-muted);">Target:</span> <strong style="color: #f85149;">${esc(b.target || 'None')}</strong></div>
+        <div><span style="color: var(--text-muted);">Strategy:</span> <span class="mono" style="font-size: 0.75rem;">${esc(b.strategy || 'default')}</span></div>
       </div>
     `;
   }
@@ -485,18 +717,19 @@
       const roleBadge = b.role === 'tank' ? 'badge-info' : b.role === 'healer' ? 'badge-success' : 'badge-error';
 
       tr.innerHTML = `
-        <td style="font-weight: 600; cursor: pointer; color: #58a6ff;" onclick="window.dashboardSelectBot(${b.guid})">${b.name}</td>
-        <td>${b.class}</td>
-        <td><span class="badge ${roleBadge}">${b.role.toUpperCase()}</span></td>
-        <td>${b.level}</td>
+        <td style="font-weight: 600; cursor: pointer; color: #58a6ff;" data-guid="${esc(b.guid)}">${esc(b.name)}</td>
+        <td>${esc(b.class)}</td>
+        <td><span class="badge ${roleBadge}">${esc((b.role || '').toUpperCase())}</span></td>
+        <td>${esc(b.level)}</td>
         <td style="width: 140px;">
-          <div style="font-size: 0.7rem; margin-bottom: 2px;">${b.hp}/${b.max_hp} (${hpPct}%)</div>
+          <div style="font-size: 0.7rem; margin-bottom: 2px;">${esc(b.hp)}/${esc(b.max_hp)} (${hpPct}%)</div>
           <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${hpPct}%; background: var(--accent-green-bright);"></div></div>
         </td>
-        <td><span class="badge ${b.state === 'combat' ? 'badge-error' : b.state === 'dead' ? 'badge-warn' : 'badge-info'}">${b.state || 'idle'}</span></td>
-        <td style="color: #f85149;">${b.target || '-'}</td>
-        <td class="mono" style="font-size: 0.8rem;">${getZoneName(b.zone)}</td>
+        <td><span class="badge ${b.state === 'combat' ? 'badge-error' : b.state === 'dead' ? 'badge-warn' : 'badge-info'}">${esc(b.state || 'idle')}</span></td>
+        <td style="color: #f85149;">${esc(b.target || '-')}</td>
+        <td class="mono" style="font-size: 0.8rem;">${esc(getZoneName(b.zone))}</td>
       `;
+      tr.querySelector('td[data-guid]').addEventListener('click', () => selectBot(b.guid));
       el.rosterTable.appendChild(tr);
     });
   }
@@ -518,7 +751,7 @@
     fetch('/api/v1/anomalies')
       .then(r => r.json())
       .then(data => {
-        state.anomalies = data || [];
+        state.anomalies = Array.isArray(data) ? data : [];
         renderAnomalies();
       })
       .catch(() => {});
@@ -540,21 +773,24 @@
       return;
     }
 
+    // Newest first, independent of the order the server returned them in.
+    const ordered = filtered.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
+
     el.anomaliesTable.innerHTML = '';
-    filtered.slice().reverse().forEach(a => {
+    ordered.forEach(a => {
       const tr = document.createElement('tr');
       const timeStr = a.time_str || (a.ts ? new Date(a.ts * 1000).toLocaleTimeString() : '-');
       const sev = (a.severity || 'info').toLowerCase();
       const sevBadge = sev === 'error' ? 'badge-error' : sev === 'warn' ? 'badge-warn' : 'badge-info';
 
       tr.innerHTML = `
-        <td class="mono" style="font-size: 0.75rem; color: var(--text-muted);">${timeStr}</td>
-        <td><span class="badge ${sevBadge}">${sev.toUpperCase()}</span></td>
-        <td class="mono" style="font-size: 0.8rem; font-weight: 600;">${a.type}</td>
-        <td style="color: #fff; font-weight: 600;">${a.bot || '-'}</td>
-        <td class="mono" style="font-size: 0.75rem;">${getZoneName(a.zone)}</td>
-        <td style="color: var(--text-muted);">${a.details || a.last_action || '-'}</td>
-        <td style="color: #f85149;">${a.target || '-'}</td>
+        <td class="mono" style="font-size: 0.75rem; color: var(--text-muted);">${esc(timeStr)}</td>
+        <td><span class="badge ${sevBadge}">${esc(sev.toUpperCase())}</span></td>
+        <td class="mono" style="font-size: 0.8rem; font-weight: 600;">${esc(a.type)}</td>
+        <td style="color: #fff; font-weight: 600;">${esc(a.bot || '-')}</td>
+        <td class="mono" style="font-size: 0.75rem;">${esc(getZoneName(a.zone))}</td>
+        <td style="color: var(--text-muted);">${esc(a.details || a.last_action || '-')}</td>
+        <td style="color: #f85149;">${esc(a.target || '-')}</td>
       `;
       el.anomaliesTable.appendChild(tr);
     });
@@ -574,26 +810,44 @@
   }
   if (el.clearAnomalies) {
     el.clearAnomalies.addEventListener('click', () => {
-      state.anomalies = [];
-      renderAnomalies();
+      fetch('/api/v1/anomalies', { method: 'DELETE' })
+        .then(() => {
+          state.anomalies = [];
+          renderAnomalies();
+        })
+        .catch(() => {});
     });
   }
 
-  function fetchBots() {
+  // REST fallback used by the Refresh button and while the socket is down.
+  function fetchBots(force = false) {
+    if (state.wsConnected && !force) return;
     fetch('/api/v1/bots')
       .then(r => r.json())
       .then(data => {
-        if (Array.isArray(data)) {
-          state.bots = data;
-          updateDashboardMetrics();
-          if (state.activeTab === 'map') renderMap();
-          if (state.activeTab === 'roster') renderRoster();
-        }
+        if (!Array.isArray(data)) return;
+        state.bots = data;
+        updateDashboardMetrics();
+        if (state.activeTab === 'map') renderMap();
+        if (state.activeTab === 'roster') renderRoster();
       })
       .catch(() => {});
   }
 
+  function applyServerStatus(s) {
+    if (!s) return;
+    state.server.online = !!s.online;
+    state.server.stale = !!s.stale;
+    state.server.uptime = s.uptime || 0;
+    state.server.diff = s.diff || 0;
+    state.server.humans = s.humans || 0;
+    state.server.bots = s.bots || 0;
+    if (s.states) state.server.states = s.states;
+  }
+
   // WebSocket Live Streaming
+  let reconnectTimer = null;
+
   function initWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/api/v1/stream`;
@@ -607,62 +861,81 @@
 
     ws.onmessage = (event) => {
       try {
-        const msg = JSON.parse(event.data);
-        handleStreamMessage(msg);
+        handleStreamMessage(JSON.parse(event.data));
       } catch (e) {}
     };
 
     ws.onclose = () => {
       state.wsConnected = false;
       if (el.consoleRate) el.consoleRate.innerHTML = '<span style="color: #f85149;">● disconnected</span>';
-      setTimeout(initWebSocket, 3000);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(initWebSocket, 3000);
     };
   }
 
   function handleStreamMessage(msg) {
     const time = new Date().toLocaleTimeString();
 
-    if (msg.event === 'heartbeat') {
+    if (msg.event === 'snapshot') {
+      const data = msg.data;
+      if (!data) return;
+      if (typeof data.seq === 'number' && data.seq < state.snapshotSeq) return;
+      state.snapshotSeq = data.seq || 0;
+
+      const prevCount = state.bots.length;
+      state.bots = Array.isArray(data.bots) ? data.bots : [];
+      state.lastSnapshotAt = Date.now();
+      applyServerStatus(data.server);
+      updateDashboardMetrics();
+
+      // Keep a selected bot's drawer fresh; close it if the bot departed.
+      if (state.selectedBotGuid !== null) selectBot(state.selectedBotGuid);
+
+      if (state.activeTab === 'map') renderMap();
+      if (state.activeTab === 'roster') renderRoster();
+
+      if (state.bots.length !== prevCount) {
+        appendConsoleLog(time, 'roster', `Snapshot #${esc(state.snapshotSeq)}: ${state.bots.length} bots active.`);
+      }
+    } else if (msg.event === 'heartbeat') {
       const d = msg.data;
       if (!d) return;
+      state.lastHeartbeatAt = Date.now();
       state.server.online = true;
+      state.server.stale = false;
       state.server.uptime = d.uptime || 0;
       state.server.diff = d.diff || 0;
       state.server.humans = d.humans || 0;
       state.server.bots = d.bots || 0;
+      if (d.states) state.server.states = d.states;
+      if (Array.isArray(d.counts)) state.counts = d.counts;
+      pushHistory();
       updateDashboardMetrics();
-      // State ratios are embedded in the heartbeat payload
-      if (d.states) {
-        updateMacroRatios(d.states);
+      if (state.activeTab === 'dashboard') {
+        renderDashboardCharts();
+        renderComposition();
       }
-      appendConsoleLog(time, 'pulse', `Heartbeat diff=${d.diff}ms, Players=${d.humans}, Bots=${d.bots}`);
-    } else if (msg.event === 'bots') {
-      const bots = msg.data;
-      if (!Array.isArray(bots)) return;
-      // Merge/upsert incoming bot snapshots by GUID
-      bots.forEach(bot => {
-        const idx = state.bots.findIndex(b => b.guid === bot.guid);
-        if (idx >= 0) {
-          state.bots[idx] = bot;
-        } else {
-          state.bots.push(bot);
-        }
-      });
+      // Heartbeats arrive every 2s; log sparsely to keep the console useful.
+      if (!handleStreamMessage._lastPulse || Date.now() - handleStreamMessage._lastPulse > 30000) {
+        handleStreamMessage._lastPulse = Date.now();
+        appendConsoleLog(time, 'pulse', `diff=${esc(d.diff)}ms, players=${esc(d.humans)}, bots=${esc(d.bots)}`);
+      }
+    } else if (msg.event === 'status') {
+      applyServerStatus(msg.data);
       updateDashboardMetrics();
-      if (state.activeTab === 'map') renderMap();
-      if (state.activeTab === 'roster') renderRoster();
     } else if (msg.event === 'anomaly') {
       const a = msg.data;
       if (a) {
         state.anomalies.push(a);
         renderAnomalies();
         const sev = (a.severity || 'info').toLowerCase();
-        appendConsoleLog(time, a.type, `<span class="log-bot">${a.bot || 'Bot'}</span>: ${a.details || a.last_action}`, sev);
+        appendConsoleLog(time, a.type, `<span class="log-bot">${esc(a.bot || 'Bot')}</span>: ${esc(a.details || a.last_action || '')}`, sev);
       }
     }
   }
 
   function updateMacroRatios(r) {
+    if (!r) return;
     const toPct = (val) => `${Math.round((val || 0) * 100)}%`;
     if (el.stateCombat) el.stateCombat.style.width = toPct(r.combat);
     if (el.stateCombatTxt) el.stateCombatTxt.textContent = toPct(r.combat);
@@ -676,18 +949,27 @@
     if (el.stateDeadTxt) el.stateDeadTxt.textContent = toPct(r.dead);
   }
 
-  window.dashboardSelectBot = selectBot;
+  // Local watchdog: the daemon cannot tell us it died, so the client decides
+  // based on pulse age. This is what makes server-online trustworthy.
+  setInterval(() => {
+    updateSnapshotAge();
+    const age = state.lastHeartbeatAt ? Date.now() - state.lastHeartbeatAt : Infinity;
+    if (age > OFFLINE_AFTER_MS && state.server.online) {
+      state.server.online = false;
+      state.server.stale = true;
+      if (state.server.states) {
+        state.server.states = { combat: 0, moving: 0, resting: 0, dead: 0, idle: 0 };
+      }
+      updateDashboardMetrics();
+      if (state.activeTab === 'dashboard') renderDashboardCharts();
+      appendConsoleLog(new Date().toLocaleTimeString(), 'watchdog', 'No heartbeat for 10s: marking server offline.', 'warn');
+    }
+  }, 3000);
 
   // Init
   initZoneSelector();
   fetchBots();
   fetchAnomalies();
   initWebSocket();
-
-  // Periodic full-refresh to keep bot list authoritative and remove stale entries
-  setInterval(() => {
-    fetchBots();
-    fetchAnomalies();
-  }, 5000);
 
 })();

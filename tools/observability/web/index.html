@@ -65,13 +65,13 @@
     <!-- Top Bar -->
     <header class="topbar">
       <div class="pill-group">
-        <div id="status-pill" class="status-pill online">
+        <div id="status-pill" class="status-pill offline">
           <span id="status-dot" class="status-dot"></span>
-          <span>Tortoise · running · <strong id="top-bots-val">0</strong> Bots</span>
+          <span id="status-label">Tortoise · offline · <strong id="top-bots-val">0</strong> Bots</span>
         </div>
         <div class="status-pill">
-          <span style="color: var(--accent-green-bright);">●</span>
-          <span>Auth · Port 3724 / 8095</span>
+          <span style="color: var(--accent-blue-bright);">●</span>
+          <span><strong id="players-val">0</strong> Players</span>
         </div>
       </div>
 
@@ -87,123 +87,101 @@
       <section id="tab-dashboard" class="tab-view">
         <div style="margin-bottom: 24px;">
           <h1 style="font-size: 1.5rem; font-weight: 700; color: #fff; margin-bottom: 4px;">Dashboard</h1>
-          <p style="color: var(--text-muted); font-size: 0.85rem;">
-            1 Realm reachable, <strong id="sub-humans-val" style="color: #fff;">0 players</strong> — <strong id="sub-bots-val" style="color: #fff;">0 bots</strong> active in world.
-          </p>
         </div>
 
         <div class="section-label">SERVER TELEMETRY · TORTOISE WOW</div>
-        
+
         <!-- Metrics Row -->
         <div class="metrics-row">
-          <div class="telemetry-card metric-gauge-card">
+          <div class="telemetry-card metric-gauge-card" title="World update tick time for the most recent loop. ~50 ms is the normal 20 Hz cadence; sustained values above 100 ms indicate lag.">
             <div class="gauge-circle">
               <svg class="gauge-svg" viewBox="0 0 72 72">
                 <circle class="gauge-bg" cx="36" cy="36" r="30"/>
                 <circle id="gauge-tick-bar" class="gauge-val-bar" cx="36" cy="36" r="30"/>
               </svg>
-              <div id="gauge-tick-val" class="gauge-text">48ms</div>
+              <div id="gauge-tick-val" class="gauge-text">–</div>
             </div>
-            <div class="metric-label">TICK MS</div>
+            <div class="metric-label">World Tick</div>
+            <div class="metric-sub">nominal 50 ms</div>
           </div>
 
-          <div class="telemetry-card metric-gauge-card">
-            <div class="gauge-circle">
-              <svg class="gauge-svg" viewBox="0 0 72 72">
-                <circle class="gauge-bg" cx="36" cy="36" r="30"/>
-                <circle id="gauge-load-bar" class="gauge-val-bar" cx="36" cy="36" r="30" style="stroke: #388bfd;"/>
-              </svg>
-              <div id="gauge-load-val" class="gauge-text">0.5</div>
-            </div>
-            <div class="metric-label">LOAD</div>
-          </div>
-
-          <div class="telemetry-card" style="display: flex; flex-direction: column; justify-content: center; align-items: center;">
+          <div class="telemetry-card metric-stat">
             <div id="metric-bots-online" class="metric-big-num">0</div>
             <div class="metric-label">Bots Online</div>
           </div>
 
-          <div class="telemetry-card" style="display: flex; flex-direction: column; justify-content: center; align-items: center;">
+          <div class="telemetry-card metric-stat">
             <div id="metric-humans-online" class="metric-big-num" style="color: #58a6ff;">0</div>
             <div class="metric-label">Players Online</div>
           </div>
 
-          <div class="telemetry-card" style="display: flex; flex-direction: column; justify-content: center; align-items: center;">
-            <div class="metric-big-num" style="color: #2ea043;">4/4</div>
-            <div class="metric-label">Services Active</div>
+          <div class="telemetry-card metric-stat" title="Age of the last complete bot roster snapshot. Under 6s is live, over 10s means telemetry is stale.">
+            <div id="snapshot-age-val" class="metric-big-num" style="font-size: 1.5rem;">–</div>
+            <div class="metric-label">Snapshot Age</div>
           </div>
 
-          <div class="telemetry-card" style="display: flex; flex-direction: column; justify-content: center; align-items: center;">
+          <div class="telemetry-card metric-stat">
             <div id="metric-uptime" class="metric-big-num" style="font-size: 1.5rem;">0m</div>
             <div class="metric-label">Uptime</div>
           </div>
         </div>
 
-        <div class="section-label">SYSTEM SERVICES</div>
-        
-        <!-- Services Grid -->
-        <div class="services-grid">
-          <div class="service-card">
-            <span class="service-dot"></span>
-            <div>
-              <div class="service-title">World Server</div>
-              <div class="service-meta">running · Port 8090</div>
+        <!-- Charts + composition -->
+        <div class="dashboard-grid">
+          <div class="telemetry-card chart-container">
+            <div class="chart-header">
+              <div class="section-label" style="margin: 0;">ACTIVITY · LAST 10 MIN</div>
+              <div class="chart-legend">
+                <div class="legend-item"><span class="legend-color" style="background: #58a6ff;"></span> Bots</div>
+                <div class="legend-item"><span class="legend-color" style="background: #2ea043;"></span> Players</div>
+              </div>
+            </div>
+            <div class="chart-box">
+              <canvas id="activity-chart"></canvas>
+            </div>
+            <div class="chart-header" style="margin-top: 10px;">
+              <div class="section-label" style="margin: 0;">WORLD TICK · LAST 10 MIN</div>
+              <span id="tick-now" class="mono" style="font-size: 0.75rem; color: var(--text-muted);">–</span>
+            </div>
+            <div class="chart-box chart-box-sm">
+              <canvas id="tick-chart"></canvas>
             </div>
           </div>
 
-          <div class="service-card">
-            <span class="service-dot"></span>
-            <div>
-              <div class="service-title">Database</div>
-              <div class="service-meta">running · connected</div>
+          <div class="telemetry-card">
+            <div class="section-label" style="margin: 0 0 12px;">BOT COMPOSITION</div>
+            <div id="class-breakdown" class="composition-list">
+              <div class="empty-hint">Waiting for bot telemetry...</div>
             </div>
-          </div>
+            <div id="role-totals" class="role-row"></div>
 
-          <div class="service-card">
-            <span class="service-dot"></span>
-            <div>
-              <div class="service-title">Telemetry Emitter</div>
-              <div class="service-meta">running · UDP 9195</div>
+            <div class="section-label" style="margin: 20px 0 10px;">MACRO STATES · 3 MIN ROLLING</div>
+            <div class="stacked-bar">
+              <div id="macro-seg-combat" class="stacked-seg" style="background: var(--accent-red);" title="Combat"></div>
+              <div id="macro-seg-moving" class="stacked-seg" style="background: var(--accent-blue-bright);" title="Moving"></div>
+              <div id="macro-seg-resting" class="stacked-seg" style="background: var(--accent-green-bright);" title="Resting"></div>
+              <div id="macro-seg-idle" class="stacked-seg" style="background: #6e7681;" title="Idle"></div>
+              <div id="macro-seg-dead" class="stacked-seg" style="background: #4b5563;" title="Dead"></div>
             </div>
-          </div>
-
-          <div class="service-card">
-            <span class="service-dot"></span>
-            <div>
-              <div class="service-title">Prometheus</div>
-              <div class="service-meta">active · /metrics</div>
+            <div class="stacked-legend">
+              <span><i style="background: var(--accent-red);"></i>Combat <b id="macro-txt-combat">0%</b></span>
+              <span><i style="background: var(--accent-blue-bright);"></i>Moving <b id="macro-txt-moving">0%</b></span>
+              <span><i style="background: var(--accent-green-bright);"></i>Resting <b id="macro-txt-resting">0%</b></span>
+              <span><i style="background: #6e7681;"></i>Idle <b id="macro-txt-idle">0%</b></span>
+              <span><i style="background: #4b5563;"></i>Dead <b id="macro-txt-dead">0%</b></span>
             </div>
           </div>
         </div>
 
-        <!-- Lower Split (Activity Chart + Console) -->
-        <div class="lower-split">
-          
-          <!-- Activity Timeline -->
-          <div class="telemetry-card chart-container">
-            <div class="chart-header">
-              <div class="section-label" style="margin: 0;">ACTIVITY TIMELINE</div>
-              <div class="chart-legend">
-                <div class="legend-item"><span class="legend-color" style="background: #2ea043;"></span> Players</div>
-                <div class="legend-item"><span class="legend-color" style="background: #58a6ff;"></span> Bots</div>
-              </div>
-            </div>
-            <div style="flex: 1; position: relative;">
-              <canvas id="activity-chart" style="width: 100%; height: 100%; display: block;"></canvas>
-            </div>
+        <!-- Live Monospace Console -->
+        <div class="console-container">
+          <div class="console-header">
+            <span>CONSOLE · LIVE STREAM</span>
+            <span id="console-rate" style="color: var(--accent-green-bright);">● connected</span>
           </div>
-
-          <!-- Live Monospace Console -->
-          <div class="console-container">
-            <div class="console-header">
-              <span>CONSOLE · LIVE STREAM</span>
-              <span id="console-rate" style="color: var(--accent-green-bright);">● connected</span>
-            </div>
-            <div id="console-body" class="console-body">
-              <div class="log-line"><span class="log-time">[Init]</span> <span class="log-tag">system</span> Telemetry stream initialized. Awaiting events...</div>
-            </div>
+          <div id="console-body" class="console-body">
+            <div class="log-line"><span class="log-time">[Init]</span> <span class="log-tag">system</span> Telemetry stream initialized. Awaiting events...</div>
           </div>
-
         </div>
       </section>
 
@@ -223,11 +201,7 @@
               <input type="checkbox" id="toggle-trails" checked style="accent-color: #2ea043;">
               <span>Path Trails (Breadcrumbs)</span>
             </label>
-            <div style="display: flex; gap: 12px; align-items: center;">
-              <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--color-tank);"></span> Tank</span>
-              <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--color-healer);"></span> Healer</span>
-              <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--color-dps);"></span> DPS</span>
-            </div>
+            <div id="map-legend" class="map-legend"></div>
           </div>
         </div>
 
@@ -291,7 +265,7 @@
         <div class="telemetry-card" style="padding: 24px;">
           <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff; margin-bottom: 8px;">Macro State Distribution</h2>
           <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 24px;">
-            Cumulative time distribution across all active bots since server start.
+            Rolling 3-minute time distribution across all active bots.
           </p>
 
           <div style="display: flex; flex-direction: column; gap: 16px;">

@@ -37,7 +37,10 @@ TortoiseBots.LogLevel = 1
 # cores with concurrent terrain support.
 # AiPlayerbot.AsyncTravelPartitions = 0
 
-# Observability telemetry UDP emitter (non-blocking loopback emission to tortoise-observability daemon).
+# Observability telemetry UDP emitter (non-blocking emission to tortoise-observability daemon).
 # Default 0 (switched off). Set to 1 to enable.
+# Host defaults to loopback. In Docker, point it at the observability service
+# name (e.g. "observability") or set the OBSERVABILITY_HOST environment variable.
 AiPlayerbot.Observability = 0
 AiPlayerbot.ObservabilityPort = 9195
+AiPlayerbot.ObservabilityHost = 127.0.0.1
