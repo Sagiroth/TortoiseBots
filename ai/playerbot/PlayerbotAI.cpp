@@ -7770,7 +7770,11 @@ bool PlayerbotAI::HasPlayerRelation()
 
     for (auto& p : sRandomBotFacade.GetPlayers())
     {
-        if (p.second && p.second->GetSocial()->HasFriend(bot->getObjectGuid()))
+        if (!p.second)
+            continue;
+
+        PlayerSocial* social = p.second->GetSocial();
+        if (social && social->HasFriend(bot->getObjectGuid()))
         {
             SetPlayerFriend(true);
             return true;
