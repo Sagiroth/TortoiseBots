@@ -572,6 +572,34 @@ bool BotManager::RemoveBot(::ObjectGuid guid, bool save)
         return false;
 
     BotRecord& rec = it->second.record;
+    // Reentrant removal from inside an AI update (UpdateBots sets
+    // m_inBotUpdate): stopping the session now would run the logout hooks
+    // synchronously, delete the updating PlayerbotAI out from under its own
+    // UpdateAI stack, and erase this entry. Mark Removing, queue the stop for
+    // the post-update drain, and return while every object is still alive.
+    if (m_inBotUpdate)
+    {
+        rec.lifecycle = BotLifecycle::Removing;
+        BotActivityLeaseManager::Instance().Release(key, BotActivity::Grinding);
+        bool queued = false;
+        for (auto const& pending : m_pendingBotRemovals)
+            if (pending.characterGuid.GetCounter() == key)
+            {
+                queued = true;
+                break;
+            }
+        if (!queued)
+        {
+            PendingBotRemoval pending;
+            pending.characterGuid = guid;
+            pending.save = save;
+            m_pendingBotRemovals.push_back(pending);
+        }
+        sLog.outString("TortoiseBots: RemoveBot %s deferred until AI update completes (Removing)",
+            guid.GetString().c_str());
+        return true;
+    }
+
     rec.lifecycle = BotLifecycle::Removing;
     // Grinding is indefinite with no timeout: clear it on logout so no ghost
     // lease lingers. Other activities are service-owned (LFT/BG/Trading via
@@ -835,6 +863,19 @@ void BotManager::SetPacketBridgeTestEnabled(bool enable, uint32_t accountId,
 
 void BotManager::UpdateBots(uint32_t diff)
 {
+    // Guard: AI updates below can request (their own or another bot's) removal.
+    // RemoveBot defers the session stop while this is set; the queue drains
+    // after the loop, when no PlayerbotAI Update remains on the stack.
+    // RAII so an unexpected unwind still clears the flag; anything queued
+    // drains at the end of the next successful pass.
+    struct BotUpdateGuard
+    {
+        BotManager* manager;
+        explicit BotUpdateGuard(BotManager* m) : manager(m) { manager->m_inBotUpdate = true; }
+        ~BotUpdateGuard() { manager->m_inBotUpdate = false; }
+    };
+    BotUpdateGuard botUpdateGuard(this);
+
     std::vector<uint32_t> guids;
     guids.reserve(m_bots.size());
     for (auto const& kv : m_bots)
@@ -847,6 +888,9 @@ void BotManager::UpdateBots(uint32_t diff)
             continue;
 
         BotEntry& entry = it->second;
+        // A removal queued earlier in this same loop only takes effect at the
+        // drain below, but the record is already Removing: never drive AI for
+        // a bot whose session stop is pending.
         if (entry.record.lifecycle != BotLifecycle::InWorld)
             continue;
 
@@ -875,6 +919,16 @@ void BotManager::UpdateBots(uint32_t diff)
         {
             entry.aiAdapter->Update(diff);
         }
+    }
+
+    m_inBotUpdate = false;
+
+    if (!m_pendingBotRemovals.empty())
+    {
+        std::vector<PendingBotRemoval> pending;
+        pending.swap(m_pendingBotRemovals);
+        for (auto const& removal : pending)
+            RemoveBot(removal.characterGuid, removal.save);
     }
 }
 
