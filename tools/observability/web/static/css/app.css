@@ -818,16 +818,18 @@ body {
   color: var(--accent-red);
 }
 
-/* Tooltip */
+/* Tooltip: fixed so it tracks the cursor in viewport coordinates and can be
+   clamped to the window instead of being clipped by the map container. */
 .map-tooltip {
-  position: absolute;
+  position: fixed;
   pointer-events: none;
   background: rgba(14, 19, 27, 0.95);
   border: 1px solid var(--border-color);
   padding: 8px 12px;
   border-radius: 6px;
   font-size: 0.75rem;
-  z-index: 40;
+  max-width: 260px;
+  z-index: 9999;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
 }
 

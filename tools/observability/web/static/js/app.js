@@ -668,15 +668,11 @@
       dot.style.left = `${b.pct_x}%`;
       dot.style.top = `${b.pct_y}%`;
       dot.style.backgroundColor = classColor(b.class);
-      dot.title = `${b.name} · ${b.class}`;
       const deg = (b.o || 0) * (180 / Math.PI);
       dot.style.transform = `translate(-50%, -50%) rotate(${-deg}deg)`;
 
       dot.addEventListener('mouseenter', (e) => {
         if (!el.mapTooltip) return;
-        el.mapTooltip.style.display = 'block';
-        el.mapTooltip.style.left = `${e.clientX + 12}px`;
-        el.mapTooltip.style.top = `${e.clientY + 12}px`;
         el.mapTooltip.innerHTML = `
           <strong style="color: #fff;">${esc(b.name)}</strong> (${esc(b.class)} Lvl ${esc(b.level)})<br>
           <span style="color: var(--text-muted);">Role:</span> ${esc((b.role || '').toUpperCase())}<br>
@@ -684,6 +680,19 @@
           <span style="color: var(--text-muted);">Zone:</span> ${esc(getZoneName(b.zone))}<br>
           <span style="color: var(--text-muted);">Target:</span> ${esc(b.target || 'None')}
         `;
+        el.mapTooltip.style.display = 'block';
+
+        // Keep the tooltip inside the viewport instead of clipping at the edge.
+        const pad = 14;
+        const rect = el.mapTooltip.getBoundingClientRect();
+        let left = e.clientX + pad;
+        let top = e.clientY + pad;
+        if (left + rect.width > window.innerWidth - 6)
+          left = e.clientX - rect.width - pad;
+        if (top + rect.height > window.innerHeight - 6)
+          top = e.clientY - rect.height - pad;
+        el.mapTooltip.style.left = `${Math.max(6, left)}px`;
+        el.mapTooltip.style.top = `${Math.max(6, top)}px`;
       });
 
       dot.addEventListener('mouseleave', () => {
