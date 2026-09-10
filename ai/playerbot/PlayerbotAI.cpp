@@ -9,6 +9,8 @@
 
 #include "playerbot/AiFactory.h"
 
+#include "../../runtime/ObservabilityEmitter.h"
+
 #include "Movement/MovementGenerator.h"
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
@@ -1078,6 +1080,15 @@ void PlayerbotAI::OnDeath()
         if (!HasActivePlayerMaster() && !bot->InBattleGround())
         {
             SET_AI_VALUE(uint32, "death count", AI_VALUE(uint32, "death count") + 1);
+
+            if (sObservabilityEmitter.IsEnabled())
+            {
+                Unit* deathTarget = AI_VALUE(Unit*, "current target");
+                std::ostringstream deathDetails;
+                deathDetails << "Died (death #" << AI_VALUE(uint32, "death count") << ")";
+                sObservabilityEmitter.EmitAnomaly("BOT_DEATH", "INFO", bot, deathDetails.str(),
+                    deathTarget ? deathTarget->GetName() : "", "", "death");
+            }
 
             if (sPlayerbotAIConfig.hasLog("deaths.csv"))
             {

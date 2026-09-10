@@ -30,7 +30,9 @@ struct BotTelemetrySnapshot
     float o = 0.0f;
     std::string target;
     std::string strategy;
-    std::string state; // "combat", "moving", "resting", "dead", "idle"
+    std::string state;       // "combat", "moving", "resting", "dead", "idle"
+    std::string lastAction;  // last action the AI executed (loop detection)
+    std::string lastTrigger; // event source that drove the last action
 };
 
 // ObservabilityEmitter sends non-blocking loopback UDP telemetry to the

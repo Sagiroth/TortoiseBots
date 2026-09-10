@@ -30,7 +30,7 @@ namespace {
 
 // Datagram schema version. The Go daemon ignores datagrams it cannot parse;
 // this is bumped when the wire format changes incompatibly.
-constexpr int kProtocolVersion = 2;
+constexpr int kProtocolVersion = 3;
 
 // Snapshot cadence and batching. Datagrams are kept well under the loopback
 // MTU so a large roster arrives as several unpredictable chunks; the receiver
@@ -373,6 +373,7 @@ void ObservabilityEmitter::EmitAnomaly(std::string const& type,
     if (bot)
     {
         ss << ",\"bot\":\"" << EscapeJson(bot->GetName()) << "\""
+           << ",\"guid\":" << bot->GetGUIDLow()
            << ",\"class\":\"" << EscapeJson(GetBotClassName(bot->GetClass())) << "\""
            << ",\"level\":" << static_cast<uint32>(bot->GetLevel())
            << ",\"map\":" << bot->GetMapId()
@@ -606,6 +607,15 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
         snap.strategy = FormatStrategies(ai);
         snap.state = MacroStateName(state);
 
+        if (ai)
+        {
+            // getName() is a non-const accessor on the action; the pointer is
+            // only read for its name here.
+            if (Action const* last = ai->GetLastExecutedAction(ai->GetState()))
+                snap.lastAction = const_cast<Action*>(last)->getName();
+            snap.lastTrigger = ai->GetLastEvent().getSource();
+        }
+
         botSnapshots.push_back(snap);
     }
 
@@ -702,7 +712,9 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
                 << ",\"o\":" << std::setprecision(2) << b.o
                 << ",\"target\":\"" << EscapeJson(b.target) << "\""
                 << ",\"strategy\":\"" << EscapeJson(b.strategy) << "\""
-                << ",\"state\":\"" << EscapeJson(b.state) << "\"}";
+                << ",\"state\":\"" << EscapeJson(b.state) << "\""
+                << ",\"last_action\":\"" << EscapeJson(b.lastAction) << "\""
+                << ",\"last_trigger\":\"" << EscapeJson(b.lastTrigger) << "\"}";
         }
         bss << "]}";
         SendDatagram(bss.str());
