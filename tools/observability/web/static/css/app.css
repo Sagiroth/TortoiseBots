@@ -719,6 +719,12 @@ body {
   50% { opacity: 0.45; }
 }
 
+/* Selected bot: bright halo so it is findable after "investigate". */
+.bot-dot.selected {
+  z-index: 25;
+  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 6px #ffffff) brightness(1.3);
+}
+
 .resolved-list {
   display: flex;
   flex-direction: column;
@@ -834,6 +840,19 @@ body {
 
 .data-table tr:hover {
   background-color: rgba(255, 255, 255, 0.02);
+}
+
+.data-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.data-table th.sortable:hover {
+  color: var(--text-main);
+}
+
+.data-table th.sort-active {
+  color: var(--accent-blue-bright);
 }
 
 /* Badges */

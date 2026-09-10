@@ -30,7 +30,7 @@ namespace {
 
 // Datagram schema version. The Go daemon ignores datagrams it cannot parse;
 // this is bumped when the wire format changes incompatibly.
-constexpr int kProtocolVersion = 3;
+constexpr int kProtocolVersion = 4;
 
 // Snapshot cadence and batching. Datagrams are kept well under the loopback
 // MTU so a large roster arrives as several unpredictable chunks; the receiver
@@ -122,6 +122,19 @@ std::string GetBotClassName(uint8 cls)
         case CLASS_WARLOCK: return "warlock";
         case CLASS_DRUID:   return "druid";
         default:            return "unknown";
+    }
+}
+
+std::string GetPowerTypeName(uint8 power)
+{
+    switch (power)
+    {
+        case POWER_MANA:      return "mana";
+        case POWER_RAGE:      return "rage";
+        case POWER_FOCUS:     return "focus";
+        case POWER_ENERGY:    return "energy";
+        case POWER_HAPPINESS: return "happiness";
+        default:              return "power";
     }
 }
 
@@ -539,9 +552,15 @@ void ObservabilityEmitter::Update(uint32 diff)
             if (unreachable)
             {
                 track.unreachableDurationMs += diff;
-                if (track.unreachableDurationMs >= 10000 && !track.unreachableReported)
+                // Re-report every cooldown window while the target stays
+                // unreachable, so the daemon has a liveness signal and can
+                // expire the episode when the condition clears.
+                bool due = !track.unreachableReported ||
+                    (nowMs - track.lastUnreachableReportMs) >= kAnomalyCooldownMs;
+                if (track.unreachableDurationMs >= 10000 && due)
                 {
                     track.unreachableReported = true;
+                    track.lastUnreachableReportMs = nowMs;
                     std::ostringstream dss;
                     dss << "Combat target '" << combatTarget->GetName() << "' unreachable / out of LoS for "
                         << (track.unreachableDurationMs / 1000.0f) << "s (dist=" << std::fixed << std::setprecision(1) << dist
@@ -596,6 +615,7 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
         snap.maxHp = bot->GetMaxHealth();
         snap.power = bot->GetPower(bot->GetPowerType());
         snap.maxPower = bot->GetMaxPower(bot->GetPowerType());
+        snap.powerType = GetPowerTypeName(bot->GetPowerType());
         snap.mapId = bot->GetMapId();
         snap.zoneId = bot->GetZoneId();
         snap.x = bot->GetPositionX();
@@ -704,6 +724,7 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
                 << ",\"max_hp\":" << b.maxHp
                 << ",\"power\":" << b.power
                 << ",\"max_power\":" << b.maxPower
+                << ",\"power_type\":\"" << EscapeJson(b.powerType) << "\""
                 << ",\"map\":" << b.mapId
                 << ",\"zone\":" << b.zoneId
                 << ",\"x\":" << std::fixed << std::setprecision(1) << b.x

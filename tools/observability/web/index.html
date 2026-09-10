@@ -235,34 +235,49 @@
       <!-- TAB 3: BOTS ROSTER -->
       <section id="tab-roster" class="tab-view" style="display: none;">
         <div class="telemetry-card">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-            <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff;">Active Bot Population</h2>
-            <div style="display: flex; gap: 12px; align-items: center;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap;">
+            <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff;">Active Bot Population <span id="roster-count" style="color: var(--text-muted); font-size: 0.8rem; font-weight: 400;"></span></h2>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+              <input type="text" id="bot-search" placeholder="Search name/class..." class="btn" style="padding: 6px 12px; width: 170px;">
               <select id="role-filter" class="btn" style="padding: 6px 12px;">
                 <option value="all">All Roles</option>
                 <option value="tank">Tanks</option>
                 <option value="healer">Healers</option>
                 <option value="dps">DPS</option>
               </select>
-              <input type="text" id="bot-search" placeholder="Search bots..." class="btn" style="padding: 6px 12px; width: 180px;">
+              <select id="class-filter" class="btn" style="padding: 6px 12px;">
+                <option value="all">All Classes</option>
+              </select>
+              <select id="status-filter" class="btn" style="padding: 6px 12px;">
+                <option value="all">All Status</option>
+                <option value="combat">Combat</option>
+                <option value="moving">Moving</option>
+                <option value="resting">Resting</option>
+                <option value="idle">Idle</option>
+                <option value="dead">Dead</option>
+              </select>
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text-muted); cursor: pointer;">
+                <input type="checkbox" id="issue-only-filter" style="accent-color: #f85149;"> Issues only
+              </label>
             </div>
           </div>
           <div style="overflow-x: auto;">
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Class</th>
-                  <th>Role</th>
-                  <th>Level</th>
-                  <th>Health (HP)</th>
-                  <th>Status</th>
+                  <th class="sortable" data-sort="name">Name</th>
+                  <th class="sortable" data-sort="class">Class</th>
+                  <th class="sortable" data-sort="role">Role</th>
+                  <th class="sortable" data-sort="level">Level</th>
+                  <th class="sortable" data-sort="hp">Health (HP)</th>
+                  <th class="sortable" data-sort="power">Power</th>
+                  <th class="sortable" data-sort="state">Status</th>
                   <th>Target</th>
-                  <th>Zone</th>
+                  <th class="sortable" data-sort="zone">Zone</th>
                 </tr>
               </thead>
               <tbody id="roster-table-body">
-                <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading active bots...</td></tr>
+                <tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading active bots...</td></tr>
               </tbody>
             </table>
           </div>
@@ -274,14 +289,14 @@
         <div style="margin-bottom: 20px;">
           <h1 style="font-size: 1.5rem; font-weight: 700; color: #fff; margin-bottom: 4px;">Persistent Issues</h1>
           <p style="color: var(--text-muted); font-size: 0.85rem;">
-            Bots with problems that keep happening. Highlighted after 10 minutes so you can investigate whether it is terrain, a missing step, or a bug.
+            Only problems that persist <strong>5+ minutes</strong> are shown, so short hiccups are ignored. Red = 10+ minutes. Click a bot to jump to its map.
           </p>
         </div>
 
         <div class="metrics-row">
           <div class="telemetry-card metric-stat"><div id="issue-active" class="metric-big-num">0</div><div class="metric-label">Active</div></div>
           <div class="telemetry-card metric-stat"><div id="issue-persistent" class="metric-big-num" style="color: #f85149;">0</div><div class="metric-label">Persistent ≥10m</div></div>
-          <div class="telemetry-card metric-stat"><div id="issue-watch" class="metric-big-num" style="color: #d29922;">0</div><div class="metric-label">Watch ≥1m</div></div>
+          <div class="telemetry-card metric-stat"><div id="issue-watch" class="metric-big-num" style="color: #d29922;">0</div><div class="metric-label">Watch 5–10m</div></div>
           <div class="telemetry-card metric-stat"><div id="issue-resolved" class="metric-big-num" style="color: #2ea043;">0</div><div class="metric-label">Recent Resolved</div></div>
           <div class="telemetry-card metric-stat"><div id="issue-deaths" class="metric-big-num" style="color: #c9d1d9;">0</div><div class="metric-label">Deaths (session)</div></div>
         </div>
@@ -313,9 +328,9 @@
               </select>
               <select id="issue-duration-filter" class="btn" style="padding: 6px 12px;">
                 <option value="0">Any duration</option>
-                <option value="60">≥ 1 min</option>
                 <option value="300">≥ 5 min</option>
                 <option value="600">≥ 10 min</option>
+                <option value="1800">≥ 30 min</option>
               </select>
             </div>
           </div>

@@ -38,6 +38,10 @@
     counts: [],
     showTrails: true,
     roleFilter: 'all',
+    rosterClassFilter: 'all',
+    rosterStatusFilter: 'all',
+    rosterIssueOnly: false,
+    rosterSort: { key: 'name', dir: 1 },
     selectedBotGuid: null,
     anomalyTypeFilter: 'all',
     anomalySeverityFilter: 'all',
@@ -68,6 +72,12 @@
   function classColor(cls) {
     const key = String(cls || '').toLowerCase().trim();
     return CLASS_COLORS[key] || CLASS_COLORS.unknown;
+  }
+
+  // Power bar label follows the bot's resource: rage, energy, focus, mana.
+  function powerLabel(b) {
+    const t = (b && b.power_type) || 'power';
+    return t.charAt(0).toUpperCase() + t.slice(1);
   }
 
   function hexToRgba(hex, alpha) {
@@ -110,8 +120,12 @@
 
     // Roster
     roleFilter: document.getElementById('role-filter'),
+    classFilter: document.getElementById('class-filter'),
+    statusFilter: document.getElementById('status-filter'),
+    issueOnlyFilter: document.getElementById('issue-only-filter'),
     botSearch: document.getElementById('bot-search'),
     rosterTable: document.getElementById('roster-table-body'),
+    rosterCount: document.getElementById('roster-count'),
 
     // Incidents
     anomaliesTable: document.getElementById('anomalies-table-body'),
@@ -683,6 +697,7 @@
       const dot = document.createElement('div');
       dot.className = 'bot-dot';
       if (issue) dot.classList.add(issue.severity === 'persistent' ? 'issue-persistent' : 'issue-watch');
+      if (b.guid === state.selectedBotGuid) dot.classList.add('selected');
       dot.style.left = `${b.pct_x}%`;
       dot.style.top = `${b.pct_y}%`;
       dot.style.backgroundColor = classColor(b.class);
@@ -767,7 +782,7 @@
 
       <div style="margin-bottom: 16px;">
         <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 4px;">
-          <span>Mana / Energy</span><strong>${esc(b.power)} / ${esc(b.max_power)}</strong>
+          <span>${esc(powerLabel(b))}</span><strong>${esc(b.power)} / ${esc(b.max_power)}</strong>
         </div>
         <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${powerPct}%; background: var(--accent-blue-bright);"></div></div>
       </div>
@@ -799,25 +814,74 @@
   }
 
   // Roster Table
+  function populateClassFilter() {
+    if (!el.classFilter) return;
+    const classes = [...new Set(state.bots.map(b => b.class))].filter(Boolean).sort();
+    const current = state.rosterClassFilter;
+    el.classFilter.innerHTML = '<option value="all">All Classes</option>' +
+      classes.map(c => `<option value="${esc(c)}">${esc(c.charAt(0).toUpperCase() + c.slice(1))}</option>`).join('');
+    el.classFilter.value = classes.includes(current) ? current : 'all';
+    state.rosterClassFilter = el.classFilter.value;
+  }
+
+  function rosterSortValue(b, key) {
+    switch (key) {
+      case 'level': return b.level || 0;
+      case 'hp': return b.max_hp ? b.hp / b.max_hp : 0;
+      case 'power': return b.max_power ? b.power / b.max_power : 0;
+      case 'class': return (b.class || '').toLowerCase();
+      case 'role': return (b.role || '').toLowerCase();
+      case 'state': return (b.state || '').toLowerCase();
+      case 'zone': return getZoneName(b.zone).toLowerCase();
+      default: return (b.name || '').toLowerCase();
+    }
+  }
+
+  function updateRosterSortIndicators() {
+    document.querySelectorAll('#tab-roster th.sortable').forEach(th => {
+      th.classList.toggle('sort-active', th.dataset.sort === state.rosterSort.key);
+      const base = th.textContent.replace(/[ ▲▼]+$/, '');
+      const arrow = th.dataset.sort === state.rosterSort.key ? (state.rosterSort.dir > 0 ? ' ▲' : ' ▼') : '';
+      th.textContent = base + arrow;
+    });
+  }
+
   function renderRoster() {
     if (!el.rosterTable) return;
     const query = (el.botSearch ? el.botSearch.value : '').toLowerCase().trim();
+    const issuesByGuid = issueSet();
+
     const filtered = state.bots.filter(b => {
       if (state.roleFilter !== 'all' && b.role !== state.roleFilter) return false;
+      if (state.rosterClassFilter !== 'all' && b.class !== state.rosterClassFilter) return false;
+      if (state.rosterStatusFilter !== 'all' && b.state !== state.rosterStatusFilter) return false;
+      if (state.rosterIssueOnly && !issuesByGuid[b.guid]) return false;
       if (query && !b.name.toLowerCase().includes(query) && !b.class.toLowerCase().includes(query)) return false;
       return true;
     });
 
+    const key = state.rosterSort.key;
+    const dir = state.rosterSort.dir;
+    filtered.sort((a, b) => {
+      const av = rosterSortValue(a, key), bv = rosterSortValue(b, key);
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return a.name.localeCompare(b.name);
+    });
+
+    if (el.rosterCount) el.rosterCount.textContent = `· ${filtered.length}/${state.bots.length}`;
+    updateRosterSortIndicators();
+
     if (filtered.length === 0) {
-      el.rosterTable.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">No active bots found.</td></tr>`;
+      el.rosterTable.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 24px;">No matching bots.</td></tr>`;
       return;
     }
 
-    const issuesByGuid = issueSet();
     el.rosterTable.innerHTML = '';
     filtered.forEach(b => {
       const tr = document.createElement('tr');
       const hpPct = b.max_hp ? Math.round((b.hp / b.max_hp) * 100) : 100;
+      const powerPct = b.max_power ? Math.round((b.power / b.max_power) * 100) : 0;
       const roleBadge = b.role === 'tank' ? 'badge-info' : b.role === 'healer' ? 'badge-success' : 'badge-error';
       const issue = issuesByGuid[b.guid];
       const issueBadge = issue
@@ -829,9 +893,13 @@
         <td>${esc(b.class)}</td>
         <td><span class="badge ${roleBadge}">${esc((b.role || '').toUpperCase())}</span></td>
         <td>${esc(b.level)}</td>
-        <td style="width: 140px;">
+        <td style="width: 130px;">
           <div style="font-size: 0.7rem; margin-bottom: 2px;">${esc(b.hp)}/${esc(b.max_hp)} (${hpPct}%)</div>
           <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${hpPct}%; background: var(--accent-green-bright);"></div></div>
+        </td>
+        <td style="width: 140px;">
+          <div style="font-size: 0.7rem; margin-bottom: 2px;">${esc(powerLabel(b))} ${esc(b.power)}/${esc(b.max_power)} (${powerPct}%)</div>
+          <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${powerPct}%; background: var(--accent-blue-bright);"></div></div>
         </td>
         <td><span class="badge ${b.state === 'combat' ? 'badge-error' : b.state === 'dead' ? 'badge-warn' : 'badge-info'}">${esc(b.state || 'idle')}</span></td>
         <td style="color: #f85149;">${esc(b.target || '-')}</td>
@@ -853,6 +921,40 @@
       renderMap();
     });
   }
+
+  if (el.classFilter) {
+    el.classFilter.addEventListener('change', (e) => {
+      state.rosterClassFilter = e.target.value;
+      renderRoster();
+    });
+  }
+
+  if (el.statusFilter) {
+    el.statusFilter.addEventListener('change', (e) => {
+      state.rosterStatusFilter = e.target.value;
+      renderRoster();
+    });
+  }
+
+  if (el.issueOnlyFilter) {
+    el.issueOnlyFilter.addEventListener('change', (e) => {
+      state.rosterIssueOnly = e.target.checked;
+      renderRoster();
+    });
+  }
+
+  document.querySelectorAll('#tab-roster th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      if (state.rosterSort.key === key) {
+        state.rosterSort.dir *= -1;
+      } else {
+        state.rosterSort.key = key;
+        state.rosterSort.dir = 1;
+      }
+      renderRoster();
+    });
+  });
 
   // Incidents
   function fetchAnomalies() {
@@ -943,6 +1045,7 @@
       .then(data => {
         if (!Array.isArray(data)) return;
         state.bots = data;
+        populateClassFilter();
         updateDashboardMetrics();
         if (state.activeTab === 'map') renderMap();
         if (state.activeTab === 'roster') renderRoster();
@@ -1014,6 +1117,7 @@
       if (state.activeTab === 'dashboard') renderFleetHealth();
 
       if (state.bots.length !== prevCount) {
+        populateClassFilter();
         appendConsoleLog(time, 'roster', `Snapshot #${esc(state.snapshotSeq)}: ${state.bots.length} bots active.`);
       }
     } else if (msg.event === 'heartbeat') {
@@ -1245,9 +1349,19 @@
   }
 
   function focusBot(guid) {
+    const bot = state.bots.find(b => b.guid === guid);
+
+    // Open the map on the zone the bot is actually in, otherwise the marker
+    // would not be drawn (the map filters to the selected zone).
+    if (bot && ZONE_CONFIG[bot.zone]) {
+      state.currentZoneId = bot.zone;
+      if (el.zoneSelect) el.zoneSelect.value = bot.zone;
+      loadZoneMap(bot.zone);
+    }
+
     state.selectedBotGuid = guid;
-    selectBot(guid);
     switchTab('map');
+    selectBot(guid);
   }
 
   if (el.issueTypeFilter) {

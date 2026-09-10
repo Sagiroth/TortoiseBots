@@ -4,7 +4,7 @@ import "time"
 
 // ProtocolVersion is bumped whenever the C++ -> Go datagram layout changes in
 // a way the daemon must understand. It is carried in every datagram.
-const ProtocolVersion = 3
+const ProtocolVersion = 4
 
 // Anomaly types accepted from the game server. Anything else is rejected so
 // that Prometheus label cardinality stays bounded.
@@ -24,9 +24,10 @@ type BotSnapshot struct {
 	Level    uint32  `json:"level"`
 	HP       uint32  `json:"hp"`
 	MaxHP    uint32  `json:"max_hp"`
-	Power    uint32  `json:"power"`
-	MaxPower uint32  `json:"max_power"`
-	MapID    uint32  `json:"map"`
+	Power     uint32 `json:"power"`
+	MaxPower  uint32 `json:"max_power"`
+	PowerType string `json:"power_type,omitempty"` // mana, rage, energy, focus, happiness
+	MapID     uint32 `json:"map"`
 	ZoneID   uint32  `json:"zone"`
 	X        float64 `json:"x"`
 	Y        float64 `json:"y"`

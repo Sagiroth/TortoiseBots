@@ -22,6 +22,7 @@ struct BotTelemetrySnapshot
     uint32 maxHp = 0;
     uint32 power = 0;
     uint32 maxPower = 0;
+    std::string powerType; // "mana", "rage", "energy", "focus", "happiness"
     uint32 mapId = 0;
     uint32 zoneId = 0;
     float x = 0.0f;
@@ -115,6 +116,7 @@ private:
         uint64 unreachableTargetGuid = 0;
         uint32 unreachableDurationMs = 0;
         bool unreachableReported = false;
+        uint32 lastUnreachableReportMs = 0;
     };
     std::map<uint32, BotTrackState> m_botTracking;
 
