@@ -162,6 +162,9 @@ public:
     uint32 ahMarketMaxOperations = 32;      // Max work operations per world tick (op-count cap)
     uint32 ahMarketChanceSell = 10;         // Chance % per cycle to enter Gather/Post
     uint32 ahMarketChanceBuy = 10;          // Chance % per cycle to enter Buy
+    // Observability telemetry UDP emitter (module-only)
+    bool observability = false;
+    uint32 observabilityPort = 9195;
     uint32 ahMarketBuyValue = 80;           // Buyer evaluation willingness % (relative to fair value)
     uint32 ahMarketMaxSpendPerBot = 0;      // Max spend per bot (0 = unlimited up to AH budget)
     uint32 ahMarketMaxQuality = 4;          // Max quality for synthetic supply (0=Poor..4=Epic)

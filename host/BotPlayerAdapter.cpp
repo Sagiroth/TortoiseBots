@@ -7,6 +7,8 @@
 #include "Map.h"
 #include "Player.h"
 #include "WorldSession.h"
+#include "Chat.h"
+#include "../runtime/ObservabilityEmitter.h"
 
 namespace TortoiseBots {
 
@@ -22,7 +24,13 @@ BotPlayerAdapter::BotPlayerAdapter()
 void BotPlayerAdapter::OnLogin(Player* player)
 {
     if (player && player->GetSession() && player->GetSession()->HasNetworkTransport())
+    {
         RandomBotService::Instance().OnHumanLogin();
+        if (player->GetSession()->GetSecurity() >= SEC_DEVELOPER && sObservabilityEmitter.IsEnabled())
+        {
+            ChatHandler(player).PSendSysMessage("|cff00ff00[TortoiseBots]|r Observability dashboard active: http://localhost:8095/dashboard");
+        }
+    }
     BotManager::Instance().OnPlayerLogin(player);
 }
 

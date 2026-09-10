@@ -11,6 +11,10 @@ ConfVersion=2020072501
 # want to test/play with bots; flip back when you want guaranteed clean live play.
 AiPlayerbot.Enabled = 0
 
+# Enable Observability telemetry UDP emitter (default 0, switched off)
+AiPlayerbot.Observability = 0
+AiPlayerbot.ObservabilityPort = 9195
+
 # Enable random bot system
 # Single-bot manual-add (`.bot add <name>`) is the
 # recommended starting point. Random bots auto-spawn dozens of characters and
