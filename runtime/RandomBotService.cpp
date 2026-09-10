@@ -45,15 +45,30 @@ namespace
 {
 std::string GenerateRndBotName()
 {
-    // 5..8 chars, first upper rest lower, random letters, passes CheckPlayerName.
-    // No fixed prefix; uniqueness via DB (GetPlayerGuidByName + core NAME_IN_USE).
-    static const char letters[] = "abcdefghijklmnopqrstuvwxyz";
+    // Pronounceable 2-3 syllable fantasy names (consonant onset + vowel nucleus,
+    // optional coda). Letters only, first upper -> passes CheckPlayerName.
+    // Uniqueness via DB (GetPlayerGuidByName + core NAME_IN_USE) with retry.
+    static const char* onset[] = {
+        "b","br","c","cr","d","dr","f","g","gr","h","j","k","kr","l","m","n",
+        "p","r","s","sh","st","t","th","tr","v","w","z","kh","gh","mor","thar","zar"
+    };
+    static const char* nucleus[] = { "a","e","i","o","u","ae","ar","or","ur","al","yr" };
+    static const char* coda[]    = { "","","","n","r","k","l","th","sh","g","rn" };
+    uint32 const nOn = sizeof(onset)   / sizeof(onset[0]);
+    uint32 const nNu = sizeof(nucleus) / sizeof(nucleus[0]);
+    uint32 const nCo = sizeof(coda)    / sizeof(coda[0]);
+    uint32 const syllables = urand(2, 3);
     std::string name;
-    name.reserve(8);
-    name.push_back(char('A' + urand(0, 25)));
-    uint32 len = urand(5, 8);
-    for (uint32 i = 1; i < len; ++i)
-        name.push_back(letters[urand(0, 25)]);
+    name.reserve(12);
+    for (uint32 i = 0; i < syllables; ++i)
+    {
+        name += onset[urand(0, nOn - 1)];
+        name += nucleus[urand(0, nNu - 1)];
+    }
+    name += coda[urand(0, nCo - 1)];
+    if (name.size() > 11)
+        name.resize(11);
+    name[0] = char(name[0] & ~0x20); // uppercase first letter, ASCII a-z
     return name;
 }
 
