@@ -99,16 +99,28 @@ func TestAnomalyEpisodeExpires(t *testing.T) {
 	}
 }
 
-func TestTrackerReset(t *testing.T) {
+func TestTrackerResetKeepsResolved(t *testing.T) {
 	tr := newIssueTracker()
 	base := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+
+	// Open a stuck issue, then clear it by moving again.
 	tr.Observe([]model.BotSnapshot{movingBot(0)}, base)
 	tr.Observe([]model.BotSnapshot{movingBot(0)}, base.Add(2*time.Minute))
-	if len(tr.Snapshot().Active) == 0 {
-		t.Fatal("expected an active issue before reset")
+	tr.Observe([]model.BotSnapshot{movingBot(100)}, base.Add(2*time.Minute+time.Second))
+	if len(tr.Snapshot().Resolved) != 1 {
+		t.Fatal("expected one resolved issue")
 	}
+
+	// Re-open one, then reset (simulating a server restart).
+	tr.Observe([]model.BotSnapshot{movingBot(0)}, base.Add(3*time.Minute))
+	tr.Observe([]model.BotSnapshot{movingBot(0)}, base.Add(4*time.Minute))
 	tr.Reset()
-	if len(tr.Snapshot().Active) != 0 || len(tr.Snapshot().Resolved) != 0 {
-		t.Fatal("reset did not clear issues")
+
+	snap := tr.Snapshot()
+	if len(snap.Active) != 0 {
+		t.Fatalf("reset did not clear active issues: %d", len(snap.Active))
+	}
+	if len(snap.Resolved) != 1 {
+		t.Fatalf("reset wiped resolved history: %d", len(snap.Resolved))
 	}
 }

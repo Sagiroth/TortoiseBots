@@ -227,10 +227,11 @@ func (t *issueTracker) Snapshot() model.IssueSnapshot {
 	return model.IssueSnapshot{Active: active, Resolved: resolved, CountsByType: counts}
 }
 
+// Reset clears open episodes and per-bot detectors but keeps the resolved
+// history, so a server restart does not wipe the record of what cleared.
 func (t *issueTracker) Reset() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.active = make(map[issueKey]*activeIssue)
 	t.detectors = make(map[uint32]*botDetector)
-	t.resolved = nil
 }
