@@ -6,6 +6,7 @@
 #include "../runtime/RandomBotService.h"
 #include "../runtime/AhMarketService.h"
 #include "../runtime/BattlegroundQueueService.h"
+#include "../runtime/ObservabilityEmitter.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
 #include "Config/Config.h"
 #include "ObjectMgr.h"
@@ -106,6 +107,7 @@ void BotHostAdapter::OnStartup()
     }
 
     sLog.outString("TortoiseBots: native module loaded (AI %s)", configured ? "enabled" : "disabled");
+    ObservabilityEmitter::Instance().Initialize();
 }
 void BotHostAdapter::OnUpdate(uint32 diff)
 {
@@ -117,10 +119,12 @@ void BotHostAdapter::OnUpdate(uint32 diff)
     RandomBotService::Instance().Update(diff);
     AhMarketService::Instance().Update(diff);
     BattlegroundQueueService::Instance().Update(diff);
+    ObservabilityEmitter::Instance().Update(diff);
 }
 
 void BotHostAdapter::OnShutdown()
 {
+    ObservabilityEmitter::Instance().Shutdown();
     BattlegroundQueueService::Instance().Shutdown();
     RandomBotService::Instance().Shutdown();
     BotActivityLeaseManager::Instance().Clear();

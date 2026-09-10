@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
+  <title>TortoiseBots — Server & Bot Observability</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%232ea043%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><polygon points=%2212 2 2 7 12 12 22 7 12 2%22/><polyline points=%222 17 12 22 22 17%22/><polyline points=%222 12 12 17 22 12%22/></svg>">
+</head>
+<body>
+
+<div class="app-container">
+
+  <!-- Left Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <svg class="brand-icon" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+      </svg>
+      <span class="brand-title">Tortoise WoW</span>
+      <span class="brand-version">1.18.1</span>
+    </div>
+
+    <nav class="sidebar-menu">
+      <a class="menu-item active" data-tab="dashboard">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        <span>Dashboard</span>
+      </a>
+
+      <div class="menu-category">World</div>
+      <a class="menu-item" data-tab="map">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+        <span>Live Map</span>
+      </a>
+      <a class="menu-item" data-tab="roster">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span>Bots</span>
+      </a>
+      <a class="menu-item" data-tab="issues">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <span>Issues</span>
+        <span id="issues-count" class="badge badge-error" style="margin-left: auto; padding: 1px 6px;">0</span>
+      </a>
+
+      <div class="menu-category">Server</div>
+      <a class="menu-item" data-tab="incidents">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        <span>Incidents</span>
+        <span id="anomalies-count" class="badge badge-warn" style="margin-left: auto; padding: 1px 6px;">0</span>
+      </a>
+      <a href="/metrics" target="_blank" class="menu-item">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span>Prometheus</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <span>Tortoise WoW</span>
+      <a href="/api/v1/auth/logout" class="btn" style="padding: 4px 8px; font-size: 0.7rem;">Logout</a>
+    </div>
+  </aside>
+
+  <!-- Main Area -->
+  <div class="main-wrapper">
+    
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="pill-group">
+        <div id="status-pill" class="status-pill offline">
+          <span id="status-dot" class="status-dot"></span>
+          <span id="status-label">Tortoise · offline · <strong id="top-bots-val">0</strong> Bots</span>
+        </div>
+        <div class="status-pill">
+          <span style="color: var(--accent-blue-bright);">●</span>
+          <span><strong id="players-val">0</strong> Players</span>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <button id="refresh-btn" class="btn" style="font-size: 0.75rem;">Refresh</button>
+      </div>
+    </header>
+
+    <!-- Page Content -->
+    <div class="content-area">
+
+      <!-- TAB 1: DASHBOARD VIEW -->
+      <section id="tab-dashboard" class="tab-view">
+        <div style="margin-bottom: 24px;">
+          <h1 style="font-size: 1.5rem; font-weight: 700; color: #fff; margin-bottom: 4px;">Dashboard</h1>
+        </div>
+
+        <div class="section-label">SERVER TELEMETRY · TORTOISE WOW</div>
+
+        <!-- Metrics Row -->
+        <div class="metrics-row">
+          <div class="telemetry-card metric-gauge-card" title="World update tick time for the most recent loop. ~50 ms is the normal 20 Hz cadence; sustained values above 100 ms indicate lag.">
+            <div class="gauge-circle">
+              <svg class="gauge-svg" viewBox="0 0 72 72">
+                <circle class="gauge-bg" cx="36" cy="36" r="30"/>
+                <circle id="gauge-tick-bar" class="gauge-val-bar" cx="36" cy="36" r="30"/>
+              </svg>
+              <div id="gauge-tick-val" class="gauge-text">–</div>
+            </div>
+            <div class="metric-label">World Tick</div>
+            <div class="metric-sub">nominal 50 ms</div>
+          </div>
+
+          <div class="telemetry-card metric-stat">
+            <div id="metric-bots-online" class="metric-big-num">0</div>
+            <div class="metric-label">Bots Online</div>
+          </div>
+
+          <div class="telemetry-card metric-stat">
+            <div id="metric-humans-online" class="metric-big-num" style="color: #58a6ff;">0</div>
+            <div class="metric-label">Players Online</div>
+          </div>
+
+          <div class="telemetry-card metric-stat" title="Age of the last complete bot roster snapshot. Under 6s is live, over 10s means telemetry is stale.">
+            <div id="snapshot-age-val" class="metric-big-num" style="font-size: 1.5rem;">–</div>
+            <div class="metric-label">Snapshot Age</div>
+          </div>
+
+          <div class="telemetry-card metric-stat">
+            <div id="metric-uptime" class="metric-big-num" style="font-size: 1.5rem;">0m</div>
+            <div class="metric-label">Uptime</div>
+          </div>
+
+          <div class="telemetry-card metric-stat" title="Active persistent bot issues. Red = at least one running 10+ minutes.">
+            <div id="metric-issues" class="metric-big-num" style="font-size: 1.5rem;">0</div>
+            <div class="metric-label">Issues</div>
+            <div class="metric-sub" id="metric-issues-sub">0 persistent</div>
+          </div>
+        </div>
+
+        <!-- Charts + composition -->
+        <div class="dashboard-grid">
+          <div class="telemetry-card chart-container">
+            <div class="chart-header">
+              <div class="section-label" style="margin: 0;">ACTIVITY · LAST 10 MIN</div>
+              <div class="chart-legend">
+                <div class="legend-item"><span class="legend-color" style="background: #58a6ff;"></span> Bots</div>
+                <div class="legend-item"><span class="legend-color" style="background: #2ea043;"></span> Players</div>
+              </div>
+            </div>
+            <div class="chart-box">
+              <canvas id="activity-chart"></canvas>
+            </div>
+            <div class="chart-header" style="margin-top: 10px;">
+              <div class="section-label" style="margin: 0;">WORLD TICK · LAST 10 MIN</div>
+              <span id="tick-now" class="mono" style="font-size: 0.75rem; color: var(--text-muted);">–</span>
+            </div>
+            <div class="chart-box chart-box-sm">
+              <canvas id="tick-chart"></canvas>
+            </div>
+          </div>
+
+          <div class="telemetry-card">
+            <div class="section-label" style="margin: 0 0 12px;">BOT COMPOSITION</div>
+            <div id="class-breakdown" class="composition-list">
+              <div class="empty-hint">Waiting for bot telemetry...</div>
+            </div>
+            <div id="role-totals" class="role-row"></div>
+
+            <div class="section-label" style="margin: 20px 0 10px;">MACRO STATES · 3 MIN ROLLING</div>
+            <div class="composition-list">
+              <div class="comp-row"><span class="comp-name">Combat</span><span class="comp-bar-bg"><span id="macro-bar-combat" class="comp-bar" style="background: #f85149; width: 0%;"></span></span><span id="macro-pct-combat" class="comp-count">0%</span></div>
+              <div class="comp-row"><span class="comp-name">Moving</span><span class="comp-bar-bg"><span id="macro-bar-moving" class="comp-bar" style="background: #58a6ff; width: 0%;"></span></span><span id="macro-pct-moving" class="comp-count">0%</span></div>
+              <div class="comp-row"><span class="comp-name">Resting</span><span class="comp-bar-bg"><span id="macro-bar-resting" class="comp-bar" style="background: #2ea043; width: 0%;"></span></span><span id="macro-pct-resting" class="comp-count">0%</span></div>
+              <div class="comp-row"><span class="comp-name">Idle</span><span class="comp-bar-bg"><span id="macro-bar-idle" class="comp-bar" style="background: #9aa4b2; width: 0%;"></span></span><span id="macro-pct-idle" class="comp-count">0%</span></div>
+              <div class="comp-row"><span class="comp-name">Dead</span><span class="comp-bar-bg"><span id="macro-bar-dead" class="comp-bar" style="background: #c9d1d9; width: 0%;"></span></span><span id="macro-pct-dead" class="comp-count">0%</span></div>
+            </div>
+
+            <div class="section-label" style="margin: 20px 0 10px;">FLEET HEALTH</div>
+            <div id="fleet-health" class="composition-list">
+              <div class="empty-hint">Waiting for bot roster...</div>
+            </div>
+
+            <div class="section-label" style="margin: 20px 0 6px;">TOP ZONES <span style="text-transform: none; opacity: 0.6; font-weight: 400;">(click to open map)</span></div>
+            <div id="zone-list" class="zone-list"></div>
+          </div>
+        </div>
+
+        <!-- Live Monospace Console -->
+        <div class="console-container">
+          <div class="console-header">
+            <span>CONSOLE · LIVE STREAM</span>
+            <span id="console-rate" style="color: var(--accent-green-bright);">● connected</span>
+          </div>
+          <div id="console-body" class="console-body">
+            <div class="log-line"><span class="log-time">[Init]</span> <span class="log-tag">system</span> Telemetry stream initialized. Awaiting events...</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: LIVE MAP (2D ZONE MAP) -->
+      <section id="tab-map" class="tab-view" style="display: none;">
+        <div class="telemetry-card" style="padding: 14px 18px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+            <label for="zone-filter-input" style="font-weight: 600; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase;">Zone:</label>
+            <input type="text" id="zone-filter-input" placeholder="Filter zone (e.g. Durotar, Barrens)..." class="btn" style="padding: 6px 12px; font-size: 0.85rem; width: 200px; text-align: left;">
+            <select id="zone-select" class="btn" style="padding: 6px 14px; font-weight: 600; max-width: 260px;">
+            </select>
+            <span id="zone-filter-count" class="badge badge-info">101 zones</span>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 20px; font-size: 0.85rem;">
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+              <input type="checkbox" id="toggle-trails" checked style="accent-color: #2ea043;">
+              <span>Path Trails (Breadcrumbs)</span>
+            </label>
+            <div id="map-legend" class="map-legend"></div>
+          </div>
+        </div>
+
+        <div style="position: relative;">
+          <div class="map-viewport">
+            <img id="map-img" class="map-img" src="/maps/elwynn.webp" alt="Zone Map">
+            <canvas id="map-canvas" class="map-overlay" style="pointer-events: none;"></canvas>
+            <div id="map-overlay" class="map-overlay"></div>
+            <div id="map-tooltip" class="map-tooltip" style="display: none;"></div>
+          </div>
+
+          <!-- Bot Side Drawer -->
+          <div id="bot-drawer" class="telemetry-card" style="display: none; position: absolute; top: 16px; right: 16px; width: 320px; padding: 20px; z-index: 30; background: rgba(14, 19, 27, 0.95);">
+            <div style="display: flex; justify-content: flex-end;">
+              <button id="close-drawer" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.2rem;">&times;</button>
+            </div>
+            <div id="drawer-content"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: BOTS ROSTER -->
+      <section id="tab-roster" class="tab-view" style="display: none;">
+        <div class="telemetry-card">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap;">
+            <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff;">Active Bot Population <span id="roster-count" style="color: var(--text-muted); font-size: 0.8rem; font-weight: 400;"></span></h2>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+              <input type="text" id="bot-search" placeholder="Search name/class..." class="btn" style="padding: 6px 12px; width: 170px;">
+              <select id="role-filter" class="btn" style="padding: 6px 12px;">
+                <option value="all">All Roles</option>
+                <option value="tank">Tanks</option>
+                <option value="healer">Healers</option>
+                <option value="dps">DPS</option>
+              </select>
+              <select id="class-filter" class="btn" style="padding: 6px 12px;">
+                <option value="all">All Classes</option>
+              </select>
+              <select id="status-filter" class="btn" style="padding: 6px 12px;">
+                <option value="all">All Status</option>
+                <option value="combat">Combat</option>
+                <option value="moving">Moving</option>
+                <option value="resting">Resting</option>
+                <option value="idle">Idle</option>
+                <option value="dead">Dead</option>
+              </select>
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text-muted); cursor: pointer;">
+                <input type="checkbox" id="issue-only-filter" style="accent-color: #f85149;"> Issues only
+              </label>
+            </div>
+          </div>
+          <div style="overflow-x: auto;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th class="sortable" data-sort="name">Name</th>
+                  <th class="sortable" data-sort="class">Class</th>
+                  <th class="sortable" data-sort="role">Role</th>
+                  <th class="sortable" data-sort="level">Level</th>
+                  <th class="sortable" data-sort="hp">Health (HP)</th>
+                  <th class="sortable" data-sort="power">Power</th>
+                  <th class="sortable" data-sort="state">Status</th>
+                  <th>Target</th>
+                  <th class="sortable" data-sort="zone">Zone</th>
+                </tr>
+              </thead>
+              <tbody id="roster-table-body">
+                <tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading active bots...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: ISSUES -->
+      <section id="tab-issues" class="tab-view" style="display: none;">
+        <div style="margin-bottom: 20px;">
+          <h1 style="font-size: 1.5rem; font-weight: 700; color: #fff; margin-bottom: 4px;">Persistent Issues</h1>
+          <p style="color: var(--text-muted); font-size: 0.85rem;">
+            Only problems that persist <strong>5+ minutes</strong> are shown, so short hiccups are ignored. Red = 10+ minutes. Click a bot to jump to its map.
+          </p>
+        </div>
+
+        <div class="metrics-row">
+          <div class="telemetry-card metric-stat"><div id="issue-active" class="metric-big-num">0</div><div class="metric-label">Active</div></div>
+          <div class="telemetry-card metric-stat"><div id="issue-persistent" class="metric-big-num" style="color: #f85149;">0</div><div class="metric-label">Persistent ≥10m</div></div>
+          <div class="telemetry-card metric-stat"><div id="issue-watch" class="metric-big-num" style="color: #d29922;">0</div><div class="metric-label">Watch 5–10m</div></div>
+          <div class="telemetry-card metric-stat"><div id="issue-resolved" class="metric-big-num" style="color: #2ea043;">0</div><div class="metric-label">Recent Resolved</div></div>
+          <div class="telemetry-card metric-stat"><div id="issue-deaths" class="metric-big-num" style="color: #c9d1d9;">0</div><div class="metric-label">Deaths (session)</div></div>
+        </div>
+
+        <div class="dashboard-grid" style="grid-template-columns: 1.6fr 1fr;">
+          <div class="telemetry-card chart-container" style="height: 280px;">
+            <div class="chart-header">
+              <div class="section-label" style="margin: 0;">ACTIVE ISSUES OVER TIME</div>
+              <div class="chart-legend" id="issue-legend"></div>
+            </div>
+            <div class="chart-box"><canvas id="issue-chart"></canvas></div>
+          </div>
+          <div class="telemetry-card">
+            <div class="section-label" style="margin: 0 0 12px;">ISSUES BY ZONE</div>
+            <div id="issue-zones" class="composition-list"><div class="empty-hint">No active issues.</div></div>
+          </div>
+        </div>
+
+        <div class="telemetry-card">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap;">
+            <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff;">Active Issues</h2>
+            <div style="display: flex; gap: 12px; align-items: center;">
+              <select id="issue-type-filter" class="btn" style="padding: 6px 12px;">
+                <option value="all">All Types</option>
+                <option value="STUCK">Stuck</option>
+                <option value="DEAD_LONG">Dead (long)</option>
+                <option value="ACTION_LOOP">Action Loop</option>
+                <option value="UNREACHABLE_TARGET">Unreachable</option>
+              </select>
+              <select id="issue-duration-filter" class="btn" style="padding: 6px 12px;">
+                <option value="0">Any duration</option>
+                <option value="300">≥ 5 min</option>
+                <option value="600">≥ 10 min</option>
+                <option value="1800">≥ 30 min</option>
+              </select>
+            </div>
+          </div>
+          <div style="overflow-x: auto;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Bot</th><th>Class</th><th>Type</th><th>Duration</th>
+                  <th>Last Action</th><th>Trigger</th><th>Zone</th><th>Target</th>
+                </tr>
+              </thead>
+              <tbody id="issues-table-body">
+                <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">No active issues.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="telemetry-card" style="margin-top: 20px;">
+          <div class="section-label" style="margin: 0 0 12px;">RECENTLY RESOLVED</div>
+          <div id="issues-resolved" class="resolved-list"></div>
+        </div>
+      </section>
+
+      <!-- TAB 5: INCIDENTS -->
+      <section id="tab-incidents" class="tab-view" style="display: none;">
+        <div class="telemetry-card">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff;">Incidents & Anomalies</h2>
+            <div style="display: flex; gap: 12px; align-items: center;">
+              <select id="anomaly-type-filter" class="btn" style="padding: 6px 12px;">
+                <option value="all">All Types</option>
+                <option value="BOT_STUCK">BOT_STUCK</option>
+                <option value="ACTION_LOOP">ACTION_LOOP</option>
+                <option value="UNREACHABLE_TARGET">UNREACHABLE_TARGET</option>
+                <option value="BOT_DEATH">BOT_DEATH</option>
+              </select>
+              <select id="anomaly-severity-filter" class="btn" style="padding: 6px 12px;">
+                <option value="all">All Severities</option>
+                <option value="info">Info</option>
+                <option value="warn">Warn</option>
+                <option value="error">Error</option>
+              </select>
+              <button id="clear-anomalies" class="btn" style="padding: 6px 12px;">Clear</button>
+            </div>
+          </div>
+          <div style="overflow-x: auto;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Severity</th>
+                  <th>Type</th>
+                  <th>Bot</th>
+                  <th>Zone</th>
+                  <th>Details / Last Action</th>
+                  <th>Target</th>
+                </tr>
+              </thead>
+              <tbody id="anomalies-table-body">
+                <tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 24px;">No incidents recorded.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>

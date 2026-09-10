@@ -535,7 +535,7 @@ bool RandomBotService::TryAutoCreate()
                 }
                 return false;
             }
-            m_pendingNextRetry = now + 60;
+            m_pendingNextRetry = now + 1;
             if (!m_pendingStaleLogged && m_pendingSince && now - m_pendingSince >= 300)
             {
                 sLog.outError("TortoiseBots: auto-create pending account %s unresolved for %ld seconds, continuing with existing accounts (one pending kept, no new allocation)",
@@ -577,7 +577,7 @@ bool RandomBotService::TryAutoCreate()
 
         bool isMixed = false;
         uint32_t allowed = GetAccountAllowedTeam(accId, isMixed);
-        if (isMixed)
+        if (isMixed && !allowTwoSide)
         {
             sLog.outError("TortoiseBots: auto-create account %u has mixed-faction RNDBOT characters, excluding from auto-create", accId);
             m_failedAutoCreateAccounts.insert(accId);
@@ -639,6 +639,7 @@ bool RandomBotService::TryAutoCreate()
         char suffixBuf[16];
         std::snprintf(suffixBuf, sizeof(suffixBuf), "%06u", suffix);
         std::string username = safePrefix + suffixBuf;
+        AccountMgr::normalizeString(username);
         if (sAccountMgr.GetId(username) != 0)
             continue;
         std::string password = GenerateRandomPassword();
@@ -663,7 +664,7 @@ bool RandomBotService::TryAutoCreate()
                 // account or spin. Log once after prolonged unresolved period.
                 m_pendingAccountName = username;
                 m_pendingSince = time(nullptr);
-                m_pendingNextRetry = m_pendingSince + 60;
+                m_pendingNextRetry = m_pendingSince + 1;
                 m_pendingStaleLogged = false;
                 return false;
             }
@@ -951,9 +952,15 @@ void RandomBotService::Update(uint32_t diff)
     uint32_t elapsed = m_serviceElapsedMs;
     m_serviceElapsedMs = 0;
 
-    // Bounded auto-create: one attempt per cadence, no per-tick LIKE scan.
+    // Bounded auto-create: up to 5 creations per cadence if progressing toward target
     if (sPlayerbotAIConfig.randomBotAutoCreate)
-        TryAutoCreate();
+    {
+        for (int i = 0; i < 5; ++i)
+        {
+            if (!TryAutoCreate())
+                break;
+        }
+    }
 
     if (!sPlayerbotAIConfig.randomBotAutologin)
         return;

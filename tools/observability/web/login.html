@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
+  <title>Admin Login — Tortoise WoW Observability</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%236366f1%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><circle cx=%2212%22 cy=%2212%22 r=%2210%22/><circle cx=%2212%22 cy=%2212%22 r=%223%22/></svg>">
+</head>
+<body style="display: flex; align-items: center; justify-content: center; min-height: 100vh;">
+
+  <div class="glass-card" style="width: 100%; max-width: 400px; padding: 32px; margin: 20px;">
+    <div style="text-align: center; margin-bottom: 24px;">
+      <div style="margin-bottom: 12px; display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: 12px; background: rgba(99, 102, 241, 0.12); border: 1px solid rgba(99, 102, 241, 0.3);">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <circle cx="12" cy="12" r="3"></circle>
+          <line x1="12" y1="2" x2="12" y2="5"></line>
+          <line x1="12" y1="19" x2="12" y2="22"></line>
+          <line x1="2" y1="12" x2="5" y2="12"></line>
+          <line x1="19" y1="12" x2="22" y2="12"></line>
+        </svg>
+      </div>
+      <h1 style="font-size: 1.5rem; font-weight: 700; color: #fff;">Tortoise WoW</h1>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">Bot & Server Observability Platform</p>
+    </div>
+
+    <div id="error-box" class="glass-card" style="display: none; padding: 12px; margin-bottom: 16px; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1); color: #f87171; font-size: 0.85rem; border-radius: 8px;">
+    </div>
+
+    <form id="login-form">
+      <div style="margin-bottom: 16px;">
+        <label for="username" style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;">WoW Account Name</label>
+        <input type="text" id="username" name="username" required autocomplete="username" class="btn" style="width: 100%; padding: 10px 14px; font-size: 0.95rem; text-align: left;">
+      </div>
+
+      <div style="margin-bottom: 24px;">
+        <label for="password" style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;">Password</label>
+        <input type="password" id="password" name="password" required autocomplete="current-password" class="btn" style="width: 100%; padding: 10px 14px; font-size: 0.95rem; text-align: left;">
+      </div>
+
+      <button type="submit" id="submit-btn" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 10px 16px; font-weight: 600;">
+        Sign In as Game Master
+      </button>
+    </form>
+
+    <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border-color); text-align: center; font-size: 0.75rem; color: var(--text-muted);">
+      Authentication verifies against <code class="mono" style="color: #a5b4fc;">tw_logon.account</code>.<br>
+      Requires Game Master rank (<code class="mono">rank &gt;= 3</code>).
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('login-form');
+    const errorBox = document.getElementById('error-box');
+    const submitBtn = document.getElementById('submit-btn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorBox.style.display = 'none';
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Authenticating...';
+
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+
+      try {
+        const res = await fetch('/api/v1/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          window.location.href = '/dashboard';
+        } else {
+          errorBox.textContent = data.error || 'Authentication failed';
+          errorBox.style.display = 'block';
+        }
+      } catch (err) {
+        errorBox.textContent = 'Network or server error during authentication';
+        errorBox.style.display = 'block';
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Sign In as Game Master';
+      }
+    });
+  </script>
+</body>
+</html>

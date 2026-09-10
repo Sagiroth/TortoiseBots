@@ -7,6 +7,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 // #include "playerbot/PerformanceMonitor.h" // E2E green
 #include "playerbot/BotActionLog.h"
+#include "../../../runtime/ObservabilityEmitter.h"
 
 #ifdef BUILD_ELUNA
 #include "LuaEngine/LuaEngine.h"
@@ -159,6 +160,13 @@ void Engine::RecordFailure(Action* action, Event& event, ActionResult result)
     actionFailures.Record(FailureKey(action, event, result), WorldTimer::getMSTime(),
         sPlayerbotAIConfig.failedActionRetryBaseMs, sPlayerbotAIConfig.failedActionRetryMaxMs,
         sPlayerbotAIConfig.failedActionCacheMaxEntries, sPlayerbotAIConfig.failedActionCacheTtlMs);
+
+    if (sObservabilityEmitter.IsEnabled() && ai && ai->GetBot() && action)
+    {
+        Unit* target = action->GetTarget();
+        std::string targetName = target ? target->GetName() : "";
+        sObservabilityEmitter.OnActionFailed(ai->GetBot(), action->getName(), targetName);
+    }
 }
 
 void Engine::ClearActionFailures(Action* action, Event& event)
