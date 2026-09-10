@@ -3046,7 +3046,12 @@ bool PlayerbotAI::SayToGuild(std::string msg, bool likePlayer)
 
             for (auto& player : sRandomBotFacade.GetPlayers())
             {
-                if (player.second->GetGuildId() == bot->GetGuildId())
+                // The facade view can outlive removed bots; resolve by GUID.
+                Player* guildBot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, player.first));
+                if (!guildBot || !guildBot->IsInWorld())
+                    continue;
+
+                if (guildBot->GetGuildId() == bot->GetGuildId())
                 {
                     if (likePlayer || (sPlayerbotAIConfig.llmEnabled > 0 && (HasStrategy("ai chat", BotState::BOT_STATE_NON_COMBAT) || sPlayerbotAIConfig.llmEnabled == 3) &&
                         sPlayerbotAIConfig.llmBotToBotChatChance))
@@ -5328,7 +5333,12 @@ bool PlayerbotAI::HasPlayerNearby(WorldPosition pos, float range)
     bool nearPlayer = false;
     for (auto& i : sRandomBotFacade.GetPlayers())
     {
-        Player* player = i.second;
+        // The facade map is only re-synced periodically; entries can outlive
+        // their Player under bot churn, so resolve by GUID before any deref.
+        Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, i.first));
+        if (!player || !player->IsInWorld())
+            continue;
+
         if (!player->IsGameMaster() || player->IsGMVisible())
         {
             if (player->GetMapId() != bot->GetMapId())
@@ -5340,7 +5350,7 @@ bool PlayerbotAI::HasPlayerNearby(WorldPosition pos, float range)
             // if player is far check farsight/cinematic camera
             Camera& viewPoint = player->GetCamera();
             WorldObject* viewObj = viewPoint.GetBody();
-            if (viewObj && viewObj != player)
+            if (viewObj && viewObj != player && viewObj->IsInWorld())
             {
                 if (pos.sqDistance(WorldPosition(viewObj)) < sqRange)
                     nearPlayer = true;
@@ -5363,7 +5373,10 @@ bool PlayerbotAI::HasManyPlayersNearby(uint32 trigerrValue, float range)
 
     for (auto& i : sRandomBotFacade.GetPlayers())
     {
-        Player* player = i.second;
+        Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, i.first));
+        if (!player || !player->IsInWorld())
+            continue;
+
         if ((!player->IsGameMaster() || player->IsGMVisible()) && sServerFacade.getDistance2d(player, bot) < sqRange)
         {
             found++;
@@ -5498,11 +5511,12 @@ ActivePiorityType PlayerbotAI::GetPriorityType()
     // friends always active
     for (auto& i : sRandomBotFacade.GetPlayers())
     {
-        Player* player = i.second;
+        Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, i.first));
         if (!player || !player->IsInWorld())
             continue;
 
-        if (player->GetSocial()->HasFriend(bot->getObjectGuid()))
+        PlayerSocial* social = player->GetSocial();
+        if (social && social->HasFriend(bot->getObjectGuid()))
             return ActivePiorityType::PLAYER_FRIEND;
     }
 
@@ -7784,10 +7798,13 @@ bool PlayerbotAI::HasPlayerRelation()
 
     for (auto& p : sRandomBotFacade.GetPlayers())
     {
-        if (!p.second)
+        // The facade view can outlive removed bots; resolve by GUID before
+        // touching the Player or its social list.
+        Player* peer = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, p.first));
+        if (!peer || !peer->IsInWorld())
             continue;
 
-        PlayerSocial* social = p.second->GetSocial();
+        PlayerSocial* social = peer->GetSocial();
         if (social && social->HasFriend(bot->getObjectGuid()))
         {
             SetPlayerFriend(true);
