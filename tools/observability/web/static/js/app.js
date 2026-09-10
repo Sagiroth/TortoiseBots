@@ -1,28 +1,18 @@
-// Tortoise WoW Observability Dashboard Client
+// Tortoise WoW Observability Dashboard — Telemetry & Bot Management
 (function() {
   'use strict';
 
-  // Zone registry matching bundled webp maps and DBC area IDs
+  // Fallback zone dictionary (loaded dynamically from /data/zone_maps.json)
   let ZONE_CONFIG = {
     12: { name: 'Elwynn Forest', map: 0, file: 'elwynn.webp' },
     14: { name: 'Durotar', map: 1, file: 'durotar.webp' },
     17: { name: 'The Barrens', map: 1, file: 'barrens.webp' },
-    3277: { name: 'Warsong Gulch', map: 489, file: 'warsonggulch.webp' },
-    1: { name: 'Dun Morogh', map: 0, file: 'dunmorogh.webp' },
-    215: { name: 'Mulgore', map: 1, file: 'mulgore.webp' },
-    85: { name: 'Tirisfal Glades', map: 0, file: 'tirisfal.webp' },
-    141: { name: 'Teldrassil', map: 1, file: 'teldrassil.webp' },
-    40: { name: 'Westfall', map: 0, file: 'westfall.webp' },
-    44: { name: 'Redridge Mountains', map: 0, file: 'redridge.webp' },
-    148: { name: 'Darkshore', map: 1, file: 'darkshore.webp' },
-    33: { name: 'Stranglethorn Vale', map: 0, file: 'stranglethorn.webp' },
-    3358: { name: 'Arathi Basin', map: 529, file: 'arathibasin.webp' },
-    2597: { name: 'Alterac Valley', map: 30, file: 'alteracvalley.webp' }
+    3277: { name: 'Warsong Gulch', map: 489, file: 'warsonggulch.webp' }
   };
 
   const state = {
-    activeTab: 'map',
-    currentZoneId: 12, // Default Elwynn
+    activeTab: 'dashboard',
+    currentZoneId: 12,
     bots: [],
     anomalies: [],
     server: {
@@ -32,6 +22,11 @@
       humans: 0,
       bots: 0,
       states: { combat: 0, moving: 0, resting: 0, dead: 0, idle: 0 }
+    },
+    history: {
+      timestamps: [],
+      bots: [],
+      humans: []
     },
     showTrails: true,
     roleFilter: 'all',
@@ -45,66 +40,166 @@
   // DOM Elements
   const el = {
     statusPill: document.getElementById('status-pill'),
-    statusText: document.getElementById('status-text'),
     statusDot: document.getElementById('status-dot'),
-    uptimeVal: document.getElementById('uptime-val'),
-    diffVal: document.getElementById('diff-val'),
-    humansVal: document.getElementById('humans-val'),
-    botsVal: document.getElementById('bots-val'),
+    topBotsVal: document.getElementById('top-bots-val'),
+    subHumansVal: document.getElementById('sub-humans-val'),
+    subBotsVal: document.getElementById('sub-bots-val'),
+    metricBotsOnline: document.getElementById('metric-bots-online'),
+    metricHumansOnline: document.getElementById('metric-humans-online'),
+    metricUptime: document.getElementById('metric-uptime'),
+    gaugeTickVal: document.getElementById('gauge-tick-val'),
+    gaugeTickBar: document.getElementById('gauge-tick-bar'),
+    gaugeLoadVal: document.getElementById('gauge-load-val'),
+    gaugeLoadBar: document.getElementById('gauge-load-bar'),
+    
+    // Tabs & Navigation
+    menuItems: document.querySelectorAll('.sidebar-menu .menu-item[data-tab]'),
+    tabViews: document.querySelectorAll('.tab-view'),
+    
+    // Map
+    zoneFilterInput: document.getElementById('zone-filter-input'),
+    zoneFilterCount: document.getElementById('zone-filter-count'),
     zoneSelect: document.getElementById('zone-select'),
     mapImg: document.getElementById('map-img'),
     mapOverlay: document.getElementById('map-overlay'),
     mapCanvas: document.getElementById('map-canvas'),
     mapTooltip: document.getElementById('map-tooltip'),
     toggleTrails: document.getElementById('toggle-trails'),
-    roleFilter: document.getElementById('role-filter'),
-    botSearch: document.getElementById('bot-search'),
     botDrawer: document.getElementById('bot-drawer'),
     drawerContent: document.getElementById('drawer-content'),
     closeDrawer: document.getElementById('close-drawer'),
+
+    // Roster
+    roleFilter: document.getElementById('role-filter'),
+    botSearch: document.getElementById('bot-search'),
+    rosterTable: document.getElementById('roster-table-body'),
+
+    // Incidents
     anomaliesTable: document.getElementById('anomalies-table-body'),
     anomaliesCount: document.getElementById('anomalies-count'),
     typeFilter: document.getElementById('anomaly-type-filter'),
     severityFilter: document.getElementById('anomaly-severity-filter'),
     clearAnomalies: document.getElementById('clear-anomalies'),
-    rosterTable: document.getElementById('roster-table-body'),
+
+    // Macro states
     stateCombat: document.getElementById('state-combat'),
+    stateCombatTxt: document.getElementById('state-combat-txt'),
     stateMoving: document.getElementById('state-moving'),
+    stateMovingTxt: document.getElementById('state-moving-txt'),
     stateResting: document.getElementById('state-resting'),
+    stateRestingTxt: document.getElementById('state-resting-txt'),
     stateIdle: document.getElementById('state-idle'),
+    stateIdleTxt: document.getElementById('state-idle-txt'),
     stateDead: document.getElementById('state-dead'),
-    tabBtns: document.querySelectorAll('.tab-btn'),
-    tabViews: document.querySelectorAll('.tab-view')
+    stateDeadTxt: document.getElementById('state-dead-txt'),
+
+    // Chart & Console
+    activityChart: document.getElementById('activity-chart'),
+    consoleBody: document.getElementById('console-body'),
+    consoleRate: document.getElementById('console-rate'),
+    refreshBtn: document.getElementById('refresh-btn')
   };
 
-  // Format seconds to hh:mm:ss
-  function formatUptime(seconds) {
-    if (!seconds) return '00:00:00';
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  }
-
-  // Tab Navigation
-  el.tabBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const tab = btn.dataset.tab;
+  // Sidebar Tab Navigation
+  el.menuItems.forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.preventDefault();
+      const tab = item.dataset.tab;
+      if (!tab) return;
       state.activeTab = tab;
-      el.tabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-      el.tabViews.forEach(v => v.style.display = v.id === `tab-${tab}` ? 'block' : 'none');
+      el.menuItems.forEach(m => m.classList.toggle('active', m.dataset.tab === tab));
+      el.tabViews.forEach(v => {
+        v.style.display = v.id === `tab-${tab}` ? 'block' : 'none';
+      });
       if (tab === 'map') renderMap();
       if (tab === 'roster') renderRoster();
+      if (tab === 'dashboard') renderActivityChart();
     });
   });
 
-  // Zone Selector Change
-  if (el.zoneSelect) {
-    el.zoneSelect.addEventListener('change', (e) => {
-      const zid = parseInt(e.target.value, 10);
-      state.currentZoneId = zid;
-      loadZoneMap(zid);
+  if (el.refreshBtn) {
+    el.refreshBtn.addEventListener('click', () => {
+      fetchBots();
+      fetchAnomalies();
     });
+  }
+
+  // Format uptime
+  function formatUptime(seconds) {
+    if (!seconds) return '0m';
+    const m = Math.floor(seconds / 60);
+    const h = Math.floor(m / 60);
+    const remM = m % 60;
+    if (h > 0) return `${h}h ${remM}m`;
+    return `${m}m`;
+  }
+
+  // Log to Console Card
+  function appendConsoleLog(time, tag, text, level = 'info') {
+    if (!el.consoleBody) return;
+    const line = document.createElement('div');
+    line.className = 'log-line';
+    const tagClass = level === 'warn' ? 'warn' : level === 'error' ? 'error' : '';
+    line.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-tag ${tagClass}">[${tag}]</span> ${text}`;
+    el.consoleBody.appendChild(line);
+    while (el.consoleBody.children.length > 200) {
+      el.consoleBody.removeChild(el.consoleBody.firstChild);
+    }
+    el.consoleBody.scrollTop = el.consoleBody.scrollHeight;
+  }
+
+  // Zone Selector & Filtering
+  function populateZoneSelect(filter = '') {
+    if (!el.zoneSelect) return;
+    const q = filter.trim().toLowerCase();
+    el.zoneSelect.innerHTML = '';
+    const sorted = Object.entries(ZONE_CONFIG).sort((a, b) => a[1].name.localeCompare(b[1].name));
+    const matching = sorted.filter(([id, z]) => !q || z.name.toLowerCase().includes(q));
+
+    matching.forEach(([id, z]) => {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = z.name;
+      if (parseInt(id, 10) === state.currentZoneId) opt.selected = true;
+      el.zoneSelect.appendChild(opt);
+    });
+
+    if (el.zoneFilterCount) {
+      el.zoneFilterCount.textContent = q ? `${matching.length}/${sorted.length} zones` : `${sorted.length} zones`;
+    }
+
+    if (matching.length > 0 && !matching.some(([id]) => parseInt(id, 10) === state.currentZoneId)) {
+      const firstId = parseInt(matching[0][0], 10);
+      state.currentZoneId = firstId;
+      el.zoneSelect.value = firstId;
+      loadZoneMap(firstId);
+    }
+  }
+
+  function initZoneSelector() {
+    fetch('/data/zone_maps.json')
+      .then(r => r.json())
+      .then(cfg => {
+        if (!cfg || Object.keys(cfg).length === 0) return;
+        ZONE_CONFIG = cfg;
+        populateZoneSelect(el.zoneFilterInput ? el.zoneFilterInput.value : '');
+        loadZoneMap(state.currentZoneId);
+      })
+      .catch(() => {});
+
+    if (el.zoneFilterInput) {
+      el.zoneFilterInput.addEventListener('input', (e) => {
+        populateZoneSelect(e.target.value);
+      });
+    }
+
+    if (el.zoneSelect) {
+      el.zoneSelect.addEventListener('change', (e) => {
+        const zid = parseInt(e.target.value, 10);
+        state.currentZoneId = zid;
+        loadZoneMap(zid);
+      });
+    }
   }
 
   function loadZoneMap(zoneId) {
@@ -115,7 +210,6 @@
     }
   }
 
-  // Trail Toggle
   if (el.toggleTrails) {
     el.toggleTrails.addEventListener('change', (e) => {
       state.showTrails = e.target.checked;
@@ -123,27 +217,340 @@
     });
   }
 
-  // Filter Event Listeners
-  if (el.roleFilter) {
-    el.roleFilter.addEventListener('change', (e) => {
-      state.roleFilter = e.target.value;
-      renderMap();
-      renderRoster();
+  // Activity Timeline Sparkline
+  function renderActivityChart() {
+    const canvas = el.activityChart;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.parentElement.clientWidth;
+    const h = canvas.parentElement.clientHeight;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Draw subtle grid lines
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+    ctx.lineWidth = 1;
+    for (let y = 0; y <= h; y += h / 4) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+
+    const data = state.history.bots;
+    if (data.length < 2) {
+      ctx.fillStyle = '#484f58';
+      ctx.font = '12px Inter';
+      ctx.fillText('Waiting for activity telemetry...', 20, h / 2);
+      return;
+    }
+
+    const maxVal = Math.max(10, Math.max(...data, ...state.history.humans) * 1.15);
+    const stepX = w / (data.length - 1);
+
+    // Draw Bots filled area
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    data.forEach((val, idx) => {
+      const x = idx * stepX;
+      const y = h - (val / maxVal) * (h - 20) - 10;
+      if (idx === 0) ctx.lineTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.lineTo(w, h);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, 'rgba(88, 166, 255, 0.25)');
+    grad.addColorStop(1, 'rgba(88, 166, 255, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Draw Bots stroke
+    ctx.beginPath();
+    data.forEach((val, idx) => {
+      const x = idx * stepX;
+      const y = h - (val / maxVal) * (h - 20) - 10;
+      if (idx === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = '#58a6ff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Draw Players stroke
+    ctx.beginPath();
+    state.history.humans.forEach((val, idx) => {
+      const x = idx * stepX;
+      const y = h - (val / maxVal) * (h - 20) - 10;
+      if (idx === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = '#2ea043';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  // Update Top Stats & Gauge Rings
+  function updateDashboardMetrics() {
+    const s = state.server;
+    const botCount = state.bots.length > 0 ? state.bots.length : s.bots;
+
+    if (el.topBotsVal) el.topBotsVal.textContent = botCount;
+    if (el.subBotsVal) el.subBotsVal.textContent = `${botCount} Bots`;
+    if (el.subHumansVal) el.subHumansVal.textContent = `${s.humans} Players`;
+    if (el.metricBotsOnline) el.metricBotsOnline.textContent = botCount;
+    if (el.metricHumansOnline) el.metricHumansOnline.textContent = s.humans;
+    if (el.metricUptime) el.metricUptime.textContent = formatUptime(s.uptime);
+
+    // Tick ms gauge
+    const diff = s.diff || 50;
+    if (el.gaugeTickVal) el.gaugeTickVal.textContent = `${diff}ms`;
+    if (el.gaugeTickBar) {
+      const maxDiff = 200;
+      const pct = Math.min(1, diff / maxDiff);
+      const circumference = 188.5;
+      el.gaugeTickBar.style.strokeDashoffset = circumference - (circumference * pct);
+      el.gaugeTickBar.style.stroke = diff > 100 ? '#f85149' : diff > 70 ? '#d29922' : '#2ea043';
+    }
+
+    // Load gauge
+    const load = (diff / 100).toFixed(2);
+    if (el.gaugeLoadVal) el.gaugeLoadVal.textContent = load;
+    if (el.gaugeLoadBar) {
+      const circumference = 188.5;
+      const pct = Math.min(1, parseFloat(load));
+      el.gaugeLoadBar.style.strokeDashoffset = circumference - (circumference * pct);
+    }
+
+    // Update activity history
+    const now = new Date().toLocaleTimeString();
+    state.history.timestamps.push(now);
+    state.history.bots.push(botCount);
+    state.history.humans.push(s.humans);
+    if (state.history.bots.length > 30) {
+      state.history.timestamps.shift();
+      state.history.bots.shift();
+      state.history.humans.shift();
+    }
+    if (state.activeTab === 'dashboard') renderActivityChart();
+  }
+
+  // 2D Map Rendering
+  function renderMap() {
+    if (!el.mapOverlay) return;
+    el.mapOverlay.innerHTML = '';
+
+    const canvas = el.mapCanvas;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    if (canvas.width !== rect.width || canvas.height !== rect.height) {
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+    }
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const zoneBots = state.bots.filter(b => {
+      if (b.zone !== state.currentZoneId) return false;
+      if (state.roleFilter !== 'all' && b.role !== state.roleFilter) return false;
+      return true;
+    });
+
+    // Draw trails
+    if (state.showTrails) {
+      zoneBots.forEach(b => {
+        if (!b.trail || b.trail.length < 2) return;
+        ctx.beginPath();
+        b.trail.forEach((pt, idx) => {
+          const px = (pt.pct_x / 100) * canvas.width;
+          const py = (pt.pct_y / 100) * canvas.height;
+          if (idx === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        });
+        ctx.strokeStyle = b.role === 'tank' ? 'rgba(56, 139, 253, 0.4)' : b.role === 'healer' ? 'rgba(46, 160, 67, 0.4)' : 'rgba(248, 81, 73, 0.4)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      });
+    }
+
+    // Draw bot dots
+    zoneBots.forEach(b => {
+      const dot = document.createElement('div');
+      dot.className = 'bot-dot';
+      dot.style.left = `${b.pct_x}%`;
+      dot.style.top = `${b.pct_y}%`;
+      dot.style.backgroundColor = b.role === 'tank' ? 'var(--color-tank)' : b.role === 'healer' ? 'var(--color-healer)' : 'var(--color-dps)';
+      dot.style.boxShadow = `0 0 6px ${dot.style.backgroundColor}`;
+
+      // Heading cone
+      const cone = document.createElement('div');
+      cone.className = 'bot-heading-cone';
+      const deg = (b.o || 0) * (180 / Math.PI);
+      cone.style.transform = `rotate(${-deg}deg)`;
+      dot.appendChild(cone);
+
+      dot.addEventListener('mouseenter', (e) => {
+        if (!el.mapTooltip) return;
+        el.mapTooltip.style.display = 'block';
+        el.mapTooltip.style.left = `${e.clientX + 12}px`;
+        el.mapTooltip.style.top = `${e.clientY + 12}px`;
+        el.mapTooltip.innerHTML = `
+          <strong style="color: #fff;">${b.name}</strong> (${b.class || 'Unknown'} Lvl ${b.level})<br>
+          <span style="color: var(--text-muted);">Role:</span> ${b.role.toUpperCase()}<br>
+          <span style="color: var(--text-muted);">Status:</span> ${b.state || 'idle'}<br>
+          <span style="color: var(--text-muted);">Target:</span> ${b.target || 'None'}
+        `;
+      });
+
+      dot.addEventListener('mouseleave', () => {
+        if (el.mapTooltip) el.mapTooltip.style.display = 'none';
+      });
+
+      dot.addEventListener('click', () => selectBot(b.guid));
+      el.mapOverlay.appendChild(dot);
     });
   }
 
-  if (el.botSearch) {
-    el.botSearch.addEventListener('input', (e) => {
-      state.searchQuery = e.target.value.toLowerCase().trim();
-      renderMap();
-      renderRoster();
-    });
+  function selectBot(guid) {
+    state.selectedBotGuid = guid;
+    const b = state.bots.find(x => x.guid === guid);
+    if (!b || !el.botDrawer || !el.drawerContent) return;
+
+    el.botDrawer.style.display = 'block';
+    const hpPct = b.max_hp ? Math.round((b.hp / b.max_hp) * 100) : 100;
+    const powerPct = b.max_power ? Math.round((b.power / b.max_power) * 100) : 0;
+
+    el.drawerContent.innerHTML = `
+      <div style="font-size: 1.15rem; font-weight: 700; color: #fff; margin-bottom: 4px;">${b.name}</div>
+      <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 16px;">
+        Level ${b.level} ${b.class} · <span class="badge badge-info">${b.role.toUpperCase()}</span>
+      </div>
+
+      <div style="margin-bottom: 14px;">
+        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 4px;">
+          <span>Health</span><strong>${b.hp} / ${b.max_hp} (${hpPct}%)</strong>
+        </div>
+        <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${hpPct}%; background: var(--accent-green-bright);"></div></div>
+      </div>
+
+      <div style="margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 4px;">
+          <span>Mana / Energy</span><strong>${b.power} / ${b.max_power}</strong>
+        </div>
+        <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${powerPct}%; background: var(--accent-blue-bright);"></div></div>
+      </div>
+
+      <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; font-size: 0.8rem; display: flex; flex-direction: column; gap: 6px;">
+        <div><span style="color: var(--text-muted);">Status:</span> <strong>${b.state}</strong></div>
+        <div><span style="color: var(--text-muted);">Target:</span> <strong style="color: #f85149;">${b.target || 'None'}</strong></div>
+        <div><span style="color: var(--text-muted);">Strategy:</span> <span class="mono" style="font-size: 0.75rem;">${b.strategy || 'default'}</span></div>
+      </div>
+    `;
   }
 
   if (el.closeDrawer) {
     el.closeDrawer.addEventListener('click', () => {
+      if (el.botDrawer) el.botDrawer.style.display = 'none';
       state.selectedBotGuid = null;
-      el.botDrawer.style.display = 'none';
+    });
+  }
+
+  // Roster Table
+  function renderRoster() {
+    if (!el.rosterTable) return;
+    const query = (el.botSearch ? el.botSearch.value : '').toLowerCase().trim();
+    const filtered = state.bots.filter(b => {
+      if (state.roleFilter !== 'all' && b.role !== state.roleFilter) return false;
+      if (query && !b.name.toLowerCase().includes(query) && !b.class.toLowerCase().includes(query)) return false;
+      return true;
+    });
+
+    if (filtered.length === 0) {
+      el.rosterTable.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">No active bots found.</td></tr>`;
+      return;
+    }
+
+    el.rosterTable.innerHTML = '';
+    filtered.forEach(b => {
+      const tr = document.createElement('tr');
+      const hpPct = b.max_hp ? Math.round((b.hp / b.max_hp) * 100) : 100;
+      const roleBadge = b.role === 'tank' ? 'badge-info' : b.role === 'healer' ? 'badge-success' : 'badge-error';
+
+      tr.innerHTML = `
+        <td style="font-weight: 600; cursor: pointer; color: #58a6ff;" onclick="window.dashboardSelectBot(${b.guid})">${b.name}</td>
+        <td>${b.class}</td>
+        <td><span class="badge ${roleBadge}">${b.role.toUpperCase()}</span></td>
+        <td>${b.level}</td>
+        <td style="width: 140px;">
+          <div style="font-size: 0.7rem; margin-bottom: 2px;">${b.hp}/${b.max_hp} (${hpPct}%)</div>
+          <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${hpPct}%; background: var(--accent-green-bright);"></div></div>
+        </td>
+        <td><span class="badge ${b.state === 'combat' ? 'badge-error' : 'badge-info'}">${b.state}</span></td>
+        <td style="color: #f85149;">${b.target || '-'}</td>
+        <td class="mono" style="font-size: 0.8rem;">Zone ${b.zone}</td>
+      `;
+      el.rosterTable.appendChild(tr);
+    });
+  }
+
+  if (el.botSearch) {
+    el.botSearch.addEventListener('input', () => renderRoster());
+  }
+
+  if (el.roleFilter) {
+    el.roleFilter.addEventListener('change', (e) => {
+      state.roleFilter = e.target.value;
+      renderRoster();
+      renderMap();
+    });
+  }
+
+  // Incidents
+  function fetchAnomalies() {
+    fetch('/api/v1/anomalies')
+      .then(r => r.json())
+      .then(data => {
+        state.anomalies = data || [];
+        renderAnomalies();
+      })
+      .catch(() => {});
+  }
+
+  function renderAnomalies() {
+    if (!el.anomaliesTable) return;
+    if (el.anomaliesCount) el.anomaliesCount.textContent = state.anomalies.length;
+
+    const filtered = state.anomalies.filter(a => {
+      if (state.anomalyTypeFilter !== 'all' && a.type !== state.anomalyTypeFilter) return false;
+      if (state.anomalySeverityFilter !== 'all' && a.severity !== state.anomalySeverityFilter) return false;
+      return true;
+    });
+
+    if (filtered.length === 0) {
+      el.anomaliesTable.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 24px;">No incidents recorded.</td></tr>`;
+      return;
+    }
+
+    el.anomaliesTable.innerHTML = '';
+    filtered.slice().reverse().forEach(a => {
+      const tr = document.createElement('tr');
+      const timeStr = a.timestamp ? new Date(a.timestamp).toLocaleTimeString() : '-';
+      const sevBadge = a.severity === 'error' ? 'badge-error' : a.severity === 'warn' ? 'badge-warn' : 'badge-info';
+
+      tr.innerHTML = `
+        <td class="mono" style="font-size: 0.75rem; color: var(--text-muted);">${timeStr}</td>
+        <td><span class="badge ${sevBadge}">${a.severity}</span></td>
+        <td class="mono" style="font-size: 0.8rem; font-weight: 600;">${a.type}</td>
+        <td style="color: #fff; font-weight: 600;">${a.bot_name || '-'}</td>
+        <td class="mono" style="font-size: 0.75rem;">${a.zone_id || '-'}</td>
+        <td style="color: var(--text-muted);">${a.details || a.last_action || '-'}</td>
+        <td style="color: #f85149;">${a.target || '-'}</td>
+      `;
+      el.anomaliesTable.appendChild(tr);
     });
   }
 
@@ -153,14 +560,12 @@
       renderAnomalies();
     });
   }
-
   if (el.severityFilter) {
     el.severityFilter.addEventListener('change', (e) => {
       state.anomalySeverityFilter = e.target.value;
       renderAnomalies();
     });
   }
-
   if (el.clearAnomalies) {
     el.clearAnomalies.addEventListener('click', () => {
       state.anomalies = [];
@@ -168,21 +573,21 @@
     });
   }
 
-  // Initial Fetch of Anomaly History
-  async function fetchAnomalies() {
-    try {
-      const res = await fetch('/api/v1/anomalies');
-      if (res.ok) {
-        const data = await res.json();
-        state.anomalies = data || [];
-        renderAnomalies();
-      }
-    } catch (err) {
-      console.error('Failed to fetch anomalies:', err);
-    }
+  function fetchBots() {
+    fetch('/api/v1/bots')
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          state.bots = data;
+          updateDashboardMetrics();
+          if (state.activeTab === 'map') renderMap();
+          if (state.activeTab === 'roster') renderRoster();
+        }
+      })
+      .catch(() => {});
   }
 
-  // WebSocket Connection
+  // WebSocket Live Streaming
   function initWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/api/v1/stream`;
@@ -190,382 +595,82 @@
 
     ws.onopen = () => {
       state.wsConnected = true;
-      updateServerStatus();
-      console.log('[WS] Connected to telemetry stream');
+      if (el.consoleRate) el.consoleRate.innerHTML = '● connected';
+      appendConsoleLog(new Date().toLocaleTimeString(), 'ws', 'Connected to live telemetry stream.');
     };
 
-    ws.onmessage = (evt) => {
+    ws.onmessage = (event) => {
       try {
-        const msg = JSON.parse(evt.data);
-        if (msg.event === 'heartbeat') {
-          handleHeartbeat(msg.data);
-        } else if (msg.event === 'anomaly') {
-          handleAnomaly(msg.data);
-        }
-      } catch (e) {
-        console.error('Error handling WS message:', e);
-      }
+        const msg = JSON.parse(event.data);
+        handleStreamMessage(msg);
+      } catch (e) {}
     };
 
     ws.onclose = () => {
       state.wsConnected = false;
-      updateServerStatus();
-      console.log('[WS] Connection closed, retrying in 2s...');
-      setTimeout(initWebSocket, 2000);
-    };
-
-    ws.onerror = (err) => {
-      console.error('[WS] Error:', err);
-      ws.close();
+      if (el.consoleRate) el.consoleRate.innerHTML = '<span style="color: #f85149;">● disconnected</span>';
+      setTimeout(initWebSocket, 3000);
     };
   }
 
-  function handleHeartbeat(hb) {
-    state.server.online = true;
-    state.server.uptime = hb.uptime;
-    state.server.diff = hb.diff;
-    state.server.humans = hb.humans;
-    state.server.bots = hb.bots;
-    state.server.states = hb.states || state.server.states;
-    state.bots = hb.bot_list || [];
+  function handleStreamMessage(msg) {
+    const time = new Date().toLocaleTimeString();
 
-    updateServerStatus();
-    renderStateRatios();
-
-    if (state.activeTab === 'map') renderMap();
-    if (state.activeTab === 'roster') renderRoster();
-    if (state.selectedBotGuid) updateBotDrawer();
-  }
-
-  function handleAnomaly(a) {
-    state.anomalies.unshift(a);
-    if (state.anomalies.length > 1000) {
-      state.anomalies.pop();
-    }
-    renderAnomalies();
-  }
-
-  function updateServerStatus() {
-    if (!state.wsConnected || !state.server.online) {
-      el.statusText.textContent = state.wsConnected ? 'Server Offline' : 'Disconnected';
-      el.statusDot.className = 'status-dot offline';
-      el.statusPill.style.borderColor = 'rgba(239, 68, 68, 0.3)';
-      el.statusPill.style.color = '#f87171';
-    } else if (state.server.diff > 100) {
-      el.statusText.textContent = `Lagging (${state.server.diff.toFixed(1)}ms)`;
-      el.statusDot.className = 'status-dot lagging';
-      el.statusPill.style.borderColor = 'rgba(245, 158, 11, 0.3)';
-      el.statusPill.style.color = '#fbbf24';
-    } else {
-      el.statusText.textContent = 'Server Online';
-      el.statusDot.className = 'status-dot pulse';
-      el.statusPill.style.borderColor = 'rgba(16, 185, 129, 0.25)';
-      el.statusPill.style.color = '#34d399';
-    }
-
-    el.uptimeVal.textContent = formatUptime(state.server.uptime);
-    el.diffVal.textContent = `${(state.server.diff || 0).toFixed(1)}ms`;
-    el.humansVal.textContent = state.server.humans || 0;
-    el.botsVal.textContent = state.server.bots || 0;
-  }
-
-  function renderStateRatios() {
-    const s = state.server.states;
-    const cPct = ((s.combat || 0) * 100).toFixed(1);
-    const mPct = ((s.moving || 0) * 100).toFixed(1);
-    const rPct = ((s.resting || 0) * 100).toFixed(1);
-    const iPct = ((s.idle || 0) * 100).toFixed(1);
-    const dPct = ((s.dead || 0) * 100).toFixed(1);
-
-    if (el.stateCombat) el.stateCombat.style.width = `${cPct}%`;
-    if (el.stateMoving) el.stateMoving.style.width = `${mPct}%`;
-    if (el.stateResting) el.stateResting.style.width = `${rPct}%`;
-    if (el.stateIdle) el.stateIdle.style.width = `${iPct}%`;
-    if (el.stateDead) el.stateDead.style.width = `${dPct}%`;
-
-    document.getElementById('state-combat-txt').textContent = `${cPct}%`;
-    document.getElementById('state-moving-txt').textContent = `${mPct}%`;
-    document.getElementById('state-resting-txt').textContent = `${rPct}%`;
-    document.getElementById('state-idle-txt').textContent = `${iPct}%`;
-    document.getElementById('state-dead-txt').textContent = `${dPct}%`;
-  }
-
-  // 2D Map Rendering
-  function renderMap() {
-    if (!el.mapOverlay) return;
-
-    // Clear overlay markers
-    el.mapOverlay.innerHTML = '';
-
-    // Setup Canvas for breadcrumb trails
-    const canvas = el.mapCanvas;
-    const ctx = canvas ? canvas.getContext('2d') : null;
-    if (canvas && ctx) {
-      canvas.width = canvas.offsetWidth;
-      canvas.height = canvas.offsetHeight;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
-
-    const currentZone = state.currentZoneId;
-
-    // Filter bots in current zone
-    const botsInZone = state.bots.filter(b => {
-      if (b.zone !== currentZone && b.map !== ZONE_CONFIG[currentZone]?.map) {
-        // Fallback match: if bot's zone matches selected zone
-        if (b.zone !== currentZone) return false;
+    if (msg.event === 'PULSE') {
+      state.server.online = true;
+      state.server.uptime = msg.uptime || 0;
+      state.server.diff = msg.diff_ms || 0;
+      state.server.humans = msg.humans || 0;
+      state.server.bots = msg.bots || 0;
+      updateDashboardMetrics();
+      appendConsoleLog(time, 'pulse', `Heartbeat diff=${msg.diff_ms}ms, Players=${msg.humans}, Bots=${msg.bots}`);
+    } else if (msg.event === 'BOT_SNAPSHOT') {
+      const bot = msg.bot;
+      if (!bot) return;
+      const idx = state.bots.findIndex(b => b.guid === bot.guid);
+      if (idx >= 0) {
+        state.bots[idx] = bot;
+      } else {
+        state.bots.push(bot);
       }
-      if (state.roleFilter !== 'all' && b.role.toLowerCase() !== state.roleFilter) return false;
-      if (state.searchQuery && !b.name.toLowerCase().includes(state.searchQuery)) return false;
-      return true;
-    });
-
-    // Draw breadcrumb trails on canvas
-    if (state.showTrails && ctx && canvas) {
-      botsInZone.forEach(b => {
-        if (!b.trail || b.trail.length < 2) return;
-        ctx.beginPath();
-        let color = '#3b82f6';
-        if (b.role === 'healer') color = '#10b981';
-        if (b.role === 'dps') color = '#ef4444';
-
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
-        ctx.setLineDash([4, 4]);
-        ctx.globalAlpha = 0.5;
-
-        for (let i = 0; i < b.trail.length; i++) {
-          const pt = b.trail[i];
-          const px = (pt.pct_x / 100.0) * canvas.width;
-          const py = (pt.pct_y / 100.0) * canvas.height;
-          if (i === 0) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
-        }
-        ctx.stroke();
-      });
-      ctx.globalAlpha = 1.0;
-      ctx.setLineDash([]);
+      updateDashboardMetrics();
+      if (state.activeTab === 'map') renderMap();
+      if (state.activeTab === 'roster') renderRoster();
+      appendConsoleLog(time, 'doing', `<span class="log-bot">${bot.name}</span> (${bot.role}): status=${bot.state || 'idle'} target=${bot.target || 'none'}`);
+    } else if (msg.event === 'ANOMALY') {
+      const a = msg.anomaly;
+      if (a) {
+        state.anomalies.push(a);
+        renderAnomalies();
+        appendConsoleLog(time, a.type, `<span class="log-bot">${a.bot_name || 'Bot'}</span>: ${a.details || a.last_action}`, a.severity);
+      }
+    } else if (msg.event === 'STATE_RATIOS') {
+      const r = msg.ratios;
+      if (r) {
+        updateMacroRatios(r);
+      }
     }
-
-    // Render bot dots
-    botsInZone.forEach(b => {
-      // Must have valid map percentages
-      if (b.pct_x <= 0 || b.pct_x >= 100 || b.pct_y <= 0 || b.pct_y >= 100) return;
-
-      const marker = document.createElement('div');
-      marker.className = `bot-marker ${b.state === 'dead' ? 'dead' : b.role.toLowerCase()}`;
-      marker.style.left = `${b.pct_x}%`;
-      marker.style.top = `${b.pct_y}%`;
-      marker.dataset.guid = b.guid;
-
-      // Hover tooltip
-      marker.addEventListener('mouseenter', (e) => {
-        showTooltip(e, b);
-      });
-      marker.addEventListener('mouseleave', () => {
-        hideTooltip();
-      });
-
-      // Click selection
-      marker.addEventListener('click', () => {
-        selectBot(b.guid);
-      });
-
-      el.mapOverlay.appendChild(marker);
-    });
   }
 
-  function showTooltip(e, bot) {
-    if (!el.mapTooltip) return;
-    const hpPct = bot.max_hp ? Math.round((bot.hp / bot.max_hp) * 100) : 100;
-    const powerPct = bot.max_power ? Math.round((bot.power / bot.max_power) * 100) : 100;
-
-    let roleBadgeColor = '#3b82f6';
-    if (bot.role === 'healer') roleBadgeColor = '#10b981';
-    if (bot.role === 'dps') roleBadgeColor = '#ef4444';
-
-    el.mapTooltip.innerHTML = `
-      <div style="font-weight: 700; font-size: 0.85rem; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-        <span>${bot.name} (Lvl ${bot.level} ${bot.class})</span>
-        <span style="font-size: 0.7rem; padding: 1px 6px; border-radius: 4px; background: ${roleBadgeColor}33; color: ${roleBadgeColor}; text-transform: uppercase;">${bot.role}</span>
-      </div>
-      <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 6px;">
-        State: <strong style="color: #fff;">${bot.state}</strong> | Target: <strong style="color: #f87171;">${bot.target || 'None'}</strong>
-      </div>
-      <div style="margin-bottom: 4px;">
-        <div style="display: flex; justify-content: space-between; font-size: 0.7rem; margin-bottom: 2px;">
-          <span>HP</span><span>${bot.hp} / ${bot.max_hp} (${hpPct}%)</span>
-        </div>
-        <div class="progress-bar-bg"><div class="progress-bar-fill progress-hp" style="width: ${hpPct}%"></div></div>
-      </div>
-      <div>
-        <div style="display: flex; justify-content: space-between; font-size: 0.7rem; margin-bottom: 2px;">
-          <span>Power</span><span>${bot.power} / ${bot.max_power} (${powerPct}%)</span>
-        </div>
-        <div class="progress-bar-bg"><div class="progress-bar-fill progress-mana" style="width: ${powerPct}%"></div></div>
-      </div>
-    `;
-
-    el.mapTooltip.style.left = `${bot.pct_x}%`;
-    el.mapTooltip.style.top = `${bot.pct_y}%`;
-    el.mapTooltip.style.display = 'block';
-  }
-
-  function hideTooltip() {
-    if (el.mapTooltip) el.mapTooltip.style.display = 'none';
-  }
-
-  function selectBot(guid) {
-    state.selectedBotGuid = guid;
-    updateBotDrawer();
-  }
-
-  function updateBotDrawer() {
-    if (!state.selectedBotGuid || !el.botDrawer) return;
-    const bot = state.bots.find(b => b.guid === state.selectedBotGuid);
-    if (!bot) {
-      el.botDrawer.style.display = 'none';
-      return;
-    }
-
-    const hpPct = bot.max_hp ? Math.round((bot.hp / bot.max_hp) * 100) : 100;
-    const powerPct = bot.max_power ? Math.round((bot.power / bot.max_power) * 100) : 100;
-
-    el.drawerContent.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px;">
-        <h3 style="font-size: 1.25rem; font-weight: 700; color: #fff;">${bot.name}</h3>
-        <span class="badge ${bot.role === 'tank' ? 'badge-info' : bot.role === 'healer' ? 'badge-warn' : 'badge-error'}">${bot.role.toUpperCase()}</span>
-      </div>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 16px;">
-        <div>Class: <strong style="color: #fff;">${bot.class}</strong></div>
-        <div>Level: <strong style="color: #fff;">${bot.level}</strong></div>
-        <div>State: <strong style="color: #fff;">${bot.state}</strong></div>
-        <div>Zone: <strong style="color: #fff;">${bot.zone} (Map ${bot.map})</strong></div>
-        <div style="grid-column: span 2;">Target: <strong style="color: #f87171;">${bot.target || 'None'}</strong></div>
-        <div style="grid-column: span 2;">Strategy: <strong style="color: #818cf8;">${bot.strategy || 'None'}</strong></div>
-        <div style="grid-column: span 2;" class="mono">Coords: (${bot.x.toFixed(1)}, ${bot.y.toFixed(1)}, ${bot.z.toFixed(1)})</div>
-      </div>
-      <div style="margin-bottom: 10px;">
-        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 4px;">
-          <span>Health</span><span>${bot.hp} / ${bot.max_hp}</span>
-        </div>
-        <div class="progress-bar-bg" style="height: 8px;"><div class="progress-bar-fill progress-hp" style="width: ${hpPct}%"></div></div>
-      </div>
-      <div style="margin-bottom: 16px;">
-        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 4px;">
-          <span>Power</span><span>${bot.power} / ${bot.max_power}</span>
-        </div>
-        <div class="progress-bar-bg" style="height: 8px;"><div class="progress-bar-fill progress-mana" style="width: ${powerPct}%"></div></div>
-      </div>
-    `;
-
-    el.botDrawer.style.display = 'block';
-  }
-
-  // Anomalies Table Rendering
-  function renderAnomalies() {
-    if (!el.anomaliesTable) return;
-    el.anomaliesTable.innerHTML = '';
-
-    const filtered = state.anomalies.filter(a => {
-      if (state.anomalyTypeFilter !== 'all' && a.type !== state.anomalyTypeFilter) return false;
-      if (state.anomalySeverityFilter !== 'all' && a.severity !== state.anomalySeverityFilter) return false;
-      return true;
-    });
-
-    if (el.anomaliesCount) {
-      el.anomaliesCount.textContent = `${filtered.length} incidents`;
-    }
-
-    if (filtered.length === 0) {
-      el.anomaliesTable.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 24px;">No incidents recorded</td></tr>`;
-      return;
-    }
-
-    filtered.forEach(a => {
-      const tr = document.createElement('tr');
-      const timeStr = a.time_str || new Date(a.ts * 1000).toLocaleTimeString();
-      const sevBadge = a.severity === 'ERROR' ? 'badge-error' : a.severity === 'WARN' ? 'badge-warn' : 'badge-info';
-
-      tr.innerHTML = `
-        <td class="mono" style="font-size: 0.8rem; color: var(--text-muted);">${timeStr}</td>
-        <td><span class="badge ${sevBadge}">${a.type}</span></td>
-        <td style="font-weight: 600;">${a.bot}</td>
-        <td class="mono" style="font-size: 0.8rem;">Zone ${a.zone}</td>
-        <td style="color: #f87171;">${a.target || '-'}</td>
-        <td class="mono" style="font-size: 0.8rem;">${a.last_action || '-'}</td>
-        <td style="color: var(--text-muted);">${a.details}</td>
-      `;
-      el.anomaliesTable.appendChild(tr);
-    });
-  }
-
-  // Roster Table Rendering
-  function renderRoster() {
-    if (!el.rosterTable) return;
-    el.rosterTable.innerHTML = '';
-
-    const filtered = state.bots.filter(b => {
-      if (state.roleFilter !== 'all' && b.role.toLowerCase() !== state.roleFilter) return false;
-      if (state.searchQuery && !b.name.toLowerCase().includes(state.searchQuery)) return false;
-      return true;
-    });
-
-    if (filtered.length === 0) {
-      el.rosterTable.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">No active bots found</td></tr>`;
-      return;
-    }
-
-    filtered.forEach(b => {
-      const tr = document.createElement('tr');
-      const hpPct = b.max_hp ? Math.round((b.hp / b.max_hp) * 100) : 100;
-      const roleClass = b.role === 'tank' ? 'badge-info' : b.role === 'healer' ? 'badge-warn' : 'badge-error';
-
-      tr.innerHTML = `
-        <td style="font-weight: 600; cursor: pointer; color: #818cf8;" onclick="window.dashboardSelectBot(${b.guid})">${b.name}</td>
-        <td>${b.class}</td>
-        <td><span class="badge ${roleClass}">${b.role.toUpperCase()}</span></td>
-        <td>${b.level}</td>
-        <td style="width: 140px;">
-          <div style="font-size: 0.7rem; margin-bottom: 2px;">${b.hp}/${b.max_hp} (${hpPct}%)</div>
-          <div class="progress-bar-bg"><div class="progress-bar-fill progress-hp" style="width: ${hpPct}%"></div></div>
-        </td>
-        <td><span class="badge ${b.state === 'combat' ? 'badge-error' : 'badge-info'}">${b.state}</span></td>
-        <td style="color: #f87171;">${b.target || '-'}</td>
-        <td class="mono" style="font-size: 0.8rem;">Zone ${b.zone}</td>
-      `;
-      el.rosterTable.appendChild(tr);
-    });
-  }
-
-  function initZoneSelector() {
-    fetch('/data/zone_maps.json')
-      .then(r => r.json())
-      .then(cfg => {
-        if (!cfg || Object.keys(cfg).length === 0) return;
-        ZONE_CONFIG = cfg;
-        if (el.zoneSelect) {
-          el.zoneSelect.innerHTML = '';
-          const sorted = Object.entries(ZONE_CONFIG).sort((a, b) => a[1].name.localeCompare(b[1].name));
-          sorted.forEach(([id, z]) => {
-            const opt = document.createElement('option');
-            opt.value = id;
-            opt.textContent = z.name;
-            if (parseInt(id, 10) === state.currentZoneId) opt.selected = true;
-            el.zoneSelect.appendChild(opt);
-          });
-        }
-        loadZoneMap(state.currentZoneId);
-      })
-      .catch(() => {
-        // Fallback to static options in index.html
-      });
+  function updateMacroRatios(r) {
+    const toPct = (val) => `${Math.round((val || 0) * 100)}%`;
+    if (el.stateCombat) el.stateCombat.style.width = toPct(r.combat);
+    if (el.stateCombatTxt) el.stateCombatTxt.textContent = toPct(r.combat);
+    if (el.stateMoving) el.stateMoving.style.width = toPct(r.moving);
+    if (el.stateMovingTxt) el.stateMovingTxt.textContent = toPct(r.moving);
+    if (el.stateResting) el.stateResting.style.width = toPct(r.resting);
+    if (el.stateRestingTxt) el.stateRestingTxt.textContent = toPct(r.resting);
+    if (el.stateIdle) el.stateIdle.style.width = toPct(r.idle);
+    if (el.stateIdleTxt) el.stateIdleTxt.textContent = toPct(r.idle);
+    if (el.stateDead) el.stateDead.style.width = toPct(r.dead);
+    if (el.stateDeadTxt) el.stateDeadTxt.textContent = toPct(r.dead);
   }
 
   window.dashboardSelectBot = selectBot;
 
-  // Initialize
+  // Init
   initZoneSelector();
-  loadZoneMap(state.currentZoneId);
+  fetchBots();
   fetchAnomalies();
   initWebSocket();
 
