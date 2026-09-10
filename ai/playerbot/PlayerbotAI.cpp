@@ -271,6 +271,20 @@ PlayerbotAI::~PlayerbotAI()
         delete aiObjectContext;
 }
 
+Player* PlayerbotAI::GetLiveMaster()
+{
+    if (!master)
+        return nullptr;
+
+    Player* live = masterGuid ? sObjectAccessor.FindPlayer(masterGuid) : nullptr;
+    if (live != master)
+    {
+        master = nullptr;
+        return nullptr;
+    }
+    return master;
+}
+
 void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 {
     AiObjectContext* context = aiObjectContext;
