@@ -695,6 +695,7 @@ bool PlayerbotAIConfig::Initialize()
     autoDoQuests = config.GetBoolDefault("AiPlayerbot.AutoDoQuests", true);
     generateTravelNodes = config.GetBoolDefault("AiPlayerbot.GenerateTravelNodes", false);
     generateFishLocations = config.GetBoolDefault("AiPlayerbot.GenerateFishLocations", false);
+    asyncTravelPartitions = config.GetBoolDefault("AiPlayerbot.AsyncTravelPartitions", false); // false = travel/terrain lookups on main thread only (crash-safe on cores without concurrent terrain load)
     if (generateTravelNodes || generateFishLocations)
     {
         sLog.outError("TortoiseBots: travel/fish cache generation is disabled because the pinned core PathInfo has no area query or avoidance filter; use persisted caches or direct movement/fishing.");

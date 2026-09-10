@@ -30,3 +30,9 @@ TortoiseBots.PendingAddRemoveTest.CharacterGuid = 0
 
 # Module diagnostics.
 TortoiseBots.LogLevel = 1
+
+# Travel/terrain lookups run inline on the world thread when disabled (safe).
+# Cores whose MMapManager does not support concurrent tile loading (e.g. Penqle /
+# vmangos) MUST keep this at 0 to avoid a worker-thread SIGSEGV; set 1 only on
+# cores with concurrent terrain support.
+# AiPlayerbot.AsyncTravelPartitions = 0

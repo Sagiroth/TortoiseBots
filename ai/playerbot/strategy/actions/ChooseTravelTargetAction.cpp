@@ -730,7 +730,7 @@ bool RequestTravelTargetAction::Execute(Event& event)
 
     ai->TellDebug(ai->GetMaster(), "Getting new destination ranges for " + TravelDestinationPurposeName.at(actionPurpose), "debug travel");
 
-    *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async(std::launch::async, [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, purpose = actionPurpose]() { return sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)purpose); });
+    *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, purpose = actionPurpose]() { return sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)purpose); });
 
     AI_VALUE(TravelTarget*, "travel target")->SetStatus(TravelStatus::TRAVEL_STATUS_PREPARE);
     SET_AI_VALUE2(std::string, "manual string", "future travel purpose", getQualifier());
@@ -830,7 +830,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         else                                                        //Last 200 minutes
             WorldPvpLocation = "Strangletorn Vale";
 
-        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async(std::launch::async, [travelInfo = PlayerTravelInfo(bot), center, WorldPvpLocation]()
+        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [travelInfo = PlayerTravelInfo(bot), center, WorldPvpLocation]()
             {
                 PartitionedTravelList list;
                 for (auto& destination : ChooseTravelTargetAction::FindDestination(travelInfo, WorldPvpLocation, true, false, false, false, false, false))
@@ -884,7 +884,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             return false;
         }
 
-        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async(std::launch::async, [travelInfo = PlayerTravelInfo(bot), center, meetingLocation]()
+        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [travelInfo = PlayerTravelInfo(bot), center, meetingLocation]()
             {
                 PartitionedTravelList list;
                 for (auto& destination : ChooseTravelTargetAction::FindDestination(travelInfo, meetingLocation, true, false, false, false, false, false))
@@ -973,7 +973,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                 }
             }
 
-            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async(std::launch::async,
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred),
                 [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, questId,
                 questComplete, questInProgress, objectiveEntries]()
                 {
@@ -1036,7 +1036,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         }
         else if (order.type == GuildOrderType::Farm || order.type == GuildOrderType::Kill)
         {
-            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async(std::launch::async, [travelInfo = PlayerTravelInfo(bot), center, orderTarget, partitions = travelPartitions]()
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [travelInfo = PlayerTravelInfo(bot), center, orderTarget, partitions = travelPartitions]()
                 {
                     PartitionedTravelList list;
 
@@ -1161,7 +1161,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         }
         else if (order.type == GuildOrderType::Explore)
         {
-            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async(std::launch::async, [travelInfo = PlayerTravelInfo(bot), center, orderTarget]()
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [travelInfo = PlayerTravelInfo(bot), center, orderTarget]()
                 {
                     PartitionedTravelList list;
                     for (auto& destination : ChooseTravelTargetAction::FindDestination(travelInfo, orderTarget, true, false, false, false, false, false))
@@ -1178,7 +1178,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         }
         else if (order.type == GuildOrderType::AuctionHouse)
         {
-            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async(std::launch::async, [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
                 {
                     PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg);
 
@@ -1225,7 +1225,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             return false;
         }
 
-        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async(std::launch::async, [entries = trainerEntries, partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
+        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [entries = trainerEntries, partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
             {
                 return sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::Trainer, entries, false);
             });
@@ -1240,7 +1240,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             return false;
         }
 
-        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async(std::launch::async, [entries = mountVendorEntries, partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
+        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [entries = mountVendorEntries, partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
             {
                 return sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::Vendor, entries, false);
             });
@@ -1264,7 +1264,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             return false;
         }
 
-        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async(std::launch::async, [entries = reagentVendorEntries, partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
+        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [entries = reagentVendorEntries, partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
             {
                 return sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::Vendor, entries, false);
             });
@@ -1281,7 +1281,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             useFlags = NPCFlags::UNIT_NPC_FLAG_PETITIONER;
 
 
-        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async(std::launch::async, [cityFlags = useFlags, partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
+        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [cityFlags = useFlags, partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
             {
                 PartitionedTravelList list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GenericRpg);
 
@@ -1507,7 +1507,7 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
             takers, objectives, givers);
     }
 
-    *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async(std::launch::async, [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, destinationFetches]()
+    *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, destinationFetches]()
         {
             PartitionedTravelList list;
             for (auto [purpose, questId, range] : destinationFetches)
