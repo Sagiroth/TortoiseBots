@@ -1,3 +1,21 @@
+// Winsock has to be the first thing this translation unit includes. windows.h - which
+// several core headers below pull in transitively - defaults to winsock1 if it gets there
+// first, and winsock2.h then collides with it (WinSock.h already declared errors). Nothing
+// here happened to trip that only because DatabaseMysql.h currently includes winsock2.h
+// itself before any of these; that is an accident of its own include order, not a guarantee.
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
+#else
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <unistd.h>
+#include <fcntl.h>
+#endif
+
 #include "ObservabilityEmitter.h"
 
 #include "BotManager.h"
@@ -11,13 +29,6 @@
 #include "Log.h"
 #include "Timer.h"
 #include "MotionMaster.h"
-
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include <cmath>
 #include <cstring>
 #include <cstdlib>
@@ -203,7 +214,7 @@ ObservabilityEmitter::ObservabilityEmitter()
     : m_enabled(false)
     , m_host("127.0.0.1")
     , m_port(9195)
-    , m_socketFd(-1)
+    , m_socketFd(kInvalidSocket)
     , m_destAddr(nullptr)
     , m_snapshotTimerMs(0)
     , m_sessionId(0)
@@ -251,17 +262,22 @@ void ObservabilityEmitter::Initialize()
     if (m_host.empty())
         m_host = "127.0.0.1";
 
-    int fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (fd < 0)
+    SocketHandle fd = static_cast<SocketHandle>(socket(AF_INET, SOCK_DGRAM, 0));
+    if (fd == kInvalidSocket)
     {
         sLog.outError("TortoiseBots: failed to create UDP socket for Observability emitter");
         m_enabled = false;
         return;
     }
 
-    int flags = fcntl(fd, F_GETFL, 0);
+#ifdef _WIN32
+    u_long nonBlocking = 1;
+    ioctlsocket(static_cast<SOCKET>(fd), FIONBIO, &nonBlocking);
+#else
+    int flags = fcntl(static_cast<int>(fd), F_GETFL, 0);
     if (flags >= 0)
-        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+        fcntl(static_cast<int>(fd), F_SETFL, flags | O_NONBLOCK);
+#endif
 
     struct sockaddr_in* addr = new struct sockaddr_in();
     std::memset(addr, 0, sizeof(*addr));
@@ -299,10 +315,14 @@ void ObservabilityEmitter::Shutdown()
 {
     {
         std::lock_guard<std::mutex> lock(m_socketMutex);
-        if (m_socketFd >= 0)
+        if (m_socketFd != kInvalidSocket)
         {
-            close(m_socketFd);
-            m_socketFd = -1;
+#ifdef _WIN32
+            closesocket(static_cast<SOCKET>(m_socketFd));
+#else
+            close(static_cast<int>(m_socketFd));
+#endif
+            m_socketFd = kInvalidSocket;
         }
         if (m_destAddr)
         {
@@ -324,7 +344,7 @@ void ObservabilityEmitter::Shutdown()
 
 bool ObservabilityEmitter::IsEnabled() const
 {
-    return m_enabled && m_socketFd >= 0;
+    return m_enabled && m_socketFd != kInvalidSocket;
 }
 
 void ObservabilityEmitter::SendDatagram(std::string const& payload)
@@ -333,11 +353,18 @@ void ObservabilityEmitter::SendDatagram(std::string const& payload)
         return;
 
     std::lock_guard<std::mutex> lock(m_socketMutex);
-    if (m_socketFd < 0 || !m_destAddr)
+    if (m_socketFd == kInvalidSocket || !m_destAddr)
         return;
 
-    ssize_t res = sendto(m_socketFd, payload.c_str(), payload.length(), MSG_DONTWAIT,
+#ifdef _WIN32
+    // No MSG_DONTWAIT on Winsock; the socket was put in non-blocking mode above, which is
+    // what the flag is here for. sendto takes an int length and returns int.
+    int res = sendto(static_cast<SOCKET>(m_socketFd), payload.c_str(), static_cast<int>(payload.length()), 0,
+                     reinterpret_cast<struct sockaddr*>(m_destAddr), sizeof(struct sockaddr_in));
+#else
+    ssize_t res = sendto(static_cast<int>(m_socketFd), payload.c_str(), payload.length(), MSG_DONTWAIT,
                          reinterpret_cast<struct sockaddr*>(m_destAddr), sizeof(struct sockaddr_in));
+#endif
     if (res < 0)
     {
         static time_t lastLog = 0;
@@ -345,7 +372,11 @@ void ObservabilityEmitter::SendDatagram(std::string const& payload)
         if (now - lastLog >= 10)
         {
             lastLog = now;
+#ifdef _WIN32
+            sLog.outError("TortoiseBots: Observability sendto failed (payload len=%zu, error=%d)", payload.length(), WSAGetLastError());
+#else
             sLog.outError("TortoiseBots: Observability sendto failed (payload len=%zu, errno=%d)", payload.length(), errno);
+#endif
         }
     }
 }
