@@ -47,16 +47,31 @@ type StateRatios struct {
 	Idle    float64 `json:"idle"`
 }
 
+type ClassRoleCount struct {
+	Class string `json:"class"`
+	Role  string `json:"role"`
+	Count uint32 `json:"count"`
+}
+
 // HeartbeatPayload is received periodically over UDP from the C++ module.
 type HeartbeatPayload struct {
-	TS          int64         `json:"ts"`
-	Type        string        `json:"type"`
-	Uptime      uint32        `json:"uptime"`
-	TickDiffMs  float64       `json:"diff"`
-	HumansCount uint32        `json:"humans"`
-	BotsCount   uint32        `json:"bots"`
-	States      StateRatios   `json:"states"`
-	BotList     []BotSnapshot `json:"bot_list"`
+	TS          int64            `json:"ts"`
+	Type        string           `json:"type"`
+	Uptime      uint32           `json:"uptime"`
+	TickDiffMs  float64          `json:"diff"`
+	HumansCount uint32           `json:"humans"`
+	BotsCount   uint32           `json:"bots"`
+	States      StateRatios      `json:"states"`
+	Counts      []ClassRoleCount `json:"counts,omitempty"`
+	BotList     []BotSnapshot    `json:"bot_list,omitempty"`
+}
+
+// BotBatchPayload delivers chunked bot states to prevent UDP fragmentation issues.
+type BotBatchPayload struct {
+	Type         string        `json:"type"`
+	BatchIndex   int           `json:"batch_index"`
+	TotalBatches int           `json:"total_batches"`
+	Bots         []BotSnapshot `json:"bots"`
 }
 
 // Position represents 3D coordinates.

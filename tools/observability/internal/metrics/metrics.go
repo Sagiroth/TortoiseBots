@@ -87,16 +87,22 @@ func (r *Registry) RecordHeartbeat(p *model.HeartbeatPayload) {
 
 	// Reset active bot counts and re-tally
 	r.botActiveCount.Reset()
-	type countKey struct {
-		class, role string
-	}
-	counts := make(map[countKey]float64)
-	for _, b := range p.BotList {
-		key := countKey{class: b.Class, role: b.Role}
-		counts[key]++
-	}
-	for k, v := range counts {
-		r.botActiveCount.WithLabelValues(k.class, k.role).Set(v)
+	if len(p.Counts) > 0 {
+		for _, c := range p.Counts {
+			r.botActiveCount.WithLabelValues(c.Class, c.Role).Set(float64(c.Count))
+		}
+	} else {
+		type countKey struct {
+			class, role string
+		}
+		counts := make(map[countKey]float64)
+		for _, b := range p.BotList {
+			key := countKey{class: b.Class, role: b.Role}
+			counts[key]++
+		}
+		for k, v := range counts {
+			r.botActiveCount.WithLabelValues(k.class, k.role).Set(v)
+		}
 	}
 }
 

@@ -218,8 +218,18 @@ void ObservabilityEmitter::SendDatagram(std::string const& payload)
     if (m_socketFd < 0 || !m_destAddr)
         return;
 
-    sendto(m_socketFd, payload.c_str(), payload.length(), MSG_DONTWAIT,
-           reinterpret_cast<struct sockaddr*>(m_destAddr), sizeof(struct sockaddr_in));
+    ssize_t res = sendto(m_socketFd, payload.c_str(), payload.length(), MSG_DONTWAIT,
+                         reinterpret_cast<struct sockaddr*>(m_destAddr), sizeof(struct sockaddr_in));
+    if (res < 0)
+    {
+        static time_t lastLog = 0;
+        time_t now = time(nullptr);
+        if (now - lastLog >= 10)
+        {
+            lastLog = now;
+            sLog.outError("TortoiseBots: Observability sendto failed (payload len=%zu, errno=%d)", payload.length(), errno);
+        }
+    }
 }
 
 void ObservabilityEmitter::EmitAnomaly(std::string const& type,
@@ -457,6 +467,13 @@ void ObservabilityEmitter::Update(uint32 diff)
         uint32 botCount = static_cast<uint32>(botSnapshots.size());
         uint32 humanCount = activeSessions > botCount ? (activeSessions - botCount) : 0;
 
+        // Tally class and role counts for the compact heartbeat
+        std::map<std::pair<std::string, std::string>, uint32> countMap;
+        for (BotTelemetrySnapshot const& b : botSnapshots)
+        {
+            countMap[{b.className, b.role}]++;
+        }
+
         std::ostringstream ss;
         ss << "{\"ts\":" << time(nullptr)
            << ",\"type\":\"HEARTBEAT\""
@@ -470,35 +487,58 @@ void ObservabilityEmitter::Update(uint32 diff)
            << "\"resting\":" << rResting << ","
            << "\"dead\":" << rDead << ","
            << "\"idle\":" << rIdle
-           << "}"
-           << ",\"bot_list\":[";
+           << "},\"counts\":[";
 
-        for (size_t i = 0; i < botSnapshots.size(); ++i)
+        bool firstCount = true;
+        for (auto const& kv : countMap)
         {
-            BotTelemetrySnapshot const& b = botSnapshots[i];
-            if (i > 0) ss << ",";
-            ss << "{\"name\":\"" << EscapeJson(b.name) << "\""
-               << ",\"guid\":" << b.guid
-               << ",\"class\":\"" << EscapeJson(b.className) << "\""
-               << ",\"role\":\"" << EscapeJson(b.role) << "\""
-               << ",\"level\":" << b.level
-               << ",\"hp\":" << b.hp
-               << ",\"max_hp\":" << b.maxHp
-               << ",\"power\":" << b.power
-               << ",\"max_power\":" << b.maxPower
-               << ",\"map\":" << b.mapId
-               << ",\"zone\":" << b.zoneId
-               << ",\"x\":" << std::fixed << std::setprecision(1) << b.x
-               << ",\"y\":" << b.y
-               << ",\"z\":" << b.z
-               << ",\"o\":" << std::setprecision(2) << b.o
-               << ",\"target\":\"" << EscapeJson(b.target) << "\""
-               << ",\"strategy\":\"" << EscapeJson(b.strategy) << "\""
-               << ",\"state\":\"" << EscapeJson(b.state) << "\"}";
+            if (!firstCount) ss << ",";
+            firstCount = false;
+            ss << "{\"class\":\"" << EscapeJson(kv.first.first) << "\",\"role\":\"" << EscapeJson(kv.first.second) << "\",\"count\":" << kv.second << "}";
         }
         ss << "]}";
 
         SendDatagram(ss.str());
+
+        // Send bots in chunked batches of 25 to guarantee each UDP datagram stays under 7 KB
+        constexpr size_t kBatchSize = 25;
+        size_t totalBatches = botSnapshots.empty() ? 0 : ((botSnapshots.size() + kBatchSize - 1) / kBatchSize);
+        for (size_t bIdx = 0; bIdx < totalBatches; ++bIdx)
+        {
+            size_t start = bIdx * kBatchSize;
+            size_t end = std::min(start + kBatchSize, botSnapshots.size());
+
+            std::ostringstream bss;
+            bss << "{\"type\":\"BOT_BATCH\",\"batch_index\":" << bIdx
+                << ",\"total_batches\":" << totalBatches
+                << ",\"bots\":[";
+
+            for (size_t i = start; i < end; ++i)
+            {
+                BotTelemetrySnapshot const& b = botSnapshots[i];
+                if (i > start) bss << ",";
+                bss << "{\"name\":\"" << EscapeJson(b.name) << "\""
+                    << ",\"guid\":" << b.guid
+                    << ",\"class\":\"" << EscapeJson(b.className) << "\""
+                    << ",\"role\":\"" << EscapeJson(b.role) << "\""
+                    << ",\"level\":" << b.level
+                    << ",\"hp\":" << b.hp
+                    << ",\"max_hp\":" << b.maxHp
+                    << ",\"power\":" << b.power
+                    << ",\"max_power\":" << b.maxPower
+                    << ",\"map\":" << b.mapId
+                    << ",\"zone\":" << b.zoneId
+                    << ",\"x\":" << std::fixed << std::setprecision(1) << b.x
+                    << ",\"y\":" << b.y
+                    << ",\"z\":" << b.z
+                    << ",\"o\":" << std::setprecision(2) << b.o
+                    << ",\"target\":\"" << EscapeJson(b.target) << "\""
+                    << ",\"strategy\":\"" << EscapeJson(b.strategy) << "\""
+                    << ",\"state\":\"" << EscapeJson(b.state) << "\"}";
+            }
+            bss << "]}";
+            SendDatagram(bss.str());
+        }
     }
 }
 

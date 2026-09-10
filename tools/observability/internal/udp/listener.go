@@ -114,7 +114,8 @@ func (l *Listener) processPacket(data []byte) {
 		return
 	}
 
-	if header.Type == "HEARTBEAT" {
+	switch header.Type {
+	case "HEARTBEAT":
 		var hb model.HeartbeatPayload
 		if err := json.Unmarshal(data, &hb); err != nil {
 			return
@@ -123,30 +124,12 @@ func (l *Listener) processPacket(data []byte) {
 		l.trailMu.Lock()
 		l.lastHeartbeat = &hb
 
-		// Project positions and calculate trails
-		for i := range hb.BotList {
-			bot := &hb.BotList[i]
-			if px, py, ok := l.zoneProj.Project(bot.MapID, bot.ZoneID, bot.X, bot.Y); ok {
-				bot.PctX = px
-				bot.PctY = py
+		if len(hb.BotList) > 0 {
+			for i := range hb.BotList {
+				l.projectAndTrail(&hb.BotList[i])
 			}
-
-			// Update trail history
-			coord := model.Coordinate{
-				X:    bot.X,
-				Y:    bot.Y,
-				PctX: bot.PctX,
-				PctY: bot.PctY,
-			}
-			trail := l.trails[bot.GUID]
-			trail = append(trail, coord)
-			if len(trail) > 10 {
-				trail = trail[len(trail)-10:]
-			}
-			l.trails[bot.GUID] = trail
-			bot.Trail = trail
+			l.lastBots = hb.BotList
 		}
-		l.lastBots = hb.BotList
 		l.trailMu.Unlock()
 
 		l.metricsReg.RecordHeartbeat(&hb)
@@ -154,7 +137,30 @@ func (l *Listener) processPacket(data []byte) {
 		if l.hub != nil {
 			l.hub.Broadcast("heartbeat", hb)
 		}
-	} else {
+
+	case "BOT_BATCH":
+		var batch model.BotBatchPayload
+		if err := json.Unmarshal(data, &batch); err != nil {
+			return
+		}
+
+		l.trailMu.Lock()
+		// If first batch, replace or update
+		if batch.BatchIndex == 0 {
+			l.lastBots = make([]model.BotSnapshot, 0, len(batch.Bots)*batch.TotalBatches)
+		}
+		for i := range batch.Bots {
+			bot := &batch.Bots[i]
+			l.projectAndTrail(bot)
+			l.lastBots = append(l.lastBots, *bot)
+		}
+		l.trailMu.Unlock()
+
+		if l.hub != nil {
+			l.hub.Broadcast("bots", batch.Bots)
+		}
+
+	default:
 		// Anomaly event
 		var anomaly model.AnomalyPayload
 		if err := json.Unmarshal(data, &anomaly); err != nil {
@@ -168,6 +174,27 @@ func (l *Listener) processPacket(data []byte) {
 			l.hub.Broadcast("anomaly", saved)
 		}
 	}
+}
+
+func (l *Listener) projectAndTrail(bot *model.BotSnapshot) {
+	if px, py, ok := l.zoneProj.Project(bot.MapID, bot.ZoneID, bot.X, bot.Y); ok {
+		bot.PctX = px
+		bot.PctY = py
+	}
+
+	coord := model.Coordinate{
+		X:    bot.X,
+		Y:    bot.Y,
+		PctX: bot.PctX,
+		PctY: bot.PctY,
+	}
+	trail := l.trails[bot.GUID]
+	trail = append(trail, coord)
+	if len(trail) > 10 {
+		trail = trail[len(trail)-10:]
+	}
+	l.trails[bot.GUID] = trail
+	bot.Trail = trail
 }
 
 func (l *Listener) GetLastBots() []model.BotSnapshot {
