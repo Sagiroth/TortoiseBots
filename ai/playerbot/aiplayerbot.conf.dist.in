@@ -5160,3 +5160,9 @@ AiPlayerbot.HealDistance = 30
 # The same for battlegrounds, where tighter is better. Previously this was a hard
 # halving of the value above, which tied the two together for no good reason.
 AiPlayerbot.HealDistanceBg = 25
+
+# Travel/terrain lookups run inline on the world thread when disabled (safe).
+# Cores whose MMapManager does not support concurrent tile loading (e.g. Penqle /
+# vmangos) MUST keep this at 0 to avoid a worker-thread SIGSEGV; set 1 only on
+# cores with concurrent terrain support.
+# AiPlayerbot.AsyncTravelPartitions = 0
