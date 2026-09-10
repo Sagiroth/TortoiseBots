@@ -473,6 +473,8 @@ bool BotManager::AddBotWithMaster(uint32_t accountId, ::ObjectGuid guid, ::Objec
     entry.record.masterGuid = masterGuid;
     entry.record.lifecycle = BotLifecycle::PendingAdd;
     m_bots.emplace(key, std::move(entry));
+    if (!masterGuid.IsEmpty())
+        BotActivityLeaseManager::Instance().ClaimForMaster(key);
     sLog.outString("TortoiseBots: AddBot %s on acct %u master %s (PendingAdd, StartHeadlessSession)",
         guid.GetString().c_str(), accountId, masterGuid.GetString().c_str());
     return true;

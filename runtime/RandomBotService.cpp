@@ -868,16 +868,19 @@ void RandomBotService::MaintainOnlinePool()
             }
             if (BotSessionAdapter::GetHeadlessSessionState(pinnedCandidate->characterGuid) != HeadlessSessionState::NotFound)
                 continue;
+            uint32 guidLow = pinnedCandidate->characterGuid.GetCounter();
+            if (!BotActivityLeaseManager::Instance().TryAcquire(guidLow, BotActivity::Grinding, 0))
+                continue;
+
             if (BotManager::Instance().AddRandomBot(pinnedCandidate->accountId, pinnedCandidate->characterGuid))
             {
                 ++online;
                 ++added;
-                // Indefinite Grinding lease for autonomous random bots; structured
-                // work (LFT/BG/Trading) or a human master preempts it.
-                BotActivityLeaseManager::Instance().TryAcquire(pinnedCandidate->characterGuid.GetCounter(), BotActivity::Grinding, 0);
                 sLog.outString("TortoiseBots: pinned random bot %s queued on account %u (prioritized)",
                     pinnedCandidate->characterGuid.GetString().c_str(), pinnedCandidate->accountId);
             }
+            else
+                BotActivityLeaseManager::Instance().Release(guidLow, BotActivity::Grinding);
         }
     }
 
@@ -902,14 +905,19 @@ void RandomBotService::MaintainOnlinePool()
         if (BotSessionAdapter::GetHeadlessSessionState(candidate.characterGuid) != HeadlessSessionState::NotFound)
             continue;
 
+        uint32 guidLow = candidate.characterGuid.GetCounter();
+        if (!BotActivityLeaseManager::Instance().TryAcquire(guidLow, BotActivity::Grinding, 0))
+            continue;
+
         if (BotManager::Instance().AddRandomBot(candidate.accountId, candidate.characterGuid))
         {
             ++online;
             ++added;
-            BotActivityLeaseManager::Instance().TryAcquire(candidate.characterGuid.GetCounter(), BotActivity::Grinding, 0);
             sLog.outString("TortoiseBots: native random bot %s queued on account %u",
                 candidate.characterGuid.GetString().c_str(), candidate.accountId);
         }
+        else
+            BotActivityLeaseManager::Instance().Release(guidLow, BotActivity::Grinding);
     }
 }
 

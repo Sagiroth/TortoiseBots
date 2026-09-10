@@ -891,7 +891,14 @@ bool AhMarketService::BuyAuctionCandidate(AuctionEntry* auction, AuctionHouseObj
     packet << auction->Id;
     packet << targetPrice;
 
+    BotActivity previousActivity = BotActivityLeaseManager::Instance().GetActivity(buyer->GetGUIDLow());
+    if (!BotActivityLeaseManager::Instance().TryAcquire(buyer->GetGUIDLow(), BotActivity::Trading, 120000))
+        return false;
+
     buyer->GetSession()->HandleAuctionPlaceBid(packet);
+    BotActivity restore = previousActivity == BotActivity::Grinding
+        ? BotActivity::Grinding : BotActivity::Idle;
+    BotActivityLeaseManager::Instance().Release(buyer->GetGUIDLow(), BotActivity::Trading, restore);
     ++m_totalBought;
     sLog.outString("TortoiseBots: AhMarket buyer %s placed %s on auc %u (item %s x%u) for %u",
         buyer->GetName(), canBuyout ? "buyout" : "bid", auction->Id, proto->Name1.c_str(), count, targetPrice);
@@ -1307,6 +1314,7 @@ void AhMarketService::Update(uint32_t diff)
         size_t idx = (start + offset) % eligible.size();
         Player* bot = eligible[idx];
         uint32_t guidLow = bot->GetGUIDLow();
+        BotActivity previousActivity = BotActivityLeaseManager::Instance().GetActivity(guidLow);
         // 2-minute Trading lease covers teleport travel + posting.
         if (!BotActivityLeaseManager::Instance().TryAcquire(guidLow, BotActivity::Trading, 120000))
             continue;
@@ -1316,12 +1324,18 @@ void AhMarketService::Update(uint32_t diff)
         if (res == PostResult::Posted)
         {
             ++posted;
-            BotActivityLeaseManager::Instance().Release(guidLow, BotActivity::Trading);
+            BotActivity restore = previousActivity == BotActivity::Grinding
+                ? BotActivity::Grinding : BotActivity::Idle;
+            BotActivityLeaseManager::Instance().Release(guidLow, BotActivity::Trading, restore);
         }
         else if (res == PostResult::Teleported)
             ++teleported;
         else
-            BotActivityLeaseManager::Instance().Release(guidLow, BotActivity::Trading);
+        {
+            BotActivity restore = previousActivity == BotActivity::Grinding
+                ? BotActivity::Grinding : BotActivity::Idle;
+            BotActivityLeaseManager::Instance().Release(guidLow, BotActivity::Trading, restore);
+        }
     }
 
     if (posted || teleported)

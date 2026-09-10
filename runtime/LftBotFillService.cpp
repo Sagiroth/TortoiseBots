@@ -507,6 +507,7 @@ void LftBotFillService::Update(uint32_t diff)
                     continue;
 
                 uint32 guidLow = chosen->GetObjectGuid().GetCounter();
+                BotActivity previousActivity = BotActivityLeaseManager::Instance().GetActivity(guidLow);
                 // 10-minute LftQueued lease arbitrates dungeon-fill ownership.
                 // Denied (Trading/BgQueued/PlayerMaster) -> skip candidate.
                 if (!BotActivityLeaseManager::Instance().TryAcquire(guidLow, BotActivity::LftQueued, 600000))
@@ -522,7 +523,8 @@ void LftBotFillService::Update(uint32_t diff)
                 {
                     if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(chosen))
                         ai->SetForcedRole(0);
-                    BotActivityLeaseManager::Instance().Release(guidLow, BotActivity::LftQueued);
+                    BotActivityLeaseManager::Instance().Release(guidLow, BotActivity::LftQueued,
+                        previousActivity == BotActivity::Grinding ? BotActivity::Grinding : BotActivity::Idle);
                     continue;
                 }
 

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <cstdint>
-#include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace TortoiseBots
 {
@@ -38,6 +38,12 @@ struct ActivityLease
     uint32_t maxDurationMs = 0;
 };
 
+struct ActivityLeaseInfo
+{
+    uint32_t guidLow = 0;
+    ActivityLease lease;
+};
+
 // Centralized in-memory arbitration of background-service intent (issue #89).
 //
 // World-thread only: console/chat/RA commands and all background service ticks
@@ -55,8 +61,10 @@ public:
     bool TryAcquire(uint32_t guidLow, BotActivity activity, uint32_t maxDurationMs = 0);
 
     // Release only when the current owner matches (prevents stale releases
-    // from clearing a newer owner).
-    void Release(uint32_t guidLow, BotActivity expectedActivity);
+    // from clearing a newer owner). A failed preemption may restore a prior
+    // Grinding lease instead of leaving an autonomous bot unowned.
+    void Release(uint32_t guidLow, BotActivity expectedActivity,
+        BotActivity restoreActivity = BotActivity::Idle);
 
     // Human master claim: evicts any background lease with active cleanup,
     // then locks to PlayerMaster (indefinite).
@@ -73,10 +81,9 @@ public:
     // Remaining lease time in ms, or 0 for indefinite / no lease.
     uint32_t GetRemainingMs(uint32_t guidLow) const;
 
-    size_t GetTrackedCount() const { return m_leases.size(); }
     void GetActivityCounts(uint32_t& grinding, uint32_t& trading, uint32_t& lft,
         uint32_t& bg, uint32_t& master) const;
-    std::string GetStatusString() const;
+    std::vector<ActivityLeaseInfo> GetActiveLeases() const;
 
     void Update(uint32_t diff);
     void Clear();

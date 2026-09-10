@@ -350,16 +350,34 @@ bool BattlegroundQueueService::TryQueue(::Player* bot, uint32 queueTypeValue)
                 if (slot.guid.GetCounter() != bot->GetObjectGuid().GetCounter())
                     leaseGuids.push_back(slot.guid.GetCounter());
     }
-    std::vector<uint32_t> acquired;
+    struct LeaseAttempt
+    {
+        uint32_t guidLow;
+        BotActivity previousActivity;
+    };
+    std::vector<LeaseAttempt> acquired;
+    auto rollbackLeases = [&]()
+    {
+        for (LeaseAttempt const& attempt : acquired)
+        {
+            // A same-activity re-acquire did not create ownership for this
+            // attempt; keep the existing BgQueued lease intact.
+            if (attempt.previousActivity == BotActivity::BgQueued)
+                continue;
+            BotActivity restore = attempt.previousActivity == BotActivity::Grinding
+                ? BotActivity::Grinding : BotActivity::Idle;
+            BotActivityLeaseManager::Instance().Release(attempt.guidLow, BotActivity::BgQueued, restore);
+        }
+    };
     for (uint32_t guidLow : leaseGuids)
     {
+        BotActivity previousActivity = BotActivityLeaseManager::Instance().GetActivity(guidLow);
         if (!BotActivityLeaseManager::Instance().TryAcquire(guidLow, BotActivity::BgQueued, 1800000))
         {
-            for (uint32_t done : acquired)
-                BotActivityLeaseManager::Instance().Release(done, BotActivity::BgQueued);
+            rollbackLeases();
             return false;
         }
-        acquired.push_back(guidLow);
+        acquired.push_back(LeaseAttempt{guidLow, previousActivity});
     }
     // Leases held for the atomic group attempt; core rejection below rolls back.
 
@@ -377,8 +395,7 @@ bool BattlegroundQueueService::TryQueue(::Player* bot, uint32 queueTypeValue)
     if (!mapId)
     {
         sLog.outString("TortoiseBots: BG auto-queue no map for bgType %u for bot %s", bgType, bot->GetName());
-        for (uint32_t done : acquired)
-            BotActivityLeaseManager::Instance().Release(done, BotActivity::BgQueued);
+        rollbackLeases();
         return false;
     }
     packet << guid << mapId << instanceId << joinAsGroup;
@@ -402,8 +419,7 @@ bool BattlegroundQueueService::TryQueue(::Player* bot, uint32 queueTypeValue)
     if (!bot->InBattleGroundQueueForBattleGroundQueueType(queueType))
     {
         sLog.outString("TortoiseBots: BG auto-queue %s (%s) not queued (core rejected joinAsGroup=%u)", bot->GetName(), name, joinAsGroup);
-        for (uint32_t done : acquired)
-            BotActivityLeaseManager::Instance().Release(done, BotActivity::BgQueued);
+        rollbackLeases();
         return false;
     }
     // In-memory ownership as (guidLow, queueType) pairs: track only GUIDs
@@ -424,13 +440,19 @@ bool BattlegroundQueueService::TryQueue(::Player* bot, uint32 queueTypeValue)
             }
         // Release leases for group members the core did not actually queue
         // (excluded bracket/offline) so no ghost BgQueued lingers to timeout.
-        for (uint32_t guidLow : acquired)
+        for (LeaseAttempt const& attempt : acquired)
         {
             bool owned = false;
             for (uint64_t key : m_ownedQueuedGuids)
-                if (uint32_t(key >> 32) == guidLow) { owned = true; break; }
+                if (uint32_t(key >> 32) == attempt.guidLow) { owned = true; break; }
             if (!owned)
-                BotActivityLeaseManager::Instance().Release(guidLow, BotActivity::BgQueued);
+            {
+                if (attempt.previousActivity == BotActivity::BgQueued)
+                    continue;
+                BotActivity restore = attempt.previousActivity == BotActivity::Grinding
+                    ? BotActivity::Grinding : BotActivity::Idle;
+                BotActivityLeaseManager::Instance().Release(attempt.guidLow, BotActivity::BgQueued, restore);
+            }
         }
     }
 

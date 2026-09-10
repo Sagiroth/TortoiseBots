@@ -6,8 +6,6 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Log.h"
 
-#include <sstream>
-
 namespace TortoiseBots
 {
 
@@ -58,10 +56,16 @@ bool BotActivityLeaseManager::TryAcquire(uint32_t guidLow, BotActivity activity,
     return false;
 }
 
-void BotActivityLeaseManager::Release(uint32_t guidLow, BotActivity expectedActivity)
+void BotActivityLeaseManager::Release(uint32_t guidLow, BotActivity expectedActivity,
+    BotActivity restoreActivity)
 {
     auto it = m_leases.find(guidLow);
-    if (it != m_leases.end() && it->second.activity == expectedActivity)
+    if (it == m_leases.end() || it->second.activity != expectedActivity)
+        return;
+
+    if (restoreActivity == BotActivity::Grinding)
+        it->second = ActivityLease{BotActivity::Grinding, m_elapsedMs, 0};
+    else
         m_leases.erase(it);
 }
 
@@ -131,15 +135,13 @@ void BotActivityLeaseManager::GetActivityCounts(uint32_t& grinding, uint32_t& tr
     }
 }
 
-std::string BotActivityLeaseManager::GetStatusString() const
+std::vector<ActivityLeaseInfo> BotActivityLeaseManager::GetActiveLeases() const
 {
-    uint32_t grinding, trading, lft, bg, master;
-    GetActivityCounts(grinding, trading, lft, bg, master);
-    std::ostringstream out;
-    out << "Leases: Grinding " << grinding << ", Trading " << trading
-        << ", LftQueued " << lft << ", BgQueued " << bg
-        << ", PlayerMaster " << master << " (tracked " << m_leases.size() << ")";
-    return out.str();
+    std::vector<ActivityLeaseInfo> leases;
+    leases.reserve(m_leases.size());
+    for (auto const& kv : m_leases)
+        leases.push_back(ActivityLeaseInfo{kv.first, kv.second});
+    return leases;
 }
 
 void BotActivityLeaseManager::Update(uint32_t diff)

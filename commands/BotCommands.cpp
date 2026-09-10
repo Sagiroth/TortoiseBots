@@ -257,6 +257,18 @@ static bool HandleLease(ChatHandler* handler, char const* args)
     uint32_t idle = online > tracked ? online - tracked : 0;
     handler->PSendSysMessage("Leases: Idle %u, Grinding %u, Trading %u, LftQueued %u, BgQueued %u, PlayerMaster %u (online %u, tracked %u).",
         idle, grinding, trading, lft, bg, master, online, tracked);
+
+    std::vector<ActivityLeaseInfo> leases = BotActivityLeaseManager::Instance().GetActiveLeases();
+    for (ActivityLeaseInfo const& info : leases)
+    {
+        uint32_t remaining = BotActivityLeaseManager::Instance().GetRemainingMs(info.guidLow);
+        if (info.lease.maxDurationMs)
+            handler->PSendSysMessage("Lease %u: %s, %u ms remaining.", info.guidLow,
+                BotActivityName(info.lease.activity), remaining);
+        else
+            handler->PSendSysMessage("Lease %u: %s, indefinite.", info.guidLow,
+                BotActivityName(info.lease.activity));
+    }
     return true;
 }
 
