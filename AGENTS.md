@@ -37,14 +37,14 @@ The canonical upstream and target core is:
 
 <https://github.com/Penqle/tortoise-wow>
 
-Unless qualified otherwise, these terms mean `Penqle/tortoise-wow`: upstream, upstream core, target core, core main, core PR.
+Unless qualified otherwise, these terms mean `tortoise-wow`: upstream, upstream core, target core, core main, core PR.
 
-`Shyalya/tortoise-wow` and other PlayerBots repos (`cmangos/playerbots`, `mod-playerbots`, `mangoszero/server`, `cmangos/mangos-classic`) are **read-only donor references**, not upstream. Source-of-truth order:
+`shyalya-tortoise-wow` and other PlayerBots repos (`cmangos/playerbots`, `mod-playerbots`, `mangoszero/server`, `cmangos/mangos-classic`) are **read-only donor references**, not upstream. Source-of-truth order:
 
-1. `Penqle/tortoise-wow` pinned target core
+1. `tortoise-wow` pinned target core
 2. Tortoise data / DBC / runtime evidence
 3. This repo's host contract (`docs/HOST_API.md`, `docs/PLAN.md`)
-4. Shyalya and other donors as references only
+4. `shyalya-tortoise-wow` and other donors as references only
 
 Git remote aliases are not authority — always identify a repo by `owner/repo`.
 
@@ -56,8 +56,8 @@ All references are remote, read-only, and optional. Clone only what you need for
 
 | Reference | URL | Purpose |
 | --- | --- | --- |
-| Upstream core | <https://github.com/Penqle/tortoise-wow> | Target core (`Penqle/tortoise-wow`) |
-| Shyalya fork | <https://github.com/Shyalya/tortoise-wow> | Tortoise 1.18.1 compatibility evidence, known API differences, Tortoise fixes |
+| Upstream core | <https://github.com/Penqle/tortoise-wow> | Target core (`tortoise-wow`) |
+| shyalya-tortoise-wow | <https://github.com/Shyalya/tortoise-wow> | Tortoise 1.18.1 compatibility evidence, known API differences, Tortoise fixes |
 | CMaNGOS PlayerBots | <https://github.com/cmangos/playerbots> | Existing combat/movement/class/healing/CC/dungeon behavior |
 | CMaNGOS Classic | <https://github.com/cmangos/mangos-classic> | What CMaNGOS PlayerBots expects from its host |
 | MangosZero | <https://github.com/mangoszero/server> | Lifecycle/session/group patterns |
@@ -68,7 +68,7 @@ Do not edit, commit to, or rebase reference repos. Do not blindly copy their arc
 
 ### What each reference is for — quick guide
 
-- **Shyalya** — Tortoise spells/talents, session/movement/group/loot lessons, integration pain
+- **shyalya-tortoise-wow** — Tortoise spells/talents, session/movement/group/loot lessons, integration pain
 - **CMaNGOS PlayerBots** — richest behavior source for combat/movement/healing/CC/dungeons
 - **CMaNGOS Classic** — host API definitions and lifecycle semantics
 - **MangosZero** — smaller bot lifecycle, character creation, group handling
@@ -77,10 +77,10 @@ Do not edit, commit to, or rebase reference repos. Do not blindly copy their arc
 
 Do not search every repo for every task:
 
-- **Public behavior / commands / ownership** → Shyalya → CMaNGOS PlayerBots
-- **Combat / class AI / healing / CC / movement** → CMaNGOS PlayerBots → Shyalya → MangosZero
-- **Session / lifecycle / bot login** → Current Tortoise core → MangosZero → Shyalya → CMaNGOS
-- **Tortoise spells / talents / custom content** → Tortoise core/data → Shyalya → Vanilla refs
+- **Public behavior / commands / ownership** → `shyalya-tortoise-wow` → CMaNGOS PlayerBots
+- **Combat / class AI / healing / CC / movement** → CMaNGOS PlayerBots → `shyalya-tortoise-wow` → MangosZero
+- **Session / lifecycle / bot login** → Current Tortoise core → MangosZero → `shyalya-tortoise-wow` → CMaNGOS
+- **Tortoise spells / talents / custom content** → Tortoise core/data → `shyalya-tortoise-wow` → Vanilla refs
 - **Runtime / integration failures** → Current core source → Docker env (if you have one) → logs → references
 
 The current Tortoise architecture always outranks making a donor port easier.

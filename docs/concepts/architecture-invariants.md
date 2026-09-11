@@ -17,7 +17,7 @@ TortoiseBots adheres to strict architectural rules to prevent the severe code co
 ## The 5 Core Invariants
 
 ### 1. 100% Modular Native C++ Module
-The core server ([Penqle/tortoise-wow](https://github.com/Penqle/tortoise-wow)) must compile cleanly without TortoiseBots enabled (`-DMODULES=disabled` or without `-DMODULE_TORTOISEBOTS=static`). TortoiseBots lives entirely inside `modules/TortoiseBots/`.
+The core server ([tortoise-wow](https://github.com/Penqle/tortoise-wow)) must compile cleanly without TortoiseBots enabled (`-DMODULES=disabled` or without `-DMODULE_TORTOISEBOTS=static`). TortoiseBots lives entirely inside `modules/TortoiseBots/`.
 
 ### 2. Zero Core Coupling (No `GetBot()` or `m_bot`)
 Never reintroduce direct bot references into core engine code:

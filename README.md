@@ -1,10 +1,10 @@
 # TortoiseBots
 
-Independent native PlayerBots module for the canonical **Tortoise WoW 1.18.1** core from Penqle ([`Penqle/tortoise-wow`](https://github.com/Penqle/tortoise-wow), `bot-helpers` branch).
+Independent native PlayerBots module for the canonical **Tortoise WoW 1.18.1** core repository ([`tortoise-wow`](https://github.com/Penqle/tortoise-wow), `bot-helpers` branch).
 
 `TortoiseBots` delivers native AI companions through a decoupled C++ architecture: bot AI, combat strategies, and lifecycle management live entirely within this module, while session transport and character state stay cleanly owned by the core via generic headless sessions (`SessionTransport::Headless`). The core builds and runs 100% cleanly without the module (`MODULES=disabled`).
 
-> **Companion in-game UI:** pair with [**TortoiseBotsManager**](https://github.com/tortoise-wow-stack/TortoiseBotsManager) (`/tbm`). All player-facing control — roster, lifecycle, and tactical party actions — is driven from this addon; the server-side command surface is an internal/advanced transport, not a player API.
+> **Companion in-game UI:** pair with [**TortoiseBotsManager**](https://github.com/Sagiroth/TortoiseBotsManager) (`/tbm`). All player-facing control — roster, lifecycle, and tactical party actions — is driven from this addon; the server-side command surface is an internal/advanced transport, not a player API.
 
 ---
 
@@ -43,7 +43,7 @@ Independent native PlayerBots module for the canonical **Tortoise WoW 1.18.1** c
 ## Architecture & host integration
 
 ```text
-  Penqle Core (tortoise-wow: bot-helpers)
+  Core Server (tortoise-wow: bot-helpers)
   ┌─────────────────────────────────────────┐
   │ Canonical 1.18.1 World Server           │
   │ Generic Headless Sessions (No bot deps) │

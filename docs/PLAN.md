@@ -14,7 +14,7 @@ relates_to:
 
 **Status:** Active architecture and roadmap
 **Target:** Tortoise WoW 1.18.1 core
-**Primary goal:** Useful PlayerBots for Tortoise 1.18.1 Core from Penqle without rebuilding the old tightly coupled core.
+**Primary goal:** Useful PlayerBots for Tortoise 1.18.1 Core repository (`tortoise-wow`) without rebuilding the old tightly coupled core.
 
 ## 1. Product goal
 

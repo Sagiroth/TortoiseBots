@@ -2,8 +2,8 @@
 id: concept-donor-hierarchy
 title: Donor Hierarchy & Porting Rules
 category: concepts
-summary: Evidence priority and architectural guidelines when referencing Shyalya, mod-playerbots, and upstream core.
-tags: [donors, shyalya, mod-playerbots, porting, rules]
+summary: Evidence priority and architectural guidelines when referencing shyalya-tortoise-wow, mod-playerbots, and upstream core.
+tags: [donors, shyalya-tortoise-wow, mod-playerbots, porting, rules]
 relates_to:
   - concept-architecture-invariants
   - concept-strategy-engine
@@ -18,11 +18,11 @@ When implementing or diagnosing behavior in TortoiseBots, code must not be blind
 When investigating bugs or porting features, evaluate evidence in this order:
 
 1. **Actual Tortoise WoW Client / Server Runtime Behavior** (Ground Truth).
-2. **Shyalya Implementation** ([Shyalya/tortoise-wow](https://github.com/Shyalya/tortoise-wow)):
+2. **shyalya-tortoise-wow Implementation** ([Shyalya/tortoise-wow](https://github.com/Shyalya/tortoise-wow)):
    - **Primary runtime oracle for Turtle WoW 1.18.1 PlayerBots semantics.**
    - Consult first for: engine lifecycle, action queue behavior, movement/`MotionMaster` interactions, Turtle-specific DBC/spell adaptations, and packet hook ordering.
-   - *Never copy Shyalya's core coupling (`m_bot`, `WorldSession::GetBot()`).*
-3. **Current Penqle / Tortoise Core Semantics** ([Penqle/tortoise-wow](https://github.com/Penqle/tortoise-wow)).
+   - *Never copy its core coupling (`m_bot`, `WorldSession::GetBot()`).*
+3. **Current Core Server Semantics** ([tortoise-wow](https://github.com/Penqle/tortoise-wow)).
 4. **mod-playerbots** ([mod-playerbots/mod-playerbots](https://github.com/mod-playerbots/mod-playerbots)):
    - **Primary mature behavior donor.**
    - Consult first for: combat rotations, healing prioritization, interrupt selections, CC logic, dungeon behavior, and rich tactics.
@@ -31,7 +31,7 @@ When investigating bugs or porting features, evaluate evidence in this order:
 ## Porting Rules
 
 ```text
-Turtle runtime mechanics  → Shyalya first
+Turtle runtime mechanics  → shyalya-tortoise-wow first
 Mature gameplay behavior  → mod-playerbots first
 Architecture ownership    → TortoiseBots rules always win
 ```
