@@ -12,7 +12,7 @@ relates_to:
 
 # Available Bot Commands & Addon Controls
 
-TortoiseBots provides a native, intent-driven command suite (`.bot`) that powers both the **[TortoiseBotsManager](https://github.com/tortoise-wow-stack/TortoiseBotsManager)** (`/tbm`) addon and standard in-game chat commands.
+TortoiseBots provides a native, intent-driven command suite (`.bot`) that powers both the **[TortoiseBotsManager](https://github.com/Sagiroth/TortoiseBotsManager)** (`/tbm`) addon and standard in-game chat commands.
 
 All commands require the requesting player to be an in-game character owning the target bot (same account) or a GameMaster.
 

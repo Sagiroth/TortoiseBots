@@ -17,7 +17,7 @@ TortoiseBots allows you to turn characters on **your own account** into intellig
 ## 1. Prerequisites
 
 1. Create the characters you want to use as bots on your account.
-2. Install the **[TortoiseBotsManager](https://github.com/tortoise-wow-stack/TortoiseBotsManager)** addon (`/tbm`) into your client's `Interface/AddOns/` directory.
+2. Install the **[TortoiseBotsManager](https://github.com/Sagiroth/TortoiseBotsManager)** addon (`/tbm`) into your client's `Interface/AddOns/` directory.
 3. Log into your main player character in the game.
 
 ## 2. Spawning Your Bots
