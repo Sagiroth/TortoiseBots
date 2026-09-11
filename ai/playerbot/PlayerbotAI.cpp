@@ -10,7 +10,7 @@
 #include "playerbot/AiFactory.h"
 
 #include "../../runtime/ObservabilityEmitter.h"
-#include "host/BotPacketPump.h"
+#include "ByteBuffer.h"
 
 #include "Movement/MovementGenerator.h"
 #include "Maps/GridNotifiers.h"
@@ -82,6 +82,24 @@ std::mutex& DelayedBotPacketsMutex()
 {
     static auto* mutex = new std::mutex();
     return *mutex;
+}
+// Headless sessions drain via core ProcessPackets (#475), which runs
+// ChatHandler::ParseCommands. Bots are SEC_PLAYER but player commands can be
+// enabled server-side, so command-like chat ('.'/'!') must never reach core
+// with text[0] as '.'/'!'.
+static bool IsCommandLikeChat(std::string const& msg)
+{
+    return !msg.empty() && (msg[0] == '.' || msg[0] == '!');
+}
+// Prepend a space if the message starts with '.' or '!' (and is not '..' or '!!').
+// ChatHandler::ParseCommands only triggers when text[0] is '.' or '!', so a leading
+// space prevents command execution while allowing the message to display in chat.
+static void SanitizeCommandLikeChat(std::string& msg)
+{
+    if (!msg.empty() && (msg[0] == '.' || msg[0] == '!') && (msg.size() < 2 || (msg[1] != '.' && msg[1] != '!')))
+    {
+        msg.insert(0, " ");
+    }
 }
 }
 
@@ -3050,6 +3068,7 @@ bool PlayerbotAI::SayToGuild(std::string msg, bool likePlayer)
     {
         return false;
     }
+    SanitizeCommandLikeChat(msg);
 
     if (bot->GetGuildId())
     {
@@ -3078,7 +3097,7 @@ bool PlayerbotAI::SayToGuild(std::string msg, bool likePlayer)
 
                         std::unique_ptr<WorldPacket> packetPtr(new WorldPacket(packet_template));
 
-                        TortoiseBots::BotPacketPump::Enqueue(bot, packetPtr.release());
+                        bot->GetSession()->QueuePacket(packetPtr.release());
                         return true;
                     }
                     break;
@@ -3119,6 +3138,7 @@ bool PlayerbotAI::SayToGuildRecruitment(std::string msg) { return SayToNamedChan
 
 bool PlayerbotAI::SayToParty(std::string msg, bool likePlayer)
 {
+    SanitizeCommandLikeChat(msg);
     if (!bot->GetGroup())
     {
         return false;
@@ -3141,7 +3161,7 @@ bool PlayerbotAI::SayToParty(std::string msg, bool likePlayer)
 
                 std::unique_ptr<WorldPacket> packetPtr(new WorldPacket(packet_template));
 
-                TortoiseBots::BotPacketPump::Enqueue(bot, packetPtr.release());
+                bot->GetSession()->QueuePacket(packetPtr.release());
                 return true;
             }
         }
@@ -3178,6 +3198,7 @@ bool PlayerbotAI::SayToRaid(std::string msg)
 
 bool PlayerbotAI::Yell(std::string msg, bool likePlayer)
 {
+    SanitizeCommandLikeChat(msg);
     uint32 lang = LANG_UNIVERSAL;
     if (bot->GetTeam() == ALLIANCE)
     {
@@ -3201,7 +3222,7 @@ bool PlayerbotAI::Yell(std::string msg, bool likePlayer)
 
             std::unique_ptr<WorldPacket> packetPtr(new WorldPacket(packet_template));
 
-            TortoiseBots::BotPacketPump::Enqueue(bot, packetPtr.release());
+            bot->GetSession()->QueuePacket(packetPtr.release());
             return true;
         }
     }
@@ -3213,6 +3234,7 @@ bool PlayerbotAI::Yell(std::string msg, bool likePlayer)
 
 bool PlayerbotAI::Say(std::string msg, bool likePlayer)
 {
+    SanitizeCommandLikeChat(msg);
     uint32 lang = LANG_UNIVERSAL;
     if (bot->GetTeam() == ALLIANCE)
     {
@@ -3237,7 +3259,7 @@ bool PlayerbotAI::Say(std::string msg, bool likePlayer)
 
             std::unique_ptr<WorldPacket> packetPtr(new WorldPacket(packet_template));
 
-            TortoiseBots::BotPacketPump::Enqueue(bot, packetPtr.release());
+            bot->GetSession()->QueuePacket(packetPtr.release());
             return true;
         }
     }
@@ -7216,7 +7238,37 @@ void PlayerbotAI::ProcessDelayedPackets()
             !PlayerbotAIStorage::Instance().GetAI(bot))
             continue;
 
-        TortoiseBots::BotPacketPump::Enqueue(bot, queued.packet.release());
+        // Delayed packets are generic opcodes; only chat needs command filtering.
+        // Peek CMSG_MESSAGECHAT layout (type, lang, [channel,] message) and drop
+        // command-like text rather than letting core ParseCommands run it.
+        if (queued.packet && queued.packet->GetOpcode() == CMSG_MESSAGECHAT)
+        {
+            WorldPacket& pkt = *queued.packet;
+            size_t savedRpos = pkt.rpos();
+            bool drop = false;
+            try
+            {
+                uint32 type = 0, lang = 0;
+                pkt >> type >> lang;
+                if (type == CHAT_MSG_CHANNEL || type == CHAT_MSG_WHISPER)
+                {
+                    std::string target;
+                    pkt >> target;
+                }
+                std::string message;
+                pkt >> message;
+                drop = IsCommandLikeChat(message);
+            }
+            catch (ByteBufferException&)
+            {
+                drop = false;
+            }
+            pkt.rpos(savedRpos);
+            if (drop)
+                continue;
+        }
+
+        bot->GetSession()->QueuePacket(queued.packet.release());
     }
 }
 
@@ -7593,10 +7645,10 @@ void PlayerbotAI::ImbueItem(Item* item, uint16 targetFlag, ObjectGuid targetGUID
       *packet << targetGUID.WriteAsPacked();
 
 #ifdef CMANGOS
-   TortoiseBots::BotPacketPump::Enqueue(bot, packet.release());
+   bot->GetSession()->QueuePacket(packet.release());
 #endif
 #ifdef MANGOS
-   TortoiseBots::BotPacketPump::Enqueue(bot, packet);
+   bot->GetSession()->QueuePacket(packet);
 #endif
 }
 
