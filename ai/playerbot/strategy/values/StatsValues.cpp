@@ -26,6 +26,13 @@ bool IsDeadValue::Calculate()
 
 bool PetIsDeadValue::Calculate()
 {
+    // Hunters have no pet system before level 10 (Revive Pet auto-learns at
+    // 10+, AutoLearnSpellAction.cpp:62): without this, a pet-less lowbie with
+    // a stale character_pet row reads "pet dead" and loops a failing revive.
+    // Rule ported from mod-playerbots StatsValues.cpp (mature behavior donor).
+    if ((bot->GetLevel() < 10 && bot->GetClass() == CLASS_HUNTER) || bot->IsMounted())
+        return false;
+
 #ifdef MANGOS
     PetDatabaseStatus status = Pet::GetStatusFromDB(bot);
     if (status == PET_DB_DEAD)
