@@ -217,6 +217,11 @@ public:
     // or no destination. Persisted ai_playerbot_zone_level is tried first
     // (with parent fallback) then immutable DBC AreaLevel/parent.
     bool enableRandomTeleports = false;
+    // Relocate a random bot that keeps dying where its level cannot survive:
+    // after a successful rez, if the validated zone level exceeds bot level + 5
+    // with 2+ deaths and no master/group, teleport once to a validated
+    // level-fitting point and reset the death count. Default on; fail-closed.
+    bool relocateHopelessDeaths = true;
     // Default-off bounded LFT fill: observe native queue (GetQueuedPlayers),
     // identify human groups/instances and missing 1/1/3 roles, filter in-memory
     // Headless random candidates by authoritative Soromeister/LFT ranges,

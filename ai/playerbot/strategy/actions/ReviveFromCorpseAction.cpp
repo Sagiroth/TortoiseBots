@@ -7,6 +7,8 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/DeadValues.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "runtime/BotManager.h"
 
 using namespace ai;
 
@@ -62,6 +64,10 @@ bool ReviveFromCorpseAction::Execute(Event& event)
     bot->GetSession()->HandleReclaimCorpseOpcode(packet);
 
     SET_AI_VALUE(bool, "corpse run", false);
+    // Post-rez rescue (best-effort, fail-closed): a random bot that keeps dying
+    // where its level cannot survive is relocated once to validated fitting
+    // ground instead of GY-camping. Normal and owned flows are unaffected.
+    TortoiseBots::BotManager::Instance().RelocateHopelessBot(bot);
     // Deliberately NOT resetting "death count" here. BestGraveyardValue only
     // switches to a graveyard outside the current zone once the count reaches
     // DEATH_COUNT_BEFORE_TRYING_ANOTHER_GRAVEYARD - but a bot resurrecting is
@@ -335,6 +341,9 @@ bool SpiritHealerAction::Execute(Event& event)
         bot->SpawnCorpseBones();
         bot->SaveToDB();
         SET_AI_VALUE(bool, "corpse run", false);
+        // Same post-rez rescue as the corpse path: hopeless mismatch relocates
+        // once instead of GY-camping (see above).
+        TortoiseBots::BotManager::Instance().RelocateHopelessBot(bot);
         // Deliberately NOT resetting "death count" here. BestGraveyardValue only
         // switches to a graveyard outside the current zone once the count reaches
         // DEATH_COUNT_BEFORE_TRYING_ANOTHER_GRAVEYARD - but a bot resurrecting is

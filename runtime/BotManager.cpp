@@ -59,33 +59,14 @@ bool IsUsableTeleportPoint(ai::WorldPosition const& point)
         point.getZ() >= groundZ && point.getZ() <= maxZ + 2.0f;
 }
 
-bool TryRandomTeleport(::Player* bot, BotRecord const& record)
+// Shared level-fitting picker for login scatter and post-rez rescue.
+// Probes GenericRpg destinations in the bot's ±5 validated level window and
+// returns a terrain-validated point. Destinations stay TravelMgr-owned.
+// Returns nullptr on any miss (fail-closed, original position retained).
+ai::WorldPosition const* PickLevelFittingPoint(::Player* bot)
 {
-    if (!sPlayerbotAIConfig.enableRandomTeleports)
-        return false;
-    if (!bot || !bot->GetSession() || !bot->GetSession()->IsHeadless())
-        return false;
-    if (!record.random)
-        return false;
-    // Match the existing RPG travel safety gate: low-level bots must not be
-    // scattered into NPC travel routes before they can survive the journey.
-    if (bot->GetLevel() < 5)
-        return false;
-    if (bot->IsBeingTeleported())
-        return false;
-    if (!bot->IsInWorld())
-        return false;
-    if (sRandomBotFacade.IsPinnedBot(bot->GetGUIDLow()))
-    {
-        sLog.outString("TortoiseBots: random teleport skipped pinned bot %s", bot->GetName());
-        return false;
-    }
-    ::PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
-    if (!ai)
-    {
-        sLog.outString("TortoiseBots: random teleport no AI for bot %s, retaining position", bot->GetName());
-        return false;
-    }
+    if (!bot)
+        return nullptr;
     auto& travelMgr = MaNGOS::Singleton<ai::TravelMgr>::Instance();
     // Use bounded validated levels: persisted ai_playerbot_zone_level first (with
     // parent-zone cached fallback), then immutable DBC AreaTable AreaLevel / parent
@@ -99,7 +80,7 @@ bool TryRandomTeleport(::Player* bot, BotRecord const& record)
     if (dests.empty())
     {
         sLog.outString("TortoiseBots: random teleport no GenericRpg destinations for bot %s level %u", bot->GetName(), bot->GetLevel());
-        return false;
+        return nullptr;
     }
 
     // Probe a bounded random subset. Destination points can be numerous, and
@@ -159,8 +140,41 @@ bool TryRandomTeleport(::Player* bot, BotRecord const& record)
     if (!chosen)
     {
         sLog.outString("TortoiseBots: random teleport no valid overworld point for bot %s level %u", bot->GetName(), bot->GetLevel());
+        return nullptr;
+    }
+    return chosen;
+}
+
+bool TryRandomTeleport(::Player* bot, BotRecord const& record)
+{
+    if (!sPlayerbotAIConfig.enableRandomTeleports)
+        return false;
+    if (!bot || !bot->GetSession() || !bot->GetSession()->IsHeadless())
+        return false;
+    if (!record.random)
+        return false;
+    // Match the existing RPG travel safety gate: low-level bots must not be
+    // scattered into NPC travel routes before they can survive the journey.
+    if (bot->GetLevel() < 5)
+        return false;
+    if (bot->IsBeingTeleported())
+        return false;
+    if (!bot->IsInWorld())
+        return false;
+    if (sRandomBotFacade.IsPinnedBot(bot->GetGUIDLow()))
+    {
+        sLog.outString("TortoiseBots: random teleport skipped pinned bot %s", bot->GetName());
         return false;
     }
+    ::PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+    if (!ai)
+    {
+        sLog.outString("TortoiseBots: random teleport no AI for bot %s, retaining position", bot->GetName());
+        return false;
+    }
+    ai::WorldPosition const* chosen = PickLevelFittingPoint(bot);
+    if (!chosen)
+        return false;
 
     bool ok = bot->TeleportTo(chosen->getMapId(), chosen->getX(), chosen->getY(), chosen->getZ(), bot->GetOrientation(), 0);
     if (ok)
@@ -170,6 +184,53 @@ bool TryRandomTeleport(::Player* bot, BotRecord const& record)
     return ok;
 }
 } // namespace
+
+bool BotManager::RelocateHopelessBot(::Player* bot)
+{
+    if (!sPlayerbotAIConfig.relocateHopelessDeaths)
+        return false;
+    if (!bot || !bot->GetSession() || !bot->GetSession()->IsHeadless())
+        return false;
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || bot->InBattleGround())
+        return false;
+    if (bot->GetGroup())
+        return false;
+    BotRecord* record = FindBot(bot->GetObjectGuid());
+    if (!record || !record->random || record->lifecycle != BotLifecycle::InWorld)
+        return false;
+    if (!record->masterGuid.IsEmpty())
+        return false;
+    if (sRandomBotFacade.IsPinnedBot(bot->GetGUIDLow()))
+        return false;
+    ::PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+    if (!ai || !ai->GetAiObjectContext())
+        return false;
+    auto* deathCountValue = ai->GetAiObjectContext()->GetValue<uint32>("death count");
+    uint32 deathCount = deathCountValue ? deathCountValue->Get() : 0;
+    if (deathCount < 2)
+        return false;
+    // Same +5 tolerance the travel and quest gates use: only a zone the bot
+    // cannot plausibly survive counts as hopeless. Unknown levels fail closed.
+    int32 areaLevel = 0;
+    auto& travelMgr = MaNGOS::Singleton<ai::TravelMgr>::Instance();
+    if (!travelMgr.TryGetValidatedAreaLevel(bot->GetAreaId(), areaLevel) || areaLevel <= 0)
+        return false;
+    if (areaLevel <= (int32)bot->GetLevel() + 5)
+        return false;
+    ai::WorldPosition const* chosen = PickLevelFittingPoint(bot);
+    if (!chosen)
+        return false;
+    if (!bot->TeleportTo(chosen->getMapId(), chosen->getX(), chosen->getY(), chosen->getZ(), bot->GetOrientation(), 0))
+    {
+        sLog.outError("TortoiseBots: hopeless-death relocation TeleportTo failed for bot %s, retaining position", bot->GetName());
+        return false;
+    }
+    if (deathCountValue)
+        deathCountValue->Reset();
+    sLog.outString("TortoiseBots: relocated hopeless bot %s level %u after %u deaths from area level %d to map %u %.1f %.1f %.1f",
+        bot->GetName(), bot->GetLevel(), deathCount, areaLevel, chosen->getMapId(), chosen->getX(), chosen->getY(), chosen->getZ());
+    return true;
+}
 
 // A Headless session must never render an owned bot as an account-level GM.
 // Its Network owner retains all account privileges; this only normalizes the

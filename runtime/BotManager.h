@@ -105,6 +105,11 @@ public:
     bool AddBotWithMaster(uint32_t accountId, ObjectGuid guid, ObjectGuid masterGuid);
 // pi-lens-ignore: clang:unknown_typename
     bool RemoveBot(ObjectGuid guid, bool save = true);
+    // Post-rez rescue for random bots stuck where their level cannot survive.
+    // Returns true when the bot was relocated to a validated level-fitting
+    // point (death count reset). Fail-closed: any validation miss, non-random
+    // record, master/group/BG membership, or disabled config keeps position.
+    bool RelocateHopelessBot(::Player* bot);
 
     // Durable manual ownership is separate from the transient Headless record.
     // GetOwnedCharacters includes every undeleted same-account character plus
