@@ -192,7 +192,10 @@ void LftBotFillService::ClearForcedRole(uint32 guidLow)
     ObjectGuid guid(HIGHGUID_PLAYER, guidLow);
     if (Player* p = sObjectAccessor.FindPlayer(guid))
         if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(p))
+        {
             ai->SetForcedRole(0);
+            ai->DoSpecificAction("auto talents");
+        }
 }
 
 void LftBotFillService::ReconcilePending(bool cancelAll, std::vector<std::string> const* activeInstances)
@@ -516,13 +519,19 @@ void LftBotFillService::Update(uint32_t diff)
                 instVec.push_back(instance);
                 // Set forced role so AI rebuilds with correct spec (tank/heal/dps)
                 if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(chosen))
+                {
                     ai->SetForcedRole(needRole);
+                    ai->DoSpecificAction("auto talents");
+                }
 
                 bool ok = sLFTMgr.QueuePlayer(chosen, instVec, needRole);
                 if (!ok)
                 {
                     if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(chosen))
+                    {
                         ai->SetForcedRole(0);
+                        ai->DoSpecificAction("auto talents");
+                    }
                     BotActivityLeaseManager::Instance().Release(guidLow, BotActivity::LftQueued,
                         previousActivity == BotActivity::Grinding ? BotActivity::Grinding : BotActivity::Idle);
                     continue;

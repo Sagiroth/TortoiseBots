@@ -60,3 +60,32 @@ The bot's shapeshifting engine maintains the appropriate form based on assigned 
   - Casts *Innervate* on the party healer when their mana drops below 20%.
 - **Party Buffs:**
   - Maintains *Mark of the Wild* (armor, stats, resistances) and *Thorns* (reflective nature damage) on party members.
+
+---
+
+## Premade Talent Specs & Progression (1.18.1)
+
+TortoiseBots configures validated 5-level talent checkpoints (levels 10–60) tailored for Turtle WoW 1.18.1:
+
+| Spec Name | Config ID | Role | 60 Allocation | Key Signatures & Synergies |
+| :--- | :--- | :--- | :--- | :--- |
+| **Balance** | `11.0` | Ranged DPS | `38 / 0 / 13` | Moonkin Form (35), Eclipse (45), Balance of All Things, Omen of Clarity, Subtlety -20% threat dip. |
+| **Feral** | `11.1` | Tank / Melee DPS | `11 / 40 / 0` | Shared Bear/Cat build: Leader of the Pack (50), Berserk (40), Carnage, Heart of the Wild, Thick Hide, Omen of Clarity. |
+| **Restoration** | `11.2` | Healer | `10 / 0 / 41` | Swiftmend (20), Nature's Swiftness (35), Tree of Life Form (50), Gift of Nature, Preservation, Balance dip. |
+
+### Leveling Milestones & Progression Rationale
+
+- **Balance (`11.0`):**
+  - *Levels 10–35:* Arcane/Nature scaling: *Improved Wrath* (5/5), *Improved Moonfire* (2/2), *Natural Weapons* (3/3), *Moonfury* (3/3), *Omen of Clarity* (1/1 Clearcasting), *Vengeance* (5/5 crit damage), and *Moonkin Form* (35 signature armor & crit aura).
+  - *Levels 35–45:* *Moonglow* (3/3 mana efficiency), *Owlkin Frenzy* (3/3), *Balance of All Things* (3/3), and *Eclipse* (45 custom Wrath/Starfire alternation engine).
+  - *Levels 45–60:* Restoration threat dip into *Improved Mark of the Wild* (5/5) and *Subtlety* (5/5 for -20% threat reduction on balance nukes).
+- **Feral (`11.1` - Shared Bear Tank & Cat DPS):**
+  - *Rationale:* A single, robust Feral talent tree covers both Bear Tanking and Cat DPS without compromise. In combat, the bot's runtime stance engine switches between forms based on role (Tank -> Bear, DPS -> Cat).
+  - *Levels 10–35:* Feral core: *Ferocity* (5/5 cost reduction), *Feral Instinct* (3/3 threat/stealth), *Thick Hide* (3/3 armor), *Feral Charge* (20 Bear interrupt/gap closer), *Sharpened Claws* (3/3 crit), *Primal Fury* (2/2 rage/combo on crit), and *Predatory Strikes* (3/3 AP scaling).
+  - *Levels 35–50:* *Berserk* (40 custom burst), *Heart of the Wild* (5/5 +20% Stamina in Bear, +20% Strength in Cat), *Carnage* (2/2 bleed damage), and *Leader of the Pack* (50 party crit aura).
+  - *Levels 50–60:* Balance dip into *Natural Weapons* (3/3 physical damage), *Natural Shapeshifter* (2/3), and *Omen of Clarity* (60 Clearcasting on melee attacks).
+- **Restoration (`11.2`):**
+  - *Levels 10–35:* HoT efficiency: *Improved Mark of the Wild* (5/5), *Improved Healing Touch* (5/5), *Swiftmend* (20 burst HoT consumption), *Gift of Nature* (5/5 healing throughput), and *Nature's Swiftness* (35 emergency instant heal).
+  - *Levels 35–50:* *Tranquil Spirit* (5/5 cost reduction), *Preservation* (3/3), *Improved Regrowth* (5/5 crit), and *Tree of Life Form* (50 spirit aura & HoT efficiency form).
+  - *Levels 50–60:* Balance dip into *Improved Wrath* (5/5) and *Sylvan Blessing* (2/2) for solo/dungeon questing support.
+

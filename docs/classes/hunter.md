@@ -61,3 +61,31 @@ Hunters excel at sustained single-target ranged DPS, pet off-tanking, snares, an
 - **Crowd Control:**
   - Deploys *Freezing Trap* when assigned CC via `.bot action cc <mark>`.
   - Uses *Concussive Shot* to snare fleeing targets.
+
+---
+
+## Premade Talent Specs & Progression (1.18.1)
+
+TortoiseBots provides validated 5-level talent checkpoints (levels 10–60) tailored for Turtle WoW 1.18.1:
+
+| Spec Name | Config ID | Role | 60 Allocation | Key Signatures & Synergies |
+| :--- | :--- | :--- | :--- | :--- |
+| **Beast Mastery** | `3.0` | Ranged DPS | `45 / 6 / 0` | Bestial Wrath (40), Frenzy (45), Kill Command (50), Unleashed Fury, Scent of Blood, Efficiency dip. |
+| **Marksmanship** | `3.1` | Ranged DPS | `9 / 42 / 0` | Aimed Shot (20), Mortal Shots (30), Lock and Load (50), Experimental Ammunition, Barrage, BM survivability dip. |
+| **Survival** | `3.2` | Melee DPS | `8 / 0 / 43` | Carve (35), Lacerate (50), Untamed Trapper (60), Savage Strikes, Trap Mastery, BM pet health dip. |
+
+### Leveling Milestones & Progression Rationale
+
+- **Beast Mastery (`3.0`):**
+  - *Levels 10–35:* Pet empowerment rush: *Swift Aspects* (5/5), *Endurance Training* (5/5), *Thick Hide* (3/3), *Unleashed Fury* (5/5 pet damage), *Ferocity* (5/5 pet crit), and *Intimidation* (30).
+  - *Levels 35–45:* *Scent of Blood* (3/3), *Bestial Wrath* (40 signature enrage), *Frenzy* (5/5 pet attack speed), and *Spirit Bond* (2/2).
+  - *Levels 45–60:* *Kill Command* (50 capstone instant pet strike) and 6 points in Marksmanship (*Efficiency* 5/5 + *Improved Stings* 1/5) for shot mana sustainability.
+- **Marksmanship (`3.1`):**
+  - *Levels 10–30:* Core shot burst: *Efficiency* (5/5), *Lethal Shots* (5/5 ranged crit), *Aimed Shot* (20 signature opener), *Swiftshot* (3/3), and *Mortal Shots* (30 +30% crit damage bonus).
+  - *Levels 30–50:* *Barrage* (3/3 Multi-Shot damage), *Experimental Ammunition* (40), *Ranged Weapon Specialization* (5/5), and *Lock and Load* (50 capstone proc).
+  - *Levels 50–60:* Completes Marksmanship utility and takes 9 Beast Mastery points (*Swift Aspects* 5/5 + pet survivability) to support group dungeon grinding.
+- **Survival (`3.2`):**
+  - *Levels 10–35:* Melee toolkit rush: *Improved Slaying* (3/3), *Resourcefulness* (5/5 trap cost/cooldown), *Savage Strikes* (2/2 Raptor/Mongoose crit), *Planning Ahead* (2/2), and *Carve* (35 front-cone cleave).
+  - *Levels 35–50:* *Surefooted* (3/3 hit chance), *Killer Instinct* (3/3 crit), *Trap Mastery* (3/3), and *Lacerate* (50 stacking melee bleed).
+  - *Levels 50–60:* *Lightning Reflexes* (5/5 Agility scaling), *Untamed Trapper* (60 capstone), and 8 Beast Mastery points (*Endurance Training* 5/5 + *Thick Hide* 3/3) to keep the melee hunter's pet resilient.
+
