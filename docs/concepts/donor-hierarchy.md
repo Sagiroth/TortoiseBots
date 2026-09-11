@@ -18,12 +18,12 @@ When implementing or diagnosing behavior in TortoiseBots, code must not be blind
 When investigating bugs or porting features, evaluate evidence in this order:
 
 1. **Actual Tortoise WoW Client / Server Runtime Behavior** (Ground Truth).
-2. **Shyalya Implementation** (`playerbots-references/shyalya-tortoise-wow`):
+2. **Shyalya Implementation** ([Shyalya/tortoise-wow](https://github.com/Shyalya/tortoise-wow)):
    - **Primary runtime oracle for Turtle WoW 1.18.1 PlayerBots semantics.**
    - Consult first for: engine lifecycle, action queue behavior, movement/`MotionMaster` interactions, Turtle-specific DBC/spell adaptations, and packet hook ordering.
    - *Never copy Shyalya's core coupling (`m_bot`, `WorldSession::GetBot()`).*
-3. **Current Penqle / Tortoise Core Semantics** (`tortoise-wow`).
-4. **mod-playerbots** (`playerbots-references/mod-playerbots`):
+3. **Current Penqle / Tortoise Core Semantics** ([Penqle/tortoise-wow](https://github.com/Penqle/tortoise-wow)).
+4. **mod-playerbots** ([mod-playerbots/mod-playerbots](https://github.com/mod-playerbots/mod-playerbots)):
    - **Primary mature behavior donor.**
    - Consult first for: combat rotations, healing prioritization, interrupt selections, CC logic, dungeon behavior, and rich tactics.
    - Strip all TBC/WotLK assumptions before porting.

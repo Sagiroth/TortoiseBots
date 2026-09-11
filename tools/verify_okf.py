@@ -131,8 +131,11 @@ def main():
         rel_file = md_file.relative_to(DOCS_DIR)
         for match in MD_LINK_REGEX.finditer(body):
             text, href = match.group(1), match.group(2)
-            # Skip web URLs, file URIs, and mailto/anchor-only links
-            if href.startswith(("http://", "https://", "mailto:", "#", "file://")):
+            if href.startswith("file://"):
+                errors.append(f"{rel_file}: Forbidden local file URI [{text}]({href}); use repository-relative paths or public URLs")
+                continue
+            # Skip web URLs and mailto/anchor-only links
+            if href.startswith(("http://", "https://", "mailto:", "#")):
                 continue
             # Strip fragment
             link_path = href.split("#")[0]

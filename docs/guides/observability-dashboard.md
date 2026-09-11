@@ -11,7 +11,7 @@ relates_to:
 
 # Observability Dashboard & Telemetry
 
-TortoiseBots includes an optional, zero-overhead observability subsystem located in [`tools/observability`](file:///home/deck/Documents/TortoiseBots/tools/observability). It provides live visibility into bot fleet health, active locations, combat states, and navigation stuck episodes.
+TortoiseBots includes an optional, zero-overhead observability subsystem located in [`tools/observability`](../../tools/observability). It provides live visibility into bot fleet health, active locations, combat states, and navigation stuck episodes.
 
 ```text
 TortoiseBots Module (C++)
@@ -58,7 +58,7 @@ go run cmd/server/main.go --http-port 8080 --udp-port 9195
 ```
 
 #### Via Docker Compose:
-If using `tortoise-docker-penqle`, ensure the `observability` service container is enabled.
+If using containerized deployment (e.g. [tortoise-docker-penqle](https://github.com/PiotrZadka/tortoise-docker-penqle)), ensure the `observability` service container is running.
 
 ---
 
