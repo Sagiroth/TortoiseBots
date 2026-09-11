@@ -92,7 +92,7 @@ Using [`tortoise-docker-penqle`](https://github.com/Sagiroth/tortoise-docker-pen
 
 ```bash
 # Inside your tortoise-wow (bot-helpers) checkout:
-git clone https://github.com/tortoise-wow-stack/TortoiseBots.git modules/TortoiseBots
+git clone https://github.com/Sagiroth/TortoiseBots.git modules/TortoiseBots
 
 cmake -B build -DMODULES=static -DMODULE_TORTOISEBOTS=static
 cmake --build build -j"$(nproc)"
