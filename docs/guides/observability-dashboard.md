@@ -58,7 +58,7 @@ go run cmd/server/main.go --http-port 8080 --udp-port 9195
 ```
 
 #### Via Docker Compose:
-If using containerized deployment (e.g. [tortoise-docker-penqle](https://github.com/Sagiroth/tortoise-docker-penqle)), ensure the `observability` service container is running.
+If using containerized deployment (e.g. Docker Compose runtime), ensure the `observability` service container is running.
 
 ---
 

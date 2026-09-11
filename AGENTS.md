@@ -62,7 +62,7 @@ All references are remote, read-only, and optional. Clone only what you need for
 | CMaNGOS Classic | <https://github.com/cmangos/mangos-classic> | What CMaNGOS PlayerBots expects from its host |
 | MangosZero | <https://github.com/mangoszero/server> | Lifecycle/session/group patterns |
 | mod-playerbots | <https://github.com/mod-playerbots/mod-playerbots> | Newer behavior reference |
-| Docker/runtime env | <https://github.com/Sagiroth/tortoise-docker-penqle> | Optional local runtime/validation environment |
+| Docker/runtime env | Local / private checkout | Optional local runtime/validation environment |
 
 Do not edit, commit to, or rebase reference repos. Do not blindly copy their architecture. Before relying on a commit for provenance, record its SHA (e.g. GitHub permalink or `git ls-remote <url> HEAD`).
 

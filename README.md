@@ -78,7 +78,7 @@ Independent native PlayerBots module for the canonical **Tortoise WoW 1.18.1** c
 
 ### 1. Fast iteration (Docker + ccache)
 
-Using [`tortoise-docker-penqle`](https://github.com/Sagiroth/tortoise-docker-penqle):
+Using a local Docker Compose development environment:
 
 ```bash
 # In tortoise-docker-penqle/:
