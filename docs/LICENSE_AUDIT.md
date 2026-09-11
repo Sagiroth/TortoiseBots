@@ -1,8 +1,18 @@
+---
+id: ref-license-audit
+title: Donor License Compatibility Audit
+category: reference
+summary: Audit record of donor source licenses, compatibility with Penqle core AGPL-3.0, and release gates.
+tags: [license, legal, audit, compliance]
+relates_to:
+  - concept-architecture-invariants
+---
+
 # Donor licence compatibility audit
 
 **Status:** Open  
 **Scope:** TortoiseBots donor-derived source and its combination with
-`Penqle/tortoise-wow`  
+`tortoise-wow/tortoise-wow`  
 **Baseline reviewed:** repository `main` at
 `0774a3e10c5529b315cd7f55306ebeadd94c0f58`
 
@@ -20,7 +30,7 @@ actual files included in a build.
 | `cmangos/mangos-classic@9b682be` | Root `LICENSE`: GPL-2.0 text | Host/API patterns, mostly reimplemented | No copied body is identified by the current provenance entries; if one is added, record the exact grant variant |
 | `mangoszero/server@1817ae1` | Root `LICENSE`: GPL-3.0 text | Lifecycle patterns, recorded as reimplemented | Compatible as a reference; any future copied body must retain its grant and notices |
 | `mod-playerbots/mod-playerbots@5397110cba48` | Root `LICENSE`: GPL-2.0 text; sampled ported source headers grant version 2 or later | Modern generic strategies and nine class contexts | Headered GPL-2.0-or-later files can move to GPLv3-compatible terms; audit all copied/ported files rather than extrapolating from the sample |
-| `Penqle/tortoise-wow` | Root `LICENSE`: AGPL-3.0 | Target core | The combined build must satisfy AGPL-3.0 and every included module component's compatible terms |
+| `tortoise-wow/tortoise-wow` | Root `LICENSE`: AGPL-3.0 | Target core | The combined build must satisfy AGPL-3.0 and every included module component's compatible terms |
 
 ## Release gate
 

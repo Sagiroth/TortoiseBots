@@ -1,3 +1,14 @@
+---
+id: ref-player-control
+title: Player-Owned Control Catalog
+category: reference
+summary: Technical delivery specification for the public .bot command catalog, account authentication, and addon transport protocol.
+tags: [commands, player-control, catalog, addon-protocol, tbm]
+relates_to:
+  - guide-player-controls
+  - concept-architecture-invariants
+---
+
 # Player-owned control catalog
 
 **Status:** design and delivery contract

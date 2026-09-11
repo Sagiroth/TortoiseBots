@@ -19,7 +19,7 @@ work and keeps the design focused.
 ## Current core target
 
 TortoiseBots currently targets the `bot-helpers` branch of
-[`Penqle/tortoise-wow`](https://github.com/Penqle/tortoise-wow). Until that work
+[`tortoise-wow`](https://github.com/tortoise-wow/tortoise-wow). Until that work
 is merged into `main` or `1181dev`, build and test integration changes against
 `bot-helpers`.
 

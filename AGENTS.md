@@ -14,18 +14,32 @@ PlayerBots is rebuilt as a clean, optional module. The Tortoise core must remain
 
 ## Read first
 
-For any PlayerBots work, read in this order:
+For any PlayerBots work, consult the **Open Knowledge Format (OKF)** catalogue in `docs/`:
 
-1. `docs/PLAN.md` — durable architecture rules and roadmap.
-2. `docs/HOST_API.md` — when touching sessions, lifecycle, packets, commands, build/module integration, or any core seam.
-3. `docs/PROVENANCE.md` — when porting or changing donor-derived behavior.
-4. `docs/README.md` — documentation map.
+1. [`docs/README.md`](docs/README.md) — Central switchboard and navigation catalog.
+2. [`docs/manifest.yaml`](docs/manifest.yaml) — OKF bundle index, ontology, and role entry points.
+3. [`docs/concepts/architecture-invariants.md`](docs/concepts/architecture-invariants.md) — The 5 non-negotiable architectural rules.
+4. [`docs/classes/overview.md`](docs/classes/overview.md) — 9-class combat rotations, specs, and Turtle WoW custom abilities.
+5. [`docs/guides/player-controls.md`](docs/guides/player-controls.md) — Tactical intents (`.bot action`), CC by raid mark, and `/tbm` addon protocol.
+6. [`docs/guides/living-world.md`](docs/guides/living-world.md) — Roaming bots, quest grinding, AH economy, and guild formation.
+7. [`docs/HOST_API.md`](docs/HOST_API.md) — When touching sessions, lifecycle, packets, commands, or core seams.
+8. [`docs/PROVENANCE.md`](docs/PROVENANCE.md) — When porting or changing donor-derived behavior.
 
-`docs/PLAN.md` is the architecture source of truth. Historical evidence (audit/handover) lives in Git history and `docs/archive/` if retained.
+`docs/PLAN.md` and `docs/concepts/` are the architecture source of truth. Historical audit evidence lives in Git history.
 
-This repo is self-contained. You do not need any checkout outside it to understand the architecture or to contribute. All required context is in `docs/` and this file.
+This repo is self-contained. All required context is indexed in `docs/` and validated via `python3 tools/verify_okf.py`.
 
-If you have a local Tortoise core checkout or Docker stack alongside this repo, tell the agent explicitly when it is relevant. The agent must not assume any sibling directory exists or guess absolute paths.
+### ⚠️ Keeping OKF Documentation Up-to-Date
+
+The Open Knowledge Format (`docs/`) is the single source of truth for TortoiseBots architecture, bot commands, configuration, classes, and mechanics. Whenever making changes that impact user-facing behavior, class balance, commands, or host seams, update the corresponding documentation:
+
+| Change Scope / Area | Typical Code Paths | Required OKF Doc Updates | Mandatory Gate |
+| :--- | :--- | :--- | :--- |
+| **Commands & Actions** | `commands/*`, `actions/*` | [`docs/guides/player-controls.md`](docs/guides/player-controls.md) | `python3 tools/verify_okf.py` |
+| **Configuration & Tuning** | `PlayerbotAIConfig.*`, `aiplayerbot.conf*` | [`docs/guides/configuration-tuning.md`](docs/guides/configuration-tuning.md) | `python3 tools/verify_okf.py` |
+| **Class AI & Rotations** | `strategy/<class>/*`, `AiObjectContext` | Relevant class doc in [`docs/classes/`](docs/classes/) | `python3 tools/verify_okf.py` |
+| **Host Seams & Sessions** | `host/*`, `runtime/BotManager.*` | [`docs/HOST_API.md`](docs/HOST_API.md), [`docs/concepts/architecture-invariants.md`](docs/concepts/architecture-invariants.md) | `tools/verify_penqle_host_contract.sh` |
+| **Doc Structure & Nodes** | Any file in `docs/` | [`docs/manifest.yaml`](docs/manifest.yaml), [`docs/README.md`](docs/README.md) | `python3 tools/verify_okf.py` |
 
 ---
 
@@ -33,16 +47,16 @@ If you have a local Tortoise core checkout or Docker stack alongside this repo, 
 
 The canonical upstream and target core is:
 
-<https://github.com/Penqle/tortoise-wow>
+<https://github.com/tortoise-wow/tortoise-wow>
 
-Unless qualified otherwise, these terms mean `Penqle/tortoise-wow`: upstream, upstream core, target core, core main, core PR.
+Unless qualified otherwise, these terms mean `tortoise-wow`: upstream, upstream core, target core, core main, core PR.
 
-`Shyalya/tortoise-wow` and other PlayerBots repos (`cmangos/playerbots`, `mod-playerbots`, `mangoszero/server`, `cmangos/mangos-classic`) are **read-only donor references**, not upstream. Source-of-truth order:
+`shyalya-tortoise-wow` and other PlayerBots repos (`cmangos/playerbots`, `mod-playerbots`, `mangoszero/server`, `cmangos/mangos-classic`) are **read-only donor references**, not upstream. Source-of-truth order:
 
-1. `Penqle/tortoise-wow` pinned target core
+1. `tortoise-wow` pinned target core
 2. Tortoise data / DBC / runtime evidence
 3. This repo's host contract (`docs/HOST_API.md`, `docs/PLAN.md`)
-4. Shyalya and other donors as references only
+4. `shyalya-tortoise-wow` and other donors as references only
 
 Git remote aliases are not authority — always identify a repo by `owner/repo`.
 
@@ -54,19 +68,19 @@ All references are remote, read-only, and optional. Clone only what you need for
 
 | Reference | URL | Purpose |
 | --- | --- | --- |
-| Upstream core | <https://github.com/Penqle/tortoise-wow> | Target core (`Penqle/tortoise-wow`) |
-| Shyalya fork | <https://github.com/Shyalya/tortoise-wow> | Tortoise 1.18.1 compatibility evidence, known API differences, Tortoise fixes |
+| Upstream core | <https://github.com/tortoise-wow/tortoise-wow> | Target core (`tortoise-wow`) |
+| shyalya-tortoise-wow | <https://github.com/Shyalya/tortoise-wow> | Tortoise 1.18.1 compatibility evidence, known API differences, Tortoise fixes |
 | CMaNGOS PlayerBots | <https://github.com/cmangos/playerbots> | Existing combat/movement/class/healing/CC/dungeon behavior |
 | CMaNGOS Classic | <https://github.com/cmangos/mangos-classic> | What CMaNGOS PlayerBots expects from its host |
 | MangosZero | <https://github.com/mangoszero/server> | Lifecycle/session/group patterns |
 | mod-playerbots | <https://github.com/mod-playerbots/mod-playerbots> | Newer behavior reference |
-| Docker/runtime env | <https://github.com/Sagiroth/tortoise-docker-penqle> | Optional local runtime/validation environment |
+| Docker/runtime env | Local / private checkout | Optional local runtime/validation environment |
 
 Do not edit, commit to, or rebase reference repos. Do not blindly copy their architecture. Before relying on a commit for provenance, record its SHA (e.g. GitHub permalink or `git ls-remote <url> HEAD`).
 
 ### What each reference is for — quick guide
 
-- **Shyalya** — Tortoise spells/talents, session/movement/group/loot lessons, integration pain
+- **shyalya-tortoise-wow** — Tortoise spells/talents, session/movement/group/loot lessons, integration pain
 - **CMaNGOS PlayerBots** — richest behavior source for combat/movement/healing/CC/dungeons
 - **CMaNGOS Classic** — host API definitions and lifecycle semantics
 - **MangosZero** — smaller bot lifecycle, character creation, group handling
@@ -75,10 +89,10 @@ Do not edit, commit to, or rebase reference repos. Do not blindly copy their arc
 
 Do not search every repo for every task:
 
-- **Public behavior / commands / ownership** → Shyalya → CMaNGOS PlayerBots
-- **Combat / class AI / healing / CC / movement** → CMaNGOS PlayerBots → Shyalya → MangosZero
-- **Session / lifecycle / bot login** → Current Tortoise core → MangosZero → Shyalya → CMaNGOS
-- **Tortoise spells / talents / custom content** → Tortoise core/data → Shyalya → Vanilla refs
+- **Public behavior / commands / ownership** → `shyalya-tortoise-wow` → CMaNGOS PlayerBots
+- **Combat / class AI / healing / CC / movement** → CMaNGOS PlayerBots → `shyalya-tortoise-wow` → MangosZero
+- **Session / lifecycle / bot login** → Current Tortoise core → MangosZero → `shyalya-tortoise-wow` → CMaNGOS
+- **Tortoise spells / talents / custom content** → Tortoise core/data → `shyalya-tortoise-wow` → Vanilla refs
 - **Runtime / integration failures** → Current core source → Docker env (if you have one) → logs → references
 
 The current Tortoise architecture always outranks making a donor port easier.
@@ -245,7 +259,7 @@ A successful build/test remains evidence for unchanged code. Do not rebuild afte
 
 ### Validation cadence
 
-- **Docs/comments/config only** → text checks + `git diff --check`, no C++ build.
+- **Docs/comments/config only** → verify via `./tools/verify_all.sh` (runs OKF validator, surface checks, and decision-trail test in ~1s), text checks + `git diff --check`, no C++ build.
 - **Module-only C++** → one cached `MODULE_TORTOISEBOTS=static` build after the batch is coherent.
 - **Observability tool (Go)** → `docker run --rm -v "$PWD/tools/observability:/src" -w /src golang:1.22-alpine sh -c 'go vet ./... && go test ./...'` (no host Go toolchain). Live check: server logs `Observability telemetry active`, `/metrics` shows `mangos_server_online 1` and rising `tortoisebots_snapshots_total`.
 - **Core-seam change** → cached module build while iterating; full ON/OFF matrix only when stable.

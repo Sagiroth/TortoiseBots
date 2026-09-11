@@ -1,8 +1,20 @@
+---
+id: concept-plan
+title: Architecture Roadmap & Definition of Done
+category: concepts
+summary: Strategic roadmap, architectural invariants, release milestones, and definition of done for TortoiseBots.
+tags: [roadmap, architecture, milestones, plan]
+relates_to:
+  - concept-architecture-invariants
+  - concept-strategy-engine
+  - concept-known-limitations
+---
+
 # PLAN.md — TortoiseBots architecture and roadmap
 
 **Status:** Active architecture and roadmap
 **Target:** Tortoise WoW 1.18.1 core
-**Primary goal:** Useful PlayerBots for Tortoise 1.18.1 Core from Penqle without rebuilding the old tightly coupled core.
+**Primary goal:** Useful PlayerBots for Tortoise 1.18.1 Core repository (`tortoise-wow`) without rebuilding the old tightly coupled core.
 
 ## 1. Product goal
 
@@ -95,8 +107,8 @@ interfaces this module calls and that legacy bot-object coupling has not
 returned to normal gameplay code. It is a pre-build gate, not a replacement
 for the enabled/disabled build matrix or runtime acceptance.
 
-Use [`MERGE_ACCEPTANCE.md`](MERGE_ACCEPTANCE.md) for the exact ON/OFF build,
-fixture, real-client, and default-off optional-service sequence.
+See [`AGENTS.md`](../AGENTS.md) and [`README.md`](../README.md) for the exact
+build, fixture, real-client, and default-off optional-service sequence.
 
 * **Summon:** same-map and cross-map owned bot; dead, combat, taxi and
   teleport rejection; duplicate-request rejection; completed teleport resumes
@@ -110,7 +122,7 @@ These are runtime gates, not claims based on static inspection.
 
 ### 6.3 F-03/F-27 closure
 
-`7353989c`/`07cf7976` pinned pair: F-03 (legacy LFT/slots/filters) and F-27 (`npc_teslinah` + `script_name='0'` → `20260825090000_world.sql`) closed where source proves it; 17 ScriptNames remain unverified content gaps (see `archive/PLAYERBOTS_AUDIT.md`).
+`7353989c`/`07cf7976` pinned pair: F-03 (legacy LFT/slots/filters) and F-27 (`npc_teslinah` + `script_name='0'` → `20260825090000_world.sql`) closed where source proves it; 17 ScriptNames remain unverified content gaps (recorded in Git history).
 
 ### 6.4 Known-good pair
 
@@ -151,8 +163,7 @@ Use smallest check that proves change — see `AGENTS.md` §Validation. Previous
 **First release:** human+ bots work in world + 5-player dungeon (tank/heal/DPS, follow/recover/regroup), core stays optional, install/build documented.
 
 ## 12. Working docs
-
+ 
 * `PLAN.md` — roadmap (this file)
 * `HOST_API.md` — host contract
-* `PROVENANCE.md` — lineage
-* `archive/PLAYERBOTS_AUDIT.md` — historical evidence
+* `PROVENANCE.md` — lineage and attribution ledger

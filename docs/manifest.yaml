@@ -1,0 +1,112 @@
+bundle: TortoiseBots Knowledge Base
+version: 1.0.0
+format: open-knowledge-format/v1
+description: >-
+  Authoritative, traversable knowledge base for the TortoiseBots native module,
+  documenting class AI, player controls, configuration knobs, and architecture invariants.
+
+entrypoints:
+  human_quickstart: guides/getting-started.md
+  player_controls: guides/player-controls.md
+  class_catalog: classes/overview.md
+  configuration: guides/configuration-tuning.md
+  observability: guides/observability-dashboard.md
+  developer_architecture: concepts/architecture-invariants.md
+
+categories:
+  classes:
+    description: "Deep-dive documentation for all 9 playable classes, specs, and Turtle content."
+  guides:
+    description: "Practical guides for players, operators, and developers."
+  concepts:
+    description: "Core architectural invariants, engine mechanics, and boundaries."
+  reference:
+    description: "Authoritative machine and human reference data."
+
+nodes:
+  # Classes
+  - id: class-overview
+    path: classes/overview.md
+    category: classes
+  - id: class-warrior
+    path: classes/warrior.md
+    category: classes
+  - id: class-paladin
+    path: classes/paladin.md
+    category: classes
+  - id: class-hunter
+    path: classes/hunter.md
+    category: classes
+  - id: class-rogue
+    path: classes/rogue.md
+    category: classes
+  - id: class-priest
+    path: classes/priest.md
+    category: classes
+  - id: class-shaman
+    path: classes/shaman.md
+    category: classes
+  - id: class-mage
+    path: classes/mage.md
+    category: classes
+  - id: class-warlock
+    path: classes/warlock.md
+    category: classes
+  - id: class-druid
+    path: classes/druid.md
+    category: classes
+
+  # Guides
+  - id: guide-getting-started
+    path: guides/getting-started.md
+    category: guides
+  - id: guide-player-controls
+    path: guides/player-controls.md
+    category: guides
+  - id: guide-configuration-tuning
+    path: guides/configuration-tuning.md
+    category: guides
+  - id: guide-observability-dashboard
+    path: guides/observability-dashboard.md
+    category: guides
+  - id: guide-living-world
+    path: guides/living-world.md
+    category: guides
+  - id: guide-dungeon-tactics
+    path: guides/dungeon-tactics.md
+    category: guides
+
+  # Concepts
+  - id: concept-architecture-invariants
+    path: concepts/architecture-invariants.md
+    category: concepts
+  - id: concept-strategy-engine
+    path: concepts/strategy-engine.md
+    category: concepts
+  - id: concept-donor-hierarchy
+    path: concepts/donor-hierarchy.md
+    category: concepts
+  - id: concept-known-limitations
+    path: concepts/known-limitations.md
+    category: concepts
+  - id: concept-bot-mechanics-and-quirks
+    path: concepts/bot-mechanics-and-quirks.md
+    category: concepts
+  - id: concept-plan
+    path: PLAN.md
+    category: concepts
+
+  # Reference
+  - id: ref-host-api
+    path: HOST_API.md
+    category: reference
+  - id: ref-player-control
+    path: PLAYER_CONTROL.md
+    category: reference
+  - id: ref-provenance
+    path: PROVENANCE.md
+    category: reference
+  - id: ref-license-audit
+    path: LICENSE_AUDIT.md
+    category: reference
+
