@@ -29,6 +29,16 @@ For any PlayerBots work, consult the **Open Knowledge Format (OKF)** catalogue i
 
 This repo is self-contained. All required context is indexed in `docs/` and validated via `python3 tools/verify_okf.py`.
 
+### ⚠️ Keeping OKF Documentation Up-to-Date
+
+The Open Knowledge Format (`docs/`) is the single source of truth for TortoiseBots architecture, bot commands, configuration, classes, and mechanics.
+**Whenever making a code, command, configuration, or architectural change that impacts user-facing behavior, class balance, commands, or host seams, you MUST update the corresponding OKF documentation and run `python3 tools/verify_okf.py`:**
+* **Added or modified commands/actions (`.bot`):** Update [`docs/guides/player-controls.md`](docs/guides/player-controls.md).
+* **Changed configuration settings or thresholds:** Update [`docs/guides/configuration-tuning.md`](docs/guides/configuration-tuning.md).
+* **Modified class AI, spells, or rotation logic:** Update the relevant class guide in [`docs/classes/`](docs/classes/).
+* **Changed host seams, session lifecycle, or core interfaces:** Update [`docs/HOST_API.md`](docs/HOST_API.md) and [`docs/concepts/architecture-invariants.md`](docs/concepts/architecture-invariants.md).
+* **Added, removed, or moved documentation files:** Update [`docs/manifest.yaml`](docs/manifest.yaml) and ensure `python3 tools/verify_okf.py` passes cleanly (0 errors).
+
 ---
 
 ## Canonical upstream
