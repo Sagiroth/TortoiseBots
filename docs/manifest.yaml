@@ -72,6 +72,9 @@ nodes:
   - id: guide-living-world
     path: guides/living-world.md
     category: guides
+  - id: guide-dungeon-tactics
+    path: guides/dungeon-tactics.md
+    category: guides
 
   # Concepts
   - id: concept-architecture-invariants

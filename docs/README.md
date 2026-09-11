@@ -11,6 +11,7 @@ The root graph specification is declared in [`manifest.yaml`](manifest.yaml). Yo
 | If you are... | Start here | Purpose |
 | :--- | :--- | :--- |
 | **A player wanting to adventure with bots** | [**Getting Started Guide**](guides/getting-started.md) | How to spawn owned bots, form a party, and run dungeons |
+| **Leading a dungeon party or raid** | [**Dungeon & Raid Tactics**](guides/dungeon-tactics.md) | Corner pulling, CC markers, wipes, and instance navigation |
 | **Looking for in-game commands or addon controls** | [**Player Controls & /tbm Addon**](guides/player-controls.md) | Tactical intents (attack, pull, pullback, CC, AoE, formations) |
 | **Curious about how a specific class plays** | [**Class Catalog Overview**](classes/overview.md) | Rotations, Turtle custom spells, and spec capabilities |
 | **Wanting a living world with wandering bots & AH** | [**Living World & Autonomous Bots**](guides/living-world.md) | Roaming bots, quest grinding, AH economy, and guilds |
@@ -59,6 +60,7 @@ Detailed combat rotations, Turtle WoW 1.18.1 custom abilities, pet handling, and
 ## 📚 Guides & Operations
 
 - [**Getting Started**](guides/getting-started.md) — Spawning owned bots, account ownership, inviting, and dungeon basics.
+- [**Dungeon & Raid Tactics**](guides/dungeon-tactics.md) — Field manual for clearing 5-player dungeons: corner pulling, LoS, CC discipline, and wipes.
 - [**Living World & Autonomous Bots**](guides/living-world.md) — Wandering bots, quest grinding, AH trading, guilds, and battlegrounds.
 - [**Player Controls**](guides/player-controls.md) — Roster vs. Actions, `.bot action` command intents, and the `TBM:` addon protocol.
 - [**Configuration & Tuning**](guides/configuration-tuning.md) — Plain-English explanation of `aiplayerbot.conf` and `tortoise_bots.conf` settings.
