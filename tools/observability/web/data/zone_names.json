@@ -1,0 +1,62 @@
+{
+ "1769": {
+  "name": "Timbermaw Hold",
+  "map": 1
+ },
+ "1941": {
+  "name": "Caverns of Time",
+  "map": 1
+ },
+ "2366": {
+  "name": "The Black Morass",
+  "map": 269
+ },
+ "5053": {
+  "name": "Moomoo Grove",
+  "map": 801
+ },
+ "5077": {
+  "name": "Crescent Grove",
+  "map": 802
+ },
+ "5086": {
+  "name": "Karazhan Crypt",
+  "map": 800
+ },
+ "5087": {
+  "name": "Stormwind Vault",
+  "map": 35
+ },
+ "5097": {
+  "name": "Emerald Sanctum",
+  "map": 807
+ },
+ "5103": {
+  "name": "Hateforge Quarry",
+  "map": 808
+ },
+ "5204": {
+  "name": "The Black Morass",
+  "map": 269
+ },
+ "5208": {
+  "name": "Gilneas City",
+  "map": 815
+ },
+ "5561": {
+  "name": "Balor",
+  "map": 0
+ },
+ "5581": {
+  "name": "Northwind",
+  "map": 0
+ },
+ "5601": {
+  "name": "Dragonmaw Refuge",
+  "map": 816
+ },
+ "5602": {
+  "name": "Dismal Reaches",
+  "map": 0
+ }
+}
