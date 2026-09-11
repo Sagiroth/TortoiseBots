@@ -694,7 +694,7 @@ bool PlayerbotAIConfig::Initialize()
     autoTrainSpells = config.GetStringDefault("AiPlayerbot.AutoTrainSpells", "no");
     autoPickTalents = config.GetStringDefault("AiPlayerbot.AutoPickTalents", "no");
     autoLearnTrainerSpells = config.GetBoolDefault("AiPlayerbot.AutoLearnTrainerSpells", false);
-    autoLearnQuestSpells = config.GetBoolDefault("AiPlayerbot.AutoLearnQuestSpells", false);
+    autoLearnQuestSpells = config.GetBoolDefault("AiPlayerbot.AutoLearnQuestSpells", true);
     autoLearnDroppedSpells = config.GetBoolDefault("AiPlayerbot.AutoLearnDroppedSpells", false);
     autoDoQuests = config.GetBoolDefault("AiPlayerbot.AutoDoQuests", true);
     generateTravelNodes = config.GetBoolDefault("AiPlayerbot.GenerateTravelNodes", false);
