@@ -20,6 +20,24 @@ The root graph specification is declared in [`manifest.yaml`](manifest.yaml). Yo
 
 ---
 
+## ⚡ Quick Task Finder (How Do I...?)
+
+| What do you want to do? | Direct Solution & Link |
+| :--- | :--- |
+| **Summon lost or stuck bots to your location** | Type `.bot summon` or use the Summon button in `/tbm` → [Player Controls](guides/player-controls.md#2-roster--lifecycle-commands) |
+| **Have bots learn all class spells automatically** | Whisper `/w <BotName> trainer` while standing near a class trainer → [Whisper Cheat-Sheet](guides/player-controls.md#5-mature-ai-command-delegation--whispers) |
+| **Make bot alts automatically match my level** | Set `AiPlayerbot.SyncAltLevelToMaster = 1` in `aiplayerbot.conf` → [QoL Configuration](guides/configuration-tuning.md#1-player-quality-of-life-qol-flags) |
+| **Pull a pack safely and retreat around a corner** | Target enemy and type `.bot action pullback` → [Tactical Party Actions](guides/player-controls.md#1-tactical-party-actions-bot-action-intent) |
+| **Prevent bots from breaking Polymorph or Freezing Trap** | Target mark and type `.bot action cc <mark>` (pets auto-disengage) → [CC Discipline](concepts/bot-mechanics-and-quirks.md#2-tactical-interrupt--cc-resolution-gimmicks) |
+| **Enable an active player economy on the Auction House** | Set `AiPlayerbot.AhMarketEnabled = 1` → [Living AH Economy](guides/living-world.md#4-the-living-auction-house-economy-ahmarketservice) |
+| **Blacklist or override price of an item on the AH** | Type `.bot ah item <id> 0 0` (admin only) → [AH Admin Commands](guides/player-controls.md#6-auction-house-management-bot-ah--ahbot) |
+| **Autofill missing roles for LFT dungeon runs** | Set `AiPlayerbot.RandomBotLftEnabled = 1` → [LFT Autofill](guides/living-world.md#5-automated-dungeon--battleground-queues) |
+| **Inspect stuck bots and live positions on a 2D map** | Run Go daemon in `tools/observability` and open `http://localhost:8080` → [Observability Dashboard](guides/observability-dashboard.md) |
+| **Understand Turtle custom spells (Viper, Holy Strike, Carve)** | Check individual class deep-dives or census TSV → [Class Overview](classes/overview.md) & [Spell Coverage](reference/spell-coverage.tsv) |
+| **Port a new feature or fix a bug cleanly** | Follow headless session invariant & donor hierarchy → [Architecture Invariants](concepts/architecture-invariants.md) & [Donor Hierarchy](concepts/donor-hierarchy.md) |
+
+---
+
 ## ⚔️ Class AI & Rotations Catalog
 
 Detailed combat rotations, Turtle WoW 1.18.1 custom abilities, pet handling, and talent progress for all nine classes:
