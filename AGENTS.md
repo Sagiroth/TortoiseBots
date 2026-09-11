@@ -259,7 +259,7 @@ A successful build/test remains evidence for unchanged code. Do not rebuild afte
 
 ### Validation cadence
 
-- **Docs/comments/config only** → verify OKF graph (`python3 tools/verify_okf.py`), text checks + `git diff --check`, no C++ build.
+- **Docs/comments/config only** → verify via `./tools/verify_all.sh` (runs OKF validator, surface checks, and decision-trail test in ~1s), text checks + `git diff --check`, no C++ build.
 - **Module-only C++** → one cached `MODULE_TORTOISEBOTS=static` build after the batch is coherent.
 - **Observability tool (Go)** → `docker run --rm -v "$PWD/tools/observability:/src" -w /src golang:1.22-alpine sh -c 'go vet ./... && go test ./...'` (no host Go toolchain). Live check: server logs `Observability telemetry active`, `/metrics` shows `mangos_server_online 1` and rising `tortoisebots_snapshots_total`.
 - **Core-seam change** → cached module build while iterating; full ON/OFF matrix only when stable.
