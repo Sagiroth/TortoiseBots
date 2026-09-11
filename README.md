@@ -86,7 +86,6 @@ Independent native PlayerBots module for the canonical **Tortoise WoW 1.18.1** c
 
 - A [Tortoise WoW core](https://github.com/Penqle/tortoise-wow) checkout on the `bot-helpers` branch.
 - C++17 toolchain and CMake (see build below).
-- Optional: the [Docker stack](https://github.com/Sagiroth/tortoise-docker-penqle) for local build/run/telemetry.
 
 ---
 
