@@ -39,16 +39,22 @@ When you target an enemy mob and issue `.bot action pullback`:
 2. The tank uses a ranged attack (Bow, Gun, Thrown, or *Exorcism*) or charges in, applies immediate threat, and immediately sprints back to your party's current location.
 3. Non-tank bots hold fire until the tank reaches the regroup anchor, drawing the entire mob pack safely around the corner into your ambush.
 
-```text
-                Corridor / Patrol Room
-              [Mob 1]  [Mob 2]  [Caster]
-                         │
-                         │ Tank pulls with ranged attack
-                         ▼
-        ┌────────── LoS Corner ──────────┐
-        │                                │
-     [Tank]                           [You]
-     [Melee DPS]                 [Healer / Ranged]
+```mermaid
+flowchart TD
+    subgraph DangerRoom ["Corridor / Patrol Room (Unsafe)"]
+        TargetMob["Target Mob Pack (Melee + Caster Adds)"]
+    end
+
+    subgraph PullStep ["Pull Sequence"]
+        Command["Player Issues: .bot action pullback"] --> TankPull["Tank Pulls with Ranged Shot / Exorcism"]
+        TankPull --> Retract["Tank Immediately Sprints Back Around Corner"]
+        TargetMob -->|"LoS Broken: Casters Forced to Follow"| Corner["LoS Corner Pivot"]
+    end
+
+    subgraph AmbushZone ["Safe Ambush Area (Behind Corner)"]
+        Corner --> Ambush["Ambush Zone: Party Holds Fire Until Tank Regroups"]
+        Ambush --> Combat["All Bots Engage Safely Away from Patrols"]
+    end
 ```
 
 ---

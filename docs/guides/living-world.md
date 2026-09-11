@@ -16,7 +16,31 @@ TortoiseBots is not limited to player-owned companions. It includes a complete *
 
 ---
 
-## 1. Wandering & Leveling Bots
+## 1. Autonomous Bot Lifecycle
+
+```mermaid
+flowchart TD
+    Login["Login & Spawn at Inn / Bindpoint"] --> GearCheck["Check Gear Durability & Bag Space"]
+    GearCheck -->|"Need Repair / Empty Bags"| Town["Visit Blacksmith & Vendor Junk"]
+    GearCheck -->|"Ready to Venture"| GoalChoice{"Choose Activity Intent"}
+    Town --> GoalChoice
+    GoalChoice -->|Questing| Quest["Accept & Track Local Quests"]
+    GoalChoice -->|Grinding| Grind["Path to Level-Appropriate Mob Camp"]
+    GoalChoice -->|Gathering| Gather["Path to Herb & Ore Resource Nodes"]
+    Quest --> Travel["Travel via Foot / Flight Master / Zeppelin"]
+    Grind --> Travel
+    Gather --> Travel
+    Travel --> Combat["Engage Mobs with Class Rotations"]
+    Combat --> Loot["Loot Mobs, Quest Items & Resources"]
+    Loot --> Rest["Rest: Consume Food / Water"]
+    Rest --> CheckBags{"Bags Full or Quest Done?"}
+    CheckBags -->|Yes| Hearth["Hearthstone / Return to Town"]
+    CheckBags -->|No| Combat
+    Hearth --> TurnIn["Turn In Quests & Learn Spell Ranks"]
+    TurnIn --> AH["Post Gathered Items on Auction House"]
+```
+
+## 2. Wandering & Leveling Bots
 
 Autonomous bots roam the open world, reacting dynamically to nearby players and wildlife:
 
@@ -30,7 +54,7 @@ Autonomous bots roam the open world, reacting dynamically to nearby players and 
 
 ---
 
-## 2. Dynamic World Level Syncing
+## 3. Dynamic World Level Syncing
 
 A common issue with bot realms is having level 60 bots everywhere while you are leveling a fresh level 10 character. TortoiseBots solves this through dynamic bracket scaling:
 
@@ -41,7 +65,7 @@ A common issue with bot realms is having level 60 bots everywhere while you are 
 
 ---
 
-## 3. Social Interaction: Groups & Guilds
+## 4. Social Interaction: Groups & Guilds
 
 Random bots actively participate in realm social structures:
 
@@ -55,24 +79,16 @@ Random bots actively participate in realm social structures:
 
 ---
 
-## 4. The Living Auction House Economy (`AhMarketService`)
+## 5. The Living Auction House Economy (`AhMarketService`)
 
 TortoiseBots features an active, simulated player economy that prevents the Auction House from feeling like a ghost town:
 
-```text
-Wandering Bots Loot & Craft
-    │
-    ▼
-Check Value & Quality (Vendor vs Auction pricing)
-    │
-    ▼
-Post Listings on Auction House (Real AH deposit + duration)
-    │
-    ▼
-Human Players & Other Bots Browse, Bid, and Buyout
-    │
-    ▼
-Proceeds Delivered via In-Game Mailbox
+```mermaid
+flowchart TD
+    Loot["Wandering Bots Loot Mobs & Craft Gear"] --> Appraise["Appraise Item Quality (Vendor Junk vs AH Surplus)"]
+    Appraise --> Post["Post Native Auction House Listings (Deposit + Duration)"]
+    Post --> Trade["Players & Other Bots Browse, Bid, and Buyout"]
+    Trade --> Mail["Native Settlement: Gold Delivered to In-Game Mailbox"]
 ```
 
 * **Bot Sellers:** Bots list surplus profession mats (cloth, herbs, ore, leather), green/blue Bind-on-Equip (BoE) gear, and crafted consumables on the Auction House at realistic market prices.
@@ -90,7 +106,7 @@ Administrators can inspect and tune the synthetic market pass using in-game comm
 
 ---
 
-## 5. Automated Dungeon & Battleground Queues
+## 6. Automated Dungeon & Battleground Queues
 
 ### Looking-For-Trouble (LFT) Dungeon Autofill
 * Config: **`AiPlayerbot.RandomBotLftEnabled = 1`**
@@ -104,7 +120,7 @@ Administrators can inspect and tune the synthetic market pass using in-game comm
 
 ---
 
-## 6. Recommended Living World Configuration
+## 7. Recommended Living World Configuration
 
 To enable a full living world on your server, ensure these toggles are set in `conf/aiplayerbot.conf`:
 

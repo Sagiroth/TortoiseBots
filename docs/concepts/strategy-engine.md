@@ -15,58 +15,40 @@ TortoiseBots uses an action-scheduling engine derived from Playerbots. Rather th
 
 ## The Execution Cycle
 
-On every bot update tick (`PlayerbotAI::UpdateAI`), the engine executes the following loop:
-
-```text
-┌────────────────────────────────────────────────────────┐
-│               Trigger Evaluation Phase                 │
-│  Iterate active triggers across all attached strategies │
-│  (e.g., TargetHealthBelow25, LowMana, CCMarkActive)   │
-└──────────────────────────┬─────────────────────────────┘
-                           │ Active Triggers Emit Actions
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│               Relevance Calculation                    │
-│  Action base relevance (0.0 to 100.0)                  │
-│  Multipliers adjust values based on context/role       │
-└──────────────────────────┬─────────────────────────────┘
-                           │ Sort & Insert
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│                   Action Basket                        │
-│  Highest relevance action selected; ties keep older    │
-└──────────────────────────┬─────────────────────────────┘
-                           │ Execution Attempt
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│                Execution & Backoff                     │
-│  Action::Execute() -> returns true / false             │
-│  Failures trigger bounded backoff to prevent loops     │
-└────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    Tick["UpdateAI Tick (Every World Frame)"] --> TrigEval["Trigger Evaluation Phase"]
+    TrigEval -->|"Condition Met?"| ActiveTrigs["Active Triggers Emit Actions"]
+    TrigEval -->|"No Trigger Fired"| DefAction["Enqueue Strategy Default Actions"]
+    ActiveTrigs --> RelCalc["Relevance Calculation (0.0 to 100.0)"]
+    DefAction --> RelCalc
+    RelCalc --> Mults["Apply Multipliers (Role / Threat / Posture)"]
+    Mults --> Basket["Action Basket (Priority Queue)"]
+    Basket --> Exec["Execute Highest Relevance Action"]
+    Exec -->|"Success"| Done["Action Completed"]
+    Exec -->|"Failure"| Backoff["ActionFailureBackoff (Cooldown / Eviction)"]
 ```
 
 ## Core Building Blocks
 
-### 1. Strategies
-A strategy represents a high-level posture or intent (e.g., `frost mage combat`, `heal`, `stay`, `pullback`). Each strategy registers:
-- Triggers to watch.
-- Actions to invoke when those triggers fire.
-- Default actions to fall back to when no trigger is active.
+| Component | Responsibility | Example Class / Implementation | Relevance / Effect |
+| :--- | :--- | :--- | :--- |
+| **Strategy** | High-level posture or intent container | `FrostMageStrategy`, `HealStrategy`, `PullbackStrategy` | Registers triggers, actions, and defaults |
+| **Trigger** | Context condition check | `CriticalHealthTrigger`, `LowManaTrigger`, `EnemyCastTrigger` | Evaluates boolean state (`isTriggered()`) |
+| **Action** | Concrete world interaction or spell cast | `CastFlashHealAction`, `ReachSpellAction`, `EatAction` | Returns `true` on execution success |
+| **Multiplier** | Contextual relevance adjuster | `RoleMultiplier`, `ThreatMultiplier`, `DistanceMultiplier` | Scales base action score (e.g. 1.5x, 0.0x) |
+| **Backoff** | Anti-looping failure throttling | `ActionFailureBackoff` in `Engine.cpp` | Exponential TTL suppression on repeated failure |
 
-### 2. Triggers
-Triggers test conditions on the bot, the environment, or party members:
-- `CriticalHealthTrigger`: Party member health < 25%.
-- `LowManaTrigger`: Bot mana < 20%.
-- `EnemyCastTrigger`: Current target is casting an interruptible spell.
+---
 
-### 3. Actions
-Actions perform discrete steps in the world:
-- Cast spell (e.g. `CastFlashHealAction`, `CastFrostboltAction`).
-- Movement (e.g. `FollowAction`, `FleeAction`, `ReachSpellAction`).
-- Utility (e.g. `EatAction`, `DrinkAction`, `LootAction`).
+## Action Relevance Tiers
 
-### 4. Multipliers
-Multipliers dynamically alter the relevance score of actions. For example, if a bot is assigned the `tank` role, threat-generating actions receive positive multipliers while defensive kiting actions receive suppression multipliers.
+The engine evaluates actions on a continuous priority scale from `0.0` to `100.0`:
 
-### 5. Failure Backoff
-If an action fails (e.g., target out of line of sight, spell on cooldown, target invalid), the engine records failure in `ActionFailureBackoff`. This prevents bots from busy-looping and spamming identical failed cast packets every frame.
+| Relevance Tier | Score Range | Typical Actions | Context & Intent |
+| :---: | :---: | :--- | :--- |
+| **Emergency** | `90.0 – 100.0` | Emergency healing (*Lay on Hands*, *Shield Wall*), emergency interrupts, self-dispel | Party member near death, lethal boss cast incoming |
+| **High Tactical** | `70.0 – 89.0` | Tactical crowd control (*Polymorph*, *Freezing Trap*), pullback retreat, taunt on healer aggro | Maintaining tactical control, peeling mobs off cloth casters |
+| **Standard Combat** | `40.0 – 69.0` | Rotational damage spells, standard melee attacks, refreshing dots/debuffs | Normal DPS rotation when threat and health are stable |
+| **Low / Filler** | `20.0 – 39.0` | Wand attacks, auto-shots, pet maintenance | Mana conservation, low-priority chip damage |
+| **Out-of-Combat** | `1.0 – 19.0` | Follow master, sit to eat/drink, buff group members, loot corpses | Non-combat maintenance when all hostility has ceased |

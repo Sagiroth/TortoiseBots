@@ -39,6 +39,19 @@ TortoiseBots implements comprehensive AI for all **nine Vanilla classes** (Warri
 
 ## Spec Detection & Strategy Selection
 
+```mermaid
+flowchart TD
+    Talents["Spent Talent Points (Talent.dbc)"] --> Tally["AiFactory::SelectSpec (Count Tab Points)"]
+    Tally --> Tree{"Dominant Talent Tree?"}
+    Tree -->|Tab 1 Highest| Spec1["Primary Spec Strategy (e.g. Arms, Holy, Assassination)"]
+    Tree -->|Tab 2 Highest| Spec2["Secondary Spec Strategy (e.g. Fury, Protection, Combat)"]
+    Tree -->|Tab 3 Highest| Spec3["Tertiary Spec Strategy (e.g. Prot, Retribution, Subtlety)"]
+    Spec1 --> Modifiers["Apply Contextual Role Modifiers (Tank / Heal / DPS)"]
+    Spec2 --> Modifiers
+    Spec3 --> Modifiers
+    Modifiers --> ActiveEngine["Active Class Strategy Engine Attached"]
+```
+
 The bot's combat strategy is determined dynamically by analyzing its spent talent points (`AiFactory::SelectSpec`):
 - **Dominant Talent Tree:** The bot tallies spent talent points across the three class tabs. Whichever tree has the highest allocation determines the active combat strategy (e.g. Arms vs Fury vs Protection for Warriors).
 - **Hybrid Support:** Hybrid classes adapt based on context. For example, a Feral Druid switches to Bear form when tanking or Cat form when DPSing.
@@ -48,8 +61,9 @@ The bot's combat strategy is determined dynamically by analyzing its spent talen
 
 ## Shared Bot Behaviors
 
-Every class benefits from shared foundational systems:
-- **Resting & Recovery:** Automatically sits to consume food and water when out of combat if health or mana drops below configured thresholds.
-- **Weapon Imbues & Buffs:** Automatically maintains class buffs (e.g. *Arcane Intellect*, *Mark of the Wild*, *Power Word: Fortitude*) and weapon imbues (poisons, sharpening stones, shaman elemental weapon buffs).
-- **Targeting & Assist:** Assists the party leader or designated tank by default, switching targets intelligently when crowd control is applied or when high-threat adds spawn.
-- **Looting & Gathering:** Cleans corpses, participates in greed/need rolls, and harvests herbs/mining nodes if trained.
+| Shared Subsystem | Trigger Condition | Bot Action / Behavior | Configuration / Control |
+| :--- | :--- | :--- | :--- |
+| **Resting & Recovery** | Out-of-combat, HP < 60% or Mana < 40% | Sits down, consumes food/water simultaneously | Automatic; pauses when group moves |
+| **Buffs & Imbues** | Buff missing on self/party, duration < 5m | Recasts class buffs (Arcane Intellect, PW:F, MotW) and poisons | Automated out-of-combat maintenance |
+| **Targeting & Assist** | Leader/Tank enters combat | Assists master's target; honors Skull focus and CC exclusions | `.bot action focus skull`, CC mark priority |
+| **Looting & Gathering** | Dead corpse or nearby resource node | Navigates to corpse, loots quest items, rolls Greed/Need | `AiPlayerbot.RollBadItemsWithPlayer` |

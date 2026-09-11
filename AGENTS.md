@@ -31,13 +31,15 @@ This repo is self-contained. All required context is indexed in `docs/` and vali
 
 ### ⚠️ Keeping OKF Documentation Up-to-Date
 
-The Open Knowledge Format (`docs/`) is the single source of truth for TortoiseBots architecture, bot commands, configuration, classes, and mechanics.
-**Whenever making a code, command, configuration, or architectural change that impacts user-facing behavior, class balance, commands, or host seams, you MUST update the corresponding OKF documentation and run `python3 tools/verify_okf.py`:**
-* **Added or modified commands/actions (`.bot`):** Update [`docs/guides/player-controls.md`](docs/guides/player-controls.md).
-* **Changed configuration settings or thresholds:** Update [`docs/guides/configuration-tuning.md`](docs/guides/configuration-tuning.md).
-* **Modified class AI, spells, or rotation logic:** Update the relevant class guide in [`docs/classes/`](docs/classes/).
-* **Changed host seams, session lifecycle, or core interfaces:** Update [`docs/HOST_API.md`](docs/HOST_API.md) and [`docs/concepts/architecture-invariants.md`](docs/concepts/architecture-invariants.md).
-* **Added, removed, or moved documentation files:** Update [`docs/manifest.yaml`](docs/manifest.yaml) and ensure `python3 tools/verify_okf.py` passes cleanly (0 errors).
+The Open Knowledge Format (`docs/`) is the single source of truth for TortoiseBots architecture, bot commands, configuration, classes, and mechanics. Whenever making changes that impact user-facing behavior, class balance, commands, or host seams, update the corresponding documentation:
+
+| Change Scope / Area | Typical Code Paths | Required OKF Doc Updates | Mandatory Gate |
+| :--- | :--- | :--- | :--- |
+| **Commands & Actions** | `commands/*`, `actions/*` | [`docs/guides/player-controls.md`](docs/guides/player-controls.md) | `python3 tools/verify_okf.py` |
+| **Configuration & Tuning** | `PlayerbotAIConfig.*`, `aiplayerbot.conf*` | [`docs/guides/configuration-tuning.md`](docs/guides/configuration-tuning.md) | `python3 tools/verify_okf.py` |
+| **Class AI & Rotations** | `strategy/<class>/*`, `AiObjectContext` | Relevant class doc in [`docs/classes/`](docs/classes/) | `python3 tools/verify_okf.py` |
+| **Host Seams & Sessions** | `host/*`, `runtime/BotManager.*` | [`docs/HOST_API.md`](docs/HOST_API.md), [`docs/concepts/architecture-invariants.md`](docs/concepts/architecture-invariants.md) | `tools/verify_penqle_host_contract.sh` |
+| **Doc Structure & Nodes** | Any file in `docs/` | [`docs/manifest.yaml`](docs/manifest.yaml), [`docs/README.md`](docs/README.md) | `python3 tools/verify_okf.py` |
 
 ---
 
