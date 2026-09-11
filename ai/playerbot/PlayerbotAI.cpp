@@ -85,10 +85,21 @@ std::mutex& DelayedBotPacketsMutex()
 }
 // Headless sessions drain via core ProcessPackets (#475), which runs
 // ChatHandler::ParseCommands. Bots are SEC_PLAYER but player commands can be
-// enabled server-side, so never queue command-like chat ('.'/'!') as a packet.
+// enabled server-side, so command-like chat ('.'/'!') must never reach core
+// with text[0] as '.'/'!'.
 static bool IsCommandLikeChat(std::string const& msg)
 {
     return !msg.empty() && (msg[0] == '.' || msg[0] == '!');
+}
+// Prepend a space if the message starts with '.' or '!' (and is not '..' or '!!').
+// ChatHandler::ParseCommands only triggers when text[0] is '.' or '!', so a leading
+// space prevents command execution while allowing the message to display in chat.
+static void SanitizeCommandLikeChat(std::string& msg)
+{
+    if (!msg.empty() && (msg[0] == '.' || msg[0] == '!') && (msg.size() < 2 || (msg[1] != '.' && msg[1] != '!')))
+    {
+        msg.insert(0, " ");
+    }
 }
 }
 
@@ -3057,8 +3068,7 @@ bool PlayerbotAI::SayToGuild(std::string msg, bool likePlayer)
     {
         return false;
     }
-    if (IsCommandLikeChat(msg))
-        return false;
+    SanitizeCommandLikeChat(msg);
 
     if (bot->GetGuildId())
     {
@@ -3128,8 +3138,7 @@ bool PlayerbotAI::SayToGuildRecruitment(std::string msg) { return SayToNamedChan
 
 bool PlayerbotAI::SayToParty(std::string msg, bool likePlayer)
 {
-    if (IsCommandLikeChat(msg))
-        return false;
+    SanitizeCommandLikeChat(msg);
     if (!bot->GetGroup())
     {
         return false;
@@ -3189,8 +3198,7 @@ bool PlayerbotAI::SayToRaid(std::string msg)
 
 bool PlayerbotAI::Yell(std::string msg, bool likePlayer)
 {
-    if (IsCommandLikeChat(msg))
-        return false;
+    SanitizeCommandLikeChat(msg);
     uint32 lang = LANG_UNIVERSAL;
     if (bot->GetTeam() == ALLIANCE)
     {
@@ -3226,8 +3234,7 @@ bool PlayerbotAI::Yell(std::string msg, bool likePlayer)
 
 bool PlayerbotAI::Say(std::string msg, bool likePlayer)
 {
-    if (IsCommandLikeChat(msg))
-        return false;
+    SanitizeCommandLikeChat(msg);
     uint32 lang = LANG_UNIVERSAL;
     if (bot->GetTeam() == ALLIANCE)
     {
