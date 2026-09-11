@@ -215,13 +215,30 @@
         </div>
 
         <div style="position: relative;">
-          <div class="map-viewport">
+          <!-- WORLD VIEW (default): both continents, all bots -->
+          <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+            <button class="btn" id="world-tab-0" style="padding: 6px 14px; font-weight: 600;">Eastern Kingdoms <span id="world-count-0" style="opacity: 0.6; font-weight: 400;"></span></button>
+            <button class="btn" id="world-tab-1" style="padding: 6px 14px; font-weight: 600;">Kalimdor <span id="world-count-1" style="opacity: 0.6; font-weight: 400;"></span></button>
+          </div>
+            <div id="world-zones" style="display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap;"></div>
+          <div id="world-view">
+            <div class="map-viewport" id="world-viewport">
+              <img class="map-img" id="world-img" src="/maps/azeroth.webp" alt="Continent Map">
+              <canvas id="world-canvas" class="map-overlay" style="pointer-events: none;"></canvas>
+              <div id="world-overlay" class="map-overlay"></div>
+            </div>
+            <div id="world-offmap" style="margin-top: 10px; font-size: 0.8rem; color: var(--text-muted);"></div>
+          </div>
+          <!-- ZONE VIEW (drill-down) -->
+          <div id="zone-view" style="display: none;">
+          <div class="map-viewport" id="zone-viewport">
             <img id="map-img" class="map-img" src="/maps/elwynn.webp" alt="Zone Map">
             <canvas id="map-canvas" class="map-overlay" style="pointer-events: none;"></canvas>
             <div id="map-overlay" class="map-overlay"></div>
-            <div id="map-tooltip" class="map-tooltip" style="display: none;"></div>
+            <div id="zone-noart" style="display: none; position: absolute; top: 12px; left: 12px; z-index: 20; background: rgba(14, 19, 27, 0.9); border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 12px; font-size: 0.8rem; color: var(--text-muted);"></div>
           </div>
-
+          </div>
+          <div id="map-tooltip" class="map-tooltip" style="display: none;"></div>
           <!-- Bot Side Drawer -->
           <div id="bot-drawer" class="telemetry-card" style="display: none; position: absolute; top: 16px; right: 16px; width: 320px; padding: 20px; z-index: 30; background: rgba(14, 19, 27, 0.95);">
             <div style="display: flex; justify-content: flex-end;">

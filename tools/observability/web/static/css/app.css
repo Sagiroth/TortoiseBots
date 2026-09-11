@@ -699,6 +699,14 @@ body {
   filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.9));
 }
 
+/* World view markers are plain dots (zone view keeps direction triangles). */
+#world-view .bot-dot {
+  width: 10px;
+  height: 10px;
+  clip-path: none;
+  border-radius: 50%;
+}
+
 .bot-dot:hover {
   z-index: 20;
   filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.9)) brightness(1.4);

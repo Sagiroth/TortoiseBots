@@ -18,6 +18,8 @@
   const state = {
     activeTab: 'dashboard',
     currentZoneId: 12,
+    mapView: 'world',
+    worldMapId: 0,
     bots: [],
     anomalies: [],
     server: {
@@ -109,11 +111,24 @@
     zoneFilterCount: document.getElementById('zone-filter-count'),
     zoneSelect: document.getElementById('zone-select'),
     mapImg: document.getElementById('map-img'),
+    zoneNoart: document.getElementById('zone-noart'),
+    zoneViewport: document.getElementById('zone-viewport'),
     mapOverlay: document.getElementById('map-overlay'),
     mapCanvas: document.getElementById('map-canvas'),
     mapTooltip: document.getElementById('map-tooltip'),
     mapLegend: document.getElementById('map-legend'),
-    toggleTrails: document.getElementById('toggle-trails'),
+    worldView: document.getElementById('world-view'),
+    zoneView: document.getElementById('zone-view'),
+    worldViewport: document.getElementById('world-viewport'),
+    worldImg: document.getElementById('world-img'),
+    worldCanvas: document.getElementById('world-canvas'),
+    worldOverlay: document.getElementById('world-overlay'),
+    worldTab0: document.getElementById('world-tab-0'),
+    worldTab1: document.getElementById('world-tab-1'),
+    worldCount0: document.getElementById('world-count-0'),
+    worldCount1: document.getElementById('world-count-1'),
+    worldZones: document.getElementById('world-zones'),
+    worldOffmap: document.getElementById('world-offmap'),
     botDrawer: document.getElementById('bot-drawer'),
     drawerContent: document.getElementById('drawer-content'),
     closeDrawer: document.getElementById('close-drawer'),
@@ -186,10 +201,18 @@
     return `${m}m`;
   }
 
+  // English names for DBC areas that have bounds but no extracted artwork
+  // (mostly Turtle custom zones). Sources: Shyalya locales_area.sql for 12,
+  // web research for Balor/Northwind, provisional deDE translations for
+  // 5601/5602. Areas with no name anywhere keep the "Zone N" fallback.
+  let EXTRA_ZONE_NAMES = {};
+
   function getZoneName(zoneId) {
     if (zoneId === null || zoneId === undefined) return '-';
     const zone = ZONE_CONFIG[zoneId];
-    return zone ? zone.name : `Zone ${zoneId}`;
+    if (zone) return zone.name;
+    const extra = EXTRA_ZONE_NAMES[zoneId];
+    return extra ? extra.name : `Zone ${zoneId}`;
   }
 
   function appendConsoleLog(time, tag, text, level = 'info') {
@@ -242,30 +265,57 @@
   }
 
   // Zone Selector & Filtering
+  function zoneContinentName(mapId) {
+    if (mapId === 0) return 'Eastern Kingdoms';
+    if (mapId === 1) return 'Kalimdor';
+    return 'Other maps';
+  }
+
   function populateZoneSelect(filter = '') {
     if (!el.zoneSelect) return;
     const q = filter.trim().toLowerCase();
     el.zoneSelect.innerHTML = '';
+    const worldOpt = document.createElement('option');
+    worldOpt.value = 'world';
+    worldOpt.textContent = '🌍 World (both continents)';
+    el.zoneSelect.appendChild(worldOpt);
     const sorted = Object.entries(ZONE_CONFIG).sort((a, b) => a[1].name.localeCompare(b[1].name));
     const matching = sorted.filter(([id, z]) => !q || z.name.toLowerCase().includes(q));
-
+    const groups = [[0, []], [1, []], [-1, []]];
     matching.forEach(([id, z]) => {
-      const opt = document.createElement('option');
-      opt.value = id;
-      opt.textContent = z.name;
-      if (parseInt(id, 10) === state.currentZoneId) opt.selected = true;
-      el.zoneSelect.appendChild(opt);
+      const g = z.map === 0 ? groups[0] : z.map === 1 ? groups[1] : groups[2];
+      g[1].push([id, z]);
     });
-
+    groups.forEach(([mapId, entries]) => {
+      if (!entries.length) return;
+      const og = document.createElement('optgroup');
+      og.label = zoneContinentName(mapId);
+      entries.forEach(([id, z]) => {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = z.name;
+        og.appendChild(opt);
+      });
+      el.zoneSelect.appendChild(og);
+    });
     if (el.zoneFilterCount) {
       el.zoneFilterCount.textContent = q ? `${matching.length}/${sorted.length} zones` : `${sorted.length} zones`;
     }
-
-    if (matching.length > 0 && !matching.some(([id]) => parseInt(id, 10) === state.currentZoneId)) {
+    if (state.mapView === 'world') {
+      el.zoneSelect.value = 'world';
+      return;
+    }
+    if (matching.some(([id]) => parseInt(id, 10) === state.currentZoneId)) {
+      el.zoneSelect.value = state.currentZoneId;
+      return;
+    }
+    if (matching.length > 0) {
       const firstId = parseInt(matching[0][0], 10);
       state.currentZoneId = firstId;
       el.zoneSelect.value = firstId;
       loadZoneMap(firstId);
+    } else {
+      setMapView('world');
     }
   }
 
@@ -286,20 +336,221 @@
 
     if (el.zoneSelect) {
       el.zoneSelect.addEventListener('change', (e) => {
+        if (e.target.value === 'world') { setMapView('world'); return; }
         const zid = parseInt(e.target.value, 10);
         state.currentZoneId = zid;
+        setMapView('zone', zid);
         loadZoneMap(zid);
       });
     }
+    fetchZoneBounds();
+    fetch('/data/zone_names.json')
+      .then(r => r.json())
+      .then(cfg => {
+        if (cfg && Object.keys(cfg).length > 0) {
+          EXTRA_ZONE_NAMES = cfg;
+          if (state.activeTab === 'map') renderMap();
+          if (state.activeTab === 'dashboard') renderFleetHealth();
+        }
+      })
+      .catch(() => {});
+    if (el.worldTab0) el.worldTab0.addEventListener('click', () => setWorldTab(0));
+    if (el.worldTab1) el.worldTab1.addEventListener('click', () => setWorldTab(1));
   }
 
   function loadZoneMap(zoneId) {
     const zone = ZONE_CONFIG[zoneId];
-    if (zone && el.mapImg) {
-      el.mapImg.src = `/maps/${zone.file}`;
-      renderMap();
+    const art = zone && zone.file;
+    if (el.mapImg) {
+      if (art) {
+        if (el.mapImg.getAttribute('src') !== `/maps/${zone.file}`) el.mapImg.src = `/maps/${zone.file}`;
+        el.mapImg.style.display = 'block';
+      } else {
+        el.mapImg.removeAttribute('src');
+        el.mapImg.style.display = 'none';
+      }
     }
+    if (el.zoneViewport && !art) el.zoneViewport.style.aspectRatio = '1002 / 668';
+    if (el.zoneNoart) {
+      if (art) {
+        el.zoneNoart.style.display = 'none';
+      } else {
+        el.zoneNoart.style.display = 'block';
+        el.zoneNoart.innerHTML = `No map artwork for <strong style="color: #fff;">${esc(getZoneName(zoneId))}</strong> — dots positioned by DBC bounds.`;
+      }
+    }
+    renderMap();
   }
+    // Zone art is not uniformly 3:2 (14 files are 4:3). Fit the viewport to
+    // the loaded art so projected dots land on the artwork instead of a crop.
+    if (el.mapImg) {
+      el.mapImg.addEventListener('load', () => {
+        const w = el.mapImg.naturalWidth, h = el.mapImg.naturalHeight;
+        if (w > 0 && h > 0 && el.zoneViewport) el.zoneViewport.style.aspectRatio = `${w} / ${h}`;
+      });
+    }
+
+  // World view: both continents from WorldMapArea.dbc bounds (data/zones.json).
+  let ZONE_BOUNDS = null; // key "map_area" -> {map_id, area_id, name, loc_*}
+  function fetchZoneBounds() {
+    fetch('/data/zones.json')
+      .then(r => r.json())
+      .then(cfg => {
+        if (cfg && Object.keys(cfg).length > 0) {
+          ZONE_BOUNDS = cfg;
+          if (state.mapView === 'world') renderMap();
+        }
+      })
+      .catch(() => {});
+  }
+
+  function continentBounds(mapId) {
+    if (!ZONE_BOUNDS) return null;
+    // The area_id 0 record is the continent itself: its rect is exactly what
+    // the client world-map art (azeroth.webp / kalimdor.webp) spans, so dots
+    // projected against it land on the artwork. Aggregate fallback only.
+    const whole = ZONE_BOUNDS[mapId + '_0'];
+    if (whole && whole.loc_left > whole.loc_right && whole.loc_top > whole.loc_bottom) {
+      return { left: whole.loc_left, right: whole.loc_right, top: whole.loc_top, bottom: whole.loc_bottom };
+    }
+    let left = -Infinity, right = Infinity, top = -Infinity, bottom = Infinity, n = 0;
+    for (const key in ZONE_BOUNDS) {
+      const z = ZONE_BOUNDS[key];
+      if (z.map_id !== mapId || z.area_id === 0) continue;
+      if (!(z.loc_left > z.loc_right) || !(z.loc_top > z.loc_bottom)) continue;
+      if (z.loc_left > left) left = z.loc_left;
+      if (z.loc_right < right) right = z.loc_right;
+      if (z.loc_top > top) top = z.loc_top;
+      if (z.loc_bottom < bottom) bottom = z.loc_bottom;
+      n++;
+    }
+    if (!n || left <= right || top <= bottom) return null;
+    return { left, right, top, bottom };
+  }
+
+  function projectWorld(mapId, x, y) {
+    const c = continentBounds(mapId);
+    if (!c) return null;
+    return {
+      x: ((c.left - y) / (c.left - c.right)) * 100,
+      y: ((c.top - x) / (c.top - c.bottom)) * 100
+    };
+  }
+
+
+  function worldBots(mapId) {
+    return state.bots.filter(b => {
+      if (b.map !== mapId) return false;
+      if (state.roleFilter !== 'all' && b.role !== state.roleFilter) return false;
+      return true;
+    });
+  }
+
+  function setMapView(view, zoneId) {
+    state.mapView = view;
+    if (el.worldView) el.worldView.style.display = view === 'world' ? 'block' : 'none';
+    if (el.zoneView) el.zoneView.style.display = view === 'world' ? 'none' : 'block';
+    if (el.zoneSelect) el.zoneSelect.value = view === 'world' ? 'world' : String(zoneId !== undefined ? zoneId : state.currentZoneId);
+    paintWorldTabs();
+    renderMap();
+  }
+
+  function paintWorldTabs() {
+    const mapId = state.worldMapId || 0;
+    [[el.worldTab0, 0], [el.worldTab1, 1]].forEach(([tab, id]) => {
+      if (!tab) return;
+      const active = id === mapId && state.mapView === 'world';
+      tab.style.borderColor = active ? 'var(--accent-green-bright)' : '';
+      tab.style.color = active ? '#fff' : '';
+    });
+  }
+
+  function setWorldTab(mapId) {
+    state.worldMapId = mapId;
+    const files = { 0: '/maps/azeroth.webp', 1: '/maps/kalimdor.webp' };
+    if (el.worldImg && el.worldImg.getAttribute('src') !== files[mapId]) el.worldImg.src = files[mapId];
+    setMapView('world');
+  }
+
+
+  function renderWorld() {
+    const mapId = state.worldMapId || 0;
+    const bots = renderWorldPanel(mapId);
+    const off = state.bots.filter(b => b.map !== 0 && b.map !== 1);
+    if (el.worldOffmap) {
+      el.worldOffmap.textContent = off.length
+        ? `${off.length} bot${off.length === 1 ? '' : 's'} in instances or other maps — see Roster.`
+        : '';
+    }
+    renderMapLegend(bots);
+  }
+
+  // Zones on the active continent that currently hold bots, busiest first.
+  // Empty zones vanish on the next render; click drills into the zone view.
+  function renderWorldZones(mapId) {
+    if (!el.worldZones) return;
+    el.worldZones.innerHTML = '';
+    const counts = new Map();
+    state.bots.forEach(b => {
+      if (b.map !== mapId) return;
+      counts.set(b.zone, (counts.get(b.zone) || 0) + 1);
+    });
+    [...counts.entries()].sort((a, b) => b[1] - a[1]).forEach(([zoneId, n]) => {
+      const chip = document.createElement('button');
+      chip.className = 'btn';
+      chip.style.cssText = 'padding: 4px 10px; font-size: 0.78rem; font-weight: 600; cursor: pointer;';
+      chip.innerHTML = `${esc(getZoneName(zoneId))} <span style="opacity: 0.6;">${n}</span>`;
+      chip.addEventListener('click', () => openZone(zoneId));
+      el.worldZones.appendChild(chip);
+    });
+  }
+
+  function renderWorldPanel(mapId) {
+    const canvas = el.worldCanvas;
+    const overlay = el.worldOverlay;
+    const viewport = el.worldViewport;
+    if (!canvas || !overlay) return [];
+    overlay.innerHTML = '';
+    const bots = worldBots(mapId);
+    const c = continentBounds(mapId);
+    if (!c) return bots;
+    const w = c.left - c.right, h = c.top - c.bottom;
+    if (viewport && w > 0 && h > 0) viewport.style.aspectRatio = `${w} / ${h}`;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return bots;
+    if (canvas.width !== Math.floor(rect.width) || canvas.height !== Math.floor(rect.height)) {
+      canvas.width = Math.floor(rect.width);
+      canvas.height = Math.floor(rect.height);
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return bots;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (state.showTrails) {
+      bots.forEach(b => {
+        if (!b.trail || b.trail.length < 2) return;
+        ctx.beginPath();
+        let started = false;
+        b.trail.forEach(pt => {
+          const p = projectWorld(mapId, pt.x, pt.y);
+          if (!p) return;
+          const px = (p.x / 100) * canvas.width, py = (p.y / 100) * canvas.height;
+          if (!started) { ctx.moveTo(px, py); started = true; }
+          else ctx.lineTo(px, py);
+        });
+        ctx.strokeStyle = hexToRgba(classColor(b.class), 0.45);
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      });
+    }
+    const issuesByGuid = issueSet();
+    bots.forEach(b => {
+      const p = projectWorld(mapId, b.x, b.y);
+      if (!p) return;
+      overlay.appendChild(makeBotDot(b, issuesByGuid[b.guid], p.x, p.y));
+    });
+    return bots;
+  }
+
 
   if (el.toggleTrails) {
     el.toggleTrails.addEventListener('change', (e) => {
@@ -565,13 +816,14 @@
     }
   }
 
+  // Art-less zones (custom zones like Northwind) open a dark zone view with
+  // an explanatory badge: bounds exist so dots still plot, only paint is missing.
   function openZone(zoneId) {
-    if (ZONE_CONFIG[zoneId]) {
-      state.currentZoneId = zoneId;
-      if (el.zoneSelect) el.zoneSelect.value = zoneId;
-      loadZoneMap(zoneId);
-    }
+    state.currentZoneId = zoneId;
+    setMapView('zone', zoneId);
+    loadZoneMap(zoneId);
     switchTab('map');
+    return true;
   }
 
   function renderMacroBar(r) {
@@ -654,8 +906,62 @@
     if (state.activeTab === 'dashboard') renderMacroBar(s.states);
   }
 
+  function makeBotDot(b, issue, pctX, pctY) {
+    const dot = document.createElement('div');
+    dot.className = 'bot-dot';
+    if (issue) dot.classList.add(issue.severity === 'persistent' ? 'issue-persistent' : 'issue-watch');
+    if (b.guid === state.selectedBotGuid) dot.classList.add('selected');
+    dot.style.left = `${pctX}%`;
+    dot.style.top = `${pctY}%`;
+    dot.style.backgroundColor = classColor(b.class);
+    const deg = (b.o || 0) * (180 / Math.PI);
+    dot.style.transform = `translate(-50%, -50%) rotate(${-deg}deg)`;
+    dot.addEventListener('mouseenter', (e) => {
+      if (!el.mapTooltip) return;
+      const issueLine = issue
+        ? `<br><span style="color: var(--accent-red);">Issue:</span> ${esc(ISSUE_LABELS[issue.type] || issue.type)} (${esc(fmtDuration(issue.duration_sec))})`
+        : '';
+      el.mapTooltip.innerHTML = `
+        <strong style="color: #fff;">${esc(b.name)}</strong> (${esc(b.class)} Lvl ${esc(b.level)})<br>
+        <span style="color: var(--text-muted);">Role:</span> ${esc((b.role || '').toUpperCase())}<br>
+        <span style="color: var(--text-muted);">Status:</span> ${esc(b.state || 'idle')}<br>
+        <span style="color: var(--text-muted);">Zone:</span> ${esc(getZoneName(b.zone))}<br>
+        <span style="color: var(--text-muted);">Target:</span> ${esc(b.target || 'None')}
+        ${issueLine}
+      `;
+      el.mapTooltip.style.display = 'block';
+      const pad = 14;
+      const tipRect = el.mapTooltip.getBoundingClientRect();
+      let left = e.clientX + pad;
+      let top = e.clientY + pad;
+      if (left + tipRect.width > window.innerWidth - 6)
+        left = e.clientX - tipRect.width - pad;
+      if (top + tipRect.height > window.innerHeight - 6)
+        top = e.clientY - tipRect.height - pad;
+      el.mapTooltip.style.left = `${Math.max(6, left)}px`;
+      el.mapTooltip.style.top = `${Math.max(6, top)}px`;
+    });
+    dot.addEventListener('mouseleave', () => {
+      if (el.mapTooltip) el.mapTooltip.style.display = 'none';
+    });
+    dot.addEventListener('click', (ev) => { ev.stopPropagation(); selectBot(b.guid); });
+    return dot;
+  }
+
   // 2D Map Rendering
   function renderMap() {
+    [0, 1].forEach(id => {
+      const countEl = id === 0 ? el.worldCount0 : el.worldCount1;
+      if (countEl) {
+        const n = worldBots(id).length;
+        countEl.textContent = n ? `· ${n}` : '';
+      }
+    });
+    const chipMap = state.mapView === 'world'
+      ? (state.worldMapId || 0)
+      : ((ZONE_CONFIG[state.currentZoneId] || {}).map ?? state.worldMapId ?? 0);
+    renderWorldZones(chipMap);
+    if (state.mapView === 'world') { renderWorld(); return; }
     if (!el.mapOverlay) return;
     el.mapOverlay.innerHTML = '';
 
@@ -693,51 +999,7 @@
 
     const issuesByGuid = issueSet();
     zoneBots.forEach(b => {
-      const issue = issuesByGuid[b.guid];
-      const dot = document.createElement('div');
-      dot.className = 'bot-dot';
-      if (issue) dot.classList.add(issue.severity === 'persistent' ? 'issue-persistent' : 'issue-watch');
-      if (b.guid === state.selectedBotGuid) dot.classList.add('selected');
-      dot.style.left = `${b.pct_x}%`;
-      dot.style.top = `${b.pct_y}%`;
-      dot.style.backgroundColor = classColor(b.class);
-      const deg = (b.o || 0) * (180 / Math.PI);
-      dot.style.transform = `translate(-50%, -50%) rotate(${-deg}deg)`;
-
-      dot.addEventListener('mouseenter', (e) => {
-        if (!el.mapTooltip) return;
-        const issueLine = issue
-          ? `<br><span style="color: var(--accent-red);">Issue:</span> ${esc(ISSUE_LABELS[issue.type] || issue.type)} (${esc(fmtDuration(issue.duration_sec))})`
-          : '';
-        el.mapTooltip.innerHTML = `
-          <strong style="color: #fff;">${esc(b.name)}</strong> (${esc(b.class)} Lvl ${esc(b.level)})<br>
-          <span style="color: var(--text-muted);">Role:</span> ${esc((b.role || '').toUpperCase())}<br>
-          <span style="color: var(--text-muted);">Status:</span> ${esc(b.state || 'idle')}<br>
-          <span style="color: var(--text-muted);">Zone:</span> ${esc(getZoneName(b.zone))}<br>
-          <span style="color: var(--text-muted);">Target:</span> ${esc(b.target || 'None')}
-          ${issueLine}
-        `;
-        el.mapTooltip.style.display = 'block';
-
-        // Keep the tooltip inside the viewport instead of clipping at the edge.
-        const pad = 14;
-        const rect = el.mapTooltip.getBoundingClientRect();
-        let left = e.clientX + pad;
-        let top = e.clientY + pad;
-        if (left + rect.width > window.innerWidth - 6)
-          left = e.clientX - rect.width - pad;
-        if (top + rect.height > window.innerHeight - 6)
-          top = e.clientY - rect.height - pad;
-        el.mapTooltip.style.left = `${Math.max(6, left)}px`;
-        el.mapTooltip.style.top = `${Math.max(6, top)}px`;
-      });
-
-      dot.addEventListener('mouseleave', () => {
-        if (el.mapTooltip) el.mapTooltip.style.display = 'none';
-      });
-
-      dot.addEventListener('click', () => selectBot(b.guid));
-      el.mapOverlay.appendChild(dot);
+      el.mapOverlay.appendChild(makeBotDot(b, issuesByGuid[b.guid], b.pct_x, b.pct_y));
     });
 
     renderMapLegend(zoneBots);
@@ -856,7 +1118,7 @@
       if (state.rosterClassFilter !== 'all' && b.class !== state.rosterClassFilter) return false;
       if (state.rosterStatusFilter !== 'all' && b.state !== state.rosterStatusFilter) return false;
       if (state.rosterIssueOnly && !issuesByGuid[b.guid]) return false;
-      if (query && !b.name.toLowerCase().includes(query) && !b.class.toLowerCase().includes(query)) return false;
+      if (query && !String(b.name || '').toLowerCase().includes(query) && !String(b.class || '').toLowerCase().includes(query)) return false;
       return true;
     });
 
@@ -866,7 +1128,7 @@
       const av = rosterSortValue(a, key), bv = rosterSortValue(b, key);
       if (av < bv) return -1 * dir;
       if (av > bv) return 1 * dir;
-      return a.name.localeCompare(b.name);
+      return String(a.name || '').localeCompare(String(b.name || ''));
     });
 
     if (el.rosterCount) el.rosterCount.textContent = `· ${filtered.length}/${state.bots.length}`;
@@ -905,7 +1167,7 @@
         <td style="color: #f85149;">${esc(b.target || '-')}</td>
         <td class="mono" style="font-size: 0.8rem;">${esc(getZoneName(b.zone))}</td>
       `;
-      tr.querySelector('td[data-guid]').addEventListener('click', () => selectBot(b.guid));
+      tr.querySelector('td[data-guid]').addEventListener('click', () => focusBot(b.guid));
       el.rosterTable.appendChild(tr);
     });
   }
@@ -1075,6 +1337,9 @@
 
     ws.onopen = () => {
       state.wsConnected = true;
+      // Daemon restarts reset its sequence: drop the high-water mark or every
+      // post-restart snapshot is discarded as stale while gauges look alive.
+      state.snapshotSeq = 0;
       if (el.consoleRate) el.consoleRate.innerHTML = '● connected';
       appendConsoleLog(new Date().toLocaleTimeString(), 'ws', 'Connected to live telemetry stream.');
     };
@@ -1350,15 +1615,9 @@
 
   function focusBot(guid) {
     const bot = state.bots.find(b => b.guid === guid);
-
     // Open the map on the zone the bot is actually in, otherwise the marker
     // would not be drawn (the map filters to the selected zone).
-    if (bot && ZONE_CONFIG[bot.zone]) {
-      state.currentZoneId = bot.zone;
-      if (el.zoneSelect) el.zoneSelect.value = bot.zone;
-      loadZoneMap(bot.zone);
-    }
-
+    if (bot) openZone(bot.zone);
     state.selectedBotGuid = guid;
     switchTab('map');
     selectBot(guid);
