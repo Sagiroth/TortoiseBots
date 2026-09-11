@@ -60,3 +60,31 @@ Warlocks provide sustained Shadow and Fire DPS through curses and damage-over-ti
 - **Crowd Control:**
   - Casts *Fear* on designated marks (or when fleeing).
   - Casts *Banish* on Demons and Elementals.
+
+---
+
+## Premade Talent Specs & Progression (1.18.1)
+
+TortoiseBots provides verified 5-level talent checkpoints (levels 10–60) tailored for Turtle WoW 1.18.1:
+
+| Spec Name | Config ID | Role | 60 Allocation | Key Signatures & Synergies |
+| :--- | :--- | :--- | :--- | :--- |
+| **Affliction** | `9.0` | Ranged DPS | `40 / 0 / 11` | Dark Harvest (40), Shadow Mastery (40), Nightfall, Siphon Life, Bane -0.5s Shadow Bolt dip. |
+| **Demonology** | `9.1` | Ranged DPS / Tanky | `7 / 44 / 0` | Power Overwhelming (30), Soul Link (40), Master Demonologist, Instant Corruption dip. |
+| **Destruction** | `9.2` | Ranged DPS | `7 / 0 / 44` | Conflagrate (40), Ruin (30), Instant Corruption + Improved Life Tap dip. 0 points in Searing Pain threat. |
+
+### Leveling Milestones & Progression Rationale
+
+- **Affliction (`9.0`):**
+  - *Levels 10–35:* DoT scaling foundation: *Improved Corruption* (5/5 instant cast), *Improved Life Tap* (2/2), *Nightfall* (2/2 instant Shadow Bolt on Corruption/Drain Life ticks), *Grim Reach* (2/2 range), *Soul Siphon* (3/3), and *Siphon Life* (30 periodic health siphon).
+  - *Levels 35–45:* *Rapid Deterioration* (2/2), *Shadow Mastery* (40 +10% shadow damage), and *Dark Harvest* (40 Turtle custom finisher).
+  - *Levels 45–60:* *Suppression* (5/5 spell hit cap) and 11 Destruction points (*Cataclysm* 5/5 + *Bane* 5/5 + *Shadowburn* 1/1) reducing Shadow Bolt cast time by 0.5s.
+- **Demonology (`9.1`):**
+  - *Levels 10–35:* Pet durability and burst: *Demonic Embrace* (5/5 Stamina), *Demonic Aegis* (3/3 Armor/healing buff), *Fel Intellect* (3/3), *Fel Domination* (1/1 fast pet summon), *Unholy Power* (3/3 pet damage), and *Power Overwhelming* (30 custom pet sacrifice burst).
+  - *Levels 35–45:* *Demonic Precision* (3/3 pet spell hit), *Master Demonologist* (5/5 stat scaling), and *Soul Link* (40 30% damage transfer).
+  - *Levels 45–60:* Completes Demonology utility (*Unleashed Potential* + *Nether Studies*), then takes 7 Affliction points into *Improved Corruption* (5/5) and *Improved Life Tap* (2/2).
+- **Destruction (`9.2`):**
+  - *Levels 10–35:* Fire/Shadow nuke path: *Cataclysm* (5/5 cost reduction), *Bane* (5/5 cast time reduction), *Shadowburn* (20 instant soul shard burst), *Devastation* (5/5 +5% crit), and *Ruin* (30 +100% crit damage bonus).
+  - *Levels 35–45:* *Improved Immolate* (5/5) and *Conflagrate* (40 instant burst consuming Immolate).
+  - *Levels 45–60:* Takes 7 Affliction points into *Improved Corruption* (5/5 instant cast) and *Improved Life Tap* (2/2) to eliminate cast vulnerability, then finishes Destruction with *Emberstorm* (5/5) and *Demonic Swiftness* (2/2 reduced Imp Firebolt cast time). Avoids threat-increasing talents (*Improved Searing Pain*).
+

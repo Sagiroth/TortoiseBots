@@ -59,3 +59,30 @@ Warriors serve as primary dungeon tanks or powerful melee DPS. The bot manages r
 - **Interrupts:** Casts *Shield Bash* (Defensive/Battle stance with shield) or *Pummel* (Berserker stance) instantly when an enemy begins casting an interruptible spell.
 - **Shouts:** Automatically maintains *Battle Shout* on party members and applies *Demoralizing Shout* to debuff melee packs.
 - **CC & Snares:** Casts *Piercing Howl* (AoE snare) or *Hamstring* on fleeing mobs. Uses *Concussion Blow* (Protection) as a 5-second stun on priority targets.
+
+---
+
+## Premade Talent Specs & Progression (1.18.1)
+
+TortoiseBots ships with pre-configured talent progressions at 5-level intervals (levels 10–60) designed for Turtle WoW 1.18.1:
+
+| Spec Name | Config ID | Role | 60 Allocation | Key Signatures & Synergies |
+| :--- | :--- | :--- | :--- | :--- |
+| **Fury** | `1.0` | Melee DPS | `17 / 34 / 0` | Death Wish (30), Flurry (35), Bloodthirst (40), Ravager (-3s Whirlwind CD), 17 Arms dip for Deep Wounds 3/3 + Impale 2/2 (+20% crit damage bonus). |
+| **Protection** | `1.1` | Tank | `7 / 0 / 44` | Shield Slam (40), Concussion Blow (50), Gag Order (silence on Shield Bash / dispel on Shield Slam), Defensive Tactics, Tactical Mastery 4/5. |
+| **Arms** | `1.2` | Melee DPS | `40 / 11 / 0` | Sweeping Strikes (30), Mortal Strike (40), Master Strike, Boundless Anger, 11 Fury dip for Cruelty 5/5 + Piercing Howl. |
+
+### Leveling Milestones & Progression Rationale
+
+- **Fury (`1.0`):**
+  - *Levels 10–30:* Pure Fury path rush to *Cruelty* (5/5 crit), *Dual Wield Specialization* (5/5), *Unbridled Wrath* (5/5), *Piercing Howl* (1/1 AoE snare), and *Death Wish* (30).
+  - *Levels 30–40:* *Flurry* (5/5 attack speed) into *Bloodthirst* (40 capstone).
+  - *Levels 40–60:* Takes *Ravager* (3/3 Cleave rage / Whirlwind CD) and *Improved Execute* (2/2), then transitions into Arms for *Tactical Mastery* (5/5), *Improved Overpower* (2/2), *Deep Wounds* (3/3), and *Impale* (2/2), maximizing critical strike burst.
+- **Protection (`1.1`):**
+  - *Levels 10–30:* Defensive core rushing *Shield Specialization* (5/5), *Anticipation* (3/3), *Toughness* (5/5), *Last Stand* (20), *Improved Taunt* (2/2), and *Improved Revenge* (3/3).
+  - *Levels 30–50:* *Defiance* (5/5 threat), *Gag Order* (2/2 silence utility), *Shield Slam* (40), *Improved Shield Slam* (2/2), *Reprisal* (2/2), and *Concussion Blow* (50).
+  - *Levels 50–60:* *Defensive Tactics* (3/3) and 7 points in Arms (*Tactical Mastery* + *Improved Heroic Strike*) to retain rage across stance dancing.
+- **Arms (`1.2`):**
+  - *Levels 10–40:* Focuses on two-handed power: *Deflection* (5/5), *Deep Wounds* (3/3), *Two-Handed Weapon Specialization* (3/3), *Impale* (2/2), *Sweeping Strikes* (30), and *Mortal Strike* (40).
+  - *Levels 40–60:* Custom Turtle talents *Boundless Anger* (3/3) and *Master of Arms* (5/5), followed by an 11-point Fury dip into *Cruelty* (5/5) and *Piercing Howl* (1/1).
+

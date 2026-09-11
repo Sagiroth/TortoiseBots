@@ -60,3 +60,31 @@ Mages provide premier ranged spell DPS, the game's most reliable crowd control (
 - **Food & Drink Conjuration:** Automatically conjures food and water out of combat, sharing stacks with party members who need mana or health.
 - **Buffs:** Maintains *Arcane Intellect* on all mana-using party members and self *Mage Armor* / *Ice Armor*.
 - **Curses:** Uses *Remove Lesser Curse* on party members affected by debilitating curses.
+
+---
+
+## Premade Talent Specs & Progression (1.18.1)
+
+TortoiseBots provides verified 5-level talent checkpoints (levels 10–60) tailored for Turtle WoW 1.18.1:
+
+| Spec Name | Config ID | Role | 60 Allocation | Key Signatures & Synergies |
+| :--- | :--- | :--- | :--- | :--- |
+| **Arcane** | `8.0` | Ranged DPS | `40 / 0 / 11` | Arcane Power (40), PoM (30), Temporal Convergence, Accelerated Arcana, Frost hit cap dip. 0 points in Wand Spec. |
+| **Fire** | `8.1` | Ranged DPS | `10 / 41 / 0` | Hot Streak (30), Combustion (40), Master of Elements, 5/5 Clearcasting + -40% threat dip. 0 points in Wand Spec. |
+| **Frost** | `8.2` | Ranged DPS | `10 / 0 / 41` | Shatter (30), Ice Block (35), Ice Barrier (40), Icicles, Flash Freeze, Clearcasting + threat dip. 0 points in Wand Spec. |
+
+### Leveling Milestones & Progression Rationale
+
+- **Arcane (`8.0`):**
+  - *Levels 10–35:* Burst and mana foundation: *Arcane Subtlety* (2/2 -40% threat), *Improved Arcane Missiles* (5/5 anti-pushback), *Arcane Concentration* (5/5 Clearcasting), *Presence of Mind* (30 instant cast), and *Temporal Convergence* (3/3 haste).
+  - *Levels 35–45:* *Accelerated Arcana* (1/1), *Arcane Power* (40 +30% spell damage burst), and *Resonance Cascade* (5/5).
+  - *Levels 45–60:* Frost dip into *Improved Frostbolt* (5/5) and *Elemental Precision* (3/3 providing 6% spell hit cap and threat reduction) to ensure high raid damage without resisting.
+- **Fire (`8.1`):**
+  - *Levels 10–35:* Fire nuke ramping: *Improved Fireball* (5/5 cast time reduction), *Ignite* (5/5 +40% periodic crit burn), *Pyroblast* (20 opener), *Master of Elements* (3/3 mana refund on crit), and *Hot Streak* (30 instant Pyroblast procs).
+  - *Levels 35–45:* *Fire Power* (5/5 fire spell damage) and *Combustion* (40 critical strike engine).
+  - *Levels 45–60:* *Burning Soul* (2/2 pushback resistance) and 10 Arcane points (*Arcane Subtlety* 2/2 for threat reduction + *Arcane Concentration* 5/5 for Clearcasting free spells).
+- **Frost (`8.2`):**
+  - *Levels 10–35:* Shatter and control engine: *Improved Frostbolt* (5/5), *Elemental Precision* (3/3 spell hit cap), *Ice Shards* (5/5 +100% crit damage bonus), *Cold Snap* (25 cooldown reset), and *Shatter* (30 +50% crit on frozen targets).
+  - *Levels 35–45:* *Ice Block* (35 emergency immunity), *Ice Barrier* (40 damage absorb shield), *Icicles* (1/1), and *Winter's Chill* (5/5 stacking frost crit debuff).
+  - *Levels 45–60:* *Flash Freeze* (2/2 instant Frostbolt procs) and 10 Arcane points into *Arcane Subtlety* (2/2) and *Arcane Concentration* (5/5 Clearcasting).
+

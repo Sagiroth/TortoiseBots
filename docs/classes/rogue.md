@@ -63,3 +63,31 @@ Rogues provide premier single-target melee physical DPS, invaluable pre-combat c
 - **Poisons:** Automatically applies *Instant Poison* / *Deadly Poison* to main-hand and off-hand weapons out of combat.
 - **Interrupts:** Casts *Kick* instantly to lock out enemy spell schools.
 - **Disarm & Blinds:** Uses *Gouge* to incapacitate secondary attackers and *Blind* on out-of-control adds.
+
+---
+
+## Premade Talent Specs & Progression (1.18.1)
+
+TortoiseBots ships with verified 5-level talent checkpoints (levels 10–60) tailored for Turtle WoW 1.18.1:
+
+| Spec Name | Config ID | Role | 60 Allocation | Key Signatures & Synergies |
+| :--- | :--- | :--- | :--- | :--- |
+| **Combat** | `4.0` | Melee DPS | `20 / 31 / 0` | Dual Wield Spec (30), Blade Rush (35), Adrenaline Rush (40), Hack and Slash extra attacks, Relentless Strikes, Lethality. |
+| **Assassination** | `4.1` | Melee DPS | `40 / 11 / 0` | Cold Blood (35), Seal Fate (45), Noxious Assault (50), Envenom, Vigor, Efficient Poisons, Precision dip. |
+| **Subtlety** | `4.2` | Melee DPS | `10 / 0 / 41` | Hemorrhage (30), Preparation (35), Mark for Death (45), Honor Among Thieves, Tricks of the Trade, Assassination crit dip. |
+
+### Leveling Milestones & Progression Rationale
+
+- **Combat (`4.0`):**
+  - *Levels 10–30:* Melee efficiency path: *Opportunity* (5/5), *Precision* (5/5 +5% hit), *Improved Backstab* (3/3), *Improved Sprint* (2/2), and *Dual Wield Specialization* (30 +50% offhand damage).
+  - *Levels 30–40:* *Surprise Attack* (1/1 unblockable strike), *Hack and Slash* (2/2 sword/axe extra attacks), *Blade Rush* (35 attack speed & energy recovery), and *Adrenaline Rush* (40 signature energy surge).
+  - *Levels 40–60:* Transitions into Assassination for *Malice* (5/5 crit), *Ruthlessness* (3/3 combo points on finisher), *Relentless Strikes* (25 energy on finisher), and *Lethality* (5/5 +30% crit damage bonus).
+- **Assassination (`4.1`):**
+  - *Levels 10–35:* Poison and crit engine: *Malice* (5/5), *Ruthlessness* (3/3), *Murder* (2/2), *Relentless Strikes* (1/1), *Lethality* (5/5), *Vile Poisons* (3/3), *Improved Poisons* (3/3), and *Cold Blood* (35 guaranteed crit).
+  - *Levels 35–50:* *Efficient Poisons* (3/3), *Envenom* (40 finisher), *Seal Fate* (45 double combo point on crit), and *Noxious Assault* (50 twin-weapon strike).
+  - *Levels 50–60:* Combat dip (*Opportunity* 5/5 + *Precision* 3/5) to maximize hit and energy delivery.
+- **Subtlety (`4.2`):**
+  - *Levels 10–30:* Stealth and bleed path: *Camouflage* (5/5), *Serrated Blades* (3/3 armor penetration), *Initiative* (3/3), *Ghostly Strike* (3/3), and *Hemorrhage* (30 low-cost debuff strike).
+  - *Levels 30–45:* *Preparation* (35 cooldown reset), *Shadow of Death* (1/1 burst), *Bloody Mess* (2/2 bleed scaling), and *Mark for Death* (45 capstone).
+  - *Levels 45–60:* *Honor Among Thieves* (2/2 group crit synergy) and 10 points in Assassination (*Malice* 5/5 + *Ruthlessness* 3/3 + *Murder* 2/2) for reliable finisher cycling.
+
