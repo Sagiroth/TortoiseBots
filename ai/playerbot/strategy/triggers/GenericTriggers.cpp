@@ -190,12 +190,21 @@ bool OutNumberedTrigger::IsActive()
 bool BuffTrigger::IsActive()
 {
     Unit* target = GetTarget();
-	return target && !ai->HasAura(spell, target, false, checkIsOwner) && target->IsAlive();
+    // A buff that was never trained can never appear as an aura, so without
+    // this the trigger stays active forever and the cast fails every tick
+    // (observed ACTION_LOOPs: inner fire / lightning shield / aspect of the
+    // hawk on level 1-2 bots). No donor equivalent; native hardening for a
+    // pool that starts at level 1 (donor bots are max-level, never affected).
+    if (!ai->HasSpell(spell))
+        return false;
+    return target && !ai->HasAura(spell, target, false, checkIsOwner) && target->IsAlive();
 }
 
 bool MyBuffTrigger::IsActive()
 {
     Unit* target = GetTarget();
+    if (!ai->HasSpell(spell))
+        return false;
     return target && !ai->HasMyAura(spell, target);
 }
 
@@ -323,6 +332,9 @@ bool AoeTrigger::IsActive()
 
 bool DebuffTrigger::IsActive()
 {
+    if (!ai->HasSpell(spell))
+        return false;
+
     Unit* target = GetTarget();
     if(target && target->IsAlive())
     {

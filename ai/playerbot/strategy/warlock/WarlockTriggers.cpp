@@ -7,6 +7,9 @@ using namespace ai;
 
 bool DemonArmorTrigger::IsActive()
 {
+	if (!ai->HasSpell("demon skin") && !ai->HasSpell("demon armor"))
+		return false;
+
 	Unit* target = GetTarget();
 	return !ai->HasAura("demon skin", target) &&
 			   !ai->HasAura("demon armor", target);
@@ -24,6 +27,9 @@ bool InfernoTrigger::IsActive()
 
 bool CorruptionTrigger::IsActive()
 {
+	if (!ai->HasSpell("corruption"))
+		return false;
+
 	Unit* target = GetTarget();
 	return target && !ai->HasAura("corruption", target) && !HasMaxDebuffs();
 }
@@ -35,6 +41,9 @@ bool CorruptionOnAttackerTrigger::IsActive()
 
 bool LifeTapTrigger::IsActive()
 {
+	if (!ai->HasSpell("life tap"))
+		return false;
+
 	const uint32 mana = AI_VALUE2(uint8, "mana", "self target");
 	if (mana <= sPlayerbotAIConfig.lowMana)
 	{
@@ -50,6 +59,9 @@ bool LifeTapTrigger::IsActive()
 
 bool DrainSoulTrigger::IsActive()
 {
+	if (!ai->HasSpell("drain soul"))
+		return false;
+
 	// If no item cheats enabled
     if (!ai->HasCheat(BotCheatMask::item))
     {
@@ -74,6 +86,15 @@ bool DrainSoulTrigger::IsActive()
 
 bool NoCurseTrigger::IsActive()
 {
+	if (!ai->HasSpell("curse of agony") &&
+		!ai->HasSpell("curse of doom") &&
+		!ai->HasSpell("curse of recklessness") &&
+		!ai->HasSpell("curse of shadow") &&
+		!ai->HasSpell("curse of the elements") &&
+		!ai->HasSpell("curse of weakness") &&
+		!ai->HasSpell("curse of tongues"))
+		return false;
+
 	Unit* target = GetTarget();
 	if (target)
 	{
@@ -91,6 +112,15 @@ bool NoCurseTrigger::IsActive()
 
 bool NoCurseOnAttackerTrigger::IsActive()
 {
+	if (!ai->HasSpell("curse of agony") &&
+		!ai->HasSpell("curse of doom") &&
+		!ai->HasSpell("curse of recklessness") &&
+		!ai->HasSpell("curse of shadow") &&
+		!ai->HasSpell("curse of the elements") &&
+		!ai->HasSpell("curse of weakness") &&
+		!ai->HasSpell("curse of tongues"))
+		return false;
+
     std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "possible attack targets");
     Unit* currentTarget = AI_VALUE(Unit*, "current target");
     for (std::list<ObjectGuid>::iterator i = attackers.begin(); i != attackers.end(); ++i)
