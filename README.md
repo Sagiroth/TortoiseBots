@@ -1,6 +1,6 @@
 # TortoiseBots
 
-Independent native PlayerBots module for the canonical **Tortoise WoW 1.18.1** core repository ([`tortoise-wow`](https://github.com/Penqle/tortoise-wow), `bot-helpers` branch).
+Independent native PlayerBots module for the canonical **Tortoise WoW 1.18.1** core repository ([`tortoise-wow`](https://github.com/tortoise-wow/tortoise-wow), `bot-helpers` branch).
 
 `TortoiseBots` delivers native AI companions through a decoupled C++ architecture: bot AI, combat strategies, and lifecycle management live entirely within this module, while session transport and character state stay cleanly owned by the core via generic headless sessions (`SessionTransport::Headless`). The core builds and runs 100% cleanly without the module (`MODULES=disabled`).
 
@@ -69,7 +69,7 @@ Independent native PlayerBots module for the canonical **Tortoise WoW 1.18.1** c
 
 ## Requirements
 
-- A [Tortoise WoW core](https://github.com/Penqle/tortoise-wow) checkout on the `bot-helpers` branch.
+- A [Tortoise WoW core](https://github.com/tortoise-wow/tortoise-wow) checkout on the `bot-helpers` branch.
 - C++17 toolchain and CMake (see build below).
 
 ---

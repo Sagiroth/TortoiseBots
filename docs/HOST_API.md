@@ -49,12 +49,12 @@ Validated local core checkpoint:
 It is based on the refreshed upstream `main` at `05912a49f7cd8f12afff04b3c37e6f852f981268`.
 
 Upstream status:
-generic Headless capability remains proposed in PR [#411](https://github.com/Penqle/tortoise-wow/pull/411)
+generic Headless capability remains proposed in PR [#411](https://github.com/tortoise-wow/tortoise-wow/pull/411)
 (`8037fc8`, based on refreshed upstream `main`). It is not yet merged.
 The module-facing surface is the three `World` lifecycle calls plus
 `SessionTransport` queries.
 
-Generic participant primitives remain proposed in PR [#416](https://github.com/Penqle/tortoise-wow/pull/416).
+Generic participant primitives remain proposed in PR [#416](https://github.com/tortoise-wow/tortoise-wow/pull/416).
 The corrected candidate is `e63161c`, based on the corrected #411 candidate,
 and remains logically separate.
 

@@ -35,7 +35,7 @@ This repo is self-contained. All required context is indexed in `docs/` and vali
 
 The canonical upstream and target core is:
 
-<https://github.com/Penqle/tortoise-wow>
+<https://github.com/tortoise-wow/tortoise-wow>
 
 Unless qualified otherwise, these terms mean `tortoise-wow`: upstream, upstream core, target core, core main, core PR.
 
@@ -56,7 +56,7 @@ All references are remote, read-only, and optional. Clone only what you need for
 
 | Reference | URL | Purpose |
 | --- | --- | --- |
-| Upstream core | <https://github.com/Penqle/tortoise-wow> | Target core (`tortoise-wow`) |
+| Upstream core | <https://github.com/tortoise-wow/tortoise-wow> | Target core (`tortoise-wow`) |
 | shyalya-tortoise-wow | <https://github.com/Shyalya/tortoise-wow> | Tortoise 1.18.1 compatibility evidence, known API differences, Tortoise fixes |
 | CMaNGOS PlayerBots | <https://github.com/cmangos/playerbots> | Existing combat/movement/class/healing/CC/dungeon behavior |
 | CMaNGOS Classic | <https://github.com/cmangos/mangos-classic> | What CMaNGOS PlayerBots expects from its host |

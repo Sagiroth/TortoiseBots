@@ -22,7 +22,7 @@ When investigating bugs or porting features, evaluate evidence in this order:
    - **Primary runtime oracle for Turtle WoW 1.18.1 PlayerBots semantics.**
    - Consult first for: engine lifecycle, action queue behavior, movement/`MotionMaster` interactions, Turtle-specific DBC/spell adaptations, and packet hook ordering.
    - *Never copy its core coupling (`m_bot`, `WorldSession::GetBot()`).*
-3. **Current Core Server Semantics** ([tortoise-wow](https://github.com/Penqle/tortoise-wow)).
+3. **Current Core Server Semantics** ([tortoise-wow](https://github.com/tortoise-wow/tortoise-wow)).
 4. **mod-playerbots** ([mod-playerbots/mod-playerbots](https://github.com/mod-playerbots/mod-playerbots)):
    - **Primary mature behavior donor.**
    - Consult first for: combat rotations, healing prioritization, interrupt selections, CC logic, dungeon behavior, and rich tactics.

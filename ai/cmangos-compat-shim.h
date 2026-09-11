@@ -1,8 +1,8 @@
 // pi-lens-ignore: clang:pp_file_not_found,clang:unknown_typename,clang:undeclared_var_use,clang:use_of_undeclared_identifier,clang:unknown_type_name
-// cmangos/playerbots → Penqle/tortoise-wow compatibility shim.
+// cmangos/playerbots → tortoise-wow compatibility shim.
 //
 // Provides the cmangos-side names/constants the vendored bot module references
-// but Penqle either names differently or doesn't expose. Included by botpch.h
+// but tortoise-wow either names differently or doesn't expose. Included by botpch.h
 // as the first header in the PCH chain so all bot TUs see it.
 //
 // What's here:

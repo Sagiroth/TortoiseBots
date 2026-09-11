@@ -14,13 +14,13 @@ notice. See `ai/playerbot/` headers,
 [`docs/LICENSE_AUDIT.md`](docs/LICENSE_AUDIT.md) for source commits and the
 open compatibility audit. Do not strip those notices.
 
-## Upstream — Penqle/tortoise-wow
+## Upstream — tortoise-wow/tortoise-wow
 
 The canonical target core for this module is:
 
-* **Penqle/tortoise-wow** — <https://github.com/Penqle/tortoise-wow>
+* **tortoise-wow/tortoise-wow** — <https://github.com/tortoise-wow/tortoise-wow>
 * Licence: **GNU Affero General Public License v3.0 (AGPL-3.0)**
-* Full text: <https://github.com/Penqle/tortoise-wow/blob/main/LICENSE>
+* Full text: <https://github.com/tortoise-wow/tortoise-wow/blob/main/LICENSE>
 
 A combined build may be distributed or operated only when every included
 TortoiseBots component is available under terms compatible with AGPL-3.0. Once
