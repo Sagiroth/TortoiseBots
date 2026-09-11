@@ -297,6 +297,29 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
     std::string specLink = sRandomBotFacade.GetData(bot->GetGUIDLow(), "specLink");
     uint8 cls = bot->GetClass();
 
+    // If an explicit role is required (e.g. from dungeon finder queue) and this is
+    // an autonomous random bot whose stored spec cannot fill that role, wipe the
+    // stored choice so the selection logic below picks an appropriate spec for the role.
+    if (role != BotRoles::BOT_ROLE_NONE &&
+        sRandomBotFacade.IsRandomBot(bot) &&
+        bot->GetLevel() >= 10 &&
+        specNo > 0)
+    {
+        TalentPath* currentPath = getPremadePath(cls, specId);
+        if (currentPath && !currentPath->talentSpec.empty())
+        {
+            BotRoles specRole = AiFactory::GetPlayerRoles(cls, currentPath->talentSpec.back().highestTree());
+            if (!(specRole & role) && !getPremadePaths(cls, "", role).empty())
+            {
+                sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specNo", 0);
+                sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specLink", 0, "");
+                bot->ResetTalents(true);
+                specNo = 0;
+                specLink.clear();
+            }
+        }
+    }
+
     //Continue the current spec
     if (specNo > 0)
     {
@@ -309,6 +332,8 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
         {
             *out << "Upgrading spec " << "|h|cffffffff" << getPremadePath(bot->GetClass(), specId)->name << " (" << newSpec.formatSpec(cls) << ")";
         }
+        if (newSpec.GetTalentPoints() >= GetTotalTalentPoints_TB(bot))
+            return true;
     }
     else if (!specLink.empty())
     {
@@ -321,84 +346,83 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
         {
             *out << "Upgrading saved spec " << "|h|cffffffff" << ChatHelper::formatClass(bot, newSpec.highestTree()) << " (" << newSpec.formatSpec(cls) << ")";
         }
+        if (newSpec.GetTalentPoints() >= GetTotalTalentPoints_TB(bot))
+            return true;
     }
 
     //Spec was not found or not sufficient
-    if (GetTotalTalentPoints_TB(bot) > 0 || (!specNo && specLink.empty()))
+    TalentSpec oldSpec(bot);
+    int currentTree = oldSpec.highestTree();
+    std::vector<TalentPath*> paths;
+
+    if (oldSpec.points)
+        paths = getPremadePaths(bot, &oldSpec);
+
+    if (paths.size() == 0) //No spec like the old one found. Pick any.
     {
-        TalentSpec oldSpec(bot);
-        int currentTree = oldSpec.highestTree();
-        std::vector<TalentPath*> paths;
+        if (GetTotalTalentPoints_TB(bot) > 0)
+            *out << "No specs like the current spec found.";
 
-        if (oldSpec.points)
-            paths = getPremadePaths(bot, &oldSpec);
+        paths = getPremadePaths(bot->GetClass(), "", role);
 
-        if (paths.size() == 0) //No spec like the old one found. Pick any.
+        if (paths.empty() && role != BotRoles::BOT_ROLE_NONE)
+            paths = getPremadePaths(bot->GetClass(), "", BotRoles::BOT_ROLE_NONE);
+    }
+
+    if(paths.size() > 0 && oldSpec.GetTalentPoints() > 0)
+    {
+        //Check if any spec has the same tree as the current spec.
+        bool hasSameTree = false;
+        for (auto it : paths)
         {
-            if (GetTotalTalentPoints_TB(bot) > 0)
-                *out << "No specs like the current spec found.";
-
-            paths = getPremadePaths(bot->GetClass(), "", role);
-
-            if (paths.empty() && role != BotRoles::BOT_ROLE_NONE)
-                paths = getPremadePaths(bot->GetClass(), "", BotRoles::BOT_ROLE_NONE);
-        }
-
-        if(paths.size() > 0 && oldSpec.GetTalentPoints() > 0)
-        {
-            //Check if any spec has the same tree as the current spec.
-            bool hasSameTree = false;
-            for (auto it : paths)
+            if (it->talentSpec.back().highestTree() == currentTree)
             {
-                if (it->talentSpec.back().highestTree() == currentTree)
-                {
-                    hasSameTree = true;
-                    break;
-                }
-            }
-
-            if (hasSameTree) //Remove specs that do not end up in the same tree.
-            {
-                auto it = paths.begin();
-                while (it != paths.end())
-                {
-                    TalentPath* path = *it;
-                    if (path->talentSpec.back().highestTree() != currentTree)
-                    {
-                        it = paths.erase(it);
-                    }
-                    else
-                    {
-                        ++it;
-                    }
-                }
+                hasSameTree = true;
+                break;
             }
         }
 
-        if (paths.size() == 0)
+        if (hasSameTree) //Remove specs that do not end up in the same tree.
         {
-            *out << "No predefined talents found for this class.";
-            specId = -1;
+            auto it = paths.begin();
+            while (it != paths.end())
+            {
+                TalentPath* path = *it;
+                if (path->talentSpec.back().highestTree() != currentTree)
+                {
+                    it = paths.erase(it);
+                }
+                else
+                {
+                    ++it;
+                }
+            }
         }
-        else if (paths.size() > 1 && sPlayerbotAIConfig.autoPickTalents != "full" && !sRandomBotFacade.IsRandomBot(bot))
-        {
-            *out << "Found multiple specs: ";
-            listPremadePaths(cls, paths, out);
-        }
-        else
-        {
-            specId = PickPremadePath(paths, sRandomBotFacade.IsRandomBot(bot))->id;
-            TalentSpec newSpec = *GetBestPremadeSpec(bot, specId);
-            specLink = newSpec.GetTalentLink();
-            newSpec.CropTalents(bot);
-            newSpec.ApplyTalents(bot, out);
-            if (PlayerbotAIStorage::Instance().GetAI(bot))
-                PlayerbotAIStorage::Instance().GetAI(bot)->UpdateTalentSpec();
-            if (paths.size() > 1)
-                *out << "Found " << paths.size() << " possible specs to choose from. ";
+    }
 
-            *out << "Apply spec " << "|h|cffffffff" << getPremadePath(cls, specId)->name << " " << newSpec.formatSpec(cls);
-        }
+    if (paths.size() == 0)
+    {
+        *out << "No predefined talents found for this class.";
+        specId = -1;
+    }
+    else if (paths.size() > 1 && sPlayerbotAIConfig.autoPickTalents != "full" && !sRandomBotFacade.IsRandomBot(bot))
+    {
+        *out << "Found multiple specs: ";
+        listPremadePaths(cls, paths, out);
+    }
+    else
+    {
+        specId = PickPremadePath(paths, sRandomBotFacade.IsRandomBot(bot))->id;
+        TalentSpec newSpec = *GetBestPremadeSpec(bot, specId);
+        specLink = newSpec.GetTalentLink();
+        newSpec.CropTalents(bot);
+        newSpec.ApplyTalents(bot, out);
+        if (PlayerbotAIStorage::Instance().GetAI(bot))
+            PlayerbotAIStorage::Instance().GetAI(bot)->UpdateTalentSpec();
+        if (paths.size() > 1)
+            *out << "Found " << paths.size() << " possible specs to choose from. ";
+
+        *out << "Apply spec " << "|h|cffffffff" << getPremadePath(cls, specId)->name << " " << newSpec.formatSpec(cls);
     }
 
     sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specNo", specId + 1);
@@ -407,7 +431,7 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
     else
         sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specLink", 0);
 
-    return (specNo == 0) ? false : true;
+    return (specId == -1) ? false : true;
 }
 
 //Returns a pre-made talent spec that best suits the bots current talents.
