@@ -28,6 +28,9 @@ bool IceArmorTrigger::IsActive()
 
 bool ManaShieldTrigger::IsActive()
 {
+    if (!ai->HasSpell("mana shield"))
+        return false;
+
     return !ai->HasAura("mana shield", bot) && AI_VALUE2(uint8, "mana", "self target") > sPlayerbotAIConfig.mediumMana;
 }
 

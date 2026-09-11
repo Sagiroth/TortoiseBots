@@ -7,6 +7,9 @@ using namespace ai;
 
 bool HunterNoStingsActiveTrigger::IsActive()
 {
+    if (!ai->HasSpell("serpent sting") && !ai->HasSpell("scorpid sting") && !ai->HasSpell("viper sting"))
+        return false;
+
 	Unit* target = AI_VALUE(Unit*, "current target");
     return target && AI_VALUE2(uint8, "health", "current target") > 40 &&
         !ai->HasAura("serpent sting", target) &&

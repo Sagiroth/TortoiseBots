@@ -7,11 +7,10 @@ using namespace ai;
 
 bool InnerFireTrigger::IsActive()
 {
-    Unit* target = GetTarget();
-    return SpellTrigger::IsActive() && !ai->HasAura(spell, target);
+    return BuffTrigger::IsActive();
 }
 
 bool ShadowformTrigger::IsActive()
 {
-    return !ai->HasAura("shadowform", bot);
+    return ai->HasSpell("shadowform") && !ai->HasAura("shadowform", bot);
 }

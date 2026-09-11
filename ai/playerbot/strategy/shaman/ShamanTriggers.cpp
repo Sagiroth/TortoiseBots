@@ -32,5 +32,8 @@ bool ShamanWeaponTrigger::IsActive()
 
 bool ShockTrigger::IsActive()
 {
+    if (!ai->HasSpell("earth shock") && !ai->HasSpell("flame shock") && !ai->HasSpell("frost shock"))
+        return false;
+
     return SpellTrigger::IsActive() && !ai->HasAnyAuraOf(GetTarget(), "frost shock", "earth shock", "flame shock", NULL) && !HasMaxDebuffs();
 }

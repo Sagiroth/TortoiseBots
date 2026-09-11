@@ -505,8 +505,8 @@ AiPlayerbot.AutoPickTalents = full
 AiPlayerbot.AutoLearnTrainerSpells = 0
 
 # Bots automatically learn classquest reward spells on levelup
-# Default: 0 (disabled)
-AiPlayerbot.AutoLearnQuestSpells = 0
+# Default: 1 (enabled)
+AiPlayerbot.AutoLearnQuestSpells = 1
 
 # Alt Bots automatically learn class spells from books dropped from dungeons and raids when leveled and they reached the required level of the book.
 # Default: 0 (disabled)
