@@ -1,3 +1,14 @@
+---
+id: ref-host-api
+title: Core Host Seams & Module API Contract
+category: reference
+summary: Technical specification of the generic C++ host seams, headless session lifecycle, packet bridge, and module integration contracts.
+tags: [host-api, seams, c++, headless, packets, contract]
+relates_to:
+  - concept-architecture-invariants
+  - concept-strategy-engine
+---
+
 # HOST_API — current TortoiseBots host contract
 
 **Target:** Tortoise WoW 1.18.1 core
@@ -359,7 +370,7 @@ to a real API, remove/disable it, or fail closed. Do not return fake success
 only to satisfy a donor interface.
 
 The completed audit removed or disabled several such compatibility surfaces;
-see [PLAYERBOTS_AUDIT.md](archive/PLAYERBOTS_AUDIT.md) for evidence.
+evidence is preserved in Git history and `PROVENANCE.md`.
 
 ## 16. LFT queue integration (optional, default-off)
 
@@ -475,4 +486,4 @@ core gameplay code, redesign it.
 
 ## 21. Historical closure
 
-F-03/F-27 closure and validation boundary are recorded in `PLAN.md` §6.1 and `PROVENANCE.md`; see `archive/PLAYERBOTS_AUDIT.md` for full evidence. This contract covers only the current host API.
+F-03/F-27 closure and validation boundary are recorded in `PLAN.md` §6.1 and `PROVENANCE.md`; full historical audit evidence is preserved in Git history. This contract covers only the current host API.

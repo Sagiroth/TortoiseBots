@@ -1,3 +1,13 @@
+---
+id: ref-license-audit
+title: Donor License Compatibility Audit
+category: reference
+summary: Audit record of donor source licenses, compatibility with Penqle core AGPL-3.0, and release gates.
+tags: [license, legal, audit, compliance]
+relates_to:
+  - concept-architecture-invariants
+---
+
 # Donor licence compatibility audit
 
 **Status:** Open  

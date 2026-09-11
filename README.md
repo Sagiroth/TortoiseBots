@@ -10,48 +10,33 @@ Independent native PlayerBots module for the canonical **Tortoise WoW 1.18.1** c
 
 ## Features
 
-### Class AI
-- Nine Vanilla classes (Warrior–Druid) with class/spec-aware strategies, rotations, and priorities.
-- Spec-aware combat: tanking and threat, healing, DPS rotations, ranged/melee positioning.
-- Interrupts, crowd control, and raid-mark assignment (`cc <mark>`).
-- Buffs, consumables, food/drink and rest, pets, and off-spec support.
+### Class Combat AI
+- **Nine Vanilla Classes (Warrior–Druid):** Spec-aware talent trees, single-target rotations, and AoE pacing.
+- **Role Mastery:** Threat generation and tab-target holding for tanks, priority healing ladders for healers, and burst/sustain DPS.
+- **Turtle WoW 1.18.1 Content:** Custom spells integrated into rotations (*Master Strike*, *Holy Strike*, *Carve*, *Lacerate*, *Aspect of the Viper*, *Chastise*, *Earthquake*, *Icicles*, *Dark Harvest*, *Tree of Life Form*).
+- **Tactical Utility:** School-locking interrupts (*Kick*, *Pummel*, *Counterspell*), raid-marker crowd control (*Polymorph*, *Sap*, *Freezing Trap*), buffs, consumables, and simultaneous eating/drinking.
 
-### Party & lifecycle
-- Owned companions claimed from **your own account**; each runs as a headless session and follows you into the world.
-- Summon / follow / stay / formations, plus tactical party intents (attack, pull, pullback, focus, AoE, CC).
-- Authoritative roster snapshots (`TBM:` protocol) so the addon always shows real bot state.
-- **Human reclaim wins:** a real login on the account always takes precedence over a headless bot.
+### Companion Party System
+- **Your Own Account Alts:** Turn characters from your own account into headless bots that adventure with you in the open world and 5-player dungeons.
+- **Tactical Controls & Addon:** Seamless pairing with the **TortoiseBotsManager** (`/tbm`) addon for instant party commands (`attack`, `pull`, `pullback`, `cc <mark>`, `aoe on/off`, `focus skull`).
+- **Human Reclaim Always Wins:** Logging into an account character instantly and cleanly disconnects the bot.
 
-### World, travel & progression
-- Questing, grinding, looting and gathering, training, vendors, resting, and corpse recovery.
-- Waypoint / flight-path / boat / zeppelin travel, dungeon and instance entry, and map-aware navigation.
-- Progression: leveling, talent presets per spec, gear evaluation and seeding, trainer gating.
+### Living World Ecosystem
+- **Wandering & Leveling Bots:** Autonomous random bots (`RNDBOT*`) roam zones, travel via flight paths/boats, grind mobs, gather herbs/ore, and turn in quests.
+- **Dynamic Level Scaling:** Random bot population dynamically scales with online players, ensuring zones near your level feel active and alive.
+- **Organic Groups & Guilds:** Random bots invite solo players to quest, form organic adventuring groups, buy guild charters, and create their own guilds.
 
-### Economy
-- Bots use **real inventories** and participate in the live auction house, vendor, and trade flows.
-- Optional, default-off bounded auction market service for supply and buyer activity (`AiPlayerbot.ahMarket*`).
+### Simulated Economy
+- **Living Auction House:** Bots evaluate surplus materials and BoE gear, posting them at realistic prices and buying equipment upgrades with real gold.
+- **Trade & Repair:** Bots visit blacksmiths to repair durability, sell vendor trash, and buy reagents.
 
-### Persistence
-- Bot AI state is saved and restored across sessions via the module's AI DB store.
-- Durable master binding and character state are owned by the core, so bots survive server restarts and relog with their progress intact.
+### Dungeons & Battlegrounds
+- **Looking-For-Trouble (LFT) Fill:** Automatically injects bots into LFT queues to fill vacant Tank, Healer, or DPS slots when human players are waiting.
+- **Battleground Auto-Queue:** Injects bots into Warsong Gulch, Arathi Basin, and Alterac Valley to launch active PvP matches.
 
-### Autonomous population & scheduling
-- `RandomBotService`: bounded pool of `RNDBOT*` characters with autologin at startup.
-- Optional auto-create (default off) that creates accounts/characters toward `MinRandomBots`/`MaxRandomBots` using native core creation APIs.
-- Activity leases schedule background work and reconcile shard/realm timing safely.
-
-### Optional services (default off)
-- **LFT autofill:** tops up human-waiting Looking-For-Trouble queues with live bots for the missing tank/healer/DPS roles.
-- **Battleground auto-queue:** demand-aware WSG / AB / AV participation driven by observed human queue demand.
-
-### Observability (optional)
-- Non-blocking UDP telemetry emitter inside the module (`AiPlayerbot.Observability`).
-- Standalone Go daemon in [`tools/observability`](tools/observability): Prometheus `/metrics`, live web dashboard (roster, 2D zone map, macro-state breakdown, fleet health, deaths).
-- **Persistent issue tracking:** a bot stuck, looping an action, or unable to reach a target for 5+ minutes becomes a tracked episode you can investigate and clear.
-- Fully config-gated; zero disk I/O when the daemon is offline.
-
-### Optional LLM (experimental)
-- Asynchronous, optional LLM chat integration. **Never required** for combat, movement, healing, threat, interrupts, or CC — bot gameplay continues normally when the LLM is unavailable.
+### Fleet Observability & Diagnostics
+- **Live Web Dashboard:** Standalone Go telemetry daemon in [`tools/observability`](tools/observability) with an interactive 2D world map, macro-state breakdowns, and Prometheus metrics (`/metrics`).
+- **Persistent Issue Tracking:** Automatically detects and tracks any bot that gets stuck or loops actions for 5+ minutes so you can clear the root cause.
 
 ---
 
@@ -155,13 +140,20 @@ TortoiseBots/
 
 ## Documentation
 
-- [`docs/PLAN.md`](docs/PLAN.md) — architectural invariants, design rules, and roadmap.
-- [`docs/HOST_API.md`](docs/HOST_API.md) — host boundary seams, headless sessions, packets, and lifecycles.
-- [`docs/PLAYER_CONTROL.md`](docs/PLAYER_CONTROL.md) — player control intents and addon transport protocol.
-- [`tools/observability`](tools/observability) — telemetry daemon, Prometheus metrics, and web dashboard.
-- [`docs/PROVENANCE.md`](docs/PROVENANCE.md) — attributions and donor lineage records.
-- [`docs/LICENSE_AUDIT.md`](docs/LICENSE_AUDIT.md) — third-party code licensing and compliance.
-- [`AGENTS.md`](AGENTS.md) — contributor workflow, dev environment, and engineering rules.
+Documentation follows the **Open Knowledge Format (OKF)** standard (see [`docs/manifest.yaml`](docs/manifest.yaml)):
+
+- [**Documentation Catalog**](docs/README.md) — Central switchboard and navigation index.
+- [**Class AI & Rotations**](docs/classes/overview.md) — Rotations, specs, and Turtle WoW custom abilities for all 9 classes.
+- [**Living World & Autonomous Bots**](docs/guides/living-world.md) — Wandering bots, quest grinding, AH trading, guilds, and battlegrounds.
+- [**Player Controls & /tbm Addon**](docs/guides/player-controls.md) — Tactical intents, party actions, and addon transport protocol.
+- [**Configuration & Tuning**](docs/guides/configuration-tuning.md) — Plain-English guide to `aiplayerbot.conf` settings and knobs.
+- [**Bot Mechanics, Quirks & Gaps**](docs/concepts/bot-mechanics-and-quirks.md) — Targeting math, threat distribution, movement, interrupts, and quirks.
+- [**Observability Dashboard**](docs/guides/observability-dashboard.md) — Web dashboard, live 2D world map, Prometheus metrics, and issue tracker.
+- [**Architecture & Invariants**](docs/concepts/architecture-invariants.md) — Headless sessions, modularity rules, and core boundary.
+- [**Host API Contract**](docs/HOST_API.md) — Technical C++ host boundary seams and packet bridges.
+- [**Roadmap & Plan**](docs/PLAN.md) — Design invariants, roadmap, and definition of done.
+- [**Source Provenance**](docs/PROVENANCE.md) — Donor lineage and attribution ledger.
+- [`AGENTS.md`](AGENTS.md) — Contributor workflow, dev environment, and engineering rules.
 
 ---
 

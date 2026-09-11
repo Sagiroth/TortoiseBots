@@ -1,3 +1,14 @@
+---
+id: ref-provenance
+title: Source Provenance & Behavior Harvesting Ledger
+category: reference
+summary: Append-oriented historical ledger tracking donor repositories, commit SHAs, ported translation units, and licensing attribution.
+tags: [provenance, attribution, donor, lineage, history]
+relates_to:
+  - concept-donor-hierarchy
+  - concept-architecture-invariants
+---
+
 # PROVENANCE — TortoiseBots behavior harvesting log
 
 > **Append-oriented historical record.** This file is the source-lineage and

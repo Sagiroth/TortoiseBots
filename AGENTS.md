@@ -14,18 +14,20 @@ PlayerBots is rebuilt as a clean, optional module. The Tortoise core must remain
 
 ## Read first
 
-For any PlayerBots work, read in this order:
+For any PlayerBots work, consult the **Open Knowledge Format (OKF)** catalogue in `docs/`:
 
-1. `docs/PLAN.md` — durable architecture rules and roadmap.
-2. `docs/HOST_API.md` — when touching sessions, lifecycle, packets, commands, build/module integration, or any core seam.
-3. `docs/PROVENANCE.md` — when porting or changing donor-derived behavior.
-4. `docs/README.md` — documentation map.
+1. [`docs/README.md`](docs/README.md) — Central switchboard and navigation catalog.
+2. [`docs/manifest.yaml`](docs/manifest.yaml) — OKF bundle index, ontology, and role entry points.
+3. [`docs/concepts/architecture-invariants.md`](docs/concepts/architecture-invariants.md) — The 5 non-negotiable architectural rules.
+4. [`docs/classes/overview.md`](docs/classes/overview.md) — 9-class combat rotations, specs, and Turtle WoW custom abilities.
+5. [`docs/guides/player-controls.md`](docs/guides/player-controls.md) — Tactical intents (`.bot action`), CC by raid mark, and `/tbm` addon protocol.
+6. [`docs/guides/living-world.md`](docs/guides/living-world.md) — Roaming bots, quest grinding, AH economy, and guild formation.
+7. [`docs/HOST_API.md`](docs/HOST_API.md) — When touching sessions, lifecycle, packets, commands, or core seams.
+8. [`docs/PROVENANCE.md`](docs/PROVENANCE.md) — When porting or changing donor-derived behavior.
 
-`docs/PLAN.md` is the architecture source of truth. Historical evidence (audit/handover) lives in Git history and `docs/archive/` if retained.
+`docs/PLAN.md` and `docs/concepts/` are the architecture source of truth. Historical audit evidence lives in Git history.
 
-This repo is self-contained. You do not need any checkout outside it to understand the architecture or to contribute. All required context is in `docs/` and this file.
-
-If you have a local Tortoise core checkout or Docker stack alongside this repo, tell the agent explicitly when it is relevant. The agent must not assume any sibling directory exists or guess absolute paths.
+This repo is self-contained. All required context is indexed in `docs/` and validated via `python3 tools/verify_okf.py`.
 
 ---
 
@@ -245,7 +247,7 @@ A successful build/test remains evidence for unchanged code. Do not rebuild afte
 
 ### Validation cadence
 
-- **Docs/comments/config only** → text checks + `git diff --check`, no C++ build.
+- **Docs/comments/config only** → verify OKF graph (`python3 tools/verify_okf.py`), text checks + `git diff --check`, no C++ build.
 - **Module-only C++** → one cached `MODULE_TORTOISEBOTS=static` build after the batch is coherent.
 - **Observability tool (Go)** → `docker run --rm -v "$PWD/tools/observability:/src" -w /src golang:1.22-alpine sh -c 'go vet ./... && go test ./...'` (no host Go toolchain). Live check: server logs `Observability telemetry active`, `/metrics` shows `mangos_server_online 1` and rising `tortoisebots_snapshots_total`.
 - **Core-seam change** → cached module build while iterating; full ON/OFF matrix only when stable.
