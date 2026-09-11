@@ -4,7 +4,6 @@
 #include "playerbot/TravelMgr.h"
 #include "TellLosAction.h"
 #include "EquipAction.h"
-#include "host/BotPacketPump.h"
 
 using namespace ai;
 
@@ -160,7 +159,7 @@ bool UseFishingBobberAction::Execute(Event& event)
 
         std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
         *packet << obj->getObjectGuid();
-        TortoiseBots::BotPacketPump::Enqueue(bot, packet.release());
+        bot->GetSession()->QueuePacket(packet.release());
 
         std::ostringstream out; out << "Opening " << chat->formatGameobject(obj);
         ai->TellPlayerNoFacing(ai->GetMaster(), out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);

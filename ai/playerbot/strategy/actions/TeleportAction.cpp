@@ -3,7 +3,6 @@
 #include "TeleportAction.h"
 #include "playerbot/strategy/values/LastMovementValue.h"
 #include "playerbot/ServerFacade.h"
-#include "host/BotPacketPump.h"
 
 using namespace ai;
 
@@ -36,7 +35,7 @@ bool TeleportAction::Execute(Event& event)
 
         std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
         *packet << *i;
-        TortoiseBots::BotPacketPump::Enqueue(bot, packet.release());
+        bot->GetSession()->QueuePacket(packet.release());
         return true;
     }
 

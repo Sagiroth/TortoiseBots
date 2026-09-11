@@ -5,7 +5,6 @@
 #include "MovementActions.h"
 #include "UseItemAction.h"
 #include "playerbot/strategy/values/GuidPositionValues.h"
-#include "host/BotPacketPump.h"
 
 namespace ai
 {
@@ -137,7 +136,7 @@ namespace ai
 
                 std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
                 *packet << go->getObjectGuid();
-                TortoiseBots::BotPacketPump::Enqueue(bot, packet.release());
+                bot->GetSession()->QueuePacket(packet.release());
 
                 if (ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
                 {
