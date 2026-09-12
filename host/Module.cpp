@@ -19,6 +19,7 @@ void RegisterScripts()
     new LftFillAdapter();
     new BotPacketAdapter();
     new BotPlayerAdapter();
+    new BotUnitAdapter();
     new BotChatAdapter();
 }
 

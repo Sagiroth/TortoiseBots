@@ -107,6 +107,10 @@ bool QuestRelationTravelDestination::IsPossible(const PlayerTravelInfo& info) co
     if (!info.GetBoolValue2("has strategy", "rpg quest"))
         return false;
 
+    // Never send bots to challenge quest givers (e.g. Mysterious Stranger)
+    if (GetEntry() == 81030 || GetEntry() == 62609 || GetQuestId() == 80388)
+        return false;
+
     bool forceThisQuest = info.HasFocusQuest();
 
     if (forceThisQuest && !info.IsFocusQuest(GetQuestId()))
@@ -152,6 +156,18 @@ bool QuestRelationTravelDestination::IsPossible(const PlayerTravelInfo& info) co
             if (IsOverWorld(info.getPosition()))
                 return false;
         }
+    }
+
+    // Don't send a bot to a quest giver in a zone far above its level, or cross-zone for lowbies
+    WorldPosition* point = GetClosestPoint(info.getPosition());
+    if (point)
+    {
+        int32 destAreaLevel = point->GetAreaLevel();
+        if (destAreaLevel > 0 && destAreaLevel > (int32)info.GetLevel() + 5)
+            return false;
+
+        if (info.GetLevel() <= 5 && point->distance(info.getPosition()) > 1500.0f)
+            return false;
     }
 
     return true;
@@ -223,6 +239,9 @@ std::string QuestRelationTravelDestination::GetTitle() const {
 
 bool QuestObjectiveTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 {
+    if (GetEntry() == 81030 || GetEntry() == 62609 || GetQuestId() == 80388)
+        return false;
+
     if (!info.GetBoolValue2("has strategy", "rpg quest"))
         return false;
 
@@ -302,6 +321,18 @@ bool QuestObjectiveTravelDestination::IsPossible(const PlayerTravelInfo& info) c
             if (!IsOverWorld(info.getPosition()))
                 return false;
         }
+    }
+
+    // Don't send a bot to a quest objective in a zone far above its level, or cross-zone for lowbies
+    WorldPosition* point = GetClosestPoint(info.getPosition());
+    if (point)
+    {
+        int32 destAreaLevel = point->GetAreaLevel();
+        if (destAreaLevel > 0 && destAreaLevel > (int32)info.GetLevel() + 5)
+            return false;
+
+        if (info.GetLevel() <= 5 && point->distance(info.getPosition()) > 1500.0f)
+            return false;
     }
 
     return true;
@@ -414,6 +445,9 @@ bool RpgTravelDestination::IsPossible(const PlayerTravelInfo& info) const
     {
         int32 destAreaLevel = point->GetAreaLevel();
         if (destAreaLevel > 0 && destAreaLevel > (int32)info.GetLevel() + 5)
+            return false;
+
+        if (info.GetLevel() <= 5 && point->distance(info.getPosition()) > 1500.0f)
             return false;
     }
 
@@ -573,6 +607,9 @@ bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
     {
         int32 destAreaLevel = point->GetAreaLevel();
         if (destAreaLevel > 0 && destAreaLevel > (int32)info.GetLevel() + 5)
+            return false;
+
+        if (info.GetLevel() <= 5 && point->distance(info.getPosition()) > 1500.0f)
             return false;
     }
 
@@ -744,6 +781,17 @@ bool GatherTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 
     if (GetPurpose() != TravelDestinationPurpose::GatherFishing && reqSkillValue + 100 < skillValue) //Gray level = no skillup
         return false;
+
+    WorldPosition* point = GetClosestPoint(info.getPosition());
+    if (point)
+    {
+        int32 destAreaLevel = point->GetAreaLevel();
+        if (destAreaLevel > 0 && destAreaLevel > (int32)info.GetLevel() + 5)
+            return false;
+
+        if (info.GetLevel() <= 5 && point->distance(info.getPosition()) > 1500.0f)
+            return false;
+    }
 
     return true;
 }
@@ -2327,6 +2375,7 @@ PartitionedTravelList TravelMgr::GetPartitions(const WorldPosition& center, cons
         unsigned const pointSeed = MixTravelRouteSeed(seed ^ pointRange.first);
         std::shuffle(points.begin(), points.end(), std::default_random_engine(pointSeed));
 
+        float minDistance = FLT_MAX;
         for (auto& position : points)
         {
             if (!IsLocationLevelValid(*position, info, purposeFlag))
@@ -2345,7 +2394,17 @@ PartitionedTravelList TravelMgr::GetPartitions(const WorldPosition& center, cons
                 continue;
             }
 
-            point = TravelPoint(dest, position, distance);
+            if (info.GetLevel() <= 5 && distance > 1500.0f)
+            {
+                probeRejectDistance++;
+                continue;
+            }
+
+            if (distance < minDistance)
+            {
+                minDistance = distance;
+                point = TravelPoint(dest, position, distance);
+            }
         }
 
         if (std::get<2>(point) > 0)

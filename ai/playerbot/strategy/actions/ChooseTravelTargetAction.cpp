@@ -364,11 +364,26 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
             {
                 // Checked after IsActive so the area lookup only happens for
                 // the point that was actually selected.
-                if (!target->IsForced() && position && position->IsEnemyHomeZoneFor(bot->GetTeam()))
+                if (!target->IsForced() && position)
                 {
-                    ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - enemy home zone", "debug travel");
+                    if (position->IsEnemyHomeZoneFor(bot->GetTeam()))
+                    {
+                        ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - enemy home zone", "debug travel");
+                        continue;
+                    }
 
-                    continue;
+                    int32 posAreaLevel = position->GetAreaLevel();
+                    if (posAreaLevel > 0 && posAreaLevel > (int32)bot->GetLevel() + 5)
+                    {
+                        ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - area level too high", "debug travel");
+                        continue;
+                    }
+
+                    if (bot->GetLevel() <= 5 && position->distance(bot) > 1500.0f)
+                    {
+                        ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - too far for starting level", "debug travel");
+                        continue;
+                    }
                 }
 
                 if (partition != std::prev(partitionedList.end())->first && !urand(0, 10)) //10% chance to skip to a longer partition.
@@ -1424,7 +1439,12 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
             // Quadratic in level, so a level 20 bot searches thirty times further
             // than a level 1 one. The quest giver a bot has to walk back to is by
             // definition inside its own zone, whatever its level.
-            destinationFetches.push_back({ flag, questId, std::max(5000.f, 1000.f + (bot->GetLevel() * bot->GetLevel()) * 75.f) });
+            float questRange = 1000.f + (bot->GetLevel() * bot->GetLevel()) * 75.f;
+            if (bot->GetLevel() > 5)
+                questRange = std::max(5000.f, questRange);
+            else
+                questRange = std::min(1500.f, questRange);
+            destinationFetches.push_back({ flag, questId, questRange });
 
             if (onlyClassQuest && destinationFetches.size() > 1) //Only do class quests if we have any.
             {
@@ -1519,7 +1539,10 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
             }
 
             if (list.empty())
-                list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::QuestGiver);
+            {
+                float questGiverRange = (travelInfo.GetLevel() <= 5) ? 1500.0f : ((travelInfo.GetLevel() <= 10) ? 3000.0f : 10000.0f);
+                list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::QuestGiver, {}, true, questGiverRange);
+            }
 
             return list;
         }

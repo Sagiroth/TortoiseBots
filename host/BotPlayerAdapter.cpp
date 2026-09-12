@@ -3,6 +3,8 @@
 #include "../behavior/PlayerConvenience.h"
 #include "../runtime/BotManager.h"
 #include "../runtime/RandomBotService.h"
+#include "../runtime/PlayerbotAIStorage.h"
+#include "../ai/playerbot/PlayerbotAI.h"
 #include "Log.h"
 #include "Map.h"
 #include "Player.h"
@@ -76,6 +78,23 @@ void BotPlayerAdapter::OnLogout(Player* player)
         RandomBotService::Instance().OnHumanLogout();
 }
 
+BotUnitAdapter::BotUnitAdapter()
+    : UnitScript("tortoisebots_units", { UNITHOOK_ON_UNIT_DEATH })
+{
+}
 
+void BotUnitAdapter::OnUnitDeath(Unit* unit, Unit* killer)
+{
+    if (!unit || !unit->IsPlayer())
+        return;
+
+    Player* player = unit->ToPlayer();
+    PlayerbotAI* ai = GET_PLAYERBOT_AI(player);
+    if (!ai)
+        return;
+
+    ai->SetLastKiller(killer);
+}
 
 } // namespace TortoiseBots
+

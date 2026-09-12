@@ -148,6 +148,11 @@ std::unordered_map<ObjectGuid, float> ChooseRpgTargetAction::GetTargets(Player* 
         if (!guidP)
             SkipRpgTarget("not found on map/instance.");
 
+        // Area level gate: do not select RPG targets in areas significantly higher level than the bot
+        int32 targetAreaLevel = guidP.GetAreaLevel();
+        if (targetAreaLevel > 0 && targetAreaLevel > (int32)bot->GetLevel() + 5)
+            SkipRpgTarget("Area level too high.");
+
         // Never approach Mysterious Stranger NPCs — they offer challenge quests bots must not take.
         if (guidP.IsCreature())
         {

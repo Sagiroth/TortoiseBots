@@ -1073,6 +1073,23 @@ void PlayerbotAI::OnCombatEnded()
     }
 }
 
+void PlayerbotAI::SetLastKiller(Unit* killer)
+{
+    lastKiller_.time = WorldTimer::getMSTime();
+    if (!killer || killer == bot)
+    {
+        lastKiller_.name = "Environment";
+        lastKiller_.level = 0;
+        lastKiller_.isEnvironment = true;
+    }
+    else
+    {
+        lastKiller_.name = killer->GetName();
+        lastKiller_.level = killer->GetLevel();
+        lastKiller_.isEnvironment = false;
+    }
+}
+
 void PlayerbotAI::OnDeath()
 {
     if (!IsStateActive(BotState::BOT_STATE_DEAD) && !sServerFacade.IsAlive(bot))
@@ -1100,13 +1117,48 @@ void PlayerbotAI::OnDeath()
         {
             SET_AI_VALUE(uint32, "death count", AI_VALUE(uint32, "death count") + 1);
 
+            // Determine accurate killer name & level
+            std::string killerName;
+            uint32 killerLevel = 0;
+            if (!lastKiller_.name.empty())
+            {
+                killerName = lastKiller_.name;
+                killerLevel = lastKiller_.level;
+            }
+            else
+            {
+                // Fallback: check attackers set
+                for (Unit* attacker : bot->GetAttackers())
+                {
+                    if (attacker)
+                    {
+                        killerName = attacker->GetName();
+                        killerLevel = attacker->GetLevel();
+                        break;
+                    }
+                }
+                if (killerName.empty())
+                {
+                    Unit* deathTarget = AI_VALUE(Unit*, "current target");
+                    if (deathTarget)
+                    {
+                        killerName = deathTarget->GetName();
+                        killerLevel = deathTarget->GetLevel();
+                    }
+                }
+            }
+
             if (sObservabilityEmitter.IsEnabled())
             {
-                Unit* deathTarget = AI_VALUE(Unit*, "current target");
                 std::ostringstream deathDetails;
                 deathDetails << "Died (death #" << AI_VALUE(uint32, "death count") << ")";
+                if (lastKiller_.isEnvironment)
+                    deathDetails << " to Falling / Environment";
+                else if (!killerName.empty())
+                    deathDetails << " to " << killerName << " (" << killerLevel << ")";
+
                 sObservabilityEmitter.EmitAnomaly("BOT_DEATH", "INFO", bot, deathDetails.str(),
-                    deathTarget ? deathTarget->GetName() : "", "", "death");
+                    killerName, "", "death");
             }
 
             if (sPlayerbotAIConfig.hasLog("deaths.csv"))
@@ -1128,11 +1180,14 @@ void PlayerbotAI::OnDeath()
 
                 AiObjectContext* context = GetAiObjectContext();
 
+                float killerHealth = 100.0f;
                 Unit* ctarget = AI_VALUE(Unit*, "current target");
+                if (ctarget && (!killerName.empty() && ctarget->GetName() == killerName))
+                    killerHealth = ctarget->GetHealthPercent();
 
-                if (ctarget)
+                if (!killerName.empty())
                 {
-                    out << "\"" << ctarget->GetName() << "\"," << ctarget->GetLevel() << "," << ctarget->GetHealthPercent() << ",";
+                    out << "\"" << killerName << "\"," << killerLevel << "," << killerHealth << ",";
                 }
                 else
                     out << "\"none\",0,100,";
@@ -1155,7 +1210,7 @@ void PlayerbotAI::OnDeath()
                     if (unit->GetVictim() != bot)
                         continue;
 
-                    if (unit == ctarget)
+                    if (!killerName.empty() && unit->GetName() == killerName)
                         continue;
 
                     out << unit->GetName() << "(" << unit->GetLevel() << ")";
@@ -1174,6 +1229,8 @@ void PlayerbotAI::OnDeath()
                 sPlayerbotAIConfig.log("deaths.csv", out.str().c_str());
             }
         }
+
+        ClearLastKiller();
 
         SET_AI_VALUE(Unit*, "current target", nullptr);
         SET_AI_VALUE(Unit*, "enemy player target", nullptr);
@@ -1199,6 +1256,7 @@ void PlayerbotAI::OnResurrected()
             StopMoving();
         }
 
+        ClearLastKiller();
         ChangeEngine(BotState::BOT_STATE_NON_COMBAT);
     }
 }
