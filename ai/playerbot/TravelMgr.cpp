@@ -409,9 +409,13 @@ bool RpgTravelDestination::IsPossible(const PlayerTravelInfo& info) const
     // spiral at the local high-level graveyard. Mirrors the grind-target level gate
     // (GrindTravelDestination::IsPossible). Margin matches the quest-level gate (+5).
     // getAreaLevel() returns -1/-2 for unknown areas; only reject on a real level.
-    int32 destAreaLevel = GuidPosition(HIGHGUID_UNIT, GetEntry()).GetAreaLevel();
-    if (destAreaLevel > 0 && destAreaLevel > (int32)info.GetLevel() + 5)
-        return false;
+    WorldPosition* point = GetClosestPoint(info.getPosition());
+    if (point)
+    {
+        int32 destAreaLevel = point->GetAreaLevel();
+        if (destAreaLevel > 0 && destAreaLevel > (int32)info.GetLevel() + 5)
+            return false;
+    }
 
     //Horde pvp baracks
     if (ClosestMapId(info.getPosition()) == 450 && info.GetTeam() == ALLIANCE)
@@ -562,6 +566,15 @@ bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 
     if (cInfo->rank > CREATURE_ELITE_NORMAL && !info.GetBoolValue("can fight elite"))
         return false;
+
+    // Don't send a bot to a grind creature located in a zone far above its level
+    WorldPosition* point = GetClosestPoint(info.getPosition());
+    if (point)
+    {
+        int32 destAreaLevel = point->GetAreaLevel();
+        if (destAreaLevel > 0 && destAreaLevel > (int32)info.GetLevel() + 5)
+            return false;
+    }
 
     return true;
 }
