@@ -10,6 +10,13 @@ using namespace ai;
 
 bool TalkToQuestGiverAction::ProcessQuest(Player* requester, Quest const* quest, WorldObject* questGiver)
 {
+    // Challenge quests (Hardcore mode, etc.) - must never be processed by bots.
+    if (quest->GetQuestId() == 80388)
+        return false;
+
+    if (questGiver && (questGiver->GetEntry() == 81030 || questGiver->GetEntry() == 62609))
+        return false;
+
     bool isCompleted = false;
 
     std::string outputMessage;

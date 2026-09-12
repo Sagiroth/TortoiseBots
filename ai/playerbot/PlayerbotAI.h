@@ -695,6 +695,17 @@ public:
     void OnDeath();
     void OnResurrected();
 
+    struct LastKillerInfo
+    {
+        std::string name;
+        uint32 level = 0;
+        bool isEnvironment = false;
+        uint32 time = 0;
+    };
+    void SetLastKiller(Unit* killer);
+    const LastKillerInfo& GetLastKiller() const { return lastKiller_; }
+    void ClearLastKiller() { lastKiller_ = LastKillerInfo(); }
+
     void SetActionDuration(const Action* action);
     void SetActionDuration(uint32 duration);
 
@@ -788,6 +799,7 @@ protected:
     bool m_recordIncommingMessages = false;
     std::vector<std::string> m_recordedMessages;
     ai::Event lastEvent;
+    LastKillerInfo lastKiller_;
 
 public:
     void RecordMessages(bool record, bool incomming = false) { m_recordMessages = record; m_recordIncommingMessages = incomming; if (!record) m_recordedMessages.clear(); }

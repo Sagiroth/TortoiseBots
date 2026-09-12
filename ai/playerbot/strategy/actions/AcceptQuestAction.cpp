@@ -23,6 +23,13 @@ bool AcceptAllQuestsAction::ProcessQuest(Player* requester, Quest const* quest, 
     if (quest->GetQuestId() == 3861)
         return false;
 
+    // Challenge quests (Hardcore mode, etc.) - must never be taken by bots.
+    if (quest->GetQuestId() == 80388)
+        return false;
+
+    if (questGiver && (questGiver->GetEntry() == 81030 || questGiver->GetEntry() == 62609))
+        return false;
+
     // Tortoise-wow rogue-only quests with excessive walking and poor reward.
     static const std::unordered_set<uint32> tortoiseOnlyBlacklist = {
         50000, // Professor Malkovich
@@ -91,7 +98,7 @@ bool AcceptQuestAction::Execute(Event& event)
         p >> guid >> quest;
     }
 
-    if (!quest || !guid)
+    if (!quest || !guid || quest == 80388)
         return false;
 
     Quest const* qInfo = sObjectMgr.GetQuestTemplate(quest);

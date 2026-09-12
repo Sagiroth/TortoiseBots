@@ -17,10 +17,19 @@ EntryQuestRelationMap EntryQuestRelationMapValue::Calculate()
 	QuestObjectMgr* questObjectMgr = (QuestObjectMgr*)&sObjectMgr;
 
 	for (auto [entry, questId] : questObjectMgr->GetCreatureQuestRelationsMap())
+	{
+		// Filter out challenge NPCs like Mysterious Stranger (81030) and Echo (62609)
+		if (entry == 81030 || entry == 62609 || questId == 80388)
+			continue;
 		rMap[entry][questId] |= (uint8)TravelDestinationPurpose::QuestGiver;
+	}
 
 	for (auto [entry, questId] : questObjectMgr->GetCreatureQuestInvolvedRelationsMap())
+	{
+		if (entry == 81030 || entry == 62609 || questId == 80388)
+			continue;
 		rMap[entry][questId] |= (uint8)TravelDestinationPurpose::QuestTaker;
+	}
 
 	for (auto [entry, questId] : questObjectMgr->GetGOQuestRelationsMap())
 		rMap[-(int32)entry][questId] |= (uint8)TravelDestinationPurpose::QuestGiver;

@@ -201,6 +201,14 @@ bool QuestAction::AcceptQuest(Player* requester, Quest const* quest, uint64 ques
     bool success = false;
     const uint32 questId = quest->GetQuestId();
 
+    // Challenge quests (Hardcore mode, etc.) - must never be accepted by bots.
+    if (questId == 80388)
+        return false;
+
+    ObjectGuid giverGuid(questGiver);
+    if (giverGuid.IsCreature() && (giverGuid.GetEntry() == 81030 || giverGuid.GetEntry() == 62609))
+        return false;
+
     std::string outputMessage;
     std::map<std::string, std::string> args;
     args["%quest"] = chat->formatQuest(quest);

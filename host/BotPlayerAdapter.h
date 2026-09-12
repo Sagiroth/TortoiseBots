@@ -17,4 +17,14 @@ public:
     void OnLogout(Player* player) override;
 };
 
+// Unit lifecycle adapter to capture lethal damage events (accurate killer attribution).
+class BotUnitAdapter final : public UnitScript
+{
+public:
+    BotUnitAdapter();
+
+    void OnUnitDeath(Unit* unit, Unit* killer) override;
+};
+
 } // namespace TortoiseBots
+
