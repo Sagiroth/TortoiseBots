@@ -75,7 +75,7 @@ def main():
     parser.add_argument("--tag", default="", help="Release tag or version identifier.")
     parser.add_argument("--repo", default="Sagiroth/TortoiseBots", help="GitHub repository name.")
     parser.add_argument("--thread-id", default="", help="Target Discord thread ID.")
-    parser.add_argument("--username", default="Tortoise WoW Bot", help="Webhook bot display name.")
+    parser.add_argument("--username", default="TortoiseBot Changelog", help="Webhook bot display name.")
     parser.add_argument("--avatar-url", default="", help="Optional bot avatar image URL.")
     args = parser.parse_args()
 
