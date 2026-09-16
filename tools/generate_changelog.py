@@ -215,6 +215,7 @@ def main():
     parser.add_argument("--since", help="ISO timestamp or date to search PRs since (default: auto-detect from last tag/changelog)")
     parser.add_argument("--write", action="store_true", help="Prepend or append generated entry to CHANGELOG.md")
     parser.add_argument("--out-notes", help="Write release notes to specified file (useful for gh release create)")
+    parser.add_argument("--out-delta", help="Write delta release notes for current run only (useful for Discord notifications)")
     parser.add_argument("--dry-run", action="store_true", help="Print collected PRs without calling AI API")
     parser.add_argument("--date", default=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d"), help="Release date string (default: today)")
     args = parser.parse_args()
@@ -231,6 +232,19 @@ def main():
 
     print(f"Checking for merged PRs since: {since_date or 'beginning'} (reference: {since_tag or 'none'})")
     prs = get_merged_prs_since(since_date)
+
+    # Exclude any PRs that are already documented in CHANGELOG.md
+    if os.path.exists(CHANGELOG_PATH):
+        with open(CHANGELOG_PATH, "r", encoding="utf-8") as f:
+            changelog_content = f.read()
+        filtered_prs = []
+        for pr in prs:
+            pr_pattern = rf"#\s*{pr['number']}\b"
+            if not re.search(pr_pattern, changelog_content):
+                filtered_prs.append(pr)
+            else:
+                print(f"Skipping PR #{pr['number']} (already documented in CHANGELOG.md)")
+        prs = filtered_prs
 
     if not prs:
         print("No new merged PRs found since last release/entry. Nothing to do.")
@@ -269,6 +283,11 @@ def main():
         with open(args.out_notes, "w", encoding="utf-8") as f:
             f.write(notes_to_write.strip() + "\n")
         print(f"Saved release notes to: {args.out_notes} (merged_with_existing={exists})")
+
+    if args.out_delta:
+        with open(args.out_delta, "w", encoding="utf-8") as f:
+            f.write(summary.strip() + "\n")
+        print(f"Saved delta release notes to: {args.out_delta}")
 
     if args.write:
         update_or_prepend_changelog(args.date, summary)

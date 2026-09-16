@@ -5,6 +5,12 @@ on:
   schedule:
     # Run weekly on Sunday at midnight UTC
     - cron: "0 0 * * 0"
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'CHANGELOG.md'
+      - '.github/workflows/**'
 
 permissions:
   contents: write
@@ -32,7 +38,7 @@ jobs:
           OPENCODE_ENDPOINT: ${{ secrets.OPENCODE_ENDPOINT }}
           OPENCODE_MODEL: ${{ secrets.OPENCODE_MODEL }}
         run: |
-          python3 tools/generate_changelog.py --write --out-notes /tmp/release_notes.md
+          python3 tools/generate_changelog.py --write --out-notes /tmp/release_notes.md --out-delta /tmp/discord_notes.md
 
       - name: Commit CHANGELOG.md
         if: steps.generate.outputs.has_changes == 'true'
@@ -59,3 +65,14 @@ jobs:
               --notes-file /tmp/release_notes.md \
               --target main
           fi
+
+      - name: Post Changelog to Discord Thread
+        if: steps.generate.outputs.has_changes == 'true'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          python3 tools/post_discord_changelog.py \
+            --notes /tmp/discord_notes.md \
+            --title "${{ steps.generate.outputs.release_title }}" \
+            --tag "${{ steps.generate.outputs.release_tag }}" \
+            --thread-id "1542647578548772954"
