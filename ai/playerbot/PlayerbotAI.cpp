@@ -10,6 +10,7 @@
 #include "playerbot/AiFactory.h"
 
 #include "../../runtime/ObservabilityEmitter.h"
+#include "../../runtime/BotActivityLease.h"
 #include "ByteBuffer.h"
 
 #include "Movement/MovementGenerator.h"
@@ -2260,8 +2261,13 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
 
     Group *group = bot->GetGroup();
 
+    // A bot leased to another module's dungeon crew keeps its master state as it is:
+    // no strip, no adoption of the bot group leader. Both would rebuild the strategies
+    // mid-fight and, through the BotManager (ClaimForMaster / ReleaseMaster), replace
+    // the Dungeon lease that keeps the random-bot services off the crew.
+    bool const dungeonCrew = TortoiseBots::BotActivityLeaseManager::Instance().GetActivity(bot->GetGUIDLow()) == TortoiseBots::BotActivity::Dungeon;
     //Remove bot masters not in our group.
-    if (master && master != bot && !HasActivePlayerMaster() && (!group || group->GetLeaderGuid() != master->getObjectGuid()))
+    if (!dungeonCrew && master && master != bot && !HasActivePlayerMaster() && (!group || group->GetLeaderGuid() != master->getObjectGuid()))
     {
         Player* replacementMaster = IsRealPlayer() ? bot : nullptr;
         if (TortoiseBots::BotManager::Instance().IsBot(bot->GetObjectGuid()))
@@ -2286,7 +2292,7 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
     }
 
     // test BG master set
-    if ((!master || !HasActivePlayerMaster()) && group && !IsRealPlayer())
+    if (!dungeonCrew && (!master || !HasActivePlayerMaster()) && group && !IsRealPlayer())
     {
         //Ideally we want to have the leader as master.
         Player* newMaster = GetGroupMaster();

@@ -1,6 +1,9 @@
 #include "../../runtime/PlayerbotAIStorage.h"
+#include "../../runtime/BotManager.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/AiFactory.h"
+#include "playerbot/AiContextAugment.h"
+#include <vector>
 #include "strategy/AiObjectContext.h"
 #include "strategy/ReactionEngine.h"
 
@@ -19,7 +22,9 @@
 #include "playerbot/RandomBotFacade.h"
 #include "Battlegrounds/BattleGroundMgr.h"
 
-AiObjectContext* AiFactory::createAiObjectContext(Player* player, PlayerbotAI* ai)
+// The class context of a bot; the augmenters of other modules are applied on top in
+// createAiObjectContext below (AiContextAugment.h).
+static AiObjectContext* CreateClassAiObjectContext(Player* player, PlayerbotAI* ai)
 {
     switch (player->GetClass())
     {
@@ -79,6 +84,43 @@ AiObjectContext* AiFactory::createAiObjectContext(Player* player, PlayerbotAI* a
 
     }
     return new AiObjectContext(ai);
+}
+
+namespace
+{
+    std::vector<AiContextAugmenter>& Augmenters()
+    {
+        static std::vector<AiContextAugmenter> augmenters;
+        return augmenters;
+    }
+}
+
+void RegisterAiContextAugmenter(AiContextAugmenter augmenter)
+{
+    if (!augmenter)
+        return;
+    Augmenters().push_back(augmenter);
+    // The bots that are already in the world get it now.
+    for (Player* bot : TortoiseBots::BotManager::Instance().GetAllBots())
+        if (bot)
+            if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
+                if (ai->GetAiObjectContext())
+                    augmenter(ai, ai->GetAiObjectContext());
+}
+
+void ApplyAiContextAugmenters(PlayerbotAI* ai, ai::AiObjectContext* context)
+{
+    if (!ai || !context)
+        return;
+    for (AiContextAugmenter augmenter : Augmenters())
+        augmenter(ai, context);
+}
+
+AiObjectContext* AiFactory::createAiObjectContext(Player* player, PlayerbotAI* ai)
+{
+    AiObjectContext* context = CreateClassAiObjectContext(player, ai);
+    ApplyAiContextAugmenters(ai, context);
+    return context;
 }
 
 int AiFactory::GetPlayerSpecTab(const Player* bot)

@@ -130,6 +130,7 @@ void BotActivityLeaseManager::GetActivityCounts(uint32_t& grinding, uint32_t& tr
             case BotActivity::LftQueued: ++lft; break;
             case BotActivity::BgQueued: ++bg; break;
             case BotActivity::PlayerMaster: ++master; break;
+            case BotActivity::Dungeon: break;
             case BotActivity::Idle: break;
         }
     }
@@ -191,6 +192,7 @@ void BotActivityLeaseManager::EvictService(uint32_t guidLow, BotActivity evicted
         case BotActivity::Grinding:
         case BotActivity::Idle:
         case BotActivity::PlayerMaster:
+        case BotActivity::Dungeon:
             break;
     }
 }

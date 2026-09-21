@@ -15,6 +15,11 @@ enum class BotActivity : uint8_t
     LftQueued,
     BgQueued,
     PlayerMaster,
+    // Another module runs the bot through a dungeon (a crew). Acquired through TryAcquire
+    // like the structured background activities (it preempts Grinding, nothing preempts it),
+    // and the random-bot services leave such a bot alone: no timed logout, no recovery
+    // revive, no strategy roulette, no gear seeding, no misplaced-bot relocation.
+    Dungeon,
 };
 
 inline char const* BotActivityName(BotActivity activity)
@@ -27,6 +32,7 @@ inline char const* BotActivityName(BotActivity activity)
         case BotActivity::LftQueued: return "LftQueued";
         case BotActivity::BgQueued: return "BgQueued";
         case BotActivity::PlayerMaster: return "PlayerMaster";
+        case BotActivity::Dungeon: return "Dungeon";
     }
     return "Unknown";
 }

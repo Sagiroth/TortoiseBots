@@ -234,6 +234,8 @@ bool MisplacedBotEligible(::Player* bot, int32& areaLevelOut, std::string* why =
         return no("has a master");
     if (sRandomBotFacade.IsPinnedBot(bot->GetGUIDLow()))
         return no("pinned bot");
+    if (BotActivityLeaseManager::Instance().GetActivity(bot->GetGUIDLow()) == BotActivity::Dungeon)
+        return no("dungeon crew");
 
     // Isolated custom starting zones (Alah'Thalas 2040, Thalassian Highlands 5225, Blackstone Island 5536)
     // lack walking paths/transports to the mainland; random bots here are always hopelessly misplaced.

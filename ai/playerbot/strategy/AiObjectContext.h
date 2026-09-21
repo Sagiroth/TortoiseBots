@@ -102,6 +102,12 @@ namespace ai
         {
             valueContexts.Add(sharedValues);
         }
+        // Extension seam (AiContextAugment.h): another module appends its own strategy,
+        // action and trigger contexts to this bot. As with the value form, the receiving
+        // list takes ownership of what is not marked shared.
+        virtual void AddShared(NamedObjectContext<Strategy>* context) { strategyContexts.Add(context); }
+        virtual void AddShared(NamedObjectContext<Action>* context) { actionContexts.Add(context); }
+        virtual void AddShared(NamedObjectContext<Trigger>* context) { triggerContexts.Add(context); }
         std::list<std::string> Save();
         void Load(std::list<std::string> data);
 

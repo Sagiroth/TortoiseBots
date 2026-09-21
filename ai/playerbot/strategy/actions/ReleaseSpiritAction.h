@@ -4,6 +4,8 @@
 
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/Action.h"
+#include "runtime/BotActivityLease.h"
+#include "Group/Group.h"
 #include "MovementActions.h"
 #include "playerbot/strategy/values/LastMovementValue.h"
 #include "ReviveFromCorpseAction.h"
@@ -55,11 +57,55 @@ namespace ai
     class AutoReleaseSpiritAction : public ReleaseSpiritAction
     {
     public:
+        // Any living group member on the bot's map whose class can resurrect?
+        bool DungeonCrewHasLivingResurrecter() const
+        {
+            Group* group = bot->GetGroup();
+            if (!group)
+                return false;
+            for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            {
+                Player* member = ref->getSource();
+                if (!member || member == bot || !member->IsAlive() || member->GetMapId() != bot->GetMapId())
+                    continue;
+                switch (member->GetClass())
+                {
+                    case CLASS_PRIEST: case CLASS_PALADIN: case CLASS_SHAMAN: case CLASS_DRUID:
+                        return true;
+                    default:
+                        break;
+                }
+            }
+            return false;
+        }
+
+        // Any living group member on the bot's map still fighting?
+        bool DungeonCrewInCombat() const
+        {
+            Group* group = bot->GetGroup();
+            if (!group)
+                return false;
+            for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            {
+                Player* member = ref->getSource();
+                if (member && member != bot && member->IsAlive() && member->GetMapId() == bot->GetMapId() && member->IsInCombat())
+                    return true;
+            }
+            return false;
+        }
+
         AutoReleaseSpiritAction(PlayerbotAI* ai, std::string name = "auto release") : ReleaseSpiritAction(ai, name) {}
 
         virtual bool Execute(Event& event) override
         {
             sLog.outDetail("Bot #%d %s:%d <%s> auto released", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
+            // Diagnosis: a dungeon crew member that releases costs its party a corpse run
+            // from the instance entrance. Name what the predicates read when it happened.
+            if (bot->FindMap() && bot->FindMap()->IsDungeon())
+                sLog.outDetail("[AUTO-RELEASE] %s map=%u lease=%s group=%d livingRezzer=%d crewInCombat=%d",
+                    bot->GetName(), bot->GetMapId(),
+                    TortoiseBots::BotActivityName(TortoiseBots::BotActivityLeaseManager::Instance().GetActivity(bot->GetGUIDLow())),
+                    bot->GetGroup() ? 1 : 0, DungeonCrewHasLivingResurrecter() ? 1 : 0, DungeonCrewInCombat() ? 1 : 0);
 
             WorldPacket packet(CMSG_REPOP_REQUEST);
             packet << uint8(0);
@@ -91,6 +137,12 @@ namespace ai
 
             if (bot->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST))
                 return false;
+            // A dungeon crew (another module holds the Dungeon activity lease) waits for
+            // its own resurrection while a living group member of a resurrecting class is
+            // on its map; only a wipe releases. Stock bots without a player master release
+            // at once, which put crew members at the graveyard outside the instance.
+            if (TortoiseBots::BotActivityLeaseManager::Instance().GetActivity(bot->GetGUIDLow()) == TortoiseBots::BotActivity::Dungeon)
+                return !DungeonCrewHasLivingResurrecter() && !DungeonCrewInCombat();
 
             if (!bot->GetGroup())
                 return true;

@@ -4,6 +4,7 @@
 // do not own sessions, players, AI instances, or random-bot population.
 
 #include "../ai/playerbot/RandomBotFacade.h"
+#include "runtime/BotActivityLease.h"
 
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
@@ -248,6 +249,11 @@ void RandomBotFacade::UpdateGearSpells(Player* bot)
 bool RandomBotFacade::ProcessBot(Player* player)
 {
     if (!player || !IsRandomBot(player) || !player->IsInWorld() || player->IsBeingTeleported())
+        return false;
+    // A dungeon crew (another module holds the Dungeon activity lease) is left alone:
+    // no graveyard repop, no expired-value sweep. This runs from the bot's own AI
+    // ("random bot update") as well as from the service loop, so the guard sits here.
+    if (TortoiseBots::BotActivityLeaseManager::Instance().GetActivity(player->GetGUIDLow()) == TortoiseBots::BotActivity::Dungeon)
         return false;
 
     if (!player->IsAlive())

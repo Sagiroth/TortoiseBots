@@ -832,6 +832,9 @@ void RandomBotService::RemoveExpiredBots(uint32_t diff)
             m_ageMs[i] = 0;
             continue;
         }
+        // A dungeon crew is not logged out under its run.
+        if (BotActivityLeaseManager::Instance().GetActivity(candidate.characterGuid.GetCounter()) == BotActivity::Dungeon)
+            continue;
 
         m_ageMs[i] += diff;
         if (!sPlayerbotAIConfig.randomBotTimedLogout || !sPlayerbotAIConfig.maxRandomBotInWorldTime)
@@ -998,6 +1001,11 @@ void RandomBotService::Update(uint32_t diff)
         BotRecord* record = BotManager::Instance().FindBot(candidate.characterGuid);
         Player* player = sObjectAccessor.FindPlayer(candidate.characterGuid);
         if (!record || !record->enteredWorld || !player)
+            continue;
+
+        // A dungeon crew (another module holds the Dungeon lease) keeps its strategies and its
+        // corpse runs: no recovery revive, no strategy roulette, no timed gear seeding.
+        if (BotActivityLeaseManager::Instance().GetActivity(player->GetGUIDLow()) == BotActivity::Dungeon)
             continue;
 
         // Recovery/expired-value work stays on the world thread and is bounded
