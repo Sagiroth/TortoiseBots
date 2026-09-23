@@ -2862,6 +2862,10 @@ bool PlayerbotAI::IsMelee(Player* player, bool inGroup)
 
 bool PlayerbotAI::IsTank(Player* player, bool inGroup)
 {
+    uint8 forcedRole = PlayerbotAIStorage::Instance().GetPlayerForcedRole(player->GetObjectGuid());
+    if (forcedRole != static_cast<uint8>(BOT_ROLE_NONE))
+        return forcedRole == static_cast<uint8>(BOT_ROLE_TANK);
+
     PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(player);
     if (botAi)
     {
@@ -2876,12 +2880,15 @@ bool PlayerbotAI::IsTank(Player* player, bool inGroup)
     }
 
     BotRoles botRoles = AiFactory::GetPlayerRoles(player);
-
     return (botRoles & BOT_ROLE_TANK) != 0;
 }
 
 bool PlayerbotAI::IsHeal(Player* player, bool inGroup)
 {
+    uint8 forcedRole = PlayerbotAIStorage::Instance().GetPlayerForcedRole(player->GetObjectGuid());
+    if (forcedRole != static_cast<uint8>(BOT_ROLE_NONE))
+        return forcedRole == static_cast<uint8>(BOT_ROLE_HEALER);
+
     PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(player);
     if (botAi)
     {
@@ -2894,7 +2901,6 @@ bool PlayerbotAI::IsHeal(Player* player, bool inGroup)
     }
 
     BotRoles botRoles = AiFactory::GetPlayerRoles(player);
-
     return (botRoles & BOT_ROLE_HEALER) != 0;
 }
 

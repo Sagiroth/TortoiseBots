@@ -2,23 +2,95 @@
 #include "playerbot/playerbot.h"
 #include "DpsTargetValue.h"
 #include "LeastHpTargetValue.h"
+#include "PossibleAttackTargetsValue.h"
+#include "playerbot/GroupMembers.h"
+#include "../../../../runtime/PlayerbotAIStorage.h"
 
 using namespace ai;
+
+namespace
+{
+    class DpsTargetStrategy : public FindLeastHpTargetStrategy
+    {
+    public:
+        explicit DpsTargetStrategy(PlayerbotAI* ai) : FindLeastHpTargetStrategy(ai) {}
+        using FindNonCcTargetStrategy::IsCcTarget;
+    };
+
+    bool IsAttackedByParty(Unit* target, Group* group)
+    {
+        for (Player* member : LiveGroupMembers(group))
+        {
+            if (member->GetVictim() == target)
+                return true;
+
+            Unit* pet = member->GetPet();
+            if (pet && pet->GetVictim() == target)
+                return true;
+        }
+
+        return false;
+    }
+
+    Unit* GetGroupTankTarget(PlayerbotAI* ai)
+    {
+        Player* bot = ai ? ai->GetBot() : nullptr;
+        Group* group = bot ? bot->GetGroup() : nullptr;
+        if (!bot || !group)
+            return nullptr;
+
+        PlayerbotAIStorage& storage = PlayerbotAIStorage::Instance();
+        Player* master = ai->GetMaster();
+        bool useHumanMasterTarget = master && master != bot && master->GetGroup() == group &&
+            !storage.GetAI(master) && PlayerbotAI::IsTank(master);
+        Player* tank = useHumanMasterTarget ? master : nullptr;
+
+        if (!tank)
+        {
+            for (Player* member : LiveGroupMembers(group))
+            {
+                if (!storage.GetAI(member) || !PlayerbotAI::IsTank(member))
+                    continue;
+
+                tank = member;
+                break;
+            }
+        }
+
+        if (!tank)
+            return nullptr;
+
+        Unit* target = useHumanMasterTarget
+            ? ai->GetUnit(master->GetSelectionGuid())
+            : tank->GetVictim();
+        if (!target || !sServerFacade.IsAlive(target) ||
+            !PossibleAttackTargetsValue::IsValid(target, bot, sPlayerbotAIConfig.sightDistance, false, false) ||
+            !bot->IsWithinLOSInMap(target) ||
+            (!target->IsInCombat() && !IsAttackedByParty(target, group)))
+            return nullptr;
+
+        return target;
+    }
+}
+
 
 
 Unit* DpsTargetValue::Calculate()
 {
-    // Keep an explicit player-command target ahead of normal assist/RTI
-    // selection.  Without this, the first normal combat tick can choose a
-    // different group attacker (for example a lower-health mob), causing
-    // dps-assist to replace the target the owner just ordered the bot to hit.
+    // Explicit orders and raid marks remain ahead of tank assistance.
     if (Unit* explicitTarget = GetExplicitAttackTarget())
         return explicitTarget;
 
     Unit* rti = RtiTargetValue::Calculate();
     if (rti) return rti;
 
-    FindLeastHpTargetStrategy strategy(ai);
+    DpsTargetStrategy strategy(ai);
+    if (Unit* tankTarget = GetGroupTankTarget(ai))
+    {
+        if (tankTarget != AI_VALUE(Unit*, "cc target") && !strategy.IsCcTarget(tankTarget))
+            return tankTarget;
+    }
+
     return TargetValue::FindTarget(&strategy);
 }
 

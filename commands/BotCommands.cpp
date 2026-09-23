@@ -715,13 +715,28 @@ static bool HandleRole(ChatHandler* handler, char const* args)
     else if (roleToken == "clear" || roleToken == "none" || roleToken == "reset")
         role = static_cast<uint8>(ai::BOT_ROLE_NONE);
 
+    if (requester && role != 255 &&
+        (botToken == "self" || botToken == requester->GetName()))
+    {
+        PlayerbotAIStorage& storage = PlayerbotAIStorage::Instance();
+        if (role == static_cast<uint8>(ai::BOT_ROLE_NONE))
+            storage.ClearPlayerForcedRole(requester->GetObjectGuid());
+        else
+            storage.SetPlayerForcedRole(requester->GetObjectGuid(), role);
+
+        char const* label = role == static_cast<uint8>(ai::BOT_ROLE_TANK) ? "tank"
+            : role == static_cast<uint8>(ai::BOT_ROLE_HEALER) ? "healer"
+            : role == static_cast<uint8>(ai::BOT_ROLE_DPS) ? "dps" : "cleared";
+        handler->PSendSysMessage("Your role set to %s.", label);
+        return true;
+    }
     Player* bot = nullptr;
     BotRecord* record = nullptr;
     std::string name;
     if (!requester || botToken.empty() || role == 255 ||
         !ResolveOwnedBot(handler, botToken.c_str(), bot, record, name))
     {
-        handler->PSendSysMessage("Usage: .bot role <online bot name> <tank|healer|dps|clear> (same account only)");
+        handler->PSendSysMessage("Usage: .bot role <online bot name|self|your name> <tank|healer|dps|clear>");
         return true;
     }
 

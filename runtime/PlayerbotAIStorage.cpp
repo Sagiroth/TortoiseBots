@@ -63,3 +63,25 @@ PlayerbotAI* PlayerbotAIStorage::GetAI(ObjectGuid guid) const
     auto it = byGuid_.find(guid);
     return it != byGuid_.end() ? it->second : nullptr;
 }
+
+void PlayerbotAIStorage::SetPlayerForcedRole(ObjectGuid guid, uint8 role)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (role == 0)
+        playerForcedRoles_.erase(guid);
+    else
+        playerForcedRoles_[guid] = role;
+}
+
+uint8 PlayerbotAIStorage::GetPlayerForcedRole(ObjectGuid guid) const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = playerForcedRoles_.find(guid);
+    return it != playerForcedRoles_.end() ? it->second : 0;
+}
+
+void PlayerbotAIStorage::ClearPlayerForcedRole(ObjectGuid guid)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    playerForcedRoles_.erase(guid);
+}

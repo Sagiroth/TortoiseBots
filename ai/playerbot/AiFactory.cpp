@@ -17,6 +17,15 @@
 #include "strategy/hunter/HunterAiObjectContext.h"
 #include "strategy/rogue/RogueAiObjectContext.h"
 #include "Objects/Player.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Database/DBCEnums.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Database/DBCStores.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Objects/Item.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Objects/ItemPrototype.h"
+#include "playerbot/GroupMembers.h"
 #include "../../runtime/PlayerbotAIStorage.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/RandomBotFacade.h"
@@ -299,23 +308,144 @@ BotRoles AiFactory::GetPlayerRoles(uint8 cls, uint8 tab)
     return role;
 }
 
+static BotRoles GetTalentRoles(const Player* player)
+{
+    return AiFactory::GetPlayerRoles(player->GetClass(),
+        static_cast<uint8>(AiFactory::GetPlayerSpecTab(player)));
+}
+
+static bool HasShieldEquipped(const Player* player)
+{
+    Item const* offhand = player->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND);
+    ItemPrototype const* prototype = offhand ? offhand->GetProto() : nullptr;
+    return prototype && prototype->Class == ITEM_CLASS_ARMOR &&
+        prototype->SubClass == ITEM_SUBCLASS_ARMOR_SHIELD;
+}
+
+static bool HasRockbiterWeapon(const Player* player)
+{
+    Item const* mainHand = player->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+    uint32 enchantId = mainHand ? mainHand->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT) : 0;
+    SpellItemEnchantmentEntry const* enchant = enchantId
+        ? sSpellItemEnchantmentStore.LookupEntry(enchantId) : nullptr;
+    if (!enchant)
+        return false;
+
+    for (uint8 effect = 0; effect < 3; ++effect)
+        if (enchant->type[effect] == ITEM_ENCHANTMENT_TYPE_TOTEM)
+            return true;
+
+    return false;
+}
+
+static BotRoles GetRoleFromStanceOrGear(const Player* player)
+{
+    switch (player->GetClass())
+    {
+        case CLASS_DRUID:
+            if (player->GetShapeshiftForm() == FORM_BEAR ||
+                player->GetShapeshiftForm() == FORM_DIREBEAR)
+                return BOT_ROLE_TANK;
+            if (player->GetShapeshiftForm() == FORM_CAT)
+                return BOT_ROLE_DPS;
+            break;
+        case CLASS_WARRIOR:
+            if (player->GetShapeshiftForm() == FORM_DEFENSIVESTANCE || HasShieldEquipped(player))
+                return BOT_ROLE_TANK;
+            break;
+        case CLASS_PALADIN:
+            if (player->HasAura(25780) && HasShieldEquipped(player))
+                return BOT_ROLE_TANK;
+            break;
+        case CLASS_SHAMAN:
+            if (HasShieldEquipped(player) && HasRockbiterWeapon(player))
+                return BOT_ROLE_TANK;
+            break;
+    }
+
+    return BOT_ROLE_NONE;
+}
+
+
+static bool HasOtherTank(const Player* player)
+{
+    Group* group = const_cast<Player*>(player)->GetGroup();
+    if (!group)
+        return false;
+
+    ObjectGuid playerGuid = player->GetObjectGuid();
+    bool playerSeen = false;
+    bool earlierHeuristicTank = false;
+    PlayerbotAIStorage& storage = PlayerbotAIStorage::Instance();
+    for (Player* member : LiveGroupMembers(group))
+    {
+        ObjectGuid memberGuid = member->GetObjectGuid();
+        if (memberGuid == playerGuid)
+        {
+            playerSeen = true;
+            continue;
+        }
+
+        uint8 forcedRole = storage.GetPlayerForcedRole(memberGuid);
+        if (forcedRole != static_cast<uint8>(BOT_ROLE_NONE))
+        {
+            if (forcedRole == static_cast<uint8>(BOT_ROLE_TANK))
+                return true;
+            continue;
+        }
+
+        PlayerbotAI* memberAI = storage.GetAI(member);
+        if (memberAI)
+        {
+            uint8 botForcedRole = memberAI->GetForcedRole();
+            if (botForcedRole == static_cast<uint8>(BOT_ROLE_TANK) ||
+                memberAI->ContainsStrategy(STRATEGY_TYPE_TANK))
+                return true;
+            if (botForcedRole != static_cast<uint8>(BOT_ROLE_NONE) && memberAI->HasActivePlayerMaster())
+                continue;
+        }
+
+        uint8 memberClass = member->GetClass();
+        if ((memberClass == CLASS_WARRIOR || memberClass == CLASS_PALADIN || memberClass == CLASS_DRUID) &&
+            (GetTalentRoles(member) & BOT_ROLE_TANK) != 0)
+            return true;
+
+        // If no explicit or talent tank exists, the first group-slot member
+        // with a tank stance/form/gear signal owns the automatic tank role.
+        // Counting later candidates would make two stance-shifters suppress
+        // each other instead of selecting one tank.
+        if (!playerSeen && GetRoleFromStanceOrGear(member) == BOT_ROLE_TANK)
+            earlierHeuristicTank = true;
+    }
+
+    return earlierHeuristicTank;
+}
+
 BotRoles AiFactory::GetPlayerRoles(const Player* player)
 {
-    // This used to work out a role from what the character was doing right then
-    // - defensive stance, righteous fury, bear form - and then return the talent
-    // based answer anyway, throwing that work away. Restoring it would have made
-    // things worse, not better: the switch only ever set the tank bit, so a fury
-    // warrior who happened to stand in defensive stance would have been handed
-    // the tank slot with a fury build, while a feral druid was already
-    // recognised through its talents. The aura check is gone. The tree decides.
-    // An explicit forced role wins for owned companions (.bot role, hire):
-    // a Feral ordered to DPS must read as DPS, not Tank. Free wandering bots
-    // keep the natural talent mask so LFT fill keeps seeing Feral as
-    // tank-capable even while borrowed under another slot.
-    PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(const_cast<Player*>(player));
+    if (!player)
+        return BOT_ROLE_NONE;
+
+    PlayerbotAIStorage& storage = PlayerbotAIStorage::Instance();
+    uint8 playerForcedRole = storage.GetPlayerForcedRole(player->GetObjectGuid());
+    if (playerForcedRole != static_cast<uint8>(BOT_ROLE_NONE))
+        return static_cast<BotRoles>(playerForcedRole);
+
+    PlayerbotAI* botAi = storage.GetAI(const_cast<Player*>(player));
     if (botAi && botAi->GetForcedRole() != BOT_ROLE_NONE && botAi->HasActivePlayerMaster())
         return static_cast<BotRoles>(botAi->GetForcedRole());
-    return GetPlayerRoles(player->GetClass(), GetPlayerSpecTab(player));
+
+    // Only scan the group when a current stance/form/gear signal could change
+    // the talent role; without one, both paths return the talent role.
+    BotRoles stateRole = GetRoleFromStanceOrGear(player);
+    if (stateRole != BOT_ROLE_NONE)
+    {
+        if (HasOtherTank(player))
+            return GetTalentRoles(player);
+        return stateRole;
+    }
+
+    return GetTalentRoles(player);
 }
 
 void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const facade, Engine* combatEngine)

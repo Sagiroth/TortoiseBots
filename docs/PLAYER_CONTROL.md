@@ -25,8 +25,10 @@ Player controls must make an owned bot convenient to manage in world content.
 They are not a second bot AI, a raw debug console, a GM replacement, or a way
 to mutate core-owned session/group/queue state.
 
-All controls require the existing account-owner or GM authorization. A request
-may be accepted asynchronously; the UI must report *queued* or *rejected*, not
+Bot-targeted controls require the existing account-owner or GM authorization;
+`.bot role self` is requester-local and changes only the requesting player's
+runtime group-role override. Bot gameplay requests may be accepted
+asynchronously; the UI must report *queued* or *rejected*, not
 claim a gameplay action succeeded before the mature AI accepts it. New gameplay
 requests resolve scope from the requester's normal WoW target; roster checkbox
 selection is never consulted by gameplay.
@@ -36,14 +38,15 @@ selection is never consulted by gameplay.
 The control module has one interface for native commands and the addon:
 
 ```text
-validated player intent + owned live bot + optional selected target
-    -> accepted / rejected / queued result
-    -> existing PlayerbotAI action or strategy
+validated player intent + (owned live bot + optional target OR role-self choice)
+    -> existing PlayerbotAI behavior OR runtime player role store
 ```
 
-It reuses `PlayerbotAI::HandleCommand` or a named existing action only after
-validating a fixed catalog entry. It must not copy the inherited chat parser,
-reimplement strategies, or grow gameplay state inside `BotManager`.
+Bot-targeted controls reuse `PlayerbotAI::HandleCommand` or a named existing
+action only after validating a fixed catalog entry. `.bot role self` validates
+the role and updates the separate runtime player-role store. The control module
+must not copy inherited chat parsers, reimplement strategies, or add role state
+to `BotManager`.
 
 `BotManager` continues to own bot records, Headless lifecycle and durable
 master binding. `PlayerConvenience` owns only the short-lived summon
@@ -62,6 +65,7 @@ layer.
 | Policy | aoe on/off | Existing `dps aoe` strategy | Scope-resolved strategy toggle; CC/RTI avoidance remains mature-AI-owned. |
 | Lifecycle | login, logout, invite, kick, summon | Headless lifecycle and native group/convenience handlers | Roster-only; multi-select is filtered to eligible server-owned rows. |
 | Visibility | roster snapshot, status | Module roster storage and diagnostics | `.bot roster` is authoritative for offline and online owned rows. |
+| Roles | `.bot role self <tank|healer|dps|clear>` | `AiFactory::GetPlayerRoles` and the shared player-role predicates | Stores a runtime-only human role override without registering a `PlayerbotAI`; `clear` restores group-aware automatic inference. |
 
 The native action shell emits one structured `TBM:ACTION_ACK` or
 `TBM:ACTION_ERR` result for addon requests. It suppresses incidental mature-AI

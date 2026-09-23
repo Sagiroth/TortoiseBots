@@ -21,11 +21,16 @@ public:
     void RemoveAI(Player* player);
     PlayerbotAI* GetAI(Player* player) const;
     PlayerbotAI* GetAI(ObjectGuid guid) const;
+    void SetPlayerForcedRole(ObjectGuid guid, uint8 role);
+    uint8 GetPlayerForcedRole(ObjectGuid guid) const;
+    void ClearPlayerForcedRole(ObjectGuid guid);
 
 private:
     mutable std::mutex mutex_;
     std::unordered_map<ObjectGuid, PlayerbotAI*> byGuid_;
     std::unordered_map<Player*, PlayerbotAI*> byPlayer_;
+    // Human role overrides stay separate from the PlayerbotAI registries.
+    std::unordered_map<ObjectGuid, uint8> playerForcedRoles_;
 };
 
 #ifndef GET_PLAYERBOT_AI
