@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/actions/GenericActions.h"
 
 namespace ai
@@ -253,9 +254,8 @@ namespace ai
             {
                 Unit* lowestHealer = nullptr;
                 float lowestPct = static_cast<float>(sPlayerbotAIConfig.lowMana);
-                for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+                for (Player* member : LiveGroupMembers(group))
                 {
-                    Player* member = gref->GetSource();
                     if (!member || member == bot || !ai->IsSafe(member) || !ai->IsHeal(member))
                         continue;
                     if (member->GetMapId() != bot->GetMapId() || !sServerFacade.IsAlive(member))

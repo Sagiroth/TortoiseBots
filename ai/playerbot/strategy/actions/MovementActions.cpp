@@ -1,4 +1,5 @@
 
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/PerformanceMonitor.h"
 #include "MovementActions.h"
@@ -1126,12 +1127,12 @@ float MovementAction::GetFollowAngle()
         return 0.0f;
 
     int index = 1;
-    for (GroupReference *ref = group->GetFirstMember(); ref; ref = ref->next())
+    for (Player* member : LiveGroupMembers(group))
     {
-        if( ref->GetSource() == master)
+        if( member == master)
             continue;
 
-        if( ref->GetSource() == bot)
+        if( member == bot)
             return 2 * M_PI / (group->GetMembersCount() -1) * index;
 
         index++;
@@ -1659,9 +1660,8 @@ bool MovementAction::Flee(Unit *target)
         const float maxFleeDistance = isTarget ? 40.0f : ai->GetRange("spell") * 1.5;
         const float minRangedTargetDistance = ai->GetRange("spell") / 2 + ai->GetRange("follow");
 
-        for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+        for (Player* groupMember : LiveGroupMembers(group))
         {
-            Player* groupMember = gref->GetSource();
 
             // Ignore group member if is not alive or on a different zone
             if (!groupMember || groupMember->IsBeingTeleported() || groupMember == bot || groupMember == master || !sServerFacade.IsAlive(groupMember) || bot->GetMapId() != groupMember->GetMapId())

@@ -1,3 +1,4 @@
+#include "playerbot/GroupMembers.h"
 #include "DungeonActions.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
@@ -248,9 +249,8 @@ Unit* RaidAnchor(PlayerbotAI* ai, Player* bot)
         return nullptr;
     Unit* nearest = nullptr;
     float nearestDist = FLT_MAX;
-    for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+    for (Player* member : LiveGroupMembers(group))
     {
-        Player* member = gref->GetSource();
         if (!member || member == bot || !sServerFacade.IsAlive(member))
             continue;
         if (member->GetMapId() != bot->GetMapId())
@@ -343,9 +343,8 @@ bool RaidSpreadAction::Execute(Event& event)
         return false;
     Player* nearest = nullptr;
     float nearestDist = FLT_MAX;
-    for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+    for (Player* member : LiveGroupMembers(group))
     {
-        Player* member = gref->GetSource();
         if (!member || member == bot || !sServerFacade.IsAlive(member))
             continue;
         if (member->GetMapId() != bot->GetMapId())

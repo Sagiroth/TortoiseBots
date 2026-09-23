@@ -88,12 +88,28 @@ void PlayerbotAIAdapter::RebindMaster(Player* master)
         ai_->Reset(true);
         if (bot_)
             bot_->StopMoving();
+
+        if (AiObjectContext* context = ai_->GetAiObjectContext()) // pi-lens-ignore: clang:all
+        {
+            if (ai::Value<Unit*>* masterTarget = context->GetValue<Unit*>("master target"))
+                masterTarget->Reset();
+            if (ai::Value<Unit*>* followTargetValue = context->GetValue<Unit*>("follow target"))
+                followTargetValue->Reset();
+        }
+    }
+    // If the bot fell into wander while master was offline, return it to follow.
+    if (ai_->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT) &&
+        master && master->GetSession() && !master->GetSession()->IsHeadless())
+    {
+        ai_->SetMovementStrategy("follow"); // pi-lens-ignore: clang:all
     }
     // Mature strategy state survives a master pointer disconnect. Only repair
     // a bot with no movement strategy at all; never let a stale native intent
     // overwrite mature follow/stay/wander/guard/free/passive commands.
-    if (!ai_->HasActiveMovementStrategy()) // pi-lens-ignore: clang:all
+    else if (!ai_->HasActiveMovementStrategy()) // pi-lens-ignore: clang:all
+    {
         ai_->EnsureDefaultMovementStrategy(); // pi-lens-ignore: clang:all
+    }
 }
 
 void PlayerbotAIAdapter::DetachMaster()

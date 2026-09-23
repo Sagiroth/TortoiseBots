@@ -1,4 +1,5 @@
 
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "ShareQuestAction.h"
 
@@ -53,9 +54,8 @@ bool AutoShareQuestAction::Execute(Event& event)
 
         bool partyNeedsQuest = false;
 
-        for (GroupReference* itr = bot->GetGroup()->GetFirstMember(); itr != nullptr; itr = itr->next())
+        for (Player* player : LiveGroupMembers(bot->GetGroup()))
         {
-            Player* player = itr->GetSource();
 
             if (!player || player == bot || !player->IsInWorld() || !ai->IsSafe(player))         // skip self
                 continue;

@@ -1,4 +1,5 @@
 
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "Formations.h"
 
@@ -293,9 +294,8 @@ namespace ai
             float orientation = followTarget->getOrientation();
 
             std::vector<Player*> players;
-            for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+            for (Player* member : LiveGroupMembers(group))
             {
-                Player* member = gref->GetSource();
                 if (!ai->IsSafe(member)) continue;
                 if (member != followTarget)
                     players.push_back(member);
@@ -330,9 +330,8 @@ namespace ai
 
             std::vector<Player*> tanks;
             std::vector<Player*> dps;
-            for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+            for (Player* member : LiveGroupMembers(group))
             {
-                Player* member = gref->GetSource();
                 if (!ai->IsSafe(member)) continue;
                 if (member != followTarget)
                 {
@@ -477,18 +476,16 @@ float Formation::GetFollowAngle()
     else if (group)
     {
         std::vector<Player*> roster;
-        for (GroupReference *ref = group->GetFirstMember(); ref; ref = ref->next())
+        for (Player* member : LiveGroupMembers(group))
         {
-            Player* member = ref->GetSource();
             if (!ai->IsSafe(member) || !sServerFacade.IsAlive(member)) continue;
             if (member && member != followTarget && !ai->IsTank(member) && !ai->IsHeal(member))
             {
                 roster.insert(roster.begin() + roster.size() / 2, member);
             }
         }
-        for (GroupReference *ref = group->GetFirstMember(); ref; ref = ref->next())
+        for (Player* member : LiveGroupMembers(group))
         {
-            Player* member = ref->GetSource();
             if (!ai->IsSafe(member) || !sServerFacade.IsAlive(member)) continue;
             if (member && member != followTarget && ai->IsHeal(member))
             {
@@ -496,9 +493,8 @@ float Formation::GetFollowAngle()
             }
         }
         bool left = true;
-        for (GroupReference *ref = group->GetFirstMember(); ref; ref = ref->next())
+        for (Player* member : LiveGroupMembers(group))
         {
-            Player* member = ref->GetSource();
             if (!ai->IsSafe(member) || !sServerFacade.IsAlive(member)) continue;
             if (member && member != followTarget && ai->IsTank(member))
             {

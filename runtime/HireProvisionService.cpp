@@ -1,4 +1,5 @@
 // pi-lens-ignore-file: clang:pp_file_not_found,clang:unknown_typename,clang:use_of_undeclared_identifier,clang:unknown_type_name,clang:undeclared_var_use,clang:incomplete_member_access
+#include "../ai/playerbot/GroupMembers.h"
 #include "HireProvisionService.h"
 #include "HireCost.h"
 #include "HireLifecycle.h"
@@ -201,9 +202,8 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
     uint32_t liveGroupBots = 0;
     if (group)
     {
-        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        for (Player* member : LiveGroupMembers(group))
         {
-            Player* member = ref->getSource();
             if (!member || member == requester)
                 continue;
             BotRecord* record = BotManager::Instance().FindBot(member->GetObjectGuid());

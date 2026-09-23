@@ -1,4 +1,5 @@
 
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "PartyMemberValue.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -43,19 +44,19 @@ Unit* PartyMemberValue::FindPartyMember(FindPlayerPredicate &predicate, bool ign
     Group* group = bot->GetGroup();
     if (group)
     {
-        for (GroupReference *ref = group->GetFirstMember(); ref; ref = ref->next())
+        for (Player* member : LiveGroupMembers(group))
         {
-            if (!ref->GetSource() || bot->GetMapId() != ref->GetSource()->GetMapId()) continue;
+            if (!member || bot->GetMapId() != member->GetMapId()) continue;
 
-            if (ref->GetSource() != bot)
+            if (member != bot)
             {
-                if (ref->getSubGroup() != bot->GetSubGroup())
+                if (member->GetSubGroup() != bot->GetSubGroup())
                 {
-                    nearestPlayers.push_back(ref->GetSource()->getObjectGuid());
+                    nearestPlayers.push_back(member->getObjectGuid());
                 }
                 else
                 {
-                    nearestPlayers.push_front(ref->GetSource()->getObjectGuid());
+                    nearestPlayers.push_front(member->getObjectGuid());
                 }
             }
         }

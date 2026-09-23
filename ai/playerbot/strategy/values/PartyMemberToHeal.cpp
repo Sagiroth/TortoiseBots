@@ -1,4 +1,5 @@
 
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "PartyMemberToHeal.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -242,9 +243,8 @@ std::vector<Player*> PartyMemberToHeal::GetPartyMembers()
         Group* group = bot->GetGroup();
         if (group)
         {
-            for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+            for (Player* player : LiveGroupMembers(group))
             {
-                Player* player = gref->GetSource();
                 if (player && ai->IsSafe(player))
                 {
                     partyMembers.push_back(player);
@@ -311,9 +311,8 @@ Unit* PartyMemberToRemoveRoots::Calculate()
     Group* group = bot->GetGroup();
     if(group)
     {
-        for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+        for (Player* player : LiveGroupMembers(group))
         {
-            Player* player = gref->GetSource();
             if (sServerFacade.IsAlive(player))
             {
                 if (player->m_duel && player->m_duel->opponent)

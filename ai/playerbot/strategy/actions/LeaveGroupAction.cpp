@@ -1,4 +1,5 @@
 
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "../../runtime/PlayerbotAIStorage.h" // Headless storage shim
 #include "LeaveGroupAction.h"
@@ -72,9 +73,8 @@ namespace ai
         if (ai->HasActivePlayerMaster())
             return false;
 
-        for (GroupReference* gref = bot->GetGroup()->GetFirstMember(); gref; gref = gref->next())
+        for (Player* member : LiveGroupMembers(bot->GetGroup()))
         {
-            Player* member = gref->GetSource();
             if (!ai->IsSafe(member))
                 return false;
         }

@@ -1,4 +1,5 @@
 
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "GroupValues.h"
 #include "playerbot/ServerFacade.h"
@@ -13,9 +14,9 @@ std::list<ObjectGuid> GroupMembersValue::Calculate()
     Group* group = bot->GetGroup();
     if (group)
     {
-        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        for (Player* member : LiveGroupMembers(group))
         {
-            members.push_back(ref->GetSource()->getObjectGuid());
+            members.push_back(member->getObjectGuid());
         }
     }
     else

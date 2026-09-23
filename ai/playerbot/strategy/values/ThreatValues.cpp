@@ -1,4 +1,5 @@
 
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "ThreatValues.h"
 
@@ -90,9 +91,8 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
 
     float maxThreat = -1.0f;
 
-    for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+    for (Player* player : LiveGroupMembers(group))
     {
-        Player* player = gref->GetSource();
         if (!player || !sServerFacade.IsAlive(player) || !ai->IsSafe(player) || player == ai->GetBot())
             continue;
 

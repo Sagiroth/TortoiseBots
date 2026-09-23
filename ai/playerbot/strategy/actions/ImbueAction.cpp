@@ -1,3 +1,4 @@
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "ImbueAction.h"
 #include "playerbot/PlayerbotAI.h"
@@ -28,9 +29,8 @@ bool ImbueWithStoneAction::Execute(Event& event)
     if (bot->GetGroup())
     {
         Group* group = bot->GetGroup();
-        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        for (Player* member : LiveGroupMembers(group))
         {
-            Player* member = ref->GetSource();
             if (!member || member == bot || !member->IsInWorld() || !group->SameSubGroup(bot, member))
                 continue;
 
@@ -91,9 +91,8 @@ bool ImbueWithStoneAction::isUseful()
     if (bot->GetGroup())
     {
         Group* group = bot->GetGroup();
-        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        for (Player* member : LiveGroupMembers(group))
         {
-            Player* member = ref->GetSource();
             if (!member || member == bot || !member->IsInWorld() || !group->SameSubGroup(bot, member))
                 continue;
 

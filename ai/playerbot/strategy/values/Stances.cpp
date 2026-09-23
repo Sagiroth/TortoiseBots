@@ -1,4 +1,5 @@
 
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "Stances.h"
 
@@ -77,9 +78,8 @@ namespace ai
                 int index = 0, count = 0;
                 if (group)
                 {
-                    for (GroupReference *ref = group->GetFirstMember(); ref; ref = ref->next())
+                    for (Player* member : LiveGroupMembers(group))
                     {
-                        Player* member = ref->GetSource();
                         if (!ai->IsSafe(member))
                             continue;
 
@@ -130,9 +130,8 @@ namespace ai
             float angle = 0.0f;
             if (group)
             {
-                for (GroupReference *ref = group->GetFirstMember(); ref; ref = ref->next())
+                for (Player* member : LiveGroupMembers(group))
                 {
-                    Player* member = ref->GetSource();
                     if (member && ai->IsSafe(member) && member != bot && ai->IsRanged(member))
                     {
                         angle += target->GetAngle(member);
@@ -158,9 +157,8 @@ namespace ai
             int index = 0, count = 0;
             if (group)
             {
-                for (GroupReference *ref = group->GetFirstMember(); ref; ref = ref->next())
+                for (Player* member : LiveGroupMembers(group))
                 {
-                    Player* member = ref->GetSource();
                     if (!ai->IsSafe(member))
                         continue;
                     if (member == bot) index = count;

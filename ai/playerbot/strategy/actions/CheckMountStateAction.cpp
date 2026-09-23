@@ -1,4 +1,5 @@
 
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "CheckMountStateAction.h"
 #include "playerbot/strategy/values/PositionValue.h"
@@ -361,9 +362,8 @@ bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
 
     if (limitSpeedToGroup && bot->GetGroup() && ai->IsGroupLeader())
     {
-        for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+        for (Player* member : LiveGroupMembers(bot->GetGroup()))
         {
-            Player* member = ref->GetSource();
             if (member == bot)
                 continue;
 

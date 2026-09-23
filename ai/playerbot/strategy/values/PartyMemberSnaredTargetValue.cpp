@@ -6,6 +6,7 @@
  * or (at your option) any later version.
  */
 
+#include "playerbot/GroupMembers.h"
 #include "PartyMemberSnaredTargetValue.h"
 #include "PlayerbotAIAware.h"
 #include "Playerbots.h"
@@ -47,9 +48,8 @@ Unit* PartyMemberSnaredTargetValue::Calculate()
     Player* bestTarget = nullptr;
     float closestDistance = std::numeric_limits<float>::max();
 
-    for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+    for (Player* member : LiveGroupMembers(group))
     {
-        Player* member = gref->GetSource();
         if (!member)
             continue;
 

@@ -1,3 +1,4 @@
+#include "../ai/playerbot/GroupMembers.h"
 #include "BotManager.h"
 #include "BotActivityLease.h"
 #include "PlayerbotAIAdapter.h"
@@ -204,10 +205,9 @@ bool GroupHasRealPlayer(::Player* bot)
     Group* group = bot ? bot->GetGroup() : nullptr;
     if (!group)
         return false;
-    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
-        if (Player* member = ref->getSource())
-            if (member != bot && member->GetSession() && !member->GetSession()->IsHeadless())
-                return true;
+    for (Player* member : LiveGroupMembers(group))
+        if (member != bot && member->GetSession() && !member->GetSession()->IsHeadless())
+            return true;
     return false;
 }
 
@@ -720,11 +720,15 @@ void BotManager::RebindOwnedBots(::Player* master)
         if (entry.record.lifecycle != BotLifecycle::InWorld)
             continue;
 
+        uint32 botOwner = entry.record.ownerAccountId ? entry.record.ownerAccountId : entry.record.accountId;
+        bool isOwner = (botOwner == masterAccountId || master->GetSession()->GetSecurity() >= SEC_GAMEMASTER);
+
         bool shouldRebind = (entry.record.masterGuid == masterGuid);
-        if (!shouldRebind && masterGroup && masterGroup->IsMember(entry.record.characterGuid))
+        if (!shouldRebind && isOwner)
         {
-            uint32 botOwner = entry.record.ownerAccountId ? entry.record.ownerAccountId : entry.record.accountId;
-            if (botOwner == masterAccountId || master->GetSession()->GetSecurity() >= SEC_GAMEMASTER)
+            if (masterGroup && masterGroup->IsMember(entry.record.characterGuid))
+                shouldRebind = true;
+            else if (entry.record.masterGuid.IsEmpty() || !sObjectAccessor.FindPlayer(entry.record.masterGuid))
                 shouldRebind = true;
         }
 
@@ -737,7 +741,17 @@ void BotManager::RebindOwnedBots(::Player* master)
 
         entry.record.masterGuid = masterGuid;
         if (entry.aiAdapter && entry.aiAdapter->IsInitialized())
+        {
             entry.aiAdapter->RebindMaster(master);
+            if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
+            {
+                if (ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT))
+                {
+                    ai::Event followEvent("follow", "", master);
+                    ai->DoSpecificAction("follow chat shortcut", followEvent, true);
+                }
+            }
+        }
         else if (PlayerbotAIStorage::Instance().GetAI(bot))
             sLog.outError("TortoiseBots: cannot rebind master for %s because the module AI adapter is unavailable",
                 bot->GetName());
@@ -1514,17 +1528,18 @@ void BotManager::UpdatePacketBridgeTest(uint32_t diff)
 
             ChatHandler commandHandler(syntheticNetwork);
             std::string followCommand = "follow " + std::string(bot->GetName());
-            std::string inviteCommand = "invite " + std::string(bot->GetName());
             bool commandSurfacePassed =
                 BotCommands::HandleChatCommand(&commandHandler, "list") &&
                 BotCommands::HandleChatCommand(&commandHandler, "stats") &&
                 BotCommands::HandleChatCommand(&commandHandler, followCommand.c_str()) &&
+                BotCommands::HandleChatCommand(&commandHandler, "action follow") &&
                 PlayerbotAIStorage::Instance().GetAI(bot) &&
                 PlayerbotAIStorage::Instance().GetAI(bot)->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT);
 
-            TB_LOG_BASIC("TortoiseBots: PacketBridgeTest native command surface %s — list/stats/follow dispatched through ChatHandler",
+            TB_LOG_BASIC("TortoiseBots: PacketBridgeTest native command surface %s — list/stats/follow/action dispatched through ChatHandler",
                 commandSurfacePassed ? "PASSED" : "FAILED");
 
+            std::string inviteCommand = "invite " + std::string(bot->GetName());
             bool immediateInvitePassed =
                 BotCommands::HandleChatCommand(&commandHandler, inviteCommand.c_str()) &&
                 master->GetGroup() && bot->GetGroup() == master->GetGroup() &&

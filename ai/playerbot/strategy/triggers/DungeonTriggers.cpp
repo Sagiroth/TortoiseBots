@@ -1,4 +1,5 @@
 
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "DungeonTriggers.h"
 #include "playerbot/strategy/values/PositionValue.h"
@@ -437,9 +438,8 @@ bool RaidSpreadNeededTrigger::IsActive()
     Group* group = bot->GetGroup();
     if (!group)
         return false;
-    for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+    for (Player* member : LiveGroupMembers(group))
     {
-        Player* member = gref->GetSource();
         if (!member || member == bot || !sServerFacade.IsAlive(member))
             continue;
         if (member->GetMapId() != bot->GetMapId())

@@ -1,4 +1,5 @@
 
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "PlayerbotAI.h"
@@ -33,9 +34,8 @@ PlayerbotSecurityLevel PlayerbotSecurity::LevelFor(Player* from, DenyReason* rea
         Group* group = from->GetGroup();
         if (group && !ignoreGroup)
         {
-            for (GroupReference *gref = group->GetFirstMember(); gref; gref = gref->next())
+            for (Player* player : LiveGroupMembers(group))
             {
-                Player* player = gref->getSource();
                 if (player == bot)
                     return PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL;
             }
@@ -109,9 +109,8 @@ PlayerbotSecurityLevel PlayerbotSecurity::LevelFor(Player* from, DenyReason* rea
             return PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE;
         }
 
-        for (GroupReference *gref = group->GetFirstMember(); gref; gref = gref->next())
+        for (Player* player : LiveGroupMembers(group))
         {
-            Player* player = gref->getSource();
             if (player == from)
                 return PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL;
         }

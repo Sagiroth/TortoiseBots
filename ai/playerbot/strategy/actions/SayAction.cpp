@@ -1,4 +1,5 @@
 
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "../../runtime/PlayerbotAIStorage.h" // Headless storage shim
 #include "SayAction.h"
@@ -68,9 +69,8 @@ bool SayAction::Execute(Event& event)
     if (group)
     {
         std::vector<Player*> members;
-        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        for (Player* member : LiveGroupMembers(group))
         {
-            Player* member = ref->GetSource();
             PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(member);
             if (memberAi) members.push_back(member);
         }

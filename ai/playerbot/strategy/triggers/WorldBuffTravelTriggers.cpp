@@ -1,4 +1,5 @@
-﻿#include "playerbot/playerbot.h"
+﻿#include "playerbot/GroupMembers.h"
+#include "playerbot/playerbot.h"
 #include "WorldBuffTravelTriggers.h"
 #include "playerbot/ServerFacade.h"
 #include "Database/DBCStores.h"
@@ -146,9 +147,8 @@ static uint32 ForEachGroupMember(Player* bot, std::function<void(Player*)> callb
         return 0;
 
     uint32 count = 0;
-    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    for (Player* member : LiveGroupMembers(group))
     {
-        Player* member = ref->GetSource();
         if (!member || member == bot)
             continue;
 
@@ -175,15 +175,14 @@ static bool DoAllGroupMembersHaveDMTBuffs(Player* bot)
         });
 
     uint32 totalMembers = 0;
-    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    for (Player* member : LiveGroupMembers(group))
     {
-        if (ref->GetSource() && ref->GetSource() != bot)
+        if (member && member != bot)
             ++totalMembers;
     }
 
-    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    for (Player* member : LiveGroupMembers(group))
     {
-        Player* member = ref->GetSource();
         if (member == bot)
             continue;
 
@@ -203,9 +202,8 @@ static bool DoAllGroupMembersHaveSongflower(Player* bot)
     if (!group)
         return true;
 
-    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    for (Player* member : LiveGroupMembers(group))
     {
-        Player* member = ref->GetSource();
         if (member == bot)
             continue;
 

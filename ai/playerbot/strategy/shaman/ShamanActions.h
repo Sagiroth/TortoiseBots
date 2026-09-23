@@ -1,5 +1,6 @@
 #pragma once
 
+#include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/actions/GenericActions.h"
 #include "playerbot/strategy/actions/ChangeStrategyAction.h"
 
@@ -109,9 +110,8 @@ namespace ai
             if (!group)
                 return !AI_VALUE2(bool, "has totem", name);
 
-            for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            for (Player* member : LiveGroupMembers(group))
             {
-                Player* member = ref->GetSource();
                 if (!member || !sServerFacade.IsAlive(member))
                     continue;
 

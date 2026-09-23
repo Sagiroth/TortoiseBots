@@ -563,23 +563,27 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 
 ActionNode* Engine::CreateActionNode(const std::string& name)
 {
-    ActionNode* actionNode = nullptr;
+    ActionNode* cachedNode = nullptr;
     for (std::map<std::string, Strategy*>::iterator i = strategies.begin(); i != strategies.end(); i++)
     {
         Strategy* strategy = i->second;
-        actionNode = strategy->GetAction(name);
-        if (actionNode)
+        cachedNode = strategy->GetAction(name);
+        if (cachedNode)
         {
             break;
         }
     }
 
-    if (!actionNode)
-    {
-        actionNode = new ActionNode(name);
-    }
+    // Every caller either queues the node (Engine::Reset deletes it when the
+    // queue drains) or deletes it outright, so the engine must own what it gets
+    // back. A node from a strategy factory belongs to that strategy's cache -
+    // handing it out and then deleting it left the factory holding a dangling
+    // pointer, and the next lookup double-freed it (issue: .bot action
+    // commands killed the world server with heap corruption).
+    if (cachedNode)
+        return new ActionNode(*cachedNode);
 
-    return actionNode;
+    return new ActionNode(name);
 }
 
 bool Engine::MultiplyAndPush(NextAction** actions, float forceRelevance, bool skipPrerequisites, const Event& event, const char* pushType)

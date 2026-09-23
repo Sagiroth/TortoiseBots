@@ -1,3 +1,4 @@
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "Formations.h"
 #include "Arrow.h"
@@ -80,11 +81,9 @@ void ArrowFormation::FillSlotsExceptMaster()
 {
     Unit* followTarget = AI_VALUE(Unit*, "follow target");
     Group* group = bot->GetGroup();
-    GroupReference *gref = group->GetFirstMember();
     uint32 index = 0;
-    while (gref)
+    for (Player* member : LiveGroupMembers(group))
     {
-        Player* member = gref->GetSource();
         if (ai->IsSafe(member))
         {
             if (member == bot)
@@ -93,7 +92,6 @@ void ArrowFormation::FillSlotsExceptMaster()
                 FindSlot(member)->AddLast(new FormationUnit(index, false));
             index++;
         }
-        gref = gref->next();
     }
 }
 
@@ -101,19 +99,15 @@ void ArrowFormation::AddMasterToSlot()
 {
     Unit* followTarget = AI_VALUE(Unit*, "follow target");
     Group* group = bot->GetGroup();
-    GroupReference *gref = group->GetFirstMember();
     uint32 index = 0;
-    while (gref)
+    for (Player* member : LiveGroupMembers(group))
     {
-        Player* member = gref->GetSource();
-
         if (member == followTarget)
         {
             FindSlot(member)->InsertAtCenter(masterUnit = new FormationUnit(index, true));
             break;
         }
 
-        gref = gref->next();
         index++;
     }
 }

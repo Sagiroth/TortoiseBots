@@ -1,4 +1,5 @@
 
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "MoveToTravelTargetAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -32,9 +33,8 @@ bool MoveToTravelTargetAction::Execute(Event& event)
     Group* group = bot->GetGroup();
     if (ai->IsGroupLeader() && !urand(0, 1) && !bot->IsInCombat())
     {
-        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        for (Player* member : LiveGroupMembers(group))
         {
-            Player* member = ref->GetSource();
             if (member == bot)
                 continue;
 

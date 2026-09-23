@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/GroupMembers.h"
 #include "playerbot/PlayerbotAI.h"
 #include "GenericActions.h"
 
@@ -63,10 +64,9 @@ namespace ai
             Group* group = bot->GetGroup();
             if (!group)
                 return false;
-            for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            for (Player* member : LiveGroupMembers(group))
             {
-                Player* member = ref->getSource();
-                if (!member || member == bot || !member->IsAlive() || member->GetMapId() != bot->GetMapId())
+                if (member == bot || !member->IsAlive() || member->GetMapId() != bot->GetMapId())
                     continue;
                 switch (member->GetClass())
                 {
@@ -85,10 +85,9 @@ namespace ai
             Group* group = bot->GetGroup();
             if (!group)
                 return false;
-            for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            for (Player* member : LiveGroupMembers(group))
             {
-                Player* member = ref->getSource();
-                if (member && member != bot && member->IsAlive() && member->GetMapId() == bot->GetMapId() && member->IsInCombat())
+                if (member != bot && member->IsAlive() && member->GetMapId() == bot->GetMapId() && member->IsInCombat())
                     return true;
             }
             return false;

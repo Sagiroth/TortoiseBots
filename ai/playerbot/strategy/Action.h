@@ -168,6 +168,21 @@ namespace ai
             NextAction::destroy(continuers);
         }
 
+        // Engine-owned copy. Strategy action-node factories cache and own the
+        // nodes they hand out, so the engine must never delete one of those
+        // directly: the factory kept the freed pointer and the next lookup
+        // double-freed it (heap corruption, SIGABRT on .bot action commands).
+        // Callers that queue or delete a node take a copy and own it; the
+        // NextAction arrays are cloned so each side destroys only its own.
+        ActionNode(ActionNode const& other)
+        {
+            this->action = other.action;
+            this->name = other.name;
+            this->prerequisites = NextAction::clone(other.prerequisites);
+            this->alternatives = NextAction::clone(other.alternatives);
+            this->continuers = NextAction::clone(other.continuers);
+        }
+
     public:
         Action* getAction() { return action; }
         void setAction(Action* action) { this->action = action; }

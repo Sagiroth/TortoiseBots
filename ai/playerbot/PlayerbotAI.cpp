@@ -1,3 +1,4 @@
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/PerformanceMonitor.h"
 #include <stdarg.h>
@@ -12,6 +13,7 @@
 #include "../../runtime/ObservabilityEmitter.h"
 #include "../../runtime/BotActivityLease.h"
 #include "ByteBuffer.h"
+#include "ObjectAccessor.h"
 
 #include "Movement/MovementGenerator.h"
 #include "Maps/GridNotifiers.h"
@@ -331,9 +333,13 @@ Player* PlayerbotAI::GetGroupMaster()
 
         // 3. If the group leader is a bot, look for any real player in the group.
         // A human player in the party always takes authority over a bot leader.
-        for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+        // Iterate the Group's own member slots (ObjectGuids) and resolve each
+        // through the ObjectAccessor: a Player* from the GroupReference list can
+        // outlive the Player object during a headless bot's relogin window, and
+        // dereferencing it reads freed memory (issue #225).
+        for (Group::MemberSlot const& slot : group->GetMemberSlots())
         {
-            Player* member = gref->GetSource();
+            Player* member = ObjectAccessor::FindPlayer(slot.guid);
             if (member && member->IsInWorld() && IsRealPlayer(member))
                 return member;
         }
@@ -1792,12 +1798,12 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
         Group* group = bot->GetGroup();
         if (group)
         {
-            for (GroupReference *ref = group->GetFirstMember(); ref; ref = ref->next())
+            for (Player* member : LiveGroupMembers(group))
             {
-                if (ref->GetSource() == master)
+                if (member == master)
                     continue;
 
-                if (ref->GetSource() == bot)
+                if (member == bot)
                     break;
 
                 index++;
@@ -2402,15 +2408,22 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
         // If this bot is group leader and there is a real player in the group, yield leadership to the real player.
         if (group->IsLeader(bot->GetObjectGuid()))
         {
-            for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+            // Resolve the new leader through the Group's member slots before any
+            // change: the GroupReference list can hand out a Player* that is
+            // already freed during a headless bot's relogin window (issue #225),
+            // and mutating the group mid-iteration is unsafe regardless.
+            ObjectGuid realPlayerGuid;
+            for (Group::MemberSlot const& slot : group->GetMemberSlots())
             {
-                Player* member = gref->GetSource();
+                Player* member = ObjectAccessor::FindPlayer(slot.guid);
                 if (member && member->IsInWorld() && IsRealPlayer(member))
                 {
-                    group->ChangeLeader(member->GetObjectGuid());
+                    realPlayerGuid = slot.guid;
                     break;
                 }
             }
+            if (!realPlayerGuid.IsEmpty())
+                group->ChangeLeader(realPlayerGuid);
         }
 
         if (!master || !HasActivePlayerMaster())
@@ -2420,9 +2433,8 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
 
             // Are there any non-bot players in the group?
             if (!newMaster || !IsRealPlayer(newMaster))
-                for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+                for (Player* member : LiveGroupMembers(group))
                 {
-                    Player* member = gref->GetSource();
 
                     if (!member)
                         continue;
@@ -3031,14 +3043,13 @@ std::vector<Player*> PlayerbotAI::GetPlayersInGroup()
     if (!group)
         return members;
 
-    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    for (Player* member : LiveGroupMembers(group))
     {
-        Player* member = ref->GetSource();
 
         if (PlayerbotAIStorage::Instance().GetAI(member) && !PlayerbotAIStorage::Instance().GetAI(member)->IsRealPlayer())
             continue;
 
-        members.push_back(ref->GetSource());
+        members.push_back(member);
     }
 
     return members;
@@ -5752,9 +5763,8 @@ ActivePiorityType PlayerbotAI::GetPriorityType()
     Group* group = bot->GetGroup();
     if (group)
     {
-        for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+        for (Player* member : LiveGroupMembers(group))
         {
-            Player* member = gref->GetSource();
 
             if (!member || !member->IsInWorld())
                 continue;
@@ -8007,9 +8017,8 @@ uint32 PlayerbotAI::GetBuffedCount(Player* player, std::string spellname)
 
     if (group)
     {
-        for (GroupReference *gref = group->GetFirstMember(); gref; gref = gref->next())
+        for (Player* member : LiveGroupMembers(group))
         {
-            Player* member = gref->GetSource();
             if (!member || !member->IsInWorld() && member->GetMapId() != bot->GetMapId())
                 continue;
 

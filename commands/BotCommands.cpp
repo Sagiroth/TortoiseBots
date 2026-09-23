@@ -2363,6 +2363,7 @@ static bool HandleAction(ChatHandler* handler, char const* args)
         ? "bot:" + std::string(context.selectedBot->GetName()) : "party";
     SendActionAck(handler, intent, scopeName, succeeded,
         intent == "aoe" || intent == "loot" ? aoeState : "");
+    return true;
 }
 
 static bool HandleRaidAction(ChatHandler* handler, BotCommandContext const& context, Player* requester, std::string const& intent)

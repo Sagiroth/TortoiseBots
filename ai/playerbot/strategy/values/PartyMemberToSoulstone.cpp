@@ -1,3 +1,4 @@
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "PartyMemberToSoulstone.h"
 #include "playerbot/ServerFacade.h"
@@ -53,9 +54,8 @@ private:
 
 static bool HasOtherWarlockInGroup(Player* bot, Group* group)
 {
-    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    for (Player* member : LiveGroupMembers(group))
     {
-        Player* member = ref->GetSource();
         if (!member || member == bot)
             continue;
         if (member->GetClass() == CLASS_WARLOCK)

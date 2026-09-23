@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/triggers/GenericTriggers.h"
 
 namespace ai
@@ -282,8 +283,8 @@ namespace ai
             Group* group = bot->GetGroup();
             if (group)
             {
-                for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
-                    if (ai->HasAura("spirit link", ref->GetSource(), false, true))
+                for (Player* member : LiveGroupMembers(group))
+                    if (ai->HasAura("spirit link", member, false, true))
                         return false;
             }
             return BuffOnTankTrigger::IsActive() && ai->IsStateActive(BotState::BOT_STATE_COMBAT);
@@ -456,8 +457,8 @@ namespace ai
             Group* group = bot->GetGroup();
             if (group)
             {
-                for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
-                    if (ai->HasAura("earth shield", ref->GetSource(), false, true))
+                for (Player* member : LiveGroupMembers(group))
+                    if (ai->HasAura("earth shield", member, false, true))
                         return false;
             }
             return BuffOnTankTrigger::IsActive();

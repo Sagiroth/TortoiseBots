@@ -6,6 +6,7 @@
  * or (at your option) any later version.
  */
 
+#include "playerbot/GroupMembers.h"
 #include "EstimatedLifetimeValue.h"
 #include "AiFactory.h"
 #include "PlayerbotAI.h"
@@ -37,9 +38,8 @@ float EstimatedGroupDpsValue::Calculate()
     std::vector<Player*> groupPlayer = {bot};
     if (Group* group = bot->GetGroup())
     {
-        for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+        for (Player* member : LiveGroupMembers(group))
         {
-            Player* member = gref->GetSource();
             if (member == bot)  // calculated
                 continue;
 

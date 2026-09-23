@@ -1,4 +1,5 @@
 
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/strategy/Action.h"
 #include "playerbot/strategy/generic/PullStrategy.h"
@@ -31,9 +32,8 @@ bool ShouldPullTrigger::IsActive()
     if (!group)
         return false;
 
-    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    for (Player* member : LiveGroupMembers(group))
     {
-        Player* member = ref->GetSource();
         if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId())
             continue;
 

@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/Strategy.h"
 
 namespace ai
@@ -153,9 +154,8 @@ namespace ai
         if (!group)
             return true;
 
-        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        for (Player* member : LiveGroupMembers(group))
         {
-            Player* member = ref->GetSource();
             if (member == player)
                 continue;
 

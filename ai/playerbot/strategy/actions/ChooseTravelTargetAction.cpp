@@ -1,4 +1,5 @@
 
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/LootObjectStack.h"
 #include "ChooseTravelTargetAction.h"
@@ -579,11 +580,11 @@ bool ChooseGroupTravelTargetAction::Execute(Event& event)
     if (!group)
         return false;
 
-    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    for (Player* member : LiveGroupMembers(group))
     {
-        if (ref->GetSource() != bot)
+        if (member != bot)
         {
-            groupPlayers.push_back(ref->GetSource()->getObjectGuid());
+            groupPlayers.push_back(member->getObjectGuid());
         }
     }
 
