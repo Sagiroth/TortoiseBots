@@ -287,7 +287,7 @@ namespace ai
 
     protected:
         virtual std::string getName() override { return PartyMemberActionNameSupport::getName(); }
-        virtual std::string GetTargetName() override { return "friendly unit without aura"; }
+        virtual std::string GetTargetName() override { return "party member without aura"; }
         virtual std::string GetTargetQualifier() override { return GetSpellName() + "-" + (ignoreTanks ? "1" : "0"); }
 
     protected:

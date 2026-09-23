@@ -53,7 +53,7 @@ Unit* FriendlyUnitWithoutAuraValue::Calculate()
     if (paramPos != std::string::npos)
     {
         auras = qualifier.substr(0, paramPos);
-        ignoreTank = std::stoi(qualifier.substr(paramPos + 1, paramPos + 2));
+        ignoreTank = std::stoi(qualifier.substr(paramPos + 1));
     }
 
     PlayerWithoutAuraPredicate predicate(ai, auras);
@@ -69,7 +69,7 @@ Unit* PartyMemberWithoutAuraValue::Calculate()
     if (paramPos != std::string::npos)
     {
         auras = qualifier.substr(0, paramPos);
-        ignoreTank = std::stoi(qualifier.substr(paramPos + 1, paramPos + 2));
+        ignoreTank = std::stoi(qualifier.substr(paramPos + 1));
     }
 
 	PlayerWithoutAuraPredicate predicate(ai, auras);
@@ -114,11 +114,11 @@ Unit* PartyMemberWithoutMyAuraValue::Calculate()
     if (paramPos != std::string::npos)
     {
         auras = qualifier.substr(0, paramPos);
-        ignoreTank = std::stoi(qualifier.substr(paramPos + 1, paramPos + 2));
+        ignoreTank = std::stoi(qualifier.substr(paramPos + 1));
     }
 
     PlayerWithoutMyAuraPredicate predicate(ai, auras);
-    return FindPartyMember(predicate, false, ignoreTank);
+    return FindPartyMember(predicate, true, ignoreTank);
 }
 
 class TankWithoutAuraPredicate : public FindPlayerPredicate, public PlayerbotAIAware
@@ -158,5 +158,5 @@ private:
 Unit* PartyTankWithoutAuraValue::Calculate()
 {
     TankWithoutAuraPredicate predicate(ai, qualifier);
-    return FindPartyMember(predicate);
+    return FindPartyMember(predicate, true);
 }

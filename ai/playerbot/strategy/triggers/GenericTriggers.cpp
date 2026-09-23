@@ -211,7 +211,7 @@ bool MyBuffTrigger::IsActive()
 Value<Unit*>* BuffOnPartyTrigger::GetTargetValue()
 {
     const std::string qualifier = spell + "-" + (ignoreTanks ? "1" : "0");
-	return context->GetValue<Unit*>("friendly unit without aura", qualifier);
+	return context->GetValue<Unit*>("party member without aura", qualifier);
 }
 
 Value<Unit*>* GreaterBuffOnPartyTrigger::GetTargetValue()

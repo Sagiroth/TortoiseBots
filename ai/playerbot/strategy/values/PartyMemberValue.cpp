@@ -62,7 +62,7 @@ Unit* PartyMemberValue::FindPartyMember(FindPlayerPredicate &predicate, bool ign
         }
     }
 
-    bool allowBufOutOfGroupPlayers = !ignoreOutOfGroup;
+    bool allowBufOutOfGroupPlayers = !ignoreOutOfGroup && !bot->GetGroup() && !master;
 
     if (allowBufOutOfGroupPlayers && !ai->AllowActivity(OUT_OF_PARTY_ACTIVITY))
         allowBufOutOfGroupPlayers = false;
