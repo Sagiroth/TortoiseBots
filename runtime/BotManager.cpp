@@ -701,17 +701,41 @@ void BotManager::RebindOwnedBots(::Player* master)
         return;
 
     ObjectGuid masterGuid = master->GetObjectGuid();
+    uint32 masterAccountId = master->GetSession()->GetAccountId();
+    Group* masterGroup = master->GetGroup();
+
+    if (masterGroup && !masterGroup->IsLeader(masterGuid))
+    {
+        // If the current leader is a headless bot, transfer leadership to the live human player.
+        Player* currentLeader = sObjectMgr.GetPlayer(masterGroup->GetLeaderGuid());
+        if (currentLeader && currentLeader->GetSession() && currentLeader->GetSession()->IsHeadless())
+        {
+            masterGroup->ChangeLeader(masterGuid);
+        }
+    }
+
     for (auto& kv : m_bots)
     {
         BotEntry& entry = kv.second;
-        if (entry.record.masterGuid != masterGuid ||
-            entry.record.lifecycle != BotLifecycle::InWorld)
+        if (entry.record.lifecycle != BotLifecycle::InWorld)
+            continue;
+
+        bool shouldRebind = (entry.record.masterGuid == masterGuid);
+        if (!shouldRebind && masterGroup && masterGroup->IsMember(entry.record.characterGuid))
+        {
+            uint32 botOwner = entry.record.ownerAccountId ? entry.record.ownerAccountId : entry.record.accountId;
+            if (botOwner == masterAccountId || master->GetSession()->GetSecurity() >= SEC_GAMEMASTER)
+                shouldRebind = true;
+        }
+
+        if (!shouldRebind)
             continue;
 
         ::Player* bot = sObjectAccessor.FindPlayer(entry.record.characterGuid);
         if (!bot || !bot->GetSession() || !bot->GetSession()->IsHeadless())
             continue;
 
+        entry.record.masterGuid = masterGuid;
         if (entry.aiAdapter && entry.aiAdapter->IsInitialized())
             entry.aiAdapter->RebindMaster(master);
         else if (PlayerbotAIStorage::Instance().GetAI(bot))

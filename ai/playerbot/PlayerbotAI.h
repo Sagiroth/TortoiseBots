@@ -617,7 +617,7 @@ public:
     // the ack tick skips AI updates (short same-map teleports included).
     uint64_t GetTransitionGeneration() const { return transitionGeneration; }
     //Get the group leader or the master of the bot.
-    Player* GetGroupMaster() { return bot->InBattleGround() ? master : bot->GetGroup() ? (sObjectMgr.GetPlayer(bot->GetGroup()->GetLeaderGuid()) ? sObjectMgr.GetPlayer(bot->GetGroup()->GetLeaderGuid()) : master) : master; }
+    Player* GetGroupMaster();
 
     bool IsGroupLeader() { return bot->GetGroup() && bot->GetGroup()->GetLeaderGuid() == bot->GetObjectGuid(); }
 

@@ -309,6 +309,43 @@ Player* PlayerbotAI::GetLiveMaster()
     return master;
 }
 
+Player* PlayerbotAI::GetGroupMaster()
+{
+    if (bot->InBattleGround())
+        return master;
+
+    Group* group = bot->GetGroup();
+    if (group)
+    {
+        // 1. If the bot already has an active real player master in this group,
+        // that master takes supreme authority.
+        Player* liveMaster = GetLiveMaster();
+        if (liveMaster && IsRealPlayer(liveMaster) && liveMaster->IsInWorld() &&
+            group->IsMember(liveMaster->GetObjectGuid()))
+            return liveMaster;
+
+        // 2. If the group leader is a real player, that leader takes authority.
+        Player* leader = sObjectMgr.GetPlayer(group->GetLeaderGuid());
+        if (leader && leader->IsInWorld() && IsRealPlayer(leader))
+            return leader;
+
+        // 3. If the group leader is a bot, look for any real player in the group.
+        // A human player in the party always takes authority over a bot leader.
+        for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+        {
+            Player* member = gref->GetSource();
+            if (member && member->IsInWorld() && IsRealPlayer(member))
+                return member;
+        }
+
+        // 4. No real player in the group: fall back to the bot group leader.
+        if (leader)
+            return leader;
+    }
+
+    return master;
+}
+
 void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 {
     AiObjectContext* context = aiObjectContext;
@@ -2360,42 +2397,58 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
     }
 
     // test BG master set
-    if (!dungeonCrew && (!master || !HasActivePlayerMaster()) && group && !IsRealPlayer())
+    if (!dungeonCrew && group && !IsRealPlayer())
     {
-        //Ideally we want to have the leader as master.
-        Player* newMaster = GetGroupMaster();
-
-        //Are there any non-bot players in the group?
-        if (!newMaster || PlayerbotAIStorage::Instance().GetAI(newMaster))
+        // If this bot is group leader and there is a real player in the group, yield leadership to the real player.
+        if (group->IsLeader(bot->GetObjectGuid()))
+        {
             for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
             {
                 Player* member = gref->GetSource();
-
-                if (!member)
-                    continue;
-
-                if (member == bot)
-                    continue;
-
-                if (member == newMaster)
-                    continue;
-
-                if (!member->IsInWorld())
-                    continue;
-
-                if (!IsInGroup_Helper(member, bot, true))
-                    continue;
-
-                //Do not make bots your master if they are nog group leader.
-                if (PlayerbotAIStorage::Instance().GetAI(member) && !bot->InBattleGround())
-                    continue;
-
-                if (bot->InBattleGround())
-                    continue;
-
-                newMaster = member;
-                break;
+                if (member && member->IsInWorld() && IsRealPlayer(member))
+                {
+                    group->ChangeLeader(member->GetObjectGuid());
+                    break;
+                }
             }
+        }
+
+        if (!master || !HasActivePlayerMaster())
+        {
+            // Ideally we want to have the real player in the group as master.
+            Player* newMaster = GetGroupMaster();
+
+            // Are there any non-bot players in the group?
+            if (!newMaster || !IsRealPlayer(newMaster))
+                for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+                {
+                    Player* member = gref->GetSource();
+
+                    if (!member)
+                        continue;
+
+                    if (member == bot)
+                        continue;
+
+                    if (member == newMaster)
+                        continue;
+
+                    if (!member->IsInWorld())
+                        continue;
+
+                    if (!IsInGroup_Helper(member, bot, true))
+                        continue;
+
+                    // Do not make bots your master if they are not a real player.
+                    if (!IsRealPlayer(member) && !bot->InBattleGround())
+                        continue;
+
+                    if (bot->InBattleGround())
+                        continue;
+
+                    newMaster = member;
+                    break;
+                }
 
         if (newMaster && (!master || master != newMaster) && bot != newMaster)
         {
@@ -2440,6 +2493,7 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
             }
         }
     }
+}
 
     // fix bots in BG not having proper strategies
     if (bot->InBattleGround() && !HasStrategy("battleground", BotState::BOT_STATE_NON_COMBAT))

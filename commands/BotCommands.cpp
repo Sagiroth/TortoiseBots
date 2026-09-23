@@ -312,6 +312,12 @@ static bool HandleInvite(ChatHandler* handler, char const* args)
     Group* requesterGroup = requester->GetGroup();
     if (requesterGroup && requesterGroup->isBGGroup())
         requesterGroup = requester->GetOriginalGroup();
+    if (requesterGroup && !requesterGroup->IsLeader(requester->GetObjectGuid()))
+    {
+        Player* currentLeader = sObjectMgr.GetPlayer(requesterGroup->GetLeaderGuid());
+        if (currentLeader && currentLeader->GetSession() && currentLeader->GetSession()->IsHeadless())
+            requesterGroup->ChangeLeader(requester->GetObjectGuid());
+    }
     if (requesterGroup && !requesterGroup->IsRaidGroup() &&
         requesterGroup->GetMembersCount() > 4)
     {
@@ -359,6 +365,16 @@ static bool HandleUninvite(ChatHandler* handler, char const* args)
     {
         handler->PSendSysMessage("Usage: .bot uninvite <online bot name> (same account only)");
         return true;
+    }
+
+    Group* requesterGroup = requester->GetGroup();
+    if (requesterGroup && requesterGroup->isBGGroup())
+        requesterGroup = requester->GetOriginalGroup();
+    if (requesterGroup && !requesterGroup->IsLeader(requester->GetObjectGuid()))
+    {
+        Player* currentLeader = sObjectMgr.GetPlayer(requesterGroup->GetLeaderGuid());
+        if (currentLeader && currentLeader->GetSession() && currentLeader->GetSession()->IsHeadless())
+            requesterGroup->ChangeLeader(requester->GetObjectGuid());
     }
 
     WorldPacket packet;
@@ -2111,6 +2127,8 @@ static bool HandleAction(ChatHandler* handler, char const* args)
     }
     else if (intent == "raid status" || intent == "raid tankface" || intent == "raid douse" || intent == "raid custom status" || intent == "raid custom on" || intent == "raid custom off")
         return HandleRaidAction(handler, context, requester, intent);
+    else
+        scope = ResolveDynamicScope(context);
     if (tactical)
     {
         Player* executor = ResolvePullExecutor(context);

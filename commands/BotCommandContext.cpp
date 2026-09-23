@@ -35,6 +35,9 @@ bool CanControlBot(Player* requester, BotRecord const* record)
     if (IsBotAdministrator(requester))
         return true;
 
+    if (record->masterGuid && record->masterGuid == requester->GetObjectGuid())
+        return true;
+
     uint32_t ownerAccount = record->ownerAccountId ? record->ownerAccountId : record->accountId;
     return ownerAccount != 0 && ownerAccount == requester->GetSession()->GetAccountId();
 }
