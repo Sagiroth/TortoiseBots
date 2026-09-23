@@ -217,6 +217,7 @@ void PlayerbotFactory::MakeComplete()
     // item per contested slot and drop the loser plus its orphaned instance
     // row — two indexed statements, idempotent.
     PruneDuplicateEquipRows();
+    EnchantEquipment();
     bot->SaveToDB();
 }
 
@@ -269,6 +270,7 @@ void PlayerbotFactory::ProvisionSpellsAndGear()
         InitPet();
         InitPetSpells();
     }
+    EnchantEquipment();
     bot->SaveToDB();
 }
 
@@ -376,6 +378,7 @@ void PlayerbotFactory::Randomize(bool incremental, bool syncWithMaster)
     }
 
     InitEquipment(incremental, syncWithMaster);
+    EnchantEquipment();
     pmo.reset();
 
     if (isRandomBot)

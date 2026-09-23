@@ -47,6 +47,12 @@ class PlayerbotFactory
 {
 public:
     PlayerbotFactory(Player* bot, uint32 level, uint32 itemQuality = 0) : level(level), itemQuality(itemQuality), bot(bot), ai(PlayerbotAIStorage::Instance().GetAI(bot)) {}
+    virtual ~PlayerbotFactory()
+    {
+        for (auto* enchant : m_EnchantContainer)
+            delete enchant;
+        m_EnchantContainer.clear();
+    }
 
     static void Init();
     void Refresh();
