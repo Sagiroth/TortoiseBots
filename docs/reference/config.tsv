@@ -3,7 +3,7 @@ AiPlayerbot.RandomBotAutoCreate	0	—	—	—	PlayerbotAIConfig + RandomBotServi
 AiPlayerbot.AutoDoQuests	—	—	—	—	AiFactory defaults before overrides	owned/autonomous	—	—	—	pending (census)
 Quest sync directions (both)	differ T/S vs M	—	—	—	—	—	—	—	donor defaults differ; explicit off/on semantics	pending (census)
 RandomBotNonCombatStrategies	empty override does not remove factory defaults	—	—	—	AiFactory.cpp	—	—	—	—	pending (census)
-AH/LFT/BG service switches	default-off, still required scope	—	—	—	services	—	—	—	disabled default is not exclusion	pending (census)
+AH/LFT/BG service switches	LFT/BG default-on, AH default-off; still required scope	—	—	—	services	—	—	—	disabled default is not exclusion	pending (census)
 AiPlayerbot.WorldBuff* (repeated)	commented examples (22888 etc.)	none loaded (GetValues {})	—	live on reload boundary	T: PlayerbotAIConfig.cpp:443-475 loader; F23 synthetic policy	worldbuff	—	—	loader FIXED in M10 (native prefix walk)	fixed-M10 (runtime proof pending)
 TortoiseBots.* test fixtures (AutoTest/PacketBridgeTest/PendingAddRemoveTest)	0	—	—	one-shot	BotHostAdapter + BotManager journeys; verified paths, not re-run here	operator	—	—	—	pending-runtime
 TortoiseBots.LogLevel	2 (was 1, never read)	—	—	yes: WORLDHOOK_ON_AFTER_CONFIG_LOAD	ModuleLog::ApplyConfig; gates TB_LOG_BASIC/DETAIL/DEBUG across host/+runtime/	operator	0-3	—	—	fixed (branch feat/module-log-level)
