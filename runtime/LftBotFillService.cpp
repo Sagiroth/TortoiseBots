@@ -141,7 +141,8 @@ void LftBotFillService::Initialize()
 
     if (!sPlayerbotAIConfig.enabled || !sPlayerbotAIConfig.randomBotLftEnabled)
     {
-        TB_LOG_BASIC("TortoiseBots: LFT fill disabled (ai %u lft %u)", sPlayerbotAIConfig.enabled, sPlayerbotAIConfig.randomBotLftEnabled);
+        TB_LOG_BASIC("TortoiseBots: LFT random fill disabled (ai %u lft %u); own-party offer acceptance stays on",
+            sPlayerbotAIConfig.enabled, sPlayerbotAIConfig.randomBotLftEnabled);
         return;
     }
     TB_LOG_BASIC("TortoiseBots: LFT fill enabled interval %u max %u (observe GetQueuedPlayers, native QueuePlayer/offers, reconcile)",
