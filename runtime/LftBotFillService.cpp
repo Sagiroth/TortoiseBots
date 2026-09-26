@@ -384,8 +384,8 @@ void LftBotFillService::AcceptPartyBotOffers()
 {
     // Own-party acceptance: a real player queued LFT in a party with their own
     // managed bots (alts/hires, non-random). The core auto-answers the
-    // rolecheck for them (rolecheck hook: forced role, then live strategies
-    // TANK > HEALER > DPS, then AiFactory spec/gear), but the formed offer
+    // rolecheck for them (rolecheck hook: forced role, then named combat
+    // specs, then AiFactory spec/gear), but the formed offer
     // still needs every member to accept.
     // Accept only those: managed bot, in an offer, not fill-owned, whose
     // master or group leader is a real (network) player in the same offer.

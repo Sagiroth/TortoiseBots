@@ -42,27 +42,49 @@ uint8 BotPlayerAdapter::GetBotRoles(Player* who)
         return 0;
     if (!BotManager::Instance().IsBot(who->GetObjectGuid()))
         return 0;
-    // TBM role/spec buttons drive live combat strategies, not the forced
-    // role: only the tank button sends `.bot role` (HandleRole). A managed
-    // companion with an active real-player master answers from those live
-    // strategies first (TANK > HEALER > DPS over every engine, the same
-    // ContainsStrategy the combat code reads in IsTank/IsHeal). The order
-    // matters for hybrids: priest `+holy,+offdps` carries HEAL (+offdps is
-    // GENERIC, and the ambient `dps assist` is DPS) so it answers HEALER.
+    // TBM role/spec buttons send mature spec changes (`.bot command <Name>
+    // <strat>` -> HandleMatureCommand -> HandleCommand whisper queue ->
+    // reaction "co" trigger -> ChangeCombatStrategyAction on BOT_STATE_COMBAT
+    // only). So the click lands in the combat engine alone; the non-combat
+    // engine keeps install-time strategies (e.g. `protection`/`tank assist`
+    // from AddDefaultNonCombatStrategies) no matter what the player clicks.
+    // The rolecheck therefore reads combat-engine NAMED specs, never ambient
+    // helpers: `tank assist`/`dps assist` carry TANK/DPS bits but are added
+    // next to every spec and are never removed by `-protection` etc, so a
+    // bit test over every engine answers TANK forever after one tank click.
     // Forced roles (storage override or AI) still win outright; without them
-    // and without any role-typed live strategy the talent/spec auto-detect
-    // applies.
+    // and without a named combat spec the talent/spec auto-detect applies.
     if (PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(who))
         if (botAi->HasActivePlayerMaster() &&
             PlayerbotAIStorage::Instance().GetPlayerForcedRole(who->GetObjectGuid()) == 0 &&
             botAi->GetForcedRole() == 0)
         {
-            if (botAi->ContainsStrategy(ai::STRATEGY_TYPE_TANK))
+            // TANK: installed only by a tank click (`+protection`,
+            // `+tank feral`) or install-time prot/feral defaults.
+            if (botAi->HasStrategy("protection", BotState::BOT_STATE_COMBAT) ||
+                botAi->HasStrategy("tank feral", BotState::BOT_STATE_COMBAT) ||
+                botAi->HasStrategy("bear", BotState::BOT_STATE_COMBAT) ||
+                botAi->HasStrategy("tank", BotState::BOT_STATE_COMBAT))
                 return static_cast<uint8>(ai::BOT_ROLE_TANK);
-            if (botAi->ContainsStrategy(ai::STRATEGY_TYPE_HEAL))
+            // HEALER: holy/discipline/restoration (plus legacy heal/resto).
+            if (botAi->HasStrategy("holy", BotState::BOT_STATE_COMBAT) ||
+                botAi->HasStrategy("discipline", BotState::BOT_STATE_COMBAT) ||
+                botAi->HasStrategy("restoration", BotState::BOT_STATE_COMBAT) ||
+                botAi->HasStrategy("heal", BotState::BOT_STATE_COMBAT) ||
+                botAi->HasStrategy("resto", BotState::BOT_STATE_COMBAT))
                 return static_cast<uint8>(ai::BOT_ROLE_HEALER);
-            if (botAi->ContainsStrategy(ai::STRATEGY_TYPE_DPS))
-                return static_cast<uint8>(ai::BOT_ROLE_DPS);
+            // DPS: named combat specs only. Ambient `dps assist` is ignored on
+            // purpose: it rides along with every spec including healers, and a
+            // bare assist set (no spec) falls through to auto-detect.
+            static char const* const dpsSpecs[] = { "arms", "fury",
+                "retribution", "beast mastery", "marksmanship", "survival",
+                "combat", "assassination", "subtlety", "shadow",
+                "elemental", "enhancement", "frost", "fire", "arcane",
+                "affliction", "demonology", "destruction", "dps feral",
+                "balance", "cat" };
+            for (char const* spec : dpsSpecs)
+                if (botAi->HasStrategy(spec, BotState::BOT_STATE_COMBAT))
+                    return static_cast<uint8>(ai::BOT_ROLE_DPS);
         }
     return static_cast<uint8>(AiFactory::GetPlayerRoles(who));
 }

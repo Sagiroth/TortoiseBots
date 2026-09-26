@@ -21,7 +21,7 @@ namespace TortoiseBots
 // service auto-accepts its own Headless participants and, independently of the
 // fill switch, managed party bots whose real-player master/group leader shares
 // the offer (rolecheck answers come from the rolecheck hook: forced role,
-// then live strategies, then AiFactory spec/gear). Unknown dungeon ranges
+// then named combat specs, then AiFactory spec/gear). Unknown dungeon ranges
 // fail closed. No second queue, DB tick, addon protocol, or role hook.
 class LftBotFillService
 {

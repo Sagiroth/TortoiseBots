@@ -518,14 +518,14 @@ Config: `AiPlayerbot.RandomBotLftEnabled=1` (set `0` to opt out),
 Random fill is demand-driven only: no human waiting means queued fill bots are
 pulled back out. A human queuing with their own party bots works with the
 switch on or off: the core auto-answers the rolecheck from the rolecheck hook
-(`BotPlayerAdapter::GetBotRoles` — explicit forced role first, then the bot's
-live combat strategies TANK > HEALER > DPS, then `AiFactory` spec/gear fallback)
-and the service auto-accepts the offer for managed non-random bots whose master/group
+(`BotPlayerAdapter::GetBotRoles` — explicit forced role first, then named
+combat specs, then `AiFactory` spec/gear fallback; ambient `tank assist` /
+`dps assist` ignored) and the service auto-accepts the offer for managed non-random bots whose master/group
 leader is a real player in the same offer, on the existing update cadence —
 no per-bot-tick world scans, no fill leases or forced roles for party bots, and
 fill-owned entries are never touched by the party path. So the addon role/spec
-buttons drive the rolecheck (tank button via `.bot role`, the rest via live
-strategies). No teleport or summon
+buttons drive the rolecheck (tank button via `.bot role`, the rest via named
+combat specs). No teleport or summon
 exists on either path: after the group forms the party walks (follow) to the
 portal, so `.bot summon` stragglers first.
 
