@@ -162,7 +162,7 @@ AiPlayerbot.EnableRandomTeleports = 1
 # Default 0 (blocked, normalized to mainland starter zones).
 AiPlayerbot.AllowIsolatedCustomStartingZones = 0
 
-# Default-off bounded fill of human-waiting LFT queues with live random Headless bots.
+# Default-on bounded fill of human-waiting LFT queues with live random Headless bots.
 # Uses core #416 QueuePlayer/LeaveQueue/IsQueued/IsInOffer/AcceptOffer/
 # GetQueuedPlayers; core owns private queues, offers, cancellation and groups.
 # Candidates use AiFactory roles and the hardcoded Soromeister LFT.allDungeons
@@ -170,8 +170,8 @@ AiPlayerbot.AllowIsolatedCustomStartingZones = 0
 # not an average-human +/-5 approximation. Unknown/corrupt/custom ranges fail
 # closed and log once.
 # Rate-limited/reconciled; no role hook, addon-string injection, private-map access,
-# second queue, or DB query per tick. Requires #411 Headless and #416. Default 0.
-#AiPlayerbot.RandomBotLftEnabled = 0
+# second queue, or DB query per tick. Requires #411 Headless and #416. Default 1.
+#AiPlayerbot.RandomBotLftEnabled = 1
 #AiPlayerbot.RandomBotLftUpdateInterval = 15000
 #AiPlayerbot.RandomBotLftMaxFillsPerInterval = 1
 # Issue #189: allow the LFT fill to respec a bot into a missing role (role

@@ -85,13 +85,13 @@ These flags control the behavior of autonomous random bots roaming the world:
 
 ---
 
-## 3. Autonomous Services (Default OFF)
+## 3. Autonomous Services
 
-All autonomous services are fully bounded and disabled by default. Enable only the services you need:
+All autonomous services are fully bounded. LFT autofill is on by default; the AH market and battleground queue stay off unless enabled:
 
 | Enable with | Default | Description |
 | :--- | :---: | :--- |
-| `AiPlayerbot.RandomBotLftEnabled = 1` | `0` | **LFT Dungeon Autofill:** When real players queue for Looking-For-Trouble dungeons and wait for missing roles (e.g. Tank or Healer), eligible bots fill the vacant slots and run the instance. |
+| `AiPlayerbot.RandomBotLftEnabled = 1` | `1` | **LFT Dungeon Autofill (on by default; set `0` to opt out):** When real players queue for Looking-For-Trouble dungeons and wait for missing roles (e.g. Tank or Healer), eligible bots fill the vacant slots. Fill is demand-driven only — bots never queue without a waiting human. Your own party bots queue with you and auto-accept the dungeon offer (works with the switch on or off); after the group forms the party walks to the portal together, so `.bot summon` stragglers — there is no automatic teleport. |
 | `AiPlayerbot.AhMarketEnabled = 1` | `0` | **Living Auction House:** Bots post gathered trade goods and bind-on-equip gear on the Auction House, and bid on/buyout items using real player pricing models. |
 | `AiPlayerbot.RandomBotBgEnabled = 1` | `0` | **Battleground Auto-Queue:** Injects random bots into Warsong Gulch, Arathi Basin, and Alterac Valley when human players queue. |
 

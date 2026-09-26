@@ -489,7 +489,7 @@ only to satisfy a donor interface.
 The completed audit removed or disabled several such compatibility surfaces;
 evidence is preserved in Git history and `PROVENANCE.md`.
 
-## 16. LFT queue integration (optional, default-off)
+## 16. LFT queue integration (optional, default-on)
 
 `LftBotFillService` observes the copy-only generic LFT API merged with the
 participant primitives ([#438](https://github.com/tortoise-wow/tortoise-wow/pull/438))
@@ -497,7 +497,9 @@ and never owns `m_queue`, offers, groups, or a second queue.
 The service actually uses only `GetQueuedPlayers`, `QueuePlayer`, `LeaveQueue`,
 `IsQueued`, `IsInOffer`, and `AcceptOffer`; core retains all offer,
 acceptance, cancellation, and group-formation semantics. `AcceptOffer` is
-called only for module-owned Headless participants; humans still accept
+called only for module-owned Headless participants (fill-owned bots in
+`m_pending`, plus a human's own non-random party bots whose master/group
+leader is a real player in the same offer); humans still accept
 through the native addon path.
 
 Candidates are filtered in memory by team, hardcore state, group/live state,
@@ -510,9 +512,19 @@ role hook, private-map access, addon-string injection, or DB query per tick.
 Forced roles are cleared on pending exit paths, and reconciliation runs even
 when the fill budget is zero.
 
-Config: `AiPlayerbot.RandomBotLftEnabled=0`,
+Config: `AiPlayerbot.RandomBotLftEnabled=1` (set `0` to opt out),
 `AiPlayerbot.RandomBotLftUpdateInterval=15000`,
 `AiPlayerbot.RandomBotLftMaxFillsPerInterval=1`.
+Random fill is demand-driven only: no human waiting means queued fill bots are
+pulled back out. A human queuing with their own party bots works with the
+switch on or off: the core auto-answers the rolecheck from
+`AiFactory::GetPlayerRoles` (forced role first, spec/gear fallback) and the
+service auto-accepts the offer for managed non-random bots whose master/group
+leader is a real player in the same offer, on the existing update cadence —
+no per-bot-tick world scans, no fill leases or forced roles for party bots, and
+fill-owned entries are never touched by the party path. No teleport or summon
+exists on either path: after the group forms the party walks (follow) to the
+portal, so `.bot summon` stragglers first.
 
 ## 17. AH market population (optional, default-off)
 

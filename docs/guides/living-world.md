@@ -129,10 +129,15 @@ Administrators can inspect and tune the synthetic market pass using in-game comm
 ## 6. Automated Dungeon & Battleground Queues
 
 ### Looking-For-Trouble (LFT) Dungeon Autofill
-* Config: **`AiPlayerbot.RandomBotLftEnabled = 1`**
-* When human players queue in the LFT tool and sit waiting for missing roles (especially Tanks or Healers), the module checks idle random bots in the world matching that level bracket.
-* Eligible bots auto-queue, accept the dungeon invite, and teleport into the instance to run the dungeon with the human group.
+* Config: **`AiPlayerbot.RandomBotLftEnabled = 1`** (on by default; set `0` to opt out)
+* When human players queue in the LFT tool and sit waiting for missing roles (especially Tanks or Healers), the module checks idle random bots in the world matching that level bracket. Random bots only fill while a real human waits — never autonomously.
+* Eligible bots auto-queue and accept the dungeon invite; the group then walks to the dungeon together (bots follow their master into the portal via the master's area-trigger). There is **no teleport or summon**: bots far from the portal need `.bot summon`.
 * Role match is fail-closed on each bot's own spec: a tank slot needs a natural tank with a shield actually equipped (best shield from bags is equipped first), a druid tank needs bear form, a healer needs healing spells. A missing role stays empty with a logged skip reason instead of being filled badly. Set `AiPlayerbot.RandomBotLftAllowRoleBorrow = 1` only to opt back into respec-into-role borrowing.
+
+### Dungeons With Your Own Party Bots
+* Queue in the LFT tool with your own managed bots in the party (alts/hires): the core auto-answers the rolecheck for them with the role you set (`.bot role <Name> <tank|healer|dps|clear>`, or the TBM party-frame role buttons, which send the same `.bot role` command; a human's own `role self` override works the same way), falling back to automatic spec/gear detection when no role is set.
+* Your bots **auto-accept the dungeon offer** on the fill service's tick cadence, so the 90s native offer timer no longer expires on them. This works whether `RandomBotLftEnabled` is on or off; the random-fill switch only gates random-pool fill, not your party.
+* After the group forms, bots follow you to the portal — bring them along or `.bot summon` stragglers first, since there is no automatic teleport.
 
 ### Battleground Auto-Queue
 * Config: **`AiPlayerbot.RandomBotBgEnabled = 1`**
