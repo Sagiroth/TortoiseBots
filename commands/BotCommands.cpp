@@ -261,6 +261,7 @@ static bool HandleVersion(ChatHandler* handler)
     // Any player may ask; the version is public build metadata, not control.
     handler->PSendSysMessage("TortoiseBots %s", BuildVersion().c_str());
     handler->PSendSysMessage("TBM:VERSION|%s", BuildVersion().c_str());
+    handler->PSendSysMessage("%s", AttributionLine().c_str());
     return true;
 }
 
@@ -3106,7 +3107,7 @@ bool HandleChatCommand(ChatHandler* handler, char const* args)
     while (*args == ' ' || *args == '\t') ++args;
     if (!*args)
     {
-        handler->PSendSysMessage("Usage: .bot add/remove/logout/roster/action/follow/invite/uninvite/kick/stay/guard/free/ready/attack/interrupt/formation/list/stats/status/lease/version/pullback/role/summon/command/hire/loot/repair/sell/rest/drink/eat/release/corpse run/learn/trade/strategy/ah/pool");
+        handler->PSendSysMessage("Usage: .bot add/remove/logout/roster/action/follow/invite/uninvite/kick/stay/guard/free/ready/attack/interrupt/formation/list/stats/status/lease/version/about/pullback/role/summon/command/hire/loot/repair/sell/rest/drink/eat/release/corpse run/learn/trade/strategy/ah/pool");
         return true;
     }
 
@@ -3164,7 +3165,7 @@ bool HandleChatCommand(ChatHandler* handler, char const* args)
         return HandleStatus(handler, subArgs);
     if (cmd == "lease")
         return HandleLease(handler, subArgs);
-    if (cmd == "version" || cmd == "v")
+    if (cmd == "version" || cmd == "v" || cmd == "about" || cmd == "credits")
         return HandleVersion(handler);
     if (cmd == "pullback" || cmd == "pull-back")
         return HandlePullback(handler, subArgs);

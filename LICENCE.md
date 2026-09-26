@@ -29,6 +29,24 @@ including its Corresponding Source requirement for network use. The donor
 compatibility audit is still open; do not rely on the target core's licence
 alone to resolve an incompatible or unclear donor grant.
 
+## Attribution (author notice)
+
+TortoiseBots is created and maintained by **Sagiroth**
+(<https://github.com/Sagiroth/TortoiseBots>).
+
+The module shows this attribution as its Appropriate Legal Notice (AGPL-3.0
+section 5(d)): in the worldserver startup log, in a login message to every
+player, and from `.bot version` / `.bot about`. Under AGPL-3.0 section 7(b), for
+original TortoiseBots work, the following additional term applies:
+
+> Modified versions, forks, repacks and bundles must preserve these author
+> attributions and the source link, and must not remove or hide them from
+> the places listed above. You may add your own credit alongside them.
+
+Distributing or publicly showing a build (for example a Docker bundle, repack,
+video or public server) should also credit TortoiseBots by Sagiroth with a link
+to the repository. See the README for ready-to-paste credit text.
+
 ## Donor / reference projects
 
 | Project | Licence | Notes |
@@ -48,6 +66,8 @@ licence text.
   not assume GPL-2.0-only and GPL-2.0-or-later are interchangeable.
 * Do not distribute or operate a combined build until the donor compatibility
   matrix is complete and every included grant is compatible with AGPL-3.0.
+* Keep the TortoiseBots author attribution and source link intact (see
+  *Attribution* above).
 * Keep notices intact and record substantial ports in
   [`docs/PROVENANCE.md`](docs/PROVENANCE.md).
 * Track evidence and unresolved items in
