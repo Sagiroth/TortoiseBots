@@ -4,7 +4,7 @@
 
 ### Dungeon Finder
 - `AiPlayerbot.RandomBotLftEnabled` is now **on by default** (code fallback + template `= 1`); set `0` to opt out. Demand-driven policy unchanged: random bots only queue while a real human waits.
-- Your own party bots can now dungeon with you: queue LFT with your alts/hires in the party, they answer the rolecheck with your `.bot role` setting (spec/gear auto-detect fallback) and auto-accept the dungeon offer before the 90s timer expires. Works with the random-fill switch on or off.
+- Your own party bots can now dungeon with you: queue LFT with your alts/hires in the party, they answer the rolecheck from your forced role, else your role/spec buttons (live strategies TANK > HEALER > DPS), else spec/gear auto-detect — and auto-accept the dungeon offer before the 90s timer expires. Works with the random-fill switch on or off.
 - No teleport or summon automation: after the group forms the party walks to the portal (bots follow you in), so `.bot summon` stragglers first. Docs no longer claim bots teleport into the instance or run it by themselves.
 
 ## 2026-09-25

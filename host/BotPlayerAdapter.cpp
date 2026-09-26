@@ -42,6 +42,28 @@ uint8 BotPlayerAdapter::GetBotRoles(Player* who)
         return 0;
     if (!BotManager::Instance().IsBot(who->GetObjectGuid()))
         return 0;
+    // TBM role/spec buttons drive live combat strategies, not the forced
+    // role: only the tank button sends `.bot role` (HandleRole). A managed
+    // companion with an active real-player master answers from those live
+    // strategies first (TANK > HEALER > DPS over every engine, the same
+    // ContainsStrategy the combat code reads in IsTank/IsHeal). The order
+    // matters for hybrids: priest `+holy,+offdps` carries HEAL (+offdps is
+    // GENERIC, and the ambient `dps assist` is DPS) so it answers HEALER.
+    // Forced roles (storage override or AI) still win outright; without them
+    // and without any role-typed live strategy the talent/spec auto-detect
+    // applies.
+    if (PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(who))
+        if (botAi->HasActivePlayerMaster() &&
+            PlayerbotAIStorage::Instance().GetPlayerForcedRole(who->GetObjectGuid()) == 0 &&
+            botAi->GetForcedRole() == 0)
+        {
+            if (botAi->ContainsStrategy(ai::STRATEGY_TYPE_TANK))
+                return static_cast<uint8>(ai::BOT_ROLE_TANK);
+            if (botAi->ContainsStrategy(ai::STRATEGY_TYPE_HEAL))
+                return static_cast<uint8>(ai::BOT_ROLE_HEALER);
+            if (botAi->ContainsStrategy(ai::STRATEGY_TYPE_DPS))
+                return static_cast<uint8>(ai::BOT_ROLE_DPS);
+        }
     return static_cast<uint8>(AiFactory::GetPlayerRoles(who));
 }
 
