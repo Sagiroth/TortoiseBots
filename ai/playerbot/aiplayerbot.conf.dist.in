@@ -227,7 +227,7 @@ AiPlayerbot.AhMarketTimeMax = 24
 # Currently has no effect (read but unused).
 AiPlayerbot.AhMarketValueVendor = 1
 
-# Demand-aware WSG/AB/AV queue participation for live Headless RNDBOTs. Default off.
+# Demand-aware WSG/AB/AV queue participation for live Headless RNDBOTs. Default on.
 # Uses the native BattleGroundJoinAction/WorldSession handler path and the
 # copy-only BattleGroundMgr queued-participant snapshot from core #416. No
 # human-waiting queue means no bot queueing; otherwise bots match the observed
@@ -238,7 +238,7 @@ AiPlayerbot.AhMarketValueVendor = 1
 # the per-interval budget is 0..10. No second queue/thread, DB scan, arena,
 # vehicle, or expansion BG behavior. Master-reclaim reconciliation only removes
 # queue entries owned by this service. Requires core #411 and #416.
-#AiPlayerbot.RandomBotBgEnabled = 0
+#AiPlayerbot.RandomBotBgEnabled = 1
 #AiPlayerbot.RandomBotBgQueueInterval = 30000
 #AiPlayerbot.RandomBotBgMaxQueuePerInterval = 1
 

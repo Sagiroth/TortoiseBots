@@ -85,15 +85,15 @@ These flags control the behavior of autonomous random bots roaming the world:
 
 ---
 
-## 3. Autonomous Services (Default OFF)
+## 3. Autonomous Services
 
-All autonomous services are fully bounded and disabled by default. Enable only the services you need:
+All autonomous services are fully bounded. LFT autofill and the AH market are disabled by default — enable only the services you need. Battleground auto-queue is on by default:
 
 | Enable with | Default | Description |
 | :--- | :---: | :--- |
 | `AiPlayerbot.RandomBotLftEnabled = 1` | `0` | **LFT Dungeon Autofill:** When real players queue for Looking-For-Trouble dungeons and wait for missing roles (e.g. Tank or Healer), eligible bots fill the vacant slots and run the instance. |
 | `AiPlayerbot.AhMarketEnabled = 1` | `0` | **Living Auction House:** Bots post gathered trade goods and bind-on-equip gear on the Auction House, and bid on/buyout items using real player pricing models. |
-| `AiPlayerbot.RandomBotBgEnabled = 1` | `0` | **Battleground Auto-Queue:** Injects random bots into Warsong Gulch, Arathi Basin, and Alterac Valley when human players queue. |
+| `AiPlayerbot.RandomBotBgEnabled = 1` | `1` | **Battleground Auto-Queue (on by default):** Injects random bots into Warsong Gulch, Arathi Basin, and Alterac Valley when human players queue. Set `0` to opt out. Your own party bots queue with you via Join as Group (WSG/AB; AV is solo-only in the core) and auto-accept the invite regardless of this toggle. |
 
 ---
 

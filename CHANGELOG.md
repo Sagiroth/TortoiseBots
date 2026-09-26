@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Battlegrounds
+
+- `AiPlayerbot.RandomBotBgEnabled` is now **on by default** (code fallback + template `= 1`); set `0` to opt out. Demand-driven policy unchanged: random bots only queue while a real human waits.
+- Your own party bots can now BG with you: Join as Group at the battlemaster (WSG/AB; AV rejects group joins in the core, queue solo), bots auto-accept the invite and run BG strategies. The queue service leaves non-owned entries alone and counts only real humans as demand.
+
 ## 2026-09-25
 
 ### Combat & AI
