@@ -140,9 +140,14 @@ Administrators can inspect and tune the synthetic market pass using in-game comm
 * After the group forms, bots follow you to the portal — bring them along or `.bot summon` stragglers first, since there is no automatic teleport.
 
 ### Battleground Auto-Queue
-* Config: **`AiPlayerbot.RandomBotBgEnabled = 1`**
+* Config: **`AiPlayerbot.RandomBotBgEnabled = 1`** (on by default; set `0` to opt out)
 * Monitors PvP queues for **Warsong Gulch (WSG)**, **Arathi Basin (AB)**, and **Alterac Valley (AV)**.
-* When real players queue up, random bots queue to balance faction team sizes and launch the battleground, allowing you to play active PvP battlegrounds even on low-population private servers.
+* When real players queue up, random bots queue to balance faction team sizes and launch the battleground, allowing you to play active PvP battlegrounds even on low-population private servers. Random bots only queue while a real human waits in the queue — never autonomously.
+
+### Battlegrounds With Your Own Party Bots
+* Queue at the battlemaster with **Join as Group**: the core group-join check passes headless bot members like any player (same team, in world, level bracket, no deserter), so your party — you plus your own managed bots — enters the queue together. **WSG and AB** support group joins; **AV rejects group joins in the core**, so queue AV solo alongside your bots instead.
+* Your bots **auto-accept the BG invite** (`STATUS_WAIT_JOIN` → port) through the same `bg status` packet action random bots use, then drop `follow` and run the per-map BG strategies (`warsong`/`arathi`/`alterac` + `pvp`) for the duration of the match.
+* The auto-queue service never touches your party bots: master-reclaim reconciliation and lease eviction only cancel queue entries the service itself queued, and human-demand accounting counts only non-headless real players — your bots (or random fill bots) never create fake demand.
 
 ---
 

@@ -659,7 +659,7 @@ Related-data handling keeps the core bot-agnostic and needs **no core change**:
   groups, instances, petitions, guild membership) stays with
   `Player::DeleteFromDB`.
 
-## 19. Battleground auto-queue (optional, default-off)
+## 19. Battleground auto-queue (optional, default-on)
 
 `BattlegroundQueueService` provides bounded, demand-aware WSG/AB/AV participation
 for live Headless random bots through the existing native
@@ -669,19 +669,29 @@ mapId+0, fail-closed `GetBattleGroundTemplate`/`GetMapId` validation) for
 master-reclaim leave. Demand is read from the copy-only generic
 `BattleGroundMgr::GetQueuedParticipants` snapshot (merged #438): no human
 waiting participant means no bot is queued, and a non-empty bucket selects its
-queue type/bracket and underrepresented team. The core remains the owner of
-queue state, invites, and port events; the module never mutates
+queue type/bracket and underrepresented team. A waiting participant counts only
+when its session is non-headless and it is not a random bot, so neither random
+fill bots nor a human's own headless party bots create demand. The core remains
+the owner of queue state, invites, and port events; the module never mutates
 `m_BattleGroundQueues`, calls `BattleGroundQueue::RemovePlayer` directly, owns a
 second queue, starts a worker thread, or writes queue structures. Candidates are
 selected in memory and checked for the native level bracket, queue slots,
 alive/idle state, deserter/taxi/combat status, and active human master;
 reconcile is guarded by `InBattleGround`, `(guid, queueType)` ownership,
 `HasActivePlayerMaster` and `InBattleGroundQueueForBattleGroundQueueType` with
-fail-closed map validation. AV is always queued solo and success is verified
-after the native handler; WSG/AB group joins require every member to be a
-service-owned Headless bot. Cadence and per-interval budget are clamped and the
-setting defaults off (`RandomBotBgEnabled=0`). Requires the merged session and
-participant primitives (#438).
+fail-closed map validation, so a human's own party bots — never queued by the
+service and never holding its `BgQueued` lease — are left alone. AV is always
+queued solo and success is verified after the native handler; WSG/AB group joins
+require every member to be a service-owned Headless bot. Cadence and per-interval
+budget are clamped and the setting defaults on (`RandomBotBgEnabled=1`; set `0`
+to opt out). Requires the merged session and participant primitives (#438).
+
+A human queuing at the battlemaster with **Join as Group** alongside their own
+managed bots needs no service involvement: the core group-join path accepts
+headless members, each member receives the queue/invite status, and every bot's
+existing `bg status` packet action auto-accepts `STATUS_WAIT_JOIN` and runs the
+BG strategies (`follow` is dropped inside the battleground). AV group joins are
+rejected by the core, so AV parties queue solo.
 
 ## 20. New core seam test
 

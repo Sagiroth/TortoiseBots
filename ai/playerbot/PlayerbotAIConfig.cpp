@@ -449,14 +449,14 @@ bool PlayerbotAIConfig::Initialize()
     bExplicitDbStoreSave = config.GetBoolDefault("AiPlayerbot.ExplicitDbStoreSave", false);
 
     randomBotLoginWithPlayer = config.GetBoolDefault("AiPlayerbot.RandomBotLoginWithPlayer", false);
-    // Autonomous WSG/AB/AV queue. Default off. Uses proven
+    // Autonomous WSG/AB/AV queue. Default on. Uses proven
     // BattleGroundJoinAction/BGStatusAction path via
     // WorldSession::HandleBattlemasterJoinOpcode (guid 1337 bypass) and
     // BattleGroundMgr ownership for invite/queue updates. Bounded cadence
     // and max-per-interval, in-memory Headless/random selection, faction/
     // level bracket/state/deserter/taxi/combat/queue checks, no second
     // queue/thread/arena/vehicle/expansion or DB tick scans.
-    randomBotBgEnabled = config.GetBoolDefault("AiPlayerbot.RandomBotBgEnabled", false);
+    randomBotBgEnabled = config.GetBoolDefault("AiPlayerbot.RandomBotBgEnabled", true);
     randomBotBgQueueInterval = config.GetIntDefault("AiPlayerbot.RandomBotBgQueueInterval", 30000);
     randomBotBgMaxQueuePerInterval = config.GetIntDefault("AiPlayerbot.RandomBotBgMaxQueuePerInterval", 1);
 
