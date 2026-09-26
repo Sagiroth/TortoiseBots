@@ -74,6 +74,18 @@ Configuration is generated at build time from `ai/playerbot/aiplayerbot.conf.dis
 
 ---
 
+## 🙏 Credit
+
+TortoiseBots is made by **Sagiroth**. Forks, repacks, Docker bundles, videos and
+public servers are welcome — please credit it. Ready to paste:
+
+```text
+Playerbots: TortoiseBots by Sagiroth — https://github.com/Sagiroth/TortoiseBots
+```
+
+The in-game login message and `.bot about` show the same line; keep them in
+modified builds (see [`LICENCE.md`](LICENCE.md#attribution-author-notice)).
+
 ## 📜 License & Provenance
 
 Original module code combined with donor PlayerBots implementations under GPL-2.0 / AGPL-3.0 compatible licenses. See [`LICENCE.md`](LICENCE.md), [`docs/PROVENANCE.md`](docs/PROVENANCE.md), and [`docs/LICENSE_AUDIT.md`](docs/LICENSE_AUDIT.md).

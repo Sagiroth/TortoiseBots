@@ -14,6 +14,7 @@
 #include "Chat.h"
 #include "../runtime/ObservabilityEmitter.h"
 #include "ModuleLog.h"
+#include "ModuleVersion.h"
 
 namespace TortoiseBots {
 
@@ -50,6 +51,7 @@ void BotPlayerAdapter::OnLogin(Player* player)
     {
         RandomBotService::Instance().OnHumanLogin();
         HireLifecycle::Instance().OnMasterLogin(player);
+        ChatHandler(player).PSendSysMessage("|cff00ff00[TortoiseBots]|r %s", AttributionLine().c_str());
         if (player->GetSession()->GetSecurity() >= SEC_DEVELOPER && sObservabilityEmitter.IsEnabled())
         {
             ChatHandler(player).PSendSysMessage("|cff00ff00[TortoiseBots]|r Observability dashboard active: http://localhost:8095/dashboard");

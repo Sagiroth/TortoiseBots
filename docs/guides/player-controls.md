@@ -121,7 +121,7 @@ Commands for checking bot state, lifecycle, and fleet metrics:
 | `.bot status` | `<Name>` | Displays detailed status of an owned bot: lifecycle (`starting`, `in world`, `removing`), AI attachment, active movement strategy (`follow`, `stay`, `guard`, `free`, `custom`), and owner. |
 | `.bot stats` | None | Summarizes owned bot fleet: total online, random bots, and bots with active AI attached. |
 | `.bot lease` | `[status]` | Reports autonomous activity lease counts (Idle, Grinding, Trading, LftQueued, BgQueued, PlayerMaster) and lists active lease timers. |
-| `.bot version` *(alias `v`)* | None | Prints the server build version (`TortoiseBots <UTC date>-v<N>`); any player may use it. Also emits `TBM:VERSION|<version>` for the addon. |
+| `.bot version` *(aliases `v`, `about`, `credits`)* | None | Prints the server build version (`TortoiseBots <UTC date>-v<N>`), then `TBM:VERSION|<version>` for the addon, then the author credit and source link (`TortoiseBots by Sagiroth - https://github.com/Sagiroth/TortoiseBots`); any player may use it. The same credit line is sent to every player on login and written to the startup log. |
 | `.bot help` *(alias `h`)* | None | Prints the enabled banner and server version (`TBM:VERSION|<version>`). |
 
 ---

@@ -27,4 +27,17 @@ inline std::string BuildVersion()
     return raw;
 }
 
+// Author credit and canonical source shown at startup, on login and by
+// `.bot about`. This is the program's Appropriate Legal Notice under
+// AGPL-3.0 section 5(d); modified versions must keep displaying it.
+constexpr char const* kModuleAuthor = "Sagiroth";
+constexpr char const* kModuleSourceUrl = "https://github.com/Sagiroth/TortoiseBots";
+constexpr char const* kModuleLicence = "AGPL-3.0";
+
+inline std::string AttributionLine()
+{
+    return std::string("TortoiseBots by ") + kModuleAuthor + " - " + kModuleSourceUrl +
+        " (" + kModuleLicence + ", source available)";
+}
+
 } // namespace TortoiseBots

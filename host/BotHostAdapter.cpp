@@ -121,6 +121,7 @@ void BotHostAdapter::OnStartup()
     }
 
     TB_LOG_BASIC("TortoiseBots %s (AI %s)", BuildVersion().c_str(), configured ? "enabled" : "disabled");
+    TB_LOG_BASIC("%s", AttributionLine().c_str());
     ObservabilityEmitter::Instance().Initialize();
 }
 void BotHostAdapter::OnUpdate(uint32 diff)

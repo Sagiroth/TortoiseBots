@@ -79,7 +79,7 @@ to v1 daily and each repo counts its own merges). The workflow's own
 Where to see it:
 
 - Server log at startup: `TortoiseBots <version>` (or `dev` for a checkout
-  without the stamped file).
+  without the stamped file), followed by the author credit and source link.
 - In game, any player: `.bot version` prints the server build plus a
   `TBM:VERSION|<version>` protocol line for the addon.
 - The `/tbm` window header shows `TBM <addon version> · server <server
