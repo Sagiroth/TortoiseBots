@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-26
+
+### Dungeon Finder & Battlegrounds
+- LFT dungeon fill and BG queue are now **on by default** — no config edits needed to get bots filling roles while you wait in queue. Random bots still only fill when a real player is actually queued. [#310](https://github.com/Sagiroth/TortoiseBots/pull/310)
+- Your own party bots now auto-accept dungeon offers instead of letting them expire after 90s, so you can run dungeons and battlegrounds with your regular crew rather than random fillers. Acceptance triggers only when the master or group leader is a real player. [#310](https://github.com/Sagiroth/TortoiseBots/pull/310)
+
+### Attribution & Observability
+- Author credit and source link now surface at startup, via `.bot version`, and as a one-time login system message for real players — forks, repacks, and videos carry attribution by default with no gameplay impact. Bot sessions are excluded from the login message. [#309](https://github.com/Sagiroth/TortoiseBots/pull/309)
+
+---
+
 ## 2026-09-25
 
 ### Combat & AI
