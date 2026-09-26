@@ -9,7 +9,7 @@ class Group;
 namespace TortoiseBots
 {
 
-// Default-off demand-aware WSG/AB/AV queue participation for live Headless
+// Default-on demand-aware WSG/AB/AV queue participation for live Headless
 // random bots. The service uses the core's copy-only queued-participant demand
 // snapshot to match human-waiting queue type/bracket and underrepresented team.
 // It joins through WorldSession::HandleBattlemasterJoinOpcode (guid 1337 bypass)

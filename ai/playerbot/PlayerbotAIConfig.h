@@ -248,12 +248,12 @@ public:
     // with 2+ deaths and no master/group, teleport once to a validated
     // level-fitting point and reset the death count. Default on; fail-closed.
     bool relocateHopelessDeaths = true;
-    // Default-off bounded LFT fill: observe native queue (GetQueuedPlayers),
+    // Default-on bounded LFT fill: observe native queue (GetQueuedPlayers),
     // identify human groups/instances and missing 1/1/3 roles, filter in-memory
     // Headless random candidates by authoritative Soromeister/LFT ranges,
     // team/hardcore/state/role (AiFactory), and call core QueuePlayer through
     // native offers. Unknown ranges fail closed; no role hook or DB tick scan.
-    bool randomBotLftEnabled = false;
+    bool randomBotLftEnabled = true;
     uint32 randomBotLftUpdateInterval = 15000;
     uint32 randomBotLftMaxFillsPerInterval = 1;
     // Issue #189: LFT role borrowing (respec a bot into a missing role) is
@@ -485,13 +485,13 @@ public:
     bool respawnModForPlayerBots, respawnModForInstances;
 
     bool randomBotLoginWithPlayer;
-    // Autonomous BG queue for WSG/AB/AV. Default off. Bounded cadence and
+    // Autonomous BG queue for WSG/AB/AV. Default on. Bounded cadence and
     // max-per-interval, in-memory Headless/random selection, faction/level
     // bracket/state/deserter/taxi/combat/queue checks, native handler
     // ownership/invites/queue updates via HandleBattlemasterJoinOpcode (guid
     // 1337 bypass) + SMSG_BATTLEFIELD_STATUS/BGStatusAction invite path.
     // No second queue/thread/arena/vehicle/expansion or DB tick scans.
-    bool randomBotBgEnabled = false;
+    bool randomBotBgEnabled = true;
     uint32 randomBotBgQueueInterval = 30000;
     uint32 randomBotBgMaxQueuePerInterval = 1;
 

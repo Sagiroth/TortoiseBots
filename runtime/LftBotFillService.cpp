@@ -15,6 +15,8 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "World.h"
 // pi-lens-ignore: clang:pp_file_not_found
+#include "Group/Group.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "Log.h"
 #include "LFT/LFTMgr.h"
 #ifndef MANGOSSERVER_LFTMGR_H
@@ -139,7 +141,8 @@ void LftBotFillService::Initialize()
 
     if (!sPlayerbotAIConfig.enabled || !sPlayerbotAIConfig.randomBotLftEnabled)
     {
-        TB_LOG_BASIC("TortoiseBots: LFT fill disabled (ai %u lft %u)", sPlayerbotAIConfig.enabled, sPlayerbotAIConfig.randomBotLftEnabled);
+        TB_LOG_BASIC("TortoiseBots: LFT random fill disabled (ai %u lft %u); own-party offer acceptance stays on",
+            sPlayerbotAIConfig.enabled, sPlayerbotAIConfig.randomBotLftEnabled);
         return;
     }
     TB_LOG_BASIC("TortoiseBots: LFT fill enabled interval %u max %u (observe GetQueuedPlayers, native QueuePlayer/offers, reconcile)",
@@ -377,11 +380,64 @@ void LftBotFillService::AcceptPendingOffers()
     }
 }
 
+void LftBotFillService::AcceptPartyBotOffers()
+{
+    // Own-party acceptance: a real player queued LFT in a party with their own
+    // managed bots (alts/hires, non-random). The core auto-answers the
+    // rolecheck for them (rolecheck hook: forced role, then named combat
+    // specs, then AiFactory spec/gear), but the formed offer
+    // still needs every member to accept.
+    // Accept only those: managed bot, in an offer, not fill-owned, whose
+    // master or group leader is a real (network) player in the same offer.
+    // No queued-snapshot scan: only bots already in an offer are visited, via
+    // the in-memory managed-bot list (GetAllBots filters in world + Headless).
+    std::vector<Player*> bots = BotManager::Instance().GetAllBots();
+    for (Player* bot : bots)
+    {
+        if (!bot)
+            continue;
+        ObjectGuid guid = bot->GetObjectGuid();
+        uint32 guidLow = guid.GetCounter();
+        // Never touch fill-owned bots (they have their own acceptor above),
+        // nor random-pool bots (fill candidates, not party companions).
+        if (m_pending.find(guidLow) != m_pending.end())
+            continue;
+        if (BotManager::Instance().IsRandomBot(guid))
+            continue;
+        if (!sLFTMgr.IsInOffer(guid))
+            continue;
+        PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+        if (!ai || !ai->HasActivePlayerMaster())
+            continue;
+        // The human must be part of this run: master or group leader, live,
+        // real (network transport), in the same offer.
+        Player* anchor = nullptr;
+        if (Player* master = ai->GetLiveMaster())
+            if (master->IsInWorld() && master->GetSession() &&
+                master->GetSession()->HasNetworkTransport() &&
+                sLFTMgr.IsInOffer(master->GetObjectGuid()))
+                anchor = master;
+        if (!anchor)
+            if (Group* group = bot->GetGroup())
+                if (Player* leader = sObjectMgr.GetPlayer(group->GetLeaderGuid()))
+                    if (leader != bot && leader->IsInWorld() && leader->GetSession() &&
+                        leader->GetSession()->HasNetworkTransport() &&
+                        sLFTMgr.IsInOffer(leader->GetObjectGuid()))
+                        anchor = leader;
+        if (!anchor)
+            continue;
+        // World-thread only generic core API (PR #416). Reuses native offer accept.
+        if (sLFTMgr.AcceptOffer(guid))
+            TB_LOG_DETAIL("TortoiseBots: LFT party bot %s accepted offer with %s",
+                bot->GetName(), anchor->GetName());
+    }
+}
+
 void LftBotFillService::Update(uint32_t diff)
 {
     if (!m_initialized)
         return;
-    if (!sPlayerbotAIConfig.enabled || !sPlayerbotAIConfig.randomBotLftEnabled)
+    if (!sPlayerbotAIConfig.enabled)
     {
         if (!m_pending.empty())
             ReconcilePending(true, nullptr);
@@ -395,6 +451,19 @@ void LftBotFillService::Update(uint32_t diff)
     if (m_elapsedMs < interval)
         return;
     m_elapsedMs = 0;
+
+    // Own-party bots accept on the same cadence, independent of the
+    // random-fill switch: without this the 90s native offer timer expires and
+    // non-accepting party bots are dropped from the queue. Never touches
+    // fill-owned (m_pending) or random-pool bots.
+    AcceptPartyBotOffers();
+
+    if (!sPlayerbotAIConfig.randomBotLftEnabled)
+    {
+        if (!m_pending.empty())
+            ReconcilePending(true, nullptr);
+        return;
+    }
 
     // Snapshot native queue (copy, no private map exposure)
     std::vector<LFTManager::QueuedInfo> queued = sLFTMgr.GetQueuedPlayers();
