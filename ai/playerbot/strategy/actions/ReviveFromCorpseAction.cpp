@@ -12,6 +12,26 @@
 #include "runtime/BotManager.h"
 
 using namespace ai;
+// A released ghost: dead + GHOST flag. Used below to pick the sidestep reclaim
+// spot (a ghost reclaims from reachable ground near the corpse, not exactly on
+// the death spot). Note: with DisableActivityPriorities=1 the two
+// wait-then-teleport windows never fire (AllowActivity(DETAILED_MOVE) is always
+// true), so no bypass is needed or applied there - ghosts take the normal
+// MoveTo walk path every tick like every other bot.
+static bool GhostWalksToCorpse(Player* bot)
+{
+    return bot && !sServerFacade.IsAlive(bot) && bot->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST);
+}
+
+// How long a corpse run waits for a nearby resurrect-capable master before
+// running anyway. Covers the grouped report (random bot + real-player leader,
+// ghost idle at the graveyard): the master may be the wrong class, OOM, mid-
+// fight, or simply not noticing - waiting forever is never right. Donor
+// mod-playerbots has no wait gate at all (wait block commented out,
+// ReviveFromCorpseAction.cpp:85-90); 90 s keeps the polite wait without the
+// infinite stall.
+static constexpr int64 kWaitForMasterTimeoutSec = 90;
+
 
 static bool FindInstanceEntranceTrigger(uint32 corpseMapId, uint32 botMapId, WorldPosition const& botPos,
                                          AreaTriggerEntry const*& outAtEntry, AreaTriggerTeleport const*& outAt)
@@ -92,14 +112,34 @@ bool ReviveFromCorpseAction::Execute(Event& event)
         }
     }
 
+    // The core drops CMSG_RECLAIM_CORPSE silently in five cases (not alive-check
+    // inverted: alive, not ghost, no corpse, reclaim delay, out of
+    // CORPSE_RECLAIM_RADIUS=39 yd, BG not in progress - MiscHandler.cpp:710-732),
+    // so only claim success when the bot is actually alive afterwards. On a drop
+    // the corpse-run continues next tick (corpse near re-fires) instead of
+    // logging a phantom revive and running the post-rez rescue for a still-dead bot.
+    float reclaimDist = (float)CORPSE_RECLAIM_RADIUS;
+    if (!corpse->IsWithinDistInMap(bot, reclaimDist, true))
+    {
+        sLog.outDetail("[BOT CORPSE] %s: revive from corpse - BLOCKED: corpse %.1f yd away, core needs within %d yd; walking closer",
+            bot->GetName(), bot->GetDistance(corpse), CORPSE_RECLAIM_RADIUS);
+        return false;
+    }
+
     sLog.outDetail("[BOT CORPSE] %s: revive from corpse - RECLAIMING corpse now", bot->GetName());
-    sLog.outDetail("Bot #%d %s:%d <%s> revives at body", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
 
     ai->StopMoving();
     WorldPacket packet(CMSG_RECLAIM_CORPSE);
     packet << bot->getObjectGuid();
     bot->GetSession()->HandleReclaimCorpseOpcode(packet);
 
+    if (!sServerFacade.IsAlive(bot))
+    {
+        sLog.outDetail("[BOT CORPSE] %s: revive from corpse - RECLAIM DROPPED by core (still dead), retrying next tick", bot->GetName());
+        return false;
+    }
+
+    sLog.outDetail("Bot #%d %s:%d <%s> revives at body", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
     SET_AI_VALUE(bool, "corpse run", false);
     // Post-rez rescue (best-effort, fail-closed): a random bot that keeps dying
     // where its level cannot survive is relocated once to validated fitting
@@ -151,7 +191,18 @@ bool FindCorpseAction::Execute(Event& event)
         }
     }
 
-    if (master && !manualCorpseRun && master->GetMapId() == bot->GetMapId() && !corpseInDungeon)
+    // Bounded wait for a nearby resurrect-capable master. Past the timeout the run
+    // goes anyway: the master may be the wrong class, OOM, mid-fight, or simply not
+    // noticing, and waiting forever strands the ghost at the graveyard (grouped
+    // report, Sep 2026). Donor mod-playerbots has no wait gate at all (its wait
+    // block is commented out); 90 s keeps the polite wait without the infinite stall.
+    bool waitForMasterTimedOut = deadTime > kWaitForMasterTimeoutSec;
+    if (waitForMasterTimedOut && master && !manualCorpseRun && master->GetMapId() == bot->GetMapId() && !corpseInDungeon)
+    {
+        sLog.outDetail("[BOT CORPSE] %s: find corpse - wait-for-master timed out after %llds, running to corpse anyway",
+            bot->GetName(), (long long)deadTime);
+    }
+    if (master && !manualCorpseRun && !waitForMasterTimedOut && master->GetMapId() == bot->GetMapId() && !corpseInDungeon)
     {
         bool masterCanResurrect = sServerFacade.IsAlive(master) && !master->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST) &&
                                   (PlayerbotAI::IsHeal(master) || master->GetClass() == CLASS_PRIEST || master->GetClass() == CLASS_PALADIN ||
@@ -292,6 +343,16 @@ bool FindCorpseAction::Execute(Event& event)
                 }
                 moveToPos = masterPos;
             }
+            else if (GhostWalksToCorpse(bot))
+            {
+                // A corpse run that ends exactly on the corpse revives inside the same
+                // pack that killed the bot: revive->death median was 129 s live. When
+                // no flee-worthy threat is near, still step a few yards aside onto
+                // reachable ground so the reclaim lands off the death spot.
+                WorldPosition sidestep = corpsePos;
+                if (sidestep.GetReachableRandomPointOnGround(bot, reclaimDist, true))
+                    moveToPos = WorldPosition(moveToPos.GetMapId(), sidestep.getX(), sidestep.getY(), sidestep.getZ(), 0.0);
+            }
             else
             {
                 FleeManager manager(bot, reclaimDist, 0.0, urand(0, 1), moveToPos);
@@ -332,7 +393,6 @@ bool FindCorpseAction::Execute(Event& event)
             }
         }
     }
-
     //Actual mobing part.
     bool moved = false;
 

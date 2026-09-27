@@ -1410,8 +1410,10 @@ void PlayerbotAI::OnResurrected()
     if (sServerFacade.IsAlive(bot))
     {
         deathHandled_ = false; // alive again: the next death is a new one
-        // Phase 2: 15s full-rate scan grace after revive (spawn-camp guard).
-        m_reviveGraceUntilMs = WorldTimer::getMSTime() + PlayerbotAI::kReviveTeleportGraceMs;
+        // 60 s full-rate scan grace after revive (spawn-camp guard): the revive
+        // lands at 50% HP on the death spot and re-dies fast live, so the first
+        // minute runs the full scan. Teleport grace stays 15 s (HandleTeleportAck).
+        m_reviveGraceUntilMs = WorldTimer::getMSTime() + PlayerbotAI::kReviveGraceMs;
     }
 
     if (IsStateActive(BotState::BOT_STATE_DEAD) && sServerFacade.IsAlive(bot))
@@ -1466,6 +1468,30 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
     SC_PHASE("UpdateAIInternal.entry", bot ? bot->GetName() : "(null)");
     if (bot->IsBeingTeleported() || !bot->IsInWorld())
         return;
+    // Self-heal for the "alive but engine DEAD" mismatch (research §5.6): a bot the
+    // core reports alive while the engine still sits in DEAD runs only the dead
+    // strategy, so it never travels, never grinds, and reads dead on the dashboard
+    // for minutes. OnResurrected normally flips the engine, but the flip is missed
+    // when the alive transition lands outside the resurrect path (teleport while
+    // dead, instance-entrance revive, core/AI ordering). If the core has reported
+    // alive for a full 5 s window and the engine is still DEAD, flip it directly -
+    // the same ChangeEngine(NON_COMBAT) OnResurrected performs, minus the
+    // follow-stop/clear that only belong to a genuine fresh revive.
+    if (sServerFacade.IsAlive(bot) && IsStateActive(BotState::BOT_STATE_DEAD))
+    {
+        uint32 nowMs = WorldTimer::getMSTime();
+        if (!m_aliveWhileDeadSinceMs)
+            m_aliveWhileDeadSinceMs = nowMs;
+        else if (WorldTimer::getMSTimeDiff(m_aliveWhileDeadSinceMs, nowMs) >= 5000)
+        {
+            sLog.outDetail("[BOT CORPSE] %s: alive for 5s+ while engine DEAD, flipping to non-combat", bot->GetName());
+            m_aliveWhileDeadSinceMs = 0;
+            deathHandled_ = false;
+            ChangeEngine(BotState::BOT_STATE_NON_COMBAT);
+        }
+    }
+    else
+        m_aliveWhileDeadSinceMs = 0;
 
     std::unique_ptr<PerformanceMonitorOperation> pmo;
     if (sPlayerbotAIConfig.perfMonEnabled)

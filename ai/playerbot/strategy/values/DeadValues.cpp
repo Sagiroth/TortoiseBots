@@ -143,7 +143,12 @@ bool ShouldSpiritHealerValue::Calculate()
     uint32 deathCount = AI_VALUE(uint32, "death count");
     uint8 durability = AI_VALUE(uint8, "durability");
 
-    if (ai->HasActivePlayerMaster()) //Only use spirit healers with direct command with active master.
+    // A grouped ghost still corpse-runs: with an active player master the wait-for-
+    // master gate in find corpse holds the ghost briefly for a res, then (90 s timeout)
+    // runs to the body. Sending it to the spirit healer instead strands it: the res
+    // sickness + durability loss buy nothing, and the grouped report (ghost idle at
+    // the GY with its leader standing nearby) is exactly this branch firing.
+    if (ai->HasActivePlayerMaster())
         return false;
 
     //Nothing to lose

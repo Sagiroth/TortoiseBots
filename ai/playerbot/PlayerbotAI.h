@@ -702,6 +702,11 @@ public:
     // frozen: combat, death, damage, revive/teleport grace, nearby humans and
     // a 1.5s staleness cap all force full rate.
     static constexpr uint32 kReviveTeleportGraceMs = 15000;
+    // Revive grace is longer than the teleport grace: a fresh revive at 50% HP
+    // standing on its death spot re-dies fast live (revive->death median 129 s,
+    // 57 of 257 within 60 s), so the first minute after any revive runs the
+    // full-rate scan and lets the bot feel the same pack coming back.
+    static constexpr uint32 kReviveGraceMs = 60000;
     bool IsSpatialScanIdle() const;
     bool ShouldReuseSpatialScan();
     void NoteSpatialScan() { m_lastSpatialScanMs = WorldTimer::getMSTime(); }
@@ -829,6 +834,9 @@ protected:
     uint32 m_lastSpatialScanMs = 0;
     uint32 m_reviveGraceUntilMs = 0;
     uint32 m_teleportGraceUntilMs = 0;
+    // First tick (ms clock) the core reported alive while the engine was still DEAD;
+    // 0 = not currently mismatched. Backs the 5 s alive-but-DEAD self-heal window.
+    uint32 m_aliveWhileDeadSinceMs = 0;
     uint32 m_lastMana = 0;
     bool isPlayerFriend = false;
     bool isMovingToTransport = false;
