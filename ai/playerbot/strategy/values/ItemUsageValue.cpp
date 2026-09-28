@@ -595,7 +595,15 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
 
     bool shouldEquip = false;
     bool armorForSpec = true;
-    uint32 specId = sRandomItemMgr.GetPlayerSpecId(bot);
+    // Pre-talent bots (levels 1-9) have no real spec, and the fallback scale
+    // (e.g. assassination = daggers only for rogues) would ban whole weapon
+    // families they can use (Balparn kept a 1-2 dagger over a 3-7 mace).
+    // Relax only the WEAPON subclass gate until a spec exists; scoring uses
+    // the fallback scale (RandomItemMgr::ItemStatWeight) so DPS still decides.
+    // Armor gates stay on: a warrior/paladin never takes cloth, even pre-10.
+    uint32 realSpecId = sRandomItemMgr.GetPlayerSpecId(bot);
+    bool const hasRealSpec = (realSpecId != 0);
+    uint32 specId = realSpecId;
     if (!specId)
         specId = sRandomItemMgr.GetFallbackSpecId(bot->GetClass());
 
@@ -603,7 +611,7 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     if (statWeight)
         shouldEquip = true;
 
-    if (itemProto->Class == ITEM_CLASS_WEAPON && !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto))
+    if (hasRealSpec && itemProto->Class == ITEM_CLASS_WEAPON && !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto))
         shouldEquip = false;
     if (itemProto->Class == ITEM_CLASS_ARMOR)
     {
@@ -617,7 +625,7 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
 
     ai->TellDebug(ai->GetMaster(), "Checking equip: " + chat->formatItem(itemProto) + " to " + chat->formatSlot(slot) + " vs " + (oldItem ? chat->formatItem(oldItem->GetProto()) : "empty"), "debug equip");
 
-    if (itemProto->Class == ITEM_CLASS_WEAPON &&
+    if (hasRealSpec && itemProto->Class == ITEM_CLASS_WEAPON &&
         !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto))
     {
         if (oldItem)
@@ -705,6 +713,18 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
 
         shouldEquip = true;
     }
+
+    // Spec transition: a bot WITH a spec that still wields a weapon its spec
+    // forbids (e.g. an assassination rogue holding the mace it used pre-10)
+    // swaps to a spec-allowed weapon as soon as one is available, even at
+    // somewhat lower DPS. Only the weight race is skipped; class rules
+    // (CanUseItem above) and the weapon spec gate still apply to the new item.
+    bool const newWeaponForSpec = (hasRealSpec && itemProto->Class == ITEM_CLASS_WEAPON &&
+        sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto));
+    bool const oldWeaponAgainstSpec = (hasRealSpec && oldItemProto->Class == ITEM_CLASS_WEAPON &&
+        !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, oldItemProto));
+    if (newWeaponForSpec && oldWeaponAgainstSpec)
+        return ItemUsage::ITEM_USAGE_EQUIP;
 
     bool existingShouldEquip = true;
     if (oldItemProto->Class == ITEM_CLASS_WEAPON && !oldStatWeight)
