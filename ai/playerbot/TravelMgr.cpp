@@ -2594,47 +2594,73 @@ void TravelMgr::LoadMapTransfers()
     }
 }
 
-std::vector<std::pair<WorldPosition, float>> TravelMgr::sqMapTransDistances(const WorldPosition& start, uint32 endMapId) const
+void TravelMgr::CollectMapTransferPortals(const WorldPosition& start, uint32 endMapId,
+    std::vector<std::pair<WorldPosition, float>>& outPortals) const
 {
+    outPortals.clear();
     uint32 startMapId = start.GetMapId();
     if (startMapId == endMapId)
-        return { { start, 0.0f } };
+    {
+        outPortals.emplace_back(start, 0.0f);
+        return;
+    }
 
     auto mapTransfers = mapTransfersMap.find({ startMapId, endMapId });
 
     if (mapTransfers == mapTransfersMap.end())
-        return {};
+        return;
 
-    std::vector<std::pair<WorldPosition, float>> retPortals;
-
+    outPortals.reserve(mapTransfers->second.size());
     for (auto& mapTrans : mapTransfers->second)
     {
         WorldPosition portalOnEndMap = mapTrans.GetPointTo();
 
         float sqDist = mapTrans.sqDist(start, portalOnEndMap);
 
-        retPortals.push_back(std::make_pair(portalOnEndMap, sqDist));
+        outPortals.emplace_back(portalOnEndMap, sqDist);
     }
+}
 
+std::vector<std::pair<WorldPosition, float>> TravelMgr::sqMapTransDistances(const WorldPosition& start, uint32 endMapId) const
+{
+    // Copy-returning wrapper kept for the remaining callers (WorldSquare,
+    // WorldPosition helpers are covered by MinMapTransDistance below).
+    // Allocates once via CollectMapTransferPortals; prefer the out-param form
+    // on hot paths.
+    std::vector<std::pair<WorldPosition, float>> retPortals;
+    CollectMapTransferPortals(start, endMapId, retPortals);
     return retPortals;
+}
+
+// Minimum squared through-portal distance without any heap allocation: the
+// portal lists are static data, so iterate the map-transfer entries directly
+// instead of materialising a vector first. Same arithmetic as MapTransDistance.
+float TravelMgr::MinSqMapTransDistance(const WorldPosition& start, const WorldPosition& end) const
+{
+    uint32 startMapId = start.GetMapId();
+    uint32 endMapId = end.GetMapId();
+    if (startMapId == endMapId)
+        return 0.0f;
+
+    auto mapTransfers = mapTransfersMap.find({ startMapId, endMapId });
+    if (mapTransfers == mapTransfersMap.end())
+        return FLT_MAX;
+
+    float minsqDist = FLT_MAX;
+    for (auto& mapTrans : mapTransfers->second)
+    {
+        WorldPosition portalOnEndMap = mapTrans.GetPointTo();
+        float sqDist = mapTrans.sqDist(start, portalOnEndMap) + portalOnEndMap.sqDistance2d(end);
+        if (sqDist < minsqDist)
+            minsqDist = sqDist;
+    }
+    return minsqDist;
 }
 
 float TravelMgr::MapTransDistance(const WorldPosition& start, const WorldPosition& end, bool toMap) const
 {
-    //These are the portals on the end map that start can reach.
-    std::vector<std::pair<WorldPosition, float>> portals = sqMapTransDistances(start, end.GetMapId());
-
-    if (portals.empty())
+    float const minsqDist = MinSqMapTransDistance(start, end);
+    if (minsqDist == FLT_MAX)
         return FLT_MAX;
-
-    float minsqDist = FLT_MAX;
-
-    for (auto& [portal, sqDistanceFromStartToPortal] : portals)
-    {
-        float sqDist = sqDistanceFromStartToPortal + portal.sqDistance2d(end);
-        if (sqDist < minsqDist)
-            minsqDist = sqDist;
-    }
-
     return sqrt(minsqDist);
 }

@@ -126,13 +126,13 @@ WorldPosition::WorldPosition(const std::vector<WorldPosition>& list, const World
         set(pos.closestSq(list));
     }
 }
-
 float WorldPosition::distance(const WorldPosition& to) const
 {
     if(mapId == to.GetMapId())
         return relPoint(to).size();
 
     //this -> mapTransfer | mapTransfer -> center
+    // Allocation-free through-portal query on the hot path.
     return sTravelMgr.MapTransDistance(*this, to);
 };
 
@@ -143,6 +143,16 @@ float WorldPosition::fDist(const WorldPosition& to) const
 
     //this -> mapTransfer | mapTransfer -> center
     return sTravelMgr.MapTransDistance(*this, to);
+};
+
+// Squared through-portal distance without the sqrt or any heap allocation.
+// Same-map fast path stays inline arithmetic; cross-map uses the portal table.
+float WorldPosition::sqTransDistance(const WorldPosition& to) const
+{
+    if (mapId == to.GetMapId())
+        return sqDistance2d(to);
+
+    return sTravelMgr.MinSqMapTransDistance(*this, to);
 };
 
 //When moving from this along list return last point that falls within range.

@@ -161,6 +161,10 @@ namespace ai
 
         float fDist(const WorldPosition& to) const;
 
+        // Squared through-portal distance without sqrt or heap allocation
+        // (same-map: 2D squared distance; cross-map: portal table minimum).
+        float sqTransDistance(const WorldPosition& to) const;
+
         //Returns the closest point from the list.
         WorldPosition* closest(const std::vector<WorldPosition*>& list) const { return *std::min_element(list.begin(), list.end(), [this](WorldPosition* i, WorldPosition* j) {return this->distance(*i) < this->distance(*j); }); }
         WorldPosition closest(const std::vector<WorldPosition>& list) const { return *std::min_element(list.begin(), list.end(), [this](WorldPosition i, WorldPosition j) {return this->distance(i) < this->distance(j); }); }

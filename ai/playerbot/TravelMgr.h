@@ -461,6 +461,11 @@ namespace ai
 		void LoadMapTransfers();
 		std::vector<std::pair<WorldPosition, float>> sqMapTransDistances(const WorldPosition& start, uint32 endMapId) const;
 		float MapTransDistance(const WorldPosition& start, const WorldPosition& end, bool toMap = false) const;
+		// Hot-path forms without per-call heap allocation: reuse a caller-owned
+		// buffer, or skip the portal vector entirely for the min-squared query.
+		void CollectMapTransferPortals(const WorldPosition& start, uint32 endMapId,
+		    std::vector<std::pair<WorldPosition, float>>& outPortals) const;
+		float MinSqMapTransDistance(const WorldPosition& start, const WorldPosition& end) const;
 
 		void AddBadMmap(uint32 mapId, int x, int y) { badMmap.push_back(std::make_tuple(mapId, x, y)); }
 		bool IsBadMmap(uint32 mapId, int x, int y) const { return std::find(badMmap.begin(), badMmap.end(), std::make_tuple(mapId, x, y)) != badMmap.end(); }
