@@ -236,7 +236,7 @@ void PlayerbotFactory::TopUpConsumableFamily(std::vector<uint32> const& familyLo
     }
     if (targetIdx >= familyLowToHigh.size())
         return;
-    // Count held target items (oils are stackable=1: count items, not stacks).
+    // Count held target-or-better items (oils are stackable=1: count items, not stacks).
     uint32 heldTarget = 0;
     std::vector<Item*> lowerTier;
     {
@@ -248,6 +248,8 @@ void PlayerbotFactory::TopUpConsumableFamily(std::vector<uint32> const& familyLo
                 continue;
             if (item->GetEntry() == targetId)
                 heldTarget += std::max<uint32>(1, item->GetCount());
+            else if (std::find(familyLowToHigh.begin() + targetIdx, familyLowToHigh.end(), item->GetEntry()) != familyLowToHigh.end())
+                heldTarget += std::max<uint32>(1, item->GetCount()); // a better tier already covers the need
             else
             {
                 for (size_t i = 0; i < targetIdx; ++i)
@@ -290,23 +292,16 @@ void PlayerbotFactory::AddConsumables()
          // AiFactory strategies); pre-10 default tab 1 reads as holy.
          bool wantWizard = bot->GetClass() == CLASS_MAGE || bot->GetClass() == CLASS_WARLOCK ||
              (bot->GetClass() == CLASS_PRIEST && AiFactory::GetPlayerSpecTab(bot) == 2);
-         if (wantWizard)
-         {
-            uint32 target = 0;
-            if (level >= 45) target = CONSUM_ID_BRILLIANT_WIZARD_OIL;
-            else if (level >= 40) target = CONSUM_ID_WIZARD_OIL;
-            else if (level >= 5) target = CONSUM_ID_MINOR_WIZARD_OIL;
-            if (target)
-               TopUpConsumableFamily(wizardFamily, target, 2);
-         }
-         else
-         {
-            uint32 target = 0;
-            if (level >= 45) target = CONSUM_ID_BRILLIANT_MANA_OIL;
-            else if (level >= 5) target = CONSUM_ID_MINOR_MANA_OIL;
-            if (target)
-               TopUpConsumableFamily(manaFamily, target, 2);
-         }
+         // Current tier = the best oil of the line the bot can already use
+         // (required levels: wizard 5/30/40/45, mana 20/40/45).
+         std::vector<uint32> const& family = wantWizard ? wizardFamily : manaFamily;
+         uint32 target = 0;
+         for (uint32 oilId : family)
+            if (ItemPrototype const* proto = sObjectMgr.GetItemPrototype(oilId))
+               if (proto->RequiredLevel <= level)
+                  target = oilId;
+         if (target)
+            TopUpConsumableFamily(family, target, 2);
    }
       break;
       case CLASS_PALADIN:
