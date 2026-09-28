@@ -527,8 +527,12 @@ std::vector<uint8> ItemUsageValue::GetEquipSlotCandidates(Player* bot, Item* ite
     for (uint8 slot : slotOrder)
     {
         uint16 dest;
+        // not_loading must stay at the core default (true): passing false makes
+        // core's 2H branch skip the off-hand unequip/store checks and return
+        // EQUIP_ERR_ITEMS_CANT_BE_SWAPPED whenever any off-hand item is held,
+        // and it also skips the alive/level/honor-rank checks this probe wants.
         InventoryResult result = item
-            ? bot->CanEquipItem(slot, dest, item, true, false)
+            ? bot->CanEquipItem(slot, dest, item, true)
             : RandomBotFacade::CanEquipUnseenItem(bot, slot, dest, proto->ItemId);
 
         if (result != EQUIP_ERR_OK)
@@ -573,7 +577,14 @@ uint8 ItemUsageValue::GetPreferredEquipSlot(Player* bot, Item* item, ItemPrototy
 
         if (newWeaponForSpec && equipped->GetProto()->Class == ITEM_CLASS_WEAPON &&
             !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, equipped->GetProto()))
+        {
+            // An empty main hand is worse than an off-spec off hand: without a
+            // main hand the bot cannot auto-attack or use main-hand abilities
+            // at all, so filling it wins over replacing the off hand.
+            if (emptySlot == EQUIPMENT_SLOT_MAINHAND)
+                return emptySlot;
             return slot; // off-spec weapon here: this is the slot to replace
+        }
 
         uint32 weight = sRandomItemMgr.ItemStatWeight(bot, equipped);
         if (best == NULL_SLOT || weight < bestWeight)

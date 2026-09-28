@@ -413,7 +413,16 @@ bool EquipUpgradesAction::Execute(Event& event)
 
     for (auto& item : items)
     {
-        ItemUsage usage = AI_VALUE2(ItemUsage, "item usage", ItemQualifier(item).GetQualifier());
+        // Re-score against the equipment as it stands now: the visitor scored
+        // every candidate before the loop ran, so after equipping one item a
+        // later candidate would still carry the usage it got for the slot it
+        // would have taken then. Re-resolving the slot below can point it at a
+        // different, stronger slot (Ring A took the weak finger, Ring B now
+        // resolves to the strong one), and a stale EQUIP would overwrite and
+        // downgrade it. Reset forces Calculate() to run again this tick.
+        ItemQualifier qualifier(item);
+        RESET_AI_VALUE2(ItemUsage, "item usage", qualifier.GetQualifier());
+        ItemUsage usage = AI_VALUE2(ItemUsage, "item usage", qualifier.GetQualifier());
         if (usage != ItemUsage::ITEM_USAGE_EQUIP && usage != ItemUsage::ITEM_USAGE_BAD_EQUIP)
         {
             continue;
@@ -467,10 +476,11 @@ bool EquipUpgradesAction::Execute(Event& event)
 
     // Put the higher top-end damage weapon in the main hand. Only when core
     // can actually swap the two (neither weapon is locked to its own hand) and
-    // only when both are weapons the bot's spec may wield: a real spec means
-    // both must pass the spec check, and before talents (specId 0) the check
-    // is skipped, because the fallback scale is daggers-only for rogues and
-    // would keep a pre-10 rogue's heavier mace out of the main hand.
+    // only when both are weapons the bot's spec may wield. GetPlayerSpecId()
+    // resolves the class-default scale id whenever no talents are spent, so
+    // for any normally provisioned bot this is the strict spec check; the
+    // !hasRealSpec escape only applies when the weight-scale table is absent
+    // and no fallback can be resolved either (scoring is unavailable then).
     if (didEquip && bot->CanDualWield())
     {
         Item* mh = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
@@ -506,6 +516,9 @@ bool EquipUpgradesAction::Execute(Event& event)
                         // Only claim success when the swap really happened.
                         if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND) == oh)
                         {
+                            RESET_AI_VALUE2(ItemUsage, "item usage", ItemQualifier(oh).GetQualifier());
+                            RESET_AI_VALUE2(ItemUsage, "item usage", ItemQualifier(mh).GetQualifier());
+
                             sLog.outDetail("Bot #%d <%s> swapped MH/OH weapons to put higher top-end damage (%.1f) in main hand",
                                 bot->GetGUIDLow(), bot->GetName(), ohMaxDmg);
                         }
