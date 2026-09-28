@@ -54,8 +54,7 @@ void MaintenanceStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &trigger
     // Priority 5.0f matches the old equipment-audit slot (below travel and
     // quest work, above 0.7-1.0f upkeep). IsActive is always true; cheapness
     // comes from EquipUpgradesAction itself: with no EQUIP/BAD_EQUIP usage in
-    // the bags the visitor returns nothing, no weapon means no MH/OH
-    // unequip, and the run only clears expired usage values.
+    // the bags the visitor returns nothing and no gear is touched.
     triggers.push_back(new TriggerNode(
         "equipment audit",
         NextAction::array(0, new NextAction("equip upgrades", 5.0f), NULL)));
