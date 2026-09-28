@@ -13,6 +13,7 @@
 #include "playerbot/RandomBotFacade.h"
 #include "Guild/GuildMgr.h"
 #include <iomanip>
+#include <mutex>
 
 using namespace ai;
 
@@ -356,11 +357,8 @@ inline std::string PrintPartion(uint32 sqPartition)
 // the Burning Steppes to get there). The route is the travel-node route the bot would
 // follow; a route that does not exist at all (another continent without a transfer) is
 // rejected too. Short hops on the same map are not checked - no A* for the everyday case.
-static bool RouteIsSurvivable(Player* bot, WorldPosition* position, std::string& blocker)
+static bool RouteIsSurvivableUncached(Player* bot, WorldPosition const& start, WorldPosition* position, std::string& blocker)
 {
-    WorldPosition start(bot);
-    if (start.getMapId() == position->getMapId() && start.distance(*position) < 1000.0f)
-        return true;
     std::vector<WorldPosition> beginPath, endPath;
     TravelNodeRoute route = sTravelNodeMap.getRoute(start, *position, beginPath, endPath, bot);
     if (route.isEmpty())
@@ -400,6 +398,52 @@ static bool RouteIsSurvivable(Player* bot, WorldPosition* position, std::string&
         }
     }
     route.cleanTempNodes();
+    return ok;
+}
+
+// The verdict is cached per bot, start area (200 yd cells) and destination
+// (25 yd cells) for 10 minutes. SetBestTarget re-checks the same candidates
+// on every pick, and a rejected or unreachable destination costs a full
+// travel-node A* each time; with hundreds of bots that search dominated the
+// world thread. A level-up or reputation change is picked up when the entry
+// expires.
+static bool RouteIsSurvivable(Player* bot, WorldPosition* position, std::string& blocker)
+{
+    WorldPosition start(bot);
+    if (start.getMapId() == position->getMapId() && start.distance(*position) < 1000.0f)
+        return true;
+
+    struct Verdict
+    {
+        bool ok;
+        std::string blocker;
+        time_t expires;
+    };
+    static std::mutex cacheMutex;
+    static std::unordered_map<std::string, Verdict> cache;
+
+    std::ostringstream key;
+    key << bot->GetGUIDLow() << ':' << bot->GetLevel() << ':'
+        << start.getMapId() << ':' << int32(start.getX() / 200.0f) << ':' << int32(start.getY() / 200.0f) << ':'
+        << position->getMapId() << ':' << int32(position->getX() / 25.0f) << ':' << int32(position->getY() / 25.0f);
+
+    time_t const now = time(nullptr);
+    {
+        std::lock_guard<std::mutex> lock(cacheMutex);
+        auto it = cache.find(key.str());
+        if (it != cache.end() && it->second.expires > now)
+        {
+            blocker = it->second.blocker;
+            return it->second.ok;
+        }
+    }
+
+    bool const ok = RouteIsSurvivableUncached(bot, start, position, blocker);
+
+    std::lock_guard<std::mutex> lock(cacheMutex);
+    if (cache.size() > 50000)
+        cache.clear();
+    cache[key.str()] = { ok, ok ? std::string() : blocker, now + 600 };
     return ok;
 }
 
