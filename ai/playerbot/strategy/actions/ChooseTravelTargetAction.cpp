@@ -178,9 +178,11 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
         }
     }
 
-    // Travel-target observability: one line per newly chosen target (this runs
-    // only when SetBestTarget succeeded, so no log spam on failed picks).
+    // Travel-target observability: one line per newly chosen target. Resets
+    // (ResetTargetAction) also pass through here with the null destination at
+    // map 0 (0,0,0), which resolves to Alterac Mountains, so skip those.
     // logEvent no-ops unless bot_events.csv is in AllowedLogFiles.
+    if (oldTarget->GetDestination() && typeid(*oldTarget->GetDestination()) != typeid(NullTravelDestination))
     {
         std::string purpose = GetTravelPurposeName(AI_VALUE2(std::string, "manual string", "future travel purpose"));
         std::string destZone = (oldTarget->getPosition() && oldTarget->getPosition()->GetArea())
