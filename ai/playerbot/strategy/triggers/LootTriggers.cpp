@@ -9,13 +9,28 @@ using namespace ai;
 
 bool LootAvailableTrigger::IsActive()
 {
-    return AI_VALUE(bool, "has available loot") &&
-            (
-                    sServerFacade.IsDistanceLessOrEqualThan(AI_VALUE2(float, "distance", "loot target"), INTERACTION_DISTANCE) ||
-                    AI_VALUE(std::list<ObjectGuid>, "all targets").empty()
-            ) &&
-            !AI_VALUE2(bool, "combat", "self target") &&
-            !AI_VALUE2(bool, "mounted", "self target");
+    if (AI_VALUE2(bool, "combat", "self target") || AI_VALUE2(bool, "mounted", "self target"))
+        return false;
+
+    if (!AI_VALUE(bool, "has available loot"))
+        return false;
+
+    // Loot every corpse this bot (or its group) killed and may loot before
+    // pulling the next mob, like a player. Fire the selection action ("loot")
+    // when no corpse is picked yet, or the picked one can no longer be looted
+    // or reached (looted by someone else, despawned, expired, or abandoned
+    // after a failed approach): "loot" then picks the nearest corpse still on
+    // the stack, so the chain repairs itself instead of stalling.
+    //
+    // The old "already within INTERACTION_DISTANCE, or no hostile targets
+    // around" gate starved the chain in mob-dense grind zones: "attack
+    // anything" (GrindingStrategy, 5.0) grabbed the next mob and the bot walked
+    // off, and a selected corpse that went stale was never replaced, so the
+    // "far from current loot" -> "move to loot" path (7.0) could not run.
+    // While a valid target is selected, those two actions walk to and open it,
+    // so re-selecting the target every tick is neither needed nor desirable.
+    LootObject lootTarget = AI_VALUE(LootObject, "loot target");
+    return lootTarget.IsEmpty() || !lootTarget.IsLootPossible(bot);
 }
 
 bool FarFromCurrentLootTrigger::IsActive()

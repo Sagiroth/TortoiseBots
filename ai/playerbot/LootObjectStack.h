@@ -1,5 +1,7 @@
 #pragma once
 #include "playerbot.h"
+#include <map>
+#include <utility>
 
 namespace ai
 {
@@ -57,12 +59,22 @@ namespace ai
         bool CanLoot(float maxDistance);
         LootObject GetLoot(float maxDistance = 0);
 
+        // Bounded give-up for corpses we cannot path to (see MoveToLootAction).
+        // A corpse is retried a few times; after that it is ignored until the
+        // failure memory ages out, so it cannot pin the loot chain forever.
+        void NoteApproachFailure(ObjectGuid guid);
+        bool IsAbandoned(ObjectGuid guid);
+
     public:
         std::vector<LootObject> OrderByDistance(float maxDistance = 0);
 
     private:
+        static const uint32 MAX_APPROACH_FAILURES = 3;
+        static const time_t APPROACH_FAILURE_TTL = 120;  // seconds
+
         Player* bot;
         LootTargetList availableLoot;
+        std::map<ObjectGuid, std::pair<uint32, time_t> > approachFailures;
     };
 
 };

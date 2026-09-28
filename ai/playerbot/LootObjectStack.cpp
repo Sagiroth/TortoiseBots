@@ -307,8 +307,46 @@ bool LootObject::IsLootPossible(Player* bot)
     return true;
 }
 
+void LootObjectStack::NoteApproachFailure(ObjectGuid guid)
+{
+    time_t now = time(0);
+
+    // Drop aged-out memory (cheap: only a handful of entries, only on failure).
+    for (std::map<ObjectGuid, std::pair<uint32, time_t> >::iterator i = approachFailures.begin(); i != approachFailures.end();)
+    {
+        if (now - i->second.second > APPROACH_FAILURE_TTL)
+            i = approachFailures.erase(i);
+        else
+            ++i;
+    }
+
+    std::pair<uint32, time_t>& entry = approachFailures[guid];
+    entry.first++;
+    entry.second = now;
+}
+
+bool LootObjectStack::IsAbandoned(ObjectGuid guid)
+{
+    std::map<ObjectGuid, std::pair<uint32, time_t> >::iterator i = approachFailures.find(guid);
+    if (i == approachFailures.end())
+        return false;
+
+    if (time(0) - i->second.second > APPROACH_FAILURE_TTL)
+    {
+        approachFailures.erase(i);
+        return false;
+    }
+
+    return i->second.first >= MAX_APPROACH_FAILURES;
+}
+
 bool LootObjectStack::Add(ObjectGuid guid)
 {
+    // A corpse we repeatedly failed to reach stays out of the stack until the
+    // failure memory ages out, even if a later "add all loot" sweep re-adds it.
+    if (IsAbandoned(guid))
+        return false;
+
     if (!availableLoot.insert(guid).second)
         return false;
 
@@ -332,6 +370,7 @@ void LootObjectStack::Remove(ObjectGuid guid)
 void LootObjectStack::Clear()
 {
     availableLoot.clear();
+    approachFailures.clear();
 }
 
 bool LootObjectStack::CanLoot(float maxDistance)
@@ -359,6 +398,9 @@ std::vector<LootObject> LootObjectStack::OrderByDistance(float maxDistance)
     for (LootTargetList::iterator i = safeCopy.begin(); i != safeCopy.end(); i++)
     {
         ObjectGuid guid = i->guid;
+        if (IsAbandoned(guid))
+            continue;
+
         LootObject lootObject(bot, guid);
         if (!lootObject.IsLootPossible(bot))
             continue;

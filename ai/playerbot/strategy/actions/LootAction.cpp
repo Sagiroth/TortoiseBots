@@ -384,6 +384,13 @@ bool StoreLootAction::Execute(Event& event)
     {
         WorldPacket packet(CMSG_LOOT_MONEY, 0);
         bot->GetSession()->HandleLootMoneyOpcode(packet);
+
+        // Money taken before the item loop, so gold-only corpses (most low-level
+        // kills) used to leave no trace: income was unmeasurable and a bot that
+        // opened a corpse but took only money looked identical to one that never
+        // opened it. Log the copper amount so bot_events.csv can correlate kills
+        // with looting.
+        sPlayerbotAIConfig.logEvent(ai, "LootMoney", std::to_string(gold), std::to_string(guid.GetEntry()));
     }
 
     for (uint8 i = 0; i < items; ++i)

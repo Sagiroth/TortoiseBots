@@ -2070,6 +2070,28 @@ bool MoveToLootAction::Execute(Event& event)
     bool los = sServerFacade.IsWithinLOSInMap(bot, wo);
     float dist = sServerFacade.getDistance2d(bot, wo);
     bool moved = los ? MoveNear(wo, sPlayerbotAIConfig.contactDistance) : MoveTo(WorldPosition(wo));
+
+    // Bounded give-up: a corpse the bot cannot path to must not pin the loot
+    // chain (and with it the next pull) indefinitely. Count failed approaches
+    // per corpse; once one is abandoned, drop it and clear the target so
+    // "loot" selects the next corpse. The memory lives in the loot stack and
+    // ages out, so a corpse that becomes reachable later is retried.
+    if (!moved)
+    {
+        LootObjectStack* lootStack = AI_VALUE(LootObjectStack*, "available loot");
+        if (lootStack)
+        {
+            lootStack->NoteApproachFailure(loot.guid);
+            if (lootStack->IsAbandoned(loot.guid))
+            {
+                sLog.outDebug("[BOT LOOT] %s: giving up on unreachable guid=%lu after repeated failed approaches",
+                    bot->GetName(), loot.guid.GetRawValue());
+                lootStack->Remove(loot.guid);
+                context->GetValue<LootObject>("loot target")->Set(LootObject());
+            }
+        }
+    }
+
     sLog.outDebug("[BOT LOOT] %s: MoveToLoot guid=%lu dist=%.1f los=%d via=%s result=%d",
         bot->GetName(), loot.guid.GetRawValue(), dist, los ? 1 : 0, los ? "MoveNear" : "MoveTo", moved ? 1 : 0);
     return moved;
