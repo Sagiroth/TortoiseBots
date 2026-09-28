@@ -12,6 +12,8 @@ void TrainerAction::Learn(uint32 cost, ObjectGuid trainerGuid, uint32 spellId, T
     {
         if (AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::spells) < cost)
         {
+            if (cost < visitCheapestUnaffordable)
+                visitCheapestUnaffordable = cost;
             msg << " - too expensive";
             return;
         }
@@ -34,6 +36,8 @@ void TrainerAction::Learn(uint32 cost, ObjectGuid trainerGuid, uint32 spellId, T
     }
     if (!learned)
         ai->CastSpell(tSpell->spell, bot);
+
+    ++visitLearned;
 
     sPlayerbotAIConfig.logEvent(ai, "TrainerAction", proto->SpellName[0], std::to_string(proto->Id));
 
@@ -156,8 +160,34 @@ bool TrainerAction::Execute(Event& event)
 
     if (text.find("learn") != std::string::npos || sRandomBotFacade.IsFreeBot(bot) || (sPlayerbotAIConfig.autoTrainSpells != "no" && (creature->GetCreatureInfo()->trainer_type != TRAINER_TYPE_TRADESKILLS || !ai->HasActivePlayerMaster()))) //Todo rewrite to only exclude start primary profession skills and make config dependent.
     {
-        if(Iterate(requester, creature, &TrainerAction::Learn, spells))
+        visitCheapestUnaffordable = UINT32_MAX;
+        visitLearned = 0;
+        bool const hasTrainable = Iterate(requester, creature, &TrainerAction::Learn, spells);
+        if (hasTrainable)
             context->ClearValues("item usage"); //Bot might be able to use new items.
+
+        // A class-trainer visit that found trainable spells but learned none of
+        // them because every one was too expensive cannot be finished by
+        // standing there: "should travel named::trainer class" stays true (the
+        // cheapest green spell anywhere still fits the budget), so the bot
+        // re-requested the same trainer roughly every 20 s forever. Blacklist
+        // the purpose for 10 minutes with the same mechanism
+        // ChooseTravelTargetAction::Execute uses when a search yields no usable
+        // destination; RequestTravelTargetAction::isUseful reads the same key.
+        // Like the other parks it is a cooling-off: any successful pick of
+        // another purpose clears it early (setNewTarget clears all blacklists).
+        if (hasTrainable && visitLearned == 0 && visitCheapestUnaffordable != UINT32_MAX && spells.empty() &&
+            creature->GetCreatureInfo()->trainer_type == TRAINER_TYPE_CLASS)
+        {
+            std::string const purposeKey = "trainer class";
+            if (AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purposeKey) <= time(0))
+                sPlayerbotAIConfig.logEvent(ai, "TrainerNoMoney",
+                    std::to_string(visitCheapestUnaffordable),
+                    std::to_string(AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::spells)));
+
+            SET_AI_VALUE2(bool, "no active travel destinations", purposeKey, true);
+            SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purposeKey, time(0) + 10 * MINUTE);
+        }
     }
     else
         Iterate(requester, creature, NULL, spells);
