@@ -159,6 +159,7 @@ private:
         uint32 firstFailTimeMs = 0;
         uint32 lastFailTimeMs = 0;
         bool reported = false;
+        uint32 lastReportMs = 0;
     };
     std::map<std::string, ActionFailureRecord> m_actionFailures;
 

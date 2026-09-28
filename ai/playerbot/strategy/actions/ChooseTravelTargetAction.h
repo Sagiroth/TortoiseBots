@@ -18,6 +18,9 @@ namespace ai
         virtual bool isUseful() override;
         static void ReportTravelTarget(Player* bot, Player* requester, TravelTarget* newTarget, TravelTarget* oldTarget);
     protected:
+        // Checks shared by every travel-target action (activity, movement,
+        // no active target). isUseful adds the prepared-request check.
+        bool CanChooseTravel();
         void setNewTarget(Player* requester, TravelTarget* newTarget, TravelTarget* oldTarget);
 
         bool SetBestTarget(Player* requester, TravelTarget* target, PartitionedTravelList& travelPartitions, bool onlyActive = true);

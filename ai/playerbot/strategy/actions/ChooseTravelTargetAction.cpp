@@ -99,6 +99,14 @@ bool ChooseTravelTargetAction::Execute(Event& event)
 
 bool ChooseTravelTargetAction::isUseful()
 {
+    // Only a prepared request has destinations to choose from; otherwise the
+    // "not travel target active" trigger would run this every tick just to fail.
+    return CanChooseTravel() &&
+        AI_VALUE(TravelTarget*, "travel target")->GetStatus() == TravelStatus::TRAVEL_STATUS_PREPARE;
+}
+
+bool ChooseTravelTargetAction::CanChooseTravel()
+{
     if (!ai->AllowActivity(TRAVEL_ACTIVITY))
         return false;
 
@@ -770,7 +778,7 @@ bool ChooseGroupTravelTargetAction::isUseful()
     if (!bot->GetGroup())
         return false;
 
-    if (!ChooseTravelTargetAction::isUseful())
+    if (!CanChooseTravel())
         return false;
 
     if (AI_VALUE(TravelTarget*, "travel target")->GetStatus() == TravelStatus::TRAVEL_STATUS_PREPARE)
@@ -850,7 +858,7 @@ bool RefreshTravelTargetAction::isUseful()
     if (bot->InBattleGround())
         return false;
 
-    if (!ChooseTravelTargetAction::isUseful())
+    if (!CanChooseTravel())
         return false;
 
     if (AI_VALUE(TravelTarget*, "travel target")->GetStatus() == TravelStatus::TRAVEL_STATUS_PREPARE)
@@ -891,7 +899,7 @@ bool ResetTargetAction::isUseful()
     if (bot->InBattleGround())
         return false;
 
-    if (!ChooseTravelTargetAction::isUseful())
+    if (!CanChooseTravel())
         return false;
 
     if (AI_VALUE(TravelTarget*, "travel target")->GetStatus() == TravelStatus::TRAVEL_STATUS_PREPARE)

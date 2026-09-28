@@ -519,9 +519,13 @@ void ObservabilityEmitter::OnActionFailed(Player* bot,
     }
     rec.lastFailTimeMs = nowMs;
 
-    if (rec.count >= 5 && !rec.reported)
+    // A bot stuck on the same failing action would otherwise raise a new
+    // anomaly every 2 s window; report each bot/action pair at most every 5 min.
+    if (rec.count >= 5 && !rec.reported &&
+        (rec.lastReportMs == 0 || (nowMs - rec.lastReportMs) > 300000))
     {
         rec.reported = true;
+        rec.lastReportMs = nowMs;
         std::string details = "Action '" + actionName + "' failed >= 5 times within 2 seconds";
         PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
         std::string activeStrat = !strategy.empty() ? strategy : FormatStrategies(ai);

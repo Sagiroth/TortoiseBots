@@ -293,7 +293,7 @@ bool PetitionTurnInAction::isUseful()
     if (!ai->HasStrategy("travel", BotState::BOT_STATE_NON_COMBAT))
         return false;
 
-    if (!ChooseTravelTargetAction::isUseful())
+    if (!CanChooseTravel())
         return false;
 
     bool inCity = false;
