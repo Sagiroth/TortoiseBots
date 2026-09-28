@@ -212,6 +212,61 @@ void PlayerbotFactory::SeedFreshMoney()
     sLog.outDetail("Bot %d seeded with %u copper (level %u)", bot->GetGUIDLow(), money, lvl);
 }
 
+// Weapon oils (casters), sharpening/weight stones (melee) and rogue poisons
+// are granted as one small stack of the CURRENT level tier only (oils: 2
+// like the donor, stones/poisons: 5 as seeded before). In this DB oils are
+// stackable=1, so one extra item is one extra bag slot. The helper below
+// only ever removes STRICTLY lower tiers of the same line and only tops up
+// toward the target: anything at or above the current tier that the bot
+// owns (raid consumables, self-made stacks, higher ranks) is left alone,
+// and target stacks are never trimmed down.
+void PlayerbotFactory::TopUpConsumableFamily(std::vector<uint32> const& familyLowToHigh, uint32 targetId, uint32 target)
+{
+    if (!bot || !targetId || !target)
+        return;
+    // Index of the current tier; anything above it is kept unconditionally.
+    size_t targetIdx = familyLowToHigh.size();
+    for (size_t i = 0; i < familyLowToHigh.size(); ++i)
+    {
+        if (familyLowToHigh[i] == targetId)
+        {
+            targetIdx = i;
+            break;
+        }
+    }
+    if (targetIdx >= familyLowToHigh.size())
+        return;
+    // Count held target items (oils are stackable=1: count items, not stacks).
+    uint32 heldTarget = 0;
+    std::vector<Item*> lowerTier;
+    {
+        FindItemByIdsVisitor visitor(ItemIds(familyLowToHigh.begin(), familyLowToHigh.end()));
+        ai->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
+        for (Item* item : visitor.GetResult())
+        {
+            if (!item)
+                continue;
+            if (item->GetEntry() == targetId)
+                heldTarget += std::max<uint32>(1, item->GetCount());
+            else
+            {
+                for (size_t i = 0; i < targetIdx; ++i)
+                {
+                    if (familyLowToHigh[i] == item->GetEntry())
+                    {
+                        lowerTier.push_back(item);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    for (Item* item : lowerTier)
+        bot->DestroyItem(item->GetBagSlot(), item->GetSlot(), true);
+    if (heldTarget < target)
+        StoreItem(targetId, target - heldTarget, true);
+}
+
 void PlayerbotFactory::AddConsumables()
 {
     auto pmo = sPerformanceMonitor.start(PERF_MON_RNDBOT, "PlayerbotFactory_Consumables");
@@ -221,108 +276,97 @@ void PlayerbotFactory::AddConsumables()
       case CLASS_MAGE:
       case CLASS_WARLOCK:
       {
-         if (level >= 5 && level < 20) {
-            StoreItem(CONSUM_ID_MINOR_WIZARD_OIL, 5);
-            }
-         if (level >= 20 && level < 40) {
-            StoreItem(CONSUM_ID_MINOR_MANA_OIL, 5);
-            StoreItem(CONSUM_ID_MINOR_WIZARD_OIL, 5);
+         // Wizard vs mana oil by class/spec (donor InitConsumables is
+         // spec-aware: shadow priests imbue spellpower, holy/disc imbue
+         // mana; mages/warlocks always spellpower). Two separate families
+         // so holding one line never purges the other.
+         static std::vector<uint32> const wizardFamily = {
+             CONSUM_ID_MINOR_WIZARD_OIL, CONSUM_ID_LESSER_WIZARD_OIL,
+             CONSUM_ID_WIZARD_OIL, CONSUM_ID_BRILLIANT_WIZARD_OIL };
+         static std::vector<uint32> const manaFamily = {
+             CONSUM_ID_MINOR_MANA_OIL, CONSUM_ID_LESSER_MANA_OIL,
+             CONSUM_ID_BRILLIANT_MANA_OIL };
+         // Priest tab 2 is shadow (RandomItemMgr::GetPlayerSpecName,
+         // AiFactory strategies); pre-10 default tab 1 reads as holy.
+         bool wantWizard = bot->GetClass() == CLASS_MAGE || bot->GetClass() == CLASS_WARLOCK ||
+             (bot->GetClass() == CLASS_PRIEST && AiFactory::GetPlayerSpecTab(bot) == 2);
+         if (wantWizard)
+         {
+            uint32 target = 0;
+            if (level >= 45) target = CONSUM_ID_BRILLIANT_WIZARD_OIL;
+            else if (level >= 40) target = CONSUM_ID_WIZARD_OIL;
+            else if (level >= 5) target = CONSUM_ID_MINOR_WIZARD_OIL;
+            if (target)
+               TopUpConsumableFamily(wizardFamily, target, 2);
          }
-         if (level >= 40 && level < 45) {
-             StoreItem(CONSUM_ID_MINOR_MANA_OIL, 5);
-             StoreItem(CONSUM_ID_WIZARD_OIL, 5);
-         }
-         if (level >= 45) {
-             StoreItem(CONSUM_ID_BRILLIANT_MANA_OIL, 5);
-             StoreItem(CONSUM_ID_BRILLIANT_WIZARD_OIL, 5);
+         else
+         {
+            uint32 target = 0;
+            if (level >= 45) target = CONSUM_ID_BRILLIANT_MANA_OIL;
+            else if (level >= 5) target = CONSUM_ID_MINOR_MANA_OIL;
+            if (target)
+               TopUpConsumableFamily(manaFamily, target, 2);
          }
    }
       break;
       case CLASS_PALADIN:
       case CLASS_WARRIOR:
-      case CLASS_HUNTER:
        {
-         if (level >= 1 && level < 5) {
-            StoreItem(CONSUM_ID_ROUGH_SHARPENING_STONE, 5);
-            StoreItem(CONSUM_ID_ROUGH_WEIGHTSTONE, 5);
-        }
-         if (level >= 5 && level < 15) {
-            StoreItem(CONSUM_ID_COARSE_WEIGHTSTONE, 5);
-            StoreItem(CONSUM_ID_COARSE_SHARPENING_STONE, 5);
-         }
-         if (level >= 15 && level < 25) {
-            StoreItem(CONSUM_ID_HEAVY_WEIGHTSTONE, 5);
-            StoreItem(CONSUM_ID_HEAVY_SHARPENING_STONE, 5);
-         }
-         if (level >= 25 && level < 35) {
-            StoreItem(CONSUM_ID_SOL_SHARPENING_STONE, 5);
-            StoreItem(CONSUM_ID_SOLID_WEIGHTSTONE, 5);
-         }
-         if (level >= 35) {
-             StoreItem(CONSUM_ID_DENSE_WEIGHTSTONE, 5);
-             StoreItem(CONSUM_ID_DENSE_SHARPENING_STONE, 5);
-         }
+         // Hunters get no melee stones (ranged class; review MEDIUM-01).
+         static std::vector<uint32> const sharpeningFamily = {
+             CONSUM_ID_ROUGH_SHARPENING_STONE, CONSUM_ID_COARSE_SHARPENING_STONE,
+             CONSUM_ID_HEAVY_SHARPENING_STONE, CONSUM_ID_SOL_SHARPENING_STONE,
+             CONSUM_ID_DENSE_SHARPENING_STONE, CONSUM_ID_ELEMENTAL_SHARPENING_STONE,
+             CONSUM_ID_CONSECRATED_SHARPENING_STONE };
+         static std::vector<uint32> const weightFamily = {
+             CONSUM_ID_ROUGH_WEIGHTSTONE, CONSUM_ID_COARSE_WEIGHTSTONE,
+             CONSUM_ID_HEAVY_WEIGHTSTONE, CONSUM_ID_SOLID_WEIGHTSTONE,
+             CONSUM_ID_DENSE_WEIGHTSTONE };
+         uint32 sharpenTarget = 0, weightTarget = 0;
+         if (level >= 35) { sharpenTarget = CONSUM_ID_DENSE_SHARPENING_STONE; weightTarget = CONSUM_ID_DENSE_WEIGHTSTONE; }
+         else if (level >= 25) { sharpenTarget = CONSUM_ID_SOL_SHARPENING_STONE; weightTarget = CONSUM_ID_SOLID_WEIGHTSTONE; }
+         else if (level >= 15) { sharpenTarget = CONSUM_ID_HEAVY_SHARPENING_STONE; weightTarget = CONSUM_ID_HEAVY_WEIGHTSTONE; }
+         else if (level >= 5) { sharpenTarget = CONSUM_ID_COARSE_SHARPENING_STONE; weightTarget = CONSUM_ID_COARSE_WEIGHTSTONE; }
+         else if (level >= 1) { sharpenTarget = CONSUM_ID_ROUGH_SHARPENING_STONE; weightTarget = CONSUM_ID_ROUGH_WEIGHTSTONE; }
+         if (sharpenTarget)
+            TopUpConsumableFamily(sharpeningFamily, sharpenTarget, 5);
+         if (weightTarget)
+            TopUpConsumableFamily(weightFamily, weightTarget, 5);
    }
        break;
        case CLASS_ROGUE:
       {
-         if (level >= 20 && level < 28) {
-            StoreItem(CONSUM_ID_INSTANT_POISON, 5);
-            StoreItem(CONSUM_ID_CRIPPLING_POISON, 5);
-         }
-         if (level >= 28 && level < 30) {
-            StoreItem(CONSUM_ID_INSTANT_POISON_II, 5);
-            StoreItem(CONSUM_ID_CRIPPLING_POISON, 5);
-            StoreItem(CONSUM_ID_MIND_POISON, 5);
-         }
-         if (level >= 30 && level < 36) {
-            StoreItem(CONSUM_ID_DEADLY_POISON, 5);
-            StoreItem(CONSUM_ID_INSTANT_POISON_II, 5);
-            StoreItem(CONSUM_ID_CRIPPLING_POISON, 5);
-            StoreItem(CONSUM_ID_MIND_POISON, 5);
-         }
-         if (level >= 36 && level < 38) {
-             StoreItem(CONSUM_ID_DEADLY_POISON, 5);
-             StoreItem(CONSUM_ID_INSTANT_POISON_III, 5);
-             StoreItem(CONSUM_ID_CRIPPLING_POISON, 5);
-             StoreItem(CONSUM_ID_MIND_POISON, 5);
-         }
-         if (level >= 38 && level < 44) {
-             StoreItem(CONSUM_ID_DEADLY_POISON_II, 5);
-             StoreItem(CONSUM_ID_INSTANT_POISON_III, 5);
-             StoreItem(CONSUM_ID_CRIPPLING_POISON, 5);
-             StoreItem(CONSUM_ID_MIND_POISON_II, 5);
-         }
-         if (level >= 44 && level < 46) {
-             StoreItem(CONSUM_ID_DEADLY_POISON_II, 5);
-            StoreItem(CONSUM_ID_INSTANT_POISON_IV, 5);
-            StoreItem(CONSUM_ID_CRIPPLING_POISON, 5);
-            StoreItem(CONSUM_ID_MIND_POISON_II, 5);
-         }
-         if (level >= 46 && level < 52) {
-             StoreItem(CONSUM_ID_DEADLY_POISON_III, 5);
-             StoreItem(CONSUM_ID_INSTANT_POISON_IV, 5);
-             StoreItem(CONSUM_ID_CRIPPLING_POISON, 5);
-             StoreItem(CONSUM_ID_MIND_POISON_II, 5);
-         }
-         if (level >= 52 && level < 54) {
-             StoreItem(CONSUM_ID_DEADLY_POISON_III, 5);
-            StoreItem(CONSUM_ID_INSTANT_POISON_V, 5);
-            StoreItem(CONSUM_ID_CRIPPLING_POISON_II, 5);
-            StoreItem(CONSUM_ID_MIND_POISON_III, 5);
-         }
-         if (level >= 54 && level < 60) {
-             StoreItem(CONSUM_ID_DEADLY_POISON_IV, 5);
-             StoreItem(CONSUM_ID_INSTANT_POISON_V, 5);
-             StoreItem(CONSUM_ID_CRIPPLING_POISON_II, 5);
-             StoreItem(CONSUM_ID_MIND_POISON_III, 5);
-         }
-         if (level >= 60) {
-            StoreItem(CONSUM_ID_DEADLY_POISON_V, 5);
-            StoreItem(CONSUM_ID_INSTANT_POISON_VI, 5);
-            StoreItem(CONSUM_ID_CRIPPLING_POISON_II, 5);
-            StoreItem(CONSUM_ID_MIND_POISON_III, 5);
-         }
+         static std::vector<uint32> const instantFamily = {
+             CONSUM_ID_INSTANT_POISON, CONSUM_ID_INSTANT_POISON_II, CONSUM_ID_INSTANT_POISON_III,
+             CONSUM_ID_INSTANT_POISON_IV, CONSUM_ID_INSTANT_POISON_V, CONSUM_ID_INSTANT_POISON_VI,
+             CONSUM_ID_INSTANT_POISON_VII };
+         static std::vector<uint32> const deadlyFamily = {
+             CONSUM_ID_DEADLY_POISON, CONSUM_ID_DEADLY_POISON_II, CONSUM_ID_DEADLY_POISON_III,
+             CONSUM_ID_DEADLY_POISON_IV, CONSUM_ID_DEADLY_POISON_V,
+             CONSUM_ID_DEADLY_POISON_VI, CONSUM_ID_DEADLY_POISON_VII };
+         static std::vector<uint32> const cripplingFamily = {
+             CONSUM_ID_CRIPPLING_POISON, CONSUM_ID_CRIPPLING_POISON_II };
+         static std::vector<uint32> const mindFamily = {
+             CONSUM_ID_MIND_POISON, CONSUM_ID_MIND_POISON_II, CONSUM_ID_MIND_POISON_III };
+         uint32 instantTarget = 0, deadlyTarget = 0, cripplingTarget = 0, mindTarget = 0;
+         if (level >= 60) { deadlyTarget = CONSUM_ID_DEADLY_POISON_V; instantTarget = CONSUM_ID_INSTANT_POISON_VI; cripplingTarget = CONSUM_ID_CRIPPLING_POISON_II; mindTarget = CONSUM_ID_MIND_POISON_III; }
+         else if (level >= 54) { deadlyTarget = CONSUM_ID_DEADLY_POISON_IV; instantTarget = CONSUM_ID_INSTANT_POISON_V; cripplingTarget = CONSUM_ID_CRIPPLING_POISON_II; mindTarget = CONSUM_ID_MIND_POISON_III; }
+         else if (level >= 52) { deadlyTarget = CONSUM_ID_DEADLY_POISON_III; instantTarget = CONSUM_ID_INSTANT_POISON_V; cripplingTarget = CONSUM_ID_CRIPPLING_POISON_II; mindTarget = CONSUM_ID_MIND_POISON_III; }
+         else if (level >= 46) { deadlyTarget = CONSUM_ID_DEADLY_POISON_III; instantTarget = CONSUM_ID_INSTANT_POISON_IV; cripplingTarget = CONSUM_ID_CRIPPLING_POISON; mindTarget = CONSUM_ID_MIND_POISON_II; }
+         else if (level >= 44) { deadlyTarget = CONSUM_ID_DEADLY_POISON_II; instantTarget = CONSUM_ID_INSTANT_POISON_IV; cripplingTarget = CONSUM_ID_CRIPPLING_POISON; mindTarget = CONSUM_ID_MIND_POISON_II; }
+         else if (level >= 38) { deadlyTarget = CONSUM_ID_DEADLY_POISON_II; instantTarget = CONSUM_ID_INSTANT_POISON_III; cripplingTarget = CONSUM_ID_CRIPPLING_POISON; mindTarget = CONSUM_ID_MIND_POISON_II; }
+         else if (level >= 36) { deadlyTarget = CONSUM_ID_DEADLY_POISON; instantTarget = CONSUM_ID_INSTANT_POISON_III; cripplingTarget = CONSUM_ID_CRIPPLING_POISON; mindTarget = CONSUM_ID_MIND_POISON; }
+         else if (level >= 30) { deadlyTarget = CONSUM_ID_DEADLY_POISON; instantTarget = CONSUM_ID_INSTANT_POISON_II; cripplingTarget = CONSUM_ID_CRIPPLING_POISON; mindTarget = CONSUM_ID_MIND_POISON; }
+         else if (level >= 28) { instantTarget = CONSUM_ID_INSTANT_POISON_II; cripplingTarget = CONSUM_ID_CRIPPLING_POISON; mindTarget = CONSUM_ID_MIND_POISON; }
+         else if (level >= 20) { instantTarget = CONSUM_ID_INSTANT_POISON; cripplingTarget = CONSUM_ID_CRIPPLING_POISON; }
+         if (deadlyTarget)
+            TopUpConsumableFamily(deadlyFamily, deadlyTarget, 5);
+         if (instantTarget)
+            TopUpConsumableFamily(instantFamily, instantTarget, 5);
+         if (cripplingTarget)
+            TopUpConsumableFamily(cripplingFamily, cripplingTarget, 5);
+         if (mindTarget)
+            TopUpConsumableFamily(mindFamily, mindTarget, 5);
          break;
       }
    }
@@ -3562,16 +3606,20 @@ void PlayerbotFactory::InitReagents()
         }
 
         uint32 maxCount = proto->GetMaxStackSize();
+        uint32 want = maxCount * std::max<uint32>(1, regCount);
 
         QueryItemCountVisitor visitor(*i);
         ai->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
-        if ((uint32)visitor.GetCount() > maxCount) continue;
+        uint32 have = visitor.GetCount() > 0 ? (uint32)visitor.GetCount() : 0;
+        if (have >= want) continue;
 
-        uint32 randCount = urand(maxCount / 2, maxCount * regCount);
+        uint32 randCount = urand(maxCount / 2, want);
+        uint32 addCount = std::min(randCount, want - have);
+        if (!addCount) continue;
 
-        Item* newItem = bot->StoreNewItemInInventorySlot(*i, randCount);
+        Item* newItem = bot->StoreNewItemInInventorySlot(*i, addCount);
 
-        sLog.outDetail("Bot %d got reagent %s x%d", bot->GetGUIDLow(), proto->Name1, randCount);
+        sLog.outDetail("Bot %d got reagent %s x%d", bot->GetGUIDLow(), proto->Name1, addCount);
     }
 
     for (PlayerSpellMap::iterator itr = bot->GetSpellMap().begin(); itr != bot->GetSpellMap().end(); ++itr)

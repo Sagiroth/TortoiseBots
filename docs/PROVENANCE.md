@@ -1912,3 +1912,40 @@ Local validation:
 - Live verification (no docker build in this worktree): guard-faction masks
   from `tw_world` SELECTs, `deaths.csv` killer breakdown, `bot_events.csv`
   `debug travel` skip lines after the next module build.
+
+## Bounded consumable seeding (oils/stones/poisons) + reagent top-up clamp — 2026-09-28
+
+Feature: `PlayerbotFactory::AddConsumables` tops one small stack of the
+current level tier only (oils x2 like the donor, stones/poisons x5 as seeded
+before) and `InitReagents` tops up to its stack target, never above. The
+top-up helper only removes STRICTLY lower tiers of the same line, keeps any
+higher tier the bot owns (raid consumables, self-made stacks), never trims
+the target stack down, grants at most the missing count, and hunters receive
+no melee sharpening/weight stones. Wizard vs mana oil is spec-aware
+(mage/warlock/shadow priest get wizard oil, other priests mana oil) with two
+separate families so one line never purges the other.
+
+Source repository: `mod-playerbots` @ `b6696bdb` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+- `src/Bot/Factory/PlayerbotFactory.cpp:1090-1303` (`InitConsumables`:
+  spec-aware oil pick — shadow priest wizard oil, holy mana oil, mage
+  wizard oil — x2; stones/poisons x20 via `items.push_back({id, N})` top-up
+  at `:1298-1303`: `count = N - GetItemCount; if (count > 0) StoreItem`).
+
+Copied / ported / independently reimplemented: reimplemented, not copied.
+The donor tops up per item id with no family purge and no raid-tier guard;
+this change adds the low-to-high family ordering (lower tiers purged, higher
+kept) and clamps the local overshooting `InitReagents` grant
+(`> maxCount` + unconditional `urand(max/2, max*regCount)`) to a
+never-above-target top-up. Poison/stone keep count stays 5 (local seed
+shape), not the donor's 20.
+
+Reason: in this DB oils are `stackable = 1`, so the old `StoreItem(id, 5)`
+per tier granted 5-10 bag slots per caster with no family bound and no
+re-seed purge; `InitReagents` overshot its target every run.
+
+Local validation:
+- `bash tools/verify_all.sh`; `git diff --check`.
+- Module build by orchestrator (workers do not run the docker builder).

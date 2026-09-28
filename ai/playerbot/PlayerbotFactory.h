@@ -91,6 +91,10 @@ private:
     void InitBags();
     void InitInventorySkill();
     Item* StoreItem(uint32 itemId, uint32 count, bool ignoreCount = false);
+    // Top up one consumable family (oils/stones/poisons), ordered low to high
+    // tier: destroys only strictly lower tiers, tops targetId up to target
+    // items, never touches a higher tier the bot owns, never trims target.
+    void TopUpConsumableFamily(std::vector<uint32> const& familyLowToHigh, uint32 targetId, uint32 target);
     void AddConsumables();
     // Level-appropriate enchant for one equipped item: best candidate from
     // ai_playerbot_enchant_candidates for the bot's class/spec (see
