@@ -344,7 +344,8 @@ bool FindCorpseAction::Execute(Event& event)
         // sidestep point ~34 yd away while ReviveFromCorpse could already have
         // reclaimed, and each dispatch re-launched a POINT spline the bot never
         // rode (live: byte-identical from-positions for 5+ min, dist 34-38).
-        if (corpse->IsWithinDistInMap(bot, (float)CORPSE_RECLAIM_RADIUS, true))
+        bool insideReclaimRange = corpse->IsWithinDistInMap(bot, (float)CORPSE_RECLAIM_RADIUS, true);
+        if (insideReclaimRange)
         {
             if (moveToMaster) //We are near master.
             {
@@ -353,13 +354,32 @@ bool FindCorpseAction::Execute(Event& event)
                     sLog.outDetail("[BOT CORPSE] %s: find corpse - within core reclaim range & near master, yielding to revive-from-corpse", bot->GetName());
                     return false;
                 }
+                // En route to the master but not yet in spell range: the master
+                // may stand 26-34 yd from the corpse, so keep walking (the move
+                // target below stays masterPos). Only the 8-min walked-too-long
+                // backstop below may still yield - it runs for master legs too so
+                // a stale one can never strand the ghost past it.
             }
-            else if (deadTime > 8 * MINUTE) //We have walked too long already.
+            // Core reclaim delay still running: park the ghost where it is and wait
+            // for the delay to expire. Walking closer cannot help (already inside
+            // the 39 yd range) and risks gliding into a pack; the delay branch in
+            // ReviveFromCorpseAction reclaims the moment it expires. Without this
+            // the ghost walks to the corpse, MoveTo at destination returns false,
+            // and the fallback below abandons the run for the spirit healer.
+            int64 reclaimWait = corpse->GetGhostTime() + bot->GetCorpseReclaimDelay(corpse->GetType() == CORPSE_RESURRECTABLE_PVP) - time(nullptr);
+            if (reclaimWait > 0)
+            {
+                ai->StopMoving();
+                sLog.outDetail("[BOT CORPSE] %s: find corpse - inside reclaim range, waiting out reclaim delay (%llds left)",
+                    bot->GetName(), (long long)reclaimWait);
+                return true;
+            }
+            if (deadTime > 8 * MINUTE) //We have walked too long already.
             {
                 sLog.outDetail("[BOT CORPSE] %s: find corpse - within core reclaim range & deadTime>8min, yielding to revive-from-corpse", bot->GetName());
                 return false;
             }
-            else
+            if (!moveToMaster)
             {
                 std::list<ObjectGuid> units = AI_VALUE(std::list<ObjectGuid>, "possible targets no los");
 
@@ -371,12 +391,22 @@ bool FindCorpseAction::Execute(Event& event)
             }
         }
 
-        //If we are getting close move to a save ressurrection spot instead of just the corpse.
-        // Inside the core reclaim range there is nothing to walk to: the ghost is
-        // already close enough for ReviveFromCorpse to reclaim this tick, so walk
-        // straight at the corpse (any sidestep target ~34 yd away re-launches a
-        // POINT spline every tick that the bot never rides - the 34-38 yd stall).
-        if (corpse->IsWithinDistInMap(bot, (float)CORPSE_RECLAIM_RADIUS, true))
+        // Walk straight at the corpse only when already inside the core reclaim
+        // range, ungrouped, and with no flee-worthy threat: any sidestep target
+        // ~34 yd away re-launches a POINT spline every tick that the bot never
+        // rides (the 34-38 yd stall). A grouped ghost keeps its master target
+        // (within spellDistance the yield gate above fires and the reclaim runs);
+        // with a threat the FleeManager branch below still picks a safe vector
+        // instead of the pack that killed the bot.
+        bool walkStraightToCorpse = false;
+        if (insideReclaimRange && !moveToMaster)
+        {
+            std::list<ObjectGuid> nearUnits = AI_VALUE(std::list<ObjectGuid>, "possible targets no los");
+            FleeManager probe(bot, reclaimDist, 0.0, urand(0, 1), moveToPos);
+            if (!probe.IsUseful() && botPos.GetUnitsAggro(nearUnits, bot) == 0)
+                walkStraightToCorpse = true;
+        }
+        if (walkStraightToCorpse)
             moveToPos = corpsePos;
         else if (corpseDist < sPlayerbotAIConfig.reactDistance)
         {
@@ -488,40 +518,35 @@ bool FindCorpseAction::Execute(Event& event)
             bool started = bot->IsMoving() || (bot->GetMotionMaster() && !bot->GetMotionMaster()->empty() && movegenAfter != (int32)IDLE_MOTION_TYPE);
             float ghostDistAfter = WorldPosition(bot).distance(moveToPos);
             uint32 posUnchangedSec = AI_VALUE2(uint32, "time since last change", "current position");
-            // Per-tick during a stall; log failures always (they trigger the
-            // spirit-healer retry below) and successes at most once a minute.
-            bool logMoveTo = !moved;
-            if (moved)
-            {
-                time_t nowMove = time(nullptr);
-                time_t lastMoveLog = AI_VALUE2(time_t, "manual time", "find corpse moveto");
-                if (!lastMoveLog || nowMove - lastMoveLog >= 60)
-                {
-                    SET_AI_VALUE2(time_t, "manual time", "find corpse moveto", nowMove);
-                    logMoveTo = true;
-                }
-            }
+            // Per-tick during a stall; failures drive the spirit-healer retry
+            // below, so log them at most once a minute too (same key covers the
+            // MoveTo line and both failure lines - one line per minute max).
+            time_t nowMove = time(nullptr);
+            time_t lastMoveLog = AI_VALUE2(time_t, "manual time", "find corpse moveto");
+            bool logMoveTo = !lastMoveLog || nowMove - lastMoveLog >= 60;
+            if (logMoveTo)
+                SET_AI_VALUE2(time_t, "manual time", "find corpse moveto", nowMove);
             if (logMoveTo)
                 sLog.outDetail("[BOT CORPSE] %s: find corpse - MoveTo(%.1f,%.1f,%.1f) returned %s",
                     bot->GetName(), moveToPos.getX(), moveToPos.getY(), moveToPos.getZ(), moved ? "true" : "false");
-            // Log every successful dispatch (throttled): the stall signature is
-            // not only MoveTo=true with an IDLE stack (never launched) but also
-            // MoveTo=true with a POINT generator that never displaces the bot
-            // (spline validated-but-stalled). The `started` field tells them
-            // apart. A false return already falls through to the spirit-healer
-            // retry below, so it needs no triage line.
+            // Throttled ghost-move CSV row (30 s key inside LogGhostMoveDiag):
+            // the stall signature is MoveTo=true with a POINT generator that
+            // never displaces the bot. A false return already falls through to
+            // the spirit-healer retry below, so it needs no triage row.
             if (moved)
                 LogGhostMoveDiag(ai, bot, ghostBefore, moveToPos, ghostDistBefore, movegenBefore, movegenAfter,
                     started, moved, ghostDistAfter, posUnchangedSec);
 
             if (!moved && !ai->HasActivePlayerMaster()) //We could not move to coprse. Try spirithealer instead.
             {
-                sLog.outDetail("[BOT CORPSE] %s: find corpse - MoveTo failed & no active player master, trying spirit healer", bot->GetName());
+                if (logMoveTo)
+                    sLog.outDetail("[BOT CORPSE] %s: find corpse - MoveTo failed & no active player master, trying spirit healer", bot->GetName());
                 moved = ai->DoSpecificAction("spirit healer", Event(), true);
             }
             else if (!moved)
             {
-                sLog.outDetail("[BOT CORPSE] %s: find corpse - MoveTo failed but has active player master, NOT using spirit healer -> FAILED loop", bot->GetName());
+                if (logMoveTo)
+                    sLog.outDetail("[BOT CORPSE] %s: find corpse - MoveTo failed but has active player master, NOT using spirit healer -> FAILED loop", bot->GetName());
             }
         }
     }
