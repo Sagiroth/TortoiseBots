@@ -79,7 +79,12 @@ bool ChooseTravelTargetAction::Execute(Event& event)
 
     if (!SetBestTarget(requester, &newTarget, destinationList))
     {
-        SET_AI_VALUE2(bool, "no active travel destinations", futureTravelPurpose, true);
+        // Park this purpose for a minute. RequestTravelTargetAction clears the
+        // flag as soon as its "no travel purpose until" time has passed, and
+        // without one it re-requested (and re-searched) on the very next tick.
+        std::string const purposeKey = futureTravelPurpose.empty() ? "quest" : futureTravelPurpose;
+        SET_AI_VALUE2(bool, "no active travel destinations", purposeKey, true);
+        SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purposeKey, time(0) + MINUTE);
         ai->TellDebug(ai->GetMaster(), "No target set", "debug travel");
 
         // TEMPORARY, see the probe in RequestQuestTravelTargetAction. Destinations
