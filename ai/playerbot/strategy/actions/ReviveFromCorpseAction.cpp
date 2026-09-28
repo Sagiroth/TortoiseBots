@@ -19,17 +19,16 @@ using namespace ai;
 
 // Rate-limited ghost-movement diagnostics (live-server triage for the "ghost
 // stands still" stall: the move action reports success but the bot does not
-// displace). One line per bot per 30 s on the ghost corpse-run dispatch path,
-// via the existing [BOT CORPSE] detail channel (LogLevel=3). Fields: target +
-// 3D distance, motion stack type before/after MoveTo (IDLE vs POINT vs
-// anything else), whether a movement was actually started, and position delta
-// over time (from "current position" change tracking). `watch` grep:
-// [BOT CORPSE] ... ghost-move.
+// displace). One row per bot per 30 s on the ghost corpse-run dispatch path,
+// written to ghost_moves.csv when it is listed in AiPlayerbot.AllowedLogFiles.
+// Fields: target + 3D distance, motion stack type before/after MoveTo (IDLE vs
+// POINT vs anything else), whether a movement was actually started, and
+// seconds without a position change.
 static void LogGhostMoveDiag(PlayerbotAI* ai, Player* bot, WorldPosition const& botBefore,
     WorldPosition const& target, float distBefore, int32 movegenBefore, int32 movegenAfter,
     bool started, bool moveResult, float distAfter, uint32 posUnchangedSec)
 {
-    if (!bot || !ai)
+    if (!bot || !ai || !sPlayerbotAIConfig.hasLog("ghost_moves.csv"))
         return;
     AiObjectContext* context = ai->GetAiObjectContext();
     if (!context)
@@ -39,10 +38,13 @@ static void LogGhostMoveDiag(PlayerbotAI* ai, Player* bot, WorldPosition const& 
     if (last && now - last < 30)
         return;
     SET_AI_VALUE2(time_t, "manual time", "ghost move diag", now);
-    sLog.outDetail("[BOT CORPSE] %s: ghost-move target=(%.1f,%.1f,%.1f map %u) dist=%.1f movegen=%d->%d started=%d result=%d distAfter=%.1f posUnchanged=%us from=(%.1f,%.1f,%.1f)",
-        bot->GetName(), target.getX(), target.getY(), target.getZ(), target.GetMapId(),
-        distBefore, movegenBefore, movegenAfter, started ? 1 : 0, moveResult ? 1 : 0,
-        distAfter, posUnchangedSec, botBefore.getX(), botBefore.getY(), botBefore.getZ());
+    // name,map,fromX,fromY,fromZ,targetX,targetY,targetZ,dist,movegenBefore,movegenAfter,started,result,distAfter,posUnchangedSec
+    char row[320];
+    snprintf(row, sizeof(row), "%s,%u,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%d,%d,%d,%d,%.1f,%u",
+        bot->GetName(), target.GetMapId(), botBefore.getX(), botBefore.getY(), botBefore.getZ(),
+        target.getX(), target.getY(), target.getZ(), distBefore, movegenBefore, movegenAfter,
+        started ? 1 : 0, moveResult ? 1 : 0, distAfter, posUnchangedSec);
+    sPlayerbotAIConfig.log("ghost_moves.csv", row);
 }
 
 
