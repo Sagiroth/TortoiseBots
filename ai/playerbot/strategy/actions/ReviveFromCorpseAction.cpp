@@ -19,12 +19,12 @@ using namespace ai;
 
 // Rate-limited ghost-movement diagnostics (live-server triage for the "ghost
 // stands still" stall: the move action reports success but the bot does not
-// displace). Emits at most one line per bot per 30 s, only on the ghost
-// corpse-run path, via the existing [BOT CORPSE] detail channel (LogLevel=3).
-// Fields: target + 3D distance, motion stack type before/after MoveTo
-// (IDLE vs POINT vs anything else), whether a movement was actually started,
-// and position delta over time (from "current position" change tracking, 0.0 =
-// byte-identical DB position). `watch` grep: [BOT CORPSE] ... ghost-move.
+// displace). One line per bot per 30 s on the ghost corpse-run dispatch path,
+// via the existing [BOT CORPSE] detail channel (LogLevel=3). Fields: target +
+// 3D distance, motion stack type before/after MoveTo (IDLE vs POINT vs
+// anything else), whether a movement was actually started, and position delta
+// over time (from "current position" change tracking). `watch` grep:
+// [BOT CORPSE] ... ghost-move.
 static void LogGhostMoveDiag(PlayerbotAI* ai, Player* bot, WorldPosition const& botBefore,
     WorldPosition const& target, float distBefore, int32 movegenBefore, int32 movegenAfter,
     bool started, bool moveResult, float distAfter, uint32 posUnchangedSec)
@@ -452,10 +452,10 @@ bool FindCorpseAction::Execute(Event& event)
         else
         {
             // Ghost-movement triage: capture the motion stack before/after the
-            // dispatch. The stall signature is MoveTo=true with no motion
-            // started (still IDLE / empty stack) - i.e. the AI thinks it walks
-            // while the core motion stack never starts. Only that case logs
-            // (rate-limited to one line per bot per 30 s).
+            // dispatch. MoveTo=true with a live POINT generator that never
+            // displaces the bot is the stall signature; MoveTo=true with an
+            // IDLE stack means nothing was launched. Logged throttled
+            // (one line per bot per 30 s).
             WorldPosition ghostBefore(bot);
             float ghostDistBefore = ghostBefore.distance(moveToPos);
             int32 movegenBefore = bot->GetMotionMaster() ? (int32)bot->GetMotionMaster()->GetCurrentMovementGeneratorType() : -1;
@@ -466,12 +466,13 @@ bool FindCorpseAction::Execute(Event& event)
             uint32 posUnchangedSec = AI_VALUE2(uint32, "time since last change", "current position");
             sLog.outDetail("[BOT CORPSE] %s: find corpse - MoveTo(%.1f,%.1f,%.1f) returned %s",
                 bot->GetName(), moveToPos.getX(), moveToPos.getY(), moveToPos.getZ(), moved ? "true" : "false");
-            // Only the success-without-motion case matters: a false return already
-            // falls through to the spirit-healer retry below. Logging every
-            // successful dispatch would spam one [BOT CORPSE] line per tick per
-            // ghost; the 30 s throttle in LogGhostMoveDiag keeps the triage
-            // channel quiet while a stall persists across minutes.
-            if (moved && !started)
+            // Log every successful dispatch (throttled): the stall signature is
+            // not only MoveTo=true with an IDLE stack (never launched) but also
+            // MoveTo=true with a POINT generator that never displaces the bot
+            // (spline validated-but-stalled). The `started` field tells them
+            // apart. A false return already falls through to the spirit-healer
+            // retry below, so it needs no triage line.
+            if (moved)
                 LogGhostMoveDiag(ai, bot, ghostBefore, moveToPos, ghostDistBefore, movegenBefore, movegenAfter,
                     started, moved, ghostDistAfter, posUnchangedSec);
 
