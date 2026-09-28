@@ -476,11 +476,7 @@ bool EquipUpgradesAction::Execute(Event& event)
 
     // Put the higher top-end damage weapon in the main hand. Only when core
     // can actually swap the two (neither weapon is locked to its own hand) and
-    // only when both are weapons the bot's spec may wield. GetPlayerSpecId()
-    // resolves the class-default scale id whenever no talents are spent, so
-    // for any normally provisioned bot this is the strict spec check; the
-    // !hasRealSpec escape only applies when the weight-scale table is absent
-    // and no fallback can be resolved either (scoring is unavailable then).
+    // only when both are weapons the bot's spec may wield.
     if (didEquip && bot->CanDualWield())
     {
         Item* mh = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
@@ -494,11 +490,9 @@ bool EquipUpgradesAction::Execute(Event& event)
             && oh->GetProto()->InventoryType != INVTYPE_WEAPONOFFHAND)
         {
             uint32 specId = sRandomItemMgr.GetPlayerSpecId(bot);
-            bool const hasRealSpec = (specId != 0);
 
-            if (!hasRealSpec
-                || (sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, mh->GetProto())
-                    && sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, oh->GetProto())))
+            if (sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, mh->GetProto())
+                && sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, oh->GetProto()))
             {
                 float mhMaxDmg = mh->GetProto()->Damage[0].DamageMax;
                 float ohMaxDmg = oh->GetProto()->Damage[0].DamageMax;

@@ -215,9 +215,6 @@ RollVote RollAction::CalculateRollVote(ItemQualifier& itemQualifier)
     bool sharedLoot = group && (group->GetLootMethod() == GROUP_LOOT || group->GetLootMethod() == NEED_BEFORE_GREED);
     bool groupLootContext = sharedLoot || (map && (map->IsDungeon() || map->IsRaid()));
     uint32 specId = sRandomItemMgr.GetPlayerSpecId(bot);
-    // No talents yet (levels 1-9): the weapon subclass rule is relaxed, as in
-    // ItemUsageValue::QueryItemUsageForEquip; the armor rule still applies.
-    bool const hasRealSpec = specId != 0;
     if (!specId)
         specId = sRandomItemMgr.GetFallbackSpecId(bot->GetClass());
 
@@ -231,7 +228,7 @@ RollVote RollAction::CalculateRollVote(ItemQualifier& itemQualifier)
     // Issue #189 Phase 2: roll weapons the same way the bot would wear them.
     if (usage != ItemUsage::ITEM_USAGE_FORCE_NEED &&
         itemProto && itemProto->Class == ITEM_CLASS_WEAPON &&
-        groupLootContext && hasRealSpec &&
+        groupLootContext &&
         !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto))
     {
         needVote = ROLL_GREED;

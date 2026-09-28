@@ -2083,18 +2083,11 @@ uint32 RandomItemMgr::CalculateRandomPropertyWeight(uint8 playerclass, uint8 spe
 uint32 RandomItemMgr::ItemStatWeight(Player* player, ItemQualifier& qualifier)
 {
     ItemSpecType itSpec;
-    // Pre-talent bots (levels 1-9) have no spec id, and scale 0 is empty:
-    // every item would score 0 and gear choice would fall back to
-    // quality/ilvl (a grey 3-7 mace loses to a white 1-2 dagger). Score
-    // with the class fallback scale instead, like GetUpgrade does below.
-    uint32 specId = GetPlayerSpecId(player);
-    if (!specId)
-        specId = GetFallbackSpecId(player->GetClass());
-    uint32 weight = CalculateStatWeight(player->GetClass(), specId, qualifier.GetProto(), itSpec);
+    uint32 weight = CalculateStatWeight(player->GetClass(), GetPlayerSpecId(player), qualifier.GetProto(), itSpec);
     if(qualifier.GetEnchantId())
-        weight += CalculateEnchantWeight(player->GetClass(), specId, qualifier.GetEnchantId());
+        weight += CalculateEnchantWeight(player->GetClass(), GetPlayerSpecId(player), qualifier.GetEnchantId());
     if (qualifier.GetRandomPropertyId())
-        weight += CalculateRandomPropertyWeight(player->GetClass(), specId, qualifier.GetRandomPropertyId());
+        weight += CalculateRandomPropertyWeight(player->GetClass(), GetPlayerSpecId(player), qualifier.GetRandomPropertyId());
     return weight;
 }
 
