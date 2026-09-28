@@ -366,12 +366,18 @@ bool FindCorpseAction::Execute(Event& event)
             // ReviveFromCorpseAction reclaims the moment it expires. Without this
             // the ghost walks to the corpse, MoveTo at destination returns false,
             // and the fallback below abandons the run for the spirit healer.
+            // A ghost still walking to its master keeps walking.
             int64 reclaimWait = corpse->GetGhostTime() + bot->GetCorpseReclaimDelay(corpse->GetType() == CORPSE_RESURRECTABLE_PVP) - time(nullptr);
-            if (reclaimWait > 0)
+            if (reclaimWait > 0 && !moveToMaster)
             {
                 ai->StopMoving();
-                sLog.outDetail("[BOT CORPSE] %s: find corpse - inside reclaim range, waiting out reclaim delay (%llds left)",
-                    bot->GetName(), (long long)reclaimWait);
+                time_t const nowWait = time(nullptr);
+                if (nowWait - AI_VALUE2(time_t, "manual time", "reclaim wait logged") >= 15)
+                {
+                    SET_AI_VALUE2(time_t, "manual time", "reclaim wait logged", nowWait);
+                    sLog.outDetail("[BOT CORPSE] %s: find corpse - inside reclaim range, waiting out reclaim delay (%llds left)",
+                        bot->GetName(), (long long)reclaimWait);
+                }
                 return true;
             }
             if (deadTime > 8 * MINUTE) //We have walked too long already.

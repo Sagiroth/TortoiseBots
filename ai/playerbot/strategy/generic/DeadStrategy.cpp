@@ -36,7 +36,7 @@ void DeadStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "resurrect request",
-        NextAction::array(0, new NextAction("accept resurrect", relevance), NULL)));
+        NextAction::array(0, new NextAction("accept resurrect", relevance + 3.0f), NULL)));
 
     triggers.push_back(new TriggerNode(
         "falling far",
