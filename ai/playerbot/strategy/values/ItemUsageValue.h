@@ -72,6 +72,17 @@ namespace ai
         virtual ItemUsage Calculate() override;
 
         static ItemUsage QueryItemUsageForEquip(ItemQualifier& itemQualifier, Player* bot);
+        // Equipment slots an item may legitimately occupy, primary first.
+        // Core FindEquipSlot(NULL_SLOT, swap=true) only ever reports slots[0]
+        // once every eligible slot is full, so a ring/trinket pair or a
+        // dual-wield hand can never be reached through it. item may be null
+        // for an item not yet in the player's bags (loot, vendor).
+        static std::vector<uint8> GetEquipSlotCandidates(Player* bot, Item* item, ItemPrototype const* proto);
+        // Slot the item should be compared against and equipped into: the
+        // first empty candidate, else the candidate whose item is weakest (an
+        // off-spec weapon counts as weakest so the spec transition can replace
+        // it). NULL_SLOT when core accepts no slot.
+        static uint8 GetPreferredEquipSlot(Player* bot, Item* item, ItemPrototype const* proto);
         static uint32 GetSmallestBagSize(Player* bot);
         static std::string ReasonForNeed(ItemUsage usage, ItemQualifier qualifier = ItemQualifier(), uint32 count = 1, Player* bot = nullptr);
         static uint32 GetAhDepositCost(ItemPrototype const* proto, uint32 count = 1);

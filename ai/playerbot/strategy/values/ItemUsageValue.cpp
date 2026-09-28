@@ -502,6 +502,90 @@ if ((proto->Class == ITEM_CLASS_PROJECTILE ||
     return ItemUsage::ITEM_USAGE_NONE;
 }
 
+std::vector<uint8> ItemUsageValue::GetEquipSlotCandidates(Player* bot, Item* item, ItemPrototype const* proto)
+{
+    std::vector<uint8> slotOrder;
+    switch (proto->InventoryType)
+    {
+        case INVTYPE_FINGER:
+            slotOrder = { EQUIPMENT_SLOT_FINGER1, EQUIPMENT_SLOT_FINGER2 };
+            break;
+        case INVTYPE_TRINKET:
+            slotOrder = { EQUIPMENT_SLOT_TRINKET1, EQUIPMENT_SLOT_TRINKET2 };
+            break;
+        case INVTYPE_WEAPON:
+            slotOrder = { EQUIPMENT_SLOT_MAINHAND };
+            if (bot->CanDualWield())
+                slotOrder.push_back(EQUIPMENT_SLOT_OFFHAND);
+            break;
+        default:
+            slotOrder = { NULL_SLOT }; // core resolves the single eligible slot
+            break;
+    }
+
+    std::vector<uint8> candidates;
+    for (uint8 slot : slotOrder)
+    {
+        uint16 dest;
+        InventoryResult result = item
+            ? bot->CanEquipItem(slot, dest, item, true, false)
+            : RandomBotFacade::CanEquipUnseenItem(bot, slot, dest, proto->ItemId);
+
+        if (result != EQUIP_ERR_OK)
+            continue;
+
+        uint8 resolved = dest & 0xFF;
+        if (std::find(candidates.begin(), candidates.end(), resolved) == candidates.end())
+            candidates.push_back(resolved);
+    }
+
+    return candidates;
+}
+
+uint8 ItemUsageValue::GetPreferredEquipSlot(Player* bot, Item* item, ItemPrototype const* proto)
+{
+    std::vector<uint8> candidates = GetEquipSlotCandidates(bot, item, proto);
+    if (candidates.empty())
+        return NULL_SLOT;
+
+    uint32 realSpecId = sRandomItemMgr.GetPlayerSpecId(bot);
+    bool const hasRealSpec = (realSpecId != 0);
+    uint32 specId = hasRealSpec ? realSpecId : sRandomItemMgr.GetFallbackSpecId(bot->GetClass());
+
+    // A spec-allowed weapon should take over a hand that still holds a weapon
+    // the spec forbids (the spec transition), and that hand can be the off one.
+    bool const newWeaponForSpec = hasRealSpec && proto->Class == ITEM_CLASS_WEAPON &&
+        sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, proto);
+
+    uint8 emptySlot = NULL_SLOT;
+    uint8 best = NULL_SLOT;
+    uint32 bestWeight = 0;
+
+    for (uint8 slot : candidates)
+    {
+        Item* equipped = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+        if (!equipped)
+        {
+            if (emptySlot == NULL_SLOT)
+                emptySlot = slot; // fill an empty slot, unless a spec transition wins
+            continue;
+        }
+
+        if (newWeaponForSpec && equipped->GetProto()->Class == ITEM_CLASS_WEAPON &&
+            !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, equipped->GetProto()))
+            return slot; // off-spec weapon here: this is the slot to replace
+
+        uint32 weight = sRandomItemMgr.ItemStatWeight(bot, equipped);
+        if (best == NULL_SLOT || weight < bestWeight)
+        {
+            best = slot;
+            bestWeight = weight;
+        }
+    }
+
+    return emptySlot != NULL_SLOT ? emptySlot : best;
+}
+
 ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, Player* bot)
 {
     PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
@@ -515,21 +599,17 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     if (itemProto->InventoryType == INVTYPE_NON_EQUIP)
         return ItemUsage::ITEM_USAGE_NONE;
 
-    uint16 dest;
-
+    // Pick the slot to compare against. Core only reports the primary slot
+    // once a ring/trinket pair or a dual-wield hand is full, which deadlocks
+    // the secondary slot; the helper falls back to the weaker equipped item.
     std::list<Item*> items = AI_VALUE2(std::list<Item*>, "inventory items", chat->formatItem(itemQualifier));
-    InventoryResult result;
-    if (!items.empty())
-    {
-        result = bot->CanEquipItem(NULL_SLOT, dest, items.front(), true, false);
-    }
-    else
-    {
-        result = RandomBotFacade::CanEquipUnseenItem(bot, NULL_SLOT, dest, itemProto->ItemId);
-    }
+    Item* bagItem = items.empty() ? nullptr : items.front();
 
-    if (result != EQUIP_ERR_OK)
+    uint8 slot = ItemUsageValue::GetPreferredEquipSlot(bot, bagItem, itemProto);
+    if (slot == NULL_SLOT)
         return ItemUsage::ITEM_USAGE_NONE;
+
+    uint16 dest = ((INVENTORY_SLOT_BAG_0 << 8) | slot);
 
     if (itemProto->Class == ITEM_CLASS_QUIVER)
     {
@@ -621,7 +701,6 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     }
 
     Item* oldItem = bot->GetItemByPos(dest);
-    uint8 slot = dest & 255;
 
     ai->TellDebug(ai->GetMaster(), "Checking equip: " + chat->formatItem(itemProto) + " to " + chat->formatSlot(slot) + " vs " + (oldItem ? chat->formatItem(oldItem->GetProto()) : "empty"), "debug equip");
 
@@ -644,7 +723,12 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
         bool const contributes = itemProto->Armor > 0
             || itemProto->Block > 0
             || itemProto->Damage[0].DamageMax > 0.0f
-            || itemProto->Spells[0].SpellId > 0;
+            || itemProto->Spells[0].SpellId > 0
+            // A random-property item carries its stats in the random suffix,
+            // not the base prototype: a Beaded Orb (15969, +228) scores 0 for
+            // a pre-talent warlock, so into an empty slot it still counts as
+            // contributing rather than being rejected as a stat-less item.
+            || (!oldItem && itemQualifier.GetRandomPropertyId() != 0);
 
         if (!contributes)
             return ItemUsage::ITEM_USAGE_NONE;
