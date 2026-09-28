@@ -1521,17 +1521,17 @@ TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Uni
 
     float f, g, h;
 
-    std::vector<TravelNodeStub*> open;
-
-    // Min-heap on m_f (smallest f popped first): each pop/push is O(log n).
-    // Decrease-key uses lazy duplicates (see the successor loop below).
-    // NOTE: push_heap/pop_heap treat the comparator as "less" (max-heap), so
-    // the comparison is inverted relative to the old std::sort order.
-    static auto const openLess = [](TravelNodeStub* i, TravelNodeStub* j)
+    // Open list: min-heap of (f at push time, stub), smallest f popped first.
+    // Keys are copied into the entry, so a stub whose f improves later gets
+    // a new entry and the old one stays valid heap data until it pops and is
+    // skipped as stale (its stored f no longer matches the stub).
+    typedef std::pair<float, TravelNodeStub*> OpenEntry;
+    std::vector<OpenEntry> open;
+    auto const openLess = [](OpenEntry const& i, OpenEntry const& j)
     {
-        if (i->m_f != j->m_f)
-            return i->m_f > j->m_f;
-        return std::less<TravelNodeStub*>()(j, i); // deterministic tie-break
+        if (i.first != j.first)
+            return i.first > j.first;
+        return std::less<TravelNodeStub*>()(j.second, i.second); // deterministic tie-break
     };
 
     std::vector<TravelNode*> portNodes;
@@ -1585,7 +1585,7 @@ TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Uni
                     childNode->m_h = childNode->dataNode->fDist(goal) / unitSpeed;
                     childNode->m_f = childNode->m_g + childNode->m_h;
 
-                    open.push_back(childNode);
+                    open.emplace_back(childNode->m_f, childNode);
                     std::push_heap(open.begin(), open.end(), openLess);
                     childNode->open = true;
                     portNodes.push_back(portNode);
@@ -1637,7 +1637,7 @@ TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Uni
             childNode->m_h = childNode->dataNode->fDist(goal) / unitSpeed;
             childNode->m_f = childNode->m_g + childNode->m_h;
 
-            open.push_back(childNode);
+            open.emplace_back(childNode->m_f, childNode);
             std::push_heap(open.begin(), open.end(), openLess);
             childNode->open = true;
             portNodes.push_back(portNode);
@@ -1652,18 +1652,18 @@ TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Uni
         return TravelNodeRoute();
     }
 
-    open.push_back(startStub);
+    open.emplace_back(startStub->m_f, startStub);
     std::push_heap(open.begin(), open.end(), openLess);
     startStub->open = true;
 
     while (!open.empty())
     {
-        currentNode = open.front(); // pop the node from open for which f is minimal
-        float const poppedF = currentNode->m_f;
-        std::pop_heap(open.begin(), open.end(), openLess);
+        std::pop_heap(open.begin(), open.end(), openLess); // pop the entry with minimal f
+        float const poppedF = open.back().first;
+        currentNode = open.back().second;
         open.pop_back();
         if (!currentNode->open || currentNode->m_f != poppedF)
-            continue; // stale duplicate of a stub re-queued with a better g
+            continue; // stale entry: the stub was re-queued with a better f or already expanded
         currentNode->open = false;
 
         currentNode->close = true;
@@ -1731,20 +1731,11 @@ TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Uni
 
             if (childNode->close)
                 childNode->close = false;
-            if (!childNode->open)
-            {
-                open.push_back(childNode);
-                std::push_heap(open.begin(), open.end(), openLess);
-                childNode->open = true;
-            }
-            else
-            {
-                // Better g for a stub already queued: its key changed in place,
-                // so push a lazy duplicate to restore the heap order. The stale
-                // duplicate (popped with a different f) is skipped above.
-                open.push_back(childNode);
-                std::push_heap(open.begin(), open.end(), openLess);
-            }
+            // New, reopened or improved stub: queue an entry with the new f.
+            // An older entry for an already-open stub is skipped when popped.
+            open.emplace_back(childNode->m_f, childNode);
+            std::push_heap(open.begin(), open.end(), openLess);
+            childNode->open = true;
         }
     }
 

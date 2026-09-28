@@ -2640,7 +2640,7 @@ float TravelMgr::MinSqMapTransDistance(const WorldPosition& start, const WorldPo
     uint32 startMapId = start.GetMapId();
     uint32 endMapId = end.GetMapId();
     if (startMapId == endMapId)
-        return 0.0f;
+        return start.sqDistance2d(end);
 
     auto mapTransfers = mapTransfersMap.find({ startMapId, endMapId });
     if (mapTransfers == mapTransfersMap.end())
