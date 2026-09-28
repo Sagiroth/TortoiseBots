@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "DestroyItemAction.h"
 #include "playerbot/strategy/values/ItemCountValue.h"
+#include "playerbot/strategy/values/MaintenanceValues.h"
 
 using namespace ai;
 
@@ -74,11 +75,16 @@ bool SmartDestroyItemAction::Execute(Event& event)
         return true;
     }
 
+    //We need money: keep quest items and anything a vendor would buy (sell
+    //first), destroy only genuinely useless stuff.
+    bool const needsMoney = AI_VALUE(bool, "should get money") || ShouldSellValue::CantAffordNextSpell(ai);
+
     std::vector<ItemUsage> bestToDestroy = { ItemUsage::ITEM_USAGE_NONE }; //First destroy anything useless.
 
-    if (!AI_VALUE(bool, "can sell") && AI_VALUE(bool, "should get money")) //We need money so quest items are less important since they can't directly be sold.
+    if (needsMoney)
     {
-        bestToDestroy.push_back(ItemUsage::ITEM_USAGE_QUEST);
+        if (!AI_VALUE(bool, "can sell")) //Quest items can't directly be sold.
+            bestToDestroy.push_back(ItemUsage::ITEM_USAGE_QUEST);
     }
     else //We don't need money so destroy the cheapest stuff.
     {

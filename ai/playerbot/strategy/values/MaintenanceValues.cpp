@@ -3,8 +3,29 @@
 #include "Mail/Mail.h"
 #include "MapNodes/MasterPlayer.h"
 #include "playerbot/strategy/values/GuildValues.h"
+#include "playerbot/playerbot.h"
 
 using namespace ai;
+
+//Mirrors the partial-purse rule in RequestNamedTravelTargetAction ("trainer
+//class"): the cheapest green class rank must fit free money for spells.
+bool ShouldSellValue::CantAffordNextSpell(PlayerbotAI* ai)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+
+    if (!AI_VALUE2(uint32, "train cost", (uint32)TRAINER_TYPE_CLASS)) //Has nothing to train
+        return false;
+
+    uint32 minSpellCost = UINT32_MAX;
+    for (TrainerSpell const* trainable : AI_VALUE2(std::vector<TrainerSpell const*>, "trainable spells", TRAINER_TYPE_CLASS))
+        if (trainable && trainable->spellCost < minSpellCost)
+            minSpellCost = trainable->spellCost;
+
+    if (minSpellCost == UINT32_MAX)
+        return false;
+
+    return AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::spells) < minSpellCost;
+}
 
 bool ShouldAHSellValue::Calculate()
 {

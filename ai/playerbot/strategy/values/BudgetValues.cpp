@@ -128,7 +128,12 @@ uint32 MoneyNeededForValue::Calculate()
         moneyWanted = 0;
         break;
     case NeedMoneyFor::repair:
-        moneyWanted = AI_VALUE(uint32, "max repair cost");
+        //Random pool bots free-repair every tick (default RndBotCheats include
+        //"repair"), so reserving the gear's repair price would be money they can
+        //never spend - it would only shrink free money for everything saved after
+        //repair (ammo, ah, guild, spells). Reserve nothing for them; bots that
+        //actually pay for repairs keep the full-price reserve.
+        moneyWanted = ai->HasCheat(BotCheatMask::repair) ? 0 : AI_VALUE(uint32, "max repair cost");
         break;
     case NeedMoneyFor::ammo:
         moneyWanted = (bot->GetClass() == CLASS_HUNTER) ? (level * level * level) / 10 : 0; //Or level^3 (1s @ lvl10, 30s @ lvl30, 2g @ lvl60, 5g @ lvl80): Todo replace (should be best ammo buyable x 8 stacks cost)

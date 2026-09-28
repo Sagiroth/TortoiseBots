@@ -68,7 +68,20 @@ namespace ai
     {
     public:
         ShouldSellValue(PlayerbotAI* ai, std::string name = "should sell", int checkInterval = 2) : BoolCalculatedValue(ai, name , checkInterval) {}
-        virtual bool Calculate() override { return AI_VALUE(uint8, "bag space") > 80; };
+        virtual bool Calculate() override
+        {
+            if (AI_VALUE(uint8, "bag space") > 80)
+                return true;
+
+            //A broke bot converts loot to coin instead of waiting for a full bag:
+            //sell whenever the cheapest trainable class rank does not fit the spell
+            //budget and there is something a vendor will buy.
+            return CantAffordNextSpell(ai) &&
+                AI_VALUE2(uint32, "item count", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_VENDOR)) > 0;
+        }
+
+        //True when the bot has trainable class spells it cannot pay for.
+        static bool CantAffordNextSpell(PlayerbotAI* ai);
     };
 
     class CanSellValue : public BoolCalculatedValue
