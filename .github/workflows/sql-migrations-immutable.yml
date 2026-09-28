@@ -1,0 +1,25 @@
+name: SQL migrations immutable
+
+# A migration on main may already be applied on someone's realm. Updaters that
+# track files by hash stop on a changed file, and ones that track names skip
+# it, so a change must ship as a new migration instead.
+on:
+  pull_request:
+    paths:
+      - "data/sql/**"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fail on modified, renamed or deleted migrations
+        run: |
+          changed=$(git diff --name-only --diff-filter=MDR "origin/${{ github.base_ref }}...HEAD" -- data/sql)
+          if [ -n "$changed" ]; then
+            echo "::error::Applied migrations must not change; add a new migration instead:"
+            echo "$changed"
+            exit 1
+          fi
