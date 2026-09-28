@@ -12,16 +12,39 @@
 #include "runtime/BotManager.h"
 
 using namespace ai;
-// A released ghost: dead + GHOST flag. Used below to pick the sidestep reclaim
-// spot (a ghost reclaims from reachable ground near the corpse, not exactly on
-// the death spot). Note: with DisableActivityPriorities=1 the two
-// wait-then-teleport windows never fire (AllowActivity(DETAILED_MOVE) is always
-// true), so no bypass is needed or applied there - ghosts take the normal
-// MoveTo walk path every tick like every other bot.
-static bool GhostWalksToCorpse(Player* bot)
+// Note: with DisableActivityPriorities=1 the two wait-then-teleport windows never
+// fire (AllowActivity(DETAILED_MOVE) is always true), so no bypass is needed or
+// applied there - ghosts take the normal MoveTo walk path every tick like every
+// other bot.
+
+// Rate-limited ghost-movement diagnostics (live-server triage for the "ghost
+// stands still" stall: the move action reports success but the bot does not
+// displace). Emits at most one line per bot per 30 s, only on the ghost
+// corpse-run path, via the existing [BOT CORPSE] detail channel (LogLevel=3).
+// Fields: target + 3D distance, motion stack type before/after MoveTo
+// (IDLE vs POINT vs anything else), whether a movement was actually started,
+// and position delta over time (from "current position" change tracking, 0.0 =
+// byte-identical DB position). `watch` grep: [BOT CORPSE] ... ghost-move.
+static void LogGhostMoveDiag(PlayerbotAI* ai, Player* bot, WorldPosition const& botBefore,
+    WorldPosition const& target, float distBefore, int32 movegenBefore, int32 movegenAfter,
+    bool started, bool moveResult, float distAfter, uint32 posUnchangedSec)
 {
-    return bot && !sServerFacade.IsAlive(bot) && bot->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST);
+    if (!bot || !ai)
+        return;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    if (!context)
+        return;
+    time_t now = time(nullptr);
+    time_t last = AI_VALUE2(time_t, "manual time", "ghost move diag");
+    if (last && now - last < 30)
+        return;
+    SET_AI_VALUE2(time_t, "manual time", "ghost move diag", now);
+    sLog.outDetail("[BOT CORPSE] %s: ghost-move target=(%.1f,%.1f,%.1f map %u) dist=%.1f movegen=%d->%d started=%d result=%d distAfter=%.1f posUnchanged=%us from=(%.1f,%.1f,%.1f)",
+        bot->GetName(), target.getX(), target.getY(), target.getZ(), target.GetMapId(),
+        distBefore, movegenBefore, movegenAfter, started ? 1 : 0, moveResult ? 1 : 0,
+        distAfter, posUnchangedSec, botBefore.getX(), botBefore.getY(), botBefore.getZ());
 }
+
 
 // How long a corpse run waits for a nearby resurrect-capable master before
 // running anyway. Covers the grouped report (random bot + real-player leader,
@@ -343,16 +366,6 @@ bool FindCorpseAction::Execute(Event& event)
                 }
                 moveToPos = masterPos;
             }
-            else if (GhostWalksToCorpse(bot))
-            {
-                // A corpse run that ends exactly on the corpse revives inside the same
-                // pack that killed the bot: revive->death median was 129 s live. When
-                // no flee-worthy threat is near, still step a few yards aside onto
-                // reachable ground so the reclaim lands off the death spot.
-                WorldPosition sidestep = corpsePos;
-                if (sidestep.GetReachableRandomPointOnGround(bot, reclaimDist, true))
-                    moveToPos = WorldPosition(moveToPos.GetMapId(), sidestep.getX(), sidestep.getY(), sidestep.getZ(), 0.0);
-            }
             else
             {
                 FleeManager manager(bot, reclaimDist, 0.0, urand(0, 1), moveToPos);
@@ -380,6 +393,16 @@ bool FindCorpseAction::Execute(Event& event)
                         }
                         moveToPos = corpsePos;
                     }
+                }
+                else
+                {
+                    // No flee-worthy threat near: still step aside onto reachable
+                    // ground within the reclaim radius so the reclaim lands off the
+                    // exact death spot (revive->death median was 129 s live), instead
+                    // of inside the same pack that killed the bot.
+                    WorldPosition sidestep = corpsePos;
+                    if (sidestep.GetReachableRandomPointOnGround(bot, reclaimDist, true))
+                        moveToPos = WorldPosition(moveToPos.GetMapId(), sidestep.getX(), sidestep.getY(), sidestep.getZ(), 0.0);
                 }
             }
         }
@@ -428,10 +451,29 @@ bool FindCorpseAction::Execute(Event& event)
         }
         else
         {
-
+            // Ghost-movement triage: capture the motion stack before/after the
+            // dispatch. The stall signature is MoveTo=true with no motion
+            // started (still IDLE / empty stack) - i.e. the AI thinks it walks
+            // while the core motion stack never starts. Only that case logs
+            // (rate-limited to one line per bot per 30 s).
+            WorldPosition ghostBefore(bot);
+            float ghostDistBefore = ghostBefore.distance(moveToPos);
+            int32 movegenBefore = bot->GetMotionMaster() ? (int32)bot->GetMotionMaster()->GetCurrentMovementGeneratorType() : -1;
             moved = MoveTo(moveToPos.GetMapId(), moveToPos.getX(), moveToPos.getY(), moveToPos.getZ(), false, false);
+            int32 movegenAfter = bot->GetMotionMaster() ? (int32)bot->GetMotionMaster()->GetCurrentMovementGeneratorType() : -1;
+            bool started = bot->IsMoving() || (bot->GetMotionMaster() && !bot->GetMotionMaster()->empty() && movegenAfter != (int32)IDLE_MOTION_TYPE);
+            float ghostDistAfter = WorldPosition(bot).distance(moveToPos);
+            uint32 posUnchangedSec = AI_VALUE2(uint32, "time since last change", "current position");
             sLog.outDetail("[BOT CORPSE] %s: find corpse - MoveTo(%.1f,%.1f,%.1f) returned %s",
                 bot->GetName(), moveToPos.getX(), moveToPos.getY(), moveToPos.getZ(), moved ? "true" : "false");
+            // Only the success-without-motion case matters: a false return already
+            // falls through to the spirit-healer retry below. Logging every
+            // successful dispatch would spam one [BOT CORPSE] line per tick per
+            // ghost; the 30 s throttle in LogGhostMoveDiag keeps the triage
+            // channel quiet while a stall persists across minutes.
+            if (moved && !started)
+                LogGhostMoveDiag(ai, bot, ghostBefore, moveToPos, ghostDistBefore, movegenBefore, movegenAfter,
+                    started, moved, ghostDistAfter, posUnchangedSec);
 
             if (!moved && !ai->HasActivePlayerMaster()) //We could not move to coprse. Try spirithealer instead.
             {

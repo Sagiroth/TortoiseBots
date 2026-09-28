@@ -45,14 +45,4 @@ void DeadStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "move long stuck",
         NextAction::array(0, new NextAction("repop", relevance+1), NULL)));
-
-    // A ghost whose corpse run makes no progress must not sit at the graveyard
-    // for 10+ min waiting for ShouldSpiritHealer's deadTime>10min rule to fire:
-    // when the ghost has not moved in 5 min (MoveStuck, same thresholds as the
-    // maintenance strategy), repop it to the nearest graveyard directly. This is
-    // the escape hatch for unroutable corpse runs (e.g. Z-height-separated GY
-    // and corpse with no navmesh path); the normal walk path is untouched.
-    triggers.push_back(new TriggerNode(
-        "move stuck",
-        NextAction::array(0, new NextAction("repop", relevance), NULL)));
 }

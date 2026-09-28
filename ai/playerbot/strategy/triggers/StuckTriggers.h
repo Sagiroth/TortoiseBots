@@ -28,8 +28,10 @@ namespace ai
             if (ai->HasActivePlayerMaster())
                 return false;
 
-            if (ai->GetGroupMaster() && PlayerbotAIStorage::Instance().GetAI(!ai->GetGroupMaster()))
-                return false;
+            if (Player* groupMaster = ai->GetGroupMaster())
+                if (PlayerbotAI* masterAi = PlayerbotAIStorage::Instance().GetAI(groupMaster))
+                    if (masterAi->HasActivePlayerMaster())
+                        return false;
 
             if (!ai->AllowActivity(ALL_ACTIVITY))
             {
@@ -71,8 +73,10 @@ namespace ai
             if (ai->HasActivePlayerMaster())
                 return false;
 
-            if (ai->GetGroupMaster() && PlayerbotAIStorage::Instance().GetAI(!ai->GetGroupMaster()))
-                return false;
+            if (Player* groupMaster = ai->GetGroupMaster())
+                if (PlayerbotAI* masterAi = PlayerbotAIStorage::Instance().GetAI(groupMaster))
+                    if (masterAi->HasActivePlayerMaster())
+                        return false;
 
             if (!ai->AllowActivity(ALL_ACTIVITY))
             {
@@ -154,8 +158,10 @@ namespace ai
             if (ai->HasActivePlayerMaster())
                 return false;
 
-            if (ai->GetGroupMaster() && PlayerbotAIStorage::Instance().GetAI(!ai->GetGroupMaster()))
-                return false;
+            if (Player* groupMaster = ai->GetGroupMaster())
+                if (PlayerbotAI* masterAi = PlayerbotAIStorage::Instance().GetAI(groupMaster))
+                    if (masterAi->HasActivePlayerMaster())
+                        return false;
 
             if (!ai->AllowActivity(ALL_ACTIVITY))
                 return false;
@@ -195,8 +201,10 @@ namespace ai
             if (ai->HasActivePlayerMaster())
                 return false;
 
-            if (ai->GetGroupMaster() && PlayerbotAIStorage::Instance().GetAI(!ai->GetGroupMaster()))
-                return false;
+            if (Player* groupMaster = ai->GetGroupMaster())
+                if (PlayerbotAI* masterAi = PlayerbotAIStorage::Instance().GetAI(groupMaster))
+                    if (masterAi->HasActivePlayerMaster())
+                        return false;
 
             if (!ai->AllowActivity(ALL_ACTIVITY))
                 return false;

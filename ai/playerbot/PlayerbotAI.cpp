@@ -1426,6 +1426,12 @@ void PlayerbotAI::OnResurrected()
         }
 
         ClearLastKiller();
+        // The corpse run is over whichever path revived the bot: without this,
+        // a revive that bypasses ReviveFromCorpseAction (combat res, GM command)
+        // leaves "corpse run" set and the next death skips the wait-for-master
+        // gate via the manual override.
+        if (aiObjectContext)
+            aiObjectContext->GetValue<bool>("corpse run")->Set(false);
         ChangeEngine(BotState::BOT_STATE_NON_COMBAT);
     }
 }
@@ -1468,15 +1474,17 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
     SC_PHASE("UpdateAIInternal.entry", bot ? bot->GetName() : "(null)");
     if (bot->IsBeingTeleported() || !bot->IsInWorld())
         return;
-    // Self-heal for the "alive but engine DEAD" mismatch (research §5.6): a bot the
-    // core reports alive while the engine still sits in DEAD runs only the dead
-    // strategy, so it never travels, never grinds, and reads dead on the dashboard
-    // for minutes. OnResurrected normally flips the engine, but the flip is missed
-    // when the alive transition lands outside the resurrect path (teleport while
-    // dead, instance-entrance revive, core/AI ordering). If the core has reported
-    // alive for a full 5 s window and the engine is still DEAD, flip it directly -
-    // the same ChangeEngine(NON_COMBAT) OnResurrected performs, minus the
-    // follow-stop/clear that only belong to a genuine fresh revive.
+    // Self-heal for the "alive but engine DEAD" mismatch: a bot the core reports
+    // alive while the engine still sits in DEAD runs only the dead strategy, so it
+    // never travels, never grinds, and reads dead on the dashboard for minutes.
+    // The normal flip lives in OnResurrected (engine flip + 60 s revive grace +
+    // follow/stay stop), which the reaction engine fires every tick via the
+    // "resurrect" trigger - but the flip is missed when the alive transition
+    // lands outside the resurrect path (teleport while dead, instance-entrance
+    // revive, core/AI ordering). If the core has reported alive for a full 5 s
+    // window and the engine is still DEAD, call OnResurrected() directly - same
+    // path as the trigger, not a parallel flip, so grace and the follow/stay
+    // stop apply too.
     if (sServerFacade.IsAlive(bot) && IsStateActive(BotState::BOT_STATE_DEAD))
     {
         uint32 nowMs = WorldTimer::getMSTime();
@@ -1484,10 +1492,9 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
             m_aliveWhileDeadSinceMs = nowMs;
         else if (WorldTimer::getMSTimeDiff(m_aliveWhileDeadSinceMs, nowMs) >= 5000)
         {
-            sLog.outDetail("[BOT CORPSE] %s: alive for 5s+ while engine DEAD, flipping to non-combat", bot->GetName());
+            sLog.outDetail("[BOT CORPSE] %s: alive for 5s+ while engine DEAD, running OnResurrected", bot->GetName());
             m_aliveWhileDeadSinceMs = 0;
-            deathHandled_ = false;
-            ChangeEngine(BotState::BOT_STATE_NON_COMBAT);
+            OnResurrected();
         }
     }
     else
