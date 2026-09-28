@@ -401,12 +401,12 @@ static bool RouteIsSurvivableUncached(Player* bot, WorldPosition const& start, W
     return ok;
 }
 
-// The verdict is cached per bot, start area (200 yd cells) and destination
-// (25 yd cells) for 10 minutes. SetBestTarget re-checks the same candidates
+// The verdict is cached per bot, level, hostile-town mode, start area (200 yd
+// cells) and destination (25 yd cells) for 5 minutes. SetBestTarget re-checks the same candidates
 // on every pick, and a rejected or unreachable destination costs a full
 // travel-node A* each time; with hundreds of bots that search dominated the
-// world thread. A level-up or reputation change is picked up when the entry
-// expires.
+// world thread. Gold, reputation and graph changes are picked up when the
+// entry expires.
 static bool RouteIsSurvivable(Player* bot, WorldPosition* position, std::string& blocker)
 {
     WorldPosition start(bot);
@@ -422,10 +422,13 @@ static bool RouteIsSurvivable(Player* bot, WorldPosition* position, std::string&
     static std::mutex cacheMutex;
     static std::unordered_map<std::string, Verdict> cache;
 
+    PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(bot);
+    bool const avoidTowns = sPlayerbotAIConfig.avoidHostileTowns && botAi && !botAi->HasRealPlayerMaster();
+
     std::ostringstream key;
-    key << bot->GetGUIDLow() << ':' << bot->GetLevel() << ':'
-        << start.getMapId() << ':' << int32(start.getX() / 200.0f) << ':' << int32(start.getY() / 200.0f) << ':'
-        << position->getMapId() << ':' << int32(position->getX() / 25.0f) << ':' << int32(position->getY() / 25.0f);
+    key << bot->GetGUIDLow() << ':' << bot->GetLevel() << ':' << avoidTowns << ':'
+        << start.getMapId() << ':' << int32(std::floor(start.getX() / 200.0f)) << ':' << int32(std::floor(start.getY() / 200.0f)) << ':'
+        << position->getMapId() << ':' << int32(std::floor(position->getX() / 25.0f)) << ':' << int32(std::floor(position->getY() / 25.0f));
 
     time_t const now = time(nullptr);
     {
@@ -442,8 +445,13 @@ static bool RouteIsSurvivable(Player* bot, WorldPosition* position, std::string&
 
     std::lock_guard<std::mutex> lock(cacheMutex);
     if (cache.size() > 50000)
-        cache.clear();
-    cache[key.str()] = { ok, ok ? std::string() : blocker, now + 600 };
+    {
+        for (auto it = cache.begin(); it != cache.end();)
+            it = it->second.expires <= now ? cache.erase(it) : std::next(it);
+        if (cache.size() > 50000)
+            cache.clear();
+    }
+    cache[key.str()] = { ok, ok ? std::string() : blocker, now + 300 };
     return ok;
 }
 
