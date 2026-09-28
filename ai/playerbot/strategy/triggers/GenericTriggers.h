@@ -536,7 +536,10 @@ namespace ai
     class EquipmentAuditTrigger : public TimeTrigger
     {
     public:
-        EquipmentAuditTrigger(PlayerbotAI* ai) : TimeTrigger(ai, "equipment audit", 60) {}
+        // ~5 min periodic bag audit, jittered per bot by the Trigger base
+        // (first check at time(0) - rand() % interval). 300 bots spread over
+        // ~300 ticks instead of stampeding every 60 s.
+        EquipmentAuditTrigger(PlayerbotAI* ai) : TimeTrigger(ai, "equipment audit", 300) {}
     };
 
     class AndTrigger : public Trigger, public Qualified

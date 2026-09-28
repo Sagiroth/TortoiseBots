@@ -360,13 +360,50 @@ bool EquipUpgradesAction::Execute(Event& event)
         }
     }
 
+    // Weapons are compared against the equipped piece inside
+    // QueryItemUsageForEquip, so the run needs the old MH/OH in place to
+    // decide. Unequipping them first (donor lineage, present since the
+    // 204-file forward-port 450365a) makes every bag weapon read as an
+    // empty-slot upgrade and re-equip afterwards: two packet round-trips
+    // per run plus a visible weapon flicker and a swing-timer reset. Only
+    // do it when a weapon candidate actually sits in the bags; armor, bags
+    // and quivers never need the equipped piece out of the way.
     Item* oldMainhand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
     Item* oldOffhand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND);
 
+    bool hasWeaponCandidate = false;
+    for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END && !hasWeaponCandidate; ++bag)
+    {
+        if (Bag* pBag = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag))
+        {
+            for (uint32 slot = 0; slot < pBag->GetBagSize(); ++slot)
+            {
+                if (Item* bagItem = pBag->GetItemByPos(slot))
+                {
+                    if (bagItem->GetProto() && bagItem->GetProto()->Class == ITEM_CLASS_WEAPON)
+                    {
+                        hasWeaponCandidate = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END && !hasWeaponCandidate; ++slot)
+    {
+        if (Item* bagItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+        {
+            if (bagItem->GetProto() && bagItem->GetProto()->Class == ITEM_CLASS_WEAPON)
+                hasWeaponCandidate = true;
+        }
+    }
+    if (hasWeaponCandidate)
+    {
     if (oldMainhand)
         UnequipAction::UnequipItem(ai, bot, oldMainhand, true);
     if (oldOffhand)
         UnequipAction::UnequipItem(ai, bot, oldOffhand, true);
+    }
 
     context->ClearExpiredValues("item usage", 10); //Clear old item usage.
 
@@ -380,7 +417,17 @@ bool EquipUpgradesAction::Execute(Event& event)
 
     bool didEquip = false;
 
-    items.sort([plr = bot](Item* i, Item* j) {
+    // CRITICAL-03: EQUIP (real upgrade vs current gear) sorts before
+    // BAD_EQUIP (fills an empty slot), then by stat weight. Pure weight
+    // order re-equips a higher-DPS off-spec weapon ahead of the spec
+    // weapon, so the spec transition never happens.
+    PlayerbotAI* sortAi = ai;
+    AiObjectContext* sortContext = sortAi->GetAiObjectContext();
+    items.sort([sortContext, plr = bot](Item* i, Item* j) {
+        ItemUsage iUsage = sortContext->GetValue<ItemUsage>("item usage", ItemQualifier(i).GetQualifier())->Get();
+        ItemUsage jUsage = sortContext->GetValue<ItemUsage>("item usage", ItemQualifier(j).GetQualifier())->Get();
+        if (iUsage != jUsage)
+            return iUsage < jUsage;
         bool iMain = i->GetProto()->InventoryType == INVTYPE_WEAPONMAINHAND;
         bool jMain = j->GetProto()->InventoryType == INVTYPE_WEAPONMAINHAND;
 

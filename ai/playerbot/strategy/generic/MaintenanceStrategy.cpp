@@ -47,6 +47,19 @@ void MaintenanceStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &trigger
         "move long stuck",
         NextAction::array(0, new NextAction("unstuck", 0.9f), NULL)));
 
+    // Periodic bag audit: re-check bags for upgrades every ~5 min, jittered
+    // per bot so 500 bots do not run it on the same tick. The check interval
+    // (300 s) is the jitter window: Trigger staggers first check by
+    // rand() % interval, then needCheck() gates every 300 s after that.
+    // Priority 5.0f matches the old equipment-audit slot (below travel and
+    // quest work, above 0.7-1.0f upkeep). IsActive is always true; cheapness
+    // comes from EquipUpgradesAction itself: with no EQUIP/BAD_EQUIP usage in
+    // the bags the visitor returns nothing, no weapon means no MH/OH
+    // unequip, and the run only clears expired usage values.
+    triggers.push_back(new TriggerNode(
+        "equipment audit",
+        NextAction::array(0, new NextAction("equip upgrades", 5.0f), NULL)));
+
     triggers.push_back(new TriggerNode(
         "random",
         NextAction::array(0, new NextAction("use random quest item", 0.9f), NULL)));
