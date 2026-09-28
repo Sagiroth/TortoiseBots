@@ -8455,8 +8455,9 @@ bool PlayerbotAI::ShouldReuseSpatialScan()
     }
     m_lastMana = mana;
     uint32 nowMs = WorldTimer::getMSTime();
-    // Post-revive / post-teleport grace: full rate for 15s. Future timestamps
-    // mean grace is active (wraparound-safe: diff grace->now is huge).
+    // Post-revive / post-teleport grace: full rate while a grace window is open
+    // (revive 60 s, teleport 15 s). Future timestamps mean grace is active
+    // (wraparound-safe: diff grace->now is huge).
     if (WorldTimer::getMSTimeDiff(m_reviveGraceUntilMs, nowMs) > (UINT32_MAX / 2) ||
         WorldTimer::getMSTimeDiff(m_teleportGraceUntilMs, nowMs) > (UINT32_MAX / 2))
         return false;

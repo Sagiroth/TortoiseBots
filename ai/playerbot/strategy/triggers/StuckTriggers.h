@@ -28,10 +28,18 @@ namespace ai
             if (ai->HasActivePlayerMaster())
                 return false;
 
+            // A human group master has no PlayerbotAI entry, so the bot-AI lookup
+            // below cannot see it: exempt a real-player group master directly.
+            // Covers a bot grouped with a human while its own master binding is
+            // transient (relogin window) or the bot itself leads the party.
             if (Player* groupMaster = ai->GetGroupMaster())
+            {
+                if (ai->IsRealPlayer(groupMaster))
+                    return false;
                 if (PlayerbotAI* masterAi = PlayerbotAIStorage::Instance().GetAI(groupMaster))
                     if (masterAi->HasActivePlayerMaster())
                         return false;
+            }
 
             if (!ai->AllowActivity(ALL_ACTIVITY))
             {
@@ -73,10 +81,15 @@ namespace ai
             if (ai->HasActivePlayerMaster())
                 return false;
 
+            // See MoveStuckTrigger: a human group master has no PlayerbotAI entry.
             if (Player* groupMaster = ai->GetGroupMaster())
+            {
+                if (ai->IsRealPlayer(groupMaster))
+                    return false;
                 if (PlayerbotAI* masterAi = PlayerbotAIStorage::Instance().GetAI(groupMaster))
                     if (masterAi->HasActivePlayerMaster())
                         return false;
+            }
 
             if (!ai->AllowActivity(ALL_ACTIVITY))
             {
@@ -158,10 +171,15 @@ namespace ai
             if (ai->HasActivePlayerMaster())
                 return false;
 
+            // See MoveStuckTrigger: a human group master has no PlayerbotAI entry.
             if (Player* groupMaster = ai->GetGroupMaster())
+            {
+                if (ai->IsRealPlayer(groupMaster))
+                    return false;
                 if (PlayerbotAI* masterAi = PlayerbotAIStorage::Instance().GetAI(groupMaster))
                     if (masterAi->HasActivePlayerMaster())
                         return false;
+            }
 
             if (!ai->AllowActivity(ALL_ACTIVITY))
                 return false;
@@ -201,10 +219,15 @@ namespace ai
             if (ai->HasActivePlayerMaster())
                 return false;
 
+            // See MoveStuckTrigger: a human group master has no PlayerbotAI entry.
             if (Player* groupMaster = ai->GetGroupMaster())
+            {
+                if (ai->IsRealPlayer(groupMaster))
+                    return false;
                 if (PlayerbotAI* masterAi = PlayerbotAIStorage::Instance().GetAI(groupMaster))
                     if (masterAi->HasActivePlayerMaster())
                         return false;
+            }
 
             if (!ai->AllowActivity(ALL_ACTIVITY))
                 return false;

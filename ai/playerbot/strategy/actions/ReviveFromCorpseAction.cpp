@@ -224,8 +224,16 @@ bool FindCorpseAction::Execute(Event& event)
     bool waitForMasterTimedOut = deadTime > kWaitForMasterTimeoutSec;
     if (waitForMasterTimedOut && master && !manualCorpseRun && master->GetMapId() == bot->GetMapId() && !corpseInDungeon)
     {
-        sLog.outDetail("[BOT CORPSE] %s: find corpse - wait-for-master timed out after %llds, running to corpse anyway",
-            bot->GetName(), (long long)deadTime);
+        // The condition stays true every tick for the whole walk back, so log
+        // at most once a minute per bot via a dedicated manual-time key.
+        time_t nowWait = time(nullptr);
+        time_t lastWaitLog = AI_VALUE2(time_t, "manual time", "wait master logged");
+        if (!lastWaitLog || nowWait - lastWaitLog >= 60)
+        {
+            SET_AI_VALUE2(time_t, "manual time", "wait master logged", nowWait);
+            sLog.outDetail("[BOT CORPSE] %s: find corpse - wait-for-master timed out after %llds, running to corpse anyway",
+                bot->GetName(), (long long)deadTime);
+        }
     }
     if (master && !manualCorpseRun && !waitForMasterTimedOut && master->GetMapId() == bot->GetMapId() && !corpseInDungeon)
     {
@@ -327,20 +335,28 @@ bool FindCorpseAction::Execute(Event& event)
         sLog.outDetail("[BOT CORPSE] %s: find corpse - corpseDist=%.1f reclaimDist=%.1f reactDist=%.1f moveToMaster=%d deadTime=%llds",
             bot->GetName(), corpseDist, reclaimDist, sPlayerbotAIConfig.reactDistance, moveToMaster ? 1 : 0, (long long)deadTime);
 
-        //Should we ressurect? If so, return false.
-        if (corpseDist < reclaimDist)
+        //Should we ressurect? If so, return false. Uses the core's own reclaim
+        // predicate (39 yd 3D, same call the core enforces in MiscHandler) so the
+        // ghost stops walking exactly when a reclaim would succeed - never earlier
+        // (phantom yield outside reclaim range) and never later (walking past the
+        // point where ReviveFromCorpse would fire). The old 34 yd 3D gate left a
+        // dead band: at 34-39 yd FindCorpse kept dispatching MoveTo to a flee/
+        // sidestep point ~34 yd away while ReviveFromCorpse could already have
+        // reclaimed, and each dispatch re-launched a POINT spline the bot never
+        // rode (live: byte-identical from-positions for 5+ min, dist 34-38).
+        if (corpse->IsWithinDistInMap(bot, (float)CORPSE_RECLAIM_RADIUS, true))
         {
             if (moveToMaster) //We are near master.
             {
                 if (botPos.fDist(masterPos) < sPlayerbotAIConfig.spellDistance)
                 {
-                    sLog.outDetail("[BOT CORPSE] %s: find corpse - within reclaimDist & near master, yielding to revive-from-corpse", bot->GetName());
+                    sLog.outDetail("[BOT CORPSE] %s: find corpse - within core reclaim range & near master, yielding to revive-from-corpse", bot->GetName());
                     return false;
                 }
             }
             else if (deadTime > 8 * MINUTE) //We have walked too long already.
             {
-                sLog.outDetail("[BOT CORPSE] %s: find corpse - within reclaimDist & deadTime>8min, yielding to revive-from-corpse", bot->GetName());
+                sLog.outDetail("[BOT CORPSE] %s: find corpse - within core reclaim range & deadTime>8min, yielding to revive-from-corpse", bot->GetName());
                 return false;
             }
             else
@@ -349,14 +365,20 @@ bool FindCorpseAction::Execute(Event& event)
 
                 if (botPos.GetUnitsAggro(units, bot) == 0) //There are no mobs near.
                 {
-                    sLog.outDetail("[BOT CORPSE] %s: find corpse - within reclaimDist & no mobs near, yielding to revive-from-corpse", bot->GetName());
+                    sLog.outDetail("[BOT CORPSE] %s: find corpse - within core reclaim range & no mobs near, yielding to revive-from-corpse", bot->GetName());
                     return false;
                 }
             }
         }
 
         //If we are getting close move to a save ressurrection spot instead of just the corpse.
-        if (corpseDist < sPlayerbotAIConfig.reactDistance)
+        // Inside the core reclaim range there is nothing to walk to: the ghost is
+        // already close enough for ReviveFromCorpse to reclaim this tick, so walk
+        // straight at the corpse (any sidestep target ~34 yd away re-launches a
+        // POINT spline every tick that the bot never rides - the 34-38 yd stall).
+        if (corpse->IsWithinDistInMap(bot, (float)CORPSE_RECLAIM_RADIUS, true))
+            moveToPos = corpsePos;
+        else if (corpseDist < sPlayerbotAIConfig.reactDistance)
         {
             if (moveToMaster)
             {
@@ -466,8 +488,22 @@ bool FindCorpseAction::Execute(Event& event)
             bool started = bot->IsMoving() || (bot->GetMotionMaster() && !bot->GetMotionMaster()->empty() && movegenAfter != (int32)IDLE_MOTION_TYPE);
             float ghostDistAfter = WorldPosition(bot).distance(moveToPos);
             uint32 posUnchangedSec = AI_VALUE2(uint32, "time since last change", "current position");
-            sLog.outDetail("[BOT CORPSE] %s: find corpse - MoveTo(%.1f,%.1f,%.1f) returned %s",
-                bot->GetName(), moveToPos.getX(), moveToPos.getY(), moveToPos.getZ(), moved ? "true" : "false");
+            // Per-tick during a stall; log failures always (they trigger the
+            // spirit-healer retry below) and successes at most once a minute.
+            bool logMoveTo = !moved;
+            if (moved)
+            {
+                time_t nowMove = time(nullptr);
+                time_t lastMoveLog = AI_VALUE2(time_t, "manual time", "find corpse moveto");
+                if (!lastMoveLog || nowMove - lastMoveLog >= 60)
+                {
+                    SET_AI_VALUE2(time_t, "manual time", "find corpse moveto", nowMove);
+                    logMoveTo = true;
+                }
+            }
+            if (logMoveTo)
+                sLog.outDetail("[BOT CORPSE] %s: find corpse - MoveTo(%.1f,%.1f,%.1f) returned %s",
+                    bot->GetName(), moveToPos.getX(), moveToPos.getY(), moveToPos.getZ(), moved ? "true" : "false");
             // Log every successful dispatch (throttled): the stall signature is
             // not only MoveTo=true with an IDLE stack (never launched) but also
             // MoveTo=true with a POINT generator that never displaces the bot
