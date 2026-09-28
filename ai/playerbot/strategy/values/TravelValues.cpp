@@ -443,6 +443,13 @@ bool ShouldTravelNamedValue::Calculate()
         if (ai->HasRealPlayerMaster())
             return false;
 
+        // A fruitless visit parks the trainer (TrainerAction). Read the park
+        // time, not the flag: any successful pick clears the flag early.
+        // Without this the need stays true during the park and keeps a bot
+        // in a capital (should leave outgrown zone waits for it).
+        if (AI_VALUE2(time_t, "manual time", "no travel purpose until::" + name) > time(0))
+            return false;
+
         TrainerType trainerType = TRAINER_TYPE_CLASS;
         NeedMoneyFor budgetType = NeedMoneyFor::spells;
 
