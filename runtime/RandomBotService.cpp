@@ -303,6 +303,26 @@ void RandomBotService::LoadCandidates()
     std::set<uint32> accountIds(registry.AccountIds().begin(), registry.AccountIds().end());
     m_rndBotAccountIds.assign(accountIds.begin(), accountIds.end());
 
+    // Hire characters live on pool accounts but are never pool residents:
+    // while hired they belong to their master, and when the hire ends they are
+    // deleted. The durable hire ledger is that marker. Excluding them keeps a
+    // dismissed companion out of the roaming world for the few ticks its row
+    // still exists (and out of the account character count the auto-create
+    // pass uses), instead of handing a master-geared character back to the
+    // pool.
+    std::set<uint32> hiredCharacters;
+    {
+        std::unique_ptr<QueryResult> ledger(CharacterDatabase.PQuery(
+            "SELECT `character_guid` FROM `tortoise_bots_hire`"));
+        if (ledger)
+        {
+            do
+            {
+                hiredCharacters.insert(ledger->Fetch()[0].GetUInt32());
+            } while (ledger->NextRow());
+        }
+    }
+
     std::set<uint32> characterIds;
     for (uint32 accountId : accountIds)
     {
@@ -316,6 +336,8 @@ void RandomBotService::LoadCandidates()
             Field* fields = characters->Fetch();
             uint32 guidLow = fields[0].GetUInt32();
             if (!guidLow || !characterIds.insert(guidLow).second)
+                continue;
+            if (hiredCharacters.count(guidLow))
                 continue;
 
             Candidate candidate;
