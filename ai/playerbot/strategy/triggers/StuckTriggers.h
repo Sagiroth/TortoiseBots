@@ -137,7 +137,10 @@ namespace ai
             // a bot camped on a mob spawn kills without moving, and flagging it
             // hearthing/repop every 10 minutes is exactly the false "stuck" class
             // #312 fixed for ExperienceValue::EqualToLast.
-            if (timeSinceLastXp < 15 * MINUTE || timeSinceLastMoney < 15 * MINUTE)
+            // Dead bots are exempt: they cannot earn, and DeadStrategy routes this
+            // same trigger to repop, so gating it would only delay a stuck ghost
+            // whose XP clock stopped when it died.
+            if (bot->IsAlive() && (timeSinceLastXp < 15 * MINUTE || timeSinceLastMoney < 15 * MINUTE))
                 return false;
 
             uint32 timeSinceLastMove = AI_VALUE2(uint32, "time since last change", "current position");
@@ -243,10 +246,11 @@ namespace ai
             // Same false "stuck" class as MoveLongStuckTrigger: 15 minutes of
             // uninterrupted combat is normal for a bot chaining pulls in a dense
             // camp. Only call the fight stuck when the bot also stopped earning:
-            // XP or money changed in the last 15 min means it is winning.
+            // XP or money changed in the last 15 min means it is winning
+            // (dead bots are exempt, see MoveLongStuckTrigger).
             uint32 timeSinceLastXp = AI_VALUE2(uint32, "time since last change", "experience");
             uint32 timeSinceLastMoney = AI_VALUE2(uint32, "time since last change", "money");
-            if (timeSinceLastXp < 15 * MINUTE || timeSinceLastMoney < 15 * MINUTE)
+            if (bot->IsAlive() && (timeSinceLastXp < 15 * MINUTE || timeSinceLastMoney < 15 * MINUTE))
                 return false;
 
             if (timeSinceCombatChange > 15 * MINUTE)
