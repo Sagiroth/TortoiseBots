@@ -2946,8 +2946,7 @@ void PlayerbotFactory::EnsureSkillRewardedSpells(Player* bot)
     enum GrantedAbility : uint8
     {
         GRANT_DUAL_WIELD = 0x1,
-        GRANT_PARRY      = 0x2,
-        GRANT_BLOCK      = 0x4,
+        GRANT_BLOCK      = 0x2,
     };
 
     // Rows that teach a spell to whoever gains the skill. Static for the whole
@@ -2982,12 +2981,18 @@ void PlayerbotFactory::EnsureSkillRewardedSpells(Player* bot)
 
         // Only the abilities the module and the core actually need from the
         // spellbook are worth learning here:
-        //  * DUAL_WIELD / PARRY / BLOCK carry the equip and combat flags the
-        //    core reads (Player::m_canDualWield and friends are never saved), so
-        //    they are also re-applied for a bot that already knows the spell;
-        //  * the weapon-damage effect is the ranged "shoot" family the AI casts
-        //    by name, and values/SpellIdValue resolves that name against this
-        //    spellbook only.
+        //  * DUAL_WIELD / BLOCK carry the equip and combat flags the core reads
+        //    (Player::m_canDualWield and friends are never saved), so they are
+        //    also re-applied for a bot that already knows the spell;
+        //  * the weapon-damage effects are the ranged abilities the AI casts by
+        //    name ("shoot bow", "shoot" for a wand, "auto shot"), and
+        //    values/SpellIdValue resolves those names against this spellbook
+        //    only. Shoot Bow/Gun/Crossbow/Throw/Auto Shot use
+        //    SPELL_EFFECT_WEAPON_DAMAGE, the wand's Shoot (5019) uses
+        //    SPELL_EFFECT_WEAPON_DAMAGE_NOSCHOOL - the same effect as melee
+        //    abilities (Heroic Strike, the pet Cleave), so effect 17 is accepted
+        //    only for rows whose skill is a weapon skill (SkillLine.categoryId
+        //    == SKILL_CATEGORY_WEAPON; Arms and Marksmanship are class skills).
         // Everything else a skill rewards (profession recipes, the client's
         // Attack/Duel/Stuck helpers, defense placeholders) is left alone.
         uint8 grantedAbility = 0;
@@ -2996,10 +3001,16 @@ void PlayerbotFactory::EnsureSkillRewardedSpells(Player* bot)
         {
             switch (spell->Effect[effect])
             {
-            case SPELL_EFFECT_DUAL_WIELD:      grantedAbility |= GRANT_DUAL_WIELD; wantedAbility = true; break;
-            case SPELL_EFFECT_PARRY:           grantedAbility |= GRANT_PARRY;      wantedAbility = true; break;
-            case SPELL_EFFECT_BLOCK:           grantedAbility |= GRANT_BLOCK;      wantedAbility = true; break;
-            case SPELL_EFFECT_WEAPON_DAMAGE:   wantedAbility = true; break;
+            case SPELL_EFFECT_DUAL_WIELD:            grantedAbility |= GRANT_DUAL_WIELD; wantedAbility = true; break;
+            case SPELL_EFFECT_BLOCK:                 grantedAbility |= GRANT_BLOCK;      wantedAbility = true; break;
+            case SPELL_EFFECT_WEAPON_DAMAGE:         wantedAbility = true; break;
+            case SPELL_EFFECT_WEAPON_DAMAGE_NOSCHOOL:
+            {
+                SkillLineEntry const* skillLine = sSkillLineStore.LookupEntry(ability->skillId);
+                if (skillLine && skillLine->categoryId == SKILL_CATEGORY_WEAPON)
+                    wantedAbility = true;
+                break;
+            }
             default: break;
             }
         }
@@ -3038,10 +3049,34 @@ void PlayerbotFactory::EnsureSkillRewardedSpells(Player* bot)
 
         if (grantedAbility & GRANT_DUAL_WIELD)
             bot->SetCanDualWield(true);
-        if (grantedAbility & GRANT_PARRY)
-            bot->SetCanParry(true);
         if (grantedAbility & GRANT_BLOCK)
             bot->SetCanBlock(true);
+    }
+
+    // The flags those passive spells carry are per session (Player::m_canDualWield
+    // and friends are never saved), so restore them from every ability the bot
+    // already knows. Parry has no skill_line_ability row with learnOnGetSkill set
+    // (3127 is trainer-only, granted in InitSkills), so this sweep is also what
+    // gives a bot its parry back after a login.
+    for (auto const& known : bot->GetSpellMap())
+    {
+        if (known.second.state == PLAYERSPELL_REMOVED || known.second.disabled)
+            continue;
+
+        SpellEntry const* knownSpell = sServerFacade.LookupSpellInfo(known.first);
+        if (!knownSpell)
+            continue;
+
+        for (uint32 effect = 0; effect < MAX_EFFECT_INDEX; ++effect)
+        {
+            switch (knownSpell->Effect[effect])
+            {
+            case SPELL_EFFECT_DUAL_WIELD: bot->SetCanDualWield(true); break;
+            case SPELL_EFFECT_PARRY:      bot->SetCanParry(true);      break;
+            case SPELL_EFFECT_BLOCK:      bot->SetCanBlock(true);      break;
+            default: break;
+            }
+        }
     }
 }
 

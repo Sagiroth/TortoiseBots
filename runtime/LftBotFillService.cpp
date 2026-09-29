@@ -263,11 +263,30 @@ bool LftBotFillService::EquipBestShieldFromBags(Player* bot) const
         }
     };
 
+    // Find the shield first: nothing about the bot's weapon may change unless
+    // there is a shield to put on afterwards, or a candidate that cannot be
+    // filled would be left behind with a one-hander and an empty hand.
+    Item* best = nullptr;
+    forEachBagItem([&](Item* item)
+    {
+        ItemPrototype const* proto = item->GetProto();
+        if (!proto || proto->Class != ITEM_CLASS_ARMOR || proto->SubClass != ITEM_SUBCLASS_ARMOR_SHIELD)
+            return;
+        if (bot->CanUseItem(item) != EQUIP_ERR_OK)
+            return;
+        if (!best || proto->ItemLevel > best->GetProto()->ItemLevel)
+            best = item;
+    });
+
+    if (!best)
+        return false;
+
     // A tank still wielding a two-hander cannot take the shield at all: core
-    // refuses the off-hand while a 2H is used, so the quick fix below would
-    // fail for every shield in the bags and the role would be skipped. Put the
-    // best one-hander the core accepts into the main hand first (core's own
-    // CanEquipItem applies class, skill and level rules), then the shield.
+    // refuses the off-hand while a 2H is used. Put the best one-hander the core
+    // accepts into the main hand (core's own CanEquipItem applies class, skill
+    // and level rules) and keep the two-hander, so it can be handed back if the
+    // shield then cannot go on after all.
+    Item* swappedOut = nullptr;
     if (bot->IsTwoHandUsed())
     {
         Item* bestMh = nullptr;
@@ -286,36 +305,50 @@ bool LftBotFillService::EquipBestShieldFromBags(Player* bot) const
                 bestMh = item;
         });
 
-        if (bestMh)
+        if (!bestMh)
+            return false;
+
+        swappedOut = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+        uint16 src = (static_cast<uint16>(bestMh->GetBagSlot()) << 8) | bestMh->GetSlot();
+        uint16 dst = (static_cast<uint16>(INVENTORY_SLOT_BAG_0) << 8) | EQUIPMENT_SLOT_MAINHAND;
+        bot->SwapItem(src, dst);
+    }
+
+    uint16 shieldDest = 0;
+    if (bot->CanEquipItem(EQUIPMENT_SLOT_OFFHAND, shieldDest, best, true) != EQUIP_ERR_OK)
+    {
+        // Hand the two-hander back rather than leaving the bot with a
+        // one-hander and an empty off-hand.
+        if (swappedOut && bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND) != swappedOut)
         {
-            uint16 src = (static_cast<uint16>(bestMh->GetBagSlot()) << 8) | bestMh->GetSlot();
+            uint16 src = (static_cast<uint16>(swappedOut->GetBagSlot()) << 8) | swappedOut->GetSlot();
             uint16 dst = (static_cast<uint16>(INVENTORY_SLOT_BAG_0) << 8) | EQUIPMENT_SLOT_MAINHAND;
             bot->SwapItem(src, dst);
         }
+
+        return false;
     }
 
-    // Highest-item-level shield the core accepts.
-    Item* best = nullptr;
-    forEachBagItem([&](Item* item)
-    {
-        ItemPrototype const* proto = item->GetProto();
-        if (!proto || proto->Class != ITEM_CLASS_ARMOR || proto->SubClass != ITEM_SUBCLASS_ARMOR_SHIELD)
-            return;
-        uint16 dest = 0;
-        if (bot->CanEquipItem(EQUIPMENT_SLOT_OFFHAND, dest, item, true) != EQUIP_ERR_OK)
-            return;
-        if (!best || proto->ItemLevel > best->GetProto()->ItemLevel)
-            best = item;
-    });
-
-    if (!best)
-        return false;
     uint8 bagIndex = best->GetBagSlot();
     uint8 slot = best->GetSlot();
     uint16 src = (static_cast<uint16>(bagIndex) << 8) | slot;
     uint16 dst = (static_cast<uint16>(INVENTORY_SLOT_BAG_0) << 8) | EQUIPMENT_SLOT_OFFHAND;
     bot->SwapItem(src, dst);
-    return true;
+
+    Item const* equipped = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND);
+    ItemPrototype const* equippedProto = equipped ? equipped->GetProto() : nullptr;
+    if (equippedProto && equippedProto->Class == ITEM_CLASS_ARMOR && equippedProto->SubClass == ITEM_SUBCLASS_ARMOR_SHIELD)
+        return true;
+
+    // The swap was refused after all: undo the weapon change.
+    if (swappedOut && bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND) != swappedOut)
+    {
+        uint16 backSrc = (static_cast<uint16>(swappedOut->GetBagSlot()) << 8) | swappedOut->GetSlot();
+        uint16 backDst = (static_cast<uint16>(INVENTORY_SLOT_BAG_0) << 8) | EQUIPMENT_SLOT_MAINHAND;
+        bot->SwapItem(backSrc, backDst);
+    }
+
+    return false;
 }
 
 void LftBotFillService::ClearForcedRole(uint32 guidLow)
