@@ -277,6 +277,19 @@ public:
     // level-fitting grind hub, avoids low-level services except in capitals, and refuses
     // low-level homebinds. Default on; fail-closed on unknown area levels.
     bool leaveOutgrownZones = true;
+    // Vendor trip thresholds (#339): the stock a bot must carry before it walks to a
+    // vendor on its own. Either the sell value covers the money missing for the next
+    // trainable class rank, or the batch rules below fire. Bots below level 5 use the
+    // LowLevel* pair instead: a fresh bot carries one or two greys, not a bag of them.
+    uint32 vendorBatchMinCount = 8;
+    uint32 vendorBatchMinBagSpace = 60;
+    uint32 lowLevelVendorBatchMinCount = 3;
+    uint32 lowLevelVendorBatchMinBagSpace = 25;
+    // Radius in yards of the vendor trip a bot below level 5 may make. The blanket
+    // "no RPG travel below level 5" rule exists because the path to an NPC usually
+    // crosses level 5+ mobs; a beginner may still reach its own camp vendor, so the
+    // trip is capped to this radius instead (and to the starting-zone level band).
+    float lowLevelVendorMaxDistance = 600.0f;
     // Default-on bounded LFT fill: observe native queue (GetQueuedPlayers),
     // identify human groups/instances and missing 1/1/3 roles, filter in-memory
     // Headless random candidates by authoritative Soromeister/LFT ranges,

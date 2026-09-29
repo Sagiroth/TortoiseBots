@@ -406,6 +406,11 @@ bool PlayerbotAIConfig::Initialize()
     unstuckHearthLevelFit = config.GetBoolDefault("AiPlayerbot.UnstuckHearthLevelFit", true);
     botQuestLogUpkeep = config.GetBoolDefault("AiPlayerbot.BotQuestLogUpkeep", true);
     leaveOutgrownZones = config.GetBoolDefault("AiPlayerbot.LeaveOutgrownZones", true);
+    vendorBatchMinCount = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.VendorBatchMinCount", 8));
+    vendorBatchMinBagSpace = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.VendorBatchMinBagSpace", 60));
+    lowLevelVendorBatchMinCount = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.LowLevelVendorBatchMinCount", 3));
+    lowLevelVendorBatchMinBagSpace = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.LowLevelVendorBatchMinBagSpace", 25));
+    lowLevelVendorMaxDistance = config.GetFloatDefault("AiPlayerbot.LowLevelVendorMaxDistance", 600.0f);
     randomBotLftEnabled = config.GetBoolDefault("AiPlayerbot.RandomBotLftEnabled", true);
     randomBotLftUpdateInterval = config.GetIntDefault("AiPlayerbot.RandomBotLftUpdateInterval", 15000);
     randomBotLftMaxFillsPerInterval = config.GetIntDefault("AiPlayerbot.RandomBotLftMaxFillsPerInterval", 1);

@@ -8,10 +8,6 @@
 
 using namespace ai;
 
-//A batch of grey trash this small is not worth the walk on its own, and the
-//bags must already be filling before the bot bothers with it.
-static const uint32 MIN_VENDOR_BATCH_COUNT = 8;
-static const uint8 MIN_VENDOR_BATCH_BAG_SPACE = 60;
 
 //Cheapest green class rank the bot has not learned yet, 0 when the trainer has
 //nothing left to teach.
@@ -85,8 +81,15 @@ bool ai::SellableStockWorthAVendorTrip(PlayerbotAI* ai)
     if (!sellableCount)
         return false;
 
+    //The batch thresholds scale down below level 5: a fresh bot's stock is one or
+    //two greys (eight items and 60% bags are unreachable before level 5), so the
+    //LowLevel* pair is what makes the batch rule fire for the starting pool.
+    bool const beginner = ai->GetBot()->GetLevel() < 5;
+    uint32 const minBatchCount = beginner ? sPlayerbotAIConfig.lowLevelVendorBatchMinCount : sPlayerbotAIConfig.vendorBatchMinCount;
+    uint32 const minBatchBagSpace = beginner ? sPlayerbotAIConfig.lowLevelVendorBatchMinBagSpace : sPlayerbotAIConfig.vendorBatchMinBagSpace;
+
     return sellValue >= moneyMissing || //Selling this stock buys the spell.
-        (sellableCount >= MIN_VENDOR_BATCH_COUNT && AI_VALUE(uint8, "bag space") >= MIN_VENDOR_BATCH_BAG_SPACE);
+        (sellableCount >= minBatchCount && AI_VALUE(uint8, "bag space") >= minBatchBagSpace);
 }
 
 //A member that is about to leave the party for a vendor must not be dragged

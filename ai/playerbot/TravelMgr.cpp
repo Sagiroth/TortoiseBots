@@ -434,9 +434,17 @@ uint8 QuestObjectiveTravelDestination::getObjective() const
 
 bool RpgTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 {
+    bool const beginner = info.GetLevel() < 5;
+
     // Don't send low-level bots on RPG travel — the path to any NPC typically
     // crosses level 5+ mobs that kill level 1-4 bots instantly, creating a death loop.
-    if (info.GetLevel() < 5)
+    // Exception: the camp vendor. Selling the starter loot is the only income a fresh
+    // random bot has, and the camp it spawns in is mob-safe; the trip is capped to the
+    // beginner radius below and to the starting-zone level band, so the walk stays
+    // inside that safe pocket. Every other RPG errand (trainer, AH, mail, generic rpg)
+    // stays blocked below level 5, and owned/hired bots with a player master are
+    // unaffected — their player decides where they walk.
+    if (beginner && (GetPurpose() != TravelDestinationPurpose::Vendor || !info.IsMasterlessRandom()))
         return false;
 
     // Don't send a bot to an NPC sitting in a zone far above its level — the journey
@@ -471,9 +479,16 @@ bool RpgTravelDestination::IsPossible(const PlayerTravelInfo& info) const
                 return false;
         }
 
+        // A beginner vendor trip must stay inside the starting camp: the far walk is
+        // exactly what the level-5 gate above protects against.
+        if (beginner && point->distance(info.getPosition()) > sPlayerbotAIConfig.lowLevelVendorMaxDistance)
+            return false;
+
         if (info.GetLevel() <= 5 && point->distance(info.getPosition()) > 1500.0f)
             return false;
     }
+    else if (beginner) //A vendor trip we cannot measure is not worth the risk.
+        return false;
 
     //Horde pvp baracks
     if (ClosestMapId(info.getPosition()) == 450 && info.GetTeam() == ALLIANCE)
@@ -2375,7 +2390,18 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
             return false;
     }
 
-    if (!(purposeFlag & (uint32)TravelDestinationPurpose::QuestTaker))
+    // A beginner vendor trip is the one RPG errand a level 1-4 bot may make (see
+    // RpgTravelDestination::IsPossible). The area-level check would reject the bot's
+    // own camp vendor: starting areas are rated 2-5 while the bot is 1-4. The trip is
+    // already bounded to the beginner radius and to the starting-zone level band
+    // (area level <= bot level + 5), so the walk stays in the mob-safe camp.
+    bool const beginnerVendorTrip =
+        info.GetLevel() < 5 &&
+        info.IsMasterlessRandom() &&
+        (purposeFlag & (uint32)TravelDestinationPurpose::Vendor) &&
+        position.distance(info.getPosition()) <= sPlayerbotAIConfig.lowLevelVendorMaxDistance;
+
+    if (!(purposeFlag & (uint32)TravelDestinationPurpose::QuestTaker) && !beginnerVendorTrip)
     {
         if (!areaLevel || (uint32)botLevel < areaLevel) //Skip points that are in a area that is too high level.
             return false;

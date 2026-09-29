@@ -214,6 +214,25 @@ AiPlayerbot.BotQuestLogUpkeep = 1
 # Default 1.
 AiPlayerbot.LeaveOutgrownZones = 1
 
+# Vendor trip thresholds (#339): when a bot with a trainable class rank it cannot
+# pay for walks to a vendor. Either the sell value of its vendor-usable stock
+# covers the money missing for that rank, or the batch below fires: at least
+# VendorBatchMinCount vendor-usable items and bags at least
+# VendorBatchMinBagSpace percent full. Bots below level 5 use the LowLevel* pair
+# instead — a fresh bot carries one or two greys, so 8 items / 60% bags never
+# applied to the starting pool and it stayed broke. Default 8 / 60, low level
+# 3 / 25.
+AiPlayerbot.VendorBatchMinCount = 8
+AiPlayerbot.VendorBatchMinBagSpace = 60
+AiPlayerbot.LowLevelVendorBatchMinCount = 3
+AiPlayerbot.LowLevelVendorBatchMinBagSpace = 25
+# Radius in yards of the vendor trip a random masterless bot below level 5 may
+# make. All RPG travel below level 5 stays blocked (the path to an NPC usually
+# crosses level 5+ mobs); the camp vendor is the exception, and the trip is
+# capped to this radius so the bot never leaves its mob-safe starting pocket.
+# Default 600.
+AiPlayerbot.LowLevelVendorMaxDistance = 600
+
 # Default-on bounded fill of human-waiting LFT queues with live random Headless bots.
 # Uses core #416 QueuePlayer/LeaveQueue/IsQueued/IsInOffer/AcceptOffer/
 # GetQueuedPlayers; core owns private queues, offers, cancellation and groups.
