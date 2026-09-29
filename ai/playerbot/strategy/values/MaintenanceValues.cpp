@@ -48,16 +48,14 @@ bool ShouldSellValue::CantAffordNextSpell(PlayerbotAI* ai)
 }
 
 //A broke bot that picks up one grey pelt is not a reason to leave the grind
-//spot: it sells the pelt, is still broke, and walks back. Only sell when the
-//stock actually buys the missing spell rank, or when a real batch has piled
-//up and the bags are filling anyway.
+//spot: it sells the pelt, is still broke, and walks back. So a small stock is
+//only worth the walk when it actually buys the missing spell rank. A real
+//batch is worth the walk on its own: the bags are filling anyway, and a bot
+//with nothing left to train (a fresh level 1 has no green class rank yet)
+//must still turn its loot into coin instead of hoarding it until the bags are
+//full.
 bool ai::SellableStockWorthAVendorTrip(PlayerbotAI* ai)
 {
-    uint32 moneyMissing = SpellMoneyMissing(ai);
-
-    if (!moneyMissing) //The bot can pay for its next rank, or has nothing to train.
-        return false;
-
     //A vendor trip is an overworld errand: never worth it in the middle of a
     //run, and never worth overruling an explicit player master.
     if (!WorldPosition(ai->GetBot()).isOverworld() || ai->HasActivePlayerMaster())
@@ -88,8 +86,12 @@ bool ai::SellableStockWorthAVendorTrip(PlayerbotAI* ai)
     uint32 const minBatchCount = beginner ? sPlayerbotAIConfig.lowLevelVendorBatchMinCount : sPlayerbotAIConfig.vendorBatchMinCount;
     uint32 const minBatchBagSpace = beginner ? sPlayerbotAIConfig.lowLevelVendorBatchMinBagSpace : sPlayerbotAIConfig.vendorBatchMinBagSpace;
 
-    return sellValue >= moneyMissing || //Selling this stock buys the spell.
-        (sellableCount >= minBatchCount && AI_VALUE(uint8, "bag space") >= minBatchBagSpace);
+    if (sellableCount >= minBatchCount && AI_VALUE(uint8, "bag space") >= minBatchBagSpace)
+        return true; //A real batch has piled up; the bags are filling anyway.
+
+    uint32 moneyMissing = SpellMoneyMissing(ai);
+
+    return moneyMissing > 0 && sellValue >= moneyMissing; //Selling this stock buys the spell.
 }
 
 //A member that is about to leave the party for a vendor must not be dragged
