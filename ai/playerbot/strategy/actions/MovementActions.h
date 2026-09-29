@@ -120,6 +120,16 @@ namespace ai
     public:
         MoveToLootAction(PlayerbotAI* ai) : MovementAction(ai, "move to loot") {}
         virtual bool Execute(Event& event) override;
+
+    private:
+        // A launched move can still lead nowhere (navmesh path degraded to a direct spline), so
+        // the bounded give-up also needs a no-progress watchdog. See the implementation.
+        bool StuckOnApproach(ObjectGuid guid);
+
+        ObjectGuid approachGuid;
+        float approachX = 0.0f;
+        float approachY = 0.0f;
+        time_t approachSince = 0;
     };
 
     class MoveOutOfEnemyContactAction : public MovementAction

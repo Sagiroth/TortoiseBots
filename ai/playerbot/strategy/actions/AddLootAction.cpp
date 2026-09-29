@@ -82,7 +82,7 @@ bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
         else
             ai->TellDebug(requester, "for trying to add loot from " + ChatHelper::formatWorldobject(wo), "debug loot");
 
-        sLog.outDebug("[BOT LOOT] %s: AddLoot reject guid=%lu (no lootable WorldObject: corpse not tapped/looted-by-bot or wrong type)",
+        sLog.outDebug("[BOT LOOT] %s: AddLoot reject guid=%lu (no lootable WorldObject: creature corpse not this bot's to loot (round robin/tap), already looted, or wrong type)",
             bot->GetName(), guid.GetRawValue());
         return false;
     }
@@ -94,7 +94,7 @@ bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
     if (loot.IsEmpty())
     {
         ai->TellDebug(requester, "Loot object is empty.", "debug loot");
-        sLog.outDebug("[BOT LOOT] %s: AddLoot reject guid=%lu (loot object empty / not lootable-tapped)",
+        sLog.outDebug("[BOT LOOT] %s: AddLoot reject guid=%lu (loot object empty: nothing lootable for this bot)",
             bot->GetName(), guid.GetRawValue());
         return false;
     }

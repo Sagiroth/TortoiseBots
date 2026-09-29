@@ -3,7 +3,6 @@
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/Value.h"
 #include "playerbot/LootObjectStack.h"
-#include "playerbot/ServerFacade.h"
 
 namespace ai
 {
@@ -41,7 +40,9 @@ namespace ai
             return !loot.IsEmpty() &&
                     loot.GetWorldObject(bot) &&
                     loot.IsLootPossible(bot) &&
-                    sServerFacade.IsDistanceLessOrEqualThan(AI_VALUE2(float, "distance", "loot target"), INTERACTION_DISTANCE);
+                    // Same rule OpenLootAction::DoLoot (and the server) applies, so "open loot"
+                    // does not fire while the bot is still a few yards short of the object.
+                    loot.IsInLootRange(bot);
         }
     };
 }

@@ -31,6 +31,15 @@ static constexpr float kMaxWaypointDrop = 4.0f;
 // instead of teleporting across the shaft.
 static constexpr float kTransportBoardDistance = 15.0f;
 
+// "Move to loot" give-up watchdog: when navmesh pathing degrades to a direct spline
+// (MovementAction::ResolveMovePath appends the end position), MoveTo reports success while the
+// bot runs into the geometry, so a corpse behind a rock or on a ledge would be approached
+// forever and the failure counter (which only sees !moved) would never fill. Anchor the bot's
+// position per target; standing inside the radius for the whole timeout counts as a failed
+// approach (three of those abandon the corpse, see LootObjectStack::NoteApproachFailure).
+static constexpr float kLootApproachStuckRadius = 2.0f;  // yards
+static constexpr time_t kLootApproachStuckTimeout = 5;   // seconds
+
 void MovementAction::CreateWp(Player* wpOwner, float x, float y, float z, float o, uint32 entry, bool important)
 {
     float dist = wpOwner->GetDistance(x, y, z);
@@ -2034,6 +2043,33 @@ bool RunAwayAction::Execute(Event& event)
     return Flee(AI_VALUE(Unit*, "master target"));
 }
 
+bool MoveToLootAction::StuckOnApproach(ObjectGuid guid)
+{
+    time_t now = time(0);
+    float x = bot->GetPositionX();
+    float y = bot->GetPositionY();
+
+    float dx = x - approachX;
+    float dy = y - approachY;
+    bool anchored = guid == approachGuid && dx * dx + dy * dy <= kLootApproachStuckRadius * kLootApproachStuckRadius;
+    if (!anchored)
+    {
+        approachGuid = guid;
+        approachX = x;
+        approachY = y;
+        approachSince = now;
+        return false;
+    }
+
+    if (now - approachSince < kLootApproachStuckTimeout)
+        return false;
+
+    // Same spot for the whole window while still out of loot range: count it, start a new
+    // window, and let the shared failure counter decide when to abandon the corpse.
+    approachSince = now;
+    return true;
+}
+
 bool MoveToLootAction::Execute(Event& event)
 {
     LootObject loot = AI_VALUE(LootObject, "loot target");
@@ -2073,10 +2109,12 @@ bool MoveToLootAction::Execute(Event& event)
 
     // Bounded give-up: a corpse the bot cannot path to must not pin the loot
     // chain (and with it the next pull) indefinitely. Count failed approaches
-    // per corpse; once one is abandoned, drop it and clear the target so
-    // "loot" selects the next corpse. The memory lives in the loot stack and
-    // ages out, so a corpse that becomes reachable later is retried.
-    if (!moved)
+    // per corpse -- a move that failed to launch and a move that launched but
+    // made no progress (see StuckOnApproach); once one is abandoned, drop it
+    // and clear the target so "loot" selects the next corpse. The memory lives
+    // in the loot stack and ages out, so a corpse that becomes reachable later
+    // is retried.
+    if (!moved || StuckOnApproach(loot.guid))
     {
         LootObjectStack* lootStack = AI_VALUE(LootObjectStack*, "available loot");
         if (lootStack)

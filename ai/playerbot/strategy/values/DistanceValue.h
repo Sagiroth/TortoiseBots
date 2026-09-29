@@ -3,7 +3,6 @@
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/Value.h"
 #include "TargetValue.h"
-#include "playerbot/LootObjectStack.h"
 #include "playerbot/ServerFacade.h"
 #include "PositionValue.h"
 #include "Stances.h"
@@ -18,19 +17,6 @@ namespace ai
     public:
         float Calculate() override
         {
-            if (qualifier == "loot target")
-            {
-                LootObject loot = AI_VALUE(LootObject, qualifier);
-                if (loot.IsEmpty())
-                    return 0.0f;
-
-                WorldObject* obj = loot.GetWorldObject(bot);
-                if (!obj)
-                    return 0.0f;
-
-                return sServerFacade.GetDistance2d(ai->GetBot(), obj);
-            }
-
             if (qualifier.find("position_") == 0)
             {
                 std::string position = qualifier.substr(9);

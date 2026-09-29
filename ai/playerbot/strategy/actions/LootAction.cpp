@@ -21,24 +21,11 @@ bool LootAction::Execute(Event& event)
 
     LootObject prevLoot = AI_VALUE(LootObject, "loot target");
 
-    LootObject lootObject;
-    Player* master = ai->GetMaster();
-    std::vector<LootObject> candidates = AI_VALUE(LootObjectStack*, "available loot")->OrderByDistance(sPlayerbotAIConfig.lootDistance);
-    for (LootObject& candidate : candidates)
-    {
-        if (master && master != bot)
-        {
-            Creature* c = ai->GetCreature(candidate.guid);
-            if (c && sServerFacade.GetDeathState(c) == CORPSE)
-            {
-                float safeRange = sPlayerbotAIConfig.lootDistance;
-                if (sServerFacade.getDistance2d(master, c) > safeRange)
-                    continue;
-            }
-        }
-        lootObject = candidate;
-        break;
-    }
+    // The stack already dropped corpses this bot may not loot (round robin, another player's
+    // tap) and corpses out of the master's safe range, so the nearest remaining entry is the
+    // target. Re-filtering here duplicated those rules, and when they drifted apart the loot
+    // action kept firing without ever selecting anything.
+    LootObject lootObject = AI_VALUE(LootObjectStack*, "available loot")->GetLoot(sPlayerbotAIConfig.lootDistance);
 
     if (lootObject.IsEmpty())
         return false;
@@ -86,19 +73,6 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
     sLog.outDebug("[BOT LOOT] %s: DoLoot target=%lu", bot->GetName(), lootObject.guid.GetRawValue());
 
     Creature* creature = ai->GetCreature(lootObject.guid);
-    // Gate the loot send on the SERVER's exact loot-range rule: a 3D distance check against
-    // GetMaxLootDistance with no bounding-radius slack (Player::SendLoot, Player.cpp:9382 ->
-    // Object _IsWithinDist with SizeFactor::None). The old gate only measured 2D distance and
-    // ignored Z, so while the bot was being dragged along by follow/chase it fired CMSG_LOOT
-    // from a few yards above/below a corpse it had not actually reached (2D=2y but 3D>5y),
-    // and the server replied TOO_FAR. Returning false here keeps MoveToLoot approaching until
-    // the bot is truly standing on the corpse, then it loots.
-    if (creature && !creature->IsWithinDistInMap(bot, bot->GetMaxLootDistance(creature), true, SizeFactor::None))
-    {
-        sLog.outDebug("[BOT LOOT] %s: not in 3D loot range (dist2d=%.1f maxLoot=%.1f), keep approaching guid=%lu",
-            bot->GetName(), sServerFacade.getDistance2d(bot, creature), bot->GetMaxLootDistance(creature), lootObject.guid.GetRawValue());
-        return false;
-    }
 
     // Re-confirm the creature is still a fresh, lootable corpse before sending CMSG_LOOT.
     // The cached UNIT_DYNFLAG_LOOTABLE can lag behind a corpse that has despawned or
@@ -114,7 +88,28 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
         return false;
     }
 
-    if (creature && creature->HasFlag(UNIT_DYNAMIC_FLAGS, UNIT_DYNFLAG_LOOTABLE) && !creature->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SKINNABLE))
+    // Gate the loot send on the SERVER's exact loot-range rule (LootObject::IsInLootRange: 3D
+    // GetMaxLootDistance for corpses, INTERACTION_DISTANCE for game objects). The old creature
+    // gate here was 3D but "can loot" still compared 2D distance, so on a slope the bot fired
+    // CMSG_LOOT from a few yards above/below a corpse it had not reached, the server replied
+    // TOO_FAR, and the same 8.0-priority action re-fired every tick while "move to loot" (7.0)
+    // never got to walk the last yards.
+    if (!lootObject.IsInLootRange(bot))
+    {
+        if (creature)
+            sLog.outDebug("[BOT LOOT] %s: not in loot range (dist2d=%.1f maxLoot=%.1f), keep approaching guid=%lu",
+                bot->GetName(), sServerFacade.getDistance2d(bot, creature), bot->GetMaxLootDistance(creature), lootObject.guid.GetRawValue());
+        else
+            sLog.outDebug("[BOT LOOT] %s: not in loot range, keep approaching guid=%lu",
+                bot->GetName(), lootObject.guid.GetRawValue());
+        return false;
+    }
+
+    // Items first, also on a corpse the core already flagged skinnable: skinning is refused
+    // while any corpse loot is left (Spell::CheckCast -> SPELL_FAILED_TARGET_NOT_LOOTED), so the
+    // old !UNIT_FLAG_SKINNABLE requirement made beast corpses unlootable (non-skinners ignored
+    // them) and left skinners casting Skinning on an unlooted corpse every tick forever.
+    if (creature && creature->HasFlag(UNIT_DYNAMIC_FLAGS, UNIT_DYNFLAG_LOOTABLE))
     {
         if (!lootObject.IsLootPossible(bot)) //Clear loot if bot can't loot it.
         {
@@ -171,9 +166,6 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
     }
 
     GameObject* go = ai->GetGameObject(lootObject.guid);
-    if (go && sServerFacade.getDistance2d(bot, go) > INTERACTION_DISTANCE)
-        return false;
-
     if (go && (go->getLootState() == GO_ACTIVATED || go->GetGoState() == GO_STATE_ACTIVE))
         return false;
 

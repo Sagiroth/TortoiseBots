@@ -1984,3 +1984,26 @@ ever ran while hostiles were near, so the "far from current loot" ->
 Local validation:
 - `bash tools/verify_all.sh`; `git diff --check`.
 - Module build by orchestrator (workers do not run the docker builder).
+
+### Follow-up 2026-09-29 — the ported triggers now use the core's own loot rules
+
+No new donor code; the ported triggers above were re-pointed at the core rules
+after the 2026-09-28 economy review showed the donor shape fighting them:
+
+- Loot range is one predicate now (`LootObject::IsInLootRange`): 3D
+  `Player::GetMaxLootDistance` for corpses (what `Player::SendLoot` enforces),
+  `INTERACTION_DISTANCE` for game objects. The donor's `>= INTERACTION_DISTANCE - 2`
+  2D shape left `can loot` (8.0) firing while `open loot` failed the server's 3D
+  gate every tick on sloped ground, so `move to loot` (7.0) never ran.
+- Corpse entitlement uses `Player::IsAllowedToLoot` — the same call the core uses
+  to mask `UNIT_DYNFLAG_LOOTABLE` per viewer, i.e. where the round-robin turn
+  lives — instead of the module's group-wide `Creature::IsTappedBy`.
+- Corpse items are looted before skinning (`LootObject::Refresh` takes the loot
+  path first and arms the skin path only when `loot.isLooted()` and
+  `Creature::IsSkinnableBy`), matching the Skinning conditions in
+  `Spell::CheckCast`.
+- The master safe-range rule (`AiPlayerbot.LootDistance`) is applied inside
+  `LootObjectStack::OrderByDistance`, so "has available loot", target selection
+  and "far from current loot" cannot disagree.
+- `MoveToLootAction` counts a launched-but-stationary approach as a failure, so
+  the bounded give-up also covers navmesh paths that degrade to a direct spline.

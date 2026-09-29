@@ -2,9 +2,6 @@
 #include "playerbot/playerbot.h"
 #include "LootTriggers.h"
 #include "playerbot/LootObjectStack.h"
-#include "playerbot/PlayerbotAIConfig.h"
-
-#include "playerbot/ServerFacade.h"
 using namespace ai;
 
 bool LootAvailableTrigger::IsActive()
@@ -44,32 +41,16 @@ bool FarFromCurrentLootTrigger::IsActive()
     // "move to loot" runs at priority 7 but "out of free move range" fires "follow" at
     // ACTION_HIGH (20). A corpse is only reachable without oscillation if the master is
     // within followDistance + GetMaxLootDistance of it — otherwise the bot must leave the
-    // leash to reach the corpse and follow immediately wins, causing a yo-yo.
-    Player* master = ai->GetMaster();
-    if (master && master != bot)
-    {
-        Creature* creature = ai->GetCreature(loot.guid);
-        if (creature && sServerFacade.GetDeathState(creature) == CORPSE)
-        {
-            float safeRange = sPlayerbotAIConfig.lootDistance;
-            if (sServerFacade.getDistance2d(master, creature) > safeRange)
-                return false;
-        }
-    }
+    // leash to reach the corpse and follow immediately wins, causing a yo-yo. Same predicate
+    // the loot stack uses to decide whether the corpse counts as available loot at all.
+    if (!AI_VALUE(LootObjectStack*, "available loot")->IsWithinMasterLootRange(loot))
+        return false;
 
-    // Must agree with OpenLootAction::DoLoot's loot-range rule, or the bot deadlocks: for a
-    // creature corpse the server validates loot with a 3D distance check (Player::SendLoot),
-    // but the plain "distance" value here is 2D and ignores Z. On sloped ground the bot read
-    // "close enough" (2D <= 5) and so never fired "move to loot", yet "open loot" failed the
-    // 3D gate -> it sat a few yards off a corpse it could not loot. Use the same 3D rule so
-    // the bot keeps approaching until it is genuinely on the corpse, then loots.
-    if (Creature* creature = PlayerbotAIStorage::Instance().GetAI(bot)->GetCreature(loot.guid))
-    {
-        if (sServerFacade.GetDeathState(creature) == CORPSE)
-            return !creature->IsWithinDistInMap(bot, bot->GetMaxLootDistance(creature), true, SizeFactor::None);
-    }
-
-    return AI_VALUE2(float, "distance", "loot target") > INTERACTION_DISTANCE;
+    // Must agree with OpenLootAction::DoLoot's loot-range rule, or the bot deadlocks: while the
+    // 2D "distance" value here read "close enough", "open loot" (8.0) outranked "move to loot"
+    // (7.0) and failed the server's 3D range check every tick, so on sloped ground the bot sat
+    // a few yards off a corpse it could not loot and never approached it.
+    return !loot.IsInLootRange(bot);
 }
 
 bool CanLootTrigger::IsActive()
