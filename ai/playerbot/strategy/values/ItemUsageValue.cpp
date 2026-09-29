@@ -291,7 +291,14 @@ ItemUsage ItemUsageValue::Calculate()
         }
     }
 
-    ItemUsage equip = QueryItemUsageForEquip(itemQualifier, bot);
+    // Profession tools (Mining Pick, Blacksmith Hammer, Skinning Knife, Arclight
+    // Spanner, Woodcutting Axe) and a few quest items are weapon-class "misc"
+    // weapons: no weapon skill is needed to wield them, so a bot with an empty
+    // hand scored one as a fill-the-slot weapon and announced "Equipping ...".
+    // The copy a bot needs was already kept above and quest items are handled
+    // below; none of them is gear.
+    const bool miscWeapon = proto->Class == ITEM_CLASS_WEAPON && proto->SubClass == ITEM_SUBCLASS_WEAPON_MISC;
+    ItemUsage equip = miscWeapon ? ItemUsage::ITEM_USAGE_NONE : QueryItemUsageForEquip(itemQualifier, bot);
     if (equip != ItemUsage::ITEM_USAGE_NONE)
         return equip;
 
