@@ -97,6 +97,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/host/HireGroupAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/BotManager.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/BotActivityLease.cpp"
+    "${TORTOISEBOTS_ROOT}/runtime/CharacterCleanup.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/RandomBotAccountRegistry.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/RandomBotPoolReset.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/RandomBotService.cpp"

@@ -49,14 +49,16 @@ struct HireOutcome
     uint32_t cost = 0;
 };
 
-// Issue #192: on-demand companion hiring. Finds or creates a character on an
-// RNDBOT account matching the requested class/race/gender, levels it to the
+// Issue #192: on-demand companion hiring. Creates a character on an RNDBOT
+// account matching the requested class/race/gender, levels it to the
 // requester, provisions talents/spells/skills/gear for the requested role,
-// and invites it to the requester's group. Character creation reuses the
-// generic CharacterCreation seam on the world thread; login goes through the
-// normal Headless queue owned by BotManager. Provisioning itself is deferred
-// to Update() because the character only exists as a live Player once the
-// Headless session finishes logging in.
+// and invites it to the requester's group. Companion characters are temporary:
+// the hire ledger records each created character and HireLifecycle deletes it
+// when the hire ends. Character creation uses the generic CharacterCreation
+// seam on the world thread; login goes through the normal Headless queue owned
+// by BotManager. Provisioning itself is deferred to Update() because the
+// character only exists as a live Player once the Headless session finishes
+// logging in.
 class HireProvisionService
 {
 public:
@@ -95,9 +97,8 @@ public:
         // Reunite attempts so far (invite failures + teleport waits).
         uint32_t reuniteAttempts = 0;
     };
-    bool FindOwnedReusableCandidate(Player* requester, HireSelection const& sel, uint32_t& accountId, ObjectGuid& guid);
-
-    bool FindReusableCandidate(HireSelection const& sel, uint32_t& accountId, ObjectGuid& guid);
+    // Every hire creates its own character on a managed pool account; the
+    // character is deleted when the hire ends.
     bool CreateCandidate(HireSelection const& sel, uint32_t requesterTeam, uint32_t& accountId, ObjectGuid& guid);
     bool ProvisionNow(Player* bot, PendingProvision& pending);
     // Issue #281: heavy one-shot work (level/talents/spells/gear/SaveToDB).

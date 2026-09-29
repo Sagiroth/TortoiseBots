@@ -273,19 +273,19 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
     ObjectGuid guid;
     HireSelection resolved = sel;
     resolved.role = role;
-    // Own dismissed bots first: an offline bot the requester already owns and
-    // that is not hired out to another master is re-leveled and re-provisioned
-    // instead of minting a new character (no DB bloat, keeps names stable).
-    // Pool strangers second, fresh creation last.
-    bool haveCandidate = FindOwnedReusableCandidate(requester, resolved, accountId, guid);
-    if (!haveCandidate)
-        haveCandidate = FindReusableCandidate(resolved, accountId, guid);
+    // Every hire is a brand-new character on a managed pool account
+    // (HireProvisionService::CreateCandidate). Hired companions are temporary:
+    // dismissing one deletes its character, so a hire must never adopt an
+    // existing character — not a roaming pool bot (that would destroy an
+    // organic world character) and never one of the player's own characters.
+    // The durable hire ledger records exactly these created characters, and it
+    // is the only thing the deletion guard trusts.
     Team team = requesterTeam;
-    if (!haveCandidate && !CreateCandidate(resolved, team, accountId, guid))
+    if (!CreateCandidate(resolved, team, accountId, guid))
     {
         outcome.status = HireStatus::NoCandidate;
         outcome.message = "No mercenary of that kind is available right now. Try again shortly.";
-        sLog.outError("TortoiseBots: hire NoCandidate class %u race %u gender %u role %u (reuse + create both failed)",
+        sLog.outError("TortoiseBots: hire NoCandidate class %u race %u gender %u role %u (creation failed)",
             uint32(resolved.classId), uint32(resolved.race), uint32(resolved.gender), uint32(resolved.role));
         return outcome;
     }
@@ -315,9 +315,22 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
         outcome.message = "Could not record your ownership. No gold was taken.";
         return outcome;
     }
+    // The hire ledger is written here, once. Without it the character would
+    // never be deleted when the hire ends, so a failed write fails the whole
+    // hire instead of leaving an undeletable companion behind.
+    if (!HireLifecycle::Instance().Claim(guid, masterGuid, ownerAccountId, accountId))
+    {
+        BotManager::Instance().RemoveBot(guid, false);
+        requester->ModifyMoney(static_cast<int32>(cost));
+        requester->SaveToDB();
+        outcome.status = HireStatus::Failed;
+        outcome.message = "Could not record your hire. No gold was taken.";
+        sLog.outError("TortoiseBots: hire ledger unavailable; the hire of character %s (%u) was rolled back",
+            guid.GetString().c_str(), guid.GetCounter());
+        return outcome;
+    }
     if (BotRecord* record = BotManager::Instance().FindBot(guid))
         record->random = true;
-    HireLifecycle::Instance().Claim(guid, masterGuid, ownerAccountId);
     BotActivityLeaseManager::Instance().ClaimForMaster(guid.GetCounter());
 
     PendingProvision pending;
@@ -337,106 +350,6 @@ HireOutcome HireProvisionService::Hire(Player* requester, HireSelection const& s
     outcome.message = std::string("Hired ") + outcome.botName + " for " +
         ai::ChatHelper::formatMoney(cost) + ". Your companion is mustering.";
     return outcome;
-}
-
-// Own dismissed bots first: offline, requester-owned, matching
-// class/race/gender, and not currently hired by anyone. Re-levels and
-// re-provisions the same character instead of minting a new one.
-bool HireProvisionService::FindOwnedReusableCandidate(Player* requester, HireSelection const& sel, uint32_t& accountId, ObjectGuid& guid)
-{
-    if (!requester || !requester->GetSession())
-        return false;
-    uint32_t ownerAccountId = requester->GetSession()->GetAccountId();
-    for (OwnedCharacter const& row : BotManager::Instance().GetOwnedCharacters(ownerAccountId))
-    {
-        if (row.ownerAccountId != ownerAccountId)
-            continue;
-        PlayerCacheData const* data = sObjectMgr.GetPlayerDataByGUID(row.characterGuid.GetCounter());
-        if (!data || data->uiClass != sel.classId || data->uiRace != sel.race || data->uiGender != sel.gender)
-            continue;
-        if (data->uiAccount == 0)
-            continue;
-        if (BotManager::Instance().FindBot(row.characterGuid))
-            continue;
-        if (sObjectAccessor.FindPlayer(row.characterGuid))
-            continue;
-        if (BotSessionAdapter::GetHeadlessSessionState(row.characterGuid) != HeadlessSessionState::NotFound)
-            continue;
-        if (HireLifecycle::Instance().IsHired(row.characterGuid))
-            continue;
-        OwnedCharacter live;
-        if (BotManager::Instance().GetOwnedCharacter(row.characterGuid, live) && !live.masterGuid.IsEmpty() &&
-            live.masterGuid != requester->GetObjectGuid())
-            continue;
-        accountId = data->uiAccount;
-        guid = row.characterGuid;
-        return true;
-    }
-    return false;
-}
-
-bool HireProvisionService::FindReusableCandidate(HireSelection const& sel, uint32_t& accountId, ObjectGuid& guid)
-{
-    // Issue #265: reuse only accounts the module registered itself. A
-    // prefix-matching personal account is never handed out as a hire.
-    std::vector<uint32_t> accountIds = RandomBotAccountRegistry::Instance().AccountIds();
-
-    uint32_t perAccountLimit = sWorld.getConfig(CONFIG_UINT32_CHARACTERS_PER_REALM);
-    if (!perAccountLimit)
-        perAccountLimit = sWorld.getConfig(CONFIG_UINT32_CHARACTERS_PER_ACCOUNT);
-    if (!perAccountLimit)
-        perAccountLimit = 10;
-
-    for (uint32_t id : accountIds)
-    {
-        std::unique_ptr<QueryResult> rows(CharacterDatabase.PQuery(
-            "SELECT guid, name, race, class, gender, online, account FROM characters "
-            "WHERE account = '%u' AND deleteDate IS NULL ORDER BY guid LIMIT 50", id));
-        if (!rows)
-            continue;
-        uint32_t rowCount = 0;
-        struct Row { uint32_t guid; uint32_t race; uint32_t cls; uint32_t gender; uint32_t online; std::string name; };
-        std::vector<Row> parsed;
-        do
-        {
-            Field* f = rows->Fetch();
-            ++rowCount;
-            Row r;
-            r.guid = f[0].GetUInt32();
-            r.name = f[1].GetString();
-            r.race = f[2].GetUInt32();
-            r.cls = f[3].GetUInt32();
-            r.gender = f[4].GetUInt32();
-            r.online = f[5].GetUInt32();
-            parsed.push_back(r);
-        } while (rows->NextRow());
-        if (rowCount >= perAccountLimit)
-        {
-            TB_LOG_DETAIL("TortoiseBots: hire reuse skips full RNDBOT account %u (%u chars)", id, rowCount);
-            continue;
-        }
-        for (Row const& r : parsed)
-        {
-            if (r.race != sel.race || r.cls != sel.classId || r.gender != sel.gender)
-                continue;
-            if (r.online)
-                continue;
-            ObjectGuid candidate(HIGHGUID_PLAYER, r.guid);
-            if (BotManager::Instance().FindBot(candidate))
-                continue;
-            if (sObjectAccessor.FindPlayer(candidate))
-                continue;
-            if (BotSessionAdapter::GetHeadlessSessionState(candidate) != HeadlessSessionState::NotFound)
-                continue;
-            OwnedCharacter ownedRow;
-            if (BotManager::Instance().GetOwnedCharacter(candidate, ownedRow) && ownedRow.ownerAccountId)
-                continue;
-            accountId = id;
-            guid = candidate;
-            return true;
-        }
-    }
-    return false;
 }
 
 bool HireProvisionService::CreateCandidate(HireSelection const& sel, uint32_t requesterTeam, uint32_t& accountId, ObjectGuid& guid)
@@ -736,8 +649,8 @@ void HireProvisionService::ProvisionHeavy(Player* bot, PendingProvision const& p
     // Level sync: GiveLevel runs the full stat/talent-point pipeline (and
     // UpdateSkillsForLevel rides along inside it); the bot keeps its
     // race/class/gender/name and only grows into the master's level.
-    // Downgrades (reused higher-level candidate) go through SetLevel plus
-    // the public stat/XP follow-ups GiveLevel would have run.
+    // Downgrades (a target level below the character's own) go through
+    // SetLevel plus the public stat/XP follow-ups GiveLevel would have run.
     if (bot->GetLevel() != pending.targetLevel)
     {
         if (pending.targetLevel > bot->GetLevel())
@@ -888,6 +801,14 @@ void HireProvisionService::Update(uint32_t diff)
     uint32_t completed = 0;
     for (auto it = m_pending.begin(); it != m_pending.end() && completed < 2;)
     {
+        // The hire ended while it was still mustering (kicked from the group,
+        // master grace expired, `.bot remove`): it is being deleted, so stop
+        // provisioning it.
+        if (!HireLifecycle::Instance().IsHired(it->botGuid))
+        {
+            it = m_pending.erase(it);
+            continue;
+        }
         Player* bot = sObjectAccessor.FindPlayer(it->botGuid);
         BotRecord* record = BotManager::Instance().FindBot(it->botGuid);
         bool controllable = bot && record && BotManager::Instance().IsControllableBot(bot) &&

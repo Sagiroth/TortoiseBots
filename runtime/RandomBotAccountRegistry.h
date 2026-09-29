@@ -46,8 +46,8 @@ struct PoolAccount
 
 // The authoritative list of login accounts the module owns as random-pool
 // infrastructure (issue #265). Every random-pool operation crosses this seam:
-// candidate discovery, hire reuse, auto-create targets, reset target
-// selection, and `IsInRandomAccountList`.
+// candidate discovery, hire account selection, auto-create targets, reset
+// target selection, and `IsInRandomAccountList`.
 //
 // An account that is not registered here is never treated as module-owned, no
 // matter how closely its username resembles the configured prefix.

@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <ctime>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -15,18 +16,33 @@ class Group;
 namespace TortoiseBots
 {
 
-// Issue #192: hired-companion lifecycle. Tracks which Headless bots are hired
-// companions (vs roaming pool), runs the master-disconnect grace timer, and
-// dismisses companions when their group goes away. Driven from BotManager's
-// world tick and the module GroupScript adapter; never blocks the tick.
+// Issue #192: hired-companion lifecycle. Hired companions are temporary:
+// they live while their master is online plus the disconnect grace period,
+// and when the hire ends the character is deleted instead of returning to the
+// roaming pool. Tracks active hires, runs the master-disconnect grace timer,
+// and drives the asynchronous deletion of dismissed companions. Driven from
+// BotManager's world tick and the module GroupScript adapter; never blocks the
+// tick.
 class HireLifecycle
 {
 public:
     static HireLifecycle& Instance();
 
-    // Mark a freshly hired bot. Called once per Hire().
-    void Claim(ObjectGuid botGuid, ObjectGuid masterGuid, uint32_t ownerAccountId);
-    void Release(ObjectGuid botGuid);
+    // Mark a freshly hired bot and write its durable hire-ledger row. Called
+    // once per Hire(); false means the ledger could not be written and the
+    // caller must abort the hire without charging. A character with no ledger
+    // row is never deleted (see runtime/HireDeletionPolicy.h).
+    bool Claim(ObjectGuid botGuid, ObjectGuid masterGuid, uint32_t ownerAccountId,
+        uint32_t characterAccountId);
+
+    // End a hire now, without a grace period. `.bot remove`/`.bot logout` on a
+    // companion and any other explicit release go through here; a bot that is
+    // not a hire is left alone.
+    void DismissNow(ObjectGuid botGuid, char const* reason);
+
+    // Drop the lifecycle record without touching the character: the
+    // managed-pool reset deletes the character (and the ledger row) itself.
+    void Forget(ObjectGuid botGuid);
 
     bool IsHired(ObjectGuid botGuid) const;
     ObjectGuid GetMaster(ObjectGuid botGuid) const;
@@ -55,13 +71,36 @@ private:
         bool greeted = false;
     };
 
+    // A dismissed hire whose character is waiting for its asynchronous
+    // deletion. The durable state lives in tortoise_bots_hire ('dismissed');
+    // this queue only tracks the in-flight work.
+    struct PendingDeletion
+    {
+        uint32_t guidLow = 0;
+        std::string reason;
+        time_t queuedAt = 0;
+    };
+
     void Dismiss(HiredRecord const& record, char const* reason, bool removeFromGroup = true);
     bool MasterOnline(HiredRecord const& record) const;
     void Reunite(HiredRecord& record, Player* master);
     void SweepGracePeriod(time_t now);
 
+    // Durable hire ledger.
+    bool LedgerRow(ObjectGuid botGuid, uint32_t& characterAccountId) const;
+    // Guard, mark dismissed, and queue the character for deletion.
+    void QueueDeletion(uint32_t guidLow, uint32_t ledgerAccountId, char const* reason);
+    // First ticks after startup: every ledger row is a stale hire (no hire
+    // survives a restart), so it is recovered and deleted.
+    bool RecoverStaleHires();
+    void SweepDeletions(time_t now);
+    bool ProcessDeletion(PendingDeletion const& entry, time_t now);
+
     std::unordered_map<uint32_t, HiredRecord> m_hired;
     std::unordered_set<uint32_t> m_dismissing;
+    std::vector<PendingDeletion> m_pendingDeletions;
+    bool m_ledgerRecovered = false;
+    time_t m_recoveryRetryAt = 0;
     uint32_t m_updateElapsedMs = 0;
     uint32_t m_restockElapsedMs = 0;
 };

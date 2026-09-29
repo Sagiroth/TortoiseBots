@@ -211,6 +211,7 @@ This is module-internal scheduling and needs no core seam.
 | Short-lived player convenience state | `PlayerConvenience` |
 | Durable master GUID | `BotRecord.masterGuid` |
 | Live master pointer | `PlayerbotAI` |
+| Durable hire ledger | `HireLifecycle` (`tortoise_bots_hire`) |
 
 A second owner for session lifetime, AI state, movement or master identity is an
 architecture warning.
@@ -631,7 +632,7 @@ reset and no live reset command exists.
 Ordering relative to world startup and headless sessions: the plan is built
 after the module's world-startup hook, so the database and DBC stores are
 loaded. The reset then runs `Planning` (drain every pool session with
-`BotManager::RemoveBot(guid, false)` plus `HireLifecycle::Release`),
+`BotManager::RemoveBot(guid, false)` plus `HireLifecycle::Forget`),
 `SettlingAuctions` (settle every target-owned listing, one character per tick,
 while all pool bidders still exist — a pool bot bidding on another pool bot's
 auction would otherwise be gone by the time that listing is reached), and only
@@ -670,10 +671,59 @@ Related-data handling keeps the core bot-agnostic and needs **no core change**:
   bot-led guild holding any character outside the managed pool aborts the reset
   before the first deletion.
 - **Module rows** for each deleted character (`ai_playerbot_db_store`,
-  `ai_playerbot_custom_strategy`, `tortoise_bots_owned_character`) are removed
-  explicitly and re-verified; character-owned data (inventory, mail, pets,
-  groups, instances, petitions, guild membership) stays with
-  `Player::DeleteFromDB`.
+  `ai_playerbot_custom_strategy`, `tortoise_bots_owned_character`,
+  `tortoise_bots_armory_stats`, `tortoise_bots_hire`) are removed explicitly —
+  the shared `CharacterCleanup` helper — and re-verified; character-owned data
+  (inventory, mail, pets, groups, instances, petitions, guild membership) stays
+  with `Player::DeleteFromDB`.
+
+## 18.2 Hired companions are temporary (optional, default-on with hiring)
+
+A hired companion is a **temporary character**, not a pool bot with extra
+steps: it lives while its master is online plus
+`AiPlayerbot.HireDisconnectGracePeriod` seconds after a disconnect, and when the
+hire ends its character is deleted (`.bot hire`, `<Mercenary Hire>`, and the
+`Hire*` knobs are described in [Player Controls](guides/player-controls.md)).
+`HireLifecycle` (runtime/) owns that lifecycle end to end:
+
+- **Ledger.** `HireLifecycle::Claim` writes one `tortoise_bots_hire` row per
+  hire, before the fee is charged, for a character `HireProvisionService`
+  itself created with `CharacterCreation::CreateCharacter`. A hire never adopts
+  an existing character: a roaming pool bot is never consumed, and a player's
+  own character is never taken over (the earlier candidate-reuse paths are
+  gone). The row is therefore the only proof that a character was created by
+  Hire(), and the deletion guard refuses without it.
+- **Ending the hire.** Every ending path funnels through
+  `HireLifecycle::Dismiss`: removal from the group (`HireGroupAdapter` group
+  hooks), group disband, master grace expiry (`SweepGracePeriod`), explicit
+  `.bot remove`/`.bot logout` (`DismissNow`), and a vanished runtime record. The
+  ledger row is marked `dismissed` first, the master binding and activity lease
+  are released, and `BotManager::RemoveBot(guid, false)` logs the character off.
+- **Deletion.** A live character cannot be deleted, so the actual wipe is
+  asynchronous: `HireLifecycle::Update` processes one queued character per world
+  tick once its Headless session is gone. Before deleting it revalidates the
+  ledger row, that the account is a registered managed pool account
+  (`tortoise_bots_pool_account`), and that `characters.account` still matches
+  the ledger (`HireDeletionPolicy`, unit-tested in
+  `tools/test_hire_deletion_policy.cpp`). Auctions are settled through
+  `CharacterCleanup` first (the core's `Player::DeleteFromDB` does not touch
+  listings); the core then removes the character, its group, guild/petition
+  membership, items, pets and mail, and the module rows go with it. A character
+  whose account no longer matches, or that a human session owns, is never
+  deleted — it stays and the refusal is logged. While a managed-pool reset is
+  active the queue waits it out (the reset settles every auction with all pool
+  bidders present and deletes the same characters itself).
+- **Crash safety.** No hire survives a restart: hire state is in-memory, so a
+  fresh process recovers **every** `tortoise_bots_hire` row on its first ticks
+  and deletes those characters (`state` is set to `dismissed` before the
+  deletion, and the row is removed with the character). A crash between the
+  logout and the deletion therefore cannot leave an orphan hire in the pool, and
+  a master cannot be reunited with a companion after a restart — hiring again
+  means paying the fee again.
+- **Population accounting.** Deleting a hire frees one character slot on a
+  managed pool account. The pool target (`MinRandomBots`/`MaxRandomBots`) is
+  unaffected: the freed slot is refilled by the same bounded auto-create pass
+  that fills any other missing pool character.
 
 ## 19. Battleground auto-queue (optional, default-on)
 

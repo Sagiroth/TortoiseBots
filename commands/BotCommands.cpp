@@ -1160,7 +1160,15 @@ static bool HandleRemove(ChatHandler* handler, char const* args)
         handler->PSendSysMessage("You may only control characters on your account.");
         return true;
     }
-    HireLifecycle::Instance().Release(guid);
+    if (HireLifecycle::Instance().IsHired(guid))
+    {
+        // Issue #192 follow-up: a hired companion is temporary. An explicit
+        // removal ends the hire now and deletes its character; the fee is not
+        // refunded and the next hire is a new character.
+        HireLifecycle::Instance().DismissNow(guid, "removed by master");
+        handler->PSendSysMessage("Hire ended for %s; its character is being deleted.", name.c_str());
+        return true;
+    }
     if (BotManager::Instance().RemoveBot(guid, true))
         handler->PSendSysMessage("Removal requested for bot %s; Headless cleanup completes asynchronously.", name.c_str());
     else
@@ -1894,8 +1902,8 @@ static bool HandleRoster(ChatHandler* handler)
     for (auto it = rows.begin(); it != rows.end(); )
     {
         // The roster lists the player's own characters. Hired companions live on
-        // random-pool accounts; their ownership row stays after dismissal so a re-hire
-        // brings the same character back, but they are not alts and do not belong here.
+        // random-pool accounts and are temporary: their character is deleted
+        // when the hire ends, so a dismissed companion never shows up here.
         if (it->characterGuid == requester->GetObjectGuid() ||
             RandomBotAccountRegistry::Instance().IsRegistered(it->characterAccountId))
             it = rows.erase(it);
@@ -1982,7 +1990,16 @@ static bool HandleLogout(ChatHandler* handler, char const* args)
         return true;
     }
 
-    HireLifecycle::Instance().Release(bot->GetObjectGuid());
+    if (HireLifecycle::Instance().IsHired(bot->GetObjectGuid()))
+    {
+        // A hire is temporary: logging it out ends the hire and deletes its
+        // character instead of keeping a pool character alive with the
+        // master's level and gear.
+        HireLifecycle::Instance().DismissNow(bot->GetObjectGuid(), "logged out by master");
+        handler->PSendSysMessage("Hire ended for %s; its character is being deleted.", name.c_str());
+        return true;
+    }
+
     if (!BotManager::Instance().RemoveBot(bot->GetObjectGuid(), true))
     {
         handler->PSendSysMessage("Bot %s could not be logged out.", name.c_str());

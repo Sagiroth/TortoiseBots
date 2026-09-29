@@ -16,6 +16,8 @@ TortoiseBots is not limited to player-owned companions. It includes a complete *
 
 > **What "managed" means.** A pool account is one recorded in the character-database table `tortoise_bots_pool_account`: either the module created it itself (auto-create or hiring) or an administrator adopted it explicitly at the server console. A username that merely starts with the configured prefix (`RNDBOT`) does **not** make an account a pool account — such accounts are ignored by the pool and are never reset. See [Resetting the managed bot pool](#resetting-the-managed-bot-pool).
 
+> **Hired companions are guests, not residents.** Players hire companions through the `<Mercenary Hire>` recruiters (see [Player Controls](player-controls.md)). Each hire creates its **own new character** on a managed pool account, and that character is **deleted** when the hire ends — when the companion is kicked or released, when the party disbands, or when the disconnect grace period after the player logs out expires. A dismissed companion never returns to the roaming pool, so it can never drag a player-level character with master-level gear into the organic world. The freed account slot is simply refilled by the normal auto-create target (it never raises or lowers `AiPlayerbot.MinRandomBots`/`MaxRandomBots`), and because the character is gone, the player pays for a fresh companion the next time.
+
 ---
 
 ## 1. Autonomous Bot Lifecycle
@@ -232,7 +234,7 @@ Adoption (`bot pool adopt preview` / `confirm`) only **registers** accounts. It 
 ### What a reset intentionally loses
 
 - bot level, gear, bags, bank, quests, and profession progression;
-- hired companions that were riding the pool (their durable ownership rows are cleared with the character);
+- hired companions that were riding the pool (any hire character still on a pool account — its hire-ledger and durable ownership rows are cleared with the character);
 - pinned bot names and their saved GUIDs (pins resolve again once new characters exist);
 - guilds that consist only of pool characters (a guild holding anyone outside the pool blocks the reset instead — see below);
 - bot-owned auction listings: active bidders are refunded through the core's normal auction mail before the listing is removed, and the listed item is destroyed with the character.

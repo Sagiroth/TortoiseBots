@@ -2,7 +2,11 @@
 #include "HireLifecycle.h"
 #include "BotManager.h"
 #include "BotActivityLease.h"
+#include "CharacterCleanup.h"
+#include "HireDeletionPolicy.h"
 #include "PlayerbotAIStorage.h"
+#include "RandomBotAccountRegistry.h"
+#include "RandomBotPoolReset.h"
 #include "../host/BotSessionAdapter.h"
 #include "../host/ModuleLog.h"
 #include "../ai/playerbot/PlayerbotAI.h"
@@ -11,15 +15,16 @@
 #include "../ai/playerbot/strategy/Event.h"
 
 #include "ObjectAccessor.h"
-#include "ObjectMgr.h"
 #include "Player.h"
-#include "World.h"
 #include "WorldSession.h"
 #include "Chat.h"
 #include "Group/Group.h"
+#include "Database/DatabaseEnv.h"
 #include "Log.h"
 
+#include <cstddef>
 #include <ctime>
+#include <memory>
 
 namespace TortoiseBots
 {
@@ -30,22 +35,51 @@ HireLifecycle& HireLifecycle::Instance()
     return instance;
 }
 
-void HireLifecycle::Claim(ObjectGuid botGuid, ObjectGuid masterGuid, uint32_t ownerAccountId)
+bool HireLifecycle::Claim(ObjectGuid botGuid, ObjectGuid masterGuid, uint32_t ownerAccountId,
+    uint32_t characterAccountId)
 {
-    if (botGuid.IsEmpty())
-        return;
+    if (botGuid.IsEmpty() || !characterAccountId)
+        return false;
+
+    // Durable hire ledger first: it is written exactly once per hire and is the
+    // only proof that this character was created by Hire(). Deleting a hired
+    // character is refused without it (HireDeletionPolicy). A failed write
+    // aborts the hire before the fee is charged.
+    uint32_t botGuidLow = botGuid.GetCounter();
+    if (!CharacterDatabase.DirectPExecute(
+            "INSERT INTO `tortoise_bots_hire` "
+            "(`character_guid`, `character_account_id`, `owner_account_id`, `state`) "
+            "VALUES ('%u', '%u', '%u', 'active')",
+            botGuidLow, characterAccountId, ownerAccountId))
+    {
+        sLog.outError("TortoiseBots: hire ledger write failed for character %u on account %u",
+            botGuidLow, characterAccountId);
+        return false;
+    }
+
     HiredRecord record;
     record.botGuid = botGuid;
     record.masterGuid = masterGuid;
     record.ownerAccountId = ownerAccountId;
     record.masterOfflineSince = 0;
     record.greeted = false;
-    m_hired[botGuid.GetCounter()] = record;
+    m_hired[botGuidLow] = record;
+    return true;
 }
 
-void HireLifecycle::Release(ObjectGuid botGuid)
+void HireLifecycle::Forget(ObjectGuid botGuid)
 {
     m_hired.erase(botGuid.GetCounter());
+}
+
+void HireLifecycle::DismissNow(ObjectGuid botGuid, char const* reason)
+{
+    auto it = m_hired.find(botGuid.GetCounter());
+    if (it == m_hired.end())
+        return; // an owned alt or an untracked bot: nothing here may touch it
+    HiredRecord record = it->second;
+    // The bot is being logged off anyway, so no group surgery is needed.
+    Dismiss(record, reason ? reason : "released", false);
 }
 
 bool HireLifecycle::IsHired(ObjectGuid botGuid) const
@@ -82,43 +116,23 @@ void HireLifecycle::Dismiss(HiredRecord const& record, char const* reason, bool 
     if (removeFromGroup && bot && bot->GetGroup())
         bot->GetGroup()->RemoveMember(record.botGuid, 0);
 
-    // Zero-strain vs living-world: with no random pool the hire logs off
-    // immediately; with a pool it only logs off past the admin's population
-    // target, otherwise it hearths home and rejoins the roaming world.
-    bool randomPoolOn = sPlayerbotAIConfig.randomBotAutologin && sPlayerbotAIConfig.maxRandomBots > 0;
-    bool overTarget = false;
-    if (randomPoolOn)
-    {
-        uint32_t onlineRandom = 0;
-        for (Player* candidate : BotManager::Instance().GetAllBots())
-        {
-            BotRecord* rec = candidate ? BotManager::Instance().FindBot(candidate->GetObjectGuid()) : nullptr;
-            if (rec && rec->random)
-                ++onlineRandom;
-        }
-        uint32_t target = std::min(sPlayerbotAIConfig.minRandomBots, sPlayerbotAIConfig.maxRandomBots);
-        if (!target)
-            target = sPlayerbotAIConfig.maxRandomBots;
-        overTarget = onlineRandom > target;
-    }
-
-    if (!randomPoolOn || overTarget)
-    {
-        TB_LOG_BASIC("TortoiseBots: hired bot %s dismissed (%s); logging off",
-            record.botGuid.GetString().c_str(), reason ? reason : "released");
-        BotManager::Instance().RemoveBot(record.botGuid, true);
-        m_dismissing.erase(botGuidLow);
-        return;
-    }
-
-    if (bot && bot->IsInWorld() && bot->IsAlive() && !bot->IsBeingTeleported())
-    {
-        bot->TeleportToHomebind(0, false);
-        TB_LOG_BASIC("TortoiseBots: hired bot %s dismissed (%s); hearths home to the roaming pool",
-            bot->GetName(), reason ? reason : "released");
-    }
+    // The hire is over: the companion is not a roaming bot and must not carry
+    // master-level gear back into the organic world. Drop every master binding
+    // now, mark the ledger, and log the bot off; the character is deleted from
+    // the database as soon as its Headless session is gone (a live character
+    // cannot be deleted).
     BotManager::Instance().ClearBotMaster(record.botGuid);
-    BotActivityLeaseManager::Instance().ReleaseMaster(record.botGuid.GetCounter());
+    BotActivityLeaseManager::Instance().ReleaseMaster(botGuidLow);
+    uint32_t characterAccountId = 0;
+    if (LedgerRow(record.botGuid, characterAccountId))
+        QueueDeletion(botGuidLow, characterAccountId, reason ? reason : "released");
+    else
+        sLog.outError("TortoiseBots: hired bot %s has no hire ledger row; its character is left in place",
+            record.botGuid.GetString().c_str());
+
+    TB_LOG_BASIC("TortoiseBots: hired bot %s dismissed (%s); logging off for deletion",
+        record.botGuid.GetString().c_str(), reason ? reason : "released");
+    BotManager::Instance().RemoveBot(record.botGuid, false);
     m_dismissing.erase(botGuidLow);
 }
 
@@ -251,11 +265,15 @@ void HireLifecycle::SweepGracePeriod(time_t now)
     for (auto it = m_hired.begin(); it != m_hired.end();)
     {
         HiredRecord& record = it->second;
-        // Drop bookkeeping for bots that left the module another way
-        // (.bot remove, reclaim, restart without a record).
+        // The runtime record is gone (a failed Headless login, a reclaim, a
+        // removal the group hooks never saw): the hire is over either way, so
+        // end it the same way every other dismissal ends — delete the
+        // character. Bookkeeping is never dropped silently.
         if (!BotManager::Instance().FindBot(record.botGuid))
         {
+            HiredRecord orphan = record;
             it = m_hired.erase(it);
+            Dismiss(orphan, "runtime record gone");
             continue;
         }
         if (!record.masterOfflineSince)
@@ -292,12 +310,202 @@ void HireLifecycle::SweepGracePeriod(time_t now)
     }
 }
 
+bool HireLifecycle::LedgerRow(ObjectGuid botGuid, uint32_t& characterAccountId) const
+{
+    std::unique_ptr<QueryResult> row(CharacterDatabase.PQuery(
+        "SELECT `character_account_id` FROM `tortoise_bots_hire` WHERE `character_guid` = '%u'",
+        botGuid.GetCounter()));
+    if (!row)
+        return false;
+    characterAccountId = row->Fetch()[0].GetUInt32();
+    return true;
+}
+
+void HireLifecycle::QueueDeletion(uint32_t guidLow, uint32_t ledgerAccountId, char const* reason)
+{
+    // Hard guard: the ledger row is the only proof that this character was
+    // created by Hire(). Without it nothing is deleted, ever.
+    if (!ledgerAccountId)
+    {
+        sLog.outError("TortoiseBots: refusing to delete character %u after '%s': no hire ledger row",
+            guidLow, reason ? reason : "released");
+        return;
+    }
+    for (PendingDeletion const& pending : m_pendingDeletions)
+        if (pending.guidLow == guidLow)
+            return;
+
+    // Durable intent first: a crash between here and the deletion is resumed
+    // from this row on the next server start.
+    CharacterDatabase.DirectPExecute(
+        "UPDATE `tortoise_bots_hire` SET `state` = 'dismissed', `dismissed_at` = NOW() "
+        "WHERE `character_guid` = '%u'", guidLow);
+
+    PendingDeletion pending;
+    pending.guidLow = guidLow;
+    pending.reason = reason ? reason : "released";
+    pending.queuedAt = time(nullptr);
+    m_pendingDeletions.push_back(pending);
+    TB_LOG_BASIC("TortoiseBots: hired character %u scheduled for deletion (%s)",
+        guidLow, pending.reason.c_str());
+}
+
+bool HireLifecycle::RecoverStaleHires()
+{
+    if (!RandomBotAccountRegistry::Instance().IsValidated())
+    {
+        sLog.outError("TortoiseBots: stale hires cannot be recovered: the managed-pool account registry is not validated");
+        return false;
+    }
+
+    std::unique_ptr<QueryResult> rows(CharacterDatabase.PQuery(
+        "SELECT `character_guid`, `character_account_id` FROM `tortoise_bots_hire`"));
+    if (!rows)
+    {
+        // A null result may mean "no rows" or "the table could not be read";
+        // COUNT(*) cannot return an empty row set, so it tells them apart.
+        std::unique_ptr<QueryResult> count(CharacterDatabase.PQuery(
+            "SELECT COUNT(*) FROM `tortoise_bots_hire`"));
+        if (!count)
+        {
+            sLog.outError("TortoiseBots: hire ledger could not be read; stale hires are not recovered yet");
+            return false;
+        }
+        return true; // empty ledger
+    }
+
+    uint32_t recovered = 0;
+    do
+    {
+        Field* fields = rows->Fetch();
+        uint32_t guidLow = fields[0].GetUInt32();
+        uint32_t accountId = fields[1].GetUInt32();
+        if (m_hired.find(guidLow) != m_hired.end())
+            continue; // a live hire is never stale
+        QueueDeletion(guidLow, accountId, "server restart");
+        ++recovered;
+    } while (rows->NextRow());
+
+    if (recovered)
+        TB_LOG_BASIC("TortoiseBots: %u stale hired companion(s) recovered for deletion after a restart", recovered);
+    return true;
+}
+
+bool HireLifecycle::ProcessDeletion(PendingDeletion const& entry, time_t now)
+{
+    ObjectGuid guid(HIGHGUID_PLAYER, entry.guidLow);
+    Player* player = sObjectAccessor.FindPlayer(guid);
+    if (player && player->GetSession() && !player->GetSession()->IsHeadless())
+    {
+        // A network session owns the character now (an operator logging into a
+        // managed account, for example): human sessions are never deleted.
+        sLog.outError("TortoiseBots: refusing to delete dismissed hire %u: a network session owns it", entry.guidLow);
+        return true;
+    }
+
+    // A live character cannot be deleted: ask for the logout and retry next tick.
+    if (BotManager::Instance().IsBot(guid))
+        BotManager::Instance().RemoveBot(guid, false);
+    if (player || BotManager::Instance().IsBot(guid) ||
+        BotSessionAdapter::GetHeadlessSessionState(guid) != HeadlessSessionState::NotFound)
+    {
+        if (now - entry.queuedAt > 300)
+            sLog.outError("TortoiseBots: dismissed hire %u is still online after %llds; deletion waits",
+                entry.guidLow, static_cast<long long>(now - entry.queuedAt));
+        return false;
+    }
+
+    // Offline: revalidate every durable fact before touching anything.
+    uint32_t ledgerAccountId = 0;
+    std::unique_ptr<QueryResult> ledger(CharacterDatabase.PQuery(
+        "SELECT `character_account_id` FROM `tortoise_bots_hire` WHERE `character_guid` = '%u'",
+        entry.guidLow));
+    bool hasLedger = ledger != nullptr;
+    if (hasLedger)
+        ledgerAccountId = ledger->Fetch()[0].GetUInt32();
+
+    std::unique_ptr<QueryResult> character(CharacterDatabase.PQuery(
+        "SELECT `account` FROM `characters` WHERE `guid` = '%u'", entry.guidLow));
+    bool characterExists = character != nullptr;
+    uint32_t accountId = characterExists ? character->Fetch()[0].GetUInt32() : 0;
+
+    if (!characterExists)
+    {
+        // Already gone (the managed-pool reset deletes pool characters too).
+        // Only the ledger row is left to clear.
+        CharacterDatabase.DirectPExecute("DELETE FROM `tortoise_bots_hire` WHERE `character_guid` = '%u'", entry.guidLow);
+        return true;
+    }
+
+    HireDeletionDecision decision = DecideHireDeletion(
+        hasLedger,
+        RandomBotAccountRegistry::Instance().IsRegistered(ledgerAccountId),
+        accountId == ledgerAccountId);
+    if (decision != HireDeletionDecision::Allowed)
+    {
+        sLog.outError("TortoiseBots: refusing to delete dismissed hire %u: %s",
+            entry.guidLow, HireDeletionDecisionName(decision));
+        return true; // terminal: a refusal is never retried into a deletion
+    }
+
+    // Auctions are not part of the core character deletion; refund the bidders
+    // and remove the listings first, or nothing is deleted at all.
+    uint32_t settled = 0;
+    std::string error;
+    if (!SettleCharacterAuctions(entry.guidLow, settled, error))
+    {
+        sLog.outError("TortoiseBots: dismissed hire %u could not be deleted: %s", entry.guidLow, error.c_str());
+        return false; // retry next tick
+    }
+
+    DeleteCharacterEverywhere(entry.guidLow, accountId);
+    TB_LOG_BASIC("TortoiseBots: hired character %u deleted (%s; %u auction(s) settled)",
+        entry.guidLow, entry.reason.c_str(), settled);
+    return true;
+}
+
+void HireLifecycle::SweepDeletions(time_t now)
+{
+    if (m_pendingDeletions.empty())
+        return;
+    // The managed-pool reset rebuilds whole accounts and settles every auction
+    // while all pool bidders still exist; a concurrent deletion here could
+    // remove a bidder mid-reset. It deletes pool characters (stale hires
+    // included) itself, so this queue simply waits it out.
+    if (RandomBotPoolReset::Instance().IsActive())
+        return;
+
+    // One deletion per tick: a core character wipe plus the module rows,
+    // exactly like the pool reset's deletion phase. Entries that are still
+    // logged in are skipped so one stalled session cannot starve the rest.
+    for (size_t i = 0; i < m_pendingDeletions.size(); ++i)
+    {
+        if (!ProcessDeletion(m_pendingDeletions[i], now))
+            continue;
+        m_pendingDeletions.erase(m_pendingDeletions.begin() + static_cast<std::ptrdiff_t>(i));
+        return;
+    }
+}
+
 void HireLifecycle::Update(uint32_t diff)
 {
     m_updateElapsedMs += diff;
     if (m_updateElapsedMs < 5000)
         return;
     m_updateElapsedMs = 0;
+
+    // Issue #192 follow-up: a hire lives only while its master is online plus
+    // the grace period, so no hire survives a restart. Every ledger row found
+    // by a fresh process is stale and is recovered and deleted.
+    if (!m_ledgerRecovered && (m_recoveryRetryAt == 0 || time(nullptr) >= m_recoveryRetryAt))
+    {
+        if (RecoverStaleHires())
+            m_ledgerRecovered = true;
+        else
+            m_recoveryRetryAt = time(nullptr) + 60;
+    }
+    SweepDeletions(time(nullptr));
+
     if (m_hired.empty())
         return;
     SweepGracePeriod(time(nullptr));
