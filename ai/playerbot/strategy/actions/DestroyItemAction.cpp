@@ -36,23 +36,25 @@ void DestroyItemAction::DestroyItem(FindItemVisitor* visitor, Player* requester)
 
 bool SmartDestroyItemAction::DestroyGreyJunk(Player* requester)
 {
-    std::list<Item*> greyItems;
+    //Collected as item ids, not item pointers: DestroyItem() frees every stack
+    //it finds, so a second stack of an id we already threw away would be a
+    //dangling pointer. The map also dedupes stacks of the same item and sorts
+    //them by value, so the cheapest grey goes first.
+    std::map<uint32, uint32> greyByValue;
     for (Item* item : AI_VALUE2(std::list<Item*>, "inventory items", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_VENDOR)))
     {
         ItemPrototype const* proto = item->GetProto();
 
         if (proto && proto->Quality == ITEM_QUALITY_POOR)
-            greyItems.push_back(item);
+            greyByValue[proto->ItemId] += proto->SellPrice * item->GetCount();
     }
 
-    greyItems.sort([](Item* first, Item* second) { return first->GetProto()->SellPrice * first->GetCount() < second->GetProto()->SellPrice * second->GetCount(); });
-
-    for (Item* item : greyItems)
+    for (auto& grey : greyByValue)
     {
-        if (HAS_AI_VALUE2("force item usage", item->GetProto()->ItemId))
+        if (HAS_AI_VALUE2("force item usage", grey.first))
             continue;
 
-        FindItemByIdVisitor visitor(item->GetProto()->ItemId);
+        FindItemByIdVisitor visitor(grey.first);
         DestroyItem(&visitor, requester);
 
         if (AI_VALUE(uint8, "bag space") < 90)
@@ -108,17 +110,20 @@ bool SmartDestroyItemAction::Execute(Event& event)
     // only destroy grey items if with real player/guild
     if (onlyDestroyGray)
     {
-        std::set<Item*> items;
+        //Item ids, not item pointers: destroying one id frees every stack of
+        //it, so a later stack of the same id would already be dangling.
+        std::set<uint32> itemIds;
         FindItemsToTradeByQualityVisitor visitor(ITEM_QUALITY_POOR, 5);
         ai->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
-        items.insert(visitor.GetResult().begin(), visitor.GetResult().end());
+        for (Item* item : visitor.GetResult())
+            itemIds.insert(item->GetProto()->ItemId);
 
-        for (auto& item : items)
+        for (auto& itemId : itemIds)
         {
-            if (HAS_AI_VALUE2("force item usage", item->GetProto()->ItemId))
+            if (HAS_AI_VALUE2("force item usage", itemId))
                 continue;
 
-            FindItemByIdVisitor visitor(item->GetProto()->ItemId);
+            FindItemByIdVisitor visitor(itemId);
             DestroyItem(&visitor, requester);
 
             bagSpace = AI_VALUE(uint8, "bag space");

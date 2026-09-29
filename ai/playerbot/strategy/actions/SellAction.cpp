@@ -3,6 +3,7 @@
 #include "SellAction.h"
 #include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
+#include "playerbot/strategy/values/MaintenanceValues.h"
 
 using namespace ai;
 
@@ -47,12 +48,19 @@ bool SellAction::Execute(Event& event)
 
     uint32 soldItems = 0;
     uint32 shouldSell = std::max(minAutoSellItems, uint32(items.size() * urand(minAutoSellPercentageOfBag, maxAutoSellPercentageOfBag) / 100));
+
+    //The random cap exists so a bag-pressure top-up keeps some stock. A trip
+    //made to fund a spell rank is pointless if it leaves the stock that still
+    //covers the deficit behind: the bot would sell half, walk home and be sent
+    //straight back. Liquidation is then all or nothing.
+    bool const allOrNothing = event.GetSource() == "rpg action" && ShouldSellValue::CantAffordNextSpell(ai);
+
     for (std::list<Item*>::iterator i = items.begin(); i != items.end(); ++i)
     {
         if (Sell(requester, *i))
             soldItems++;
 
-        if (event.GetSource() == "rpg action" && soldItems >= shouldSell)
+        if (!allOrNothing && event.GetSource() == "rpg action" && soldItems >= shouldSell)
             break;
     }
 
