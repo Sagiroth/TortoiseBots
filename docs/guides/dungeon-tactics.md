@@ -25,7 +25,7 @@ This guide outlines practical field tactics to ensure smooth dungeon runs withou
 2. **Toggle AoE OFF on CC Packs:** Before pulling packs where you plan to *Polymorph* or *Sap*, run `.bot action aoe off`. This prevents Mages (*Blizzard*), Warlocks (*Rain of Fire*), and Hunters (*Multi-Shot*) from accidentally breaking crowd control.
 3. **Always Mark the Primary Target with Skull:** Issue `.bot action focus skull`. DPS treat the Skull-marked target as their kill priority (it sets the mark and issues one attack; normal target selection — peels, CC protection, re-targeting — still applies).
 4. **Give the Tank Two Seconds:** Tanks tab-target *Sunder Armor* (warlock pets add *Torment*) based on lowest personal threat. Give them 2–3 seconds to establish initial aggro before nuking.
-5. **Keep `.bot summon <Name>` Ready:** If a bot gets stuck on tricky instance terrain (like Blackrock Depths stairs or Gnomeregan elevators), `.bot summon <Name>` snaps them directly to you out of combat (requires `NonGmFreeSummon = 1` unless GM).
+5. **Keep `.bot summon <Name>` Ready:** If a bot gets stuck on tricky instance terrain (like Blackrock Depths stairs or Gnomeregan elevators), `.bot summon <Name>` snaps them directly to you out of combat.
 
 ---
 
@@ -92,7 +92,7 @@ If your group wipes, follow this checklist to recover quickly:
 1. When dead, whisper your bots `/w <BotName> release` (or type `.bot command <Name> release`).
 2. Once in ghost form at the graveyard, issue `/w <BotName> corpse run`.
 3. Ghost bots will path organically back to the instance portal and zone inside.
-4. If a bot gets stuck outside the dungeon entrance, simply zone in yourself and type `.bot summon <Name>` to gather them safely at the instance threshold (requires `NonGmFreeSummon = 1` unless GM).
+4. If a bot gets stuck outside the dungeon entrance, simply zone in yourself and type `.bot summon <Name>` to gather them safely at the instance threshold.
 
 ### Elevators, Boats & Ledges
 * In complex vertical dungeons (Gnomeregan, Sunken Temple, Blackrock Spire), bots can occasionally desync when jumping down ledges or riding elevators.

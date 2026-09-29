@@ -1581,13 +1581,6 @@ static bool HandleSummon(ChatHandler* handler, char const* args)
         handler->PSendSysMessage("You cannot summon while on a taxi.");
         return true;
     }
-    // NonGmFreeSummon gates unrestricted summoning: without it only GMs may
-    // summon freely (CanControlBot already limits scope to owned bots).
-    if (!sPlayerbotAIConfig.nonGmFreeSummon && !IsBotAdministrator(requester))
-    {
-        handler->PSendSysMessage("Summoning is restricted to GameMasters (AiPlayerbot.NonGmFreeSummon = 0).");
-        return true;
-    }
     std::string name = Trim(args ? args : "");
     if (name.empty() || !normalizePlayerName(name))
     {

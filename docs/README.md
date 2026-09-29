@@ -25,7 +25,7 @@ The root graph specification is declared in [`manifest.yaml`](manifest.yaml). Yo
 
 | What do you want to do? | Direct Solution & Link |
 | :--- | :--- |
-| **Summon lost or stuck bots to your location** | Type `.bot summon <Name>` (needs `NonGmFreeSummon = 1` unless GM) or use the Summon button in `/tbm` → [Player Controls](guides/player-controls.md#2-roster--lifecycle-commands) |
+| **Summon lost or stuck bots to your location** | Type `.bot summon <Name>` or use the Summon button in `/tbm` → [Player Controls](guides/player-controls.md#2-roster--lifecycle-commands) |
 | **Have bots learn all class spells automatically** | Whisper `/w <BotName> trainer` while standing near a class trainer → [Whisper Cheat-Sheet](guides/player-controls.md#5-mature-ai-command-delegation--whispers) |
 | **Make bot alts automatically match my level** | Set `AiPlayerbot.SyncAltLevelToMaster = 1` in `aiplayerbot.conf` → [QoL Configuration](guides/configuration-tuning.md#1-player-quality-of-life-qol-flags) |
 | **Pull a pack safely and retreat around a corner** | Target enemy and type `.bot action pullback` → [Tactical Party Actions](guides/player-controls.md#1-tactical-party-actions-bot-action-intent) |

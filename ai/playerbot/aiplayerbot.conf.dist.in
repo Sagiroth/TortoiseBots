@@ -520,7 +520,8 @@ AiPlayerbot.BotLogFile =
 # outBasic and outErrorDb are written regardless whenever BotLogFile is set.
 # AiPlayerbot.BotLogDebug = 0
 
-# The summon command can be used without restriction by non-gms.
+# The in-chat "summon" order teleports the bot straight to a non-GM player; otherwise
+# the bot walks or uses a meeting stone or innkeeper. .bot summon is not affected.
 # AiPlayerbot.NonGmFreeSummon = 0
 
 # Bots will put their talentspec in guild notes when they change/tell their talents if they have the rights.

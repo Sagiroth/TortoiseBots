@@ -81,7 +81,7 @@ These commands manage the login, party membership, and presence of your owned bo
 | **Logout Bot** | `.bot remove <Name>` *(or `logout`)* | Cleanly logs out an active headless bot on your account. |
 | **Invite to Party** | `.bot invite <Name>` | Sends a party invite to an online bot on your account. |
 | **Uninvite from Party**| `.bot uninvite <Name>` *(or `kick`)*| Removes an owned bot from your group. |
-| **Summon** | `.bot summon <Name>` | Teleports one owned bot safely to your location out of combat. Requires `AiPlayerbot.NonGmFreeSummon = 1` unless you are a GM. |
+| **Summon** | `.bot summon <Name>` | Teleports one owned bot safely to your location out of combat. Works for your own bots and hired companions; no config switch needed. |
 | **Release Spirit** | `.bot release` | Commands dead companion bots to release spirit to the graveyard. Also available as `.bot action release`. |
 | **Corpse Run** | `.bot corpse run` | Commands spirit bots to run back to their corpse or instance entrance. Also available as `.bot action corpse run`. |
 | **Learn Spells** | `.bot learn` | Commands companion bots near matching trainers to learn affordable spells. Also available as `.bot action learn`. |
