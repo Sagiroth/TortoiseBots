@@ -120,6 +120,7 @@ void TalkToQuestGiverAction::RewardNoItem(Quest const* quest, WorldObject* quest
     if (bot->CanRewardQuest(quest, false))
     {
         bot->RewardQuest(quest, 0, questGiver, false);
+        sPlayerbotAIConfig.logEvent(ai, "QuestRewarded", quest->GetTitle(), std::to_string(quest->GetQuestId()));
         out = BOT_TEXT2("quest_status_completed", args);
 
         BroadcastHelper::BroadcastQuestTurnedIn(ai, bot, quest);
@@ -142,6 +143,7 @@ void TalkToQuestGiverAction::RewardSingleItem(Quest const* quest, WorldObject* q
     if (bot->CanRewardQuest(quest, index, false))
     {
         bot->RewardQuest(quest, index, questGiver, true);
+        sPlayerbotAIConfig.logEvent(ai, "QuestRewarded", quest->GetTitle(), std::to_string(quest->GetQuestId()));
         out = BOT_TEXT2("quest_status_complete_single_reward", args);
 
         BroadcastHelper::BroadcastQuestTurnedIn(ai, bot, quest);
@@ -230,6 +232,7 @@ void TalkToQuestGiverAction::RewardMultipleItem(Player* requester, Quest const* 
         }
 
         bot->RewardQuest(quest, *bestIds.begin(), questGiver, true);
+        sPlayerbotAIConfig.logEvent(ai, "QuestRewarded", quest->GetTitle(), std::to_string(quest->GetQuestId()));
     }
     else if ((questRewardOption == QuestRewardOptionType::QUEST_REWARD_CONFIG_DRIVEN && sPlayerbotAIConfig.autoPickReward == "no") ||
              questRewardOption == QuestRewardOptionType::QUEST_REWARD_OPTION_LIST
@@ -258,6 +261,7 @@ void TalkToQuestGiverAction::RewardMultipleItem(Player* requester, Quest const* 
             }
 
             bot->RewardQuest(quest, rewardIndex, questGiver, true);
+            sPlayerbotAIConfig.logEvent(ai, "QuestRewarded", quest->GetTitle(), std::to_string(quest->GetQuestId()));
         }
     }
 }

@@ -7,6 +7,7 @@
 #include "../runtime/PlayerbotAIStorage.h"
 #include "../ai/playerbot/AiFactory.h"
 #include "../ai/playerbot/PlayerbotAI.h"
+#include "../ai/playerbot/PlayerbotAIConfig.h"
 #include "Log.h"
 #include "Map.h"
 #include "Player.h"
@@ -22,6 +23,7 @@ BotPlayerAdapter::BotPlayerAdapter()
     : PlayerScript("tortoisebots_players", {
         PLAYERHOOK_ON_LOGIN,
         PLAYERHOOK_ON_MAP_CHANGED,
+        PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST,
         PLAYERHOOK_ON_BEFORE_LOGOUT,
         PLAYERHOOK_ON_LOGOUT,
         PLAYERHOOK_IS_MANAGED_BOT,
@@ -132,6 +134,24 @@ void BotPlayerAdapter::OnMapChanged(Player* player)
                 bot->GetName(), player->GetName());
         }
     }
+}
+
+void BotPlayerAdapter::OnPlayerCompleteQuest(Player* player, Quest const* quest)
+{
+    if (!player || !quest)
+        return;
+
+    // Core-side observation point: Player::CompleteQuest runs for every path
+    // that finishes a quest - objective credit from a kill or item, a command,
+    // and the module's own forced completion - but it never sends the
+    // SMSG_QUESTUPDATE_COMPLETE packet a client (and therefore an AI) would
+    // otherwise see. So this hook is the only place a bot's completion is
+    // observable. Non-bot players have no AI in the registry: nothing logged.
+    PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(player);
+    if (!botAi)
+        return;
+
+    sPlayerbotAIConfig.logEvent(botAi, "QuestCompleted", quest->GetTitle(), std::to_string(quest->GetQuestId()));
 }
 
 void BotPlayerAdapter::OnBeforeLogout(Player* player)

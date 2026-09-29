@@ -14,6 +14,7 @@ public:
     uint8 GetBotRoles(Player* who) override;
     void OnLogin(Player* player) override;
     void OnMapChanged(Player* player) override;
+    void OnPlayerCompleteQuest(Player* player, Quest const* quest) override;
     void OnBeforeLogout(Player* player) override;
     void OnLogout(Player* player) override;
 };

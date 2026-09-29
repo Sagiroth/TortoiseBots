@@ -168,7 +168,7 @@ Current adapters:
 | --- | --- |
 | `BotHostAdapter` | startup, shutdown and world update |
 | `BotSessionAdapter` | Headless session lifecycle |
-| `BotPlayerAdapter` | player lifecycle/reclaim attachment; answers core LFT managed-bot rolecheck (`IsManagedBot`/`GetBotRoles`) |
+| `BotPlayerAdapter` | player lifecycle/reclaim attachment; answers core LFT managed-bot rolecheck (`IsManagedBot`/`GetBotRoles`); logs bot quest completions for `bot_events.csv` |
 | `BotChatAdapter` | native `.bot` command integration |
 | `BotPacketAdapter` | packet bridge into Existing PlayerBots (primarily AzerothCore/mod-playerbots) |
 
@@ -311,7 +311,8 @@ TortoiseBots consumes one chat hook: `BotAddonAdapter` registers
 `PLAYERHOOK_ON_ADDON_MESSAGE` for the `TBM` prefix (below). `BotChatAdapter`
 owns the generic `AllCommandScript` entry for `.bot`, and `BotPlayerAdapter`
 registers `PLAYERHOOK_ON_LOGIN`, `PLAYERHOOK_ON_MAP_CHANGED`,
-`PLAYERHOOK_ON_BEFORE_LOGOUT` and `PLAYERHOOK_ON_LOGOUT`. No module code
+`PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST`, `PLAYERHOOK_ON_BEFORE_LOGOUT` and
+`PLAYERHOOK_ON_LOGOUT`. No module code
 registers `OnChatChannel`; do not add it until #498 is merged.
 
 #### Addon command transport

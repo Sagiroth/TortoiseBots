@@ -150,6 +150,15 @@ bool MoveToTravelTargetAction::Execute(Event& event)
     {
         target->IncRetry(true);
 
+        // One line per travel target rather than per attempt: a wedged bot
+        // re-enters this action every tick, and IncRetry steps by 2, so the
+        // first failure is exactly 2. The drop below carries the final depth.
+        // Purpose plus remaining distance is what separates "could not path to
+        // the taker" from "never tried to move" (no line at all).
+        if (target->GetRetryCount(true) == 2)
+            sPlayerbotAIConfig.logEvent(ai, "TravelMoveFailed", AI_VALUE2(std::string, "manual string", "future travel purpose"),
+                std::to_string((int32)botLocation.distance(location)));
+
         if (target->IsMaxRetry(true))
         {
             ai->TellDebug(ai->GetMaster(), "The target is unreachable, dropping it so other travel still works.", "debug travel");
@@ -162,6 +171,7 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             // active target would instead freeze ALL travel (IsActive stays
             // true, requests gate on it) for the whole window.
             std::string const purpose = AI_VALUE2(std::string, "manual string", "future travel purpose");
+            sPlayerbotAIConfig.logEvent(ai, "TravelTargetDropped", purpose, std::to_string(target->GetRetryCount(true)));
             target->SetForced(false);
             sTravelMgr.SetNullTravelTarget(target);
             RESET_AI_VALUE(bool, "travel target active");
