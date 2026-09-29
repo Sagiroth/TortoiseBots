@@ -2945,6 +2945,8 @@ void PlayerbotFactory::InitSkills()
 // numbers below come from the live trainer data (`npc_trainer` for the teaching
 // spell 1424: warrior 10 in 29 trainers, hunter 20 in 39) and from the owner's
 // call for the rogue, whose 22 trainers say 20 while SkillRaceClassInfo says 10.
+static uint32 const kDualWieldSpell = 674;
+
 static uint32 DualWieldLevelForClass(uint8 botClass)
 {
     switch (botClass)
@@ -2985,6 +2987,20 @@ void PlayerbotFactory::EnsureSkillRewardedSpells(Player* bot)
     uint32 const raceMask = bot->GetRaceMask();
     uint32 const classMask = bot->GetClassMask();
     uint32 const level = bot->GetLevel();
+
+    // A class that cannot dual wield in this game (shamans get it in TBC) must not
+    // carry the ability: the module used to hand it to shamans at level 10. The
+    // ability rows below never reach such a class (their class mask excludes it),
+    // so strip it here, the same way the level gate does for a bot below its level.
+    if (!DualWieldLevelForClass(bot->GetClass()) &&
+        (bot->HasSpell(kDualWieldSpell) || bot->GetSkillValuePure(SKILL_DUAL_WIELD)))
+    {
+        if (bot->HasSpell(kDualWieldSpell))
+            bot->RemoveSpell(kDualWieldSpell);
+        if (bot->GetSkillValuePure(SKILL_DUAL_WIELD))
+            bot->SetSkill(SKILL_DUAL_WIELD, 0, 0);
+        bot->SetCanDualWield(false);
+    }
 
     for (SkillLineAbilityEntry const* ability : s_skillRewardedSpells)
     {
