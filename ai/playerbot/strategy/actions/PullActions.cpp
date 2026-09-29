@@ -275,6 +275,15 @@ bool PullAction::Execute(Event& event)
             // spell branch too.
             SET_AI_VALUE(Unit*, "current target", GetTarget());
 
+            // The pulled mob is not in combat until the shot lands, and
+            // InvalidTargetValue only lets a not-yet-engaged target through
+            // when it is the bot's explicit "attack target". Without it the
+            // combat engine drops the target every tick ("select new target"),
+            // which cancels the shot before the arrow flies.
+            AiObjectContext* pullContext = ai->GetAiObjectContext();
+            pullContext->GetValue<ObjectGuid>("attack target")->Set(target->getObjectGuid());
+            pullContext->GetValue<bool>("invalid target", "current target")->Reset();
+
             if (actionName == "reach pull")
             {
                 // Body pull: the tank is in melee reach of the target, so the
