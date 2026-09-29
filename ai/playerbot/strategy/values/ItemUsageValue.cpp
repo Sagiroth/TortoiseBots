@@ -633,6 +633,10 @@ static bool IsBestOwnedShield(Player* bot, Item* myself, ItemPrototype const* pr
         if (!other || other->Class != ITEM_CLASS_ARMOR || other->SubClass != ITEM_SUBCLASS_ARMOR_SHIELD)
             return;
 
+        // A shield the bot cannot wear must not outrank one it can keep.
+        if (bot->CanUseItem(item) != EQUIP_ERR_OK)
+            return;
+
         if (other->ItemLevel > proto->ItemLevel ||
             (other->ItemLevel == proto->ItemLevel &&
              (other->Quality > proto->Quality ||
