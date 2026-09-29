@@ -2893,27 +2893,11 @@ void PlayerbotFactory::InitSkills()
         break;
     }
 
-    // Dual Wield: warriors, hunters, rogues and shamans train it in the
-    // world (91 trainers teach spell 1424, which chains to spell 674,
-    // SPELL_EFFECT_DUAL_WIELD -> m_canDualWield). An instant GiveLevel
-    // seed never runs that chain, the flag stays false, and FindEquipSlot
-    // then refuses every offhand weapon for dual-wielders (NULL_SLOT ->
-    // ERR_NOT_EQUIPPED), leaving them main-hand-only. Grant it once here;
-    // re-learning is a no-op and the flag is idempotent.
-    if (bot->GetLevel() >= 10 &&
-        (bot->GetClass() == CLASS_WARRIOR || bot->GetClass() == CLASS_HUNTER ||
-         bot->GetClass() == CLASS_ROGUE || bot->GetClass() == CLASS_SHAMAN))
-    {
-        if (!bot->HasSpell(1424))
-            bot->LearnSpell(1424, false);
-        if (!bot->HasSpell(674))
-            bot->LearnSpell(674, false);
-        bot->SetCanDualWield(true);
-    }
-
-    // Parry: same trainer-only chain (spell 3128 teaches 3127,
+    // Parry: trainer-only chain (spell 3128 teaches 3127,
     // SPELL_EFFECT_PARRY -> m_canParry) at level 8 for these four classes.
-    // Without it every bot parried 0% of attacks.
+    // Without it every bot parried 0% of attacks. The skill_line_ability row
+    // for Parry carries learnOnGetSkill = 0, so the ability pass below - which
+    // only walks rows the character gains with a skill - cannot cover it.
     if (bot->GetLevel() >= 8 &&
         (bot->GetClass() == CLASS_WARRIOR || bot->GetClass() == CLASS_PALADIN ||
          bot->GetClass() == CLASS_HUNTER || bot->GetClass() == CLASS_ROGUE))
@@ -2923,16 +2907,24 @@ void PlayerbotFactory::InitSkills()
         bot->SetCanParry(true);
     }
 
-    // Weapon skills also teach the weapon's "shoot" ability (SkillLineAbility
-    // learnOnGetSkill: Bows -> 2480 Shoot Bow, Guns -> 7918, Crossbows -> 7919,
-    // Thrown -> 2764, Wands -> 5019). A bot that owns the skill but not the
-    // ability cannot shoot at all: the module resolves a spell name only
-    // against the bot's own spellbook (values/SpellIdValue), so "shoot bow"
-    // resolves to spell 0 and CastShootAction/the ranged pull silently do
-    // nothing - the bot stands there with a bow, arrows and 150 Bows skill.
-    // Re-run the core's own pass instead of hand-listing spell ids: it applies
-    // the class/race masks and the skill requirement exactly like training a
-    // real character does.
+    // Skills teach abilities in the world (skill_line_ability learnOnGetSkill):
+    // skill 118 Dual Wield -> spell 674, Bows -> Shoot Bow, Defense -> Block.
+    // A seeded bot visits no trainer and the core's own skill-reward pass only
+    // runs when the skill value is written through Player::SetSkill, so a bot
+    // can end up owning the SKILL without the SPELL the core gates the ability
+    // on:
+    //
+    //  * without spell 674 (SPELL_EFFECT_DUAL_WIELD) CanEquipItem refuses every
+    //    off-hand weapon, so a rogue with Dual Wield and a second dagger in the
+    //    bag never equips it;
+    //  * without the "shoot" ability the module cannot resolve "shoot bow" to a
+    //    spell id (values/SpellIdValue reads only the bot's own spellbook) and
+    //    the ranged pull silently does nothing (#344);
+    //  * without spell 107 (SPELL_EFFECT_BLOCK) a shield wearer never blocks.
+    //
+    // The pass is table-driven: masks, thresholds and levels come from the
+    // core's own skill_line_ability / SkillRaceClassInfo / spell data, so no
+    // class list, spell id or level is hardcoded here.
     EnsureSkillRewardedSpells(bot);
 }
 
@@ -2941,20 +2933,105 @@ void PlayerbotFactory::EnsureSkillRewardedSpells(Player* bot)
     if (!bot)
         return;
 
-    static uint16 const skills[] = {
-        SKILL_BOWS, SKILL_GUNS, SKILL_CROSSBOWS, SKILL_THROWN, SKILL_WANDS
+    enum GrantedAbility : uint8
+    {
+        GRANT_DUAL_WIELD = 0x1,
+        GRANT_PARRY      = 0x2,
+        GRANT_BLOCK      = 0x4,
     };
 
-    for (uint16 skill : skills)
+    // Rows that teach a spell to whoever gains the skill. Static for the whole
+    // run - the table is loaded once at startup.
+    static std::vector<SkillLineAbilityEntry const*> s_skillRewardedSpells;
+    if (s_skillRewardedSpells.empty())
     {
-        uint16 const value = bot->GetSkillValuePure(skill);
-        if (!value)
+        for (uint32 id = 0; id < sSkillLineAbilityStore.GetNumRows(); ++id)
+        {
+            SkillLineAbilityEntry const* ability = sSkillLineAbilityStore.LookupEntry(id);
+            if (!ability || !ability->learnOnGetSkill || !ability->spellId)
+                continue;
+
+            s_skillRewardedSpells.push_back(ability);
+        }
+    }
+
+    uint32 const raceMask = bot->GetRaceMask();
+    uint32 const classMask = bot->GetClassMask();
+    uint32 const level = bot->GetLevel();
+
+    for (SkillLineAbilityEntry const* ability : s_skillRewardedSpells)
+    {
+        if (ability->racemask && !(ability->racemask & raceMask))
+            continue;
+        if (ability->classmask && !(ability->classmask & classMask))
             continue;
 
-        // Re-issuing the skill is the public way to run the core's reward pass
-        // (Player::UpdateSkillTrainedSpells is private). Pure values keep
-        // item/aura skill bonuses out of what gets written back.
-        bot->SetSkill(skill, value, bot->GetSkillMaxPure(skill));
+        SpellEntry const* spell = sServerFacade.LookupSpellInfo(ability->spellId);
+        if (!spell || (spell->spellLevel && level < spell->spellLevel))
+            continue;
+
+        // Only the abilities the module and the core actually need from the
+        // spellbook are worth learning here:
+        //  * DUAL_WIELD / PARRY / BLOCK carry the equip and combat flags the
+        //    core reads (Player::m_canDualWield and friends are never saved), so
+        //    they are also re-applied for a bot that already knows the spell;
+        //  * the weapon-damage effect is the ranged "shoot" family the AI casts
+        //    by name, and values/SpellIdValue resolves that name against this
+        //    spellbook only.
+        // Everything else a skill rewards (profession recipes, the client's
+        // Attack/Duel/Stuck helpers, defense placeholders) is left alone.
+        uint8 grantedAbility = 0;
+        bool wantedAbility = false;
+        for (uint32 effect = 0; effect < MAX_EFFECT_INDEX; ++effect)
+        {
+            switch (spell->Effect[effect])
+            {
+            case SPELL_EFFECT_DUAL_WIELD:      grantedAbility |= GRANT_DUAL_WIELD; wantedAbility = true; break;
+            case SPELL_EFFECT_PARRY:           grantedAbility |= GRANT_PARRY;      wantedAbility = true; break;
+            case SPELL_EFFECT_BLOCK:           grantedAbility |= GRANT_BLOCK;      wantedAbility = true; break;
+            case SPELL_EFFECT_WEAPON_DAMAGE:   wantedAbility = true; break;
+            default: break;
+            }
+        }
+
+        if (!wantedAbility)
+            continue;
+
+        uint16 const skillValue = bot->GetSkillValuePure(ability->skillId);
+        if (skillValue)
+        {
+            // The bot owns the skill: the ability is owed to it whatever its
+            // level, since the world already decided the bot may have the skill.
+            if (skillValue < ability->req_skill_value)
+                continue;
+        }
+        else
+        {
+            // The bot does not own the skill yet. Only a class skill the world
+            // grants on its own (Dual Wield for a rogue at 10, a warrior or
+            // hunter at 20 - SkillRaceClassInfo.reqLevel) may be granted from
+            // here; learning the spell also adds the skill through
+            // Player::UpdateSpellTrainedSkills. Any other missing skill stays
+            // missing: the seed decides which weapon skills a bot gets.
+            if (!grantedAbility)
+                continue;
+
+            // Same resolution the core uses (honours skill_race_class_info_mod).
+            SkillRaceClassInfoEntry const* raceClass = sSpellMgr.GetSkillRaceClassInfo(
+                ability->skillId, bot->GetRace(), bot->GetClass());
+            if (!raceClass || level < raceClass->reqLevel)
+                continue;
+        }
+
+        if (!bot->HasSpell(spell->Id))
+            bot->LearnSpell(spell->Id, false);
+
+        if (grantedAbility & GRANT_DUAL_WIELD)
+            bot->SetCanDualWield(true);
+        if (grantedAbility & GRANT_PARRY)
+            bot->SetCanParry(true);
+        if (grantedAbility & GRANT_BLOCK)
+            bot->SetCanBlock(true);
     }
 }
 

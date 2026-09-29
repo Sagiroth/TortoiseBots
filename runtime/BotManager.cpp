@@ -547,10 +547,11 @@ void BotManager::OnPlayerLogin(::Player* player)
     record.syncedInWorld = true;
     sRandomBotFacade.MarkNativePlayersDirty();
 
-    // Bots created before the ranged shoot abilities were granted (or whose
-    // provisioning never reached the skill-reward pass) would never be able to
-    // shoot a bow, gun, crossbow, thrown weapon or wand. Idempotent: the core
-    // pass only learns what the skills already teach.
+    // Bots created before an ability was granted (or whose provisioning never
+    // reached the skill-reward pass) would be missing the spell the core gates
+    // the ability on: no shoot ability for a bow, no spell 674 for Dual Wield.
+    // Idempotent: it learns only what the skills the bot already has teach, and
+    // restores the per-session equip flags those spells carry.
     PlayerbotFactory::EnsureSkillRewardedSpells(player);
 
     // Normalize Goblin and High Elf (and any random bot in custom isolated
@@ -593,15 +594,9 @@ void BotManager::OnPlayerLogin(::Player* player)
         }
     }
 
-    // m_canDualWield is not persisted (the Player ctor clears it and the
-    // spellbook passive chain does not re-fire on login), which would make
-    // FindEquipSlot/CanEquipItem refuse every future offhand swap for
-    // dual-wielders. Restore it for the four classes that train Dual Wield
-    // (seed-time InitSkills grants the same flag).
-    if (record.random && player->GetLevel() >= 10 &&
-        (player->GetClass() == CLASS_WARRIOR || player->GetClass() == CLASS_HUNTER ||
-         player->GetClass() == CLASS_ROGUE || player->GetClass() == CLASS_SHAMAN))
-        player->SetCanDualWield(true);
+    // Note: m_canDualWield is not persisted (the Player ctor clears it). The
+    // flag is owned by the Dual Wield spell this login's ability pass above
+    // learns and re-applies, so no class list is needed here.
 
     // Initial gear seeding is for fresh pool bots only, never earned progression.
     // See GearSeedingGuard.h for the dual-heuristic rule. Stamp after the

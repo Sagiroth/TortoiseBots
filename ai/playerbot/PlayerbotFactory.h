@@ -14,12 +14,16 @@ public:
 
     void Refresh();
     void InitSkills();
-    // Re-run the core's skill-reward pass for the ranged weapon skills this bot
-    // actually has, so it knows the abilities those skills teach (Bows ->
-    // Shoot Bow and so on). Idempotent; safe on every login and every factory
-    // provisioning pass. See the implementation for why a bot cannot shoot
-    // without it.
+    // Learn the abilities the bot's skills teach, and restore the per-session
+    // equip flags those abilities carry (Dual Wield, Parry, Block). Table-driven
+    // from skill_line_ability / SkillRaceClassInfo / the spell store: a bot that
+    // owns skill 118 learns spell 674, a bot with Bows learns Shoot Bow, and a
+    // rogue/warrior/hunter that reached the class level for Dual Wield learns it
+    // even before the skill exists. Idempotent; safe on every login and every
+    // factory provisioning pass. See the implementation for why a bot cannot use
+    // its off-hand, shoot a bow, or block without it.
     static void EnsureSkillRewardedSpells(Player* bot);
+
     void EnchantEquipment();
     void EquipGear() { InitEquipment(false, false); }
     void EquipGearBest() { return InitEquipment(false, false, false); }
