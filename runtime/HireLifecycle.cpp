@@ -29,6 +29,16 @@
 namespace TortoiseBots
 {
 
+namespace
+{
+// A dismissed hire's Headless session is expected to close on the next ticks.
+// One that refuses is escalated to an explicit stop request, and then
+// abandoned: the character is never deleted while it may still be live, and
+// its 'dismissed' ledger row makes the next server start recover it.
+constexpr time_t kDeletionForceStopAfterSec = 30;
+constexpr time_t kDeletionAbandonAfterSec = 120;
+} // namespace
+
 HireLifecycle& HireLifecycle::Instance()
 {
     static HireLifecycle instance;
@@ -391,41 +401,67 @@ bool HireLifecycle::RecoverStaleHires()
     return true;
 }
 
-bool HireLifecycle::ProcessDeletion(PendingDeletion const& entry, time_t now)
+bool HireLifecycle::ProcessDeletion(PendingDeletion& entry, time_t now)
 {
-    ObjectGuid guid(HIGHGUID_PLAYER, entry.guidLow);
+    // Snapshot the entry: deleting a character removes it from its group,
+    // which re-enters the group hooks and can append to the queue (and
+    // reallocate it) while this call is on the stack.
+    uint32_t guidLow = entry.guidLow;
+    std::string reason = entry.reason;
+    time_t queuedAt = entry.queuedAt;
+
+    ObjectGuid guid(HIGHGUID_PLAYER, guidLow);
     Player* player = sObjectAccessor.FindPlayer(guid);
     if (player && player->GetSession() && !player->GetSession()->IsHeadless())
     {
         // A network session owns the character now (an operator logging into a
         // managed account, for example): human sessions are never deleted.
-        sLog.outError("TortoiseBots: refusing to delete dismissed hire %u: a network session owns it", entry.guidLow);
+        sLog.outError("TortoiseBots: refusing to delete dismissed hire %u: a network session owns it", guidLow);
         return true;
     }
 
-    // A live character cannot be deleted: ask for the logout and retry next tick.
-    if (BotManager::Instance().IsBot(guid))
-        BotManager::Instance().RemoveBot(guid, false);
+    // A live character cannot be deleted. Ask once per pass for the logout
+    // (RemoveBot is what drives BotManager's own removal state machine).
+    if (BotRecord* record = BotManager::Instance().FindBot(guid))
+    {
+        if (record->lifecycle != BotLifecycle::Removing)
+            BotManager::Instance().RemoveBot(guid, false);
+    }
     if (player || BotManager::Instance().IsBot(guid) ||
         BotSessionAdapter::GetHeadlessSessionState(guid) != HeadlessSessionState::NotFound)
     {
-        if (now - entry.queuedAt > 300)
-            sLog.outError("TortoiseBots: dismissed hire %u is still online after %llds; deletion waits",
-                entry.guidLow, static_cast<long long>(now - entry.queuedAt));
+        // Bounded retry: a session that refuses to close is escalated to an
+        // explicit stop request once, and then abandoned instead of being
+        // polled and logged forever. The character is never deleted while it
+        // may still be live; its ledger row stays 'dismissed', so the next
+        // server start recovers and deletes it.
+        time_t waited = now - queuedAt;
+        if (waited >= kDeletionForceStopAfterSec && !entry.stopRequested)
+        {
+            entry.stopRequested = true;
+            sLog.outError("TortoiseBots: dismissed hire %u is still online after %llds; forcing the Headless session stop",
+                guidLow, static_cast<long long>(waited));
+            BotSessionAdapter::StopHeadlessSession(guid, false);
+        }
+        else if (waited >= kDeletionAbandonAfterSec)
+        {
+            sLog.outError("TortoiseBots: dismissed hire %u never went offline; leaving the character in place "
+                "(it is deleted on the next server start)", guidLow);
+            return true;
+        }
         return false;
     }
 
     // Offline: revalidate every durable fact before touching anything.
     uint32_t ledgerAccountId = 0;
     std::unique_ptr<QueryResult> ledger(CharacterDatabase.PQuery(
-        "SELECT `character_account_id` FROM `tortoise_bots_hire` WHERE `character_guid` = '%u'",
-        entry.guidLow));
+        "SELECT `character_account_id` FROM `tortoise_bots_hire` WHERE `character_guid` = '%u'", guidLow));
     bool hasLedger = ledger != nullptr;
     if (hasLedger)
         ledgerAccountId = ledger->Fetch()[0].GetUInt32();
 
     std::unique_ptr<QueryResult> character(CharacterDatabase.PQuery(
-        "SELECT `account` FROM `characters` WHERE `guid` = '%u'", entry.guidLow));
+        "SELECT `account` FROM `characters` WHERE `guid` = '%u'", guidLow));
     bool characterExists = character != nullptr;
     uint32_t accountId = characterExists ? character->Fetch()[0].GetUInt32() : 0;
 
@@ -433,7 +469,7 @@ bool HireLifecycle::ProcessDeletion(PendingDeletion const& entry, time_t now)
     {
         // Already gone (the managed-pool reset deletes pool characters too).
         // Only the ledger row is left to clear.
-        CharacterDatabase.DirectPExecute("DELETE FROM `tortoise_bots_hire` WHERE `character_guid` = '%u'", entry.guidLow);
+        CharacterDatabase.DirectPExecute("DELETE FROM `tortoise_bots_hire` WHERE `character_guid` = '%u'", guidLow);
         return true;
     }
 
@@ -444,7 +480,7 @@ bool HireLifecycle::ProcessDeletion(PendingDeletion const& entry, time_t now)
     if (decision != HireDeletionDecision::Allowed)
     {
         sLog.outError("TortoiseBots: refusing to delete dismissed hire %u: %s",
-            entry.guidLow, HireDeletionDecisionName(decision));
+            guidLow, HireDeletionDecisionName(decision));
         return true; // terminal: a refusal is never retried into a deletion
     }
 
@@ -452,15 +488,15 @@ bool HireLifecycle::ProcessDeletion(PendingDeletion const& entry, time_t now)
     // and remove the listings first, or nothing is deleted at all.
     uint32_t settled = 0;
     std::string error;
-    if (!SettleCharacterAuctions(entry.guidLow, settled, error))
+    if (!SettleCharacterAuctions(guidLow, settled, error))
     {
-        sLog.outError("TortoiseBots: dismissed hire %u could not be deleted: %s", entry.guidLow, error.c_str());
+        sLog.outError("TortoiseBots: dismissed hire %u could not be deleted: %s", guidLow, error.c_str());
         return false; // retry next tick
     }
 
-    DeleteCharacterEverywhere(entry.guidLow, accountId);
+    DeleteCharacterEverywhere(guidLow, accountId);
     TB_LOG_BASIC("TortoiseBots: hired character %u deleted (%s; %u auction(s) settled)",
-        entry.guidLow, entry.reason.c_str(), settled);
+        guidLow, reason.c_str(), settled);
     return true;
 }
 
@@ -475,9 +511,10 @@ void HireLifecycle::SweepDeletions(time_t now)
     if (RandomBotPoolReset::Instance().IsActive())
         return;
 
-    // One deletion per tick: a core character wipe plus the module rows,
-    // exactly like the pool reset's deletion phase. Entries that are still
-    // logged in are skipped so one stalled session cannot starve the rest.
+    // One character per world tick, the same bounded step the pool reset's
+    // deletion phase uses: a core character wipe (auctions settled first) plus
+    // the module rows. Entries that are still logged in are skipped so one
+    // stalled session cannot starve the rest.
     for (size_t i = 0; i < m_pendingDeletions.size(); ++i)
     {
         if (!ProcessDeletion(m_pendingDeletions[i], now))
@@ -489,6 +526,14 @@ void HireLifecycle::SweepDeletions(time_t now)
 
 void HireLifecycle::Update(uint32_t diff)
 {
+    time_t now = time(nullptr);
+
+    // The deletion queue is pumped on every world tick (one character per
+    // pass), so a dismissed companion is gone within ticks - a kicked party of
+    // four, or the stale hires recovered after a restart, drains in seconds
+    // rather than one character per five.
+    SweepDeletions(now);
+
     m_updateElapsedMs += diff;
     if (m_updateElapsedMs < 5000)
         return;
@@ -497,18 +542,17 @@ void HireLifecycle::Update(uint32_t diff)
     // Issue #192 follow-up: a hire lives only while its master is online plus
     // the grace period, so no hire survives a restart. Every ledger row found
     // by a fresh process is stale and is recovered and deleted.
-    if (!m_ledgerRecovered && (m_recoveryRetryAt == 0 || time(nullptr) >= m_recoveryRetryAt))
+    if (!m_ledgerRecovered && (m_recoveryRetryAt == 0 || now >= m_recoveryRetryAt))
     {
         if (RecoverStaleHires())
             m_ledgerRecovered = true;
         else
-            m_recoveryRetryAt = time(nullptr) + 60;
+            m_recoveryRetryAt = now + 60;
     }
-    SweepDeletions(time(nullptr));
 
     if (m_hired.empty())
         return;
-    SweepGracePeriod(time(nullptr));
+    SweepGracePeriod(now);
     // Cheap periodic top-up for hired companions (no item cheat): class
     // reagents, food/drink, potions and level-tier bandages, each bounded
     // to a small stack by the factory. Hourly per bot, module-owned bots

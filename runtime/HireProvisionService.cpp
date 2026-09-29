@@ -391,7 +391,20 @@ bool HireProvisionService::CreateCandidate(HireSelection const& sel, uint32_t re
             } while (rows->NextRow());
         }
         if (count >= perAccountLimit)
-            return false;
+        {
+            // A dismissed hire is on its way out of the database (the hire
+            // deletion queue is pumped every world tick). Its row must not make
+            // the account look full, or an immediate re-hire after a release
+            // would be pushed onto a brand-new pool account.
+            uint32_t departing = 0;
+            std::unique_ptr<QueryResult> queued(CharacterDatabase.PQuery(
+                "SELECT COUNT(*) FROM `tortoise_bots_hire` "
+                "WHERE `state` = 'dismissed' AND `character_account_id` = '%u'", id));
+            if (queued)
+                departing = queued->Fetch()[0].GetUInt32();
+            if (count <= departing || count - departing >= perAccountLimit)
+                return false;
+        }
         if (!allowTwoSide)
         {
             if (hasAlliance && hasHorde)

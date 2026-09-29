@@ -79,6 +79,9 @@ private:
         uint32_t guidLow = 0;
         std::string reason;
         time_t queuedAt = 0;
+        // Set once the bounded retry escalated to an explicit Headless stop
+        // request, so a stuck session is not spammed and is abandoned instead.
+        bool stopRequested = false;
     };
 
     void Dismiss(HiredRecord const& record, char const* reason, bool removeFromGroup = true);
@@ -94,7 +97,7 @@ private:
     // survives a restart), so it is recovered and deleted.
     bool RecoverStaleHires();
     void SweepDeletions(time_t now);
-    bool ProcessDeletion(PendingDeletion const& entry, time_t now);
+    bool ProcessDeletion(PendingDeletion& entry, time_t now);
 
     std::unordered_map<uint32_t, HiredRecord> m_hired;
     std::unordered_set<uint32_t> m_dismissing;

@@ -700,8 +700,15 @@ hire ends its character is deleted (`.bot hire`, `<Mercenary Hire>`, and the
   ledger row is marked `dismissed` first, the master binding and activity lease
   are released, and `BotManager::RemoveBot(guid, false)` logs the character off.
 - **Deletion.** A live character cannot be deleted, so the actual wipe is
-  asynchronous: `HireLifecycle::Update` processes one queued character per world
-  tick once its Headless session is gone. Before deleting it revalidates the
+  asynchronous: `HireLifecycle::Update` pumps the queue on **every world tick**
+  and processes one queued character per pass once its Headless session is gone
+  (the same bounded step the pool reset's deletion phase uses), so a kicked
+  party of four — or the stale hires recovered after a restart — is gone within
+  ticks. A session that refuses to close is retried with a bounded budget: after
+  30 s the module issues an explicit `BotSessionAdapter::StopHeadlessSession`
+  once, and after 120 s it stops waiting and leaves the character alone (the
+  ledger row stays `dismissed`, so the next server start recovers it) instead of
+  polling and logging forever. Before deleting it revalidates the
   ledger row, that the account is a registered managed pool account
   (`tortoise_bots_pool_account`), and that `characters.account` still matches
   the ledger (`HireDeletionPolicy`, unit-tested in
@@ -723,7 +730,11 @@ hire ends its character is deleted (`.bot hire`, `<Mercenary Hire>`, and the
 - **Population accounting.** Deleting a hire frees one character slot on a
   managed pool account. The pool target (`MinRandomBots`/`MaxRandomBots`) is
   unaffected: the freed slot is refilled by the same bounded auto-create pass
-  that fills any other missing pool character.
+  that fills any other missing pool character. A character whose ledger row is
+  `dismissed` is **not** counted against the per-account character limit when
+  the next hire picks an account, so releasing a companion and hiring again
+  immediately reuses the freed slot instead of being pushed onto a brand-new
+  pool account (or rejected while the deletion queue drains).
 
 ## 19. Battleground auto-queue (optional, default-on)
 
