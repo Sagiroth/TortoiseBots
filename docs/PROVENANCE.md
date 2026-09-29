@@ -1995,9 +1995,17 @@ after the 2026-09-28 economy review showed the donor shape fighting them:
   `INTERACTION_DISTANCE` for game objects. The donor's `>= INTERACTION_DISTANCE - 2`
   2D shape left `can loot` (8.0) firing while `open loot` failed the server's 3D
   gate every tick on sloped ground, so `move to loot` (7.0) never ran.
-- Corpse entitlement uses `Player::IsAllowedToLoot` — the same call the core uses
-  to mask `UNIT_DYNFLAG_LOOTABLE` per viewer, i.e. where the round-robin turn
-  lives — instead of the module's group-wide `Creature::IsTappedBy`.
+- Corpse entitlement is `LootObjectStack.cpp`'s `MayLootCorpse`: the core's
+  `Player::IsAllowedToLoot` (the same call that masks `UNIT_DYNFLAG_LOOTABLE` per
+  viewer, i.e. where the round-robin turn lives) with two clauses trimmed that
+  only exist so that a *player* at the corpse can open it for the party:
+  an unblocked over-threshold item no longer entitles the whole party (the roll
+  reaches bots wherever they are, the turn holder opens the corpse) and under
+  MASTER_LOOT only the master looter -- in the overworld too -- or a bot with
+  personal quest/FFA loot opens it (the module's own check only covered
+  dungeons). Free-for-all, the allowed-looter set and per-player items stay with
+  the core. A pet-only kill stays excluded: `Unit::Kill` credits no player for
+  it, so no loot is ever rolled and `Player::SendLoot` refuses the corpse.
 - Corpse items are looted before skinning (`LootObject::Refresh` takes the loot
   path first and arms the skin path only when `loot.isLooted()` and
   `Creature::IsSkinnableBy`), matching the Skinning conditions in

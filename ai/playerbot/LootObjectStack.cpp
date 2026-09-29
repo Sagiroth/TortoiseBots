@@ -51,6 +51,54 @@ LootObject::LootObject(Player* bot, ObjectGuid guid)
     Refresh(bot, guid);
 }
 
+// May this bot open the corpse's loot window? This is the core's own entitlement test -- the one
+// that masks the loot sparkle on a real client (Object::BuildValuesUpdate -> Player::IsAllowedToLoot)
+// with the two clauses trimmed that exist only so that a *player* standing at the corpse can open
+// it on behalf of the party:
+//
+//  * GROUP_LOOT / NEED_BEFORE_GREED: an unblocked over-threshold item makes IsAllowedToLoot true
+//    for every member, so anybody may open the corpse and start the roll. A bot never needs the
+//    walk for that -- the roll packet reaches it wherever it is and LootRollAction answers it --
+//    while the corpse itself is opened by the member whose turn it is. Keeping the clause made
+//    the whole party leave its targets for every green drop and keep walking back for the rest
+//    of the 60s roll window (Loot::hasOverThresholdItem does not look at is_blocked).
+//  * MASTER_LOOT: the same clause let any member open the corpse, in the overworld too (the
+//    module's own master-looter check only covered dungeons): the first bot to reach a world
+//    boss received MASTER_PERMISSION and the master loot list instead of the assigned looter,
+//    who is the one expected to distribute.
+//
+// Everything else stays with the core rule: free-for-all, the round-robin turn, a solo tap (and
+// the allowed-looter set recorded at the kill), and the quest/FFA/conditional items that are
+// personal to this bot. A corpse the assigned member never opens stays unlooted -- the same as
+// for a group of players in 1.12, where only that member can see and release the items.
+//
+// One deliberate exclusion: a creature tapped and killed by the bot's *pet* only (the owner never
+// damaged it) is refused, and rightly so. Unit::Kill sets pPlayerTap = null for a pet recipient,
+// so that kill is never credited: no loot is ever rolled for the corpse and Player::SendLoot
+// refuses it (Creature::GetLootRecipient() resolves the pet guid to nothing). "Always tag the mob
+// yourself or the pet kill gives no loot and no XP" is the vanilla rule, not a module bug; making
+// such corpses lootable needs the core to credit the pet's owner, not a change here.
+static bool MayLootCorpse(Player* bot, Creature* creature)
+{
+    if (!bot->IsAllowedToLoot(creature))
+        return false;
+
+    Group* group = bot->GetGroup();
+    if (!group || group->isBGGroup() || group->GetLootMethod() == FREE_FOR_ALL)
+        return true;                                        // the core grants every member this corpse
+
+    Loot const& loot = creature->loot;
+    if (loot.roundRobinPlayer == 0 || loot.roundRobinPlayer == bot->GetObjectGuid())
+        return true;                                        // no turn assigned (released) or this bot's turn
+
+    // The assigned master looter opens its corpses even if the turn recorded at the kill went
+    // elsewhere (the turn is the tapper when the group had no looter guid yet).
+    if (group->GetLootMethod() == MASTER_LOOT && group->GetLooterGuid() == bot->GetObjectGuid())
+        return true;
+
+    return loot.hasItemFor(bot);                            // another member's turn: personal loot only
+}
+
 void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
 {
     skillId = SKILL_NONE;
@@ -69,12 +117,11 @@ void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
         // unlootable-and-unskinnable beast casting Skinning every tick.
         if (creature->HasFlag(UNIT_DYNAMIC_FLAGS, UNIT_DYNFLAG_LOOTABLE))
         {
-            // The lootable flag is not a right: the core masks it per viewer with exactly
-            // Player::IsAllowedToLoot (Object::BuildValuesUpdate), where the round-robin rule
-            // lives. Without that test every grouped bot queues the same corpse and walks to
-            // it -- opening an empty window and taking the gold out of turn -- while the member
-            // whose round-robin kill it is finds nothing left.
-            if (bot->IsAllowedToLoot(creature))
+            // The lootable flag is not a right: the core masks it per viewer with Player::IsAllowedToLoot
+            // (Object::BuildValuesUpdate), where the round-robin rule lives. Without that test every
+            // grouped bot queues the same corpse and walks to it -- opening an empty window and taking
+            // the gold out of turn -- while the member whose round-robin kill it is finds nothing left.
+            if (MayLootCorpse(bot, creature))
             {
                 if (debug)
                     ai->TellDebug(ai->GetMaster(), "Creature flag lootable.", "debug loot");
