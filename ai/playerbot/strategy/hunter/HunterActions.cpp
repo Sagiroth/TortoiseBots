@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "playerbot/strategy/actions/GenericActions.h"
+#include "playerbot/strategy/actions/HunterRangedTelemetry.h"
 #include "HunterActions.h"
 
 using namespace ai;
@@ -105,5 +106,11 @@ bool CastAutoShotAction::Execute(Event& event)
         ai->StopMoving();
     }
 
-    return CastSpellAction::Execute(event);
+    bool const executed = CastSpellAction::Execute(event);
+
+    // Hunter ranged telemetry: one row per (re)start of the ranged auto-attack
+    // (the core keeps the shot repeating on its own); see HunterRangedTelemetry.h.
+    LogHunterRangedEvent(ai, "AutoShot", std::string("cast=") + (executed ? "1" : "0"));
+
+    return executed;
 }

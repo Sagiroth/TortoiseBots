@@ -64,6 +64,20 @@ Hunters excel at sustained single-target ranged DPS, pet off-tanking, snares, an
 
 ---
 
+## Diagnostics (`bot_events.csv`)
+
+Hunter ammo stacks cannot tell whether a hunter is shooting: the random-bot item cheat refills the equipped ammo stack to its maximum on every update, so the stack sits at 200 either way. These rows (`AiPlayerbot.AllowedLogFiles` must list `bot_events.csv`) carry the decision instead — one row per bot per event per 5 s, with the distance to the target and the strategy flags, captured before any switch is applied:
+
+| Event | Meaning | `info2` flags |
+| :--- | :--- | :--- |
+| `AutoShot` | The module (re)started the hunter's ranged auto-attack (the core then repeats it on its own until the target leaves the weapon's band) | `cast`, `ranged`, `close` |
+| `SwitchToMelee` | The hunter traded its ranged kit for melee (`-ranged,+close`) | pre-switch `ranged`, `close` |
+| `SwitchToRanged` | The hunter traded melee back for ranged (`-close,+ranged`) | pre-switch `ranged`, `close` |
+
+Reading it: `AutoShot` rows with `ranged=1,close=0` are a hunter firing; a `SwitchToMelee` row with `ranged=1` followed by no `AutoShot` rows is a hunter that lost its ranged kit and, below level 10, cannot switch back (see the level gate in `SwitchToRangedTrigger`).
+
+---
+
 ## Premade Talent Specs & Progression (1.18.1)
 
 TortoiseBots provides validated 5-level talent checkpoints (levels 10–60) tailored for Turtle WoW 1.18.1:
