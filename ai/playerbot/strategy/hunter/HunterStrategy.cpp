@@ -61,6 +61,14 @@ void HunterStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "switch to melee",
         NextAction::array(0, new NextAction("switch to melee", ACTION_MOVE), NULL)));
 
+    // Step back out of the shot's dead zone. Below ACTION_MOVE so a hunter that
+    // may switch (level >= 10, or one with no loaded ranged weapon) still gets
+    // its melee switch first; for the armed low-level hunter the switch is
+    // blocked, and this is what keeps it from standing inside the dead zone.
+    triggers.push_back(new TriggerNode(
+        "enemy too close for auto shot",
+        NextAction::array(0, new NextAction("flee", static_cast<float>(ACTION_MOVE) - 1.0f), NULL)));
+
     triggers.push_back(new TriggerNode(
         "counterattack",
         NextAction::array(0, new NextAction("counterattack", ACTION_HIGH + 2), NULL)));
