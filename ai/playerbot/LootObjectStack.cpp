@@ -8,6 +8,15 @@ using namespace ai;
 
 #define MAX_LOOT_OBJECT_COUNT 10
 
+// How long a queued corpse stays eligible. The stack is a work queue, not the authority on whether
+// a corpse still holds loot: every read re-validates it (Refresh: still a CORPSE with the lootable
+// flag and this bot's entitlement; IsLootPossible: something left to take), so this window only
+// has to outlast the reason the bot could not get to the corpse yet. That reason is a fight - the
+// loot chain is non-combat only - while the corpse itself stays for Corpse.Decay.NORMAL (300s).
+// The old 30s window dropped the corpse of the kill that started a fight before the bot was out of
+// combat again, so those kills were never looted at all.
+#define LOOT_OBJECT_TTL_SECONDS 180
+
 LootTarget::LootTarget(ObjectGuid guid) : guid(guid), asOfTime(time(0))
 {
 }
@@ -428,8 +437,11 @@ bool LootObjectStack::Add(ObjectGuid guid)
     if (IsAbandoned(guid))
         return false;
 
-    if (!availableLoot.insert(guid).second)
-        return false;
+    // Re-adding refreshes the entry's age. Ignoring a guid that is already queued left the corpse
+    // with the timestamp of the first Add, so OrderByDistance dropped it LOOT_OBJECT_TTL_SECONDS
+    // later even though "add all loot" (or the bot's own next kill) had just re-offered it.
+    availableLoot.erase(LootTarget(guid));
+    availableLoot.insert(LootTarget(guid));
 
     if (availableLoot.size() < MAX_LOOT_OBJECT_COUNT)
         return true;
@@ -486,10 +498,10 @@ bool LootObjectStack::IsWithinMasterLootRange(LootObject& loot)
 std::vector<LootObject> LootObjectStack::OrderByDistance(float maxDistance)
 {
     size_t beforeShrink = availableLoot.size();
-    availableLoot.shrink(time(0) - 30);
+    availableLoot.shrink(time(0) - LOOT_OBJECT_TTL_SECONDS);
     if (availableLoot.size() < beforeShrink)
-        sLog.outDebug("[BOT LOOT] %s: loot stack expired %zu corpse(s) (>30s old, dropped before looting)",
-            bot->GetName(), beforeShrink - availableLoot.size());
+        sLog.outDebug("[BOT LOOT] %s: loot stack expired %zu corpse(s) (>%us old, dropped before looting)",
+            bot->GetName(), beforeShrink - availableLoot.size(), (unsigned)LOOT_OBJECT_TTL_SECONDS);
 
     std::map<float, LootObject> sortedMap;
     LootTargetList safeCopy(availableLoot);

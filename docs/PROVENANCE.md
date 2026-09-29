@@ -2016,6 +2016,37 @@ after the 2026-09-28 economy review showed the donor shape fighting them:
 - `MoveToLootAction` counts a launched-but-stationary approach as a failure, so
   the bounded give-up also covers navmesh paths that degrade to a direct spline.
 
+### Follow-up 2026-09-29 (2) — loot owns the kill before the next pull
+
+No new donor code. Live economy trace on the 500-bot level-1 pool (main
+`a072ed0`, `bot_events.csv` + `loot.log`): 0.30 loot lines per kill, 25% of kills
+looted within 30s. A kill followed by an attack order within 2s produced loot on
+7% of corpses, against 43% when the bot stayed out of the next fight for 5-10s,
+and the median loot delay was 5s — the two ported pieces above were still
+fighting the engine's own state machine:
+
+- `LootAvailableTrigger` (`LootTriggers.cpp`) tested `AI_VALUE2(bool, "combat",
+  "self target")`, i.e. `UNIT_FLAG_IN_COMBAT` (+ any group member in combat
+  within `AiPlayerbot.ReactDistance`, 150 yd). The engine's combat/non-combat
+  state comes from the "combat start"/"combat end" reaction (`has attackers`),
+  not from that flag, so the flag's short post-kill linger suppressed "loot"
+  (6.0) while `attack anything` (5.0) was free to order the next pull. The loot
+  chain only exists in the non-combat engine, so the clause added nothing except
+  the loss. Dropped; `mounted` still blocks.
+- `LootObjectStack` dropped a queued corpse 30s after its **first** `Add` and
+  never refreshed the timestamp on a repeat `Add`. Corpses are queued when the
+  bot starts attacking (`AttackAction::Execute`) and re-offered on the kill's
+  `SMSG_LOG_XPGAIN` and by every `add all loot` sweep, so a level-1 fight (where
+  a kill can take longer than 30s) expired the corpse before it was even dead,
+  and after that no add could revive it. TTL is 180s now (`Corpse.Decay.NORMAL`
+  is 300s) and re-adding refreshes the entry's age.
+
+Local validation:
+- `bash tools/verify_all.sh`; `git diff --check`.
+- Module build by orchestrator (workers do not run the docker builder).
+- Live indicator to watch: `loot.log` lines per `XpGainAction` kill 0.30 -> >0.8;
+  `StoreLootAction`/`LootMoney` rows in `bot_events.csv`.
+
 ## Hunter quiver / warlock soul-bag handling — 2026-09-28
 
 Feature: hunter quiver/ammo-pouch slot reservation (`InitBags` leaves one
