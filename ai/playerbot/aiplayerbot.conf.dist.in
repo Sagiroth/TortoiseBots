@@ -191,9 +191,17 @@ AiPlayerbot.AvoidHostileTowns = 1
 
 # When a random bot without a player master is stuck for a long time it uses its
 # hearthstone. 1 = only if its homebind area is within 10 levels of the bot
-# (otherwise it repops instead); 0 = always hearth (the old behaviour, which
-# parked outgrown bots in their starting zones). Default 1.
+# (otherwise it repops instead); 0 = skip the level check (the old behaviour, which
+# parked outgrown bots in their starting zones). The distance gate below still
+# applies either way. Default 1.
 AiPlayerbot.UnstuckHearthLevelFit = 1
+
+# How far a "long stuck" bot must be from its own homebind before a hearthstone
+# is worth casting, in yards. Closer than this the hearth only throws the bot back
+# into the same camp (a level 1 starting zone is a few hundred yards wide) while
+# burning its 30-minute cooldown, so the unstuck chain repops to the nearest
+# graveyard instead. 0 disables the gate (always hearth). Default 300.
+AiPlayerbot.UnstuckHearthMinDistance = 300
 
 # Quest-log upkeep for random bots without a player master: drop finished
 # quests that can no longer be rewarded (except transient money blockers),

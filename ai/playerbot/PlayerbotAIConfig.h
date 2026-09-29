@@ -267,6 +267,12 @@ public:
     // "Long stuck" hearths a random masterless bot only when its homebind area is within
     // 10 levels of the bot; otherwise it repops instead of flying home to a zone it outgrew.
     bool unstuckHearthLevelFit = true;
+    // Minimum distance (yards) from its own homebind a "long stuck" bot must be before a
+    // hearthstone makes sense: a level 1 bot's whole starting zone is a few hundred yards
+    // wide, so hearthing there only threw it back into the same camp with a 30-minute
+    // cooldown burnt (478 uses/100 min, 95% within 300 yd of the homebind, 2026-09-29).
+    // Closer than this the unstuck chain repops instead. 0 disables the gate.
+    float unstuckHearthMinDistance = 300.0f;
     // Quest-log upkeep for masterless random bots: drop finished quests that
     // can no longer be rewarded, refuse grey quests unless the reward is an
     // equip upgrade, and prefer turn-in travel once 2 quests are finished.

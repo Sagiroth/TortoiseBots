@@ -127,6 +127,19 @@ namespace ai
                 return true;
             }
 
+            uint32 timeSinceLastXp = AI_VALUE2(uint32, "time since last change", "experience");
+            uint32 timeSinceLastMoney = AI_VALUE2(uint32, "time since last change", "money");
+
+            // Progress is XP or money: a level-60 bot never gains XP and a town
+            // crafter/vendor barely moves, so either one changing in the last
+            // 15 min means the bot is earning, not stuck.
+            // This gate must come before the "no movement for 10 minutes" branch:
+            // a bot camped on a mob spawn kills without moving, and flagging it
+            // hearthing/repop every 10 minutes is exactly the false "stuck" class
+            // #312 fixed for ExperienceValue::EqualToLast.
+            if (timeSinceLastXp < 15 * MINUTE || timeSinceLastMoney < 15 * MINUTE)
+                return false;
+
             uint32 timeSinceLastMove = AI_VALUE2(uint32, "time since last change", "current position");
 
             if (timeSinceLastMove > 10 * MINUTE)
@@ -135,15 +148,6 @@ namespace ai
 
                 return true;
             }
-
-            uint32 timeSinceLastXp = AI_VALUE2(uint32, "time since last change", "experience");
-            uint32 timeSinceLastMoney = AI_VALUE2(uint32, "time since last change", "money");
-
-            // Progress is XP or money: a level-60 bot never gains XP and a town
-            // crafter/vendor barely moves, so either one changing in the last
-            // 15 min means the bot is earning, not stuck.
-            if (timeSinceLastXp < 15 * MINUTE || timeSinceLastMoney < 15 * MINUTE)
-                return false;
 
             uint32 distanceMoved = AI_VALUE2(uint32, "distance moved since", 15 * MINUTE);
 
@@ -235,6 +239,15 @@ namespace ai
             WorldPosition botPos(bot);
 
             uint32 timeSinceCombatChange = AI_VALUE2(uint32, "time since last change", "combat::self target");
+
+            // Same false "stuck" class as MoveLongStuckTrigger: 15 minutes of
+            // uninterrupted combat is normal for a bot chaining pulls in a dense
+            // camp. Only call the fight stuck when the bot also stopped earning:
+            // XP or money changed in the last 15 min means it is winning.
+            uint32 timeSinceLastXp = AI_VALUE2(uint32, "time since last change", "experience");
+            uint32 timeSinceLastMoney = AI_VALUE2(uint32, "time since last change", "money");
+            if (timeSinceLastXp < 15 * MINUTE || timeSinceLastMoney < 15 * MINUTE)
+                return false;
 
             if (timeSinceCombatChange > 15 * MINUTE)
             {

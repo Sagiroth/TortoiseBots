@@ -6,11 +6,27 @@ using namespace ai;
 
 // A random bot's homebind is usually still its racial starting inn: hearthing a level 40
 // bot "unstuck" parked it in Elwynn for good (2042 hearths in 4.7 h on a live realm).
-// Hearth only while home is in an area the bot has not outgrown; otherwise repop, which
-// brings it to the nearest graveyard.
+// Hearth only while home is somewhere the bot has a reason to go: an area it has not
+// outgrown, and far enough away that the teleport actually moves it.
 static bool HearthLeadsSomewhereUseful(PlayerbotAI* ai, Player* bot)
 {
-    if (!sPlayerbotAIConfig.unstuckHearthLevelFit || ai->HasRealPlayerMaster())
+    if (ai->HasRealPlayerMaster())
+        return true;
+
+    // A level 1 bot's whole starting zone is a few hundred yards wide, so hearthing
+    // "unstuck" landed it next to where it already stood - and the 10-minute
+    // "move long stuck" timer then called another one (478 hearths/100 min, 95% of them
+    // within 300 yd of the bot's own homebind, 2026-09-29). Too close to be a rescue:
+    // the unstuck chain repops to the nearest graveyard instead, which costs no
+    // hearthstone cooldown. 0 disables the gate.
+    if (sPlayerbotAIConfig.unstuckHearthMinDistance > 0.0f)
+    {
+        WorldPosition const home = bot->GetHomeBindLocation();
+        if (home.isValid() && WorldPosition(bot).fDist(home) < sPlayerbotAIConfig.unstuckHearthMinDistance)
+            return false;
+    }
+
+    if (!sPlayerbotAIConfig.unstuckHearthLevelFit)
         return true;
 
     int32 homeLevel = 0;
@@ -25,6 +41,16 @@ bool UnstuckAction::Execute(Event& event)
     std::string source = event.GetSource();
     Player* bot = ai->GetBot();
     Player* master = ai->GetMaster();
+
+    // UseHearthStoneAction records where a hearthstone cast started. A cast that gets
+    // interrupted never moves the bot, and its position timer keeps running, so the
+    // "long stuck" rescue below would fire the same cast again seconds later, on the
+    // same spot, forever. Once one attempt has been made from here without the bot
+    // leaving, the hearth has nothing left to offer and the chain repops instead
+    // (which relocates the bot and ends the stuck episode).
+    WorldPosition const hearthAnchor = AI_VALUE2(WorldPosition, "custom position", "hearth attempt anchor");
+    bool const hearthAttemptLeftBotInPlace = hearthAnchor.isValid() &&
+        WorldPosition(bot).fDist(hearthAnchor) < sPlayerbotAIConfig.tooCloseDistance;
 
     // Default action if no specific source is matched
     if (source.empty())
@@ -113,7 +139,7 @@ bool UnstuckAction::Execute(Event& event)
     if (source.find("move long stuck") != std::string::npos)
     {
         ai->TellDebug(master, "Unstuck: Long move stuck detected, attempting hearthstone or repop.", "debug unstuck");
-        if (AI_VALUE2(bool, "action useful", "hearthstone") && bot->IsAlive() && HearthLeadsSomewhereUseful(ai, bot))
+        if (AI_VALUE2(bool, "action useful", "hearthstone") && bot->IsAlive() && !hearthAttemptLeftBotInPlace && HearthLeadsSomewhereUseful(ai, bot))
         {
             return ai->DoSpecificAction("hearthstone", event, true);
         }
@@ -134,7 +160,7 @@ bool UnstuckAction::Execute(Event& event)
     if (source.find("combat long stuck") != std::string::npos)
     {
         ai->TellDebug(master, "Unstuck: Long combat stuck detected, attempting hearthstone or repop.", "debug unstuck");
-        if (AI_VALUE2(bool, "action useful", "hearthstone") && bot->IsAlive() && HearthLeadsSomewhereUseful(ai, bot))
+        if (AI_VALUE2(bool, "action useful", "hearthstone") && bot->IsAlive() && !hearthAttemptLeftBotInPlace && HearthLeadsSomewhereUseful(ai, bot))
         {
             return ai->DoSpecificAction("hearthstone", event, true);
         }

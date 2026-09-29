@@ -404,6 +404,7 @@ bool PlayerbotAIConfig::Initialize()
     mountBreakEvenFactor = config.GetFloatDefault("AiPlayerbot.MountBreakEvenFactor", 1.5f);
     avoidHostileTowns = config.GetBoolDefault("AiPlayerbot.AvoidHostileTowns", true);
     unstuckHearthLevelFit = config.GetBoolDefault("AiPlayerbot.UnstuckHearthLevelFit", true);
+    unstuckHearthMinDistance = config.GetFloatDefault("AiPlayerbot.UnstuckHearthMinDistance", 300.0f);
     botQuestLogUpkeep = config.GetBoolDefault("AiPlayerbot.BotQuestLogUpkeep", true);
     leaveOutgrownZones = config.GetBoolDefault("AiPlayerbot.LeaveOutgrownZones", true);
     randomBotLftEnabled = config.GetBoolDefault("AiPlayerbot.RandomBotLftEnabled", true);

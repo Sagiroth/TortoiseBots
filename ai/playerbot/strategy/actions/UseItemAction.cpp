@@ -1167,7 +1167,19 @@ bool UseHearthStoneAction::Execute(Event& event)
     {
         sPlayerbotAIConfig.logEvent(ai, "UseHearthStoneAction", event.GetParam(), event.GetSource());
         RESET_AI_VALUE(bool, "combat::self target");
-        RESET_AI_VALUE(WorldPosition, "current position");
+
+        // Do NOT reset "current position" here. This line runs when the cast *starts*;
+        // the teleport (if any) only lands 10 s later, so resetting the value restarted
+        // its "time since last change" clock for a move the bot had not made yet. A cast
+        // interrupted by the fight therefore handed the bot a fresh 10 minutes of grace
+        // and the "move long stuck" rescue fired again, and again: it hearhed to a spot a
+        // few hundred yards from its own homebind, walked back, stood still (478 hearths
+        // in 100 min, 95% of them within 300 yd of the bot's own homebind, 2026-09-29).
+        // A hearth that does land teleports the bot and the position value sees that on
+        // its own; RepopAction resets this same value because it teleports in the same
+        // call. Record where the attempt started instead, so UnstuckAction can tell a
+        // hearth that moved the bot from one that left it standing.
+        SET_AI_VALUE2(WorldPosition, "custom position", "hearth attempt anchor", WorldPosition(bot));
     }
 
     return used;
