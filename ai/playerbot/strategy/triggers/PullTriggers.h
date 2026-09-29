@@ -35,4 +35,16 @@ namespace ai
         PullHoldExpiredTrigger(PlayerbotAI* ai, std::string name = "pull hold expired") : Trigger(ai, name) {}
         bool IsActive() override;
     };
+
+    // True when the anchor hold the puller itself was parked on (a pullback
+    // parks the tank at the anchor for the fight) is over: the pulled fight is
+    // finished, so the tank resumes following the party. Held DPS bots carry
+    // the same anchor marker but run their own wait window instead
+    // ("pull hold expired").
+    class PullAnchorDoneTrigger : public Trigger
+    {
+    public:
+        PullAnchorDoneTrigger(PlayerbotAI* ai) : Trigger(ai, "pull anchor done") {}
+        bool IsActive() override;
+    };
 }

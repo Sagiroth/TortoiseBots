@@ -243,6 +243,23 @@ void PullStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "pull end",
         NextAction::array(0, new NextAction("pull end", ACTION_MOVE), NULL)));
+
+    // The puller's own anchor hold (a pullback parks the tank at the anchor
+    // for the fight) is released by the same action the held DPS bots use,
+    // once that fight is over.
+    triggers.push_back(new TriggerNode(
+        "pull anchor done",
+        NextAction::array(0, new NextAction("release pull hold", ACTION_HIGH), NULL)));
+}
+
+void PullStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
+{
+    // A pull cannot outlive the puller. The dead engine has to run the pull
+    // end too: a tank that dies mid-pull would otherwise keep the party held
+    // until their wait window expires, with nobody left to bring them in.
+    triggers.push_back(new TriggerNode(
+        "pull end",
+        NextAction::array(0, new NextAction("pull end", ACTION_HIGH), NULL)));
 }
 
 void PullStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

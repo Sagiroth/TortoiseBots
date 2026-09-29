@@ -362,12 +362,17 @@ bool PullEndAction::Execute(Event& event)
                 BotState::BOT_STATE_ALL);
         }
 
+        // A pull cannot outlive its tank (the dead-engine "pull end" trigger
+        // has already released the held party): finish the bookkeeping, but do
+        // not park a corpse on the anchor or re-stamp the party's join window.
+        const bool alive = bot->IsAlive();
+
         // The tank is back and takes the fight over here: this is the moment a
         // pullback's join window counts from. Narrow every held party bot's
         // wait window to the join delay and restart its clock, so the DPS
         // arrive joinDelay after the tank is back instead of after the wide
         // return-covering window placed at the command.
-        if (wasCommand && wasPullback)
+        if (alive && wasCommand && wasPullback)
             RestampPullParty(bot, strategy->GetCommandJoinDelay(), true);
 
         // Remove the saved pull position
@@ -381,7 +386,7 @@ bool PullEndAction::Execute(Event& event)
         // Keep the mob as the live target (selection, current target, attack
         // target) and the tank's normal rotation takes it from here - for a
         // pullback it does so at the anchor, where the mob comes to it.
-        Unit* pullTarget = strategy->GetTarget();
+        Unit* pullTarget = alive ? strategy->GetTarget() : nullptr;
         if (pullTarget && pullTarget->IsInWorld() && pullTarget->IsAlive() &&
             pullTarget->GetMapId() == bot->GetMapId() && bot->IsValidAttackTarget(pullTarget))
         {
@@ -396,12 +401,16 @@ bool PullEndAction::Execute(Event& event)
         {
             // After a pullback the tank holds the anchor for the join window:
             // drop a stay at the anchor position so the tank fights the
-            // incoming mob in the corner instead of drifting back out.
-            if (wasCommand && wasPullback)
+            // incoming mob in the corner instead of drifting back out. The
+            // same anchor goes into "pull hold" as the tank's own copy, so the
+            // hold can be released once that fight is over ("pull anchor
+            // done") - without it the tank would stand there for good.
+            if (alive && wasCommand && wasPullback)
             {
                 PositionEntry tankStay = posMap["stay"];
                 tankStay.Set(stayPosition.x, stayPosition.y, stayPosition.z, stayPosition.mapId);
                 posMap["stay"] = tankStay;
+                posMap["pull hold"] = tankStay;
                 ai->SetMovementStrategy("stay");
             }
             posMap.erase("pull");

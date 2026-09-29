@@ -85,6 +85,16 @@ bool PullEndTrigger::IsActive()
     if (!strategy || !strategy->HasPullStarted())
         return false;
 
+    // The puller is down: the pull is over. End it and release the held party
+    // right away - they have to fight for themselves, and a dead tank can
+    // never satisfy the anchor condition below (the window would otherwise
+    // run out its full length first).
+    if (!bot->IsAlive())
+    {
+        ReleasePullHoldNow(bot);
+        return true;
+    }
+
     const time_t secondsSincePullStarted = time(0) - strategy->GetPullStartTime();
     // Per-command mode owns the return leg; the sticky strategy is only the
     // fallback for automatic dungeon pulls.
@@ -148,4 +158,27 @@ bool PullHoldExpiredTrigger::IsActive()
         return true;
     uint8 waitSeconds = AI_VALUE(uint8, "wait for attack time");
     return time(0) - combatStart >= static_cast<time_t>(waitSeconds);
+}
+
+bool PullAnchorDoneTrigger::IsActive()
+{
+    // The held DPS bots carry the same anchor marker but run their own wait
+    // window ("pull hold expired"); only the puller holds the anchor for a
+    // fight it is already having.
+    if (ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT))
+        return false;
+
+    PositionMap& posMap = AI_VALUE(PositionMap&, "position");
+    if (!posMap["pull hold"].isSet())
+        return false;
+
+    // Hold the anchor for as long as the pulled fight lasts: in combat, or
+    // with a live target left to tank. Once nothing is left - the mob dead,
+    // the pack finished, the hold broken off - the tank follows the party
+    // again instead of standing at the anchor forever.
+    if (sServerFacade.IsInCombat(bot))
+        return false;
+
+    Unit* currentTarget = AI_VALUE(Unit*, "current target");
+    return !currentTarget || !currentTarget->IsAlive();
 }

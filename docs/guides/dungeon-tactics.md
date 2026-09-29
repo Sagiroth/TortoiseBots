@@ -38,6 +38,7 @@ When you target an enemy mob and issue `.bot action pullback`:
 1. The server picks the puller by precedence: your targeted bot, else any bot designated `.bot role <Name> tank` (any class), else a native tank-spec bot.
 2. The tank uses its class pull action (ranged shot/throw, *Judgement*, *Faerie Fire*, *Serpent Sting*, or *Lightning Bolt*) — or closes in and body-pulls (`reach pull`) when no ranged option exists — applies immediate threat, and immediately sprints back to your party's current location, where it takes the incoming mobs over on its own (no follow-up order needed).
 3. Non-tank bots hold fire until the tank reaches the regroup anchor, drawing the entire mob pack safely around the corner into your ambush.
+4. The tank holds the anchor only for the fight that pull brought in: as soon as it is over (mob dead, nothing left to tank, out of combat) the hold is released and the tank follows the party again. A pull the tank starts on its own (`should pull`, dungeons only) is an ordinary engagement: it has no command anchor, so the party is not held for it.
 
 ```mermaid
 flowchart TD
