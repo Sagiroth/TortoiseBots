@@ -544,6 +544,12 @@ void BotManager::OnPlayerLogin(::Player* player)
     record.syncedInWorld = true;
     sRandomBotFacade.MarkNativePlayersDirty();
 
+    // Bots created before the ranged shoot abilities were granted (or whose
+    // provisioning never reached the skill-reward pass) would never be able to
+    // shoot a bow, gun, crossbow, thrown weapon or wand. Idempotent: the core
+    // pass only learns what the skills already teach.
+    PlayerbotFactory::EnsureSkillRewardedSpells(player);
+
     // Normalize Goblin and High Elf (and any random bot in custom isolated
     // starting zones lacking navmesh/transport to mainland) to standard faction starting zones.
     if (record.random && !sPlayerbotAIConfig.allowIsolatedCustomStartingZones)

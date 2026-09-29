@@ -2922,6 +2922,40 @@ void PlayerbotFactory::InitSkills()
             bot->LearnSpell(3127, false);
         bot->SetCanParry(true);
     }
+
+    // Weapon skills also teach the weapon's "shoot" ability (SkillLineAbility
+    // learnOnGetSkill: Bows -> 2480 Shoot Bow, Guns -> 7918, Crossbows -> 7919,
+    // Thrown -> 2764, Wands -> 5019). A bot that owns the skill but not the
+    // ability cannot shoot at all: the module resolves a spell name only
+    // against the bot's own spellbook (values/SpellIdValue), so "shoot bow"
+    // resolves to spell 0 and CastShootAction/the ranged pull silently do
+    // nothing - the bot stands there with a bow, arrows and 150 Bows skill.
+    // Re-run the core's own pass instead of hand-listing spell ids: it applies
+    // the class/race masks and the skill requirement exactly like training a
+    // real character does.
+    EnsureSkillRewardedSpells(bot);
+}
+
+void PlayerbotFactory::EnsureSkillRewardedSpells(Player* bot)
+{
+    if (!bot)
+        return;
+
+    static uint16 const skills[] = {
+        SKILL_BOWS, SKILL_GUNS, SKILL_CROSSBOWS, SKILL_THROWN, SKILL_WANDS
+    };
+
+    for (uint16 skill : skills)
+    {
+        uint16 const value = bot->GetSkillValuePure(skill);
+        if (!value)
+            continue;
+
+        // Re-issuing the skill is the public way to run the core's reward pass
+        // (Player::UpdateSkillTrainedSpells is private). Pure values keep
+        // item/aura skill bonuses out of what gets written back.
+        bot->SetSkill(skill, value, bot->GetSkillMaxPure(skill));
+    }
 }
 
 void PlayerbotFactory::SetRandomSkill(uint16 id)

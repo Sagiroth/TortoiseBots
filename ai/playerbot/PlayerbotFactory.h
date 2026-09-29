@@ -14,6 +14,12 @@ public:
 
     void Refresh();
     void InitSkills();
+    // Re-run the core's skill-reward pass for the ranged weapon skills this bot
+    // actually has, so it knows the abilities those skills teach (Bows ->
+    // Shoot Bow and so on). Idempotent; safe on every login and every factory
+    // provisioning pass. See the implementation for why a bot cannot shoot
+    // without it.
+    static void EnsureSkillRewardedSpells(Player* bot);
     void EnchantEquipment();
     void EquipGear() { InitEquipment(false, false); }
     void EquipGearBest() { return InitEquipment(false, false, false); }
