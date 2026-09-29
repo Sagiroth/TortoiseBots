@@ -150,6 +150,13 @@ bool PullRequestAction::Execute(Event& event)
 
     strategy->RequestPull(target);
 
+    // Keep the pulled mob as the explicit attack target for the whole approach:
+    // it is not in combat until the shot lands, and without this the combat
+    // engine drops it every few ticks and re-paths the walk to the mob.
+    AiObjectContext* pullContext = ai->GetAiObjectContext();
+    pullContext->GetValue<ObjectGuid>("attack target")->Set(target->getObjectGuid());
+    pullContext->GetValue<bool>("invalid target", "current target")->Reset();
+
     // Force change combat state to have a faster reaction time
     ai->OnCombatStarted();
 

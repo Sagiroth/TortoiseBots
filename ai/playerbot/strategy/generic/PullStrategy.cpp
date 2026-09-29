@@ -336,6 +336,9 @@ void PullStrategy::NotePullActionCast()
     pullActionCastMs = WorldTimer::getMSTime();
     if (!pullActionCastMs)
         pullActionCastMs = 1; // 0 is "no cast yet"
+    // The pull time cap is for the approach; the wait for the arrow gets its own
+    // window, so a long walk to the mob must not eat it.
+    pullStartTime = time(0);
 }
 
 uint32 PullStrategy::GetPullActionCastAgeMs() const
