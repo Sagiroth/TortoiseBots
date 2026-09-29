@@ -190,6 +190,9 @@ resumable round-robin rotation; the pool's per-tick time budget only engages
 once the previous world tick ran longer than
 `AiPlayerbot.PoolBudgetWhenTickOverMs`
 (see [docs/guides/configuration-tuning.md](guides/configuration-tuning.md)).
+"Under a real player" means a live master with a network session, or a
+character on an account the pool does not own (`runtime/PlayerBotClassification.h`);
+the `random` flag and the `PlayerMaster` lease are not ownership signals.
 This is module-internal scheduling and needs no core seam.
 
 ## 9. Ownership model

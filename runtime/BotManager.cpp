@@ -1,8 +1,10 @@
 #include "../ai/playerbot/GroupMembers.h"
 #include "BotManager.h"
 #include "BotActivityLease.h"
+#include "PlayerBotClassification.h"
 #include "PlayerbotAIAdapter.h"
 #include "PlayerbotAIStorage.h"
+#include "RandomBotAccountRegistry.h"
 #include "GearSeedingGuard.h"
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "../ai/playerbot/RandomBotFacade.h"
@@ -1255,16 +1257,34 @@ void BotManager::SetPacketBridgeTestEnabled(bool enable, uint32_t accountId,
 
 namespace
 {
-// Player-owned bots, i.e. the ones a real player is playing with: explicit
-// module-owned records (AddBot/AddBotWithMaster) and any bot claimed by a
-// master through BindBotMaster (the lease is the same O(1) discriminator the
-// background services already use). These always update first and are never
-// cut by the pool budget.
-bool IsPlayerOwnedBot(BotEntry const& entry)
+// Live master lookup: a network transport means a real player, headless
+// sessions have none. Masterless bots skip the lookup entirely.
+bool HasLiveRealPlayerMaster(::ObjectGuid masterGuid)
 {
-    return !entry.record.random ||
-        BotActivityLeaseManager::Instance().GetActivity(entry.record.characterGuid.GetCounter()) ==
-            BotActivity::PlayerMaster;
+    if (masterGuid.IsEmpty())
+        return false;
+
+    ::Player* master = sObjectAccessor.FindPlayer(masterGuid);
+    if (!master || !master->IsInWorld())
+        return false;
+
+    ::WorldSession* session = master->GetSession();
+    return session && session->HasNetworkTransport();
+}
+
+// Classification inputs for one bot: the managed-pool account registry says
+// whether the character belongs to the random pool, the master says whether a
+// real player is driving it right now (see PlayerBotClassification.h for why
+// record.random, masterGuid alone and the PlayerMaster lease are not used).
+PlayerBotClassificationInputs ClassifyBot(BotEntry const& entry)
+{
+    RandomBotAccountRegistry& registry = RandomBotAccountRegistry::Instance();
+    PlayerBotClassificationInputs inputs;
+    // Without a validated registry the module cannot tell its own accounts from
+    // anybody else's: keep the bot in the pool instead of prioritizing it.
+    inputs.accountIsPool = AccountIsPool(registry.IsValidated(), registry.IsRegistered(entry.record.accountId));
+    inputs.hasLiveRealPlayerMaster = HasLiveRealPlayerMaster(entry.record.masterGuid);
+    return inputs;
 }
 } // namespace
 
@@ -1295,13 +1315,22 @@ void BotManager::UpdateBots(uint32_t diff)
     std::vector<uint32_t> poolGuids;
     playerGuids.reserve(m_bots.size());
     poolGuids.reserve(m_bots.size());
+    uint32_t masterBots = 0;       // player bots with a live real-player master
+    uint32_t ownedAccountBots = 0; // player bots on the owner's own account
     for (auto const& kv : m_bots)
     {
         if (kv.second.record.lifecycle != BotLifecycle::InWorld)
             continue;
 
-        if (IsPlayerOwnedBot(kv.second))
+        PlayerBotClassificationInputs const classification = ClassifyBot(kv.second);
+        if (IsPlayerOwnedBot(classification))
+        {
             playerGuids.push_back(kv.first);
+            if (classification.hasLiveRealPlayerMaster)
+                ++masterBots;
+            else
+                ++ownedAccountBots;
+        }
         else
             poolGuids.push_back(kv.first);
     }
@@ -1314,7 +1343,7 @@ void BotManager::UpdateBots(uint32_t diff)
     {
         auto it = m_bots.find(guidLow);
         return it != m_bots.end() && it->second.record.lifecycle == BotLifecycle::InWorld &&
-            !IsPlayerOwnedBot(it->second);
+            !IsPlayerOwnedBot(ClassifyBot(it->second));
     });
 
     auto updateOneBot = [this, diff](uint32_t guidLow)
@@ -1392,8 +1421,9 @@ void BotManager::UpdateBots(uint32_t diff)
 
     // BOTPERF: module pass cost per world tick, one line per ~30 s of tick
     // time. passUs is the average pass in the window, maxUs the worst;
-    // playerBots/poolBots/poolProcessed/budgetHit describe the pass
-    // just measured.
+    // playerBots/poolBots/poolProcessed/budgetHit describe the pass just
+    // measured. ownedBots (owner's own account) plus masterBots (live
+    // real-player master) make up playerBots, so the split is auditable.
     uint64_t const passUs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now() - passStart).count());
     m_perfPassUsSum += passUs;
@@ -1402,9 +1432,9 @@ void BotManager::UpdateBots(uint32_t diff)
     m_perfElapsedMs += diff;
     if (m_perfElapsedMs >= 30000)
     {
-        TB_LOG_BASIC("TortoiseBots: BOTPERF passUs=%llu playerBots=%u poolBots=%u poolProcessed=%u budgetHit=%u maxUs=%llu ticks=%u",
+        TB_LOG_BASIC("TortoiseBots: BOTPERF passUs=%llu playerBots=%u ownedBots=%u masterBots=%u poolBots=%u poolProcessed=%u budgetHit=%u maxUs=%llu ticks=%u",
             static_cast<unsigned long long>(m_perfPassUsSum / m_perfPassCount),
-            playerBots, poolBots, poolProcessed, budgetHit ? 1u : 0u,
+            playerBots, ownedAccountBots, masterBots, poolBots, poolProcessed, budgetHit ? 1u : 0u,
             static_cast<unsigned long long>(m_perfPassUsMax), m_perfPassCount);
         m_perfPassUsSum = 0;
         m_perfPassUsMax = 0;

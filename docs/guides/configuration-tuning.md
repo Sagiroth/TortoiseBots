@@ -116,7 +116,14 @@ All autonomous services are fully bounded. LFT autofill and battleground auto-qu
 
 ### Per-tick AI pass budget (large pools)
 
-The module's AI pass runs at the end of every world tick, so a bot a real player is playing with used to queue behind the whole random pool. Bots under a real player (module-owned records and every bot bound to a master) now always update first, every tick, and are never throttled; the random pool runs after them in a round-robin order that resumes where the previous tick stopped, so a bot that misses a pass is served on a later one and never dropped.
+The module's AI pass runs at the end of every world tick, so a bot a real player is playing with used to queue behind the whole random pool. Player-owned bots now always update first, every tick, and are never throttled; the random pool runs after them in a round-robin order that resumes where the previous tick stopped, so a bot that misses a pass is served on a later one and never dropped.
+
+**Who counts as player-owned** (the rule is deliberately about real ownership, not bookkeeping flags):
+
+- a bot whose master is a **live player with a network session** — hired companions and party bots while their player is online; and
+- a bot on an account the random pool does **not** own (`tortoise_bots_pool_account`), i.e. the owner's own characters.
+
+Everything else is the pool, including characters on `RNDBOT` pool accounts that carry a master from a bot-only group, a stale `PlayerMaster` lease, or `random = false` after a restart. Those flags are not ownership signals: bot-only groups hand their members a bot master and a lease (`PlayerbotAI::GetGroupMaster` → `BotManager::BindBotMaster`), which once misclassified ~40 % of a 500-bot pool (212 bots) as player-owned and kept them unbudgeted.
 
 The pool is only throttled when the server is already struggling. On an average PC with a small pool the ticks are short, both keys stay out of the way, and the pool gets exactly the pass it always got.
 
@@ -130,10 +137,10 @@ Tuning: raise `PoolTickBudgetUs` (e.g. `25000`–`50000`) if pool bots feel slug
 The module reports the pass once per ~30 s of world-tick time at `TortoiseBots.LogLevel = 1` or higher (default `2`):
 
 ```
-TortoiseBots: BOTPERF passUs=812 playerBots=5 poolBots=500 poolProcessed=4 budgetHit=1 maxUs=9820 ticks=62
+TortoiseBots: BOTPERF passUs=812 playerBots=5 ownedBots=5 masterBots=0 poolBots=495 poolProcessed=4 budgetHit=1 maxUs=9820 ticks=62
 ```
 
-`passUs` is the average `UpdateBots` cost in the window in microseconds (`maxUs` the worst), `playerBots`/`poolBots` the candidate counts of the measured pass, `poolProcessed` the pool slots the rotation advanced past (a record that was unusable that tick still counts), and `budgetHit` `1` when the budget cut that pass short. Read it like this: `budgetHit=1` with a small `passUs` is the throttle working; `budgetHit=1` and `poolProcessed=1` means the budget is too tight for the pool size (raise it); a low `passUs` while ticks are still multi-second says the module pass is not what stretches the tick.
+`passUs` is the average `UpdateBots` cost in the window in microseconds (`maxUs` the worst), `playerBots` the unbudgeted candidate count, split into `ownedBots` (owner's account) and `masterBots` (live player master), `poolBots` the pool candidate count, `poolProcessed` the pool slots the rotation advanced past (a record that was unusable that tick still counts), and `budgetHit` `1` when the budget cut that pass short. Read it like this: `budgetHit=1` with a small `passUs` is the throttle working; `budgetHit=1` and `poolProcessed=1` means the budget is too tight for the pool size (raise it); a low `passUs` while ticks are still multi-second says the module pass is not what stretches the tick. A `playerBots` far above the real player's party (check `ownedBots` + `masterBots`) means a classification bug, not a busy player.
 
 ### Server settings for many bots (`mangosd.conf`)
 
