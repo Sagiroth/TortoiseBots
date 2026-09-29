@@ -2938,6 +2938,24 @@ void PlayerbotFactory::InitSkills()
     EnsureSkillRewardedSpells(bot);
 }
 
+// Dual Wield is the one ability whose class threshold the data cannot carry:
+// skill 118's SkillRaceClassInfo rows say rogue 10 / warrior and hunter 20, but
+// `skill_race_class_info_mod` id 132 forces that row's MinLevel to 1 ("Show Dual
+// Wield on trainers at all levels"), so the DBC value is no gate at all. The
+// numbers below come from the live trainer data (`npc_trainer` for the teaching
+// spell 1424: warrior 10 in 29 trainers, hunter 20 in 39) and from the owner's
+// call for the rogue, whose 22 trainers say 20 while SkillRaceClassInfo says 10.
+static uint32 DualWieldLevelForClass(uint8 botClass)
+{
+    switch (botClass)
+    {
+    case CLASS_WARRIOR: return 10;
+    case CLASS_ROGUE:   return 10;
+    case CLASS_HUNTER:  return 20;
+    default:            return 0;   // class cannot train Dual Wield at all
+    }
+}
+
 void PlayerbotFactory::EnsureSkillRewardedSpells(Player* bot)
 {
     if (!bot)
@@ -2974,6 +2992,29 @@ void PlayerbotFactory::EnsureSkillRewardedSpells(Player* bot)
             continue;
         if (ability->classmask && !(ability->classmask & classMask))
             continue;
+
+        // Dual Wield class gate: below the class threshold the ability is not
+        // owed yet, whatever the bot picked up from the seed, the trainer path
+        // or a previous build. Drop the spell, then the skill (the skill removal
+        // runs the core's own skill -> spell pass, which removes it again
+        // harmlessly) and clear the session flag. Equipment is left untouched:
+        // Player::SetCanDualWield is a plain flag, nothing in the core unequips
+        // the off-hand when it goes false, and an off-hand weapon merely stops
+        // contributing (Player::UpdateOffhandDamage and the stat passes are
+        // gated on CanDualWield()) until the bot earns Dual Wield.
+        if (ability->skillId == SKILL_DUAL_WIELD)
+        {
+            uint32 const requiredLevel = DualWieldLevelForClass(bot->GetClass());
+            if (requiredLevel && level < requiredLevel)
+            {
+                if (bot->HasSpell(ability->spellId))
+                    bot->RemoveSpell(ability->spellId);
+                if (bot->GetSkillValuePure(SKILL_DUAL_WIELD))
+                    bot->SetSkill(SKILL_DUAL_WIELD, 0, 0);
+                bot->SetCanDualWield(false);
+                continue;
+            }
+        }
 
         SpellEntry const* spell = sServerFacade.LookupSpellInfo(ability->spellId);
         if (!spell || (spell->spellLevel && level < spell->spellLevel))
