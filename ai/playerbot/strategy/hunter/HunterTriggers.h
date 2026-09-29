@@ -1,9 +1,15 @@
 #pragma once
 
 #include "playerbot/strategy/triggers/GenericTriggers.h"
+#include "playerbot/strategy/hunter/HunterActions.h"
 
 namespace ai
 {
+    // Below this level a hunter cannot kite back into ranged once melee starts:
+    // SwitchToRangedTrigger refuses to switch back (its kiting toolkit - snares
+    // and traps - is not there yet).
+    uint32 const HUNTER_KITING_LEVEL = 10;
+
     HAS_AURA_TRIGGER_TIME(FeignDeathTrigger, "feign death", 2);
 
     BEGIN_TRIGGER(HunterNoStingsActiveTrigger, Trigger)
@@ -223,7 +229,7 @@ private:
             // reopen ranged distance (which the "target->GetVictim() != bot" case below would
             // otherwise attempt even against a target just as fast as the bot, e.g. whenever
             // the pet currently has aggro, regardless of what happens if aggro flips back).
-            if (bot->GetClass() == CLASS_HUNTER && bot->GetLevel() < 10)
+            if (bot->GetClass() == CLASS_HUNTER && bot->GetLevel() < HUNTER_KITING_LEVEL)
                 return false;
 
             bool hasAmmo = ai->HasCheat(BotCheatMask::item) || AI_VALUE2(uint32, "item count", "ammo");
@@ -247,6 +253,16 @@ private:
 
         bool IsActive() override
         {
+            // A hunter below the kiting level keeps its ranged kit:
+            // SwitchToRangedTrigger never switches back below
+            // HUNTER_KITING_LEVEL, and the auto shot that the kit keeps running
+            // is gated on the "ranged" strategy - one melee switch here ends the
+            // hunter's sustained ranged attack for the rest of the level. The
+            // melee fallback stays for a hunter with no loaded ranged weapon (no
+            // weapon, wrong or no ammo, spent thrown stack).
+            if (bot->GetClass() == CLASS_HUNTER && bot->GetLevel() < HUNTER_KITING_LEVEL && HunterHasLoadedRangedWeapon(ai))
+                return false;
+
             bool hasAmmo = ai->HasCheat(BotCheatMask::item) || AI_VALUE2(uint32, "item count", "ammo");
             if (!hasAmmo)
                 return true;

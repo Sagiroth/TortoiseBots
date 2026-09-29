@@ -267,6 +267,11 @@ namespace ai
             if (!target)
                 return false;
 
+            // "enemy" means enemy: a friendly current target (a wounded ally, a
+            // stale target) must not drag a ranged bot across the zone.
+            if (!sServerFacade.IsHostileTo(bot, target))
+                return false;
+
             return target && (bot->GetDistance(target, SizeFactor::CombatReach) > (distance - sPlayerbotAIConfig.contactDistance)) || !bot->IsWithinLOSInMap(target, true);
         }
     };

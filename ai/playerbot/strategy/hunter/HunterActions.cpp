@@ -6,6 +6,25 @@
 
 using namespace ai;
 
+bool ai::HunterHasLoadedRangedWeapon(PlayerbotAI* playerbotAi)
+{
+    if (!playerbotAi)
+        return false;
+
+    Player* bot = playerbotAi->GetBot();
+    if (!bot)
+        return false;
+
+    Item* ranged = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED);
+    if (!ranged)
+        return false;
+
+    if (ranged->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_THROWN)
+        return true;
+
+    return HunterHasRangedAmmo(playerbotAi);
+}
+
 bool CastSerpentStingAction::isUseful()
 {
     return HunterHasRangedAmmo(ai) && CastRangedDebuffSpellAction::isUseful() && AI_VALUE2(uint8, "health", GetTargetName()) > 50 && !(AI_VALUE2(uint8, "mana", GetTargetName()) >= 10);

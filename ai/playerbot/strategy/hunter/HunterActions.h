@@ -9,6 +9,12 @@ namespace ai
         return ai && (ai->HasCheat(BotCheatMask::item) || (ai->GetAiObjectContext() && ai->GetAiObjectContext()->GetValue<uint32>("item count", "ammo")->Get() > 0));
     }
 
+    // A loaded ranged weapon: the weapon in the ranged slot plus the ammo it
+    // takes (a thrown weapon is its own ammo). HunterHasRangedAmmo alone answers
+    // "yes" for an item-cheat bot with no ranged weapon at all, and the melee
+    // fallback has to stay available for that hunter.
+    bool HunterHasLoadedRangedWeapon(PlayerbotAI* ai);
+
     BEGIN_RANGED_DEBUFF_ACTION(CastHuntersMarkAction, "hunter's mark")
     END_SPELL_ACTION()
 

@@ -2096,6 +2096,7 @@ Local validation:
   not run the docker builder).
 
 
+
 ## Ranged kit keeps its casting band (`enemy out of spell` -> `reach spell`) — 2026-09-29
 
 Feature: the `ranged` combat strategy (`RangedCombatStrategy`, registered as the
@@ -2244,3 +2245,4 @@ same melee rule every other melee kit carries (`reach melee`, `ACTION_MOVE`, whi
 outranks the Wrath node so the bot walks in and still casts Wrath whenever reach
 cannot run). Validator after the fix: dead-tree triggers 124 -> 123, no new missing
 actions.
+
