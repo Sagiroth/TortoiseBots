@@ -27,23 +27,6 @@ int MaxGrindLevelOverBot(Player* bot, PlayerbotAI* ai)
 
     return 4;
 }
-
-// A melee swing only lands inside the core's vertical reach: |dz| < 6 yd (the squared
-// UNIT_DEFAULT_MELEE_Z_LIMIT in Unit::CanReachWithMeleeAutoAttack). Ordering an attack on
-// a mob further above or below cannot end in a hit, and the mob will not come down for it
-// either - the pair sits on the unreachable-evade edge until the bot's stuck timer
-// teleports it away (measured: bots standing 11-28 yd above a spawn, 20+ orders from that
-// one point for up to 54 min, zero kills). Casters keep the looser spellDistance cap: a
-// spell does reach up a slope, and they are not the ones closing to melee.
-bool IsOutOfVerticalReach(Player* bot, Unit* unit, PlayerbotAI* ai)
-{
-    float const zDiff = std::abs(bot->getPositionZ() - unit->getPositionZ());
-
-    if (!ai->IsRanged(bot))
-        return zDiff > 6.0f;
-
-    return zDiff > sPlayerbotAIConfig.spellDistance;
-}
 }
 
 Unit* GrindTargetValue::Calculate()
@@ -126,12 +109,6 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
             continue;
         }
 
-        if (IsOutOfVerticalReach(bot, unit, ai))
-        {
-            logGrind(unit, "ignored (to far above/below).");
-            continue;
-        }
-
         logGrind(unit, "(hostile) selected.");
         return unit;
     }
@@ -175,7 +152,7 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
             continue;
 
 
-        if (IsOutOfVerticalReach(bot, unit, ai))
+        if (abs(bot->getPositionZ() - unit->getPositionZ()) > sPlayerbotAIConfig.spellDistance)
         {
             logGrind(unit, "ignored (to far above/below).");
             continue;

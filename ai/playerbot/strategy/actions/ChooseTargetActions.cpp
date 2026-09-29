@@ -100,6 +100,9 @@ void ai::AttackAnythingAction::LogRepeatOrder(Unit* target)
     // A second order on the same mob inside this window is a repeat: a bot that killed a
     // mob and moved on does not come back to the same creature in under a minute.
     uint32 const repeatWindowMs = 60 * IN_MILLISECONDS;
+    // Logging starts at the third repeat (a single repeat is normal - target re-selected
+    // after a reset) and then at most one row per window.
+    uint32 const minRepeatsToLog = 3;
 
     uint32 const nowMs = WorldTimer::getMSTime();
     bool const repeat = lastGrindOrderMs && lastGrindTarget == target->getObjectGuid() &&
@@ -109,8 +112,13 @@ void ai::AttackAnythingAction::LogRepeatOrder(Unit* target)
     lastGrindOrderMs = nowMs;
     grindRepeatCount = repeat ? grindRepeatCount + 1 : 0;
 
-    if (!repeat)
+    if (grindRepeatCount < minRepeatsToLog)
         return;
+
+    if (lastRepeatLogMs && WorldTimer::getMSTimeDiff(lastRepeatLogMs, nowMs) < repeatWindowMs)
+        return;
+
+    lastRepeatLogMs = nowMs;
 
     std::ostringstream out;
     out << "guid=" << target->getObjectGuid().GetRawValue();

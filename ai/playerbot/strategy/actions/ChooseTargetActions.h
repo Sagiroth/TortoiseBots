@@ -41,9 +41,12 @@ namespace ai
         // series 96 orders over ~50 min with zero kills, and such bots log nothing else,
         // so nothing showed why). The extra "GrindTargetRepeat" row carries the state
         // that separates the two causes - never arrived (not in combat, the mob is not
-        // our victim) from arrived and stuck - so the next run answers it from the log.
+        // our victim) from arrived and stuck. Throttled: from the third repeat on, at most
+        // one row per window, so a bot looping for an hour costs a line a minute instead
+        // of one per order.
         ObjectGuid lastGrindTarget;
         uint32 lastGrindOrderMs = 0;
+        uint32 lastRepeatLogMs = 0;
         uint32 grindRepeatCount = 0;
 
         void LogRepeatOrder(Unit* target);
