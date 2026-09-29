@@ -112,6 +112,12 @@ namespace ai
         void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
         void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
     };
+
+    // Zero the wait window of every bot the given tank's pull holds, so each
+    // one's own "pull hold expired" trigger releases it (stay + follow) on its
+    // next tick. Used whenever the pull will not bring the party in: the tank
+    // died, the return leg timed out, or the pull ended without aggro.
+    void ReleaseHeldPartyNow(Player* tank);
 }
 
 using ai::PullStrategy;

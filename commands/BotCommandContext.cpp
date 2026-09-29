@@ -305,8 +305,9 @@ void PausePartyDpsForPull(BotCommandContext const& context, Player* executor, ui
     }
 }
 
-// Release the anchor hold placed by PausePartyDpsForPull. Only clears a stay
-// that still matches our anchor copy; a player-placed stay is left alone.
+// Release the anchor hold placed by PausePartyDpsForPull. Dropping the wait
+// window also drops the hold (PlayerbotAI::ChangeStrategy owns that rule, and
+// the hold marker is what keeps a player-placed stay out of it).
 void ReleasePartyDpsFromPull(BotCommandContext const& context, Player* executor)
 {
     for (Player* bot : context.partyBots)
@@ -317,18 +318,6 @@ void ReleasePartyDpsFromPull(BotCommandContext const& context, Player* executor)
         if (!ai || !ai->GetAiObjectContext())
             continue;
         ai->ChangeStrategy("-wait for attack", BotState::BOT_STATE_ALL);
-        ai::PositionMap& posMap = ai->GetAiObjectContext()->GetValue<ai::PositionMap&>("position")->Get();
-        ai::PositionEntry holdPos = posMap["pull hold"];
-        if (!holdPos.isSet())
-            continue;
-        ai::PositionEntry stayPos = posMap["stay"];
-        if (stayPos.isSet() && stayPos.mapId == holdPos.mapId &&
-            stayPos.x == holdPos.x && stayPos.y == holdPos.y)
-        {
-            ai->SetMovementStrategy("follow");
-            posMap.erase("stay");
-        }
-        posMap.erase("pull hold");
     }
 }
 

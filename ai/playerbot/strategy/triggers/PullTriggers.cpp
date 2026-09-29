@@ -6,32 +6,8 @@
 #include "PullTriggers.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/actions/PullActions.h"
-#include "../../runtime/BotManager.h"
-#include "../../runtime/PlayerbotAIStorage.h"
 
 using namespace ai;
-
-namespace
-{
-// Zero every held party bot's wait window so the per-bot "pull hold expired"
-// trigger releases them on the next tick. Used when the tank's return leg
-// times out: the pull ends, but the tank must not release the party itself.
-void ReleasePullHoldNow(Player* tank)
-{
-    if (!tank)
-        return;
-    for (Player* member : LiveGroupMembers(tank->GetGroup()))
-    {
-        if (!member || member == tank || !TortoiseBots::BotManager::Instance().IsBot(member->GetObjectGuid()))
-            continue;
-        PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(member);
-        if (!memberAi || !memberAi->GetAiObjectContext())
-            continue;
-        memberAi->GetAiObjectContext()->GetValue<uint8>("wait for attack time")->Set(0);
-        memberAi->GetAiObjectContext()->GetValue<time_t>("combat start time")->Set(time(0));
-    }
-}
-} // namespace
 
 bool PullStartTrigger::IsActive()
 {
@@ -91,7 +67,7 @@ bool PullEndTrigger::IsActive()
     // run out its full length first).
     if (!bot->IsAlive())
     {
-        ReleasePullHoldNow(bot);
+        ReleaseHeldPartyNow(bot);
         return true;
     }
 
@@ -115,7 +91,7 @@ bool PullEndTrigger::IsActive()
         time_t returnStart = strategy->GetReturnStartTime();
         if (returnStart > 0 && time(0) - returnStart >= static_cast<time_t>(sPlayerbotAIConfig.pullBackMaxReturnTime))
         {
-            ReleasePullHoldNow(bot);
+            ReleaseHeldPartyNow(bot);
             return true;
         }
 
@@ -148,9 +124,6 @@ bool PullHoldExpiredTrigger::IsActive()
     PositionMap& posMap = AI_VALUE(PositionMap&, "position");
     if (!posMap["pull hold"].isSet())
         return false;
-    // Early release already dropped the wait strategy: finish the cleanup.
-    if (!ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT))
-        return true;
     time_t combatStart = AI_VALUE(time_t, "combat start time");
     if (combatStart <= 0)
         return true;
@@ -174,6 +147,11 @@ bool PullAnchorDoneTrigger::IsActive()
     // with a live target left to tank. Once nothing is left - the mob dead,
     // the pack finished, the hold broken off - the tank follows the party
     // again instead of standing at the anchor forever.
+    //
+    // This runs inside the combat engine, which is evaluated between reaction
+    // ticks: it frees the tank in the same tick the fight is over, while
+    // PlayerbotAI::OnCombatEnded is the guarantee (it fires with the engine
+    // switch, where this trigger no longer exists). Both call the same release.
     if (sServerFacade.IsInCombat(bot))
         return false;
 

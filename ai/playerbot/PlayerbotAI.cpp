@@ -1168,6 +1168,15 @@ void PlayerbotAI::OnCombatEnded()
             StopMoving();
         }
 
+        // The combat engine drops the "pull anchor done" trigger with it: a
+        // pullback parks the tank on stay at the anchor for the fight it brings
+        // in, and that hold is over the moment the fight is. Releasing it here
+        // (rather than from a trigger in one engine) is what makes the release
+        // engine-independent - without it the tank kept the stay in
+        // BOT_STATE_NON_COMBAT, where no pull trigger exists, and never
+        // followed the party again.
+        ReleasePullHold();
+
         ChangeEngine(BotState::BOT_STATE_NON_COMBAT);
     }
 }
@@ -1401,6 +1410,10 @@ void PlayerbotAI::OnDeath()
         SET_AI_VALUE(time_t, "combat start time", 0);
         SET_AI_VALUE2(bool, "manual bool", "enemies near corpse", false);
         SET_AI_VALUE2(bool, "manual bool", "enemies near graveyard", false);
+        // A corpse cannot hold an anchor, and the dead engine is no place to
+        // keep one: the tank would come back from the spirit healer still
+        // parked on the stay that pull placed it on, instead of following.
+        ReleasePullHold();
         ChangeEngine(BotState::BOT_STATE_DEAD);
     }
 }
@@ -2781,6 +2794,14 @@ void PlayerbotAI::ReInitCurrentEngine()
 
 void PlayerbotAI::ChangeStrategy(const std::string& names, BotState type)
 {
+    // The wait window is the hold's own guard, so it must not outlive it:
+    // whichever path drops "wait for attack" - a bot's own release, a party
+    // release, or a player's ".bot co -wait for attack" - frees the anchor hold
+    // with it. One rule here beats repeating the release at every caller; a
+    // hold left without its guard would keep the bot on stay for good.
+    if (names.find("-wait for attack") != std::string::npos)
+        ReleasePullHold();
+
     if(type == BotState::BOT_STATE_ALL)
     {
         for (uint8 i = 0; i < (uint8)BotState::BOT_STATE_ALL; i++)
@@ -6519,6 +6540,13 @@ bool PlayerbotAI::HasActiveMovementStrategy()
 
 void PlayerbotAI::SetMovementStrategy(const std::string& movement)
 {
+    // An explicit movement order supersedes a pull's anchor hold. Dropping the
+    // marker here is what lets the release paths tell our anchor stay from a
+    // stay the player asked for: a player-placed stay must survive the hold's
+    // release. Callers that place the hold write the marker after calling this.
+    if (aiObjectContext)
+        aiObjectContext->GetValue<PositionMap&>("position")->Get().erase("pull hold");
+
     // Keep the mature chat-shortcut semantics in one place. Follow, wander,
     // and stay are the mutually exclusive owner-controlled modes. Guard and
     // free intentionally retain their mature relationships with passive/stay.
@@ -6574,6 +6602,29 @@ void PlayerbotAI::EnsureDefaultMovementStrategy(Player* requester)
             PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL,
             false
         );
+    }
+}
+
+void PlayerbotAI::ReleasePullHold()
+{
+    if (!aiObjectContext)
+        return;
+
+    // "pull hold" is the marker that the stay in posMap["stay"] is the anchor a
+    // pull parked this bot on. Its absence means either no hold was placed or a
+    // later movement order took it over (SetMovementStrategy drops the marker),
+    // so a stay the player asked for is never cleared here. The hold has exactly
+    // one reason - the pull that placed it - and the caller decides that it is
+    // over: the fight ended, the bot died, or the wait window was cut short.
+    PositionMap& posMap = aiObjectContext->GetValue<PositionMap&>("position")->Get();
+    if (!posMap["pull hold"].isSet())
+        return;
+
+    posMap.erase("pull hold");
+    if (posMap["stay"].isSet())
+    {
+        posMap.erase("stay");
+        EnsureDefaultMovementStrategy();
     }
 }
 

@@ -1,9 +1,28 @@
 
 #include "playerbot/playerbot.h"
 #include "playerbot/strategy/PassiveMultiplier.h"
+#include "../../runtime/BotManager.h"
+#include "../../runtime/PlayerbotAIStorage.h"
+#include "playerbot/GroupMembers.h"
 #include "PullStrategy.h"
 
 using namespace ai;
+
+void ai::ReleaseHeldPartyNow(Player* tank)
+{
+    if (!tank)
+        return;
+    for (Player* member : LiveGroupMembers(tank->GetGroup()))
+    {
+        if (!member || member == tank || !TortoiseBots::BotManager::Instance().IsBot(member->GetObjectGuid()))
+            continue;
+        PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(member);
+        if (!memberAi || !memberAi->GetAiObjectContext())
+            continue;
+        memberAi->GetAiObjectContext()->GetValue<uint8>("wait for attack time")->Set(0);
+        memberAi->GetAiObjectContext()->GetValue<time_t>("combat start time")->Set(time(0));
+    }
+}
 
 class PullStrategyActionNodeFactory : public NamedObjectFactory<ActionNode>
 {
