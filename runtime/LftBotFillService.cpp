@@ -245,11 +245,59 @@ bool LftBotFillService::EquipBestShieldFromBags(Player* bot) const
     ItemPrototype const* worn = offhand ? offhand->GetProto() : nullptr;
     if (worn && worn->Class == ITEM_CLASS_ARMOR && worn->SubClass == ITEM_SUBCLASS_ARMOR_SHIELD)
         return true;
-    // Scan backpack and equipped bags for the highest-item-level shield the core accepts.
+
+    // Backpack (bag 0, slots 23..38) and equipped bags (bag slots 19..22).
+    auto forEachBagItem = [&](auto const& consider)
+    {
+        for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+            if (Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                consider(item);
+
+        for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+        {
+            Bag const* pBag = (Bag const*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag);
+            uint32 size = pBag ? pBag->GetBagSize() : 0;
+            for (uint32 slot = 0; slot < size; ++slot)
+                if (Item* item = bot->GetItemByPos(bag, static_cast<uint8>(slot)))
+                    consider(item);
+        }
+    };
+
+    // A tank still wielding a two-hander cannot take the shield at all: core
+    // refuses the off-hand while a 2H is used, so the quick fix below would
+    // fail for every shield in the bags and the role would be skipped. Put the
+    // best one-hander the core accepts into the main hand first (core's own
+    // CanEquipItem applies class, skill and level rules), then the shield.
+    if (bot->IsTwoHandUsed())
+    {
+        Item* bestMh = nullptr;
+        forEachBagItem([&](Item* item)
+        {
+            ItemPrototype const* proto = item->GetProto();
+            if (!proto || proto->Class != ITEM_CLASS_WEAPON ||
+                (proto->InventoryType != INVTYPE_WEAPON && proto->InventoryType != INVTYPE_WEAPONMAINHAND))
+                return;
+
+            uint16 dest = 0;
+            if (bot->CanEquipItem(EQUIPMENT_SLOT_MAINHAND, dest, item, true) != EQUIP_ERR_OK)
+                return;
+
+            if (!bestMh || proto->ItemLevel > bestMh->GetProto()->ItemLevel)
+                bestMh = item;
+        });
+
+        if (bestMh)
+        {
+            uint16 src = (static_cast<uint16>(bestMh->GetBagSlot()) << 8) | bestMh->GetSlot();
+            uint16 dst = (static_cast<uint16>(INVENTORY_SLOT_BAG_0) << 8) | EQUIPMENT_SLOT_MAINHAND;
+            bot->SwapItem(src, dst);
+        }
+    }
+
+    // Highest-item-level shield the core accepts.
     Item* best = nullptr;
-    auto checkCandidate = [&](Item* item) {
-        if (!item)
-            return;
+    forEachBagItem([&](Item* item)
+    {
         ItemPrototype const* proto = item->GetProto();
         if (!proto || proto->Class != ITEM_CLASS_ARMOR || proto->SubClass != ITEM_SUBCLASS_ARMOR_SHIELD)
             return;
@@ -258,20 +306,8 @@ bool LftBotFillService::EquipBestShieldFromBags(Player* bot) const
             return;
         if (!best || proto->ItemLevel > best->GetProto()->ItemLevel)
             best = item;
-    };
+    });
 
-    // 1. Backpack (bag 0, slots 23..38)
-    for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
-        checkCandidate(bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
-
-    // 2. Equipped bags (bag slots 19..22)
-    for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
-    {
-        Bag const* pBag = (Bag const*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag);
-        uint32 size = pBag ? pBag->GetBagSize() : 0;
-        for (uint32 slot = 0; slot < size; ++slot)
-            checkCandidate(bot->GetItemByPos(bag, static_cast<uint8>(slot)));
-    }
     if (!best)
         return false;
     uint8 bagIndex = best->GetBagSlot();

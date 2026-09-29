@@ -633,7 +633,22 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
 
     uint8 slot = ItemUsageValue::GetPreferredEquipSlot(bot, bagItem, itemProto);
     if (slot == NULL_SLOT && !isQuiverUpgradeCandidate)
+    {
+        // A two-hander in the main hand makes core resolve no off-hand slot, so
+        // every shield the bot could wear reads as useless here and the next
+        // vendor visit sells it (Turtle keeps buyback rows in the DB, which is
+        // where the pool's "shield still in the bag" actually sat). Keep it
+        // instead: equipping stays a no-op while the two-hander is worn, and the
+        // next audit puts the shield on as soon as a one-hander takes the main
+        // hand. Which hand the bot wants is decided by the spec (protection
+        // warriors and paladins list the shield as their off-hand).
+        if (itemProto->Class == ITEM_CLASS_ARMOR &&
+            itemProto->SubClass == ITEM_SUBCLASS_ARMOR_SHIELD &&
+            bot->IsTwoHandUsed())
+            return ItemUsage::ITEM_USAGE_EQUIP;
+
         return ItemUsage::ITEM_USAGE_NONE;
+    }
 
     uint16 dest = ((INVENTORY_SLOT_BAG_0 << 8) | slot);
 

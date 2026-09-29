@@ -1928,19 +1928,29 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
         if (incremental && upgradeSlots.size() && upgradeSlots[slot] != true && !(slot == EQUIPMENT_SLOT_TRINKET1 || slot == EQUIPMENT_SLOT_TRINKET2))
             continue;
 
-        // Fresh seed: a leftover starter shield sitting under a two-handed
-        // main hand is not equippable in-game (2H disables the offhand slot),
-        // so it is stale band-breaking junk — clear it and leave the slot
-        // legally empty.
+        // Fresh seed: the main hand is rolled first, and a two-handed weapon
+        // makes the off-hand slot illegal (2H disables it). Whatever still sits
+        // there is not junk though — a shield or an off-hand weapon this class
+        // can wear is kept in the bags, so the next seed or the equipment audit
+        // can use it the moment a one-hander takes the main hand. Destroying it
+        // here is how fresh protection bots lost their starter shield for good.
+        // Only an item this class can never use, or one the bags no longer have
+        // room for, is cleared.
         if (seedSpread && slot == EQUIPMENT_SLOT_OFFHAND)
         {
             Item* mhItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
             Item* ohItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
             if (mhItem && mhItem->GetProto() && mhItem->GetProto()->InventoryType == INVTYPE_2HWEAPON && ohItem)
             {
-                sLog.outDetail("Bot #%d <%s>: clearing stale offhand %u under 2H main hand",
-                    bot->GetGUIDLow(), bot->GetName(), ohItem->GetEntry());
-                bot->DestroyItem(ohItem->GetBagSlot(), ohItem->GetSlot(), true);
+                if (bot->CanUseItem(ohItem) == EQUIP_ERR_OK)
+                    bot->AutoUnequipItemFromSlot(EQUIPMENT_SLOT_OFFHAND, false);
+
+                if (Item* stillEquipped = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                {
+                    sLog.outDetail("Bot #%d <%s>: clearing stale offhand %u under 2H main hand",
+                        bot->GetGUIDLow(), bot->GetName(), stillEquipped->GetEntry());
+                    bot->DestroyItem(stillEquipped->GetBagSlot(), stillEquipped->GetSlot(), true);
+                }
             }
         }
 
