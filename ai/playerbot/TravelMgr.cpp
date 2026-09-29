@@ -1499,7 +1499,11 @@ void TravelMgr::LoadQuestTravelTable()
     sPlayerbotAIConfig.openLog("bot_events.csv", "w");
     sPlayerbotAIConfig.openLog("travel_map.csv", "w");
     sPlayerbotAIConfig.openLog("quest_map.csv", "w");
-    sPlayerbotAIConfig.openLog("deaths.csv", "w");
+    // deaths.csv is an event history, not a per-run dump like the files above:
+    // opening it in append keeps every death across a pool reset (and across a
+    // full restart when the file already exists), so before/after comparisons
+    // stay possible.
+    sPlayerbotAIConfig.openLog("deaths.csv", "a");
     sPlayerbotAIConfig.openLog("player_paths.csv", "w");
     sPlayerbotAIConfig.openLog("travel_destinations.csv", "w");
     sPlayerbotAIConfig.openLog("deadzone.csv", "w");

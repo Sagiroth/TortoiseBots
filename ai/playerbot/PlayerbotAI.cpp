@@ -1330,6 +1330,15 @@ void PlayerbotAI::OnDeath()
                     killerName, "", "death");
             }
 
+            // Death gets its own bot_events.csv row: logEvent also records the
+            // position and the bot's level, info1/info2 carry the killer and its
+            // level. RepopAction only says a stuck rescue ran, so a dead bot and a
+            // teleported live bot are otherwise identical in the event stream and a
+            // death is visible only in deaths.csv.
+            sPlayerbotAIConfig.logEvent(this, "BotDeath",
+                !killerName.empty() ? killerName : (lastKiller_.isEnvironment ? "Environment" : "none"),
+                std::to_string(killerLevel));
+
             if (sPlayerbotAIConfig.hasLog("deaths.csv"))
             {
                 WorldPosition botPos(bot);
