@@ -747,6 +747,12 @@ public:
     void SetActionDuration(const Action* action);
     void SetActionDuration(uint32 duration);
 
+    // Human orders act now: drop the bot's own action clock instead of letting
+    // a leftover delay (teleport grace, failed cast, blocked tick) stall the
+    // command's next step. The pull commands need it - they force one tick
+    // inline, but the pull itself continues on the bot's own ticks.
+    void ClearActionClock() { ResetAIInternalUpdateDelay(); }
+
     const Action* GetLastExecutedAction(BotState state) const;
 
     bool IsImmuneToSpell(uint32 spellId) const;

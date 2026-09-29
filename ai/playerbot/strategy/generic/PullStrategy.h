@@ -31,16 +31,25 @@ namespace ai
         bool IsPullPendingToStart() const { return pendingToStart; }
         bool HasPullStarted() const { return pullStartTime > 0; }
         bool HasPullActionCompleted() const { return pullActionCompleted; }
+        // Ranged pull: the cast only opens the core's ranged auto-repeat, the
+        // arrow flies a swing later (Unit::_UpdateAutoRepeatSpell) and any
+        // other cast or movement cancels it. The pull action records the cast
+        // here and waits for the target to show the shot before it completes.
+        bool HasPullActionCast() const { return pullActionCastMs != 0; }
+        uint32 GetPullActionCastAgeMs() const;
+        void NotePullActionCast();
         void OnPullStarted();
         void OnPullActionCompleted();
         void OnPullEnded();
         ReactStates GetPetReactState() const { return petReactState; }
         void SetPetReactState(ReactStates reactState) { petReactState = reactState; }
         // Per-command mode: true while a pull/pullback command owns this pull.
-        // The return leg follows commandPullback, not the sticky strategy.
+        // The return leg follows the intent snapshotted by RequestPull, not the
+        // strategy set at evaluation time.
         void BeginCommand(bool pullback, bool hadPullBackStrategy, uint32 joinDelaySeconds = 0);
         bool IsCommandActive() const { return commandActive; }
         bool IsCommandPullback() const { return commandPullback; }
+        bool IsPullBackIntent() const { return pullBackIntent; }
         bool HadPullBack() const { return hadPullBack; }
         uint32 GetCommandJoinDelay() const { return commandJoinDelay; }
         time_t GetReturnStartTime() const { return returnStartTime; }
@@ -60,12 +69,17 @@ namespace ai
         bool pendingToStart;
         bool pullActionCompleted;
         time_t pullStartTime;
+        // WorldTimer ms of the ranged pull cast this pull is waiting on, or 0.
+        uint32 pullActionCastMs;
         ReactStates petReactState;
         // Per-command return mode: set by the pull/pullback command, restored
         // to the tank's default when the pull ends. Never sticky.
         bool commandPullback;
         bool commandActive;
         bool hadPullBack;
+        // Return leg for the pull in flight (see RequestPull): the command's
+        // mode, or the tank's own "pull back" for an automatic pull.
+        bool pullBackIntent;
         uint32 commandJoinDelay;
         time_t returnStartTime;
     };

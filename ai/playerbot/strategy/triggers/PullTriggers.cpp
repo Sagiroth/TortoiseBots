@@ -96,11 +96,9 @@ bool PullEndTrigger::IsActive()
     }
 
     const time_t secondsSincePullStarted = time(0) - strategy->GetPullStartTime();
-    // Per-command mode owns the return leg; the sticky strategy is only the
-    // fallback for automatic dungeon pulls.
-    const bool pullback = strategy->IsCommandActive()
-        ? strategy->IsCommandPullback()
-        : ai->HasStrategy("pull back", BotState::BOT_STATE_COMBAT);
+    // The return leg follows the intent recorded when the pull was requested
+    // (command mode, or the tank's own "pull back" for an automatic pull).
+    const bool pullback = strategy->IsPullBackIntent();
 
     if (pullback && strategy->HasPullActionCompleted())
     {

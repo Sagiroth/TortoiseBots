@@ -12,6 +12,25 @@ using namespace ai;
 
 namespace
 {
+// The core fires the first ranged auto-shot up to 500 ms after the cast
+// (Unit::_UpdateAutoRepeatSpell's first-cast grace) plus the bow's swing.
+// Past this the pull goes on regardless: a pull that cannot land must not hold
+// the tank - and with it the party's join window - at the pull spot.
+constexpr uint32 kPullShotWaitMs = 4000;
+
+// True once the pulled target has actually been hit: the arrow's damage put us
+// on its threat list, it came for us, or it is in combat at all.
+bool PullTargetEngaged(Unit* target, Player* bot)
+{
+    if (!target || !bot)
+        return false;
+    if (target->GetVictim() == bot)
+        return true;
+    if (target->GetThreatManager().getThreat(bot) > 0.0f)
+        return true;
+    return target->IsInCombat();
+}
+
 // Re-stamp every held party bot's combat-start clock, optionally narrowing
 // its wait window. Shared by the pull landing (once the cast lands) and the
 // pull end (when a pullback's tank is back and takes the fight over).
@@ -270,16 +289,34 @@ bool PullAction::Execute(Event& event)
                 strategy->OnPullActionCompleted();
                 return true;
             }
+            else if (strategy->HasPullActionCast())
+            {
+                // The cast went out: wait for the arrow itself. In this core
+                // "Shoot Bow" only opens the ranged auto-repeat - the arrow
+                // flies a swing later (Unit::_UpdateAutoRepeatSpell), and the
+                // next cast or any movement cancels it. Completing the pull on
+                // the cast made the tank run back during the windup, so the
+                // arrow never landed and the mob never aggroed.
+                // Re-arm the pull request (no time reset): that is what keeps
+                // this poll queued every tick while the tank stands still.
+                strategy->RequestPull(target, false);
+
+                if (PullTargetEngaged(target, bot) || strategy->GetPullActionCastAgeMs() >= kPullShotWaitMs)
+                {
+                    strategy->OnPullActionCompleted();
+                    // Anchor the DPS join delay to the landing, not to the
+                    // command: re-stamp every held party bot's combat-start
+                    // clock so an ordinary pull holds for the full delay after
+                    // the shot lands. Pullbacks keep the wide return-covering
+                    // window here; the pull end narrows it to the join delay.
+                    RestampPullParty(bot, 0, false);
+                }
+                return true;
+            }
             else if (ai->DoSpecificAction(actionName, event, true))
             {
                 bot->SetSelectionGuid(target->getObjectGuid());
-                strategy->OnPullActionCompleted();
-                // Anchor the DPS join delay to the landing, not to the
-                // command: re-stamp every held party bot's combat-start clock
-                // so an ordinary pull holds for the full delay after the cast
-                // lands. Pullbacks keep the wide return-covering window here;
-                // the pull end narrows it to the join delay.
-                RestampPullParty(bot, 0, false);
+                strategy->NotePullActionCast();
                 return true;
             }
             else
@@ -297,6 +334,12 @@ bool PullAction::isPossible()
     PullStrategy* strategy = PullStrategy::Get(ai);
     if (strategy)
     {
+        // Waiting for the arrow: the spell cannot be cast again (that would
+        // restart the ranged swing) and there is nothing left to check - the
+        // action only has to observe the shot.
+        if (strategy->HasPullActionCast())
+            return true;
+
         if (strategy->GetPullActionName() == "reach pull")
             return true;
 
@@ -332,6 +375,17 @@ void PullAction::InitPullAction()
             }
         }
     }
+}
+
+bool PullAction::isUseful()
+{
+    // Waiting for the arrow: the spell's own usefulness no longer applies, and
+    // the action has to stay eligible or the wait would never be observed.
+    PullStrategy* strategy = PullStrategy::Get(ai);
+    if (strategy && strategy->HasPullActionCast())
+        return true;
+
+    return CastSpellAction::isUseful();
 }
 
 bool PullEndAction::Execute(Event& event)

@@ -43,9 +43,11 @@ PullStrategy::PullStrategy(PlayerbotAI* ai, std::string pullAction, std::string 
 , pendingToStart(false)
 , pullActionCompleted(false)
 , pullStartTime(0)
+, pullActionCastMs(0)
 , commandPullback(false)
 , commandActive(false)
 , hadPullBack(false)
+, pullBackIntent(false)
 , commandJoinDelay(0)
 , returnStartTime(0)
 , petReactState(REACT_DEFENSIVE)
@@ -325,17 +327,34 @@ void PullStrategy::OnPullActionCompleted()
     pendingToStart = false;
     pullActionCompleted = true;
     pullStartTime = time(0);
-    if (commandActive && commandPullback && !returnStartTime)
+    if (IsPullBackIntent() && !returnStartTime)
         returnStartTime = time(0);
 }
+
+void PullStrategy::NotePullActionCast()
+{
+    pullActionCastMs = WorldTimer::getMSTime();
+    if (!pullActionCastMs)
+        pullActionCastMs = 1; // 0 is "no cast yet"
+}
+
+uint32 PullStrategy::GetPullActionCastAgeMs() const
+{
+    if (!pullActionCastMs)
+        return 0;
+    return WorldTimer::getMSTimeDiff(pullActionCastMs, WorldTimer::getMSTime());
+}
+
 void PullStrategy::OnPullEnded()
 {
     pendingToStart = false;
     pullActionCompleted = false;
     pullStartTime = 0;
+    pullActionCastMs = 0;
     commandActive = false;
     commandPullback = false;
     hadPullBack = false;
+    pullBackIntent = false;
     commandJoinDelay = 0;
     returnStartTime = 0;
     SetTarget(nullptr);
@@ -354,10 +373,21 @@ void PullStrategy::RequestPull(Unit* target, bool resetTime)
 {
     SetTarget(target);
     pendingToStart = true;
+
+    // Return-leg intent, fixed for the whole pull: the command's own mode when
+    // it owns this pull, else the tank's configured "pull back" behaviour (the
+    // fallback for its automatic dungeon pulls). Snapshotting it here keeps the
+    // decision out of reach of later strategy changes - the pull end restores
+    // the tank's default "pull back", and the return trigger must not read that
+    // as "this pull was a pullback".
+    pullBackIntent = commandActive ? commandPullback
+        : ai->HasStrategy("pull back", BotState::BOT_STATE_COMBAT);
+
     if(resetTime)
     {
         pullActionCompleted = false;
         pullStartTime = time(0);
+        pullActionCastMs = 0;
     }
 }
 float PullMultiplier::GetValue(Action* action)

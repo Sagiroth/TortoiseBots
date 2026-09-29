@@ -1551,6 +1551,9 @@ static bool HandlePullback(ChatHandler* handler, char const* args)
         return true;
     }
 
+    // Same as the .bot action path: do not let the tank's leftover action
+    // clock delay the pull.
+    tankAI->ClearActionClock();
     ExecuteQuietNextAction(tankAI, false);
 
     handler->PSendSysMessage("Pullback requested: tank %s is using its native pull strategy.", tank->GetName());
@@ -2800,6 +2803,11 @@ static bool HandleAction(ChatHandler* handler, char const* args)
             SendActionError(handler, intent, "failed", "The native pull strategy rejected the target.");
             return true;
         }
+        // A human order acts now: the tank's own action clock (left over from
+        // whatever it was doing) would otherwise stall the pull for the rest of
+        // its delay before the second pull tick ever runs - the reported "tank
+        // stands still for seconds, then starts pulling".
+        ai->ClearActionClock();
         // Pull start/action are normal movement-priority actions.  A minimal
         // step filters them out and leaves the tank waiting for a later tick.
         ExecuteQuietNextAction(ai, false);

@@ -63,6 +63,7 @@ namespace ai
         PullAction(PlayerbotAI* ai, std::string name = "pull action");
         bool Execute(Event& event) override;
         bool isPossible() override;
+        bool isUseful() override;
     private:
         void InitPullAction();
         std::string GetTargetName() override { return "pull target"; }
