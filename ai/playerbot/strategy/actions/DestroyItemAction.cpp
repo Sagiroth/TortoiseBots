@@ -36,20 +36,24 @@ void DestroyItemAction::DestroyItem(FindItemVisitor* visitor, Player* requester)
 
 bool SmartDestroyItemAction::DestroyGreyJunk(Player* requester)
 {
-    //Collected as item ids, not item pointers: DestroyItem() frees every stack
-    //it finds, so a second stack of an id we already threw away would be a
-    //dangling pointer. The map also dedupes stacks of the same item and sorts
-    //them by value, so the cheapest grey goes first.
-    std::map<uint32, uint32> greyByValue;
+    //Item ids, never item pointers: DestroyItem() frees every stack carrying
+    //the id, so a second stack of an id already thrown away would be a
+    //dangling pointer. Stacks of one id are merged while reading, then the
+    //ids are ordered by value so the cheapest grey goes first - a map alone
+    //would only order them by item id.
+    std::map<uint32, uint32> valueById;
     for (Item* item : AI_VALUE2(std::list<Item*>, "inventory items", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_VENDOR)))
     {
         ItemPrototype const* proto = item->GetProto();
 
         if (proto && proto->Quality == ITEM_QUALITY_POOR)
-            greyByValue[proto->ItemId] += proto->SellPrice * item->GetCount();
+            valueById[proto->ItemId] += proto->SellPrice * item->GetCount();
     }
 
-    for (auto& grey : greyByValue)
+    std::list<std::pair<uint32, uint32>> cheapestFirst(valueById.begin(), valueById.end());
+    cheapestFirst.sort([](std::pair<uint32, uint32> const& left, std::pair<uint32, uint32> const& right) { return left.second < right.second; });
+
+    for (auto& grey : cheapestFirst)
     {
         if (HAS_AI_VALUE2("force item usage", grey.first))
             continue;
