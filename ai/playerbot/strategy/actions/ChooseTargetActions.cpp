@@ -38,10 +38,29 @@ bool AttackAnythingAction::isUseful()
     if (ai->ContainsStrategy(STRATEGY_TYPE_HEAL) && !ai->HasStrategy("offdps", BotState::BOT_STATE_COMBAT))
         return false;
 
+    // A finished quest waiting at its taker is the bot's own business: the walk
+    // to the hand-in must not lose to "attack before being attacked", or a bot
+    // with a level-appropriate mob in front of it never takes a step. Scoped to
+    // that one case - an objective, grind spot, vendor or giver target keeps the
+    // old attack-first rule - so grinding is not starved for bots that merely
+    // happen to be travelling.
+    TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
+    TravelDestination* destination = travelTarget->IsActive() ? travelTarget->GetDestination() : nullptr;
+    if (destination && destination->GetPurpose() == TravelDestinationPurpose::QuestTaker)
+    {
+        // QuestTaker destinations are only ever built as
+        // QuestRelationTravelDestination (TravelMgr::AddDestination), whose id
+        // is the quest that taker rewards.
+        QuestTravelDestination* questDestination = static_cast<QuestTravelDestination*>(destination);
+        if (bot->GetQuestStatus(questDestination->GetQuestId()) == QUEST_STATUS_COMPLETE &&
+            CanFreeMoveValue::CanFreeMoveTo(ai, *travelTarget->getPosition()))
+            return false;
+    }
+
     if(!target->IsPlayer() && sServerFacade.isInFront(bot, target, target->GetCombatReach(bot, false, 0.0f) * 1.5f, M_PI_F * 0.5f) && target->IsHostileTo(bot) && target->GetLevel() < bot->GetLevel() + 3.0) // Attack before being attacked.
         return true;
 
-    if (AI_VALUE(bool, "travel target traveling") && CanFreeMoveValue::CanFreeMoveTo(ai, *AI_VALUE(TravelTarget*,"travel target")->getPosition())) //Bot is traveling
+    if (AI_VALUE(bool, "travel target traveling") && CanFreeMoveValue::CanFreeMoveTo(ai, *travelTarget->getPosition())) //Bot is traveling
         return false;
 
     return true;

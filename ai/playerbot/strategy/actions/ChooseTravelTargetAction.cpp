@@ -1696,17 +1696,19 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
         }
 
         // Quest-log upkeep for masterless random bots: enter hand-in mode at
-        // 2 finished quests (the old threshold of 5 sat above the observed
-        // ~2.7 backlog per bot, so turn-ins kept losing the distance race to
-        // objectives), then stay in it until the log drains to zero finished
-        // quests so one town trip hands everything in instead of ping-ponging
-        // out after the first turn-in drops the count to 1. Owned bots keep
-        // the old threshold. State lives in the upkeep predicate itself via
-        // the facade value store (no new value class).
+        // 1 finished quest, then stay in it until the log drains to zero
+        // finished quests so one town trip hands everything in instead of
+        // ping-ponging out after the first turn-in drops the count to 1. A
+        // threshold of 2 left the latch disengaged: on a fresh 500-bot pool 62
+        // bots held exactly one finished quest and a single bot held two, so
+        // the average backlog sat below the gate and turn-ins kept losing the
+        // distance race to objectives. Owned bots keep the old threshold of 5.
+        // State lives in the upkeep predicate itself via the facade value store
+        // (no new value class).
         bool upkeepBot = sPlayerbotAIConfig.botQuestLogUpkeep &&
             !ai->HasActivePlayerMaster() &&
             sRandomBotFacade.IsRandomBot(bot);
-        uint32 handInThreshold = upkeepBot ? 2 : 5;
+        uint32 handInThreshold = upkeepBot ? 1 : 5;
         if (upkeepBot)
         {
             bool draining = sRandomBotFacade.GetValue(bot, "quest hand-in") != 0;
