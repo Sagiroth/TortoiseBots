@@ -1,6 +1,7 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
 #include "GenericActions.h"
+#include "playerbot/strategy/values/ItemUsageValue.h"
 
 namespace ai
 {
@@ -44,6 +45,12 @@ namespace ai
         virtual std::vector<std::string> GetUsedActions() { return {"destroy"}; }
         virtual std::vector<std::string> GetUsedValues() { return { "bag space", "force item usage" }; }
 #endif
+
+    protected:
+        //Frees bag space by throwing away grey vendor trash, cheapest first.
+        //Returns true once the bags are back under the 90% threshold.
+        bool DestroyGreyJunk(Player* requester);
+        bool DestroyUsages(Player* requester, std::vector<ItemUsage> const& usages);
     };
 
     class DestroyAllGrayItemsAction : public DestroyItemAction

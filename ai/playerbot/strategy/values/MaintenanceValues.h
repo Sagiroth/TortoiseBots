@@ -64,6 +64,13 @@ namespace ai
         virtual bool Calculate() override { return  ai->HasStrategy("rpg maintenance", BotState::BOT_STATE_NON_COMBAT) && AI_VALUE(uint8, "durability inventory") < 100 && AI_VALUE(uint32, "min repair cost") < AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::repair); };
     };
 
+    //True when the vendor-usable stock a broke bot carries is worth the walk to
+    //a vendor: it either covers the money missing for the cheapest trainable
+    //class rank, or a real batch has piled up while the bags are filling.
+    //Without that threshold a bot that cannot afford one rank ping-pongs
+    //between the field and town, one grey pelt per trip, and never grinds.
+    bool SellableStockWorthAVendorTrip(PlayerbotAI* ai);
+
     class ShouldSellValue : public BoolCalculatedValue
     {
     public:
@@ -73,15 +80,17 @@ namespace ai
             if (AI_VALUE(uint8, "bag space") > 80)
                 return true;
 
-            //A broke bot converts loot to coin instead of waiting for a full bag:
-            //sell whenever the cheapest trainable class rank does not fit the spell
-            //budget and there is something a vendor will buy.
-            return CantAffordNextSpell(ai) &&
-                AI_VALUE2(uint32, "item count", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_VENDOR)) > 0;
+            //A broke bot converts loot to coin instead of waiting for a full
+            //bag, as long as the trip actually funds the missing spell rank.
+            return SellableStockWorthAVendorTrip(ai);
         }
 
         //True when the bot has trainable class spells it cannot pay for.
         static bool CantAffordNextSpell(PlayerbotAI* ai);
+
+        //True when a group member is about to leave the party for a vendor and
+        //must therefore not be pulled into an elite or boss fight.
+        static bool GroupMemberLeavingForVendor(PlayerbotAI* ai);
     };
 
     class CanSellValue : public BoolCalculatedValue
@@ -159,14 +168,14 @@ namespace ai
     {
     public:
         CanFightEliteValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "can fight elite", 2) {}
-        virtual bool Calculate() override { return bot->GetGroup() && AI_VALUE2(bool, "group and", "can fight equal") && AI_VALUE2(bool, "group and", "following party") && !AI_VALUE2(bool, "group or", "should sell,can sell"); };
+        virtual bool Calculate() override { return bot->GetGroup() && AI_VALUE2(bool, "group and", "can fight equal") && AI_VALUE2(bool, "group and", "following party") && !ShouldSellValue::GroupMemberLeavingForVendor(ai); };
     };
 
     class CanFightBossValue : public BoolCalculatedValue
     {
     public:
         CanFightBossValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "can fight boss", 2) {}
-        virtual bool Calculate() override { return bot->GetGroup() && bot->GetGroup()->GetMembersCount() > 3 && AI_VALUE2(bool, "group and", "can fight equal") && AI_VALUE2(bool, "group and", "following party") && !AI_VALUE2(bool, "group or", "should sell,can sell"); };
+        virtual bool Calculate() override { return bot->GetGroup() && bot->GetGroup()->GetMembersCount() > 3 && AI_VALUE2(bool, "group and", "can fight equal") && AI_VALUE2(bool, "group and", "following party") && !ShouldSellValue::GroupMemberLeavingForVendor(ai); };
     };
 
     class ShouldDrinkValue : public BoolCalculatedValue

@@ -34,6 +34,61 @@ void DestroyItemAction::DestroyItem(FindItemVisitor* visitor, Player* requester)
     }
 }
 
+bool SmartDestroyItemAction::DestroyGreyJunk(Player* requester)
+{
+    std::list<Item*> greyItems;
+    for (Item* item : AI_VALUE2(std::list<Item*>, "inventory items", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_VENDOR)))
+    {
+        ItemPrototype const* proto = item->GetProto();
+
+        if (proto && proto->Quality == ITEM_QUALITY_POOR)
+            greyItems.push_back(item);
+    }
+
+    greyItems.sort([](Item* first, Item* second) { return first->GetProto()->SellPrice * first->GetCount() < second->GetProto()->SellPrice * second->GetCount(); });
+
+    for (Item* item : greyItems)
+    {
+        if (HAS_AI_VALUE2("force item usage", item->GetProto()->ItemId))
+            continue;
+
+        FindItemByIdVisitor visitor(item->GetProto()->ItemId);
+        DestroyItem(&visitor, requester);
+
+        if (AI_VALUE(uint8, "bag space") < 90)
+            return true;
+    }
+
+    return false;
+}
+
+//Destroys the listed usages in order, newest item of each usage first, and
+//stops as soon as the bags are back under the 90% threshold. Returns true
+//when that happened.
+bool SmartDestroyItemAction::DestroyUsages(Player* requester, std::vector<ItemUsage> const& usages)
+{
+    for (auto& usage : usages)
+    {
+        std::list<uint32> items = AI_VALUE2(std::list<uint32>, "inventory item ids", "usage " + std::to_string((uint8)usage));
+
+        items.reverse();
+
+        for (auto& item : items)
+        {
+            if (HAS_AI_VALUE2("force item usage", item))
+                continue;
+
+            FindItemByIdVisitor visitor(item);
+            DestroyItem(&visitor, requester);
+
+            if (AI_VALUE(uint8, "bag space") < 90)
+                return true;
+        }
+    }
+
+    return false;
+}
+
 bool SmartDestroyItemAction::Execute(Event& event)
 {
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
@@ -93,32 +148,17 @@ bool SmartDestroyItemAction::Execute(Event& event)
         bestToDestroy.push_back(ItemUsage::ITEM_USAGE_AH);
     }
 
+    if (DestroyUsages(requester, bestToDestroy))
+        return true;
+
+    //A full bag must never cost the bot its potions and food to protect grey
+    //trash worth a few copper, so grey goes before profession stock and
+    //consumables - cheapest first, keeping what is worth selling.
+    if (needsMoney && DestroyGreyJunk(requester))
+        return true;
+
     //If we still need room
-    bestToDestroy.push_back(ItemUsage::ITEM_USAGE_SKILL); //Items that might help tradeskill are more important than above but still expendable.
-    bestToDestroy.push_back(ItemUsage::ITEM_USAGE_USE); //These are more likely to be useful 'soon' but still expendable.
-
-    for (auto& usage : bestToDestroy)
-    {
-        std::list<uint32> items = AI_VALUE2(std::list<uint32>, "inventory item ids", "usage " + std::to_string((uint8)usage));
-
-        items.reverse();
-
-        for (auto& item : items)
-        {
-            if (HAS_AI_VALUE2("force item usage", item))
-                continue;
-
-            FindItemByIdVisitor visitor(item);
-            DestroyItem(&visitor, requester);
-
-            bagSpace = AI_VALUE(uint8, "bag space");
-
-            if(bagSpace < 90)
-                return true;
-        }
-    }
-
-    return false;
+    return DestroyUsages(requester, { ItemUsage::ITEM_USAGE_SKILL, ItemUsage::ITEM_USAGE_USE }); //Items that might help tradeskill are more important than above but still expendable. These are more likely to be useful 'soon' but still expendable.
 }
 
 bool DestroyAllGrayItemsAction::Execute(Event& event)

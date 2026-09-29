@@ -4,27 +4,117 @@
 #include "MapNodes/MasterPlayer.h"
 #include "playerbot/strategy/values/GuildValues.h"
 #include "playerbot/playerbot.h"
+#include "playerbot/WorldPosition.h"
 
 using namespace ai;
 
-//Mirrors the partial-purse rule in RequestNamedTravelTargetAction ("trainer
-//class"): the cheapest green class rank must fit free money for spells.
-bool ShouldSellValue::CantAffordNextSpell(PlayerbotAI* ai)
+//A batch of grey trash this small is not worth the walk on its own, and the
+//bags must already be filling before the bot bothers with it.
+static const uint32 MIN_VENDOR_BATCH_COUNT = 8;
+static const uint8 MIN_VENDOR_BATCH_BAG_SPACE = 60;
+
+//Cheapest green class rank the bot has not learned yet, 0 when the trainer has
+//nothing left to teach.
+static uint32 MinTrainableSpellCost(PlayerbotAI* ai)
 {
     AiObjectContext* context = ai->GetAiObjectContext();
 
     if (!AI_VALUE2(uint32, "train cost", (uint32)TRAINER_TYPE_CLASS)) //Has nothing to train
-        return false;
+        return 0;
 
     uint32 minSpellCost = UINT32_MAX;
     for (TrainerSpell const* trainable : AI_VALUE2(std::vector<TrainerSpell const*>, "trainable spells", TRAINER_TYPE_CLASS))
         if (trainable && trainable->spellCost < minSpellCost)
             minSpellCost = trainable->spellCost;
 
-    if (minSpellCost == UINT32_MAX)
+    return minSpellCost == UINT32_MAX ? 0 : minSpellCost;
+}
+
+//Mirrors the partial-purse rule in RequestNamedTravelTargetAction ("trainer
+//class"): the cheapest green class rank must fit free money for spells. What
+//the purse is missing for that rank, 0 when nothing is missing.
+static uint32 SpellMoneyMissing(PlayerbotAI* ai)
+{
+    uint32 minSpellCost = MinTrainableSpellCost(ai);
+
+    if (!minSpellCost)
+        return 0;
+
+    AiObjectContext* context = ai->GetAiObjectContext();
+    uint32 freeMoney = AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::spells);
+
+    return freeMoney < minSpellCost ? minSpellCost - freeMoney : 0;
+}
+
+bool ShouldSellValue::CantAffordNextSpell(PlayerbotAI* ai)
+{
+    return SpellMoneyMissing(ai) > 0;
+}
+
+//A broke bot that picks up one grey pelt is not a reason to leave the grind
+//spot: it sells the pelt, is still broke, and walks back. Only sell when the
+//stock actually buys the missing spell rank, or when a real batch has piled
+//up and the bags are filling anyway.
+bool SellableStockWorthAVendorTrip(PlayerbotAI* ai)
+{
+    uint32 moneyMissing = SpellMoneyMissing(ai);
+
+    if (!moneyMissing) //The bot can pay for its next rank, or has nothing to train.
         return false;
 
-    return AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::spells) < minSpellCost;
+    //A vendor trip is an overworld errand: never worth it in the middle of a
+    //run, and never worth overruling an explicit player master.
+    if (!WorldPosition(ai->GetBot()).isOverworld() || ai->HasActivePlayerMaster())
+        return false;
+
+    AiObjectContext* context = ai->GetAiObjectContext();
+
+    uint32 sellValue = 0;
+    uint32 sellableCount = 0;
+    for (Item* item : AI_VALUE2(std::list<Item*>, "inventory items", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_VENDOR)))
+    {
+        ItemPrototype const* proto = item->GetProto();
+
+        if (!proto || !proto->SellPrice)
+            continue;
+
+        sellValue += proto->SellPrice * item->GetCount();
+        sellableCount += item->GetCount();
+    }
+
+    if (!sellableCount)
+        return false;
+
+    return sellValue >= moneyMissing || //Selling this stock buys the spell.
+        (sellableCount >= MIN_VENDOR_BATCH_COUNT && AI_VALUE(uint8, "bag space") >= MIN_VENDOR_BATCH_BAG_SPACE);
+}
+
+//A member that is about to leave the party for a vendor must not be dragged
+//into an elite or boss fight. Bag pressure is the only veto: "should sell" is
+//also true for a broke bot that merely plans to liquidate its stock at the
+//next vendor, and one such member must never freeze the whole party.
+bool ShouldSellValue::GroupMemberLeavingForVendor(PlayerbotAI* ai)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+
+    if (!WorldPosition(ai->GetBot()).isOverworld()) //A dungeon run cannot detour to a vendor.
+        return false;
+
+    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "group members"))
+    {
+        Player* player = sObjectMgr.GetPlayer(guid);
+
+        if (!player || !ai->IsSafe(player))
+            continue;
+
+        if (!PlayerbotAIStorage::Instance().GetAI(player))
+            continue;
+
+        if (PAI_VALUE(uint8, "bag space") > 80 && PAI_VALUE(bool, "can sell"))
+            return true;
+    }
+
+    return false;
 }
 
 bool ShouldAHSellValue::Calculate()
