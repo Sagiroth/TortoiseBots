@@ -2032,7 +2032,13 @@ fighting the engine's own state machine:
   not from that flag, so the flag's short post-kill linger suppressed "loot"
   (6.0) while `attack anything` (5.0) was free to order the next pull. The loot
   chain only exists in the non-combat engine, so the clause added nothing except
-  the loss. Dropped; `mounted` still blocks.
+  the loss. The gate is `bot->GetAttackers()` now: the core's own "attacking me"
+  set, filled in `Unit::Attack` (an add counts the moment it aggros, before its
+  first hit) and drained in `CombatStop`/`AttackStop` (its death or evade). That
+  keeps a fresh kill looting at once - the dead mob is already out of the set -
+  while closing the engine's 2s-cached `has attackers` blind spot, in which a
+  corpse could make the bot kneel for `lootDelay` next to an add that already had
+  it as its victim. `mounted` still blocks.
 - `LootObjectStack` dropped a queued corpse 30s after its **first** `Add` and
   never refreshed the timestamp on a repeat `Add`. Corpses are queued when the
   bot starts attacking (`AttackAction::Execute`) and re-offered on the kill's

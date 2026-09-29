@@ -15,7 +15,15 @@ bool LootAvailableTrigger::IsActive()
     // against 43% when the bot stayed quiet for 5-10s. The corpse then expired unopened.
     // "combat" also counted any group member in combat within reactDistance (150y), so a bot
     // party stopped looting while anyone nearby fought.
-    if (AI_VALUE2(bool, "mounted", "self target"))
+    //
+    // bot->GetAttackers() replaces it with the core's own "attacking me right now" set, which has
+    // neither of those two defects: it is filled in Unit::Attack (the moment an add aggros, before
+    // its first hit) and drained in CombatStop/AttackStop (the moment it dies or evades). That
+    // closes the engine's blind spot - "has attackers" is a 2s-cached list, so a corpse could make
+    // the bot kneel for lootDelay next to an add that already had it as its victim - while a kill
+    // still loots at once (the dead mob is gone from the set) and a corpse held up by a real fight
+    // waits in the stack for LOOT_OBJECT_TTL_SECONDS instead of being lost.
+    if (AI_VALUE2(bool, "mounted", "self target") || !bot->GetAttackers().empty())
         return false;
 
     if (!AI_VALUE(bool, "has available loot"))
