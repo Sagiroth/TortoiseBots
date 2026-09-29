@@ -2015,3 +2015,45 @@ after the 2026-09-28 economy review showed the donor shape fighting them:
   and "far from current loot" cannot disagree.
 - `MoveToLootAction` counts a launched-but-stationary approach as a failure, so
   the bounded give-up also covers navmesh paths that degrade to a direct spline.
+
+## Hunter quiver / warlock soul-bag handling — 2026-09-28
+
+Feature: hunter quiver/ammo-pouch slot reservation (`InitBags` leaves one
+slot free for hunters) and tier upgrades across quiver tiers (`InitAmmo`
+moves ammo aside into backpack/bag space before equipping the better
+quiver, so a quiver full of ammo can still be upgraded); quiver in the loot
+push filter; class-aware bag-slot choice in `EquipAction` (a quiver may
+only replace a quiver or take an empty slot, a plain bag never evicts a
+quiver or soul bag, a soul bag replaces a soul bag or takes an empty slot
+and, as the first one, evicts the smallest plain bag, with loud
+`INVENTORY_FULL` instead of silent no-ops); bag and quiver items bypass
+per-slot resolution in the equip audit (core resolves an `INVTYPE_BAG`
+probe to a single slot and vetoes it while a quiver is worn, so a quiver
+upgrade never resolved to a slot); a bag swap reads the item's live
+position (evacuating the replaced bag can move the upgrade bag itself) and
+only reports success when the bag really reached the slot; quiver + soul
+bag usage in `ItemUsageValue` (first quiver/soul bag equips, bigger soul
+bag replaces a smaller one, plain-bag upgrades measured against plain
+containers only).
+
+Source repository: `mod-playerbots` @ `b6696bdbd3740e575598d167d69f39f68cc0b907`
+(local checkout `../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only): no donor equivalent - donor
+`InitBags` fills all four slots uniformly and its equip path only handles
+`ITEM_CLASS_CONTAINER`; it never equips quivers/soul bags specially.
+
+Copied / ported / reimplemented: reimplemented, not copied. Bag-slot rules
+follow the core storage contracts in `tortoise-wow`
+`src/game/Objects/Player.cpp` (`CanEquipItem` one-quiver veto,
+`CanUnequipItem` non-empty-bag rule, `SwapItem` bag-exchange gate).
+
+Reason: seeded hunters filled all four bag slots with plain bags before
+`InitAmmo` ran, so the quiver never equipped; hunters with a quiver full
+of ammo could not upgrade across tiers; warlocks never equipped a soul bag
+(`ITEM_USAGE_NONE` hard-coded).
+
+Local validation:
+- `bash tools/verify_all.sh`; `git diff --check`.
+- Module build by orchestrator via `scratchpad/build-commit.sh` (workers do
+  not run the docker builder).

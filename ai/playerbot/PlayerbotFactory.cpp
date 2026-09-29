@@ -2529,12 +2529,24 @@ void PlayerbotFactory::InitBags()
 {
     auto pmo = sPerformanceMonitor.start(PERF_MON_RNDBOT, "PlayerbotFactory_Bags");
     InitLevelBags();
+    // Hunters always want a quiver/ammo pouch (INVTYPE_BAG, same four
+    // slots): InitAmmo runs after this and must find a free slot, so fill
+    // at most three plain bags and leave one slot for the quiver.
+    uint32 maxPlainBags = (INVENTORY_SLOT_BAG_END - INVENTORY_SLOT_BAG_START) - (bot->GetClass() == CLASS_HUNTER ? 1 : 0);
+    uint32 plainBags = 0;
+    for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; ++slot)
+    {
+        Item* bagItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+        if (bagItem && bagItem->GetProto() && bagItem->GetProto()->Class != ITEM_CLASS_QUIVER)
+            ++plainBags;
+    }
     for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; ++slot)
     {
         Bag* pBag = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-        if (!pBag)
+        if (!pBag && plainBags < maxPlainBags)
         {
-            bot->StoreNewItemInBestSlots(4500, 1); // add Traveler's Backpack if no bag in slot
+            if (bot->StoreNewItemInBestSlots(4500, 1)) // add Traveler's Backpack if no bag in slot
+                ++plainBags;
         }
     }
 }
@@ -3205,12 +3217,14 @@ void PlayerbotFactory::InitAmmo()
     if (!subClass)
         return;
 
-    // Ammo container (owner spec): nothing ever equipped a quiver — fresh
+    // Ammo container (owner spec): nothing ever equipped a quiver - fresh
     // hunters carried the level-1 Light Quiver from CharacterCreation
     // forever. Give the best vendor-sold container the level allows
-    // (RandomItemMgr::GetQuiver, vendor-joined so never a raid drop); the
-    // core allows exactly one quiver/pouch, so a strictly worse one is
-    // dropped first and CanEquipItem re-checks the same uniqueness.
+    // (RandomItemMgr::GetQuiver, vendor-joined so never a raid drop). Core
+    // rules: exactly one quiver/pouch may be equipped (CAN_EQUIP_ONLY1_*),
+    // and a non-empty bag can never move from a specific slot
+    // (CanUnequipItem), so a quiver full of ammo can neither be swapped
+    // aside nor destroyed to make room.
     if (subClass == ITEM_SUBCLASS_ARROW || subClass == ITEM_SUBCLASS_BULLET)
     {
         uint32 quiverId = sRandomItemMgr.GetQuiver(level);
@@ -3218,23 +3232,97 @@ void PlayerbotFactory::InitAmmo()
         if (bestQuiver)
         {
             bool haveGood = false;
+            Item* upgradeTarget = nullptr;
+            uint8 upgradeSlot = 0;
             for (uint8 bagSlot = INVENTORY_SLOT_BAG_START; bagSlot < INVENTORY_SLOT_BAG_END; ++bagSlot)
             {
                 Item* bagItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bagSlot);
-                if (!bagItem || bagItem->GetProto()->Class != ITEM_CLASS_QUIVER)
+                if (!bagItem || !bagItem->GetProto() || bagItem->GetProto()->Class != ITEM_CLASS_QUIVER)
                     continue;
                 if (bagItem->GetEntry() == quiverId || bagItem->GetProto()->RequiredLevel >= bestQuiver->RequiredLevel)
                 {
                     haveGood = true;
                     continue;
                 }
+                Bag* quiverBag = bagItem->IsBag() ? (Bag*)bagItem : nullptr;
+                if (quiverBag && !quiverBag->IsEmpty())
+                {
+                    // Occupied quiver: the upgrade must wait below.
+                    // haveGood stays false so InitAmmo retries next level;
+                    // no endless error spam: this path is silent.
+                    upgradeTarget = bagItem;
+                    upgradeSlot = bagSlot;
+                    continue;
+                }
                 bot->DestroyItem(INVENTORY_SLOT_BAG_0, bagSlot, true);
             }
-            if (!haveGood)
+            if (!haveGood && !upgradeTarget)
             {
+                // NULL_SLOT, not INVENTORY_SLOT_BAG_START: that slot holds a
+                // plain bag, and asking for it explicitly makes
+                // CanEquipUnseenItem answer "slot 19" whatever else is free.
+                // EquipItem then sees an occupied destination, treats the
+                // pair as a stack merge and deletes the new quiver. With
+                // NULL_SLOT core resolves the free slot InitBags kept open.
+                // swap=true still falls back to slot 19 when nothing is
+                // free, so only a slot that really is empty may be used.
                 uint16 eDest;
-                if (RandomBotFacade::CanEquipUnseenItem(bot, INVENTORY_SLOT_BAG_START, eDest, quiverId) == EQUIP_ERR_OK)
+                bool freeDest = RandomBotFacade::CanEquipUnseenItem(bot, NULL_SLOT, eDest, quiverId) == EQUIP_ERR_OK
+                    && !bot->GetItemByPos(INVENTORY_SLOT_BAG_0, eDest & 0xFF);
+                if (freeDest)
                     bot->EquipNewItem(eDest, quiverId, true);
+                else
+                {
+                    // No free bag slot at all (all four occupied). Carry
+                    // the better quiver in the backpack so nothing is
+                    // lost and the next InitAmmo/equip can retry. Silent:
+                    // this seed runs on login, never an error storm.
+                    Item* pItem = Item::CreateItem(quiverId, 1, bot);
+                    if (pItem)
+                    {
+                        ItemPosCountVec dest;
+                        if (bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, pItem, false) == EQUIP_ERR_OK)
+                            bot->StoreItem(dest, pItem, true);
+                        else
+                            delete pItem;
+                    }
+                }
+            }
+            if (!haveGood && upgradeTarget && upgradeTarget->IsBag())
+            {
+                // Full-of-ammo upgrade: free the old quiver by moving its
+                // ammo into backpack/bag space, then equip the better
+                // quiver into the same slot. Retry next InitAmmo if no
+                // room for the ammo; still silent, never an error storm.
+                // (Core CanUnequipItem forbids moving a non-empty bag from
+                // a specific slot, and a two-non-empty-bag SwapItem just
+                // errors - so relocate the CONTENTS instead.)
+                Bag* quiverBag = (Bag*)upgradeTarget;
+                bool movedAll = true;
+                for (uint32 i = 0; i < quiverBag->GetBagSize(); ++i)
+                {
+                    Item* ammo = quiverBag->GetItemByPos(i);
+                    if (!ammo)
+                        continue;
+                    quiverBag->RemoveItem(i, false);
+                    ItemPosCountVec dest;
+                    if (bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, ammo, false) != EQUIP_ERR_OK)
+                    {
+                        quiverBag->StoreItem(i, ammo, false);
+                        movedAll = false;
+                        break;
+                    }
+                    bot->StoreItem(dest, ammo, true);
+                }
+                if (movedAll && quiverBag->IsEmpty())
+                {
+                    uint16 eDest;
+                    if (RandomBotFacade::CanEquipUnseenItem(bot, upgradeSlot, eDest, quiverId) == EQUIP_ERR_OK)
+                    {
+                        bot->DestroyItem(INVENTORY_SLOT_BAG_0, upgradeSlot, true);
+                        bot->EquipNewItem(eDest, quiverId, true);
+                    }
+                }
             }
         }
     }

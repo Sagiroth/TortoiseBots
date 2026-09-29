@@ -616,8 +616,16 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     std::list<Item*> items = AI_VALUE2(std::list<Item*>, "inventory items", chat->formatItem(itemQualifier));
     Item* bagItem = items.empty() ? nullptr : items.front();
 
+    // Quiver/pouch upgrades are decided by the hunter's own ilvl/quality
+    // comparison below, not by free-slot accounting: a full row of plain
+    // bags must not collapse the usage to NONE first (the equip path then
+    // picks the quiver slot or a free slot, or fails explicitly).
+    bool const isQuiverUpgradeCandidate = (itemProto->Class == ITEM_CLASS_QUIVER &&
+        bot->GetClass() == CLASS_HUNTER &&
+        bot->GetWeaponForAttack(WeaponAttackType::RANGED_ATTACK, false, false) != nullptr);
+
     uint8 slot = ItemUsageValue::GetPreferredEquipSlot(bot, bagItem, itemProto);
-    if (slot == NULL_SLOT)
+    if (slot == NULL_SLOT && !isQuiverUpgradeCandidate)
         return ItemUsage::ITEM_USAGE_NONE;
 
     uint16 dest = ((INVENTORY_SLOT_BAG_0 << 8) | slot);
@@ -654,6 +662,13 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
 
             std::vector<Bag*> equippedQuivers = PlayerbotAIStorage::Instance().GetAI(bot)->GetEquippedQuivers();
 
+            if (equippedQuivers.empty())
+            {
+                // Hunter with no quiver yet: any quiver matching the
+                // ranged weapon is an upgrade (free slot or quiver slot
+                // picked by GetSmallestBagSlot; core vetoes a second one).
+                return ItemUsage::ITEM_USAGE_EQUIP;
+            }
             for (auto quiver : equippedQuivers)
             {
                 if (quiver->GetProto()->ItemLevel < itemProto->ItemLevel)
@@ -675,8 +690,37 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
 
     if (itemProto->Class == ITEM_CLASS_CONTAINER)
     {
+        // Soul bags (and other profession containers) are only useful to
+        // the class that fills them: a warlock treats a soul bag as an
+        // equip upgrade when it holds more shards than the smallest
+        // equipped soul bag. First soul bag equips even when its slots <
+        // plain bag size (shards would otherwise sit in plain slots).
+        // No slot reserved blindly: GetSmallestBagSlot only replaces a
+        // soul bag or takes an empty slot, never a plain bag.
         if (itemProto->SubClass != ITEM_SUBCLASS_CONTAINER)
-            return ItemUsage::ITEM_USAGE_NONE; //Todo add logic for non-bag containers. We want to look at professions/class and only replace if non-bag is larger than bag.
+        {
+            if (itemProto->SubClass == ITEM_SUBCLASS_SOUL_CONTAINER && bot->GetClass() == CLASS_WARLOCK)
+            {
+                uint32 smallestSoul = 0;
+                bool haveSoulBag = false;
+                for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+                {
+                    Item* bagItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag);
+                    if (bagItem && bagItem->GetProto() && bagItem->GetProto()->Class == ITEM_CLASS_CONTAINER &&
+                        bagItem->GetProto()->SubClass == ITEM_SUBCLASS_SOUL_CONTAINER)
+                    {
+                        haveSoulBag = true;
+                        uint32 slots = ((Bag*)bagItem)->GetBagSize();
+                        if (!smallestSoul || slots < smallestSoul)
+                            smallestSoul = slots;
+                    }
+                }
+                if (haveSoulBag && smallestSoul >= itemProto->ContainerSlots)
+                    return ItemUsage::ITEM_USAGE_NONE;
+                return ItemUsage::ITEM_USAGE_EQUIP;
+            }
+            return ItemUsage::ITEM_USAGE_NONE;
+        }
 
         if (GetSmallestBagSize(bot) >= itemProto->ContainerSlots)
             return ItemUsage::ITEM_USAGE_NONE;
@@ -864,16 +908,24 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     return ItemUsage::ITEM_USAGE_NONE;
 }
 
-//Return smaltest bag size equipped
+// Return the smallest plain-container bag equipped, or 0 when a bag slot is
+// free. Quivers/ammo pouches, soul bags and profession bags hold their own
+// item types, so counting their slots would make every plain bag look like an
+// upgrade and trade bags back and forth on every audit.
 uint32 ItemUsageValue::GetSmallestBagSize(Player* bot)
 {
     int8 curSlot = 0;
     uint32 curSlots = 0;
     for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
     {
-        const Bag* const pBag = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag);
+        Item* bagItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag);
+        const Bag* const pBag = (Bag*)bagItem;
         if (pBag)
         {
+            ItemPrototype const* proto = bagItem->GetProto();
+            if (!proto || proto->Class != ITEM_CLASS_CONTAINER || proto->SubClass != ITEM_SUBCLASS_CONTAINER)
+                continue;
+
             if (curSlot > 0 && curSlots < pBag->GetBagSize())
                 continue;
 

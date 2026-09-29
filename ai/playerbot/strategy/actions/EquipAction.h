@@ -31,6 +31,7 @@ namespace ai
         void EquipItem(Player* requester, FindItemVisitor* visitor);
         void ListItems(Player* requester);
         static uint8 GetSmallestBagSlot(Player* bot);
+        static uint8 GetSmallestBagSlot(Player* bot, uint32 newClass, uint32 newSubClass);
     };
 
     class EquipUpgradesAction : public EquipAction
