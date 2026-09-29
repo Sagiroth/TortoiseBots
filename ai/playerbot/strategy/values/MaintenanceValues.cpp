@@ -55,7 +55,7 @@ bool ShouldSellValue::CantAffordNextSpell(PlayerbotAI* ai)
 //spot: it sells the pelt, is still broke, and walks back. Only sell when the
 //stock actually buys the missing spell rank, or when a real batch has piled
 //up and the bags are filling anyway.
-bool SellableStockWorthAVendorTrip(PlayerbotAI* ai)
+bool ai::SellableStockWorthAVendorTrip(PlayerbotAI* ai)
 {
     uint32 moneyMissing = SpellMoneyMissing(ai);
 
