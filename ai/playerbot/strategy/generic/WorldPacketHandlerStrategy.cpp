@@ -126,7 +126,7 @@ void WorldPacketHandlerStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &
 
     triggers.push_back(new TriggerNode(
         "levelup",
-        NextAction::array(0, new NextAction("auto talents", relevance), new NextAction("auto learn spell", relevance), new NextAction("equip upgrades", relevance), NULL)));
+        NextAction::array(0, new NextAction("auto talents", relevance), new NextAction("auto learn spell", relevance), NULL)));
 
     triggers.push_back(new TriggerNode(
         "release spirit",
