@@ -37,9 +37,10 @@ inline bool IsPlayerOwnedBot(PlayerBotClassificationInputs const& inputs)
 }
 
 // The managed-account registry answers "is this account a registered RNDBOT
-// pool account". Anything the registry cannot vouch for counts as pool: an
-// unvalidated registry (or an account it does not know) must never promote a
-// pool bot into the unbudgeted player pass.
+// pool account". An unvalidated registry must never promote a pool bot into
+// the unbudgeted player pass, so it counts as pool. Once the registry is
+// validated, an account it does not know is not a pool account: that is the
+// owner's own account, and its bots are player bots.
 inline bool AccountIsPool(bool registryValidated, bool accountRegistered)
 {
     return !registryValidated || accountRegistered;

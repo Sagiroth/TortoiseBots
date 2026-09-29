@@ -1282,7 +1282,9 @@ PlayerBotClassificationInputs ClassifyBot(BotEntry const& entry)
     PlayerBotClassificationInputs inputs;
     // Without a validated registry the module cannot tell its own accounts from
     // anybody else's: keep the bot in the pool instead of prioritizing it.
-    inputs.accountIsPool = AccountIsPool(registry.IsValidated(), registry.IsRegistered(entry.record.accountId));
+    // An unset account (0) says nothing about ownership: keep it in the pool.
+    inputs.accountIsPool = entry.record.accountId == 0 ||
+        AccountIsPool(registry.IsValidated(), registry.IsRegistered(entry.record.accountId));
     inputs.hasLiveRealPlayerMaster = HasLiveRealPlayerMaster(entry.record.masterGuid);
     return inputs;
 }
