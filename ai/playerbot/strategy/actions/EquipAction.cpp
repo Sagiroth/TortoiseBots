@@ -5,6 +5,7 @@
 #include <set>
 
 #include "playerbot/RandomItemMgr.h"
+#include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/ItemCountValue.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 
@@ -406,6 +407,17 @@ void EquipAction::EquipItem(PlayerbotAI* ai, Player* requester, Item* item, bool
 bool EquipUpgradesAction::Execute(Event& event)
 {
     if (!sPlayerbotAIConfig.autoEquipUpgradeLoot && !sRandomBotFacade.IsRandomBot(bot))
+        return false;
+
+    // Worn gear is never touched in combat. This action is reachable from the
+    // combat engine - WorldPacketHandlerStrategy::InitCombatTriggers installs
+    // the same node list as the non-combat one, and bots ding on the killing
+    // blow - so without this gate a level-up rewrites the loadout in the middle
+    // of a fight, which is the #336 world-mob evade regression. The periodic
+    // "equipment audit" node picks the same upgrade up out of combat instead.
+    // PlayerbotAI's "attacked while fishing" wake-up is the one deliberate
+    // in-combat call and labels its event so it still lands.
+    if (sServerFacade.IsInCombat(bot) && event.GetSource() != "fishing pole recovery")
         return false;
 
     if (event.GetSource() == "trade status")

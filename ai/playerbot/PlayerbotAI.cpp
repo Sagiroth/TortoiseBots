@@ -490,7 +490,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
                 }
             if (Item* mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND))
                 if (mainHand->GetProto()->Class == ITEM_CLASS_WEAPON && mainHand->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_FISHING_POLE)
-                    DoSpecificAction("equip upgrades", Event(), true);
+                    DoSpecificAction("equip upgrades", Event("fishing pole recovery"), true);
         }
         if (!inCombat && !isCasting && !isWaiting)
         {
