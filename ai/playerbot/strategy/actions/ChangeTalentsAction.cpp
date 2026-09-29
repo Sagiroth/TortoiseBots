@@ -470,7 +470,6 @@ bool AutoSetTalentsAction::Execute(Event& event)
         return false;
 
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
-    sPlayerbotAIConfig.logEvent(ai, "AutoSetTalentsAction", std::to_string(bot->GetLevelPlayedTime()), std::to_string(bot->GetTotalPlayedTime()));
 
     std::ostringstream out;
 
@@ -483,6 +482,12 @@ bool AutoSetTalentsAction::Execute(Event& event)
     {
         return false;
     }
+
+    // Logged past the no-op gates above (owned bot, autoPickTalents=no, no free
+    // points): the action is re-run on every level-up, so logging at entry wrote
+    // one AutoSetTalentsAction row per ding at level < 10 - where talents do not
+    // exist yet - and none of them said anything about talents.
+    sPlayerbotAIConfig.logEvent(ai, "AutoSetTalentsAction", std::to_string(bot->GetLevelPlayedTime()), std::to_string(bot->GetTotalPlayedTime()));
 
     AutoSelectTalents(bot, &out, ai ? (BotRoles)ai->GetForcedRole() : BotRoles::BOT_ROLE_NONE);
 
