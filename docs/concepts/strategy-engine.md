@@ -2,11 +2,12 @@
 id: concept-strategy-engine
 title: Strategy Engine & Action Scheduling
 category: concepts
-summary: Deep dive into the Playerbots AI cycle, action baskets, triggers, multipliers, reaction queues, and failure backoff.
-tags: [architecture, engine, ai, triggers, actions, strategies]
+summary: Deep dive into the Playerbots AI cycle, action baskets, triggers, multipliers, reaction queues, failure backoff, and the per-tick module pass that schedules player-owned bots ahead of the pool.
+tags: [architecture, engine, ai, triggers, actions, strategies, scheduling]
 relates_to:
   - concept-architecture-invariants
   - concept-donor-hierarchy
+  - guide-configuration-tuning
 ---
 
 # Strategy Engine & Action Scheduling
@@ -28,6 +29,17 @@ flowchart TD
     Exec -->|"Success"| Done["Action Completed"]
     Exec -->|"Failure"| Backoff["ActionFailureBackoff (strategy/ActionFailureBackoff.h, owned by Engine.h)"]
 ```
+
+## Module Pass & World-Tick Scheduling
+
+The module drives every bot from a single pass on the world thread (`BotManager::UpdateBots`, called from the module's `WorldScript` update, i.e. at the end of a world tick). Two ordered phases keep a real player's party responsive when the random pool is large:
+
+1. **Player-owned bots first.** Records a player owns and every bot bound to a master (`BotActivity::PlayerMaster` lease) update first, on every tick, with no budget. Both discriminators are O(1).
+2. **Random pool second.** Everything else runs in a round-robin rotation held across ticks (`PoolPassRotation`, `runtime/PoolPassRotation.h`): each pass resumes where the previous tick stopped, so a bot that misses a pass is served on a later one and is never skipped permanently. Membership changes rebuild the rotation; the pass itself stays O(pool).
+
+Only the pool phase can be cut short, and only while the previous world tick ran longer than `AiPlayerbot.PoolBudgetWhenTickOverMs` (default 150 ms): the pass then stops at `AiPlayerbot.PoolTickBudgetUs` (default 10 ms) and continues from the cursor on the next tick. A healthy server never opens that gate, so a small pool sees the unchanged full pass. See [Configuration Knobs & Feature Flags](../guides/configuration-tuning.md).
+
+Every ~30 s of tick time the pass logs its own cost — `TortoiseBots: BOTPERF passUs=... playerBots=... poolBots=... poolProcessed=... budgetHit=...` at module log level 1 or higher — which is the direct measure of how much of the world tick the AI pass owns.
 
 ## Core Building Blocks
 

@@ -80,5 +80,7 @@ All interaction between the module and core server passes through explicit adapt
 * `BotChatAdapter`: chat-command entry (`AllCommandScript` for `.bot`).
 * `BotPlayerAdapter`: Interacts with standard `Player` objects through native server APIs; answers the core LFT managed-bot hooks (`IsManagedBot` gate + `GetBotRoles` role answer).
 
+Within that world-tick pass, `BotManager::UpdateBots` schedules bots without any core involvement: bots under a real player update first and unbudgeted, the random pool follows in a resumable round-robin rotation whose per-tick budget engages only while the previous world tick ran long (see [Strategy Engine & Action Scheduling](strategy-engine.md) and [Configuration Knobs & Feature Flags](../guides/configuration-tuning.md)).
+
 #### 5. Asynchronous LLM Isolation
 LLM-based chat interactions are purely asynchronous and decoupled. If an LLM backend times out or fails, combat AI, movement, healing, interrupts, and crowd control continue running with zero interruption or frame hitching.

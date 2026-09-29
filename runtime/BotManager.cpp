@@ -37,6 +37,7 @@
 #include "../host/ModuleLog.h"
 
 #include <algorithm>
+#include <chrono>
 #include <ctime>
 
 namespace TortoiseBots {
@@ -1252,8 +1253,28 @@ void BotManager::SetPacketBridgeTestEnabled(bool enable, uint32_t accountId,
         masterGuid.GetString().c_str(), botGuid.GetString().c_str());
 }
 
+namespace
+{
+// Player-owned bots, i.e. the ones a real player is playing with: explicit
+// module-owned records (AddBot/AddBotWithMaster) and any bot claimed by a
+// master through BindBotMaster (the lease is the same O(1) discriminator the
+// background services already use). These always update first and are never
+// cut by the pool budget.
+bool IsPlayerOwnedBot(BotEntry const& entry)
+{
+    return !entry.record.random ||
+        BotActivityLeaseManager::Instance().GetActivity(entry.record.characterGuid.GetCounter()) ==
+            BotActivity::PlayerMaster;
+}
+} // namespace
+
 void BotManager::UpdateBots(uint32_t diff)
 {
+    // Module-side pass cost. Left in permanently: with a large pool the
+    // periodic BOTPERF line is the only direct measure of how much of the
+    // world tick this pass owns.
+    auto const passStart = std::chrono::steady_clock::now();
+
     // Guard: AI updates below can request (their own or another bot's) removal.
     // RemoveBot defers the session stop while this is set; the queue drains
     // after the loop, when no PlayerbotAI Update remains on the stack.
@@ -1267,23 +1288,47 @@ void BotManager::UpdateBots(uint32_t diff)
     };
     BotUpdateGuard botUpdateGuard(this);
 
-    std::vector<uint32_t> guids;
-    guids.reserve(m_bots.size());
+    // One scan builds both candidate lists: player-owned bots are separated
+    // out so they can never queue behind the pool, and the pool is what the
+    // later budget may cut.
+    std::vector<uint32_t> playerGuids;
+    std::vector<uint32_t> poolGuids;
+    playerGuids.reserve(m_bots.size());
+    poolGuids.reserve(m_bots.size());
     for (auto const& kv : m_bots)
-        guids.push_back(kv.first);
+    {
+        if (kv.second.record.lifecycle != BotLifecycle::InWorld)
+            continue;
 
-    for (uint32_t guidLow : guids)
+        if (IsPlayerOwnedBot(kv.second))
+            playerGuids.push_back(kv.first);
+        else
+            poolGuids.push_back(kv.first);
+    }
+
+    // Round-robin order for the pool pass. Rebuilt only when the live
+    // membership changes, so the cursor points at the same place in the same
+    // rotation between ticks: a bot that misses a pass is served on a later
+    // one, never skipped permanently.
+    m_poolRotation.Refresh(poolGuids, [this](uint32_t guidLow)
+    {
+        auto it = m_bots.find(guidLow);
+        return it != m_bots.end() && it->second.record.lifecycle == BotLifecycle::InWorld &&
+            !IsPlayerOwnedBot(it->second);
+    });
+
+    auto updateOneBot = [this, diff](uint32_t guidLow)
     {
         auto it = m_bots.find(guidLow);
         if (it == m_bots.end())
-            continue;
+            return;
 
         BotEntry& entry = it->second;
         // A removal queued earlier in this same loop only takes effect at the
         // drain below, but the record is already Removing: never drive AI for
         // a bot whose session stop is pending.
         if (entry.record.lifecycle != BotLifecycle::InWorld)
-            continue;
+            return;
 
         // Headless players have no client to acknowledge a core near/far
         // teleport. The donor PlayerbotMgr drove this acknowledgement from its
@@ -1303,14 +1348,37 @@ void BotManager::UpdateBots(uint32_t diff)
             PlayerbotAI* ai = entry.aiAdapter->GetAI();
             if ((player->IsBeingTeleportedNear() || player->IsBeingTeleportedFar()) && ai)
                 ai->HandleTeleportAck();
-            continue;
+            return;
         }
 
         if (entry.aiAdapter && entry.aiAdapter->IsUsable())
         {
             entry.aiAdapter->Update(diff);
         }
-    }
+    };
+
+    // Pass 1: bots under a real player, always, first, with no budget.
+    for (uint32_t guidLow : playerGuids)
+        updateOneBot(guidLow);
+
+    // Pass 2: the pool, resuming at the rotation cursor. The budget is checked
+    // between bots (so a pass can overshoot by one bot's work, the
+    // AhMarketService convention) and only engages once the previous world
+    // tick ran long; a healthy tick gives the pool the same full pass it
+    // always got.
+    uint32_t const playerBots = static_cast<uint32_t>(playerGuids.size());
+    uint32_t const poolBots = m_poolRotation.Size();
+    uint64_t const budgetUs = sPlayerbotAIConfig.poolTickBudgetUs;
+    uint32 const gateMs = sPlayerbotAIConfig.poolBudgetWhenTickOverMs;
+    bool const budgetActive = budgetUs > 0 && (gateMs == 0 || diff > gateMs);
+    bool budgetHit = false;
+    uint32_t const poolProcessed = m_poolRotation.Run(budgetActive, budgetUs,
+        []()
+        {
+            return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+        },
+        updateOneBot, budgetHit);
 
     m_inBotUpdate = false;
 
@@ -1320,6 +1388,28 @@ void BotManager::UpdateBots(uint32_t diff)
         pending.swap(m_pendingBotRemovals);
         for (auto const& removal : pending)
             RemoveBot(removal.characterGuid, removal.save);
+    }
+
+    // BOTPERF: module pass cost per world tick, one line per ~30 s of tick
+    // time. passUs is the average pass in the window, maxUs the worst;
+    // playerBots/poolBots/poolProcessed/budgetHit describe the pass
+    // just measured.
+    uint64_t const passUs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - passStart).count());
+    m_perfPassUsSum += passUs;
+    m_perfPassUsMax = std::max(m_perfPassUsMax, passUs);
+    ++m_perfPassCount;
+    m_perfElapsedMs += diff;
+    if (m_perfElapsedMs >= 30000)
+    {
+        TB_LOG_BASIC("TortoiseBots: BOTPERF passUs=%llu playerBots=%u poolBots=%u poolProcessed=%u budgetHit=%u maxUs=%llu ticks=%u",
+            static_cast<unsigned long long>(m_perfPassUsSum / m_perfPassCount),
+            playerBots, poolBots, poolProcessed, budgetHit ? 1u : 0u,
+            static_cast<unsigned long long>(m_perfPassUsMax), m_perfPassCount);
+        m_perfPassUsSum = 0;
+        m_perfPassUsMax = 0;
+        m_perfPassCount = 0;
+        m_perfElapsedMs = 0;
     }
 }
 

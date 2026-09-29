@@ -1282,6 +1282,23 @@ AiPlayerbot.PremadeSpecLink.11.2.60 = 5002012--5050013355213521
 # Max AI iterations per tick
 #AiPlayerbot.IterationsPerTick = 100
 
+# Per-tick AI pass scheduling for a large random pool (party-bot latency).
+# Bots owned by a real player — module-owned records and every bot bound to a
+# master — are always updated first, every tick, with no budget. The random
+# pool runs after them in a round-robin order that resumes where the previous
+# tick stopped, so a bot that misses a pass is served on a later one, never
+# dropped.
+#   PoolTickBudgetUs: microseconds of module work per tick for the pool pass.
+#       0 = no budget at all (the pool always gets the full pass).
+#       Values below 1000 are raised to 1000; 100000 is the ceiling.
+#   PoolBudgetWhenTickOverMs: the budget only engages while the previous world
+#       tick ran longer than this, so a healthy server (small pool) keeps the
+#       unchanged full pass. 0 = budget on every tick.
+# The pass cost and whether the budget cut a pass are reported by the
+# "TortoiseBots: BOTPERF ..." log line every ~30 s (LogLevel 1 or higher).
+AiPlayerbot.PoolTickBudgetUs = 10000
+AiPlayerbot.PoolBudgetWhenTickOverMs = 150
+
 # Bounded failure backoff for autonomous background work (issue #84).
 # Repeated failures wait base, 2x, 4x, 8x, 16x up to the max before the
 # action may run again. Combat, reactions, owner commands and owned bots

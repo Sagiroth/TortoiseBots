@@ -184,6 +184,14 @@ module-owned `PlayerConvenience`, `AhMarketService`, and
 
 The core listener is generic; it does not call a PlayerBots singleton.
 
+Inside that pass (`BotManager::UpdateBots`) bots under a real player are
+updated first and without a budget, then the random pool follows in a
+resumable round-robin rotation; the pool's per-tick time budget only engages
+once the previous world tick ran longer than
+`AiPlayerbot.PoolBudgetWhenTickOverMs`
+(see [docs/guides/configuration-tuning.md](guides/configuration-tuning.md)).
+This is module-internal scheduling and needs no core seam.
+
 ## 9. Ownership model
 
 | Responsibility | Owner |

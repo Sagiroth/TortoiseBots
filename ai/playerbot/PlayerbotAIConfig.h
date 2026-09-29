@@ -482,6 +482,14 @@ public:
 
     BotSelfBotLevel selfBotLevel;
     uint32 iterationsPerTick;
+    // Per-tick AI pass scheduling in BotManager::UpdateBots: bots owned by a
+    // real player always run first and unbudgeted, the random pool runs after
+    // them from a round-robin cursor. The budget below applies to the pool
+    // pass only, and only while the previous world tick ran longer than
+    // poolBudgetWhenTickOverMs, so a healthy server never notices it.
+    // Microseconds of module work per tick; 0 disables the budget entirely.
+    uint32 poolTickBudgetUs = 10000;
+    uint32 poolBudgetWhenTickOverMs = 150;
     // Issue #84: bounded failure backoff tuning. Zero base/max disables.
     uint32 failedActionRetryBaseMs;
     uint32 failedActionRetryMaxMs;

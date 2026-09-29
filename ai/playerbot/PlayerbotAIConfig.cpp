@@ -247,6 +247,15 @@ bool PlayerbotAIConfig::Initialize()
 
     iterationsPerTick = config.GetIntDefault("AiPlayerbot.IterationsPerTick", 100);
 
+    // Module-side pool pass budget (PlayerbotAIConfig.h). The floor keeps a
+    // typo from starving the pool to a single bot per tick; the ceiling keeps
+    // the key from silently disabling itself.
+    poolTickBudgetUs = (uint32)config.GetIntDefault("AiPlayerbot.PoolTickBudgetUs", 10000);
+    if (poolTickBudgetUs > 0 && poolTickBudgetUs < 1000) poolTickBudgetUs = 1000;
+    if (poolTickBudgetUs > 100000) poolTickBudgetUs = 100000;
+    poolBudgetWhenTickOverMs = (uint32)config.GetIntDefault("AiPlayerbot.PoolBudgetWhenTickOverMs", 150);
+    if (poolBudgetWhenTickOverMs > 10000) poolBudgetWhenTickOverMs = 10000;
+
     // Issue #84: donor Shyalya defaults (base 250ms doubling to 2s cap,
     // 30s TTL, 64 entries). Zero base/max disables the backoff entirely.
     failedActionRetryBaseMs = uint32(std::max(0, std::min(2000, config.GetIntDefault("AiPlayerbot.FailedActionRetryBase", 250))));

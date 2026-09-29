@@ -114,6 +114,27 @@ All autonomous services are fully bounded. LFT autofill and battleground auto-qu
 | `AiPlayerbot.ForceActiveWhenNearPlayer` | `0` | Also treat bots merely visible to a player as always reacting. |
 | `AiPlayerbot.DisableBotOptimizations` | `0` | Currently has **no effect** (read but unused). |
 
+### Per-tick AI pass budget (large pools)
+
+The module's AI pass runs at the end of every world tick, so a bot a real player is playing with used to queue behind the whole random pool. Bots under a real player (module-owned records and every bot bound to a master) now always update first, every tick, and are never throttled; the random pool runs after them in a round-robin order that resumes where the previous tick stopped, so a bot that misses a pass is served on a later one and never dropped.
+
+The pool is only throttled when the server is already struggling. On an average PC with a small pool the ticks are short, both keys stay out of the way, and the pool gets exactly the pass it always got.
+
+| Setting | Default | What It Does |
+| :--- | :---: | :--- |
+| `AiPlayerbot.PoolTickBudgetUs` | `10000` | Microseconds of module work per tick for the pool pass, once the gate below opens. `0` removes the budget entirely (the pool always runs its full pass). Values below `1000` are raised to `1000`; `100000` is the ceiling. |
+| `AiPlayerbot.PoolBudgetWhenTickOverMs` | `150` | The gate: the budget applies only while the previous world tick took longer than this. `0` applies it on every tick. A tick at or below the value keeps the unbudgeted, full pool pass. |
+
+Tuning: raise `PoolTickBudgetUs` (e.g. `25000`–`50000`) if pool bots feel sluggish while the tick is long; lower it if player-owned bots still lag. The budget is checked between bots, so a pass can overshoot by one bot's work. With 500 bots on a slow machine every choice means *someone* waits — the gate only decides whether it is the player's party or the pool.
+
+The module reports the pass once per ~30 s of world-tick time at `TortoiseBots.LogLevel = 1` or higher (default `2`):
+
+```
+TortoiseBots: BOTPERF passUs=812 playerBots=5 poolBots=500 poolProcessed=4 budgetHit=1 maxUs=9820 ticks=62
+```
+
+`passUs` is the average `UpdateBots` cost in the window in microseconds (`maxUs` the worst), `playerBots`/`poolBots` the candidate counts of the measured pass, `poolProcessed` the pool slots the rotation advanced past (a record that was unusable that tick still counts), and `budgetHit` `1` when the budget cut that pass short. Read it like this: `budgetHit=1` with a small `passUs` is the throttle working; `budgetHit=1` and `poolProcessed=1` means the budget is too tight for the pool size (raise it); a low `passUs` while ticks are still multi-second says the module pass is not what stretches the tick.
+
 ### Server settings for many bots (`mangosd.conf`)
 
 Hundreds of always-active bots keep most of both continents busy, which the core's defaults don't expect. Two core settings matter most; the Docker stack renders them from `.env` (`CLEANUP_TERRAIN`, `PLAYER_SAVE_INTERVAL`).
@@ -173,7 +194,7 @@ TortoiseBots.LogLevel = 2
 | Level | Name | Shows |
 | :---: | :--- | :--- |
 | `0` | Minimal | Errors only. |
-| `1` | Basic | One-off startup, shutdown, and diagnostic test results (e.g. `PendingAddRemoveTest`, `AutoTest`). |
+| `1` | Basic | One-off startup, shutdown, and diagnostic test results (e.g. `PendingAddRemoveTest`, `AutoTest`), plus the periodic `BOTPERF` AI-pass cost line. |
 | `2` | Detail (default) | Per-bot state transitions: session start/stop, add/remove, AH postings, BG queue entries. |
 | `3` | Debug | Per-tick and per-packet traces. High volume — intended for short diagnostic sessions, not left on. |
 

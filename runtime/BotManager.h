@@ -7,6 +7,7 @@
 #include <vector>
 // pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectGuid.h"
+#include "PoolPassRotation.h"
 #ifndef MANGOS_OBJECT_GUID_H
 // Lens/build fallback — core header not on analyzer include path.
 enum { HIGHGUID_PLAYER = 0 };
@@ -203,6 +204,15 @@ private:
         bool save = true;
     };
     std::vector<PendingBotRemoval> m_pendingBotRemovals;
+    // Round-robin rotation for the random-pool pass in UpdateBots, with the
+    // cursor that lets a budgeted pass resume where the previous tick stopped
+    // (see PoolPassRotation.h).
+    PoolPassRotation m_poolRotation;
+    // BOTPERF window: UpdateBots pass cost accumulated over ~30 s of tick time.
+    uint64_t m_perfPassUsSum = 0;
+    uint64_t m_perfPassUsMax = 0;
+    uint32_t m_perfPassCount = 0;
+    uint32_t m_perfElapsedMs = 0;
     bool m_autoTestEnabled = false;
     uint32_t m_autoTestAccount = 0;
 // pi-lens-ignore: clang:unknown_typename

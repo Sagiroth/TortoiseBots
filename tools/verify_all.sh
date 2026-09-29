@@ -26,13 +26,16 @@ python3 -m unittest tools/test_engine_walk_gating.py
 echo "✓ Engine unit tests passed."
 
 echo ""
-echo "=== 5. Running Pool Reset Policy Test (issue #265) ==="
+echo "=== 5. Running Standalone Policy Tests (issue #265, party-bot latency) ==="
 if command -v g++ >/dev/null 2>&1; then
-    g++ -std=c++17 -Wall -Wextra tools/test_pool_reset_policy.cpp -o "${TMPDIR:-/tmp}/test_pool_reset_policy"
-    "${TMPDIR:-/tmp}/test_pool_reset_policy"
-    echo "✓ Pool reset policy verified."
+    for policy_test in test_pool_reset_policy test_pool_pass_rotation; do
+        policy_bin="${TMPDIR:-/tmp}/${policy_test}"
+        g++ -std=c++17 -Wall -Wextra "tools/${policy_test}.cpp" -o "${policy_bin}"
+        "${policy_bin}"
+    done
+    echo "✓ Standalone policy tests verified."
 else
-    echo "ℹ Skipping pool reset policy test (no g++ on PATH)."
+    echo "ℹ Skipping standalone policy tests (no g++ on PATH)."
 fi
 
 echo ""
