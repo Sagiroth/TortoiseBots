@@ -236,7 +236,17 @@ bool AttackAction::Attack(Player* requester, Unit* target)
         if (!ai->HasStrategy("stealthed", BotState::BOT_STATE_COMBAT) && !isWaitingForAttack)
         {
             ai->PlayAttackEmote(1);
-            const bool meleeEval = !ai->IsRanged(bot) && !ai->IsHeal(bot);
+            // The second argument arms the auto-attack state (UNIT_STAT_MELEE_ATTACKING),
+            // and in this core that state *is* the auto-attack: Player::Update only swings
+            // while it is set. A bot the strategy set calls "ranged" but which has no
+            // ranged weapon (pre-10 druid on Wrath, elemental shaman - no wand, no bow)
+            // was therefore left with no auto-attack at all, however close the mob came:
+            // measured over 99 min at level 1, druid 0.008 and shaman 0.013 kills per
+            // attack order against 0.035-0.079 for warrior/paladin/rogue and 0.11-0.23 for
+            // the nukers. "ranged" describes the talent spec, not what the bot attacks
+            // with; healers keep the old, deliberate hands-off handling.
+            const bool meleeEval = !ai->IsHeal(bot) &&
+                (!ai->IsRanged(bot) || !bot->GetWeaponForAttack(RANGED_ATTACK, true, true));
             result = bot->Attack(target, meleeEval);
             SC_LOG("attack-cmd bot->Attack bot=%s tgt=%s result=%d meleeEval=%d",
                    bot ? bot->GetName() : "(null)",

@@ -35,6 +35,19 @@ namespace ai
     class AttackAnythingAction : public AttackAction
     {
     private:
+        // Repeat-order telemetry: the grind loop can hand out the same mob over and over
+        // from the same spot, the signature of an order that never turns into a kill
+        // (measured level-1 pool: 66 bots with 20+ orders from one point, the longest
+        // series 96 orders over ~50 min with zero kills, and such bots log nothing else,
+        // so nothing showed why). The extra "GrindTargetRepeat" row carries the state
+        // that separates the two causes - never arrived (not in combat, the mob is not
+        // our victim) from arrived and stuck - so the next run answers it from the log.
+        ObjectGuid lastGrindTarget;
+        uint32 lastGrindOrderMs = 0;
+        uint32 grindRepeatCount = 0;
+
+        void LogRepeatOrder(Unit* target);
+
     public:
         AttackAnythingAction(PlayerbotAI* ai) : AttackAction(ai, "attack anything") {}
         std::string GetTargetName() override { return "grind target"; }

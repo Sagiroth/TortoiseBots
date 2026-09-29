@@ -12,6 +12,40 @@
 
 using namespace ai;
 
+namespace
+{
+// Highest level above the bot a grind target may have. A character below level 10 has
+// weapon skill 5 and no abilities, so of the orders it placed on a mob two or more levels
+// above it about 1% ended in a kill (0.3% for melee) against 16-28% at the bot's own
+// level - and those orders were 15% of all grind orders in a measured level-1 pool. Only
+// the solo grind is restricted: a bot following a real player is told what to fight, and
+// the battleground exemption stays where it always was, on the check itself.
+int MaxGrindLevelOverBot(Player* bot, PlayerbotAI* ai)
+{
+    if (bot->GetLevel() < 10 && !ai->HasRealPlayerMaster())
+        return 1;
+
+    return 4;
+}
+
+// A melee swing only lands inside the core's vertical reach: |dz| < 6 yd (the squared
+// UNIT_DEFAULT_MELEE_Z_LIMIT in Unit::CanReachWithMeleeAutoAttack). Ordering an attack on
+// a mob further above or below cannot end in a hit, and the mob will not come down for it
+// either - the pair sits on the unreachable-evade edge until the bot's stuck timer
+// teleports it away (measured: bots standing 11-28 yd above a spawn, 20+ orders from that
+// one point for up to 54 min, zero kills). Casters keep the looser spellDistance cap: a
+// spell does reach up a slope, and they are not the ones closing to melee.
+bool IsOutOfVerticalReach(Player* bot, Unit* unit, PlayerbotAI* ai)
+{
+    float const zDiff = std::abs(bot->getPositionZ() - unit->getPositionZ());
+
+    if (!ai->IsRanged(bot))
+        return zDiff > 6.0f;
+
+    return zDiff > sPlayerbotAIConfig.spellDistance;
+}
+}
+
 Unit* GrindTargetValue::Calculate()
 {
     uint32 memberCount = 1;
@@ -60,6 +94,19 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
         }
     };
 
+    int const maxLevelOver = MaxGrindLevelOverBot(bot, ai);
+
+    // A mob an active quest asks for is never skipped by the level cap: the cap is about
+    // what the bot can kill alone, not about which objective it may try.
+    auto levelTooHigh = [&](Unit* unit)
+    {
+        if (bot->InBattleGround() || unit->getObjectGuid().IsPlayer() ||
+            (int)unit->GetLevel() - (int)bot->GetLevel() <= maxLevelOver)
+            return false;
+
+        return !AI_VALUE2(bool, "need for quest", std::to_string(unit->GetEntry()));
+    };
+
     std::list<ObjectGuid> attackers = context->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
     for (std::list<ObjectGuid>::iterator i = attackers.begin(); i != attackers.end(); i++)
     {
@@ -70,6 +117,18 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
         if (!bot->InBattleGround() && !CanFreeMoveValue::CanFreeTarget(ai, GuidPosition(unit)))
         {
             logGrind(unit, "(hostile) ignored (out of free range).");
+            continue;
+        }
+
+        if (levelTooHigh(unit))
+        {
+            logGrind(unit, std::to_string((int)unit->GetLevel() - (int)bot->GetLevel()) + " levels above bot).");
+            continue;
+        }
+
+        if (IsOutOfVerticalReach(bot, unit, ai))
+        {
+            logGrind(unit, "ignored (to far above/below).");
             continue;
         }
 
@@ -116,7 +175,7 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
             continue;
 
 
-        if (abs(bot->getPositionZ() - unit->getPositionZ()) > sPlayerbotAIConfig.spellDistance)
+        if (IsOutOfVerticalReach(bot, unit, ai))
         {
             logGrind(unit, "ignored (to far above/below).");
             continue;
@@ -137,7 +196,7 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
             continue;
         }
 
-        if (!bot->InBattleGround() && (int)unit->GetLevel() - (int)bot->GetLevel() > 4 && !unit->getObjectGuid().IsPlayer())
+        if (levelTooHigh(unit))
         {
             logGrind(unit, std::to_string((int)unit->GetLevel() - (int)bot->GetLevel()) + " levels above bot).");
             continue;

@@ -88,6 +88,13 @@
 - Shaman bots (and any other class outside warrior/rogue/hunter) now lose the illegally-seeded Dual Wield spell, skill, and session flag at login — no more bogus level-10 dual wield from the old hard-coded seeding. [#351](https://github.com/Sagiroth/TortoiseBots/pull/351)
 - Cleanup is flag-and-skill only: equipped items are left untouched, so existing bots keep their gear without manual intervention. [#351](https://github.com/Sagiroth/TortoiseBots/pull/351)
 
+### Combat & AI
+- Grinding bots below level 10 now take on mobs at most one level above their own instead of up to four — orders against +2 to +4 mobs were 15% of all orders in a measured level-1 pool and converted about 1% of the time (0.3% for melee) against 16-28% at the bot's own level. Quest objectives and bots following a real player are exempt.
+- Grind targets are no longer picked across a ledge: a melee bot refuses a mob more than ~6 yd above or below it, the core's vertical melee reach, where a swing cannot land and the mob cannot come down for it either. Bots were ordering 20+ attacks from one spot for up to 54 min with zero kills, standing 11-28 yd off the spawns.
+- A bot that already holds a creature in evade mode — unkillable, every point of damage against it is dropped by the core — now drops it as an invalid target instead of standing on it silently until the creature resets.
+- Bots whose talent spec is "ranged" but which carry no ranged weapon (pre-10 druid on Wrath, elemental shaman) now arm their auto-attack, so they swing once the mob closes instead of standing on it with nothing to cast: druid averaged 0.008 and shaman 0.013 kills per attack order against 0.035-0.079 for warrior/paladin/rogue.
+- New `GrindTargetRepeat` row in `bot_events.csv` for a second attack order on the same mob within 60 s, carrying mob guid/entry, distance, height difference, combat state, victim match and the repeat count — the trace that separates "never arrived" from "arrived and stuck" in the grind loop.
+
 ## 2026-09-28
 
 ### Database & Migrations

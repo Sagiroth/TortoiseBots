@@ -22,6 +22,17 @@ bool InvalidTargetValue::Calculate()
         return false;
     }
 
+    // A creature in evade mode cannot be killed: the core refuses to start an attack on
+    // one, and every point of damage aimed at it is dropped (WorldObject::DealDamageMods).
+    // AttackersValue::IsValid already refuses such a creature when a new target is picked;
+    // one already held has to be dropped here, or the bot keeps "fighting" it - silent,
+    // motionless, and taking nothing - until the creature resets 24 s later.
+    Creature* creature = dynamic_cast<Creature*>(target);
+    if (creature && creature->IsInEvadeMode())
+    {
+        return true;
+    }
+
     if (qualifier == "current target")
     {
         if (target->getObjectGuid() != bot->GetSelectionGuid())
