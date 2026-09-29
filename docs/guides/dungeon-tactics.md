@@ -36,7 +36,7 @@ Open corridors are death traps in dungeons like Deadmines, Scarlet Monastery, an
 ### The Pullback Maneuver (`.bot action pullback`)
 When you target an enemy mob and issue `.bot action pullback`:
 1. The server picks the puller by precedence: your targeted bot, else any bot designated `.bot role <Name> tank` (any class), else a native tank-spec bot.
-2. The tank uses its class pull action (ranged shot/throw, *Judgement*, *Faerie Fire*, *Serpent Sting*, or *Lightning Bolt*) — or closes in and body-pulls (`reach pull`) when no ranged option exists — applies immediate threat, and immediately sprints back to your party's current location.
+2. The tank uses its class pull action (ranged shot/throw, *Judgement*, *Faerie Fire*, *Serpent Sting*, or *Lightning Bolt*) — or closes in and body-pulls (`reach pull`) when no ranged option exists — applies immediate threat, and immediately sprints back to your party's current location, where it takes the incoming mobs over on its own (no follow-up order needed).
 3. Non-tank bots hold fire until the tank reaches the regroup anchor, drawing the entire mob pack safely around the corner into your ambush.
 
 ```mermaid

@@ -1405,7 +1405,7 @@ AiPlayerbot.EnableCustomRaidTactics = 1
 # the anchor (pullback); a per-command [seconds] argument (0-60) overrides the
 # default. The return leg is hard-capped by PullBackMaxReturnTime.
 #AiPlayerbot.PullDpsJoinDelay = 10
-#AiPlayerbot.PullBackDpsJoinDelay = 3
+#AiPlayerbot.PullBackDpsJoinDelay = 5
 #AiPlayerbot.PullBackMaxReturnTime = 15
 # Random bot default strategies (applied after defaults)
 AiPlayerbot.RandomBotCombatStrategies = +dps,+dps assist,-threat

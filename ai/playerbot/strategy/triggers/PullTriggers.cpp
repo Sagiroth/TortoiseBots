@@ -111,11 +111,10 @@ bool PullEndTrigger::IsActive()
             return true;
         }
 
-        // Tank back at the anchor: stop the return clock (NoteReturnedToAnchor
-        // is called by the arrival brake) and hold the anchor for the join
-        // window. Do not discard the return anchor just because the target
-        // died, changed victim, or the normal pull timeout elapsed while
-        // returning.
+        // Tank back at the anchor: the pull ends and PullEndAction hands the
+        // fight over (and re-stamps the held party to the join delay). Do not
+        // discard the return anchor just because the target died, changed
+        // victim, or the normal pull timeout elapsed while returning.
         return bot->GetDistance(pullPosition.x, pullPosition.y, pullPosition.z) <=
             ai->GetRange("follow");
     }

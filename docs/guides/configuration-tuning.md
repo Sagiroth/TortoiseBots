@@ -168,7 +168,7 @@ You do not need to restart the server to adjust tactical behavior during gamepla
 ### Tactical Gameplay Toggles (`.bot action <toggle>`)
 - `.bot action aoe <on|off>` — Enables or disables Area-of-Effect abilities (crucial around crowd-controlled mobs).
 - `.bot action pull [seconds]` — Tank pulls your target and stays fighting there; party DPS hold at your position for `seconds` (0-60, default `AiPlayerbot.PullDpsJoinDelay = 10`) after the pull lands. The addon advertises support via the `TBM:CAPS|pull-seconds` roster trailer.
-- `.bot action pullback [seconds]` — Tank pulls from range and returns to your position, holding there; party DPS join `seconds` (0-60, default `AiPlayerbot.PullBackDpsJoinDelay = 3`) after the tank is back. The return leg is capped by `AiPlayerbot.PullBackMaxReturnTime = 15`.
+- `.bot action pullback [seconds]` — Tank pulls from range and returns to your position, holding there and picking the pulled mob up as it arrives; party DPS join `seconds` (0-60, default `AiPlayerbot.PullBackDpsJoinDelay = 5`) after the tank is back. The return leg is capped by `AiPlayerbot.PullBackMaxReturnTime = 15`.
 - `.bot action focus` — Focuses party damage onto the mob marked with the Skull raid marker.
 - `.bot action cc <mark>` — Assigns CC to a specific raid marker (e.g. Moon, Star).
 

@@ -44,7 +44,6 @@ namespace ai
         bool HadPullBack() const { return hadPullBack; }
         uint32 GetCommandJoinDelay() const { return commandJoinDelay; }
         time_t GetReturnStartTime() const { return returnStartTime; }
-        void NoteReturnedToAnchor();
 
     private:
         void SetTarget(Unit* target);

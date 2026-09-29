@@ -343,14 +343,6 @@ void PullStrategy::RequestPull(Unit* target, bool resetTime)
         pullStartTime = time(0);
     }
 }
-
-void PullStrategy::NoteReturnedToAnchor()
-{
-    // Called when the tank reaches the anchor: stop the return clock so the
-    // end trigger holds the anchor for the join window instead of ending
-    // the pull the instant the tank arrives.
-    returnStartTime = 0;
-}
 float PullMultiplier::GetValue(Action* action)
 {
     const PullStrategy* strategy = PullStrategy::Get(ai);

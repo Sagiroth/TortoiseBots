@@ -1,39 +1,11 @@
 
 #include "playerbot/playerbot.h"
-#include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/generic/PullStrategy.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
 #include "PositionAction.h"
-#include "../../runtime/BotManager.h"
-#include "../../runtime/PlayerbotAIStorage.h"
 
 using namespace ai;
-
-namespace
-{
-// Same party re-stamp as the pull landing (see PullActions.cpp): when the
-// tank arrives at the anchor, narrow every held party bot's wait window to
-// the pullback join delay and restart its clock, so the delay counts from
-// arrival. Kept local (not shared) to avoid a new cross-file helper header.
-void RestampPullPartyOnArrival(Player* tank, uint32 waitSeconds)
-{
-    if (!tank)
-        return;
-    for (Player* member : LiveGroupMembers(tank->GetGroup()))
-    {
-        if (!member || member == tank || !TortoiseBots::BotManager::Instance().IsBot(member->GetObjectGuid()))
-            continue;
-        PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(member);
-        if (!memberAi || !memberAi->GetAiObjectContext())
-            continue;
-        if (!memberAi->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT))
-            continue;
-        memberAi->GetAiObjectContext()->GetValue<uint8>("wait for attack time")->Set(static_cast<uint8>(waitSeconds));
-        memberAi->GetAiObjectContext()->GetValue<time_t>("combat start time")->Set(time(0));
-    }
-}
-} // namespace
 
 void TellPosition(PlayerbotAI* ai, Player* requester, std::string name, ai::PositionEntry pos)
 {
@@ -238,29 +210,4 @@ bool ReturnToPullPositionAction::isPossible()
     PullStrategy* strategy = PullStrategy::Get(ai);
     return pullPosition.isSet() && pullPosition.mapId == bot->GetMapId() &&
         strategy && strategy->HasPullActionCompleted();
-}
-
-bool ReturnToPullPositionAction::Execute(Event& event)
-{
-    // Arrival brake: the AI thinks a tick late, so stop the tank the moment
-    // it is within follow distance of the anchor instead of drifting past
-    // it. Face the pull target so the tank keeps the mob in front, then
-    // re-stamp the held party: the pullback join delay counts from arrival.
-    PositionMap& posMap = AI_VALUE(PositionMap&, "position");
-    PositionEntry pullPosition = posMap["pull"];
-    if (pullPosition.isSet() && pullPosition.mapId == bot->GetMapId() &&
-        bot->GetDistance(pullPosition.x, pullPosition.y, pullPosition.z) <= sPlayerbotAIConfig.followDistance)
-    {
-        ai->StopMoving();
-        if (PullStrategy* strategy = PullStrategy::Get(ai))
-        {
-            strategy->NoteReturnedToAnchor();
-            if (Unit* target = strategy->GetTarget())
-                sServerFacade.SetFacingTo(bot, target);
-            if (strategy->IsCommandActive() && strategy->IsCommandPullback())
-                RestampPullPartyOnArrival(bot, strategy->GetCommandJoinDelay());
-        }
-        return true;
-    }
-    return MoveToPositionAction::Execute(event);
 }
