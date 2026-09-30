@@ -239,7 +239,7 @@ bool HasActiveWorkTarget(PlayerbotAI* ai)
 // True when the bot did anything observable this tick: moved since the 1 s
 // position sample, executed a new AI action, casts, loots, sits, or holds an
 // active work target. Member reads + one name compare; no DB, no scans.
-bool NoteActivity(Player* bot, PlayerbotAI* ai, BotTrackState& track, uint32 nowMs, char const* actionName)
+bool NoteActivity(Player* bot, PlayerbotAI* ai, ObservabilityEmitter::BotTrackState& track, uint32 nowMs, char const* actionName)
 {
     bool active = false;
     float dx = bot->GetPositionX() - track.lastX;

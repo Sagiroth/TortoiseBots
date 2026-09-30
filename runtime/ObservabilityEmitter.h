@@ -67,6 +67,32 @@ public:
     // Called once per world tick with the world update diff.
     void Update(uint32 diff);
 
+    struct BotTrackState
+    {
+        float lastX = 0.0f;
+        float lastY = 0.0f;
+        float lastZ = 0.0f;
+        uint32 lastSeenMs = 0;
+        uint8 stateIndex = 0;
+        uint32 stationaryMovementMs = 0;
+        bool stuckReported = false;
+        uint32 lastSampleMs = 0;      // when lastX/lastY were sampled (once a second)
+        // Last world-tick time the bot did anything observable: moved,
+        // executed an AI action, cast, looted, or held an active travel
+        // target. Idle requires none of these for >= kIdleAfterMs.
+        uint32 lastActivityMs = 0;
+        // Last executed action name, to notice a new action without string
+        // compares against history: any pointer/name change is activity.
+        std::string lastActionName;
+
+        uint64 unreachableTargetGuid = 0;
+        uint32 unreachableDurationMs = 0;
+        bool unreachableReported = false;
+        uint32 lastUnreachableReportMs = 0;
+    };
+
+private:
+
     void EmitAnomaly(std::string const& type,
                      std::string const& severity,
                      Player* bot,
@@ -142,29 +168,6 @@ private:
     uint64 m_sessionId;
     uint64 m_snapshotSeq;
 
-    struct BotTrackState
-    {
-        float lastX = 0.0f;
-        float lastY = 0.0f;
-        float lastZ = 0.0f;
-        uint32 lastSeenMs = 0;
-        uint8 stateIndex = 0;
-        uint32 stationaryMovementMs = 0;
-        bool stuckReported = false;
-        uint32 lastSampleMs = 0;      // when lastX/lastY were sampled (once a second)
-        // Last world-tick time the bot did anything observable: moved,
-        // executed an AI action, cast, looted, or held an active travel/rpg
-        // target. Idle requires none of these for >= kIdleAfterMs.
-        uint32 lastActivityMs = 0;
-        // Last executed action name, to notice a new action without string
-        // compares against history: any pointer/name change is activity.
-        std::string lastActionName;
-
-        uint64 unreachableTargetGuid = 0;
-        uint32 unreachableDurationMs = 0;
-        bool unreachableReported = false;
-        uint32 lastUnreachableReportMs = 0;
-    };
     std::map<uint32, BotTrackState> m_botTracking;
 
     // Optional roster contributor from another module (world thread only).
