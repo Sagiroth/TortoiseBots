@@ -36,7 +36,7 @@ namespace ai
             // random pool records at all).
             if (TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()) &&
                 !ai->HasRealPlayerMaster() &&
-                TortoiseBots::BotManager::Instance().IsRandomBot(inviter->getObjectGuid()))
+                TortoiseBots::BotManager::Instance().IsRandomBot(inviter->GetObjectGuid()))
             {
                 PlayerbotAI* inviterAi = PlayerbotAIStorage::Instance().GetAI(inviter);
                 if (!inviterAi || !inviterAi->HasRealPlayerMaster())
@@ -49,6 +49,7 @@ namespace ai
                     bot->UninviteFromGroup();
                     return false;
                 }
+            }
 
 			bool allowed = ai->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE, false, inviter);
             sLog.outDebug("TortoiseBots: AcceptInvitationAction %s inviter %s security %u",
