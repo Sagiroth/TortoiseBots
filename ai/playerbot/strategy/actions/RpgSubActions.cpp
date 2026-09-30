@@ -735,10 +735,15 @@ bool RpgTradeUsefulAction::Execute(Event& event)
     {
         if (IsTradingItem(item->GetEntry())) //Did we manage to add the item to the trade?
         {
-            if (bot->GetGroup() && bot->GetGroup()->IsMember(guidP))
-                ai->TellPlayerNoFacing(GetMaster(), "You can use this " + chat->formatItem(item) + " better than me, " + player->GetName() + ".", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
-            else
-                bot->Say("You can use this " + chat->formatItem(item) + " better than me, " + player->GetName() + ".", (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
+            // Pool bots trade with each other constantly; the line names a bot
+            // nobody is watching. Only a real trade partner gets told.
+            if (isRealPlayer_Helper(player))
+            {
+                if (bot->GetGroup() && bot->GetGroup()->IsMember(guidP))
+                    ai->TellPlayerNoFacing(GetMaster(), "You can use this " + chat->formatItem(item) + " better than me, " + player->GetName() + ".", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+                else
+                    bot->Say("You can use this " + chat->formatItem(item) + " better than me, " + player->GetName() + ".", (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
+            }
 
             if (!urand(0, 4) || items.size() < 2) //Complete the trade if we have no more items to trade.
             {
@@ -830,10 +835,14 @@ bool RpgEnchantAction::Execute(Event& event)
                 if (didCast)
                 {
                     ai->TellDebug(ai->GetMaster(), "accept trade", "debug rpg");
-                    if (bot->GetGroup() && bot->GetGroup()->IsMember(guidP))
-                        ai->TellPlayerNoFacing(GetMaster(), "Let me enchant this " + chat->formatItem(item) + " with " + chat->formatSpell(spellId) + " for you " + player->GetName() + ".", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
-                    else
-                        bot->Say("Let me enchant this " + chat->formatItem(item) + " with " + chat->formatSpell(spellId) + " for you " + player->GetName() + ".", (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
+                    // Same as the trade line above: bot-to-bot enchants stay silent.
+                    if (isRealPlayer_Helper(player))
+                    {
+                        if (bot->GetGroup() && bot->GetGroup()->IsMember(guidP))
+                            ai->TellPlayerNoFacing(GetMaster(), "Let me enchant this " + chat->formatItem(item) + " with " + chat->formatSpell(spellId) + " for you " + player->GetName() + ".", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+                        else
+                            bot->Say("Let me enchant this " + chat->formatItem(item) + " with " + chat->formatSpell(spellId) + " for you " + player->GetName() + ".", (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
+                    }
 
                     WorldPacket p;
                     uint32 status = TRADE_STATUS_TRADE_ACCEPT;

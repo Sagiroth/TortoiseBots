@@ -9,7 +9,6 @@
 #include "PossibleAttackTargetsValue.h"
 #include "playerbot/strategy/actions/ChooseTargetActions.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
-#include "Formulas.h"
 
 using namespace ai;
 
@@ -49,12 +48,7 @@ Unit* GrindTargetValue::Calculate()
 
 Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
 {
-    uint32 memberCount = 1;
     Group* group = bot->GetGroup();
-    Player* master = GetMaster();
-
-    if (master && (master == bot || master->GetMapId() != bot->GetMapId() || master->IsBeingTeleported() || !PlayerbotAIStorage::Instance().GetAI(master)))
-        master = nullptr;
 
     // TEMP-DEBUG(grind-target): the existing "debug grind" strategy only reaches a
     // real player master via TellPlayer, which silently no-ops for random bots (no
@@ -116,7 +110,10 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
             continue;
         }
 
-        if (!bot->InBattleGround() && !CanFreeMoveValue::CanFreeTarget(ai, GuidPosition(unit)))
+        // Solo bots (no master at all) are bounded by scan radius only; any
+        // follower keeps the free-move leash so grind never picks a target the
+        // follow strategy would immediately pull it back from.
+        if (!bot->InBattleGround() && ai->GetMaster() && !CanFreeMoveValue::CanFreeTarget(ai, GuidPosition(unit)))
         {
             logGrind(unit, "(hostile) ignored (out of free range).");
             continue;
@@ -177,18 +174,13 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
             continue;
         }
 
-        if (!bot->InBattleGround() && !CanFreeMoveValue::CanFreeTarget(ai, GuidPosition(unit))) //Do not grind mobs far away from master.
+        // As above: solo bots skip, followers keep the leash. The old "far from
+        // master" block is gone: it was unreachable (the master local was nulled
+        // for real players, which never have an AI), and CanFreeTarget already
+        // bounds followers to free-move range around the follow target.
+        if (!bot->InBattleGround() && ai->GetMaster() && !CanFreeMoveValue::CanFreeTarget(ai, GuidPosition(unit))) //Do not grind mobs far away from master.
         {
             logGrind(unit, "ignored (out of free range).");
-            continue;
-        }
-
-        if (!bot->InBattleGround() && master &&
-            (ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
-             ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)) &&
-            sServerFacade.getDistance2d(master, unit) > sPlayerbotAIConfig.proximityDistance)
-        {
-            logGrind(unit, "ignored (far from master).");
             continue;
         }
 
@@ -258,7 +250,11 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
                 logGrind(unit, "ignored (not needed for active quest).");
                 continue;
             }
-            else if (creature && !MaNGOS::XP::Gain(bot, creature) && urand(0, 50))
+            // Pre-attack MaNGOS::XP::Gain() always returns 0 here: it multiplies by
+            // GetXPModifierDueToDamageOrigin(), which is 0 until somebody damages the
+            // creature - so every untouched mob looked like "no XP". Use the pure
+            // grey-level/no-XP-flag predicate instead (donor: bot->isHonorOrXPTarget).
+            else if (creature && !bot->IsHonorOrXPTarget(unit) && urand(0, 50))
             {
                 logGrind(unit, "ignored (not xp and not needed for quest).");
                 continue;
