@@ -28,6 +28,27 @@ namespace ai
                     bot->GetName(), grp->GetLeaderGuid().GetString().c_str());
                 return false;
             }
+            // Donor parity (mod-playerbots ships RandomBotGroupNearby off): a
+            // masterless pool bot never groups with another pool bot, so it
+            // declines an invite whose leader has no live real-player master.
+            // Invites from real players, hires and owner-account bots pass
+            // through: their AI carries a real-player master (or they are not
+            // random pool records at all).
+            if (TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()) &&
+                !ai->HasRealPlayerMaster() &&
+                TortoiseBots::BotManager::Instance().IsRandomBot(inviter->getObjectGuid()))
+            {
+                PlayerbotAI* inviterAi = PlayerbotAIStorage::Instance().GetAI(inviter);
+                if (!inviterAi || !inviterAi->HasRealPlayerMaster())
+                {
+                    sLog.outDebug("TortoiseBots: AcceptInvitationAction %s declines pool-bot invite from %s",
+                        bot->GetName(), inviter->GetName());
+                    WorldPacket data(SMSG_GROUP_DECLINE, 10);
+                    data << bot->GetName();
+                    sServerFacade.SendPacket(inviter, data);
+                    bot->UninviteFromGroup();
+                    return false;
+                }
 
 			bool allowed = ai->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE, false, inviter);
             sLog.outDebug("TortoiseBots: AcceptInvitationAction %s inviter %s security %u",

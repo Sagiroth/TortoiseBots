@@ -335,6 +335,12 @@ namespace ai
                     continue;
             }
 
+            // Donor parity: a masterless pool bot never invites another
+            // masterless pool bot (bot-only groups idle the followers).
+            if (botAi && sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster() &&
+                sRandomBotFacade.IsRandomBot(player) && !botAi->HasRealPlayerMaster())
+                continue;
+
             if (abs(int32(player->GetLevel() - bot->GetLevel())) > 2)
                 continue;
 
@@ -471,6 +477,12 @@ namespace ai
                     continue;
 
                 if (playerAi->HasActivePlayerMaster()) //Do not invite alts of active players.
+                    continue;
+
+                // Donor parity: a masterless pool bot never invites another
+                // masterless pool bot (bot-only groups idle the followers).
+                if (sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster() &&
+                    sRandomBotFacade.IsRandomBot(player) && !playerAi->HasRealPlayerMaster())
                     continue;
 
                 if (player->GetLevel() > bot->GetLevel() + 5) //Invite higher levels that need money so they can grind money and help out.

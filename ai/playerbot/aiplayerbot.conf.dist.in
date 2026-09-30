@@ -521,8 +521,9 @@ AiPlayerbot.RandomBotQuestIds = 7848,3802,5505,6502,7761,9378
 # Randombots will invite players to groups/raids/guilds. (This can also be disabled by turning on DnD on your character)
 # AiPlayerbot.RandomBotInvitePlayer = 1
 
-# Randombots will invite nearby bots to groups/raids/guilds
-# AiPlayerbot.RandomBotGroupNearby = 1
+# Randombots will invite nearby bots to groups/raids/guilds. Off by default
+# (mod-playerbots parity): bot-only groups leash members and stall the pool.
+# AiPlayerbot.RandomBotGroupNearby = 0
 # AiPlayerbot.RandomBotRaidNearby = 1
 # AiPlayerbot.RandomBotGuildNearby = 1
 

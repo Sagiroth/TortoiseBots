@@ -2247,3 +2247,34 @@ cannot run). Validator after the fix: dead-tree triggers 124 -> 123, no new miss
 actions.
 
 
+
+## Pool bots stop grouping with each other (`RandomBotGroupNearby` off) — 2026-09-30
+
+Feature: `AiPlayerbot.RandomBotGroupNearby` defaults to `0` (code fallback and
+template example), matching mod-playerbots. `InviteNearbyToGroupAction` and
+`InviteGuildToGroupAction` skip masterless pool-bot targets, and
+`AcceptInvitationAction` declines an invite whose leader is a masterless pool
+bot. Invites from real players still group; hired companions and owner-account
+bots keep their existing paths (hires bind via `HireLifecycle`, owned bots are
+not random pool records, adopted party bots carry a real-player master).
+
+Source repository: `mod-playerbots` @
+`b6696bdbd3740e575598d167d69f39f68cc0b907` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only): `conf/playerbots.conf.dist`
+(`AiPlayerbot.RandomBotGroupNearby = 0`) and
+`src/Bot/RandomPlayerbotMgr.cpp` (`leave group if leader is rndbot`:
+`IsRandomBot(group->GetLeader())` -> `LeaveOrDisbandGroup`).
+
+Copied / ported / reimplemented: reimplemented. No dissolve sweep: the pool is
+being reset anyway, so existing bot-only groups vanish with it; the decline
+gate uses the existing `SMSG_GROUP_DECLINE` + `UninviteFromGroup` reply path.
+
+Reason: pool bots inviting each other (`invite nearby` / `invite guild` on
+`often` / `random`, `GroupStrategy`) formed ~109 bot-only groups in a 500-bot
+pool; members leash via `far from master` / grouped-travel and idle as
+followers.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No docker
+build (per task scope).
