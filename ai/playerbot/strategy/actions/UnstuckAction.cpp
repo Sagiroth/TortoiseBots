@@ -65,11 +65,6 @@ bool UnstuckAction::Execute(Event& event)
     bool const hearthAttemptLeftBotInPlace = hearthAnchor.isValid() &&
         WorldPosition(bot).fDist(hearthAnchor) < sPlayerbotAIConfig.tooCloseDistance;
 
-    // One line per trip, not per tick: the stuck triggers poll every 5 s, so a
-    // wedged bot produces a line per poll until it moves. This is the only
-    // record of a bot that dispatches movement and stays put.
-    sPlayerbotAIConfig.logEvent(ai, "UnstuckTrip", source);
-
     // Trips swallowed since the previous row ride in the second field. State
     // lives in the facade value store, like "stuck keep count".
     time_t const lastLogged = AI_VALUE2(time_t, "manual time", "unstuck trip logged at");
