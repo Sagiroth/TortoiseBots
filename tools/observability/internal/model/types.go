@@ -73,10 +73,13 @@ type Coordinate struct {
 }
 
 // StateRatios holds the share of time spent across bot macro states. Values
-// are a rolling-window ratio (0.0 - 1.0), not a lifetime average.
+// are a rolling-window ratio (0.0 - 1.0), not a lifetime average. Busy means
+// standing still but doing something (looting, casting, eating, working a
+// travel target); idle means no observable activity for >= 45 s.
 type StateRatios struct {
 	Combat  float64 `json:"combat"`
 	Moving  float64 `json:"moving"`
+	Busy    float64 `json:"busy"`
 	Resting float64 `json:"resting"`
 	Dead    float64 `json:"dead"`
 	Idle    float64 `json:"idle"`

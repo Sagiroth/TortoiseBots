@@ -185,8 +185,9 @@
             <div class="composition-list">
               <div class="comp-row"><span class="comp-name">Combat</span><span class="comp-bar-bg"><span id="macro-bar-combat" class="comp-bar" style="background: #f85149; width: 0%;"></span></span><span id="macro-pct-combat" class="comp-count">0%</span></div>
               <div class="comp-row"><span class="comp-name">Moving</span><span class="comp-bar-bg"><span id="macro-bar-moving" class="comp-bar" style="background: #58a6ff; width: 0%;"></span></span><span id="macro-pct-moving" class="comp-count">0%</span></div>
+              <div class="comp-row" title="Standing still but doing something: looting, casting, eating, working a travel target"><span class="comp-name">Busy</span><span class="comp-bar-bg"><span id="macro-bar-busy" class="comp-bar" style="background: #d29922; width: 0%;"></span></span><span id="macro-pct-busy" class="comp-count">0%</span></div>
               <div class="comp-row"><span class="comp-name">Resting</span><span class="comp-bar-bg"><span id="macro-bar-resting" class="comp-bar" style="background: #2ea043; width: 0%;"></span></span><span id="macro-pct-resting" class="comp-count">0%</span></div>
-              <div class="comp-row"><span class="comp-name">Idle</span><span class="comp-bar-bg"><span id="macro-bar-idle" class="comp-bar" style="background: #9aa4b2; width: 0%;"></span></span><span id="macro-pct-idle" class="comp-count">0%</span></div>
+              <div class="comp-row" title="No movement, action, cast, loot, or active target for 45+ s"><span class="comp-name">Idle</span><span class="comp-bar-bg"><span id="macro-bar-idle" class="comp-bar" style="background: #9aa4b2; width: 0%;"></span></span><span id="macro-pct-idle" class="comp-count">0%</span></div>
               <div class="comp-row"><span class="comp-name">Dead</span><span class="comp-bar-bg"><span id="macro-bar-dead" class="comp-bar" style="background: #c9d1d9; width: 0%;"></span></span><span id="macro-pct-dead" class="comp-count">0%</span></div>
             </div>
             <div class="section-label" style="margin: 20px 0 10px;">FLEET HEALTH</div>
@@ -306,6 +307,7 @@
                 <option value="all">All Status</option>
                 <option value="combat">Combat</option>
                 <option value="moving">Moving</option>
+                <option value="busy">Busy</option>
                 <option value="resting">Resting</option>
                 <option value="idle">Idle</option>
                 <option value="dead">Dead</option>
@@ -385,6 +387,10 @@
                   <div id="armory-pow-bar" class="stat-bar-fill stat-bar-mana" style="width: 100%;"></div>
                   <span id="armory-pow-text" class="stat-bar-text">0 / 0 Mana</span>
                 </div>
+              </div>
+              <div id="armory-xp-wrap" class="stat-bar-wrap" style="margin-top: 6px; display: none;">
+                <div id="armory-xp-bar" class="stat-bar-fill" style="width: 0%; background: var(--accent-yellow);"></div>
+                <span id="armory-xp-text" class="stat-bar-text">– XP</span>
               </div>
             </div>
             <div class="armory-head-right">

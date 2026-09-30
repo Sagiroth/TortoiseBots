@@ -31,7 +31,7 @@
       diff: 0,
       humans: 0,
       bots: 0,
-      states: { combat: 0, moving: 0, resting: 0, dead: 0, idle: 0 }
+      states: { combat: 0, moving: 0, busy: 0, resting: 0, dead: 0, idle: 0 }
     },
     history: {
       t: [],
@@ -1383,7 +1383,7 @@
 
   function renderMacroBar(r) {
     if (!r) return;
-    ['combat', 'moving', 'resting', 'idle', 'dead'].forEach(key => {
+    ['combat', 'moving', 'busy', 'resting', 'idle', 'dead'].forEach(key => {
       const pct = Math.round((r[key] || 0) * 100);
       const bar = document.getElementById(`macro-bar-${key}`);
       const txt = document.getElementById(`macro-pct-${key}`);
@@ -2138,6 +2138,28 @@
       powBar.style.width = '0%';
     }
     if (powText) powText.textContent = `Max ${fmtNum(maxPow)} ${powerLabel}`;
+
+    // XP bar from live telemetry (same source as the roster XP column).
+    // The armory DB has no per-level XP row, so offline bots show nothing
+    // rather than a fake bar.
+    const xpWrap = document.getElementById('armory-xp-wrap');
+    const xpBar = document.getElementById('armory-xp-bar');
+    const xpText = document.getElementById('armory-xp-text');
+    if (xpWrap) {
+      const pct = live ? xpPct(live) : null;
+      if (pct === null) {
+        xpWrap.style.display = 'none';
+      } else {
+        xpWrap.style.display = '';
+        if (xpBar) xpBar.style.width = `${pct}%`;
+        if (xpText) {
+          const rate = fmtXpRate(live.xp_per_hour);
+          xpText.textContent = rate !== '–'
+            ? `${live.xp} / ${live.next_xp} XP (${pct}%) · ${rate}`
+            : `${live.xp} / ${live.next_xp} XP (${pct}%)`;
+        }
+      }
+    }
 
     if (el.armoryError) el.armoryError.style.display = 'none';
     if (el.armoryBody) el.armoryBody.style.display = 'block';
@@ -3380,7 +3402,7 @@
       state.server.online = false;
       state.server.stale = true;
       if (state.server.states) {
-        state.server.states = { combat: 0, moving: 0, resting: 0, dead: 0, idle: 0 };
+        state.server.states = { combat: 0, moving: 0, busy: 0, resting: 0, dead: 0, idle: 0 };
       }
       updateDashboardMetrics();
       if (state.activeTab === 'dashboard') renderDashboardCharts();
