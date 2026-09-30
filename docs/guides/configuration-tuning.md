@@ -230,7 +230,9 @@ Volume is controlled by these knobs (all need a restart):
 | :--- | :---: | :--- |
 | `AiPlayerbot.EnableBroadcasts` | `1` | Master switch. `0` disables all quest/loot/kill/level-up/suggest broadcasts. |
 | `AiPlayerbot.BroadcastToWorldGlobalChance` / `BroadcastToGeneralGlobalChance` | `3000` | Main throttle on what reaches world/general chat (range `0`-`30000`). `0` re-routes most broadcasts away from that channel. |
-| `AiPlayerbot.BroadcastChance*` | varies | Per-event chance, e.g. `BroadcastChanceQuestAccepted`, `BroadcastChanceSuggestSell`. `0` disables that one class. The toxic lines (`*Toxic*`) default to `0`; the Thunderfury joke defaults to `1` — set `AiPlayerbot.BroadcastChanceSuggestThunderfury = 0` to silence it. |
+| `AiPlayerbot.BroadcastChance*` | varies | Per-event chance, e.g. `BroadcastChanceQuestAccepted`. `0` disables that one class. The toxic lines (`*Toxic*`) and the trade spam (`BroadcastChanceSuggestSell`, the "WTS"/"I am selling" lines pool bots hawk in say/yell/trade/general) default to `0`; the Thunderfury joke defaults to `1` — set `AiPlayerbot.BroadcastChanceSuggestThunderfury = 0` to silence it. |
+
+Travel picks ("Traveling 123y to ...") and vendor confirmations ("Selling ...") are silent unless a live player asked: a direct `.bot`/`go`/`where` command reply still answers its requester, but autonomous pool-bot narration and bot-to-bot trade/enchant lines (RPG "You can use this ..." / "Let me enchant this ..." between two bots) never reach chat.
 
 ## 8. Settings that currently have no effect
 

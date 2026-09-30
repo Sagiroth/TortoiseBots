@@ -80,7 +80,11 @@ bool MoveToTravelTargetAction::Execute(Event& event)
                         out << " in " << memberPos.GetAreaName();
                 }
 
-                ai->TellPlayerNoFacing(GetMaster(), out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+                // "Waiting a bit for X" is AI narration between pool bots while a
+                // group travels together: nobody asked to read it. A real player
+                // waiting on their own party still gets the nudge.
+                if (isRealPlayer_Helper(GetMaster()))
+                    ai->TellPlayerNoFacing(GetMaster(), out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
             }
 
             // Introduce a random delay between 80% and 120% of maxWaitForMove to make waiting more natural

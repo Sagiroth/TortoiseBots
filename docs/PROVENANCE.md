@@ -2278,3 +2278,87 @@ followers.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No docker
 build (per task scope).
+
+## Grind XP-eligibility predicate (`IsHonorOrXPTarget` instead of pre-attack `XP::Gain`) — 2026-09-30
+
+Feature: `GrindTargetValue` skips the "not xp and not needed for quest" branch
+only for mobs that truly give no XP, using the pure grey-level/no-XP-flag
+predicate instead of a pre-attack `MaNGOS::XP::Gain` call.
+
+Source project: `mod-playerbots` (`bot->isHonorOrXPTarget(unit)` gate in
+`GrindTargetValue.cpp`) + current core `Player::IsHonorOrXPTarget`
+implementation.
+
+Source commit: `mod-playerbots@b6696bdbd3740e575598d167d69f39f68cc0b907`.
+
+Source files: donor
+`src/Ai/Base/Value/GrindTargetValue.cpp:74`; core
+`src/game/Objects/Player.cpp:21934-21952` (`IsHonorOrXPTarget`),
+`src/game/Formulas.h:34-42` (`GetGrayLevel`), `:102-170` (`Gain`),
+`src/game/Objects/Creature.h:992-998` (`GetXPModifierDueToDamageOrigin`).
+
+Ported / reimplemented: one-line predicate swap in
+`ai/playerbot/strategy/values/GrindTargetValue.cpp:256`
+(`!MaNGOS::XP::Gain(bot, creature)` -> `!bot->IsHonorOrXPTarget(unit)`);
+comment records why. Log reason text and `urand` behaviour unchanged.
+Core `IsHonorOrXPTarget` is exactly the donor-equivalent grey check the task
+asked for (mob level above `GetGrayLevel`, not totem/pet,
+`xp_multiplier != 0`, no `UNIT_STAT_NO_KILL_REWARD`); no `CREATURE_FLAG_EXTRA_NO_XP`
+exists in this core, so no such flag check was added.
+
+Reason: `Gain` multiplies by `GetXPModifierDueToDamageOrigin()`, which is 0
+for a creature nobody has damaged yet — every untouched overworld mob counted
+as "no XP" and was skipped 50/51 times, ending 87-98% of level 1-3 pool grind
+picks with "no grind target found".
+
+Other `MaNGOS::XP::Gain` uses in the module: none — the grind call was the
+only one (`rg 'XP::Gain' ai/`), so no sibling fix was needed.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`.
+
+## Grind leash: solo bots skip `CanFreeTarget`, dead far-from-master block removed — 2026-09-30
+
+Feature: `GrindTargetValue` skips both `CanFreeMoveValue::CanFreeTarget` rejects
+(attackers loop and scan loop) only when the bot has no master at all
+(`ai->GetMaster() == nullptr`, i.e. solo pool bots); any follower — real-player
+master, bot group leader, hired/owned bot in a party — keeps the free-move
+leash. The "far from master" block is deleted: it was unreachable (the local
+`master` was nulled for real players, which never have an AI, so
+`master && HasRealPlayerMaster()` could never be true), and restoring it only
+for bot masters was rejected — it would reintroduce the F-02 yoyo (follower
+picks a target past follow range, `FollowMasterStrategy`'s "out of free move
+range" recall at `ACTION_HIGH` (20) beats `attack anything` (5.0), bot
+oscillates). `CanFreeTarget` already bounds followers to free-move range around
+the follow target, so no second distance gate is needed.
+
+Source project: `mod-playerbots` (grind leash shape in
+`src/Ai/Base/Value/GrindTargetValue.cpp`) + donor report items 4-5.
+
+Source commit: `mod-playerbots@b6696bdbd3740e575598d167d69f39f68cc0b907`.
+
+Source files: donor `src/Ai/Base/Value/GrindTargetValue.cpp:83-93` (wider
+`grindDistance` leash commented out; `follow`-only check vs `lootDistance`);
+local `ai/playerbot/strategy/values/GrindTargetValue.cpp:104-107,168-176`
+(`CanFreeTarget` gates; far-from-master block deleted).
+
+Ported / reimplemented: `ai->HasRealPlayerMaster()` replaced with
+`ai->GetMaster()` on both `CanFreeTarget` conditions; the far-from-master block
+(and its now-unused `master` local) removed. Log reason texts unchanged.
+
+Correction to the previous entry (F-04): `PossibleTargetsValue::IsPossibleTarget`
+does NOT call `CanFreeAttack` — only `PossibleTargetsValue::IsValid` does, and
+`CanFreeAttack` is a no-op anyway: `PlayerbotAI::GetRange("attack")` returns 0
+(`PlayerbotAI.cpp:6935`), so `CanFreeMove` short-circuits at `if (!range) return
+true` (`FreeMoveValues.cpp:94-95`). It never leashed grind picks. Follower
+cohesion comes from the `CanFreeTarget` pick gate plus the follow strategy's own
+"out of free move range" recall — not from `CanFreeAttack`.
+
+Reason: level 1-3 pool bots (no master) ended ~80-92% of grind picks with "no
+grind target found"; top rejects were "out of free range" (~30%, free-move
+range around the bot group leader) and "far from master" (~17%, fired on
+`follow` OR `wander` for bot-led pool groups). Bot-led pool groups dissolve on
+the sibling branch, but hired/owned bots may still follow a bot leader in a real
+player's party — they keep the leash so grind picks stay inside the follow
+recall radius.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`.
