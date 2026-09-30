@@ -36,6 +36,19 @@ static bool HearthLeadsSomewhereUseful(PlayerbotAI* ai, Player* bot)
     return homeLevel + 10 >= (int32)bot->GetLevel();
 }
 
+// UnstuckTrip volume control. MoveStuckTrigger polls every 5 s and counts a bot
+// as stuck while it moves under 50 yd in 10 minutes or stands still for 5, so
+// slow-grinding bots keep it active for hours: per-trip logging wrote ~200 rows
+// per bot per hour - 915,558 rows, 92 MB of a 125 MB bot_events.csv (74%) in
+// 9 h. One row per stuck episode instead: a new episode starts when the bot has
+// really moved (50 yd, the trigger's own no-progress bound) and a liveness row
+// keeps a marathon episode visible every 30 minutes. Replayed over those 9 h the
+// rule writes 7,147 rows. The trigger source is deliberately NOT an episode
+// boundary - a wedged bot flaps between "move stuck" and "combat stuck" every
+// few ticks, and counting that as a new episode alone left 74k rows.
+static constexpr time_t UNSTUCK_LOG_WINDOW = 30 * MINUTE;
+static constexpr float UNSTUCK_LOG_PROGRESS = 50.0f;
+
 bool UnstuckAction::Execute(Event& event)
 {
     std::string source = event.GetSource();
@@ -56,6 +69,27 @@ bool UnstuckAction::Execute(Event& event)
     // wedged bot produces a line per poll until it moves. This is the only
     // record of a bot that dispatches movement and stays put.
     sPlayerbotAIConfig.logEvent(ai, "UnstuckTrip", source);
+
+    // Trips swallowed since the previous row ride in the second field. State
+    // lives in the facade value store, like "stuck keep count".
+    time_t const lastLogged = AI_VALUE2(time_t, "manual time", "unstuck trip logged at");
+    WorldPosition const lastAnchor = AI_VALUE2(WorldPosition, "custom position", "unstuck trip anchor");
+    int32 repeats = AI_VALUE2(int32, "manual int", "unstuck trip repeats");
+
+    bool const newEpisode = lastLogged == 0 ||
+        WorldPosition(bot).sqDistance(lastAnchor) > UNSTUCK_LOG_PROGRESS * UNSTUCK_LOG_PROGRESS;
+
+    if (newEpisode || time(0) - lastLogged >= UNSTUCK_LOG_WINDOW)
+    {
+        sPlayerbotAIConfig.logEvent(ai, "UnstuckTrip", source, std::to_string(repeats));
+        SET_AI_VALUE2(WorldPosition, "custom position", "unstuck trip anchor", WorldPosition(bot));
+        SET_AI_VALUE2(time_t, "manual time", "unstuck trip logged at", time(0));
+        repeats = 0;
+    }
+    else
+        ++repeats;
+
+    SET_AI_VALUE2(int32, "manual int", "unstuck trip repeats", repeats);
 
     // Default action if no specific source is matched
     if (source.empty())
