@@ -124,7 +124,11 @@ bool SellAction::Sell(Player* requester, Item* item)
 
         didSell = true;
 
-        ai->TellPlayer(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+        // A vendor run is autonomous AI; the per-item "Selling X" whisper
+        // reaches /say or party chat when the requester is another pool bot.
+        // Keep the confirmation for a live player; else stay silent.
+        if (requester && isRealPlayer_Helper(requester))
+            ai->TellPlayer(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
         break;
     }
 

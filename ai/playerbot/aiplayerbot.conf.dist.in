@@ -643,7 +643,10 @@ AiPlayerbot.BroadcastToGeneralGlobalChance = 3000
 # AiPlayerbot.BroadcastChanceSuggestQuest = 10000
 # AiPlayerbot.BroadcastChanceSuggestGrindMaterials = 5000
 # AiPlayerbot.BroadcastChanceSuggestGrindReputation = 5000
-# AiPlayerbot.BroadcastChanceSuggestSell = 300
+# Trade spam ("WTS %category", "I am selling [item]") from masterless pool bots
+# is off by default: with hundreds of bots in one zone it reads as wall-to-wall
+# selling. Set >0 (e.g. 300) to let ungrouped random bots hawk their bags again.
+# AiPlayerbot.BroadcastChanceSuggestSell = 0
 # suggest_something is pure ambient chit-chat (no real event behind it, e.g. "anyone
 # know the lore behind Elwynn Forest") - it fired at 100% chance by default, making it
 # the single biggest source of world/general noise. Cut hard since it carries no info.
