@@ -10,6 +10,7 @@ package state
 
 import (
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -343,8 +344,9 @@ func (s *Store) ServerInfo() *model.ServerInfoPayload {
 
 // observeXPLocked folds one published roster into the per-bot XP tracks and
 // stamps XpPerHour / XpGainAgeSec onto the stored snaps. Level-ups reset the
-// baseline (the ding's remainder is the new base, never a burst); bots at max
-// level or without wire XP keep a zero rate.
+// baseline to the ding remainder (never a burst); bots at max level or
+// without wire XP keep a zero rate. Samples older than the window are
+// pruned, so a flat bot's rate decays to 0.
 func (s *Store) observeXPLocked(bots []model.BotSnapshot, now time.Time) {
 	if s.xpTracks == nil {
 		s.xpTracks = make(map[uint32]*xpTrack)
@@ -392,10 +394,7 @@ func (s *Store) observeXPLocked(bots []model.BotSnapshot, now time.Time) {
 			b.XpPerHour = 0
 		} else if b.Level != prev.level {
 			// Ding: remainder XP is the new baseline, never a burst.
-			tr.samples = append([]xpSample{{at: now, level: b.Level, xp: b.XP}}, tr.samples...)
-			if len(tr.samples) > 2 {
-				tr.samples = tr.samples[len(tr.samples)-2:]
-			}
+			tr.samples = []xpSample{{at: now, level: b.Level, xp: b.XP}}
 			// A ding is itself proof of gain.
 			tr.lastGain = now
 			tr.hasGain = true
@@ -472,7 +471,7 @@ func (s *Store) grindingLocked(bots []model.BotSnapshot, now time.Time) model.Gr
 		if b.State == "combat" {
 			out.PctInCombat += 1
 		}
-		if b.TravelPurpose == "grind" || b.TravelPurpose == "Grind" {
+		if strings.EqualFold(b.TravelPurpose, "grind") {
 			out.PctGrinding += 1
 		}
 		out.LevelBands[levelBand(b.Level)]++

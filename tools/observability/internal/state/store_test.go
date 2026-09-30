@@ -344,3 +344,102 @@ func TestConflictingTotalBatchesRestartsCycle(t *testing.T) {
 		t.Fatal("out-of-range batch published a cycle")
 	}
 }
+func xbot(guid uint32, name string, level, xp, next uint32) model.BotSnapshot {
+	b := bot(guid, name, 0)
+	b.Level, b.XP, b.NextXP = level, xp, next
+	return b
+}
+
+func TestXpRateDerivesFromWindowedDeltas(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+
+	s.ApplyHeartbeat(heartbeat(1, 1))
+	s.ApplyBatch(batch(1, 0, 1, xbot(1, "Alpha", 10, 100, 1000)))
+	if got := s.Snapshot().Bots[0].XpPerHour; got != 0 {
+		t.Fatalf("first sample must not produce a rate, got %v", got)
+	}
+	if got := s.Snapshot().Bots[0].XpGainAgeSec; got != -1 {
+		t.Fatalf("no gain yet must be -1, got %v", got)
+	}
+
+	// +300 XP over 6 minutes => 3000 XP/h.
+	c.Advance(6 * time.Minute)
+	s.ApplyHeartbeat(heartbeat(2, 1))
+	s.ApplyBatch(batch(2, 0, 1, xbot(1, "Alpha", 10, 400, 1000)))
+	got := s.Snapshot().Bots[0]
+	if got.XpPerHour < 2999 || got.XpPerHour > 3001 {
+		t.Fatalf("expected ~3000 XP/h, got %v", got.XpPerHour)
+	}
+	if got.XpGainAgeSec != 0 {
+		t.Fatalf("gain age must be 0 right after a gain, got %v", got.XpGainAgeSec)
+	}
+
+	// A ding resets the baseline: remainder XP is the new base, never a burst.
+	c.Advance(2 * time.Second)
+	s.ApplyHeartbeat(heartbeat(3, 1))
+	s.ApplyBatch(batch(3, 0, 1, xbot(1, "Alpha", 11, 50, 2000)))
+	if got := s.Snapshot().Bots[0].XpPerHour; got != 0 {
+		t.Fatalf("ding must reset the rate, got %v", got)
+	}
+
+	// Old samples age out of the 30 min window: a flat bot decays to 0 and
+	// its gain age goes stale.
+	c.Advance(31 * time.Minute)
+	s.ApplyHeartbeat(heartbeat(4, 1))
+	s.ApplyBatch(batch(4, 0, 1, xbot(1, "Alpha", 11, 50, 2000)))
+	got = s.Snapshot().Bots[0]
+	if got.XpPerHour != 0 {
+		t.Fatalf("stale window must decay to 0, got %v", got.XpPerHour)
+	}
+	if got.XpGainAgeSec < 1800 {
+		t.Fatalf("gain age must reflect the stale ding, got %v", got.XpGainAgeSec)
+	}
+}
+
+func TestGrindingSummaryCountsAndBands(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+
+	a := xbot(1, "Alpha", 10, 0, 1000)
+	a.State, a.TravelPurpose = "combat", "grind"
+	b := xbot(2, "Beta", 61, 0, 0) // max level, no wire XP
+	b.State = "idle"
+	s.ApplyHeartbeat(heartbeat(1, 2))
+	s.ApplyBatch(batch(1, 0, 1, a, b))
+
+	g := s.Snapshot().Grinding
+	if g.BotsTracked != 2 {
+		t.Fatalf("expected 2 tracked, got %d", g.BotsTracked)
+	}
+	if g.PctInCombat != 50 || g.PctGrinding != 50 {
+		t.Fatalf("combat/grind pct wrong: %+v", g)
+	}
+	if g.LevelBands["10-19"] != 1 || g.LevelBands["60"] != 1 {
+		t.Fatalf("level bands wrong: %+v", g.LevelBands)
+	}
+}
+
+func TestServerInfoStoredAndSessionGated(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+	if s.ServerInfo() != nil {
+		t.Fatal("expected no server info initially")
+	}
+	s.ApplyServerInfo(&model.ServerInfoPayload{Session: 7, ModuleVersion: "test"})
+	if got := s.ServerInfo(); got == nil || got.ModuleVersion != "test" {
+		t.Fatalf("server info not stored: %+v", got)
+	}
+	// A delayed datagram from another session must not overwrite.
+	s.ApplyServerInfo(&model.ServerInfoPayload{Session: 8, ModuleVersion: "stale"})
+	if got := s.ServerInfo(); got.ModuleVersion != "test" {
+		t.Fatalf("stale session overwrote server info: %+v", got)
+	}
+	// A session change clears it.
+	hb := heartbeat(1, 0)
+	hb.Session = 9
+	s.ApplyHeartbeat(hb)
+	if s.ServerInfo() != nil {
+		t.Fatal("session change must clear server info")
+	}
+}
