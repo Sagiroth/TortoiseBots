@@ -10,6 +10,7 @@
 #include "PlayerTalentSpec.h"
 #include <stack>
 #include "strategy/IterateItemsMask.h"
+#include "BotDiagnostics.h"
 #include "../../runtime/BotManager.h"
 
 class Player;
@@ -857,6 +858,13 @@ protected:
     ai::Event lastEvent;
     LastKillerInfo lastKiller_;
     bool deathHandled_ = false; // this death was logged and counted; cleared when the bot is seen alive again
+
+    // Evade probe (diagnostics only): samples the health and evade state of the creature
+    // this bot is fighting, and logs the cases where the mob evades or regenerates faster
+    // than the bot damages it. Writes bot_events.csv rows "EvadeProbe" / "EvadeProbeCounter";
+    // sets no action, value or movement. Defined in BotDiagnostics.cpp, see there.
+    botdiag::EvadeProbeState evadeProbe;
+    void UpdateEvadeProbe();
 
 public:
     void RecordMessages(bool record, bool incomming = false) { m_recordMessages = record; m_recordIncommingMessages = incomming; if (!record) m_recordedMessages.clear(); }

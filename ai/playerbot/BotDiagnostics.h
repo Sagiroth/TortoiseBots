@@ -20,6 +20,40 @@
 
 namespace ai { namespace botdiag {
     bool IsActionLogEnabled();
+
+    // State of the evade probe in PlayerbotAI::UpdateEvadeProbe (implemented in
+    // BotDiagnostics.cpp). Kept here as plain data: this header is included by host code
+    // that also carries a global `class PlayerbotAI;` forward declaration, so it must not
+    // name the AI class at all (doing so made the name ambiguous in those translation
+    // units).
+    //
+    // The probe is observation only - it never sets an action, a value or movement. While
+    // a bot holds a creature target (its current target, or the attack target it was
+    // ordered to grind), a sample every kSampleSec records the mob's health and evade
+    // state, and a row is written to bot_events.csv ("EvadeProbe") when the mob is in
+    // evade mode, is evading because its target is unreachable, or gained 15+ health
+    // points since the previous sample while the bot was fighting it - regeneration
+    // outrunning the bot's damage. At most one row per bot per 30 s.
+    //
+    // A counter row ("EvadeProbeCounter") per fighting bot per minute carries the fights
+    // sampled, how many of those had a mob that gained health, and how many samples saw an
+    // evading or an unreachable mob, so rates can be computed from the log alone.
+    struct EvadeProbeState
+    {
+        uint32 lastSampleSec = 0;
+        uint32 lastLogSec = 0;
+        uint32 lastCounterSec = 0;
+        uint64 sampledTarget = 0;      // guid of the mob the previous sample was taken from
+        uint32 sampledSec = 0;         // when that sample was taken (for the health rate)
+        uint32 sampledHealthPct = 0;
+        uint64 riseCountedTarget = 0;  // fight already counted as "mob gained health"
+        uint32 counterFights = 0;
+        uint32 counterRiseFights = 0;
+        uint32 counterEvade = 0;
+        uint32 counterNoReach = 0;
+        uint32 counterRows = 0;
+    };
+
     extern thread_local const char* gLastPhaseTag;
     extern thread_local const char* gLastPhaseBotName;
 }}

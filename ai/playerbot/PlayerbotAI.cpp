@@ -1496,6 +1496,9 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
     SC_PHASE("UpdateAIInternal.entry", bot ? bot->GetName() : "(null)");
     if (bot->IsBeingTeleported() || !bot->IsInWorld())
         return;
+
+    // Observation only (see BotDiagnostics.h): no action, value or movement is touched.
+    UpdateEvadeProbe();
     // Self-heal for the "alive but engine DEAD" mismatch: a bot the core reports
     // alive while the engine still sits in DEAD runs only the dead strategy, so it
     // never travels, never grinds, and reads dead on the dashboard for minutes.
