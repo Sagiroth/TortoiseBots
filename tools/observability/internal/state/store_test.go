@@ -426,6 +426,13 @@ func TestServerInfoStoredAndSessionGated(t *testing.T) {
 	if s.ServerInfo() != nil {
 		t.Fatal("expected no server info initially")
 	}
+	// Establish session 7 with a complete cycle.
+	hb := heartbeat(1, 1)
+	hb.Session = 7
+	s.ApplyHeartbeat(hb)
+	b := batch(1, 0, 1, bot(1, "Alpha", 0))
+	b.Session = 7
+	s.ApplyBatch(b)
 	s.ApplyServerInfo(&model.ServerInfoPayload{Session: 7, ModuleVersion: "test"})
 	if got := s.ServerInfo(); got == nil || got.ModuleVersion != "test" {
 		t.Fatalf("server info not stored: %+v", got)
@@ -436,9 +443,9 @@ func TestServerInfoStoredAndSessionGated(t *testing.T) {
 		t.Fatalf("stale session overwrote server info: %+v", got)
 	}
 	// A session change clears it.
-	hb := heartbeat(1, 0)
-	hb.Session = 9
-	s.ApplyHeartbeat(hb)
+	hb2 := heartbeat(1, 0)
+	hb2.Session = 9
+	s.ApplyHeartbeat(hb2)
 	if s.ServerInfo() != nil {
 		t.Fatal("session change must clear server info")
 	}

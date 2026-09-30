@@ -30,6 +30,7 @@
 #include "SystemConfig.h"
 #include "WorldSession.h"
 #include "Log.h"
+#include "../host/ModuleLog.h"
 #include "../host/ModuleVersion.h"
 #include "Timer.h"
 #include "MotionMaster.h"

@@ -223,6 +223,7 @@ func readTalentDBC(dir string) ([]dbcTalent, []dbcTalentTab, error) {
 			page:      r[13],
 		})
 	}
+	talents := make([]dbcTalent, 0, len(tRecs))
 	for _, r := range tRecs {
 		// Layout per TalentEntry: id, tab, row, col, rankID[5], padding,
 		// dependsOn, ..., dependsOnRank, ..., dependsOnSpell.

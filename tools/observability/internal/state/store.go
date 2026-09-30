@@ -37,6 +37,20 @@ const (
 	maxTrackedXP = 5000
 )
 
+// Config tunes retention. Zero values fall back to the defaults.
+type Config struct {
+	TrailPoints int
+	BotTTL      time.Duration // staleness threshold for the roster
+	RosterTTL   time.Duration // wipe the roster after this without a snapshot
+	PendingTTL  time.Duration // abandon incomplete cycles after this
+	IssueMinAge time.Duration // only surface issues that persist this long
+}
+
+type botEntry struct {
+	snap  model.BotSnapshot
+	trail []model.Coordinate
+}
+
 // xpSample is one published per-bot XP observation.
 type xpSample struct {
 	at    time.Time
