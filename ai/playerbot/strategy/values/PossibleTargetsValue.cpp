@@ -112,6 +112,18 @@ bool PossibleTargetsValue::IsValid(Unit* target, Player* player, bool ignoreLos)
             return false;
         }
 
+        // A creature in evade mode is untouchable: the core refuses to start an attack
+        // on one and drops every point of damage aimed at it (WorldObject::DealDamageMods),
+        // while its health regenerates. One is therefore not a possible target - not for
+        // grinding (GrindTargetValue), not for a pull, not for the travel/area scans - and
+        // a bot that reaches it walks the whole way for nothing and then stands on it.
+        // It is also what clears a stale "attack target" in SelectNewTargetAction: that
+        // check is "possible targets no los", so the guid must not survive here.
+        if (target->IsCreature() && static_cast<Creature*>(target)->IsInEvadeMode())
+        {
+            return false;
+        }
+
         // Being in combat with *this* target is a reason to know where it is
         // without seeing it. Being in combat at all is not: player->IsInCombat()
         // used to be part of this, which meant a bot fighting anyone could pick

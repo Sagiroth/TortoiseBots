@@ -35,6 +35,15 @@ namespace ai { namespace botdiag {
     // points since the previous sample while the bot was fighting it - regeneration
     // outrunning the bot's damage. At most one row per bot per 30 s.
     //
+    // Alongside the mob's health and distance, the row carries what the creature is doing
+    // and why it is untouchable: its current movement generator (6/HOME means it was sent
+    // home by EnterEvadeMode and is walking back), how far it is from the spawn point it
+    // is walking to and from the position its current fight started at (the core stops
+    // counting a victim that left the threat radius around that point), how many units
+    // still attack it, the threat the bot itself holds, and whether the bot's pet is the
+    // one fighting it. Together those separate "the fight dragged it away from home",
+    // "the last attacker died or left", and "a pet pulled it and its owner walked off".
+    //
     // A counter row ("EvadeProbeCounter") per fighting bot per minute carries the fights
     // sampled, how many of those had a mob that gained health, and how many samples saw an
     // evading or an unreachable mob, so rates can be computed from the log alone.

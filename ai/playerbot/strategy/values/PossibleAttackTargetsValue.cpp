@@ -263,6 +263,13 @@ bool PossibleAttackTargetsValue::IsTapped(Unit* target, Player* player)
 
 bool PossibleAttackTargetsValue::IsValid(Unit* target, Player* player, float range, bool ignoreCC, bool checkAttackerValid)
 {
+    // Nothing about an evading creature makes it attackable: the core absorbs every point
+    // of damage aimed at it, so the early "it has a victim / a target guid / it is my
+    // attack target" acceptances below must not vouch for one. Held as "attack target" it
+    // would otherwise stay a possible target for as long as the creature is away from home.
+    if (target && target->IsCreature() && static_cast<Creature*>(target)->IsInEvadeMode())
+        return false;
+
     // Check for the valid attackers value
     if (checkAttackerValid && !AttackersValue::IsValid(target, player))
     {

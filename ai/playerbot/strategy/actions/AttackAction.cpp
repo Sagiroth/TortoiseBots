@@ -310,6 +310,25 @@ bool AttackAction::IsTargetValid(Player* requester, Unit* target)
 
         return false;
     }
+    else if (target->IsCreature() && static_cast<Creature*>(target)->IsInEvadeMode())
+    {
+        // The core refuses to start an attack on an evading creature (Unit::Attack) and
+        // drops every point of damage aimed at it, so an order to attack one must not
+        // even arm the auto-attack. The target values are already evade-aware, but they
+        // are cached: a creature that entered evade after the target was picked still
+        // reached this point through AttackAnythingAction, which then left the bot
+        // hunting a mob it could never damage - and left "current target"/"attack target"
+        // pointing at it, because a failed Attack() never replaces them.
+        if (verbose)
+        {
+            std::ostringstream msg;
+            msg << target->GetName();
+            msg << " is evading";
+            ai->TellPlayerNoFacing(requester, msg.str());
+        }
+
+        return false;
+    }
     else if (sServerFacade.getDistance2d(bot, target) > sPlayerbotAIConfig.sightDistance)
     {
         if (verbose)

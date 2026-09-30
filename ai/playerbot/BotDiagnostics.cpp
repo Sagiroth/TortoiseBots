@@ -129,6 +129,30 @@ void PlayerbotAI::UpdateEvadeProbe()
         out << " dt=" << (sameTarget ? (uint32)(now - (time_t)evadeProbe.sampledSec) : 0);
         out << " class=" << (uint32)bot->GetClass();
         out << " blvl=" << (uint32)bot->GetLevel();
+
+        // Why the creature is in evade, and what it looks like while it is. The core has
+        // three ways in: the unreachable timer (logged above as notreach), EnterEvadeMode
+        // having sent it home - HOME motion, the walk back to its spawn point - and the
+        // hard leash, which no starting-zone creature has (its leash_range is 0). motion
+        // tells which one, homedist how far the fight dragged it from the spawn point it
+        // is now walking back to (an evading mob is invulnerable and regenerating the
+        // whole way), csdist how far the current fight has moved from where it started -
+        // the core stops counting a victim that left the threat radius around that point
+        // and evades when no reference is left - and atk/threat whether anything is still
+        // holding it. petvictim separates a creature the bot's own pet is fighting from
+        // one the bot is, which is the report "the hunter's pet pulls, the owner walks on
+        // and the mob is left alone".
+        float homeX, homeY, homeZ, homeO;
+        creature->GetRespawnCoord(homeX, homeY, homeZ, &homeO);
+        float combatStartX, combatStartY, combatStartZ;
+        creature->GetCombatStartPosition(combatStartX, combatStartY, combatStartZ);
+        Unit* pet = bot->GetPet();
+        out << " motion=" << (uint32)creature->GetMotionMaster()->GetCurrentMovementGeneratorType();
+        out << " homedist=" << (uint32)creature->GetDistance(homeX, homeY, homeZ);
+        out << " csdist=" << (uint32)creature->GetDistance(combatStartX, combatStartY, combatStartZ);
+        out << " atk=" << (uint32)creature->GetAttackers().size();
+        out << " threat=" << (uint32)sServerFacade.GetThreatManager(creature).getThreat(bot);
+        out << " petvictim=" << (int)(pet && pet->GetVictim() == creature);
         sPlayerbotAIConfig.logEvent(ai, "EvadeProbe", out.str(), std::to_string(creature->GetEntry()));
     }
 

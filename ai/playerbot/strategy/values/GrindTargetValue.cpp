@@ -97,6 +97,16 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
         if (!unit || !sServerFacade.IsAlive(unit))
             continue;
 
+        // Belt and braces: "possible attack targets" is built from "attackers", which
+        // already refuses an evading creature, but this loop trusts a cached list and
+        // returns on the first hit - so the one predicate that decides whether the mob
+        // can be hurt at all is applied here as well, with a reason in the grind log.
+        if (unit->IsCreature() && static_cast<Creature*>(unit)->IsInEvadeMode())
+        {
+            logGrind(unit, "(hostile) ignored (evading).");
+            continue;
+        }
+
         if (!bot->InBattleGround() && !CanFreeMoveValue::CanFreeTarget(ai, GuidPosition(unit)))
         {
             logGrind(unit, "(hostile) ignored (out of free range).");
