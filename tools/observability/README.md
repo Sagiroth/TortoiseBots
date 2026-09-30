@@ -22,7 +22,8 @@ Macro states (`state`, heartbeat `states`, `tortoisebots_state_ratio`): `combat`
 - `STUCK` and `ACTION_LOOP` are counter-only (`tortoisebots_anomalies_total`): `STUCK` never enters the Incidents ring buffer (the 60 s `STUCK` issue episode is the surfaced signal) and `ACTION_LOOP` never opens an issue episode (cooldown-gated to one event/30 s, so it almost never reaches a surface gate).
 - `BOT_DEATH` is emitted from `PlayerbotAI::OnDeath` (target/zone/position/level).
 - Anomaly emitters that can persist (`UNREACHABLE_TARGET`) re-report every cooldown window so the daemon has a liveness signal; do not make them fire-once.
-- `humans` counts live network-transport sessions with an in-world player (`World::GetAllSessions` + `HasNetworkTransport`). Headless bot sessions never enter the network map, so the old `sessions - bots` math is gone.
+- `SERVER_INFO` datagrams (startup + every 5 min) carry module/core versions, live core rates and `AiPlayerbot` flags from running getters — never config files. The dashboard Server panel renders them, and its **Copy diagnostic report** button turns them plus pool health (tracked/gaining, median/total XP/h, deaths/min, combat/grind %, level bands), issue counts and freshness into a paste-ready plain-text snapshot (no secrets) — the way to report issues.
+- `/api/v1/grinding` serves the pool rollup behind the Grinding panel: per-bot XP/h + last-gain age over a 30 min level-up-aware window, pool gaining %, median/total XP/h, kills/min + killed-5min % (from `BOT_DEATH` anomalies), combat/grind %, adaptive level bands.
 
 ## Issue episodes (`internal/state` issue tracker)
 

@@ -19,7 +19,7 @@ Configuration lives in two installed files (the build generates them from templa
 1. `aiplayerbot.conf`, installed next to `mangosd.conf` — every `AiPlayerbot.*` gameplay flag, QoL toggle, AI threshold and service. Template: `ai/playerbot/aiplayerbot.conf.dist.in`. A different path can be set with `AiPlayerbot.ConfigFile` in `mangosd.conf`.
 2. `modules/tortoise_bots.conf` in the server config directory — `TortoiseBots.*` module options (log level, telemetry). Template: `conf/tortoise_bots.conf.dist`.
 
-Both are read once at server start; `.reload config` only re-applies `TortoiseBots.LogLevel`. A line that is commented out (`#`) in the template sets nothing — the code default listed below applies. The Docker stack (`tortoise-docker-penqle`) renders these files from its `.env` on every start, so its values win there.
+Both are read once at server start; `.reload config` only re-applies `TortoiseBots.LogLevel`. A line that is commented out (`#`) in the template sets nothing — the code default listed below applies.
 
 ---
 
@@ -85,7 +85,6 @@ These flags control the behavior of autonomous random bots roaming the world:
 | `AiPlayerbot.UnstuckHearthMinDistance` | `300` | `300` | Yards from its own homebind a long-stuck random bot must be before a hearthstone is worth casting; closer than this the unstuck chain repops instead, so the bot does not burn its 30-minute hearthstone cooldown to land a few hundred yards away (a level 1 starting zone is that small). `0` always hearths. |
 
 | `AiPlayerbot.BotQuestLogUpkeep` | `1` | `1` | Masterless random bots drop finished quests they can no longer reward (except money blockers) and grey itemless deliver quests, skip grey quests unless the reward is an equip upgrade, clean a nearly-full log only when something is droppable, and stay in turn-in travel from the first finished quest until none remain. `0` restores the old behaviour. Owned/alt bots unaffected. |
-| `AiPlayerbot.LeaveOutgrownZones` | `1` | `1` | A random masterless bot at level 10+ in a non-capital zone it outlevels by 5+ walks to a level-band Grind hub, skips services and inn homebinds in zones 10+ below it (capitals excepted). Unknown area levels fail closed. |
 | `AiPlayerbot.LeaveOutgrownZones` | `1` | `1` | A random masterless bot at level 10+ in a non-capital zone it outlevels by 5+ — or idling in a capital with no pending trainer/mount/AH/Vendor/Repair need — walks to a level-band Grind hub, skips services and inn homebinds in zones 10+ below it (capitals excepted). Unknown area levels fail closed. `LeaveOutgrownZone`/`TravelTarget` rows in `bot_events.csv` count fires. |
 | `AiPlayerbot.AllowIsolatedCustomStartingZones` | `0` | `0` | When 0, blocks random bots from custom isolated starter zones (Blackstone Island, Thalassian Highlands, Alah'Thalas) and normalizes them to mainland starter zones. |
 | `AiPlayerbot.RandomBotEvenStartZones` | `1` | `1` | Spreads new random bots evenly across the six racial starting zones: auto-create picks a valid race from the least-populated start zone (counted once per creation batch, level-1 pool characters) and isolated-custom-zone normalization sends the bot to the least-populated standard start of its faction (core `playercreateinfo` spawns). `0` keeps the old behaviour: uniform random race, goblins to Valley of Trials, high elves to Northshire. |
@@ -153,12 +152,13 @@ TortoiseBots: BOTPERF passUs=812 playerBots=5 ownedBots=5 masterBots=0 poolBots=
 
 ### Server settings for many bots (`mangosd.conf`)
 
-Hundreds of always-active bots keep most of both continents busy, which the core's defaults don't expect. Two core settings matter most; the Docker stack renders them from `.env` (`CLEANUP_TERRAIN`, `PLAYER_SAVE_INTERVAL`).
+Hundreds of always-active bots keep most of both continents busy, which the core's defaults don't expect. Three core settings matter most:
 
 | Setting | Recommended | Why |
 | :--- | :---: | :--- |
 | `CleanupTerrain` | `0` | The core frees unused terrain every 60 s; bots re-enter it seconds later and the reload stalls the map tick. With 500 bots, slow (>200 ms) map ticks dropped from 126 to 20 per 10 minutes. Memory stays bounded by the continents' terrain (~2 GB extracted). Keep `1` on low-RAM machines. |
 | `PlayerSave.Interval` | `300000` | The 60 s default saves every bot in the same minute; 5 min removes that write wave. A crash loses at most this much progress. |
+| `DynamicRespawn.MaxReductionRate` / `DynamicRespawn.MinRespawnTime` | `0.75` / `15` | Speed up respawns where many players/bots crowd: the core shortens spawn timers near groups of players (defaults cap the cut at `0.25` and never below `25` s). On bot-heavy servers raise the cap and lower the floor so starter valleys and grind fields keep up with a crowded pool. Core defaults are `0.25` / `25`; the rest of the `DynamicRespawn.*` block stays at its defaults. |
 
 ---
 
