@@ -71,6 +71,19 @@
 
 - Fresh pool bots stop spamming greetings and emotes at each other in starting zones. Real players still get greetings (limited), and hire/summon/reunite greetings for a real master are unchanged — `AiPlayerbot.RandomBotGreet` defaults to off for the pool. [#367](https://github.com/Sagiroth/TortoiseBots/pull/367)
 
+### Combat & AI
+- Pool bots (level 1-3) actually find grind targets again instead of idling: the XP pre-check was asking the core about mobs nobody had hit yet, so almost every untouched mob read as "no XP" and got skipped. It now uses the core's grey-level test (`Player::IsHonorOrXPTarget`), matching mod-playerbots behavior. [#370](https://github.com/Sagiroth/TortoiseBots/pull/370)
+- Leash handling for masterless bots cleaned up, so bots stop breaking off fights and wandering instead of committing to a kill. [#370](https://github.com/Sagiroth/TortoiseBots/pull/370)
+
+### Core Sync & Fixes
+- Newly created bots no longer get stuck in their race intro on first login. While the intro plays the server won't let creatures target that character, so bots would hit a mob, the mob would find nobody to fight, evade, and heal to full. The module now ends the intro on world entry — no core change required. [#369](https://github.com/Sagiroth/TortoiseBots/pull/369)
+- Also covers the second intro path via camera game objects (RPG use / cinematics), so bots don't silently re-enter an untargetable state afterward. [#369](https://github.com/Sagiroth/TortoiseBots/pull/369)
+
+### Chat & Bot Behavior
+- Pool bots no longer narrate their own autonomous actions in public or party chat; travel lines, "Selling [item]" spam, and bot-to-bot trade/enchant chatter are now silent unless a real player prompted them [#372](https://github.com/Sagiroth/TortoiseBots/pull/372)
+- Direct replies to player commands still work as before — only the unprompted narration is suppressed, so nearby players stop getting spammed in `/say` [#372](https://github.com/Sagiroth/TortoiseBots/pull/372)
+- `AiPlayerbot.BroadcastChanceSuggestSell` now defaults to `0` (down from `300`), killing the "WTS" broadcasts out of the box. Operators who actually want that noise can raise the value in config [#372](https://github.com/Sagiroth/TortoiseBots/pull/372)
+
 ## 2026-09-29
 
 ### Combat & AI
