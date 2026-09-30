@@ -22,7 +22,7 @@
     worldMapId: 0,
     bots: [],
     anomalies: [],
-    grinding: { bots_tracked: 0, bots_gaining_xp: 0, pct_gaining_xp: 0, median_xp_hour: 0, total_xp_hour: 0, kills_per_min: 0, pct_killed_5min: 0, pct_in_combat: 0, pct_grinding: 0, level_bands: {} },
+    grinding: { bots_tracked: 0, bots_gaining_xp: 0, pct_gaining_xp: 0, median_xp_hour: 0, total_xp_hour: 0, deaths_per_min: 0, pct_died_5min: 0, pct_in_combat: 0, pct_grinding: 0, level_bands: {} },
     serverInfo: null,
     server: {
       online: false,
@@ -1357,11 +1357,11 @@
       <div class="role-row" style="margin-top: 0;">
         <span class="badge badge-success" title="Bots with an XP gain in the last 10 min">${esc(g.bots_gaining_xp)}/${esc(g.bots_tracked)} GAINING XP</span>
         <span class="badge badge-info" title="Median XP/hour over bots with a positive rate">${esc(fmtXpRate(g.median_xp_hour))} MEDIAN</span>
-        <span class="badge badge-error" title="BOT_DEATH-derived kills per minute, last 10 min">${esc((g.kills_per_min || 0).toFixed(1))} KILLS/MIN</span>
+        <span class="badge badge-error" title="BOT_DEATH bot deaths per minute, last 10 min">${esc((g.deaths_per_min || 0).toFixed(1))} DEATHS/MIN</span>
       </div>
       <div class="comp-row"><span class="comp-name">In combat</span><span class="comp-bar-bg"><span class="comp-bar" style="width: ${Math.round(g.pct_in_combat || 0)}%; background: #f85149;"></span></span><span class="comp-count">${Math.round(g.pct_in_combat || 0)}%</span></div>
       <div class="comp-row"><span class="comp-name">Grind travel</span><span class="comp-bar-bg"><span class="comp-bar" style="width: ${Math.round(g.pct_grinding || 0)}%; background: #58a6ff;"></span></span><span class="comp-count">${Math.round(g.pct_grinding || 0)}%</span></div>
-      <div class="comp-row"><span class="comp-name">Killed 5m</span><span class="comp-bar-bg"><span class="comp-bar" style="width: ${Math.round(g.pct_killed_5min || 0)}%; background: #d29922;"></span></span><span class="comp-count">${Math.round(g.pct_killed_5min || 0)}%</span></div>`;
+      <div class="comp-row"><span class="comp-name">Died 5m</span><span class="comp-bar-bg"><span class="comp-bar" style="width: ${Math.round(g.pct_died_5min || 0)}%; background: #d29922;"></span></span><span class="comp-count">${Math.round(g.pct_died_5min || 0)}%</span></div>`;
     if (bands) {
       const order = ['1-9', '10-19', '20-29', '30-39', '40-49', '50-59', '60'];
       const lb = g.level_bands || {};
@@ -1402,7 +1402,7 @@
   function serverGroup(title, rows) {
     return `<div class="section-label" style="margin: 12px 0 6px;">${esc(title)}</div>
       <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 4px 16px; font-size: 0.78rem;">
-      ${rows.map(([k, v]) => `<div style="display: flex; justify-content: space-between; gap: 8px;"><span style="color: var(--text-muted);">${esc(k)}</span><strong class="mono">${v}</strong></div>`).join('')}
+      ${rows.map(row => `<div style="display: flex; justify-content: space-between; gap: 8px;">${row.map(cell => `<span style="color: var(--text-muted);">${cell}</span>`).join('<span style="color: var(--text-dim);">·</span>')}</div>`).join('')}
       </div>`;
   }
 
@@ -1424,27 +1424,27 @@
         · max level ${esc(info.max_level || '?')}
       </div>
       ${serverGroup('RATES', [
-        ['XP kill', num(rates.xp_kill)], ['XP elite', num(rates.xp_kill_elite)],
-        ['XP quest', num(rates.xp_quest)], ['XP explore', num(rates.xp_explore)],
-        ['Drop money', num(rates.drop_money)], ['Honor', num(rates.honor)],
-        ['Rep gain', num(rates.rep_gain)], ['Talent', num(rates.talent)],
-        ['Bot XP mult', num(rates.bot_xp_mult)],
+        [[esc('XP kill'), num(rates.xp_kill)], [esc('XP elite'), num(rates.xp_kill_elite)],
+        [esc('XP quest'), num(rates.xp_quest)], [esc('XP explore'), num(rates.xp_explore)],
+        [esc('Drop money'), num(rates.drop_money)], [esc('Honor'), num(rates.honor)],
+        [esc('Rep gain'), num(rates.rep_gain)], [esc('Talent'), num(rates.talent)],
+        [esc('Bot XP mult'), num(rates.bot_xp_mult)]],
       ])}
       ${serverGroup('BOTS', [
-        ['Min/max random', `${num(bots.min_random)} / ${num(bots.max_random)}`],
-        ['Update interval', num(bots.update_interval)], ['Max level', num(bots.max_level)],
-        [`Group nearby ${flagBadge(bots.group_nearby)}`, `Raid nearby ${flagBadge(bots.raid_nearby)}`],
-        [`Invite player ${flagBadge(bots.invite_player)}`, `Timed logout ${flagBadge(bots.timed_logout)}`],
-        [`Random levels off ${flagBadge(bots.disable_random_levels)}`, `Level ladder ${flagBadge(bots.level_ladder)}`],
-        [`Auto quests ${flagBadge(bots.auto_do_quests)}`, `Activity off ${flagBadge(bots.disable_activity)}`],
-        ['Active alone', num(bots.active_alone)], [`Force near ${flagBadge(bots.force_active_near)}`, `Limit combat ${flagBadge(bots.limit_combat)}`],
-        ['Pool budget', `${num(bots.pool_budget_us)}us / ${num(bots.pool_budget_gate_ms)}ms`],
-        [`AH buyer ${flagBadge(bots.ah_buyer)}`, `LFT ${flagBadge(bots.lft)}`, `BG ${flagBadge(bots.bg)}`],
-        [`Avoid towns ${flagBadge(bots.avoid_towns)}`, `Leave zones ${flagBadge(bots.leave_zones)}`],
+        [[esc('Min/max random'), `${num(bots.min_random)} / ${num(bots.max_random)}`],
+        [esc('Update interval'), num(bots.update_interval)], [esc('Max level'), num(bots.max_level)],
+        [esc('Group nearby'), flagBadge(bots.group_nearby)], [esc('Raid nearby'), flagBadge(bots.raid_nearby)],
+        [esc('Invite player'), flagBadge(bots.invite_player)], [esc('Timed logout'), flagBadge(bots.timed_logout)],
+        [esc('Random levels off'), flagBadge(bots.disable_random_levels)], [esc('Level ladder'), flagBadge(bots.level_ladder)],
+        [esc('Auto quests'), flagBadge(bots.auto_do_quests)], [esc('Activity off'), flagBadge(bots.disable_activity)],
+        [esc('Active alone'), num(bots.active_alone)], [esc('Force near'), flagBadge(bots.force_active_near)], [esc('Limit combat'), flagBadge(bots.limit_combat)],
+        [esc('Pool budget'), `${num(bots.pool_budget_us)}us / ${num(bots.pool_budget_gate_ms)}ms`],
+        [esc('AH buyer'), flagBadge(bots.ah_buyer)], [esc('LFT'), flagBadge(bots.lft)], [esc('BG'), flagBadge(bots.bg)],
+        [esc('Avoid towns'), flagBadge(bots.avoid_towns)], [esc('Leave zones'), flagBadge(bots.leave_zones)]],
       ])}
       ${serverGroup('DIAGNOSTICS', [
-        [`PerfMon ${flagBadge(diag.perf_mon)}`, `bot_events ${flagBadge(diag.bot_events)}`],
-        [`unreachable ${flagBadge(diag.unreachable)}`, `deaths ${flagBadge(diag.deaths)}`],
+        [[esc('PerfMon'), flagBadge(diag.perf_mon)], [esc('bot_events'), flagBadge(diag.bot_events)],
+        [esc('unreachable'), flagBadge(diag.unreachable)], [esc('deaths'), flagBadge(diag.deaths)]],
       ])}`;
   }
 
@@ -1462,7 +1462,7 @@
       `- rates: xp_kill=${rates.xp_kill ?? '?'} xp_elite=${rates.xp_kill_elite ?? '?'} xp_quest=${rates.xp_quest ?? '?'} xp_explore=${rates.xp_explore ?? '?'} drop_money=${rates.drop_money ?? '?'} honor=${rates.honor ?? '?'} rep=${rates.rep_gain ?? '?'} talent=${rates.talent ?? '?'} bot_xp_mult=${rates.bot_xp_mult ?? '?'}`,
       `- bots: min/max=${bots.min_random ?? '?'}/${bots.max_random ?? '?'} update=${bots.update_interval ?? '?'} maxlvl=${bots.max_level ?? '?'} group=${on(bots.group_nearby)} raid=${on(bots.raid_nearby)} invite=${on(bots.invite_player)} timed_logout=${on(bots.timed_logout)} no_rand_levels=${on(bots.disable_random_levels)} ladder=${on(bots.level_ladder)} quests=${on(bots.auto_do_quests)} no_activity=${on(bots.disable_activity)} alone=${bots.active_alone ?? '?'} pool=${bots.pool_budget_us ?? '?'}us/${bots.pool_budget_gate_ms ?? '?'}ms ah=${on(bots.ah_buyer)} lft=${on(bots.lft)} bg=${on(bots.bg)}`,
       `- diag: perfmon=${on(diag.perf_mon)} bot_events=${on(diag.bot_events)} unreachable=${on(diag.unreachable)} deaths=${on(diag.deaths)}`,
-      `- pool: tracked=${g.bots_tracked || 0} gaining=${g.bots_gaining_xp || 0} (${Math.round(g.pct_gaining_xp || 0)}%) median_xp/h=${Math.round(g.median_xp_hour || 0)} total_xp/h=${Math.round(g.total_xp_hour || 0)} kills/min=${(g.kills_per_min || 0).toFixed(1)} killed5m=${Math.round(g.pct_killed_5min || 0)}% combat=${Math.round(g.pct_in_combat || 0)}% grind=${Math.round(g.pct_grinding || 0)}%`,
+      `- pool: tracked=${g.bots_tracked || 0} gaining=${g.bots_gaining_xp || 0} (${Math.round(g.pct_gaining_xp || 0)}%) median_xp/h=${Math.round(g.median_xp_hour || 0)} total_xp/h=${Math.round(g.total_xp_hour || 0)} deaths/min=${(g.deaths_per_min || 0).toFixed(1)} died5m=${Math.round(g.pct_died_5min || 0)}% combat=${Math.round(g.pct_in_combat || 0)}% grind=${Math.round(g.pct_grinding || 0)}%`,
       `- levels: ${['1-9', '10-19', '20-29', '30-39', '40-49', '50-59', '60'].map(k => `${k}=${((g.level_bands || {})[k]) || 0}`).join(' ')}`,
       `- issues: active=${state.issues.active.length} persistent=${state.issues.active.filter(i => i.severity === 'persistent').length}`,
       `- server: online=${state.server.online} stale=${state.server.stale} uptime=${state.server.uptime}s tick=${state.server.diff}ms humans=${state.server.humans} bots=${state.server.bots}`,
@@ -2899,7 +2899,7 @@
     const sorted = [...skills].sort((a, b) => groupOf(a.skill) - groupOf(b.skill) || skillNameById(a.skill).localeCompare(skillNameById(b.skill)));
     const groups = [[], [], []];
     sorted.forEach(sk => groups[groupOf(sk.skill)].push(sk));
-    const titles = ['Weapons & Defense', 'Armor Proficiencies', 'Languages & Secondary Skills'];
+    const titles = ['Weapons & Defense', 'Armor Proficiencies', 'Languages'];
     host.innerHTML = groups.map((g, i) => g.length ? `<div class="section-label" style="margin: 14px 0 8px;">${titles[i]}</div>${skillTable(g)}` : '').join('') || `<div class="empty-hint">No skills.</div>`;
   }
 

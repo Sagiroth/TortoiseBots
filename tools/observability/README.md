@@ -43,7 +43,7 @@ Armory detail view: Spells and Professions are separate tabs (profession spells 
 
 ## Diagnostic report (recommended for bug reports)
 
-The dashboard Server panel has a **Copy diagnostic report** button producing a compact plain-text (markdown) snapshot: module/core versions, effective rates and bot flags, pool health (tracked/gaining, median/total XP/hour, kills/min, killed-5min %, combat/grind %, level bands), issue counts, and server freshness. It contains no secrets (no IPs, hosts, account names, passwords). Paste it into a GitHub issue or Discord when reporting bugs — it answers "how is this server configured" without config-file archaeology.
+The dashboard Server panel has a **Copy diagnostic report** button producing a compact plain-text (markdown) snapshot: module/core versions, effective rates and bot flags, pool health (tracked/gaining, median/total XP/hour, deaths/min, died-5min %, combat/grind %, level bands), issue counts, and server freshness. It contains no secrets (no IPs, hosts, account names, passwords). Paste it into a GitHub issue or Discord when reporting bugs — it answers "how is this server configured" without config-file archaeology.
 
 ## Validation
 
