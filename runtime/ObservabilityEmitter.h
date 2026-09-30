@@ -91,8 +91,7 @@ public:
         uint32 lastUnreachableReportMs = 0;
     };
 
-private:
-
+public:
     void EmitAnomaly(std::string const& type,
                      std::string const& severity,
                      Player* bot,
