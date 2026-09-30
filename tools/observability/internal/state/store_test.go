@@ -375,12 +375,13 @@ func TestXpRateDerivesFromWindowedDeltas(t *testing.T) {
 		t.Fatalf("gain age must be 0 right after a gain, got %v", got.XpGainAgeSec)
 	}
 
-	// A ding resets the baseline: remainder XP is the new base, never a burst.
+	// A ding keeps the window: pre-ding progress + remainder still rate,
+	// never a burst, never erased.
 	c.Advance(2 * time.Second)
 	s.ApplyHeartbeat(heartbeat(3, 1))
 	s.ApplyBatch(batch(3, 0, 1, xbot(1, "Alpha", 11, 50, 2000)))
-	if got := s.Snapshot().Bots[0].XpPerHour; got != 0 {
-		t.Fatalf("ding must reset the rate, got %v", got)
+	if got := s.Snapshot().Bots[0].XpPerHour; got < 2900 || got > 3100 {
+		t.Fatalf("ding must preserve the windowed rate, got %v", got)
 	}
 
 	// Old samples age out of the 30 min window: a flat bot decays to 0 and

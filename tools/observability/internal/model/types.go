@@ -142,16 +142,17 @@ type ServerInfoPayload struct {
 }
 
 // GrindingSummary is the daemon's pool-wide "are they grinding" rollup,
-// computed from live XP deltas, combat state, and travel purpose. Kills are
-// derived from BOT_DEATH anomalies, so no new emitter kill counter is needed.
+// computed from live XP deltas, combat state, and travel purpose. Deaths are
+// BOT_DEATH anomalies (a bot dying, not a bot killing): they measure pool
+// casualties, not grinding productivity.
 type GrindingSummary struct {
 	BotsTracked   int            `json:"bots_tracked"`
 	BotsGainingXP int            `json:"bots_gaining_xp"`
 	PctGainingXP  float64        `json:"pct_gaining_xp"`
 	MedianXpHour  float64        `json:"median_xp_hour"`
 	TotalXpHour   float64        `json:"total_xp_hour"`
-	KillsPerMin   float64        `json:"kills_per_min"`
-	PctKilled5Min float64        `json:"pct_killed_5min"`
+	DeathsPerMin  float64        `json:"deaths_per_min"`
+	PctDied5Min   float64        `json:"pct_died_5min"`
 	PctInCombat   float64        `json:"pct_in_combat"`
 	PctGrinding   float64        `json:"pct_grinding"`
 	// LevelBands counts bots per band: 1-9, 10-19, ..., 50-59, 60.

@@ -74,8 +74,8 @@ func New() *Registry {
 			Help: "Bots with an XP gain in the last 10 minutes",
 		}),
 		grindingKills: promauto.NewGauge(prometheus.GaugeOpts{
-			Name: "tortoisebots_grinding_kills_per_min",
-			Help: "BOT_DEATH-derived kills per minute over the last 10 minutes",
+			Name: "tortoisebots_grinding_deaths_per_min",
+			Help: "BOT_DEATH bot deaths per minute over the last 10 minutes",
 		}),
 		grindingCombat: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: "tortoisebots_grinding_pct_in_combat",
@@ -142,7 +142,7 @@ func (r *Registry) RecordSnapshot() {
 func (r *Registry) RecordGrinding(g model.GrindingSummary) {
 	r.grindingXpHour.Set(g.TotalXpHour)
 	r.grindingGaining.Set(float64(g.BotsGainingXP))
-	r.grindingKills.Set(g.KillsPerMin)
+	r.grindingKills.Set(g.DeathsPerMin)
 	r.grindingCombat.Set(g.PctInCombat)
 }
 

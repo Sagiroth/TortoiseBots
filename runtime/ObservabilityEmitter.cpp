@@ -211,7 +211,7 @@ uint8 BaseMacroState(Player* bot, PlayerbotAI* ai)
 
     // Standing still but doing something: looting, casting, sitting to
     // eat/drink, or an active travel destination being worked. Member reads
-    // only; the AI-value check is the same cached lookup FillTravelInfo does.
+    // only; the work-target flag is refreshed at snapshot cadence.
     if (bot->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_LOOTING))
         return STATE_BUSY;
     if (bot->IsNonMeleeSpellCasted(false))
@@ -221,9 +221,9 @@ uint8 BaseMacroState(Player* bot, PlayerbotAI* ai)
 
     return STATE_IDLE;
 }
-// Whether the bot holds an active travel destination: the AI is working
-// something even while standing still (vendoring, gathering, questing).
-// Cached value lookup only, same as FillTravelInfo.
+// Whether the bot holds an active travel destination (snapshot cadence
+// only, never per tick): the AI is working something even while standing
+// still (vendoring, gathering, questing). Cached value lookup.
 bool HasActiveWorkTarget(PlayerbotAI* ai)
 {
     if (!ai || !ai->GetAiObjectContext())
@@ -238,8 +238,9 @@ bool HasActiveWorkTarget(PlayerbotAI* ai)
 
 // True when the bot did anything observable this tick: moved since the 1 s
 // position sample, executed a new AI action, casts, loots, sits, or holds an
-// active work target. Member reads + one name compare; no DB, no scans.
-bool NoteActivity(Player* bot, PlayerbotAI* ai, ObservabilityEmitter::BotTrackState& track, uint32 nowMs, char const* actionName)
+// active work target flag (refreshed at snapshot cadence, see Update).
+// Member reads + one name compare; no DB, no scans, no AI-value lookup.
+bool NoteActivity(Player* bot, bool hasWorkTarget, ObservabilityEmitter::BotTrackState& track, uint32 nowMs, char const* actionName)
 {
     bool active = false;
     float dx = bot->GetPositionX() - track.lastX;
@@ -254,7 +255,7 @@ bool NoteActivity(Player* bot, PlayerbotAI* ai, ObservabilityEmitter::BotTrackSt
         active = true;
     if (bot->GetStandState() == UNIT_STAND_STATE_SIT)
         active = true;
-    if (HasActiveWorkTarget(ai))
+    if (hasWorkTarget)
         active = true;
     if (active)
         track.lastActivityMs = nowMs;
@@ -262,6 +263,10 @@ bool NoteActivity(Player* bot, PlayerbotAI* ai, ObservabilityEmitter::BotTrackSt
         track.lastActionName = actionName;
     return active;
 }
+// Active travel destination for the grinding panel. Cached AI values only
+// (the value object already exists; Get() returns the pointer); GetShortName/
+// GetTitle are cheap string builders on the already-chosen destination. Idle
+// bots contribute empty strings so the pool rollup can count not-travelling.
 // Active travel destination for the grinding panel. Cached AI values only
 // (the value object already exists; Get() returns the pointer); GetShortName/
 // GetTitle are cheap string builders on the already-chosen destination. Idle
@@ -695,15 +700,21 @@ void ObservabilityEmitter::Update(uint32 diff)
             if (Action const* last = ai->GetLastExecutedAction(ai->GetState()))
                 lastActionName = const_cast<Action*>(last)->getName().c_str();
         }
-        if (track.lastActivityMs == 0)
-            track.lastActivityMs = nowMs;
-        NoteActivity(bot, ai, track, nowMs, lastActionName);
+        // Fresh tracks start idle (unknown past), not busy: when the
+        // first observation shows no activity, the 45 s clock starts
+        // expired instead of granting a grace window. Active newcomers
+        // keep the timestamp NoteActivity just stamped.
+        bool fresh = track.lastActivityMs == 0 && track.lastActionName.empty();
+        NoteActivity(bot, track.hasWorkTarget, track, nowMs, lastActionName);
+        if (fresh && track.lastActivityMs == 0)
+            track.lastActivityMs = nowMs - kIdleAfterMs;
 
         uint8 state = BaseMacroState(bot, ai);
         // Idle means really doing nothing: base IDLE with no observable
         // activity for >= kIdleAfterMs stays busy (between actions). Combat,
         // moving, resting and dead are instant states, never gated.
-        if (state == STATE_IDLE && (nowMs - track.lastActivityMs) < kIdleAfterMs)
+        if (state == STATE_IDLE && track.lastActivityMs != 0 &&
+            (nowMs - track.lastActivityMs) < kIdleAfterMs)
             state = STATE_BUSY;
         track.stateIndex = state;
         track.lastSeenMs = nowMs;
@@ -799,22 +810,33 @@ void ObservabilityEmitter::Update(uint32 diff)
         }
     }
 
+    // Server-info cadence runs on every world tick (real time), not inside
+    // the 2 s snapshot gate: the snapshot block below returns early 39/40
+    // ticks, which previously diluted the 5-min interval to ~200 min.
+    m_serverInfoTimerMs += diff;
+    if (m_serverInfoTimerMs == diff || m_serverInfoTimerMs >= 300000)
+    {
+        m_serverInfoTimerMs = 0;
+        EmitServerInfo();
+    }
+
     m_snapshotTimerMs += diff;
     if (m_snapshotTimerMs < kSnapshotIntervalMs)
         return;
     m_snapshotTimerMs = 0;
 
+    // Refresh per-bot work-target flags at snapshot cadence (one AI-value
+    // lookup per bot per 2 s, not per tick), then run the snapshot.
+    for (Player* bot : activeBots)
+    {
+        if (!bot || !bot->IsInWorld())
+            continue;
+        BotTrackState& track = m_botTracking[bot->GetGUIDLow()];
+        track.hasWorkTarget = HasActiveWorkTarget(GET_PLAYERBOT_AI(bot));
+    }
+
     PruneState(nowMs);
     EmitSnapshotCycle(activeBots, diff);
-
-    // Server panel: first snapshot of the process, then every 5 min. Cheap
-    // (a few dozen getters + one small datagram), no per-tick cost.
-    m_serverInfoTimerMs += diff;
-    if (m_serverInfoTimerMs == diff || m_serverInfoTimerMs >= 300000)
-    {
-        m_serverInfoTimerMs = diff;
-        EmitServerInfo();
-    }
 
     for (size_t i = 0; i < kArmoryBotsPerSnapshot && i < activeBots.size(); ++i)
     {

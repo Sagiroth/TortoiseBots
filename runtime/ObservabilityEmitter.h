@@ -79,8 +79,10 @@ public:
         uint32 lastSampleMs = 0;      // when lastX/lastY were sampled (once a second)
         // Last world-tick time the bot did anything observable: moved,
         // executed an AI action, cast, looted, or held an active travel
-        // target. Idle requires none of these for >= kIdleAfterMs.
+        // target (flag refreshed at snapshot cadence, not per tick).
+        // Idle requires none of these for >= kIdleAfterMs.
         uint32 lastActivityMs = 0;
+        bool hasWorkTarget = false;
         // Last executed action name, to notice a new action without string
         // compares against history: any pointer/name change is activity.
         std::string lastActionName;
