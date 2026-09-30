@@ -1257,6 +1257,10 @@ body {
   gap: 6px;
 }
 
+.talent-cell-empty {
+  min-height: 64px;
+}
+
 .talent-node {
   border: 1px solid var(--border-color);
   border-radius: 4px;
