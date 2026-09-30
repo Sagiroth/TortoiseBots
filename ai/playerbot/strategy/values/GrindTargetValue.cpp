@@ -47,12 +47,7 @@ Unit* GrindTargetValue::Calculate()
 
 Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
 {
-    uint32 memberCount = 1;
     Group* group = bot->GetGroup();
-    Player* master = GetMaster();
-
-    if (master && (master == bot || master->GetMapId() != bot->GetMapId() || master->IsBeingTeleported() || !PlayerbotAIStorage::Instance().GetAI(master)))
-        master = nullptr;
 
     // TEMP-DEBUG(grind-target): the existing "debug grind" strategy only reaches a
     // real player master via TellPlayer, which silently no-ops for random bots (no
@@ -106,10 +101,10 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
             continue;
         }
 
-        // Donor (mod-playerbots GrindTargetValue.cpp) has no free-move check here:
-        // masterless bots are bounded by scan radius only. Real-player-mastered
-        // bots keep the leash.
-        if (!bot->InBattleGround() && ai->HasRealPlayerMaster() && !CanFreeMoveValue::CanFreeTarget(ai, GuidPosition(unit)))
+        // Solo bots (no master at all) are bounded by scan radius only; any
+        // follower keeps the free-move leash so grind never picks a target the
+        // follow strategy would immediately pull it back from.
+        if (!bot->InBattleGround() && ai->GetMaster() && !CanFreeMoveValue::CanFreeTarget(ai, GuidPosition(unit)))
         {
             logGrind(unit, "(hostile) ignored (out of free range).");
             continue;
@@ -170,24 +165,13 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
             continue;
         }
 
-        // Donor has no CanFreeTarget gate in the grind value at all: a bot with
-        // no real-player master is bounded by scan radius only. Real-player
-        // mastered bots keep today's leash (free-move range around the master).
-        if (!bot->InBattleGround() && ai->HasRealPlayerMaster() && !CanFreeMoveValue::CanFreeTarget(ai, GuidPosition(unit))) //Do not grind mobs far away from master.
+        // As above: solo bots skip, followers keep the leash. The old "far from
+        // master" block is gone: it was unreachable (the master local was nulled
+        // for real players, which never have an AI), and CanFreeTarget already
+        // bounds followers to free-move range around the follow target.
+        if (!bot->InBattleGround() && ai->GetMaster() && !CanFreeMoveValue::CanFreeTarget(ai, GuidPosition(unit))) //Do not grind mobs far away from master.
         {
             logGrind(unit, "ignored (out of free range).");
-            continue;
-        }
-
-        // Donor fires only on the follow strategy vs lootDistance: a grouped pool
-        // bot's "master" is its bot group leader, and wander (the default pool
-        // strategy) is exempt. Restrict to follow + a real (network) player; pool
-        // bots and wanderers pick from the whole scan radius.
-        if (!bot->InBattleGround() && master && ai->HasRealPlayerMaster() &&
-            ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) &&
-            sServerFacade.getDistance2d(master, unit) > sPlayerbotAIConfig.proximityDistance)
-        {
-            logGrind(unit, "ignored (far from master).");
             continue;
         }
 

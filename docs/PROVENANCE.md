@@ -2285,12 +2285,20 @@ only one (`rg 'XP::Gain' ai/`), so no sibling fix was needed.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`.
 
-## Grind leash gates need a real-player master (`HasRealPlayerMaster`) — 2026-09-30
+## Grind leash: solo bots skip `CanFreeTarget`, dead far-from-master block removed — 2026-09-30
 
 Feature: `GrindTargetValue` skips both `CanFreeMoveValue::CanFreeTarget` rejects
-(attackers loop and scan loop) when the bot has no real-player master, and fires
-"far from master" only on the `follow` strategy with a real-player master —
-never for `wander` or bot-led pool groups.
+(attackers loop and scan loop) only when the bot has no master at all
+(`ai->GetMaster() == nullptr`, i.e. solo pool bots); any follower — real-player
+master, bot group leader, hired/owned bot in a party — keeps the free-move
+leash. The "far from master" block is deleted: it was unreachable (the local
+`master` was nulled for real players, which never have an AI, so
+`master && HasRealPlayerMaster()` could never be true), and restoring it only
+for bot masters was rejected — it would reintroduce the F-02 yoyo (follower
+picks a target past follow range, `FollowMasterStrategy`'s "out of free move
+range" recall at `ACTION_HIGH` (20) beats `attack anything` (5.0), bot
+oscillates). `CanFreeTarget` already bounds followers to free-move range around
+the follow target, so no second distance gate is needed.
 
 Source project: `mod-playerbots` (grind leash shape in
 `src/Ai/Base/Value/GrindTargetValue.cpp`) + donor report items 4-5.
@@ -2299,23 +2307,27 @@ Source commit: `mod-playerbots@b6696bdbd3740e575598d167d69f39f68cc0b907`.
 
 Source files: donor `src/Ai/Base/Value/GrindTargetValue.cpp:83-93` (wider
 `grindDistance` leash commented out; `follow`-only check vs `lootDistance`);
-local `ai/playerbot/strategy/values/GrindTargetValue.cpp:109-112,173-189`
-(`CanFreeTarget` gates, `follow`-or-`wander` vs `proximityDistance` gate).
+local `ai/playerbot/strategy/values/GrindTargetValue.cpp:104-107,168-176`
+(`CanFreeTarget` gates; far-from-master block deleted).
 
-Ported / reimplemented: gate-only change in
-`ai/playerbot/strategy/values/GrindTargetValue.cpp` — `ai->HasRealPlayerMaster()`
-added to both `CanFreeTarget` conditions; `wander` removed from the
-"far from master" strategy test and `ai->HasRealPlayerMaster()` added.
-Log reason texts unchanged. Distance threshold stays `proximityDistance`
-(deliberate local divergence from donor `lootDistance`; kept small per task).
-`PossibleTargetsValue::IsPossibleTarget` still applies `CanFreeAttack`
-(attack-range leash) to every candidate, and the follow strategy's own
-"out of free move range" trigger still recalls the bot — pool-bot group
-cohesion does not rely on these grind-pick gates.
+Ported / reimplemented: `ai->HasRealPlayerMaster()` replaced with
+`ai->GetMaster()` on both `CanFreeTarget` conditions; the far-from-master block
+(and its now-unused `master` local) removed. Log reason texts unchanged.
 
-Reason: level 1-3 pool bots (no real-player master) ended ~80-92% of grind
-picks with "no grind target found"; top rejects were "out of free range"
-(~30%, free-move range around the bot group leader) and "far from master"
-(~17%, fired on `follow` OR `wander` for bot-led pool groups).
+Correction to the previous entry (F-04): `PossibleTargetsValue::IsPossibleTarget`
+does NOT call `CanFreeAttack` — only `PossibleTargetsValue::IsValid` does, and
+`CanFreeAttack` is a no-op anyway: `PlayerbotAI::GetRange("attack")` returns 0
+(`PlayerbotAI.cpp:6935`), so `CanFreeMove` short-circuits at `if (!range) return
+true` (`FreeMoveValues.cpp:94-95`). It never leashed grind picks. Follower
+cohesion comes from the `CanFreeTarget` pick gate plus the follow strategy's own
+"out of free move range" recall — not from `CanFreeAttack`.
+
+Reason: level 1-3 pool bots (no master) ended ~80-92% of grind picks with "no
+grind target found"; top rejects were "out of free range" (~30%, free-move
+range around the bot group leader) and "far from master" (~17%, fired on
+`follow` OR `wander` for bot-led pool groups). Bot-led pool groups dissolve on
+the sibling branch, but hired/owned bots may still follow a bot leader in a real
+player's party — they keep the leash so grind picks stay inside the follow
+recall radius.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`.
