@@ -74,9 +74,10 @@ enum MacroState : uint8
 {
     STATE_COMBAT = 0,
     STATE_MOVING = 1,
-    STATE_RESTING = 2,
-    STATE_DEAD = 3,
-    STATE_IDLE = 4,
+    STATE_BUSY = 2,
+    STATE_RESTING = 3,
+    STATE_DEAD = 4,
+    STATE_IDLE = 5,
 };
 
 char const* MacroStateName(uint8 state)
@@ -85,6 +86,7 @@ char const* MacroStateName(uint8 state)
     {
         case STATE_COMBAT:  return "combat";
         case STATE_MOVING:  return "moving";
+        case STATE_BUSY:    return "busy";
         case STATE_RESTING: return "resting";
         case STATE_DEAD:    return "dead";
         default:            return "idle";
@@ -189,7 +191,7 @@ std::string GetBotRole(Player* bot, PlayerbotAI* ai)
     return "dps";
 }
 
-uint8 DetermineMacroState(Player* bot, PlayerbotAI* ai)
+uint8 BaseMacroState(Player* bot, PlayerbotAI* ai)
 {
     if (!sServerFacade.IsAlive(bot) || (ai && ai->GetState() == BotState::BOT_STATE_DEAD))
         return STATE_DEAD;
@@ -207,7 +209,58 @@ uint8 DetermineMacroState(Player* bot, PlayerbotAI* ai)
     if (bot->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING))
         return STATE_RESTING;
 
+    // Standing still but doing something: looting, casting, sitting to
+    // eat/drink, or an active travel destination being worked. Member reads
+    // only; the AI-value check is the same cached lookup FillTravelInfo does.
+    if (bot->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_LOOTING))
+        return STATE_BUSY;
+    if (bot->IsNonMeleeSpellCasted(false))
+        return STATE_BUSY;
+    if (bot->GetStandState() == UNIT_STAND_STATE_SIT)
+        return STATE_BUSY;
+
     return STATE_IDLE;
+}
+// Whether the bot holds an active travel destination: the AI is working
+// something even while standing still (vendoring, gathering, questing).
+// Cached value lookup only, same as FillTravelInfo.
+bool HasActiveWorkTarget(PlayerbotAI* ai)
+{
+    if (!ai || !ai->GetAiObjectContext())
+        return false;
+    ai::Value<ai::TravelTarget*>* travel =
+        ai->GetAiObjectContext()->GetValue<ai::TravelTarget*>("travel target");
+    if (!travel)
+        return false;
+    ai::TravelTarget* target = travel->Get();
+    return target && target->IsActive();
+}
+
+// True when the bot did anything observable this tick: moved since the 1 s
+// position sample, executed a new AI action, casts, loots, sits, or holds an
+// active work target. Member reads + one name compare; no DB, no scans.
+bool NoteActivity(Player* bot, PlayerbotAI* ai, BotTrackState& track, uint32 nowMs, char const* actionName)
+{
+    bool active = false;
+    float dx = bot->GetPositionX() - track.lastX;
+    float dy = bot->GetPositionY() - track.lastY;
+    if (dx * dx + dy * dy >= 0.25f)
+        active = true;
+    if (actionName && *actionName && track.lastActionName != actionName)
+        active = true;
+    if (bot->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_LOOTING))
+        active = true;
+    if (bot->IsNonMeleeSpellCasted(false))
+        active = true;
+    if (bot->GetStandState() == UNIT_STAND_STATE_SIT)
+        active = true;
+    if (HasActiveWorkTarget(ai))
+        active = true;
+    if (active)
+        track.lastActivityMs = nowMs;
+    if (actionName && *actionName)
+        track.lastActionName = actionName;
+    return active;
 }
 // Active travel destination for the grinding panel. Cached AI values only
 // (the value object already exists; Get() returns the pointer); GetShortName/
@@ -634,7 +687,24 @@ void ObservabilityEmitter::Update(uint32 diff)
         PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
         BotTrackState& track = m_botTracking[bot->GetGUIDLow()];
 
-        uint8 state = DetermineMacroState(bot, ai);
+        // Last-action name without the non-const getName() call: read once
+        // here, reused for the activity check and the snapshot below.
+        char const* lastActionName = "";
+        if (ai)
+        {
+            if (Action const* last = ai->GetLastExecutedAction(ai->GetState()))
+                lastActionName = const_cast<Action*>(last)->getName().c_str();
+        }
+        if (track.lastActivityMs == 0)
+            track.lastActivityMs = nowMs;
+        NoteActivity(bot, ai, track, nowMs, lastActionName);
+
+        uint8 state = BaseMacroState(bot, ai);
+        // Idle means really doing nothing: base IDLE with no observable
+        // activity for >= kIdleAfterMs stays busy (between actions). Combat,
+        // moving, resting and dead are instant states, never gated.
+        if (state == STATE_IDLE && (nowMs - track.lastActivityMs) < kIdleAfterMs)
+            state = STATE_BUSY;
         track.stateIndex = state;
         track.lastSeenMs = nowMs;
         AddStateTime(state, diff);
@@ -817,7 +887,7 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
 
         PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
         auto trackIt = m_botTracking.find(bot->GetGUIDLow());
-        uint8 state = trackIt != m_botTracking.end() ? trackIt->second.stateIndex : DetermineMacroState(bot, ai);
+        uint8 state = trackIt != m_botTracking.end() ? trackIt->second.stateIndex : BaseMacroState(bot, ai);
 
         BotTelemetrySnapshot snap;
         snap.name = bot->GetName();
@@ -868,7 +938,7 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
     }
 
     // Rolling window ratios: how bots spent the recent window, not all time.
-    uint64 totals[kStateCount] = {0, 0, 0, 0, 0};
+    uint64 totals[kStateCount] = {0};
     for (size_t b = 0; b < kStateBucketCount; ++b)
         for (size_t s = 0; s < kStateCount; ++s)
             totals[s] += m_stateWindow[b][s];
@@ -915,6 +985,7 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
        << ",\"states\":{"
        << "\"combat\":" << std::fixed << std::setprecision(3) << ratio(STATE_COMBAT) << ","
        << "\"moving\":" << ratio(STATE_MOVING) << ","
+       << "\"busy\":" << ratio(STATE_BUSY) << ","
        << "\"resting\":" << ratio(STATE_RESTING) << ","
        << "\"dead\":" << ratio(STATE_DEAD) << ","
        << "\"idle\":" << ratio(STATE_IDLE)

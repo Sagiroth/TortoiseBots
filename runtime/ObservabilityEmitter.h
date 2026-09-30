@@ -152,13 +152,19 @@ private:
         uint32 stationaryMovementMs = 0;
         bool stuckReported = false;
         uint32 lastSampleMs = 0;      // when lastX/lastY were sampled (once a second)
+        // Last world-tick time the bot did anything observable: moved,
+        // executed an AI action, cast, looted, or held an active travel/rpg
+        // target. Idle requires none of these for >= kIdleAfterMs.
+        uint32 lastActivityMs = 0;
+        // Last executed action name, to notice a new action without string
+        // compares against history: any pointer/name change is activity.
+        std::string lastActionName;
 
         uint64 unreachableTargetGuid = 0;
         uint32 unreachableDurationMs = 0;
         bool unreachableReported = false;
         uint32 lastUnreachableReportMs = 0;
     };
-    std::map<uint32, BotTrackState> m_botTracking;
 
     // Optional roster contributor from another module (world thread only).
     std::function<void(std::vector<Player*>&)> m_externalRosterProvider;
@@ -179,14 +185,17 @@ private:
     // Rolling macro-state histogram: kStateBuckets buckets of kStateBucketMs
     // each, one column per state. Ratios therefore describe the recent window
     // instead of an all-time average.
+    // States: combat, moving, busy (looting/casting/eating/working a travel
+    // or rpg target — doing something while standing still), resting, dead,
+    // idle (no movement, action, cast, loot, or active target for >=
+    // kIdleAfterMs). Idle means really doing nothing, not "between actions".
     static constexpr size_t kStateBucketCount = 90;
     static constexpr uint32 kStateBucketMs = 2000;
-    static constexpr size_t kStateCount = 5; // combat, moving, resting, dead, idle
+    static constexpr size_t kStateCount = 6; // combat, moving, busy, resting, dead, idle
+    static constexpr uint32 kIdleAfterMs = 45000;
     uint64 m_stateWindow[kStateBucketCount][kStateCount];
     size_t m_stateBucketIndex;
     uint32 m_stateBucketElapsedMs;
 };
-
-#define sObservabilityEmitter (::TortoiseBots::ObservabilityEmitter::Instance())
 
 } // namespace TortoiseBots
