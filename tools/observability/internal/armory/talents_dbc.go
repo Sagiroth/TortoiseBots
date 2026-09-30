@@ -210,8 +210,9 @@ func readTalentDBC(dir string) ([]dbcTalent, []dbcTalentTab, error) {
 	tabs := make([]dbcTalentTab, 0, len(tabRecs))
 	for _, r := range tabRecs {
 		// Layout per core DBCStructure.h TalentTabEntry: id, name[8
-		// offsets], nameFlags, spellIcon, raceMask, classMask, tabpage,
-		// internalname. Field 1 is the enUS name offset.
+		// offsets], nameFlags(9), spellIcon(10), raceMask(11), classMask(12),
+		// tabpage/orderIndex(13), internalname(14). Page orders the three
+		// trees of a class left-to-right like the 1.12 talent frame.
 		if len(r) < 14 {
 			continue
 		}
@@ -219,9 +220,9 @@ func readTalentDBC(dir string) ([]dbcTalent, []dbcTalentTab, error) {
 			id:        r[0],
 			name:      dbcString(tabStr, r[1]),
 			classMask: r[12],
+			page:      r[13],
 		})
 	}
-	talents := make([]dbcTalent, 0, len(tRecs))
 	for _, r := range tRecs {
 		// Layout per TalentEntry: id, tab, row, col, rankID[5], padding,
 		// dependsOn, ..., dependsOnRank, ..., dependsOnSpell.

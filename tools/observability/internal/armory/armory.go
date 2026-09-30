@@ -397,7 +397,10 @@ func (s *Service) GetBotProfile(guid uint32) (*BotProfile, error) {
 	}
 
 	// 7. Skills: every row; the frontend filters weapon/armor categories.
-	skillQuery := "SELECT skill, value, `max` FROM character_skills WHERE guid = ? ORDER BY skill"
+	// Dedupe defensively: (guid, skill) is unique, but MAX() keeps the
+	// highest value if a duplicate ever slips in, so the Skills tab never
+	// shows the same skill twice.
+	skillQuery := "SELECT skill, MAX(value), MAX(`max`) FROM character_skills WHERE guid = ? GROUP BY skill ORDER BY skill"
 	skRows, err := s.db.Query(skillQuery, guid)
 	if err != nil {
 		return nil, err
@@ -414,7 +417,6 @@ func (s *Service) GetBotProfile(guid uint32) (*BotProfile, error) {
 	if err := skRows.Err(); err != nil {
 		return nil, err
 	}
-
 	// 8. Talents: resolved from the operator's world DB talent/talenttab
 	// mirror tables when present. The core itself loads Talent/TalentTab from
 	// the operator's own DBC files at startup, so these mirrors are often
