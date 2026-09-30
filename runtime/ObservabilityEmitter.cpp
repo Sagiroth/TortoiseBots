@@ -22,14 +22,15 @@
 #include "PlayerbotAIStorage.h"
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
+#include "../ai/playerbot/TravelMgr.h"
+#include "../ai/playerbot/strategy/values/TravelValues.h"
+// (kept: sServerFacade.IsAlive/IsInCombat/IsHostileTo used below)
 #include "../ai/playerbot/ServerFacade.h"
-#include "Config/Config.h"
-#include "Database/DatabaseEnv.h"
-#include "Player.h"
 #include "World.h"
+#include "SystemConfig.h"
 #include "WorldSession.h"
 #include "Log.h"
-#include "../host/ModuleLog.h"
+#include "../host/ModuleVersion.h"
 #include "Timer.h"
 #include "MotionMaster.h"
 #include <algorithm>
@@ -45,7 +46,7 @@ namespace {
 
 // Datagram schema version. The Go daemon ignores datagrams it cannot parse;
 // this is bumped when the wire format changes incompatibly.
-constexpr int kProtocolVersion = 5;
+constexpr int kProtocolVersion = 6;
 
 // Snapshot cadence and batching. Datagrams are kept well under the loopback
 // MTU so a large roster arrives as several unpredictable chunks; the receiver
@@ -206,6 +207,35 @@ uint8 DetermineMacroState(Player* bot, PlayerbotAI* ai)
         return STATE_RESTING;
 
     return STATE_IDLE;
+}
+// Active travel destination for the grinding panel. Cached AI values only
+// (the value object already exists; Get() returns the pointer); GetShortName/
+// GetTitle are cheap string builders on the already-chosen destination. Idle
+// bots contribute empty strings so the pool rollup can count not-travelling.
+void FillTravelInfo(PlayerbotAI* ai, std::string& purpose, std::string& to)
+{
+    purpose.clear();
+    to.clear();
+    if (!ai || !ai->GetAiObjectContext())
+        return;
+    ai::Value<ai::TravelTarget*>* value =
+        ai->GetAiObjectContext()->GetValue<ai::TravelTarget*>("travel target");
+    if (!value)
+        return;
+    ai::TravelTarget* target = value->Get();
+    if (!target || !target->IsActive())
+        return;
+    ai::TravelDestination* dest = target->GetDestination();
+    if (!dest)
+        return;
+    purpose = dest->GetShortName();
+    if (purpose == "unknown" || purpose == "idle" || purpose == "none" || purpose.empty())
+    {
+        purpose.clear();
+        to.clear();
+        return;
+    }
+    to = dest->GetTitle();
 }
 
 } // anonymous namespace
@@ -382,6 +412,7 @@ void ObservabilityEmitter::Shutdown()
 
     m_enabled = false;
     m_snapshotTimerMs = 0;
+    m_serverInfoTimerMs = 0;
     m_snapshotSeq = 0;
     m_stateBucketIndex = 0;
     m_stateBucketElapsedMs = 0;
@@ -705,6 +736,16 @@ void ObservabilityEmitter::Update(uint32 diff)
     PruneState(nowMs);
     EmitSnapshotCycle(activeBots, diff);
 
+    // Server panel: first snapshot of the process, then every 5 min. Cheap
+    // (a few dozen getters + one small datagram), no per-tick cost.
+    if (m_serverInfoTimerMs == 0 || m_serverInfoTimerMs >= 300000)
+    {
+        m_serverInfoTimerMs = 1;
+        EmitServerInfo();
+    }
+    else
+        m_serverInfoTimerMs += diff;
+
     for (size_t i = 0; i < kArmoryBotsPerSnapshot && i < activeBots.size(); ++i)
     {
         Player* bot = activeBots[m_armoryCursor++ % activeBots.size()];
@@ -784,6 +825,8 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
         snap.className = GetBotClassName(bot->GetClass());
         snap.role = GetBotRole(bot, ai);
         snap.level = bot->GetLevel();
+        snap.xp = bot->GetUInt32Value(PLAYER_XP);
+        snap.nextXp = bot->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
         snap.hp = bot->GetHealth();
         snap.maxHp = bot->GetMaxHealth();
         snap.power = bot->GetPower(bot->GetPowerType());
@@ -804,8 +847,12 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
         snap.o = bot->GetOrientation();
         Unit* target = bot->GetSelectedUnit();
         snap.target = target ? target->GetName() : "";
+        snap.targetLevel = 0;
+        if (target && target != bot && target->GetTypeId() == TYPEID_UNIT)
+            snap.targetLevel = static_cast<uint32>(target->GetLevel());
         snap.strategy = FormatStrategies(ai);
         snap.state = MacroStateName(state);
+        FillTravelInfo(ai, snap.travelPurpose, snap.travelTo);
 
         if (ai)
         {
@@ -815,7 +862,6 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
                 snap.lastAction = const_cast<Action*>(last)->getName();
             snap.lastTrigger = ai->GetLastEvent().getSource();
         }
-
         botSnapshots.push_back(snap);
     }
 
@@ -909,6 +955,8 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
                 << ",\"class\":\"" << EscapeJson(b.className) << "\""
                 << ",\"role\":\"" << EscapeJson(b.role) << "\""
                 << ",\"level\":" << b.level
+                << ",\"xp\":" << b.xp
+                << ",\"next_xp\":" << b.nextXp
                 << ",\"hp\":" << b.hp
                 << ",\"max_hp\":" << b.maxHp
                 << ",\"power\":" << b.power
@@ -921,14 +969,86 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
                 << ",\"z\":" << b.z
                 << ",\"o\":" << std::setprecision(2) << b.o
                 << ",\"target\":\"" << EscapeJson(b.target) << "\""
+                << ",\"target_level\":" << b.targetLevel
                 << ",\"strategy\":\"" << EscapeJson(b.strategy) << "\""
                 << ",\"state\":\"" << EscapeJson(b.state) << "\""
                 << ",\"last_action\":\"" << EscapeJson(b.lastAction) << "\""
-                << ",\"last_trigger\":\"" << EscapeJson(b.lastTrigger) << "\"}";
+                << ",\"last_trigger\":\"" << EscapeJson(b.lastTrigger) << "\""
+                << ",\"travel_purpose\":\"" << EscapeJson(b.travelPurpose) << "\""
+                << ",\"travel_to\":\"" << EscapeJson(b.travelTo) << "\"}";
         }
         bss << "]}";
         SendDatagram(bss.str());
     }
+}
+// Effective running settings for the dashboard Server panel. Reads live core
+// rate getters and AiPlayerbot fields — never .env or conf files — so what
+// the panel shows is what the server actually runs. Small (~1 KB) JSON,
+// sent at startup then every 5 min; no per-tick cost, no secrets.
+void ObservabilityEmitter::EmitServerInfo()
+{
+    auto flag = [](bool on) -> char const* { return on ? "1" : "0"; };
+    std::ostringstream ss;
+    ss << "{\"v\":" << kProtocolVersion
+       << ",\"session\":" << m_sessionId
+       << ",\"seq\":" << m_snapshotSeq
+       << ",\"ts\":" << time(nullptr)
+       << ",\"type\":\"SERVER_INFO\""
+       << ",\"module_version\":\"" << EscapeJson(BuildVersion()) << "\""
+       << ",\"core_revision\":\"" << EscapeJson(REVISION_HASH) << "\""
+       << ",\"core_date\":\"" << EscapeJson(REVISION_DATE) << "\""
+       << ",\"uptime\":" << sWorld.GetUptime()
+       << ",\"max_level\":" << sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL)
+       << ",\"rates\":{"
+       << "\"xp_kill\":" << sWorld.getConfig(CONFIG_FLOAT_RATE_XP_KILL)
+       << ",\"xp_kill_elite\":" << sWorld.getConfig(CONFIG_FLOAT_RATE_XP_KILL_ELITE)
+       << ",\"xp_quest\":" << sWorld.getConfig(CONFIG_FLOAT_RATE_XP_QUEST)
+       << ",\"xp_explore\":" << sWorld.getConfig(CONFIG_FLOAT_RATE_XP_EXPLORE)
+       << ",\"drop_money\":" << sWorld.getConfig(CONFIG_FLOAT_RATE_DROP_MONEY)
+       << ",\"drop_poor\":" << sWorld.getConfig(CONFIG_FLOAT_RATE_DROP_ITEM_POOR)
+       << ",\"drop_normal\":" << sWorld.getConfig(CONFIG_FLOAT_RATE_DROP_ITEM_NORMAL)
+       << ",\"drop_uncommon\":" << sWorld.getConfig(CONFIG_FLOAT_RATE_DROP_ITEM_UNCOMMON)
+       << ",\"drop_rare\":" << sWorld.getConfig(CONFIG_FLOAT_RATE_DROP_ITEM_RARE)
+       << ",\"drop_epic\":" << sWorld.getConfig(CONFIG_FLOAT_RATE_DROP_ITEM_EPIC)
+       << ",\"drop_legendary\":" << sWorld.getConfig(CONFIG_FLOAT_RATE_DROP_ITEM_LEGENDARY)
+       << ",\"honor\":" << sWorld.getConfig(CONFIG_FLOAT_RATE_HONOR)
+       << ",\"rep_gain\":" << sWorld.getConfig(CONFIG_FLOAT_RATE_REPUTATION_GAIN)
+       << ",\"rep_low_kill\":" << sWorld.getConfig(CONFIG_FLOAT_RATE_REPUTATION_LOWLEVEL_KILL)
+       << ",\"rep_low_quest\":" << sWorld.getConfig(CONFIG_FLOAT_RATE_REPUTATION_LOWLEVEL_QUEST)
+       << ",\"talent\":" << sWorld.getConfig(CONFIG_FLOAT_RATE_TALENT)
+       << ",\"bot_xp_mult\":" << sPlayerbotAIConfig.playerbotsXPrate
+       << "}"
+       << ",\"bots\":{"
+       << "\"min_random\":" << sPlayerbotAIConfig.minRandomBots
+       << ",\"max_random\":" << sPlayerbotAIConfig.maxRandomBots
+       << ",\"update_interval\":" << sPlayerbotAIConfig.randomBotUpdateInterval
+       << ",\"max_level\":" << sPlayerbotAIConfig.randomBotMaxLevel
+       << ",\"group_nearby\":\"" << flag(sPlayerbotAIConfig.randomBotGroupNearby) << "\""
+       << ",\"raid_nearby\":\"" << flag(sPlayerbotAIConfig.randomBotRaidNearby) << "\""
+       << ",\"invite_player\":\"" << flag(sPlayerbotAIConfig.randomBotInvitePlayer) << "\""
+       << ",\"timed_logout\":\"" << flag(sPlayerbotAIConfig.randomBotTimedLogout) << "\""
+       << ",\"disable_random_levels\":\"" << flag(sPlayerbotAIConfig.disableRandomLevels) << "\""
+       << ",\"level_ladder\":\"" << flag(sPlayerbotAIConfig.levelLadder) << "\""
+       << ",\"auto_do_quests\":\"" << flag(sPlayerbotAIConfig.autoDoQuests) << "\""
+       << ",\"disable_activity\":\"" << flag(sPlayerbotAIConfig.disableActivityPriorities) << "\""
+       << ",\"active_alone\":" << sPlayerbotAIConfig.botActiveAlone
+       << ",\"force_active_near\":\"" << flag(sPlayerbotAIConfig.forceActiveWhenNearPlayer) << "\""
+       << ",\"limit_combat\":\"" << flag(sPlayerbotAIConfig.limitCombatActivity) << "\""
+       << ",\"pool_budget_us\":" << sPlayerbotAIConfig.poolTickBudgetUs
+       << ",\"pool_budget_gate_ms\":" << sPlayerbotAIConfig.poolBudgetWhenTickOverMs
+       << ",\"ah_buyer\":\"" << flag(sPlayerbotAIConfig.ahMarketBuyer) << "\""
+       << ",\"lft\":\"" << flag(sPlayerbotAIConfig.randomBotLftEnabled) << "\""
+       << ",\"bg\":\"" << flag(sPlayerbotAIConfig.randomBotBgEnabled) << "\""
+       << ",\"avoid_towns\":\"" << flag(sPlayerbotAIConfig.avoidHostileTowns) << "\""
+       << ",\"leave_zones\":\"" << flag(sPlayerbotAIConfig.leaveOutgrownZones) << "\""
+       << "}"
+       << ",\"diagnostics\":{"
+       << "\"perf_mon\":\"" << flag(sPlayerbotAIConfig.perfMonEnabled) << "\""
+       << ",\"bot_events\":\"" << flag(sPlayerbotAIConfig.hasLog("bot_events.csv")) << "\""
+       << ",\"unreachable\":\"" << flag(sPlayerbotAIConfig.hasLog("unreachable_targets.csv")) << "\""
+       << ",\"deaths\":\"" << flag(sPlayerbotAIConfig.hasLog("deaths.csv")) << "\""
+       << "}}";
+    SendDatagram(ss.str());
 }
 
 } // namespace TortoiseBots

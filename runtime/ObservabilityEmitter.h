@@ -21,6 +21,8 @@ struct BotTelemetrySnapshot
     std::string className;
     std::string role;
     uint32 level = 0;
+    uint32 xp = 0;        // PLAYER_XP: progress into the current level
+    uint32 nextXp = 0;    // PLAYER_NEXT_LEVEL_XP: XP needed to finish the level
     uint32 hp = 0;
     uint32 maxHp = 0;
     uint32 power = 0;
@@ -33,10 +35,13 @@ struct BotTelemetrySnapshot
     float z = 0.0f;
     float o = 0.0f;
     std::string target;
+    uint32 targetLevel = 0;  // combat target level (0 = none/non-unit)
     std::string strategy;
     std::string state;       // "combat", "moving", "resting", "dead", "idle"
     std::string lastAction;  // last action the AI executed (loop detection)
     std::string lastTrigger; // event source that drove the last action
+    std::string travelPurpose; // active travel destination short name ("grind", "vendor", ...)
+    std::string travelTo;      // active travel destination title (empty when idle)
 };
 
 // ObservabilityEmitter sends non-blocking loopback UDP telemetry to the
@@ -92,6 +97,11 @@ private:
     bool AnomalyAllowed(uint32 guid, uint8 typeId, uint32 nowMs);
     void AddStateTime(size_t stateIndex, uint32 diff);
     void EmitSnapshotCycle(std::vector<Player*> const& activeBots, uint32 diff);
+    // Effective running settings for the dashboard Server panel (Addendum 2):
+    // core rate getters + AiPlayerbot flags, sent at startup and on a slow
+    // cadence. No strings from config files, no secrets — numbers and on/off.
+    void EmitServerInfo();
+    uint32 m_serverInfoTimerMs = 0;
     // Exact server-side stats for the dashboard armory
     // (tortoise_bots_armory_stats); a few bots per snapshot, round-robin.
     void WriteArmoryStats(Player* bot);
