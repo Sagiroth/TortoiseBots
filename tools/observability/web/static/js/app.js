@@ -22,7 +22,7 @@
     worldMapId: 0,
     bots: [],
     anomalies: [],
-    grinding: { bots_tracked: 0, bots_gaining_xp: 0, pct_gaining_xp: 0, median_xp_hour: 0, total_xp_hour: 0, deaths_per_min: 0, pct_died_5min: 0, pct_in_combat: 0, pct_grinding: 0, level_bands: {} },
+    grinding: { bots_tracked: 0, bots_gaining_xp: 0, pct_gaining_xp: 0, median_xp_hour: 0, total_xp_hour: 0, deaths_per_min: 0, pct_died_5min: 0, state_counts: {}, level_bands: [] },
     serverInfo: null,
     server: {
       online: false,
@@ -691,7 +691,8 @@
       renderDashboardCharts();
       renderComposition();
       renderFleetHealth();
-      renderMacroBar(state.server.states);
+      renderActivity();
+      renderGrinding();
     }
   }
 
@@ -1293,10 +1294,16 @@
       </div>`).join('');
 
     if (el.roleTotals) {
-      el.roleTotals.innerHTML = ['tank', 'healer', 'dps'].map(role => {
-        const badge = roleBadgeClass(role);
-        return `<span class="badge ${badge}" title="AI combat role (forced role / combat strategies / talent-gear auto-detect), not a group slot">${byRole[role] || 0} ${role.toUpperCase()}</span>`;
-      }).join('') + `<div class="empty-hint" style="margin-top:6px;">AI combat roles, not group slots — random-pool bots run talent/gear auto-detect.</div>`;
+      // Pool rosters are ~all AI-role DPS: 0/0/500 badges are noise. Show
+      // roles only when a real mix exists (tanks or healers present).
+      if ((byRole.tank || 0) + (byRole.healer || 0) === 0) {
+        el.roleTotals.innerHTML = '';
+      } else {
+        el.roleTotals.innerHTML = ['tank', 'healer', 'dps'].map(role => {
+          const badge = roleBadgeClass(role);
+          return `<span class="badge ${badge}" title="AI combat role (forced role / combat strategies / talent-gear auto-detect), not a group slot">${byRole[role] || 0} ${role.toUpperCase()}</span>`;
+        }).join('') + `<div class="empty-hint" style="margin-top:6px;">AI combat roles, not group slots.</div>`;
+      }
     }
   }
 
@@ -1311,7 +1318,7 @@
       return;
     }
 
-    let dead = 0, low = 0, inCombat = 0;
+    let dead = 0, low = 0;
     const zones = new Map();
     bots.forEach(b => {
       // A missing max_hp means "unknown", not "full health": those bots skew
@@ -1319,13 +1326,13 @@
       const pct = b.max_hp ? b.hp / b.max_hp : null;
       if (b.state === 'dead' || b.hp === 0) dead++;
       else if (pct !== null && pct < 0.35) low++;
-      if (b.state === 'combat') inCombat++;
       zones.set(`${b.map}_${b.zone}`, (zones.get(`${b.map}_${b.zone}`) || 0) + 1);
     });
 
+    // Combat/dead live in the Activity block (single source); health keeps
+    // LOW HP + DEAD (dead needs no map click, combat does not belong here).
     el.fleetHealth.innerHTML = `
       <div class="role-row" style="margin-top: 0;">
-        <span class="badge badge-error">${inCombat} IN COMBAT</span>
         <span class="badge badge-warn">${low} LOW HP</span>
         <span class="badge badge-info">${dead} DEAD</span>
       </div>`;
@@ -1341,8 +1348,36 @@
       });
     }
   }
-  // Grinding panel: the "are they grinding" picture from daemon XP deltas,
-  // combat state, travel purpose, and BOT_DEATH-derived kill rates.
+  // Activity block: the single authoritative states census (counts + %,
+  // same snapshot as the roster). Replaces the scattered combat/dead
+  // duplicates that used to live in Fleet Health and Grinding.
+  const ACTIVITY_ORDER = [
+    ['combat', '#f85149', 'In combat or pulling'],
+    ['moving', '#58a6ff', 'A movement generator owns the bot'],
+    ['busy', '#d29922', 'Standing still but doing something (loot, cast, eat, travel work, recent action)'],
+    ['resting', '#2ea043', 'Rest flag'],
+    ['idle', '#9aa4b2', 'No activity for 45+ s — really doing nothing'],
+    ['dead', '#c9d1d9', 'Dead'],
+  ];
+  function renderActivity() {
+    const host = document.getElementById('activity-panel');
+    const g = state.grinding || {};
+    if (!host) return;
+    const counts = g.state_counts || {};
+    const n = g.bots_tracked || state.bots.length || 0;
+    if (!n) {
+      host.innerHTML = '<div class="empty-hint">Waiting for bot roster...</div>';
+      return;
+    }
+    host.innerHTML = ACTIVITY_ORDER.map(([key, color, title]) => {
+      const c = counts[key] || 0;
+      const pct = Math.round((c / n) * 100);
+      return `<div class="comp-row" title="${esc(title)}"><span class="comp-name">${key[0].toUpperCase() + key.slice(1)}</span><span class="comp-bar-bg"><span class="comp-bar" style="width: ${pct}%; background: ${color};"></span></span><span class="comp-count">${c} · ${pct}%</span></div>`;
+    }).join('');
+  }
+  // Grinding panel: XP gains + deaths only. States moved to the Activity
+  // block above; grind-travel merged into the Levels footnote (it duplicated
+  // Moving without explaining the split).
   function renderGrinding() {
     const host = document.getElementById('grinding-panel');
     const bands = document.getElementById('level-bands');
@@ -1353,21 +1388,20 @@
       if (bands) bands.innerHTML = '';
       return;
     }
+    const gainingTitle = `${g.bots_gaining_xp} of ${g.bots_tracked} bots gained XP in the last 10 min — quest turn-ins, discovery and kills all count, not just combat`;
     host.innerHTML = `
       <div class="role-row" style="margin-top: 0;">
-        <span class="badge badge-success" title="Bots with an XP gain in the last 10 min">${esc(g.bots_gaining_xp)}/${esc(g.bots_tracked)} GAINING XP</span>
-        <span class="badge badge-info" title="Median XP/hour over bots with a positive rate">${esc(fmtXpRate(g.median_xp_hour))} MEDIAN</span>
+        <span class="badge badge-success" title="${esc(gainingTitle)}">${esc(g.bots_gaining_xp)}/${esc(g.bots_tracked)} GAINING XP</span>
+        <span class="badge badge-info" title="Median XP/hour over ALL tracked bots (idle included)">${esc(fmtXpRate(g.median_xp_hour))} MEDIAN</span>
         <span class="badge badge-error" title="BOT_DEATH bot deaths per minute, last 10 min">${esc((g.deaths_per_min || 0).toFixed(1))} DEATHS/MIN</span>
       </div>
-      <div class="comp-row"><span class="comp-name">In combat</span><span class="comp-bar-bg"><span class="comp-bar" style="width: ${Math.round(g.pct_in_combat || 0)}%; background: #f85149;"></span></span><span class="comp-count">${Math.round(g.pct_in_combat || 0)}%</span></div>
-      <div class="comp-row"><span class="comp-name">Grind travel</span><span class="comp-bar-bg"><span class="comp-bar" style="width: ${Math.round(g.pct_grinding || 0)}%; background: #58a6ff;"></span></span><span class="comp-count">${Math.round(g.pct_grinding || 0)}%</span></div>
-      <div class="comp-row"><span class="comp-name">Died 5m</span><span class="comp-bar-bg"><span class="comp-bar" style="width: ${Math.round(g.pct_died_5min || 0)}%; background: #d29922;"></span></span><span class="comp-count">${Math.round(g.pct_died_5min || 0)}%</span></div>`;
+      <div class="comp-row" title="Share of tracked bots that died in the last 5 min (distinct bots, not death events)"><span class="comp-name">Died 5m</span><span class="comp-bar-bg"><span class="comp-bar" style="width: ${Math.round(g.pct_died_5min || 0)}%; background: #d29922;"></span></span><span class="comp-count">${Math.round(g.pct_died_5min || 0)}%</span></div>`;
     if (bands) {
-      const order = ['1-9', '10-19', '20-29', '30-39', '40-49', '50-59', '60'];
-      const lb = g.level_bands || {};
-      const max = Math.max(1, ...order.map(k => lb[k] || 0));
-      bands.innerHTML = `<div class="section-label" style="margin: 8px 0 6px;">LEVELS</div>` + order.map(k => `
-        <div class="comp-row"><span class="comp-name">${esc(k)}</span><span class="comp-bar-bg"><span class="comp-bar" style="width: ${Math.round(((lb[k] || 0) / max) * 100)}%; background: #2ea043;"></span></span><span class="comp-count">${lb[k] || 0}</span></div>`).join('');
+      const lb = Array.isArray(g.level_bands) ? g.level_bands : [];
+      const max = Math.max(1, ...lb.map(b => b.count || 0));
+      const label = b => (b.lo === b.hi ? `L${b.lo}` : `${b.lo}-${b.hi}`);
+      bands.innerHTML = `<div class="section-label" style="margin: 8px 0 6px;">LEVELS</div>` + lb.map(b => `
+        <div class="comp-row"><span class="comp-name">${esc(label(b))}</span><span class="comp-bar-bg"><span class="comp-bar" style="width: ${Math.round(((b.count || 0) / max) * 100)}%; background: #2ea043;"></span></span><span class="comp-count">${b.count || 0}</span></div>`).join('');
     }
   }
 
@@ -1381,16 +1415,6 @@
     return true;
   }
 
-  function renderMacroBar(r) {
-    if (!r) return;
-    ['combat', 'moving', 'busy', 'resting', 'idle', 'dead'].forEach(key => {
-      const pct = Math.round((r[key] || 0) * 100);
-      const bar = document.getElementById(`macro-bar-${key}`);
-      const txt = document.getElementById(`macro-pct-${key}`);
-      if (bar) bar.style.width = `${pct}%`;
-      if (txt) txt.textContent = `${pct}%`;
-    });
-  }
   // Server panel: effective running settings (rates / bots / diagnostics)
   // from the SERVER_INFO payload — live getters, never config files.
   function flagBadge(v) {
@@ -1462,8 +1486,8 @@
       `- rates: xp_kill=${rates.xp_kill ?? '?'} xp_elite=${rates.xp_kill_elite ?? '?'} xp_quest=${rates.xp_quest ?? '?'} xp_explore=${rates.xp_explore ?? '?'} drop_money=${rates.drop_money ?? '?'} honor=${rates.honor ?? '?'} rep=${rates.rep_gain ?? '?'} talent=${rates.talent ?? '?'} bot_xp_mult=${rates.bot_xp_mult ?? '?'}`,
       `- bots: min/max=${bots.min_random ?? '?'}/${bots.max_random ?? '?'} update=${bots.update_interval ?? '?'} maxlvl=${bots.max_level ?? '?'} group=${on(bots.group_nearby)} raid=${on(bots.raid_nearby)} invite=${on(bots.invite_player)} timed_logout=${on(bots.timed_logout)} no_rand_levels=${on(bots.disable_random_levels)} ladder=${on(bots.level_ladder)} quests=${on(bots.auto_do_quests)} no_activity=${on(bots.disable_activity)} alone=${bots.active_alone ?? '?'} pool=${bots.pool_budget_us ?? '?'}us/${bots.pool_budget_gate_ms ?? '?'}ms ah=${on(bots.ah_buyer)} lft=${on(bots.lft)} bg=${on(bots.bg)}`,
       `- diag: perfmon=${on(diag.perf_mon)} bot_events=${on(diag.bot_events)} unreachable=${on(diag.unreachable)} deaths=${on(diag.deaths)}`,
-      `- pool: tracked=${g.bots_tracked || 0} gaining=${g.bots_gaining_xp || 0} (${Math.round(g.pct_gaining_xp || 0)}%) median_xp/h=${Math.round(g.median_xp_hour || 0)} total_xp/h=${Math.round(g.total_xp_hour || 0)} deaths/min=${(g.deaths_per_min || 0).toFixed(1)} died5m=${Math.round(g.pct_died_5min || 0)}% combat=${Math.round(g.pct_in_combat || 0)}% grind=${Math.round(g.pct_grinding || 0)}%`,
-      `- levels: ${['1-9', '10-19', '20-29', '30-39', '40-49', '50-59', '60'].map(k => `${k}=${((g.level_bands || {})[k]) || 0}`).join(' ')}`,
+      `- pool: tracked=${g.bots_tracked || 0} gaining=${g.bots_gaining_xp || 0} (${Math.round(g.pct_gaining_xp || 0)}%) median_xp/h=${Math.round(g.median_xp_hour || 0)} total_xp/h=${Math.round(g.total_xp_hour || 0)} deaths/min=${(g.deaths_per_min || 0).toFixed(1)} died5m=${Math.round(g.pct_died_5min || 0)}% states=${['combat', 'moving', 'busy', 'resting', 'idle', 'dead'].map(k => `${k}=${((g.state_counts || {})[k]) || 0}`).join(' ')}`,
+      `- levels: ${(Array.isArray(g.level_bands) ? g.level_bands : []).map(b => `${b.lo === b.hi ? `L${b.lo}` : `${b.lo}-${b.hi}`}=${b.count || 0}`).join(' ')}`,
       `- issues: active=${state.issues.active.length} persistent=${state.issues.active.filter(i => i.severity === 'persistent').length}`,
       `- server: online=${state.server.online} stale=${state.server.stale} uptime=${state.server.uptime}s tick=${state.server.diff}ms humans=${state.server.humans} bots=${state.server.bots}`,
     ].join('\n');
@@ -1552,7 +1576,6 @@
 
     updateSnapshotAge();
     setStatusPill();
-    if (state.activeTab === 'dashboard') renderMacroBar(s.states);
   }
 
   function makeBotDot(b, issue, pctX, pctY) {
@@ -3042,11 +3065,15 @@
         updateDashboardMetrics();
         if (state.activeTab === 'map') renderMap();
         if (state.activeTab === 'roster') renderRoster();
-        if (state.activeTab === 'dashboard') { renderFleetHealth(); renderComposition(); renderGrinding(); }
+        if (state.activeTab === 'dashboard') { renderFleetHealth(); renderActivity(); renderComposition(); renderGrinding(); }
       })
       .catch(() => {});
     fetch('/api/v1/grinding').then(r => r.json()).then(g => {
-      if (g && typeof g.bots_tracked === 'number') { state.grinding = g; renderGrinding(); }
+      if (g && typeof g.bots_tracked === 'number') {
+        state.grinding = g;
+        renderActivity();
+        renderGrinding();
+      }
     }).catch(() => {});
     fetch('/api/v1/server-info').then(r => {
       if (!r.ok) return null;
@@ -3121,7 +3148,7 @@
 
       if (state.activeTab === 'map') renderMap();
       if (state.activeTab === 'roster') renderRoster();
-      if (state.activeTab === 'dashboard') { renderFleetHealth(); renderGrinding(); }
+      if (state.activeTab === 'dashboard') { renderFleetHealth(); renderActivity(); renderGrinding(); }
 
       if (state.bots.length !== prevCount) {
         populateClassFilter();
