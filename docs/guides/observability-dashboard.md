@@ -34,7 +34,7 @@ When the daemon is running, sign in with a game account of GM rank ≥ 2 (or run
 - **Roster & Health Overview:** Real-time list of all active bots, class names (icons exist only for items/spells/talents), current levels, per-bot XP progress bars (XP/hour + last-gain age), health/mana percentages, target units with target level, and active travel purpose/destination.
 - **Grinding panel:** Pool-wide "are they grinding" rollup — bots gaining XP, median/total XP per hour, kills/min and % killed in the last 5 min, % in combat, % on grind travel, and level distribution.
 - **Server panel (effective settings):** Module/core versions, live server rates (XP kill/quest/explore, drops, honor/rep, talent, bot XP multiplier), key TortoiseBots flags, and diagnostics toggles — all read from running getters, never config files. The **Copy diagnostic report** button produces a compact plain-text snapshot (no secrets) to paste into GitHub issues or Discord; use it when reporting bugs.
-- **Macro-State Breakdown:** Fleet-wide visualization showing how many bots are currently in `combat`, `moving`, `resting`, `idle`, or `dead`.
+- **Macro-State Breakdown:** Fleet-wide 3-min rolling visualization: `combat` (in combat), `moving` (a movement generator owns the bot), `busy` (standing still but doing something: looting, casting, sitting to eat/drink, or working an active travel target — plus anything with observable activity in the last 45 s, e.g. the pause between waypoints), `resting` (rest flag), `idle` (no movement, action, cast, loot, or active target for 45+ s — really doing nothing), `dead`.
 - **Persistent Issue Tracker:** Bots stuck (60 s frozen while moving), dead long (2+ min), or unable to reach a combat target (2+ min, auto-closes when the snapshot contradicts it) are tracked as episodes. The tab defaults to the ≥10 min persistent filter — the subset worth reading; only episodes past their gate are shown, short ones are discarded, and no dead-long rows open in the first 5 min after a server restart. Incidents is a rolling last-1000-event window, not history.
 - **Mobile & Tablet Friendly:** Fully responsive layout for phones (360–430 px) and tablets (768 px) featuring an off-canvas navigation drawer, stacked grids, scrollable tables, and touch-friendly controls while preserving the desktop layout.
 
@@ -69,7 +69,7 @@ The `observability` service is part of the compose stack (opt-in via `--profile 
 
 The daemon exports Prometheus metrics at `http://localhost:8095/metrics`, allowing you to visualize bot performance in Grafana:
 - `tortoisebots_active_count{class,role}`: Number of active bots by class and role.
-- `tortoisebots_state_ratio`: Rolling-window ratio (0.0–1.0) of time spent per macro state (`combat`/`moving`/`resting`/`idle`/`dead`).
+- `tortoisebots_state_ratio`: Rolling-window ratio (0.0–1.0) of time spent per macro state (`combat`/`moving`/`busy`/`resting`/`idle`/`dead`).
 - `tortoisebots_grinding_xp_per_hour_total` / `tortoisebots_grinding_bots_gaining` / `tortoisebots_grinding_kills_per_min` / `tortoisebots_grinding_pct_in_combat`: Pool XP and kill activity behind the grinding panel.
 - `tortoisebots_issues_active`: Number of active stuck-episode issues by type.
 - `tortoisebots_snapshots_total` / `tortoisebots_anomalies_total`: Telemetry ingest counters (roster snapshots published / anomalies detected).
