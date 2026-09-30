@@ -2094,3 +2094,118 @@ Local validation:
 - `bash tools/verify_all.sh`; `git diff --check`.
 - Module build by orchestrator via `scratchpad/build-commit.sh` (workers do
   not run the docker builder).
+
+
+## Ranged kit keeps its casting band (`enemy out of spell` -> `reach spell`) — 2026-09-29
+
+Feature: the `ranged` combat strategy (`RangedCombatStrategy`, registered as the
+`ranged` strategy) also fires `reach spell` at `ACTION_HIGH` when its current
+target is out of the caster's spell range, so a ranged kit pushed out of its
+band walks back in instead of idling. The trigger it hangs on (`enemy out of
+spell`, class `EnemyOutOfSpellRangeTrigger`) additionally requires a hostile
+target, so a stale or friendly `current target` cannot drag a ranged bot across
+the zone.
+
+Source repository: `mod-playerbots` @
+`b6696bdbd3740e575598d167d69f39f68cc0b907` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only): `src/Ai/Base/Strategy/CombatStrategy.cpp`
+(`"enemy out of spell"` -> `reach spell`, `ACTION_HIGH` — the donor's first
+trigger in its base combat strategy).
+
+Copied / ported / reimplemented: reimplemented, not copied. The donor registers
+the node in its base `CombatStrategy`; the module's `CombatStrategy` live hook
+(`CombatStrategy::InitCombatTriggers`) is only reached by the unregistered
+vector-API class trees (`Generic{Druid,Hunter,Paladin,Priest}Strategy`), while
+every live class kit chains through `ClassStrategy`. The rule therefore sits
+with the ranged kit itself, next to the complementary
+`enemy too close for spell` -> `flee` node, and melee specs — which own a
+higher-relevance `reach melee` — are not given a spell-range closing rule.
+
+Reason: donors keep a ranged bot inside its casting band from both sides. Without
+the rule nothing closed the distance again once a target left the band: the
+hunter's auto-shot prerequisite only covers "beyond the weapon's maximum range",
+and a caster's spell prerequisite only exists while a spell is castable (out of
+mana or on cooldown, it has no distance action at all).
+
+Local validation:
+- `bash tools/verify_all.sh` (OKF, surface, action/trigger wiring, engine unit
+  tests, policy tests, decision trail, talent presets, host contract);
+  `git diff --check`.
+- Module build via `build-commit.sh`; runtime measurement via the hunter
+  telemetry rows (`AutoShot`, `SwitchToMelee`, `SwitchToRanged`) — see
+  `docs/classes/hunter.md` and the 2026-09-29 hunter fix summary.
+
+### Same section — dead-zone step back (`enemy too close for auto shot` -> `flee`)
+
+Feature: a hunter that still has the `ranged` kit and a loaded ranged weapon
+steps back out of the shot's own minimum range (`EnemyTooCloseForAutoShotTrigger`
+in `HunterTriggers.h`, node in `HunterStrategy::InitCombatTriggers` at
+`ACTION_MOVE - 1` → `flee`), because the generic `enemy too close for spell`
+flee is suppressed while a fast target is glued to the bot and no shot is
+possible inside that range.
+
+Source files (donor, reference only): `src/Ai/Class/Hunter/Strategy/GenericHunterStrategy.cpp`
+(`"enemy too close for auto shot"` → `disengage`, `flee`).
+
+Copied / ported / reimplemented: reimplemented. Only the trigger *name* is
+donor's; the donor's own file is the unregistered forward-port in this module
+(`ai/playerbot/strategy/hunter/GenericHunterStrategy.cpp`, references the
+never-registered `disengage` action), so the live trigger is written against
+the module's existing `flee` action and gated on the loaded ranged weapon
+instead of the donor's action list. Relevance sits one step below the melee
+switch so a hunter that may switch (level >= 10, or without a loaded ranged
+weapon) keeps its melee fallback first.
+
+## A grind order walks the bot to its target (`AttackAnythingAction`) — 2026-09-30
+
+Feature: the autonomous grind order (`AttackAnythingAction::Execute`, node
+`"no target"` -> `"attack anything"` in `GrindingStrategy`) carries the approach
+to the mob it just selected. When the target is outside attack range the action
+now runs the kit's reach action (`reach melee` for a melee kit, `reach spell`
+for a ranged one) instead of stopping the bot where it stands; only a target
+already inside attack range falls back to `ai->StopMoving()`.
+
+Source repository: `mod-playerbots` @
+`b6696bdbd3740e575598d167d69f39f68cc0b907` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only): `src/Ai/Base/Actions/ChooseTargetActions.cpp`
+(`AttackAnythingAction::Execute` sets the `pull target` and clears the motion
+master, with `// bot->StopMoving();` deliberately commented out, so the order
+never breaks the approach) and `src/Ai/Base/Strategy/GrindingStrategy.cpp`
+(the same `"no target"` -> `"attack anything"` node).
+
+Copied / ported / reimplemented: reimplemented. The port had replaced the
+donor's commented-out stop with an unconditional `ai->StopMoving()` after the
+order, and left the approach to the combat engine's reach action alone. The
+reach action is real and works (live: 22 `reach melee` and 25 `reach spell`
+action samples among the 188 of 395 bots that moved), but it is not the only
+thing racing for the engine's single action slot per tick, so it must not be
+the order's only path to the target.
+
+Reason: with the stop unconditional, a bot that ordered a mob 20-60 yd away
+stayed exactly where it was. Live measurement over the whole random-bot pool
+(395 bots, 150 s, 1 Hz observability samples): 207 bots ended the window at the
+position they started it (0 yd displacement) and none of them ever executed a
+reach action, while the 188 that moved did; 53 of the frozen bots spent the
+window looping `reset`/`unstuck` (the combat-stuck rescue, which forces the
+engine back to non-combat and clears the target), 15 looped `select new target`,
+and 18 placed grind orders that changed nothing. The mob never gets to aggro
+either (`victim=0` in every `GrindTargetRepeat` row), so the fight never starts
+and the bot re-orders the same creature for hours (frozen sequences of 140 min
+average, up to 280 min, byte-identical positions).
+
+Local validation:
+- `bash tools/verify_all.sh` (OKF, module surface, action/trigger wiring, engine
+  unit tests, policy tests, decision trail, talent presets, host contract);
+  `git diff --check`.
+- Module build via `build-commit.sh` (no deploy).
+- Live indicators to watch after deploy: `GrindTargetRepeat` rows with
+  `dist` > 10 yd and `victim=0` (the never-approached order) should vanish;
+  kills/attack for level 1-3 bots should rise from ~0.03-0.2 toward the
+  level 5 rate (~1.0); `UnstuckTrip` rows per bot-hour should fall with the
+  `reset`/`combat (long) stuck` share; the frozen-population share measured by
+  the observability daemon (bots with 0 yd displacement over a 60 s window)
+  should collapse from ~53%.

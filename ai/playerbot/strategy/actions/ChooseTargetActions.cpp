@@ -106,7 +106,30 @@ bool ai::AttackAnythingAction::Execute(Event& event)
                 // not let it inherit an old command-only priority marker.
                 context->GetValue<ObjectGuid>("explicit attack target")->Set(ObjectGuid());
                 context->GetValue<ObjectGuid>("attack target")->Set(grindTarget->getObjectGuid());
-                ai->StopMoving();
+
+                // The order has to carry the walk to the target with it. A grind target is
+                // picked from up to sightDistance (60 yd) away, and the only other thing that
+                // closes that distance is the combat engine's reach action - which does not
+                // reliably run: of 395 live bots watched for 150 s at 1 Hz, none of the 207
+                // that ended the window where they started ever executed one, while 22 reach
+                // melee and 25 reach spell samples belong to the 188 that did move. Those 207
+                // spent the window on the stuck reset, "select new target" or nothing at all -
+                // standing still 20-60 yd from a mob they had just ordered. Donor
+                // mod-playerbots keeps its StopMoving commented out here for the same reason:
+                // the order must not itself break the approach. So close the distance here,
+                // where the order is given, and stand still only when already inside attack
+                // range. The reach action brings its own guards: it is a no-op in range, it
+                // gives up on a target it cannot close on for 15 s - blacklisting the creature,
+                // and on a second give-up the whole spot - and it never moves a bot that has
+                // "stay". Kit choice mirrors the combat engine: the ranged kit holds casting
+                // distance, everything else fights in melee (which is also what a kit with
+                // neither carries as its default action: the below-10 leveling druid).
+                const bool rangedKit = ai->HasStrategy("ranged", BotState::BOT_STATE_COMBAT) &&
+                    !ai->HasStrategy("close", BotState::BOT_STATE_COMBAT);
+                if (!ai->DoSpecificAction(rangedKit ? "reach spell" : "reach melee", event, true))
+                {
+                    ai->StopMoving();
+                }
             }
         }
     }
