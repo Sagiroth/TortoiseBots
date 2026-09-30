@@ -364,6 +364,14 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 
     SC_PHASE("UpdateAI.entry", bot ? bot->GetName() : "(null)");
 
+    // A Headless bot has no client to finish a cinematic
+    // (CMSG_COMPLETE_CINEMATIC), so any cinematic started mid-session - e.g.
+    // a camera game object used before RpgUseTrigger excluded the type -
+    // would leave it untargetable (Unit::IsTargetable) until logout. Member
+    // read only, no DB/scan; the OnPlayerLogin call keeps owning first login.
+    if (bot->watching_cinematic_entry)
+        bot->CinematicEnd();
+
     // revalidate the
     // cached master pointer against ObjectAccessor BEFORE any code
     // path can deref it. If the master Player was destroyed since
