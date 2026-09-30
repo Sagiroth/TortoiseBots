@@ -582,8 +582,9 @@ void BotManager::OnPlayerLogin(::Player* player)
             if (sPlayerbotAIConfig.randomBotEvenStartZones)
             {
                 uint32_t counts[kStartZoneCount] = {};
-                if (std::unique_ptr<QueryResult> rows = CharacterDatabase.PQuery(
-                        "SELECT `race` FROM `characters` WHERE `deleteDate` IS NULL AND `level` = 1"))
+                std::unique_ptr<QueryResult> rows(CharacterDatabase.PQuery(
+                    "SELECT `race` FROM `characters` WHERE `deleteDate` IS NULL AND `level` = 1"));
+                if (rows)
                 {
                     do
                     {
