@@ -165,6 +165,7 @@ private:
         bool unreachableReported = false;
         uint32 lastUnreachableReportMs = 0;
     };
+    std::map<uint32, BotTrackState> m_botTracking;
 
     // Optional roster contributor from another module (world thread only).
     std::function<void(std::vector<Player*>&)> m_externalRosterProvider;
@@ -197,5 +198,7 @@ private:
     size_t m_stateBucketIndex;
     uint32 m_stateBucketElapsedMs;
 };
+
+#define sObservabilityEmitter (::TortoiseBots::ObservabilityEmitter::Instance())
 
 } // namespace TortoiseBots
