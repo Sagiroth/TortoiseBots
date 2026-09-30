@@ -2209,3 +2209,38 @@ Local validation:
   `reset`/`combat (long) stuck` share; the frozen-population share measured by
   the observability daemon (bots with 0 yd displacement over a 60 s window)
   should collapse from ~53%.
+
+### Follow-up 2026-09-30 — review of the grind approach (PR #361): walk wait and the leveling druid
+
+Two review findings, both fixed in the tree that carries the approach rule.
+
+**1. The wrapper action erased the movement wait.** `AttackAnythingAction::Execute`
+runs the reach action nested (`ai->DoSpecificAction`), and the reach books its own
+wait (`ReachTargetAction::Execute` -> `WaitForReach` -> `Action::SetDuration` ->
+`Engine::ListenAndExecute` -> `PlayerbotAI::SetActionDuration`). The engine applies
+the duration of the action it executed *as a whole* after `Execute()` returns, and
+that outer action (`AttackAnythingAction`) carries the `Action` default
+(`sPlayerbotAIConfig.reactDelay`), so the wait collapsed to the 100 ms default: the
+bot ticked again immediately, the combat engine re-ran `reach melee`/`reach spell`,
+and the spline was relaunched once per tick for the whole walk. The wrapper now
+carries the wait the reach asked for (`SetDuration(ai->GetAIInternalUpdateDelay())`)
+and releases it again to the default when no movement was taken, so a cached action
+object cannot keep a stale walk wait. Local validation: `tools/verify_all.sh`;
+module build via `build-commit.sh` (no deploy); the walk wait is observable as
+`sPlayerbotAIConfig.MaxWaitForMove`-capped AI ticks (default 3 s) instead of one
+tick per 100 ms while a bot closes distance.
+
+**2. The below-10 druid had no reach node at all.** `LevelingDruidStrategy` wired
+its Wrath node to the trigger name `enemy out of melee range`, which no creator
+registers — `TriggerContext.h` registers `enemy out of melee` (`EnemyOutOfMeleeTrigger`;
+`enemy out of melee range` is only that trigger's own display name, which never
+participates in node lookup, `Engine::ProcessTriggers` resolves by node name).
+`tools/verify_action_trigger_wiring.py` reported it as a dead-tree trigger, so the
+node never fired, and because the kit owns neither `close` nor `ranged` the generic
+`enemy out of melee` -> `reach melee` rule was missing from the engine as well: a
+below-10 druid could not re-close a fight (knockback, a mob that runs) and had no
+ranged answer while out of reach. Fixed by naming the live trigger and by adding the
+same melee rule every other melee kit carries (`reach melee`, `ACTION_MOVE`, which
+outranks the Wrath node so the bot walks in and still casts Wrath whenever reach
+cannot run). Validator after the fix: dead-tree triggers 124 -> 123, no new missing
+actions.

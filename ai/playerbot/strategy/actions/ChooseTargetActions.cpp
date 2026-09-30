@@ -126,9 +126,25 @@ bool ai::AttackAnythingAction::Execute(Event& event)
                 // neither carries as its default action: the below-10 leveling druid).
                 const bool rangedKit = ai->HasStrategy("ranged", BotState::BOT_STATE_COMBAT) &&
                     !ai->HasStrategy("close", BotState::BOT_STATE_COMBAT);
-                if (!ai->DoSpecificAction(rangedKit ? "reach spell" : "reach melee", event, true))
+                if (ai->DoSpecificAction(rangedKit ? "reach spell" : "reach melee", event, true))
+                {
+                    // The nested reach has booked its own walk wait (ReachTargetAction::Execute
+                    // -> WaitForReach -> SetDuration -> Engine::ListenAndExecute ->
+                    // SetActionDuration), but the engine applies the *outer* action's duration
+                    // once Execute() returns - and this action's own duration is the reactDelay
+                    // default. Without this the 100 ms would land on top of the reach's wait
+                    // (up to MaxWaitForMove), the bot would tick straight away again, the combat
+                    // engine would re-run the reach and relaunch the spline once per tick for the
+                    // whole walk. Carry the wait the reach asked for as this action's duration.
+                    SetDuration(ai->GetAIInternalUpdateDelay());
+                }
+                else
                 {
                     ai->StopMoving();
+                    // No movement was taken, so this action must not keep a wait from an
+                    // earlier walk (the action object is cached per context): release the
+                    // default so the next order is considered on the next tick.
+                    SetDuration(sPlayerbotAIConfig.reactDelay);
                 }
             }
         }

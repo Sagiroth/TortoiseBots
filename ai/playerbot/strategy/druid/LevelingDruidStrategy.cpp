@@ -29,8 +29,21 @@ void LevelingDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
 
     // Cast Wrath if initiating combat or the enemy is still at range
     triggers.push_back(new TriggerNode(
-        "enemy out of melee range",
+        "enemy out of melee",
         NextAction::array(0, new NextAction("wrath", ACTION_NORMAL), NULL)));
+
+    // Close to melee like every other melee kit does. A druid below level 10 runs the
+    // "leveling" kit, which owns neither "close" nor "ranged", so the generic
+    // "enemy out of melee" -> "reach melee" rule is not in this engine at all - and the node
+    // here used to hang on the trigger name "enemy out of melee range", which no creator
+    // registers (only "enemy out of melee" does, TriggerContext.h), so it never fired:
+    // tools/verify_action_trigger_wiring.py listed it as a dead-tree trigger and the druid had
+    // no way to close or re-close a fight (a knocked-back or fleeing mob left it standing).
+    // Reach outranks the wrath node above, so the druid walks in; wrath still lands whenever
+    // reach cannot run - the bot rooted or stunned, or a target reach has given up on.
+    triggers.push_back(new TriggerNode(
+        "enemy out of melee",
+        NextAction::array(0, new NextAction("reach melee", ACTION_MOVE), NULL)));
 
     // Cast Moonfire if not applied and mana is over 50%
     triggers.push_back(new TriggerNode(
