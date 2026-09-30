@@ -45,6 +45,15 @@ namespace TortoiseBots
 
 namespace
 {
+// Level-ladder holds (RandomBotService::LadderBuildBuckets / RemoveExpiredBots): a candidate
+// that could not be brought online is left alone for a minute instead of being picked again
+// every pass; a candidate that left the world within a minute of entering it (a refused
+// login, a bad spawn, a crash) is set aside for an hour. These are the only two holds the
+// ladder arms, so LADDER_QUICK_LOGOUT_HOLD_MS is also the longest hold a candidate may
+// legitimately carry.
+uint32_t const LADDER_BUSY_RETRY_MS = 60000;
+uint32_t const LADDER_QUICK_LOGOUT_HOLD_MS = 3600000;
+
 std::string GenerateRndBotName()
 {
     // Pronounceable 2-3 syllable fantasy names (consonant onset + vowel nucleus,
@@ -965,7 +974,7 @@ void RandomBotService::RemoveExpiredBots(uint32_t diff)
                 if (m_ladderRetryMs.size() != m_candidates.size())
                     m_ladderRetryMs.resize(m_candidates.size(), 0);
                 uint32_t nowMs = WorldTimer::getMSTime();
-                m_ladderRetryMs[i] = nowMs + 3600000;
+                m_ladderRetryMs[i] = nowMs + LADDER_QUICK_LOGOUT_HOLD_MS;
                 ++m_quickLogouts;
                 if (nowMs - m_quickLogoutLogMs >= 60000)
                 {
@@ -1018,6 +1027,13 @@ void RandomBotService::RemoveExpiredBots(uint32_t diff)
             candidate.characterGuid.GetString().c_str());
         BotManager::Instance().RemoveBot(candidate.characterGuid, true);
         BotActivityLeaseManager::Instance().Release(candidate.characterGuid.GetCounter(), BotActivity::Grinding);
+        // A deliberate timed logout is not a quick logout: the bot was online for its whole
+        // lifetime and is expected back. Clearing the age (so the next login counts from
+        // zero) while leaving `was a bot` set made the next pass read it as "left 0 ms after
+        // entering the world" and set the character aside for an hour - on 2026-09-30 that
+        // parked 105 of 500 bots outside the world (level ladder pass: online 395/500,
+        // offline eligible 2). Clear both, so only a genuine quick logout is held back.
+        m_wasBot[i] = 0;
         m_ageMs[i] = 0;
     }
 }
@@ -1064,18 +1080,37 @@ uint32_t RandomBotService::LadderBandTarget(uint32_t band) const
 // order among equals so they take turns), built once per service interval. The first version
 // rescanned all candidates for every pick, which is quadratic when the target stays short
 // (a slow login pipeline) - measured as a world tick of 120 ms instead of 50 at 300 bots.
-void RandomBotService::LadderBuildBuckets(std::vector<std::vector<size_t>>& buckets, uint32_t nowMs) const
+void RandomBotService::LadderBuildBuckets(std::vector<std::vector<size_t>>& buckets, uint32_t nowMs,
+    LadderSkips& skips)
 {
     size_t n = m_candidates.size();
     buckets.assign(LadderBandCount(), std::vector<size_t>());
     for (size_t k = 0; k < n; ++k)
     {
         size_t i = (m_nextCandidate + k) % n;
-        if (i < m_ladderRetryMs.size() && m_ladderRetryMs[i] && nowMs < m_ladderRetryMs[i])
-            continue;
+        uint32_t const heldUntil = i < m_ladderRetryMs.size() ? m_ladderRetryMs[i] : 0;
+        if (heldUntil && nowMs < heldUntil)
+        {
+            if (heldUntil - nowMs <= LADDER_QUICK_LOGOUT_HOLD_MS)
+            {
+                ++skips.held;
+                continue;
+            }
+            // A hold further into the future than the longest one this pass ever arms is not
+            // a hold: the deadline is wall-clock derived (WorldTimer::getMSTime), so a clock
+            // step makes it jump, and a candidate set aside with such a value is never picked
+            // again - it is silently lost from the pool (2026-09-30: 103 of the 105 bots held
+            // after a timed logout never came back, `offline eligible 2` with 105 offline).
+            // Repair the value and pick the candidate in this same pass.
+            m_ladderRetryMs[i] = 0;
+            ++skips.staleHold;
+        }
         Candidate const& c = m_candidates[i];
         if (BotManager::Instance().IsBot(c.characterGuid))
+        {
+            ++skips.tracked;
             continue;
+        }
         buckets[LadderBandOf(c.level)].push_back(i);
     }
     for (auto& bucket : buckets)
@@ -1247,7 +1282,8 @@ void RandomBotService::MaintainOnlinePool()
             if (c.team == HORDE) ++onlineHorde; else ++onlineAlliance;
         }
         std::vector<std::vector<size_t>> buckets;
-        LadderBuildBuckets(buckets, nowMs);
+        LadderSkips skips;
+        LadderBuildBuckets(buckets, nowMs, skips);
         uint32_t eligible = 0, sessionBusy = 0, leaseBusy = 0, addFailed = 0;
         for (auto const& bucket : buckets)
             eligible += static_cast<uint32_t>(bucket.size());
@@ -1265,21 +1301,21 @@ void RandomBotService::MaintainOnlinePool()
                 // A network session owns the character; never steal it.
                 if (!player->GetSession() || !player->GetSession()->IsHeadless())
                 {
-                    m_ladderRetryMs[index] = nowMs + 60000;
+                    m_ladderRetryMs[index] = nowMs + LADDER_BUSY_RETRY_MS;
                     ++sessionBusy;
                     continue;
                 }
             }
             if (BotSessionAdapter::GetHeadlessSessionState(candidate.characterGuid) != HeadlessSessionState::NotFound)
             {
-                m_ladderRetryMs[index] = nowMs + 60000;
+                m_ladderRetryMs[index] = nowMs + LADDER_BUSY_RETRY_MS;
                 ++sessionBusy;
                 continue;
             }
             uint32 guidLow = candidate.characterGuid.GetCounter();
             if (!BotActivityLeaseManager::Instance().TryAcquire(guidLow, BotActivity::Grinding, 0))
             {
-                m_ladderRetryMs[index] = nowMs + 60000;
+                m_ladderRetryMs[index] = nowMs + LADDER_BUSY_RETRY_MS;
                 ++leaseBusy;
                 continue;
             }
@@ -1296,7 +1332,7 @@ void RandomBotService::MaintainOnlinePool()
             else
             {
                 BotActivityLeaseManager::Instance().Release(guidLow, BotActivity::Grinding);
-                m_ladderRetryMs[index] = nowMs + 60000;
+                m_ladderRetryMs[index] = nowMs + LADDER_BUSY_RETRY_MS;
                 ++addFailed;
             }
         }
@@ -1304,8 +1340,9 @@ void RandomBotService::MaintainOnlinePool()
         if (online < m_targetCount && nowMs - m_ladderPassLogMs >= 60000)
         {
             m_ladderPassLogMs = nowMs;
-            TB_LOG_BASIC("TortoiseBots: level ladder pass: online %u/%u, added %u, offline eligible %u, skipped: session %u, lease %u, add refused %u",
-                online, m_targetCount, added, eligible, sessionBusy, leaseBusy, addFailed);
+            TB_LOG_BASIC("TortoiseBots: level ladder pass: online %u/%u, added %u, offline eligible %u, skipped: session %u, lease %u, add refused %u, held %u, tracked %u, stale holds %u",
+                online, m_targetCount, added, eligible, sessionBusy, leaseBusy, addFailed,
+                skips.held, skips.tracked, skips.staleHold);
         }
         return;
     }

@@ -61,7 +61,15 @@ private:
     uint32_t LadderBandOf(uint32_t level) const;
     uint32_t LadderBandTarget(uint32_t band) const;
     std::string LadderBandName(uint32_t band) const;
-    void LadderBuildBuckets(std::vector<std::vector<size_t>>& buckets, uint32_t nowMs) const;
+    // Why one bucket build left a candidate out of the pool; the pass log prints these, so
+    // a pool that stays short can be told apart from a pool that is merely held back.
+    struct LadderSkips
+    {
+        uint32_t held = 0;      // held by a legitimate hold (busy retry / quick-logout quarantine)
+        uint32_t staleHold = 0; // held by a hold beyond any legitimate window - repaired and picked
+        uint32_t tracked = 0;   // a BotManager record outlived the logout (never picked)
+    };
+    void LadderBuildBuckets(std::vector<std::vector<size_t>>& buckets, uint32_t nowMs, LadderSkips& skips);
     int LadderPickFromBuckets(std::vector<std::vector<size_t>>& buckets, std::vector<uint32_t> const& onlinePerBand, uint32_t onlineAlliance, uint32_t onlineHorde) const;
     void LadderLog(uint32_t diff);
     void RemoveExpiredBots(uint32_t diff);
