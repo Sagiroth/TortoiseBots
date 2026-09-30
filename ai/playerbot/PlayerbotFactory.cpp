@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotFactory.h"
 #include "playerbot/PerformanceMonitor.h"
+#include "../../runtime/HunterPetPolicy.h"
 
 #include "Database/SQLStorages.h"
 #include "Objects/ItemPrototype.h"
@@ -133,9 +134,9 @@ void PlayerbotFactory::ProvisionSpellsAndGear()
     InitFood();
     AddConsumables();
     InitBandages();
-    // Hunter pets (level 10+) and warlock summons need their pet objects;
-    // InitPet is a no-op for other classes.
-    if ((bot->GetClass() == CLASS_HUNTER && bot->GetLevel() >= 10) ||
+    // Hunter pets (level 10+, the trainer tier of Tame Beast 1515) and warlock
+    // summons need their pet objects; InitPet is a no-op for other classes.
+    if ((bot->GetClass() == CLASS_HUNTER && bot->GetLevel() >= TortoiseBots::HUNTER_PET_MIN_LEVEL) ||
         bot->GetClass() == CLASS_WARLOCK)
     {
         InitPet();
@@ -371,6 +372,14 @@ void PlayerbotFactory::InitPet()
 {
     // Randomize a new pet (only for hunters)
     if (bot->GetClass() != CLASS_HUNTER)
+        return;
+
+    // A hunter has no pet system before the Tame Beast trainer tier (spell
+    // 1515, baseLevel 10 in tw_world.spell_template), so nothing may hand one
+    // out earlier. This is the single choke point every pet-creation path goes
+    // through: without it the hunter pet strategy's "initialize pet" action
+    // seeded a level-1 pet on every level-1 pool hunter.
+    if (bot->GetLevel() < TortoiseBots::HUNTER_PET_MIN_LEVEL)
         return;
 
     Pet* pet = bot->GetPet();

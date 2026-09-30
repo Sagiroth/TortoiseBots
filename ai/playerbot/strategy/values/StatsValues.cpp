@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include <memory>
 #include "StatsValues.h"
+#include "../../../runtime/HunterPetPolicy.h"
 
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/actions/CheckMountStateAction.h"
@@ -30,7 +31,7 @@ bool PetIsDeadValue::Calculate()
     // 10+, AutoLearnSpellAction.cpp:62): without this, a pet-less lowbie with
     // a stale character_pet row reads "pet dead" and loops a failing revive.
     // Rule ported from mod-playerbots StatsValues.cpp (mature behavior donor).
-    if ((bot->GetLevel() < 10 && bot->GetClass() == CLASS_HUNTER) || bot->IsMounted())
+    if ((bot->GetLevel() < TortoiseBots::HUNTER_PET_MIN_LEVEL && bot->GetClass() == CLASS_HUNTER) || bot->IsMounted())
         return false;
 
 #ifdef MANGOS

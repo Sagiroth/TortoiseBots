@@ -86,6 +86,7 @@ Every fresh seed (pool login via `MakeComplete`, hire via `ProvisionSpellsAndGea
 A common issue with bot realms is a whole pool stuck at level 1 while you level a fresh character. TortoiseBots seeds each fresh pool bot once, on its first login, at a random level in `AiPlayerbot.RandomBotStartLevelMin`/`Max` (default 1–60, so the realm has bots at every level; for example 10–15 for a test pool, 1/1 keeps the historic level-1 start). With `AiPlayerbot.LevelLadder` (on by default) the online share is also spread by level band:
 
 * Bots level up normally from their seed through grinding, questing, and XP.
+* The same class gates a pool bot as a player: a hunter owns no pet below level 10 (*Tame Beast*, spell 1515). A level-1 hunter in a fresh pool is pet-less, gets a random level-appropriate pet when it reaches 10, and a pool hunter logging in below 10 gives up a pet an older pool seeded for it. Player-owned, hired and adopted hunters keep theirs.
 * The login scatter (`AiPlayerbot.EnableRandomTeleports`, on by default) runs after the seed, so a seeded bot of level 10+ is placed in a zone fitting its level. Lower-level bots stay in their starting area, and pinned bots or bots already teleporting are skipped.
 
 ---

@@ -4,6 +4,7 @@
 #include "AttackAction.h"
 #include <map>
 #include "playerbot/PlayerbotFactory.h"
+#include "../../../runtime/HunterPetPolicy.h"
 
 using namespace ai;
 
@@ -123,6 +124,13 @@ bool InitializePetAction::Execute(Event& event)
 
 bool InitializePetAction::isUseful()
 {
+    // A hunter has no pet before the Tame Beast trainer tier (spell 1515,
+    // baseLevel 10 in tw_world.spell_template). Gate before the character_pet
+    // lookup below so a level-1 hunter neither creates a pet nor re-queries
+    // the character DB every time the strategy's "often" trigger fires.
+    if (bot->GetClass() == CLASS_HUNTER && bot->GetLevel() < TortoiseBots::HUNTER_PET_MIN_LEVEL)
+        return false;
+
     // Only for random bots with item cheats enabled
     if ((ai->HasCheat(BotCheatMask::item) && sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId())) ||
         // Or if alt bot and autoLearnTrainerSpells is true

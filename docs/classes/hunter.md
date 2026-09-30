@@ -53,7 +53,9 @@ Hunters excel at sustained single-target ranged DPS, pet off-tanking, snares, an
 ## Pet Management & Utility
 
 - **Pet Lifecycle:**
-  - Automatically summons pet out of combat. If it has no pet at all it will attempt to tame a nearby tameable beast.
+  - **Pets start at level 10.** *Tame Beast* (1515) and the *Call Pet* / *Revive Pet* / *Feed Pet* kit it unlocks are trainer tier 10 in the server data (`tw_world.spell_template`: `baseLevel` = `spellLevel` = 10), so a bot below that level owns no pet at all. The seam (`PlayerbotFactory::InitPet`) refuses to create one, and a pool hunter that logs in below the threshold gives up a pet an older pool seeded for it (`runtime/HunterPetPolicy.h`); player-owned, hired and adopted hunters are never touched.
+  - At the threshold (on level-up, or logging in at 10+ without a pet) the bot is granted a random tameable pet matching its level, out of combat.
+  - Automatically summons its pet out of combat. With no pet at all it will attempt to tame a nearby tameable beast.
   - Revives dead pets using *Revive Pet* and heals injured pets during combat via *Mend Pet*.
   - Restores an unhappy pet's happiness via the feed handler (no food items are consumed).
 - **Pet Safety & CC Discipline:**

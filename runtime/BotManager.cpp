@@ -2,6 +2,8 @@
 #include "BotManager.h"
 #include "BotActivityLease.h"
 #include "PlayerBotClassification.h"
+#include "HunterPetPolicy.h"
+#include "HireLifecycle.h"
 #include "PlayerbotAIAdapter.h"
 #include "PlayerbotAIStorage.h"
 #include "RandomBotAccountRegistry.h"
@@ -480,6 +482,14 @@ static bool HasPrimaryProfession(::Player* player)
     return false;
 }
 
+namespace
+{
+// Defined below with the pool/pass classification it shares: a bot counts as
+// player-owned when a live real player masters it or its account is not a
+// registered RNDBOT pool account.
+PlayerBotClassificationInputs ClassifyBot(BotEntry const& entry);
+} // namespace
+
 void BotManager::OnPlayerLogin(::Player* player)
 {
     if (!player)
@@ -576,6 +586,59 @@ void BotManager::OnPlayerLogin(::Player* player)
                 player->SaveToDB();
                 TB_LOG_DETAIL("TortoiseBots: normalized Alliance bot %s spawn from isolated zone %u to Northshire", player->GetName(), zoneId);
             }
+        }
+    }
+
+    // tw_world.spell_template: Tame Beast (1515) and the Call/Revive/Feed pet
+    // kit it unlocks are baseLevel = spellLevel = 10, so a hunter cannot own a
+    // pet below that level. The pool seeded one anyway (the pet strategy's
+    // "initialize pet" action had no level gate), leaving level-1 pets on
+    // level-1 hunters. Give it up here, before the level seed: a bot the seed
+    // raises past the threshold then gets a fresh, level-fitting pet from the
+    // same action instead of keeping a stale level-1 one. Owner-account
+    // characters, hired companions and adopted party bots are never touched -
+    // see runtime/HunterPetPolicy.h.
+    if (record.random && player->GetClass() == CLASS_HUNTER &&
+        player->GetLevel() < HUNTER_PET_MIN_LEVEL)
+    {
+        // A seeded pet usually has no live object: InitPet leaves it dead, a
+        // dead current pet is saved as NOT_IN_SLOT, and login loads only the
+        // current slot. So "owns a pet" is a row question, not an
+        // IsLoaded question. Stabled pets stay: they are not in play.
+        std::unique_ptr<QueryResult> petRows(CharacterDatabase.PQuery(
+            "SELECT id FROM character_pet WHERE owner = '%u' AND (slot = '%u' OR slot > '%u')",
+            player->GetGUIDLow(), uint32(PET_SAVE_AS_CURRENT), uint32(PET_SAVE_LAST_STABLE_SLOT)));
+
+        PlayerBotClassificationInputs const classification = ClassifyBot(entry);
+        HunterPetLoginInputs petInputs;
+        petInputs.isPoolBot = !IsPlayerOwnedBot(classification);
+        petInputs.isHiredCompanion = HireLifecycle::Instance().IsHired(player->GetObjectGuid());
+        petInputs.isHunter = player->GetClass() == CLASS_HUNTER;
+        petInputs.level = player->GetLevel();
+        petInputs.hasPet = player->GetPet() != nullptr || petRows != nullptr;
+
+        if (DecideHunterPetOnLogin(petInputs) == HunterPetLoginDecision::DropPetBelowThreshold)
+        {
+            // A loaded pet goes through Unsummon: deleting only its row would
+            // leave the live object on the player, and that re-saves itself on
+            // the way out.
+            if (Pet* pet = player->GetPet())
+                pet->Unsummon(PET_SAVE_AS_DELETED, player);
+
+            // Pet::DeleteFromDB is the core's own removal and the only one that
+            // clears character_pet together with its aura/spell/cooldown rows
+            // and the character-DB pet cache entry - a bare DELETE would leave
+            // the cache to re-load and re-insert the pet on the next login.
+            if (petRows)
+            {
+                do
+                {
+                    Pet::DeleteFromDB(petRows->Fetch()[0].GetUInt32());
+                } while (petRows->NextRow());
+            }
+
+            TB_LOG_DETAIL("TortoiseBots: dropped the below-level-%u pet of pool hunter %s",
+                HUNTER_PET_MIN_LEVEL, player->GetName());
         }
     }
 
