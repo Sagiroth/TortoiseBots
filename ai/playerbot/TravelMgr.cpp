@@ -2405,7 +2405,17 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
         (purposeFlag & (uint32)TravelDestinationPurpose::Vendor) &&
         position.distance(info.getPosition()) <= sPlayerbotAIConfig.lowLevelVendorMaxDistance;
 
-    if (!(purposeFlag & (uint32)TravelDestinationPurpose::QuestTaker) && !beginnerVendorTrip)
+    // Beginners grinding their starter valley are exempt from the zone-average
+    // gate: GrindTravelDestination::IsPossible already caps their mob window to
+    // their own level (and excludes critters), but the valley average sits above
+    // a level 1-4 bot whenever higher-tier mobs spawn elsewhere in the same
+    // valley - vetoing every local grind point, so the bot parks at spawn
+    // re-rolling out-of-range rabbits instead of walking 200 yd to its wolves.
+    // The grind floor below still applies, so grey zones stay excluded. Scoped
+    // to masterless random bots so owned lowbies never wander off mid-follow.
+    bool const beginnerGrind = (purposeFlag & (uint32)TravelDestinationPurpose::Grind) &&
+        info.GetLevel() <= 4 && info.IsMasterlessRandom();
+    if (!beginnerGrind && !(purposeFlag & (uint32)TravelDestinationPurpose::QuestTaker) && !beginnerVendorTrip)
     {
         if (!areaLevel || (uint32)botLevel < areaLevel) //Skip points that are in a area that is too high level.
             return false;
