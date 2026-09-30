@@ -403,8 +403,8 @@ func TestGrindingSummaryCountsAndBands(t *testing.T) {
 	s := newTestStore(c)
 
 	a := xbot(1, "Alpha", 10, 0, 1000)
-	a.State, a.TravelPurpose = "combat", "grind"
-	b := xbot(2, "Beta", 61, 0, 0) // max level, no wire XP
+	a.State = "combat"
+	b := xbot(2, "Beta", 11, 0, 1000)
 	b.State = "idle"
 	s.ApplyHeartbeat(heartbeat(1, 2))
 	s.ApplyBatch(batch(1, 0, 1, a, b))
@@ -413,11 +413,28 @@ func TestGrindingSummaryCountsAndBands(t *testing.T) {
 	if g.BotsTracked != 2 {
 		t.Fatalf("expected 2 tracked, got %d", g.BotsTracked)
 	}
-	if g.PctInCombat != 50 || g.PctGrinding != 50 {
-		t.Fatalf("combat/grind pct wrong: %+v", g)
+	if g.StateCounts["combat"] != 1 || g.StateCounts["idle"] != 1 {
+		t.Fatalf("state counts wrong: %+v", g.StateCounts)
 	}
-	if g.LevelBands["10-19"] != 1 || g.LevelBands["60"] != 1 {
-		t.Fatalf("level bands wrong: %+v", g.LevelBands)
+	// Narrow pool (10-11): adaptive per-level bands.
+	if len(g.LevelBands) != 2 || g.LevelBands[0].Lo != 10 || g.LevelBands[1].Count != 1 {
+		t.Fatalf("adaptive bands wrong: %+v", g.LevelBands)
+	}
+}
+
+func TestLevelBandsWidenWhenSpread(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+
+	s.ApplyHeartbeat(heartbeat(1, 3))
+	s.ApplyBatch(batch(1, 0, 1, xbot(1, "A", 1, 0, 400), xbot(2, "B", 30, 0, 1000), xbot(3, "C", 60, 0, 0)))
+
+	g := s.Snapshot().Grinding
+	if len(g.LevelBands) != 7 {
+		t.Fatalf("spread pool must use 7 classic bands, got %+v", g.LevelBands)
+	}
+	if g.LevelBands[0].Count != 1 || g.LevelBands[3].Count != 1 || g.LevelBands[6].Count != 1 {
+		t.Fatalf("spread bands misbucketed: %+v", g.LevelBands)
 	}
 }
 

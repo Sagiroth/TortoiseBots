@@ -143,7 +143,11 @@ func (r *Registry) RecordGrinding(g model.GrindingSummary) {
 	r.grindingXpHour.Set(g.TotalXpHour)
 	r.grindingGaining.Set(float64(g.BotsGainingXP))
 	r.grindingKills.Set(g.DeathsPerMin)
-	r.grindingCombat.Set(g.PctInCombat)
+	if n := g.BotsTracked; n > 0 {
+		r.grindingCombat.Set(float64(g.StateCounts["combat"]) / float64(n) * 100)
+	} else {
+		r.grindingCombat.Set(0)
+	}
 }
 
 func (r *Registry) RecordIssues(snap model.IssueSnapshot) {

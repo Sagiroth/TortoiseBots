@@ -153,10 +153,21 @@ type GrindingSummary struct {
 	TotalXpHour   float64        `json:"total_xp_hour"`
 	DeathsPerMin  float64        `json:"deaths_per_min"`
 	PctDied5Min   float64        `json:"pct_died_5min"`
-	PctInCombat   float64        `json:"pct_in_combat"`
-	PctGrinding   float64        `json:"pct_grinding"`
-	// LevelBands counts bots per band: 1-9, 10-19, ..., 50-59, 60.
-	LevelBands map[string]int `json:"level_bands"`
+	// StateCounts is the single authoritative per-state census (roster
+	// states, not the 3-min rolling ratios): combat/moving/busy/resting/
+	// dead/idle counts. The dashboard Activity block renders counts + %
+	// from here; Fleet Health and Grinding no longer duplicate them.
+	StateCounts map[string]int `json:"state_counts"`
+	// LevelBands is adaptive: per level while the pool is narrow (e.g.
+	// L1..L7 during launch), widening to 1-9/10-19/.../60 as it spreads.
+	LevelBands []LevelBand `json:"level_bands"`
+}
+
+// LevelBand is one adaptive level bucket: [Lo, Hi] with Count bots.
+type LevelBand struct {
+	Lo    uint32 `json:"lo"`
+	Hi    uint32 `json:"hi"`
+	Count int    `json:"count"`
 }
 
 // ServerStatus is the daemon's single authoritative view of the game server

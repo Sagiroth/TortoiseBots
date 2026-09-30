@@ -10,7 +10,6 @@ package state
 
 import (
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -486,12 +485,13 @@ func xpRateLocked(samples []xpSample, now time.Time) float64 {
 // from BOT_DEATH anomalies in the ring buffer (no new emitter counter), XP
 // from the derived per-bot rates, combat/travel from the roster itself.
 func (s *Store) grindingLocked(bots []model.BotSnapshot, now time.Time) model.GrindingSummary {
-	out := model.GrindingSummary{LevelBands: map[string]int{}}
+	out := model.GrindingSummary{}
 	n := len(bots)
 	if n == 0 {
 		return out
 	}
 	out.BotsTracked = n
+	out.StateCounts = map[string]int{}
 	rates := make([]float64, 0, n)
 	for _, b := range bots {
 		rates = append(rates, b.XpPerHour)
@@ -505,21 +505,14 @@ func (s *Store) grindingLocked(bots []model.BotSnapshot, now time.Time) model.Gr
 		if b.XpPerHour > 0 {
 			out.TotalXpHour += b.XpPerHour
 		}
-		if b.State == "combat" {
-			out.PctInCombat += 1
-		}
-		if strings.EqualFold(b.TravelPurpose, "grind") {
-			out.PctGrinding += 1
-		}
-		out.LevelBands[levelBand(b.Level)]++
+		out.StateCounts[b.State]++
 	}
 	sort.Float64s(rates)
 	if len(rates) > 0 {
 		out.MedianXpHour = rates[len(rates)/2]
 	}
 	out.PctGainingXP = float64(out.BotsGainingXP) / float64(n) * 100
-	out.PctInCombat = out.PctInCombat / float64(n) * 100
-	out.PctGrinding = out.PctGrinding / float64(n) * 100
+	out.LevelBands = levelBands(bots)
 	// BOT_DEATH anomalies are bot deaths, not bot kills: last-5-min
 	// distinct dead bots + per-min casualty rate.
 	if s.anomalies != nil {
@@ -545,23 +538,52 @@ func (s *Store) grindingLocked(bots []model.BotSnapshot, now time.Time) model.Gr
 	return out
 }
 
-func levelBand(level uint32) string {
-	switch {
-	case level >= 60:
-		return "60"
-	case level >= 50:
-		return "50-59"
-	case level >= 40:
-		return "40-49"
-	case level >= 30:
-		return "30-39"
-	case level >= 20:
-		return "20-29"
-	case level >= 10:
-		return "10-19"
-	default:
-		return "1-9"
+// levelBands builds adaptive buckets from the roster itself: per level
+// while the pool spans <= 10 levels (launch: L1..L7 visible), otherwise the
+// classic 1-9/10-19/.../50-59/60 bands. A single "1-9: 500" row can never
+// hide progress again.
+func levelBands(bots []model.BotSnapshot) []model.LevelBand {
+	if len(bots) == 0 {
+		return nil
 	}
+	minLvl, maxLvl := bots[0].Level, bots[0].Level
+	for _, b := range bots[1:] {
+		if b.Level < minLvl {
+			minLvl = b.Level
+		}
+		if b.Level > maxLvl {
+			maxLvl = b.Level
+		}
+	}
+	if minLvl < 1 {
+		minLvl = 1
+	}
+	if maxLvl-minLvl <= 10 {
+		out := make([]model.LevelBand, 0, maxLvl-minLvl+1)
+		for lvl := minLvl; lvl <= maxLvl; lvl++ {
+			out = append(out, model.LevelBand{Lo: lvl, Hi: lvl})
+		}
+		for _, b := range bots {
+			if b.Level >= minLvl && b.Level <= maxLvl {
+				out[b.Level-minLvl].Count++
+			}
+		}
+		return out
+	}
+	bounds := [][2]uint32{{1, 9}, {10, 19}, {20, 29}, {30, 39}, {40, 49}, {50, 59}, {60, 60}}
+	out := make([]model.LevelBand, 0, len(bounds))
+	for _, bd := range bounds {
+		out = append(out, model.LevelBand{Lo: bd[0], Hi: bd[1]})
+	}
+	for _, b := range bots {
+		for i, bd := range bounds {
+			if b.Level >= bd[0] && b.Level <= bd[1] {
+				out[i].Count++
+				break
+			}
+		}
+	}
+	return out
 }
 
 // publishLocked replaces the roster with the contents of a complete cycle.
