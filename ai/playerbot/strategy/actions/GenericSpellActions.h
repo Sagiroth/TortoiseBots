@@ -153,6 +153,25 @@ namespace ai
 	public:
 		CastBuffSpellAction(PlayerbotAI* ai, std::string spell) : CastAuraSpellAction(ai, spell) { }
         virtual std::string GetTargetName() override { return "self target"; }
+        virtual bool isUseful() override;
+        virtual bool Execute(Event& event) override;
+
+    protected:
+        // Issue #359: an upkeep buff has no retry cooldown of its own. Its trigger
+        // re-evaluates every tick (BuffTrigger interval < 2) and the engine's
+        // failure backoff deliberately exempts bots with a real player master, so a
+        // buff whose aura is still missing after the attempt (drink in progress, out
+        // of range or LOS, not enough mana, master moving away) was re-attempted on
+        // every AI tick - the hired priest "buffs itself, drinks and repeats" loop.
+        // One attempt per target per BUFF_RETRY_COOLDOWN seconds, out of combat only;
+        // the aura gate in CastAuraSpellAction::isUseful still decides whether the
+        // buff is needed at all.
+        ObjectGuid lastAttemptTarget;
+        time_t lastAttemptTime = 0;
+
+        // bot_events.csv telemetry ("SelfBuff"), rate limited: one row per applied
+        // self buff, so a recast loop stays countable without flooding the log.
+        time_t lastSelfBuffEventTime = 0;
 	};
 
     class CastSpellTargetAction : public CastSpellAction

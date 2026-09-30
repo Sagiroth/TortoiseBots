@@ -15,6 +15,12 @@ bool CanInterruptCurrentSpell(Spell const* spell)
     // spells are not current interrupt targets.
     return spell && spell->getState() <= SPELL_STATE_DELAYED;
 }
+
+// Seconds between two out-of-combat cast attempts of the same upkeep buff on the
+// same target (issue #359).
+uint32 const BUFF_RETRY_COOLDOWN = 3;
+// Seconds between two "SelfBuff" telemetry rows for the same bot and spell.
+uint32 const SELF_BUFF_EVENT_INTERVAL = 10;
 }
 
 CastSpellAction::CastSpellAction(PlayerbotAI* ai, std::string spell)
@@ -278,6 +284,44 @@ bool CastPetSpellAction::isPossible()
 bool CastAuraSpellAction::isUseful()
 {
     return CastSpellAction::isUseful() && !ai->HasAura(GetSpellName(), GetTarget(), false, isOwner);
+}
+
+bool CastBuffSpellAction::isUseful()
+{
+    if (!bot->IsInCombat())
+    {
+        Unit* target = GetTarget();
+        if (target && lastAttemptTime && target->getObjectGuid() == lastAttemptTarget &&
+            time(0) - lastAttemptTime < (time_t)BUFF_RETRY_COOLDOWN)
+            return false;
+    }
+
+    return CastAuraSpellAction::isUseful();
+}
+
+bool CastBuffSpellAction::Execute(Event& event)
+{
+    // Recorded before the cast so a failed attempt starts the cooldown too -
+    // otherwise the action is retried on every tick (issue #359).
+    if (Unit* target = GetTarget())
+        lastAttemptTarget = target->getObjectGuid();
+    lastAttemptTime = time(0);
+
+    if (!CastSpellAction::Execute(event))
+        return false;
+
+    Unit* target = GetTarget();
+    if (target && target == bot)
+    {
+        time_t const now = time(0);
+        if (now - lastSelfBuffEventTime >= (time_t)SELF_BUFF_EVENT_INTERVAL)
+        {
+            lastSelfBuffEventTime = now;
+            sPlayerbotAIConfig.logEvent(ai, "SelfBuff", GetSpellName(), std::to_string(bot->GetLevel()));
+        }
+    }
+
+    return true;
 }
 
 bool CastMeleeAoeSpellAction::isUseful()
