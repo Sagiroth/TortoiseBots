@@ -97,7 +97,7 @@ Random bots actively participate in realm social structures:
 
 ### Party & Dungeon Invites
 * **Inviting Lone Players (`RandomBotInvitePlayer = 1`):** If you are questing solo in an area, nearby random bots on matching quests or grinding in the same camp will invite you to form a party. (If you prefer to solo, turning on `/dnd` stops bot invites).
-* **Bot-to-Bot Grouping (off by default, `RandomBotGroupNearby = 0`):** Pool bots stay solo so bot-led groups cannot leash members into idle followers. A pool bot also declines an invite from another pool bot. Set `1` to let bots organically group up with nearby bots for difficult quest mobs, elite areas, and dungeons.
+* **Bot-to-Bot Grouping (off by default, `RandomBotGroupNearby = 0`):** Pool bots stay solo so bot-led groups cannot leash members into idle followers. The pool-bot skip/decline applies only when this is `0` (inviting real players still follows `RandomBotInvitePlayer`). Set `1` to let bots organically group up with nearby bots for difficult quest mobs, elite areas, and dungeons.
 
 ### Autonomous Guild Formation (`RandomBotFormGuild = 1`)
 * Bots periodically visit guild masters in capital cities, purchase a **Guild Charter**, and collect signatures from other unguilded bots.

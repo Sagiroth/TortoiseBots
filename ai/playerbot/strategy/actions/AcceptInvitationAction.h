@@ -28,13 +28,13 @@ namespace ai
                     bot->GetName(), grp->GetLeaderGuid().GetString().c_str());
                 return false;
             }
-            // Donor parity (mod-playerbots ships RandomBotGroupNearby off): a
-            // masterless pool bot never groups with another pool bot, so it
-            // declines an invite whose leader has no live real-player master.
-            // Invites from real players, hires and owner-account bots pass
-            // through: their AI carries a real-player master (or they are not
-            // random pool records at all).
-            if (TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()) &&
+            // Bot-to-bot pool grouping is governed only by
+            // RandomBotGroupNearby: decline another pool bot's invite only
+            // when it is 0. Invites from real players, hires and
+            // owner-account bots pass through: their AI carries a
+            // real-player master (or they are not random pool records).
+            if (!sPlayerbotAIConfig.randomBotGroupNearby &&
+                TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()) &&
                 !ai->HasRealPlayerMaster() &&
                 TortoiseBots::BotManager::Instance().IsRandomBot(inviter->GetObjectGuid()))
             {
