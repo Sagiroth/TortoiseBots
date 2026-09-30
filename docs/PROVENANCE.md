@@ -2254,6 +2254,37 @@ The mine evade signature (`dun-elwynn.md`: 56/60 probe rows `notreach=1` with th
 
 Reimplemented natively, cheapest shape: the grind loop refuses a notreach-flagged candidate in the attackers fast path and runs one `WorldPosition::canPathTo` on the chosen winner only (never per candidate per tick); `AttackAnythingAction` refuses a cached pick the core flagged after selection before `current target` arms; `InvalidTargetValue` drops a held target the moment the flag appears, so the existing reach give-up (15 s, `unreachable targets`/`unreachable entries`, 5 min) blacklists the guid/kind instead of the bot holding a ghost. Local validation: `tools/verify_all.sh`; module build via `build-commit.sh` (no deploy). Live indicator: mine k/a converging to field rate, `evading` grind rejects falling.
 
+## Pool bots stop grouping with each other (`RandomBotGroupNearby` off) — 2026-09-30
+
+Feature: `AiPlayerbot.RandomBotGroupNearby` defaults to `0` (code fallback and
+template example), matching mod-playerbots. `InviteNearbyToGroupAction` and
+`InviteGuildToGroupAction` skip masterless pool-bot targets, and
+`AcceptInvitationAction` declines an invite whose leader is a masterless pool
+bot. Invites from real players still group; hired companions and owner-account
+bots keep their existing paths (hires bind via `HireLifecycle`, owned bots are
+not random pool records, adopted party bots carry a real-player master).
+
+Source repository: `mod-playerbots` @
+`b6696bdbd3740e575598d167d69f39f68cc0b907` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only): `conf/playerbots.conf.dist`
+(`AiPlayerbot.RandomBotGroupNearby = 0`) and
+`src/Bot/RandomPlayerbotMgr.cpp` (`leave group if leader is rndbot`:
+`IsRandomBot(group->GetLeader())` -> `LeaveOrDisbandGroup`).
+
+Copied / ported / reimplemented: reimplemented. No dissolve sweep: the pool is
+being reset anyway, so existing bot-only groups vanish with it; the decline
+gate uses the existing `SMSG_GROUP_DECLINE` + `UninviteFromGroup` reply path.
+
+Reason: pool bots inviting each other (`invite nearby` / `invite guild` on
+`often` / `random`, `GroupStrategy`) formed ~109 bot-only groups in a 500-bot
+pool; members leash via `far from master` / grouped-travel and idle as
+followers.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No docker
+build (per task scope).
+
 ## Grind XP-eligibility predicate (`IsHonorOrXPTarget` instead of pre-attack `XP::Gain`) — 2026-09-30
 
 Feature: `GrindTargetValue` skips the "not xp and not needed for quest" branch

@@ -78,7 +78,9 @@ namespace ai
     public:
         InviteGuildToGroupAction(PlayerbotAI* ai, std::string name = "invite guild") : InviteNearbyToGroupAction(ai, name) {}
         virtual bool Execute(Event& event) override;
-        virtual bool isUseful() override { return bot->GetGuildId() && InviteNearbyToGroupAction::isUseful(); };
+        // Guild grouping is governed by RandomBotGuildNearby, not
+        // RandomBotGroupNearby: pool guildmates group per the guild key.
+        virtual bool isUseful() override { return bot->GetGuildId() && sPlayerbotAIConfig.randomBotGuildNearby; };
 
     private:
         std::vector<Player*> getGuildMembers();

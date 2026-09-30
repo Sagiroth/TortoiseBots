@@ -84,6 +84,22 @@
 - Direct replies to player commands still work as before — only the unprompted narration is suppressed, so nearby players stop getting spammed in `/say` [#372](https://github.com/Sagiroth/TortoiseBots/pull/372)
 - `AiPlayerbot.BroadcastChanceSuggestSell` now defaults to `0` (down from `300`), killing the "WTS" broadcasts out of the box. Operators who actually want that noise can raise the value in config [#372](https://github.com/Sagiroth/TortoiseBots/pull/372)
 
+### Core Sync & Fixes
+- Pool bots no longer invite each other into bot-only groups, eliminating ~110 phantom groups per 500-bot pool and the travel loops and idle followers they caused [#371](https://github.com/Sagiroth/TortoiseBots/pull/371)
+- `AiPlayerbot.RandomBotGroupNearby` now defaults to `0` (matching mod-playerbots); set it to `1` to restore the old bot-to-bot grouping behavior [#371](https://github.com/Sagiroth/TortoiseBots/pull/371)
+
+### Grouping & Invites
+- Real-player invites (`RandomBotInvitePlayer`) are unaffected — bots still accept and group with humans regardless of the new default [#371](https://github.com/Sagiroth/TortoiseBots/pull/371)
+- Groups containing a real player continue to function normally; only bot-led, bot-only groups are suppressed [#371](https://github.com/Sagiroth/TortoiseBots/pull/371)
+
+### Starter Zones & World
+
+- New random bots now roll a race from the least-populated level-1 starting area instead of defaulting into the same handful of zones, spreading the pool evenly across all six starts. [#373](https://github.com/Sagiroth/TortoiseBots/pull/373)
+- Fixes the crowded-valley problem after a pool reset: Valley of Trials was pulling ~147 bots, Northshire ~117 and Coldridge ~106 while Deathknell, Camp Narache and Shadowglen sat at ~40 each — the packed zones ran out of mobs and bots just stood around. [#373](https://github.com/Sagiroth/TortoiseBots/pull/373)
+- Goblins and high elves moved off their isolated start zones into the general starting-area rotation, so they no longer skew the distribution. [#373](https://github.com/Sagiroth/TortoiseBots/pull/373)
+- Population is counted once per creation batch, so bulk pool resets stay balanced rather than front-loading one zone. [#373](https://github.com/Sagiroth/TortoiseBots/pull/373)
+- New config `AiPlayerbot.RandomBotEvenStartZones` (default `1`) toggles the behavior; set it to `0` to restore the old random-race picks. [#373](https://github.com/Sagiroth/TortoiseBots/pull/373)
+
 ## 2026-09-29
 
 ### Combat & AI

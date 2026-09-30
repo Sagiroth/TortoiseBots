@@ -163,6 +163,16 @@ AiPlayerbot.EnableRandomTeleports = 1
 # Default 0 (blocked, normalized to mainland starter zones).
 AiPlayerbot.AllowIsolatedCustomStartingZones = 0
 
+# Spread new random bots evenly across the six racial starting zones instead
+# of piling orc/troll/goblin into Valley of Trials, human/high elf into
+# Elwynn and dwarf/gnome into Dun Morogh while Tirisfal, Mulgore and
+# Teldrassil sit empty. Auto-create picks a valid race from the
+# least-populated start zone; isolated-custom-zone normalization sends the
+# bot to the least-populated standard start of its faction (both use the
+# core playercreateinfo spawns). Set 0 for the old behaviour: uniform random
+# race, goblins to Valley of Trials, high elves to Northshire. Default 1.
+AiPlayerbot.RandomBotEvenStartZones = 1
+
 # Where a random bot without a player master comes back after a repop (the
 # evacuation used when it keeps dying or is stuck while dead): 1 = nearest
 # graveyard, like a player at the spirit healer; 0 = its racial starting area
@@ -521,8 +531,9 @@ AiPlayerbot.RandomBotQuestIds = 7848,3802,5505,6502,7761,9378
 # Randombots will invite players to groups/raids/guilds. (This can also be disabled by turning on DnD on your character)
 # AiPlayerbot.RandomBotInvitePlayer = 1
 
-# Randombots will invite nearby bots to groups/raids/guilds
-# AiPlayerbot.RandomBotGroupNearby = 1
+# Randombots will invite nearby bots to groups/raids/guilds. Off by default
+# (mod-playerbots parity): bot-only groups leash members and stall the pool.
+# AiPlayerbot.RandomBotGroupNearby = 0
 # AiPlayerbot.RandomBotRaidNearby = 1
 # AiPlayerbot.RandomBotGuildNearby = 1
 

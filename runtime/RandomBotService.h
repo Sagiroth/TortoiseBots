@@ -85,6 +85,13 @@ private:
     bool IsPinnedGuid(uint32 guidLow) const { return m_pinnedGuids.find(guidLow) != m_pinnedGuids.end(); }
 
     std::vector<Candidate> m_candidates;
+    // Even-start-zone cache: per-zone level-1 pool counts for the
+    // least-populated-zone race pick. Refreshed once per creation batch (see
+    // StartZoneCountsForBatch), so up to 5 creations per cadence share one
+    // bounded SELECT instead of re-counting per character.
+    uint32_t m_startZoneCounts[6] = {};
+    uint32_t m_startZoneBatch = 0; // creation-batch id the counts were built for
+    void StartZoneCountsForBatch(uint32_t batch);
     std::vector<uint32_t> m_ageMs;
     std::vector<uint32_t> m_strategyAgeMs;
     std::vector<uint32_t> m_randomizeAgeMs;

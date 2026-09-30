@@ -397,6 +397,7 @@ bool PlayerbotAIConfig::Initialize()
     randomBotLoginAtStartup = config.GetBoolDefault("AiPlayerbot.RandomBotLoginAtStartup", false);
     randomBotAutoCreate = config.GetBoolDefault("AiPlayerbot.RandomBotAutoCreate", false);
     enableRandomTeleports = config.GetBoolDefault("AiPlayerbot.EnableRandomTeleports", true);
+    randomBotEvenStartZones = config.GetBoolDefault("AiPlayerbot.RandomBotEvenStartZones", true);
     allowIsolatedCustomStartingZones = config.GetBoolDefault("AiPlayerbot.AllowIsolatedCustomStartingZones", false);
     relocateHopelessDeaths = config.GetBoolDefault("AiPlayerbot.RelocateHopelessDeaths", true);
     repopAtGraveyard = config.GetBoolDefault("AiPlayerbot.RepopAtGraveyard", true);
@@ -673,7 +674,7 @@ bool PlayerbotAIConfig::Initialize()
 	randomBotPreQuests = config.GetBoolDefault("AiPlayerbot.PreQuests", false);
     randomBotSayWithoutMaster = config.GetBoolDefault("AiPlayerbot.RandomBotSayWithoutMaster", false);
     randomBotInvitePlayer = config.GetBoolDefault("AiPlayerbot.RandomBotInvitePlayer", true);
-    randomBotGroupNearby = config.GetBoolDefault("AiPlayerbot.RandomBotGroupNearby", true);
+    randomBotGroupNearby = config.GetBoolDefault("AiPlayerbot.RandomBotGroupNearby", false);
     randomBotRaidNearby = config.GetBoolDefault("AiPlayerbot.RandomBotRaidNearby", true);
     randomBotGuildNearby = config.GetBoolDefault("AiPlayerbot.RandomBotGuildNearby", true);
     inviteChat = config.GetBoolDefault("AiPlayerbot.InviteChat", true);

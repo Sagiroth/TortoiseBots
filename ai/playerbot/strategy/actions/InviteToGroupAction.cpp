@@ -335,6 +335,14 @@ namespace ai
                     continue;
             }
 
+            // Bot-to-bot pool grouping is governed only by
+            // RandomBotGroupNearby: skip pool-bot targets only when it is 0.
+            // Inviting real players keeps working per RandomBotInvitePlayer.
+            if (!sPlayerbotAIConfig.randomBotGroupNearby && botAi &&
+                sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster() &&
+                sRandomBotFacade.IsRandomBot(player) && !botAi->HasRealPlayerMaster())
+                continue;
+
             if (abs(int32(player->GetLevel() - bot->GetLevel())) > 2)
                 continue;
 
@@ -384,7 +392,7 @@ namespace ai
 
     bool InviteNearbyToGroupAction::isUseful()
     {
-        if (!sPlayerbotAIConfig.randomBotGroupNearby)
+        if (!sPlayerbotAIConfig.randomBotGroupNearby && !sPlayerbotAIConfig.randomBotInvitePlayer)
             return false;
 
         if (bot->InBattleGround())
@@ -471,6 +479,13 @@ namespace ai
                     continue;
 
                 if (playerAi->HasActivePlayerMaster()) //Do not invite alts of active players.
+                    continue;
+
+                // Bot-to-bot pool grouping is governed only by
+                // RandomBotGroupNearby: skip pool-bot targets only when it is 0.
+                if (!sPlayerbotAIConfig.randomBotGroupNearby &&
+                    sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster() &&
+                    sRandomBotFacade.IsRandomBot(player) && !playerAi->HasRealPlayerMaster())
                     continue;
 
                 if (player->GetLevel() > bot->GetLevel() + 5) //Invite higher levels that need money so they can grind money and help out.

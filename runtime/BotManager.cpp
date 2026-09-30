@@ -7,6 +7,7 @@
 #include "PlayerbotAIAdapter.h"
 #include "PlayerbotAIStorage.h"
 #include "RandomBotAccountRegistry.h"
+#include "StartZoneBalance.h"
 #include "GearSeedingGuard.h"
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "../ai/playerbot/RandomBotFacade.h"
@@ -575,26 +576,41 @@ void BotManager::OnPlayerLogin(::Player* player)
 
     // Normalize Goblin and High Elf (and any random bot in custom isolated
     // starting zones lacking navmesh/transport to mainland) to standard faction starting zones.
+    // With RandomBotEvenStartZones the destination is the least-populated
+    // standard start of the bot's faction (one bounded characters-table count
+    // per normalization); otherwise goblins go to Valley of Trials and high
+    // elves to Northshire as before.
     if (record.random && !sPlayerbotAIConfig.allowIsolatedCustomStartingZones)
     {
         uint32 zoneId = player->GetZoneId();
         uint32 areaId = player->GetAreaId();
         if (PlayerbotAIConfig::IsIsolatedCustomZone(zoneId) || PlayerbotAIConfig::IsIsolatedCustomZone(areaId))
         {
-            if (player->GetTeam() == HORDE)
+            StartZoneSpawn const* spawn = nullptr;
+            bool horde = player->GetTeam() == HORDE;
+            if (sPlayerbotAIConfig.randomBotEvenStartZones)
             {
-                player->TeleportTo(1, -618.518f, -4251.67f, 38.718f, 0.0f);
-                player->SetHomebindToLocation(WorldLocation(1, -618.518f, -4251.67f, 38.718f, 0.0f), 14);
-                player->SaveToDB();
-                TB_LOG_DETAIL("TortoiseBots: normalized Horde bot %s spawn from isolated zone %u to Valley of Trials", player->GetName(), zoneId);
+                uint32_t counts[kStartZoneCount] = {};
+                std::unique_ptr<QueryResult> rows(CharacterDatabase.PQuery(
+                    "SELECT `race` FROM `characters` WHERE `deleteDate` IS NULL AND `level` = 1"));
+                if (rows)
+                {
+                    do
+                    {
+                        int zone = StartZoneIndexForRace(rows->Fetch()[0].GetUInt32());
+                        if (zone >= 0 && zone < int(kStartZoneCount))
+                            ++counts[zone];
+                    } while (rows->NextRow());
+                }
+                spawn = &kStartZoneSpawns[LeastPopulatedStartZone(counts, horde)];
             }
             else
-            {
-                player->TeleportTo(0, -8949.95f, -132.493f, 83.5312f, 0.0f);
-                player->SetHomebindToLocation(WorldLocation(0, -8949.95f, -132.493f, 83.5312f, 0.0f), 12);
-                player->SaveToDB();
-                TB_LOG_DETAIL("TortoiseBots: normalized Alliance bot %s spawn from isolated zone %u to Northshire", player->GetName(), zoneId);
-            }
+                spawn = horde ? &kStartZoneSpawns[0] : &kStartZoneSpawns[3];
+            player->TeleportTo(spawn->map, spawn->x, spawn->y, spawn->z, spawn->o);
+            player->SetHomebindToLocation(WorldLocation(spawn->map, spawn->x, spawn->y, spawn->z, spawn->o), spawn->area);
+            player->SaveToDB();
+            TB_LOG_DETAIL("TortoiseBots: normalized %s bot %s spawn from isolated zone %u to %s",
+                horde ? "Horde" : "Alliance", player->GetName(), zoneId, spawn->name);
         }
     }
 
