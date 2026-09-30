@@ -46,6 +46,12 @@
 - Added a read-only `EvadeProbe` diagnostic that samples each bot's current target every 2s (deduped to one row per bot per 30s) and logs to `bot_events.csv` only on suspicious behavior: mob in evade mode, unreachable target, or HP ticking up +15 while engaged — capturing mob name/level/HP, distance, height delta, line of sight, and the bot's move/cast state to help track down the unkillable/regen mob reports [#360](https://github.com/Sagiroth/TortoiseBots/pull/360)
 - Purely observational: no gameplay or AI behavior changes, so it's safe to leave enabled on live servers while chasing the regen bug [#360](https://github.com/Sagiroth/TortoiseBots/pull/360)
 
+### Combat & AI
+- Hired priests no longer re-attempt their upkeep self-buff every tick, so idle healers stop bleeding mana and looping buff → drink → buff. The retry cadence is now documented for future tuning. [#363](https://github.com/Sagiroth/TortoiseBots/pull/363)
+
+### Bot Pool & Availability
+- Bots that missed their scheduled return after the 6-hour timed logout are no longer parked on a stale 1-hour hold — timed logouts are handled separately from quick logouts, so a lapsed hold can't keep a bot out of the world. Recovers roughly 105 bots (~6.7% of pool capacity), mostly levels 1–4. [#362](https://github.com/Sagiroth/TortoiseBots/pull/362)
+
 ## 2026-09-29
 
 ### Combat & AI
