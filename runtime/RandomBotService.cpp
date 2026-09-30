@@ -15,6 +15,7 @@
 #include "playerbot/RandomBotFacade.h"
 #include "RandomBotAccountRegistry.h"
 #include "RandomBotPoolReset.h"
+#include "StartZoneBalance.h"
 #include "AccountMgr.h"
 #include "SharedDefines.h"
 #include "Database/DBCStores.h"
@@ -440,6 +441,91 @@ uint32_t RandomBotService::GetAccountAllowedTeam(uint32_t accountId, bool& isMix
     return TEAM_NONE;
 }
 
+void RandomBotService::StartZoneCountsForBatch(uint32_t batch)
+{
+    // One bounded characters-table pass per creation batch (the Update loop
+    // below runs up to 5 TryAutoCreate calls per cadence). Counts level-1
+    // pool characters per start zone; fail-closed keeps the previous (or
+    // zeroed) counts so a DB miss never blocks creation. A creation inside
+    // the same batch bumps the picked zone locally, so consecutive picks see
+    // each other without another SELECT.
+    if (m_startZoneBatch == batch && batch != 0)
+        return;
+    m_startZoneBatch = batch;
+    if (!sPlayerbotAIConfig.randomBotEvenStartZones)
+        return;
+
+    RandomBotAccountRegistry& registry = RandomBotAccountRegistry::Instance();
+    if (!registry.IsValidated())
+        return;
+    std::string accounts = registry.AccountIdList();
+    if (accounts.empty())
+        return;
+    for (uint32_t& count : m_startZoneCounts)
+        count = 0;
+    std::unique_ptr<QueryResult> rows(CharacterDatabase.PQuery(
+        "SELECT `race` FROM `characters` WHERE `deleteDate` IS NULL AND `level` = 1 AND `account` IN (%s)",
+        accounts.c_str()));
+    if (!rows)
+        return;
+    do
+    {
+        int zone = StartZoneIndexForRace(rows->Fetch()[0].GetUInt32());
+        if (zone >= 0 && zone < int(kStartZoneCount))
+            ++m_startZoneCounts[zone];
+    } while (rows->NextRow());
+}
+
+namespace
+{
+// Narrow an account-eligible race/class list to the least-populated start
+// zone that still has a valid race in the list. Empty when no entry maps to
+// a known zone (fail-closed: caller falls back to the full list).
+std::vector<std::pair<uint8_t, uint8_t>> LeastPopulatedZoneCombos(
+    std::vector<std::pair<uint8_t, uint8_t>> const& validForAccount, uint32_t const (&counts)[6])
+{
+    for (uint32_t zone = 0; zone < kStartZoneCount; ++zone)
+    {
+        bool zoneHasRace = false;
+        for (auto const& pr : validForAccount)
+            if (StartZoneIndexForRace(pr.first) == int(zone))
+            {
+                zoneHasRace = true;
+                break;
+            }
+        if (!zoneHasRace)
+            continue;
+        // This zone is a candidate; check whether any other candidate zone is emptier.
+        bool emptiest = true;
+        for (uint32_t other = 0; other < kStartZoneCount; ++other)
+        {
+            if (other == zone || counts[other] >= counts[zone])
+                continue;
+            bool otherHasRace = false;
+            for (auto const& pr : validForAccount)
+                if (StartZoneIndexForRace(pr.first) == int(other))
+                {
+                    otherHasRace = true;
+                    break;
+                }
+            if (otherHasRace)
+            {
+                emptiest = false;
+                break;
+            }
+        }
+        if (!emptiest)
+            continue;
+        std::vector<std::pair<uint8_t, uint8_t>> narrowed;
+        for (auto const& pr : validForAccount)
+            if (StartZoneIndexForRace(pr.first) == int(zone))
+                narrowed.push_back(pr);
+        return narrowed;
+    }
+    return {};
+}
+} // namespace
+
 RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAccount(uint32_t accountId, std::vector<std::pair<uint8_t, uint8_t>> const& validForAccount)
 {
     if (validForAccount.empty())
@@ -472,7 +558,15 @@ RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAcc
         if (sObjectMgr.GetPlayerGuidByName(norm))
             continue;
 
-        auto pr = validForAccount[urand(0, uint32(validForAccount.size() - 1))];
+        std::vector<std::pair<uint8_t, uint8_t>> const* pool = &validForAccount;
+        std::vector<std::pair<uint8_t, uint8_t>> evenPool;
+        if (sPlayerbotAIConfig.randomBotEvenStartZones)
+        {
+            evenPool = LeastPopulatedZoneCombos(validForAccount, m_startZoneCounts);
+            if (!evenPool.empty())
+                pool = &evenPool;
+        }
+        auto pr = (*pool)[urand(0, uint32(pool->size() - 1))];
         uint8 race = pr.first;
         uint8 cls = pr.second;
 
@@ -502,6 +596,12 @@ RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAcc
         CharacterCreateOutcome outcome = CharacterCreation::CreateCharacter(accountId, info);
         if (outcome.result == CHAR_CREATE_SUCCESS)
         {
+            if (sPlayerbotAIConfig.randomBotEvenStartZones)
+            {
+                int zone = StartZoneIndexForRace(race);
+                if (zone >= 0 && zone < int(kStartZoneCount))
+                    ++m_startZoneCounts[zone];
+            }
             if (race == RACE_GOBLIN)
             {
                 CharacterDatabase.PExecute(
@@ -1408,6 +1508,8 @@ void RandomBotService::Update(uint32_t diff)
     // Bounded auto-create: up to 5 creations per cadence if progressing toward target
     if (sPlayerbotAIConfig.randomBotAutoCreate)
     {
+        static uint32_t autoCreateBatch = 0;
+        StartZoneCountsForBatch(++autoCreateBatch);
         for (int i = 0; i < 5; ++i)
         {
             if (!TryAutoCreate())

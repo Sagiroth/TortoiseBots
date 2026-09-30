@@ -235,6 +235,13 @@ public:
     // or no destination. Persisted ai_playerbot_zone_level is tried first
     // (with parent fallback) then immutable DBC AreaLevel/parent.
     bool enableRandomTeleports = true;
+    // Evenly spread new random bots across the six racial starting zones:
+    // auto-create picks a valid race from the least-populated start zone and
+    // isolated-custom-zone normalization sends the bot to the least-populated
+    // standard start of its faction. Default true; false keeps the old
+    // behaviour (uniform random race, goblins to Valley of Trials, high
+    // elves to Northshire).
+    bool randomBotEvenStartZones = true;
     // Whether random bots are allowed in custom isolated starting zones
     // (Blackstone Island 5536, Thalassian Highlands 5225, Alah'Thalas 2040).
     // Default false (blocked and normalized to mainland starting zones).

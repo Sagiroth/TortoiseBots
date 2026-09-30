@@ -28,7 +28,7 @@ echo "✓ Engine unit tests passed."
 echo ""
 echo "=== 5. Running Standalone Policy Tests (issue #265, party-bot latency, hire deletion guard, hunter pet threshold) ==="
 if command -v g++ >/dev/null 2>&1; then
-    for policy_test in test_pool_reset_policy test_pool_pass_rotation test_player_bot_classification test_hire_deletion_policy test_hunter_pet_policy; do
+    for policy_test in test_pool_reset_policy test_pool_pass_rotation test_player_bot_classification test_hire_deletion_policy test_hunter_pet_policy test_start_zone_balance; do
         policy_bin="${TMPDIR:-/tmp}/${policy_test}"
         g++ -std=c++17 -Wall -Wextra "tools/${policy_test}.cpp" -o "${policy_bin}"
         "${policy_bin}"
