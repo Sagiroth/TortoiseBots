@@ -258,10 +258,19 @@ func main() {
 		writeJSON(w, store.Snapshot().Bots)
 	}))
 
-	mux.HandleFunc("/api/v1/issues", requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, store.Issues())
+	mux.HandleFunc("/api/v1/grinding", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, store.Snapshot().Grinding)
 	}))
 
+	mux.HandleFunc("/api/v1/server-info", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		if info := store.ServerInfo(); info != nil {
+			writeJSON(w, info)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"no server info received yet"}`))
+	}))
 	mux.HandleFunc("/api/v1/anomalies", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodDelete:
@@ -331,13 +340,17 @@ func main() {
 
 		// Bootstrap the client from the same store the live stream uses, so
 		// REST polling is no longer required for correctness.
-		hub.Serve(w, r, upgrader,
-			ws.Event{Name: "snapshot", Data: store.Snapshot()},
-			ws.Event{Name: "status", Data: store.Status()},
-		)
+		initial := []ws.Event{
+			{Name: "snapshot", Data: store.Snapshot()},
+			{Name: "status", Data: store.Status()},
+		}
+		if info := store.ServerInfo(); info != nil {
+			initial = append(initial, ws.Event{Name: "server_info", Data: info})
+		}
+		hub.Serve(w, r, upgrader, initial...)
 	})
 
-	serverAddr := fmt.Sprintf("0.0.0.0:%d", *httpPort)
+ serverAddr := fmt.Sprintf("0.0.0.0:%d", *httpPort)
 	log.Printf("[HTTP] Dashboard & API running at http://localhost:%d/dashboard", *httpPort)
 	log.Printf("[HTTP] Prometheus metrics available at http://localhost:%d/metrics", *httpPort)
 

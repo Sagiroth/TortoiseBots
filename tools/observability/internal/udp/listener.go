@@ -121,6 +121,7 @@ func (l *Listener) janitorLoop() {
 			if removed {
 				snap := l.store.Snapshot()
 				l.metricsReg.RecordIssues(snap.Issues)
+				l.metricsReg.RecordGrinding(snap.Grinding)
 				l.hub.Broadcast("snapshot", snap)
 			}
 			if online != lastOnline {
@@ -137,6 +138,7 @@ func (l *Listener) publishSnapshot() {
 	snap := l.store.Snapshot()
 	l.metricsReg.RecordSnapshot()
 	l.metricsReg.RecordIssues(snap.Issues)
+	l.metricsReg.RecordGrinding(snap.Grinding)
 	l.hub.Broadcast("snapshot", snap)
 }
 
@@ -175,6 +177,16 @@ func (l *Listener) processPacket(data []byte) {
 		if l.store.ApplyBatch(&batch) {
 			l.publishSnapshot()
 		}
+
+	case "SERVER_INFO":
+		var info model.ServerInfoPayload
+		if err := json.Unmarshal(data, &info); err != nil {
+			return
+		}
+		l.store.ApplyServerInfo(&info)
+		// Broadcast alone (no roster republish): the panel listens for this
+		// event and the next snapshot carries the same payload inline.
+		l.hub.Broadcast("server_info", info)
 
 	default:
 		var anomaly model.AnomalyPayload
