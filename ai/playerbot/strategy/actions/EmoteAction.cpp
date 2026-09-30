@@ -138,7 +138,12 @@ Unit* EmoteActionBase::GetTarget()
     for (std::list<ObjectGuid>::iterator i = nfp.begin(); i != nfp.end(); ++i)
     {
         Unit* unit = ai->GetUnit(*i);
-        if (unit && sServerFacade.getDistance2d(bot, unit) < sPlayerbotAIConfig.tooCloseDistance) targets.push_back(unit);
+        // Emotes are aimed at real players. Aiming one at another pool bot is
+        // invisible to any human, and with hundreds of bots in one zone the two
+        // sides emote at each other forever.
+        if (unit && !TortoiseBots::BotManager::Instance().IsBot(unit->getObjectGuid()) &&
+            sServerFacade.getDistance2d(bot, unit) < sPlayerbotAIConfig.tooCloseDistance)
+            targets.push_back(unit);
     }
 
     if (!targets.empty())
@@ -693,7 +698,8 @@ bool EmoteAction::Execute(Event& event)
         if (text_emote == TEXTEMOTE_EAT)
             allowEmote = false;
 
-        if (allowEmote && pSource && (pSource->getObjectGuid() != bot->getObjectGuid()))
+        if (allowEmote && pSource && (pSource->getObjectGuid() != bot->getObjectGuid()) &&
+            !TortoiseBots::BotManager::Instance().IsBot(pSource->getObjectGuid()))
         {
             sLog.outDetail("Bot #%d %s:%d <%s> received SMSG_TEXT_EMOTE %d from player #%d <%s>", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName(), text_emote, pSource->GetGUIDLow(), pSource->GetName());
             emote = text_emote;
@@ -709,7 +715,11 @@ bool EmoteAction::Execute(Event& event)
         p >> emoteId >> source;
 
         pSource = sObjectMgr.GetPlayer(source);
-        if (pSource && pSource != bot && sServerFacade.getDistance2d(bot, pSource) < sPlayerbotAIConfig.farDistance && emoteId != EMOTE_ONESHOT_NONE)
+        // A pool bot emoting is not something to react to: with hundreds of
+        // bots close together that is a permanent emote conversation nobody
+        // reads. Real players still get a reaction.
+        if (pSource && pSource != bot && !TortoiseBots::BotManager::Instance().IsBot(pSource->getObjectGuid()) &&
+            sServerFacade.getDistance2d(bot, pSource) < sPlayerbotAIConfig.farDistance && emoteId != EMOTE_ONESHOT_NONE)
         {
             if ((pSource->getObjectGuid() != bot->getObjectGuid()) && (pSource->GetSelectionGuid() == bot->getObjectGuid() || (urand(0, 1) && sServerFacade.isInFront(pSource, bot, 10.0f, M_PI_F))))
             {
@@ -807,8 +817,16 @@ bool EmoteAction::Execute(Event& event)
         return true;
     }
 
+    Unit* target = GetTarget();
+
     if (param.empty() || emotes.find(param) == emotes.end())
     {
+        // Random emote: only with a real player there to see it. GetTarget()
+        // never returns a pool bot, so an audience of bots means no emote at
+        // all instead of an endless emote exchange no human ever reads.
+        if (!target)
+            return false;
+
         int index = rand() % emotes.size();
         for (std::map<std::string, uint32>::iterator i = emotes.begin(); i != emotes.end() && index; ++i, --index)
             emote = i->second;
@@ -823,7 +841,7 @@ bool EmoteAction::Execute(Event& event)
         emote = atoi(param.substr(4).c_str());
     }
 
-    return Emote(GetTarget(), emote);
+    return Emote(target, emote);
 }
 
 bool EmoteAction::isUseful()

@@ -645,6 +645,8 @@ bool PlayerbotAIConfig::Initialize()
 
 	//SPP switches
     enableGreet = config.GetBoolDefault("AiPlayerbot.EnableGreet", true);
+    greetCooldown = config.GetIntDefault("AiPlayerbot.GreetCooldown", 600);
+    randomBotGreet = config.GetBoolDefault("AiPlayerbot.RandomBotGreet", false);
 	disableRandomLevels = config.GetBoolDefault("AiPlayerbot.DisableRandomLevels", false);
     instantRandomize = config.GetBoolDefault("AiPlayerbot.InstantRandomize", true);
     randomBotRandomPassword = config.GetBoolDefault("AiPlayerbot.RandomBotRandomPassword", true);

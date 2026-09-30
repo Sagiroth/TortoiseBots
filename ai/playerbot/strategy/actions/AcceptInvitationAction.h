@@ -84,33 +84,22 @@ namespace ai
             sPlayerbotAIConfig.logEvent(ai, "AcceptInvitationAction", grp->GetLeaderName(), std::to_string(grp->GetMembersCount()));
 
             Player* master = inviter;
+            bool inviterIsBot = TortoiseBots::BotManager::Instance().IsBot(inviter->getObjectGuid());
 
             if (PlayerbotAIStorage::Instance().GetAI(master)) //Copy formation from bot master.
             {
-                if (sPlayerbotAIConfig.inviteChat && (TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()) || !ai->HasActivePlayerMaster()))
-                {
-                    std::map<std::string, std::string> placeholders;
-                    placeholders["%name"] = master->GetName();
-                    std::string reply;
-                    if (urand(0, 3))
-                        reply = BOT_TEXT2("Send me an invite %name!", placeholders);
-                    else
-                        reply = BOT_TEXT2("Sure I will join you.", placeholders);
-
-                    Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-
-                    if (guild && master->GetGuildId() == bot->GetGuildId())
-                        guild->BroadcastToGuild(bot->GetSession(), reply, LANG_UNIVERSAL);
-                    else if (sServerFacade.getDistance2d(bot, master) < sPlayerbotAIConfig.spellDistance * 1.5)
-                        bot->Say(reply, (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
-                }
-
                 Formation* masterFormation = MAI_VALUE(Formation*, "formation");
                 FormationValue* value = (FormationValue*)context->GetValue<Formation*>("formation");
                 value->Load(masterFormation->GetName());
             }
 
-            ai->TellPlayer(inviter, BOT_TEXT("hello"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            // Greet the new master, but never another pool bot: the grouper
+            // invites nearby bots non-stop while a pool fills up, and a bot
+            // answering the bot that invited it is chatter no human reads.
+            if (!inviterIsBot)
+            {
+                ai->TellPlayer(inviter, BOT_TEXT("hello"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            }
 
             ai->DoSpecificAction("reset raids", event, true);
             ai->DoSpecificAction("update gear", event, true);

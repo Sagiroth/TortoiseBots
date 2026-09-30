@@ -346,7 +346,12 @@ namespace ai
                 group->ConvertToRaid();
 
             Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-            if (sPlayerbotAIConfig.inviteChat && (sRandomBotFacade.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
+            // The invite line ("Hey %player, do you want join my group?") is for
+            // a real player. Pool bots invite each other non-stop while the pool
+            // fills up, so answering every bot invite in /s turned a starting
+            // zone into a wall of bot names no human ever reads.
+            if (sPlayerbotAIConfig.inviteChat && isRealPlayer_Helper(player) &&
+                (sRandomBotFacade.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
             {
                 if (guild && player && bot->GetGuildId() == player->GetGuildId())
                 {

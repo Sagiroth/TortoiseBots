@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "NewPlayerNearbyValue.h"
+#include "runtime/BotManager.h"
 
 using namespace ai;
 
@@ -11,6 +12,15 @@ ObjectGuid NewPlayerNearbyValue::Calculate()
     for (std::list<ObjectGuid>::iterator i = players.begin(); i != players.end(); ++i)
     {
         ObjectGuid guid = *i;
+
+        // "New player" means a real player. Greeting is the only consumer of
+        // this value, and a pool of hundreds of bots sharing a starting zone
+        // would otherwise greet each other on every encounter - text emotes no
+        // human reads, and the greet action marks every nearby bot as seen in
+        // one pass, so the trigger fires constantly while the pool churns.
+        if (TortoiseBots::BotManager::Instance().IsBot(guid))
+            continue;
+
         if (alreadySeenPlayers.find(guid) == alreadySeenPlayers.end())
             return guid;
     }

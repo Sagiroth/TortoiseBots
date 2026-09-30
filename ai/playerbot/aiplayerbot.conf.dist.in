@@ -448,8 +448,19 @@ AiPlayerbot.RandombotsWalkingRPG = 0
 # Set randombots movement speed to walking only inside buildings
 AiPlayerbot.RandombotsWalkingRPG.InDoors = 0
 
-# Bots greet to the players
+# Bots greet real players passing by (text emote, once per encounter).
+# Bots never greet other bots: the pool is hundreds of them, so greetings only
+# make sense for a real player audience. 0 disables greetings entirely.
 AiPlayerbot.EnableGreet = 1
+
+# Seconds before the same real player is greeted again by the same bot.
+# A player who keeps walking in and out of sight is greeted once per window.
+AiPlayerbot.GreetCooldown = 600
+
+# Masterless pool bots also greet real players (1), or only greet for a live
+# player master (0, default). With hundreds of pool bots in one zone the wave
+# of greetings answers every visitor, so it is opt-in.
+AiPlayerbot.RandomBotGreet = 0
 
 # Show helmet and cloak on randombots (reset required)
 AiPlayerbot.RandomBotShowHelmet = 1
@@ -518,7 +529,9 @@ AiPlayerbot.RandomBotQuestIds = 7848,3802,5505,6502,7761,9378
 # Randombots will form guilds by buying a charter, getting signatures and handing it in.
 # AiPlayerbot.RandomBotFormGuild = 1
 
-# Bots will chat in say/guild when they invite other bots to groups/raids/guilds
+# Bots announce group/raid invites in say or guild chat. Only a real player is
+# announced to; a bot inviting another bot stays silent (the pool invites
+# itself non-stop while it fills up).
 AiPlayerbot.InviteChat = 1
 
 # Enable per-bot action log files (logs/bots/<botname>_acc<id>_<timestamp>.log)

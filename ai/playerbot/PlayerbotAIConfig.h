@@ -379,6 +379,11 @@ public:
     bool shareTargets;
 	std::list<uint32> pvpProhibitedZoneIds;
     bool enableGreet;
+    // Seconds before the same real player may be greeted again by the same bot.
+    uint32 greetCooldown;
+    // Masterless pool bots also greet real players (off: greetings are for a
+    // bot's own player).
+    bool randomBotGreet;
     bool randomBotShowHelmet;
     bool randomBotShowCloak;
     bool disableRandomLevels;

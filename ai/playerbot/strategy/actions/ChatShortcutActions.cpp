@@ -85,6 +85,12 @@ bool FollowChatShortcutAction::Execute(Event& event)
     Unit* followTarget = AI_VALUE(Unit*, "follow target");
     std::string targetName = followTarget ? followTarget->GetName() : (requester ? requester->GetName() : "");
 
+    // "is following X" announces the shortcut to whoever asked for it. Every
+    // bot-to-bot invite ends in this shortcut, so when another pool bot asked,
+    // the announcement is chat nobody asked to read.
+    bool announce = !targetName.empty() &&
+        !TortoiseBots::BotManager::Instance().IsBot(requester->getObjectGuid());
+
     if (sServerFacade.IsInCombat(bot))
     {
         WorldLocation loc = formation->GetLocation();
@@ -93,13 +99,13 @@ bool FollowChatShortcutAction::Execute(Event& event)
 
         if (MoveTo(loc.mapId, loc.x, loc.y, loc.z, false, false))
         {
-            if (!ai->HasStrategy("silent", BotState::BOT_STATE_NON_COMBAT) && !targetName.empty())
+            if (!ai->HasStrategy("silent", BotState::BOT_STATE_NON_COMBAT) && announce)
                 bot->TextEmote("is following " + targetName + ".");
             return true;
         }
     }
 
-    if (!ai->HasStrategy("silent", BotState::BOT_STATE_NON_COMBAT) && !targetName.empty())
+    if (!ai->HasStrategy("silent", BotState::BOT_STATE_NON_COMBAT) && announce)
         bot->TextEmote("is following " + targetName + ".");
     return true;
 }
