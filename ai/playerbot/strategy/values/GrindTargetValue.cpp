@@ -106,7 +106,10 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
             continue;
         }
 
-        if (!bot->InBattleGround() && !CanFreeMoveValue::CanFreeTarget(ai, GuidPosition(unit)))
+        // Donor (mod-playerbots GrindTargetValue.cpp) has no free-move check here:
+        // masterless bots are bounded by scan radius only. Real-player-mastered
+        // bots keep the leash.
+        if (!bot->InBattleGround() && ai->HasRealPlayerMaster() && !CanFreeMoveValue::CanFreeTarget(ai, GuidPosition(unit)))
         {
             logGrind(unit, "(hostile) ignored (out of free range).");
             continue;
@@ -167,15 +170,21 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
             continue;
         }
 
-        if (!bot->InBattleGround() && !CanFreeMoveValue::CanFreeTarget(ai, GuidPosition(unit))) //Do not grind mobs far away from master.
+        // Donor has no CanFreeTarget gate in the grind value at all: a bot with
+        // no real-player master is bounded by scan radius only. Real-player
+        // mastered bots keep today's leash (free-move range around the master).
+        if (!bot->InBattleGround() && ai->HasRealPlayerMaster() && !CanFreeMoveValue::CanFreeTarget(ai, GuidPosition(unit))) //Do not grind mobs far away from master.
         {
             logGrind(unit, "ignored (out of free range).");
             continue;
         }
 
-        if (!bot->InBattleGround() && master &&
-            (ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
-             ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)) &&
+        // Donor fires only on the follow strategy vs lootDistance: a grouped pool
+        // bot's "master" is its bot group leader, and wander (the default pool
+        // strategy) is exempt. Restrict to follow + a real (network) player; pool
+        // bots and wanderers pick from the whole scan radius.
+        if (!bot->InBattleGround() && master && ai->HasRealPlayerMaster() &&
+            ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) &&
             sServerFacade.getDistance2d(master, unit) > sPlayerbotAIConfig.proximityDistance)
         {
             logGrind(unit, "ignored (far from master).");

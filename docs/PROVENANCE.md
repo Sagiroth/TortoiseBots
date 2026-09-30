@@ -2284,3 +2284,38 @@ Other `MaNGOS::XP::Gain` uses in the module: none — the grind call was the
 only one (`rg 'XP::Gain' ai/`), so no sibling fix was needed.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`.
+
+## Grind leash gates need a real-player master (`HasRealPlayerMaster`) — 2026-09-30
+
+Feature: `GrindTargetValue` skips both `CanFreeMoveValue::CanFreeTarget` rejects
+(attackers loop and scan loop) when the bot has no real-player master, and fires
+"far from master" only on the `follow` strategy with a real-player master —
+never for `wander` or bot-led pool groups.
+
+Source project: `mod-playerbots` (grind leash shape in
+`src/Ai/Base/Value/GrindTargetValue.cpp`) + donor report items 4-5.
+
+Source commit: `mod-playerbots@b6696bdbd3740e575598d167d69f39f68cc0b907`.
+
+Source files: donor `src/Ai/Base/Value/GrindTargetValue.cpp:83-93` (wider
+`grindDistance` leash commented out; `follow`-only check vs `lootDistance`);
+local `ai/playerbot/strategy/values/GrindTargetValue.cpp:109-112,173-189`
+(`CanFreeTarget` gates, `follow`-or-`wander` vs `proximityDistance` gate).
+
+Ported / reimplemented: gate-only change in
+`ai/playerbot/strategy/values/GrindTargetValue.cpp` — `ai->HasRealPlayerMaster()`
+added to both `CanFreeTarget` conditions; `wander` removed from the
+"far from master" strategy test and `ai->HasRealPlayerMaster()` added.
+Log reason texts unchanged. Distance threshold stays `proximityDistance`
+(deliberate local divergence from donor `lootDistance`; kept small per task).
+`PossibleTargetsValue::IsPossibleTarget` still applies `CanFreeAttack`
+(attack-range leash) to every candidate, and the follow strategy's own
+"out of free move range" trigger still recalls the bot — pool-bot group
+cohesion does not rely on these grind-pick gates.
+
+Reason: level 1-3 pool bots (no real-player master) ended ~80-92% of grind
+picks with "no grind target found"; top rejects were "out of free range"
+(~30%, free-move range around the bot group leader) and "far from master"
+(~17%, fired on `follow` OR `wander` for bot-led pool groups).
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`.
