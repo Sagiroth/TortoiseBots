@@ -309,7 +309,11 @@ void ChooseTravelTargetAction::ReportTravelTarget(Player* bot, Player* requester
     if (out.str().empty())
         return;
 
-    if (!isGuildMeeting)
+    // Travel picks are autonomous AI, not command replies: when the requester
+    // is another pool bot the TellPlayerNoFacing below reaches /say or party
+    // chat. Keep the direct command reply to a live player; else stay silent
+    // (debug and travel_map.csv logging below still run).
+    if (!isGuildMeeting && requester && isRealPlayer_Helper(requester))
         ai->TellPlayerNoFacing(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_TALK, false);
 
     if (!futureTravelDetail.empty())

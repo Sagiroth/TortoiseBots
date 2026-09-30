@@ -510,6 +510,15 @@ void BotManager::OnPlayerLogin(::Player* player)
 
     NormalizeHeadlessGmPresentation(player);
 
+    // A character's first login on a player-rank account starts its race intro
+    // (WorldSession::HandlePlayerLogin). Only the client's CMSG_COMPLETE_CINEMATIC
+    // or a disconnect ends it, and until then Unit::IsTargetable refuses the
+    // character as an attack target: a creature the bot hits finds no victim in
+    // its threat list and evades at once, healing back to full. A Headless
+    // session has no client to finish the intro, so finish it here.
+    if (player->watching_cinematic_entry)
+        player->CinematicEnd();
+
     BotEntry& entry = it->second;
     BotRecord& record = entry.record;
     if (record.enteredWorld)
