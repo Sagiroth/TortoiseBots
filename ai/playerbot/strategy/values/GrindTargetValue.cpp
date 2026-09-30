@@ -8,7 +8,6 @@
 #include "PossibleAttackTargetsValue.h"
 #include "playerbot/strategy/actions/ChooseTargetActions.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
-#include "Formulas.h"
 
 using namespace ai;
 
@@ -249,7 +248,11 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
                 logGrind(unit, "ignored (not needed for active quest).");
                 continue;
             }
-            else if (creature && !MaNGOS::XP::Gain(bot, creature) && urand(0, 50))
+            // Pre-attack MaNGOS::XP::Gain() always returns 0 here: it multiplies by
+            // GetXPModifierDueToDamageOrigin(), which is 0 until somebody damages the
+            // creature - so every untouched mob looked like "no XP". Use the pure
+            // grey-level/no-XP-flag predicate instead (donor: bot->isHonorOrXPTarget).
+            else if (creature && !bot->IsHonorOrXPTarget(unit) && urand(0, 50))
             {
                 logGrind(unit, "ignored (not xp and not needed for quest).");
                 continue;

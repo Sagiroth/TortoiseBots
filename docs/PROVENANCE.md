@@ -2247,3 +2247,40 @@ cannot run). Validator after the fix: dead-tree triggers 124 -> 123, no new miss
 actions.
 
 
+
+## Grind XP-eligibility predicate (`IsHonorOrXPTarget` instead of pre-attack `XP::Gain`) — 2026-09-30
+
+Feature: `GrindTargetValue` skips the "not xp and not needed for quest" branch
+only for mobs that truly give no XP, using the pure grey-level/no-XP-flag
+predicate instead of a pre-attack `MaNGOS::XP::Gain` call.
+
+Source project: `mod-playerbots` (`bot->isHonorOrXPTarget(unit)` gate in
+`GrindTargetValue.cpp`) + current core `Player::IsHonorOrXPTarget`
+implementation.
+
+Source commit: `mod-playerbots@b6696bdbd3740e575598d167d69f39f68cc0b907`.
+
+Source files: donor
+`src/Ai/Base/Value/GrindTargetValue.cpp:74`; core
+`src/game/Objects/Player.cpp:21934-21952` (`IsHonorOrXPTarget`),
+`src/game/Formulas.h:34-42` (`GetGrayLevel`), `:102-170` (`Gain`),
+`src/game/Objects/Creature.h:992-998` (`GetXPModifierDueToDamageOrigin`).
+
+Ported / reimplemented: one-line predicate swap in
+`ai/playerbot/strategy/values/GrindTargetValue.cpp:256`
+(`!MaNGOS::XP::Gain(bot, creature)` -> `!bot->IsHonorOrXPTarget(unit)`);
+comment records why. Log reason text and `urand` behaviour unchanged.
+Core `IsHonorOrXPTarget` is exactly the donor-equivalent grey check the task
+asked for (mob level above `GetGrayLevel`, not totem/pet,
+`xp_multiplier != 0`, no `UNIT_STAT_NO_KILL_REWARD`); no `CREATURE_FLAG_EXTRA_NO_XP`
+exists in this core, so no such flag check was added.
+
+Reason: `Gain` multiplies by `GetXPModifierDueToDamageOrigin()`, which is 0
+for a creature nobody has damaged yet — every untouched overworld mob counted
+as "no XP" and was skipped 50/51 times, ending 87-98% of level 1-3 pool grind
+picks with "no grind target found".
+
+Other `MaNGOS::XP::Gain` uses in the module: none — the grind call was the
+only one (`rg 'XP::Gain' ai/`), so no sibling fix was needed.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`.
