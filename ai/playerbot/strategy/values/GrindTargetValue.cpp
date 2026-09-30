@@ -209,9 +209,9 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
         }
 
         // Wild XP-granting type-8 beasts (Deer/Cow) are fair game, not critter
-        // skips: core XP::Gain only zeroes summoned critters, so gate the skip
-        // on the same no-XP verdict the loop below already uses.
-        if (creature && creature->GetCreatureType() == CREATURE_TYPE_CRITTER && !MaNGOS::XP::Gain(bot, creature) && urand(0, 10))
+        // skips: gate the skip on the grey-level/no-XP verdict. Pre-attack
+        // MaNGOS::XP::Gain is 0 for any creature nobody has damaged yet.
+        if (creature && creature->GetCreatureType() == CREATURE_TYPE_CRITTER && !bot->IsHonorOrXPTarget(unit) && urand(0, 10))
         {
             logGrind(unit, "ignored (ignore critters).");
             continue;
