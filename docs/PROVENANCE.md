@@ -2247,3 +2247,9 @@ cannot run). Validator after the fix: dead-tree triggers 124 -> 123, no new miss
 actions.
 
 
+
+### Follow-up 2026-09-30 — refuse grind orders on mobs the bot cannot path to
+
+The mine evade signature (`dun-elwynn.md`: 56/60 probe rows `notreach=1` with the mob still chasing, `|dz|>5` in 25/60, mine k/a 0.30 vs 0.45 in the field) is ordered by the bot, not caused by the core: the core flags a creature it cannot reach after 3 s (`Creature::IsEvadeBecauseTargetNotReachable`, `m_TargetNotReachableTimer`, full reset only at 24 s) while the grind loop kept ordering it for the whole window. Donor `mod-playerbots` (`GrindTargetValue.cpp`, `InvalidTargetValue.cpp`, `AttackersValue.cpp` @ `b6696bdb`) gates the pick on LOS and the Z gap (`INTERACTION_DISTANCE`) and drops evading holders, but has no notreach gate either — the window before the walk home is unhandled there too.
+
+Reimplemented natively, cheapest shape: the grind loop refuses a notreach-flagged candidate in the attackers fast path and runs one `WorldPosition::canPathTo` on the chosen winner only (never per candidate per tick); `AttackAnythingAction` refuses a cached pick the core flagged after selection before `current target` arms; `InvalidTargetValue` drops a held target the moment the flag appears, so the existing reach give-up (15 s, `unreachable targets`/`unreachable entries`, 5 min) blacklists the guid/kind instead of the bot holding a ghost. Local validation: `tools/verify_all.sh`; module build via `build-commit.sh` (no deploy). Live indicator: mine k/a converging to field rate, `evading` grind rejects falling.

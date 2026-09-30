@@ -4,6 +4,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/RandomBotFacade.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/WorldPosition.h"
 #include "AttackersValue.h"
 #include "PossibleAttackTargetsValue.h"
 #include "playerbot/strategy/actions/ChooseTargetActions.h"
@@ -101,6 +102,14 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
         // already refuses an evading creature, but this loop trusts a cached list and
         // returns on the first hit - so the one predicate that decides whether the mob
         // can be hurt at all is applied here as well, with a reason in the grind log.
+        // The core flags a creature it cannot path to long before it walks home:
+        // m_TargetNotReachableTimer > 3 s (IsEvadeBecauseTargetNotReachable) while the
+        // full evade reset takes 24 s. An order placed in that window never lands.
+        if (unit->IsCreature() && static_cast<Creature*>(unit)->IsEvadeBecauseTargetNotReachable())
+        {
+            logGrind(unit, "(hostile) ignored (unreachable).");
+            continue;
+        }
         if (unit->IsCreature() && static_cast<Creature*>(unit)->IsInEvadeMode())
         {
             logGrind(unit, "(hostile) ignored (evading).");
@@ -294,6 +303,18 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
         }
     }
 
+    // One pathfind per pick, on the winner only: a candidate across a mine shaft or
+    // cliff walls the bot (bot spends 24 s attacking air, the core evades the mob).
+    if (result && result->IsCreature())
+    {
+        Creature* picked = static_cast<Creature*>(result);
+        if (picked->IsEvadeBecauseTargetNotReachable() ||
+            !WorldPosition(bot).canPathTo(WorldPosition(result), bot))
+        {
+            logGrind(result, "ignored (no path).");
+            result = NULL;
+        }
+    }
     if (result)
     {
         logGrind(result, "selected.");

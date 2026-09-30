@@ -33,6 +33,15 @@ bool InvalidTargetValue::Calculate()
         return true;
     }
 
+    // Same for the window before the walk home: the core flags a creature it cannot
+    // path to after 3 s (IsEvadeBecauseTargetNotReachable), a full 21 s before the
+    // evade reset. A held order in that window only ever misses, so drop it now and
+    // let the reach give-up blacklist the guid instead of holding a ghost.
+    if (creature && creature->IsEvadeBecauseTargetNotReachable())
+    {
+        return true;
+    }
+
     if (qualifier == "current target")
     {
         if (target->getObjectGuid() != bot->GetSelectionGuid())

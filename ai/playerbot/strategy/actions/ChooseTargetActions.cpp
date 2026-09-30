@@ -77,6 +77,14 @@ bool ai::AttackAnythingAction::Execute(Event& event)
     if (result)
     {
         Unit* grindTarget = GetTarget();
+        // The grind pick is cached: a mob the core flagged unreachable after the pick
+        // still gets ordered here. Refuse it before "current target" arms, so the bot
+        // never holds a ghost it cannot path to.
+        if (grindTarget && grindTarget->IsCreature() &&
+            static_cast<Creature*>(grindTarget)->IsEvadeBecauseTargetNotReachable())
+        {
+            return false;
+        }
         if (grindTarget)
         {
             std::string grindName = grindTarget->GetName();
