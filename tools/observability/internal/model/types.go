@@ -39,7 +39,7 @@ type BotSnapshot struct {
 	Z        float64 `json:"z"`
 	O        float64 `json:"o"`
 	Target      string `json:"target"`
-	TargetLevel uint32 `json:"target_level,omitempty"` // combat target level (0 = none/non-unit)
+	TargetLevel uint32 `json:"target_level,omitempty"` // selected-unit target level (0 = none/self)
 	Strategy    string `json:"strategy"`
 	State       string `json:"state"` // "combat", "moving", "resting", "dead", "idle"
 	LastAction  string `json:"last_action,omitempty"`

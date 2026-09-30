@@ -739,13 +739,12 @@ void ObservabilityEmitter::Update(uint32 diff)
 
     // Server panel: first snapshot of the process, then every 5 min. Cheap
     // (a few dozen getters + one small datagram), no per-tick cost.
-    if (m_serverInfoTimerMs == 0 || m_serverInfoTimerMs >= 300000)
+    m_serverInfoTimerMs += diff;
+    if (m_serverInfoTimerMs == diff || m_serverInfoTimerMs >= 300000)
     {
-        m_serverInfoTimerMs = 1;
+        m_serverInfoTimerMs = diff;
         EmitServerInfo();
     }
-    else
-        m_serverInfoTimerMs += diff;
 
     for (size_t i = 0; i < kArmoryBotsPerSnapshot && i < activeBots.size(); ++i)
     {
@@ -849,7 +848,9 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
         Unit* target = bot->GetSelectedUnit();
         snap.target = target ? target->GetName() : "";
         snap.targetLevel = 0;
-        if (target && target != bot && target->GetTypeId() == TYPEID_UNIT)
+        // Any unit target (creature or player, e.g. a follow master) carries
+        // a level; only self-selection (the no-hostile-target case) is 0.
+        if (target && target != bot)
             snap.targetLevel = static_cast<uint32>(target->GetLevel());
         snap.strategy = FormatStrategies(ai);
         snap.state = MacroStateName(state);
