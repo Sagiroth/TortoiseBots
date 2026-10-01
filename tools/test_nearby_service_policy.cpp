@@ -123,14 +123,15 @@ int main()
     // Only a journey in flight owns the bot. A live pool produced 0 SellAction
     // rows in 90 minutes because the rule treated every active travel target -
     // including the Grind target a bot sits on for its whole work phase - as
-    // "busy", so a bot parked next to a vendor never serviced it.
-    CHECK(ai::NearbyServiceTravelOwnsBot(ai::NEARBY_SERVICE_TRAVEL_STATUS_PREPARE) == true);   // preparing a journey
-    CHECK(ai::NearbyServiceTravelOwnsBot(ai::NEARBY_SERVICE_TRAVEL_STATUS_TRAVEL) == true);    // walking it
-    CHECK(ai::NearbyServiceTravelOwnsBot(0) == false);                                         // no target
-    CHECK(ai::NearbyServiceTravelOwnsBot(2) == false);                                         // arrived (READY)
-    CHECK(ai::NearbyServiceTravelOwnsBot(4) == false);                                         // working at it
-    CHECK(ai::NearbyServiceTravelOwnsBot(5) == false);                                         // cooldown
-    CHECK(ai::NearbyServiceTravelOwnsBot(6) == false);                                         // expired
+    // "busy", so a bot parked next to a vendor never serviced it. The travel
+    // request/multiplier ask the same helper for the bag-pressure vendor errand.
+    CHECK(ai::JourneyInFlightOwnsBot(ai::NEARBY_SERVICE_TRAVEL_STATUS_PREPARE) == true);   // preparing a journey
+    CHECK(ai::JourneyInFlightOwnsBot(ai::NEARBY_SERVICE_TRAVEL_STATUS_TRAVEL) == true);    // walking it
+    CHECK(ai::JourneyInFlightOwnsBot(0) == false);                                         // no target
+    CHECK(ai::JourneyInFlightOwnsBot(2) == false);                                         // arrived (READY)
+    CHECK(ai::JourneyInFlightOwnsBot(4) == false);                                         // working at it
+    CHECK(ai::JourneyInFlightOwnsBot(5) == false);                                         // cooldown
+    CHECK(ai::JourneyInFlightOwnsBot(6) == false);                                         // expired
     std::cout << "  [PASS] only a journey in flight blocks the rule\n";
 
     std::cout << "All idle near-service policy checks PASSED!\n";

@@ -36,15 +36,19 @@ namespace ai
     const int NEARBY_SERVICE_TRAVEL_STATUS_PREPARE = 1;
     const int NEARBY_SERVICE_TRAVEL_STATUS_TRAVEL = 3;
 
-    // Only a journey in flight owns the bot. A target that is merely set - the
-    // bot arrived and is waiting out its work/cooldown at the destination, or
-    // grinding its spot - leaves the bot where it stands, so the quest giver,
-    // trainer or vendor next to it must be usable then. Blocking on any active
-    // target (the first version of this rule) meant the rule could only fire in
-    // the gaps between journeys, which is exactly when the travel layer grabs
-    // the bot again: live, a bot parked next to a vendor with a live Grind target
-    // never serviced it and 0 SellAction rows were produced in 90 minutes.
-    inline bool NearbyServiceTravelOwnsBot(int travelStatus)
+    // Only a journey in flight owns the bot: preparing one, or walking it. A
+    // target that is merely set - the bot arrived and is waiting out its
+    // work/cooldown at the destination - leaves the bot where it stands, so the
+    // quest giver, trainer or vendor next to it must be usable then (the idle
+    // near-service rule) and a bag-pressure vendor errand may still start (the
+    // travel layer). Blocking on any active target meant the near-service rule
+    // could only fire in the gaps between journeys, which is exactly when the
+    // travel layer grabs the bot again: live, a bot parked next to a vendor with
+    // a live Grind target never serviced it, 0 SellAction rows were produced in
+    // 90 minutes, and the vendor travel request showed up as USELESS (`travel
+    // target active`) in the old pool's decision trails while the bot sat at its
+    // destination.
+    inline bool JourneyInFlightOwnsBot(int travelStatus)
     {
         return travelStatus == NEARBY_SERVICE_TRAVEL_STATUS_PREPARE ||
             travelStatus == NEARBY_SERVICE_TRAVEL_STATUS_TRAVEL;

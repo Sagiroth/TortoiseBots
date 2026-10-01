@@ -122,6 +122,14 @@ namespace ai
     //loop on trips that cannot empty its bags.
     bool BagPressureVendorTrip(PlayerbotAI* ai);
 
+    //May the bag-pressure vendor errand start while a travel target is set?
+    //Yes while that target is merely parked at its destination (arrived,
+    //working it, or in cooldown) and no while a journey is in flight; and only
+    //for the Vendor purpose, so other request actions keep the old churn guard.
+    //The travel request action and the travel multiplier both ask this, so they
+    //cannot disagree.
+    bool VendorErrandWhileParked(PlayerbotAI* ai, const std::string& qualifier);
+
     //A vendor errand that found nothing vendor-usable cannot be finished by
     //standing there. Park the Vendor travel purpose the way TrainerAction parks
     //a fruitless trainer visit: the same key ChooseTravelTargetAction sets when
