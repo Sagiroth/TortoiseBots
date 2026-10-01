@@ -56,6 +56,13 @@ bool ChooseTravelTargetAction::Execute(Event& event)
 
     travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_NONE);
 
+    // Spread the grind: a creature spot already worked by as many bots as it has
+    // room for drops out of this pick, and the bot takes the next candidate range
+    // instead (see TravelMgr::DropCrowdedGrindPoints). Cheap - one hash lookup per
+    // candidate, demand kept incrementally by TravelTarget, no scan over bots.
+    if (futureTravelPurpose == std::to_string((uint32)TravelDestinationPurpose::Grind))
+        sTravelMgr.DropCrowdedGrindPoints(destinationList);
+
     ai->TellDebug(ai->GetMaster(), "Got " + std::to_string(destinationList.size()) + " new destination ranges for " + futureTravelPurposeName, "debug travel");
 
     TravelTarget newTarget = TravelTarget(ai);

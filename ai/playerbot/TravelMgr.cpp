@@ -1,6 +1,8 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/TravelRoutePolicy.h"
+#include "playerbot/GrindSpotPolicy.h"
 #include <numeric>
+#include <mutex>
 #include <iomanip>
 
 #include "playerbot/strategy/values/SharedValueContext.h"
@@ -627,31 +629,25 @@ bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 
     int32 botLevel = info.GetLevel();
 
-    uint8 botPowerLevel = info.GetUint8Value("durability");
-    float levelMod = botPowerLevel / 500.0f; //(0-0.2f)
-    float levelBoost = botPowerLevel / 50.0f; //(0-2.0f)
-
-    int32 maxLevel = std::max(botLevel * (0.5f + levelMod), botLevel - 5.0f + levelBoost);
-
-    // Beginners (level 1-4): the band above truncates to 0 at level 1 (and to 1-2 at
-    // levels 2-4), and the gold rule below rejects every beast - so a fresh bot in an
-    // enclosed starting valley (Valley of Trials, Camp Narache: nothing but boars and
-    // scorpids, gold 0) never finds a single grind target and idles at the campfire,
-    // which RpgTravelDestination forbids it to leave below level 5. Let beginners fight
-    // their own level and coinless starter beasts; from level 5 on nothing changes.
+    // Autonomous bots get the level-appropriate window (GrindSpotPolicy.h) so a spot
+    // stops being a destination the moment the bot outlevels it and the next request
+    // walks it to the next fitting field or zone. Owned bots keep the old conservative
+    // window - their player decides where to hunt. Either way the beginner clamp keeps
+    // levels 1-4 on their own level, and the gold rule below still lets those bots hunt
+    // coinless starter beasts (Valley of Trials, Camp Narache: nothing but boars and
+    // scorpids, gold 0), which they could otherwise never grind.
     bool const beginner = botLevel <= 4;
-    if (beginner)
-        maxLevel = std::max(maxLevel, botLevel);
+    GrindLevelBand const band = GetGrindLevelBand((uint32)botLevel, info.GetUint8Value("durability"), info.IsMasterlessRandom());
 
-    if ((int32)cInfo->level_max > maxLevel) //@lvl5 max = 3, @lvl60 max = 57
+    if (!GrindLevelFits(band, (int32)cInfo->level_max)) //level 5: [3,6] where it used to be [3,3]
         return false;
 
-    int32 minLevel = std::max(botLevel * (0.4f + levelMod), botLevel - 12.0f + levelBoost);
-
-    if ((int32)cInfo->level_max < minLevel) //@lvl5 min = 3, @lvl60 max = 50
-        return false;
-
-    if (cInfo->gold_min == 0 && (!beginner || cInfo->type == CREATURE_TYPE_CRITTER))
+    // Autonomous bots hunt coinless wildlife (wolves, boars, spiders, scorpids)
+    // at every level: those carry no copper but they pay in XP, grey vendor loot
+    // and skins, and they are the open-field hunt that keeps bots out of the
+    // humanoid camps. Critters (zero XP) are never worth the walk. Owned bots keep
+    // the old copper-only rule, with the beginner allowance they always had.
+    if (!GrindPreyAllowed((int32)cInfo->gold_min, cInfo->type == CREATURE_TYPE_CRITTER, info.IsMasterlessRandom(), beginner))
         return false;
 
     if (cInfo->rank > CREATURE_ELITE_NORMAL && !info.GetBoolValue("can fight elite"))
@@ -957,6 +953,12 @@ void TravelTarget::SetTarget(TravelDestination* tDestination1, WorldPosition* wP
     if (dynamic_cast<TemporaryTravelDestination*>(tDestination) && tDestination1 != tDestination)
         delete tDestination;
 
+    if (tDestination != tDestination1)
+    {
+        sTravelMgr.ReleaseGrindSpot(tDestination);
+        sTravelMgr.AcquireGrindSpot(tDestination1);
+    }
+
     wPosition = wPosition1;
     tDestination = tDestination1;
 
@@ -975,6 +977,13 @@ void TravelTarget::SetTarget(TravelDestination* tDestination1, WorldPosition* wP
     moveRetryCount = 0;
 
     SetStatus(TravelStatus::TRAVEL_STATUS_TRAVEL);
+}
+
+TravelTarget::~TravelTarget()
+{
+    // A bot that logs out must not leave its grind spot counted as taken, or the
+    // pool would slowly fill the world with "crowded" spots nobody is on.
+    sTravelMgr.ReleaseGrindSpot(tDestination);
 }
 
 void TravelTarget::CopyTarget(TravelTarget* const target) {
@@ -1062,6 +1071,26 @@ bool TravelTarget::IsConditionsActive(bool clear)
     return true;
 }
 
+namespace
+{
+    // A grind destination the bot has simply outgrown: its creatures sit outside the
+    // bot's level band, so the spot can never come back and the bot must walk on. The
+    // band test is the same one the destination filter uses - this only asks whether
+    // the level window is the reason (see the other gates in IsPossible).
+    bool GrindSpotOutgrown(TravelDestination* destination, Player* bot)
+    {
+        GrindTravelDestination* grind = dynamic_cast<GrindTravelDestination*>(destination);
+
+        if (!grind || !grind->GetCreatureInfo() || !bot)
+            return false;
+
+        PlayerTravelInfo info(bot);
+
+        return !GrindLevelFits(GetGrindLevelBand((uint32)info.GetLevel(), info.GetUint8Value("durability"), info.IsMasterlessRandom()),
+            (int32)grind->GetCreatureInfo()->level_max);
+    }
+}
+
 void TravelTarget::CheckStatus()
 {
     if (!IsActive())
@@ -1121,6 +1150,20 @@ void TravelTarget::CheckStatus()
 
         if (destinationInactive || conditionsInactive)
         {
+            // A grind spot the bot has simply outgrown is not a temporary failure:
+            // its creatures sit below the bot's level band, nothing will bring them
+            // back, and the ordinary cooldown would freeze the bot in place for a
+            // full minute on every ding. Expire it so the very next tick can request
+            // a spot that fits. Every other reason a destination went inactive
+            // (unreachable kind, tapped, blacklist) keeps the cooldown pause.
+            if (destinationInactive && GrindSpotOutgrown(tDestination, bot))
+            {
+                ai->TellDebug(ai->GetMaster(), "The target is expiring because the bot has outgrown the spot.", "debug travel");
+                SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
+                ai->GetAiObjectContext()->ClearValues("no active travel destinations");
+                return;
+            }
+
             ai->TellDebug(ai->GetMaster(), "The target is cooling down because the destination was no longer active or the conditions are no longer true.", "debug travel");
             forced = false;
             SetStatus(TravelStatus::TRAVEL_STATUS_COOLDOWN);
@@ -2611,6 +2654,79 @@ void TravelMgr::ShuffleTravelPoints(std::vector<TravelPoint>&points)
 
     WeightedShuffle(points.begin(), points.end(), weights.begin(), weights.end(), gen);
     */
+}
+
+namespace
+{
+    // Destination -> travel targets currently holding it. Deliberately never
+    // destroyed: pool bots log out during shutdown, and their TravelTarget
+    // destructors may run after static destruction.
+    std::unordered_map<TravelDestination*, uint32>& GrindSpotDemand()
+    {
+        static std::unordered_map<TravelDestination*, uint32>* demand = new std::unordered_map<TravelDestination*, uint32>();
+        return *demand;
+    }
+
+    // Bots on different maps update on different map threads, so every access
+    // to the shared demand map goes through this lock. Leaked like the map.
+    std::mutex& GrindSpotDemandLock()
+    {
+        static std::mutex* lock = new std::mutex();
+        return *lock;
+    }
+}
+
+void TravelMgr::AcquireGrindSpot(TravelDestination* destination)
+{
+    if (!destination || destination->GetPurpose() != TravelDestinationPurpose::Grind)
+        return;
+
+    std::lock_guard<std::mutex> guard(GrindSpotDemandLock());
+    GrindSpotDemand()[destination]++;
+}
+
+void TravelMgr::ReleaseGrindSpot(TravelDestination* destination)
+{
+    if (!destination || destination->GetPurpose() != TravelDestinationPurpose::Grind)
+        return;
+
+    std::lock_guard<std::mutex> guard(GrindSpotDemandLock());
+    auto it = GrindSpotDemand().find(destination);
+    if (it == GrindSpotDemand().end())
+        return;
+
+    if (--it->second == 0)
+        GrindSpotDemand().erase(it);
+}
+
+bool TravelMgr::IsGrindSpotCrowded(TravelDestination* destination) const
+{
+    // Room for what the spot actually is: a two-spawn cave does not feed five bots,
+    // a forty-spawn field is not full with twelve. The floor of two lets a bot always
+    // join a spot a single other bot is working.
+    uint32 const capacity = GrindSpotCapacity(destination->GetSize());
+    std::lock_guard<std::mutex> guard(GrindSpotDemandLock());
+    auto it = GrindSpotDemand().find(destination);
+
+    return it != GrindSpotDemand().end() && it->second >= capacity;
+}
+
+void TravelMgr::DropCrowdedGrindPoints(PartitionedTravelList& points) const
+{
+    for (auto it = points.begin(); it != points.end();)
+    {
+        std::vector<TravelPoint>& list = it->second;
+
+        list.erase(std::remove_if(list.begin(), list.end(), [this](const TravelPoint& point)
+        {
+            TravelDestination* destination = std::get<0>(point);
+            return destination && destination->GetPurpose() == TravelDestinationPurpose::Grind && IsGrindSpotCrowded(destination);
+        }), list.end());
+
+        // Drop the range with it: SetBestTarget's "skip to a longer range" roll keys
+        // off the last range, and an empty one would make it abandon a pick.
+        it = list.empty() ? points.erase(it) : std::next(it);
+    }
 }
 
 void TravelMgr::SetNullTravelTarget(TravelTarget* target) const

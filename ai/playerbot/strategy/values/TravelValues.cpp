@@ -102,32 +102,15 @@ EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
         }
 
 
-        if (cInfo->gold_min > 0)
-        {
+        // Coinless creatures are grind destinations too: wildlife (wolves, boars,
+        // spiders, scorpids, bears) carries no copper at all - it pays in XP, grey
+        // vendor loot and skins - and is the bread-and-butter hunt of every level.
+        // Only critters stay out (zero XP, not worth a walk). The per-bot rule that
+        // owns this purpose (GrindTravelDestination::IsPossible) keeps owned and
+        // hired bots on the old copper-only set; the map itself is team- and
+        // bot-blind, so it has to offer both.
+        if (cInfo->gold_min > 0 || cInfo->type != CREATURE_TYPE_CRITTER)
             purpose |= (uint32)TravelDestinationPurpose::Grind;
-        }
-        else
-        {
-            switch (entry)
-            {
-                case 28611: //Scarlet Captain           1
-                case 28530: //Scarlet Commander         2
-                case 28936: //Scarlet Commander         4
-                case 29000: //Scarlet Commander Rodrick 4
-                case 28529: //Scarlet Crusader          2
-                case 28940: //Scarlet Crusader          4
-                case 28609: //Scarlet Infantryman       1
-                case 28610: //Scarlet Marksman          4
-                case 28608: //Scarlet Medic             1
-                case 28819: //Scarlet Miner             1
-                case 28822: //Scarlet Miner             1
-                case 28557: //Scarlet Peasant           1
-                case 28594: //Scarlet Preacher          2
-                case 28939: //Scarlet Preacher          4
-                    purpose |= (uint32)TravelDestinationPurpose::Grind;
-                    break;
-            }
-        }
 
         if (cInfo->rank == CREATURE_ELITE_ELITE || cInfo->rank == CREATURE_ELITE_RAREELITE || cInfo->rank == CREATURE_ELITE_WORLDBOSS || cInfo->rank == CREATURE_ELITE_RARE)
         {
