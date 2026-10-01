@@ -104,6 +104,40 @@ static void SanitizeCommandLikeChat(std::string& msg)
         msg.insert(0, " ");
     }
 }
+
+// Would Spell::prepare() refuse this cast for lack of power?
+//
+// The throwaway Spell the CanCastSpell probes build never runs prepare(), and
+// m_powerCost is documented as "initialized only in Spell::prepare"
+// (Spells/Spell.h), so CheckCast(true) approves every power-starved cast. The
+// action was then selected, executed and refused by prepare() with
+// SPELL_FAILED_NO_POWER - 88k of 190k live cast failures over 47 minutes, and
+// nearly all of them rogue energy for Sinister Strike/Eviscerate. This mirrors
+// the core's own gate (Spell::CheckPower) for the probe, so the AI picks
+// something else instead of burning the attempt on a cast that cannot start.
+//
+// The cost is deliberately computed without caster spellmods: ApplySpellMod()
+// spends mod charges (Player::DropModCharge) and a probe must not consume the
+// charge the real cast needs. Cost-reduction procs (Clearcasting and the like)
+// are therefore not priced in, so such a cast waits until the bot could pay
+// the full price anyway; the probe never approves a cast the core will refuse.
+SpellCastResult CheckSpellPower(SpellEntry const* spellInfo, Unit* caster, Item* castItem)
+{
+    // Item casts pay no power (Spell::CheckPower).
+    if (!spellInfo || !caster || castItem)
+        return SPELL_CAST_OK;
+
+    // POWER_HEALTH sits outside MAX_POWERS and needs health, not power, so it
+    // is the one "invalid" power type that must still be measured.
+    if (spellInfo->powerType >= MAX_POWERS && spellInfo->powerType != POWER_HEALTH)
+        return SPELL_CAST_OK;
+
+    uint32 const cost = Spell::CalculatePowerCost(spellInfo, caster, nullptr, nullptr);
+    if (spellInfo->powerType == POWER_HEALTH)
+        return caster->GetHealth() > cost ? SPELL_CAST_OK : SPELL_FAILED_CASTER_AURASTATE;
+
+    return caster->GetPower(Powers(spellInfo->powerType)) < cost ? SPELL_FAILED_NO_POWER : SPELL_CAST_OK;
+}
 }
 
 static uint32 GetQuestSlotQuestId(Player* player, uint16 slot)
@@ -4512,6 +4546,39 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
         return false;
     }
 
+    // Spell::prepare() refuses a new cast while another non-melee spell is
+    // still being cast, and that is where SPELL_FAILED_SPELL_IN_PROGRESS comes
+    // from. CheckCast(true) alone does not cover it, so without the same gate
+    // here the AI re-attempted the spell every tick from the moment the cast
+    // bar ended until the server's spell state cleared - 98k of 190k live cast
+    // failures over 47 minutes (Smite, Shadow Bolt, Fireball, heals). The
+    // expression is spelled exactly as Spell::prepare() spells it: channeled
+    // and auto-repeat spells are not "in progress" for this purpose.
+    if (bot->IsNonMeleeSpellCasted(false, true, true))
+    {
+        if (checkResult)
+        {
+            *checkResult = SPELL_FAILED_SPELL_IN_PROGRESS;
+        }
+
+        return false;
+    }
+
+    // Spell::prepare() also refuses a cast the caster cannot pay for, but only
+    // because it is the one place that fills in m_powerCost; this probe never
+    // runs prepare(), so CheckCast(true) approved power-starved casts.
+    Item* castItem = itemTarget ? itemTarget : aiObjectContext->GetValue<Item*>("item for spell", spellid)->Get();
+    SpellCastResult powerResult = CheckSpellPower(spellInfo, bot, castItem);
+    if (powerResult != SPELL_CAST_OK)
+    {
+        if (checkResult)
+        {
+            *checkResult = powerResult;
+        }
+
+        return false;
+    }
+
     // already active next melee swing spell
     if (IsNextMeleeSwingSpell(spellInfo))
     {
@@ -4612,7 +4679,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
 	Spell *spell = new Spell(bot, spellInfo, false);
 
     spell->m_targets.setUnitTarget(target);
-    spell->SetCastItem(itemTarget ? itemTarget : aiObjectContext->GetValue<Item*>("item for spell", spellid)->Get());
+    spell->SetCastItem(castItem);
     spell->m_targets.setItemTarget(spell->m_targets.getItemTarget());
 
     SpellCastResult result = spell->CheckCast(true);
