@@ -5010,6 +5010,22 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
         return CastPetSpell(spellId, target);
     }
 
+    // Spell::prepare() refuses a second non-melee cast while one is still running, and that is
+    // where SPELL_FAILED_SPELL_IN_PROGRESS comes from. CanCastSpell() mirrors the gate for every
+    // caller that asks before casting (CastSpellAction::isPossible and the cast triggers), but the
+    // loot chain calls this overload directly: OpenLootAction::DoLoot starts Skinning / Herb
+    // Gathering / Mining and the opening spells from its own action. While the 2s gather cast ran,
+    // "can loot" stayed true - the loot target is still valid until the cast completes and the
+    // corpse is skinned - so the chain re-issued the cast every tick and the server refused each
+    // one. Live: 545 of the 750 SPELL_IN_PROGRESS refusals in a 47-minute window were Skinning,
+    // plus the herb/ore/opening spells of the same path. Same expression as prepare(): a channeled
+    // or auto-repeat spell does not count as "in progress".
+    if (bot->IsNonMeleeSpellCasted(false, true, true))
+    {
+        botdiag::BotActionLog::Write(this, "CAST_GATE", "spell=%u targetGuid=0x%llx reason=cast-in-progress", spellId, (unsigned long long)target->getObjectGuid().GetRawValue());
+        return false;
+    }
+
     aiObjectContext->GetValue<LastMovement&>("last movement")->Get().Set(NULL);
     aiObjectContext->GetValue<time_t>("stay time")->Set(0);
 
