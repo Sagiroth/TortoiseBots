@@ -11,11 +11,11 @@ Rules that keep its state honest:
 - Anomaly types are a closed set (`model.AcceptedAnomalyTypes`) so Prometheus label cardinality stays bounded.
 - Bump `kProtocolVersion` in `ObservabilityEmitter.cpp` and `model.ProtocolVersion` in `internal/model/types.go` together.
 
-## Telemetry surface (protocol v6)
+## Telemetry surface (protocol v7)
 
 Each `BOT_BATCH` bot entry carries: `name, guid, class, role, level, xp, next_xp, hp/max_hp, power/max_power, power_type, map, zone, x/y/z/o, target, target_level, strategy, state, last_action, last_trigger, travel_purpose, travel_to`.
 
-Macro states (`state`, heartbeat `states`, `tortoisebots_state_ratio`): `combat` (in combat), `moving` (a movement generator owns the bot), `busy` (standing still but doing something: looting, casting, sitting to eat/drink, working an active travel target — plus anything with observable activity in the last 45 s), `resting` (rest flag), `idle` (no movement, action, cast, loot, or active target for 45+ s — really doing nothing), `dead`. Per-tick cost is member reads + one action-name compare; the 3-min window is unchanged.
+Macro states (`state`, heartbeat `states`, `tortoisebots_state_ratio`): `combat` (in combat), `moving` (a movement generator owns the bot), `busy` (standing still but doing real work: looting, casting, sitting to eat/drink, or movement within the last 45 s), `stalled` (standing still for 45+ s whose only activity was churn — an active travel target or a changing last-action name, no movement/loot/cast/sit — i.e. standing with a destination and getting nowhere), `resting` (rest flag), `idle` (no movement, action, cast, loot, or active target for 45+ s — really doing nothing), `dead`. `stalled` exists so a bot parked with a travel target is no longer reported as busy. Per-tick cost is member reads + one action-name compare; the 3-min window is unchanged.
 - `power_type` is the current resource (`mana`, `rage`, `energy`, `focus`, `happiness`); druids reflect their active form. Label bars by it, never hardcode "mana".
 - `last_action`/`last_trigger` feed repeated-action detection; they are sampled per 2s snapshot, not per execution.
 - Anomalies carry `guid` so the daemon can key episodes; accepted types are `STUCK`, `ACTION_LOOP`, `UNREACHABLE_TARGET`, `BOT_DEATH`.

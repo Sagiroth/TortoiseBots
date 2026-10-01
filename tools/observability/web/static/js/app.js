@@ -31,7 +31,7 @@
       diff: 0,
       humans: 0,
       bots: 0,
-      states: { combat: 0, moving: 0, busy: 0, resting: 0, dead: 0, idle: 0 }
+      states: { combat: 0, moving: 0, busy: 0, stalled: 0, resting: 0, dead: 0, idle: 0 }
     },
     history: {
       t: [],
@@ -1354,7 +1354,8 @@
   const ACTIVITY_ORDER = [
     ['combat', '#f85149', 'In combat or pulling'],
     ['moving', '#58a6ff', 'A movement generator owns the bot'],
-    ['busy', '#d29922', 'Standing still but doing something (loot, cast, eat, travel work, recent action)'],
+    ['busy', '#d29922', 'Standing still but doing real work (loot, cast, eat, or movement in the last 45 s)'],
+    ['stalled', '#e3852a', 'Standing still for 45+ s with only a travel target or action-name changes — no progress'],
     ['resting', '#2ea043', 'Rest flag'],
     ['idle', '#9aa4b2', 'No activity for 45+ s — really doing nothing'],
     ['dead', '#c9d1d9', 'Dead'],
@@ -1486,7 +1487,7 @@
       `- rates: xp_kill=${rates.xp_kill ?? '?'} xp_elite=${rates.xp_kill_elite ?? '?'} xp_quest=${rates.xp_quest ?? '?'} xp_explore=${rates.xp_explore ?? '?'} drop_money=${rates.drop_money ?? '?'} honor=${rates.honor ?? '?'} rep=${rates.rep_gain ?? '?'} talent=${rates.talent ?? '?'} bot_xp_mult=${rates.bot_xp_mult ?? '?'}`,
       `- bots: min/max=${bots.min_random ?? '?'}/${bots.max_random ?? '?'} update=${bots.update_interval ?? '?'} maxlvl=${bots.max_level ?? '?'} group=${on(bots.group_nearby)} raid=${on(bots.raid_nearby)} invite=${on(bots.invite_player)} timed_logout=${on(bots.timed_logout)} no_rand_levels=${on(bots.disable_random_levels)} ladder=${on(bots.level_ladder)} quests=${on(bots.auto_do_quests)} no_activity=${on(bots.disable_activity)} alone=${bots.active_alone ?? '?'} pool=${bots.pool_budget_us ?? '?'}us/${bots.pool_budget_gate_ms ?? '?'}ms ah=${on(bots.ah_buyer)} lft=${on(bots.lft)} bg=${on(bots.bg)}`,
       `- diag: perfmon=${on(diag.perf_mon)} bot_events=${on(diag.bot_events)} unreachable=${on(diag.unreachable)} deaths=${on(diag.deaths)}`,
-      `- pool: tracked=${g.bots_tracked || 0} gaining=${g.bots_gaining_xp || 0} (${Math.round(g.pct_gaining_xp || 0)}%) median_xp/h=${Math.round(g.median_xp_hour || 0)} total_xp/h=${Math.round(g.total_xp_hour || 0)} deaths/min=${(g.deaths_per_min || 0).toFixed(1)} died5m=${Math.round(g.pct_died_5min || 0)}% states=${['combat', 'moving', 'busy', 'resting', 'idle', 'dead'].map(k => `${k}=${((g.state_counts || {})[k]) || 0}`).join(' ')}`,
+      `- pool: tracked=${g.bots_tracked || 0} gaining=${g.bots_gaining_xp || 0} (${Math.round(g.pct_gaining_xp || 0)}%) median_xp/h=${Math.round(g.median_xp_hour || 0)} total_xp/h=${Math.round(g.total_xp_hour || 0)} deaths/min=${(g.deaths_per_min || 0).toFixed(1)} died5m=${Math.round(g.pct_died_5min || 0)}% states=${['combat', 'moving', 'busy', 'stalled', 'resting', 'idle', 'dead'].map(k => `${k}=${((g.state_counts || {})[k]) || 0}`).join(' ')}`,
       `- levels: ${(Array.isArray(g.level_bands) ? g.level_bands : []).map(b => `${b.lo === b.hi ? `L${b.lo}` : `${b.lo}-${b.hi}`}=${b.count || 0}`).join(' ')}`,
       `- issues: active=${state.issues.active.length} persistent=${state.issues.active.filter(i => i.severity === 'persistent').length}`,
       `- server: online=${state.server.online} stale=${state.server.stale} uptime=${state.server.uptime}s tick=${state.server.diff}ms humans=${state.server.humans} bots=${state.server.bots}`,
@@ -1852,7 +1853,7 @@
           <div style="font-size: 0.7rem; margin-bottom: 2px;">${esc(powerLabel(b))} ${esc(b.power)}/${esc(b.max_power)} (${powerPct}%)</div>
           <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${powerPct}%; background: var(--accent-blue-bright);"></div></div>
         </td>
-        <td><span class="badge ${b.state === 'combat' ? 'badge-error' : b.state === 'dead' ? 'badge-warn' : 'badge-info'}">${esc(b.state || 'idle')}</span></td>
+        <td><span class="badge ${b.state === 'combat' ? 'badge-error' : (b.state === 'dead' || b.state === 'stalled') ? 'badge-warn' : 'badge-info'}">${esc(b.state || 'idle')}</span></td>
         <td style="color: #f85149;">${esc(displayTarget(b))}${b.target_level ? ` <span style="color: var(--text-muted);">L${esc(b.target_level)}</span>` : ''}</td>
         <td class="mono" style="font-size: 0.8rem;">${esc(getZoneName(b.zone, b.map))}</td>
       `;
@@ -3429,7 +3430,7 @@
       state.server.online = false;
       state.server.stale = true;
       if (state.server.states) {
-        state.server.states = { combat: 0, moving: 0, busy: 0, resting: 0, dead: 0, idle: 0 };
+        state.server.states = { combat: 0, moving: 0, busy: 0, stalled: 0, resting: 0, dead: 0, idle: 0 };
       }
       updateDashboardMetrics();
       if (state.activeTab === 'dashboard') renderDashboardCharts();

@@ -37,7 +37,7 @@ struct BotTelemetrySnapshot
     std::string target;
     uint32 targetLevel = 0;  // combat target level (0 = none/non-unit)
     std::string strategy;
-    std::string state;       // "combat", "moving", "resting", "dead", "idle"
+    std::string state;       // "combat", "moving", "busy", "stalled", "resting", "dead", "idle"
     std::string lastAction;  // last action the AI executed (loop detection)
     std::string lastTrigger; // event source that drove the last action
     std::string travelPurpose; // active travel destination short name ("grind", "vendor", ...)
@@ -82,6 +82,12 @@ public:
         // target (flag refreshed at snapshot cadence, not per tick).
         // Idle requires none of these for >= kIdleAfterMs.
         uint32 lastActivityMs = 0;
+        // Start of the current run of churn-only activity: a new last-action
+        // name or an active travel target, with no movement, loot, cast or
+        // sit. When the run reaches kIdleAfterMs the bot is stalled, not
+        // busy; real progress (or a full kIdleAfterMs with no activity at
+        // all) resets it to 0.
+        uint32 churnSinceMs = 0;
         bool hasWorkTarget = false;
         // Last executed action name, to notice a new action without string
         // compares against history: any pointer/name change is activity.
@@ -190,13 +196,15 @@ private:
     // Rolling macro-state histogram: kStateBuckets buckets of kStateBucketMs
     // each, one column per state. Ratios therefore describe the recent window
     // instead of an all-time average.
-    // States: combat, moving, busy (looting/casting/eating/working a travel
-    // or rpg target — doing something while standing still), resting, dead,
-    // idle (no movement, action, cast, loot, or active target for >=
-    // kIdleAfterMs). Idle means really doing nothing, not "between actions".
+    // States: combat, moving, busy (real work while standing still —
+    // looting, casting, eating, or movement within the last kIdleAfterMs),
+    // stalled (standing still for >= kIdleAfterMs with nothing but churn: a
+    // travel target or action-name changes), resting, dead, idle (no
+    // movement, action, cast, loot, or active target for >= kIdleAfterMs).
+    // Idle means really doing nothing, not "between actions".
     static constexpr size_t kStateBucketCount = 90;
     static constexpr uint32 kStateBucketMs = 2000;
-    static constexpr size_t kStateCount = 6; // combat, moving, busy, resting, dead, idle
+    static constexpr size_t kStateCount = 7; // combat, moving, busy, stalled, resting, dead, idle
     static constexpr uint32 kIdleAfterMs = 45000;
     uint64 m_stateWindow[kStateBucketCount][kStateCount];
     size_t m_stateBucketIndex;

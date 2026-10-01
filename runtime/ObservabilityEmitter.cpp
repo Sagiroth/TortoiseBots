@@ -47,7 +47,7 @@ namespace {
 
 // Datagram schema version. The Go daemon ignores datagrams it cannot parse;
 // this is bumped when the wire format changes incompatibly.
-constexpr int kProtocolVersion = 6;
+constexpr int kProtocolVersion = 7;
 
 // Snapshot cadence and batching. Datagrams are kept well under the loopback
 // MTU so a large roster arrives as several unpredictable chunks; the receiver
@@ -75,9 +75,10 @@ enum MacroState : uint8
     STATE_COMBAT = 0,
     STATE_MOVING = 1,
     STATE_BUSY = 2,
-    STATE_RESTING = 3,
-    STATE_DEAD = 4,
-    STATE_IDLE = 5,
+    STATE_STALLED = 3,
+    STATE_RESTING = 4,
+    STATE_DEAD = 5,
+    STATE_IDLE = 6,
 };
 
 char const* MacroStateName(uint8 state)
@@ -87,6 +88,7 @@ char const* MacroStateName(uint8 state)
         case STATE_COMBAT:  return "combat";
         case STATE_MOVING:  return "moving";
         case STATE_BUSY:    return "busy";
+        case STATE_STALLED: return "stalled";
         case STATE_RESTING: return "resting";
         case STATE_DEAD:    return "dead";
         default:            return "idle";
@@ -236,37 +238,40 @@ bool HasActiveWorkTarget(PlayerbotAI* ai)
     return target && target->IsActive();
 }
 
-// True when the bot did anything observable this tick: moved since the 1 s
-// position sample, executed a new AI action, casts, loots, sits, or holds an
-// active work target flag (refreshed at snapshot cadence, see Update).
+// Observable activity this tick, split by kind. "progress" is real work: the
+// bot moved, looted, cast, or sat to eat/drink. "churn" is the pair of
+// standing-still signals that used to pass for busy on their own — a new
+// last-action name, or an active travel target. Keeping them apart is what
+// lets a bot standing with a target be told from one that is working.
 // Member reads + one name compare; no DB, no scans, no AI-value lookup.
-bool NoteActivity(Player* bot, bool hasWorkTarget, ObservabilityEmitter::BotTrackState& track, uint32 nowMs, char const* actionName)
+struct Activity
 {
-    bool active = false;
+    bool progress = false;
+    bool churn = false;
+    bool any = false;
+};
+
+Activity NoteActivity(Player* bot, bool hasWorkTarget, ObservabilityEmitter::BotTrackState& track, char const* actionName)
+{
+    Activity act;
     float dx = bot->GetPositionX() - track.lastX;
     float dy = bot->GetPositionY() - track.lastY;
     if (dx * dx + dy * dy >= 0.25f)
-        active = true;
-    if (actionName && *actionName && track.lastActionName != actionName)
-        active = true;
+        act.progress = true;
     if (bot->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_LOOTING))
-        active = true;
+        act.progress = true;
     if (bot->IsNonMeleeSpellCasted(false))
-        active = true;
+        act.progress = true;
     if (bot->GetStandState() == UNIT_STAND_STATE_SIT)
-        active = true;
-    if (hasWorkTarget)
-        active = true;
-    if (active)
-        track.lastActivityMs = nowMs;
+        act.progress = true;
+    if (hasWorkTarget || (actionName && *actionName && track.lastActionName != actionName))
+        act.churn = true;
+    act.any = act.progress || act.churn;
     if (actionName && *actionName)
         track.lastActionName = actionName;
-    return active;
+    return act;
 }
-// Active travel destination for the grinding panel. Cached AI values only
-// (the value object already exists; Get() returns the pointer); GetShortName/
-// GetTitle are cheap string builders on the already-chosen destination. Idle
-// bots contribute empty strings so the pool rollup can count not-travelling.
+
 // Active travel destination for the grinding panel. Cached AI values only
 // (the value object already exists; Get() returns the pointer); GetShortName/
 // GetTitle are cheap string builders on the already-chosen destination. Idle
@@ -703,19 +708,38 @@ void ObservabilityEmitter::Update(uint32 diff)
         // Fresh tracks start idle (unknown past), not busy: when the
         // first observation shows no activity, the 45 s clock starts
         // expired instead of granting a grace window. Active newcomers
-        // keep the timestamp NoteActivity just stamped.
+        // keep the timestamp just stamped.
         bool fresh = track.lastActivityMs == 0 && track.lastActionName.empty();
-        NoteActivity(bot, track.hasWorkTarget, track, nowMs, lastActionName);
+        Activity act = NoteActivity(bot, track.hasWorkTarget, track, lastActionName);
+        if (act.any)
+            track.lastActivityMs = nowMs;
+        if (act.progress)
+            track.churnSinceMs = 0;
+        else if (act.churn && track.churnSinceMs == 0)
+            track.churnSinceMs = nowMs;
         if (fresh && track.lastActivityMs == 0)
             track.lastActivityMs = nowMs - kIdleAfterMs;
 
         uint8 state = BaseMacroState(bot, ai);
-        // Idle means really doing nothing: base IDLE with no observable
-        // activity for >= kIdleAfterMs stays busy (between actions). Combat,
-        // moving, resting and dead are instant states, never gated.
-        if (state == STATE_IDLE && track.lastActivityMs != 0 &&
-            (nowMs - track.lastActivityMs) < kIdleAfterMs)
-            state = STATE_BUSY;
+        // Idle means really doing nothing: a base IDLE bot that did anything
+        // inside kIdleAfterMs is busy while it made real progress, and stalled
+        // when its only activity was churn (a travel target or action-name
+        // changes) for that whole window. Combat, moving, resting and dead are
+        // instant states, never gated.
+        if (state == STATE_IDLE)
+        {
+            if (track.lastActivityMs != 0 && (nowMs - track.lastActivityMs) < kIdleAfterMs)
+            {
+                bool churnOnly = track.churnSinceMs != 0 &&
+                    (nowMs - track.churnSinceMs) >= kIdleAfterMs;
+                state = churnOnly ? STATE_STALLED : STATE_BUSY;
+            }
+            else
+            {
+                // Nothing at all for kIdleAfterMs: any churn run is over.
+                track.churnSinceMs = 0;
+            }
+        }
         track.stateIndex = state;
         track.lastSeenMs = nowMs;
         AddStateTime(state, diff);
@@ -1008,6 +1032,7 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
        << "\"combat\":" << std::fixed << std::setprecision(3) << ratio(STATE_COMBAT) << ","
        << "\"moving\":" << ratio(STATE_MOVING) << ","
        << "\"busy\":" << ratio(STATE_BUSY) << ","
+       << "\"stalled\":" << ratio(STATE_STALLED) << ","
        << "\"resting\":" << ratio(STATE_RESTING) << ","
        << "\"dead\":" << ratio(STATE_DEAD) << ","
        << "\"idle\":" << ratio(STATE_IDLE)
