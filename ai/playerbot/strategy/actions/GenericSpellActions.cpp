@@ -19,6 +19,11 @@ bool CanInterruptCurrentSpell(Spell const* spell)
 // Seconds between two out-of-combat cast attempts of the same upkeep buff on the
 // same target (issue #359).
 uint32 const BUFF_RETRY_COOLDOWN = 3;
+// Issue #378: a group buff covers the whole (sub)group from one cast and costs a
+// reagent, so a target that cannot receive it (another raid subgroup, too low
+// level for the rank) must not be re-tried every few seconds - each retry burned
+// the reagent and mana and still left the target unbuffed. One attempt a minute.
+uint32 const GREATER_BUFF_RETRY_COOLDOWN = 60;
 // Seconds between two "SelfBuff" telemetry rows for the same bot and spell.
 uint32 const SELF_BUFF_EVENT_INTERVAL = 10;
 // Mana percent an upkeep buff waits for before it is (re)cast (issue #378).
@@ -300,7 +305,7 @@ bool CastBuffSpellAction::isUseful()
     {
         Unit* target = GetTarget();
         if (target && lastAttemptTime && target->getObjectGuid() == lastAttemptTarget &&
-            time(0) - lastAttemptTime < (time_t)BUFF_RETRY_COOLDOWN)
+            time(0) - lastAttemptTime < (time_t)GetBuffRetryCooldown())
             return false;
 
         if (!HasManaForBuff())
@@ -348,6 +353,16 @@ bool CastBuffSpellAction::HasManaForBuff()
 
     uint8 const minMana = spellInfo->procCharges ? CHARGE_BUFF_MIN_MANA_PERCENT : BUFF_MIN_MANA_PERCENT;
     return ai->GetManaPercent() >= minMana;
+}
+
+uint32 CastBuffSpellAction::GetBuffRetryCooldown() const
+{
+    return BUFF_RETRY_COOLDOWN;
+}
+
+uint32 GreaterBuffOnPartyAction::GetBuffRetryCooldown() const
+{
+    return GREATER_BUFF_RETRY_COOLDOWN;
 }
 
 bool CastBuffSpellAction::Execute(Event& event)

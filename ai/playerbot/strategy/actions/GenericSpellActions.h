@@ -157,6 +157,12 @@ namespace ai
         virtual bool Execute(Event& event) override;
 
     protected:
+        // Issue #378: retry window for one attempt on one target, out of combat.
+        // The party group buffs widen it (see GreaterBuffOnPartyAction): a single
+        // cast covers the whole (sub)group and spends a reagent, so a target that
+        // cannot receive the area buff must not burn another reagent every 3 s.
+        virtual uint32 GetBuffRetryCooldown() const;
+
         // Issue #378: out of combat an upkeep buff is not worth its mana while the
         // bot is below its floor. Combat casts (seals, totems, shields, charge
         // re-applies) are never gated. Percentage-cost spells and shapeshift forms
@@ -169,9 +175,9 @@ namespace ai
         // buff whose aura is still missing after the attempt (drink in progress, out
         // of range or LOS, not enough mana, master moving away) was re-attempted on
         // every AI tick - the hired priest "buffs itself, drinks and repeats" loop.
-        // One attempt per target per BUFF_RETRY_COOLDOWN seconds, out of combat only;
-        // the aura gate in CastAuraSpellAction::isUseful still decides whether the
-        // buff is needed at all.
+        // One attempt per target per GetBuffRetryCooldown() seconds, out of combat
+        // only; the aura gate in CastAuraSpellAction::isUseful still decides whether
+        // the buff is needed at all.
         ObjectGuid lastAttemptTarget;
         time_t lastAttemptTime = 0;
 
@@ -329,6 +335,11 @@ namespace ai
     protected:
         virtual std::string getName() override { return PartyMemberActionNameSupport::getName(); }
         virtual std::string GetTargetName() override { return "party member without aura"; }
+        // Greater buffs get the long retry window: the cast is area-wide and costs
+        // a reagent, so a member the area never covers is only re-attempted once a
+        // minute. While it is cooling down isUseful() is false and the engine runs
+        // the lower-priority single-target buff for that member instead.
+        virtual uint32 GetBuffRetryCooldown() const override;
         // Must match GreaterBuffOnPartyTrigger::GetTargetValue(): the member has
         // to lack the lower single-target buff as well (issue #378).
         virtual std::string GetTargetQualifier() override { return GetSpellName() + (lowerSpell.empty() ? "" : "," + lowerSpell) + "-" + (ignoreTanks ? "1" : "0"); }
