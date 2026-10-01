@@ -148,6 +148,12 @@ namespace ai
 
         static bool IsTrainerOf(CreatureInfo const* cInfo, Player* pPlayer);
 
+        //True when this trainer still teaches a GREEN spell the bot can pay for
+        //out of "free money for spells". Shared by the trigger and the idle
+        //nearby-service rule, which asks the same question of an NPC that is
+        //not the bot's rpg target (yet).
+        static bool TeachesAffordableSpell(PlayerbotAI* ai, GuidPosition guidP, Player* bot);
+
         virtual bool IsActive() override;
     };
 

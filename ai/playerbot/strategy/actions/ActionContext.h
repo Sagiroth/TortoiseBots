@@ -29,6 +29,7 @@
 #include "OutfitAction.h"
 #include "RevealGatheringItemAction.h"
 #include "SayAction.h"
+#include "ServiceNearbyNpcAction.h"
 #include "OutfitAction.h"
 #include "RandomBotUpdateAction.h"
 #include "RemoveAuraAction.h"
@@ -94,6 +95,7 @@ namespace ai
             creators["crpg"] = [](PlayerbotAI* ai) { return new CRpgAction(ai); };
             creators["choose rpg target"] = [](PlayerbotAI* ai) { return new ChooseRpgTargetAction(ai); };
             creators["move to rpg target"] = [](PlayerbotAI* ai) { return new MoveToRpgTargetAction(ai); };
+            creators["service nearby npc"] = [](PlayerbotAI* ai) { return new ServiceNearbyNpcAction(ai); };
 			creators["travel"] = [](PlayerbotAI* ai) { return new TravelAction(ai); };
 			creators["choose travel target"] = [](PlayerbotAI* ai) { return new ChooseTravelTargetAction(ai); };
             creators["choose group travel target"] = [](PlayerbotAI* ai) { return new ChooseGroupTravelTargetAction(ai); };
