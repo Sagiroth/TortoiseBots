@@ -6,6 +6,7 @@
 #include "playerbot/strategy/generic/PullStrategy.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#include <map>
 
 bool DpsAssistAction::isUseful()
 {
@@ -92,6 +93,10 @@ bool ai::AttackAnythingAction::Execute(Event& event)
             {
                 sPlayerbotAIConfig.logEvent(ai, "AttackAnythingAction", grindName + " (lvl " + std::to_string(grindTarget->GetLevel()) + ")", std::to_string(grindTarget->GetEntry()));
                 LogRepeatOrder(grindTarget);
+
+                // The order above was the last one worth giving this creature.
+                if (GiveUpOnGrindTarget(grindTarget))
+                    return true;
 
                 if (ai->HasStrategy("pull", BotState::BOT_STATE_COMBAT))
                 {
@@ -195,6 +200,93 @@ void ai::AttackAnythingAction::LogRepeatOrder(Unit* target)
     out << " victim=" << (int)(target->GetVictim() == bot);
     out << " repeats=" << grindRepeatCount;
     sPlayerbotAIConfig.logEvent(ai, "GrindTargetRepeat", out.str(), std::to_string(target->GetEntry()));
+}
+
+// The telemetry above separates the two shapes of a repeated order, and live data
+// showed the dominant one: 67 of 500 fresh bots frozen at a single coordinate for
+// 30+ minutes, ordering the same creature 27 times an hour with repeats=3..14,
+// incombat=0, victim=0 and 10-59 yd still to go - no kill, no loot, no travel move
+// (report-stationary.md). ReachTargetAction has the right remedy - 15 s without
+// headway puts the creature on the "unreachable targets"/"unreachable entries"
+// lists for five minutes, which also drops the grind destination
+// (GrindTravelDestination::IsActive) so the bot walks somewhere else - but its
+// window restarts whenever the creature wanders two yards closer or the order
+// moves to another creature of the same kind, so on a field of wandering mobs it
+// can go an hour without ever firing.
+//
+// So run the same rule on the order record instead, where the bot's intent is
+// known: kGrindGiveUpOrders orders of the same creature, spread over at least
+// kGrindGiveUpMinSpanMs, with the bot never in that fight and no order ever seeing
+// the creature closer than 2 yd under the best distance so far, means every route
+// the picker offers ends in the same standstill. Blacklist exactly what the reach
+// action would have, so the existing escape paths do the rest.
+static uint32 const kGrindGiveUpOrders = 5;
+static uint32 const kGrindGiveUpMinSpanMs = 60 * IN_MILLISECONDS;
+
+bool ai::AttackAnythingAction::GiveUpOnGrindTarget(Unit* target)
+{
+    if (!target || !target->IsCreature())
+        return false;
+
+    // A bot that is in the fight - or that the creature is fighting - is
+    // reachable by definition, and a target that keeps coming after it is
+    // handled by the reach action's own exception.
+    if (bot->IsInCombat() || target->GetVictim() == bot)
+    {
+        grindUnreachableTarget = ObjectGuid();
+        grindUnreachableSinceMs = 0;
+        grindUnreachableOrders = 0;
+        return false;
+    }
+
+    uint32 const nowMs = WorldTimer::getMSTime();
+    float const distance = sServerFacade.getDistance2d(bot, target);
+
+    if (grindUnreachableTarget != target->getObjectGuid() || grindUnreachableSinceMs == 0)
+    {
+        grindUnreachableTarget = target->getObjectGuid();
+        grindUnreachableSinceMs = nowMs;
+        grindUnreachableBestDist = distance;
+        grindUnreachableOrders = 1;
+        return false;
+    }
+
+    ++grindUnreachableOrders;
+
+    // Any order that finds the creature closer than the best distance so far is
+    // the bot actually closing in - the mob walking to us counts, exactly as the
+    // reach action counts it.
+    if (distance < grindUnreachableBestDist - 2.0f)
+    {
+        grindUnreachableBestDist = distance;
+        grindUnreachableOrders = 1;
+        return false;
+    }
+
+    if (grindUnreachableOrders < kGrindGiveUpOrders ||
+        WorldTimer::getMSTimeDiff(grindUnreachableSinceMs, nowMs) < kGrindGiveUpMinSpanMs)
+        return false;
+
+    uint32 const expiresAt = nowMs + 5 * MINUTE * IN_MILLISECONDS;
+    context->GetValue<std::map<ObjectGuid, uint32>&>("unreachable targets")->Get()[grindUnreachableTarget] = expiresAt;
+    context->GetValue<std::map<uint32, uint32>&>("unreachable entries")->Get()[target->GetEntry()] = expiresAt;
+
+    // Drop the order with the creature so the next pick starts from a clean
+    // slate instead of re-arming the target we just blacklisted. CurrentTargetValue
+    // resolves from its own selection guid, so it has to be Set() to null - Reset()
+    // only clears the base value it never reads.
+    context->GetValue<ObjectGuid>("attack target")->Set(ObjectGuid());
+    context->GetValue<ObjectGuid>("explicit attack target")->Set(ObjectGuid());
+    context->GetValue<Unit*>("current target")->Set(nullptr);
+    bot->AttackStop();
+
+    ai->TellDebug(ai->GetMaster(), "Giving up on " + std::string(target->GetName()) +
+        " - ordered " + std::to_string(grindUnreachableOrders) + " times without ever reaching it", "debug move");
+
+    grindUnreachableTarget = ObjectGuid();
+    grindUnreachableSinceMs = 0;
+    grindUnreachableOrders = 0;
+    return true;
 }
 
 bool AttackEnemyPlayerAction::isUseful()
