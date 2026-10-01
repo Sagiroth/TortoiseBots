@@ -3894,13 +3894,14 @@ void PlayerbotFactory::InitReagents()
     case CLASS_PRIEST:
         regCount = 3;
         // Rank levels: Prayer of Fortitude R1 (21562) is level 48 and needs the
-        // Holy Candle 17028, the level-60 spells (PoF R2 21564, Prayer of Spirit
-        // 27681, Prayer of Shadow Protection 27683) all need the Sacred Candle
-        // 17029. The old > 48 threshold left a level-48 hire without a candle.
-        if (bot->GetLevel() >= 48)
+        // Holy Candle 17028, while every level-60 spell (PoF R2 21564, Prayer of
+        // Spirit 27681, Prayer of Shadow Protection 27683) needs the Sacred Candle
+        // 17029. A level-60 priest never casts R1 again (the highest known rank
+        // wins), so seeding Holy Candles there only wastes bag slots.
+        if (bot->GetLevel() >= 48 && bot->GetLevel() < 60)
             items = { 17028 };
         if (bot->GetLevel() >= 60)
-            items = { 17028, 17029 };
+            items = { 17029 };
         break;
     case CLASS_ROGUE:
         regCount = 1;
