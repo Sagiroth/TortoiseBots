@@ -21,6 +21,11 @@ bool CanInterruptCurrentSpell(Spell const* spell)
 uint32 const BUFF_RETRY_COOLDOWN = 3;
 // Seconds between two "SelfBuff" telemetry rows for the same bot and spell.
 uint32 const SELF_BUFF_EVENT_INTERVAL = 10;
+// Mana percent an upkeep buff waits for before it is (re)cast (issue #378).
+// A charge buff (Shadowguard, Touch of Weakness, Inner Fire, shields) is spent
+// by being hit and then re-cast at full price, so it uses the higher floor.
+uint8 const BUFF_MIN_MANA_PERCENT = 40;
+uint8 const CHARGE_BUFF_MIN_MANA_PERCENT = 70;
 }
 
 CastSpellAction::CastSpellAction(PlayerbotAI* ai, std::string spell)
@@ -296,7 +301,29 @@ bool CastBuffSpellAction::isUseful()
             return false;
     }
 
-    return CastAuraSpellAction::isUseful();
+    return CastAuraSpellAction::isUseful() && HasManaForBuff();
+}
+
+bool CastBuffSpellAction::HasManaForBuff()
+{
+    const SpellEntry* const spellInfo = sServerFacade.LookupSpellInfo(GetSpellID());
+    // Only mana upkeep buffs are held back. Stances, forms, stealth and the
+    // zero-cost toggles are free, and spells on a recovery timer are deliberate
+    // cooldown abilities (Ice Block, Feign Death, Dash...) that must stay usable
+    // whatever the mana pool looks like.
+    if (!spellInfo || spellInfo->powerType != POWER_MANA || !spellInfo->manaCost || spellInfo->GetRecoveryTime())
+        return true;
+
+    if (bot->GetPowerType() != POWER_MANA)
+        return true;
+
+    // Aspects are permanent, mutually exclusive mode toggles rather than upkeep
+    // buffs - a hunter must stay able to switch them at any mana level.
+    if (GetSpellName().find("aspect of ") == 0)
+        return true;
+
+    uint8 const minMana = spellInfo->procCharges ? CHARGE_BUFF_MIN_MANA_PERCENT : BUFF_MIN_MANA_PERCENT;
+    return ai->GetManaPercent() >= minMana;
 }
 
 bool CastBuffSpellAction::Execute(Event& event)

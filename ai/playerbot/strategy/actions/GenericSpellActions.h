@@ -157,6 +157,9 @@ namespace ai
         virtual bool Execute(Event& event) override;
 
     protected:
+        // Issue #378: an upkeep buff is not worth its mana while the bot is low.
+        bool HasManaForBuff();
+
         // Issue #359: an upkeep buff has no retry cooldown of its own. Its trigger
         // re-evaluates every tick (BuffTrigger interval < 2) and the engine's
         // failure backoff deliberately exempts bots with a real player master, so a
