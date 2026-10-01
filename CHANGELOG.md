@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### World & Bot Population
+- Autonomous bots now level on a **grind-spot ladder**: a grind destination is only accepted while its creatures sit within two levels below and one above the bot, so a bot walks on to the next field or zone as soon as it outlevels a spot — on foot, by taxi, boat or zeppelin, never by teleport. Before, the destination window always pointed at mobs two to ten levels below the bot and collapsed to exactly level-3 creatures at level 5, which is why 157 of 500 fresh bots were parked at level 5 after 90 minutes. Owned/hired bots are unchanged.
+
+---
+
 ## 2026-10-01
 
 ### Party Buffs & Hire Cleanup

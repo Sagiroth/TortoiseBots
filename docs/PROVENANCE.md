@@ -2366,3 +2366,66 @@ player's party — they keep the leash so grind picks stay inside the follow
 recall radius.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`.
+
+## Level-appropriate grind destinations (`GrindSpotPolicy`) — 2026-10-01
+
+Feature: a grind *destination* must be able to pay level-appropriate XP. For
+autonomous (masterless random) bots the accepted creature window is now
+`[botLevel - 2, botLevel + 1]` instead of the old "roughly half the bot's level"
+window; owned/hired bots keep the old conservative window. Because the window
+travels with the bot, outgrowing a spot invalidates the travel target that led
+there (`GrindTravelDestination::IsActive` -> `IsPossible`), the cooldown forces a
+new request, and the next request walks the bot through the travel graph (foot,
+taxi, boat, zeppelin - no teleports) to the nearest field/zone whose creatures
+still fit. Same window at every level, so the ladder runs 1 -> 60.
+
+Source project: `mod-playerbots` (NewRPG "go grind": level-bracketed random grind
+POIs and their re-roll), plus donor report items 1-2.
+
+Source commit: `mod-playerbots@b6696bdbd3740e575598d167d69f39f68cc0b907`.
+
+Source files: donor `src/Ai/World/Rpg/Action/NewRpgBaseAction.cpp:964-1015`
+(`SelectRandomGrindPos`: uniform pick from the level's POI set, 500 yd / 2500 yd
+ranges, `/3` below level 5), donor `src/Mgr/Travel/TravelMgr.cpp:4812-4828` (POI
+cache bucketed per level as `[midLevel - RandomBotTeleLowerLevel,
+midLevel + RandomBotTeleHigherLevel]`), donor `conf/playerbots.conf.dist:1599,1604`
+(`RandomBotTeleLowerLevel = 1`, `RandomBotTeleHigherLevel = 3`); local
+`ai/playerbot/TravelMgr.cpp:620-648` (`GrindTravelDestination::IsPossible`),
+`ai/playerbot/GrindSpotPolicy.h` (new), `ai/playerbot/TravelMgr.cpp:2431-2444`
+(`IsLocationLevelValid` zone floor, unchanged, now the second half of the same
+gate), `ai/playerbot/strategy/values/GrindTargetValue.cpp:23-31`
+(`MaxGrindLevelOverBot`, the order cap the new ceiling respects).
+
+Ported / reimplemented: donor picks a random POI from a level-bracketed set and
+re-rolls on its RPG timeout; we filter the existing per-entry grind destinations
+by the same kind of level bracket and let the existing destination-validity and
+travel-target-expiry machinery do the re-roll - no new status machine, no new
+timer, no teleport. Donor's lower bound (creature level >= bot level - 1) is our
+`- 2` and donor's upper (bot level + 3) is our `+ 1`: our own order cap refuses
+targets more than one level above a sub-10 bot (`MaxGrindLevelOverBot`), so a
+destination further up would only ever be walked to for nothing. Beginner clamp
+(levels 1-4 = own level) and the coinless-starter-beast rule are preserved for
+owned bots, and subsumed by the ladder window for autonomous ones.
+
+Reason: measured on the live pool (2026-10-01, 500 fresh level-1 bots). At level
+5 the old window collapsed to exactly `level_max == 3` creatures and the zone
+floor built on the same numbers rejected the point's own starting valley, so
+level-5 bots received *zero* `Grind` travel targets (0 of 2,308 targets in the
+last hour: 732 trainer, 683 skinning, 601 generic RPG, 258 herbalism, 34 mining)
+and sat at level 5 - 157/500 after 90 minutes, 5 -> 6 never completing, raw XP
+per kill down to 31.7 (against ~50 at levels 1-4). Offline replay against the
+live world DB for a level-5 bot at the Northshire camp (1500 yd, gold-bearing,
+non-elite, matching the purpose map): old band admitted exactly one creature kind
+(Kobold Worker, level 3, 164 yd, inside the rejected starter area); new band
+admits the Goldshire field (Defias Cutpurse 5-6 at 331 yd, Kobold Tunneler 5-6 at
+921 yd) and, with the unchanged area gates, the camp itself is left behind.
+Durotar/Valley of Trials: new band admits Vile Familiar (3-4), Yarrog Baneshadow
+(5) and Kul Tiras Sailor (5-6, Tiragarde).
+
+Local validation: `tools/test_grind_spot_policy.cpp` (band shape at levels 5/6/8/
+60, monotone ladder 1-60, grey-level floor, owned-bot windows unchanged,
+gear-condition independence) via `bash tools/verify_all.sh`; `git diff --check`;
+module build via `build-commit.sh` (no deploy). Live indicators to watch after
+deploy: `TravelTarget` rows with purpose `Grind` for level 5+ bots (should stop
+being zero), `LeaveOutgrownZone` unchanged, XP per kill at levels 5-10 rising
+toward the level-appropriate value, and the level-5 population draining.

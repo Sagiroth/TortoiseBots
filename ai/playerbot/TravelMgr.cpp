@@ -1,5 +1,6 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/TravelRoutePolicy.h"
+#include "playerbot/GrindSpotPolicy.h"
 #include <numeric>
 #include <iomanip>
 
@@ -627,28 +628,17 @@ bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 
     int32 botLevel = info.GetLevel();
 
-    uint8 botPowerLevel = info.GetUint8Value("durability");
-    float levelMod = botPowerLevel / 500.0f; //(0-0.2f)
-    float levelBoost = botPowerLevel / 50.0f; //(0-2.0f)
-
-    int32 maxLevel = std::max(botLevel * (0.5f + levelMod), botLevel - 5.0f + levelBoost);
-
-    // Beginners (level 1-4): the band above truncates to 0 at level 1 (and to 1-2 at
-    // levels 2-4), and the gold rule below rejects every beast - so a fresh bot in an
-    // enclosed starting valley (Valley of Trials, Camp Narache: nothing but boars and
-    // scorpids, gold 0) never finds a single grind target and idles at the campfire,
-    // which RpgTravelDestination forbids it to leave below level 5. Let beginners fight
-    // their own level and coinless starter beasts; from level 5 on nothing changes.
+    // Autonomous bots get the level-appropriate window (GrindSpotPolicy.h) so a spot
+    // stops being a destination the moment the bot outlevels it and the next request
+    // walks it to the next fitting field or zone. Owned bots keep the old conservative
+    // window - their player decides where to hunt. Either way the beginner clamp keeps
+    // levels 1-4 on their own level, and the gold rule below still lets those bots hunt
+    // coinless starter beasts (Valley of Trials, Camp Narache: nothing but boars and
+    // scorpids, gold 0), which they could otherwise never grind.
     bool const beginner = botLevel <= 4;
-    if (beginner)
-        maxLevel = std::max(maxLevel, botLevel);
+    GrindLevelBand const band = GetGrindLevelBand((uint32)botLevel, info.GetUint8Value("durability"), info.IsMasterlessRandom());
 
-    if ((int32)cInfo->level_max > maxLevel) //@lvl5 max = 3, @lvl60 max = 57
-        return false;
-
-    int32 minLevel = std::max(botLevel * (0.4f + levelMod), botLevel - 12.0f + levelBoost);
-
-    if ((int32)cInfo->level_max < minLevel) //@lvl5 min = 3, @lvl60 max = 50
+    if (!GrindLevelFits(band, (int32)cInfo->level_max)) //level 5: [3,6] where it used to be [3,3]
         return false;
 
     if (cInfo->gold_min == 0 && (!beginner || cInfo->type == CREATURE_TYPE_CRITTER))
