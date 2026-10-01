@@ -7,7 +7,7 @@
 - Bots now hunt **coinless wildlife** at every level (wolves, boars, spiders, scorpids, bears). Those mobs were not grind destinations at all because they drop no copper, which left a level-5 bot with nothing but the humanoid camps to walk to. Critters stay excluded.
 - Grind spots are now **shared, not swarmed**: a spot already worked by as many bots as it has room for (a third of its spawn points, never fewer than two) drops out of the pick, so a backlog of bots spreads across the fields instead of stacking on the nearest one.
 - Dinging while grinding no longer freezes a bot for a minute: a spot the bot has outgrown is released at once instead of sitting in the usual 60-second cooldown.
-- Bots stop **camping a creature they cannot reach**. A grind order that never turns into a fight and never gets closer used to be re-issued forever — 67 of 500 fresh bots were frozen at one coordinate for 30+ minutes ordering the same mob 27 times an hour with no kill and no loot. After five such orders the creature goes on the same unreachable list the reach action uses, which also drops its grind destination so the bot walks on.
+- Bots stop **camping a creature they cannot reach**. A grind order that never turns into a fight and never gets closer used to be re-issued forever — 67 of 500 fresh bots were frozen at one coordinate for 30+ minutes ordering the same mob 27 times an hour with no kill and no loot. After five such orders the creature itself goes on the same unreachable list the reach action uses; its kind follows only when a second creature of it strands the bot inside three minutes, so one mob stuck in geometry no longer hides every reachable one of its species (and the grind destination goes with it, so the bot walks on).
 
 ---
 

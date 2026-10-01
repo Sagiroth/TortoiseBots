@@ -58,6 +58,15 @@ namespace ai
         float grindUnreachableBestDist = 0.0f;
         uint32 grindUnreachableOrders = 0;
 
+        // The creature just given up on is never enough to condemn its whole kind: a single
+        // thug spawned inside geometry must not hide every reachable thug in the zone (and the
+        // species is also a grind destination, so the bot would walk off the camp). The kind is
+        // set aside only when a *second, different* creature of it strands the bot inside the
+        // window, mirroring the reach action's two-in-a-row rule.
+        uint32 grindGiveUpEntry = 0;
+        ObjectGuid grindGiveUpEntryTarget;
+        uint32 grindGiveUpEntryMs = 0;
+
         void LogRepeatOrder(Unit* target);
         bool GiveUpOnGrindTarget(Unit* target);
 
