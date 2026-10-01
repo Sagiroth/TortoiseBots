@@ -2483,9 +2483,29 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
     bool const beginnerGrind = (purposeFlag & (uint32)TravelDestinationPurpose::Grind) &&
         info.GetLevel() <= 4 && info.IsMasterlessRandom();
 
+    // A grind destination's own creatures are already bounded by the policy band in
+    // GrindSpotPolicy.h ([botLevel-2, botLevel+1]), so the area average is a second,
+    // coarser veto on top of it. It is the one that bites at level 5: the beginner
+    // exemption above ends exactly there (level <= 4) while the band has just widened
+    // to level 3-6 creatures. Measured on the live stage-3 pool (500 bots, 90 min) at
+    // the level-5 pick centres: of the spawns inside the band and within 1500 yd, 66%
+    // of the level-4+ mobs and 81% of the level-5/6 ones sat in areas rated 6-10 and
+    // died to this single comparison, so level-5 bots ground level 1-3 creatures for
+    // 14-42 XP while the level 5-6 wildlife worth 56-70 lived one area rating away -
+    // 40% of the level-5 bots never got a grind destination at all, and the ones that
+    // did took 27 min to reach level 6 against 16 min for level 4->5.
+    // Autonomous grind therefore gets the same +5 margin that
+    // GrindTravelDestination::IsPossible already applies on the closest point (and
+    // that the quest gate below/above uses), so the two gates agree instead of the
+    // finer band being undone by the coarser average. Owned/hired bots keep the
+    // strict ceiling: their player decides where they hunt.
+    int32 areaCeiling = botLevel;
+    if ((purposeFlag & (uint32)TravelDestinationPurpose::Grind) && info.IsMasterlessRandom())
+        areaCeiling += 5;
+
     if (!beginnerGrind && !(purposeFlag & (uint32)TravelDestinationPurpose::QuestTaker) && !beginnerVendorTrip)
     {
-        if (!areaLevel || (uint32)botLevel < areaLevel) //Skip points that are in a area that is too high level.
+        if (!areaLevel || (uint32)areaCeiling < areaLevel) //Skip points that are in a area that is too high level.
             return false;
     }
 
