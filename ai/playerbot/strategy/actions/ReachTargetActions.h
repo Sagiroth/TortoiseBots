@@ -36,9 +36,13 @@ namespace ai
         uint32 stoodSinceMs = 0;
         float stoodX = 0.0f;
         float stoodY = 0.0f;
+        ObjectGuid stoodTarget;
+        float stoodDist = 0.0f;
+        uint32 lastExecuteMs = 0;
 
         static uint32 const kNoHeadwayMs = 15000;
         static uint32 const kNoMoveMs = 10000;
+        static uint32 const kStandResetMs = 2000;
 
         // A creature that is in evade mode, or that the core has flagged as unable to reach
         // the bot (Creature::IsEvadeBecauseTargetNotReachable), will not come to us and cannot
@@ -94,27 +98,40 @@ namespace ai
             {
                 UpdateMovementState();
 
-                // Stand-still clock: re-anchored only when the bot itself moves, so it measures the
-                // bot's own progress and nothing else (see the give-up block below). Kept out of
-                // that block so the "wait for an approaching enemy" early return cannot leave a
-                // stale anchor behind.
-                {
-                    uint32 const nowMs = WorldTimer::getMSTime();
-                    float const dxStood = bot->GetPositionX() - stoodX;
-                    float const dyStood = bot->GetPositionY() - stoodY;
-                    if (stoodSinceMs == 0 || (dxStood * dxStood + dyStood * dyStood) > 4.0f)
-                    {
-                        stoodX = bot->GetPositionX();
-                        stoodY = bot->GetPositionY();
-                        stoodSinceMs = nowMs;
-                    }
-                }
-
                 // Ignore movement if too far
                 const float distanceToTarget = bot->GetDistance(target);
                 float chaseDist = range;
                 const bool inLos = bot->IsWithinLOSInMap(target, true);
                 const bool isFriend = sServerFacade.IsFriendlyTo(bot, target);
+
+                // Stand-still clock: counts time in which neither the bot nor its target made
+                // headway, and is re-anchored on everything that makes "not moving" mean nothing -
+                // a different reach target, a gap since the last reach attempt (the bot was
+                // resting, looting, travelling or in another engine), the bot being held in place
+                // or busy (rooted, stunned/feared/confused, sitting, casting), the bot taking a
+                // step, or the target closing two yards. Without those resets a bot that stood
+                // still for 10 s while eating would give up on the first tick of its next pull.
+                {
+                    uint32 const nowMs = WorldTimer::getMSTime();
+                    bool const idleGap = lastExecuteMs == 0 || nowMs - lastExecuteMs > kStandResetMs;
+                    bool const held = bot->IsRooted() || bot->HasUnitState(UNIT_STAT_NO_FREE_MOVE) ||
+                        bot->GetStandState() != UNIT_STAND_STATE_STAND ||
+                        bot->IsNonMeleeSpellCasted(true, false, true);
+                    float const dxStood = bot->GetPositionX() - stoodX;
+                    float const dyStood = bot->GetPositionY() - stoodY;
+                    bool const botMoved = (dxStood * dxStood + dyStood * dyStood) > 4.0f;
+                    bool const targetClosed = stoodDist > 0.0f && (stoodDist - distanceToTarget) > 2.0f;
+                    if (stoodSinceMs == 0 || idleGap || held || botMoved || targetClosed ||
+                        stoodTarget != target->getObjectGuid())
+                    {
+                        stoodSinceMs = nowMs;
+                        stoodX = bot->GetPositionX();
+                        stoodY = bot->GetPositionY();
+                        stoodDist = distanceToTarget;
+                        stoodTarget = target->getObjectGuid();
+                    }
+                    lastExecuteMs = nowMs;
+                }
 
                 if (range > 0.0f)
                 {
@@ -182,13 +199,17 @@ namespace ai
                     // NOPATH or incomplete in sight) while ChaseTo still reported success, so nothing
                     // else ever noticed the bot was not moving.
                     bool const cannotBeReached = TargetCannotBeReached(target);
-                    bool const noHeadway = nowMs - noLosSinceMs >= kNoHeadwayMs &&
+                    // A creature that is running (feared or fleeing at low health) is a live fight,
+                    // not a stuck spot: the bot keeps after it instead of abandoning a nearly dead
+                    // mob and blacklisting its kind.
+                    bool const runner = target->HasUnitState(UNIT_STAT_FLEEING | UNIT_STAT_CONFUSED);
+                    bool const noHeadway = !runner && nowMs - noLosSinceMs >= kNoHeadwayMs &&
                         (target->GetVictim() != bot || !inLos || cannotBeReached);
                     bool const outOfReach = range > 0.0f
                         ? distanceToTarget > range * 1.4f
                         : !bot->CanReachWithMeleeAutoAttack(target);
                     bool const fighting = !cannotBeReached && (bot->IsInCombat() || target->GetVictim() == bot);
-                    bool const stoodStill = outOfReach && !fighting && nowMs - stoodSinceMs >= kNoMoveMs;
+                    bool const stoodStill = !runner && outOfReach && !fighting && nowMs - stoodSinceMs >= kNoMoveMs;
 
                     if (noHeadway || stoodStill)
                     {
