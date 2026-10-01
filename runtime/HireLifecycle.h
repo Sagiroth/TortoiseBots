@@ -47,6 +47,11 @@ public:
     bool IsHired(ObjectGuid botGuid) const;
     ObjectGuid GetMaster(ObjectGuid botGuid) const;
 
+    // The hire was confirmed grouped with its master (called from both
+    // Reunite paths). Until this is set the hire is still being provisioned
+    // and the master-departure rule leaves it alone.
+    void MarkGrouped(ObjectGuid botGuid);
+
     // Group hooks (called from the module GroupScript adapter).
     void OnGroupMemberRemoved(Group* group, ObjectGuid guid);
     void OnGroupDisband(Group* group);
@@ -69,6 +74,10 @@ private:
         // dismisses. Zero = master online (or never seen offline).
         time_t masterOfflineSince = 0;
         bool greeted = false;
+        // Set once the hire was seen sharing its master's group (issue #378).
+        // A departure before that is a provisioning artefact, never an end of
+        // hire: only then is a master-less group a dismissal.
+        bool everGrouped = false;
     };
 
     // A dismissed hire whose character is waiting for its asynchronous
@@ -86,6 +95,9 @@ private:
 
     void Dismiss(HiredRecord const& record, char const* reason, bool removeFromGroup = true);
     bool MasterOnline(HiredRecord const& record) const;
+    // Issue #378: the record's master is online but no longer shares the
+    // hire's group, so the hire is over. Pure-rule wrapper (HireDeparturePolicy.h).
+    bool MasterLeftGroup(HiredRecord const& record) const;
     void Reunite(HiredRecord& record, Player* master);
     void SweepGracePeriod(time_t now);
 

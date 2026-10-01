@@ -4,6 +4,7 @@
 #include "BotActivityLease.h"
 #include "CharacterCleanup.h"
 #include "HireDeletionPolicy.h"
+#include "HireDeparturePolicy.h"
 #include "PlayerbotAIStorage.h"
 #include "RandomBotAccountRegistry.h"
 #include "RandomBotPoolReset.h"
@@ -105,11 +106,31 @@ ObjectGuid HireLifecycle::GetMaster(ObjectGuid botGuid) const
     return it->second.masterGuid;
 }
 
+void HireLifecycle::MarkGrouped(ObjectGuid botGuid)
+{
+    auto it = m_hired.find(botGuid.GetCounter());
+    if (it != m_hired.end())
+        it->second.everGrouped = true;
+}
+
 bool HireLifecycle::MasterOnline(HiredRecord const& record) const
 {
     Player* master = sObjectAccessor.FindPlayer(record.masterGuid);
     return master && master->IsInWorld() && master->GetSession() &&
         !master->GetSession()->IsHeadless();
+}
+
+bool HireLifecycle::MasterLeftGroup(HiredRecord const& record) const
+{
+    Player* master = sObjectAccessor.FindPlayer(record.masterGuid);
+    Player* bot = sObjectAccessor.FindPlayer(record.botGuid);
+    // A logged-out master can still be in world for a moment; the recorded
+    // logout grace keeps that hire on the grace path instead.
+    bool masterOnline = MasterOnline(record) && !record.masterOfflineSince;
+    // A hire that is not live (mid-login, a stale session) counts as still
+    // grouped: the runtime-record watchdog owns that case, not this rule.
+    bool inSameGroup = !bot || !bot->IsInWorld() || !master || bot->IsInSameGroupWith(master);
+    return ShouldDismissHireOnGroupDeparture(true, masterOnline, record.everGrouped, inSameGroup);
 }
 
 void HireLifecycle::Dismiss(HiredRecord const& record, char const* reason, bool removeFromGroup)
@@ -150,14 +171,35 @@ void HireLifecycle::OnGroupMemberRemoved(Group* group, ObjectGuid guid)
 {
     if (!group || guid.IsEmpty())
         return;
-    auto it = m_hired.find(guid.GetCounter());
-    if (it == m_hired.end())
+
+    // The removed member is itself a hire: the hire ends. Kicked or left by
+    // choice; master-offline grace is only for disconnects (master object
+    // gone), never for explicit removals. Core has already removed the member
+    // from the group before this hook.
+    if (auto it = m_hired.find(guid.GetCounter()); it != m_hired.end())
+    {
+        HiredRecord record = it->second;
+        Dismiss(record, "removed from group", false);
         return;
-    // Kicked or left by choice: the hire ends. Master-offline grace is only
-    // for disconnects (master object gone), never for explicit removals.
-    // Core has already removed the member from the group before this hook.
-    HiredRecord record = it->second;
-    Dismiss(record, "removed from group", false);
+    }
+
+    // Issue #378: the removed member is the master of one or more hires that
+    // are members of this group. In a group of more than two the group
+    // survives the master's departure, so nothing else would end the hire: the
+    // master stays online, the disconnect grace clock never starts, and the
+    // companions trail a master who is no longer in their party forever. Only
+    // the hire registry is iterated — a pool bot or an alt in the same party
+    // is never a hire and never reaches Dismiss. A logged-out master is left
+    // to the grace timer (MasterLeftGroup gates on the recorded logout).
+    std::vector<HiredRecord> departing;
+    for (auto const& kv : m_hired)
+    {
+        HiredRecord const& record = kv.second;
+        if (record.masterGuid == guid && group->IsMember(record.botGuid) && MasterLeftGroup(record))
+            departing.push_back(record);
+    }
+    for (HiredRecord const& record : departing)
+        Dismiss(record, "master left the group", false);
 }
 
 void HireLifecycle::OnGroupDisband(Group* group)
@@ -174,7 +216,14 @@ void HireLifecycle::OnGroupDisband(Group* group)
             departing.push_back(kv.second);
     }
     for (HiredRecord const& record : departing)
+    {
+        // Issue #378: a two-member party disbands when its master logs out,
+        // but the disconnect grace period owns that hire; only a genuine
+        // disband with an online master ends it here.
+        if (record.masterOfflineSince)
+            continue;
         Dismiss(record, "group disbanded", false);
+    }
 }
 
 void HireLifecycle::OnMasterLogin(Player* master)
@@ -251,6 +300,10 @@ void HireLifecycle::Reunite(HiredRecord& record, Player* master)
     }
     if (bot->IsInSameGroupWith(master))
     {
+        // Issue #378: the hire is confirmed grouped, so a later departure of
+        // the master ends the hire instead of being treated as a provisioning
+        // artefact.
+        record.everGrouped = true;
         if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
         {
             ai::Event followEvent("follow", "", master);
@@ -284,6 +337,19 @@ void HireLifecycle::SweepGracePeriod(time_t now)
             HiredRecord orphan = record;
             it = m_hired.erase(it);
             Dismiss(orphan, "runtime record gone");
+            continue;
+        }
+        // Issue #378 backstop: a master that left the party in a way no group
+        // hook reported (a raid removal before the module registered, a group
+        // change the core handled elsewhere). Only a live hire whose master is
+        // still online and that was once grouped reaches this: a hire still
+        // being provisioned and an offline/logged-out master (grace period)
+        // are excluded by MasterLeftGroup.
+        if (MasterLeftGroup(record))
+        {
+            HiredRecord departing = record;
+            it = m_hired.erase(it);
+            Dismiss(departing, "master left the group");
             continue;
         }
         if (!record.masterOfflineSince)

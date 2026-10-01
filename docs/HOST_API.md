@@ -696,7 +696,11 @@ hire ends its character is deleted (`.bot hire`, `<Mercenary Hire>`, and the
   Hire(), and the deletion guard refuses without it.
 - **Ending the hire.** Every ending path funnels through
   `HireLifecycle::Dismiss`: removal from the group (`HireGroupAdapter` group
-  hooks), group disband, master grace expiry (`SweepGracePeriod`), explicit
+  hooks), the **master** leaving the party while online (the group hooks dismiss
+  the master's hires; a 5 s `SweepGracePeriod` backstop catches a departure no
+  hook reported, e.g. a raid removal — a hire still being provisioned and a
+  logged-out master are excluded, so logout keeps the grace period), group
+  disband, master grace expiry (`SweepGracePeriod`), explicit
   `.bot remove`/`.bot logout` (`DismissNow`), and a vanished runtime record. The
   ledger row is marked `dismissed` first, the master binding and activity lease
   are released, and `BotManager::RemoveBot(guid, false)` logs the character off.

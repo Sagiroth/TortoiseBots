@@ -638,6 +638,9 @@ bool HireProvisionService::ProvisionNow(Player* bot, PendingProvision& pending)
                 bot->GetName(), master->GetName());
             return false;
         }
+        // Issue #378: the hire is confirmed grouped, so leaving the party now
+        // ends the hire (never treated as a provisioning artefact).
+        HireLifecycle::Instance().MarkGrouped(pending.botGuid);
         auto totalElapsedMs =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
         TB_LOG_BASIC("TortoiseBots: hired companion %s (level %u role %u) joined %s (provision %lldms, total %lldms)",
