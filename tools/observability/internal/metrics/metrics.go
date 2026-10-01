@@ -114,6 +114,7 @@ func (r *Registry) RecordHeartbeat(p *model.HeartbeatPayload) {
 	r.stateRatio.WithLabelValues("combat").Set(p.States.Combat)
 	r.stateRatio.WithLabelValues("moving").Set(p.States.Moving)
 	r.stateRatio.WithLabelValues("busy").Set(p.States.Busy)
+	r.stateRatio.WithLabelValues("stalled").Set(p.States.Stalled)
 	r.stateRatio.WithLabelValues("resting").Set(p.States.Resting)
 	r.stateRatio.WithLabelValues("dead").Set(p.States.Dead)
 	r.stateRatio.WithLabelValues("idle").Set(p.States.Idle)
@@ -182,7 +183,7 @@ func (r *Registry) markOffline() {
 	r.grindingGaining.Set(0)
 	r.grindingKills.Set(0)
 	r.grindingCombat.Set(0)
-	for _, state := range []string{"combat", "moving", "busy", "resting", "dead", "idle"} {
+	for _, state := range []string{"combat", "moving", "busy", "stalled", "resting", "dead", "idle"} {
 		r.stateRatio.WithLabelValues(state).Set(0)
 	}
 }

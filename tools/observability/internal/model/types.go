@@ -4,7 +4,7 @@ import "time"
 
 // ProtocolVersion is bumped whenever the C++ -> Go datagram layout changes in
 // a way the daemon must understand. It is carried in every datagram.
-const ProtocolVersion = 6
+const ProtocolVersion = 7
 
 // Anomaly types accepted from the game server. Anything else is rejected so
 // that Prometheus label cardinality stays bounded. STUCK is counter-only
@@ -41,7 +41,7 @@ type BotSnapshot struct {
 	Target      string `json:"target"`
 	TargetLevel uint32 `json:"target_level,omitempty"` // selected-unit target level (0 = none/self)
 	Strategy    string `json:"strategy"`
-	State       string `json:"state"` // "combat", "moving", "resting", "dead", "idle"
+	State       string `json:"state"` // "combat", "moving", "busy", "stalled", "resting", "dead", "idle"
 	LastAction  string `json:"last_action,omitempty"`
 	LastTrigger string `json:"last_trigger,omitempty"`
 	// TravelPurpose/TravelTo describe the active travel destination ("grind",
@@ -74,12 +74,15 @@ type Coordinate struct {
 
 // StateRatios holds the share of time spent across bot macro states. Values
 // are a rolling-window ratio (0.0 - 1.0), not a lifetime average. Busy means
-// standing still but doing something (looting, casting, eating, working a
-// travel target); idle means no observable activity for >= 45 s.
+// standing still but doing real work (looting, casting, eating, or movement
+// in the window); stalled means standing still for >= 45 s with nothing but
+// churn (an active travel target or action-name changes); idle means no
+// observable activity at all for >= 45 s.
 type StateRatios struct {
 	Combat  float64 `json:"combat"`
 	Moving  float64 `json:"moving"`
 	Busy    float64 `json:"busy"`
+	Stalled float64 `json:"stalled"`
 	Resting float64 `json:"resting"`
 	Dead    float64 `json:"dead"`
 	Idle    float64 `json:"idle"`
@@ -154,9 +157,9 @@ type GrindingSummary struct {
 	DeathsPerMin  float64        `json:"deaths_per_min"`
 	PctDied5Min   float64        `json:"pct_died_5min"`
 	// StateCounts is the single authoritative per-state census (roster
-	// states, not the 3-min rolling ratios): combat/moving/busy/resting/
-	// dead/idle counts. The dashboard Activity block renders counts + %
-	// from here; Fleet Health and Grinding no longer duplicate them.
+	// states, not the 3-min rolling ratios): combat/moving/busy/stalled/
+	// resting/dead/idle counts. The dashboard Activity block renders counts
+	// + % from here; Fleet Health and Grinding no longer duplicate them.
 	StateCounts map[string]int `json:"state_counts"`
 	// LevelBands is adaptive: per level while the pool is narrow (e.g.
 	// L1..L7 during launch), widening to 1-9/10-19/.../60 as it spreads.
