@@ -19,6 +19,36 @@ uint32 GetAuctionItemCount(AuctionEntry const& auction)
     Item* item = sAuctionMgr.GetAItem(auction.itemGuidLow);
     return item ? item->GetCount() : 0;
 }
+
+// What a piece changes on the character sheet when it carries no stat the
+// bot's weight scale knows: armour and block for armour, DPS for weapons.
+// ItemStatWeight scores such a piece 0 for every spec but protection paladin
+// and feral tank (only those weight "armor" in ai_playerbot_weightscale_data),
+// so two low-level pieces tie at 0 and the winner used to come from quality +
+// item level - which let the white ilvl-1 starter kit outrank grey drops with
+// ten times the armour. Used only to break an exact tie of the weighted
+// scores, so a piece with a real stat always outranks a bigger stat-less one.
+float ItemSheetValue(ItemPrototype const* proto)
+{
+    if (proto->IsWeapon())
+    {
+        if (proto->Delay <= 0)
+            return 0;
+
+        float best = 0;
+        for (int i = 0; i < MAX_ITEM_PROTO_DAMAGES; ++i)
+        {
+            if (proto->Damage[i].DamageMax == 0)
+                continue;
+
+            best = std::max(best, (proto->Damage[i].DamageMin + proto->Damage[i].DamageMax) / 2.0f / (proto->Delay / 1000.0f));
+        }
+
+        return best;
+    }
+
+    return static_cast<float>(proto->Armor) + static_cast<float>(proto->Block);
+}
 }
 
 std::unordered_map<uint32, std::unordered_set<uint32>> ItemUsageValue::m_reagentItemIdsForCraftingSkills;
@@ -903,9 +933,22 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     }
 
     uint32 oldStatWeight = sRandomItemMgr.ItemStatWeight(bot, oldItem);
-    if (statWeight && oldStatWeight)
+
+    // When the weighted scores tie - the common case for low-level gear, since
+    // armour-only pieces score 0 for nearly every spec - the sheet value breaks
+    // the tie before quality and item level do. A real stat item still outranks
+    // a bigger stat-less one, because only an exact tie reaches it.
+    float const sheetValue = ItemSheetValue(itemProto);
+    float const oldSheetValue = ItemSheetValue(oldItemProto);
+    bool const weightsTied = statWeight == oldStatWeight;
+
+    if (!weightsTied)
     {
         shouldEquip = statWeight >= oldStatWeight;
+    }
+    else if (sheetValue != oldSheetValue)
+    {
+        shouldEquip = sheetValue > oldSheetValue;
     }
     else
     {
@@ -915,11 +958,21 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     if (AI_VALUE2_EXISTS(ForceItemUsage, "force item usage", itemProto->ItemId, ForceItemUsage::FORCE_USAGE_NONE) == ForceItemUsage::FORCE_USAGE_EQUIP) //New item is forced. Always equip it.
         return ItemUsage::ITEM_USAGE_EQUIP;
 
+    // Wrong armour class for the spec still has to win the compare below, but it
+    // must get the chance to. The spec armour sets describe the endgame class;
+    // below the level a class can wear its best armour the bot is dressed in the
+    // creation kit (a protection warrior starts in cloth), and demanding both a
+    // higher subclass and a strictly higher stat weight rejected exactly the
+    // upgrades that fit those slots. Legality stays with CanUseItem above - this
+    // is only a preference.
+    //
+    // A stat advantage alone must not buy the swap: the ARMOR case below accepts
+    // a higher stat weight on its own, so without the sheet floor a plate wearer
+    // would trade hundreds of armour for a better-statted cloth piece. A wrong
+    // armour class is therefore only ever allowed while it gives up no armour.
     if (itemProto->Class == ITEM_CLASS_ARMOR && !armorForSpec)
     {
-        if (oldItemProto->Class != ITEM_CLASS_ARMOR ||
-            itemProto->SubClass >= oldItemProto->SubClass ||
-            statWeight <= oldStatWeight)
+        if (oldItemProto->Class != ITEM_CLASS_ARMOR || sheetValue < oldSheetValue)
             return ItemUsage::ITEM_USAGE_NONE;
 
         shouldEquip = true;
@@ -948,9 +1001,11 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     bool isBetter = false;
     if (statWeight > oldStatWeight)
         isBetter = true;
-    else if (statWeight == oldStatWeight && itemProto->Quality > oldItemProto->Quality)
+    else if (weightsTied && sheetValue != oldSheetValue)
+        isBetter = sheetValue > oldSheetValue;
+    else if (weightsTied && itemProto->Quality > oldItemProto->Quality)
         isBetter = true;
-    else if (statWeight == oldStatWeight && itemProto->Quality == oldItemProto->Quality && itemProto->ItemLevel > oldItemProto->ItemLevel)
+    else if (weightsTied && itemProto->Quality == oldItemProto->Quality && itemProto->ItemLevel > oldItemProto->ItemLevel)
         isBetter = true;
 
     Item* item = CurrentItem(itemProto, bot);
