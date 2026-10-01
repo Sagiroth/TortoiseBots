@@ -839,6 +839,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
 Engine* AiFactory::createCombatEngine(Player* player, PlayerbotAI* const facade, AiObjectContext* AiObjectContext)
 {
 	Engine* engine = new Engine(facade, AiObjectContext, BotState::BOT_STATE_COMBAT);
+    facade->SetEngine(BotState::BOT_STATE_COMBAT, engine);
     AddDefaultCombatStrategies(player, facade, engine);
     return engine;
 }
@@ -1200,6 +1201,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
 Engine* AiFactory::createNonCombatEngine(Player* player, PlayerbotAI* const facade, AiObjectContext* AiObjectContext)
 {
 	Engine* nonCombatEngine = new Engine(facade, AiObjectContext, BotState::BOT_STATE_NON_COMBAT);
+    facade->SetEngine(BotState::BOT_STATE_NON_COMBAT, nonCombatEngine);
     AddDefaultNonCombatStrategies(player, facade, nonCombatEngine);
 	return nonCombatEngine;
 }
@@ -1405,6 +1407,7 @@ void AiFactory::AddDefaultDeadStrategies(Player* player, PlayerbotAI* const faca
 Engine* AiFactory::createDeadEngine(Player* player, PlayerbotAI* const facade, AiObjectContext* AiObjectContext)
 {
     Engine* deadEngine = new Engine(facade, AiObjectContext, BotState::BOT_STATE_DEAD);
+    facade->SetEngine(BotState::BOT_STATE_DEAD, deadEngine);
     AddDefaultDeadStrategies(player, facade, deadEngine);
     return deadEngine;
 }
@@ -1606,6 +1609,7 @@ void AiFactory::AddDefaultReactionStrategies(Player* player, PlayerbotAI* const 
 ReactionEngine* AiFactory::createReactionEngine(Player* player, PlayerbotAI* const facade, AiObjectContext* AiObjectContext)
 {
     ReactionEngine* reactionEngine = new ReactionEngine(facade, AiObjectContext, BotState::BOT_STATE_REACTION);
+    facade->SetEngine(BotState::BOT_STATE_REACTION, reactionEngine);
     AddDefaultReactionStrategies(player, facade, reactionEngine);
     return reactionEngine;
 }

@@ -27,11 +27,20 @@ float RpgActionMultiplier::GetValue(Action* action)
 
 void RpgStrategy::OnStrategyAdded(BotState state)
 {
-    ai->ChangeStrategy("+rpg quest,+rpg vendor,+rpg explore,+rpg maintenance,+rpg player,+rpg bg,+rpg guild", state);
+    // Progression-only children. This cascade is now actually live (the engine
+    // is registered before its defaults are attached, see PlayerbotAI::SetEngine),
+    // so the family has to be the one the pool may run unattended: quest travel
+    // and the town errands (vendor/explore/maintenance) that every bot needs.
+    // "rpg player" and "rpg guild" are deliberately not here - they act on real
+    // players (trade windows and duel popups from RpgTradeUsefulAction /
+    // RpgDuelAction, guild-charter petition offers from PetitionOfferNearbyAction,
+    // 10 s per charter) and must stay opt-in. "rpg bg" is inert: its only trigger
+    // needs the "free bg join" action, which no action context creates.
+    ai->ChangeStrategy("+rpg quest,+rpg vendor,+rpg explore,+rpg maintenance", state);
 }
 void RpgStrategy::OnStrategyRemoved(BotState state)
 {
-    ai->ChangeStrategy("-rpg quest,-rpg vendor,-rpg explore,-rpg maintenance,-rpg player,-rpg bg,-rpg guild", state);
+    ai->ChangeStrategy("-rpg quest,-rpg vendor,-rpg explore,-rpg maintenance", state);
 }
 
 void RpgStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
