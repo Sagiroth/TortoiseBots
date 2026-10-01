@@ -14,6 +14,7 @@
 using ai::GetGrindLevelBand;
 using ai::GrindLevelBand;
 using ai::GrindLevelFits;
+using ai::GrindPreyAllowed;
 
 namespace
 {
@@ -72,7 +73,7 @@ int main()
 
         // Level 60: high-level zones, same shape.
         GrindLevelBand const l60 = Ladder(60);
-        CHECK(l60.minLevel == 58 && l60.maxLevel == 61);
+        CHECK(l60.minLevel == 58 && l60.maxLevel == 62);
         std::cout << "  [PASS] level 6 / 8 / 60 windows step with the bot\n";
     }
 
@@ -134,6 +135,27 @@ int main()
             CHECK(band.maxLevel >= 21);
         }
         std::cout << "  [PASS] ladder band holds at every gear condition\n";
+    }
+
+    // -------------------------------------------------------------
+    // Test 6: coinless wildlife is prey for autonomous bots, critters never are
+    // -------------------------------------------------------------
+    {
+        // Copper-bearing creatures always were grind prey.
+        CHECK(GrindPreyAllowed(7, false, true, false));
+        CHECK(GrindPreyAllowed(7, false, false, false));
+
+        // Coinless wildlife (wolves, boars, spiders): autonomous bots take it at any
+        // level, owned bots keep the copper-only rule (bar the beginner allowance).
+        CHECK(GrindPreyAllowed(0, false, true, false));
+        CHECK(!GrindPreyAllowed(0, false, false, false));
+        CHECK(GrindPreyAllowed(0, false, false, true));
+
+        // Critters pay no XP: never worth a walk, whoever the bot is.
+        CHECK(!GrindPreyAllowed(0, true, true, false));
+        CHECK(!GrindPreyAllowed(0, true, true, true));
+        CHECK(!GrindPreyAllowed(0, true, false, true));
+        std::cout << "  [PASS] coinless wildlife in, critters out\n";
     }
 
     std::cout << "All grind-spot level-band tests passed.\n";

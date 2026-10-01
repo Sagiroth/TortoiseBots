@@ -641,7 +641,12 @@ bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
     if (!GrindLevelFits(band, (int32)cInfo->level_max)) //level 5: [3,6] where it used to be [3,3]
         return false;
 
-    if (cInfo->gold_min == 0 && (!beginner || cInfo->type == CREATURE_TYPE_CRITTER))
+    // Autonomous bots hunt coinless wildlife (wolves, boars, spiders, scorpids)
+    // at every level: those carry no copper but they pay in XP, grey vendor loot
+    // and skins, and they are the open-field hunt that keeps bots out of the
+    // humanoid camps. Critters (zero XP) are never worth the walk. Owned bots keep
+    // the old copper-only rule, with the beginner allowance they always had.
+    if (!GrindPreyAllowed((int32)cInfo->gold_min, cInfo->type == CREATURE_TYPE_CRITTER, info.IsMasterlessRandom(), beginner))
         return false;
 
     if (cInfo->rank > CREATURE_ELITE_NORMAL && !info.GetBoolValue("can fight elite"))

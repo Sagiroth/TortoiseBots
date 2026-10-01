@@ -70,4 +70,25 @@ namespace ai
     {
         return creatureLevelMax >= band.minLevel && creatureLevelMax <= band.maxLevel;
     }
+
+    // Whether a creature is worth being a grind *destination* at all.
+    //
+    // Copper-bearing creatures always were. Coinless ones were excluded because
+    // they carry no coin loot - but wildlife (wolves, boars, spiders, scorpids,
+    // bears) is the open-field hunt of every level: it pays XP, grey vendor loot
+    // and skins, and it is what keeps a bot out of the crowded humanoid camps.
+    // So autonomous bots take it at every level; owned/hired bots keep the
+    // copper-only rule their player's errands were built around, plus the
+    // beginner allowance they always had. Critters pay no XP at all and are
+    // never worth a walk.
+    inline bool GrindPreyAllowed(std::int32_t goldMin, bool critter, bool autonomous, bool beginner)
+    {
+        if (goldMin > 0)
+            return true;
+
+        if (critter)
+            return false;
+
+        return autonomous || beginner;
+    }
 }
