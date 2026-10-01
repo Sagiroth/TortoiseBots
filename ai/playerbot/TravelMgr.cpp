@@ -2,6 +2,7 @@
 #include "playerbot/TravelRoutePolicy.h"
 #include "playerbot/GrindSpotPolicy.h"
 #include <numeric>
+#include <mutex>
 #include <iomanip>
 
 #include "playerbot/strategy/values/SharedValueContext.h"
@@ -2611,6 +2612,14 @@ namespace
         static std::unordered_map<TravelDestination*, uint32>* demand = new std::unordered_map<TravelDestination*, uint32>();
         return *demand;
     }
+
+    // Bots on different maps update on different map threads, so every access
+    // to the shared demand map goes through this lock. Leaked like the map.
+    std::mutex& GrindSpotDemandLock()
+    {
+        static std::mutex* lock = new std::mutex();
+        return *lock;
+    }
 }
 
 void TravelMgr::AcquireGrindSpot(TravelDestination* destination)
@@ -2618,6 +2627,7 @@ void TravelMgr::AcquireGrindSpot(TravelDestination* destination)
     if (!destination || destination->GetPurpose() != TravelDestinationPurpose::Grind)
         return;
 
+    std::lock_guard<std::mutex> guard(GrindSpotDemandLock());
     GrindSpotDemand()[destination]++;
 }
 
@@ -2626,6 +2636,7 @@ void TravelMgr::ReleaseGrindSpot(TravelDestination* destination)
     if (!destination || destination->GetPurpose() != TravelDestinationPurpose::Grind)
         return;
 
+    std::lock_guard<std::mutex> guard(GrindSpotDemandLock());
     auto it = GrindSpotDemand().find(destination);
     if (it == GrindSpotDemand().end())
         return;
@@ -2640,6 +2651,7 @@ bool TravelMgr::IsGrindSpotCrowded(TravelDestination* destination) const
     // a forty-spawn field is not full with twelve. The floor of two lets a bot always
     // join a spot a single other bot is working.
     uint32 const capacity = GrindSpotCapacity(destination->GetSize());
+    std::lock_guard<std::mutex> guard(GrindSpotDemandLock());
     auto it = GrindSpotDemand().find(destination);
 
     return it != GrindSpotDemand().end() && it->second >= capacity;
