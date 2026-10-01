@@ -157,7 +157,10 @@ namespace ai
         virtual bool Execute(Event& event) override;
 
     protected:
-        // Issue #378: an upkeep buff is not worth its mana while the bot is low.
+        // Issue #378: out of combat an upkeep buff is not worth its mana while the
+        // bot is below its floor. Combat casts (seals, totems, shields, charge
+        // re-applies) are never gated. Percentage-cost spells and shapeshift forms
+        // are handled inside; see the .cpp for the exemptions.
         bool HasManaForBuff();
 
         // Issue #359: an upkeep buff has no retry cooldown of its own. Its trigger

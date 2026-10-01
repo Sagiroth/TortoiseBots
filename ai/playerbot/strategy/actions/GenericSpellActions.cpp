@@ -293,33 +293,57 @@ bool CastAuraSpellAction::isUseful()
 
 bool CastBuffSpellAction::isUseful()
 {
+    // Issue #378: the mana floor and the retry window are upkeep rules. Combat
+    // casts of the same spells (seals, totems, Mana Shield, Earth Shield, an
+    // Inner Fire re-apply) must never be held back by them.
     if (!bot->IsInCombat())
     {
         Unit* target = GetTarget();
         if (target && lastAttemptTime && target->getObjectGuid() == lastAttemptTarget &&
             time(0) - lastAttemptTime < (time_t)BUFF_RETRY_COOLDOWN)
             return false;
+
+        if (!HasManaForBuff())
+            return false;
     }
 
-    return CastAuraSpellAction::isUseful() && HasManaForBuff();
+    return CastAuraSpellAction::isUseful();
 }
 
 bool CastBuffSpellAction::HasManaForBuff()
 {
     const SpellEntry* const spellInfo = sServerFacade.LookupSpellInfo(GetSpellID());
-    // Only mana upkeep buffs are held back. Stances, forms, stealth and the
-    // zero-cost toggles are free, and spells on a recovery timer are deliberate
-    // cooldown abilities (Ice Block, Feign Death, Dash...) that must stay usable
-    // whatever the mana pool looks like.
-    if (!spellInfo || spellInfo->powerType != POWER_MANA || !spellInfo->manaCost || spellInfo->GetRecoveryTime())
+    // Only mana upkeep buffs are held back. Spells on a recovery timer are
+    // deliberate cooldown abilities (Ice Block, Feign Death, Dash...) that must
+    // stay usable whatever the mana pool looks like.
+    if (!spellInfo || spellInfo->powerType != POWER_MANA || spellInfo->GetRecoveryTime())
         return true;
 
     if (bot->GetPowerType() != POWER_MANA)
         return true;
 
+    // Shapeshift forms are movement/combat modes, not upkeep buffs. They are
+    // paid for with a percentage of base mana (Bear/Cat 35%, Travel/Aquatic 13%)
+    // but must stay castable at any mana level, or the druid is stuck in caster
+    // form until it regenerates.
+    for (uint8 i = 0; i < MAX_EFFECT_INDEX; ++i)
+        if (spellInfo->EffectApplyAuraName[i] == SPELL_AURA_MOD_SHAPESHIFT)
+            return true;
+
     // Aspects are permanent, mutually exclusive mode toggles rather than upkeep
     // buffs - a hunter must stay able to switch them at any mana level.
     if (GetSpellName().find("aspect of ") == 0)
+        return true;
+
+    // Stances, stealth and the other zero-cost toggles are free. Percentage-cost
+    // spells (Blessing of Salvation 8%, Dampen/Amplify Magic 6%) store manaCost 0
+    // and their price in ManaCostPercentage; the core charges
+    // ManaCostPercentage * GetCreateMana() / 100 for them (Spell::CalculateManaCost),
+    // so they must not slip past the floor as "free".
+    uint32 const manaCost = spellInfo->manaCost
+        ? spellInfo->manaCost
+        : uint32(spellInfo->ManaCostPercentage) * bot->GetCreateMana() / 100;
+    if (!manaCost)
         return true;
 
     uint8 const minMana = spellInfo->procCharges ? CHARGE_BUFF_MIN_MANA_PERCENT : BUFF_MIN_MANA_PERCENT;
