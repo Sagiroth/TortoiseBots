@@ -15,6 +15,7 @@ using ai::GetGrindLevelBand;
 using ai::GrindLevelBand;
 using ai::GrindLevelFits;
 using ai::GrindPreyAllowed;
+using ai::GrindSpotCapacity;
 
 namespace
 {
@@ -161,6 +162,20 @@ int main()
         CHECK(!GrindPreyAllowed(0, true, true, true));
         CHECK(!GrindPreyAllowed(0, true, false, true));
         std::cout << "  [PASS] coinless wildlife in, critters out\n";
+    }
+
+    // -------------------------------------------------------------
+    // Test 7: a spot only holds as many bots as it has spawns to give
+    // -------------------------------------------------------------
+    {
+        CHECK(GrindSpotCapacity(0) == 2);
+        CHECK(GrindSpotCapacity(1) == 2);   // Garrick Padfoot's single spawn
+        CHECK(GrindSpotCapacity(6) == 2);
+        CHECK(GrindSpotCapacity(9) == 3);
+        CHECK(GrindSpotCapacity(39) == 13); // Defias Cutpurse, Goldshire
+        CHECK(GrindSpotCapacity(43) == 14); // Young Wolf, Northshire
+        CHECK(GrindSpotCapacity(52) == 17); // Stonetusk Boar, Elwynn
+        std::cout << "  [PASS] per-spot capacity follows the spawn count\n";
     }
 
     std::cout << "All grind-spot level-band tests passed.\n";

@@ -940,10 +940,23 @@ void TravelTarget::SetTarget(TravelDestination* tDestination1, WorldPosition* wP
     if (dynamic_cast<TemporaryTravelDestination*>(tDestination) && tDestination1 != tDestination)
         delete tDestination;
 
+    if (tDestination != tDestination1)
+    {
+        sTravelMgr.ReleaseGrindSpot(tDestination);
+        sTravelMgr.AcquireGrindSpot(tDestination1);
+    }
+
     wPosition = wPosition1;
     tDestination = tDestination1;
 
     SetStatus(TravelStatus::TRAVEL_STATUS_TRAVEL);
+}
+
+TravelTarget::~TravelTarget()
+{
+    // A bot that logs out must not leave its grind spot counted as taken, or the
+    // pool would slowly fill the world with "crowded" spots nobody is on.
+    sTravelMgr.ReleaseGrindSpot(tDestination);
 }
 
 void TravelTarget::CopyTarget(TravelTarget* const target) {
@@ -2552,6 +2565,68 @@ void TravelMgr::ShuffleTravelPoints(std::vector<TravelPoint>&points)
 
     WeightedShuffle(points.begin(), points.end(), weights.begin(), weights.end(), gen);
     */
+}
+
+namespace
+{
+    // Destination -> travel targets currently holding it. Deliberately never
+    // destroyed: pool bots log out during shutdown, and their TravelTarget
+    // destructors may run after static destruction.
+    std::unordered_map<TravelDestination*, uint32>& GrindSpotDemand()
+    {
+        static std::unordered_map<TravelDestination*, uint32>* demand = new std::unordered_map<TravelDestination*, uint32>();
+        return *demand;
+    }
+}
+
+void TravelMgr::AcquireGrindSpot(TravelDestination* destination)
+{
+    if (!destination || destination->GetPurpose() != TravelDestinationPurpose::Grind)
+        return;
+
+    GrindSpotDemand()[destination]++;
+}
+
+void TravelMgr::ReleaseGrindSpot(TravelDestination* destination)
+{
+    if (!destination || destination->GetPurpose() != TravelDestinationPurpose::Grind)
+        return;
+
+    auto it = GrindSpotDemand().find(destination);
+    if (it == GrindSpotDemand().end())
+        return;
+
+    if (--it->second == 0)
+        GrindSpotDemand().erase(it);
+}
+
+bool TravelMgr::IsGrindSpotCrowded(TravelDestination* destination) const
+{
+    // Room for what the spot actually is: a two-spawn cave does not feed five bots,
+    // a forty-spawn field is not full with twelve. The floor of two lets a bot always
+    // join a spot a single other bot is working.
+    uint32 const capacity = GrindSpotCapacity(destination->GetSize());
+    auto it = GrindSpotDemand().find(destination);
+
+    return it != GrindSpotDemand().end() && it->second >= capacity;
+}
+
+void TravelMgr::DropCrowdedGrindPoints(PartitionedTravelList& points) const
+{
+    for (auto it = points.begin(); it != points.end();)
+    {
+        std::vector<TravelPoint>& list = it->second;
+
+        list.erase(std::remove_if(list.begin(), list.end(), [this](const TravelPoint& point)
+        {
+            TravelDestination* destination = std::get<0>(point);
+            return destination && destination->GetPurpose() == TravelDestinationPurpose::Grind && IsGrindSpotCrowded(destination);
+        }), list.end());
+
+        // Drop the range with it: SetBestTarget's "skip to a longer range" roll keys
+        // off the last range, and an empty one would make it abandon a pick.
+        it = list.empty() ? points.erase(it) : std::next(it);
+    }
 }
 
 void TravelMgr::SetNullTravelTarget(TravelTarget* target) const

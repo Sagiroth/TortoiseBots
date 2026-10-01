@@ -98,4 +98,14 @@ namespace ai
 
         return autonomous || beginner;
     }
+
+    // How many bots one grind destination may hold before the picker sends the next
+    // bot elsewhere: a third of its spawn points, never below two (a bot may always
+    // join a spot a single other bot is working). Without this every bot in a zone
+    // walks to the same nearest spot - the destination shuffle only spreads them
+    // inside the nearest distance range.
+    inline std::uint32_t GrindSpotCapacity(std::uint32_t spawnPoints)
+    {
+        return std::max<std::uint32_t>(2, spawnPoints / 3);
+    }
 }
