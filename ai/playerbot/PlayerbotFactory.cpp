@@ -2665,53 +2665,45 @@ void PlayerbotFactory::InitTradeSkills()
     uint16 secondSkill = sRandomBotFacade.GetValue(bot, "secondSkill");
     if (!firstSkill || !secondSkill)
     {
-        std::vector<uint32> firstSkills;
-        std::vector<uint32> secondSkills;
+        // Every random bot owns at least one gathering primary: a craft is dead
+        // weight without the gathering that feeds its reagents, it can never skill
+        // up or earn. The second primary is either that fed craft or a second
+        // gathering, never a second craft. The pairs are explicit because two
+        // independent candidate lists (the previous shape) cross-product into
+        // invalid rolls: warrior/paladin Blacksmithing + Engineering, and
+        // rogue/hunter/druid/shaman Engineering + Leatherworking.
+        using SkillPair = std::pair<uint32, uint32>;
+        std::vector<SkillPair> pairs;
         switch (bot->GetClass())
         {
         case CLASS_WARRIOR:
         case CLASS_PALADIN:
-            firstSkills.push_back(SKILL_BLACKSMITHING);
-            secondSkills.push_back(SKILL_ENGINEERING);
+            pairs.push_back(SkillPair(SKILL_MINING, SKILL_BLACKSMITHING));
+            pairs.push_back(SkillPair(SKILL_MINING, SKILL_ENGINEERING));
             break;
         case CLASS_SHAMAN:
         case CLASS_DRUID:
         case CLASS_HUNTER:
         case CLASS_ROGUE:
-            firstSkills.push_back(SKILL_SKINNING);
-            firstSkills.push_back(SKILL_ENGINEERING);
-            secondSkills.push_back(SKILL_LEATHERWORKING);
+            pairs.push_back(SkillPair(SKILL_SKINNING, SKILL_LEATHERWORKING));
+            pairs.push_back(SkillPair(SKILL_MINING, SKILL_ENGINEERING));
+            pairs.push_back(SkillPair(SKILL_SKINNING, SKILL_MINING));
+            break;
+        default:
+            // Casters keep the four pairs they always had; none of them pairs two
+            // crafts. (0, 6) used to leave three casters in seven without any
+            // profession (firstSkill and secondSkill stayed 0, SetRandomSkill(0)
+            // is a no-op).
+            pairs.push_back(SkillPair(SKILL_HERBALISM, SKILL_ALCHEMY));
+            pairs.push_back(SkillPair(SKILL_HERBALISM, SKILL_MINING));
+            pairs.push_back(SkillPair(SKILL_MINING, SKILL_SKINNING));
+            pairs.push_back(SkillPair(SKILL_HERBALISM, SKILL_SKINNING));
             break;
         }
 
-        if (firstSkills.empty() || secondSkills.empty())
-        {
-            // Four pairs below: (0, 6) left three casters in seven without any profession
-            // (firstSkill and secondSkill stayed 0, SetRandomSkill(0) is a no-op).
-            switch (urand(0, 3))
-            {
-            case 0:
-                firstSkill = SKILL_HERBALISM;
-                secondSkill = SKILL_ALCHEMY;
-                break;
-            case 1:
-                firstSkill = SKILL_HERBALISM;
-                secondSkill = SKILL_MINING;
-                break;
-            case 2:
-                firstSkill = SKILL_MINING;
-                secondSkill = SKILL_SKINNING;
-                break;
-            case 3:
-                firstSkill = SKILL_HERBALISM;
-                secondSkill = SKILL_SKINNING;
-            }
-        }
-        else
-        {
-            firstSkill = firstSkills[urand(0, firstSkills.size() - 1)];
-            secondSkill = secondSkills[urand(0, secondSkills.size() - 1)];
-        }
+        SkillPair const& pair = pairs[urand(0, pairs.size() - 1)];
+        firstSkill = pair.first;
+        secondSkill = pair.second;
 
         sRandomBotFacade.SetValue(bot, "firstSkill", firstSkill);
         sRandomBotFacade.SetValue(bot, "secondSkill", secondSkill);
