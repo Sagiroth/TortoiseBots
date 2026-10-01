@@ -3,7 +3,10 @@
 ## Unreleased
 
 ### World & Bot Population
-- Autonomous bots now level on a **grind-spot ladder**: a grind destination is only accepted while its creatures sit within two levels below and one above the bot, so a bot walks on to the next field or zone as soon as it outlevels a spot — on foot, by taxi, boat or zeppelin, never by teleport. Before, the destination window always pointed at mobs two to ten levels below the bot and collapsed to exactly level-3 creatures at level 5, which is why 157 of 500 fresh bots were parked at level 5 after 90 minutes. Owned/hired bots are unchanged.
+- Autonomous bots now level on a **grind-spot ladder**: a grind destination is only accepted while its creatures sit within two levels below and one or two above the bot, so a bot walks on to the next field or zone as soon as it outlevels a spot — on foot, by taxi, boat or zeppelin, never by teleport. Before, the destination window always pointed at mobs two to ten levels below the bot and collapsed to exactly level-3 creatures at level 5, which is why 157 of 500 fresh bots were parked at level 5 after 90 minutes. Owned/hired bots are unchanged.
+- Bots now hunt **coinless wildlife** at every level (wolves, boars, spiders, scorpids, bears). Those mobs were not grind destinations at all because they drop no copper, which left a level-5 bot with nothing but the humanoid camps to walk to. Critters stay excluded.
+- Grind spots are now **shared, not swarmed**: a spot already worked by as many bots as it has room for (a third of its spawn points, never fewer than two) drops out of the pick, so a backlog of bots spreads across the fields instead of stacking on the nearest one.
+- Dinging while grinding no longer freezes a bot for a minute: a spot the bot has outgrown is released at once instead of sitting in the usual 60-second cooldown.
 
 ---
 
