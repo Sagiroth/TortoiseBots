@@ -223,6 +223,10 @@ void ai::AttackAnythingAction::LogRepeatOrder(Unit* target)
 static uint32 const kGrindGiveUpOrders = 5;
 static uint32 const kGrindGiveUpMinSpanMs = 60 * IN_MILLISECONDS;
 
+// Two stranded creatures of one kind this close together is a bad camp, not bad luck; the reach
+// action uses the same three minutes for its spot rule.
+static uint32 const kGrindGiveUpEntryWindowMs = 3 * MINUTE * IN_MILLISECONDS;
+
 bool ai::AttackAnythingAction::GiveUpOnGrindTarget(Unit* target)
 {
     if (!target || !target->IsCreature())
@@ -269,7 +273,28 @@ bool ai::AttackAnythingAction::GiveUpOnGrindTarget(Unit* target)
 
     uint32 const expiresAt = nowMs + 5 * MINUTE * IN_MILLISECONDS;
     context->GetValue<std::map<ObjectGuid, uint32>&>("unreachable targets")->Get()[grindUnreachableTarget] = expiresAt;
-    context->GetValue<std::map<uint32, uint32>&>("unreachable entries")->Get()[target->GetEntry()] = expiresAt;
+
+    // Never the whole kind on one creature. "unreachable entries" ignores every creature of the
+    // entry in target selection and drops the entry as a grind destination, so one thug stuck
+    // behind the abbey fence would hide the entire species for five minutes - quest targets
+    // included. A second, different creature of the same kind stranded inside the window is
+    // what makes the kind itself suspect; then set it aside, exactly as the reach action does
+    // on its second give-up in three minutes.
+    uint32 const entry = target->GetEntry();
+    if (grindGiveUpEntry == entry && grindGiveUpEntryTarget != grindUnreachableTarget &&
+        WorldTimer::getMSTimeDiff(grindGiveUpEntryMs, nowMs) <= kGrindGiveUpEntryWindowMs)
+    {
+        context->GetValue<std::map<uint32, uint32>&>("unreachable entries")->Get()[entry] = expiresAt;
+        grindGiveUpEntry = 0;
+        grindGiveUpEntryTarget = ObjectGuid();
+        grindGiveUpEntryMs = 0;
+    }
+    else
+    {
+        grindGiveUpEntry = entry;
+        grindGiveUpEntryTarget = grindUnreachableTarget;
+        grindGiveUpEntryMs = nowMs;
+    }
 
     // Drop the order with the creature so the next pick starts from a clean
     // slate instead of re-arming the target we just blacklisted. CurrentTargetValue
