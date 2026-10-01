@@ -16,8 +16,15 @@ static bool IsFixedRewardUpgrade(AiObjectContext* context, Quest const* quest)
     return false;
 }
 
-bool AcceptAllQuestsAction::ProcessQuest(Player* requester, Quest const* quest, WorldObject* questGiver)
+//The quest-log policy this action applies before it takes a quest. Exposed so
+//the idle nearby-service rule can ask a giver the same question instead of
+//walking to one whose only quest is blocked here (breadcrumbs below level 5,
+//CLUCK, the hardcore challenge, the Tortoise rogue quests, grey quests with a
+//useless reward) - one policy, so the two cannot drift.
+bool AcceptAllQuestsAction::WouldAcceptQuest(PlayerbotAI* ai, Player* bot, Quest const* quest, WorldObject* questGiver)
 {
+    AiObjectContext* context = ai->GetAiObjectContext();
+
     // Breadcrumb quests that lead bots out of the starting zone into dangerous territory.
     // Block until level 5 when the bot is actually ready to move on.
     static const std::unordered_set<uint32> startingZoneBreadcrumbs = {
@@ -66,6 +73,41 @@ bool AcceptAllQuestsAction::ProcessQuest(Player* requester, Quest const* quest, 
         if (!AI_VALUE2(bool, "need quest reward", (int32)quest->GetQuestId()) && !IsFixedRewardUpgrade(context, quest))
             return false;
     }
+
+    return true;
+}
+
+//Any quest in this giver's menu that WouldAcceptQuest() accepts and the bot can
+//pick up right now. The idle nearby-service rule walks to a giver only when this
+//is true, so it cannot park itself at a giver whose quests are all blocked.
+bool AcceptAllQuestsAction::OffersAcceptableQuest(PlayerbotAI* ai, Player* bot, WorldObject* questGiver)
+{
+    if (!questGiver)
+        return false;
+
+    bot->PrepareQuestMenu(questGiver->getObjectGuid());
+    QuestMenu& menu = bot->PlayerTalkClass->GetQuestMenu();
+
+    for (uint32 i = 0; i < menu.MenuItemCount(); ++i)
+    {
+        QuestMenuItem const& item = menu.GetItem(i);
+
+        if (item.m_qIcon != DIALOG_STATUS_AVAILABLE) //Only what the bot could take now.
+            continue;
+
+        Quest const* quest = sObjectMgr.GetQuestTemplate(item.m_qId);
+
+        if (quest && WouldAcceptQuest(ai, bot, quest, questGiver))
+            return true;
+    }
+
+    return false;
+}
+
+bool AcceptAllQuestsAction::ProcessQuest(Player* requester, Quest const* quest, WorldObject* questGiver)
+{
+    if (!WouldAcceptQuest(ai, bot, quest, questGiver))
+        return false;
 
     if (AcceptQuest(requester, quest, questGiver->getObjectGuid()))
     {
@@ -266,6 +308,12 @@ bool QuestDetailsAction::Execute(Event& event)
     if (bot->CanAddQuest(qInfo, false))
     {
         bot->AddQuest(qInfo, requester);
+
+        // The gossip/quest-details path is the one accept that used to be
+        // invisible in bot_events.csv (the emote-time hello makes the core send
+        // the details page for a single-entry quest menu). Log it under the same
+        // name QuestAction::AcceptQuest uses so the quest ledger counts it.
+        sPlayerbotAIConfig.logEvent(ai, "AcceptQuestAction", qInfo->GetTitle(), std::to_string(qInfo->GetQuestId()));
 
         if (bot->CanCompleteQuest(quest))
             bot->CompleteQuest(quest);

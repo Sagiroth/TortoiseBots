@@ -4,6 +4,7 @@
 #include "Mail/Mail.h"
 #include "MapNodes/MasterPlayer.h"
 #include "playerbot/strategy/values/GuildValues.h"
+#include "playerbot/strategy/actions/AcceptQuestAction.h"
 #include "playerbot/strategy/triggers/RpgTriggers.h"
 #include "playerbot/RandomBotFacade.h"
 #include "playerbot/playerbot.h"
@@ -77,6 +78,27 @@ static bool VendorServiceNeeded(PlayerbotAI* ai)
     return NearbyServiceBagPressure(AI_VALUE(uint8, "bag space")) || AI_VALUE(bool, "should sell");
 }
 
+//A finished quest the bot can actually be paid for. A quest that is complete but
+//cannot be rewarded (full bags, a money requirement) is left to the travel layer
+//and the log upkeep instead of parking the bot at the taker.
+bool ai::HasRewardableFinishedQuest(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+
+    for (auto& [questId, status] : bot->getQuestStatusMap())
+    {
+        if (status.m_rewarded || status.m_status != QUEST_STATUS_COMPLETE)
+            continue;
+
+        Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
+
+        if (quest && bot->CanRewardQuest(quest, false))
+            return true;
+    }
+
+    return false;
+}
+
 GuidPosition ai::NearbyServiceTarget(PlayerbotAI* ai)
 {
     Player* bot = ai->GetBot();
@@ -97,11 +119,13 @@ GuidPosition ai::NearbyServiceTarget(PlayerbotAI* ai)
     if (!AI_VALUE(bool, "can move around"))
         return GuidPosition();
 
+    bool const needsTurnIn = HasRewardableFinishedQuest(ai);
+    bool const needsAccept = AI_VALUE(uint8, "free quest log slots") > 0;
     bool const needsVendor = VendorServiceNeeded(ai);
     bool const needsTrainer = TrainerServiceNeeded(ai) &&
         AI_VALUE2(time_t, "manual time", "no travel purpose until::trainer class") <= time(0); //Respect the fruitless-visit park.
 
-    if (!needsVendor && !needsTrainer)
+    if (!needsTurnIn && !needsAccept && !needsVendor && !needsTrainer)
         return GuidPosition();
 
     std::vector<GuidPosition> nearby;
@@ -119,17 +143,27 @@ GuidPosition ai::NearbyServiceTarget(PlayerbotAI* ai)
         if (sqDistance > NearbyServiceRangeSq())
             continue;
 
-        int rank = -1; //Not a service target: a vendor errand, a random NPC, a wrong-class trainer.
+        //Not a service target: a random NPC, a quest giver with nothing to
+        //offer, a wrong-class trainer. The order below is the ranking order in
+        //NearbyServicePolicy.h, so an NPC that could serve two kinds gets the
+        //stronger one.
+        NearbyServiceKind kind = NearbyServiceKind::None;
+        bool const isQuestGiver = guidP.HasNpcFlag(UNIT_NPC_FLAG_QUESTGIVER);
 
-        if (needsVendor && guidP.HasNpcFlag(UNIT_NPC_FLAG_VENDOR))
-            rank = 0;
+        if (needsTurnIn && isQuestGiver && AI_VALUE2(bool, "can turn in quest npc", guidP.GetEntry()))
+            kind = NearbyServiceKind::TurnIn;
+        else if (needsAccept && isQuestGiver && AI_VALUE2(bool, "can accept quest npc", guidP.GetEntry()) &&
+            AcceptAllQuestsAction::OffersAcceptableQuest(ai, bot, guidP.GetWorldObject(bot->GetInstanceId())))
+            kind = NearbyServiceKind::Accept;
+        else if (needsVendor && guidP.HasNpcFlag(UNIT_NPC_FLAG_VENDOR))
+            kind = NearbyServiceKind::Vendor;
         else if (needsTrainer && guidP.HasNpcFlag(UNIT_NPC_FLAG_TRAINER) &&
             RpgTrainTrigger::IsTrainerOf(guidP.GetCreatureTemplate(), bot) &&
             RpgTrainTrigger::TeachesAffordableSpell(ai, guidP, bot))
-            rank = 1;
+            kind = NearbyServiceKind::Trainer;
 
         nearby.push_back(guidP);
-        candidates.push_back(NearbyServiceCandidate{ rank, sqDistance });
+        candidates.push_back(NearbyServiceCandidate{ NearbyServiceRankOf(kind), sqDistance });
     }
 
     int const best = BestNearbyServiceCandidate(candidates);
