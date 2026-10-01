@@ -8,8 +8,14 @@ namespace ai
     // How far below its own level a grind *destination's* creatures may sit for an
     // autonomous bot, and how far above. The destination search checks the spawn
     // entry's level_max against this window (GrindTravelDestination::IsPossible).
+    // The ceiling below level 10 is the grinder's own order cap
+    // (GrindTargetValue::MaxGrindLevelOverBot); from level 10 the combat cap is +4
+    // but autonomous bots run on weak, mostly starter gear, so the *destination*
+    // ceiling stays one step above the bot and lets the bot pick what it dares
+    // fight once it is there.
     std::int32_t const GRIND_LEVEL_UNDER = 2;
-    std::int32_t const GRIND_LEVEL_OVER = 1;
+    std::int32_t const GRIND_LEVEL_OVER_LOW = 1;
+    std::int32_t const GRIND_LEVEL_OVER_HIGH = 2;
 
     // Creature-level window a grind destination must sit in.
     //
@@ -23,7 +29,7 @@ namespace ai
     //
     // Autonomous (masterless random) bots get a level-appropriate window instead:
     // the destination's creature level_max must land inside
-    //     [botLevel - GRIND_LEVEL_UNDER, botLevel + GRIND_LEVEL_OVER]
+    //     [botLevel - GRIND_LEVEL_UNDER, botLevel + (level < 10 ? LOW : HIGH)]
     // A mob two levels down still pays ~83% of the kill's base XP and ten levels
     // down pays nothing at all (MaNGOS::XP::GetGrayLevel / BaseGainLevelFactor);
     // the grinder itself refuses orders more than one level above a sub-10 bot
@@ -53,7 +59,8 @@ namespace ai
         if (levelAppropriate)
         {
             minLevel = std::max(minLevel, (std::int32_t)botLevel - GRIND_LEVEL_UNDER);
-            maxLevel = std::max(maxLevel, (std::int32_t)botLevel + GRIND_LEVEL_OVER);
+            std::int32_t const over = botLevel < 10 ? GRIND_LEVEL_OVER_LOW : GRIND_LEVEL_OVER_HIGH;
+            maxLevel = std::max(maxLevel, (std::int32_t)botLevel + over);
         }
         else if (botLevel <= 4)
         {

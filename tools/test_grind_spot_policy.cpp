@@ -71,10 +71,17 @@ int main()
         CHECK(!GrindLevelFits(l8, DEFIAS_THUG));
         CHECK(GrindLevelFits(l8, ICE_CLAW_BEAR));
 
+        // Level 10: the ceiling steps to +2 (the combat cap is +4 from here, but
+        // autonomous bots run on weak gear).
+        GrindLevelBand const l9 = Ladder(9);
+        GrindLevelBand const l10 = Ladder(10);
+        CHECK(l9.maxLevel == 10 && l10.maxLevel == 12);
+        CHECK(l10.minLevel == 8);
+
         // Level 60: high-level zones, same shape.
         GrindLevelBand const l60 = Ladder(60);
         CHECK(l60.minLevel == 58 && l60.maxLevel == 62);
-        std::cout << "  [PASS] level 6 / 8 / 60 windows step with the bot\n";
+        std::cout << "  [PASS] level 6 / 8 / 10 / 60 windows step with the bot\n";
     }
 
     // -------------------------------------------------------------
@@ -85,11 +92,9 @@ int main()
         {
             GrindLevelBand const band = Ladder(level);
 
-            // The band never demands a mob the grinder refuses: below level 10 the
-            // order cap is +1, at 10+ it is +4.
-            CHECK(band.maxLevel >= level + 1);
-            if (level < 10)
-                CHECK(band.maxLevel <= level + 1);
+            // The ceiling is the order cap below level 10 (+1), and +2 from level
+            // 10 on; the grinder's own combat cap (+4) is always above it.
+            CHECK(band.maxLevel == level + (level < 10 ? 1 : 2));
             CHECK(band.maxLevel <= level + 4);
 
             // No green-low / grey latches: the floor sits at `level - 2` or higher.
@@ -132,7 +137,7 @@ int main()
         {
             GrindLevelBand const band = Ladder(20, power);
             CHECK(band.minLevel >= 18);
-            CHECK(band.maxLevel >= 21);
+            CHECK(band.maxLevel >= 22);
         }
         std::cout << "  [PASS] ladder band holds at every gear condition\n";
     }
