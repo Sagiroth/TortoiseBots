@@ -3,10 +3,10 @@
 #include <vector>
 
 // Pure policy for the idle near-service rule (issue #379): a bot that is
-// waiting must use the class trainer or vendor next to it instead of asking for
-// a new journey it may never finish. The world-facing part (which NPCs are in
-// range, which need is real) lives in NearbyServiceTarget(); the decisions
-// below are pure so they can be tested on their own.
+// waiting must use the quest giver, class trainer or vendor next to it instead
+// of asking for a new journey it may never finish. The world-facing part (which
+// NPCs are in range, which need is real) lives in NearbyServiceTarget(); the
+// decisions below are pure so they can be tested on their own.
 
 namespace ai
 {
@@ -30,10 +30,30 @@ namespace ai
         return bagSpacePercentFull >= NEARBY_SERVICE_BAG_PRESSURE;
     }
 
-    // One NPC the rule could walk to. rank: 0 = vendor, 1 = class trainer,
-    // negative = not a service target at all. Vendors outrank trainers even when
-    // the trainer is nearer: the sale is what funds the next class rank, and the
-    // trainer is picked up on a later tick once the purse can pay.
+    // What the rule can do with a nearby NPC, in the order it prefers them.
+    // Handing in a finished quest is the strongest reason to stop: the reward
+    // item and its XP are the only organic gear a low-level bot gets, and the
+    // hand-in frees the quest log slot. Accepting a quest the bot can actually
+    // take costs nothing and feeds that loop, so it comes next. The town errands
+    // come after both, and there the sale still outranks the class rank it
+    // funds. None means "not a service target".
+    enum class NearbyServiceKind : int
+    {
+        None = -1,
+        TurnIn = 0,
+        Accept = 1,
+        Vendor = 2,
+        Trainer = 3,
+    };
+
+    inline int NearbyServiceRankOf(NearbyServiceKind kind)
+    {
+        return static_cast<int>(kind);
+    }
+
+    // One NPC the rule could walk to. rank: lower is serviced first - see
+    // NearbyServiceRankOf() - negative = not a service target at all. Ties go to
+    // the nearest NPC.
     struct NearbyServiceCandidate
     {
         int rank;
