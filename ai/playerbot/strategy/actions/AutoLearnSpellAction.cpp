@@ -71,8 +71,17 @@ void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
     // companions hired below the gate when they later dinged 18.
     if (freeLearn)
     {
-        PlayerbotFactory turtle(bot, bot->GetLevel());
-        turtle.InitTurtleMount();
+        PlayerbotFactory mounts(bot, bot->GetLevel());
+        mounts.InitTurtleMount();
+
+        // Organic level-up mounts (AiPlayerbot.LevelUpMounts): a bot that
+        // dings 40 or 60 earns the same mount set the seed/hire path grants
+        // (slow mount at 40, epic at 60); nothing else teaches them while a
+        // bot levels from 1. Riding skill follows from InitSkills below and
+        // InitMounts is idempotent per tier, so seeding and a repeated
+        // level-up packet are no-ops.
+        if (sPlayerbotAIConfig.levelUpMounts && (bot->GetLevel() == 40 || bot->GetLevel() == 60))
+            mounts.InitMounts();
     }
 
     if (freeLearn && sPlayerbotAIConfig.autoLearnQuestSpells)
