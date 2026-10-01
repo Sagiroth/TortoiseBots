@@ -87,12 +87,24 @@ bool ChooseTravelTargetAction::Execute(Event& event)
 
     if (!SetBestTarget(requester, &newTarget, destinationList))
     {
-        // Park this purpose for a minute. RequestTravelTargetAction clears the
-        // flag as soon as its "no travel purpose until" time has passed, and
-        // without one it re-requested (and re-searched) on the very next tick.
+        // Park this purpose. RequestTravelTargetAction clears the flag as soon
+        // as its "no travel purpose until" time has passed, and without one it
+        // re-requested (and re-searched) on the very next tick. A minute suits a
+        // service errand, whose destination is usually inactive for a moment;
+        // a hand-in search that came back empty is not worth repeating that
+        // soon. The takers it just rejected (route above the bot's level, no
+        // partition, hostile town, area band) do not become reachable again a
+        // minute later, and the request outranks Grind (6.36 vs 6.35) - so the
+        // bot aborted its grind errand every minute, forever, for a quest it
+        // could not hand in (and any successful pick elsewhere wiped the flag
+        // anyway, see HasFinishedQuestValue). Ten minutes is the trainer park's
+        // order of magnitude; the value that ranks the row reads this timestamp,
+        // so the row stands down for the whole park.
         std::string const purposeKey = futureTravelPurpose.empty() ? "quest" : futureTravelPurpose;
+        bool const failedHandIn = purposeKey == "quest" && HasRewardableFinishedQuest(ai);
         SET_AI_VALUE2(bool, "no active travel destinations", purposeKey, true);
-        SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purposeKey, time(0) + MINUTE);
+        SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purposeKey,
+            time(0) + (failedHandIn ? 10 * MINUTE : MINUTE));
         ai->TellDebug(ai->GetMaster(), "No target set", "debug travel");
 
         // TEMPORARY, see the probe in RequestQuestTravelTargetAction. Destinations
@@ -113,6 +125,20 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         {
             SET_AI_VALUE2(time_t, "manual time", "vendor trip no target log", time(0) + 10 * MINUTE);
             sPlayerbotAIConfig.logEvent(ai, "VendorTripNoTarget",
+                std::to_string(destinationList.size()), std::to_string(bot->GetLevel()));
+        }
+
+        //And for the quest errand. A bot carrying a rewardable finished quest now
+        //outranks Grind (see TravelStrategy), so this search runs often; the only
+        //other outcome it can record is the success (QuestTravelToGiver/Taker), so
+        //without this line "the request never ran" and "destinations came back and
+        //none was accepted" look identical - the exact blind spot that hid the
+        //6.3-vs-6.35 ranking bug for two realms. One line per ten minutes per bot.
+        if (purposeKey == "quest" &&
+            AI_VALUE2(time_t, "manual time", "quest trip no target log") <= time(0))
+        {
+            SET_AI_VALUE2(time_t, "manual time", "quest trip no target log", time(0) + 10 * MINUTE);
+            sPlayerbotAIConfig.logEvent(ai, "QuestTripNoTarget",
                 std::to_string(destinationList.size()), std::to_string(bot->GetLevel()));
         }
 
@@ -442,16 +468,21 @@ static bool RouteIsSurvivableUncached(Player* bot, WorldPosition const& start, W
     return ok;
 }
 
-// The verdict is cached per bot, level, hostile-town mode, start area (200 yd
-// cells) and destination (25 yd cells) for 5 minutes. SetBestTarget re-checks the same candidates
+// The verdict is cached per bot, level, hostile-town mode, checked-hop mode,
+// start area (200 yd cells) and destination (25 yd cells) for 5 minutes.
+// SetBestTarget re-checks the same candidates
 // on every pick, and a rejected or unreachable destination costs a full
 // travel-node A* each time; with hundreds of bots that search dominated the
 // world thread. Gold, reputation and graph changes are picked up when the
 // entry expires.
-static bool RouteIsSurvivable(Player* bot, WorldPosition* position, std::string& blocker)
+// checkShortHop makes the 1000 yd bypass below not apply: callers use it for
+// trips a bot below level 10 makes on foot, where the bypass would silently
+// skip the one check that keeps a starter-zone hand-in out of a higher-level
+// neighbourhood (see SetBestTarget).
+static bool RouteIsSurvivable(Player* bot, WorldPosition* position, std::string& blocker, bool checkShortHop = false)
 {
     WorldPosition start(bot);
-    if (start.getMapId() == position->getMapId() && start.distance(*position) < 1000.0f)
+    if (!checkShortHop && start.getMapId() == position->getMapId() && start.distance(*position) < 1000.0f)
         return true;
 
     struct Verdict
@@ -467,7 +498,7 @@ static bool RouteIsSurvivable(Player* bot, WorldPosition* position, std::string&
     bool const avoidTowns = sPlayerbotAIConfig.avoidHostileTowns && botAi && !botAi->HasRealPlayerMaster();
 
     std::ostringstream key;
-    key << bot->GetGUIDLow() << ':' << bot->GetLevel() << ':' << avoidTowns << ':'
+    key << bot->GetGUIDLow() << ':' << bot->GetLevel() << ':' << avoidTowns << ':' << checkShortHop << ':'
         << start.getMapId() << ':' << int32(std::floor(start.getX() / 200.0f)) << ':' << int32(std::floor(start.getY() / 200.0f)) << ':'
         << position->getMapId() << ':' << int32(std::floor(position->getX() / 25.0f)) << ':' << int32(std::floor(position->getY() / 25.0f));
 
@@ -577,7 +608,20 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                     }
 
                     std::string blocker;
-                    if (!RouteIsSurvivable(bot, position, blocker))
+                    // The 1000 yd bypass inside RouteIsSurvivable skips exactly
+                    // the trips a beginner makes - starter-zone takers and
+                    // breadcrumb reports sit a few hundred yards away - and a
+                    // taker is the one destination the search layer does not
+                    // level-check (IsLocationLevelValid exempts QuestTaker,
+                    // because inside the async search the destination's area is
+                    // frequently unresolved) while the band here is the loose
+                    // +5. A masterless bot below level 10 therefore walks the
+                    // route like a long journey, so a hand-in across a
+                    // higher-level neighbourhood is refused instead of walked.
+                    // One travel-node A*, cached five minutes per candidate.
+                    bool const checkTakerRoute = !ai->HasRealPlayerMaster() && bot->GetLevel() < 10 &&
+                        destination->GetPurpose() == TravelDestinationPurpose::QuestTaker;
+                    if (!RouteIsSurvivable(bot, position, blocker, checkTakerRoute))
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - route crosses " + blocker, "debug travel");
                         if (sPlayerbotAIConfig.hasLog("travel_route_gate.csv"))
@@ -1702,6 +1746,7 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
     // getQuestStatusMap().size(), which includes already rewarded entries and
     // reads above the cap - the probe below saw an average of 22 against a
     // limit of 20.
+    bool takerOnly = false;
     {
         uint32 finished = 0, active = 0;
         for (auto& [questId, questStatus] : bot->getQuestStatusMap())
@@ -1750,9 +1795,15 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
 
                 // Only if there is somewhere to hand in. An empty list would fall
                 // through to the QuestGiver fetch below and send a bot that cannot
-                // accept anything off to collect more.
+                // accept anything off to collect more. takerOnly silences the same
+                // fallback inside the search itself: a taker can survive this
+                // fetch and still yield no partition, and the fallback would then
+                // hand the bot a quest giver anyway.
                 if (!handInOnly.empty())
+                {
                     destinationFetches = handInOnly;
+                    takerOnly = true;
+                }
             }
         }
         else if (finished >= handInThreshold || active + 2 >= MAX_QUEST_LOG_SIZE)
@@ -1764,9 +1815,15 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
 
             // Only if there is somewhere to hand in. An empty list would fall
             // through to the QuestGiver fetch below and send a bot that cannot
-            // accept anything off to collect more.
+            // accept anything off to collect more. takerOnly silences the same
+            // fallback inside the search itself: a taker can survive this fetch
+            // and still yield no partition, and the fallback would then hand the
+            // bot a quest giver anyway.
             if (!handInOnly.empty())
+            {
                 destinationFetches = handInOnly;
+                takerOnly = true;
+            }
         }
     }
 
@@ -1795,7 +1852,7 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
             takers, objectives, givers);
     }
 
-    *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, destinationFetches]()
+    *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, destinationFetches, takerOnly]()
         {
             PartitionedTravelList list;
             for (auto [purpose, questId, range] : destinationFetches)
@@ -1806,7 +1863,12 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
                     list[partition].insert(list[partition].end(), points.begin(), points.end());
             }
 
-            if (list.empty())
+            // A bot that was narrowed to its takers is not looking for new
+            // quests: the fetch list holds no quest giver, the log is full or
+            // the hand-in latch is engaged, and picking a giver hub would walk
+            // it somewhere it cannot accept anything. Let the pick fail and the
+            // caller park the purpose instead.
+            if (list.empty() && !takerOnly)
             {
                 float questGiverRange = (travelInfo.GetLevel() <= 5) ? 1500.0f : ((travelInfo.GetLevel() <= 10) ? 3000.0f : 10000.0f);
                 list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::QuestGiver, {}, true, questGiverRange);

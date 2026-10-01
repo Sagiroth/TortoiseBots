@@ -110,6 +110,22 @@ void TravelStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
         {"val::not::travel target active","refresh travel target", 6.7f},                                     // 90%
         {"val::not::travel target active","choose group travel target", 6.65f},                               // 50%
         {"val::should travel named::trainer trade","request named travel target::trainer trade", 6.51f},      // 25%
+        // A finished quest outranks the next grind errand. The plain quest row
+        // below sits at 6.3, one hair under Grind (6.35), and that is the whole
+        // reason a bot never walked to a taker: on a live stage-2 realm ~1597
+        // complete quests sat unrewarded across 484 bots with 0 QuestTravelToTaker
+        // events, so every one of the 544 QuestRewarded rows came from a taker the
+        // bot was already standing next to (the 50 yd nearby-service radius covered
+        // 140 of the 1597; 1264 of the other 1457 had their ender inside 1000 yd).
+        // Ranked at 6.36 - one step above Grind, below every service errand (vendor
+        // 6.94, repair 6.93, trainer class 6.89) - the hand-in wins the tick without
+        // pre-empting the #379 vendor/repair/trainer trips. Only a quest that is
+        // rewardable right now qualifies, so a finished quest blocked by a full bag
+        // or a money requirement cannot park the bot at the taker. While the bot
+        // carries finished work the request itself already narrows to taker-only
+        // destinations (the log-upkeep latch), so this row cannot start a hunt for
+        // new quests.
+        {"val::and::{has strategy::rpg quest,has rewardable finished quest}","request quest travel target", 6.36f}, // 95%
         {"val::has strategy::rpg quest", "request quest travel target", 6.3f}                                 // 95%
     };
 
