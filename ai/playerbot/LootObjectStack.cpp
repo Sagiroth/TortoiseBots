@@ -279,6 +279,44 @@ LootObject::LootObject(const LootObject& other)
     reqItem = other.reqItem;
 }
 
+// Is there anywhere at all for loot to go? Body loot answers that per item ("should loot object"
+// -> StackSpaceForItem), but a node's loot and a skinnable corpse's loot are rolled when the
+// window opens, so their items do not exist yet and the per-item test cannot be asked. Ask the
+// coarser question instead: a free bag slot, or a stack that is not full yet. A bot with neither
+// opens the object and stores nothing (StoreLootAction drops every item), which for a node also
+// leaves it GO_ACTIVATED holding its payload until the server resets it.
+static bool HasBagRoomForLoot(PlayerbotAI* ai, Player* bot)
+{
+    // "bag space" is the used percentage, so anything below 100 has a slot to spare. Asking it
+    // first keeps the item scan off the normal path (it is the same bag walk, computed once a tick).
+    AiObjectContext* context = ai->GetAiObjectContext();
+    if (AI_VALUE(uint8, "bag space") < 100)
+        return true;
+
+    for (int i = INVENTORY_SLOT_ITEM_START; i < INVENTORY_SLOT_ITEM_END; ++i)
+    {
+        Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, i);
+        if (item && item->GetCount() < item->GetMaxStackCount())
+            return true;
+    }
+
+    for (int i = INVENTORY_SLOT_BAG_START; i < INVENTORY_SLOT_BAG_END; ++i)
+    {
+        Bag* bag = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, i);
+        if (!bag)
+            continue;
+
+        for (uint32 j = 0; j < bag->GetBagSize(); ++j)
+        {
+            Item* item = bag->GetItemByPos(j);
+            if (item && item->GetCount() < item->GetMaxStackCount())
+                return true;
+        }
+    }
+
+    return false;
+}
+
 bool LootObject::IsLootPossible(Player* bot)
 {
     if (IsEmpty() || !GetWorldObject(bot))
@@ -319,6 +357,12 @@ bool LootObject::IsLootPossible(Player* bot)
     // worth queueing.
     if (skillId == SKILL_NONE && guid.IsCreature() &&
         !AI_VALUE2_LAZY(bool, "should loot object", std::to_string(guid.GetRawValue())))
+        return false;
+
+    // Skill objects and game objects are the two payloads "should loot object" cannot answer for,
+    // and they are also the only ones that reached this point without any capacity test: body loot
+    // got one above. Queue them only when the bot has somewhere to put the loot.
+    if ((skillId != SKILL_NONE || guid.IsGameObject()) && !HasBagRoomForLoot(ai, bot))
         return false;
 
     // Check if the game object has quest loot and bot has the quest for it
