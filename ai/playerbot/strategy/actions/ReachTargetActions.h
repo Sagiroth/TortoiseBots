@@ -11,6 +11,7 @@
 #include "playerbot/strategy/values/MoveStyleValue.h"
 #include "GenericSpellActions.h"
 #include "playerbot/PlayerbotFactory.h"
+#include "AI/CreatureAI.h"
 #include <ctime>
 
 namespace ai
@@ -29,6 +30,43 @@ namespace ai
         float noLosStartY = 0.0f;
         uint32 lastGiveUpMs = 0;
         uint32 giveUpsInARow = 0;
+
+        // Second give-up clock, anchored on the bot's own position instead of the target's
+        // distance (see Execute).
+        uint32 stoodSinceMs = 0;
+        float stoodX = 0.0f;
+        float stoodY = 0.0f;
+
+        static uint32 const kNoHeadwayMs = 15000;
+        static uint32 const kNoMoveMs = 10000;
+
+        // A creature that is in evade mode, or that the core has flagged as unable to reach
+        // the bot (Creature::IsEvadeBecauseTargetNotReachable), will not come to us and cannot
+        // be damaged where it stands - so the "it is attacking me, it will come" exception in
+        // Execute does not hold for it. Measured on the frozen pool: a bot held the same Murloc
+        // Streamrunner for 15+ minutes with victim=1, inLos=1, notreach=1, botmove=0, hp=100.
+        static bool TargetCannotBeReached(Unit* target)
+        {
+            if (!target || !target->IsCreature())
+                return false;
+
+            Creature* creature = static_cast<Creature*>(target);
+            return creature->IsInEvadeMode() || creature->IsEvadeBecauseTargetNotReachable();
+        }
+
+        // A given-up target must not survive as the bot's order. While "current target" or
+        // "attack target" still points at a live hostile, CombatEndTrigger keeps the bot in
+        // BOT_STATE_COMBAT and the combat engine has no travel/grind/loot actions, so a bot
+        // wedged on a creature it cannot reach never travels again (measured: 81 bots stood
+        // inside a 0.5 yd box for 20-124 minutes while still ordering attacks). Clearing the
+        // order lets "combat end" fire and the non-combat engine pick a reachable target.
+        void DropAttackTarget()
+        {
+            context->GetValue<ObjectGuid>("attack target")->Set(ObjectGuid());
+            context->GetValue<ObjectGuid>("explicit attack target")->Set(ObjectGuid());
+            context->GetValue<Unit*>("current target")->Set(nullptr);
+            bot->AttackStop();
+        }
 
     public:
 
@@ -55,6 +93,22 @@ namespace ai
             if (target)
             {
                 UpdateMovementState();
+
+                // Stand-still clock: re-anchored only when the bot itself moves, so it measures the
+                // bot's own progress and nothing else (see the give-up block below). Kept out of
+                // that block so the "wait for an approaching enemy" early return cannot leave a
+                // stale anchor behind.
+                {
+                    uint32 const nowMs = WorldTimer::getMSTime();
+                    float const dxStood = bot->GetPositionX() - stoodX;
+                    float const dyStood = bot->GetPositionY() - stoodY;
+                    if (stoodSinceMs == 0 || (dxStood * dxStood + dyStood * dyStood) > 4.0f)
+                    {
+                        stoodX = bot->GetPositionX();
+                        stoodY = bot->GetPositionY();
+                        stoodSinceMs = nowMs;
+                    }
+                }
 
                 // Ignore movement if too far
                 const float distanceToTarget = bot->GetDistance(target);
@@ -90,8 +144,12 @@ namespace ai
                 // approaching enemy (above) does not count either way. Without headway for
                 // 15 s the target goes on the "unreachable targets" list for five minutes
                 // (honoured by AttackersValue::IgnoreTarget) and "invalid target" selects
-                // something else. A target that is attacking the bot is never given up on:
-                // it is reachable, or it will come to us.
+                // something else. A target that is attacking the bot is never given up on
+                // while it can reach the bot at all: it is reachable, or it will come to us.
+                // A creature in evade mode, or one the core has flagged as unable to reach the
+                // bot, is the exception (see TargetCannotBeReached); and a target the bot has
+                // not walked towards for kNoMoveMs while out of its reach is given up on as
+                // well, whatever the creature does.
                 // Measured after the first version (300 bots, one hour): the give-up only fired
                 // without line of sight, so a target in plain sight across a fence, a cliff or a
                 // stream was chased for minutes ("inLos=true, 54 yd, 100 s"); and the list was
@@ -112,7 +170,27 @@ namespace ai
                         noLosStartX = bot->GetPositionX();
                         noLosStartY = bot->GetPositionY();
                     }
-                    else if (nowMs - noLosSinceMs >= 15000 && (target->GetVictim() != bot || !inLos))
+
+                    // The clock above restarts whenever the creature wanders two yards closer or
+                    // the order moves to another creature of the same kind - on a field of wandering
+                    // mobs it can go an hour without firing (measured: repeats=3..14 on one creature,
+                    // orders spread over 50 minutes). The stand-still clock anchored in Execute looks
+                    // only at the bot, so "not a single step for kNoMoveMs while the target is out of
+                    // the bot's reach and the bot is not fighting it" is a give-up of its own. That is
+                    // the shape of the frozen pool: the chase path came back empty (the core's chase
+                    // generator returns without launching a spline when the path to the target is
+                    // NOPATH or incomplete in sight) while ChaseTo still reported success, so nothing
+                    // else ever noticed the bot was not moving.
+                    bool const cannotBeReached = TargetCannotBeReached(target);
+                    bool const noHeadway = nowMs - noLosSinceMs >= kNoHeadwayMs &&
+                        (target->GetVictim() != bot || !inLos || cannotBeReached);
+                    bool const outOfReach = range > 0.0f
+                        ? distanceToTarget > range * 1.4f
+                        : !bot->CanReachWithMeleeAutoAttack(target);
+                    bool const fighting = !cannotBeReached && (bot->IsInCombat() || target->GetVictim() == bot);
+                    bool const stoodStill = outOfReach && !fighting && nowMs - stoodSinceMs >= kNoMoveMs;
+
+                    if (noHeadway || stoodStill)
                     {
                         // The attacker exception only holds in sight: a mob that "attacks" the bot
                         // from out of sight for 15 s without closing in is stuck as well (a Wendigo in
@@ -123,6 +201,13 @@ namespace ai
                         unreachable[target->getObjectGuid()] = nowMs + 5 * MINUTE * IN_MILLISECONDS;
                         if (target->IsCreature())
                             context->GetValue<std::map<uint32, uint32>&>("unreachable entries")->Get()[target->GetEntry()] = nowMs + 5 * MINUTE * IN_MILLISECONDS;
+
+                        // Drop the order with it: the blacklist only steers the next pick, while the
+                        // order the bot already holds keeps it in combat with a creature it cannot
+                        // reach. Clearing it lets CombatEndTrigger fire and the non-combat engine
+                        // (travel, grind, loot) run again.
+                        DropAttackTarget();
+
                         if (alreadyGivenUp)
                         {
                             // A second reach action (melee and spell both track the target) - one
@@ -130,7 +215,9 @@ namespace ai
                             noLosTarget = ObjectGuid();
                             return false;
                         }
-                        ai->TellDebug(GetMaster(), "Giving up on " + std::string(target->GetName()) + (inLos ? " - in sight but no headway for 15 s" : " - out of line of sight, no headway for 15 s"), "debug move");
+                        ai->TellDebug(GetMaster(), "Giving up on " + std::string(target->GetName()) +
+                            (stoodStill && !noHeadway ? " - out of reach, not a step taken for 10 s"
+                                : inLos ? " - in sight but no headway for 15 s" : " - out of line of sight, no headway for 15 s"), "debug move");
 
                         // Second give-up within three minutes: the whole spot is bad (a cave mouth with
                         // troggs, trolls and wolves - measured: one bot gave up on six kinds in twenty
@@ -176,6 +263,7 @@ namespace ai
                             sPlayerbotAIConfig.log("unreachable_targets.csv", out.str().c_str());
                         }
                         noLosTarget = ObjectGuid();
+                        stoodSinceMs = 0;
                         return false;
                     }
                 }
