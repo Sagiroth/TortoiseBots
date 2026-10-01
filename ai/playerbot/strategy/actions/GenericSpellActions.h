@@ -318,15 +318,18 @@ namespace ai
     class GreaterBuffOnPartyAction : public CastBuffSpellAction, public PartyMemberActionNameSupport
     {
     public:
-        GreaterBuffOnPartyAction(PlayerbotAI* ai, std::string spell, bool ignoreTanks = false) : CastBuffSpellAction(ai, spell), PartyMemberActionNameSupport(spell), ignoreTanks(ignoreTanks) {}
+        GreaterBuffOnPartyAction(PlayerbotAI* ai, std::string spell, bool ignoreTanks = false, std::string lowerSpell = "") : CastBuffSpellAction(ai, spell), PartyMemberActionNameSupport(spell), ignoreTanks(ignoreTanks), lowerSpell(lowerSpell) {}
 
     protected:
         virtual std::string getName() override { return PartyMemberActionNameSupport::getName(); }
         virtual std::string GetTargetName() override { return "party member without aura"; }
-        virtual std::string GetTargetQualifier() override { return GetSpellName() + "-" + (ignoreTanks ? "1" : "0"); }
+        // Must match GreaterBuffOnPartyTrigger::GetTargetValue(): the member has
+        // to lack the lower single-target buff as well (issue #378).
+        virtual std::string GetTargetQualifier() override { return GetSpellName() + (lowerSpell.empty() ? "" : "," + lowerSpell) + "-" + (ignoreTanks ? "1" : "0"); }
 
     private:
         bool ignoreTanks;
+        std::string lowerSpell;
     };
 
     //---------------------------------------------------------------------------------------------------------------------

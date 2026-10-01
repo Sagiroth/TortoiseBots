@@ -235,7 +235,12 @@ Value<Unit*>* BuffOnPartyTrigger::GetTargetValue()
 
 Value<Unit*>* GreaterBuffOnPartyTrigger::GetTargetValue()
 {
-    const std::string qualifier = spell + "-" + (ignoreTanks ? "1" : "0");
+    // The greater buff only pays off for a member that still lacks the lower
+    // single-target buff too: with the lower spell alone in the qualifier a
+    // member that already has it (e.g. Power Word: Fortitude) would be picked,
+    // the trigger would then fail its own lower-aura check, and the group
+    // version would never be cast for the rest of the session (issue #378).
+    const std::string qualifier = spell + "," + lowerSpell + "-" + (ignoreTanks ? "1" : "0");
     return context->GetValue<Unit*>("party member without aura", qualifier);
 }
 

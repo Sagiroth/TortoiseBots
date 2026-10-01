@@ -250,9 +250,11 @@ void MageBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
         "arcane intellect on party",
         NextAction::array(0, new NextAction("arcane intellect on party", ACTION_NORMAL + 3), NULL)));
 
+    // Above "arcane intellect on party": at equal relevance the single-target
+    // buff wins the tie and Arcane Brilliance is never cast (issue #378).
     triggers.push_back(new TriggerNode(
         "arcane brilliance on party",
-        NextAction::array(0, new NextAction("arcane brilliance on party", ACTION_NORMAL + 3), NULL)));
+        NextAction::array(0, new NextAction("arcane brilliance on party", ACTION_NORMAL + 4), NULL)));
 
     triggers.push_back(new TriggerNode(
         "arcane intellect",

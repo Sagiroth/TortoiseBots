@@ -81,7 +81,7 @@ namespace ai
     class CastArcaneBrillianceOnPartyAction : public GreaterBuffOnPartyAction
     {
     public:
-        CastArcaneBrillianceOnPartyAction(PlayerbotAI* ai) : GreaterBuffOnPartyAction(ai, "arcane brilliance") {}
+        CastArcaneBrillianceOnPartyAction(PlayerbotAI* ai) : GreaterBuffOnPartyAction(ai, "arcane brilliance", false, "arcane intellect") {}
     };
 
 	class CastRemoveCurseAction : public CastCureSpellAction

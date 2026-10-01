@@ -355,9 +355,11 @@ void DruidBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     BuffStrategy::InitNonCombatTriggers(triggers);
 
+    // Above "mark of the wild on party": at equal relevance the single-target
+    // buff wins the tie and Gift of the Wild is never cast (issue #378).
     triggers.push_back(new TriggerNode(
         "gift of the wild on party",
-        NextAction::array(0, new NextAction("gift of the wild on party", ACTION_NORMAL + 3), NULL)));
+        NextAction::array(0, new NextAction("gift of the wild on party", ACTION_NORMAL + 4), NULL)));
 
     triggers.push_back(new TriggerNode(
         "mark of the wild on party",
