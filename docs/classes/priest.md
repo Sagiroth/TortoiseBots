@@ -64,7 +64,7 @@ The bot checks for the *Weakened Soul* debuff (6788) before attempting *Power Wo
 
 ## Buffs & Crowd Control
 
-- **Party Buffs:** Maintains *Power Word: Fortitude* (Stamina), *Divine Spirit* (Spirit), and *Shadow Protection*. Out of combat the bot also casts *Resurrection* (removing *Shadowform* first) and uses *Fade* for threat management (raid medium-threat and after *Psychic Scream*).
+- **Party Buffs:** Maintains *Power Word: Fortitude* (Stamina), *Divine Spirit* (Spirit), and *Shadow Protection*. Once known, the group versions (*Prayer of Fortitude*, *Prayer of Spirit*, *Prayer of Shadow Protection*) replace the per-member single-target casts, and the bot picks a member that still lacks both. Out of combat the bot also casts *Resurrection* (removing *Shadowform* first) and uses *Fade* for threat management (raid medium-threat and after *Psychic Scream*). *Prayer of Fortitude* has no trainer on this realm: a hired priest learns rank 1 at level 48 and rank 2 at 60, and the reagent seeding follows those rank levels (Holy Candle from 48, Sacred Candle from 60).
 - **Dispels:** Proactively uses *Dispel Magic* on self and allies (to clear magic debuffs), and *Cure Disease* on diseased allies. The enemy-target dispel action is registered but has no trigger, so the bot never offensively dispels.
 - **Crowd Control:**
   - Casts *Shackle Undead* when assigned CC on Undead targets.

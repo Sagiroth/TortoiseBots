@@ -62,7 +62,7 @@ The bot's shapeshifting engine maintains the appropriate form based on assigned 
 - **Barkskin:**
   - Balance/Restoration cast *Barkskin* on own-health triggers (medium-health band in the Balance/Restoration combat sets, almost-full-health band in the generic set); never wired for Feral (Cat/Bear lose form bonuses under Turtle 1.18.1 attack-speed and shapeshift penalties).
 - **Party Buffs:**
-  - Maintains *Mark of the Wild* (armor, stats, resistances) and *Thorns* (reflective nature damage) on party members.
+  - Maintains *Mark of the Wild* (armor, stats, resistances) and *Thorns* (reflective nature damage) on party members, upgrading *Mark of the Wild* to *Gift of the Wild* once known (the group version outbids the single-target cast and only targets a member that lacks both).
 
 ---
 
