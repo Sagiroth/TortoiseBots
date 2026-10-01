@@ -3,6 +3,7 @@
 #include "QuestValues.h"
 #include "SharedValueContext.h"
 #include "ItemUsageValue.h"
+#include "MaintenanceValues.h"
 #include "playerbot/TravelMgr.h"
 
 using namespace ai;
@@ -410,6 +411,11 @@ uint8 FreeQuestLogSlotValue::Calculate()
 	}
 
 	return MAX_QUEST_LOG_SIZE - numQuest;
+}
+
+bool HasFinishedQuestValue::Calculate()
+{
+	return HasRewardableFinishedQuest(ai);
 }
 
 uint32 DialogStatusValue::getDialogStatus(Player* bot, int32 questgiver, uint32 questId)

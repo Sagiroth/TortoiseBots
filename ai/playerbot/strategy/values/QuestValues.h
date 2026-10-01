@@ -123,6 +123,17 @@ namespace ai
         virtual uint8 Calculate() override;
     };
 
+    //A finished quest the bot can actually be paid for right now: hand-in
+    //eligible (complete, unrewarded, CanRewardQuest) - the same test the log
+    //upkeep's turn-in latch and the nearby-service hand-in use. The travel
+    //layer reads it to rank a turn-in trip above the next grind errand.
+    class HasFinishedQuestValue : public BoolCalculatedValue
+    {
+    public:
+        HasFinishedQuestValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "has rewardable finished quest", 5) {}
+        virtual bool Calculate() override;
+    };
+
     //Dialog status npc
     class DialogStatusValue : public Uint32CalculatedValue, public Qualified
     {

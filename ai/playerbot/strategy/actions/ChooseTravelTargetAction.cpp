@@ -116,6 +116,20 @@ bool ChooseTravelTargetAction::Execute(Event& event)
                 std::to_string(destinationList.size()), std::to_string(bot->GetLevel()));
         }
 
+        //And for the quest errand. A bot carrying a rewardable finished quest now
+        //outranks Grind (see TravelStrategy), so this search runs often; the only
+        //other outcome it can record is the success (QuestTravelToGiver/Taker), so
+        //without this line "the request never ran" and "destinations came back and
+        //none was accepted" look identical - the exact blind spot that hid the
+        //6.3-vs-6.35 ranking bug for two realms. One line per ten minutes per bot.
+        if (purposeKey == "quest" &&
+            AI_VALUE2(time_t, "manual time", "quest trip no target log") <= time(0))
+        {
+            SET_AI_VALUE2(time_t, "manual time", "quest trip no target log", time(0) + 10 * MINUTE);
+            sPlayerbotAIConfig.logEvent(ai, "QuestTripNoTarget",
+                std::to_string(destinationList.size()), std::to_string(bot->GetLevel()));
+        }
+
         return false;
     }
 
