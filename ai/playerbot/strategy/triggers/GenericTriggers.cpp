@@ -240,7 +240,9 @@ Value<Unit*>* GreaterBuffOnPartyTrigger::GetTargetValue()
     // member that already has it (e.g. Power Word: Fortitude) would be picked,
     // the trigger would then fail its own lower-aura check, and the group
     // version would never be cast for the rest of the session (issue #378).
-    const std::string qualifier = spell + "," + lowerSpell + "-" + (ignoreTanks ? "1" : "0");
+    // Spelled exactly like GreaterBuffOnPartyAction::GetTargetQualifier(), so the
+    // trigger and the action always resolve the same target.
+    const std::string qualifier = spell + (lowerSpell.empty() ? "" : "," + lowerSpell) + "-" + (ignoreTanks ? "1" : "0");
     return context->GetValue<Unit*>("party member without aura", qualifier);
 }
 
