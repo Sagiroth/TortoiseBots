@@ -310,6 +310,30 @@ bool OpenLootAction::CanOpenLock(uint32 skillId, uint32 reqSkillValue)
     return skillValue >= reqSkillValue || !reqSkillValue;
 }
 
+// The gathering skill a game object's lock asks for (herbalism / mining / ...), i.e. the value
+// LootObject::Refresh derives when it classifies the node. Refresh only looks at an object that
+// is still GO_READY, so it returns nothing for the node whose loot window is open right now.
+static uint32 GetNodeGatherSkill(GameObject* go)
+{
+    if (!go)
+        return SKILL_NONE;
+
+    LockEntry const* lockInfo = sLockStore.LookupEntry(go->GetGOInfo()->GetLockId());
+    if (!lockInfo)
+        return SKILL_NONE;
+
+    for (int i = 0; i < 8; ++i)
+    {
+        if (lockInfo->Type[i] != LOCK_KEY_SKILL)
+            continue;
+
+        if (uint32 skillId = SkillByLockType(LockType(lockInfo->Index[i])))
+            return skillId;
+    }
+
+    return SKILL_NONE;
+}
+
 bool StoreLootAction::Execute(Event& event)
 {
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
@@ -352,6 +376,15 @@ bool StoreLootAction::Execute(Event& event)
 
     sLog.outDebug("[BOT LOOT] %s: StoreLoot guid=%lu type=%u gold=%u items=%u",
         bot->GetName(), guid.GetRawValue(), loot_type, gold, items);
+
+    // Profession loot is worth its own event: a StoreLootAction row cannot be told apart from
+    // ordinary corpse loot afterwards, and skinning/gathering had no telemetry at all - the
+    // "zero leather in five weeks" reading had to be dug out of item ids in loot.log. A skinned
+    // corpse opens its window as LOOT_SKINNING; a node opens as ordinary loot, so its skill comes
+    // from the object's lock.
+    uint32 gatherSkill = loot_type == LOOT_SKINNING ? (uint32)SKILL_SKINNING : SKILL_NONE;
+    if (gatherSkill == SKILL_NONE && guid.IsGameObject())
+        gatherSkill = GetNodeGatherSkill(ai->GetGameObject(guid));
 
     bot->SetLootGuid(guid);
 
@@ -464,6 +497,9 @@ bool StoreLootAction::Execute(Event& event)
         }
 
         sPlayerbotAIConfig.logEvent(ai, "StoreLootAction", proto->Name1, std::to_string(proto->ItemId));
+
+        if (gatherSkill != SKILL_NONE)
+            sPlayerbotAIConfig.logEvent(ai, "GatherLoot", std::to_string(gatherSkill), std::to_string(proto->ItemId));
 
         BroadcastHelper::BroadcastLootingItem(ai, bot, proto, itemQualifier);
     }

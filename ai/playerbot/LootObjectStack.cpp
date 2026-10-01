@@ -301,7 +301,24 @@ bool LootObject::IsLootPossible(Player* bot)
 
     AiObjectContext* context = ai->GetAiObjectContext();
 
-    if (!AI_VALUE2_LAZY(bool, "should loot object", std::to_string(guid.GetRawValue())))
+    // "should loot object" asks whether the object's *current* loot holds anything this bot wants.
+    // That question only has an answer for a creature corpse, whose body loot the core rolls at
+    // death (Unit::Kill -> Loot::FillLoot). Every other payload is a consequence of the action
+    // itself and cannot be known here:
+    //
+    //  * a skinnable corpse reaches this point only when Refresh has already seen it empty and
+    //    released (UNIT_FLAG_SKINNABLE + loot.isLooted()), and the skinning table is rolled by the
+    //    Skinning cast itself - so gating on "does the corpse still hold body loot" rejected every
+    //    skin target in exactly the state skinning requires. Live: not one Skinning cast in the
+    //    whole bot log corpus, zero leather, zero skinning skill-ups, while 55% of the looted
+    //    corpses were skinnable and every skinner owned its knife.
+    //  * a herb/ore node (like every unopened game object) has its loot rolled on the first open
+    //    (Player::SendLoot), so no node could ever pass this test either.
+    //
+    // Body loot stays gated: a corpse whose remaining items this bot will not take is still not
+    // worth queueing.
+    if (skillId == SKILL_NONE && guid.IsCreature() &&
+        !AI_VALUE2_LAZY(bool, "should loot object", std::to_string(guid.GetRawValue())))
         return false;
 
     // Check if the game object has quest loot and bot has the quest for it
