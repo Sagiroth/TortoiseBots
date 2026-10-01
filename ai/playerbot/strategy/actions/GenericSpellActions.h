@@ -5,6 +5,30 @@
 
 namespace ai
 {
+    // Issue #T7: several buffers in one party picked the same target in the same
+    // tick - a freshly hired member has no auras yet, so every buffer decided
+    // "it lacks my buff" before the first cast (1.5 s) had landed the aura, and
+    // all of them cast the same spell. This tiny registry is shared by every bot
+    // in the process: the caster claims the target (or the whole group for the
+    // area buffs) right before casting and the other casters stand down while a
+    // claim is live. Claims are time-bounded only - a caster that dies, leaves
+    // or logs out is harmless, its entry simply expires.
+    class BuffClaimRegistry
+    {
+    public:
+        // Claim a scope (a target's guid, or GroupScope()) for spell.
+        static void Claim(ObjectGuid const& caster, ObjectGuid const& scope, std::string const& spell);
+        // True when a caster other than `caster` holds a live claim on scope.
+        static bool IsClaimedByOther(ObjectGuid const& caster, ObjectGuid const& scope, std::string const& spell);
+        // Stable group scope for a bot: its group id when grouped (one id for the
+        // whole party, so two separate parties never interfere), its own guid
+        // when solo.
+        static ObjectGuid GroupScope(Player* bot);
+        // True when another bot holds a live claim on target, or on the caster's
+        // group for this spell (the group scope covers the area buffs).
+        static bool IsTargetClaimedByOther(Player* caster, Unit* target, std::string const& spell);
+    };
+
     class CastSpellAction : public Action
     {
     public:
@@ -162,6 +186,12 @@ namespace ai
         // cast covers the whole (sub)group and spends a reagent, so a target that
         // cannot receive the area buff must not burn another reagent every 3 s.
         virtual uint32 GetBuffRetryCooldown() const;
+
+        // Issue #T7: the scopes this cast claims before it is attempted, so other
+        // bots stop duplicating it. Default: the resolved target. The greater
+        // (area) buffs override it to claim the caster's whole group, under both
+        // the greater and the lower single-target name.
+        virtual void ClaimBuffCast(Unit* target);
 
         // Issue #378: out of combat an upkeep buff is not worth its mana while the
         // bot is below its floor. Combat casts (seals, totems, shields, charge
@@ -340,6 +370,10 @@ namespace ai
         // minute. While it is cooling down isUseful() is false and the engine runs
         // the lower-priority single-target buff for that member instead.
         virtual uint32 GetBuffRetryCooldown() const override;
+        // Issue #T7: a greater buff covers the whole (sub)group from one cast, so
+        // the claim is on the group (under the greater and the lower spell name)
+        // and every other bot stands down for both casts.
+        virtual void ClaimBuffCast(Unit* target) override;
         // Must match GreaterBuffOnPartyTrigger::GetTargetValue(): the member has
         // to lack the lower single-target buff as well (issue #378).
         virtual std::string GetTargetQualifier() override { return GetSpellName() + (lowerSpell.empty() ? "" : "," + lowerSpell) + "-" + (ignoreTanks ? "1" : "0"); }

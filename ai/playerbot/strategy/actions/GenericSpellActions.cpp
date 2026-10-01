@@ -3,6 +3,10 @@
 #include "GenericActions.h"
 #include "UseItemAction.h"
 
+#include <map>
+#include <mutex>
+#include <utility>
+
 using namespace ai;
 
 namespace
@@ -31,6 +35,106 @@ uint32 const SELF_BUFF_EVENT_INTERVAL = 10;
 // by being hit and then re-cast at full price, so it uses the higher floor.
 uint8 const BUFF_MIN_MANA_PERCENT = 40;
 uint8 const CHARGE_BUFF_MIN_MANA_PERCENT = 70;
+
+// Issue #T7: how long a buff claim keeps the other buffers of the same spell
+// away. Must cover the cast plus the delay before the aura lands (the longest
+// upkeep cast is 1.5 s), with margin; a claim that outlives a failed cast only
+// delays the retry of whoever sees the missing aura afterwards.
+time_t const BUFF_CLAIM_TTL = 4;
+
+// Group scope marker. HighGuid values are <= 0xF140, so no real object guid raw
+// value has 0xFFFF in its top 16 bits - a group scope can never collide with a
+// target scope.
+uint64 const BUFF_CLAIM_GROUP_SCOPE_TAG = 0xFFFF000000000000ULL;
+
+struct BuffClaim
+{
+    uint64 caster;
+    time_t expiry;
+};
+
+// One registry for the whole process. Bots on one map are updated on that map's
+// thread, but MapManager runs the continent/instance updates on concurrent
+// thread pools, so the map is mutex guarded. The lock is only ever held around
+// the map itself (no AI/aura/world call), so it cannot deadlock.
+std::mutex& BuffClaimMutex()
+{
+    static std::mutex mutex;
+    return mutex;
+}
+
+std::map<std::pair<uint64, std::string>, BuffClaim>& BuffClaims()
+{
+    static std::map<std::pair<uint64, std::string>, BuffClaim> claims;
+    return claims;
+}
+}
+
+void BuffClaimRegistry::Claim(ObjectGuid const& caster, ObjectGuid const& scope, std::string const& spell)
+{
+    time_t const now = time(0);
+    std::lock_guard<std::mutex> lock(BuffClaimMutex());
+    std::map<std::pair<uint64, std::string>, BuffClaim>& claims = BuffClaims();
+
+    // No cleanup thread: prune the expired entries on every write, so the map
+    // only ever holds casts of the last few seconds.
+    for (std::map<std::pair<uint64, std::string>, BuffClaim>::iterator it = claims.begin(); it != claims.end();)
+    {
+        if (it->second.expiry <= now)
+            it = claims.erase(it);
+        else
+            ++it;
+    }
+
+    BuffClaim claim;
+    claim.caster = caster.GetRawValue();
+    claim.expiry = now + BUFF_CLAIM_TTL;
+    claims[std::make_pair(scope.GetRawValue(), spell)] = claim;
+}
+
+bool BuffClaimRegistry::IsClaimedByOther(ObjectGuid const& caster, ObjectGuid const& scope, std::string const& spell)
+{
+    time_t const now = time(0);
+    std::lock_guard<std::mutex> lock(BuffClaimMutex());
+    std::map<std::pair<uint64, std::string>, BuffClaim>& claims = BuffClaims();
+
+    std::map<std::pair<uint64, std::string>, BuffClaim>::iterator it =
+        claims.find(std::make_pair(scope.GetRawValue(), spell));
+    if (it == claims.end())
+        return false;
+
+    if (it->second.expiry <= now)
+    {
+        claims.erase(it);
+        return false;
+    }
+
+    // The caster's own claim must never block it: consecutive casts of one bot
+    // stay governed by the retry cooldowns alone.
+    return it->second.caster != caster.GetRawValue();
+}
+
+ObjectGuid BuffClaimRegistry::GroupScope(Player* bot)
+{
+    Group* group = bot ? bot->GetGroup() : nullptr;
+    if (!group)
+        return bot ? bot->GetObjectGuid() : ObjectGuid();
+
+    return ObjectGuid(BUFF_CLAIM_GROUP_SCOPE_TAG | uint64(group->GetId()));
+}
+
+bool BuffClaimRegistry::IsTargetClaimedByOther(Player* caster, Unit* target, std::string const& spell)
+{
+    if (!caster || !target)
+        return false;
+
+    ObjectGuid const& casterGuid = caster->GetObjectGuid();
+    if (IsClaimedByOther(casterGuid, target->GetObjectGuid(), spell))
+        return true;
+
+    // A greater (area) buff is claimed on the group, not on the member, so the
+    // single-target fallback of the same family has to look there too.
+    return IsClaimedByOther(casterGuid, GroupScope(caster), spell);
 }
 
 CastSpellAction::CastSpellAction(PlayerbotAI* ai, std::string spell)
@@ -298,12 +402,19 @@ bool CastAuraSpellAction::isUseful()
 
 bool CastBuffSpellAction::isUseful()
 {
+    Unit* target = GetTarget();
+
+    // Issue #T7: another bot already has this spell in flight for the target (or
+    // for its whole group, for the area buffs) - stand down this tick so the
+    // queued basket is dropped instead of duplicating the cast.
+    if (BuffClaimRegistry::IsTargetClaimedByOther(bot, target, GetSpellName()))
+        return false;
+
     // Issue #378: the mana floor and the retry window are upkeep rules. Combat
     // casts of the same spells (seals, totems, Mana Shield, Earth Shield, an
     // Inner Fire re-apply) must never be held back by them.
     if (!bot->IsInCombat())
     {
-        Unit* target = GetTarget();
         if (target && lastAttemptTime && target->getObjectGuid() == lastAttemptTarget &&
             time(0) - lastAttemptTime < (time_t)GetBuffRetryCooldown())
             return false;
@@ -313,6 +424,12 @@ bool CastBuffSpellAction::isUseful()
     }
 
     return CastAuraSpellAction::isUseful();
+}
+
+void CastBuffSpellAction::ClaimBuffCast(Unit* target)
+{
+    if (target)
+        BuffClaimRegistry::Claim(bot->GetObjectGuid(), target->GetObjectGuid(), GetSpellName());
 }
 
 bool CastBuffSpellAction::HasManaForBuff()
@@ -365,12 +482,28 @@ uint32 GreaterBuffOnPartyAction::GetBuffRetryCooldown() const
     return GREATER_BUFF_RETRY_COOLDOWN;
 }
 
+void GreaterBuffOnPartyAction::ClaimBuffCast(Unit* /*target*/)
+{
+    // Issue #T7: the area buff covers the whole (sub)group from one cast, so the
+    // claim is on the group - and under the lower single-target name as well, so
+    // another bot's Power Word: Fortitude fallback on a member stands down too.
+    ObjectGuid const scope = BuffClaimRegistry::GroupScope(bot);
+    BuffClaimRegistry::Claim(bot->GetObjectGuid(), scope, GetSpellName());
+    if (!lowerSpell.empty())
+        BuffClaimRegistry::Claim(bot->GetObjectGuid(), scope, lowerSpell);
+}
+
 bool CastBuffSpellAction::Execute(Event& event)
 {
     // Recorded before the cast so a failed attempt starts the cooldown too -
-    // otherwise the action is retried on every tick (issue #359).
+    // otherwise the action is retried on every tick (issue #359). The claim
+    // (issue #T7) is written at the same point, so the other buffers of the same
+    // spell see the cast while its aura is still in flight.
     if (Unit* target = GetTarget())
+    {
         lastAttemptTarget = target->getObjectGuid();
+        ClaimBuffCast(target);
+    }
     lastAttemptTime = time(0);
 
     if (!CastSpellAction::Execute(event))

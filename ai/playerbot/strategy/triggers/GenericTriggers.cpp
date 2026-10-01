@@ -7,6 +7,7 @@
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/values/AoeValues.h"
 #include "playerbot/strategy/actions/AttackAction.h"
+#include "playerbot/strategy/actions/GenericSpellActions.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 
 #include <regex>
@@ -216,6 +217,13 @@ bool BuffTrigger::IsActive()
     // pool that starts at level 1 (donor bots are max-level, never affected).
     if (!ai->HasSpell(spell))
         return false;
+
+    // Issue #T7: another bot is already casting this spell on the target (or, for
+    // the area buffs, on the whole group). Stay inactive this tick rather than
+    // pick the next member - that would re-create the same race for the others.
+    if (BuffClaimRegistry::IsTargetClaimedByOther(bot, target, spell))
+        return false;
+
     return target && !ai->HasAura(spell, target, false, checkIsOwner) && target->IsAlive();
 }
 
