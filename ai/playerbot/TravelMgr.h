@@ -405,7 +405,9 @@ namespace ai
 		void SetGroupCopy(GuidPosition member) { groupMember = member; }
 
 		void IncRetry(bool isMove) { if (isMove) moveRetryCount+=2; else extendRetryCount++; }
-		void DecRetry(bool isMove) { if (isMove && moveRetryCount > 0) moveRetryCount--; else if (extendRetryCount > 0) extendRetryCount--; }
+		// Each counter decays on its own: a successful move must not eat into
+		// the re-point budget (or the other way round).
+		void DecRetry(bool isMove) { if (isMove) { if (moveRetryCount > 0) moveRetryCount--; } else if (extendRetryCount > 0) extendRetryCount--; }
 
 		void CopyTarget(TravelTarget* const target);
 	private:

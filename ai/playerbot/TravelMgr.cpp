@@ -948,6 +948,20 @@ void TravelTarget::SetTarget(TravelDestination* tDestination1, WorldPosition* wP
     wPosition = wPosition1;
     tDestination = tDestination1;
 
+    // A new destination (or a new point of one) starts with a fresh move
+    // budget: the failed moves that built up moveRetryCount belonged to the
+    // previous spot. Never reset, the counter ratcheted across destinations
+    // (IncRetry steps by 2, only a successful move decays it by 1, and nothing
+    // else ever set it back), so once it passed IsMaxRetry the first failed
+    // MoveTo dropped every new target - live counters reached 1187 and 91.7%
+    // of drops carried >12 against a drop threshold of 10.
+    // extendRetryCount is deliberately NOT reset here: it counts how often the
+    // same destination was re-pointed (RefreshTravelTargetAction) and is what
+    // retires a spot that keeps being re-picked; CopyTarget carries it over
+    // from the freshly chosen target. UnstuckAction saves/restores both
+    // counters around the re-SetTarget it does after its reset.
+    moveRetryCount = 0;
+
     SetStatus(TravelStatus::TRAVEL_STATUS_TRAVEL);
 }
 
