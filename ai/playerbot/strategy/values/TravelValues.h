@@ -29,8 +29,6 @@ namespace ai
         EntryTravelPurposeMapValue(PlayerbotAI* ai, std::string name = "entry travel purpose") : SingleCalculatedValue(ai, name) {};
 
         virtual EntryTravelPurposeMap Calculate() override;
-
-        static uint32 SkillIdToGatherEntry(int32 entry);
     };
 
     enum class TravelDestinationPurpose : uint32

@@ -859,20 +859,8 @@ bool GatherTravelDestination::IsPossible(const PlayerTravelInfo& info) const
         if (destAreaLevel > 0 && destAreaLevel > (int32)info.GetLevel() + 5)
             return false;
 
-        // A beginner gathers in its own neighbourhood. The 1500 yd starting-level
-        // allowance admitted a lone skinnable spawn at the Stormwind docks (1290 yd
-        // from a Northshire bot) that the bot could not path to: it failed the move
-        // six times, dropped the gather purpose and blacklisted it for five minutes,
-        // while its own spawns sat 76 yd away. Owned and hired lowbies keep the old
-        // allowance - they gather next to their player, not on their own errand.
-        if (info.GetLevel() <= 5)
-        {
-            float const maxDistance = info.IsMasterlessRandom()
-                ? sPlayerbotAIConfig.lowLevelGatherMaxDistance
-                : 1500.0f;
-            if (point->distance(info.getPosition()) > maxDistance)
-                return false;
-        }
+        if (info.GetLevel() <= 5 && point->distance(info.getPosition()) > 1500.0f)
+            return false;
     }
 
     return true;
@@ -2495,24 +2483,7 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
     bool const beginnerGrind = (purposeFlag & (uint32)TravelDestinationPurpose::Grind) &&
         info.GetLevel() <= 4 && info.IsMasterlessRandom();
 
-    // A beginner gather trip gets the same treatment as a beginner vendor trip, for
-    // the same reason: the zone-average gate vetoes the bot's own starter valley
-    // (rated above a level 1-4 bot), and the only point that survived inside the
-    // 10 km gather search sat 1.3 km away - one skinnable spawn at the Stormwind
-    // docks, which bots failed to path to and dropped, burning the gather purpose
-    // for five minutes at a time. Bounded to the beginner radius and to the
-    // destination's own area band (SetBestTarget still refuses an area above bot
-    // level + 5), so the walk stays in the bot's neighbourhood.
-    bool const beginnerGather =
-        info.GetLevel() <= 4 &&
-        info.IsMasterlessRandom() &&
-        (purposeFlag & ((uint32)TravelDestinationPurpose::GatherSkinning |
-                        (uint32)TravelDestinationPurpose::GatherMining |
-                        (uint32)TravelDestinationPurpose::GatherHerbalism |
-                        (uint32)TravelDestinationPurpose::GatherFishing)) &&
-        position.distance(info.getPosition()) <= sPlayerbotAIConfig.lowLevelGatherMaxDistance;
-
-    if (!beginnerGrind && !beginnerGather && !(purposeFlag & (uint32)TravelDestinationPurpose::QuestTaker) && !beginnerVendorTrip)
+    if (!beginnerGrind && !(purposeFlag & (uint32)TravelDestinationPurpose::QuestTaker) && !beginnerVendorTrip)
     {
         if (!areaLevel || (uint32)botLevel < areaLevel) //Skip points that are in a area that is too high level.
             return false;

@@ -71,9 +71,8 @@ void TravelStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
         {"val::and::{should get money,can get mail,should get mail}", TravelDestinationPurpose::Mail, 6.79f},  //100%
         {"val::should get money", TravelDestinationPurpose::Grind, 6.77f},                                     // 90%
         {"",TravelDestinationPurpose::Mail, 6.6f},                                                             // 30%
-        {"",TravelDestinationPurpose::GatherMining, 6.5f},                                                     // 90%/40% in group
-        {"",TravelDestinationPurpose::GatherSkinning, 6.5f},                                                   // 90%/40% in group
-        {"",TravelDestinationPurpose::GatherHerbalism, 6.5f},                                                  // 90%/40% in group
+        {"",TravelDestinationPurpose::GatherMining, 6.5f},                                                     // 90%/40% in group, level 10+
+        {"",TravelDestinationPurpose::GatherHerbalism, 6.5f},                                                  // 90%/40% in group, level 10+
         {"",TravelDestinationPurpose::GatherFishing, 6.5f},                                                    // 90%/40% in group
         {"",TravelDestinationPurpose::Boss, 6.4f},                                                             // 50%
         // Grind was 6.27 here - dead last, one step below GenericRpg (6.28). Live data

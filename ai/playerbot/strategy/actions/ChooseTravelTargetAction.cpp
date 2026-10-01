@@ -679,12 +679,6 @@ DestinationList ChooseTravelTargetAction::FindDestination(PlayerTravelInfo info,
     //Gather
     if (gather)
     {
-        for (auto& d : sTravelMgr.GetDestinations(info, (uint32)TravelDestinationPurpose::GatherSkinning, {}, false, 1000000.0f))
-        {
-            if (strstri(d->GetTitle().c_str(), name.c_str()))
-                dests.push_back(d);
-        }
-
         for (auto& d : sTravelMgr.GetDestinations(info, (uint32)TravelDestinationPurpose::GatherMining, {}, false, 1000000.0f))
         {
             if (strstri(d->GetTitle().c_str(), name.c_str()))
@@ -1043,7 +1037,6 @@ bool RequestTravelTargetAction::isAllowed() const
             return urand(1, 100) < 30;
         else
             return true;
-    case TravelDestinationPurpose::GatherSkinning:
     case TravelDestinationPurpose::GatherMining:
     case TravelDestinationPurpose::GatherHerbalism:
     case TravelDestinationPurpose::GatherFishing:
@@ -1317,11 +1310,12 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                                     mobEntries.push_back(entry);
                             }
 
-                            // Check which gathering skills the bot actually has.
+                            // Check which gathering skills the bot actually has. Skinning is not one
+                            // of them here: it has no travel destination (a skin comes off the bot's own
+                            // kill), so a skinner-only bot falls through to the mob hunt below.
                             bool hasHerbalism = travelInfo.GetCurrentSkill(SKILL_HERBALISM) > 0;
                             bool hasMining = travelInfo.GetCurrentSkill(SKILL_MINING) > 0;
-                            bool hasSkinning = travelInfo.GetCurrentSkill(SKILL_SKINNING) > 0;
-                            bool hasAnyGathering = hasHerbalism || hasMining || hasSkinning;
+                            bool hasAnyGathering = hasHerbalism || hasMining;
 
                             // Bot has a gathering skill: prioritize gather nodes.
                             if (!gatherEntries.empty() && hasAnyGathering)
@@ -1336,12 +1330,6 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                                 if (hasMining)
                                 {
                                     PartitionedTravelList gatherList = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GatherMining, gatherEntries, true);
-                                    for (auto& [partition, points] : gatherList)
-                                        list[partition].insert(list[partition].end(), points.begin(), points.end());
-                                }
-                                if (hasSkinning)
-                                {
-                                    PartitionedTravelList gatherList = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GatherSkinning, gatherEntries, true);
                                     for (auto& [partition, points] : gatherList)
                                         list[partition].insert(list[partition].end(), points.begin(), points.end());
                                 }
@@ -1360,12 +1348,6 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                                 if (list.empty() && hasMining)
                                 {
                                     PartitionedTravelList gatherList = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GatherMining);
-                                    for (auto& [partition, points] : gatherList)
-                                        list[partition].insert(list[partition].end(), points.begin(), points.end());
-                                }
-                                if (list.empty() && hasSkinning)
-                                {
-                                    PartitionedTravelList gatherList = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::GatherSkinning);
                                     for (auto& [partition, points] : gatherList)
                                         list[partition].insert(list[partition].end(), points.begin(), points.end());
                                 }

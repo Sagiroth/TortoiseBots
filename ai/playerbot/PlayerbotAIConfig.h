@@ -309,15 +309,6 @@ public:
     // crosses level 5+ mobs; a beginner may still reach its own camp vendor, so the
     // trip is capped to this radius instead (and to the starting-zone level band).
     float lowLevelVendorMaxDistance = 600.0f;
-    // Radius in yards of a gather trip a random masterless bot below level 5 may
-    // make on its own errand. A beginner's own spawns can sit above its level band
-    // (the starting valley average), and the 1500 yd starting-level allowance used
-    // to admit a lone skinnable spawn a kilometre away that the bot could not path
-    // to: it failed the move, dropped the gather purpose and blacklisted it. Inside
-    // this radius beginners skip the zone-average gate, and no gather destination
-    // whose nearest point lies beyond it is offered. 0 disables beginner gather
-    // travel (they gather only what they walk past).
-    float lowLevelGatherMaxDistance = 600.0f;
     // Default-on bounded LFT fill: observe native queue (GetQueuedPlayers),
     // identify human groups/instances and missing 1/1/3 roles, filter in-memory
     // Headless random candidates by authoritative Soromeister/LFT ranges,

@@ -37,6 +37,30 @@ EntryGuidps EntryGuidpsValue::Calculate()
     return guidps;
 }
 
+// The gathering skill a game object's lock requires (herbalism / mining). Creatures no longer
+// carry a gather purpose: a skinnable spawn point is a live mob, not a corpse, so those
+// destinations were removed (see the map builder and NeedTravelPurposeValue).
+static uint32 GameObjectLockSkill(GameObjectInfo const* gInfo)
+{
+    if (!gInfo)
+        return SKILL_NONE;
+
+    LockEntry const* lockInfo = sLockStore.LookupEntry(gInfo->GetLockId());
+    if (!lockInfo)
+        return SKILL_NONE;
+
+    for (int i = 0; i < 8; ++i)
+    {
+        if (lockInfo->Type[i] != LOCK_KEY_SKILL)
+            continue;
+
+        if (uint32 skillId = SkillByLockType(LockType(lockInfo->Index[i])))
+            return skillId;
+    }
+
+    return SKILL_NONE;
+}
+
 EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
 {
     EntryQuestRelationMap relationMap = GAI_VALUE(EntryQuestRelationMap, "entry quest relation");
@@ -123,20 +147,11 @@ EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
                 purpose |= (uint32)TravelDestinationPurpose::Boss;
         }
 
-        if (cInfo->skinning_loot_id && GetRequiredLootSkillCompat(cInfo) == SKILL_SKINNING)
-        {
-            purpose |= (uint32)TravelDestinationPurpose::GatherSkinning;
-        }
-
-        if (uint32 skillId = SkillIdToGatherEntry(entry))
-        {
-            if (skillId == SKILL_SKINNING)
-                purpose |= (uint32)TravelDestinationPurpose::GatherSkinning;
-            if (skillId == SKILL_MINING)
-                purpose |= (uint32)TravelDestinationPurpose::GatherMining;
-            if (skillId == SKILL_HERBALISM)
-                purpose |= (uint32)TravelDestinationPurpose::GatherHerbalism;
-        }
+        // No gather purpose for creatures: a skinnable spawn point is a *live* mob, so the
+        // destination could only ever deliver a grind, never a corpse to skin (skinning is a
+        // corpse of the bot's own kill). Until now every skinnable entry got a GatherSkinning
+        // destination whose points are static spawn coordinates - the source of the 600 yd-plus
+        // skin errands (see NeedTravelPurposeValue).
 
         if (purpose > 0)
             entryPurposeMap[entry] = purpose;
@@ -174,13 +189,11 @@ EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
             }
         }
 
-        if (uint32 skillId = SkillIdToGatherEntry(goEntry))
+        if (uint32 skillId = GameObjectLockSkill(gInfo))
         {
-            if (skillId == SKILL_SKINNING)
-                purpose |= (uint32)TravelDestinationPurpose::GatherSkinning;
             if (skillId == SKILL_MINING)
                 purpose |= (uint32)TravelDestinationPurpose::GatherMining;
-            if (skillId == SKILL_HERBALISM)
+            else if (skillId == SKILL_HERBALISM)
                 purpose |= (uint32)TravelDestinationPurpose::GatherHerbalism;
         }
 
@@ -191,52 +204,31 @@ EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
     return entryPurposeMap;
 }
 
-uint32 EntryTravelPurposeMapValue::SkillIdToGatherEntry(int32 entry)
-{
-    if (entry > 0)
-    {
-        CreatureInfo const* cInfo = sCreatureStorage.LookupEntry<CreatureInfo>(entry);
-
-        if (!cInfo->skinning_loot_id)
-            return 0;
-
-        return GetRequiredLootSkillCompat(cInfo);
-    }
-    else
-    {
-        GameObjectInfo const* gInfo = sObjectMgr.GetGameObjectInfo(entry * -1);
-
-        if (uint32 lockId = gInfo->GetLockId())
-        {
-            LockEntry const* lockInfo = sLockStore.LookupEntry(lockId);
-            if (lockInfo)
-            {
-                uint32 skillId = SKILL_NONE;
-
-                for (int i = 0; i < 8; ++i)
-                {
-                    if (lockInfo->Type[i] != LOCK_KEY_SKILL)
-                        continue;
-
-                    if (SkillByLockType(LockType(lockInfo->Index[i])) == 0)
-                        continue;
-
-                    return SkillByLockType(LockType(lockInfo->Index[i]));
-                }
-            }
-        }
-    }
-
-    return 0;
-}
-
 bool NeedTravelPurposeValue::Calculate()
 {
     TravelDestinationPurpose purpose = TravelDestinationPurpose(stoi(getQualifier()));
 
+    // Gather errands have two hard limits, applied before the per-purpose skill check below.
+    //
+    // Skinning is never a travel purpose. A GatherSkinning destination is a static spawn point of
+    // a *live* skinnable creature, and a bot can only skin a corpse it looted itself - so the
+    // errand can never pay off, while live it was the largest death cause of the beginner pool
+    // (215 of 676 deaths in a 43-minute stage-2 window: level 1-5 bots walking into level 5-6
+    // mobs for a spawn 600+ yd away). Skinning now happens where it belongs, on the bot's own
+    // kill, right after that kill is looted (LootObjectStack + LootAction). The donor,
+    // mod-playerbots, has no gather travel purpose at all.
+    if (purpose == TravelDestinationPurpose::GatherSkinning)
+        return false;
+
+    // Herb and ore trips start at level 10. Below that every errand is a walk through mobs the
+    // bot cannot fight (live: 147 herb/mining errand deaths, all with a killer above the bot's
+    // level), and the nodes it passes on its way are picked up by the walk-past scan anyway.
+    if ((purpose == TravelDestinationPurpose::GatherMining || purpose == TravelDestinationPurpose::GatherHerbalism) &&
+        bot->GetLevel() < 10)
+        return false;
+
     const std::map<TravelDestinationPurpose, SkillType> gatheringSkills =
     { {TravelDestinationPurpose::GatherFishing, SKILL_FISHING}
-        , {TravelDestinationPurpose::GatherSkinning, SKILL_SKINNING}
         , {TravelDestinationPurpose::GatherMining, SKILL_MINING}
         , {TravelDestinationPurpose::GatherHerbalism, SKILL_HERBALISM}
     };
@@ -269,7 +261,6 @@ bool NeedTravelPurposeValue::Calculate()
     case TravelDestinationPurpose::GatherFishing:
         if (!AI_VALUE2(bool, "has strategy", "tfish"))
             return false;
-    case TravelDestinationPurpose::GatherSkinning:
     case TravelDestinationPurpose::GatherMining:
     case TravelDestinationPurpose::GatherHerbalism:
         skill = gatheringSkills.at(purpose);
