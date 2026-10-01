@@ -6,6 +6,7 @@
 #include "FishAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/values/TravelValues.h"
+#include "playerbot/strategy/values/MaintenanceValues.h"
 #include "playerbot/TravelNode.h"
 #include "playerbot/strategy/values/SharedValueContext.h"
 #include "playerbot/strategy/values/GuildValues.h"
@@ -93,6 +94,20 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         if (sRandomBotFacade.IsPinnedBot(bot->GetGUIDLow()))
             sLog.outBasic("QUESTPROBE: %s got %u destination ranges for '%s' and picked none",
                 bot->GetName(), uint32(destinationList.size()), futureTravelPurpose.c_str());
+
+        //A vendor errand has no other diagnostic: a search that never yields a
+        //destination leaves the loot in the bags and produces no event at all,
+        //which is exactly how the pool reached 0 SellAction rows in 90 minutes
+        //with no way to tell "the request never ran" from "it ran and found
+        //nothing" (the trainer path has TrainerNoMoney for the same reason). One
+        //line per ten minutes per bot; a vendor trip that works logs nothing.
+        if (purposeKey == std::to_string((uint32)TravelDestinationPurpose::Vendor) &&
+            AI_VALUE2(time_t, "manual time", "vendor trip no target log") <= time(0))
+        {
+            SET_AI_VALUE2(time_t, "manual time", "vendor trip no target log", time(0) + 10 * MINUTE);
+            sPlayerbotAIConfig.logEvent(ai, "VendorTripNoTarget",
+                std::to_string(destinationList.size()), std::to_string(bot->GetLevel()));
+        }
 
         return false;
     }
@@ -938,7 +953,18 @@ bool RequestTravelTargetAction::Execute(Event& event)
     if (leavingOutgrown && actionPurpose == TravelDestinationPurpose::Grind)
         outgrownFloor = (int32)bot->GetLevel() - 5;
 
-    *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, purpose = actionPurpose, outgrownFloor]() { return sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)purpose, {}, true, 10000.0f, outgrownFloor); });
+    // A vendor errand searches the way the named trainer request does - without
+    // the RpgTravelDestination::IsPossible pre-filter. That filter is the only
+    // search-side difference between the trainer errand (which works: 809 trainer
+    // travel targets and 279 purchases in the same window) and the vendor errand
+    // (0 Vendor targets), and the gates that actually protect the walk are not in
+    // it: the partition gate still enforces the beginner radius
+    // (IsLocationLevelValid, LowLevelVendorMaxDistance), the area-level fit and
+    // the <=5 level distance cap, and SetBestTarget still applies the hostile
+    // town, area-level, distance and route checks.
+    bool const onlyPossible = actionPurpose != TravelDestinationPurpose::Vendor;
+
+    *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, purpose = actionPurpose, outgrownFloor, onlyPossible]() { return sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)purpose, {}, onlyPossible, 10000.0f, outgrownFloor); });
 
     AI_VALUE(TravelTarget*, "travel target")->SetStatus(TravelStatus::TRAVEL_STATUS_PREPARE);
     SET_AI_VALUE2(std::string, "manual string", "future travel purpose", getQualifier());
@@ -969,7 +995,7 @@ bool RequestTravelTargetAction::isUseful() {
     if (AI_VALUE(TravelTarget*, "travel target")->GetStatus() == TravelStatus::TRAVEL_STATUS_PREPARE)
         return false;
 
-    if (AI_VALUE(bool, "travel target active"))
+    if (AI_VALUE(bool, "travel target active") && !VendorErrandWhileParked(ai, getQualifier()))
         return false;
 
     // Time-boxed blacklist set by MoveToTravelTargetAction on repeated move

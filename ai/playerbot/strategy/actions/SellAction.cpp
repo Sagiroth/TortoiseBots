@@ -64,6 +64,34 @@ bool SellAction::Execute(Event& event)
             break;
     }
 
+    //An errand sale that sold nothing used to be invisible: 90 minutes of a live
+    //pool produced 0 SellAction rows and no reason for them, so "no vendor wants
+    //this stock" and "no vendor in reach" could not be told apart. One line per
+    //five minutes per bot keeps a bot that cannot sell visible without flooding
+    //bot_events.csv.
+    if (!soldItems && event.GetSource() == "rpg action")
+    {
+        uint32 sellable = 0;
+        for (Item* item : items)
+            if (item->GetProto()->SellPrice)
+                sellable++;
+
+        //Nothing a vendor buys: standing at a vendor cannot finish this errand,
+        //so stop asking for the Vendor travel target (and the near-service walk)
+        //for a while instead of re-trying every tick.
+        if (!sellable)
+            ParkVendorErrand(ai, 10);
+
+        if (AI_VALUE2(time_t, "manual time", "sell errand failed log") <= time(0))
+        {
+            SET_AI_VALUE2(time_t, "manual time", "sell errand failed log", time(0) + 5 * MINUTE);
+
+            sPlayerbotAIConfig.logEvent(ai, "SellErrandFailed",
+                sellable ? "no vendor in reach" : "no vendor-usable stock",
+                std::to_string(items.size()));
+        }
+    }
+
     return soldItems;
 }
 

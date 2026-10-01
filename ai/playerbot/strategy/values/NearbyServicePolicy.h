@@ -30,6 +30,30 @@ namespace ai
         return bagSpacePercentFull >= NEARBY_SERVICE_BAG_PRESSURE;
     }
 
+    // TravelStatus values the rule has to know about (0 = none, 1 = prepare,
+    // 2 = ready, 3 = travel, 4 = work, 5 = cooldown, 6 = expired). The production
+    // path static_asserts these against TravelStatus so they cannot drift.
+    const int NEARBY_SERVICE_TRAVEL_STATUS_PREPARE = 1;
+    const int NEARBY_SERVICE_TRAVEL_STATUS_TRAVEL = 3;
+
+    // Only a journey in flight owns the bot: preparing one, or walking it. A
+    // target that is merely set - the bot arrived and is waiting out its
+    // work/cooldown at the destination - leaves the bot where it stands, so the
+    // quest giver, trainer or vendor next to it must be usable then (the idle
+    // near-service rule) and a bag-pressure vendor errand may still start (the
+    // travel layer). Blocking on any active target meant the near-service rule
+    // could only fire in the gaps between journeys, which is exactly when the
+    // travel layer grabs the bot again: live, a bot parked next to a vendor with
+    // a live Grind target never serviced it, 0 SellAction rows were produced in
+    // 90 minutes, and the vendor travel request showed up as USELESS (`travel
+    // target active`) in the old pool's decision trails while the bot sat at its
+    // destination.
+    inline bool JourneyInFlightOwnsBot(int travelStatus)
+    {
+        return travelStatus == NEARBY_SERVICE_TRAVEL_STATUS_PREPARE ||
+            travelStatus == NEARBY_SERVICE_TRAVEL_STATUS_TRAVEL;
+    }
+
     // What the rule can do with a nearby NPC, in the order it prefers them.
     // Handing in a finished quest is the strongest reason to stop: the reward
     // item and its XP are the only organic gear a low-level bot gets, and the

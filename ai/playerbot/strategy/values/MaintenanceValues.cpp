@@ -8,6 +8,7 @@
 #include "playerbot/strategy/triggers/RpgTriggers.h"
 #include "playerbot/RandomBotFacade.h"
 #include "playerbot/playerbot.h"
+#include "playerbot/TravelMgr.h"
 #include "playerbot/WorldPosition.h"
 
 using namespace ai;
@@ -67,12 +68,17 @@ static bool TrainerServiceNeeded(PlayerbotAI* ai)
 
 //Sellable stock plus either the bag-pressure valve or the existing "should
 //sell" rule (a real batch has piled up, or the stock funds the next spell
-//rank).
+//rank). A vendor errand that already found nothing a vendor buys stays parked
+//for a while (ParkVendorErrand), exactly like the trainer half below, so a bot
+//cannot walk to the same vendor every five seconds to sell nothing.
 static bool VendorServiceNeeded(PlayerbotAI* ai)
 {
     AiObjectContext* context = ai->GetAiObjectContext();
 
     if (!AI_VALUE(bool, "can sell"))
+        return false;
+
+    if (AI_VALUE2(time_t, "manual time", "no travel purpose until::" + std::to_string((uint32)TravelDestinationPurpose::Vendor)) > time(0))
         return false;
 
     return NearbyServiceBagPressure(AI_VALUE(uint8, "bag space")) || AI_VALUE(bool, "should sell");
@@ -104,16 +110,24 @@ GuidPosition ai::NearbyServiceTarget(PlayerbotAI* ai)
     Player* bot = ai->GetBot();
     AiObjectContext* context = ai->GetAiObjectContext();
 
-    //Random pool bots only, and only while idle: a bot with a journey in
-    //flight, a player master or a fight on its hands is not waiting for
-    //anything.
+    //Random pool bots only, and only while idle: a bot with a player master or a
+    //fight on its hands is not waiting for anything.
     if (!sRandomBotFacade.IsRandomBot(bot) || ai->HasRealPlayerMaster())
         return GuidPosition();
 
     if (!bot->IsAlive() || bot->IsInCombat() || !WorldPosition(bot).isOverworld())
         return GuidPosition();
 
-    if (AI_VALUE(bool, "travel target active"))
+    //A journey in flight owns the bot; a target it has already reached does not.
+    //Only PREPARE/TRAVEL are blocked, so a bot parked at its destination (READY),
+    //working there (WORK) or waiting out the cooldown services the NPC next to
+    //it instead of standing still until the target expires.
+    static_assert((int)TravelStatus::TRAVEL_STATUS_PREPARE == NEARBY_SERVICE_TRAVEL_STATUS_PREPARE,
+        "NearbyServicePolicy travel statuses must match TravelStatus");
+    static_assert((int)TravelStatus::TRAVEL_STATUS_TRAVEL == NEARBY_SERVICE_TRAVEL_STATUS_TRAVEL,
+        "NearbyServicePolicy travel statuses must match TravelStatus");
+
+    if (JourneyInFlightOwnsBot((int)AI_VALUE(TravelTarget*, "travel target")->GetStatus()))
         return GuidPosition();
 
     if (!AI_VALUE(bool, "can move around"))
@@ -169,6 +183,106 @@ GuidPosition ai::NearbyServiceTarget(PlayerbotAI* ai)
     int const best = BestNearbyServiceCandidate(candidates);
 
     return best < 0 ? GuidPosition() : nearby[best];
+}
+
+//Is a vendor among the NPCs the bot can reach on foot right now? The same
+//"possible rpg targets" set the near-service rule walks, so the two rules
+//cannot disagree about what "within reach" means.
+static bool VendorWithinNearbyServiceRange(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    AiObjectContext* context = ai->GetAiObjectContext();
+
+    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "possible rpg targets"))
+    {
+        GuidPosition guidP(guid, bot->GetMapId(), bot->GetInstanceId());
+
+        if (!guidP.IsCreature() || !guidP.HasNpcFlag(UNIT_NPC_FLAG_VENDOR))
+            continue;
+
+        if (guidP.sqDistance(bot) <= NearbyServiceRangeSq())
+            return true;
+    }
+
+    return false;
+}
+
+//Bag pressure valve (travel half, issue #379). The near-service rule above only
+//covers a vendor within 50 yd; a bot grinding in the field has none, and the
+//Vendor travel purpose never fired for the pool at all - measured over 90
+//minutes of stage-1 data: 46 % of the bots sat above 80 % bag fill with half
+//their bags vendor trash, yet 0 SellAction rows, 0 BuyAction rows and not one
+//Vendor travel target, while 279 trainer errands ran. So the bags reach a
+//vendor only if something asks for the journey, and this is that ask.
+//
+//The stock test is deliberately the crude one - at least one bag item a vendor
+//pays for - and not `can sell`'s usage answer: the usage answer is what the
+//sell action uses to decide what to hand over, and a valve that waits for the
+//same value stays silent whenever that answer is wrong. A trip that finds
+//nothing to sell parks itself for ten minutes (SellAction) and logs
+//SellErrandFailed, so the loose test cannot turn into a walk-about. The rpg
+//vendor strategy is still required: without it the bot would arrive and not
+//sell at all.
+bool ai::BagPressureVendorTrip(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    AiObjectContext* context = ai->GetAiObjectContext();
+
+    if (!sRandomBotFacade.IsRandomBot(bot) || ai->HasRealPlayerMaster())
+        return false;
+
+    if (!bot->IsAlive() || bot->IsInCombat() || !WorldPosition(bot).isOverworld())
+        return false;
+
+    if (!NearbyServiceBagPressure(AI_VALUE(uint8, "bag space")))
+        return false;
+
+    if (!ai->HasStrategy("rpg vendor", BotState::BOT_STATE_NON_COMBAT))
+        return false;
+
+    bool hasPricedStock = false;
+    for (Item* item : AI_VALUE2(std::list<Item*>, "inventory items", "inventory"))
+    {
+        ItemPrototype const* proto = item->GetProto();
+
+        if (proto && proto->SellPrice)
+        {
+            hasPricedStock = true;
+            break;
+        }
+    }
+
+    if (!hasPricedStock)
+        return false;
+
+    return !VendorWithinNearbyServiceRange(ai);
+}
+
+//May the bag-pressure vendor errand start while the bot already has a travel
+//target? Only while that target is merely parked at its destination - and only
+//for the Vendor purpose, so a relaxed guard cannot let gather/grind requests
+//churn targets the way the "no active target" gate was written to prevent.
+bool ai::VendorErrandWhileParked(PlayerbotAI* ai, const std::string& qualifier)
+{
+    if (qualifier != std::to_string((uint32)TravelDestinationPurpose::Vendor))
+        return false;
+
+    if (!BagPressureVendorTrip(ai))
+        return false;
+
+    AiObjectContext* context = ai->GetAiObjectContext();
+
+    return !JourneyInFlightOwnsBot((int)AI_VALUE(TravelTarget*, "travel target")->GetStatus());
+}
+
+void ai::ParkVendorErrand(PlayerbotAI* ai, uint32 minutes)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+
+    std::string const purposeKey = std::to_string((uint32)TravelDestinationPurpose::Vendor);
+
+    SET_AI_VALUE2(bool, "no active travel destinations", purposeKey, true);
+    SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purposeKey, time(0) + (time_t)minutes * MINUTE);
 }
 
 //A broke bot that picks up one grey pelt is not a reason to leave the grind

@@ -102,10 +102,10 @@ namespace ai
 
     //The nearest quest giver, class trainer or vendor a waiting bot has a real
     //reason to use, or an empty GuidPosition when there is nothing to do or
-    //nobody close enough to do it with. Empty unless the bot is idle (no journey
-    //in flight, no fight, no player master) and the NPC is within a short walk: a
-    //bot standing next to the NPC that would unblock it must use it instead of
-    //starting a journey it may never finish (issue #379).
+    //nobody close enough to do it with. Empty unless the bot is idle (not
+    //preparing or walking a journey, no fight, no player master) and the NPC is
+    //within a short walk: a bot standing next to the NPC that would unblock it
+    //must use it instead of starting a journey it may never finish (issue #379).
     GuidPosition NearbyServiceTarget(PlayerbotAI* ai);
 
     //True when the bot holds a finished quest it can actually be paid for. A
@@ -114,6 +114,27 @@ namespace ai
     //nearby hand-in waits until the reward would go through - the same
     //CanRewardQuest test the travel layer builds its taker fetch from.
     bool HasRewardableFinishedQuest(PlayerbotAI* ai);
+
+    //Bag pressure in the field: bags at the pressure line, stock a vendor
+    //actually wants, and no vendor within the near-service radius. True means
+    //the bot must request the existing Vendor travel target instead of waiting
+    //for one to walk past. False once nothing sellable is left, so a bot cannot
+    //loop on trips that cannot empty its bags.
+    bool BagPressureVendorTrip(PlayerbotAI* ai);
+
+    //May the bag-pressure vendor errand start while a travel target is set?
+    //Yes while that target is merely parked at its destination (arrived,
+    //working it, or in cooldown) and no while a journey is in flight; and only
+    //for the Vendor purpose, so other request actions keep the old churn guard.
+    //The travel request action and the travel multiplier both ask this, so they
+    //cannot disagree.
+    bool VendorErrandWhileParked(PlayerbotAI* ai, const std::string& qualifier);
+
+    //A vendor errand that found nothing vendor-usable cannot be finished by
+    //standing there. Park the Vendor travel purpose the way TrainerAction parks
+    //a fruitless trainer visit: the same key ChooseTravelTargetAction sets when
+    //a destination search comes up empty, cleared early by any successful pick.
+    void ParkVendorErrand(PlayerbotAI* ai, uint32 minutes);
 
     class NearbyServiceTargetValue : public GuidPositionCalculatedValue
     {

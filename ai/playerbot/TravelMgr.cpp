@@ -2419,6 +2419,16 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
         (purposeFlag & (uint32)TravelDestinationPurpose::Vendor) &&
         position.distance(info.getPosition()) <= sPlayerbotAIConfig.lowLevelVendorMaxDistance;
 
+    // A beginner vendor trip is a walk inside its own camp, whatever the other
+    // gates would allow. The vendor search no longer runs the IsPossible
+    // pre-filter that used to enforce this radius (see
+    // RequestTravelTargetAction::Execute), so it is enforced here instead - and
+    // a radius of 0 keeps meaning "no beginner vendor trips at all".
+    if (info.GetLevel() < 5 && info.IsMasterlessRandom() &&
+        (purposeFlag & (uint32)TravelDestinationPurpose::Vendor) &&
+        position.distance(info.getPosition()) > sPlayerbotAIConfig.lowLevelVendorMaxDistance)
+        return false;
+
     // Beginners grinding their starter valley are exempt from the zone-average
     // gate: GrindTravelDestination::IsPossible already caps their mob window to
     // their own level (and excludes critters), but the valley average sits above

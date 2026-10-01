@@ -2,6 +2,8 @@
 #include "playerbot/playerbot.h"
 #include "TravelStrategy.h"
 #include "playerbot/TravelMgr.h"
+#include "playerbot/strategy/actions/ChooseTravelTargetAction.h"
+#include "playerbot/strategy/values/MaintenanceValues.h"
 
 using namespace ai;
 
@@ -20,6 +22,18 @@ float TravelActionMultiplier::GetValue(Action* action)
             return 1.0f;
         if (name.find("guild order") != std::string::npos)
             return 1.0f;
+
+        // A bag-pressure vendor errand may start while the bot is merely parked
+        // at its destination (arrived, working it, or in cooldown): the bags are
+        // at the pressure line and there is no vendor within walking distance, so
+        // standing there until the current target expires is what left the pool
+        // with 0 SellAction rows. Only the Vendor purpose and only while the
+        // valve is open - every other request keeps the churn guard.
+        if (RequestTravelTargetAction* request = dynamic_cast<RequestTravelTargetAction*>(action))
+        {
+            if (VendorErrandWhileParked(ai, request->getQualifier()))
+                return 1.0f;
+        }
 
         return 0.0f;
     }
