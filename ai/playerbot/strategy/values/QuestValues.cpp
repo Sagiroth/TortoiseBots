@@ -415,7 +415,21 @@ uint8 FreeQuestLogSlotValue::Calculate()
 
 bool HasFinishedQuestValue::Calculate()
 {
-	return HasRewardableFinishedQuest(ai);
+	if (!HasRewardableFinishedQuest(ai))
+		return false;
+
+	// This value ranks the turn-in request above the grind errand (6.36 vs 6.35,
+	// see TravelStrategy), so it must stand down while the quest purpose is
+	// parked: a hand-in search that came back with no reachable taker would
+	// otherwise re-fire as soon as ChooseTravelTargetAction's park expired, abort
+	// the grind errand again, and repeat forever for a quest whose ender never
+	// becomes walkable. The park's own bool cannot carry this - any successful
+	// travel pick writes it back to false (setNewTarget clears the whole value
+	// map) while the timestamp stands - so the timestamp decides here. The
+	// nearby-service hand-in and the log-upkeep latch use the raw predicate
+	// (HasRewardableFinishedQuest), so a bot standing next to its taker still
+	// gets paid during the park.
+	return AI_VALUE2(time_t, "manual time", "no travel purpose until::quest") <= time(0);
 }
 
 uint32 DialogStatusValue::getDialogStatus(Player* bot, int32 questgiver, uint32 questId)
