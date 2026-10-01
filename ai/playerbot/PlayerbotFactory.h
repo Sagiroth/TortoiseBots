@@ -57,6 +57,10 @@ public:
     // for TurtleMountAtLevel..39, no-op at 40+ and when disabled. Called from
     // InitMounts (seed path) and the level-up spell hook.
     void InitTurtleMount();
+    // Racial/collection mount set at 40 (slow) and 60 (epic), idempotent per
+    // tier. Public so the 40/60 level-up spell hook can grant it behind
+    // AiPlayerbot.LevelUpMounts; the seed/hire field kit calls it too.
+    void InitMounts();
     void InitPet();
     void InitPetSpells();
 
@@ -81,7 +85,6 @@ private:
     // "auto talents" action applies the matching premade build. Returns false if the
     // class has no premade specs configured.
     bool SelectPremadeSpecNo();
-    void InitMounts();
     // Idempotent kit helpers shared by the fresh-seed and restock paths.
     // InitBags keeps the hunter quiver/pouch logic intact; InitLevelBags
     // upgrades plain container slots to a level-tier vendor bag first.

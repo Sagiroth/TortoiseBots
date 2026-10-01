@@ -3760,6 +3760,22 @@ void PlayerbotFactory::InitMounts()
         if (available.empty())
             continue;
 
+        // Idempotent per tier: a bot that already owns a mount from this tier
+        // keeps it, so a re-seed or a repeated level-up at 60 cannot stack the
+        // whole racial/collection list. Level-up calls InitMounts at 40 and 60
+        // only, so this is what makes the second call a no-op.
+        bool ownsTier = false;
+        for (uint32 candidate : available)
+        {
+            if (bot->HasSpell(candidate))
+            {
+                ownsTier = true;
+                break;
+            }
+        }
+        if (ownsTier)
+            continue;
+
         uint32 spell = available[urand(0, available.size() - 1)];
         if (spell)
         {
