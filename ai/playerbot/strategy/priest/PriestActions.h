@@ -104,9 +104,22 @@ namespace ai
 
     // racials
     RANGED_DEBUFF_ACTION(CastDevouringPlagueAction, "devouring plague");
-    BUFF_ACTION(CastTouchOfWeaknessAction, "touch of weakness");
+    // Touch of Weakness and Shadowguard overwrite each other (see
+    // PriestTriggers.cpp). A queued cast of the second must not fire while the
+    // first is up, or the two upkeep triggers ping-pong every tick.
+    class CastTouchOfWeaknessAction : public CastBuffSpellAction
+    {
+    public:
+        CastTouchOfWeaknessAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "touch of weakness") {}
+        bool isUseful() override { return !ai->HasAura("shadowguard", bot) && CastBuffSpellAction::isUseful(); }
+    };
     RANGED_DEBUFF_ACTION(CastHexOfWeaknessAction, "hex of weakness");
-    BUFF_ACTION(CastShadowguardAction, "shadowguard");
+    class CastShadowguardAction : public CastBuffSpellAction
+    {
+    public:
+        CastShadowguardAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "shadowguard") {}
+        bool isUseful() override { return !ai->HasAura("touch of weakness", bot) && CastBuffSpellAction::isUseful(); }
+    };
     HEAL_ACTION(CastDesperatePrayerAction, "desperate prayer");
     SPELL_ACTION_U(CastStarshardsAction, "starshards", (AI_VALUE2(uint8, "mana", "self target") > 50 && AI_VALUE(Unit*, "current target") && AI_VALUE2(float, "distance", "current target") > 15.0f));
     BUFF_ACTION(CastElunesGraceAction, "elune's grace");

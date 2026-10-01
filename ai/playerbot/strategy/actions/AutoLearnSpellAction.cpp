@@ -397,6 +397,16 @@ bool AutoLearnSpellAction::LearnSpellFromSpell(uint32 spellId, std::ostringstrea
 
             if (IsValidSpell(learnedSpell))
             {
+                // Racial-only spells (Touch of Weakness, Devouring Plague,
+                // Fear Ward, Shadowguard...) carry a skill_line_ability race
+                // mask. The quest-reward path is driven only by
+                // SatisfyQuestRace on the QUEST, and quest 5659 "Touch of
+                // Weakness" lists Undead|Troll, so a Troll priest was taught
+                // the Undead racial (2652). Honour the spell's own mask here
+                // like the trainer path (GetTrainerSpellState) already does.
+                if (!bot->IsSpellFitByClassAndRace(learnedSpell))
+                    continue;
+
                 if (!bot->HasSpell(learnedSpell))
                 {
                     bot->LearnSpell(learnedSpell, false);

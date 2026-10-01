@@ -22,9 +22,9 @@ namespace ai
 
     // racials
     DEBUFF_TRIGGER(DevouringPlagueTrigger, "devouring plague");
-    BUFF_TRIGGER(TouchOfWeaknessTrigger, "touch of weakness");
+    BUFF_TRIGGER_A(TouchOfWeaknessTrigger, "touch of weakness");
     DEBUFF_TRIGGER(HexOfWeaknessTrigger, "hex of weakness");
-    BUFF_TRIGGER(ShadowguardTrigger, "shadowguard");
+    BUFF_TRIGGER_A(ShadowguardTrigger, "shadowguard");
     DEFLECT_TRIGGER(FeedbackTrigger, "feedback");
     SNARE_TRIGGER(ChastiseTrigger, "chastise");
     DEBUFF_TRIGGER(StarshardsTrigger, "starshards");
