@@ -3325,6 +3325,12 @@ void PlayerbotFactory::InitAvailableSpells()
             bot->LearnSpell(9634, false);   // Dire Bear Form
     }
 
+    // Prayer of Fortitude has no trainer on this realm - players learn it from
+    // world-drop codices - so a hire only ever got the level-60 book rank. Learn
+    // rank 1 (21562) from its own level, 48.
+    if (bot->GetClass() == CLASS_PRIEST && bot->GetLevel() >= 48 && !bot->HasSpell(21562))
+        bot->LearnSpell(21562, false);
+
     // add book spells
     if (bot->GetLevel() == 60)
     {
@@ -3887,9 +3893,13 @@ void PlayerbotFactory::InitReagents()
         break;
     case CLASS_PRIEST:
         regCount = 3;
-        if (bot->GetLevel() > 48)
+        // Rank levels: Prayer of Fortitude R1 (21562) is level 48 and needs the
+        // Holy Candle 17028, the level-60 spells (PoF R2 21564, Prayer of Spirit
+        // 27681, Prayer of Shadow Protection 27683) all need the Sacred Candle
+        // 17029. The old > 48 threshold left a level-48 hire without a candle.
+        if (bot->GetLevel() >= 48)
             items = { 17028 };
-        if (bot->GetLevel() > 55)
+        if (bot->GetLevel() >= 60)
             items = { 17028, 17029 };
         break;
     case CLASS_ROGUE:
