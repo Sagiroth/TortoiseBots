@@ -40,6 +40,18 @@ void RpgStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
         "no rpg target",
         NextAction::array(0, new NextAction("choose rpg target", 5.0f), NULL)));
 
+    //Idle near-service errand (issue #379). Above every "request travel
+    //target" purpose (6.28-6.96) on purpose: a bot with no journey in flight
+    //that is standing next to the trainer or vendor it needs must use it,
+    //rather than start a journey it may never finish - the travel layer's
+    //purposes outrank the whole rpg layer (5.0) and used to pre-empt it, which
+    //is how a bot ended up idling three metres from the NPC (or dying on a
+    //cross-zone trainer trip). Still far below the utility triggers (100), so
+    //mail/upkeep checks keep their precedence.
+    triggers.push_back(new TriggerNode(
+        "val::should service nearby npc",
+        NextAction::array(0, new NextAction("service nearby npc", 6.97f), NULL)));
+
     triggers.push_back(new TriggerNode(
         "far from rpg target",
         NextAction::array(0, new NextAction("move to rpg target", 5.0f), NULL)));

@@ -1,8 +1,11 @@
 
 #include "MaintenanceValues.h"
+#include "NearbyServicePolicy.h"
 #include "Mail/Mail.h"
 #include "MapNodes/MasterPlayer.h"
 #include "playerbot/strategy/values/GuildValues.h"
+#include "playerbot/strategy/triggers/RpgTriggers.h"
+#include "playerbot/RandomBotFacade.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/WorldPosition.h"
 
@@ -45,6 +48,93 @@ static uint32 SpellMoneyMissing(PlayerbotAI* ai)
 bool ShouldSellValue::CantAffordNextSpell(PlayerbotAI* ai)
 {
     return SpellMoneyMissing(ai) > 0;
+}
+
+//An affordable class rank is still unlearned: the partial-purse rule the
+//"trainer class" travel trigger uses, minus the journey.
+static bool TrainerServiceNeeded(PlayerbotAI* ai)
+{
+    uint32 minSpellCost = MinTrainableSpellCost(ai);
+
+    if (!minSpellCost)
+        return false;
+
+    AiObjectContext* context = ai->GetAiObjectContext();
+
+    return AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::spells) >= minSpellCost;
+}
+
+//Sellable stock plus either the bag-pressure valve or the existing "should
+//sell" rule (a real batch has piled up, or the stock funds the next spell
+//rank).
+static bool VendorServiceNeeded(PlayerbotAI* ai)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+
+    if (!AI_VALUE(bool, "can sell"))
+        return false;
+
+    return NearbyServiceBagPressure(AI_VALUE(uint8, "bag space")) || AI_VALUE(bool, "should sell");
+}
+
+GuidPosition ai::NearbyServiceTarget(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    AiObjectContext* context = ai->GetAiObjectContext();
+
+    //Random pool bots only, and only while idle: a bot with a journey in
+    //flight, a player master or a fight on its hands is not waiting for
+    //anything.
+    if (!sRandomBotFacade.IsRandomBot(bot) || ai->HasRealPlayerMaster())
+        return GuidPosition();
+
+    if (!bot->IsAlive() || bot->IsInCombat() || !WorldPosition(bot).isOverworld())
+        return GuidPosition();
+
+    if (AI_VALUE(bool, "travel target active"))
+        return GuidPosition();
+
+    if (!AI_VALUE(bool, "can move around"))
+        return GuidPosition();
+
+    bool const needsVendor = VendorServiceNeeded(ai);
+    bool const needsTrainer = TrainerServiceNeeded(ai) &&
+        AI_VALUE2(time_t, "manual time", "no travel purpose until::trainer class") <= time(0); //Respect the fruitless-visit park.
+
+    if (!needsVendor && !needsTrainer)
+        return GuidPosition();
+
+    std::vector<GuidPosition> nearby;
+    std::vector<NearbyServiceCandidate> candidates;
+
+    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "possible rpg targets"))
+    {
+        GuidPosition guidP(guid, bot->GetMapId(), bot->GetInstanceId());
+
+        if (!guidP.IsCreature())
+            continue;
+
+        float const sqDistance = guidP.sqDistance(bot);
+
+        if (sqDistance > NearbyServiceRangeSq())
+            continue;
+
+        int rank = -1; //Not a service target: a vendor errand, a random NPC, a wrong-class trainer.
+
+        if (needsVendor && guidP.HasNpcFlag(UNIT_NPC_FLAG_VENDOR))
+            rank = 0;
+        else if (needsTrainer && guidP.HasNpcFlag(UNIT_NPC_FLAG_TRAINER) &&
+            RpgTrainTrigger::IsTrainerOf(guidP.GetCreatureTemplate(), bot) &&
+            RpgTrainTrigger::TeachesAffordableSpell(ai, guidP, bot))
+            rank = 1;
+
+        nearby.push_back(guidP);
+        candidates.push_back(NearbyServiceCandidate{ rank, sqDistance });
+    }
+
+    int const best = BestNearbyServiceCandidate(candidates);
+
+    return best < 0 ? GuidPosition() : nearby[best];
 }
 
 //A broke bot that picks up one grey pelt is not a reason to leave the grind

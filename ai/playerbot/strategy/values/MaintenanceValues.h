@@ -100,6 +100,28 @@ namespace ai
         virtual bool Calculate() override { return ai->HasStrategy("rpg vendor", BotState::BOT_STATE_NON_COMBAT) && AI_VALUE2(uint32, "item count", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_VENDOR)) > 0; };
     };
 
+    //The nearest class trainer or vendor a waiting bot has a real reason to
+    //use, or an empty GuidPosition when there is nothing to do or nobody close
+    //enough to do it with. Empty unless the bot is idle (no journey in flight,
+    //no fight, no player master) and the NPC is within a short walk: a bot
+    //standing next to the trainer that would unblock it must use it instead of
+    //starting a journey it may never finish (issue #379).
+    GuidPosition NearbyServiceTarget(PlayerbotAI* ai);
+
+    class NearbyServiceTargetValue : public GuidPositionCalculatedValue
+    {
+    public:
+        NearbyServiceTargetValue(PlayerbotAI* ai, std::string name = "nearby service target", int checkInterval = 5) : GuidPositionCalculatedValue(ai, name, checkInterval) {}
+        virtual GuidPosition Calculate() override { return NearbyServiceTarget(ai); }
+    };
+
+    class ShouldServiceNearbyNpcValue : public BoolCalculatedValue
+    {
+    public:
+        ShouldServiceNearbyNpcValue(PlayerbotAI* ai, std::string name = "should service nearby npc", int checkInterval = 5) : BoolCalculatedValue(ai, name, checkInterval) {}
+        virtual bool Calculate() override { return (bool)AI_VALUE(GuidPosition, "nearby service target"); }
+    };
+
     class CanBuyValue : public BoolCalculatedValue
     {
     public:

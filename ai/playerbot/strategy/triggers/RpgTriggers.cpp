@@ -309,19 +309,13 @@ bool RpgTrainTrigger::IsTrainerOf(CreatureInfo const* cInfo, Player* pPlayer)
     return true;
 }
 
-bool RpgTrainTrigger::IsActive()
+bool RpgTrainTrigger::TeachesAffordableSpell(PlayerbotAI* ai, GuidPosition guidP, Player* bot)
 {
-    GuidPosition guidP(getGuidP());
-
-    if (!guidP.HasNpcFlag(UNIT_NPC_FLAG_TRAINER))
-        return false;
-
-    if (guidP.IsHostileTo(bot))
-        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
 
     CreatureInfo const* cInfo = guidP.GetCreatureTemplate();
 
-    if (!IsTrainerOf(cInfo, bot))
+    if (!cInfo)
         return false;
 
     // check present spell in trainer spell list
@@ -351,9 +345,6 @@ bool RpgTrainTrigger::IsActive()
         if (!tSpell)
             continue;
 
-        uint32 reqLevel = 0;
-
-        reqLevel = tSpell->reqLevel;
         TrainerSpellState state = bot->GetTrainerSpellState(tSpell);
         if (state != TRAINER_SPELL_GREEN)
             continue;
@@ -390,7 +381,24 @@ bool RpgTrainTrigger::IsActive()
 
         return true;
     }
+
     return false;
+}
+
+bool RpgTrainTrigger::IsActive()
+{
+    GuidPosition guidP(getGuidP());
+
+    if (!guidP.HasNpcFlag(UNIT_NPC_FLAG_TRAINER))
+        return false;
+
+    if (guidP.IsHostileTo(bot))
+        return false;
+
+    if (!IsTrainerOf(guidP.GetCreatureTemplate(), bot))
+        return false;
+
+    return TeachesAffordableSpell(ai, guidP, bot);
 }
 
 bool RpgHealTrigger::IsActive()
