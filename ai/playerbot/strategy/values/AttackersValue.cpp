@@ -485,13 +485,22 @@ bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
 
     // A target the bot gave up on (out of line of sight with no way to close the
     // distance, see ReachTargetAction) is left alone for a while - unless it comes
-    // after the bot itself, in which case it is plainly reachable.
+    // after the bot itself, in which case it is plainly reachable. A creature that is
+    // evading, or that the core has flagged as unable to reach the bot, is the
+    // exception to that exception: it "attacks" the bot from a place it cannot be
+    // reached from, so treating it as reachable erased the give-up on the next tick,
+    // kept it in the bot's attacker list (combat never ended) and had the bot re-target
+    // it forever (a Murloc Streamrunner held a bot for 15+ minutes at victim=1,
+    // inLos=1, notreach=1, botmove=0).
+    bool const cannotBeReached = target->IsCreature() &&
+        (static_cast<Creature*>(target)->IsInEvadeMode() || static_cast<Creature*>(target)->IsEvadeBecauseTargetNotReachable());
+
     std::map<ObjectGuid, uint32>& unreachable = context->GetValue<std::map<ObjectGuid, uint32>&>("unreachable targets")->Get();
     auto givenUp = unreachable.find(target->getObjectGuid());
     if (givenUp != unreachable.end())
     {
         if (WorldTimer::getMSTime() < givenUp->second &&
-            (target->GetVictim() != playerToCheckAgainst || !playerToCheckAgainst->IsWithinLOSInMap(target, true)))
+            (cannotBeReached || target->GetVictim() != playerToCheckAgainst || !playerToCheckAgainst->IsWithinLOSInMap(target, true)))
             return true;
         unreachable.erase(givenUp);
     }
@@ -505,7 +514,7 @@ bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
         if (givenUpKind != unreachableKinds.end())
         {
             if (WorldTimer::getMSTime() < givenUpKind->second &&
-                (target->GetVictim() != playerToCheckAgainst || !playerToCheckAgainst->IsWithinLOSInMap(target, true)))
+                (cannotBeReached || target->GetVictim() != playerToCheckAgainst || !playerToCheckAgainst->IsWithinLOSInMap(target, true)))
                 return true;
             unreachableKinds.erase(givenUpKind);
         }
