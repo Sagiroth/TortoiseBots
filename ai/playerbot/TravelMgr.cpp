@@ -1044,6 +1044,26 @@ bool TravelTarget::IsConditionsActive(bool clear)
     return true;
 }
 
+namespace
+{
+    // A grind destination the bot has simply outgrown: its creatures sit outside the
+    // bot's level band, so the spot can never come back and the bot must walk on. The
+    // band test is the same one the destination filter uses - this only asks whether
+    // the level window is the reason (see the other gates in IsPossible).
+    bool GrindSpotOutgrown(TravelDestination* destination, Player* bot)
+    {
+        GrindTravelDestination* grind = dynamic_cast<GrindTravelDestination*>(destination);
+
+        if (!grind || !grind->GetCreatureInfo() || !bot)
+            return false;
+
+        PlayerTravelInfo info(bot);
+
+        return !GrindLevelFits(GetGrindLevelBand((uint32)info.GetLevel(), info.GetUint8Value("durability"), info.IsMasterlessRandom()),
+            (int32)grind->GetCreatureInfo()->level_max);
+    }
+}
+
 void TravelTarget::CheckStatus()
 {
     if (!IsActive())
@@ -1103,6 +1123,20 @@ void TravelTarget::CheckStatus()
 
         if (destinationInactive || conditionsInactive)
         {
+            // A grind spot the bot has simply outgrown is not a temporary failure:
+            // its creatures sit below the bot's level band, nothing will bring them
+            // back, and the ordinary cooldown would freeze the bot in place for a
+            // full minute on every ding. Expire it so the very next tick can request
+            // a spot that fits. Every other reason a destination went inactive
+            // (unreachable kind, tapped, blacklist) keeps the cooldown pause.
+            if (destinationInactive && GrindSpotOutgrown(tDestination, bot))
+            {
+                ai->TellDebug(ai->GetMaster(), "The target is expiring because the bot has outgrown the spot.", "debug travel");
+                SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
+                ai->GetAiObjectContext()->ClearValues("no active travel destinations");
+                return;
+            }
+
             ai->TellDebug(ai->GetMaster(), "The target is cooling down because the destination was no longer active or the conditions are no longer true.", "debug travel");
             forced = false;
             SetStatus(TravelStatus::TRAVEL_STATUS_COOLDOWN);
