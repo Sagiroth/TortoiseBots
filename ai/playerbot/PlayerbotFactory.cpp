@@ -2649,6 +2649,14 @@ void PlayerbotFactory::InitAllSkills()
     auto pmo = sPerformanceMonitor.start(PERF_MON_RNDBOT, "PlayerbotFactory_Skills1");
     InitSkills();
     InitTradeSkills();
+    // A profession is unusable without its tool: the skinning branch of the loot
+    // pipeline refuses every skinnable corpse without item 7005 and mining refuses
+    // every node without 2901 (LootObject::IsLootPossible). The kit used to be
+    // handed out only by MakeComplete(), which pool bots reach solely through the
+    // level >= 5 + fresh-login gear seeding, so a bot whose professions are granted
+    // here at level 1 kept the skill and never got the tool. Grant the kit wherever
+    // the professions are granted; InitInventorySkill is idempotent.
+    InitInventorySkill();
 }
 
 void PlayerbotFactory::InitTradeSkills()

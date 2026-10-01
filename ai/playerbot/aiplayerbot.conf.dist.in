@@ -252,6 +252,14 @@ AiPlayerbot.LowLevelVendorBatchMinBagSpace = 25
 # Default 600.
 AiPlayerbot.LowLevelVendorMaxDistance = 600
 
+# Radius in yards of a gather trip a random masterless bot below level 5 may make
+# to reach a skinnable spawn or a herb/ore node. Beginners skip the zone-average
+# level gate inside this radius (their own starter valley is rated above them),
+# and a gather destination whose nearest point lies beyond it is not offered at
+# all, so a bot never walks a kilometre for one spawn it cannot reach. Default 600.
+# 0 disables beginner gather travel (they gather only what they walk past).
+AiPlayerbot.LowLevelGatherMaxDistance = 600
+
 # Default-on bounded fill of human-waiting LFT queues with live random Headless bots.
 # Uses core #416 QueuePlayer/LeaveQueue/IsQueued/IsInOffer/AcceptOffer/
 # GetQueuedPlayers; core owns private queues, offers, cancellation and groups.

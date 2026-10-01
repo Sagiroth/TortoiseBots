@@ -722,6 +722,17 @@ void BotManager::OnPlayerLogin(::Player* player)
         TB_LOG_DETAIL("TortoiseBots: bot %s received its level-bound skills and professions.", player->GetName());
     }
 
+    // Idempotent kit top-up for a bot that already had a profession when it logged
+    // in: InitAllSkills granted professions without the profession tools until this
+    // change, so such a bot can hold the skill and still be refused by
+    // LootObject::IsLootPossible, which requires the knife/pick. StoreItem skips
+    // anything the bot already owns, so this is a no-op for a bot that has its kit.
+    if (record.random)
+    {
+        PlayerbotFactory tools(player, player->GetLevel());
+        tools.AddTools();
+    }
+
     // One-shot random scatter on headless login only; fail-closed, no DB mutation, no homebind.
     // Must run AFTER gear seeding and skills so the bot is fully initialized before any map transfer.
     TryRandomTeleport(player, record);
