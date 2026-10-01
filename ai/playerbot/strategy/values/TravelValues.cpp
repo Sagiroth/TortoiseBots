@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "TravelValues.h"
 #include "playerbot/TravelMgr.h"
+#include "MaintenanceValues.h"
 #include "QuestValues.h"
 #include "SharedValueContext.h"
 #include "BudgetValues.h"
@@ -272,7 +273,10 @@ bool NeedTravelPurposeValue::Calculate()
             return true;
         if (AI_VALUE2(bool, "has strategy", "free") && AI_VALUE(bool, "should sell") && AI_VALUE(bool, "can sell"))
             return true;
-        break;
+        //Bag pressure in the field: the two rules above only ask for a journey
+        //while the stock is worth walking for, and nothing else turns a full bag
+        //into a Vendor target when no vendor is within the near-service radius.
+        return BagPressureVendorTrip(ai);
     case TravelDestinationPurpose::AH:
         if (AI_VALUE2(bool, "group or", "should ah sell,can ah sell,following party"))
             return true;

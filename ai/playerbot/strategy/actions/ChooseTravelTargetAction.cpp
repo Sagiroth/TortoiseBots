@@ -94,6 +94,20 @@ bool ChooseTravelTargetAction::Execute(Event& event)
             sLog.outBasic("QUESTPROBE: %s got %u destination ranges for '%s' and picked none",
                 bot->GetName(), uint32(destinationList.size()), futureTravelPurpose.c_str());
 
+        //A vendor errand has no other diagnostic: a search that never yields a
+        //destination leaves the loot in the bags and produces no event at all,
+        //which is exactly how the pool reached 0 SellAction rows in 90 minutes
+        //with no way to tell "the request never ran" from "it ran and found
+        //nothing" (the trainer path has TrainerNoMoney for the same reason). One
+        //line per ten minutes per bot; a vendor trip that works logs nothing.
+        if (purposeKey == std::to_string((uint32)TravelDestinationPurpose::Vendor) &&
+            AI_VALUE2(time_t, "manual time", "vendor trip no target log") <= time(0))
+        {
+            SET_AI_VALUE2(time_t, "manual time", "vendor trip no target log", time(0) + 10 * MINUTE);
+            sPlayerbotAIConfig.logEvent(ai, "VendorTripNoTarget",
+                std::to_string(destinationList.size()), std::to_string(bot->GetLevel()));
+        }
+
         return false;
     }
 

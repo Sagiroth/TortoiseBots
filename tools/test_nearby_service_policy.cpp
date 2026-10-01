@@ -120,6 +120,19 @@ int main()
     CHECK(NearbyServiceRangeSq() == 2500.0f);
     std::cout << "  [PASS] nearby radius is 50 yd\n";
 
+    // Only a journey in flight owns the bot. A live pool produced 0 SellAction
+    // rows in 90 minutes because the rule treated every active travel target -
+    // including the Grind target a bot sits on for its whole work phase - as
+    // "busy", so a bot parked next to a vendor never serviced it.
+    CHECK(ai::NearbyServiceTravelOwnsBot(ai::NEARBY_SERVICE_TRAVEL_STATUS_PREPARE) == true);   // preparing a journey
+    CHECK(ai::NearbyServiceTravelOwnsBot(ai::NEARBY_SERVICE_TRAVEL_STATUS_TRAVEL) == true);    // walking it
+    CHECK(ai::NearbyServiceTravelOwnsBot(0) == false);                                         // no target
+    CHECK(ai::NearbyServiceTravelOwnsBot(2) == false);                                         // arrived (READY)
+    CHECK(ai::NearbyServiceTravelOwnsBot(4) == false);                                         // working at it
+    CHECK(ai::NearbyServiceTravelOwnsBot(5) == false);                                         // cooldown
+    CHECK(ai::NearbyServiceTravelOwnsBot(6) == false);                                         // expired
+    std::cout << "  [PASS] only a journey in flight blocks the rule\n";
+
     std::cout << "All idle near-service policy checks PASSED!\n";
     return 0;
 }
