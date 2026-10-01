@@ -421,13 +421,6 @@ bool ShouldTravelNamedValue::Calculate()
         if (ai->HasRealPlayerMaster())
             return false;
 
-        // A fruitless visit parks the trainer (TrainerAction). Read the park
-        // time, not the flag: any successful pick clears the flag early.
-        // Without this the need stays true during the park and keeps a bot
-        // in a capital (should leave outgrown zone waits for it).
-        if (AI_VALUE2(time_t, "manual time", "no travel purpose until::" + name) > time(0))
-            return false;
-
         TrainerType trainerType = TRAINER_TYPE_CLASS;
         NeedMoneyFor budgetType = NeedMoneyFor::spells;
 
@@ -463,10 +456,35 @@ bool ShouldTravelNamedValue::Calculate()
         if (minSpellCost == UINT32_MAX)
             return false;
 
-        if (AI_VALUE2(uint32, "free money for", (uint32)budgetType) < minSpellCost)
-            return false;
+        uint32 const freeMoney = AI_VALUE2(uint32, "free money for", (uint32)budgetType);
+        bool const canAfford = freeMoney >= minSpellCost;
 
-        return true;
+        // A fruitless visit parks the trainer (TrainerAction). The park is a
+        // cooling-off for the training need that visit found, not a ban, and it must
+        // not outlive it. A park set because nothing was affordable ends the moment
+        // the purse covers the cheapest rank - that is exactly the change that makes
+        // the visit worth repeating - while a park set because the trainer had nothing
+        // to teach is held: money is not what made it fruitless, so the bot is not sent
+        // back there the moment it loots. A level-up lifts either kind
+        // (AutoLearnSpellAction, the ding handler that already expires the travel
+        // target). The timestamp is what every reader of the park consults, so
+        // clearing it unblocks the nearby-trainer service as well; the
+        // "no active travel destinations" flag alone would not, it is cleared by the
+        // next successful pick of any purpose while the timestamp survives. While the
+        // park holds it also keeps the need from pinning a bot in a capital: the
+        // leave-outgrown-zone rule waits for trainer needs.
+        std::string const parkKey = "no travel purpose until::" + name;
+
+        if (AI_VALUE2(time_t, "manual time", parkKey) > time(0))
+        {
+            bool const moneyPark = AI_VALUE2(bool, "manual bool", "trainer park needs money");
+            if (!canAfford || !moneyPark)
+                return false;
+
+            RESET_AI_VALUE2(time_t, "manual time", parkKey);
+        }
+
+        return canAfford;
     }
 
     return false;

@@ -61,6 +61,15 @@ void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
         }
     }
 
+    // A level-up is exactly what can make a fruitless class-trainer visit fruitful
+    // again: new ranks appear at the trainer, and the training need is recomputed from
+    // the new level. The ten-minute park such a visit sets (TrainerAction) is a
+    // cooling-off for the need of the level it was set at, so it must not outlive that
+    // level - otherwise a bot that dings 6 a minute after a fruitless level-5 visit
+    // sits on its new ranks for the rest of the park. The trainer-travel value lifts
+    // the park the same way once the purse covers the cheapest rank.
+    RESET_AI_VALUE2(time_t, "manual time", "no travel purpose until::trainer class");
+
     // Free learning is random-pool only; the paid trainer path is untouched.
     bool const freeLearn = IsFreeLearnBot(bot);
 

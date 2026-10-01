@@ -181,8 +181,16 @@ bool TrainerAction::Execute(Event& event)
         // that stayed in the field. Blacklist the purpose for 10 minutes with the same
         // mechanism ChooseTravelTargetAction::Execute uses when a search yields no
         // usable destination; RequestTravelTargetAction::isUseful reads the same key.
-        // Like the other parks it is a cooling-off: any successful pick of
-        // another purpose clears it early (setNewTarget clears all blacklists).
+        //
+        // The park is timed, not flag-based: readers of the trainer park
+        // (ShouldTravelNamedValue, the nearby-trainer service) consult this
+        // timestamp, so it holds for its full ten minutes whatever else the bot picks
+        // up in the meantime. It ends early only when what made the visit fruitless
+        // changed: a level-up (AutoLearnSpellAction) always, and - for the
+        // nothing-affordable case - a purse that now covers the cheapest rank
+        // (ShouldTravelNamedValue). The reason is recorded with the park, so a bot
+        // that walked to a trainer which teaches it nothing is not sent back there the
+        // moment it loots a copper.
         bool const nothingLearnable = !hasTrainable || visitCheapestUnaffordable != UINT32_MAX;
         bool const fruitless = visitLearned == 0 && nothingLearnable;
 
@@ -196,6 +204,7 @@ bool TrainerAction::Execute(Event& event)
                     std::to_string(visitCheapestUnaffordable),
                     std::to_string(AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::spells)));
 
+            SET_AI_VALUE2(bool, "manual bool", "trainer park needs money", visitCheapestUnaffordable != UINT32_MAX);
             SET_AI_VALUE2(bool, "no active travel destinations", purposeKey, true);
             SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purposeKey, time(0) + 10 * MINUTE);
         }
