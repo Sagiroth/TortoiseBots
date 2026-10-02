@@ -4,7 +4,7 @@ import "time"
 
 // ProtocolVersion is bumped whenever the C++ -> Go datagram layout changes in
 // a way the daemon must understand. It is carried in every datagram.
-const ProtocolVersion = 7
+const ProtocolVersion = 8
 
 // Anomaly types accepted from the game server. Anything else is rejected so
 // that Prometheus label cardinality stays bounded. STUCK is counter-only
@@ -63,6 +63,160 @@ type BotSnapshot struct {
 
 	// Projected breadcrumb trail (server-maintained, newest last)
 	Trail []Coordinate `json:"trail,omitempty"`
+
+	// Activity is the daemon's rolling per-bot activity rollup (counters only;
+	// the level timeline lives in the /api/v1/activity detail). Nil until the
+	// bot has produced its first tracked event.
+	Activity *BotActivity `json:"activity,omitempty"`
+}
+
+// BotEvent is one activity event forwarded by the game server's BOT_EVENTS
+// datagram. The module forwards only a whitelist of bot_events.csv rows
+// (quests, loot, vendor/trainer/repair/give-up/auction/AH, deaths) so the
+// dashboard can roll them up per bot without a per-tick DB read. Item events
+// carry the item prototype's quality and prices (looked up server-side, no
+// DB); money is the bot's copper at event time, from which the daemon derives
+// earned/spent deltas.
+type BotEvent struct {
+	Event  string `json:"event"`
+	Info1  string `json:"info1,omitempty"`
+	Info2  string `json:"info2,omitempty"`
+	Bot    string `json:"bot,omitempty"`
+	GUID   uint32 `json:"guid,omitempty"`
+	Class  string `json:"class,omitempty"`
+	Level  uint32 `json:"level,omitempty"`
+	MapID  uint32 `json:"map,omitempty"`
+	ZoneID uint32 `json:"zone,omitempty"`
+	// Item enrichment, present only for events whose info2 is an item id.
+	ItemID  uint32 `json:"item_id,omitempty"`
+	Quality uint32 `json:"quality,omitempty"`
+	Sell    uint32 `json:"sell,omitempty"`
+	Buy     uint32 `json:"buy,omitempty"`
+	// Money is the bot's copper at event time (0 = unknown).
+	Money uint64 `json:"money,omitempty"`
+}
+
+// BotEventsPayload delivers the activity events emitted during one snapshot
+// cycle. Events are not tied to a specific batch: the daemon applies them as
+// they arrive and the next published roster carries the refreshed counters.
+type BotEventsPayload struct {
+	V       int        `json:"v"`
+	Session uint64     `json:"session"`
+	Seq     uint64     `json:"seq"`
+	TS      int64      `json:"ts"`
+	Type    string     `json:"type"`
+	Events  []BotEvent `json:"events"`
+}
+
+// BotActivity is the daemon's rolling per-bot activity rollup. Counters are
+// session-scoped (reset with the roster on a game-server restart or roster
+// wipe). Money fields are copper.
+type BotActivity struct {
+	QuestsRewarded  int      `json:"quests_rewarded"`
+	QuestsAccepted  int      `json:"quests_accepted"`
+	QuestsCompleted int      `json:"quests_completed"`
+	QuestHandIns    int      `json:"quest_handins"`
+	OpenQuests      int      `json:"open_quests"`
+	LootItems       int      `json:"loot_items"`
+	LootValue       uint64   `json:"loot_value"`
+	NotableLoot     int      `json:"notable_loot"`
+	ItemsSold       int      `json:"items_sold"`
+	SoldValue       uint64   `json:"sold_value"`
+	ItemsBought     int      `json:"items_bought"`
+	BoughtValue     uint64   `json:"bought_value"`
+	MoneyEarned     uint64   `json:"money_earned"`
+	MoneySpent      uint64   `json:"money_spent"`
+	Kills           int      `json:"kills"`
+	Deaths          int      `json:"deaths"`
+	GhostSeconds    float64  `json:"ghost_seconds"`
+	TrainerVisits   int      `json:"trainer_visits"`
+	SpellsLearned   int      `json:"spells_learned"`
+	VendorVisits    int      `json:"vendor_visits"`
+	Repairs         int      `json:"repairs"`
+	RepairCost      uint64   `json:"repair_cost"`
+	GiveUps         int      `json:"giveups"`
+	Skinning        int      `json:"skinning"`
+	Gathering       int      `json:"gathering"`
+	SkillUps        int      `json:"skillups"`
+	AHListings      int      `json:"ah_listings"`
+	AHBids          int      `json:"ah_bids"`
+	Events          int64    `json:"events"`
+	LevelsGained    int      `json:"levels_gained"`
+	FirstSeen       int64    `json:"first_seen"`
+	LastEvent       int64    `json:"last_event"`
+	Levels          []LevelEvent `json:"levels,omitempty"`
+}
+
+// LevelEvent is one observed level for a bot: the first time the roster
+// reported that level. The gap between consecutive entries is the time spent
+// on the previous level.
+type LevelEvent struct {
+	Level uint32 `json:"level"`
+	At    int64  `json:"at"`
+}
+
+// LootFeedItem is one row of the pool-wide loot feed: a looted/stored item, a
+// gathering or skinning drop, or a money pickup. Source is "loot", "gather",
+// "skin" or "money".
+type LootFeedItem struct {
+	At      int64  `json:"at"`
+	Bot     string `json:"bot"`
+	GUID    uint32 `json:"guid"`
+	Class   string `json:"class"`
+	Level   uint32 `json:"level"`
+	MapID   uint32 `json:"map"`
+	ZoneID  uint32 `json:"zone"`
+	Source  string `json:"source"`
+	Item    string `json:"item,omitempty"`
+	ItemID  uint32 `json:"item_id,omitempty"`
+	Quality uint32 `json:"quality"`
+	Value   uint64 `json:"value,omitempty"`
+	Money   uint64 `json:"money,omitempty"`
+}
+
+// QuestFeedItem is one row of the pool-wide quest feed.
+type QuestFeedItem struct {
+	At      int64  `json:"at"`
+	Bot     string `json:"bot"`
+	GUID    uint32 `json:"guid"`
+	Class   string `json:"class"`
+	Level   uint32 `json:"level"`
+	Event   string `json:"event"`
+	Quest   string `json:"quest"`
+	QuestID uint32 `json:"quest_id"`
+}
+
+// ActivityLevelItem is one level-up observed across the pool, used for the
+// pool-wide level timeline.
+type ActivityLevelItem struct {
+	At    int64  `json:"at"`
+	Bot   string `json:"bot"`
+	GUID  uint32 `json:"guid"`
+	Class string `json:"class"`
+	Level uint32 `json:"level"`
+}
+
+// ActivitySummary is the pool-wide activity rollup.
+type ActivitySummary struct {
+	BotsTracked int         `json:"bots_tracked"`
+	ElapsedSec  float64     `json:"elapsed_sec"`
+	Counters    BotActivity `json:"counters"`
+}
+
+// ActivityBot is one bot's activity in the /api/v1/activity response.
+type ActivityBot struct {
+	GUID     uint32      `json:"guid"`
+	Name     string      `json:"name"`
+	Class    string      `json:"class"`
+	Level    uint32      `json:"level"`
+	Activity BotActivity `json:"activity"`
+}
+
+// ActivityResponse is the payload of GET /api/v1/activity.
+type ActivityResponse struct {
+	Summary   ActivitySummary    `json:"summary"`
+	Bots      []ActivityBot      `json:"bots"`
+	LevelFeed []ActivityLevelItem `json:"level_feed"`
 }
 
 type Coordinate struct {

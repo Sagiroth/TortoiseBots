@@ -4,6 +4,7 @@
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/strategy/actions/LootAction.h"
+#include "runtime/ObservabilityEmitter.h"
 #ifdef MANGOS
 #include "luaEngine.h"
 #endif
@@ -63,6 +64,12 @@ bool XpGainAction::Execute(Event& event)
     ai->AccelerateRespawn(guid);
 
     Creature* creature = ai->GetCreature(guid);
+
+    // The bot_events.csv XpGainAction row cannot carry the kill/non-kill XP
+    // flag (type), so the dashboard's kills/hour comes from this explicit
+    // kill event instead of guessing from the CSV fields.
+    if (type == 0 && guid)
+        sObservabilityEmitter.EmitBotActivity("Kill", creature ? creature->GetName() : "", std::to_string(xpgain), bot);
 
     //if (creature && ((creature->IsElite() && !creature->GetMap()->IsDungeon()) || creature->IsWorldBoss() || creature->GetLevel() > DEFAULT_MAX_LEVEL + 1 || creature->GetLevel() > bot->GetLevel() + 4))
     if (creature && !creature->GetMap()->IsDungeon())

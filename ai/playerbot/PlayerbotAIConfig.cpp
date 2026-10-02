@@ -11,6 +11,8 @@
 // Issue #265: the managed-account registry is the authority for random-pool
 // account identity (prefix matching never authorizes ownership).
 #include "../../runtime/RandomBotAccountRegistry.h"
+// logEvent forwards the activity whitelist to the telemetry daemon.
+#include "../../runtime/ObservabilityEmitter.h"
 
 #include "playerbot/TravelMgr.h"
 
@@ -1308,6 +1310,13 @@ void PlayerbotAIConfig::logEvent(PlayerbotAI* ai, std::string eventName, std::st
 
         log("bot_events.csv", out.str().c_str());
     }
+
+    // Mirror the dashboard-relevant subset to the observability daemon over
+    // UDP. Deliberately outside the hasLog() gate: the activity rollup is a
+    // telemetry feature, not a CSV-logging one. EmitBotActivity filters to its
+    // own whitelist and no-ops when the emitter is disabled.
+    if (ai)
+        sObservabilityEmitter.EmitBotActivity(eventName, info1, info2, ai->GetBot());
 };
 
 void PlayerbotAIConfig::logEvent(PlayerbotAI* ai, std::string eventName, ObjectGuid guid, std::string info2)

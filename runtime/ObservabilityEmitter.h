@@ -113,6 +113,18 @@ public:
                         std::string const& targetName = "",
                         std::string const& strategy = "");
 
+    // Activity stream: mirrors a whitelist of bot_events.csv rows (quests,
+    // loot, vendor/trainer/repair, auctions, deaths, give-ups) into the
+    // BOT_EVENTS datagram so the dashboard can roll them up per bot without
+    // reading the CSV from another container. Item events are enriched with
+    // the prototype's quality and prices; every event carries the bot's
+    // copper so the daemon can derive earned/spent. Cheap: one small JSON
+    // fragment per whitelisted row, flushed with the next snapshot cycle.
+    void EmitBotActivity(std::string const& event,
+                         std::string const& info1,
+                         std::string const& info2,
+                         Player* bot);
+
     // turtle: let another module (e.g. mod-turtlebots residents) contribute its
     // own Player* roster to every telemetry cycle. Called on the world thread.
     void SetExternalRosterProvider(std::function<void(std::vector<Player*>&)> provider);
@@ -167,6 +179,13 @@ private:
     // Guards socket teardown against a concurrent sender; emission and state
     // mutation stay on the world thread.
     mutable std::mutex m_socketMutex;
+
+    // Whitelisted activity events collected since the last snapshot, as
+    // ready-to-join JSON fragments. Bounded: on overflow the batch is dropped
+    // (the next cycle starts clean) the same way the other rolling tables
+    // bound themselves.
+    std::vector<std::string> m_pendingEvents;
+    void FlushBotEvents(uint64 seq);
 
     uint32 m_snapshotTimerMs;
     // Epoch identifying this server process. The daemon outlives server

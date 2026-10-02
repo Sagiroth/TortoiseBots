@@ -178,6 +178,13 @@ func (l *Listener) processPacket(data []byte) {
 			l.publishSnapshot()
 		}
 
+	case "BOT_EVENTS":
+		var events model.BotEventsPayload
+		if err := json.Unmarshal(data, &events); err != nil {
+			return
+		}
+		l.store.ApplyBotEvents(&events)
+
 	case "SERVER_INFO":
 		var info model.ServerInfoPayload
 		if err := json.Unmarshal(data, &info); err != nil {

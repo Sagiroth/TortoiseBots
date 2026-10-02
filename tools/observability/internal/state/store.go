@@ -105,6 +105,13 @@ type Store struct {
 	// serverInfo is the latest SERVER_INFO payload (effective settings).
 	// Stored verbatim; cleared on session change only.
 	serverInfo *model.ServerInfoPayload
+
+	// Activity rollup fed by the BOT_EVENTS datagrams: per-bot counters plus
+	// the pool-wide loot/quest/level feeds. Cleared with the roster.
+	activity  map[uint32]*botActivityState
+	lootFeed  []model.LootFeedItem
+	questFeed []model.QuestFeedItem
+	levelFeed []model.ActivityLevelItem
 }
 
 // New creates an empty store. The ring buffer is owned by the caller and is
@@ -136,6 +143,7 @@ func New(cfg Config, anomalies *ringbuf.RingBuffer) *Store {
 		anomalies: anomalies,
 		issues:    newIssueTracker(cfg.IssueMinAge),
 		xpTracks:  make(map[uint32]*xpTrack),
+		activity:  make(map[uint32]*botActivityState),
 	}
 }
 
@@ -279,6 +287,7 @@ func (s *Store) Evict() bool {
 	if s.lastSnapshotAt.IsZero() || now.Sub(s.lastSnapshotAt) > s.cfg.RosterTTL {
 		s.bots = make(map[uint32]*botEntry)
 		s.xpTracks = make(map[uint32]*xpTrack)
+		s.resetActivityLocked()
 		s.issues.Reset()
 		return true
 	}
@@ -313,6 +322,7 @@ func (s *Store) Snapshot() model.SnapshotPayload {
 			snap.Trail = make([]model.Coordinate, len(entry.trail))
 			copy(snap.Trail, entry.trail)
 		}
+		snap.Activity = s.activityForLocked(snap.GUID)
 		bots = append(bots, snap)
 	}
 	sort.Slice(bots, func(i, j int) bool { return bots[i].Name < bots[j].Name })
@@ -616,6 +626,14 @@ func (s *Store) publishLocked(seq uint64, bots []model.BotSnapshot, now time.Tim
 	s.lastSnapshotAt = now
 	s.snapshotsPublished++
 	s.observeXPLocked(bots, now)
+	s.observeLevelsLocked(bots, now)
+	// Drop activity for bots the roster no longer carries; the map stays
+	// bounded by the live population instead of growing with bot churn.
+	for guid := range s.activity {
+		if _, ok := next[guid]; !ok {
+			delete(s.activity, guid)
+		}
+	}
 	// Stamp the derived XP fields onto the stored roster so Snapshot serves
 	// them without recomputation.
 	for _, b := range bots {
@@ -668,9 +686,19 @@ func (s *Store) beginSessionLocked(session uint64) {
 	s.heartbeatAt = time.Time{}
 	s.lastSnapshotAt = time.Time{}
 	s.xpTracks = make(map[uint32]*xpTrack)
+	s.resetActivityLocked()
 	s.serverInfo = nil
 	s.issues.Reset()
 	s.issues.NoteSessionChange(s.now())
+}
+
+// resetActivityLocked drops every activity counter and feed. Called with the
+// roster: a new game-server process, or a roster wipe, invalidates them.
+func (s *Store) resetActivityLocked() {
+	s.activity = make(map[uint32]*botActivityState)
+	s.lootFeed = nil
+	s.questFeed = nil
+	s.levelFeed = nil
 }
 
 func (s *Store) prunePendingLocked(now time.Time) {

@@ -29,6 +29,7 @@
 #include "World.h"
 #include "SystemConfig.h"
 #include "WorldSession.h"
+#include "ObjectMgr.h"
 #include "Log.h"
 #include "../host/ModuleLog.h"
 #include "../host/ModuleVersion.h"
@@ -38,6 +39,7 @@
 #include <cmath>
 #include <cstring>
 #include <cstdlib>
+#include <set>
 #include <sstream>
 #include <iomanip>
 
@@ -47,7 +49,7 @@ namespace {
 
 // Datagram schema version. The Go daemon ignores datagrams it cannot parse;
 // this is bumped when the wire format changes incompatibly.
-constexpr int kProtocolVersion = 7;
+constexpr int kProtocolVersion = 8;
 
 // Snapshot cadence and batching. Datagrams are kept well under the loopback
 // MTU so a large roster arrives as several unpredictable chunks; the receiver
@@ -65,6 +67,12 @@ constexpr uint32 kAnomalyCooldownTtlMs = 600000;
 constexpr size_t kMaxTrackedBots = 5000;
 constexpr size_t kMaxActionFailures = 4096;
 constexpr size_t kMaxAnomalyCooldowns = 8192;
+
+// Activity stream bounds: at most this many rows wait for the next snapshot
+// flush (overflow drops the batch), chunked this many per datagram to stay
+// well under the loopback MTU.
+constexpr size_t kMaxPendingEvents = 2048;
+constexpr size_t kEventBatchSize = 40;
 
 // Per-bot/type anomaly cooldown, so a repeatedly failing bot cannot flood the
 // dashboard and Prometheus counters.
@@ -109,6 +117,51 @@ uint8 AnomalyTypeIdFromName(std::string const& type)
     if (type == "ACTION_LOOP") return ANOMALY_ACTION_LOOP;
     if (type == "UNREACHABLE_TARGET") return ANOMALY_UNREACHABLE;
     return ANOMALY_UNKNOWN;
+}
+
+// Activity whitelist: the bot_events.csv rows the dashboard's per-bot activity
+// rollup consumes. Everything else (travel churn, buffs, evade probes) stays
+// out of the UDP stream.
+bool IsActivityEvent(std::string const& event)
+{
+    static std::set<std::string> const whitelist = {
+        // quests
+        "QuestRewarded", "AcceptQuestAction", "AcceptQuestShareAction",
+        "TalkToQuestGiverAction", "QuestUpdateCompleteAction", "QuestDropped",
+        // loot & money
+        "StoreLootAction", "GatherLoot", "LootMoney",
+        // vendor / trainer / repair / auction
+        "SellAction", "BuyAction", "RepairAllAction", "TrainerAction", "NearbyService",
+        "AhAction", "AhBidAction",
+        // deaths, revives (ghost time) and give-ups
+        "BotDeath", "ReviveFromCorpseAction", "ReviveFromSpiritHealerAction", "RepopAction",
+        "ReachGiveUp",
+        // explicit kill signal from XpGainAction (the CSV row cannot carry the
+        // kill/non-kill XP flag)
+        "Kill",
+    };
+    return whitelist.count(event) != 0;
+}
+
+// Events whose info2 is an item id: enriched with the prototype's quality and
+// prices so the dashboard can filter loot by quality and value it.
+bool IsItemEvent(std::string const& event)
+{
+    static std::set<std::string> const itemEvents = {
+        "StoreLootAction", "GatherLoot", "SellAction", "BuyAction", "AhAction", "AhBidAction",
+    };
+    return itemEvents.count(event) != 0;
+}
+
+uint32 ParseItemId(std::string const& s)
+{
+    if (s.empty())
+        return 0;
+    char* end = nullptr;
+    unsigned long v = std::strtoul(s.c_str(), &end, 10);
+    if (end == s.c_str() || v == 0 || v > 0x7FFFFFFF)
+        return 0;
+    return static_cast<uint32>(v);
 }
 
 std::string EscapeJson(std::string const& s)
@@ -484,6 +537,7 @@ void ObservabilityEmitter::Shutdown()
     m_botTracking.clear();
     m_actionFailures.clear();
     m_anomalyCooldowns.clear();
+    m_pendingEvents.clear();
 }
 
 bool ObservabilityEmitter::IsEnabled() const
@@ -626,6 +680,76 @@ void ObservabilityEmitter::OnActionFailed(Player* bot,
         std::string activeStrat = !strategy.empty() ? strategy : FormatStrategies(ai);
         EmitAnomaly("ACTION_LOOP", "WARN", bot, details, targetName, activeStrat, actionName);
     }
+}
+
+void ObservabilityEmitter::EmitBotActivity(std::string const& event,
+                                            std::string const& info1,
+                                            std::string const& info2,
+                                            Player* bot)
+{
+    if (!IsEnabled() || !bot || !IsActivityEvent(event))
+        return;
+
+    std::ostringstream ss;
+    ss << "{\"event\":\"" << EscapeJson(event) << "\"";
+    if (!info1.empty())
+        ss << ",\"info1\":\"" << EscapeJson(info1) << "\"";
+    if (!info2.empty())
+        ss << ",\"info2\":\"" << EscapeJson(info2) << "\"";
+    ss << ",\"bot\":\"" << EscapeJson(bot->GetName()) << "\""
+       << ",\"guid\":" << bot->GetGUIDLow()
+       << ",\"class\":\"" << EscapeJson(GetBotClassName(bot->GetClass())) << "\""
+       << ",\"level\":" << static_cast<uint32>(bot->GetLevel())
+       << ",\"map\":" << bot->GetMapId()
+       << ",\"zone\":" << bot->GetZoneId();
+
+    if (IsItemEvent(event))
+    {
+        uint32 itemId = ParseItemId(info2);
+        ItemPrototype const* proto = itemId ? sObjectMgr.GetItemPrototype(itemId) : nullptr;
+        if (proto)
+        {
+            ss << ",\"item_id\":" << itemId
+               << ",\"quality\":" << proto->Quality
+               << ",\"sell\":" << proto->SellPrice
+               << ",\"buy\":" << proto->BuyPrice;
+        }
+    }
+
+    // The daemon derives earned/spent from successive balances; a cheat-gold
+    // borrow is always restored before the next event, so the delta stays real.
+    ss << ",\"money\":" << bot->GetMoney() << "}";
+
+    if (m_pendingEvents.size() >= kMaxPendingEvents)
+        m_pendingEvents.clear();
+    m_pendingEvents.push_back(ss.str());
+}
+
+void ObservabilityEmitter::FlushBotEvents(uint64 seq)
+{
+    if (m_pendingEvents.empty())
+        return;
+
+    size_t const total = m_pendingEvents.size();
+    for (size_t start = 0; start < total; start += kEventBatchSize)
+    {
+        size_t const end = std::min(start + kEventBatchSize, total);
+
+        std::ostringstream ss;
+        ss << "{\"v\":" << kProtocolVersion
+           << ",\"session\":" << m_sessionId
+           << ",\"seq\":" << seq
+           << ",\"ts\":" << time(nullptr)
+           << ",\"type\":\"BOT_EVENTS\",\"events\":[";
+        for (size_t i = start; i < end; ++i)
+        {
+            if (i > start) ss << ",";
+            ss << m_pendingEvents[i];
+        }
+        ss << "]}";
+        SendDatagram(ss.str());
+    }
+    m_pendingEvents.clear();
 }
 
 void ObservabilityEmitter::AddStateTime(size_t stateIndex, uint32 diff)
@@ -1048,6 +1172,11 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
     ss << "]}";
 
     SendDatagram(ss.str());
+
+    // Activity events collected since the previous cycle. Sent between the
+    // heartbeat and the roster batches so the store has already folded them
+    // in when the last batch completes the cycle and publishes the roster.
+    FlushBotEvents(seq);
 
     // Chunked roster batches complete the cycle opened by the heartbeat.
     size_t totalBatches = (botSnapshots.size() + kBatchSize - 1) / kBatchSize;
