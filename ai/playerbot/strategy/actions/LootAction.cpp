@@ -7,6 +7,7 @@
 #include "playerbot/RandomBotFacade.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/LootStrategyValue.h"
+#include "playerbot/strategy/values/LootValues.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/SharedValueContext.h"
@@ -601,4 +602,135 @@ bool ReleaseLootAction::Execute(Event& event)
     }
 
     return true;
+}
+
+// ---------- bot-only green/blue drop boost ----------
+//
+// The server's Rate.Drop.Item.Uncommon/Rare apply to every player equally, so a bot-only
+// boost cannot come from mangosd.conf: the module rolls the creature's own loot template
+// one extra time per kill and keeps only quality-2/3 entries. It runs in the xpgain
+// handler, which fires exactly once per kill and before the corpse can be opened, so the
+// bonus items are part of the loot window the bot later stores.
+//
+// The extra roll's chance is (multiplier - 1) x the entry's DB chance, gated by the
+// chance of every reference row on the path. The base roll already happened at death, so
+// the expected number of greens/blues per kill is approximately multiplier x normal.
+// Groups are walked entry by entry (a group's own pick consumes the base roll only) and
+// no quality-2/3 row of a low-level creature uses equal-chanced (chance = 0) groups, so
+// those are skipped rather than guessed at.
+namespace
+{
+    constexpr int MAX_LOOT_BONUS_REF_DEPTH = 4;
+
+    void BoostRareLootTemplate(LootTemplateAccess const* access, float pathChance, Player* bot,
+        Loot& loot, Creature* creature, PlayerbotAI* ai, int depth);
+
+    void BoostRareLootEntry(LootStoreItem const& entry, float pathChance, Player* bot,
+        Loot& loot, Creature* creature, PlayerbotAI* ai, int depth)
+    {
+        if (entry.mincountOrRef < 0)                            // reference row: gate the subtree by its own chance
+        {
+            LootTemplate const* referenced = LootTemplates_Reference.GetLootFor(uint32(-entry.mincountOrRef));
+            if (!referenced)
+                return;
+
+            float refChance = entry.chance >= 100.0f ? 1.0f : entry.chance / 100.0f;
+            BoostRareLootTemplate(reinterpret_cast<LootTemplateAccess const*>(referenced),
+                pathChance * refChance, bot, loot, creature, ai, depth + 1);
+            return;
+        }
+
+        if (entry.mincountOrRef <= 0 || entry.chance <= 0.0f || entry.needs_quest)
+            return;
+
+        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(entry.itemid);
+        if (!proto || (proto->Quality != ITEM_QUALITY_UNCOMMON && proto->Quality != ITEM_QUALITY_RARE))
+            return;
+
+        // Quest rules: a quest-only drop or quest-starting item belongs to the quest system,
+        // never to a drop-rate boost. Unique rules: adding something the bot already holds at
+        // its max_count would only leave an item it can never pick up.
+        if (proto->Class == ITEM_CLASS_QUEST || proto->StartQuest)
+            return;
+
+        if (proto->MaxCount > 0 && bot->HasItemCount(entry.itemid, proto->MaxCount, true))
+            return;
+
+        float rate = proto->Quality == ITEM_QUALITY_UNCOMMON
+            ? sPlayerbotAIConfig.botLootRateUncommon
+            : sPlayerbotAIConfig.botLootRateRare;
+
+        if (rate <= 1.0f)
+            return;
+
+        // Stack on the server's own quality rate so the multiplier means the same thing
+        // whichever Rate.Drop.Item.* mangosd.conf ships.
+        float serverRate = LootTemplates_Creature.IsRatesAllowed()
+            ? sWorld.getConfig(proto->Quality == ITEM_QUALITY_UNCOMMON
+                ? CONFIG_FLOAT_RATE_DROP_ITEM_UNCOMMON : CONFIG_FLOAT_RATE_DROP_ITEM_RARE)
+            : 1.0f;
+
+        float chance = entry.chance * pathChance * serverRate * (rate - 1.0f);
+        if (chance > 100.0f)
+            chance = 100.0f;
+
+        if (chance <= 0.0f || !roll_chance_f(chance))
+            return;
+
+        loot.AddItem(entry);
+
+        sPlayerbotAIConfig.logEvent(ai, "BotLootBonus", creature->GetObjectGuid(),
+            std::to_string(proto->Quality) + ":" + std::to_string(proto->ItemId) + ":" + proto->Name1);
+    }
+
+    void BoostRareLootTemplate(LootTemplateAccess const* access, float pathChance, Player* bot,
+        Loot& loot, Creature* creature, PlayerbotAI* ai, int depth)
+    {
+        if (!access || depth > MAX_LOOT_BONUS_REF_DEPTH)
+            return;
+
+        for (LootStoreItem const& entry : access->Entries)
+            BoostRareLootEntry(entry, pathChance, bot, loot, creature, ai, depth);
+
+        for (LootLootGroupAccess const& group : access->Groups)
+        {
+            for (LootStoreItem const& entry : group.ExplicitlyChanced)
+                BoostRareLootEntry(entry, pathChance, bot, loot, creature, ai, depth);
+
+            for (LootStoreItem const& entry : group.EqualChanced)
+                BoostRareLootEntry(entry, pathChance, bot, loot, creature, ai, depth);
+        }
+    }
+}
+
+void ai::ApplyBotLootBonus(PlayerbotAI* ai, Player* bot, ObjectGuid victimGuid)
+{
+    if (sPlayerbotAIConfig.botLootRateUncommon <= 1.0f && sPlayerbotAIConfig.botLootRateRare <= 1.0f)
+        return;
+
+    // Masterless pool bots only: a player character or a hired/alt bot keeps the server's
+    // rates, so the boost can never leak into a real player's economy.
+    if (!sRandomBotFacade.IsRandomBot(bot))
+        return;
+
+    Creature* creature = ai->GetCreature(victimGuid);
+    if (!creature || creature->IsAlive())
+        return;
+
+    // Personal loot of this bot's own kill. m_personal is false whenever the core rolled the
+    // corpse for a group, which is exactly the "loot shared with a real player" case.
+    Loot& loot = creature->loot;
+    if (!loot.m_personal || creature->GetLootRecipient() != bot)
+        return;
+
+    uint32 lootId = creature->GetLootId();
+    if (!lootId)
+        return;
+
+    LootTemplate const* lootTemplate = LootTemplates_Creature.GetLootFor(lootId);
+    if (!lootTemplate)
+        return;
+
+    BoostRareLootTemplate(reinterpret_cast<LootTemplateAccess const*>(lootTemplate),
+        1.0f, bot, loot, creature, ai, 0);
 }

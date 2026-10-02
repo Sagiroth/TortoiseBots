@@ -257,6 +257,17 @@ AiPlayerbot.LowLevelVendorBatchMinBagSpace = 25
 # Default 600.
 AiPlayerbot.LowLevelVendorMaxDistance = 600
 
+# Bot-only drop-rate boost for green (uncommon) and blue (rare) items. Masterless
+# random pool bots roll each quality-2/3 entry of a creature's loot template one extra
+# time per kill, at (multiplier - 1) x the entry's DB chance, so the expected number of
+# greens/blues per kill is roughly the multiplier times the normal rate. Quest items,
+# quest starters, unique items already held and entries that never yield quality 2/3
+# are never boosted; players and hired/alt bots keep the server's own rates, and loot
+# shared with a group is never touched. Each hit is logged to bot_events.csv as a
+# "BotLootBonus" row (creature name, "quality:itemId:itemName"). 1.0 = off.
+#AiPlayerbot.BotLootRateUncommon = 1.0
+#AiPlayerbot.BotLootRateRare = 1.0
+
 # Default-on bounded fill of human-waiting LFT queues with live random Headless bots.
 # Uses core #416 QueuePlayer/LeaveQueue/IsQueued/IsInOffer/AcceptOffer/
 # GetQueuedPlayers; core owns private queues, offers, cancellation and groups.
