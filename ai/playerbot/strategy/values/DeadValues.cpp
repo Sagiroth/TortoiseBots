@@ -33,7 +33,21 @@ GuidPosition GraveyardValue::Calculate()
     {
         auto travelTarget = AI_VALUE(TravelTarget*, "travel target");
 
-        if (travelTarget && travelTarget->getPosition() && travelTarget->getPosition()->GetMapId() == bot->GetMapId())
+        // A target with no destination is not travelling anywhere: it carries the
+        // shared null position, map 0 at (0,0,0), which the terrain resolves to
+        // Alterac Mountains. Every spirit-healer revive of a bot whose target had
+        // been dropped therefore resolved to the two graveyards linked to Alterac
+        // - Tarren Mill and Southshore - 8,000+ yd away in a level-22 zone, which
+        // is how level-5 ghosts released in Elwynn and Tirisfal woke up in
+        // Hillsbrad. Dropped (unreachable) targets are the common state: the pool
+        // drops ~13 per bot per 47 min. No destination, no travel graveyard.
+        if (!travelTarget || !travelTarget->GetDestination() ||
+            typeid(*travelTarget->GetDestination()) == typeid(NullTravelDestination))
+        {
+            return GuidPosition();
+        }
+
+        if (travelTarget->getPosition() && travelTarget->getPosition()->GetMapId() == bot->GetMapId())
         {
             refPosition = *travelTarget->getPosition();
         }

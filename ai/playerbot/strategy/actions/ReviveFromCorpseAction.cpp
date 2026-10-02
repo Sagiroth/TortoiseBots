@@ -606,7 +606,27 @@ bool SpiritHealerAction::Execute(Event& event)
     }
 
     uint32 dCount = AI_VALUE(uint32, "death count");
-    GuidPosition grave = AI_VALUE(GuidPosition, "best graveyard");
+
+    // Revive where a player's release would: the graveyard of the bot's own team
+    // closest to the corpse, i.e. the core lookup RepopAtGraveyard already used
+    // when the ghost was released. "Best graveyard" can point zones away - at the
+    // master's, or (with a dropped travel target) at the null target's shared
+    // position, map 0 at (0,0,0), which resolves to Alterac Mountains. Walking or
+    // teleporting a ghost there is how level-5 bots released in Elwynn/Tirisfal
+    // ended up in Hillsbrad, 8.6k yd away in a level-22 zone (91 of 129
+    // spirit-healer revives on the last live pool landed >500 yd from the corpse,
+    // 35 of them at Tarren Mill/Southshore). The corpse position is the only
+    // reference a dead bot always has.
+    GuidPosition grave;
+    if (WorldSafeLocsEntry const* corpseGrave = sObjectMgr.GetClosestGraveYard(
+            corpse->GetPositionX(), corpse->GetPositionY(), corpse->GetPositionZ(), corpse->GetMapId(), bot->GetTeam()))
+    {
+        grave = GuidPosition(0, corpseGrave);
+    }
+    else
+    {
+        grave = AI_VALUE(GuidPosition, "best graveyard");
+    }
 
     //something went wrong
     if (!grave)
