@@ -6,6 +6,7 @@
 #include "TalkToQuestGiverAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/RandomBotFacade.h"
+#include "playerbot/TakerReachabilityCache.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/LootObjectStack.h"
 #include "Maps/PathFinder.h"
@@ -16,68 +17,116 @@
 
 using namespace ai;
 
-// Stuck-hand-in fallback (TryAutoHandInUnreachableTaker). Several bots on the live
+// Stuck-hand-in fallback (TrySettleUnreachableHandIn). Several bots on the live
 // realm walked to a taker they could never reach - the Tower of Azora's Antonas
 // Riftgaze, whose navmesh tile has no walkable route to the NPC; every bot stalls
-// 18-29 yd away, at the same height, and none ever handed the quest in. A hand-in
-// trip that keeps failing to move is therefore settled here after a short window.
+// 18-29 yd away, at the same height, and none ever handed the quest in. Two
+// signals settle such a trip, both scoped to a masterless pool bot with a
+// finished, rewardable quest:
+//
+//   * one navmesh probe to the taker itself, the moment the trip comes within
+//     range: no complete path to interaction distance means the hand-in is paid
+//     now. The answer is shared process-wide (TakerReachabilityCache), so the
+//     whole pool settles without each bot running its own query.
+//   * the no-progress counters below (a failed move, or the same taker picked
+//     again) as the fallback for a taker the probe still calls walkable.
 static constexpr float AUTO_HAND_IN_RANGE = 100.0f;           // the bot is at the taker, only the last step fails
-static constexpr uint32 AUTO_HAND_IN_FAILS = 3;               // failed moves inside one episode
+static constexpr uint32 AUTO_HAND_IN_FAILS = 3;               // failed moves/re-picks inside one episode
 static constexpr time_t AUTO_HAND_IN_AGE = 90;                // seconds since the episode's first failed move
+static constexpr time_t AUTO_HAND_IN_PATH_CHECK = 60;         // seconds between navmesh probes for one taker
 static constexpr int32 AUTO_HAND_IN_EPISODE = 10 * MINUTE;    // no failed move for this long ends the episode
 static constexpr int32 AUTO_HAND_IN_PARK = 30 * MINUTE;       // the quest's hand-in travel park, set when it fires
 
-bool MoveToTravelTargetAction::TryAutoHandInUnreachableTaker(TravelTarget* target, std::string const& purpose, float distance)
+// The hand-in destination a travel target is currently carrying, when it is a
+// taker trip a pool bot could hand in. nullptr for every other purpose.
+static QuestTravelDestination* HandInTakerDestination(TravelTarget* target, std::string const& purpose)
 {
     if (purpose != "quest")
-        return false;
+        return nullptr;
+
+    QuestTravelDestination* destination = dynamic_cast<QuestTravelDestination*>(target->GetDestination());
+    if (!destination || destination->GetPurpose() != TravelDestinationPurpose::QuestTaker)
+        return nullptr;
+
+    return destination;
+}
+
+// The taker a hand-in trip keeps failing to reach, when the fallback may act on
+// it: a masterless pool bot carrying a finished, rewardable quest, standing
+// within range of the taker but not yet at interaction distance. nullptr for
+// anything else, including a bot that has already reached the taker.
+static Creature* StuckHandInTaker(PlayerbotAI* ai, uint32 questId, int32 takerEntry)
+{
+    if (takerEntry <= 0)
+        return nullptr;
+
+    Player* bot = ai->GetBot();
 
     // Pool bots with no real master only. A hired or player-commanded bot keeps the
     // normal hand-in: its master may be walking it to the taker.
     if (!sPlayerbotAIConfig.botQuestLogUpkeep || ai->HasActivePlayerMaster() || !sRandomBotFacade.IsRandomBot(bot))
-        return false;
-
-    QuestTravelDestination* destination = dynamic_cast<QuestTravelDestination*>(target->GetDestination());
-    if (!destination || destination->GetPurpose() != TravelDestinationPurpose::QuestTaker)
-        return false;
-
-    int32 const takerEntry = destination->GetEntry();
-    if (takerEntry <= 0)
-        return false;
-
-    uint32 const questId = destination->GetQuestId();
-    Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
-    if (!quest)
-        return false;
+        return nullptr;
 
     // Only a finished quest the bot can be paid for right now.
-    if (bot->GetQuestStatus(questId) != QUEST_STATUS_COMPLETE || bot->GetQuestRewardStatus(questId) || !bot->CanRewardQuest(quest, false))
+    Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
+    if (!quest || bot->GetQuestStatus(questId) != QUEST_STATUS_COMPLETE || bot->GetQuestRewardStatus(questId) || !bot->CanRewardQuest(quest, false))
+        return nullptr;
+
+    Creature* taker = bot->FindNearestCreature((uint32)takerEntry, AUTO_HAND_IN_RANGE);
+    if (!taker)
+        return nullptr;
+
+    // Reaching interaction distance disproves an earlier mark: the taker is
+    // walkable to after all, so the whole pool may walk it again. (Bots only get
+    // here on a live hand-in trip, so this is the one place a stale mark - a fixed
+    // mesh, a moved spawn - can be retired early.)
+    if (bot->GetDistance(taker) <= INTERACTION_DISTANCE)
+    {
+        TakerReachabilityCache::Instance().Clear(takerEntry);
+        return nullptr;
+    }
+
+    return taker;
+}
+
+// One navmesh query to the taker's own position, the same query the movement
+// generator makes. NOPATH is a hole in the mesh, and a partial path
+// (INCOMPLETE) or a path that simply ends beyond interaction range both mean the
+// bot can never talk to the NPC from ground it is able to stand on. When the
+// query did not use the navmesh at all (a tile that is not loaded), it has
+// nothing to say and the trip keeps its normal walk.
+static bool TakerUnwalkable(Player* bot, Creature* taker)
+{
+    PathFinder path(bot);
+    path.calculate(taker->GetPositionX(), taker->GetPositionY(), taker->GetPositionZ(), false);
+
+    PathType const type = path.getPathType();
+    if (type & PATHFIND_NOT_USING_PATH)
         return false;
 
-    // The failure must be the last step to a taker the bot is already standing next to.
-    if (distance > AUTO_HAND_IN_RANGE)
-        return false;
+    if (type & PATHFIND_NOPATH)
+        return true;
 
-    // Failure episode, keyed per quest: one unreachable taker cannot settle another
-    // quest's hand-in, and a repeatable quest gets a fresh episode once a window
-    // passes without a failed move. The value counts failed moves, the data holds
-    // the episode's first failure.
-    std::string const key = "quest hand in fail::" + std::to_string(questId);
-    uint32 const fails = sRandomBotFacade.GetValue(bot, key);
-    std::string const sinceStr = sRandomBotFacade.GetData(bot->GetGUIDLow(), key);
-    time_t const since = sinceStr.empty() ? time(0) : static_cast<time_t>(std::strtoul(sinceStr.c_str(), nullptr, 10));
-    sRandomBotFacade.SetValue(bot, key, fails + 1, std::to_string(since), AUTO_HAND_IN_EPISODE);
+    Vector3 const end = path.getActualEndPosition();
+    return taker->GetDistance(end.x, end.y, end.z) > INTERACTION_DISTANCE;
+}
 
-    if (fails + 1 < AUTO_HAND_IN_FAILS || time(0) - since < AUTO_HAND_IN_AGE)
+// Pay the quest out without a talk and stop the search from offering this taker
+// again for a while. `reason` lands in the QuestAutoHandIn event.
+bool MoveToTravelTargetAction::SettleUnreachableTakerHandIn(PlayerbotAI* ai, uint32 questId, int32 takerEntry, std::string const& reason)
+{
+    Player* bot = ai->GetBot();
+    Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
+    if (!quest)
         return false;
 
     // Park this quest's hand-in travel (per quest, not the whole purpose): the taker
     // is not walkable to, so the search must stop offering it. Read by
     // RequestQuestTravelTargetAction. The nearby-service hand-in does not read the
     // park, so a bot that does end up next to its taker is still paid normally.
-    SET_AI_VALUE2(time_t, "manual time", "no quest hand in until::" + std::to_string(questId), time(0) + AUTO_HAND_IN_PARK);
+    ai->GetAiObjectContext()->GetValue<time_t>("manual time", "no quest hand in until::" + std::to_string(questId))->Set(time(0) + AUTO_HAND_IN_PARK);
 
-    Creature* taker = bot->FindNearestCreature((uint32)takerEntry, AUTO_HAND_IN_RANGE * 2);
+    Creature* taker = bot->FindNearestCreature((uint32)takerEntry, AUTO_HAND_IN_RANGE);
     if (!taker)
         return false;
 
@@ -88,9 +137,80 @@ bool MoveToTravelTargetAction::TryAutoHandInUnreachableTaker(TravelTarget* targe
         return false;
 
     sPlayerbotAIConfig.logEvent(ai, "QuestAutoHandIn", quest->GetTitle(),
-        std::to_string(questId) + ":" + std::to_string(takerEntry) + ":unreachable");
+        std::to_string(questId) + ":" + std::to_string(takerEntry) + ":" + reason);
 
     return true;
+}
+
+void MoveToTravelTargetAction::CountHandInNoProgress(PlayerbotAI* ai, uint32 questId, int32 takerEntry)
+{
+    if (!StuckHandInTaker(ai, questId, takerEntry))
+        return;
+
+    // Failure episode, keyed per quest: one unreachable taker cannot settle another
+    // quest's hand-in, and a repeatable quest gets a fresh episode once a window
+    // passes without a failed move. The value counts failed moves and re-picks,
+    // the data holds the episode's first failure.
+    Player* bot = ai->GetBot();
+    std::string const key = "quest hand in fail::" + std::to_string(questId);
+    uint32 const fails = sRandomBotFacade.GetValue(bot, key);
+    std::string const sinceStr = sRandomBotFacade.GetData(bot->GetGUIDLow(), key);
+    time_t const since = sinceStr.empty() ? time(0) : static_cast<time_t>(std::strtoul(sinceStr.c_str(), nullptr, 10));
+    sRandomBotFacade.SetValue(bot, key, fails + 1, std::to_string(since), AUTO_HAND_IN_EPISODE);
+}
+
+bool MoveToTravelTargetAction::TrySettleUnreachableHandIn(TravelTarget* target, std::string const& purpose)
+{
+    QuestTravelDestination* destination = HandInTakerDestination(target, purpose);
+    if (!destination)
+        return false;
+
+    uint32 const questId = destination->GetQuestId();
+    int32 const takerEntry = destination->GetEntry();
+
+    Creature* taker = StuckHandInTaker(ai, questId, takerEntry);
+    if (!taker)
+        return false;
+
+    time_t const now = time(0);
+    Player* bot = ai->GetBot();
+
+    // One navmesh probe answers the whole pool: the mark a previous probe left
+    // settles this hand-in now, without touching the query.
+    if (TakerReachabilityCache::Instance().IsUnreachable(takerEntry, now))
+        return SettleUnreachableTakerHandIn(ai, questId, takerEntry, "nopath");
+
+    // Otherwise probe once per bot per taker: a reachable taker must not be
+    // queried every tick while the bot walks the last stretch to it.
+    AiObjectContext* context = ai->GetAiObjectContext();
+    std::string const probeKey = "taker navmesh probe::" + std::to_string(takerEntry);
+    bool const probeDue = !context->HasValue("manual time", probeKey) ||
+        context->GetValue<time_t>("manual time", probeKey)->Get() <= now - AUTO_HAND_IN_PATH_CHECK;
+
+    if (probeDue)
+    {
+        context->GetValue<time_t>("manual time", probeKey)->Set(now);
+
+        if (TakerUnwalkable(bot, taker))
+        {
+            TakerReachabilityCache::Instance().MarkUnreachable(takerEntry, now);
+            return SettleUnreachableTakerHandIn(ai, questId, takerEntry, "nopath");
+        }
+    }
+
+    // Fallback for a taker the probe called walkable (or has not probed yet):
+    // three failed moves or re-picks without ever reaching interaction range.
+    std::string const key = "quest hand in fail::" + std::to_string(questId);
+    uint32 const fails = sRandomBotFacade.GetValue(bot, key);
+    if (fails < AUTO_HAND_IN_FAILS)
+        return false;
+
+    std::string const sinceStr = sRandomBotFacade.GetData(bot->GetGUIDLow(), key);
+    time_t const since = sinceStr.empty() ? now : static_cast<time_t>(std::strtoul(sinceStr.c_str(), nullptr, 10));
+    if (now - since < AUTO_HAND_IN_AGE)
+        return false;
+
+    return SettleUnreachableTakerHandIn(ai, questId, takerEntry, "unreachable");
 }
 
 bool MoveToTravelTargetAction::Execute(Event& event)
@@ -195,6 +315,13 @@ bool MoveToTravelTargetAction::Execute(Event& event)
         }
     }
 
+    std::string const purpose = AI_VALUE2(std::string, "manual string", "future travel purpose");
+
+    // A hand-in trip that has come within range of a taker the navmesh cannot
+    // reach is settled here, before the bot walks another lap around it.
+    if (TrySettleUnreachableHandIn(target, purpose))
+        return false;
+
     float x = location.getX();
     float y = location.getY();
     float z = location.getZ();
@@ -235,8 +362,6 @@ bool MoveToTravelTargetAction::Execute(Event& event)
     {
         target->IncRetry(true);
 
-        std::string const purpose = AI_VALUE2(std::string, "manual string", "future travel purpose");
-
         // One line per travel target rather than per attempt: a wedged bot
         // re-enters this action every tick, and IncRetry steps by 2, so the
         // first failure is exactly 2. The drop below carries the final depth.
@@ -246,10 +371,14 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             sPlayerbotAIConfig.logEvent(ai, "TravelMoveFailed", purpose,
                 std::to_string((int32)botLocation.distance(location)));
 
-        // A hand-in trip that keeps failing to move to a taker the bot is standing
-        // next to is settled here instead of looping (see the helper). The quest is
-        // paid, so there is nothing left to walk to: let the next tick pick again.
-        if (TryAutoHandInUnreachableTaker(target, purpose, botLocation.distance(location)))
+        // A failed move toward a hand-in taker is one no-progress episode for that
+        // quest, the same episode a re-picked taker counts (ChooseTravelTargetAction).
+        // Settling on it pays the quest, so nothing is left to walk to and the next
+        // tick may pick again.
+        if (QuestTravelDestination* destination = HandInTakerDestination(target, purpose))
+            CountHandInNoProgress(ai, destination->GetQuestId(), destination->GetEntry());
+
+        if (TrySettleUnreachableHandIn(target, purpose))
             return false;
 
         if (target->IsMaxRetry(true))
