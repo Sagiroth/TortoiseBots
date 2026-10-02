@@ -4,6 +4,7 @@
 #include "playerbot/strategy/Value.h"
 #include "ItemUsageValue.h"
 #include "BudgetValues.h"
+#include "NearbyServicePolicy.h"
 
 namespace ai
 {
@@ -122,6 +123,10 @@ namespace ai
     //CanRewardQuest test the travel layer builds its taker fetch from.
     bool HasRewardableFinishedQuest(PlayerbotAI* ai);
 
+    // True while this NPC+verb sits in its brief fail park (issue #407). The
+    // park key matches the one ServiceNearbyNpcAction::RecordFail sets, so the
+    // selector and the verb cannot disagree about what is parked.
+    bool NearbyServiceVerbParked(PlayerbotAI* ai, GuidPosition npc, NearbyServiceKind kind);
     //Bag pressure in the field: bags at the pressure line, stock a vendor
     //actually wants, and no vendor within the near-service radius. True means
     //the bot must request the existing Vendor travel target instead of waiting

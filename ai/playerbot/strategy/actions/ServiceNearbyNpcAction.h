@@ -1,4 +1,6 @@
 #pragma once
+#include <cstdint>
+#include <string>
 #include "playerbot/PlayerbotAI.h"
 
 #include "playerbot/strategy/Action.h"
@@ -35,5 +37,11 @@ namespace ai
     private:
         // Runs one verb and logs the NearbyService row when it did something.
         bool RunVerb(std::string const& kind, std::string const& action, Event event, uint32 npcEntry);
+        // Manual-value keys for the brief fail park (issue #407).
+        static std::string FailKey(uint64_t npcGuid, std::string const& kind);
+        static std::string FailCountKey(uint64_t npcGuid, std::string const& kind);
+        bool ParkedForFail(uint64_t npcGuid, std::string const& kind);
+        void RecordFail(uint64_t npcGuid, std::string const& kind);
+        void ClearFail(uint64_t npcGuid, std::string const& kind);
     };
 }

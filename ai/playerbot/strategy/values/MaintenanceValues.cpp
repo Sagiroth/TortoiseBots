@@ -170,6 +170,30 @@ bool ai::HasRewardableFinishedQuest(PlayerbotAI* ai)
     return false;
 }
 
+// The fail-park key the verb sets on repeated failure (issue #407): per
+// NPC guid + per verb kind, so a parked sell never blocks a hand-in on the
+// same NPC. Keys must match ServiceNearbyNpcAction::{FailKey, verbs}.
+static std::string NearbyServiceFailKey(GuidPosition npc, NearbyServiceKind kind)
+{
+    std::string verb;
+    switch (kind)
+    {
+        case NearbyServiceKind::TurnIn: verb = "turn in quest"; break;
+        case NearbyServiceKind::Accept: verb = "accept quest"; break;
+        case NearbyServiceKind::Vendor: verb = "sell"; break;
+        case NearbyServiceKind::Trainer: verb = "trainer"; break;
+        default: return "";
+    }
+    return "nearby service fail until::" + std::to_string(npc.GetRawValue()) + "::" + verb;
+}
+
+bool ai::NearbyServiceVerbParked(PlayerbotAI* ai, GuidPosition npc, NearbyServiceKind kind)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    std::string const key = NearbyServiceFailKey(npc, kind);
+    return !key.empty() && NearbyServiceTargetParked(AI_VALUE2(time_t, "manual time", key), time(0));
+}
+
 GuidPosition ai::NearbyServiceTarget(PlayerbotAI* ai)
 {
     Player* bot = ai->GetBot();
@@ -240,6 +264,12 @@ GuidPosition ai::NearbyServiceTarget(PlayerbotAI* ai)
             RpgTrainTrigger::IsTrainerOf(guidP.GetCreatureTemplate(), bot) &&
             RpgTrainTrigger::TeachesAffordableSpell(ai, guidP, bot))
             kind = NearbyServiceKind::Trainer;
+
+        // A verb that failed repeatedly on this NPC is parked briefly (issue
+        // #407): the NPC stays eligible for its other verbs, so only the
+        // parked kind is skipped here.
+        if (kind != NearbyServiceKind::None && NearbyServiceVerbParked(ai, guidP, kind))
+            kind = NearbyServiceKind::None;
 
         nearby.push_back(guidP);
         candidates.push_back(NearbyServiceCandidate{ NearbyServiceRankOf(kind), sqDistance });

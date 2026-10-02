@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <ctime>
 #include <vector>
 
 // Pure policy for the idle near-service rule (issue #379): a bot that is
@@ -105,5 +106,27 @@ namespace ai
         }
 
         return best;
+    }
+
+    // A verb that keeps failing on the same NPC+kind is never finished by
+    // standing there (issue #407: 34 ACTION_LOOP rows on 30 bots). Park that
+    // pair briefly instead of retrying every tick: the bot walks on, and the
+    // park expires on its own. 90 s is long enough to break the tick loop but
+    // far short of the 10-min trainer/travel parks, so a quest hand-in or a
+    // rank that becomes affordable is only delayed, never missed - the target
+    // selector keeps offering the NPC for its other verbs meanwhile.
+    constexpr int NEARBY_SERVICE_FAIL_PARK_SECONDS = 90;
+    constexpr int NEARBY_SERVICE_FAIL_PARK_TRIPS = 3;
+
+    // True while `parkedUntil` (0 = never parked) still holds at `now`.
+    inline bool NearbyServiceTargetParked(time_t parkedUntil, time_t now)
+    {
+        return parkedUntil != 0 && now < parkedUntil;
+    }
+
+    // True once `failures` consecutive fails on one NPC+verb earn a park.
+    inline bool NearbyServiceShouldPark(int failures)
+    {
+        return failures >= NEARBY_SERVICE_FAIL_PARK_TRIPS;
     }
 }

@@ -1,6 +1,7 @@
 #include "../ai/playerbot/strategy/values/NearbyServicePolicy.h"
 
 #include <cstdlib>
+#include <ctime>
 #include <iostream>
 
 #define CHECK(x) do { \
@@ -16,6 +17,10 @@ using ai::NearbyServiceCandidate;
 using ai::NearbyServiceKind;
 using ai::NearbyServiceRangeSq;
 using ai::NearbyServiceRankOf;
+using ai::NearbyServiceShouldPark;
+using ai::NearbyServiceTargetParked;
+using ai::NEARBY_SERVICE_FAIL_PARK_SECONDS;
+using ai::NEARBY_SERVICE_FAIL_PARK_TRIPS;
 
 static NearbyServiceCandidate Candidate(NearbyServiceKind kind, float sqDistance)
 {
@@ -133,6 +138,28 @@ int main()
     CHECK(ai::JourneyInFlightOwnsBot(5) == false);                                         // cooldown
     CHECK(ai::JourneyInFlightOwnsBot(6) == false);                                         // expired
     std::cout << "  [PASS] only a journey in flight blocks the rule\n";
+
+    // A verb that keeps failing on one NPC+kind earns a brief park (issue
+    // #407): 3 consecutive fails trip it, the park lasts 90 s, and it must not
+    // approach the 10-min trainer/travel parks - a hand-in or affordable rank
+    // is only delayed, never missed.
+    CHECK(NEARBY_SERVICE_FAIL_PARK_TRIPS == 3);
+    CHECK(NEARBY_SERVICE_FAIL_PARK_SECONDS == 90);
+    CHECK(!NearbyServiceShouldPark(0));
+    CHECK(!NearbyServiceShouldPark(NEARBY_SERVICE_FAIL_PARK_TRIPS - 1));
+    CHECK(NearbyServiceShouldPark(NEARBY_SERVICE_FAIL_PARK_TRIPS));
+    CHECK(NearbyServiceShouldPark(NEARBY_SERVICE_FAIL_PARK_TRIPS + 5));
+    std::cout << "  [PASS] three consecutive fails earn a park\n";
+
+    {
+        std::time_t const now = 1'000'000;
+        CHECK(!NearbyServiceTargetParked(0, now));
+        CHECK(NearbyServiceTargetParked(now + NEARBY_SERVICE_FAIL_PARK_SECONDS, now));
+        CHECK(NearbyServiceTargetParked(now + NEARBY_SERVICE_FAIL_PARK_SECONDS - 1, now));
+        CHECK(!NearbyServiceTargetParked(now + NEARBY_SERVICE_FAIL_PARK_SECONDS, now + NEARBY_SERVICE_FAIL_PARK_SECONDS));
+        CHECK(!NearbyServiceTargetParked(now - 1, now));
+    }
+    std::cout << "  [PASS] fail park holds 90 s then expires\n";
 
     std::cout << "All idle near-service policy checks PASSED!\n";
     return 0;
