@@ -4,6 +4,7 @@
 #include "playerbot/PerformanceMonitor.h"
 #include "../../runtime/HunterPetPolicy.h"
 #include "../../runtime/StarterKitPolicy.h"
+#include "../../runtime/ProfessionGrantPolicy.h"
 
 #include "Database/SQLStorages.h"
 #include "Objects/ItemPrototype.h"
@@ -2709,11 +2710,21 @@ void PlayerbotFactory::InitAllSkills()
     InitInventorySkill();
 }
 
-void PlayerbotFactory::InitTradeSkills()
+// Owner decision (runtime/ProfessionGrantPolicy.h): a pool bot's PRIMARY
+// pair is granted at level 5, not at creation. Secondaries (First Aid,
+// Cooking, Fishing) are granted at any level, as before.
+void PlayerbotFactory::EnsurePrimaryProfessions()
 {
+    // Gate for the pair ROLL only: below PRIMARY_PROFESSION_MIN_LEVEL (5)
+    // the stored values stay 0 (skipped below) so the next seed/ding/login
+    // rolls them, and a bot that already holds any primary - factory pair or
+    // self-learned - is never re-rolled (re-rolling would stack a third
+    // primary and wipe earned skill-ups). The recipe sweep further down
+    // still runs unconditionally, as before.
+    bool const grantPair = bot->GetLevel() >= TortoiseBots::PRIMARY_PROFESSION_MIN_LEVEL && !HasAnyPrimaryProfession();
     uint16 firstSkill = sRandomBotFacade.GetValue(bot, "firstSkill");
     uint16 secondSkill = sRandomBotFacade.GetValue(bot, "secondSkill");
-    if (!firstSkill || !secondSkill)
+    if ((!firstSkill || !secondSkill) && grantPair)
     {
         // Every random bot owns at least one gathering primary: a craft is dead
         // weight without the gathering that feeds its reagents, it can never skill
@@ -2759,12 +2770,13 @@ void PlayerbotFactory::InitTradeSkills()
         sRandomBotFacade.SetValue(bot, "secondSkill", secondSkill);
     }
 
-    SetRandomSkill(SKILL_FIRST_AID);
-    SetRandomSkill(SKILL_FISHING);
-    SetRandomSkill(SKILL_COOKING);
-
-    SetRandomSkill(firstSkill);
-    SetRandomSkill(secondSkill);
+    // Below the gate (or when a primary is already held) the ids stay 0:
+    // skip the grant explicitly; Player::SetSkill(0, ...) is a core-side
+    // no-op, but never call it with 0 here.
+    if (firstSkill)
+        SetRandomSkill(firstSkill);
+    if (secondSkill)
+        SetRandomSkill(secondSkill);
 
 
     // learn recipies
@@ -2851,6 +2863,26 @@ void PlayerbotFactory::InitTradeSkills()
                 ai->CastSpell(tSpell->spell, bot);
         }
     }
+}
+
+void PlayerbotFactory::InitTradeSkills()
+{
+    // Secondaries stay as they are: First Aid, Cooking and Fishing at any level.
+    SetRandomSkill(SKILL_FIRST_AID);
+    SetRandomSkill(SKILL_FISHING);
+    SetRandomSkill(SKILL_COOKING);
+
+    EnsurePrimaryProfessions();
+}
+
+bool PlayerbotFactory::HasAnyPrimaryProfession() const
+{
+    static uint16 const kPrimary[] = { SKILL_ALCHEMY, SKILL_BLACKSMITHING, SKILL_ENCHANTING, SKILL_ENGINEERING,
+                                       SKILL_HERBALISM, SKILL_LEATHERWORKING, SKILL_MINING, SKILL_SKINNING, SKILL_TAILORING };
+    for (uint16 id : kPrimary)
+        if (bot->HasSkill(id))
+            return true;
+    return false;
 }
 
 void PlayerbotFactory::InitSkills()

@@ -714,7 +714,11 @@ void BotManager::OnPlayerLogin(::Player* player)
     // level; from then on it trains and skills up on its own. "Once" is decided from
     // the character itself - a bot that already has a primary profession is left
     // alone - because the facade values live in memory only and would not survive a
-    // restart (which would re-roll professions every time).
+    // restart (which would re-roll professions every time). Primaries land from
+    // level PRIMARY_PROFESSION_MIN_LEVEL (5): InitTradeSkills keeps secondaries at
+    // any level and holds the pair below the gate, so a level-1..4 bot on login
+    // gets weapon skills plus First Aid/Cooking/Fishing and earns its pair on
+    // the ding (AutoLearnSpellAction) or the next login at 5+.
     if (record.random && !HasPrimaryProfession(player))
     {
         PlayerbotFactory skills(player, player->GetLevel());

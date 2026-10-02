@@ -3,6 +3,7 @@
 #include "TrainerValues.h"
 #include "SharedValueContext.h"
 #include "playerbot/PlayerbotHelpMgr.h"
+#include "../../../../runtime/ProfessionGrantPolicy.h"
 
 using namespace ai;
 
@@ -120,8 +121,11 @@ std::vector<TrainerSpell const*> TrainableSpellsValue::Calculate()
                 if (state != TRAINER_SPELL_GREEN)
                     continue;
 
-                //Skip initial profession training.
-                if (bot->GetLevel() < 10 && sSpellMgr.IsProfessionSpell(trainerSpell->spell) && sSpellMgr.GetSpellRank(trainerSpell->spell) == 1)
+                // Skip initial profession training below the pool grant level:
+                // pool bots earn their primary pair at PRIMARY_PROFESSION_MIN_LEVEL
+                // (5), so rank-1 profession spells become trainable from the same
+                // level instead of 10.
+                if (!TortoiseBots::IsRankOneProfessionTrainable(bot->GetLevel()) && sSpellMgr.IsProfessionSpell(trainerSpell->spell) && sSpellMgr.GetSpellRank(trainerSpell->spell) == 1)
                     continue;
 
                 trainableSpells.push_back(trainerSpell);

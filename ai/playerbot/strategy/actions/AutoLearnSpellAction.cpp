@@ -135,6 +135,15 @@ void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
     {
         PlayerbotFactory factory(bot, bot->GetLevel());
         factory.InitSkills();
+        // Professions-at-5 backstop: a pool bot that dings 5 without primaries
+        // (created before the gate, or seeded below it) earns its class pair
+        // here, plus the matching tools. Both helpers no-op for bots that
+        // already hold a primary or own the tools.
+        if (!factory.HasAnyPrimaryProfession())
+        {
+            factory.EnsurePrimaryProfessions();
+            factory.AddTools();
+        }
     }
 }
 
