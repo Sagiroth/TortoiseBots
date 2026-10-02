@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="dark">
   <title>TortoiseBots — Server & Bot Observability</title>
-  <link rel="stylesheet" href="/static/css/app.css?v=7">
+  <link rel="stylesheet" href="/static/css/app.css?v=8">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%232ea043%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><polygon points=%2212 2 2 7 12 12 22 7 12 2%22/><polyline points=%222 17 12 22 22 17%22/><polyline points=%222 12 12 17 22 12%22/></svg>">
 </head>
 <body>
@@ -26,39 +26,47 @@
     </div>
 
     <nav class="sidebar-menu">
-      <a class="menu-item active" data-tab="dashboard">
+      <a class="menu-item active" data-tab="overview" title="Is the fleet healthy right now?">
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-        <span>Dashboard</span>
+        <span>Overview</span>
       </a>
 
-      <div class="menu-category">World</div>
-      <a class="menu-item" data-tab="map">
-        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
-        <span>Live Map</span>
-      </a>
-      <a class="menu-item" data-tab="roster">
+      <div class="menu-category">Fleet</div>
+      <a class="menu-item" data-tab="roster" title="Roster, live state, gear and the character sheet">
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         <span>Bots</span>
       </a>
-      <a class="menu-item" data-tab="activity">
+      <a class="menu-item" data-tab="progress" title="Levelling speed and gear behind level">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+        <span>Progress</span>
+      </a>
+      <a class="menu-item" data-tab="activity" title="Quest, kill, loot and gathering counters, feeds and the live stream">
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         <span>Activity</span>
       </a>
-      <a class="menu-item" data-tab="armory">
-        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.83z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-        <span>Armory</span>
+      <a class="menu-item" data-tab="economy" title="Money, vendors, repairs, auction house and notable loot">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v12"/><path d="M15 9.5a3 3 0 0 0-3-1.5c-1.7 0-3 .9-3 2s1.3 2 3 2 3 .9 3 2-1.3 2-3 2a3 3 0 0 1-3-1.5"/></svg>
+        <span>Economy</span>
       </a>
-      <a class="menu-item" data-tab="issues" title="Persistent issue episodes; the badge counts those running 10+ minutes">
-        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        <span>Issues</span>
-        <span id="issues-count" class="badge badge-error" style="margin-left: auto; padding: 1px 6px;">0</span>
+
+      <div class="menu-category">World</div>
+      <a class="menu-item" data-tab="map" title="Live positions, zone census and travel">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+        <span>Live Map</span>
       </a>
 
       <div class="menu-category">Server</div>
-      <a class="menu-item" data-tab="incidents">
-        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-        <span>Incidents</span>
-        <span id="anomalies-count" class="badge badge-warn" style="margin-left: auto; padding: 1px 6px;">0</span>
+      <a class="menu-item" data-tab="issues" title="Persistent issue episodes (badge: 10+ min) and the rolling incident feed (badge: warn/error)">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <span>Issues</span>
+        <span class="menu-badges">
+          <span id="issues-count" class="badge badge-error">0</span>
+          <span id="anomalies-count" class="badge badge-warn">0</span>
+        </span>
+      </a>
+      <a class="menu-item" data-tab="server" title="Effective settings, versions and the diagnostic report">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+        <span>Server</span>
       </a>
       <a href="/metrics" target="_blank" class="menu-item">
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -85,7 +93,7 @@
             <line x1="3" y1="18" x2="21" y2="18"></line>
           </svg>
         </button>
-        <span id="current-tab-title" class="current-tab-title">Dashboard</span>
+        <span id="current-tab-title" class="current-tab-title">Overview</span>
       </div>
 
       <div class="pill-group">
@@ -107,10 +115,11 @@
     <!-- Page Content -->
     <div class="content-area">
 
-      <!-- TAB 1: DASHBOARD VIEW -->
-      <section id="tab-dashboard" class="tab-view">
+      <!-- TAB: OVERVIEW — is the fleet healthy right now? -->
+      <section id="tab-overview" class="tab-view">
         <div class="tab-heading-wrap">
-          <h1 class="tab-section-heading" style="font-size: 1.5rem; font-weight: 700; color: #fff; margin-bottom: 4px;">Dashboard</h1>
+          <h1 class="tab-section-heading tab-title">Overview</h1>
+          <p class="tab-subtitle">Fleet health at a glance: population, live states, XP and deaths.</p>
         </div>
 
         <div class="section-label">SERVER TELEMETRY · TORTOISE WOW</div>
@@ -156,7 +165,6 @@
           </div>
         </div>
 
-        <!-- Charts + composition -->
         <div class="dashboard-grid">
           <div class="telemetry-card chart-container">
             <div class="chart-header">
@@ -178,62 +186,35 @@
             </div>
           </div>
 
-          <!-- Server panel: effective running settings + diagnostic report.
-               Sits next to the charts so the two short cards share a row and
-               the long composition cards share the next one; the console spans
-               both columns at the bottom. -->
+          <!-- Fleet health at a glance: LOW HP, the authoritative live-states
+               census, and the pool XP/death rollup. Details live on Bots
+               (roster), Progress (levels/gear) and Issues (episodes). -->
           <div class="telemetry-card">
-            <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px;">
-              <div class="section-label" style="margin: 0;">SERVER · EFFECTIVE SETTINGS</div>
-              <button id="copy-diag-btn" class="btn" style="font-size: 0.75rem;" title="Copy a plain-text diagnostic report (versions, effective settings, pool health) for bug reports">Copy diagnostic report</button>
-            </div>
-            <div id="server-panel"><div class="empty-hint">Waiting for server info (sent at startup, then every 5 min)...</div></div>
-          </div>
-
-          <div class="telemetry-card">
-            <div class="section-label" style="margin: 0 0 12px;">BOT COMPOSITION</div>
-            <div id="class-breakdown" class="composition-list">
-              <div class="empty-hint">Waiting for bot telemetry...</div>
-            </div>
-            <div id="role-totals" class="role-row"></div>
-
-            <div class="section-label" style="margin: 20px 0 10px;" title="Live roster census (counts + share), same snapshot as the roster below">ACTIVITY · LIVE STATES</div>
-            <div id="activity-panel" class="composition-list">
-              <div class="empty-hint">Waiting for bot roster...</div>
-            </div>
-          </div>
-
-          <div class="telemetry-card">
-            <div class="section-label" style="margin: 0 0 10px;">FLEET HEALTH</div>
+            <div class="section-label" style="margin: 0 0 10px;">FLEET HEALTH · LOW HP</div>
             <div id="fleet-health" class="composition-list">
               <div class="empty-hint">Waiting for bot roster...</div>
             </div>
 
-            <div class="section-label" style="margin: 20px 0 10px;">GRINDING · XP & DEATHS</div>
+            <div class="section-label" style="margin: 20px 0 10px;" title="Live roster census (counts + share), same snapshot as the roster below">LIVE STATES</div>
+            <div id="activity-panel" class="composition-list">
+              <div class="empty-hint">Waiting for bot roster...</div>
+            </div>
+
+            <div class="section-label" style="margin: 20px 0 10px;">XP &amp; DEATHS · LAST 10 MIN</div>
             <div id="grinding-panel" class="composition-list">
               <div class="empty-hint">Waiting for XP samples...</div>
-            </div>
-            <div id="level-bands" class="composition-list" style="margin-top: 8px;"></div>
-
-            <div class="section-label" style="margin: 20px 0 6px;">TOP ZONES <span style="text-transform: none; opacity: 0.6; font-weight: 400;">(click to open map)</span></div>
-            <div id="zone-list" class="zone-list"></div>
-          </div>
-
-          <!-- Live Monospace Console (spans both grid columns) -->
-          <div class="console-container dashboard-console">
-            <div class="console-header">
-              <span>CONSOLE · LIVE STREAM</span>
-              <span id="console-rate" style="color: var(--accent-green-bright);">● connected</span>
-            </div>
-            <div id="console-body" class="console-body">
-              <div class="log-line"><span class="log-time">[Init]</span> <span class="log-tag">system</span> Telemetry stream initialized. Awaiting events...</div>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- TAB 2: LIVE MAP (2D ZONE MAP) -->
+      <!-- TAB: LIVE MAP (2D ZONE MAP) -->
       <section id="tab-map" class="tab-view" style="display: none;">
+        <div class="tab-heading-wrap">
+          <h1 class="tab-section-heading tab-title">Live Map</h1>
+          <p class="tab-subtitle">Where the fleet is: live positions, zone census and travel.</p>
+        </div>
+
         <div class="telemetry-card" style="padding: 14px 18px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
           <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
             <label for="zone-filter-input" style="font-weight: 600; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase;">Zone:</label>
@@ -250,6 +231,11 @@
             </label>
             <div id="map-legend" class="map-legend"></div>
           </div>
+        </div>
+
+        <div class="telemetry-card" style="margin-bottom: 16px;">
+          <div class="section-label" style="margin: 0 0 10px;">TOP ZONES <span style="text-transform: none; opacity: 0.6; font-weight: 400;">(click to open the zone map)</span></div>
+          <div id="zone-list" class="zone-list"></div>
         </div>
 
         <div style="position: relative;">
@@ -297,168 +283,86 @@
         </div>
       </section>
 
-      <!-- TAB 3: BOTS ROSTER -->
+      <!-- TAB: BOTS (roster + composition + armory character sheet) -->
       <section id="tab-roster" class="tab-view" style="display: none;">
-        <div class="telemetry-card">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap;">
-            <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff;">Active Bot Population <span id="roster-count" style="color: var(--text-muted); font-size: 0.8rem; font-weight: 400;"></span></h2>
-            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-              <input type="text" id="bot-search" placeholder="Search name/class..." class="btn bot-search-input">
-              <select id="role-filter" class="btn" style="padding: 6px 12px;">
-                <option value="all">All Roles</option>
-                <option value="tank">Tanks</option>
-                <option value="healer">Healers</option>
-                <option value="dps">DPS</option>
-              </select>
-              <select id="class-filter" class="btn" style="padding: 6px 12px;">
-                <option value="all">All Classes</option>
-              </select>
-              <select id="status-filter" class="btn" style="padding: 6px 12px;">
-                <option value="all">All Status</option>
-                <option value="combat">Combat</option>
-                <option value="moving">Moving</option>
-                <option value="busy">Busy</option>
-                <option value="stalled">Stalled</option>
-                <option value="resting">Resting</option>
-                <option value="idle">Idle</option>
-                <option value="dead">Dead</option>
-              </select>
-              <label style="display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text-muted); cursor: pointer;">
-                <input type="checkbox" id="issue-only-filter" style="accent-color: #f85149;"> Issues only
-              </label>
+        <div class="tab-heading-wrap">
+          <h1 class="tab-section-heading tab-title">Bots</h1>
+          <p class="tab-subtitle">Who is in the fleet and what each bot carries: roster, gear and character sheet.</p>
+        </div>
+
+        <div id="roster-panel">
+          <div class="telemetry-card" style="margin-bottom: 20px;">
+            <div class="section-label" style="margin: 0 0 12px;">FLEET COMPOSITION</div>
+            <div id="class-breakdown" class="composition-list">
+              <div class="empty-hint">Waiting for bot telemetry...</div>
             </div>
+            <div id="role-totals" class="role-row"></div>
           </div>
-          <div class="table-container">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th class="sortable" tabindex="0" data-sort="name">Name</th>
-                  <th class="sortable" tabindex="0" data-sort="class">Class</th>
-                  <th class="sortable" tabindex="0" data-sort="role">Role</th>
-                  <th class="sortable" tabindex="0" data-sort="level">Level</th>
-                  <th class="sortable" tabindex="0" data-sort="gear" title="Average item level of equipped gear (shirt and tabard excluded); the quality split is in the armory profile">Gear</th>
-                  <th class="sortable" tabindex="0" data-sort="quests">Quests</th>
-                  <th class="sortable" tabindex="0" data-sort="loot">Loot</th>
-                  <th class="sortable" tabindex="0" data-sort="xp">XP</th>
-                  <th class="sortable" tabindex="0" data-sort="hp">Health (HP)</th>
-                  <th class="sortable" tabindex="0" data-sort="power">Power</th>
-                  <th class="sortable" tabindex="0" data-sort="state">Status</th>
-                  <th>Target</th>
-                  <th class="sortable" tabindex="0" data-sort="zone">Zone</th>
-                </tr>
-              </thead>
-              <tbody id="roster-table-body">
-                <tr><td colspan="13" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading active bots...</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <p class="empty-hint" style="margin-top:8px;">Role = AI combat role (forced / strategy / talent-gear auto-detect), not a group slot.</p>
-        </div>
-      </section>
-      <!-- TAB: BOT ACTIVITY / PROGRESS -->
-      <section id="tab-activity" class="tab-view" style="display: none;">
-        <div style="margin-bottom: 20px;">
-          <h1 class="tab-section-heading" style="font-size: 1.5rem; font-weight: 700; color: #fff; margin-bottom: 4px;">Bot Activity <span id="activity-count" style="color: var(--text-muted); font-size: 0.8rem; font-weight: 400;"></span></h1>
-          <p style="color: var(--text-muted); font-size: 0.85rem;">Per-bot progress from the activity daemon: quests, loot, money, kills, vendors, gathering. Click a bot to jump to its map; click a name in the per-bot table to open its armory.</p>
-        </div>
 
-        <div class="section-label">POOL COUNTERS · ALL TRACKED BOTS</div>
-        <div id="activity-metrics" class="metrics-row" style="margin-bottom: 20px;">
-          <div class="empty-hint">Waiting for activity data...</div>
-        </div>
-
-        <div class="telemetry-card" style="margin-bottom: 20px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap;">
-            <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff;">Notable Loot</h2>
-            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-              <select id="loot-quality-filter" class="btn" style="padding: 6px 12px;">
-                <option value="0">Any quality</option>
-                <option value="2" selected>Uncommon+</option>
-                <option value="3">Rare+</option>
-                <option value="4">Epic+</option>
-              </select>
-              <select id="loot-class-filter" class="btn" style="padding: 6px 12px;">
-                <option value="">All Classes</option>
-              </select>
-              <input type="number" id="loot-min-level" class="btn" style="padding: 6px 12px; width: 110px;" placeholder="Min level" min="1" max="60">
-              <input type="text" id="loot-bot-search" placeholder="Bot search..." class="btn bot-search-input">
+          <div class="telemetry-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap;">
+              <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff;">Active Bot Population <span id="roster-count" style="color: var(--text-muted); font-size: 0.8rem; font-weight: 400;"></span></h2>
+              <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <input type="text" id="bot-search" placeholder="Search name/class..." class="btn bot-search-input">
+                <select id="role-filter" class="btn" style="padding: 6px 12px;">
+                  <option value="all">All Roles</option>
+                  <option value="tank">Tanks</option>
+                  <option value="healer">Healers</option>
+                  <option value="dps">DPS</option>
+                </select>
+                <select id="class-filter" class="btn" style="padding: 6px 12px;">
+                  <option value="all">All Classes</option>
+                </select>
+                <select id="status-filter" class="btn" style="padding: 6px 12px;">
+                  <option value="all">All Status</option>
+                  <option value="combat">Combat</option>
+                  <option value="moving">Moving</option>
+                  <option value="busy">Busy</option>
+                  <option value="stalled">Stalled</option>
+                  <option value="resting">Resting</option>
+                  <option value="idle">Idle</option>
+                  <option value="dead">Dead</option>
+                </select>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text-muted); cursor: pointer;">
+                  <input type="checkbox" id="issue-only-filter" style="accent-color: #f85149;"> Issues only
+                </label>
+                <button id="roster-armory-btn" class="btn" style="padding: 6px 12px;" title="Every bot character in the armory database, online or offline">All bots (incl. offline)</button>
+              </div>
             </div>
-          </div>
-          <div class="table-container">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Time</th><th>Bot</th><th>Class/Level</th><th>Source</th><th>Item</th><th>Zone</th>
-                </tr>
-              </thead>
-              <tbody id="loot-table-body">
-                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading notable loot...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="telemetry-card" style="margin-bottom: 20px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap;">
-            <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff;">Quests</h2>
-            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-              <input type="text" id="quest-bot-search" placeholder="Bot search..." class="btn bot-search-input">
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th class="sortable" tabindex="0" data-sort="name">Name</th>
+                    <th class="sortable" tabindex="0" data-sort="class">Class</th>
+                    <th class="sortable" tabindex="0" data-sort="role">Role</th>
+                    <th class="sortable" tabindex="0" data-sort="level">Level</th>
+                    <th class="sortable" tabindex="0" data-sort="gear" title="Average item level of equipped gear (shirt and tabard excluded); the quality split is in the armory profile">Gear</th>
+                    <th class="sortable" tabindex="0" data-sort="quests">Quests</th>
+                    <th class="sortable" tabindex="0" data-sort="loot">Loot</th>
+                    <th class="sortable" tabindex="0" data-sort="xp">XP</th>
+                    <th class="sortable" tabindex="0" data-sort="hp">Health (HP)</th>
+                    <th class="sortable" tabindex="0" data-sort="power">Power</th>
+                    <th class="sortable" tabindex="0" data-sort="state">Status</th>
+                    <th>Target</th>
+                    <th class="sortable" tabindex="0" data-sort="zone">Zone</th>
+                  </tr>
+                </thead>
+                <tbody id="roster-table-body">
+                  <tr><td colspan="13" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading active bots...</td></tr>
+                </tbody>
+              </table>
             </div>
-          </div>
-          <div class="table-container">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Time</th><th>Bot</th><th>Class/Level</th><th>Event</th><th>Quest</th>
-                </tr>
-              </thead>
-              <tbody id="quests-table-body">
-                <tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading quest events...</td></tr>
-              </tbody>
-            </table>
+            <p class="empty-hint" style="margin-top:8px;">Role = AI combat role (forced / strategy / talent-gear auto-detect), not a group slot.</p>
           </div>
         </div>
 
-        <div class="telemetry-card" style="margin-bottom: 20px;">
-          <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff; margin-bottom: 16px;">Per-Bot Activity</h2>
-          <div class="table-container">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Name</th><th>Class</th><th>Level</th><th>Quests</th><th>Loot</th><th>Notable</th><th>Kills</th><th>Deaths</th><th>Money +/-</th><th>Trainers</th><th>Vendors</th><th>Repairs</th><th>Give-ups</th><th>Gather/Skin</th><th>AH</th>
-                </tr>
-              </thead>
-              <tbody id="activity-table-body">
-                <tr><td colspan="15" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading per-bot activity...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="telemetry-card">
-          <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff; margin-bottom: 16px;">Level Timeline</h2>
-          <div class="table-container">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Time</th><th>Bot</th><th>Class</th><th>Level</th>
-                </tr>
-              </thead>
-              <tbody id="level-timeline-body">
-                <tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading level timeline...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-
-      <!-- TAB ARMORY (all bot characters from the armory DB + per-bot profile) -->
-      <section id="tab-armory" class="tab-view" style="display: none;">
+        <!-- Armory sub-view: the same tab, deeper. Covers offline bots too. -->
         <div id="armory-list-view" class="telemetry-card" style="display: none;">
           <div class="armory-topbar">
-            <h1 class="tab-section-heading" style="font-size: 1.5rem; font-weight: 700; color: #fff;">Bot Armory</h1>
+            <h2 class="tab-title" style="font-size: 1.15rem;">All Bots <span style="color: var(--text-muted); font-size: 0.8rem; font-weight: 400;">incl. offline</span></h2>
             <input type="text" id="armory-list-search" placeholder="Search name…" class="btn armory-list-search-input">
+            <button class="btn" id="armory-roster-btn">← Roster</button>
           </div>
           <p style="color: var(--text-muted); font-size: 0.85rem;">Every bot character in the armory database, online or offline. Click a bot to open its profile.</p>
           <div class="table-container">
@@ -506,6 +410,7 @@
             </div>
             <div class="armory-head-right">
               <div id="armory-money" class="mono"></div>
+              <div id="armory-ilvl" class="mono armory-ilvl"></div>
               <div id="armory-played" class="armory-played"></div>
             </div>
           </div>
@@ -549,13 +454,152 @@
         </div>
       </section>
 
-      <!-- TAB 4: ISSUES -->
+      <!-- TAB: PROGRESS (levelling curve, gear behind level, level timeline) -->
+      <section id="tab-progress" class="tab-view" style="display: none;">
+        <div class="tab-heading-wrap">
+          <h1 class="tab-section-heading tab-title">Progress</h1>
+          <p class="tab-subtitle">Levelling speed: level bands, gear behind level, and the level-up timeline.</p>
+        </div>
+
+        <div class="telemetry-card">
+          <div class="section-label" style="margin: 0 0 10px;">LEVEL BANDS · BOTS &amp; GEAR ITEM LEVEL</div>
+          <div id="level-bands" class="composition-list">
+            <div class="empty-hint">Waiting for XP samples...</div>
+          </div>
+          <p class="empty-hint" style="margin-top:10px;">One row per level while the pool spans ≤10 levels, otherwise five-level buckets. <span class="mono">ilvl</span> is the average equipped item level of the swept bots in the band and its ratio to the band's level — how far gear trails the level.</p>
+        </div>
+
+        <div class="telemetry-card" style="margin-top: 20px;">
+          <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff; margin-bottom: 4px;">Level Timeline</h2>
+          <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 16px;">Every level-up the daemon has seen, newest first. The gap between a bot's consecutive rows is the time it spent on the previous level.</p>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Time</th><th>Bot</th><th>Class</th><th>Level</th>
+                </tr>
+              </thead>
+              <tbody id="level-timeline-body">
+                <tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading level timeline...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: ACTIVITY (quest/kill/loot counters, feeds, live stream) -->
+      <section id="tab-activity" class="tab-view" style="display: none;">
+        <div class="tab-heading-wrap">
+          <h1 class="tab-section-heading tab-title">Activity <span id="activity-count" style="color: var(--text-muted); font-size: 0.8rem; font-weight: 400;"></span></h1>
+          <p class="tab-subtitle">What bots are doing: quest, kill and loot counters, feeds and the live event stream.</p>
+        </div>
+
+        <div class="section-label">POOL COUNTERS · ALL TRACKED BOTS</div>
+        <div id="activity-metrics" class="metrics-row" style="margin-bottom: 20px;">
+          <div class="empty-hint">Waiting for activity data...</div>
+        </div>
+
+        <div class="telemetry-card" style="margin-bottom: 20px;">
+          <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff; margin-bottom: 16px;">Per-Bot Activity</h2>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th><th>Class</th><th>Level</th><th>Quests</th><th>Loot</th><th>Notable</th><th>Kills</th><th>Deaths</th><th>Money +/-</th><th>Trainers</th><th>Vendors</th><th>Repairs</th><th>Give-ups</th><th>Gather/Skin</th><th>AH</th>
+                </tr>
+              </thead>
+              <tbody id="activity-table-body">
+                <tr><td colspan="15" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading per-bot activity...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="telemetry-card" style="margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap;">
+            <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff;">Quests</h2>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+              <input type="text" id="quest-bot-search" placeholder="Bot search..." class="btn bot-search-input">
+            </div>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Time</th><th>Bot</th><th>Class/Level</th><th>Event</th><th>Quest</th>
+                </tr>
+              </thead>
+              <tbody id="quests-table-body">
+                <tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading quest events...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Live Monospace Console -->
+        <div class="console-container">
+          <div class="console-header">
+            <span>CONSOLE · LIVE STREAM</span>
+            <span id="console-rate" style="color: var(--accent-green-bright);">● connected</span>
+          </div>
+          <div id="console-body" class="console-body">
+            <div class="log-line"><span class="log-time">[Init]</span> <span class="log-tag">system</span> Telemetry stream initialized. Awaiting events...</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: ECONOMY (money, vendors, repairs, AH, notable loot) -->
+      <section id="tab-economy" class="tab-view" style="display: none;">
+        <div class="tab-heading-wrap">
+          <h1 class="tab-section-heading tab-title">Economy</h1>
+          <p class="tab-subtitle">Money, vendors, repairs, auction house and notable loot.</p>
+        </div>
+
+        <div class="section-label">POOL ECONOMY · ALL TRACKED BOTS</div>
+        <div id="economy-metrics" class="metrics-row" style="margin-bottom: 20px;">
+          <div class="empty-hint">Waiting for activity data...</div>
+        </div>
+
+        <div class="telemetry-card">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap;">
+            <div>
+              <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff;">Notable Loot</h2>
+              <p style="color: var(--text-muted); font-size: 0.8rem; margin: 4px 0 0;">Green or better loot, money pickups and gather/skin drops — the supply side of the gear and gold loop.</p>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+              <select id="loot-quality-filter" class="btn" style="padding: 6px 12px;">
+                <option value="0">Any quality</option>
+                <option value="2" selected>Uncommon+</option>
+                <option value="3">Rare+</option>
+                <option value="4">Epic+</option>
+              </select>
+              <select id="loot-class-filter" class="btn" style="padding: 6px 12px;">
+                <option value="">All Classes</option>
+              </select>
+              <input type="number" id="loot-min-level" class="btn" style="padding: 6px 12px; width: 110px;" placeholder="Min level" min="1" max="60">
+              <input type="text" id="loot-bot-search" placeholder="Bot search..." class="btn bot-search-input">
+            </div>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Time</th><th>Bot</th><th>Class/Level</th><th>Source</th><th>Item</th><th>Zone</th>
+                </tr>
+              </thead>
+              <tbody id="loot-table-body">
+                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading notable loot...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: ISSUES & INCIDENTS (persistent episodes + rolling anomaly feed) -->
       <section id="tab-issues" class="tab-view" style="display: none;">
-        <div style="margin-bottom: 20px;">
-          <h1 class="tab-section-heading" style="font-size: 1.5rem; font-weight: 700; color: #fff; margin-bottom: 4px;">Persistent Issues</h1>
-          <p style="color: var(--text-muted); font-size: 0.85rem;">
-            Only problems that persist are shown — unreachable targets 2+ minutes, everything else 5+ minutes — so short hiccups are ignored. Red = 10+ minutes. Click a bot to jump to its map.
-          </p>
+        <div class="tab-heading-wrap">
+          <h1 class="tab-section-heading tab-title">Issues &amp; Incidents</h1>
+          <p class="tab-subtitle">What is broken: persistent issue episodes and the rolling incident feed.</p>
         </div>
 
         <div class="metrics-row">
@@ -580,7 +624,7 @@
           </div>
         </div>
 
-        <div class="telemetry-card">
+        <div class="telemetry-card" id="issues-panel">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap;">
             <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff;">Active Issues</h2>
             <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
@@ -617,14 +661,11 @@
           <div class="section-label" style="margin: 0 0 12px;">RECENTLY RESOLVED</div>
           <div id="issues-resolved" class="resolved-list"></div>
         </div>
-      </section>
 
-      <!-- TAB 5: INCIDENTS -->
-      <section id="tab-incidents" class="tab-view" style="display: none;">
-        <div class="telemetry-card">
+        <div class="telemetry-card" id="incidents-panel" style="margin-top: 20px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
             <div>
-              <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff;">Incidents & Anomalies</h2>
+              <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff;">Incidents &amp; Anomalies</h2>
               <p style="color: var(--text-muted); font-size: 0.8rem; margin: 4px 0 0;">Rolling window: the last 1000 incidents (~30 min at busy rates). A daemon restart clears it; "Deaths (ring window)" counts the BOT_DEATH rows currently in the list.</p>
             </div>
             <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
@@ -638,7 +679,6 @@
                 <option value="all">All Severities</option>
                 <option value="info">Info</option>
                 <option value="warn">Warn</option>
-                <option value="error">Error</option>
               </select>
               <button id="clear-anomalies" class="btn" style="padding: 6px 12px;">Clear</button>
             </div>
@@ -664,11 +704,30 @@
         </div>
       </section>
 
+      <!-- TAB: SERVER (effective settings, versions, diagnostic report) -->
+      <section id="tab-server" class="tab-view" style="display: none;">
+        <div class="tab-heading-wrap">
+          <h1 class="tab-section-heading tab-title">Server</h1>
+          <p class="tab-subtitle">Effective server settings, versions and the diagnostic report.</p>
+        </div>
+
+        <div class="telemetry-card">
+          <div class="server-card-head">
+            <div>
+              <div class="section-label" style="margin: 0 0 4px;">EFFECTIVE SETTINGS</div>
+              <p style="color: var(--text-muted); font-size: 0.8rem; margin: 0;">Read from the running server's own getters at startup, then every 5 min — never from config files.</p>
+            </div>
+            <button id="copy-diag-btn" class="btn" style="font-size: 0.75rem;" title="Copy a plain-text diagnostic report (versions, effective settings, pool health) for bug reports">Copy diagnostic report</button>
+          </div>
+          <div id="server-panel"><div class="empty-hint">Waiting for server info (sent at startup, then every 5 min)...</div></div>
+        </div>
+      </section>
+
     </div>
   </div>
 
 </div>
 
-<script src="/static/js/app.js?v=7"></script>
+<script src="/static/js/app.js?v=8"></script>
 </body>
 </html>

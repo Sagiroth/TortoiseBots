@@ -5,6 +5,38 @@
 # PlayerBots implementation here. Expansion-only donor families are removed
 # from the tree rather than hidden behind a subtraction list.
 
+# The core detects its own revision with a plain `git rev-parse` (core
+# CMakeLists.txt) and silently falls back to "unknown"/epoch when git refuses
+# the checkout. That happens in the containerised dev builder, where the
+# root-owned bind mount trips git's dubious-ownership guard, so the compiled
+# REVISION_HASH never names the running core and the observability dashboard
+# shows "core unknown 1970-01-01". Probe the core checkout ourselves with the
+# same safe.directory workaround used for the module root, and hand the real
+# values to the module. Empty results fall back to the core's own macros.
+function(tortoisebots_detect_core_revision out_revision out_date)
+  set(${out_revision} "" PARENT_SCOPE)
+  set(${out_date} "" PARENT_SCOPE)
+  execute_process(
+    COMMAND git -c "safe.directory=${CMAKE_SOURCE_DIR}" -C "${CMAKE_SOURCE_DIR}" rev-parse --short=20 HEAD
+    RESULT_VARIABLE TORTOISEBOTS_CORE_REV_RESULT
+    OUTPUT_VARIABLE TORTOISEBOTS_CORE_REV_VALUE
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+  if(NOT TORTOISEBOTS_CORE_REV_RESULT EQUAL 0 OR "${TORTOISEBOTS_CORE_REV_VALUE}" STREQUAL "")
+    return()
+  endif()
+  execute_process(
+    COMMAND git -c "safe.directory=${CMAKE_SOURCE_DIR}" -C "${CMAKE_SOURCE_DIR}" show -s --format=%ci HEAD
+    RESULT_VARIABLE TORTOISEBOTS_CORE_DATE_RESULT
+    OUTPUT_VARIABLE TORTOISEBOTS_CORE_DATE_VALUE
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+  set(${out_revision} "${TORTOISEBOTS_CORE_REV_VALUE}" PARENT_SCOPE)
+  if(TORTOISEBOTS_CORE_DATE_RESULT EQUAL 0 AND NOT "${TORTOISEBOTS_CORE_DATE_VALUE}" STREQUAL "")
+    set(${out_date} "${TORTOISEBOTS_CORE_DATE_VALUE}" PARENT_SCOPE)
+  endif()
+endfunction()
+
 if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
   set(TORTOISEBOTS_ROOT "${CMAKE_CURRENT_LIST_DIR}")
 
@@ -48,6 +80,13 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
   endif()
   message(STATUS "TortoiseBots version: ${TORTOISEBOTS_BUILD_VERSION}")
   message(STATUS "TortoiseBots source: ${TORTOISEBOTS_ROOT} commit ${TORTOISEBOTS_SOURCE_COMMIT} (${TORTOISEBOTS_SOURCE_STATE})")
+  tortoisebots_detect_core_revision(TORTOISEBOTS_CORE_REVISION TORTOISEBOTS_CORE_DATE)
+  if(TORTOISEBOTS_CORE_REVISION STREQUAL "")
+    # git unavailable: the emitter falls back to the core's own macros.
+    message(STATUS "TortoiseBots: core revision not readable from git; using the core's compiled REVISION_HASH")
+  else()
+    message(STATUS "TortoiseBots: core ${TORTOISEBOTS_CORE_REVISION} (${TORTOISEBOTS_CORE_DATE})")
+  endif()
   # Re-run CMake when the workflow stamps a new VERSION so the compiled
   # string cannot go stale.
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${TORTOISEBOTS_ROOT}/VERSION")
@@ -248,6 +287,12 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "POST_TARGETS")
       CMANGOS=1)
     target_compile_definitions("${TORTOISEBOTS_TARGET}" PRIVATE
       "TORTOISEBOTS_BUILD_VERSION=\"${TORTOISEBOTS_BUILD_VERSION}\"")
+    # Same reason as the build version above: recompute in this scope. Empty
+    # values tell the emitter to keep the core's own REVISION_HASH/DATE.
+    tortoisebots_detect_core_revision(TORTOISEBOTS_CORE_REVISION TORTOISEBOTS_CORE_DATE)
+    target_compile_definitions("${TORTOISEBOTS_TARGET}" PRIVATE
+      "TORTOISEBOTS_CORE_REVISION=\"${TORTOISEBOTS_CORE_REVISION}\""
+      "TORTOISEBOTS_CORE_DATE=\"${TORTOISEBOTS_CORE_DATE}\"")
     target_include_directories("${TORTOISEBOTS_TARGET}" PRIVATE
       "${TORTOISEBOTS_ROOT}"
       "${TORTOISEBOTS_ROOT}/ai"

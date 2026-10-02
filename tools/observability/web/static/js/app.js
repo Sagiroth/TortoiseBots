@@ -15,8 +15,12 @@
 
   const OFFLINE_AFTER_MS = 10000;
 
+  // The selected tab survives a reload: the operator reloads mid-investigation
+  // and expects to land back where they were. Only known tab keys are honoured.
+  const TAB_STORAGE_KEY = 'tortoisebots.dashboard.tab';
+
   const state = {
-    activeTab: 'dashboard',
+    activeTab: 'overview',
     currentZoneId: 12,
     mapView: 'world',
     worldMapId: 0,
@@ -57,6 +61,7 @@
     issueDurationFilter: 300,
     issueHistory: { t: [], series: {} },
     armoryGuid: null,
+    armoryOpen: false,
     armoryProfile: null,
     armorySubtab: 'stats',
     armorySpellFilter: '',
@@ -479,9 +484,12 @@
     botSearch: document.getElementById('bot-search'),
     rosterTable: document.getElementById('roster-table-body'),
     rosterCount: document.getElementById('roster-count'),
+    rosterPanel: document.getElementById('roster-panel'),
+    rosterArmoryBtn: document.getElementById('roster-armory-btn'),
     // Activity
     activityMetrics: document.getElementById('activity-metrics'),
     activityCount: document.getElementById('activity-count'),
+    economyMetrics: document.getElementById('economy-metrics'),
     lootTable: document.getElementById('loot-table-body'),
     lootQualityFilter: document.getElementById('loot-quality-filter'),
     lootClassFilter: document.getElementById('loot-class-filter'),
@@ -502,7 +510,9 @@
     armoryName: document.getElementById('armory-name'),
     armorySubtitle: document.getElementById('armory-subtitle'),
     armoryMoney: document.getElementById('armory-money'),
+    armoryIlvl: document.getElementById('armory-ilvl'),
     armoryPlayed: document.getElementById('armory-played'),
+    armoryRosterBtn: document.getElementById('armory-roster-btn'),
     armoryError: document.getElementById('armory-error'),
     armoryBody: document.getElementById('armory-body'),
     gearLeft: document.getElementById('armory-gear-left'),
@@ -534,7 +544,7 @@
     metricIssues: document.getElementById('metric-issues'),
     metricIssuesSub: document.getElementById('metric-issues-sub'),
 
-    // Dashboard composition
+    // Bots tab: fleet composition
     classBreakdown: document.getElementById('class-breakdown'),
     roleTotals: document.getElementById('role-totals'),
     fleetHealth: document.getElementById('fleet-health'),
@@ -699,15 +709,16 @@
     el.consoleBody.scrollTop = el.consoleBody.scrollHeight;
   }
 
-  // Sidebar Tab Navigation
+  // Sidebar Tab Navigation.
   const TAB_TITLES = {
-    dashboard: 'Dashboard',
+    overview: 'Overview',
     map: 'Live Map',
     roster: 'Bots',
+    progress: 'Progress',
     activity: 'Activity',
-    armory: 'Armory',
-    issues: 'Persistent Issues',
-    incidents: 'Incidents'
+    economy: 'Economy',
+    issues: 'Issues & Incidents',
+    server: 'Server'
   };
 
   function openNavDrawer() {
@@ -732,32 +743,37 @@
     }
   }
 
+  // Switching tabs renders only the tab that becomes visible; hidden tabs are
+  // rebuilt on their own activation, never on every 2 s snapshot.
   function switchTab(tab) {
+    if (!TAB_TITLES[tab]) tab = 'overview';
     state.activeTab = tab;
+    try { localStorage.setItem(TAB_STORAGE_KEY, tab); } catch (e) {}
     if (el.currentTabTitle) {
-      el.currentTabTitle.textContent = TAB_TITLES[tab] || (tab.charAt(0).toUpperCase() + tab.slice(1));
+      el.currentTabTitle.textContent = TAB_TITLES[tab];
     }
     el.menuItems.forEach(item => {
       item.classList.toggle('active', item.dataset.tab === tab);
     });
     closeNavDrawer();
 
-    if (tab === 'roster') renderRoster();
-    if (tab === 'armory') { armoryView(); if (state.armoryGuid === null || state.armoryGuid === undefined) renderArmoryList(); }
     el.tabViews.forEach(v => {
       v.style.display = v.id === `tab-${tab}` ? 'block' : 'none';
     });
-    if (tab === 'map') renderMap();
-    if (tab === 'activity') { renderActivityTab(); fetchLootFeed(); fetchQuestFeed(); }
-    if (tab === 'issues') renderIssues();
-    if (tab === 'incidents') renderAnomalies();
-    if (tab === 'dashboard') {
-      renderDashboardCharts();
-      renderComposition();
-      renderFleetHealth();
+
+    if (tab === 'overview') {
+      renderOverviewCharts();
       renderActivity();
+      renderFleetHealth();
       renderGrinding();
     }
+    if (tab === 'map') { renderMap(); renderZoneList(); }
+    if (tab === 'roster') renderBotsTab();
+    if (tab === 'progress') { renderLevelBands(); renderLevelTimeline(); }
+    if (tab === 'activity') { renderActivityTab(); fetchQuestFeed(); }
+    if (tab === 'economy') { renderEconomyTab(); fetchLootFeed(); }
+    if (tab === 'issues') { renderIssues(); renderAnomalies(); }
+    if (tab === 'server') renderServerPanel();
   }
 
   el.menuItems.forEach(item => {
@@ -784,8 +800,8 @@
     resizeTimer = setTimeout(() => {
       if (state.activeTab === 'map') {
         renderMap();
-      } else if (state.activeTab === 'dashboard') {
-        renderDashboardCharts();
+      } else if (state.activeTab === 'overview') {
+        renderOverviewCharts();
       } else if (state.activeTab === 'issues') {
         renderIssueChart();
       }
@@ -800,7 +816,9 @@
       fetchAnomalies();
       fetchIssues(true);
       fetchActivity();
-      if (state.activeTab === 'activity') { fetchLootFeed(); fetchQuestFeed(); }
+      if (state.activeTab === 'activity') fetchQuestFeed();
+      if (state.activeTab === 'economy') fetchLootFeed();
+      if (state.activeTab === 'roster') renderBotsTab();
     });
   }
 
@@ -913,8 +931,8 @@
       .then(cfg => {
         if (cfg && Object.keys(cfg).length > 0) {
           EXTRA_ZONE_NAMES = cfg;
-          if (state.activeTab === 'map') renderMap();
-          if (state.activeTab === 'dashboard') renderFleetHealth();
+          if (state.activeTab === 'map') { renderMap(); renderZoneList(); }
+          if (state.activeTab === 'overview') renderFleetHealth();
         }
       })
       .catch(() => {});
@@ -1315,7 +1333,7 @@
     }
   }
 
-  function renderDashboardCharts() {
+  function renderOverviewCharts() {
     renderActivityChart();
     renderTickChart();
   }
@@ -1375,44 +1393,53 @@
     }
   }
 
-  // Fleet health + zone distribution from the authoritative roster.
+  // Fleet health (Overview) + zone census (World) both read the authoritative
+  // roster. Health is about state only; the zone list is the "where" summary
+  // behind the map.
   function renderFleetHealth() {
     if (!el.fleetHealth) return;
 
     const bots = state.bots;
     if (bots.length === 0) {
       el.fleetHealth.innerHTML = '<div class="empty-hint">Waiting for bot roster...</div>';
-      if (el.zoneList) el.zoneList.innerHTML = '';
       return;
     }
 
     let low = 0;
-    const zones = new Map();
     bots.forEach(b => {
       // A missing max_hp means "unknown", not "full health": those bots skew
       // neither the LOW HP nor the healthy side.
       const pct = b.max_hp ? b.hp / b.max_hp : null;
       if (b.state !== 'dead' && b.hp !== 0 && pct !== null && pct < 0.35) low++;
-      zones.set(`${b.map}_${b.zone}`, (zones.get(`${b.map}_${b.zone}`) || 0) + 1);
     });
 
-    // Dead bots are counted once, in the Activity census above; this card is
-    // about health only.
+    // Dead bots are counted once, in the LIVE STATES census above; this card
+    // is about health only.
     el.fleetHealth.innerHTML = `
       <div class="role-row" style="margin-top: 0;">
         <span class="badge badge-warn">${low} LOW HP</span>
       </div>`;
+  }
 
-    if (el.zoneList) {
-      const top = [...zones.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
-      el.zoneList.innerHTML = top.map(([key, n]) => {
-        const [mapIdStr, zoneIdStr] = key.split('_');
-        return `<div class="zone-row" data-zone="${zoneIdStr}"><span>${esc(getZoneName(Number(zoneIdStr), Number(mapIdStr)))}</span><span class="comp-count">${n}</span></div>`;
-      }).join('');
-      el.zoneList.querySelectorAll('.zone-row').forEach(row => {
-        row.addEventListener('click', () => openZone(parseInt(row.dataset.zone, 10)));
-      });
+  // Zone census for the World tab: top zones by bot count, click to open.
+  function renderZoneList() {
+    if (!el.zoneList) return;
+    const zones = new Map();
+    state.bots.forEach(b => {
+      zones.set(`${b.map}_${b.zone}`, (zones.get(`${b.map}_${b.zone}`) || 0) + 1);
+    });
+    if (zones.size === 0) {
+      el.zoneList.innerHTML = '<div class="empty-hint">Waiting for bot roster...</div>';
+      return;
     }
+    const top = [...zones.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+    el.zoneList.innerHTML = top.map(([key, n]) => {
+      const [mapIdStr, zoneIdStr] = key.split('_');
+      return `<div class="zone-row" data-zone="${zoneIdStr}"><span>${esc(getZoneName(Number(zoneIdStr), Number(mapIdStr)))}</span><span class="comp-count">${n}</span></div>`;
+    }).join('');
+    el.zoneList.querySelectorAll('.zone-row').forEach(row => {
+      row.addEventListener('click', () => openZone(parseInt(row.dataset.zone, 10)));
+    });
   }
   // Activity block: the single authoritative states census (counts + %,
   // same snapshot as the roster). Replaces the scattered combat/dead
@@ -1434,17 +1461,15 @@
       return `<div class="comp-row" title="${esc(STATE_TITLES[key] || key)}"><span class="comp-name">${key[0].toUpperCase() + key.slice(1)}</span><span class="comp-bar-bg"><span class="comp-bar" style="width: ${pct}%; background: ${STATE_COLORS[key]};"></span></span><span class="comp-count">${c} · ${pct}%</span></div>`;
     }).join('');
   }
-  // Grinding panel: XP gains + deaths only. States moved to the Activity
-  // block above; grind-travel merged into the Levels footnote (it duplicated
-  // Moving without explaining the split).
+  // Grinding panel (Overview): XP gains + deaths only, so the gauges answer
+  // "is the pool actually progressing". Level bands and their gear live on the
+  // Progress tab (renderLevelBands).
   function renderGrinding() {
     const host = document.getElementById('grinding-panel');
-    const bands = document.getElementById('level-bands');
     const g = state.grinding || {};
     if (!host) return;
     if (!g.bots_tracked) {
       host.innerHTML = '<div class="empty-hint">Waiting for XP samples...</div>';
-      if (bands) bands.innerHTML = '';
       return;
     }
     const gainingTitle = `${g.bots_gaining_xp} of ${g.bots_tracked} bots gained XP in the last 10 min — quest turn-ins, discovery and kills all count, not just combat`;
@@ -1455,22 +1480,35 @@
         <span class="badge badge-error" title="BOT_DEATH bot deaths per minute, last 10 min">${esc((g.deaths_per_min || 0).toFixed(1))} DEATHS/MIN (10m)</span>
       </div>
       <div class="comp-row" title="Share of tracked bots that died in the last 5 min (distinct bots, not death events)"><span class="comp-name">Died 5m</span><span class="comp-bar-bg"><span class="comp-bar" style="width: ${Math.round(g.pct_died_5min || 0)}%; background: #d29922;"></span></span><span class="comp-count">${Math.round(g.pct_died_5min || 0)}%</span></div>`;
-    if (bands) {
-      const lb = Array.isArray(g.level_bands) ? g.level_bands : [];
-      const max = Math.max(1, ...lb.map(b => b.count || 0));
-      const label = b => (b.lo === b.hi ? `L${b.lo}` : `${b.lo}-${b.hi}`);
-      // Gear cell: the daemon's equipped-item-level sweep, averaged over the
-      // bands' bots, with its ratio to the band's level so "is gear keeping
-      // up?" is one glance. "–" until the first sweep covers a band.
-      const gear = b => {
-        if (!b.gear_bots) return '<span class="comp-gear" title="No gear sweep has covered these bots yet">–</span>';
-        const mid = (b.lo + b.hi) / 2;
-        const ratio = mid > 0 ? b.avg_item_level / mid : 0;
-        return `<span class="comp-gear" title="Average equipped item level of the ${b.gear_bots} swept bots in this band, and its ratio to level ${mid}">ilvl ${b.avg_item_level.toFixed(1)} · ${ratio.toFixed(2)}×</span>`;
-      };
-      bands.innerHTML = `<div class="section-label" style="margin: 8px 0 6px;">LEVELS · GEAR</div>` + lb.map(b => `
-        <div class="comp-row"><span class="comp-name">${esc(label(b))}</span><span class="comp-bar-bg"><span class="comp-bar" style="width: ${Math.round(((b.count || 0) / max) * 100)}%; background: #2ea043;"></span></span><span class="comp-count">${b.count || 0}</span>${gear(b)}</div>`).join('');
+  }
+
+  // Progress tab: one row per level band with the band's bot count and the
+  // average equipped item level from the daemon's gear sweep, with its ratio to
+  // the band's level so "is gear keeping up?" is one glance. "–" until the
+  // first sweep covers a band.
+  function renderLevelBands() {
+    const bands = document.getElementById('level-bands');
+    if (!bands) return;
+    const g = state.grinding || {};
+    if (!g.bots_tracked) {
+      bands.innerHTML = '<div class="empty-hint">Waiting for XP samples...</div>';
+      return;
     }
+    const lb = Array.isArray(g.level_bands) ? g.level_bands : [];
+    if (!lb.length) {
+      bands.innerHTML = '<div class="empty-hint">No level bands yet.</div>';
+      return;
+    }
+    const max = Math.max(1, ...lb.map(b => b.count || 0));
+    const label = b => (b.lo === b.hi ? `L${b.lo}` : `${b.lo}-${b.hi}`);
+    const gear = b => {
+      if (!b.gear_bots) return '<span class="comp-gear" title="No gear sweep has covered these bots yet">–</span>';
+      const mid = (b.lo + b.hi) / 2;
+      const ratio = mid > 0 ? b.avg_item_level / mid : 0;
+      return `<span class="comp-gear" title="Average equipped item level of the ${b.gear_bots} swept bots in this band, and its ratio to level ${mid}">ilvl ${b.avg_item_level.toFixed(1)} · ${ratio.toFixed(2)}×</span>`;
+    };
+    bands.innerHTML = lb.map(b => `
+      <div class="comp-row"><span class="comp-name">${esc(label(b))}</span><span class="comp-bar-bg"><span class="comp-bar" style="width: ${Math.round(((b.count || 0) / max) * 100)}%; background: #2ea043;"></span></span><span class="comp-count">${b.count || 0}</span>${gear(b)}</div>`).join('');
   }
 
   // Art-less zones (custom zones like Northwind) open a dark zone view with
@@ -1483,19 +1521,24 @@
     return true;
   }
 
-  // Server panel: effective running settings (rates / bots / diagnostics)
-  // from the SERVER_INFO payload — live getters, never config files.
+  // Server panel: effective running settings from the SERVER_INFO payload —
+  // live getters, never config files. Each setting is one key/value row
+  // (label left, value right, monospace values, ON/OFF badges aligned) laid
+  // out as sections that reflow into columns, so no label ever wraps mid-word
+  // and nothing overflows the card.
   function flagBadge(v) {
     return v === '1' || v === 1 || v === true
       ? '<span class="badge badge-success">on</span>'
       : '<span class="badge">off</span>';
   }
 
-  function serverGroup(title, rows) {
-    return `<div class="section-label" style="margin: 12px 0 6px;">${esc(title)}</div>
-      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 4px 16px; font-size: 0.78rem;">
-      ${rows.map(row => `<div style="display: flex; justify-content: space-between; gap: 8px;">${row.map(cell => `<span style="color: var(--text-muted);">${cell}</span>`).join('<span style="color: var(--text-dim);">·</span>')}</div>`).join('')}
-      </div>`;
+  // rows: [label, valueHtml, confKeyOrHint]
+  function settingsSection(title, rows) {
+    return `<div class="settings-col">
+      <div class="section-label" style="margin: 0 0 8px;">${esc(title)}</div>
+      <div class="settings-rows">${rows.map(([label, value, hint]) =>
+        `<div class="setting-row"${hint ? ` title="${esc(hint)}"` : ''}><span class="setting-key">${esc(label)}</span><span class="setting-val">${value}</span></div>`).join('')}</div>
+    </div>`;
   }
 
   function renderServerPanel() {
@@ -1508,36 +1551,67 @@
     }
     const rates = info.rates || {}, bots = info.bots || {}, diag = info.diagnostics || {};
     const num = v => (v === undefined || v === null || v === '' ? '–' : esc(v));
+    const cfg = k => `AiPlayerbot.${k}`;
     host.innerHTML = `
-      <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">
-        TortoiseBots <strong class="mono" style="color: #fff;">${esc(info.module_version || '?')}</strong>
-        · core <strong class="mono" style="color: #fff;">${esc(info.core_revision || '?')}</strong>
-        <span style="color: var(--text-dim);">${esc(info.core_date || '')}</span>
-        · max level ${esc(info.max_level || '?')}
+      <div class="server-versions">
+        <span><span class="setting-dim">TortoiseBots</span> <strong class="mono">${esc(info.module_version || '?')}</strong></span>
+        <span><span class="setting-dim">core</span> <strong class="mono">${esc(info.core_revision || '?')}</strong> <span class="setting-dim">${esc(info.core_date || '')}</span></span>
+        <span><span class="setting-dim">max level</span> <strong class="mono">${num(info.max_level)}</strong></span>
       </div>
-      ${serverGroup('RATES', [
-        [[esc('XP kill'), num(rates.xp_kill)], [esc('XP elite'), num(rates.xp_kill_elite)],
-        [esc('XP quest'), num(rates.xp_quest)], [esc('XP explore'), num(rates.xp_explore)],
-        [esc('Drop money'), num(rates.drop_money)], [esc('Honor'), num(rates.honor)],
-        [esc('Rep gain'), num(rates.rep_gain)], [esc('Talent'), num(rates.talent)],
-        [esc('Bot XP mult'), num(rates.bot_xp_mult)]],
-      ])}
-      ${serverGroup('BOTS', [
-        [[esc('Min/max random'), `${num(bots.min_random)} / ${num(bots.max_random)}`],
-        [esc('Update interval'), num(bots.update_interval)], [esc('Max level'), num(bots.max_level)],
-        [esc('Group nearby'), flagBadge(bots.group_nearby)], [esc('Raid nearby'), flagBadge(bots.raid_nearby)],
-        [esc('Invite player'), flagBadge(bots.invite_player)], [esc('Timed logout'), flagBadge(bots.timed_logout)],
-        [esc('Random levels off'), flagBadge(bots.disable_random_levels)], [esc('Level ladder'), flagBadge(bots.level_ladder)],
-        [esc('Auto quests'), flagBadge(bots.auto_do_quests)], [esc('Activity off'), flagBadge(bots.disable_activity)],
-        [esc('Active alone'), num(bots.active_alone)], [esc('Force near'), flagBadge(bots.force_active_near)], [esc('Limit combat'), flagBadge(bots.limit_combat)],
-        [esc('Pool budget'), `${num(bots.pool_budget_us)}us / ${num(bots.pool_budget_gate_ms)}ms`],
-        [esc('AH buyer'), flagBadge(bots.ah_buyer)], [esc('LFT'), flagBadge(bots.lft)], [esc('BG'), flagBadge(bots.bg)],
-        [esc('Avoid towns'), flagBadge(bots.avoid_towns)], [esc('Leave zones'), flagBadge(bots.leave_zones)]],
-      ])}
-      ${serverGroup('DIAGNOSTICS', [
-        [[esc('PerfMon'), flagBadge(diag.perf_mon)], [esc('bot_events'), flagBadge(diag.bot_events)],
-        [esc('unreachable'), flagBadge(diag.unreachable)], [esc('deaths'), flagBadge(diag.deaths)]],
-      ])}`;
+      <div class="settings-grid">
+        ${settingsSection('RATES · CORE WORLD', [
+          ['XP kill', num(rates.xp_kill), 'CONFIG_FLOAT_RATE_XP_KILL'],
+          ['XP elite', num(rates.xp_kill_elite), 'CONFIG_FLOAT_RATE_XP_KILL_ELITE'],
+          ['XP quest', num(rates.xp_quest), 'CONFIG_FLOAT_RATE_XP_QUEST'],
+          ['XP explore', num(rates.xp_explore), 'CONFIG_FLOAT_RATE_XP_EXPLORE'],
+          ['Drop money', num(rates.drop_money), 'CONFIG_FLOAT_RATE_DROP_MONEY'],
+          ['Honor', num(rates.honor), 'CONFIG_FLOAT_RATE_HONOR'],
+          ['Rep gain', num(rates.rep_gain), 'CONFIG_FLOAT_RATE_REPUTATION_GAIN'],
+          ['Talent', num(rates.talent), 'CONFIG_FLOAT_RATE_TALENT']
+        ])}
+        ${settingsSection('BOTS · POOL', [
+          ['Min/max random', `${num(bots.min_random)} / ${num(bots.max_random)}`, `${cfg('MinRandomBots')} / ${cfg('MaxRandomBots')}`],
+          ['Update interval', `${num(bots.update_interval)} ms`, cfg('RandomBotUpdateInterval')],
+          ['Max level', num(bots.max_level), cfg('RandomBotMaxLevel')],
+          ['Active alone', num(bots.active_alone), cfg('botActiveAlone')],
+          ['Pool budget', `${num(bots.pool_budget_us)} µs / ${num(bots.pool_budget_gate_ms)} ms`, `${cfg('PoolTickBudgetUs')} / ${cfg('PoolBudgetWhenTickOverMs')}`]
+        ])}
+        ${settingsSection('BOTS · TUNING', [
+          ['XP rate', num(rates.bot_xp_mult), cfg('XPRate')],
+          ['Loot rate uncommon', num(bots.bot_loot_uncommon), cfg('BotLootRateUncommon')],
+          ['Loot rate rare', num(bots.bot_loot_rare), cfg('BotLootRateRare')],
+          ['AH market enabled', flagBadge(bots.ah_market), cfg('AhMarketEnabled')],
+          ['Auto-learn trainer spells', flagBadge(bots.auto_learn_trainer_spells), cfg('AutoLearnTrainerSpells')],
+          ['Auto-learn quest spells', flagBadge(bots.auto_learn_quest_spells), cfg('AutoLearnQuestSpells')],
+          ['Level-up mounts', flagBadge(bots.level_up_mounts), cfg('LevelUpMounts')],
+          ['Turtle mount at level', num(bots.turtle_mount_at_level), cfg('TurtleMountAtLevel')]
+        ])}
+        ${settingsSection('BOTS · GROUPS', [
+          ['Group nearby', flagBadge(bots.group_nearby), cfg('RandomBotGroupNearby')],
+          ['Raid nearby', flagBadge(bots.raid_nearby), cfg('RandomBotRaidNearby')],
+          ['Invite player', flagBadge(bots.invite_player), cfg('RandomBotInvitePlayer')],
+          ['Timed logout', flagBadge(bots.timed_logout), cfg('RandomBotTimedLogout')],
+          ['Force active near', flagBadge(bots.force_active_near), cfg('ForceActiveWhenNearPlayer')],
+          ['Limit combat', flagBadge(bots.limit_combat), cfg('LimitCombatActivity')],
+          ['Auto quests', flagBadge(bots.auto_do_quests), cfg('AutoDoQuests')]
+        ])}
+        ${settingsSection('BOTS · WORLD', [
+          ['Avoid towns', flagBadge(bots.avoid_towns), cfg('AvoidHostileTowns')],
+          ['Leave zones', flagBadge(bots.leave_zones), cfg('LeaveOutgrownZones')],
+          ['LFT', flagBadge(bots.lft), cfg('RandomBotLftEnabled')],
+          ['Battlegrounds', flagBadge(bots.bg), cfg('RandomBotBgEnabled')],
+          ['AH buyer', flagBadge(bots.ah_buyer), cfg('AhMarketBuyer')],
+          ['Random levels off', flagBadge(bots.disable_random_levels), cfg('DisableRandomLevels')],
+          ['Level ladder', flagBadge(bots.level_ladder), cfg('LevelLadder')],
+          ['Activity priorities off', flagBadge(bots.disable_activity), cfg('DisableActivityPriorities')]
+        ])}
+        ${settingsSection('DIAGNOSTICS · LOGS', [
+          ['PerfMon', flagBadge(diag.perf_mon), cfg('PerfMonEnabled')],
+          ['bot_events log', flagBadge(diag.bot_events), 'forwarded activity stream (bot_events.csv)'],
+          ['unreachable log', flagBadge(diag.unreachable), 'unreachable_targets.csv'],
+          ['deaths log', flagBadge(diag.deaths), 'deaths.csv']
+        ])}
+      </div>`;
   }
 
   // Pool gear summary for the diagnostic report: average equipped item level
@@ -1562,12 +1636,16 @@
     const info = state.serverInfo || {};
     const rates = info.rates || {}, bots = info.bots || {}, diag = info.diagnostics || {};
     const g = state.grinding || {};
-    const on = v => (v === '1' || v === 1 || v === true) ? 'on' : 'off';
+    // Unknown (key absent from the emitter's payload) reads "?", not "off", so
+    // a report from an older server cannot claim a setting is disabled.
+    const on = v => (v === '1' || v === 1 || v === true) ? 'on'
+      : (v === '0' || v === 0 || v === false) ? 'off' : '?';
     return [
       '# TortoiseBots diagnostic report',
       `- module: ${info.module_version || '?'} / core: ${info.core_revision || '?'} (${info.core_date || '?'}) / max level: ${info.max_level || '?'}`,
       `- rates: xp_kill=${rates.xp_kill ?? '?'} xp_elite=${rates.xp_kill_elite ?? '?'} xp_quest=${rates.xp_quest ?? '?'} xp_explore=${rates.xp_explore ?? '?'} drop_money=${rates.drop_money ?? '?'} honor=${rates.honor ?? '?'} rep=${rates.rep_gain ?? '?'} talent=${rates.talent ?? '?'} bot_xp_mult=${rates.bot_xp_mult ?? '?'}`,
       `- bots: min/max=${bots.min_random ?? '?'}/${bots.max_random ?? '?'} update=${bots.update_interval ?? '?'} maxlvl=${bots.max_level ?? '?'} group=${on(bots.group_nearby)} raid=${on(bots.raid_nearby)} invite=${on(bots.invite_player)} timed_logout=${on(bots.timed_logout)} no_rand_levels=${on(bots.disable_random_levels)} ladder=${on(bots.level_ladder)} quests=${on(bots.auto_do_quests)} no_activity=${on(bots.disable_activity)} alone=${bots.active_alone ?? '?'} pool=${bots.pool_budget_us ?? '?'}us/${bots.pool_budget_gate_ms ?? '?'}ms ah=${on(bots.ah_buyer)} lft=${on(bots.lft)} bg=${on(bots.bg)}`,
+      `- tuning: xp_rate=${rates.bot_xp_mult ?? '?'} loot_uncommon=${bots.bot_loot_uncommon ?? '?'} loot_rare=${bots.bot_loot_rare ?? '?'} ah_market=${on(bots.ah_market)} autolearn_trainer=${on(bots.auto_learn_trainer_spells)} autolearn_quest=${on(bots.auto_learn_quest_spells)} levelup_mounts=${on(bots.level_up_mounts)} turtle_mount_lvl=${bots.turtle_mount_at_level ?? '?'}`,
       `- diag: perfmon=${on(diag.perf_mon)} bot_events=${on(diag.bot_events)} unreachable=${on(diag.unreachable)} deaths=${on(diag.deaths)}`,
       `- pool: tracked=${g.bots_tracked || 0} gaining=${g.bots_gaining_xp || 0} (${Math.round(g.pct_gaining_xp || 0)}%) median_xp/h=${Math.round(g.median_xp_hour || 0)} total_xp/h=${Math.round(g.total_xp_hour || 0)} deaths/min=${(g.deaths_per_min || 0).toFixed(1)} died5m=${Math.round(g.pct_died_5min || 0)}% states=${['combat', 'moving', 'busy', 'stalled', 'resting', 'idle', 'dead'].map(k => `${k}=${((g.state_counts || {})[k]) || 0}`).join(' ')}`,
       `- levels: ${(Array.isArray(g.level_bands) ? g.level_bands : []).map(b => `${b.lo === b.hi ? `L${b.lo}` : `${b.lo}-${b.hi}`}=${b.count || 0}${b.gear_bots ? `/ilvl${b.avg_item_level.toFixed(1)}` : ''}`).join(' ')}`,
@@ -1640,7 +1718,7 @@
     }
   }
 
-  function updateDashboardMetrics() {
+  function updateOverviewMetrics() {
     const s = state.server;
     // While the server is offline the last count is history, not live state.
     const botCount = s.online ? s.bots : 0;
@@ -2073,6 +2151,8 @@
     return `<div class="telemetry-card metric-stat"><div class="metric-big-num" style="font-size: 1.5rem;">${valueHtml}</div><div class="metric-label">${esc(label)}</div></div>`;
   }
 
+  // Activity tab counters: what bots did (quests, kills, deaths, gathering,
+  // trainers, give-ups). The money/vendor/AH half lives on the Economy tab.
   function renderActivityMetrics() {
     if (!el.activityMetrics) return;
     const summary = state.activity && state.activity.summary;
@@ -2086,24 +2166,41 @@
       activityCard('Quests', num(c.quests_rewarded)) +
       activityCard('Hand-ins', num(c.quest_handins)) +
       activityCard('Open quests', num(c.open_quests)) +
-      activityCard('Loot items', num(c.loot_items)) +
-      activityCard('Notable loot', num(c.notable_loot)) +
-      activityCard('Money earned', formatMoney(c.money_earned)) +
-      activityCard('Money spent', formatMoney(c.money_spent)) +
       activityCard('Kills', num(c.kills)) +
       activityCard('Deaths (session)', num(c.deaths)) +
       activityCard('Ghost time', esc(fmtDuration(c.ghost_seconds))) +
+      activityCard('Loot items', num(c.loot_items)) +
+      activityCard('Gathering', num(c.gathering)) +
+      activityCard('Skinning', num(c.skinning)) +
+      activityCard('Skill-ups', num(c.skillups)) +
       activityCard('Trainers', num(c.trainer_visits)) +
       activityCard('Spells', num(c.spells_learned)) +
+      activityCard('Give-ups', num(c.giveups));
+    if (el.activityCount) el.activityCount.textContent = `· ${summary.bots_tracked || 0} tracked`;
+  }
+
+  // Economy counters: the money loop (earned/spent, sold/bought), vendor and
+  // repair traffic and the auction house — the pool-level view of "does the
+  // commerce loop close?".
+  function renderEconomyMetrics() {
+    if (!el.economyMetrics) return;
+    const summary = state.activity && state.activity.summary;
+    const c = summary && summary.counters;
+    if (!c) {
+      el.economyMetrics.innerHTML = '<div class="empty-hint">Waiting for activity data...</div>';
+      return;
+    }
+    const num = v => esc(v || 0);
+    el.economyMetrics.innerHTML =
+      activityCard('Money earned', formatMoney(c.money_earned)) +
+      activityCard('Money spent', formatMoney(c.money_spent)) +
+      activityCard('Sold', `${num(c.items_sold)} · ${formatMoney(c.sold_value)}`) +
+      activityCard('Bought', `${num(c.items_bought)} · ${formatMoney(c.bought_value)}`) +
+      activityCard('Notable loot', num(c.notable_loot)) +
       activityCard('Vendors', num(c.vendor_visits)) +
-      activityCard('Repairs', num(c.repairs)) +
-      activityCard('Give-ups', num(c.giveups)) +
-      activityCard('Skinning', num(c.skinning)) +
-      activityCard('Gathering', num(c.gathering)) +
-      activityCard('Skill-ups', num(c.skillups)) +
+      activityCard('Repairs', `${num(c.repairs)} · ${formatMoney(c.repair_cost)}`) +
       activityCard('AH listings', num(c.ah_listings)) +
       activityCard('AH bids', num(c.ah_bids));
-    if (el.activityCount) el.activityCount.textContent = `· ${summary.bots_tracked || 0} tracked`;
   }
 
   function classLevelCell(cls, level) {
@@ -2121,7 +2218,7 @@
   }
 
   function fetchLootFeed() {
-    if (!el.lootTable || state.activeTab !== 'activity') return;
+    if (!el.lootTable || state.activeTab !== 'economy') return;
     fetch(`/api/v1/activity/loot?${lootFeedParams()}`)
       .then(jsonOrThrow)
       .then(rows => {
@@ -2258,9 +2355,24 @@
   function renderActivityTab() {
     renderActivityMetrics();
     renderActivityTable();
-    renderLevelTimeline();
-    renderLootFeed();
     renderQuestFeed();
+  }
+
+  function renderEconomyTab() {
+    renderEconomyMetrics();
+    renderLootFeed();
+  }
+
+  // Bots tab: either the layout as a whole (composition + live roster) or, if
+  // the armory sub-view is open, the armory list/profile instead.
+  function renderBotsTab() {
+    if (state.armoryOpen) {
+      armoryView();
+      if (state.armoryGuid === null || state.armoryGuid === undefined) renderArmoryList();
+      return;
+    }
+    renderComposition();
+    renderRoster();
   }
 
   function fetchActivity() {
@@ -2270,7 +2382,8 @@
         if (!data || !data.summary) return;
         state.activity = data;
         populateLootClassFilter();
-        if (state.activeTab === 'activity') { renderActivityTab(); fetchLootFeed(); fetchQuestFeed(); }
+        if (state.activeTab === 'activity') { renderActivityTab(); fetchQuestFeed(); }
+        if (state.activeTab === 'economy') { renderEconomyTab(); fetchLootFeed(); }
         if (state.armoryProfile && state.armorySubtab === 'progress') renderArmoryPanel(state.armoryProfile, 'progress');
       })
       .catch(() => {});
@@ -2445,30 +2558,43 @@
     return isNaN(f) ? '–' : (Number.isInteger(f) ? String(f) : f.toFixed(1));
   }
 
-  // Armory has two views: the searchable all-bots list (landing) and the
-  // per-bot profile. state.armoryGuid === null means the list view.
+  // Armory has two views inside the Bots tab: the searchable all-bots list
+  // (covers offline bots too) and the per-bot profile. state.armoryOpen picks
+  // the sub-view; state.armoryGuid === null means the list.
   function armoryView() {
     const listMode = state.armoryGuid === null || state.armoryGuid === undefined;
-    if (el.armoryListView) el.armoryListView.style.display = listMode ? 'block' : 'none';
-    if (el.armoryProfileView) el.armoryProfileView.style.display = listMode ? 'none' : 'block';
+    if (el.rosterPanel) el.rosterPanel.style.display = state.armoryOpen ? 'none' : 'block';
+    if (el.armoryListView) el.armoryListView.style.display = state.armoryOpen && listMode ? 'block' : 'none';
+    if (el.armoryProfileView) el.armoryProfileView.style.display = state.armoryOpen && !listMode ? 'block' : 'none';
+  }
+
+  function showRoster() {
+    state.armoryOpen = false;
+    state.armoryGuid = null;
+    state.armoryProfile = null;
+    armoryView();
   }
 
   function showArmoryList() {
+    state.armoryOpen = true;
     state.armoryGuid = null;
     state.armoryProfile = null;
-    switchTab('armory');
+    armoryView();
+    renderArmoryList();
   }
 
   function openArmory(guid) {
+    state.armoryOpen = true;
     state.armoryGuid = guid;
     state.armoryProfile = null;
-    switchTab('armory');
+    switchTab('roster');
     armoryView();
     if (el.armoryError) el.armoryError.style.display = 'none';
     if (el.armoryBody) el.armoryBody.style.display = 'none';
     if (el.armoryName) { el.armoryName.textContent = 'Loading…'; el.armoryName.style.color = '#fff'; }
     if (el.armorySubtitle) el.armorySubtitle.textContent = '';
     if (el.armoryMoney) el.armoryMoney.innerHTML = '';
+    if (el.armoryIlvl) { el.armoryIlvl.textContent = ''; el.armoryIlvl.title = ''; }
     if (el.armoryPlayed) el.armoryPlayed.textContent = '';
     fetch(`/api/v1/armory/bot/${encodeURIComponent(guid)}`)
       .then(async r => {
@@ -2520,7 +2646,7 @@
   }
 
   function updateArmorySortIndicators() {
-    document.querySelectorAll('#tab-armory #armory-list-view th.sortable').forEach(th => {
+    document.querySelectorAll('#armory-list-view th.sortable').forEach(th => {
       th.classList.toggle('sort-active', th.dataset.armorySort === state.armorySort.key);
       const base = th.textContent.replace(/[ ▲▼]+$/, '');
       const arrow = th.dataset.armorySort === state.armorySort.key ? (state.armorySort.dir > 0 ? ' ▲' : ' ▼') : '';
@@ -2674,7 +2800,7 @@
 
     if (el.armoryError) el.armoryError.style.display = 'none';
     if (el.armoryBody) el.armoryBody.style.display = 'block';
-    renderArmoryGear(p);
+    renderArmoryGear(p, live);
     renderArmoryStats(p);
     renderArmoryPanel(p, state.armorySubtab || 'bags');
   }
@@ -2960,10 +3086,24 @@
   // Equipped-gear summary above the paperdoll: average item level over the
   // filled slots (shirt/tabard excluded, same rule as the daemon's roster
   // sweep) plus the quality split of the pieces rendered below.
-  function renderGearSummary(p) {
+  // liveGear is the roster snapshot's swept gear rollup when the bot is online
+  // (identical slot rule, DB truth); the profile's own equipment is the
+  // fallback so offline bots still get a header stat.
+  function renderGearSummary(p, liveGear) {
     const host = el.gearSummary;
     if (!host) return;
     const g = gearSummary(p.equipment);
+    const header = liveGear && liveGear.pieces ? liveGear : g;
+    if (el.armoryIlvl) {
+      if (header.pieces) {
+        const split = `${header.pieces} equipped pieces · ${header.grey} grey / ${header.white} white / ${header.green} green / ${header.blue} blue / ${header.epic} epic`;
+        el.armoryIlvl.textContent = `iLvl ${Math.round(header.item_level)}`;
+        el.armoryIlvl.title = `Average equipped item level ${header.item_level.toFixed(1)} · ${split}`;
+      } else {
+        el.armoryIlvl.textContent = '';
+        el.armoryIlvl.title = '';
+      }
+    }
     if (!g.pieces) {
       host.innerHTML = '<span>No gear equipped.</span>';
       return;
@@ -2975,13 +3115,13 @@
       q(g.blue, 3, 'blue') + q(g.epic, 4, 'epic');
   }
 
-  function renderArmoryGear(p) {
+  function renderArmoryGear(p, live) {
     const m = gearBySlot(p);
     if (el.gearLeft) el.gearLeft.innerHTML = GEAR_LEFT.map(s => gearRowLeft(s, m[s])).join('');
     if (el.gearRight) el.gearRight.innerHTML = GEAR_RIGHT.map(s => gearRowRight(s, m[s])).join('');
     if (el.gearWeapons) el.gearWeapons.innerHTML = GEAR_WEAPONS.map(s => gearRowWeapon(s, m[s])).join('');
-    renderGearSummary(p);
-    bindItemTooltips(document.getElementById('tab-armory'));
+    renderGearSummary(p, live && live.gear);
+    bindItemTooltips(document.getElementById('tab-roster'));
   }
 
   function armoryTipDiv() {
@@ -3437,6 +3577,9 @@
   function initArmory() {
     if (el.armoryBack) el.armoryBack.addEventListener('click', closeArmory);
     if (el.armoryMapBtn) el.armoryMapBtn.addEventListener('click', armoryFocusMap);
+    // Bots tab: roster <-> armory list, plus the profile's "back to list".
+    if (el.rosterArmoryBtn) el.rosterArmoryBtn.addEventListener('click', showArmoryList);
+    if (el.armoryRosterBtn) el.armoryRosterBtn.addEventListener('click', () => { showRoster(); renderRoster(); });
     document.querySelectorAll('.armory-subtab').forEach(btn => {
       btn.addEventListener('click', () => {
         if (state.armoryProfile) renderArmoryPanel(state.armoryProfile, btn.dataset.subtab);
@@ -3461,7 +3604,7 @@
         if (td) openArmory(parseInt(td.dataset.guid, 10));
       });
     }
-    document.querySelectorAll('#tab-armory #armory-list-view th.sortable').forEach(th => {
+    document.querySelectorAll('#armory-list-view th.sortable').forEach(th => {
       onSortableActivate(th, () => {
         const key = th.dataset.armorySort;
         if (state.armorySort.key === key) {
@@ -3538,7 +3681,6 @@
       const timeStr = a.time_str || (a.ts ? new Date(a.ts * 1000).toLocaleTimeString() : '-');
       const sev = (a.severity || 'info').toLowerCase();
       const sevBadge = sev === 'error' ? 'badge-error' : sev === 'warn' ? 'badge-warn' : 'badge-info';
-
       tr.innerHTML = `
         <td class="mono" style="font-size: 0.75rem; color: var(--text-muted);">${esc(timeStr)}</td>
         <td><span class="badge ${sevBadge}">${esc(sev.toUpperCase())}</span></td>
@@ -3592,17 +3734,18 @@
         if (!Array.isArray(data)) return;
         state.bots = data;
         populateClassFilter();
-        updateDashboardMetrics();
-        if (state.activeTab === 'map') renderMap();
-        if (state.activeTab === 'roster') renderRoster();
-        if (state.activeTab === 'dashboard') { renderFleetHealth(); renderActivity(); renderComposition(); renderGrinding(); }
+        updateOverviewMetrics();
+        if (state.activeTab === 'map') { renderMap(); renderZoneList(); }
+        if (state.activeTab === 'roster' && !state.armoryOpen) renderRoster();
+        if (state.activeTab === 'overview') { renderFleetHealth(); renderActivity(); renderGrinding(); }
+        if (state.activeTab === 'progress') renderLevelBands();
       })
       .catch(() => {});
     fetch('/api/v1/grinding').then(jsonOrThrow).then(g => {
       if (g && typeof g.bots_tracked === 'number') {
         state.grinding = g;
-        renderActivity();
-        renderGrinding();
+        if (state.activeTab === 'overview') { renderActivity(); renderGrinding(); }
+        if (state.activeTab === 'progress') renderLevelBands();
       }
     }).catch(() => {});
     fetch('/api/v1/server-info').then(r => {
@@ -3670,14 +3813,15 @@
       state.lastSnapshotAt = Date.now();
       applyServerStatus(data.server);
       applyIssues(data.issues);
-      updateDashboardMetrics();
+      updateOverviewMetrics();
 
       // Keep a selected bot's drawer fresh; close it if the bot departed.
       if (state.selectedBotGuid !== null) selectBot(state.selectedBotGuid);
 
-      if (state.activeTab === 'map') renderMap();
-      if (state.activeTab === 'roster') renderRoster();
-      if (state.activeTab === 'dashboard') { renderFleetHealth(); renderActivity(); renderGrinding(); }
+      if (state.activeTab === 'map') { renderMap(); renderZoneList(); }
+      if (state.activeTab === 'roster' && !state.armoryOpen) renderRoster();
+      if (state.activeTab === 'overview') { renderFleetHealth(); renderActivity(); renderGrinding(); }
+      if (state.activeTab === 'progress') renderLevelBands();
 
       if (state.bots.length !== prevCount) {
         populateClassFilter();
@@ -3695,9 +3839,11 @@
       state.server.bots = d.bots || 0;
       if (Array.isArray(d.counts)) state.counts = d.counts;
       pushHistory();
-      updateDashboardMetrics();
-      if (state.activeTab === 'dashboard') {
-        renderDashboardCharts();
+      updateOverviewMetrics();
+      if (state.activeTab === 'overview') {
+        renderOverviewCharts();
+      }
+      if (state.activeTab === 'roster' && !state.armoryOpen) {
         renderComposition();
       }
       // Heartbeats arrive every 2s; log sparsely to keep the console useful.
@@ -3707,7 +3853,7 @@
       }
     } else if (msg.event === 'status') {
       applyServerStatus(msg.data);
-      updateDashboardMetrics();
+      updateOverviewMetrics();
     } else if (msg.event === 'server_info') {
       if (msg.data) { state.serverInfo = msg.data; renderServerPanel(); }
     } else if (msg.event === 'anomaly') {
@@ -3718,8 +3864,7 @@
         if (state.anomalies.length > ANOMALY_MAX) state.anomalies.splice(0, state.anomalies.length - ANOMALY_MAX);
         // Rebuild the (up to 1000-row) table only when it is on screen.
         updateAnomalyBadge();
-        if (state.activeTab === 'incidents') renderAnomalies();
-        if (state.activeTab === 'issues') renderIssues();
+        if (state.activeTab === 'issues') { renderAnomalies(); renderIssues(); }
         const sev = (a.severity || 'info').toLowerCase();
         appendConsoleLog(time, a.type, `<span class="log-bot">${esc(a.bot || 'Bot')}</span>: ${esc(a.details || a.last_action || '')}`, sev);
       }
@@ -3751,10 +3896,10 @@
     };
     pushIssueHistory();
     updateIssueBadges();
-    if (state.activeTab === 'issues') renderIssues();
-    if (state.activeTab === 'map') renderMap();
-    if (state.activeTab === 'roster') renderRoster();
-    if (state.activeTab === 'dashboard') updateDashboardMetrics();
+    if (state.activeTab === 'issues') { renderIssues(); renderAnomalies(); }
+    if (state.activeTab === 'map') { renderMap(); renderZoneList(); }
+    if (state.activeTab === 'roster' && !state.armoryOpen) renderRoster();
+    if (state.activeTab === 'overview') updateOverviewMetrics();
   }
 
   function pushIssueHistory() {
@@ -3963,8 +4108,8 @@
     if (age > OFFLINE_AFTER_MS && state.server.online) {
       state.server.online = false;
       state.server.stale = true;
-      updateDashboardMetrics();
-      if (state.activeTab === 'dashboard') renderDashboardCharts();
+      updateOverviewMetrics();
+      if (state.activeTab === 'overview') renderOverviewCharts();
       appendConsoleLog(new Date().toLocaleTimeString(), 'watchdog', 'No heartbeat for 10s: marking server offline.', 'warn');
     }
   }, 3000);
@@ -3983,5 +4128,12 @@
   fetchActivity();
   setInterval(fetchActivity, 30000);
   initWebSocket();
-  switchTab('dashboard');
+
+  // Restore the tab the operator last used (validated against the tab set).
+  let initialTab = 'overview';
+  try {
+    const saved = localStorage.getItem(TAB_STORAGE_KEY);
+    if (saved && TAB_TITLES[saved]) initialTab = saved;
+  } catch (e) {}
+  switchTab(initialTab);
 })();
