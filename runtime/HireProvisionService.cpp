@@ -3,6 +3,7 @@
 #include "HireProvisionService.h"
 #include "HireCost.h"
 #include "HireLifecycle.h"
+#include "HireSpecPolicy.h"
 #include "BotManager.h"
 #include "BotActivityLease.h"
 #include "PlayerbotAIStorage.h"
@@ -80,6 +81,15 @@ std::string RandomHireName()
 }
 
 } // namespace
+
+// HireSpecPolicy.h keeps its class ids and role bits core-free for the
+// standalone policy test; make sure they cannot drift from the real enums.
+static_assert(kHireRoleTank == ai::BOT_ROLE_TANK && kHireRoleHealer == ai::BOT_ROLE_HEALER &&
+    kHireRoleDps == ai::BOT_ROLE_DPS, "hire spec role bits drifted from ai::BotRoles");
+static_assert(kHireClassWarrior == CLASS_WARRIOR && kHireClassPaladin == CLASS_PALADIN &&
+    kHireClassHunter == CLASS_HUNTER && kHireClassRogue == CLASS_ROGUE && kHireClassPriest == CLASS_PRIEST &&
+    kHireClassShaman == CLASS_SHAMAN && kHireClassMage == CLASS_MAGE && kHireClassWarlock == CLASS_WARLOCK &&
+    kHireClassDruid == CLASS_DRUID, "hire spec class ids drifted from SharedDefines.h");
 
 HireProvisionService& HireProvisionService::Instance()
 {
@@ -677,19 +687,21 @@ void HireProvisionService::ProvisionHeavy(Player* bot, PendingProvision const& p
             bot->SetUInt32Value(PLAYER_NEXT_LEVEL_XP, sObjectMgr.GetXPForLevel(pending.targetLevel));
         }
     }
-    // Spec first: pick a premade build matching the hired role where one
-    // exists, otherwise keep the class default. The forced role makes the
-    // mature auto-talents path converge on the hired kit. A gossip spec word
-    // narrows it further: Feral Cat stays on the shared feral path while
-    // Balance resolves to the balance path (both read as DPS).
+    // Spec first: the gossip spec step picks a premade build for every class
+    // (issue #386); the forced role alone makes an Arms/Fury warrior a coin
+    // flip, so the requested spec name narrows the choice. Bear and Cat share
+    // the feral path; the forced role decides the kit on top of it.
     uint8 forcedRole = pending.role ? pending.role : DefaultRoleForClass(bot->GetClass());
     ai->SetForcedRole(forcedRole);
     {
-        std::string specName;
-        if (bot->GetClass() == CLASS_DRUID && pending.specIndex >= 0)
-            specName = pending.specIndex == 2 ? "balance" : pending.specIndex == 1 ? "restoration" : "feral";
-        std::vector<TalentPath*> paths = specName.empty() ? ai::ChangeTalentsAction::getPremadePaths(bot->GetClass(), "", (ai::BotRoles)forcedRole)
-            : ai::ChangeTalentsAction::getPremadePaths(bot->GetClass(), specName, (ai::BotRoles)forcedRole);
+        char const* specName = HireSpecPathName(bot->GetClass(), pending.specIndex);
+        std::vector<TalentPath*> paths = ai::ChangeTalentsAction::getPremadePaths(
+            bot->GetClass(), specName ? specName : "", (ai::BotRoles)forcedRole);
+        // Fall back to the role only when no premade build exists for the
+        // requested spec (or the request was role-only); then to any build
+        // when the role has none either.
+        if (paths.empty())
+            paths = ai::ChangeTalentsAction::getPremadePaths(bot->GetClass(), "", (ai::BotRoles)forcedRole);
         if (paths.empty())
             paths = ai::ChangeTalentsAction::getPremadePaths(bot->GetClass(), "", ai::BOT_ROLE_NONE);
         bool appliedSpec = false;
@@ -697,10 +709,27 @@ void HireProvisionService::ProvisionHeavy(Player* bot, PendingProvision const& p
         {
             TalentPath* chosen = paths[urand(0, uint32(paths.size() - 1))];
             TalentSpec spec = *ai::ChangeTalentsAction::GetBestPremadeSpec(bot, chosen->id);
+            // Premade links are defined in 5-level brackets, so at a level off
+            // the grid GetBestPremadeSpec returns the next bracket up. Crop to
+            // the hire's own talent points (as every other premade apply site
+            // does) or CheckTalents rejects the build and the requested spec
+            // silently degrades to a random role spec.
+            spec.CropTalents(bot);
             std::ostringstream out;
             if (spec.CheckTalents(bot, &out))
             {
                 spec.ApplyTalents(bot, &out);
+                // Issue #386: check the finished talents really are the build
+                // we selected, and that a named request was honoured, instead
+                // of trusting the selection silently.
+                TalentSpec applied(bot);
+                if (applied.GetTalentLink() != spec.GetTalentLink())
+                    sLog.outError("TortoiseBots: hire talents for %s (class %u spec '%s') do not match selected build '%s' (%s vs %s)",
+                        bot->GetName(), uint32(bot->GetClass()), specName ? specName : "role", chosen->name.c_str(),
+                        applied.GetTalentLink().c_str(), spec.GetTalentLink().c_str());
+                if (!HireSpecHonoured(specName, chosen->name.c_str()))
+                    sLog.outError("TortoiseBots: hired %s (class %u) for spec '%s' but no premade build exists for it at role %u; provisioned '%s' instead",
+                        bot->GetName(), uint32(bot->GetClass()), specName, uint32(forcedRole), chosen->name.c_str());
                 sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specNo", chosen->id + 1);
                 sRandomBotFacade.SetValue(bot->GetGUIDLow(), "specLink", 0);
                 appliedSpec = true;
@@ -710,7 +739,12 @@ void HireProvisionService::ProvisionHeavy(Player* bot, PendingProvision const& p
         // AutoSelectTalents converges on the class default for the new level.
         ai::Event talentEvent("hire", "", master);
         if (!appliedSpec)
+        {
+            if (specName)
+                sLog.outError("TortoiseBots: hired %s (class %u) for spec '%s' but no premade build could be applied; falling back to the role",
+                    bot->GetName(), uint32(bot->GetClass()), specName);
             ai->DoSpecificAction("auto talents", talentEvent, true);
+        }
         else if (PlayerbotAIStorage::Instance().GetAI(bot))
         {
             PlayerbotAIStorage::Instance().GetAI(bot)->UpdateTalentSpec();
