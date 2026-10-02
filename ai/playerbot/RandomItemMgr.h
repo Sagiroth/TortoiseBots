@@ -220,7 +220,10 @@ class RandomItemMgr
         bool CanEquipArmor(uint8 clazz, uint8 spec, uint32 level, ItemPrototype const* proto);
         bool ShouldEquipArmorForSpec(uint8 playerclass, uint8 spec, ItemPrototype const* proto);
         bool CanEquipWeapon(uint8 clazz, ItemPrototype const* proto);
-        bool ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, ItemPrototype const* proto);
+        // canDualWield=false: the bot cannot use an off-hand yet (no Dual Wield
+        // spell), so a dual-wield spec may fall back to a two-hander it can
+        // actually swing. Only fury's weapon set changes (see .cpp).
+        bool ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, ItemPrototype const* proto, bool canDualWield = true);
         bool CheckItemSpec(uint8 spec, ItemSpecType itSpec);
         // Fresh-seed provenance gates. Unknown items pass (fail-open): missing
         // world rows (custom items, sparse DBC) must never block gear; only

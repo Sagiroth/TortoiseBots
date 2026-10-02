@@ -613,10 +613,12 @@ uint8 ItemUsageValue::GetPreferredEquipSlot(Player* bot, Item* item, ItemPrototy
     if (!specId)
         specId = sRandomItemMgr.GetFallbackSpecId(bot->GetClass());
 
+    bool const canDualWield = bot->CanDualWield();
+
     // A spec-allowed weapon should take over a hand that still holds a weapon
     // the spec forbids (the spec transition), and that hand can be the off one.
     bool const newWeaponForSpec = proto->Class == ITEM_CLASS_WEAPON &&
-        sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, proto);
+        sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, proto, canDualWield);
 
     uint8 emptySlot = NULL_SLOT;
     uint8 best = NULL_SLOT;
@@ -633,7 +635,7 @@ uint8 ItemUsageValue::GetPreferredEquipSlot(Player* bot, Item* item, ItemPrototy
         }
 
         if (newWeaponForSpec && equipped->GetProto()->Class == ITEM_CLASS_WEAPON &&
-            !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, equipped->GetProto()))
+            !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, equipped->GetProto(), canDualWield))
         {
             // An empty main hand is worse than an off-spec off hand: without a
             // main hand the bot cannot auto-attack or use main-hand abilities
@@ -661,7 +663,7 @@ uint8 ItemUsageValue::GetPreferredEquipSlot(Player* bot, Item* item, ItemPrototy
 // for them a shield stays ordinary loot.
 static bool BotCanReturnToShield(Player* bot, uint32 specId, ItemPrototype const* proto)
 {
-    if (sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, proto))
+    if (sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, proto, bot->CanDualWield()))
         return true;
 
     return (AiFactory::GetPlayerRoles(bot) & BOT_ROLE_TANK) != 0;
@@ -737,6 +739,8 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     uint32 specId = sRandomItemMgr.GetPlayerSpecId(bot);
     if (!specId)
         specId = sRandomItemMgr.GetFallbackSpecId(bot->GetClass());
+
+    bool const canDualWield = bot->CanDualWield();
 
     uint8 slot = ItemUsageValue::GetPreferredEquipSlot(bot, bagItem, itemProto);
     if (slot == NULL_SLOT && !isQuiverUpgradeCandidate)
@@ -867,7 +871,7 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     if (statWeight)
         shouldEquip = true;
 
-    if (itemProto->Class == ITEM_CLASS_WEAPON && !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto))
+    if (itemProto->Class == ITEM_CLASS_WEAPON && !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto, canDualWield))
         shouldEquip = false;
     if (itemProto->Class == ITEM_CLASS_ARMOR)
     {
@@ -881,7 +885,7 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     ai->TellDebug(ai->GetMaster(), "Checking equip: " + chat->formatItem(itemProto) + " to " + chat->formatSlot(slot) + " vs " + (oldItem ? chat->formatItem(oldItem->GetProto()) : "empty"), "debug equip");
 
     if (itemProto->Class == ITEM_CLASS_WEAPON &&
-        !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto))
+        !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto, canDualWield))
     {
         if (oldItem)
             return ItemUsage::ITEM_USAGE_NONE;
@@ -1004,10 +1008,17 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     // skipped; class rules (CanUseItem above) and the weapon spec gate still
     // apply to the new item.
     bool const newWeaponForSpec = (itemProto->Class == ITEM_CLASS_WEAPON &&
-        sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto));
+        sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto, canDualWield));
     bool const oldWeaponAgainstSpec = (oldItemProto->Class == ITEM_CLASS_WEAPON &&
-        !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, oldItemProto));
-    if (newWeaponForSpec && oldWeaponAgainstSpec)
+        !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, oldItemProto, canDualWield));
+
+    // The two-hander a fury warrior leveled on before it could dual wield is not
+    // an off-spec mistake: learning Dual Wield must not downgrade it to the
+    // first one-hander in the bags. Only the weight race below may replace it.
+    bool const standInTwoHander = canDualWield &&
+        oldItemProto->InventoryType == INVTYPE_2HWEAPON && itemProto->InventoryType != INVTYPE_2HWEAPON;
+
+    if (newWeaponForSpec && oldWeaponAgainstSpec && !standInTwoHander)
         return ItemUsage::ITEM_USAGE_EQUIP;
 
     bool existingShouldEquip = true;

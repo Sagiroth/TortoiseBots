@@ -628,8 +628,8 @@ bool EquipUpgradesAction::Execute(Event& event)
         {
             uint32 specId = sRandomItemMgr.GetPlayerSpecId(bot);
 
-            if (sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, mh->GetProto())
-                && sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, oh->GetProto()))
+            if (sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, mh->GetProto(), bot->CanDualWield())
+                && sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, oh->GetProto(), bot->CanDualWield()))
             {
                 float mhMaxDmg = mh->GetProto()->Damage[0].DamageMax;
                 float ohMaxDmg = oh->GetProto()->Damage[0].DamageMax;
