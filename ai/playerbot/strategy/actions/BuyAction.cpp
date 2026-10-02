@@ -5,6 +5,7 @@
 #include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/strategy/values/ItemCountValue.h"
 #include "playerbot/strategy/values/BudgetValues.h"
+#include "playerbot/strategy/values/VendorWeaponUpgradePolicy.h"
 #include "playerbot/strategy/values/MountValues.h"
 #include "playerbot/strategy/values/GuildValues.h"
 
@@ -136,7 +137,38 @@ bool BuyAction::Execute(Event& event)
                     {
                         RESET_AI_VALUE2(ItemUsage, "item usage", tItem->item);
                         ai->DoSpecificAction("equip upgrades", event, true);
+                        result = true;
                         break;
+                    }
+
+                    // A vendor weapon that is a real upgrade ships even when the
+                    // usage classifier answers NONE for it: the classifier only
+                    // scores items it has seen in bags, never vendor stock, so a
+                    // weapon the bot does not own (e.g. a pool rogue's first
+                    // sword while it still swings a starter dagger) is never
+                    // EQUIP. Same rules the equip audit uses: spec-allowed
+                    // weapon type, usable now, better by the module's own
+                    // scoring. Money for the next trainer ranks comes first.
+                    if (!result && !ai->HasActivePlayerMaster() && sRandomBotFacade.IsRandomBot(bot) &&
+                        IsVendorWeaponUpgradeCandidate(proto->Class, proto->SubClass) &&
+                        !ai->HasItemInInventory(proto->ItemId))
+                    {
+                        ItemQualifier weaponQualifier(proto->ItemId);
+                        if (ItemUsageValue::QueryItemUsageForEquip(weaponQualifier, bot) == ItemUsage::ITEM_USAGE_EQUIP)
+                        {
+                            RESET_AI_VALUE2(uint32, "total money needed for", (uint32)NeedMoneyFor::spells);
+                            uint32 spellReserve = AI_VALUE2(uint32, "total money needed for", (uint32)NeedMoneyFor::spells);
+                            if (VendorWeaponUpgradeAffordable(price, bot->GetMoney(), spellReserve))
+                            {
+                                if (BuyItem(requester, tItems, vendorguid, proto, bought, ItemUsage::ITEM_USAGE_EQUIP))
+                                {
+                                    result = true;
+                                    RESET_AI_VALUE2(ItemUsage, "item usage", tItem->item);
+                                    RESET_AI_VALUE2(std::list<Item*>, "inventory items", ChatHelper::formatItem(proto));
+                                    ai->DoSpecificAction("equip upgrades", event, true);
+                                }
+                            }
+                        }
                     }
                 }
             }
