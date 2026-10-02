@@ -2555,3 +2555,59 @@ change grants no gold and no spells (owner rule).
 Local validation: `bash tools/verify_all.sh`; `git diff --check`; module build via
 `build-commit.sh` (no deploy). Runtime not verified here: the worktree is for
 morning review and was not deployed.
+
+## Pre-pull rest threshold: free-food bots rest to MediumHealth (`UseFoodStrategy`) — 2026-10-02
+
+Feature: a bot whose food and drink are free (the item cheat granted by
+`AiPlayerbot.RndBotCheats = repair,breath,item`) rests to
+`AiPlayerbot.MediumHealth` (70%) before it takes its next fight, instead of
+stopping at `AiPlayerbot.LowHealth` (50%). `UseFoodStrategy` registers the
+`food` action on the critical/low/medium health bands for those bots and
+`ShouldEatValue` uses `MediumHealth` as its threshold; bots without the cheat
+keep the `LowHealth` band and threshold unchanged. The `food` action sits at
+relevance 6.0, above `attack anything` (5.0) and the travel chain (1.0), so the
+pull is deferred until the bar is back.
+
+Source repository: `mod-playerbots` @
+`b6696bdbd3740e575598d167d69f39f68cc0b907` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Base/Strategy/UseFoodStrategy.cpp` (with `BotCheatMask::food`,
+`"medium health"` -> `food`; without it, `"low health"` -> `food`),
+`src/Ai/Base/Trigger/HealthTriggers.h` (`MediumHealthTrigger` spans `[0,
+MediumHealth)`) and `src/Ai/Base/Actions/NonCombatActions.cpp`
+(`EatAction::isUseful` is `health < 100`, so the trigger alone owns the band).
+
+Copied / ported / reimplemented: ported with a local adaptation. This module
+has no `food` cheat mask — the free rations ride on `BotCheatMask::item`, which
+`EatAction`/`DrinkAction` already branch on — so the donor's food-cheat branch
+is keyed on `item`. The donor's `MediumHealthTrigger` covers `[0, 70)`; here it
+is `[LowHealth, MediumHealth)` and `LowHealthTrigger` is
+`[CriticalHealth, LowHealth)`, so the strategy names the critical, low and
+medium bands to cover the same range (the engine executes at most one action
+per tick, so the repeated trigger is free).
+
+Reason: the item cheat feeds a bot conjured rations but only the `LowHealth`
+band asked for them, so every pool bot ate to half a health bar, stopped, and
+pulled the next mob from there. On the live level 6-9 pool
+(`test/stage7` `9cd56ea`, 04:00-07:06Z, 3,153 deaths) 38% of deaths ended with
+the killer already under half health and another 32% with the killer untouched
+at 100% HP (an add), i.e. fights a fuller starting bar decides; the deaths
+clustered on quest-objective camps at the bot's own level (46% on
+kill-objective travel, killer below the bot in 37% of deaths, above in 39%).
+
+Local validation: module build via `build-commit.sh` (no deploy); `bash
+tools/verify_all.sh`; `git diff --check`. Live indicators to watch after
+deploy: the share of `Food(24005)` casts per bot-hour (should rise), the
+`tortoisebots_state_ratio{state="resting"}` fraction, deaths per bot-hour in
+the level 6-10 bracket, and the share of deaths whose killer is under 50% HP
+(the class a fuller bar should convert).
+
+Measured but not implemented in this bundle (for the record): the ~30% of
+deaths whose killer the bot never damaged (adds/social pulls) is a pull-
+discipline question — a per-candidate "another hostile within assist range"
+scan on the grind pick — and the 17% of deaths to a killer two or more levels
+above the bot is largely the same add; both need a design that keeps the pick
+scan off the per-tick world (the module's performance rule), so they are left
+for a follow-up rather than bolted onto the destination gate.
