@@ -2561,25 +2561,26 @@ void PlayerbotFactory::InitBags()
     InitLevelBags();
     // Starter set (Issue #401): every bot owns three 14-slot Journeyman's
     // Backpacks (3914, req 0, no race/class mask), warlocks one Small Soul
-    // Pouch (22243) on top. Hunters always want a quiver/ammo pouch
-    // (INVTYPE_BAG, same four slots): InitAmmo runs after this and must find
-    // a free slot, so fill at most two plain bags for hunters (three for
-    // everyone else) and let the soul bag take a third warm-body slot for
-    // warlocks - it then upgrades through the normal equip path.
+    // Pouch (22243) on top, hunters their quiver/ammo pouch via InitAmmo.
+    // All four slots end up used; later upgrades go through the
+    // content-evacuating swap, so no free slot is reserved.
     InitStarterBags();
 }
 
 void PlayerbotFactory::InitStarterBags()
 {
-    // Three plain bags out of four slots: hunters reserve one slot for the
-    // quiver, warlocks one for the soul pouch. The cap rule lives in the
-    // tested policy header (MaxPlainBagsForClass) so both agree.
+    // Owner spec: 3 plain bags for every class; the fourth slot holds the
+    // hunter quiver/ammo pouch or the warlock soul pouch (all 4 slots used,
+    // no free slot reserved - later upgrades use the content-evacuating
+    // swap). The cap counts plain containers only, so an equipped soul
+    // pouch never blocks the third plain bag.
     uint32 maxPlainBags = TortoiseBots::MaxPlainBagsForClass(bot->GetClass());
     uint32 plainBags = 0;
     for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; ++slot)
     {
         Item* bagItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-        if (bagItem && bagItem->GetProto() && bagItem->GetProto()->Class != ITEM_CLASS_QUIVER)
+        ItemPrototype const* proto = bagItem ? bagItem->GetProto() : nullptr;
+        if (proto && proto->Class == ITEM_CLASS_CONTAINER && proto->SubClass == ITEM_SUBCLASS_CONTAINER)
             ++plainBags;
     }
     for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; ++slot)
