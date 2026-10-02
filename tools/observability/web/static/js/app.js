@@ -799,6 +799,13 @@
         showArmoryTab();
         return;
       }
+      // Bots always opens on the roster, even when the armory sub-view was the
+      // last one shown in this section.
+      if (tab === 'roster') {
+        switchTab('roster');
+        showRoster();
+        return;
+      }
       if (tab) switchTab(tab);
     });
   });
