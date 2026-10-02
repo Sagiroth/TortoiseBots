@@ -1164,7 +1164,9 @@ bool RequestTravelTargetAction::isUseful() {
     // travel trigger's stored condition keeps alive. Bag-pressure re-requests
     // while parked at a destination keep working: the valve above still owns
     // that case, and a trip never picked (stamp 0) is never suppressed.
+    // Bags under pressure always get through: a full bag must reach a vendor.
     if (getQualifier() == std::to_string((uint32)TravelDestinationPurpose::Vendor) &&
+        !BagPressureVendorTrip(ai) &&
         VendorTripSuppressedByRecentTrip(
             AI_VALUE2(time_t, "manual time", "vendor trip since"), time(0)))
         return false;

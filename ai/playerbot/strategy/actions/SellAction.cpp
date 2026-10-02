@@ -103,9 +103,8 @@ bool SellAction::Execute(Event& event)
     // A sale pays off the vendor trip that brought the bot here: clear the
     // "one vendor journey at a time" window (issue #399) so the need - which
     // is false now anyway, the stock just sold - re-arms honestly on the next
-    // pickup instead of waiting out the ten minutes. A capped sale that kept
-    // stock behind keeps the trip that is still worth finishing.
-    if (soldItems && soldItems >= shouldSell)
+    // pickup instead of waiting out the ten minutes.
+    if (soldItems)
         RESET_AI_VALUE2(time_t, "manual time", "vendor trip since");
 
     return soldItems;
