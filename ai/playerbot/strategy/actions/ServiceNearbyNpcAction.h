@@ -41,7 +41,7 @@ namespace ai
         // One verb attempt in ranking order; false when the verb does not apply,
         // is parked, or failed. A parked verb is skipped so the NPC's remaining
         // verbs still run.
-        bool TryVerb(Event& event, GuidPosition const& target, NearbyServiceKind kind, std::string const& verb);
+        bool TryVerb(Event& event, GuidPosition target, NearbyServiceKind kind, std::string const& verb);
         // Runs one verb and logs the NearbyService row when it did something.
         // Failures accumulate in the fixed-size fail parks (load/mutate/store -
         // AI_VALUE returns a copy); a success clears the pair.

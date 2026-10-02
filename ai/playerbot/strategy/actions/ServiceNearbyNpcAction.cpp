@@ -46,7 +46,7 @@ bool ServiceNearbyNpcAction::Execute(Event& event)
 // failed; true only when it did something. Failures accumulate in the
 // fixed-size per-bot fail parks (load/mutate/store - AI_VALUE returns a copy,
 // never per-NPC manual values); a success clears the pair.
-bool ServiceNearbyNpcAction::TryVerb(Event& event, GuidPosition const& target, NearbyServiceKind kind, std::string const& verb)
+bool ServiceNearbyNpcAction::TryVerb(Event& event, GuidPosition target, NearbyServiceKind kind, std::string const& verb)
 {
     AiObjectContext* context = ai->GetAiObjectContext();
     NearbyServiceFailParks parks = AI_VALUE(NearbyServiceFailParks, "nearby service fail parks");
