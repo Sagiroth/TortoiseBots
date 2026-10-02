@@ -711,6 +711,12 @@ void HireProvisionService::ProvisionHeavy(Player* bot, PendingProvision const& p
         {
             TalentPath* chosen = paths[urand(0, uint32(paths.size() - 1))];
             TalentSpec spec = *ai::ChangeTalentsAction::GetBestPremadeSpec(bot, chosen->id);
+            // Premade links are defined in 5-level brackets, so at a level off
+            // the grid GetBestPremadeSpec returns the next bracket up. Crop to
+            // the hire's own talent points (as every other premade apply site
+            // does) or CheckTalents rejects the build and the requested spec
+            // silently degrades to a random role spec.
+            spec.CropTalents(bot);
             std::ostringstream out;
             if (spec.CheckTalents(bot, &out))
             {
@@ -735,7 +741,12 @@ void HireProvisionService::ProvisionHeavy(Player* bot, PendingProvision const& p
         // AutoSelectTalents converges on the class default for the new level.
         ai::Event talentEvent("hire", "", master);
         if (!appliedSpec)
+        {
+            if (specName)
+                sLog.outError("TortoiseBots: hired %s (class %u) for spec '%s' but no premade build could be applied; falling back to the role",
+                    bot->GetName(), uint32(bot->GetClass()), specName);
             ai->DoSpecificAction("auto talents", talentEvent, true);
+        }
         else if (PlayerbotAIStorage::Instance().GetAI(bot))
         {
             PlayerbotAIStorage::Instance().GetAI(bot)->UpdateTalentSpec();
