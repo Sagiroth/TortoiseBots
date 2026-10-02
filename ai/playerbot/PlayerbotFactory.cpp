@@ -2715,13 +2715,18 @@ void PlayerbotFactory::InitAllSkills()
 // Cooking, Fishing) are granted at any level, as before.
 void PlayerbotFactory::EnsurePrimaryProfessions()
 {
-    // Gate for the pair ROLL only: below PRIMARY_PROFESSION_MIN_LEVEL (5)
-    // the stored values stay 0 (skipped below) so the next seed/ding/login
-    // rolls them, and a bot that already holds any primary - factory pair or
-    // self-learned - is never re-rolled (re-rolling would stack a third
-    // primary and wipe earned skill-ups). The recipe sweep further down
-    // still runs unconditionally, as before.
-    bool const grantPair = bot->GetLevel() >= TortoiseBots::PRIMARY_PROFESSION_MIN_LEVEL && !HasAnyPrimaryProfession();
+    // Gate for the pair ROLL only, via the tested policy helper below (same
+    // rule tools/test_profession_grant_policy.cpp pins): below
+    // PRIMARY_PROFESSION_MIN_LEVEL (5) the stored values stay 0 (skipped
+    // below) so the next seed/ding/login rolls them, and a bot that already
+    // holds any primary - factory pair or self-learned - is never re-rolled
+    // (re-rolling would stack a third primary and wipe earned skill-ups).
+    // The recipe sweep further down still runs unconditionally, as before.
+    TortoiseBots::ProfessionGrantInputs grantInputs;
+    grantInputs.level = bot->GetLevel();
+    grantInputs.isPoolBot = sRandomBotFacade.IsRandomBot(bot);
+    grantInputs.hasPrimaryProfession = HasAnyPrimaryProfession();
+    bool const grantPair = TortoiseBots::DecideProfessionGrant(grantInputs) == TortoiseBots::ProfessionGrantDecision::GrantAll;
     uint16 firstSkill = sRandomBotFacade.GetValue(bot, "firstSkill");
     uint16 secondSkill = sRandomBotFacade.GetValue(bot, "secondSkill");
     if ((!firstSkill || !secondSkill) && grantPair)

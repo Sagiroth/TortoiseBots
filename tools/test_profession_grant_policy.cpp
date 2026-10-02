@@ -2,7 +2,10 @@
 // gets its PRIMARY pair at level 5, secondaries at any level, and a bot that
 // already holds a primary (or is not a pool bot) is never re-rolled. Guards
 // the rules that keep player characters and hired/owned bots' existing
-// professions safe.
+// professions safe. This pins the exact helper production calls:
+// PlayerbotFactory::EnsurePrimaryProfessions (GrantAll gate for the pair
+// roll), AutoLearnSpellAction::LearnSpells (GrantAll gate on ding) and
+// BotManager::OnPlayerLogin (any non-LeaveAlone enters for secondaries).
 //
 // Build and run:
 //   g++ -std=c++17 -Wall -Wextra tools/test_profession_grant_policy.cpp -o /tmp/test_profession_grant

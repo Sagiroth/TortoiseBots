@@ -10,9 +10,9 @@
 // Pure decision rules over durable facts (level, pool identity, whether the
 // character already holds a primary), unit-tested on their own
 // (tools/test_profession_grant_policy.cpp). The table that picks the pair
-// itself stays in PlayerbotFactory::InitTradeSkills; this header only owns
-// the WHEN, so the seed path, the level-up hook and the trainer-travel gate
-// cannot drift apart again.
+// itself stays in PlayerbotFactory::EnsurePrimaryProfessions; this header
+// only owns the WHEN, so the seed path, the level-up hook, the login
+// backstop and the trainer-travel gate cannot drift apart again.
 //
 // Tailoring / Enchanting note: 0 holders is not a weighting bug. No pair in
 // the factory table includes them - both are crafts with no gathering skill
