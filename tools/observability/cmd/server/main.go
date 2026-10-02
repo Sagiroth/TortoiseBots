@@ -113,6 +113,24 @@ func main() {
 	}
 	log.Printf("[Armory] Service initialized for %s and %s", *dbChar, *dbWorld)
 
+	// Equipped-gear sweep: one aggregate character-DB query every few minutes
+	// (never per tick) feeding the roster item-level column, the armory gear
+	// panel and the per-level-band averages. Runs immediately, then on the
+	// timer; a failed sweep keeps the previous numbers.
+	go func() {
+		const gearInterval = 5 * time.Minute
+		for {
+			stats, err := armoryService.GearRollup()
+			if err != nil {
+				log.Printf("[Gear] sweep failed: %v", err)
+			} else {
+				store.SetGear(stats)
+				log.Printf("[Gear] swept %d bots", len(stats))
+			}
+			time.Sleep(gearInterval)
+		}
+	}()
+
 	// 5. WebSocket hub and UDP ingestion
 	hub := ws.NewHub()
 	udpListener := udp.NewListener(*udpHost, *udpPort, store, metricsRegistry, projectionEngine, hub)
@@ -260,6 +278,13 @@ func main() {
 
 	mux.HandleFunc("/api/v1/grinding", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, store.Snapshot().Grinding)
+	}))
+
+	// Issue episodes (active + recently resolved). The dashboard fetches this
+	// on init and on Refresh to recover the issue tab/badge when a WebSocket
+	// event was missed.
+	mux.HandleFunc("/api/v1/issues", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, store.Issues())
 	}))
 
 	// Activity: per-bot counters (quests, loot, money, kills, deaths, vendor

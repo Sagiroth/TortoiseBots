@@ -608,8 +608,20 @@ void ObservabilityEmitter::EmitAnomaly(std::string const& type,
     if (!IsEnabled())
         return;
 
-    if (bot && !AnomalyAllowed(bot->GetGUIDLow(), AnomalyTypeIdFromName(type), WorldTimer::getMSTime()))
+    // Rate-limiting exists to collapse a sustained condition (stuck, action
+    // loop, unreachable target) into one row per window. A death is an event,
+    // not a condition: a bot dying twice inside one window died twice, and the
+    // pool casualty rate must not lose the second one. So BOT_DEATH bypasses
+    // the (guid, type) cooldown entirely.
+    bool const rateLimited = type != "BOT_DEATH";
+    if (bot && rateLimited && !AnomalyAllowed(bot->GetGUIDLow(), AnomalyTypeIdFromName(type), WorldTimer::getMSTime()))
         return;
+
+    // Callers that pass no strategy (the death path) still report the bot's
+    // active strategy list, so every row carries the same context.
+    std::string strat = strategy;
+    if (strat.empty() && bot)
+        strat = FormatStrategies(GET_PLAYERBOT_AI(bot));
 
     std::ostringstream ss;
     ss << "{\"v\":" << kProtocolVersion
@@ -632,8 +644,8 @@ void ObservabilityEmitter::EmitAnomaly(std::string const& type,
 
     if (!targetName.empty())
         ss << ",\"target\":\"" << EscapeJson(targetName) << "\"";
-    if (!strategy.empty())
-        ss << ",\"strategy\":\"" << EscapeJson(strategy) << "\"";
+    if (!strat.empty())
+        ss << ",\"strategy\":\"" << EscapeJson(strat) << "\"";
     if (!lastAction.empty())
         ss << ",\"last_action\":\"" << EscapeJson(lastAction) << "\"";
     if (!details.empty())
@@ -1067,7 +1079,9 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
         snap.level = bot->GetLevel();
         snap.xp = bot->GetUInt32Value(PLAYER_XP);
         snap.nextXp = bot->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
-        snap.hp = bot->GetHealth();
+        // A dead unit reports GetHealth() == 1 in the core, which made corpse
+        // bars read "1 HP" on the dashboard. Report the corpse as 0 HP.
+        snap.hp = bot->IsAlive() ? bot->GetHealth() : 0;
         snap.maxHp = bot->GetMaxHealth();
         snap.power = bot->GetPower(bot->GetPowerType());
         snap.maxPower = bot->GetMaxPower(bot->GetPowerType());

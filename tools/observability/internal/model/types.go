@@ -68,6 +68,26 @@ type BotSnapshot struct {
 	// the level timeline lives in the /api/v1/activity detail). Nil until the
 	// bot has produced its first tracked event.
 	Activity *BotActivity `json:"activity,omitempty"`
+
+	// Gear is the bot's equipped-gear summary, refreshed by the daemon from
+	// the character DB every few minutes (never per tick). Nil until the first
+	// gear sweep completes.
+	Gear *BotGear `json:"gear,omitempty"`
+}
+
+// BotGear is one bot's equipped-gear summary: the average item level of the
+// equipment slots that carry an item (0-18 except shirt and tabard, weapons
+// and ranged included) and how many of those pieces fall in each quality tier.
+// Derived from items equipped in the character DB; the average ignores empty
+// slots, so a half-dressed bot is not dragged down by slots it never filled.
+type BotGear struct {
+	ItemLevel float64 `json:"item_level"`
+	Pieces    int     `json:"pieces"`
+	Grey      int     `json:"grey"`
+	White     int     `json:"white"`
+	Green     int     `json:"green"`
+	Blue      int     `json:"blue"`
+	Epic      int     `json:"epic"`
 }
 
 // BotEvent is one activity event forwarded by the game server's BOT_EVENTS
@@ -293,9 +313,13 @@ type ServerInfoPayload struct {
 	CoreDate      string             `json:"core_date"`
 	Uptime        uint32             `json:"uptime"`
 	MaxLevel      uint32             `json:"max_level"`
-	Rates         map[string]float64 `json:"rates"`
-	Bots          map[string]string  `json:"bots"`
-	Diagnostics   map[string]string  `json:"diagnostics"`
+	Rates map[string]float64 `json:"rates"`
+	// Bots mixes numbers (pool sizes, intervals, budgets) with "0"/"1" flag
+	// strings: the emitter writes each field in its natural JSON type, so this
+	// must not be map[string]string or the whole SERVER_INFO datagram is
+	// dropped by the unmarshaller. The UI renders numbers and flags alike.
+	Bots        map[string]any    `json:"bots"`
+	Diagnostics map[string]string `json:"diagnostics"`
 }
 
 // GrindingSummary is the daemon's pool-wide "are they grinding" rollup,
@@ -320,11 +344,15 @@ type GrindingSummary struct {
 	LevelBands []LevelBand `json:"level_bands"`
 }
 
-// LevelBand is one adaptive level bucket: [Lo, Hi] with Count bots.
+// LevelBand is one adaptive level bucket: [Lo, Hi] with Count bots. AvgItemLevel
+// is the mean equipped item level of the band's bots that have gear data
+// (0 = no gear sweep has covered them yet).
 type LevelBand struct {
-	Lo    uint32 `json:"lo"`
-	Hi    uint32 `json:"hi"`
-	Count int    `json:"count"`
+	Lo           uint32  `json:"lo"`
+	Hi           uint32  `json:"hi"`
+	Count        int     `json:"count"`
+	AvgItemLevel float64 `json:"avg_item_level,omitempty"`
+	GearBots     int     `json:"gear_bots,omitempty"`
 }
 
 // ServerStatus is the daemon's single authoritative view of the game server

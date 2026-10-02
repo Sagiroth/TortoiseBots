@@ -430,11 +430,52 @@ func TestLevelBandsWidenWhenSpread(t *testing.T) {
 	s.ApplyBatch(batch(1, 0, 1, xbot(1, "A", 1, 0, 400), xbot(2, "B", 30, 0, 1000), xbot(3, "C", 60, 0, 0)))
 
 	g := s.Snapshot().Grinding
-	if len(g.LevelBands) != 7 {
-		t.Fatalf("spread pool must use 7 classic bands, got %+v", g.LevelBands)
+	// Spread pool: fixed five-level buckets 1-5, 6-10, ... 56-60.
+	if len(g.LevelBands) != 12 {
+		t.Fatalf("spread pool must use 12 five-level bands, got %+v", g.LevelBands)
 	}
-	if g.LevelBands[0].Count != 1 || g.LevelBands[3].Count != 1 || g.LevelBands[6].Count != 1 {
-		t.Fatalf("spread bands misbucketed: %+v", g.LevelBands)
+	if g.LevelBands[0] != (model.LevelBand{Lo: 1, Hi: 5, Count: 1}) {
+		t.Fatalf("level 1 must land in 1-5: %+v", g.LevelBands[0])
+	}
+	if g.LevelBands[5].Lo != 26 || g.LevelBands[5].Hi != 30 || g.LevelBands[5].Count != 1 {
+		t.Fatalf("level 30 must land in 26-30: %+v", g.LevelBands[5])
+	}
+	if g.LevelBands[11].Lo != 56 || g.LevelBands[11].Hi != 60 || g.LevelBands[11].Count != 1 {
+		t.Fatalf("level 60 must land in 56-60: %+v", g.LevelBands[11])
+	}
+}
+
+func TestGearSweepFeedsRosterAndBands(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+
+	s.ApplyHeartbeat(heartbeat(1, 2))
+	s.ApplyBatch(batch(1, 0, 1, xbot(1, "A", 8, 0, 400), xbot(2, "B", 9, 0, 400)))
+
+	// Sweep: A averages 10 over 3 pieces; B has not been swept yet.
+	s.SetGear(map[uint32]model.BotGear{
+		1: {ItemLevel: 10, Pieces: 3, White: 2, Green: 1},
+	})
+
+	snap := s.Snapshot()
+	if g := snap.Bots[0].Gear; g == nil || g.ItemLevel != 10 || g.Green != 1 || g.Pieces != 3 {
+		t.Fatalf("roster must carry the gear sweep: %+v", g)
+	}
+	if snap.Bots[1].Gear != nil {
+		t.Fatalf("unswept bot must report no gear, got %+v", snap.Bots[1].Gear)
+	}
+
+	// Narrow pool: one band per level, and only the band with gear data
+	// carries an average (an empty average must not read as ilvl 0).
+	bands := snap.Grinding.LevelBands
+	if len(bands) != 2 || bands[0].Lo != 8 || bands[1].Lo != 9 {
+		t.Fatalf("narrow bands wrong: %+v", bands)
+	}
+	if bands[0].AvgItemLevel != 10 || bands[0].GearBots != 1 {
+		t.Fatalf("band 8 must average its swept gear: %+v", bands[0])
+	}
+	if bands[1].AvgItemLevel != 0 || bands[1].GearBots != 0 {
+		t.Fatalf("band 9 has no gear data: %+v", bands[1])
 	}
 }
 

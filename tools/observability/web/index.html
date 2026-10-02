@@ -48,7 +48,7 @@
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.83z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
         <span>Armory</span>
       </a>
-      <a class="menu-item" data-tab="issues">
+      <a class="menu-item" data-tab="issues" title="Persistent issue episodes; the badge counts those running 10+ minutes">
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         <span>Issues</span>
         <span id="issues-count" class="badge badge-error" style="margin-left: auto; padding: 1px 6px;">0</span>
@@ -149,9 +149,9 @@
             <div class="metric-label">Uptime</div>
           </div>
 
-          <div class="telemetry-card metric-stat" title="Active persistent bot issues. Red = at least one running 10+ minutes.">
+          <div class="telemetry-card metric-stat" title="Active issue episodes. Red = at least one running 10+ minutes; the sub-line counts those persistent ones.">
             <div id="metric-issues" class="metric-big-num" style="font-size: 1.5rem;">0</div>
-            <div class="metric-label">Issues</div>
+            <div class="metric-label">Active Issues</div>
             <div class="metric-sub" id="metric-issues-sub">0 persistent</div>
           </div>
         </div>
@@ -178,6 +178,18 @@
             </div>
           </div>
 
+          <!-- Server panel: effective running settings + diagnostic report.
+               Sits next to the charts so the two short cards share a row and
+               the long composition cards share the next one; the console spans
+               both columns at the bottom. -->
+          <div class="telemetry-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px;">
+              <div class="section-label" style="margin: 0;">SERVER · EFFECTIVE SETTINGS</div>
+              <button id="copy-diag-btn" class="btn" style="font-size: 0.75rem;" title="Copy a plain-text diagnostic report (versions, effective settings, pool health) for bug reports">Copy diagnostic report</button>
+            </div>
+            <div id="server-panel"><div class="empty-hint">Waiting for server info (sent at startup, then every 5 min)...</div></div>
+          </div>
+
           <div class="telemetry-card">
             <div class="section-label" style="margin: 0 0 12px;">BOT COMPOSITION</div>
             <div id="class-breakdown" class="composition-list">
@@ -189,7 +201,10 @@
             <div id="activity-panel" class="composition-list">
               <div class="empty-hint">Waiting for bot roster...</div>
             </div>
-            <div class="section-label" style="margin: 20px 0 10px;">FLEET HEALTH</div>
+          </div>
+
+          <div class="telemetry-card">
+            <div class="section-label" style="margin: 0 0 10px;">FLEET HEALTH</div>
             <div id="fleet-health" class="composition-list">
               <div class="empty-hint">Waiting for bot roster...</div>
             </div>
@@ -202,24 +217,17 @@
 
             <div class="section-label" style="margin: 20px 0 6px;">TOP ZONES <span style="text-transform: none; opacity: 0.6; font-weight: 400;">(click to open map)</span></div>
             <div id="zone-list" class="zone-list"></div>
-        </div>
-        <!-- Server panel: effective running settings + diagnostic report -->
-        <div class="telemetry-card" style="margin-top: 16px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px;">
-            <div class="section-label" style="margin: 0;">SERVER · EFFECTIVE SETTINGS</div>
-            <button id="copy-diag-btn" class="btn" style="font-size: 0.75rem;" title="Copy a plain-text diagnostic report (versions, effective settings, pool health) for bug reports">Copy diagnostic report</button>
           </div>
-          <div id="server-panel"><div class="empty-hint">Waiting for server info (sent at startup, then every 5 min)...</div></div>
-        </div>
 
-        <!-- Live Monospace Console -->
-        <div class="console-container">
-          <div class="console-header">
-            <span>CONSOLE · LIVE STREAM</span>
-            <span id="console-rate" style="color: var(--accent-green-bright);">● connected</span>
-          </div>
-          <div id="console-body" class="console-body">
-            <div class="log-line"><span class="log-time">[Init]</span> <span class="log-tag">system</span> Telemetry stream initialized. Awaiting events...</div>
+          <!-- Live Monospace Console (spans both grid columns) -->
+          <div class="console-container dashboard-console">
+            <div class="console-header">
+              <span>CONSOLE · LIVE STREAM</span>
+              <span id="console-rate" style="color: var(--accent-green-bright);">● connected</span>
+            </div>
+            <div id="console-body" class="console-body">
+              <div class="log-line"><span class="log-time">[Init]</span> <span class="log-tag">system</span> Telemetry stream initialized. Awaiting events...</div>
+            </div>
           </div>
         </div>
       </section>
@@ -324,22 +332,23 @@
             <table class="data-table">
               <thead>
                 <tr>
-                  <th class="sortable" data-sort="name">Name</th>
-                  <th class="sortable" data-sort="class">Class</th>
-                  <th class="sortable" data-sort="role">Role</th>
-                  <th class="sortable" data-sort="level">Level</th>
-                  <th class="sortable" data-sort="quests">Quests</th>
-                  <th class="sortable" data-sort="loot">Loot</th>
-                  <th class="sortable" data-sort="xp">XP</th>
-                  <th class="sortable" data-sort="hp">Health (HP)</th>
-                  <th class="sortable" data-sort="power">Power</th>
-                  <th class="sortable" data-sort="state">Status</th>
+                  <th class="sortable" tabindex="0" data-sort="name">Name</th>
+                  <th class="sortable" tabindex="0" data-sort="class">Class</th>
+                  <th class="sortable" tabindex="0" data-sort="role">Role</th>
+                  <th class="sortable" tabindex="0" data-sort="level">Level</th>
+                  <th class="sortable" tabindex="0" data-sort="gear" title="Average item level of equipped gear (shirt and tabard excluded); the quality split is in the armory profile">Gear</th>
+                  <th class="sortable" tabindex="0" data-sort="quests">Quests</th>
+                  <th class="sortable" tabindex="0" data-sort="loot">Loot</th>
+                  <th class="sortable" tabindex="0" data-sort="xp">XP</th>
+                  <th class="sortable" tabindex="0" data-sort="hp">Health (HP)</th>
+                  <th class="sortable" tabindex="0" data-sort="power">Power</th>
+                  <th class="sortable" tabindex="0" data-sort="state">Status</th>
                   <th>Target</th>
-                  <th class="sortable" data-sort="zone">Zone</th>
+                  <th class="sortable" tabindex="0" data-sort="zone">Zone</th>
                 </tr>
               </thead>
               <tbody id="roster-table-body">
-                <tr><td colspan="12" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading active bots...</td></tr>
+                <tr><td colspan="13" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading active bots...</td></tr>
               </tbody>
             </table>
           </div>
@@ -456,13 +465,13 @@
             <table class="data-table">
               <thead>
                 <tr>
-                  <th class="sortable" data-armory-sort="name">Name</th>
-                  <th class="sortable" data-armory-sort="class">Class</th>
-                  <th class="sortable" data-armory-sort="spec">Spec</th>
-                  <th class="sortable" data-armory-sort="level">Level</th>
-                  <th class="sortable" data-armory-sort="race">Race</th>
-                  <th class="sortable" data-armory-sort="money">Gold</th>
-                  <th class="sortable" data-armory-sort="online">Status</th>
+                  <th class="sortable" tabindex="0" data-armory-sort="name">Name</th>
+                  <th class="sortable" tabindex="0" data-armory-sort="class">Class</th>
+                  <th class="sortable" tabindex="0" data-armory-sort="spec">Spec</th>
+                  <th class="sortable" tabindex="0" data-armory-sort="level">Level</th>
+                  <th class="sortable" tabindex="0" data-armory-sort="race">Race</th>
+                  <th class="sortable" tabindex="0" data-armory-sort="money">Gold</th>
+                  <th class="sortable" tabindex="0" data-armory-sort="online">Status</th>
                 </tr>
               </thead>
               <tbody id="armory-list-body"></tbody>
@@ -480,7 +489,7 @@
               <h2 id="armory-name" class="armory-name">–</h2>
               <div id="armory-subtitle" class="armory-subtitle"></div>
               <div id="armory-spec-info" style="margin-top: 4px; font-size: 0.85rem; font-weight: 700; color: var(--accent-yellow);"></div>
-              <div id="armory-bars" class="armory-bars">
+              <div class="armory-bars">
                 <div class="stat-bar-wrap" style="flex: 1;">
                   <div id="armory-hp-bar" class="stat-bar-fill stat-bar-hp" style="width: 100%;"></div>
                   <span id="armory-hp-text" class="stat-bar-text">0 / 0 HP</span>
@@ -506,6 +515,7 @@
               <!-- Left: Equipment Paperdoll -->
               <div class="armory-paperdoll-section">
                 <div class="section-label" style="margin-bottom: 8px;">Equipped Gear</div>
+                <div id="armory-gear-summary" class="armory-gear-summary"></div>
                 <div class="armory-gear">
                   <div id="armory-gear-left" class="armory-gear-col"></div>
                   <div id="armory-gear-right" class="armory-gear-col"></div>
@@ -553,7 +563,7 @@
           <div class="telemetry-card metric-stat"><div id="issue-persistent" class="metric-big-num" style="color: #f85149;">0</div><div class="metric-label">Persistent ≥10m</div></div>
           <div class="telemetry-card metric-stat"><div id="issue-watch" class="metric-big-num" style="color: #d29922;">0</div><div class="metric-label">Watch 5–10m</div></div>
           <div class="telemetry-card metric-stat"><div id="issue-resolved" class="metric-big-num" style="color: #2ea043;">0</div><div class="metric-label">Recent Resolved</div></div>
-          <div class="telemetry-card metric-stat"><div id="issue-deaths" class="metric-big-num" style="color: #c9d1d9;">0</div><div class="metric-label">Deaths (session)</div></div>
+          <div class="telemetry-card metric-stat"><div id="issue-deaths" class="metric-big-num" style="color: #c9d1d9;">0</div><div class="metric-label">Deaths (ring window)</div></div>
         </div>
 
         <div class="dashboard-grid dashboard-grid-issues">
@@ -582,8 +592,8 @@
               </select>
               <select id="issue-duration-filter" class="btn" style="padding: 6px 12px;">
                 <option value="0">Any duration</option>
-                <option value="300">≥ 5 min</option>
-                <option value="600" selected>≥ 10 min</option>
+                <option value="300" selected>≥ 5 min</option>
+                <option value="600">≥ 10 min</option>
                 <option value="1800">≥ 30 min</option>
               </select>
             </div>
@@ -615,7 +625,7 @@
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
             <div>
               <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff;">Incidents & Anomalies</h2>
-              <p style="color: var(--text-muted); font-size: 0.8rem; margin: 4px 0 0;">Rolling window: the last 1000 events (~30 min at busy rates). A daemon restart clears it; "Deaths (session)" is this browser tab only.</p>
+              <p style="color: var(--text-muted); font-size: 0.8rem; margin: 4px 0 0;">Rolling window: the last 1000 incidents (~30 min at busy rates). A daemon restart clears it; "Deaths (ring window)" counts the BOT_DEATH rows currently in the list.</p>
             </div>
             <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
               <select id="anomaly-type-filter" class="btn" style="padding: 6px 12px;">

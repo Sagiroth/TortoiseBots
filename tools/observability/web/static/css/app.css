@@ -244,7 +244,9 @@ body {
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: var(--text-dim);
+  /* --text-dim (#484f58) was below comfortable contrast on the card
+     background; the muted tone still reads as a label but is legible. */
+  color: var(--text-muted);
   text-transform: uppercase;
   margin-bottom: 12px;
 }
@@ -365,6 +367,14 @@ body {
   grid-template-columns: 1.65fr 1fr;
   gap: 20px;
   margin-bottom: 20px;
+  /* Cards keep their natural height instead of stretching to the tallest one
+     in the row, so a short card never grows a wall of empty background. */
+  align-items: start;
+}
+
+/* The live console reads best full width across both grid columns. */
+.dashboard-console {
+  grid-column: 1 / -1;
 }
 
 @media (max-width: 1200px) {
@@ -439,6 +449,17 @@ body {
   text-align: right;
   font-family: 'JetBrains Mono', monospace;
   color: var(--text-main);
+}
+
+/* Gear column of a level band: average equipped item level and its ratio to
+   the band's level, muted so the bot count stays the primary number. */
+.comp-gear {
+  width: 96px;
+  text-align: right;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .role-row {
@@ -725,6 +746,12 @@ body {
   filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.9)) brightness(1.4);
 }
 
+/* Dead bots dim instead of changing colour: the fill keeps the class colour
+   and the state is readable at a glance (matches STATE_COLORS.dead). */
+.bot-dot.corpse {
+  opacity: 0.45;
+}
+
 /* Issue highlighting: watch = amber glow, persistent = pulsing red glow. */
 .bot-dot.issue-watch {
   filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 3px #d29922);
@@ -874,6 +901,12 @@ body {
 
 .data-table th.sort-active {
   color: var(--accent-blue-bright);
+}
+
+/* Sortable headers are keyboard-reachable (tabindex + Enter/Space). */
+.data-table th.sortable:focus-visible {
+  outline: 2px solid var(--accent-blue-bright);
+  outline-offset: -2px;
 }
 
 /* Badges */
@@ -1029,6 +1062,22 @@ body {
   margin-bottom: 6px;
   width: 100%;
   box-sizing: border-box;
+}
+
+/* Equipped-gear summary line above the paperdoll: average item level plus the
+   quality split of the pieces that are actually worn. */
+.armory-gear-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: baseline;
+  margin-bottom: 10px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.armory-gear-summary strong {
+  color: var(--text-main);
 }
 
 @media (max-width: 500px) {
@@ -2050,11 +2099,13 @@ body {
     gap: 12px;
   }
 
-  /* Hide secondary table columns below 600px */
-  #tab-roster .data-table th:nth-child(6),
-  #tab-roster .data-table td:nth-child(6),
-  #tab-roster .data-table th:nth-child(8),
-  #tab-roster .data-table td:nth-child(8) {
+  /* Hide secondary table columns below 600px.
+     Roster (13 cols): keep Health + Status, drop Power (10) and Target (12).
+     Issues (7 cols): drop Zone (6) and Target (7), keep bot/type/duration/action. */
+  #tab-roster .data-table th:nth-child(10),
+  #tab-roster .data-table td:nth-child(10),
+  #tab-roster .data-table th:nth-child(12),
+  #tab-roster .data-table td:nth-child(12) {
     display: none;
   }
 
@@ -2067,8 +2118,8 @@ body {
 
   #tab-issues .data-table th:nth-child(6),
   #tab-issues .data-table td:nth-child(6),
-  #tab-issues .data-table th:nth-child(8),
-  #tab-issues .data-table td:nth-child(8) {
+  #tab-issues .data-table th:nth-child(7),
+  #tab-issues .data-table td:nth-child(7) {
     display: none;
   }
 

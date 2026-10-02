@@ -24,10 +24,10 @@ type Registry struct {
 	stateRatio     *prometheus.GaugeVec
 	issuesActive   *prometheus.GaugeVec
 	snapshotsTotal prometheus.Counter
-	// Grinding panel: pool-wide XP and kill rates derived per snapshot.
+	// Grinding panel: pool-wide XP and casualty rates derived per snapshot.
 	grindingXpHour  prometheus.Gauge
 	grindingGaining prometheus.Gauge
-	grindingKills   prometheus.Gauge
+	grindingDeaths  prometheus.Gauge
 	grindingCombat  prometheus.Gauge
 }
 
@@ -73,7 +73,7 @@ func New() *Registry {
 			Name: "tortoisebots_grinding_bots_gaining",
 			Help: "Bots with an XP gain in the last 10 minutes",
 		}),
-		grindingKills: promauto.NewGauge(prometheus.GaugeOpts{
+		grindingDeaths: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: "tortoisebots_grinding_deaths_per_min",
 			Help: "BOT_DEATH bot deaths per minute over the last 10 minutes",
 		}),
@@ -143,7 +143,7 @@ func (r *Registry) RecordSnapshot() {
 func (r *Registry) RecordGrinding(g model.GrindingSummary) {
 	r.grindingXpHour.Set(g.TotalXpHour)
 	r.grindingGaining.Set(float64(g.BotsGainingXP))
-	r.grindingKills.Set(g.DeathsPerMin)
+	r.grindingDeaths.Set(g.DeathsPerMin)
 	if n := g.BotsTracked; n > 0 {
 		r.grindingCombat.Set(float64(g.StateCounts["combat"]) / float64(n) * 100)
 	} else {
@@ -181,7 +181,7 @@ func (r *Registry) markOffline() {
 	r.issuesActive.Reset()
 	r.grindingXpHour.Set(0)
 	r.grindingGaining.Set(0)
-	r.grindingKills.Set(0)
+	r.grindingDeaths.Set(0)
 	r.grindingCombat.Set(0)
 	for _, state := range []string{"combat", "moving", "busy", "stalled", "resting", "dead", "idle"} {
 		r.stateRatio.WithLabelValues(state).Set(0)
