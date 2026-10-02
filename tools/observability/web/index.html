@@ -40,6 +40,10 @@
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         <span>Bots</span>
       </a>
+      <a class="menu-item" data-tab="activity">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        <span>Activity</span>
+      </a>
       <a class="menu-item" data-tab="armory">
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.83z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
         <span>Armory</span>
@@ -324,6 +328,8 @@
                   <th class="sortable" data-sort="class">Class</th>
                   <th class="sortable" data-sort="role">Role</th>
                   <th class="sortable" data-sort="level">Level</th>
+                  <th class="sortable" data-sort="quests">Quests</th>
+                  <th class="sortable" data-sort="loot">Loot</th>
                   <th class="sortable" data-sort="xp">XP</th>
                   <th class="sortable" data-sort="hp">Health (HP)</th>
                   <th class="sortable" data-sort="power">Power</th>
@@ -333,13 +339,110 @@
                 </tr>
               </thead>
               <tbody id="roster-table-body">
-                <tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading active bots...</td></tr>
+                <tr><td colspan="12" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading active bots...</td></tr>
               </tbody>
             </table>
           </div>
           <p class="empty-hint" style="margin-top:8px;">Role = AI combat role (forced / strategy / talent-gear auto-detect), not a group slot.</p>
         </div>
       </section>
+      <!-- TAB: BOT ACTIVITY / PROGRESS -->
+      <section id="tab-activity" class="tab-view" style="display: none;">
+        <div style="margin-bottom: 20px;">
+          <h1 class="tab-section-heading" style="font-size: 1.5rem; font-weight: 700; color: #fff; margin-bottom: 4px;">Bot Activity <span id="activity-count" style="color: var(--text-muted); font-size: 0.8rem; font-weight: 400;"></span></h1>
+          <p style="color: var(--text-muted); font-size: 0.85rem;">Per-bot progress from the activity daemon: quests, loot, money, kills, vendors, gathering. Click a bot to jump to its map; click a name in the per-bot table to open its armory.</p>
+        </div>
+
+        <div class="section-label">POOL COUNTERS · ALL TRACKED BOTS</div>
+        <div id="activity-metrics" class="metrics-row" style="margin-bottom: 20px;">
+          <div class="empty-hint">Waiting for activity data...</div>
+        </div>
+
+        <div class="telemetry-card" style="margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap;">
+            <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff;">Notable Loot</h2>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+              <select id="loot-quality-filter" class="btn" style="padding: 6px 12px;">
+                <option value="0">Any quality</option>
+                <option value="2" selected>Uncommon+</option>
+                <option value="3">Rare+</option>
+                <option value="4">Epic+</option>
+              </select>
+              <select id="loot-class-filter" class="btn" style="padding: 6px 12px;">
+                <option value="">All Classes</option>
+              </select>
+              <input type="number" id="loot-min-level" class="btn" style="padding: 6px 12px; width: 110px;" placeholder="Min level" min="1" max="60">
+              <input type="text" id="loot-bot-search" placeholder="Bot search..." class="btn bot-search-input">
+            </div>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Time</th><th>Bot</th><th>Class/Level</th><th>Source</th><th>Item</th><th>Zone</th>
+                </tr>
+              </thead>
+              <tbody id="loot-table-body">
+                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading notable loot...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="telemetry-card" style="margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap;">
+            <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff;">Quests</h2>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+              <input type="text" id="quest-bot-search" placeholder="Bot search..." class="btn bot-search-input">
+            </div>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Time</th><th>Bot</th><th>Class/Level</th><th>Event</th><th>Quest</th>
+                </tr>
+              </thead>
+              <tbody id="quests-table-body">
+                <tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading quest events...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="telemetry-card" style="margin-bottom: 20px;">
+          <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff; margin-bottom: 16px;">Per-Bot Activity</h2>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th><th>Class</th><th>Level</th><th>Quests</th><th>Loot</th><th>Notable</th><th>Kills</th><th>Deaths</th><th>Money +/-</th><th>Trainers</th><th>Vendors</th><th>Repairs</th><th>Give-ups</th><th>Gather/Skin</th><th>AH</th>
+                </tr>
+              </thead>
+              <tbody id="activity-table-body">
+                <tr><td colspan="15" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading per-bot activity...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="telemetry-card">
+          <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff; margin-bottom: 16px;">Level Timeline</h2>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Time</th><th>Bot</th><th>Class</th><th>Level</th>
+                </tr>
+              </thead>
+              <tbody id="level-timeline-body">
+                <tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading level timeline...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
 
       <!-- TAB ARMORY (all bot characters from the armory DB + per-bot profile) -->
       <section id="tab-armory" class="tab-view" style="display: none;">
@@ -424,12 +527,14 @@
               <button class="armory-subtab" data-subtab="spells">Spells</button>
               <button class="armory-subtab" data-subtab="professions">Professions</button>
               <button class="armory-subtab" data-subtab="skills">Skills</button>
+              <button class="armory-subtab" data-subtab="progress">Progress</button>
             </div>
             <div id="armory-content-bags" class="armory-content-panel"></div>
             <div id="armory-content-talents" class="armory-content-panel" style="display: none;"></div>
             <div id="armory-content-spells" class="armory-content-panel" style="display: none;"></div>
             <div id="armory-content-professions" class="armory-content-panel" style="display: none;"></div>
             <div id="armory-content-skills" class="armory-content-panel" style="display: none;"></div>
+            <div id="armory-content-progress" class="armory-content-panel" style="display: none;"></div>
           </div>
         </div>
       </section>

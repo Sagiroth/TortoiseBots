@@ -11,7 +11,7 @@ Rules that keep its state honest:
 - Anomaly types are a closed set (`model.AcceptedAnomalyTypes`) so Prometheus label cardinality stays bounded.
 - Bump `kProtocolVersion` in `ObservabilityEmitter.cpp` and `model.ProtocolVersion` in `internal/model/types.go` together.
 
-## Telemetry surface (protocol v7)
+## Telemetry surface (protocol v8)
 
 Each `BOT_BATCH` bot entry carries: `name, guid, class, role, level, xp, next_xp, hp/max_hp, power/max_power, power_type, map, zone, x/y/z/o, target, target_level, strategy, state, last_action, last_trigger, travel_purpose, travel_to`.
 
@@ -24,6 +24,8 @@ Macro states (`state`, heartbeat `states`, `tortoisebots_state_ratio`): `combat`
 - Anomaly emitters that can persist (`UNREACHABLE_TARGET`) re-report every cooldown window so the daemon has a liveness signal; do not make them fire-once.
 - `SERVER_INFO` datagrams (startup + every 5 min) carry module/core versions, live core rates and `AiPlayerbot` flags from running getters — never config files. The dashboard Server panel renders them, and its **Copy diagnostic report** button turns them plus pool health (tracked/gaining, median/total XP/h, deaths/min, combat/grind %, level bands), issue counts and freshness into a paste-ready plain-text snapshot (no secrets) — the way to report issues.
 - `/api/v1/grinding` serves the pool rollup behind the Grinding panel: per-bot XP/h + last-gain age over a 30 min level-up-aware window, pool gaining %, median/total XP/h, kills/min + killed-5min % (from `BOT_DEATH` anomalies), combat/grind %, adaptive level bands.
+- `BOT_EVENTS` datagrams carry the activity stream: the module mirrors a whitelist of `bot_events.csv` rows (`PlayerbotAIConfig::logEvent` → `ObservabilityEmitter::EmitBotActivity`) between the heartbeat and the roster batches of a cycle, so the roster published by the same cycle already carries the refreshed counters. Whitelisted: quest accept/complete/turn-in/drop/travel, `StoreLootAction`, `GatherLoot`, `LootMoney`, `SellAction`, `BuyAction`, `RepairAllAction`, `TrainerAction`, `NearbyService` (kind = trainer/vendor/turn-in), `AhAction`, `AhBidAction`, `BotDeath`, the revive/repop events (ghost time), `ReachGiveUp`, and an explicit `Kill` event from `XpGainAction` — the CSV row cannot carry the kill/non-kill XP flag. Item events are enriched server-side with `ItemPrototype` quality/sell/buy (no DB); every event carries the bot's copper, from which the daemon derives earned/spent. The queue is bounded (2048 rows, dropped on overflow) and chunked 40/datagram; `logEvent` forwards even when `bot_events.csv` is not in `AllowedLogFiles`.
+- `/api/v1/activity` (summary + per-bot counters + level timeline), `/api/v1/activity/loot` (`min_quality`/`class`/`min_level`/`max_level`/`bot`/`limit`), `/api/v1/activity/quests` (`bot`/`limit`) serve the Activity tab. Per-bot counters are also embedded in every roster snapshot as `activity`. All activity state is in-memory and bounded by the live population (activity is pruned with the roster; counters reset on session change or roster wipe); no DB reads.
 
 ## Issue episodes (`internal/state` issue tracker)
 
@@ -44,7 +46,7 @@ Armory detail view: Spells and Professions are separate tabs (profession spells 
 
 ## Diagnostic report (recommended for bug reports)
 
-The dashboard Server panel has a **Copy diagnostic report** button producing a compact plain-text (markdown) snapshot: module/core versions, effective rates and bot flags, pool health (tracked/gaining, median/total XP/hour, deaths/min, died-5min %, combat/grind %, level bands), issue counts, and server freshness. It contains no secrets (no IPs, hosts, account names, passwords). Paste it into a GitHub issue or Discord when reporting bugs — it answers "how is this server configured" without config-file archaeology.
+The dashboard Server panel has a **Copy diagnostic report** button producing a compact plain-text (markdown) snapshot: module/core versions, effective rates and bot flags, pool health (tracked/gaining, median/total XP/hour, deaths/min, died-5min %, combat/grind %, level bands), pool activity counters (quests/loot/money/kills/deaths/ghost time/services), issue counts, and server freshness. It contains no secrets (no IPs, hosts, account names, passwords). Paste it into a GitHub issue or Discord when reporting bugs — it answers "how is this server configured" without config-file archaeology.
 
 ## Validation
 
