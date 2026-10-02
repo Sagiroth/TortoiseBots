@@ -57,6 +57,18 @@ Armory detail view: Spells and Professions are separate tabs (profession spells 
 
 The dashboard Server panel has a **Copy diagnostic report** button producing a compact plain-text (markdown) snapshot: module/core versions, effective rates and bot flags, the bot-tuning line (XP rate, loot rates, autolearn trainer/quest, level-up mounts, AH market), pool health (tracked/gaining, median/total XP/hour, deaths/min, died-5min %, combat/grind %, level bands with their average item level), a pool gear line (swept bots, average item level, equipped-piece quality census), pool activity counters (quests/loot/money/kills/deaths/ghost time/services), issue counts, and server freshness. A flag the running server did not report reads `?`, never a false "off". It contains no secrets (no IPs, hosts, account names, passwords). Paste it into a GitHub issue or Discord when reporting bugs — it answers "how is this server configured" without config-file archaeology.
 
+## Map artwork (`web/maps`)
+
+The zone/continent images are the client's WorldMap texture. The client draws a
+zone as 12 base tiles (a 4x3 grid of 256px textures, `Interface\WorldMap\<Zone>\<Zone><n>.blp`)
+plus one `WorldMapOverlay.dbc` texture per sub-area that paints in the revealed
+detail — exporting the base tiles alone leaves every zone looking fogged.
+`scripts/gen_zone_maps.py` composites both at their DBC offsets and rewrites
+`web/maps/*.webp` **at the existing file sizes**: the daemon's world->map
+percentages are relative to that canvas. Maps of Mystery artwork (custom zones)
+is hand-drawn and must not be regenerated. Run it against a client Data
+directory when the art needs refreshing; the script needs `mpyq` and `Pillow`.
+
 ## Validation
 
 No host Go toolchain is assumed: `docker run --rm -v "$PWD/tools/observability:/src" -w /src golang:1.22-alpine sh -c 'go vet ./... && go test ./...'`. Live check: the server logs `Observability telemetry active`, and `/metrics` (default port 8095) shows `mangos_server_online 1` and a rising `tortoisebots_snapshots_total`.

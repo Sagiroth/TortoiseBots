@@ -975,6 +975,7 @@
       } else {
         el.mapImg.removeAttribute('src');
         el.mapImg.style.display = 'none';
+        resetZoneArt();
       }
     }
     if (el.zoneViewport && !art) el.zoneViewport.style.aspectRatio = '1002 / 668';
@@ -991,14 +992,91 @@
     // used to be a second full 500-dot render per zone switch.
   }
 
-    // Zone art is not uniformly 3:2 (14 files are 4:3). Fit the viewport to
-    // the loaded art so projected dots land on the artwork instead of a crop.
-    if (el.mapImg) {
-      el.mapImg.addEventListener('load', () => {
-        const w = el.mapImg.naturalWidth, h = el.mapImg.naturalHeight;
-        if (w > 0 && h > 0 && el.zoneViewport) el.zoneViewport.style.aspectRatio = `${w} / ${h}`;
-      });
+  // Zone art is not uniformly trimmed to the drawing: several files carry a
+  // black border (a 3:2 map padded to a 4:3 canvas, or a letterboxed band).
+  // Dots are placed at a percentage of the artwork, so a percentage of the
+  // whole file drifts towards the padded edges — the bottom band of a 4:3 file
+  // alone moves a dot ~10% down the map. Measure the artwork once per loaded
+  // image and fit the viewport to it; a map that already fills its file (and
+  // blank/garbage art) keeps the plain full-image fit.
+  function artRegion(img) {
+    const cw = img.naturalWidth, ch = img.naturalHeight;
+    if (!cw || !ch) return null;
+    let px;
+    try {
+      const c = document.createElement('canvas');
+      c.width = cw; c.height = ch;
+      const cx = c.getContext('2d', { willReadFrequently: true });
+      cx.drawImage(img, 0, 0);
+      px = cx.getImageData(0, 0, cw, ch).data;
+    } catch (e) {
+      return null; // canvas unavailable (tainted/blocked): keep the full image
     }
+    let l = cw, t = ch, r = -1, b = -1, ink = 0;
+    for (let y = 0; y < ch; y++) {
+      for (let x = 0; x < cw; x++) {
+        const i = (y * cw + x) * 4;
+        if (px[i] + px[i + 1] + px[i + 2] <= 24) continue;
+        ink++;
+        if (x < l) l = x;
+        if (x > r) r = x;
+        if (y < t) t = y;
+        if (y > b) b = y;
+      }
+    }
+    // Require a real drawing: a dark or blank map is not a bordered one, and
+    // trimming it would move the dots through the art instead of the padding.
+    if (r < 0 || ink < cw * ch * 0.1 || (r - l + 1) < cw * 0.5 || (b - t + 1) < ch * 0.5) return null;
+    if (l === 0 && t === 0 && r === cw - 1 && b === ch - 1) return null;
+    return { cw, ch, l, t, w: r - l + 1, h: b - t + 1 };
+  }
+
+  // Drop the artwork-fit inline styles (kept when a zone has no map file).
+  function resetZoneArt() {
+    const img = el.mapImg;
+    if (!img) return;
+    img.style.position = '';
+    img.style.left = '';
+    img.style.top = '';
+    img.style.width = '';
+    img.style.height = '';
+    img.style.objectFit = '';
+    img.style.maxWidth = '';
+    img.style.maxHeight = '';
+  }
+
+  function fitZoneArt() {
+    const img = el.mapImg, vp = el.zoneViewport;
+    if (!img || !vp || !img.naturalWidth) return;
+    const art = artRegion(img);
+    resetZoneArt();
+    if (!art) {
+      vp.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+      return;
+    }
+    // The viewport shows exactly the artwork, so a dot at pct_x/pct_y lands on
+    // the same percentage of the drawing; the image is scaled so its artwork
+    // region fills the viewport and the padding is clipped.
+    vp.style.aspectRatio = `${art.w} / ${art.h}`;
+    img.style.position = 'absolute';
+    img.style.left = `${-art.l / art.w * 100}%`;
+    img.style.top = `${-art.t / art.h * 100}%`;
+    img.style.width = `${art.cw / art.w * 100}%`;
+    img.style.height = `${art.ch / art.h * 100}%`;
+    img.style.objectFit = 'fill';
+    img.style.maxWidth = 'none';
+    img.style.maxHeight = 'none';
+  }
+
+  if (el.mapImg) {
+    el.mapImg.addEventListener('load', () => {
+      fitZoneArt();
+      // The fit resizes the viewport, so the trail canvas must re-measure.
+      if (state.activeTab === 'map') renderMap();
+    });
+    // The default src may already be decoded before this listener attaches.
+    if (el.mapImg.complete && el.mapImg.naturalWidth) fitZoneArt();
+  }
 
   // World view: both continents from WorldMapArea.dbc bounds (data/zones.json).
   let ZONE_BOUNDS = null; // key "map_area" -> {map_id, area_id, name, loc_*}
