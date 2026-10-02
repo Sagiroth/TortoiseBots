@@ -7,6 +7,7 @@
 #include "MoveToTravelTargetAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/TravelInstancePolicy.h"
+#include "playerbot/strategy/values/VendorTripPolicy.h"
 #include "playerbot/strategy/values/TravelValues.h"
 #include "playerbot/strategy/values/MaintenanceValues.h"
 #include "playerbot/TravelNode.h"
@@ -266,17 +267,40 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
             MoveToTravelTargetAction::CountHandInNoProgress(ai, dest->GetQuestId(), dest->GetEntry());
     }
 
-    // Travel-target observability: one line per newly chosen target. Resets
-    // (ResetTargetAction) also pass through here with the null destination at
-    // map 0 (0,0,0), which resolves to Alterac Mountains, so skip those.
-    // logEvent no-ops unless bot_events.csv is in AllowedLogFiles.
-    if (oldTarget->GetDestination() && typeid(*oldTarget->GetDestination()) != typeid(NullTravelDestination))
+    // Travel-target observability: one line per newly chosen target. A pick from
+    // a null target (after a drop, a ding, a stuck retire) used to log nothing,
+    // so the AH funnel was undercounted: 14 AH drops but only 6 logged AH picks
+    // (issue #399 side note). Resets (ResetTargetAction) still pass through here
+    // with the null destination at map 0 (0,0,0), which resolves to Alterac
+    // Mountains, so skip those. logEvent no-ops unless bot_events.csv is in
+    // AllowedLogFiles.
+    bool const pickedFromNull = !oldTarget->GetDestination() ||
+        typeid(*oldTarget->GetDestination()) == typeid(NullTravelDestination);
+    std::string const travelPurposeName = GetTravelPurposeName(AI_VALUE2(std::string, "manual string", "future travel purpose"));
+    bool const isResetToNull = pickedFromNull && travelPurposeName == "None";
+    if (!isResetToNull)
     {
-        std::string purpose = GetTravelPurposeName(AI_VALUE2(std::string, "manual string", "future travel purpose"));
+        std::string purpose = travelPurposeName;
         std::string destZone = (oldTarget->getPosition() && oldTarget->getPosition()->GetArea())
             ? oldTarget->getPosition()->GetAreaName(true, true) : "";
+        if (pickedFromNull)
+            destZone += " (from null)";
         sPlayerbotAIConfig.logEvent(ai, "TravelTarget", purpose, destZone);
 
+        // One vendor journey at a time: a walk to a vendor has just started, and
+        // the request gate refuses another until this is ten minutes old, a sale
+        // has landed (SellAction) or the bot has dinged (XpGainAction,
+        // AutoLearnSpellAction). Without it a trip the bot never walks - move
+        // starved by loot and attacks, or a target wiped by a stuck reset - was
+        // re-issued as fast as the request gate re-armed: 3,113 vendor picks in
+        // 2 h 46 min, median re-pick gap 64 s, 44 % of gaps under 30 s, against
+        // ~170 completed trips a day earlier (issue #399). Request-side only,
+        // like the trainer window below: the travel trigger doubles as the
+        // in-flight trip's stored condition, so gating the trigger would drop
+        // the trip itself on the next travel check. See VendorTripPolicy.h and
+        // RequestTravelTargetAction::isUseful.
+        if (purpose == "Vendor")
+            SET_AI_VALUE2(time_t, "manual time", "vendor trip since", time(0));
         // One trainer journey at a time: a walk to a trainer has just started, and
         // the errand's trigger refuses another until this is ten minutes old, the
         // bot has learned something (TrainerAction) or it has dinged
@@ -1129,6 +1153,20 @@ bool RequestTravelTargetAction::isUseful() {
         return false;
 
     if (AI_VALUE(bool, "travel target active") && !VendorErrandWhileParked(ai, getQualifier()))
+        return false;
+
+    // One vendor journey at a time (issue #399): a picked vendor trip
+    // suppresses new vendor requests for ten minutes, until a sale lands or
+    // the bot dings (both clear "vendor trip since"). Without it a trip the
+    // bot never walks was re-requested as fast as the gate re-armed - 44 % of
+    // vendor re-pick gaps under 30 s. Pure helper in VendorTripPolicy.h so the
+    // rule is unit-tested; request-side only, so it cannot drop the trip the
+    // travel trigger's stored condition keeps alive. Bag-pressure re-requests
+    // while parked at a destination keep working: the valve above still owns
+    // that case, and a trip never picked (stamp 0) is never suppressed.
+    if (getQualifier() == std::to_string((uint32)TravelDestinationPurpose::Vendor) &&
+        VendorTripSuppressedByRecentTrip(
+            AI_VALUE2(time_t, "manual time", "vendor trip since"), time(0)))
         return false;
 
     // Time-boxed blacklist set by MoveToTravelTargetAction on repeated move
