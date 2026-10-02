@@ -138,7 +138,7 @@ bool IsActivityEvent(std::string const& event)
         "AhAction", "AhBidAction",
         // deaths, revives (ghost time) and give-ups
         "BotDeath", "ReviveFromCorpseAction", "ReviveFromSpiritHealerAction", "RepopAction",
-        "ReachGiveUp",
+        "LongStuckFallback", "ReachGiveUp",
         // explicit kill signal from XpGainAction (the CSV row cannot carry the
         // kill/non-kill XP flag)
         "Kill",

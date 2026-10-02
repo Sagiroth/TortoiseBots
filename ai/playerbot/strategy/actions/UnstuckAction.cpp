@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "UnstuckAction.h"
+#include "playerbot/LongStuckRescuePolicy.h"
 #include "playerbot/TravelMgr.h"
 
 using namespace ai;
@@ -43,9 +44,91 @@ static bool HearthLeadsSomewhereUseful(PlayerbotAI* ai, Player* bot)
 // `return DoSpecificAction("hearthstone")` ended the rescue there. The
 // "hearth attempt anchor" that gates the next trip is only recorded once a cast
 // starts, so the same non-cast was retried every five seconds forever and the
-// repop fallback was unreachable. Live stage-7 pool: 69 of the 72 wedged bots
-// that fired "move long stuck" produced no UseHearthStoneAction and no
-// RepopAction row while sitting at one coordinate for two to three hours.
+// repop fallback was unreachable. The same failure hides one level down: the
+// repop action runs through the engine gates (MovementAction::isPossible, i.e.
+// PlayerbotAI::CanMove), which fails on exactly the bots that need the rescue
+// most - rooted, stunned, feared or otherwise immobile - so the action returns
+// IMPOSSIBLE/USELESS without moving and LongStuckRescue would fire again
+// forever on the same coordinate. Live 2026-10-02 pool: 74 of the 90 bots
+// that logged "move long stuck" produced no UseHearthStoneAction and no
+// RepopAction row (Crurcar at POINT(-14401.71 6560.12) fired 5 trips over 2 h
+// without moving). The last resort below teleports the bot directly instead:
+// a teleport needs no movement precondition, so the bot always ends up
+// somewhere else - the nearest graveyard, or its homebind when it is already
+// standing next to its graveyard.
+static bool LongStuckFallbackTeleport(PlayerbotAI* ai, Player* bot, Player* master)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+
+    // Battleground bots and bots that belong to a real player (owned alts and
+    // hires, even while the player is offline) are their player's business:
+    // never yank them.
+    if (bot->InBattleGround() || ai->HasRealPlayerMaster())
+        return false;
+
+    WorldPosition const botPos(bot);
+    WorldPosition home = bot->GetHomeBindLocation();
+    WorldSafeLocsEntry const* grave = sObjectMgr.GetClosestGraveYard(
+        bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId(), bot->GetTeam());
+    float const graveDist = grave
+        ? botPos.fDist(WorldPosition(grave->map_id, grave->x, grave->y, grave->z)) : 0.0f;
+    float const homeDist = home.isValid() ? botPos.fDist(home) : 0.0f;
+    switch (PickLongStuckFallbackTarget(true, grave != nullptr, graveDist, homeDist))
+    {
+        case LongStuckFallbackTarget::Graveyard:
+            break;
+        case LongStuckFallbackTarget::Homebind:
+            grave = nullptr;
+            break;
+        default:
+            return false;
+    }
+
+    TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
+    if (travelTarget)
+    {
+        sTravelMgr.SetNullTravelTarget(travelTarget);
+        RESET_AI_VALUE(bool, "travel target active");
+    }
+    RESET_AI_VALUE(WorldPosition, "current position");
+
+    // "combat long stuck" also lands here: drop the old fight like
+    // RepopAction::Execute does, or the bot arrives still chasing it.
+    RESET_AI_VALUE(Unit*, "old target");
+    RESET_AI_VALUE(Unit*, "current target");
+    RESET_AI_VALUE(Unit*, "pull target");
+    RESET_AI_VALUE(bool, "combat::self target");
+    bot->SetSelectionGuid(ObjectGuid());
+
+    // Leave a transport first: RemovePassenger keeps MOVEFLAG_ONTRANSPORT, and a
+    // stale flag with no transport freezes the bot (issue #216).
+    if (bot->GetTransport())
+    {
+        bot->GetTransport()->RemovePassenger(bot);
+        bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_ONTRANSPORT);
+    }
+
+    bool moved = false;
+    if (grave)
+    {
+        moved = bot->TeleportTo(grave->map_id, grave->x, grave->y, grave->z, 0.0f);
+        if (moved)
+            sPlayerbotAIConfig.logEvent(ai, "LongStuckFallback", "graveyard", master ? master->GetName() : "");
+    }
+    else
+    {
+        // A rescue, not a hearth: keep the hearthstone cooldown untouched.
+        moved = bot->TeleportToHomebind(0, false);
+        if (moved)
+            sPlayerbotAIConfig.logEvent(ai, "LongStuckFallback", "homebind", master ? master->GetName() : "");
+    }
+    if (!moved)
+        return false;
+    bot->SaveToDB();
+    ai->TellDebug(master, "Unstuck: long-stuck fallback teleport relocated the bot.", "debug unstuck");
+    return true;
+}
+
 static bool LongStuckRescue(PlayerbotAI* ai, Event& event, Player* bot, Player* master, bool hearthAttemptLeftBotInPlace)
 {
     AiObjectContext* context = ai->GetAiObjectContext();
@@ -59,7 +142,11 @@ static bool LongStuckRescue(PlayerbotAI* ai, Event& event, Player* bot, Player* 
         ai->TellDebug(master, "Unstuck: hearthstone did not cast, falling back to repop.", "debug unstuck");
     }
 
-    return ai->DoSpecificAction("repop", event, true);
+    if (ai->DoSpecificAction("repop", event, true))
+        return true;
+
+    ai->TellDebug(master, "Unstuck: repop did not move the bot, teleporting to a safe spot.", "debug unstuck");
+    return LongStuckFallbackTeleport(ai, bot, master);
 }
 
 // UnstuckTrip volume control. MoveStuckTrigger polls every 5 s and counts a bot
