@@ -3,15 +3,95 @@
 #include "playerbot/playerbot.h"
 #include "MoveToTravelTargetAction.h"
 #include "ChooseTravelTargetAction.h"
+#include "TalkToQuestGiverAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/RandomBotFacade.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/LootObjectStack.h"
 #include "Maps/PathFinder.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
+#include <cstdlib>
 #include <iomanip>
 
 using namespace ai;
+
+// Stuck-hand-in fallback (TryAutoHandInUnreachableTaker). Several bots on the live
+// realm walked to a taker they could never reach - the Tower of Azora's Antonas
+// Riftgaze, whose navmesh tile has no walkable route to the NPC; every bot stalls
+// 18-29 yd away, at the same height, and none ever handed the quest in. A hand-in
+// trip that keeps failing to move is therefore settled here after a short window.
+static constexpr float AUTO_HAND_IN_RANGE = 100.0f;           // the bot is at the taker, only the last step fails
+static constexpr uint32 AUTO_HAND_IN_FAILS = 3;               // failed moves inside one episode
+static constexpr time_t AUTO_HAND_IN_AGE = 90;                // seconds since the episode's first failed move
+static constexpr int32 AUTO_HAND_IN_EPISODE = 10 * MINUTE;    // no failed move for this long ends the episode
+static constexpr int32 AUTO_HAND_IN_PARK = 30 * MINUTE;       // the quest's hand-in travel park, set when it fires
+
+bool MoveToTravelTargetAction::TryAutoHandInUnreachableTaker(TravelTarget* target, std::string const& purpose, float distance)
+{
+    if (purpose != "quest")
+        return false;
+
+    // Pool bots with no real master only. A hired or player-commanded bot keeps the
+    // normal hand-in: its master may be walking it to the taker.
+    if (!sPlayerbotAIConfig.botQuestLogUpkeep || ai->HasActivePlayerMaster() || !sRandomBotFacade.IsRandomBot(bot))
+        return false;
+
+    QuestTravelDestination* destination = dynamic_cast<QuestTravelDestination*>(target->GetDestination());
+    if (!destination || destination->GetPurpose() != TravelDestinationPurpose::QuestTaker)
+        return false;
+
+    int32 const takerEntry = destination->GetEntry();
+    if (takerEntry <= 0)
+        return false;
+
+    uint32 const questId = destination->GetQuestId();
+    Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
+    if (!quest)
+        return false;
+
+    // Only a finished quest the bot can be paid for right now.
+    if (bot->GetQuestStatus(questId) != QUEST_STATUS_COMPLETE || bot->GetQuestRewardStatus(questId) || !bot->CanRewardQuest(quest, false))
+        return false;
+
+    // The failure must be the last step to a taker the bot is already standing next to.
+    if (distance > AUTO_HAND_IN_RANGE)
+        return false;
+
+    // Failure episode, keyed per quest: one unreachable taker cannot settle another
+    // quest's hand-in, and a repeatable quest gets a fresh episode once a window
+    // passes without a failed move. The value counts failed moves, the data holds
+    // the episode's first failure.
+    std::string const key = "quest hand in fail::" + std::to_string(questId);
+    uint32 const fails = sRandomBotFacade.GetValue(bot, key);
+    std::string const sinceStr = sRandomBotFacade.GetData(bot->GetGUIDLow(), key);
+    time_t const since = sinceStr.empty() ? time(0) : static_cast<time_t>(std::strtoul(sinceStr.c_str(), nullptr, 10));
+    sRandomBotFacade.SetValue(bot, key, fails + 1, std::to_string(since), AUTO_HAND_IN_EPISODE);
+
+    if (fails + 1 < AUTO_HAND_IN_FAILS || time(0) - since < AUTO_HAND_IN_AGE)
+        return false;
+
+    // Park this quest's hand-in travel (per quest, not the whole purpose): the taker
+    // is not walkable to, so the search must stop offering it. Read by
+    // RequestQuestTravelTargetAction. The nearby-service hand-in does not read the
+    // park, so a bot that does end up next to its taker is still paid normally.
+    SET_AI_VALUE2(time_t, "manual time", "no quest hand in until::" + std::to_string(questId), time(0) + AUTO_HAND_IN_PARK);
+
+    Creature* taker = bot->FindNearestCreature((uint32)takerEntry, AUTO_HAND_IN_RANGE * 2);
+    if (!taker)
+        return false;
+
+    // Same reward path as a talk-in: the reward choice (best item for the class and
+    // spec) and the core Player::RewardQuest call, which carries the XP, money and
+    // reputation. Returns false when no reward was actually given.
+    if (!TalkToQuestGiverAction::RewardFinishedQuest(ai, quest, taker))
+        return false;
+
+    sPlayerbotAIConfig.logEvent(ai, "QuestAutoHandIn", quest->GetTitle(),
+        std::to_string(questId) + ":" + std::to_string(takerEntry) + ":unreachable");
+
+    return true;
+}
 
 bool MoveToTravelTargetAction::Execute(Event& event)
 {
@@ -155,14 +235,22 @@ bool MoveToTravelTargetAction::Execute(Event& event)
     {
         target->IncRetry(true);
 
+        std::string const purpose = AI_VALUE2(std::string, "manual string", "future travel purpose");
+
         // One line per travel target rather than per attempt: a wedged bot
         // re-enters this action every tick, and IncRetry steps by 2, so the
         // first failure is exactly 2. The drop below carries the final depth.
         // Purpose plus remaining distance is what separates "could not path to
         // the taker" from "never tried to move" (no line at all).
         if (target->GetRetryCount(true) == 2)
-            sPlayerbotAIConfig.logEvent(ai, "TravelMoveFailed", AI_VALUE2(std::string, "manual string", "future travel purpose"),
+            sPlayerbotAIConfig.logEvent(ai, "TravelMoveFailed", purpose,
                 std::to_string((int32)botLocation.distance(location)));
+
+        // A hand-in trip that keeps failing to move to a taker the bot is standing
+        // next to is settled here instead of looping (see the helper). The quest is
+        // paid, so there is nothing left to walk to: let the next tick pick again.
+        if (TryAutoHandInUnreachableTaker(target, purpose, botLocation.distance(location)))
+            return false;
 
         if (target->IsMaxRetry(true))
         {
@@ -175,7 +263,6 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             // same destination is not re-picked at once. A COOLDOWN on the
             // active target would instead freeze ALL travel (IsActive stays
             // true, requests gate on it) for the whole window.
-            std::string const purpose = AI_VALUE2(std::string, "manual string", "future travel purpose");
             sPlayerbotAIConfig.logEvent(ai, "TravelTargetDropped", purpose, std::to_string(target->GetRetryCount(true)));
             target->SetForced(false);
             sTravelMgr.SetNullTravelTarget(target);

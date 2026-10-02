@@ -1730,7 +1730,17 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
                 continue;
 
             if (player->CanRewardQuest(questTemplate, false))
-                flag = (uint32)TravelDestinationPurpose::QuestTaker;
+            {
+                // A hand-in trip whose moves kept failing is parked per quest by the
+                // stuck-hand-in fallback (MoveToTravelTargetAction): the taker is not
+                // walkable to, so the search stops offering it for the park window.
+                // Other quests, objectives and givers are unaffected. Reading the
+                // park only when one exists keeps the value store from growing a
+                // "manual time" entry per quest the bot has ever held.
+                std::string const parkKey = "no quest hand in until::" + std::to_string(questId);
+                if (!HAS_AI_VALUE2("manual time", parkKey) || AI_VALUE2(time_t, "manual time", parkKey) <= time(0))
+                    flag = (uint32)TravelDestinationPurpose::QuestTaker;
+            }
             else
             {
                 for (uint32 objective = 0; objective < 4; objective++)

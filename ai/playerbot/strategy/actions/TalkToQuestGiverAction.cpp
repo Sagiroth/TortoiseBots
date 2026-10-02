@@ -78,7 +78,21 @@ bool TalkToQuestGiverAction::ProcessQuest(Player* requester, Quest const* quest,
     return isCompleted;
 }
 
-bool TalkToQuestGiverAction::TurnInQuest(Player* requester, Quest const* quest, WorldObject* questGiver, std::string& out)
+bool TalkToQuestGiverAction::RewardFinishedQuest(PlayerbotAI* ai, Quest const* quest, WorldObject* questGiver)
+{
+    if (!ai || !ai->GetBot() || !quest || !questGiver)
+        return false;
+
+    // A local instance: this path only reads ai/bot/chat, none of which the engine
+    // owns, and it is never registered or run as a normal tick.
+    TalkToQuestGiverAction action(ai);
+    std::string out;
+    action.TurnInQuest(ai->GetMaster(), quest, questGiver, out, true);
+
+    return ai->GetBot()->GetQuestRewardStatus(quest->GetQuestId());
+}
+
+bool TalkToQuestGiverAction::TurnInQuest(Player* requester, Quest const* quest, WorldObject* questGiver, std::string& out, bool autoHandIn)
 {
     uint32 questID = quest->GetQuestId();
     if (bot->GetQuestRewardStatus(questID))
@@ -91,7 +105,11 @@ bool TalkToQuestGiverAction::TurnInQuest(Player* requester, Quest const* quest, 
         bot->PlayDistanceSound(621);
     }
 
-    sPlayerbotAIConfig.logEvent(ai, "TalkToQuestGiverAction", quest->GetTitle(), std::to_string(quest->GetQuestId()));
+    // An auto hand-in is not a talk to the giver: the caller (the stuck-hand-in
+    // fallback in MoveToTravelTargetAction) writes QuestAutoHandIn instead, so a
+    // "talked to the quest giver" count keeps meaning exactly that.
+    if (!autoHandIn)
+        sPlayerbotAIConfig.logEvent(ai, "TalkToQuestGiverAction", quest->GetTitle(), std::to_string(quest->GetQuestId()));
 
     if (quest->GetRewChoiceItemsCount() == 0)
     {
