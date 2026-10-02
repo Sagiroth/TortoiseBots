@@ -253,14 +253,24 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
                 logGrind(unit, "ignored (not needed for active quest).");
                 continue;
             }
-            // Pre-attack MaNGOS::XP::Gain() always returns 0 here: it multiplies by
-            // GetXPModifierDueToDamageOrigin(), which is 0 until somebody damages the
-            // creature - so every untouched mob looked like "no XP". Use the pure
-            // grey-level/no-XP-flag predicate instead (donor: bot->isHonorOrXPTarget).
-            else if (creature && !bot->IsHonorOrXPTarget(unit) && urand(0, 50))
+            // A grey (no-XP) creature is never worth starting a fight over (issue
+            // #396): an autonomous pool bot skips it outright, mirroring the donor
+            // mod-playerbots hard gate (!bot->isHonorOrXPTarget). Self-defence still
+            // applies (the attackers loop above returns before this), quest-objective
+            // kills stay allowed (needForQuest branch), and bots with a real-player
+            // master keep the old probabilistic lean so explicit orders are unchanged.
+            else if (creature && !bot->IsHonorOrXPTarget(unit))
             {
-                logGrind(unit, "ignored (not xp and not needed for quest).");
-                continue;
+                if (!ai->HasRealPlayerMaster() && !bot->InBattleGround())
+                {
+                    logGrind(unit, "ignored (grey, no xp).");
+                    continue;
+                }
+                if (urand(0, 50))
+                {
+                    logGrind(unit, "ignored (not xp and not needed for quest).");
+                    continue;
+                }
             }
             else if (urand(0, 100) < 75)
             {

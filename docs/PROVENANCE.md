@@ -2611,3 +2611,37 @@ scan on the grind pick — and the 17% of deaths to a killer two or more levels
 above the bot is largely the same add; both need a design that keeps the pick
 scan off the per-tick world (the module's performance rule), so they are left
 for a follow-up rather than bolted onto the destination gate.
+
+## Grind grey hard-skip for autonomous pool bots (issue #396 part A) — 2026-10-02
+
+Feature: `GrindTargetValue` refuses grey (no-XP) creatures outright for bots
+with no real-player master, instead of the old 50/51 probabilistic lean.
+Self-defence still applies (the attackers loop returns before this branch),
+quest-objective kills stay allowed (`needForQuest` branch), and bots with a
+real-player master (owned/hired/followed) plus battlegrounds keep the old
+lean, so explicit orders are unchanged.
+
+Source project: `mod-playerbots`
+`src/Ai/Base/Value/GrindTargetValue.cpp:74`
+(`if (!bot->isHonorOrXPTarget(unit)) continue;` — unconditional donor gate) @
+`b6696bdbd3740e575598d167d69f39f68cc0b907`, adapted with the master/BG
+exemptions the donor does not need (its equivalent gate is unconditional).
+
+Source files: donor `GrindTargetValue.cpp:74`; core grey rule
+`tortoise-wow` `src/game/Objects/Player.cpp:21934-21952`
+(`IsHonorOrXPTarget`), `src/game/Formulas.h:34-42` (`GetGrayLevel`).
+
+Ported / reimplemented: `ai/playerbot/strategy/values/GrindTargetValue.cpp`
+grey branch — masterless non-BG bots `continue` on
+`!bot->IsHonorOrXPTarget(unit)` with a distinct grind-log reason
+("ignored (grey, no xp)."); text in
+`docs/guides/living-world.md` (Grinding & Combat row).
+
+Reason: live `bot_events.csv` (2026-10-02, 25,180 rows): 3,398
+`AttackAnythingAction` orders, 584 (17.2%) on grey targets per
+`GetGrayLevel`, from 112 of 400 ordering bots — e.g. a level-7 rogue in
+Northshire ordering level-1/2 wolves. The pre-existing 50/51 skip let
+roughly half of every grey candidate through.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`; module
+build via `build-commit.sh` (no deploy).
