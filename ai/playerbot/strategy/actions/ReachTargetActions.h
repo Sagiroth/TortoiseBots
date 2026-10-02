@@ -469,6 +469,11 @@ namespace ai
         std::string GetTargetName() override { return "pull target"; }
         bool RequiresAttackableTarget() const override { return true; }
 
+        // How far the firing position's ground may sit above or below the
+        // puller before the point is another floor (a ledge, a chasm, a
+        // multi-tier room) rather than the ground the puller stands on.
+        static constexpr float kMaxFiringPositionDrop = 4.0f;
+
         // A ranged pull walks to a firing position with a point move instead of
         // the core chase. Inside a dungeon the core's chase generator refuses a
         // destination that is not melee-reachable from the target
@@ -483,17 +488,58 @@ namespace ai
             if (!strategy || strategy->GetPullActionName() == "reach pull")
                 return ChaseTo(target, distance, bot->GetAngle(target));
 
+            bool const inLos = bot->IsWithinLOSInMap(target, true);
+
+            // Already inside the pull's own shooting range with line of sight:
+            // the shot is ready, do not reposition. The reach action's range is
+            // the pull range minus a buffer, so without this a bot sitting in
+            // the buffer would be sent to a "firing position" further out and
+            // walk away from the mob.
+            if (strategy->GetRange() > 0.0f && inLos &&
+                bot->GetDistance(target) <= strategy->GetRange())
+                return true;
+
+            // Out of sight: advance towards the mob, the way the mature reach
+            // path does, and take the firing position on the next tick once the
+            // mob is visible. A point on the straight line would sit in the very
+            // wall the corner is made of (a corner pull), and a point further
+            // out than the puller already stands would walk backwards.
+            if (!inLos)
+                return MoveTo(target->GetMapId(), target->getPositionX(),
+                    target->getPositionY(), target->getPositionZ());
+
+            // In sight: walk to a firing position at the pull range, but only
+            // after it holds up as a place the bot can stand, path to, and shoot
+            // from: a corner or a ledge must not send the tank into a wall or
+            // down to another floor. When it does not hold up, advance towards
+            // the mob instead and re-pick on the next tick.
             WorldPosition puller(bot);
             WorldPosition targetPosition(target);
             PullFiringPosition firing = ComputePullFiringPosition(
                 puller.getX(), puller.getY(), targetPosition.getX(), targetPosition.getY(), distance);
-            if (!firing.valid)
-                return false;
+            if (firing.valid)
+            {
+                WorldPosition firingPosition(target->GetMapId(), firing.x, firing.y, puller.getZ());
+                firingPosition.setZ(firingPosition.GetHeight());
 
-            WorldPosition firingPosition(target->GetMapId(), firing.x, firing.y, puller.getZ());
-            firingPosition.setZ(firingPosition.GetHeight());
-            return MoveTo(firingPosition.GetMapId(), firingPosition.getX(),
-                firingPosition.getY(), firingPosition.getZ());
+                // GetHeight starts its ray at the puller's Z, so a point over a
+                // chasm or a lower tier snaps to the floor below. Keep only a
+                // point on the puller's own ground.
+                bool const sameFloor = std::fabs(firingPosition.getZ() - puller.getZ()) <= kMaxFiringPositionDrop;
+
+                // IsValidPosition: a navmesh path to the point, valid map
+                // coordinates, line of sight from the point to the mob, and no
+                // hazard around it.
+                if (sameFloor && IsValidPosition(firingPosition, targetPosition))
+                {
+                    if (MoveTo(firingPosition.GetMapId(), firingPosition.getX(),
+                            firingPosition.getY(), firingPosition.getZ()))
+                        return true;
+                }
+            }
+
+            return MoveTo(target->GetMapId(), target->getPositionX(),
+                target->getPositionY(), target->getPositionZ());
         }
     };
 

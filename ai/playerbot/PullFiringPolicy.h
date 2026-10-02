@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <cmath>
 
 // Pure policy for the approach of an explicit ranged pull (issue #389).
@@ -22,7 +23,9 @@ namespace ai
     };
 
     // The point `firingDistance` yards from the target, on the side the puller
-    // already stands: the walk is straight at the mob and never crosses it.
+    // already stands: the walk is straight at the mob and never crosses it. The
+    // distance is clamped to the puller's own distance, so the point can never
+    // land behind the puller and walk the tank backwards away from the mob.
     // Degenerate inputs - the puller on top of the target, or a non-positive
     // distance - have no firing position.
     inline PullFiringPosition ComputePullFiringPosition(
@@ -37,7 +40,8 @@ namespace ai
         if (firingDistance <= 0.0f || distance <= 0.0f)
             return result;
 
-        const float scale = firingDistance / distance;
+        const float effectiveDistance = std::min(firingDistance, distance);
+        const float scale = effectiveDistance / distance;
         result.x = targetX + dx * scale;
         result.y = targetY + dy * scale;
         result.valid = true;

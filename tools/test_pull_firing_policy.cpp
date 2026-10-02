@@ -69,6 +69,18 @@ int main()
         std::cout << "  [PASS] degenerate inputs have no firing position\n";
     }
 
+    // The firing distance is clamped to the puller's own distance: when the mob
+    // is already closer than the firing range (out of sight around a corner,
+    // say) the point is the puller's own position, never a point behind the
+    // puller that would walk the tank backwards away from the mob.
+    {
+        PullFiringPosition const point = ComputePullFiringPosition(10.0f, 0.0f, 0.0f, 0.0f, 22.0f);
+        CHECK(point.valid);
+        CHECK(std::fabs(point.x - 10.0f) < 0.001f);
+        CHECK(std::fabs(point.y - 0.0f) < 0.001f);
+        std::cout << "  [PASS] firing distance is clamped to the puller's distance\n";
+    }
+
     std::cout << "All pull firing-position policy checks PASSED!\n";
     return 0;
 }
