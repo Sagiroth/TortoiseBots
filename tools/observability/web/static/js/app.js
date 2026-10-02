@@ -747,7 +747,8 @@
 
   // The Armory tab is the Bots section opened on its armory sub-view (list ↔
   // profile), so both entries share one tab-view. Exactly one sidebar entry is
-  // highlighted: Armory while the sub-view is open, Bots otherwise.
+  // highlighted — Armory while the sub-view is open, Bots otherwise — and the
+  // remembered tab always matches it, so a reload returns to the same view.
   function paintNavActive() {
     const armory = state.activeTab === 'roster' && state.armoryOpen;
     el.menuItems.forEach(item => {
@@ -757,6 +758,7 @@
     if (el.currentTabTitle) {
       el.currentTabTitle.textContent = armory ? 'Armory' : (TAB_TITLES[state.activeTab] || 'Overview');
     }
+    try { localStorage.setItem(TAB_STORAGE_KEY, armory ? 'armory' : state.activeTab); } catch (e) {}
   }
 
   // Switching tabs renders only the tab that becomes visible; hidden tabs are
@@ -764,10 +766,6 @@
   function switchTab(tab) {
     if (!TAB_TITLES[tab]) tab = 'overview';
     state.activeTab = tab;
-    try { localStorage.setItem(TAB_STORAGE_KEY, tab); } catch (e) {}
-    el.menuItems.forEach(item => {
-      item.classList.toggle('active', item.dataset.tab === tab);
-    });
     closeNavDrawer();
 
     el.tabViews.forEach(v => {
@@ -798,8 +796,7 @@
       // in-Bots drill-down (roster → All bots → profile → ← Roster) is
       // unchanged.
       if (tab === 'armory') {
-        switchTab('roster');
-        showArmoryList();
+        showArmoryTab();
         return;
       }
       if (tab) switchTab(tab);
@@ -2645,6 +2642,13 @@
     armoryView();
   }
 
+  // The Armory tab: the Bots section on its armory sub-view. Kept next to the
+  // other sub-view helpers so both entry points behave identically.
+  function showArmoryTab() {
+    switchTab('roster');
+    showArmoryList();
+  }
+
   function showArmoryList() {
     state.armoryOpen = true;
     state.armoryGuid = null;
@@ -4203,11 +4207,13 @@
   setInterval(fetchActivity, 30000);
   initWebSocket();
 
-  // Restore the tab the operator last used (validated against the tab set).
+  // Restore the tab the operator last used (validated against the tab set;
+  // "armory" is the Bots section opened on its armory sub-view).
   let initialTab = 'overview';
   try {
     const saved = localStorage.getItem(TAB_STORAGE_KEY);
-    if (saved && TAB_TITLES[saved]) initialTab = saved;
+    if (saved && (saved === 'armory' || TAB_TITLES[saved])) initialTab = saved;
   } catch (e) {}
-  switchTab(initialTab);
+  if (initialTab === 'armory') showArmoryTab();
+  else switchTab(initialTab);
 })();
