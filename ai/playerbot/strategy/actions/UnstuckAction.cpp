@@ -36,6 +36,32 @@ static bool HearthLeadsSomewhereUseful(PlayerbotAI* ai, Player* bot)
     return homeLevel + 10 >= (int32)bot->GetLevel();
 }
 
+// The long-stuck rescue: hearth when its homebind leads somewhere useful,
+// otherwise repop - which relocates the bot and nulls its travel target, so a
+// fresh destination can be picked. The hearthstone action returns false
+// whenever the cast does not start (blocked item/spell state) and the old
+// `return DoSpecificAction("hearthstone")` ended the rescue there. The
+// "hearth attempt anchor" that gates the next trip is only recorded once a cast
+// starts, so the same non-cast was retried every five seconds forever and the
+// repop fallback was unreachable. Live stage-7 pool: 69 of the 72 wedged bots
+// that fired "move long stuck" produced no UseHearthStoneAction and no
+// RepopAction row while sitting at one coordinate for two to three hours.
+static bool LongStuckRescue(PlayerbotAI* ai, Event& event, Player* bot, Player* master, bool hearthAttemptLeftBotInPlace)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+
+    if (AI_VALUE2(bool, "action useful", "hearthstone") && bot->IsAlive() &&
+        !hearthAttemptLeftBotInPlace && HearthLeadsSomewhereUseful(ai, bot))
+    {
+        if (ai->DoSpecificAction("hearthstone", event, true))
+            return true;
+
+        ai->TellDebug(master, "Unstuck: hearthstone did not cast, falling back to repop.", "debug unstuck");
+    }
+
+    return ai->DoSpecificAction("repop", event, true);
+}
+
 // UnstuckTrip volume control. MoveStuckTrigger polls every 5 s and counts a bot
 // as stuck while it moves under 50 yd in 10 minutes or stands still for 5, so
 // slow-grinding bots keep it active for hours: per-trip logging wrote ~200 rows
@@ -173,14 +199,7 @@ bool UnstuckAction::Execute(Event& event)
     if (source.find("move long stuck") != std::string::npos)
     {
         ai->TellDebug(master, "Unstuck: Long move stuck detected, attempting hearthstone or repop.", "debug unstuck");
-        if (AI_VALUE2(bool, "action useful", "hearthstone") && bot->IsAlive() && !hearthAttemptLeftBotInPlace && HearthLeadsSomewhereUseful(ai, bot))
-        {
-            return ai->DoSpecificAction("hearthstone", event, true);
-        }
-        else
-        {
-            return ai->DoSpecificAction("repop", event, true);
-        }
+        return LongStuckRescue(ai, event, bot, master, hearthAttemptLeftBotInPlace);
     }
 
     // Handle combat stuck scenarios
@@ -194,14 +213,7 @@ bool UnstuckAction::Execute(Event& event)
     if (source.find("combat long stuck") != std::string::npos)
     {
         ai->TellDebug(master, "Unstuck: Long combat stuck detected, attempting hearthstone or repop.", "debug unstuck");
-        if (AI_VALUE2(bool, "action useful", "hearthstone") && bot->IsAlive() && !hearthAttemptLeftBotInPlace && HearthLeadsSomewhereUseful(ai, bot))
-        {
-            return ai->DoSpecificAction("hearthstone", event, true);
-        }
-        else
-        {
-            return ai->DoSpecificAction("repop", event, true);
-        }
+        return LongStuckRescue(ai, event, bot, master, hearthAttemptLeftBotInPlace);
     }
 
     // Fallback to reset if no specific condition is met
