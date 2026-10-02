@@ -1962,9 +1962,9 @@ body {
   background-color: var(--bg-card-hover, #1a2230);
 }
 
-/* Roster: the XP/Health/Power columns must keep their bars readable at laptop
-   widths, so their cells never shrink below a legible bar, the numeric
-   counter columns stay narrow, and the text columns give up space first. */
+/* Roster: the XP/Health/Power bar columns sit right after Level and must stay
+   legible at laptop widths, so their cells never shrink below a readable bar
+   and the roster's cell padding is tighter than the other tables'. */
 #roster-panel .data-table th,
 #roster-panel .data-table td {
   padding: 10px 10px;
