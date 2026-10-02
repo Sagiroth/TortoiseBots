@@ -2829,6 +2829,37 @@ static bool HandleAction(ChatHandler* handler, char const* args)
         // step filters them out and leaves the tank waiting for a later tick.
         ExecuteQuietNextAction(ai, false);
 
+        // A ranged pull closes the distance with a point move to a firing
+        // position. If that move cannot be launched the tank stands where it
+        // was and the pull can only run out its 15 s window - report it instead
+        // of acknowledging a pull that never started (issue #389). A body pull
+        // is exempt: its melee chase is launched by the core on the next
+        // movement tick, not inside this AI tick.
+        if (!bodyPull)
+        {
+            Unit* pullTarget = nullptr;
+            float pullRange = 0.0f;
+            if (PullStrategy* probe = PullStrategy::Get(ai))
+            {
+                pullTarget = probe->GetTarget();
+                pullRange = probe->GetRange();
+            }
+
+            bool started = !pullTarget || !pullTarget->IsInWorld() ||
+                sServerFacade.isMoving(executor) ||
+                executor->GetDistance(pullTarget) <= pullRange;
+
+            if (!started)
+            {
+                // Abort the way the pull timeout would, so the tank is not left
+                // holding the pull target or the party.
+                ExecuteQuietAction(ai, "pull end", ai::Event(intent, "", requester));
+                SendActionError(handler, intent, "unreachable",
+                    "The tank could not start moving to a firing position for the pull.");
+                return true;
+            }
+        }
+
         std::string scope = context.selectedBot == executor
             ? "bot:" + std::string(executor->GetName()) : "party";
         if (bodyPull)

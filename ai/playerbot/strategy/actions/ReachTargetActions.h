@@ -11,6 +11,7 @@
 #include "playerbot/strategy/values/MoveStyleValue.h"
 #include "GenericSpellActions.h"
 #include "playerbot/PlayerbotFactory.h"
+#include "playerbot/PullFiringPolicy.h"
 #include "AI/CreatureAI.h"
 #include <ctime>
 
@@ -322,11 +323,20 @@ namespace ai
                 }
                 else
                 {
-                    return ChaseTo(target, chaseDist, bot->GetAngle(target));
+                    return MoveIntoRange(target, chaseDist);
                 }
             }
 
             return false;
+        }
+
+        // How a reach action closes the distance to a hostile target. The
+        // default is the mature core chase; an explicit ranged pull overrides
+        // it with a point move to a firing position (see ReachPullAction and
+        // issue #389).
+        virtual bool MoveIntoRange(Unit* target, float distance)
+        {
+            return ChaseTo(target, distance, bot->GetAngle(target));
         }
 
         // True for reach actions whose target is always meant to be attacked
@@ -458,6 +468,33 @@ namespace ai
 
         std::string GetTargetName() override { return "pull target"; }
         bool RequiresAttackableTarget() const override { return true; }
+
+        // A ranged pull walks to a firing position with a point move instead of
+        // the core chase. Inside a dungeon the core's chase generator refuses a
+        // destination that is not melee-reachable from the target
+        // (TargetedMovementGenerator) and silently drops the move, so a chase
+        // can never carry the puller to shooting range there - the tank stood
+        // still while the command had already acknowledged (issue #389). A body
+        // pull keeps the chase: its destination is melee reach, which the
+        // dungeon check accepts, and it still follows a moving mob.
+        bool MoveIntoRange(Unit* target, float distance) override
+        {
+            PullStrategy* strategy = PullStrategy::Get(ai);
+            if (!strategy || strategy->GetPullActionName() == "reach pull")
+                return ChaseTo(target, distance, bot->GetAngle(target));
+
+            WorldPosition puller(bot);
+            WorldPosition targetPosition(target);
+            PullFiringPosition firing = ComputePullFiringPosition(
+                puller.getX(), puller.getY(), targetPosition.getX(), targetPosition.getY(), distance);
+            if (!firing.valid)
+                return false;
+
+            WorldPosition firingPosition(target->GetMapId(), firing.x, firing.y, puller.getZ());
+            firingPosition.setZ(firingPosition.GetHeight());
+            return MoveTo(firingPosition.GetMapId(), firingPosition.getX(),
+                firingPosition.getY(), firingPosition.getZ());
+        }
     };
 
     class ReachPartyMemberToHealAction : public ReachTargetAction
