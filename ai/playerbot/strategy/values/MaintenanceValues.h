@@ -284,7 +284,14 @@ namespace ai
         ShouldEatValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "should eat", 2) {}
         virtual bool Calculate() override
         {
-            if (AI_VALUE2(uint8, "health", "self target") >= sPlayerbotAIConfig.lowHealth)
+            // Matches the trigger band UseFoodStrategy installs: a bot with free
+            // conjured rations (the item cheat) tops up to MediumHealth before it
+            // takes another fight, everyone else still stops at LowHealth. Without
+            // this the action would refuse to run for the [LowHealth, MediumHealth)
+            // band the strategy just made it responsible for.
+            uint32 eatBelow = ai->HasCheat(BotCheatMask::item)
+                ? sPlayerbotAIConfig.mediumHealth : sPlayerbotAIConfig.lowHealth;
+            if (AI_VALUE2(uint8, "health", "self target") >= eatBelow)
                 return false;
 
             Player* master = ai->GetMaster();
