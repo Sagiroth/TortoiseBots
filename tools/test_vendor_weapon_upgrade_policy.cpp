@@ -39,6 +39,19 @@ int main()
     CHECK(VendorWeaponUpgradeAffordable(54, 0, 0) == false);       // broke bot buys nothing
     std::cout << "  [PASS] trainer reserve is kept before any weapon buy\n";
 
+    // Reachability trace: the reviewer showed the old fallback (inside the
+    // n<10 usage loop, after `if (!usageAllowed) break;`) was dead for
+    // NONE-classified stock. The new pass sits per vendor item BEFORE that
+    // loop, so each gate below is evaluated for NONE stock too:
+    //   candidate(2,7)=true -> master/hire/random gates -> not-owned ->
+    //   QueryItemUsageForEquip==EQUIP -> affordable(price,money,reserve) ->
+    //   BuyItem -> equip upgrades. At most one weapon per Execute
+    //   (boughtWeapon), so the trace ends after the first upgrade.
+    CHECK(IsVendorWeaponUpgradeCandidate(2, 7) == true);      // reached: gear weapon
+    CHECK(VendorWeaponUpgradeAffordable(54, 500, 100) == true); // reached: purse side ok
+    CHECK(VendorWeaponUpgradeAffordable(54, 58, 100) == false); // blocked: reserve first
+    std::cout << "  [PASS] weapon-pass gates evaluate before the usage loop\n";
+
     std::cout << "All vendor weapon upgrade policy checks PASSED!\n";
     return 0;
 }

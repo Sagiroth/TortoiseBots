@@ -3,6 +3,7 @@
 #include "ItemUsageValue.h"
 #include "BudgetValues.h"
 #include "VendorWeaponUpgradePolicy.h"
+#include "runtime/HireLifecycle.h"
 #include "playerbot/PlayerbotAI.h"
 #include "SharedValueContext.h"
 
@@ -106,8 +107,12 @@ bool VendorHasUsefulItemValue::Calculate()
             // upgrade would keep this trigger dark and the fallback buy loop
             // in BuyAction would never run. Same audit rules: spec-allowed,
             // usable now, better by scoring, affordable under the trainer
-            // reserve. Masterless pool bots only; explicit orders are unchanged.
-            if (ai->HasActivePlayerMaster() || !sRandomBotFacade.IsRandomBot(bot))
+            // reserve. Masterless pool bots only; owned alts (not random),
+            // bots with a live master, and hired companions (whose character
+            // is deleted at hire end, even mid grace period) never spend.
+            if (ai->HasActivePlayerMaster() || ai->HasRealPlayerMaster() ||
+                !sRandomBotFacade.IsRandomBot(bot) ||
+                TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()))
                 continue;
             if (!IsVendorWeaponUpgradeCandidate(proto->Class, proto->SubClass))
                 continue;
