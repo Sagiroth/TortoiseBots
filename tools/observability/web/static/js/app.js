@@ -489,7 +489,9 @@
     // Activity
     activityMetrics: document.getElementById('activity-metrics'),
     activityCount: document.getElementById('activity-count'),
+    activityWindow: document.getElementById('activity-window'),
     economyMetrics: document.getElementById('economy-metrics'),
+    economyWindow: document.getElementById('economy-window'),
     lootTable: document.getElementById('loot-table-body'),
     lootQualityFilter: document.getElementById('loot-quality-filter'),
     lootClassFilter: document.getElementById('loot-class-filter'),
@@ -743,15 +745,26 @@
     }
   }
 
+  // The Armory tab is the Bots section opened on its armory sub-view (list ↔
+  // profile), so both entries share one tab-view. Exactly one sidebar entry is
+  // highlighted: Armory while the sub-view is open, Bots otherwise.
+  function paintNavActive() {
+    const armory = state.activeTab === 'roster' && state.armoryOpen;
+    el.menuItems.forEach(item => {
+      const tab = item.dataset.tab;
+      item.classList.toggle('active', armory ? tab === 'armory' : tab === state.activeTab);
+    });
+    if (el.currentTabTitle) {
+      el.currentTabTitle.textContent = armory ? 'Armory' : (TAB_TITLES[state.activeTab] || 'Overview');
+    }
+  }
+
   // Switching tabs renders only the tab that becomes visible; hidden tabs are
   // rebuilt on their own activation, never on every 2 s snapshot.
   function switchTab(tab) {
     if (!TAB_TITLES[tab]) tab = 'overview';
     state.activeTab = tab;
     try { localStorage.setItem(TAB_STORAGE_KEY, tab); } catch (e) {}
-    if (el.currentTabTitle) {
-      el.currentTabTitle.textContent = TAB_TITLES[tab];
-    }
     el.menuItems.forEach(item => {
       item.classList.toggle('active', item.dataset.tab === tab);
     });
@@ -774,12 +787,21 @@
     if (tab === 'economy') { renderEconomyTab(); fetchLootFeed(); }
     if (tab === 'issues') { renderIssues(); renderAnomalies(); }
     if (tab === 'server') renderServerPanel();
+    paintNavActive();
   }
 
   el.menuItems.forEach(item => {
     item.addEventListener('click', (e) => {
       e.preventDefault();
       const tab = item.dataset.tab;
+      // The Armory entry opens the Bots section on its armory sub-view; the
+      // in-Bots drill-down (roster → All bots → profile → ← Roster) is
+      // unchanged.
+      if (tab === 'armory') {
+        switchTab('roster');
+        showArmoryList();
+        return;
+      }
       if (tab) switchTab(tab);
     });
   });
@@ -1652,7 +1674,7 @@
       `- gear: ${gearDiagLine()}`,
       `- issues: active=${state.issues.active.length} persistent=${state.issues.active.filter(i => i.severity === 'persistent').length}`,
       `- server: online=${state.server.online} stale=${state.server.stale} uptime=${state.server.uptime}s tick=${state.server.diff}ms humans=${state.server.humans} bots=${state.server.bots}`,
-      `- activity: ${(() => { const c = (state.activity && state.activity.summary && state.activity.summary.counters) || null; if (!c) return 'no data'; return `quests=${c.quests_rewarded || 0} handins=${c.quest_handins || 0} open=${c.open_quests || 0} loot=${c.loot_items || 0} notable=${c.notable_loot || 0} money=+${c.money_earned || 0}c/-${c.money_spent || 0}c sold=${c.sold_value || 0}c bought=${c.bought_value || 0}c kills=${c.kills || 0} deaths=${c.deaths || 0} ghost=${c.ghost_seconds || 0}s trainers=${c.trainer_visits || 0} spells=${c.spells_learned || 0} vendors=${c.vendor_visits || 0} repairs=${c.repairs || 0} giveups=${c.giveups || 0} gather=${c.gathering || 0} skin=${c.skinning || 0} ah=${c.ah_listings || 0}/${c.ah_bids || 0}`; })()}`,
+      `- activity: ${(() => { const sm = (state.activity && state.activity.summary) || null; const c = sm && sm.counters; if (!c) return 'no data'; return `window=since ${sm.since_str || '?'} quests=${c.quests_rewarded || 0} handins=${c.quest_handins || 0} open=${c.open_quests || 0} loot=${c.loot_items || 0} notable=${c.notable_loot || 0} money=+${c.money_earned || 0}c/-${c.money_spent || 0}c sold=${c.sold_value || 0}c bought=${c.bought_value || 0}c kills=${c.kills || 0} deaths=${c.deaths || 0} ghost=${c.ghost_seconds || 0}s trainers=${c.trainer_visits || 0} spells=${c.spells_learned || 0} vendors=${c.vendor_visits || 0} repairs=${c.repairs || 0} giveups=${c.giveups || 0} gather=${c.gathering || 0} skin=${c.skinning || 0} ah=${c.ah_listings || 0}/${c.ah_bids || 0}`; })()}`,
     ].join('\n');
   }
 
@@ -2071,18 +2093,18 @@
         <td><span class="badge ${roleBadge}" title="AI combat role (forced role / combat strategies / talent-gear auto-detect), not a group slot">${esc(roleLabel(b))}</span></td>
         <td>${esc(b.level)}</td>
         <td class="mono">${gearCell(b)}</td>
-        <td class="mono">${b.activity ? esc(b.activity.quests_rewarded || 0) : '<span style="color: var(--text-muted);">–</span>'}</td>
-        <td class="mono">${b.activity ? esc(b.activity.loot_items || 0) : '<span style="color: var(--text-muted);">–</span>'}</td>
-        <td style="width: 150px;">${xpCell(b)}</td>
-        <td style="width: 130px;">
+        <td class="roster-bar-cell" style="width: 150px;">${xpCell(b)}</td>
+        <td class="roster-bar-cell" style="width: 130px;">
           <div style="font-size: 0.7rem; margin-bottom: 2px;">${esc(b.hp)}/${esc(b.max_hp)} (${hpPct}%)</div>
           <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${hpPct}%; background: var(--accent-green-bright);"></div></div>
         </td>
-        <td style="width: 140px;">
+        <td class="roster-bar-cell" style="width: 140px;">
           <div style="font-size: 0.7rem; margin-bottom: 2px;">${esc(powerLabel(b))} ${esc(b.power)}/${esc(b.max_power)} (${powerPct}%)</div>
           <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${powerPct}%; background: var(--accent-blue-bright);"></div></div>
         </td>
         <td><span class="badge ${stateBadgeClass(b.state)}">${esc(b.state || 'idle')}</span></td>
+        <td class="mono">${b.activity ? esc(b.activity.quests_rewarded || 0) : '<span style="color: var(--text-muted);">–</span>'}</td>
+        <td class="mono">${b.activity ? esc(b.activity.loot_items || 0) : '<span style="color: var(--text-muted);">–</span>'}</td>
         <td style="color: #f85149;">${esc(displayTarget(b))}${b.target_level ? ` <span style="color: var(--text-muted);">L${esc(b.target_level)}</span>` : ''}</td>
         <td class="mono" style="font-size: 0.8rem;">${esc(getZoneName(b.zone, b.map))}</td>
       `;
@@ -2147,6 +2169,45 @@
     return new Date(ts * 1000).toLocaleTimeString();
   }
 
+  // The daemon's wall clock, derived from the counter window it reports as
+  // both an epoch (since) and its own rendering (since_str): re-parsing that
+  // string locally and offsetting by the epoch difference cancels both zones.
+  // Payload fields that carry only an epoch still display the server's hour,
+  // never the viewer's.
+  function daemonClock(ts) {
+    const s = state.activity && state.activity.summary;
+    if (s && s.since && s.since_str) {
+      const parsed = Date.parse(s.since_str.replace(' ', 'T'));
+      if (Number.isFinite(parsed)) {
+        return new Date(ts * 1000 + (parsed - s.since * 1000)).toLocaleTimeString();
+      }
+    }
+    return fmtClock(ts);
+  }
+
+  // Feed rows carry the daemon's own rendered timestamp (time_str), so every
+  // table on the dashboard shares one time base. Formatting the epoch in the
+  // viewer's zone (the fallback) would make the feeds disagree with the
+  // incident table whenever the browser is not on the server's clock.
+  function feedClock(item) {
+    if (item && item.time_str) return item.time_str.slice(11, 19);
+    return daemonClock(item ? item.at : 0);
+  }
+
+  // Activity counters are session-scoped: they count the current game-server
+  // session and are kept across a dashboard restart. Every panel that shows
+  // them repeats this window so "19 loot" cannot read as a lifetime total.
+  function counterWindow() {
+    const s = state.activity && state.activity.summary;
+    return (s && s.since_str) ? `since ${s.since_str.slice(11, 16)}` : 'this session';
+  }
+
+  function counterWindowTitle() {
+    const s = state.activity && state.activity.summary;
+    const start = (s && s.since_str) ? ` since ${s.since_str}` : '';
+    return `Counters cover the current game-server session${start}. They are kept across a dashboard restart and reset when the game server restarts.`;
+  }
+
   function activityCard(label, valueHtml) {
     return `<div class="telemetry-card metric-stat"><div class="metric-big-num" style="font-size: 1.5rem;">${valueHtml}</div><div class="metric-label">${esc(label)}</div></div>`;
   }
@@ -2162,12 +2223,17 @@
       return;
     }
     const num = v => esc(v || 0);
+    const win = counterWindowTitle();
+    if (el.activityWindow) el.activityWindow.textContent = `POOL COUNTERS · ${counterWindow().toUpperCase()} · ALL TRACKED BOTS`;
+    // Each card carries the window in its tooltip as well; the header states
+    // it once for the row.
+    el.activityMetrics.title = win;
     el.activityMetrics.innerHTML =
-      activityCard('Quests', num(c.quests_rewarded)) +
+      activityCard('Quests rewarded', num(c.quests_rewarded)) +
       activityCard('Hand-ins', num(c.quest_handins)) +
-      activityCard('Open quests', num(c.open_quests)) +
+      activityCard('Finished, not handed in', num(c.open_quests)) +
       activityCard('Kills', num(c.kills)) +
-      activityCard('Deaths (session)', num(c.deaths)) +
+      activityCard('Deaths', num(c.deaths)) +
       activityCard('Ghost time', esc(fmtDuration(c.ghost_seconds))) +
       activityCard('Loot items', num(c.loot_items)) +
       activityCard('Gathering', num(c.gathering)) +
@@ -2176,7 +2242,7 @@
       activityCard('Trainers', num(c.trainer_visits)) +
       activityCard('Spells', num(c.spells_learned)) +
       activityCard('Give-ups', num(c.giveups));
-    if (el.activityCount) el.activityCount.textContent = `· ${summary.bots_tracked || 0} tracked`;
+    if (el.activityCount) el.activityCount.textContent = `· ${summary.bots_tracked || 0} tracked · ${counterWindow()}`;
   }
 
   // Economy counters: the money loop (earned/spent, sold/bought), vendor and
@@ -2191,6 +2257,8 @@
       return;
     }
     const num = v => esc(v || 0);
+    if (el.economyWindow) el.economyWindow.textContent = `POOL ECONOMY · ${counterWindow().toUpperCase()} · ALL TRACKED BOTS`;
+    el.economyMetrics.title = counterWindowTitle();
     el.economyMetrics.innerHTML =
       activityCard('Money earned', formatMoney(c.money_earned)) +
       activityCard('Money spent', formatMoney(c.money_spent)) +
@@ -2243,7 +2311,7 @@
         ? `<span class="mono">${formatMoney(r.money)}</span>`
         : `<span class="quality-text-${q}" title="${esc(qualityName(q))}">${esc(r.item || 'Item')}</span>${r.value ? ` <span class="mono" style="color: var(--text-muted);">(${formatMoney(r.value)})</span>` : ''}`;
       tr.innerHTML = `
-        <td class="mono" style="font-size: 0.75rem; color: var(--text-muted);">${esc(fmtClock(r.at))}</td>
+        <td class="mono" style="font-size: 0.75rem; color: var(--text-muted);">${esc(feedClock(r))}</td>
         <td style="font-weight: 600; cursor: pointer; color: #58a6ff;" data-guid="${esc(r.guid)}">${esc(r.bot)}</td>
         <td>${classLevelCell(r.class, r.level)}</td>
         <td><span class="badge badge-info">${esc(r.source || '-')}</span></td>
@@ -2280,7 +2348,7 @@
     rows.forEach(r => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td class="mono" style="font-size: 0.75rem; color: var(--text-muted);">${esc(fmtClock(r.at))}</td>
+        <td class="mono" style="font-size: 0.75rem; color: var(--text-muted);">${esc(feedClock(r))}</td>
         <td style="font-weight: 600; cursor: pointer; color: #58a6ff;" data-guid="${esc(r.guid)}">${esc(r.bot)}</td>
         <td>${classLevelCell(r.class, r.level)}</td>
         <td><span class="badge badge-info">${esc(r.event || '-')}</span></td>
@@ -2341,7 +2409,7 @@
       const tr = document.createElement('tr');
       const cls = e.class ? String(e.class).charAt(0).toUpperCase() + String(e.class).slice(1) : '–';
       tr.innerHTML = `
-        <td class="mono" style="font-size: 0.75rem; color: var(--text-muted);">${esc(fmtClock(e.at))}</td>
+        <td class="mono" style="font-size: 0.75rem; color: var(--text-muted);">${esc(feedClock(e))}</td>
         <td style="font-weight: 600; cursor: pointer; color: #58a6ff;" data-guid="${esc(e.guid)}">${esc(e.bot)}</td>
         <td>${esc(cls)}</td>
         <td><span class="badge badge-success">L${esc(e.level)}</span></td>
@@ -2442,6 +2510,7 @@
       html += `<div class="empty-hint">No activity recorded for this bot yet.</div>`;
     } else {
       html += `
+      <div class="empty-hint" style="margin-bottom: 12px;">Counters cover the current game-server session (${esc(counterWindow())}). They are kept across a dashboard restart and reset when the game server restarts.</div>
       <div class="armory-stat-card">
         <div class="stat-card-title">Quests</div>
         ${progressRow('Rewarded', num(a.quests_rewarded))}
@@ -2465,7 +2534,7 @@
       <div class="armory-stat-card">
         <div class="stat-card-title">Combat</div>
         ${progressRow('Kills', num(a.kills))}
-        ${progressRow('Deaths (session)', num(a.deaths))}
+        ${progressRow('Deaths', num(a.deaths))}
         ${progressRow('Ghost time', esc(fmtDuration(a.ghost_seconds)))}
         ${progressRow('Levels gained', num(a.levels_gained))}
         ${progressRow('Events', num(a.events))}
@@ -2487,10 +2556,10 @@
         ${progressRow('AH listings', num(a.ah_listings))}
         ${progressRow('AH bids', num(a.ah_bids))}
       </div>
-      <div class="armory-stat-card">
-        <div class="stat-card-title">Session</div>
-        ${progressRow('First seen', esc(fmtClock(a.first_seen)))}
-        ${progressRow('Last event', esc(fmtClock(a.last_event)))}
+      <div class="armory-stat-card" title="${esc(counterWindowTitle())}">
+        <div class="stat-card-title">This session (${esc(counterWindow())})</div>
+        ${progressRow('First seen', esc(daemonClock(a.first_seen)))}
+        ${progressRow('Last event', esc(daemonClock(a.last_event)))}
       </div>`;
     }
     const feed = (state.activity && Array.isArray(state.activity.level_feed) ? state.activity.level_feed : [])
@@ -2499,7 +2568,7 @@
     if (feed.length) {
       const rows = feed.map((e, i) => {
         const gap = i === 0 ? '–' : fmtDuration((e.at || 0) - (feed[i - 1].at || 0));
-        return `<tr><td class="mono" style="font-size: 0.75rem; color: var(--text-muted);">${esc(fmtClock(e.at))}</td><td><span class="badge badge-success">L${esc(e.level)}</span></td><td class="mono" style="color: var(--text-muted);">${esc(gap)}</td></tr>`;
+        return `<tr><td class="mono" style="font-size: 0.75rem; color: var(--text-muted);">${esc(feedClock(e))}</td><td><span class="badge badge-success">L${esc(e.level)}</span></td><td class="mono" style="color: var(--text-muted);">${esc(gap)}</td></tr>`;
       }).reverse().join('');
       html += `<div class="section-label" style="margin: 14px 0 8px;">LEVEL TIMELINE · ${feed.length}</div><div style="overflow-x: auto;"><table class="data-table"><thead><tr><th>Time</th><th>Level</th><th>Time since last</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     } else if (a && Object.keys(a).length > 0) {
@@ -2566,6 +2635,7 @@
     if (el.rosterPanel) el.rosterPanel.style.display = state.armoryOpen ? 'none' : 'block';
     if (el.armoryListView) el.armoryListView.style.display = state.armoryOpen && listMode ? 'block' : 'none';
     if (el.armoryProfileView) el.armoryProfileView.style.display = state.armoryOpen && !listMode ? 'block' : 'none';
+    paintNavActive();
   }
 
   function showRoster() {
@@ -3200,7 +3270,11 @@
   function renderArmoryPanel(p, tab) {
     if (tab === 'stats') tab = 'bags';
     state.armorySubtab = tab;
-    document.querySelectorAll('.armory-subtab').forEach(b => b.classList.toggle('active', b.dataset.subtab === tab));
+    // Scoped to the sub-view buttons: the talent trees reuse the .armory-subtab
+    // class for styling and carry data-ttab instead, so a bare class selector
+    // would clear their active state and clear every panel for tab ===
+    // undefined.
+    document.querySelectorAll('.armory-subtab[data-subtab]').forEach(b => b.classList.toggle('active', b.dataset.subtab === tab));
     ['bags', 'talents', 'spells', 'professions', 'skills', 'progress'].forEach(t => {
       const panel = document.getElementById(`armory-content-${t}`);
       if (panel) panel.style.display = t === tab ? 'block' : 'none';
@@ -3580,12 +3654,12 @@
     // Bots tab: roster <-> armory list, plus the profile's "back to list".
     if (el.rosterArmoryBtn) el.rosterArmoryBtn.addEventListener('click', showArmoryList);
     if (el.armoryRosterBtn) el.armoryRosterBtn.addEventListener('click', () => { showRoster(); renderRoster(); });
-    document.querySelectorAll('.armory-subtab').forEach(btn => {
+    document.querySelectorAll('.armory-subtab[data-subtab]').forEach(btn => {
       btn.addEventListener('click', () => {
         if (state.armoryProfile) renderArmoryPanel(state.armoryProfile, btn.dataset.subtab);
         else {
           state.armorySubtab = btn.dataset.subtab;
-          document.querySelectorAll('.armory-subtab').forEach(b => b.classList.toggle('active', b === btn));
+          document.querySelectorAll('.armory-subtab[data-subtab]').forEach(b => b.classList.toggle('active', b === btn));
         }
       });
     });

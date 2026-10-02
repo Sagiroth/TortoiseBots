@@ -128,7 +128,12 @@ func (s *Store) applyBotEventLocked(ev model.BotEvent, now time.Time) {
 	case "AcceptQuestAction", "AcceptQuestShareAction":
 		a.counters.QuestsAccepted++
 		s.appendQuestFeed(model.QuestFeedItem{At: now.Unix(), Bot: a.name, GUID: ev.GUID, Class: a.class, Level: a.level, Event: "AcceptQuestAction", Quest: ev.Info1, QuestID: questID})
-	case "QuestUpdateCompleteAction":
+	// Quest objectives finished. The module emits QuestCompleted from its own
+	// OnQuestComplete hook; QuestUpdateCompleteAction is the packet-driven
+	// action of the same name, kept for cores that deliver it to a bot
+	// session. Both mean "complete, not yet handed in", so they feed the same
+	// counter and the same open-quest ledger.
+	case "QuestUpdateCompleteAction", "QuestCompleted":
 		a.counters.QuestsCompleted++
 		if questID != 0 {
 			a.openQuest[questID] = true
@@ -206,7 +211,20 @@ func (s *Store) applyBotEventLocked(ev model.BotEvent, now time.Time) {
 	a.counters.OpenQuests = len(a.openQuest)
 }
 
+// stampTime renders an unix second in the daemon's own time zone. Feed rows
+// carry it so every table on the dashboard shares one time base (the incident
+// rows already did): formatting the epoch client-side would use the viewer's
+// zone and make the tabs disagree.
+func stampTime(ts int64) string {
+	if ts == 0 {
+		return ""
+	}
+	return time.Unix(ts, 0).Format("2006-01-02 15:04:05")
+}
+
+// appendLootFeed keeps the pool-wide loot feed bounded (newest last).
 func (s *Store) appendLootFeed(item model.LootFeedItem) {
+	item.TimeStr = stampTime(item.At)
 	s.lootFeed = append(s.lootFeed, item)
 	if len(s.lootFeed) > lootFeedLimit {
 		s.lootFeed = append([]model.LootFeedItem(nil), s.lootFeed[len(s.lootFeed)-lootFeedLimit:]...)
@@ -214,6 +232,7 @@ func (s *Store) appendLootFeed(item model.LootFeedItem) {
 }
 
 func (s *Store) appendQuestFeed(item model.QuestFeedItem) {
+	item.TimeStr = stampTime(item.At)
 	s.questFeed = append(s.questFeed, item)
 	if len(s.questFeed) > questFeedLimit {
 		s.questFeed = append([]model.QuestFeedItem(nil), s.questFeed[len(s.questFeed)-questFeedLimit:]...)
@@ -253,7 +272,7 @@ func (s *Store) observeLevelsLocked(bots []model.BotSnapshot, now time.Time) {
 		if len(a.counters.Levels) > 300 {
 			a.counters.Levels = append([]model.LevelEvent(nil), a.counters.Levels[len(a.counters.Levels)-300:]...)
 		}
-		s.levelFeed = append(s.levelFeed, model.ActivityLevelItem{At: now.Unix(), Bot: a.name, GUID: b.GUID, Class: a.class, Level: b.Level})
+		s.levelFeed = append(s.levelFeed, model.ActivityLevelItem{At: now.Unix(), TimeStr: stampTime(now.Unix()), Bot: a.name, GUID: b.GUID, Class: a.class, Level: b.Level})
 		if len(s.levelFeed) > levelFeedLimit {
 			s.levelFeed = append([]model.ActivityLevelItem(nil), s.levelFeed[len(s.levelFeed)-levelFeedLimit:]...)
 		}
@@ -354,6 +373,10 @@ func (s *Store) Activity() model.ActivityResponse {
 		}
 	}
 	out.Summary.BotsTracked = len(out.Bots)
+	if !s.sessionSince.IsZero() {
+		out.Summary.Since = s.sessionSince.Unix()
+		out.Summary.SinceStr = stampTime(out.Summary.Since)
+	}
 	if earliest != 0 {
 		out.Summary.ElapsedSec = now.Sub(time.Unix(earliest, 0)).Seconds()
 	}

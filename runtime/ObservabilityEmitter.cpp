@@ -122,12 +122,15 @@ uint8 AnomalyTypeIdFromName(std::string const& type)
 // Activity whitelist: the bot_events.csv rows the dashboard's per-bot activity
 // rollup consumes. Everything else (travel churn, buffs, evade probes) stays
 // out of the UDP stream.
+// QuestUpdateCompleteAction is packet-driven and never fires for a headless bot
+// session, so the quest-complete counters ride on QuestCompleted, which
+// BotPlayerAdapter emits from the core's own quest-complete hook.
 bool IsActivityEvent(std::string const& event)
 {
     static std::set<std::string> const whitelist = {
         // quests
         "QuestRewarded", "AcceptQuestAction", "AcceptQuestShareAction",
-        "TalkToQuestGiverAction", "QuestUpdateCompleteAction", "QuestDropped",
+        "TalkToQuestGiverAction", "QuestUpdateCompleteAction", "QuestCompleted", "QuestDropped",
         // loot & money
         "StoreLootAction", "GatherLoot", "LootMoney",
         // vendor / trainer / repair / auction

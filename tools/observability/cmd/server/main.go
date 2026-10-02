@@ -59,6 +59,13 @@ func main() {
 	issueMinAgeSec := flag.Int("issue-min-age-sec", getEnvInt("ISSUE_MIN_AGE_SEC", 300), "Only surface bot issues that persist at least this many seconds")
 	minGMLevel := flag.Int("min-gm-level", getEnvInt("MIN_GM_LEVEL", 2), "Minimum GM rank required for dashboard login (2 = gamemaster)")
 	devNoAuth := flag.Bool("dev-no-auth", false, "Disable Game Master authentication check for local dev testing")
+	// The activity rollup is in-memory, so without this a dashboard restart
+	// resets every counter. The file sits in the mounted icon-cache directory
+	// by default (the only writable persistent path the deployment gives the
+	// daemon) and is rewritten once a minute.
+	activityStateFile := flag.String("activity-state-file",
+		getEnv("ACTIVITY_STATE_FILE", filepath.Join(getEnv("ICON_CACHE_DIR", filepath.Join(os.TempDir(), "tortoise_icons")), "activity-state.json")),
+		"Where to persist the per-bot activity counters across dashboard restarts (empty disables)")
 	flag.Parse()
 
 	log.Println("=====================================================")
@@ -70,6 +77,23 @@ func main() {
 	store := state.New(state.Config{
 		IssueMinAge: time.Duration(*issueMinAgeSec) * time.Second,
 	}, anomalies)
+
+	// Activity counters survive a dashboard restart: restore the last
+	// snapshot, then rewrite it every minute (one small JSON file, bounded by
+	// the pool; never a per-tick DB read).
+	if restored, err := store.RestoreActivity(*activityStateFile); err != nil {
+		log.Printf("[Activity] state restore failed (%s): %v", *activityStateFile, err)
+	} else if restored > 0 {
+		log.Printf("[Activity] restored counters for %d bots from %s", restored, *activityStateFile)
+	}
+	go func() {
+		for {
+			time.Sleep(time.Minute)
+			if err := store.SaveActivity(*activityStateFile); err != nil {
+				log.Printf("[Activity] state save failed: %v", err)
+			}
+		}
+	}()
 
 	// 2. Prometheus metrics
 	metricsRegistry := metrics.New()

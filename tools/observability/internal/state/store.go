@@ -88,6 +88,10 @@ type Store struct {
 	// session identifies the game-server process. A restart resets its seq,
 	// so a session change resets all sequence and roster state.
 	session            uint64
+	// sessionSince is when the current game-server session was first seen:
+	// the window every activity counter covers, surfaced in the activity API
+	// so the dashboard can label counters instead of implying lifetime totals.
+	sessionSince       time.Time
 	pending            map[uint64]*pendingCycle
 	lastSeq            uint64
 	lastSnapshotAt     time.Time
@@ -365,6 +369,7 @@ func (s *Store) ApplyServerInfo(info *model.ServerInfoPayload) {
 	// would wipe freshly arrived info via beginSessionLocked.
 	if s.session == 0 && info.Session != 0 {
 		s.session = info.Session
+		s.sessionSince = s.now()
 	}
 	cp := *info
 	s.serverInfo = &cp
@@ -730,6 +735,7 @@ func (s *Store) beginSessionLocked(session uint64) {
 	}
 
 	s.session = session
+	s.sessionSince = s.now()
 	s.lastSeq = 0
 	s.pending = make(map[uint64]*pendingCycle)
 	s.bots = make(map[uint32]*botEntry)
