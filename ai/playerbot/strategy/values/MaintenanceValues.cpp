@@ -250,6 +250,7 @@ GuidPosition ai::NearbyServiceTarget(PlayerbotAI* ai)
 
         nearby.push_back(guidP);
         candidates.push_back(NearbyServiceCandidate{ NearbyServiceRankOf(kind), sqDistance });
+    }
 
     int const best = BestNearbyServiceCandidate(candidates);
 
