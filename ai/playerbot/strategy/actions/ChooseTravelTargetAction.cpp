@@ -652,6 +652,24 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                         continue;
                     }
 
+                    // Death-spot avoidance (issue #398) at pick time: the
+                    // IsActive gates above already drop the bot's current target,
+                    // but the search lists every possible destination, so a pick
+                    // inside the camp the bot keeps dying in is refused here and
+                    // the next candidate range wins instead. Grind and quest
+                    // objectives only - givers, takers and services stay walkable.
+                    TravelDestinationPurpose pickPurpose = destination->GetPurpose();
+                    uint32 const pickPurposeId = (uint32)pickPurpose;
+                    bool const pickIsDeathGated = pickPurpose == TravelDestinationPurpose::Grind ||
+                        (pickPurposeId >= (uint32)TravelDestinationPurpose::QuestObjective1 &&
+                            pickPurposeId <= (uint32)TravelDestinationPurpose::QuestObjective4);
+                    if (pickIsDeathGated && ai->IsDeathSpotAvoided(position->GetMapId(), position->getX(),
+                        position->getY(), WorldTimer::getMSTime()))
+                    {
+                        ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - death spot avoided", "debug travel");
+                        continue;
+                    }
+
                     if (bot->GetLevel() <= 5 && position->distance(bot) > 1500.0f)
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - too far for starting level", "debug travel");
@@ -933,6 +951,26 @@ bool RefreshTravelTargetAction::Execute(Event& event)
     {
         ai->TellDebug(requester, "Old destination was no longer valid.", "debug travel");
         return false;
+    }
+
+    // Death-spot avoidance (issue #398): a re-point of the same camp the bot
+    // keeps dying in is refused so the refresh falls through to a fresh pick
+    // elsewhere instead of re-arming the loop. Grind and quest objectives
+    // only, same set as the gates above.
+    WorldPosition* refreshPoint = target->getPosition();
+    if (oldDestination && refreshPoint)
+    {
+        TravelDestinationPurpose refreshPurpose = oldDestination->GetPurpose();
+        uint32 const refreshPurposeId = (uint32)refreshPurpose;
+        bool const refreshIsDeathGated = refreshPurpose == TravelDestinationPurpose::Grind ||
+            (refreshPurposeId >= (uint32)TravelDestinationPurpose::QuestObjective1 &&
+                refreshPurposeId <= (uint32)TravelDestinationPurpose::QuestObjective4);
+        if (refreshIsDeathGated && ai->IsDeathSpotAvoided(refreshPoint->GetMapId(), refreshPoint->getX(),
+            refreshPoint->getY(), WorldTimer::getMSTime()))
+        {
+            ai->TellDebug(requester, "Old destination is death-spot avoided.", "debug travel");
+            return false;
+        }
     }
 
     PlayerTravelInfo info(bot);

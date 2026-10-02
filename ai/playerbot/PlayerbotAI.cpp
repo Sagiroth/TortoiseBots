@@ -39,6 +39,7 @@
 #include "strategy/values/PositionValue.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/TravelMgr.h"
+#include "playerbot/DeathClusterPolicy.h"
 #include "Movement/spline/MoveSplineInitArgs.h"
 #include "Maps/InstanceData.h"
 #include "ChatHelper.h"
@@ -1250,6 +1251,12 @@ bool PlayerbotAI::ShouldAvoidPlayerKiller(std::string const& name) const
     return WorldTimer::getMSTime() - avoidPlayerKillerMs_ <= 10 * MINUTE * IN_MILLISECONDS;
 }
 
+bool PlayerbotAI::IsDeathSpotAvoided(uint32 mapId, float x, float y, uint32 nowMs) const
+{
+    return ai::IsDeathPositionAvoided(mapId, x, y, deathAvoidMapId_, deathAvoidX_, deathAvoidY_, nowMs,
+        deathAvoidExpiryMs_, ai::kDeathAvoidRadiusYd);
+}
+
 // Death-cluster escape (OnDeath): how many deaths inside one hunting ground,
 // within how long, before the bot leaves it, and for how long the
 // destination/kind stays blacklisted. Calibrated on the cycle-3 pool's 769
@@ -1377,6 +1384,26 @@ void PlayerbotAI::OnDeath()
                         context->GetValue<std::map<uint32, uint32>&>("unreachable entries")->Get()[clusterEntry] = nowClusterMs + kDeathClusterBlacklistMs;
                         sPlayerbotAIConfig.logEvent(this, "DeathClusterEscape", std::to_string(clusterEntry), WorldPosition(bot).GetAreaName());
                         TellDebug(GetMaster(), "Leaving this hunting ground for a while - it killed me " + std::to_string(kDeathClusterDeaths) + " times", "debug move");
+                        // Rotating killers defeat the kind blacklist above (issue
+                        // #398: median 7 killer kinds per loop bot), so the second
+                        // escape inside the avoidance window escalates to the spot
+                        // itself: grind and quest picks inside this hunting ground
+                        // go inactive for an hour and the bot walks elsewhere.
+                        // Owned bots and bots with a real player master stay out -
+                        // their player decides where to hunt.
+                        if (!HasRealPlayerMaster())
+                        {
+                            deathEscapeCount_ = ai::NextDeathEscapeCount(deathEscapeCount_, nowClusterMs, deathLastEscapeMs_);
+                            deathLastEscapeMs_ = nowClusterMs;
+                            if (ai::DeathAvoidanceEscalated(deathEscapeCount_))
+                            {
+                                deathAvoidMapId_ = bot->GetMapId();
+                                deathAvoidX_ = bot->GetPositionX();
+                                deathAvoidY_ = bot->GetPositionY();
+                                deathAvoidExpiryMs_ = nowClusterMs + ai::kDeathAvoidMs;
+                                sPlayerbotAIConfig.logEvent(this, "DeathSpotAvoided", WorldPosition(bot).GetAreaName());
+                            }
+                        }
                     }
                 }
             }

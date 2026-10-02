@@ -751,6 +751,20 @@ public:
     uint32 deathClusterMapId_ = 0;
     float deathClusterX_ = 0.0f;
     float deathClusterY_ = 0.0f;
+    // Death-spot avoidance (issue #398): the camp the bot keeps dying in, and
+    // until when (WorldTimer ms) it stays off limits for grind and quest picks.
+    // Set on the second cluster escape inside the avoidance window; 0 expiry
+    // means no avoidance is stored. Owned bots and bots with a real player
+    // master never set it (OnDeath guards them out).
+    uint32 deathEscapeCount_ = 0;
+    uint32 deathLastEscapeMs_ = 0;
+    uint32 deathAvoidMapId_ = 0;
+    float deathAvoidX_ = 0.0f;
+    float deathAvoidY_ = 0.0f;
+    uint32 deathAvoidExpiryMs_ = 0;
+    // A death-spot query needs only plain data (map + coordinates), so the
+    // travel layer can ask without pulling in the policy header.
+    bool IsDeathSpotAvoided(uint32 mapId, float x, float y, uint32 nowMs) const;
     // A player (usually another random bot) that killed this bot recently: name +
     // expiry. While set, the victim does not proactively engage that killer
     // (EnemyPlayersValue::IsValid refuses it) so a same-spot trade-kill loop
