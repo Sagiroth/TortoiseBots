@@ -58,4 +58,15 @@ inline bool NeedsStarterBags(uint32_t plainBagCount)
     return plainBagCount < STARTER_PLAIN_BAG_COUNT;
 }
 
+// Plain-bag cap: four bag slots, STARTER_PLAIN_BAG_COUNT plain bags wanted.
+// Hunters keep one slot free for the quiver, warlocks one for the soul
+// pouch, so they cap one lower. Production (InitStarterBags) and this test
+// share the rule.
+inline uint32_t MaxPlainBagsForClass(uint32_t classId)
+{
+    if (classId == CLASS_HUNTER_ID || classId == CLASS_WARLOCK_ID)
+        return STARTER_PLAIN_BAG_COUNT - 1;
+    return STARTER_PLAIN_BAG_COUNT;
+}
+
 } // namespace TortoiseBots

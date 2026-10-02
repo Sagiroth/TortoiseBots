@@ -3,6 +3,7 @@
 #include "playerbot/PlayerbotFactory.h"
 #include "playerbot/PerformanceMonitor.h"
 #include "../../runtime/HunterPetPolicy.h"
+#include "../../runtime/StarterKitPolicy.h"
 
 #include "Database/SQLStorages.h"
 #include "Objects/ItemPrototype.h"
@@ -22,11 +23,10 @@ using namespace ai;
 
 namespace
 {
-// #401 starter set (tw_world.item_template, pinned by the policy test):
-// 3914 Journeyman's Backpack (14 slots, req 0, no class mask) x3 for every
-// bot, 22243 Small Soul Pouch (12 slots, warlock-only) for warlocks.
-uint32 const STARTER_PLAIN_BAG = 3914;
-uint32 const STARTER_SOUL_BAG = 22243;
+// #401 starter set entries live in runtime/StarterKitPolicy.h (pinned by
+// tools/test_starter_kit_policy.cpp); local aliases keep call sites short.
+uint32 const STARTER_PLAIN_BAG = TortoiseBots::STARTER_PLAIN_BAG_ENTRY;
+uint32 const STARTER_SOUL_BAG = TortoiseBots::STARTER_SOUL_BAG_ENTRY;
 
 std::vector<std::pair<uint32, uint32>> const& CollectionMounts()
 {
@@ -2571,7 +2571,10 @@ void PlayerbotFactory::InitBags()
 
 void PlayerbotFactory::InitStarterBags()
 {
-    uint32 maxPlainBags = (INVENTORY_SLOT_BAG_END - INVENTORY_SLOT_BAG_START) - (bot->GetClass() == CLASS_HUNTER ? 1 : 0);
+    // Three plain bags out of four slots: hunters reserve one slot for the
+    // quiver, warlocks one for the soul pouch. The cap rule lives in the
+    // tested policy header (MaxPlainBagsForClass) so both agree.
+    uint32 maxPlainBags = TortoiseBots::MaxPlainBagsForClass(bot->GetClass());
     uint32 plainBags = 0;
     for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; ++slot)
     {
@@ -2638,6 +2641,12 @@ void PlayerbotFactory::InitLevelBags()
             continue;
         ItemPrototype const* proto = bagItem->GetProto();
         if (!proto || proto->Class == ITEM_CLASS_QUIVER)
+            continue;
+        // Specialty containers (soul bags, profession bags) are never plain
+        // bags: destroying an empty soul pouch at 40+ to make a vendor bag
+        // would strand shards and break the warlock kit. Tiers only touch
+        // plain containers.
+        if (proto->Class != ITEM_CLASS_CONTAINER || proto->SubClass != ITEM_SUBCLASS_CONTAINER)
             continue;
         if (bagItem->GetEntry() == tierBag || proto->ContainerSlots >= tierSlots)
             continue;
@@ -3516,16 +3525,12 @@ void PlayerbotFactory::InitAmmo()
                     continue;
                 // A wrong-family container (pouch with a bow, quiver with a
                 // gun) holds no usable ammo: retire it like a too-small one.
+                // Contents are NOT destroyed - the upgrade path below moves
+                // them into backpack space first, same as a tier upgrade.
                 if (bagItem->GetProto()->SubClass != wantContainer)
                 {
-                    Bag* wrongBag = bagItem->IsBag() ? (Bag*)bagItem : nullptr;
-                    if (wrongBag && !wrongBag->IsEmpty())
-                    {
-                        upgradeTarget = bagItem;
-                        upgradeSlot = bagSlot;
-                        continue;
-                    }
-                    bot->DestroyItem(INVENTORY_SLOT_BAG_0, bagSlot, true);
+                    upgradeTarget = bagItem;
+                    upgradeSlot = bagSlot;
                     continue;
                 }
                 if (bagItem->GetEntry() == quiverId || bagItem->GetProto()->RequiredLevel >= bestQuiver->RequiredLevel)
@@ -3562,19 +3567,12 @@ void PlayerbotFactory::InitAmmo()
                     bot->EquipNewItem(eDest, quiverId, true);
                 else
                 {
-                    // No free bag slot at all (all four occupied). Carry
-                    // the better quiver in the backpack so nothing is
-                    // lost and the next InitAmmo/equip can retry. Silent:
-                    // this seed runs on login, never an error storm.
-                    Item* pItem = Item::CreateItem(quiverId, 1, bot);
-                    if (pItem)
-                    {
-                        ItemPosCountVec dest;
-                        if (bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, pItem, false) == EQUIP_ERR_OK)
-                            bot->StoreItem(dest, pItem, true);
-                        else
-                            delete pItem;
-                    }
+                    // No free bag slot at all (e.g. four plain bags on a
+                    // pre-#401 hunter). Do NOT park the quiver in the
+                    // backpack: it reads as vendor trash there and would be
+                    // sold, then re-created and re-sold forever. The hunter
+                    // keeps shooting from backpack ammo (the audit equips a
+                    // quiver when a slot frees up); retry next pass.
                 }
             }
             if (!haveGood && upgradeTarget && upgradeTarget->IsBag())
@@ -3656,7 +3654,9 @@ void PlayerbotFactory::InitAmmo()
     // every other projectile stack from the bags — the fresh-seed case has
     // ammoId = 0 with a Rough Arrow stack already in the bags, which the
     // old stale-entry destroy could never match (52-stack sighting on the
-    // live pool).
+    // live pool). Same for ding-through tiers: obsolete stacks are vendor
+    // trash the bot would otherwise carry forever. Ammo is server-managed
+    // and re-seeded, never player property, so retiring it is safe.
     {
         FindAmmoVisitor ammoVisitor(bot, pItem->GetProto()->SubClass);
         ai->InventoryIterateItems(&ammoVisitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
@@ -3702,22 +3702,25 @@ void PlayerbotFactory::InitThrown()
 {
     if (bot->GetClass() != CLASS_ROGUE && bot->GetClass() != CLASS_WARRIOR)
         return;
+    // Pool bots only: a hired companion or an owned alt may carry a
+    // player-gifted (possibly enchanted) thrown weapon, which is never
+    // replaced. The audit still equips upgrades it finds.
+    if (!sRandomBotFacade.IsRandomBot(bot) || !ai || !ai->HasCheat(BotCheatMask::item))
+        return;
     uint32 entry = sRandomItemMgr.GetAmmo(level, ITEM_SUBCLASS_THROWN);
     if (!entry)
         return;
     ItemPrototype const* tierProto = sObjectMgr.GetItemPrototype(entry);
     if (!tierProto)
         return;
-    {
-        FindItemByIdVisitor visitor(entry);
-        ai->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
-        if (!visitor.GetResult().empty())
-        {
-            if (bot->GetUInt32Value(PLAYER_AMMO_ID) != entry)
-                bot->SetAmmo(entry);
-            return;
-        }
-    }
+    // The ranged slot is the weapon: retire strictly worse spares from the
+    // bags, keep anything at or above the tier (player gifts, raid drops),
+    // and equip the tier when the slot is empty. Never touch the equipped
+    // item - the audit owns upgrades once something is worn.
+    Item* ranged = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED);
+    if (ranged && ranged->GetProto() && ranged->GetProto()->Class == ITEM_CLASS_WEAPON &&
+        ranged->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_THROWN)
+        return;
     uint32 tierLevel = tierProto->RequiredLevel;
     {
         FindThrownVisitor visitor(bot);
@@ -3730,10 +3733,26 @@ void PlayerbotFactory::InitThrown()
                 bot->DestroyItem(oldThrown->GetBagSlot(), oldThrown->GetSlot(), true);
         }
     }
-    if (!bot->GetItemCount(entry))
-        bot->StoreNewItemInInventorySlot(entry, 1);
-    if (bot->GetUInt32Value(PLAYER_AMMO_ID) != entry)
-        bot->SetAmmo(entry);
+    {
+        FindItemByIdVisitor visitor(entry);
+        ai->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
+        if (visitor.GetResult().empty() && !bot->GetItemCount(entry))
+            bot->StoreNewItemInInventorySlot(entry, 1);
+    }
+    {
+        FindItemByIdVisitor visitor(entry);
+        ai->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
+        if (visitor.GetResult().empty())
+            return;
+        Item* thrown = visitor.GetResult().front();
+        uint16 dest = 0;
+        if (bot->CanEquipItem(NULL_SLOT, dest, thrown, true) == EQUIP_ERR_OK)
+        {
+            uint8 destSlot = dest & 0xFF;
+            if (destSlot == EQUIPMENT_SLOT_RANGED && !bot->GetItemByPos(INVENTORY_SLOT_BAG_0, destSlot))
+                bot->EquipItem(dest, true);
+        }
+    }
 }
 
 void PlayerbotFactory::InitTurtleMount()

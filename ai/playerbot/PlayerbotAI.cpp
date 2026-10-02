@@ -712,6 +712,8 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
             // level/weapon-appropriate ammo, and a gun<->bow swap leaves a
             // stale ammo id behind. Resync through InitAmmo first so the
             // refill below tops up the right stack instead of the old one.
+            // Throttled to one attempt a minute: when bags are full the
+            // mismatch cannot resolve and must not busy-loop every tick.
             bool ammoMismatch = false;
             if (Item* ranged = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED))
             {
@@ -734,7 +736,14 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
                     ammoMismatch = true;
             }
             if (ammoMismatch)
-                PlayerbotFactory(bot, bot->GetLevel(), 0).InitAmmo();
+            {
+                uint32 nowMs = WorldTimer::getMSTime();
+                if (!m_lastAmmoResyncMs || nowMs - m_lastAmmoResyncMs >= 60 * 1000)
+                {
+                    m_lastAmmoResyncMs = nowMs;
+                    PlayerbotFactory(bot, bot->GetLevel(), 0).InitAmmo();
+                }
+            }
             uint32 itemId = bot->GetUInt32Value(PLAYER_AMMO_ID);
             if (itemId && bot->GetItemCount(itemId))
             {

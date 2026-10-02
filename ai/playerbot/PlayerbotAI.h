@@ -860,8 +860,9 @@ protected:
     uint32 faceTargetUpdateDelay = 0;
     // Phase 2 spatial-scan cadence (ms clock + grace windows).
     uint32 m_lastSpatialScanMs = 0;
-    uint32 m_reviveGraceUntilMs = 0;
-    uint32 m_teleportGraceUntilMs = 0;
+    // Last ms clock InitAmmo ran from the per-tick ammo refill (#401): a
+    // failed resync (bags full) retries at most once a minute, never busy-loops.
+    uint32 m_lastAmmoResyncMs = 0;
     // First tick (ms clock) the core reported alive while the engine was still DEAD;
     // 0 = not currently mismatched. Backs the 5 s alive-but-DEAD self-heal window.
     uint32 m_aliveWhileDeadSinceMs = 0;

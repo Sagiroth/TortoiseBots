@@ -63,12 +63,24 @@ static void TestPinnedEntries()
     CHECK(STARTER_SOUL_BAG_ENTRY == 22243);
 }
 
+// Hunters and warlocks reserve one slot (quiver / soul pouch), so they cap
+// one plain bag lower; everyone else takes the full three.
+static void TestMaxPlainBagsForClass()
+{
+    CHECK(MaxPlainBagsForClass(CLASS_HUNTER_ID) == 2);
+    CHECK(MaxPlainBagsForClass(CLASS_WARLOCK_ID) == 2);
+    CHECK(MaxPlainBagsForClass(1) == 3);
+    CHECK(MaxPlainBagsForClass(4) == 3);
+    CHECK(MaxPlainBagsForClass(11) == 3);
+}
+
 int main()
 {
     TestContainerForWeapon();
     TestSoulBagForClass();
     TestNeedsStarterBags();
     TestPinnedEntries();
+    TestMaxPlainBagsForClass();
     std::printf("starter kit policy: %d checks passed\n", checks);
     return 0;
 }

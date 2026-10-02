@@ -104,8 +104,9 @@ bool XpGainAction::Execute(Event& event)
         // Issue #401: the ammo container, thrown tier and soul pouch are
         // server-managed by level. Re-check the starter set on ding so a
         // bot that levels past a tier boundary picks it up without waiting
-        // for the next login. Idempotent; pool bots only.
-        if (sRandomBotFacade.IsRandomBot(bot))
+        // for the next login. Idempotent; free pool bots only (never hired
+        // companions or owned alts - their kit is the player's business).
+        if (sRandomBotFacade.IsFreeBot(bot))
         {
             PlayerbotFactory kit(bot, bot->GetLevel());
             kit.EnsureStarterKit();
