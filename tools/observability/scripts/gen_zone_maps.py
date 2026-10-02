@@ -23,7 +23,7 @@ Usage:
 `--overlay-dbc` defaults to the newest WorldMapOverlay.dbc readable from the
 client MPQs. Some Turtle clients keep it in an encrypted patch that mpyq cannot
 open; pass the copy the server tooling extracted (e.g. the one in
-tortoise-docker-penqle/data/dbc/) so the offsets match the shipped art.
+the server's extracted dbc/ directory) so the offsets match the shipped art.
 """
 
 import argparse
