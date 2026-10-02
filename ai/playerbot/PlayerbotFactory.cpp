@@ -138,6 +138,7 @@ void PlayerbotFactory::ProvisionSpellsAndGear()
     // hired at any level arrives with a usable kit.
     InitThrown();
     InitBags();
+    InitInventorySkill();
     InitMounts();
     InitAmmo();
     InitReagents();
@@ -3751,7 +3752,7 @@ void PlayerbotFactory::InitThrown()
         {
             uint8 destSlot = dest & 0xFF;
             if (destSlot == EQUIPMENT_SLOT_RANGED && !bot->GetItemByPos(INVENTORY_SLOT_BAG_0, destSlot))
-                bot->EquipItem(dest, true);
+                bot->SwapItem(thrown->GetPos(), dest);
         }
     }
 }

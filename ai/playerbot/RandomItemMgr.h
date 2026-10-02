@@ -183,6 +183,7 @@ class RandomItemMgr
         uint32 GetStatWeight(Player* player, uint32 itemId);
         uint32 GetLiveStatWeight(Player* player, uint32 itemId, uint32 specId = 0);
         uint32 GetStatWeight(uint32 itemId, uint32 specId);
+        uint32 GetBestRandomEnchantStatWeight(uint32 itemId, uint32 specId);
         uint32 GetRandomItem(uint32 level, RandomItemType type, RandomItemPredicate* predicate = NULL);
         uint32 GetAmmo(uint32 level, uint32 subClass);
         // Best vendor-sold quiver/ammo pouch for the level (0 = none known).
@@ -192,6 +193,7 @@ class RandomItemMgr
         // that do not know the weapon.
         uint32 GetQuiver(uint32 level, uint32 subClass);
         uint32 GetQuiver(uint32 level);
+        uint32 GetRandomPotion(uint32 level, uint32 effect);
         uint32 GetRandomFood(uint32 level, uint32 category);
         uint32 GetFood(uint32 level, uint32 category);
         uint32 GetRandomTrade(uint32 level);
