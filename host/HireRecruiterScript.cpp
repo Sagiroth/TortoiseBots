@@ -2,6 +2,7 @@
 #include "HireRecruiterScript.h"
 #include "../runtime/HireProvisionService.h"
 #include "../runtime/HireCost.h"
+#include "../runtime/HireSpecPolicy.h"
 #include "../runtime/BotManager.h"
 #include "../ai/playerbot/playerbot.h"
 #include "../ai/playerbot/ChatHelper.h"
@@ -83,46 +84,11 @@ char const* RaceName(uint8 race)
     }
 }
 
-struct SpecOption
-{
-    char const* label;
-    uint8 role;
-};
-
 // The spec step lists talent-flavoured choices but hires by role: the option
 // maps to a BOT_ROLE bit consumed by provisioning (premade build + forced
-// role), never to a hardcoded talent tree.
-struct SpecList
-{
-    SpecOption const* options;
-    uint32 count;
-};
-
-SpecList SpecsFor(uint8 classId)
-{
-    static SpecOption const warrior[] = { { "Protection (Tank)", ai::BOT_ROLE_TANK }, { "Arms (DPS)", ai::BOT_ROLE_DPS }, { "Fury (DPS)", ai::BOT_ROLE_DPS } };
-    static SpecOption const paladin[] = { { "Protection (Tank)", ai::BOT_ROLE_TANK }, { "Holy (Healer)", ai::BOT_ROLE_HEALER }, { "Retribution (DPS)", ai::BOT_ROLE_DPS } };
-    static SpecOption const hunter[] = { { "Beast Mastery (DPS)", ai::BOT_ROLE_DPS }, { "Marksmanship (DPS)", ai::BOT_ROLE_DPS }, { "Survival (DPS)", ai::BOT_ROLE_DPS } };
-    static SpecOption const rogue[] = { { "Assassination (DPS)", ai::BOT_ROLE_DPS }, { "Combat (DPS)", ai::BOT_ROLE_DPS }, { "Subtlety (DPS)", ai::BOT_ROLE_DPS } };
-    static SpecOption const priest[] = { { "Holy (Healer)", ai::BOT_ROLE_HEALER }, { "Discipline (Healer)", ai::BOT_ROLE_HEALER }, { "Shadow (DPS)", ai::BOT_ROLE_DPS } };
-    static SpecOption const shaman[] = { { "Restoration (Healer)", ai::BOT_ROLE_HEALER }, { "Elemental (DPS)", ai::BOT_ROLE_DPS }, { "Enhancement (DPS)", ai::BOT_ROLE_DPS } };
-    static SpecOption const mage[] = { { "Frost (DPS)", ai::BOT_ROLE_DPS }, { "Fire (DPS)", ai::BOT_ROLE_DPS }, { "Arcane (DPS)", ai::BOT_ROLE_DPS } };
-    static SpecOption const warlock[] = { { "Affliction (DPS)", ai::BOT_ROLE_DPS }, { "Demonology (DPS)", ai::BOT_ROLE_DPS }, { "Destruction (DPS)", ai::BOT_ROLE_DPS } };
-    static SpecOption const druid[] = { { "Feral Bear (Tank)", ai::BOT_ROLE_TANK }, { "Restoration (Healer)", ai::BOT_ROLE_HEALER }, { "Balance (DPS)", ai::BOT_ROLE_DPS }, { "Feral Cat (DPS)", ai::BOT_ROLE_DPS } };
-    switch (classId)
-    {
-        case CLASS_WARRIOR: return { warrior, 3 };
-        case CLASS_PALADIN: return { paladin, 3 };
-        case CLASS_HUNTER: return { hunter, 3 };
-        case CLASS_ROGUE: return { rogue, 3 };
-        case CLASS_PRIEST: return { priest, 3 };
-        case CLASS_SHAMAN: return { shaman, 3 };
-        case CLASS_MAGE: return { mage, 3 };
-        case CLASS_WARLOCK: return { warlock, 3 };
-        case CLASS_DRUID: return { druid, 4 };
-        default: return { nullptr, 0 };
-    }
-}
+// role). The option's pathName selects the premade tree, so the wizard is
+// honoured for every class (issue #386). The table lives in
+// runtime/HireSpecPolicy.h so the recruiter and the provisioner share it.
 
 bool ClassForFaction(uint8 classId, Team team)
 {
@@ -220,9 +186,10 @@ void ShowGenderMenu(Player* player, Creature* creature, uint8 classId, uint8 rac
 
 void ShowSpecMenu(Player* player, Creature* creature, uint8 classId, uint8 race, uint8 gender)
 {
-    SpecList specs = SpecsFor(classId);
-    for (uint32 i = 0; i < specs.count && i < kMaxMenuItems - 1; ++i)
-        AddItem(player, GOSSIP_ICON_BATTLE, specs.options[i].label, kSenderSpec,
+    uint32_t specCount = 0;
+    HireSpecOption const* specs = HireSpecOptions(classId, specCount);
+    for (uint32 i = 0; i < specCount && i < kMaxMenuItems - 1; ++i)
+        AddItem(player, GOSSIP_ICON_BATTLE, specs[i].label, kSenderSpec,
             (uint32(classId) << 24) | (uint32(race) << 16) | (uint32(gender) << 8) | i);
     AddItem(player, GOSSIP_ICON_TALK, "< Back", kSenderSpec,
         (uint32(classId) << 24) | (uint32(race) << 16) | (uint32(gender) << 8) | kBackAction);
@@ -231,8 +198,9 @@ void ShowSpecMenu(Player* player, Creature* creature, uint8 classId, uint8 race,
 
 void ShowConfirmMenu(Player* player, Creature* creature, uint8 classId, uint8 race, uint8 gender, uint8 specIndex)
 {
-    SpecList specs = SpecsFor(classId);
-    if (!specs.options || specIndex >= specs.count)
+    uint32_t specCount = 0;
+    HireSpecOption const* specs = HireSpecOptions(classId, specCount);
+    if (!specs || specIndex >= specCount)
     {
         ShowSpecMenu(player, creature, classId, race, gender);
         return;
@@ -240,7 +208,7 @@ void ShowConfirmMenu(Player* player, Creature* creature, uint8 classId, uint8 ra
     uint32_t level = player->GetLevel();
     uint32_t cost = HireCost::ForNextHire(CurrentCosts(), QuoteHireCount(player), level);
     std::ostringstream label;
-    label << "Hire " << RaceName(race) << " " << ClassName(classId) << " (" << specs.options[specIndex].label << ") for "
+    label << "Hire " << RaceName(race) << " " << ClassName(classId) << " (" << specs[specIndex].label << ") for "
         << ai::ChatHelper::formatMoney(cost) << ". Confirm?";
     // Packed selection travels in the sender; action distinguishes confirm/back.
     uint32 packed = (uint32(classId) << 24) | (uint32(race) << 16) | (uint32(gender) << 8) | specIndex;
@@ -328,13 +296,14 @@ bool HireRecruiterScript::OnSelect(Player* player, Creature* creature, uint32_t 
         uint8 race = static_cast<uint8>((action >> 16) & 0xFF);
         uint8 gender = static_cast<uint8>((action >> 8) & 0xFF);
         uint32 low = action & 0xFF;
-        SpecList specs = SpecsFor(classId);
+        uint32_t specCount = 0;
+        HireSpecOptions(classId, specCount);
         if (low == kBackAction)
         {
             ShowGenderMenu(player, creature, classId, race);
             return true;
         }
-        if (low >= specs.count)
+        if (low >= specCount)
         {
             ShowSpecMenu(player, creature, classId, race, gender);
             return true;
@@ -350,8 +319,9 @@ bool HireRecruiterScript::OnSelect(Player* player, Creature* creature, uint32_t 
         uint8 race = static_cast<uint8>((sender >> 16) & 0xFF);
         uint8 gender = static_cast<uint8>((sender >> 8) & 0xFF);
         uint8 specIndex = static_cast<uint8>(sender & 0xFF);
-        SpecList specs = SpecsFor(classId);
-        if (!KnownHireClass(classId) || !specs.options || specIndex >= specs.count ||
+        uint32_t specCount = 0;
+        HireSpecOption const* specs = HireSpecOptions(classId, specCount);
+        if (!KnownHireClass(classId) || !specs || specIndex >= specCount ||
             !sObjectMgr.GetPlayerInfo(race, classId) ||
             (gender != GENDER_MALE && gender != GENDER_FEMALE))
         {
@@ -367,7 +337,7 @@ bool HireRecruiterScript::OnSelect(Player* player, Creature* creature, uint32_t 
         sel.classId = classId;
         sel.race = race;
         sel.gender = gender;
-        sel.role = specs.options[specIndex].role;
+        sel.role = specs[specIndex].role;
         sel.specIndex = static_cast<int>(specIndex);
         HireOutcome outcome = HireProvisionService::Instance().Hire(player, sel, true);
         CloseWithHint(player, outcome.message.c_str());
