@@ -519,7 +519,7 @@ bool RandomItemMgr::CanEquipArmor(uint8 clazz, uint8 spec, uint32 level, ItemPro
     //return CheckItemStats(clazz, sp, ap, tank);
 }
 
-bool RandomItemMgr::ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, ItemPrototype const* proto)
+bool RandomItemMgr::ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, ItemPrototype const* proto, bool canDualWield)
 {
     EquipmentSlots slot_mh = EQUIPMENT_SLOT_START;
     EquipmentSlots slot_oh = EQUIPMENT_SLOT_START;
@@ -547,6 +547,14 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, Item
     if (!m_weightScales[spec].info.id)
         return false;
 
+    // A weapon-in-each-hand spec cannot use the off hand before the core lets
+    // it dual wield - Player::CanEquipItem answers EQUIP_ERR_CANT_DUAL_WIELD for
+    // every off-hand weapon until Dual Wield (spell 674) is learned, and a
+    // warrior only picks that up at its class level (PlayerbotFactory's
+    // DualWieldLevelForClass) - so such a spec has to level on a two-hander
+    // where its class can wield one. Hunter and enhancement shaman already list
+    // theirs, and rogue cannot use any two-hander at all (CanUseItem refuses
+    // it), so fury is the only set that changes below.
     std::unordered_set<uint32> mh_weapons;
     std::unordered_set<uint32> oh_weapons;
     std::unordered_set<uint32> r_weapons;
@@ -569,6 +577,18 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, Item
         else
         {
             mh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_FIST };
+            if (!canDualWield)
+            {
+                // The off hand is unusable until Dual Wield is learned, so fury
+                // levels on the same two-handers arms does. Once the flag is on
+                // the one-hander pair is the spec rule again and a two-hander is
+                // only kept while it still out-scores the main hand (see the
+                // stand-in guard in ItemUsageValue), never downgraded on sight.
+                mh_weapons.insert(ITEM_SUBCLASS_WEAPON_SWORD2);
+                mh_weapons.insert(ITEM_SUBCLASS_WEAPON_AXE2);
+                mh_weapons.insert(ITEM_SUBCLASS_WEAPON_MACE2);
+                mh_weapons.insert(ITEM_SUBCLASS_WEAPON_POLEARM);
+            }
             oh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_FIST };
             r_weapons = { ITEM_SUBCLASS_WEAPON_BOW, ITEM_SUBCLASS_WEAPON_CROSSBOW, ITEM_SUBCLASS_WEAPON_GUN };
         }
