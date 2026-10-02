@@ -60,9 +60,10 @@ static bool LongStuckFallbackTeleport(PlayerbotAI* ai, Player* bot, Player* mast
 {
     AiObjectContext* context = ai->GetAiObjectContext();
 
-    // Battleground bots and bots with an actively played master are their
-    // player's business: never yank them (mirrors RepopAction::isUseful).
-    if (bot->InBattleGround() || ai->HasActivePlayerMaster())
+    // Battleground bots and bots that belong to a real player (owned alts and
+    // hires, even while the player is offline) are their player's business:
+    // never yank them.
+    if (bot->InBattleGround() || ai->HasRealPlayerMaster())
         return false;
 
     WorldPosition const botPos(bot);
@@ -91,6 +92,22 @@ static bool LongStuckFallbackTeleport(PlayerbotAI* ai, Player* bot, Player* mast
     }
     RESET_AI_VALUE(WorldPosition, "current position");
 
+    // "combat long stuck" also lands here: drop the old fight like
+    // RepopAction::Execute does, or the bot arrives still chasing it.
+    RESET_AI_VALUE(Unit*, "old target");
+    RESET_AI_VALUE(Unit*, "current target");
+    RESET_AI_VALUE(Unit*, "pull target");
+    RESET_AI_VALUE(bool, "combat::self target");
+    bot->SetSelectionGuid(ObjectGuid());
+
+    // Leave a transport first: RemovePassenger keeps MOVEFLAG_ONTRANSPORT, and a
+    // stale flag with no transport freezes the bot (issue #216).
+    if (bot->GetTransport())
+    {
+        bot->GetTransport()->RemovePassenger(bot);
+        bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_ONTRANSPORT);
+    }
+
     bool moved = false;
     if (grave)
     {
@@ -100,7 +117,8 @@ static bool LongStuckFallbackTeleport(PlayerbotAI* ai, Player* bot, Player* mast
     }
     else
     {
-        moved = bot->TeleportToHomebind();
+        // A rescue, not a hearth: keep the hearthstone cooldown untouched.
+        moved = bot->TeleportToHomebind(0, false);
         if (moved)
             sPlayerbotAIConfig.logEvent(ai, "LongStuckFallback", "homebind", master ? master->GetName() : "");
     }
