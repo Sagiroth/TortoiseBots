@@ -76,6 +76,12 @@ void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
     // of the ten-minute window before it may walk to its trainer.
     RESET_AI_VALUE2(time_t, "manual time", "trainer trip since");
 
+    // Same for the "one vendor journey at a time" window (issue #399,
+    // "vendor trip since"): new ranks at the new level are exactly what the
+    // next vendor trip funds. Dings through the XP hook (XpGainAction) clear
+    // the same key next to their own travel-target expiry.
+    RESET_AI_VALUE2(time_t, "manual time", "vendor trip since");
+
     // Free learning is random-pool only; the paid trainer path is untouched.
     bool const freeLearn = IsFreeLearnBot(bot);
 

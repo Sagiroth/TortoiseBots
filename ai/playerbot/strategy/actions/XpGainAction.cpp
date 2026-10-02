@@ -105,6 +105,10 @@ bool XpGainAction::Execute(Event& event)
         sTravelMgr.SetNullTravelTarget(travelTarget);
         travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
         travelTarget->SetExpireIn(1000);
+        // A ding changes what the stock is worth (new spell ranks to fund), so
+        // the "one vendor journey at a time" window (issue #399) ends with the
+        // old level's trip instead of suppressing the next one.
+        RESET_AI_VALUE2(time_t, "manual time", "vendor trip since");
     }
 
     return false;

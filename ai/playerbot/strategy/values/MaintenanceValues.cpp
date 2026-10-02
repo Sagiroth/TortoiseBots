@@ -65,6 +65,28 @@ static bool TrainerServiceNeeded(PlayerbotAI* ai)
 
     return AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::spells) >= minSpellCost;
 }
+bool CanSellValue::Calculate()
+{
+    if (!ai->HasStrategy("rpg vendor", BotState::BOT_STATE_NON_COMBAT))
+        return false;
+
+    AiObjectContext* context = ai->GetAiObjectContext();
+
+    // The usage classifier can label an item VENDOR while its SellPrice is 0
+    // (a nonzero expected-AH-price manual value opens the VENDOR/AH branch),
+    // and the sell errand then finds nothing to sell. Require at least one
+    // held item a vendor actually buys: one bag walk per 2 s cache window, the
+    // same walk SellableStockWorthAVendorTrip already does below.
+    for (Item* item : AI_VALUE2(std::list<Item*>, "inventory items", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_VENDOR)))
+    {
+        ItemPrototype const* proto = item ? item->GetProto() : nullptr;
+
+        if (proto && proto->SellPrice > 0)
+            return true;
+    }
+
+    return false;
+}
 
 //Sellable stock plus either the bag-pressure valve or the existing "should
 //sell" rule (a real batch has piled up, or the stock funds the next spell

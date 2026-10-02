@@ -72,9 +72,14 @@ bool SellAction::Execute(Event& event)
     if (!soldItems && event.GetSource() == "rpg action")
     {
         uint32 sellable = 0;
+        uint32 vendorUsage = 0;
         for (Item* item : items)
+        {
             if (item->GetProto()->SellPrice)
                 sellable++;
+            if (AI_VALUE2_LAZY(ItemUsage, "item usage", ItemQualifier(item).GetQualifier()) == ItemUsage::ITEM_USAGE_VENDOR)
+                vendorUsage++;
+        }
 
         //Nothing a vendor buys: standing at a vendor cannot finish this errand,
         //so stop asking for the Vendor travel target (and the near-service walk)
@@ -86,11 +91,22 @@ bool SellAction::Execute(Event& event)
         {
             SET_AI_VALUE2(time_t, "manual time", "sell errand failed log", time(0) + 5 * MINUTE);
 
-            sPlayerbotAIConfig.logEvent(ai, "SellErrandFailed",
-                sellable ? "no vendor in reach" : "no vendor-usable stock",
-                std::to_string(items.size()));
+            // The usage breakdown tells "usage said VENDOR but SellPrice is 0"
+            // (issue #408) apart from "nothing was even classified VENDOR".
+            std::string reason = sellable ? "no vendor in reach" :
+                (vendorUsage ? "no vendor-usable stock" : "no vendor-usage stock");
+            sPlayerbotAIConfig.logEvent(ai, "SellErrandFailed", reason,
+                std::to_string(items.size()) + ":" + std::to_string(vendorUsage));
         }
     }
+
+    // A sale pays off the vendor trip that brought the bot here: clear the
+    // "one vendor journey at a time" window (issue #399) so the need - which
+    // is false now anyway, the stock just sold - re-arms honestly on the next
+    // pickup instead of waiting out the ten minutes. A capped sale that kept
+    // stock behind keeps the trip that is still worth finishing.
+    if (soldItems && soldItems >= shouldSell)
+        RESET_AI_VALUE2(time_t, "manual time", "vendor trip since");
 
     return soldItems;
 }
