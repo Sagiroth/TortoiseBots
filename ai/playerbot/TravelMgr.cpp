@@ -2530,20 +2530,12 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
     // above a fresh bot (Camp Narache and Mulgore 6, Dun Morogh 7, Durotar 8) and
     // the destination gate gives them the wider margin for the same reason.
     // Owned/hired bots keep the strict ceiling: their player decides.
-    //
-    // Quest-giver destinations take a +5 margin: the starter valleys are rated 2-6
-    // in ai_playerbot_zone_level while the bots living in them are level 1-6, so a
-    // ceiling at the bot's own level vetoes every giver in the valley the bot is
-    // standing in (30 of 33 live bots below level 4 found no giver). The chosen
-    // point is re-checked against level + 5 downstream.
+    // Quest-giver destinations keep the plain ceiling: a +5 margin (cycle 5) walked
+    // level 1-4 bots out of their valley into the level 5-8 belt toward givers and
+    // takers, and deaths went 3.9 -> 14-22 per minute (60% on quest travel).
     int32 areaCeiling = botLevel;
-    if (info.IsMasterlessRandom())
-    {
-        if (purposeFlag & (uint32)TravelDestinationPurpose::Grind)
-            areaCeiling += GRIND_AREA_MARGIN;
-        else if (purposeFlag & (uint32)TravelDestinationPurpose::QuestGiver)
-            areaCeiling += 5;
-    }
+    if ((purposeFlag & (uint32)TravelDestinationPurpose::Grind) && info.IsMasterlessRandom())
+        areaCeiling += GRIND_AREA_MARGIN;
 
     if (!beginnerGrind && !(purposeFlag & (uint32)TravelDestinationPurpose::QuestTaker) && !beginnerVendorTrip)
     {
