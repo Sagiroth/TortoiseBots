@@ -1962,6 +1962,22 @@ body {
   background-color: var(--bg-card-hover, #1a2230);
 }
 
+/* Roster: the XP/Health/Power bar columns sit right after Level and must stay
+   legible at laptop widths, so their cells never shrink below a readable bar
+   and the roster's cell padding is tighter than the other tables'. */
+#roster-panel .data-table th,
+#roster-panel .data-table td {
+  padding: 10px 10px;
+}
+
+#roster-panel .data-table .roster-bar-cell {
+  min-width: 104px;
+}
+
+#roster-panel .data-table .progress-bar-bg {
+  height: 8px;
+}
+
 .dashboard-grid > *,
 .telemetry-card,
 .chart-container,
@@ -2215,12 +2231,13 @@ body {
 
   /* Hide secondary table columns below 600px. Panels are addressed by id, not
      by tab, so moving a table between tabs cannot collide with another rule.
-     Roster (13 cols): keep Health + Status, drop Power (10) and Target (12).
+     Roster (13 cols): keep the XP/Health bars and Status, drop Power (8) and
+     Target (12).
      Armory list (7 cols): drop Race (5) and Gold (6).
      Issues (7 cols): drop Zone (6) and Target (7).
      Incidents (7 cols): drop Target (7). */
-  #roster-panel .data-table th:nth-child(10),
-  #roster-panel .data-table td:nth-child(10),
+  #roster-panel .data-table th:nth-child(8),
+  #roster-panel .data-table td:nth-child(8),
   #roster-panel .data-table th:nth-child(12),
   #roster-panel .data-table td:nth-child(12) {
     display: none;

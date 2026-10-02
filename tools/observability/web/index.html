@@ -36,6 +36,10 @@
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         <span>Bots</span>
       </a>
+      <a class="menu-item" data-tab="armory" title="Every bot's gear, stats, spells, professions and progress sheet (offline bots included)">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.83z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+        <span>Armory</span>
+      </a>
       <a class="menu-item" data-tab="progress" title="Levelling speed and gear behind level">
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
         <span>Progress</span>
@@ -338,12 +342,12 @@
                     <th class="sortable" tabindex="0" data-sort="role">Role</th>
                     <th class="sortable" tabindex="0" data-sort="level">Level</th>
                     <th class="sortable" tabindex="0" data-sort="gear" title="Average item level of equipped gear (shirt and tabard excluded); the quality split is in the armory profile">Gear</th>
-                    <th class="sortable" tabindex="0" data-sort="quests">Quests</th>
-                    <th class="sortable" tabindex="0" data-sort="loot">Loot</th>
                     <th class="sortable" tabindex="0" data-sort="xp">XP</th>
                     <th class="sortable" tabindex="0" data-sort="hp">Health (HP)</th>
                     <th class="sortable" tabindex="0" data-sort="power">Power</th>
                     <th class="sortable" tabindex="0" data-sort="state">Status</th>
+                    <th class="sortable" tabindex="0" data-sort="quests" title="Quest rewards seen since the current game-server session (kept across a dashboard restart, reset when the game server restarts)">Quests</th>
+                    <th class="sortable" tabindex="0" data-sort="loot" title="Looted items seen since the current game-server session (kept across a dashboard restart, reset when the game server restarts)">Loot</th>
                     <th>Target</th>
                     <th class="sortable" tabindex="0" data-sort="zone">Zone</th>
                   </tr>
@@ -494,7 +498,7 @@
           <p class="tab-subtitle">What bots are doing: quest, kill and loot counters, feeds and the live event stream.</p>
         </div>
 
-        <div class="section-label">POOL COUNTERS · ALL TRACKED BOTS</div>
+        <div class="section-label" id="activity-window">POOL COUNTERS · ALL TRACKED BOTS</div>
         <div id="activity-metrics" class="metrics-row" style="margin-bottom: 20px;">
           <div class="empty-hint">Waiting for activity data...</div>
         </div>
@@ -555,7 +559,7 @@
           <p class="tab-subtitle">Money, vendors, repairs, auction house and notable loot.</p>
         </div>
 
-        <div class="section-label">POOL ECONOMY · ALL TRACKED BOTS</div>
+        <div class="section-label" id="economy-window">POOL ECONOMY · ALL TRACKED BOTS</div>
         <div id="economy-metrics" class="metrics-row" style="margin-bottom: 20px;">
           <div class="empty-hint">Waiting for activity data...</div>
         </div>

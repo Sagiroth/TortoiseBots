@@ -1,6 +1,8 @@
 package state
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -45,7 +47,7 @@ func TestBotEventsFoldIntoCounters(t *testing.T) {
 		model.BotEvent{Event: "ReachGiveUp", Info1: "Wedge", Info2: "no-move|entry=1", Bot: "Braltur", GUID: 7, Money: 1560},
 		model.BotEvent{Event: "Kill", Info1: "Plainstrider", Info2: "45", Bot: "Braltur", GUID: 7, Money: 1560},
 		model.BotEvent{Event: "BotDeath", Info1: "Plainstrider", Info2: "12", Bot: "Braltur", GUID: 7, Money: 1560},
-	), )
+	))
 
 	// A second bot with a distinct class, for the feed filters.
 	s.ApplyBotEvents(events(1,
@@ -240,5 +242,147 @@ func TestPruneDepartedBotActivity(t *testing.T) {
 	act := s.Activity()
 	if len(act.Bots) != 1 || act.Bots[0].Name != "Alpha" {
 		t.Fatalf("departed bot activity not pruned: %+v", act.Bots)
+	}
+}
+
+// The module's own quest-complete signal is QuestCompleted (OnQuestComplete).
+// QuestUpdateCompleteAction is packet-driven and never reaches a headless bot
+// session, so without this mapping the completed/open-quest numbers were
+// structurally zero on the live dashboard.
+func TestQuestCompletedEventFeedsCountersAndFeed(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+
+	s.ApplyBotEvents(events(1,
+		model.BotEvent{Event: "AcceptQuestAction", Info1: "Vile Familiars", Info2: "792", Bot: "Kraejar", GUID: 4, Class: "rogue", Level: 8},
+	))
+	c.Advance(time.Minute)
+	s.ApplyBotEvents(events(1,
+		model.BotEvent{Event: "QuestCompleted", Info1: "Vile Familiars", Info2: "792", Bot: "Kraejar", GUID: 4, Class: "rogue", Level: 8},
+	))
+
+	act := s.Activity()
+	if act.Summary.Counters.QuestsCompleted != 1 || act.Summary.Counters.OpenQuests != 1 {
+		t.Fatalf("QuestCompleted did not count as complete/open: %+v", act.Summary.Counters)
+	}
+	feed := s.QuestFeed(QuestFilter{})
+	if len(feed) != 2 || feed[0].Event != "QuestCompleted" || feed[0].Quest != "Vile Familiars" {
+		t.Fatalf("quest feed wrong: %+v", feed)
+	}
+
+	// Handing the quest in closes the open-quest ledger.
+	c.Advance(time.Minute)
+	s.ApplyBotEvents(events(1,
+		model.BotEvent{Event: "TalkToQuestGiverAction", Info1: "Vile Familiars", Info2: "792", Bot: "Kraejar", GUID: 4, Class: "rogue", Level: 8},
+		model.BotEvent{Event: "QuestRewarded", Info1: "Vile Familiars", Info2: "792", Bot: "Kraejar", GUID: 4, Class: "rogue", Level: 8},
+	))
+	if got := s.Activity().Summary.Counters.OpenQuests; got != 0 {
+		t.Fatalf("open quests = %d after the reward, want 0", got)
+	}
+}
+
+// Feed rows carry the daemon's own rendered timestamp so every table on the
+// dashboard shares one time base (the incident rows already did).
+func TestFeedRowsCarryDaemonTimestamp(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+	s.ApplyBotEvents(events(1,
+		model.BotEvent{Event: "StoreLootAction", Info1: "Malachite", Info2: "774", Bot: "Alpha", GUID: 1, Class: "warrior", Level: 4, ItemID: 774, Quality: 2, Sell: 15},
+		model.BotEvent{Event: "QuestCompleted", Info1: "Quest A", Info2: "10", Bot: "Alpha", GUID: 1, Class: "warrior", Level: 4},
+	))
+	publishRoster(s, 1, model.BotSnapshot{Name: "Alpha", GUID: 1, Class: "warrior", Level: 4, State: "idle"})
+
+	want := "2026-09-10 12:00:00"
+	if rows := s.LootFeed(LootFilter{}); len(rows) != 1 || rows[0].TimeStr != want {
+		t.Fatalf("loot feed timestamp = %+v, want %s", rows, want)
+	}
+	if rows := s.QuestFeed(QuestFilter{}); len(rows) != 1 || rows[0].TimeStr != want {
+		t.Fatalf("quest feed timestamp = %+v, want %s", rows, want)
+	}
+	if rows := s.Activity().LevelFeed; len(rows) != 1 || rows[0].TimeStr != want {
+		t.Fatalf("level feed timestamp = %+v, want %s", rows, want)
+	}
+}
+
+// Every counter window must be reported: the dashboard labels "since 12:00",
+// never an unlabelled total.
+func TestActivitySummaryReportsWindowStart(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+	s.ApplyBotEvents(events(1, model.BotEvent{Event: "Kill", Info1: "Boar", Info2: "20", Bot: "Alpha", GUID: 1, Class: "warrior", Level: 5}))
+
+	act := s.Activity()
+	if act.Summary.Since != c.Now().Unix() || act.Summary.SinceStr != "2026-09-10 12:00:00" {
+		t.Fatalf("activity window = %d/%q, want the session start", act.Summary.Since, act.Summary.SinceStr)
+	}
+}
+
+// A dashboard restart must not reset the counters; a game-server restart must.
+func TestActivitySurvivesDashboardRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "activity-state.json")
+	c := newClock()
+	s := newTestStore(c)
+	s.ApplyBotEvents(events(1,
+		model.BotEvent{Event: "StoreLootAction", Info1: "Malachite", Info2: "774", Bot: "Alpha", GUID: 1, Class: "warrior", Level: 4, ItemID: 774, Quality: 2, Sell: 15},
+		model.BotEvent{Event: "QuestCompleted", Info1: "Quest A", Info2: "10", Bot: "Alpha", GUID: 1, Class: "warrior", Level: 4},
+		model.BotEvent{Event: "Kill", Info1: "Boar", Info2: "20", Bot: "Alpha", GUID: 1, Class: "warrior", Level: 4},
+	))
+	if err := s.SaveActivity(path); err != nil {
+		t.Fatalf("save failed: %v", err)
+	}
+
+	// New daemon process, same game server.
+	restarted := newTestStore(c)
+	n, err := restarted.RestoreActivity(path)
+	if err != nil || n != 1 {
+		t.Fatalf("restore = %d, %v; want 1 bot", n, err)
+	}
+	act := restarted.Activity()
+	if len(act.Bots) != 1 || act.Bots[0].Activity.LootItems != 1 || act.Bots[0].Activity.Kills != 1 ||
+		act.Bots[0].Activity.QuestsCompleted != 1 || act.Bots[0].Activity.OpenQuests != 1 {
+		t.Fatalf("counters did not survive the restart: %+v", act.Bots)
+	}
+	if act.Summary.SinceStr != "2026-09-10 12:00:00" || len(act.LevelFeed) != 0 {
+		t.Fatalf("window/feeds not restored: since=%q levels=%+v", act.Summary.SinceStr, act.LevelFeed)
+	}
+	if len(restarted.LootFeed(LootFilter{})) != 1 || len(restarted.QuestFeed(QuestFilter{})) != 1 {
+		t.Fatalf("feeds did not survive the restart")
+	}
+
+	// The restored session continues: a datagram with the same session id
+	// must add to the counters instead of wiping them.
+	restarted.ApplyBotEvents(events(1, model.BotEvent{Event: "Kill", Info1: "Boar", Info2: "20", Bot: "Alpha", GUID: 1, Class: "warrior", Level: 4}))
+	if got := restarted.Activity().Bots[0].Activity.Kills; got != 2 {
+		t.Fatalf("kills = %d after restore + same-session event, want 2", got)
+	}
+
+	// A restarted game server invalidates the restored counters.
+	restarted.ApplyBotEvents(events(2, model.BotEvent{Event: "Kill", Info1: "Boar", Info2: "20", Bot: "Beta", GUID: 2, Class: "rogue", Level: 7}))
+	after := restarted.Activity()
+	if len(after.Bots) != 1 || after.Bots[0].Name != "Beta" || after.Bots[0].Activity.Kills != 1 {
+		t.Fatalf("new session must reset the restored counters: %+v", after.Bots)
+	}
+	if after.Summary.Since != c.Now().Unix() {
+		t.Fatalf("window start not moved to the new session: %d", after.Summary.Since)
+	}
+}
+
+func TestRestoreActivityIgnoresMissingAndCorruptFiles(t *testing.T) {
+	dir := t.TempDir()
+	s := newTestStore(newClock())
+
+	if n, err := s.RestoreActivity(filepath.Join(dir, "absent.json")); n != 0 || err != nil {
+		t.Fatalf("missing file: n=%d err=%v, want 0/nil", n, err)
+	}
+
+	corrupt := filepath.Join(dir, "corrupt.json")
+	if err := os.WriteFile(corrupt, []byte("{not json"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RestoreActivity(corrupt); err == nil {
+		t.Fatal("corrupt snapshot must be reported, not silently ignored")
+	}
+	if got := s.Activity(); len(got.Bots) != 0 {
+		t.Fatalf("corrupt restore must leave the store empty: %+v", got.Bots)
 	}
 }

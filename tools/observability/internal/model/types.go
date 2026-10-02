@@ -180,6 +180,10 @@ type LevelEvent struct {
 // "skin" or "money".
 type LootFeedItem struct {
 	At      int64  `json:"at"`
+	// TimeStr is At rendered in the daemon's own time zone. The dashboard
+	// renders it instead of formatting At in the viewer's zone, so feed rows
+	// and incident rows cannot disagree about the hour.
+	TimeStr string `json:"time_str,omitempty"`
 	Bot     string `json:"bot"`
 	GUID    uint32 `json:"guid"`
 	Class   string `json:"class"`
@@ -197,6 +201,7 @@ type LootFeedItem struct {
 // QuestFeedItem is one row of the pool-wide quest feed.
 type QuestFeedItem struct {
 	At      int64  `json:"at"`
+	TimeStr string `json:"time_str,omitempty"`
 	Bot     string `json:"bot"`
 	GUID    uint32 `json:"guid"`
 	Class   string `json:"class"`
@@ -209,8 +214,9 @@ type QuestFeedItem struct {
 // ActivityLevelItem is one level-up observed across the pool, used for the
 // pool-wide level timeline.
 type ActivityLevelItem struct {
-	At    int64  `json:"at"`
-	Bot   string `json:"bot"`
+	At      int64  `json:"at"`
+	TimeStr string `json:"time_str,omitempty"`
+	Bot     string `json:"bot"`
 	GUID  uint32 `json:"guid"`
 	Class string `json:"class"`
 	Level uint32 `json:"level"`
@@ -218,9 +224,15 @@ type ActivityLevelItem struct {
 
 // ActivitySummary is the pool-wide activity rollup.
 type ActivitySummary struct {
-	BotsTracked int         `json:"bots_tracked"`
-	ElapsedSec  float64     `json:"elapsed_sec"`
-	Counters    BotActivity `json:"counters"`
+	BotsTracked int `json:"bots_tracked"`
+	// Since/SinceStr are the start of the window every counter covers: the
+	// current game-server session. Since is 0 and SinceStr empty before the
+	// first heartbeat. The dashboard must label counters with this window
+	// ("since 10:24"), never present them as lifetime totals.
+	Since      int64       `json:"since"`
+	SinceStr   string      `json:"since_str,omitempty"`
+	ElapsedSec float64     `json:"elapsed_sec"`
+	Counters   BotActivity `json:"counters"`
 }
 
 // ActivityBot is one bot's activity in the /api/v1/activity response.
