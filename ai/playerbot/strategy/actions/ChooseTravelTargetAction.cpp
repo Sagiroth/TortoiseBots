@@ -120,9 +120,20 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         // timestamp, so the row stands down for the whole park.
         std::string const purposeKey = futureTravelPurpose.empty() ? "quest" : futureTravelPurpose;
         bool const questErrand = purposeKey == "quest";
+        // A beginner pool bot that found nothing is not waiting out a real
+        // backlog: below level 5 the whole quest search fits inside 1500 yd, so an
+        // empty result only says "nothing in range right now", and the ten-minute
+        // park would strand it at an NPC with grind as its only other errand
+        // (issue #393). Retry next minute like any other purpose - unless it
+        // carries a finished quest it could hand in, whose 6.36 row outranks
+        // grind: re-searching that every minute would starve the very fallback
+        // this shortens the park for.
+        bool const beginnerRepark = questErrand && bot->GetLevel() < 5 &&
+            sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster() &&
+            !HasRewardableFinishedQuest(ai);
         SET_AI_VALUE2(bool, "no active travel destinations", purposeKey, true);
         SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purposeKey,
-            time(0) + (questErrand ? 10 * MINUTE : MINUTE));
+            time(0) + ((questErrand && !beginnerRepark) ? 10 * MINUTE : MINUTE));
         ai->TellDebug(ai->GetMaster(), "No target set", "debug travel");
 
         // TEMPORARY, see the probe in RequestQuestTravelTargetAction. Destinations

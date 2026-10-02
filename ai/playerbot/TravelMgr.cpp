@@ -657,7 +657,16 @@ bool ExploreTravelDestination::IsActive(Player* bot, const PlayerTravelInfo& inf
 
 bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 {
-    if (info.GetBoolValue("should sell") && (info.GetBoolValue("can sell") || info.GetBoolValue("can ah sell")))
+    // The old veto read the cached "should sell" && "can sell" pair, which a fresh
+    // pool bot satisfies with one grey pelt in its bags: the next grind search
+    // found nothing, so the stranded beginner kept its empty result and its NPC.
+    // Read the live vendor need instead ("vendor trip needed", snapshotted in the
+    // constructor from VendorTripNeeded: repair, a spell the stock actually pays
+    // for, rations it can afford). A parked vendor purpose (fruitless errand,
+    // issue #393) is no need at all - the trip is not happening - so grind stays
+    // a destination and the bot walks instead of idling. The park timestamp still
+    // gates the vendor row itself.
+    if (info.GetBoolValue("vendor trip needed"))
         return false;
 
     CreatureInfo const* cInfo = GetCreatureInfo();

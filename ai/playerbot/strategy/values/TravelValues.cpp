@@ -290,10 +290,19 @@ bool NeedTravelPurposeValue::Calculate()
     }
     case TravelDestinationPurpose::Grind:
     {
-        uint32 rpgPhase = ai->GetFixedBotNumber(BotTypeNumber::RPG_PHASE_NUMBER, 60, 1);
+        // Beginners never take the GenericRpg walk this staggers against
+        // (RpgTravelDestination::IsPossible blocks every non-vendor RPG errand
+        // below level 5), so the last 15 minutes of each hour leave a level 1-4
+        // pool bot with quests parked and no errand at all (issue #393). Let
+        // them grind around the clock instead of idling at an NPC.
+        bool const beginner = bot->GetLevel() < 5 && sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster();
+        if (!beginner)
+        {
+            uint32 rpgPhase = ai->GetFixedBotNumber(BotTypeNumber::RPG_PHASE_NUMBER, 60, 1);
 
-        if (rpgPhase > 45) //Only first 45 minutes of the hour allow generic grind.
-            return false;
+            if (rpgPhase > 45) //Only first 45 minutes of the hour allow generic grind.
+                return false;
+        }
 
         return !AI_VALUE2(bool, "manual bool", "is travel refresh");
     }

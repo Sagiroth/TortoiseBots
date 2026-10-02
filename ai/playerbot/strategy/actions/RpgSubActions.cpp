@@ -11,6 +11,8 @@
 #include "GuildCreateActions.h"
 #include "SocialMgr.h"
 #include "playerbot/TravelMgr.h"
+#include "playerbot/RandomBotFacade.h"
+#include "playerbot/strategy/values/MaintenanceValues.h"
 #include "SayAction.h"
 #include "playerbot/PlayerbotLLMInterface.h"
 
@@ -103,7 +105,18 @@ void RpgHelper::setDelay(bool waitForGroup)
     // for the full rpgDelay per step. Live rosters had 100+ bots parked in
     // "rpg gossip talk" for minutes with an unfinished travel target, i.e. standing
     // with a destination and getting nowhere - what the observability layer reports
-    // as "stalled". A bot with no travel target at all keeps the full roleplay pause.
+    // as "stalled". A pool bot with no travel target at all takes the short pause
+    // too: with nothing to walk, a new errand (grind above all) should win the
+    // next tick, not ten seconds of gossip per step (issue #393). Only a pool bot
+    // parked at an NPC it actually needs - a rewardable hand-in, an acceptable
+    // quest, a needed vendor or trainer sale/learn - keeps the full roleplay pause.
+    bool const poolSolo = !ai->HasRealPlayerMaster() && !bot->GetGroup() && sRandomBotFacade.IsRandomBot(bot);
+    if (poolSolo && !NearbyServiceTarget(ai))
+    {
+        ai->SetActionDuration(sPlayerbotAIConfig.rpgDelay / 5);
+        return;
+    }
+
     bool const hasPendingTravel = AI_VALUE(TravelTarget*, "travel target")->IsActive();
 
     if ((!ai->HasRealPlayerMaster() && !bot->GetGroup() && !hasPendingTravel) || (bot->GetGroup() && bot->GetGroup()->IsLeader(bot->getObjectGuid()) && waitForGroup))

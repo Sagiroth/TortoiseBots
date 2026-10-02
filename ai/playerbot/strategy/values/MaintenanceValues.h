@@ -150,6 +150,17 @@ namespace ai
         NearbyServiceTargetValue(PlayerbotAI* ai, std::string name = "nearby service target", int checkInterval = 5) : GuidPositionCalculatedValue(ai, name, checkInterval) {}
         virtual GuidPosition Calculate() override { return NearbyServiceTarget(ai); }
     };
+    // Snapshot of VendorTripNeeded for the travel destination search, which runs
+    // async off-tick and cannot call the live predicate there: true only for a
+    // real vendor errand (repair, a spell the stock pays for, affordable
+    // rations), never for a parked purpose. Lets grind stay a destination while
+    // the vendor purpose is parked (issue #393).
+    class VendorTripNeededValue : public BoolCalculatedValue
+    {
+    public:
+        VendorTripNeededValue(PlayerbotAI* ai, std::string name = "vendor trip needed", int checkInterval = 5) : BoolCalculatedValue(ai, name, checkInterval) {}
+        virtual bool Calculate() override { return VendorTripNeeded(ai); }
+    };
 
     class ShouldServiceNearbyNpcValue : public BoolCalculatedValue
     {
