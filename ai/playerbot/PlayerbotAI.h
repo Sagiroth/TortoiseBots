@@ -744,6 +744,13 @@ public:
     };
     uint32 prevKillerEntry_ = 0; // the kind that killed the bot before (lethal-kind rule in OnDeath)
     uint32 prevKillerMs_ = 0;
+    // Death-cluster escape (see OnDeath): deaths inside one small area within a
+    // window, whatever killed the bot, and where that area is.
+    uint32 deathClusterCount_ = 0;
+    uint32 deathClusterMs_ = 0;
+    uint32 deathClusterMapId_ = 0;
+    float deathClusterX_ = 0.0f;
+    float deathClusterY_ = 0.0f;
     // A player (usually another random bot) that killed this bot recently: name +
     // expiry. While set, the victim does not proactively engage that killer
     // (EnemyPlayersValue::IsValid refuses it) so a same-spot trade-kill loop
