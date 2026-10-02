@@ -756,14 +756,34 @@ bool GrindTravelDestination::IsActive(Player* bot, const PlayerTravelInfo& info)
     // looped QuestTripNoTarget instead of walking to its wolves (issue #393).
     // The rule lives in GrindSpotPolicy.h next to the other prey rules; the
     // donor mod-playerbots grind filter keeps loot-carrying neutrals the same
-    // way and only refuses non-hostile NPCs.
+    // way and only refuses non-hostile NPCs. The neutral gates mirror the
+    // arrival-side attackability verdict, so an admitted destination is one
+    // the bot can actually hit: reputation factions (core IsValidAttackTarget
+    // refuses neutral-rep targets without AT_WAR), unattackable unit flags
+    // (core IsTargetable), elites/rares. All data-only (creature template +
+    // faction DBC), safe on the world thread.
     GuidPosition botPos(bot);
     GuidPosition preyPos(HIGHGUID_UNIT, GetEntry());
     CreatureInfo const* preyInfo = GetCreatureInfo();
+    bool noReputation = true;
+    if (preyInfo)
+    {
+        // Penqle uses sObjectMgr.GetFactionTemplateEntry/GetFactionEntry, not
+        // the cmangos sFactionTemplateStore/sFactionStore globals (see
+        // PlayerbotAI.h). Missing rows fail open: a template or faction the
+        // core never loaded cannot carry a reputation list, so the core AT_WAR
+        // check in IsValidAttackTarget cannot refuse it either.
+        if (FactionTemplateEntry const* preyTemplate = sObjectMgr.GetFactionTemplateEntry(preyInfo->faction))
+            if (FactionEntry const* preyFaction = sObjectMgr.GetFactionEntry(preyTemplate->faction))
+                noReputation = !preyFaction->CanHaveReputation();
+    }
     return GrindHostilityAllowed(botPos.IsHostileTo(preyPos, bot->GetInstanceId()),
         botPos.IsFriendlyTo(preyPos, bot->GetInstanceId()),
         preyInfo ? preyInfo->npc_flags : 0,
-        preyInfo && preyInfo->xp_multiplier != 0.0f);
+        preyInfo && preyInfo->xp_multiplier != 0.0f,
+        noReputation,
+        preyInfo ? preyInfo->unit_flags : 0,
+        preyInfo ? preyInfo->rank : 0);
 }
 
 std::string GrindTravelDestination::GetTitle() const
