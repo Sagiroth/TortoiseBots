@@ -229,7 +229,7 @@ ItemUsage ItemUsageValue::Calculate()
     if (proto->Class == ITEM_CLASS_KEY)
         return ItemUsage::ITEM_USAGE_USE;
 
-    if (proto->Class == ITEM_CLASS_CONSUMABLE && !ai->HasCheat(BotCheatMask::item))
+    if (proto->Class == ITEM_CLASS_CONSUMABLE)
     {
         std::string foodType = "";
 
@@ -265,6 +265,20 @@ ItemUsage ItemUsageValue::Calculate()
 
         if (isAppropriateConsumable && bot->CanUseItem(proto) == EQUIP_ERR_OK)
         {
+            //A consumable the bot can actually use is never vendor trash - with
+            //or without the item cheat. The random pool runs with
+            //AiPlayerbot.RndBotCheats = repair,breath,item, and the old
+            //`&& !HasCheat(BotCheatMask::item)` on this block skipped the whole
+            //decision for every pool bot: their food and drink fell through to
+            //the VENDOR branch, so every sell path handed them over (live cycle
+            //4: 1,286 of the 4,394 sale rows were the bot's own food and drink)
+            //and that same VENDOR answer is what armed the 2,300 vendor errands.
+            //
+            //The cheat only makes the "buy more" signal moot - the bot never has
+            //to shop - it is not a licence to sell rations.
+            if (ai->HasCheat(BotCheatMask::item))
+                return ItemUsage::ITEM_USAGE_KEEP;
+
             float stacks = BetterStacks(proto, foodType);
 
             if (stacks < 1)
@@ -273,20 +287,20 @@ ItemUsage ItemUsageValue::Calculate()
 
                 if (stacks < 1)
                     return ItemUsage::ITEM_USAGE_USE; //Buy some to get to 1 stack
-                else if (stacks < 2)
-                    return ItemUsage::ITEM_USAGE_KEEP; //Keep the item if less than 2 stack
             }
+
+            return ItemUsage::ITEM_USAGE_KEEP; //Never sell what the bot eats, drinks or bandages with.
         }
     }
 
     if (proto->Class == ITEM_CLASS_REAGENT && SpellsUsingItem(proto->ItemId, bot).size())
     {
-        float stacks = CurrentStacks(ai, proto);
-
-        if (stacks < 1)
+        //A reagent one of the bot's own spells consumes is never vendor trash,
+        //however many stacks it holds.
+        if (CurrentStacks(ai, proto) < 1)
             return ItemUsage::ITEM_USAGE_USE;
-        else if (stacks < 2)
-            return ItemUsage::ITEM_USAGE_KEEP;
+
+        return ItemUsage::ITEM_USAGE_KEEP;
     }
 
     //EQUIP (bot-aware speed: dynamic mounts such as the 0-static-speed
@@ -362,6 +376,11 @@ ItemUsage ItemUsageValue::Calculate()
             return ItemUsage::ITEM_USAGE_KEEP;
     }
 
+    //A quest item the bot carries is never vendor trash, whether or not it holds
+    //the quest that needs it right now.
+    if (proto->Class == ItemClass::ITEM_CLASS_QUEST)
+        return ItemUsage::ITEM_USAGE_KEEP;
+
     // AMMO
 if ((proto->Class == ITEM_CLASS_PROJECTILE ||
      (proto->Class == ITEM_CLASS_WEAPON && proto->SubClass == ITEM_SUBCLASS_WEAPON_THROWN)) &&
@@ -433,8 +452,8 @@ if ((proto->Class == ITEM_CLASS_PROJECTILE ||
 
                 if (totalStacks < needAmmo)            // Not enough ammo, buy more
                     return ItemUsage::ITEM_USAGE_AMMO;
-                else if (totalStacks < needAmmo + 1)   // Enough ammo, but keep it
-                    return ItemUsage::ITEM_USAGE_KEEP;
+
+                return ItemUsage::ITEM_USAGE_KEEP;     //Ammo for the equipped ranged weapon is never vendor trash.
             }
         }
     }

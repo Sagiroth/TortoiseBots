@@ -244,14 +244,17 @@ bool NeedTravelPurposeValue::Calculate()
             return true;
         break;
     case TravelDestinationPurpose::Vendor:
-        if (AI_VALUE2(bool, "group or", "should sell,can sell,following party"))
-            return true;
-        if (AI_VALUE2(bool, "has strategy", "free") && AI_VALUE(bool, "should sell") && AI_VALUE(bool, "can sell"))
-            return true;
-        //Bag pressure in the field: the two rules above only ask for a journey
-        //while the stock is worth walking for, and nothing else turns a full bag
-        //into a Vendor target when no vendor is within the near-service radius.
-        return BagPressureVendorTrip(ai);
+        //Real need only (issue #379 follow-up): the `should sell` && `can sell`
+        //pair this replaces was true for every pool bot the moment it held food
+        //or drink, because the random-bot item cheat skipped the consumable
+        //decision and classified rations as vendor trash - live cycle 4 walked
+        //2,300 vendor errands in 65 minutes (1,286 of the 4,394 sale rows were the
+        //bot's own food and drink) and BuyAction never fired. A journey now needs
+        //stock a vendor pays for and that is worth the walk, a durability below
+        //the repair threshold, or an empty food/drink bag the bot can pay to
+        //refill - plus the bag-pressure valve below for a bot whose bags are full
+        //in the field. Both sides read the same ten-minute fruitless-errand park.
+        return VendorTripNeeded(ai) || BagPressureVendorTrip(ai);
     case TravelDestinationPurpose::AH:
         if (AI_VALUE2(bool, "group or", "should ah sell,can ah sell,following party"))
             return true;

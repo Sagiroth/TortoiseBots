@@ -122,6 +122,14 @@ namespace ai
     //loop on trips that cannot empty its bags.
     bool BagPressureVendorTrip(PlayerbotAI* ai);
 
+    //Is there a real reason to walk to a vendor? Stock a vendor pays for and
+    //that is worth the walk, a durability below the repair threshold, or an
+    //empty food/drink bag the bot can pay to refill - and never while the Vendor
+    //purpose is parked after a fruitless errand (ParkVendorErrand). The rpg
+    //vendor travel request reads this instead of the loose `should sell` &&
+    //`can sell` pair, which a starting bot satisfied with its own food.
+    bool VendorTripNeeded(PlayerbotAI* ai);
+
     //May the bag-pressure vendor errand start while a travel target is set?
     //Yes while that target is merely parked at its destination (arrived,
     //working it, or in cooldown) and no while a journey is in flight; and only
