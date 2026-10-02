@@ -215,14 +215,15 @@ static bool VendorWithinNearbyServiceRange(PlayerbotAI* ai)
 //Vendor travel target, while 279 trainer errands ran. So the bags reach a
 //vendor only if something asks for the journey, and this is that ask.
 //
-//The stock test is deliberately the crude one - at least one bag item a vendor
-//pays for - and not `can sell`'s usage answer: the usage answer is what the
-//sell action uses to decide what to hand over, and a valve that waits for the
-//same value stays silent whenever that answer is wrong. A trip that finds
-//nothing to sell parks itself for ten minutes (SellAction) and logs
-//SellErrandFailed, so the loose test cannot turn into a walk-about. The rpg
-//vendor strategy is still required: without it the bot would arrive and not
-//sell at all.
+//The stock test is `can sell`, the same vendor-usage answer the sell action
+//hands over - and the rpg vendor strategy it requires, without which the bot
+//would arrive and not sell at all. The old crude test ("any item with a sell
+//price") counted the bot's own food and drink, so a bot at the pressure line
+//with nothing but rations walked to town to sell nothing; the usage answer had
+//to become trustworthy first, see ItemUsageValue's consumable branch (the item
+//cheat no longer hides what the bot eats). The ten-minute park after a fruitless
+//errand is read here too: the old request ignored it and re-armed on the very
+//next tick.
 bool ai::BagPressureVendorTrip(PlayerbotAI* ai)
 {
     Player* bot = ai->GetBot();
@@ -237,25 +238,78 @@ bool ai::BagPressureVendorTrip(PlayerbotAI* ai)
     if (!NearbyServiceBagPressure(AI_VALUE(uint8, "bag space")))
         return false;
 
-    if (!ai->HasStrategy("rpg vendor", BotState::BOT_STATE_NON_COMBAT))
+    if (AI_VALUE2(time_t, "manual time", "no travel purpose until::" + std::to_string((uint32)TravelDestinationPurpose::Vendor)) > time(0))
         return false;
 
-    bool hasPricedStock = false;
+    if (!AI_VALUE(bool, "can sell"))
+        return false;
+
+    return !VendorWithinNearbyServiceRange(ai);
+}
+
+//Nothing left to eat or drink: no hp food and, for a mana user, no mana drink
+//the bot can actually use. Restocking is a real vendor errand only when the bot
+//can pay for it, which the caller checks.
+static bool OutOfRations(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    AiObjectContext* context = ai->GetAiObjectContext();
+    bool const usesMana = bot->GetPowerType() == POWER_MANA;
+    bool hasFood = false;
+    bool hasDrink = false;
+
     for (Item* item : AI_VALUE2(std::list<Item*>, "inventory items", "inventory"))
     {
         ItemPrototype const* proto = item->GetProto();
 
-        if (proto && proto->SellPrice)
-        {
-            hasPricedStock = true;
-            break;
-        }
+        if (!proto || proto->Class != ITEM_CLASS_CONSUMABLE || bot->CanUseItem(proto) != EQUIP_ERR_OK)
+            continue;
+
+        if (ItemUsageValue::IsHpFoodOrDrink(proto))
+            hasFood = true;
+        else if (usesMana && ItemUsageValue::IsManaFoodOrDrink(proto))
+            hasDrink = true;
     }
 
-    if (!hasPricedStock)
+    return !hasFood || (usesMana && !hasDrink);
+}
+
+//The real vendor need (issue #379 follow-up). The `should sell` && `can sell`
+//pair that ranked the Vendor travel row collapsed, for a masterless pool bot, to
+//"holds at least one item the usage classifier calls vendor trash" - `group or
+//{should sell, can sell, following party}` is that pair (the bot wanders, so
+//"following party" is true) and the row that needed the "free" strategy is dead
+//for the pool. What it counted was the bot's own food: the random pool runs with
+//RndBotCheats = repair,breath,item, and the consumable decision block was gated
+//on `!HasCheat(item)`, so every pool bot's rations fell through to VENDOR. Live
+//cycle 4: 2,300 Vendor picks in 65 minutes (4.18 per bot-hour, 112 bots at five
+//picks or more, median 78 s between picks for the bots that churned, worst bot
+//188), 1,286 of the 4,394 sale rows were the bot's own food and drink, and
+//BuyAction never fired once. A journey is now worth it only for stock a vendor
+//pays for and that is worth the walk, a durability below the repair threshold,
+//or an empty food/drink bag - and never while the purpose is parked after a
+//fruitless errand (ParkVendorErrand), which the old request ignored on the very
+//next tick.
+bool ai::VendorTripNeeded(PlayerbotAI* ai)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+
+    if (AI_VALUE2(time_t, "manual time", "no travel purpose until::" + std::to_string((uint32)TravelDestinationPurpose::Vendor)) > time(0))
         return false;
 
-    return !VendorWithinNearbyServiceRange(ai);
+    if (AI_VALUE(bool, "should repair"))
+        return true;
+
+    //A bot with a player master follows the player's journeys: it keeps the
+    //loose `should sell` && `can sell` pair it always had - now that `can sell`
+    //no longer counts the bot's own rations - and gets no solo food errand.
+    if (ai->HasActivePlayerMaster())
+        return AI_VALUE(bool, "should sell") && AI_VALUE(bool, "can sell");
+
+    if (SellableStockWorthAVendorTrip(ai))
+        return true;
+
+    return OutOfRations(ai) && AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::consumables) > 0;
 }
 
 //May the bag-pressure vendor errand start while the bot already has a travel
