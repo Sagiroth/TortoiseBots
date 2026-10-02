@@ -54,7 +54,7 @@
     lastSnapshotAt: 0,
     issues: { active: [], resolved: [], counts_by_type: {} },
     issueTypeFilter: 'all',
-    issueDurationFilter: 600,
+    issueDurationFilter: 300,
     issueHistory: { t: [], series: {} },
     armoryGuid: null,
     armoryProfile: null,
