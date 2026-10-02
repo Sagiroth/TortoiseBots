@@ -875,6 +875,25 @@ body {
   50% { opacity: 0.45; }
 }
 
+/* Ring around the selected bot, drawn as its own element under the dot. */
+.bot-select-ring {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border: 2px solid #ffd33d;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 24;
+  box-shadow: 0 0 8px rgba(255, 211, 61, 0.8);
+  animation: select-ring-pulse 1.6s ease-out infinite;
+}
+
+@keyframes select-ring-pulse {
+  0% { width: 18px; height: 18px; opacity: 1; }
+  100% { width: 44px; height: 44px; opacity: 0.15; }
+}
+
 /* Selected bot: bright halo so it is findable after "investigate". */
 .bot-dot.selected {
   z-index: 25;

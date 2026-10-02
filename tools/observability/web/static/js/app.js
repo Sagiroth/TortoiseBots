@@ -1247,6 +1247,7 @@
       const p = projectWorld(mapId, b.x, b.y);
       if (!p) return;
       overlay.appendChild(makeBotDot(b, issuesByGuid[b.guid], p.x, p.y));
+      if (b.guid === state.selectedBotGuid) overlay.appendChild(makeSelectRing(p.x, p.y));
     });
     return bots;
   }
@@ -1845,6 +1846,16 @@
     setStatusPill();
   }
 
+  // A pulsing ring around the selected bot so it is easy to spot on the map
+  // (the dot itself is clipped to a triangle, so the ring is its own element).
+  function makeSelectRing(pctX, pctY) {
+    const ring = document.createElement('div');
+    ring.className = 'bot-select-ring';
+    ring.style.left = `${pctX}%`;
+    ring.style.top = `${pctY}%`;
+    return ring;
+  }
+
   function makeBotDot(b, issue, pctX, pctY) {
     const dot = document.createElement('div');
     dot.className = 'bot-dot';
@@ -1979,6 +1990,7 @@
     const issuesByGuid = issueSet();
     zoneBots.forEach(b => {
       el.mapOverlay.appendChild(makeBotDot(b, issuesByGuid[b.guid], b.pct_x, b.pct_y));
+      if (b.guid === state.selectedBotGuid) el.mapOverlay.appendChild(makeSelectRing(b.pct_x, b.pct_y));
     });
 
     renderMapLegend(zoneBots);
