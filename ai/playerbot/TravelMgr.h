@@ -96,7 +96,7 @@ namespace ai
 			{"can repair", false},
 			{"should ah sell", false},
 			{"can ah sell", false},
-			{"can get mail", false },
+			{"vendor trip needed", false},
 			{"has strategy::rpg quest", false},
 			{"can fight equal", false},
 			{"can fight elite", false},
