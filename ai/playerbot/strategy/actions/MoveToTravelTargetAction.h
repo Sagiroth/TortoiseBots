@@ -16,12 +16,25 @@ namespace ai
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;
 
+        // Stuck-hand-in fallback, shared with the re-pick observation in
+        // ChooseTravelTargetAction::setNewTarget: records one no-progress
+        // episode for this quest's hand-in trip (a failed move toward the
+        // taker, or the same taker picked again). Execute settles the trip off
+        // these counters when the taker turns out not to be walkable to.
+        static void CountHandInNoProgress(PlayerbotAI* ai, uint32 questId, int32 takerEntry);
+
     private:
-        // Stuck-hand-in fallback: a completed quest whose hand-in trip to its taker
-        // keeps failing to move, for a pool bot with no real master. Pays the quest
-        // out server-side (TalkToQuestGiverAction::RewardFinishedQuest) and parks
-        // that quest's hand-in travel. Returns true when the quest was rewarded.
-        bool TryAutoHandInUnreachableTaker(TravelTarget* target, std::string const& purpose, float distance);
+        // A hand-in trip whose taker the bot cannot walk to is settled without
+        // walking the last steps: one navmesh probe per bot, shared process-wide
+        // (TakerReachabilityCache), or, when the probe says the taker is
+        // walkable, the no-progress episode counters. Returns true when the
+        // quest was rewarded.
+        bool TrySettleUnreachableHandIn(TravelTarget* target, std::string const& purpose);
+
+        // Pay the finished quest out without a talk and park that quest's
+        // hand-in travel. `reason` ("nopath" when a navmesh probe settled it,
+        // "unreachable" when the episode counters did) lands in QuestAutoHandIn.
+        static bool SettleUnreachableTakerHandIn(PlayerbotAI* ai, uint32 questId, int32 takerEntry, std::string const& reason);
     };
 
 }

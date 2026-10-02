@@ -4,6 +4,7 @@
 #include "playerbot/LootObjectStack.h"
 #include "ChooseTravelTargetAction.h"
 #include "FishAction.h"
+#include "MoveToTravelTargetAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/TravelInstancePolicy.h"
 #include "playerbot/strategy/values/TravelValues.h"
@@ -244,6 +245,14 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
             std::string eventName = (dest->GetPurpose() == TravelDestinationPurpose::QuestGiver) ? "QuestTravelToGiver" : "QuestTravelToTaker";
             sPlayerbotAIConfig.logEvent(ai, eventName, q->GetTitle(), std::to_string(dest->GetQuestId()));
         }
+
+        // Picking the same hand-in taker again while still stuck near it (the
+        // taker within range but out of interaction distance) is one no-progress
+        // episode for that quest: the trip that produced this pick made none.
+        // MoveToTravelTargetAction settles the hand-in off these episodes when
+        // its own navmesh probe cannot.
+        if (dest->GetPurpose() == TravelDestinationPurpose::QuestTaker)
+            MoveToTravelTargetAction::CountHandInNoProgress(ai, dest->GetQuestId(), dest->GetEntry());
     }
 
     // Travel-target observability: one line per newly chosen target. Resets
