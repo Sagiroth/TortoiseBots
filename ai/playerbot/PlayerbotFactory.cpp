@@ -138,6 +138,7 @@ void PlayerbotFactory::ProvisionSpellsAndGear()
     // hired at any level arrives with a usable kit.
     InitThrown();
     InitBags();
+    InitInventorySkill();
     InitMounts();
     InitAmmo();
     InitReagents();
