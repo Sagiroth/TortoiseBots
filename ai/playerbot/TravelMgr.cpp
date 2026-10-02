@@ -129,7 +129,19 @@ bool QuestRelationTravelDestination::IsPossible(const PlayerTravelInfo& info) co
         if (!forceThisQuest && (int32)quest->GetQuestLevel() >= (int32)info.GetLevel() + (int32)5)
             return false;
 
-        if ((int32)info.GetLevel() < quest->GetMinLevel() || (int32)info.GetLevel() > quest->GetMaxLevel())
+        // MaxLevel 0 is "no upper bound" in this core, not "level 0": the take
+        // gate reads it as `if (pQuest->GetMaxLevel() && pQuest->GetMaxLevel() <
+        // GetLevel())` (Player::CanTakeQuest). 6,509 of the 7,190 quest templates
+        // carry 0, and against a level 1+ bot the literal comparison below
+        // rejected every one of them, so the giver search could only ever find
+        // the handful of templates that do set it - 8 giver pairs across 60 live
+        // level 1-8 bots, from Turtle's low-level 60145/60150. QuestTravelToGiver
+        // stayed 0 over 60 minutes of live play while 1,514 of 1,572 fruitless
+        // quest searches came back with an empty list, although 15-42 giver
+        // (npc, quest) pairs whose quest-level window a sampled level 1-4 bot fits
+        // sit within 1500 yd of it.
+        if ((int32)info.GetLevel() < quest->GetMinLevel() ||
+            (quest->GetMaxLevel() && (int32)info.GetLevel() > quest->GetMaxLevel()))
             return false;
 
         if (OnMap(info.getPosition())) //CanTakeQuest will check required conditions which will fail on a different map.
@@ -2518,9 +2530,20 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
     // above a fresh bot (Camp Narache and Mulgore 6, Dun Morogh 7, Durotar 8) and
     // the destination gate gives them the wider margin for the same reason.
     // Owned/hired bots keep the strict ceiling: their player decides.
+    //
+    // Quest-giver destinations take a +5 margin: the starter valleys are rated 2-6
+    // in ai_playerbot_zone_level while the bots living in them are level 1-6, so a
+    // ceiling at the bot's own level vetoes every giver in the valley the bot is
+    // standing in (30 of 33 live bots below level 4 found no giver). The chosen
+    // point is re-checked against level + 5 downstream.
     int32 areaCeiling = botLevel;
-    if ((purposeFlag & (uint32)TravelDestinationPurpose::Grind) && info.IsMasterlessRandom())
-        areaCeiling += GRIND_AREA_MARGIN;
+    if (info.IsMasterlessRandom())
+    {
+        if (purposeFlag & (uint32)TravelDestinationPurpose::Grind)
+            areaCeiling += GRIND_AREA_MARGIN;
+        else if (purposeFlag & (uint32)TravelDestinationPurpose::QuestGiver)
+            areaCeiling += 5;
+    }
 
     if (!beginnerGrind && !(purposeFlag & (uint32)TravelDestinationPurpose::QuestTaker) && !beginnerVendorTrip)
     {
