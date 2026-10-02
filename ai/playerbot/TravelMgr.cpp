@@ -451,8 +451,9 @@ bool RpgTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 
     // Don't send a bot to an NPC sitting in a zone far above its level — the journey
     // crosses (and the destination sits among) mobs that farm the bot into a death
-    // spiral at the local high-level graveyard. Mirrors the grind-target level gate
-    // (GrindTravelDestination::IsPossible). Margin matches the quest-level gate (+5).
+    // spiral at the local high-level graveyard. Margin matches the quest-level gate
+    // (+5); the autonomous grind gate is one step tighter (GRIND_AREA_MARGIN in
+    // GrindSpotPolicy.h - an errand's route is fixed, a grind pick is not).
     // getAreaLevel() returns -1/-2 for unknown areas; only reject on a real level.
     WorldPosition* point = GetClosestPoint(info.getPosition());
     if (point)
@@ -663,8 +664,18 @@ bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
             (PlayerbotAIConfig::IsIsolatedCustomZone(zoneId) || (area && PlayerbotAIConfig::IsIsolatedCustomZone(area->Id))))
             return false;
 
+        // Autonomous bots take the measured ceiling (GrindSpotPolicy.h): the first
+        // areas above the bot's level hold the XP, the far tail (bot+4..+5) paid the
+        // same XP per kill for about three times the deaths. The beginner clamp
+        // window (levels 1-4) keeps the wider margin regardless - a starter valley's
+        // own sub-areas are rated far above a fresh bot (Camp Narache and Mulgore 6,
+        // Dun Morogh 7, Durotar 8), so the tighter margin would leave a level-1 bot
+        // with no destination at all, which is the starter-valley wall the clamp
+        // exists for. This margin and TravelMgr::IsLocationLevelValid's area ceiling
+        // must agree, or the coarser area vote lets through points this one rejects.
+        int32 const areaMargin = (info.IsMasterlessRandom() && !beginner) ? GRIND_AREA_MARGIN : GRIND_AREA_MARGIN_OWNED;
         int32 destAreaLevel = point->GetAreaLevel();
-        if (destAreaLevel > 0 && destAreaLevel > (int32)info.GetLevel() + 5)
+        if (destAreaLevel > 0 && destAreaLevel > (int32)info.GetLevel() + areaMargin)
             return false;
 
         if (info.GetLevel() <= 5 && point->distance(info.getPosition()) > 1500.0f)
@@ -2494,14 +2505,22 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
     // 14-42 XP while the level 5-6 wildlife worth 56-70 lived one area rating away -
     // 40% of the level-5 bots never got a grind destination at all, and the ones that
     // did took 27 min to reach level 6 against 16 min for level 4->5.
-    // Autonomous grind therefore gets the same +5 margin that
-    // GrindTravelDestination::IsPossible already applies on the closest point (and
-    // that the quest gate below/above uses), so the two gates agree instead of the
-    // finer band being undone by the coarser average. Owned/hired bots keep the
-    // strict ceiling: their player decides where they hunt.
+    // Autonomous grind therefore gets the same margin that
+    // GrindTravelDestination::IsPossible applies on the closest point, so the two
+    // gates agree instead of the finer band being undone by the coarser average.
+    // That margin is GRIND_AREA_MARGIN (+3): the cycle-3 deaths review showed the
+    // far tail (areas rated bot+4..bot+5) paying the same XP per kill as the first
+    // band (49.5 -> 50-52) for 117-150 deaths per 1,000 kills against 46 at or
+    // below the bot's level, so it only bought corpses. The band the ceiling was
+    // widened for (Elwynn 6, Teldrassil 7 for a level-5 bot) is +1/+2 and stays
+    // open. Levels 1-4 never reach this ceiling (beginnerGrind above), which is
+    // what keeps their start-valley destinations: those sub-areas are rated far
+    // above a fresh bot (Camp Narache and Mulgore 6, Dun Morogh 7, Durotar 8) and
+    // the destination gate gives them the wider margin for the same reason.
+    // Owned/hired bots keep the strict ceiling: their player decides.
     int32 areaCeiling = botLevel;
     if ((purposeFlag & (uint32)TravelDestinationPurpose::Grind) && info.IsMasterlessRandom())
-        areaCeiling += 5;
+        areaCeiling += GRIND_AREA_MARGIN;
 
     if (!beginnerGrind && !(purposeFlag & (uint32)TravelDestinationPurpose::QuestTaker) && !beginnerVendorTrip)
     {
