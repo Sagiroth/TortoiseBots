@@ -32,7 +32,7 @@ private:
 
     ACTION_NODE_A(windfury_totem, "windfury totem", "grace of air totem");
 
-    ACTION_NODE_A(windfury_weapon, "windfury weapon", "rockbiter weapon");
+    ACTION_NODE_A(windfury_weapon, "windfury weapon", "flametongue weapon");
 };
 
 EnhancementShamanStrategy::EnhancementShamanStrategy(PlayerbotAI* ai) : ShamanStrategy(ai)
@@ -378,6 +378,8 @@ void EnhancementShamanBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& 
 {
     ShamanBuffStrategy::InitCombatTriggers(triggers);
 
+    // Queue the fixed spec imbue (issue #406): below its gate it IMPOSSIBLE-gates
+    // (no trained spell id) and the node alternative below lands the trained one.
     triggers.push_back(new TriggerNode(
         "shaman weapon",
         NextAction::array(0, new NextAction("windfury weapon", ACTION_HIGH), NULL)));
