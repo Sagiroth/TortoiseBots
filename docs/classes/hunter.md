@@ -29,7 +29,7 @@ Hunters excel at sustained single-target ranged DPS, pet off-tanking, snares, an
    - *Aimed Shot* when the MM talent is known, otherwise *Arcane Shot* (never both), on cooldown.
    - *Multi-Shot* when AoE is permitted and multiple enemies are engaged.
    - Keeps *Serpent Sting* ticking on high-health targets (skips on low-health mobs to conserve mana).
-3. **Dead-Zone Handling:** Below level 10 a hunter with a loaded ranged weapon keeps its ranged kit instead of switching to melee: nothing switches it back before level 10 (`SwitchToRangedTrigger` — no snares or traps yet), and the switch removes the `ranged` strategy that gates the auto shot the kit keeps running, so one melee switch ends the hunter's sustained ranged attack for the rest of the level. The melee fallback (*Wing Clip*, *Mongoose Bite*/*Raptor Strike*, melee weapon swapping) is reserved for hunters that cannot shoot at all: no ranged weapon, no matching ammo, or a spent thrown-weapon stack. Inside the weapon's own minimum range (the dead zone, where no shot is possible and the generic `enemy too close for spell` flee is suppressed against a glued target) an armed hunter steps back out with `enemy too close for auto shot` → `flee`, then resumes shooting while the pet holds the target. From level 10 the bot swaps both ways (melee when a faster target is on it, back to ranged when it can kite); *Disengage* is not automated.
+3. **Dead-Zone Handling:** Inside the weapon's own minimum range no shot is possible, and the generic `enemy too close for spell` flee is suppressed against a fast target. A mob glued there is answered by trading into melee (`-ranged,+close`, melee auto-attack + *Raptor Strike*; *Wing Clip*/*Mongoose Bite* once known) at any level — `SwitchToMeleeTrigger` has no level gate, mirroring the donor. `SwitchToRangedTrigger` (also ungated) hands the ranged kit back as soon as the target is off the bot, immobilized, too slow to follow, or the bot has made distance. When the switch leaves the bot alone (target rooted or too slow, or no melee weapon) the `enemy too close for auto shot` → `flee` step-back at `ACTION_MOVE − 1` still moves it out, after which it resumes shooting while the pet holds the target. *Disengage* is not automated.
 4. **Distance Band:** The ranged kit keeps its own band: `flee` moves the bot out when a target is inside it, and `enemy out of spell` → `reach spell` closes the distance again when the target leaves casting range.
 
 ### 2. Melee Survival Combat
@@ -77,7 +77,7 @@ Hunter ammo stacks cannot tell whether a hunter is shooting: the random-bot item
 | `SwitchToMelee` | The hunter traded its ranged kit for melee (`-ranged,+close`) | pre-switch `ranged`, `close` |
 | `SwitchToRanged` | The hunter traded melee back for ranged (`-close,+ranged`) | pre-switch `ranged`, `close` |
 
-Reading it: `AutoShot` rows with `ranged=1,close=0` are a hunter firing; a `SwitchToMelee` row with `ranged=1` followed by no `AutoShot` rows is a hunter that lost its ranged kit and, below level 10, cannot switch back (see the level gate in `SwitchToRangedTrigger`).
+Reading it: `AutoShot` rows with `ranged=1,close=0` are a hunter firing; a `SwitchToMelee` row with `ranged=1` followed by a `SwitchToRanged` row and new `AutoShot` rows is a hunter that traded into melee for a glued mob and re-opened fire once it could.
 
 ---
 

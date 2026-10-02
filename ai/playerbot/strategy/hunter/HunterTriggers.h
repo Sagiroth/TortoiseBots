@@ -5,11 +5,6 @@
 
 namespace ai
 {
-    // Below this level a hunter cannot kite back into ranged once melee starts:
-    // SwitchToRangedTrigger refuses to switch back (its kiting toolkit - snares
-    // and traps - is not there yet).
-    uint32 const HUNTER_KITING_LEVEL = 10;
-
     HAS_AURA_TRIGGER_TIME(FeignDeathTrigger, "feign death", 2);
 
     BEGIN_TRIGGER(HunterNoStingsActiveTrigger, Trigger)
@@ -224,14 +219,10 @@ private:
 
         bool IsActive() override
         {
-            // Below level 10, Hunter has no viable kiting toolkit (8yd ranged minimum, no
-            // traps yet) - once melee starts, stay in it rather than repeatedly trying to
-            // reopen ranged distance (which the "target->GetVictim() != bot" case below would
-            // otherwise attempt even against a target just as fast as the bot, e.g. whenever
-            // the pet currently has aggro, regardless of what happens if aggro flips back).
-            if (bot->GetClass() == CLASS_HUNTER && bot->GetLevel() < HUNTER_KITING_LEVEL)
-                return false;
-
+            // No level gate: the donor's SwitchToRangedTrigger has none either, and
+            // below level 10 this is what hands the ranged kit back after a melee
+            // trade - once the target is off the bot, immobilized, too slow to
+            // follow, or the bot has made distance.
             bool hasAmmo = ai->HasCheat(BotCheatMask::item) || AI_VALUE2(uint32, "item count", "ammo");
             if (!hasAmmo)
                 return false;
@@ -282,16 +273,11 @@ private:
 
         bool IsActive() override
         {
-            // A hunter below the kiting level keeps its ranged kit:
-            // SwitchToRangedTrigger never switches back below
-            // HUNTER_KITING_LEVEL, and the auto shot that the kit keeps running
-            // is gated on the "ranged" strategy - one melee switch here ends the
-            // hunter's sustained ranged attack for the rest of the level. The
-            // melee fallback stays for a hunter with no loaded ranged weapon (no
-            // weapon, wrong or no ammo, spent thrown stack).
-            if (bot->GetClass() == CLASS_HUNTER && bot->GetLevel() < HUNTER_KITING_LEVEL && HunterHasLoadedRangedWeapon(ai))
-                return false;
-
+            // No level gate (the donor's switch has none): a glued mob inside the
+            // shot's dead zone cannot be shot, and holding the ranged kit only
+            // yields the zero-damage dead-zone step-back, so below level 10 the
+            // hunter now trades into melee instead. SwitchToRangedTrigger gives the
+            // ranged kit back once the target is off the bot or out of melee.
             bool hasAmmo = ai->HasCheat(BotCheatMask::item) || AI_VALUE2(uint32, "item count", "ammo");
             if (!hasAmmo)
                 return true;

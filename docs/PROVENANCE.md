@@ -2511,3 +2511,47 @@ The first version of this bundle also claimed the beginner gold exemption in
 purpose map never gave those creatures a `Grind` purpose, so the exemption could
 only ever see the old Scarlet whitelist. `GrindPreyAllowed` now owns both halves
 of the rule (purpose map + per-bot gate).
+
+## Hunter dead-zone melee fallback below level 10 — 2026-10-02
+
+Feature: `SwitchToMeleeTrigger` / `SwitchToRangedTrigger` lose their sub-10 level
+gates, so a hunter below level 10 whose target is glued inside the shot's dead
+zone trades into melee (melee auto-attack + *Raptor Strike*) instead of holding a
+ranged kit that cannot fire, and hands the ranged kit back whenever the target is
+off the bot, immobilized, too slow to follow, or out of melee.
+
+Source project: `mod-playerbots` (hunter "ranged" / "close" kit switches).
+
+Source commit: `mod-playerbots@5397110cba484a9b7209bc9f632652e9d4bd6a70` (same
+checkpoint recorded above for the class-strategy port).
+
+Source files: donor `src/Ai/Class/Hunter/HunterTriggers.cpp:112-126`
+(`SwitchToRangedTrigger`: `close && victim != bot && distance > 8`;
+`SwitchToMeleeTrigger`: `ranged && victim == bot && distance <= 8` — neither has a
+level gate); local `ai/playerbot/strategy/hunter/HunterTriggers.h`
+(`SwitchToRangedTrigger`, `SwitchToMeleeTrigger`, removal of the
+`HUNTER_KITING_LEVEL` constant), `ai/playerbot/strategy/hunter/HunterStrategy.cpp`
+(dead-zone step-back comment). `docs/classes/hunter.md` §Ranged Combat updated.
+
+Ported / reimplemented: donor behavior matched where it applies — no level gate
+on either switch, and the step back to ranged happens only when the target is not
+on the bot and the bot is out of melee. Our `SwitchToRangedTrigger` keeps its
+existing richer conditions (target immobilized / too slow to follow / distance >
+8) rather than the donor's bare `victim != bot && distance > 8`. No new action,
+trigger, config key or spell: `SwitchToMeleeAction` already does
+`bot->Attack(target, true)` + `-ranged,+close`, and the existing `enemy is close`
+→ `raptor strike` trigger covers the melee ability.
+
+Reason: measured on the live cycle-3 pool (2026-10-01, 94 hunter bots, 90 min).
+At levels 1-9 the hunter has no rotation (Auto Shot only; Arcane Shot and Serpent
+Sting are unlearned because the pool cannot pay the trainer), and the custom
+sub-10 gate turned the weapon's 8-yd minimum range into a no-damage state: 100 %
+of 3,177 `AutoShot` rows were `ranged=1,close=0`, 0 `SwitchToMelee` /
+`SwitchToRanged` rows, 17 % of shot (re)starts at 9-11 yd and 8 starts per kill —
+a bot repeatedly re-opening fire instead of fighting or holding position. Hunters
+were the lowest-throughput class (median 573 XP/bot-h vs warrior 1,298). This
+change grants no gold and no spells (owner rule).
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`; module build via
+`build-commit.sh` (no deploy). Runtime not verified here: the worktree is for
+morning review and was not deployed.
