@@ -17,6 +17,26 @@ namespace ai
     std::int32_t const GRIND_LEVEL_OVER_LOW = 1;
     std::int32_t const GRIND_LEVEL_OVER_HIGH = 2;
 
+    // How far above its own level an autonomous bot's grind destination may sit
+    // by *area rating* (the zone/area level the travel gate compares, not the mob
+    // level the band above bounds). Two gates apply it and they must agree:
+    // TravelMgr::IsLocationLevelValid votes on the scanned point, and
+    // GrindTravelDestination::IsPossible on the destination's closest point - when
+    // the coarser area vote is looser it lets points through that the finer one
+    // then rejects. Measured on the live cycle-3 pool: deaths per 1,000 kills rise
+    // from 46 in areas at or below the bot's level to 117-150 in areas rated
+    // bot+4..bot+5, while the XP per kill is flat (49.5 -> 50-52) - the far tail
+    // buys no extra XP and about three times the deaths, so the margin stops at
+    // +3. Levels 1-4 keep the wider margin: their start-valley sub-areas are rated
+    // far above them (Camp Narache and Mulgore 6, Dun Morogh 7, Durotar 8), and the
+    // tight margin would strip a level-1 bot of every destination it has. Owned
+    // and hired bots keep it too: their player decides where they hunt.
+    std::int32_t const GRIND_AREA_MARGIN = 3;
+
+    // The margin owned/hired bots get, and the one the RPG errand and quest gates
+    // still use (TravelMgr::IsLocationLevelValid).
+    std::int32_t const GRIND_AREA_MARGIN_OWNED = 5;
+
     // Creature-level window a grind destination must sit in.
     //
     // The long-standing window (roughly half the bot's level, narrowed further by

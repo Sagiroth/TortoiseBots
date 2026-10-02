@@ -1250,6 +1250,19 @@ bool PlayerbotAI::ShouldAvoidPlayerKiller(std::string const& name) const
     return WorldTimer::getMSTime() - avoidPlayerKillerMs_ <= 10 * MINUTE * IN_MILLISECONDS;
 }
 
+// Death-cluster escape (OnDeath): how many deaths inside one hunting ground,
+// within how long, before the bot leaves it, and for how long the
+// destination/kind stays blacklisted. Calibrated on the cycle-3 pool's 769
+// deaths: a bot's consecutive deaths sit a median 142 s and 142 yd apart (p90
+// 492 yd), so a tight camp radius catches almost nothing (60 yd: 6 clusters) -
+// 300 yd is the hunting-ground size that matters, where 3 deaths in 15 minutes
+// covers 109 of the 769 deaths (14%) across 25 bots. Half an hour off matches
+// the lethal-kind rule's cooldown.
+static constexpr uint32 kDeathClusterDeaths = 3;
+static constexpr uint32 kDeathClusterWindowMs = 15 * MINUTE * IN_MILLISECONDS;
+static constexpr float kDeathClusterRadiusYd = 300.0f;
+static constexpr uint32 kDeathClusterBlacklistMs = 30 * MINUTE * IN_MILLISECONDS;
+
 void PlayerbotAI::OnDeath()
 {
     if (!IsStateActive(BotState::BOT_STATE_DEAD) && !sServerFacade.IsAlive(bot))
@@ -1315,6 +1328,57 @@ void PlayerbotAI::OnDeath()
                 }
                 prevKillerEntry_ = lastKiller_.entry;
                 prevKillerMs_ = nowMs;
+            }
+            // Death-cluster escape: kDeathClusterDeaths deaths inside one small area
+            // within a window mean the bot is looping on a camp it cannot survive
+            // there, whatever the killer kind is. The per-kind rule above only trips
+            // on two consecutive deaths to the same creature, so a camp whose mobs
+            // rotate as they kill the bot slips through it (cycle-3 measurement: a
+            // third of all deaths arrive within two kills of the previous death).
+            // Blacklist the grind destination the bot was working - the same per-bot
+            // list the unreachable give-up and the lethal-kind rule use - so its
+            // travel target drops and the destination picker sends the bot elsewhere.
+            if (context)
+            {
+                uint32 const nowClusterMs = WorldTimer::getMSTime();
+                float const dxCluster = bot->GetPositionX() - deathClusterX_;
+                float const dyCluster = bot->GetPositionY() - deathClusterY_;
+                bool const sameSpot = deathClusterCount_ > 0 &&
+                    bot->GetMapId() == deathClusterMapId_ &&
+                    nowClusterMs - deathClusterMs_ <= kDeathClusterWindowMs &&
+                    dxCluster * dxCluster + dyCluster * dyCluster <= kDeathClusterRadiusYd * kDeathClusterRadiusYd;
+
+                if (sameSpot)
+                    deathClusterCount_++;
+                else
+                {
+                    deathClusterCount_ = 1;
+                    deathClusterMs_ = nowClusterMs;
+                    deathClusterMapId_ = bot->GetMapId();
+                    deathClusterX_ = bot->GetPositionX();
+                    deathClusterY_ = bot->GetPositionY();
+                }
+
+                if (deathClusterCount_ >= kDeathClusterDeaths)
+                {
+                    deathClusterCount_ = 0; // the next death starts a fresh cluster
+
+                    uint32 clusterEntry = 0;
+                    TravelTarget* clusterTarget = AI_VALUE(TravelTarget*, "travel target");
+                    GrindTravelDestination* clusterGrind = clusterTarget
+                        ? dynamic_cast<GrindTravelDestination*>(clusterTarget->GetDestination()) : nullptr;
+                    if (clusterGrind)
+                        clusterEntry = clusterGrind->GetEntry();
+                    else if (lastKiller_.entry)
+                        clusterEntry = lastKiller_.entry; // no Grind destination: leave the kind that kills here
+
+                    if (clusterEntry)
+                    {
+                        context->GetValue<std::map<uint32, uint32>&>("unreachable entries")->Get()[clusterEntry] = nowClusterMs + kDeathClusterBlacklistMs;
+                        sPlayerbotAIConfig.logEvent(this, "DeathClusterEscape", std::to_string(clusterEntry), WorldPosition(bot).GetAreaName());
+                        TellDebug(GetMaster(), "Leaving this hunting ground for a while - it killed me " + std::to_string(kDeathClusterDeaths) + " times", "debug move");
+                    }
+                }
             }
             // Killed by a player (entry == 0, not the environment): avoid that
             // named killer for a while so two masterless random bots grinding the

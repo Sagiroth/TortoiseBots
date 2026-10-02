@@ -5,6 +5,19 @@
 
 using namespace ai;
 
+// A ghost whose distance to its corpse stops closing for this long is not
+// corpse-running any more: the MoveTo spline is dispatched every tick and never
+// ridden (the stall signature LogGhostMoveDiag records - identical from-position,
+// no distance gain). Left to the dead-time gates below, the bot stands there
+// until deadTime > 10 * MINUTE, i.e. up to ten minutes of a dead bot doing
+// nothing; on the live cycle-3 masterless pool 168 of 799 corpse runs spent ~601 s
+// that way and produced 76% of all ghost time.
+static constexpr uint32 kGhostStallSec = 60;
+
+// Yards of progress toward the corpse that still count as "moving": a run that
+// closes the distance slowly keeps its clock reset, only a stopped one trips.
+static constexpr float kGhostStallProgressYd = 5.0f;
+
 GuidPosition GraveyardValue::Calculate()
 {
     WorldPosition refPosition = bot, botPos(bot);
@@ -182,6 +195,43 @@ bool ShouldSpiritHealerValue::Calculate()
     //Dead for a long time
     if (deadTime > 20 * MINUTE)
         return true;
+
+    // Stalled corpse run: the ghost stopped closing the distance to its corpse,
+    // so the walk is not going anywhere and waiting out the ten minutes above
+    // buys nothing. Hand the run to the spirit healer exactly like a long dead
+    // time does. Inside the core reclaim radius the corpse revive fires without
+    // walking (find corpse parks the ghost there on purpose while the reclaim
+    // delay runs), so only a ghost that still has ground to cover counts.
+    if (!corpse->IsWithinDistInMap(bot, (float)CORPSE_RECLAIM_RADIUS, true))
+    {
+        float const corpseDist = WorldPosition(bot).fDist(corpse);
+        time_t const now = time(nullptr);
+        int32 bestDist = AI_VALUE2(int32, "manual int", "ghost walk best");
+        time_t anchor = AI_VALUE2(time_t, "manual time", "ghost walk anchor");
+
+        // An anchor from a previous corpse run (or before this death) restarts
+        // the clock; so does any progress toward the corpse.
+        if (anchor < corpse->GetGhostTime())
+        {
+            anchor = 0;
+            bestDist = 0;
+        }
+
+        if (bestDist <= 0 || corpseDist < (float)bestDist - kGhostStallProgressYd)
+        {
+            SET_AI_VALUE2(int32, "manual int", "ghost walk best", (int32)corpseDist);
+            SET_AI_VALUE2(time_t, "manual time", "ghost walk anchor", now);
+            anchor = now;
+        }
+
+        if (anchor != 0 && now - anchor >= (time_t)kGhostStallSec)
+        {
+            sLog.outDetail("[BOT CORPSE] %s: find corpse stalled %.1fy from the corpse for %us, reviving at the spirit healer",
+                bot->GetName(), corpseDist, kGhostStallSec);
+            SET_AI_VALUE2(time_t, "manual time", "ghost walk anchor", now); // re-arm, the revive may take a tick or two
+            return true;
+        }
+    }
 
     //If there are enemies near grave and corpse we go to corpse first.
     if (AI_VALUE2(bool, "manual bool", "enemies near graveyard"))
