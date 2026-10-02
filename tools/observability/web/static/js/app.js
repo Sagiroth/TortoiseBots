@@ -949,7 +949,9 @@
         el.zoneNoart.innerHTML = `No map artwork for <strong style="color: #fff;">${esc(getZoneName(zoneId))}</strong> — dots positioned by DBC bounds.`;
       }
     }
-    renderMap();
+    // No renderMap() here: every caller that switches zone goes through
+    // setMapView (which renders) or switchTab('map') (which renders), so this
+    // used to be a second full 500-dot render per zone switch.
   }
 
     // Zone art is not uniformly 3:2 (14 files are 4:3). Fit the viewport to
