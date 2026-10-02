@@ -727,10 +727,15 @@ void BotManager::OnPlayerLogin(::Player* player)
     // change, so such a bot can hold the skill and still be refused by
     // LootObject::IsLootPossible, which requires the knife/pick. StoreItem skips
     // anything the bot already owns, so this is a no-op for a bot that has its kit.
+    // Issue #401 backstop for the live pool: the same pass tops up the starter
+    // set (bags before the bulky kit, thrown before bags, then ammo), so bots
+    // created before the starter set get it on login, not only at creation.
+    // Every helper checks current state first; nothing earned is ever moved.
     if (record.random)
     {
         PlayerbotFactory tools(player, player->GetLevel());
         tools.AddTools();
+        tools.EnsureStarterKit();
     }
 
     // One-shot random scatter on headless login only; fail-closed, no DB mutation, no homebind.

@@ -708,6 +708,33 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         }
         if (HasCheat(BotCheatMask::item) && (bot->GetClass() == CLASS_HUNTER || bot->GetClass() == CLASS_ROGUE || bot->GetClass() == CLASS_WARRIOR))
         {
+            // Server-managed ammo (Issue #401): InitAmmo picks the
+            // level/weapon-appropriate ammo, and a gun<->bow swap leaves a
+            // stale ammo id behind. Resync through InitAmmo first so the
+            // refill below tops up the right stack instead of the old one.
+            bool ammoMismatch = false;
+            if (Item* ranged = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED))
+            {
+                uint32 wantSub = 0;
+                switch (ranged->GetProto()->SubClass)
+                {
+                case ITEM_SUBCLASS_WEAPON_GUN:
+                    wantSub = ITEM_SUBCLASS_BULLET;
+                    break;
+                case ITEM_SUBCLASS_WEAPON_BOW:
+                case ITEM_SUBCLASS_WEAPON_CROSSBOW:
+                    wantSub = ITEM_SUBCLASS_ARROW;
+                    break;
+                case ITEM_SUBCLASS_WEAPON_THROWN:
+                    break;
+                }
+                uint32 ammoId = bot->GetUInt32Value(PLAYER_AMMO_ID);
+                ItemPrototype const* ammoProto = ammoId ? sObjectMgr.GetItemPrototype(ammoId) : nullptr;
+                if (wantSub && (!ammoProto || ammoProto->Class != ITEM_CLASS_PROJECTILE || ammoProto->SubClass != wantSub))
+                    ammoMismatch = true;
+            }
+            if (ammoMismatch)
+                PlayerbotFactory(bot, bot->GetLevel(), 0).InitAmmo();
             uint32 itemId = bot->GetUInt32Value(PLAYER_AMMO_ID);
             if (itemId && bot->GetItemCount(itemId))
             {
