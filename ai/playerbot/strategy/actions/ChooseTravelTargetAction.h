@@ -10,6 +10,14 @@ namespace ai
 {
     const std::vector<uint32> travelPartitions = { 100, 250, 500, 1000, 2000, 3000, 4000, 5000, 6000, 10000, 50000, 100000, 500000 };
 
+    // A companion standing inside a dungeon or raid must not run autonomous
+    // travel selection (issue #388): a real player master bypasses activity
+    // throttling, so its travel strategy - granted in the open world and never
+    // revoked on zone-in - would otherwise run the destination search on the
+    // world tick. Shared by the request, choose and move travel actions; see
+    // TravelInstancePolicy.h for the pure decision.
+    bool TravelBlockedInsideInstance(PlayerbotAI* ai);
+
     class ChooseTravelTargetAction : public Action {
     public:
         ChooseTravelTargetAction(PlayerbotAI* ai, std::string name = "choose travel target") : Action(ai, name) {}

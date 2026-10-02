@@ -2,6 +2,7 @@
 #include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "MoveToTravelTargetAction.h"
+#include "ChooseTravelTargetAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/LootObjectStack.h"
@@ -223,6 +224,9 @@ bool MoveToTravelTargetAction::Execute(Event& event)
 
 bool MoveToTravelTargetAction::isUseful()
 {
+    if (TravelBlockedInsideInstance(ai))
+        return false;
+
     if (!bot->IsAlive()) // a ghost travelling or picking fights instead of going for its corpse
         return false;
 

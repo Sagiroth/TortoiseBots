@@ -5,6 +5,7 @@
 #include "ChooseTravelTargetAction.h"
 #include "FishAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/TravelInstancePolicy.h"
 #include "playerbot/strategy/values/TravelValues.h"
 #include "playerbot/strategy/values/MaintenanceValues.h"
 #include "playerbot/TravelNode.h"
@@ -27,6 +28,20 @@ inline std::string GetTravelPurposeName(std::string purpose)
         return "quest";
 
     return purpose;
+}
+
+bool ai::TravelBlockedInsideInstance(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    Map* map = bot->GetMap();
+    bool const inInstance = map && (map->IsDungeon() || map->IsRaid());
+
+    // Map check first: the master lookup walks the object accessor, and this
+    // guard runs for every travel action on every tick in the open world too.
+    if (!inInstance)
+        return false;
+
+    return TravelSelectionBlockedByInstance(ai->HasRealPlayerMaster(), inInstance);
 }
 
 bool ChooseTravelTargetAction::Execute(Event& event)
@@ -162,6 +177,9 @@ bool ChooseTravelTargetAction::isUseful()
 
 bool ChooseTravelTargetAction::CanChooseTravel()
 {
+    if (TravelBlockedInsideInstance(ai))
+        return false;
+
     if (!ai->AllowActivity(TRAVEL_ACTIVITY))
         return false;
 
@@ -1045,6 +1063,9 @@ bool RequestTravelTargetAction::Execute(Event& event)
 
 bool RequestTravelTargetAction::isUseful() {
     if (bot->InBattleGround())
+        return false;
+
+    if (TravelBlockedInsideInstance(ai))
         return false;
 
     if (!ai->AllowActivity(TRAVEL_ACTIVITY))
