@@ -1253,8 +1253,7 @@ bool PlayerbotAI::ShouldAvoidPlayerKiller(std::string const& name) const
 
 bool PlayerbotAI::IsDeathSpotAvoided(uint32 mapId, float x, float y, uint32 nowMs) const
 {
-    return ai::IsDeathPositionAvoided(mapId, x, y, deathAvoidMapId_, deathAvoidX_, deathAvoidY_, nowMs,
-        deathAvoidExpiryMs_, ai::kDeathAvoidRadiusYd);
+    return ai::IsDeathPositionAvoided(mapId, x, y, nowMs, deathAvoidSpots_, ai::kDeathAvoidSpots);
 }
 
 // Death-cluster escape (OnDeath): how many deaths inside one hunting ground,
@@ -1387,21 +1386,43 @@ void PlayerbotAI::OnDeath()
                         // Rotating killers defeat the kind blacklist above (issue
                         // #398: median 7 killer kinds per loop bot), so the second
                         // escape inside the avoidance window escalates to the spot
-                        // itself: grind and quest picks inside this hunting ground
-                        // go inactive for an hour and the bot walks elsewhere.
-                        // Owned bots and bots with a real player master stay out -
-                        // their player decides where to hunt.
+                        // itself: grind and quest-objective picks inside the camp
+                        // are refused for a while and the bot walks elsewhere.
+                        // Lowbies (<= 5, stuck in their starter valley) avoid a
+                        // smaller camp for a shorter while; a ding clears the
+                        // list. Owned bots and bots with a real player master
+                        // stay out - their player decides where to hunt.
                         if (!HasRealPlayerMaster())
                         {
                             deathEscapeCount_ = ai::NextDeathEscapeCount(deathEscapeCount_, nowClusterMs, deathLastEscapeMs_);
                             deathLastEscapeMs_ = nowClusterMs;
                             if (ai::DeathAvoidanceEscalated(deathEscapeCount_))
                             {
-                                deathAvoidMapId_ = bot->GetMapId();
-                                deathAvoidX_ = bot->GetPositionX();
-                                deathAvoidY_ = bot->GetPositionY();
-                                deathAvoidExpiryMs_ = nowClusterMs + ai::kDeathAvoidMs;
+                                uint32 const botLevel = bot->GetLevel();
+                                ai::AddDeathAvoidSpot(deathAvoidSpots_, ai::kDeathAvoidSpots, bot->GetMapId(),
+                                    bot->GetPositionX(), bot->GetPositionY(), nowClusterMs,
+                                    ai::DeathAvoidDurationMs(botLevel), ai::DeathAvoidRadiusYd(botLevel));
                                 sPlayerbotAIConfig.logEvent(this, "DeathSpotAvoided", WorldPosition(bot).GetAreaName());
+                                // The bot is standing in the camp it must leave:
+                                // drop the current target now so the corpse run
+                                // and the next pick start from a clean slate
+                                // instead of walking back to the same point.
+                                // SetBestTarget's per-point filter (not the
+                                // whole-destination IsActive gates) decides
+                                // where the next pick lands.
+                                TravelTarget* escapeTarget = AI_VALUE(TravelTarget*, "travel target");
+                                if (escapeTarget && escapeTarget->GetDestination() &&
+                                    typeid(*escapeTarget->GetDestination()) != typeid(NullTravelDestination))
+                                {
+                                    WorldPosition* escapePoint = escapeTarget->getPosition();
+                                    if (escapePoint && IsDeathSpotAvoided(escapePoint->GetMapId(), escapePoint->getX(),
+                                        escapePoint->getY(), nowClusterMs))
+                                    {
+                                        sTravelMgr.SetNullTravelTarget(escapeTarget);
+                                        escapeTarget->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
+                                        escapeTarget->SetExpireIn(1000);
+                                    }
+                                }
                             }
                         }
                     }

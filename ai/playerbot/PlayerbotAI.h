@@ -11,6 +11,7 @@
 #include <stack>
 #include "strategy/IterateItemsMask.h"
 #include "BotDiagnostics.h"
+#include "playerbot/DeathClusterPolicy.h"
 #include "../../runtime/BotManager.h"
 
 class Player;
@@ -751,17 +752,17 @@ public:
     uint32 deathClusterMapId_ = 0;
     float deathClusterX_ = 0.0f;
     float deathClusterY_ = 0.0f;
-    // Death-spot avoidance (issue #398): the camp the bot keeps dying in, and
-    // until when (WorldTimer ms) it stays off limits for grind and quest picks.
-    // Set on the second cluster escape inside the avoidance window; 0 expiry
-    // means no avoidance is stored. Owned bots and bots with a real player
-    // master never set it (OnDeath guards them out).
+    // Death-spot avoidance (issue #398): the camps the bot keeps dying in, and
+    // until when (WorldTimer ms) each stays off limits for grind and quest
+    // picks. Set on the second cluster escape inside the avoidance window; an
+    // expiry of 0 means the slot is free. Owned bots and bots with a real
+    // player master never set it (OnDeath guards them out). A ding clears the
+    // list (AutoLearnSpellAction): the band that killed the bot no longer
+    // applies at the new level.
     uint32 deathEscapeCount_ = 0;
     uint32 deathLastEscapeMs_ = 0;
-    uint32 deathAvoidMapId_ = 0;
-    float deathAvoidX_ = 0.0f;
-    float deathAvoidY_ = 0.0f;
-    uint32 deathAvoidExpiryMs_ = 0;
+    ai::DeathAvoidSpot deathAvoidSpots_[ai::kDeathAvoidSpots] = {};
+    void ClearDeathAvoidance() { for (auto& spot : deathAvoidSpots_) spot = ai::DeathAvoidSpot(); }
     // A death-spot query needs only plain data (map + coordinates), so the
     // travel layer can ask without pulling in the policy header.
     bool IsDeathSpotAvoided(uint32 mapId, float x, float y, uint32 nowMs) const;

@@ -407,14 +407,6 @@ bool QuestObjectiveTravelDestination::IsActive(Player* bot, const PlayerTravelIn
     if (!AI_VALUE2(bool, "group or", "following party,need quest objective::" + Qualified::MultiQualify(qualifier, ","))) //Noone needs the quest objective.
         return false;
 
-    // Same hunting-ground avoidance as the grind gate below (issue #398): a
-    // quest objective inside the spot the bot keeps dying in is not offered
-    // for an hour, whatever the killer kind is. Objectives already finished
-    // keep flowing to the hand-in (taker destinations are never gated).
-    WorldPosition* avoidPoint = GetClosestPoint(info.getPosition());
-    if (avoidPoint && ai->IsDeathSpotAvoided(avoidPoint->GetMapId(), avoidPoint->getX(), avoidPoint->getY(),
-        WorldTimer::getMSTime()))
-        return false;
     WorldPosition botPos(bot);
 
     if (!skipKillableCheck && GetEntry() > 0 && !IsOut(botPos))
@@ -756,15 +748,6 @@ bool GrindTravelDestination::IsActive(Player* bot, const PlayerTravelInfo& info)
             return false;
         unreachableKinds.erase(givenUpKind);
     }
-
-    // A hunting ground the bot keeps dying in (issue #398: second death-cluster
-    // escape inside the avoidance window) is no grind destination for an hour,
-    // whatever the killer kind is. Checked on the destination's closest point
-    // so the surviving destinations are the ones that walk the bot elsewhere.
-    WorldPosition* avoidPoint = GetClosestPoint(info.getPosition());
-    if (avoidPoint && ai->IsDeathSpotAvoided(avoidPoint->GetMapId(), avoidPoint->getX(), avoidPoint->getY(),
-        WorldTimer::getMSTime()))
-        return false;
 
     return GuidPosition(bot).IsHostileTo(GuidPosition(HIGHGUID_UNIT, GetEntry()), bot->GetInstanceId());
 }

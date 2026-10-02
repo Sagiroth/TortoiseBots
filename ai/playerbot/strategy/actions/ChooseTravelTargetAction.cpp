@@ -652,17 +652,15 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                         continue;
                     }
 
-                    // Death-spot avoidance (issue #398) at pick time: the
-                    // IsActive gates above already drop the bot's current target,
-                    // but the search lists every possible destination, so a pick
-                    // inside the camp the bot keeps dying in is refused here and
-                    // the next candidate range wins instead. Grind and quest
-                    // objectives only - givers, takers and services stay walkable.
-                    TravelDestinationPurpose pickPurpose = destination->GetPurpose();
-                    uint32 const pickPurposeId = (uint32)pickPurpose;
-                    bool const pickIsDeathGated = pickPurpose == TravelDestinationPurpose::Grind ||
-                        (pickPurposeId >= (uint32)TravelDestinationPurpose::QuestObjective1 &&
-                            pickPurposeId <= (uint32)TravelDestinationPurpose::QuestObjective4);
+                    // Death-spot avoidance (issue #398) at pick time, per point:
+                    // a point inside a camp the bot keeps dying in is refused
+                    // and the next candidate wins instead, while other camps of
+                    // the same grind creature or quest objective stay usable.
+                    // Grind and quest objectives only - givers, takers and
+                    // services stay walkable.
+                    uint32 const pickPurposeId = (uint32)destination->GetPurpose();
+                    bool const pickIsDeathGated = ai::IsDeathGatedPurpose(pickPurposeId,
+                        (uint32)TravelDestinationPurpose::Grind, (uint32)TravelDestinationPurpose::QuestAllObjective);
                     if (pickIsDeathGated && ai->IsDeathSpotAvoided(position->GetMapId(), position->getX(),
                         position->getY(), WorldTimer::getMSTime()))
                     {
@@ -960,11 +958,9 @@ bool RefreshTravelTargetAction::Execute(Event& event)
     WorldPosition* refreshPoint = target->getPosition();
     if (oldDestination && refreshPoint)
     {
-        TravelDestinationPurpose refreshPurpose = oldDestination->GetPurpose();
-        uint32 const refreshPurposeId = (uint32)refreshPurpose;
-        bool const refreshIsDeathGated = refreshPurpose == TravelDestinationPurpose::Grind ||
-            (refreshPurposeId >= (uint32)TravelDestinationPurpose::QuestObjective1 &&
-                refreshPurposeId <= (uint32)TravelDestinationPurpose::QuestObjective4);
+        uint32 const refreshPurposeId = (uint32)oldDestination->GetPurpose();
+        bool const refreshIsDeathGated = ai::IsDeathGatedPurpose(refreshPurposeId,
+            (uint32)TravelDestinationPurpose::Grind, (uint32)TravelDestinationPurpose::QuestAllObjective);
         if (refreshIsDeathGated && ai->IsDeathSpotAvoided(refreshPoint->GetMapId(), refreshPoint->getX(),
             refreshPoint->getY(), WorldTimer::getMSTime()))
         {

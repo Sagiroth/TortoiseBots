@@ -61,6 +61,11 @@ void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
         }
     }
 
+    // A ding outgrows the band that killed the bot: the death-spot avoidance
+    // (issue #398) is a cooling-off for the level it was set at, so it must
+    // not strand a lowbie outside its starter-valley camps after it dings.
+    ai->ClearDeathAvoidance();
+
     // A level-up is exactly what can make a fruitless class-trainer visit fruitful
     // again: new ranks appear at the trainer, and the training need is recomputed from
     // the new level. The ten-minute park such a visit sets (TrainerAction) is a
