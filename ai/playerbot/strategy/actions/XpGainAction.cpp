@@ -3,6 +3,7 @@
 #include "XpGainAction.h"
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/TravelMgr.h"
+#include "playerbot/strategy/actions/LootAction.h"
 #ifdef MANGOS
 #include "luaEngine.h"
 #endif
@@ -52,6 +53,13 @@ bool XpGainAction::Execute(Event& event)
     ai->TellDebug(requester, out.str(),"debug xp");
 
     AI_VALUE(LootObjectStack*, "available loot")->Add(guid);
+
+    // Bot-only green/blue drop boost: the xpgain packet is the only per-kill signal a bot
+    // gets, and loot is already rolled at this point, so this is where the extra quality-2/3
+    // roll lands - once per kill, before the corpse can be opened (see LootAction.cpp).
+    if (type == 0 && guid.IsCreature())
+        ApplyBotLootBonus(ai, bot, guid);
+
     ai->AccelerateRespawn(guid);
 
     Creature* creature = ai->GetCreature(guid);

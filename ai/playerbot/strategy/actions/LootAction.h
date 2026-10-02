@@ -40,4 +40,10 @@ namespace ai
         ReleaseLootAction(PlayerbotAI* ai) : MovementAction(ai, "release loot") {}
         virtual bool Execute(Event& event) override;
     };
+
+    // Bot-only green/blue drop boost (AiPlayerbot.BotLootRateUncommon/Rare).
+    // Called once per kill from the xpgain handler, before the corpse can be opened: rolls
+    // the creature's own loot template for quality-2/3 entries again at (multiplier - 1) x
+    // the entry's chance and adds the hits, so the bot finds them in the loot window.
+    void ApplyBotLootBonus(PlayerbotAI* ai, Player* bot, ObjectGuid victimGuid);
 }

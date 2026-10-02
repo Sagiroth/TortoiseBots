@@ -309,6 +309,14 @@ public:
     // crosses level 5+ mobs; a beginner may still reach its own camp vendor, so the
     // trip is capped to this radius instead (and to the starting-zone level band).
     float lowLevelVendorMaxDistance = 600.0f;
+    // Bot-only green/blue drop boost. Masterless pool bots roll each quality-2/3
+    // entry of a creature's loot template one extra time per kill, at
+    // (multiplier - 1) x the entry's DB chance, so the expected number of
+    // greens/blues per kill is roughly the multiplier times the normal rate.
+    // Players and hired/alt bots keep the server's own rates; group loot is never
+    // touched. 1.0 = off (no extra roll at all).
+    float botLootRateUncommon = 1.0f;
+    float botLootRateRare = 1.0f;
     // Default-on bounded LFT fill: observe native queue (GetQueuedPlayers),
     // identify human groups/instances and missing 1/1/3 roles, filter in-memory
     // Headless random candidates by authoritative Soromeister/LFT ranges,
