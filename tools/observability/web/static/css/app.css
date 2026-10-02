@@ -470,8 +470,9 @@ body {
 }
 
 .zone-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 2px 24px;
 }
 
 .zone-row {
@@ -590,6 +591,10 @@ body {
   display: flex;
   flex-direction: column;
   height: 440px;
+  /* Fixed height on purpose: the canvases size themselves from their box's
+     measured rect, so a stretched card feeds its own height back into the
+     layout and inflates. The surrounding grid row is sized by its taller
+     sibling instead. */
 }
 
 @media (max-height: 900px) {
@@ -685,6 +690,109 @@ body {
 
 .tab-heading-wrap {
   margin-bottom: 24px;
+}
+
+/* Standard tab header: title + one-line purpose. */
+.tab-heading-wrap .tab-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.tab-subtitle {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+/* Sidebar badges (issues + incidents on the one Issues entry). */
+.menu-badges {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 4px;
+}
+
+.menu-badges .badge {
+  padding: 1px 6px;
+}
+
+/* Server · effective settings: one key/value row per setting, grouped into
+   sections that reflow into columns. Labels never wrap (nowrap + ellipsis)
+   so a setting cannot split mid-word, and values align in monospace with a
+   shared minimum width so ON/OFF badges line up. */
+.server-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.server-versions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  font-size: 0.82rem;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.setting-dim {
+  color: var(--text-muted);
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px 26px;
+  align-items: start;
+}
+
+.settings-col {
+  min-width: 0;
+}
+
+.settings-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.setting-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.8rem;
+}
+
+.setting-key {
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.setting-val {
+  font-family: 'JetBrains Mono', monospace;
+  color: #e6edf3;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 46px;
+  text-align: right;
+}
+
+/* Armory header stat: average equipped item level next to the gold. */
+.armory-ilvl {
+  font-size: 0.85rem;
+  color: var(--accent-yellow);
+  margin-top: 3px;
+  cursor: help;
 }
 
 /* Zone chips collapsible toggle on phones */
@@ -976,6 +1084,7 @@ body {
   align-items: center;
   gap: 10px;
   margin-bottom: 16px;
+  flex-wrap: wrap;
 }
 
 .armory-topbar .badge {
@@ -1963,13 +2072,18 @@ body {
     grid-template-columns: minmax(0, 1fr) !important;
   }
 
-  /* Hide duplicate section headings below 900px */
+  /* Hide duplicate section headings below 900px (the mobile topbar shows the
+     tab name); keep the one-line purpose, with its own spacing. */
   .tab-section-heading {
     display: none !important;
   }
 
   .tab-heading-wrap {
     margin-bottom: 0 !important;
+  }
+
+  .tab-subtitle {
+    margin-bottom: 14px;
   }
 }
 
@@ -2099,32 +2213,35 @@ body {
     gap: 12px;
   }
 
-  /* Hide secondary table columns below 600px.
+  /* Hide secondary table columns below 600px. Panels are addressed by id, not
+     by tab, so moving a table between tabs cannot collide with another rule.
      Roster (13 cols): keep Health + Status, drop Power (10) and Target (12).
-     Issues (7 cols): drop Zone (6) and Target (7), keep bot/type/duration/action. */
-  #tab-roster .data-table th:nth-child(10),
-  #tab-roster .data-table td:nth-child(10),
-  #tab-roster .data-table th:nth-child(12),
-  #tab-roster .data-table td:nth-child(12) {
+     Armory list (7 cols): drop Race (5) and Gold (6).
+     Issues (7 cols): drop Zone (6) and Target (7).
+     Incidents (7 cols): drop Target (7). */
+  #roster-panel .data-table th:nth-child(10),
+  #roster-panel .data-table td:nth-child(10),
+  #roster-panel .data-table th:nth-child(12),
+  #roster-panel .data-table td:nth-child(12) {
     display: none;
   }
 
-  #tab-armory .data-table th:nth-child(5),
-  #tab-armory .data-table td:nth-child(5),
-  #tab-armory .data-table th:nth-child(6),
-  #tab-armory .data-table td:nth-child(6) {
+  #armory-list-view .data-table th:nth-child(5),
+  #armory-list-view .data-table td:nth-child(5),
+  #armory-list-view .data-table th:nth-child(6),
+  #armory-list-view .data-table td:nth-child(6) {
     display: none;
   }
 
-  #tab-issues .data-table th:nth-child(6),
-  #tab-issues .data-table td:nth-child(6),
-  #tab-issues .data-table th:nth-child(7),
-  #tab-issues .data-table td:nth-child(7) {
+  #issues-panel .data-table th:nth-child(6),
+  #issues-panel .data-table td:nth-child(6),
+  #issues-panel .data-table th:nth-child(7),
+  #issues-panel .data-table td:nth-child(7) {
     display: none;
   }
 
-  #tab-incidents .data-table th:nth-child(7),
-  #tab-incidents .data-table td:nth-child(7) {
+  #incidents-panel .data-table th:nth-child(7),
+  #incidents-panel .data-table td:nth-child(7) {
     display: none;
   }
 
