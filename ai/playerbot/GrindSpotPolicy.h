@@ -119,6 +119,32 @@ namespace ai
         return autonomous || beginner;
     }
 
+    // Whether a grind destination survives the hostility gate
+    // (GrindTravelDestination::IsActive).
+    //
+    // Hostile entries are always prey. Neutral entries are prey when they are
+    // XP-paying wildlife: no NPC flag (vendors, trainers and other service
+    // mobs are never prey) and a non-zero XP multiplier (critters, Deer and
+    // Toads pay nothing). Friendly entries are never prey.
+    //
+    // This mirrors the donor mod-playerbots grind filter
+    // (src/Ai/Base/Value/GrindTargetValue.cpp: loot-carrying neutrals are kept,
+    // only non-hostile NPCs are refused). The old hostile-only read excluded
+    // every neutral starter beast - Thistle Boars / Nightsabers (faction 189/7
+    // read REP_NEUTRAL against a player faction template) - so a level 1-3 bot
+    // with no quest destination never held a grind destination and looped
+    // QuestTripNoTarget instead of walking to its wolves (issue #393).
+    inline bool GrindHostilityAllowed(bool hostileToBot, bool friendlyToBot, std::uint32_t npcFlags, bool paysXp)
+    {
+        if (hostileToBot)
+            return true;
+
+        if (friendlyToBot)
+            return false;
+
+        return npcFlags == 0 && paysXp;
+    }
+
     // How many bots one grind destination may hold before the picker sends the next
     // bot elsewhere: a third of its spawn points, never below two (a bot may always
     // join a spot a single other bot is working). Without this every bot in a zone

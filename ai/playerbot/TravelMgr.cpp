@@ -749,7 +749,21 @@ bool GrindTravelDestination::IsActive(Player* bot, const PlayerTravelInfo& info)
         unreachableKinds.erase(givenUpKind);
     }
 
-    return GuidPosition(bot).IsHostileTo(GuidPosition(HIGHGUID_UNIT, GetEntry()), bot->GetInstanceId());
+    // Neutral starter wildlife is prey, not scenery. The old hostile-only read
+    // rejected every neutral beast - Thistle Boars / Nightsabers (faction
+    // 189/7 read REP_NEUTRAL against a player faction template) - so a level
+    // 1-3 bot with no quest destination never held a grind destination and
+    // looped QuestTripNoTarget instead of walking to its wolves (issue #393).
+    // The rule lives in GrindSpotPolicy.h next to the other prey rules; the
+    // donor mod-playerbots grind filter keeps loot-carrying neutrals the same
+    // way and only refuses non-hostile NPCs.
+    GuidPosition botPos(bot);
+    GuidPosition preyPos(HIGHGUID_UNIT, GetEntry());
+    CreatureInfo const* preyInfo = GetCreatureInfo();
+    return GrindHostilityAllowed(botPos.IsHostileTo(preyPos, bot->GetInstanceId()),
+        botPos.IsFriendlyTo(preyPos, bot->GetInstanceId()),
+        preyInfo ? preyInfo->npc_flags : 0,
+        preyInfo && preyInfo->xp_multiplier != 0.0f);
 }
 
 std::string GrindTravelDestination::GetTitle() const
