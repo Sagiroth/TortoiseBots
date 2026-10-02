@@ -249,6 +249,22 @@ namespace ai
                         else
                             giveUpsInARow = 1;
                         lastGiveUpMs = nowMs;
+
+                        // The give-up had no event of its own: it was only visible through its
+                        // effects (EvadeProbe samples, the frozen/stationary rates) unless
+                        // unreachable_targets.csv happened to be enabled, so the fix could
+                        // never be judged from a pool run. One line per give-up - the duplicate
+                        // guard above returns before this point - carrying the reason, the
+                        // creature kind, the distance and the streak length so "gave up on a
+                        // wedged creature" is separable from "retreated from a bad spot".
+                        // ReachGiveUp (not GrindGiveUp): this is the reach action's give-up,
+                        // and the melee/spell/pull variants all funnel through here.
+                        char const* giveUpReason = stoodStill && !noHeadway ? "no-move"
+                            : inLos ? "no-headway-los" : "no-headway-nolos";
+                        sPlayerbotAIConfig.logEvent(ai, "ReachGiveUp", target->GetName(),
+                            std::string(giveUpReason) + "|entry=" + std::to_string(target->GetEntry()) +
+                            "|dist=" + std::to_string((int)distanceToTarget) + "|los=" + (inLos ? "1" : "0") +
+                            "|repeat=" + std::to_string(giveUpsInARow));
                         if (giveUpsInARow >= 2)
                         {
                             giveUpsInARow = 0;

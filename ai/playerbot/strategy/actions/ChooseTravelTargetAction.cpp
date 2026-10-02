@@ -236,6 +236,17 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
         std::string destZone = (oldTarget->getPosition() && oldTarget->getPosition()->GetArea())
             ? oldTarget->getPosition()->GetAreaName(true, true) : "";
         sPlayerbotAIConfig.logEvent(ai, "TravelTarget", purpose, destZone);
+
+        // One trainer journey at a time: a walk to a trainer has just started, and
+        // the errand's trigger refuses another until this is ten minutes old, the
+        // bot has learned something (TrainerAction) or it has dinged
+        // (AutoLearnSpellAction). Without it a trip that never reached the trainer
+        // was re-issued as fast as its travel target died - cycle-3 pool, level 5:
+        // 1,124 trainer-class picks from 172 bots in 90 min, 638 of 952 consecutive
+        // picks made from the same coordinate, against ~130 actual learns. See
+        // ShouldTravelNamedValue.
+        if (purpose.find("trainer") == 0)
+            SET_AI_VALUE2(time_t, "manual time", "trainer trip since", time(0));
     }
 
     oldTarget->SetStatus(TravelStatus::TRAVEL_STATUS_READY);

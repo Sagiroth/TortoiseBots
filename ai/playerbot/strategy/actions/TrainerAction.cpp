@@ -166,6 +166,14 @@ bool TrainerAction::Execute(Event& event)
         if (hasTrainable)
             context->ClearValues("item usage"); //Bot might be able to use new items.
 
+        // A visit that actually bought something ends the "one trip at a time"
+        // window (ShouldTravelNamedValue): the next rank the bot can afford - a
+        // later ding, or coins it looted on the way - is trainable right away
+        // instead of waiting out the ten minutes. A visit that bought nothing
+        // leaves the window alone; the fruitless-visit park below covers that case.
+        if (visitLearned > 0)
+            RESET_AI_VALUE2(time_t, "manual time", "trainer trip since");
+
         // A class-trainer visit that achieved nothing cannot be finished by standing
         // there. That is every visit that learned no spell and left the bot with
         // nothing learnable and affordable: either this trainer has nothing green to

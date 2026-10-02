@@ -70,6 +70,12 @@ void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
     // the park the same way once the purse covers the cheapest rank.
     RESET_AI_VALUE2(time_t, "manual time", "no travel purpose until::trainer class");
 
+    // Same reason as the park above, for the "one trainer journey at a time"
+    // window (ShouldTravelNamedValue): new ranks at the new level are exactly
+    // what the next trip is for, so a bot that dinged must not sit out the rest
+    // of the ten-minute window before it may walk to its trainer.
+    RESET_AI_VALUE2(time_t, "manual time", "trainer trip since");
+
     // Free learning is random-pool only; the paid trainer path is untouched.
     bool const freeLearn = IsFreeLearnBot(bot);
 

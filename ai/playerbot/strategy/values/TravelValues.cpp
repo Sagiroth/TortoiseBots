@@ -459,6 +459,24 @@ bool ShouldTravelNamedValue::Calculate()
         uint32 const freeMoney = AI_VALUE2(uint32, "free money for", (uint32)budgetType);
         bool const canAfford = freeMoney >= minSpellCost;
 
+        // One trainer journey at a time. "train cost" is summed over every trainer in
+        // the world, so this need stays true for as long as any affordable rank exists
+        // anywhere - and the row outranks Grind (6.89 vs 6.35), so every time the
+        // bot's travel target died before arrival it re-requested a trainer instead of
+        // grinding. Measured on the cycle-3 pool at level 5: 1,124 trainer-class picks
+        // from 172 bots in 90 min (cycle 2: 497) against only ~130 learns, 57% of them
+        // from 15 stationary bots, 638 of 952 consecutive picks made from the same
+        // coordinate - the bot never walked, it only re-picked. The park below only
+        // covers a visit that reached a trainer; a trip that never got there (travel
+        // target expired on its short timer, unstuck reset, drop) left nothing behind,
+        // so the loop was unbounded. This timestamp is set when an errand is actually
+        // started (RequestNamedTravelTargetAction) and cleared by a successful learn
+        // (TrainerAction) or a level-up (AutoLearnSpellAction, next to the park clear),
+        // so the bot tries the walk once and grinds until the window is up.
+        time_t const trainerTripSince = AI_VALUE2(time_t, "manual time", "trainer trip since");
+        if (trainerTripSince && time(0) - trainerTripSince < 10 * MINUTE)
+            return false;
+
         // A fruitless visit parks the trainer (TrainerAction). The park is a
         // cooling-off for the training need that visit found, not a ban, and it must
         // not outlive it. A park set because nothing was affordable ends the moment
