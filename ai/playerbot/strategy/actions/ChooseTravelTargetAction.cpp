@@ -1058,14 +1058,20 @@ bool RequestTravelTargetAction::isUseful() {
 
     // Time-boxed blacklist set by MoveToTravelTargetAction on repeated move
     // failure (and by UnstuckAction when retiring a target): ManualSetValue
-    // has no expiry, so the timestamp recorded alongside clears it after 5
-    // min. Other purposes are unaffected throughout.
-    if (AI_VALUE2(bool, "no active travel destinations", (getQualifier().empty() ? "quest" : getQualifier())))
-    {
-        if (AI_VALUE2(time_t, "manual time", "no travel purpose until::" + (getQualifier().empty() ? "quest" : getQualifier())) > time(0))
-            return false;
-        RESET_AI_VALUE2(bool, "no active travel destinations", (getQualifier().empty() ? "quest" : getQualifier()));
-    }
+    // has no expiry, so the timestamp recorded alongside is what ends the park.
+    // The timestamp is the authority, not the flag: the flag is context-wide
+    // and is wiped by every routine travel-target expiry and by every
+    // successful pick of any purpose (setNewTarget/ClearValues), so a bot that
+    // dropped a destination it could not walk to re-picked the same one within
+    // seconds. Live stage-7 pool: the same quest taker re-picked 12-20 s after
+    // being dropped, ~180 pick+fail+drop cycles per hour on the worst bots.
+    // Other purposes stay unaffected throughout either way.
+    std::string const parkKey = getQualifier().empty() ? "quest" : getQualifier();
+    if (AI_VALUE2(time_t, "manual time", "no travel purpose until::" + parkKey) > time(0))
+        return false;
+
+    if (AI_VALUE2(bool, "no active travel destinations", parkKey))
+        RESET_AI_VALUE2(bool, "no active travel destinations", parkKey);
 
     if (!AI_VALUE(bool, "can move around"))
         return false;
