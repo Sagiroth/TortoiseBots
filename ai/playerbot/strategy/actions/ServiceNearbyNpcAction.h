@@ -5,9 +5,12 @@
 
 #include "playerbot/strategy/Action.h"
 #include "MovementActions.h"
+#include "playerbot/strategy/values/NearbyServicePolicy.h"
 
 namespace ai
 {
+    class GuidPosition;
+
     // Walks to the quest giver, class trainer or vendor the bot has an idle-time
     // reason to use - see NearbyServiceTarget() in MaintenanceValues.h - and then
     // runs the existing action for it ("talk to quest giver", "accept all
@@ -35,13 +38,14 @@ namespace ai
 #endif
 
     private:
+        // One verb attempt in ranking order; false when the verb does not apply,
+        // is parked, or failed. A parked verb is skipped so the NPC's remaining
+        // verbs still run.
+        bool TryVerb(Event& event, GuidPosition const& target, NearbyServiceKind kind, std::string const& verb);
         // Runs one verb and logs the NearbyService row when it did something.
-        bool RunVerb(std::string const& kind, std::string const& action, Event event, uint32 npcEntry);
-        // Manual-value keys for the brief fail park (issue #407).
-        static std::string FailKey(uint64_t npcGuid, std::string const& kind);
-        static std::string FailCountKey(uint64_t npcGuid, std::string const& kind);
-        bool ParkedForFail(uint64_t npcGuid, std::string const& kind);
-        void RecordFail(uint64_t npcGuid, std::string const& kind);
-        void ClearFail(uint64_t npcGuid, std::string const& kind);
+        // Failures accumulate in the fixed-size fail parks (load/mutate/store -
+        // AI_VALUE returns a copy); a success clears the pair.
+        bool RunVerb(uint64_t npcGuid, int verbId,
+            std::string const& kind, std::string const& action, Event event, uint32 npcEntry, time_t now);
     };
 }

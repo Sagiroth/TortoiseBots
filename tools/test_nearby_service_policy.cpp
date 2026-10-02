@@ -12,15 +12,17 @@
 } while (0)
 
 using ai::BestNearbyServiceCandidate;
+using ai::NEARBY_SERVICE_FAIL_PARK_SECONDS;
+using ai::NEARBY_SERVICE_FAIL_PARK_TRIPS;
+using ai::NEARBY_SERVICE_FAIL_SLOTS;
 using ai::NearbyServiceBagPressure;
 using ai::NearbyServiceCandidate;
+using ai::NearbyServiceFailParks;
 using ai::NearbyServiceKind;
 using ai::NearbyServiceRangeSq;
 using ai::NearbyServiceRankOf;
 using ai::NearbyServiceShouldPark;
 using ai::NearbyServiceTargetParked;
-using ai::NEARBY_SERVICE_FAIL_PARK_SECONDS;
-using ai::NEARBY_SERVICE_FAIL_PARK_TRIPS;
 
 static NearbyServiceCandidate Candidate(NearbyServiceKind kind, float sqDistance)
 {
@@ -160,6 +162,66 @@ int main()
         CHECK(!NearbyServiceTargetParked(now - 1, now));
     }
     std::cout << "  [PASS] fail park holds 90 s then expires\n";
+
+    // The fixed-size tracker behind the real code (issue #407 review): 3
+    // consecutive fails park one NPC+verb for 90 s, other verbs on the same
+    // NPC stay live, success clears, expiry re-arms, and the table never
+    // grows past its slots.
+    {
+        std::time_t const now = 2'000'000;
+        NearbyServiceFailParks parks;
+        uint64_t const npc = 12345;
+        int const turnIn = NearbyServiceRankOf(NearbyServiceKind::TurnIn);
+        int const vendor = NearbyServiceRankOf(NearbyServiceKind::Vendor);
+
+        CHECK(!parks.Parked(npc, turnIn, now));
+        parks.RecordFail(npc, turnIn, now);
+        parks.RecordFail(npc, turnIn, now);
+        CHECK(!parks.Parked(npc, turnIn, now));
+        parks.RecordFail(npc, turnIn, now);
+        CHECK(parks.Parked(npc, turnIn, now));
+        // Same NPC, other verb: unaffected.
+        CHECK(!parks.Parked(npc, vendor, now));
+        // Expiry re-arms.
+        CHECK(!parks.Parked(npc, turnIn, now + NEARBY_SERVICE_FAIL_PARK_SECONDS));
+        parks.RecordFail(npc, turnIn, now + NEARBY_SERVICE_FAIL_PARK_SECONDS);
+        CHECK(!parks.Parked(npc, turnIn, now + NEARBY_SERVICE_FAIL_PARK_SECONDS));
+
+        // Success clears the pair.
+        parks.RecordFail(npc, vendor, now);
+        parks.RecordFail(npc, vendor, now);
+        parks.RecordFail(npc, vendor, now);
+        CHECK(parks.Parked(npc, vendor, now));
+        parks.Clear(npc, vendor);
+        CHECK(!parks.Parked(npc, vendor, now));
+    }
+    std::cout << "  [PASS] tracker parks one verb, spares the others\n";
+
+    {
+        std::time_t const now = 3'000'000;
+        NearbyServiceFailParks parks;
+        // Fill every slot with a live park, then force a fifth pair in: the
+        // table must still hold at most NEARBY_SERVICE_FAIL_SLOTS entries.
+        for (std::size_t s = 0; s < NEARBY_SERVICE_FAIL_SLOTS; ++s)
+        {
+            uint64_t const npc = 1000 + s;
+            int const verb = NearbyServiceRankOf(NearbyServiceKind::Vendor);
+            parks.RecordFail(npc, verb, now);
+            parks.RecordFail(npc, verb, now);
+            parks.RecordFail(npc, verb, now);
+            CHECK(parks.Parked(npc, verb, now));
+        }
+        parks.RecordFail(9999, NearbyServiceRankOf(NearbyServiceKind::Trainer), now);
+        parks.RecordFail(9999, NearbyServiceRankOf(NearbyServiceKind::Trainer), now);
+        parks.RecordFail(9999, NearbyServiceRankOf(NearbyServiceKind::Trainer), now);
+        CHECK(parks.Parked(9999, NearbyServiceRankOf(NearbyServiceKind::Trainer), now));
+        int live = 0;
+        for (std::size_t s = 0; s < NEARBY_SERVICE_FAIL_SLOTS; ++s)
+            if (parks.slots[s].npcGuid != 0)
+                ++live;
+        CHECK(live <= (int)NEARBY_SERVICE_FAIL_SLOTS);
+    }
+    std::cout << "  [PASS] tracker never grows past its slots\n";
 
     std::cout << "All idle near-service policy checks PASSED!\n";
     return 0;

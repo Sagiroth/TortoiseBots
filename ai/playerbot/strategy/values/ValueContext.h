@@ -348,6 +348,7 @@ namespace ai
             creators["should sell"] = [](PlayerbotAI* ai) { return new ShouldSellValue(ai); };
             creators["can sell"] = [](PlayerbotAI* ai) { return new CanSellValue(ai); };
             creators["nearby service target"] = [](PlayerbotAI* ai) { return new NearbyServiceTargetValue(ai); };
+            creators["nearby service fail parks"] = [](PlayerbotAI* ai) { return new NearbyServiceFailParksValue(ai); };
             creators["vendor trip needed"] = [](PlayerbotAI* ai) { return new VendorTripNeededValue(ai); };
             creators["should service nearby npc"] = [](PlayerbotAI* ai) { return new ShouldServiceNearbyNpcValue(ai); };
             creators["can buy"] = [](PlayerbotAI* ai) { return new CanBuyValue(ai); };

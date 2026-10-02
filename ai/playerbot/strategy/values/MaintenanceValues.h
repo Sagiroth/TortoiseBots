@@ -122,11 +122,6 @@ namespace ai
     //nearby hand-in waits until the reward would go through - the same
     //CanRewardQuest test the travel layer builds its taker fetch from.
     bool HasRewardableFinishedQuest(PlayerbotAI* ai);
-
-    // True while this NPC+verb sits in its brief fail park (issue #407). The
-    // park key matches the one ServiceNearbyNpcAction::RecordFail sets, so the
-    // selector and the verb cannot disagree about what is parked.
-    bool NearbyServiceVerbParked(PlayerbotAI* ai, GuidPosition npc, NearbyServiceKind kind);
     //Bag pressure in the field: bags at the pressure line, stock a vendor
     //actually wants, and no vendor within the near-service radius. True means
     //the bot must request the existing Vendor travel target instead of waiting
@@ -161,6 +156,17 @@ namespace ai
     public:
         NearbyServiceTargetValue(PlayerbotAI* ai, std::string name = "nearby service target", int checkInterval = 5) : GuidPositionCalculatedValue(ai, name, checkInterval) {}
         virtual GuidPosition Calculate() override { return NearbyServiceTarget(ai); }
+    };
+
+    // Fixed-size per-bot record of repeatedly failing nearby-service NPC+verb
+    // pairs (issue #407 review): a single value holding the whole
+    // NearbyServiceFailParks struct, so the park state never grows with the
+    // number of NPCs the bot looks at and dies with the bot's context.
+    class NearbyServiceFailParksValue : public ManualSetValue<NearbyServiceFailParks>
+    {
+    public:
+        NearbyServiceFailParksValue(PlayerbotAI* ai, std::string name = "nearby service fail parks") :
+            ManualSetValue<NearbyServiceFailParks>(ai, NearbyServiceFailParks(), name) {}
     };
     // Snapshot of VendorTripNeeded for the travel destination search, which runs
     // async off-tick and cannot call the live predicate there: true only for a

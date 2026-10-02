@@ -1,7 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "ServiceNearbyNpcAction.h"
 #include "playerbot/strategy/values/MaintenanceValues.h"
-#include "playerbot/strategy/values/NearbyServicePolicy.h"
 
 using namespace ai;
 
@@ -12,7 +11,6 @@ bool ServiceNearbyNpcAction::isUseful()
 
 bool ServiceNearbyNpcAction::Execute(Event& event)
 {
-    AiObjectContext* context = ai->GetAiObjectContext();
     GuidPosition target = AI_VALUE(GuidPosition, "nearby service target");
 
     if (!target)
@@ -26,122 +24,97 @@ bool ServiceNearbyNpcAction::Execute(Event& event)
     if (!bot->IsWithinDistInMap(npc, INTERACTION_DISTANCE))
         return MoveNear(npc, INTERACTION_DISTANCE - 1.0f);
 
-    uint64_t const npcGuid = target.GetRawValue();
+    // In range. Verbs run strongest-first - hand in, accept, sell, train
+    // (NearbyServicePolicy.h) - and a verb parked after repeated failures is
+    // skipped in place, so the NPC's remaining verbs still run (issue #407
+    // review: a parked hand-in must never hide a vendor on the same NPC).
+    // A finished quest comes first: the reward item and its XP are the only
+    // organic gear a low-level bot gets, and the hand-in frees the log slot
+    // the next accept needs.
+    if (TryVerb(event, target, NearbyServiceKind::TurnIn, "turn in quest") ||
+        TryVerb(event, target, NearbyServiceKind::Accept, "accept quest") ||
+        TryVerb(event, target, NearbyServiceKind::Vendor, "sell") ||
+        TryVerb(event, target, NearbyServiceKind::Trainer, "trainer"))
+        return true;
 
-    // In range. The selector ranked this NPC in the same order the checks below
-    // run - hand in, accept, sell, train (NearbyServicePolicy.h) - so the verb
-    // here is the one the rule picked the NPC for. A finished quest comes first:
-    // the reward item and its XP are the only organic gear a low-level bot gets,
-    // and the hand-in frees the log slot the next accept needs.
-    if (HasRewardableFinishedQuest(ai) && AI_VALUE2(bool, "can turn in quest npc", target.GetEntry()))
+    // In range of a real target but every live verb is parked or inapplicable:
+    // report failure so the engine does not treat the walk as success.
+    return false;
+}
+
+// One verb attempt: false when the verb does not apply here, is parked, or
+// failed; true only when it did something. Failures accumulate in the
+// fixed-size per-bot fail parks (load/mutate/store - AI_VALUE returns a copy,
+// never per-NPC manual values); a success clears the pair.
+bool ServiceNearbyNpcAction::TryVerb(Event& event, GuidPosition const& target, NearbyServiceKind kind, std::string const& verb)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    NearbyServiceFailParks parks = AI_VALUE(NearbyServiceFailParks, "nearby service fail parks");
+    uint64_t const npcGuid = target.GetRawValue();
+    int const verbId = NearbyServiceRankOf(kind);
+    time_t const now = time(0);
+
+    if (parks.Parked(npcGuid, verbId, now))
+        return false;
+
+    if (kind == NearbyServiceKind::TurnIn)
     {
-        if (ParkedForFail(npcGuid, "turn in quest"))
+        if (!HasRewardableFinishedQuest(ai) || !AI_VALUE2(bool, "can turn in quest npc", target.GetEntry()))
             return false;
 
         WorldPacket p(CMSG_QUESTGIVER_COMPLETE_QUEST);
         p << (ObjectGuid)target;
         p.rpos(0);
 
-        bool const done = RunVerb("turn in quest", "talk to quest giver", Event("rpg action", p), target.GetEntry());
-        if (done)
-            ClearFail(npcGuid, "turn in quest");
-        else
-            RecordFail(npcGuid, "turn in quest");
-        return done;
+        return RunVerb(npcGuid, verbId, verb, "talk to quest giver", Event("rpg action", p), target.GetEntry(), now);
     }
 
-    if (AI_VALUE(uint8, "free quest log slots") > 0 && AI_VALUE2(bool, "can accept quest npc", target.GetEntry()))
+    if (kind == NearbyServiceKind::Accept)
     {
-        if (ParkedForFail(npcGuid, "accept quest"))
+        if (AI_VALUE(uint8, "free quest log slots") == 0 || !AI_VALUE2(bool, "can accept quest npc", target.GetEntry()))
             return false;
 
         WorldPacket p(CMSG_QUESTGIVER_ACCEPT_QUEST);
         p << (ObjectGuid)target;
         p.rpos(0);
 
-        bool const done = RunVerb("accept quest", "accept all quests", Event("rpg action", p), target.GetEntry());
-        if (done)
-            ClearFail(npcGuid, "accept quest");
-        else
-            RecordFail(npcGuid, "accept quest");
-        return done;
+        return RunVerb(npcGuid, verbId, verb, "accept all quests", Event("rpg action", p), target.GetEntry(), now);
     }
 
-    // The selector prefers a vendor whenever a sale is due, so a vendor here
-    // means "sell first"; the trainer is then picked up on a later tick, once the
-    // sale has funded the rank.
-    if (target.HasNpcFlag(UNIT_NPC_FLAG_VENDOR))
+    if (kind == NearbyServiceKind::Vendor)
     {
-        if (ParkedForFail(npcGuid, "sell"))
+        // The selector prefers a vendor whenever a sale is due, so a vendor
+        // here means "sell first"; the trainer is then picked up on a later
+        // tick, once the sale has funded the rank.
+        if (!target.HasNpcFlag(UNIT_NPC_FLAG_VENDOR))
             return false;
 
-        bool const done = RunVerb("sell", "sell", Event("rpg action", "vendor"), target.GetEntry());
-        if (done)
-            ClearFail(npcGuid, "sell");
-        else
-            RecordFail(npcGuid, "sell");
-        return done;
+        return RunVerb(npcGuid, verbId, verb, "sell", Event("rpg action", "vendor"), target.GetEntry(), now);
     }
 
-    if (ParkedForFail(npcGuid, "trainer"))
-        return false;
-
-    bool const done = RunVerb("trainer", "trainer", Event("rpg action", target), target.GetEntry());
-    if (done)
-        ClearFail(npcGuid, "trainer");
-    else
-        RecordFail(npcGuid, "trainer");
-    return done;
+    return RunVerb(npcGuid, verbId, verb, "trainer", Event("rpg action", target), target.GetEntry(), now);
 }
 
 // Runs the verb through the existing action and records the rule firing. Only a
 // verb that did something is logged (the outcomes land as their own events:
 // QuestRewarded, AcceptQuestAction, SellAction, TrainerAction), so a bot that
 // keeps finding nothing here does not fill bot_events.csv every tick.
-bool ServiceNearbyNpcAction::RunVerb(std::string const& kind, std::string const& action, Event event, uint32 npcEntry)
+// Failures accumulate in the fixed-size fail parks; a success clears the pair.
+bool ServiceNearbyNpcAction::RunVerb(uint64_t npcGuid, int verbId,
+    std::string const& kind, std::string const& action, Event event, uint32 npcEntry, time_t now)
 {
     bool const done = ai->DoSpecificAction(action, event, true);
+    AiObjectContext* context = ai->GetAiObjectContext();
+    NearbyServiceFailParks parks = AI_VALUE(NearbyServiceFailParks, "nearby service fail parks");
 
     if (done)
-        sPlayerbotAIConfig.logEvent(ai, "NearbyService", kind, std::to_string(npcEntry));
-
-    return done;
-}
-
-std::string ServiceNearbyNpcAction::FailKey(uint64_t npcGuid, std::string const& kind)
-{
-    return "nearby service fail until::" + std::to_string(npcGuid) + "::" + kind;
-}
-
-std::string ServiceNearbyNpcAction::FailCountKey(uint64_t npcGuid, std::string const& kind)
-{
-    return "nearby service fail count::" + std::to_string(npcGuid) + "::" + kind;
-}
-
-bool ServiceNearbyNpcAction::ParkedForFail(uint64_t npcGuid, std::string const& kind)
-{
-    AiObjectContext* context = ai->GetAiObjectContext();
-    return NearbyServiceTargetParked(
-        AI_VALUE2(time_t, "manual time", FailKey(npcGuid, kind)), time(0));
-}
-
-void ServiceNearbyNpcAction::RecordFail(uint64_t npcGuid, std::string const& kind)
-{
-    AiObjectContext* context = ai->GetAiObjectContext();
-    int const fails = AI_VALUE2(int, "manual int", FailCountKey(npcGuid, kind)) + 1;
-    SET_AI_VALUE2(int, "manual int", FailCountKey(npcGuid, kind), fails);
-
-    if (NearbyServiceShouldPark(fails))
     {
-        SET_AI_VALUE2(time_t, "manual time", FailKey(npcGuid, kind),
-            time(0) + NEARBY_SERVICE_FAIL_PARK_SECONDS);
-        RESET_AI_VALUE2(int, "manual int", FailCountKey(npcGuid, kind));
+        sPlayerbotAIConfig.logEvent(ai, "NearbyService", kind, std::to_string(npcEntry));
+        parks.Clear(npcGuid, verbId);
     }
-}
+    else
+        parks.RecordFail(npcGuid, verbId, now);
 
-void ServiceNearbyNpcAction::ClearFail(uint64_t npcGuid, std::string const& kind)
-{
-    AiObjectContext* context = ai->GetAiObjectContext();
-    RESET_AI_VALUE2(int, "manual int", FailCountKey(npcGuid, kind));
-    RESET_AI_VALUE2(time_t, "manual time", FailKey(npcGuid, kind));
+    SET_AI_VALUE(NearbyServiceFailParks, "nearby service fail parks", parks);
+    return done;
 }
