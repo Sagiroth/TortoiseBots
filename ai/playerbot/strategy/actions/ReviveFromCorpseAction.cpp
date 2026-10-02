@@ -57,6 +57,18 @@ static void LogGhostMoveDiag(PlayerbotAI* ai, Player* bot, WorldPosition const& 
 // infinite stall.
 static constexpr int64 kWaitForMasterTimeoutSec = 90;
 
+// The walk to the graveyard stalls the same way the corpse run does: the MoveTo
+// spline is dispatched every tick and never ridden, so the ghost stands still.
+// The corpse run is guarded by DeadValues.cpp's 60 s rule, but that guard only
+// hands the run over - once the ghost is on the spirit-healer leg nothing watches
+// it any more, and the leg ends only on the ten-minute deadTime teleport below.
+// On the live cycle-5 pool that is what the 601 s ghost runs are: stall detected
+// at 60 s, hand-off, then nine more minutes of a dead bot on the graveyard walk.
+// Same 60 s / 5 yd progress rule as the corpse run; the stuck ghost is teleported
+// here instead of handed over, because the graveyard is already its destination.
+static constexpr uint32 kSpiritHealerStallSec = 60;
+static constexpr float kSpiritHealerStallProgressYd = 5.0f;
+
 
 static bool FindInstanceEntranceTrigger(uint32 corpseMapId, uint32 botMapId, WorldPosition const& botPos,
                                          AreaTriggerEntry const*& outAtEntry, AreaTriggerTeleport const*& outAt)
@@ -676,6 +688,41 @@ bool SpiritHealerAction::Execute(Event& event)
         delay = std::min(delay, uint32(10 * MINUTE));
 
         shouldTeleportToGY = deadTime > delay;
+    }
+
+    // Stalled walk to the graveyard: same never-ridden spline as the corpse run,
+    // so a ghost that stops closing the distance is not going to arrive - jump it
+    // to the graveyard instead of standing there until the ten-minute gate above.
+    // Rule and constants match DeadValues.cpp's corpse-run guard (best distance
+    // reached, re-armed only by real ground gained); a normal walk closes far more
+    // than 5 yd a minute, so only a stopped ghost trips it.
+    if (!shouldTeleportToGY)
+    {
+        float const graveDist = grave.fDist(bot);
+        time_t const now = time(nullptr);
+        int32 bestDist = AI_VALUE2(int32, "manual int", "gy walk best");
+        time_t anchor = AI_VALUE2(time_t, "manual time", "gy walk anchor");
+
+        // An anchor from a previous death restarts the clock; so does progress.
+        if (anchor < corpse->GetGhostTime())
+        {
+            anchor = 0;
+            bestDist = 0;
+        }
+
+        if (bestDist <= 0 || graveDist < (float)bestDist - kSpiritHealerStallProgressYd)
+        {
+            SET_AI_VALUE2(int32, "manual int", "gy walk best", (int32)graveDist);
+            SET_AI_VALUE2(time_t, "manual time", "gy walk anchor", now);
+            anchor = now;
+        }
+
+        if (anchor != 0 && now - anchor >= (time_t)kSpiritHealerStallSec)
+        {
+            sLog.outDetail("[BOT CORPSE] %s: spirit healer walk stalled %.1fy from the graveyard for %us, teleporting there",
+                bot->GetName(), graveDist, kSpiritHealerStallSec);
+            shouldTeleportToGY = true;
+        }
     }
 
     if (ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
