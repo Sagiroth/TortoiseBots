@@ -97,7 +97,16 @@ void RpgHelper::resetFacing(GuidPosition guidPosition)
 
 void RpgHelper::setDelay(bool waitForGroup)
 {
-    if ((!ai->HasRealPlayerMaster() && !bot->GetGroup()) || (bot->GetGroup() && bot->GetGroup()->IsLeader(bot->getObjectGuid()) && waitForGroup))
+    // A pool bot (no master, no group) that still holds an active travel target is
+    // only idling between the steps of an errand it has not finished: give it the
+    // short pause so it goes back to its destination instead of standing at an NPC
+    // for the full rpgDelay per step. Live rosters had 100+ bots parked in
+    // "rpg gossip talk" for minutes with an unfinished travel target, i.e. standing
+    // with a destination and getting nowhere - what the observability layer reports
+    // as "stalled". A bot with no travel target at all keeps the full roleplay pause.
+    bool const hasPendingTravel = AI_VALUE(TravelTarget*, "travel target")->IsActive();
+
+    if ((!ai->HasRealPlayerMaster() && !bot->GetGroup() && !hasPendingTravel) || (bot->GetGroup() && bot->GetGroup()->IsLeader(bot->getObjectGuid()) && waitForGroup))
         ai->SetActionDuration(sPlayerbotAIConfig.rpgDelay);
     else
         ai->SetActionDuration(sPlayerbotAIConfig.rpgDelay / 5);
