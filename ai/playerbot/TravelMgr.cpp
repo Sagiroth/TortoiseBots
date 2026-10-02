@@ -129,7 +129,19 @@ bool QuestRelationTravelDestination::IsPossible(const PlayerTravelInfo& info) co
         if (!forceThisQuest && (int32)quest->GetQuestLevel() >= (int32)info.GetLevel() + (int32)5)
             return false;
 
-        if ((int32)info.GetLevel() < quest->GetMinLevel() || (int32)info.GetLevel() > quest->GetMaxLevel())
+        // MaxLevel 0 is "no upper bound" in this core, not "level 0": the take
+        // gate reads it as `if (pQuest->GetMaxLevel() && pQuest->GetMaxLevel() <
+        // GetLevel())` (Player::CanTakeQuest). 6,509 of the 7,190 quest templates
+        // carry 0, and against a level 1+ bot the literal comparison below
+        // rejected every one of them, so the giver search could only ever find
+        // the handful of templates that do set it - 8 giver pairs across 60 live
+        // level 1-8 bots, from Turtle's low-level 60145/60150. QuestTravelToGiver
+        // stayed 0 over 60 minutes of live play while 1,514 of 1,572 fruitless
+        // quest searches came back with an empty list, although 15-42 giver
+        // (npc, quest) pairs whose quest-level window a sampled level 1-4 bot fits
+        // sit within 1500 yd of it.
+        if ((int32)info.GetLevel() < quest->GetMinLevel() ||
+            (quest->GetMaxLevel() && (int32)info.GetLevel() > quest->GetMaxLevel()))
             return false;
 
         if (OnMap(info.getPosition())) //CanTakeQuest will check required conditions which will fail on a different map.
@@ -2499,8 +2511,20 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
     // that the quest gate below/above uses), so the two gates agree instead of the
     // finer band being undone by the coarser average. Owned/hired bots keep the
     // strict ceiling: their player decides where they hunt.
+    //
+    // Quest-giver destinations take the same margin for the same reason. The
+    // starter valleys are rated 2-6 in ai_playerbot_zone_level (Northshire 2,
+    // Deathknell 3, Coldridge and Valley of Trials 4, Dolanaar 5, Camp Narache 6)
+    // while the bots living in them are level 1-6, so a ceiling measured at the
+    // bot's own level vetoes every giver in the valley the bot is already standing
+    // in. Measured over 60 live level 1-8 bots with the giver gate itself fixed:
+    // 30 of the 33 bots below level 4 found no giver at all under the plain
+    // ceiling, and all 60 found 10-63 under +5. Nothing downstream is loosened by this:
+    // QuestRelationTravelDestination::IsPossible and SetBestTarget both re-check
+    // the chosen point against level + 5, and a same-map hop over 1000 yd still
+    // walks the travel-node route with its own +5 band.
     int32 areaCeiling = botLevel;
-    if ((purposeFlag & (uint32)TravelDestinationPurpose::Grind) && info.IsMasterlessRandom())
+    if ((purposeFlag & ((uint32)TravelDestinationPurpose::Grind | (uint32)TravelDestinationPurpose::QuestGiver)) && info.IsMasterlessRandom())
         areaCeiling += 5;
 
     if (!beginnerGrind && !(purposeFlag & (uint32)TravelDestinationPurpose::QuestTaker) && !beginnerVendorTrip)

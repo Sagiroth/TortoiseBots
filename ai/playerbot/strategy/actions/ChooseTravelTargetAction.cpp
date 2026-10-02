@@ -90,21 +90,23 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         // Park this purpose. RequestTravelTargetAction clears the flag as soon
         // as its "no travel purpose until" time has passed, and without one it
         // re-requested (and re-searched) on the very next tick. A minute suits a
-        // service errand, whose destination is usually inactive for a moment;
-        // a hand-in search that came back empty is not worth repeating that
-        // soon. The takers it just rejected (route above the bot's level, no
-        // partition, hostile town, area band) do not become reachable again a
-        // minute later, and the request outranks Grind (6.36 vs 6.35) - so the
-        // bot aborted its grind errand every minute, forever, for a quest it
-        // could not hand in (and any successful pick elsewhere wiped the flag
-        // anyway, see HasFinishedQuestValue). Ten minutes is the trainer park's
-        // order of magnitude; the value that ranks the row reads this timestamp,
-        // so the row stands down for the whole park.
+        // service errand, whose destination is usually inactive for a moment.
+        // A quest search that came back empty is a different animal: every
+        // gate that rejected it (quest level window, free log slots, area band,
+        // route, reachability) is still true a minute later, and the search is a
+        // full walk of the quest destinations. The plain quest row sits at 6.3,
+        // live in the 15 minutes of each bot-hour where Grind's purpose value is
+        // off, and the 6.36 hand-in row outranks Grind outright - so a one-minute
+        // park put the bot back into a fruitless search every minute, aborting
+        // its errand each time. Ten minutes is the trainer park's and the
+        // QuestTripNoTarget log throttle's order of magnitude; the value that
+        // ranks the hand-in row (has rewardable finished quest) reads this
+        // timestamp, so the row stands down for the whole park.
         std::string const purposeKey = futureTravelPurpose.empty() ? "quest" : futureTravelPurpose;
-        bool const failedHandIn = purposeKey == "quest" && HasRewardableFinishedQuest(ai);
+        bool const questErrand = purposeKey == "quest";
         SET_AI_VALUE2(bool, "no active travel destinations", purposeKey, true);
         SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purposeKey,
-            time(0) + (failedHandIn ? 10 * MINUTE : MINUTE));
+            time(0) + (questErrand ? 10 * MINUTE : MINUTE));
         ai->TellDebug(ai->GetMaster(), "No target set", "debug travel");
 
         // TEMPORARY, see the probe in RequestQuestTravelTargetAction. Destinations
@@ -1857,7 +1859,15 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
             PartitionedTravelList list;
             for (auto [purpose, questId, range] : destinationFetches)
             {
-                PartitionedTravelList subList = sTravelMgr.GetPartitions(center, partitions, travelInfo, purpose, { questId }, true, range);
+                // Quest destinations are keyed by quest id (TravelMgr::AddDestination:
+                // id = questId ? questId : entry), and the primary quest-giver fetch
+                // carries 0 - so the old `{ questId }` filter asked for a
+                // destination keyed 0 and matched nothing at all. Every giver had to
+                // come from the empty-filter fallback below, which only runs when
+                // nothing else was found. An empty vector is this API's "no entry
+                // filter" (see FindDestination, which searches givers the same way).
+                std::vector<int32> const entryFilter = questId ? std::vector<int32>{ questId } : std::vector<int32>();
+                PartitionedTravelList subList = sTravelMgr.GetPartitions(center, partitions, travelInfo, purpose, entryFilter, true, range);
 
                 for (auto& [partition, points] : subList)
                     list[partition].insert(list[partition].end(), points.begin(), points.end());
