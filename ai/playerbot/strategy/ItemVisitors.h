@@ -474,11 +474,26 @@ namespace ai
         uint32 weaponType;
     };
 
+    // Every Tortoise thrown weapon in the bags (class 2, subclass 16),
+    // whatever the tier. Used by the server-managed thrown upgrade ladder
+    // (Issue #401): strictly worse tiers are retired when the level tier
+    // is known.
+    class FindThrownVisitor : public FindUsableItemVisitor
+    {
+    public:
+        FindThrownVisitor(Player* bot) : FindUsableItemVisitor(bot) {}
+
+        virtual bool Accept(const ItemPrototype* proto) override
+        {
+            return proto->Class == ITEM_CLASS_WEAPON &&
+                proto->SubClass == ITEM_SUBCLASS_WEAPON_THROWN;
+        }
+    };
+
     class FindQuestItemVisitor : public FindUsableItemVisitor
     {
     public:
         FindQuestItemVisitor(Player* bot) : FindUsableItemVisitor(bot) {}
-
         virtual bool Accept(const ItemPrototype* proto) override
         {
             if (proto->Class == ITEM_CLASS_QUEST)

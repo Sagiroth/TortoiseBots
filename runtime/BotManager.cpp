@@ -731,6 +731,15 @@ void BotManager::OnPlayerLogin(::Player* player)
     {
         PlayerbotFactory tools(player, player->GetLevel());
         tools.AddTools();
+        // Issue #401 backstop for the live pool: free bots created before the
+        // starter set get it on login, not only at creation. Hired companions
+        // and owned alts are never touched: their kit is the player's business
+        // (see PlayerBotClassification.h). Every helper checks current state
+        // first; nothing earned is ever moved.
+        PlayerBotClassificationInputs const kitClassification = ClassifyBot(entry);
+        if (!IsPlayerOwnedBot(kitClassification) &&
+            !HireLifecycle::Instance().IsHired(player->GetObjectGuid()))
+            tools.EnsureStarterKit();
     }
 
     // One-shot random scatter on headless login only; fail-closed, no DB mutation, no homebind.

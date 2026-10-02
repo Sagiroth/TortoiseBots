@@ -72,16 +72,18 @@ For servers configured to run persistent, organically leveling bots starting at 
 * **Trade Skills:** Bots receive two class-matched primary professions, always at least one gathering: the second is either the craft that gathering feeds or a second gathering, never a second craft (a craft without its gathering can never be skilled or fed). Warriors/Paladins roll Mining + Blacksmithing or Mining + Engineering; Rogues/Hunters/Shamans/Druids roll Skinning + Leatherworking, Mining + Engineering or Skinning + Mining; casters keep the Herbalism/Alchemy, Herbalism/Mining, Mining/Skinning or Herbalism/Skinning roll. First Aid, Cooking and Fishing are added on top.
 * **Persistence:** Seeding runs once per fresh bot (it is skipped when the bot already has a primary profession or has played time); the professions and skills themselves are saved as normal character data, so they are never re-rolled across restarts.
 
-### Fresh-Bot Field Kit (bags, tools, mounts, money, bandages)
+### Fresh-Bot Field Kit (bags, soul bag, ammo, thrown, tools, mounts, money, bandages)
 
 Every fresh seed (pool login via `MakeComplete`, hire via `ProvisionSpellsAndGear`) also grants a usable field kit, idempotently — re-seeds only fill gaps, never duplicate:
-* **Bags:** level-tier vendor bags in the plain container slots (6-slot to 16-slot by level band). Hunter quiver/ammo-pouch slots are untouched.
+* **Bags:** three 14-slot Journeyman's Backpacks (item 3914) in the plain container slots, plus level-tier vendor-bag upgrades through the normal equip path. Hunter quiver/ammo-pouch slots stay reserved for the quiver. Bots created before this set get it on the next login or level-up (`EnsureStarterKit`), which never moves earned items.
+* **Soul bag:** warlocks also get a Small Soul Pouch (item 22243, 12 slots), upgraded through the normal soul-bag equip path as bigger ones drop.
+* **Ammo container + ammo (hunters):** the quiver/ammo pouch matches the equipped ranged weapon (gun -> pouch, bow/crossbow -> quiver) and upgrades itself by level from vendor-sold rows only; ammo is server-managed by level and re-synced when the weapon family changes, topped up by the existing per-tick item cheat.
+* **Thrown weapon (rogues/warriors):** a single level-tier thrown weapon for ranged pulling, upgraded by the same server-managed ladder (no stack, never shopped for).
 * **Profession tools:** mining pick, skinning knife, blacksmith hammer, arclight spanner and fishing pole, matching the bot's professions. Mining/skinning/fishing cannot run without them.
 * **Mounts:** Swift Riding Turtle (spell 30174) at `AiPlayerbot.TurtleMountAtLevel` (default 18) through 39, race/class mount spell at 40 (apprentice) and 60 (journeyman); riding skill is already level-gated. Masterless random bots also earn the turtle on level-up, and with `AiPlayerbot.LevelUpMounts` (default 1) they earn the 40/60 mount on the level-up too instead of only when seeded (`0` = seed/hire only). The grant is idempotent per tier, so re-seeding never stacks mounts. Mount speed follows riding skill like every player mount (riding 0 -> level/2, 75 -> 60%, 150 -> 100%), so level-60 bots ride at 100% and 40-59 bots at 60%.
 * **Money:** a level-scaled starting amount on first seed only — never refilled on re-seed, so vendor/AH/repair economy stays earned.
 * **Bandages:** one half-stack at the First Aid tier; class reagents, food/drink and potions come from the existing seed tables.
 * **Hired-companion restock:** hired companions get a cheap hourly top-up (reagents, food/drink, potions, bandages, each bounded to a small stack). Tools and bags stay one-time seed.
-
 ---
 
 ## 3. Fresh-Bot Level Seed
