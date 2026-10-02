@@ -540,16 +540,14 @@ bool HireProvisionService::EnsureGrouped(Player* master, Player* bot)
 {
     if (!master || !bot || !master->GetSession() || master == bot)
         return false;
-    if (bot->IsInSameGroupWith(master))
+    // Issue #387: raid membership, not subgroup membership. In a raid the
+    // first four companions fill the master's subgroup; a later hire lands in
+    // another subgroup, so a subgroup test would never see it as grouped.
+    if (bot->IsInSameRaidWith(master))
         return true;
 
     if (Group* oldGroup = bot->GetGroup())
-    {
-        if (oldGroup != master->GetGroup())
-            oldGroup->RemoveMember(bot->GetObjectGuid(), 0);
-        else
-            return bot->IsInSameGroupWith(master);
-    }
+        oldGroup->RemoveMember(bot->GetObjectGuid(), 0);
 
     Group* requesterGroup = master->GetGroup();
     if (requesterGroup && requesterGroup->isBGGroup())
@@ -567,10 +565,10 @@ bool HireProvisionService::EnsureGrouped(Player* master, Player* bot)
     if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
     {
         ai::Event inviteEvent("group invite", "", master);
-        if (ai->DoSpecificAction("accept invitation", inviteEvent, true) && bot->IsInSameGroupWith(master))
+        if (ai->DoSpecificAction("accept invitation", inviteEvent, true) && bot->IsInSameRaidWith(master))
             return true;
     }
-    return bot->IsInSameGroupWith(master);
+    return bot->IsInSameRaidWith(master);
 }
 
 uint32_t HireProvisionService::CountHired(Player* master) const
@@ -749,7 +747,7 @@ bool HireProvisionService::Reunite(Player* bot, Player* master)
 {
     if (!bot || !master)
         return false;
-    if (bot->IsInSameGroupWith(master))
+    if (bot->IsInSameRaidWith(master))
         return true;
     // The bot itself must be settled: mid-teleport it is out of world, and
     // HandleGroupAcceptOpcode/AddMember reads live map state. Same-map hops
@@ -764,7 +762,7 @@ bool HireProvisionService::Reunite(Player* bot, Player* master)
             return false;
         bot->TeleportTo(master->GetMapId(), master->GetPositionX(), master->GetPositionY(),
             master->GetPositionZ(), master->GetOrientation(), 0);
-        return bot->IsInSameGroupWith(master);
+        return bot->IsInSameRaidWith(master);
     }
     // Same map, but a far hop (e.g. opposite continents' distance or a forced
     // map change): invite now so the pending entry survives the transfer,
@@ -776,7 +774,7 @@ bool HireProvisionService::Reunite(Player* bot, Player* master)
             return false;
         bot->TeleportTo(master->GetMapId(), master->GetPositionX(), master->GetPositionY(),
             master->GetPositionZ(), master->GetOrientation(), 0);
-        return bot->IsInSameGroupWith(master);
+        return bot->IsInSameRaidWith(master);
     }
     bot->TeleportTo(master->GetMapId(), master->GetPositionX(), master->GetPositionY(),
         master->GetPositionZ(), master->GetOrientation(), 0);
@@ -786,7 +784,7 @@ bool HireProvisionService::Reunite(Player* bot, Player* master)
         return false;
     if (!EnsureGrouped(master, bot))
         return false;
-    return bot->IsInSameGroupWith(master);
+    return bot->IsInSameRaidWith(master);
 }
 
 void HireProvisionService::DropStalePending()

@@ -16,9 +16,11 @@
 //  - everGrouped: the hire was observed sharing its master's group at least
 //    once. Before that the hire is still being provisioned (or was never
 //    grouped) and must not be dismissed.
-//  - inSameGroupWithMaster: the hire still shares its master's group. A hire
-//    that is not in world (mid-login, a stale session) also counts as
-//    "same group": the runtime-record watchdog owns that case, not this rule.
+//  - inSameGroupWithMaster: the hire still shares its master's group — the
+//    same group object (raid membership, not just the same raid subgroup,
+//    issue #387). A hire that is not in world (mid-login, a stale session)
+//    also counts as "same group": the runtime-record watchdog owns that case,
+//    not this rule.
 //
 // A hire whose master left the party while online has masterOnline true,
 // everGrouped true and inSameGroupWithMaster false, so it is dismissed.

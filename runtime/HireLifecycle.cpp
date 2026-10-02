@@ -129,7 +129,9 @@ bool HireLifecycle::MasterLeftGroup(HiredRecord const& record) const
     bool masterOnline = MasterOnline(record) && !record.masterOfflineSince;
     // A hire that is not live (mid-login, a stale session) counts as still
     // grouped: the runtime-record watchdog owns that case, not this rule.
-    bool inSameGroup = !bot || !bot->IsInWorld() || !master || bot->IsInSameGroupWith(master);
+    // Issue #387: raid membership, not subgroup: a hire in another raid
+    // subgroup still shares the master's group.
+    bool inSameGroup = !bot || !bot->IsInWorld() || !master || bot->IsInSameRaidWith(master);
     return ShouldDismissHireOnGroupDeparture(true, masterOnline, record.everGrouped, inSameGroup);
 }
 
@@ -278,7 +280,7 @@ void HireLifecycle::Reunite(HiredRecord& record, Player* master)
     Player* bot = sObjectAccessor.FindPlayer(record.botGuid);
     if (!bot || !BotManager::Instance().IsControllableBot(bot))
         return;
-    if (!bot->IsInSameGroupWith(master))
+    if (!bot->IsInSameRaidWith(master))
     {
         Group* masterGroup = master->GetGroup();
         if (masterGroup && masterGroup->isBGGroup())
@@ -298,7 +300,7 @@ void HireLifecycle::Reunite(HiredRecord& record, Player* master)
             }
         }
     }
-    if (bot->IsInSameGroupWith(master))
+    if (bot->IsInSameRaidWith(master))
     {
         // Issue #378: the hire is confirmed grouped, so a later departure of
         // the master ends the hire instead of being treated as a provisioning
