@@ -1,10 +1,21 @@
 # TortoiseBots
 
-Independent native PlayerBots module for the canonical **Tortoise WoW 1.18.1** core repository ([`tortoise-wow`](https://github.com/tortoise-wow/tortoise-wow), `main` branch).
+An independent, native PlayerBots module for the canonical **Tortoise WoW 1.18.1** core repository ([`tortoise-wow`](https://github.com/tortoise-wow/tortoise-wow), `main` branch).
 
 `TortoiseBots` delivers native AI companions through a decoupled C++ architecture: bot AI, combat strategies, and lifecycle management live entirely within this module, while session transport and character state stay cleanly owned by the core via generic headless sessions (`SessionTransport::Headless`). The core builds and runs 100% cleanly without the module (`MODULES=disabled`).
 
 > **Companion in-game UI:** pair with [**TortoiseBotsManager**](https://github.com/Sagiroth/TortoiseBotsManager) (`/tbm`). All player-facing control — roster, lifecycle, and tactical party actions — is driven from this addon; the server-side command surface is an internal/advanced transport, not a player API.
+
+---
+
+## ✨ What It Does
+
+* **A living world from level 1.** A pool of autonomous bots (size set by `MinRandomBots` / `MaxRandomBots`) starts in the starter zones and levels on its own: questing, grinding, training, selling loot, gathering and moving on to new zones as it outgrows them. No gold is handed out, gear comes from loot, quests and vendors, and the auction house only sees what bots really loot.
+* **Bots that keep going.** Bots rest before the next pull, flee at critical health, avoid spots where they keep dying, and are rescued automatically when they get stuck or stall as a ghost.
+* **Sensible kit.** Every pool bot carries three 14-slot bags, level-appropriate food and drink (water only for mana users), ammo and a quiver or ammo pouch matched to its weapon, a soul pouch for warlocks, and buys a better vendor weapon with its own gold when it can afford one. Primary professions arrive at level 5.
+* **Your own party.** Play with bot alts from your own account or hire temporary companions at `<Mercenary Hire>` recruiters; they follow, fight, heal and tank in dungeons and raids, controlled from the TortoiseBotsManager addon.
+* **Full class AI.** Rotations for all 9 classes, including Turtle WoW 1.18.1 custom abilities.
+* **Observability.** A web dashboard with a live map, per-bot activity, incidents and a one-command KPI report (`tools/pool_kpi_report.py`) for comparing pool runs.
 
 ---
 
