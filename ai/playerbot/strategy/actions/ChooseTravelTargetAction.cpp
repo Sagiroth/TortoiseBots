@@ -68,11 +68,10 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         // not re-request - and re-search - on the very next tick. One
         // minute: the search offered nothing at all, which usually clears
         // fast (a destination briefly inactive, a stale partition). Key and
-        // duration live in TravelRepickPolicy.h. Status and ClearValues
-        // first, then re-arm only this purpose (same order as the
-        // empty-search path: ClearValues wipes the flag context-wide).
+        // duration live in TravelRepickPolicy.h. Status first, then re-arm
+        // only this purpose: other purposes' parks survive (timestamps stay
+        // authoritative, flags stay set).
         travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_NONE);
-        context->ClearValues("no active travel destinations");
         std::string const invalidParkKey = TravelInvalidParkKey(futureTravelPurpose);
         SET_AI_VALUE2(bool, "no active travel destinations", invalidParkKey, true);
         SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + invalidParkKey,
@@ -118,9 +117,9 @@ bool ChooseTravelTargetAction::Execute(Event& event)
 
     if (!SetBestTarget(requester, &newTarget, destinationList))
     {
-        // Park this purpose. RequestTravelTargetAction clears the flag as soon
-        // as its "no travel purpose until" time has passed, and without one it
-        // re-requested (and re-searched) on the very next tick. A minute suits a
+        // Park this purpose (flag + timestamp; other purposes' parks are left
+        // alone). Without a park the purpose re-requested (and re-searched)
+        // on the very next tick. A minute suits a
         // service errand, whose destination is usually inactive for a moment.
         // A quest search that came back empty is a different animal: every
         // gate that rejected it (quest level window, free log slots, area band,
@@ -352,7 +351,9 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
     RESET_AI_VALUE(ObjectGuid,"attack target");
     RESET_AI_VALUE(ObjectGuid,"explicit attack target");
     RESET_AI_VALUE(bool, "travel target active");
-    context->ClearValues("no active travel destinations");
+    // No blanket ClearValues: a pick of this purpose must not wipe other
+    // purposes' time-boxed parks (timestamps stay authoritative, flags are
+    // cleared lazily by the request gate once their park expires).
     SET_AI_VALUE2(std::string, "manual string", "future travel detail", std::string());
 };
 
@@ -1050,7 +1051,8 @@ bool RefreshTravelTargetAction::Execute(Event& event)
     target->IncRetry(false);
 
     RESET_AI_VALUE(bool, "travel target active");
-    context->ClearValues("no active travel destinations");
+    // A re-point keeps the same destination: other purposes' parks are left
+    // alone (see setNewTarget).
     SET_AI_VALUE2(std::string, "manual string", "future travel detail", std::string());
 
     ai->TellDebug(requester, "Refreshed travel target", "debug travel");
@@ -1089,8 +1091,8 @@ bool ResetTargetAction::Execute(Event& event)
 {
     TravelTarget* oldTarget = AI_VALUE(TravelTarget*, "travel target");
 
-    context->ClearValues("no active travel destinations");
-
+    // A reset picks nothing, so other purposes' time-boxed parks are left
+    // alone.
     TravelTarget newTarget = TravelTarget(ai);
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     setNewTarget(requester, &newTarget, oldTarget);
@@ -1203,13 +1205,13 @@ bool RequestTravelTargetAction::isUseful() {
     // Time-boxed blacklist set by MoveToTravelTargetAction on repeated move
     // failure (and by UnstuckAction when retiring a target): ManualSetValue
     // has no expiry, so the timestamp recorded alongside is what ends the park.
-    // The timestamp is the authority, not the flag: the flag is context-wide
-    // and is wiped by every routine travel-target expiry and by every
-    // successful pick of any purpose (setNewTarget/ClearValues), so a bot that
-    // dropped a destination it could not walk to re-picked the same one within
-    // seconds. Live stage-7 pool: the same quest taker re-picked 12-20 s after
-    // being dropped, ~180 pick+fail+drop cycles per hour on the worst bots.
-    // Other purposes stay unaffected throughout either way.
+    // The timestamp is the authority, not the flag: the flag is parked
+    // per-purpose and survives picks, resets and expiries of other purposes
+    // (no blanket ClearValues anywhere on the pick path), so a dropped
+    // destination stays parked for its window while other purposes keep
+    // working. The flag is cleared lazily below once its park has expired.
+    // Live night2 pool: a dropped purpose re-picked after a median 1 s,
+    // 2,243 same-purpose repicks all under 300 s.
     std::string const parkKey = getQualifier().empty() ? "quest" : getQualifier();
     if (AI_VALUE2(time_t, "manual time", "no travel purpose until::" + parkKey) > time(0))
         return false;

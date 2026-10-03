@@ -291,15 +291,16 @@ bool UnstuckAction::Execute(Event& event)
             // No progress across 3 keeps (~15+ min stuck): retire the target
             // instead of preserving it. Null + time-boxed blacklist of the
             // purpose for 5 min so the same destination is not re-picked at
-            // once; anything else can still be requested immediately.
+            // once; anything else can still be requested immediately. Filed
+            // under the park key the request gate reads back (see the drop
+            // path in MoveToTravelTargetAction); the park survives picks of
+            // other purposes.
             std::string const purpose = AI_VALUE2(std::string, "manual string", "future travel purpose");
+            std::string const parkKey = TravelPurposeParkKey(purpose);
             sTravelMgr.SetNullTravelTarget(travelTarget);
             RESET_AI_VALUE(bool, "travel target active");
-            if (!purpose.empty())
-            {
-                SET_AI_VALUE2(bool, "no active travel destinations", purpose, true);
-                SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purpose, time(0) + 5 * MINUTE);
-            }
+            SET_AI_VALUE2(bool, "no active travel destinations", parkKey, true);
+            SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + parkKey, time(0) + 5 * MINUTE);
             SET_AI_VALUE2(int32, "manual int", "stuck keep count", 0);
             ai->TellDebug(master, "Unstuck: retiring travel target after 3 stuck keeps without progress.", "debug unstuck");
             return ai->DoSpecificAction("reset", event, true);
@@ -378,14 +379,14 @@ bool UnstuckAction::Execute(Event& event)
             // preserving it, like the move-stuck path. Null + time-boxed
             // blacklist of the purpose for 5 min so the same destination is
             // not re-picked at once; anything else can still be requested.
+            // Filed under the park key the request gate reads back (see the
+            // drop path in MoveToTravelTargetAction).
             std::string const combatPurpose = AI_VALUE2(std::string, "manual string", "future travel purpose");
+            std::string const combatParkKey = TravelPurposeParkKey(combatPurpose);
             sTravelMgr.SetNullTravelTarget(combatTarget);
             RESET_AI_VALUE(bool, "travel target active");
-            if (!combatPurpose.empty())
-            {
-                SET_AI_VALUE2(bool, "no active travel destinations", combatPurpose, true);
-                SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + combatPurpose, time(0) + 5 * MINUTE);
-            }
+            SET_AI_VALUE2(bool, "no active travel destinations", combatParkKey, true);
+            SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + combatParkKey, time(0) + 5 * MINUTE);
             SET_AI_VALUE2(int32, "manual int", "stuck keep count", 0);
             ai->TellDebug(master, "Unstuck: retiring travel target after 3 stuck keeps without progress.", "debug unstuck");
             return ai->DoSpecificAction("reset", event, true);

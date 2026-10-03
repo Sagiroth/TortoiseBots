@@ -14,6 +14,8 @@ using ai::ShouldKeepTravelAcrossStuckReset;
 using ai::ShouldRetireStuckTravelKeep;
 using ai::TravelInvalidParkKey;
 using ai::TravelIsResetToNull;
+using ai::TravelMoveFailPathTag;
+using ai::TravelPurposeParkKey;
 using ai::TravelTargetIsNull;
 
 int main()
@@ -67,6 +69,31 @@ int main()
     CHECK(!TravelIsResetToNull(false, false, "None"));
     CHECK(!TravelIsResetToNull(false, false, "quest"));
     std::cout << "  [PASS] reset-to-null skip keeps normal picks logging\n";
+
+    // (e) Purpose-park key: the drop/retire path parks exactly the key the
+    // request gate reads back ("quest" for the quest errand, which carries no
+    // qualifier). An empty purpose - wiped by a reset - parks the quest
+    // errand instead of nothing (finding 1 + §1.2: 514 empty fails, 1,658
+    // empty drops parked key "" while requests checked "quest").
+    CHECK(TravelPurposeParkKey("") == "quest");
+    CHECK(TravelPurposeParkKey("quest") == "quest");
+    CHECK(TravelPurposeParkKey("4096") == "4096");
+    CHECK(TravelPurposeParkKey("64") == "64");
+    CHECK(TravelPurposeParkKey("512") == "512");
+    CHECK(TravelPurposeParkKey("trainer class") == "trainer class");
+    std::cout << "  [PASS] purpose-park key matches the request gate\n";
+
+    // (f) Move-fail path tag: NOPATH vs INCOMPLETE vs unloaded tile vs full
+    // path, from the raw PathFinder::getPathType() bits (finding 14).
+    CHECK(TravelMoveFailPathTag(0x0008) == "nopath");
+    CHECK(TravelMoveFailPathTag(0x0004) == "incomplete");
+    CHECK(TravelMoveFailPathTag(0x0010) == "not-using-path");
+    CHECK(TravelMoveFailPathTag(0x0001) == "complete");
+    CHECK(TravelMoveFailPathTag(0x0000) == "complete");
+    // NOT_USING_PATH wins when combined: an unloaded tile says nothing about
+    // reachability, like the taker probe treats it.
+    CHECK(TravelMoveFailPathTag(0x0008 | 0x0010) == "not-using-path");
+    std::cout << "  [PASS] move-fail path tag buckets the pathfinder result\n";
 
     std::cout << "travel repick policy: OK\n";
     return 0;
