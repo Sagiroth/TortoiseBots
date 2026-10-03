@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/ServerFacade.h"
 #include "FishValues.h"
 #include "Timer.h"
 
@@ -8,6 +9,14 @@ using namespace ai;
 bool CanFishValue::Calculate()
 {
     if (!bot->GetSkill(SKILL_FISHING, false, false)) //Unable to fish.
+        return false;
+
+    // The shore search fishes from the bank; a swimming bot has no stand and
+    // a fighting bot has no hands (donor CanFishValue, issue #402).
+    if (bot->IsInWater() || bot->IsUnderwater())
+        return false;
+
+    if (sServerFacade.IsInCombat(bot))
         return false;
 
     std::list<Item*> poles = AI_VALUE2(std::list<Item*>, "inventory items", "fishing pole");

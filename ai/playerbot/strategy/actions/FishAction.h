@@ -13,6 +13,24 @@ namespace ai
     // TravelMgr::GetFishSpot, but up to eight candidates are tried until one is not guarded;
     // the last candidate is returned when every one of them is.
     WorldPosition* GetSafeFishSpot(Player* bot, bool onlyNearestGrid = false);
+    // Open-water search (issue #402, ported from mod-playerbots `FindWaterRadial` /
+    // `FindFishingHole`): fishable water within `searchRadius` of `from`, else an
+    // invalid position. The pool-bot-only direct-fishing fallback when the travel
+    // fish table is empty; bounded (fixed rings x directions) and cheap, and it
+    // reads already-loaded terrain like any path query - no world scan.
+    WorldPosition FindNearbyWater(Player* bot, WorldPosition const& from, float searchRadius);
+    // Nearest visible fishing hole (school) within `searchRadius`, else invalid.
+    // Fishing prefers the hole at cast time; the search walks to it only when
+    // the hole itself is out of casting range from dry land.
+    WorldPosition FindNearbyFishingHole(PlayerbotAI* ai, Player* bot, float searchRadius);
+    // Cast point on dry land `from` facing `water`: ground at the bot, water
+    // 10-20 yd out with line of sight, invalid when the bot must move first.
+    WorldPosition GetShoreCastSpot(Player* bot, WorldPosition const& from, WorldPosition const& water);
+    // Nearest dry stand toward `water` that can cast at it (sampled along the
+    // bot-to-water ray inside `searchRadius`), invalid when none is. Lets an
+    // idle pool bot walk a short step to the shore instead of only fishing
+    // when it happens to stand in casting range already.
+    WorldPosition StepTowardFishableWater(Player* bot, WorldPosition const& from, WorldPosition const& water, float searchRadius);
 
     class MoveToFishAction : public MovementAction, public Qualified
     {
