@@ -3082,3 +3082,49 @@ Local validation: `tools/test_point_danger_policy.cpp` (scope, live
 level-4 case, travelling +1 ceiling; registered in `tools/verify_all.sh`);
 `bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
 compiles).
+
+## Local grind and camp picks (issue #424) — 2026-10-03
+
+Feature: pool bots search the grind errand inside the donor's local window
+(2500 yd, 833 below level 5) instead of 10000 yd, and camp (GenericRpg inn
+hub) errands inside 500 yd at level <= 5 / 2500 yd above. Owned/hired bots
+keep the full radius (their player decides); leave-outgrown-zone grinds keep
+it too (a zone exit is far by design). All destination gates stay in force.
+
+Source project: `mod-playerbots` (NewRPG local picks).
+
+Source commit: `mod-playerbots@b6696bdbd3740e575598d167d69f39f68cc0b907`.
+
+Source files: donor
+`src/Ai/World/Rpg/Action/NewRpgBaseAction.cpp:964-1062`
+(`SelectRandomGrindPos`: same-map/zone level-bucket picks, 500 yd / 2500 yd,
+/3 below level 5, 50% near bias; `SelectRandomCampPos`: same-map/zone
+inn-hub picks, 500 yd at level <= 5 else 2500 yd, 50 yd push),
+`src/Mgr/Travel/TravelMgr.h:880,884` (`GetTravelHubs`, `GetLocsPerLevelCache`),
+`src/Mgr/Travel/TravelMgr.cpp:4490` (`GetTravelHubs`),
+`src/Mgr/Travel/TravelMgr.cpp:4812-4828` (level-bucketed POI cache); local
+`ai/playerbot/LocalPickPolicy.h` (new),
+`ai/playerbot/strategy/actions/ChooseTravelTargetAction.cpp`
+(`RequestTravelTargetAction::Execute` request radius),
+`tools/test_local_pick_policy.cpp`.
+
+Copied / ported / reimplemented: reimplemented the distance windows as a
+request-side search radius (one float down the async `GetPartitions` call);
+same-map is already covered (`GetDestinations` drops unreachable maps),
+level/zone picks are superseded by the stronger local gates (creature band
+`GrindSpotPolicy.h`, area ceiling `IsLocationLevelValid` /
+`GrindTravelDestination::IsPossible`, point danger `PointDangerPolicy.h`
+#418/#428, taker route #434). The 50% near-coin is dominated by our
+nearest-partition pick (recorded as `LOCAL_GRIND_NEAR_BIAS_PERCENT`); the
+50 yd camp push applies to resting camp status only, not errand trips.
+
+Reason: without the cap a pool bot with nothing suitable nearby walks up to
+10000 yd for grind while the donor caps at 2500 yd (833 below level 5).
+Measured baseline (night2-4h, 2026-10-02, 4 h): median vendor re-pick gap
+1113 s across 598 consecutive-pick gaps; grind/camp radii previously shared
+the uncapped 10000 yd search with every other purpose.
+
+Local validation: `tools/test_local_pick_policy.cpp` (donor window numbers,
+pool-only scope, leave-outgrown exemption, camp bands; registered in
+`tools/verify_all.sh`); `bash tools/verify_all.sh`; `git diff --check`. No
+deploy (orchestrator compiles).
