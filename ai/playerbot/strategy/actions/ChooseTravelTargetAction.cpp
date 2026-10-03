@@ -7,6 +7,7 @@
 #include "MoveToTravelTargetAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/TravelInstancePolicy.h"
+#include "playerbot/TravelRepickPolicy.h"
 #include "playerbot/strategy/values/VendorTripPolicy.h"
 #include "playerbot/strategy/values/TravelValues.h"
 #include "playerbot/strategy/values/MaintenanceValues.h"
@@ -61,8 +62,21 @@ bool ChooseTravelTargetAction::Execute(Event& event)
 
     if (!futureDestinations->valid())
     {
+        // The async search produced no usable result, so there is nothing to
+        // choose from. Park this purpose the way the empty-search path
+        // below does (same keys the request gate reads), so the bot does
+        // not re-request - and re-search - on the very next tick. One
+        // minute: the search offered nothing at all, which usually clears
+        // fast (a destination briefly inactive, a stale partition). Key and
+        // duration live in TravelRepickPolicy.h. Status and ClearValues
+        // first, then re-arm only this purpose (same order as the
+        // empty-search path: ClearValues wipes the flag context-wide).
         travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_NONE);
         context->ClearValues("no active travel destinations");
+        std::string const invalidParkKey = TravelInvalidParkKey(futureTravelPurpose);
+        SET_AI_VALUE2(bool, "no active travel destinations", invalidParkKey, true);
+        SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + invalidParkKey,
+            time(0) + TRAVEL_FUTURE_INVALID_PARK_SECONDS);
         return false;
     }
 
@@ -270,19 +284,31 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
     // Travel-target observability: one line per newly chosen target. A pick from
     // a null target (after a drop, a ding, a stuck retire) used to log nothing,
     // so the AH funnel was undercounted: 14 AH drops but only 6 logged AH picks
-    // (issue #399 side note). Resets (ResetTargetAction) still pass through here
-    // with the null destination at map 0 (0,0,0), which resolves to Alterac
-    // Mountains, so skip those. logEvent no-ops unless bot_events.csv is in
-    // AllowedLogFiles.
-    bool const pickedFromNull = !oldTarget->GetDestination() ||
-        typeid(*oldTarget->GetDestination()) == typeid(NullTravelDestination);
+    // (issue #399 side note). As coded before, the old target was read AFTER
+    // CopyTarget above, so the check could never fire - while the live binary
+    // logged the old null zone (Alterac Mountains, the null destination at
+    // map 0 (0,0,0)) with the marker. Now the zone is the NEW destination's
+    // and the from-null state is the OLD target's pre-copy state. Resets
+    // (ResetTargetAction) pass a fresh null target through here with a stale
+    // purpose value, so the skip reads the NEW side, not the old one - every
+    // real pick is non-null there and still logs. logEvent no-ops unless
+    // bot_events.csv is in AllowedLogFiles. Predicates live in
+    // TravelRepickPolicy.h.
+    TravelDestination* oldPickDest = oldTarget ? oldTarget->GetDestination() : nullptr;
+    bool const pickedFromNull = oldTarget != newTarget &&
+        TravelTargetIsNull(oldPickDest != nullptr,
+            oldPickDest != nullptr && typeid(*oldPickDest) == typeid(NullTravelDestination));
+    TravelDestination* newPickDest = newTarget ? newTarget->GetDestination() : nullptr;
+    bool const newPickIsNull = TravelTargetIsNull(newPickDest != nullptr,
+        newPickDest != nullptr && typeid(*newPickDest) == typeid(NullTravelDestination));
     std::string const travelPurposeName = GetTravelPurposeName(AI_VALUE2(std::string, "manual string", "future travel purpose"));
-    bool const isResetToNull = pickedFromNull && travelPurposeName == "None";
+    bool const isResetToNull = TravelIsResetToNull(pickedFromNull, newPickIsNull, travelPurposeName);
     if (!isResetToNull)
     {
         std::string purpose = travelPurposeName;
-        std::string destZone = (oldTarget->getPosition() && oldTarget->getPosition()->GetArea())
-            ? oldTarget->getPosition()->GetAreaName(true, true) : "";
+        WorldPosition* newPickPos = newTarget ? newTarget->getPosition() : nullptr;
+        std::string destZone = (newPickPos && newPickPos->GetArea())
+            ? newPickPos->GetAreaName(true, true) : "";
         if (pickedFromNull)
             destZone += " (from null)";
         sPlayerbotAIConfig.logEvent(ai, "TravelTarget", purpose, destZone);
@@ -1030,7 +1056,10 @@ bool RefreshTravelTargetAction::Execute(Event& event)
     ai->TellDebug(requester, "Refreshed travel target", "debug travel");
     ReportTravelTarget(bot, requester, target, target);
 
-    return false;
+    // A successful re-point did the work: report success. Returning false
+    // here read as a failure and tripped ACTION_LOOP telemetry while the
+    // destination stayed active.
+    return true;
 }
 
 bool RefreshTravelTargetAction::isUseful()

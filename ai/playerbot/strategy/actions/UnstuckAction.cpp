@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "UnstuckAction.h"
 #include "playerbot/LongStuckRescuePolicy.h"
+#include "playerbot/TravelRepickPolicy.h"
 #include "playerbot/TravelMgr.h"
 
 using namespace ai;
@@ -289,11 +290,72 @@ bool UnstuckAction::Execute(Event& event)
         return LongStuckRescue(ai, event, bot, master, hearthAttemptLeftBotInPlace);
     }
 
-    // Handle combat stuck scenarios
+    // Handle combat stuck scenarios. A combat-stuck plain reset used to null
+    // the travel target while move-stuck preserved it, so a bot wedged
+    // mid-fight re-requested and re-picked its quest target every few seconds
+    // while standing still (Khapuzarae: a pick every 4-6 s after the combat
+    // UnstuckTrip). Keep an active target across this reset exactly like the
+    // move-stuck path above: same keep rule, same 3-keep retirement, same
+    // save/restore of destination, position, status, conditions, forced flag,
+    // retry counters, relevance and group copy. See TravelRepickPolicy.h.
     if (source.find("combat stuck") != std::string::npos)
     {
         ai->TellDebug(master, "Unstuck: Combat stuck detected, resetting position.", "debug unstuck");
-        return ai->DoSpecificAction("reset", event, true);
+        TravelTarget* combatTarget = AI_VALUE(TravelTarget*, "travel target");
+        TravelDestination* combatDestProbe = combatTarget ? combatTarget->GetDestination() : nullptr;
+        bool const keepCombatTravel = ShouldKeepTravelAcrossStuckReset(combatTarget != nullptr,
+            combatTarget && combatTarget->IsActive(),
+            combatDestProbe != nullptr,
+            combatTarget && combatTarget->getPosition() != nullptr,
+            combatDestProbe && typeid(*combatDestProbe) == typeid(NullTravelDestination));
+        int32 combatKeeps = AI_VALUE2(int32, "manual int", "stuck keep count");
+        WorldPosition combatAnchor = AI_VALUE2(WorldPosition, "custom position", "stuck keep anchor");
+        if (!keepCombatTravel)
+        {
+            SET_AI_VALUE2(int32, "manual int", "stuck keep count", 0);
+            return ai->DoSpecificAction("reset", event, true);
+        }
+        if (ShouldRetireStuckTravelKeep(combatKeeps, WorldPosition(bot).sqDistance(combatAnchor)))
+        {
+            // No progress across 3 keeps: retire the target instead of
+            // preserving it, like the move-stuck path. Null + time-boxed
+            // blacklist of the purpose for 5 min so the same destination is
+            // not re-picked at once; anything else can still be requested.
+            std::string const combatPurpose = AI_VALUE2(std::string, "manual string", "future travel purpose");
+            sTravelMgr.SetNullTravelTarget(combatTarget);
+            RESET_AI_VALUE(bool, "travel target active");
+            if (!combatPurpose.empty())
+            {
+                SET_AI_VALUE2(bool, "no active travel destinations", combatPurpose, true);
+                SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + combatPurpose, time(0) + 5 * MINUTE);
+            }
+            SET_AI_VALUE2(int32, "manual int", "stuck keep count", 0);
+            ai->TellDebug(master, "Unstuck: retiring travel target after 3 stuck keeps without progress.", "debug unstuck");
+            return ai->DoSpecificAction("reset", event, true);
+        }
+        TravelDestination* combatDest = combatTarget->GetDestination();
+        WorldPosition* combatPos = combatTarget->getPosition();
+        TravelStatus combatStatus = combatTarget->GetStatus();
+        std::vector<std::string> combatConditions = combatTarget->GetConditions();
+        bool const combatForced = combatTarget->IsForced();
+        uint32 const combatMoveRetry = combatTarget->GetRetryCount(true);
+        uint32 const combatExtendRetry = combatTarget->GetRetryCount(false);
+        uint32 const combatRelevance = combatTarget->GetRelevance();
+        GuidPosition combatGroupCopy = combatTarget->GetGroupmember();
+        bool const combatReset = ai->DoSpecificAction("reset", event, true);
+        combatTarget->SetTarget(combatDest, combatPos);
+        combatTarget->SetStatus(combatStatus);
+        combatTarget->SetConditions(combatConditions);
+        combatTarget->SetForced(combatForced);
+        combatTarget->SetRetry(true, combatMoveRetry);
+        combatTarget->SetRetry(false, combatExtendRetry);
+        combatTarget->SetRelevance(combatRelevance);
+        if (combatGroupCopy)
+            combatTarget->SetGroupCopy(combatGroupCopy);
+        if (combatKeeps == 0 || !combatAnchor.isValid())
+            SET_AI_VALUE2(WorldPosition, "custom position", "stuck keep anchor", WorldPosition(bot));
+        SET_AI_VALUE2(int32, "manual int", "stuck keep count", combatKeeps + 1);
+        return combatReset;
     }
 
     // Handle long combat stuck scenarios
