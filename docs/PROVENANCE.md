@@ -2764,3 +2764,59 @@ strike fired while travelling with no pack or cap check. Est. 20-30% +
 Local validation: `tools/test_pull_regen_policy.cpp` (regen bands, cap,
 strike gate); `bash tools/verify_all.sh`; `git diff --check`. No deploy
 (orchestrator compiles).
+## Death fix B: rest to almost-full, pool-only critical flee, attacker snapshot, never-empty rations — 2026-10-03
+
+Feature: (1) cheat bots (free rations) eat to `AlmostFullHealth` and drink to
+almost-full instead of stopping at 70/85 — `UseFoodStrategy` registers the
+critical/low/medium/almost-full bands and `ShouldEatValue`/`ShouldDrinkValue`
+stop there (start threshold unchanged; no-cheat bots keep 50/85). (2) The
+donor `critical health -> flee` node is restored pool-only via a new
+`critical health no master` trigger (no real player master, never PvP), and
+grouped pool bots now carry the `flee` strategy too (the trigger itself keeps
+owned/hired dungeon/raid bots still). (3) `deaths.csv` `adds` reads a live
+per-tick attacker snapshot (30 s window, capped at 8, killer excluded by
+name) instead of the victim-filtered loop that was structurally always 0.
+(4) Every pool bot holds one full stack of the best vendor food for its
+level (and water for mana users; warrior/rogue get none), refilled every
+tick like ammo, stale tiers swapped on ding; owned/hired bots without the
+cheat keep the earned restock path. Food/drink already classify KEEP, so
+sell and smart-destroy never hand them over (verified by code read, no
+change needed). Pure rules live in `ai/playerbot/SurvivePolicy.h`, pinned by
+`tools/test_survive_policy.cpp` (registered in `tools/verify_all.sh`).
+
+Source repository: `mod-playerbots` @
+`b6696bdbd3740e575598d167d69f39f68cc0b907` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Base/Strategy/FleeStrategy.cpp:17` (`critical health` -> `flee` at
+`ACTION_MEDIUM_HEAL`), `src/Ai/Base/Strategy/UseFoodStrategy.cpp:11-24`
+(food-cheat `medium health` -> `food`, `high mana` -> `drink`),
+`src/Ai/Base/Trigger/GenericTriggers.cpp:112-157` (Panic = critical AND
+low/no mana; OutNumbered with no pre-10 hunter/mage/druid or solo-priest
+gate — ours adds those level gates natively, left untouched),
+`src/Ai/Base/Trigger/HealthTriggers.h` (`MediumHealthTrigger` spans
+`[0, MediumHealth)`), `src/Ai/Base/Actions/NonCombatActions.cpp`
+(`EatAction`/`DrinkAction` cheat branches, `isUseful` at `< 100`).
+
+Copied / ported / reimplemented: flee node ported with a local adaptation —
+the donor fires `critical health` for every bot, ours fires a new
+`critical health no master` trigger so real-master (owned/hired, dungeon,
+raid) bots never flee on their own; the rest stop deliberately exceeds donor
+parity (90 not 70) on the measured near-won-fight evidence; the attacker
+snapshot, ration seeding/refill and policy header are native (no donor
+equivalent).
+
+Reason: night2-4h pool, 6492 deaths at 27/min: 29.6% end with the killer
+under 30% HP (a fuller bar flips them), chain-pull with no regen gate, no
+low-HP escape for the classes that die most, an always-0 `adds` column, and
+level-1 food carried for levels.
+
+Local validation: `bash tools/verify_all.sh` (OKF, surface, wiring
+`queued=1543 live-missing=0`, policy tests incl. new survive test, decision
+trail); `git diff --check`. Module build + runtime deploy left to the
+orchestrator (worktree rule: no docker builds here). Live indicators to
+watch after deploy: `Food(24005)` casts per bot-hour (should rise),
+deaths per bot-hour in the level 5-10 bracket, share of deaths with killer
+under 30% HP, nonzero `adds` counts in `deaths.csv`, and `flee` rows in the
+decision trail for critical-HP pool bots.

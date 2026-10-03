@@ -136,6 +136,10 @@ void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
     {
         PlayerbotFactory factory(bot, bot->GetLevel());
         factory.InitSkills();
+        // Level-tier rations follow the ding (owner addendum): same swap as
+        // the XP hook - stale lower tiers out, the new band's food/drink
+        // in. The XP hook fires on the same ding; both are idempotent.
+        factory.AddFood();
         // Professions-at-5 backstop: a pool bot that dings 5 without primaries
         // (created before the gate, or seeded below it) earns its class pair
         // here, plus the matching tools. Gated on the same tested policy

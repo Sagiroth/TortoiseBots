@@ -140,6 +140,7 @@ namespace ai
             creators["possible adds"] = [](PlayerbotAI* ai) { return new PossibleAddsTrigger(ai); };
             creators["panic"] = [](PlayerbotAI* ai) { return new PanicTrigger(ai); };
             creators["outnumbered"] = [](PlayerbotAI* ai) { return new OutNumberedTrigger(ai); };
+            creators["critical health no master"] = [](PlayerbotAI* ai) { return new CriticalHealthNoMasterTrigger(ai); };
             creators["behind target"] = [](PlayerbotAI* ai) { return new IsBehindTargetTrigger(ai); };
             creators["not behind target"] = [](PlayerbotAI* ai) { return new IsNotBehindTargetTrigger(ai); };
             creators["not facing target"] = [](PlayerbotAI* ai) { return new IsNotFacingTargetTrigger(ai); };

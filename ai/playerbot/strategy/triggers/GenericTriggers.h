@@ -653,6 +653,18 @@ namespace ai
         virtual std::string getName() override { return "outnumbered"; }
     END_TRIGGER()
 
+    // Pool-only low-HP escape for the restored donor "critical health ->
+    // flee" node (FleeStrategy): fires on the critical band only while no
+    // real player master answers for the bot. Owned/hired bots in
+    // dungeon/raid groups keep today's behaviour - their player decides.
+    class CriticalHealthNoMasterTrigger : public Trigger
+    {
+    public:
+        CriticalHealthNoMasterTrigger(PlayerbotAI* ai) : Trigger(ai, "critical health no master") {}
+
+        virtual bool IsActive() override;
+    };
+
 	class NoPetTrigger : public Trigger
 	{
 	public:

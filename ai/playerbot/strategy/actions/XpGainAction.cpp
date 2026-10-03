@@ -110,6 +110,10 @@ bool XpGainAction::Execute(Event& event)
         {
             PlayerbotFactory kit(bot, bot->GetLevel());
             kit.EnsureStarterKit();
+            // Level-tier rations upgrade themselves (owner addendum): the
+            // per-tick refill below only tops the current tier up, so swap
+            // stale lower tiers for the new band's food/drink here.
+            kit.AddFood();
         }
         TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
         sTravelMgr.SetNullTravelTarget(travelTarget);

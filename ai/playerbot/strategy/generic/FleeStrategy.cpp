@@ -60,6 +60,17 @@ void FleeStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
     triggers.push_back(new TriggerNode(
         "outnumbered",
         NextAction::array(0, new NextAction("flee", ACTION_EMERGENCY + 9), NULL)));
+
+    // Restored donor node (mod-playerbots FleeStrategy.cpp:17, "critical
+    // health" -> flee at ACTION_MEDIUM_HEAL): without it no low-HP escape
+    // exists for a fighter that keeps its mana (PanicTrigger needs low/no
+    // mana) or is gated out of OutNumberedTrigger (hunter/mage/priest
+    // pre-10, solo priest). Pool-only via the trigger itself, so owned and
+    // hired bots answering to a real player master never flee on their own -
+    // their player decides, especially in dungeons and raids.
+    triggers.push_back(new TriggerNode(
+        "critical health no master",
+        NextAction::array(0, new NextAction("flee", ACTION_MEDIUM_HEAL), NULL)));
 }
 
 void FleeFromAddsStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
