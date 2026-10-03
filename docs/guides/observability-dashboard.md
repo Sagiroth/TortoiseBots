@@ -90,9 +90,18 @@ All three read in-memory bounded state; no database queries are made. Money earn
 
 **Counter window and persistence.** Counters are session-scoped: they reset when the game server restarts (new session id) or when a roster wipe invalidates it. To keep them across a *dashboard* restart the daemon snapshots the rollup to `activity-state.json` once a minute (default `<ICON_CACHE_DIR>/activity-state.json`, override with `--activity-state-file` / `ACTIVITY_STATE_FILE`, empty disables) and restores it at startup; a snapshot from a different game-server session is dropped by the first datagram instead of leaking the previous pool's numbers into the new run.
 
----
+## 4. Pool KPI Report (`tools/pool_kpi_report.py`)
 
-## 4. Bot Armory (DB inspector)
+Offline counterpart to the live dashboard: one Markdown KPI table for a whole
+pool window since a reset timestamp, computed from a snapshot dir plus the
+character DB (bag fill only). Stdlib only; no container name is hardcoded —
+pass `--db-cmd "docker exec -i <container> mariadb ... -N -B"` (or omit it and
+the bag row prints `n/a`). The 2026-10-02 baseline lives in
+`tools/pool_kpi_baseline_2026-10-02.json`; pass `--baseline` for a side-by-side
+column, `--save-baseline` to freeze a new run.
+
+
+## 5. Bot Armory (DB inspector)
 
 The **Armory** tab inspects any bot straight from the database — no live session and no telemetry needed — so it also covers offline bots: equipment and bag slots with resolved items, live/saved stats, spells, skills, and talents. It is reachable two ways: the top-level **Armory** sidebar entry, or `All bots (incl. offline)` in the Bots roster (the sub-view; `← Roster` goes back).
 
@@ -127,7 +136,7 @@ The three class trees in DBC page order (1.12 frame left-to-right), each as a 7-
 
 ---
 
-## 5. Zone Map Artwork Credits
+## 6. Zone Map Artwork Credits
 
 Zone map artwork for custom Turtle WoW locations and upgraded classic zones is by fantasy cartographer **Maps of Mystery (Cameron Holt)** — [Maps of Mystery on ArtStation](https://www.artstation.com/mapsofmystery).
 

@@ -1,0 +1,114 @@
+{
+ "meta": {
+  "reset": "2026-10-02 12:54",
+  "end": "2026-10-02T15:38:34+00:00",
+  "window_hours": 2.743,
+  "source": "/mnt/pny-ssd/tortoise-snapshots/2026-10-02-1540/logs"
+ },
+ "kpis": {
+  "deaths/min (pool)": {
+   "value": "24.26",
+   "note": "3992 deaths / 165 min (deaths.csv)"
+  },
+  "BotDeath rows (bot_events)": {
+   "value": "3992",
+   "note": "cross-check vs deaths.csv"
+  },
+  "DeathClusterEscape rows": {
+   "value": "728",
+   "note": "loop-breaker fires"
+  },
+  "DeathSpotAvoided rows": {
+   "value": "0",
+   "note": "0 = gate not live / no avoids"
+  },
+  "median XP/h per bot": {
+   "value": "1817",
+   "note": "daemon grinding.json (pool XP model)"
+  },
+  "kills/bot/h": {
+   "value": "19.1",
+   "note": "26325 kills / 500 bots / 2.76 h (activity.json)"
+  },
+  "bots with >5 min total ghost": {
+   "value": "196",
+   "note": "196/500 (bots.json ghost_seconds)"
+  },
+  "lvl1-3, no XP last 60 min": {
+   "value": "109/117",
+   "note": "xp_gain_age_sec missing/neg/>3600s (incl. never-gained)"
+  },
+  "static bots (trail <10 yd)": {
+   "value": "19",
+   "note": "snapshot proxy, not duration: Brigror L3/stalled, Grurkar L6/stalled, Julurn L8/stalled, Khyrga L3/combat, Kraemorursh L7/moving, Kralgrubol L6/stalled, Lursur L6/stalled, Myrcekhi L6/stalled \u2026"
+  },
+  "Vendor TravelTarget picks": {
+   "value": "3113",
+   "note": "402 bots; 5826 MoveFailed rows (all purposes)"
+  },
+  "median vendor re-pick gap": {
+   "value": "64 s",
+   "note": "2711 consecutive-pick gaps"
+  },
+  "ACTION_LOOP anomalies": {
+   "value": "72",
+   "note": "windfury weapon 35, service nearby npc 34, loot 3"
+  },
+  "UNREACHABLE_TARGET anomalies": {
+   "value": "272",
+   "note": "daemon incident feed"
+  },
+  "BOTPERF AI pass": {
+   "value": "mean 49.2 ms, max 57.8 ms",
+   "note": "n=329; thirds 45.0/50.1/52.4 ms"
+  },
+  "gathering node opens/h": {
+   "value": "17.1",
+   "note": "47 GatherLoot rows / 2.74 h"
+  },
+  "fishing casts": {
+   "value": "0",
+   "note": "CAST_START over 823 per-bot logs"
+  },
+  "AH listings / buys": {
+   "value": "37 / 0",
+   "note": "trades.log in-window"
+  },
+  "AhAction / AhMarket rows": {
+   "value": "36 / 1",
+   "note": "bot_events sell/market path"
+  },
+  "median min reset\u2192L5": {
+   "value": "56.8",
+   "note": "n=352"
+  },
+  "median min reset\u2192L6": {
+   "value": "90.3",
+   "note": "n=305"
+  },
+  "median min reset\u2192L7": {
+   "value": "118.8",
+   "note": "n=196"
+  },
+  "median min reset\u2192L10": {
+   "value": "149.5",
+   "note": "n=4"
+  },
+  "bag fill median / >=90%": {
+   "value": "43.8% / 0",
+   "note": "n=500, full=0, bagless=245 (DB)"
+  },
+  "TrainerAction / TrainerNoMoney": {
+   "value": "1532 / 227",
+   "note": "visits vs cannot-afford"
+  },
+  "QuestCompleted rows": {
+   "value": "1928",
+   "note": "turn-in completions"
+  },
+  "unstuck rescues/h (hearth+fallback)": {
+   "value": "50.3",
+   "note": "138 hearth + 0 LongStuckFallback / 2.74 h; RepopAction 222 extra context"
+  }
+ }
+}
