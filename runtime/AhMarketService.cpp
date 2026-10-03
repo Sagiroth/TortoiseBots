@@ -1,5 +1,6 @@
 #include "AhMarketService.h"
 #include "BotActivityLease.h"
+#include "TradingLeasePolicy.h"
 
 // pi-lens-ignore: clang:pp_file_not_found
 #include "BotManager.h"
@@ -1305,7 +1306,7 @@ void AhMarketService::Update(uint32_t diff)
             continue;
         // Lease arbitration (issue #89): host guards above stay authoritative.
         // Trading holders stay eligible so a teleported bot keeps its lease
-        // across travel ticks until Posted/Failed or the 2-minute timeout.
+        // across travel ticks until Posted/Failed or the trip-lease timeout.
         BotActivity activity = BotActivityLeaseManager::Instance().GetActivity(bot->GetGUIDLow());
         if (activity != BotActivity::Idle && activity != BotActivity::Grinding && activity != BotActivity::Trading)
             continue;
@@ -1332,8 +1333,10 @@ void AhMarketService::Update(uint32_t diff)
         Player* bot = eligible[idx];
         uint32_t guidLow = bot->GetGUIDLow();
         BotActivity previousActivity = BotActivityLeaseManager::Instance().GetActivity(guidLow);
-        // 2-minute Trading lease covers teleport travel + posting.
-        if (!BotActivityLeaseManager::Instance().TryAcquire(guidLow, BotActivity::Trading, 120000))
+        // #404: the trip posts on the NEXT seller tick, so a flat 120 s lease raced the post at
+        // the default 120 s tick (29 expiries vs ~1 post). Lease two ticks + margin, bounded.
+        uint32_t tripMs = TradingTripLeaseMs(intervalMs);
+        if (!BotActivityLeaseManager::Instance().TryAcquire(guidLow, BotActivity::Trading, tripMs))
             continue;
         bool allowTeleport = teleported < batch;
         PostResult res = TryPostForBot(bot, allowTeleport);

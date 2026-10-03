@@ -2871,3 +2871,168 @@ No deploy (orchestrator compiles).
 | Rogue no-enchant triggers + open-world poison upkeep | mod-playerbots RogueTriggers.h MainHand/OffHandWeaponNoEnchantTrigger, RogueAiObjectContext creators, GenericRogueNonCombatStrategy + GenericRogueStrategy wiring | ai/playerbot/strategy/rogue/RogueTriggers.{h,cpp} (classes + IsActive), RogueAiObjectContext.cpp (creators), RogueStrategy.cpp (upkeep on always-on RogueStrategy::InitNonCombatTriggers; spec pve/pvp/raid poison strategies unchanged) | Reimplemented: donor names shape, Tortoise per-poison apply actions kept | Generic upkeep was dead (unregistered names skipped by Engine::ProcessTriggers); open-world levelers never poisoned | verify_action_trigger_wiring.py (0 live-missing), test_class_consumable_policy.cpp, verify_all.sh |
 | Organic warlock shard economy (Drain Soul harvest, no seeding/conjuring) | mod-playerbots CastDrainSoulAction::isUseful (<26 shards), OutOf==0/TooMany>=26 triggers (no cheat gate), core SpellAuras (shard only when drained victim yields XP/honor) | ai/playerbot/strategy/warlock/WarlockTriggers.{h,cpp} (cheat gates dropped; drain window 25->20 matching target critical health), WarlockActions.h (Create Soul Shard action disabled - DB-only spells 23464/24827; cheat shard-destroy in Shadowburn/Dark Harvest removed), PlayerbotFactory.cpp (InitReagents warlock seed capped at 5-keep band), runtime/ClassConsumablePolicy.h | Reimplemented: donor real-shard model kept under the pool item cheat instead of donor conjure | Pool warlocks held zero shards (all upkeep paths false under cheat); hired/owned unchanged - same real-shard path | test_class_consumable_policy.cpp, verify_all.sh |
 | Class-consumable ding refresh + sell/destroy guards | mod-playerbots PlayerbotFactory rogue seed + AutoMaintenanceOnLevelupAction ding refresh | XpGainAction.cpp + AutoLearnSpellAction.cpp (pool-only AddConsumes + AddBandages, idempotent), ItemUsageValue.cpp (KEEP for masked poisons + upkeep stones/oils; dead class-ID-vs-mask block removed), PlayerbotFactory.h (coarse weightstone 3239->3240) | Reimplemented | Ding left real-item bots on stale tiers; zero live stock drained via vendor/destroy | test_class_consumable_policy.cpp, verify_all.sh |
+## Periodic quest-log triage for pool bots (E07) — 2026-10-03
+Feature: upkeep bots drop FAILED quests and, once fewer than two log slots
+are free, unfinishable solo picks — over-level (+3), elite/dungeon/raid
+(type != 0), suggested-group (>= 2) and zone-mismatched quests — instead of
+pinning slots (`QuestTriageShouldDrop` in `ai/playerbot/QuestLogPolicy.h`,
+wired into `CleanQuestLogAction::IsDroppable` and mirrored in the
+`QuestLogNearlyFullTrigger` pre-scan, which now also sees FAILED). COMPLETE
+quests never triage; class quests stay preserved; no whole-log last resort.
+Repeatable/seasonal drops not ported (no 1.12 seasonal API).
+
+Source project: `mod-playerbots`
+`src/Ai/World/Rpg/Action/NewRpgBaseAction.cpp:556-590`
+(`IsQuestWorthDoing`, `IsQuestCapableDoing`, `OrganizeQuestLog` at `:590`,
+`:614-616` FAILED drop, `:640-665` zone pass, `freeSlotNum >= 2` gate).
+
+Source files: donor `NewRpgBaseAction.cpp:556-690`;
+local `ai/playerbot/QuestLogPolicy.h` (`QuestTriageShouldDrop`),
+`ai/playerbot/strategy/actions/DropQuestAction.{h,cpp}`,
+`ai/playerbot/strategy/triggers/GenericTriggers.h`,
+`tools/test_quest_log_triage_policy.cpp`.
+
+Copied / ported / reimplemented: reimplemented (donor numbers, local
+plumbing; donor reward-pick `BestRewardIndex` not ported).
+
+Reason: accept-time gating only (`AcceptQuestAction::WouldAcceptQuest`) lets
+the log clog with quests the bot can never finish; E07 rates the impact
+MEDIUM (blocked slots). Donor defaults OFF for repeatables/seasonal kept
+out per brief.
+
+Local validation: `tools/test_quest_log_triage_policy.cpp` (FAILED,
++3/scaling, type, suggested, zone/sort/unknown, doable kept; registered in
+`tools/verify_all.sh`); `bash tools/verify_all.sh`; `git diff --check`.
+No deploy (orchestrator compiles).
+
+## Loot-roll vote gates for pool bots (E08) — 2026-10-03
+Feature: plain auto votes pass through three donor gates before the
+`IsLootAllowed` verdict — FFA/master-loot rolls PASS, recipes NEED when
+learnable (SKILL usage) / PASS when soulbound-unusable / GREED when
+tradeable, epic junk-class tokens NEED only for classes in their
+`AllowableClass` mask (empty mask = unrestricted), duplicate uniques
+(already `UNIQUE_EQUIPPED`, or at `MaxCount`) demote NEED to GREED
+(`LootMethodTakesRolls`, `RecipeRollVote`, `TokenUsableByClass`,
+`UniqueCopyOwned` in `ai/playerbot/LootRollPolicy.h`, wired into
+`RollAction::CalculateRollVote`). Recipe/token gates are pool-only
+(`!HasRealPlayerMaster`); FORCE_NEED/FORCE_GREED and the bad-equip rule
+win. Deliberate 1.12 divergence: the core has no DISENCHANT vote
+(`CountRollVote` only records NEED/GREED/PASS), so DISENCHANT usage stays
+GREED and enchanters disenchant post-win via maintenance.
+
+Source project: `mod-playerbots`
+`src/Ai/Base/Actions/LootRollAction.cpp:40-110`
+(vote gates, `lootNeedRollLevel`/`lootRollRecipe`/`lootRollDisenchant`/
+`lootGreedRollLevel` defaults `:707-710` in `PlayerbotAIConfig.cpp`),
+`LootRollAction.h:29-30` (`CanBotUseToken`, `RollUniqueCheck` at `:185`,
+`:197`).
+
+Source files: donor `LootRollAction.cpp:40-210`, `LootRollAction.h:29-30`;
+local `ai/playerbot/LootRollPolicy.h`,
+`ai/playerbot/strategy/actions/LootRollAction.cpp`,
+`tools/test_loot_roll_policy.cpp`.
+
+Copied / ported / reimplemented: reimplemented (donor gates, local vote
+plumbing; no new config keys — donor recipe/DE/greed toggles default off
+and are folded into the pool-only scope instead).
+
+Reason: E08 rates the gap MEDIUM — pool bots GREEDed soulbound recipes
+they cannot learn, NEEDed duplicate uniques they cannot loot, and voted in
+FFA/master rolls. No DE-skill config existed, so no new key was added.
+
+Local validation: `tools/test_loot_roll_policy.cpp` (loot method,
+recipe split, unique ownership, token mask; registered in
+`tools/verify_all.sh`); `bash tools/verify_all.sh`; `git diff --check`.
+No deploy (orchestrator compiles).
+## 2026-10-03 — pet upkeep + gather tools + medium-mana potion (r-donor E01/E02/E10/E11)
+
+Donor: `mod-playerbots` @ b6696bdbd3740e575598d167d69f39f68cc0b907.
+
+Source files: donor `src/Ai/Base/Actions/PetsAction.cpp:342-405`
+(`TogglePetSpellAutoCastAction`), `:442-514` (`SetPetStanceAction`),
+`src/Ai/Base/Trigger/GenericTriggers.cpp:48-53,743-764`
+(`HasPetTrigger`, `NewPetTrigger`), `src/Mgr/Item/LootObjectStack.cpp:337-343`
+(tool allowlist), `src/Ai/Base/Strategy/UsePotionsStrategy.cpp:35-38`
+(medium-mana node), `src/Bot/Factory/PlayerbotFactory.cpp:1304+`
+(`InitPetTalents`); local `ai/playerbot/strategy/actions/GenericActions.{h,cpp}`
+(new actions), `ai/playerbot/strategy/triggers/GenericTriggers.{h,cpp}` +
+`TriggerContext.h` (triggers + creators), `ActionContext.h` (action creators),
+`ai/playerbot/strategy/hunter/HunterStrategy.cpp` +
+`ai/playerbot/strategy/warlock/WarlockStrategy.cpp` (live upkeep nodes),
+`ai/playerbot/LootObjectStack.cpp` (allowlist), `runtime/PetUpkeepPolicy.h`
+(denylist + toggle rule, pinned by `tools/test_pet_upkeep_policy.cpp`),
+`runtime/GatherToolPolicy.h` (tool lists, pinned by
+`tools/test_gather_tool_policy.cpp`),
+`ai/playerbot/strategy/generic/UsePotionsStrategy.cpp` (medium-mana node),
+`docs/classes/hunter.md`, `docs/classes/warlock.md`.
+
+Copied / ported / reimplemented: ported with 1.12 adaptations — autocastable
+= non-passive (no NO_AUTOCAST_AI bit in this core; `Pet::ToggleAutocast`
+refuses passives the same way), stale-entry prune via `Pet::HasSpell`
+(already excludes PETSPELL_REMOVED), denylist = the 1.12-existant subset
+(WotLK-only Spell Lock 27276/27277 ranks, Leap 47482/58867, 48011 visual
+excluded; all Cower ranks 1742/1753-1756/16697 disabled to agree with the
+factory), stance = REACT_DEFENSIVE always (donor DefaultPetStance collapsed
+to our InitPet/CanPetAttack invariant), guardian coverage via
+`CallForAllControlledUnits(CONTROLLED_GUARDIANS)` (no m_Controlled in this
+core), tool allowlist minus WotLK-only 40772/40892/40893.
+
+Reason: the live hunter "pet" and warlock "pet" strategies queued
+`toggle pet spell` / `set pet stance` with no creators (silent no-ops every
+tick); bots carrying any non-default valid tool refused nodes; casters
+waited for low mana before potion logic armed.
+
+Local validation: `tools/test_pet_upkeep_policy.cpp`,
+`tools/test_gather_tool_policy.cpp` (registered in `tools/verify_all.sh`);
+`bash tools/verify_all.sh` (incl. wiring gate: live-missing 0);
+`git diff --check`. No deploy (orchestrator compiles).
+
+E10 verdict (pet talents): NOT APPLICABLE, skipped. Donor `InitPetTalents`
+spends WotLK pet talent points (`GetMaxTalentPointsForLevel`,
+`petTalentType`, `TalentEntry`/`TalentTab` pet masks) — none of those APIs
+exist in this core (grep verified: no `GetMaxTalentPointsForLevel`,
+`petTalentType`, or pet-talent store outside player talents). 1.12 pets use
+training points (`Pet::m_TrainingPoints`, `GetTPForSpell`), and
+`InitPetSpells` already teaches level-appropriate spells plus autocast
+state. Nothing to port.
+## Quest/grind points refuse hostile over-cap neighbours (q-points) — 2026-10-03
+Feature: `TravelMgr::IsLocationLevelValid` refuses a quest-objective /
+quest-loot / grind *point* whose 40 yd surroundings hold hostile spawns past
+the bot's grind cap (`PointDangerApplies` + `PointDangerous` in
+`ai/playerbot/PointDangerPolicy.h`: pool bots below 10 only, +1 numbers from
+`PullGrindLevelCap`; owned/hired bots and level 10+ keep today's behaviour).
+The neighbour lookup is a static per-map 32 yd cell index over the creature
+spawn table (`WorldPosition::GetHighestHostileLevelNear`, built once via
+`call_once` next to the hostile-town index: no world scan, no DB, no map
+loads, no per-query allocation) counting only spawns the bot is hostile to
+by static template reaction, so neutral camps, vendors and wildlife never
+bar a point. When every point of a destination is dangerous the search comes
+back empty and the caller parks the purpose like any other empty search.
+Doc row: `docs/concepts/bot-mechanics-and-quirks.md` (Grind Target
+destination band).
+
+Source project: `mod-playerbots` — no donor shape: its `TravelMgr` never
+looks at neighbouring spawns (`getCreaturesNear` only builds the destination
+and node tables), so this is local, measured on the live pool.
+
+Source files: local `ai/playerbot/PointDangerPolicy.h` (new),
+`ai/playerbot/WorldPosition.h` + `WorldPosition.cpp` (danger-spawn index),
+`ai/playerbot/TravelMgr.cpp` (`IsLocationLevelValid` gate),
+`tools/test_point_danger_policy.cpp`.
+
+Copied / ported / reimplemented: reimplemented (local rule, local numbers).
+
+Reason: live pool 2026-10-03 (fresh level-1 pool since 10:51 UTC, server on
+#418): 211 of 523 deaths are bots level 1-4 killed by mobs 2+ above —
+#418 keeps the spawn entry itself in cap but says nothing about the point's
+surroundings. Worst case: level-4 Kralnyrvar on the item-750 trip (Timber
+Wolf entry 69, level_max 2, in cap) picks a Timber Wolf spawn point at
+POINT(-73.97 -9254.43) outside Northshire and dies five times to the Defias
+Cutpurse 5 / Forest Spider 6 / Mangy Wolf 6 standing next to it (spawn
+table: Forest Spider 9 yd, Mangy Wolf 33 yd, Defias Cutpurse 38 yd away).
+125 of the 211 die on the same `loot item 750` trip.
+
+Local validation: `tools/test_point_danger_policy.cpp` (scope, live
+level-4 case, travelling +1 ceiling; registered in `tools/verify_all.sh`);
+`bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
+compiles).

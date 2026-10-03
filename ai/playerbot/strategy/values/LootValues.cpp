@@ -2,6 +2,7 @@
 #include "SharedValueContext.h"
 #include "LootValues.h"
 #include "playerbot/strategy/actions/LootAction.h"
+#include "playerbot/strategy/actions/SkinningLootPolicy.h"
 
 using namespace ai;
 
@@ -510,11 +511,12 @@ bool ShouldLootObject::Calculate()
 			continue;
 
 		ItemQualifier ltemQualifier(lItem);
+        // #403: skins arrive on the wire as LOOT_PICKPOCKETING (core rewrites LOOT_SKINNING for the
+        // 1.12 client), so the wire type can never identify them. The server-side loot_type still can.
+        if (!IsSkinningLoot((uint32)lootAccess.lootType()) && !StoreLootAction::IsLootAllowed(ltemQualifier, ai))
+            continue;
 
-		if (lootAccess.lootType() != LOOT_SKINNING && !StoreLootAction::IsLootAllowed(ltemQualifier, ai))
-			continue;
-
-		return true;
+        return true;
 	}
 
 	return false;

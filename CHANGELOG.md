@@ -61,6 +61,55 @@
 - Replaces six hard-coded breadcrumb quest IDs with level-aware gating, so new starter-zone delivery chains are covered automatically instead of needing manual ID maintenance [#420](https://github.com/Sagiroth/TortoiseBots/pull/420)
 - Owned/hired bots and level 10+ pool bots keep their existing behavior — no change to player-controlled or established bots [#420](https://github.com/Sagiroth/TortoiseBots/pull/420)
 
+### Combat & AI
+
+- Bots that decline a duel — whether they're too low level or too low on health — no longer immediately accept it anyway; the handler now returns after sending the cancel instead of falling through to the accept packet [#421](https://github.com/Sagiroth/TortoiseBots/pull/421)
+
+### Starter Zones & World
+- Low-level pool bots (1–9) now skip quest objectives, quest loot, and grind points with a hostile spawn above their level cap within 40 yd — ends the Northshire death spiral where "Tough Wolf Meat" runs fed bots straight into Forest Spiders, Mangy Wolves, and Defias Cutpurses. In the first live data, 211 of 523 deaths were levels 1–4, and 125 of those were on a single trip. [#428](https://github.com/Sagiroth/TortoiseBots/pull/428)
+- Threat checks use a per-map cell index over the spawn table, built once — no world scan per decision, so pathing stays cheap. [#428](https://github.com/Sagiroth/TortoiseBots/pull/428)
+- Neutral wildlife and vendors don't count as threats, so lowbies still turn in, buy, and grind in safe areas normally. [#428](https://github.com/Sagiroth/TortoiseBots/pull/428)
+- Owned/hired bots and all level 10+ bots are unchanged — no impact on established characters or player-controlled companions. [#428](https://github.com/Sagiroth/TortoiseBots/pull/428)
+
+### Core Sync & Fixes
+- Fixed a build break on main caused by travel code calling `WorldPosition::GetHighestHostileLevelNear`, which was still in the private section. Both accessors are now public, so the module compiles cleanly again. [#429](https://github.com/Sagiroth/TortoiseBots/pull/429)
+
+### Combat & AI
+- Hunter and warlock pets on pool bots now run the autocast sweep and default to defensive stance, matching mod-playerbots parity — the live pet strategies never queued those actions before. [#430](https://github.com/Sagiroth/TortoiseBots/pull/430)
+- Pets with a real player master are left alone, so players keep full control of their own pet. [#430](https://github.com/Sagiroth/TortoiseBots/pull/430)
+- Medium-mana potions are now wired into the potions strategy, so bots actually use them instead of sitting on a dead node. [#430](https://github.com/Sagiroth/TortoiseBots/pull/430)
+
+### Professions & Tools
+- Mining and skinning allowlists now accept every pick and skinning knife that exists in 1.12, instead of one hardcoded item each. [#430](https://github.com/Sagiroth/TortoiseBots/pull/430)
+
+### Observability & Telemetry
+- Skinning loot is now detected via the server-side loot type (the 1.12 client mislabels it as pickpocketing), so GatherLoot rows and the dashboard skinning counter actually populate. [#431](https://github.com/Sagiroth/TortoiseBots/pull/431)
+- Per-revive `hopeless check ... not eligible` lines are demoted to quiet — relocations still fire (4 logged on 2026-10-02), only the log noise was dialed down. [#431](https://github.com/Sagiroth/TortoiseBots/pull/431)
+
+### Vendors & Trading
+- Trading activity lease now outlives the auction house post tick, eliminating premature lease expiry warnings. [#431](https://github.com/Sagiroth/TortoiseBots/pull/431)
+- Vendor-flagged NPCs with no goods (e.g. Terry Palin) are no longer treated as vendors, stopping the `empty trading item list` error spam. [#431](https://github.com/Sagiroth/TortoiseBots/pull/431)
+
+### Combat & AI
+- Shaman weapon upkeep (Rockbiter) now stands down when it can't progress — sitting, eating, casting, or already enchanted — instead of firing every tick and getting refused by the cast gate's stand-or-facing delay [#432](https://github.com/Sagiroth/TortoiseBots/pull/432)
+- Nearby-service selector no longer acts on stale cached answers; it stays quiet when there's nothing to hand in, accept, sell, or train at the current NPC [#432](https://github.com/Sagiroth/TortoiseBots/pull/432)
+- Loot loop gets the same stand-down treatment, cutting wasted ticks when there's nothing to pick up [#432](https://github.com/Sagiroth/TortoiseBots/pull/432)
+
+### Quests & Progression
+- Bots now prune their quest log when it runs low: failed, far over-level, elite/dungeon/raid, group-suggested, and other-zone quests get dropped, so the log stops filling with content they can never finish [#433](https://github.com/Sagiroth/TortoiseBots/pull/433)
+- Quests are triaged using the same logic as mod-playerbots (donor `OrganizeQuestLog`), keeping parity between pool bots and native bots [#433](https://github.com/Sagiroth/TortoiseBots/pull/433)
+
+### Loot & Rolls
+- No more greed rolls on soulbound recipes the bot can't learn — wasted rolls and dead loot are gone [#433](https://github.com/Sagiroth/TortoiseBots/pull/433)
+- Bots no longer roll need on duplicate uniques they already own [#433](https://github.com/Sagiroth/TortoiseBots/pull/433)
+- Bots refrain from voting entirely in free-for-all and master-loot rolls, matching mod-playerbots' `LootRollAction` gates [#433](https://github.com/Sagiroth/TortoiseBots/pull/433)
+
+### Starter Zones & World
+
+- Bots no longer rot in their start valley: ordinary quests are once again open up to +3 (green/yellow), restoring hand-ins and XP flow after the post-#420/#428 quest-trip collapse ([#434](https://github.com/Sagiroth/TortoiseBots/pull/434))
+- Fixed the taker-area check that mis-scored start valleys (Camp Narache 6, Dun Morogh 7, Durotar 8) as far above fresh bots, which was blocking in-valley hand-ins ([#434](https://github.com/Sagiroth/TortoiseBots/pull/434))
+- Only the leave-the-valley case is now gated: a hand-in in a different area than the bot's for a quest above its level waits its turn ([#434](https://github.com/Sagiroth/TortoiseBots/pull/434))
+
 ## 2026-10-02
 
 ### Levelling & Progression

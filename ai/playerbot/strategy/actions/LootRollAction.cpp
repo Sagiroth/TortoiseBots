@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "LootRollAction.h"
+#include "playerbot/LootRollPolicy.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/RandomItemMgr.h"
 #include "playerbot/strategy/values/LootValues.h"
@@ -232,6 +233,68 @@ RollVote RollAction::CalculateRollVote(ItemQualifier& itemQualifier)
         !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto, bot->CanDualWield()))
     {
         needVote = ROLL_GREED;
+    }
+
+    // Donor-parity vote gates (mod-playerbots LootRollAction::Execute,
+    // CanBotUseToken, RollUniqueCheck; E08). All three apply only to the
+    // plain auto vote: an explicit FORCE_NEED / FORCE_GREED from the
+    // player (or the bad-equip rule above) is a direct order and wins.
+    // Pool bots only for recipe/token (no competing player rolls against
+    // them); the duplicate-unique demotion applies to every bot because
+    // the core refuses a second unique copy anyway.
+    bool poolRoll = !ai->HasRealPlayerMaster();
+    if (itemProto && usage != ItemUsage::ITEM_USAGE_FORCE_NEED &&
+        usage != ItemUsage::ITEM_USAGE_FORCE_GREED)
+    {
+        Group* rollGroup = bot->GetGroup();
+        if (rollGroup && !ai::LootMethodTakesRolls((int)rollGroup->GetLootMethod()))
+            return ROLL_PASS;
+
+        // Recipe gate: SKILL usage on a recipe is already the learned-state
+        // verdict (ItemUsageValue: known recipes fall to KEEP/NONE, unknown
+        // + usable ones read SKILL) - NEED it when learnable, PASS a
+        // soulbound one it cannot use, GREED a tradeable one for the AH.
+        if (poolRoll && itemProto->Class == ITEM_CLASS_RECIPE)
+        {
+            bool canLearn = usage == ItemUsage::ITEM_USAGE_SKILL;
+            if (usage == ItemUsage::ITEM_USAGE_SKILL || usage == ItemUsage::ITEM_USAGE_KEEP ||
+                usage == ItemUsage::ITEM_USAGE_NONE)
+            {
+                ai::LootRollVote recipeVote = ai::RecipeRollVote(canLearn,
+                    itemProto->Bonding == BIND_WHEN_PICKED_UP);
+                needVote = recipeVote == ai::LootRollVote::Need ? ROLL_NEED :
+                    recipeVote == ai::LootRollVote::Greed ? ROLL_GREED : ROLL_PASS;
+            }
+        }
+        // Class-token gate: epic junk-class tokens are NEEDed only by a
+        // class in their AllowableClass mask (donor CanBotUseToken; empty
+        // mask is unrestricted).
+        else if (poolRoll && itemProto->Class == ITEM_CLASS_JUNK &&
+            itemProto->Quality == ITEM_QUALITY_EPIC)
+        {
+            needVote = ai::TokenUsableByClass(itemProto->AllowableClass, bot->GetClassMask()) ?
+                ROLL_NEED : ROLL_GREED;
+        }
+
+        // Duplicate-unique gate (donor RollUniqueCheck at the default
+        // NEED-becomes-GREED level): a UNIQUE_EQUIPPED item already worn,
+        // or a stack already at MaxCount, cannot be looted again.
+        if (needVote == ROLL_NEED && itemProto->MaxCount > 0 &&
+            bot->GetItemCount(itemProto->ItemId, false) >= itemProto->MaxCount)
+            needVote = ROLL_GREED;
+        if (needVote == ROLL_NEED && (itemProto->Flags & ITEM_FLAG_UNIQUE_EQUIPPED))
+        {
+            bool equipped = false;
+            for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+                if (Item* worn = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                    if (worn->GetProto()->ItemId == itemProto->ItemId)
+                    {
+                        equipped = true;
+                        break;
+                    }
+            if (equipped && ai::UniqueCopyOwned(true, true, 1, 1))
+                needVote = ROLL_GREED;
+        }
     }
 
 

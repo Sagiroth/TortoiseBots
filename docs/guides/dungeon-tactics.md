@@ -126,7 +126,7 @@ Zone-ins for Map 807, 532, and 800 swap in `emerald sanctum`, `lower karazhan`, 
 ## 5. Dungeon Loot & Item Upgrades
 
 ### Loot Rolling Rules
-* Bots participate in standard party loot rolls (`Need`, `Greed`, `Pass`).
+* Bots participate in standard party loot rolls (`Need`, `Greed`, `Pass`). Pool bots (no player master) NEED learnable recipes, PASS soulbound recipes they cannot learn, GREED tradeable ones for the auction house, NEED class tokens only their class can use, and demote duplicate uniques (already worn or at `MaxCount`) to GREED; owned/hired bots keep the old vote. Every bot PASSES under free-for-all or master loot. Disenchanting stays post-win: with no `DISENCHANT` vote in 1.12, enchanters GREED and disenchant after winning via the usual maintenance action.
 * **Need on Empty Slots (`AiPlayerbot.RollBadItemsWithPlayer = 1`):** When enabled in `aiplayerbot.conf`, bots also roll Need on empty-slot filler (otherwise Greed); genuine upgrades (`ITEM_USAGE_EQUIP`) are always Needed regardless of the flag.
 
 ### Reagents & Food Sharing

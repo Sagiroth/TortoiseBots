@@ -35,7 +35,7 @@ bool AcceptAllQuestsAction::WouldAcceptQuest(PlayerbotAI* ai, Player* bot, Quest
     // scaling content, never blocked; owned/hired bots follow the player.
     // Donor mod-playerbots IsQuestCapableDoing (NewRpgBaseAction.cpp:573)
     // refuses +3 at any level; the pool uses +1 below 10.
-    if (!ai::QuestTakerTripFits((int)quest->GetQuestLevel(), 0, bot->GetLevel(),
+    if (!ai::QuestTakerTripFits((int)quest->GetQuestLevel(), false, bot->GetLevel(),
         sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster()))
         return false;
 

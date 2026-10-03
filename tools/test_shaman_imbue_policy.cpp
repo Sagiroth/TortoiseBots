@@ -11,6 +11,7 @@
 } while (0)
 
 using ai::BestKnownShamanImbue;
+using ai::ShamanUpkeepShouldAttempt;
 
 int main()
 {
@@ -53,6 +54,16 @@ int main()
     // Any imbue beats none: windfury is the last resort, never an empty hand.
     CHECK(BestKnownShamanImbue(false, true, false, false, false) == "windfury weapon");
     std::cout << "  [PASS] windfury is the last resort rather than no imbue\n";
+
+    // Upkeep tick gate (live ACTION_LOOP: sitting/casting/stunned bots failed
+    // every tick on an already-imbued weapon). Only a known-but-missing
+    // imbue on a castable bot may run.
+    CHECK(ShamanUpkeepShouldAttempt(true, false, false) == true);
+    CHECK(ShamanUpkeepShouldAttempt(false, false, false) == false);
+    CHECK(ShamanUpkeepShouldAttempt(true, true, false) == false);
+    CHECK(ShamanUpkeepShouldAttempt(true, false, true) == false);
+    CHECK(ShamanUpkeepShouldAttempt(false, true, false) == false);
+    std::cout << "  [PASS] upkeep stands down when nothing needs casting\n";
 
     std::cout << "All shaman imbue policy checks PASSED!\n";
     return 0;

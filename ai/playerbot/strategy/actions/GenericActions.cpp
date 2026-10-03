@@ -2,8 +2,10 @@
 #include "playerbot/playerbot.h"
 #include "GenericActions.h"
 #include "AttackAction.h"
-#include <map>
 #include "playerbot/PlayerbotFactory.h"
+#include <algorithm>
+#include <vector>
+#include "../../../runtime/PetUpkeepPolicy.h"
 #include "../../../runtime/HunterPetPolicy.h"
 
 using namespace ai;
@@ -572,6 +574,99 @@ bool SetPetAction::Execute(Event& event)
 
     return false;
 }
+
+bool TogglePetSpellAutoCastAction::isPossible()
+{
+    // Pool bots only: a player who owns or hired the bot sets its pet's
+    // autocast and stance themselves, and this must not override them.
+    return bot->GetPet() != nullptr && !ai->HasRealPlayerMaster();
+}
+
+// Autonomous autocast sweep (E01): ported from mod-playerbots
+// TogglePetSpellAutoCastAction, adapted to the 1.12 APIs. The donor reads
+// SpellInfo::IsAutocastable plus a rank-prune of m_autospells; here passive
+// spells are skipped via IsPassiveSpell (the cmangos-compat-shim documents
+// that 1.12 has no separate NO_AUTOCAST_AI bit, and Pet::ToggleAutocast
+// refuses passives the same way) and stale autocast entries are pruned via
+// Pet::HasSpell, which already excludes PETSPELL_REMOVED. Silence (no
+// toggle, pet fresh from InitPet) returns true so the per-tick "has pet"
+// node stays cheap instead of FAILED-logged.
+bool TogglePetSpellAutoCastAction::Execute(Event& /*event*/)
+{
+    Pet* pet = bot->GetPet();
+    if (!pet)
+        return false;
+
+    std::vector<uint32> stale;
+    for (uint32 autocast : pet->m_autospells)
+        if (!pet->HasSpell(autocast))
+            stale.push_back(autocast);
+    for (uint32 spellId : stale)
+    {
+        auto it = std::find(pet->m_autospells.begin(), pet->m_autospells.end(), spellId);
+        if (it != pet->m_autospells.end())
+            pet->m_autospells.erase(it);
+    }
+
+    for (PetSpellMap::const_iterator itr = pet->m_petSpells.begin(); itr != pet->m_petSpells.end(); ++itr)
+    {
+        if (itr->second.state == PETSPELL_REMOVED)
+            continue;
+
+        uint32 spellId = itr->first;
+        if (IsPassiveSpell(spellId))
+            continue;
+
+        bool active = std::find(pet->m_autospells.begin(), pet->m_autospells.end(), spellId) != pet->m_autospells.end();
+        TortoiseBots::PetAutocastDecision decision =
+            TortoiseBots::DecidePetAutocast(active, TortoiseBots::IsDisabledPetAutocast(spellId));
+        if (decision == TortoiseBots::PetAutocastDecision::LeaveAlone)
+            continue;
+
+        pet->ToggleAutocast(spellId, decision == TortoiseBots::PetAutocastDecision::Enable);
+    }
+
+    return true;
+}
+
+bool SetPetStanceAction::isPossible()
+{
+    // Pool bots only: a player who owns or hired the bot sets its pet's
+    // autocast and stance themselves, and this must not override them.
+    return bot->GetPet() != nullptr && !ai->HasRealPlayerMaster();
+}
+
+// Autonomous stance pin (E01): ported from mod-playerbots SetPetStanceAction
+// with the donor's DefaultPetStance config collapsed to our invariant —
+// PlayerbotFactory::InitPet seeds REACT_DEFENSIVE and
+// AttackAction::CanPetAttack refuses REACT_PASSIVE, so defensive is the only
+// stance the autonomous path may set; explicit player orders still go
+// through SetPetAction (pet aggressive/defensive/passive packets). Covers
+// the main pet plus every guardian (totems skipped); returns false with no
+// pet so the "new pet" node stays silent instead of no-op OK.
+bool SetPetStanceAction::Execute(Event& /*event*/)
+{
+    Pet* pet = bot->GetPet();
+    if (!pet)
+        return false;
+
+    pet->SetReactState(REACT_DEFENSIVE);
+
+    struct ApplyStance
+    {
+        void operator()(Unit* unit) const
+        {
+            Creature* creature = dynamic_cast<Creature*>(unit);
+            if (!creature || creature->IsTotem())
+                return;
+            creature->SetReactState(REACT_DEFENSIVE);
+        }
+    };
+    bot->CallForAllControlledUnits(ApplyStance(), CONTROLLED_GUARDIANS);
+
+    return true;
+}
+
 
 bool PetAttackAction::isUseful()
 {
