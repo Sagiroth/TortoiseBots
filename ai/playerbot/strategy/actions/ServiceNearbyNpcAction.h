@@ -44,8 +44,11 @@ namespace ai
         bool TryVerb(Event& event, GuidPosition target, NearbyServiceKind kind, std::string const& verb);
         // Runs one verb and logs the NearbyService row when it did something.
         // Failures accumulate in the fixed-size fail parks (load/mutate/store -
-        // AI_VALUE returns a copy); a success clears the pair.
-        bool RunVerb(uint64_t npcGuid, int verbId,
-            std::string const& kind, std::string const& action, Event event, uint32 npcEntry, time_t now);
+        // AI_VALUE returns a copy); a success clears the pair. A verb that ran
+        // but changed nothing (trainer taught nothing, quest still open)
+        // counts as a failure: the verb re-checks its own applicability and
+        // an unchanged answer records a fail instead of clearing.
+        bool RunVerb(uint64_t npcGuid, int verbId, NearbyServiceKind verbKind,
+            std::string const& kind, std::string const& action, Event event, GuidPosition target, time_t now);
     };
 }

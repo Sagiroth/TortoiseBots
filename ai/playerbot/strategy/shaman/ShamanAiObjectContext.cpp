@@ -318,6 +318,7 @@ namespace ai
                 creators["flametongue weapon"] = [](PlayerbotAI* ai) { return new CastFlametongueWeaponAction(ai); };
                 creators["frostbrand weapon"] = [](PlayerbotAI* ai) { return new CastFrostbrandWeaponAction(ai); };
                 creators["windfury weapon"] = [](PlayerbotAI* ai) { return new CastWindfuryWeaponAction(ai); };
+                creators["shaman weapon upkeep"] = [](PlayerbotAI* ai) { return new CastShamanWeaponUpkeepAction(ai); };
                 creators["purge"] = [](PlayerbotAI* ai) { return new CastPurgeAction(ai); };
                 creators["healing wave"] = [](PlayerbotAI* ai) { return new CastHealingWaveAction(ai); };
                 creators["lesser healing wave"] = [](PlayerbotAI* ai) { return new CastLesserHealingWaveAction(ai); };

@@ -23,6 +23,7 @@ using ai::NearbyServiceRangeSq;
 using ai::NearbyServiceRankOf;
 using ai::NearbyServiceShouldPark;
 using ai::NearbyServiceTargetParked;
+using ai::NearbyServiceVerbMadeProgress;
 
 static NearbyServiceCandidate Candidate(NearbyServiceKind kind, float sqDistance)
 {
@@ -222,6 +223,43 @@ int main()
         CHECK(live <= (int)NEARBY_SERVICE_FAIL_SLOTS);
     }
     std::cout << "  [PASS] tracker never grows past its slots\n";
+
+    // A verb that ran but changed nothing counts as a failure, not a success
+    // (issue #407 follow-up: a trainer that taught nothing logged 6
+    // NearbyService successes in 1 s and re-queued every tick). The caller
+    // re-evaluates the verb's own applicability after a done==true run; an
+    // unchanged answer means nothing moved.
+    CHECK(NearbyServiceVerbMadeProgress(NearbyServiceKind::TurnIn, false) == true);
+    CHECK(NearbyServiceVerbMadeProgress(NearbyServiceKind::TurnIn, true) == false);
+    CHECK(NearbyServiceVerbMadeProgress(NearbyServiceKind::Accept, false) == true);
+    CHECK(NearbyServiceVerbMadeProgress(NearbyServiceKind::Accept, true) == false);
+    CHECK(NearbyServiceVerbMadeProgress(NearbyServiceKind::Trainer, false) == true);
+    CHECK(NearbyServiceVerbMadeProgress(NearbyServiceKind::Trainer, true) == false);
+    std::cout << "  [PASS] unchanged verb state after a run counts as a fail\n";
+
+    // Vendor needs no re-check: SellAction returns false when it sold nothing,
+    // so done==true always means stock moved.
+    CHECK(NearbyServiceVerbMadeProgress(NearbyServiceKind::Vendor, false) == true);
+    CHECK(NearbyServiceVerbMadeProgress(NearbyServiceKind::Vendor, true) == true);
+    std::cout << "  [PASS] vendor success always counts as progress\n";
+
+    // And the three-strike park still applies to no-progress runs: the sixth
+    // 1-second trainer success in the live log would have been the third
+    // consecutive fail and parked the pair for 90 s instead.
+    {
+        std::time_t const now = 4'000'000;
+        NearbyServiceFailParks parks;
+        uint64_t const npc = 777;
+        int const trainer = NearbyServiceRankOf(NearbyServiceKind::Trainer);
+
+        CHECK(NearbyServiceVerbMadeProgress(NearbyServiceKind::Trainer, true) == false);
+        parks.RecordFail(npc, trainer, now);
+        parks.RecordFail(npc, trainer, now);
+        CHECK(!parks.Parked(npc, trainer, now));
+        parks.RecordFail(npc, trainer, now);
+        CHECK(parks.Parked(npc, trainer, now));
+    }
+    std::cout << "  [PASS] no-progress fails trip the 90 s park\n";
 
     std::cout << "All idle near-service policy checks PASSED!\n";
     return 0;

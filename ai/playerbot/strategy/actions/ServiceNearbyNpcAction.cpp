@@ -1,6 +1,8 @@
 #include "playerbot/playerbot.h"
 #include "ServiceNearbyNpcAction.h"
 #include "playerbot/strategy/values/MaintenanceValues.h"
+#include "playerbot/strategy/actions/AcceptQuestAction.h"
+#include "playerbot/strategy/triggers/RpgTriggers.h"
 
 using namespace ai;
 
@@ -66,7 +68,7 @@ bool ServiceNearbyNpcAction::TryVerb(Event& event, GuidPosition target, NearbySe
         p << (ObjectGuid)target;
         p.rpos(0);
 
-        return RunVerb(npcGuid, verbId, verb, "talk to quest giver", Event("rpg action", p), target.GetEntry(), now);
+        return RunVerb(npcGuid, verbId, kind, verb, "talk to quest giver", Event("rpg action", p), target, now);
     }
 
     if (kind == NearbyServiceKind::Accept)
@@ -78,7 +80,7 @@ bool ServiceNearbyNpcAction::TryVerb(Event& event, GuidPosition target, NearbySe
         p << (ObjectGuid)target;
         p.rpos(0);
 
-        return RunVerb(npcGuid, verbId, verb, "accept all quests", Event("rpg action", p), target.GetEntry(), now);
+        return RunVerb(npcGuid, verbId, kind, verb, "accept all quests", Event("rpg action", p), target, now);
     }
 
     if (kind == NearbyServiceKind::Vendor)
@@ -89,25 +91,56 @@ bool ServiceNearbyNpcAction::TryVerb(Event& event, GuidPosition target, NearbySe
         if (!target.HasNpcFlag(UNIT_NPC_FLAG_VENDOR))
             return false;
 
-        return RunVerb(npcGuid, verbId, verb, "sell", Event("rpg action", "vendor"), target.GetEntry(), now);
+        return RunVerb(npcGuid, verbId, kind, verb, "sell", Event("rpg action", "vendor"), target, now);
     }
 
-    return RunVerb(npcGuid, verbId, verb, "trainer", Event("rpg action", target), target.GetEntry(), now);
-}
+    return RunVerb(npcGuid, verbId, kind, verb, "trainer", Event("rpg action", target), target, now);
 
 // Runs the verb through the existing action and records the rule firing. Only a
 // verb that did something is logged (the outcomes land as their own events:
 // QuestRewarded, AcceptQuestAction, SellAction, TrainerAction), so a bot that
 // keeps finding nothing here does not fill bot_events.csv every tick.
 // Failures accumulate in the fixed-size fail parks; a success clears the pair.
-bool ServiceNearbyNpcAction::RunVerb(uint64_t npcGuid, int verbId,
-    std::string const& kind, std::string const& action, Event event, uint32 npcEntry, time_t now)
+// A verb that ran but changed nothing (trainer taught nothing, quest still
+// not handed in, nothing accepted) counts as a failure, not a success: the
+// verb re-evaluates its own applicability after a done==true run and an
+// unchanged answer records a fail. Applicability answers are cached values,
+// so Reset() them first - otherwise the post-run read returns the pre-run
+// answer and progress is never seen. Vendor needs no re-check: SellAction
+// already returns false when it sold nothing, so done==true always moved stock.
+bool ServiceNearbyNpcAction::RunVerb(uint64_t npcGuid, int verbId, NearbyServiceKind verbKind,
+    std::string const& kind, std::string const& action, Event event, GuidPosition target, time_t now)
 {
     bool const done = ai->DoSpecificAction(action, event, true);
     AiObjectContext* context = ai->GetAiObjectContext();
     NearbyServiceFailParks parks = AI_VALUE(NearbyServiceFailParks, "nearby service fail parks");
+    uint32 const npcEntry = target.GetEntry();
 
-    if (done)
+    bool progressed = done;
+    if (done && verbKind != NearbyServiceKind::Vendor)
+    {
+        if (verbKind == NearbyServiceKind::TurnIn)
+        {
+            RESET_AI_VALUE2(bool, "can turn in quest npc", npcEntry);
+            progressed = NearbyServiceVerbMadeProgress(verbKind,
+                HasRewardableFinishedQuest(ai) && AI_VALUE2(bool, "can turn in quest npc", npcEntry));
+        }
+        else if (verbKind == NearbyServiceKind::Accept)
+        {
+            RESET_AI_VALUE2(bool, "can accept quest npc", npcEntry);
+            Creature* npc = target.GetCreature(bot->GetInstanceId());
+            progressed = NearbyServiceVerbMadeProgress(verbKind,
+                npc && AcceptAllQuestsAction::OffersAcceptableQuest(ai, bot, npc));
+        }
+        else
+        {
+            GuidPosition freshTarget(target);
+            progressed = NearbyServiceVerbMadeProgress(verbKind,
+                RpgTrainTrigger::TeachesAffordableSpell(ai, freshTarget, bot));
+        }
+    }
+
+    if (progressed)
     {
         sPlayerbotAIConfig.logEvent(ai, "NearbyService", kind, std::to_string(npcEntry));
         parks.Clear(npcGuid, verbId);
@@ -116,5 +149,5 @@ bool ServiceNearbyNpcAction::RunVerb(uint64_t npcGuid, int verbId,
         parks.RecordFail(npcGuid, verbId, now);
 
     SET_AI_VALUE(NearbyServiceFailParks, "nearby service fail parks", parks);
-    return done;
+    return progressed;
 }

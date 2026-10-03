@@ -77,6 +77,22 @@ namespace ai
         return static_cast<int>(kind);
     }
 
+    // A verb that ran but changed nothing is a failure for the park logic,
+    // not a success (issue #407 follow-up: a trainer that taught nothing
+    // logged 6 NearbyService successes in 1 s and re-queued every tick).
+    // The caller re-evaluates the verb's own applicability after a done==true
+    // run (TurnIn: still rewardable + can-turn-in; Accept: still offers an
+    // acceptable quest; Trainer: still teaches an affordable spell) and asks
+    // here: still applicable means nothing moved. Vendor needs no re-check:
+    // SellAction already returns false when it sold nothing, so done==true
+    // always means stock moved.
+    inline bool NearbyServiceVerbMadeProgress(NearbyServiceKind kind, bool stillApplicable)
+    {
+        if (kind == NearbyServiceKind::Vendor)
+            return true;
+        return !stillApplicable;
+    }
+
     // One NPC the rule could walk to. rank: lower is serviced first - see
     // NearbyServiceRankOf() - negative = not a service target at all. Ties go to
     // the nearest NPC.

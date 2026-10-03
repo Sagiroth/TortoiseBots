@@ -87,6 +87,23 @@ namespace ai
         CastWindfuryWeaponAction(PlayerbotAI* ai) : CastEnchantItemAction(ai, "windfury weapon") {}
     };
 
+    // Weapon-imbue upkeep (issue #406 follow-up): the strategies used to queue
+    // one fixed imbue per spec while ShamanWeaponTrigger stayed true on any
+    // known imbue, so every shaman below 30 failed the windfury cast every
+    // tick (the chain still landed rockbiter but the failed head logged an
+    // ACTION_LOOP). This action picks the best imbue the bot actually knows
+    // via HasSpell (ranked in ShamanImbuePolicy.h: enhancement windfury >
+    // flametongue > frostbrand > rockbiter, others flametongue first) and
+    // runs only that one through DoSpecificAction - the inner cast never
+    // reports IMPOSSIBLE for untrained imbues, so nothing is recorded.
+    // False when no imbue is known yet (fresh level 1).
+    class CastShamanWeaponUpkeepAction : public Action
+    {
+    public:
+        CastShamanWeaponUpkeepAction(PlayerbotAI* ai) : Action(ai, "shaman weapon upkeep") {}
+        bool Execute(Event& event) override;
+    };
+
     class CastTotemAction : public CastBuffSpellAction
     {
     public:
