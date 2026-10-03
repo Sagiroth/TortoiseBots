@@ -18,6 +18,12 @@ namespace ai
     // TravelInstancePolicy.h for the pure decision.
     bool TravelBlockedInsideInstance(PlayerbotAI* ai);
 
+    // Decide-once flight plan (#426): evaluates fly-or-walk for a freshly
+    // set travel target and stores the verdict on manual values. Defined in
+    // MoveToTravelTargetAction.cpp (owns the boarding helper); called from
+    // ChooseTravelTargetAction::setNewTarget.
+    void DecideFlightPlanForTarget(PlayerbotAI* ai, Player* bot, TravelTarget const* target);
+
     class ChooseTravelTargetAction : public Action {
     public:
         ChooseTravelTargetAction(PlayerbotAI* ai, std::string name = "choose travel target") : Action(ai, name) {}

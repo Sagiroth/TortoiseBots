@@ -454,8 +454,8 @@ namespace ai
 		EntryDestinationMap GetExploreLocs() const { return destinationMap.at(TravelDestinationPurpose::Explore); };
 		DestinationList GetDestinations(const PlayerTravelInfo& info, uint32 purposeFlag = (uint32)TravelDestinationPurpose::None, const std::vector<int32>& entries = {}, bool onlyPossible = true, float maxDistance = 10000.0f) const;
 		void GetPartitionsLock(bool getLock = true);
-		static bool IsLocationLevelValid(const WorldPosition& position, const PlayerTravelInfo& info, uint32 purposeFlag = (uint32)TravelDestinationPurpose::None, int32 grindZoneFloor = 0);
-		PartitionedTravelList GetPartitions(const WorldPosition& center, const std::vector<uint32>& distancePartitions, const PlayerTravelInfo& info, uint32 purposeFlag = (uint32)TravelDestinationPurpose::None, const std::vector<int32>& entries = {}, bool onlyPossible = true, float maxDistance = 10000.0f, int32 grindZoneFloor = 0) const;
+		static bool IsLocationLevelValid(const WorldPosition& position, const PlayerTravelInfo& info, uint32 purposeFlag = (uint32)TravelDestinationPurpose::None, int32 grindZoneFloor = 0, uint32 excludeZoneId = 0);
+		PartitionedTravelList GetPartitions(const WorldPosition& center, const std::vector<uint32>& distancePartitions, const PlayerTravelInfo& info, uint32 purposeFlag = (uint32)TravelDestinationPurpose::None, const std::vector<int32>& entries = {}, bool onlyPossible = true, float maxDistance = 10000.0f, int32 grindZoneFloor = 0, uint32 excludeZoneId = 0) const;
 		static void ShuffleTravelPoints(std::vector<TravelPoint>& points);
 
 		// Grind-spot demand: how many travel targets currently hold a destination.
@@ -488,6 +488,13 @@ namespace ai
 		// cached fallback), then immutable DBC AreaTable AreaLevel / parent AreaLevel.
 		// No creature scan, no DB write, no lazy GetAreaLevel mutation.
 		bool TryGetValidatedAreaLevel(uint32 areaId, int32& outLevel) const;
+		// Taxi-node zone cache (#426): DBC TaxiNodes coordinates carry no zone id,
+		// and resolving one via WorldPosition::GetArea would load that tile's
+		// vmap on the world thread. Built once at startup from the loaded
+		// terrain (same source the pick-time gates read), then immutable:
+		// node id -> zone area id (0 = unresolvable, fail closed).
+		void LoadTaxiNodeZones();
+		uint32 GetTaxiNodeZoneId(uint32 taxiNodeId) const;
 	private:
 		void Clear();
 		void SetNullTravelTarget(Player* player) const;
@@ -527,6 +534,10 @@ namespace ai
 		GatherTravelDestination fishMap;
 		std::list<AsyncGuidPosition> fishPoints;
 		std::unordered_map<uint32, int32> areaLevels;
+		// Taxi-node zone cache (#426 flight transport): node id -> zone area id
+		// (0 = unresolvable at build, fail closed at use). Built once at startup
+		// from loaded terrain, then immutable.
+		std::unordered_map<uint32, uint32> taxiNodeZones;
 
 		std::mutex getDestinationMutex;
 		std::condition_variable getDestinationVar;

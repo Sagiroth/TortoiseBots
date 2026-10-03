@@ -167,6 +167,26 @@
 - The AH buyer no longer sits idle: bids only happen when a pool bot has actually reached an auctioneer on its own, using a bounded rotating pool scan instead of teleporting bots into place. [#444](https://github.com/Sagiroth/TortoiseBots/pull/444)
 - Added organic auction demand: level 10+ pool bots with at least 5 gold spendable above reserves and an auction house on their own continent can take the normal AH travel errand (~5% of the pool per hour, 10-minute cooldown) and bid on arrival. [#444](https://github.com/Sagiroth/TortoiseBots/pull/444)
 
+### Hire & Companions
+- Hired bots now post their spec and spell summary exactly once in party chat after joining the group, instead of leaking (or silently dropping) the level-up automation echo [#445](https://github.com/Sagiroth/TortoiseBots/pull/445)
+- Fixes the flaky "no message at all" case caused by stale master pointers, bots not yet grouped, or nothing new to report [#445](https://github.com/Sagiroth/TortoiseBots/pull/445)
+
+### Professions & World Activities
+- Pool bots now actually fish: when the travel table has no fishing spot, they fall back to the ported mod-playerbots open-water search, so idle bots get a rare side activity instead of standing around. [#446](https://github.com/Sagiroth/TortoiseBots/pull/446)
+- Strict "levelling first" gating: at most one fishing session per hour (5 casts over 5 minutes), and never while the bot has real work — travel errands, quest turn-ins, selling, trainer, repair, money runs, or bags over 90% full. Fishing relevance sits below questing and grinding. [#446](https://github.com/Sagiroth/TortoiseBots/pull/446)
+- Bounded server cost: coarse radial search (~88 probes), throttled per bot, with a 30-minute shared per-cell water cache and a 15-minute park on dry spots so bots don't re-scan dead ground. [#446](https://github.com/Sagiroth/TortoiseBots/pull/446)
+- No gear churn: the weapon goes back on immediately after the session ends, so fishing never leaves bots running around unequipped. [#446](https://github.com/Sagiroth/TortoiseBots/pull/446)
+
+### Travel & Taxi
+- Pool bots actually fly now: flight is treated as a way to reach the travel destination the bot already chose, instead of occasionally picking a random leg. [#447](https://github.com/Sagiroth/TortoiseBots/pull/447)
+- Flight is decided once when a new far travel target is set — trips of 1500+ yd, or a known direct taxi leg that saves 500+ yd — and only if the destination level falls within the bot's range (unknown levels refuse). Travel ticks just read the stored plan. [#447](https://github.com/Sagiroth/TortoiseBots/pull/447)
+- Bots walk to the flight master first, board, pay the normal fare from their own gold (trainer reserve kept intact), then walk the last leg to the destination. [#447](https://github.com/Sagiroth/TortoiseBots/pull/447)
+- Taxi node zones are now cached once at startup, so travel pathing stops re-resolving terrain/VMAP lookups on every tick. [#447](https://github.com/Sagiroth/TortoiseBots/pull/447)
+
+### Travel & Zone Migration
+
+- **Outgrown-zone leaves now actually leave.** The leave-errand grind search was picking the nearest active grind point — which was still in the zone the bot was vacating (Galwurth "left" Durotar three times and re-picked Durotar every time). The search now excludes the zone being left, so bots roll into a level-appropriate spot in the next zone instead of ping-ponging in place. Travel graph already had the hops (including Teldrassil → Darkshore via the Darnassus/Rut'theran portal), so no pathing work was needed. Capital-idle leaves unchanged. [#448](https://github.com/Sagiroth/TortoiseBots/pull/448)
+
 ## 2026-10-02
 
 ### Levelling & Progression

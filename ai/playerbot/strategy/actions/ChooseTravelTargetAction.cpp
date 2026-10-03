@@ -9,6 +9,7 @@
 #include "playerbot/PullRegenPolicy.h"
 #include "playerbot/LocalPickPolicy.h"
 #include "playerbot/GrindSpotPolicy.h"
+#include "playerbot/ZoneMigratePolicy.h"
 #include "playerbot/TravelInstancePolicy.h"
 #include "playerbot/TravelRepickPolicy.h"
 #include "playerbot/strategy/values/VendorTripPolicy.h"
@@ -244,6 +245,11 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
 
     //Actually apply the new target to the travel target used by the bot.
     oldTarget->CopyTarget(newTarget);
+
+    // Decide-once flight plan (#426 item 5): evaluate fly-or-walk for the
+    // freshly set target now (startup caches only, no vmap), store the
+    // verdict on manual values. Travel ticks only read the stored plan.
+    DecideFlightPlanForTarget(ai, bot, oldTarget);
 
     if (oldTarget->IsForced()) //Make sure travel goes into cooldown after getting to the destination.
         oldTarget->SetExpireIn(HOUR * IN_MILLISECONDS);
@@ -1157,8 +1163,21 @@ bool RequestTravelTargetAction::Execute(Event& event)
     // keeps its wider window.
     bool const leavingOutgrown = event.GetSource() == "should leave outgrown zone";
     int32 outgrownFloor = 0;
+    uint32 outgrownExcludeZone = 0;
     if (leavingOutgrown && actionPurpose == TravelDestinationPurpose::Grind)
+    {
         outgrownFloor = (int32)bot->GetLevel() - 5;
+        // Zone migration (ZoneMigratePolicy.h): exclude the zone being left
+        // so the search cannot re-pick home. The trigger already vetted
+        // outgrownness (area + 5 < bot, or capital-idle); the only decision
+        // here is which zone: the bot's current zone, unless the leave
+        // reason is "capital" (trainers/AH/bank live there). Unknown zones
+        // exclude nothing.
+        AreaTableEntry const* botArea = WorldPosition(bot).GetArea();
+        uint32 botZoneId = botArea ? (botArea->ZoneId ? botArea->ZoneId : botArea->Id) : 0;
+        outgrownExcludeZone = ZoneMigrationExcludeZone(botZoneId,
+            WorldPosition(bot).HasAreaFlag(AREA_FLAG_CAPITAL));
+    }
 
     // A vendor errand searches the way the named trainer request does - without
     // the RpgTravelDestination::IsPossible pre-filter. That filter is the only
@@ -1188,7 +1207,7 @@ bool RequestTravelTargetAction::Execute(Event& event)
     else if (actionPurpose == TravelDestinationPurpose::GenericRpg)
         requestMaxDistance = CampRequestMaxDistance(masterless, bot->GetLevel(), requestMaxDistance);
 
-    *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, purpose = actionPurpose, outgrownFloor, onlyPossible, requestMaxDistance]() { return sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)purpose, {}, onlyPossible, requestMaxDistance, outgrownFloor); });
+    *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, purpose = actionPurpose, outgrownFloor, outgrownExcludeZone, onlyPossible, requestMaxDistance]() { return sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)purpose, {}, onlyPossible, requestMaxDistance, outgrownFloor, outgrownExcludeZone); });
 
     AI_VALUE(TravelTarget*, "travel target")->SetStatus(TravelStatus::TRAVEL_STATUS_PREPARE);
     SET_AI_VALUE2(std::string, "manual string", "future travel purpose", getQualifier());
