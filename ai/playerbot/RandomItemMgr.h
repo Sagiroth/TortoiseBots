@@ -187,7 +187,11 @@ class RandomItemMgr
         uint32 GetRandomItem(uint32 level, RandomItemType type, RandomItemPredicate* predicate = NULL);
         uint32 GetAmmo(uint32 level, uint32 subClass);
         // Best vendor-sold quiver/ammo pouch for the level (0 = none known).
-        // Built with the ammo cache; see BuildAmmoCache.
+        // Built with the ammo cache; see BuildAmmoCache. The subclassed
+        // overload answers per weapon family (gun -> pouch, bow/crossbow ->
+        // quiver); the plain overload keeps the quiver answer for callers
+        // that do not know the weapon.
+        uint32 GetQuiver(uint32 level, uint32 subClass);
         uint32 GetQuiver(uint32 level);
         uint32 GetRandomPotion(uint32 level, uint32 effect);
         uint32 GetRandomFood(uint32 level, uint32 category);
@@ -277,8 +281,8 @@ class RandomItemMgr
         BotEquipCache equipCache;
         std::map<EquipmentSlots, std::set<InventoryType> > viableSlots;
         std::map<uint32, std::map<uint32, uint32> > ammoCache;
-        // (level-1)/10 bucket -> best vendor-sold quiver/pouch entry.
-        std::map<uint32, uint32> quiverCache;
+        // (level-1)/10 bucket -> subclass -> best vendor-sold quiver/pouch entry.
+        std::map<uint32, std::map<uint32, uint32> > quiverCache;
         std::map<uint32, std::map<uint32, std::vector<uint32> > > potionCache;
         std::map<uint32, std::map<uint32, std::vector<uint32> > > foodCache;
         std::map<uint32, std::vector<uint32> > tradeCache;
