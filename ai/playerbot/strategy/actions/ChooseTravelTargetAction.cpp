@@ -11,6 +11,7 @@
 #include "playerbot/GrindSpotPolicy.h"
 #include "playerbot/TravelInstancePolicy.h"
 #include "playerbot/TravelRepickPolicy.h"
+#include "playerbot/RpgMixerPolicy.h"
 #include "playerbot/strategy/values/VendorTripPolicy.h"
 #include "playerbot/strategy/values/TravelValues.h"
 #include "playerbot/strategy/values/MaintenanceValues.h"
@@ -50,6 +51,67 @@ bool ai::TravelBlockedInsideInstance(PlayerbotAI* ai)
     return TravelSelectionBlockedByInstance(ai->HasRealPlayerMaster(), inInstance);
 }
 
+namespace
+{
+    // Weighted RPG mixer verdict (issue #422, donor
+    // `NewRpgBaseAction::RandomChangeStatus`): reads the cached winning slot
+    // when live, else rolls a fresh one from the cached need values and
+    // stores it for RPG_MIXER_PICK_WINDOW_SECONDS. Availability reuses the
+    // same cached values the request gates read (2-5 tick intervals, no
+    // world scan): quest want = free log slots, grind/camp = purpose not
+    // time-parked, explore = "explore" strategy on. File-local: needs
+    // PlayerbotAI/AiObjectContext/BotState, which the pure header must not
+    // include (standalone test never links the server).
+    int RpgMixerRollVerdict(PlayerbotAI* ai, AiObjectContext* context, time_t now, double roll01)
+    {
+        std::time_t until = AI_VALUE2(time_t, "manual time", ai::RpgMixerUntilKey());
+        if (ai::RpgMixerVerdictLive(until, now))
+            return AI_VALUE2(int, "manual int", ai::RpgMixerPickKey());
+        ai::RpgMixerAvailability availability;
+        availability.quest = AI_VALUE(uint8, "free quest log slots") > 0;
+        availability.grind = AI_VALUE2(time_t, "manual time",
+            std::string("no travel purpose until::") + std::to_string((uint32)TravelDestinationPurpose::Grind)) <= now;
+        availability.camp = AI_VALUE2(time_t, "manual time",
+            std::string("no travel purpose until::") + std::to_string((uint32)TravelDestinationPurpose::GenericRpg)) <= now;
+        availability.explore = ai->HasStrategy("explore", BotState::BOT_STATE_NON_COMBAT);
+        int slot = ai::PickRpgMixerSlot(availability, roll01);
+        if (slot < 0)
+            return -1;
+        SET_AI_VALUE2(int, "manual int", ai::RpgMixerPickKey(), slot);
+        SET_AI_VALUE2(time_t, "manual time", ai::RpgMixerUntilKey(), now + ai::RPG_MIXER_PICK_WINDOW_SECONDS);
+        return slot;
+    }
+
+    // Request-side gate for the generic leisure travel requests: service and
+    // named purposes pass (need-gated errands outrank leisure by design), as
+    // do the quest errand (its own condition string, not a number), the
+    // leave-outgrown-zone grind (forced travel, not leisure - read off the
+    // value, since isUseful carries no event), owned/hired bots (their
+    // player decides), and a dead verdict (nothing available - the quest
+    // errand parks itself if it truly has nowhere to go).
+    bool RpgMixerGateAllows(PlayerbotAI* ai, AiObjectContext* context, const std::string& qualifier, double roll01)
+    {
+        if (qualifier.empty() || qualifier == "quest")
+            return true;
+        unsigned long purposeId = 0;
+        try { purposeId = std::stoul(qualifier); } catch (...) { return true; }
+        if (purposeId != (unsigned long)TravelDestinationPurpose::Grind &&
+            purposeId != (unsigned long)TravelDestinationPurpose::GenericRpg &&
+            purposeId != (unsigned long)TravelDestinationPurpose::Explore)
+            return true;
+        Player* bot = ai->GetBot();
+        if (!(sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster()))
+            return true;
+        if (AI_VALUE(bool, "should leave outgrown zone"))
+            return true;
+        int slot = RpgMixerRollVerdict(ai, context, time(0), roll01);
+        return ai::RpgMixerSlotAllowsRequest(slot, qualifier,
+            std::to_string((uint32)TravelDestinationPurpose::Grind),
+            std::to_string((uint32)TravelDestinationPurpose::GenericRpg),
+            std::to_string((uint32)TravelDestinationPurpose::Explore));
+    }
+}
+
 bool ChooseTravelTargetAction::Execute(Event& event)
 {
     TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
@@ -79,6 +141,12 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         SET_AI_VALUE2(bool, "no active travel destinations", invalidParkKey, true);
         SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + invalidParkKey,
             time(0) + TRAVEL_FUTURE_INVALID_PARK_SECONDS);
+        // The trip never started: the mixer verdict that admitted this request
+        // is spent, so the next idle tick rolls fresh instead of replaying a
+        // pick whose search just came back empty. Manual values have no
+        // expiry; clearing here is what lets a parked-then-expired purpose
+        // re-enter the roll instead of holding a stale win.
+        SET_AI_VALUE2(time_t, "manual time", ai::RpgMixerUntilKey(), time_t(0));
         return false;
     }
 
@@ -152,6 +220,10 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purposeKey,
             time(0) + ((questErrand && !beginnerRepark) ? 10 * MINUTE : MINUTE));
         ai->TellDebug(ai->GetMaster(), "No target set", "debug travel");
+        // Same spent-verdict clear as the invalid-result path: the roll
+        // admitted this purpose and the search found nothing usable, so the
+        // next idle tick re-rolls among whatever is unparked then.
+        SET_AI_VALUE2(time_t, "manual time", ai::RpgMixerUntilKey(), time_t(0));
 
         // TEMPORARY, see the probe in RequestQuestTravelTargetAction. Destinations
         // came back and none of them was accepted - worth telling apart from "none
@@ -369,6 +441,10 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
     RESET_AI_VALUE(ObjectGuid,"attack target");
     RESET_AI_VALUE(ObjectGuid,"explicit attack target");
     RESET_AI_VALUE(bool, "travel target active");
+    // A successful pick spends the mixer verdict: the next idle trip rolls
+    // fresh instead of replaying the win that produced this journey. Same
+    // non-blanket discipline as the parks above - only the mixer key.
+    SET_AI_VALUE2(time_t, "manual time", ai::RpgMixerUntilKey(), time_t(0));
     // No blanket ClearValues: a pick of this purpose must not wipe other
     // purposes' time-boxed parks (timestamps stay authoritative, flags are
     // cleared lazily by the request gate once their park expires).
@@ -1262,6 +1338,25 @@ bool RequestTravelTargetAction::isUseful() {
 
     if (AI_VALUE2(bool, "no active travel destinations", parkKey))
         RESET_AI_VALUE2(bool, "no active travel destinations", parkKey);
+
+    // Weighted RPG mixer (#422, donor RandomChangeStatus): leisure purposes
+    // (grind/camp/explore) share one weighted roll with quest instead of
+    // racing on static relevance. Service purposes bypass (their needs
+    // outrank leisure), as do the quest errand, the leave-outgrown-zone
+    // grind and owned/hired bots (see RpgMixerPolicy.h). Cached verdict,
+    // one roll per trip, cached need values only - no world scan. Placed
+    // after the park checks so a parked purpose never re-rolls the mixer,
+    // and before the skip-chance roll so the mixer verdict - not relevance
+    // order - decides which leisure purpose may request next.
+    {
+        AiObjectContext* context = ai->GetAiObjectContext();
+        double const roll01 = (double)urand(0, 9999) / 10000.0;
+        if (!RpgMixerGateAllows(ai, context, getQualifier(), roll01))
+        {
+            ai->TellDebug(ai->GetMaster(), "Skipped " + GetTravelPurposeName(qualifier) + " (rpg mixer picked another activity)", "debug travel");
+            return false;
+        }
+    }
 
     if (!AI_VALUE(bool, "can move around"))
         return false;

@@ -3392,3 +3392,53 @@ Local validation: `tools/test_vendor_buy_policy.cpp` (gear-budget mapping,
 score-vs-level ordering, unweighted fallback, tie stability; registered in
 `tools/verify_all.sh`); `bash tools/verify_all.sh`; `git diff --check`. No
 deploy (orchestrator compiles).
+
+## Weighted RPG status mixer (issue #422) — 2026-10-03
+Feature: a pool bot's next leisure journey (quest / grind / camp / explore)
+is drawn from a weighted table (quest 60, grind 15, camp 10, explore 5 -
+the donor's quest-heavy shape) among the purposes available right now,
+instead of the four triggers racing on static relevance. Service and named
+errands (vendor, repair, AH, mail, trainer, city, guild, ...) bypass the
+mixer: need-gated business outranks leisure by design. Verdict cached per
+bot ("rpg mixer pick" + "rpg mixer until"), spent on every pick or parked
+search, so one trip rolls once - no per-tick cost, no world scan.
+
+Source project: `mod-playerbots`.
+
+Source commit: `mod-playerbots@b6696bdbd3740e575598d167d69f39f68cc0b907`.
+
+Source files: donor `src/PlayerbotAIConfig.cpp:730-737`
+(`RpgStatusProbWeight`: DoQuest 60, WanderNpc 20, WanderRandom/GoGrind/Flight
+15, Camp/PvP 10, Rest 5),
+`src/Ai/World/Rpg/Action/NewRpgBaseAction.cpp:1083` (`RandomChangeStatus`:
+weighted roll over available statuses, rest fallback), `:1215`
+(`CheckRpgStatusAvailable`: per-status gates),
+`src/Ai/World/Rpg/Action/NewRpgAction.cpp:241` (IDLE fans out to the roll);
+local `ai/playerbot/RpgMixerPolicy.h` (new: weights, availability-gated
+roll, slot-purpose mapping, scope, verdict lifetime),
+`ai/playerbot/strategy/actions/ChooseTravelTargetAction.cpp` (file-local
+`RpgMixerRollVerdict` / `RpgMixerGateAllows` on the generic request gate +
+spent-verdict clears on pick/park paths),
+`tools/test_rpg_mixer_policy.cpp`.
+
+Copied / ported / reimplemented: reimplemented the mixer as a request-side
+gate on the existing generic travel requests (no donor status machine -
+our journeys are destinations, not statuses). WanderNpc/WanderRandom map to
+the camp (GenericRpg inn-hub NPC wandering) and explore slots; flight stays
+transport under #426/#447, not a mixer slot; rest/PvP have no travel form
+here (the quest errand's own park covers "nothing available"). Leave-
+outgrown-zone grinds bypass (forced travel, not leisure); all destination
+gates stay in force (#418/#428/#434, local picks #424/#441, stall parks
+#423/#442, death protection, instance/BG blocks); owned/hired bots keep
+player control.
+
+Reason: without the mixer quest-vs-grind priority is one static number -
+tuning questing means retuning a global relevance. Live night2 pool shows
+the symptom (GenericRpg picked 2x as often as Grind whenever any purpose
+was active); the donor tunes the same balance through the weight table.
+
+Local validation: `tools/test_rpg_mixer_policy.cpp` (donor weights,
+quest-heavy roll shape, availability gating, slot-purpose mapping,
+pool-only scope, verdict window; registered in `tools/verify_all.sh`);
+`bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
+compiles).
