@@ -2867,3 +2867,77 @@ Local validation: `tools/test_quest_objective_level_policy.cpp` (cap,
 travelling ceiling, +4 from 10, vendor/owned exemptions; registered in
 `tools/verify_all.sh`); `bash tools/verify_all.sh`; `git diff --check`.
 No deploy (orchestrator compiles).
+
+## Periodic quest-log triage for pool bots (E07) — 2026-10-03
+Feature: upkeep bots drop FAILED quests and, once fewer than two log slots
+are free, unfinishable solo picks — over-level (+3), elite/dungeon/raid
+(type != 0), suggested-group (>= 2) and zone-mismatched quests — instead of
+pinning slots (`QuestTriageShouldDrop` in `ai/playerbot/QuestLogPolicy.h`,
+wired into `CleanQuestLogAction::IsDroppable` and mirrored in the
+`QuestLogNearlyFullTrigger` pre-scan, which now also sees FAILED). COMPLETE
+quests never triage; class quests stay preserved; no whole-log last resort.
+Repeatable/seasonal drops not ported (no 1.12 seasonal API).
+
+Source project: `mod-playerbots`
+`src/Ai/World/Rpg/Action/NewRpgBaseAction.cpp:556-590`
+(`IsQuestWorthDoing`, `IsQuestCapableDoing`, `OrganizeQuestLog` at `:590`,
+`:614-616` FAILED drop, `:640-665` zone pass, `freeSlotNum >= 2` gate).
+
+Source files: donor `NewRpgBaseAction.cpp:556-690`;
+local `ai/playerbot/QuestLogPolicy.h` (`QuestTriageShouldDrop`),
+`ai/playerbot/strategy/actions/DropQuestAction.{h,cpp}`,
+`ai/playerbot/strategy/triggers/GenericTriggers.h`,
+`tools/test_quest_log_triage_policy.cpp`.
+
+Copied / ported / reimplemented: reimplemented (donor numbers, local
+plumbing; donor reward-pick `BestRewardIndex` not ported).
+
+Reason: accept-time gating only (`AcceptQuestAction::WouldAcceptQuest`) lets
+the log clog with quests the bot can never finish; E07 rates the impact
+MEDIUM (blocked slots). Donor defaults OFF for repeatables/seasonal kept
+out per brief.
+
+Local validation: `tools/test_quest_log_triage_policy.cpp` (FAILED,
++3/scaling, type, suggested, zone/sort/unknown, doable kept; registered in
+`tools/verify_all.sh`); `bash tools/verify_all.sh`; `git diff --check`.
+No deploy (orchestrator compiles).
+
+## Loot-roll vote gates for pool bots (E08) — 2026-10-03
+Feature: plain auto votes pass through three donor gates before the
+`IsLootAllowed` verdict — FFA/master-loot rolls PASS, recipes NEED when
+learnable (SKILL usage) / PASS when soulbound-unusable / GREED when
+tradeable, epic junk-class tokens NEED only for classes in their
+`AllowableClass` mask (empty mask = unrestricted), duplicate uniques
+(already `UNIQUE_EQUIPPED`, or at `MaxCount`) demote NEED to GREED
+(`LootMethodTakesRolls`, `RecipeRollVote`, `TokenUsableByClass`,
+`UniqueCopyOwned` in `ai/playerbot/LootRollPolicy.h`, wired into
+`RollAction::CalculateRollVote`). Recipe/token gates are pool-only
+(`!HasRealPlayerMaster`); FORCE_NEED/FORCE_GREED and the bad-equip rule
+win. Deliberate 1.12 divergence: the core has no DISENCHANT vote
+(`CountRollVote` only records NEED/GREED/PASS), so DISENCHANT usage stays
+GREED and enchanters disenchant post-win via maintenance.
+
+Source project: `mod-playerbots`
+`src/Ai/Base/Actions/LootRollAction.cpp:40-110`
+(vote gates, `lootNeedRollLevel`/`lootRollRecipe`/`lootRollDisenchant`/
+`lootGreedRollLevel` defaults `:707-710` in `PlayerbotAIConfig.cpp`),
+`LootRollAction.h:29-30` (`CanBotUseToken`, `RollUniqueCheck` at `:185`,
+`:197`).
+
+Source files: donor `LootRollAction.cpp:40-210`, `LootRollAction.h:29-30`;
+local `ai/playerbot/LootRollPolicy.h`,
+`ai/playerbot/strategy/actions/LootRollAction.cpp`,
+`tools/test_loot_roll_policy.cpp`.
+
+Copied / ported / reimplemented: reimplemented (donor gates, local vote
+plumbing; no new config keys — donor recipe/DE/greed toggles default off
+and are folded into the pool-only scope instead).
+
+Reason: E08 rates the gap MEDIUM — pool bots GREEDed soulbound recipes
+they cannot learn, NEEDed duplicate uniques they cannot loot, and voted in
+FFA/master rolls. No DE-skill config existed, so no new key was added.
+
+Local validation: `tools/test_loot_roll_policy.cpp` (loot method,
+recipe split, unique ownership, token mask; registered in
+`tools/verify_all.sh`); `bash tools/verify_all.sh`; `git diff --check`.
+No deploy (orchestrator compiles).

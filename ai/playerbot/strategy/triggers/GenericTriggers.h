@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
+#include "playerbot/QuestLogPolicy.h"
 #include "playerbot/ChatHelper.h"
 #include "playerbot/strategy/Trigger.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -1357,24 +1358,34 @@ namespace ai
         // Cheap pre-scan mirroring CleanQuestLogAction::IsDroppable (same
         // predicate shape): class quests never droppable, level-0/scaling
         // never grey, money shortfall never a drop reason, INCOMPLETE deliver
-        // quests droppable only when grey and itemless.
+        // quests droppable only when grey and itemless, FAILED droppable for
+        // upkeep bots, and the nearly-full triage (over-level, elite/
+        // dungeon/raid/group/zone-mismatch) mirrors the clean action.
         bool HasDroppableQuest()
         {
             for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
             {
                 uint32 questId = GetQuestSlotIdCompat(bot, slot);
                 QuestStatus status = questId ? bot->GetQuestStatus(questId) : QUEST_STATUS_NONE;
-                if (!questId || (status != QUEST_STATUS_INCOMPLETE && status != QUEST_STATUS_COMPLETE))
+                if (!questId || (status != QUEST_STATUS_INCOMPLETE && status != QUEST_STATUS_COMPLETE && status != QUEST_STATUS_FAILED))
                     continue;
                 Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
                 if (!quest || quest->GetRequiredClasses())
                     continue;
+                if (status == QUEST_STATUS_FAILED)
+                    return true;
                 bool grey = quest->GetQuestLevel() > 0 &&
                     bot->GetLevel() >= bot->GetQuestLevelForPlayer(quest) + 8;
                 if (status == QUEST_STATUS_INCOMPLETE)
                 {
                     if (!grey)
+                    {
+                        if (ai::QuestTriageShouldDrop((int)quest->GetQuestLevel(), bot->GetLevel(),
+                            quest->GetType(), quest->GetSuggestedPlayers(), false,
+                            quest->GetZoneOrSort(), bot->GetZoneId()))
+                            return true;
                         continue;
+                    }
                     if (!quest->HasSpecialFlag(QUEST_SPECIAL_FLAG_DELIVER))
                         return true;
                     for (uint8 i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; ++i)

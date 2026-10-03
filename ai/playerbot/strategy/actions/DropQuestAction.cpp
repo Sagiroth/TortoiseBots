@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "DropQuestAction.h"
+#include "playerbot/QuestLogPolicy.h"
 
 using namespace ai;
 
@@ -64,10 +65,15 @@ bool CleanQuestLogAction::HasRequiredDeliverItems(Quest const* quest)
     return true;
 }
 
-bool CleanQuestLogAction::IsDroppable(Quest const* quest, QuestStatus status, bool upkeep)
+bool CleanQuestLogAction::IsDroppable(Quest const* quest, QuestStatus status, bool upkeep, bool triage)
 {
     if (!quest || quest->GetRequiredClasses())
         return false;
+    // FAILED quests never complete on their own (the core parks them in
+    // QUEST_STATE_FAIL): upkeep bots drop them instead of pinning the slot.
+    // Donor NewRpgBaseAction::OrganizeQuestLog drops FAILED the same way.
+    if (status == QUEST_STATUS_FAILED)
+        return upkeep;
     if (status == QUEST_STATUS_INCOMPLETE)
     {
         if (IsGreyIncomplete(quest) && !quest->HasSpecialFlag(QUEST_SPECIAL_FLAG_DELIVER))
@@ -79,6 +85,16 @@ bool CleanQuestLogAction::IsDroppable(Quest const* quest, QuestStatus status, bo
         // (still re-farmable elsewhere, and the log slot is otherwise pinned
         // forever by a quest far below level). Money is never a drop reason.
         if (upkeep && IsGreyIncomplete(quest) && !HasRequiredDeliverItems(quest))
+            return true;
+        // Periodic triage for upkeep bots (donor OrganizeQuestLog idea, own
+        // code): over-level (+3), elite/dungeon/raid (type != 0),
+        // suggested-group and zone-mismatched quests are unfinishable solo
+        // picks that only pin log slots. Triage runs only when the log is
+        // nearly full (Execute gates it); grey quests are left to the rules
+        // above and COMPLETE quests never reach here.
+        if (triage && upkeep && ai::QuestTriageShouldDrop((int)quest->GetQuestLevel(), bot->GetLevel(),
+            quest->GetType(), quest->GetSuggestedPlayers(), false,
+            quest->GetZoneOrSort(), bot->GetZoneId()))
             return true;
         return false;
     }
@@ -109,25 +125,35 @@ bool CleanQuestLogAction::Execute(Event& event)
         return false;
 
     // The INCOMPLETE grey rule inside IsDroppable is the old behaviour and
-    // always runs. The COMPLETE branch and the INCOMPLETE itemless-deliver
-    // branch are quest-log upkeep for masterless random bots only: IsUpkeepBot
-    // gates on upkeep + no active master + IsRandomBot, so owned/alt bots
-    // never lose quests even with the master offline.
+    // always runs. The COMPLETE branch, the INCOMPLETE itemless-deliver
+    // branch, the FAILED branch and the INCOMPLETE triage branch are
+    // quest-log upkeep for masterless random bots only: IsUpkeepBot gates
+    // on upkeep + no active master + IsRandomBot, so owned/alt bots never
+    // lose quests even with the master offline. Triage runs only when the
+    // log is nearly full (donor OrganizeQuestLog runs at freeSlotNum < 2);
+    // otherwise the scan only applies the old per-quest rules.
     bool upkeep = IsUpkeepBot();
     bool dropped = false;
+    // The triage gate mirrors QuestLogNearlyFullTrigger (free slots > 2 =
+    // full enough to leave alone).
+    uint8 freeSlots = 0;
+    for (uint8 count = 0; count < MAX_QUEST_LOG_SIZE; ++count)
+        if (!GetQuestSlotIdCompat(bot, count))
+            ++freeSlots;
+    bool triage = upkeep && freeSlots < 2;
     uint8 slot = 0;
     while (slot < MAX_QUEST_LOG_SIZE)
     {
         uint32 questId = GetQuestSlotIdCompat(bot, slot);
         QuestStatus status = questId ? bot->GetQuestStatus(questId) : QUEST_STATUS_NONE;
-        if (!questId || (status != QUEST_STATUS_INCOMPLETE && status != QUEST_STATUS_COMPLETE))
+        if (!questId || (status != QUEST_STATUS_INCOMPLETE && status != QUEST_STATUS_COMPLETE && status != QUEST_STATUS_FAILED))
         {
             ++slot;
             continue;
         }
 
         Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
-        bool drop = IsDroppable(quest, status, upkeep);
+        bool drop = IsDroppable(quest, status, upkeep, triage);
 
         ++slot;
         if (!drop)
