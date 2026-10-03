@@ -13,9 +13,12 @@
 
 using ai::GetGrindLevelBand;
 using ai::GrindLevelBand;
+using ai::GrindIdleFallbackAllowed;
+using ai::GRIND_IDLE_FALLBACK_RANGE_YD;
 using ai::GrindLevelFits;
 using ai::GrindPreyAllowed;
 using ai::GrindSpotCapacity;
+using ai::GrindValleyExempted;
 
 namespace
 {
@@ -176,6 +179,48 @@ int main()
         CHECK(GrindSpotCapacity(43) == 14); // Young Wolf, Northshire
         CHECK(GrindSpotCapacity(52) == 17); // Stonetusk Boar, Elwynn
         std::cout << "  [PASS] per-spot capacity follows the spawn count\n";
+    }
+
+    // -------------------------------------------------------------
+    // Test 8: starter-valley exemption from the area-average ceiling
+    // -------------------------------------------------------------
+    {
+        // Durotar (rated 8) and Dun Morogh (rated 7) veto every local grind
+        // point for a level 1-4 pool bot through the area ceiling, while its
+        // mobs are vetted in-cap by the band. The exemption mirrors the
+        // IsLocationLevelValid beginnerGrind gate at the other two area gates.
+        CHECK(GrindValleyExempted(1, true));
+        CHECK(GrindValleyExempted(4, true));
+        CHECK(!GrindValleyExempted(5, true));
+        CHECK(!GrindValleyExempted(1, false));
+        CHECK(!GrindValleyExempted(60, true));
+        std::cout << "  [PASS] level 1-4 masterless bots skip the valley ceiling\n";
+    }
+
+    // -------------------------------------------------------------
+    // Test 9: idle-starter fallback gate
+    // -------------------------------------------------------------
+    {
+        // An idle level 1-5 masterless bot with no journey and an empty normal
+        // pick may take the wider fallback scan.
+        CHECK(GrindIdleFallbackAllowed(true, 1, false, false, false, true, true, true));
+        CHECK(GrindIdleFallbackAllowed(true, 5, false, false, false, true, true, true));
+        // Owned/hired bots keep today's behaviour.
+        CHECK(!GrindIdleFallbackAllowed(false, 1, false, false, false, true, true, true));
+        // Above the starter band the travel layer owns longer walks.
+        CHECK(!GrindIdleFallbackAllowed(true, 6, false, false, false, true, true, true));
+        // A bot with a journey keeps walking it.
+        CHECK(!GrindIdleFallbackAllowed(true, 1, true, false, false, true, true, true));
+        // Fighting, battleground, instance and stuck bots are excluded.
+        CHECK(!GrindIdleFallbackAllowed(true, 1, false, true, false, true, true, true));
+        CHECK(!GrindIdleFallbackAllowed(true, 1, false, false, true, true, true, true));
+        CHECK(!GrindIdleFallbackAllowed(true, 1, false, false, false, false, true, true));
+        CHECK(!GrindIdleFallbackAllowed(true, 1, false, false, false, true, false, true));
+        // Only when the normal pick came back empty.
+        CHECK(!GrindIdleFallbackAllowed(true, 1, false, false, false, true, true, false));
+        // The fallback reaches past the 60 yd combat scan but stays nearby.
+        CHECK(GRIND_IDLE_FALLBACK_RANGE_YD == 150.0f);
+        std::cout << "  [PASS] idle-starter fallback gate is tight\n";
     }
 
     std::cout << "All grind-spot level-band tests passed.\n";

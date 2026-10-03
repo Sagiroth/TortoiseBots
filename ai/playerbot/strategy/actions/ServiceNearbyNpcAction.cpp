@@ -36,7 +36,24 @@ bool ServiceNearbyNpcAction::Execute(Event& event)
     }
 
     if (!bot->IsWithinDistInMap(npc, INTERACTION_DISTANCE))
-        return MoveNear(npc, INTERACTION_DISTANCE - 1.0f);
+    {
+        // The walk itself is the unbounded fail leg: MoveNear answers false
+        // with no verb fail recorded, so the verb parks never trip and the
+        // action fails at tick speed (ACTION_LOOP) until the need goes away.
+        // Park the approach after repeated fails like any other verb - the
+        // selector skips an approach-parked NPC for all verbs, then offers
+        // it again once the park expires.
+        if (MoveNear(npc, INTERACTION_DISTANCE - 1.0f))
+            return true;
+
+        AiObjectContext* context = ai->GetAiObjectContext();
+        NearbyServiceFailParks parks = AI_VALUE(NearbyServiceFailParks, "nearby service fail parks");
+        parks.RecordFail(target.GetRawValue(), NearbyServiceRankOf(NearbyServiceKind::Approach), time(0));
+        SET_AI_VALUE(NearbyServiceFailParks, "nearby service fail parks", parks);
+        RESET_AI_VALUE(GuidPosition, "nearby service target");
+        RESET_AI_VALUE(bool, "should service nearby npc");
+        return false;
+    }
 
     // In range. Verbs run strongest-first - hand in, accept, sell, train
     // (NearbyServicePolicy.h) - and a verb parked after repeated failures is
