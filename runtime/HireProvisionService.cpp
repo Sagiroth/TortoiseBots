@@ -3,6 +3,7 @@
 #include "HireProvisionService.h"
 #include "HireCost.h"
 #include "HireLifecycle.h"
+#include "HireIntroPolicy.h"
 #include "HireSpecPolicy.h"
 #include "BotManager.h"
 #include "BotActivityLease.h"
@@ -14,7 +15,9 @@
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
 #include "../ai/playerbot/PlayerbotFactory.h"
+#include "../ai/playerbot/AiFactory.h"
 #include "../ai/playerbot/ChatHelper.h"
+#include "../ai/playerbot/ServerFacade.h"
 #include "../ai/playerbot/strategy/actions/ChangeTalentsAction.h"
 #include "../ai/playerbot/strategy/Event.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -32,6 +35,7 @@
 #include "Group/Group.h"
 #include "Database/DatabaseEnv.h"
 #include "Database/DBCStores.h"
+#include "Spells/SpellMgr.h"
 
 #if __has_include("Handlers/CharacterCreation.h")
 #include "Handlers/CharacterCreation.h"
@@ -649,6 +653,10 @@ bool HireProvisionService::ProvisionNow(Player* bot, PendingProvision& pending)
         // Issue #378: the hire is confirmed grouped, so leaving the party now
         // ends the hire (never treated as a provisioning artefact).
         HireLifecycle::Instance().MarkGrouped(pending.botGuid);
+        // Issue #382: the dedicated spec+spells intro. The provision jump's
+        // queued levelup packets were drained in ProvisionHeavy, so this is
+        // the only post - and it goes out exactly once, only grouped.
+        AnnounceIntro(bot, master, pending);
         auto totalElapsedMs =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
         TB_LOG_BASIC("TortoiseBots: hired companion %s (level %u role %u) joined %s (provision %lldms, total %lldms)",
@@ -760,6 +768,18 @@ void HireProvisionService::ProvisionHeavy(Player* bot, PendingProvision const& p
         PlayerbotFactory factory(bot, bot->GetLevel());
         factory.ProvisionSpellsAndGear();
     }
+    // Snapshot the provisioned spellbook. Kept on the pending entry for
+    // post-deploy diagnosis (what the intro could see); the intro itself
+    // reads the live spellbook through the rank chains below. Non-const on
+    // purpose: the snapshot travels back on the pending entry. A hire whose
+    // master is offline re-snapshots on the retry, never stale.
+    // NOLINTNEXTLINE(readability-non-const-parameter)
+    SnapshotKnownSpells(bot, const_cast<PendingProvision&>(pending).spellsAtProvision);
+    // The provision jump trips the queued SMSG_LEVELUP_INFO's levelup trigger
+    // on a later tick, which would announce provisioning as its own
+    // "Upgrading spec ... / I have learned ..." post. Provisioning sends the
+    // one intro itself (AnnounceIntro, once grouped), so drain that echo here.
+    DropPendingLevelupEcho(ai);
     bot->SaveToDB();
 
     // Role strategies mirror `.bot role`: tank hires hold the protection kit
@@ -897,6 +917,201 @@ void HireProvisionService::Update(uint32_t diff)
                 ++it;
         }
     }
+}
+
+// Spells most players reach for first, as rank-CHAIN heads. AnnounceIntro
+// resolves each chain to the highest rank the bot actually knows, so the line
+// always names the kit-defining spells at the hire's own level instead of
+// whatever the spell map happened to iterate first. Removed/disabled rows
+// never qualify and passive chains are skipped at the call site; every chain
+// below is reachable through the trainer scan (InitClassLevelSpells /
+// LearnTrainerSpells), the book rows (InitAvailableSpells), the quest rows
+// (LearnQuestSpells) or the drop table (LearnDroppedSpells). Class order
+// follows SharedDefines.h (warrior 1 .. druid 11).
+uint32_t HireProvisionService::IntroWishlist(uint8_t classId, size_t rank)
+{
+    // Warrior: Whirlwind chain head 1680 (r2 2381, r3 5120), Mortal Strike
+    // 12294, Bloodthirst 23881, Shield Slam 23922, Revenge 6572, Sunder 7386,
+    // Shield Block 2565, Taunt 355.
+    static uint32_t const warrior[] = { 1680, 12294, 23881, 23922, 6572, 7386, 2565, 355 };
+    // Paladin: Judgement 20271, Hammer of Justice 853, Divine Shield 642,
+    // Blessing of Protection 1022, Blessing of Freedom 1044, Holy Light 635.
+    static uint32_t const paladin[] = { 20271, 853, 642, 1022, 1044, 635 };
+    // Hunter: Call Pet 883, Dismiss Pet 2641, Tame Beast 1515, Concussive
+    // Shot 5116, Arcane Shot 3044, Serpent Sting 1978.
+    static uint32_t const hunter[] = { 883, 2641, 1515, 5116, 3044, 1978 };
+    // Rogue: Sinister Strike 1757, Eviscerate 2098, Gouge 1776, Kick 1766,
+    // Evasion 5277, Sprint 2983, Slice and Dice 5171, Expose Armor 8647.
+    static uint32_t const rogue[] = { 1757, 2098, 1776, 1766, 5277, 2983, 5171, 8647 };
+    // Priest: Power Word: Shield 17, Renew 139, Flash Heal 2061, Prayer of
+    // Fortitude 21562 (rank 1; the only trainer-less rank), Mind Blast 8092,
+    // Shadow Word: Pain 589.
+    static uint32_t const priest[] = { 17, 139, 2061, 21562, 8092, 589 };
+    // Shaman: Healing Wave 331, Lesser Healing Wave 8004, Chain Heal 1064,
+    // Lightning Bolt 403, Earth Shock 8042, Rockbiter Weapon 8017.
+    static uint32_t const shaman[] = { 331, 8004, 1064, 403, 8042, 8017 };
+    // Mage: Frost Armor 168, Fireball 133, Frostbolt 116, Polymorph 118,
+    // Conjure Water 5504, Arcane Intellect 1459.
+    static uint32_t const mage[] = { 168, 133, 116, 118, 5504, 1459 };
+    // Warlock: Imp 688, Voidwalker 697, Succubus 712, Inferno 1122,
+    // Corruption 172, Immolate 348.
+    static uint32_t const warlock[] = { 688, 697, 712, 1122, 172, 348 };
+    // Druid: Rejuvenation 774, Regrowth 8936, Healing Touch 5185, Aquatic
+    // Form 1066, Bear Form 5487, Dire Bear Form 9634.
+    static uint32_t const druid[] = { 774, 8936, 5185, 1066, 5487, 9634 };
+    struct Row
+    {
+        uint8_t cls;
+        uint32_t const* ids;
+        size_t count;
+    };
+    static Row const rows[] = {
+        { 1, warrior, sizeof(warrior) / sizeof(warrior[0]) },
+        { 2, paladin, sizeof(paladin) / sizeof(paladin[0]) },
+        { 3, hunter, sizeof(hunter) / sizeof(hunter[0]) },
+        { 4, rogue, sizeof(rogue) / sizeof(rogue[0]) },
+        { 5, priest, sizeof(priest) / sizeof(priest[0]) },
+        { 7, shaman, sizeof(shaman) / sizeof(shaman[0]) },
+        { 8, mage, sizeof(mage) / sizeof(mage[0]) },
+        { 9, warlock, sizeof(warlock) / sizeof(warlock[0]) },
+        { 11, druid, sizeof(druid) / sizeof(druid[0]) },
+    };
+    for (Row const& row : rows)
+        if (row.cls == classId && rank < row.count)
+            return row.ids[rank];
+    return 0;
+}
+
+// Highest known spell of a chain: the spell map holds every rank the bot
+// learned, but the client activates the top one, so the intro names that.
+// Walks the core chain down from the known ranks via GetPrevSpellInChain
+// (the same call the factory's rank gate uses); a head with no chain entry
+// resolves to itself.
+uint32_t HireProvisionService::HighestKnownRankInChain(Player* bot, uint32_t anyKnownRank)
+{
+    // Highest known rank of the chain holding anyKnownRank. Rank ids do not
+    // sort by rank, so order comes from the core chain: the known entry with
+    // the longest prev-link prefix wins. Short chains (<= 8), one spell-map
+    // scan; the provisioner already runs heavier passes at this point.
+    if (!bot || !anyKnownRank || !bot->HasSpell(anyKnownRank))
+        return 0;
+    uint32_t first = sSpellMgr.GetFirstSpellInChain(anyKnownRank);
+    uint32_t best = 0;
+    uint32_t bestDepth = 0;
+    for (auto const& known : bot->GetSpellMap())
+    {
+        if (known.second.state == PLAYERSPELL_REMOVED || known.second.disabled)
+            continue;
+        if (sSpellMgr.GetFirstSpellInChain(known.first) != first)
+            continue;
+        if (!bot->HasSpell(known.first))
+            continue;
+        uint32_t depth = 0;
+        for (uint32_t p = known.first; p; ++depth)
+        {
+            uint32_t q = sSpellMgr.GetPrevSpellInChain(p);
+            if (!q || q == p)
+                break;
+            p = q;
+        }
+        if (!best || depth > bestDepth)
+        {
+            best = known.first;
+            bestDepth = depth;
+        }
+    }
+    return best;
+}
+
+void HireProvisionService::SnapshotKnownSpells(Player* bot, std::vector<uint32_t>& out)
+{
+    out.clear();
+    if (!bot)
+        return;
+    for (auto const& known : bot->GetSpellMap())
+    {
+        if (known.second.state == PLAYERSPELL_REMOVED || known.second.disabled)
+            continue;
+        out.push_back(known.first);
+    }
+}
+
+// Drop the queued SMSG_LEVELUP_INFO packets the provision jump just sent.
+// Each dropped packet would otherwise fire the levelup trigger on a later
+// tick and post provisioning as an automation echo ("Upgrading spec ...",
+// "I have learned the spells: ..."). Queued-only: what HandleBotOutgoingPacket
+// already consumed (and set the trigger) is left alone - the intro carries
+// the content either way.
+void HireProvisionService::DropPendingLevelupEcho(PlayerbotAI* ai)
+{
+    if (!ai)
+        return;
+    ai->botOutgoingPacketHandlers.DropQueuedOpcode(SMSG_LEVELUP_INFO);
+}
+
+// Issue #382: the one spec+spells post. Runs only on the confirmed-grouped
+// path (ProvisionNow above, and HireLifecycle::Reunite for grace hires), so
+// the bot always has a party to say it to and the whisper fallback behind
+// TellPlayer is unreachable. Exactly once per hire; retries and the grace
+// path see introSent and stay silent.
+void HireProvisionService::AnnounceForGraceHire(Player* bot, Player* master, bool& introSent)
+{
+    // Grace hires were fully provisioned before the master went offline, so
+    // the spell snapshot is not needed: the intro reads the live spellbook.
+    // The forced role was set on the AI during provisioning and survives the
+    // grace wait, so carry it over when it is still there.
+    PendingProvision scratch;
+    scratch.specIndex = -1;
+    scratch.introSent = introSent;
+    if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
+        scratch.role = ai->GetForcedRole();
+    AnnounceIntro(bot, master, scratch);
+    introSent = scratch.introSent;
+}
+
+void HireProvisionService::AnnounceIntro(Player* bot, Player* master, PendingProvision& pending)
+{
+    if (!bot || !master || !bot->IsInWorld() || !master->IsInWorld())
+        return;
+    if (!bot->IsInSameRaidWith(master))
+        return;
+    if (!ShouldAnnounceHireIntro(!pending.introSent, true, true))
+        return;
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+    if (!ai)
+        return;
+
+    TalentSpec spec(bot);
+    uint8_t forcedRole = pending.role ? pending.role : DefaultRoleForClass(bot->GetClass());
+    std::string roleWord = ai::ChatHelper::formatRole(static_cast<ai::BotRoles>(forcedRole));
+    std::string specName = ai::ChatHelper::specName(bot);
+    std::string className = ai::ChatHelper::formatClass(bot->GetClass());
+    std::string specLine = ComposeHireSpecLine(specName, className, roleWord,
+        spec.GetTalentPoints(0), spec.GetTalentPoints(1), spec.GetTalentPoints(2));
+    ai->TellPlayer(master, specLine, PLAYERBOT_SECURITY_ALLOW_ALL, false);
+
+    std::vector<std::string> names;
+    for (size_t rank = 0;; ++rank)
+    {
+        uint32_t chainHead = IntroWishlist(bot->GetClass(), rank);
+        if (!chainHead)
+            break;
+        uint32_t spellId = HighestKnownRankInChain(bot, chainHead);
+        if (!spellId)
+            continue;
+        SpellEntry const* info = sServerFacade.LookupSpellInfo(spellId);
+        if (!info)
+            continue;
+        if (info->IsPassiveSpell())
+            continue;
+        names.push_back(ai::ChatHelper::formatSpell(info));
+        if (names.size() >= 10)
+            break;
+    }
+    if (!names.empty())
+        ai->TellPlayer(master, "Key spells: " + FormatHireSpellList(names),
+            PLAYERBOT_SECURITY_ALLOW_ALL, false);
+    pending.introSent = true;
 }
 
 } // namespace TortoiseBots

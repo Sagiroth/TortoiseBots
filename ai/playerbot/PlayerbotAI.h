@@ -299,6 +299,10 @@ public:
     void AddHandler(uint16 opcode, std::string handler, bool shouldDelay = false);
     void Handle(ExternalEventHelper &helper);
     void AddPacket(const WorldPacket& packet);
+    // Drop every queued packet with this opcode, keeping the rest in order.
+    // Used by hire provisioning (issue #382): the provision jump's
+    // SMSG_LEVELUP_INFO must not fire the levelup automation echo later.
+    void DropQueuedOpcode(uint16 opcode);
 
 private:
     std::map<uint16, std::string> handlers;

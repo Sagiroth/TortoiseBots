@@ -82,6 +82,15 @@ public:
     static bool ClassCanRole(uint8 classId, uint8 role);
     static uint8 DefaultRoleForClass(uint8 classId);
 
+    // Highest known spell of a chain: the spell map holds every rank the
+    // bot learned, but the client activates the top one, so the intro names
+    // that. Walks the core chain down from the known ranks via
+    // GetPrevSpellInChain (same call the factory's rank gate uses).
+    static uint32_t HighestKnownRankInChain(Player* bot, uint32_t anyKnownRank);
+    // Rank-CHAIN heads for the intro's "key spells" line, per class (see the
+    // .cpp for the provenance of every id). Returns 0 past the end.
+    static uint32_t IntroWishlist(uint8_t classId, size_t rank);
+
     struct PendingProvision
     {
         ObjectGuid botGuid;
@@ -96,11 +105,22 @@ public:
         bool provisioned = false;
         // Reunite attempts so far (invite failures + teleport waits).
         uint32_t reuniteAttempts = 0;
+        // Spellbook snapshot at the end of the heavy pass (post-deploy
+        // diagnosis of what the intro could see) plus the intro-once guard
+        // (issue #382).
+        std::vector<uint32_t> spellsAtProvision;
+        bool introSent = false;
     };
     // Every hire creates its own character on a managed pool account; the
     // character is deleted when the hire ends.
     bool CreateCandidate(HireSelection const& sel, uint32_t requesterTeam, uint32_t& accountId, ObjectGuid& guid);
     bool ProvisionNow(Player* bot, PendingProvision& pending);
+    static void SnapshotKnownSpells(Player* bot, std::vector<uint32_t>& out);
+    static void DropPendingLevelupEcho(PlayerbotAI* ai);
+    static void AnnounceIntro(Player* bot, Player* master, PendingProvision& pending);
+    // Grace-path entry: same intro for hires grouped by HireLifecycle::Reunite
+    // (master was offline at provision). introSent is the HiredRecord guard.
+    static void AnnounceForGraceHire(Player* bot, Player* master, bool& introSent);
     // Issue #281: heavy one-shot work (level/talents/spells/gear/SaveToDB).
     void ProvisionHeavy(Player* bot, PendingProvision const& pending, PlayerbotAI* ai, Player* master);
     // Issue #281: teleport + grouping only; safe to retry every tick.
