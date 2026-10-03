@@ -9,8 +9,7 @@
 #include "PossibleAttackTargetsValue.h"
 #include "playerbot/strategy/actions/ChooseTargetActions.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
-
-using namespace ai;
+#include "playerbot/PullRegenPolicy.h"
 
 namespace
 {
@@ -20,12 +19,11 @@ namespace
 // level - and those orders were 15% of all grind orders in a measured level-1 pool. Only
 // the solo grind is restricted: a bot following a real player is told what to fight, and
 // the battleground exemption stays where it always was, on the check itself.
+// The numbers live in PullRegenPolicy.h (PullGrindLevelCap) next to the
+// pull-regen gate so the cap stays testable on its own.
 int MaxGrindLevelOverBot(Player* bot, PlayerbotAI* ai)
 {
-    if (bot->GetLevel() < 10 && !ai->HasRealPlayerMaster())
-        return 1;
-
-    return 4;
+    return ai::PullGrindLevelCap(bot->GetLevel(), ai->HasRealPlayerMaster());
 }
 }
 

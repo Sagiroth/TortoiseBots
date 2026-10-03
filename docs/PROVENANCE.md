@@ -2722,3 +2722,45 @@ Local validation: `bash tools/verify_all.sh` (OKF, surface, wiring
 `queued=1542 live-missing=0`, policy tests incl. new weapon test, decision
 trail); `git diff --check`. Module build + runtime deploy left to the
 orchestrator (worktree rule: no docker builds here).
+
+## Pull-regen gate: wounded pool bots sit out the next pull (m-deaths fix A) — 2026-10-03
+Feature: `AttackAnythingAction::isUseful` refuses a NEW grind pull while a
+masterless pool bot is below `AiPlayerbot.MediumHealth` (mana users:
+`AiPlayerbot.MediumMana` too), using existing thresholds. The gate only runs
+with an empty core `GetAttackers()` set, so revenge (the
+`GrindTargetValue` `possible attack targets` loop) is always answered;
+owned bots, real-master bots and battlegrounds keep today's behaviour. The
+pre-emptive "attack before being attacked" strike only starts a fresh pull
+with no `possible adds` and inside the same grind level cap
+(`PullGrindLevelCap`: +1 below 10, +4 from 10); a mob already fighting the
+bot (victim set) is always answered. The level numbers live in
+`ai/playerbot/PullRegenPolicy.h` (`PullGrindLevelCap`,
+`ShouldDeferGrindPull`, `AllowPreemptiveStrike`), and
+`MaxGrindLevelOverBot` now delegates to the policy so the cap stays
+testable. Doc row: `docs/concepts/bot-mechanics-and-quirks.md`
+(Grind Target mob pick).
+
+Source project: `mod-playerbots` `src/Ai/Base/Actions/ChooseTargetActions.cpp`
+(`AttackAnythingAction::isUseful`, no regen term) and
+`src/Ai/Base/Value/GrindTargetValue.cpp` (no health filter) — verified
+absent in the local checkout, so there is nothing to port; both rules are
+local, measured on the level 1-12 pool (night2-4h: 6492 deaths, findings
+1/3/7 in `m-deaths.md`).
+
+Source files: `ai/playerbot/strategy/actions/ChooseTargetActions.cpp`,
+`ai/playerbot/strategy/values/GrindTargetValue.cpp`,
+`ai/playerbot/PullRegenPolicy.h`,
+`tools/test_pull_regen_policy.cpp`.
+
+Copied / ported / reimplemented: reimplemented (local rule, donor parity
+checked, not copied).
+
+Reason: 33.3% of pool deaths land <= 60 s after the victim's previous kill
+(median 31 s between attack orders) with no HP/mana check before the next
+pull; 37.0% of sub-10 deaths are by mobs above the +1 cap; the line-61
+strike fired while travelling with no pack or cap check. Est. 20-30% +
+5-10% of deaths saved.
+
+Local validation: `tools/test_pull_regen_policy.cpp` (regen bands, cap,
+strike gate); `bash tools/verify_all.sh`; `git diff --check`. No deploy
+(orchestrator compiles).
