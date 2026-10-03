@@ -58,8 +58,7 @@ Warriors serve as primary dungeon tanks or powerful melee DPS. The bot manages r
 ## Utility & Interrupts
 
 - **Interrupts:** Protection: *Shield Bash* · Fury: *Pummel* (auto-Berserker) · Arms: none wired. *Shield Bash* has no stance precondition in code.
-- **Shouts:** Automatically maintains *Battle Shout* on party members (all specs); only Protection wires *Demoralizing Shout*.
-- **CC & Snares:** Casts *Piercing Howl* (AoE snare) or *Hamstring* on fleeing mobs. Uses *Concussion Blow* (Protection) as a 5-second stun on priority targets, per game data.
+- **Shouts:** Automatically maintains *Battle Shout* on party members (all specs); only Protection wires *Demoralizing Shout*. *Intimidating Shout* (AoE fear) never fires inside a dungeon or raid, or for a bot grouped with a real player (a feared mob pulls neighbouring packs); outdoors with no master to disrupt, a critical-health bot may still shout to make space.
 
 ---
 

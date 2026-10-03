@@ -3,6 +3,7 @@
 #include "playerbot/PlayerbotFactory.h"
 #include "playerbot/PerformanceMonitor.h"
 #include "playerbot/SurvivePolicy.h"
+#include "playerbot/SpellRankPolicy.h"
 #include "../../runtime/HunterPetPolicy.h"
 #include "../../runtime/StarterKitPolicy.h"
 #include "../../runtime/ProfessionGrantPolicy.h"
@@ -156,6 +157,11 @@ void PlayerbotFactory::ProvisionSpellsAndGear()
         InitPet();
         InitPetSpells();
     }
+    // Issue #381: a hire at a level below the character's own (or a stale
+    // over-rank row from before the rank gate) would otherwise keep spells a
+    // trainer would never show. Drop those ranks and re-teach the highest
+    // rank the level still allows.
+    PruneOverLevelSpellRanks();
     EnchantEquipment();
     bot->SaveToDB();
 }
@@ -3306,16 +3312,28 @@ void PlayerbotFactory::InitClassLevelSpells()
             if (!bot->IsSpellFitByClassAndRace(learnedSpellId, &reqLevel))
                 continue;
 
-            TrainerSpellState state = bot->GetTrainerSpellState(trainerSpell);
+            // Issue #381: several trainer rows carry a lower reqLevel than the
+            // spell they teach (Crusader Strike 1: row 8, spell 10;
+            // Intimidating Shout: row 20, spell 22; the shaman row teaching
+            // Elemental Fury 877: row 6, spell 35), so the row alone would
+            // admit the rank early. The taught spell's own level decides; the
+            // rule lives in ai/playerbot/SpellRankPolicy.h and is shared with
+            // the paid trainer path.
+            bool rowUsable = bot->GetTrainerSpellState(trainerSpell) == TRAINER_SPELL_GREEN;
+
             // A first-rank talent can appear in trainer data for a class that
             // already owns that talent spell; preserve the donor behavior that
             // allows the valid rank to be initialized without accepting other
-            // red trainer entries.
+            // red trainer entries. The talent exception runs before the rank
+            // gate so a talent-owed rank is never refused for its level.
             uint32 firstRank = sSpellMgr.GetFirstSpellInChain(learnedSpellId);
             bool validTalent = GetTalentSpellCost(firstRank) && bot->HasSpell(firstRank) &&
                 reqLevel <= bot->GetLevel();
 
-            if (state != TRAINER_SPELL_GREEN && !validTalent)
+            if (!rowUsable && !validTalent)
+                continue;
+            if (!ai::SpellRankTeachableNow(bot->GetLevel(), learnedSpell->spellLevel,
+                    learnedSpell->spellLevel != 0, true))
                 continue;
 
             if (teachingSpell->SpellFamilyName != classFamily)
@@ -3512,6 +3530,70 @@ void PlayerbotFactory::InitSpecialSpells()
 
         if(spellInfo)
             bot->LearnSpell(spellId, false);
+    }
+}
+
+// Issue #381: drop spell ranks above the bot's level after provisioning and
+// re-teach the highest rank the level still allows, so the book always
+// matches what a trainer would show. Walks the bot's own chains (no trainer
+// scan): for each known spell above the level, remove it, then walk down to
+// the highest rank at or below the level and teach it when the bot knows no
+// rank of that chain. Spells with no level in the data (racials, mounts,
+// form placeholders) are never pruned; talents are never touched.
+void PlayerbotFactory::PruneOverLevelSpellRanks()
+{
+    if (!bot)
+        return;
+
+    uint32 const botLevel = bot->GetLevel();
+    std::vector<uint32> overLevel;
+    overLevel.reserve(8);
+    for (auto const& known : bot->GetSpellMap())
+    {
+        if (known.second.state == PLAYERSPELL_REMOVED || known.second.disabled)
+            continue;
+        if (GetTalentSpellCost(known.first))
+            continue;
+        SpellEntry const* info = sServerFacade.LookupSpellInfo(known.first);
+        if (!info || info->spellLevel == 0)
+            continue;
+        if (ai::SpellOverLevelForBot(botLevel, info->spellLevel, true))
+            overLevel.push_back(known.first);
+    }
+
+    for (uint32 spellId : overLevel)
+    {
+        uint32 firstRank = sSpellMgr.GetFirstSpellInChain(spellId);
+        bot->RemoveSpell(spellId, false, false);
+        // Re-teach the highest rank the level still allows: walk down from
+        // the removed rank until the level fits, then teach only when the
+        // bot holds no rank of the chain (a kept lower rank already covers
+        // it, and the core's own chain handling activates the right one).
+        uint32 candidate = sSpellMgr.GetPrevSpellInChain(spellId);
+        while (candidate)
+        {
+            SpellEntry const* candidateInfo = sServerFacade.LookupSpellInfo(candidate);
+            if (!candidateInfo || candidateInfo->spellLevel == 0 || candidateInfo->spellLevel <= botLevel)
+                break;
+            candidate = sSpellMgr.GetPrevSpellInChain(candidate);
+        }
+        if (!candidate)
+            continue;
+        uint32 probe = candidate;
+        bool holdsRank = false;
+        while (probe)
+        {
+            if (bot->HasSpell(probe))
+            {
+                holdsRank = true;
+                break;
+            }
+            if (probe == firstRank)
+                break;
+            probe = sSpellMgr.GetPrevSpellInChain(probe);
+        }
+        if (!holdsRank)
+            bot->LearnSpell(candidate, false);
     }
 }
 

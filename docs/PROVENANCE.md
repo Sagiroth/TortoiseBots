@@ -2867,3 +2867,50 @@ Local validation: `tools/test_quest_objective_level_policy.cpp` (cap,
 travelling ceiling, +4 from 10, vendor/owned exemptions; registered in
 `tools/verify_all.sh`); `bash tools/verify_all.sh`; `git diff --check`.
 No deploy (orchestrator compiles).
+
+## Spell-rank gate + instance AoE-fear ban (issues #381, #383) — 2026-10-03
+
+Feature: bots only learn spell ranks at or below their level (taught spell's
+own `spellLevel`, not the trainer row's `reqLevel`), across the factory seed,
+the pool auto-learn, and the paid trainer visit; hire provisioning prunes
+over-level ranks on the downgrade path and re-teaches the highest allowed
+rank. AoE fear (priest Psychic Scream, warlock Howl of Terror, warrior
+Intimidating Shout) never fires inside a dungeon/raid or for a bot grouped
+with a real player: the scream trigger moves to the PvP-only cc kit (Howl
+already lives there) and all three actions carry the instance/master gate.
+
+Source repository: `playerbots-references/mod-playerbots` @ `b6696bdb`
+(gameplay donor: fear-on-mark only, no automatic pack fear; Howl of Terror
+kept out of the PvE cc kit — same shape, ported to the local `cc`/`cc pvp`
+split; no donor code copied).
+
+Source files:
+- `ai/playerbot/SpellRankPolicy.h` (`SpellRankTeachableNow`,
+  `SpellOverLevelForBot`), `tools/test_spell_rank_policy.cpp`
+- `ai/playerbot/AoeFearPolicy.h` (`AoeFearAllowed`),
+  `tools/test_aoe_fear_policy.cpp`
+- `ai/playerbot/PlayerbotFactory.cpp` (`InitClassLevelSpells` rank gate,
+  `PruneOverLevelSpellRanks`), `ai/playerbot/PlayerbotFactory.h`
+- `ai/playerbot/strategy/actions/AutoLearnSpellAction.cpp`
+  (`LearnSpellFromSpell` rank gate),
+  `ai/playerbot/strategy/actions/TrainerAction.cpp` (`Learn` rank gate)
+- `ai/playerbot/strategy/priest/PriestStrategy.cpp` (scream to `cc pvp`),
+  `ai/playerbot/strategy/priest/PriestActions.h` (scream action gate),
+  `ai/playerbot/strategy/warlock/WarlockActions.h` (howl action gate),
+  `ai/playerbot/strategy/warrior/WarriorActions.h` (shout action gate)
+- `docs/classes/priest.md`, `docs/classes/warrior.md`,
+  `docs/classes/warlock.md`
+
+Copied / ported / independently reimplemented: reimplemented (donor
+behaviour, local code).
+
+Reason: issue #381 — a hired level-16 priest carried Fortitude rank 3
+(level 24); trainer rows with a lower reqLevel than the taught spell plus
+the downgrade path that skips the trainer gate made over-rank books
+possible on every class. Issue #383 — a hired holy priest cast Psychic
+Scream three times in RFC and pulled extra packs.
+
+Local validation: `tools/test_spell_rank_policy.cpp` + new
+`tools/test_aoe_fear_policy.cpp` (both registered in
+`tools/verify_all.sh`); `bash tools/verify_all.sh`; `git diff --check`.
+No deploy (orchestrator compiles).

@@ -68,7 +68,7 @@ The bot checks for the *Weakened Soul* debuff (6788) before attempting *Power Wo
 - **Dispels:** Proactively uses *Dispel Magic* on self and allies (to clear magic debuffs), and *Cure Disease* on diseased allies. The enemy-target dispel action is registered but has no trigger, so the bot never offensively dispels.
 - **Crowd Control:**
   - Casts *Shackle Undead* when assigned CC on Undead targets.
-  - Casts *Psychic Scream* on any single enemy within 5 yards, then follows up with *Fade* (not fleeing).
+  - *Psychic Scream* (AoE fear) is PvP-only: it is never cast in PvE groups, and never inside a dungeon or raid (a feared mob pulls neighbouring packs). Outdoors with no master to disrupt, a surrounded bot may still scream to make space, then follows up with *Fade* (not fleeing).
 
 ---
 

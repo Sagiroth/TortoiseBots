@@ -74,8 +74,14 @@ public:
     // tier. Public so the 40/60 level-up spell hook can grant it behind
     // AiPlayerbot.LevelUpMounts; the seed/hire field kit calls it too.
     void InitMounts();
+    // Issue #381: drop spell ranks above the bot's level after provisioning
+    // (downgrade path) and re-teach the highest rank the level still allows,
+    // so the book always matches what a trainer would show. Rank chains that
+    // need no teacher (Prayer of Fortitude 21562/21564) are re-taught from
+    // the bot's own book, never from a trainer row. Idempotent; safe on every
+    // hire and re-seed.
+    void PruneOverLevelSpellRanks();
     void InitPet();
-    void InitPetSpells();
 
 private:
     void Shuffle(std::vector<uint32>& items);

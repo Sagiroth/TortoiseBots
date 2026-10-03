@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/strategy/actions/GenericActions.h"
+#include "playerbot/AoeFearPolicy.h"
 
 namespace ai
 {
@@ -12,7 +13,27 @@ namespace ai
     MELEE_ACTION_U(CastBattleShoutTauntAction, "battle shout", CastSpellAction::isUseful()); // useful to rebuff
     MELEE_DEBUFF_ACTION_R(CastDemoralizingShoutAction, "demoralizing shout", 8.0f); // low range debuff
     MELEE_ACTION(CastChallengingShoutAction, "challenging shout");
-    MELEE_DEBUFF_ACTION_R(CastIntimidatingShoutAction, "intimidating shout", 8.0f);
+    class CastIntimidatingShoutAction : public CastMeleeDebuffSpellAction
+    {
+    public:
+        CastIntimidatingShoutAction(PlayerbotAI* ai) : CastMeleeDebuffSpellAction(ai, "intimidating shout")
+        {
+            range = 8.0f;
+        }
+        bool isUseful() override
+        {
+            // Issue #383: the shout fears the pack and the feared mobs pull
+            // neighbouring packs, so it never fires inside a dungeon or raid.
+            // The shared rule lives in ai/playerbot/AoeFearPolicy.h; a
+            // masterless pool bot alone in the open world keeps the old
+            // critical-health emergency.
+            Map* map = bot->GetMap();
+            bool inInstance = map && (map->IsDungeon() || map->IsRaid());
+            if (!ai::AoeFearAllowed(inInstance, ai->HasActivePlayerMaster()))
+                return false;
+            return CastMeleeDebuffSpellAction::isUseful();
+        }
+    };
 
     // arms
     MELEE_ACTION(CastHeroicStrikeAction, "heroic strike");

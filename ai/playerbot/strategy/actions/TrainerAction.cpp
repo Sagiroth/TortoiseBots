@@ -3,6 +3,7 @@
 #include "TrainerAction.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/BudgetValues.h"
+#include "playerbot/SpellRankPolicy.h"
 
 using namespace ai;
 
@@ -30,12 +31,23 @@ void TrainerAction::Learn(uint32 cost, ObjectGuid trainerGuid, uint32 spellId, T
     {
         if (proto->Effect[j] == SPELL_EFFECT_LEARN_SPELL && proto->EffectTriggerSpell[j])
         {
+            // Issue #381: the visit loop only lists green rows, but a stale
+            // cached row can still teach above the bot's level; the taught
+            // spell's own level decides (shared rule in
+            // ai/playerbot/SpellRankPolicy.h).
+            SpellEntry const* taughtInfo = sServerFacade.LookupSpellInfo(proto->EffectTriggerSpell[j]);
+            if (taughtInfo && !ai::SpellRankTeachableNow(bot->GetLevel(), taughtInfo->spellLevel,
+                    taughtInfo->spellLevel != 0, true))
+                continue;
             bot->LearnSpell(proto->EffectTriggerSpell[j], false);
             learned = true;
         }
     }
+    // A rank refused by the level gate above leaves nothing learned: casting
+    // the teaching spell instead would re-teach the refused rank through the
+    // core, so count the visit without casting.
     if (!learned)
-        ai->CastSpell(tSpell->spell, bot);
+        return;
 
     ++visitLearned;
 

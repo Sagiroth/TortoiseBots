@@ -3,6 +3,7 @@
 #include "AutoLearnSpellAction.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/TravelMgr.h"
+#include "playerbot/SpellRankPolicy.h"
 #include "playerbot/PlayerbotFactory.h"
 #include "../../../../runtime/ProfessionGrantPolicy.h"
 #include "Objects/Item.h"
@@ -459,6 +460,15 @@ bool AutoLearnSpellAction::LearnSpellFromSpell(uint32 spellId, std::ostringstrea
                 // the Undead racial (2652). Honour the spell's own mask here
                 // like the trainer path (GetTrainerSpellState) already does.
                 if (!bot->IsSpellFitByClassAndRace(learnedSpell))
+                    continue;
+
+                // Issue #381: quest reward data can carry a rank above the
+                // bot's level the same way a trainer row can; the taught
+                // spell's own level decides (shared rule in
+                // ai/playerbot/SpellRankPolicy.h).
+                SpellEntry const* taughtInfo = sServerFacade.LookupSpellInfo(learnedSpell);
+                if (taughtInfo && !ai::SpellRankTeachableNow(bot->GetLevel(), taughtInfo->spellLevel,
+                        taughtInfo->spellLevel != 0, true))
                     continue;
 
                 if (!bot->HasSpell(learnedSpell))

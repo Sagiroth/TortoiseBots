@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/strategy/actions/GenericActions.h"
+#include "playerbot/AoeFearPolicy.h"
 
 namespace ai
 {
@@ -87,7 +88,25 @@ namespace ai
     RANGED_DEBUFF_ACTION(CastPowerWordPainAction, "shadow word: pain");
     RANGED_DEBUFF_ENEMY_ACTION(CastPowerWordPainOnAttackerAction, "shadow word: pain");
     SPELL_ACTION(CastMindBlastAction, "mind blast");
-    SPELL_ACTION(CastPsychicScreamAction, "psychic scream");
+    class CastPsychicScreamAction : public CastSpellAction
+    {
+    public:
+        CastPsychicScreamAction(PlayerbotAI* ai) : CastSpellAction(ai, "psychic scream") {}
+        bool isUseful() override
+        {
+            // Issue #383: the scream fears the pack and the feared mobs pull
+            // neighbouring packs, so it never fires inside a dungeon or raid
+            // (or for a bot grouped with a real player outside). The base cc
+            // trigger moved to the PvP-only kit; this action gate covers the
+            // manual `.bot action` path the trigger move cannot reach. The
+            // shared rule lives in ai/playerbot/AoeFearPolicy.h.
+            Map* map = bot->GetMap();
+            bool inInstance = map && (map->IsDungeon() || map->IsRaid());
+            if (!ai::AoeFearAllowed(inInstance, ai->HasActivePlayerMaster()))
+                return false;
+            return CastSpellAction::isUseful();
+        }
+    };
     RANGED_DEBUFF_ACTION(CastMindSootheAction, "mind soothe");
     BUFF_ACTION_U(CastFadeAction, "fade", bot->GetGroup());
     BUFF_ACTION(CastShadowProtectionAction, "shadow protection");

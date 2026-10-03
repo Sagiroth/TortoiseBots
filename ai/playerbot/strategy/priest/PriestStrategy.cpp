@@ -323,9 +323,9 @@ void PriestCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "chastise",
         NextAction::array(0, new NextAction("chastise", ACTION_INTERRUPT), NULL)));
 
-    triggers.push_back(new TriggerNode(
-        "enemy five yards",
-        NextAction::array(0, new NextAction("psychic scream", ACTION_INTERRUPT), NULL)));
+    // Issue #383: Psychic Scream scatters packs and the feared mobs pull
+    // neighbouring packs, so it stays out of the base (PvE) cc kit the way
+    // warlock Howl of Terror already does: PvP-only, below.
 }
 
 void PriestCcStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -336,6 +336,11 @@ void PriestCcStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 void PriestCcPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     CcPvpStrategy::InitCombatTriggers(triggers);
+
+    // Issue #383: AoE fear scatters PvE packs into adds; keep it for PvP only.
+    triggers.push_back(new TriggerNode(
+        "enemy five yards",
+        NextAction::array(0, new NextAction("psychic scream", ACTION_INTERRUPT), NULL)));
 }
 
 void PriestCcPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

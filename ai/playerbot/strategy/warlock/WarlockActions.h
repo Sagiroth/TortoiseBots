@@ -2,6 +2,7 @@
 
 #include "playerbot/strategy/actions/GenericActions.h"
 #include "playerbot/strategy/actions/UseItemAction.h"
+#include "playerbot/AoeFearPolicy.h"
 
 namespace ai
 {
@@ -541,6 +542,18 @@ namespace ai
     {
     public:
 		CastHowlOfTerrorAction(PlayerbotAI* ai) : CastMeleeAoeSpellAction(ai, "howl of terror", 10.0f) {}
+        bool isUseful() override
+        {
+            // Issue #383: same AoE-fear pack scatter as Psychic Scream. The
+            // trigger already lives in the PvP-only cc kit; this action gate
+            // covers the manual `.bot action` path. Shared rule in
+            // ai/playerbot/AoeFearPolicy.h.
+            Map* map = bot->GetMap();
+            bool inInstance = map && (map->IsDungeon() || map->IsRaid());
+            if (!ai::AoeFearAllowed(inInstance, ai->HasActivePlayerMaster()))
+                return false;
+            return CastMeleeAoeSpellAction::isUseful();
+        }
     };
 
 	SPELL_ACTION(CastSearingPainAction, "searing pain");
