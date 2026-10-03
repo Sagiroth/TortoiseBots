@@ -3992,42 +3992,48 @@ uint32 RandomItemMgr::GetRandomPotion(uint32 level, uint32 effect)
     return potions[urand(0, potions.size() - 1)];
 }
 
-uint32 RandomItemMgr::GetFood(uint32 level, uint32 category)
+uint32 RandomItemMgr::GetFood(uint32 level, uint32 category, uint32 pick)
 {
+    // Plain vendor rations only (owner rule): the ordinary food and drink any
+    // innkeeper or vendor sells for the level, never cooked food with a "Well
+    // Fed" buff. Tiers follow the items' required level (1, 5, 15, 25, 35, 45);
+    // every entry is sold by vendors in the world database.
     std::vector<uint32> items;
     if (category == 11)
     {
         if (level < 5)
-            items = { 787, 117, 4540, 2680 };
+            items = { 117, 4540, 4536, 2070, 787, 4604 };      // Tough Jerky, Tough Hunk of Bread, Shiny Red Apple, Darnassian Bleu, Slitherskin Mackerel, Forest Mushroom Cap
         else if (level < 15)
-            items = { 2287, 4592, 4541, 21072 };
+            items = { 2287, 4541, 4537, 414, 4592, 4605 };     // Haunch of Meat, Freshly Baked Bread, Tel'Abim Banana, Dalaran Sharp, Longjaw Mud Snapper, Red-speckled Mushroom
         else if (level < 25)
-            items = { 3770, 16170, 4542, 20074 };
+            items = { 3770, 4542, 4538, 422, 4593, 4606 };     // Mutton Chop, Moist Cornbread, Snapvine Watermelon, Dwarven Mild, Bristle Whisker Catfish, Spongy Morel
         else if (level < 35)
-            items = { 4594, 3771, 1707, 4457 };
+            items = { 3771, 4544, 4539, 1707, 4594, 4607 };    // Wild Hog Shank, Mulgore Spice Bread, Goldenbark Apple, Stormwind Brie, Rockscale Cod, Delicious Cave Mold
         else if (level < 45)
-            items = { 4599, 4601, 21552, 17222 /*21030, 16168 */ };
+            items = { 4599, 4601, 4602, 3927, 21552, 4608 };   // Cured Ham Steak, Soft Banana Bread, Moon Harvest Pumpkin, Fine Aged Cheddar, Striped Yellowtail, Raw Black Truffle
         else
-            items = { 8950, 8952, 8957, 21023 /*21033, 21031 */ };
+            items = { 8952, 8950, 8953, 8932, 8957, 8948 };    // Roasted Quail, Homemade Cherry Pie, Deep Fried Plantains, Alterac Swiss, Spinefin Halibut, Dried King Bolete
     }
 
     if (category == 59)
     {
         if (level < 5)
-            items = { 159, 117 };
+            items = { 159 };    // Refreshing Spring Water
         else if (level < 15)
-            items = { 1179, 21072 };
+            items = { 1179 };   // Ice Cold Milk
         else if (level < 25)
-            items = { 1205 };
+            items = { 1205 };   // Melon Juice
         else if (level < 35)
-            items = { 1708 };
+            items = { 1708 };   // Sweet Nectar
         else if (level < 45)
-            items = { 1645 };
+            items = { 1645 };   // Moonberry Juice
         else
-            items = { 8766 };
+            items = { 8766 };   // Morning Glory Dew
     }
 
     if (items.empty()) return 0;
+    if (pick)
+        return items[pick % items.size()];
     return items[urand(0, items.size() - 1)];
 }
 
