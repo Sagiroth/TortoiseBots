@@ -82,6 +82,7 @@ public:
     // hire and re-seed.
     void PruneOverLevelSpellRanks();
     void InitPet();
+    void InitPetSpells();
 
 private:
     void Shuffle(std::vector<uint32>& items);
