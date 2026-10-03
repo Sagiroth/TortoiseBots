@@ -5,6 +5,7 @@
 #include "LftBotFillService.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Log.h"
+#include "../host/ModuleLog.h"
 
 namespace TortoiseBots
 {
@@ -158,7 +159,10 @@ void BotActivityLeaseManager::Update(uint32_t diff)
         }
         uint32_t guidLow = it->first;
         BotActivity activity = it->second.activity;
-        sLog.outError("TortoiseBots: activity lease %s for bot %u expired after %u ms, evicting",
+        // #404: an expiry is routine protection (a Trading trip that outran its lease), not an
+        // operator event - this fired as outError ~30x per measurement. Evictions clear stale
+        // state and the eviction hooks re-arm the owning service, so TB_LOG_DEBUG is enough.
+        TB_LOG_DEBUG("TortoiseBots: activity lease %s for bot %u expired after %u ms, evicting",
             BotActivityName(activity), guidLow, it->second.maxDurationMs);
         // Evict first so the owning service cancels native queue/teleport
         // state, then drop the lease back to Idle.

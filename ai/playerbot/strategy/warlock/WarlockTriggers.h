@@ -141,7 +141,7 @@ namespace ai
     public:
         WarlockConjuredItemTrigger(PlayerbotAI* ai, std::string item) : ItemCountTrigger(ai, item, 1) {}
 
-        virtual bool IsActive() override { return ItemCountTrigger::IsActive() && (ai->HasCheat(BotCheatMask::item) || AI_VALUE2(uint32, "item count", "soul shard") > 0); }
+        virtual bool IsActive() override { return ItemCountTrigger::IsActive(); }
     };
 
     class HasSpellstoneTrigger : public WarlockConjuredItemTrigger
@@ -206,13 +206,16 @@ namespace ai
     {
     public:
         NoSoulShardTrigger(PlayerbotAI* ai) : Trigger(ai, "no soul shard") {}
-        bool IsActive() override { return !ai->HasCheat(BotCheatMask::item) && bot->GetItemCount(6265) == 0; }
+        // Shards are real for every bot (organic harvest, never seeded), so
+        // the zero-shard upkeep must run under the item cheat too. The
+        // create action itself gates on a known trainable spell.
+        bool IsActive() override { return bot->GetItemCount(6265) == 0; }
     };
     class TooManySoulShardsTrigger : public Trigger
     {
     public:
         TooManySoulShardsTrigger(PlayerbotAI* ai) : Trigger(ai, "too many soul shards") {}
-        bool IsActive() override { return !ai->HasCheat(BotCheatMask::item) && !bot->IsInCombat() && bot->GetItemCount(6265) > 5; }
+        bool IsActive() override { return !bot->IsInCombat() && bot->GetItemCount(6265) > 5; }
     };
 
     class FearPvpTrigger : public Trigger

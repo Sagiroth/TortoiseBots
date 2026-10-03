@@ -78,23 +78,21 @@ bool DrainSoulTrigger::IsActive()
 	if (!ai->HasSpell("drain soul"))
 		return false;
 
-	// If no item cheats enabled
-    if (!ai->HasCheat(BotCheatMask::item))
-    {
-		// Check if it has less than 5 soul shards
-        if (!bot->HasItemCount(6265, 5))
-        {
-			// Check if it has enough bag space
-			if (AI_VALUE(uint8, "bag space") > 0)
+	// Organic harvest: shards are real for every warlock (never seeded, the
+	// cheat no longer mints them), so the gate is cheat-agnostic. Core only
+	// grants the shard when the drained target dies while yielding XP/honor,
+	// so finishing below 20% health mirrors the donor execute without
+	// wasting casts on full-health targets.
+	if (!bot->HasItemCount(6265, 5))
+	{
+		if (AI_VALUE(uint8, "bag space") > 0)
+		{
+			const uint32 targetHealth = AI_VALUE2(uint8, "health", "current target");
+			if (targetHealth <= 20)
 			{
-                // Check if target health is less than 25% (was 15%)
-                const uint32 targetHealth = AI_VALUE2(uint8, "health", "current target");
-                if (targetHealth <= 25)
-                {
-                    return true;
-                }
+				return true;
 			}
-        }
+		}
 	}
 
 	return false;

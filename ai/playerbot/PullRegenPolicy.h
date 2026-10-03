@@ -72,16 +72,22 @@ namespace ai
     // mod-playerbots IsQuestCapableDoing (NewRpgBaseAction.cpp:573)
     // refuses botLevel + 3 < questLevel at any level; the pool uses +1
     // below 10.
-    inline bool QuestTakerTripFits(int questLevel, int takerAreaLevel,
+    // takerElsewhere: the hand-in NPC stands in another area than the bot
+    // (the next town). Start valleys are rated far above fresh bots in the
+    // area data (Camp Narache 6, Dun Morogh 7, Durotar 8), so an area-level
+    // cap blocked every hand-in inside the valley; the trip that must wait is
+    // the one that leaves the bot's area for a quest above its level.
+    // Ordinary quests stay open up to +3, like a player's green/yellow ones.
+    inline bool QuestTakerTripFits(int questLevel, bool takerElsewhere,
         std::uint32_t botLevel, bool masterlessRandom)
     {
         if (!masterlessRandom || botLevel >= 10)
             return true;
 
-        if (questLevel > 0 && questLevel - (int)botLevel > 1)
+        if (questLevel > 0 && questLevel - (int)botLevel > 3)
             return false;
 
-        if (takerAreaLevel > 0 && takerAreaLevel - (int)botLevel > 1)
+        if (takerElsewhere && questLevel > (int)botLevel)
             return false;
 
         return true;

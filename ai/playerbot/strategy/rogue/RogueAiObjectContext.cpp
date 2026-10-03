@@ -227,6 +227,8 @@ namespace ai
                 creators["apply mind poison off hand"] = [](PlayerbotAI* ai) { return new ApplyMindPoisonTrigger(ai, false); };
                 creators["apply instant poison off hand"] = [](PlayerbotAI* ai) { return new ApplyInstantPoisonTrigger(ai, false); };
                 creators["apply wound poison off hand"] = [](PlayerbotAI* ai) { return new ApplyWoundPoisonTrigger(ai, false); };
+                creators["main hand weapon no enchant"] = [](PlayerbotAI* ai) { return new MainHandWeaponNoEnchantTrigger(ai); };
+                creators["off hand weapon no enchant"] = [](PlayerbotAI* ai) { return new OffHandWeaponNoEnchantTrigger(ai); };
             }
         };
 

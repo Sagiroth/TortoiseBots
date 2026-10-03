@@ -330,9 +330,9 @@ bool TeleportMisplacedBot(::Player* bot, int32 areaLevel, const std::string& cau
 
 bool BotManager::RelocateHopelessBot(::Player* bot)
 {
-    // Diagnostic (15.9.): one line per revive saying why a bot was NOT relocated - a level-8
-    // bot died fifteen times to level-20 spiders in Hillsbrad without a single relocation
-    // although the zone table and the rule said it should have been.
+    // #404: both negatives below used TB_LOG_BASIC, i.e. one line per revive for every bot that is
+    // correctly NOT relocated (~4k lines in one measurement, 24/min). Staying put needs no attention,
+    // so these are TB_LOG_DEBUG; only the relocation itself stays loud (TeleportMisplacedBot, outString).
     ::PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     auto* deathCountValue = (ai && ai->GetAiObjectContext()) ? ai->GetAiObjectContext()->GetValue<uint32>("death count") : nullptr;
     uint32 deathCount = deathCountValue ? deathCountValue->Get() : 0;
@@ -341,7 +341,7 @@ bool BotManager::RelocateHopelessBot(::Player* bot)
     if (!MisplacedBotEligible(bot, areaLevel, &why))
     {
         if (bot && deathCount)
-            TB_LOG_BASIC("TortoiseBots: hopeless check %s level %u zone %u area %u deaths %u: not eligible - %s",
+            TB_LOG_DEBUG("TortoiseBots: hopeless check %s level %u zone %u area %u deaths %u: not eligible - %s",
                 bot->GetName(), bot->GetLevel(), bot->GetZoneId(), bot->GetAreaId(), deathCount, why.c_str());
         return false;
     }
@@ -352,7 +352,7 @@ bool BotManager::RelocateHopelessBot(::Player* bot)
          (PlayerbotAIConfig::IsIsolatedCustomZone(bot->GetAreaId()) || PlayerbotAIConfig::IsIsolatedCustomZone(bot->GetZoneId())))) ? 1 : 2;
     if (deathCount < minDeaths)
     {
-        TB_LOG_BASIC("TortoiseBots: hopeless check %s level %u zone %u area %u (level %d) deaths %u: below %u, not yet",
+        TB_LOG_DEBUG("TortoiseBots: hopeless check %s level %u zone %u area %u (level %d) deaths %u: below %u, not yet",
             bot->GetName(), bot->GetLevel(), bot->GetZoneId(), bot->GetAreaId(), areaLevel, deathCount, minDeaths);
         return false;
     }

@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/PerformanceMonitor.h"
 #include "BuyAction.h"
+#include "SellAction.h"
 #include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/strategy/values/ItemCountValue.h"
 #include "playerbot/strategy/values/BudgetValues.h"
@@ -37,6 +38,10 @@ bool BuyAction::Execute(Event& event)
         ObjectGuid vendorguid = *i;
         Creature *pCreature = bot->GetNPCIfCanInteractWith(vendorguid, UNIT_NPC_FLAG_VENDOR);
         if (!pCreature)
+            continue;
+        // #404: skip flagged-but-stockless NPCs (e.g. entry 1650, no npc_vendor rows) so bots
+        // neither buy from nor greet an error-spam vendor; quest service on the same NPC is unaffected.
+        if (!SellAction::HasVendorStock(pCreature))
             continue;
 
         vendored = true;
@@ -353,6 +358,8 @@ bool BuyBackAction::Execute(Event& event)
         vendorguid = *i;
         Creature* pCreature = bot->GetNPCIfCanInteractWith(vendorguid, UNIT_NPC_FLAG_VENDOR);
         if (!pCreature)
+            continue;
+        if (!SellAction::HasVendorStock(pCreature))
             continue;
 
         hasVendor = true;

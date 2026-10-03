@@ -114,6 +114,12 @@ bool XpGainAction::Execute(Event& event)
             // per-tick refill below only tops the current tier up, so swap
             // stale lower tiers for the new band's food/drink here.
             kit.AddFood();
+            // Stones/oils/poisons are seeded by tier and upgrade the same
+            // way (r-poisons #4); refresh them on ding so the real-item
+            // path never casts a stale rank. Bandages follow the First Aid
+            // ladder. All three are idempotent top-ups, pool bots only.
+            kit.AddConsumes();
+            kit.AddBandages();
         }
         TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
         sTravelMgr.SetNullTravelTarget(travelTarget);

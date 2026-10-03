@@ -37,7 +37,10 @@ namespace ai
     public:
         CastCreateSoulShardAction(PlayerbotAI* ai) : CastSpellAction(ai, "create soul shard") {}
         bool Execute(Event& event) override { return CastSpellAction::Execute(event); }
-        bool isUseful() override { return !ai->HasCheat(BotCheatMask::item) && bot->GetItemCount(6265) == 0; }
+        // Organic-only: Create Soul Shard exists in the DB (23464/24827) but
+        // is not a trained spell, so isPossible() stays false while Drain Soul
+        // is the single real harvest path (see the DrainSoulTrigger note).
+        bool isUseful() override { return false; }
     };
 
     class DestroySoulShardAction : public Action
@@ -47,8 +50,6 @@ namespace ai
         bool Execute(Event& event) override
         {
             (void)event;
-            if (ai->HasCheat(BotCheatMask::item))
-                return false;
             uint32 count = bot->GetItemCount(6265);
             if (count <= 5)
                 return false;
@@ -90,20 +91,6 @@ namespace ai
         {
             if (CastSpellAction::Execute(event))
             {
-                // Remove potential extra soul shard
-                if (ai->HasCheat(BotCheatMask::item))
-                {
-                    Unit* target = GetTarget();
-                    if (target && AI_VALUE2(uint8, "health", GetTargetName()) <= 20)
-                    {
-                        Item* soulShard = FindItemByEntryCompat(bot, 6265);
-                        if (soulShard)
-                        {
-                            bot->DestroyItem(soulShard->GetBagSlot(), soulShard->GetSlot(), true);
-                        }
-                    }
-                }
-
                 return true;
             }
 

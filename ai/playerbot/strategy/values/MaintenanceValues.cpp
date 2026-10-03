@@ -1,5 +1,6 @@
 
 #include "MaintenanceValues.h"
+#include "playerbot/strategy/actions/SellAction.h"
 #include "NearbyServicePolicy.h"
 #include "Mail/Mail.h"
 #include "MapNodes/MasterPlayer.h"
@@ -239,9 +240,16 @@ GuidPosition ai::NearbyServiceTarget(PlayerbotAI* ai)
             AcceptAllQuestsAction::OffersAcceptableQuest(ai, bot, guidP.GetWorldObject(bot->GetInstanceId())) &&
             !parks.Parked(guidP.GetRawValue(), NearbyServiceRankOf(NearbyServiceKind::Accept), time(0)))
             kind = NearbyServiceKind::Accept;
-        else if (needsVendor && guidP.HasNpcFlag(UNIT_NPC_FLAG_VENDOR) &&
-            !parks.Parked(guidP.GetRawValue(), NearbyServiceRankOf(NearbyServiceKind::Vendor), time(0)))
-            kind = NearbyServiceKind::Vendor;
+        else if (needsVendor && guidP.HasNpcFlag(UNIT_NPC_FLAG_VENDOR))
+        {
+            // #404: a flagged-but-stockless NPC (entry 1650) is not a vendor for this rule: the
+            // bot would walk 50 yd to it, sell nothing, and spam the core error on gossip. Quest
+            // verbs on the same NPC (turn-in/accept above) are untouched.
+            Creature* vendorCreature = guidP.GetCreature(bot->GetInstanceId());
+            if (vendorCreature && SellAction::HasVendorStock(vendorCreature) &&
+                !parks.Parked(guidP.GetRawValue(), NearbyServiceRankOf(NearbyServiceKind::Vendor), time(0)))
+                kind = NearbyServiceKind::Vendor;
+        }
         else if (needsTrainer && guidP.HasNpcFlag(UNIT_NPC_FLAG_TRAINER) &&
             RpgTrainTrigger::IsTrainerOf(guidP.GetCreatureTemplate(), bot) &&
             RpgTrainTrigger::TeachesAffordableSpell(ai, guidP, bot) &&
@@ -270,6 +278,10 @@ static bool VendorWithinNearbyServiceRange(PlayerbotAI* ai)
         GuidPosition guidP(guid, bot->GetMapId(), bot->GetInstanceId());
 
         if (!guidP.IsCreature() || !guidP.HasNpcFlag(UNIT_NPC_FLAG_VENDOR))
+            continue;
+        // #404: stockless flagged NPCs are not vendors for this answer either.
+        Creature* vendorCreature = guidP.GetCreature(bot->GetInstanceId());
+        if (!vendorCreature || !SellAction::HasVendorStock(vendorCreature))
             continue;
 
         if (guidP.sqDistance(bot) <= NearbyServiceRangeSq())

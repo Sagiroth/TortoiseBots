@@ -4227,7 +4227,11 @@ void PlayerbotFactory::InitReagents()
             items = { 17057, 17058, 17030 };
         break;
     case CLASS_WARLOCK:
-        regCount = 10;
+        // Organic-only (owner rule): shards are harvested with Drain Soul,
+        // never bulk-seeded. Keep the fresh-seed/hire/hire-restock paths at
+        // the keep band so a fresh warlock can summon its first pet without
+        // waiting for its first execute; further shards come from combat.
+        regCount = 2;
         if (bot->GetLevel() > 9)
             items = { 6265 };
         if (bot->GetLevel() > 49)
@@ -4265,6 +4269,10 @@ void PlayerbotFactory::InitReagents()
 
         uint32 maxCount = proto->GetMaxStackSize();
         uint32 want = maxCount * std::max<uint32>(1, regCount);
+        // Soul shards cap at the keep band the destroy-excess trigger
+        // enforces (5): seeding more would be destroyed out of combat.
+        if (bot->GetClass() == CLASS_WARLOCK && *i == 6265)
+            want = std::min(want, uint32(5));
 
         QueryItemCountVisitor visitor(*i);
         ai->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);

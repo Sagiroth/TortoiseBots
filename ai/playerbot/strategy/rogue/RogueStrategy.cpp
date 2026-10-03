@@ -89,6 +89,20 @@ void RogueStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 void RogueStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitNonCombatTriggers(triggers);
+
+    // Open-world poison upkeep (r-poisons #1): the spec pve/pvp/raid poison
+    // strategies only arrive via update-strats, so the always-on base keeps
+    // Instant on the main hand itself. Off hand prefers Deadly with an
+    // Instant fallback while Deadly is still trained/held. Trigger-gated, so
+    // once any poison lands every path goes quiet until it expires.
+    triggers.push_back(new TriggerNode(
+        "main hand weapon no enchant",
+        NextAction::array(0, new NextAction("apply instant poison main hand", 20.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "off hand weapon no enchant",
+        NextAction::array(0, new NextAction("apply deadly poison off hand", 19.0f),
+                             new NextAction("apply instant poison off hand", 18.0f), NULL)));
 }
 
 void RogueStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)

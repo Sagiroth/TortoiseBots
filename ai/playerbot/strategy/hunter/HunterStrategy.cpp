@@ -598,4 +598,16 @@ void HunterPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "often",
         NextAction::array(0, new NextAction("initialize pet", ACTION_NORMAL + 1), NULL)));
+
+    // E01: autonomous autocast sweep + one-shot stance pin. The toggle pays
+    // for a full pet-spell scan, so it rides the shared throttled "has pet"
+    // trigger; the stance pin must land right after (re)tame/summon, hence
+    // the stateful "new pet" one-shot.
+    triggers.push_back(new TriggerNode(
+        "has pet",
+        NextAction::array(0, new NextAction("toggle pet spell", ACTION_NORMAL + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "new pet",
+        NextAction::array(0, new NextAction("set pet stance", ACTION_NORMAL + 1), NULL)));
 }
