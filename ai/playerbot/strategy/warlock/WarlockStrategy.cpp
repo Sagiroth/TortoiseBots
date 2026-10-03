@@ -432,6 +432,16 @@ void WarlockPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers
     triggers.push_back(new TriggerNode(
         "often",
         NextAction::array(0, new NextAction("blood pact", ACTION_NORMAL), NULL)));
+
+    // E01: same autonomous upkeep as hunter pets — throttled sweep plus
+    // one-shot stance pin after each (re)summon.
+    triggers.push_back(new TriggerNode(
+        "has pet",
+        NextAction::array(0, new NextAction("toggle pet spell", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "new pet",
+        NextAction::array(0, new NextAction("set pet stance", ACTION_NORMAL), NULL)));
 }
 
 void WarlockPetPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

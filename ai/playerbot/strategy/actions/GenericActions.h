@@ -157,6 +157,28 @@ namespace ai
         bool Execute(Event& event) override;
     };
 
+    // Autonomous pet upkeep (E01): ported from mod-playerbots TogglePetSpellAutoCastAction /
+    // SetPetStanceAction so the queued "toggle pet spell" / "set pet stance" nodes in the
+    // live pet strategies resolve. The toggle sweep walks pet->m_petSpells and applies
+    // runtime/PetUpkeepPolicy.h (non-passive, minus the Prowl/Cower/Spell-Lock/Devour denylist);
+    // the stance action pins REACT_DEFENSIVE on the pet plus every guardian (except totems),
+    // matching PlayerbotFactory::InitPet and AttackAction::CanPetAttack's passive gate.
+    class TogglePetSpellAutoCastAction : public Action
+    {
+    public:
+        TogglePetSpellAutoCastAction(PlayerbotAI* ai) : Action(ai, "toggle pet spell") {}
+        bool Execute(Event& event) override;
+        bool isPossible() override;
+    };
+
+    class SetPetStanceAction : public Action
+    {
+    public:
+        SetPetStanceAction(PlayerbotAI* ai) : Action(ai, "set pet stance") {}
+        bool Execute(Event& event) override;
+        bool isPossible() override;
+    };
+
     class PetAttackAction : public Action
     {
     public:

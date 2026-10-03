@@ -676,6 +676,29 @@ namespace ai
 		}
 	};
 
+	class HasPetTrigger : public Trigger
+	{
+	public:
+		HasPetTrigger(PlayerbotAI* ai) : Trigger(ai, "has pet", 30) {}
+
+		virtual bool IsActive() override
+        {
+			return AI_VALUE(Unit*, "pet target") && !AI_VALUE2(bool, "mounted", "self target");
+		}
+	};
+
+	class NewPetTrigger : public Trigger
+	{
+	public:
+		NewPetTrigger(PlayerbotAI* ai) : Trigger(ai, "new pet"), fired(false) {}
+
+		virtual bool IsActive() override;
+
+	private:
+		ObjectGuid lastPetGuid;
+		bool fired;
+	};
+
 	class PetAttackTrigger : public Trigger
 	{
 	public:

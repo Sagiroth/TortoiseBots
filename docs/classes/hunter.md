@@ -59,6 +59,7 @@ Hunters excel at sustained single-target ranged DPS, pet off-tanking, snares, an
   - Automatically summons its pet out of combat. With no pet at all it will attempt to tame a nearby tameable beast.
   - Revives dead pets using *Revive Pet* and heals injured pets during combat via *Mend Pet*.
   - Restores an unhappy pet's happiness via the feed handler (no food items are consumed).
+  - **Autonomous upkeep:** out of combat the bot sweeps the pet's known spells and enables autocast on every non-passive one except *Prowl*, *Cower*, *Spell Lock* and *Devour Magic* (deliberate-cast abilities), and pins the pet plus guardians to *Defensive* after each (re)tame or summon. Explicit `.bot pet aggressive|defensive|passive` orders still apply immediately.
 - **Pet Safety & CC Discipline:**
   - When a target is crowd-controlled (e.g. *Polymorph* or *Freezing Trap*), the bot's pet is prevented from attacking the CC'd mob, preventing accidental breaks.
 - **Crowd Control:**
