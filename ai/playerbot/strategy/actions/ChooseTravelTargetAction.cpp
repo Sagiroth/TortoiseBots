@@ -7,6 +7,7 @@
 #include "MoveToTravelTargetAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/PullRegenPolicy.h"
+#include "playerbot/GrindSpotPolicy.h"
 #include "playerbot/TravelInstancePolicy.h"
 #include "playerbot/TravelRepickPolicy.h"
 #include "playerbot/strategy/values/VendorTripPolicy.h"
@@ -692,7 +693,16 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                     }
 
                     int32 posAreaLevel = position->GetAreaLevel();
-                    if (posAreaLevel > 0 && posAreaLevel > (int32)bot->GetLevel() + 5)
+                    // Starter-valley exemption for the grind pick (GrindSpotPolicy.h):
+                    // the valley average sits far above a level 1-4 bot while its
+                    // mobs are vetted in-cap by the destination band, so the
+                    // ceiling would veto every local point. Mirrors the
+                    // IsLocationLevelValid beginnerGrind exemption. Owned/hired
+                    // bots keep the ceiling.
+                    bool const valleyExempted = destination->GetPurpose() == TravelDestinationPurpose::Grind &&
+                        ai::GrindValleyExempted(bot->GetLevel(),
+                            sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster());
+                    if (!valleyExempted && posAreaLevel > 0 && posAreaLevel > (int32)bot->GetLevel() + 5)
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - area level too high", "debug travel");
                         continue;
