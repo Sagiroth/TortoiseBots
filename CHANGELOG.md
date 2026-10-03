@@ -127,6 +127,12 @@
 - Per-spell suppression still works everywhere through the skip-spell list (`ss`), so you can keep a single fear on lockdown while leaving the rest of the toolkit available. [#437](https://github.com/Sagiroth/TortoiseBots/pull/437)
 - Behavior and commands documented in the player controls guide. [#437](https://github.com/Sagiroth/TortoiseBots/pull/437)
 
+### Economy & Vendors
+
+- Vendor buys are now ordered by the bot's own item score — item level only used as a tiebreaker — matching mod-playerbots behavior so upgrades land where they actually matter. [#438](https://github.com/Sagiroth/TortoiseBots/pull/438)
+- The gear budget now also covers replacing bad or broken gear, not just filling empty slots, so bots stop running around in shredded equipment. [#438](https://github.com/Sagiroth/TortoiseBots/pull/438)
+- Trainer-money reserve still applies — bots won't blow their training funds on vendor loot. [#438](https://github.com/Sagiroth/TortoiseBots/pull/438)
+
 ## 2026-10-02
 
 ### Levelling & Progression
