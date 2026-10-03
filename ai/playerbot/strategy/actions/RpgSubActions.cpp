@@ -10,7 +10,6 @@
 #include "GossipDef.h"
 #include "GuildCreateActions.h"
 #include "SocialMgr.h"
-#include "playerbot/FlightErrandPolicy.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/RandomBotFacade.h"
 #include "playerbot/strategy/values/MaintenanceValues.h"
@@ -182,55 +181,32 @@ bool RpgTaxiAction::Execute(Event& event)
 
     GuidPosition guidP = rpg->guidP();
 
-    ai->RemoveShapeshift();
     ai->Unmount();
 
     uint32 node = sObjectMgr.GetNearestTaxiNode(guidP.getX(), guidP.getY(), guidP.getZ(), guidP.GetMapId(), bot->GetTeam());
-    if (!node)
-        return false;
-
-    WorldPosition const botPos(bot);
-    bool const botInCapital = botPos.HasAreaFlag(AREA_FLAG_CAPITAL);
-    uint32 const botLevel = bot->GetLevel();
 
     std::vector<uint32> nodes;
     for (uint32 i = 0; i < sTaxiPathStore.GetNumRows(); ++i)
     {
         TaxiPathEntry const* entry = sTaxiPathStore.LookupEntry(i);
-        if (!entry || entry->from != node)
-            continue;
-        if (!bot->GetTaxi().IsTaximaskNodeKnown(entry->to) && !bot->IsTaxiCheater())
-            continue;
-        // Only destinations usable by the bot's own faction. Previously
-        // the sole check was whether the flight point is KNOWN - but with
-        // "AllFlightPaths = 1" (or isTaxiCheater) every node counts as
-        // known, including the enemy's. The randomly drawn destination
-        // therefore flew bots straight into enemy towns, where they landed
-        // at the flight master (observed live: Alliance bots in The
-        // Crossroads and Orgrimmar, Horde bots in Stormwind).
-        // A flight point is only usable by a faction if it has a mount
-        // entry for it - the same check the core does in
-        // ObjectMgr::GetNearestTaxiNode.
-        TaxiNodesEntry const* toNode = sObjectMgr.GetTaxiNodeEntry(entry->to);
-        if (!toNode || !toNode->MountCreatureID[bot->GetTeam() == ALLIANCE ? 1 : 0])
-            continue;
-        // Autonomous flight errand (#426, donor GetOptimalFlightDestinations):
-        // a flight may not land where the RPG walk gate would not let the bot
-        // stand (ceiling +5, outgrown floor +10 with a capital exemption).
-        // Unknown areas (unloaded vmap at cross-map legs) fail open; the
-        // IsLocationLevelValid gate vets the bot on arrival. Coexists with
-        // the #418/#428/#434 gates by adding to them, never bypassing them.
-        WorldPosition const destPos(toNode->map_id, toNode->x, toNode->y, toNode->z);
-        int32 const destAreaLevel = destPos.GetAreaLevel();
-        AreaTableEntry const* destZone = nullptr;
-        AreaTableEntry const* destArea = destPos.GetArea();
-        if (destArea)
-            destZone = destArea->ZoneId ? GetAreaEntryByAreaID(destArea->ZoneId) : destArea;
-        bool const destZoneIsCapital = destZone && (destZone->Flags & AREA_FLAG_CAPITAL);
-        if (!FlightErrandDestinationUsable(botLevel, botInCapital, destAreaLevel, destZoneIsCapital))
-            continue;
+        if (entry && entry->from == node && (bot->GetTaxi().IsTaximaskNodeKnown(entry->to) || bot->IsTaxiCheater()))
+        {
+            // Only destinations usable by the bot's own faction. Previously
+            // the sole check was whether the flight point is KNOWN - but with
+            // "AllFlightPaths = 1" (or isTaxiCheater) every node counts as
+            // known, including the enemy's. The randomly drawn destination
+            // therefore flew bots straight into enemy towns, where they landed
+            // at the flight master (observed live: Alliance bots in The
+            // Crossroads and Orgrimmar, Horde bots in Stormwind).
+            // A flight point is only usable by a faction if it has a mount
+            // entry for it - the same check the core does in
+            // ObjectMgr::GetNearestTaxiNode.
+            TaxiNodesEntry const* toNode = sObjectMgr.GetTaxiNodeEntry(entry->to);
+            if (!toNode || !toNode->MountCreatureID[bot->GetTeam() == ALLIANCE ? 1 : 0])
+                continue;
 
-        nodes.push_back(i);
+            nodes.push_back(i);
+        }
     }
 
     if (nodes.empty())
@@ -272,8 +248,8 @@ bool RpgTaxiAction::Execute(Event& event)
         return false;
     }
 
+
     sLog.outDetail("Bot #%d <%s> is flying from %s to %s (%zu location available)", bot->GetGUIDLow(), bot->GetName(), nodeFrom->name[LOCALE_enUS], nodeTo->name[LOCALE_enUS], nodes.size());
-    sPlayerbotAIConfig.logEvent(ai, "TaxiFlight", nodeFrom->name[LOCALE_enUS], nodeTo->name[LOCALE_enUS]);
     bot->SetMoney(money);
 
     rpg->AfterExecute();

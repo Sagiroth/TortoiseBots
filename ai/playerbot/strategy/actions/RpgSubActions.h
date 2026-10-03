@@ -1,6 +1,5 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
-#include "playerbot/RandomBotFacade.h"
 
 #include "playerbot/strategy/Action.h"
 #include "MovementActions.h"
@@ -110,7 +109,7 @@ namespace ai
     public:
         RpgTaxiAction(PlayerbotAI* ai, std::string name = "rpg taxi") : RpgSubAction(ai, name) {}
 
-        virtual bool isUseful() override { return rpg->InRange() && !ai->HasRealPlayerMaster() && (bot->GetGroup() || sRandomBotFacade.IsRandomBot(bot)); }
+        virtual bool isUseful() override { return rpg->InRange() && !ai->HasRealPlayerMaster() && bot->GetGroup(); }
 
         virtual std::string GetRpgActionName() const override { return "grabbing a taxi from"; };
 

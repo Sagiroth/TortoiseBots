@@ -12,6 +12,8 @@
 #include "Maps/PathFinder.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/TravelRepickPolicy.h"
+#include "playerbot/FlightErrandPolicy.h"
+#include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
 #include <cstdlib>
 #include <iomanip>
@@ -213,6 +215,116 @@ bool MoveToTravelTargetAction::TrySettleUnreachableHandIn(TravelTarget* target, 
 
     return SettleUnreachableTakerHandIn(ai, questId, takerEntry, "unreachable");
 }
+// Goal-directed flight (#426): a flight is transport toward the travel target
+// the bot already chose, never a random errand. When the bot has a far travel
+// target and a KNOWN direct taxi hop from the nearest flight master lands at
+// the node nearest that destination - level-valid for the bot (fail closed on
+// unknown levels) and meaningfully closer than the takeoff - the bot boards
+// instead of walking the whole way. Pool randoms only (no real master);
+// owned/hired bots keep walking with their player. The bot pays the normal
+// fare from its own gold above the class-trainer reserve - no money injection.
+// Cost: two GetNearestTaxiNode scans (in-memory DBC loop, no world objects)
+// plus in-memory area-table reads per travel tick, only for trips >= 1500 yd.
+// No new vmap load beyond what the pick-time gates already do: the one
+// WorldPosition::GetArea call below is the same call SetBestTarget makes per
+// candidate, and the level itself comes from the startup-cached zone-level
+// table (TryGetValidatedAreaLevel), never from a fresh vmap read.
+static bool TryBoardFlightToTarget(PlayerbotAI* ai, Player* bot, TravelTarget* target,
+    WorldPosition const& botLocation, WorldPosition const& location)
+{
+    if (ai->HasRealPlayerMaster() || !sRandomBotFacade.IsRandomBot(bot))
+        return false;
+    if (!bot->IsAlive() || bot->IsInCombat())
+        return false;
+    if (bot->IsTaxiFlying() || bot->IsBeingTeleported())
+        return false;
+    if (!target || !target->getPosition())
+        return false;
+
+    float const tripDistance = botLocation.distance(location);
+    if (tripDistance < ai::FLIGHT_TRANSPORT_MIN_TRIP_YD)
+        return false;
+
+    uint32 const fromNode = sObjectMgr.GetNearestTaxiNode(botLocation.getX(), botLocation.getY(),
+        botLocation.getZ(), botLocation.GetMapId(), bot->GetTeam());
+    if (!fromNode || !bot->GetTaxi().IsTaximaskNodeKnown(fromNode))
+        return false;
+
+    TaxiNodesEntry const* fromEntry = sObjectMgr.GetTaxiNodeEntry(fromNode);
+    if (!fromEntry || !fromEntry->MountCreatureID[bot->GetTeam() == ALLIANCE ? 1 : 0])
+        return false;
+    WorldPosition const masterPos(fromEntry->map_id, fromEntry->x, fromEntry->y, fromEntry->z);
+    if (masterPos.GetMapId() != botLocation.GetMapId())
+        return false;
+
+    uint32 const toNode = sObjectMgr.GetNearestTaxiNode(location.getX(), location.getY(),
+        location.getZ(), location.GetMapId(), bot->GetTeam());
+    if (!toNode || toNode == fromNode)
+        return false;
+    if (!bot->GetTaxi().IsTaximaskNodeKnown(toNode))
+        return false;
+
+    TaxiNodesEntry const* toEntry = sObjectMgr.GetTaxiNodeEntry(toNode);
+    if (!toEntry || !toEntry->MountCreatureID[bot->GetTeam() == ALLIANCE ? 1 : 0])
+        return false;
+
+    uint32 taxiPath = 0;
+    uint32 fare = 0;
+    sObjectMgr.GetTaxiPath(fromNode, toNode, taxiPath, fare);
+    if (!taxiPath)
+        return false;
+
+    uint32 const botLevel = bot->GetLevel();
+    bool const botInCapital = botLocation.HasAreaFlag(AREA_FLAG_CAPITAL);
+    WorldPosition const destPos(toEntry->map_id, toEntry->x, toEntry->y, toEntry->z);
+    AreaTableEntry const* destArea = destPos.GetArea();
+    if (!destArea)
+        return false;
+    uint32 const destZoneId = destArea->ZoneId ? destArea->ZoneId : destArea->Id;
+    int32 destAreaLevel = 0;
+    if (!sTravelMgr.TryGetValidatedAreaLevel(destZoneId, destAreaLevel) || destAreaLevel <= 0)
+        return false;
+    AreaTableEntry const* destZone = GetAreaEntryByAreaID(destZoneId);
+    bool const destZoneIsCapital = destZone && (destZone->Flags & AREA_FLAG_CAPITAL);
+    if (!ai::FlightTransportDestinationUsable(botLevel, botInCapital, destAreaLevel, destZoneIsCapital))
+        return false;
+
+    WorldPosition const landPos(toEntry->map_id, toEntry->x, toEntry->y, toEntry->z);
+    if (!ai::FlightTransportLegWorthwhile(tripDistance, botLocation.distance(location), landPos.distance(location)))
+        return false;
+
+    uint32 const trainerReserve = AI_VALUE2(uint32, "total money needed for", (uint32)NeedMoneyFor::spells);
+    if (!ai::FlightTransportAffordable(bot->GetMoney(), fare, trainerReserve))
+        return false;
+
+    // The master must be reachable on foot: the bot walks to it first via the
+    // normal path below, and only boards inside interaction range. A distant
+    // master means the walk handles this tick; the next tick retries closer.
+    if (botLocation.distance(masterPos) > INTERACTION_DISTANCE)
+        return false;
+
+    std::list<ObjectGuid> npcs = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
+    Creature* flightMaster = nullptr;
+    for (ObjectGuid guid : npcs)
+    {
+        flightMaster = bot->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_FLIGHTMASTER);
+        if (flightMaster)
+            break;
+    }
+    if (!flightMaster)
+        return false;
+
+    ai->RemoveShapeshift();
+    ai->Unmount();
+    bot->GetSession()->SendLearnNewTaxiNode(flightMaster);
+    if (!bot->ActivateTaxiPathTo({ fromNode, toNode }, flightMaster, 0))
+        return false;
+
+    TaxiNodesEntry const* nodeFrom = fromEntry;
+    TaxiNodesEntry const* nodeTo = toEntry;
+    sPlayerbotAIConfig.logEvent(ai, "TaxiFlight", nodeFrom->name[LOCALE_enUS], nodeTo->name[LOCALE_enUS]);
+    return true;
+}
 
 bool MoveToTravelTargetAction::Execute(Event& event)
 {
@@ -231,6 +343,12 @@ bool MoveToTravelTargetAction::Execute(Event& event)
 
     WorldPosition botLocation(bot);
     WorldPosition location = *target->getPosition();
+
+    // Goal-directed flight before the ordinary walk: a far travel target with
+    // a level-valid KNOWN taxi hop that lands meaningfully closer boards the
+    // flight instead of walking. Returns true once airborne.
+    if (TryBoardFlightToTarget(ai, bot, target, botLocation, location))
+        return true;
 
     Group* group = bot->GetGroup();
     if (ai->IsGroupLeader() && !urand(0, 1) && !bot->IsInCombat())
