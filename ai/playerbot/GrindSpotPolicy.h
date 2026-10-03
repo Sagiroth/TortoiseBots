@@ -37,6 +37,54 @@ namespace ai
     // still use (TravelMgr::IsLocationLevelValid).
     std::int32_t const GRIND_AREA_MARGIN_OWNED = 5;
 
+    // Whether a masterless starter bot (level 1-4) is exempt from the
+    // destination area-average ceiling. Its own valley is rated far above it
+    // (Camp Narache and Mulgore 6, Dun Morogh 7, Durotar 8), so the ceiling
+    // vetoes every local grind point and the bot parks at spawn with no
+    // destination at all - the starter-valley wall the ladder window exists
+    // for. The mob-level band above still vets every creature (in-cap only),
+    // and the grey, critter, elite, point-danger and distance gates are
+    // untouched, so the walk stays inside the safe valley. Owned/hired bots
+    // keep the ceiling: their player decides where they hunt. Same scope as
+    // the TravelMgr::IsLocationLevelValid beginnerGrind exemption, which this
+    // mirrors at the two other gates that apply the same ceiling.
+    inline bool GrindValleyExempted(std::uint32_t botLevel, bool masterlessRandom)
+    {
+        return masterlessRandom && botLevel <= 4;
+    }
+
+    // How far an idle starter bot looks for a fallback grind target when the
+    // normal scan found nothing and it holds no travel destination. Starter
+    // mobs graze past the 60 yd combat scan (Camp Narache Plainstriders sit
+    // 115+ yd from the camp), so a bot with no destination idles until one
+    // wanders in. 150 yd is the follow-leash scale: near enough to walk
+    // without crossing zones, far enough to reach the grazing herds.
+    float const GRIND_IDLE_FALLBACK_RANGE_YD = 150.0f;
+
+    // Minimum time between fallback scans for one bot. The normal scan runs
+    // every value tick; the wider grid visit is only re-tried on this
+    // cadence so a stranded pool does not pay it every second.
+    std::uint32_t const GRIND_IDLE_FALLBACK_INTERVAL_MS = 10000;
+
+    // Highest bot level the fallback serves. Above this the travel layer owns
+    // longer walks (destinations, route gates, death-spot avoidance); the
+    // fallback is the starter safety net, not a second travel system.
+    std::uint32_t const GRIND_IDLE_FALLBACK_MAX_LEVEL = 5;
+
+    // Whether an idle starter bot may take a fallback grind target right now:
+    // masterless, low level, no journey in flight, not fighting, overworld,
+    // able to move, and the normal pick came back empty. Owned/hired bots
+    // keep today's behaviour (their player decides), and a bot with a travel
+    // destination keeps walking it - the travel layer outranks this rule.
+    inline bool GrindIdleFallbackAllowed(bool masterlessRandom, std::uint32_t botLevel,
+        bool travelTargetActive, bool inCombat, bool inBattleground, bool overworld,
+        bool canMoveAround, bool normalPickEmpty)
+    {
+        return masterlessRandom && botLevel <= GRIND_IDLE_FALLBACK_MAX_LEVEL &&
+            !travelTargetActive && !inCombat && !inBattleground && overworld &&
+            canMoveAround && normalPickEmpty;
+    }
+
     // Creature-level window a grind destination must sit in.
     //
     // The long-standing window (roughly half the bot's level, narrowed further by

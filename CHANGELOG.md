@@ -127,6 +127,42 @@
 - Per-spell suppression still works everywhere through the skip-spell list (`ss`), so you can keep a single fear on lockdown while leaving the rest of the toolkit available. [#437](https://github.com/Sagiroth/TortoiseBots/pull/437)
 - Behavior and commands documented in the player controls guide. [#437](https://github.com/Sagiroth/TortoiseBots/pull/437)
 
+### Economy & Vendors
+
+- Vendor buys are now ordered by the bot's own item score — item level only used as a tiebreaker — matching mod-playerbots behavior so upgrades land where they actually matter. [#438](https://github.com/Sagiroth/TortoiseBots/pull/438)
+- The gear budget now also covers replacing bad or broken gear, not just filling empty slots, so bots stop running around in shredded equipment. [#438](https://github.com/Sagiroth/TortoiseBots/pull/438)
+- Trainer-money reserve still applies — bots won't blow their training funds on vendor loot. [#438](https://github.com/Sagiroth/TortoiseBots/pull/438)
+
+### Starter Zones & World
+- Fresh level 1–4 pool bots no longer get vetoed by the area-average level ceiling in starter zones (Durotar, Dun Morogh ratings sit above new characters), so they can actually pick grind points and level up instead of standing idle. Mob level bands, point danger, grey/elite checks, and route gates still apply. [#439](https://github.com/Sagiroth/TortoiseBots/pull/439)
+
+### Combat & AI
+- Service NPCs that can't be reached — indoors, on ledges, or otherwise unreachable — no longer trap bots in a failing approach loop every tick. Three failed approaches park that NPC for 90 s, matching the existing failing-verb behavior, and dead or unloaded NPCs are skipped outright (finishes the #407 nearby service loop cleanup). [#439](https://github.com/Sagiroth/TortoiseBots/pull/439)
+
+### Travel & Pool Bots
+- Pool bots now search local windows for grind and camp spots (500 yd near / 2500 yd far, scaled down below level 5) instead of a 10000 yd sweep, so they stop ping-ponging across the zone. [#441](https://github.com/Sagiroth/TortoiseBots/pull/441)
+- Outgrown-zone travel keeps the long-range search, so bots still relocate when it's actually time to move on. [#441](https://github.com/Sagiroth/TortoiseBots/pull/441)
+- Radius change is request-side only — no extra world scans, no added server cost. [#441](https://github.com/Sagiroth/TortoiseBots/pull/441)
+- Plays nice with existing level/point-danger gates and the idle-starter fallback scan. Closes #424. [#441](https://github.com/Sagiroth/TortoiseBots/pull/441)
+
+### Quests & Objectives
+
+- Bots now give up on a quest objective after ~5 minutes stuck at the objective with zero progress, so they stop farming a broken spawn or unreachable target and get back to something productive [#442](https://github.com/Sagiroth/TortoiseBots/pull/442)
+- The stall timer only ticks while the bot is actually at the objective area — travel time is never counted, so long cross-zone runs won't false-trigger an abandon [#442](https://github.com/Sagiroth/TortoiseBots/pull/442)
+- The verdict is anchored per quest across all of its counters, so a multi-part objective won't be abandoned just because one counter is slow [#442](https://github.com/Sagiroth/TortoiseBots/pull/442)
+- Stalled quests are parked for 30 minutes instead of blacklisted; other quests and all hand-ins keep running normally while it cools down [#442](https://github.com/Sagiroth/TortoiseBots/pull/442)
+- Exploration and scripted event objectives (no counters) are exempt, so world/POI-driven quests can't get stuck in an abandon loop [#442](https://github.com/Sagiroth/TortoiseBots/pull/442)
+- Emits a single `QuestObjectiveStalled` event per verdict, making it easy to spot problem quests in logs without event spam [#442](https://github.com/Sagiroth/TortoiseBots/pull/442)
+
+### Observability & Engine
+
+- Pool KPI report now tracks **zone-migration**, answering the "do bots actually move to level-appropriate zones?" question with hard numbers instead of vibes [#443](https://github.com/Sagiroth/TortoiseBots/pull/443)
+- New **fit-share per level band**: counts bots sitting in a zone within `level -2..+5`, using the exact same rule as the travel gates, so the report matches in-game behavior instead of a parallel heuristic [#443](https://github.com/Sagiroth/TortoiseBots/pull/443)
+- **Movement telemetry added**: bots that changed zone, top `from -> to` pairs, and highest zone reached — enough to spot bots ping-ponging between zones or camping a single one forever [#443](https://github.com/Sagiroth/TortoiseBots/pull/443)
+- **Stuck-in-starter detection**: flags bots still in their start zone above level 8, plus left-start counts per start zone, so a broken travel path or gate gets caught per-zone rather than blamed on "bots are dumb" [#443](https://github.com/Sagiroth/TortoiseBots/pull/443)
+- Fully **backward compatible** with old baselines — existing stored reports still parse, no re-baselining required [#443](https://github.com/Sagiroth/TortoiseBots/pull/443)
+- Metrics documented in the observability guide so server operators can read the new fields without reverse-engineering the script [#443](https://github.com/Sagiroth/TortoiseBots/pull/443)
+
 ## 2026-10-02
 
 ### Levelling & Progression

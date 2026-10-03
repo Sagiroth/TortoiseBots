@@ -315,6 +315,13 @@ GuidPosition ai::NearbyServiceTarget(PlayerbotAI* ai)
         if (!guidP.IsCreature())
             continue;
 
+        // A dead NPC serves nothing, and the executor refuses it every tick
+        // without recording a verb fail - so without this the action fails at
+        // tick speed, with no park to trip, until the corpse is gone.
+        Creature* serviceCreature = guidP.GetCreature(bot->GetInstanceId());
+        if (!serviceCreature || !serviceCreature->IsAlive())
+            continue;
+
         float const sqDistance = guidP.sqDistance(bot);
 
         if (sqDistance > NearbyServiceRangeSq())
@@ -330,6 +337,13 @@ GuidPosition ai::NearbyServiceTarget(PlayerbotAI* ai)
         bool const isQuestGiver = guidP.HasNpcFlag(UNIT_NPC_FLAG_QUESTGIVER);
         NearbyServiceFailParks const parks = AI_VALUE(NearbyServiceFailParks, "nearby service fail parks");
 
+        // The walk leg records here when MoveNear keeps failing out of range
+        // (indoor NPC, unreachable ledge): the NPC is skipped for all verbs
+        // until the park expires instead of failing at tick speed with no
+        // verb park to trip.
+        if (parks.Parked(guidP.GetRawValue(), NearbyServiceRankOf(NearbyServiceKind::Approach), time(0)))
+            continue;
+
         if (needsTurnIn && isQuestGiver && AI_VALUE2(bool, "can turn in quest npc", guidP.GetEntry()) &&
             !parks.Parked(guidP.GetRawValue(), NearbyServiceRankOf(NearbyServiceKind::TurnIn), time(0)))
             kind = NearbyServiceKind::TurnIn;
@@ -342,7 +356,7 @@ GuidPosition ai::NearbyServiceTarget(PlayerbotAI* ai)
             // #404: a flagged-but-stockless NPC (entry 1650) is not a vendor for this rule: the
             // bot would walk 50 yd to it, sell nothing, and spam the core error on gossip. Quest
             // verbs on the same NPC (turn-in/accept above) are untouched.
-            Creature* vendorCreature = guidP.GetCreature(bot->GetInstanceId());
+            Creature* vendorCreature = serviceCreature;
             if (vendorCreature && SellAction::HasVendorStock(vendorCreature) &&
                 !parks.Parked(guidP.GetRawValue(), NearbyServiceRankOf(NearbyServiceKind::Vendor), time(0)))
                 kind = NearbyServiceKind::Vendor;
