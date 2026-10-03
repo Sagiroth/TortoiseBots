@@ -10,12 +10,12 @@ An independent, native PlayerBots module for the canonical **Tortoise WoW 1.18.1
 
 ## ✨ What It Does
 
-* **A living world.** A pool of autonomous bots (size set by `MinRandomBots` / `MaxRandomBots`) is spread across levels 1–60 by default, or starts everyone at level 1 for a fresh-realm feel (`RandomBotStartLevelMin` / `Max`). From there the bots level on their own: questing, grinding, training, selling loot, gathering and moving on to new zones as they outgrow them. Bots that start above level 1 get level-appropriate starting gear once; after that no gold is handed out, gear comes from loot, quests and vendors, and the auction house only sees what bots really loot.
-* **Bots that keep going.** Bots rest before the next pull, flee at critical health, avoid spots where they keep dying, and are rescued automatically when they get stuck or stall as a ghost.
-* **Sensible kit.** Every pool bot carries three 14-slot bags, level-appropriate food and drink (water only for mana users), ammo and a quiver or ammo pouch matched to its weapon, a soul pouch for warlocks, and buys a better vendor weapon with its own gold when it can afford one. Primary professions arrive at level 5.
-* **Your own party.** Play with bot alts from your own account or hire temporary companions at `<Mercenary Hire>` recruiters; they follow, fight, heal and tank in dungeons and raids, controlled from the TortoiseBotsManager addon.
-* **Full class AI.** Rotations for all 9 classes, including Turtle WoW 1.18.1 custom abilities.
-* **Observability.** A web dashboard with a live map, per-bot activity, incidents and a one-command KPI report (`tools/pool_kpi_report.py`) for comparing pool runs.
+* **A living world.** A pool of autonomous bots quests, grinds, trains, trades and travels on its own. The pool is configurable for different playstyles, from a fresh realm where everyone starts at level 1 to a populated world with bots at every level.
+* **Your own party.** Play with bot alts from your own account or hire companions; they follow, fight, heal and tank in dungeons and raids, controlled from the TortoiseBotsManager addon.
+* **Full class AI** for all 9 classes, including Turtle WoW 1.18.1 custom abilities.
+* **Observability.** A web dashboard with a live map, per-bot activity and incidents.
+
+Details and every setting are in the [documentation](docs/README.md).
 
 ---
 
