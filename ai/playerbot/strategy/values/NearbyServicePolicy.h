@@ -63,6 +63,15 @@ namespace ai
     // take costs nothing and feeds that loop, so it comes next. The town errands
     // come after both, and there the sale still outranks the class rank it
     // funds. None means "not a service target".
+    //
+    // Approach is not a verb the bot runs: it is the walk leg to the NPC
+    // itself. A MoveNear that keeps failing while the bot is still out of
+    // range (an indoor NPC whose near points all fail the line-of-sight
+    // sweep, a ledge the pathfinder cannot reach) records here instead of
+    // failing at tick speed with no park to trip - live, the verb parks
+    // below never saw those fails, so the action looped until the need went
+    // away. While the approach is parked the selector skips the NPC for all
+    // verbs, then offers it again once the park expires.
     enum class NearbyServiceKind : int
     {
         None = -1,
@@ -70,6 +79,7 @@ namespace ai
         Accept = 1,
         Vendor = 2,
         Trainer = 3,
+        Approach = 4,
     };
 
     inline int NearbyServiceRankOf(NearbyServiceKind kind)
@@ -95,7 +105,9 @@ namespace ai
 
     // One NPC the rule could walk to. rank: lower is serviced first - see
     // NearbyServiceRankOf() - negative = not a service target at all. Ties go to
-    // the nearest NPC.
+    // the nearest NPC. Approach never appears here: it is the walk leg, not
+    // a verb, so the selector skips an approach-parked NPC outright instead
+    // of ranking it.
     struct NearbyServiceCandidate
     {
         int rank;

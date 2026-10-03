@@ -10,6 +10,10 @@
 #include "playerbot/strategy/actions/ChooseTargetActions.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
 #include "playerbot/PullRegenPolicy.h"
+#include "playerbot/GrindSpotPolicy.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 
 namespace
 {
@@ -40,6 +44,13 @@ Unit* GrindTargetValue::Calculate()
     {
         target = FindTargetForGrinding(assistCount++);
     }
+
+    // Idle-starter fallback: the normal scan found nothing and the bot holds
+    // no travel destination, so without this it idles until a mob wanders
+    // into the 60 yd scan. A low-level masterless bot then walks to the
+    // nearest in-cap XP mob instead of gossip-touring the camp.
+    if (!target)
+        target = FindIdleFallbackTarget();
 
     return target;
 }
@@ -347,6 +358,81 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
     }
 
     return result;
+}
+
+Unit* GrindTargetValue::FindIdleFallbackTarget()
+{
+    // Gate first, scan never: the wider grid visit only runs for an idle
+    // starter bot with no journey and an empty normal pick (see
+    // GrindIdleFallbackAllowed in GrindSpotPolicy.h). Everything else keeps
+    // today's behaviour.
+    TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
+
+    uint32 const nowMs = WorldTimer::getMSTime();
+    if (lastIdleFallbackMs && nowMs - lastIdleFallbackMs < ai::GRIND_IDLE_FALLBACK_INTERVAL_MS)
+        return nullptr;
+    lastIdleFallbackMs = nowMs;
+
+    // The normal 60 yd scan is empty by construction here: look a little
+    // wider for the nearest mob the bot can actually fight. Every per-mob
+    // gate mirrors the normal pick - in-cap only (PullGrindLevelCap, never
+    // loosened), XP-paying only (no greys), attackable, unclaimed - plus a
+    // path check per candidate so the order never becomes the 50 yd stare
+    // the reach action then has to give up on.
+    std::list<Unit*> units;
+    MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck u_check(bot, bot, ai::GRIND_IDLE_FALLBACK_RANGE_YD);
+    MaNGOS::UnitListSearcher<MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck> searcher(units, u_check);
+    Cell::VisitAllObjects(bot, searcher, ai::GRIND_IDLE_FALLBACK_RANGE_YD);
+
+    int const maxLevelOver = MaxGrindLevelOverBot(bot, ai);
+    Unit* best = nullptr;
+    float bestDist = 0.0f;
+
+    for (Unit* unit : units)
+    {
+        if (!unit || !sServerFacade.IsAlive(unit))
+            continue;
+
+        Creature* creature = dynamic_cast<Creature*>(unit);
+        if (!creature)
+            continue;
+
+        if (creature->IsEvadeBecauseTargetNotReachable())
+            continue;
+        if (creature->IsInEvadeMode())
+            continue;
+
+        if ((int)unit->GetLevel() - (int)bot->GetLevel() > maxLevelOver)
+            continue;
+
+        if (creature->GetCreatureInfo() && creature->GetCreatureInfo()->rank > CREATURE_ELITE_NORMAL &&
+            !AI_VALUE(bool, "can fight elite"))
+            continue;
+
+        if (!AttackersValue::IsValid(unit, bot, nullptr, false, false))
+            continue;
+
+        if (!PossibleAttackTargetsValue::IsPossibleTarget(unit, bot, ai::GRIND_IDLE_FALLBACK_RANGE_YD, false))
+            continue;
+
+        // Grey (no-XP) creatures are never worth starting a fight over, and
+        // critters only when they pay XP (issue #396). Revenge still applies
+        // through the attackers loop, which runs before this.
+        if (!bot->IsHonorOrXPTarget(unit))
+            continue;
+
+        float const dist = sServerFacade.GetDistance2d(bot, unit);
+        if (best && !(dist < bestDist))
+            continue;
+
+        if (!WorldPosition(bot).canPathTo(WorldPosition(unit), bot))
+            continue;
+
+        best = unit;
+        bestDist = dist;
+    }
+
+    return best;
 }
 
 int GrindTargetValue::GetTargetingPlayerCount( Unit* unit )

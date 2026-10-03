@@ -267,6 +267,17 @@ bool NeedTravelPurposeValue::Calculate()
             return true;
         if (AI_VALUE2(bool, "has strategy", "free") && AI_VALUE(bool, "should ah sell") && AI_VALUE(bool, "can ah sell"))
             return true;
+        // Organic buyer demand (issue #405 rework, review 2): a masterless
+        // pool bot holding spendable gold walks to its auction house on its
+        // own feet and bids on arrival (no buyer teleport). Phase gate first:
+        // it is the cheap clock check, so the purse/position work below only
+        // runs in the open slice (review finding 7).
+        if (!AI_VALUE2(bool, "has strategy", "free"))
+            break;
+        if (!ai::BuyerTripPhaseOpen(ai->GetFixedBotNumber(BotTypeNumber::RPG_PHASE_NUMBER, ai::kBuyerTripPhaseMax, 1)))
+            break;
+        if (ai::AhBuyerTripNeeded(ai))
+            return true;
         break;
     case TravelDestinationPurpose::GatherFishing:
         if (!AI_VALUE2(bool, "has strategy", "tfish"))

@@ -70,9 +70,13 @@ void NoWarStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void FishStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    // Side activity, never above levelling (review #402): the travel fish
+    // errand keeps its 6.5 purpose weight; the open-water fallback only fires
+    // while the bot is idle, and even then ranks below the quest hand-in
+    // (6.36) and the grind errand (6.35) so it never pre-empts real work.
     triggers.push_back(new TriggerNode(
         "val::can fish",
-        NextAction::array(0, new NextAction("move to fish" + modifier, 5.0f), new NextAction("fish" + modifier, 10.0f), NULL)));
+        NextAction::array(0, new NextAction("move to fish" + modifier, 3.0f), new NextAction("fish" + modifier, 4.0f), NULL)));
 
     triggers.push_back(new TriggerNode(
         "val::can open fishing dobber",

@@ -1,5 +1,6 @@
 // pi-lens-ignore-file: clang:pp_file_not_found,clang:unknown_typename,clang:use_of_undeclared_identifier,clang:unknown_type_name,clang:undeclared_var_use,clang:incomplete_member_access
 #include "HireLifecycle.h"
+#include "HireProvisionService.h"
 #include "BotManager.h"
 #include "BotActivityLease.h"
 #include "CharacterCleanup.h"
@@ -311,6 +312,10 @@ void HireLifecycle::Reunite(HiredRecord& record, Player* master)
             ai::Event followEvent("follow", "", master);
             ai->DoSpecificAction("follow chat shortcut", followEvent, true);
         }
+        // Issue #382: grace-path hires missed the provision window (master
+        // offline), so they never got the spec+spells intro. Same once-guard
+        // as the provision path; no-op when it already went out.
+        HireProvisionService::AnnounceForGraceHire(bot, master, record.introSent);
         if (!record.greeted)
         {
             record.greeted = true;

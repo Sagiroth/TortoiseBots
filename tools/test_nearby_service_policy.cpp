@@ -261,6 +261,30 @@ int main()
     }
     std::cout << "  [PASS] no-progress fails trip the 90 s park\n";
 
+    // The walk leg parks too: three MoveNear fails on one NPC park the
+    // approach, and the selector skips an approach-parked NPC for every verb
+    // (it is the walk that fails, not any one errand). Other NPCs stay live.
+    CHECK(NearbyServiceRankOf(NearbyServiceKind::Approach) > NearbyServiceRankOf(NearbyServiceKind::Trainer));
+    {
+        std::time_t const now = 5'000'000;
+        NearbyServiceFailParks parks;
+        uint64_t const npc = 4242;
+        int const approach = NearbyServiceRankOf(NearbyServiceKind::Approach);
+        int const accept = NearbyServiceRankOf(NearbyServiceKind::Accept);
+
+        parks.RecordFail(npc, approach, now);
+        parks.RecordFail(npc, approach, now);
+        CHECK(!parks.Parked(npc, approach, now));
+        CHECK(!parks.Parked(npc, accept, now));
+        parks.RecordFail(npc, approach, now);
+        CHECK(parks.Parked(npc, approach, now));
+        // The other verbs on the same NPC are untouched by the approach park
+        // itself; the selector skips the NPC while the approach park holds.
+        CHECK(!parks.Parked(npc, accept, now));
+        CHECK(!parks.Parked(npc, approach, now + NEARBY_SERVICE_FAIL_PARK_SECONDS));
+    }
+    std::cout << "  [PASS] walk-leg fails park the approach\n";
+
     std::cout << "All idle near-service policy checks PASSED!\n";
     return 0;
 }

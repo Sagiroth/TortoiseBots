@@ -1,5 +1,7 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/ServerFacade.h"
+#include "playerbot/FishingSpotPolicy.h"
 #include "FishValues.h"
 #include "Timer.h"
 
@@ -8,6 +10,41 @@ using namespace ai;
 bool CanFishValue::Calculate()
 {
     if (!bot->GetSkill(SKILL_FISHING, false, false)) //Unable to fish.
+        return false;
+
+    // Levelling first, fishing as a side activity (review #402): pool bots
+    // only, never swimming or fighting, bags with room, and an unspent
+    // hourly session (5 casts / 5 min) with no levelling work pending.
+    if (!sRandomBotFacade.IsRandomBot(bot) || ai->HasRealPlayerMaster())
+        return false;
+
+    if (bot->IsInWater() || bot->IsUnderwater())
+        return false;
+
+    if (sServerFacade.IsInCombat(bot))
+        return false;
+
+    if (AI_VALUE(uint8, "bag space") > 90)
+        return false;
+
+    uint32 const now = WorldTimer::getMSTime();
+    int const casts = AI_VALUE2(int, "manual int", "fish session casts");
+    int const start = AI_VALUE2(int, "manual int", "fish session start");
+    int const ended = AI_VALUE2(int, "manual int", "fish session end");
+    if (!FishingSessionAllowsSearch(uint32(start), uint32(ended), casts, now))
+        return false;
+
+    if (AI_VALUE(bool, "travel target active") || AI_VALUE(bool, "travel target working"))
+        return false;
+    if (AI_VALUE(bool, "has rewardable finished quest"))
+        return false;
+    if (AI_VALUE(bool, "should sell") || AI_VALUE(bool, "can sell"))
+        return false;
+    if (AI_VALUE2(bool, "should travel named", "trainer class"))
+        return false;
+    if (AI_VALUE(bool, "should get money"))
+        return false;
+    if (AI_VALUE(bool, "should repair"))
         return false;
 
     std::list<Item*> poles = AI_VALUE2(std::list<Item*>, "inventory items", "fishing pole");
@@ -44,9 +81,10 @@ bool DoneFishingValue::Calculate()
     // Between two casts the bot holds the pole and channels nothing - that is not "done":
     // "done fishing" fired "equip upgrades" every tick between the casts, which took the
     // pole off (and, with a stat on it, put it right back). Half a minute after the last
-    // cast the fishing is over and the weapon may come back.
+    // cast the fishing is over and the weapon may come back - unless combat
+    // started, in which case the weapon comes back at once (review #402).
     int const lastCast = AI_VALUE2(int, "manual int", "last fish cast");
-    if (lastCast && WorldTimer::getMSTime() - uint32(lastCast) < 30000)
+    if (lastCast && !sServerFacade.IsInCombat(bot) && WorldTimer::getMSTime() - uint32(lastCast) < 30000)
         return false;
 
     if (bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
