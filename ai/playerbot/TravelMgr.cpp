@@ -1195,7 +1195,9 @@ void TravelTarget::CheckStatus()
     {
         ai->TellDebug(ai->GetMaster(), "Travel target expired because the status time was exceeded.", "debug travel");
         SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
-        ai->GetAiObjectContext()->ClearValues("no active travel destinations");
+        // No ClearValues: the time-boxed purpose park (flag + timestamp) must
+        // survive a routine expiry of another purpose; the request gate clears
+        // each flag lazily once its own park expires.
         return;
     }
 
@@ -1237,7 +1239,8 @@ void TravelTarget::CheckStatus()
             {
                 ai->TellDebug(ai->GetMaster(), "The target is expiring because the bot has outgrown the spot.", "debug travel");
                 SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
-                ai->GetAiObjectContext()->ClearValues("no active travel destinations");
+                // No ClearValues here either (see above): this expiry only
+                // ends the outgrown spot's own target, not other purposes' parks.
                 return;
             }
 

@@ -11,6 +11,7 @@
 #include "playerbot/LootObjectStack.h"
 #include "Maps/PathFinder.h"
 #include "playerbot/TravelMgr.h"
+#include "playerbot/TravelRepickPolicy.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
 #include <cstdlib>
 #include <iomanip>
@@ -365,11 +366,27 @@ bool MoveToTravelTargetAction::Execute(Event& event)
         // One line per travel target rather than per attempt: a wedged bot
         // re-enters this action every tick, and IncRetry steps by 2, so the
         // first failure is exactly 2. The drop below carries the final depth.
-        // Purpose plus remaining distance is what separates "could not path to
-        // the taker" from "never tried to move" (no line at all).
+        // The info2 field stays the remaining distance (parsers read it), with
+        // the path bucket from a fresh navmesh probe appended after a colon
+        // (nopath = mesh hole, incomplete = partial path, not-using-path =
+        // unloaded tile, complete = full path whose dispatch still failed;
+        // crossmap = destination on another map, never probed). Finding 14:
+        // without it NOPATH vs INCOMPLETE vs mmap-hole cannot be separated
+        // from the CSV.
         if (target->GetRetryCount(true) == 2)
-            sPlayerbotAIConfig.logEvent(ai, "TravelMoveFailed", purpose,
-                std::to_string((int32)botLocation.distance(location)));
+        {
+            std::string failDetail = std::to_string((int32)botLocation.distance(location));
+            failDetail += ":";
+            if (location.GetMapId() != bot->GetMapId())
+                failDetail += "crossmap";
+            else
+            {
+                PathFinder probe(bot);
+                probe.calculate(location.getX(), location.getY(), location.getZ(), false);
+                failDetail += TravelMoveFailPathTag((uint32_t)probe.getPathType());
+            }
+            sPlayerbotAIConfig.logEvent(ai, "TravelMoveFailed", purpose, failDetail);
+        }
 
         // A failed move toward a hand-in taker is one no-progress episode for that
         // quest, the same episode a re-picked taker counts (ChooseTravelTargetAction).
@@ -396,15 +413,16 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             target->SetForced(false);
             sTravelMgr.SetNullTravelTarget(target);
             RESET_AI_VALUE(bool, "travel target active");
-            if (!purpose.empty())
-            {
-                // Time-boxed, not permanent: ManualSetValue has no expiry, so
-                // record when the blacklist was set and let isUseful clear it
-                // after 5 min. Cleared early by any successful pick
-                // (setNewTarget clears all blacklists).
-                SET_AI_VALUE2(bool, "no active travel destinations", purpose, true);
-                SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purpose, time(0) + 5 * MINUTE);
-            }
+            // Time-boxed, not permanent: ManualSetValue has no expiry, so
+            // record when the blacklist was set and let the request gate clear
+            // it after 5 min. Filed under the park key the gate reads back
+            // ("quest" for the quest errand, which carries no qualifier), so
+            // an empty purpose parks the quest errand instead of nothing.
+            // The park survives picks of other purposes (no blanket
+            // ClearValues on the pick path); only this purpose stands down.
+            std::string const parkKey = TravelPurposeParkKey(purpose);
+            SET_AI_VALUE2(bool, "no active travel destinations", parkKey, true);
+            SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + parkKey, time(0) + 5 * MINUTE);
         }
     }
     else

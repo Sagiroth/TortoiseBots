@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <ctime>
 #include <string>
 
@@ -31,6 +32,36 @@ namespace ai
     inline std::string TravelInvalidParkKey(const std::string& futurePurpose)
     {
         return futurePurpose.empty() ? "quest" : futurePurpose;
+    }
+
+    // Park key for a dropped/retired purpose: the request gate files the quest
+    // errand under "quest" (its request carries no qualifier) and every other
+    // purpose under its qualifier string, so a drop parks exactly the key the
+    // gate reads back. Empty (a purpose wiped by a reset) means the quest
+    // errand, like the invalid-result park above.
+    inline std::string TravelPurposeParkKey(const std::string& futurePurpose)
+    {
+        return futurePurpose.empty() ? "quest" : futurePurpose;
+    }
+
+    // PathFinder::getPathType() bucket for the TravelMoveFailed row: NOPATH
+    // vs INCOMPLETE vs a tile that never used the navmesh could not be
+    // separated from the CSV (finding 14). Bit values mirror the core
+    // PathFinder::PathType enum (tortoise-wow src/game/Maps/PathFinder.h);
+    // the caller passes the raw type, the tag names the bucket. A cross-map
+    // probe never runs (the caller tags those without querying).
+    constexpr uint32_t TRAVEL_PATHFIND_INCOMPLETE = 0x0004;
+    constexpr uint32_t TRAVEL_PATHFIND_NOPATH = 0x0008;
+    constexpr uint32_t TRAVEL_PATHFIND_NOT_USING_PATH = 0x0010;
+    inline std::string TravelMoveFailPathTag(uint32_t pathType)
+    {
+        if (pathType & TRAVEL_PATHFIND_NOT_USING_PATH)
+            return "not-using-path";
+        if (pathType & TRAVEL_PATHFIND_NOPATH)
+            return "nopath";
+        if (pathType & TRAVEL_PATHFIND_INCOMPLETE)
+            return "incomplete";
+        return "complete";
     }
 
     // May a stuck reset keep its travel target - the same keep rule the
