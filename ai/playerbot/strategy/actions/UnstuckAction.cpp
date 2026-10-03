@@ -6,6 +6,7 @@
 #include "playerbot/TravelRepickPolicy.h"
 #include "playerbot/CombatStuckPolicy.h"
 #include "playerbot/TravelMgr.h"
+#include "runtime/BotManager.h"
 
 using namespace ai;
 
@@ -118,6 +119,10 @@ static bool LongStuckFallbackTeleport(PlayerbotAI* ai, Player* bot, Player* mast
         moved = bot->TeleportTo(grave->map_id, grave->x, grave->y, grave->z, 0.0f);
         if (moved)
             sPlayerbotAIConfig.logEvent(ai, "LongStuckFallback", "graveyard", master ? master->GetName() : "");
+        // A sub-10 pool bot landed above its level (valley GY in the next
+        // town) goes straight home (LowbieGraveyardPolicy.h).
+        if (moved)
+            TortoiseBots::BotManager::Instance().SendStrandedLowbieHome(bot);
     }
     else
     {

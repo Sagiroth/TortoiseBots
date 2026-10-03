@@ -185,6 +185,11 @@ bool ReviveFromCorpseAction::Execute(Event& event)
     // where its level cannot survive is relocated once to validated fitting
     // ground instead of GY-camping. Normal and owned flows are unaffected.
     TortoiseBots::BotManager::Instance().RelocateHopelessBot(bot);
+    // A sub-10 pool bot woken above its level (valley graveyard in the next
+    // town) goes straight home instead of walking back through mobs it cannot
+    // survive (LowbieGraveyardPolicy.h). Fires only on the area-level
+    // evidence, needs no death count.
+    TortoiseBots::BotManager::Instance().SendStrandedLowbieHome(bot);
     // Deliberately NOT resetting "death count" here. BestGraveyardValue only
     // switches to a graveyard outside the current zone once the count reaches
     // DEATH_COUNT_BEFORE_TRYING_ANOTHER_GRAVEYARD - but a bot resurrecting is
@@ -743,6 +748,8 @@ bool SpiritHealerAction::Execute(Event& event)
         // Same post-rez rescue as the corpse path: hopeless mismatch relocates
         // once instead of GY-camping (see above).
         TortoiseBots::BotManager::Instance().RelocateHopelessBot(bot);
+        // Same lowbie-home net as the corpse path (see above).
+        TortoiseBots::BotManager::Instance().SendStrandedLowbieHome(bot);
         // Deliberately NOT resetting "death count" here. BestGraveyardValue only
         // switches to a graveyard outside the current zone once the count reaches
         // DEATH_COUNT_BEFORE_TRYING_ANOTHER_GRAVEYARD - but a bot resurrecting is

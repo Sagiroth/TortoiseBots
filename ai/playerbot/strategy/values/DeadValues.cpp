@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "DeadValues.h"
 #include "playerbot/TravelMgr.h"
+#include "playerbot/LowbieGraveyardPolicy.h"
 
 using namespace ai;
 
@@ -182,8 +183,13 @@ bool ShouldSpiritHealerValue::Calculate()
     if (ai->HasAura(SPELL_ID_PASSIVE_RESURRECTION_SICKNESS, bot) || durability < 10)
         return true;
 
-    //Died too many times
-    if (deathCount > DEATH_COUNT_BEFORE_REVIVING_AT_SPIRIT_HEALER)
+    //Died too many times - but a sub-10 pool bot never goes to the spirit
+    //healer just for the count: its valley graveyard sits in the next town,
+    //so the revive strands it above its level (LowbieGraveyardPolicy.h).
+    //The corpse run stays the default; the stall and long-dead-time gates
+    //below still rescue a genuinely stuck ghost.
+    if (deathCount > DEATH_COUNT_BEFORE_REVIVING_AT_SPIRIT_HEALER &&
+        !ShouldSkipDeathCountSpiritHeal(bot->GetLevel(), sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster()))
         return true;
 
     Corpse* corpse = bot->GetCorpse();
