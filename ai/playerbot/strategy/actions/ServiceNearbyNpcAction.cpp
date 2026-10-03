@@ -16,12 +16,24 @@ bool ServiceNearbyNpcAction::Execute(Event& event)
     GuidPosition target = AI_VALUE(GuidPosition, "nearby service target");
 
     if (!target)
+    {
+        // Stale target (despawned, wandered off, verbs parked): the trigger
+        // cache still offers it for up to 5 s, and every tick failed at full
+        // speed (ACTION_LOOP). Reset the caches so the next tick re-evaluates
+        // instead of failing again on the same stale answer.
+        RESET_AI_VALUE(GuidPosition, "nearby service target");
+        RESET_AI_VALUE(bool, "should service nearby npc");
         return false;
+    }
 
     Creature* npc = target.GetCreature(bot->GetInstanceId());
 
     if (!npc || !npc->IsAlive())
+    {
+        RESET_AI_VALUE(GuidPosition, "nearby service target");
+        RESET_AI_VALUE(bool, "should service nearby npc");
         return false;
+    }
 
     if (!bot->IsWithinDistInMap(npc, INTERACTION_DISTANCE))
         return MoveNear(npc, INTERACTION_DISTANCE - 1.0f);
@@ -40,7 +52,11 @@ bool ServiceNearbyNpcAction::Execute(Event& event)
         return true;
 
     // In range of a real target but every live verb is parked or inapplicable:
-    // report failure so the engine does not treat the walk as success.
+    // report failure so the engine does not treat the walk as success, but
+    // reset the caches first so the re-evaluation (which now sees the parks)
+    // stands the trigger down instead of failing at tick speed.
+    RESET_AI_VALUE(GuidPosition, "nearby service target");
+    RESET_AI_VALUE(bool, "should service nearby npc");
     return false;
 }
 

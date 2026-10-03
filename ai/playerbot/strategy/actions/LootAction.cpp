@@ -29,7 +29,16 @@ bool LootAction::Execute(Event& event)
     LootObject lootObject = AI_VALUE(LootObjectStack*, "available loot")->GetLoot(sPlayerbotAIConfig.lootDistance);
 
     if (lootObject.IsEmpty())
+    {
+        // The stack filtered to nothing (stale corpses, master-range, TTL):
+        // the trigger cache still offers "loot" for up to 5 s, and every
+        // tick failed at full speed (ACTION_LOOP). Reset the caches so the
+        // next tick re-evaluates instead of failing again on the same stale
+        // answer.
+        RESET_AI_VALUE(LootObject, "loot target");
+        RESET_AI_VALUE(bool, "has available loot");
         return false;
+    }
 
     bool released = false;
     if (!prevLoot.IsEmpty() && prevLoot.guid != lootObject.guid)
