@@ -9,7 +9,8 @@ Usage:
     python3 tools/pool_kpi_report.py --logs <snapshot-logs-dir> --reset "2026-10-02 12:54"
     python3 tools/pool_kpi_report.py --logs ... --bots-json api/bots.json \\
         --grinding-json api/grinding.json --activity-json api/activity.json \\
-        --anomalies-json api/anomalies.json --trades-log logs/trades.log \\
+        --anomalies-json api/anomalies.json --anomaly-totals-json api/anomalies-totals.json \\
+        --trades-log logs/trades.log \\
         --levelup-log logs/levelup.log --server-log logs/server_*.log \\
         --bot-logs-dir logs/bots --baseline tools/pool_kpi_baseline_2026-10-02.json
     python3 tools/pool_kpi_report.py --logs ... --save-baseline new.json
@@ -255,6 +256,8 @@ def main():
     ap.add_argument("--grinding-json", default=None)
     ap.add_argument("--activity-json", default=None)
     ap.add_argument("--anomalies-json", default=None)
+    ap.add_argument("--anomaly-totals-json", default=None,
+                    help="daemon GET /api/v1/anomalies/totals dump: cumulative per-session counts, preferred for ACTION_LOOP/UNREACHABLE rows")
     ap.add_argument("--trades-log", default=None)
     ap.add_argument("--levelup-log", default=None)
     ap.add_argument("--server-log", default=None)
@@ -337,15 +340,29 @@ def main():
     rows.append(("median vendor re-pick gap", fmt(statistics.median(gaps), 0) + " s" if gaps else "n/a",
                  f"{len(gaps)} consecutive-pick gaps"))
 
-    if args.anomalies_json:
+    if args.anomaly_totals_json:
+        totals = json.load(open(args.anomaly_totals_json))
+        by_type = totals.get("totals", {})
+        by_action = totals.get("by_action", {})
+        since = totals.get("since_str", "") or ""
+        loops = by_action.get("ACTION_LOOP", {})
+        top = ", ".join(f"{k} {v}" for k, v in
+                        sorted(loops.items(), key=lambda kv: -kv[1])[:4]) or "none"
+        rows.append(("ACTION_LOOP anomalies", fmt(by_type.get("ACTION_LOOP", 0)),
+                     f"session totals{(' ' + since) if since else ''}: {top}"))
+        rows.append(("UNREACHABLE_TARGET anomalies", fmt(by_type.get("UNREACHABLE_TARGET", 0)),
+                     f"session totals{(' ' + since) if since else ''}"))
+    elif args.anomalies_json:
         an = json.load(open(args.anomalies_json))
         loops = [a for a in an if a.get("type") == "ACTION_LOOP"]
         from collections import Counter
         c = Counter(a.get("last_action", "?") for a in loops)
         rows.append(("ACTION_LOOP anomalies", fmt(len(loops)),
-                     ", ".join(f"{k} {v}" for k, v in c.most_common(4)) or "none"))
+                     "rolling 1000-row feed only (pass --anomaly-totals-json for whole-run counts): " +
+                     (", ".join(f"{k} {v}" for k, v in c.most_common(4)) or "none")))
         rows.append(("UNREACHABLE_TARGET anomalies", fmt(sum(
-            1 for a in an if a.get("type") == "UNREACHABLE_TARGET")), "daemon incident feed"))
+            1 for a in an if a.get("type") == "UNREACHABLE_TARGET")),
+                     "rolling 1000-row feed only (pass --anomaly-totals-json for whole-run counts)"))
     else:
         rows.append(("ACTION_LOOP anomalies", "n/a", "need --anomalies-json"))
         rows.append(("UNREACHABLE_TARGET anomalies", "n/a", "need --anomalies-json"))

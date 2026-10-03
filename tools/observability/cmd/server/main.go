@@ -381,6 +381,14 @@ func main() {
 		}
 	}))
 
+	// Cumulative per-session anomaly counts. The incident feed above is a
+	// rolling 1000-row window (~24 min at 500-bot BOT_DEATH rates), so a
+	// whole-run count of ACTION_LOOP etc. lives here instead. Totals reset
+	// with the game-server session (or a roster wipe) and are not cleared
+	// by DELETE /api/v1/anomalies, which only wipes the rolling window.
+	mux.HandleFunc("GET /api/v1/anomalies/totals", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, store.AnomalyTotals())
+	}))
 	mux.HandleFunc("GET /api/v1/armory/bots", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query().Get("q")
 		bots, err := armoryService.ListBots(q)

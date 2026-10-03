@@ -671,6 +671,7 @@
             <div>
               <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff;">Incidents &amp; Anomalies</h2>
               <p style="color: var(--text-muted); font-size: 0.8rem; margin: 4px 0 0;">Rolling window: the last 1000 incidents (~30 min at busy rates). A daemon restart clears it; "Deaths (ring window)" counts the BOT_DEATH rows currently in the list.</p>
+              <p id="anomaly-totals-line" style="color: var(--text-muted); font-size: 0.8rem; margin: 4px 0 0;">Session totals: loading…</p>
             </div>
             <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
               <select id="anomaly-type-filter" class="btn" style="padding: 6px 12px;">

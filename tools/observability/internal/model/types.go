@@ -447,6 +447,21 @@ type AnomalyPayload struct {
 	ReceivedAt time.Time `json:"-"`
 }
 
+// AnomalyTotals is the cumulative per-session anomaly count behind
+// GET /api/v1/anomalies/totals. The incident feed (/api/v1/anomalies) is a
+// rolling 1000-row window, so whole-run counts (e.g. ACTION_LOOP rows for
+// the KPI report) live here instead. Totals counts every accepted type
+// (including counter-only STUCK); ByAction breaks down only the types whose
+// last_action names the failing behaviour (ACTION_LOOP,
+// UNREACHABLE_TARGET). Since/SinceStr mark when counting started: the first
+// counted anomaly, or the session change / roster wipe that reset them.
+type AnomalyTotals struct {
+	Since    int64                        `json:"since"`
+	SinceStr string                       `json:"since_str,omitempty"`
+	Totals   map[string]uint64            `json:"totals"`
+	ByAction map[string]map[string]uint64 `json:"by_action,omitempty"`
+}
+
 // ZoneBoundingBox matches WorldMapArea.dbc records.
 type ZoneBoundingBox struct {
 	WmaID     uint32  `json:"wma_id"`

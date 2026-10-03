@@ -26,6 +26,7 @@
     worldMapId: 0,
     bots: [],
     anomalies: [],
+    anomalyTotals: null,
     grinding: { bots_tracked: 0, bots_gaining_xp: 0, pct_gaining_xp: 0, median_xp_hour: 0, total_xp_hour: 0, deaths_per_min: 0, pct_died_5min: 0, state_counts: {}, level_bands: [] },
     serverInfo: null,
     server: {
@@ -525,9 +526,9 @@
     // Incidents
     anomaliesTable: document.getElementById('anomalies-table-body'),
     anomaliesCount: document.getElementById('anomalies-count'),
+    anomaliesTotals: document.getElementById('anomaly-totals-line'),
     typeFilter: document.getElementById('anomaly-type-filter'),
     severityFilter: document.getElementById('anomaly-severity-filter'),
-    clearAnomalies: document.getElementById('clear-anomalies'),
 
     // Issues
     issueActive: document.getElementById('issue-active'),
@@ -783,7 +784,7 @@
     if (tab === 'progress') { renderLevelBands(); renderLevelTimeline(); }
     if (tab === 'activity') { renderActivityTab(); fetchQuestFeed(); }
     if (tab === 'economy') { renderEconomyTab(); fetchLootFeed(); }
-    if (tab === 'issues') { renderIssues(); renderAnomalies(); }
+    if (tab === 'issues') { renderIssues(); renderAnomalies(); fetchAnomalyTotals(); }
     if (tab === 'server') renderServerPanel();
     paintNavActive();
   }
@@ -3812,6 +3813,57 @@
         renderAnomalies();
       })
       .catch(() => {});
+    fetchAnomalyTotals();
+  }
+
+  // Cumulative session totals behind GET /api/v1/anomalies/totals: the
+  // rolling feed above loses whole-run counts (BOT_DEATH fills the 1000-row
+  // window in ~24 min at 500-bot rates), so this line is the full picture.
+  // Kept in totals state, not the incident rows: Clear wipes the window
+  // (state.anomalies) but leaves these counters untouched.
+  function fetchAnomalyTotals() {
+    fetch('/api/v1/anomalies/totals')
+      .then(jsonOrThrow)
+      .then(data => {
+        state.anomalyTotals = data || null;
+        renderAnomalyTotals();
+      })
+      .catch(() => {});
+  }
+
+  function renderAnomalyTotals() {
+    if (!el.anomaliesTotals) return;
+    const t = state.anomalyTotals;
+    if (!t || !t.totals) {
+      el.anomaliesTotals.textContent = 'Session totals: no data yet.';
+      return;
+    }
+    const order = ['ACTION_LOOP', 'UNREACHABLE_TARGET', 'BOT_DEATH', 'STUCK'];
+    const parts = [];
+    for (const k of order) {
+      if (t.totals[k] != null) parts.push(`${k} ${t.totals[k]}`);
+    }
+    for (const k of Object.keys(t.totals || {})) {
+      if (order.indexOf(k) === -1) parts.push(`${k} ${t.totals[k]}`);
+    }
+    const since = t.since_str ? ` since ${t.since_str.slice(0, 16)}` : '';
+    const loops = topAction(t, 'ACTION_LOOP');
+    const unreach = topAction(t, 'UNREACHABLE_TARGET');
+    const extra = [loops, unreach].filter(Boolean).join(' · ');
+    el.anomaliesTotals.textContent =
+      `Session totals${since}: ${parts.length ? parts.join(' · ') : 'none'}` +
+      (extra ? ` (top: ${extra})` : '');
+  }
+
+  // Most common last_action for one anomaly type, e.g. "move 41".
+  function topAction(t, type) {
+    const m = (t.by_action && t.by_action[type]) || null;
+    if (!m) return '';
+    let best = '', bestN = 0;
+    for (const k of Object.keys(m)) {
+      if (m[k] > bestN) { bestN = m[k]; best = k; }
+    }
+    return best ? `${type} top ${best} ${bestN}` : '';
   }
 
   // INFO rows (notably every BOT_DEATH) are feed noise; the sidebar badge
@@ -4040,6 +4092,9 @@
         // Rebuild the (up to 1000-row) table only when it is on screen.
         updateAnomalyBadge();
         if (state.activeTab === 'issues') { renderAnomalies(); renderIssues(); }
+        // The rolling feed above just grew by one; the cumulative session
+        // totals behind the totals line grew with it, so refetch them.
+        fetchAnomalyTotals();
         const sev = (a.severity || 'info').toLowerCase();
         appendConsoleLog(time, a.type, `<span class="log-bot">${esc(a.bot || 'Bot')}</span>: ${esc(a.details || a.last_action || '')}`, sev);
       }
