@@ -53,7 +53,8 @@ int main()
     // sub-10 pool cap is +1, so +1 fits and +2 bars.
     // -------------------------------------------------------------
     {
-        CHECK(PointDangerous(3, 1));
+        CHECK(!PointDangerous(3, 1));   // valley level-3 hostiles do not bar a level-1 bot
+        CHECK(PointDangerous(4, 1));
         CHECK(!PointDangerous(2, 1));
         CHECK(PointDangerous(5, 3));
         CHECK(!PointDangerous(4, 3));

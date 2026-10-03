@@ -51,6 +51,10 @@ namespace ai
     // level: anything past the grind cap the bot's own orders keep.
     inline bool PointDangerous(int highestHostileLevelMax, std::uint32_t botLevel)
     {
-        return highestHostileLevelMax - (int)botLevel > PullGrindLevelCap(botLevel, false);
+        // Floor at level 4: start valleys hold level 3 hostiles next to almost
+        // every point, and treating them as danger for a level-1 bot left it
+        // with nothing to do (live 2026-10-03: grind picks -40%).
+        int const threshold = (int)botLevel + (int)PullGrindLevelCap(botLevel, false) + 1;
+        return highestHostileLevelMax >= (threshold < 4 ? 4 : threshold);
     }
 }

@@ -198,8 +198,11 @@ bool QuestRelationTravelDestination::IsPossible(const PlayerTravelInfo& info) co
         // bots at 10+ keep today's behaviour.
         if (WorldPosition* takerPoint = GetClosestPoint(info.getPosition()))
         {
+            AreaTableEntry const* takerArea = takerPoint->GetArea();
+            AreaTableEntry const* botArea = info.getPosition().GetArea();
+            bool const takerElsewhere = takerArea && botArea && takerArea->Id != botArea->Id;
             if (!ai::QuestTakerTripFits((int)quest->GetQuestLevel(),
-                takerPoint->GetAreaLevel(), info.GetLevel(), info.IsMasterlessRandom()))
+                takerElsewhere, info.GetLevel(), info.IsMasterlessRandom()))
                 return false;
         }
     }

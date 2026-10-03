@@ -1867,7 +1867,7 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
                 // hiding same-valley hand-ins that are ready now; the
                 // destination IsPossible gate below re-checks the same rule
                 // with the taker's area once the search runs.
-                if (!ai::QuestTakerTripFits((int)questTemplate->GetQuestLevel(), 0,
+                if (!ai::QuestTakerTripFits((int)questTemplate->GetQuestLevel(), false,
                     bot->GetLevel(), sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster()))
                     continue;
 
