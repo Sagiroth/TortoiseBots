@@ -196,6 +196,13 @@
 - Fresh level 1-4 pool bots no longer dead-end on quest search in their starting valley. The zone ceiling (Camp Narache 6, Dun Morogh 7, Durotar 8) used to reject every objective, leaving e.g. 57 of 64 tauren bots standing around at Camp Narache — quest objectives and quest givers now get the same level 1-4 exemption grinding already had. [#450](https://github.com/Sagiroth/TortoiseBots/pull/450)
 - Safety rails intact: each quest's own level and danger checks still run, so this only unblocks *level-appropriate* errands. Player-owned and hired bots are untouched — no behavior change for anyone's actual characters. [#450](https://github.com/Sagiroth/TortoiseBots/pull/450)
 
+### Travel & Leisure AI
+
+- Pool bots now pick free-time activities with a single weighted roll — questing 60, grinding 15, town/inn 10, exploring 5 — bringing us in line with mod-playerbots behavior. [#451](https://github.com/Sagiroth/TortoiseBots/pull/451)
+- Fixed the old fixed-priority system where grinding basically always won; camp and explore activities were effectively dead content. Expect bots to actually wander into towns and set up camps again. [#451](https://github.com/Sagiroth/TortoiseBots/pull/451)
+- The roll is possibility-aware: no quest rolls while quests are parked, no camping below level 5. Bots won't commit to activities they can't currently perform. [#451](https://github.com/Sagiroth/TortoiseBots/pull/451)
+- Empty roll results trigger an immediate re-roll, and grinding stays as the guaranteed fallback — bots never stand idle. [#451](https://github.com/Sagiroth/TortoiseBots/pull/451)
+
 ## 2026-10-02
 
 ### Levelling & Progression
