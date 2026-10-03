@@ -103,6 +103,16 @@ type Store struct {
 	anomalies *ringbuf.RingBuffer
 	issues    *issueTracker
 
+	// anomSince, anomByType, anomByAction are the cumulative per-session
+	// anomaly counts behind GET /api/v1/anomalies/totals. The incident
+	// ring buffer is a rolling 1000-row window (~24 min at 500-bot death
+	// rates), so whole-run counts live here instead. They reset with the
+	// session (or a roster wipe), exactly like the activity counters;
+	// clearing the incident feed does not reset them.
+	anomSince    time.Time
+	anomByType   map[string]uint64
+	anomByAction map[string]map[string]uint64
+
 	// xpTracks holds per-bot XP observations for XP/hour derivation. Keyed
 	// by GUID like the roster; pruned on publish and session reset.
 	xpTracks map[uint32]*xpTrack
@@ -151,6 +161,8 @@ func New(cfg Config, anomalies *ringbuf.RingBuffer) *Store {
 		pending:   make(map[uint64]*pendingCycle),
 		anomalies: anomalies,
 		issues:    newIssueTracker(cfg.IssueMinAge),
+		anomByType:   make(map[string]uint64),
+		anomByAction: make(map[string]map[string]uint64),
 		xpTracks:  make(map[uint32]*xpTrack),
 		activity:  make(map[uint32]*botActivityState),
 		gear:      make(map[uint32]model.BotGear),
@@ -257,6 +269,7 @@ func (s *Store) AddAnomaly(a model.AnomalyPayload) model.AnomalyPayload {
 	if a.Type == "STUCK" {
 		s.mu.Lock()
 		now := s.now()
+		s.countAnomalyLocked(&a, now)
 		s.mu.Unlock()
 		s.issues.TouchAnomaly(a, now)
 		a.ReceivedAt = now
@@ -266,6 +279,7 @@ func (s *Store) AddAnomaly(a model.AnomalyPayload) model.AnomalyPayload {
 
 	s.mu.Lock()
 	now := s.now()
+	s.countAnomalyLocked(&saved, now)
 	s.mu.Unlock()
 	s.issues.TouchAnomaly(saved, now)
 	return saved
@@ -298,6 +312,7 @@ func (s *Store) Evict() bool {
 		s.bots = make(map[uint32]*botEntry)
 		s.xpTracks = make(map[uint32]*xpTrack)
 		s.resetActivityLocked()
+		s.resetAnomalyTotalsLocked()
 		s.issues.Reset()
 		return true
 	}
@@ -744,6 +759,7 @@ func (s *Store) beginSessionLocked(session uint64) {
 	s.lastSnapshotAt = time.Time{}
 	s.xpTracks = make(map[uint32]*xpTrack)
 	s.resetActivityLocked()
+	s.resetAnomalyTotalsLocked()
 	s.serverInfo = nil
 	s.issues.Reset()
 	s.issues.NoteSessionChange(s.now())

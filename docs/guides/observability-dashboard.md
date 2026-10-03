@@ -21,7 +21,7 @@ TortoiseBots Module (C++)
 Go Observability Daemon (tools/observability)
     │
     ├──► Prometheus Metrics HTTP Endpoint (/metrics)
-    ├──► REST API (/api/v1/status, /api/v1/bots, /api/v1/issues, /api/v1/anomalies)
+    ├──► REST API (/api/v1/status, /api/v1/bots, /api/v1/issues, /api/v1/anomalies, /api/v1/anomalies/totals)
     └──► WebSocket (/api/v1/stream) -> Embedded Web SPA Dashboard (:8095)
 ```
 
@@ -37,7 +37,7 @@ When the daemon is running, sign in with a game account of GM rank ≥ 2 (or run
 - **Activity** — what bots are doing: pool counters (quests rewarded, handed in and finished-but-not-handed-in, kills, deaths and ghost time, looted items, gathering/skinning and skill-ups, trainer visits and spells learned, give-ups), the per-bot activity table, the quest feed, and the live event console. The counter header names the window they cover (`SINCE HH:MM`, the current game-server session) and the row tooltip spells it out.
 - **Economy** — money, vendors, repairs, auction house and notable loot: pool counters (money earned/spent, items sold/bought and their value, notable loot, vendor visits, repairs and their cost, AH listings/bids) plus the **filterable notable-loot feed** (quality green+, class, level range, bot) covering loot, money pickups and gather/skin drops. Same window label as Activity: these are session counters, not lifetime totals.
 - **Live Map** — where the fleet is: the top-zone census (click to open that zone's map), then the 2D world map (Kalimdor/Eastern Kingdoms continent tabs, zone chips, breadcrumb trails) and the per-bot side drawer.
-- **Issues** — what is broken: persistent issue episodes (bots stuck 60 s while moving, dead 2+ min, unable to reach a combat target 2+ min) with the active-issues chart, issues by zone, the active table and the recently-resolved list, *plus* the rolling incident feed (last 1000 anomalies ≈ 30 min). Only episodes past their gate are shown, short ones are discarded, and no dead-long rows open in the first 5 min after a server restart.
+- **Issues** — what is broken: persistent issue episodes (bots stuck 60 s while moving, dead 2+ min, unable to reach a combat target 2+ min) with the active-issues chart, issues by zone, the active table and the recently-resolved list, *plus* the rolling incident feed (last 1000 anomalies ≈ 30 min) with a one-line session totals row (cumulative per-type counts since the game-server session, with the top `last_action` for `ACTION_LOOP`/`UNREACHABLE_TARGET`; dump it via `GET /api/v1/anomalies/totals` for KPI runs). Only episodes past their gate are shown, short ones are discarded, and no dead-long rows open in the first 5 min after a server restart.
 - **Server** — effective settings and versions: module/core revision and max level, then one key/value row per setting grouped into RATES · CORE WORLD, BOTS · POOL, BOTS · TUNING (XP rate, loot rates, autolearn, level-up mounts, AH market), BOTS · GROUPS, BOTS · WORLD and DIAGNOSTICS · LOGS — all read from the running server's own getters, never config files. The **Copy diagnostic report** button turns them plus pool health into a paste-ready plain-text snapshot (no secrets); use it when reporting bugs.
 - **Mobile & Tablet Friendly:** Fully responsive layout for phones (360–430 px) and tablets (768 px) featuring an off-canvas navigation drawer, stacked grids, reflowing settings columns, scrollable tables, and touch-friendly controls while preserving the desktop layout.
 - **State census semantics** (Overview): `busy` is standing still but doing real work (loot, cast, sit to eat/drink, or movement within the last 45 s); `stalled` is standing still for 45+ s whose only activity was churn — an active travel target or changing action names, i.e. holding a destination and getting nowhere; `idle` is no movement, action, cast, loot or active target for 45+ s. One colour per state is shared by the census, the roster badges and the map markers, and the 3-min rolling ratios stay in Prometheus (`tortoisebots_state_ratio`) for alerting.
@@ -98,7 +98,10 @@ character DB (bag fill only). Stdlib only; no container name is hardcoded —
 pass `--db-cmd "docker exec -i <container> mariadb ... -N -B"` (or omit it and
 the bag row prints `n/a`). The 2026-10-02 baseline lives in
 `tools/pool_kpi_baseline_2026-10-02.json`; pass `--baseline` for a side-by-side
-column, `--save-baseline` to freeze a new run.
+column, `--save-baseline` to freeze a new run. Pass `--anomaly-totals-json`
+with a `GET /api/v1/anomalies/totals` dump for the `ACTION_LOOP` /
+`UNREACHABLE_TARGET` rows: the incident feed (`api/anomalies.json`) is only
+the last 1000 rows, while the totals file carries whole-run session counts.
 
 
 ## 5. Bot Armory (DB inspector)
