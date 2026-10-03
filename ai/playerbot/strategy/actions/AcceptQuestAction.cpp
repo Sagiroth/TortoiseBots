@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "AcceptQuestAction.h"
+#include "playerbot/PullRegenPolicy.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 
 using namespace ai;
@@ -18,24 +19,24 @@ static bool IsFixedRewardUpgrade(AiObjectContext* context, Quest const* quest)
 
 //The quest-log policy this action applies before it takes a quest. Exposed so
 //the idle nearby-service rule can ask a giver the same question instead of
-//walking to one whose only quest is blocked here (breadcrumbs below level 5,
-//CLUCK, the hardcore challenge, the Tortoise rogue quests, grey quests with a
-//useless reward) - one policy, so the two cannot drift.
+//walking to one whose only quest is blocked here (leave-the-valley quest
+//level below 10, CLUCK, the hardcore challenge, the Tortoise rogue quests,
+//grey quests with a useless reward) - one policy, so the two cannot drift.
 bool AcceptAllQuestsAction::WouldAcceptQuest(PlayerbotAI* ai, Player* bot, Quest const* quest, WorldObject* questGiver)
 {
     AiObjectContext* context = ai->GetAiObjectContext();
 
-    // Breadcrumb quests that lead bots out of the starting zone into dangerous territory.
-    // Block until level 5 when the bot is actually ready to move on.
-    static const std::unordered_set<uint32> startingZoneBreadcrumbs = {
-        2158, // Rest and Relaxation    (Human      -> Goldshire inn)
-        1656, // A Task Unfinished      (Tauren     -> Mulgore)
-        2159, // Dolanaar Delivery      (NElf       -> Dolanaar inn)
-        8,    // A Rogue's Deal         (Undead     -> Deathknell)
-        2160, // Supplies to Tannok     (Dwarf/Gnome -> Dun Morogh)
-        2161, // A Peon's Burden        (Orc        -> Durotar)
-    };
-    if (startingZoneBreadcrumbs.count(quest->GetQuestId()) && bot->GetLevel() < 5)
+    // Leave-the-valley hand-ins (end-of-start-zone deliveries) are not
+    // taken early: their taker sits in the next town while the bot is
+    // level 1-2, and the trip out dies on the way. A pool bot below 10
+    // only takes a quest rated at most one above its own level (same +1
+    // as the grind order cap, QuestTakerTripFits); the trip is offered
+    // again once the bot reaches the quest's level. QuestLevel 0 is
+    // scaling content, never blocked; owned/hired bots follow the player.
+    // Donor mod-playerbots IsQuestCapableDoing (NewRpgBaseAction.cpp:573)
+    // refuses +3 at any level; the pool uses +1 below 10.
+    if (!ai::QuestTakerTripFits((int)quest->GetQuestLevel(), 0, bot->GetLevel(),
+        sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster()))
         return false;
 
     // CLUCK! — a novelty quest bots can't meaningfully complete; block entirely.

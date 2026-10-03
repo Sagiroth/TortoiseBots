@@ -186,6 +186,21 @@ bool QuestRelationTravelDestination::IsPossible(const PlayerTravelInfo& info) co
             if (IsOverWorld(info.getPosition()))
                 return false;
         }
+
+        // Leave-the-valley hand-ins wait: a pool bot below 10 only walks to
+        // a taker whose quest is rated at most one above its own level and
+        // whose area is rated the same (QuestTakerTripFits, same +1 as the
+        // grind order cap). The taker search then comes back empty and the
+        // caller parks the purpose like any other empty search, so the bot
+        // keeps working its own valley until it reaches the quest's level.
+        // Hand-ins in the same valley keep working; owned/hired bots and
+        // bots at 10+ keep today's behaviour.
+        if (WorldPosition* takerPoint = GetClosestPoint(info.getPosition()))
+        {
+            if (!ai::QuestTakerTripFits((int)quest->GetQuestLevel(),
+                takerPoint->GetAreaLevel(), info.GetLevel(), info.IsMasterlessRandom()))
+                return false;
+        }
     }
 
     // Don't send a bot to a quest giver in a zone far above its level, or cross-zone for lowbies.
