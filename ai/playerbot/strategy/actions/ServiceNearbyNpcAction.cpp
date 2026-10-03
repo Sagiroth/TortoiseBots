@@ -95,6 +95,7 @@ bool ServiceNearbyNpcAction::TryVerb(Event& event, GuidPosition target, NearbySe
     }
 
     return RunVerb(npcGuid, verbId, kind, verb, "trainer", Event("rpg action", target), target, now);
+}
 
 // Runs the verb through the existing action and records the rule firing. Only a
 // verb that did something is logged (the outcomes land as their own events:
