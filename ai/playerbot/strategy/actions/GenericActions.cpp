@@ -577,7 +577,9 @@ bool SetPetAction::Execute(Event& event)
 
 bool TogglePetSpellAutoCastAction::isPossible()
 {
-    return bot->GetPet() != nullptr;
+    // Pool bots only: a player who owns or hired the bot sets its pet's
+    // autocast and stance themselves, and this must not override them.
+    return bot->GetPet() != nullptr && !ai->HasRealPlayerMaster();
 }
 
 // Autonomous autocast sweep (E01): ported from mod-playerbots
@@ -629,7 +631,9 @@ bool TogglePetSpellAutoCastAction::Execute(Event& /*event*/)
 
 bool SetPetStanceAction::isPossible()
 {
-    return bot->GetPet() != nullptr;
+    // Pool bots only: a player who owns or hired the bot sets its pet's
+    // autocast and stance themselves, and this must not override them.
+    return bot->GetPet() != nullptr && !ai->HasRealPlayerMaster();
 }
 
 // Autonomous stance pin (E01): ported from mod-playerbots SetPetStanceAction
