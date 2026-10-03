@@ -267,6 +267,15 @@ bool NeedTravelPurposeValue::Calculate()
             return true;
         if (AI_VALUE2(bool, "has strategy", "free") && AI_VALUE(bool, "should ah sell") && AI_VALUE(bool, "can ah sell"))
             return true;
+        // Organic buyer demand (issue #405 rework): a masterless pool bot
+        // holding spare gold above its trainer reserve walks to its auction
+        // house on its own feet and bids on arrival (no buyer teleport).
+        // Rate-bounded by the RPG-phase slice so only part of the pool
+        // travels at once; the arrival bid itself stays house-matched and
+        // budget-gated in BuyAuctionCandidate / AhBidAction.
+        if (AI_VALUE2(bool, "has strategy", "free") && ai::AhBuyerTripNeeded(ai) &&
+            ai::BuyerTripPhaseOpen(ai->GetFixedBotNumber(BotTypeNumber::RPG_PHASE_NUMBER, ai::kBuyerTripPhaseMax, 1)))
+            return true;
         break;
     case TravelDestinationPurpose::GatherFishing:
         if (!AI_VALUE2(bool, "has strategy", "tfish"))

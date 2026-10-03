@@ -68,6 +68,33 @@ static bool TrainerServiceNeeded(PlayerbotAI* ai)
 
     return AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::spells) >= minSpellCost;
 }
+// Organic AH buyer trip (issue #405 rework): a masterless pool bot never a
+// hire, walking to its auction house on its own feet to bid on arrival (no
+// buyer teleport). The purse rule mirrors the owner ask: spare gold above the
+// trainer reserve. The reserve is "total money needed for spells" (repair +
+// ammo + AH deposit + guild + class ranks), reset first so the cached value
+// cannot go stale across level-ups. Tradeskill/mount ranks are not reserved
+// here: "can ah buy" already spares nothing for them, and the arrival bid
+// still passes the full "free money for ah" budget gate. Rate bounding lives
+// in the caller (RPG-phase slice in NeedTravelPurposeValue), not here.
+bool AhBuyerTripNeeded(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (!bot)
+        return false;
+    if (ai->HasActivePlayerMaster() || ai->HasRealPlayerMaster())
+        return false;
+    if (!sRandomBotFacade.IsRandomBot(bot))
+        return false;
+    if (TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()))
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    RESET_AI_VALUE2(uint32, "total money needed for", (uint32)NeedMoneyFor::spells);
+    uint32 spellReserve = AI_VALUE2(uint32, "total money needed for", (uint32)NeedMoneyFor::spells);
+    // A trip must be able to pay for *something* once there (policy floor).
+    return BuyerTripAffordable(bot->GetMoney(), spellReserve);
+}
+
 bool CanBuyValue::Calculate()
 {
     if (!ai->HasStrategy("rpg vendor", BotState::BOT_STATE_NON_COMBAT))

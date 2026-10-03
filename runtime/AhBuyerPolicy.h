@@ -2,53 +2,56 @@
 
 #include <cstdint>
 
-// Pure policy for the AH buyer teleport-or-skip (issue #405).
+// Pure policy for the organic AH buyer trip (issue #405 rework).
 //
-// The buyer used to bid only while standing next to an auctioneer and never
-// teleported, unlike the seller — so with pool bots rarely in cities it could
-// never fire. It now shares the seller safety net: prefer a bot already at a
-// matching-house auctioneer, else teleport one eligible bot and defer the bid
-// until the next Buy pass revisits the listing.
+// NO buyer teleport: the market buyer bids only with a pool bot ALREADY
+// standing at an auctioneer of the auction's house (arrived on its own feet,
+// e.g. on a sell trip or an AH travel errand). Teleport stays only the
+// pre-existing stuck rescue on the way there - nothing new. To make buying
+// happen organically, a masterless pool bot holding spare gold above its
+// trainer reserve gets the normal AH travel purpose and walks/flies there
+// (same destination the seller uses); the arrival bid stays house-matched
+// and budget-gated.
 //
-// Bounds keep one buyer candidate cheap for a 500-bot pool: at most
+// Bounds keep one buyer scan cheap for a 500-bot pool: at most
 // kBuyerExamineCap pool entries are examined (cheap guards only) and at most
 // kBuyerProbeCap of them touch an AI context ("nearest npcs" + interact
-// check) per auction candidate. Teleports are capped globally at one per
-// market interval, and a teleported bot sits out re-teleport selection for
-// one interval via the "ahMarketLastBuy" facade cooldown (it can still bid
-// once it stands at the auctioneer — the cooldown gates teleport, not bids).
+// check) per auction candidate. The rotating start (m_buyerScanIndex in the
+// service) cycles coverage across passes.
 
-namespace TortoiseBots
+namespace ai
 {
     // Max AI-context probes ("nearest npcs" + interact + house resolve) per
-    // auction candidate. Everything past the cap is teleport-fallback only.
+    // auction candidate. Past the cap the scan stops: no teleport fallback,
+    // the candidate is simply skipped until a later pass rotates coverage.
     inline constexpr uint32_t kBuyerProbeCap = 8;
     // Max pool entries examined (cheap guards: world/alive/lease/owner) per
-    // auction candidate. Random start rotates coverage across passes.
+    // auction candidate.
     inline constexpr uint32_t kBuyerExamineCap = 24;
 
-    // Clamp range for buyer cadences, shared with the seller attempt cooldown
-    // (AhMarketService::TryPostForBot clamps to the same 5..3600 window).
-    inline constexpr uint32_t kBuyerCooldownMinSec = 5;
-    inline constexpr uint32_t kBuyerCooldownMaxSec = 3600;
+    // Organic buyer trip purse rule (mirrors AhBuyerTripNeeded in
+    // MaintenanceValues.cpp): spare gold above the trainer reserve must cover
+    // at least the cheapest realistic opening bid. Below one silver the AH
+    // cannot clear anyway (deposit + minimum-bid granularity).
+    inline constexpr uint32_t kBuyerTripMinSpareCopper = 100;
 
-    // Per-bot trip cooldown after a buyer teleport: one market interval, so a
-    // bot en route is not re-teleported for the next listing while it travels.
-    inline uint32_t BuyerTripCooldownSec(uint32_t marketIntervalSec)
+    inline bool BuyerTripAffordable(uint32_t moneyCopper, uint32_t spellReserveCopper)
     {
-        if (marketIntervalSec < kBuyerCooldownMinSec)
-            return kBuyerCooldownMinSec;
-        if (marketIntervalSec > kBuyerCooldownMaxSec)
-            return kBuyerCooldownMaxSec;
-        return marketIntervalSec;
+        if (moneyCopper <= spellReserveCopper)
+            return false;
+        return (moneyCopper - spellReserveCopper) >= kBuyerTripMinSpareCopper;
     }
 
-    // Global buyer teleport budget: at most one teleport per market interval.
-    // Times are seconds (time(nullptr)); a zero lastTeleport allows the first.
-    inline bool BuyerTeleportAllowed(int64_t nowSec, int64_t lastTeleportSec, uint32_t marketIntervalSec)
+    // Organic buyer travel share: only this slice of the hourly RPG phase
+    // walks to the AH to shop (same GetFixedBotNumber(., 60, 1) clock the
+    // GenericRpg/Grind stagger uses). Keeps shopping trips bounded: not
+    // every rich bot walks at once.
+    inline constexpr uint32_t kBuyerTripPhaseMax = 60;
+    inline constexpr uint32_t kBuyerTripPhaseBelow = 15;
+
+    inline bool BuyerTripPhaseOpen(uint32_t rpgPhase)
     {
-        uint32_t interval = BuyerTripCooldownSec(marketIntervalSec);
-        return (nowSec - lastTeleportSec) >= (int64_t)interval;
+        return rpgPhase < kBuyerTripPhaseBelow;
     }
 
-} // namespace TortoiseBots
+} // namespace ai

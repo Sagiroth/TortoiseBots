@@ -5,6 +5,7 @@
 #include "ItemUsageValue.h"
 #include "BudgetValues.h"
 #include "NearbyServicePolicy.h"
+#include "runtime/AhBuyerPolicy.h"
 
 
 namespace ai
@@ -234,6 +235,11 @@ namespace ai
         CanAHBuyValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "can ah buy", 2) {}
         virtual bool Calculate() override { return ai->HasStrategy("rpg vendor", BotState::BOT_STATE_NON_COMBAT) && !AI_VALUE(bool, "should repair") && !AI_VALUE(bool, "should sell") && !AI_VALUE(bool, "can get mail") && AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::ah) > 0; };
     };
+
+    // Organic AH buyer trip (issue #405 rework): spare gold above the trainer
+    // reserve. Implemented in MaintenanceValues.cpp next to the other
+    // need-rules; the RPG-phase rate bound lives in NeedTravelPurposeValue.
+    bool AhBuyerTripNeeded(PlayerbotAI* ai);
 
 
     class CanGetMailValue : public BoolCalculatedValue

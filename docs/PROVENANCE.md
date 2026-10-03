@@ -3083,42 +3083,49 @@ level-4 case, travelling +1 ceiling; registered in `tools/verify_all.sh`);
 `bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
 compiles).
 
-## Buyer teleport-or-skip for the synthetic AH buyer (issue #405) — 2026-10-03
-Feature: `AhMarketService::BuyAuctionCandidate` no longer needs a pool bot to
-already stand at an auctioneer. It scans a bounded rotating slice of the pool
-(max 24 examined, max 8 in-place `FindNearbyAuctioneer` probes) preferring a
-bot already at an auctioneer serving the listing's house object, else
-teleports one eligible bot there like the seller (`TryTeleportBuyerToAuctioneer`
-over matching-house cached positions only) and defers the bid until a later
-Buy pass revisits the listing. Teleports are capped at one per market interval
-globally (`m_lastBuyerTeleport` + `BuyerTeleportAllowed`) with a one-interval
-per-bot trip cooldown (`ahMarketLastBuy`, cleared on lease eviction); the
-cooldown gates teleport selection only, never the bid itself. Matching-house
-binding matters because `HandleAuctionPlaceBid` resolves the auction through
-the auctioneer's own house object (`GetAuctionsMap`), so a wrong-house bid is
-rejected. Same fail-closed guards as the seller (grouped / active-master /
-LFT / BG / instance never selected or teleported; hostile or unknown-faction
-auctioneers never targeted; bids still spend the bot's own gold inside the
-`free money for ah` budget via canonical `HandleAuctionPlaceBid`). Pure cadence
-math lives in `runtime/AhBuyerPolicy.h` (`BuyerTripCooldownSec`,
-`BuyerTeleportAllowed`, probe/examine caps). Doc row:
+## Organic AH buyer: in-place bids plus spare-gold travel demand (issue #405) — 2026-10-03
+Feature: `AhMarketService::BuyAuctionCandidate` bids only with a pool bot
+ALREADY standing at an auctioneer serving the listing's house object (no buyer
+teleport per owner decision; teleport stays only the pre-existing stuck rescue
+on the way there). The per-candidate scan is a bounded rotating slice of the
+pool (max 24 examined on cheap guards, max 8 in-place `FindNearbyAuctioneer`
+probes via `m_buyerScanIndex`; past the cap the candidate is skipped until a
+later pass). Demand comes from the normal AH travel purpose
+(`NeedTravelPurposeValue`, same destination the seller uses): a masterless
+pool bot (never a hire) holding spare gold above its trainer reserve
+(`AhBuyerTripNeeded` in `MaintenanceValues.cpp`: `BuyerTripAffordable(money,
+total-money-needed-for spells)`, at least 1 silver spare) and inside the first
+15 minutes of the hourly RPG phase (`BuyerTripPhaseOpen`, same 0..60 clock as
+the GenericRpg/Grind stagger) walks/flies to its auction house on its own feet
+and bids on arrival through the usual `rpg ah buy` path. Same fail-closed
+guards as before (grouped / active-master / LFT / BG / instance excluded;
+hostile auctioneers skipped; house-matched bidding because
+`HandleAuctionPlaceBid` resolves the auction through the auctioneer's own
+house object; bids spend the bot's own gold inside `free money for ah`). Pure
+numbers live in `runtime/AhBuyerPolicy.h` (`kBuyerProbeCap`,
+`kBuyerExamineCap`, `kBuyerTripMinSpareCopper`, `BuyerTripAffordable`,
+`kBuyerTripPhaseMax/Below`, `BuyerTripPhaseOpen`). Doc row:
 `docs/guides/living-world.md` (Living Auction House Economy).
 
 Source project: no donor shape — `mod-playerbots` has no market buyer (only a
-commented-out `AuctionItem` in `LootAction.cpp`); the teleport-or-skip mirrors
-our own seller path in the same file.
+commented-out `AuctionItem` in `LootAction.cpp`); the travel demand reuses our
+own AH travel destination.
 
-Source files: `runtime/AhBuyerPolicy.h` (new), `runtime/AhMarketService.h`,
-`runtime/AhMarketService.cpp`, `docs/guides/living-world.md`,
+Source files: `runtime/AhBuyerPolicy.h`,
+`runtime/AhMarketService.h` + `runtime/AhMarketService.cpp` (in-place
+house-matched scan only),
+`ai/playerbot/strategy/values/MaintenanceValues.h` + `MaintenanceValues.cpp`
+(`AhBuyerTripNeeded`), `ai/playerbot/strategy/values/TravelValues.cpp` (AH
+purpose buyer leg), `docs/guides/living-world.md`,
 `tools/test_ah_buyer_policy.cpp`.
 
 Copied / ported / reimplemented: reimplemented (local rule, local numbers).
 
 Reason: issue #405 — 37 listings in 2 h 46 min with 0 bids / 0 purchases and
 `AhMarketBuyer = 1`, because pool bots almost never stand at an auctioneer at
-low level and the buyer never teleported there unlike the seller.
+low level. First iteration gave the buyer the seller teleport; owner decision
+reverses that (NO buyer teleport), so demand now walks instead.
 
-Local validation: `tools/test_ah_buyer_policy.cpp` (caps, trip cooldown
-floor/cap, global one-per-interval budget; registered in `tools/verify_all.sh`);
-`bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
-compiles).
+Local validation: `tools/test_ah_buyer_policy.cpp` (scan caps, purse floor,
+phase window; registered in `tools/verify_all.sh`); `bash
+tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator compiles).

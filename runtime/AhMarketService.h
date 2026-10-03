@@ -34,15 +34,13 @@ namespace TortoiseBots
 // via facade value store (before teleport/post, not only on success) prevents
 // deposit/gold/no-auctioneer/invalid-spawn loops; successful-post cooldown
 // (interval*2) and bounded batch (1..5 teleports/posts per tick) are preserved.
-// Buyer teleport-or-skip (issue #405): the buyer used to need a nearby
-// auctioneer and never teleported, so with pool bots rarely in cities it
-// could never fire. It now shares the seller path: prefer a bot already at
-// a matching-house auctioneer, else teleport one eligible bot (per-bot
-// "ahMarketLastBuy" cooldown plus at most one buyer teleport per market
-// interval) and defer the bid until it arrives. Teleport targets only
-// auctioneers serving the auction's house object, else the bid handler
-// cannot see the auction. Bids still spend the bot's own gold inside the
-// "free money for ah" budget through canonical HandleAuctionPlaceBid.
+// Organic buyer (issue #405 rework, NO buyer teleport): the market buyer bids
+// only with a pool bot ALREADY standing at an auctioneer of the auction's
+// house (arrived on its own feet, e.g. on a sell trip or an AH travel
+// errand). Demand comes from the normal AH travel purpose: a masterless pool
+// bot holding spare gold above its trainer reserve walks/flies to its auction
+// house like the seller and bids on arrival (house-matched, budget-gated).
+// Teleport stays only the pre-existing stuck rescue on the way there.
 // Cross-feature safety (fail-closed): bots with an active PlayerbotAI player
 // master, any grouped/manual-use bot (Player::GetGroup), LFT queued/in-offer
 // (sLFTMgr.IsQueued/IsInOffer via core #416, read-only, no queue mutation),
@@ -148,19 +146,10 @@ private:
     uint32_t CalculateStack(ItemPrototype const* proto, uint32_t stockCount, uint32_t unitPrice) const;
     bool PublishSyntheticAuction(uint32_t itemId, uint32_t count, uint32_t unitPrice);
     bool BuyAuctionCandidate(AuctionEntry* auction, AuctionHouseObject* ahObject);
-    // Positions from the cached snapshot serving the given house object, or
-    // every cached position when the houses are cross-faction linked.
-    std::vector<AuctioneerPos const*> AuctioneerPositionsForHouse(AuctionHouseObject* ahObject) const;
-    // Teleport with the matching-house restriction (seller uses any house).
-    bool TryTeleportBuyerToAuctioneer(Player* bot, AuctionHouseObject* ahObject);
-    // Clamped seller tick in ms, shared by the seller loop and the buyer
-    // trip lease so the lease always covers the next pass.
-    static uint32_t SellerIntervalMs();
 
     uint32_t m_elapsedMs = 0;
     size_t m_nextIndex = 0;
     size_t m_buyerScanIndex = 0;
-    time_t m_lastBuyerTeleport = 0;
     std::vector<AuctioneerPos> m_auctioneerPositions;
     bool m_positionsLoaded = false;
 

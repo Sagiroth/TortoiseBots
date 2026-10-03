@@ -1,5 +1,7 @@
-// Standalone policy test for issue #405: the AH buyer teleport-or-skip uses
-// a bounded scan plus one-interval trip/global teleport cooldowns.
+// Standalone policy test for issue #405 rework: organic AH buyer.
+// No buyer teleport - the market buyer bids only with a bot already at a
+// matching-house auctioneer; demand comes from the organic AH travel purpose
+// (spare gold above the trainer reserve, RPG-phase rate bound).
 // Mirrors runtime/AhBuyerPolicy.h; no server headers needed.
 //
 // Build and run:
@@ -21,38 +23,40 @@ int failures = 0;
 } while (0)
 } // namespace
 
-using TortoiseBots::BuyerTeleportAllowed;
-using TortoiseBots::BuyerTripCooldownSec;
-using TortoiseBots::kBuyerCooldownMaxSec;
-using TortoiseBots::kBuyerCooldownMinSec;
-using TortoiseBots::kBuyerExamineCap;
-using TortoiseBots::kBuyerProbeCap;
+using ai::BuyerTripAffordable;
+using ai::BuyerTripPhaseOpen;
+using ai::kBuyerExamineCap;
+using ai::kBuyerProbeCap;
+using ai::kBuyerTripMinSpareCopper;
+using ai::kBuyerTripPhaseBelow;
+using ai::kBuyerTripPhaseMax;
 
 int main()
 {
     // Scan stays bounded for a 500-bot pool: 24 cheap examinations max,
     // 8 of them at most touching an AI context ("nearest npcs" probe).
+    // Past the cap the candidate is skipped - there is no teleport fallback.
     CHECK(kBuyerExamineCap == 24);
     CHECK(kBuyerProbeCap == 8);
     CHECK(kBuyerProbeCap <= kBuyerExamineCap);
 
-    // The seller path clamps its attempt cooldown to 5..3600 s; the buyer
-    // trip cooldown uses the same floor and cap.
-    CHECK(kBuyerCooldownMinSec == 5);
-    CHECK(kBuyerCooldownMaxSec == 3600);
-    CHECK(BuyerTripCooldownSec(120) == 120);
-    CHECK(BuyerTripCooldownSec(0) == kBuyerCooldownMinSec);
-    CHECK(BuyerTripCooldownSec(5000) == kBuyerCooldownMaxSec);
+    // Purse rule: spare gold above the trainer reserve must cover at least
+    // the cheapest realistic opening bid (1 silver floor).
+    CHECK(kBuyerTripMinSpareCopper == 100);
+    CHECK(!BuyerTripAffordable(0, 0));       // broke bot stays home
+    CHECK(!BuyerTripAffordable(500, 500));   // reserve exactly covered: no trip
+    CHECK(!BuyerTripAffordable(500, 450));   // 50c spare: below granularity
+    CHECK(BuyerTripAffordable(600, 500));    // 100c spare: trip
+    CHECK(BuyerTripAffordable(100000, 0));   // rich bot with nothing to train
 
-    // First teleport after boot is always allowed (last = 0 sentinel).
-    CHECK(BuyerTeleportAllowed(1000000, 0, 120));
-    // A second teleport inside the same 120 s interval is denied.
-    CHECK(!BuyerTeleportAllowed(110, 100, 120));
-    // Exactly one interval later it fires again.
-    CHECK(BuyerTeleportAllowed(220, 100, 120));
-    // Short intervals still pay the 5 s floor, not the raw tick.
-    CHECK(!BuyerTeleportAllowed(104, 100, 0));
-    CHECK(BuyerTeleportAllowed(105, 100, 0));
+    // Rate bound: only the first 15 minutes of the hourly RPG phase walk
+    // to shop (same 0..60 clock as the GenericRpg/Grind stagger).
+    CHECK(kBuyerTripPhaseMax == 60);
+    CHECK(kBuyerTripPhaseBelow == 15);
+    CHECK(BuyerTripPhaseOpen(0));
+    CHECK(BuyerTripPhaseOpen(14));
+    CHECK(!BuyerTripPhaseOpen(15));
+    CHECK(!BuyerTripPhaseOpen(59));
 
     if (failures)
     {
