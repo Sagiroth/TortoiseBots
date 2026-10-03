@@ -53,6 +53,23 @@ namespace ai
         return masterlessRandom && botLevel <= 4;
     }
 
+    // Whether a masterless starter bot (level 1-4) is exempt from the
+    // destination area-average ceiling on a quest errand (objectives and
+    // givers; hand-ins stay exempt as before). Same starter-valley wall as
+    // above: the valley average sits far above a fresh bot (Camp Narache 6,
+    // Dun Morogh 7, Durotar 8) while the quest's own gates already vet the
+    // trip - the giver/taker level window (PullRegenPolicy.h
+    // QuestTakerTripFits), the spawn entry's own template
+    // (QuestObjectiveLevelFits) and the 40 yd point-danger surroundings.
+    // Without this a level-1 bot holding The Hunt Begins (QuestLevel 2)
+    // sees every Plainstrider point vetoed by the area-6 average and parks
+    // the quest purpose with an empty list. Owned/hired bots keep the
+    // ceiling: their player decides where they walk.
+    inline bool QuestValleyExempted(std::uint32_t botLevel, bool masterlessRandom)
+    {
+        return masterlessRandom && botLevel <= 4;
+    }
+
     // How far an idle starter bot looks for a fallback grind target when the
     // normal scan found nothing and it holds no travel destination. Starter
     // mobs graze past the 60 yd combat scan (Camp Narache Plainstriders sit

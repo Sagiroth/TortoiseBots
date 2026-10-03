@@ -38,6 +38,7 @@
 #include "../ai/playerbot/TravelMgr.h"
 #include "../ai/playerbot/WorldPosition.h"
 #include "../ai/playerbot/strategy/values/TravelValues.h"
+#include "../ai/playerbot/LowbieGraveyardPolicy.h"
 
 #include "Database/DatabaseEnv.h"
 #include "../host/ModuleLog.h"
@@ -365,6 +366,71 @@ bool BotManager::RelocateStrandedBot(::Player* bot)
     if (!MisplacedBotEligible(bot, areaLevel))
         return false;
     return TeleportMisplacedBot(bot, areaLevel, "stranded bot");
+}
+
+bool BotManager::SendStrandedLowbieHome(::Player* bot)
+{
+    if (!sPlayerbotAIConfig.relocateHopelessDeaths)
+        return false;
+    if (!bot || !bot->GetSession() || !bot->GetSession()->IsHeadless())
+        return false;
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || bot->InBattleGround())
+        return false;
+    if (GroupHasRealPlayer(bot))
+        return false;
+    BotRecord* record = BotManager::Instance().FindBot(bot->GetObjectGuid());
+    if (!record || !record->random || record->lifecycle != BotLifecycle::InWorld)
+        return false;
+    if (!record->masterGuid.IsEmpty())
+        return false;
+    if (sRandomBotFacade.IsPinnedBot(bot->GetGUIDLow()))
+        return false;
+    if (BotActivityLeaseManager::Instance().GetActivity(bot->GetGUIDLow()) == BotActivity::Dungeon)
+        return false;
+    if (bot->GetLevel() >= ai::LOWBIE_GRAVEYARD_MAX_LEVEL)
+        return false;
+
+    auto& travelMgr = MaNGOS::Singleton<ai::TravelMgr>::Instance();
+    int32 areaLevel = 0;
+    if (!travelMgr.TryGetValidatedAreaLevel(bot->GetAreaId(), areaLevel) || areaLevel <= 0)
+        return false;
+    int32 homeLevel = 0;
+    if (!travelMgr.TryGetValidatedAreaLevel(bot->GetHomeBindAreaId(), homeLevel) || homeLevel <= 0)
+        return false;
+    if (!ai::ShouldSendLowbieHome(bot->GetLevel(), true, areaLevel, homeLevel))
+        return false;
+
+    // A rescue, not a hearth: TeleportToHomebind without the hearthstone
+    // cooldown, like LongStuckFallbackTeleport. Leave a bot-only group first
+    // so the moved bot is not pulled back (mirrors TeleportMisplacedBot).
+    if (bot->GetGroup() && bot->GetSession())
+    {
+        WorldPacket leave;
+        bot->GetSession()->HandleGroupDisbandOpcode(leave);
+    }
+    if (!bot->TeleportToHomebind(0, false))
+    {
+        sLog.outError("TortoiseBots: lowbie-home teleport failed for bot %s, retaining position", bot->GetName());
+        return false;
+    }
+    bot->SaveToDB();
+    ::PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+    if (ai && ai->GetAiObjectContext())
+    {
+        auto* travelHolder = ai->GetAiObjectContext()->GetValue<ai::TravelTarget*>("travel target");
+        ai::TravelTarget* target = travelHolder ? travelHolder->Get() : nullptr;
+        if (target)
+        {
+            MaNGOS::Singleton<ai::TravelMgr>::Instance().SetNullTravelTarget(target);
+            target->SetStatus(ai::TravelStatus::TRAVEL_STATUS_EXPIRED);
+            target->SetExpireIn(1000);
+        }
+        if (auto* deathCountValue = ai->GetAiObjectContext()->GetValue<uint32>("death count"))
+            deathCountValue->Reset();
+    }
+    sLog.outString("TortoiseBots: sent stranded lowbie %s level %u home from area level %d",
+        bot->GetName(), bot->GetLevel(), areaLevel);
+    return true;
 }
 
 void BotManager::SweepStrandedBots(uint32_t diff)

@@ -6,6 +6,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/Action.h"
 #include "runtime/BotActivityLease.h"
+#include "runtime/BotManager.h"
 #include "Group/Group.h"
 #include "MovementActions.h"
 #include "playerbot/strategy/values/LastMovementValue.h"
@@ -253,6 +254,9 @@ namespace ai
                     sLog.outDetail("Repop: Teleporting bot #%d %s:%d <%s> to the nearest graveyard", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
                     bot->TeleportTo(grave->map_id, grave->x, grave->y, grave->z, bot->GetOrientation());
                     sPlayerbotAIConfig.logEvent(ai, "RepopAction", "graveyard");
+                    // A sub-10 pool bot landed above its level (valley GY in
+                    // the next town) goes straight home (LowbieGraveyardPolicy.h).
+                    TortoiseBots::BotManager::Instance().SendStrandedLowbieHome(bot);
                     return true;
                 }
             }
