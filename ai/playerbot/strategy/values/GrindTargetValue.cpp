@@ -420,6 +420,8 @@ Unit* GrindTargetValue::FindIdleFallbackTarget()
         // through the attackers loop, which runs before this.
         if (!bot->IsHonorOrXPTarget(unit))
             continue;
+
+        float const dist = sServerFacade.GetDistance2d(bot, unit);
         if (best && !(dist < bestDist))
             continue;
 
