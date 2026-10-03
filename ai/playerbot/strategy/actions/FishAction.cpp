@@ -327,12 +327,17 @@ bool MoveToFishAction::Execute(Event& event)
         fishSpot = *target->getPosition();
 
         if (AI_VALUE(TravelTarget*, "travel target") != target) //Do not fish ontop of master.
-            fishSpot = *GetSafeFishSpot(bot, true);
+        {
+            WorldPosition* safeSpot = GetSafeFishSpot(bot, true);
+            fishSpot = safeSpot ? *safeSpot : WorldPosition();
+        }
     }
 
     if (!fishSpot) //Get any fish spot.
     {
-        fishSpot = *GetSafeFishSpot(bot);
+        WorldPosition* anySpot = GetSafeFishSpot(bot); //Null when the fish dataset is empty.
+        if (anySpot)
+            fishSpot = *anySpot;
 
         if (fishSpot)
         {
