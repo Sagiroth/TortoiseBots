@@ -480,8 +480,10 @@ namespace ai
         // radius of this position: spawns the bot is not hostile to never
         // count, so vendor/quest camps and neutral wildlife do not bar the
         // point. 0 when nothing hostile is near.
+    public:
         uint32 getHighestHostileLevelNear(float radius, Team botTeam) const;
         uint32 GetHighestHostileLevelNear(float radius, Team botTeam) const { return getHighestHostileLevelNear(radius, botTeam); }
+    private:
         static constexpr float PointDangerCellSize() { return 32.0f; }
         static int32 PointDangerCellCoord(float c) { return (int32)floorf(c / PointDangerCellSize()); }
         static void EnsurePointDangerIndex();
