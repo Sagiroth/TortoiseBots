@@ -119,6 +119,66 @@ namespace ai
         return autonomous || beginner;
     }
 
+    // Unit-flag bits that make a spawn unattackable for a player attacker.
+    // Mirrors the core attackability read (WorldObject::IsValidAttackTarget ->
+    // Unit::IsTargetable(forAttack, isAttackerPlayer = true)):
+    // NOT_ATTACKABLE_1, NOT_SELECTABLE, IMMUNE_TO_PLAYER and NON_ATTACKABLE_2
+    // each refuse the attack on their own. IMMUNE_TO_NPC is deliberately not
+    // here: it only refuses NPC attackers, and 107 spawned entries carry it
+    // (escort quest NPCs and the like) that a player can still hit. Passive
+    // wildlife carries none of these bits (verified in tw_world).
+    std::uint32_t const GRIND_UNATTACKABLE_UNIT_FLAGS = 0x00000080u /* UNIT_FLAG_NOT_ATTACKABLE_1 */
+        | 0x02000000u /* UNIT_FLAG_NOT_SELECTABLE */
+        | 0x00000100u /* UNIT_FLAG_IMMUNE_TO_PLAYER */
+        | 0x00010000u /* UNIT_FLAG_NON_ATTACKABLE_2 */;
+
+    // Whether a grind destination survives the hostility gate
+    // (GrindTravelDestination::IsActive).
+    //
+    // Hostile entries are always prey. Neutral entries are prey only when they
+    // are attackable XP-paying wildlife:
+    //   (1) no reputation list (the faction's reputationListID < 0, i.e. the
+    //       core IsValidAttackTarget AT_WAR check cannot refuse the attack;
+    //       Steamwheedle / Cenarion / Dalaran guards and citizens fail here),
+    //   (2) none of the unattackable unit-flag bits above (combat dummies,
+    //       quest spirits, ambient pets fail here),
+    //   (3) rank 0 (elites, rares and bosses fail here),
+    //   plus the existing no-NPC-flag and non-zero-XP-multiplier reads.
+    // Friendly entries are never prey.
+    //
+    // This mirrors the donor mod-playerbots grind filter
+    // (src/Ai/Base/Value/GrindTargetValue.cpp: loot-carrying neutrals are kept,
+    // only non-hostile NPCs are refused) and the core attackability verdict the
+    // arrival-side target selection applies (WorldObject::IsValidAttackTarget,
+    // Object.cpp ~5937), so a destination the gate admits is one the bot can
+    // actually attack on arrival. The old hostile-only read excluded every
+    // neutral starter beast - Thistle Boars / Nightsabers (faction 189/7 read
+    // REP_NEUTRAL against a player faction template) - so a level 1-3 bot
+    // with no quest destination never held a grind destination and looped
+    // QuestTripNoTarget instead of walking to its wolves (issue #393).
+    // All inputs are data-only (creature template + faction DBC), so the rule
+    // stays safe wherever the destination gate runs.
+    inline bool GrindHostilityAllowed(bool hostileToBot, bool friendlyToBot,
+        std::uint32_t npcFlags, bool paysXp, bool noReputation, std::uint32_t unitFlags, std::uint32_t rank)
+    {
+        if (hostileToBot)
+            return true;
+
+        if (friendlyToBot)
+            return false;
+
+        if (npcFlags != 0 || !paysXp)
+            return false;
+
+        if (!noReputation)
+            return false;
+
+        if (unitFlags & GRIND_UNATTACKABLE_UNIT_FLAGS)
+            return false;
+
+        return rank == 0;
+    }
+
     // How many bots one grind destination may hold before the picker sends the next
     // bot elsewhere: a third of its spawn points, never below two (a bot may always
     // join a spot a single other bot is working). Without this every bot in a zone
