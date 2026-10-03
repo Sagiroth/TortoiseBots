@@ -2731,8 +2731,11 @@ void PlayerbotFactory::EnsurePrimaryProfessions()
     uint16 secondSkill = sRandomBotFacade.GetValue(bot, "secondSkill");
     if ((!firstSkill || !secondSkill) && grantPair)
     {
-        // Every random bot owns at least one gathering primary: a craft is dead
-        // weight without the gathering that feeds its reagents, it can never skill
+        // Every random bot owns at least one gathering primary, with one
+        // owner-decided exception (runtime/ProfessionGrantPolicy.h): cloth
+        // classes (mage, priest, warlock) may roll Tailoring + Enchanting
+        // together, about 1 in 3 of them. Otherwise a craft is dead weight
+        // without the gathering that feeds its reagents, it can never skill
         // up or earn. The second primary is either that fed craft or a second
         // gathering, never a second craft. The pairs are explicit because two
         // independent candidate lists (the previous shape) cross-product into
@@ -2756,8 +2759,18 @@ void PlayerbotFactory::EnsurePrimaryProfessions()
             pairs.push_back(SkillPair(SKILL_SKINNING, SKILL_MINING));
             break;
         default:
-            // Casters keep the four pairs they always had; none of them pairs two
-            // crafts. (0, 6) used to leave three casters in seven without any
+            // About 1 in 3 cloth bots takes the Tailoring + Enchanting pair
+            // (tested rule RollsTailorEnchantPair); the rest keep the four
+            // gathering pairs below. Enchanting's rod (16207) already comes
+            // from InitInventorySkill; Tailoring needs no tool.
+            uint32 tailorRoll = urand(0, TortoiseBots::TAILOR_ENCHANT_SHARE_DENOMINATOR - 1);
+            if (TortoiseBots::RollsTailorEnchantPair(bot->GetClass(), tailorRoll))
+            {
+                pairs.push_back(SkillPair(SKILL_TAILORING, SKILL_ENCHANTING));
+                break;
+            }
+            // Four gathering pairs as before; none of them pairs two crafts.
+            // (0, 6) used to leave three casters in seven without any
             // profession (firstSkill and secondSkill stayed 0, SetRandomSkill(0)
             // is a no-op).
             pairs.push_back(SkillPair(SKILL_HERBALISM, SKILL_ALCHEMY));

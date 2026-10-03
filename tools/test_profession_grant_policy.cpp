@@ -1,10 +1,13 @@
 // Standalone regression test for the professions-at-5 rule: every pool bot
 // gets its PRIMARY pair at level 5, secondaries at any level, and a bot that
-// already holds a primary (or is not a pool bot) is never re-rolled. Guards
-// the rules that keep player characters and hired/owned bots' existing
-// professions safe. This pins the exact helper production calls:
+// already holds a primary (or is not a pool bot) is never re-rolled. Also
+// pins the Tailoring + Enchanting share: only cloth classes (mage, priest,
+// warlock) may roll it, about 1 in 3 of them. Guards the rules that keep
+// player characters and hired/owned bots' existing professions safe. This
+// pins the exact helper production calls:
 // PlayerbotFactory::EnsurePrimaryProfessions (GrantAll gate for the pair
-// roll), AutoLearnSpellAction::LearnSpells (GrantAll gate on ding) and
+// roll, RollsTailorEnchantPair for the cloth share),
+// AutoLearnSpellAction::LearnSpells (GrantAll gate on ding) and
 // BotManager::OnPlayerLogin (any non-LeaveAlone enters for secondaries).
 //
 // Build and run:
@@ -89,6 +92,44 @@ static void TestThresholdValue()
     CHECK(PRIMARY_PROFESSION_MIN_LEVEL == 5);
 }
 
+// Tailoring + Enchanting share (owner decision): only cloth classes (mage 8,
+// priest 5, warlock 9) may roll it, and only roll 0 of 3 takes it - about 1
+// in 3 eligible bots. Class ids mirror SharedDefines.h (same precedent as
+// StarterKitPolicy.h). Pins the exact rule production calls:
+// PlayerbotFactory::EnsurePrimaryProfessions (urand(0, DENOMINATOR - 1)).
+static void TestTailorEnchantEligibility()
+{
+    CHECK(IsTailorEnchantClass(5));  // priest
+    CHECK(IsTailorEnchantClass(8));  // mage
+    CHECK(IsTailorEnchantClass(9));  // warlock
+    CHECK(!IsTailorEnchantClass(1)); // warrior
+    CHECK(!IsTailorEnchantClass(2)); // paladin
+    CHECK(!IsTailorEnchantClass(3)); // hunter
+    CHECK(!IsTailorEnchantClass(4)); // rogue
+    CHECK(!IsTailorEnchantClass(7)); // shaman
+    CHECK(!IsTailorEnchantClass(11)); // druid
+}
+
+static void TestTailorEnchantShare()
+{
+    CHECK(TAILOR_ENCHANT_SHARE_DENOMINATOR == 3);
+    // Roll 0 takes it, rolls 1-2 keep the gathering pairs.
+    CHECK(RollsTailorEnchantPair(8, 0));
+    CHECK(RollsTailorEnchantPair(5, 0));
+    CHECK(RollsTailorEnchantPair(9, 0));
+    CHECK(!RollsTailorEnchantPair(8, 1));
+    CHECK(!RollsTailorEnchantPair(8, 2));
+    CHECK(!RollsTailorEnchantPair(5, 1));
+    CHECK(!RollsTailorEnchantPair(9, 2));
+    // Non-cloth classes never take it on any roll.
+    CHECK(!RollsTailorEnchantPair(1, 0));
+    CHECK(!RollsTailorEnchantPair(2, 0));
+    CHECK(!RollsTailorEnchantPair(3, 0));
+    CHECK(!RollsTailorEnchantPair(4, 0));
+    CHECK(!RollsTailorEnchantPair(7, 0));
+    CHECK(!RollsTailorEnchantPair(11, 0));
+}
+
 int main()
 {
     TestBelowGateSecondariesOnly();
@@ -97,6 +138,8 @@ int main()
     TestNotPool();
     TestTrainerParity();
     TestThresholdValue();
+    TestTailorEnchantEligibility();
+    TestTailorEnchantShare();
     std::printf("profession grant policy: %d checks passed\n", checks);
     return 0;
 }
