@@ -7,6 +7,8 @@
 #include "MoveToTravelTargetAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/PullRegenPolicy.h"
+#include "playerbot/LocalPickPolicy.h"
+#include "playerbot/GrindSpotPolicy.h"
 #include "playerbot/TravelInstancePolicy.h"
 #include "playerbot/TravelRepickPolicy.h"
 #include "playerbot/strategy/values/VendorTripPolicy.h"
@@ -327,6 +329,16 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
         // RequestTravelTargetAction::isUseful.
         if (purpose == "Vendor")
             SET_AI_VALUE2(time_t, "manual time", "vendor trip since", time(0));
+        // One AH shopping journey at a time (issue #405): the buyer trip need
+        // doubles as the in-flight trip's stored condition, so without a stamp
+        // here a trip whose target dies mid-walk re-issues immediately. Same
+        // request-side-only pattern as the vendor/trainer stamps above; the
+        // need lapses on this stamp after ten minutes like the trainer window.
+        // travelPurposeName here is the DISPLAY name ("AH"; the raw qualifier
+        // is the numeric purpose id "1024") - match the display name like the
+        // "Vendor"/"trainer" stamps above match theirs.
+        if (purpose == "AH")
+            SET_AI_VALUE2(time_t, "manual time", "ah buyer trip since", time(0));
         // One trainer journey at a time: a walk to a trainer has just started, and
         // the errand's trigger refuses another until this is ten minutes old, the
         // bot has learned something (TrainerAction) or it has dinged
@@ -692,7 +704,16 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                     }
 
                     int32 posAreaLevel = position->GetAreaLevel();
-                    if (posAreaLevel > 0 && posAreaLevel > (int32)bot->GetLevel() + 5)
+                    // Starter-valley exemption for the grind pick (GrindSpotPolicy.h):
+                    // the valley average sits far above a level 1-4 bot while its
+                    // mobs are vetted in-cap by the destination band, so the
+                    // ceiling would veto every local point. Mirrors the
+                    // IsLocationLevelValid beginnerGrind exemption. Owned/hired
+                    // bots keep the ceiling.
+                    bool const valleyExempted = destination->GetPurpose() == TravelDestinationPurpose::Grind &&
+                        ai::GrindValleyExempted(bot->GetLevel(),
+                            sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster());
+                    if (!valleyExempted && posAreaLevel > 0 && posAreaLevel > (int32)bot->GetLevel() + 5)
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - area level too high", "debug travel");
                         continue;
@@ -1150,7 +1171,24 @@ bool RequestTravelTargetAction::Execute(Event& event)
     // town, area-level, distance and route checks.
     bool const onlyPossible = actionPurpose != TravelDestinationPurpose::Vendor;
 
-    *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, purpose = actionPurpose, outgrownFloor, onlyPossible]() { return sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)purpose, {}, onlyPossible, 10000.0f, outgrownFloor); });
+    // Local grind/camp picks (issue #424, donor SelectRandomGrindPos /
+    // SelectRandomCampPos): pool bots search the grind errand inside the local
+    // window (2500 yd, 833 below level 5) instead of 10000 yd, and camp
+    // errands (GenericRpg inn hubs) inside 500 yd at level <= 5 / 2500 yd
+    // above. Owned/hired bots keep the full radius (their player decides),
+    // and a leave-outgrown-zone grind keeps it too (a zone exit is far by
+    // design). All destination gates stay in force: the band, area ceiling,
+    // point danger (#418/#428), taker route (#434) still reject; an empty
+    // search parks the purpose like any other empty search. One float down
+    // the async lambda, no world scan, no per-tick cost.
+    bool const masterless = sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster();
+    float requestMaxDistance = 10000.0f;
+    if (actionPurpose == TravelDestinationPurpose::Grind)
+        requestMaxDistance = GrindRequestMaxDistance(leavingOutgrown, masterless, bot->GetLevel(), requestMaxDistance);
+    else if (actionPurpose == TravelDestinationPurpose::GenericRpg)
+        requestMaxDistance = CampRequestMaxDistance(masterless, bot->GetLevel(), requestMaxDistance);
+
+    *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, purpose = actionPurpose, outgrownFloor, onlyPossible, requestMaxDistance]() { return sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)purpose, {}, onlyPossible, requestMaxDistance, outgrownFloor); });
 
     AI_VALUE(TravelTarget*, "travel target")->SetStatus(TravelStatus::TRAVEL_STATUS_PREPARE);
     SET_AI_VALUE2(std::string, "manual string", "future travel purpose", getQualifier());
@@ -1883,12 +1921,24 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
             }
             else
             {
+                // Stall-abandoned pursuit (issue #423): the quest sat arrived
+                // (WORK) past the 5-min horizon with unchanged counters, so
+                // its fetch is skipped for the park window. Parked quests
+                // still hand in (the taker branch above); the anchor
+                // re-arms on the next visit when the park expires.
+                std::string const stallParkKey = "no quest objective until::" + std::to_string(questId);
+                bool const stallParked = !ai->HasActivePlayerMaster() &&
+                    sPlayerbotAIConfig.botQuestLogUpkeep && sRandomBotFacade.IsRandomBot(bot) &&
+                    HAS_AI_VALUE2("manual time", stallParkKey) &&
+                    AI_VALUE2(time_t, "manual time", stallParkKey) > time(0);
                 for (uint32 objective = 0; objective < 4; objective++)
                 {
                     TravelDestinationPurpose purposeFlag = (TravelDestinationPurpose)(1 << (objective + 1));
 
                     std::vector<std::string> qualifier = { std::to_string(questId), std::to_string(objective) };
 
+                    if (stallParked)
+                        continue;
                     if (AI_VALUE2(bool, "group or", "following party,need quest objective::" + Qualified::MultiQualify(qualifier, ","))) //Noone needs the quest objective.
                         flag = flag | (uint32)purposeFlag;
                 }

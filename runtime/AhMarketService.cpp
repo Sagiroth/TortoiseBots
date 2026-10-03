@@ -1,4 +1,5 @@
 #include "AhMarketService.h"
+#include "AhBuyerPolicy.h"
 #include "BotActivityLease.h"
 #include "TradingLeasePolicy.h"
 
@@ -817,8 +818,9 @@ bool AhMarketService::PublishSyntheticAuction(uint32_t itemId, uint32_t count, u
 
 bool AhMarketService::BuyAuctionCandidate(AuctionEntry* auction, AuctionHouseObject* ahObject)
 {
-    (void)ahObject;
-    if (!auction || auction->expireTime <= time(nullptr))
+    if (!auction || !ahObject)
+        return false;
+    if (auction->expireTime <= time(nullptr))
         return false;
     if (!auction->lockedIpAddress.empty() && auction->depositTime + 300 >= time(nullptr))
         return false;
@@ -838,10 +840,24 @@ bool AhMarketService::BuyAuctionCandidate(AuctionEntry* auction, AuctionHouseObj
     if (bots.empty())
         return false;
 
-    std::vector<Player*> eligible;
-    for (Player* bot : bots)
+    // Organic model (issue #405 rework, review 2, NO buyer teleport): bid
+    // only with a pool bot ALREADY standing at an auctioneer of the auction's
+    // house (arrived on its own feet). One pass, no blind spot (review
+    // finding 6): examine == probe (ai::kBuyerExamineCap ==
+    // ai::kBuyerProbeCap), so every touched entry is fully probed and
+    // m_buyerScanIndex cycles the whole pool over passes.
+    size_t poolSize = bots.size();
+    size_t start = poolSize ? (m_buyerScanIndex % poolSize) : 0;
+    Player* buyer = nullptr;
+    ::PlayerbotAI* ai = nullptr;
+    Unit* auctioneer = nullptr;
+    uint32_t examined = 0;
+    for (size_t offset = 0; offset < poolSize && examined < ai::kBuyerExamineCap && !buyer; ++offset)
     {
-        if (!IsBotAvailableForMarket(bot))
+        size_t idx = (start + offset) % poolSize;
+        Player* bot = bots[idx];
+        ++examined;
+        if (!bot || !IsBotAvailableForMarket(bot))
             continue;
         if (!sRandomBotFacade.IsRandomBot(bot))
             continue;
@@ -851,24 +867,40 @@ bool AhMarketService::BuyAuctionCandidate(AuctionEntry* auction, AuctionHouseObj
             continue;
         if (auction->owner == bot->GetGUIDLow())
             continue;
+        if (!bot->GetSession() || !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported())
+            continue;
         if (auction->ownerAccount == bot->GetSession()->GetAccountId())
             continue;
         if (auction->bidder == bot->GetGUIDLow())
             continue;
         if (auction->bidder && sObjectMgr.GetPlayerAccountIdByGUID(ObjectGuid(HIGHGUID_PLAYER, auction->bidder)) == bot->GetSession()->GetAccountId())
             continue;
-        eligible.push_back(bot);
+        ::PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(bot);
+        if (!botAi)
+            continue;
+        Unit* nearby = FindNearbyAuctioneer(bot, botAi);
+        if (!nearby || !nearby->IsInWorld())
+            continue;
+        // Bind to the auction's house object: with faction-separated houses
+        // the bid handler only sees auctions of the auctioneer's own house.
+        // Null-checked: GetAuctionHouseEntry returns null for unmapped
+        // factions and GetAuctionsMap dereferences its argument (server
+        // crash if passed null; see review-y-405b finding 2).
+        AuctionHouseEntry const* nearbyEntry = AuctionHouseMgr::GetAuctionHouseEntry(nearby);
+        if (!nearbyEntry)
+            continue;
+        AuctionHouseObject* nearbyHouse = sAuctionMgr.GetAuctionsMap(nearbyEntry);
+        if (!nearbyHouse || nearbyHouse != ahObject)
+            continue;
+        buyer = bot;
+        ai = botAi;
+        auctioneer = nearby;
     }
-    if (eligible.empty())
-        return false;
-
-    Player* buyer = eligible[urand(0, eligible.size() - 1)];
-    ::PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(buyer);
-    if (!ai)
-        return false;
-
-    Unit* auctioneer = FindNearbyAuctioneer(buyer, ai);
-    if (!auctioneer)
+    if (poolSize)
+        m_buyerScanIndex = (start + examined) % poolSize;
+    if (examined >= poolSize)
+        m_buyerScanIndex = 0;
+    if (!buyer || !ai || !auctioneer)
         return false;
 
     uint32 fairUnit = CalculatePrice(proto);
@@ -1175,9 +1207,24 @@ void AhMarketService::StepBuy()
     }
 
     AuctionEntry* auction = it->second;
+    if (!auction)
+    {
+        m_scanCursor = it->first;
+        return;
+    }
     m_scanCursor = auction->Id;
 
     BuyAuctionCandidate(auction, ahObject);
+}
+
+uint32_t AhMarketService::SellerIntervalMs()
+{
+    uint32 intervalMs = sPlayerbotAIConfig.ahMarketInterval * 1000;
+    if (intervalMs < 1000)
+        intervalMs = 1000;
+    if (intervalMs > 3600000)
+        intervalMs = 3600000;
+    return intervalMs;
 }
 
 void AhMarketService::StepExpire()
@@ -1279,11 +1326,7 @@ void AhMarketService::Update(uint32_t diff)
     }
 
     // 2. Real-inventory seller loop
-    uint32 intervalMs = sPlayerbotAIConfig.ahMarketInterval * 1000;
-    if (intervalMs < 1000)
-        intervalMs = 1000;
-    if (intervalMs > 3600000)
-        intervalMs = 3600000;
+    uint32 intervalMs = SellerIntervalMs();
 
     m_elapsedMs += diff;
     if (m_elapsedMs < intervalMs)

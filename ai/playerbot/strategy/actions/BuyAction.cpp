@@ -7,6 +7,8 @@
 #include "playerbot/strategy/values/ItemCountValue.h"
 #include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/strategy/values/VendorWeaponUpgradePolicy.h"
+#include "playerbot/strategy/values/VendorBuyPolicy.h"
+#include "playerbot/RandomItemMgr.h"
 #include "runtime/HireLifecycle.h"
 #include "playerbot/strategy/values/MountValues.h"
 #include "playerbot/strategy/values/GuildValues.h"
@@ -69,8 +71,22 @@ bool BuyAction::Execute(Event& event)
 
             if (m_items_sorted.empty())
                 continue;
-
-            std::sort(m_items_sorted.begin(), m_items_sorted.end(), [](VendorItem* i, VendorItem* j) {return sObjectMgr.GetItemPrototype(i->item)->ItemLevel > sObjectMgr.GetItemPrototype(j->item)->ItemLevel; });
+            // #427: order vendor stock by live stat-weight score (best upgrade
+            // first) with an item-level fallback when either side scores 0,
+            // ported from donor BuyAction.cpp:69-88. One weight lookup per
+            // item per visit (O(stock)); the loop below reuses no cache.
+            std::unordered_map<uint32, uint32> vendorScores;
+            vendorScores.reserve(m_items_sorted.size());
+            for (VendorItem* scored : m_items_sorted)
+                vendorScores[scored->item] = sRandomItemMgr.GetLiveStatWeight(bot, scored->item);
+            std::sort(m_items_sorted.begin(), m_items_sorted.end(), [&vendorScores](VendorItem* i, VendorItem* j)
+            {
+                ItemPrototype const* pi = sObjectMgr.GetItemPrototype(i->item);
+                ItemPrototype const* pj = sObjectMgr.GetItemPrototype(j->item);
+                if (!pi || !pj)
+                    return false;
+                return VendorBuyRanksFirst(vendorScores[i->item], pi->ItemLevel, vendorScores[j->item], pj->ItemLevel);
+            });
 
             for (auto& tItem : m_items_sorted)
             {
@@ -129,7 +145,13 @@ bool BuyAction::Execute(Event& event)
                     bool usageAllowed = true;
                     switch (usage)
                     {
-                        case ItemUsage::ITEM_USAGE_EQUIP: moneyKey = (uint32)NeedMoneyFor::gear; break;
+                        // #427: donor BuyAction.cpp:140-147 maps REPLACE/EQUIP/
+                        // BAD/BROKEN to the gear budget. Our classifier has no
+                        // REPLACE (EQUIP covers it), so the gear set is
+                        // EQUIP/BAD_EQUIP/BROKEN_EQUIP; BROKEN_AH stays unbought.
+                        case ItemUsage::ITEM_USAGE_EQUIP:
+                        case ItemUsage::ITEM_USAGE_BAD_EQUIP:
+                        case ItemUsage::ITEM_USAGE_BROKEN_EQUIP: moneyKey = (uint32)NeedMoneyFor::gear; break;
                         case ItemUsage::ITEM_USAGE_USE: moneyKey = (uint32)NeedMoneyFor::consumables; break;
                         case ItemUsage::ITEM_USAGE_SKILL: moneyKey = (uint32)NeedMoneyFor::tradeskill; break;
                         case ItemUsage::ITEM_USAGE_AMMO: moneyKey = (uint32)NeedMoneyFor::ammo; break;
@@ -172,7 +194,7 @@ bool BuyAction::Execute(Event& event)
                     RESET_AI_VALUE2(std::list<Item*>, "inventory items", ChatHelper::formatItem(proto));
                     RESET_AI_VALUE(std::vector<MountValue>, "mount list");
 
-                    if (usage == ItemUsage::ITEM_USAGE_EQUIP || usage == ItemUsage::ITEM_USAGE_BAD_EQUIP) //Equip upgrades and stop buying this time.
+                    if (VendorBuyUsesGearBudget(static_cast<uint32_t>(usage))) //Equip upgrades and stop buying this time.
                     {
                         RESET_AI_VALUE2(ItemUsage, "item usage", tItem->item);
                         ai->DoSpecificAction("equip upgrades", event, true);
