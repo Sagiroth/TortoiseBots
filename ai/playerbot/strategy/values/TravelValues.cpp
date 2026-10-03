@@ -121,10 +121,17 @@ EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
         {
             if ((cInfo->npc_flags & flag) != 0)
             {
+                // #404: a flagged-but-stockless NPC (entry 1650) is not a vendor destination: the
+                // trip would sell nothing and each hello prints a core "empty trading item list"
+                // error. Stock = npc_vendor rows or a non-empty vendor template. Quest/other
+                // purposes above are untouched, so the NPC stays reachable for its quest.
+                if (flagPurpose == TravelDestinationPurpose::Vendor &&
+                    !sObjectMgr.GetNpcVendorItemList(entry) &&
+                    (!cInfo->vendor_id || !sObjectMgr.GetNpcVendorTemplateItemList(cInfo->vendor_id)))
+                    continue;
                 purpose |= (uint32)flagPurpose;
             }
         }
-
 
         // Coinless creatures are grind destinations too: wildlife (wolves, boars,
         // spiders, scorpids, bears) carries no copper at all - it pays in XP, grey

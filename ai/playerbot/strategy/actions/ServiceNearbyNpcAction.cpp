@@ -1,9 +1,9 @@
 #include "playerbot/playerbot.h"
 #include "ServiceNearbyNpcAction.h"
+#include "SellAction.h"
 #include "playerbot/strategy/values/MaintenanceValues.h"
 #include "playerbot/strategy/actions/AcceptQuestAction.h"
 #include "playerbot/strategy/triggers/RpgTriggers.h"
-
 using namespace ai;
 
 bool ServiceNearbyNpcAction::isUseful()
@@ -87,9 +87,16 @@ bool ServiceNearbyNpcAction::TryVerb(Event& event, GuidPosition target, NearbySe
     {
         // The selector prefers a vendor whenever a sale is due, so a vendor
         // here means "sell first"; the trainer is then picked up on a later
-        // tick, once the sale has funded the rank.
+        // tick, once the sale has funded the rank. #404: a flagged-but-stockless NPC is not
+        // a vendor for this verb either (SellAction skips it), so fail here and let the NPC's
+        // remaining verbs (quest/trainer) still run.
         if (!target.HasNpcFlag(UNIT_NPC_FLAG_VENDOR))
             return false;
+        if (Creature* vendorCreature = target.GetCreature(bot->GetInstanceId()))
+        {
+            if (!SellAction::HasVendorStock(vendorCreature))
+                return false;
+        }
 
         return RunVerb(npcGuid, verbId, kind, verb, "sell", Event("rpg action", "vendor"), target, now);
     }

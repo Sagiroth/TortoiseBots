@@ -13,6 +13,11 @@ namespace ai
         bool Sell(Player* requester, FindItemVisitor* visitor);
         bool Sell(Player* requester, Item* item);
 
+        // True when the NPC actually has vendor stock (npc_vendor rows or template rows).
+        // Flagged-but-stockless NPCs (issue #404: entry 1650) would only print a core
+        // "empty trading item list" error on gossip, so both sell and buy skip them here.
+        static bool HasVendorStock(Creature* vendor);
+
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "sell"; } //Must equal iternal name
         virtual std::string GetHelpDescription()
