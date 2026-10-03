@@ -53,6 +53,7 @@ namespace ai
 		PlayerTravelInfo(Player* player);
 
 		const WorldPosition& getPosition() const { return position; }
+		const WorldPosition& GetHomebind() const { return homebind; }
 		Team GetTeam() const { return team; }
 		uint32 GetLevel() const  { return level; }
 		uint32 GetIdentitySeed() const { return identitySeed; }
@@ -76,6 +77,7 @@ namespace ai
 
 	private:
 		WorldPosition position;
+		WorldPosition homebind;
 		Team team = TEAM_NONE;
 		uint32 level = 0;
 		uint32 identitySeed = 0;

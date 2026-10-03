@@ -30,6 +30,7 @@ PlayerTravelInfo::PlayerTravelInfo(Player* player)
     AiObjectContext* context = ai->GetAiObjectContext();
 
     position = player;
+    homebind = WorldPosition(player->GetHomeBindLocation());
 
     team = player->GetTeam();
     level = player->GetLevel();
@@ -2661,6 +2662,21 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
     bool const beginnerQuest = (purposeFlag & ((uint32)TravelDestinationPurpose::QuestGiver |
         (uint32)TravelDestinationPurpose::QuestAllObjective)) != 0 &&
         ai::QuestValleyExempted(info.GetLevel(), info.IsMasterlessRandom());
+
+    // Both exemptions above drop the area ceiling, so keep their destinations
+    // inside the starter valley instead (GrindSpotPolicy.h
+    // BeginnerValleyLeashAllows): same zone as the bot, near its homebind.
+    if (beginnerGrind || beginnerQuest)
+    {
+        AreaTableEntry const* botArea = info.getPosition().GetArea();
+        uint32 const botZoneId = botArea ? (botArea->ZoneId ? botArea->ZoneId : botArea->Id) : 0;
+        uint32 const pointZoneId = posArea ? (posArea->ZoneId ? posArea->ZoneId : posArea->Id) : 0;
+        WorldPosition const& home = info.GetHomebind();
+        bool const homeOnSameMap = home.GetMapId() == position.GetMapId();
+        if (!ai::BeginnerValleyLeashAllows(true, botZoneId, pointZoneId, homeOnSameMap,
+                homeOnSameMap ? home.distance(position) : 0.0f))
+            return false;
+    }
 
     // A grind destination's own creatures are already bounded by the policy band in
     // GrindSpotPolicy.h ([botLevel-2, botLevel+1]), so the area average is a second,

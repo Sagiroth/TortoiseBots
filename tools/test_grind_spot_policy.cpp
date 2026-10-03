@@ -19,6 +19,8 @@ using ai::GrindLevelFits;
 using ai::GrindPreyAllowed;
 using ai::GrindSpotCapacity;
 using ai::GrindValleyExempted;
+using ai::BeginnerValleyLeashAllows;
+using ai::BEGINNER_HOME_LEASH_YD;
 
 namespace
 {
@@ -221,6 +223,24 @@ int main()
         // The fallback reaches past the 60 yd combat scan but stays nearby.
         CHECK(GRIND_IDLE_FALLBACK_RANGE_YD == 150.0f);
         std::cout << "  [PASS] idle-starter fallback gate is tight\n";
+    }
+
+    {
+        // Starter-valley leash: only applies to the exempted level 1-4 pool picks.
+        CHECK(BeginnerValleyLeashAllows(false, 14, 17, false, 5000.0f));
+        // Same zone, inside the circle: allowed.
+        CHECK(BeginnerValleyLeashAllows(true, 14, 14, true, 300.0f));
+        // Valley of Trials (Durotar 14) bot, Barrens (17) point: refused.
+        CHECK(!BeginnerValleyLeashAllows(true, 14, 17, true, 300.0f));
+        // Northshire bot, Goldshire point ~580 yd from the abbey: refused.
+        CHECK(!BeginnerValleyLeashAllows(true, 12, 12, true, 580.0f));
+        // Unresolved zones (async search, vmap not loaded) fall back to distance.
+        CHECK(BeginnerValleyLeashAllows(true, 0, 17, true, 400.0f));
+        CHECK(!BeginnerValleyLeashAllows(true, 0, 0, true, 501.0f));
+        // Homebind on another map: refused.
+        CHECK(!BeginnerValleyLeashAllows(true, 14, 14, false, 0.0f));
+        CHECK(BEGINNER_HOME_LEASH_YD == 500.0f);
+        std::cout << "  [PASS] starter-valley leash keeps exempted picks home\n";
     }
 
     std::cout << "All grind-spot level-band tests passed.\n";

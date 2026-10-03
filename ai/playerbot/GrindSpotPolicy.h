@@ -70,6 +70,29 @@ namespace ai
         return masterlessRandom && botLevel <= 4;
     }
 
+    // Starter-valley leash for the two exemptions above (live 2026-10-03,
+    // fresh level-1 pool): with the area ceiling gone, the only bound left on
+    // a level 1-4 pool bot was the ~830 yd local radius, so Valley of Trials
+    // bots took 32 grind trips into The Barrens and died to level-9 Dreadmaw
+    // Crocolisks (~25 deaths), and Northshire bots walked out toward Goldshire
+    // into Mangy Wolves and Defias. An exempted destination must stay on the
+    // bot's own zone (when both zones resolve - async searches often have no
+    // area loaded, so unknown passes) and within BEGINNER_HOME_LEASH_YD of the
+    // bot's homebind, its starter spawn. Northshire, Valley of Trials,
+    // Coldridge, Deathknell, Shadowglen and Camp Narache quests all sit inside
+    // that circle; Goldshire (~580 yd from the abbey) and the Barrens do not.
+    constexpr float BEGINNER_HOME_LEASH_YD = 500.0f;
+
+    inline bool BeginnerValleyLeashAllows(bool exempted, std::uint32_t botZoneId, std::uint32_t pointZoneId,
+        bool homeOnSameMap, float distanceToHome)
+    {
+        if (!exempted)
+            return true;
+        if (botZoneId && pointZoneId && botZoneId != pointZoneId)
+            return false;
+        return homeOnSameMap && distanceToHome <= BEGINNER_HOME_LEASH_YD;
+    }
+
     // How far an idle starter bot looks for a fallback grind target when the
     // normal scan found nothing and it holds no travel destination. Starter
     // mobs graze past the 60 yd combat scan (Camp Narache Plainstriders sit
