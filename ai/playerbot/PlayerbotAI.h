@@ -364,6 +364,8 @@ public:
     void HandleCommand(uint32 type, const std::string& text, Player& fromPlayer, const uint32 lang = LANG_UNIVERSAL);
     void QueueChatResponse(uint32 msgType, ObjectGuid guid1, ObjectGuid guid2, std::string message, std::string chanName, std::string name, bool noDelay = false);
 	void HandleBotOutgoingPacket(const WorldPacket& packet);
+    // Issue #382: drop a queued outgoing packet (e.g. the provisioning level-up echo).
+    void DropQueuedOutgoingOpcode(uint16 opcode) { botOutgoingPacketHandlers.DropQueuedOpcode(opcode); }
     void HandleMasterIncomingPacket(const WorldPacket& packet);
     void HandleMasterOutgoingPacket(const WorldPacket& packet);
 	void HandleTeleportAck();

@@ -1,5 +1,6 @@
 // pi-lens-ignore-file: clang:pp_file_not_found,clang:unknown_typename,clang:use_of_undeclared_identifier,clang:unknown_type_name,clang:undeclared_var_use,clang:incomplete_member_access
 #include "HireLifecycle.h"
+#include "HireProvisionService.h"
 #include "BotManager.h"
 #include "BotActivityLease.h"
 #include "CharacterCleanup.h"

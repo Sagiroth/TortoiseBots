@@ -1046,7 +1046,7 @@ void HireProvisionService::DropPendingLevelupEcho(PlayerbotAI* ai)
 {
     if (!ai)
         return;
-    ai->botOutgoingPacketHandlers.DropQueuedOpcode(SMSG_LEVELUP_INFO);
+    ai->DropQueuedOutgoingOpcode(SMSG_LEVELUP_INFO);
 }
 
 // Issue #382: the one spec+spells post. Runs only on the confirmed-grouped
@@ -1088,7 +1088,7 @@ void HireProvisionService::AnnounceIntro(Player* bot, Player* master, PendingPro
     std::string className = ai::ChatHelper::formatClass(bot->GetClass());
     std::string specLine = ComposeHireSpecLine(specName, className, roleWord,
         spec.GetTalentPoints(0), spec.GetTalentPoints(1), spec.GetTalentPoints(2));
-    ai->TellPlayer(master, specLine, PLAYERBOT_SECURITY_ALLOW_ALL, false);
+    ai->TellPlayer(master, specLine, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
 
     std::vector<std::string> names;
     for (size_t rank = 0;; ++rank)
@@ -1110,7 +1110,7 @@ void HireProvisionService::AnnounceIntro(Player* bot, Player* master, PendingPro
     }
     if (!names.empty())
         ai->TellPlayer(master, "Key spells: " + FormatHireSpellList(names),
-            PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
     pending.introSent = true;
 }
 
