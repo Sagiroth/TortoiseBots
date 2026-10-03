@@ -113,6 +113,13 @@ public:
     // point (death count reset). Fail-closed: any validation miss, non-random
     // record, master/group/BG membership, or disabled config keeps position.
     bool RelocateHopelessBot(::Player* bot);
+    // Safety net for masterless pool bots below level 10 (LowbieGraveyardPolicy.h):
+    // after any revive/teleport, a bot standing in an area rated above its
+    // level goes back to its birthplace via homebind teleport (no hearth
+    // cooldown) instead of walking. The home area must itself fit, so a
+    // mis-set homebind can never bounce the bot somewhere worse. Fail-closed
+    // like RelocateHopelessBot; no death count needed.
+    bool SendStrandedLowbieHome(::Player* bot);
     // Time-based rescue for random bots stranded alive where their level
     // cannot survive (guarded towns etc. never produce the deaths that drive
     // RelocateHopelessBot). Same eligibility, +5 rule and destinations;

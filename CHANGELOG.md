@@ -187,6 +187,10 @@
 
 - **Outgrown-zone leaves now actually leave.** The leave-errand grind search was picking the nearest active grind point — which was still in the zone the bot was vacating (Galwurth "left" Durotar three times and re-picked Durotar every time). The search now excludes the zone being left, so bots roll into a level-appropriate spot in the next zone instead of ping-ponging in place. Travel graph already had the hops (including Teldrassil → Darkshore via the Darnassus/Rut'theran portal), so no pathing work was needed. Capital-idle leaves unchanged. [#448](https://github.com/Sagiroth/TortoiseBots/pull/448)
 
+### Starter Zones & World
+- Below level 10, pool bots no longer default to the spirit healer just because of their death count — the corpse run is the default again, so they stop piling up in Brill, Goldshire, Kharanos, Razor Hill, Bloodhoof, and Dolanaar. Stalled corpse walks and long dead timers still trigger a rescue. [#449](https://github.com/Sagiroth/TortoiseBots/pull/449)
+- Added an extra safety net around revive and rescue teleports so a bot that does get moved can't just drift off to the next town unchecked. [#449](https://github.com/Sagiroth/TortoiseBots/pull/449)
+
 ## 2026-10-02
 
 ### Levelling & Progression
