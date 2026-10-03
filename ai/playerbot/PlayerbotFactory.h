@@ -32,8 +32,16 @@ public:
     void UpgradeGearBest() { return InitEquipment(true, false, false); }
     // Weapon/armour/riding skills plus two class-appropriate professions and the
     // secondary skills, all bounded by the current level. Public so the runtime can
-    // give it to persistent-level bots on first login.
+    // give it to persistent-level bots on first login. Primaries are granted from
+    // level PRIMARY_PROFESSION_MIN_LEVEL (5); below that only secondaries land.
     void InitAllSkills();
+    // Idempotent primary-pair grant at the level gate (Professions-at-5):
+    // rolls the class pair and teaches it when the bot is at/above the gate
+    // and holds no primary; never touches a bot that already has one. Public
+    // so the level-up spell hook can grant it on ding.
+    void EnsurePrimaryProfessions();
+    // True when the bot holds any primary profession (never re-roll those).
+    bool HasAnyPrimaryProfession() const;
     // Issue #189 Phase 1: idempotent "make complete" for random-pool bots.
     // Talents first, then knob-gated free spells, then skills, then gear —
     // same result whether first run at 1, 10, 40 or 60. Owned bots keep

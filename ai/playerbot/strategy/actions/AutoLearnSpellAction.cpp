@@ -4,6 +4,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/PlayerbotFactory.h"
+#include "../../../../runtime/ProfessionGrantPolicy.h"
 #include "Objects/Item.h"
 #include <Mail/Mail.h>
 #include <map>
@@ -135,6 +136,20 @@ void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
     {
         PlayerbotFactory factory(bot, bot->GetLevel());
         factory.InitSkills();
+        // Professions-at-5 backstop: a pool bot that dings 5 without primaries
+        // (created before the gate, or seeded below it) earns its class pair
+        // here, plus the matching tools. Gated on the same tested policy
+        // helper as the seed path (GrantAll only); the helpers no-op for bots
+        // that already hold a primary or own the tools.
+        TortoiseBots::ProfessionGrantInputs grantInputs;
+        grantInputs.level = bot->GetLevel();
+        grantInputs.isPoolBot = true; // freeLearn already pins pool identity
+        grantInputs.hasPrimaryProfession = factory.HasAnyPrimaryProfession();
+        if (TortoiseBots::DecideProfessionGrant(grantInputs) == TortoiseBots::ProfessionGrantDecision::GrantAll)
+        {
+            factory.EnsurePrimaryProfessions();
+            factory.AddTools();
+        }
     }
 }
 

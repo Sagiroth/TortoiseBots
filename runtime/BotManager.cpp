@@ -3,6 +3,7 @@
 #include "BotActivityLease.h"
 #include "PlayerBotClassification.h"
 #include "HunterPetPolicy.h"
+#include "ProfessionGrantPolicy.h"
 #include "HireLifecycle.h"
 #include "PlayerbotAIAdapter.h"
 #include "PlayerbotAIStorage.h"
@@ -714,8 +715,15 @@ void BotManager::OnPlayerLogin(::Player* player)
     // level; from then on it trains and skills up on its own. "Once" is decided from
     // the character itself - a bot that already has a primary profession is left
     // alone - because the facade values live in memory only and would not survive a
-    // restart (which would re-roll professions every time).
-    if (record.random && !HasPrimaryProfession(player))
+    // restart (which would re-roll professions every time). Pool eligibility uses
+    // the same tested policy helper as the seed path (DecideProfessionGrant):
+    // SecondariesOnly at 1-4 still enters (InitTradeSkills grants secondaries at
+    // any level), LeaveAlone never enters. Primaries land from level
+    // PRIMARY_PROFESSION_MIN_LEVEL (5): a level-1..4 bot on login gets weapon
+    // skills plus First Aid/Cooking/Fishing and earns its pair on the ding
+    // (AutoLearnSpellAction) or the next login at 5+.
+    TortoiseBots::ProfessionGrantInputs skillInputs{ player->GetLevel(), record.random, HasPrimaryProfession(player) };
+    if (TortoiseBots::DecideProfessionGrant(skillInputs) != TortoiseBots::ProfessionGrantDecision::LeaveAlone)
     {
         PlayerbotFactory skills(player, player->GetLevel());
         skills.InitAllSkills();
