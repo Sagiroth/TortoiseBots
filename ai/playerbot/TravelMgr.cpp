@@ -3,6 +3,8 @@
 #include "playerbot/GrindSpotPolicy.h"
 #include "playerbot/PullRegenPolicy.h"
 #include "playerbot/PointDangerPolicy.h"
+// Zone migration exclusion for the leave-outgrown-zone grind errand.
+#include "playerbot/ZoneMigratePolicy.h"
 #include <numeric>
 #include <mutex>
 #include <iomanip>
@@ -2541,7 +2543,7 @@ void TravelMgr::GetPartitionsLock(bool getLock)
     sTravelMgr.getDestinationVar.notify_one();
 }
 
-bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const PlayerTravelInfo& info, uint32 purposeFlag, int32 grindZoneFloor)
+bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const PlayerTravelInfo& info, uint32 purposeFlag, int32 grindZoneFloor, uint32 excludeZoneId)
 {
     bool canFightElite = info.GetBoolValue("can fight elite");
     int32 botLevel = (int32)info.GetLevel();
@@ -2673,6 +2675,17 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
             grindMinLevel = grindZoneFloor;
         if ((int32)areaLevel <= grindMinLevel)
             return false;
+        // Zone migration (ZoneMigratePolicy.h): a leave-errand search must
+        // not land back in the zone being left. The point's zone id comes
+        // from its area (sub-areas inherit their parent zone). The trigger
+        // already vetted outgrownness, so the exclusion is by zone id alone;
+        // capital-idle leaves pass 0 and skip this entirely.
+        if (excludeZoneId)
+        {
+            uint32 pointZoneId = posArea ? (posArea->ZoneId ? posArea->ZoneId : posArea->Id) : 0;
+            if (pointZoneId == excludeZoneId)
+                return false;
+        }
     }
     // A quest/grind point whose surroundings hold hostile spawns past the
     // bot's grind cap is no point: the spawn entry itself was in cap (see
@@ -2698,7 +2711,7 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
     return true;
 }
 
-PartitionedTravelList TravelMgr::GetPartitions(const WorldPosition& center, const std::vector<uint32>& distancePartitions, const PlayerTravelInfo& info, uint32 purposeFlag, const std::vector<int32>& entries, bool onlyPossible, float maxDistance, int32 grindZoneFloor) const
+PartitionedTravelList TravelMgr::GetPartitions(const WorldPosition& center, const std::vector<uint32>& distancePartitions, const PlayerTravelInfo& info, uint32 purposeFlag, const std::vector<int32>& entries, bool onlyPossible, float maxDistance, int32 grindZoneFloor, uint32 excludeZoneId) const
 {
     sTravelMgr.GetPartitionsLock();
 
@@ -2739,7 +2752,7 @@ PartitionedTravelList TravelMgr::GetPartitions(const WorldPosition& center, cons
         float minDistance = FLT_MAX;
         for (auto& position : points)
         {
-            if (!IsLocationLevelValid(*position, info, purposeFlag, grindZoneFloor))
+            if (!IsLocationLevelValid(*position, info, purposeFlag, grindZoneFloor, excludeZoneId))
             {
                 probeRejectLevel++;
                 continue;

@@ -3167,3 +3167,34 @@ Local validation: `tools/test_vendor_buy_policy.cpp` (gear-budget mapping,
 score-vs-level ordering, unweighted fallback, tie stability; registered in
 `tools/verify_all.sh`); `bash tools/verify_all.sh`; `git diff --check`. No
 deploy (orchestrator compiles).
+
+## Zone migration: leave-errand excludes the zone being left — 2026-10-03
+Feature: the leave-outgrown-zone Grind search no longer re-picks the zone
+the bot is leaving (`ai/playerbot/ZoneMigratePolicy.h`:
+`ZoneMigrationExcludeZone` — bot's current zone id, or 0 when the leave
+reason is "capital" or the zone is unknown; threaded as `excludeZoneId`
+through `TravelMgr::GetPartitions` into `TravelMgr::IsLocationLevelValid`,
+which refuses Grind points in that zone; computed in
+`RequestTravelTargetAction::Execute` from `WorldPosition(bot).GetArea()`
+with sub-area → parent-zone resolution).
+
+Copied / ported / reimplemented: reimplemented (local rule; donor
+comparison only — donor `mod-playerbots` teleports random bots into
+level-bracketed zones, `RandomTeleportForLevel`
+`src/Bot/RandomPlayerbotMgr.cpp:1783` + `zone2LevelBracket`
+`src/Mgr/Travel/TravelMgr.cpp:4561`, ours migrates organically over the
+travel graph with no teleports).
+
+Reason: the leave rule fired on sub-area level but the search floor
+(botLevel - 5, zone-level) still admitted home, and `SetBestTarget` takes
+the nearest partition first — night2: Galwurth fired 3x at 10.59 in Durotar
+and re-picked Durotar every time. Capital-idle leaves exclude nothing
+(trainers/AH/bank; night2 Zarortharur kept Dun Morogh correctly). Pool-only
+(masterless Grind errand); quest/vendor/gather/rpg untouched; Brill/
+Kharanos/Razor Hill spirit-revive arrivals are a separate fix
+(fix/lowbie-graveyard-strand), not counted here.
+
+Local validation: `tools/test_zone_migrate_policy.cpp` (outgrown exclusion,
+capital no-op, unknown fail-open; registered in `tools/verify_all.sh`);
+`bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
+compiles).
