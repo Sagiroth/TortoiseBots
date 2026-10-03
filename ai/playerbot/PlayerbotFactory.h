@@ -60,6 +60,7 @@ public:
     void AddPotions() { return InitPotions(); }
     void AddConsumes() { return AddConsumables(); }
     void AddFood() { return InitFood(); }
+    void AddBandages() { return InitBandages(); }
     void InitAmmo();
     void InitThrown();
     // Idempotent #401 starter-set backstop for the live pool (login and
@@ -145,7 +146,7 @@ private:
 enum PriorizedConsumables
 {
    CONSUM_ID_ROUGH_WEIGHTSTONE = 3239,
-   CONSUM_ID_COARSE_WEIGHTSTONE = 3239,
+   CONSUM_ID_COARSE_WEIGHTSTONE = 3240,
    CONSUM_ID_HEAVY_WEIGHTSTONE = 3241,
    CONSUM_ID_SOLID_WEIGHTSTONE = 7965,
    CONSUM_ID_DENSE_WEIGHTSTONE = 12643,

@@ -291,4 +291,22 @@ namespace ai
         ApplyWoundPoisonTrigger(PlayerbotAI* ai, bool inMainHand) : ApplyPoisonTrigger(ai, inMainHand, { 703, 704, 705, 706, 2644, 3772, 3773 }, "apply wound poison main hand") {}
     };
 
+    // Donor parity (mod-playerbots RogueTriggers.h): plain "is the weapon
+    // unenchanted" signals. The per-poison Apply* triggers above cover
+    // expiry/rank/wrong-poison inside the spec pve/pvp/raid strategies; these
+    // two drive the generic open-world upkeep (instant MH, deadly OH).
+    class MainHandWeaponNoEnchantTrigger : public BuffTrigger
+    {
+    public:
+        MainHandWeaponNoEnchantTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "main hand", 1) {}
+        bool IsActive() override;
+    };
+
+    class OffHandWeaponNoEnchantTrigger : public BuffTrigger
+    {
+    public:
+        OffHandWeaponNoEnchantTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "off hand", 1) {}
+        bool IsActive() override;
+    };
+
 }

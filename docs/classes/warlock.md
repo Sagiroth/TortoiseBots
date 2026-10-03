@@ -26,7 +26,7 @@ Warlocks provide sustained Shadow and Fire DPS through curses and damage-over-ti
 ### 1. DoT Upkeep & Shard Economy
 - **Curses:** Defaults to *Curse of Agony*; other curses only when you enable them manually.
 - **DoTs:** Only *Corruption* is health-gated (skipped at/below 20% target health); *Immolate* has no gate. Affliction also maintains *Siphon Life*.
-- **Soul Shard Harvest:** Automatically casts *Drain Soul* when the target is at/below 25% health, provided the bot holds fewer than 5 Soul Shards and has bag space; no elite check.
+- **Soul Shard Harvest:** Shards are never seeded or conjured — the bot harvests them organically with *Drain Soul* when the target is at/below 20% health, provided it holds fewer than 5 Soul Shards and has bag space; no elite check. Excess above 5 is destroyed out of combat. Healthstones (*Create Healthstone*, level 10+) and Soulstones (*Create Soulstone (Minor)*, level 18+) are created out of combat whenever the bot holds a shard and lacks one.
 
 ### 2. Mana Management: Life Tap
 - Affliction also casts *Dark Pact* on low mana, so *Life Tap* is not the only mana tool.

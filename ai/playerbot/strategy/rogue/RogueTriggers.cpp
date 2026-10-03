@@ -61,3 +61,19 @@ bool MarkForDeathTrigger::IsActive()
 
 	return AI_VALUE2(uint8, "health", "current target") > 50;
 }
+
+bool MainHandWeaponNoEnchantTrigger::IsActive()
+{
+    Item* weapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+    if (!weapon || weapon->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT))
+        return false;
+    return true;
+}
+
+bool OffHandWeaponNoEnchantTrigger::IsActive()
+{
+    Item* weapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND);
+    if (!weapon || weapon->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT))
+        return false;
+    return true;
+}

@@ -9,6 +9,7 @@
 #include "playerbot/RandomItemMgr.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/ServerFacade.h"
+#include "../../../../runtime/ClassConsumablePolicy.h"
 
 using namespace ai;
 
@@ -168,6 +169,34 @@ ItemUsage ItemUsageValue::Calculate()
     //of combat by the "too many soul shards" trigger)
     if (bot->GetClass() == CLASS_WARLOCK && proto->ItemId == 6265 && CurrentStacks(ai, proto) <= 5)
         return ItemUsage::ITEM_USAGE_KEEP;
+
+    // Class consumables upkeep (c-cons, r-poisons finding 14): poisons the
+    // bot's class is masked for, and stones/oils its class actually uses,
+    // are never vendor trash or AH stock while level-appropriate - the seed
+    // side (AddConsumables/TopUpConsumableFamily, refreshed on ding) plants
+    // exactly these entries, so selling them just re-buys the same stack.
+    // KEEP also shields them from the full-bag destroy list, like food/ammo.
+    // Rules live in runtime/ClassConsumablePolicy.h (unit-tested).
+    if (proto->Class == ITEM_CLASS_TRADE_GOODS || proto->Class == ITEM_CLASS_CONSUMABLE)
+    {
+        uint32_t botClass = bot->GetClass();
+        uint32_t botLevel = bot->GetLevel();
+        if (TortoiseBots::IsStoneEntry(proto->ItemId))
+        {
+            if (TortoiseBots::ShouldKeepStone(botClass, proto->RequiredLevel, botLevel))
+                return ItemUsage::ITEM_USAGE_KEEP;
+        }
+        else if (TortoiseBots::IsOilEntry(proto->ItemId))
+        {
+            if (TortoiseBots::ShouldKeepOil(botClass, proto->RequiredLevel, botLevel))
+                return ItemUsage::ITEM_USAGE_KEEP;
+        }
+        else if (proto->Class == ITEM_CLASS_CONSUMABLE &&
+                 TortoiseBots::ShouldKeepClassMaskedConsumable(botClass, proto->AllowableClass, proto->RequiredLevel, botLevel))
+        {
+            return ItemUsage::ITEM_USAGE_KEEP;
+        }
+    }
 
     //SKILL
     if (ai->HasActivePlayerMaster())
@@ -462,25 +491,6 @@ if ((proto->Class == ITEM_CLASS_PROJECTILE ||
     //KEEP
     if (proto->Quality >= ITEM_QUALITY_EPIC && sPlayerbotAIConfig.botsSaveEpics && !sRandomBotFacade.IsRandomBot(bot))
         return ItemUsage::ITEM_USAGE_KEEP;
-
-    if (proto->Class == ItemClass::ITEM_CLASS_CONSUMABLE)
-    {
-        uint8 maxCharacterLevel = 60;
-
-        //keep relevant class consumables (e.g. rogue poisons)
-        if (proto->AllowableClass == bot->GetClass() && proto->RequiredLevel + 6 >= bot->GetLevel())
-        {
-            if (bot->GetLevel() == maxCharacterLevel && proto->RequiredLevel + 6 >= bot->GetLevel())
-            {
-                return ItemUsage::ITEM_USAGE_USE;
-            }
-
-            if (bot->GetLevel() == maxCharacterLevel && proto->RequiredLevel + 10 >= bot->GetLevel())
-            {
-                return ItemUsage::ITEM_USAGE_USE;
-            }
-        }
-    }
 
     uint32 ahPrice = 0;
 
