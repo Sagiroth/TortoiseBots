@@ -1,6 +1,7 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/TravelRoutePolicy.h"
 #include "playerbot/GrindSpotPolicy.h"
+#include "playerbot/PullRegenPolicy.h"
 #include <numeric>
 #include <mutex>
 #include <iomanip>
@@ -330,6 +331,19 @@ bool QuestObjectiveTravelDestination::IsPossible(const PlayerTravelInfo& info) c
 
         if (!skipKillableCheck && !forceThisQuest)
         {
+            // A pool bot fights at most one level above its own below level 10
+            // (PullGrindLevelCap): a creature past that cap is no quest
+            // destination. The template read is the spawn entry itself, so an
+            // over-level alternative drop of the same item never lures the bot
+            // off its valley - the capped search comes back empty and the caller
+            // parks the purpose instead. Vendors are exempt (buying needs no
+            // fight); owned/hired bots keep today's behaviour. Matches the donor
+            // mod-playerbots shape (its +4 mob check) at the pool's +1 number.
+            if (cInfo && !ai::QuestObjectiveLevelFits((int)cInfo->level_max, info.GetLevel(),
+                info.IsMasterlessRandom(),
+                (cInfo->npc_flags & UNIT_NPC_FLAG_VENDOR) != 0))
+                return false;
+
             if (cInfo && (int)cInfo->level_max - (int)info.GetLevel() > 4)
                 return false;
 

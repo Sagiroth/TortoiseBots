@@ -2820,3 +2820,50 @@ watch after deploy: `Food(24005)` casts per bot-hour (should rise),
 deaths per bot-hour in the level 5-10 bracket, share of deaths with killer
 under 30% HP, nonzero `adds` counts in `deaths.csv`, and `flee` rows in the
 decision trail for critical-HP pool bots.
+
+## Quest destinations keep the sub-10 grind cap (q-level) — 2026-10-03
+Feature: `QuestObjectiveTravelDestination::IsPossible` refuses a creature
+past the pool grind cap (`QuestObjectiveLevelFits` in
+`ai/playerbot/PullRegenPolicy.h`: +1 below 10, +4 from 10, same numbers as
+`PullGrindLevelCap`; vendors exempt, owned/hired bots exempt), so an
+over-level alternative drop of the same quest item never becomes a
+destination — the capped search comes back empty and the caller parks the
+purpose like any other empty search. `GrindTargetValue` closes the same
+hole on arrival: below 10 with no real player master the quest-mob
+exemption no longer applies, so a bot that walks into a mixed field never
+orders the level 5-6 neighbours. Doc rows:
+`docs/concepts/bot-mechanics-and-quirks.md` (Grind Target destination band
++ mob pick).
+
+Source project: `mod-playerbots`
+`src/Mgr/Travel/TravelMgr.cpp:1219-1233`
+(`QuestObjectiveTravelDestination::isActive`: quest-level window + `+4` mob
+check) — same shape, ported at the pool's +1 number below 10; donor
+`src/Ai/Base/Value/GrindTargetValue.cpp` has no quest exemption at all (its
+`needForQuest` only widens the pick to quest mobs), so the local exemption
+is narrowed, not copied.
+
+Source files: donor `TravelMgr.cpp:1219-1233`, `GrindTargetValue.cpp`;
+local `ai/playerbot/TravelMgr.cpp:333-344`,
+`ai/playerbot/strategy/values/GrindTargetValue.cpp:75-92`,
+`ai/playerbot/PullRegenPolicy.h` (`QuestObjectiveLevelFits`),
+`tools/test_quest_objective_level_policy.cpp`.
+
+Copied / ported / reimplemented: reimplemented (donor shape, local numbers).
+
+Reason: live pool 2026-10-03 (fresh level-1 pool, 1277 deaths since 09:11
+UTC): 798 (62.5%) are bots level 1-4 killed by mobs 2+ levels above —
+Defias Cutpurse 188, Mangy Wolf 150, Forest Spider 63, Tirisfal Plagued
+Bear 63, Ravaged Corpse 64. 199 of those die on a `loot item 750` trip
+(Tough Wolf Meat, entry 69, level_max 2) killed by the level 5-6
+neighbours sharing the field; 302 die on giver/taker trips through the
+same fields. Quest-giver/taker routing itself was checked and left alone:
+takers already get the sub-10 route walk (`checkTakerRoute` in
+`SetBestTarget`), both keep the +5 area band, and the traced deaths are
+walk-through kills on the way, not bad addresses — the capped objectives
+plus the arrival-side order cap are the fix that reaches them.
+
+Local validation: `tools/test_quest_objective_level_policy.cpp` (cap,
+travelling ceiling, +4 from 10, vendor/owned exemptions; registered in
+`tools/verify_all.sh`); `bash tools/verify_all.sh`; `git diff --check`.
+No deploy (orchestrator compiles).

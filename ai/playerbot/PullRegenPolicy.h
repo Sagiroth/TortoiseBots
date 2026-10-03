@@ -38,6 +38,25 @@ namespace ai
         return targetLevel - (int)botLevel <= PullGrindLevelCap(botLevel, hasRealPlayerMaster);
     }
 
+    // Whether a quest objective / quest-loot creature is a valid destination
+    // for a pool bot: a creature the bot would refuse as a grind order is no
+    // quest destination either. Live pool (Oct 2026, fresh level-1 Elwynn
+    // bots): 62% of level 1-4 deaths were by mobs 2+ levels above, the worst
+    // a level-2 bot on a quest-loot trip (item 750, entry 69, level_max 2)
+    // dying to the level 5-6 neighbours sharing its field (Defias Cutpurse,
+    // Mangy Wolf, Forest Spider). The check runs on the static creature
+    // template, so it stays safe wherever the destination filter runs (async
+    // search). Vendors are exempt: buying the item needs no fight.
+    // Owned/hired bots keep today's behaviour: their player decides.
+    inline bool QuestObjectiveLevelFits(int creatureLevelMax, std::uint32_t botLevel,
+        bool masterlessRandom, bool vendorObjective)
+    {
+        if (vendorObjective || !masterlessRandom)
+            return true;
+
+        return PullLevelWithinCap(creatureLevelMax, botLevel, false);
+    }
+
     // Whether a wounded bot must sit out the next NEW pull: health below
     // mediumHealth, or (for mana users only) mana below mediumMana. The call
     // site skips this for revenge targets (the mob already attacks the bot),
