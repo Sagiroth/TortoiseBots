@@ -3400,8 +3400,26 @@ the donor's quest-heavy shape) among the purposes available right now,
 instead of the four triggers racing on static relevance. Service and named
 errands (vendor, repair, AH, mail, trainer, city, guild, ...) bypass the
 mixer: need-gated business outranks leisure by design. Verdict cached per
-bot ("rpg mixer pick" + "rpg mixer until"), spent on every pick or parked
-search, so one trip rolls once - no per-tick cost, no world scan.
+bot ("rpg mixer pick" + "rpg mixer until"), revalidated on every read and
+re-rolled the moment its purpose parks (no sticky dead verdict), spent on
+every pick or parked search, so one trip rolls once - no per-tick cost, no
+world scan.
+
+Follow-up hardening (review y-422 CRITICAL 1, 2, 4 - verified in code):
+availability mirrors the real request gates with cached values only
+(quest = free log slots AND quest purpose unparked AND rpg-quest strategy
+on; grind/camp = purpose unparked plus their NeedTravelPurposeValue phase
+windows, camp also level 5+; explore = purpose unparked AND explore
+strategy on). Quest takes part in the same roll (a Grind/Camp/Explore
+verdict gates the quest request too - otherwise quest 6.30 always
+pre-empts a camp 6.28 / explore 6.29 win and the mixer only steals from
+grind); the quest errand (`request quest travel target`, empty qualifier -
+"quest" is only its stored purpose string) keeps two bypasses: an aboard
+rewardable finished quest (the 6.36 hand-in row and taker-only latch) and
+an explicit player focus order. Grind is the fallback: with nothing else
+available the verdict is grind and no grind request is ever mixer-blocked,
+so the mixer can never idle a bot or level it slower than main.
+`std::stoul` try/catch replaced with `Qualified::isValidNumberString`.
 
 Source project: `mod-playerbots`.
 
@@ -3439,6 +3457,8 @@ was active); the donor tunes the same balance through the weight table.
 
 Local validation: `tools/test_rpg_mixer_policy.cpp` (donor weights,
 quest-heavy roll shape, availability gating, slot-purpose mapping,
-pool-only scope, verdict window; registered in `tools/verify_all.sh`);
+pool-only scope, verdict window, parked-quest exclusion, stale-verdict
+re-roll, grind fallback, quest gated by non-quest verdicts; registered in
+`tools/verify_all.sh`);
 `bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
 compiles).

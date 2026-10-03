@@ -27,10 +27,15 @@
 // Pool bots only, verdict cached on the value store ("rpg mixer pick" +
 // "rpg mixer until", 10 min like the other travel parks), so the roll runs
 // once per trip, never per tick, with no world scan: availability reuses the
-// already-cached need values the request gates read. The world-facing gate
-// lives at the call site (`ChooseTravelTargetAction.cpp`, file-local
-// `RpgMixerGateAllows`); this header holds only the pure decision rules so
-// the standalone test never links the server.
+// already-cached need values the request gates read. A live verdict is
+// revalidated on every read - a slot that went unavailable re-rolls at once,
+// never parks the bot. Grind is the fallback: with quest/camp/explore all
+// unavailable the verdict is grind, never a dead -1, so the mixer can never
+// idle a bot or slow its levelling past main. The world-facing gate lives
+// at the call site (`ChooseTravelTargetAction.cpp`, file-local
+// `RpgMixerGateAllows`);
+// this header holds only the pure decision rules so the standalone test
+// never links the server.
 
 namespace ai
 {
@@ -64,8 +69,16 @@ namespace ai
     inline std::string RpgMixerUntilKey() { return "rpg mixer until"; }
 
     // Availability of each leisure slot, read by the caller from cached need
-    // values (no world scan here): quest errands wantable, grind/camp
-    // purposes unparked, explore strategy on.
+    // values only (no world scan): quest = free log slots, quest purpose
+    // unparked, "rpg quest" strategy on; grind/camp/explore = purpose
+    // unparked; camp additionally level 5+ and its rpg-phase window open
+    // (the cheap NeedTravelPurposeValue(GenericRpg) gates); grind
+    // additionally its own phase window (beginners grind all hours, others
+    // the first 45 min - a Grind verdict while the plain grind row's need is
+    // false would block runnable camp/quest while grind itself cannot fire);
+    // explore additionally the "explore" strategy on. The transient
+    // "is travel refresh" flag is not mirrored: it only holds during refresh
+    // condition checks, and the real triggers still enforce every need.
     struct RpgMixerAvailability
     {
         bool quest = false;
@@ -111,13 +124,25 @@ namespace ai
         return mixerUntil != 0 && mixerUntil > now;
     }
 
+    // A live verdict stays only while its slot is still available: re-check
+    // on every read, and re-roll the moment the winner parked. Never a
+    // sticky dead verdict - grind is the fallback below, so the gate below
+    // still admits grind when everything else parked.
+
     // Weighted roll over the available slots (donor `RandomChangeStatus`):
     // `roll01` in [0, 1) selects proportionally to weight among available
-    // slots only. Returns the slot index, or -1 when nothing is available
-    // (the caller falls back to the quest errand, which parks itself if it
-    // truly has nowhere to go).
+    // slots only. A dead -1 below only covers the never-reached all-four-
+    // unavailable corner (the grind fallback above always fires first):
+    // the gate below admits it so the real need triggers decide.
     inline int PickRpgMixerSlot(const RpgMixerAvailability& availability, double roll01)
     {
+        // Grind is the fallback: with quest/camp/explore all unavailable
+        // the verdict is grind, never a dead -1, so the mixer admits the
+        // grind request and its real gates (need, park, level band) decide -
+        // exactly main's behaviour. The mixer can never idle a bot or slow
+        // its levelling past main.
+        if (!availability.quest && !availability.camp && !availability.explore)
+            return (int)RpgMixerSlot::Grind;
         std::uint32_t total = 0;
         for (std::uint8_t i = 0; i < (std::uint8_t)RpgMixerSlot::Count; ++i)
         {
@@ -148,8 +173,15 @@ namespace ai
 
     // Does the winning slot admit a request for this travel purpose? The
     // qualifier arrives as the request actions carry it: the quest errand
-    // under "quest" (empty also means quest), every other purpose under its
-    // numeric `TravelDestinationPurpose` id.
+    // (`request quest travel target`, no qualifier - it stores "quest" and
+    // arrives empty or "quest"), every other purpose under its numeric
+    // `TravelDestinationPurpose` id. Quest is a leisure slot and gated when
+    // another slot won - otherwise quest (6.30) pre-empts a camp (6.28) or
+    // explore (6.29) win and the mixer only steals from grind. Grind is the
+    // fallback: a grind request is always admitted, so a bot with nothing
+    // else available keeps levelling the way main did. A dead verdict (-1)
+    // only covers the never-reached all-four-unavailable corner and admits
+    // everything still runnable - its real need triggers decide.
     inline bool RpgMixerSlotAllowsRequest(int slotIndex, const std::string& qualifier,
         const std::string& grindPurposeId, const std::string& campPurposeId,
         const std::string& explorePurposeId)
