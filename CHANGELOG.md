@@ -145,6 +145,15 @@
 - Radius change is request-side only — no extra world scans, no added server cost. [#441](https://github.com/Sagiroth/TortoiseBots/pull/441)
 - Plays nice with existing level/point-danger gates and the idle-starter fallback scan. Closes #424. [#441](https://github.com/Sagiroth/TortoiseBots/pull/441)
 
+### Quests & Objectives
+
+- Bots now give up on a quest objective after ~5 minutes stuck at the objective with zero progress, so they stop farming a broken spawn or unreachable target and get back to something productive [#442](https://github.com/Sagiroth/TortoiseBots/pull/442)
+- The stall timer only ticks while the bot is actually at the objective area — travel time is never counted, so long cross-zone runs won't false-trigger an abandon [#442](https://github.com/Sagiroth/TortoiseBots/pull/442)
+- The verdict is anchored per quest across all of its counters, so a multi-part objective won't be abandoned just because one counter is slow [#442](https://github.com/Sagiroth/TortoiseBots/pull/442)
+- Stalled quests are parked for 30 minutes instead of blacklisted; other quests and all hand-ins keep running normally while it cools down [#442](https://github.com/Sagiroth/TortoiseBots/pull/442)
+- Exploration and scripted event objectives (no counters) are exempt, so world/POI-driven quests can't get stuck in an abandon loop [#442](https://github.com/Sagiroth/TortoiseBots/pull/442)
+- Emits a single `QuestObjectiveStalled` event per verdict, making it easy to spot problem quests in logs without event spam [#442](https://github.com/Sagiroth/TortoiseBots/pull/442)
+
 ## 2026-10-02
 
 ### Levelling & Progression

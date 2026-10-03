@@ -1911,12 +1911,24 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
             }
             else
             {
+                // Stall-abandoned pursuit (issue #423): the quest sat arrived
+                // (WORK) past the 5-min horizon with unchanged counters, so
+                // its fetch is skipped for the park window. Parked quests
+                // still hand in (the taker branch above); the anchor
+                // re-arms on the next visit when the park expires.
+                std::string const stallParkKey = "no quest objective until::" + std::to_string(questId);
+                bool const stallParked = !ai->HasActivePlayerMaster() &&
+                    sPlayerbotAIConfig.botQuestLogUpkeep && sRandomBotFacade.IsRandomBot(bot) &&
+                    HAS_AI_VALUE2("manual time", stallParkKey) &&
+                    AI_VALUE2(time_t, "manual time", stallParkKey) > time(0);
                 for (uint32 objective = 0; objective < 4; objective++)
                 {
                     TravelDestinationPurpose purposeFlag = (TravelDestinationPurpose)(1 << (objective + 1));
 
                     std::vector<std::string> qualifier = { std::to_string(questId), std::to_string(objective) };
 
+                    if (stallParked)
+                        continue;
                     if (AI_VALUE2(bool, "group or", "following party,need quest objective::" + Qualified::MultiQualify(qualifier, ","))) //Noone needs the quest objective.
                         flag = flag | (uint32)purposeFlag;
                 }

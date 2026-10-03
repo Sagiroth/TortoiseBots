@@ -3082,6 +3082,50 @@ Local validation: `tools/test_point_danger_policy.cpp` (scope, live
 level-4 case, travelling +1 ceiling; registered in `tools/verify_all.sh`);
 `bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
 compiles).
+## POI-stall quest abandon (i423) — 2026-10-03
+Feature: `QuestStallPolicy.h` (new) ports the donor's 5-min no-progress
+verdict adapted to our quest-objective travel (1.12 has no POI table to walk:
+no `QuestPOIVector` in core, no quest-poi DBC/DB rows). While arrived at
+the objective (`TravelAction::Execute`, travel-target status WORK) the quest's
+kill/item counters are anchored per quest in the facade store; a WORK tick
+with unchanged counters past the 5-min horizon parks that quest's objective
+fetch for 30 min (`no quest objective until::<questId>`, read in
+`RequestQuestTravelTargetAction::Execute`) and nulls the current target, so
+the next search moves on instead of walking useless laps. Travel time never
+counts (the anchor is only created and compared while WORK). Any kill/item
+progress on any objective re-anchors instead of stalling; explore/event/spell
+objectives with no counter requirement are exempt; givers/takers are
+unaffected, so parked quests still hand in; the quest stays in the log (no
+removal — removal stays the nearly-full-log triage). No global quest-purpose
+park: other quests and all hand-ins keep working. Pool upkeep bots only
+(`botQuestLogUpkeep`, no active master, `IsRandomBot`); owned/hired bots keep
+today's pursuit. Existing gates (#418, #428, #434) untouched: gated
+destinations are never picked, so they never anchor. One `bot_events.csv` row
+per stall (`QuestObjectiveStalled`); no `TravelTarget` pick log for the
+stall-dropped target (the drop returns before the pick logging).
+
+Source project: `mod-playerbots` @ b6696bd (gold-standard behaviour donor).
+
+Source files: `src/Ai/World/Rpg/Action/NewRpgBaseAction.h` (`POIInfo`,
+`GetQuestPOIPosAndObjectiveIdx`), `src/Ai/World/Rpg/Action/NewRpgAction.cpp`
+(`DoIncompleteQuest`/`DoCompletedQuest`, `poiStayTime = 5 * 60 * 1000`,
+`lowPriorityQuest`), `src/Bot/PlayerbotAI.h:607` (`lowPriorityQuest`).
+
+Copied / ported / reimplemented: reimplemented (donor walks POI coordinates
+and times from POI arrival; ours anchors arrived travel-pursuit counters per
+quest; donor marks a session set, ours parks time-boxed so a later ding
+re-tests the quest).
+
+Reason: no POI pursuit existed here (`POIInfo` zero hits), so a quest whose
+objective area yields nothing is re-picked every minute (objectives expire
+fast) — the search loops and long useless trips in #423.
+
+Local validation: `tools/test_quest_stall_policy.cpp` (donor constants,
+first WORK tick, horizon boundary, kill/item progress, zero-progress stall,
+per-quest alternating objectives, non-counter exemption, anchor round-trip;
+registered in `tools/verify_all.sh`);
+`bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
+compiles).
 
 ## Local grind and camp picks (issue #424) — 2026-10-03
 
