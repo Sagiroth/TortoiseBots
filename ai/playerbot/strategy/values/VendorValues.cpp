@@ -1,6 +1,9 @@
+#include "playerbot/playerbot.h"
 #include "VendorValues.h"
 #include "ItemUsageValue.h"
 #include "BudgetValues.h"
+#include "VendorWeaponUpgradePolicy.h"
+#include "runtime/HireLifecycle.h"
 #include "playerbot/PlayerbotAI.h"
 #include "SharedValueContext.h"
 
@@ -98,7 +101,31 @@ bool VendorHasUsefulItemValue::Calculate()
         ItemUsage usage = AI_VALUE2_LAZY(ItemUsage, "item usage", vendorItem->item);
 
         if (freeMoney.find(usage) == freeMoney.end() || proto->BuyPrice > freeMoney[usage])
-            continue;
+        {
+            // Vendor stock the bot does not own yet never scores EQUIP (the
+            // classifier only evaluates items it has seen), so a real weapon
+            // upgrade would keep this trigger dark and the fallback buy loop
+            // in BuyAction would never run. Same audit rules: spec-allowed,
+            // usable now, better by scoring, affordable under the trainer
+            // reserve. Masterless pool bots only; owned alts (not random),
+            // bots with a live master, and hired companions (whose character
+            // is deleted at hire end, even mid grace period) never spend.
+            if (ai->HasActivePlayerMaster() || ai->HasRealPlayerMaster() ||
+                !sRandomBotFacade.IsRandomBot(bot) ||
+                TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()))
+                continue;
+            if (!IsVendorWeaponUpgradeCandidate(proto->Class, proto->SubClass))
+                continue;
+            if (ai->HasItemInInventory(proto->ItemId))
+                continue;
+            ItemQualifier weaponQualifier(vendorItem->item);
+            if (ItemUsageValue::QueryItemUsageForEquip(weaponQualifier, bot) != ItemUsage::ITEM_USAGE_EQUIP)
+                continue;
+            RESET_AI_VALUE2(uint32, "total money needed for", (uint32)NeedMoneyFor::spells);
+            uint32 spellReserve = AI_VALUE2(uint32, "total money needed for", (uint32)NeedMoneyFor::spells);
+            if (!VendorWeaponUpgradeAffordable(proto->BuyPrice, bot->GetMoney(), spellReserve))
+                continue;
+        }
 
         return true;
     }

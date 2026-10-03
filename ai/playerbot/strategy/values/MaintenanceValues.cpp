@@ -7,6 +7,8 @@
 #include "playerbot/strategy/actions/AcceptQuestAction.h"
 #include "playerbot/strategy/triggers/RpgTriggers.h"
 #include "playerbot/RandomBotFacade.h"
+#include "runtime/HireLifecycle.h"
+#include "VendorWeaponUpgradePolicy.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/WorldPosition.h"
@@ -65,6 +67,47 @@ static bool TrainerServiceNeeded(PlayerbotAI* ai)
 
     return AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::spells) >= minSpellCost;
 }
+bool CanBuyValue::Calculate()
+{
+    if (!ai->HasStrategy("rpg vendor", BotState::BOT_STATE_NON_COMBAT))
+        return false;
+    if (AI_VALUE(bool, "should repair"))
+        return false;
+    if (AI_VALUE(uint8, "bag space") >= 90)
+        return false;
+    if (AI_VALUE(bool, "can get mail"))
+        return false;
+    if (AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::ammo) ||
+        AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::consumables) ||
+        AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::gear) ||
+        AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::tradeskill))
+        return true;
+    // Weapon-upgrade path only: a masterless pool bot (never a hire) that can
+    // afford a real upgrade above the trainer reserve may buy even when every
+    // free-money bucket above is empty. No other buy is loosened.
+    return CanBuyValue::CanAffordVendorWeaponUpgrade(ai);
+}
+
+bool CanBuyValue::CanAffordVendorWeaponUpgrade(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    AiObjectContext* context = ai->GetAiObjectContext();
+    if (ai->HasActivePlayerMaster() || ai->HasRealPlayerMaster())
+        return false;
+    if (!sRandomBotFacade.IsRandomBot(bot))
+        return false;
+    if (TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()))
+        return false;
+    RESET_AI_VALUE2(uint32, "total money needed for", (uint32)NeedMoneyFor::spells);
+    uint32 spellReserve = AI_VALUE2(uint32, "total money needed for", (uint32)NeedMoneyFor::spells);
+    // Nearest-vendor stock scan is done by "vendor has useful item" (the rpg
+    // buy trigger checks it right after "can buy"); here only the purse side
+    // is answered: any weapon at all affordable above the reserve suffices.
+    // Cheapest gear weapon in the world DB is ~15c (thrown excluded); use a
+    // 1c floor so the gate never blocks on price granularity.
+    return VendorWeaponUpgradeAffordable(1, bot->GetMoney(), spellReserve);
+}
+
 bool CanSellValue::Calculate()
 {
     if (!ai->HasStrategy("rpg vendor", BotState::BOT_STATE_NON_COMBAT))
