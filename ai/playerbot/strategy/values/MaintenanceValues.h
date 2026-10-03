@@ -93,11 +93,18 @@ namespace ai
         static bool GroupMemberLeavingForVendor(PlayerbotAI* ai);
     };
 
+    // True when the bot holds stock a vendor actually buys (issue #408): the
+    // usage classifier can label an item VENDOR while its SellPrice is 0 (a
+    // nonzero expected-AH-price manual value opens the VENDOR/AH branch in
+    // ItemUsageValue), and the sell errand then finds nothing to sell - 1,443
+    // "no vendor-usable stock" rows on 413 bots. The implementation lives in
+    // MaintenanceValues.cpp so the bag scan stays next to the batch scan
+    // (SellableStockWorthAVendorTrip) that already does exactly this walk.
     class CanSellValue : public BoolCalculatedValue
     {
     public:
         CanSellValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "can sell",2) {}
-        virtual bool Calculate() override { return ai->HasStrategy("rpg vendor", BotState::BOT_STATE_NON_COMBAT) && AI_VALUE2(uint32, "item count", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_VENDOR)) > 0; };
+        virtual bool Calculate() override;
     };
 
     //The nearest quest giver, class trainer or vendor a waiting bot has a real
