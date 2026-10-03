@@ -2867,3 +2867,45 @@ Local validation: `tools/test_quest_objective_level_policy.cpp` (cap,
 travelling ceiling, +4 from 10, vendor/owned exemptions; registered in
 `tools/verify_all.sh`); `bash tools/verify_all.sh`; `git diff --check`.
 No deploy (orchestrator compiles).
+
+## Quest/grind points refuse hostile over-cap neighbours (q-points) — 2026-10-03
+Feature: `TravelMgr::IsLocationLevelValid` refuses a quest-objective /
+quest-loot / grind *point* whose 40 yd surroundings hold hostile spawns past
+the bot's grind cap (`PointDangerApplies` + `PointDangerous` in
+`ai/playerbot/PointDangerPolicy.h`: pool bots below 10 only, +1 numbers from
+`PullGrindLevelCap`; owned/hired bots and level 10+ keep today's behaviour).
+The neighbour lookup is a static per-map 32 yd cell index over the creature
+spawn table (`WorldPosition::GetHighestHostileLevelNear`, built once via
+`call_once` next to the hostile-town index: no world scan, no DB, no map
+loads, no per-query allocation) counting only spawns the bot is hostile to
+by static template reaction, so neutral camps, vendors and wildlife never
+bar a point. When every point of a destination is dangerous the search comes
+back empty and the caller parks the purpose like any other empty search.
+Doc row: `docs/concepts/bot-mechanics-and-quirks.md` (Grind Target
+destination band).
+
+Source project: `mod-playerbots` — no donor shape: its `TravelMgr` never
+looks at neighbouring spawns (`getCreaturesNear` only builds the destination
+and node tables), so this is local, measured on the live pool.
+
+Source files: local `ai/playerbot/PointDangerPolicy.h` (new),
+`ai/playerbot/WorldPosition.h` + `WorldPosition.cpp` (danger-spawn index),
+`ai/playerbot/TravelMgr.cpp` (`IsLocationLevelValid` gate),
+`tools/test_point_danger_policy.cpp`.
+
+Copied / ported / reimplemented: reimplemented (local rule, local numbers).
+
+Reason: live pool 2026-10-03 (fresh level-1 pool since 10:51 UTC, server on
+#418): 211 of 523 deaths are bots level 1-4 killed by mobs 2+ above —
+#418 keeps the spawn entry itself in cap but says nothing about the point's
+surroundings. Worst case: level-4 Kralnyrvar on the item-750 trip (Timber
+Wolf entry 69, level_max 2, in cap) picks a Timber Wolf spawn point at
+POINT(-73.97 -9254.43) outside Northshire and dies five times to the Defias
+Cutpurse 5 / Forest Spider 6 / Mangy Wolf 6 standing next to it (spawn
+table: Forest Spider 9 yd, Mangy Wolf 33 yd, Defias Cutpurse 38 yd away).
+125 of the 211 die on the same `loot item 750` trip.
+
+Local validation: `tools/test_point_danger_policy.cpp` (scope, live
+level-4 case, travelling +1 ceiling; registered in `tools/verify_all.sh`);
+`bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
+compiles).
