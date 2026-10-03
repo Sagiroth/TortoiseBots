@@ -323,6 +323,7 @@ void ai::DecideFlightPlanForTarget(PlayerbotAI* ai, Player* bot, TravelTarget co
 static bool TryBoardFlightToTarget(PlayerbotAI* ai, Player* bot, TravelTarget* target,
     WorldPosition const& botLocation, WorldPosition const& location)
 {
+    AiObjectContext* context = ai->GetAiObjectContext();
     if (ai->HasRealPlayerMaster() || !sRandomBotFacade.IsRandomBot(bot))
         return false;
     if (!bot->IsAlive() || bot->IsInCombat())
