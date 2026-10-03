@@ -207,6 +207,9 @@ namespace ai
 
         virtual WorldPosition* GetNextPoint(const WorldPosition& point, std::list<uint8>& chancesToGoFar, bool allowSame = false) const
         {
+            if (points.empty()) //Empty dataset (e.g. no fish locations generated): nothing to pick.
+                return nullptr;
+
             if (!ShouldGoFar(chancesToGoFar))
                 return GetClosestPoint(point);
 
@@ -356,6 +359,9 @@ namespace ai
                 if(nextPoint)
                     return nextPoint;
             }
+
+            if (subSquares.empty()) //Empty dataset: urand(0, size - 1) would index past the end.
+                return nullptr;
 
             //Pick a random square to go 'far'.
             nextSq = &(std::next(subSquares.begin(), urand(0, subSquares.size() - 1))->second);
