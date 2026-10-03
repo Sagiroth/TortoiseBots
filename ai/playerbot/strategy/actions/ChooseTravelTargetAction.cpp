@@ -327,6 +327,16 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
         // RequestTravelTargetAction::isUseful.
         if (purpose == "Vendor")
             SET_AI_VALUE2(time_t, "manual time", "vendor trip since", time(0));
+        // One AH shopping journey at a time (issue #405): the buyer trip need
+        // doubles as the in-flight trip's stored condition, so without a stamp
+        // here a trip whose target dies mid-walk re-issues immediately. Same
+        // request-side-only pattern as the vendor/trainer stamps above; the
+        // need lapses on this stamp after ten minutes like the trainer window.
+        // travelPurposeName here is the DISPLAY name ("AH"; the raw qualifier
+        // is the numeric purpose id "1024") - match the display name like the
+        // "Vendor"/"trainer" stamps above match theirs.
+        if (purpose == "AH")
+            SET_AI_VALUE2(time_t, "manual time", "ah buyer trip since", time(0));
         // One trainer journey at a time: a walk to a trainer has just started, and
         // the errand's trigger refuses another until this is ten minutes old, the
         // bot has learned something (TrainerAction) or it has dinged

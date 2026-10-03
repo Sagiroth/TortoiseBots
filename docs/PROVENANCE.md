@@ -3083,28 +3083,33 @@ level-4 case, travelling +1 ceiling; registered in `tools/verify_all.sh`);
 `bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
 compiles).
 
-## Organic AH buyer: in-place bids plus spare-gold travel demand (issue #405) — 2026-10-03
+## Organic AH buyer: in-place bids plus spare-gold travel demand (issue #405) — 2026-10-03, review 2
 Feature: `AhMarketService::BuyAuctionCandidate` bids only with a pool bot
 ALREADY standing at an auctioneer serving the listing's house object (no buyer
 teleport per owner decision; teleport stays only the pre-existing stuck rescue
-on the way there). The per-candidate scan is a bounded rotating slice of the
-pool (max 24 examined on cheap guards, max 8 in-place `FindNearbyAuctioneer`
-probes via `m_buyerScanIndex`; past the cap the candidate is skipped until a
-later pass). Demand comes from the normal AH travel purpose
-(`NeedTravelPurposeValue`, same destination the seller uses): a masterless
-pool bot (never a hire) holding spare gold above its trainer reserve
-(`AhBuyerTripNeeded` in `MaintenanceValues.cpp`: `BuyerTripAffordable(money,
-total-money-needed-for spells)`, at least 1 silver spare) and inside the first
-15 minutes of the hourly RPG phase (`BuyerTripPhaseOpen`, same 0..60 clock as
-the GenericRpg/Grind stagger) walks/flies to its auction house on its own feet
-and bids on arrival through the usual `rpg ah buy` path. Same fail-closed
-guards as before (grouped / active-master / LFT / BG / instance excluded;
-hostile auctioneers skipped; house-matched bidding because
-`HandleAuctionPlaceBid` resolves the auction through the auctioneer's own
-house object; bids spend the bot's own gold inside `free money for ah`). Pure
-numbers live in `runtime/AhBuyerPolicy.h` (`kBuyerProbeCap`,
-`kBuyerExamineCap`, `kBuyerTripMinSpareCopper`, `BuyerTripAffordable`,
-`kBuyerTripPhaseMax/Below`, `BuyerTripPhaseOpen`). Doc row:
+on the way there). The per-candidate scan is one pass with no blind spot
+(review finding 6): examine == probe (8), every touched entry fully probed,
+`m_buyerScanIndex` rotating start cycles the whole pool over passes. All house
+lookups null-checked (finding 2: `GetAuctionHouseEntry` may return null and
+`GetAuctionsMap` dereferences its argument; every other pointer on the path -
+bot, session, auction, map entry - guarded too). Demand comes from the normal
+AH travel purpose (`NeedTravelPurposeValue`, same destination the seller uses,
+phase gate evaluated FIRST so the purse/position work only runs in the open
+slice): a masterless pool bot level 10+ (finding 3: past the beginner death
+belt), never a hire, ungrouped, not LFT/BG/instance, whose own map holds an AH
+house (same-continent reachability via the cached entry-guidps map; cross-map
+houses are unroutable FLT_MAX and never open the trip), holding 5 gold of
+spendable "free money for anything" (finding 4: ONE money rule - exactly the
+purse `AhBidAction` reads for AH/VENDOR/QUEST listings on arrival, so no trip
+is futile), inside the first 3 minutes of the hourly RPG phase (~5% of the
+pool/hour), one trip per bot per 10 minutes (pick-stamped "ah buyer trip
+since", same pattern as the trainer/vendor stamps; parked AH purposes
+respected so a failed search is not re-requested every tick). No
+RESET_AI_VALUE2 anywhere on this path (finding 7): the cached value at its
+normal checkInterval is read as-is. The existing destination/point gates
+(area-level ceiling, grind cap, point-danger) keep applying on the way - this
+policy only opens the door, never overrides a forbidden area. Pure numbers in
+`runtime/AhBuyerPolicy.h` (ai namespace). Doc row:
 `docs/guides/living-world.md` (Living Auction House Economy).
 
 Source project: no donor shape — `mod-playerbots` has no market buyer (only a
@@ -3112,11 +3117,12 @@ commented-out `AuctionItem` in `LootAction.cpp`); the travel demand reuses our
 own AH travel destination.
 
 Source files: `runtime/AhBuyerPolicy.h`,
-`runtime/AhMarketService.h` + `runtime/AhMarketService.cpp` (in-place
-house-matched scan only),
+`runtime/AhMarketService.h` (`SellerIntervalMs` declaration restored - finding
+1) + `runtime/AhMarketService.cpp` (in-place house-matched scan only),
 `ai/playerbot/strategy/values/MaintenanceValues.h` + `MaintenanceValues.cpp`
 (`AhBuyerTripNeeded`), `ai/playerbot/strategy/values/TravelValues.cpp` (AH
-purpose buyer leg), `docs/guides/living-world.md`,
+purpose buyer leg), `ai/playerbot/strategy/actions/ChooseTravelTargetAction.cpp`
+(trip stamp), `docs/guides/living-world.md`,
 `tools/test_ah_buyer_policy.cpp`.
 
 Copied / ported / reimplemented: reimplemented (local rule, local numbers).
@@ -3126,6 +3132,7 @@ Reason: issue #405 — 37 listings in 2 h 46 min with 0 bids / 0 purchases and
 low level. First iteration gave the buyer the seller teleport; owner decision
 reverses that (NO buyer teleport), so demand now walks instead.
 
-Local validation: `tools/test_ah_buyer_policy.cpp` (scan caps, purse floor,
-phase window; registered in `tools/verify_all.sh`); `bash
-tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator compiles).
+Local validation: `tools/test_ah_buyer_policy.cpp` (scan caps, level floor,
+purse floor, phase window, same-continent rule; registered in
+`tools/verify_all.sh`); `bash tools/verify_all.sh`; `git diff --check`. No
+deploy (orchestrator compiles).

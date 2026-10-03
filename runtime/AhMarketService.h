@@ -146,6 +146,9 @@ private:
     uint32_t CalculateStack(ItemPrototype const* proto, uint32_t stockCount, uint32_t unitPrice) const;
     bool PublishSyntheticAuction(uint32_t itemId, uint32_t count, uint32_t unitPrice);
     bool BuyAuctionCandidate(AuctionEntry* auction, AuctionHouseObject* ahObject);
+    // Clamped seller tick in ms, shared by the seller loop (Update) so the
+    // trip-lease math and the loop always agree on the tick length.
+    static uint32_t SellerIntervalMs();
 
     uint32_t m_elapsedMs = 0;
     size_t m_nextIndex = 0;
