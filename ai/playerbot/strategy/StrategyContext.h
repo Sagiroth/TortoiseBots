@@ -36,6 +36,7 @@
 #include "generic/RpgStrategy.h"
 #include "generic/TravelStrategy.h"
 #include "generic/DebugStrategy.h"
+#include "generic/AoeFearStrategy.h"
 #include "generic/BattlegroundStrategy.h"
 #include "generic/MaintenanceStrategy.h"
 #include "generic/GroupStrategy.h"
@@ -121,6 +122,7 @@ namespace ai
             creators["debug"] = [](PlayerbotAI* ai) { return new DebugStrategy(ai); };
             creators["debug action"] = [](PlayerbotAI* ai) { return new DebugActionStrategy(ai); };
             creators["debug move"] = [](PlayerbotAI* ai) { return new DebugMoveStrategy(ai); };
+            creators["aoe fear"] = [](PlayerbotAI* ai) { return new AoeFearStrategy(ai); };
             creators["debug rpg"] = [](PlayerbotAI* ai) { return new DebugRpgStrategy(ai); };
             creators["debug spell"] = [](PlayerbotAI* ai) { return new DebugSpellStrategy(ai); };
             creators["debug travel"] = [](PlayerbotAI* ai) { return new DebugTravelStrategy(ai); };

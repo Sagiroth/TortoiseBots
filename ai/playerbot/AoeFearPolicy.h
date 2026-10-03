@@ -14,8 +14,12 @@
 namespace ai
 {
 
-inline bool AoeFearAllowed(bool inDungeonOrRaid, bool hasRealPlayerMaster)
+// optedIn: the bot runs the "aoe fear" strategy (co +aoe fear), which a player
+// sets when they want the fear back inside an instance or in their group.
+inline bool AoeFearAllowed(bool inDungeonOrRaid, bool hasRealPlayerMaster, bool optedIn = false)
 {
+    if (optedIn)
+        return true;
     if (inDungeonOrRaid)
         return false;
     if (hasRealPlayerMaster)

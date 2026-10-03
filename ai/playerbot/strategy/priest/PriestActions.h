@@ -102,7 +102,7 @@ namespace ai
             // shared rule lives in ai/playerbot/AoeFearPolicy.h.
             Map* map = bot->GetMap();
             bool inInstance = map && (map->IsDungeon() || map->IsRaid());
-            if (!ai::AoeFearAllowed(inInstance, ai->HasActivePlayerMaster()))
+            if (!ai::AoeFearAllowed(inInstance, ai->HasActivePlayerMaster(), ai->HasStrategy("aoe fear", BotState::BOT_STATE_COMBAT)))
                 return false;
             return CastSpellAction::isUseful();
         }

@@ -29,6 +29,10 @@ int main()
 
     // Outside, with no master to disrupt, the old emergency behaviour stays.
     CHECK(AoeFearAllowed(false, false));
+    // Opt-in ("co +aoe fear") brings it back inside instances and with a master.
+    CHECK(AoeFearAllowed(true, true, true));
+    CHECK(AoeFearAllowed(true, false, true));
+    CHECK(AoeFearAllowed(false, true, true));
 
     std::cout << "All AoE fear policy checks PASSED!\n";
     return 0;
