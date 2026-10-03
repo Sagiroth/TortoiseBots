@@ -186,7 +186,7 @@ namespace
     }
 }
 
-WorldPosition ai::FindNearbyWater(Player* bot, WorldPosition const& from, float searchRadius)
+static WorldPosition FindNearbyWater(Player* bot, WorldPosition const& from, float searchRadius)
 {
     if (!bot || !bot->GetMap() || !from)
         return WorldPosition();
