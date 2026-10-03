@@ -965,7 +965,12 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
         // bot teleport away in full view of a player standing at its
         // current position, which reads as the bot "zooming" instantly to
         // its new spot instead of walking there.
-        if (!ai->HasPlayerNearby(teleportPosition) && !ai->HasPlayerNearby(startPos))
+        // Same-map only: this hop stands in for a walk. A path point stamped
+        // with another map id (live 2026-10-03: a level-2 Valley of Trials bot
+        // landed on map 0 at its own x,y, in the Hinterlands) must never turn
+        // into a cross-continent teleport.
+        if (teleportPosition.GetMapId() == bot->GetMapId() &&
+            !ai->HasPlayerNearby(teleportPosition) && !ai->HasPlayerNearby(startPos))
         {
             time_t now = time(0);
             lastMove.nextTeleport = now + (time_t)MoveDelay(startPos.distance(teleportPosition));
