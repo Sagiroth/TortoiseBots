@@ -38,6 +38,55 @@ namespace ai
         return targetLevel - (int)botLevel <= PullGrindLevelCap(botLevel, hasRealPlayerMaster);
     }
 
+    // Whether a quest objective / quest-loot creature is a valid destination
+    // for a pool bot: a creature the bot would refuse as a grind order is no
+    // quest destination either. Live pool (Oct 2026, fresh level-1 Elwynn
+    // bots): 62% of level 1-4 deaths were by mobs 2+ levels above, the worst
+    // a level-2 bot on a quest-loot trip (item 750, entry 69, level_max 2)
+    // dying to the level 5-6 neighbours sharing its field (Defias Cutpurse,
+    // Mangy Wolf, Forest Spider). The check runs on the static creature
+    // template, so it stays safe wherever the destination filter runs (async
+    // search). Vendors are exempt: buying the item needs no fight.
+    // Owned/hired bots keep today's behaviour: their player decides.
+    inline bool QuestObjectiveLevelFits(int creatureLevelMax, std::uint32_t botLevel,
+        bool masterlessRandom, bool vendorObjective)
+    {
+        if (vendorObjective || !masterlessRandom)
+            return true;
+
+        return PullLevelWithinCap(creatureLevelMax, botLevel, false);
+    }
+
+    // Whether a pool bot may take / walk to hand in a quest right now.
+    // The end-of-start-valley deliveries (Dolanaar Delivery, Coldridge
+    // Valley Mail Delivery, Rest and Relaxation...) are offered at level
+    // 1-2 while their taker sits in the next town and the quest itself is
+    // rated 3-5; walking there at once dies on the way (~150 of 450 deaths
+    // on giver/taker trips in the Oct 2026 pool). A quest rated at most
+    // one above the bot is normal valley work (same +1 as the grind order
+    // cap); anything rated higher is parked until the bot reaches its
+    // level, as is a taker standing in an area rated higher. QuestLevel 0
+    // is scaling content (GetQuestLevelForPlayer falls back to bot level):
+    // never parked on the quest half; area 0 is unknown: never parked on
+    // the area half. Owned/hired bots keep today's behaviour. Donor
+    // mod-playerbots IsQuestCapableDoing (NewRpgBaseAction.cpp:573)
+    // refuses botLevel + 3 < questLevel at any level; the pool uses +1
+    // below 10.
+    inline bool QuestTakerTripFits(int questLevel, int takerAreaLevel,
+        std::uint32_t botLevel, bool masterlessRandom)
+    {
+        if (!masterlessRandom || botLevel >= 10)
+            return true;
+
+        if (questLevel > 0 && questLevel - (int)botLevel > 1)
+            return false;
+
+        if (takerAreaLevel > 0 && takerAreaLevel - (int)botLevel > 1)
+            return false;
+
+        return true;
+    }
+
     // Whether a wounded bot must sit out the next NEW pull: health below
     // mediumHealth, or (for mana users only) mana below mediumMana. The call
     // site skips this for revenge targets (the mob already attacks the bot),

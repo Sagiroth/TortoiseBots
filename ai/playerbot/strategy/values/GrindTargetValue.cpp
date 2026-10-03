@@ -72,13 +72,21 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
 
     int const maxLevelOver = MaxGrindLevelOverBot(bot, ai);
 
-    // A mob an active quest asks for is never skipped by the level cap: the cap is about
-    // what the bot can kill alone, not about which objective it may try.
+    // A mob an active quest asks for is skipped by the level cap while the
+    // bot is below level 10 without a real player master: a level-2 bot on a
+    // quest trip still cannot kill a level-5+ mob, and ordering it only
+    // produces the corpse the destination gate above now refuses to walk to
+    // (62% of level 1-4 pool deaths were by mobs 2+ levels above). From level
+    // 10, or with a real player master, quest work keeps the old exemption.
+    bool const questWorkCapped = bot->GetLevel() < 10 && !ai->HasRealPlayerMaster();
     auto levelTooHigh = [&](Unit* unit)
     {
         if (bot->InBattleGround() || unit->getObjectGuid().IsPlayer() ||
             (int)unit->GetLevel() - (int)bot->GetLevel() <= maxLevelOver)
             return false;
+
+        if (questWorkCapped)
+            return true;
 
         return !AI_VALUE2(bool, "need for quest", std::to_string(unit->GetEntry()));
     };

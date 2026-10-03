@@ -195,7 +195,9 @@ class RandomItemMgr
         uint32 GetQuiver(uint32 level);
         uint32 GetRandomPotion(uint32 level, uint32 effect);
         uint32 GetRandomFood(uint32 level, uint32 category);
-        uint32 GetFood(uint32 level, uint32 category);
+        // pick: a stable per-bot value (e.g. GUID) so a bot always gets the same
+        // ration of a tier; 0 keeps the old random pick.
+        uint32 GetFood(uint32 level, uint32 category, uint32 pick = 0);
         uint32 GetRandomTrade(uint32 level);
         uint32 CalculateRandomEnchantId(uint8 playerclass, uint8 spec, ItemPrototype const* proto);
         uint32 CalculateBestRandomEnchantId(uint8 playerclass, uint8 spec, uint32 itemId);

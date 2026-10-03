@@ -123,6 +123,15 @@ bool SellAction::Sell(Player* requester, FindItemVisitor* visitor)
     return didSell;
 }
 
+bool SellAction::HasVendorStock(Creature* vendor)
+{
+    if (!vendor)
+        return false;
+    VendorItemData const* items = vendor->GetVendorItems();
+    VendorItemData const* templateItems = vendor->GetVendorTemplateItems();
+    return (items && !items->Empty()) || (templateItems && !templateItems->Empty());
+}
+
 bool SellAction::Sell(Player* requester, Item* item)
 {
     bool didSell = false;
@@ -137,6 +146,12 @@ bool SellAction::Sell(Player* requester, Item* item)
         if (!pCreature)
             continue;
 
+        // #404: Terry Palin (entry 1650) carries the vendor flag but no npc_vendor rows, so
+        // every gossip hello at him prints a core outErrorDb line ("empty trading item list"). World
+        // DB data - never touched from the module - so skip flagged-but-stockless NPCs before
+        // interacting: quest givers like Palin (quest 60042) are still served via the quest verbs.
+        if (!HasVendorStock(pCreature))
+            continue;
         if (!item->GetProto()->SellPrice)
         {
             if(ai->HasActivePlayerMaster())

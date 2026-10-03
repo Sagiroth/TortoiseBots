@@ -4022,7 +4022,7 @@ void PlayerbotFactory::InitFood()
         if (category == 59 && bot->GetPowerType() != POWER_MANA) // Do not give drinks to non-mana users.
             continue;
 
-        uint32 itemId = sRandomItemMgr.GetFood(level, category);
+        uint32 itemId = sRandomItemMgr.GetFood(level, category, bot->GetGUIDLow());
         if (!itemId)
         {
             sLog.outDetail("No food (category %d) available for bot %s (%d level)", category, bot->GetName(), bot->GetLevel());
@@ -4063,7 +4063,7 @@ void PlayerbotFactory::InitPoolRations()
         if (category == 59 && !ai::ShouldSeedDrink(bot->GetPowerType() == POWER_MANA))
             continue;
 
-        uint32 itemId = sRandomItemMgr.GetFood(level, category);
+        uint32 itemId = sRandomItemMgr.GetFood(level, category, bot->GetGUIDLow());
         if (!itemId)
         {
             sLog.outDetail("No food (category %d) available for bot %s (%d level)", category, bot->GetName(), bot->GetLevel());

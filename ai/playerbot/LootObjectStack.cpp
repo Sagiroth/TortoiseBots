@@ -3,6 +3,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/SharedValueContext.h"
+#include "../../runtime/GatherToolPolicy.h"
 
 using namespace ai;
 
@@ -425,10 +426,18 @@ bool LootObject::IsLootPossible(Player* bot)
     if (reqSkillValue > skillValue)
         return false;
 
-    if (skillId == SKILL_MINING && !bot->HasItemCount(2901, 1))
+    // E02: donor allowlist (mod-playerbots LootObjectStack.cpp:337-343), minus the
+    // WotLK-only ids with no 1.12 rows (40772/40892/40893). Every id here was
+    // verified to exist in tw_world.item_template; lists live in
+    // runtime/GatherToolPolicy.h and are pinned by tools/test_gather_tool_policy.cpp.
+    if (skillId == SKILL_MINING &&
+        !TortoiseBots::HasAnyTool([bot](uint32 item) { return bot->HasItemCount(item, 1); },
+                                  TortoiseBots::kMiningPickIds))
         return false;
 
-    if (skillId == SKILL_SKINNING && !bot->HasItemCount(7005, 1))
+    if (skillId == SKILL_SKINNING &&
+        !TortoiseBots::HasAnyTool([bot](uint32 item) { return bot->HasItemCount(item, 1); },
+                                  TortoiseBots::kSkinningKnifeIds))
         return false;
 
     return true;

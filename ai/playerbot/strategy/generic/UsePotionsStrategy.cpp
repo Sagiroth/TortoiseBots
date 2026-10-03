@@ -45,6 +45,13 @@ void UsePotionsStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
         "low mana",
         NextAction::array(0, new NextAction("dark rune", ACTION_HIGH), NULL)));
 
+    // E11: proactive mana-potion arm at the medium threshold (donor
+    // UsePotionsStrategy.cpp:36: medium mana -> mana potion EMERGENCY).
+    // Dark rune stays the low-mana answer; this node fires earlier through
+    // the existing action-node fallback ("dark rune" -> "mana potion").
+    triggers.push_back(new TriggerNode(
+        "medium mana",
+        NextAction::array(0, new NextAction("mana potion", ACTION_EMERGENCY), NULL)));
     triggers.push_back(new TriggerNode(
         "has poison debuff",
         NextAction::array(0, new NextAction("anti-venom", ACTION_DISPEL), NULL)));

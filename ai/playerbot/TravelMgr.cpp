@@ -1,6 +1,8 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/TravelRoutePolicy.h"
 #include "playerbot/GrindSpotPolicy.h"
+#include "playerbot/PullRegenPolicy.h"
+#include "playerbot/PointDangerPolicy.h"
 #include <numeric>
 #include <mutex>
 #include <iomanip>
@@ -185,6 +187,21 @@ bool QuestRelationTravelDestination::IsPossible(const PlayerTravelInfo& info) co
             if (IsOverWorld(info.getPosition()))
                 return false;
         }
+
+        // Leave-the-valley hand-ins wait: a pool bot below 10 only walks to
+        // a taker whose quest is rated at most one above its own level and
+        // whose area is rated the same (QuestTakerTripFits, same +1 as the
+        // grind order cap). The taker search then comes back empty and the
+        // caller parks the purpose like any other empty search, so the bot
+        // keeps working its own valley until it reaches the quest's level.
+        // Hand-ins in the same valley keep working; owned/hired bots and
+        // bots at 10+ keep today's behaviour.
+        if (WorldPosition* takerPoint = GetClosestPoint(info.getPosition()))
+        {
+            if (!ai::QuestTakerTripFits((int)quest->GetQuestLevel(),
+                takerPoint->GetAreaLevel(), info.GetLevel(), info.IsMasterlessRandom()))
+                return false;
+        }
     }
 
     // Don't send a bot to a quest giver in a zone far above its level, or cross-zone for lowbies.
@@ -330,6 +347,19 @@ bool QuestObjectiveTravelDestination::IsPossible(const PlayerTravelInfo& info) c
 
         if (!skipKillableCheck && !forceThisQuest)
         {
+            // A pool bot fights at most one level above its own below level 10
+            // (PullGrindLevelCap): a creature past that cap is no quest
+            // destination. The template read is the spawn entry itself, so an
+            // over-level alternative drop of the same item never lures the bot
+            // off its valley - the capped search comes back empty and the caller
+            // parks the purpose instead. Vendors are exempt (buying needs no
+            // fight); owned/hired bots keep today's behaviour. Matches the donor
+            // mod-playerbots shape (its +4 mob check) at the pool's +1 number.
+            if (cInfo && !ai::QuestObjectiveLevelFits((int)cInfo->level_max, info.GetLevel(),
+                info.IsMasterlessRandom(),
+                (cInfo->npc_flags & UNIT_NPC_FLAG_VENDOR) != 0))
+                return false;
+
             if (cInfo && (int)cInfo->level_max - (int)info.GetLevel() > 4)
                 return false;
 
@@ -2634,6 +2664,26 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
         if (grindZoneFloor > grindMinLevel)
             grindMinLevel = grindZoneFloor;
         if ((int32)areaLevel <= grindMinLevel)
+            return false;
+    }
+    // A quest/grind point whose surroundings hold hostile spawns past the
+    // bot's grind cap is no point: the spawn entry itself was in cap (see
+    // #418), but the field around it is not - a level-4 bot on the item-750
+    // trip walks to a Timber Wolf point outside Northshire and dies to the
+    // Defias Cutpurse 5 / Forest Spider 6 / Mangy Wolf 6 standing next to
+    // it. Pool bots below 10 only (PointDangerApplies); quest objectives,
+    // quest loot and grind. The static cell index (40 yd, one build, no
+    // world scan) keeps this cheap inside the async search; neutral camps
+    // and wildlife never count (template reaction), so giver/taker walks
+    // through town stay untouched. When every point of a destination is
+    // dangerous the search comes back empty and the caller parks the
+    // purpose like any other empty search.
+    if (ai::PointDangerApplies(info.GetLevel(), info.IsMasterlessRandom()) &&
+        (purposeFlag & ((uint32)TravelDestinationPurpose::QuestAllObjective | (uint32)TravelDestinationPurpose::Grind)))
+    {
+        Team const botTeam = info.GetTeam();
+        uint32 const highestNear = position.GetHighestHostileLevelNear(ai::POINT_DANGER_RADIUS_YD, botTeam);
+        if (highestNear != 0 && ai::PointDangerous((int)highestNear, info.GetLevel()))
             return false;
     }
 

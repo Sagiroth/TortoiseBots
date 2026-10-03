@@ -46,6 +46,50 @@
 - Combat-stuck give-ups no longer blacklist an entire mob kind: only the single offending mob is skipped, so common starters stay valid targets. Fixes bot progression being pushed onto mobs 3+ levels above them (deaths to over-leveled mobs had climbed from ~20% to 31%). [#417](https://github.com/Sagiroth/TortoiseBots/pull/417)
 - Give-up now skips targets that are actively attacking the bot instead of dropping the whole entry, cutting down the 608 stuck-cycles / 174 bots and 19% death-within-a-minute spike observed in the post-#412 live check. [#417](https://github.com/Sagiroth/TortoiseBots/pull/417)
 
+### Travel & Questing
+- Low-level quest trips now obey the same +1 level cap as grinding: below level 10, a quest objective creature must fit the target's level window before bots will travel to it [#418](https://github.com/Sagiroth/TortoiseBots/pull/418)
+- Removed the "quest-needed" exemption that let level-2 bots get sent into fields of level 5-6 Defias Cutpurses, Mangy Wolves, and Forest Spiders — no more suicide runs for Tough Wolf Meat [#418](https://github.com/Sagiroth/TortoiseBots/pull/418)
+- When no valid quest target fits the cap, the purpose parks like any other empty search instead of forcing a bad trip, cutting the ~62.5% of low-level deaths caused by 2+ level-difference mobs [#418](https://github.com/Sagiroth/TortoiseBots/pull/418)
+
+### Bot Supplies & Rations
+- Pool bots now buy plain vendor food and drink matching their level tier (1/5/15/25/35/45) instead of buff food like Spiced Wolf Meat, Smoked Sagefish, or Dirge's Chimaerok Chops — no more wasted Well Fed items burned as cheap rations. [#419](https://github.com/Sagiroth/TortoiseBots/pull/419)
+- Cleaned up the drink lists: Tough Jerky and Smoked Sagefish are no longer miscategorized as beverages. [#419](https://github.com/Sagiroth/TortoiseBots/pull/419)
+- Each bot now sticks to one stable ration per tier rather than re-rolling a new random pick on every 30 s top-up, so bags won't slowly fill with a dozen half-stacks of assorted food. [#419](https://github.com/Sagiroth/TortoiseBots/pull/419)
+
+### Questing & Progression
+- Pool bots below level 10 no longer grab end-of-valley delivery quests at level 1-2 and immediately march into the next town — hand-ins are now parked until the quest level and taker's area level are within +1 of the bot's own level, cutting the ~⅓ of deaths that happened on quest giver/taker trips [#420](https://github.com/Sagiroth/TortoiseBots/pull/420)
+- Replaces six hard-coded breadcrumb quest IDs with level-aware gating, so new starter-zone delivery chains are covered automatically instead of needing manual ID maintenance [#420](https://github.com/Sagiroth/TortoiseBots/pull/420)
+- Owned/hired bots and level 10+ pool bots keep their existing behavior — no change to player-controlled or established bots [#420](https://github.com/Sagiroth/TortoiseBots/pull/420)
+
+### Combat & AI
+
+- Bots that decline a duel — whether they're too low level or too low on health — no longer immediately accept it anyway; the handler now returns after sending the cancel instead of falling through to the accept packet [#421](https://github.com/Sagiroth/TortoiseBots/pull/421)
+
+### Starter Zones & World
+- Low-level pool bots (1–9) now skip quest objectives, quest loot, and grind points with a hostile spawn above their level cap within 40 yd — ends the Northshire death spiral where "Tough Wolf Meat" runs fed bots straight into Forest Spiders, Mangy Wolves, and Defias Cutpurses. In the first live data, 211 of 523 deaths were levels 1–4, and 125 of those were on a single trip. [#428](https://github.com/Sagiroth/TortoiseBots/pull/428)
+- Threat checks use a per-map cell index over the spawn table, built once — no world scan per decision, so pathing stays cheap. [#428](https://github.com/Sagiroth/TortoiseBots/pull/428)
+- Neutral wildlife and vendors don't count as threats, so lowbies still turn in, buy, and grind in safe areas normally. [#428](https://github.com/Sagiroth/TortoiseBots/pull/428)
+- Owned/hired bots and all level 10+ bots are unchanged — no impact on established characters or player-controlled companions. [#428](https://github.com/Sagiroth/TortoiseBots/pull/428)
+
+### Core Sync & Fixes
+- Fixed a build break on main caused by travel code calling `WorldPosition::GetHighestHostileLevelNear`, which was still in the private section. Both accessors are now public, so the module compiles cleanly again. [#429](https://github.com/Sagiroth/TortoiseBots/pull/429)
+
+### Combat & AI
+- Hunter and warlock pets on pool bots now run the autocast sweep and default to defensive stance, matching mod-playerbots parity — the live pet strategies never queued those actions before. [#430](https://github.com/Sagiroth/TortoiseBots/pull/430)
+- Pets with a real player master are left alone, so players keep full control of their own pet. [#430](https://github.com/Sagiroth/TortoiseBots/pull/430)
+- Medium-mana potions are now wired into the potions strategy, so bots actually use them instead of sitting on a dead node. [#430](https://github.com/Sagiroth/TortoiseBots/pull/430)
+
+### Professions & Tools
+- Mining and skinning allowlists now accept every pick and skinning knife that exists in 1.12, instead of one hardcoded item each. [#430](https://github.com/Sagiroth/TortoiseBots/pull/430)
+
+### Observability & Telemetry
+- Skinning loot is now detected via the server-side loot type (the 1.12 client mislabels it as pickpocketing), so GatherLoot rows and the dashboard skinning counter actually populate. [#431](https://github.com/Sagiroth/TortoiseBots/pull/431)
+- Per-revive `hopeless check ... not eligible` lines are demoted to quiet — relocations still fire (4 logged on 2026-10-02), only the log noise was dialed down. [#431](https://github.com/Sagiroth/TortoiseBots/pull/431)
+
+### Vendors & Trading
+- Trading activity lease now outlives the auction house post tick, eliminating premature lease expiry warnings. [#431](https://github.com/Sagiroth/TortoiseBots/pull/431)
+- Vendor-flagged NPCs with no goods (e.g. Terry Palin) are no longer treated as vendors, stopping the `empty trading item list` error spam. [#431](https://github.com/Sagiroth/TortoiseBots/pull/431)
+
 ## 2026-10-02
 
 ### Levelling & Progression

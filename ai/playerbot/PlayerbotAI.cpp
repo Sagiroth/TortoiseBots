@@ -1312,7 +1312,7 @@ void PlayerbotAI::RefillPoolRations()
         uint32 category = categories[i];
         if (category == 59 && !ai::ShouldSeedDrink(bot->GetPowerType() == POWER_MANA))
             continue;
-        uint32 wantId = sRandomItemMgr.GetFood(bot->GetLevel(), category);
+        uint32 wantId = sRandomItemMgr.GetFood(bot->GetLevel(), category, bot->GetGUIDLow());
         if (!wantId)
             continue;
         ItemPrototype const* wantProto = sObjectMgr.GetItemPrototype(wantId);

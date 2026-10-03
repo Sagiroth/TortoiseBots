@@ -6,6 +6,7 @@
 #include "FishAction.h"
 #include "MoveToTravelTargetAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/PullRegenPolicy.h"
 #include "playerbot/TravelInstancePolicy.h"
 #include "playerbot/TravelRepickPolicy.h"
 #include "playerbot/strategy/values/VendorTripPolicy.h"
@@ -1856,6 +1857,20 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
 
             if (player->CanRewardQuest(questTemplate, false))
             {
+                // Leave-the-valley hand-ins wait before the search runs: a
+                // pool bot below 10 only walks to a taker whose quest is
+                // rated at most one above its own level
+                // (QuestTakerTripFits, same +1 as the grind order cap and
+                // the WouldAcceptQuest gate - same quest-half condition, so
+                // the two cannot drift). Skipping the fetch keeps the empty
+                // taker search - and its 10-minute purpose park - from
+                // hiding same-valley hand-ins that are ready now; the
+                // destination IsPossible gate below re-checks the same rule
+                // with the taker's area once the search runs.
+                if (!ai::QuestTakerTripFits((int)questTemplate->GetQuestLevel(), 0,
+                    bot->GetLevel(), sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster()))
+                    continue;
+
                 // A hand-in trip whose moves kept failing is parked per quest by the
                 // stuck-hand-in fallback (MoveToTravelTargetAction): the taker is not
                 // walkable to, so the search stops offering it for the park window.
