@@ -223,6 +223,7 @@ bool MoveToTravelTargetAction::TrySettleUnreachableHandIn(TravelTarget* target, 
 // use the startup taxi-node zone cache (item 6) - no GetArea/vmap on ticks.
 static bool ReadFlightPlan(PlayerbotAI* ai, uint32& fromNode, uint32& toNode)
 {
+    AiObjectContext* context = ai->GetAiObjectContext();
     int32 from = AI_VALUE2(int32, "manual int", "flight from node");
     int32 to = AI_VALUE2(int32, "manual int", "flight to node");
     if (from <= 0 || to <= 0 || from == to)
@@ -234,6 +235,7 @@ static bool ReadFlightPlan(PlayerbotAI* ai, uint32& fromNode, uint32& toNode)
 
 static void ClearFlightPlan(PlayerbotAI* ai)
 {
+    AiObjectContext* context = ai->GetAiObjectContext();
     SET_AI_VALUE2(int32, "manual int", "flight from node", (int32)0);
     SET_AI_VALUE2(int32, "manual int", "flight to node", (int32)0);
 }
@@ -245,6 +247,7 @@ static void ClearFlightPlan(PlayerbotAI* ai)
 // reads beyond the two cached uint32s below.
 void ai::DecideFlightPlanForTarget(PlayerbotAI* ai, Player* bot, TravelTarget const* target)
 {
+    AiObjectContext* context = ai->GetAiObjectContext();
     ClearFlightPlan(ai);
     if (!ai || !bot || !target || !target->getPosition())
         return;
