@@ -57,6 +57,36 @@ namespace ai
         return PullLevelWithinCap(creatureLevelMax, botLevel, false);
     }
 
+    // Whether a pool bot may take / walk to hand in a quest right now.
+    // The end-of-start-valley deliveries (Dolanaar Delivery, Coldridge
+    // Valley Mail Delivery, Rest and Relaxation...) are offered at level
+    // 1-2 while their taker sits in the next town and the quest itself is
+    // rated 3-5; walking there at once dies on the way (~150 of 450 deaths
+    // on giver/taker trips in the Oct 2026 pool). A quest rated at most
+    // one above the bot is normal valley work (same +1 as the grind order
+    // cap); anything rated higher is parked until the bot reaches its
+    // level, as is a taker standing in an area rated higher. QuestLevel 0
+    // is scaling content (GetQuestLevelForPlayer falls back to bot level):
+    // never parked on the quest half; area 0 is unknown: never parked on
+    // the area half. Owned/hired bots keep today's behaviour. Donor
+    // mod-playerbots IsQuestCapableDoing (NewRpgBaseAction.cpp:573)
+    // refuses botLevel + 3 < questLevel at any level; the pool uses +1
+    // below 10.
+    inline bool QuestTakerTripFits(int questLevel, int takerAreaLevel,
+        std::uint32_t botLevel, bool masterlessRandom)
+    {
+        if (!masterlessRandom || botLevel >= 10)
+            return true;
+
+        if (questLevel > 0 && questLevel - (int)botLevel > 1)
+            return false;
+
+        if (takerAreaLevel > 0 && takerAreaLevel - (int)botLevel > 1)
+            return false;
+
+        return true;
+    }
+
     // Whether a wounded bot must sit out the next NEW pull: health below
     // mediumHealth, or (for mana users only) mana below mediumMana. The call
     // site skips this for revenge targets (the mob already attacks the bot),

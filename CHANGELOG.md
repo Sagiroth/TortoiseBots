@@ -56,6 +56,15 @@
 - Cleaned up the drink lists: Tough Jerky and Smoked Sagefish are no longer miscategorized as beverages. [#419](https://github.com/Sagiroth/TortoiseBots/pull/419)
 - Each bot now sticks to one stable ration per tier rather than re-rolling a new random pick on every 30 s top-up, so bags won't slowly fill with a dozen half-stacks of assorted food. [#419](https://github.com/Sagiroth/TortoiseBots/pull/419)
 
+### Questing & Progression
+- Pool bots below level 10 no longer grab end-of-valley delivery quests at level 1-2 and immediately march into the next town — hand-ins are now parked until the quest level and taker's area level are within +1 of the bot's own level, cutting the ~⅓ of deaths that happened on quest giver/taker trips [#420](https://github.com/Sagiroth/TortoiseBots/pull/420)
+- Replaces six hard-coded breadcrumb quest IDs with level-aware gating, so new starter-zone delivery chains are covered automatically instead of needing manual ID maintenance [#420](https://github.com/Sagiroth/TortoiseBots/pull/420)
+- Owned/hired bots and level 10+ pool bots keep their existing behavior — no change to player-controlled or established bots [#420](https://github.com/Sagiroth/TortoiseBots/pull/420)
+
+### Combat & AI
+
+- Bots that decline a duel — whether they're too low level or too low on health — no longer immediately accept it anyway; the handler now returns after sending the cancel instead of falling through to the accept packet [#421](https://github.com/Sagiroth/TortoiseBots/pull/421)
+
 ## 2026-10-02
 
 ### Levelling & Progression
