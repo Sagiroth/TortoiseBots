@@ -65,7 +65,7 @@ Players can set `.bot role self <tank|healer|dps|clear>` to override runtime rol
 
 | Shared Subsystem | Trigger Condition | Bot Action / Behavior | Configuration / Control |
 | :--- | :--- | :--- | :--- |
-| **Resting & Recovery** | Out-of-combat, HP below `AiPlayerbot.MediumHealth` (default 70%) for bots with the item cheat (free conjured rations) or below `AiPlayerbot.LowHealth` (default 50%) otherwise; or low mana | Sits down, consumes food/water simultaneously | Automatic; pauses when group moves |
+| **Resting & Recovery** | Out-of-combat, HP below `AiPlayerbot.AlmostFullHealth` (default 90%) for bots with the item cheat (free rations, seeded and refilled to a full level-tier stack) or below `AiPlayerbot.LowHealth` (default 50%) otherwise; drink stops at almost-full for cheat bots (85 otherwise), mana users only | Sits down, consumes food/water simultaneously | Automatic; pauses when group moves |
 | **Buffs & Imbues** | Buff missing on self/party | Recasts class buffs (Arcane Intellect, PW:F, MotW) and poisons | Automated out-of-combat maintenance |
 | **Targeting & Assist** | Leader/Tank enters combat | Assists master's target; honors Skull focus and CC exclusions | `.bot action focus skull`, CC mark priority |
 | **Looting & Gathering** | Dead corpse or nearby resource node | Navigates to corpse, loots quest items, rolls Greed/Need | loot/roll actions; `RollBadItemsWithPlayer` only forces Need on empty-slot upgrades |

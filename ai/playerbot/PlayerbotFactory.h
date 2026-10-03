@@ -109,6 +109,10 @@ private:
     void InitBandages();
     void InitPotions();
     void InitFood();
+    // Pool-only full-stack ration seed behind InitFood's cheat gate: best
+    // vendor food (and water for mana users) for the level, one full stack
+    // each, stale lower tiers replaced. The per-tick refill keeps it there.
+    void InitPoolRations();
     void InitReagents();
     bool CanEquipArmor(ItemPrototype const* proto);
     bool CanEquipWeapon(ItemPrototype const* proto);

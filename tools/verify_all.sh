@@ -28,7 +28,7 @@ echo "✓ Engine unit tests passed."
 echo ""
 echo "=== 5. Running Standalone Policy Tests (issue #265, party-bot latency, hire deletion guard, hunter pet threshold, grind-spot level band, travel-instance guard, hire spec honouring, pull firing position, taker reachability, death-cluster escalation) ==="
 if command -v g++ >/dev/null 2>&1; then
-    for policy_test in test_pool_reset_policy test_pool_pass_rotation test_player_bot_classification test_hire_deletion_policy test_hire_departure_policy test_hunter_pet_policy test_start_zone_balance test_nearby_service_policy test_grind_spot_policy test_travel_instance_policy test_hire_spec_policy test_pull_firing_policy test_taker_reachability_cache test_death_cluster_policy test_vendor_trip_policy test_long_stuck_rescue_policy test_starter_kit_policy test_grind_hostility_policy test_profession_grant_policy test_vendor_weapon_upgrade_policy; do
+    for policy_test in test_pool_reset_policy test_pool_pass_rotation test_player_bot_classification test_hire_deletion_policy test_hire_departure_policy test_hunter_pet_policy test_start_zone_balance test_nearby_service_policy test_grind_spot_policy test_travel_instance_policy test_hire_spec_policy test_pull_firing_policy test_taker_reachability_cache test_death_cluster_policy test_vendor_trip_policy test_long_stuck_rescue_policy test_starter_kit_policy test_grind_hostility_policy test_profession_grant_policy test_vendor_weapon_upgrade_policy test_survive_policy; do
         policy_bin="${TMPDIR:-/tmp}/${policy_test}"
         g++ -std=c++17 -Wall -Wextra "tools/${policy_test}.cpp" -o "${policy_bin}"
         "${policy_bin}"

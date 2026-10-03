@@ -704,9 +704,18 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
 	{
         combatEngine->addStrategy("roll");
 
+        // The pool-only "critical health -> flee" node lives in the flee
+        // strategy, so grouped pool bots need it too: free bots group with
+        // each other while levelling, and those groups wipe the same way a
+        // solo bot does. Ungrouped grant is unchanged (plus boost and the
+        // druid/shaman/paladin kit below). Real-player masters are safe: the
+        // trigger itself refuses to fire while one answers for the bot, and
+        // dungeons/raids with a real master stay flee-free either way.
+        if (!player->GetGroup() || !facade->HasRealPlayerMaster())
+            combatEngine->addStrategy("flee");
+
         if (!player->GetGroup())
         {
-            combatEngine->addStrategy("flee");
             combatEngine->addStrategy("boost");
 
             if (player->GetClass() == CLASS_DRUID && tab == 2)

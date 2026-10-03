@@ -40,6 +40,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/DeathClusterPolicy.h"
+#include "playerbot/SurvivePolicy.h"
 #include "Movement/spline/MoveSplineInitArgs.h"
 #include "Maps/InstanceData.h"
 #include "ChatHelper.h"
@@ -764,6 +765,11 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
                 PlayerbotFactory(bot, bot->GetLevel(), 0).InitAmmo();
             }
         }
+        // Never-empty kit rations (owner addendum): pool-only sibling of the
+        // ammo refill above. The cheat eat/drink runs on spells, so the stack
+        // only shrinks through sharing/selling/destroying - top it back up
+        // every tick, same as ammo. One stack each; bags fit (3x14 now).
+        RefillPoolRations();
     }
 
     // Alt level sync - level up non-random bots to match master level
@@ -1260,6 +1266,78 @@ void PlayerbotAI::OnCombatEnded()
     }
 }
 
+void PlayerbotAI::NoteFightAttackers()
+{
+    // Sampled from DoNextAction while the fight is live: at death time the
+    // attacker set is already drained (SetDeathState -> CombatStop), so the
+    // death writer reads this snapshot instead. Cheap by design: one copy
+    // of the live set per tick, dead creatures filtered out, capped at 8.
+    if (!bot || !bot->IsInWorld() || !sServerFacade.IsInCombat(bot))
+        return;
+    deathAttackers_.clear();
+    for (Unit* attacker : bot->GetAttackers())
+    {
+        if (!attacker || !sServerFacade.IsAlive(attacker))
+            continue;
+        ai::DeathAttackerEntry entry;
+        entry.name = attacker->GetName();
+        entry.level = attacker->GetLevel();
+        deathAttackers_.push_back(entry);
+        if (deathAttackers_.size() >= ai::kDeathAttackerListCap)
+            break;
+    }
+    deathAttackersMs_ = WorldTimer::getMSTime();
+}
+
+void PlayerbotAI::RefillPoolRations()
+{
+    // Never-empty kit food/drink (owner addendum): the cheat-block sibling of
+    // the ammo refill. Cheat-bot eat/drink runs on spells (24005/24355), so
+    // stacks only shrink through sharing, selling or destroying - but the
+    // theft paths exist (mage sharing, vendor churn), so top the level-tier
+    // stack back up every tick like ammo. Pool-only (random record + item
+    // cheat); owned/hired bots without the cheat keep the earned restock
+    // path (RestockCompanion/OutOfRations vendor errand).
+    if (!bot || !bot->IsAlive() || !bot->IsInWorld())
+        return;
+    if (!HasCheat(BotCheatMask::item) || !sRandomBotFacade.IsRandomBot(bot))
+        return;
+    uint32 categories[] = { 11, 59 };
+    for (int i = 0; i < 2; ++i)
+    {
+        uint32 category = categories[i];
+        if (category == 59 && !ai::ShouldSeedDrink(bot->GetPowerType() == POWER_MANA))
+            continue;
+        uint32 wantId = sRandomItemMgr.GetFood(bot->GetLevel(), category);
+        if (!wantId)
+            continue;
+        ItemPrototype const* wantProto = sObjectMgr.GetItemPrototype(wantId);
+        if (!wantProto)
+            continue;
+        // Stale lower tier in the bags: drop it so the current tier is the
+        // only food/drink the bot carries (no bag clutter, same rule as the
+        // seed). Anything at or above the tier stays - player gifts, raid
+        // drops and the mage's own conjured stack are never touched.
+        FindFoodVisitor visitor(bot, category);
+        InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
+        for (Item* foodItem : visitor.GetResult())
+        {
+            if (!foodItem || !foodItem->GetProto() || foodItem->GetEntry() == wantId)
+                continue;
+            if (foodItem->GetProto()->ItemLevel < wantProto->ItemLevel)
+                bot->DestroyItem(foodItem->GetBagSlot(), foodItem->GetSlot(), true);
+        }
+        uint32 have = bot->GetItemCount(wantId);
+        uint32 want = wantProto->GetMaxStackSize();
+        if (have >= want)
+            continue;
+        ItemPosCountVec dest;
+        if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, wantId, want - have) != EQUIP_ERR_OK)
+            continue;
+        bot->StoreNewItem(dest, wantId, true, Item::GenerateItemRandomPropertyId(wantId));
+    }
+}
+
 void PlayerbotAI::SetLastKiller(Unit* killer)
 {
     lastKiller_.time = WorldTimer::getMSTime();
@@ -1546,8 +1624,6 @@ void PlayerbotAI::OnDeath()
 
                 botPos.printWKT(out);
 
-                AiObjectContext* context = GetAiObjectContext();
-
                 float killerHealth = 100.0f;
                 Unit* ctarget = AI_VALUE(Unit*, "current target");
                 if (ctarget && (!killerName.empty() && ctarget->GetName() == killerName))
@@ -1560,33 +1636,20 @@ void PlayerbotAI::OnDeath()
                 else
                     out << "\"none\",0,100,";
 
-                std::list<ObjectGuid> targets = AI_VALUE_LAZY(std::list<ObjectGuid>, "all targets");
-
-                out << "\"";
-
+                // Multi-attacker count from the live snapshot (NoteFightAttackers):
+                // the old victim-filtered "all targets" loop was structurally
+                // always 0 here - SetDeathState drains the attacker set and
+                // clears victim pointers before OnDeath runs. A stale (>30 s)
+                // or empty snapshot writes 0, same as before.
+                std::string addsText;
                 uint32 adds = 0;
-
-                for (auto target : targets)
+                if (ai::IsDeathAttackerSnapshotFresh(WorldTimer::getMSTime(), deathAttackersMs_))
                 {
-                    if (!target.IsCreature())
-                        continue;
-
-                    Unit* unit = GetUnit(target);
-                    if (!unit)
-                        continue;
-
-                    if (unit->GetVictim() != bot)
-                        continue;
-
-                    if (!killerName.empty() && unit->GetName() == killerName)
-                        continue;
-
-                    out << unit->GetName() << "(" << unit->GetLevel() << ")";
-
-                    adds++;
+                    auto formatted = ai::FormatDeathAttackers(deathAttackers_, killerName);
+                    addsText = formatted.first;
+                    adds = formatted.second;
                 }
-
-                out << "\"," << std::to_string(adds);
+                out << "\"" << addsText << "\"," << std::to_string(adds);
 
                 TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
                 std::string travelInfo = "none";
@@ -1599,6 +1662,8 @@ void PlayerbotAI::OnDeath()
         }
 
         ClearLastKiller();
+        deathAttackers_.clear();
+        deathAttackersMs_ = 0;
 
         SET_AI_VALUE(Unit*, "current target", nullptr);
         SET_AI_VALUE(Unit*, "enemy player target", nullptr);
@@ -2789,6 +2854,13 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
     }
 
     bool minimal = !AllowActivity();
+
+    // Live attacker snapshot for the deaths.csv 'adds' column (telemetry
+    // fix): the victim-filtered "all targets" loop at death time sees an
+    // already-drained attacker set, so sample here while the fight is live.
+    // One GetAttackers() copy per tick, dead creatures filtered, capped at
+    // 8; the death writer reads it only if fresh (30 s window).
+    NoteFightAttackers();
 
     SC_PHASE("DoNextAction.engineDoNextAction", bot ? bot->GetName() : "(null)");
     currentEngine->DoNextAction(NULL, 0, (minimal || min), bot->IsTaxiFlying());

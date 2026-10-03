@@ -12,6 +12,7 @@
 #include "strategy/IterateItemsMask.h"
 #include "BotDiagnostics.h"
 #include "playerbot/DeathClusterPolicy.h"
+#include "playerbot/SurvivePolicy.h"
 #include "../../runtime/BotManager.h"
 
 class Player;
@@ -743,6 +744,19 @@ public:
         uint32 time = 0;
         uint32 entry = 0;       // creature entry, 0 for players and the environment
     };
+    // Live attacker snapshot for the deaths.csv 'adds' column: sampled from
+    // bot->GetAttackers() while fighting (NoteFightAttackers, throttled),
+    // read at death time. The old victim-filtered "all targets" loop was
+    // structurally always 0 - SetDeathState drains the attacker set and
+    // clears victim pointers before OnDeath runs - so the snapshot is what
+    // makes multi-attacker deaths measurable. Capped at 8 entries, fresh
+    // for 30 s (see SurvivePolicy.h).
+    void NoteFightAttackers();
+    // Per-tick top-up of the level-tier food/drink stack (owner addendum):
+    // the cheat-block sibling of the ammo refill, pool-only.
+    void RefillPoolRations();
+    std::vector<ai::DeathAttackerEntry> deathAttackers_;
+    uint32 deathAttackersMs_ = 0; // WorldTimer ms of the last sample, 0 = none
     uint32 prevKillerEntry_ = 0; // the kind that killed the bot before (lethal-kind rule in OnDeath)
     uint32 prevKillerMs_ = 0;
     // Death-cluster escape (see OnDeath): deaths inside one small area within a

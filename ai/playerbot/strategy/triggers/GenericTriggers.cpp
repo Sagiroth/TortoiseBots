@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/SurvivePolicy.h"
 #include "GenericTriggers.h"
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -108,6 +109,17 @@ bool PanicTrigger::IsActive()
            AI_VALUE2(uint8, "health", "self target") < sPlayerbotAIConfig.criticalHealth &&
 		   (!AI_VALUE2(bool, "has mana", "self target") ||
             AI_VALUE2(uint8, "mana", "self target") < sPlayerbotAIConfig.lowMana);
+}
+
+bool CriticalHealthNoMasterTrigger::IsActive()
+{
+    // Pool-only: a real player master (owned/hired bots, dungeon/raid
+    // groups) decides movement itself. Never in PvP either, like Panic.
+    if (!ShouldFleeAtCriticalHealth(ai->HasRealPlayerMaster()))
+        return false;
+    if (ai->IsInPvp())
+        return false;
+    return AI_VALUE2(uint8, "health", "self target") < sPlayerbotAIConfig.criticalHealth;
 }
 
 bool OutNumberedTrigger::IsActive()
