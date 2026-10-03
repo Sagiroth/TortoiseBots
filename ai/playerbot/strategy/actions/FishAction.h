@@ -15,10 +15,13 @@ namespace ai
     WorldPosition* GetSafeFishSpot(Player* bot, bool onlyNearestGrid = false);
     // Open-water search (issue #402, ported from mod-playerbots `FindWaterRadial` /
     // `FindFishingHole`): fishable water within `searchRadius` of `from`, else an
-    // invalid position. The pool-bot-only direct-fishing fallback when the travel
-    // fish table is empty; bounded (fixed rings x directions) and cheap, and it
-    // reads already-loaded terrain like any path query - no world scan.
-    WorldPosition FindNearbyWater(Player* bot, WorldPosition const& from, float searchRadius);
+    // invalid position. Pool bots fishing the travel errand fall back to it
+    // when the travel fish table is empty; bounded (coarse rings, per-bot
+    // throttle, shared per-cell cache) and cheap, reading already-loaded
+    // terrain like any path query - no world scan. Levelling first: idle bots
+    // only, one short session per hour (5 casts / 5 min), combat ends the
+    // session and puts the weapon back at once.
+    void EndFishingSession(PlayerbotAI* ai, char const* why);
     // Nearest visible fishing hole (school) within `searchRadius`, else invalid.
     // Fishing prefers the hole at cast time; the search walks to it only when
     // the hole itself is out of casting range from dry land.

@@ -5,6 +5,8 @@
 #include "playerbot/GuidPosition.h"
 #include <ctime>
 #include <cmath>
+#include <mutex>
+#include <unordered_map>
 #include "FishAction.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/FishingSpotPolicy.h"
@@ -17,23 +19,74 @@ bool MoveToFishAction::isUseful()
 {
     if (qualifier == "travel")
     {
-        if (!AI_VALUE(bool, "travel target working"))
-            return false;
-
-        TravelTarget* target = AI_VALUE(TravelTarget*, "leader travel target");
-
-        if (target->GetDestination()->GetPurpose() != TravelDestinationPurpose::GatherFishing)
+        // The travel-table spot is primary; the open-water path below only
+        // runs when the travel target is idle (levelling first - never while
+        // an errand is being walked or worked).
+        if (AI_VALUE(bool, "travel target active"))
             return false;
     }
     else if (AI_VALUE2(bool, "manual bool", "no fish water"))
     {
-        // A fresh minute has passed - let the search try again.
+        // A fresh window has passed - let the search try again.
         if (WorldTimer::getMSTime() - uint32(AI_VALUE2(int, "manual int", "no fish water at")) < ai::FISH_NO_WATER_RETRY_MS)
             return false;
         RESET_AI_VALUE2(bool, "manual bool", "no fish water");
     }
 
     return true;
+}
+
+namespace
+{
+    // Levelling first: fishing never starts while the bot has real work -
+    // an active travel errand, a friend in need... in code: a travel target
+    // being walked or worked, a rewardable finished quest, vendor stock worth
+    // a trip, a trainer visit pending, no money for ammo, or repair need.
+    bool FishLevellingStandsDown(PlayerbotAI* ai)
+    {
+        AiObjectContext* context = ai->GetAiObjectContext();
+        if (AI_VALUE(bool, "travel target active") || AI_VALUE(bool, "travel target working"))
+            return true;
+        if (AI_VALUE(bool, "has rewardable finished quest"))
+            return true;
+        if (AI_VALUE(bool, "should sell") || AI_VALUE(bool, "can sell"))
+            return true;
+        if (AI_VALUE2(bool, "should travel named", "trainer class"))
+            return true;
+        if (AI_VALUE(bool, "should get money"))
+            return true;
+        if (AI_VALUE(bool, "should repair"))
+            return true;
+        if (AI_VALUE(uint8, "bag space") > 90)
+            return true;
+        return false;
+    }
+}
+
+void ai::EndFishingSession(PlayerbotAI* ai, char const* why)
+{
+    if (!ai)
+        return;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    uint32 const now = WorldTimer::getMSTime();
+    int const casts = AI_VALUE2(int, "manual int", "fish session casts");
+    if (AI_VALUE2(int, "manual int", "fish session start") == 0 && casts == 0)
+        return;
+    SET_AI_VALUE2(int, "manual int", "fish session end", int(now));
+    RESET_AI_VALUE2(int, "manual int", "fish session start");
+    RESET_AI_VALUE2(int, "manual int", "fish session casts");
+    RESET_AI_VALUE2(WorldPosition, "custom position", "fish spot");
+    if (why && ai->GetBot())
+        ai->TellDebug(ai->GetMaster(), std::string("Fishing session ended (") + why + ")", "debug move");
+}
+
+namespace
+{
+    void FishStartSession(PlayerbotAI* ai)
+    {
+        AiObjectContext* context = ai->GetAiObjectContext();
+        SET_AI_VALUE2(int, "manual int", "fish session start", int(WorldTimer::getMSTime()));
+    }
 }
 
 bool ai::IsFishingSpotGuarded(Player* bot, WorldPosition const& spot, float radius)
@@ -73,6 +126,33 @@ WorldPosition* ai::GetSafeFishSpot(Player* bot, bool onlyNearestGrid)
 // of sight from `Map::isInLineOfSight`. Donor SHA b6696bd.
 namespace
 {
+    struct FishWaterCacheEntry
+    {
+        WorldPosition water;
+        uint32 cachedAtMs = 0;
+        bool hasWater = false;
+    };
+
+    // Shared per-map-cell water verdicts (30 min): the radial search is ~88
+    // probes with terrain/LOS queries each, so a cell a bot already searched
+    // never pays it again - whichever bot comes next reads the verdict.
+    std::unordered_map<std::uint64_t, FishWaterCacheEntry>& FishWaterCache()
+    {
+        static std::unordered_map<std::uint64_t, FishWaterCacheEntry> cache;
+        return cache;
+    }
+    std::mutex& FishWaterCacheMutex()
+    {
+        static std::mutex mutex;
+        return mutex;
+    }
+
+    std::uint64_t FishCellOf(WorldPosition const& pos)
+    {
+        CellPair const cell = pos.getCellPair();
+        return ai::FishingCellKey(pos.GetMapId(), (std::int32_t)cell.x_coord, (std::int32_t)cell.y_coord);
+    }
+
     // Fishable water (not magma/slime) deep enough to cast into at (x, y),
     // else INVALID_HEIGHT. `z` is the query height (bot level); the water
     // surface is only trusted when it sits above the lakebed under it.
@@ -110,6 +190,13 @@ WorldPosition ai::FindNearbyWater(Player* bot, WorldPosition const& from, float 
 {
     if (!bot || !bot->GetMap() || !from)
         return WorldPosition();
+    // Shared verdict first: another bot already searched this map cell.
+    {
+        std::lock_guard<std::mutex> lock(FishWaterCacheMutex());
+        auto it = FishWaterCache().find(FishCellOf(from));
+        if (it != FishWaterCache().end() && ai::FishingWaterCacheFresh(it->second.cachedAtMs, WorldTimer::getMSTime()))
+            return it->second.hasWater ? it->second.water : WorldPosition();
+    }
     // Fish where the bot stands: water in casting range with line of sight.
     // Rings grow outward and the first ring with water wins, so the nearest
     // shore is picked; the middle candidate fishes square to the bank.
@@ -134,10 +221,17 @@ WorldPosition ai::FindNearbyWater(Player* bot, WorldPosition const& from, float 
             break;
     }
     if (found.empty())
+    {
+        std::lock_guard<std::mutex> lock(FishWaterCacheMutex());
+        FishWaterCache()[FishCellOf(from)] = { WorldPosition(), WorldTimer::getMSTime(), false };
         return WorldPosition();
-    if (found.size() == 1)
-        return found[0];
-    return found[found.size() / 2];
+    }
+    WorldPosition const pick = found.size() == 1 ? found[0] : found[found.size() / 2];
+    {
+        std::lock_guard<std::mutex> lock(FishWaterCacheMutex());
+        FishWaterCache()[FishCellOf(from)] = { pick, WorldTimer::getMSTime(), true };
+    }
+    return pick;
 }
 
 WorldPosition ai::FindNearbyFishingHole(PlayerbotAI* ai, Player* bot, float searchRadius)
@@ -252,21 +346,27 @@ bool MoveToFishAction::Execute(Event& event)
     }
 
     // No travel fish spot (the FISH_LOCATION table is empty and generation is
-    // off): a masterless pool bot fishes nearby open water instead of idling.
-    // Owned/hired bots keep player control and never take this path. The
-    // water found here is validated below with a timed no-water marker, so a
-    // bot far from any shore does not re-scan every tick. Nothing travels:
-    // the spot reached is at most a short step to the shore (StepToward, 40 yd
-    // at most), never a destination pick that could bypass the level gates.
+    // off): a masterless pool bot fishing the travel errand falls back to
+    // nearby open water. Owned/hired bots keep player control and never take
+    // this path. Levelling first: the fallback needs an idle bot (no travel
+    // errand at all), an unspent hourly session (max 5 casts / 5 min), and a
+    // fresh throttle window - then at most a short step to the shore, never a
+    // destination pick that could bypass the level gates.
+    uint32 const nowFish = WorldTimer::getMSTime();
     bool noFishWater = AI_VALUE2(bool, "manual bool", "no fish water");
-    if (noFishWater && WorldTimer::getMSTime() - uint32(AI_VALUE2(int, "manual int", "no fish water at")) >= ai::FISH_NO_WATER_RETRY_MS)
+    if (noFishWater && nowFish - uint32(AI_VALUE2(int, "manual int", "no fish water at")) >= ai::FISH_NO_WATER_RETRY_MS)
     {
         RESET_AI_VALUE2(bool, "manual bool", "no fish water");
         noFishWater = false;
     }
-    if (!fishSpot && qualifier != "travel" && ai::FishingSpotApplies(sRandomBotFacade.IsRandomBot(bot), ai->HasRealPlayerMaster()) &&
-        !noFishWater)
+    int fishCasts = AI_VALUE2(int, "manual int", "fish session casts");
+    int fishStart = AI_VALUE2(int, "manual int", "fish session start");
+    int fishEnd = AI_VALUE2(int, "manual int", "fish session end");
+    if (!fishSpot && ai::FishingSpotApplies(sRandomBotFacade.IsRandomBot(bot), ai->HasRealPlayerMaster()) && !noFishWater &&
+        ai::FishingSearchAllowed(uint32(AI_VALUE2(int, "manual int", "fish search at")), nowFish) &&
+        ai::FishingSessionAllowsSearch(uint32(fishStart), uint32(fishEnd), fishCasts, nowFish) && !FishLevellingStandsDown(ai))
     {
+        SET_AI_VALUE2(int, "manual int", "fish search at", int(nowFish));
         WorldPosition const botPos(bot);
         float const radius = ai::FishingSearchRadius(ai->GetMaster() != nullptr);
         WorldPosition water = FindNearbyFishingHole(ai, bot, radius);
@@ -295,8 +395,10 @@ bool MoveToFishAction::Execute(Event& event)
         if (!fishSpot)
         {
             SET_AI_VALUE2(bool, "manual bool", "no fish water", true);
-            SET_AI_VALUE2(int, "manual int", "no fish water at", int(WorldTimer::getMSTime()));
+            SET_AI_VALUE2(int, "manual int", "no fish water at", int(nowFish));
         }
+        else if (uint32(fishStart) == 0)
+            FishStartSession(ai);
     }
 
     SET_AI_VALUE2(WorldPosition, "custom position", "fish spot", fishSpot);
@@ -309,6 +411,31 @@ bool MoveToFishAction::Execute(Event& event)
 
 bool FishAction::isUseful()
 {
+    // Side-activity budget: combat or an expired session never casts. The
+    // travel-target check below stays: the travel errand's own spot still
+    // needs a working target; the open-water spot only exists while idle.
+    if (sServerFacade.IsInCombat(bot))
+    {
+        EndFishingSession(ai, "combat");
+        return false;
+    }
+    uint32 const nowUseful = WorldTimer::getMSTime();
+    int const casts = AI_VALUE2(int, "manual int", "fish session casts");
+    int const start = AI_VALUE2(int, "manual int", "fish session start");
+    int const ended = AI_VALUE2(int, "manual int", "fish session end");
+    bool const poolPath = ai::FishingSpotApplies(sRandomBotFacade.IsRandomBot(bot), ai->HasRealPlayerMaster());
+    if (poolPath && uint32(start) != 0 && ai::FishingSessionExpired(uint32(start), casts, nowUseful))
+    {
+        EndFishingSession(ai, "budget spent");
+        return false;
+    }
+    // An abandoned session (expired, never ended) closes here so its hourly
+    // cooldown starts - otherwise the stale `start` would bypass the budget.
+    if (poolPath && uint32(start) == 0 && uint32(ended) == 0 && casts > 0)
+    {
+        RESET_AI_VALUE2(int, "manual int", "fish session casts");
+        return false;
+    }
     if (qualifier == "travel")
     {
         if (!AI_VALUE(bool, "travel target working"))
@@ -339,6 +466,13 @@ bool FishAction::isUseful()
 
 bool FishAction::Execute(Event& event)
 {
+    // Combat stops the session at once; the weapon comes back via the
+    // "attacked while fishing" wake-up plus the immediate re-equip below.
+    if (sServerFacade.IsInCombat(bot))
+    {
+        EndFishingSession(ai, "combat");
+        return false;
+    }
     if (qualifier == "travel")
     {
         if (!AI_VALUE(bool, "travel target working"))
@@ -357,17 +491,19 @@ bool FishAction::Execute(Event& event)
     // The open-water cast ("7731 <bot>") always lands in front of the bot, so
     // aim at the water: prefer a visible fishing hole in range, else the
     // nearest water in casting range. When neither is there the spot was a
-    // bank step that cannot reach - drop it and let the search walk on.
+    // bank step that cannot reach - drop it and let the search walk on. The
+    // cast search reuses the warm cell cache, so this aim costs no new scan.
+    uint32 const nowCast = WorldTimer::getMSTime();
     WorldPosition water = FindNearbyFishingHole(ai, bot, ai::FISH_MAX_CAST_DISTANCE);
     if (!water)
         water = FindNearbyWater(bot, WorldPosition(bot), ai::FISH_MAX_CAST_DISTANCE);
     if (water)
         fishSpot.setO(atan2(water.getY() - bot->getPositionY(), water.getX() - bot->getPositionX()));
-    else if (qualifier != "travel")
+    else
     {
         RESET_AI_VALUE2(WorldPosition, "custom position", "fish spot");
         SET_AI_VALUE2(bool, "manual bool", "no fish water", true);
-        SET_AI_VALUE2(int, "manual int", "no fish water at", int(WorldTimer::getMSTime()));
+        SET_AI_VALUE2(int, "manual int", "no fish water at", int(nowCast));
         return false;
     }
 
@@ -384,7 +520,7 @@ bool FishAction::Execute(Event& event)
     // errand): no base skill means no fish here, otherwise skill covers the
     // requirement with the errand's -5 head start. Checked at cast time so a
     // bot that walks to water in a zone it cannot fish never casts.
-    if (qualifier != "travel" && water)
+    if (water)
     {
         WorldPosition const waterPos(water);
         uint32 zoneId = 0, areaId = 0;
@@ -396,7 +532,7 @@ bool FishAction::Execute(Event& event)
         {
             RESET_AI_VALUE2(WorldPosition, "custom position", "fish spot");
             SET_AI_VALUE2(bool, "manual bool", "no fish water", true);
-            SET_AI_VALUE2(int, "manual int", "no fish water at", int(WorldTimer::getMSTime()));
+            SET_AI_VALUE2(int, "manual int", "no fish water at", int(nowCast));
             return false;
         }
     }
@@ -453,8 +589,19 @@ bool FishAction::Execute(Event& event)
     bool didCast = CastCustomSpellAction::Execute(fishCastEvent);
     if (didCast)
     {
-        SET_AI_VALUE2(int, "manual int", "last fish cast", int(WorldTimer::getMSTime()));
+        SET_AI_VALUE2(int, "manual int", "last fish cast", int(nowCast));
         RESET_AI_VALUE2(bool, "manual bool", "no fish water");
+        int const castsNow = AI_VALUE2(int, "manual int", "fish session casts") + 1;
+        SET_AI_VALUE2(int, "manual int", "fish session casts", castsNow);
+        // Budget spent (5 casts or 5 min): the session ends now and the pole
+        // comes off at once - no waiting for the next tick's audit.
+        uint32 const sessionStart = uint32(AI_VALUE2(int, "manual int", "fish session start"));
+        if (ai::FishingSessionExpired(sessionStart, castsNow, WorldTimer::getMSTime()))
+        {
+            EndFishingSession(ai, "budget spent");
+            if (ai->CanDoSpecificAction("equip upgrades"))
+                ai->DoSpecificAction("equip upgrades", Event("fishing session end"), true);
+        }
     }
 
     SetDuration(sPlayerbotAIConfig.globalCoolDown);

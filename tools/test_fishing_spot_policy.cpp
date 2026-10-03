@@ -11,9 +11,16 @@
 } while (0)
 
 using ai::FishingCastInRange;
+using ai::FishingCellKey;
+using ai::FishingSearchAllowed;
 using ai::FishingSearchRadius;
+using ai::FishingSessionActive;
+using ai::FishingSessionAllowsSearch;
+using ai::FishingSessionExpired;
+using ai::FishingSessionStartable;
 using ai::FishingSpotApplies;
 using ai::FishingStandDry;
+using ai::FishingWaterCacheFresh;
 using ai::FishingWaterDeepEnough;
 using ai::FishingZoneSkillOk;
 
@@ -91,6 +98,60 @@ int main()
         CHECK(!FishingStandDry(true, true));
         CHECK(!FishingStandDry(false, false));
         std::cout << "  [PASS] stand must be dry valid ground\n";
+    }
+
+    // -------------------------------------------------------------
+    // (7) Side-activity budget (review): one session per hour, at most
+    // 5 min / 5 casts. A fresh bot may start; a running session stays
+    // startable; a spent session (time or casts) blocks until the hour
+    // passes. Wrap-safe: uint32 ms arithmetic survives the ~49-day wrap.
+    // -------------------------------------------------------------
+    {
+        std::uint32_t const hour = 3600000;
+        std::uint32_t const fiveMin = 300000;
+        CHECK(FishingSessionStartable(0, 0, 0, 1000));
+        CHECK(FishingSessionAllowsSearch(0, 0, 0, 1000));
+        // Running session: 2 casts in, 1 min elapsed.
+        CHECK(!FishingSessionStartable(1000, 0, 2, 61000));
+        CHECK(FishingSessionAllowsSearch(1000, 0, 2, 61000));
+        CHECK(FishingSessionActive(1000, 2, 61000));
+        // Time spent: 5 min elapsed.
+        CHECK(FishingSessionExpired(1000, 2, 1000 + fiveMin));
+        CHECK(!FishingSessionActive(1000, 2, 1000 + fiveMin));
+        // Casts spent: 5 casts even in the first minute.
+        CHECK(FishingSessionExpired(1000, 5, 61000));
+        // Ended an hour ago: startable again.
+        CHECK(FishingSessionStartable(0, 1000, 0, 1000 + hour));
+        CHECK(!FishingSessionStartable(0, 1000, 0, 1000 + hour - 1));
+        // Wrap: start 10 s before the uint32 wrap, now 10 s after.
+        std::uint32_t const nearWrap = 0xFFFFFFFFu - 10000;
+        CHECK(!FishingSessionExpired(nearWrap, 1, 10000));
+        CHECK(FishingSessionExpired(nearWrap, 1, nearWrap + fiveMin));
+        std::cout << "  [PASS] hourly session budget (5 casts / 5 min)\n";
+    }
+
+    // -------------------------------------------------------------
+    // (8) Search throttle (review): at most one search per bot per
+    // 15 s; shared per-cell water verdicts stay fresh 30 min.
+    // -------------------------------------------------------------
+    {
+        CHECK(FishingSearchAllowed(0, 1000));
+        CHECK(!FishingSearchAllowed(1000, 1000 + 14999));
+        CHECK(FishingSearchAllowed(1000, 1000 + 15000));
+        CHECK(FishingWaterCacheFresh(1000, 1000 + 1799999));
+        CHECK(!FishingWaterCacheFresh(1000, 1000 + 1800000));
+        CHECK(!FishingWaterCacheFresh(0, 1000));
+        std::cout << "  [PASS] per-bot throttle and cell cache windows\n";
+    }
+
+    // -------------------------------------------------------------
+    // (9) Cell keys (review): distinct map cells map to distinct keys.
+    // -------------------------------------------------------------
+    {
+        CHECK(FishingCellKey(0, 1, 2) != FishingCellKey(0, 1, 3));
+        CHECK(FishingCellKey(0, 1, 2) != FishingCellKey(1, 1, 2));
+        CHECK(FishingCellKey(0, 1, 2) == FishingCellKey(0, 1, 2));
+        std::cout << "  [PASS] cell keys separate map cells\n";
     }
 
     std::cout << "All fishing-spot policy tests passed.\n";

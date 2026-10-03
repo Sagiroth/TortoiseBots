@@ -3125,3 +3125,31 @@ cast range, depth, skill gate, dry stand; registered in
 `tools/verify_all.sh`); `bash tools/verify_all.sh`;
 `python3 tools/verify_action_trigger_wiring.py` (0 missing);
 `git diff --check`. No deploy (orchestrator compiles).
+
+### Review fixes (levelling first, fishing as a side activity)
+
+Review verdict on `ac1df6f`: the `qualifier != "travel"` gate made the
+fallback dead code for every `tfish` pool bot, the uncapped relevance-10
+trigger would stall levelling on first water contact, and the 336-probe
+search with a 60 s retry would cost ~117k terrain/raycast queries per
+minute. Fixed on this branch:
+
+- Qualifier: the fallback now runs inside the `tfish` (`::travel`) path —
+  when the travel fish table yields nothing and the travel target is idle.
+- Budget: `FishingSpotPolicy.h` session rules — one session/hour, max 5
+  casts / 5 min, wrap-safe `WorldTimer` arithmetic; `CanFishValue`,
+  `MoveToFishAction` and `FishAction` all enforce it; `FishStrategy`
+  relevance drops to 3/4 (below quest 6.36 / grind 6.35). Never while a
+  travel errand, rewardable finished quest, vendor/trainer/money/repair
+  need, or >90% bags.
+- Cost: 5 yd rings x 8 dirs (~88 probes), 15 s per-bot search throttle,
+  15 min per-bot no-water park, shared per-map-cell water verdict cache
+  (30 min, mutex-guarded).
+- Combat: session ends at once on combat (`FishAction`, `PlayerbotAI`
+  wake-up), `equip upgrades` fires immediately at session end, and the
+  `DoneFishingValue` 30 s pole delay is skipped in combat.
+
+Local validation: extended `tools/test_fishing_spot_policy.cpp` (session
+budget incl. wrap, throttle/cache windows, cell keys); `bash
+tools/verify_all.sh` green; `verify_action_trigger_wiring.py` 0 missing;
+`git diff --check` clean.

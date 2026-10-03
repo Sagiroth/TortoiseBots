@@ -39,6 +39,7 @@
 #include "strategy/values/PositionValue.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/TravelMgr.h"
+#include "playerbot/strategy/actions/FishAction.h"
 #include "playerbot/DeathClusterPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "Movement/spline/MoveSplineInitArgs.h"
@@ -535,6 +536,10 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
             if (Item* mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND))
                 if (mainHand->GetProto()->Class == ITEM_CLASS_WEAPON && mainHand->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_FISHING_POLE)
                     DoSpecificAction("equip upgrades", Event("fishing pole recovery"), true);
+            // Combat ends any open-water fishing session at once: the spot is
+            // dropped (no walk-back after the fight) and the hourly cooldown
+            // starts now, so the bot levels instead of re-casting.
+            ai::EndFishingSession(this, "combat");
         }
         if (!inCombat && !isCasting && !isWaiting)
         {
