@@ -15,6 +15,7 @@
 #include "playerbot/TravelNode.h"
 #include "playerbot/strategy/values/SharedValueContext.h"
 #include "playerbot/strategy/values/GuildValues.h"
+#include "playerbot/QuestStallPolicy.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
 #include "playerbot/RandomBotFacade.h"
 #include "Guild/GuildMgr.h"
@@ -255,6 +256,69 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
         oldTarget->AddCondition(condition);
         if (Quest const* q = sObjectMgr.GetQuestTemplate(dest->GetQuestId()))
             sPlayerbotAIConfig.logEvent(ai, "QuestTravelToObjective", q->GetTitle(), std::to_string(dest->GetQuestId()));
+
+        // POI-stall abandon, pick side (issue #423): the donor's 5-min
+        // no-progress verdict, adapted to our objective travel. Each pick
+        // anchors this quest+objective's kill/item counters; a re-pick of the
+        // same objective with unchanged counters past the horizon parks the
+        // quest's objective fetch and expires the just-made pick, so the bot
+        // moves on instead of walking useless laps. Pool upkeep bots only;
+        // owned/hired bots keep today's pursuit. Givers/takers unaffected.
+        uint32 const stallQuestId = dest->GetQuestId();
+        uint32 const stallObjective = (uint8)dest->getObjective();
+        if (sPlayerbotAIConfig.botQuestLogUpkeep && !ai->HasActivePlayerMaster() &&
+            sRandomBotFacade.IsRandomBot(bot) && stallObjective < QUEST_OBJECTIVES_COUNT)
+        {
+            std::string const anchorKey = "quest objective stall::" + std::to_string(stallQuestId);
+            QuestStallAnchor anchor;
+            bool const hasAnchor = ParseQuestStallAnchor(
+                sRandomBotFacade.GetData(bot->GetGUIDLow(), anchorKey), anchor);
+            uint32 curKill = 0, curItem = 0;
+            bool inLog = false;
+            QuestStatusMap& questStatuses = bot->getQuestStatusMap();
+            auto statusIt = questStatuses.find(stallQuestId);
+            if (statusIt != questStatuses.end() && !statusIt->second.m_rewarded &&
+                statusIt->second.m_status == QUEST_STATUS_INCOMPLETE)
+            {
+                inLog = true;
+                curKill = statusIt->second.m_creatureOrGOcount[stallObjective];
+                curItem = statusIt->second.m_itemcount[stallObjective];
+            }
+            if (!inLog)
+            {
+                sRandomBotFacade.SetValue(bot, anchorKey, 0, "", kQuestStallAnchorTtlSec);
+            }
+            else if (!hasAnchor || anchor.objective != stallObjective ||
+                curKill != anchor.kill || curItem != anchor.item)
+            {
+                sRandomBotFacade.SetValue(bot, anchorKey, 1,
+                    FormatQuestStallAnchor(time(0), stallObjective, curKill, curItem),
+                    kQuestStallAnchorTtlSec);
+            }
+            else if (QuestObjectiveStalled(curKill, curItem, anchor.kill, anchor.item,
+                anchor.time, time(0)))
+            {
+                SET_AI_VALUE2(time_t, "manual time",
+                    "no quest objective until::" + std::to_string(stallQuestId),
+                    time(0) + kQuestStallParkSec);
+                if (Quest const* q = sObjectMgr.GetQuestTemplate(stallQuestId))
+                    sPlayerbotAIConfig.logEvent(ai, "QuestObjectiveStalled",
+                        q->GetTitle(), std::to_string(stallQuestId));
+                sTravelMgr.SetNullTravelTarget(oldTarget);
+                RESET_AI_VALUE(bool, "travel target active");
+                // Park the quest purpose like an empty search: without this the
+                // dropped pick returns NONE and the request gate re-searches
+                // next tick, re-picks the same parked quest (same counters,
+                // same anchor) and walks the lap anyway. Ten minutes matches
+                // the plain-quest empty-search park; other purposes unaffected.
+                SET_AI_VALUE2(bool, "no active travel destinations", "quest", true);
+                SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::quest",
+                    time(0) + 10 * MINUTE);
+                // Fall through to the pick logging below with the nulled target:
+                // the reset skip reads the NEW side, so this stall-parked drop
+                // logs nothing as a pick (same as ResetTargetAction).
+            }
+        }
     }
     else if (QuestRelationTravelDestination* dest = dynamic_cast<QuestRelationTravelDestination*>(oldTarget->GetDestination()))
     {
@@ -1883,12 +1947,24 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
             }
             else
             {
+                // Stall-abandoned pursuit (issue #423): the same quest+objective
+                // was re-picked past the 5-min horizon with unchanged counters,
+                // so its fetch is skipped for the park window. Parked quests
+                // still hand in (the taker branch above) and still re-anchor
+                // below when the park expires.
+                std::string const stallParkKey = "no quest objective until::" + std::to_string(questId);
+                bool const stallParked = !ai->HasActivePlayerMaster() &&
+                    sPlayerbotAIConfig.botQuestLogUpkeep && sRandomBotFacade.IsRandomBot(bot) &&
+                    HAS_AI_VALUE2("manual time", stallParkKey) &&
+                    AI_VALUE2(time_t, "manual time", stallParkKey) > time(0);
                 for (uint32 objective = 0; objective < 4; objective++)
                 {
                     TravelDestinationPurpose purposeFlag = (TravelDestinationPurpose)(1 << (objective + 1));
 
                     std::vector<std::string> qualifier = { std::to_string(questId), std::to_string(objective) };
 
+                    if (stallParked)
+                        continue;
                     if (AI_VALUE2(bool, "group or", "following party,need quest objective::" + Qualified::MultiQualify(qualifier, ","))) //Noone needs the quest objective.
                         flag = flag | (uint32)purposeFlag;
                 }
