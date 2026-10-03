@@ -128,8 +128,9 @@ flowchart TD
 
 Switches: `AiPlayerbot.AhMarketEnabled = 1` turns on bots posting and bidding with their own inventories (random bots must be logged in, i.e. `AiPlayerbot.RandomBotAutologin = 1`). The server-generated extras are separate and off by default: `AiPlayerbot.AhMarketSyntheticSupply = 1` (synthetic listings) and `AiPlayerbot.AhMarketBuyer = 1` (synthetic buyer).
 
+Buyer teleport-or-skip (issue #405): the synthetic buyer prefers a pool bot already standing at an auctioneer serving the listing's house, else it teleports one eligible bot there like the seller and defers the bid until the next pass revisits the listing. At most 8 bots are probed in place per listing (24 examined), teleports are capped at one per market interval with a one-interval per-bot trip cooldown, and grouped / master-claimed / LFT / battleground / instance bots are never touched — bids still spend the bot's own gold inside its AH budget.
+
 ### Auction House Administration Commands (`.bot ah` / `.ahbot`)
-Administrators can inspect and tune the synthetic market pass using in-game commands:
 * `.bot ah status` — Inspect active listings, inventory counts, and market passes.
 * `.bot ah reload` — Reload overrides and blacklists from the `ahbot_items` database table.
 * `.bot ah rebuild [all]` — Triggers an immediate market pass (`all` expires active unbid synthetic items).

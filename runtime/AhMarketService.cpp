@@ -1,4 +1,5 @@
 #include "AhMarketService.h"
+#include "AhBuyerPolicy.h"
 #include "BotActivityLease.h"
 #include "TradingLeasePolicy.h"
 
@@ -129,8 +130,11 @@ void AhMarketService::OnLeaseEvicted(uint32_t guidLow)
     if (!guidLow)
         return;
     // Clear the per-bot attempt cooldown so the bot rejoins the normal
-    // market cadence instead of sitting out an evicted attempt.
+    // market cadence instead of sitting out an evicted attempt. The buyer
+    // trip cooldown ("ahMarketLastBuy") goes too, so an evicted buyer trip
+    // does not sit out its normal cadence either.
     sRandomBotFacade.SetValue(guidLow, "ahMarketLastPost", 0, "", 0);
+    sRandomBotFacade.SetValue(guidLow, "ahMarketLastBuy", 0, "", 0);
 }
 
 
@@ -838,9 +842,23 @@ bool AhMarketService::BuyAuctionCandidate(AuctionEntry* auction, AuctionHouseObj
     if (bots.empty())
         return false;
 
-    std::vector<Player*> eligible;
-    for (Player* bot : bots)
+    // Bounded rotation over the pool: cheap guards only (world/alive, market
+    // eligibility, lease, owner/bidder), then at most kBuyerProbeCap AI
+    // probes. m_buyerScanIndex rotates the start so passes cycle the pool.
+    size_t poolSize = bots.size();
+    size_t start = poolSize ? (m_buyerScanIndex % poolSize) : 0;
+    Player* presentBuyer = nullptr;
+    ::PlayerbotAI* presentAi = nullptr;
+    Unit* presentAuctioneer = nullptr;
+    Player* teleportFallback = nullptr;
+    ::PlayerbotAI* teleportFallbackAi = nullptr;
+    uint32_t examined = 0;
+    uint32_t probed = 0;
+    for (size_t offset = 0; offset < poolSize && examined < kBuyerExamineCap && !presentBuyer; ++offset)
     {
+        size_t idx = (start + offset) % poolSize;
+        Player* bot = bots[idx];
+        ++examined;
         if (!IsBotAvailableForMarket(bot))
             continue;
         if (!sRandomBotFacade.IsRandomBot(bot))
@@ -851,25 +869,90 @@ bool AhMarketService::BuyAuctionCandidate(AuctionEntry* auction, AuctionHouseObj
             continue;
         if (auction->owner == bot->GetGUIDLow())
             continue;
-        if (auction->ownerAccount == bot->GetSession()->GetAccountId())
+        if (!bot->GetSession() || auction->ownerAccount == bot->GetSession()->GetAccountId())
             continue;
         if (auction->bidder == bot->GetGUIDLow())
             continue;
         if (auction->bidder && sObjectMgr.GetPlayerAccountIdByGUID(ObjectGuid(HIGHGUID_PLAYER, auction->bidder)) == bot->GetSession()->GetAccountId())
             continue;
-        eligible.push_back(bot);
+        // A buyer already spent an interval travelling is not re-teleported
+        // while its trip is in flight; it may still bid once in place.
+        bool tripActive = sRandomBotFacade.GetValueValidTime(bot->GetGUIDLow(), "ahMarketLastBuy") > 0;
+        ::PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+        if (!ai)
+            continue;
+        if (probed >= kBuyerProbeCap)
+        {
+            if (!teleportFallback && !tripActive)
+            {
+                teleportFallback = bot;
+                teleportFallbackAi = ai;
+            }
+            continue;
+        }
+        ++probed;
+        Unit* nearby = FindNearbyAuctioneer(bot, ai);
+        if (!nearby || !nearby->IsInWorld())
+        {
+            if (!teleportFallback && !tripActive)
+            {
+                teleportFallback = bot;
+                teleportFallbackAi = ai;
+            }
+            continue;
+        }
+        // Bind to the auction's house object: with faction-separated houses
+        // the bid handler only sees auctions of the auctioneer's own house.
+        AuctionHouseObject* nearbyHouse = sAuctionMgr.GetAuctionsMap(
+            AuctionHouseMgr::GetAuctionHouseEntry(nearby));
+        if (nearbyHouse != ahObject)
+        {
+            if (!teleportFallback && !tripActive)
+            {
+                teleportFallback = bot;
+                teleportFallbackAi = ai;
+            }
+            continue;
+        }
+        presentBuyer = bot;
+        presentAi = ai;
+        presentAuctioneer = nearby;
     }
-    if (eligible.empty())
-        return false;
+    if (poolSize)
+        m_buyerScanIndex = (start + examined) % poolSize;
+    if (examined >= poolSize)
+        m_buyerScanIndex = 0;
 
-    Player* buyer = eligible[urand(0, eligible.size() - 1)];
-    ::PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(buyer);
-    if (!ai)
+    Player* buyer = presentBuyer;
+    ::PlayerbotAI* ai = presentAi;
+    Unit* auctioneer = presentAuctioneer;
+    if (!buyer)
+    {
+        // Teleport-or-skip (issue #405): no eligible bot stands at a
+        // matching-house auctioneer, so move one there like the seller and
+        // defer the bid until it arrives (the Buy pass revisits listings).
+        if (!teleportFallback || !teleportFallbackAi)
+            return false;
+        uint32_t tripCooldown = BuyerTripCooldownSec(sPlayerbotAIConfig.ahMarketInterval);
+        // Global budget: at most one buyer teleport per market interval, so
+        // one busy market pass cannot shuttle the whole pool to the cities.
+        if (!BuyerTeleportAllowed(time(nullptr), m_lastBuyerTeleport, sPlayerbotAIConfig.ahMarketInterval))
+            return false;
+        BotActivity previous = BotActivityLeaseManager::Instance().GetActivity(teleportFallback->GetGUIDLow());
+        // Trip lease covers the next Buy pass like the seller trip lease
+        // (two seller ticks + margin, same helper as the seller trip).
+        uint32_t tripMs = TradingTripLeaseMs(SellerIntervalMs());
+        if (!BotActivityLeaseManager::Instance().TryAcquire(teleportFallback->GetGUIDLow(), BotActivity::Trading, tripMs))
+            return false;
+        sRandomBotFacade.SetValue(teleportFallback->GetGUIDLow(), "ahMarketLastBuy", 1, "", (int32)tripCooldown);
+        EnsurePositionsLoaded();
+        bool teleported = TryTeleportBuyerToAuctioneer(teleportFallback, ahObject);
+        BotActivity restore = previous == BotActivity::Grinding ? BotActivity::Grinding : BotActivity::Idle;
+        BotActivityLeaseManager::Instance().Release(teleportFallback->GetGUIDLow(), BotActivity::Trading, restore);
+        if (teleported)
+            m_lastBuyerTeleport = time(nullptr);
         return false;
-
-    Unit* auctioneer = FindNearbyAuctioneer(buyer, ai);
-    if (!auctioneer)
-        return false;
+    }
 
     uint32 fairUnit = CalculatePrice(proto);
     uint32 medianMarket = ai::ItemUsageValue::GetAHMedianBuyoutPricePerItem(proto, buyer);
@@ -1180,6 +1263,83 @@ void AhMarketService::StepBuy()
     BuyAuctionCandidate(auction, ahObject);
 }
 
+uint32_t AhMarketService::SellerIntervalMs()
+{
+    uint32 intervalMs = sPlayerbotAIConfig.ahMarketInterval * 1000;
+    if (intervalMs < 1000)
+        intervalMs = 1000;
+    if (intervalMs > 3600000)
+        intervalMs = 3600000;
+    return intervalMs;
+}
+
+std::vector<AhMarketService::AuctioneerPos const*> AhMarketService::AuctioneerPositionsForHouse(AuctionHouseObject* ahObject) const
+{
+    std::vector<AuctioneerPos const*> out;
+    if (!ahObject || m_auctioneerPositions.empty())
+        return out;
+    // Cross-faction linked houses share one object across ids: any position
+    // serves the auction. With separate houses, only the auctioneer's own
+    // house object can see the auction, so filter by native resolution.
+    for (AuctioneerPos const& pos : m_auctioneerPositions)
+    {
+        ai::GuidPosition gpos(HIGHGUID_UNIT, pos.entry);
+        auto const* aucFac = gpos.GetFactionTemplateEntry();
+        if (!aucFac)
+            continue;
+        AuctionHouseObject* house = sAuctionMgr.GetAuctionsMap(
+            AuctionHouseMgr::GetAuctionHouseEntry(aucFac->ID));
+        if (house == ahObject)
+            out.push_back(&pos);
+    }
+    return out;
+}
+
+bool AhMarketService::TryTeleportBuyerToAuctioneer(Player* bot, AuctionHouseObject* ahObject)
+{
+    if (!bot || bot->IsBeingTeleported() || !bot->IsInWorld() || !bot->IsAlive())
+        return false;
+    // Same fail-closed guard as the seller: grouped/manual-use, active
+    // master, LFT queued/in-offer, BG/instance bots are never teleported.
+    if (!IsBotAvailableForMarket(bot))
+        return false;
+    EnsurePositionsLoaded();
+    std::vector<AuctioneerPos const*> candidates = AuctioneerPositionsForHouse(ahObject);
+    if (candidates.empty())
+        return false;
+
+    // Bounded picks over matching-house positions only, skipping hostile or
+    // unknown-faction auctioneers. Same fail-closed faction rule as the
+    // seller: missing data is hostile, never a teleport target.
+    for (int attempt = 0; attempt < 5; ++attempt)
+    {
+        size_t idx = urand(0, (uint32)candidates.size() - 1);
+        AuctioneerPos const& pos = *candidates[idx];
+
+        ai::GuidPosition gpos(HIGHGUID_UNIT, pos.entry);
+        auto* aucFac = gpos.GetFactionTemplateEntry();
+        if (!aucFac)
+            continue;
+        ai::GuidPosition bpos(bot);
+        if (!bpos.GetFactionTemplateEntry())
+            continue;
+        if (gpos.IsHostileTo(bot))
+            continue;
+
+        float o = pos.o;
+        if (!std::isfinite(o) || o == 0.0f)
+            o = bot->GetOrientation();
+
+        if (bot->TeleportTo(pos.mapId, pos.x, pos.y, pos.z, o, 0))
+        {
+            TB_LOG_DEBUG("TortoiseBots: AhMarket teleported buyer %s to auctioneer %u at map %u %.1f %.1f %.1f",
+                bot->GetName(), pos.entry, pos.mapId, pos.x, pos.y, pos.z);
+            return true;
+        }
+    }
+    return false;
+}
+
 void AhMarketService::StepExpire()
 {
     uint32 houseIds[] = {1, 6, 7};
@@ -1279,11 +1439,7 @@ void AhMarketService::Update(uint32_t diff)
     }
 
     // 2. Real-inventory seller loop
-    uint32 intervalMs = sPlayerbotAIConfig.ahMarketInterval * 1000;
-    if (intervalMs < 1000)
-        intervalMs = 1000;
-    if (intervalMs > 3600000)
-        intervalMs = 3600000;
+    uint32 intervalMs = SellerIntervalMs();
 
     m_elapsedMs += diff;
     if (m_elapsedMs < intervalMs)
