@@ -5,6 +5,7 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/strategy/generic/PullStrategy.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
+#include "playerbot/PullRegenPolicy.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include <map>
 
@@ -57,8 +58,35 @@ bool AttackAnythingAction::isUseful()
             CanFreeMoveValue::CanFreeMoveTo(ai, *travelTarget->getPosition()))
             return false;
     }
+    // A wounded pool bot sits out a NEW pull until it eats/drinks back above
+    // mediumHealth (mana users: mediumMana too). A mob already fighting the
+    // bot (revenge, "possible attack targets" loop in GrindTargetValue) is
+    // always answered: the gate below only runs with an empty GetAttackers
+    // set. Pool-only (masterless random): owned bots and bots with a real
+    // player master keep today's behaviour.
+    if (!bot->InBattleGround() && sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster() &&
+        bot->GetAttackers().empty())
+    {
+        uint8 const healthPct = AI_VALUE2(uint8, "health", "self target");
+        bool const hasMana = AI_VALUE2(bool, "has mana", "self target");
+        uint8 const manaPct = hasMana ? AI_VALUE2(uint8, "mana", "self target") : 100;
+        if (ai::ShouldDeferGrindPull(healthPct, hasMana, manaPct,
+            sPlayerbotAIConfig.mediumHealth, sPlayerbotAIConfig.mediumMana))
+            return false;
+    }
 
-    if(!target->IsPlayer() && sServerFacade.isInFront(bot, target, target->GetCombatReach(bot, false, 0.0f) * 1.5f, M_PI_F * 0.5f) && target->IsHostileTo(bot) && target->GetLevel() < bot->GetLevel() + 3.0) // Attack before being attacked.
+    // The pre-emptive "attack before being attacked" strike while travelling
+    // only starts a fresh pull when no possible adds lurk nearby and the mob
+    // is inside the grind level cap. A mob already fighting the bot keeps the
+    // old rule below.
+    if (!target->IsPlayer() && sServerFacade.isInFront(bot, target, target->GetCombatReach(bot, false, 0.0f) * 1.5f, M_PI_F * 0.5f) && target->IsHostileTo(bot) &&
+        ai::AllowPreemptiveStrike((int)target->GetLevel(), bot->GetLevel(), ai->HasRealPlayerMaster(), AI_VALUE(bool, "possible adds")))
+        return true;
+
+    // Revenge: a mob already fighting the bot (victim set) is always answered,
+    // even wounded - this path also covers self-defence while travelling.
+    if (!target->IsPlayer() && sServerFacade.isInFront(bot, target, target->GetCombatReach(bot, false, 0.0f) * 1.5f, M_PI_F * 0.5f) && target->IsHostileTo(bot) &&
+        target->GetVictim() == bot)
         return true;
 
     if (AI_VALUE(bool, "travel target traveling") && CanFreeMoveValue::CanFreeMoveTo(ai, *travelTarget->getPosition())) //Bot is traveling
