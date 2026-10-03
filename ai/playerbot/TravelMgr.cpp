@@ -2648,6 +2648,19 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
     // to masterless random bots so owned lowbies never wander off mid-follow.
     bool const beginnerGrind = (purposeFlag & (uint32)TravelDestinationPurpose::Grind) &&
         info.GetLevel() <= 4 && info.IsMasterlessRandom();
+    // Same starter-valley wall for the quest errand (objectives and givers;
+    // hand-ins stay exempt as before): a level-1 bot holding The Hunt Begins
+    // (QuestLevel 2) sees every Plainstrider point vetoed by the Camp
+    // Narache/Mulgore area-6 average and parks the quest purpose with an
+    // empty list (live 2026-10-03: 57 tauren bots QuestTripNoTarget '0' at
+    // the Camp Narache spawn). The quest's own gates already vet the trip -
+    // the +1 quest-level window, the spawn entry's own template
+    // (QuestObjectiveLevelFits) and the 40 yd point-danger surroundings -
+    // so the area average is redundant here, not protective. Owned/hired
+    // bots keep the ceiling: their player decides.
+    bool const beginnerQuest = (purposeFlag & ((uint32)TravelDestinationPurpose::QuestGiver |
+        (uint32)TravelDestinationPurpose::QuestAllObjective)) != 0 &&
+        ai::QuestValleyExempted(info.GetLevel(), info.IsMasterlessRandom());
 
     // A grind destination's own creatures are already bounded by the policy band in
     // GrindSpotPolicy.h ([botLevel-2, botLevel+1]), so the area average is a second,
@@ -2680,7 +2693,7 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
     if ((purposeFlag & (uint32)TravelDestinationPurpose::Grind) && info.IsMasterlessRandom())
         areaCeiling += GRIND_AREA_MARGIN;
 
-    if (!beginnerGrind && !(purposeFlag & (uint32)TravelDestinationPurpose::QuestTaker) && !beginnerVendorTrip)
+    if (!beginnerGrind && !beginnerQuest && !(purposeFlag & (uint32)TravelDestinationPurpose::QuestTaker) && !beginnerVendorTrip)
     {
         if (!areaLevel || (uint32)areaCeiling < areaLevel) //Skip points that are in a area that is too high level.
             return false;

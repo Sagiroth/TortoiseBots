@@ -3423,3 +3423,38 @@ Local validation: `tools/test_zone_migrate_policy.cpp` (outgrown exclusion,
 capital no-op, unknown fail-open; registered in `tools/verify_all.sh`);
 `bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
 compiles).
+
+## Quest starter-valley ceiling exemption (issue #440) — 2026-10-03
+Feature: the zone-average ceiling in `TravelMgr::IsLocationLevelValid` no
+longer vetoes quest objective / giver points for a level 1-4 masterless
+pool bot (`ai/playerbot/GrindSpotPolicy.h`: `QuestValleyExempted`, same
+scope as the existing `GrindValleyExempted` beginnerGrind gate; hand-ins
+stay exempt as before). The quest's own gates already vet the trip - the
++1 quest-level window, the spawn entry's own template
+(`QuestObjectiveLevelFits`), the taker window (`QuestTakerTripFits`) and
+the 40 yd point-danger surroundings - so the area average is redundant
+here, not protective.
+
+Copied / ported / reimplemented: reimplemented (local rule; donor
+comparison only - donor `mod-playerbots`
+`src/Mgr/Travel/TravelMgr.cpp:1224` keeps the `questLevel + 5 > botLevel`
+veto without `can fight equal` for fresh bots, i.e. no such ceiling
+exists there either for a level-1 bot holding a QuestLevel 2 quest).
+
+Reason: the ceiling vetoed every Plainstrider point (area level 6) for a
+level-1 tauren holding The Hunt Begins (QuestLevel 2) at Camp Narache, so
+the quest search came back with an empty list and parked the purpose -
+live 2026-10-03: 57 tauren bots logged QuestTripNoTarget '0' at the spawn
+point (-13412.02, -6597.58 display; Camp Narache world -6597.58, -257.98)
+in the first two minutes. Zone 5536 in the issue title is the Blackstone
+Island dashboard label for that box, not the bot's zone: core
+`WorldObject::GetZoneId` (terrain) reports Mulgore 215 there, goblin/high
+elf normalisation only fires on true 5536/5225 spawns (server log: 21
+goblin 5536 relocations, zero tauren), and playercreateinfo puts tauren
+(race 6) at Camp Narache 215. Owned/hired bots and level 5+ keep the
+ceiling: their player decides / the valley wall ends at 5.
+
+Local validation: `tools/test_quest_taker_level_policy.cpp` section 4
+(exempt 1/4 masterless, bound at 5, owned/hired excluded, level 60
+excluded); `bash tools/verify_all.sh`; `git diff --check`. No deploy
+(orchestrator compiles).

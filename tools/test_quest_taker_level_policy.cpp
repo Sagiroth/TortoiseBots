@@ -1,3 +1,4 @@
+#include "../ai/playerbot/GrindSpotPolicy.h"
 #include "../ai/playerbot/PullRegenPolicy.h"
 
 #include <cstdlib>
@@ -11,6 +12,7 @@
 } while (0)
 
 using ai::QuestTakerTripFits;
+using ai::QuestValleyExempted;
 
 int main()
 {
@@ -49,6 +51,25 @@ int main()
         CHECK(QuestTakerTripFits(9, true, 1, false));   // owned/hired: player decides
         CHECK(QuestTakerTripFits(30, true, 10, true));  // level 10+: unchanged
         std::cout << "  [PASS] scaling quests, owned bots and 10+ exempt\n";
+    }
+
+    // -------------------------------------------------------------
+    // (4) Quest valley exemption: a level 1-4 masterless bot skips the
+    // destination area-average ceiling on quest objectives and givers,
+    // same scope as the grind valley exemption. Live case: a level-1
+    // tauren holding The Hunt Begins (QuestLevel 2) at Camp Narache
+    // whose Plainstrider points sit in area level 6 - the ceiling vetoed
+    // every point and the quest search parked with an empty list
+    // (QuestTripNoTarget '0'), while the quest's own gates (+1 level
+    // window, spawn template, point danger) already vet the trip.
+    // -------------------------------------------------------------
+    {
+        CHECK(QuestValleyExempted(1, true));
+        CHECK(QuestValleyExempted(4, true));
+        CHECK(!QuestValleyExempted(5, true));
+        CHECK(!QuestValleyExempted(1, false));
+        CHECK(!QuestValleyExempted(60, true));
+        std::cout << "  [PASS] level 1-4 masterless bots skip the quest valley ceiling\n";
     }
 
     std::cout << "All quest-taker level gate checks PASSED!\n";
