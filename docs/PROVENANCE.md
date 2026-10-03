@@ -3082,6 +3082,231 @@ Local validation: `tools/test_point_danger_policy.cpp` (scope, live
 level-4 case, travelling +1 ceiling; registered in `tools/verify_all.sh`);
 `bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
 compiles).
+## Goal-directed flight transport for pool bots (issue #426) — 2026-10-03
+Feature: a pool bot with a far travel target boards a flight TOWARD it
+(`DecideFlightPlanForTarget` + `TryBoardFlightToTarget` in
+`ai/playerbot/strategy/actions/MoveToTravelTargetAction.cpp`, pure rules in
+`ai/playerbot/FlightErrandPolicy.h`): decided ONCE when the travel target
+is set and stored on manual values (`flight from/to node`); travel ticks
+only read the stored plan, never recompute. A KNOWN direct taxi hop from
+the nearest flight master to the node nearest the destination, level-valid
+(area at most +5 above the bot, unknown levels FAIL CLOSED, outgrown floor
+−10 with a capital exemption, never capital-to-capital), on a trip >= 1500
+yd that saves >= 500 yd of walking, affordable from the bot's own gold
+above the class-trainer reserve. With a plan the bot walks to the flight
+master as its intermediate move target until inside interaction range,
+then boards; the bot unmounts, drops shapeshift and pays the normal fare
+— no money injection.
+Pool randoms only (no real master); owned/hired bots keep walking with
+their player. No overlap with the zone-migration work (`fix/zone-migration`
+touches pick radius and valley gates only, no flight logic): this fires
+after the pick, inside the existing travel walk, and adds no new route
+logic — the travel-node graph (with its flight legs) is untouched. Every
+takeoff writes a `TaxiFlight` row to bot_events.csv (from → to node names).
+The in-flight watch stays the core's: cross-map legs finish in
+`TaxiStepFinished` (Player.cpp) and the movement/AI layers already stand
+down while `IsTaxiFlying()` holds. No vmap load on this path: the node-zone cache (`LoadTaxiNodeZones`,
+built once at startup from loaded terrain) maps DBC nodes to zones, and
+`TryGetValidatedAreaLevel` supplies levels — both startup caches, read
+once per travel target, never per tick.
+
+Source project: `mod-playerbots` @ b6696bdbd3740e575598d167d69f39f68cc0b907.
+Donor `src/Ai/World/Rpg/Action/NewRpgBaseAction.cpp:1065-1081`
+(`SelectRandomFlightTaxiNode`), `:1215-1225` (availability gate),
+`src/Mgr/Travel/TravelMgr.cpp:4405-4477` (`GetOptimalFlightDestinations`:
+500 yd nearest-FM, level-bracket zones, no capital-to-capital shuffle),
+`src/Ai/World/Rpg/Action/NewRpgAction.cpp:635-678` (`NewRpgTravelFlightAction::Execute`).
+
+Source files: donor `NewRpgBaseAction.cpp`, `NewRpgAction.cpp`,
+`TravelMgr.cpp` (`GetOptimalFlightDestinations`); local
+`ai/playerbot/FlightErrandPolicy.h` (new),
+`ai/playerbot/strategy/actions/MoveToTravelTargetAction.cpp`
+(`TryBoardFlightToTarget` + `TaxiFlight` event),
+`tools/test_flight_errand_policy.cpp`.
+
+Copied / ported / reimplemented: reimplemented (donor node selection and
+level-bracket zones as local +5/−10 walk-gate window with fail-closed
+unknowns, trip/worth/afford gates; no zone-bracket table or cross-map taxi
+resume ported — the core already continues cross-map flights, and no config
+keys: donor `RpgStatusProbWeight.TravelFlight` is folded into the travel
+walk).
+
+Reason: live night2 pool (4 h): 0 `is flying from` rows in bot_events.csv —
+pool bots walk everywhere, including the Teldrassil exit at 11-12 that
+motivated the issue. Review revision: the first cut was a random RPG-taxi
+errand (fail-open levels, free-fare cheat, per-candidate vmap reads);
+rebuilt as transport toward the already-chosen travel target.
+
+Local validation: `tools/test_flight_errand_policy.cpp` (band, capital
+shuffle, fail-closed unknowns, leg worth, fare-vs-reserve, levelling shape;
+registered in `tools/verify_all.sh`); `bash tools/verify_all.sh`;
+`git diff --check`. No deploy (orchestrator compiles).
+
+## Open-water fishing search for pool bots (#402)
+
+Feature: masterless pool bots fish nearby open water when the travel fish
+table is empty — visible fishing holes first, otherwise the nearest fishable
+shore inside 40 yd with at most a short step to the bank, the cast aimed at
+the water, the zone skill-gated like the travel fish errand, guarded shores
+refused, failed searches rested a minute. Owned/hired bots never take the
+path. No destination is picked and no route is walked, so the travel/level
+gates (#418, #428, #434) are not bypassed.
+
+Source project: `mod-playerbots` @ `b6696bd`
+(`playerbots-references/mod-playerbots` local checkout).
+
+Source files: `src/Ai/Base/Actions/FishingAction.cpp` (`FindWaterRadial`,
+`FindFishingHole`, `HasFishableWaterOrLand`, `FindLandFromPosition` shape,
+`MIN/MAX_DISTANCE_TO_WATER`, `SEARCH_INCREMENT`, fishing `FISHING_DISTANCE`
+40 yd / `FISHING_DISTANCE_FROM_MASTER` 10 yd, `CanFishValue` swim/combat
+exclusion), `src/Ai/Base/Value/FishValues.cpp` (`CanFishValue`,
+`CanUseFishingBobberValue`), `conf/playerbots.conf.dist` (fishing distance
+comments, incl. "Currently not relevant since masterless bots will not
+fish").
+
+Copied / ported / reimplemented: reimplemented — the radial/ring search,
+hole scan and shore-stand geometry follow the donor, but liquid comes from
+`TerrainInfo::GetWaterLevel` / `getLiquidStatus` (not donor `LiquidData`),
+line of sight from `Map::isInLineOfSight`, skill from
+`sObjectMgr.GetFishingBaseSkillLevel` with the travel errand's -5 head
+start, guard from the existing `IsFishingSpotGuarded`, movement from the
+existing `MoveTo` (no donor `MoveNearWater`/`fishing spot` value port).
+Donor `master fishing` / `use bobber` / `EquipFishingPole` strategies are
+not ported: the bot already owns a pole (factory seed), equips it in
+`FishAction`, and opens its own bobber.
+
+Reason: all 500 pool bots know fishing and carry a pole with `tfish` on,
+but `FISH_LOCATION_*` is empty and generation is off, so `GetFishSpot`
+never returns and the issue measures 0 casts in 2 h 46 min.
+
+Local validation: `tools/test_fishing_spot_policy.cpp` (scope, windows,
+cast range, depth, skill gate, dry stand; registered in
+`tools/verify_all.sh`); `bash tools/verify_all.sh`;
+`python3 tools/verify_action_trigger_wiring.py` (0 missing);
+`git diff --check`. No deploy (orchestrator compiles).
+
+### Review fixes (levelling first, fishing as a side activity)
+
+Review verdict on `ac1df6f`: the `qualifier != "travel"` gate made the
+fallback dead code for every `tfish` pool bot, the uncapped relevance-10
+trigger would stall levelling on first water contact, and the 336-probe
+search with a 60 s retry would cost ~117k terrain/raycast queries per
+minute. Fixed on this branch:
+
+- Qualifier: the fallback now runs inside the `tfish` (`::travel`) path —
+  when the travel fish table yields nothing and the travel target is idle.
+- Budget: `FishingSpotPolicy.h` session rules — one session/hour, max 5
+  casts / 5 min, wrap-safe `WorldTimer` arithmetic; `CanFishValue`,
+  `MoveToFishAction` and `FishAction` all enforce it; `FishStrategy`
+  relevance drops to 3/4 (below quest 6.36 / grind 6.35). Never while a
+  travel errand, rewardable finished quest, vendor/trainer/money/repair
+  need, or >90% bags.
+- Cost: 5 yd rings x 8 dirs (~88 probes), 15 s per-bot search throttle,
+  15 min per-bot no-water park, shared per-map-cell water verdict cache
+  (30 min, mutex-guarded).
+- Combat: session ends at once on combat (`FishAction`, `PlayerbotAI`
+  wake-up), `equip upgrades` fires immediately at session end, and the
+  `DoneFishingValue` 30 s pole delay is skipped in combat.
+
+Local validation: extended `tools/test_fishing_spot_policy.cpp` (session
+budget incl. wrap, throttle/cache windows, cell keys); `bash
+tools/verify_all.sh` green; `verify_action_trigger_wiring.py` 0 missing;
+`git diff --check` clean.
+## Organic AH buyer: in-place bids plus spare-gold travel demand (issue #405) — 2026-10-03, review 2
+Feature: `AhMarketService::BuyAuctionCandidate` bids only with a pool bot
+ALREADY standing at an auctioneer serving the listing's house object (no buyer
+teleport per owner decision; teleport stays only the pre-existing stuck rescue
+on the way there). The per-candidate scan is one pass with no blind spot
+(review finding 6): examine == probe (8), every touched entry fully probed,
+`m_buyerScanIndex` rotating start cycles the whole pool over passes. All house
+lookups null-checked (finding 2: `GetAuctionHouseEntry` may return null and
+`GetAuctionsMap` dereferences its argument; every other pointer on the path -
+bot, session, auction, map entry - guarded too). Demand comes from the normal
+AH travel purpose (`NeedTravelPurposeValue`, same destination the seller uses,
+phase gate evaluated FIRST so the purse/position work only runs in the open
+slice): a masterless pool bot level 10+ (finding 3: past the beginner death
+belt), never a hire, ungrouped, not LFT/BG/instance, whose own map holds an AH
+house (same-continent reachability via the cached entry-guidps map; cross-map
+houses are unroutable FLT_MAX and never open the trip), holding 5 gold of
+spendable "free money for anything" (finding 4: ONE money rule - exactly the
+purse `AhBidAction` reads for AH/VENDOR/QUEST listings on arrival, so no trip
+is futile), inside the first 3 minutes of the hourly RPG phase (~5% of the
+pool/hour), one trip per bot per 10 minutes (pick-stamped "ah buyer trip
+since", same pattern as the trainer/vendor stamps; parked AH purposes
+respected so a failed search is not re-requested every tick). No
+RESET_AI_VALUE2 anywhere on this path (finding 7): the cached value at its
+normal checkInterval is read as-is. The existing destination/point gates
+(area-level ceiling, grind cap, point-danger) keep applying on the way - this
+policy only opens the door, never overrides a forbidden area. Pure numbers in
+`runtime/AhBuyerPolicy.h` (ai namespace). Doc row:
+`docs/guides/living-world.md` (Living Auction House Economy).
+
+Source project: no donor shape — `mod-playerbots` has no market buyer (only a
+commented-out `AuctionItem` in `LootAction.cpp`); the travel demand reuses our
+own AH travel destination.
+
+Source files: `runtime/AhBuyerPolicy.h`,
+`runtime/AhMarketService.h` (`SellerIntervalMs` declaration restored - finding
+1) + `runtime/AhMarketService.cpp` (in-place house-matched scan only),
+`ai/playerbot/strategy/values/MaintenanceValues.h` + `MaintenanceValues.cpp`
+(`AhBuyerTripNeeded`), `ai/playerbot/strategy/values/TravelValues.cpp` (AH
+purpose buyer leg), `ai/playerbot/strategy/actions/ChooseTravelTargetAction.cpp`
+(trip stamp), `docs/guides/living-world.md`,
+`tools/test_ah_buyer_policy.cpp`.
+
+Copied / ported / reimplemented: reimplemented (local rule, local numbers).
+
+Reason: issue #405 — 37 listings in 2 h 46 min with 0 bids / 0 purchases and
+`AhMarketBuyer = 1`, because pool bots almost never stand at an auctioneer at
+low level. First iteration gave the buyer the seller teleport; owner decision
+reverses that (NO buyer teleport), so demand now walks instead.
+
+Local validation: `tools/test_ah_buyer_policy.cpp` (scan caps, level floor,
+purse floor, phase window, same-continent rule; registered in
+## POI-stall quest abandon (i423) — 2026-10-03
+Feature: `QuestStallPolicy.h` (new) ports the donor's 5-min no-progress
+verdict adapted to our quest-objective travel (1.12 has no POI table to walk:
+no `QuestPOIVector` in core, no quest-poi DBC/DB rows). While arrived at
+the objective (`TravelAction::Execute`, travel-target status WORK) the quest's
+kill/item counters are anchored per quest in the facade store; a WORK tick
+with unchanged counters past the 5-min horizon parks that quest's objective
+fetch for 30 min (`no quest objective until::<questId>`, read in
+`RequestQuestTravelTargetAction::Execute`) and nulls the current target, so
+the next search moves on instead of walking useless laps. Travel time never
+counts (the anchor is only created and compared while WORK). Any kill/item
+progress on any objective re-anchors instead of stalling; explore/event/spell
+objectives with no counter requirement are exempt; givers/takers are
+unaffected, so parked quests still hand in; the quest stays in the log (no
+removal — removal stays the nearly-full-log triage). No global quest-purpose
+park: other quests and all hand-ins keep working. Pool upkeep bots only
+(`botQuestLogUpkeep`, no active master, `IsRandomBot`); owned/hired bots keep
+today's pursuit. Existing gates (#418, #428, #434) untouched: gated
+destinations are never picked, so they never anchor. One `bot_events.csv` row
+per stall (`QuestObjectiveStalled`); no `TravelTarget` pick log for the
+stall-dropped target (the drop returns before the pick logging).
+
+Source project: `mod-playerbots` @ b6696bd (gold-standard behaviour donor).
+
+Source files: `src/Ai/World/Rpg/Action/NewRpgBaseAction.h` (`POIInfo`,
+`GetQuestPOIPosAndObjectiveIdx`), `src/Ai/World/Rpg/Action/NewRpgAction.cpp`
+(`DoIncompleteQuest`/`DoCompletedQuest`, `poiStayTime = 5 * 60 * 1000`,
+`lowPriorityQuest`), `src/Bot/PlayerbotAI.h:607` (`lowPriorityQuest`).
+
+Copied / ported / reimplemented: reimplemented (donor walks POI coordinates
+and times from POI arrival; ours anchors arrived travel-pursuit counters per
+quest; donor marks a session set, ours parks time-boxed so a later ding
+re-tests the quest).
+
+Reason: no POI pursuit existed here (`POIInfo` zero hits), so a quest whose
+objective area yields nothing is re-picked every minute (objectives expire
+fast) — the search loops and long useless trips in #423.
+
+Local validation: `tools/test_quest_stall_policy.cpp` (donor constants,
+first WORK tick, horizon boundary, kill/item progress, zero-progress stall,
+per-quest alternating objectives, non-counter exemption, anchor round-trip;
+registered in `tools/verify_all.sh`);
+`bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
+compiles).
 
 ## Local grind and camp picks (issue #424) — 2026-10-03
 

@@ -246,6 +246,11 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
     //Actually apply the new target to the travel target used by the bot.
     oldTarget->CopyTarget(newTarget);
 
+    // Decide-once flight plan (#426 item 5): evaluate fly-or-walk for the
+    // freshly set target now (startup caches only, no vmap), store the
+    // verdict on manual values. Travel ticks only read the stored plan.
+    DecideFlightPlanForTarget(ai, bot, oldTarget);
+
     if (oldTarget->IsForced()) //Make sure travel goes into cooldown after getting to the destination.
         oldTarget->SetExpireIn(HOUR * IN_MILLISECONDS);
 
@@ -330,6 +335,16 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
         // RequestTravelTargetAction::isUseful.
         if (purpose == "Vendor")
             SET_AI_VALUE2(time_t, "manual time", "vendor trip since", time(0));
+        // One AH shopping journey at a time (issue #405): the buyer trip need
+        // doubles as the in-flight trip's stored condition, so without a stamp
+        // here a trip whose target dies mid-walk re-issues immediately. Same
+        // request-side-only pattern as the vendor/trainer stamps above; the
+        // need lapses on this stamp after ten minutes like the trainer window.
+        // travelPurposeName here is the DISPLAY name ("AH"; the raw qualifier
+        // is the numeric purpose id "1024") - match the display name like the
+        // "Vendor"/"trainer" stamps above match theirs.
+        if (purpose == "AH")
+            SET_AI_VALUE2(time_t, "manual time", "ah buyer trip since", time(0));
         // One trainer journey at a time: a walk to a trainer has just started, and
         // the errand's trigger refuses another until this is ten minutes old, the
         // bot has learned something (TrainerAction) or it has dinged
@@ -1925,12 +1940,24 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
             }
             else
             {
+                // Stall-abandoned pursuit (issue #423): the quest sat arrived
+                // (WORK) past the 5-min horizon with unchanged counters, so
+                // its fetch is skipped for the park window. Parked quests
+                // still hand in (the taker branch above); the anchor
+                // re-arms on the next visit when the park expires.
+                std::string const stallParkKey = "no quest objective until::" + std::to_string(questId);
+                bool const stallParked = !ai->HasActivePlayerMaster() &&
+                    sPlayerbotAIConfig.botQuestLogUpkeep && sRandomBotFacade.IsRandomBot(bot) &&
+                    HAS_AI_VALUE2("manual time", stallParkKey) &&
+                    AI_VALUE2(time_t, "manual time", stallParkKey) > time(0);
                 for (uint32 objective = 0; objective < 4; objective++)
                 {
                     TravelDestinationPurpose purposeFlag = (TravelDestinationPurpose)(1 << (objective + 1));
 
                     std::vector<std::string> qualifier = { std::to_string(questId), std::to_string(objective) };
 
+                    if (stallParked)
+                        continue;
                     if (AI_VALUE2(bool, "group or", "following party,need quest objective::" + Qualified::MultiQualify(qualifier, ","))) //Noone needs the quest objective.
                         flag = flag | (uint32)purposeFlag;
                 }

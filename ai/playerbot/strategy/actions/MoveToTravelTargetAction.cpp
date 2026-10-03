@@ -12,6 +12,8 @@
 #include "Maps/PathFinder.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/TravelRepickPolicy.h"
+#include "playerbot/FlightErrandPolicy.h"
+#include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
 #include <cstdlib>
 #include <iomanip>
@@ -213,6 +215,178 @@ bool MoveToTravelTargetAction::TrySettleUnreachableHandIn(TravelTarget* target, 
 
     return SettleUnreachableTakerHandIn(ai, questId, takerEntry, "unreachable");
 }
+// Flight plan: decided ONCE per travel target (item 5) in
+// DecideFlightPlanForTarget below, stored on manual values, and only read
+// (never recomputed) on travel ticks. Walk-to-master staging (item 4): when
+// a plan exists the bot walks to the flight master as its intermediate move
+// target until inside interaction range, then boards. All zone/level reads
+// use the startup taxi-node zone cache (item 6) - no GetArea/vmap on ticks.
+static bool ReadFlightPlan(PlayerbotAI* ai, uint32& fromNode, uint32& toNode)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    int32 from = AI_VALUE2(int32, "manual int", "flight from node");
+    int32 to = AI_VALUE2(int32, "manual int", "flight to node");
+    if (from <= 0 || to <= 0 || from == to)
+        return false;
+    fromNode = (uint32)from;
+    toNode = (uint32)to;
+    return true;
+}
+
+static void ClearFlightPlan(PlayerbotAI* ai)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    SET_AI_VALUE2(int32, "manual int", "flight from node", (int32)0);
+    SET_AI_VALUE2(int32, "manual int", "flight to node", (int32)0);
+}
+
+// Decide-once evaluation for the CURRENT travel target. Called exactly when
+// a new target is set (ChooseTravelTargetAction::setNewTarget), never on
+// travel ticks. Uses the startup taxi-node zone cache and validated area
+// levels only - no WorldPosition::GetArea, no vmap load, no money-value
+// reads beyond the two cached uint32s below.
+void ai::DecideFlightPlanForTarget(PlayerbotAI* ai, Player* bot, TravelTarget const* target)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    ClearFlightPlan(ai);
+    if (!ai || !bot || !target || !target->getPosition())
+        return;
+    if (ai->HasRealPlayerMaster() || !sRandomBotFacade.IsRandomBot(bot))
+        return;
+    if (!bot->IsAlive())
+        return;
+
+    WorldPosition const botLocation(bot);
+    WorldPosition const location = *target->getPosition();
+
+    float const tripDistance = botLocation.distance(location);
+    if (tripDistance < ai::FLIGHT_TRANSPORT_MIN_TRIP_YD)
+        return;
+
+    uint32 const fromNode = sObjectMgr.GetNearestTaxiNode(botLocation.getX(), botLocation.getY(),
+        botLocation.getZ(), botLocation.GetMapId(), bot->GetTeam());
+    if (!fromNode || !bot->GetTaxi().IsTaximaskNodeKnown(fromNode))
+        return;
+
+    TaxiNodesEntry const* fromEntry = sObjectMgr.GetTaxiNodeEntry(fromNode);
+    if (!fromEntry || !fromEntry->MountCreatureID[bot->GetTeam() == ALLIANCE ? 1 : 0])
+        return;
+    if (fromEntry->map_id != botLocation.GetMapId())
+        return;
+
+    uint32 const toNode = sObjectMgr.GetNearestTaxiNode(location.getX(), location.getY(),
+        location.getZ(), location.GetMapId(), bot->GetTeam());
+    if (!toNode || toNode == fromNode)
+        return;
+    if (!bot->GetTaxi().IsTaximaskNodeKnown(toNode))
+        return;
+
+    TaxiNodesEntry const* toEntry = sObjectMgr.GetTaxiNodeEntry(toNode);
+    if (!toEntry || !toEntry->MountCreatureID[bot->GetTeam() == ALLIANCE ? 1 : 0])
+        return;
+
+    uint32 taxiPath = 0;
+    uint32 fare = 0;
+    sObjectMgr.GetTaxiPath(fromNode, toNode, taxiPath, fare);
+    if (!taxiPath)
+        return;
+
+    // Zone ids AND area levels both come from startup caches: the node-zone
+    // cache (DBC node -> zone, built from loaded terrain at startup) and the
+    // validated zone-level table. No WorldPosition::GetArea, no vmap load.
+    uint32 const destZoneId = sTravelMgr.GetTaxiNodeZoneId(toNode);
+    if (!destZoneId)
+        return;
+    int32 destAreaLevel = 0;
+    if (!sTravelMgr.TryGetValidatedAreaLevel(destZoneId, destAreaLevel) || destAreaLevel <= 0)
+        return;
+    AreaTableEntry const* destZone = GetAreaEntryByAreaID(destZoneId);
+    bool const destZoneIsCapital = destZone && (destZone->Flags & AREA_FLAG_CAPITAL);
+    uint32 const botLevel = bot->GetLevel();
+    // Bot's own tile is always resident (the bot stands on it): no vmap load.
+    bool const botInCapital = botLocation.HasAreaFlag(AREA_FLAG_CAPITAL);
+    if (!ai::FlightTransportDestinationUsable(botLevel, botInCapital, destAreaLevel, destZoneIsCapital))
+        return;
+
+    WorldPosition const landPos(toEntry->map_id, toEntry->x, toEntry->y, toEntry->z);
+    if (!ai::FlightTransportLegWorthwhile(tripDistance, botLocation.distance(location), landPos.distance(location)))
+        return;
+
+    uint32 const trainerReserve = AI_VALUE2(uint32, "total money needed for", (uint32)NeedMoneyFor::spells);
+    if (!ai::FlightTransportAffordable(bot->GetMoney(), fare, trainerReserve))
+        return;
+
+    SET_AI_VALUE2(int32, "manual int", "flight from node", (int32)fromNode);
+    SET_AI_VALUE2(int32, "manual int", "flight to node", (int32)toNode);
+}
+
+static bool TryBoardFlightToTarget(PlayerbotAI* ai, Player* bot, TravelTarget* target,
+    WorldPosition const& botLocation, WorldPosition const& location)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    if (ai->HasRealPlayerMaster() || !sRandomBotFacade.IsRandomBot(bot))
+        return false;
+    if (!bot->IsAlive() || bot->IsInCombat())
+        return false;
+    if (bot->IsTaxiFlying() || bot->IsBeingTeleported())
+        return false;
+    if (!target || !target->getPosition())
+        return false;
+
+    // Decide-once: read the stored plan, never recompute.
+    uint32 fromNode = 0;
+    uint32 toNode = 0;
+    if (!ReadFlightPlan(ai, fromNode, toNode))
+        return false;
+
+    TaxiNodesEntry const* fromEntry = sObjectMgr.GetTaxiNodeEntry(fromNode);
+    TaxiNodesEntry const* toEntry = sObjectMgr.GetTaxiNodeEntry(toNode);
+    if (!fromEntry || !toEntry)
+    {
+        ClearFlightPlan(ai);
+        return false;
+    }
+    if (!bot->GetTaxi().IsTaximaskNodeKnown(fromNode) || !bot->GetTaxi().IsTaximaskNodeKnown(toNode))
+    {
+        ClearFlightPlan(ai);
+        return false;
+    }
+
+    WorldPosition const masterPos(fromEntry->map_id, fromEntry->x, fromEntry->y, fromEntry->z);
+    if (masterPos.GetMapId() != botLocation.GetMapId())
+    {
+        ClearFlightPlan(ai);
+        return false;
+    }
+
+    // Board only inside interaction range with a usable flight master.
+    if (botLocation.distance(masterPos) > INTERACTION_DISTANCE)
+        return false;
+
+    std::list<ObjectGuid> npcs = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
+    Creature* flightMaster = nullptr;
+    for (ObjectGuid guid : npcs)
+    {
+        flightMaster = bot->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_FLIGHTMASTER);
+        if (flightMaster)
+            break;
+    }
+    if (!flightMaster)
+        return false;
+
+    ai->RemoveShapeshift();
+    ai->Unmount();
+    bot->GetSession()->SendLearnNewTaxiNode(flightMaster);
+    if (!bot->ActivateTaxiPathTo({ fromNode, toNode }, flightMaster, 0))
+    {
+        ClearFlightPlan(ai);
+        return false;
+    }
+
+    sPlayerbotAIConfig.logEvent(ai, "TaxiFlight", fromEntry->name[LOCALE_enUS], toEntry->name[LOCALE_enUS]);
+    ClearFlightPlan(ai);
+    return true;
+}
 
 bool MoveToTravelTargetAction::Execute(Event& event)
 {
@@ -231,6 +405,42 @@ bool MoveToTravelTargetAction::Execute(Event& event)
 
     WorldPosition botLocation(bot);
     WorldPosition location = *target->getPosition();
+
+    // Decide-once flight plan (items 4-5): when the stored plan names a
+    // flight, steer to the flight master as the intermediate move target
+    // until inside interaction range, then board. The walk below aims at the
+    // (x, y, z, mapId) locals, which the staging overwrites with the master.
+    float x = location.getX();
+    float y = location.getY();
+    float z = location.getZ();
+    float mapId = location.GetMapId();
+    uint32 planFrom = 0;
+    uint32 planTo = 0;
+    // Re-read after a possible clear above: a stale plan drops out here
+    // and the walk below targets the final destination.
+    bool hasFlightPlan = ReadFlightPlan(ai, planFrom, planTo);
+    if (hasFlightPlan)
+    {
+        if (TryBoardFlightToTarget(ai, bot, target, botLocation, location))
+            return true;
+
+        TaxiNodesEntry const* stageEntry = sObjectMgr.GetTaxiNodeEntry(planFrom);
+        if (!stageEntry || stageEntry->map_id != botLocation.GetMapId() ||
+            !bot->GetTaxi().IsTaximaskNodeKnown(planFrom))
+        {
+            // Stale plan (unlearned node, cross-map master): drop it so the
+            // walk below resumes toward the final destination.
+            ClearFlightPlan(ai);
+        }
+        else
+        {
+            x = stageEntry->x;
+            y = stageEntry->y;
+            z = stageEntry->z;
+            mapId = stageEntry->map_id;
+        }
+        hasFlightPlan = ReadFlightPlan(ai, planFrom, planTo);
+    }
 
     Group* group = bot->GetGroup();
     if (ai->IsGroupLeader() && !urand(0, 1) && !bot->IsInCombat())
@@ -323,12 +533,10 @@ bool MoveToTravelTargetAction::Execute(Event& event)
     if (TrySettleUnreachableHandIn(target, purpose))
         return false;
 
-    float x = location.getX();
-    float y = location.getY();
-    float z = location.getZ();
-    float mapId = location.GetMapId();
-
-    if (botLocation.GetMapId() == location.GetMapId() && botLocation.sqDistance2d(location) < 10000.0f)
+    // With a flight plan the bot walks to the master (x/y/z/mapId staged
+    // above), so the arrival jitter below must not re-aim at the final
+    // destination - that would walk past the master.
+    if (!hasFlightPlan && botLocation.GetMapId() == location.GetMapId() && botLocation.sqDistance2d(location) < 10000.0f)
     {
         float maxDistance = target->GetDestination()->GetRadiusMin();
 

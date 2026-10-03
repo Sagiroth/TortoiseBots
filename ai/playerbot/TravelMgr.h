@@ -488,6 +488,13 @@ namespace ai
 		// cached fallback), then immutable DBC AreaTable AreaLevel / parent AreaLevel.
 		// No creature scan, no DB write, no lazy GetAreaLevel mutation.
 		bool TryGetValidatedAreaLevel(uint32 areaId, int32& outLevel) const;
+		// Taxi-node zone cache (#426): DBC TaxiNodes coordinates carry no zone id,
+		// and resolving one via WorldPosition::GetArea would load that tile's
+		// vmap on the world thread. Built once at startup from the loaded
+		// terrain (same source the pick-time gates read), then immutable:
+		// node id -> zone area id (0 = unresolvable, fail closed).
+		void LoadTaxiNodeZones();
+		uint32 GetTaxiNodeZoneId(uint32 taxiNodeId) const;
 	private:
 		void Clear();
 		void SetNullTravelTarget(Player* player) const;
@@ -527,6 +534,10 @@ namespace ai
 		GatherTravelDestination fishMap;
 		std::list<AsyncGuidPosition> fishPoints;
 		std::unordered_map<uint32, int32> areaLevels;
+		// Taxi-node zone cache (#426 flight transport): node id -> zone area id
+		// (0 = unresolvable at build, fail closed at use). Built once at startup
+		// from loaded terrain, then immutable.
+		std::unordered_map<uint32, uint32> taxiNodeZones;
 
 		std::mutex getDestinationMutex;
 		std::condition_variable getDestinationVar;

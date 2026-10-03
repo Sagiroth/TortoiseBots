@@ -145,6 +145,44 @@
 - Radius change is request-side only — no extra world scans, no added server cost. [#441](https://github.com/Sagiroth/TortoiseBots/pull/441)
 - Plays nice with existing level/point-danger gates and the idle-starter fallback scan. Closes #424. [#441](https://github.com/Sagiroth/TortoiseBots/pull/441)
 
+### Quests & Objectives
+
+- Bots now give up on a quest objective after ~5 minutes stuck at the objective with zero progress, so they stop farming a broken spawn or unreachable target and get back to something productive [#442](https://github.com/Sagiroth/TortoiseBots/pull/442)
+- The stall timer only ticks while the bot is actually at the objective area — travel time is never counted, so long cross-zone runs won't false-trigger an abandon [#442](https://github.com/Sagiroth/TortoiseBots/pull/442)
+- The verdict is anchored per quest across all of its counters, so a multi-part objective won't be abandoned just because one counter is slow [#442](https://github.com/Sagiroth/TortoiseBots/pull/442)
+- Stalled quests are parked for 30 minutes instead of blacklisted; other quests and all hand-ins keep running normally while it cools down [#442](https://github.com/Sagiroth/TortoiseBots/pull/442)
+- Exploration and scripted event objectives (no counters) are exempt, so world/POI-driven quests can't get stuck in an abandon loop [#442](https://github.com/Sagiroth/TortoiseBots/pull/442)
+- Emits a single `QuestObjectiveStalled` event per verdict, making it easy to spot problem quests in logs without event spam [#442](https://github.com/Sagiroth/TortoiseBots/pull/442)
+
+### Observability & Engine
+
+- Pool KPI report now tracks **zone-migration**, answering the "do bots actually move to level-appropriate zones?" question with hard numbers instead of vibes [#443](https://github.com/Sagiroth/TortoiseBots/pull/443)
+- New **fit-share per level band**: counts bots sitting in a zone within `level -2..+5`, using the exact same rule as the travel gates, so the report matches in-game behavior instead of a parallel heuristic [#443](https://github.com/Sagiroth/TortoiseBots/pull/443)
+- **Movement telemetry added**: bots that changed zone, top `from -> to` pairs, and highest zone reached — enough to spot bots ping-ponging between zones or camping a single one forever [#443](https://github.com/Sagiroth/TortoiseBots/pull/443)
+- **Stuck-in-starter detection**: flags bots still in their start zone above level 8, plus left-start counts per start zone, so a broken travel path or gate gets caught per-zone rather than blamed on "bots are dumb" [#443](https://github.com/Sagiroth/TortoiseBots/pull/443)
+- Fully **backward compatible** with old baselines — existing stored reports still parse, no re-baselining required [#443](https://github.com/Sagiroth/TortoiseBots/pull/443)
+- Metrics documented in the observability guide so server operators can read the new fields without reverse-engineering the script [#443](https://github.com/Sagiroth/TortoiseBots/pull/443)
+
+### Economy & Auctions
+- The AH buyer no longer sits idle: bids only happen when a pool bot has actually reached an auctioneer on its own, using a bounded rotating pool scan instead of teleporting bots into place. [#444](https://github.com/Sagiroth/TortoiseBots/pull/444)
+- Added organic auction demand: level 10+ pool bots with at least 5 gold spendable above reserves and an auction house on their own continent can take the normal AH travel errand (~5% of the pool per hour, 10-minute cooldown) and bid on arrival. [#444](https://github.com/Sagiroth/TortoiseBots/pull/444)
+
+### Hire & Companions
+- Hired bots now post their spec and spell summary exactly once in party chat after joining the group, instead of leaking (or silently dropping) the level-up automation echo [#445](https://github.com/Sagiroth/TortoiseBots/pull/445)
+- Fixes the flaky "no message at all" case caused by stale master pointers, bots not yet grouped, or nothing new to report [#445](https://github.com/Sagiroth/TortoiseBots/pull/445)
+
+### Professions & World Activities
+- Pool bots now actually fish: when the travel table has no fishing spot, they fall back to the ported mod-playerbots open-water search, so idle bots get a rare side activity instead of standing around. [#446](https://github.com/Sagiroth/TortoiseBots/pull/446)
+- Strict "levelling first" gating: at most one fishing session per hour (5 casts over 5 minutes), and never while the bot has real work — travel errands, quest turn-ins, selling, trainer, repair, money runs, or bags over 90% full. Fishing relevance sits below questing and grinding. [#446](https://github.com/Sagiroth/TortoiseBots/pull/446)
+- Bounded server cost: coarse radial search (~88 probes), throttled per bot, with a 30-minute shared per-cell water cache and a 15-minute park on dry spots so bots don't re-scan dead ground. [#446](https://github.com/Sagiroth/TortoiseBots/pull/446)
+- No gear churn: the weapon goes back on immediately after the session ends, so fishing never leaves bots running around unequipped. [#446](https://github.com/Sagiroth/TortoiseBots/pull/446)
+
+### Travel & Taxi
+- Pool bots actually fly now: flight is treated as a way to reach the travel destination the bot already chose, instead of occasionally picking a random leg. [#447](https://github.com/Sagiroth/TortoiseBots/pull/447)
+- Flight is decided once when a new far travel target is set — trips of 1500+ yd, or a known direct taxi leg that saves 500+ yd — and only if the destination level falls within the bot's range (unknown levels refuse). Travel ticks just read the stored plan. [#447](https://github.com/Sagiroth/TortoiseBots/pull/447)
+- Bots walk to the flight master first, board, pay the normal fare from their own gold (trainer reserve kept intact), then walk the last leg to the destination. [#447](https://github.com/Sagiroth/TortoiseBots/pull/447)
+- Taxi node zones are now cached once at startup, so travel pathing stops re-resolving terrain/VMAP lookups on every tick. [#447](https://github.com/Sagiroth/TortoiseBots/pull/447)
+
 ## 2026-10-02
 
 ### Levelling & Progression

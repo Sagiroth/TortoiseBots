@@ -34,9 +34,135 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # bot_events.csv columns: ts, bot, event, pos, race, class, level, info1, info2
-C_TS, C_BOT, C_EVENT, C_INFO1, C_INFO2 = 0, 1, 2, 7, 8
+C_TS, C_BOT, C_EVENT, C_RACE, C_INFO1, C_INFO2 = 0, 1, 2, 4, 7, 8
 
 FISH_SPELL_IDS = ("7620", "7731", "7732", "18248", "131474")
+# Zone-migration KPIs (owner's overnight question: do pool bots move on to
+# zones that fit their level?). The fit rule mirrors the module's own travel
+# gates (GrindSpotPolicy.h / TravelMgr.cpp, validated ai_playerbot_zone_level
+# cache seeded by data/sql/world/20260824090004_world.sql):
+#   fit  <=>  bot_level - 2 <= zone_level <= bot_level + 5
+# +5 is the RPG/quest-errand ceiling; the tighter autonomous grind ceiling
+# (+3, +1 below 10) governs destination picks, not where a bot may stand.
+# A zone_level <= 0 (unknown area, capital, instance) fails open -> n/a.
+ZONE_BANDS = ("1-5", "6-10", "11-15", "16-20", "21+")
+# Race (SharedDefines.h Races enum) -> expected start zone id (StartZoneBalance.h).
+RACE_START_ZONE = {2: 14, 8: 14, 9: 14, 6: 215, 5: 85, 1: 12, 10: 12, 3: 1, 7: 1, 4: 141}
+START_ZONE_IDS = frozenset(RACE_START_ZONE.values())
+ZONE_LEVEL_FALLBACK = {
+    # Module ai_playerbot_zone_level cache (SELECT id, level FROM <world>.ai_playerbot_zone_level):
+    # only ids the report actually reads (snapshot zones + capitals). Refresh
+    # from the migration when these drift.
+    1: 7, 12: 6, 14: 8, 17: 16, 85: 7, 130: 14, 141: 7, 215: 6,
+    148: 15, 40: 14, 38: 13, 33: 39, 10: 24, 11: 24, 267: 25, 331: 24,
+    1497: 10, 1638: 10, 1657: 10, 1519: 10, 1537: 10,
+}
+
+
+def zone_band(level):
+    level = int(level)
+    if level <= 5:
+        return "1-5"
+    if level <= 10:
+        return "6-10"
+    if level <= 15:
+        return "11-15"
+    if level <= 20:
+        return "16-20"
+    return "21+"
+
+
+def zone_fit(zone_level, bot_level):
+    """None when the zone level is unknown (fail open); else fit bool."""
+    zone_level = int(zone_level)
+    if zone_level <= 0:
+        return None
+    bot_level = int(bot_level)
+    return bot_level - 2 <= zone_level <= bot_level + 5
+
+
+def load_zone_levels(db_cmd, world_db):
+    """Validated zone levels from the world DB; {} when no --db-cmd."""
+    if not db_cmd:
+        return {}
+    levels = {}
+    for zid, lvl in run_db(db_cmd, "", world_db,
+                            f"SELECT id, level FROM {world_db}.ai_playerbot_zone_level"):
+        try:
+            levels[int(zid)] = int(lvl)
+        except ValueError:
+            continue
+    return levels
+
+
+def load_levelup_zones(path, reset=None):
+    """bot -> [(ts, level, zone)] from levelup.log (zone rides each row).
+
+    reset=None keeps every row: start-zone inference needs pre-window history
+    (pool bots are already L2+ when the window opens).
+    """
+    pat = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) Character (\S+?):\d+ "
+                     r"\[c\d+ r(\d+)\] reaches level\s+(\d+), zone (\d+)")
+    traj = defaultdict(list)
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            m = pat.match(line)
+            if not m:
+                continue
+            t = parse_naive_utc(m.group(1))
+            if reset is not None and t < reset:
+                continue
+            traj[m.group(2)].append((t, int(m.group(4)), int(m.group(5)), int(m.group(3))))
+    for v in traj.values():
+        v.sort()
+    return traj
+
+
+def pool_scope_note(db_cmd, char_db, bots):
+    """One-line pool-scope note for the zone rows; scope itself stays the snapshot.
+
+    Pool = characters on managed pool accounts (tortoise_bots_pool_account),
+    minus hired-out companions (tortoise_bots_hire ledger) - the same scope
+    RandomBotService loads. The snap1540_char copy is a *different* pool cycle
+    (zero name overlap with the night2 snapshot), so a guid/name intersection
+    would silently empty the report; the zone rows therefore always cover the
+    snapshot bots and only report the DB overlap for context.
+    """
+    if not db_cmd or not bots:
+        return "all snapshot bots (no pool check: need --db-cmd + --bots-json)"
+    try:
+        pool_names = {r[0] for r in run_db(
+            db_cmd, char_db, "",
+            f"SELECT name FROM {char_db}.characters WHERE account IN "
+            f"(SELECT account_id FROM {char_db}.tortoise_bots_pool_account)")}
+        snap = {b["name"] for b in bots}
+        return (f"all {len(snap)} snapshot bots "
+                f"({len(snap & pool_names)} also on managed pool accounts in {char_db})")
+    except RuntimeError as e:
+        return f"all snapshot bots (pool lookup failed: {str(e)[:120]})"
+
+
+def load_zone_transitions(path, reset):
+    """(moved_bots, leave_rows): zone changes from LeaveOutgrownZone rows.
+
+    One row is one leave-request fire: info1 = zone name left, info2 =
+    outgrown/capital. Pairs need ids, which bot_events lacks, so the top-pairs
+    detail comes from the levelup trajectory instead (see below).
+    """
+    moved, leave_rows = set(), 0
+    with open(path, newline="", encoding="utf-8", errors="replace") as f:
+        for row in csv.reader(f):
+            if len(row) <= C_INFO2 or row[C_EVENT].strip() != "LeaveOutgrownZone":
+                continue
+            try:
+                if parse_ts(row[C_TS]) < reset:
+                    continue
+            except ValueError:
+                continue
+            leave_rows += 1
+            moved.add(row[C_BOT])
+    return moved, leave_rows
+
 
 
 def parse_ts(s):
@@ -406,6 +532,128 @@ def main():
                          fmt(statistics.median(v), 1) if v else "n/a", f"n={len(v)}"))
     else:
         rows.append(("median min reset→L5/6/7/10", "n/a", "need --levelup-log"))
+
+    if args.levelup_log:
+        traj = load_levelup_zones(args.levelup_log)  # full history: start-zone needs pre-window rows
+        win_traj = {b: [(t, l, z) for t, l, z, _ in v if t >= reset]
+                    for b, v in traj.items()}
+        win_traj = {b: v for b, v in win_traj.items() if v}
+        if args.db_cmd:
+            try:
+                zone_levels = load_zone_levels(args.db_cmd, args.world_db)
+            except Exception as e:
+                zone_levels, _zone_err = {}, str(e)[:120]
+        else:
+            zone_levels, _zone_err = {}, ""
+        if not zone_levels:
+            zone_levels = dict(ZONE_LEVEL_FALLBACK)
+            zl_src = ("fallback table (pass --db-cmd for live ai_playerbot_zone_level)"
+                      + (f"; DB error: {_zone_err}" if _zone_err else ""))
+        else:
+            zl_src = f"live ai_playerbot_zone_level ({len(zone_levels)} ids)"
+        scope_note = pool_scope_note(args.db_cmd, args.char_db, bots)
+        names = {b["name"] for b in bots} if bots else set(win_traj)
+        cur = {b["name"]: (b["level"], b["zone"]) for b in bots} if bots else {}
+        win_traj = {b: v for b, v in win_traj.items() if b in names}
+        # Start zone: earliest recorded zone per bot. Cross-check on the pool:
+        # 471/498 agree with the race-expected start zone (2026-10-02 night2 run),
+        # so the "left start zone" share below is a 1-2 bot approximation only.
+        start = {b: v[0][2] for b, v in traj.items() if b in names}
+        # Highest zone (by level) reached per bot over the window: the window
+        # trajectory plus the snapshot zone; capitals fail open and never win
+        # (zone_level 10 beats every starter valley for a level-10+ bot).
+        def _zl(z):
+            return zone_levels.get(int(z), ZONE_LEVEL_FALLBACK.get(int(z), 0))
+        top = {}
+        for b in names:
+            cands = []
+            if b in start:
+                cands.append((_zl(start[b]), start[b]))
+            cands += [(_zl(z), z) for _, _, z in win_traj.get(b, [])]
+            if b in cur:
+                cands.append((_zl(cur[b][1]), cur[b][1]))
+            known = [(zl, z) for zl, z in cands if zl > 0]
+            if known:
+                top[b] = max(known)[1]
+        left = sum(1 for b, s in start.items()
+                   if (top.get(b, s) != s) or
+                   (len({z for _, _, z in win_traj.get(b, [])} | ({cur[b][1]} if b in cur else set())) > 1))
+        stuck8 = ([b for b in names if b in start and b in cur
+                   and cur[b][1] == start[b] and cur[b][0] > 8])
+        rows.append(("zone: left start zone", f"{left}/{len(start)}" if start else "n/a",
+                     f"{scope_note}; highest-zone or window-trail left earliest zone ({zl_src})"))
+        rows.append(("zone: still in start zone above L8", fmt(len(stuck8)),
+                     (("snapshot zone == earliest zone, level > 8: " +
+                       ", ".join(sorted(stuck8)[:8]) + (" …" if len(stuck8) > 8 else ""))
+                      if stuck8 else "none (snapshot zone == earliest zone, level > 8)")))
+        if top:
+            from collections import Counter
+            tc = Counter(top.values())
+            beyond = sorted(((z, c) for z, c in tc.items() if z not in START_ZONE_IDS),
+                            key=lambda kv: -kv[1])
+            rows.append(("zone: highest zone reached",
+                         f"{len(tc)} distinct ({sum(c for _, c in beyond)} bots beyond start zones)",
+                         "top: " + ", ".join(
+                             f"{z}×{c}" for z, c in tc.most_common(6))
+                         + ("; beyond start: " + ", ".join(f"{z}×{c}" for z, c in beyond[:6])
+                            if beyond else "; none beyond start zones")))
+        # Transitions over the window from the levelup trajectory (ids, not
+        # names: bot_events zone rows carry names only). LeaveOutgrownZone fires
+        # are the request-side cross-check (info1 = zone name left).
+        moved_lv, pairs = set(), Counter()
+        for b, v in win_traj.items():
+            zs = [z for _, _, z in v]
+            for a, bb in zip(zs, zs[1:]):
+                if a != bb:
+                    moved_lv.add(b)
+                    pairs[(a, bb)] += 1
+        moved_lo, lo_rows = load_zone_transitions(logs / "bot_events.csv", reset)
+        moved_lo &= names
+        rows.append(("zone: changed zone in window", fmt(len(moved_lv)),
+                     f"{len(moved_lv)} bots via levelup trail; {len(moved_lo)} bots / {lo_rows} LeaveOutgrownZone fires (bot_events)"))
+        if pairs:
+            rows.append(("zone: top from→to pairs", f"{len(pairs)} pairs",
+                         "; ".join(f"{a}→{bb}×{c}" for (a, bb), c in pairs.most_common(5))))
+        # Fit share per level band from the bots.json snapshot (zone + level).
+        if cur:
+            band_fit = defaultdict(lambda: [0, 0])  # band -> [fit, n]
+            for b, (lvl, z) in cur.items():
+                f = zone_fit(_zl(z), lvl)
+                if f is None:
+                    continue
+                cell = band_fit[zone_band(lvl)]
+                cell[1] += 1
+                cell[0] += 1 if f else 0
+            for band in ZONE_BANDS:
+                fit, n = band_fit.get(band, (0, 0))
+                rows.append((f"zone: fit share L{band}",
+                             f"{100.0 * fit / n:.0f}% ({fit}/{n})" if n else "n/a",
+                             f"bot L-2 <= zone_level <= bot L+5 ({zl_src})"))
+        # Left-start-zone by start zone (race stays in bot_events: col 4).
+        seen_race = {}
+        with open(logs / "bot_events.csv", newline="", encoding="utf-8", errors="replace") as f:
+            for row in csv.reader(f):
+                if len(row) <= C_INFO2 or row[C_BOT] not in names or row[C_BOT] in seen_race:
+                    continue
+                try:
+                    if parse_ts(row[C_TS]) >= reset:
+                        seen_race[row[C_BOT]] = int(row[C_RACE])
+                except ValueError:
+                    continue
+        by_start = defaultdict(lambda: [0, 0])  # start zone -> [left, n]
+        for b, s in start.items():
+            if RACE_START_ZONE.get(seen_race.get(b, -1), s) != s:
+                s = RACE_START_ZONE.get(seen_race.get(b, -1), s)
+            cell = by_start[s]
+            cell[1] += 1
+            if top.get(b, s) != s or (b in cur and cur[b][1] != s):
+                cell[0] += 1
+        if by_start:
+            rows.append(("zone: left start zone by start",
+                         "; ".join(f"{s}:{l}/{n}" for s, (l, n) in sorted(by_start.items())),
+                         "start zone id: left/n (race-expected when bot_events race disagrees)"))
+    else:
+        rows.append(("zone: left start zone", "n/a", "need --levelup-log"))
 
     if args.db_cmd and bots:
         try:

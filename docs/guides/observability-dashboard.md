@@ -98,10 +98,35 @@ character DB (bag fill only). Stdlib only; no container name is hardcoded —
 pass `--db-cmd "docker exec -i <container> mariadb ... -N -B"` (or omit it and
 the bag row prints `n/a`). The 2026-10-02 baseline lives in
 `tools/pool_kpi_baseline_2026-10-02.json`; pass `--baseline` for a side-by-side
-column, `--save-baseline` to freeze a new run. Pass `--anomaly-totals-json`
+column, `--save-baseline` to freeze a new run (old baselines still load: new
+rows show `—` there). Pass `--anomaly-totals-json`
 with a `GET /api/v1/anomalies/totals` dump for the `ACTION_LOOP` /
 `UNREACHABLE_TARGET` rows: the incident feed (`api/anomalies.json`) is only
 the last 1000 rows, while the totals file carries whole-run session counts.
+
+### Zone-migration KPIs (do bots move on to zones that fit their level?)
+
+Pass `--levelup-log logs/levelup.log` (plus `--bots-json` for the snapshot) and
+the report adds `zone:` rows. Zone levels come from the world's own
+`ai_playerbot_zone_level` cache when `--db-cmd` is given (same table the travel
+gates read), otherwise from a small fallback table baked into the script for
+the zones a pool snapshot actually contains (the note says which source won).
+Fit mirrors the module's RPG/quest-errand ceiling (`GrindSpotPolicy.h` /
+`TravelMgr.cpp`): fit is `bot L-2 <= zone_level <= bot L+5`; unknown zone
+levels (capitals, instances) count as n/a, never unfit. Start zone is each
+bot's earliest zone in `levelup.log` (pool bots are already L2+ when the
+window opens, so full history — not just the window — is read; 471/498 agree
+with the race-expected start zone on the 2026-10-02 night run).
+
+Rows: fit share per level band (`L1-5` … `L21+`) from the `bots.json` snapshot;
+changed-zone count over the window from the levelup trajectory plus the
+`LeaveOutgrownZone` request fires in `bot_events.csv` as cross-check (note
+that `bot_events.csv` zone rows carry names only, so the `from→to` top pairs
+use zone ids from the trajectory); highest zone (by level) reached per bot,
+with the count beyond the six start zones; bots still in their start zone
+above level 8 (the leave rule fires at L10+, so L9 is still valley age); and
+left-start-zone broken down by start zone id (race-expected when the
+`bot_events.csv` race disagrees with the trajectory).
 
 
 ## 5. Bot Armory (DB inspector)

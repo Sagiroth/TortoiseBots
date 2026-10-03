@@ -12,6 +12,7 @@
 #include "VendorWeaponUpgradePolicy.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/TravelMgr.h"
+#include "SharedValueContext.h"
 #include "playerbot/WorldPosition.h"
 
 using namespace ai;
@@ -68,6 +69,102 @@ static bool TrainerServiceNeeded(PlayerbotAI* ai)
 
     return AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::spells) >= minSpellCost;
 }
+// Organic AH buyer trip (issue #405 rework, review 2): a masterless pool
+// bot, never a hire, walking to an auction house on its own continent on its
+// own feet to bid on arrival (no buyer teleport).
+//
+// ONE money rule (review finding 4): the trip opens only when the bot holds
+// spendable "free money for anything" - the same purse the arrival bid reads
+// for ITEM_USAGE_AH / VENDOR / QUEST listings (AhBidAction maps all of them
+// to NeedMoneyFor::anything). A bot that cannot clear the arrival budget
+// gate never starts the walk, so no trip is futile on arrival.
+//
+// Safety (finding 3): level 10+ only (past the beginner death belt; the
+// capital walk crosses real roads), same-map auction house only (the
+// destination search has no cross-continent path; a cross-map house is
+// FLT_MAX away and unpickable), parked-purpose aware (a failed/empty search
+// parks purpose 1024 like every other purpose - respect it instead of
+// re-requesting every tick), and one trip at a time (per-bot "ah buyer trip
+// since" stamp, same pattern as the trainer/vendor trip stamps: the request
+// gate stamps on pick, arrival boredom is bounded by ShouldLeaveOutgrownZone
+// which already releases a capital-idle bot once the AH need lapses).
+// Scope (minor 8): grouped, LFT-queued/in-offer, BG/instance bots never trip.
+// Cost (finding 7): no RESET_AI_VALUE2 here - the cached "free money for"
+// value (normal checkInterval) is read as-is; the cheap phase gate already
+// ran in the caller before this is evaluated.
+bool ai::AhBuyerTripNeeded(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (!bot)
+        return false;
+    if (bot->GetLevel() < ai::kBuyerTripMinLevel)
+        return false;
+    if (ai->HasActivePlayerMaster() || ai->HasRealPlayerMaster())
+        return false;
+    if (!sRandomBotFacade.IsRandomBot(bot))
+        return false;
+    if (TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()))
+        return false;
+    // Never pull a grouped / LFT / BG / instance bot off to shop. No
+    // sLFTMgr include in this TU (the LFT seam lives behind the module
+    // runtime); the lease + IsBotAvailableForMarket + travel-blocked guards
+    // below stay authoritative, so a queued bot is never moved by this flag
+    // alone - but fail closed here on what this TU can see.
+    if (bot->GetGroup())
+        return false;
+    if (bot->InBattleGround() || bot->InBattleGroundQueue())
+        return false;
+    if (Map* map = bot->GetMap())
+        if (map->IsDungeon() || map->IsBattleGround())
+            return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    // Parked after a failed or empty AH search: stay parked like every other
+    // purpose instead of re-requesting every tick (finding 9).
+    if (AI_VALUE2(time_t, "manual time", "no travel purpose until::" + std::to_string((uint32)TravelDestinationPurpose::AH)) > time(0))
+        return false;
+    // One trip at a time: stamped when the AH pick is issued (see
+    // ChooseTravelTargetAction), lapses after ten minutes like the
+    // trainer/vendor trip stamps.
+    if (AI_VALUE2(time_t, "manual time", "ah buyer trip since") + 10 * MINUTE > time(0))
+        return false;
+    // Same-continent reachability (finding 3): the bot's own map must hold
+    // an AH house it can actually be routed to. The destination search
+    // reports cross-map houses as FLT_MAX (unroutable); mirror that here via
+    // the cached entry positions ("entry guidps": per-entry spawn points with
+    // map ids, no world scan) filtered to AH-purpose entries.
+    {
+        EntryGuidps const& guidps = GAI_VALUE(EntryGuidps, "entry guidps");
+        EntryTravelPurposeMap const& purposeMap = GAI_VALUE(EntryTravelPurposeMap, "entry travel purpose");
+        bool sameMapHouse = false;
+        for (auto const& [entry, purpose] : purposeMap)
+        {
+            if (!(purpose & (uint32)TravelDestinationPurpose::AH))
+                continue;
+            auto it = guidps.find(entry);
+            if (it == guidps.end())
+                continue;
+            for (AsyncGuidPosition const& guidp : it->second)
+            {
+                if (guidp.getMapId() == bot->GetMapId())
+                {
+                    sameMapHouse = true;
+                    break;
+                }
+            }
+            if (sameMapHouse)
+                break;
+        }
+        if (!ai::BuyerTripSameContinent(bot->GetMapId(), sameMapHouse))
+            return false;
+    }
+    // ONE money rule: spendable "free money for anything" must cover the
+    // policy floor - exactly the purse AhBidAction will read on arrival.
+    uint32 spendable = AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::anything);
+    if (spendable < ai::kBuyerTripMinSpareCopper)
+        return false;
+    return true;
+}
+
 bool CanBuyValue::Calculate()
 {
     if (!ai->HasStrategy("rpg vendor", BotState::BOT_STATE_NON_COMBAT))
