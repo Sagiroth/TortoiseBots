@@ -444,6 +444,8 @@ std::once_flag WorldPosition::s_hostileTownOnceFlag;
 std::unordered_map<WorldPosition::HostileTownCellKey, std::vector<WorldPosition::HostileTownGuard>, WorldPosition::HostileTownCellKeyHash> WorldPosition::s_hostileTownCells[2];
 size_t WorldPosition::s_hostileTownGuards[2] = { 0, 0 };
 std::atomic<bool> WorldPosition::s_hostileTownIndexBuilt{ false };
+std::once_flag WorldPosition::s_pointDangerOnceFlag;
+std::unordered_map<WorldPosition::PointDangerCellKey, std::vector<WorldPosition::PointDangerSpawn>, WorldPosition::PointDangerCellKeyHash> WorldPosition::s_pointDangerCells;
 
 // One-pass build over the static spawn table (~88k rows): template + faction
 // lookups only, no world objects, no DB, no map loads. Runs once via call_once
@@ -564,6 +566,103 @@ void WorldPosition::EnsureHostileTownIndex()
         s_hostileTownGuards[1] = guards[1];
         s_hostileTownIndexBuilt.store(true, std::memory_order_release);
     });
+}
+
+// One-pass build over the static spawn table (~88k rows): template + faction
+// lookups only, no world objects, no DB, no map loads. Runs once via call_once
+// on the first point-danger query (creature data is loaded by then); bot AI
+// runs on parallel map threads, so no double-checked locking - after the build
+// the map is immutable and queries never take a lock.
+void WorldPosition::EnsurePointDangerIndex()
+{
+    std::call_once(s_pointDangerOnceFlag, []()
+    {
+        std::unordered_map<PointDangerCellKey, std::vector<PointDangerSpawn>, PointDangerCellKeyHash> cells;
+        struct PointDangerBuildWorker
+        {
+            std::unordered_map<PointDangerCellKey, std::vector<PointDangerSpawn>, PointDangerCellKeyHash>* cells;
+            bool operator()(CreatureDataPair const& dataPair)
+            {
+                uint32 entry = dataPair.second.creature_id[0];
+                if (!entry)
+                    return false;
+                uint32 mapId = dataPair.second.position.mapId;
+                if (mapId != 0 && mapId != 1)
+                    return false;
+                CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(entry);
+                if (!info || info->civilian)
+                    return false;
+                // Invisible triggers and no-target spawns never aggro.
+                if (info->flags_extra & 0x00000080u /* CREATURE_FLAG_EXTRA_INVISIBLE */)
+                    return false;
+                if (info->flags_extra & 0x00020000u /* CREATURE_FLAG_EXTRA_NO_TARGET */)
+                    return false;
+                if (info->type == CREATURE_TYPE_CRITTER)
+                    return false;
+                FactionTemplateEntry const* spawnFaction = info->faction ? sObjectMgr.GetFactionTemplateEntry(info->faction) : nullptr;
+                if (!spawnFaction)
+                    return false;
+                FactionTemplateEntry const* ally = sObjectMgr.GetFactionTemplateEntry(1);
+                FactionTemplateEntry const* horde = sObjectMgr.GetFactionTemplateEntry(2);
+                if (!ally || !horde)
+                    return false;
+                // Static hostility per side (same reaction the target selection
+                // applies): a neutral-to-everyone spawn (wildlife on a neutral
+                // template) counts for neither side and never bars a point.
+                bool const toAlly = ally->IsHostileTo(*spawnFaction);
+                bool const toHorde = horde->IsHostileTo(*spawnFaction);
+                if (!toAlly && !toHorde)
+                    return false;
+                PointDangerCellKey key{ mapId,
+                    PointDangerCellCoord(dataPair.second.position.x),
+                    PointDangerCellCoord(dataPair.second.position.y) };
+                (*cells)[key].push_back(PointDangerSpawn{ dataPair.second.position.x,
+                    dataPair.second.position.y, toAlly, toHorde, info->level_max });
+                return false;
+            }
+        };
+        PointDangerBuildWorker worker{ &cells };
+        sObjectMgr.DoCreatureData(worker);
+        s_pointDangerCells = std::move(cells);
+    });
+}
+
+uint32 WorldPosition::getHighestHostileLevelNear(float radius, Team botTeam) const
+{
+    // O(1)-ish lock-free cell lookup after the one-time build: the query cell
+    // + neighbours within radius, exact 2D distance per spawn. Static template
+    // reaction only (no reputation traffic, no map loads, no per-query
+    // allocation): sub-10 pool bots have no meaningful standings, and the
+    // caller only runs this gate for pool bots below level 10.
+    if (botTeam != ALLIANCE && botTeam != HORDE)
+        return 0;
+    EnsurePointDangerIndex();
+    bool const isHorde = botTeam == HORDE;
+    int32 minCX = PointDangerCellCoord(x - radius);
+    int32 maxCX = PointDangerCellCoord(x + radius);
+    int32 minCY = PointDangerCellCoord(y - radius);
+    int32 maxCY = PointDangerCellCoord(y + radius);
+    float const radiusSq = radius * radius;
+    uint32 highest = 0;
+    for (int32 cx = minCX; cx <= maxCX; ++cx)
+        for (int32 cy = minCY; cy <= maxCY; ++cy)
+        {
+            auto it = s_pointDangerCells.find(PointDangerCellKey{ mapId, cx, cy });
+            if (it == s_pointDangerCells.end())
+                continue;
+            for (auto const& spawn : it->second)
+            {
+                if (!(isHorde ? spawn.hostileToHorde : spawn.hostileToAlliance))
+                    continue;
+                float dx = spawn.x - x;
+                float dy = spawn.y - y;
+                if (dx * dx + dy * dy > radiusSq)
+                    continue;
+                if (spawn.levelMax > highest)
+                    highest = spawn.levelMax;
+            }
+        }
+    return highest;
 }
 
 // Diagnostics only: 0 until the one-time build completes (callers must check

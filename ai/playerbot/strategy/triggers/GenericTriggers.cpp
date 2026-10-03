@@ -1240,6 +1240,31 @@ bool AtWarTrigger::IsActive()
     return false;
 }
 
+// One-shot per pet identity (E01): ported from mod-playerbots NewPetTrigger,
+// adapted to this core (only GetPet() exists — no GetGuardianPet, grep
+// verified). Fires once per main-pet GUID change; an empty slot resets the
+// latch so the next summon re-fires exactly once.
+bool NewPetTrigger::IsActive()
+{
+    ObjectGuid current;
+    if (Pet* pet = bot->GetPet())
+        current = pet->getObjectGuid();
+
+    if (current != lastPetGuid)
+    {
+        lastPetGuid = current;
+        fired = false;
+    }
+
+    if (!current.IsEmpty() && !fired)
+    {
+        fired = true;
+        return true;
+    }
+
+    return false;
+}
+
 bool PetAttackTrigger::IsActive()
 {
     Pet* pet = bot->GetPet();

@@ -1,9 +1,9 @@
 #include "playerbot/playerbot.h"
 #include "ServiceNearbyNpcAction.h"
+#include "SellAction.h"
 #include "playerbot/strategy/values/MaintenanceValues.h"
 #include "playerbot/strategy/actions/AcceptQuestAction.h"
 #include "playerbot/strategy/triggers/RpgTriggers.h"
-
 using namespace ai;
 
 bool ServiceNearbyNpcAction::isUseful()
@@ -16,12 +16,24 @@ bool ServiceNearbyNpcAction::Execute(Event& event)
     GuidPosition target = AI_VALUE(GuidPosition, "nearby service target");
 
     if (!target)
+    {
+        // Stale target (despawned, wandered off, verbs parked): the trigger
+        // cache still offers it for up to 5 s, and every tick failed at full
+        // speed (ACTION_LOOP). Reset the caches so the next tick re-evaluates
+        // instead of failing again on the same stale answer.
+        RESET_AI_VALUE(GuidPosition, "nearby service target");
+        RESET_AI_VALUE(bool, "should service nearby npc");
         return false;
+    }
 
     Creature* npc = target.GetCreature(bot->GetInstanceId());
 
     if (!npc || !npc->IsAlive())
+    {
+        RESET_AI_VALUE(GuidPosition, "nearby service target");
+        RESET_AI_VALUE(bool, "should service nearby npc");
         return false;
+    }
 
     if (!bot->IsWithinDistInMap(npc, INTERACTION_DISTANCE))
         return MoveNear(npc, INTERACTION_DISTANCE - 1.0f);
@@ -40,7 +52,11 @@ bool ServiceNearbyNpcAction::Execute(Event& event)
         return true;
 
     // In range of a real target but every live verb is parked or inapplicable:
-    // report failure so the engine does not treat the walk as success.
+    // report failure so the engine does not treat the walk as success, but
+    // reset the caches first so the re-evaluation (which now sees the parks)
+    // stands the trigger down instead of failing at tick speed.
+    RESET_AI_VALUE(GuidPosition, "nearby service target");
+    RESET_AI_VALUE(bool, "should service nearby npc");
     return false;
 }
 
@@ -87,9 +103,16 @@ bool ServiceNearbyNpcAction::TryVerb(Event& event, GuidPosition target, NearbySe
     {
         // The selector prefers a vendor whenever a sale is due, so a vendor
         // here means "sell first"; the trainer is then picked up on a later
-        // tick, once the sale has funded the rank.
+        // tick, once the sale has funded the rank. #404: a flagged-but-stockless NPC is not
+        // a vendor for this verb either (SellAction skips it), so fail here and let the NPC's
+        // remaining verbs (quest/trainer) still run.
         if (!target.HasNpcFlag(UNIT_NPC_FLAG_VENDOR))
             return false;
+        if (Creature* vendorCreature = target.GetCreature(bot->GetInstanceId()))
+        {
+            if (!SellAction::HasVendorStock(vendorCreature))
+                return false;
+        }
 
         return RunVerb(npcGuid, verbId, kind, verb, "sell", Event("rpg action", "vendor"), target, now);
     }

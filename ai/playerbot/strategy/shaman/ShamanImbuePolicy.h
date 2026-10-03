@@ -32,4 +32,16 @@ namespace ai
             return "windfury weapon";
         return "";
     }
+
+    // Tick gate for the upkeep action (live ACTION_LOOP on 'shaman weapon
+    // upkeep'): the cast gate refuses a second cast while one runs, fails
+    // while sitting/kneeling (eat/drink/loot/skin), airborne or stunned -
+    // and with no wait-for-spell delay every one of those ticks logged a
+    // FAILED upkeep at tick speed. The action stands down unless an imbue is
+    // known, the weapon lacks one, and the bot is castable right now; the
+    // trigger re-fires once it is.
+    inline bool ShamanUpkeepShouldAttempt(bool imbueKnown, bool alreadyImbued, bool castBlocked)
+    {
+        return imbueKnown && !alreadyImbued && !castBlocked;
+    }
 }

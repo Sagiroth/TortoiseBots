@@ -96,12 +96,16 @@ namespace ai
     // flametongue > frostbrand > rockbiter, others flametongue first) and
     // runs only that one through DoSpecificAction - the inner cast never
     // reports IMPOSSIBLE for untrained imbues, so nothing is recorded.
-    // False when no imbue is known yet (fresh level 1).
+    // Weapon-imbue upkeep is a no-op unless the weapon lacks an imbue and the
+    // bot can cast right now (live ACTION_LOOP: sitting/casting/stunned bots
+    // failed it every tick). False both when nothing is known yet (fresh
+    // level 1) and when there is simply nothing to do.
     class CastShamanWeaponUpkeepAction : public Action
     {
     public:
         CastShamanWeaponUpkeepAction(PlayerbotAI* ai) : Action(ai, "shaman weapon upkeep") {}
         bool Execute(Event& event) override;
+        bool isUseful() override;
     };
 
     class CastTotemAction : public CastBuffSpellAction

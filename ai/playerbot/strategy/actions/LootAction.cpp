@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "SkinningLootPolicy.h"
 #include "LootAction.h"
 
 #include "playerbot/LootObjectStack.h"
@@ -29,7 +30,16 @@ bool LootAction::Execute(Event& event)
     LootObject lootObject = AI_VALUE(LootObjectStack*, "available loot")->GetLoot(sPlayerbotAIConfig.lootDistance);
 
     if (lootObject.IsEmpty())
+    {
+        // The stack filtered to nothing (stale corpses, master-range, TTL):
+        // the trigger cache still offers "loot" for up to 5 s, and every
+        // tick failed at full speed (ACTION_LOOP). Reset the caches so the
+        // next tick re-evaluates instead of failing again on the same stale
+        // answer.
+        RESET_AI_VALUE(LootObject, "loot target");
+        RESET_AI_VALUE(bool, "has available loot");
         return false;
+    }
 
     bool released = false;
     if (!prevLoot.IsEmpty() && prevLoot.guid != lootObject.guid)
@@ -380,13 +390,11 @@ bool StoreLootAction::Execute(Event& event)
 
     // Profession loot is worth its own event: a StoreLootAction row cannot be told apart from
     // ordinary corpse loot afterwards, and skinning/gathering had no telemetry at all - the
-    // "zero leather in five weeks" reading had to be dug out of item ids in loot.log. A skinned
-    // corpse opens its window as LOOT_SKINNING; a node opens as ordinary loot, so its skill comes
-    // from the object's lock.
-    uint32 gatherSkill = loot_type == LOOT_SKINNING ? (uint32)SKILL_SKINNING : SKILL_NONE;
-    if (gatherSkill == SKILL_NONE && guid.IsGameObject())
-        gatherSkill = GetNodeGatherSkill(ai->GetGameObject(guid));
-
+    // "zero leather in five weeks" reading had to be dug out of item ids in loot.log. The wire
+    // loot_type cannot identify a skin (#403): the core rewrites LOOT_SKINNING to LOOT_PICKPOCKETING
+    // for the 1.12 client (Player::SendLoot), so every skin arrives as LOOT_PICKPOCKETING. The
+    // server-side Loot still carries the real type (loot->loot_type), which is what marks a skin.
+    // A node window is ordinary loot on a game object, so its skill comes from the object's lock.
     bot->SetLootGuid(guid);
 
     Loot* loot = sLootMgr.GetLoot(bot);
@@ -403,6 +411,12 @@ bool StoreLootAction::Execute(Event& event)
         RESET_AI_VALUE(LootObject, "loot target");
         return false;
     }
+
+    static_assert((uint32)LOOT_SKINNING == ai::kSkinningLootType, "SkinningLootPolicy kSkinningLootType drifted from core LOOT_SKINNING");
+    static_assert((uint32)SKILL_SKINNING == ai::kSkinningSkillId, "SkinningLootPolicy kSkinningSkillId drifted from core SKILL_SKINNING");
+    LootType const internalLootType = LootAccess(loot).lootType();
+    uint32 gatherSkill = ai::DecideGatherSkillForLoot((uint32)internalLootType, guid.IsGameObject(),
+        guid.IsGameObject() ? GetNodeGatherSkill(ai->GetGameObject(guid)) : (uint32)SKILL_NONE);
 
     uint32 itemsTaken = 0;
 
@@ -445,7 +459,7 @@ bool StoreLootAction::Execute(Event& event)
 			continue;
 		}
 
-        if (loot_type != LOOT_SKINNING && !IsLootAllowed(itemQualifier, ai))
+        if (!ai::IsSkinningLoot((uint32)internalLootType) && !IsLootAllowed(itemQualifier, ai))
         {
             sLog.outDebug("[BOT LOOT] %s: skip item=%u (IsLootAllowed=false)", bot->GetName(), itemid);
             continue;

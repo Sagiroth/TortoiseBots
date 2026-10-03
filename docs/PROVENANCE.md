@@ -2941,3 +2941,95 @@ Local validation: `tools/test_loot_roll_policy.cpp` (loot method,
 recipe split, unique ownership, token mask; registered in
 `tools/verify_all.sh`); `bash tools/verify_all.sh`; `git diff --check`.
 No deploy (orchestrator compiles).
+## 2026-10-03 — pet upkeep + gather tools + medium-mana potion (r-donor E01/E02/E10/E11)
+
+Donor: `mod-playerbots` @ b6696bdbd3740e575598d167d69f39f68cc0b907.
+
+Source files: donor `src/Ai/Base/Actions/PetsAction.cpp:342-405`
+(`TogglePetSpellAutoCastAction`), `:442-514` (`SetPetStanceAction`),
+`src/Ai/Base/Trigger/GenericTriggers.cpp:48-53,743-764`
+(`HasPetTrigger`, `NewPetTrigger`), `src/Mgr/Item/LootObjectStack.cpp:337-343`
+(tool allowlist), `src/Ai/Base/Strategy/UsePotionsStrategy.cpp:35-38`
+(medium-mana node), `src/Bot/Factory/PlayerbotFactory.cpp:1304+`
+(`InitPetTalents`); local `ai/playerbot/strategy/actions/GenericActions.{h,cpp}`
+(new actions), `ai/playerbot/strategy/triggers/GenericTriggers.{h,cpp}` +
+`TriggerContext.h` (triggers + creators), `ActionContext.h` (action creators),
+`ai/playerbot/strategy/hunter/HunterStrategy.cpp` +
+`ai/playerbot/strategy/warlock/WarlockStrategy.cpp` (live upkeep nodes),
+`ai/playerbot/LootObjectStack.cpp` (allowlist), `runtime/PetUpkeepPolicy.h`
+(denylist + toggle rule, pinned by `tools/test_pet_upkeep_policy.cpp`),
+`runtime/GatherToolPolicy.h` (tool lists, pinned by
+`tools/test_gather_tool_policy.cpp`),
+`ai/playerbot/strategy/generic/UsePotionsStrategy.cpp` (medium-mana node),
+`docs/classes/hunter.md`, `docs/classes/warlock.md`.
+
+Copied / ported / reimplemented: ported with 1.12 adaptations — autocastable
+= non-passive (no NO_AUTOCAST_AI bit in this core; `Pet::ToggleAutocast`
+refuses passives the same way), stale-entry prune via `Pet::HasSpell`
+(already excludes PETSPELL_REMOVED), denylist = the 1.12-existant subset
+(WotLK-only Spell Lock 27276/27277 ranks, Leap 47482/58867, 48011 visual
+excluded; all Cower ranks 1742/1753-1756/16697 disabled to agree with the
+factory), stance = REACT_DEFENSIVE always (donor DefaultPetStance collapsed
+to our InitPet/CanPetAttack invariant), guardian coverage via
+`CallForAllControlledUnits(CONTROLLED_GUARDIANS)` (no m_Controlled in this
+core), tool allowlist minus WotLK-only 40772/40892/40893.
+
+Reason: the live hunter "pet" and warlock "pet" strategies queued
+`toggle pet spell` / `set pet stance` with no creators (silent no-ops every
+tick); bots carrying any non-default valid tool refused nodes; casters
+waited for low mana before potion logic armed.
+
+Local validation: `tools/test_pet_upkeep_policy.cpp`,
+`tools/test_gather_tool_policy.cpp` (registered in `tools/verify_all.sh`);
+`bash tools/verify_all.sh` (incl. wiring gate: live-missing 0);
+`git diff --check`. No deploy (orchestrator compiles).
+
+E10 verdict (pet talents): NOT APPLICABLE, skipped. Donor `InitPetTalents`
+spends WotLK pet talent points (`GetMaxTalentPointsForLevel`,
+`petTalentType`, `TalentEntry`/`TalentTab` pet masks) — none of those APIs
+exist in this core (grep verified: no `GetMaxTalentPointsForLevel`,
+`petTalentType`, or pet-talent store outside player talents). 1.12 pets use
+training points (`Pet::m_TrainingPoints`, `GetTPForSpell`), and
+`InitPetSpells` already teaches level-appropriate spells plus autocast
+state. Nothing to port.
+## Quest/grind points refuse hostile over-cap neighbours (q-points) — 2026-10-03
+Feature: `TravelMgr::IsLocationLevelValid` refuses a quest-objective /
+quest-loot / grind *point* whose 40 yd surroundings hold hostile spawns past
+the bot's grind cap (`PointDangerApplies` + `PointDangerous` in
+`ai/playerbot/PointDangerPolicy.h`: pool bots below 10 only, +1 numbers from
+`PullGrindLevelCap`; owned/hired bots and level 10+ keep today's behaviour).
+The neighbour lookup is a static per-map 32 yd cell index over the creature
+spawn table (`WorldPosition::GetHighestHostileLevelNear`, built once via
+`call_once` next to the hostile-town index: no world scan, no DB, no map
+loads, no per-query allocation) counting only spawns the bot is hostile to
+by static template reaction, so neutral camps, vendors and wildlife never
+bar a point. When every point of a destination is dangerous the search comes
+back empty and the caller parks the purpose like any other empty search.
+Doc row: `docs/concepts/bot-mechanics-and-quirks.md` (Grind Target
+destination band).
+
+Source project: `mod-playerbots` — no donor shape: its `TravelMgr` never
+looks at neighbouring spawns (`getCreaturesNear` only builds the destination
+and node tables), so this is local, measured on the live pool.
+
+Source files: local `ai/playerbot/PointDangerPolicy.h` (new),
+`ai/playerbot/WorldPosition.h` + `WorldPosition.cpp` (danger-spawn index),
+`ai/playerbot/TravelMgr.cpp` (`IsLocationLevelValid` gate),
+`tools/test_point_danger_policy.cpp`.
+
+Copied / ported / reimplemented: reimplemented (local rule, local numbers).
+
+Reason: live pool 2026-10-03 (fresh level-1 pool since 10:51 UTC, server on
+#418): 211 of 523 deaths are bots level 1-4 killed by mobs 2+ above —
+#418 keeps the spawn entry itself in cap but says nothing about the point's
+surroundings. Worst case: level-4 Kralnyrvar on the item-750 trip (Timber
+Wolf entry 69, level_max 2, in cap) picks a Timber Wolf spawn point at
+POINT(-73.97 -9254.43) outside Northshire and dies five times to the Defias
+Cutpurse 5 / Forest Spider 6 / Mangy Wolf 6 standing next to it (spawn
+table: Forest Spider 9 yd, Mangy Wolf 33 yd, Defias Cutpurse 38 yd away).
+125 of the 211 die on the same `loot item 750` trip.
+
+Local validation: `tools/test_point_danger_policy.cpp` (scope, live
+level-4 case, travelling +1 ceiling; registered in `tools/verify_all.sh`);
+`bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
+compiles).
