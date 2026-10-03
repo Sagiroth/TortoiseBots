@@ -171,7 +171,8 @@ static void GiveUpCombatStuckTarget(PlayerbotAI* ai, Player* bot)
     if (!target && attackGuid)
         target = ai->GetUnit(attackGuid);
     if (!ShouldGiveUpCombatStuckTarget(target != nullptr,
-        target && !sServerFacade.UnitIsDead(target), target == bot))
+        target && !sServerFacade.UnitIsDead(target), target == bot,
+        target && target->GetVictim() == bot))
         return;
 
     uint32 const nowMs = WorldTimer::getMSTime();

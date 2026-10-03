@@ -28,18 +28,23 @@ namespace ai
 
     // Give up only on something real: no target means nothing to blacklist, a
     // corpse needs looting (SelectNewTargetAction saves it from the order we
-    // would clear), and the bot itself must never be blacklisted.
-    inline bool ShouldGiveUpCombatStuckTarget(bool hasTarget, bool targetAlive, bool targetIsSelf)
+    // would clear), and the bot itself must never be blacklisted. A mob that is
+    // hitting the bot is a fight, not a wedge: dropping it left the bot taking
+    // hits without answering (live 2026-10-03: 19% of deaths within a minute of
+    // such a give-up), so only a target that is not attacking the bot is dropped.
+    inline bool ShouldGiveUpCombatStuckTarget(bool hasTarget, bool targetAlive, bool targetIsSelf, bool targetAttacksBot)
     {
-        return hasTarget && targetAlive && !targetIsSelf;
+        return hasTarget && targetAlive && !targetIsSelf && !targetAttacksBot;
     }
 
-    // Never the whole kind on a non-creature: entries only exist for
-    // creatures, and the entry blacklist also drops the grind destination
-    // (GrindTravelDestination::IsActive).
+    // Only the one wedged mob is dropped, never its whole kind: an entry
+    // blacklist also drops the grind destination (GrindTravelDestination::
+    // IsActive), and common starter mobs (Mangy Wolf, Plainstrider) got
+    // blacklisted pool-wide within minutes, pushing bots onto harder mobs.
     inline bool ShouldBlacklistCombatStuckEntry(bool targetIsCreature)
     {
-        return targetIsCreature;
+        (void)targetIsCreature;
+        return false;
     }
 
     // Logged under ReachGiveUp so the give-up stays in the one funnel the

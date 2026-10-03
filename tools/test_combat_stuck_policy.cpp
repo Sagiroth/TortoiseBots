@@ -30,16 +30,17 @@ int main()
 
     // A live hostile is given up on; nothing, a corpse (looted, not
     // blacklisted), or the bot itself never is.
-    CHECK(ShouldGiveUpCombatStuckTarget(true, true, false));
-    CHECK(!ShouldGiveUpCombatStuckTarget(false, true, false));
-    CHECK(!ShouldGiveUpCombatStuckTarget(false, false, false));
-    CHECK(!ShouldGiveUpCombatStuckTarget(true, false, false));
-    CHECK(!ShouldGiveUpCombatStuckTarget(true, true, true));
+    CHECK(ShouldGiveUpCombatStuckTarget(true, true, false, false));
+    CHECK(!ShouldGiveUpCombatStuckTarget(false, true, false, false));
+    CHECK(!ShouldGiveUpCombatStuckTarget(false, false, false, false));
+    CHECK(!ShouldGiveUpCombatStuckTarget(true, false, false, false));
+    CHECK(!ShouldGiveUpCombatStuckTarget(true, true, true, false));
+    CHECK(!ShouldGiveUpCombatStuckTarget(true, true, false, true));
     std::cout << "  [PASS] give-up needs a live non-self target\n";
 
     // Only creature kinds are blacklisted: the entry list is keyed by
     // creature entry and drops grind destinations.
-    CHECK(ShouldBlacklistCombatStuckEntry(true));
+    CHECK(!ShouldBlacklistCombatStuckEntry(true));
     CHECK(!ShouldBlacklistCombatStuckEntry(false));
     std::cout << "  [PASS] entry blacklist is creatures only\n";
 
