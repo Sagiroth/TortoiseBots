@@ -2,6 +2,7 @@
 #include "playerbot/TravelRoutePolicy.h"
 #include "playerbot/GrindSpotPolicy.h"
 #include "playerbot/PullRegenPolicy.h"
+#include "playerbot/PointDangerPolicy.h"
 #include <numeric>
 #include <mutex>
 #include <iomanip>
@@ -2663,6 +2664,26 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
         if (grindZoneFloor > grindMinLevel)
             grindMinLevel = grindZoneFloor;
         if ((int32)areaLevel <= grindMinLevel)
+            return false;
+    }
+    // A quest/grind point whose surroundings hold hostile spawns past the
+    // bot's grind cap is no point: the spawn entry itself was in cap (see
+    // #418), but the field around it is not - a level-4 bot on the item-750
+    // trip walks to a Timber Wolf point outside Northshire and dies to the
+    // Defias Cutpurse 5 / Forest Spider 6 / Mangy Wolf 6 standing next to
+    // it. Pool bots below 10 only (PointDangerApplies); quest objectives,
+    // quest loot and grind. The static cell index (40 yd, one build, no
+    // world scan) keeps this cheap inside the async search; neutral camps
+    // and wildlife never count (template reaction), so giver/taker walks
+    // through town stay untouched. When every point of a destination is
+    // dangerous the search comes back empty and the caller parks the
+    // purpose like any other empty search.
+    if (ai::PointDangerApplies(info.GetLevel(), info.IsMasterlessRandom()) &&
+        (purposeFlag & ((uint32)TravelDestinationPurpose::QuestAllObjective | (uint32)TravelDestinationPurpose::Grind)))
+    {
+        Team const botTeam = info.GetTeam();
+        uint32 const highestNear = position.GetHighestHostileLevelNear(ai::POINT_DANGER_RADIUS_YD, botTeam);
+        if (highestNear != 0 && ai::PointDangerous((int)highestNear, info.GetLevel()))
             return false;
     }
 

@@ -61,6 +61,19 @@
 - Replaces six hard-coded breadcrumb quest IDs with level-aware gating, so new starter-zone delivery chains are covered automatically instead of needing manual ID maintenance [#420](https://github.com/Sagiroth/TortoiseBots/pull/420)
 - Owned/hired bots and level 10+ pool bots keep their existing behavior — no change to player-controlled or established bots [#420](https://github.com/Sagiroth/TortoiseBots/pull/420)
 
+### Combat & AI
+
+- Bots that decline a duel — whether they're too low level or too low on health — no longer immediately accept it anyway; the handler now returns after sending the cancel instead of falling through to the accept packet [#421](https://github.com/Sagiroth/TortoiseBots/pull/421)
+
+### Starter Zones & World
+- Low-level pool bots (1–9) now skip quest objectives, quest loot, and grind points with a hostile spawn above their level cap within 40 yd — ends the Northshire death spiral where "Tough Wolf Meat" runs fed bots straight into Forest Spiders, Mangy Wolves, and Defias Cutpurses. In the first live data, 211 of 523 deaths were levels 1–4, and 125 of those were on a single trip. [#428](https://github.com/Sagiroth/TortoiseBots/pull/428)
+- Threat checks use a per-map cell index over the spawn table, built once — no world scan per decision, so pathing stays cheap. [#428](https://github.com/Sagiroth/TortoiseBots/pull/428)
+- Neutral wildlife and vendors don't count as threats, so lowbies still turn in, buy, and grind in safe areas normally. [#428](https://github.com/Sagiroth/TortoiseBots/pull/428)
+- Owned/hired bots and all level 10+ bots are unchanged — no impact on established characters or player-controlled companions. [#428](https://github.com/Sagiroth/TortoiseBots/pull/428)
+
+### Core Sync & Fixes
+- Fixed a build break on main caused by travel code calling `WorldPosition::GetHighestHostileLevelNear`, which was still in the private section. Both accessors are now public, so the module compiles cleanly again. [#429](https://github.com/Sagiroth/TortoiseBots/pull/429)
+
 ## 2026-10-02
 
 ### Levelling & Progression

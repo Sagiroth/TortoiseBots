@@ -439,6 +439,56 @@ namespace ai
         static std::unordered_map<HostileTownCellKey, std::vector<HostileTownGuard>, HostileTownCellKeyHash> s_hostileTownCells[2];
         static size_t s_hostileTownGuards[2];
         static std::atomic<bool> s_hostileTownIndexBuilt;
+        // Hostile-neighbour danger index (q-points gate). Rule (stated once,
+        // enforced in the build worker and the query in WorldPosition.cpp):
+        // A spawn is indexed iff it can aggro a passing bot: its template is
+        // not a civilian, not an invisible trigger (extra flag 0x80), not a
+        // no-target spawn (extra flag 0x20000), and not a critter (no XP, no
+        // aggro). Battleground maps (not 0/1) are never indexed. A spawn
+        // threatens a bot at the query position iff the bot is hostile to it
+        // by static template reaction and its level_max sits past the bot's
+        // grind cap (PointDangerPolicy.h); the caller passes that cap down.
+        // Per map, per 32 yd cell: spawn x/y, hostile-side flags, faction
+        // template id and level_max. Built once from static spawn data next
+        // to the hostile-town index; immutable after the build, lock-free.
+        struct PointDangerSpawn
+        {
+            float x = 0.0f;
+            float y = 0.0f;
+            bool hostileToAlliance = false;
+            bool hostileToHorde = false;
+            uint32 levelMax = 0;
+        };
+        struct PointDangerCellKey
+        {
+            uint32 mapId = 0;
+            int32 cellX = 0;
+            int32 cellY = 0;
+            bool operator==(PointDangerCellKey const& o) const { return mapId == o.mapId && cellX == o.cellX && cellY == o.cellY; }
+        };
+        struct PointDangerCellKeyHash
+        {
+            size_t operator()(PointDangerCellKey const& k) const noexcept
+            {
+                size_t h = std::hash<uint32>()(k.mapId);
+                h ^= std::hash<int32>()(k.cellX) + 0x9e3779b9u + (h << 6) + (h >> 2);
+                h ^= std::hash<int32>()(k.cellY) + 0x9e3779b9u + (h << 6) + (h >> 2);
+                return h;
+            }
+        };
+        // Highest hostile-to-the-bot level_max among indexed spawns within
+        // radius of this position: spawns the bot is not hostile to never
+        // count, so vendor/quest camps and neutral wildlife do not bar the
+        // point. 0 when nothing hostile is near.
+    public:
+        uint32 getHighestHostileLevelNear(float radius, Team botTeam) const;
+        uint32 GetHighestHostileLevelNear(float radius, Team botTeam) const { return getHighestHostileLevelNear(radius, botTeam); }
+    private:
+        static constexpr float PointDangerCellSize() { return 32.0f; }
+        static int32 PointDangerCellCoord(float c) { return (int32)floorf(c / PointDangerCellSize()); }
+        static void EnsurePointDangerIndex();
+        static std::once_flag s_pointDangerOnceFlag;
+        static std::unordered_map<PointDangerCellKey, std::vector<PointDangerSpawn>, PointDangerCellKeyHash> s_pointDangerCells;
     };
     inline ByteBuffer& operator<<(ByteBuffer& b, WorldPosition& guidP)
     {
