@@ -92,7 +92,7 @@ static bool TrainerServiceNeeded(PlayerbotAI* ai)
 // Cost (finding 7): no RESET_AI_VALUE2 here - the cached "free money for"
 // value (normal checkInterval) is read as-is; the cheap phase gate already
 // ran in the caller before this is evaluated.
-bool AhBuyerTripNeeded(PlayerbotAI* ai)
+bool ai::AhBuyerTripNeeded(PlayerbotAI* ai)
 {
     Player* bot = ai->GetBot();
     if (!bot)
