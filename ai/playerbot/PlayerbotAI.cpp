@@ -1302,6 +1302,10 @@ void PlayerbotAI::RefillPoolRations()
         return;
     if (!HasCheat(BotCheatMask::item) || !sRandomBotFacade.IsRandomBot(bot))
         return;
+    uint32 const nowMs = WorldTimer::getMSTime();
+    if (m_lastRationRefillMs && nowMs - m_lastRationRefillMs < 30 * 1000)
+        return;
+    m_lastRationRefillMs = nowMs;
     uint32 categories[] = { 11, 59 };
     for (int i = 0; i < 2; ++i)
     {
