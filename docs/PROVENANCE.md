@@ -3082,3 +3082,59 @@ Local validation: `tools/test_point_danger_policy.cpp` (scope, live
 level-4 case, travelling +1 ceiling; registered in `tools/verify_all.sh`);
 `bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
 compiles).
+## Autonomous flight errand for pool bots (issue #426) — 2026-10-03
+Feature: a pool bot standing at a flight master takes a random
+level-fitting flight (`FlightErrandDestinationUsable` in
+`ai/playerbot/FlightErrandPolicy.h`, wired into
+`RpgTaxiAction::Execute`): the destination area may sit at most +5 above
+the bot with an outgrown floor of -10 (capital destinations exempt), a bot
+sitting in a capital is never flown to another capital, and unknown area
+levels (unloaded vmap at cross-map legs) fail open so the long flights this
+errand exists for are not grounded. The veteran guards stay: known node (or
+taxi cheat), same-faction mount entry, flight-master interaction range, and
+the action unmounts and drops shapeshift before `ActivateTaxiPathTo`. The
+gate fires only at the flight master (the rpg-taxi trigger), once per firing
+over the sibling TaxiPaths of one node — no per-tick scan, no per-candidate
+spawn walk. `RpgTaxiAction::isUseful` drops the group requirement for pool
+randoms (`bot->GetGroup() || IsRandomBot`), so solo pool bots — the bulk of
+the pool — can fire it; owned/hired bots keep player control (a real master
+still vetoes). Coexists with the travel/level gates by adding to them: the
++5 ceiling and the outgrown floor mirror `RpgTravelDestination::IsPossible`,
+and the #418/#428/#434 gates still vet the bot wherever it walks and lands.
+Every takeoff writes a `TaxiFlight` row to bot_events.csv (from → to node
+names), so cross-zone flights are countable after deploy. The in-flight
+watch stays the core's: cross-map legs finish in `TaxiStepFinished`
+(Player.cpp) and the movement/AI layers already stand down while
+`IsTaxiFlying()` holds (`PlayerbotAI::CanMove`, `MinimalMove`, travel and
+rpg movement).
+
+Source project: `mod-playerbots` @ b6696bdbd3740e575598d167d69f39f68cc0b907.
+Donor `src/Ai/World/Rpg/Action/NewRpgBaseAction.cpp:1065-1081`
+(`SelectRandomFlightTaxiNode`), `:1215-1225` (availability gate),
+`src/Mgr/Travel/TravelMgr.cpp:4405-4477` (`GetOptimalFlightDestinations`:
+500 yd nearest-FM, level-bracket zones, no capital-to-capital shuffle),
+`src/Ai/World/Rpg/Action/NewRpgAction.cpp:635-678` (`NewRpgTravelFlightAction::Execute`).
+
+Source files: donor `NewRpgBaseAction.cpp`, `NewRpgAction.cpp`,
+`TravelMgr.cpp` (`GetOptimalFlightDestinations`); local
+`ai/playerbot/FlightErrandPolicy.h` (new),
+`ai/playerbot/strategy/actions/RpgSubActions.cpp` (`RpgTaxiAction::Execute`
+filter + `TaxiFlight` event), `ai/playerbot/strategy/actions/RpgSubActions.h`
+(`isUseful` pool widening), `tools/test_flight_errand_policy.cpp`.
+
+Copied / ported / reimplemented: reimplemented (donor node selection and
+level-bracket zones, local +5/-10 walk-gate window and fail-open unknowns;
+no zone-bracket table or cross-map taxi resume ported — the core already
+continues cross-map flights, and no config keys: donor
+`RpgStatusProbWeight.TravelFlight` is folded into the rpg-taxi trigger).
+
+Reason: live night2 pool (4 h): 0 `is flying from` rows in bot_events.csv —
+pool bots walk everywhere, including the Teldrassil exit at 11-12 that
+motivated the issue. Two causes: `isUseful` required `GetGroup()` (solo
+pool bots never fired) and the draw was unfiltered (short hop home and
+over-level legs included).
+
+Local validation: `tools/test_flight_errand_policy.cpp` (band, capital
+shuffle, fail-open unknowns, levelling shape; registered in
+`tools/verify_all.sh`); `bash tools/verify_all.sh`; `git diff --check`.
+No deploy (orchestrator compiles).
