@@ -977,6 +977,9 @@ bool PlayerbotAIConfig::Initialize()
         sTravelMgr.LoadQuestTravelTable();
     }
 
+    sLog.outString("Loading taxi node zones.");
+    sTravelMgr.LoadTaxiNodeZones();
+
     sLog.outString("Named locations use native on-demand lookup.");
     sRandomBotFacade.LoadBattleMastersCache();
     sRandomBotFacade.LoadAuctionPrices();

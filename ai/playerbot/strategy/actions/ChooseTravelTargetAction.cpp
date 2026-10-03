@@ -243,6 +243,11 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
     //Actually apply the new target to the travel target used by the bot.
     oldTarget->CopyTarget(newTarget);
 
+    // Decide-once flight plan (#426 item 5): evaluate fly-or-walk for the
+    // freshly set target now (startup caches only, no vmap), store the
+    // verdict on manual values. Travel ticks only read the stored plan.
+    DecideFlightPlanForTarget(ai, bot, oldTarget);
+
     if (oldTarget->IsForced()) //Make sure travel goes into cooldown after getting to the destination.
         oldTarget->SetExpireIn(HOUR * IN_MILLISECONDS);
 

@@ -1345,6 +1345,7 @@ void TravelMgr::Clear()
     destinationMap.clear();
     pointsMap.clear();
     fishPoints.clear();
+    taxiNodeZones.clear();
 }
 
 int32 TravelMgr::GetAreaLevel(uint32 area_id)
@@ -1478,6 +1479,39 @@ bool TravelMgr::TryGetValidatedAreaLevel(uint32 areaId, int32& outLevel) const
             }
     }
     return false;
+}
+
+void TravelMgr::LoadTaxiNodeZones()
+{
+	if (!taxiNodeZones.empty())
+		return;
+
+	// One pass over the DBC taxi-node table at startup, while the world is
+	// still loading: resolves each node's zone id from loaded terrain and
+	// caches it, so travel ticks never call WorldPosition::GetArea (which
+	// loads that tile's vmap on the world thread). Terrain lookups here are
+	// in-memory grid reads; a node whose tile is not loaded yet records 0
+	// and fails closed at use (no flight through an unknown zone).
+	uint32 const maxNode = sObjectMgr.GetMaxTaxiNodeId();
+	for (uint32 nodeId = 1; nodeId < maxNode; ++nodeId)
+	{
+		TaxiNodesEntry const* node = sObjectMgr.GetTaxiNodeEntry(nodeId);
+		if (!node)
+			continue;
+
+		uint32 zoneId = 0;
+		uint32 areaId = 0;
+		sTerrainMgr.GetZoneAndAreaId(zoneId, areaId, node->map_id, node->x, node->y, node->z);
+		taxiNodeZones[nodeId] = zoneId;
+	}
+
+	sLog.outString(">> Loaded " SIZEFMTD " taxi node zones.", taxiNodeZones.size());
+}
+
+uint32 TravelMgr::GetTaxiNodeZoneId(uint32 taxiNodeId) const
+{
+	auto it = taxiNodeZones.find(taxiNodeId);
+	return it != taxiNodeZones.end() ? it->second : 0;
 }
 
 void TravelMgr::LoadAreaLevels()

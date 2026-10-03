@@ -3084,16 +3084,19 @@ level-4 case, travelling +1 ceiling; registered in `tools/verify_all.sh`);
 compiles).
 ## Goal-directed flight transport for pool bots (issue #426) — 2026-10-03
 Feature: a pool bot with a far travel target boards a flight TOWARD it
-(`TryBoardFlightToTarget` in
+(`DecideFlightPlanForTarget` + `TryBoardFlightToTarget` in
 `ai/playerbot/strategy/actions/MoveToTravelTargetAction.cpp`, pure rules in
-`ai/playerbot/FlightErrandPolicy.h`): a KNOWN direct taxi hop from the
-nearest flight master to the node nearest the destination, level-valid
+`ai/playerbot/FlightErrandPolicy.h`): decided ONCE when the travel target
+is set and stored on manual values (`flight from/to node`); travel ticks
+only read the stored plan, never recompute. A KNOWN direct taxi hop from
+the nearest flight master to the node nearest the destination, level-valid
 (area at most +5 above the bot, unknown levels FAIL CLOSED, outgrown floor
 −10 with a capital exemption, never capital-to-capital), on a trip >= 1500
 yd that saves >= 500 yd of walking, affordable from the bot's own gold
-above the class-trainer reserve. Boarding needs interaction range with the
-master (a distant master means the ordinary walk handles the tick); the bot
-unmounts, drops shapeshift and pays the normal fare — no money injection.
+above the class-trainer reserve. With a plan the bot walks to the flight
+master as its intermediate move target until inside interaction range,
+then boards; the bot unmounts, drops shapeshift and pays the normal fare
+— no money injection.
 Pool randoms only (no real master); owned/hired bots keep walking with
 their player. No overlap with the zone-migration work (`fix/zone-migration`
 touches pick radius and valley gates only, no flight logic): this fires
@@ -3102,9 +3105,10 @@ logic — the travel-node graph (with its flight legs) is untouched. Every
 takeoff writes a `TaxiFlight` row to bot_events.csv (from → to node names).
 The in-flight watch stays the core's: cross-map legs finish in
 `TaxiStepFinished` (Player.cpp) and the movement/AI layers already stand
-down while `IsTaxiFlying()` holds. No vmap load on this path: two
-in-memory DBC node scans plus startup-cached zone levels
-(`TryGetValidatedAreaLevel`) per travel tick, only for far trips.
+down while `IsTaxiFlying()` holds. No vmap load on this path: the node-zone cache (`LoadTaxiNodeZones`,
+built once at startup from loaded terrain) maps DBC nodes to zones, and
+`TryGetValidatedAreaLevel` supplies levels — both startup caches, read
+once per travel target, never per tick.
 
 Source project: `mod-playerbots` @ b6696bdbd3740e575598d167d69f39f68cc0b907.
 Donor `src/Ai/World/Rpg/Action/NewRpgBaseAction.cpp:1065-1081`
