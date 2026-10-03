@@ -10,12 +10,15 @@
 #include "Database/DBCStructure.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "runtime/BotManager.h"
+#include "playerbot/GhostStallPolicy.h"
 
 using namespace ai;
-// Note: with DisableActivityPriorities=1 the two wait-then-teleport windows never
-// fire (AllowActivity(DETAILED_MOVE) is always true), so no bypass is needed or
-// applied there - ghosts take the normal MoveTo walk path every tick like every
-// other bot.
+// Ghost stall (m-stuck §5.2): the corpse-run spline is re-dispatched from IDLE
+// every tick and never ridden (ghost_moves.csv: 2187/2189 rows IDLE->POINT with
+// no displacement), and the wait-then-teleport below never fires with
+// DisableActivityPriorities=1 (AllowActivity(DETAILED_MOVE) is always true).
+// FindCorpseAction therefore keeps riding a healthy in-flight POINT spline and
+// falls back to a deadTime/distance stall teleport that ignores the activity gate.
 
 // Rate-limited ghost-movement diagnostics (live-server triage for the "ghost
 // stands still" stall: the move action reports success but the bot does not
@@ -491,6 +494,54 @@ bool FindCorpseAction::Execute(Event& event)
     //Actual mobing part.
     bool moved = false;
 
+    // Ghost-stall teleport, independent of the activity-priority gate: a ghost
+    // that stopped closing the distance to its corpse is not corpse-running
+    // any more (the per-tick re-dispatch below never advances - see the
+    // keep-riding guard there), so hop it toward the corpse instead of
+    // standing there until the 8-min yield / 10-min GY teleport. Fires on
+    // distance progress only, like the graveyard-walk stall rule in
+    // SpiritHealerAction: the anchor is armed here on real progress and reset
+    // by any 5+ yd gain, so a slow-but-moving run never trips it. Inside the
+    // core reclaim radius the reclaim path fires without walking, so it never
+    // counts. Owned/hired bots (active player master) keep today's handling.
+    // Only pool ghosts hop, and only while the corpse is on the same map
+    // (cross-map legs are portal walks handled above).
+    if (!ai->HasActivePlayerMaster() && bot->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST) &&
+        botPos.GetMapId() == corpsePos.GetMapId() &&
+        !corpse->IsWithinDistInMap(bot, (float)CORPSE_RECLAIM_RADIUS, true))
+    {
+        float const stallDist = WorldPosition(bot).fDist(corpse);
+        time_t const now = time(nullptr);
+        int32 bestDist = AI_VALUE2(int32, "manual int", "ghost stall best");
+        time_t anchor = AI_VALUE2(time_t, "manual time", "ghost stall anchor");
+
+        // An anchor from a previous death restarts the clock; so does progress.
+        if (anchor < corpse->GetGhostTime())
+        {
+            anchor = 0;
+            bestDist = 0;
+        }
+
+        if (bestDist <= 0 || stallDist < (float)bestDist - kGhostStallProgressYd)
+        {
+            SET_AI_VALUE2(int32, "manual int", "ghost stall best", (int32)stallDist);
+            SET_AI_VALUE2(time_t, "manual time", "ghost stall anchor", now);
+            anchor = now;
+        }
+
+        if (ShouldGhostStallTeleport(ai->HasActivePlayerMaster(), corpse->IsWithinDistInMap(bot, (float)CORPSE_RECLAIM_RADIUS, true), anchor, now))
+        {
+            sLog.outDetail("[BOT CORPSE] %s: find corpse stalled %.1fy from the corpse for %us, teleporting toward corpse",
+                bot->GetName(), stallDist, kGhostStallTeleportSec);
+            bot->GetMotionMaster()->Clear();
+            bot->TeleportTo(moveToPos.GetMapId(), moveToPos.getX(), moveToPos.getY(), moveToPos.getZ(), 0);
+            if (isRealPlayer_Helper(bot))
+                bot->SendHeartBeat();
+            SET_AI_VALUE2(time_t, "manual time", "ghost stall anchor", now); // re-arm, the walk resumes after the hop
+            return true;
+        }
+    }
+
     if (!ai->AllowActivity(DETAILED_MOVE_ACTIVITY) && !ai->HasPlayerNearby(moveToPos))
     {
         uint32 delay = sServerFacade.getDistance2d(bot, moveToPos.getX(), moveToPos.getY()) / bot->GetSpeed(MOVE_RUN); //Time a bot would take to travel to destination.
@@ -523,6 +574,23 @@ bool FindCorpseAction::Execute(Event& event)
         }
         else
         {
+            // Ghost-stall keep-riding guard: when the motion stack already
+            // carries a live POINT generator toward (nearly) the same
+            // destination, a previous dispatch is still in flight - launching
+            // another MoveTo stacks a second POINT generator on top
+            // (MotionMaster::Mutate pushes without popping POINT) and each new
+            // dispatch restarts the ghost at the route start, so no spline
+            // ever advances (ghost_moves.csv: median 120 s unchanged). Keep
+            // riding instead. Owned/hired bots keep today's handling.
+            int32 keepMovegen = bot->GetMotionMaster() ? (int32)bot->GetMotionMaster()->GetCurrentMovementGeneratorType() : -1;
+            if (ShouldKeepRidingCorpseRun(ai->HasActivePlayerMaster(),
+                bot->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST),
+                keepMovegen, (int32)POINT_MOTION_TYPE, WorldPosition(bot).distance(moveToPos)))
+            {
+                sLog.outDetail("[BOT CORPSE] %s: find corpse - POINT spline still in flight, keeping it instead of re-dispatching",
+                    bot->GetName());
+                return true;
+            }
             // Ghost-movement triage: capture the motion stack before/after the
             // dispatch. MoveTo=true with a live POINT generator that never
             // displaces the bot is the stall signature; MoveTo=true with an
