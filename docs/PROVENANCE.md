@@ -3126,3 +3126,88 @@ per-quest alternating objectives, non-counter exemption, anchor round-trip;
 registered in `tools/verify_all.sh`);
 `bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
 compiles).
+
+## Local grind and camp picks (issue #424) — 2026-10-03
+
+Feature: pool bots search the grind errand inside the donor's local window
+(2500 yd, 833 below level 5) instead of 10000 yd, and camp (GenericRpg inn
+hub) errands inside 500 yd at level <= 5 / 2500 yd above. Owned/hired bots
+keep the full radius (their player decides); leave-outgrown-zone grinds keep
+it too (a zone exit is far by design). All destination gates stay in force.
+
+Source project: `mod-playerbots` (NewRPG local picks).
+
+Source commit: `mod-playerbots@b6696bdbd3740e575598d167d69f39f68cc0b907`.
+
+Source files: donor
+`src/Ai/World/Rpg/Action/NewRpgBaseAction.cpp:964-1062`
+(`SelectRandomGrindPos`: same-map/zone level-bucket picks, 500 yd / 2500 yd,
+/3 below level 5, 50% near bias; `SelectRandomCampPos`: same-map/zone
+inn-hub picks, 500 yd at level <= 5 else 2500 yd, 50 yd push),
+`src/Mgr/Travel/TravelMgr.h:880,884` (`GetTravelHubs`, `GetLocsPerLevelCache`),
+`src/Mgr/Travel/TravelMgr.cpp:4490` (`GetTravelHubs`),
+`src/Mgr/Travel/TravelMgr.cpp:4812-4828` (level-bucketed POI cache); local
+`ai/playerbot/LocalPickPolicy.h` (new),
+`ai/playerbot/strategy/actions/ChooseTravelTargetAction.cpp`
+(`RequestTravelTargetAction::Execute` request radius),
+`tools/test_local_pick_policy.cpp`.
+
+Copied / ported / reimplemented: reimplemented the distance windows as a
+request-side search radius (one float down the async `GetPartitions` call);
+same-map is already covered (`GetDestinations` drops unreachable maps),
+level/zone picks are superseded by the stronger local gates (creature band
+`GrindSpotPolicy.h`, area ceiling `IsLocationLevelValid` /
+`GrindTravelDestination::IsPossible`, point danger `PointDangerPolicy.h`
+#418/#428, taker route #434). The 50% near-coin is dominated by our
+nearest-partition pick (recorded as `LOCAL_GRIND_NEAR_BIAS_PERCENT`); the
+50 yd camp push applies to resting camp status only, not errand trips.
+
+Reason: without the cap a pool bot with nothing suitable nearby walks up to
+10000 yd for grind while the donor caps at 2500 yd (833 below level 5).
+Measured baseline (night2-4h, 2026-10-02, 4 h): median vendor re-pick gap
+1113 s across 598 consecutive-pick gaps; grind/camp radii previously shared
+the uncapped 10000 yd search with every other purpose.
+
+Local validation: `tools/test_local_pick_policy.cpp` (donor window numbers,
+pool-only scope, leave-outgrown exemption, camp bands; registered in
+## Vendor buys ordered by item score (feat/vendor-buy-score, #427) — 2026-10-03
+Feature: the vendor "buy useful" loop walks stock ordered by live
+spec-relevant stat weight (`sRandomItemMgr.GetLiveStatWeight`, best upgrade
+first) with the old item-level order kept only as the fallback when either
+side scores 0, and the gear budget (`NeedMoneyFor::gear`) now covers all
+three gear usages — EQUIP, BAD_EQUIP and BROKEN_EQUIP — instead of EQUIP
+alone. Bought gear still equips at once via the existing `equip upgrades`
+path. No REPLACE usage exists on our side (donor `ItemUsage` has
+REPLACE=2 where ours has BAD_EQUIP=2; our EQUIP already covers both the
+empty-slot and the better-than-equipped answers the donor splits across
+REPLACE/EQUIP), so the gear set is complete at EQUIP/BAD/BROKEN; BROKEN_AH
+stays unbought. Bounded: one weight lookup per vendor item per visit
+(O(stock)), no per-tick scans; travel/level gates untouched.
+
+Source project: `mod-playerbots`
+`src/Ai/Base/Actions/BuyAction.cpp:69-88` (weight sort with item-level
+fallback), `:140-147` (`REPLACE/EQUIP/BAD/BROKEN` → gear budget),
+`:176-179` (`equip upgrades` after gear buys) @
+`b6696bdbd3740e575598d167d69f39f68cc0b907`, adapted to 1.12
+(`ItemTemplate` → `ItemPrototype`, `FindEquipSlot` path not needed — the
+existing usage loop already re-checks `item usage` per item) and to our
+scopes (`sRandomItemMgr.GetLiveStatWeight(bot, itemId)` like the AH loop,
+pure ordering/budget rules in `VendorBuyPolicy.h` for the standalone test).
+
+Source files: donor `BuyAction.cpp`.
+Ported / reimplemented: `ai/playerbot/strategy/actions/BuyAction.cpp`
+(score-ordered sort, gear-budget mapping, equip trigger),
+`ai/playerbot/strategy/values/VendorBuyPolicy.h` (pure rank/budget rules),
+`tools/test_vendor_buy_policy.cpp` (standalone g++ test, registered in
+`tools/verify_all.sh`), `docs/concepts/bot-mechanics-and-quirks.md` (Gear
+Upgrades & Scoring row).
+
+Reason: our loop sorted by raw item level and refused (`usageAllowed=false`)
+every stock item the classifier answered BAD_EQUIP/BROKEN_EQUIP for, so
+vendor upgrades in those classes were never bought and a worse slot-fill
+could precede the best upgrade.
+
+Local validation: `tools/test_vendor_buy_policy.cpp` (gear-budget mapping,
+score-vs-level ordering, unweighted fallback, tie stability; registered in
+`tools/verify_all.sh`); `bash tools/verify_all.sh`; `git diff --check`. No
+deploy (orchestrator compiles).

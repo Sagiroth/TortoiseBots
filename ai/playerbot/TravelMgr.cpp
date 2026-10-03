@@ -752,7 +752,12 @@ bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
         // must agree, or the coarser area vote lets through points this one rejects.
         int32 const areaMargin = (info.IsMasterlessRandom() && !beginner) ? GRIND_AREA_MARGIN : GRIND_AREA_MARGIN_OWNED;
         int32 destAreaLevel = point->GetAreaLevel();
-        if (destAreaLevel > 0 && destAreaLevel > (int32)info.GetLevel() + areaMargin)
+        // Starter-valley exemption (GrindSpotPolicy.h): the valley average sits
+        // far above a level 1-4 bot while its mobs are vetted in-cap by the
+        // band above, so the ceiling would veto every local point. Mirrors
+        // the IsLocationLevelValid beginnerGrind exemption at this gate.
+        if (destAreaLevel > 0 && destAreaLevel > (int32)info.GetLevel() + areaMargin &&
+            !ai::GrindValleyExempted(info.GetLevel(), info.IsMasterlessRandom()))
             return false;
 
         if (info.GetLevel() <= 5 && point->distance(info.getPosition()) > 1500.0f)
