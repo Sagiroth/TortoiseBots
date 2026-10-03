@@ -74,6 +74,10 @@ private:
         // dismisses. Zero = master online (or never seen offline).
         time_t masterOfflineSince = 0;
         bool greeted = false;
+        // Issue #382: the spec+spells intro goes out once the hire is
+        // confirmed grouped. Hires grouped by the provisioner announce there;
+        // hires grouped here (master-offline grace path) announce below.
+        bool introSent = false;
         // Set once the hire was seen sharing its master's group (issue #378).
         // A departure before that is a provisioning artefact, never an end of
         // hire: only then is a master-less group a dismissal.

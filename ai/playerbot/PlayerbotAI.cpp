@@ -191,6 +191,26 @@ void PacketHandlingHelper::Handle(ExternalEventHelper &helper)
     m_botPacketMutex.unlock();
 }
 
+void PacketHandlingHelper::DropQueuedOpcode(uint16 opcode)
+{
+    m_botPacketMutex.lock();
+    // The stack drains LIFO; rebuilding from the bottom preserves the
+    // survivors' relative order. Move-only packets travel by move.
+    std::stack<std::unique_ptr<WorldPacket>> kept;
+    while (!queue.empty())
+    {
+        if (queue.top()->getOpcode() != opcode)
+            kept.push(std::move(queue.top()));
+        queue.pop();
+    }
+    while (!kept.empty())
+    {
+        queue.push(std::move(kept.top()));
+        kept.pop();
+    }
+    m_botPacketMutex.unlock();
+}
+
 void PacketHandlingHelper::AddPacket(const WorldPacket& packet)
 {
     if (packet.empty() && packet.getOpcode() != MSG_RAID_READY_CHECK)
