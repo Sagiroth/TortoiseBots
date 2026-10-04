@@ -324,6 +324,7 @@ bool RaidBombRunoutAction::Execute(Event& event)
     // Solo carrier: radial flee still clears melee range.
     float angle = frand(0, M_PI_F * 2.0f);
     return FindStep(ai, bot, botPos, angle, runout, out) &&
+           MoveTo(bot->GetMapId(), out.getX(), out.getY(), out.getZ(), false, IsReaction(), false, true);
 }
 
 bool DragonFlankAction::Execute(Event& event)
