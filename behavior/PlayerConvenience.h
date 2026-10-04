@@ -22,7 +22,23 @@ class PlayerConvenience
 public:
     static PlayerConvenience& Instance();
 
+    // Optional summon condition set (issue #473, donor summon-condition
+    // knobs). Plain data: the accept hook fills it from config, the policy
+    // helper decides, RequestSummon executes unchanged.
+    struct SummonConditions
+    {
+        bool allowInCombat = false;
+        bool allowMasterDead = false;
+        bool allowBotDead = false;
+        bool revive = false;
+        bool repair = false;
+    };
+
     bool RequestSummon(Player* requester, Player* bot);
+    // Conditional entry: applies the donor condition knobs before (and
+    // after) the native RequestSummon preconditions. Revive runs first when
+    // both the dead-bot and revive knobs are on; repair runs after arrival.
+    bool RequestGroupSummon(Player* requester, Player* bot, SummonConditions const& conditions);
     bool IsBusy(ObjectGuid botGuid) const;
     void Update(uint32 diff);
 

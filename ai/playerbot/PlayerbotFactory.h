@@ -30,6 +30,11 @@ public:
     void EquipGearPartialUpgrade() { return InitEquipment(false, false, true, true); }
     void UpgradeGear(bool syncWithMaster) { return InitEquipment(!syncWithMaster, syncWithMaster); }
     void UpgradeGearBest() { return InitEquipment(true, false, false); }
+    // Issue #473: owned-bot autogear. Incremental-only re-gear at the bot's
+    // level within a quality/ilvl cap, via the same candidate pool as every
+    // other gear path (no wipe, no syncWithMaster). Never touches pool bots;
+    // the caller gates on runtime/OwnedBotQolPolicy.h.
+    void AutogearOwned(uint32 cappedQuality, uint32 ilvlCap);
     // Weapon/armour/riding skills plus two class-appropriate professions and the
     // secondary skills, all bounded by the current level. Public so the runtime can
     // give it to persistent-level bots on first login. Primaries are granted from

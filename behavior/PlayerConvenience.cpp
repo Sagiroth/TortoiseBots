@@ -100,6 +100,45 @@ bool PlayerConvenience::RequestSummon(Player* requester, Player* bot)
         bot->GetName(), state.destX, state.destY, state.destZ, state.destMap, requester->GetName());
     return true;
 }
+// Issue #473: summon-on-group-accept with the donor summon-condition knobs.
+// Only the inviter's own bot is ever summoned (caller gates owned/hired).
+// Combat: the native flow refuses combat on either side unless allowInCombat
+// opens it. Dead master: refused unless allowMasterDead opens it (the queued
+// summon still cancels if the master dies before arrival). Dead bot:
+// refused unless allowBotDead opens it, and only revived when revive is set
+// too. Repair runs after arrival when repair is set.
+bool PlayerConvenience::RequestGroupSummon(Player* requester, Player* bot, SummonConditions const& conditions)
+{
+    if (!requester || !bot || !requester->IsInWorld() || requester->IsBeingTeleported() ||
+        requester->IsTaxiFlying())
+        return false;
+    if (!requester->IsAlive() && !conditions.allowMasterDead)
+        return false;
+    if (!bot->IsInWorld() || !bot->GetSession() || !bot->GetSession()->IsHeadless() ||
+        bot->IsBeingTeleported() || bot->IsTaxiFlying())
+        return false;
+    // The native flow never summons into or out of combat; the knob opens
+    // both sides at once, matching the donor allowSummonInCombat meaning.
+    if ((requester->IsInCombat() || bot->IsInCombat()) && !conditions.allowInCombat)
+        return false;
+    if (!bot->IsAlive())
+    {
+        if (!conditions.allowBotDead)
+            return false;
+        if (conditions.revive)
+        {
+            bot->ResurrectPlayer(1.0f, false);
+            bot->SpawnCorpseBones();
+        }
+        if (!bot->IsAlive())
+            return false;
+    }
+    if (!RequestSummon(requester, bot))
+        return false;
+    if (conditions.repair)
+        bot->DurabilityRepairAll(false, 0.0f);
+    return true;
+}
 
 bool PlayerConvenience::IsBusy(ObjectGuid botGuid) const
 {

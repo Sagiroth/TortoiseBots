@@ -4,6 +4,8 @@
 #include "playerbot/strategy/values/Formations.h"
 
 #include "playerbot/strategy/Action.h"
+#include "runtime/HireLifecycle.h"
+#include "behavior/PlayerConvenience.h"
 
 namespace ai
 {
@@ -94,6 +96,28 @@ namespace ai
 
             if (adoptedHumanMaster)
             {
+                // Issue #473: opt-in summon on group accept (donor
+                // SummonWhenGroup, off by default). Only the inviter's own
+                // bot is summoned: owned bots (IsOwnedBot) or hired
+                // companions with an active hire. Pool bots never summon.
+                // Distance-gated like the donor (beyond sight distance);
+                // same-map distance only, cross-map accepts stay manual.
+                bool eligible = ai->IsOwnedBot() ||
+                    TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid());
+                if (eligible && sPlayerbotAIConfig.ownedBotSummonWhenGroup &&
+                    bot->GetMapId() == inviter->GetMapId() &&
+                    bot->GetDistance(inviter) > sPlayerbotAIConfig.sightDistance)
+                {
+                    TortoiseBots::PlayerConvenience::SummonConditions conditions;
+                    conditions.allowInCombat = sPlayerbotAIConfig.ownedBotSummonAllowInCombat;
+                    conditions.allowMasterDead = sPlayerbotAIConfig.ownedBotSummonAllowMasterDead;
+                    conditions.allowBotDead = sPlayerbotAIConfig.ownedBotSummonAllowBotDead;
+                    conditions.revive = sPlayerbotAIConfig.ownedBotSummonRevive;
+                    conditions.repair = sPlayerbotAIConfig.ownedBotSummonRepair;
+                    if (!TortoiseBots::PlayerConvenience::Instance().RequestGroupSummon(inviter, bot, conditions))
+                        sLog.outDebug("TortoiseBots: summon-on-accept for bot %s refused by condition knobs",
+                            bot->GetName());
+                }
                 ai::Event followEvent("follow", "", inviter);
                 if (!ai->DoSpecificAction("follow chat shortcut", followEvent, true))
                 {

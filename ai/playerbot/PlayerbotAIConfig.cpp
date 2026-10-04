@@ -457,6 +457,19 @@ bool PlayerbotAIConfig::Initialize()
     hireDisconnectGracePeriod = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.HireDisconnectGracePeriod", 300));
     if (hireDisconnectGracePeriod > 3600)
         hireDisconnectGracePeriod = 3600;
+    // Issue #473: opt-in owned/hired-bot quality of life (all off by default).
+    ownedBotMaintenanceEnabled = config.GetBoolDefault("AiPlayerbot.OwnedBotMaintenanceEnabled", false);
+    ownedBotAutogearEnabled = config.GetBoolDefault("AiPlayerbot.OwnedBotAutogearEnabled", false);
+    ownedBotAutogearQualityCap = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.OwnedBotAutogearQualityCap", 2));
+    if (ownedBotAutogearQualityCap > 5)
+        ownedBotAutogearQualityCap = 5;
+    ownedBotAutogearIlvlCap = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.OwnedBotAutogearIlvlCap", 0));
+    ownedBotSummonWhenGroup = config.GetBoolDefault("AiPlayerbot.OwnedBotSummonWhenGroup", false);
+    ownedBotSummonAllowInCombat = config.GetBoolDefault("AiPlayerbot.OwnedBotSummonAllowInCombat", false);
+    ownedBotSummonAllowMasterDead = config.GetBoolDefault("AiPlayerbot.OwnedBotSummonAllowMasterDead", false);
+    ownedBotSummonAllowBotDead = config.GetBoolDefault("AiPlayerbot.OwnedBotSummonAllowBotDead", false);
+    ownedBotSummonRevive = config.GetBoolDefault("AiPlayerbot.OwnedBotSummonRevive", false);
+    ownedBotSummonRepair = config.GetBoolDefault("AiPlayerbot.OwnedBotSummonRepair", false);
      openGoSpell = config.GetIntDefault("AiPlayerbot.OpenGoSpell", 6477);
 
     randomChangeMultiplier = config.GetFloatDefault("AiPlayerbot.RandomChangeMultiplier", 1.0);

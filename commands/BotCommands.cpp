@@ -28,7 +28,11 @@
 #include "../ai/playerbot/strategy/values/ItemUsageValue.h"
 #include "../ai/playerbot/strategy/actions/EquipAction.h"
 #include "../ai/playerbot/strategy/actions/UnequipAction.h"
-
+// pi-lens-ignore: clang:pp_file_not_found
+#include "playerbot/PlayerbotFactory.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "playerbot/PlayerbotAIConfig.h"
+#include "runtime/OwnedBotQolPolicy.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Chat.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -2110,6 +2114,105 @@ static bool HandleInventory(ChatHandler* handler, char const* args)
     SendInventorySnapshot(handler, bot, requester);
     return true;
 }
+// Issue #473: opt-in owned/hired-bot quality of life (all parts off by
+// default, pool bots never eligible). Maintenance refreshes one owned bot's
+// kit through the same bounded helpers as the hire/refresh paths
+// (consumables, reagents, ammo, thrown, bandages, then a free repair);
+// autogear re-gears incrementally within the quality/ilvl caps. With the
+// flags off the commands reply that the feature is disabled.
+static bool IsOwnedBotQolEligible(Player* bot, BotRecord const* record)
+{
+    if (!bot || !record)
+        return false;
+    if (!BotManager::Instance().IsBot(bot->GetObjectGuid()))
+        return false;
+    if (BotManager::Instance().IsRandomBot(bot->GetObjectGuid()))
+        return HireLifecycle::Instance().IsHired(bot->GetObjectGuid());
+    return true;
+}
+
+static bool HandleMaintenance(ChatHandler* handler, char const* args)
+{
+    Player* requester = Requester(handler);
+    Player* bot = nullptr;
+    BotRecord* record = nullptr;
+    std::string name;
+    if (!requester || !ResolveOwnedBot(handler, args, bot, record, name))
+    {
+        handler->PSendSysMessage("Usage: .bot maintenance <online bot name> (same account only)");
+        return true;
+    }
+    if (!IsOwnedBotQolEligible(bot, record))
+    {
+        handler->PSendSysMessage("'%s' is a pool bot and keeps progressing organically.", name.c_str());
+        return true;
+    }
+    if (!sPlayerbotAIConfig.ownedBotMaintenanceEnabled)
+    {
+        handler->PSendSysMessage("Owned-bot maintenance is disabled (AiPlayerbot.OwnedBotMaintenanceEnabled = 0).");
+        return true;
+    }
+    if (!bot->IsAlive())
+    {
+        handler->PSendSysMessage("Bot '%s' must be alive.", name.c_str());
+        return true;
+    }
+    PlayerbotFactory factory(bot, bot->GetLevel());
+    factory.AddReagents();
+    factory.AddPotions();
+    factory.AddFood();
+    factory.AddConsumes();
+    factory.AddBandages();
+    factory.InitAmmo();
+    factory.InitThrown();
+    bot->DurabilityRepairAll(false, 0.0f);
+    bot->SaveToDB();
+    handler->PSendSysMessage("Maintained %s (consumables, reagents, ammo, repair).", name.c_str());
+    return true;
+}
+
+static bool HandleAutogear(ChatHandler* handler, char const* args)
+{
+    std::string text = Trim(args ? args : "");
+    size_t split = text.find_first_of(" \t");
+    std::string botToken = split == std::string::npos ? text : text.substr(0, split);
+    std::string param = split == std::string::npos ? "" : text.substr(split + 1);
+    Player* requester = Requester(handler);
+    Player* bot = nullptr;
+    BotRecord* record = nullptr;
+    std::string name;
+    if (!requester || botToken.empty() || !ResolveOwnedBot(handler, botToken.c_str(), bot, record, name))
+    {
+        handler->PSendSysMessage("Usage: .bot autogear <online bot name> [quality|ilvl] (same account only)");
+        return true;
+    }
+    if (!IsOwnedBotQolEligible(bot, record))
+    {
+        handler->PSendSysMessage("'%s' is a pool bot and keeps progressing organically.", name.c_str());
+        return true;
+    }
+    if (!sPlayerbotAIConfig.ownedBotAutogearEnabled)
+    {
+        handler->PSendSysMessage("Owned-bot autogear is disabled (AiPlayerbot.OwnedBotAutogearEnabled = 0).");
+        return true;
+    }
+    if (!bot->IsAlive())
+    {
+        handler->PSendSysMessage("Bot '%s' must be alive.", name.c_str());
+        return true;
+    }
+    OwnedBotAutogearRequest parsed = ParseOwnedBotAutogearArg(param,
+        sPlayerbotAIConfig.ownedBotAutogearQualityCap, sPlayerbotAIConfig.ownedBotAutogearIlvlCap);
+    if (!parsed.ok)
+    {
+        handler->PSendSysMessage("Unknown autogear option '%s'. Use a quality (white, green, blue, purple) or an item level number.", Trim(param).c_str());
+        return true;
+    }
+    PlayerbotFactory factory(bot, bot->GetLevel());
+    factory.AutogearOwned(parsed.quality, parsed.ilvlCap);
+    handler->PSendSysMessage("Re-geared %s within the configured caps.", name.c_str());
+    return true;
+}
 
 // Opens a trade window between the bot and the requester. The core creates
 // both trade records immediately; the requester's client opens its window
@@ -3575,7 +3678,7 @@ bool HandleChatCommand(ChatHandler* handler, char const* args)
     while (*args == ' ' || *args == '\t') ++args;
     if (!*args)
     {
-        handler->PSendSysMessage("Usage: .bot add/remove/logout/roster/action/follow/invite/uninvite/kick/stay/guard/free/ready/attack/interrupt/formation/list/stats/status/lease/version/about/pullback/role/summon/command/hire/loot/repair/sell/rest/drink/eat/release/corpse run/learn/trade/inv/item/behavior/strategy/ah/pool");
+        handler->PSendSysMessage("Usage: .bot add/remove/logout/roster/action/follow/invite/uninvite/kick/stay/guard/free/ready/attack/interrupt/formation/list/stats/status/lease/version/about/pullback/role/summon/command/hire/loot/repair/sell/rest/drink/eat/release/corpse run/learn/trade/inv/item/behavior/strategy/maintenance/autogear/ah/pool");
         return true;
     }
 
@@ -3641,6 +3744,10 @@ bool HandleChatCommand(ChatHandler* handler, char const* args)
         return HandleRole(handler, subArgs);
     if (cmd == "summon")
         return HandleSummon(handler, subArgs);
+    if (cmd == "maintenance")
+        return HandleMaintenance(handler, subArgs);
+    if (cmd == "autogear")
+        return HandleAutogear(handler, subArgs);
     if (cmd == "hire")
         return HandleHire(handler, subArgs);
     if (cmd == "pool")

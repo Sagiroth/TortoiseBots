@@ -122,6 +122,32 @@ void PlayerbotFactory::PruneDuplicateEquipRows()
         guid);
 }
 
+// Issue #473: incremental-only re-gear of an owned bot at its level within
+// a quality cap and an optional item-level cap. The quality selects the band
+// start (same itemQuality plumbing as every other gear path); the ilvl cap
+// is enforced by temporarily narrowing randomGearMaxLevel, which every
+// candidate query filters on. No wipe, no master sync.
+void PlayerbotFactory::AutogearOwned(uint32 cappedQuality, uint32 ilvlCap)
+{
+    if (!bot)
+        return;
+    if (cappedQuality > ITEM_QUALITY_LEGENDARY)
+        cappedQuality = ITEM_QUALITY_LEGENDARY;
+    itemQuality = cappedQuality;
+    if (ilvlCap == 0)
+    {
+        InitEquipment(true, false);
+        bot->SaveToDB();
+        return;
+    }
+    uint32 savedMaxLevel = sPlayerbotAIConfig.randomGearMaxLevel;
+    if (ilvlCap < savedMaxLevel)
+        sPlayerbotAIConfig.randomGearMaxLevel = ilvlCap;
+    InitEquipment(true, false);
+    sPlayerbotAIConfig.randomGearMaxLevel = savedMaxLevel;
+    bot->SaveToDB();
+}
+
 // Issue #192: spells + skills + incremental gear for a hired companion.
 // Public wrapper around the private init steps so the provisioner never
 // touches wiping paths. Talents are owned by the provisioner (role-matching

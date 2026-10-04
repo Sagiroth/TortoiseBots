@@ -301,6 +301,24 @@ AiPlayerbot.LowLevelVendorMaxDistance = 600
 #AiPlayerbot.HirePartyMult4 = 4.66
 #AiPlayerbot.HireRaidFlatCostCopper = 10000
 #AiPlayerbot.HireDisconnectGracePeriod = 300
+# Issue #473: opt-in quality of life for owned/hired bots only (every part
+# off by default; pool bots always keep progressing organically and are
+# never touched). The values below are the values that actually run.
+#AiPlayerbot.OwnedBotMaintenanceEnabled = 0
+#AiPlayerbot.OwnedBotAutogearEnabled = 0
+# Autogear caps: quality 0 poor .. 5 legendary (default 2 = uncommon/green),
+# ilvl 0 = no cap (clamped to 5 at load).
+#AiPlayerbot.OwnedBotAutogearQualityCap = 2
+#AiPlayerbot.OwnedBotAutogearIlvlCap = 0
+# Summon the joining bot to its inviter on group accept, with the condition
+# knobs below (dead bots are only revived when both the dead-bot and revive
+# knobs are on; repair runs after arrival).
+#AiPlayerbot.OwnedBotSummonWhenGroup = 0
+#AiPlayerbot.OwnedBotSummonAllowInCombat = 0
+#AiPlayerbot.OwnedBotSummonAllowMasterDead = 0
+#AiPlayerbot.OwnedBotSummonAllowBotDead = 0
+#AiPlayerbot.OwnedBotSummonRevive = 0
+#AiPlayerbot.OwnedBotSummonRepair = 0
 
 # Bounded AH market population through the native bot/session auction path. Default off.
 # When enabled, online random Headless bots use real inventory items, pricing, deposits,
