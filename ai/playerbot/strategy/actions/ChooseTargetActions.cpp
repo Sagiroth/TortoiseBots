@@ -100,6 +100,7 @@ bool AttackAnythingAction::isUseful()
         return false;
 
     return true;
+}
 
 bool ai::AttackAnythingAction::isPossible()
 {

@@ -304,6 +304,7 @@ private:
         }
     };
 
+    CAN_CAST_TRIGGER(MultishotCanCastTrigger, "multi-shot");
     SNARE_TRIGGER(IntimidationSnareTrigger, "intimidation");
     CAN_CAST_TRIGGER(CounterattackCanCastTrigger, "counterattack");
     SNARE_TRIGGER(WybernStingSnareTrigger, "wyvern sting");
