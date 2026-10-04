@@ -1394,6 +1394,8 @@ namespace ai
                 if (!questId || (status != QUEST_STATUS_INCOMPLETE && status != QUEST_STATUS_COMPLETE && status != QUEST_STATUS_FAILED))
                     continue;
                 Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
+                if (!quest || quest->GetRequiredClasses())
+                    continue;
                 // Refused quests (same predicate the clean action drops
                 // with): banned quests at any status, war-effort item
                 // turn-ins when incomplete/failed. Without this the 5s

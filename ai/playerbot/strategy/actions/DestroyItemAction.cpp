@@ -118,6 +118,9 @@ bool SmartDestroyItemAction::Execute(Event& event)
         }
     }
 
+    if (bagSpace < 90)
+        return false;
+
     bool onlyDestroyGray = false;
 
     if (ai->HasRealPlayerMaster() || ai->IsInRealGuild())
