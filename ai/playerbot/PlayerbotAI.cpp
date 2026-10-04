@@ -12,6 +12,8 @@
 
 #include "../../runtime/ObservabilityEmitter.h"
 #include "../../runtime/BotActivityLease.h"
+#include "../../runtime/HireLifecycle.h"
+#include "../../runtime/PoolBotTradePolicy.h"
 #include "ByteBuffer.h"
 #include "ObjectAccessor.h"
 
@@ -2553,6 +2555,18 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
 
             if (guid1 != bot->getObjectGuid()) // do not reply to self
             {
+                // Issue #469: a masterless pool bot ignores Trade-channel
+                // chatter unless the speaker addresses it directly. Only the
+                // Trade channel is gated (resolved via channel id, not the
+                // raw name): General/LFG/Defense/World keep prior behaviour.
+                // Owned/hired bots (live master, owner, hire record) pass.
+                if (msgtype == CHAT_MSG_CHANNEL && !HasRealPlayerMaster() &&
+                    sRandomBotFacade.IsRandomBot(bot) &&
+                    !TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()) &&
+                    GetChatChannelSource(bot, msgtype, chanName) == ChatChannelSource::SRC_TRADE &&
+                    !TortoiseBots::PoolBotTradeChatAllowed(true, true, message.find(bot->GetName()) != std::string::npos))
+                    return;
+
                 // Dispatch party chat and whispers from authorized real players (group master / members) to HandleCommand
                 if ((msgtype == CHAT_MSG_PARTY || msgtype == CHAT_MSG_WHISPER) && lang != LANG_ADDON)
                 {

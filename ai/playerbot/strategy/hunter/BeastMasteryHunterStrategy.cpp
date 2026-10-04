@@ -10,6 +10,12 @@ void BeastMasteryHunterStrategy::InitCombatTriggers(std::list<TriggerNode*>& tri
 {
     HunterStrategy::InitCombatTriggers(triggers);
 
+    // BM pet-talent cooldown: fire whenever the owner can order the pet to,
+    // below kill command so the damage cooldown wins the shared pet GCD.
+    triggers.push_back(new TriggerNode(
+        "intimidation",
+        NextAction::array(0, new NextAction("intimidation", ACTION_NORMAL + 3), NULL)));
+
     triggers.push_back(new TriggerNode(
         "kill command",
         NextAction::array(0, new NextAction("kill command", ACTION_NORMAL + 4), NULL)));

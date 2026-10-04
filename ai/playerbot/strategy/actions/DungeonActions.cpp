@@ -3,6 +3,8 @@
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/PlayerbotAI.h"
+#include "playerbot/strategy/values/LastMovementValue.h"
+#include "playerbot/CombatSpreadPolicy.h"
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
 #include "Maps/CellImpl.h"
@@ -265,7 +267,7 @@ Unit* RaidAnchor(PlayerbotAI* ai, Player* bot)
     return nearest;
 }
 
-bool FindStep(Player* bot, const WorldPosition& from, float angle, float distance, WorldPosition& out)
+bool FindStep(PlayerbotAI* ai, Player* bot, const WorldPosition& from, float angle, float distance, WorldPosition& out)
 {
     out = from + WorldPosition(0, distance * cos(angle), distance * sin(angle), 1.0f);
     out.setZ(out.GetHeight());
@@ -273,6 +275,23 @@ bool FindStep(Player* bot, const WorldPosition& from, float angle, float distanc
         return false;
     if (!from.canPathTo(out, bot))
         return false;
+    // Do not step toward unpulled hostiles: reuse FleeManager's creature
+    // danger sense (possible-targets distance). A candidate landing inside
+    // aggro range of a non-victim hostile is rejected, so a 12 yd step-out
+    // cannot drag the group into the next pack. LOS-gated and cheap: one
+    // cached "possible targets" read, no scan or pathfinding per candidate.
+    std::list<ObjectGuid> const& units = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid> >("possible targets")->Get();
+    for (ObjectGuid const& guid : units)
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (!unit || !sServerFacade.IsAlive(unit) || unit == bot)
+            continue;
+        if (unit->GetVictim())
+            continue;
+        float d = sServerFacade.getDistance2d(unit, out.getX(), out.getY());
+        if (sServerFacade.IsDistanceLessThan(d, sPlayerbotAIConfig.aggroDistance))
+            return false;
+    }
     return true;
 }
 } // namespace
@@ -295,7 +314,7 @@ bool RaidBombRunoutAction::Execute(Event& event)
         {
             for (float d : angles)
             {
-                if (FindStep(bot, botPos, away + d, runout + extra, out) &&
+                if (FindStep(ai, bot, botPos, away + d, runout + extra, out) &&
                     MoveTo(bot->GetMapId(), out.getX(), out.getY(), out.getZ(), false, IsReaction(), false, true))
                     return true;
             }
@@ -304,7 +323,7 @@ bool RaidBombRunoutAction::Execute(Event& event)
     }
     // Solo carrier: radial flee still clears melee range.
     float angle = frand(0, M_PI_F * 2.0f);
-    return FindStep(bot, botPos, angle, runout, out) &&
+    return FindStep(ai, bot, botPos, angle, runout, out) &&
            MoveTo(bot->GetMapId(), out.getX(), out.getY(), out.getZ(), false, IsReaction(), false, true);
 }
 
@@ -337,6 +356,22 @@ bool DragonFlankAction::Execute(Event& event)
 bool RaidSpreadAction::Execute(Event& event)
 {
     (void)event;
+    // The reaction engine fires this for any stacked ranged bot, but the
+    // Onyxia fight strategy also queues it directly: re-check the spread
+    // gate here so explicit hold orders and owned bots (live master OR owner
+    // record, for offline masters) hold position instead of stepping out.
+    if (!ShouldCombatSpread(sServerFacade.IsInCombat(bot), ai->HasRealPlayerMaster(),
+        ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)) ||
+        IsSpreadExemptOwned(ai->HasRealPlayerMaster(), ai->IsOwnedBot()))
+        return false;
+    // One step per cooldown: stacked bots settle after a single step-out
+    // instead of ping-ponging toward the next friendly every tick.
+    LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
+    if (IsSpreadOnCooldown(WorldTimer::getMSTime(), lastMove.lastSpreadStepMs))
+        return false;
     // Step 12yd directly away from the nearest stacked friendly.
     Group* group = bot->GetGroup();
     if (!group)
@@ -356,23 +391,40 @@ bool RaidSpreadAction::Execute(Event& event)
             nearest = member;
         }
     }
-    if (!nearest || nearestDist >= 10.0f)
+    if (!nearest || nearestDist >= kSpreadSettledDistance)
         return false;
     const WorldPosition botPos(bot);
     const WorldPosition nearPos(nearest);
     float away = nearPos.GetAngleTo(botPos);
+    // Donor "recently flee info" (mod-playerbots MovementAction::CheckLastFlee):
+    // first pass skips step-out headings within ~45deg of the last two flee
+    // destinations so repeated spreads fan out; the second pass takes vetoed
+    // headings so a spread is never blocked outright.
     const float spread = sPlayerbotAIConfig.hazardEvasionDistance;
-    const float angles[] = { 0.0f, 0.6f, -0.6f };
+    const float angles[] = { 0.0f, 0.6f, -0.6f, 1.2f, -1.2f, (float)M_PI };
     WorldPosition out(botPos);
-    for (float d : angles)
+    for (int pass = 0; pass < 2; ++pass)
     {
-        if (FindStep(bot, botPos, away + d, spread, out) &&
-            MoveTo(bot->GetMapId(), out.getX(), out.getY(), out.getZ(), false, IsReaction(), false, true))
-            return true;
+        bool const vetoSecondPass = (pass == 1);
+        for (float d : angles)
+        {
+            float heading = away + d;
+            if (!vetoSecondPass && !IsFleeHeadingFree(heading, lastMove.lastFleeAngles, kFleeAngleSlots))
+                continue;
+            if (FindStep(ai, bot, botPos, heading, spread, out) &&
+                MoveTo(bot->GetMapId(), out.getX(), out.getY(), out.getZ(), false, IsReaction(), false, true))
+            {
+                lastMove.lastFleeAngles[1] = lastMove.lastFleeAngles[0];
+                lastMove.lastFleeAngles[0] = heading;
+                if (lastMove.lastFleeAngleCount < 2)
+                    ++lastMove.lastFleeAngleCount;
+                lastMove.lastSpreadStepMs = WorldTimer::getMSTime();
+                return true;
+            }
+        }
     }
     return false;
 }
-
 bool DragonTankFaceAwayAction::Execute(Event& event)
 {
     (void)event;

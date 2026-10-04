@@ -181,7 +181,11 @@ namespace ai
     class ShouldLeaveOutgrownZoneValue : public BoolCalculatedValue
     {
     public:
-        ShouldLeaveOutgrownZoneValue(PlayerbotAI* ai, std::string name = "should leave outgrown zone", int checkInterval = 30) : BoolCalculatedValue(ai, name, checkInterval) {};
+        // Short cache: once ordinary Grind/Gather searches come back empty
+        // (1-min purpose parks), the leave errand is the only way out - a
+        // 30 s stale "false" would idle the bot between parks. The value
+        // itself is two cached lookups, no world scan.
+        ShouldLeaveOutgrownZoneValue(PlayerbotAI* ai, std::string name = "should leave outgrown zone", int checkInterval = 5) : BoolCalculatedValue(ai, name, checkInterval) {};
 
         virtual bool Calculate() override;
     };

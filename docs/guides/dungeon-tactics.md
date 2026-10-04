@@ -109,7 +109,8 @@ Entering a raid map auto-enables the `dungeon` transition engine, which swaps in
 - **Bomb runout:** carriers of *Living Bomb* (Geddon), *Burning Adrenaline* (Vaelastrasz), or *Mutating Injection* (Grobbulus) run 30yd clear of the raid anchor (`AiPlayerbot.BombRunoutDistance`).
 - **Hazard evasion:** lava bombs, void zones, and poison clouds trigger the shared hazard move-away as a reactive step-out (no persistent path avoidance yet).
 - **Dragon geometry:** non-tanks flank out of breath/tail cones automatically; order tanks with `.bot action raid tankface` to drag the head away from the raid.
-- **Ranged spread:** stacked casters split 12yd apart (`AiPlayerbot.HazardEvasionDistance`).
+- **Ranged spread:** stacked casters split 12yd apart (`AiPlayerbot.HazardEvasionDistance`). Pool bots (no real player master) also spread in any group combat — not just raids — when a friendly stands within 10yd; explicit hold orders (`stay`, `follow`, `wait for attack`, `grind`) and owned/hired bots under a player master are exempt.
+- **Flee memory:** a bot that flees or spreads remembers its last two step-out headings and picks a different vector next time (within ~45 degrees is skipped), so repeated flees fan out instead of re-picking the same bad direction.
 
 Encounter notes: MC runes douse via `.bot action raid douse` (Eternal Quintessence 22754 first, Aqual 17333 fallback); Onyxia phase 2 swaps bots to `shoot` + spread while airborne; BWL rogues disarm suppression devices (wired in both combat and non-combat states); 4H mark carriers (3+ stacks) rotate out via hazard move.
 

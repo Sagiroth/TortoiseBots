@@ -431,6 +431,13 @@ public:
     bool instantRandomize;
     bool gearscorecheck;
     int32 levelCheck;
+    // Pool-bot trade safety (issue #469, donor EnableRandomBotTrading 0-3
+    // plus our open 4): 0 off / 1 trusted (master, group, hire master) /
+    // 2 buy-only / 3 sell-only / 4 on. Out-of-range fails closed to 0.
+    int32 poolBotTradeMode;
+    // Addon chatter prefixes that never drive the trade action
+    // (donor TradeActionExcludedPrefixes parity, e.g. Questie/DBM lines).
+    std::list<std::string> tradeActionExcludedPrefixes;
 	bool randomBotPreQuests;
     float playerbotsXPrate;
     bool disableBotOptimizations;

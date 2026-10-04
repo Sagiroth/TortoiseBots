@@ -1298,7 +1298,7 @@ bool RequestTravelTargetAction::Execute(Event& event)
         outgrownFloor = (int32)bot->GetLevel() - 5;
         // Zone migration (ZoneMigratePolicy.h): exclude the zone being left
         // so the search cannot re-pick home. The trigger already vetted
-        // outgrownness (area + 5 < bot, or capital-idle); the only decision
+        // outgrownness (zone + 5 < bot, or capital-idle); the only decision
         // here is which zone: the bot's current zone, unless the leave
         // reason is "capital" (trainers/AH/bank live there). Unknown zones
         // exclude nothing.
@@ -1930,8 +1930,11 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
     {
         uint32 useFlags;
 
+        // The city trip is now need-gated on AH business (see
+        // ShouldTravelNamedValue), so it walks to the auctioneer only:
+        // banker/battlemaster legs had no need behind them.
         if (travelName == "city")
-            useFlags = NPCFlags::UNIT_NPC_FLAG_BANKER | NPCFlags::UNIT_NPC_FLAG_BATTLEMASTER | NPCFlags::UNIT_NPC_FLAG_AUCTIONEER;
+            useFlags = NPCFlags::UNIT_NPC_FLAG_AUCTIONEER;
         else if (travelName == "tabard")
             useFlags = NPCFlags::UNIT_NPC_FLAG_TABARDDESIGNER;
         else if (travelName == "petition")

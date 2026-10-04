@@ -64,6 +64,20 @@ namespace ai
         return "complete";
     }
 
+    // Single-point dispatch gate (review #475): ResolveMovePath tags its NOPATH
+    // fallback as a lone entry-less portal point, so DispatchMovement can tell
+    // "no route at all" from a clipped real path. Walking the fallback would
+    // DecRetry forever and the unreachable target would never drop; only a
+    // real clipped path earns the single-point MovePoint.
+    // PathNodeType lives in TravelNode.h (module C++, not policy-testable), so
+    // the caller passes the already-read (pointCount, type, entry) triple.
+    // Type 7 / entry 0 is NODE_STATIC_PORTAL without an entry: real route
+    // portals and teleports always carry one.
+    inline bool TravelIsNoRouteFallbackPoint(size_t pointCount, int nodeType, unsigned entry)
+    {
+        constexpr int NO_ROUTE_FALLBACK_TYPE = 7;
+        return pointCount == 1 && nodeType == NO_ROUTE_FALLBACK_TYPE && entry == 0;
+    }
     // May a stuck reset keep its travel target - the same keep rule the
     // move-stuck path applies: an active target with a real destination and
     // position survives PlayerbotAI::Reset(true); anything else (no target,
