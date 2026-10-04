@@ -171,7 +171,12 @@ Current adapters:
 | `BotPlayerAdapter` | player lifecycle/reclaim attachment; answers core LFT managed-bot rolecheck (`IsManagedBot`/`GetBotRoles`); logs bot quest completions for `bot_events.csv` |
 | `BotChatAdapter` | native `.bot` command integration |
 | `BotPacketAdapter` | packet bridge into Existing PlayerBots (primarily AzerothCore/mod-playerbots) |
-
+| `HireRecruiterAdapter` | `<Mercenary Hire>` recruiter gossip (`Hire bots` wizard + capital `World buffs` branch, issue #492; pure logic in `runtime/WorldBuffPolicy.h` + `runtime/WorldBuffService.h`) |
+| `HireGroupAdapter` | hired-companion group hooks |
+| `WorldBuffKillAdapter` | `PlayerScript::OnCreatureKill`: Onyxia/Nefarian → invisible Rally credit 95100 via `RewardPlayerAndGroupAtEvent` (issue #492) |
+| `WorldBuffAuraAdapter` | `UnitScript::OnAuraApply`: DM/Sayge/Songflower aura → receiver-only event credit via `AreaExploredOrEventHappens`, recruiter casters ignored (issue #492) |
+| `WorldBuffPvpAdapter` | `PlayerScript::OnPVPKill`: opposite-faction kill in Silithus (zone 1377) → Silithyst credit 95101 via `RewardPlayerAndGroupAtEvent` (issue #492) |
+| `WorldBuffRaidAdapter` | `PlayerScript::OnBeforeTeleport` snapshot + `OnMapChanged` restore/strip for `KeepWorldBuffsInRaids` and Upper Karazhan 814 (issue #492; pure table in `runtime/WorldBuffRaidKeeper.h`) |
 The module should prefer an existing generic hook before requesting a new core
 seam.
 

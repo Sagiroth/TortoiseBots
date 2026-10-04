@@ -22,6 +22,8 @@
 #include "WorldBuffAuraAdapter.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "WorldBuffPvpAdapter.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "WorldBuffRaidAdapter.h"
 
 namespace TortoiseBots {
 
@@ -43,6 +45,8 @@ void RegisterScripts()
     new WorldBuffAuraAdapter();
     // Issue #492: Silithyst opposite-faction kills in Silithus.
     new WorldBuffPvpAdapter();
+    // Issue #492: keep-buffs restore + Upper Kara strip.
+    new WorldBuffRaidAdapter();
 }
 
 } // namespace TortoiseBots

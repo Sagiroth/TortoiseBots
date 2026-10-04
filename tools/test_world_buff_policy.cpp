@@ -17,6 +17,7 @@
 
 #include "../runtime/WorldBuffPolicy.h"
 #include "../runtime/WorldBuffService.h"
+#include "../runtime/WorldBuffRaidKeeper.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -188,10 +189,48 @@ static void TestTeleportTable()
     CHECK(ShouldStripUpperKara(false, 0) == false);
 }
 
+static void TestRaidKeeper()
+{
+    // The 18-spell strip set matches live instance_buff_removal: all seven
+    // buffs plus 18968/26393/28681, and never Silithyst (29534).
+    uint32_t count = 0;
+    RaidStripSpells(count);
+    CHECK(count == 18);
+    CHECK(IsRaidStripSpell(22888) == true);
+    CHECK(IsRaidStripSpell(16609) == true);
+    CHECK(IsRaidStripSpell(24425) == true);
+    CHECK(IsRaidStripSpell(22817) == true);
+    CHECK(IsRaidStripSpell(22818) == true);
+    CHECK(IsRaidStripSpell(22820) == true);
+    CHECK(IsRaidStripSpell(15366) == true);
+    CHECK(IsRaidStripSpell(18968) == true);
+    CHECK(IsRaidStripSpell(26393) == true);
+    CHECK(IsRaidStripSpell(28681) == true);
+    CHECK(IsRaidStripSpell(23735) == true);
+    CHECK(IsRaidStripSpell(23769) == true);
+    CHECK(IsRaidStripSpell(29534) == false);
+    CHECK(IsRaidStripSpell(0) == false);
+    // Snapshot store: take consumes, empty snapshot erases, logout (no
+    // take) drops the buffs by design.
+    WorldBuffRaidKeeper keeper;
+    std::vector<WorldBuffSnapshotEntry> out;
+    CHECK(keeper.Take(123, out) == false);
+    keeper.Snapshot(123, { { 22888, 7000000, 7200000 } });
+    CHECK(keeper.Size() == 1);
+    CHECK(keeper.Take(123, out) == true);
+    CHECK(out.size() == 1 && out[0].spellId == 22888);
+    CHECK(out[0].remainMs == 7000000 && out[0].maxMs == 7200000);
+    CHECK(keeper.Take(123, out) == false);
+    keeper.Snapshot(7, {});
+    CHECK(keeper.Size() == 0);
+    keeper.Snapshot(7, { { 16609, 1000, 3600000 } });
+    keeper.Clear(7);
+    CHECK(keeper.Size() == 0);
+}
+
 static void TestServicePrices()
 {
     // Config pairs flow through unchanged: standard 10g+2g, Sayge 6g+1g,
-    // Songflower 4g+1g, Silithyst 2g+40s. Unknown indices fail closed.
     WorldBuffPricePair pair;
     CHECK(WorldBuffPrices(1, pair, 100000, 20000, 60000, 10000, 40000, 10000, 20000, 4000) == true);
     CHECK(pair.baseCopper == 100000 && pair.perPersonCopper == 20000);
@@ -257,6 +296,7 @@ int main()
     TestAuraMap();
     TestBossMap();
     TestTeleportTable();
+    TestRaidKeeper();
     TestServicePrices();
     TestServiceSpells();
     std::printf("world buff policy: %d checks passed\n", checks);
