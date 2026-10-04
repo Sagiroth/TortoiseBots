@@ -3527,3 +3527,37 @@ Local validation: `tools/test_quest_taker_level_policy.cpp` section 4
 (exempt 1/4 masterless, bound at 5, owned/hired excluded, level 60
 excluded); `bash tools/verify_all.sh`; `git diff --check`. No deploy
 (orchestrator compiles).
+
+## Hunter & warlock pet presence, choice and ranks (task I) — 2026-10-04
+Feature: hunter pets keep family-correct level-appropriate ranks with
+sensible autocast (Growl on, Cower/Prowl off); solo pool warlocks upgrade
+Imp -> Voidwalker once they know the summon (697, level 10); both relearn
+missing ranks on the periodic initialize-pet tick without a relog/resummon.
+
+Copied / ported / reimplemented: reimplemented. Donor `mod-playerbots` @
+b6696bdbd3740e575598d167d69f39f68cc0b907: `src/Bot/Factory/PlayerbotFactory.cpp`
+`InitPet` (hunter pet creation + autocast sweep; warlocks summon live, so no
+factory pet), `src/Ai/Class/Warlock/Strategy/GenericWarlockNonCombatStrategy.cpp`
+(summon fallback chain voidwalker -> imp; spec pet strategies imp/voidwalker/
+succubus/felhunter with "wrong pet" nodes) and `src/Ai/Class/Warlock/WarlockTriggers.cpp`
+`WrongPetTrigger` (exactly one pet strategy enabled + known summon spell).
+Adapted to 1.12: no summon-strategy fan (this module's spec strategies
+`pet <spec> pve` already default Voidwalker solo / Imp raid); one shared
+"wrong pet" node on `WarlockPetPveStrategy`; rank ladders verified against
+tw_world.spell_template baseLevel + the SkillLineAbility DBC (phantom
+Dive 23146 / Dash 23100-23112 / skill-261 rows excluded, Turtle custom ranks
+included); teach-time autocast pins Sacrifice/Seduction off (the sweep would
+leave them on); families 35/36/39 mapped to their DBC skill lines.
+
+Reason: live 2026-10-04: 50 online lvl10+ warlocks, 44 with Imp in the active
+slot vs 6 with Voidwalker (41 vs 5 in the orchestrator's earlier sample) —
+both summons known, "no pet" never fires while a pet lives, and the
+spec-strategy "wrong pet" nodes had no trigger creator (dead wiring); hunter
+pets at 10-18 carried only the tame-time ranks (Growl 14916, Bite 17255,
+Claw 16828...) with wrong Dive/Screech/Claw/Furious-Howl levels and no
+Thunderstomp 51156 rank, and fox/serpent/moth families had no table at all.
+
+Local validation: `tools/test_warlock_pet_policy.cpp`,
+`tools/test_pet_spell_rank_policy.cpp` (registered in
+`tools/verify_all.sh`); `bash tools/verify_all.sh` (incl. host contract);
+`git diff --check`. No deploy (orchestrator compiles).

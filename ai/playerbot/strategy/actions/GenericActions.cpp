@@ -7,6 +7,8 @@
 #include <vector>
 #include "../../../runtime/PetUpkeepPolicy.h"
 #include "../../../runtime/HunterPetPolicy.h"
+#include "../../../runtime/PetSpellRankPolicy.h"
+#include "../../../runtime/WarlockPetPolicy.h"
 
 using namespace ai;
 
@@ -154,148 +156,70 @@ bool InitializePetAction::isUseful()
                     hasTamedPet = sObjectMgr.GetCreatureTemplate(entry);
                 }
             }
-
-            return !hasTamedPet;
+            if (hasTamedPet)
+            {
+                // Rank upkeep, not creation: a levelled pet that misses the
+                // top rank its level allows relearns it here (Growl, Bite,
+                // Claw, family abilities). Runs on the same "often" tick as
+                // creation so a ding upgrades ranks without a relog; cheap
+                // (one pet-spell scan, no DB) once everything is known.
+                Pet* pet = bot->GetPet();
+                if (!pet || ai->HasRealPlayerMaster())
+                    return false;
+                CreatureInfo const* petInfo = sObjectMgr.GetCreatureTemplate(pet->GetEntry());
+                uint32 beastFamily = petInfo ? petInfo->beast_family : 0;
+                uint32 petLevel = pet->GetLevel();
+                for (TortoiseBots::PetRankLadder const* ladder : TortoiseBots::HunterPetLadders(beastFamily))
+                {
+                    if (!ladder)
+                        continue;
+                    for (auto const& rank : *ladder)
+                    {
+                        if (petLevel >= rank.first && !pet->HasSpell(rank.second))
+                            return true;
+                    }
+                }
+                for (auto const& single : TortoiseBots::HunterPetSingleSpells(beastFamily))
+                {
+                    if (petLevel >= single.first && !pet->HasSpell(single.second))
+                        return true;
+                }
+                for (auto const& rank : TortoiseBots::GrowlLadder())
+                {
+                    if (petLevel >= rank.first && !pet->HasSpell(rank.second))
+                        return true;
+                }
+                return false;
+            }
+            return true;
         }
         else if (bot->GetClass() == CLASS_WARLOCK)
         {
-            // Only initialize if warlock has the pet summoned
+            // Rank upkeep, not creation: a summoned demon that misses the
+            // top rank its level allows relearns it here (Torment, Firebolt,
+            // Lash of Pain...). Runs on the same "often" tick as the hunter
+            // path so a ding upgrades ranks without resummoning; cheap (one
+            // pet-spell scan, no DB) once everything is known.
             Pet* pet = bot->GetPet();
-            if (pet)
+            if (!pet || ai->HasRealPlayerMaster())
+                return false;
+            uint32 petLevel = pet->GetLevel();
+            for (auto const& ladder : TortoiseBots::WarlockPetLadders(pet->GetEntry()))
             {
-                constexpr uint32 PET_IMP = 416;
-                constexpr uint32 PET_FELHUNTER = 417;
-                constexpr uint32 PET_VOIDWALKER = 1860;
-                constexpr uint32 PET_SUCCUBUS = 1863;
-
-                //      pet type                    pet level  pet spell id
-                std::map<uint32, std::vector<std::pair<uint32, uint32>>> spellList;
-
-                // Imp spells
+                if (!ladder.second)
+                    continue;
+                for (auto const& rank : *ladder.second)
                 {
-                    // Blood Pact
-                    spellList[PET_IMP].push_back(std::pair(4, 6307));
-                    spellList[PET_IMP].push_back(std::pair(14, 7804));
-                    spellList[PET_IMP].push_back(std::pair(26, 7805));
-                    spellList[PET_IMP].push_back(std::pair(38, 11766));
-                    spellList[PET_IMP].push_back(std::pair(50, 11767));
-
-                    // Fire Shield
-                    spellList[PET_IMP].push_back(std::pair(14, 2947));
-                    spellList[PET_IMP].push_back(std::pair(24, 8316));
-                    spellList[PET_IMP].push_back(std::pair(34, 8317));
-                    spellList[PET_IMP].push_back(std::pair(44, 11770));
-                    spellList[PET_IMP].push_back(std::pair(54, 11771));
-
-                    // Firebolt
-                    spellList[PET_IMP].push_back(std::pair(1, 3110));
-                    spellList[PET_IMP].push_back(std::pair(8, 7799));
-                    spellList[PET_IMP].push_back(std::pair(18, 7800));
-                    spellList[PET_IMP].push_back(std::pair(28, 7801));
-                    spellList[PET_IMP].push_back(std::pair(38, 7802));
-                    spellList[PET_IMP].push_back(std::pair(48, 11762));
-                    spellList[PET_IMP].push_back(std::pair(58, 11763));
-
-                    // Phase Shift
-                    spellList[PET_IMP].push_back(std::pair(12, 4511));
-                }
-
-                // Felhunter spells
-                {
-                    // Devour Magic
-                    spellList[PET_FELHUNTER].push_back(std::pair(30, 19505));
-                    spellList[PET_FELHUNTER].push_back(std::pair(38, 19731));
-                    spellList[PET_FELHUNTER].push_back(std::pair(46, 19734));
-                    spellList[PET_FELHUNTER].push_back(std::pair(54, 19736));
-
-                    // Paranoia
-                    spellList[PET_FELHUNTER].push_back(std::pair(42, 19480));
-
-                    // Spell Lock
-                    spellList[PET_FELHUNTER].push_back(std::pair(36, 19244));
-                    spellList[PET_FELHUNTER].push_back(std::pair(52, 19647));
-
-                    // Tainted Blood
-                    spellList[PET_FELHUNTER].push_back(std::pair(32, 19478));
-                    spellList[PET_FELHUNTER].push_back(std::pair(40, 19655));
-                    spellList[PET_FELHUNTER].push_back(std::pair(48, 19656));
-                    spellList[PET_FELHUNTER].push_back(std::pair(56, 19660));
-                }
-
-                // Voidwalker spells
-                {
-                    // Consume Shadows
-                    spellList[PET_VOIDWALKER].push_back(std::pair(18, 17767));
-                    spellList[PET_VOIDWALKER].push_back(std::pair(26, 17850));
-                    spellList[PET_VOIDWALKER].push_back(std::pair(34, 17851));
-                    spellList[PET_VOIDWALKER].push_back(std::pair(42, 17852));
-                    spellList[PET_VOIDWALKER].push_back(std::pair(50, 17853));
-                    spellList[PET_VOIDWALKER].push_back(std::pair(58, 17854));
-
-                    // Sacrifice
-                    spellList[PET_VOIDWALKER].push_back(std::pair(16, 7812));
-                    spellList[PET_VOIDWALKER].push_back(std::pair(24, 19438));
-                    spellList[PET_VOIDWALKER].push_back(std::pair(32, 19440));
-                    spellList[PET_VOIDWALKER].push_back(std::pair(40, 19441));
-                    spellList[PET_VOIDWALKER].push_back(std::pair(48, 19442));
-                    spellList[PET_VOIDWALKER].push_back(std::pair(56, 19443));
-
-                    // Suffering
-                    spellList[PET_VOIDWALKER].push_back(std::pair(24, 17735));
-                    spellList[PET_VOIDWALKER].push_back(std::pair(36, 17750));
-                    spellList[PET_VOIDWALKER].push_back(std::pair(48, 17751));
-                    spellList[PET_VOIDWALKER].push_back(std::pair(60, 17752));
-
-                    // Torment
-                    spellList[PET_VOIDWALKER].push_back(std::pair(10, 3716));
-                    spellList[PET_VOIDWALKER].push_back(std::pair(20, 7809));
-                    spellList[PET_VOIDWALKER].push_back(std::pair(30, 7810));
-                    spellList[PET_VOIDWALKER].push_back(std::pair(40, 7811));
-                    spellList[PET_VOIDWALKER].push_back(std::pair(50, 11774));
-                    spellList[PET_VOIDWALKER].push_back(std::pair(60, 11775));
-                }
-
-                // Succubus spells
-                {
-                    // Lash of Pain
-                    spellList[PET_SUCCUBUS].push_back(std::pair(20, 7814));
-                    spellList[PET_SUCCUBUS].push_back(std::pair(28, 7815));
-                    spellList[PET_SUCCUBUS].push_back(std::pair(36, 7816));
-                    spellList[PET_SUCCUBUS].push_back(std::pair(44, 11778));
-                    spellList[PET_SUCCUBUS].push_back(std::pair(52, 11779));
-                    spellList[PET_SUCCUBUS].push_back(std::pair(60, 11780));
-
-                    // Lesser Invisibility
-                    spellList[PET_SUCCUBUS].push_back(std::pair(32, 7870));
-
-                    // Seduction
-                    spellList[PET_SUCCUBUS].push_back(std::pair(26, 6358));
-
-                    // Soothing Kiss
-                    spellList[PET_SUCCUBUS].push_back(std::pair(22, 6360));
-                    spellList[PET_SUCCUBUS].push_back(std::pair(34, 7813));
-                    spellList[PET_SUCCUBUS].push_back(std::pair(46, 11784));
-                    spellList[PET_SUCCUBUS].push_back(std::pair(58, 11785));
-                }
-
-                // Get the appropriate spell list by level and type
-                const auto& petSpellListItr = spellList.find(pet->GetEntry());
-                if (petSpellListItr != spellList.end())
-                {
-                    const auto& petSpellList = petSpellListItr->second;
-                    for (const auto& pair : petSpellListItr->second)
-                    {
-                        const uint32& levelRequired = pair.first;
-                        const uint32& spellID = pair.second;
-
-                        // Check if the pet is missing the spells for it's current level
-                        if (pet->GetLevel() >= levelRequired && !pet->HasSpell(spellID))
-                        {
-                            return true;
-                        }
-                    }
+                    if (petLevel >= rank.first && !pet->HasSpell(rank.second))
+                        return true;
                 }
             }
+            for (auto const& single : TortoiseBots::WarlockPetSingleSpells(pet->GetEntry()))
+            {
+                if (petLevel >= single.first && !pet->HasSpell(single.second))
+                    return true;
+            }
+            return false;
         }
     }
 

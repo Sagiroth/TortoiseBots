@@ -3,6 +3,7 @@
 #include "WarlockTriggers.h"
 #include "WarlockActions.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#include "../../../runtime/WarlockPetPolicy.h"
 
 using namespace ai;
 
@@ -259,6 +260,25 @@ bool NoSpecificPetTrigger::IsActive()
     }
 
     return true;
+}
+
+bool WrongPetTrigger::IsActive()
+{
+    // Pool bots only: a real-player master picks the demon themselves.
+    if (ai->HasRealPlayerMaster())
+        return false;
+    // Below the Voidwalker trainer tier (697, baseLevel 10) the Imp is the
+    // only demon available; above it the solo default is the Voidwalker.
+    if (!bot->HasSpell(TortoiseBots::WARLOCK_VOIDWALKER_SUMMON_SPELL))
+        return false;
+    Unit* pet = AI_VALUE(Unit*, "pet target");
+    if (!pet)
+        return false;
+    TortoiseBots::WarlockSoloPetInputs inputs;
+    inputs.knowsVoidwalker = true;
+    inputs.hasPet = true;
+    inputs.currentPetEntry = pet->GetEntry();
+    return TortoiseBots::DecideWarlockSoloPet(inputs) == TortoiseBots::WarlockSoloPetDecision::SummonVoidwalker;
 }
 
 uint32 SoulstoneTrigger::GetItemId()

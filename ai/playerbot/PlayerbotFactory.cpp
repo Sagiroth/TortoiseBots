@@ -5,6 +5,7 @@
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/SpellRankPolicy.h"
 #include "../../runtime/HunterPetPolicy.h"
+#include "../../runtime/PetSpellRankPolicy.h"
 #include "../../runtime/StarterKitPolicy.h"
 #include "../../runtime/ProfessionGrantPolicy.h"
 
@@ -500,7 +501,7 @@ void PlayerbotFactory::InitPet()
         if(IsPassiveSpell(spellId))
             continue;
 
-        pet->ToggleAutocast(spellId, true);
+        pet->ToggleAutocast(spellId, TortoiseBots::ShouldPetSpellAutocastDefault(spellId));
     }
 
     // Force dismiss pet to fix missing flags
@@ -566,12 +567,13 @@ void PlayerbotFactory::InitPetSpells()
             {55, 16697},
             // Dive
             {30, 23145},
-            {40, 23146},
-            {50, 23147},
+            {40, 23147},
+            {50, 23148},
             // Screech
             {8,  24423},
             {24, 24577},
-            {40, 24578},
+            {48, 24578},
+            {56, 24579},
         };
 
         hunterPetSpells[PET_BEAR] = {
@@ -587,10 +589,10 @@ void PlayerbotFactory::InitPetSpells()
             // Claw
             {1,  16827},
             {8,  16828},
-            {15, 16829},
-            {22, 16830},
-            {29, 16831},
-            {36, 16832},
+            {16, 16829},
+            {24, 16830},
+            {32, 16831},
+            {40, 16832},
             {48, 3010 },
             {56, 3009 },
             // Cower
@@ -645,10 +647,10 @@ void PlayerbotFactory::InitPetSpells()
             // Claw
             {1,  16827},
             {8,  16828},
-            {15, 16829},
-            {22, 16830},
-            {29, 16831},
-            {36, 16832},
+            {16, 16829},
+            {24, 16830},
+            {32, 16831},
+            {40, 16832},
             {48, 3010 },
             {56, 3009 },
             // Cower
@@ -660,12 +662,13 @@ void PlayerbotFactory::InitPetSpells()
             {55, 16697},
             // Dive
             {30, 23145},
-            {40, 23146},
-            {50, 23147},
+            {40, 23147},
+            {50, 23148},
             // Screech
             {8,  24423},
             {24, 24577},
-            {40, 24578},
+            {48, 24578},
+            {56, 24579},
         };
 
         hunterPetSpells[PET_CAT] = {
@@ -681,10 +684,10 @@ void PlayerbotFactory::InitPetSpells()
             // Claw
             {1,  16827},
             {8,  16828},
-            {15, 16829},
-            {22, 16830},
-            {29, 16831},
-            {36, 16832},
+            {16, 16829},
+            {24, 16830},
+            {32, 16831},
+            {40, 16832},
             {48, 3010 },
             {56, 3009 },
             // Cower
@@ -708,10 +711,10 @@ void PlayerbotFactory::InitPetSpells()
             // Claw
             {1,  16827},
             {8,  16828},
-            {15, 16829},
-            {22, 16830},
-            {29, 16831},
-            {36, 16832},
+            {16, 16829},
+            {24, 16830},
+            {32, 16831},
+            {40, 16832},
             {48, 3010 },
             {56, 3009 },
             // Cower
@@ -762,7 +765,8 @@ void PlayerbotFactory::InitPetSpells()
             // Thunderstomp
             {30, 26090},
             {40, 26187},
-            {50, 26188}
+            {50, 26188},
+            {56, 51156}
         };
 
         hunterPetSpells[PET_HYENA] = {
@@ -792,10 +796,10 @@ void PlayerbotFactory::InitPetSpells()
             // Claw
             {1,  16827},
             {8,  16828},
-            {15, 16829},
-            {22, 16830},
-            {29, 16831},
-            {36, 16832},
+            {16, 16829},
+            {24, 16830},
+            {32, 16831},
+            {40, 16832},
             {48, 3010 },
             {56, 3009 },
             // Cower
@@ -807,12 +811,12 @@ void PlayerbotFactory::InitPetSpells()
             {55, 16697},
             // Dive
             {30, 23145},
-            {40, 23146},
-            {50, 23147},
+            {40, 23147},
+            {50, 23148},
             // Screech
             {8,  24423},
             {24, 24577},
-            {40, 24578},
+            {48, 24578},
             {56, 24579}
         };
 
@@ -829,10 +833,10 @@ void PlayerbotFactory::InitPetSpells()
             // Claw
             {1,  16827},
             {8,  16828},
-            {15, 16829},
-            {22, 16830},
-            {29, 16831},
-            {36, 16832},
+            {16, 16829},
+            {24, 16830},
+            {32, 16831},
+            {40, 16832},
             {48, 3010 },
             {56, 3009 },
             // Cower
@@ -848,10 +852,10 @@ void PlayerbotFactory::InitPetSpells()
             // Claw
             {1,  16827},
             {8,  16828},
-            {15, 16829},
-            {22, 16830},
-            {29, 16831},
-            {36, 16832},
+            {16, 16829},
+            {24, 16830},
+            {32, 16831},
+            {40, 16832},
             {48, 3010 },
             {56, 3009 },
             // Cower
@@ -950,8 +954,8 @@ void PlayerbotFactory::InitPetSpells()
             {55, 16697},
             // Dive
             {30, 23145},
-            {40, 23146},
-            {50, 23147},
+            {40, 23147},
+            {50, 23148},
             // Lightning Breath
             {1,  24844},
             {12, 25008},
@@ -984,9 +988,9 @@ void PlayerbotFactory::InitPetSpells()
             {50, 23110},
             // Furious Howl
             {10, 24604},
-            {20, 24605},
-            {30, 24603},
-            {40, 24597}
+            {24, 24605},
+            {40, 24603},
+            {56, 24597}
         };
 
         // Determine petType from creature template family
@@ -1040,11 +1044,9 @@ void PlayerbotFactory::InitPetSpells()
 
                     if (!IsPassiveSpell(spellID))
                     {
-                        // Toggle Cower off by default
-                        const bool autocast = (cowerSpellIds.find(spellID) == cowerSpellIds.end());
                         if (pet->HasSpell(spellID))
                         {
-                            pet->ToggleAutocast(spellID, autocast);
+                            pet->ToggleAutocast(spellID, TortoiseBots::ShouldPetSpellAutocastDefault(spellID));
                         }
                     }
                 }
@@ -1273,7 +1275,11 @@ void PlayerbotFactory::InitPetSpells()
         const auto& petSpellListItr = spellList.find(pet->GetEntry());
         if (petSpellListItr != spellList.end())
         {
-            const auto& petSpellList = petSpellListItr->second;
+            // Learn every rank at/below the pet's level (the core's
+            // Pet::AddSpell swaps the lower rank out and keeps its autocast
+            // state) and pin the surviving top rank to the teach-time
+            // default, so relearned Voidwalker Torment / Imp Firebolt and
+            // owned/hired pets keep working between sweeps.
             for (const auto& pair : petSpellListItr->second)
             {
                 const uint32& levelRequired = pair.first;
@@ -1281,7 +1287,10 @@ void PlayerbotFactory::InitPetSpells()
 
                 if (pet->GetLevel() >= levelRequired)
                 {
-                    pet->LearnSpell(spellID);
+                    if (!pet->HasSpell(spellID))
+                        pet->LearnSpell(spellID);
+                    if (pet->HasSpell(spellID) && !IsPassiveSpell(spellID))
+                        pet->ToggleAutocast(spellID, TortoiseBots::ShouldPetSpellAutocastDefault(spellID));
                 }
             }
         }
