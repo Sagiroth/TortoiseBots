@@ -3557,3 +3557,37 @@ Local validation: `tools/test_rogue_weapon_policy.cpp` (assas/subtle
 dagger-only, combat/other excluded; registered in `tools/verify_all.sh`);
 `bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
 compiles).
+| Hunter dead-zone switch hysteresis + revenge-before-travel self-defence | mod-playerbots `src/Ai/Class/Hunter/HunterTriggers.cpp:112-128` (SwitchToRanged victim!=bot/immobilized/slow/dist>8; SwitchToMelee victim==bot AND dist<=8, no level gate either side) + `src/Ai/Base/Actions/ChooseTargetActions.cpp:104-133` (AttackAnythingAction::isUseful with no facing gate) | `ai/playerbot/HunterSwitchPolicy.h` (ShouldSwitchToMelee/ShouldSwitchToRanged + 5/10 yd edges), `ai/playerbot/strategy/hunter/HunterTriggers.h` (triggers delegate, AND/OR shapes unchanged), `ai/playerbot/strategy/actions/ChooseTargetActions.cpp` (revenge victim==bot answers first with no isInFront gate, before the QuestTaker walk-through exemption and the wounded-pool gate; pre-emptive strike keeps the front arc) | Reimplemented: donor switch shapes kept, only the shared 8 yd distance edge becomes a 5/10 yd hysteresis band; revenge reorder is donor-parity (no facing gate) | Pool hunters flipped kits every few ticks at the shared 8 yd line (inter-switch p50 15 s, 37% within 10 s, each flip rebuilding the combat trigger graph); travelling bots on completed hand-in walks never faced their attacker so the isInFront revenge gate never fired (taker trips fought back 5% vs 60-93% elsewhere) | `tools/test_hunter_switch_policy.cpp`, `bash tools/verify_all.sh`, `git diff --check` |
+
+## Quest accept/drop churn + banned quests + Bone Chew Toy — 2026-10-04
+Feature: masterless pool bots refuse war-effort item turn-ins (AQ sort
+-365 with item objectives: copper/thick-leather turn-ins, signet quests)
+and banned quests (CLUCK! 3861, inactive Method-disabled templates) at
+accept (`WouldAcceptQuest` + raw-id/share/confirm/details guards), and the
+clean action drops them with the same predicate (banned at any status for
+every bot; war-effort when incomplete/failed for upkeep bots; COMPLETE
+war-effort never dropped - turned in instead). Bone Chew Toy (item 51751)
+is never looted (`IsLootAllowed` veto + usage NONE), its GO piles
+(1000380) never queue, and copies in bags are destroyed by smart-destroy.
+Targeted by id - no generic quest-class purge, so quest starters (Free
+Ticket Voucher 19338 etc.) keep working.
+
+Copied / ported / reimplemented: reimplemented (local policy in
+`ai/playerbot/QuestLogPolicy.h`, tested by
+`tools/test_quest_log_triage_policy.cpp` §§7-10); donor behaviour
+`mod-playerbots` `src/Ai/World/Rpg/Action/NewRpgBaseAction.cpp`
+(`IsQuestWorthDoing` `:556-571` refuses repeatables, `OrganizeQuestLog`
+`:590-641` drops not-worth/capable + sort quests `ZoneOrSort < 0`)
+@ b6696bdbd3740e575598d167d69f39f68cc0b907 - modulated here to the
+war-effort sort only (breadcrumbs 8792/8795 with no item objective stay
+open) and to an accept-side filter matching the drop rule.
+
+Reason: live pool 2026-10-03/04: 16 695 accepts vs 7 194 drops (43%).
+War-effort turn-ins were ~60 accepts/h per capital with same-tick
+mass-drop bursts (Jaegaewog 22:19:55 dropped 19 quests at once after
+accepting 2); CLUCK! 153 accepts / 149 drops across 22 re-cycling bots;
+892 Bone Chew Toys sat in 118 bags from 897 StoreLoot rows on GO 1000380.
+
+Local validation: `tools/test_quest_log_triage_policy.cpp` (10 sections);
+`bash tools/verify_all.sh`; `git diff --check`. Module build by
+orchestrator (workers do not run the docker builder).
