@@ -210,20 +210,19 @@ bool AhMarketService::TryTeleportToAuctioneer(Player* bot)
     if (m_auctioneerPositions.empty())
         return false;
 
-    // Bounded random picks, skip hostile or unknown-faction auctioneers for this bot.
     // All coords are from core creature spawns, validated via IsUsableAuctioneerPoint.
     // Fail closed: missing faction data is treated as hostile (never send a bot
     // to an unknown/hostile house). No DB, no map scan; uses GuidPosition faction store.
-    // Same-map only (live 2026-10-03: seller teleports yanked questing bots
-    // across continents onto auctioneer spots, e.g. Dun Morogh -> Darnassus
-    // AH). The organic buyer already requires a same-map house (AhBuyerPolicy.h);
-    // a cross-map house is unroutable for the walk back, so skip it here.
-    // The seller eligible set (Update: Idle/Grinding/Trading leases only) and
-    // the active-trip no-hijack rule (AhSellerTeleportPolicy.h) decide WHO may
-    // take the lift: only an idle bot or one already heading to an AH. A bot
-    // mid-trip on a quest/grind/gather errand keeps walking (Tharobraeth Dun
-    // Morogh -> Stormwind AH shows same-map hops hijack too).
-    bool hasActiveTrip = false;
+    // Same-map nearest lift (live 2026-10-03: seller teleports yanked questing
+    // bots across continents onto auctioneer spots, e.g. Dun Morogh -> Darnassus
+    // AH; a random same-map pick still lands an idle Dun Morogh gnome in Booty
+    // Bay). The organic buyer already requires a same-map house (AhBuyerPolicy.h);
+    // a cross-map house is unroutable for the walk back. The lift goes to the
+    // nearest non-hostile house on the bot's map, and only for a bot already
+    // heading to an AH or standing near that house (Tharobraeth Dun Morogh ->
+    // Stormwind AH shows even near hops hijack a quest trip). Anything else
+    // keeps walking; the post is skipped until the bot gets there itself
+    // (AhSellerTeleportPolicy.h).
     bool tripIsAH = false;
     if (::PlayerbotAI* marketAi = PlayerbotAIStorage::Instance().GetAI(bot))
     {
@@ -234,54 +233,50 @@ bool AhMarketService::TryTeleportToAuctioneer(Player* bot)
             ai::TravelDestination* dest = target ? target->GetDestination() : nullptr;
             if (target && target->IsActive() && dest &&
                 typeid(*dest) != typeid(ai::NullTravelDestination))
-            {
-                hasActiveTrip = true;
                 tripIsAH = dest->GetPurpose() == ai::TravelDestinationPurpose::AH;
-            }
         }
     }
-    bool sameMapHouse = false;
-    for (AuctioneerPos const& known : m_auctioneerPositions)
-        if (AhSellerTeleportAllowed(bot->GetMapId(), known.mapId, hasActiveTrip, tripIsAH))
-        {
-            sameMapHouse = true;
-            break;
-        }
-    if (!sameMapHouse)
+    // Deterministic nearest pick: no urand, so retries aim at the same house.
+    ai::GuidPosition bpos(bot);
+    if (!bpos.GetFactionTemplateEntry())
         return false;
-    for (int attempt = 0; attempt < 5; ++attempt)
+    AuctioneerPos const* nearest = nullptr;
+    float nearestDistSq = 0.0f;
+    for (AuctioneerPos const& pos : m_auctioneerPositions)
     {
-        size_t idx = urand(0, (uint32)m_auctioneerPositions.size() - 1);
-        AuctioneerPos const& pos = m_auctioneerPositions[idx];
-        uint32 entry = pos.entry;
-
-        if (!AhSellerTeleportAllowed(bot->GetMapId(), pos.mapId, hasActiveTrip, tripIsAH))
+        if (pos.mapId != bot->GetMapId())
             continue;
-
-        // Faction check: don't teleport a bot to an auctioneer that is hostile
+        // Faction check: never lift a bot to an auctioneer that is hostile
         // or whose faction is unknown. Fail closed on missing data.
-        ai::GuidPosition gpos(HIGHGUID_UNIT, entry);
-        auto* aucFac = gpos.GetFactionTemplateEntry();
-        if (!aucFac)
-            continue;
-        ai::GuidPosition bpos(bot);
-        auto* botFac = bpos.GetFactionTemplateEntry();
-        if (!botFac)
+        ai::GuidPosition gpos(HIGHGUID_UNIT, pos.entry);
+        if (!gpos.GetFactionTemplateEntry())
             continue;
         if (gpos.IsHostileTo(bot))
             continue;
-
-        float o = pos.o;
-        if (!std::isfinite(o) || o == 0.0f)
-            o = bot->GetOrientation();
-
-        bool ok = bot->TeleportTo(pos.mapId, pos.x, pos.y, pos.z, o, 0);
-        if (ok)
+        float dx = pos.x - bot->GetPositionX();
+        float dy = pos.y - bot->GetPositionY();
+        float distSq = dx * dx + dy * dy;
+        if (!nearest || distSq < nearestDistSq)
         {
-            TB_LOG_DEBUG("TortoiseBots: AhMarket teleported bot %s to auctioneer %u at map %u %.1f %.1f %.1f",
-                bot->GetName(), entry, pos.mapId, pos.x, pos.y, pos.z);
-            return true;
+            nearest = &pos;
+            nearestDistSq = distSq;
         }
+    }
+    if (!nearest)
+        return false;
+    float nearestDist = sqrtf(nearestDistSq);
+    if (!AhSellerTeleportAllowed(bot->GetMapId(), nearest->mapId, tripIsAH, nearestDist))
+        return false;
+
+    float o = nearest->o;
+    if (!std::isfinite(o) || o == 0.0f)
+        o = bot->GetOrientation();
+
+    if (bot->TeleportTo(nearest->mapId, nearest->x, nearest->y, nearest->z, o, 0))
+    {
+        TB_LOG_DEBUG("TortoiseBots: AhMarket teleported bot %s to auctioneer %u at map %u %.1f %.1f %.1f",
+            bot->GetName(), nearest->entry, nearest->mapId, nearest->x, nearest->y, nearest->z);
+        return true;
     }
     return false;
 }
