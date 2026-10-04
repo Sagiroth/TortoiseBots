@@ -292,9 +292,23 @@ private:
     };
 
     CAN_CAST_TRIGGER(MultishotCanCastTrigger, "multi-shot");
-    // BM cooldown: the pet talent is ready whenever the owner can order it,
-    // so the trigger is a cast gate, not an aura check (cf. KillCommandTrigger).
-    CAN_CAST_TRIGGER(IntimidationTrigger, "intimidation");
+    // BM cooldown: intimidation is a self-cast (BUFF_ACTION on self, core
+    // rejects positive spells on hostile targets), ordered by the owner, so
+    // the cast gate must run against the hunter itself — plus a live-pet
+    // gate like KillCommandTrigger, since the stun lands via the pet.
+    class IntimidationTrigger : public SpellCanBeCastedTrigger
+    {
+    public:
+        IntimidationTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "intimidation") {}
+        std::string GetTargetName() override { return "self target"; }
+        bool IsActive() override
+        {
+            if (!SpellCanBeCastedTrigger::IsActive())
+                return false;
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            return pet && pet->IsAlive();
+        }
+    };
     SNARE_TRIGGER(IntimidationSnareTrigger, "intimidation");
     CAN_CAST_TRIGGER(CounterattackCanCastTrigger, "counterattack");
     SNARE_TRIGGER(WybernStingSnareTrigger, "wyvern sting");

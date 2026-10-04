@@ -3532,14 +3532,15 @@ excluded); `bash tools/verify_all.sh`; `git diff --check`. No deploy
 Feature: Demonology keeps `immolate` up (`ACTION_NORMAL + 1`, same slot as
 Destruction); Elemental/Enhancement keep `flame shock` up first via a new
 `flame shock upkeep` trigger (`FlameShockTrigger`, plain `DebuffTrigger`: no
-flame-shock aura on target, so the DoT lands first and the generic `shock`
-line spends the shared cooldown on `earth shock` only once flame is up)
-above the generic `shock` -> `earth shock` line and the separate
-`earth shock interrupt` duty; Beast
+flame-shock aura on target) above the generic `shock` -> `earth shock` line
+and the separate `earth shock interrupt` duty — `ShockTrigger` stays blind
+to the flame-shock aura so `earth shock` still spends the shared cooldown
+while the DoT ticks; Beast
 Mastery fires `intimidation` on cooldown via a new `IntimidationTrigger`
-(`SpellCanBeCastedTrigger`: the stun lands on the pet's victim, which the
-bot's `DebuffTrigger` cannot see, and the BM talent has no aura to check)
-below `kill command` (`ACTION_NORMAL + 3` vs `+ 4`).
+(`SpellCanBeCastedTrigger` on `self target`: the self-cast fails core
+`CanCastSpell` with `SPELL_FAILED_TARGET_ENEMY` against the hostile current
+target, plus a live-pet gate like `KillCommandTrigger` since the stun lands
+via the pet) below `kill command` (`ACTION_NORMAL + 3` vs `+ 4`).
 
 Copied / ported / reimplemented: reimplemented (donor
 `mod-playerbots @ b6696bdbd3740e575598d167d69f39f68cc0b907`:

@@ -47,5 +47,8 @@ bool ShockTrigger::IsActive()
     if (!ai->HasSpell("earth shock") && !ai->HasSpell("flame shock") && !ai->HasSpell("frost shock"))
         return false;
 
-    return SpellTrigger::IsActive() && !ai->HasAnyAuraOf(GetTarget(), "frost shock", "earth shock", "flame shock", NULL) && !HasMaxDebuffs();
+    // Flame shock is exempt here: it owns the shared shock cooldown via the
+    // higher-priority flame shock upkeep line, so earth shock still spends
+    // the cooldown while the flame DoT ticks instead of being locked out.
+    return SpellTrigger::IsActive() && !ai->HasAnyAuraOf(GetTarget(), "frost shock", "earth shock", NULL) && !HasMaxDebuffs();
 }
