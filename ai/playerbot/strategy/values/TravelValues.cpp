@@ -608,11 +608,19 @@ bool ShouldLeaveOutgrownZoneValue::Calculate()
     // fitting, or a capital), and after ~10 min outgrown the bot leaves
     // anyway. All reads are 2-tick cached AI values plus a bounded quest-log
     // walk - no world scan, no DB.
+    //
+    // Zone level, not sub-area: sub-areas scatter ±4 around their zone
+    // (task E: Galwurth fired 3x at 10.59 in a low Durotar sub-area while
+    // Durotar's zone level is 8, i.e. not outgrown at 10). The destination
+    // floor below is a zone-level test, so the trigger must be one too or
+    // the two disagree on what "outgrown" means.
+    AreaTableEntry const* botArea = WorldPosition(bot).GetArea();
+    uint32 botZoneId = botArea ? (botArea->ZoneId ? botArea->ZoneId : botArea->Id) : 0;
+    int32 zoneLevel = 0;
+    bool const zoneKnown = botZoneId && sTravelMgr.TryGetValidatedAreaLevel(botZoneId, zoneLevel) && zoneLevel > 0;
+    bool const outgrown = zoneKnown && zoneLevel + 5 < (int32)bot->GetLevel();
     bool leaveAnyway = false;
     {
-        int32 areaLevel = 0;
-        bool const areaKnown = sTravelMgr.TryGetValidatedAreaLevel(sServerFacade.GetAreaId(bot), areaLevel) && areaLevel > 0;
-        bool const outgrown = areaKnown && areaLevel + 5 < (int32)bot->GetLevel();
         if (outgrown)
         {
             time_t outgrownSince = AI_VALUE2(time_t, "manual time", "outgrown since");
@@ -658,12 +666,12 @@ bool ShouldLeaveOutgrownZoneValue::Calculate()
         return true;
     }
 
-    // Fail closed: unknown area levels never trigger the rule.
-    int32 areaLevel = 0;
-    if (!sTravelMgr.TryGetValidatedAreaLevel(sServerFacade.GetAreaId(bot), areaLevel) || areaLevel <= 0)
+    // Fail closed: unknown area levels never trigger the rule (zoneKnown
+    // above covers the unresolvable/unknown case).
+    if (!zoneKnown)
         return false;
 
-    return areaLevel + 5 < (int32)bot->GetLevel();
+    return outgrown;
 }
 
 bool TravelTargetActiveValue::Calculate()

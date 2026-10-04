@@ -688,7 +688,12 @@ bool MoveToTravelTargetAction::Execute(Event& event)
         // unloaded tile, complete = full path whose dispatch still failed;
         // crossmap = destination on another map, never probed). Finding 14:
         // without it NOPATH vs INCOMPLETE vs mmap-hole cannot be separated
-        // from the CSV.
+        // from the CSV. A second colon carries which return-false site fired
+        // in MoveTo2/DispatchMovement (LastMovement::moveFailReason, stamped
+        // right before each `return false`), so a "complete" probe over a
+        // clipped route is separable from a dispatch that truly reached the
+        // goal and failed. Parsers reading `dist:pathtag` keep working: the
+        // reason is only ever appended after the tag.
         if (target->GetRetryCount(true) == 2)
         {
             std::string failDetail = std::to_string((int32)botLocation.distance(location));
@@ -701,6 +706,8 @@ bool MoveToTravelTargetAction::Execute(Event& event)
                 probe.calculate(location.getX(), location.getY(), location.getZ(), false);
                 failDetail += TravelMoveFailPathTag((uint32_t)probe.getPathType());
             }
+            failDetail += ":";
+            failDetail += MoveFailReasonName(AI_VALUE(LastMovement&, "last movement").moveFailReason);
             sPlayerbotAIConfig.logEvent(ai, "TravelMoveFailed", purpose, failDetail);
         }
 

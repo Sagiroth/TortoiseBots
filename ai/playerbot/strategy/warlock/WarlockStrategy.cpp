@@ -475,6 +475,17 @@ void WarlockPetPveStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trigg
     triggers.push_back(new TriggerNode(
         "no pet",
         NextAction::array(0, new NextAction("summon imp", ACTION_NORMAL), NULL)));
+
+    // Solo default-pet upgrade (pool bots only): once the bot knows Summon
+    // Voidwalker the Imp retires to backup duty. The donor resolves the same
+    // choice per spec strategy; here it is one shared rule (see
+    // runtime/WarlockPetPolicy.h) because the Imp->Voidwalker tier is the
+    // only transition this realm has ranks for. The summon-voidwalker node
+    // already falls back to "summon imp" when the shard is missing, so a
+    // shardless bot keeps its Imp instead of standing petless.
+    triggers.push_back(new TriggerNode(
+        "wrong pet",
+        NextAction::array(0, new NextAction("summon voidwalker", ACTION_NORMAL), NULL)));
 }
 
 void WarlockPetRaidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

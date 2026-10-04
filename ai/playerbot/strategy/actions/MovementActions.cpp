@@ -394,6 +394,16 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
     //Taxi handling: Start taxi and remove path until it ends.
     if (nextStep->type == PathNodeType::NODE_FLIGHTPATH)
     {
+        // Same-map only (live 2026-10-03: bots on quest/grind trips teleported
+        // cross-map onto auctioneer spots). A taxi leg stamped with another
+        // map id is a bad path point, not a flight: the hop below would carry
+        // the bot there. Refuse it instead so the stale path is dropped and a
+        // fresh destination is picked.
+        if (nextStep->point.GetMapId() != bot->GetMapId())
+        {
+            lastMove.lastPath.clear();
+            return false;
+        }
         if (nextStep->point.sqDistance(bot) > INTERACTION_DISTANCE * INTERACTION_DISTANCE)
         {
             bot->TeleportTo(nextStep->point);
@@ -477,6 +487,16 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
 
     if (!nextStep->IsWalkable())
         return false;
+
+    // Same-map only (live 2026-10-03: bots on quest/grind trips teleported
+    // cross-map onto auctioneer spots). This hop stands in for a walk: a path
+    // point stamped with another map id is a bad point, not a destination.
+    // Drop the stale path so a fresh one is built instead of teleporting.
+    if (nextStep->point.GetMapId() != bot->GetMapId())
+    {
+        lastMove.lastPath.clear();
+        return false;
+    }
 
     if (ai->HasPlayerNearby(nextStep->point, sWorld.getConfig(CONFIG_FLOAT_LISTEN_RANGE_YELL)))
         return true;
@@ -728,12 +748,26 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
 
     std::vector<WorldPosition> path = movePath.GetPointPath();
 
+    // Same-map only (live 2026-10-03: cross-map walks landed on auctioneer
+    // spots). A walk point stamped with another map id can never ride a
+    // same-map spline: MovePoint below launches on the bot's own map, so a
+    // far point with the wrong id walks somewhere unrelated instead of
+    // failing. Refuse it so the travel target counts a retry and cools down.
+    // Transport/scripted legs are not walks: HandleSpecialMovement consumes
+    // them before this dispatch (RideTaxi/UseTransport), so skip them here.
+    for (auto const& step : movePath.GetPath())
+        if (step.IsWalkable() && step.point.GetMapId() != bot->GetMapId())
+            return false;
+
     // A path that leads nowhere - empty, or only the point the bot stands on - must not be
     // launched: the core rejects a one-point spline (MoveSplineInitArgs::Validate, path[0]
     // is always the current position) and the caller would ask for the same move every
     // tick. Report the failure instead, so the travel target counts a retry and cools down.
     if (path.size() < 2)
+    {
+        AI_VALUE(LastMovement&, "last movement").moveFailReason = MOVE_FAIL_DISPATCH_SHORT;
         return false;
+    }
 
     if (!generatePath || !bot->IsFlying())
     {
@@ -757,7 +791,10 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
 
     GeneratePathAvoidingHazards(path);
     if (path.size() < 2)
+    {
+        AI_VALUE(LastMovement&, "last movement").moveFailReason = MOVE_FAIL_HAZARD_SHORT;
         return false; // the hazard rewrite left nothing to walk
+    }
 
     std::vector<G3D::Vector3> pointPath = WorldPosition().toPointsArray(path);
     float size = WorldPosition().GetPathLength(path);
@@ -824,17 +861,23 @@ Unit* MovementAction::GetMover(Player* bot)
 
 bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react, bool noPath, bool ignoreEnemyTargets)
 {
+    LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
+
     if (!endPos.isValid())
+    {
+        lastMove.moveFailReason = MOVE_FAIL_INVALID_DEST;
         return false;
+    }
 
     UpdateMovementState();
 
     if (!ai->CanMove())
+    {
+        lastMove.moveFailReason = MOVE_FAIL_CANT_MOVE;
         return false;
+    }
 
     Unit* mover = GetMover(bot);
-
-    LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
 
     bool detailedMove = ai->AllowActivity(DETAILED_MOVE_ACTIVITY, true);
     if (!detailedMove && lastMove.nextTeleport)
@@ -866,6 +909,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
         else
             mover->StopMoving();
 
+        lastMove.moveFailReason = MOVE_FAIL_ARRIVED;
         return false;
     }
 
@@ -881,7 +925,10 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     lastMove.setPath(movePath);
 
     if (movePath.empty())
+    {
+        lastMove.moveFailReason = MOVE_FAIL_EMPTY_ROUTE;
         return false;
+    }
 
 
     if (!bot->GetTransport())
@@ -900,10 +947,18 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     bool specialMovement = movePath.UpcommingSpecialMovement(startPos, sPlayerbotAIConfig.reactDistance,bot->GetTransport());
 
     if (specialMovement)
-        return HandleSpecialMovement(movePath);
+    {
+        bool specialOk = HandleSpecialMovement(movePath);
+        if (!specialOk)
+            lastMove.moveFailReason = MOVE_FAIL_SPECIAL;
+        return specialOk;
+    }
 
     if (bot->GetTransport()) //Transports needed to be handled before now.
+    {
+        lastMove.moveFailReason = MOVE_FAIL_TRANSPORT;
         return false;
+    }
 
     if (!movePath.empty())
     {
@@ -926,6 +981,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
 
     if (movePath.empty())
     {
+        lastMove.moveFailReason = MOVE_FAIL_CLIPPED_EMPTY;
         return false;
     }
 
@@ -1064,9 +1120,12 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
 
     if (!DispatchMovement(movePath, generatePath, masterWalking))
     {
+        // DispatchMovement stamps its own site (dispatch-short / hazard-short).
         lastMove.setPath(TravelPath());
         return false; // nowhere to go: let the caller retry later or drop the target
     }
+
+    lastMove.moveFailReason = MOVE_FAIL_NONE;
 
     if (!idle)
         ClearIdleState();
@@ -1082,9 +1141,12 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
 
 bool MovementAction::MoveTo(Unit* target, float distance)
 {
+    LastMovement& unitMove = AI_VALUE(LastMovement&, "last movement");
+
     if (!target || !target->IsInWorld())
     {
         //ai->TellError("Seems I am stuck");
+        unitMove.moveFailReason = MOVE_FAIL_BAD_UNIT_TARGET;
         return false;
     }
 
@@ -1098,6 +1160,7 @@ bool MovementAction::MoveTo(Unit* target, float distance)
         if (Formation::IsNullLocation(loc) || loc.mapId == -1)
         {
             //ai->TellError("Nowhere to move");
+            unitMove.moveFailReason = MOVE_FAIL_NO_FORMATION;
             return false;
         }
 

@@ -1298,7 +1298,7 @@ bool RequestTravelTargetAction::Execute(Event& event)
         outgrownFloor = (int32)bot->GetLevel() - 5;
         // Zone migration (ZoneMigratePolicy.h): exclude the zone being left
         // so the search cannot re-pick home. The trigger already vetted
-        // outgrownness (area + 5 < bot, or capital-idle); the only decision
+        // outgrownness (zone + 5 < bot, or capital-idle); the only decision
         // here is which zone: the bot's current zone, unless the leave
         // reason is "capital" (trainers/AH/bank live there). Unknown zones
         // exclude nothing.
