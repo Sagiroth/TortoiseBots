@@ -16,7 +16,7 @@ Warlocks provide sustained Shadow and Fire DPS through curses and damage-over-ti
 ## Supported Specs & Roles
 
 - **Affliction (Ranged DPS):** Dominant DoT dealer with *Corruption*, *Curse of Agony*, *Siphon Life*, and *Drain Life*.
-- **Demonology (Pet DPS / Tanky):** Heavy pet empowerment, *Soul Link*, *Demonic Sacrifice*, and high durability.
+- **Demonology (Pet DPS / Tanky):** Heavy pet empowerment, *Soul Link*, *Demonic Sacrifice*, and high durability. Keeps *Immolate* up like the other specs.
 - **Destruction (Burst DPS):** Fire burst nuke specialist utilizing *Shadow Bolt*, *Immolate*, and *Conflagrate* (no *Searing Pain* wiring in the Destruction strategies).
 
 ---
@@ -25,7 +25,7 @@ Warlocks provide sustained Shadow and Fire DPS through curses and damage-over-ti
 
 ### 1. DoT Upkeep & Shard Economy
 - **Curses:** Defaults to *Curse of Agony*; other curses only when you enable them manually.
-- **DoTs:** Only *Corruption* is health-gated (skipped at/below 20% target health); *Immolate* has no gate. Affliction also maintains *Siphon Life*.
+- **DoTs:** Only *Corruption* is health-gated (skipped at/below 20% target health); *Immolate* has no gate and is kept up by all three specs. Affliction also maintains *Siphon Life*.
 - **Soul Shard Harvest:** Shards are never seeded or conjured — the bot harvests them organically with *Drain Soul* when the target is at/below 20% health, provided it holds fewer than 5 Soul Shards and has bag space; no elite check. Excess above 5 is destroyed out of combat. Healthstones (*Create Healthstone*, level 10+) and Soulstones (*Create Soulstone (Minor)*, level 18+) are created out of combat whenever the bot holds a shard and lacks one.
 
 ### 2. Mana Management: Life Tap

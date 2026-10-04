@@ -292,6 +292,9 @@ private:
     };
 
     CAN_CAST_TRIGGER(MultishotCanCastTrigger, "multi-shot");
+    // BM cooldown: the pet talent is ready whenever the owner can order it,
+    // so the trigger is a cast gate, not an aura check (cf. KillCommandTrigger).
+    CAN_CAST_TRIGGER(IntimidationTrigger, "intimidation");
     SNARE_TRIGGER(IntimidationSnareTrigger, "intimidation");
     CAN_CAST_TRIGGER(CounterattackCanCastTrigger, "counterattack");
     SNARE_TRIGGER(WybernStingSnareTrigger, "wyvern sting");

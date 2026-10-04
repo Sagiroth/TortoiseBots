@@ -15,7 +15,7 @@ Hunters excel at sustained single-target ranged DPS, pet off-tanking, snares, an
 
 ## Supported Specs & Roles
 
-- **Beast Mastery (Ranged DPS):** Focuses on pet empowerment, *Bestial Wrath*, and high sustained ranged output.
+- **Beast Mastery (Ranged DPS):** Focuses on pet empowerment, *Bestial Wrath*, *Kill Command*, and *Intimidation* on cooldown, with high sustained ranged output.
 - **Marksmanship (Ranged DPS):** Heavy physical burst damage centered on *Aimed Shot*, *Multi-Shot*, and *Trueshot Aura*.
 - **Survival (Melee / Ranged Hybrid):** Turtle WoW custom melee combat utilizing traps, *Carve* (automatic on AoE packs), and manual *Lacerate*.
 
