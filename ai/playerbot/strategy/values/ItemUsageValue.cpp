@@ -3,6 +3,7 @@
 #include "ItemUsageValue.h"
 #include "CraftValues.h"
 #include "MountValues.h"
+#include "AmmoCheatPolicy.h"
 #include "BudgetValues.h"
 #include "GuildValues.h"
 
@@ -454,11 +455,17 @@ if ((proto->Class == ITEM_CLASS_PROJECTILE ||
                 if (currentAmmoId)
                     currentAmmoProto = sObjectMgr.GetItemPrototype(currentAmmoId);
 
+                // Pool item cheat: the per-tick refill tops the equipped stack
+                // back up, so firing never consumes anything and vendor ammo
+                // is never a restock - it only burns the trainer purse (live
+                // pool: same-arrow batches up to 10 per visit). Gate the "buy
+                // more" signal, not the keep: cheat bots still keep what they
+                // hold so sell/destroy never hand it over.
+                if (ai::SuppressAmmoBuy(ai->HasCheat(BotCheatMask::item)))
+                    return ItemUsage::ITEM_USAGE_KEEP;
+
                 float betterAmmoStacks = BetterStacks(proto, "ammo"); // how much better ammo we have
                 float needAmmo = (bot->GetClass() == CLASS_HUNTER) ? 8 : 2;
-
-                if (ai->HasCheat(BotCheatMask::item))
-                    needAmmo = 1;
 
                                     // fallback: equip any ammo if no ammo equipped
                 if (!currentAmmoId)
@@ -775,6 +782,16 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     }
 
     uint16 dest = ((INVENTORY_SLOT_BAG_0 << 8) | slot);
+
+    // Pool item cheat: a quiver only holds ammo, so for a class without a
+    // ranged kit it is a strictly worse bag (live pool: 34 Small Quiver buys
+    // on one priest in 5 minutes, 19 on a mage, via the plain-bag EQUIP
+    // below). Cheat bots can never spend the slot usefully, so keep the
+    // row out of the buy loop; hunters keep the dedicated path above and
+    // no-cheat bots are untouched.
+    if (itemProto->Class == ITEM_CLASS_QUIVER &&
+        ai::SuppressNonHunterQuiverBuy(ai->HasCheat(BotCheatMask::item), bot->GetClass() == CLASS_HUNTER))
+        return ItemUsage::ITEM_USAGE_NONE;
 
     if (itemProto->Class == ITEM_CLASS_QUIVER)
     {

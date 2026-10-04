@@ -177,6 +177,15 @@ bool BuyAction::Execute(Event& event)
                     if (usage == ItemUsage::ITEM_USAGE_USE && ItemUsageValue::CurrentStacks(ai, proto) >= 1)
                         break;
 
+                    // Ammo restocks one stack per visit: the usage only flips
+                    // to KEEP once the new stack lands (CurrentStacks counts
+                    // live inventory), so without a cap the loop converts the
+                    // whole ammo purse into same-item stacks (live pool:
+                    // batches up to 10 per visit). Gear stops via the budget
+                    // break below; ammo has no such break.
+                    if (usage == ItemUsage::ITEM_USAGE_AMMO && ItemUsageValue::CurrentStacks(ai, proto) >= 1)
+                        break;
+
                     // Stop buying reagents/recipes once we have 1 stack
                     if (usage == ItemUsage::ITEM_USAGE_SKILL && ItemUsageValue::CurrentStacks(ai, proto) >= 1)
                         break;
