@@ -1,5 +1,5 @@
-
 #include "playerbot/playerbot.h"
+#include "playerbot/GroupBuffPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "GenericTriggers.h"
 #include "playerbot/LootObjectStack.h"
@@ -236,7 +236,14 @@ bool BuffTrigger::IsActive()
     if (BuffClaimRegistry::IsTargetClaimedByOther(bot, target, spell))
         return false;
 
-    return target && !ai->HasAura(spell, target, false, checkIsOwner) && target->IsAlive();
+    if (!target || !target->IsAlive())
+        return false;
+
+    // Issue #468 (donor BuffBelowRefreshTarget): an aura expiring inside the
+    // refresh window counts as missing, so the buff is topped up on the last
+    // out-of-combat tick instead of dropping mid-fight.
+    Aura* aura = ai->GetAura(spell, target, checkIsOwner);
+    return ai::BuffNeedsRefresh(aura != nullptr, aura ? aura->GetAuraDuration() : 0);
 }
 
 bool MyBuffTrigger::IsActive()
@@ -990,7 +997,23 @@ bool GreaterBuffOnPartyTrigger::IsActive()
 {
     Unit* target = GetTarget();
     Player* targetPlayer = dynamic_cast<Player*>(target);
-    return targetPlayer && IsInGroup_Helper(bot, targetPlayer) && BuffOnPartyTrigger::IsActive() && !ai->HasAura(lowerSpell, target, false, checkIsOwner);
+    if (!targetPlayer || !IsInGroup_Helper(bot, targetPlayer))
+        return false;
+    // The group cast must actually land on this member: without the reagent
+    // (or the training) the cast fails and the 60 s group retry starts, so a
+    // member the area buff can never cover would block its single buff too.
+    // Donor UpgradeToGroupIfAppropriate checks the same two facts per cast.
+    if (!ai->HasSpell(spell) || AI_VALUE2(uint32, "has reagents for", AI_VALUE2(uint32, "spell id", spell)) == 0)
+        return false;
+    if (!BuffOnPartyTrigger::IsActive())
+        return false;
+    // Issue #468: the group buff only pays off while the member lacks the
+    // lower single-target buff too - unless that one is expiring inside the
+    // refresh window, in which case the group cast tops up both at once.
+    if (lowerSpell.empty())
+        return true;
+    Aura* lower = ai->GetAura(lowerSpell, target, checkIsOwner);
+    return ai::BuffNeedsRefresh(lower == nullptr, lower ? lower->GetAuraDuration() : 0);
 }
 
 bool TargetOfAttacker::IsActive()

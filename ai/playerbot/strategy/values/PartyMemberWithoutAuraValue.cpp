@@ -1,5 +1,5 @@
-
 #include "playerbot/playerbot.h"
+#include "playerbot/GroupBuffPolicy.h"
 #include "PartyMemberWithoutAuraValue.h"
 
 #include "playerbot/ServerFacade.h"
@@ -33,8 +33,14 @@ public:
                 }
             }
 
-            if (ai->HasAura(*i, unit))
-                return false;
+            // Issue #468 (donor BuffBelowRefreshTarget): an aura expiring
+            // inside the refresh window counts as missing, so the member is
+            // picked and the buff is topped up before it drops.
+            Aura* aura = ai->GetAura(*i, unit);
+            if (ai::BuffNeedsRefresh(aura != nullptr, aura ? aura->GetAuraDuration() : 0))
+                continue;
+
+            return false;
         }
 
         return true;
