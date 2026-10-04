@@ -30,6 +30,17 @@ namespace ai
     // effective window (list capped at 10 but pruned to ~5 s of entries).
     constexpr std::size_t kFleeAngleSlots = 2;
 
+    // Spread re-step floor in milliseconds: one spread step-out per window
+    // per bot. Without it stacked ranged bots ping-pong every tick (each
+    // step toward open ground lands next to another friendly and re-fires).
+    // 3 s mirrors the flee return-delay scale without touching it.
+    constexpr std::uint32_t kSpreadStepCooldownMs = 3000;
+
+    // "Good enough" spacing: below this the trigger may fire, at/above it a
+    // fresh trigger check treats the bot as spread and holds position.
+    // Matches the RaidSpreadNeeded/Action 10 yd stack radius.
+    constexpr float kSpreadSettledDistance = 10.0f;
+
     // Circular heading distance in [0, PI]: wraps the raw difference into a
     // full turn first, then mirrors past PI.
     inline float FleeHeadingDistance(float a, float b)
@@ -68,5 +79,25 @@ namespace ai
         if (hasRealPlayerMaster)
             return false;
         return !stayOrdered && !followOrdered && !waitOrdered && !grindOrdered;
+    }
+
+    // Owned-bot answer for Execute-time gates: module-owned (hired/owned,
+    // IsOwnedBot) counts as owned even when the master is offline or on
+    // another character, where HasRealPlayerMaster goes false. Pool bots
+    // (IsRandomBot, no owner record) stay eligible.
+    inline bool IsSpreadExemptOwned(bool hasRealPlayerMaster, bool isOwnedBot)
+    {
+        return hasRealPlayerMaster || isOwnedBot;
+    }
+
+    // Spread re-step throttle: a step-out within the cooldown of the last
+    // recorded flee/spread dispatch holds position instead of stepping again.
+    // Wrap-safe via unsigned subtraction; 0 (no dispatch yet) never throttles.
+    inline bool IsSpreadOnCooldown(std::uint32_t nowMs, std::uint32_t lastStepMs,
+        std::uint32_t cooldownMs = kSpreadStepCooldownMs)
+    {
+        if (lastStepMs == 0)
+            return false;
+        return (nowMs - lastStepMs) < cooldownMs;
     }
 } // namespace ai

@@ -13,7 +13,10 @@
 
 using ai::FleeHeadingDistance;
 using ai::IsFleeHeadingFree;
+using ai::IsSpreadExemptOwned;
+using ai::IsSpreadOnCooldown;
 using ai::kFleeAngleEmpty;
+using ai::kSpreadStepCooldownMs;
 using ai::ShouldCombatSpread;
 
 int main()
@@ -61,6 +64,23 @@ int main()
     CHECK(!ShouldCombatSpread(true, false, false, false, false, true));
     std::cout << "  [PASS] combat-only pool-bot spread gate\n";
 
+    // Owned-bot answer: a live master exempts, and so does the owner record
+    // when the master is offline or on another character. Pool bots pass.
+    CHECK(IsSpreadExemptOwned(true, false));
+    CHECK(IsSpreadExemptOwned(false, true));
+    CHECK(IsSpreadExemptOwned(true, true));
+    CHECK(!IsSpreadExemptOwned(false, false));
+    std::cout << "  [PASS] offline-master owned bots stay exempt\n";
+
+    // Re-step throttle: no dispatch yet never throttles; a step inside the
+    // window holds; a step past it goes. Wrap-safe at the 32-bit clock edge.
+    CHECK(!IsSpreadOnCooldown(5000u, 0u));
+    CHECK(IsSpreadOnCooldown(5000u, 5000u));
+    CHECK(IsSpreadOnCooldown(5000u + kSpreadStepCooldownMs - 1, 5000u));
+    CHECK(!IsSpreadOnCooldown(5000u + kSpreadStepCooldownMs, 5000u));
+    CHECK(IsSpreadOnCooldown(10u, 0xFFFFFF00u));
+    CHECK(!IsSpreadOnCooldown(100000u, 0xFFFFFF00u));
+    std::cout << "  [PASS] spread re-step throttle\n";
     std::cout << "TortoiseBots combat-spread policy tests passed.\n";
     return 0;
 }

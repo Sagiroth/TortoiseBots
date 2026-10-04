@@ -29,6 +29,7 @@ namespace ai
             lastFleeAngles[0] = other.lastFleeAngles[0];
             lastFleeAngles[1] = other.lastFleeAngles[1];
             lastFleeAngleCount = other.lastFleeAngleCount;
+            lastSpreadStepMs = other.lastSpreadStepMs;
             moveEvent = Event();
         }
 
@@ -44,6 +45,7 @@ namespace ai
             lastFleeAngles[0] = 10.0f;
             lastFleeAngles[1] = 10.0f;
             lastFleeAngleCount = 0;
+            lastSpreadStepMs = 0;
             lastMoveShort = WorldPosition();
             nextTeleport = 0;
             moveEvent = Event();
@@ -76,6 +78,10 @@ namespace ai
         // 10.0f marks an empty slot. Written only on a dispatched combat flee.
         float lastFleeAngles[2] = { 10.0f, 10.0f };
         uint32 lastFleeAngleCount = 0;
+        // WorldTimer ms of the last spread/flee step-out dispatch. Throttles
+        // RaidSpreadAction to one step per kSpreadStepCooldownMs so stacked
+        // ranged bots settle instead of ping-ponging every tick. 0 = none yet.
+        uint32 lastSpreadStepMs = 0;
         TravelPath lastPath;
         WorldPosition lastMoveShort;
         time_t nextTeleport;

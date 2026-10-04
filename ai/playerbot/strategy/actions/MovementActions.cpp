@@ -1856,6 +1856,7 @@ bool MovementAction::Flee(Unit *target)
             lm.lastFleeAngles[0] = WorldPosition(bot).GetAngleTo(WorldPosition(target->GetMapId(), rx, ry, rz));
             if (lm.lastFleeAngleCount < 2)
                 ++lm.lastFleeAngleCount;
+            lm.lastSpreadStepMs = WorldTimer::getMSTime();
             succeeded = true;
         }
     }
