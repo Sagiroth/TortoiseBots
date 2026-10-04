@@ -3527,3 +3527,33 @@ Local validation: `tools/test_quest_taker_level_policy.cpp` section 4
 (exempt 1/4 masterless, bound at 5, owned/hired excluded, level 60
 excluded); `bash tools/verify_all.sh`; `git diff --check`. No deploy
 (orchestrator compiles).
+
+## Rogue spec weapon types: subtlety joins the dagger-only set (task K) — 2026-10-04
+Feature: `RandomItemMgr::ShouldEquipWeaponForSpec` treats the `subtle`
+weight scale like `assas` (MH/OH daggers only) via the shared
+`ai/playerbot/strategy/values/RogueWeaponPolicy.h:RogueSpecWantsDaggers`
+predicate. Combat keeps swords/maces/fists; other classes unchanged. This
+flows through the existing equip logic (equip audit, `QueryItemUsageForEquip`
+spec transition, vendor weapon upgrades, loot/roll need) with no new rules.
+
+Copied / ported / reimplemented: reimplemented from donor behaviour
+(mod-playerbots `src/Mgr/Item/RandomItemMgr.cpp:ShouldEquipWeaponForSpec`
+dagger-only rogue gate + `src/Mgr/Item/StatsWeightCalculator.cpp:699-701`
+dagger 1.5x for assassination/subtlety and `:999-1005` slow-dagger-MH /
+fast-dagger-OH speed bonus, at local `playerbots-references/mod-playerbots`
+`b6696bdb`).
+
+Reason: the `else` fallback let subtlety rogues keep swords/maces, but the
+spec's Backstab/Ambush openers need a dagger main hand (core
+`Spell::CheckItems` refuses the cast: `SPELL_FAILED_EQUIPPED_ITEM_CLASS`),
+so a subtlety rogue wielding a sword queued doomed openers exactly like an
+assassination rogue would. Live 2026-10-04: 69 online pool rogues, 64 at
+level 10+; talent-marker census (ass 8, combat 27, subtle 12) found 8/12
+subtlety rogues with a non-dagger main hand (maces/swords outscoring plain
+daggers on `mledps`), 0/8 assassination rogues mismatched, and 1/107
+NotBehind vs 479 BadTargets on Backstab casts (positioning, not weapons).
+
+Local validation: `tools/test_rogue_weapon_policy.cpp` (assas/subtle
+dagger-only, combat/other excluded; registered in `tools/verify_all.sh`);
+`bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
+compiles).
