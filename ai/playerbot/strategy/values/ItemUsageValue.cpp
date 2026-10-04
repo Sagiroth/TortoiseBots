@@ -9,6 +9,7 @@
 #include "playerbot/RandomItemMgr.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/ServerFacade.h"
+#include "../../../../runtime/ClassConsumablePolicy.h"
 
 using namespace ai;
 

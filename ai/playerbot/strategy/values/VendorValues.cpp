@@ -4,6 +4,8 @@
 #include "BudgetValues.h"
 #include "VendorWeaponUpgradePolicy.h"
 #include "SpecWeaponPolicy.h"
+#include "runtime/HireLifecycle.h"
+#include "playerbot/RandomItemMgr.h"
 #include "playerbot/PlayerbotAI.h"
 #include "SharedValueContext.h"
 
