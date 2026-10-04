@@ -9,6 +9,7 @@
 #include "playerbot/RandomItemMgr.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/QuestLogPolicy.h"
 #include "../../../../runtime/ClassConsumablePolicy.h"
 
 using namespace ai;
@@ -404,6 +405,13 @@ ItemUsage ItemUsageValue::Calculate()
         else if (IsNeededForQuest(bot, itemId, true) && CurrentStacks(ai, proto) < 2) //Do not sell quest items unless selling a full stack will stil keep enough in inventory.
             return ItemUsage::ITEM_USAGE_KEEP;
     }
+
+    // Bone Chew Toy (item 51751): the only quest needing it is the inactive
+    // 40298, so it is junk, not something to keep. Keyed off the item id, so
+    // quest starters (Free Ticket Voucher 19338 etc.) keep their KEEP verdict
+    // below and keep looting normally.
+    if (itemId == ai::kBoneChewToyItemId)
+        return ItemUsage::ITEM_USAGE_NONE;
 
     //A quest item the bot carries is never vendor trash, whether or not it holds
     //the quest that needs it right now.

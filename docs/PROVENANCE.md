@@ -3527,3 +3527,36 @@ Local validation: `tools/test_quest_taker_level_policy.cpp` section 4
 (exempt 1/4 masterless, bound at 5, owned/hired excluded, level 60
 excluded); `bash tools/verify_all.sh`; `git diff --check`. No deploy
 (orchestrator compiles).
+
+## Quest accept/drop churn + banned quests + Bone Chew Toy — 2026-10-04
+Feature: masterless pool bots refuse war-effort item turn-ins (AQ sort
+-365 with item objectives: copper/thick-leather turn-ins, signet quests)
+and banned quests (CLUCK! 3861, inactive Method-disabled templates) at
+accept (`WouldAcceptQuest` + raw-id/share/confirm/details guards), and the
+clean action drops them with the same predicate (banned at any status for
+every bot; war-effort when incomplete/failed for upkeep bots; COMPLETE
+war-effort never dropped - turned in instead). Bone Chew Toy (item 51751)
+is never looted (`IsLootAllowed` veto + usage NONE), its GO piles
+(1000380) never queue, and copies in bags are destroyed by smart-destroy.
+Targeted by id - no generic quest-class purge, so quest starters (Free
+Ticket Voucher 19338 etc.) keep working.
+
+Copied / ported / reimplemented: reimplemented (local policy in
+`ai/playerbot/QuestLogPolicy.h`, tested by
+`tools/test_quest_log_triage_policy.cpp` §§7-10); donor behaviour
+`mod-playerbots` `src/Ai/World/Rpg/Action/NewRpgBaseAction.cpp`
+(`IsQuestWorthDoing` `:556-571` refuses repeatables, `OrganizeQuestLog`
+`:590-641` drops not-worth/capable + sort quests `ZoneOrSort < 0`)
+@ b6696bdbd3740e575598d167d69f39f68cc0b907 - modulated here to the
+war-effort sort only (breadcrumbs 8792/8795 with no item objective stay
+open) and to an accept-side filter matching the drop rule.
+
+Reason: live pool 2026-10-03/04: 16 695 accepts vs 7 194 drops (43%).
+War-effort turn-ins were ~60 accepts/h per capital with same-tick
+mass-drop bursts (Jaegaewog 22:19:55 dropped 19 quests at once after
+accepting 2); CLUCK! 153 accepts / 149 drops across 22 re-cycling bots;
+892 Bone Chew Toys sat in 118 bags from 897 StoreLoot rows on GO 1000380.
+
+Local validation: `tools/test_quest_log_triage_policy.cpp` (10 sections);
+`bash tools/verify_all.sh`; `git diff --check`. Module build by
+orchestrator (workers do not run the docker builder).
