@@ -271,11 +271,18 @@ bool WrongPetTrigger::IsActive()
     // only demon available; above it the solo default is the Voidwalker.
     if (!bot->HasSpell(TortoiseBots::WARLOCK_VOIDWALKER_SUMMON_SPELL))
         return false;
+    // Summon Voidwalker consumes a Soul Shard (6265): without one the summon
+    // fails isPossible, so stay quiet instead of queueing it every 5 ticks.
+    // The "no pet" node's summon-imp fallback still covers a shardless
+    // petless bot.
+    if (bot->GetItemCount(TortoiseBots::WARLOCK_SOUL_SHARD_ITEM) == 0)
+        return false;
     Unit* pet = AI_VALUE(Unit*, "pet target");
     if (!pet)
         return false;
     TortoiseBots::WarlockSoloPetInputs inputs;
     inputs.knowsVoidwalker = true;
+    inputs.hasSoulShard = true;
     inputs.hasPet = true;
     inputs.currentPetEntry = pet->GetEntry();
     return TortoiseBots::DecideWarlockSoloPet(inputs) == TortoiseBots::WarlockSoloPetDecision::SummonVoidwalker;

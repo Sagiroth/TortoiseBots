@@ -124,7 +124,39 @@ inline PetRankLadder const& ThunderstompLadder()
     return ladder;
 }
 
+inline PetRankLadder const& NaturalArmorLadder()
+{
+    static PetRankLadder const ladder = {
+        {1, 24545}, {12, 24549}, {18, 24550}, {24, 24551},
+    };
+    return ladder;
+}
+
+inline PetRankLadder const& GreatStaminaLadder()
+{
+    static PetRankLadder const ladder = {
+        {1, 4187}, {12, 4188}, {18, 4189}, {24, 4190}, {30, 4191},
+        {36, 4192}, {42, 4193}, {48, 4194}, {54, 5041}, {60, 5042},
+    };
+    return ladder;
+}
+
 inline uint32_t ShellShieldSpell() { return 26064; } // single rank, pet level 20
+
+inline uint32_t HunterPetResistanceMinLevel() { return 20; }
+
+inline std::vector<uint32_t> const& HunterPetResistanceSpells()
+{
+    static std::vector<uint32_t> const spells = {
+        24493, // Arcane
+        23992, // Fire
+        24446, // Frost
+        24492, // Nature
+        24488, // Shadow
+    };
+    return spells;
+}
+
 
 // Turtle custom family abilities (trainable per the SkillLineAbility DBC).
 inline PetRankLadder const& BubbleBarrierLadder() // crab
@@ -164,8 +196,12 @@ inline uint32_t PollenBurstSpell() { return 42051; } // moth (Turtle family 39),
 
 // Hunter pet family spells by beast_family (CreatureFamily DBC). Families 35
 // (Serpent), 36 (Fox) and 39 (Moth) are Turtle additions with no vanilla
-// table; without them those pets kept only Growl + passives. Unknown families
-// fall back to Bite + Cower so any future family still deals damage.
+// table; without them those pets kept only Growl + passives. Growl and the
+// passive/resistance rows are NOT per-family ladders below: the shared
+// HunterPetWantedSpellIds helper adds them for every family, and both the
+// missing-rank check and the teach path walk that one helper - so isUseful
+// can never name a spell the teach path cannot add. Unknown families fall
+// back to Bite + Cower so any future family still deals damage.
 inline std::vector<PetRankLadder const*> HunterPetLadders(uint32_t beastFamily)
 {
     static PetRankLadder const empty;
@@ -339,6 +375,59 @@ inline std::vector<std::pair<uint32_t, uint32_t>> HunterPetSingleSpells(uint32_t
     }
 }
 
+// Shared rank-upkeep helpers: the missing-rank CHECK (action isUseful) and
+// the TEACH path (factory InitPetSpells) both derive from these, so the
+// check can never name a spell the teach path cannot add. The check looks
+// only at the TOP rank each ladder allows: the core's Pet::AddSpell replaces
+// a lower rank when the higher is learned, so lower ranks stay "unknown"
+// forever and must not count as missing (else isUseful never clears).
+inline uint32_t TopRankAtLevel(PetRankLadder const& ladder, uint32_t petLevel)
+{
+    uint32_t spellId = 0;
+    for (auto const& rank : ladder)
+    {
+        if (petLevel < rank.first)
+            break;
+        spellId = rank.second;
+    }
+    return spellId;
+}
+
+// One flat (spellId, isPassive) row the check and the teach path both walk:
+// top rank per ladder plus singles, in teach order. Passive rows (armor /
+// stamina / resistances) ARE wanted - LearnSpell casts them once - but the
+// callers skip ToggleAutocast for them, same as before. No vector: the
+// caller passes a tiny sink, so the per-tick check pays no allocation.
+struct PetWantedSpell
+{
+    uint32_t spellId = 0;
+    bool passive = false;
+};
+
+template<typename Sink>
+inline void ForEachHunterWantedSpell(uint32_t beastFamily, uint32_t petLevel, Sink&& sink)
+{
+    for (PetRankLadder const* ladder : HunterPetLadders(beastFamily))
+    {
+        if (!ladder)
+            continue;
+        if (uint32_t top = TopRankAtLevel(*ladder, petLevel))
+            sink(PetWantedSpell{top, false});
+    }
+    for (auto const& single : HunterPetSingleSpells(beastFamily))
+        if (petLevel >= single.first)
+            sink(PetWantedSpell{single.second, false});
+    if (uint32_t growl = TopRankAtLevel(GrowlLadder(), petLevel))
+        sink(PetWantedSpell{growl, false});
+    if (uint32_t armor = TopRankAtLevel(NaturalArmorLadder(), petLevel))
+        sink(PetWantedSpell{armor, true});
+    if (uint32_t stamina = TopRankAtLevel(GreatStaminaLadder(), petLevel))
+        sink(PetWantedSpell{stamina, true});
+    if (petLevel >= HunterPetResistanceMinLevel())
+        for (uint32_t spellId : HunterPetResistanceSpells())
+            sink(PetWantedSpell{spellId, true});
+}
+
 // Warlock demon rank ladders by pet entry. Levels verified against
 // tw_world.spell_template baseLevel; the Imp/Felhunter/Voidwalker/Succubus
 // tables the factory already carried were correct and are preserved here.
@@ -435,6 +524,25 @@ inline std::vector<std::pair<uint32_t, uint32_t>> WarlockPetSingleSpells(uint32_
         case 1863: return { {32, 7870}, {26, 6358} };         // Lesser Invisibility, Seduction
         default: return {};
     }
+}
+
+// Every spell a demon at this level should know: top rank per line plus the
+// single-rank rows. Same shared-table rule as the hunter helper: the check
+// and the teach path both walk this, and the caller skips ids with no
+// SpellEntry, so an unteachable row can never pin isUseful true.
+template<typename Sink>
+inline void ForEachWarlockWantedSpell(uint32_t petEntry, uint32_t petLevel, Sink&& sink)
+{
+    for (auto const& ladder : WarlockPetLadders(petEntry))
+    {
+        if (!ladder.second)
+            continue;
+        if (uint32_t top = TopRankAtLevel(*ladder.second, petLevel))
+            sink(PetWantedSpell{top, false});
+    }
+    for (auto const& single : WarlockPetSingleSpells(petEntry))
+        if (petLevel >= single.first)
+            sink(PetWantedSpell{single.second, false});
 }
 
 // Teach-time autocast default. Mirrors the runtime sweep

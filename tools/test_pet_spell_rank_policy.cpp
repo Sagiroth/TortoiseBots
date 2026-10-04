@@ -1,6 +1,8 @@
 // Standalone regression test for the pet spell-rank ladders
 // (runtime/PetSpellRankPolicy.h): rank levels must match the server data
-// (tw_world.spell_template baseLevel), every ladder must ascend, and the
+// (tw_world.spell_template baseLevel), every ladder must ascend, the shared
+// check/teach helpers must name only top ranks (lower ranks are dropped by
+// Pet::AddSpell, so naming them would pin isUseful true forever), and the
 // teach-time autocast default must agree with the runtime sweep except for
 // the two summon-suicide/manual-CC spells the sweep would leave on
 // (Sacrifice, Seduction).
@@ -134,6 +136,53 @@ static void TestAutocastDefaults()
     CHECK(!ShouldPetSpellAutocastDefault(6358)); // Seduction (manual CC)
 }
 
+// The check and the teach path share one table: only the TOP rank each
+// ladder allows may be named (lower ranks are dropped by AddSpell), and the
+// same wanted-id helpers must drive both.
+static void TestSharedHelpers()
+{
+    // Top rank only: a L20 wolf knows Torment-equivalent Growl-3, not ranks 1-2.
+    CHECK(TopRankAtLevel(GrowlLadder(), 20) == 14917);
+    CHECK(TopRankAtLevel(BiteLadder(), 20) == 17256);
+    CHECK(TopRankAtLevel(BiteLadder(), 1) == 17253);
+    // Wolf L20 wanted set: Bite-3 + Cower-2 + Growl-3 + armor-3 + stamina-3,
+    // never the dropped lower ranks.
+    {
+        bool hasBite3 = false, hasGrowl3 = false, hasBite1 = false, hasGrowl1 = false;
+        ForEachHunterWantedSpell(1, 20, [&](PetWantedSpell wanted)
+        {
+            if (wanted.spellId == 17256)
+                hasBite3 = true;
+            if (wanted.spellId == 14917)
+                hasGrowl3 = true;
+            if (wanted.spellId == 17253)
+                hasBite1 = true;
+            if (wanted.spellId == 2649)
+                hasGrowl1 = true;
+        });
+        CHECK(hasBite3);
+        CHECK(hasGrowl3);
+        CHECK(!hasBite1);
+        CHECK(!hasGrowl1);
+    }
+    // Voidwalker L20: Torment-2 (7809) only, never Torment-1 (3716).
+    {
+        bool hasT2 = false, hasT1 = false;
+        ForEachWarlockWantedSpell(1860, 20, [&](PetWantedSpell wanted)
+        {
+            if (wanted.spellId == 7809)
+                hasT2 = true;
+            if (wanted.spellId == 3716)
+                hasT1 = true;
+        });
+        CHECK(hasT2);
+        CHECK(!hasT1);
+    }
+    // Passives ride the same helper (no second table to drift).
+    CHECK(TopRankAtLevel(NaturalArmorLadder(), 20) == 24550);
+    CHECK(TopRankAtLevel(GreatStaminaLadder(), 20) == 4189);
+}
+
 int main()
 {
     std::printf("Starting pet spell rank policy tests...\n");
@@ -147,6 +196,8 @@ int main()
     std::printf("  [PASS] warlock ladders\n");
     TestAutocastDefaults();
     std::printf("  [PASS] autocast defaults\n");
+    TestSharedHelpers();
+    std::printf("  [PASS] shared check/teach helpers\n");
     std::printf("All pet spell rank policy checks PASSED (%d assertions)!\n", checks);
     return 0;
 }
