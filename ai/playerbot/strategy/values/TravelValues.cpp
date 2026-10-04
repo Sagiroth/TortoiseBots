@@ -601,9 +601,16 @@ bool ShouldLeaveOutgrownZoneValue::Calculate()
     // walk - no world scan, no DB.
     bool leaveAnyway = false;
     {
-        int32 areaLevel = 0;
-        bool const areaKnown = sTravelMgr.TryGetValidatedAreaLevel(sServerFacade.GetAreaId(bot), areaLevel) && areaLevel > 0;
-        bool const outgrown = areaKnown && areaLevel + 5 < (int32)bot->GetLevel();
+        // Zone level, not sub-area: sub-areas scatter ±4 around their zone
+        // (task E: Galwurth fired 3x at 10.59 in a low Durotar sub-area
+        // while Durotar's zone level is 8, i.e. not outgrown at 10). The
+        // destination floor below is a zone-level test, so the trigger must
+        // be one too or the two disagree on what "outgrown" means.
+        AreaTableEntry const* botArea = WorldPosition(bot).GetArea();
+        uint32 botZoneId = botArea ? (botArea->ZoneId ? botArea->ZoneId : botArea->Id) : 0;
+        int32 zoneLevel = 0;
+        bool const zoneKnown = botZoneId && sTravelMgr.TryGetValidatedAreaLevel(botZoneId, zoneLevel) && zoneLevel > 0;
+        bool const outgrown = zoneKnown && zoneLevel + 5 < (int32)bot->GetLevel();
         if (outgrown)
         {
             time_t outgrownSince = AI_VALUE2(time_t, "manual time", "outgrown since");
@@ -649,12 +656,15 @@ bool ShouldLeaveOutgrownZoneValue::Calculate()
         return true;
     }
 
-    // Fail closed: unknown area levels never trigger the rule.
-    int32 areaLevel = 0;
-    if (!sTravelMgr.TryGetValidatedAreaLevel(sServerFacade.GetAreaId(bot), areaLevel) || areaLevel <= 0)
+    // Fail closed: unknown area levels never trigger the rule. Zone level,
+    // not sub-area (see above): the destination floor is a zone-level test.
+    AreaTableEntry const* botArea = WorldPosition(bot).GetArea();
+    uint32 botZoneId = botArea ? (botArea->ZoneId ? botArea->ZoneId : botArea->Id) : 0;
+    int32 zoneLevel = 0;
+    if (!botZoneId || !sTravelMgr.TryGetValidatedAreaLevel(botZoneId, zoneLevel) || zoneLevel <= 0)
         return false;
 
-    return areaLevel + 5 < (int32)bot->GetLevel();
+    return zoneLevel + 5 < (int32)bot->GetLevel();
 }
 
 bool TravelTargetActiveValue::Calculate()

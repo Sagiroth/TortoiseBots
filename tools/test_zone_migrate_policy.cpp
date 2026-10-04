@@ -10,6 +10,7 @@
     } \
 } while (0)
 
+using ai::OutgrownZoneRefusesPoint;
 using ai::ZoneMigrationExcludeZone;
 
 int main()
@@ -37,6 +38,31 @@ int main()
     // open, like today's behaviour.
     CHECK(ZoneMigrationExcludeZone(0, false) == 0);
     std::cout << "  [PASS] unknown zone fails open\n";
+
+    // Ordinary Grind/Gather floor (task E): same +5 shape as the leave
+    // rule, pool bots 11+ only. Dun Morogh (zone level 7) refuses a level
+    // 13 pool bot and keeps a level 11 one (11 < 7 + 5 + 1, i.e. fits);
+    // levels 1-10 never refuse, so starter behaviour is unchanged, and
+    // owned/hired bots keep player control.
+    CHECK(OutgrownZoneRefusesPoint(7, 13, true));
+    CHECK(OutgrownZoneRefusesPoint(7, 16, true));
+    CHECK(!OutgrownZoneRefusesPoint(7, 12, true));
+    CHECK(!OutgrownZoneRefusesPoint(7, 11, true));
+    CHECK(!OutgrownZoneRefusesPoint(7, 10, true));
+    CHECK(!OutgrownZoneRefusesPoint(7, 5, true));
+    CHECK(!OutgrownZoneRefusesPoint(7, 13, false));
+    CHECK(!OutgrownZoneRefusesPoint(13, 13, true));
+    CHECK(!OutgrownZoneRefusesPoint(14, 13, true));
+    CHECK(OutgrownZoneRefusesPoint(6, 12, true));
+    CHECK(!OutgrownZoneRefusesPoint(6, 11, true));
+    std::cout << "  [PASS] outgrown zone floor refuses pool 11+ only\n";
+
+    // Unknown/unvalidated zone levels fail open: a point whose zone level
+    // never resolved must stay walkable, like today.
+    CHECK(!OutgrownZoneRefusesPoint(0, 16, true));
+    CHECK(!OutgrownZoneRefusesPoint(-1, 16, true));
+    CHECK(!OutgrownZoneRefusesPoint(-2, 16, true));
+    std::cout << "  [PASS] unknown zone level fails open\n";
 
     std::cout << "TortoiseBots zone migration policy tests passed.\n";
     return 0;

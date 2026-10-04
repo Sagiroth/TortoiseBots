@@ -45,4 +45,25 @@ namespace ai
 
         return botZoneId;
     }
+
+    // Outgrown-zone floor for ordinary Grind/Gather picks (task E): a pool
+    // bot that outlevels a zone (validated zone level + 5 < bot level) must
+    // not re-pick Grind/Gather points inside it. Donor mod-playerbots
+    // `zone2LevelBracket` (src/Mgr/Travel/TravelMgr.cpp:4561: starters
+    // {5,12}, next zones {10,20..25}) drops a level-12 bot out of the
+    // starter bracket into the next one; here the validated zone level
+    // plays the bracket edge and this refusal plays the "don't re-pick the
+    // old bracket" half. Same +5 shape as the leave rule so the two cannot
+    // drift, and the area ceiling above still bounds every pick, so an
+    // undergeared bot is never pushed anywhere it cannot survive.
+    // Pool bots level 11+ only: levels 1-10 never reach the gate below, so
+    // starter behaviour is unchanged, and owned/hired bots keep player
+    // control. Unknown point zones (id 0) and unvalidated levels (<= 0)
+    // fail open, like today.
+    inline bool OutgrownZoneRefusesPoint(std::int32_t pointZoneLevel, std::uint32_t botLevel,
+        bool masterlessRandom)
+    {
+        return masterlessRandom && botLevel > 10 && pointZoneLevel > 0 &&
+            pointZoneLevel + 5 < (std::int32_t)botLevel;
+    }
 }

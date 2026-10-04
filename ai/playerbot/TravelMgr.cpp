@@ -408,12 +408,29 @@ bool QuestObjectiveTravelDestination::IsPossible(const PlayerTravelInfo& info) c
         if (destAreaLevel > 0 && destAreaLevel > (int32)info.GetLevel() + 5)
             return false;
 
+        // Outgrown-zone floor for quest objectives (task E,
+        // ZoneMigratePolicy.h): an objective in a zone the bot outlevels by
+        // 5+ pays no XP, so the walk only parks the bot among no-XP mobs.
+        // Same +5 shape and scope as the grind/gather gates (pool bots 11+,
+        // owned/hired keep the player); givers keep their own floor above,
+        // takers always pay out, focus quests bypass. Unknown zones fail
+        // open, like today.
+        if (info.IsMasterlessRandom() && !info.HasFocusQuest())
+        {
+            AreaTableEntry const* area = point->GetArea();
+            uint32 zoneId = area ? (area->ZoneId ? area->ZoneId : area->Id) : 0;
+            if (zoneId)
+            {
+                int32 pointZoneLevel = 0;
+                if (sTravelMgr.TryGetValidatedAreaLevel(zoneId, pointZoneLevel) && pointZoneLevel > 0 &&
+                    ai::OutgrownZoneRefusesPoint(pointZoneLevel, info.GetLevel(), true))
+                    return false;
+            }
+        }
+
         if (info.GetLevel() <= 5 && point->distance(info.getPosition()) > 1500.0f)
             return false;
     }
-
-    return true;
-}
 
 bool QuestObjectiveTravelDestination::IsActive(Player* bot, const PlayerTravelInfo& info) const {
     PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
@@ -763,9 +780,21 @@ bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
             !ai::GrindValleyExempted(info.GetLevel(), info.IsMasterlessRandom()))
             return false;
 
+        // Outgrown-zone floor (task E, ZoneMigratePolicy.h): a pool bot at
+        // 11+ holding only outgrown-zone grind destinations must lose them,
+        // or the taker-only/hand-in latches aside every pick still lands
+        // home. Zone level, not area: sub-areas inherit their parent zone
+        // below. Unknown zones fail open; owned/hired bots keep the player.
+        if (area && zoneId && info.IsMasterlessRandom())
+        {
+            int32 pointZoneLevel = 0;
+            if (sTravelMgr.TryGetValidatedAreaLevel(zoneId, pointZoneLevel) && pointZoneLevel > 0 &&
+                ai::OutgrownZoneRefusesPoint(pointZoneLevel, info.GetLevel(), true))
+                return false;
+        }
+
         if (info.GetLevel() <= 5 && point->distance(info.getPosition()) > 1500.0f)
             return false;
-    }
 
     return true;
 }
@@ -988,6 +1017,25 @@ bool GatherTravelDestination::IsPossible(const PlayerTravelInfo& info) const
         int32 destAreaLevel = point->GetAreaLevel();
         if (destAreaLevel > 0 && destAreaLevel > (int32)info.GetLevel() + 5)
             return false;
+
+        // Outgrown-zone floor (task E, ZoneMigratePolicy.h): mining/herb
+        // nodes keep no mob band, so without this an outgrown starter node
+        // stays a destination forever. Same +5 shape and scope as the grind
+        // gate; fishing untouched (FishingSpotPolicy owns that errand).
+        if (info.IsMasterlessRandom() &&
+            (GetPurpose() == TravelDestinationPurpose::GatherMining ||
+                GetPurpose() == TravelDestinationPurpose::GatherHerbalism))
+        {
+            AreaTableEntry const* area = point->GetArea();
+            uint32 zoneId = area ? (area->ZoneId ? area->ZoneId : area->Id) : 0;
+            if (zoneId)
+            {
+                int32 pointZoneLevel = 0;
+                if (sTravelMgr.TryGetValidatedAreaLevel(zoneId, pointZoneLevel) && pointZoneLevel > 0 &&
+                    ai::OutgrownZoneRefusesPoint(pointZoneLevel, info.GetLevel(), true))
+                    return false;
+            }
+        }
 
         if (info.GetLevel() <= 5 && point->distance(info.getPosition()) > 1500.0f)
             return false;
@@ -2719,9 +2767,19 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
     // own floor for acceptable mobs - mirrors the per-mob minLevel window already used
     // in GrindTravelDestination::IsPossible(), applied to the zone as a whole so a
     // starting zone's own top-tier mobs can't keep a wildly over-leveled bot latched
-    // there with no reason to ever travel farther. Scoped to Grind only (not Rpg/Quest/
-    // Gather/Explore) so vendor/quest-turn-in/gather trips to a bot's home zone are
-    // unaffected.
+    // there with no reason to ever travel farther. Ordinary Grind/Gather picks
+    // for an outgrown pool bot use the zone level (OutgrownZoneRefusesPoint,
+    // +5 like the leave rule) so the two cannot drift, still bounded by the
+    // area ceiling above - an undergeared bot is never pushed anywhere it
+    // cannot survive. Scoped to pool bots level 11+ on these three XP
+    // purposes only (not Rpg/Quest/Explore, whose trips to a bot's home zone
+    // stay walkable, and not services - Task B owns city/AH gating); levels
+    // 1-10 never reach the gate, so starter behaviour is unchanged. Unknown
+    // point zones (id 0) and unvalidated levels (<= 0) fail open, like today.
+    static uint32 const outgrownXPPurposes =
+        (uint32)TravelDestinationPurpose::Grind |
+        (uint32)TravelDestinationPurpose::GatherMining |
+        (uint32)TravelDestinationPurpose::GatherHerbalism;
     if (purposeFlag & (uint32)TravelDestinationPurpose::Grind)
     {
         int32 rawLevel = (int32)info.GetLevel();
@@ -2747,6 +2805,18 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
         {
             uint32 pointZoneId = posArea ? (posArea->ZoneId ? posArea->ZoneId : posArea->Id) : 0;
             if (pointZoneId == excludeZoneId)
+                return false;
+        }
+    }
+    if ((purposeFlag & outgrownXPPurposes) && !grindZoneFloor &&
+        info.IsMasterlessRandom() && info.GetLevel() > 10)
+    {
+        uint32 pointZoneId = posArea ? (posArea->ZoneId ? posArea->ZoneId : posArea->Id) : 0;
+        if (pointZoneId)
+        {
+            int32 pointZoneLevel = 0;
+            if (sTravelMgr.TryGetValidatedAreaLevel(pointZoneId, pointZoneLevel) && pointZoneLevel > 0 &&
+                ai::OutgrownZoneRefusesPoint(pointZoneLevel, info.GetLevel(), true))
                 return false;
         }
     }
