@@ -1,0 +1,59 @@
+name: Re-post full Discord changelog
+
+# Manual re-post for a day whose automatic announcement came out incomplete:
+# summarizes the given PRs (e.g. the day's daily merges) and posts them to the
+# changelog thread. Touches neither CHANGELOG.md, VERSION, tags nor releases.
+on:
+  workflow_dispatch:
+    inputs:
+      pr_numbers:
+        description: "Comma-separated PR numbers to summarize (e.g. 477,481)"
+        required: true
+      title:
+        description: "Title of the Discord post"
+        required: true
+      release_tag:
+        description: "Release tag the post links to (e.g. v2026-10-04)"
+        required: true
+      thread_id:
+        description: "Changelog thread ID"
+        required: false
+        default: "1542647578548772954"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  repost:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Summarize requested PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          OPENCODE_ENDPOINT: ${{ secrets.OPENCODE_ENDPOINT }}
+          OPENCODE_MODEL: ${{ secrets.OPENCODE_MODEL }}
+        run: |
+          python3 tools/generate_changelog.py --prs "${{ inputs.pr_numbers }}" --out-delta /tmp/discord_notes.md
+
+      - name: Post to Discord thread
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          python3 tools/post_discord_changelog.py \
+            --notes /tmp/discord_notes.md \
+            --title "${{ inputs.title }}" \
+            --tag "${{ inputs.release_tag }}" \
+            --thread-id "${{ inputs.thread_id }}" \
+            --username "TortoiseBots Changelog"

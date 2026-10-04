@@ -94,9 +94,12 @@ def generate_summary_with_ai(prs, api_key, base_url, model):
     pr_summaries = []
     for pr in prs:
         body = (pr.get("body") or "").strip()
-        # Truncate long bodies to avoid token limits
-        if len(body) > 600:
-            body = body[:600] + "..."
+        # Truncate long bodies to avoid token limits. A daily dev->main merge
+        # lists every change of the day in its body, so it gets a far larger
+        # budget: cutting it at 600 chars dropped all but the first two items.
+        limit = 8000 if pr.get("title", "").startswith("Daily merge") else 600
+        if len(body) > limit:
+            body = body[:limit] + "..."
         author = pr.get("author", {}).get("login", "unknown")
         pr_summaries.append(
             f"- PR #{pr['number']}: {pr['title']} (by @{author})\n  Details: {body}"
@@ -113,7 +116,9 @@ def generate_summary_with_ai(prs, api_key, base_url, model):
         "2. Write concise, punchy, pragmatic bullet points explaining the gameplay or stability impact.\n"
         "3. Always reference the pull request as a markdown link like [#123](https://github.com/Sagiroth/TortoiseBots/pull/123) at the end of each bullet point.\n"
         "4. Do NOT output fluff, introductions, greetings, or sign-offs. Output ONLY the categorized markdown bullets starting with category headers (### Category).\n"
-        "5. Keep the tone pragmatic and developer/gamer friendly."
+        "5. Keep the tone pragmatic and developer/gamer friendly.\n"
+        "6. When a pull request body lists several changes (one line per pull request number, e.g. '- #456 ...'), write one bullet per listed change, "
+        "link the listed pull request number (not the daily merge PR), and never drop or merge away any listed change."
     )
 
     user_prompt = f"Summarize the following merged pull requests:\n\n{pr_text}"
@@ -294,6 +299,7 @@ def main():
     parser.add_argument("--out-version", help="Write the per-merge build version (<UTC date>-v<N>) to the given file (e.g. VERSION)")
     parser.add_argument("--out-build-number", help="Write the day's build number N to the given file")
     parser.add_argument("--version-date", help="UTC date for the build version (default: --date)")
+    parser.add_argument("--prs", help="Comma-separated PR numbers to summarize instead of auto-detecting (manual re-post; skips the CHANGELOG.md de-duplication)")
     args = parser.parse_args()
 
     version_day = args.version_date or args.date
@@ -321,11 +327,19 @@ def main():
     else:
         since_tag, since_date = get_last_release_info()
 
-    print(f"Checking for merged PRs since: {since_date or 'beginning'} (reference: {since_tag or 'none'})")
-    prs = get_merged_prs_since(since_date)
+    if args.prs:
+        prs = []
+        for number in [n.strip() for n in args.prs.split(",") if n.strip()]:
+            output = subprocess.check_output(
+                ["gh", "pr", "view", number, "--json", "number,title,body,mergedAt,author,url"], text=True)
+            prs.append(json.loads(output))
+        print(f"Summarizing requested PRs: {args.prs}")
+    else:
+        print(f"Checking for merged PRs since: {since_date or 'beginning'} (reference: {since_tag or 'none'})")
+        prs = get_merged_prs_since(since_date)
 
     # Exclude any PRs that are already documented in CHANGELOG.md
-    if os.path.exists(CHANGELOG_PATH):
+    if not args.prs and os.path.exists(CHANGELOG_PATH):
         with open(CHANGELOG_PATH, "r", encoding="utf-8") as f:
             changelog_content = f.read()
         filtered_prs = []
