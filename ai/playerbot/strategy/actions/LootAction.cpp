@@ -11,6 +11,7 @@
 #include "playerbot/strategy/values/LootValues.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/QuestLogPolicy.h"
 #include "playerbot/strategy/values/SharedValueContext.h"
 
 
@@ -547,6 +548,13 @@ bool StoreLootAction::IsLootAllowed(ItemQualifier& itemQualifier, PlayerbotAI *a
     std::set<uint32>& lootItems = AI_VALUE(std::set<uint32>&, "always loot list");
     if (lootItems.find(itemQualifier.GetId()) != lootItems.end())
         return true;
+
+    // Bone Chew Toy (item 51751): the only quest needing it is the inactive
+    // 40298, so it is never worth a bag slot. Keyed off the item id, not a
+    // generic quest-class rule, so quest starters (Free Ticket Voucher
+    // 19338 etc.) keep looting normally.
+    if (itemQualifier.GetId() == ai::kBoneChewToyItemId)
+        return false;
 
     std::set<uint32>& skipItems = AI_VALUE(std::set<uint32>&, "skip loot list");
     if (skipItems.find(itemQualifier.GetId()) != skipItems.end())

@@ -280,6 +280,18 @@ namespace ai
         NoFelhunterTrigger(PlayerbotAI* ai) : NoSpecificPetTrigger(ai, "no felhunter", 417) {}
     };
 
+    // Solo default-pet choice (pool bots only): fires while the bot knows
+    // Summon Voidwalker but runs a lesser demon. Ported from mod-playerbots
+    // WrongPetTrigger, collapsed to the one transition this realm has ranks
+    // for (Imp -> Voidwalker at 10); owned/hired bots are excluded so a
+    // player's manual pet choice is never overridden.
+    class WrongPetTrigger : public Trigger
+    {
+    public:
+        WrongPetTrigger(PlayerbotAI* ai) : Trigger(ai, "wrong pet", 5) {}
+        bool IsActive() override;
+    };
+
     class SpellLockTrigger : public InterruptSpellTrigger
     {
     public:

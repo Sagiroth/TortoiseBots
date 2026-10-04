@@ -345,11 +345,21 @@ namespace ai
     {
     public:
         BuffOnPartyAction(PlayerbotAI* ai, std::string spell, bool ignoreTanks = false) : CastBuffSpellAction(ai, spell), PartyMemberActionNameSupport(spell), ignoreTanks(ignoreTanks) {}
+        // Issue #468 (donor UpgradeToGroupIfAppropriate): when this single has
+        // a group variant and the group cast is ready (trained, stocked, and
+        // enough members lack both auras), stand the single down so the group
+        // version fires instead of N single casts. Runs beneath the aura,
+        // claim, retry and mana gates in CastBuffSpellAction::isUseful.
+        virtual bool isUseful() override;
 
     protected:
         virtual std::string getName() override { return PartyMemberActionNameSupport::getName(); }
         virtual std::string GetTargetName() override { return "party member without aura"; }
         virtual std::string GetTargetQualifier() override { return GetSpellName() + "-" + (ignoreTanks ? "1" : "0"); }
+        // Counts live same-map group members lacking both this buff (or its
+        // window-expiring aura) and its group variant. Shared with the quorum
+        // gate below; per tick, bounded by group size, no DB or world scan.
+        uint32 CountGroupMembersMissingBoth(std::string const& groupName) const;
 
     protected:
         bool ignoreTanks;

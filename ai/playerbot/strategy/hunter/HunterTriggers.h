@@ -1,5 +1,6 @@
 #pragma once
 
+#include "playerbot/HunterSwitchPolicy.h"
 #include "playerbot/strategy/triggers/GenericTriggers.h"
 #include "playerbot/strategy/hunter/HunterActions.h"
 
@@ -212,6 +213,14 @@ private:
         virtual bool IsActive() override { return !AmmoCountTrigger::IsActive(); }
     };
 
+    // Dead-zone hysteresis (pool 1v1 fix, Oct 2026): the switch pair shares one
+    // boundary so a mob pacing at exactly 8 yd cannot flip the kit every tick
+    // (inter-switch p50 is 15 s, 37% land within 10 s). Melee at 5 yd and
+    // below, ranged back at 10 yd and above: between the two the bot holds
+    // whatever kit it has. Both match the donor's AND/OR shape (victim/distance
+    // on the melee side, off-bot/immobilized/slow/far on the ranged side) -
+    // only the distance half is pinned to the hysteresis edge. No level gate
+    // on either, mirroring the donor.
     class SwitchToRangedTrigger : public Trigger
     {
     public:
@@ -222,18 +231,24 @@ private:
             // No level gate: the donor's SwitchToRangedTrigger has none either, and
             // below level 10 this is what hands the ranged kit back after a melee
             // trade - once the target is off the bot, immobilized, too slow to
-            // follow, or the bot has made distance.
+            // follow, or the bot has made distance (10+ yd, the hysteresis edge
+            // in HunterSwitchPolicy.h).
             bool hasAmmo = ai->HasCheat(BotCheatMask::item) || AI_VALUE2(uint32, "item count", "ammo");
             if (!hasAmmo)
                 return false;
 
             Unit* target = AI_VALUE(Unit*, "current target");
-            float distance = AI_VALUE2(float, "distance", "current target");
-            return target && ai->HasStrategy("close", BotState::BOT_STATE_COMBAT) &&
-                (target->GetVictim() != bot ||
-                IsImmobilizedStateCompat(target) ||
-                (target->GetSpeed(MOVE_RUN) <= (bot->GetSpeed(MOVE_RUN) / 2) && !((!bot->GetPet() || bot->GetPet()->IsDead()) && target->IsCreature() && target->GetHealthPercent() < 50.f && target->GetHealth() < bot->GetHealth())) ||
-                distance > 8.0f);
+            if (!target || !ai->HasStrategy("close", BotState::BOT_STATE_COMBAT))
+                return false;
+            // True edge-to-edge distance, not the stance-projected "distance"
+            // value (a point 1.5+ yd in front of the mob): the projection let
+            // SwitchToMelee fire at a logged 5-8 yd and hid which branch the
+            // 5/10 yd band gates. Telemetry logs this same call.
+            float const distance = bot->GetDistance(target);
+            bool const targetOffBot = target->GetVictim() != bot;
+            bool const immobilized = IsImmobilizedStateCompat(target);
+            bool const tooSlowToFollow = target->GetSpeed(MOVE_RUN) <= (bot->GetSpeed(MOVE_RUN) / 2) && !((!bot->GetPet() || bot->GetPet()->IsDead()) && target->IsCreature() && target->GetHealthPercent() < 50.f && target->GetHealth() < bot->GetHealth());
+            return ai::ShouldSwitchToRanged(true, targetOffBot, immobilized, tooSlowToFollow, distance, true);
         }
     };
 
@@ -277,21 +292,42 @@ private:
             // shot's dead zone cannot be shot, and holding the ranged kit only
             // yields the zero-damage dead-zone step-back, so below level 10 the
             // hunter now trades into melee instead. SwitchToRangedTrigger gives the
-            // ranged kit back once the target is off the bot or out of melee.
+            // ranged kit back once the target is off the bot or out of melee
+            // (10+ yd, the hysteresis edge in HunterSwitchPolicy.h).
             bool hasAmmo = ai->HasCheat(BotCheatMask::item) || AI_VALUE2(uint32, "item count", "ammo");
             if (!hasAmmo)
                 return true;
 
             Unit* target = AI_VALUE(Unit*, "current target");
-            return target && ((target->GetSpeed(MOVE_RUN) > (bot->GetSpeed(MOVE_RUN) / 2)) || ((!bot->GetPet() || bot->GetPet()->IsDead()) && target->GetHealthPercent() < 50.f && target->IsCreature() && target->GetHealth() < bot->GetHealth())) &&
-                !IsImmobilizedStateCompat(target) &&
-                ai->HasStrategy("ranged", BotState::BOT_STATE_COMBAT) &&
-                target->GetVictim() == bot &&
-                sServerFacade.IsDistanceLessOrEqualThan(AI_VALUE2(float, "distance", "current target"), 8.0f);
+            if (!target || !ai->HasStrategy("ranged", BotState::BOT_STATE_COMBAT))
+                return false;
+            bool const fastOrFinisher = (target->GetSpeed(MOVE_RUN) > (bot->GetSpeed(MOVE_RUN) / 2)) || ((!bot->GetPet() || bot->GetPet()->IsDead()) && target->GetHealthPercent() < 50.f && target->IsCreature() && target->GetHealth() < bot->GetHealth());
+            // Same true distance as the ranged half (see above): one call for
+            // both switches and the telemetry row.
+            float const distance = bot->GetDistance(target);
+            return ai::ShouldSwitchToMelee(true, target->GetVictim() == bot,
+                IsImmobilizedStateCompat(target), fastOrFinisher, distance, true);
         }
     };
 
     CAN_CAST_TRIGGER(MultishotCanCastTrigger, "multi-shot");
+    // BM cooldown: intimidation is a self-cast (BUFF_ACTION on self, core
+    // rejects positive spells on hostile targets), ordered by the owner, so
+    // the cast gate must run against the hunter itself — plus a live-pet
+    // gate like KillCommandTrigger, since the stun lands via the pet.
+    class IntimidationTrigger : public SpellCanBeCastedTrigger
+    {
+    public:
+        IntimidationTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "intimidation") {}
+        std::string GetTargetName() override { return "self target"; }
+        bool IsActive() override
+        {
+            if (!SpellCanBeCastedTrigger::IsActive())
+                return false;
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            return pet && pet->IsAlive();
+        }
+    };
     SNARE_TRIGGER(IntimidationSnareTrigger, "intimidation");
     CAN_CAST_TRIGGER(CounterattackCanCastTrigger, "counterattack");
     SNARE_TRIGGER(WybernStingSnareTrigger, "wyvern sting");

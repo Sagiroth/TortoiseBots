@@ -395,6 +395,16 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
     //Taxi handling: Start taxi and remove path until it ends.
     if (nextStep->type == PathNodeType::NODE_FLIGHTPATH)
     {
+        // Same-map only (live 2026-10-03: bots on quest/grind trips teleported
+        // cross-map onto auctioneer spots). A taxi leg stamped with another
+        // map id is a bad path point, not a flight: the hop below would carry
+        // the bot there. Refuse it instead so the stale path is dropped and a
+        // fresh destination is picked.
+        if (nextStep->point.GetMapId() != bot->GetMapId())
+        {
+            lastMove.lastPath.clear();
+            return false;
+        }
         if (nextStep->point.sqDistance(bot) > INTERACTION_DISTANCE * INTERACTION_DISTANCE)
         {
             bot->TeleportTo(nextStep->point);
@@ -478,6 +488,16 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
 
     if (!nextStep->IsWalkable())
         return false;
+
+    // Same-map only (live 2026-10-03: bots on quest/grind trips teleported
+    // cross-map onto auctioneer spots). This hop stands in for a walk: a path
+    // point stamped with another map id is a bad point, not a destination.
+    // Drop the stale path so a fresh one is built instead of teleporting.
+    if (nextStep->point.GetMapId() != bot->GetMapId())
+    {
+        lastMove.lastPath.clear();
+        return false;
+    }
 
     if (ai->HasPlayerNearby(nextStep->point, sWorld.getConfig(CONFIG_FLOAT_LISTEN_RANGE_YELL)))
         return true;
@@ -731,6 +751,17 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
     ForcedMovement moveMode = masterWalking ? FORCED_MOVEMENT_WALK : FORCED_MOVEMENT_RUN;
 
     std::vector<WorldPosition> path = movePath.GetPointPath();
+
+    // Same-map only (live 2026-10-03: cross-map walks landed on auctioneer
+    // spots). A walk point stamped with another map id can never ride a
+    // same-map spline: MovePoint below launches on the bot's own map, so a
+    // far point with the wrong id walks somewhere unrelated instead of
+    // failing. Refuse it so the travel target counts a retry and cools down.
+    // Transport/scripted legs are not walks: HandleSpecialMovement consumes
+    // them before this dispatch (RideTaxi/UseTransport), so skip them here.
+    for (auto const& step : movePath.GetPath())
+        if (step.IsWalkable() && step.point.GetMapId() != bot->GetMapId())
+            return false;
 
     // A path that leads nowhere - empty, or only the point the bot stands on - must not be
     // launched: the core rejects a one-point spline (MoveSplineInitArgs::Validate, path[0]

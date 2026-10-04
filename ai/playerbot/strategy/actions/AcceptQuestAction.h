@@ -13,11 +13,11 @@ namespace ai
         virtual bool isUsefulWhenStunned() override { return true; }
 
         //The quest-log policy ProcessQuest() applies before it takes a quest
-        //(breadcrumbs below level 5, CLUCK, the hardcore challenge, the Tortoise
-        //rogue quests, grey quests with a useless reward), and the per-giver
-        //form of it: does this giver offer a quest the policy accepts? The idle
-        //nearby-service rule asks the same question before it walks anywhere, so
-        //the two cannot drift.
+        //(breadcrumbs below level 5, banned and war-effort turn-ins, the hardcore
+        //challenge, the Tortoise rogue quests, grey quests with a useless
+        //reward), and the per-giver form of it: does this giver offer a quest
+        //the policy accepts? The idle nearby-service rule asks the same
+        //question before it walks anywhere, so the two cannot drift.
         static bool WouldAcceptQuest(PlayerbotAI* ai, Player* bot, Quest const* quest, WorldObject* questGiver);
         static bool OffersAcceptableQuest(PlayerbotAI* ai, Player* bot, WorldObject* questGiver);
 

@@ -1379,9 +1379,10 @@ namespace ai
 
     private:
         // Cheap pre-scan mirroring CleanQuestLogAction::IsDroppable (same
-        // predicate shape): class quests never droppable, level-0/scaling
-        // never grey, money shortfall never a drop reason, INCOMPLETE deliver
-        // quests droppable only when grey and itemless, FAILED droppable for
+        // predicate shape): class quests never droppable, refused (banned /
+        // war-effort) quests droppable, level-0/scaling never grey, money
+        // shortfall never a drop reason, INCOMPLETE deliver quests
+        // droppable only when grey and itemless, FAILED droppable for
         // upkeep bots, and the nearly-full triage (over-level, elite/
         // dungeon/raid/group/zone-mismatch) mirrors the clean action.
         bool HasDroppableQuest()
@@ -1395,6 +1396,22 @@ namespace ai
                 Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
                 if (!quest || quest->GetRequiredClasses())
                     continue;
+                // Refused quests (same predicate the clean action drops
+                // with): banned quests at any status, war-effort item
+                // turn-ins when incomplete/failed. Without this the 5s
+                // rescan sleeps through a full log of banned quests.
+                if (ai::IsBannedQuest(questId, !quest->IsActive()))
+                    return true;
+                bool hasItemObjective = false;
+                for (uint8 i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; ++i)
+                    if (quest->ReqItemId[i] && quest->ReqItemCount[i])
+                        hasItemObjective = true;
+                for (uint8 i = 0; i < QUEST_SOURCE_ITEM_IDS_COUNT; ++i)
+                    if (quest->ReqSourceId[i] && quest->ReqSourceCount[i])
+                        hasItemObjective = true;
+                if (status != QUEST_STATUS_COMPLETE &&
+                    ai::IsWarEffortTurnIn(quest->GetZoneOrSort(), hasItemObjective))
+                    return true;
                 if (status == QUEST_STATUS_FAILED)
                     return true;
                 bool grey = quest->GetQuestLevel() > 0 &&

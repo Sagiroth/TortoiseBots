@@ -230,6 +230,14 @@ class RandomItemMgr
         // spell), so a dual-wield spec may fall back to a two-hander it can
         // actually swing. Only fury's weapon set changes (see .cpp).
         bool ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, ItemPrototype const* proto, bool canDualWield = true);
+        // Slot-aware twin: answers for the concrete slot the item is evaluated
+        // for. The plain overload answers "legal in ANY slot" (main hand is
+        // checked first), so a 1H weapon reads as spec-legal for protection
+        // and the audit equips bag 1H weapons over the shield, ping-ponging
+        // against the shield-transition. Warriors/paladins use the policy
+        // header (SpecWeaponPolicy.h); other classes fail open to the plain
+        // answer. slot is a raw EquipmentSlots value (core header type).
+        bool ShouldEquipWeaponForSlot(uint8 playerclass, uint8 spec, ItemPrototype const* proto, uint8 slot, bool canDualWield = true);
         bool CheckItemSpec(uint8 spec, ItemSpecType itSpec);
         // Fresh-seed provenance gates. Unknown items pass (fail-open): missing
         // world rows (custom items, sparse DBC) must never block gear; only
@@ -264,6 +272,9 @@ class RandomItemMgr
         // when present; otherwise a class-generic spec so gear never skips
         // entirely (fail-open scoring, still filtered by weapon rules).
         uint32 GetFallbackSpecId(uint8 playerclass);
+        // Spec scale name for a scale id ("" when unknown). Lets callers use
+        // the slot-aware policy without touching the private scale map.
+        std::string GetSpecName(uint32 specId);
     private:
         void BuildRandomItemCache();
         void BuildEquipCache();

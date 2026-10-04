@@ -8,6 +8,7 @@
 #include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/strategy/values/VendorWeaponUpgradePolicy.h"
 #include "playerbot/strategy/values/VendorBuyPolicy.h"
+#include "playerbot/strategy/values/SpecWeaponPolicy.h"
 #include "playerbot/RandomItemMgr.h"
 #include "runtime/HireLifecycle.h"
 #include "playerbot/strategy/values/MountValues.h"
@@ -73,18 +74,29 @@ bool BuyAction::Execute(Event& event)
                 continue;
             // #427: order vendor stock by live stat-weight score (best upgrade
             // first) with an item-level fallback when either side scores 0,
-            // ported from donor BuyAction.cpp:69-88. One weight lookup per
+            // ported from donor BuyAction.cpp:69-88. Shields first for a
+            // shieldless shield-spec bot (owner matrix: a prot bot must ALWAYS
+            // have a shield), then the weight order. One weight lookup per
             // item per visit (O(stock)); the loop below reuses no cache.
+            uint32 buySpecId = sRandomItemMgr.GetPlayerSpecId(bot);
+            if (!buySpecId)
+                buySpecId = sRandomItemMgr.GetFallbackSpecId(bot->GetClass());
+            bool const buyShieldNeed = ai::SpecUsesShieldOffHand(bot->GetClass(), sRandomItemMgr.GetSpecName(buySpecId)) &&
+                !bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND);
             std::unordered_map<uint32, uint32> vendorScores;
             vendorScores.reserve(m_items_sorted.size());
             for (VendorItem* scored : m_items_sorted)
                 vendorScores[scored->item] = sRandomItemMgr.GetLiveStatWeight(bot, scored->item);
-            std::sort(m_items_sorted.begin(), m_items_sorted.end(), [&vendorScores](VendorItem* i, VendorItem* j)
+            std::sort(m_items_sorted.begin(), m_items_sorted.end(), [&vendorScores, buyShieldNeed](VendorItem* i, VendorItem* j)
             {
                 ItemPrototype const* pi = sObjectMgr.GetItemPrototype(i->item);
                 ItemPrototype const* pj = sObjectMgr.GetItemPrototype(j->item);
                 if (!pi || !pj)
                     return false;
+                uint32 const ri = ai::VendorShieldRank(buyShieldNeed, pi->Class, pi->SubClass);
+                uint32 const rj = ai::VendorShieldRank(buyShieldNeed, pj->Class, pj->SubClass);
+                if (ri != rj)
+                    return ri < rj;
                 return VendorBuyRanksFirst(vendorScores[i->item], pi->ItemLevel, vendorScores[j->item], pj->ItemLevel);
             });
 
@@ -99,20 +111,34 @@ bool BuyAction::Execute(Event& event)
 
                 auto pmo = sPerformanceMonitor.start(PERF_MON_VALUE, "IsWorthBuyingFromVendorToResellAtAH", ai);
 
+                // Pool item cheat: server-managed stock (ammo, and the quiver
+                // that only holds it) refills/is seeded without gold, so a
+                // vendor->AH flip of that stock only burns the trainer purse
+                // (live pool: 34 Small Quiver buys on priest Braegrulaer in
+                // 5 min, 19 on mage Vyrtryrg — non-hunters with no ranged
+                // kit, quiver usage NONE via the equip path). No-cheat bots
+                // (owned/hired) keep the earned flip path.
+                bool const cheatStock = proto->Class == ITEM_CLASS_QUIVER && ai->HasCheat(BotCheatMask::item);
                 // if item is worth selling to AH?
-                bool canFlipAH = ItemUsageValue::IsWorthBuyingFromVendorToResellAtAH(proto, tItem->maxcount > 0);
+                bool canFlipAH = !cheatStock &&
+                    ItemUsageValue::IsWorthBuyingFromVendorToResellAtAH(proto, tItem->maxcount > 0);
 
                 pmo.reset();
 
 
-                // Pool-bot weapon upgrade pass: runs before the usage loop so
-                // NONE-classified vendor stock is reached too. A vendor weapon
-                // the bot does not own can still be a real upgrade by the same
-                // rules the equip audit uses (spec-allowed type, usable now,
+                // Pool-bot weapon/shield upgrade pass: runs before the usage loop so
+                // NONE-classified vendor stock is reached too. A vendor weapon or
+                // shield the bot does not own can still be a real upgrade by the
+                // same rules the equip audit uses (spec-allowed type, usable now,
                 // better by scoring, via QueryItemUsageForEquip). Money for the
                 // next trainer ranks comes first. At most one weapon per visit;
-                // owned/mastered/hired bots never spend gold this way.
-                if (!result && !boughtWeapon && IsVendorWeaponUpgradeCandidate(proto->Class, proto->SubClass) &&
+                // owned/mastered/hired bots never spend gold this way. A shield
+                // spec never buys an off-hand weapon: the slot-aware audit
+                // answers NONE for it (it would only ping-pong the shield), so
+                // the gold stays for the shield (sorted first above).
+                bool const vendorOffHandWeapon = proto->Class == ITEM_CLASS_WEAPON &&
+                    ai::SpecUsesShieldOffHand(bot->GetClass(), sRandomItemMgr.GetSpecName(buySpecId));
+                if (!result && !boughtWeapon && !vendorOffHandWeapon && IsVendorWeaponUpgradeCandidate(proto->Class, proto->SubClass) &&
                     !ai->HasActivePlayerMaster() && !ai->HasRealPlayerMaster() &&
                     sRandomBotFacade.IsRandomBot(bot) &&
                     !TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()) &&
@@ -175,6 +201,18 @@ bool BuyAction::Execute(Event& event)
 
 
                     if (usage == ItemUsage::ITEM_USAGE_USE && ItemUsageValue::CurrentStacks(ai, proto) >= 1)
+                        break;
+
+                    // Item-cheat ammo restocks one stack per visit: the per-tick
+                    // refill tops the equipped stack back up, so the usage only
+                    // flips to KEEP once the new stack lands (CurrentStacks
+                    // counts live inventory) and without a cap the loop
+                    // converts the whole ammo purse into same-item stacks
+                    // (live pool: batches up to 10 per visit). No-cheat bots
+                    // (owned/hired) still burn ammo and keep the full
+                    // needAmmo = 8/2 restock below.
+                    if (usage == ItemUsage::ITEM_USAGE_AMMO && ai->HasCheat(BotCheatMask::item) &&
+                        ItemUsageValue::CurrentStacks(ai, proto) >= 1)
                         break;
 
                     // Stop buying reagents/recipes once we have 1 stack
