@@ -176,7 +176,7 @@ Current adapters:
 | `WorldBuffKillAdapter` | `PlayerScript::OnCreatureKill`: Onyxia/Nefarian → invisible Rally credit 95100 via `RewardPlayerAndGroupAtEvent` (issue #492) |
 | `WorldBuffAuraAdapter` | `UnitScript::OnAuraApply`: DM/Sayge/Songflower aura → receiver-only event credit via `AreaExploredOrEventHappens`, recruiter casters ignored (issue #492) |
 | `WorldBuffPvpAdapter` | `PlayerScript::OnPVPKill`: opposite-faction kill in Silithus (zone 1377) → Silithyst credit 95101 via `RewardPlayerAndGroupAtEvent` (issue #492) |
-| `WorldBuffRaidAdapter` | `PlayerScript::OnBeforeTeleport` snapshot + `OnMapChanged` restore/strip for `KeepWorldBuffsInRaids` and Upper Karazhan 814 (issue #492; pure table in `runtime/WorldBuffRaidKeeper.h`) |
+| `WorldBuffRaidAdapter` | `PlayerScript::OnBeforeTeleport` snapshot + `OnMapChanged` restore/strip + `OnLogout` memory cleanup for `KeepWorldBuffsInRaids` and Upper Karazhan 814 (issue #492; pure table in `runtime/WorldBuffRaidKeeper.h`) |
 The module should prefer an existing generic hook before requesting a new core
 seam.
 

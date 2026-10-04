@@ -18,6 +18,7 @@ public:
 
     void OnBeforeTeleport(Player* player, uint32 mapId, float x, float y, float z, float orientation) override;
     void OnMapChanged(Player* player) override;
+    void OnLogout(Player* player) override;
 };
 
 } // namespace TortoiseBots

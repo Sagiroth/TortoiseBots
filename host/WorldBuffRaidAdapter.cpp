@@ -18,7 +18,7 @@ WorldBuffRaidKeeper keeper;
 } // namespace
 
 WorldBuffRaidAdapter::WorldBuffRaidAdapter()
-    : PlayerScript("tortoisebots_worldbuff_raids", { PLAYERHOOK_ON_BEFORE_TELEPORT, PLAYERHOOK_ON_MAP_CHANGED })
+    : PlayerScript("tortoisebots_worldbuff_raids", { PLAYERHOOK_ON_BEFORE_TELEPORT, PLAYERHOOK_ON_MAP_CHANGED, PLAYERHOOK_ON_LOGOUT })
 {
 }
 
@@ -88,17 +88,18 @@ void WorldBuffRaidAdapter::OnMapChanged(Player* player)
         // Silithyst is not in the strip set and is never snapshotted.
         if (player->HasAura(entry.spellId))
             continue;
-        if (player->AddAura(entry.spellId, 0, player))
+        if (SpellAuraHolder* holder = player->AddAura(entry.spellId, 0, player))
         {
-            // Duration lives on the holder, not the Aura: GetAura returns
-            // the effect-0 Aura, whose holder owns both durations.
-            if (Aura* aura = player->GetAura(entry.spellId, EFFECT_INDEX_0))
-            {
-                aura->GetHolder()->SetAuraMaxDuration(entry.maxMs);
-                aura->GetHolder()->SetAuraDuration(entry.remainMs);
-            }
+            holder->SetAuraMaxDuration(entry.maxMs);
+            holder->SetAuraDuration(entry.remainMs);
         }
     }
+}
+
+void WorldBuffRaidAdapter::OnLogout(Player* player)
+{
+    if (player)
+        keeper.Clear(player->GetGUIDLow());
 }
 
 } // namespace TortoiseBots
