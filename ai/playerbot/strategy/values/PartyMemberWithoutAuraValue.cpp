@@ -33,11 +33,13 @@ public:
                 }
             }
 
-            // Issue #468 (donor BuffBelowRefreshTarget): an aura expiring
+            // Issue #468 (donor BuffBelowRefreshTarget): a LONG aura expiring
             // inside the refresh window counts as missing, so the member is
-            // picked and the buff is topped up before it drops.
+            // picked and the buff is topped up before it drops. Short auras
+            // only match on fall-off, as before.
             Aura* aura = ai->GetAura(*i, unit);
-            if (ai::BuffNeedsRefresh(aura != nullptr, aura ? aura->GetAuraDuration() : 0))
+            if (ai::BuffNeedsRefresh(aura != nullptr, aura ? aura->GetAuraDuration() : 0,
+                aura ? aura->GetAuraMaxDuration() : 0))
                 continue;
 
             return false;

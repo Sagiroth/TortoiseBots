@@ -239,11 +239,13 @@ bool BuffTrigger::IsActive()
     if (!target || !target->IsAlive())
         return false;
 
-    // Issue #468 (donor BuffBelowRefreshTarget): an aura expiring inside the
-    // refresh window counts as missing, so the buff is topped up on the last
-    // out-of-combat tick instead of dropping mid-fight.
+    // Issue #468 (donor BuffBelowRefreshTarget): a LONG aura expiring inside
+    // the refresh window counts as missing, so the buff is topped up on the
+    // last out-of-combat tick instead of dropping mid-fight. Short combat
+    // buffs (max < 5 min) only re-arm on fall-off, as before.
     Aura* aura = ai->GetAura(spell, target, checkIsOwner);
-    return ai::BuffNeedsRefresh(aura != nullptr, aura ? aura->GetAuraDuration() : 0);
+    return ai::BuffNeedsRefresh(aura != nullptr, aura ? aura->GetAuraDuration() : 0,
+        aura ? aura->GetAuraMaxDuration() : 0);
 }
 
 bool MyBuffTrigger::IsActive()
@@ -1008,12 +1010,13 @@ bool GreaterBuffOnPartyTrigger::IsActive()
     if (!BuffOnPartyTrigger::IsActive())
         return false;
     // Issue #468: the group buff only pays off while the member lacks the
-    // lower single-target buff too - unless that one is expiring inside the
-    // refresh window, in which case the group cast tops up both at once.
+    // lower single-target buff too - unless that LONG one is expiring inside
+    // the refresh window, in which case the group cast tops up both at once.
     if (lowerSpell.empty())
         return true;
     Aura* lower = ai->GetAura(lowerSpell, target, checkIsOwner);
-    return ai::BuffNeedsRefresh(lower == nullptr, lower ? lower->GetAuraDuration() : 0);
+    return ai::BuffNeedsRefresh(lower != nullptr, lower ? lower->GetAuraDuration() : 0,
+        lower ? lower->GetAuraMaxDuration() : 0);
 }
 
 bool TargetOfAttacker::IsActive()

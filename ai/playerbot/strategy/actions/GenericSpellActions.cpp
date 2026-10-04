@@ -402,10 +402,12 @@ bool CastAuraSpellAction::isUseful()
     Unit* target = GetTarget();
     if (!target)
         return false;
-    // Issue #468 (donor BuffBelowRefreshTarget): re-arm while the aura is
+    // Issue #468 (donor BuffBelowRefreshTarget): re-arm while a LONG aura is
     // still up but expiring, so the recast lands before the buff drops.
+    // Short combat buffs (max < 5 min) only re-arm on fall-off, as before.
     Aura* aura = ai->GetAura(GetSpellName(), target, isOwner);
-    return CastSpellAction::isUseful() && ai::BuffNeedsRefresh(aura != nullptr, aura ? aura->GetAuraDuration() : 0);
+    return CastSpellAction::isUseful() && ai::BuffNeedsRefresh(aura != nullptr,
+        aura ? aura->GetAuraDuration() : 0, aura ? aura->GetAuraMaxDuration() : 0);
 }
 
 bool CastBuffSpellAction::isUseful()
@@ -512,10 +514,12 @@ uint32 BuffOnPartyAction::CountGroupMembersMissingBoth(std::string const& groupN
         if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId() || !sServerFacade.IsAlive(member))
             continue;
         Aura* single = ai->GetAura(GetSpellName(), member);
-        if (!ai::BuffNeedsRefresh(single == nullptr, single ? single->GetAuraDuration() : 0))
+        if (!ai::BuffNeedsRefresh(single != nullptr, single ? single->GetAuraDuration() : 0,
+            single ? single->GetAuraMaxDuration() : 0))
             continue;
         Aura* grouped = ai->GetAura(groupName, member);
-        if (!ai::BuffNeedsRefresh(grouped == nullptr, grouped ? grouped->GetAuraDuration() : 0))
+        if (!ai::BuffNeedsRefresh(grouped != nullptr, grouped ? grouped->GetAuraDuration() : 0,
+            grouped ? grouped->GetAuraMaxDuration() : 0))
             continue;
         ++missing;
     }

@@ -24,26 +24,46 @@ static int checks = 0;
     } \
 } while (0)
 
-// Refresh: missing always rebuffs; inside the window rebuffs; outside holds.
-// Permanent auras (remaining <= 0) never count.
+// Refresh: missing always rebuffs; a LONG aura inside the window rebuffs;
+// outside it holds. Permanent auras (remaining <= 0) never count. Short
+// auras (Slice and Dice, Rupture: max well under 5 min) only rebuff on
+// fall-off, even inside the window - otherwise the trigger would stay
+// permanently active and clip them.
 static void TestRefreshWindow()
 {
-    CHECK(BuffNeedsRefresh(false, 0));
-    CHECK(BuffNeedsRefresh(false, -1));
-    CHECK(BuffNeedsRefresh(true, 1));
-    CHECK(BuffNeedsRefresh(true, 14000));
-    CHECK(!BuffNeedsRefresh(true, 15000));
-    CHECK(!BuffNeedsRefresh(true, 30 * 60 * 1000));
-    CHECK(!BuffNeedsRefresh(true, 0));
-    CHECK(!BuffNeedsRefresh(true, -1));
+    static int32_t const LONG = 30 * 60 * 1000;
+    // Missing counts regardless of durations passed: callers pass hasAura
+    // from `aura != nullptr`, so a null aura must read as needs-refresh
+    // (regression: `== nullptr` inverted this at 3 call sites).
+    CHECK(BuffNeedsRefresh(false, 0, 0));
+    CHECK(BuffNeedsRefresh(false, -1, 0));
+    CHECK(BuffNeedsRefresh(false, 0, LONG));
+    CHECK(BuffNeedsRefresh(false, 14000, LONG));
+    // Long aura inside the window rebuffs; at/over the edge holds.
+    CHECK(BuffNeedsRefresh(true, 1, LONG));
+    CHECK(BuffNeedsRefresh(true, 14000, LONG));
+    CHECK(!BuffNeedsRefresh(true, 15000, LONG));
+    CHECK(!BuffNeedsRefresh(true, 30 * 60 * 1000, LONG));
+    // Permanent auras never count.
+    CHECK(!BuffNeedsRefresh(true, 0, LONG));
+    CHECK(!BuffNeedsRefresh(true, -1, LONG));
+    // Short auras only rebuff once gone, never early.
+    CHECK(BuffNeedsRefresh(false, 0, 12000));
+    CHECK(!BuffNeedsRefresh(true, 1, 12000));
+    CHECK(!BuffNeedsRefresh(true, 11000, 12000));
+    CHECK(!BuffNeedsRefresh(true, 14000, 36000));
+    CHECK(!BuffNeedsRefresh(true, 14000, 299999));
+    // Boundary: max exactly 5 min still refreshes early.
+    CHECK(BuffNeedsRefresh(true, 14000, 5 * 60 * 1000));
 }
 
-// The window and quorum are ported donor constants: pin them so a stray
-// edit has to face this test.
+// The window, quorum and duration floor are ported donor constants: pin them
+// so a stray edit has to face this test.
 static void TestPortedConstants()
 {
     CHECK(kBuffRefreshWindowMs == 15000);
     CHECK(kGroupBuffMinMissing == 3);
+    CHECK(kBuffRefreshMinMaxDurationMs == 5 * 60 * 1000);
 }
 
 // Variant map: the five 1.12 group buffs, blessings excluded.

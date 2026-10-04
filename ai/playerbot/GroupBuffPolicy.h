@@ -3,45 +3,53 @@
 #include <cstdint>
 #include <string>
 
-// Pure decision rules for the group-buff port (issue #468): refresh a buff
-// shortly before it expires, and upgrade a single-target buff to its group
-// variant when enough party members lack both. No core includes: callers in
-// strategy/ translate game state into these plain inputs, so the rules stay
-// testable in tools/test_group_buff_policy.cpp without the server.
+// Pure decision rules for the group-buff port (issue #468): refresh a LONG
+// buff shortly before it expires, and upgrade a single-target buff to its
+// group variant when enough party members lack both. No core includes:
+// callers in strategy/ translate game state into these plain inputs, so the
+// rules stay testable in tools/test_group_buff_policy.cpp without the server.
 //
 // Donor: mod-playerbots GenericBuffUtils (BuffBelowRefreshTarget /
 // HasEnoughSameMapMissingPlayersForGroupVariant / GroupVariantFor) plus the
 // beforeDuration plumbing in GenericTriggers/GenericSpellActions. Adapted:
 // the donor passes beforeDuration = 0 at every buff registration, so stock
 // donor also only rebuffs on fall-off outside its out-of-combat force-rebuff
-// pass; the window here is a named 15 s so expiring buffs are topped up on
-// the last out-of-combat tick instead of dropping mid-fight. Greater
-// blessings stay out (donor GroupVariantFor excludes them too - coordinated
-// by a separate system, here by the GreaterBlessing gates).
+// pass; the window here is a named 15 s applied only to long buffs (max >=
+// 5 min), so short combat buffs and combo finishers (Slice and Dice,
+// Rupture) still run to expiry. Greater blessings stay out (donor
+// GroupVariantFor excludes them too - coordinated by a separate system,
+// here by the GreaterBlessing gates).
 
 namespace ai
 {
-    // Ms before expiry at which a buff counts as needing a refresh. Donor
-    // scale for explicit windows is 5-10 s (pet/prot short buffs); 15 s
+    // Ms before expiry at which a long buff counts as needing a refresh.
+    // Donor scale for explicit windows is 5-10 s (pet/prot short buffs); 15 s
     // covers the buff trigger re-evaluation interval with margin.
     std::uint32_t const kBuffRefreshWindowMs = 15000;
+
+    // Only long upkeep buffs (party buffs, armors, seals...) are refreshed
+    // early. Short combat buffs and combo finishers (Slice and Dice 9-36 s,
+    // Rupture 6-14 s, Holy Shield 10 s...) must run to expiry: a 15 s window
+    // on a 12 s aura would keep its trigger permanently active and clip it.
+    std::int32_t const kBuffRefreshMinMaxDurationMs = 5 * 60 * 1000;
 
     // Donor quorum: prefer singles until at least three living, in-world
     // group members on the bot's map lack both the single-target buff and
     // its group variant (requiredCount = 3, presence check on both).
     std::uint32_t const kGroupBuffMinMissing = 3;
 
-    // True when the buff should be (re)cast: missing outright, or expiring
-    // inside the refresh window. Durations are ms remaining, matching the
-    // Aura::GetAuraDuration() units the trigger/action gates read.
-    // Permanent auras report <= 0 and never count (donor force-rebuff
-    // branch treats them the same way).
+    // True when the buff should be (re)cast: missing outright, or a LONG
+    // buff expiring inside the refresh window. Durations are ms, matching
+    // the Aura::GetAuraDuration()/GetAuraMaxDuration() units the gates read.
+    // Permanent auras report <= 0 remaining and never count (donor
+    // force-rebuff branch treats them the same way). Short auras (max
+    // below the floor) only rebuff on fall-off, exactly as before #468.
     inline bool BuffNeedsRefresh(bool hasAura, std::int32_t remainingMs,
-        std::uint32_t windowMs = kBuffRefreshWindowMs)
+        std::int32_t maxDurationMs, std::uint32_t windowMs = kBuffRefreshWindowMs)
     {
         if (!hasAura)
             return true;
-        if (remainingMs <= 0)
+        if (remainingMs <= 0 || maxDurationMs < kBuffRefreshMinMaxDurationMs)
             return false;
         return std::uint32_t(remainingMs) < windowMs;
     }
