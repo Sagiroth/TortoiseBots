@@ -732,10 +732,34 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
     // launched: the core rejects a one-point spline (MoveSplineInitArgs::Validate, path[0]
     // is always the current position) and the caller would ask for the same move every
     // tick. Report the failure instead, so the travel target counts a retry and cools down.
-    if (path.size() < 2)
+    // A clipped route tail (or a sparse first hop cut by the gap rule) can also leave a
+    // single point further ahead: that still walks via a plain MovePoint below, so only
+    // a mesh-hole self-path or a cross-map stub fails here.
+    WorldPosition botPos(bot);
+    bool singlePointMove = path.size() == 1 && path.front().GetMapId() == botPos.GetMapId() &&
+        path.front().distance(botPos) >= sPlayerbotAIConfig.targetPosRecalcDistance;
+    if (path.size() < 2 && !singlePointMove)
     {
         AI_VALUE(LastMovement&, "last movement").moveFailReason = MOVE_FAIL_DISPATCH_SHORT;
         return false;
+    }
+
+    if (singlePointMove)
+    {
+        // A single point ahead cannot seed a spline (path[0] is the current
+        // position), so it walks as a plain MovePoint with pathfinding, the same
+        // launch the normal path ends with below. The hazard rewrite is skipped:
+        // with no segment there is nothing to bend around a hazard.
+        WorldPosition movePosition = path.back();
+        uint32 moveOptions = (moveMode == FORCED_MOVEMENT_WALK) ? MOVE_WALK_MODE : MOVE_RUN_MODE;
+        moveOptions |= MOVE_PATHFINDING;
+        mm.MovePoint(movePosition.GetMapId(),
+            movePosition.getX(),
+            movePosition.getY(),
+            movePosition.getZ(),
+            moveOptions);
+        WaitForReach(botPos.distance(movePosition));
+        return true;
     }
 
     if (!generatePath || !bot->IsFlying())
@@ -767,7 +791,6 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
 
     std::vector<G3D::Vector3> pointPath = WorldPosition().toPointsArray(path);
     float size = WorldPosition().GetPathLength(path);
-
     bool usePath = true;
 
     if (usePath)
@@ -1087,21 +1110,22 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     }
     // END DEBUG
 
-    // ClipPath keeps only this 150 yd window, so a bot that has walked the route
-    // down to its tail is left with a single point. The core rejects a one-point
-    // spline, and the dispatch failure below would retry the target out even
-    // though the bot is already there. Count it as arrived instead - same
-    // retry accounting as the recalc gate above. Only when the surviving point
-    // is nearer the destination than the bot is (a mesh-hole self-path or a
-    // cross-map stub is not arrival): those keep the dispatch-short failure.
-    if (movePath.GetPointPath().size() < 2 && startPos.GetMapId() == endPos.GetMapId() &&
-        !movePath.empty() && movePath.GetBack().distance(endPos) < totalDistance)
+    // The clipped route can end one step short of the destination: a single point
+    // while already inside the recalc gate is the same arrival the gate above
+    // reports, so stamp it arrived (DispatchMovement would reject the one-point
+    // path). Anything further out keeps moving: DispatchMovement walks it as a
+    // plain MovePoint.
+    if (!movePath.empty() && movePath.GetPointPath().size() < 2 &&
+        totalDistance < sPlayerbotAIConfig.targetPosRecalcDistance)
     {
+        if (!lastMove.lastPath.empty() && lastMove.lastPath.GetBack().distance(endPos) <= totalDistance)
+            lastMove.clear();
+
         if (mover == bot)
             ai->StopMoving();
         else
             mover->StopMoving();
-        lastMove.clear();
+
         lastMove.moveFailReason = MOVE_FAIL_ARRIVED;
         return false;
     }
