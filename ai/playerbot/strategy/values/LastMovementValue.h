@@ -63,6 +63,12 @@ namespace ai
         uint32 lastAreaTrigger;
         uint32 lastTransportEntry;
         time_t lastFlee;
+        // Number of flee actions dispatched in quick succession (within returnDelay of each
+        // other). Used to detect a "subsequent" flee loop so spellcasting can take priority.
+        uint32 fleeCount;
+        // Wall-clock of the last dispatched flee, used to decide whether the next flee is
+        // "subsequent" (close in time) or a fresh flee (window lapsed -> count resets).
+        time_t lastFleeAttempt;
         // Donor "recently flee info" (mod-playerbots MovementAction::FleePosition/
         // CheckLastFlee): last two flee destination angles, so a repeated flee
         // steps somewhere else instead of re-picking the same bad vector.
