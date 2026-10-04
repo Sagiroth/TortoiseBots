@@ -1,5 +1,6 @@
 #include "AhMarketService.h"
 #include "AhBuyerPolicy.h"
+#include "AhSellerTeleportPolicy.h"
 #include "BotActivityLease.h"
 #include "TradingLeasePolicy.h"
 
@@ -13,6 +14,8 @@
 #include "../ai/playerbot/strategy/values/BudgetValues.h"
 #include "../ai/playerbot/WorldPosition.h"
 #include "../ai/playerbot/GuidPosition.h"
+#include "../ai/playerbot/TravelMgr.h"
+#include "../ai/playerbot/strategy/values/TravelValues.h"
 
 #include "AuctionHouse/AuctionHouseMgr.h"
 #include "ObjectMgr.h"
@@ -211,11 +214,49 @@ bool AhMarketService::TryTeleportToAuctioneer(Player* bot)
     // All coords are from core creature spawns, validated via IsUsableAuctioneerPoint.
     // Fail closed: missing faction data is treated as hostile (never send a bot
     // to an unknown/hostile house). No DB, no map scan; uses GuidPosition faction store.
+    // Same-map only (live 2026-10-03: seller teleports yanked questing bots
+    // across continents onto auctioneer spots, e.g. Dun Morogh -> Darnassus
+    // AH). The organic buyer already requires a same-map house (AhBuyerPolicy.h);
+    // a cross-map house is unroutable for the walk back, so skip it here.
+    // The seller eligible set (Update: Idle/Grinding/Trading leases only) and
+    // the active-trip no-hijack rule (AhSellerTeleportPolicy.h) decide WHO may
+    // take the lift: only an idle bot or one already heading to an AH. A bot
+    // mid-trip on a quest/grind/gather errand keeps walking (Tharobraeth Dun
+    // Morogh -> Stormwind AH shows same-map hops hijack too).
+    bool hasActiveTrip = false;
+    bool tripIsAH = false;
+    if (::PlayerbotAI* marketAi = PlayerbotAIStorage::Instance().GetAI(bot))
+    {
+        if (AiObjectContext* ctx = marketAi->GetAiObjectContext())
+        {
+            auto* holder = ctx->GetValue<ai::TravelTarget*>("travel target");
+            ai::TravelTarget* target = holder ? holder->Get() : nullptr;
+            ai::TravelDestination* dest = target ? target->GetDestination() : nullptr;
+            if (target && target->IsActive() && dest &&
+                typeid(*dest) != typeid(ai::NullTravelDestination))
+            {
+                hasActiveTrip = true;
+                tripIsAH = dest->GetPurpose() == ai::TravelDestinationPurpose::AH;
+            }
+        }
+    }
+    bool sameMapHouse = false;
+    for (AuctioneerPos const& known : m_auctioneerPositions)
+        if (AhSellerTeleportAllowed(bot->GetMapId(), known.mapId, hasActiveTrip, tripIsAH))
+        {
+            sameMapHouse = true;
+            break;
+        }
+    if (!sameMapHouse)
+        return false;
     for (int attempt = 0; attempt < 5; ++attempt)
     {
         size_t idx = urand(0, (uint32)m_auctioneerPositions.size() - 1);
         AuctioneerPos const& pos = m_auctioneerPositions[idx];
         uint32 entry = pos.entry;
+
+        if (!AhSellerTeleportAllowed(bot->GetMapId(), pos.mapId, hasActiveTrip, tripIsAH))
+            continue;
 
         // Faction check: don't teleport a bot to an auctioneer that is hostile
         // or whose faction is unknown. Fail closed on missing data.
