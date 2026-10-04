@@ -13,6 +13,7 @@
 using ai::ShouldKeepTravelAcrossStuckReset;
 using ai::ShouldRetireStuckTravelKeep;
 using ai::TravelInvalidParkKey;
+using ai::TravelIsNoRouteFallbackPoint;
 using ai::TravelIsResetToNull;
 using ai::TravelMoveFailPathTag;
 using ai::TravelPurposeParkKey;
@@ -94,6 +95,18 @@ int main()
     // reachability, like the taker probe treats it.
     CHECK(TravelMoveFailPathTag(0x0008 | 0x0010) == "not-using-path");
     std::cout << "  [PASS] move-fail path tag buckets the pathfinder result\n";
+
+    // (g) No-route fallback gate (review #475): only the lone entry-less
+    // portal point ResolveMovePath emits for NOPATH counts as "no route".
+    // A real clipped point, a real portal/teleport (entry set), or more
+    // than one point is a walkable single-point move, not a failure.
+    CHECK(TravelIsNoRouteFallbackPoint(1, 7, 0));
+    CHECK(!TravelIsNoRouteFallbackPoint(1, 1, 0));
+    CHECK(!TravelIsNoRouteFallbackPoint(1, 7, 259));
+    CHECK(!TravelIsNoRouteFallbackPoint(1, 6, 0));
+    CHECK(!TravelIsNoRouteFallbackPoint(2, 7, 0));
+    CHECK(!TravelIsNoRouteFallbackPoint(0, 7, 0));
+    std::cout << "  [PASS] no-route fallback gate keeps unreachable drops\n";
 
     std::cout << "travel repick policy: OK\n";
     return 0;

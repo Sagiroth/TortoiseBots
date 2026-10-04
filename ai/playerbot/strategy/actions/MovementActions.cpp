@@ -14,6 +14,7 @@
 #include "Movement/TargetedMovementGenerator.h"
 #include "Movement/spline/MoveSplineInit.h"
 #include "playerbot/TravelMgr.h"
+#include "playerbot/TravelRepickPolicy.h"
 #include "Transports/Transport.h"
 #include "playerbot/strategy/generic/CombatStrategy.h"
 
@@ -573,12 +574,15 @@ TravelPath MovementAction::ResolveMovePath(const WorldPosition& startPosition, c
     if (!lastMove.lastPath.empty() && !outMovePath.empty() && lastMove.lastPath.GetBack().distance(endPosition) <= outMovePath.GetBack().distance(endPosition))
         outMovePath = lastMove.lastPath;
 
+    // A NOPATH fallback carries no route at all: tag the point so the dispatch
+    // below can tell it from a clipped real path and keep failing (retry/drop)
+    // instead of walking toward an unreachable target forever. PORTAL with no
+    // entry is not a real route node (portals/teleports always carry one).
     if (outMovePath.empty())
-        outMovePath.addPoint(endPosition);
+        outMovePath.addPoint(PathNodePoint{ endPosition, PathNodeType::NODE_STATIC_PORTAL, 0 });
 
     return outMovePath;
 }
-
 bool MovementAction::HandleSpecialMovement(TravelPath& path)
 {
     PathNodePoint currentPoint = path.GetPath().front();
@@ -733,10 +737,19 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
     // is always the current position) and the caller would ask for the same move every
     // tick. Report the failure instead, so the travel target counts a retry and cools down.
     // A clipped route tail (or a sparse first hop cut by the gap rule) can also leave a
-    // single point further ahead: that still walks via a plain MovePoint below, so only
-    // a mesh-hole self-path or a cross-map stub fails here.
+    // single point further ahead: that still walks via a plain MovePoint below. The
+    // ResolveMovePath NOPATH fallback (a lone entry-less portal point, no route behind
+    // it) is not a real path: walking it would DecRetry forever and the unreachable
+    // target would never drop. Mesh-hole self-paths and cross-map stubs fail too.
     WorldPosition botPos(bot);
-    bool singlePointMove = path.size() == 1 && path.front().GetMapId() == botPos.GetMapId() &&
+    bool noRouteFallback = false;
+    if (!movePath.GetPath().empty())
+    {
+        const PathNodePoint& front = movePath.GetPath().front();
+        noRouteFallback = TravelIsNoRouteFallbackPoint(movePath.GetPath().size(),
+            (int)front.type, front.entry);
+    }
+    bool singlePointMove = !noRouteFallback && path.size() == 1 && path.front().GetMapId() == botPos.GetMapId() &&
         path.front().distance(botPos) >= sPlayerbotAIConfig.targetPosRecalcDistance;
     if (path.size() < 2 && !singlePointMove)
     {
