@@ -136,12 +136,16 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
             continue;
         }
 
-        if (levelTooHigh(unit))
-        {
-            logGrind(unit, std::to_string((int)unit->GetLevel() - (int)bot->GetLevel()) + " levels above bot).");
-            continue;
-        }
-
+        // Self-defence has no level cap (donor mod-playerbots
+        // GrindTargetValue::FindTargetForGrinding returns the first live
+        // attacker unconditionally): a mob already fighting the bot must be
+        // answered however far above it stands. The +1 grind cap stays on
+        // NEW pulls in the possible-targets loop below (levelTooHigh there
+        // is untouched); evade/unreachable and follower-leash guards above
+        // stay. Without this the pick comes back null on a taker corridor,
+        // AttackAnythingAction::isUseful bails before its revenge block, and
+        // the bot walks through +2 mobs without a swing (Renees hand-ins:
+        // 3/83 fought back vs 48% on grind trips, Oct 2026 pool).
         logGrind(unit, "(hostile) selected.");
         return unit;
     }

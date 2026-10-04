@@ -3731,3 +3731,33 @@ accepting 2); CLUCK! 153 accepts / 149 drops across 22 re-cycling bots;
 Local validation: `tools/test_quest_log_triage_policy.cpp` (10 sections);
 `bash tools/verify_all.sh`; `git diff --check`. Module build by
 orchestrator (workers do not run the docker builder).
+
+## Lowbie taker-corridor self-defence + stable quest approach — 2026-10-04
+Feature: (1) the grind pick answers an attacker whatever its level
+(`GrindTargetValue::FindTargetForGrinding` attackers loop no longer applies
+the +1 `levelTooHigh` gate; evade/unreachable and follower-leash guards
+stay, and the gate is untouched in the new-pull possible-targets loop);
+(2) the travel walk keeps one stable per-(bot, destination) approach point
+for every purpose, not just service trips (the quest/giver/taker jitter no
+longer re-rolls every re-entry).
+
+Copied / ported / reimplemented: ported donor behaviour, both halves from
+mod-playerbots @ b6696bdbd3740e575598d167d69f39f68cc0b907 —
+`src/Ai/Base/Value/GrindTargetValue.cpp` (attackers loop returns the first
+live attacker unconditionally, no level check; the +4 check lives only on
+the `possible targets` loop) and
+`src/Ai/Base/Actions/MoveToTravelTargetAction.cpp:79-104` (stable
+angle/mod per (bot, destination) pair for the whole action, no
+purpose-gated jitter).
+
+Reason: live pool Oct 2026 — (1) Renees/Jorik taker walks died 3/83 with a
+fight-back vs 48% on grind trips: the pick came back null on over-level
+attackers so `AttackAnythingAction::isUseful` bailed before its revenge
+block and bots walked 800 yd through level 7-8 ground without a swing
+(Morupurtre 20:40:06 Greater Duskbat 6 at 3 yd, zero orders in 37 s);
+(2) per-tick jitter oscillated quest-trip walks across platform edges
+(Dolanaar/Sen'jin/Kharanos env-death pits, all within yards of a service
+NPC, repeat same-point deaths).
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`;
+`$SCR/build-commit.sh <sha>` green (DEPLOY never set).

@@ -633,26 +633,18 @@ bool MoveToTravelTargetAction::Execute(Event& event)
     {
         float maxDistance = target->GetDestination()->GetRadiusMin();
 
-        // Service trips keep one stable approach per (bot, destination)
-        // (donor mod-playerbots): re-rolling every tick oscillates between
-        // points and never converges when one lands inside geometry.
-        // Everything else keeps the spreading jitter.
-        if (ServiceTripIsServicePurpose(purpose))
-        {
-            float dx = 0.0f, dy = 0.0f;
-            ServiceTripStableOffset(bot->GetGUIDLow(), target->GetEntry(),
-                location.getX(), location.getY(), maxDistance, dx, dy);
-            x += dx;
-            y += dy;
-        }
-        else
-        {
-            float angle = 2 * M_PI * urand(0, 100) / 100.0;
-            float mod = urand(50, 100) / 100.0;
-
-            x += cos(angle) * maxDistance * mod;
-            y += sin(angle) * maxDistance * mod;
-        }
+        // One stable approach per (bot, destination) pair (donor
+        // mod-playerbots MoveToTravelTargetAction, same for every purpose):
+        // re-rolling the walk point every re-entry oscillates between
+        // points and never converges when one lands inside geometry - or
+        // walks the bot back and forth across a platform edge (Dolanaar
+        // tree-platform env deaths, Oct 2026 pool). Service trips keep
+        // their tested helper; every other purpose gets the same shape.
+        float dx = 0.0f, dy = 0.0f;
+        ServiceTripStableOffset(bot->GetGUIDLow(), target->GetEntry(),
+            location.getX(), location.getY(), maxDistance, dx, dy);
+        x += dx;
+        y += dy;
 
         if (ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
         {
