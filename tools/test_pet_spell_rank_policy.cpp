@@ -113,7 +113,7 @@ static void TestCustomFamilies()
 static void TestWarlockLadders()
 {
     CHECK(WarlockPetLadders(416).size() == 3);  // imp
-    CHECK(WarlockPetLadders(417).size() == 2);  // felhunter
+    CHECK(WarlockPetLadders(417).size() == 3);  // felhunter
     CHECK(WarlockPetLadders(1860).size() == 4); // voidwalker
     CHECK(WarlockPetLadders(1863).size() == 2); // succubus
     CHECK(WarlockPetLadders(1234).empty());
@@ -177,6 +177,20 @@ static void TestSharedHelpers()
         });
         CHECK(hasT2);
         CHECK(!hasT1);
+    }
+    // Spell Lock is a ladder too: a level-52 Felhunter wants rank 2 only, so
+    // the check cannot stay true on rank 1 the core already replaced.
+    {
+        bool hasSL2 = false, hasSL1 = false;
+        ForEachWarlockWantedSpell(417, 52, [&](PetWantedSpell wanted)
+        {
+            if (wanted.spellId == 19647)
+                hasSL2 = true;
+            if (wanted.spellId == 19244)
+                hasSL1 = true;
+        });
+        CHECK(hasSL2);
+        CHECK(!hasSL1);
     }
     // Passives ride the same helper (no second table to drift).
     CHECK(TopRankAtLevel(NaturalArmorLadder(), 20) == 24550);

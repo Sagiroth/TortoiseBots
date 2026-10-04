@@ -440,6 +440,7 @@ inline PetRankLadder const* WarlockPetLadder(uint32_t petEntry, char const* line
     };
     static PetRankLadder const felhunterDevour = { {30, 19505}, {38, 19731}, {46, 19734}, {54, 19736} };
     static PetRankLadder const felhunterTainted = { {32, 19478}, {40, 19655}, {48, 19656}, {56, 19660} };
+    static PetRankLadder const felhunterSpellLock = { {36, 19244}, {52, 19647} };
     static PetRankLadder const voidwalkerConsume = {
         {18, 17767}, {26, 17850}, {34, 17851}, {42, 17852}, {50, 17853}, {58, 17854},
     };
@@ -476,6 +477,8 @@ inline PetRankLadder const* WarlockPetLadder(uint32_t petEntry, char const* line
         case 417: // felhunter
             if (line[0] == 't')
                 return &felhunterTainted;
+            if (line[0] == 's')
+                return &felhunterSpellLock;
             return &felhunterDevour;
         case 1860: // voidwalker
             if (line[0] == 'c')
@@ -502,7 +505,8 @@ inline std::vector<std::pair<char const*, PetRankLadder const*>> WarlockPetLadde
             return { {"blood", WarlockPetLadder(416, "blood")}, {"shield", WarlockPetLadder(416, "shield")},
                      {"bolt", WarlockPetLadder(416, "bolt")} };
         case 417:
-            return { {"devour", WarlockPetLadder(417, "devour")}, {"tainted", WarlockPetLadder(417, "tainted")} };
+            return { {"devour", WarlockPetLadder(417, "devour")}, {"tainted", WarlockPetLadder(417, "tainted")},
+                     {"spelllock", WarlockPetLadder(417, "spelllock")} };
         case 1860:
             return { {"consume", WarlockPetLadder(1860, "consume")}, {"sacrifice", WarlockPetLadder(1860, "sacrifice")},
                      {"suffering", WarlockPetLadder(1860, "suffering")},
@@ -520,7 +524,7 @@ inline std::vector<std::pair<uint32_t, uint32_t>> WarlockPetSingleSpells(uint32_
     switch (petEntry)
     {
         case 416: return { {12, 4511} };                       // Phase Shift
-        case 417: return { {42, 19480}, {36, 19244}, {52, 19647} }; // Paranoia, Spell Lock 1-2
+        case 417: return { {42, 19480} }; // Paranoia (Spell Lock is a rank ladder)
         case 1863: return { {32, 7870}, {26, 6358} };         // Lesser Invisibility, Seduction
         default: return {};
     }
