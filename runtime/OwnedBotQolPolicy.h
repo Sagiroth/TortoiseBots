@@ -44,6 +44,25 @@ inline char const* OwnedBotQolDecisionName(OwnedBotQolDecision decision)
     return "unknown";
 }
 
+// Summon-on-accept condition policy: revive/repair run only out of combat
+// unless allowInCombat explicitly opens it (still bounded by the cooldown),
+// and a per-bot cooldown (seconds since last group summon, 0 = off) bounds
+// uninvite/invite macro abuse. Pure function for unit tests.
+inline bool OwnedBotGroupSummonReady(bool inCombat, bool allowInCombat,
+    uint32_t cooldown, long secondsSinceLast)
+{
+    if (inCombat && !allowInCombat)
+        return false;
+    if (cooldown > 0 && secondsSinceLast >= 0 &&
+        static_cast<uint64_t>(secondsSinceLast) < cooldown)
+        return false;
+    return true;
+}
+
+inline bool OwnedBotGroupSummonRevive(bool inCombat, bool allowInCombat, bool revive)
+{
+    return revive && (!inCombat || allowInCombat);
+}
 // Parse the optional autogear quality/ilvl argument ("", "green", "200").
 // Returns the clamped quality / effective ilvl cap (0 = config cap only).
 // Rejects bare digits <= 5: those read as qualities, not item levels (donor

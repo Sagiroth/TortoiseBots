@@ -373,6 +373,10 @@ public:
     bool ownedBotSummonAllowBotDead = false;
     bool ownedBotSummonRevive = false;
     bool ownedBotSummonRepair = false;
+    // Seconds between summon-on-accept teleports per bot (default 300 = 5
+    // minutes). An uninvite/invite cycle inside the window is refused, so it
+    // cannot be macroed into a free in-combat rez/repair.
+    uint32 ownedBotSummonCooldown = 300;
     bool logInGroupOnly, logValuesPerTick;
     bool fleeingEnabled;
     // Universal raid survival knobs (issue #201): bomb carriers run

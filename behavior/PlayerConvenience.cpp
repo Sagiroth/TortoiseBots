@@ -106,7 +106,9 @@ bool PlayerConvenience::RequestSummon(Player* requester, Player* bot)
 // opens it. Dead master: refused unless allowMasterDead opens it (the queued
 // summon still cancels if the master dies before arrival). Dead bot:
 // refused unless allowBotDead opens it, and only revived when revive is set
-// too. Repair runs after arrival when repair is set.
+// too. Revive/repair run only out of combat unless allowInCombat opens it,
+// so a combat summon is a reposition, never a free rez. A per-bot cooldown
+// (seconds, 0 = off) bounds uninvite/invite macro abuse.
 bool PlayerConvenience::RequestGroupSummon(Player* requester, Player* bot, SummonConditions const& conditions)
 {
     if (!requester || !bot || !requester->IsInWorld() || requester->IsBeingTeleported() ||
@@ -119,13 +121,25 @@ bool PlayerConvenience::RequestGroupSummon(Player* requester, Player* bot, Summo
         return false;
     // The native flow never summons into or out of combat; the knob opens
     // both sides at once, matching the donor allowSummonInCombat meaning.
-    if ((requester->IsInCombat() || bot->IsInCombat()) && !conditions.allowInCombat)
+    bool inCombat = requester->IsInCombat() || bot->IsInCombat();
+    if (inCombat && !conditions.allowInCombat)
         return false;
+    if (conditions.cooldown > 0)
+    {
+        uint32 key = bot->GetObjectGuid().GetCounter();
+        time_t now = time(nullptr);
+        auto it = m_groupSummonAt.find(key);
+        if (it != m_groupSummonAt.end() && now - it->second < static_cast<time_t>(conditions.cooldown))
+            return false;
+    }
     if (!bot->IsAlive())
     {
         if (!conditions.allowBotDead)
             return false;
-        if (conditions.revive)
+        // Out of combat by default: a combat summon repositions a live bot,
+        // it never battle-rezes — unless allowInCombat explicitly opens it
+        // (still bounded by the per-bot cooldown above). Same for repair.
+        if (conditions.revive && (!inCombat || conditions.allowInCombat))
         {
             bot->ResurrectPlayer(1.0f, false);
             bot->SpawnCorpseBones();
@@ -135,7 +149,9 @@ bool PlayerConvenience::RequestGroupSummon(Player* requester, Player* bot, Summo
     }
     if (!RequestSummon(requester, bot))
         return false;
-    if (conditions.repair)
+    if (conditions.cooldown > 0)
+        m_groupSummonAt[bot->GetObjectGuid().GetCounter()] = time(nullptr);
+    if (conditions.repair && (!inCombat || conditions.allowInCombat))
         bot->DurabilityRepairAll(false, 0.0f);
     return true;
 }

@@ -41,7 +41,8 @@ These settings dramatically enhance the solo or small-group experience with owne
 | `AiPlayerbot.OwnedBotSummonAllowMasterDead` | `0` | `0` | Summon-on-accept may fire while the inviter is dead. |
 | `AiPlayerbot.OwnedBotSummonAllowBotDead` | `0` | `0` | Summon-on-accept may fire while the bot is dead (revive needs `OwnedBotSummonRevive` too). |
 | `AiPlayerbot.OwnedBotSummonRevive` | `0` | `0` | Revive a dead bot as part of summon-on-accept (needs the dead-bot knob too). |
-| `AiPlayerbot.OwnedBotSummonRepair` | `0` | `0` | Repair the bot after a summon-on-accept arrival. |
+| `AiPlayerbot.OwnedBotSummonRepair` | `0` | `0` | Repair the bot after a summon-on-accept arrival (out of combat unless `OwnedBotSummonAllowInCombat` is also on). |
+| `AiPlayerbot.OwnedBotSummonCooldown` | `300` | `300` | Seconds between summon-on-accept teleports per bot (5 min). An uninvite/invite cycle inside the window is refused, so it cannot be macroed into a free in-combat rez/repair. `0` disables the cooldown. |
 | `AiPlayerbot.AutoLearnQuestSpells` | `1` | **`1`** | **Class Quest Rewards:** Automatically teaches spells awarded by completed class quests (e.g. Paladin Resurrection, Warlock pet summons, Shaman totems). |
 | `AiPlayerbot.AutoLearnTrainerSpells` | `0` | **`0`** | **Free Trainer Spells (random pool only):** When on, random bots learn every green-eligible trainer spell on level-up (Dual Wield at live data level, rank upgrades, poisons). When off, no free sweep runs — but paid trainer visits with gold still teach. Owned bots never get free spells either way, but for owned hunters/warlocks this flag also enables automatic pet initialization. |
 | `AiPlayerbot.AutoLearnDroppedSpells` | `0` | **`0`** | **Level-60 Book Spells (random pool only):** Teaches dungeon/raid book spells the bot reached the level for. Same random-only scope as the trainer sweep. |

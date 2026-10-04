@@ -1,8 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <ctime>
 #include <unordered_map>
-
 #include "ObjectGuid.h"
 
 class Player;
@@ -32,6 +32,9 @@ public:
         bool allowBotDead = false;
         bool revive = false;
         bool repair = false;
+        // Seconds between group summons per bot (0 = no cooldown). The accept
+        // hook passes the configured value; RequestGroupSummon enforces it.
+        uint32 cooldown = 0;
     };
 
     bool RequestSummon(Player* requester, Player* bot);
@@ -63,6 +66,10 @@ private:
     void UpdateSummons(uint32 diff);
 
     std::unordered_map<uint32, SummonState> m_summons;
+    // Last successful group-accept summon per bot (character counter ->
+    // time). Bounds uninvite/invite macro abuse; entries are tiny and only
+    // created for bots that actually group-summoned.
+    std::unordered_map<uint32, time_t> m_groupSummonAt;
 };
 
 } // namespace TortoiseBots

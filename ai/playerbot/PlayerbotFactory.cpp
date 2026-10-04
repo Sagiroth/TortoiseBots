@@ -125,8 +125,9 @@ void PlayerbotFactory::PruneDuplicateEquipRows()
 // Issue #473: incremental-only re-gear of an owned bot at its level within
 // a quality cap and an optional item-level cap. The quality selects the band
 // start (same itemQuality plumbing as every other gear path); the ilvl cap
-// is enforced by temporarily narrowing randomGearMaxLevel, which every
-// candidate query filters on. No wipe, no master sync.
+// is threaded into InitEquipment as an argument (0 = the global
+// randomGearMaxLevel), never through global config mutation. No wipe, no
+// master sync.
 void PlayerbotFactory::AutogearOwned(uint32 cappedQuality, uint32 ilvlCap)
 {
     if (!bot)
@@ -134,17 +135,7 @@ void PlayerbotFactory::AutogearOwned(uint32 cappedQuality, uint32 ilvlCap)
     if (cappedQuality > ITEM_QUALITY_LEGENDARY)
         cappedQuality = ITEM_QUALITY_LEGENDARY;
     itemQuality = cappedQuality;
-    if (ilvlCap == 0)
-    {
-        InitEquipment(true, false);
-        bot->SaveToDB();
-        return;
-    }
-    uint32 savedMaxLevel = sPlayerbotAIConfig.randomGearMaxLevel;
-    if (ilvlCap < savedMaxLevel)
-        sPlayerbotAIConfig.randomGearMaxLevel = ilvlCap;
-    InitEquipment(true, false);
-    sPlayerbotAIConfig.randomGearMaxLevel = savedMaxLevel;
+    InitEquipment(true, false, sPlayerbotAIConfig.randomGearProgression, false, ilvlCap);
     bot->SaveToDB();
 }
 
@@ -1839,7 +1830,7 @@ static bool PassesSeedProvenance(Player* bot, uint32 newItemId)
     return false;
 }
 
-void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool progressive, bool partialUpgrade)
+void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool progressive, bool partialUpgrade, uint32 maxItemLevelOverride)
 {
     // Bots below level 5 stay in their starting outfit: gear DB has little for them,
     // and specId is often 0 at low levels which would strip them naked (DestroyItemsVisitor
@@ -2011,7 +2002,7 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
 
         uint32 searchLevel = level;
         uint32 quality = ITEM_QUALITY_POOR;
-        uint32 maxItemLevel = sPlayerbotAIConfig.randomGearMaxLevel;
+        uint32 maxItemLevel = maxItemLevelOverride != 0 ? maxItemLevelOverride : sPlayerbotAIConfig.randomGearMaxLevel;
         bool progressiveGear = progressive;
         if(syncWithMaster && ai->GetMaster())
         {

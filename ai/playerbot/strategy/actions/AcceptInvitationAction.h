@@ -114,6 +114,7 @@ namespace ai
                     conditions.allowBotDead = sPlayerbotAIConfig.ownedBotSummonAllowBotDead;
                     conditions.revive = sPlayerbotAIConfig.ownedBotSummonRevive;
                     conditions.repair = sPlayerbotAIConfig.ownedBotSummonRepair;
+                    conditions.cooldown = sPlayerbotAIConfig.ownedBotSummonCooldown;
                     if (!TortoiseBots::PlayerConvenience::Instance().RequestGroupSummon(inviter, bot, conditions))
                         sLog.outDebug("TortoiseBots: summon-on-accept for bot %s refused by condition knobs",
                             bot->GetName());

@@ -83,6 +83,33 @@ static void TestAutogearGarbage()
     CHECK(!request.ok && request.error != nullptr);
 }
 
+static void TestGroupSummonCooldown()
+{
+    // No history: ready. Inside the window: refused. Outside: ready again.
+    CHECK(OwnedBotGroupSummonReady(false, false, 300, -1));
+    CHECK(!OwnedBotGroupSummonReady(false, false, 300, 10));
+    CHECK(OwnedBotGroupSummonReady(false, false, 300, 300));
+    CHECK(OwnedBotGroupSummonReady(false, false, 300, 301));
+    // Cooldown 0 = off.
+    CHECK(OwnedBotGroupSummonReady(false, false, 0, 10));
+}
+
+static void TestGroupSummonCombatGate()
+{
+    CHECK(!OwnedBotGroupSummonReady(true, false, 300, -1));
+    CHECK(OwnedBotGroupSummonReady(true, true, 300, -1));
+}
+
+static void TestGroupSummonReviveRepairRule()
+{
+    // Out of combat: revive flag decides. In combat: needs the explicit
+    // in-combat knob too.
+    CHECK(OwnedBotGroupSummonRevive(false, false, true));
+    CHECK(!OwnedBotGroupSummonRevive(false, false, false));
+    CHECK(!OwnedBotGroupSummonRevive(true, false, true));
+    CHECK(OwnedBotGroupSummonRevive(true, true, true));
+    CHECK(!OwnedBotGroupSummonRevive(true, true, false));
+}
 int main()
 {
     TestOwnedBotAllowed();
@@ -94,6 +121,9 @@ int main()
     TestAutogearIlvlClamped();
     TestAutogearQualityAsNumber();
     TestAutogearGarbage();
+    TestGroupSummonCooldown();
+    TestGroupSummonCombatGate();
+    TestGroupSummonReviveRepairRule();
     std::printf("owned bot qol policy: %d checks passed\n", checks);
     return 0;
 }

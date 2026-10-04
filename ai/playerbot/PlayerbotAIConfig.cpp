@@ -470,6 +470,9 @@ bool PlayerbotAIConfig::Initialize()
     ownedBotSummonAllowBotDead = config.GetBoolDefault("AiPlayerbot.OwnedBotSummonAllowBotDead", false);
     ownedBotSummonRevive = config.GetBoolDefault("AiPlayerbot.OwnedBotSummonRevive", false);
     ownedBotSummonRepair = config.GetBoolDefault("AiPlayerbot.OwnedBotSummonRepair", false);
+    ownedBotSummonCooldown = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.OwnedBotSummonCooldown", 300));
+    if (ownedBotSummonCooldown > 3600)
+        ownedBotSummonCooldown = 3600;
      openGoSpell = config.GetIntDefault("AiPlayerbot.OpenGoSpell", 6477);
 
     randomChangeMultiplier = config.GetFloatDefault("AiPlayerbot.RandomChangeMultiplier", 1.0);

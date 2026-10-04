@@ -32,8 +32,9 @@ public:
     void UpgradeGearBest() { return InitEquipment(true, false, false); }
     // Issue #473: owned-bot autogear. Incremental-only re-gear at the bot's
     // level within a quality/ilvl cap, via the same candidate pool as every
-    // other gear path (no wipe, no syncWithMaster). Never touches pool bots;
-    // the caller gates on runtime/OwnedBotQolPolicy.h.
+    // other gear path (no wipe, no syncWithMaster; the ilvl cap is an
+    // InitEquipment argument, never a global mutation). Never touches pool
+    // bots; the caller gates on runtime/OwnedBotQolPolicy.h.
     void AutogearOwned(uint32 cappedQuality, uint32 ilvlCap);
     // Weapon/armour/riding skills plus two class-appropriate professions and the
     // secondary skills, all bounded by the current level. Public so the runtime can
@@ -92,7 +93,7 @@ public:
 
 private:
     void Shuffle(std::vector<uint32>& items);
-    void InitEquipment(bool incremental, bool syncWithMaster, bool progressive = sPlayerbotAIConfig.randomGearProgression, bool partialUpgrade = false);
+    void InitEquipment(bool incremental, bool syncWithMaster, bool progressive = sPlayerbotAIConfig.randomGearProgression, bool partialUpgrade = false, uint32 maxItemLevelOverride = 0);
     // One per-quality candidate query with the wearability descent (shared
     // by the main band loop, the epic path and the fallback).
     void QuerySeedCandidates(Player* bot, uint32 specId, uint8 slot, uint32 searchLevel, uint32 maxItemLevel, uint32 q, std::vector<uint32>& ids);
