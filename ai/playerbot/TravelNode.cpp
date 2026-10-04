@@ -1179,8 +1179,12 @@ void TravelPath::ClipPath(PlayerbotAI* ai, Unit* mover, bool ignoreEnemyTargets)
             endP = p;
         else if (!p->IsWalkable())
             endP = p;
-        else if (p->point.sqDistance(prevP->point) > 125)
+        else if (prevP != fullPath.begin() && p->point.sqDistance(prevP->point) > 125)
         {
+            // Navmesh legs regularly space waypoints wider than ~11 yd; only a gap
+            // after the window start means a broken route. The first hop may simply
+            // start sparse, and cutting there left a single point that the dispatch
+            // below could not launch.
             endP = prevP;
         }
 

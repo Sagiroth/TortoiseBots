@@ -1,5 +1,7 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/GroupBuffPolicy.h"
+#include "playerbot/GroupMembers.h"
 #include "GenericActions.h"
 #include "UseItemAction.h"
 
@@ -397,7 +399,15 @@ bool CastPetSpellAction::isPossible()
 
 bool CastAuraSpellAction::isUseful()
 {
-    return CastSpellAction::isUseful() && !ai->HasAura(GetSpellName(), GetTarget(), false, isOwner);
+    Unit* target = GetTarget();
+    if (!target)
+        return false;
+    // Issue #468 (donor BuffBelowRefreshTarget): re-arm while a LONG aura is
+    // still up but expiring, so the recast lands before the buff drops.
+    // Short combat buffs (max < 5 min) only re-arm on fall-off, as before.
+    Aura* aura = ai->GetAura(GetSpellName(), target, isOwner);
+    return CastSpellAction::isUseful() && ai::BuffNeedsRefresh(aura != nullptr,
+        aura ? aura->GetAuraDuration() : 0, aura ? aura->GetAuraMaxDuration() : 0);
 }
 
 bool CastBuffSpellAction::isUseful()
@@ -491,6 +501,46 @@ void GreaterBuffOnPartyAction::ClaimBuffCast(Unit* /*target*/)
     BuffClaimRegistry::Claim(bot->GetObjectGuid(), scope, GetSpellName());
     if (!lowerSpell.empty())
         BuffClaimRegistry::Claim(bot->GetObjectGuid(), scope, lowerSpell);
+}
+
+uint32 BuffOnPartyAction::CountGroupMembersMissingBoth(std::string const& groupName) const
+{
+    Group* group = bot ? bot->GetGroup() : nullptr;
+    if (!group)
+        return 0;
+    uint32 missing = 0;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId() || !sServerFacade.IsAlive(member))
+            continue;
+        Aura* single = ai->GetAura(GetSpellName(), member);
+        if (!ai::BuffNeedsRefresh(single != nullptr, single ? single->GetAuraDuration() : 0,
+            single ? single->GetAuraMaxDuration() : 0))
+            continue;
+        Aura* grouped = ai->GetAura(groupName, member);
+        if (!ai::BuffNeedsRefresh(grouped != nullptr, grouped ? grouped->GetAuraDuration() : 0,
+            grouped ? grouped->GetAuraMaxDuration() : 0))
+            continue;
+        ++missing;
+    }
+    return missing;
+}
+
+bool BuffOnPartyAction::isUseful()
+{
+    if (!CastBuffSpellAction::isUseful())
+        return false;
+    // Scoped to recognized upgrade pairs (IsGroupBuffUpgradePair): paladin
+    // blessings are not in the variant map, so their single-target party
+    // action keeps its existing behavior untouched.
+    std::string const groupName = ai::GroupBuffVariantFor(GetSpellName());
+    if (groupName.empty() || !ai::IsGroupBuffUpgradePair(groupName, GetSpellName()))
+        return true;
+    if (!ai->HasSpell(groupName))
+        return true;
+    if (AI_VALUE2(uint32, "has reagents for", AI_VALUE2(uint32, "spell id", groupName)) == 0)
+        return true;
+    return !ai::ShouldUpgradeToGroupBuff(true, true, CountGroupMembersMissingBoth(groupName));
 }
 
 bool CastBuffSpellAction::Execute(Event& event)

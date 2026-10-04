@@ -405,6 +405,12 @@ namespace ai
         virtual bool IsActive() override;
     };
 
+    // Flame shock is the DoT half of the shared shock cooldown: it fires
+    // whenever flame shock itself is down, above the generic shock line, so
+    // the DoT lands first and earth shock spends the cooldown only when flame
+    // is already up or still unknown. The interrupt trigger is untouched.
+    DEBUFF_TRIGGER(FlameShockTrigger, "flame shock");
+
     class EarthShockInterruptSpellTrigger : public InterruptSpellTrigger
     {
     public:

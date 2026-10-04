@@ -3529,3 +3529,175 @@ excluded); `bash tools/verify_all.sh`; `git diff --check`. No deploy
 (orchestrator compiles).
 
 | Pool-bot trade safety (`PoolBotTradeMode` 0-4 + `TradeActionExcludedPrefixes`, issue #469) | `mod-playerbots` @ b6696bdbd3740e575598d167d69f39f68cc0b907 | `src/PlayerbotAIConfig.cpp:569-570,700` (`TradeActionExcludedPrefixes`, `EnableRandomBotTrading`), `src/PlayerbotAIConfig.h:329,400`, `src/Ai/Base/Actions/TradeAction.cpp:14-24` (prefix guard), `src/Ai/Base/Actions/TradeStatusAction.cpp:47-55,235-250` (mode 0-3 gates), `conf/playerbots.conf.dist:780-783` | Ported/adapted: mode numbering kept (0 off / 1 trusted / 2 buy-only / 3 sell-only) with safe default 0 instead of donor 1 and an added open mode 4; trust extended to hire masters and same-account owners and reconciled with the legacy master/group `shouldTrade` block so open modes and ungrouped owners/hire-masters work; prefix guard and buy/sell settle gates reimplemented in `runtime/PoolBotTradePolicy.h`; inbound/settle gates in `TradeStatusAction`, prefix guard in `TradeAction`, Trade-channel-only mention guard in `PlayerbotAI`. Bot-to-bot trade life (RPG giveaways, enchants, `WTS`/`WTB`) intentionally untouched | Pool-bot stranger trades refused while master/group/hire-master trades pass; Trade-channel chatter without a mention ignored; addon-prefixed lines never open trade |
+| Buff refresh window + single-to-group upgrade with reagent gate (`BuffNeedsRefresh` 15 s, `GroupBuffVariantFor`, `ShouldUpgradeToGroupBuff`; trigger/action/party-search wiring, greater-trigger reagent+training gate, single-party `isUseful` quorum stand-down) | `mod-playerbots` @ b6696bdb | `src/Ai/Base/Util/GenericBuffUtils.{h,cpp}` (`BuffBelowRefreshTarget`, `HasEnoughSameMapMissingPlayersForGroupVariant` requiredCount = 3, `GroupVariantFor`, `UpgradeToGroupIfAppropriate`, `HasRequiredReagents`), `src/Ai/Base/Trigger/GenericTriggers.{h,cpp}` (`BuffTrigger::IsActive`, `BuffOnPartyTrigger`), `src/Ai/Base/Actions/GenericSpellActions.{h,cpp}` (`CastAuraSpellAction`/`CastBuffSpellAction`/`GroupBuffSpellAction::isUseful`+`Execute`), `src/Ai/Base/Value/PartyMemberWithoutAuraValue.cpp`, `src/Bot/ForceRebuff.{h,cpp}` (reference only - no worktree equivalent) | `ai/playerbot/GroupBuffPolicy.h` (pure rules + `tools/test_group_buff_policy.cpp`), `ai/playerbot/strategy/triggers/GenericTriggers.cpp` (`BuffTrigger`, `GreaterBuffOnPartyTrigger`), `ai/playerbot/strategy/actions/GenericSpellActions.{h,cpp}` (`CastAuraSpellAction`, `BuffOnPartyAction`), `ai/playerbot/strategy/values/PartyMemberWithoutAuraValue.cpp` | Reimplemented for the worktree's static single/greater split: expiring-in-window counts as missing (refresh), singles stand down at quorum (3 same-map members lacking both, trained + reagent present) so the higher-priority greater node fires; donor's per-cast dynamic upgrade + announce + force-rebuff top-off not ported (no `GroupBuffSpellAction`, no announce path, blessings keep their own gates) | `tools/test_group_buff_policy.cpp` (33 checks) + `bash tools/verify_all.sh`; `git diff --check`; module build via orchestrator |
+| Service-trip arrival + unwatched rescue + city need gate (AH/vendor/repair/mail/trainer/city) | mod-playerbots@b6696bdb `src/Ai/Base/Actions/MoveToTravelTargetAction.cpp` (stable per-(bot, destination) approach offset; no arrival shortcut, no teleport, donor drops to cooldown on max retry) + `src/Ai/Base/Actions/ChooseTravelTargetAction.cpp:58` (ungated 10% city trip to banker/battlemaster/auctioneer) | `ai/playerbot/ServiceTripPolicy.h` (new: service predicate, hall/counter arrival radii, stable offset, rescue gate), `ai/playerbot/strategy/actions/MoveToTravelTargetAction.{h,cpp}` (`CheckServiceArrival`, `TryRescueServiceTrip`, stable service jitter), `ai/playerbot/strategy/actions/ChooseTravelTargetAction.cpp` (city walks to auctioneer only), `ai/playerbot/strategy/values/TravelValues.cpp` (city needs `should ah sell` or buyer trip), `tools/test_service_trip_policy.cpp` | Reimplemented (donor behaviour harvested, architecture not copied: arrival via NPC spawn lookup, rescue via same-map unwatched TeleportTo at IsMaxRetry with 30-min cooldown + `ServiceTripTeleport` event, city gated on AH business) | Live 2026-10-03: AH purpose 1800 picks / 758 move-fails / 316 drops, city 1614 / 917 / 520; Orgrimmar bots stalled 5-8 yd out (path incomplete), 133 AH fails within 30 yd; `tools/test_service_trip_policy.cpp` green; `bash tools/verify_all.sh` green; `git diff --check` clean; compile via orchestrator |
+
+## Rotation gaps: Demonology Immolate, Elemental/Enhancement Flame Shock, BM Intimidation (issue #467) — 2026-10-04
+Feature: Demonology keeps `immolate` up (`ACTION_NORMAL + 1`, same slot as
+Destruction); Elemental/Enhancement keep `flame shock` up first via a new
+`flame shock upkeep` trigger (`FlameShockTrigger`, plain `DebuffTrigger`: no
+flame-shock aura on target) above the generic `shock` -> `earth shock` line
+and the separate `earth shock interrupt` duty — `ShockTrigger` stays blind
+to the flame-shock aura so `earth shock` still spends the shared cooldown
+while the DoT ticks; Beast
+Mastery fires `intimidation` on cooldown via a new `IntimidationTrigger`
+(`SpellCanBeCastedTrigger` on `self target`: the self-cast fails core
+`CanCastSpell` with `SPELL_FAILED_TARGET_ENEMY` against the hostile current
+target, plus a live-pet gate like `KillCommandTrigger` since the stun lands
+via the pet) below `kill command` (`ACTION_NORMAL + 3` vs `+ 4`).
+
+Copied / ported / reimplemented: reimplemented (donor
+`mod-playerbots @ b6696bdbd3740e575598d167d69f39f68cc0b907`:
+`src/Ai/Class/Warlock/Strategy/DemonologyWarlockStrategy.cpp` (immolate
+upkeep 17.5 + immolate on attacker 19.0), `src/Ai/Class/Shaman/Strategy/
+ElementalShamanStrategy.cpp` (flame shock 5.3) and `EnhancementShaman-
+Strategy.cpp` (flame shock 19.0), `src/Ai/Class/Hunter/Strategy/
+BeastMasteryHunterStrategy.cpp` (intimidation 40.0). Donor extras not
+ported: `immolate/corruption on attacker` spread, `earth shock execute`,
+`lava burst`/`maelstrom`/`feral spirit` kit, `kill command`/`kill shot`/
+`serpent sting` kit — no matching 1.12 spells or engine values here; donor
+`DebuffTrigger` target-lifetime gate (`estimated group dps`) not ported
+either, ours already gates via shared-cooldown state. Donor `BuffTrigger`
+refresh-ahead vs ours missing-aura-only kept as-is: re-casts land only
+after full expiry).
+
+Reason: the three specs queued no upkeep for those spells — Demonology had
+no `immolate` node at all (Affliction/Destruction do), Elemental/Enhancement
+queued only the generic `shock` -> `earth shock` line (`ShamanStrategy.cpp`
+falls back to `flame shock` only when `earth shock` is unknown, and
+`ShockTrigger` refuses to fire while any shock aura is present, so the DoT
+never refreshed), and BM registered `intimidation` only as the scatter-shot
+node fallback with no trigger pushing it (`intimidation on snare target`
+needs a snare-state target and never fires as a cooldown).
+
+Local validation: `python3 tools/verify_action_trigger_wiring.py` (0 live
+missing), `bash tools/verify_all.sh`; `git diff --check`. No deploy
+(orchestrator compiles).
+## Shield ping-pong reverse guard + vendor shield-first (review #465) — 2026-10-04
+Feature: the slot-aware spec weapon policy (`SpecWeaponPolicy.h`, new) pins
+the owner weapon matrix as pure rules - prot warrior/paladin 1H main hand +
+shield off hand, holy shield-or-held, arms/ret 2H-only, fury 1H pair with a
+2H stand-in only before Dual Wield - and the module now enforces the
+off-hand side: `RandomItemMgr::ShouldEquipWeaponForSlot` answers per
+concrete slot (warrior/paladin via the policy, other classes fail open to
+the old any-slot answer), the equip audit (`ItemUsageValue`) gates weapons
+through it (compare, NONE-with-equipped, spec transitions, stand-in guard,
+MH/OH hand-swap driver in `EquipAction`), so a bag 1H weapon never targets
+the shield and a shield never answers EQUIP over a weapon in the off hand.
+Vendor side: a shieldless shield-spec bot sorts shields before all other
+weapon upgrades (`VendorShieldRank`, same EQUIP rules, own gold, trainer
+reserve first) and never buys an off-hand weapon (`BuyAction` pass +
+`VendorHasUsefulItemValue` trigger veto; the slot-aware audit would answer
+NONE for it anyway).
+
+Copied / ported / reimplemented: reimplemented (donor `mod-playerbots`
+`src/Mgr/Item/StatsWeightCalculator.cpp:630-692` penalises 2H x0.05, x0.1
+for shield specs, and `src/Mgr/Item/RandomItemMgr.cpp:1202-1265` keeps a
+dead-code 1H+shield allowlist for prot, but neither forbids a weapon in
+the off-hand slot - the reverse guard is new; donor SHA `b6696bdb`).
+
+Reason: review #465 showed the J shield-transition alone ping-pongs - a bag
+1H out-scores the shield (EQUIP over it next audit), the shield-transition
+re-equips the shield, looping every audit cycle - and the vendor pass would
+spend gold on those unwanted off-hand weapons.
+
+Local validation: `tools/test_spec_weapon_policy.cpp` (matrix rows,
+ping-pong reverse guard, fury pre/post-DW, shield detection, vendor rank;
+registered in `tools/verify_all.sh`); `bash tools/verify_all.sh`;
+`git diff --check`. No deploy (orchestrator compiles).
+## Hunter & warlock pet presence, choice and ranks (task I) — 2026-10-04
+Feature: hunter pets keep family-correct level-appropriate ranks with
+sensible autocast (Growl on, Cower/Prowl off); solo pool warlocks upgrade
+Imp -> Voidwalker once they know the summon (697, level 10); both relearn
+missing ranks on the periodic initialize-pet tick without a relog/resummon.
+
+Copied / ported / reimplemented: reimplemented. Donor `mod-playerbots` @
+b6696bdbd3740e575598d167d69f39f68cc0b907: `src/Bot/Factory/PlayerbotFactory.cpp`
+`InitPet` (hunter pet creation + autocast sweep; warlocks summon live, so no
+factory pet), `src/Ai/Class/Warlock/Strategy/GenericWarlockNonCombatStrategy.cpp`
+(summon fallback chain voidwalker -> imp; spec pet strategies imp/voidwalker/
+succubus/felhunter with "wrong pet" nodes) and `src/Ai/Class/Warlock/WarlockTriggers.cpp`
+`WrongPetTrigger` (exactly one pet strategy enabled + known summon spell).
+Adapted to 1.12: no summon-strategy fan (this module's spec strategies
+`pet <spec> pve` already default Voidwalker solo / Imp raid); one shared
+"wrong pet" node on `WarlockPetPveStrategy`; rank ladders verified against
+tw_world.spell_template baseLevel + the SkillLineAbility DBC (phantom
+Dive 23146 / Dash 23100-23112 / skill-261 rows excluded, Turtle custom ranks
+included); teach-time autocast pins Sacrifice/Seduction off (the sweep would
+leave them on); families 35/36/39 mapped to their DBC skill lines.
+
+Reason: live 2026-10-04: 50 online lvl10+ warlocks, 44 with Imp in the active
+slot vs 6 with Voidwalker (41 vs 5 in the orchestrator's earlier sample) —
+both summons known, "no pet" never fires while a pet lives, and the
+spec-strategy "wrong pet" nodes had no trigger creator (dead wiring); hunter
+pets at 10-18 carried only the tame-time ranks (Growl 14916, Bite 17255,
+Claw 16828...) with wrong Dive/Screech/Claw/Furious-Howl levels and no
+Thunderstomp 51156 rank, and fox/serpent/moth families had no table at all.
+
+Local validation: `tools/test_warlock_pet_policy.cpp`,
+`tools/test_pet_spell_rank_policy.cpp` (registered in
+`tools/verify_all.sh`); `bash tools/verify_all.sh` (incl. host contract);
+`git diff --check`. No deploy (orchestrator compiles).
+## Rogue spec weapon types: subtlety joins the dagger-only set (task K) — 2026-10-04
+Feature: `RandomItemMgr::ShouldEquipWeaponForSpec` treats the `subtle`
+weight scale like `assas` (MH/OH daggers only) via the shared
+`ai/playerbot/strategy/values/RogueWeaponPolicy.h:RogueSpecWantsDaggers`
+predicate. Combat keeps swords/maces/fists; other classes unchanged. This
+flows through the existing equip logic (equip audit, `QueryItemUsageForEquip`
+spec transition, vendor weapon upgrades, loot/roll need) with no new rules.
+
+Copied / ported / reimplemented: reimplemented from donor behaviour
+(mod-playerbots `src/Mgr/Item/RandomItemMgr.cpp:ShouldEquipWeaponForSpec`
+dagger-only rogue gate + `src/Mgr/Item/StatsWeightCalculator.cpp:699-701`
+dagger 1.5x for assassination/subtlety and `:999-1005` slow-dagger-MH /
+fast-dagger-OH speed bonus, at local `playerbots-references/mod-playerbots`
+`b6696bdb`).
+
+Reason: the `else` fallback let subtlety rogues keep swords/maces, but the
+spec's Backstab/Ambush openers need a dagger main hand (core
+`Spell::CheckItems` refuses the cast: `SPELL_FAILED_EQUIPPED_ITEM_CLASS`),
+so a subtlety rogue wielding a sword queued doomed openers exactly like an
+assassination rogue would. Live 2026-10-04: 69 online pool rogues, 64 at
+level 10+; talent-marker census (ass 8, combat 27, subtle 12) found 8/12
+subtlety rogues with a non-dagger main hand (maces/swords outscoring plain
+daggers on `mledps`), 0/8 assassination rogues mismatched, and 1/107
+NotBehind vs 479 BadTargets on Backstab casts (positioning, not weapons).
+
+Local validation: `tools/test_rogue_weapon_policy.cpp` (assas/subtle
+dagger-only, combat/other excluded; registered in `tools/verify_all.sh`);
+`bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
+compiles).
+| Hunter dead-zone switch hysteresis + revenge-before-travel self-defence | mod-playerbots `src/Ai/Class/Hunter/HunterTriggers.cpp:112-128` (SwitchToRanged victim!=bot/immobilized/slow/dist>8; SwitchToMelee victim==bot AND dist<=8, no level gate either side) + `src/Ai/Base/Actions/ChooseTargetActions.cpp:104-133` (AttackAnythingAction::isUseful with no facing gate) | `ai/playerbot/HunterSwitchPolicy.h` (ShouldSwitchToMelee/ShouldSwitchToRanged + 5/10 yd edges), `ai/playerbot/strategy/hunter/HunterTriggers.h` (triggers delegate, AND/OR shapes unchanged), `ai/playerbot/strategy/actions/ChooseTargetActions.cpp` (revenge victim==bot answers first with no isInFront gate, before the QuestTaker walk-through exemption and the wounded-pool gate; pre-emptive strike keeps the front arc) | Reimplemented: donor switch shapes kept, only the shared 8 yd distance edge becomes a 5/10 yd hysteresis band; revenge reorder is donor-parity (no facing gate) | Pool hunters flipped kits every few ticks at the shared 8 yd line (inter-switch p50 15 s, 37% within 10 s, each flip rebuilding the combat trigger graph); travelling bots on completed hand-in walks never faced their attacker so the isInFront revenge gate never fired (taker trips fought back 5% vs 60-93% elsewhere) | `tools/test_hunter_switch_policy.cpp`, `bash tools/verify_all.sh`, `git diff --check` |
+
+## Quest accept/drop churn + banned quests + Bone Chew Toy — 2026-10-04
+Feature: masterless pool bots refuse war-effort item turn-ins (AQ sort
+-365 with item objectives: copper/thick-leather turn-ins, signet quests)
+and banned quests (CLUCK! 3861, inactive Method-disabled templates) at
+accept (`WouldAcceptQuest` + raw-id/share/confirm/details guards), and the
+clean action drops them with the same predicate (banned at any status for
+every bot; war-effort when incomplete/failed for upkeep bots; COMPLETE
+war-effort never dropped - turned in instead). Bone Chew Toy (item 51751)
+is never looted (`IsLootAllowed` veto + usage NONE), its GO piles
+(1000380) never queue, and copies in bags are destroyed by smart-destroy.
+Targeted by id - no generic quest-class purge, so quest starters (Free
+Ticket Voucher 19338 etc.) keep working.
+
+Copied / ported / reimplemented: reimplemented (local policy in
+`ai/playerbot/QuestLogPolicy.h`, tested by
+`tools/test_quest_log_triage_policy.cpp` §§7-10); donor behaviour
+`mod-playerbots` `src/Ai/World/Rpg/Action/NewRpgBaseAction.cpp`
+(`IsQuestWorthDoing` `:556-571` refuses repeatables, `OrganizeQuestLog`
+`:590-641` drops not-worth/capable + sort quests `ZoneOrSort < 0`)
+@ b6696bdbd3740e575598d167d69f39f68cc0b907 - modulated here to the
+war-effort sort only (breadcrumbs 8792/8795 with no item objective stay
+open) and to an accept-side filter matching the drop rule.
+
+Reason: live pool 2026-10-03/04: 16 695 accepts vs 7 194 drops (43%).
+War-effort turn-ins were ~60 accepts/h per capital with same-tick
+mass-drop bursts (Jaegaewog 22:19:55 dropped 19 quests at once after
+accepting 2); CLUCK! 153 accepts / 149 drops across 22 re-cycling bots;
+892 Bone Chew Toys sat in 118 bags from 897 StoreLoot rows on GO 1000380.
+
+Local validation: `tools/test_quest_log_triage_policy.cpp` (10 sections);
+`bash tools/verify_all.sh`; `git diff --check`. Module build by
+orchestrator (workers do not run the docker builder).

@@ -49,7 +49,7 @@ Shamans automatically drop and maintain fixed per-spec 4-element totem sets (oth
 
 ## Utility & Interrupts
 
-- **Interrupts:** Casts *Earth Shock* instantly to interrupt enemy spell casts.
+- **Shock rotation:** Elemental and Enhancement keep *Flame Shock* up first, then spend the shared shock cooldown on *Earth Shock*; *Earth Shock* keeps its separate interrupt duty on casting targets.
 - **Snares:** Casts *Frost Shock* to snare targets.
 - **Weapon Imbues:** Automatically maintains weapon imbues (*Windfury Weapon* / *Flametongue Weapon* for Enhancement, *Flametongue Weapon* otherwise, with *Rockbiter Weapon* / *Frostbrand Weapon* as fallbacks).
 - **Dispels & Cleansing:** Uses *Purge* to strip enemy buffs (shields, HoTs) and *Cure Poison* / *Cure Disease* on party members.

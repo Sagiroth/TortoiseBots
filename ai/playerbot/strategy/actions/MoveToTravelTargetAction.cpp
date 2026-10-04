@@ -215,6 +215,95 @@ bool MoveToTravelTargetAction::TrySettleUnreachableHandIn(TravelTarget* target, 
 
     return SettleUnreachableTakerHandIn(ai, questId, takerEntry, "unreachable");
 }
+
+// A service NPC inside its arrival radius counts as arrived, even when the
+// walk point sits inside geometry (the Orgrimmar auctioneer stalls: the bot
+// 5-8 yd out, path "incomplete"). Creature entries resolve by spawn lookup
+// in the wide arrival radius; game-object mailboxes by entry; a
+// destination with no NPC entry falls back to the destination point
+// itself. Arrival flips the target to WORK so the service action runs.
+bool MoveToTravelTargetAction::CheckServiceArrival(TravelTarget* target, std::string const& purpose)
+{
+    if (!ServiceTripIsServicePurpose(purpose))
+        return false;
+
+    int32 const entry = target->GetEntry();
+    WorldPosition const location = *target->getPosition();
+
+    if (entry == 0)
+    {
+        if (location.GetMapId() != bot->GetMapId())
+            return false;
+        if (WorldPosition(bot).distance(location) > SERVICE_TRIP_COUNTER_ARRIVAL_YD)
+            return false;
+        target->SetStatus(TravelStatus::TRAVEL_STATUS_WORK);
+        return true;
+    }
+
+    if (entry > 0)
+    {
+        CreatureInfo const* info = sObjectMgr.GetCreatureTemplate((uint32)entry);
+        uint32 const flags = info ? info->npc_flags : 0;
+        float const arrival = ServiceTripArrivalRadius(flags);
+        if (bot->FindNearestCreature((uint32)entry, arrival))
+        {
+            target->SetStatus(TravelStatus::TRAVEL_STATUS_WORK);
+            return true;
+        }
+        return false;
+    }
+
+    if (bot->FindNearestGameObject((uint32)-entry, SERVICE_TRIP_COUNTER_ARRIVAL_YD))
+    {
+        target->SetStatus(TravelStatus::TRAVEL_STATUS_WORK);
+        return true;
+    }
+    return false;
+}
+
+// Rescue for a service trip at the drop threshold (IsMaxRetry): teleport to
+// the exact destination point instead of dropping + parking. Same
+// unwatched-either-end rule as the passive walk hop in MoveTo2, same map
+// only (a walk hop stands in for a walk; cross-map never does), random
+// masterless pool bot only, once per 30 min, never forced. The rescue
+// clears the move budget like a fresh pick so the next tick walks the last
+// yards instead of dropping at once; the event makes it measurable.
+bool MoveToTravelTargetAction::TryRescueServiceTrip(TravelTarget* target, std::string const& purpose)
+{
+    if (!ServiceTripIsServicePurpose(purpose))
+        return false;
+    if (!target->IsMaxRetry(true))
+        return false;
+    if (target->IsForced())
+        return false;
+
+    WorldPosition const location = *target->getPosition();
+    if (location.GetMapId() != bot->GetMapId())
+        return false;
+    if (!bot->IsAlive() || bot->IsInCombat() || bot->IsTaxiFlying() || bot->IsBeingTeleported())
+        return false;
+    if (ai->HasRealPlayerMaster() || !sRandomBotFacade.IsRandomBot(bot))
+        return false;
+    WorldPosition const botPos(bot);
+    if (ai->HasPlayerNearby(botPos, sPlayerbotAIConfig.reactDistance) || ai->HasPlayerNearby(location, sPlayerbotAIConfig.reactDistance))
+        return false;
+
+    AiObjectContext* context = ai->GetAiObjectContext();
+    time_t const now = time(0);
+    if (AI_VALUE2(time_t, "manual time", "service trip rescue") + SERVICE_TRIP_RESCUE_COOLDOWN_SEC > now)
+        return false;
+
+    if (!bot->TeleportTo(location.GetMapId(), location.getX(), location.getY(), location.getZ(),
+        WorldPosition(bot).GetAngleTo(location)))
+        return false;
+
+    SET_AI_VALUE2(time_t, "manual time", "service trip rescue", now);
+    target->SetRetry(true, 0);
+    sPlayerbotAIConfig.logEvent(ai, "ServiceTripTeleport", purpose,
+        std::to_string((int32)WorldPosition(bot).distance(location)));
+    return true;
+}
+
 // Flight plan: decided ONCE per travel target (item 5) in
 // DecideFlightPlanForTarget below, stored on manual values, and only read
 // (never recomputed) on travel ticks. Walk-to-master staging (item 4): when
@@ -255,10 +344,8 @@ void ai::DecideFlightPlanForTarget(PlayerbotAI* ai, Player* bot, TravelTarget co
         return;
     if (!bot->IsAlive())
         return;
-
     WorldPosition const botLocation(bot);
     WorldPosition const location = *target->getPosition();
-
     float const tripDistance = botLocation.distance(location);
     if (tripDistance < ai::FLIGHT_TRANSPORT_MIN_TRIP_YD)
         return;
@@ -533,6 +620,12 @@ bool MoveToTravelTargetAction::Execute(Event& event)
     if (TrySettleUnreachableHandIn(target, purpose))
         return false;
 
+    // A service NPC already in reach counts as arrived, even when the walk
+    // point below sits inside geometry. Runs before the jitter so the
+    // arrival verdict never depends on the re-rolled point.
+    if (!hasFlightPlan && CheckServiceArrival(target, purpose))
+        return true;
+
     // With a flight plan the bot walks to the master (x/y/z/mapId staged
     // above), so the arrival jitter below must not re-aim at the final
     // destination - that would walk past the master.
@@ -540,11 +633,26 @@ bool MoveToTravelTargetAction::Execute(Event& event)
     {
         float maxDistance = target->GetDestination()->GetRadiusMin();
 
-        float angle = 2 * M_PI * urand(0, 100) / 100.0;
-        float mod = urand(50, 100) / 100.0;
+        // Service trips keep one stable approach per (bot, destination)
+        // (donor mod-playerbots): re-rolling every tick oscillates between
+        // points and never converges when one lands inside geometry.
+        // Everything else keeps the spreading jitter.
+        if (ServiceTripIsServicePurpose(purpose))
+        {
+            float dx = 0.0f, dy = 0.0f;
+            ServiceTripStableOffset(bot->GetGUIDLow(), target->GetEntry(),
+                location.getX(), location.getY(), maxDistance, dx, dy);
+            x += dx;
+            y += dy;
+        }
+        else
+        {
+            float angle = 2 * M_PI * urand(0, 100) / 100.0;
+            float mod = urand(50, 100) / 100.0;
 
-        x += cos(angle) * maxDistance * mod;
-        y += sin(angle) * maxDistance * mod;
+            x += cos(angle) * maxDistance * mod;
+            y += sin(angle) * maxDistance * mod;
+        }
 
         if (ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
         {
@@ -580,7 +688,12 @@ bool MoveToTravelTargetAction::Execute(Event& event)
         // unloaded tile, complete = full path whose dispatch still failed;
         // crossmap = destination on another map, never probed). Finding 14:
         // without it NOPATH vs INCOMPLETE vs mmap-hole cannot be separated
-        // from the CSV.
+        // from the CSV. A second colon carries which return-false site fired
+        // in MoveTo2/DispatchMovement (LastMovement::moveFailReason, stamped
+        // right before each `return false`), so a "complete" probe over a
+        // clipped route is separable from a dispatch that truly reached the
+        // goal and failed. Parsers reading `dist:pathtag` keep working: the
+        // reason is only ever appended after the tag.
         if (target->GetRetryCount(true) == 2)
         {
             std::string failDetail = std::to_string((int32)botLocation.distance(location));
@@ -593,6 +706,8 @@ bool MoveToTravelTargetAction::Execute(Event& event)
                 probe.calculate(location.getX(), location.getY(), location.getZ(), false);
                 failDetail += TravelMoveFailPathTag((uint32_t)probe.getPathType());
             }
+            failDetail += ":";
+            failDetail += MoveFailReasonName(AI_VALUE(LastMovement&, "last movement").moveFailReason);
             sPlayerbotAIConfig.logEvent(ai, "TravelMoveFailed", purpose, failDetail);
         }
 
@@ -605,6 +720,13 @@ bool MoveToTravelTargetAction::Execute(Event& event)
 
         if (TrySettleUnreachableHandIn(target, purpose))
             return false;
+
+        // A stuck service trip teleports to its destination instead of
+        // dropping + parking (owner request): unwatched, same map, random
+        // masterless pool bot, once per 30 min. A refused or failed rescue
+        // falls through to the ordinary drop below.
+        if (TryRescueServiceTrip(target, purpose))
+            return true;
 
         if (target->IsMaxRetry(true))
         {
