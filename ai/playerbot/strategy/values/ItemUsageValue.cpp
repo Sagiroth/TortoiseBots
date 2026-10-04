@@ -1025,10 +1025,33 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     // The two-hander a fury warrior leveled on before it could dual wield is not
     // an off-spec mistake: learning Dual Wield must not downgrade it to the
     // first one-hander in the bags. Only the weight race below may replace it.
+    // A protection warrior/paladin never levels on a two-hander on purpose -
+    // its spec off hand is a shield, which a two-hander blocks - so for such a
+    // spec the old two-hander is an off-spec mistake like any other. The extra
+    // conjunct reads the spec set without Dual Wield: fury still allows the
+    // two-hander there (it leveled on it), protection never does.
     bool const standInTwoHander = canDualWield &&
-        oldItemProto->InventoryType == INVTYPE_2HWEAPON && itemProto->InventoryType != INVTYPE_2HWEAPON;
+        oldItemProto->InventoryType == INVTYPE_2HWEAPON && itemProto->InventoryType != INVTYPE_2HWEAPON &&
+        sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, oldItemProto, false);
 
     if (newWeaponForSpec && oldWeaponAgainstSpec && !standInTwoHander)
+        return ItemUsage::ITEM_USAGE_EQUIP;
+
+    // Shield transition: a bot that can return to a shield setup (protection or
+    // holy spec, or the tank role - see BotCanReturnToShield) whose off hand
+    // still holds a weapon takes the shield even at lower weight. No spec lets
+    // a shield setup pair the shield with an off-hand weapon (protection wants
+    // shield only, holy shield or held-in-hand), so any weapon there is wrong
+    // and no weight race is needed; without this the shield falls into the
+    // wrong-armour-class branch below and reads as vendor trash against any
+    // off-hand weapon. Slot-aware on purpose: a generic one-hander is a legal
+    // main hand, so the spec gate alone cannot spot it in the wrong hand.
+    bool const shieldForSpec = (slot == EQUIPMENT_SLOT_OFFHAND &&
+        itemProto->Class == ITEM_CLASS_ARMOR &&
+        itemProto->SubClass == ITEM_SUBCLASS_ARMOR_SHIELD &&
+        BotCanReturnToShield(bot, specId, itemProto));
+    bool const oldOffSpecWeapon = (oldItemProto->Class == ITEM_CLASS_WEAPON);
+    if (shieldForSpec && oldOffSpecWeapon)
         return ItemUsage::ITEM_USAGE_EQUIP;
 
     bool existingShouldEquip = true;

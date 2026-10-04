@@ -105,10 +105,10 @@ bool BuyAction::Execute(Event& event)
                 pmo.reset();
 
 
-                // Pool-bot weapon upgrade pass: runs before the usage loop so
-                // NONE-classified vendor stock is reached too. A vendor weapon
-                // the bot does not own can still be a real upgrade by the same
-                // rules the equip audit uses (spec-allowed type, usable now,
+                // Pool-bot weapon/shield upgrade pass: runs before the usage loop so
+                // NONE-classified vendor stock is reached too. A vendor weapon or
+                // shield the bot does not own can still be a real upgrade by the
+                // same rules the equip audit uses (spec-allowed type, usable now,
                 // better by scoring, via QueryItemUsageForEquip). Money for the
                 // next trainer ranks comes first. At most one weapon per visit;
                 // owned/mastered/hired bots never spend gold this way.

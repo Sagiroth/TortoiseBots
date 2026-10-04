@@ -103,9 +103,9 @@ bool VendorHasUsefulItemValue::Calculate()
         if (freeMoney.find(usage) == freeMoney.end() || proto->BuyPrice > freeMoney[usage])
         {
             // Vendor stock the bot does not own yet never scores EQUIP (the
-            // classifier only evaluates items it has seen), so a real weapon
-            // upgrade would keep this trigger dark and the fallback buy loop
-            // in BuyAction would never run. Same audit rules: spec-allowed,
+            // classifier only evaluates items it has seen), so a real weapon or
+            // shield upgrade would keep this trigger dark and the fallback buy
+            // loop in BuyAction would never run. Same audit rules: spec-allowed,
             // usable now, better by scoring, affordable under the trainer
             // reserve. Masterless pool bots only; owned alts (not random),
             // bots with a live master, and hired companions (whose character
