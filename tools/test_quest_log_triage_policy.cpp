@@ -10,7 +10,12 @@
     } \
 } while (0)
 
+using ai::IsBannedQuest;
+using ai::IsWarEffortTurnIn;
 using ai::QuestTriageShouldDrop;
+using ai::ShouldRefuseQuestAtAccept;
+using ai::kBoneChewToyGoEntry;
+using ai::kBoneChewToyItemId;
 
 int main()
 {
@@ -65,6 +70,50 @@ int main()
     {
         CHECK(!QuestTriageShouldDrop(10, 10, 0, 0, false, 12, 12));
         std::cout << "  [PASS] doable quest kept\n";
+    }
+
+    // (7) War-effort item turn-ins (sort -365 with item objectives) are
+    // refused: AQ copper/thick-leather turn-ins and the signet quests.
+    // Sort -365 quests with no item objective (8792/8795 breadcrumb) stay
+    // open, as do ordinary zone quests.
+    {
+        CHECK(IsWarEffortTurnIn(-365, true));
+        CHECK(!IsWarEffortTurnIn(-365, false));
+        CHECK(!IsWarEffortTurnIn(132, true));
+        CHECK(!IsWarEffortTurnIn(-284, true));
+        std::cout << "  [PASS] war-effort item turn-ins refused, breadcrumbs kept\n";
+    }
+
+    // (8) Banned quests: CLUCK! (3861) always, inactive templates (Method
+    // disabled, e.g. [DEPRECATED] 40298) always; live quests untouched.
+    {
+        CHECK(IsBannedQuest(3861, false));
+        CHECK(IsBannedQuest(3861, true));
+        CHECK(IsBannedQuest(40298, true));
+        CHECK(!IsBannedQuest(40298, false));
+        CHECK(!IsBannedQuest(179, false));
+        CHECK(!IsBannedQuest(8515, false));
+        std::cout << "  [PASS] CLUCK!/inactive banned, live quests kept\n";
+    }
+
+    // (9) Combined accept/drop predicate: banned refuses for every bot,
+    // war-effort only for upkeep bots (a level-60 owned bot can fill them).
+    {
+        CHECK(ShouldRefuseQuestAtAccept(3861, false, 132, false, false));
+        CHECK(ShouldRefuseQuestAtAccept(3861, false, 132, false, true));
+        CHECK(ShouldRefuseQuestAtAccept(8515, false, -365, true, true));
+        CHECK(!ShouldRefuseQuestAtAccept(8515, false, -365, true, false));
+        CHECK(!ShouldRefuseQuestAtAccept(8792, false, -365, false, true));
+        CHECK(!ShouldRefuseQuestAtAccept(179, false, 132, true, true));
+        std::cout << "  [PASS] combined refuse predicate matches accept and drop\n";
+    }
+
+    // (10) Bone Chew Toy ids stay pinned: the loot and bag rules key off
+    // these, never a generic quest-class purge.
+    {
+        CHECK(kBoneChewToyItemId == 51751);
+        CHECK(kBoneChewToyGoEntry == 1000380);
+        std::cout << "  [PASS] Bone Chew Toy ids pinned\n";
     }
 
     std::cout << "All quest-log triage checks PASSED!\n";
