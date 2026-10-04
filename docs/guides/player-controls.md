@@ -28,6 +28,8 @@ Whisper commands (`/w <BotName> <command>`) and `.bot command <BotName> <command
 
 Refused commands answer with a short reason in chat; addon-originated requests additionally receive exactly one `TBM:ACTION_ERR|<command>|denied|<reason>` line so the `/tbm` UI can surface it.
 
+**Pool-bot trading (issue #469):** a masterless pool bot refuses a stranger's trade window (`AiPlayerbot.PoolBotTradeMode = 0`, the default) and ignores Trade-channel chatter unless the speaker addresses it directly. Owned and hired bots always trade with their master; `1` limits the pool to master/group/hire-master trades, `2`/`3` allow buy-only/sell-only, `4` restores unrestricted trading.
+
 ---
 
 ## 1. Tactical Party Actions (`.bot action <intent>`)

@@ -493,6 +493,9 @@ void ChatReplyAction::ChatReplyDo(Player* bot, uint32 type, uint32 guid1, uint32
         return;
     }
 
+    // Issue #469: the WTB "I have it" reply answers a real player's want
+    // ad, never another bot's chatter. The speaker resolves through the
+    // accessor so a stale name cannot spoof a human.
     if ((istarts_with(msg, "WTB"))
         && HandleWTBItemsReply(bot, chatChannelSource, msg, name))
     {
@@ -797,6 +800,12 @@ bool ChatReplyAction::HandleToxicLinksReply(Player* bot, ChatChannelSource chatC
 */
 bool ChatReplyAction::HandleWTBItemsReply(Player* bot, ChatChannelSource chatChannelSource, std::string msg, std::string name)
 {
+    // Issue #469: pool bots answer a real player's WTB ad only. The speaker
+    // name resolves through the accessor; an unknown or headless speaker is
+    // another bot (or a stale name) and gets no reply.
+    Player* speaker = sObjectAccessor.FindPlayerByName(name.c_str());
+    if (sRandomBotFacade.IsRandomBot(bot) && (!speaker || !isRealPlayer_Helper(speaker)))
+        return true;
     auto messageItemIds = PlayerbotAIStorage::Instance().GetAI(bot)->GetChatHelper()->ExtractAllItemIds(msg);
 
     if (messageItemIds.empty())

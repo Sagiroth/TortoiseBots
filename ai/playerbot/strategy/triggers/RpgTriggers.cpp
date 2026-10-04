@@ -651,6 +651,11 @@ bool RpgCraftTrigger::IsActive()
 
 bool RpgTradeUsefulTrigger::isFriend(Player* player)
 {
+    // Issue #469: the pool's giveaway trade only targets real players.
+    // Bot-to-bot useful trades let strangers drain pool bots through the
+    // RPG wander path even when direct trade windows refuse them.
+    if (sRandomBotFacade.IsRandomBot(bot) && !isRealPlayer_Helper(player))
+        return false;
     if (ai->IsAlt() && GetMaster() == player)
         return true;
 
@@ -681,6 +686,13 @@ bool RpgTradeUsefulTrigger::IsActive()
 
     if (!player)
         return false;
+
+    // Issue #469: like the enchant path below, the bot's own master keeps
+    // working even while piloting another bot (headless master).
+    if (sRandomBotFacade.IsRandomBot(bot) && !isRealPlayer_Helper(player) &&
+        GetMaster() != player)
+        return false;
+
 
     if (player->GetTrader() == bot && bot->GetTrader() == player) //Continue trading please.
         return true;
@@ -716,6 +728,14 @@ bool RpgEnchantTrigger::IsActive()
 
     if (!player)
         return false;
+
+    // Issue #469: the pool's RPG enchant targets real players; the bot's
+    // own master keeps working even while piloting another bot (headless
+    // master), so owned-bot enchants never break.
+    if (sRandomBotFacade.IsRandomBot(bot) && !isRealPlayer_Helper(player) &&
+        GetMaster() != player)
+        return false;
+
 
     //if (player->GetTrader() == bot && bot->GetTrader() == player) //Continue trading please.
     //    return true;

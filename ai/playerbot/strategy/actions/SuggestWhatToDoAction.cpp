@@ -230,6 +230,11 @@ bool SuggestTradeAction::isUseful()
     if (!sRandomBotFacade.IsRandomBot(bot) || bot->GetGroup() || bot->GetInstanceId())
         return false;
 
+    // Issue #469: the WTS hawking line only fires when a real player is
+    // near enough to read it. A pool with no human audience stays silent.
+    if (!ai->HasPlayerNearby())
+        return false;
+
     return true;
 }
 

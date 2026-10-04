@@ -14,6 +14,13 @@ bool WtsAction::Execute(Event& event)
     if (!owner)
         return false;
 
+    // Issue #469: the "I'll buy ..." tell answers a real player's linked
+    // item, never another bot's chatter. Without this a Trade-channel item
+    // link between two bots loops into tells no human reads.
+    if (sRandomBotFacade.IsRandomBot(bot) && !isRealPlayer_Helper(owner))
+        return false;
+
+
     std::ostringstream out;
     std::string text = event.GetParam();
 

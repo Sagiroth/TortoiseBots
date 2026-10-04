@@ -7,6 +7,8 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/RandomBotFacade.h"
 #include "playerbot/ServerFacade.h"
+#include "../../runtime/HireLifecycle.h"
+#include "../../runtime/PoolBotTradePolicy.h"
 #include "playerbot/strategy/values/CraftValues.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "SetCraftAction.h"
@@ -19,6 +21,23 @@ bool TradeStatusAction::Execute(Event& event)
     Player* master = GetMaster();
     if (!trader)
         return false;
+
+    // Issue #469: pool-bot trade safety (donor EnableRandomBotTrading
+    // parity). A masterless pool bot refuses a stranger's trade window at
+    // the earliest point, before listing inventory or sharing conjured
+    // goods. Owned/hired bots (live master, owner, or hire record) and
+    // bot-to-bot RPG trades pass through untouched.
+    if (!ai->HasRealPlayerMaster() && sRandomBotFacade.IsRandomBot(bot) &&
+        !TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()) &&
+        isRealPlayer_Helper(trader) && !PoolBotMayTradeWith(trader))
+    {
+        ai->TellPlayer(trader, "I don't trade with strangers.", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+        WorldPacket p;
+        uint32 status = 0;
+        p << status;
+        bot->GetSession()->HandleCancelTradeOpcode(p);
+        return false;
+    }
 
     bool shouldTrade = true;
     if (!PlayerbotAIStorage::Instance().GetAI(trader))
@@ -40,6 +59,7 @@ bool TradeStatusAction::Execute(Event& event)
     }
 
     WorldPacket p(event.GetPacket());
+
     p.rpos(0);
     uint32 status;
     p >> status;
@@ -266,6 +286,33 @@ bool TradeStatusAction::CheckTrade()
         return true;
     }
 
+    // Issue #469: buy-only / sell-only settle (donor modes 2/3 parity).
+    // The inbound gate above already refused strangers in off/trusted
+    // modes; this stops value flowing the wrong way when the window is
+    // open (trusted partner, group invite race, or an open mode).
+    if (!ai->HasRealPlayerMaster() && sRandomBotFacade.IsRandomBot(bot) &&
+        !TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()) &&
+        isRealPlayer_Helper(trader) && !PoolBotMayTradeWith(trader))
+    {
+        bool botGives = bot->GetTradeData()->GetMoney() != 0;
+        bool playerGives = trader->GetTradeData()->GetMoney() != 0;
+        for (uint32 slot = 0; slot < TRADE_SLOT_TRADED_COUNT && !(botGives && playerGives); ++slot)
+        {
+            if (bot->GetTradeData()->GetItem((TradeSlots)slot))
+                botGives = true;
+            if (trader->GetTradeData()->GetItem((TradeSlots)slot))
+                playerGives = true;
+        }
+        if (!TortoiseBots::PoolBotTradeSettleAllowed(
+                TortoiseBots::ParsePoolBotTradeMode(sPlayerbotAIConfig.poolBotTradeMode),
+                true, botGives, playerGives))
+        {
+            ai->TellPlayer(trader, "I can't complete that trade.", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            ai->PlaySound(TEXTEMOTE_NO);
+            return false;
+        }
+    }
+
     int32 botItemsMoney = CalculateCost(bot, true);
     int32 botMoney = bot->GetTradeData()->GetMoney() + botItemsMoney;
     int32 playerItemsMoney = CalculateCost(trader, false);
@@ -404,4 +451,20 @@ int32 TradeStatusAction::CalculateCost(Player* player, bool sell)
     }
 
     return sum;
+}
+
+bool TradeStatusAction::PoolBotMayTradeWith(Player* trader)
+{
+    // Owned/hired bots never reach the gate (the callers check first), so
+    // a live master, same-account owner, or hire record counts as trusted.
+    // Anything else is a stranger unless the mode opens the window.
+    if (!trader || trader == GetMaster() || IsInGroup_Helper(bot, trader))
+        return true;
+    if (ai->IsBotOwnerOrGm(*trader))
+        return true;
+    if (TortoiseBots::HireLifecycle::Instance().GetMaster(bot->GetObjectGuid()) == trader->GetObjectGuid())
+        return true;
+    return TortoiseBots::PoolBotTradeAllowed(
+        TortoiseBots::ParsePoolBotTradeMode(sPlayerbotAIConfig.poolBotTradeMode),
+        true, false, false, false);
 }

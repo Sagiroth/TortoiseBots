@@ -677,6 +677,10 @@ bool PlayerbotAIConfig::Initialize()
     gearscorecheck = config.GetBoolDefault("AiPlayerbot.GearScoreCheck", false);
     levelCheck = config.GetIntDefault("AiPlayerbot.LevelCheck", 30);
 	randomBotPreQuests = config.GetBoolDefault("AiPlayerbot.PreQuests", false);
+    // Issue #469: pool-bot trading defaults to safe (0 = off). Out-of-range
+    // values fail closed in ParsePoolBotTradeMode, never open.
+    poolBotTradeMode = config.GetIntDefault("AiPlayerbot.PoolBotTradeMode", 0);
+    LoadListString<std::list<std::string>>(config.GetStringDefault("AiPlayerbot.TradeActionExcludedPrefixes", "RPLL_H_,DBMv4"), tradeActionExcludedPrefixes);
     randomBotSayWithoutMaster = config.GetBoolDefault("AiPlayerbot.RandomBotSayWithoutMaster", false);
     randomBotInvitePlayer = config.GetBoolDefault("AiPlayerbot.RandomBotInvitePlayer", true);
     randomBotGroupNearby = config.GetBoolDefault("AiPlayerbot.RandomBotGroupNearby", false);

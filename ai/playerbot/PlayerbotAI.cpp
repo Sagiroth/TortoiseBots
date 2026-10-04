@@ -12,6 +12,8 @@
 
 #include "../../runtime/ObservabilityEmitter.h"
 #include "../../runtime/BotActivityLease.h"
+#include "../../runtime/HireLifecycle.h"
+#include "../../runtime/PoolBotTradePolicy.h"
 #include "ByteBuffer.h"
 #include "ObjectAccessor.h"
 
@@ -2553,6 +2555,16 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
 
             if (guid1 != bot->getObjectGuid()) // do not reply to self
             {
+                // Issue #469: a masterless pool bot ignores Trade-channel
+                // chatter unless the speaker addresses it directly. Whispers,
+                // say, party and yell keep the old behaviour, and owned/hired
+                // bots (live master, owner, or hire record) are unaffected.
+                if (msgtype == CHAT_MSG_CHANNEL && !HasRealPlayerMaster() &&
+                    sRandomBotFacade.IsRandomBot(bot) &&
+                    !TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()) &&
+                    !TortoiseBots::PoolBotTradeChatAllowed(true, true, message.find(bot->GetName()) != std::string::npos))
+                    return;
+
                 // Dispatch party chat and whispers from authorized real players (group master / members) to HandleCommand
                 if ((msgtype == CHAT_MSG_PARTY || msgtype == CHAT_MSG_WHISPER) && lang != LANG_ADDON)
                 {
