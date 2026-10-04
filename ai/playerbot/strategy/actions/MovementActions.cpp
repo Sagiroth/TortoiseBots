@@ -733,7 +733,10 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
     // is always the current position) and the caller would ask for the same move every
     // tick. Report the failure instead, so the travel target counts a retry and cools down.
     if (path.size() < 2)
+    {
+        AI_VALUE(LastMovement&, "last movement").moveFailReason = MOVE_FAIL_DISPATCH_SHORT;
         return false;
+    }
 
     if (!generatePath || !bot->IsFlying())
     {
@@ -757,7 +760,10 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
 
     GeneratePathAvoidingHazards(path);
     if (path.size() < 2)
+    {
+        AI_VALUE(LastMovement&, "last movement").moveFailReason = MOVE_FAIL_HAZARD_SHORT;
         return false; // the hazard rewrite left nothing to walk
+    }
 
     std::vector<G3D::Vector3> pointPath = WorldPosition().toPointsArray(path);
     float size = WorldPosition().GetPathLength(path);
@@ -824,17 +830,23 @@ Unit* MovementAction::GetMover(Player* bot)
 
 bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react, bool noPath, bool ignoreEnemyTargets)
 {
+    LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
+
     if (!endPos.isValid())
+    {
+        lastMove.moveFailReason = MOVE_FAIL_INVALID_DEST;
         return false;
+    }
 
     UpdateMovementState();
 
     if (!ai->CanMove())
+    {
+        lastMove.moveFailReason = MOVE_FAIL_CANT_MOVE;
         return false;
+    }
 
     Unit* mover = GetMover(bot);
-
-    LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
 
     bool detailedMove = ai->AllowActivity(DETAILED_MOVE_ACTIVITY, true);
     if (!detailedMove && lastMove.nextTeleport)
@@ -866,6 +878,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
         else
             mover->StopMoving();
 
+        lastMove.moveFailReason = MOVE_FAIL_ARRIVED;
         return false;
     }
 
@@ -881,7 +894,10 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     lastMove.setPath(movePath);
 
     if (movePath.empty())
+    {
+        lastMove.moveFailReason = MOVE_FAIL_EMPTY_ROUTE;
         return false;
+    }
 
 
     if (!bot->GetTransport())
@@ -900,10 +916,18 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     bool specialMovement = movePath.UpcommingSpecialMovement(startPos, sPlayerbotAIConfig.reactDistance,bot->GetTransport());
 
     if (specialMovement)
-        return HandleSpecialMovement(movePath);
+    {
+        bool specialOk = HandleSpecialMovement(movePath);
+        if (!specialOk)
+            lastMove.moveFailReason = MOVE_FAIL_SPECIAL;
+        return specialOk;
+    }
 
     if (bot->GetTransport()) //Transports needed to be handled before now.
+    {
+        lastMove.moveFailReason = MOVE_FAIL_TRANSPORT;
         return false;
+    }
 
     if (!movePath.empty())
     {
@@ -926,6 +950,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
 
     if (movePath.empty())
     {
+        lastMove.moveFailReason = MOVE_FAIL_CLIPPED_EMPTY;
         return false;
     }
 
@@ -1064,9 +1089,12 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
 
     if (!DispatchMovement(movePath, generatePath, masterWalking))
     {
+        // DispatchMovement stamps its own site (dispatch-short / hazard-short).
         lastMove.setPath(TravelPath());
         return false; // nowhere to go: let the caller retry later or drop the target
     }
+
+    lastMove.moveFailReason = MOVE_FAIL_NONE;
 
     if (!idle)
         ClearIdleState();
@@ -1082,9 +1110,12 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
 
 bool MovementAction::MoveTo(Unit* target, float distance)
 {
+    LastMovement& unitMove = AI_VALUE(LastMovement&, "last movement");
+
     if (!target || !target->IsInWorld())
     {
         //ai->TellError("Seems I am stuck");
+        unitMove.moveFailReason = MOVE_FAIL_BAD_UNIT_TARGET;
         return false;
     }
 
@@ -1098,6 +1129,7 @@ bool MovementAction::MoveTo(Unit* target, float distance)
         if (Formation::IsNullLocation(loc) || loc.mapId == -1)
         {
             //ai->TellError("Nowhere to move");
+            unitMove.moveFailReason = MOVE_FAIL_NO_FORMATION;
             return false;
         }
 
