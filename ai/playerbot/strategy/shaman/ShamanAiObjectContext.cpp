@@ -259,6 +259,7 @@ namespace ai
                 creators["water breathing on party"] = [](PlayerbotAI* ai) { return new WaterBreathingOnPartyTrigger(ai); };
                 creators["water walking on party"] = [](PlayerbotAI* ai) { return new WaterWalkingOnPartyTrigger(ai); };
                 creators["shock"] = [](PlayerbotAI* ai) { return new ShockTrigger(ai); };
+                creators["flame shock upkeep"] = [](PlayerbotAI* ai) { return new FlameShockTrigger(ai); };
                 creators["earth shock interrupt"] = [](PlayerbotAI* ai) { return new EarthShockInterruptSpellTrigger(ai); };
                 creators["frost shock snare"] = [](PlayerbotAI* ai) { return new FrostShockSnareTrigger(ai); };
                 creators["cure poison"] = [](PlayerbotAI* ai) { return new CurePoisonTrigger(ai); };
