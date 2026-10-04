@@ -4,10 +4,8 @@
 #include "FleeManager.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "Group/Group.h"
-#include "strategy/values/LastMovementValue.h"
 #include "strategy/values/MoveStyleValue.h"
 #include "playerbot/ServerFacade.h"
-#include "playerbot/CombatSpreadPolicy.h"
 
 using namespace ai;
 
@@ -67,50 +65,40 @@ void FleeManager::calculatePossibleDestinations(std::list<FleePoint*> &points)
     }
 
     float distIncrement = std::max(sPlayerbotAIConfig.followDistance, (maxAllowedDistance - sPlayerbotAIConfig.tooCloseDistance) / 10.0f);
-    // Two passes over the ring: first skips spokes within ~45deg of the last
-    // two dispatched flee headings (donor "recently flee info",
-    // mod-playerbots CheckLastFlee) so a repeated flee goes somewhere else;
-    // the second pass takes vetoed spokes so fleeing is never blocked.
-    // Spokes stay absolute world headings; no extra pathfinding.
-    LastMovement& lastMove = *PlayerbotAIStorage::Instance().GetAI(bot)->GetAiObjectContext()->GetValue<LastMovement&>("last movement");
-    for (int pass = 0; pass < 2 && points.empty(); ++pass)
+    for (float dist = maxAllowedDistance; dist >= sPlayerbotAIConfig.tooCloseDistance; dist -= distIncrement)
     {
-        bool const vetoSecondPass = (pass == 1);
-        for (float dist = maxAllowedDistance; dist >= sPlayerbotAIConfig.tooCloseDistance; dist -= distIncrement)
+        float angleIncrement = std::max(M_PI / 20, M_PI / 4 / (1.0 + dist - sPlayerbotAIConfig.tooCloseDistance));
+        for (float add = 0.0f; add < M_PI / 4 + angleIncrement; add += angleIncrement)
         {
-            float angleIncrement = std::max(M_PI / 20, M_PI / 4 / (1.0 + dist - sPlayerbotAIConfig.tooCloseDistance));
-            for (float add = 0.0f; add < M_PI / 4 + angleIncrement; add += angleIncrement)
+            for (float angle = add; angle < add + 2 * M_PI_F + angleIncrement; angle += M_PI_F / 4)
             {
-                for (float angle = add; angle < add + 2 * M_PI_F + angleIncrement; angle += M_PI_F / 4)
-                {
-                    if (intersectsOri(angle, enemyOri, angleIncrement)) continue;
-                    if (!vetoSecondPass && !IsFleeHeadingFree(angle, lastMove.lastFleeAngles, kFleeAngleSlots)) continue;
-                    float x = botPosX + cos(angle) * maxAllowedDistance, y = botPosY + sin(angle) * maxAllowedDistance, z = botPosZ + CONTACT_DISTANCE;
-                    if (MoveStyleValue::CheckForEdges(PlayerbotAIStorage::Instance().GetAI(bot)) && isTooCloseToEdge(x, y, z, angle)) continue;
+                if (intersectsOri(angle, enemyOri, angleIncrement)) continue;
 
-                    if (forceMaxDistance && sServerFacade.IsDistanceLessThan(sServerFacade.getDistance2d(bot, x, y), maxAllowedDistance - sPlayerbotAIConfig.tooCloseDistance))
-                        continue;
+                float x = botPosX + cos(angle) * maxAllowedDistance, y = botPosY + sin(angle) * maxAllowedDistance, z = botPosZ + CONTACT_DISTANCE;
+                if (MoveStyleValue::CheckForEdges(PlayerbotAIStorage::Instance().GetAI(bot)) && isTooCloseToEdge(x, y, z, angle)) continue;
 
-                    bot->UpdateAllowedPositionZ(x, y, z);
+                if (forceMaxDistance && sServerFacade.IsDistanceLessThan(sServerFacade.getDistance2d(bot, x, y), maxAllowedDistance - sPlayerbotAIConfig.tooCloseDistance))
+                    continue;
 
-                    const TerrainInfo* terrain = startPosition.getTerrain();
-                    if (terrain && terrain->IsInWater(x, y, z))
-                        continue;
+                bot->UpdateAllowedPositionZ(x, y, z);
 
-                    if (/*!bot->IsWithinLOS(x, y, z + bot->GetCollisionHeight(), true) || */(target && !target->IsWithinLOS(x, y, z + bot->GetCollisionHeight(), true)))
-                        continue;
+                const TerrainInfo* terrain = startPosition.getTerrain();
+                if (terrain && terrain->IsInWater(x, y, z))
+                    continue;
 
-                    FleePoint *point = new FleePoint(PlayerbotAIStorage::Instance().GetAI(bot), x, y, z);
-                    calculateDistanceToCreatures(point);
+                if (/*!bot->IsWithinLOS(x, y, z + bot->GetCollisionHeight(), true) || */(target && !target->IsWithinLOS(x, y, z + bot->GetCollisionHeight(), true)))
+                    continue;
 
-                    if (sServerFacade.IsDistanceGreaterOrEqualThan(point->minDistance - start.minDistance, sPlayerbotAIConfig.followDistance))
-                        points.push_back(point);
-                    else
-                        delete point;
-                }
+                FleePoint *point = new FleePoint(PlayerbotAIStorage::Instance().GetAI(bot), x, y, z);
+                calculateDistanceToCreatures(point);
+
+                if (sServerFacade.IsDistanceGreaterOrEqualThan(point->minDistance - start.minDistance, sPlayerbotAIConfig.followDistance))
+                    points.push_back(point);
+                else
+                    delete point;
             }
         }
-    }
+	}
 }
 
 bool FleeManager::isTooCloseToEdge(float x, float y, float z, float angle)
