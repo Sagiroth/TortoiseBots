@@ -1,27 +1,21 @@
 #pragma once
 
-// Pool item-cheat vendor policy (task H): with AiPlayerbot.RndBotCheats=item
+// Pool item-cheat ammo policy (task H): with AiPlayerbot.RndBotCheats=item
 // the per-tick refill (PlayerbotAI.cpp) tops the equipped ammo stack back up,
-// so firing never consumes anything and vendor ammo/quiver buys only burn the
-// trainer purse. Live pool 2026-10-03: same-bot same-arrow batches up to 10
-// per vendor visit (the BuyAction n<10 loop re-firing), 34 Small Quiver buys
-// on one priest in 5 minutes. Core-free so the standalone g++ policy test
-// can include it; callers pass the already-resolved cheat/class answers.
+// so firing never consumes anything and vendor ammo is never a restock - it
+// only burns the trainer purse. Live pool 2026-10-03: same-bot same-arrow
+// batches up to 10 per vendor visit (the BuyAction n<10 loop re-firing).
+// Core-free so the standalone g++ policy test can include it; callers pass
+// the already-resolved cheat answer.
 
 namespace ai
 {
-// True when a vendor-stock ammo buy (ITEM_USAGE_AMMO) must be skipped: the
-// cheat refills the stack every tick, so there is nothing to restock. Bots
-// without the cheat (owned/hired) keep the earned restock path.
+// True when the ammo restock demand (ITEM_USAGE_AMMO) must be skipped: the
+// cheat refills the stack every tick, so there is nothing to restock. The
+// EQUIP checks (empty slot / better ammo) run before this gate, so cheat
+// bots still equip ammo. Bots without the cheat (owned/hired) keep the
+// earned needAmmo = 8/2 restock path. The BuyAction 1-stack-per-visit ammo
+// cap is likewise cheat-only; quiver flips are gated in BuyAction via the
+// AH-flip flag (the equip path already returns NONE for non-hunters).
 inline bool SuppressAmmoBuy(bool hasItemCheat) { return hasItemCheat; }
-
-// True when a non-hunter's vendor-stock quiver/ammo pouch must not read as
-// a plain-bag upgrade: the container only holds ammo, so for a class without
-// a ranged kit it is a strictly worse bag. Hunters keep their dedicated
-// quiver path (attack speed + first-quiver seeding); no-cheat bots are
-// untouched either way.
-inline bool SuppressNonHunterQuiverBuy(bool hasItemCheat, bool isHunter)
-{
-    return hasItemCheat && !isHunter;
-}
 }  // namespace ai

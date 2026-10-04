@@ -458,14 +458,14 @@ if ((proto->Class == ITEM_CLASS_PROJECTILE ||
                 // Pool item cheat: the per-tick refill tops the equipped stack
                 // back up, so firing never consumes anything and vendor ammo
                 // is never a restock - it only burns the trainer purse (live
-                // pool: same-arrow batches up to 10 per visit). Gate the "buy
-                // more" signal, not the keep: cheat bots still keep what they
-                // hold so sell/destroy never hand it over.
-                if (ai::SuppressAmmoBuy(ai->HasCheat(BotCheatMask::item)))
-                    return ItemUsage::ITEM_USAGE_KEEP;
-
+                // pool: same-arrow batches up to 10 per visit). The equip
+                // checks below still run (empty slot / better ammo classify
+                // EQUIP); only the restock demand is gated, via needAmmo = 0
+                // so the AMMO return below can never fire.
                 float betterAmmoStacks = BetterStacks(proto, "ammo"); // how much better ammo we have
                 float needAmmo = (bot->GetClass() == CLASS_HUNTER) ? 8 : 2;
+                if (ai::SuppressAmmoBuy(ai->HasCheat(BotCheatMask::item)))
+                    needAmmo = 0;
 
                                     // fallback: equip any ammo if no ammo equipped
                 if (!currentAmmoId)
@@ -783,15 +783,9 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
 
     uint16 dest = ((INVENTORY_SLOT_BAG_0 << 8) | slot);
 
-    // Pool item cheat: a quiver only holds ammo, so for a class without a
-    // ranged kit it is a strictly worse bag (live pool: 34 Small Quiver buys
-    // on one priest in 5 minutes, 19 on a mage, via the plain-bag EQUIP
-    // below). Cheat bots can never spend the slot usefully, so keep the
-    // row out of the buy loop; hunters keep the dedicated path above and
-    // no-cheat bots are untouched.
-    if (itemProto->Class == ITEM_CLASS_QUIVER &&
-        ai::SuppressNonHunterQuiverBuy(ai->HasCheat(BotCheatMask::item), bot->GetClass() == CLASS_HUNTER))
-        return ItemUsage::ITEM_USAGE_NONE;
+    // The quiver branch below already returns NONE for non-hunters (no separate
+    // gate needed): the observed priest/mage vendor quiver batches came through
+    // the AH-flip path, which BuyAction gates for item-cheat bots.
 
     if (itemProto->Class == ITEM_CLASS_QUIVER)
     {

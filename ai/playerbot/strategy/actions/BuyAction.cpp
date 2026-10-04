@@ -99,8 +99,17 @@ bool BuyAction::Execute(Event& event)
 
                 auto pmo = sPerformanceMonitor.start(PERF_MON_VALUE, "IsWorthBuyingFromVendorToResellAtAH", ai);
 
+                // Pool item cheat: server-managed stock (ammo, and the quiver
+                // that only holds it) refills/is seeded without gold, so a
+                // vendor->AH flip of that stock only burns the trainer purse
+                // (live pool: 34 Small Quiver buys on priest Braegrulaer in
+                // 5 min, 19 on mage Vyrtryrg — non-hunters with no ranged
+                // kit, quiver usage NONE via the equip path). No-cheat bots
+                // (owned/hired) keep the earned flip path.
+                bool const cheatStock = proto->Class == ITEM_CLASS_QUIVER && ai->HasCheat(BotCheatMask::item);
                 // if item is worth selling to AH?
-                bool canFlipAH = ItemUsageValue::IsWorthBuyingFromVendorToResellAtAH(proto, tItem->maxcount > 0);
+                bool canFlipAH = !cheatStock &&
+                    ItemUsageValue::IsWorthBuyingFromVendorToResellAtAH(proto, tItem->maxcount > 0);
 
                 pmo.reset();
 
@@ -177,13 +186,16 @@ bool BuyAction::Execute(Event& event)
                     if (usage == ItemUsage::ITEM_USAGE_USE && ItemUsageValue::CurrentStacks(ai, proto) >= 1)
                         break;
 
-                    // Ammo restocks one stack per visit: the usage only flips
-                    // to KEEP once the new stack lands (CurrentStacks counts
-                    // live inventory), so without a cap the loop converts the
-                    // whole ammo purse into same-item stacks (live pool:
-                    // batches up to 10 per visit). Gear stops via the budget
-                    // break below; ammo has no such break.
-                    if (usage == ItemUsage::ITEM_USAGE_AMMO && ItemUsageValue::CurrentStacks(ai, proto) >= 1)
+                    // Item-cheat ammo restocks one stack per visit: the per-tick
+                    // refill tops the equipped stack back up, so the usage only
+                    // flips to KEEP once the new stack lands (CurrentStacks
+                    // counts live inventory) and without a cap the loop
+                    // converts the whole ammo purse into same-item stacks
+                    // (live pool: batches up to 10 per visit). No-cheat bots
+                    // (owned/hired) still burn ammo and keep the full
+                    // needAmmo = 8/2 restock below.
+                    if (usage == ItemUsage::ITEM_USAGE_AMMO && ai->HasCheat(BotCheatMask::item) &&
+                        ItemUsageValue::CurrentStacks(ai, proto) >= 1)
                         break;
 
                     // Stop buying reagents/recipes once we have 1 stack
