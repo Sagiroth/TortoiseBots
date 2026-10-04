@@ -238,9 +238,13 @@ private:
                 return false;
 
             Unit* target = AI_VALUE(Unit*, "current target");
-            float distance = AI_VALUE2(float, "distance", "current target");
             if (!target || !ai->HasStrategy("close", BotState::BOT_STATE_COMBAT))
                 return false;
+            // True edge-to-edge distance, not the stance-projected "distance"
+            // value (a point 1.5+ yd in front of the mob): the projection let
+            // SwitchToMelee fire at a logged 5-8 yd and hid which branch the
+            // 5/10 yd band gates. Telemetry logs this same call.
+            float const distance = bot->GetDistance(target);
             bool const targetOffBot = target->GetVictim() != bot;
             bool const immobilized = IsImmobilizedStateCompat(target);
             bool const tooSlowToFollow = target->GetSpeed(MOVE_RUN) <= (bot->GetSpeed(MOVE_RUN) / 2) && !((!bot->GetPet() || bot->GetPet()->IsDead()) && target->IsCreature() && target->GetHealthPercent() < 50.f && target->GetHealth() < bot->GetHealth());
@@ -298,7 +302,9 @@ private:
             if (!target || !ai->HasStrategy("ranged", BotState::BOT_STATE_COMBAT))
                 return false;
             bool const fastOrFinisher = (target->GetSpeed(MOVE_RUN) > (bot->GetSpeed(MOVE_RUN) / 2)) || ((!bot->GetPet() || bot->GetPet()->IsDead()) && target->GetHealthPercent() < 50.f && target->IsCreature() && target->GetHealth() < bot->GetHealth());
-            float distance = AI_VALUE2(float, "distance", "current target");
+            // Same true distance as the ranged half (see above): one call for
+            // both switches and the telemetry row.
+            float const distance = bot->GetDistance(target);
             return ai::ShouldSwitchToMelee(true, target->GetVictim() == bot,
                 IsImmobilizedStateCompat(target), fastOrFinisher, distance, true);
         }
