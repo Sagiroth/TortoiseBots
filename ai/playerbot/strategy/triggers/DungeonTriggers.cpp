@@ -6,6 +6,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/values/HazardsValue.h"
+#include "playerbot/strategy/actions/MovementActions.h"
 #include "playerbot/CombatSpreadPolicy.h"
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
