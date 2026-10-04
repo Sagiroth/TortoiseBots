@@ -2,7 +2,8 @@
 #include "DungeonActions.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
-#include "playerbot/PlayerbotAI.h"
+#include "playerbot/strategy/values/LastMovementValue.h"
+#include "playerbot/CombatSpreadPolicy.h"
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
 #include "Maps/CellImpl.h"
@@ -361,18 +362,30 @@ bool RaidSpreadAction::Execute(Event& event)
     const WorldPosition botPos(bot);
     const WorldPosition nearPos(nearest);
     float away = nearPos.GetAngleTo(botPos);
+    // Donor "recently flee info" (mod-playerbots MovementAction::CheckLastFlee):
+    // skip a step-out heading within ~45deg of the last two flee destinations
+    // so repeated spreads fan out instead of re-picking the same vector.
+    LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
     const float spread = sPlayerbotAIConfig.hazardEvasionDistance;
-    const float angles[] = { 0.0f, 0.6f, -0.6f };
+    const float angles[] = { 0.0f, 0.6f, -0.6f, 1.2f, -1.2f, (float)M_PI };
     WorldPosition out(botPos);
     for (float d : angles)
     {
-        if (FindStep(bot, botPos, away + d, spread, out) &&
+        float heading = away + d;
+        if (!IsFleeHeadingFree(heading, lastMove.lastFleeAngles, kFleeAngleSlots))
+            continue;
+        if (FindStep(bot, botPos, heading, spread, out) &&
             MoveTo(bot->GetMapId(), out.getX(), out.getY(), out.getZ(), false, IsReaction(), false, true))
+        {
+            lastMove.lastFleeAngles[1] = lastMove.lastFleeAngles[0];
+            lastMove.lastFleeAngles[0] = heading;
+            if (lastMove.lastFleeAngleCount < 2)
+                ++lastMove.lastFleeAngleCount;
             return true;
+        }
     }
     return false;
 }
-
 bool DragonTankFaceAwayAction::Execute(Event& event)
 {
     (void)event;

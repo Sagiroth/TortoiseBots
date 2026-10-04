@@ -1849,6 +1849,13 @@ bool MovementAction::Flee(Unit *target)
                 lm.fleeCount = 1;
             lm.lastFleeAttempt = now;
             lm.lastFlee = time(0);
+            // Donor "recently flee info": remember the dispatched destination
+            // heading so the next flee/spread steps elsewhere. Absolute world
+            // heading, same frame as FleeManager's ring and RaidSpreadAction.
+            lm.lastFleeAngles[1] = lm.lastFleeAngles[0];
+            lm.lastFleeAngles[0] = WorldPosition(bot).GetAngleTo(WorldPosition(target->GetMapId(), rx, ry, rz));
+            if (lm.lastFleeAngleCount < 2)
+                ++lm.lastFleeAngleCount;
             succeeded = true;
         }
     }

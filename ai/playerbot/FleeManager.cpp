@@ -4,8 +4,9 @@
 #include "FleeManager.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "Group/Group.h"
+#include "strategy/values/LastMovementValue.h"
 #include "strategy/values/MoveStyleValue.h"
-#include "playerbot/ServerFacade.h"
+#include "playerbot/CombatSpreadPolicy.h"
 
 using namespace ai;
 
@@ -73,7 +74,12 @@ void FleeManager::calculatePossibleDestinations(std::list<FleePoint*> &points)
             for (float angle = add; angle < add + 2 * M_PI_F + angleIncrement; angle += M_PI_F / 4)
             {
                 if (intersectsOri(angle, enemyOri, angleIncrement)) continue;
-
+                // Donor "recently flee info" (mod-playerbots CheckLastFlee):
+                // drop ring spokes within ~45deg of the last two dispatched
+                // flee headings so a repeated flee goes somewhere else. The
+                // spokes stay absolute world headings; no extra pathfinding.
+                LastMovement& lastMove = *PlayerbotAIStorage::Instance().GetAI(bot)->GetAiObjectContext()->GetValue<LastMovement&>("last movement");
+                if (!IsFleeHeadingFree(angle, lastMove.lastFleeAngles, kFleeAngleSlots)) continue;
                 float x = botPosX + cos(angle) * maxAllowedDistance, y = botPosY + sin(angle) * maxAllowedDistance, z = botPosZ + CONTACT_DISTANCE;
                 if (MoveStyleValue::CheckForEdges(PlayerbotAIStorage::Instance().GetAI(bot)) && isTooCloseToEdge(x, y, z, angle)) continue;
 

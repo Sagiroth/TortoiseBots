@@ -6,7 +6,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/values/HazardsValue.h"
-#include "playerbot/strategy/actions/MovementActions.h"
+#include "playerbot/CombatSpreadPolicy.h"
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
 #include "Maps/CellImpl.h"
@@ -431,6 +431,21 @@ bool DragonBreathRiskTrigger::IsActive()
 bool RaidSpreadNeededTrigger::IsActive()
 {
     if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+        return false;
+    // Generic combat spread (donor "combat formation move" without the opt-in
+    // disperse knob): only while fighting, so idle/questing stacking is free.
+    Unit* target = GetTarget();
+    if (!target)
+        return false;
+    // Explicit orders win: a bot told to hug a spot (stay/follow/attack/pull
+    // anchors, wait-for-attack, grind) holds it; spread never overrides.
+    // Owned/hired bots file the same gate via HasRealPlayerMaster: their
+    // master decides positioning, so spread stays a pool-bot behavior.
+    if (!ShouldCombatSpread(sServerFacade.IsInCombat(bot), ai->HasRealPlayerMaster(),
+        ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)))
         return false;
     // Melee/tanks stack by design; spread is a ranged survival behavior.
     if (!ai->IsRanged(bot))

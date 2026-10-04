@@ -26,6 +26,9 @@ namespace ai
             nextTeleport = other.nextTeleport;
             fleeCount = other.fleeCount;
             lastFleeAttempt = other.lastFleeAttempt;
+            lastFleeAngles[0] = other.lastFleeAngles[0];
+            lastFleeAngles[1] = other.lastFleeAngles[1];
+            lastFleeAngleCount = other.lastFleeAngleCount;
             moveEvent = Event();
         }
 
@@ -38,6 +41,9 @@ namespace ai
             lastFlee = 0;
             fleeCount = 0;
             lastFleeAttempt = 0;
+            lastFleeAngles[0] = 10.0f;
+            lastFleeAngles[1] = 10.0f;
+            lastFleeAngleCount = 0;
             lastMoveShort = WorldPosition();
             nextTeleport = 0;
             moveEvent = Event();
@@ -57,12 +63,13 @@ namespace ai
         uint32 lastAreaTrigger;
         uint32 lastTransportEntry;
         time_t lastFlee;
-        // Number of flee actions dispatched in quick succession (within returnDelay of each
-        // other). Used to detect a "subsequent" flee loop so spellcasting can take priority.
-        uint32 fleeCount;
-        // Wall-clock of the last dispatched flee, used to decide whether the next flee is
-        // "subsequent" (close in time) or a fresh flee (window lapsed -> count resets).
-        time_t lastFleeAttempt;
+        // Donor "recently flee info" (mod-playerbots MovementAction::FleePosition/
+        // CheckLastFlee): last two flee destination angles, so a repeated flee
+        // steps somewhere else instead of re-picking the same bad vector.
+        // Angles are absolute world headings like FleeManager's ring uses;
+        // 10.0f marks an empty slot. Written only on a dispatched combat flee.
+        float lastFleeAngles[2] = { 10.0f, 10.0f };
+        uint32 lastFleeAngleCount = 0;
         TravelPath lastPath;
         WorldPosition lastMoveShort;
         time_t nextTeleport;
