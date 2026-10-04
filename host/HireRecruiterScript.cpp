@@ -3,11 +3,11 @@
 #include "../runtime/HireProvisionService.h"
 #include "../runtime/HireCost.h"
 #include "../runtime/HireSpecPolicy.h"
+#include "../runtime/WorldBuffPolicy.h"
 #include "../runtime/BotManager.h"
 #include "../ai/playerbot/playerbot.h"
 #include "../ai/playerbot/ChatHelper.h"
 #include "ModuleLog.h"
-
 #include "ScriptObjects.h"
 #include "GossipDef.h"
 #include "Player.h"
@@ -46,6 +46,11 @@ constexpr uint32 kBackAction = 255;
 constexpr uint32 kConfirmAction = 254;
 
 constexpr uint32 kMaxMenuItems = 30;
+
+void CloseWithHint(Player* player, char const* hint);
+void ShowClassMenu(Player* player, Creature* creature);
+void ShowRootMenu(Player* player, Creature* creature);
+void ShowWorldBuffMenu(Player* player, Creature* creature);
 
 uint8 const kHireClasses[] = { CLASS_WARRIOR, CLASS_PALADIN, CLASS_HUNTER, CLASS_ROGUE, CLASS_PRIEST, CLASS_SHAMAN, CLASS_MAGE, CLASS_WARLOCK, CLASS_DRUID };
 
@@ -196,6 +201,50 @@ void ShowSpecMenu(Player* player, Creature* creature, uint8 classId, uint8 race,
     player->PlayerTalkClass->SendGossipMenu(GossipText(player), creature->GetObjectGuid());
 }
 
+void ShowRootMenu(Player* player, Creature* creature)
+{
+    // Issue #492: the six capital recruiters split into Hire vs World
+    // buffs. Every other recruiter skips this and opens the hire wizard
+    // directly (unchanged behaviour outside the capitals).
+    if (!IsCapitalRecruiter(creature->GetEntry()) ||
+        !ShouldShowWorldBuffs(sPlayerbotAIConfig.worldBuffsEnabled,
+            BotManager::Instance().IsBot(player->GetObjectGuid()),
+            player->GetLevel(), sPlayerbotAIConfig.worldBuffsMinLevel))
+    {
+        ShowClassMenu(player, creature);
+        return;
+    }
+    AddItem(player, GOSSIP_ICON_CHAT, "Hire bots", kWorldBuffSenderRoot, kWorldBuffRootHire);
+    AddItem(player, GOSSIP_ICON_MONEY_BAG, "World buffs", kWorldBuffSenderRoot, kWorldBuffRootBuffs);
+    player->PlayerTalkClass->SendGossipMenu(GossipText(player), creature->GetObjectGuid());
+}
+
+void ShowWorldBuffMenu(Player* player, Creature* creature)
+{
+    // Stage 1: unlock quests land in PR2, purchases in PR3. Until then the
+    // branch only proves the routing (flag x capital x 60+ gate); every
+    // buy option closes with the same "coming soon" hint so clicks are
+    // observable but move no gold and touch no auras.
+    for (uint8_t purchase = kWorldBuffBuyRally; purchase <= kWorldBuffBuyCount; ++purchase)
+    {
+        char const* label = nullptr;
+        switch (purchase)
+        {
+            case kWorldBuffBuyRally: label = "Rallying Cry of the Dragonslayer (soon)"; break;
+            case kWorldBuffBuyWarchief: label = "Warchief's Blessing (soon)"; break;
+            case kWorldBuffBuyZandalar: label = "Spirit of Zandalar (soon)"; break;
+            case kWorldBuffBuyDmPack: label = "Dire Maul Tribute (soon)"; break;
+            case kWorldBuffBuySayge: label = "Sayge's Dark Fortune (soon)"; break;
+            case kWorldBuffBuySongflower: label = "Songflower Serenade (soon)"; break;
+            case kWorldBuffBuySilithyst: label = "Traces of Silithyst (soon)"; break;
+            default: continue;
+        }
+        AddItem(player, GOSSIP_ICON_MONEY_BAG, label, kWorldBuffSenderBuy, purchase);
+    }
+    AddItem(player, GOSSIP_ICON_TALK, "< Back", kWorldBuffSenderBack, kWorldBuffSenderBack);
+    player->PlayerTalkClass->SendGossipMenu(GossipText(player), creature->GetObjectGuid());
+}
+
 void ShowConfirmMenu(Player* player, Creature* creature, uint8 classId, uint8 race, uint8 gender, uint8 specIndex)
 {
     uint32_t specCount = 0;
@@ -233,7 +282,10 @@ bool HireRecruiterScript::OnHello(Player* player, Creature* creature)
         return true;
     }
     player->PlayerTalkClass->ClearMenus();
-    ShowClassMenu(player, creature);
+    // Pool bots only ever see the hire wizard: no world-buff branch, no
+    // purchase path. The gate lives in ShowRootMenu itself; OnSelect below
+    // re-checks it per click so a stale menu cannot bypass it.
+    ShowRootMenu(player, creature);
     return true;
 }
 
@@ -242,6 +294,44 @@ bool HireRecruiterScript::OnSelect(Player* player, Creature* creature, uint32_t 
     if (!player || !creature)
         return false;
     player->PlayerTalkClass->ClearMenus();
+
+    // Issue #492: world-buff branch senders (505-508), matched before the
+    // hire wizard and its class-menu fallback. Purchases land in PR3; in
+    // stage 1 every buy click closes with a "soon" hint (no gold, no aura).
+    // The gate is re-checked per click, so a stale menu cannot bypass a
+    // flag flip or a bot check that happened after OnHello.
+    bool buffsVisible = IsCapitalRecruiter(creature->GetEntry()) &&
+        ShouldShowWorldBuffs(sPlayerbotAIConfig.worldBuffsEnabled,
+            BotManager::Instance().IsBot(player->GetObjectGuid()),
+            player->GetLevel(), sPlayerbotAIConfig.worldBuffsMinLevel);
+    if (buffsVisible)
+    {
+        if (sender == kWorldBuffSenderRoot)
+        {
+            if (action == kWorldBuffRootHire)
+            {
+                ShowClassMenu(player, creature);
+                return true;
+            }
+            if (action == kWorldBuffRootBuffs)
+            {
+                ShowWorldBuffMenu(player, creature);
+                return true;
+            }
+            ShowRootMenu(player, creature);
+            return true;
+        }
+        if (sender == kWorldBuffSenderBuy || sender == kWorldBuffSenderSayge)
+        {
+            CloseWithHint(player, "World buffs are coming soon to this recruiter.");
+            return true;
+        }
+        if (sender == kWorldBuffSenderBack)
+        {
+            ShowRootMenu(player, creature);
+            return true;
+        }
+    }
 
     if (sender == kSenderClass)
     {
