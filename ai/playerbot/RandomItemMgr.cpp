@@ -7,7 +7,7 @@
 
 #include "playerbot/ServerFacade.h"
 #include "strategy/values/LootValues.h"
-
+#include "strategy/values/RogueWeaponPolicy.h"
 #include "ItemEnchantmentMgr.h"
 
 #include "strategy/values/SharedValueContext.h"
@@ -624,8 +624,10 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, Item
     }
     case CLASS_ROGUE:
     {
-        if (m_weightScales[spec].info.name == "assas")
+        if (RogueSpecWantsDaggers(m_weightScales[spec].info.name))
         {
+            // Backstab/Ambush need a dagger main hand; the off hand keeps a
+            // dagger for the spec's fast-off-hand damage.
             mh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER };
             oh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER };
         }

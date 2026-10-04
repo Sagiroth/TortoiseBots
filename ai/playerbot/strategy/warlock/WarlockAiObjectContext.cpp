@@ -237,6 +237,7 @@ namespace ai
                 creators["no voidwalker"] = [](PlayerbotAI* ai) { return new NoVoidwalkerTrigger(ai); };
                 creators["no succubus"] = [](PlayerbotAI* ai) { return new NoSuccubusTrigger(ai); };
                 creators["no felhunter"] = [](PlayerbotAI* ai) { return new NoFelhunterTrigger(ai); };
+                creators["wrong pet"] = [](PlayerbotAI* ai) { return new WrongPetTrigger(ai); };
                 creators["spell lock"] = [](PlayerbotAI* ai) { return new SpellLockTrigger(ai); };
                 creators["spell lock enemy healer"] = [](PlayerbotAI* ai) { return new SpellLockEnemyHealerTrigger(ai); };
                 creators["spell lock on enemy healer"] = [](PlayerbotAI* ai) { return new SpellLockEnemyHealerTrigger(ai); };

@@ -29,7 +29,7 @@ Hunters excel at sustained single-target ranged DPS, pet off-tanking, snares, an
    - *Aimed Shot* when the MM talent is known, otherwise *Arcane Shot* (never both), on cooldown.
    - *Multi-Shot* when AoE is permitted and multiple enemies are engaged.
    - Keeps *Serpent Sting* ticking on high-health targets (skips on low-health mobs to conserve mana).
-3. **Dead-Zone Handling:** Inside the weapon's own minimum range no shot is possible, and the generic `enemy too close for spell` flee is suppressed against a fast target. A mob glued there is answered by trading into melee (`-ranged,+close`, melee auto-attack + *Raptor Strike*; *Wing Clip*/*Mongoose Bite* once known) at any level — `SwitchToMeleeTrigger` has no level gate, mirroring the donor. `SwitchToRangedTrigger` (also ungated) hands the ranged kit back as soon as the target is off the bot, immobilized, too slow to follow, or the bot has made distance. When the switch leaves the bot alone (target rooted or too slow, or no melee weapon) the `enemy too close for auto shot` → `flee` step-back at `ACTION_MOVE − 1` still moves it out, after which it resumes shooting while the pet holds the target. *Disengage* is not automated.
+3. **Dead-Zone Handling:** Inside the weapon's own minimum range no shot is possible, and the generic `enemy too close for spell` flee is suppressed against a fast target. A mob glued there is answered by trading into melee (`-ranged,+close`, melee auto-attack + *Raptor Strike*; *Wing Clip*/*Mongoose Bite* once known) at any level — `SwitchToMeleeTrigger` has no level gate, mirroring the donor. The switch pair uses hysteresis so a mob pacing the boundary cannot flip the kit every tick: melee when the mob is on the bot and inside 8 yd, ranged back when it is off the bot and past 8 yd (a rooted target restores ranged at any distance). `SwitchToRangedTrigger` (also ungated) hands the ranged kit back on those terms. When the switch leaves the bot alone (target rooted or too slow, or no melee weapon) the `enemy too close for auto shot` → `flee` step-back at `ACTION_MOVE − 1` still moves it out, after which it resumes …
 4. **Distance Band:** The ranged kit keeps its own band: `flee` moves the bot out when a target is inside it, and `enemy out of spell` → `reach spell` closes the distance again when the target leaves casting range.
 
 ### 2. Melee Survival Combat
@@ -60,6 +60,7 @@ Hunters excel at sustained single-target ranged DPS, pet off-tanking, snares, an
   - Revives dead pets using *Revive Pet* and heals injured pets during combat via *Mend Pet*.
   - Restores an unhappy pet's happiness via the feed handler (no food items are consumed).
   - **Autonomous upkeep:** out of combat the bot sweeps the pet's known spells and enables autocast on every non-passive one except *Prowl*, *Cower*, *Spell Lock* and *Devour Magic* (deliberate-cast abilities), and pins the pet plus guardians to *Defensive* after each (re)tame or summon. Explicit `.bot pet aggressive|defensive|passive` orders still apply immediately.
+  - **Pet ranks:** the pet learns the highest rank its family and level allow on tame and on the periodic initialize-pet tick — *Growl* plus the family kit (*Bite*/*Claw*, boar *Charge*, cat/wolf *Dash*, bird/bat *Dive*, bat/owl *Screech*, wolf *Furious Howl*, cat *Prowl*, scorpid poison, crocolisk Death Roll, raptor Savage Rend, Turtle custom Serpent/Fox/Moth abilities, ...), ranks replacing lower ones automatically. The tick teaches a live pet only (never re-creates or kills it) and walks the same table as the missing-rank check, so an unteachable row can never retrigger it. *Growl* stays autocast-on solo; *Sacrifice*-style manual spells never autocast. Pool bots never visit a pet trainer, so without this they would keep rank 1 forever.
 - **Pet Safety & CC Discipline:**
   - When a target is crowd-controlled (e.g. *Polymorph* or *Freezing Trap*), the bot's pet is prevented from attacking the CC'd mob, preventing accidental breaks.
 - **Crowd Control:**
@@ -75,8 +76,8 @@ Hunter ammo stacks cannot tell whether a hunter is shooting: the random-bot item
 | Event | Meaning | `info2` flags |
 | :--- | :--- | :--- |
 | `AutoShot` | The module (re)started the hunter's ranged auto-attack (the core then repeats it on its own until the target leaves the weapon's band) | `cast`, `ranged`, `close` |
-| `SwitchToMelee` | The hunter traded its ranged kit for melee (`-ranged,+close`) | pre-switch `ranged`, `close` |
-| `SwitchToRanged` | The hunter traded melee back for ranged (`-close,+ranged`) | pre-switch `ranged`, `close` |
+| `SwitchToMelee` | The hunter traded its ranged kit for melee (`-ranged,+close`) | pre-switch `ranged`, `close`, firing branch (`why=M,...`) |
+| `SwitchToRanged` | The hunter traded melee back for ranged (`-close,+ranged`) | pre-switch `ranged`, `close`, firing branch (`why=R,...`) |
 
 Reading it: `AutoShot` rows with `ranged=1,close=0` are a hunter firing; a `SwitchToMelee` row with `ranged=1` followed by a `SwitchToRanged` row and new `AutoShot` rows is a hunter that traded into melee for a glued mob and re-opened fire once it could.
 
