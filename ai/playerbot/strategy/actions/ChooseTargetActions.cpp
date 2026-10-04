@@ -40,6 +40,19 @@ bool AttackAnythingAction::isUseful()
     if (ai->ContainsStrategy(STRATEGY_TYPE_HEAL) && !ai->HasStrategy("offdps", BotState::BOT_STATE_COMBAT))
         return false;
 
+    // Revenge first: a mob already fighting the bot (victim set) is always
+    // answered, even wounded and even while travelling - this is self-defence
+    // on every trip, including a completed hand-in walk. Like the donor (whose
+    // AttackAnythingAction has no facing gate), there is no isInFront check: a
+    // mob that aggros from the side or behind while the bot walks on never
+    // stands in front, and requiring it left travelling bots dying without
+    // fighting back (quest-taker trips: 5% fought back within 90 s vs 60-93%
+    // elsewhere, Oct 2026 pool). Answering an attacker that already holds the
+    // bot as victim pulls nothing new, so there is no adds risk.
+    if (!target->IsPlayer() && target->IsHostileTo(bot) &&
+        target->GetVictim() == bot)
+        return true;
+
     // A finished quest waiting at its taker is the bot's own business: the walk
     // to the hand-in must not lose to "attack before being attacked", or a bot
     // with a level-appropriate mob in front of it never takes a step. Scoped to
@@ -59,10 +72,9 @@ bool AttackAnythingAction::isUseful()
             return false;
     }
     // A wounded pool bot sits out a NEW pull until it eats/drinks back above
-    // mediumHealth (mana users: mediumMana too). A mob already fighting the
-    // bot (revenge, "possible attack targets" loop in GrindTargetValue) is
-    // always answered: the gate below only runs with an empty GetAttackers
-    // set. Pool-only (masterless random): owned bots and bots with a real
+    // mediumHealth (mana users: mediumMana too). Revenge above already
+    // answered, so the gate below only runs with no attacker holding the bot.
+    // Pool-only (masterless random): owned bots and bots with a real
     // player master keep today's behaviour.
     if (!bot->InBattleGround() && sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster() &&
         bot->GetAttackers().empty())
@@ -77,23 +89,17 @@ bool AttackAnythingAction::isUseful()
 
     // The pre-emptive "attack before being attacked" strike while travelling
     // only starts a fresh pull when no possible adds lurk nearby and the mob
-    // is inside the grind level cap. A mob already fighting the bot keeps the
-    // old rule below.
+    // is inside the grind level cap. It keeps the front-arc check: starting a
+    // fight is only for what the bot walks into, never for side aggro (that
+    // is revenge above once it lands, or walked past otherwise).
     if (!target->IsPlayer() && sServerFacade.isInFront(bot, target, target->GetCombatReach(bot, false, 0.0f) * 1.5f, M_PI_F * 0.5f) && target->IsHostileTo(bot) &&
         ai::AllowPreemptiveStrike((int)target->GetLevel(), bot->GetLevel(), ai->HasRealPlayerMaster(), AI_VALUE(bool, "possible adds")))
-        return true;
-
-    // Revenge: a mob already fighting the bot (victim set) is always answered,
-    // even wounded - this path also covers self-defence while travelling.
-    if (!target->IsPlayer() && sServerFacade.isInFront(bot, target, target->GetCombatReach(bot, false, 0.0f) * 1.5f, M_PI_F * 0.5f) && target->IsHostileTo(bot) &&
-        target->GetVictim() == bot)
         return true;
 
     if (AI_VALUE(bool, "travel target traveling") && CanFreeMoveValue::CanFreeMoveTo(ai, *travelTarget->getPosition())) //Bot is traveling
         return false;
 
     return true;
-}
 
 bool ai::AttackAnythingAction::isPossible()
 {
