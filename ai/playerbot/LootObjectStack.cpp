@@ -3,6 +3,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/SharedValueContext.h"
+#include "playerbot/QuestLogPolicy.h"
 #include "../../runtime/GatherToolPolicy.h"
 
 using namespace ai;
@@ -194,8 +195,17 @@ void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
                 ai->TellDebug(ai->GetMaster(), "Go has only quests items we don't need.", "debug loot");
             return;
         }
-
         uint32 goId = go->GetGOInfo()->id;
+        // Bone Chew Toy piles (GO 1000380 near Goldshire): the only quest
+        // needing the item is the inactive 40298, so opening them only
+        // fills bags with junk (892 copies across 118 bots). The manual
+        // "skip go loot list" stays for player choices; this one is data.
+        if (goId == ai::kBoneChewToyGoEntry)
+        {
+            if (debug)
+                ai->TellDebug(ai->GetMaster(), "Go is a Bone Chew Toy pile.", "debug loot");
+            return;
+        }
         std::set<uint32>& skipGoLootList = ai->GetAiObjectContext()->GetValue<std::set<uint32>&>("skip go loot list")->Get();
         if (skipGoLootList.find(goId) != skipGoLootList.end())
         {
@@ -364,6 +374,12 @@ bool LootObject::IsLootPossible(Player* bot)
     // and they are also the only ones that reached this point without any capacity test: body loot
     // got one above. Queue them only when the bot has somewhere to put the loot.
     if ((skillId != SKILL_NONE || guid.IsGameObject()) && !HasBagRoomForLoot(ai, bot))
+        return false;
+
+    // Bone Chew Toy piles never queue even if ActivateToQuest says yes:
+    // Refresh (the open path) already refuses them, and this Add path would
+    // otherwise re-queue the same junk pile every sweep.
+    if (guid.IsGameObject() && guid.GetEntry() == ai::kBoneChewToyGoEntry)
         return false;
 
     // Check if the game object has quest loot and bot has the quest for it
