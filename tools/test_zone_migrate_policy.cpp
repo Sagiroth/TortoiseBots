@@ -10,9 +10,9 @@
     } \
 } while (0)
 
+using ai::OUTGROWN_GATHER_NEXT_TIER_SKILL;
 using ai::OutgrownZoneRefusesPoint;
 using ai::ZoneMigrationExcludeZone;
-
 int main()
 {
     std::cout << "Starting TortoiseBots zone migration policy tests...\n";
@@ -63,6 +63,11 @@ int main()
     CHECK(!OutgrownZoneRefusesPoint(-1, 16, true));
     CHECK(!OutgrownZoneRefusesPoint(-2, 16, true));
     std::cout << "  [PASS] unknown zone level fails open\n";
+
+    // Gather next-tier skill guard: starter Copper/Earthroot (req 1) stay
+    // while the bot cannot gather next-zone Tin/Briarthorn (req 65).
+    CHECK(OUTGROWN_GATHER_NEXT_TIER_SKILL == 65);
+    std::cout << "  [PASS] gather next-tier skill threshold\n";
 
     std::cout << "TortoiseBots zone migration policy tests passed.\n";
     return 0;

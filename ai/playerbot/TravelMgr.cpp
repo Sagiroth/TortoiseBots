@@ -408,26 +408,6 @@ bool QuestObjectiveTravelDestination::IsPossible(const PlayerTravelInfo& info) c
         if (destAreaLevel > 0 && destAreaLevel > (int32)info.GetLevel() + 5)
             return false;
 
-        // Outgrown-zone floor for quest objectives (task E,
-        // ZoneMigratePolicy.h): an objective in a zone the bot outlevels by
-        // 5+ pays no XP, so the walk only parks the bot among no-XP mobs.
-        // Same +5 shape and scope as the grind/gather gates (pool bots 11+,
-        // owned/hired keep the player); givers keep their own floor above,
-        // takers always pay out, focus quests bypass. Unknown zones fail
-        // open, like today.
-        if (info.IsMasterlessRandom() && !info.HasFocusQuest())
-        {
-            AreaTableEntry const* area = point->GetArea();
-            uint32 zoneId = area ? (area->ZoneId ? area->ZoneId : area->Id) : 0;
-            if (zoneId)
-            {
-                int32 pointZoneLevel = 0;
-                if (sTravelMgr.TryGetValidatedAreaLevel(zoneId, pointZoneLevel) && pointZoneLevel > 0 &&
-                    ai::OutgrownZoneRefusesPoint(pointZoneLevel, info.GetLevel(), true))
-                    return false;
-            }
-        }
-
         if (info.GetLevel() <= 5 && point->distance(info.getPosition()) > 1500.0f)
             return false;
     }
@@ -1026,7 +1006,11 @@ bool GatherTravelDestination::IsPossible(const PlayerTravelInfo& info) const
         // nodes keep no mob band, so without this an outgrown starter node
         // stays a destination forever. Same +5 shape and scope as the grind
         // gate; fishing untouched (FishingSpotPolicy owns that errand).
-        if (info.IsMasterlessRandom() &&
+        // Next-tier guard: starter Copper/Earthroot (req 1) stay while the
+        // bot's skill cannot gather next-zone Tin/Briarthorn (req 65) -
+        // refusing them would trap a low-skill bot with nowhere to skill
+        // up. The grey rule above already drops nodes 100 past skill.
+        if (skillValue >= ai::OUTGROWN_GATHER_NEXT_TIER_SKILL && info.IsMasterlessRandom() &&
             (GetPurpose() == TravelDestinationPurpose::GatherMining ||
                 GetPurpose() == TravelDestinationPurpose::GatherHerbalism))
         {
