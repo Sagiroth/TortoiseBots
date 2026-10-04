@@ -25,12 +25,9 @@ void WorldBuffPvpAdapter::OnPVPKill(Player* killer, Player* killed)
         return;
     if (killer->GetTeam() == killed->GetTeam())
         return;
-    bool horde = killer->GetTeam() == HORDE;
-    uint32_t questId = horde ? kWorldBuffQuestSilithystH : kWorldBuffQuestSilithystA;
-    if (killer->GetQuestStatus(questId) != QUEST_STATUS_INCOMPLETE)
-        return;
-    if (killer->GetQuestRewardStatus(questId))
-        return;
+    // Group fan-out in reward distance: grants credit to every member in the
+    // killer's group/raid who has the quest in progress (including players whose
+    // bots landed the final blow).
     killer->RewardPlayerAndGroupAtEvent(kWorldBuffSilithystCredit, killed);
 }
 
