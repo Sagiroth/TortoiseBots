@@ -49,4 +49,55 @@ namespace ai
 
         return false;
     }
+
+    // Quest accept/drop churn (live pool: 16 695 accepts vs 7 194 drops).
+    // The log showed two accept-side holes with the same shape as a drop
+    // rule, so both are decided here on quest-template data and tested on
+    // their own (donor NewRpgBaseAction::OrganizeQuestLog drops sort quests
+    // ZoneOrSort < 0; modulated here to the unfillable turn-ins only):
+    //
+    // War-effort turn-ins: the AQ material quests (sort -365) with item
+    // objectives are level-60 turn-ins a levelling bot can never fill -
+    // 20 copper bars, 10 thick leather - so the bot accepted ~60/h in
+    // Ironforge/Orgrimmar (3055 drops, top-30 all this sort) and the upkeep
+    // pass dropped them again. Blocked at accept instead. The signet
+    // quests (8846+) carry the same sort and the same fate (bots at 10-14,
+    // quest items a level-10 bot cannot farm). Sort -365 quests with no
+    // item objective (8792/8795 breadcrumb, 0 drops in the pool) stay open.
+    inline bool IsWarEffortTurnIn(std::int32_t zoneOrSort, bool hasItemObjective)
+    {
+        return zoneOrSort == -365 && hasItemObjective;
+    }
+
+
+    // Novelty / deprecated quests the owner banned: CLUCK! (3861, a chicken
+    // escort that pins a log slot for a joke reward) and inactive quest
+    // templates (Method disabled, e.g. [DEPRECATED] 40298) never pay off.
+    // Matched by id so live quests with the same shape are untouched.
+    inline bool IsBannedQuest(std::uint32_t questId, bool inactive)
+    {
+        if (questId == 3861)
+            return true;
+        return inactive;
+    }
+    // One predicate for the accept gate and the drop rule, so the two cannot
+    // drift: banned quests are refused by every bot; war-effort turn-ins
+    // only by upkeep bots (a level-60 owned bot can actually fill them).
+    inline bool ShouldRefuseQuestAtAccept(std::uint32_t questId, bool inactive,
+        std::int32_t zoneOrSort, bool hasItemObjective, bool upkeepBot)
+    {
+        if (IsBannedQuest(questId, inactive))
+            return true;
+        if (upkeepBot && IsWarEffortTurnIn(zoneOrSort, hasItemObjective))
+            return true;
+        return false;
+    }
+
+    // Bone Chew Toy (item 51751, GO 1000380 near Goldshire): the only quest
+    // needing it is the inactive 40298, so every copy in bags is junk. Loot
+    // and bag rules key off these ids directly - a generic "quest-class
+    // item not in log" purge would also eat quest starters (Free Ticket
+    // Voucher 19338 etc.), which must be kept.
+    constexpr std::uint32_t kBoneChewToyItemId = 51751;
+    constexpr std::uint32_t kBoneChewToyGoEntry = 1000380;
 }
