@@ -3,12 +3,14 @@
 #include "ItemUsageValue.h"
 #include "CraftValues.h"
 #include "MountValues.h"
+#include "AmmoCheatPolicy.h"
 #include "BudgetValues.h"
 #include "GuildValues.h"
 
 #include "playerbot/RandomItemMgr.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/QuestLogPolicy.h"
 #include "../../../../runtime/ClassConsumablePolicy.h"
 
 using namespace ai;
@@ -405,6 +407,13 @@ ItemUsage ItemUsageValue::Calculate()
             return ItemUsage::ITEM_USAGE_KEEP;
     }
 
+    // Bone Chew Toy (item 51751): the only quest needing it is the inactive
+    // 40298, so it is junk, not something to keep. Keyed off the item id, so
+    // quest starters (Free Ticket Voucher 19338 etc.) keep their KEEP verdict
+    // below and keep looting normally.
+    if (itemId == ai::kBoneChewToyItemId)
+        return ItemUsage::ITEM_USAGE_NONE;
+
     //A quest item the bot carries is never vendor trash, whether or not it holds
     //the quest that needs it right now.
     if (proto->Class == ItemClass::ITEM_CLASS_QUEST)
@@ -454,11 +463,17 @@ if ((proto->Class == ITEM_CLASS_PROJECTILE ||
                 if (currentAmmoId)
                     currentAmmoProto = sObjectMgr.GetItemPrototype(currentAmmoId);
 
+                // Pool item cheat: the per-tick refill tops the equipped stack
+                // back up, so firing never consumes anything and vendor ammo
+                // is never a restock - it only burns the trainer purse (live
+                // pool: same-arrow batches up to 10 per visit). The equip
+                // checks below still run (empty slot / better ammo classify
+                // EQUIP); only the restock demand is gated, via needAmmo = 0
+                // so the AMMO return below can never fire.
                 float betterAmmoStacks = BetterStacks(proto, "ammo"); // how much better ammo we have
                 float needAmmo = (bot->GetClass() == CLASS_HUNTER) ? 8 : 2;
-
-                if (ai->HasCheat(BotCheatMask::item))
-                    needAmmo = 1;
+                if (ai::SuppressAmmoBuy(ai->HasCheat(BotCheatMask::item)))
+                    needAmmo = 0;
 
                                     // fallback: equip any ammo if no ammo equipped
                 if (!currentAmmoId)
@@ -775,6 +790,10 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     }
 
     uint16 dest = ((INVENTORY_SLOT_BAG_0 << 8) | slot);
+
+    // The quiver branch below already returns NONE for non-hunters (no separate
+    // gate needed): the observed priest/mage vendor quiver batches came through
+    // the AH-flip path, which BuyAction gates for item-cheat bots.
 
     if (itemProto->Class == ITEM_CLASS_QUIVER)
     {

@@ -12,6 +12,7 @@
 #include "playerbot/strategy/values/LastMovementValue.h"
 #include "ReviveFromCorpseAction.h"
 #include "playerbot/TravelMgr.h"
+#include "playerbot/GraveyardTeleportPolicy.h"
 
 namespace ai
 {
@@ -248,16 +249,29 @@ namespace ai
             // back to its starting zone (85 repops in 43 minutes on a live realm).
             if (sPlayerbotAIConfig.repopAtGraveyard && !ai->HasRealPlayerMaster())
             {
+                // The core lookup is zone-linked, not proximity-bounded: with no
+                // same-map same-faction graveyard for the bot's zone (bot in
+                // enemy territory) it returns an arbitrary linked graveyard on
+                // another map (entryFar) - a horde bot stuck in Teldrassil woke
+                // up in Booty Bay. Only follow the pick when it shares the
+                // bot's map and is reasonably near (GraveyardTeleportPolicy.h);
+                // otherwise fall through to the spawn/homebind path below.
                 WorldSafeLocsEntry const* grave = sObjectMgr.GetClosestGraveYard(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId(), bot->GetTeam());
                 if (grave)
                 {
-                    sLog.outDetail("Repop: Teleporting bot #%d %s:%d <%s> to the nearest graveyard", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
-                    bot->TeleportTo(grave->map_id, grave->x, grave->y, grave->z, bot->GetOrientation());
-                    sPlayerbotAIConfig.logEvent(ai, "RepopAction", "graveyard");
-                    // A sub-10 pool bot landed above its level (valley GY in
-                    // the next town) goes straight home (LowbieGraveyardPolicy.h).
-                    TortoiseBots::BotManager::Instance().SendStrandedLowbieHome(bot);
-                    return true;
+                    WorldPosition gravePos(grave);
+                    if (IsUsableGraveyardTarget(true, grave->map_id == bot->GetMapId(), WorldPosition(bot).fDist(gravePos)))
+                    {
+                        sLog.outDetail("Repop: Teleporting bot #%d %s:%d <%s> to the nearest graveyard", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
+                        bot->TeleportTo(grave->map_id, grave->x, grave->y, grave->z, bot->GetOrientation());
+                        sPlayerbotAIConfig.logEvent(ai, "RepopAction", "graveyard");
+                        // A sub-10 pool bot landed above its level (valley GY in
+                        // the next town) goes straight home (LowbieGraveyardPolicy.h).
+                        TortoiseBots::BotManager::Instance().SendStrandedLowbieHome(bot);
+                        return true;
+                    }
+                    sLog.outDetail("Repop: nearest graveyard for bot #%d %s:%d <%s> is off-map/far (map %u), using spawn/homebind instead",
+                        bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName(), grave->map_id);
                 }
             }
 
