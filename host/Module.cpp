@@ -16,6 +16,8 @@
 #include "HireRecruiterAdapter.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "HireGroupAdapter.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "WorldBuffKillAdapter.h"
 
 namespace TortoiseBots {
 
@@ -31,6 +33,8 @@ void RegisterScripts()
     // Issue #192: on-demand companion hiring (module-only gossip + group hooks).
     new HireRecruiterAdapter();
     new HireGroupAdapter();
+    // Issue #492: Onyxia/Nefarian -> invisible Rally credit for the group.
+    new WorldBuffKillAdapter();
 }
 
 } // namespace TortoiseBots

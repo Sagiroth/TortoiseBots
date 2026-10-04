@@ -134,6 +134,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/host/HireRecruiterScript.cpp"
     "${TORTOISEBOTS_ROOT}/host/HireRecruiterAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/host/HireGroupAdapter.cpp"
+    "${TORTOISEBOTS_ROOT}/host/WorldBuffKillAdapter.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/BotManager.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/BotActivityLease.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/CharacterCleanup.cpp"
