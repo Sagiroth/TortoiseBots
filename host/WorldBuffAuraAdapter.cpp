@@ -36,16 +36,15 @@ void WorldBuffAuraAdapter::OnAuraApply(Unit* unit, Aura* aura)
         return;
     // Recruiter-cast auras (purchases) never unlock: otherwise one buyer
     // would unlock the buff for the whole group straight from the till.
-    // Chronoboon-style restores with no live caster carry no "real way"
-    // evidence either, so they need a live non-recruiter caster too.
-    Unit* caster = aura->GetCaster();
-    if (!caster)
+    // Check the caster guid, not GetCaster(): a cleansed Songflower is a
+    // gameobject, so GetCaster() (Unit only) is null for the real way.
+    ObjectGuid const& casterGuid = aura->GetCasterGuid();
+    if (casterGuid.IsCreature() && IsHireRecruiterEntry(casterGuid.GetEntry()))
         return;
-    if (Creature* casterCreature = caster->ToCreature())
-    {
-        if (IsHireRecruiterEntry(casterCreature->GetEntry()))
-            return;
-    }
+    // None of the real ways happen on a raid map, but the raid keeper
+    // re-applies snapshotted auras there (player as caster): never credit.
+    if (NeedsBuffSnapshot(player->GetMapId()))
+        return;
     // Only the receiver progresses, and only while the quest is incomplete
     // in the log (pool bots never hold it: banned in QuestLogPolicy).
     // GetQuestStatus is the public log check; AreaExploredOrEventHappens

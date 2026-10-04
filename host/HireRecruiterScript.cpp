@@ -385,7 +385,9 @@ void BuyWorldBuff(Player* player, Creature* creature, uint8_t purchase, uint32_t
     // The NPC is the caster (AddAura takes duration from spell data, so the
     // original 2h/1h/30m and death rules apply unchanged). Purchased auras
     // therefore never credit aura unlocks: PR5 ignores recruiter casters.
-    bool buyerBuffed = false;
+    // Refund only when nobody got the blessing; otherwise the group keeps
+    // auras that were paid for.
+    bool anyBuffed = false;
     for (Player* target : targets)
     {
         if (!target || !target->IsInWorld() || !target->IsAlive())
@@ -395,13 +397,10 @@ void BuyWorldBuff(Player* player, Creature* creature, uint8_t purchase, uint32_t
         for (uint32_t spellId : apply)
         {
             if (target->AddAura(spellId, 0, creature))
-            {
-                if (target == player)
-                    buyerBuffed = true;
-            }
+                anyBuffed = true;
         }
     }
-    if (!buyerBuffed)
+    if (!anyBuffed)
     {
         player->ModifyMoney(static_cast<int32>(total));
         player->SaveToDB();
