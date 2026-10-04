@@ -798,6 +798,7 @@ bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 
         if (info.GetLevel() <= 5 && point->distance(info.getPosition()) > 1500.0f)
             return false;
+    }
 
     return true;
 }
