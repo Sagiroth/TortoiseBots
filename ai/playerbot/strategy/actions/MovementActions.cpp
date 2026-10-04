@@ -1087,6 +1087,25 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     }
     // END DEBUG
 
+    // ClipPath keeps only this 150 yd window, so a bot that has walked the route
+    // down to its tail is left with a single point. The core rejects a one-point
+    // spline, and the dispatch failure below would retry the target out even
+    // though the bot is already there. Count it as arrived instead - same
+    // retry accounting as the recalc gate above. Only when the surviving point
+    // is nearer the destination than the bot is (a mesh-hole self-path or a
+    // cross-map stub is not arrival): those keep the dispatch-short failure.
+    if (movePath.GetPointPath().size() < 2 && startPos.GetMapId() == endPos.GetMapId() &&
+        !movePath.empty() && movePath.GetBack().distance(endPos) < totalDistance)
+    {
+        if (mover == bot)
+            ai->StopMoving();
+        else
+            mover->StopMoving();
+        lastMove.clear();
+        lastMove.moveFailReason = MOVE_FAIL_ARRIVED;
+        return false;
+    }
+
     if (!DispatchMovement(movePath, generatePath, masterWalking))
     {
         // DispatchMovement stamps its own site (dispatch-short / hazard-short).
