@@ -9,6 +9,7 @@
 #include "playerbot/strategy/values/VendorWeaponUpgradePolicy.h"
 #include "playerbot/strategy/values/VendorBuyPolicy.h"
 #include "playerbot/strategy/values/SpecWeaponPolicy.h"
+#include "playerbot/RandomItemMgr.h"
 #include "runtime/HireLifecycle.h"
 #include "playerbot/strategy/values/MountValues.h"
 #include "playerbot/strategy/values/GuildValues.h"
