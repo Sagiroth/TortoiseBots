@@ -64,7 +64,8 @@ namespace ai
         else
         {
             bool const fast = (target->GetSpeed(MOVE_RUN) > (bot->GetSpeed(MOVE_RUN) / 2)) || finisher;
-            bool const noAmmo = !(ai->HasCheat(BotCheatMask::item) || AI_VALUE2(uint32, "item count", "ammo"));
+            AiObjectContext* context = ai->GetAiObjectContext();
+            bool const noAmmo = !(ai->HasCheat(BotCheatMask::item) || (context && AI_VALUE2(uint32, "item count", "ammo")));
             snprintf(buf, sizeof(buf), "why=M,on=%d,imm=%d,fast=%d,fin=%d,glue=%d,na=%d",
                 (int)(target->GetVictim() == bot), (int)IsImmobilizedStateCompat(target),
                 (int)fast, (int)finisher, (int)(dist <= 8.0f), (int)noAmmo);
