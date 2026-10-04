@@ -2556,12 +2556,14 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
             if (guid1 != bot->getObjectGuid()) // do not reply to self
             {
                 // Issue #469: a masterless pool bot ignores Trade-channel
-                // chatter unless the speaker addresses it directly. Whispers,
-                // say, party and yell keep the old behaviour, and owned/hired
-                // bots (live master, owner, or hire record) are unaffected.
+                // chatter unless the speaker addresses it directly. Only the
+                // Trade channel is gated (resolved via channel id, not the
+                // raw name): General/LFG/Defense/World keep prior behaviour.
+                // Owned/hired bots (live master, owner, hire record) pass.
                 if (msgtype == CHAT_MSG_CHANNEL && !HasRealPlayerMaster() &&
                     sRandomBotFacade.IsRandomBot(bot) &&
                     !TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()) &&
+                    GetChatChannelSource(bot, msgtype, chanName) == ChatChannelSource::SRC_TRADE &&
                     !TortoiseBots::PoolBotTradeChatAllowed(true, true, message.find(bot->GetName()) != std::string::npos))
                     return;
 

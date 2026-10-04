@@ -47,6 +47,16 @@ bool TradeStatusAction::Execute(Event& event)
         {
             shouldTrade = ai->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false, trader);
         }
+        // Issue #469 reconciliation: the pool gate above already approved
+        // this trader (open mode 2/3/4, ungrouped owner, or hire master),
+        // but the legacy block only knows master/group. Without this the
+        // approval is dead: the window would be cancelled right here.
+        if (!shouldTrade && !ai->HasRealPlayerMaster() && sRandomBotFacade.IsRandomBot(bot) &&
+            !TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()) &&
+            isRealPlayer_Helper(trader) && PoolBotMayTradeWith(trader))
+        {
+            shouldTrade = true;
+        }
     }
 
     if (!shouldTrade)

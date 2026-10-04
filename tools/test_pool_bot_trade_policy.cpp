@@ -59,6 +59,10 @@ int main()
     std::cout << "  [PASS] safe modes keep strangers out, masters in\n";
 
     // 4. Open modes let strangers open a window (settle gate restricts).
+    // Review regression pin: TradeStatusAction reconciles this with the
+    // legacy master/group shouldTrade block, so modes 2/3/4 and ungrouped
+    // owners/hire-masters actually reach CheckTrade instead of being
+    // cancelled by the legacy block.
     CHECK(PoolBotTradeAllowed(PoolBotTradeMode::BuyOnly, true, false, false, false));
     CHECK(PoolBotTradeAllowed(PoolBotTradeMode::SellOnly, true, false, false, false));
     CHECK(PoolBotTradeAllowed(PoolBotTradeMode::On, true, false, false, false));
@@ -81,6 +85,9 @@ int main()
     std::cout << "  [PASS] settle gate follows the mode\n";
 
     // 6. Trade channel: pool bots need a direct mention; other channels pass.
+    // Review regression pin: PlayerbotAI applies this ONLY to the Trade
+    // channel (SRC_TRADE via channel id) — General/LFG/Defense/World keep
+    // prior behaviour and never consult this gate.
     CHECK(!PoolBotTradeChatAllowed(true, true, false));
     CHECK(PoolBotTradeChatAllowed(true, true, true));
     CHECK(PoolBotTradeChatAllowed(true, false, false));
