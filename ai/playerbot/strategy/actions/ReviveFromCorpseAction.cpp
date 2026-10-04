@@ -11,6 +11,7 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "runtime/BotManager.h"
 #include "playerbot/GhostStallPolicy.h"
+#include "playerbot/GraveyardTeleportPolicy.h"
 
 using namespace ai;
 // Ghost stall (m-stuck §5.2): the corpse-run spline is re-dispatched from IDLE
@@ -694,7 +695,21 @@ bool SpiritHealerAction::Execute(Event& event)
     if (WorldSafeLocsEntry const* corpseGrave = sObjectMgr.GetClosestGraveYard(
             corpse->GetPositionX(), corpse->GetPositionY(), corpse->GetPositionZ(), corpse->GetMapId(), bot->GetTeam()))
     {
-        grave = GuidPosition(0, corpseGrave);
+        // Same guard as RepopAction: the core lookup can return a linked
+        // graveyard on another map (entryFar) when the corpse's zone links
+        // nothing usable (GraveyardTeleportPolicy.h). Only follow the pick
+        // when it shares the corpse's map and is reasonably near; otherwise
+        // keep the "best graveyard" value (already corpse-anchored and
+        // corpse-validated by its callers) instead of teleporting cross-map.
+        if (IsUsableGraveyardTarget(true, corpseGrave->map_id == corpse->GetMapId(),
+            WorldPosition(corpseGrave).fDist(WorldPosition(corpse))))
+            grave = GuidPosition(0, corpseGrave);
+        else
+        {
+            sLog.outDetail("SpiritHealer: nearest graveyard for bot #%d <%s> corpse is off-map/far (map %u), using best graveyard instead",
+                bot->GetGUIDLow(), bot->GetName(), corpseGrave->map_id);
+            grave = AI_VALUE(GuidPosition, "best graveyard");
+        }
     }
     else
     {
@@ -829,6 +844,16 @@ bool SpiritHealerAction::Execute(Event& event)
 
     if (shouldTeleportToGY)
     {
+        // The guard above picked a same-map near graveyard, but "best
+        // graveyard" (master/travel legacies) can still point at another map.
+        // Never teleport the ghost cross-map: walking there is impossible and
+        // the bot strands. Fall back to the walk, which re-picks next tick.
+        if (grave.GetMapId() != bot->GetMapId())
+        {
+            sLog.outDetail("SpiritHealer: graveyard for bot #%d <%s> is on map %u, not teleporting cross-map",
+                bot->GetGUIDLow(), bot->GetName(), grave.GetMapId());
+            return MoveTo(grave.GetMapId(), grave.getX(), grave.getY(), grave.getZ(), false, false);
+        }
         bot->GetMotionMaster()->Clear();
         bot->TeleportTo(grave.GetMapId(), grave.getX(), grave.getY(), grave.getZ(), 0);
         if (isRealPlayer_Helper(bot))
