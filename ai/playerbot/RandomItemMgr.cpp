@@ -8,6 +8,8 @@
 #include "playerbot/ServerFacade.h"
 #include "strategy/values/LootValues.h"
 
+#include "ItemEnchantmentMgr.h"
+
 #include "strategy/values/SharedValueContext.h"
 #include "strategy/values/SpecWeaponPolicy.h"
 
