@@ -18,6 +18,10 @@
 #include "HireGroupAdapter.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "WorldBuffKillAdapter.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "WorldBuffAuraAdapter.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "WorldBuffPvpAdapter.h"
 
 namespace TortoiseBots {
 
@@ -35,6 +39,10 @@ void RegisterScripts()
     new HireGroupAdapter();
     // Issue #492: Onyxia/Nefarian -> invisible Rally credit for the group.
     new WorldBuffKillAdapter();
+    // Issue #492: aura-gain unlocks (receiver only, recruiter casters out).
+    new WorldBuffAuraAdapter();
+    // Issue #492: Silithyst opposite-faction kills in Silithus.
+    new WorldBuffPvpAdapter();
 }
 
 } // namespace TortoiseBots
