@@ -612,7 +612,9 @@ bool EquipUpgradesAction::Execute(Event& event)
 
     // Put the higher top-end damage weapon in the main hand. Only when core
     // can actually swap the two (neither weapon is locked to its own hand) and
-    // only when both are weapons the bot's spec may wield. Bag/quiver work
+    // only when each weapon is legal FOR its own slot (slot-aware: a 1H reads
+    // as any-slot-legal for protection, but neither of those hands may hold
+    // a second weapon, so the swap must not run there). Bag/quiver work
     // above never touches a hand, so it reports success without firing this.
     if (didEquip && bot->CanDualWield())
     {
@@ -628,8 +630,8 @@ bool EquipUpgradesAction::Execute(Event& event)
         {
             uint32 specId = sRandomItemMgr.GetPlayerSpecId(bot);
 
-            if (sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, mh->GetProto(), bot->CanDualWield())
-                && sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, oh->GetProto(), bot->CanDualWield()))
+            if (sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, mh->GetProto(), EQUIPMENT_SLOT_MAINHAND, bot->CanDualWield())
+                && sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, oh->GetProto(), EQUIPMENT_SLOT_OFFHAND, bot->CanDualWield()))
             {
                 float mhMaxDmg = mh->GetProto()->Damage[0].DamageMax;
                 float ohMaxDmg = oh->GetProto()->Damage[0].DamageMax;

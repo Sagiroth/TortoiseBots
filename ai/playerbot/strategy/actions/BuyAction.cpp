@@ -8,7 +8,7 @@
 #include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/strategy/values/VendorWeaponUpgradePolicy.h"
 #include "playerbot/strategy/values/VendorBuyPolicy.h"
-#include "playerbot/RandomItemMgr.h"
+#include "playerbot/strategy/values/SpecWeaponPolicy.h"
 #include "runtime/HireLifecycle.h"
 #include "playerbot/strategy/values/MountValues.h"
 #include "playerbot/strategy/values/GuildValues.h"
@@ -73,18 +73,29 @@ bool BuyAction::Execute(Event& event)
                 continue;
             // #427: order vendor stock by live stat-weight score (best upgrade
             // first) with an item-level fallback when either side scores 0,
-            // ported from donor BuyAction.cpp:69-88. One weight lookup per
+            // ported from donor BuyAction.cpp:69-88. Shields first for a
+            // shieldless shield-spec bot (owner matrix: a prot bot must ALWAYS
+            // have a shield), then the weight order. One weight lookup per
             // item per visit (O(stock)); the loop below reuses no cache.
+            uint32 buySpecId = sRandomItemMgr.GetPlayerSpecId(bot);
+            if (!buySpecId)
+                buySpecId = sRandomItemMgr.GetFallbackSpecId(bot->GetClass());
+            bool const buyShieldNeed = ai::SpecUsesShieldOffHand(bot->GetClass(), sRandomItemMgr.GetSpecName(buySpecId)) &&
+                !bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND);
             std::unordered_map<uint32, uint32> vendorScores;
             vendorScores.reserve(m_items_sorted.size());
             for (VendorItem* scored : m_items_sorted)
                 vendorScores[scored->item] = sRandomItemMgr.GetLiveStatWeight(bot, scored->item);
-            std::sort(m_items_sorted.begin(), m_items_sorted.end(), [&vendorScores](VendorItem* i, VendorItem* j)
+            std::sort(m_items_sorted.begin(), m_items_sorted.end(), [&vendorScores, buyShieldNeed](VendorItem* i, VendorItem* j)
             {
                 ItemPrototype const* pi = sObjectMgr.GetItemPrototype(i->item);
                 ItemPrototype const* pj = sObjectMgr.GetItemPrototype(j->item);
                 if (!pi || !pj)
                     return false;
+                uint32 const ri = ai::VendorShieldRank(buyShieldNeed, pi->Class, pi->SubClass);
+                uint32 const rj = ai::VendorShieldRank(buyShieldNeed, pj->Class, pj->SubClass);
+                if (ri != rj)
+                    return ri < rj;
                 return VendorBuyRanksFirst(vendorScores[i->item], pi->ItemLevel, vendorScores[j->item], pj->ItemLevel);
             });
 
@@ -111,8 +122,13 @@ bool BuyAction::Execute(Event& event)
                 // same rules the equip audit uses (spec-allowed type, usable now,
                 // better by scoring, via QueryItemUsageForEquip). Money for the
                 // next trainer ranks comes first. At most one weapon per visit;
-                // owned/mastered/hired bots never spend gold this way.
-                if (!result && !boughtWeapon && IsVendorWeaponUpgradeCandidate(proto->Class, proto->SubClass) &&
+                // owned/mastered/hired bots never spend gold this way. A shield
+                // spec never buys an off-hand weapon: the slot-aware audit
+                // answers NONE for it (it would only ping-pong the shield), so
+                // the gold stays for the shield (sorted first above).
+                bool const vendorOffHandWeapon = proto->Class == ITEM_CLASS_WEAPON &&
+                    ai::SpecUsesShieldOffHand(bot->GetClass(), sRandomItemMgr.GetSpecName(buySpecId));
+                if (!result && !boughtWeapon && !vendorOffHandWeapon && IsVendorWeaponUpgradeCandidate(proto->Class, proto->SubClass) &&
                     !ai->HasActivePlayerMaster() && !ai->HasRealPlayerMaster() &&
                     sRandomBotFacade.IsRandomBot(bot) &&
                     !TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()) &&

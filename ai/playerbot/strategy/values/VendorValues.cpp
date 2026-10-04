@@ -3,7 +3,7 @@
 #include "ItemUsageValue.h"
 #include "BudgetValues.h"
 #include "VendorWeaponUpgradePolicy.h"
-#include "runtime/HireLifecycle.h"
+#include "SpecWeaponPolicy.h"
 #include "playerbot/PlayerbotAI.h"
 #include "SharedValueContext.h"
 
@@ -116,7 +116,13 @@ bool VendorHasUsefulItemValue::Calculate()
                 continue;
             if (!IsVendorWeaponUpgradeCandidate(proto->Class, proto->SubClass))
                 continue;
-            if (ai->HasItemInInventory(proto->ItemId))
+            // A shield spec never buys an off-hand weapon (same veto as the
+            // BuyAction pass: it would only ping-pong the shield).
+            uint32 vendorSpecId = sRandomItemMgr.GetPlayerSpecId(bot);
+            if (!vendorSpecId)
+                vendorSpecId = sRandomItemMgr.GetFallbackSpecId(bot->GetClass());
+            if (proto->Class == ITEM_CLASS_WEAPON &&
+                ai::SpecUsesShieldOffHand(bot->GetClass(), sRandomItemMgr.GetSpecName(vendorSpecId)))
                 continue;
             ItemQualifier weaponQualifier(vendorItem->item);
             if (ItemUsageValue::QueryItemUsageForEquip(weaponQualifier, bot) != ItemUsage::ITEM_USAGE_EQUIP)

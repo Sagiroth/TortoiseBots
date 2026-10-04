@@ -9,7 +9,6 @@
 #include "playerbot/RandomItemMgr.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/ServerFacade.h"
-#include "../../../../runtime/ClassConsumablePolicy.h"
 
 using namespace ai;
 
@@ -627,6 +626,10 @@ uint8 ItemUsageValue::GetPreferredEquipSlot(Player* bot, Item* item, ItemPrototy
 
     // A spec-allowed weapon should take over a hand that still holds a weapon
     // the spec forbids (the spec transition), and that hand can be the off one.
+    // Slot-aware on purpose: the plain gate is any-slot, so a 1H weapon reads
+    // as spec-legal for protection even in the off hand - and would then
+    // target the shield it must never replace. Only an item legal FOR the
+    // hand it would take starts a transition.
     bool const newWeaponForSpec = proto->Class == ITEM_CLASS_WEAPON &&
         sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, proto, canDualWield);
 
@@ -645,7 +648,8 @@ uint8 ItemUsageValue::GetPreferredEquipSlot(Player* bot, Item* item, ItemPrototy
         }
 
         if (newWeaponForSpec && equipped->GetProto()->Class == ITEM_CLASS_WEAPON &&
-            !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, equipped->GetProto(), canDualWield))
+            !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, equipped->GetProto(), canDualWield) &&
+            sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, proto, slot, canDualWield))
         {
             // An empty main hand is worse than an off-spec off hand: without a
             // main hand the bot cannot auto-attack or use main-hand abilities
@@ -881,7 +885,12 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     if (statWeight)
         shouldEquip = true;
 
-    if (itemProto->Class == ITEM_CLASS_WEAPON && !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto, canDualWield))
+    // Slot-aware on purpose: the plain gate answers "legal in ANY slot", so a
+    // 1H weapon reads as spec-legal for protection (main-hand set) even when
+    // compared against the shield. The OH slot of a shield spec admits
+    // shields only - a weapon there is never an upgrade, which is the
+    // reverse guard for the shield-transition below (no ping-pong).
+    if (itemProto->Class == ITEM_CLASS_WEAPON && !sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, itemProto, slot, canDualWield))
         shouldEquip = false;
     if (itemProto->Class == ITEM_CLASS_ARMOR)
     {
@@ -895,12 +904,11 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     ai->TellDebug(ai->GetMaster(), "Checking equip: " + chat->formatItem(itemProto) + " to " + chat->formatSlot(slot) + " vs " + (oldItem ? chat->formatItem(oldItem->GetProto()) : "empty"), "debug equip");
 
     if (itemProto->Class == ITEM_CLASS_WEAPON &&
-        !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto, canDualWield))
+        !sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, itemProto, slot, canDualWield))
     {
         if (oldItem)
             return ItemUsage::ITEM_USAGE_NONE;
     }
-
 
     // An item with no stats, no armour, no weapon damage and no spell does
     // nothing for the bot. Without this it falls through to BAD_EQUIP below,
@@ -1013,14 +1021,16 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
 
     // Spec transition: a bot that still wields a weapon its spec forbids
     // (e.g. an assassination rogue holding the mace it used while the
-    // pre-talent default scale applied) swaps to a spec-allowed weapon as soon
-    // as one is available, even at somewhat lower DPS. Only the weight race is
-    // skipped; class rules (CanUseItem above) and the weapon spec gate still
-    // apply to the new item.
+    // pre-talent default scale applied, or a protection warrior holding a
+    // 1H weapon in the off hand) swaps to a spec-allowed weapon as soon
+    // as one is available, even at somewhat lower DPS. The gates are
+    // slot-aware: a 1H weapon is spec-legal in the main hand but forbidden
+    // in a shield spec's off hand. Only the weight race is skipped; class
+    // rules (CanUseItem above) still apply to the new item.
     bool const newWeaponForSpec = (itemProto->Class == ITEM_CLASS_WEAPON &&
-        sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto, canDualWield));
+        sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, itemProto, slot, canDualWield));
     bool const oldWeaponAgainstSpec = (oldItemProto->Class == ITEM_CLASS_WEAPON &&
-        !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, oldItemProto, canDualWield));
+        !sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, oldItemProto, slot, canDualWield));
 
     // The two-hander a fury warrior leveled on before it could dual wield is not
     // an off-spec mistake: learning Dual Wield must not downgrade it to the
@@ -1032,7 +1042,7 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     // two-hander there (it leveled on it), protection never does.
     bool const standInTwoHander = canDualWield &&
         oldItemProto->InventoryType == INVTYPE_2HWEAPON && itemProto->InventoryType != INVTYPE_2HWEAPON &&
-        sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, oldItemProto, false);
+        sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, oldItemProto, slot, false);
 
     if (newWeaponForSpec && oldWeaponAgainstSpec && !standInTwoHander)
         return ItemUsage::ITEM_USAGE_EQUIP;

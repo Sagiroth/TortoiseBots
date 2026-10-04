@@ -3527,3 +3527,36 @@ Local validation: `tools/test_quest_taker_level_policy.cpp` section 4
 (exempt 1/4 masterless, bound at 5, owned/hired excluded, level 60
 excluded); `bash tools/verify_all.sh`; `git diff --check`. No deploy
 (orchestrator compiles).
+
+## Shield ping-pong reverse guard + vendor shield-first (review #465) — 2026-10-04
+Feature: the slot-aware spec weapon policy (`SpecWeaponPolicy.h`, new) pins
+the owner weapon matrix as pure rules - prot warrior/paladin 1H main hand +
+shield off hand, holy shield-or-held, arms/ret 2H-only, fury 1H pair with a
+2H stand-in only before Dual Wield - and the module now enforces the
+off-hand side: `RandomItemMgr::ShouldEquipWeaponForSlot` answers per
+concrete slot (warrior/paladin via the policy, other classes fail open to
+the old any-slot answer), the equip audit (`ItemUsageValue`) gates weapons
+through it (compare, NONE-with-equipped, spec transitions, stand-in guard,
+MH/OH hand-swap driver in `EquipAction`), so a bag 1H weapon never targets
+the shield and a shield never answers EQUIP over a weapon in the off hand.
+Vendor side: a shieldless shield-spec bot sorts shields before all other
+weapon upgrades (`VendorShieldRank`, same EQUIP rules, own gold, trainer
+reserve first) and never buys an off-hand weapon (`BuyAction` pass +
+`VendorHasUsefulItemValue` trigger veto; the slot-aware audit would answer
+NONE for it anyway).
+
+Copied / ported / reimplemented: reimplemented (donor `mod-playerbots`
+`src/Mgr/Item/StatsWeightCalculator.cpp:630-692` penalises 2H x0.05, x0.1
+for shield specs, and `src/Mgr/Item/RandomItemMgr.cpp:1202-1265` keeps a
+dead-code 1H+shield allowlist for prot, but neither forbids a weapon in
+the off-hand slot - the reverse guard is new; donor SHA `b6696bdb`).
+
+Reason: review #465 showed the J shield-transition alone ping-pongs - a bag
+1H out-scores the shield (EQUIP over it next audit), the shield-transition
+re-equips the shield, looping every audit cycle - and the vendor pass would
+spend gold on those unwanted off-hand weapons.
+
+Local validation: `tools/test_spec_weapon_policy.cpp` (matrix rows,
+ping-pong reverse guard, fury pre/post-DW, shield detection, vendor rank;
+registered in `tools/verify_all.sh`); `bash tools/verify_all.sh`;
+`git diff --check`. No deploy (orchestrator compiles).

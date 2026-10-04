@@ -8,9 +8,8 @@
 #include "playerbot/ServerFacade.h"
 #include "strategy/values/LootValues.h"
 
-#include "ItemEnchantmentMgr.h"
-
 #include "strategy/values/SharedValueContext.h"
+#include "strategy/values/SpecWeaponPolicy.h"
 
 char * strstri (const char* str1, const char* str2);
 
@@ -723,6 +722,25 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, Item
     }
 
     return false;
+}
+
+bool RandomItemMgr::ShouldEquipWeaponForSlot(uint8 playerclass, uint8 spec, ItemPrototype const* proto, uint8 slot, bool canDualWield)
+{
+    // Only warriors and paladins have a slot-aware policy; every other
+    // class keeps the plain any-slot answer (fail-open).
+    if (playerclass != CLASS_WARRIOR && playerclass != CLASS_PALADIN)
+        return ShouldEquipWeaponForSpec(playerclass, spec, proto, canDualWield);
+
+    if (!spec)
+        spec = static_cast<uint8>(GetFallbackSpecId(playerclass));
+
+    if (!m_weightScales[spec].info.id)
+        return false;
+
+    // The policy header owns the sets (single source of truth with the
+    // standalone test); the scale id maps back to the spec name it loaded.
+    return ai::SpecWeaponAllowed(playerclass, m_weightScales[spec].info.name,
+        proto->Class, proto->SubClass, slot, canDualWield);
 }
 
 bool RandomItemMgr::CanEquipWeapon(uint8 clazz, ItemPrototype const* proto)
@@ -2876,6 +2894,14 @@ uint32 RandomItemMgr::GetFallbackSpecId(uint8 playerclass)
         if (itr.second.info.classId == playerclass && itr.second.info.id)
             return itr.second.info.id;
     return 0;
+}
+
+std::string RandomItemMgr::GetSpecName(uint32 specId)
+{
+    auto itr = m_weightScales.find(specId);
+    if (itr == m_weightScales.end() || !itr->second.info.id)
+        return std::string();
+    return itr->second.info.name;
 }
 
 uint32 RandomItemMgr::GetUpgrade(Player* player, std::string spec, uint8 slot, uint32 quality, uint32 itemId)
