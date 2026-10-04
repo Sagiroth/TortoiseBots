@@ -432,6 +432,9 @@ bool QuestObjectiveTravelDestination::IsPossible(const PlayerTravelInfo& info) c
             return false;
     }
 
+    return true;
+}
+
 bool QuestObjectiveTravelDestination::IsActive(Player* bot, const PlayerTravelInfo& info) const {
     PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
     AiObjectContext* context = ai->GetAiObjectContext();
