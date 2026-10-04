@@ -698,22 +698,27 @@ bool SpiritHealerAction::Execute(Event& event)
         // Same guard as RepopAction: the core lookup can return a linked
         // graveyard on another map (entryFar) when the corpse's zone links
         // nothing usable (GraveyardTeleportPolicy.h). Only follow the pick
-        // when it shares the corpse's map and is reasonably near; otherwise
-        // keep the "best graveyard" value (already corpse-anchored and
-        // corpse-validated by its callers) instead of teleporting cross-map.
+        // when it shares the corpse's map and is reasonably near.
         if (IsUsableGraveyardTarget(true, corpseGrave->map_id == corpse->GetMapId(),
             WorldPosition(corpseGrave).fDist(WorldPosition(corpse))))
             grave = GuidPosition(0, corpseGrave);
         else
-        {
-            sLog.outDetail("SpiritHealer: nearest graveyard for bot #%d <%s> corpse is off-map/far (map %u), using best graveyard instead",
+            sLog.outDetail("SpiritHealer: nearest graveyard for bot #%d <%s> corpse is off-map/far (map %u), trying best graveyard instead",
                 bot->GetGUIDLow(), bot->GetName(), corpseGrave->map_id);
-            grave = AI_VALUE(GuidPosition, "best graveyard");
-        }
     }
-    else
+
+    // "Best graveyard" runs the same unguarded core lookup (DeadValues.cpp),
+    // so it can hand back the same off-map/far graveyard. Only take it when
+    // the ghost can actually get there; otherwise leave grave empty and let
+    // the evacuation below run (repop degrades to spawn/homebind).
+    if (!grave)
     {
-        grave = AI_VALUE(GuidPosition, "best graveyard");
+        GuidPosition bestGrave = AI_VALUE(GuidPosition, "best graveyard");
+        if (bestGrave && IsUsableGraveyardTarget(true, bestGrave.GetMapId() == bot->GetMapId(), bestGrave.fDist(bot)))
+            grave = bestGrave;
+        else if (bestGrave)
+            sLog.outDetail("SpiritHealer: best graveyard for bot #%d <%s> is off-map/far (map %u), evacuating instead",
+                bot->GetGUIDLow(), bot->GetName(), bestGrave.GetMapId());
     }
 
     //something went wrong
@@ -844,21 +849,32 @@ bool SpiritHealerAction::Execute(Event& event)
 
     if (shouldTeleportToGY)
     {
-        // The guard above picked a same-map near graveyard, but "best
-        // graveyard" (master/travel legacies) can still point at another map.
-        // Never teleport the ghost cross-map: walking there is impossible and
-        // the bot strands. Fall back to the walk, which re-picks next tick.
-        if (grave.GetMapId() != bot->GetMapId())
+        // Re-check at teleport time: a ghost cannot cross maps (no
+        // transports), so a cross-map target is not a walk either - evacuate
+        // via repop instead of MoveTo-looping forever. The distance half of
+        // the rule applies here too: a same-map outlier is a relocation,
+        // not a repop.
+        if (!IsUsableGraveyardTarget(true, grave.GetMapId() == bot->GetMapId(), grave.fDist(bot)))
         {
-            sLog.outDetail("SpiritHealer: graveyard for bot #%d <%s> is on map %u, not teleporting cross-map",
+            sLog.outDetail("SpiritHealer: graveyard for bot #%d <%s> is off-map/far (map %u), evacuating instead",
                 bot->GetGUIDLow(), bot->GetName(), grave.GetMapId());
-            return MoveTo(grave.GetMapId(), grave.getX(), grave.getY(), grave.getZ(), false, false);
+            ai->DoSpecificAction("repop");
+            return false;
         }
         bot->GetMotionMaster()->Clear();
         bot->TeleportTo(grave.GetMapId(), grave.getX(), grave.getY(), grave.getZ(), 0);
         if (isRealPlayer_Helper(bot))
             bot->SendHeartBeat();
         return true;
+    }
+    else if (grave.GetMapId() != bot->GetMapId())
+    {
+        // A ghost cannot walk across maps (no transports): MoveTo would
+        // fail every tick and strand the bot in ghost form. Evacuate.
+        sLog.outDetail("SpiritHealer: graveyard for bot #%d <%s> is on map %u, evacuating instead of walking cross-map",
+            bot->GetGUIDLow(), bot->GetName(), grave.GetMapId());
+        ai->DoSpecificAction("repop");
+        return false;
     }
     else
     {
