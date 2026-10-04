@@ -206,6 +206,32 @@ inline bool IsSaygeFortuneAura(uint32_t spellId)
     return false;
 }
 
+// Action encoding for purchase options (sender 506): standard buys carry the
+// buy index (1..7) directly. Sayge variant picks (1..8) pack the pick in the
+// high byte and kWorldBuffBuySayge in the low byte.
+inline uint32_t EncodeSaygeAction(uint8_t buyIndex, uint32_t pick)
+{
+    return (pick << 8) | buyIndex;
+}
+
+inline uint8_t DecodeBuyIndex(uint32_t action)
+{
+    return static_cast<uint8_t>(action & 0xFF);
+}
+
+inline uint32_t DecodeSaygePick(uint32_t action)
+{
+    return (action >> 8) & 0xFF;
+}
+
+// Fast check for the aura unlock hot path.
+inline bool IsAuraUnlockSpell(uint32_t spellId)
+{
+    return spellId == kWorldBuffSpellSongflower ||
+           IsDireMaulTributeAura(spellId) ||
+           IsSaygeFortuneAura(spellId);
+}
+
 // Aura-gain unlock quest for one real-way aura gain. 0 = no quest tracks it.
 inline uint32_t AuraUnlockQuest(uint32_t spellId, bool horde)
 {

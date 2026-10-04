@@ -246,7 +246,22 @@ void ShowWorldBuffMenu(Player* player, Creature* creature)
             continue;
         if (purchase == kWorldBuffBuySayge)
         {
-            AddItem(player, GOSSIP_ICON_MONEY_BAG, "Sayge's Dark Fortune...", kWorldBuffSenderSayge, 0);
+            WorldBuffPricePair prices;
+            if (WorldBuffPrices(purchase, prices,
+                sPlayerbotAIConfig.worldBuffsPriceBaseCopper, sPlayerbotAIConfig.worldBuffsPricePerPersonCopper,
+                sPlayerbotAIConfig.worldBuffsSaygePriceBaseCopper, sPlayerbotAIConfig.worldBuffsSaygePricePerPersonCopper,
+                sPlayerbotAIConfig.worldBuffsSongflowerPriceBaseCopper, sPlayerbotAIConfig.worldBuffsSongflowerPricePerPersonCopper,
+                sPlayerbotAIConfig.worldBuffsSilithystPriceBaseCopper, sPlayerbotAIConfig.worldBuffsSilithystPricePerPersonCopper))
+            {
+                uint32_t total = WorldBuffTotalPrice(prices.baseCopper, prices.perPersonCopper, 1);
+                std::ostringstream label;
+                label << "Sayge's Dark Fortune... (" << ai::ChatHelper::formatMoney(total) << "+)";
+                AddItem(player, GOSSIP_ICON_MONEY_BAG, label.str().c_str(), kWorldBuffSenderSayge, 0);
+            }
+            else
+            {
+                AddItem(player, GOSSIP_ICON_MONEY_BAG, "Sayge's Dark Fortune...", kWorldBuffSenderSayge, 0);
+            }
             continue;
         }
         WorldBuffPricePair prices;
@@ -281,8 +296,8 @@ void ShowSaygeMenu(Player* player, Creature* creature)
     uint32_t count = 0;
     WorldBuffSaygePick const* picks = WorldBuffSaygePicks(count);
     for (uint32_t i = 0; i < count; ++i)
-        AddItem(player, GOSSIP_ICON_MONEY_BAG, picks[i].label, kWorldBuffSenderBuy, (kWorldBuffBuySayge << 8) | (i + 1));
-    AddItem(player, GOSSIP_ICON_TALK, "< Back", kWorldBuffSenderBack, kWorldBuffSenderBack);
+        AddItem(player, GOSSIP_ICON_MONEY_BAG, picks[i].label, kWorldBuffSenderBuy, EncodeSaygeAction(kWorldBuffBuySayge, i + 1));
+    AddItem(player, GOSSIP_ICON_TALK, "< Back", kWorldBuffSenderBack, kWorldBuffSenderSayge);
     player->PlayerTalkClass->SendGossipMenu(GossipText(player), creature->GetObjectGuid());
 }
 
@@ -370,6 +385,7 @@ void BuyWorldBuff(Player* player, Creature* creature, uint8_t purchase, uint32_t
     // The NPC is the caster (AddAura takes duration from spell data, so the
     // original 2h/1h/30m and death rules apply unchanged). Purchased auras
     // therefore never credit aura unlocks: PR5 ignores recruiter casters.
+    bool buyerBuffed = false;
     for (Player* target : targets)
     {
         if (!target || !target->IsInWorld() || !target->IsAlive())
@@ -377,7 +393,20 @@ void BuyWorldBuff(Player* player, Creature* creature, uint8_t purchase, uint32_t
         for (uint32_t stripId : strip)
             target->RemoveAurasDueToSpellByCancel(stripId);
         for (uint32_t spellId : apply)
-            target->AddAura(spellId, 0, creature);
+        {
+            if (target->AddAura(spellId, 0, creature))
+            {
+                if (target == player)
+                    buyerBuffed = true;
+            }
+        }
+    }
+    if (!buyerBuffed)
+    {
+        player->ModifyMoney(static_cast<int32>(total));
+        player->SaveToDB();
+        CloseWithHint(player, "The blessing could not be applied. Your gold has been refunded.");
+        return;
     }
     player->PlayerTalkClass->CloseGossip();
     ChatHandler(player).PSendSysMessage("The recruiter's criers raise the blessing over your company.");
@@ -473,8 +502,8 @@ bool HireRecruiterScript::OnSelect(Player* player, Creature* creature, uint32_t 
         }
         if (sender == kWorldBuffSenderBuy)
         {
-            uint8_t purchase = static_cast<uint8_t>(action & 0xFF);
-            uint32_t saygePick = (action >> 8) & 0xFF;
+            uint8_t purchase = DecodeBuyIndex(action);
+            uint32_t saygePick = DecodeSaygePick(action);
             if (purchase == kWorldBuffBuySayge && saygePick == 0)
             {
                 ShowSaygeMenu(player, creature);
@@ -485,6 +514,11 @@ bool HireRecruiterScript::OnSelect(Player* player, Creature* creature, uint32_t 
         }
         if (sender == kWorldBuffSenderBack)
         {
+            if (action == kWorldBuffSenderSayge)
+            {
+                ShowWorldBuffMenu(player, creature);
+                return true;
+            }
             ShowRootMenu(player, creature);
             return true;
         }

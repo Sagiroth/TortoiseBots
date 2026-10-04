@@ -22,12 +22,14 @@ void WorldBuffAuraAdapter::OnAuraApply(Unit* unit, Aura* aura)
         return;
     if (!sPlayerbotAIConfig.worldBuffsEnabled)
         return;
+    uint32_t spellId = aura->GetId();
+    if (!IsAuraUnlockSpell(spellId))
+        return;
     if (!unit->IsPlayer())
         return;
     Player* player = unit->ToPlayer();
     if (!player)
         return;
-    uint32_t spellId = aura->GetId();
     bool horde = player->GetTeam() == HORDE;
     uint32_t questId = AuraUnlockQuest(spellId, horde);
     if (questId == 0)

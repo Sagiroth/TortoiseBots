@@ -286,6 +286,46 @@ static void TestServiceSpells()
     CHECK(IsKnownSaygeChoice(22888) == false);
 }
 
+static void TestSaygeActionEncoding()
+{
+    // Standard buys pass the buy index directly; saygePick is 0.
+    for (uint8_t buy = 1; buy <= 7; ++buy)
+    {
+        CHECK(DecodeBuyIndex(buy) == buy);
+        CHECK(DecodeSaygePick(buy) == 0);
+    }
+    // Sayge submenu actions pack (pick << 8) | buy.
+    for (uint32_t pick = 1; pick <= 8; ++pick)
+    {
+        uint32_t action = EncodeSaygeAction(kWorldBuffBuySayge, pick);
+        CHECK(DecodeBuyIndex(action) == kWorldBuffBuySayge);
+        CHECK(DecodeSaygePick(action) == pick);
+    }
+}
+
+static void TestAuraUnlockFastCheck()
+{
+    // Exactly 12 tracked auras: Songflower, 3 DM tribute guard buffs, 8 Sayge fortunes.
+    CHECK(IsAuraUnlockSpell(15366) == true);
+    CHECK(IsAuraUnlockSpell(22817) == true);
+    CHECK(IsAuraUnlockSpell(22818) == true);
+    CHECK(IsAuraUnlockSpell(22820) == true);
+    CHECK(IsAuraUnlockSpell(23735) == true);
+    CHECK(IsAuraUnlockSpell(23736) == true);
+    CHECK(IsAuraUnlockSpell(23737) == true);
+    CHECK(IsAuraUnlockSpell(23738) == true);
+    CHECK(IsAuraUnlockSpell(23766) == true);
+    CHECK(IsAuraUnlockSpell(23767) == true);
+    CHECK(IsAuraUnlockSpell(23768) == true);
+    CHECK(IsAuraUnlockSpell(23769) == true);
+    // Non-unlock spells return false.
+    CHECK(IsAuraUnlockSpell(22888) == false);
+    CHECK(IsAuraUnlockSpell(16609) == false);
+    CHECK(IsAuraUnlockSpell(24425) == false);
+    CHECK(IsAuraUnlockSpell(29534) == false);
+    CHECK(IsAuraUnlockSpell(0) == false);
+}
+
 int main()
 {
     TestGating();
@@ -299,6 +339,8 @@ int main()
     TestRaidKeeper();
     TestServicePrices();
     TestServiceSpells();
+    TestSaygeActionEncoding();
+    TestAuraUnlockFastCheck();
     std::printf("world buff policy: %d checks passed\n", checks);
     return 0;
 }
