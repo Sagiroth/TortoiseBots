@@ -640,6 +640,14 @@ uint8 ItemUsageValue::GetPreferredEquipSlot(Player* bot, Item* item, ItemPrototy
 
     for (uint8 slot : candidates)
     {
+        // A hand the spec forbids for this weapon is no candidate at all: a
+        // dual-wield-capable protection warrior would otherwise compare a
+        // main-hand upgrade against its (lighter) shield, pick the off hand,
+        // and then reject the item there - never upgrading the main hand.
+        if (proto->Class == ITEM_CLASS_WEAPON &&
+            !sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, proto, slot, canDualWield))
+            continue;
+
         Item* equipped = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
         if (!equipped)
         {
