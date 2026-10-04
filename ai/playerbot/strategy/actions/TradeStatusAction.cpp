@@ -302,8 +302,12 @@ bool TradeStatusAction::CheckTrade()
     // open (trusted partner, group invite race, or an open mode).
     if (!ai->HasRealPlayerMaster() && sRandomBotFacade.IsRandomBot(bot) &&
         !TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()) &&
-        isRealPlayer_Helper(trader) && !PoolBotMayTradeWith(trader))
+        isRealPlayer_Helper(trader) &&
+        !(trader == GetMaster() || IsInGroup_Helper(bot, trader) || ai->IsBotOwnerOrGm(*trader) ||
+          TortoiseBots::HireLifecycle::Instance().GetMaster(bot->GetObjectGuid()) == trader->GetObjectGuid()))
     {
+        // Strangers only: an open mode lets the window open (PoolBotMayTradeWith),
+        // but buy-only / sell-only still decide which way value may flow here.
         bool botGives = bot->GetTradeData()->GetMoney() != 0;
         bool playerGives = trader->GetTradeData()->GetMoney() != 0;
         for (uint32 slot = 0; slot < TRADE_SLOT_TRADED_COUNT && !(botGives && playerGives); ++slot)
