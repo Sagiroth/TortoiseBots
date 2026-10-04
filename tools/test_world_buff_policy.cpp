@@ -1,22 +1,27 @@
-// Standalone regression test for issue #492 (stage 1): pure world-buff
-// policy behind the capital-recruiter branch (runtime/WorldBuffPolicy.h):
+// Standalone regression test for issue #492 (stages 1+3): pure world-buff
+// policy behind the capital-recruiter branch (runtime/WorldBuffPolicy.h +
+// runtime/WorldBuffService.h):
 //   - branch gating (flag x bot x level),
 //   - capital-recruiter routing (6 entries) and the recruiter-caster filter,
 //   - price math (solo / 5 stacked / 40-man, all four tiers),
 //   - purchase -> unlock-quest routing for both factions,
 //   - aura -> quest map (DM any-one, Sayge any-of-8, Songflower),
 //   - boss -> credit map (Ony/Nef only; Rend/Hakkar direct, Gyth excluded),
-//   - teleport snapshot/restore/strip table incl. Upper Kara 814.
+//   - teleport snapshot/restore/strip table incl. Upper Kara 814,
+//   - service price pairs, spell lists (DM triple, Sayge strip-others),
+//     Sayge submenu picks.
 //
 // Build and run (from the repo root):
 //   g++ -std=c++17 -Wall -Wextra tools/test_world_buff_policy.cpp -o /tmp/test_world_buff_policy
 //   /tmp/test_world_buff_policy
 
 #include "../runtime/WorldBuffPolicy.h"
+#include "../runtime/WorldBuffService.h"
 
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 using namespace TortoiseBots;
 
@@ -183,6 +188,65 @@ static void TestTeleportTable()
     CHECK(ShouldStripUpperKara(false, 0) == false);
 }
 
+static void TestServicePrices()
+{
+    // Config pairs flow through unchanged: standard 10g+2g, Sayge 6g+1g,
+    // Songflower 4g+1g, Silithyst 2g+40s. Unknown indices fail closed.
+    WorldBuffPricePair pair;
+    CHECK(WorldBuffPrices(1, pair, 100000, 20000, 60000, 10000, 40000, 10000, 20000, 4000) == true);
+    CHECK(pair.baseCopper == 100000 && pair.perPersonCopper == 20000);
+    CHECK(WorldBuffPrices(4, pair, 100000, 20000, 60000, 10000, 40000, 10000, 20000, 4000) == true);
+    CHECK(pair.baseCopper == 100000 && pair.perPersonCopper == 20000);
+    CHECK(WorldBuffPrices(5, pair, 100000, 20000, 60000, 10000, 40000, 10000, 20000, 4000) == true);
+    CHECK(pair.baseCopper == 60000 && pair.perPersonCopper == 10000);
+    CHECK(WorldBuffPrices(6, pair, 100000, 20000, 60000, 10000, 40000, 10000, 20000, 4000) == true);
+    CHECK(pair.baseCopper == 40000 && pair.perPersonCopper == 10000);
+    CHECK(WorldBuffPrices(7, pair, 100000, 20000, 60000, 10000, 40000, 10000, 20000, 4000) == true);
+    CHECK(pair.baseCopper == 20000 && pair.perPersonCopper == 4000);
+    CHECK(WorldBuffPrices(0, pair, 100000, 20000, 60000, 10000, 40000, 10000, 20000, 4000) == false);
+    CHECK(WorldBuffPrices(8, pair, 100000, 20000, 60000, 10000, 40000, 10000, 20000, 4000) == false);
+}
+
+static void TestServiceSpells()
+{
+    std::vector<uint32_t> apply;
+    std::vector<uint32_t> strip;
+    // Singles.
+    CHECK(WorldBuffSpells(1, 0, apply, strip) == true && apply.size() == 1 && apply[0] == 22888);
+    CHECK(WorldBuffSpells(2, 0, apply, strip) == true && apply.size() == 1 && apply[0] == 16609);
+    CHECK(WorldBuffSpells(3, 0, apply, strip) == true && apply.size() == 1 && apply[0] == 24425);
+    CHECK(WorldBuffSpells(6, 0, apply, strip) == true && apply.size() == 1 && apply[0] == 15366);
+    CHECK(WorldBuffSpells(7, 0, apply, strip) == true && apply.size() == 1 && apply[0] == 29534);
+    // DM pack: one purchase lands all three guard buffs.
+    CHECK(WorldBuffSpells(4, 0, apply, strip) == true && apply.size() == 3);
+    CHECK(apply[0] == 22817 && apply[1] == 22818 && apply[2] == 22820);
+    CHECK(strip.empty() == true);
+    // Sayge: chosen variant applies, the other 7 strip first (single active).
+    CHECK(WorldBuffSpells(5, 23768, apply, strip) == true);
+    CHECK(apply.size() == 1 && apply[0] == 23768);
+    CHECK(strip.size() == 7);
+    for (uint32_t id : strip)
+        CHECK(id != 23768 && IsSaygeFortuneAura(id) == true);
+    // Unknown variant or purchase fails closed (menu re-shown, no charge).
+    CHECK(WorldBuffSpells(5, 0, apply, strip) == false);
+    CHECK(WorldBuffSpells(5, 22888, apply, strip) == false);
+    CHECK(WorldBuffSpells(0, 0, apply, strip) == false);
+    CHECK(WorldBuffSpells(9, 0, apply, strip) == false);
+    // Submenu: 8 distinct known variants.
+    uint32_t count = 0;
+    WorldBuffSaygePick const* picks = WorldBuffSaygePicks(count);
+    CHECK(count == 8);
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        CHECK(IsKnownSaygeChoice(picks[i].spellId) == true);
+        CHECK(IsSaygeFortuneAura(picks[i].spellId) == true);
+        for (uint32_t j = i + 1; j < count; ++j)
+            CHECK(picks[i].spellId != picks[j].spellId);
+    }
+    CHECK(IsKnownSaygeChoice(0) == false);
+    CHECK(IsKnownSaygeChoice(22888) == false);
+}
+
 int main()
 {
     TestGating();
@@ -193,6 +257,8 @@ int main()
     TestAuraMap();
     TestBossMap();
     TestTeleportTable();
+    TestServicePrices();
+    TestServiceSpells();
     std::printf("world buff policy: %d checks passed\n", checks);
     return 0;
 }

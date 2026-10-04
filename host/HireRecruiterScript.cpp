@@ -1,9 +1,12 @@
 // pi-lens-ignore-file: clang:pp_file_not_found,clang:unknown_typename,clang:use_of_undeclared_identifier,clang:unknown_type_name,clang:undeclared_var_use,clang:incomplete_member_access
+#include <sstream>
+#include <vector>
 #include "HireRecruiterScript.h"
 #include "../runtime/HireProvisionService.h"
 #include "../runtime/HireCost.h"
 #include "../runtime/HireSpecPolicy.h"
 #include "../runtime/WorldBuffPolicy.h"
+#include "../runtime/WorldBuffService.h"
 #include "../runtime/BotManager.h"
 #include "../ai/playerbot/playerbot.h"
 #include "../ai/playerbot/ChatHelper.h"
@@ -13,8 +16,10 @@
 #include "Player.h"
 #include "Creature.h"
 #include "ObjectMgr.h"
+#include "ObjectAccessor.h"
 #include "World.h"
 #include "WorldSession.h"
+#include "Group/Group.h"
 #include "Chat.h"
 #include "SharedDefines.h"
 #include "Log.h"
@@ -51,6 +56,9 @@ void CloseWithHint(Player* player, char const* hint);
 void ShowClassMenu(Player* player, Creature* creature);
 void ShowRootMenu(Player* player, Creature* creature);
 void ShowWorldBuffMenu(Player* player, Creature* creature);
+void ShowSaygeMenu(Player* player, Creature* creature);
+void CollectBuffTargets(Player* buyer, Creature* npc, std::vector<Player*>& out);
+void BuyWorldBuff(Player* player, Creature* creature, uint8_t purchase, uint32_t saygePick);
 
 uint8 const kHireClasses[] = { CLASS_WARRIOR, CLASS_PALADIN, CLASS_HUNTER, CLASS_ROGUE, CLASS_PRIEST, CLASS_SHAMAN, CLASS_MAGE, CLASS_WARLOCK, CLASS_DRUID };
 
@@ -221,28 +229,158 @@ void ShowRootMenu(Player* player, Creature* creature)
 
 void ShowWorldBuffMenu(Player* player, Creature* creature)
 {
-    // Stage 1: unlock quests land in PR2, purchases in PR3. Until then the
-    // branch only proves the routing (flag x capital x 60+ gate); every
-    // buy option closes with the same "coming soon" hint so clicks are
-    // observable but move no gold and touch no auras.
+    // Issue #492: one window for unlocks and purchases. The script owns the
+    // gossip menu, so core never appends the quest list itself: after the
+    // buy options, PrepareQuestMenu merges the recruiter's quests (PR2) and
+    // SendGossipMenu ships gossip + quest items in one message. Only
+    // unlocked buffs are offered (rewarded unlock quest for the faction);
+    // anything else shows its quest instead, so there is exactly one row
+    // per buff: quest or purchase, never both.
+    Team team = player ? player->GetTeam() : TEAM_NONE;
+    bool horde = team == HORDE;
     for (uint8_t purchase = kWorldBuffBuyRally; purchase <= kWorldBuffBuyCount; ++purchase)
     {
-        char const* label = nullptr;
+        uint32_t questId = PurchaseUnlockQuest(purchase, horde);
+        bool unlocked = questId != 0 && player->GetQuestRewardStatus(questId);
+        if (!unlocked)
+            continue;
+        if (purchase == kWorldBuffBuySayge)
+        {
+            AddItem(player, GOSSIP_ICON_MONEY_BAG, "Sayge's Dark Fortune...", kWorldBuffSenderSayge, 0);
+            continue;
+        }
+        WorldBuffPricePair prices;
+        if (!WorldBuffPrices(purchase, prices,
+            sPlayerbotAIConfig.worldBuffsPriceBaseCopper, sPlayerbotAIConfig.worldBuffsPricePerPersonCopper,
+            sPlayerbotAIConfig.worldBuffsSaygePriceBaseCopper, sPlayerbotAIConfig.worldBuffsSaygePricePerPersonCopper,
+            sPlayerbotAIConfig.worldBuffsSongflowerPriceBaseCopper, sPlayerbotAIConfig.worldBuffsSongflowerPricePerPersonCopper,
+            sPlayerbotAIConfig.worldBuffsSilithystPriceBaseCopper, sPlayerbotAIConfig.worldBuffsSilithystPricePerPersonCopper))
+            continue;
+        uint32_t total = WorldBuffTotalPrice(prices.baseCopper, prices.perPersonCopper, 1);
+        std::ostringstream label;
         switch (purchase)
         {
-            case kWorldBuffBuyRally: label = "Rallying Cry of the Dragonslayer (soon)"; break;
-            case kWorldBuffBuyWarchief: label = "Warchief's Blessing (soon)"; break;
-            case kWorldBuffBuyZandalar: label = "Spirit of Zandalar (soon)"; break;
-            case kWorldBuffBuyDmPack: label = "Dire Maul Tribute (soon)"; break;
-            case kWorldBuffBuySayge: label = "Sayge's Dark Fortune (soon)"; break;
-            case kWorldBuffBuySongflower: label = "Songflower Serenade (soon)"; break;
-            case kWorldBuffBuySilithyst: label = "Traces of Silithyst (soon)"; break;
+            case kWorldBuffBuyRally: label << "Rallying Cry of the Dragonslayer"; break;
+            case kWorldBuffBuyWarchief: label << "Warchief's Blessing"; break;
+            case kWorldBuffBuyZandalar: label << "Spirit of Zandalar"; break;
+            case kWorldBuffBuyDmPack: label << "Dire Maul Tribute (all three)"; break;
+            case kWorldBuffBuySongflower: label << "Songflower Serenade"; break;
+            case kWorldBuffBuySilithyst: label << "Traces of Silithyst"; break;
             default: continue;
         }
-        AddItem(player, GOSSIP_ICON_MONEY_BAG, label, kWorldBuffSenderBuy, purchase);
+        label << " (" << ai::ChatHelper::formatMoney(total) << "+)";
+        AddItem(player, GOSSIP_ICON_MONEY_BAG, label.str().c_str(), kWorldBuffSenderBuy, purchase);
     }
     AddItem(player, GOSSIP_ICON_TALK, "< Back", kWorldBuffSenderBack, kWorldBuffSenderBack);
+    player->PrepareQuestMenu(creature->GetObjectGuid());
     player->PlayerTalkClass->SendGossipMenu(GossipText(player), creature->GetObjectGuid());
+}
+
+void ShowSaygeMenu(Player* player, Creature* creature)
+{
+    uint32_t count = 0;
+    WorldBuffSaygePick const* picks = WorldBuffSaygePicks(count);
+    for (uint32_t i = 0; i < count; ++i)
+        AddItem(player, GOSSIP_ICON_MONEY_BAG, picks[i].label, kWorldBuffSenderBuy, (kWorldBuffBuySayge << 8) | (i + 1));
+    AddItem(player, GOSSIP_ICON_TALK, "< Back", kWorldBuffSenderBack, kWorldBuffSenderBack);
+    player->PlayerTalkClass->SendGossipMenu(GossipText(player), creature->GetObjectGuid());
+}
+
+// Buyer + live in-world group/raid members within 40 yd of the NPC. Random
+// bots standing at the bank are never in the buyer's group, so they get
+// nothing; a member 100 yd away is out of range too.
+void CollectBuffTargets(Player* buyer, Creature* npc, std::vector<Player*>& out)
+{
+    out.clear();
+    if (!buyer || !npc)
+        return;
+    out.push_back(buyer);
+    Group* group = buyer->GetGroup();
+    if (!group)
+        return;
+    for (auto const& slot : group->GetMemberSlots())
+    {
+        if (slot.guid == buyer->GetObjectGuid())
+            continue;
+        Player* member = sObjectAccessor.FindPlayer(slot.guid);
+        if (!member || !member->IsInWorld() || !member->IsAlive())
+            continue;
+        if (!npc->IsWithinDistInMap(member, 40.0f))
+            continue;
+        out.push_back(member);
+    }
+}
+
+void BuyWorldBuff(Player* player, Creature* creature, uint8_t purchase, uint32_t saygePick)
+{
+    if (!IsValidWorldBuffPurchase(purchase))
+    {
+        ShowWorldBuffMenu(player, creature);
+        return;
+    }
+    bool horde = player->GetTeam() == HORDE;
+    uint32_t questId = PurchaseUnlockQuest(purchase, horde);
+    if (questId == 0 || !player->GetQuestRewardStatus(questId))
+    {
+        CloseWithHint(player, "That blessing is not unlocked yet. Complete its unlock quest first.");
+        return;
+    }
+    uint32_t saygeSpell = 0;
+    if (purchase == kWorldBuffBuySayge)
+    {
+        uint32_t count = 0;
+        WorldBuffSaygePick const* picks = WorldBuffSaygePicks(count);
+        if (saygePick < 1 || saygePick > count)
+        {
+            ShowSaygeMenu(player, creature);
+            return;
+        }
+        saygeSpell = picks[saygePick - 1].spellId;
+    }
+    std::vector<uint32_t> apply;
+    std::vector<uint32_t> strip;
+    if (!WorldBuffSpells(purchase, saygeSpell, apply, strip))
+    {
+        ShowWorldBuffMenu(player, creature);
+        return;
+    }
+    WorldBuffPricePair prices;
+    if (!WorldBuffPrices(purchase, prices,
+        sPlayerbotAIConfig.worldBuffsPriceBaseCopper, sPlayerbotAIConfig.worldBuffsPricePerPersonCopper,
+        sPlayerbotAIConfig.worldBuffsSaygePriceBaseCopper, sPlayerbotAIConfig.worldBuffsSaygePricePerPersonCopper,
+        sPlayerbotAIConfig.worldBuffsSongflowerPriceBaseCopper, sPlayerbotAIConfig.worldBuffsSongflowerPricePerPersonCopper,
+        sPlayerbotAIConfig.worldBuffsSilithystPriceBaseCopper, sPlayerbotAIConfig.worldBuffsSilithystPricePerPersonCopper))
+    {
+        ShowWorldBuffMenu(player, creature);
+        return;
+    }
+    std::vector<Player*> targets;
+    CollectBuffTargets(player, creature, targets);
+    uint32_t total = WorldBuffTotalPrice(prices.baseCopper, prices.perPersonCopper,
+        static_cast<uint32_t>(targets.size()));
+    if (player->GetMoney() < total)
+    {
+        std::ostringstream hint;
+        hint << "You cannot afford that blessing (" << ai::ChatHelper::formatMoney(total) << ").";
+        CloseWithHint(player, hint.str().c_str());
+        return;
+    }
+    player->ModifyMoney(-static_cast<int32>(total));
+    player->SaveToDB();
+    // The NPC is the caster (AddAura takes duration from spell data, so the
+    // original 2h/1h/30m and death rules apply unchanged). Purchased auras
+    // therefore never credit aura unlocks: PR5 ignores recruiter casters.
+    for (Player* target : targets)
+    {
+        if (!target || !target->IsInWorld() || !target->IsAlive())
+            continue;
+        for (uint32_t stripId : strip)
+            target->RemoveAurasDueToSpellByCancel(stripId);
+        for (uint32_t spellId : apply)
+            target->AddAura(spellId, 0, creature);
+    }
+    player->PlayerTalkClass->CloseGossip();
+    ChatHandler(player).PSendSysMessage("The recruiter's criers raise the blessing over your company.");
 }
 
 void ShowConfirmMenu(Player* player, Creature* creature, uint8 classId, uint8 race, uint8 gender, uint8 specIndex)
@@ -296,10 +434,12 @@ bool HireRecruiterScript::OnSelect(Player* player, Creature* creature, uint32_t 
     player->PlayerTalkClass->ClearMenus();
 
     // Issue #492: world-buff branch senders (505-508), matched before the
-    // hire wizard and its class-menu fallback. Purchases land in PR3; in
-    // stage 1 every buy click closes with a "soon" hint (no gold, no aura).
-    // The gate is re-checked per click, so a stale menu cannot bypass a
-    // flag flip or a bot check that happened after OnHello.
+    // hire wizard and its class-menu fallback. The gate is re-checked per
+    // click, so a stale menu cannot bypass a flag flip or a bot check that
+    // happened after OnHello. Purchases: charge first (hire pattern), then
+    // AddAura on the buyer + live in-world group members within 40 yd of
+    // the NPC, refund on every failure. Buffs are never cast as spells: the
+    // originals are 100-yd area effects that would hit the whole capital.
     bool buffsVisible = IsCapitalRecruiter(creature->GetEntry()) &&
         ShouldShowWorldBuffs(sPlayerbotAIConfig.worldBuffsEnabled,
             BotManager::Instance().IsBot(player->GetObjectGuid()),
@@ -321,9 +461,26 @@ bool HireRecruiterScript::OnSelect(Player* player, Creature* creature, uint32_t 
             ShowRootMenu(player, creature);
             return true;
         }
-        if (sender == kWorldBuffSenderBuy || sender == kWorldBuffSenderSayge)
+        if (sender == kWorldBuffSenderSayge)
         {
-            CloseWithHint(player, "World buffs are coming soon to this recruiter.");
+            if (action == 0)
+            {
+                ShowSaygeMenu(player, creature);
+                return true;
+            }
+            ShowWorldBuffMenu(player, creature);
+            return true;
+        }
+        if (sender == kWorldBuffSenderBuy)
+        {
+            uint8_t purchase = static_cast<uint8_t>(action & 0xFF);
+            uint32_t saygePick = (action >> 8) & 0xFF;
+            if (purchase == kWorldBuffBuySayge && saygePick == 0)
+            {
+                ShowSaygeMenu(player, creature);
+                return true;
+            }
+            BuyWorldBuff(player, creature, purchase, saygePick);
             return true;
         }
         if (sender == kWorldBuffSenderBack)

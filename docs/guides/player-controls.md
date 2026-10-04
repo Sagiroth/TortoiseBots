@@ -234,6 +234,23 @@ Notes:
 - There is deliberately **no** live reset command: rebuilding the pool is a startup operation driven by `AiPlayerbot.RandomBotPoolReset`.
 
 ---
+## 7a. World Buffs at Capital Recruiters (issue #492)
+
+The six capital `<Mercenary Hire>` recruiters (Stormwind, Ironforge, Darnassus, Orgrimmar, Undercity, Thunder Bluff) offer a `World buffs` branch next to `Hire bots` for level 60+ players. Every other recruiter opens the hire wizard directly. Pool bots only ever see the hire wizard.
+
+Each of the seven buffs unlocks once per character with a quest from the same broker (turn-in fee 200g for the three boss buffs, 100g for the rest; no XP, no reward, non-repeatable). Until unlocked, the branch shows the quest; after the turn-in it shows the purchase instead — one row per buff, never both.
+
+| Buff | Unlock (once) | Purchase (each use) |
+| :--- | :--- | :--- |
+| Rallying Cry of the Dragonslayer (2 h) | Slay Onyxia or Nefarian | 10g + 2g/person |
+| Warchief's Blessing (1 h) | Slay Rend Blackhand | 10g + 2g/person |
+| Spirit of Zandalar (2 h) | Slay Hakkar | 10g + 2g/person |
+| Dire Maul Tribute (2 h, all three) | Earn any one guard's favor in Dire Maul | 10g + 2g/person |
+| Sayge's Dark Fortune (2 h, one of 8) | Receive any fortune at the Darkmoon Faire | 6g + 1g/person |
+| Songflower Serenade (1 h) | Stand in a cleansed songflower's blessing in Felwood | 4g + 1g/person |
+| Traces of Silithyst (30 min) | Defeat 5 opposite-faction players in Silithus | 2g + 40s/person |
+
+A purchase buffs you plus grouped members standing within 40 yd of the recruiter (price = base + per-person x head count, so a solo buy costs base + one share). The aura is applied directly with its original duration and death rules; random bystanders get nothing. Sayge purchases pick one of 8 fortunes from a submenu and replace any other active fortune. The Dire Maul purchase lands all three guard buffs at once.
 
 ## 8. Addon Command Transport (`TortoiseBotsManager`)
 
