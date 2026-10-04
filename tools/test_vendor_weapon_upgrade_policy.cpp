@@ -19,16 +19,20 @@ int main()
 
     // Candidate gate: gear weapons pass, tools and ammo never do. A fishing
     // pole or thrown stack must not read as a weapon upgrade (the fish action
-    // and the ammo paths own those subclasses).
+    // and the ammo paths own those subclasses). A shield (armor class 4,
+    // subclass 6) passes too: a shieldless protection bot buys one from the
+    // vendor by the same EQUIP rules; other armor never does.
     CHECK(IsVendorWeaponUpgradeCandidate(2, 7) == true);    // sword
     CHECK(IsVendorWeaponUpgradeCandidate(2, 4) == true);    // mace
     CHECK(IsVendorWeaponUpgradeCandidate(2, 15) == true);   // dagger
     CHECK(IsVendorWeaponUpgradeCandidate(2, 13) == true);   // fist
+    CHECK(IsVendorWeaponUpgradeCandidate(4, 6) == true);    // shield
     CHECK(IsVendorWeaponUpgradeCandidate(4, 1) == false);   // armor, not a weapon
+    CHECK(IsVendorWeaponUpgradeCandidate(4, 2) == false);   // armor, not a shield
     CHECK(IsVendorWeaponUpgradeCandidate(2, 14) == false);  // MISC profession tool
     CHECK(IsVendorWeaponUpgradeCandidate(2, 16) == false);  // THROWN ammo
     CHECK(IsVendorWeaponUpgradeCandidate(2, 20) == false);  // fishing pole
-    std::cout << "  [PASS] candidate gate admits gear weapons, rejects tools/ammo\n";
+    std::cout << "  [PASS] candidate gate admits gear weapons and shields, rejects tools/ammo\n";
 
     // Affordability: price must fit live money minus the spell reserve. Money
     // for the next trainer ranks comes first, so a broke bot buys nothing.

@@ -3,12 +3,14 @@
 #include "ItemUsageValue.h"
 #include "CraftValues.h"
 #include "MountValues.h"
+#include "AmmoCheatPolicy.h"
 #include "BudgetValues.h"
 #include "GuildValues.h"
 
 #include "playerbot/RandomItemMgr.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/QuestLogPolicy.h"
 #include "../../../../runtime/ClassConsumablePolicy.h"
 
 using namespace ai;
@@ -405,6 +407,13 @@ ItemUsage ItemUsageValue::Calculate()
             return ItemUsage::ITEM_USAGE_KEEP;
     }
 
+    // Bone Chew Toy (item 51751): the only quest needing it is the inactive
+    // 40298, so it is junk, not something to keep. Keyed off the item id, so
+    // quest starters (Free Ticket Voucher 19338 etc.) keep their KEEP verdict
+    // below and keep looting normally.
+    if (itemId == ai::kBoneChewToyItemId)
+        return ItemUsage::ITEM_USAGE_NONE;
+
     //A quest item the bot carries is never vendor trash, whether or not it holds
     //the quest that needs it right now.
     if (proto->Class == ItemClass::ITEM_CLASS_QUEST)
@@ -454,11 +463,17 @@ if ((proto->Class == ITEM_CLASS_PROJECTILE ||
                 if (currentAmmoId)
                     currentAmmoProto = sObjectMgr.GetItemPrototype(currentAmmoId);
 
+                // Pool item cheat: the per-tick refill tops the equipped stack
+                // back up, so firing never consumes anything and vendor ammo
+                // is never a restock - it only burns the trainer purse (live
+                // pool: same-arrow batches up to 10 per visit). The equip
+                // checks below still run (empty slot / better ammo classify
+                // EQUIP); only the restock demand is gated, via needAmmo = 0
+                // so the AMMO return below can never fire.
                 float betterAmmoStacks = BetterStacks(proto, "ammo"); // how much better ammo we have
                 float needAmmo = (bot->GetClass() == CLASS_HUNTER) ? 8 : 2;
-
-                if (ai->HasCheat(BotCheatMask::item))
-                    needAmmo = 1;
+                if (ai::SuppressAmmoBuy(ai->HasCheat(BotCheatMask::item)))
+                    needAmmo = 0;
 
                                     // fallback: equip any ammo if no ammo equipped
                 if (!currentAmmoId)
@@ -627,6 +642,10 @@ uint8 ItemUsageValue::GetPreferredEquipSlot(Player* bot, Item* item, ItemPrototy
 
     // A spec-allowed weapon should take over a hand that still holds a weapon
     // the spec forbids (the spec transition), and that hand can be the off one.
+    // Slot-aware on purpose: the plain gate is any-slot, so a 1H weapon reads
+    // as spec-legal for protection even in the off hand - and would then
+    // target the shield it must never replace. Only an item legal FOR the
+    // hand it would take starts a transition.
     bool const newWeaponForSpec = proto->Class == ITEM_CLASS_WEAPON &&
         sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, proto, canDualWield);
 
@@ -636,6 +655,14 @@ uint8 ItemUsageValue::GetPreferredEquipSlot(Player* bot, Item* item, ItemPrototy
 
     for (uint8 slot : candidates)
     {
+        // A hand the spec forbids for this weapon is no candidate at all: a
+        // dual-wield-capable protection warrior would otherwise compare a
+        // main-hand upgrade against its (lighter) shield, pick the off hand,
+        // and then reject the item there - never upgrading the main hand.
+        if (proto->Class == ITEM_CLASS_WEAPON &&
+            !sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, proto, slot, canDualWield))
+            continue;
+
         Item* equipped = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
         if (!equipped)
         {
@@ -645,7 +672,8 @@ uint8 ItemUsageValue::GetPreferredEquipSlot(Player* bot, Item* item, ItemPrototy
         }
 
         if (newWeaponForSpec && equipped->GetProto()->Class == ITEM_CLASS_WEAPON &&
-            !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, equipped->GetProto(), canDualWield))
+            !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, equipped->GetProto(), canDualWield) &&
+            sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, proto, slot, canDualWield))
         {
             // An empty main hand is worse than an off-spec off hand: without a
             // main hand the bot cannot auto-attack or use main-hand abilities
@@ -776,6 +804,10 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
 
     uint16 dest = ((INVENTORY_SLOT_BAG_0 << 8) | slot);
 
+    // The quiver branch below already returns NONE for non-hunters (no separate
+    // gate needed): the observed priest/mage vendor quiver batches came through
+    // the AH-flip path, which BuyAction gates for item-cheat bots.
+
     if (itemProto->Class == ITEM_CLASS_QUIVER)
     {
         Item* equippedRangedWeapon = bot->GetWeaponForAttack(WeaponAttackType::RANGED_ATTACK, false, false);
@@ -881,7 +913,12 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     if (statWeight)
         shouldEquip = true;
 
-    if (itemProto->Class == ITEM_CLASS_WEAPON && !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto, canDualWield))
+    // Slot-aware on purpose: the plain gate answers "legal in ANY slot", so a
+    // 1H weapon reads as spec-legal for protection (main-hand set) even when
+    // compared against the shield. The OH slot of a shield spec admits
+    // shields only - a weapon there is never an upgrade, which is the
+    // reverse guard for the shield-transition below (no ping-pong).
+    if (itemProto->Class == ITEM_CLASS_WEAPON && !sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, itemProto, slot, canDualWield))
         shouldEquip = false;
     if (itemProto->Class == ITEM_CLASS_ARMOR)
     {
@@ -895,12 +932,11 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     ai->TellDebug(ai->GetMaster(), "Checking equip: " + chat->formatItem(itemProto) + " to " + chat->formatSlot(slot) + " vs " + (oldItem ? chat->formatItem(oldItem->GetProto()) : "empty"), "debug equip");
 
     if (itemProto->Class == ITEM_CLASS_WEAPON &&
-        !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto, canDualWield))
+        !sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, itemProto, slot, canDualWield))
     {
         if (oldItem)
             return ItemUsage::ITEM_USAGE_NONE;
     }
-
 
     // An item with no stats, no armour, no weapon damage and no spell does
     // nothing for the bot. Without this it falls through to BAD_EQUIP below,
@@ -1013,22 +1049,47 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
 
     // Spec transition: a bot that still wields a weapon its spec forbids
     // (e.g. an assassination rogue holding the mace it used while the
-    // pre-talent default scale applied) swaps to a spec-allowed weapon as soon
-    // as one is available, even at somewhat lower DPS. Only the weight race is
-    // skipped; class rules (CanUseItem above) and the weapon spec gate still
-    // apply to the new item.
+    // pre-talent default scale applied, or a protection warrior holding a
+    // 1H weapon in the off hand) swaps to a spec-allowed weapon as soon
+    // as one is available, even at somewhat lower DPS. The gates are
+    // slot-aware: a 1H weapon is spec-legal in the main hand but forbidden
+    // in a shield spec's off hand. Only the weight race is skipped; class
+    // rules (CanUseItem above) still apply to the new item.
     bool const newWeaponForSpec = (itemProto->Class == ITEM_CLASS_WEAPON &&
-        sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto, canDualWield));
+        sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, itemProto, slot, canDualWield));
     bool const oldWeaponAgainstSpec = (oldItemProto->Class == ITEM_CLASS_WEAPON &&
-        !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, oldItemProto, canDualWield));
+        !sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, oldItemProto, slot, canDualWield));
 
     // The two-hander a fury warrior leveled on before it could dual wield is not
     // an off-spec mistake: learning Dual Wield must not downgrade it to the
     // first one-hander in the bags. Only the weight race below may replace it.
+    // A protection warrior/paladin never levels on a two-hander on purpose -
+    // its spec off hand is a shield, which a two-hander blocks - so for such a
+    // spec the old two-hander is an off-spec mistake like any other. The extra
+    // conjunct reads the spec set without Dual Wield: fury still allows the
+    // two-hander there (it leveled on it), protection never does.
     bool const standInTwoHander = canDualWield &&
-        oldItemProto->InventoryType == INVTYPE_2HWEAPON && itemProto->InventoryType != INVTYPE_2HWEAPON;
+        oldItemProto->InventoryType == INVTYPE_2HWEAPON && itemProto->InventoryType != INVTYPE_2HWEAPON &&
+        sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, oldItemProto, slot, false);
 
     if (newWeaponForSpec && oldWeaponAgainstSpec && !standInTwoHander)
+        return ItemUsage::ITEM_USAGE_EQUIP;
+
+    // Shield transition: a bot that can return to a shield setup (protection or
+    // holy spec, or the tank role - see BotCanReturnToShield) whose off hand
+    // still holds a weapon takes the shield even at lower weight. No spec lets
+    // a shield setup pair the shield with an off-hand weapon (protection wants
+    // shield only, holy shield or held-in-hand), so any weapon there is wrong
+    // and no weight race is needed; without this the shield falls into the
+    // wrong-armour-class branch below and reads as vendor trash against any
+    // off-hand weapon. Slot-aware on purpose: a generic one-hander is a legal
+    // main hand, so the spec gate alone cannot spot it in the wrong hand.
+    bool const shieldForSpec = (slot == EQUIPMENT_SLOT_OFFHAND &&
+        itemProto->Class == ITEM_CLASS_ARMOR &&
+        itemProto->SubClass == ITEM_SUBCLASS_ARMOR_SHIELD &&
+        BotCanReturnToShield(bot, specId, itemProto));
+    bool const oldOffSpecWeapon = (oldItemProto->Class == ITEM_CLASS_WEAPON);
+    if (shieldForSpec && oldOffSpecWeapon)
         return ItemUsage::ITEM_USAGE_EQUIP;
 
     bool existingShouldEquip = true;

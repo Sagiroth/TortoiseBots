@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "AcceptQuestAction.h"
 #include "playerbot/PullRegenPolicy.h"
+#include "playerbot/QuestLogPolicy.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 
 using namespace ai;
@@ -20,8 +21,9 @@ static bool IsFixedRewardUpgrade(AiObjectContext* context, Quest const* quest)
 //The quest-log policy this action applies before it takes a quest. Exposed so
 //the idle nearby-service rule can ask a giver the same question instead of
 //walking to one whose only quest is blocked here (leave-the-valley quest
-//level below 10, CLUCK, the hardcore challenge, the Tortoise rogue quests,
-//grey quests with a useless reward) - one policy, so the two cannot drift.
+//level below 10, banned and war-effort turn-ins, the hardcore challenge,
+//the Tortoise rogue quests, grey quests with a useless reward) - one
+//policy, so the two cannot drift.
 bool AcceptAllQuestsAction::WouldAcceptQuest(PlayerbotAI* ai, Player* bot, Quest const* quest, WorldObject* questGiver)
 {
     AiObjectContext* context = ai->GetAiObjectContext();
@@ -39,9 +41,23 @@ bool AcceptAllQuestsAction::WouldAcceptQuest(PlayerbotAI* ai, Player* bot, Quest
         sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster()))
         return false;
 
-    // CLUCK! — a novelty quest bots can't meaningfully complete; block entirely.
-    if (quest->GetQuestId() == 3861)
-        return false;
+    // Accept/drop churn: banned quests (CLUCK!, inactive templates) never,
+    // war-effort item turn-ins never for upkeep bots (same predicate the
+    // clean action drops with, so accept and drop cannot drift).
+    {
+        bool hasItemObjective = false;
+        for (int i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; ++i)
+            if (quest->ReqItemId[i] && quest->ReqItemCount[i])
+                hasItemObjective = true;
+        for (int i = 0; i < QUEST_SOURCE_ITEM_IDS_COUNT; ++i)
+            if (quest->ReqSourceId[i] && quest->ReqSourceCount[i])
+                hasItemObjective = true;
+        bool upkeepBot = sPlayerbotAIConfig.botQuestLogUpkeep &&
+            !ai->HasActivePlayerMaster() && sRandomBotFacade.IsRandomBot(bot);
+        if (ai::ShouldRefuseQuestAtAccept(quest->GetQuestId(), !quest->IsActive(),
+            quest->GetZoneOrSort(), hasItemObjective, upkeepBot))
+            return false;
+    }
 
     // Challenge quests (Hardcore mode, etc.) - must never be taken by bots.
     if (quest->GetQuestId() == 80388)
@@ -177,6 +193,11 @@ bool AcceptQuestAction::Execute(Event& event)
     if (!qInfo)
         return false;
 
+    // Raw-id path (master packet, explicit quest link): no menu walk ran
+    // WouldAcceptQuest, so the banned-quest filter runs here too.
+    if (ai::IsBannedQuest(quest, !qInfo->IsActive()))
+        return false;
+
     hasAccept |= AcceptQuest(requester, qInfo, guid);
 
     if (hasAccept)
@@ -202,13 +223,17 @@ bool AcceptQuestShareAction::Execute(Event& event)
     if (!qInfo || !bot->GetDividerGuid())
         return false;
 
+    // Shared from a party member: banned quests are refused even when the
+    // share popup fires.
+    if (ai::IsBannedQuest(qInfo->GetQuestId(), !qInfo->IsActive()))
+        return false;
+
     quest = qInfo->GetQuestId();
     if( !bot->CanTakeQuest( qInfo, false ) )
     {
         // can't take quest
         bot->SetDividerGuid( ObjectGuid() );
         ai->TellError(requester, BOT_TEXT("quest_cant_take"));
-
         return false;
     }
 
@@ -254,6 +279,13 @@ bool ConfirmQuestAction::Execute(Event& event)
     uint32 quest;
     p >> quest;
     Quest const* qInfo = sObjectMgr.GetQuestTemplate(quest);
+    if (!qInfo)
+        return false;
+
+    // Party-confirm popup for PARTY_ACCEPT quests: banned quests are never
+    // taken even when the popup fires.
+    if (ai::IsBannedQuest(qInfo->GetQuestId(), !qInfo->IsActive()))
+        return false;
 
     quest = qInfo->GetQuestId();
     if( !bot->CanTakeQuest( qInfo, false ) )
@@ -296,6 +328,11 @@ bool QuestDetailsAction::Execute(Event& event)
     Quest const* qInfo = sObjectMgr.GetQuestTemplate(quest);
 
     if (!qInfo)
+        return false;
+
+    // Gossip/quest-details path (single-entry menu auto-shows details):
+    // banned quests are never taken here either.
+    if (ai::IsBannedQuest(qInfo->GetQuestId(), !qInfo->IsActive()))
         return false;
 
     quest = qInfo->GetQuestId();
