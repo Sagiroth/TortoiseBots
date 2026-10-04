@@ -490,6 +490,17 @@ uint32 GreaterBuffOnPartyAction::GetBuffRetryCooldown() const
     return GREATER_BUFF_RETRY_COOLDOWN;
 }
 
+void GreaterBuffOnPartyAction::ClaimBuffCast(Unit* /*target*/)
+{
+    // Issue #T7: the area buff covers the whole (sub)group from one cast, so the
+    // claim is on the group - and under the lower single-target name as well, so
+    // another bot's Power Word: Fortitude fallback on a member stands down too.
+    ObjectGuid const scope = BuffClaimRegistry::GroupScope(bot);
+    BuffClaimRegistry::Claim(bot->GetObjectGuid(), scope, GetSpellName());
+    if (!lowerSpell.empty())
+        BuffClaimRegistry::Claim(bot->GetObjectGuid(), scope, lowerSpell);
+}
+
 uint32 BuffOnPartyAction::CountGroupMembersMissingBoth(std::string const& groupName) const
 {
     Group* group = bot ? bot->GetGroup() : nullptr;
