@@ -10,6 +10,15 @@ bool TradeAction::Execute(Event& event)
 {
     std::string text = event.GetParam();
 
+    // Issue #469 (donor TradeActionExcludedPrefixes parity): addon chatter
+    // (Questie/DBM/RPLL-style prefixes) never opens a trade window, even
+    // when the bot is mentioned in the Trade channel.
+    for (std::string const& prefix : sPlayerbotAIConfig.tradeActionExcludedPrefixes)
+    {
+        if (!prefix.empty() && text.find(prefix) == 0)
+            return false;
+    }
+
     if (!bot->GetTrader())
     {
         std::list<ObjectGuid> guids = chat->parseGameobjects(text);

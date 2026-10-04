@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "DestroyItemAction.h"
 #include "playerbot/strategy/values/ItemCountValue.h"
+#include "playerbot/QuestLogPolicy.h"
 #include "playerbot/strategy/values/MaintenanceValues.h"
 
 using namespace ai;
@@ -99,6 +100,23 @@ bool SmartDestroyItemAction::Execute(Event& event)
 {
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     uint8 bagSpace = AI_VALUE(uint8, "bag space");
+
+    // Bone Chew Toy (item 51751): the only quest needing it is the inactive
+    // 40298, so copies already in bags are junk. Destroyed first, before
+    // the grey-only branch below (the toy is white quality and KEEP usage
+    // never reaches the destroy lists on its own). Keyed off the item id -
+    // never a generic quest-class purge, which would also eat quest
+    // starters (Free Ticket Voucher 19338 etc.).
+    if (!ai->HasActivePlayerMaster())
+    {
+        FindItemByIdVisitor chewToy(ai::kBoneChewToyItemId);
+        ai->InventoryIterateItems(&chewToy, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
+        if (!chewToy.GetResult().empty())
+        {
+            DestroyItem(&chewToy, requester);
+            return true;
+        }
+    }
 
     if (bagSpace < 90)
         return false;

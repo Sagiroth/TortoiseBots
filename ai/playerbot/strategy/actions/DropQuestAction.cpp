@@ -69,6 +69,27 @@ bool CleanQuestLogAction::IsDroppable(Quest const* quest, QuestStatus status, bo
 {
     if (!quest || quest->GetRequiredClasses())
         return false;
+
+    // Refused quests (same predicate the accept gate uses, so the two
+    // cannot drift): banned quests for every bot, war-effort item turn-ins
+    // for upkeep bots. Banned quests drop at any status - a CLUCK! the bot
+    // holds can never pay off; COMPLETE war-effort turn-ins are never
+    // dropped (a finished quest is finishable by definition - turn it in).
+    {
+        bool hasItemObjective = false;
+        for (uint8 i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; ++i)
+            if (quest->ReqItemId[i] && quest->ReqItemCount[i])
+                hasItemObjective = true;
+        for (uint8 i = 0; i < QUEST_SOURCE_ITEM_IDS_COUNT; ++i)
+            if (quest->ReqSourceId[i] && quest->ReqSourceCount[i])
+                hasItemObjective = true;
+        if (ai::IsBannedQuest(quest->GetQuestId(), !quest->IsActive()))
+            return true;
+        if (upkeep && status != QUEST_STATUS_COMPLETE &&
+            ai::IsWarEffortTurnIn(quest->GetZoneOrSort(), hasItemObjective))
+            return true;
+    }
+
     // FAILED quests never complete on their own (the core parks them in
     // QUEST_STATE_FAIL): upkeep bots drop them instead of pinning the slot.
     // Donor NewRpgBaseAction::OrganizeQuestLog drops FAILED the same way.
@@ -129,9 +150,10 @@ bool CleanQuestLogAction::Execute(Event& event)
     // branch, the FAILED branch and the INCOMPLETE triage branch are
     // quest-log upkeep for masterless random bots only: IsUpkeepBot gates
     // on upkeep + no active master + IsRandomBot, so owned/alt bots never
-    // lose quests even with the master offline. Triage runs only when the
-    // log is nearly full (donor OrganizeQuestLog runs at freeSlotNum < 2);
-    // otherwise the scan only applies the old per-quest rules.
+    // lose quests even with the master offline (banned quests excepted -
+    // they can never pay off). Triage runs only when the log is nearly
+    // full (donor OrganizeQuestLog runs at freeSlotNum < 2); otherwise the
+    // scan only applies the old per-quest rules.
     bool upkeep = IsUpkeepBot();
     bool dropped = false;
     // The triage gate mirrors QuestLogNearlyFullTrigger (free slots > 2 =
@@ -153,7 +175,13 @@ bool CleanQuestLogAction::Execute(Event& event)
         }
 
         Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
+        // Banned quests (CLUCK!, inactive templates) drop even when upkeep
+        // is off or the bot is owned: they can never pay off, and IsDroppable
+        // returns them before any upkeep-gated branch.
+
         bool drop = IsDroppable(quest, status, upkeep, triage);
+        if (!drop && quest && ai::IsBannedQuest(questId, !quest->IsActive()))
+            drop = !quest->GetRequiredClasses();
 
         ++slot;
         if (!drop)

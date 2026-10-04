@@ -3,7 +3,9 @@
 #include "ItemUsageValue.h"
 #include "BudgetValues.h"
 #include "VendorWeaponUpgradePolicy.h"
+#include "SpecWeaponPolicy.h"
 #include "runtime/HireLifecycle.h"
+#include "playerbot/RandomItemMgr.h"
 #include "playerbot/PlayerbotAI.h"
 #include "SharedValueContext.h"
 
@@ -103,9 +105,9 @@ bool VendorHasUsefulItemValue::Calculate()
         if (freeMoney.find(usage) == freeMoney.end() || proto->BuyPrice > freeMoney[usage])
         {
             // Vendor stock the bot does not own yet never scores EQUIP (the
-            // classifier only evaluates items it has seen), so a real weapon
-            // upgrade would keep this trigger dark and the fallback buy loop
-            // in BuyAction would never run. Same audit rules: spec-allowed,
+            // classifier only evaluates items it has seen), so a real weapon or
+            // shield upgrade would keep this trigger dark and the fallback buy
+            // loop in BuyAction would never run. Same audit rules: spec-allowed,
             // usable now, better by scoring, affordable under the trainer
             // reserve. Masterless pool bots only; owned alts (not random),
             // bots with a live master, and hired companions (whose character
@@ -116,7 +118,13 @@ bool VendorHasUsefulItemValue::Calculate()
                 continue;
             if (!IsVendorWeaponUpgradeCandidate(proto->Class, proto->SubClass))
                 continue;
-            if (ai->HasItemInInventory(proto->ItemId))
+            // A shield spec never buys an off-hand weapon (same veto as the
+            // BuyAction pass: it would only ping-pong the shield).
+            uint32 vendorSpecId = sRandomItemMgr.GetPlayerSpecId(bot);
+            if (!vendorSpecId)
+                vendorSpecId = sRandomItemMgr.GetFallbackSpecId(bot->GetClass());
+            if (proto->Class == ITEM_CLASS_WEAPON &&
+                ai::SpecUsesShieldOffHand(bot->GetClass(), sRandomItemMgr.GetSpecName(vendorSpecId)))
                 continue;
             ItemQualifier weaponQualifier(vendorItem->item);
             if (ItemUsageValue::QueryItemUsageForEquip(weaponQualifier, bot) != ItemUsage::ITEM_USAGE_EQUIP)

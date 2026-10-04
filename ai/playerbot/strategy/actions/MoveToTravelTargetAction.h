@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/ServiceTripPolicy.h"
 #include "playerbot/PlayerbotAI.h"
 
 #include "playerbot/strategy/Action.h"
@@ -35,6 +36,19 @@ namespace ai
         // hand-in travel. `reason` ("nopath" when a navmesh probe settled it,
         // "unreachable" when the episode counters did) lands in QuestAutoHandIn.
         static bool SettleUnreachableTakerHandIn(PlayerbotAI* ai, uint32 questId, int32 takerEntry, std::string const& reason);
+
+        // A service trip standing at its NPC is arrived even when the walk
+        // point is not: banker/battlemaster halls from the room, counter
+        // NPCs (auctioneer, vendor, trainer, mailbox) from twice
+        // interaction range. Game-object mailboxes resolve by entry.
+        // Returns true and flips the target to WORK.
+        bool CheckServiceArrival(TravelTarget* target, std::string const& purpose);
+
+        // Rescue for a service trip at the failure threshold: unwatched,
+        // same-map, random masterless pool bot, once per 30 min. Teleports
+        // to the exact destination point and logs ServiceTripTeleport.
+        // Returns true when the rescue fired (the drop below is skipped).
+        bool TryRescueServiceTrip(TravelTarget* target, std::string const& purpose);
     };
 
 }

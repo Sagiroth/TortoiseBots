@@ -3,6 +3,7 @@
 #include "playerbot/playerbot.h"
 #include "UnstuckAction.h"
 #include "playerbot/LongStuckRescuePolicy.h"
+#include "playerbot/GraveyardTeleportPolicy.h"
 #include "playerbot/TravelRepickPolicy.h"
 #include "playerbot/CombatStuckPolicy.h"
 #include "playerbot/TravelMgr.h"
@@ -75,8 +76,19 @@ static bool LongStuckFallbackTeleport(PlayerbotAI* ai, Player* bot, Player* mast
     WorldPosition home = bot->GetHomeBindLocation();
     WorldSafeLocsEntry const* grave = sObjectMgr.GetClosestGraveYard(
         bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId(), bot->GetTeam());
+    // Same guard as RepopAction: the core lookup can return a graveyard on
+    // another map (entryFar) or thousands of yards away when the bot's zone
+    // links nothing usable (GraveyardTeleportPolicy.h). Such a pick is not a
+    // rescue target - drop it so the policy below degrades to homebind.
+    if (grave && !IsUsableGraveyardTarget(true, grave->map_id == bot->GetMapId(),
+        botPos.fDist(WorldPosition(grave))))
+    {
+        sLog.outDetail("Unstuck: nearest graveyard for bot #%d <%s> is off-map/far (map %u), using homebind instead",
+            bot->GetGUIDLow(), bot->GetName(), grave->map_id);
+        grave = nullptr;
+    }
     float const graveDist = grave
-        ? botPos.fDist(WorldPosition(grave->map_id, grave->x, grave->y, grave->z)) : 0.0f;
+        ? botPos.fDist(WorldPosition(grave)) : 0.0f;
     float const homeDist = home.isValid() ? botPos.fDist(home) : 0.0f;
     switch (PickLongStuckFallbackTarget(true, grave != nullptr, graveDist, homeDist))
     {

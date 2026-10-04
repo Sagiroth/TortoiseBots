@@ -6,6 +6,48 @@
 
 namespace ai
 {
+    // Which return-false site fired on the last failed MoveTo/MoveTo2/
+    // DispatchMovement call. Recorded in LastMovement::moveFailReason right
+    // before each `return false` so the TravelMoveFailed row can say more
+    // than the standalone navmesh probe bucket; 0 = none yet / last move
+    // dispatched fine. Numbers are log codes, never reordered.
+    enum MoveFailReason : uint32
+    {
+        MOVE_FAIL_NONE = 0,
+        MOVE_FAIL_INVALID_DEST = 1,   // MoveTo2: destination failed isValid()
+        MOVE_FAIL_CANT_MOVE = 2,      // MoveTo2: ai->CanMove() (root/stun/fear/fall/taxi/...)
+        MOVE_FAIL_ARRIVED = 3,        // MoveTo2: already within targetPosRecalcDistance
+        MOVE_FAIL_EMPTY_ROUTE = 4,    // MoveTo2: ResolveMovePath came back empty
+        MOVE_FAIL_SHORTCUT_EMPTY = 5, // MoveTo2: makeShortCut cleared the path (far from route)
+        MOVE_FAIL_SPECIAL = 6,        // MoveTo2: HandleSpecialMovement declined (portal/taxi/hearth)
+        MOVE_FAIL_TRANSPORT = 7,      // MoveTo2: still on a transport past the special leg
+        MOVE_FAIL_CLIPPED_EMPTY = 8,  // MoveTo2: ClipPath emptied the path (enemy/hazard/window)
+        MOVE_FAIL_DISPATCH_SHORT = 9, // DispatchMovement: fewer than 2 points, nothing launched
+        MOVE_FAIL_HAZARD_SHORT = 10,  // DispatchMovement: hazard rewrite left nothing to walk
+        MOVE_FAIL_BAD_UNIT_TARGET = 11, // MoveTo(Unit*): null target or not in world
+        MOVE_FAIL_NO_FORMATION = 12,  // MoveTo(Unit*): hostile target with no formation slot
+    };
+
+    inline const char* MoveFailReasonName(uint32 reason)
+    {
+        switch (reason)
+        {
+            case MOVE_FAIL_INVALID_DEST: return "invalid-dest";
+            case MOVE_FAIL_CANT_MOVE: return "cantmove";
+            case MOVE_FAIL_ARRIVED: return "arrived-recalc";
+            case MOVE_FAIL_EMPTY_ROUTE: return "empty-path";
+            case MOVE_FAIL_SHORTCUT_EMPTY: return "shortcut-empty";
+            case MOVE_FAIL_SPECIAL: return "special";
+            case MOVE_FAIL_TRANSPORT: return "transport";
+            case MOVE_FAIL_CLIPPED_EMPTY: return "clipped-empty";
+            case MOVE_FAIL_DISPATCH_SHORT: return "dispatch-short";
+            case MOVE_FAIL_HAZARD_SHORT: return "hazard-short";
+            case MOVE_FAIL_BAD_UNIT_TARGET: return "bad-unit-target";
+            case MOVE_FAIL_NO_FORMATION: return "no-formation";
+            default: return "none";
+        }
+    }
+
     class LastMovement
     {
     public:
@@ -30,6 +72,7 @@ namespace ai
             lastFleeAngles[1] = other.lastFleeAngles[1];
             lastFleeAngleCount = other.lastFleeAngleCount;
             lastSpreadStepMs = other.lastSpreadStepMs;
+            moveFailReason = other.moveFailReason;
             moveEvent = Event();
         }
 
@@ -48,6 +91,7 @@ namespace ai
             lastSpreadStepMs = 0;
             lastMoveShort = WorldPosition();
             nextTeleport = 0;
+            moveFailReason = 0;
             moveEvent = Event();
         }
 
@@ -85,6 +129,11 @@ namespace ai
         TravelPath lastPath;
         WorldPosition lastMoveShort;
         time_t nextTeleport;
+        // MoveFailReason above: which return-false site fired last (0 = none
+        // yet / last move dispatched fine). Stamped right before each
+        // `return false` so the TravelMoveFailed row can say more than the
+        // navmesh probe bucket; cleared on success paths.
+        uint32 moveFailReason;
         Event moveEvent;
     };
 
