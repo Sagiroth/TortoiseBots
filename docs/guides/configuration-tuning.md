@@ -113,6 +113,13 @@ These flags control the behavior of autonomous random bots roaming the world:
 | `AiPlayerbot.HireBaseCostCopper` / `HirePartyMult2/3/4` | `15000` / `1.66` / `2.66` / `4.66` | defaults | Level-scaled party cost curve (~15g total for 4 bots at 60). Set base to `0` for free hiring. |
 | `AiPlayerbot.HireRaidFlatCostCopper` | `10000` | `10000` | Flat per-bot rate for raid hires 5+ at 60 (1g). |
 | `AiPlayerbot.HireDisconnectGracePeriod` | `300` | `300` | Seconds a hired companion guards after its master disconnects before dismissing. |
+| `AiPlayerbot.WorldBuffsEnabled` | `1` | `1` | Master switch for world buffs at the six capital `<Mercenary Hire>` recruiters (`World buffs` branch, purchases, unlock credit). Unlock quests stay visible in the DB while off (core reads the gossip `!` straight from the relations); without the branch no quest can be taken or completed. |
+| `AiPlayerbot.WorldBuffsKeepInRaids` | `0` | `0` | `1`: raid entrances keep world buffs for everyone (restored with remaining time). `0`: core strips them as usual, and the module additionally strips them in Upper Karazhan (814). |
+| `AiPlayerbot.WorldBuffsMinLevel` | `60` | `60` | Minimum level that sees the `World buffs` branch. |
+| `AiPlayerbot.WorldBuffsPriceBaseCopper` / `WorldBuffsPricePerPersonCopper` | `100000` / `20000` | defaults | Purchase price pair (base + per-person x head count) for Rallying Cry, Warchief's Blessing, Spirit of Zandalar and the DM tribute pack (10g + 2g/person). |
+| `AiPlayerbot.WorldBuffsSaygePriceBaseCopper` / `WorldBuffsSaygePricePerPersonCopper` | `60000` / `10000` | defaults | Same pair for Sayge's Dark Fortune (6g + 1g/person). |
+| `AiPlayerbot.WorldBuffsSongflowerPriceBaseCopper` / `WorldBuffsSongflowerPricePerPersonCopper` | `40000` / `10000` | defaults | Same pair for Songflower Serenade (4g + 1g/person). |
+| `AiPlayerbot.WorldBuffsSilithystPriceBaseCopper` / `WorldBuffsSilithystPricePerPersonCopper` | `20000` / `4000` | defaults | Same pair for Traces of Silithyst (2g + 40s/person). |
 
 ---
 

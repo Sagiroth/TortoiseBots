@@ -78,6 +78,12 @@ namespace ai
     {
         if (questId == 3861)
             return true;
+        // Issue #492: world-buff unlock quests (90000-90013) are per-character
+        // purchases for real players. Pool bots never take, hold or complete
+        // them: the accept gate refuses, the drop rule cleans them, and the
+        // aura/kill credit doors check the quest log (empty by construction).
+        if (questId >= 90000 && questId <= 90013)
+            return true;
         return inactive;
     }
     // One predicate for the accept gate and the drop rule, so the two cannot

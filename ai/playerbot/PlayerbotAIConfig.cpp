@@ -457,6 +457,37 @@ bool PlayerbotAIConfig::Initialize()
     hireDisconnectGracePeriod = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.HireDisconnectGracePeriod", 300));
     if (hireDisconnectGracePeriod > 3600)
         hireDisconnectGracePeriod = 3600;
+    // Issue #492: world buffs at the six capital recruiters. Fallbacks equal
+    // the shipped template values (price pairs in copper, 10000 cu = 1g).
+    worldBuffsEnabled = config.GetBoolDefault("AiPlayerbot.WorldBuffsEnabled", true);
+    worldBuffsKeepInRaids = config.GetBoolDefault("AiPlayerbot.WorldBuffsKeepInRaids", false);
+    worldBuffsMinLevel = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.WorldBuffsMinLevel", 60));
+    if (worldBuffsMinLevel > 60)
+        worldBuffsMinLevel = 60;
+    worldBuffsPriceBaseCopper = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.WorldBuffsPriceBaseCopper", 100000));
+    if (worldBuffsPriceBaseCopper > 100000000)
+        worldBuffsPriceBaseCopper = 100000000;
+    worldBuffsPricePerPersonCopper = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.WorldBuffsPricePerPersonCopper", 20000));
+    if (worldBuffsPricePerPersonCopper > 100000000)
+        worldBuffsPricePerPersonCopper = 100000000;
+    worldBuffsSaygePriceBaseCopper = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.WorldBuffsSaygePriceBaseCopper", 60000));
+    if (worldBuffsSaygePriceBaseCopper > 100000000)
+        worldBuffsSaygePriceBaseCopper = 100000000;
+    worldBuffsSaygePricePerPersonCopper = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.WorldBuffsSaygePricePerPersonCopper", 10000));
+    if (worldBuffsSaygePricePerPersonCopper > 100000000)
+        worldBuffsSaygePricePerPersonCopper = 100000000;
+    worldBuffsSongflowerPriceBaseCopper = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.WorldBuffsSongflowerPriceBaseCopper", 40000));
+    if (worldBuffsSongflowerPriceBaseCopper > 100000000)
+        worldBuffsSongflowerPriceBaseCopper = 100000000;
+    worldBuffsSongflowerPricePerPersonCopper = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.WorldBuffsSongflowerPricePerPersonCopper", 10000));
+    if (worldBuffsSongflowerPricePerPersonCopper > 100000000)
+        worldBuffsSongflowerPricePerPersonCopper = 100000000;
+    worldBuffsSilithystPriceBaseCopper = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.WorldBuffsSilithystPriceBaseCopper", 20000));
+    if (worldBuffsSilithystPriceBaseCopper > 100000000)
+        worldBuffsSilithystPriceBaseCopper = 100000000;
+    worldBuffsSilithystPricePerPersonCopper = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.WorldBuffsSilithystPricePerPersonCopper", 4000));
+    if (worldBuffsSilithystPricePerPersonCopper > 100000000)
+        worldBuffsSilithystPricePerPersonCopper = 100000000;
     // Issue #473: opt-in owned/hired-bot quality of life (all off by default).
     ownedBotMaintenanceEnabled = config.GetBoolDefault("AiPlayerbot.OwnedBotMaintenanceEnabled", false);
     ownedBotAutogearEnabled = config.GetBoolDefault("AiPlayerbot.OwnedBotAutogearEnabled", false);

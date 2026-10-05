@@ -357,6 +357,21 @@ public:
     // Seconds a hired companion waits on guard after its master disconnects
     // before dismissing (default 300 = 5 minutes).
     uint32 hireDisconnectGracePeriod = 300;
+    // Issue #492: world buffs at the six capital <Mercenary Hire> recruiters.
+    // Unlock fees (200g/100g) live in the quest migration, not here; these
+    // keys are the per-purchase price pairs (base + per-person, copper).
+    // Code fallbacks equal the shipped template values.
+    bool worldBuffsEnabled = true;
+    bool worldBuffsKeepInRaids = false;
+    uint32 worldBuffsMinLevel = 60;
+    uint32 worldBuffsPriceBaseCopper = 100000;
+    uint32 worldBuffsPricePerPersonCopper = 20000;
+    uint32 worldBuffsSaygePriceBaseCopper = 60000;
+    uint32 worldBuffsSaygePricePerPersonCopper = 10000;
+    uint32 worldBuffsSongflowerPriceBaseCopper = 40000;
+    uint32 worldBuffsSongflowerPricePerPersonCopper = 10000;
+    uint32 worldBuffsSilithystPriceBaseCopper = 20000;
+    uint32 worldBuffsSilithystPricePerPersonCopper = 4000;
     // Issue #473: opt-in alternative play style for owned/hired bots only.
     // Every part defaults off and never touches pool bots. The maintenance
     // command refreshes one owned bot's kit (consumables/reagents/ammo/

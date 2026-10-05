@@ -3761,3 +3761,54 @@ NPC, repeat same-point deaths).
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`;
 `$SCR/build-commit.sh <sha>` green (DEPLOY never set).
+
+## World buffs at capital recruiters (issue #492) — 2026-10-05
+
+Feature: the six capital `<Mercenary Hire>` recruiters offer a `World buffs`
+branch (level 60+, real players only) with seven purchasable buffs. Each
+unlocks once per character via a migration quest (90000-90013, native
+negative-`RewOrReqMoney` fee: 200g raid bosses, 100g rest, no XP, no reward,
+non-sharable). Purchases apply the original aura directly with
+`Unit::AddAura(spellId, 0, npc)` on buyer + live in-world group/raid members
+within 40 yd of the NPC (charge-first/refund, hire pattern); Sayge picks one
+of 8 fortunes from a submenu (others stripped first), DM lands all three.
+Onyxia/Nefarian credit invisible Rally entry 95100 for the group in reward
+distance; Rend/Hakkar use direct kill objectives. DM/Sayge/Songflower quests
+are event quests completed receiver-only on real aura gains (recruiter
+casters ignored, incl. Chronoboon-style restores with no live caster);
+Silithyst counts 5x opposite-faction player kills in Silithus (zone 1377)
+for the group. `KeepWorldBuffsInRaids=1` restores the 18 DB-listed spells
+with remaining time on raid entry; `=0` strips them in Upper Karazhan (814).
+Unlock quests are pool-bot banned (90000-90013 in `IsBannedQuest`).
+
+Source files:
+- `runtime/WorldBuffPolicy.h` (gates, senders 505-508, prices, quest/aura/boss/teleport maps)
+- `runtime/WorldBuffService.h` (price pairs, spell lists, Sayge picks)
+- `runtime/WorldBuffRaidKeeper.h` (18-spell set + memory-only snapshot store)
+- `host/HireRecruiterScript.{h,cpp}` (root/branch/Sayge menus, purchase, quest merge)
+- `host/WorldBuffKillAdapter.{h,cpp}` (`OnCreatureKill` → Rally credit)
+- `host/WorldBuffAuraAdapter.{h,cpp}` (`OnAuraApply` → receiver-only event credit)
+- `host/WorldBuffPvpAdapter.{h,cpp}` (`OnPVPKill` → Silithyst credit)
+- `host/WorldBuffRaidAdapter.{h,cpp}` (snapshot/restore/strip teleports)
+- `data/sql/world/20261005090000_world.sql` (npc_flags 1→3 on 6 capitals, 14 quests, credit entries 95100/95101, relations)
+- `tools/test_world_buff_policy.cpp` (233 checks: gating, routing, prices, quest/aura/boss/teleport maps, service pairs/spells, keeper store)
+
+Copied / ported / independently reimplemented: independently reimplemented
+(native mechanic; no donor — donor behaviour references are travel-to-buff
+errands only, not purchases). Core API signatures verified in tortoise-wow
+source before use (`AddAura`, `PrepareQuestMenu`, `RewardPlayerAndGroupAtEvent`,
+`AreaExploredOrEventHappens`, `KilledMonsterCredit`, teleport hooks).
+
+Reason: solo-with-bots endgame preparation behind real unlock effort
+(one true kill / aura / 5 PvP kills per character), priced per head so raid
+use stays a gold sink, automation-free (explicit purchase clicks only).
+
+Local validation:
+- `tools/test_world_buff_policy` 233 checks — PASSED.
+- Migration applied to dev DB and rolled back (14 quests with correct
+  Type/flags/fees, 42+42 relations, npc_flags 3, then clean revert) — PASSED.
+- `bash tools/verify_all.sh` + `git diff --check` — clean each stage.
+- `$SCR/build-commit.sh <sha>` green per stage (PR1 amend for dropped const,
+  PR5 amend for private `FindQuestSlot` → public `GetQuestStatus`).
+- Not yet observed: live in-game flow (menu, purchase, credit, raid keep).
+  Needs the deployed server with the migration applied.
