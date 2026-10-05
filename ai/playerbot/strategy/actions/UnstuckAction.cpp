@@ -354,8 +354,9 @@ bool UnstuckAction::Execute(Event& event)
         return reset;
     }
 
-    // Handle long move stuck scenarios
-    if (source.find("move long stuck") != std::string::npos)
+    // Handle long move stuck scenarios; a NOPATH trap (MoveToTravelTargetAction)
+    // is the same wedge detected early.
+    if (source.find("move long stuck") != std::string::npos || source.find("travel nopath trapped") != std::string::npos)
     {
         ai->TellDebug(master, "Unstuck: Long move stuck detected, attempting hearthstone or repop.", "debug unstuck");
         return LongStuckRescue(ai, event, bot, master, hearthAttemptLeftBotInPlace);

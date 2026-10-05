@@ -64,6 +64,30 @@ namespace ai
         return "complete";
     }
 
+    // A bot that cannot path anywhere from where it stands (live 2026-10-05:
+    // Orgrimmar auction house, every target from a 35 yd hop to a far zone
+    // came back NOPATH for 12-19 min until the 15 min long-stuck rescue
+    // fired). Each target that fails NOPATH from within 10 yd of the streak's
+    // first failure extends the streak; three of them inside 20 min mean the
+    // spot, not the targets, is the problem, and the long-stuck rescue
+    // relocates the bot. A drop that is not NOPATH leaves the streak alone, a
+    // failure elsewhere or after the window starts a new one.
+    constexpr int NOPATH_TRAP_TARGETS = 3;
+    constexpr float NOPATH_TRAP_RADIUS_YD = 10.0f;
+    constexpr time_t NOPATH_TRAP_WINDOW_SECONDS = 20 * 60;
+
+    inline int NoPathTrapStreak(int streak, bool noPath, bool nearAnchor, bool windowExpired)
+    {
+        if (!noPath)
+            return streak;
+        return (streak > 0 && nearAnchor && !windowExpired) ? streak + 1 : 1;
+    }
+
+    inline bool IsNoPathTrapped(int streak)
+    {
+        return streak >= NOPATH_TRAP_TARGETS;
+    }
+
     // Single-point dispatch gate (review #475): ResolveMovePath tags its NOPATH
     // fallback as a lone entry-less portal point, so DispatchMovement can tell
     // "no route at all" from a clipped real path. Walking the fallback would
