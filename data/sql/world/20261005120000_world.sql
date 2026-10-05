@@ -16,3 +16,11 @@ UPDATE `quest_template` SET `ObjectiveText1` = 'Alliance player slain in Silithu
 -- anything else prints the creature name.
 UPDATE `creature_template` SET `name` = 'Onyxia or Nefarian' WHERE `entry` = 95100;
 UPDATE `creature_template` SET `name` = 'Enemy player in Silithus' WHERE `entry` = 95101;
+
+-- The turn-in fee was only visible at turn-in. Name it in the objective
+-- summary, which the quest window shows before accepting and the quest log
+-- keeps showing (the fee itself stays the negative RewOrReqMoney).
+UPDATE `quest_template` SET `Objectives` = REPLACE(`Objectives`, 'then return to a Mercenary Hire broker.', 'then return to a Mercenary Hire broker with the 200 gold processing fee.')
+WHERE `entry` BETWEEN 90000 AND 90013 AND `RewOrReqMoney` = -2000000;
+UPDATE `quest_template` SET `Objectives` = REPLACE(`Objectives`, 'then return to a Mercenary Hire broker.', 'then return to a Mercenary Hire broker with the 100 gold processing fee.')
+WHERE `entry` BETWEEN 90000 AND 90013 AND `RewOrReqMoney` = -1000000;
