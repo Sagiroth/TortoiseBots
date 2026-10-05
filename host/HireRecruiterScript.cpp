@@ -23,6 +23,7 @@
 #include "Chat.h"
 #include "SharedDefines.h"
 #include "Log.h"
+#include "Database/DatabaseEnv.h"
 
 namespace TortoiseBots
 {
@@ -684,6 +685,29 @@ bool HireRecruiterScript::OnSelect(Player* player, Creature* creature, uint32_t 
     }
     ShowClassMenu(player, creature);
     return true;
+}
+
+void HireRecruiterScript::SyncUnlockFees()
+{
+    uint32 changed = 0;
+    for (uint32 questId = kWorldBuffQuestRallyA; questId <= kWorldBuffQuestSilithystH; ++questId)
+    {
+        uint32 fee = IsRaidUnlockQuest(questId) ? sPlayerbotAIConfig.worldBuffsUnlockFeeRaidCopper
+                                                : sPlayerbotAIConfig.worldBuffsUnlockFeeCopper;
+        auto result = WorldDatabase.PQuery("SELECT RewOrReqMoney, Objectives FROM quest_template WHERE entry = %u", questId);
+        if (!result)
+            continue;
+        Field* fields = result->Fetch();
+        std::string objectives = WorldBuffObjectivesWithFee(fields[1].GetCppString(), fee);
+        if (fields[0].GetInt32() == -static_cast<int32>(fee) && objectives == fields[1].GetCppString())
+            continue;
+        WorldDatabase.escape_string(objectives);
+        WorldDatabase.PExecute("UPDATE quest_template SET RewOrReqMoney = %d, Objectives = '%s' WHERE entry = %u",
+            -static_cast<int32>(fee), objectives.c_str(), questId);
+        ++changed;
+    }
+    if (changed)
+        TB_LOG_BASIC("World-buff unlock fees changed on %u quests; restart the server to apply them", changed);
 }
 
 } // namespace TortoiseBots

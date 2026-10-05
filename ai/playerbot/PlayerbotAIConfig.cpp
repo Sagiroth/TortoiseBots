@@ -488,6 +488,12 @@ bool PlayerbotAIConfig::Initialize()
     worldBuffsSilithystPricePerPersonCopper = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.WorldBuffsSilithystPricePerPersonCopper", 4000));
     if (worldBuffsSilithystPricePerPersonCopper > 100000000)
         worldBuffsSilithystPricePerPersonCopper = 100000000;
+    worldBuffsUnlockFeeRaidCopper = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.WorldBuffsUnlockFeeRaidCopper", 2000000));
+    if (worldBuffsUnlockFeeRaidCopper > 100000000)
+        worldBuffsUnlockFeeRaidCopper = 100000000;
+    worldBuffsUnlockFeeCopper = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.WorldBuffsUnlockFeeCopper", 1000000));
+    if (worldBuffsUnlockFeeCopper > 100000000)
+        worldBuffsUnlockFeeCopper = 100000000;
     // Issue #473: opt-in owned/hired-bot quality of life (all off by default).
     ownedBotMaintenanceEnabled = config.GetBoolDefault("AiPlayerbot.OwnedBotMaintenanceEnabled", false);
     ownedBotAutogearEnabled = config.GetBoolDefault("AiPlayerbot.OwnedBotAutogearEnabled", false);

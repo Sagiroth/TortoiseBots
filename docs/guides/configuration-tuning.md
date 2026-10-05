@@ -120,6 +120,7 @@ These flags control the behavior of autonomous random bots roaming the world:
 | `AiPlayerbot.WorldBuffsSaygePriceBaseCopper` / `WorldBuffsSaygePricePerPersonCopper` | `60000` / `10000` | defaults | Same pair for Sayge's Dark Fortune (6g + 1g/person). |
 | `AiPlayerbot.WorldBuffsSongflowerPriceBaseCopper` / `WorldBuffsSongflowerPricePerPersonCopper` | `40000` / `10000` | defaults | Same pair for Songflower Serenade (4g + 1g/person). |
 | `AiPlayerbot.WorldBuffsSilithystPriceBaseCopper` / `WorldBuffsSilithystPricePerPersonCopper` | `20000` / `4000` | defaults | Same pair for Traces of Silithyst (2g + 40s/person). |
+| `AiPlayerbot.WorldBuffsUnlockFeeRaidCopper` / `WorldBuffsUnlockFeeCopper` | `2000000` / `1000000` | defaults | Turn-in fee of the unlock quests: Rallying Cry, Warchief's Blessing and Spirit of Zandalar (200g) / the rest (100g). `0` = free. The server writes the fee into the quests at startup, so a change takes effect after the **next** restart (restart twice). |
 
 ---
 
