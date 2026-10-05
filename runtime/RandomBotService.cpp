@@ -1,6 +1,8 @@
 #include "RandomBotService.h"
 #include "BotActivityLease.h"
 #include "BotManager.h"
+#include "PlayerbotAIStorage.h"
+#include "playerbot/PlayerbotAI.h"
 #include "GearSeedingGuard.h"
 #include "HireLifecycle.h"
 #include "../host/BotSessionAdapter.h"
@@ -1129,7 +1131,11 @@ void RandomBotService::RemoveExpiredBots(uint32_t diff)
                 XpProgress& progress = m_xpProgress[candidate.characterGuid.GetCounter()];
                 uint32_t const level = player->GetLevel();
                 uint32_t const xp = player->GetUInt32Value(PLAYER_XP);
-                if (level != progress.level || xp != progress.xp)
+                // Battlegrounds give no XP and a bot playing with a real
+                // player follows that player: neither is a stall.
+                ::PlayerbotAI* stallAi = PlayerbotAIStorage::Instance().GetAI(player);
+                bool const busyNoXp = player->InBattleGround() || (stallAi && stallAi->HasRealPlayerMaster());
+                if (busyNoXp || level != progress.level || xp != progress.xp)
                     progress = XpProgress{ level, xp, 0 };
                 else
                     progress.stallMs += diff;
