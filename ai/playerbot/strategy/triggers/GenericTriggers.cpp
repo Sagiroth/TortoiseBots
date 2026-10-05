@@ -323,9 +323,9 @@ bool MasterTargetActiveTrigger::IsActive()
     // spell or a shot never has one, so the companions stood idle until the
     // mob reached them. Count the master's selected enemy too, once it is
     // fighting the master or someone in the master's group.
-    if (master == bot || !master->IsInCombat())
+    if (master == bot || master->GetTypeId() != TYPEID_PLAYER || !master->IsInCombat())
         return false;
-    Unit* selected = ai->GetUnit(master->GetSelectionGuid());
+    Unit* selected = ai->GetUnit(static_cast<Player*>(master)->GetSelectionGuid());
     if (!selected || selected == bot || !selected->IsAlive() || !selected->IsInCombat() || !master->IsHostileTo(selected))
         return false;
     Unit* selectedVictim = selected->GetVictim();

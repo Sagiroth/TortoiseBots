@@ -386,7 +386,7 @@ void PriestBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     // attack, for the quiet moments of a fight.
     triggers.push_back(new TriggerNode(
         "power word: fortitude on party",
-        NextAction::array(0, new NextAction("power word: fortitude on party", ACTION_LOW), NULL)));
+        NextAction::array(0, new NextAction("power word: fortitude on party", ACTION_DEFAULT), NULL)));
 }
 
 void PriestBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
