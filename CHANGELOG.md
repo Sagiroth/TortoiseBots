@@ -14,6 +14,20 @@
 
 ---
 
+### World Buffs & Quests
+- World-buff unlock quests now live under a proper quest log header, with objectives that state exactly what to do (e.g. "Onyxia or Nefarian slain") and the gold fee shown in the quest text before you accept. [#495](https://github.com/Sagiroth/TortoiseBots/pull/495)
+- Recruiters display `!` when a quest is available and `?` when it's ready to turn in, so you can spot them at a glance. [#495](https://github.com/Sagiroth/TortoiseBots/pull/495)
+- Buying a buff now plays a visible spell effect, and a confirm page lists the full price for you and every group member who will be buffed before you pay. [#495](https://github.com/Sagiroth/TortoiseBots/pull/495)
+- Server owners can configure world-buff unlock fees via `AiPlayerbot.WorldBuffsUnlockFeeRaidCopper` (200g) and `AiPlayerbot.WorldBuffsUnlockFeeCopper` (100g); new fees apply after the next restart, while purchase prices were already configurable. [#498](https://github.com/Sagiroth/TortoiseBots/pull/498)
+
+### Companions & Combat AI
+- Hired companions no longer appear in gear far above their level, keeping their loadout believable and balanced. [#496](https://github.com/Sagiroth/TortoiseBots/pull/496)
+- Hired companions now engage as soon as you target an enemy attacking your group, instead of waiting for you to land a hit. [#497](https://github.com/Sagiroth/TortoiseBots/pull/497)
+- Priests reapply Power Word: Fortitude on the party during combat whenever it drops. [#497](https://github.com/Sagiroth/TortoiseBots/pull/497)
+
+### Core Sync & Fixes
+- TortoiseBotsManager: if the Mini button does nothing after an addon update, it now prompts you to restart the game client, since new addon files only load on a full restart. [#499](https://github.com/Sagiroth/TortoiseBots/pull/499)
+
 ## 2026-10-04
 
 ### Travel & Pathing
