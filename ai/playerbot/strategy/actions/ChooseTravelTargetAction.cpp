@@ -869,7 +869,7 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                     uint32 const pickPurposeId = (uint32)destination->GetPurpose();
                     bool const pickIsDeathGated = ai::IsDeathGatedPurpose(pickPurposeId,
                         (uint32)TravelDestinationPurpose::Grind, (uint32)TravelDestinationPurpose::QuestAllObjective |
-                        (uint32)TravelDestinationPurpose::QuestGiver | (uint32)TravelDestinationPurpose::QuestTaker);
+            (uint32)TravelDestinationPurpose::QuestGiver | (uint32)TravelDestinationPurpose::QuestTaker);
                     if (pickIsDeathGated && ai->IsDeathSpotAvoided(position->GetMapId(), position->getX(),
                         position->getY(), WorldTimer::getMSTime()))
                     {
@@ -1170,7 +1170,7 @@ bool RefreshTravelTargetAction::Execute(Event& event)
         uint32 const refreshPurposeId = (uint32)oldDestination->GetPurpose();
         bool const refreshIsDeathGated = ai::IsDeathGatedPurpose(refreshPurposeId,
             (uint32)TravelDestinationPurpose::Grind, (uint32)TravelDestinationPurpose::QuestAllObjective |
-                        (uint32)TravelDestinationPurpose::QuestGiver | (uint32)TravelDestinationPurpose::QuestTaker);
+            (uint32)TravelDestinationPurpose::QuestGiver | (uint32)TravelDestinationPurpose::QuestTaker);
         if (refreshIsDeathGated && ai->IsDeathSpotAvoided(refreshPoint->GetMapId(), refreshPoint->getX(),
             refreshPoint->getY(), WorldTimer::getMSTime()))
         {
