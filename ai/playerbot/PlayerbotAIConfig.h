@@ -158,6 +158,7 @@ public:
     uint32 levelLadderMaxLevelSharePct = 10;
     uint32 levelLadderLogMinutes = 5;
     uint32 minRandomBotInWorldTime, maxRandomBotInWorldTime;
+    uint32 randomBotStallRelogMinutes = 45;
     uint32 minRandomBotRandomizeTime, maxRandomBotRandomizeTime;
     uint32 minRandomBotChangeStrategyTime, maxRandomBotChangeStrategyTime;
     uint32 minRandomBotReviveTime, maxRandomBotReviveTime;

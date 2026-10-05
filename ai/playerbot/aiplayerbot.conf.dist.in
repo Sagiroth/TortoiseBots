@@ -1575,6 +1575,9 @@ AiPlayerbot.RandomBotUpdateInterval = 500
 AiPlayerbot.RandomBotsMaxLoginsPerInterval = 30
 #AiPlayerbot.MinRandomBotInWorldTime = 1800
 #AiPlayerbot.MaxRandomBotInWorldTime = 21600
+# A pool bot below level 60 that earns no XP for this many minutes is
+# relogged (a relog clears whatever left it idle). 0 = off.
+#AiPlayerbot.RandomBotStallRelogMinutes = 45
 #AiPlayerbot.MinRandomBotRandomizeTime = 21600
 #AiPlayerbot.MaxRandomBotRandomizeTime = 86400
 #AiPlayerbot.MinRandomBotsPriceChangeInterval = 7200
