@@ -394,10 +394,21 @@ void BuyWorldBuff(Player* player, Creature* creature, uint8_t purchase, uint32_t
             continue;
         for (uint32_t stripId : strip)
             target->RemoveAurasDueToSpellByCancel(stripId);
+        bool shown = false;
         for (uint32_t spellId : apply)
         {
-            if (target->AddAura(spellId, 0, creature))
-                anyBuffed = true;
+            if (!target->AddAura(spellId, 0, creature))
+                continue;
+            anyBuffed = true;
+            // Visual only: a spell-go packet plays the original cast/impact
+            // effect from the recruiter onto this target without running the
+            // spell (its 100-yd area would buff the whole capital). One per
+            // target, so the DM pack does not triple the effect.
+            if (!shown)
+            {
+                creature->SendSpellGo(target, spellId);
+                shown = true;
+            }
         }
     }
     if (!anyBuffed)
