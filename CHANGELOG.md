@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-10-05
+
+### World Buffs & Capital Recruiters
+- Recruiters in Stormwind, Ironforge, Darnassus, Orgrimmar, Undercity, and Thunder Bluff now offer a *World buffs* menu for level 60 characters. [#493](https://github.com/Sagiroth/TortoiseBots/pull/493)
+- Unlock each world buff per character via a short quest: earn it once the normal way (kill Onyxia/Nefarian, Rend, Hakkar; get a Dire Maul tribute buff, a Sayge fortune, or a Songflower; or win 5 PvP fights in Silithus) then pay a one-time 100–200g fee. [#493](https://github.com/Sagiroth/TortoiseBots/pull/493)
+- Once unlocked, one click buffs you and every group/raid member within 40 yd of the recruiter for a small gold price (base fee + per person). [#493](https://github.com/Sagiroth/TortoiseBots/pull/493)
+- Kills by your bots count toward your unlock progress. [#493](https://github.com/Sagiroth/TortoiseBots/pull/493)
+- Random pool bots never receive these buffs. [#493](https://github.com/Sagiroth/TortoiseBots/pull/493)
+
+### Configuration & Options
+- New option `AiPlayerbot.WorldBuffsKeepInRaids` (off by default): when on, entering a raid no longer strips world buffs; when off, Turtle's normal rules apply and Upper Karazhan now strips them too. `AiPlayerbot.WorldBuffsEnabled` turns the whole feature off. [#493](https://github.com/Sagiroth/TortoiseBots/pull/493)
+
+---
+
 ## 2026-10-04
 
 ### Travel & Pathing
