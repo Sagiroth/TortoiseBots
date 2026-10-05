@@ -49,6 +49,12 @@ namespace ai
         // to the exact destination point and logs ServiceTripTeleport.
         // Returns true when the rescue fired (the drop below is skipped).
         bool TryRescueServiceTrip(TravelTarget* target, std::string const& purpose);
+
+        // Counts targets that fail NOPATH from one spot (TravelRepickPolicy.h)
+        // and, at the threshold, runs the long-stuck rescue instead of
+        // cycling targets from a spot nothing is reachable from. Returns true
+        // when the rescue ran (the caller stops this tick).
+        bool TryRescueNoPathTrap(bool noPath, std::string const& purpose);
     };
 
 }

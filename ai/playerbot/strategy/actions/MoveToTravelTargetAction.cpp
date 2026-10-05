@@ -304,6 +304,41 @@ bool MoveToTravelTargetAction::TryRescueServiceTrip(TravelTarget* target, std::s
     return true;
 }
 
+// Called once per target on its first failed move (retry 2) with the navmesh
+// verdict. Bots with a real master, in a battleground or in combat are left
+// alone, like the other rescues. A rescue that does not move the bot still
+// resets the streak, so the next try needs three fresh failures. The
+// streak lives in the facade value store, like "stuck keep count".
+bool MoveToTravelTargetAction::TryRescueNoPathTrap(bool noPath, std::string const& purpose)
+{
+    if (ai->HasRealPlayerMaster() || bot->InBattleGround() || bot->IsInCombat() || !bot->IsAlive())
+        return false;
+
+    AiObjectContext* context = ai->GetAiObjectContext();
+    time_t const now = time(0);
+    WorldPosition const botPos(bot);
+    int32 streak = AI_VALUE2(int32, "manual int", "nopath trap streak");
+    WorldPosition const anchor = AI_VALUE2(WorldPosition, "custom position", "nopath trap anchor");
+    time_t const since = AI_VALUE2(time_t, "manual time", "nopath trap since");
+
+    bool const nearAnchor = anchor.isValid() && botPos.GetMapId() == anchor.GetMapId() &&
+        botPos.sqDistance(anchor) <= NOPATH_TRAP_RADIUS_YD * NOPATH_TRAP_RADIUS_YD;
+    int32 const next = NoPathTrapStreak(streak, noPath, nearAnchor, now - since > NOPATH_TRAP_WINDOW_SECONDS);
+    if (noPath && next == 1)
+    {
+        SET_AI_VALUE2(WorldPosition, "custom position", "nopath trap anchor", botPos);
+        SET_AI_VALUE2(time_t, "manual time", "nopath trap since", now);
+    }
+    SET_AI_VALUE2(int32, "manual int", "nopath trap streak", next);
+    if (!IsNoPathTrapped(next))
+        return false;
+
+    SET_AI_VALUE2(int32, "manual int", "nopath trap streak", 0);
+    sPlayerbotAIConfig.logEvent(ai, "NoPathTrapRescue", purpose, std::to_string(next));
+    Event rescueEvent("travel nopath trapped");
+    return ai->DoSpecificAction("unstuck", rescueEvent, true);
+}
+
 // Flight plan: decided ONCE per travel target (item 5) in
 // DecideFlightPlanForTarget below, stored on manual values, and only read
 // (never recomputed) on travel ticks. Walk-to-master staging (item 4): when
@@ -690,17 +725,23 @@ bool MoveToTravelTargetAction::Execute(Event& event)
         {
             std::string failDetail = std::to_string((int32)botLocation.distance(location));
             failDetail += ":";
+            bool noPath = false;
             if (location.GetMapId() != bot->GetMapId())
                 failDetail += "crossmap";
             else
             {
                 PathFinder probe(bot);
                 probe.calculate(location.getX(), location.getY(), location.getZ(), false);
-                failDetail += TravelMoveFailPathTag((uint32_t)probe.getPathType());
+                std::string const pathTag = TravelMoveFailPathTag((uint32_t)probe.getPathType());
+                noPath = pathTag == "nopath";
+                failDetail += pathTag;
             }
             failDetail += ":";
             failDetail += MoveFailReasonName(AI_VALUE(LastMovement&, "last movement").moveFailReason);
             sPlayerbotAIConfig.logEvent(ai, "TravelMoveFailed", purpose, failDetail);
+
+            if (TryRescueNoPathTrap(noPath, purpose))
+                return false;
         }
 
         // A failed move toward a hand-in taker is one no-progress episode for that
