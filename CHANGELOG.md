@@ -28,6 +28,20 @@
 ### Core Sync & Fixes
 - TortoiseBotsManager: if the Mini button does nothing after an addon update, it now prompts you to restart the game client, since new addon files only load on a full restart. [#499](https://github.com/Sagiroth/TortoiseBots/pull/499)
 
+### Questing & World
+
+- World-buff unlock quests are no longer shareable with the group, and bots — including hired companions — will never pick them up. [#500](https://github.com/Sagiroth/TortoiseBots/pull/500)
+- Pool bots caught in a death loop en route to quest NPCs now bail out and return later instead of feeding a camp endlessly — fixes the Ivar Patch/Rane Yorick meat grinder where 38 bots died 837 times overnight. [#502](https://github.com/Sagiroth/TortoiseBots/pull/502)
+
+### Companions & Gear
+
+- Hired companions at level 30+ now arrive properly geared with a neck and rings, picking suffix jewellery ("of the Eagle", etc.) that actually matches their spec instead of skipping it. [#501](https://github.com/Sagiroth/TortoiseBots/pull/501)
+
+### Observability & Engine
+
+- Stalled pool bots that earn no XP for 45 minutes get automatically relogged to unstick them — roughly 1 in 20 fresh bots could idle for hours after an early level-up. Battlegrounds and bots grouped with a real player are exempt. New option: `AiPlayerbot.RandomBotStallRelogMinutes` (`0` disables). [#503](https://github.com/Sagiroth/TortoiseBots/pull/503)
+- Overnight log fixes rolled up from monitoring and player reports. [#504](https://github.com/Sagiroth/TortoiseBots/pull/504)
+
 ## 2026-10-04
 
 ### Travel & Pathing
