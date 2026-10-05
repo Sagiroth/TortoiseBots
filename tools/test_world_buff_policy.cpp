@@ -301,6 +301,18 @@ static void TestSaygeActionEncoding()
         CHECK(DecodeBuyIndex(action) == kWorldBuffBuySayge);
         CHECK(DecodeSaygePick(action) == pick);
     }
+    // Confirm page: the buy action survives intact and the quoted head
+    // count (1..40) rides in the high bits.
+    for (uint32_t people = 1; people <= 40; ++people)
+    {
+        uint32_t sayge = EncodeConfirmAction(EncodeSaygeAction(kWorldBuffBuySayge, 8), people);
+        CHECK(DecodeConfirmCount(sayge) == people);
+        CHECK(DecodeBuyIndex(DecodeConfirmBuyAction(sayge)) == kWorldBuffBuySayge);
+        CHECK(DecodeSaygePick(DecodeConfirmBuyAction(sayge)) == 8);
+        uint32_t rally = EncodeConfirmAction(kWorldBuffBuyRally, people);
+        CHECK(DecodeConfirmCount(rally) == people);
+        CHECK(DecodeConfirmBuyAction(rally) == kWorldBuffBuyRally);
+    }
 }
 
 static void TestAuraUnlockFastCheck()

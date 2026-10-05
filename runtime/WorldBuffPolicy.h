@@ -21,6 +21,7 @@ constexpr uint32_t kWorldBuffSenderRoot = 505;
 constexpr uint32_t kWorldBuffSenderBuy = 506;
 constexpr uint32_t kWorldBuffSenderSayge = 507;
 constexpr uint32_t kWorldBuffSenderBack = 508;
+constexpr uint32_t kWorldBuffSenderConfirm = 509;
 
 // Root-menu actions (sender 505).
 constexpr uint32_t kWorldBuffRootHire = 1;
@@ -222,6 +223,24 @@ inline uint8_t DecodeBuyIndex(uint32_t action)
 inline uint32_t DecodeSaygePick(uint32_t action)
 {
     return (action >> 8) & 0xFF;
+}
+
+// Confirm page (sender 509): the buy action in the low 16 bits and the head
+// count the price was quoted for in the high 16, so a changed group is
+// re-quoted instead of charged.
+inline uint32_t EncodeConfirmAction(uint32_t buyAction, uint32_t people)
+{
+    return (people << 16) | (buyAction & 0xFFFF);
+}
+
+inline uint32_t DecodeConfirmBuyAction(uint32_t action)
+{
+    return action & 0xFFFF;
+}
+
+inline uint32_t DecodeConfirmCount(uint32_t action)
+{
+    return action >> 16;
 }
 
 // Fast check for the aura unlock hot path.

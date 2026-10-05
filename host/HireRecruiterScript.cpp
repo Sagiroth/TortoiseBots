@@ -58,7 +58,8 @@ void ShowRootMenu(Player* player, Creature* creature);
 void ShowWorldBuffMenu(Player* player, Creature* creature);
 void ShowSaygeMenu(Player* player, Creature* creature);
 void CollectBuffTargets(Player* buyer, Creature* npc, std::vector<Player*>& out);
-void BuyWorldBuff(Player* player, Creature* creature, uint8_t purchase, uint32_t saygePick);
+void BuyWorldBuff(Player* player, Creature* creature, uint32_t confirmAction);
+void ShowBuyConfirm(Player* player, Creature* creature, uint32_t buyAction);
 
 uint8 const kHireClasses[] = { CLASS_WARRIOR, CLASS_PALADIN, CLASS_HUNTER, CLASS_ROGUE, CLASS_PRIEST, CLASS_SHAMAN, CLASS_MAGE, CLASS_WARLOCK, CLASS_DRUID };
 
@@ -227,6 +228,30 @@ void ShowRootMenu(Player* player, Creature* creature)
     player->PlayerTalkClass->SendGossipMenu(GossipText(player), creature->GetObjectGuid());
 }
 
+bool CurrentPrices(uint8_t purchase, WorldBuffPricePair& prices)
+{
+    return WorldBuffPrices(purchase, prices,
+        sPlayerbotAIConfig.worldBuffsPriceBaseCopper, sPlayerbotAIConfig.worldBuffsPricePerPersonCopper,
+        sPlayerbotAIConfig.worldBuffsSaygePriceBaseCopper, sPlayerbotAIConfig.worldBuffsSaygePricePerPersonCopper,
+        sPlayerbotAIConfig.worldBuffsSongflowerPriceBaseCopper, sPlayerbotAIConfig.worldBuffsSongflowerPricePerPersonCopper,
+        sPlayerbotAIConfig.worldBuffsSilithystPriceBaseCopper, sPlayerbotAIConfig.worldBuffsSilithystPricePerPersonCopper);
+}
+
+char const* PurchaseName(uint8_t purchase)
+{
+    switch (purchase)
+    {
+        case kWorldBuffBuyRally: return "Rallying Cry of the Dragonslayer";
+        case kWorldBuffBuyWarchief: return "Warchief's Blessing";
+        case kWorldBuffBuyZandalar: return "Spirit of Zandalar";
+        case kWorldBuffBuyDmPack: return "Dire Maul Tribute (all three)";
+        case kWorldBuffBuySayge: return "Sayge's Dark Fortune";
+        case kWorldBuffBuySongflower: return "Songflower Serenade";
+        case kWorldBuffBuySilithyst: return "Traces of Silithyst";
+        default: return nullptr;
+    }
+}
+
 void ShowWorldBuffMenu(Player* player, Creature* creature)
 {
     // Issue #492: one window for unlocks and purchases. The script owns the
@@ -235,59 +260,71 @@ void ShowWorldBuffMenu(Player* player, Creature* creature)
     // SendGossipMenu ships gossip + quest items in one message. Only
     // unlocked buffs are offered (rewarded unlock quest for the faction);
     // anything else shows its quest instead, so there is exactly one row
-    // per buff: quest or purchase, never both.
+    // per buff: quest or purchase, never both. Prices are for everyone the
+    // purchase would buff right now (buyer + group members in range).
     Team team = player ? player->GetTeam() : TEAM_NONE;
     bool horde = team == HORDE;
+    std::vector<Player*> targets;
+    CollectBuffTargets(player, creature, targets);
+    uint32_t people = static_cast<uint32_t>(targets.size());
     for (uint8_t purchase = kWorldBuffBuyRally; purchase <= kWorldBuffBuyCount; ++purchase)
     {
         uint32_t questId = PurchaseUnlockQuest(purchase, horde);
         bool unlocked = questId != 0 && player->GetQuestRewardStatus(questId);
         if (!unlocked)
             continue;
-        if (purchase == kWorldBuffBuySayge)
-        {
-            WorldBuffPricePair prices;
-            if (WorldBuffPrices(purchase, prices,
-                sPlayerbotAIConfig.worldBuffsPriceBaseCopper, sPlayerbotAIConfig.worldBuffsPricePerPersonCopper,
-                sPlayerbotAIConfig.worldBuffsSaygePriceBaseCopper, sPlayerbotAIConfig.worldBuffsSaygePricePerPersonCopper,
-                sPlayerbotAIConfig.worldBuffsSongflowerPriceBaseCopper, sPlayerbotAIConfig.worldBuffsSongflowerPricePerPersonCopper,
-                sPlayerbotAIConfig.worldBuffsSilithystPriceBaseCopper, sPlayerbotAIConfig.worldBuffsSilithystPricePerPersonCopper))
-            {
-                uint32_t total = WorldBuffTotalPrice(prices.baseCopper, prices.perPersonCopper, 1);
-                std::ostringstream label;
-                label << "Sayge's Dark Fortune... (" << ai::ChatHelper::formatMoney(total) << "+)";
-                AddItem(player, GOSSIP_ICON_MONEY_BAG, label.str().c_str(), kWorldBuffSenderSayge, 0);
-            }
-            else
-            {
-                AddItem(player, GOSSIP_ICON_MONEY_BAG, "Sayge's Dark Fortune...", kWorldBuffSenderSayge, 0);
-            }
-            continue;
-        }
         WorldBuffPricePair prices;
-        if (!WorldBuffPrices(purchase, prices,
-            sPlayerbotAIConfig.worldBuffsPriceBaseCopper, sPlayerbotAIConfig.worldBuffsPricePerPersonCopper,
-            sPlayerbotAIConfig.worldBuffsSaygePriceBaseCopper, sPlayerbotAIConfig.worldBuffsSaygePricePerPersonCopper,
-            sPlayerbotAIConfig.worldBuffsSongflowerPriceBaseCopper, sPlayerbotAIConfig.worldBuffsSongflowerPricePerPersonCopper,
-            sPlayerbotAIConfig.worldBuffsSilithystPriceBaseCopper, sPlayerbotAIConfig.worldBuffsSilithystPricePerPersonCopper))
+        char const* name = PurchaseName(purchase);
+        if (!name || !CurrentPrices(purchase, prices))
             continue;
-        uint32_t total = WorldBuffTotalPrice(prices.baseCopper, prices.perPersonCopper, 1);
+        uint32_t total = WorldBuffTotalPrice(prices.baseCopper, prices.perPersonCopper, people);
         std::ostringstream label;
-        switch (purchase)
-        {
-            case kWorldBuffBuyRally: label << "Rallying Cry of the Dragonslayer"; break;
-            case kWorldBuffBuyWarchief: label << "Warchief's Blessing"; break;
-            case kWorldBuffBuyZandalar: label << "Spirit of Zandalar"; break;
-            case kWorldBuffBuyDmPack: label << "Dire Maul Tribute (all three)"; break;
-            case kWorldBuffBuySongflower: label << "Songflower Serenade"; break;
-            case kWorldBuffBuySilithyst: label << "Traces of Silithyst"; break;
-            default: continue;
-        }
-        label << " (" << ai::ChatHelper::formatMoney(total) << "+)";
-        AddItem(player, GOSSIP_ICON_MONEY_BAG, label.str().c_str(), kWorldBuffSenderBuy, purchase);
+        label << name << (purchase == kWorldBuffBuySayge ? "..." : "") << " (" << ai::ChatHelper::formatMoney(total) << ")";
+        if (purchase == kWorldBuffBuySayge)
+            AddItem(player, GOSSIP_ICON_MONEY_BAG, label.str().c_str(), kWorldBuffSenderSayge, 0);
+        else
+            AddItem(player, GOSSIP_ICON_MONEY_BAG, label.str().c_str(), kWorldBuffSenderBuy, purchase);
     }
     AddItem(player, GOSSIP_ICON_TALK, "< Back", kWorldBuffSenderBack, kWorldBuffSenderBack);
     player->PrepareQuestMenu(creature->GetObjectGuid());
+    player->PlayerTalkClass->SendGossipMenu(GossipText(player), creature->GetObjectGuid());
+}
+
+// 1.12 gossip has no confirmation popup, so a buy click opens this page:
+// the exact total for everyone who would be buffed, then Confirm or Back.
+// The quoted head count rides in the confirm action; if the group changed
+// before Confirm, BuyWorldBuff re-quotes instead of charging a new price.
+void ShowBuyConfirm(Player* player, Creature* creature, uint32_t buyAction)
+{
+    uint8_t purchase = DecodeBuyIndex(buyAction);
+    uint32_t saygePick = DecodeSaygePick(buyAction);
+    WorldBuffPricePair prices;
+    char const* name = PurchaseName(purchase);
+    if (!name || !CurrentPrices(purchase, prices))
+    {
+        ShowWorldBuffMenu(player, creature);
+        return;
+    }
+    std::vector<Player*> targets;
+    CollectBuffTargets(player, creature, targets);
+    uint32_t people = static_cast<uint32_t>(targets.size());
+    uint32_t total = WorldBuffTotalPrice(prices.baseCopper, prices.perPersonCopper, people);
+    std::ostringstream label;
+    label << "Pay " << ai::ChatHelper::formatMoney(total) << " for " << name;
+    if (purchase == kWorldBuffBuySayge)
+    {
+        uint32_t count = 0;
+        WorldBuffSaygePick const* picks = WorldBuffSaygePicks(count);
+        if (saygePick >= 1 && saygePick <= count)
+            label << " of " << picks[saygePick - 1].label;
+    }
+    if (people > 1)
+        label << " on you and " << (people - 1) << (people == 2 ? " group member" : " group members") << " nearby";
+    else
+        label << " on you";
+    label << ". Confirm?";
+    AddItem(player, GOSSIP_ICON_MONEY_BAG, label.str().c_str(), kWorldBuffSenderConfirm, EncodeConfirmAction(buyAction, people));
+    AddItem(player, GOSSIP_ICON_TALK, "< Back", kWorldBuffSenderBack, kWorldBuffSenderSayge);
     player->PlayerTalkClass->SendGossipMenu(GossipText(player), creature->GetObjectGuid());
 }
 
@@ -326,8 +363,11 @@ void CollectBuffTargets(Player* buyer, Creature* npc, std::vector<Player*>& out)
     }
 }
 
-void BuyWorldBuff(Player* player, Creature* creature, uint8_t purchase, uint32_t saygePick)
+void BuyWorldBuff(Player* player, Creature* creature, uint32_t confirmAction)
 {
+    uint32_t buyAction = DecodeConfirmBuyAction(confirmAction);
+    uint8_t purchase = DecodeBuyIndex(buyAction);
+    uint32_t saygePick = DecodeSaygePick(buyAction);
     if (!IsValidWorldBuffPurchase(purchase))
     {
         ShowWorldBuffMenu(player, creature);
@@ -360,17 +400,20 @@ void BuyWorldBuff(Player* player, Creature* creature, uint8_t purchase, uint32_t
         return;
     }
     WorldBuffPricePair prices;
-    if (!WorldBuffPrices(purchase, prices,
-        sPlayerbotAIConfig.worldBuffsPriceBaseCopper, sPlayerbotAIConfig.worldBuffsPricePerPersonCopper,
-        sPlayerbotAIConfig.worldBuffsSaygePriceBaseCopper, sPlayerbotAIConfig.worldBuffsSaygePricePerPersonCopper,
-        sPlayerbotAIConfig.worldBuffsSongflowerPriceBaseCopper, sPlayerbotAIConfig.worldBuffsSongflowerPricePerPersonCopper,
-        sPlayerbotAIConfig.worldBuffsSilithystPriceBaseCopper, sPlayerbotAIConfig.worldBuffsSilithystPricePerPersonCopper))
+    if (!CurrentPrices(purchase, prices))
     {
         ShowWorldBuffMenu(player, creature);
         return;
     }
     std::vector<Player*> targets;
     CollectBuffTargets(player, creature, targets);
+    // Someone joined or walked off since the quote: show the new price
+    // instead of charging one the player never saw.
+    if (targets.size() != DecodeConfirmCount(confirmAction))
+    {
+        ShowBuyConfirm(player, creature, buyAction);
+        return;
+    }
     uint32_t total = WorldBuffTotalPrice(prices.baseCopper, prices.perPersonCopper,
         static_cast<uint32_t>(targets.size()));
     if (player->GetMoney() < total)
@@ -519,7 +562,12 @@ bool HireRecruiterScript::OnSelect(Player* player, Creature* creature, uint32_t 
                 ShowSaygeMenu(player, creature);
                 return true;
             }
-            BuyWorldBuff(player, creature, purchase, saygePick);
+            ShowBuyConfirm(player, creature, action);
+            return true;
+        }
+        if (sender == kWorldBuffSenderConfirm)
+        {
+            BuyWorldBuff(player, creature, action);
             return true;
         }
         if (sender == kWorldBuffSenderBack)
