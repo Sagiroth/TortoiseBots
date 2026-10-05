@@ -15,6 +15,10 @@ class HireRecruiterScript
 public:
     static bool OnHello(Player* player, Creature* creature);
     static bool OnSelect(Player* player, Creature* creature, uint32_t sender, uint32_t action);
+    // Writes the configured world-buff unlock fees into the quest rows at
+    // startup. Core has already loaded the quests, so a change is live from
+    // the next restart.
+    static void SyncUnlockFees();
 };
 
 } // namespace TortoiseBots

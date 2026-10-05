@@ -9,6 +9,7 @@
 #include "../runtime/AhMarketService.h"
 #include "../runtime/BattlegroundQueueService.h"
 #include "../runtime/ObservabilityEmitter.h"
+#include "HireRecruiterScript.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
 #include "Config/Config.h"
 #include "ObjectMgr.h"
@@ -83,6 +84,7 @@ void BotHostAdapter::OnStartup()
     ModuleLog::Instance().ApplyConfig();
 
     bool configured = sPlayerbotAIConfig.Initialize();
+    HireRecruiterScript::SyncUnlockFees();
     RandomBotService::Instance().Initialize();
     BattlegroundQueueService::Instance().Initialize();
 

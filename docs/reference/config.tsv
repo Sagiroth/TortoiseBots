@@ -28,6 +28,8 @@ AiPlayerbot.WorldBuffsSongflowerPriceBaseCopper	40000	40000	—	restart	Playerbo
 AiPlayerbot.WorldBuffsSongflowerPricePerPersonCopper	10000	10000	—	restart	PlayerbotAIConfig::Initialize + WorldBuffPolicy price math	worldbuff	0-100000000	—	1g per head	pending (#492)
 AiPlayerbot.WorldBuffsSilithystPriceBaseCopper	20000	20000	—	restart	PlayerbotAIConfig::Initialize + WorldBuffPolicy price math	worldbuff	0-100000000	—	2g base	pending (#492)
 AiPlayerbot.WorldBuffsSilithystPricePerPersonCopper	4000	4000	—	restart	PlayerbotAIConfig::Initialize + WorldBuffPolicy price math	worldbuff	0-100000000	—	40s per head	pending (#492)
+AiPlayerbot.WorldBuffsUnlockFeeRaidCopper	2000000	2000000	—	restart	PlayerbotAIConfig::Initialize + HireRecruiterScript::SyncUnlockFees	worldbuff	0-100000000	—	200g turn-in fee, Rally/Warchief/Zandalar quests; written to quest_template at startup, live after the next restart	pending (#492)
+AiPlayerbot.WorldBuffsUnlockFeeCopper	1000000	1000000	—	restart	PlayerbotAIConfig::Initialize + HireRecruiterScript::SyncUnlockFees	worldbuff	0-100000000	—	100g turn-in fee, other unlock quests; written to quest_template at startup, live after the next restart	pending (#492)
 AiPlayerbot.NonCombatStrategies	empty (owned bots fall back to C++ default)	+return,+delayed roll,+loot	—	restart	PlayerbotAIConfig::Initialize + AiFactory owned-bot defaults	owned	—	—	owned-bot loot defaults on via fallback	shipped (#194)
 AiPlayerbot.AutoShareConjuredOnTrade	1	true	—	restart	PlayerbotAIConfig::Initialize + TradeStatusAction::BeginTrade	companion	0/1	—	—	shipped (#206)
 AiPlayerbot.BombRunoutDistance	— (commented example)	30.0f	—	restart	PlayerbotAIConfig::Initialize + RaidBombRunoutAction	raid	—	—	—	pending (#201)
