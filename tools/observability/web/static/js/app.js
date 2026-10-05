@@ -2,6 +2,14 @@
 // State model: the WebSocket "snapshot" event is authoritative for the roster.
 // Heartbeats update server gauges, "status" reports online/stale transitions,
 // and a local watchdog marks the stream offline if pulses stop.
+//
+// Information architecture (one owner per question, no duplicate lists):
+//   Overview  is everything running?      Bots      the one list of bots
+//   Map       where are they?             Progress  are they levelling?
+//   Activity  what happened?              Issues    what is broken?
+//   Server    how is it configured?
+// A bot's detail lives in ONE slide-over profile that any tab can open; the
+// URL hash (#/bots?bot=123&p=gear) records the tab and the open profile.
 (function() {
   'use strict';
 
@@ -15,9 +23,11 @@
 
   const OFFLINE_AFTER_MS = 10000;
 
-  // The selected tab survives a reload: the operator reloads mid-investigation
-  // and expects to land back where they were. Only known tab keys are honoured.
+  // The selected tab survives a reload when the URL carries no hash: the
+  // operator reloads mid-investigation and expects to land back where they
+  // were. Only known tab keys are honoured.
   const TAB_STORAGE_KEY = 'tortoisebots.dashboard.tab';
+  const BOTS_VIEW_STORAGE_KEY = 'tortoisebots.dashboard.botsview';
 
   const state = {
     activeTab: 'overview',
@@ -25,6 +35,11 @@
     mapView: 'world',
     worldMapId: 0,
     bots: [],
+    // Every bot character in the database (online or offline), joined with the
+    // live roster by guid to form the one Bots list.
+    roster: [],
+    rosterAt: 0,
+    rosterError: false,
     anomalies: [],
     anomalyTotals: null,
     grinding: { bots_tracked: 0, bots_gaining_xp: 0, pct_gaining_xp: 0, median_xp_hour: 0, total_xp_hour: 0, deaths_per_min: 0, pct_died_5min: 0, state_counts: {}, level_bands: [] },
@@ -43,14 +58,14 @@
       humans: [],
       diff: []
     },
-    counts: [],
     showTrails: true,
-    roleFilter: 'all',
-    rosterClassFilter: 'all',
-    rosterStatusFilter: 'all',
-    rosterIssueOnly: false,
-    rosterSort: { key: 'name', dir: 1 },
-    selectedBotGuid: null,
+    // Bots tab
+    botsPresence: 'all',
+    botsView: 'live',
+    botsState: 'all',
+    botsClass: 'all',
+    botsIssueOnly: false,
+    botsSort: { key: null, dir: 1 }, // null = online first, then by name
     anomalyTypeFilter: 'all',
     anomalySeverityFilter: 'all',
     wsConnected: false,
@@ -61,12 +76,14 @@
     issueTypeFilter: 'all',
     issueDurationFilter: 300,
     issueHistory: { t: [], series: {} },
-    armoryGuid: null,
-    armoryOpen: false,
-    armoryProfile: null,
-    armorySubtab: 'stats',
+    feedView: 'quests',
+    issuesView: 'active',
+    // Bot profile slide-over
+    profileGuid: null,
+    profile: null,
+    profileTab: 'overview',
+    profileRecent: null,
     armorySpellFilter: '',
-    armorySort: { key: 'name', dir: 1 },
     activity: null,
     lootFeed: [],
     questFeed: []
@@ -118,14 +135,6 @@
     dead: 'Dead'
   };
   const STATE_ORDER = ['combat', 'moving', 'busy', 'stalled', 'resting', 'idle', 'dead'];
-
-  // Badge class that matches STATE_COLORS: dead is neutral grey, not amber.
-  function stateBadgeClass(s) {
-    if (s === 'combat') return 'badge-error';
-    if (s === 'stalled') return 'badge-warn';
-    if (s === 'dead') return 'badge';
-    return 'badge-info';
-  }
 
   // Equipped-gear summary used by both the roster sweep (daemon) and the
   // armory paperdoll (profile rows): average item level over filled slots
@@ -429,22 +438,22 @@
   const el = {
     statusPill: document.getElementById('status-pill'),
     statusLabel: document.getElementById('status-label'),
-    topBotsVal: document.getElementById('top-bots-val'),
-    playersVal: document.getElementById('players-val'),
+    metricTick: document.getElementById('metric-tick'),
     metricBotsOnline: document.getElementById('metric-bots-online'),
     metricHumansOnline: document.getElementById('metric-humans-online'),
     metricUptime: document.getElementById('metric-uptime'),
     snapshotAgeVal: document.getElementById('snapshot-age-val'),
-    gaugeTickVal: document.getElementById('gauge-tick-val'),
-    gaugeTickBar: document.getElementById('gauge-tick-bar'),
 
-    // Tabs & Navigation
+    // Shell & navigation
     menuItems: document.querySelectorAll('.sidebar-menu .menu-item[data-tab]'),
     tabViews: document.querySelectorAll('.tab-view'),
     sidebar: document.getElementById('sidebar'),
     sidebarBackdrop: document.getElementById('sidebar-backdrop'),
     hamburgerBtn: document.getElementById('hamburger-btn'),
-    currentTabTitle: document.getElementById('current-tab-title'),
+    pageTitle: document.getElementById('page-title'),
+    quickFind: document.getElementById('quick-find'),
+    quickFindInput: document.getElementById('quick-find-input'),
+    quickFindResults: document.getElementById('quick-find-results'),
 
     // Map
     zoneFilterInput: document.getElementById('zone-filter-input'),
@@ -473,26 +482,27 @@
     toggleZoneChips: document.getElementById('toggle-zone-chips'),
     zoneChipsCount: document.getElementById('zone-chips-count'),
     worldOffmap: document.getElementById('world-offmap'),
-    botDrawer: document.getElementById('bot-drawer'),
-    drawerContent: document.getElementById('drawer-content'),
-    closeDrawer: document.getElementById('close-drawer'),
 
-    // Roster
-    roleFilter: document.getElementById('role-filter'),
-    classFilter: document.getElementById('class-filter'),
-    statusFilter: document.getElementById('status-filter'),
-    issueOnlyFilter: document.getElementById('issue-only-filter'),
+    // Bots
     botSearch: document.getElementById('bot-search'),
+    presenceSeg: document.getElementById('bots-presence'),
+    viewSeg: document.getElementById('bots-view'),
+    stateChips: document.getElementById('state-chips'),
+    classChips: document.getElementById('class-chips'),
+    rosterHead: document.getElementById('roster-head'),
     rosterTable: document.getElementById('roster-table-body'),
     rosterCount: document.getElementById('roster-count'),
-    rosterPanel: document.getElementById('roster-panel'),
-    rosterArmoryBtn: document.getElementById('roster-armory-btn'),
+    rosterNote: document.getElementById('roster-note'),
+
+    // Progress
+    progressKpis: document.getElementById('progress-kpis'),
+    levelBands: document.getElementById('level-bands'),
+    levelTimeline: document.getElementById('level-timeline-body'),
+
     // Activity
     activityMetrics: document.getElementById('activity-metrics'),
-    activityCount: document.getElementById('activity-count'),
     activityWindow: document.getElementById('activity-window'),
-    economyMetrics: document.getElementById('economy-metrics'),
-    economyWindow: document.getElementById('economy-window'),
+    feedSeg: document.getElementById('feed-seg'),
     lootTable: document.getElementById('loot-table-body'),
     lootQualityFilter: document.getElementById('loot-quality-filter'),
     lootClassFilter: document.getElementById('loot-class-filter'),
@@ -500,22 +510,27 @@
     lootBotSearch: document.getElementById('loot-bot-search'),
     questsTable: document.getElementById('quests-table-body'),
     questBotSearch: document.getElementById('quest-bot-search'),
-    activityTable: document.getElementById('activity-table-body'),
-    levelTimeline: document.getElementById('level-timeline-body'),
-    // Armory
-    armoryListView: document.getElementById('armory-list-view'),
-    armoryProfileView: document.getElementById('armory-profile-view'),
-    armoryListBody: document.getElementById('armory-list-body'),
-    armoryListSearch: document.getElementById('armory-list-search'),
-    armoryBack: document.getElementById('armory-back'),
+
+    // Bot profile slide-over
+    profileDrawer: document.getElementById('profile-drawer'),
+    profileBackdrop: document.getElementById('profile-backdrop'),
+    closeProfile: document.getElementById('close-profile'),
+    profileTabs: document.getElementById('profile-tabs'),
     armoryMapBtn: document.getElementById('armory-map-btn'),
     armoryOnline: document.getElementById('armory-online'),
     armoryName: document.getElementById('armory-name'),
     armorySubtitle: document.getElementById('armory-subtitle'),
+    armorySpecInfo: document.getElementById('armory-spec-info'),
+    armoryHpBar: document.getElementById('armory-hp-bar'),
+    armoryHpText: document.getElementById('armory-hp-text'),
+    armoryPowBar: document.getElementById('armory-pow-bar'),
+    armoryPowText: document.getElementById('armory-pow-text'),
+    armoryXpWrap: document.getElementById('armory-xp-wrap'),
+    armoryXpBar: document.getElementById('armory-xp-bar'),
+    armoryXpText: document.getElementById('armory-xp-text'),
     armoryMoney: document.getElementById('armory-money'),
     armoryIlvl: document.getElementById('armory-ilvl'),
     armoryPlayed: document.getElementById('armory-played'),
-    armoryRosterBtn: document.getElementById('armory-roster-btn'),
     armoryError: document.getElementById('armory-error'),
     armoryBody: document.getElementById('armory-body'),
     gearLeft: document.getElementById('armory-gear-left'),
@@ -525,12 +540,13 @@
 
     // Incidents
     anomaliesTable: document.getElementById('anomalies-table-body'),
-    anomaliesCount: document.getElementById('anomalies-count'),
     anomaliesTotals: document.getElementById('anomaly-totals-line'),
     typeFilter: document.getElementById('anomaly-type-filter'),
     severityFilter: document.getElementById('anomaly-severity-filter'),
+    clearAnomalies: document.getElementById('clear-anomalies'),
 
     // Issues
+    issuesSeg: document.getElementById('issues-seg'),
     issueActive: document.getElementById('issue-active'),
     issuePersistent: document.getElementById('issue-persistent'),
     issueWatch: document.getElementById('issue-watch'),
@@ -547,11 +563,9 @@
     metricIssues: document.getElementById('metric-issues'),
     metricIssuesSub: document.getElementById('metric-issues-sub'),
 
-    // Bots tab: fleet composition
-    classBreakdown: document.getElementById('class-breakdown'),
-    roleTotals: document.getElementById('role-totals'),
+    // Overview
+    activityPanel: document.getElementById('activity-panel'),
     fleetHealth: document.getElementById('fleet-health'),
-    zoneList: document.getElementById('zone-list'),
 
     // Chart & Console
     activityChart: document.getElementById('activity-chart'),
@@ -660,6 +674,7 @@
 
   function fmtXpRate(v) {
     if (!v || v <= 0) return '–';
+    if (v >= 1000000) return `${(v / 1000000).toFixed(1)}M/h`;
     if (v >= 1000) return `${(v / 1000).toFixed(1)}k/h`;
     return `${Math.round(v)}/h`;
   }
@@ -671,27 +686,9 @@
     if (m < 60) return `${m}m ago`;
     return `${Math.floor(m / 60)}h ${m % 60}m ago`;
   }
-  // Roster XP cell: progress bar + XP/hour + last-gain age. next_xp == 0 is
-  // "no data" (old emitter, max level), never a fake bar.
-  function xpCell(b) {
-    const pct = xpPct(b);
-    if (pct === null) return '<span style="color: var(--text-muted);">–</span>';
-    const rate = fmtXpRate(b.xp_per_hour);
-    const age = fmtGainAge(b.xp_gain_age_sec);
-    const title = `${b.xp}/${b.next_xp} XP · ${rate} · last gain ${age}`;
-    return `
-      <div style="font-size: 0.7rem; margin-bottom: 2px;" title="${esc(title)}">${esc(b.xp)}/${esc(b.next_xp)} (${pct}%) · ${esc(rate)}</div>
-      <div class="progress-bar-bg" title="${esc(title)}"><div class="progress-bar-fill" style="width: ${pct}%; background: var(--accent-yellow);"></div></div>`;
-  }
 
   // The telemetry role is the AI combat-role signal (forced role, combat
-  // strategies, else talent/gearmarks), not a group slot. Bots without a
-  // master run their talent/gear role; label the column honestly until a
-  // dedicated group-role signal exists.
-  function roleBadgeClass(role) {
-    return role === 'tank' ? 'badge-info' : role === 'healer' ? 'badge-success' : 'badge-error';
-  }
-
+  // strategies, else talent/gear marks), not a group slot.
   function roleLabel(b) {
     const role = (b && b.role) || 'dps';
     return role.toUpperCase();
@@ -712,17 +709,22 @@
     el.consoleBody.scrollTop = el.consoleBody.scrollHeight;
   }
 
-  // Sidebar Tab Navigation.
-  const TAB_TITLES = {
-    overview: 'Overview',
-    map: 'Live Map',
-    roster: 'Bots',
-    progress: 'Progress',
-    activity: 'Activity',
-    economy: 'Economy',
-    issues: 'Issues & Incidents',
-    server: 'Server'
+  // ---- Navigation & routing ----------------------------------------------
+  // The URL hash is the single source of truth for "where am I":
+  //   #/<tab>                      a tab
+  //   #/<tab>?bot=<guid>&p=<ptab>  a tab with a bot profile open on <ptab>
+  // so the Back button, reloads and pasted links all land on the same view.
+  const TABS = {
+    overview: { hash: 'overview', title: 'Overview' },
+    roster: { hash: 'bots', title: 'Bots' },
+    map: { hash: 'map', title: 'Map' },
+    progress: { hash: 'progress', title: 'Progress' },
+    activity: { hash: 'activity', title: 'Activity' },
+    issues: { hash: 'issues', title: 'Issues' },
+    server: { hash: 'server', title: 'Server' }
   };
+  const HASH_TO_TAB = Object.fromEntries(Object.entries(TABS).map(([k, v]) => [v.hash, k]));
+  const PROFILE_TABS = ['overview', 'gear', 'talents', 'spells', 'professions', 'skills', 'bags', 'progress'];
 
   function openNavDrawer() {
     if (!el.sidebar) return;
@@ -738,100 +740,120 @@
     if (el.hamburgerBtn) el.hamburgerBtn.setAttribute('aria-expanded', 'false');
   }
 
-  function toggleNavDrawer() {
-    if (el.sidebar && el.sidebar.classList.contains('open')) {
-      closeNavDrawer();
+  function parseRoute() {
+    const [path, query] = window.location.hash.replace(/^#\/?/, '').split('?');
+    const q = new URLSearchParams(query || '');
+    const bot = parseInt(q.get('bot'), 10);
+    return { tab: HASH_TO_TAB[path] || null, bot: Number.isFinite(bot) ? bot : null, ptab: q.get('p') };
+  }
+
+  function routeHash(r) {
+    const q = new URLSearchParams();
+    if (r.bot !== null && r.bot !== undefined) {
+      q.set('bot', r.bot);
+      if (r.ptab && r.ptab !== 'overview') q.set('p', r.ptab);
+    }
+    const qs = q.toString();
+    return `#/${TABS[r.tab].hash}${qs ? `?${qs}` : ''}`;
+  }
+
+  // Change the route: switching tab closes the profile unless a bot is given;
+  // switching only the profile tab replaces the history entry.
+  function go(partial, opts) {
+    const next = Object.assign({ tab: state.activeTab, bot: state.profileGuid, ptab: state.profileTab }, partial);
+    if (partial.tab && !('bot' in partial)) next.bot = null;
+    const hash = routeHash(next);
+    if (opts && opts.replace) {
+      history.replaceState(null, '', hash);
+      applyRoute();
+    } else if (window.location.hash === hash) {
+      applyRoute();
     } else {
-      openNavDrawer();
+      window.location.hash = hash; // hashchange -> applyRoute
     }
   }
 
-  // The Armory tab is the Bots section opened on its armory sub-view (list ↔
-  // profile), so both entries share one tab-view. Exactly one sidebar entry is
-  // highlighted — Armory while the sub-view is open, Bots otherwise — and the
-  // remembered tab always matches it, so a reload returns to the same view.
+  let routeApplied = false;
+  function applyRoute() {
+    const r = parseRoute();
+    const tab = r.tab || state.activeTab;
+    if (tab !== state.activeTab || !routeApplied) showTab(tab);
+    routeApplied = true;
+    if (r.bot !== null) {
+      state.profileTab = PROFILE_TABS.includes(r.ptab) ? r.ptab : 'overview';
+      showProfile(r.bot);
+    } else {
+      hideProfile();
+    }
+  }
+
   function paintNavActive() {
-    const armory = state.activeTab === 'roster' && state.armoryOpen;
-    el.menuItems.forEach(item => {
-      const tab = item.dataset.tab;
-      item.classList.toggle('active', armory ? tab === 'armory' : tab === state.activeTab);
-    });
-    if (el.currentTabTitle) {
-      el.currentTabTitle.textContent = armory ? 'Armory' : (TAB_TITLES[state.activeTab] || 'Overview');
-    }
-    try { localStorage.setItem(TAB_STORAGE_KEY, armory ? 'armory' : state.activeTab); } catch (e) {}
+    const tab = TABS[state.activeTab];
+    el.menuItems.forEach(item => item.classList.toggle('active', item.dataset.tab === state.activeTab));
+    if (el.pageTitle) el.pageTitle.textContent = tab.title;
+    document.title = `${tab.title} — TortoiseBots`;
+    try { localStorage.setItem(TAB_STORAGE_KEY, state.activeTab); } catch (e) {}
   }
 
-  // Switching tabs renders only the tab that becomes visible; hidden tabs are
-  // rebuilt on their own activation, never on every 2 s snapshot.
-  function switchTab(tab) {
-    if (!TAB_TITLES[tab]) tab = 'overview';
+  // Per-tab render. Hidden tabs are rebuilt on their own activation, never on
+  // every 2 s snapshot.
+  function renderTab(tab) {
+    if (tab === 'overview') { renderOverviewCharts(); renderStates(); renderAttention(); }
+    else if (tab === 'map') renderMap();
+    else if (tab === 'roster') renderBotsTab();
+    else if (tab === 'progress') renderProgress();
+    else if (tab === 'activity') renderActivityTab();
+    else if (tab === 'issues') { renderIssues(); renderAnomalies(); }
+    else if (tab === 'server') renderServerPanel();
+  }
+
+  function showTab(tab) {
+    if (!TABS[tab]) tab = 'overview';
     state.activeTab = tab;
     closeNavDrawer();
-
     el.tabViews.forEach(v => {
       v.style.display = v.id === `tab-${tab}` ? 'block' : 'none';
     });
-
-    if (tab === 'overview') {
-      renderOverviewCharts();
-      renderActivity();
-      renderFleetHealth();
-      renderGrinding();
-    }
-    if (tab === 'map') { renderMap(); renderZoneList(); }
-    if (tab === 'roster') renderBotsTab();
-    if (tab === 'progress') { renderLevelBands(); renderLevelTimeline(); }
-    if (tab === 'activity') { renderActivityTab(); fetchQuestFeed(); }
-    if (tab === 'economy') { renderEconomyTab(); fetchLootFeed(); }
-    if (tab === 'issues') { renderIssues(); renderAnomalies(); fetchAnomalyTotals(); }
-    if (tab === 'server') renderServerPanel();
     paintNavActive();
+    renderTab(tab);
+    if (tab === 'roster' && Date.now() - state.rosterAt > 15000) fetchRoster();
+    if (tab === 'activity') fetchFeed();
+    if (tab === 'issues') fetchAnomalyTotals();
   }
 
-  el.menuItems.forEach(item => {
-    item.addEventListener('click', (e) => {
-      e.preventDefault();
-      const tab = item.dataset.tab;
-      // The Armory entry opens the Bots section on its armory sub-view; the
-      // in-Bots drill-down (roster → All bots → profile → ← Roster) is
-      // unchanged.
-      if (tab === 'armory') {
-        showArmoryTab();
-        return;
-      }
-      // Bots always opens on the roster, even when the armory sub-view was the
-      // last one shown in this section.
-      if (tab === 'roster') {
-        switchTab('roster');
-        showRoster();
-        return;
-      }
-      if (tab) switchTab(tab);
-    });
-  });
-
+  el.menuItems.forEach(item => item.addEventListener('click', closeNavDrawer));
   if (el.hamburgerBtn) {
-    el.hamburgerBtn.addEventListener('click', toggleNavDrawer);
+    el.hamburgerBtn.addEventListener('click', () => {
+      if (el.sidebar && el.sidebar.classList.contains('open')) closeNavDrawer(); else openNavDrawer();
+    });
   }
   if (el.sidebarBackdrop) {
     el.sidebarBackdrop.addEventListener('click', closeNavDrawer);
   }
+  window.addEventListener('hashchange', applyRoute);
+
+  function isTyping(t) {
+    return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+  }
+
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeNavDrawer();
+    if (e.key === 'Escape') {
+      closeNavDrawer();
+      if (state.profileGuid !== null && !isTyping(e.target)) closeProfile();
+    } else if (e.key === '/' && !isTyping(e.target) && el.quickFindInput) {
+      e.preventDefault();
+      el.quickFindInput.focus();
+      el.quickFindInput.select();
+    }
   });
 
   let resizeTimer = null;
   function onWindowResize() {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
-      if (state.activeTab === 'map') {
-        renderMap();
-      } else if (state.activeTab === 'overview') {
-        renderOverviewCharts();
-      } else if (state.activeTab === 'issues') {
-        renderIssueChart();
-      }
+      if (state.activeTab === 'map') renderMap();
+      else if (state.activeTab === 'overview') renderOverviewCharts();
+      else if (state.activeTab === 'issues') renderIssueChart();
     }, 100);
   }
   window.addEventListener('resize', onWindowResize);
@@ -843,9 +865,81 @@
       fetchAnomalies();
       fetchIssues(true);
       fetchActivity();
-      if (state.activeTab === 'activity') fetchQuestFeed();
-      if (state.activeTab === 'economy') fetchLootFeed();
-      if (state.activeTab === 'roster') renderBotsTab();
+      fetchRoster();
+      if (state.activeTab === 'activity') fetchFeed();
+      if (state.profileGuid !== null) fetchProfile(state.profileGuid);
+    });
+  }
+
+  // Segmented control: switches the view of ONE panel.
+  function paintSeg(seg, value) {
+    seg.querySelectorAll('.seg-btn[data-v]').forEach(b => b.classList.toggle('active', b.dataset.v === value));
+  }
+
+  function bindSeg(seg, onChange) {
+    if (!seg) return;
+    seg.addEventListener('click', (e) => {
+      const btn = e.target.closest('.seg-btn[data-v]');
+      if (!btn) return;
+      paintSeg(seg, btn.dataset.v);
+      onChange(btn.dataset.v);
+    });
+  }
+
+  // Find-a-bot (topbar, or press "/"): opens the profile from any tab.
+  function initQuickFind() {
+    const input = el.quickFindInput, box = el.quickFindResults;
+    if (!input || !box) return;
+    let items = [];
+    let active = 0;
+    const close = () => { box.hidden = true; };
+    const paint = () => {
+      box.querySelectorAll('.qf-row').forEach((r, i) => r.classList.toggle('active', i === active));
+    };
+    const render = () => {
+      const q = input.value.trim().toLowerCase();
+      if (!q) { close(); return; }
+      const startsWith = r => (r.name.toLowerCase().startsWith(q) ? 0 : 1);
+      items = botRows()
+        .filter(r => r.name.toLowerCase().includes(q))
+        .sort((a, b) => startsWith(a) - startsWith(b) || Number(b.online) - Number(a.online) || a.name.localeCompare(b.name))
+        .slice(0, 8);
+      active = 0;
+      box.innerHTML = items.length
+        ? items.map(r => `<div class="qf-row" role="option" data-guid="${esc(r.guid)}"><span class="qf-name" style="color: ${classColor(r.cls)};">${esc(r.name)}</span><span class="qf-meta">L${esc(r.level)} ${esc(capClass(r.cls))} · ${r.online ? 'online' : 'offline'}</span></div>`).join('')
+        : '<div class="qf-empty">No bot matches.</div>';
+      box.hidden = false;
+      paint();
+    };
+    const pick = (guid) => {
+      close();
+      input.value = '';
+      input.blur();
+      openProfile(guid);
+    };
+    input.addEventListener('input', render);
+    input.addEventListener('focus', render);
+    input.addEventListener('blur', close);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (!items.length) return;
+        active = (active + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+        paint();
+      } else if (e.key === 'Enter') {
+        if (items[active]) pick(items[active].guid);
+      } else if (e.key === 'Escape') {
+        input.value = '';
+        close();
+        input.blur();
+      }
+    });
+    // mousedown (not click): the input's blur would hide the list first.
+    box.addEventListener('mousedown', (e) => {
+      const row = e.target.closest('.qf-row[data-guid]');
+      if (!row) return;
+      e.preventDefault();
+      pick(parseInt(row.dataset.guid, 10));
     });
   }
 
@@ -958,8 +1052,8 @@
       .then(cfg => {
         if (cfg && Object.keys(cfg).length > 0) {
           EXTRA_ZONE_NAMES = cfg;
-          if (state.activeTab === 'map') { renderMap(); renderZoneList(); }
-          if (state.activeTab === 'overview') renderFleetHealth();
+          if (state.activeTab === 'map') renderMap();
+          if (state.activeTab === 'overview') renderAttention();
         }
       })
       .catch(() => {});
@@ -1135,11 +1229,7 @@
 
 
   function worldBots(mapId) {
-    return state.bots.filter(b => {
-      if (b.map !== mapId) return false;
-      if (state.roleFilter !== 'all' && b.role !== state.roleFilter) return false;
-      return true;
-    });
+    return state.bots.filter(b => b.map === mapId);
   }
 
   function setMapView(view, zoneId) {
@@ -1175,7 +1265,7 @@
     const off = state.bots.filter(b => b.map !== 0 && b.map !== 1);
     if (el.worldOffmap) {
       el.worldOffmap.textContent = off.length
-        ? `${off.length} bot${off.length === 1 ? '' : 's'} in instances or other maps — see Roster.`
+        ? `${off.length} bot${off.length === 1 ? '' : 's'} in instances or other maps (see the Bots list).`
         : '';
     }
     renderMapLegend(bots);
@@ -1248,7 +1338,7 @@
       const p = projectWorld(mapId, b.x, b.y);
       if (!p) return;
       overlay.appendChild(makeBotDot(b, issuesByGuid[b.guid], p.x, p.y));
-      if (b.guid === state.selectedBotGuid) overlay.appendChild(makeSelectRing(p.x, p.y));
+      if (b.guid === state.profileGuid) overlay.appendChild(makeSelectRing(p.x, p.y));
     });
     return bots;
   }
@@ -1444,117 +1534,17 @@
     renderTickChart();
   }
 
-  // Bots by class (heartbeat counts when the socket is live, roster-derived
-  // while the socket is down so the panel never sticks on "Waiting...").
-  function compositionCounts() {
-    if ((state.counts || []).length > 0) return state.counts;
-    const agg = new Map();
-    state.bots.forEach(b => {
-      const key = `${b.class || 'unknown'}|${b.role || 'unknown'}`;
-      agg.set(key, (agg.get(key) || 0) + 1);
-    });
-    return [...agg.entries()].map(([key, count]) => {
-      const [cls, role] = key.split('|');
-      return { class: cls, role, count };
-    });
-  }
+  // ---- Overview ------------------------------------------------------------
+  // Overview answers "is everything running?": KPI tiles, the two timelines,
+  // the live-state census (each row jumps to those bots) and a short list of
+  // what needs attention. It holds no bot table and no XP/gear analysis.
 
-  function renderComposition() {
-    if (!el.classBreakdown) return;
-    const counts = compositionCounts();
-    if (counts.length === 0) {
-      el.classBreakdown.innerHTML = '<div class="empty-hint">Waiting for bot telemetry...</div>';
-      if (el.roleTotals) el.roleTotals.innerHTML = '';
-      return;
-    }
-
-    const byClass = new Map();
-    const byRole = { tank: 0, healer: 0, dps: 0 };
-    counts.forEach(c => {
-      byClass.set(c.class, (byClass.get(c.class) || 0) + c.count);
-      byRole[c.role] = (byRole[c.role] || 0) + c.count;
-    });
-
-    const entries = [...byClass.entries()].sort((a, b) => b[1] - a[1]);
-    const max = entries[0][1] || 1;
-
-    el.classBreakdown.innerHTML = entries.map(([cls, n]) => `
-      <div class="comp-row">
-        <span class="comp-name">${esc(cls)}</span>
-        <span class="comp-bar-bg"><span class="comp-bar" style="width: ${Math.round((n / max) * 100)}%; background: ${classColor(cls)};"></span></span>
-        <span class="comp-count">${n}</span>
-      </div>`).join('');
-
-    if (el.roleTotals) {
-      // Pool rosters are ~all AI-role DPS: 0/0/500 badges are noise. Show
-      // roles only when a real mix exists (tanks or healers present).
-      if ((byRole.tank || 0) + (byRole.healer || 0) === 0) {
-        el.roleTotals.innerHTML = '';
-      } else {
-        el.roleTotals.innerHTML = ['tank', 'healer', 'dps'].map(role => {
-          const badge = roleBadgeClass(role);
-          return `<span class="badge ${badge}" title="AI combat role (forced role / combat strategies / talent-gear auto-detect), not a group slot">${byRole[role] || 0} ${role.toUpperCase()}</span>`;
-        }).join('') + `<div class="empty-hint" style="margin-top:6px;">AI combat roles, not group slots.</div>`;
-      }
-    }
-  }
-
-  // Fleet health (Overview) + zone census (World) both read the authoritative
-  // roster. Health is about state only; the zone list is the "where" summary
-  // behind the map.
-  function renderFleetHealth() {
-    if (!el.fleetHealth) return;
-
-    const bots = state.bots;
-    if (bots.length === 0) {
-      el.fleetHealth.innerHTML = '<div class="empty-hint">Waiting for bot roster...</div>';
-      return;
-    }
-
-    let low = 0;
-    bots.forEach(b => {
-      // A missing max_hp means "unknown", not "full health": those bots skew
-      // neither the LOW HP nor the healthy side.
-      const pct = b.max_hp ? b.hp / b.max_hp : null;
-      if (b.state !== 'dead' && b.hp !== 0 && pct !== null && pct < 0.35) low++;
-    });
-
-    // Dead bots are counted once, in the LIVE STATES census above; this card
-    // is about health only.
-    el.fleetHealth.innerHTML = `
-      <div class="role-row" style="margin-top: 0;">
-        <span class="badge badge-warn">${low} LOW HP</span>
-      </div>`;
-  }
-
-  // Zone census for the World tab: top zones by bot count, click to open.
-  function renderZoneList() {
-    if (!el.zoneList) return;
-    const zones = new Map();
-    state.bots.forEach(b => {
-      zones.set(`${b.map}_${b.zone}`, (zones.get(`${b.map}_${b.zone}`) || 0) + 1);
-    });
-    if (zones.size === 0) {
-      el.zoneList.innerHTML = '<div class="empty-hint">Waiting for bot roster...</div>';
-      return;
-    }
-    const top = [...zones.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
-    el.zoneList.innerHTML = top.map(([key, n]) => {
-      const [mapIdStr, zoneIdStr] = key.split('_');
-      return `<div class="zone-row" data-zone="${zoneIdStr}"><span>${esc(getZoneName(Number(zoneIdStr), Number(mapIdStr)))}</span><span class="comp-count">${n}</span></div>`;
-    }).join('');
-    el.zoneList.querySelectorAll('.zone-row').forEach(row => {
-      row.addEventListener('click', () => openZone(parseInt(row.dataset.zone, 10)));
-    });
-  }
-  // Activity block: the single authoritative states census (counts + %,
-  // same snapshot as the roster). Replaces the scattered combat/dead
-  // duplicates that used to live in Fleet Health and Grinding; colours come
-  // from STATE_COLORS so the census and the roster badges agree.
-  function renderActivity() {
-    const host = document.getElementById('activity-panel');
-    const g = state.grinding || {};
+  // The one authoritative state census (counts + %, same snapshot as the Bots
+  // list); a row is a shortcut into the Bots list filtered to that state.
+  function renderStates() {
+    const host = el.activityPanel;
     if (!host) return;
+    const g = state.grinding || {};
     const counts = g.state_counts || {};
     const n = g.bots_tracked || state.bots.length || 0;
     if (!n) {
@@ -1564,36 +1554,65 @@
     host.innerHTML = STATE_ORDER.map(key => {
       const c = counts[key] || 0;
       const pct = Math.round((c / n) * 100);
-      return `<div class="comp-row" title="${esc(STATE_TITLES[key] || key)}"><span class="comp-name">${key[0].toUpperCase() + key.slice(1)}</span><span class="comp-bar-bg"><span class="comp-bar" style="width: ${pct}%; background: ${STATE_COLORS[key]};"></span></span><span class="comp-count">${c} · ${pct}%</span></div>`;
+      return `<div class="comp-row clickable" data-state="${key}" title="${esc(STATE_TITLES[key] || key)} — list these bots"><span class="comp-name">${key}</span><span class="comp-bar-bg"><span class="comp-bar" style="width: ${pct}%; background: ${STATE_COLORS[key]};"></span></span><span class="comp-count">${c} · ${pct}%</span></div>`;
     }).join('');
   }
-  // Grinding panel (Overview): XP gains + deaths only, so the gauges answer
-  // "is the pool actually progressing". Level bands and their gear live on the
-  // Progress tab (renderLevelBands).
-  function renderGrinding() {
-    const host = document.getElementById('grinding-panel');
-    const g = state.grinding || {};
+
+  function renderAttention() {
+    const host = el.fleetHealth;
     if (!host) return;
+    if (!state.bots.length && !state.issues.active.length) {
+      host.innerHTML = '<div class="empty-hint">Waiting for bot roster...</div>';
+      return;
+    }
+    const active = state.issues.active.slice().sort((a, b) => (b.duration_sec || 0) - (a.duration_sec || 0));
+    // A missing max_hp means "unknown", not "full health".
+    let low = 0;
+    state.bots.forEach(b => {
+      const pct = b.max_hp ? b.hp / b.max_hp : null;
+      if (b.state !== 'dead' && b.hp !== 0 && pct !== null && pct < 0.35) low++;
+    });
+    let html = active.length ? '' : '<div class="attention-ok">✓ No active issues</div>';
+    html += active.slice(0, 6).map(i => `
+      <div class="attention-row clickable" data-guid="${esc(i.guid)}">
+        <span class="badge ${i.severity === 'persistent' ? 'badge-error' : 'badge-warn'}">${esc(ISSUE_LABELS[i.type] || i.type)}</span>
+        <strong class="bot-name">${esc(i.bot)}</strong>
+        <span class="attention-meta">${esc(getZoneName(i.zone, i.map))} · ${esc(fmtDuration(i.duration_sec))}</span>
+      </div>`).join('');
+    if (active.length > 6) html += `<a class="card-link attention-row" href="#/issues">+${active.length - 6} more issues →</a>`;
+    if (low) html += `<div class="attention-row"><span class="badge badge-warn">Low HP</span><span>${low} bot${low === 1 ? '' : 's'} below 35% health</span></div>`;
+    host.innerHTML = html;
+  }
+
+  // ---- Progress ------------------------------------------------------------
+  // Progress answers "are the bots levelling?": the pool XP/death rollup, the
+  // level bands with gear item level, and the level-up timeline.
+  function kpiTile(label, value, sub, valueClass, title) {
+    return `<div class="kpi"${title ? ` title="${esc(title)}"` : ''}><div class="kpi-label">${esc(label)}</div><div class="kpi-value ${valueClass || ''}">${value}</div><div class="kpi-sub">${esc(sub)}</div></div>`;
+  }
+
+  function renderProgressKpis() {
+    const host = el.progressKpis;
+    if (!host) return;
+    const g = state.grinding || {};
     if (!g.bots_tracked) {
       host.innerHTML = '<div class="empty-hint">Waiting for XP samples...</div>';
       return;
     }
-    const gainingTitle = `${g.bots_gaining_xp} of ${g.bots_tracked} bots gained XP in the last 10 min — quest turn-ins, discovery and kills all count, not just combat`;
-    host.innerHTML = `
-      <div class="role-row" style="margin-top: 0;">
-        <span class="badge badge-success" title="${esc(gainingTitle)}">${esc(g.bots_gaining_xp)}/${esc(g.bots_tracked)} GAINING XP</span>
-        <span class="badge badge-info" title="Median XP/hour over ALL tracked bots (idle included)">${esc(fmtXpRate(g.median_xp_hour))} MEDIAN</span>
-        <span class="badge badge-error" title="BOT_DEATH bot deaths per minute, last 10 min">${esc((g.deaths_per_min || 0).toFixed(1))} DEATHS/MIN (10m)</span>
-      </div>
-      <div class="comp-row" title="Share of tracked bots that died in the last 5 min (distinct bots, not death events)"><span class="comp-name">Died 5m</span><span class="comp-bar-bg"><span class="comp-bar" style="width: ${Math.round(g.pct_died_5min || 0)}%; background: #d29922;"></span></span><span class="comp-count">${Math.round(g.pct_died_5min || 0)}%</span></div>`;
+    host.innerHTML =
+      kpiTile('Gaining XP', `${esc(g.bots_gaining_xp)}/${esc(g.bots_tracked)}`, `${Math.round(g.pct_gaining_xp || 0)}% in 10 min`, 'kpi-green', 'Quest turn-ins, discovery and kills all count, not just combat') +
+      kpiTile('Median XP / hour', esc(fmtXpRate(g.median_xp_hour)), 'all tracked bots', '', 'Idle bots included') +
+      kpiTile('Total XP / hour', esc(fmtXpRate(g.total_xp_hour)), 'whole pool', '') +
+      kpiTile('Deaths / min', esc((g.deaths_per_min || 0).toFixed(1)), 'last 10 min', (g.deaths_per_min || 0) > 0 ? 'kpi-amber' : '', 'BOT_DEATH bot deaths per minute') +
+      kpiTile('Died in 5 min', `${Math.round(g.pct_died_5min || 0)}%`, 'of the pool', '', 'Distinct bots, not death events');
   }
 
-  // Progress tab: one row per level band with the band's bot count and the
-  // average equipped item level from the daemon's gear sweep, with its ratio to
-  // the band's level so "is gear keeping up?" is one glance. "–" until the
-  // first sweep covers a band.
+  // One row per level band with the band's bot count and the average equipped
+  // item level from the daemon's gear sweep, with its ratio to the band's
+  // level so "is gear keeping up?" is one glance. "–" until the first sweep
+  // covers a band.
   function renderLevelBands() {
-    const bands = document.getElementById('level-bands');
+    const bands = el.levelBands;
     if (!bands) return;
     const g = state.grinding || {};
     if (!g.bots_tracked) {
@@ -1617,14 +1636,21 @@
       <div class="comp-row"><span class="comp-name">${esc(label(b))}</span><span class="comp-bar-bg"><span class="comp-bar" style="width: ${Math.round(((b.count || 0) / max) * 100)}%; background: #2ea043;"></span></span><span class="comp-count">${b.count || 0}</span>${gear(b)}</div>`).join('');
   }
 
+  function renderProgress() {
+    renderProgressKpis();
+    renderLevelBands();
+    renderLevelTimeline();
+  }
+
   // Art-less zones (custom zones like Northwind) open a dark zone view with
   // an explanatory badge: bounds exist so dots still plot, only paint is missing.
-  function openZone(zoneId) {
+  // Leaves the profile alone when already on the map; showOnMap passes the bot
+  // so the profile stays open on the map.
+  function openZone(zoneId, botGuid) {
     state.currentZoneId = zoneId;
     setMapView('zone', zoneId);
     loadZoneMap(zoneId);
-    switchTab('map');
-    return true;
+    if (state.activeTab !== 'map' || botGuid !== undefined) go(botGuid !== undefined ? { tab: 'map', bot: botGuid } : { tab: 'map' });
   }
 
   // Server panel: effective running settings from the SERVER_INFO payload —
@@ -1783,12 +1809,12 @@
     if (!el.snapshotAgeVal) return;
     if (!state.lastSnapshotAt) {
       el.snapshotAgeVal.textContent = '–';
-      el.snapshotAgeVal.className = 'metric-big-num snapshot-offline';
+      el.snapshotAgeVal.className = 'kpi-value snapshot-offline';
       return;
     }
     const age = (Date.now() - state.lastSnapshotAt) / 1000;
     el.snapshotAgeVal.textContent = age < 10 ? `${age.toFixed(1)}s` : `${Math.round(age)}s`;
-    el.snapshotAgeVal.className = 'metric-big-num ' +
+    el.snapshotAgeVal.className = 'kpi-value ' +
       (age < 6 ? 'snapshot-fresh' : age < 10 ? 'snapshot-stale' : 'snapshot-offline');
   }
 
@@ -1807,42 +1833,24 @@
   }
 
   function setStatusPill() {
-    if (!el.statusPill) return;
+    if (!el.statusPill || !el.statusLabel) return;
     const s = state.server;
-    let cls = 'status-pill offline';
-    if (s.online && !s.stale) {
-      cls = 'status-pill online';
-    } else if (s.online) {
-      cls = 'status-pill stale';
-    }
-    el.statusPill.className = cls;
-    if (el.statusLabel) {
-      el.statusLabel.innerHTML = `Tortoise · ${esc(s.online ? (s.stale ? 'snapshot stale' : 'running') : 'offline')} · <strong id="top-bots-val">${s.bots}</strong> Bots`;
-      el.topBotsVal = document.getElementById('top-bots-val');
-    } else if (el.topBotsVal) {
-      el.topBotsVal.textContent = s.bots;
-    }
+    el.statusPill.className = `status-pill ${s.online ? (s.stale ? 'stale' : 'online') : 'offline'}`;
+    const word = s.online ? (s.stale ? 'snapshot stale' : 'running') : 'offline';
+    // While the server is offline the last counts are history, not live state.
+    el.statusLabel.innerHTML = `<span class="pill-word">${esc(word)} · </span><strong>${s.online ? s.bots : 0}</strong> bots<span class="pill-players"> · <strong>${s.online ? s.humans : 0}</strong> players</span>`;
   }
 
   function updateOverviewMetrics() {
     const s = state.server;
-    // While the server is offline the last count is history, not live state.
-    const botCount = s.online ? s.bots : 0;
-
-    if (el.playersVal) el.playersVal.textContent = s.online ? s.humans : 0;
-    if (el.metricBotsOnline) el.metricBotsOnline.textContent = botCount;
-    if (el.metricHumansOnline) el.metricHumansOnline.textContent = s.online ? s.humans : 0;
-    if (el.metricUptime) el.metricUptime.textContent = s.online ? formatUptime(s.uptime) : '0s';
-
     const diff = s.diff || 0;
-    if (el.gaugeTickVal) el.gaugeTickVal.textContent = s.online ? `${diff}ms` : '–';
-    if (el.gaugeTickBar) {
-      const pct = Math.min(1, diff / 200);
-      const circumference = 188.5;
-      el.gaugeTickBar.style.strokeDashoffset = circumference - (circumference * pct);
-      el.gaugeTickBar.style.stroke = diff > 100 ? '#f85149' : diff > 70 ? '#d29922' : '#2ea043';
+    if (el.metricBotsOnline) el.metricBotsOnline.textContent = s.online ? s.bots : 0;
+    if (el.metricHumansOnline) el.metricHumansOnline.textContent = s.online ? s.humans : 0;
+    if (el.metricUptime) el.metricUptime.textContent = s.online ? `up ${formatUptime(s.uptime)}` : 'offline';
+    if (el.metricTick) {
+      el.metricTick.textContent = s.online ? `${diff} ms` : '–';
+      el.metricTick.className = `kpi-value ${!s.online ? '' : diff > 100 ? 'kpi-red' : diff > 70 ? 'kpi-amber' : 'kpi-green'}`;
     }
-
     updateSnapshotAge();
     setStatusPill();
   }
@@ -1861,7 +1869,7 @@
     const dot = document.createElement('div');
     dot.className = 'bot-dot';
     if (issue) dot.classList.add(issue.severity === 'persistent' ? 'issue-persistent' : 'issue-watch');
-    if (b.guid === state.selectedBotGuid) dot.classList.add('selected');
+    if (b.guid === state.profileGuid) dot.classList.add('selected');
     // A corpse must not read as a live bot: the fill stays the class colour,
     // the dimming carries the state (same "dead" tone as STATE_COLORS).
     if (b.state === 'dead') dot.classList.add('corpse');
@@ -1935,7 +1943,7 @@
       const node = dotFor(e);
       if (!node) return;
       e.stopPropagation();
-      selectBot(parseInt(node.dataset.guid, 10));
+      openProfile(parseInt(node.dataset.guid, 10));
     });
   }
 
@@ -1966,11 +1974,7 @@
     }
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const zoneBots = state.bots.filter(b => {
-      if (b.zone !== state.currentZoneId || !b.projected) return false;
-      if (state.roleFilter !== 'all' && b.role !== state.roleFilter) return false;
-      return true;
-    });
+    const zoneBots = state.bots.filter(b => b.zone === state.currentZoneId && b.projected);
 
     if (state.showTrails) {
       zoneBots.forEach(b => {
@@ -1991,7 +1995,7 @@
     const issuesByGuid = issueSet();
     zoneBots.forEach(b => {
       el.mapOverlay.appendChild(makeBotDot(b, issuesByGuid[b.guid], b.pct_x, b.pct_y));
-      if (b.guid === state.selectedBotGuid) el.mapOverlay.appendChild(makeSelectRing(b.pct_x, b.pct_y));
+      if (b.guid === state.profileGuid) el.mapOverlay.appendChild(makeSelectRing(b.pct_x, b.pct_y));
     });
 
     renderMapLegend(zoneBots);
@@ -2009,255 +2013,352 @@
     ).join('');
   }
 
-  function selectBot(guid) {
-    state.selectedBotGuid = guid;
-    const b = state.bots.find(x => x.guid === guid);
-    if (!b || !el.botDrawer || !el.drawerContent) {
-      if (el.botDrawer) el.botDrawer.style.display = 'none';
-      return;
-    }
+  // ---- Bots: the one list of bots -------------------------------------------
+  // Every bot character in the database (online or offline) joined with the
+  // live roster by guid. Live telemetry wins for anything it carries; offline
+  // bots show database values (level, spec, gold) and a dash for the rest.
+  // Three column sets (Live / Progress / Activity) replace what used to be
+  // separate roster, armory and per-bot activity tables.
 
-    el.botDrawer.style.display = 'block';
-    const hpPct = b.max_hp ? Math.round((b.hp / b.max_hp) * 100) : 100;
-    const powerPct = b.max_power ? Math.round((b.power / b.max_power) * 100) : 0;
-
-    el.drawerContent.innerHTML = `
-      <div style="font-size: 1.15rem; font-weight: 700; color: #fff; margin-bottom: 4px;">${esc(b.name)}</div>
-      <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 16px;">
-        Level ${esc(b.level)} ${esc(b.class)} · <span class="badge badge-info" title="AI combat role (forced role / combat strategies / talent-gear auto-detect), not a group slot">${esc(roleLabel(b))}</span>
-      </div>
-
-      <div style="margin-bottom: 14px;">
-        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 4px;">
-          <span>Health</span><strong>${esc(b.hp)} / ${esc(b.max_hp)} (${hpPct}%)</strong>
-        </div>
-        <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${hpPct}%; background: var(--accent-green-bright);"></div></div>
-      </div>
-
-      <div style="margin-bottom: 16px;">
-        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 4px;">
-          <span>${esc(powerLabel(b))}</span><strong>${esc(b.power)} / ${esc(b.max_power)}</strong>
-        </div>
-        <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${powerPct}%; background: var(--accent-blue-bright);"></div></div>
-      </div>
-
-      ${(() => { const p = xpPct(b); return p === null ? '' : `
-      <div style="margin-bottom: 16px;">
-        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 4px;">
-          <span>XP</span><strong>${esc(b.xp)} / ${esc(b.next_xp)} (${p}%) · ${esc(fmtXpRate(b.xp_per_hour))}</strong>
-        </div>
-        <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${p}%; background: var(--accent-yellow);"></div></div>
-        <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">last gain ${esc(fmtGainAge(b.xp_gain_age_sec))}</div>
-      </div>`; })()}
-
-      <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; font-size: 0.8rem; display: flex; flex-direction: column; gap: 6px;">
-        <div><span style="color: var(--text-muted);">Status:</span> <strong>${esc(b.state)}</strong></div>
-        <div><span style="color: var(--text-muted);">Target:</span> <strong style="color: #f85149;">${esc(displayTarget(b))}${b.target_level ? ` (L${esc(b.target_level)})` : ''}</strong></div>
-        ${b.travel_purpose ? `<div><span style="color: var(--text-muted);">Travel:</span> <strong>${esc(b.travel_purpose)}</strong><span style="color: var(--text-muted);"> → ${esc(b.travel_to || '')}</span></div>` : ''}
-        <div><span style="color: var(--text-muted);">Last action:</span> <span class="mono" style="font-size: 0.75rem;">${esc(b.last_action || '-')}</span></div>
-        <div><span style="color: var(--text-muted);">Trigger:</span> <span class="mono" style="font-size: 0.75rem;">${esc(b.last_trigger || '-')}</span></div>
-        <div><span style="color: var(--text-muted);">Strategy:</span> <span class="mono" style="font-size: 0.75rem;">${esc(b.strategy || 'default')}</span></div>
-      </div>
-      ${(state.issues.active.filter(i => i.guid === b.guid).length > 0) ? `
-      <div style="margin-top: 14px;">
-        <div class="section-label" style="margin: 0 0 8px;">ACTIVE ISSUES</div>
-        ${state.issues.active.filter(i => i.guid === b.guid).map(i => `
-          <div class="issue-chip ${i.severity}">
-            <span>${esc(ISSUE_LABELS[i.type] || i.type)}</span>
-            <span class="mono">${esc(fmtDuration(i.duration_sec))}</span>
-          </div>`).join('')}
-      </div>` : ''}
-      <button class="btn" id="drawer-armory-btn" style="margin-top: 14px; width: 100%; justify-content: center;">Open Armory</button>
-    `;
-    const botName = el.drawerContent.querySelector('div');
-    if (botName) { botName.style.cursor = 'pointer'; botName.title = 'Open armory'; botName.addEventListener('click', () => openArmory(b.guid)); }
-    const armoryBtn = document.getElementById('drawer-armory-btn');
-    if (armoryBtn) armoryBtn.addEventListener('click', () => openArmory(b.guid));
+  function capClass(c) {
+    const s = String(c || '');
+    return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : '–';
   }
 
-  if (el.closeDrawer) {
-    el.closeDrawer.addEventListener('click', () => {
-      if (el.botDrawer) el.botDrawer.style.display = 'none';
-      state.selectedBotGuid = null;
+  function makeBotRow(db, live) {
+    return {
+      guid: live ? live.guid : db.guid,
+      name: live ? live.name : db.name,
+      cls: String((live && live.class) || (db ? classNameById(db.class) : '') || 'unknown').toLowerCase(),
+      level: live ? live.level : db.level,
+      spec: db ? (db.spec || '') : '',
+      money: db ? (parseInt(db.money, 10) || 0) : 0,
+      online: !!live || !!(db && db.online),
+      live,
+      db
+    };
+  }
+
+  function botRows() {
+    const liveByGuid = new Map(state.bots.map(b => [b.guid, b]));
+    const known = new Set();
+    const rows = state.roster.map(d => {
+      known.add(d.guid);
+      return makeBotRow(d, liveByGuid.get(d.guid) || null);
     });
+    state.bots.forEach(b => { if (!known.has(b.guid)) rows.push(makeBotRow(null, b)); });
+    return rows;
   }
 
-  // Roster Table
-  function populateClassFilter() {
-    if (!el.classFilter) return;
-    const classes = [...new Set(state.bots.map(b => b.class))].filter(Boolean).sort();
-    const current = state.rosterClassFilter;
-    el.classFilter.innerHTML = '<option value="all">All Classes</option>' +
-      classes.map(c => `<option value="${esc(c)}">${esc(c.charAt(0).toUpperCase() + c.slice(1))}</option>`).join('');
-    el.classFilter.value = classes.includes(current) ? current : 'all';
-    state.rosterClassFilter = el.classFilter.value;
+  const DASH = '<span class="cell-muted">–</span>';
+
+  function stateTag(s) {
+    const key = s || 'idle';
+    return `<span class="state-tag" title="${esc(STATE_TITLES[key] || key)}"><i style="background: ${STATE_COLORS[key] || '#8b949e'};"></i>${esc(key)}</span>`;
   }
 
-  function rosterSortValue(b, key) {
-    switch (key) {
-      case 'level': return b.level || 0;
-      case 'gear': return b.gear ? b.gear.item_level : -1;
-      case 'xp': return (b.next_xp ? (b.xp || 0) / b.next_xp : -1);
-      case 'hp': return b.max_hp ? b.hp / b.max_hp : 0;
-      case 'power': return b.max_power ? b.power / b.max_power : 0;
-      case 'class': return (b.class || '').toLowerCase();
-      case 'role': return (b.role || '').toLowerCase();
-      case 'state': return (b.state || '').toLowerCase();
-      case 'zone': return getZoneName(b.zone, b.map).toLowerCase();
-      case 'quests': return (b.activity && b.activity.quests_rewarded) || 0;
-      case 'loot': return (b.activity && b.activity.loot_items) || 0;
-      default: return (b.name || '').toLowerCase();
-    }
+  // Compact bar cell: caption above a thin bar.
+  function barCell(text, pct, color, title) {
+    return `<div class="cell-bar"${title ? ` title="${esc(title)}"` : ''}><div class="cell-bar-text">${esc(text)}</div><div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${pct}%; background: ${color};"></div></div></div>`;
   }
 
-  // Roster gear cell: the daemon's swept average equipped item level, with the
-  // quality split in the tooltip ("–" until the first sweep covers the bot).
+  // Swept average equipped item level, with the quality split in the tooltip
+  // ("–" until the first sweep covers the bot).
   function gearCell(b) {
-    const g = b.gear;
-    if (!g) return '<span style="color: var(--text-muted);">–</span>';
+    const g = b && b.gear;
+    if (!g) return DASH;
     const title = `${g.pieces} equipped pieces · ${g.grey} grey / ${g.white} white / ${g.green} green / ${g.blue} blue / ${g.epic} epic`;
-    return `<span title="${esc(title)}">${esc(g.item_level.toFixed(1))}</span>`;
+    return `<span class="mono" title="${esc(title)}">${esc(g.item_level.toFixed(1))}</span>`;
   }
 
-  // Sortable headers are click-only in the markup; make them keyboard
-  // operable too (index.html sets tabindex="0") with Enter/Space.
-  function onSortableActivate(th, handler) {
-    th.addEventListener('click', handler);
-    th.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
-        e.preventDefault();
-        handler();
+  // Counter cell for the Activity view (session counters; offline bots have none).
+  const actNum = (key) => ({
+    sort: r => (r.live && r.live.activity ? r.live.activity[key] || 0 : -1),
+    cell: r => (r.live && r.live.activity ? `<span class="mono">${esc(r.live.activity[key] || 0)}</span>` : DASH)
+  });
+
+  const BOT_COLS = {
+    name: {
+      label: 'Name',
+      sort: r => r.name.toLowerCase(),
+      cell: (r, ctx) => {
+        const issue = ctx.issues[r.guid];
+        const badge = issue
+          ? ` <span class="badge ${issue.severity === 'persistent' ? 'badge-error' : 'badge-warn'}" title="${esc(ISSUE_LABELS[issue.type] || issue.type)}">${esc(fmtDuration(issue.duration_sec))}</span>`
+          : '';
+        return `<a class="bot-name bot-link" style="color: ${classColor(r.cls)};" href="${esc(routeHash({ tab: 'roster', bot: r.guid, ptab: state.profileTab }))}">${esc(r.name)}</a>${badge}`;
       }
-    });
-  }
+    },
+    class: {
+      label: 'Class',
+      sort: r => `${r.cls} ${r.spec}`.toLowerCase(),
+      cell: r => `${esc(capClass(r.cls))}${r.spec ? ` <span class="cell-muted">${esc(r.spec)}</span>` : ''}`
+    },
+    level: { label: 'Lvl', sort: r => r.level || 0, cell: r => esc(r.level) },
+    state: {
+      label: 'Status',
+      title: 'Live state from telemetry',
+      sort: r => (r.live ? r.live.state || 'idle' : 'zzz'),
+      cell: r => (r.live ? stateTag(r.live.state) : `<span class="cell-muted">${r.online ? '–' : 'offline'}</span>`)
+    },
+    hp: {
+      label: 'Health',
+      sort: r => (r.live && r.live.max_hp ? r.live.hp / r.live.max_hp : -1),
+      cell: r => {
+        const b = r.live;
+        if (!b) return DASH;
+        const pct = b.max_hp ? Math.min(100, Math.round((b.hp / b.max_hp) * 100)) : 100;
+        return barCell(`${b.hp}/${b.max_hp} · ${pct}%`, pct, pct < 35 ? 'var(--accent-red)' : 'var(--accent-green-bright)');
+      }
+    },
+    power: {
+      label: 'Power',
+      sort: r => (r.live && r.live.max_power ? r.live.power / r.live.max_power : -1),
+      cell: r => {
+        const b = r.live;
+        if (!b) return DASH;
+        const pct = b.max_power ? Math.min(100, Math.round((b.power / b.max_power) * 100)) : 0;
+        const color = b.power_type === 'rage' ? '#f85149' : b.power_type === 'energy' ? '#e3b341' : 'var(--accent-blue-bright)';
+        return barCell(`${powerLabel(b)} ${b.power}/${b.max_power}`, pct, color);
+      }
+    },
+    target: {
+      label: 'Target',
+      sort: r => (r.live ? displayTarget(r.live).toLowerCase() : ''),
+      cell: r => (r.live && r.live.target
+        ? `<span class="target-cell">${esc(displayTarget(r.live))}</span>${r.live.target_level ? ` <span class="cell-muted">L${esc(r.live.target_level)}</span>` : ''}`
+        : DASH)
+    },
+    zone: {
+      label: 'Zone',
+      sort: r => (r.live ? getZoneName(r.live.zone, r.live.map).toLowerCase() : ''),
+      cell: r => (r.live ? `<span class="mono">${esc(getZoneName(r.live.zone, r.live.map))}</span>` : DASH)
+    },
+    xp: {
+      label: 'XP',
+      title: 'Progress into the current level, XP per hour and the age of the last gain (live bots)',
+      sort: r => (r.live && r.live.next_xp ? (r.live.xp || 0) / r.live.next_xp : -1),
+      cell: r => {
+        const b = r.live;
+        const pct = b ? xpPct(b) : null;
+        if (pct === null) return DASH;
+        const rate = fmtXpRate(b.xp_per_hour);
+        return barCell(`${pct}% · ${rate}`, pct, 'var(--accent-yellow)', `${b.xp}/${b.next_xp} XP · ${rate} · last gain ${fmtGainAge(b.xp_gain_age_sec)}`);
+      }
+    },
+    gear: {
+      label: 'Gear',
+      title: 'Average item level of equipped gear (shirt and tabard excluded)',
+      sort: r => (r.live && r.live.gear ? r.live.gear.item_level : -1),
+      cell: r => gearCell(r.live)
+    },
+    gold: { label: 'Gold', sort: r => r.money, cell: r => (r.db ? `<span class="mono">${formatMoney(r.money)}</span>` : DASH) },
+    quests: Object.assign({ label: 'Quests', title: 'Quest rewards this game-server session' }, actNum('quests_rewarded')),
+    loot: Object.assign({ label: 'Loot', title: 'Looted items this session' }, actNum('loot_items')),
+    notable: Object.assign({ label: 'Notable', title: 'Green or better loot' }, actNum('notable_loot')),
+    kills: Object.assign({ label: 'Kills' }, actNum('kills')),
+    deaths: Object.assign({ label: 'Deaths' }, actNum('deaths')),
+    money: {
+      label: 'Money +/-',
+      title: 'Copper earned / spent this session',
+      sort: r => (r.live && r.live.activity ? r.live.activity.money_earned || 0 : -1),
+      cell: r => {
+        const a = r.live && r.live.activity;
+        return a ? `<span class="mono" style="font-size: 0.74rem;">+${formatMoney(a.money_earned)}<br>-${formatMoney(a.money_spent)}</span>` : DASH;
+      }
+    },
+    vendors: Object.assign({ label: 'Vendors' }, actNum('vendor_visits')),
+    repairs: Object.assign({ label: 'Repairs' }, actNum('repairs')),
+    giveups: Object.assign({ label: 'Give-ups', title: 'Targets or goals the bot abandoned' }, actNum('giveups')),
+    gather: {
+      label: 'Gather/Skin',
+      sort: r => (r.live && r.live.activity ? (r.live.activity.gathering || 0) + (r.live.activity.skinning || 0) : -1),
+      cell: r => {
+        const a = r.live && r.live.activity;
+        return a ? `<span class="mono">${esc(a.gathering || 0)}/${esc(a.skinning || 0)}</span>` : DASH;
+      }
+    },
+    ah: {
+      label: 'AH',
+      title: 'Auction listings / bids',
+      sort: r => (r.live && r.live.activity ? (r.live.activity.ah_listings || 0) + (r.live.activity.ah_bids || 0) : -1),
+      cell: r => {
+        const a = r.live && r.live.activity;
+        return a ? `<span class="mono">${esc(a.ah_listings || 0)}/${esc(a.ah_bids || 0)}</span>` : DASH;
+      }
+    }
+  };
 
-  function updateRosterSortIndicators() {
-    document.querySelectorAll('#tab-roster th.sortable').forEach(th => {
-      th.classList.toggle('sort-active', th.dataset.sort === state.rosterSort.key);
-      const base = th.textContent.replace(/[ ▲▼]+$/, '');
-      const arrow = th.dataset.sort === state.rosterSort.key ? (state.rosterSort.dir > 0 ? ' ▲' : ' ▼') : '';
-      th.textContent = base + arrow;
-    });
+  const BOT_VIEWS = {
+    live: ['name', 'class', 'level', 'state', 'hp', 'power', 'target', 'zone'],
+    progress: ['name', 'class', 'level', 'xp', 'gear', 'gold'],
+    activity: ['name', 'class', 'level', 'quests', 'loot', 'notable', 'kills', 'deaths', 'money', 'vendors', 'repairs', 'giveups', 'gather', 'ah']
+  };
+
+  function renderBotChips(base, issues, stateOk, classOk) {
+    const chip = (kind, value, label, count, dot, active, extra) =>
+      `<button class="chip${active ? ' active' : ''}${extra || ''}" data-kind="${kind}" data-v="${esc(value)}">${dot ? `<i style="background: ${dot};"></i>` : ''}${esc(label)} <b>${count}</b></button>`;
+
+    const forStates = base.filter(classOk);
+    const stateCount = {};
+    forStates.forEach(r => { if (r.live) { const k = r.live.state || 'idle'; stateCount[k] = (stateCount[k] || 0) + 1; } });
+    const withIssues = base.filter(r => issues[r.guid]).length;
+    el.stateChips.innerHTML =
+      chip('state', 'all', 'Any state', forStates.length, '', state.botsState === 'all') +
+      STATE_ORDER.filter(k => stateCount[k] || state.botsState === k)
+        .map(k => chip('state', k, k[0].toUpperCase() + k.slice(1), stateCount[k] || 0, STATE_COLORS[k], state.botsState === k)).join('') +
+      (withIssues || state.botsIssueOnly ? chip('issues', '1', 'With issues', withIssues, '#f85149', state.botsIssueOnly, ' chip-warn') : '');
+
+    const forClasses = base.filter(stateOk);
+    const classCount = {};
+    forClasses.forEach(r => { classCount[r.cls] = (classCount[r.cls] || 0) + 1; });
+    el.classChips.innerHTML =
+      chip('class', 'all', 'All classes', forClasses.length, '', state.botsClass === 'all') +
+      Object.entries(classCount).sort((a, b) => b[1] - a[1])
+        .map(([c, n]) => chip('class', c, capClass(c), n, classColor(c), state.botsClass === c)).join('');
   }
 
   function renderRoster() {
     if (!el.rosterTable) return;
+    paintSeg(el.presenceSeg, state.botsPresence);
+    paintSeg(el.viewSeg, state.botsView);
+
+    const rows = botRows();
+    const issues = issueSet();
     const query = (el.botSearch ? el.botSearch.value : '').toLowerCase().trim();
-    const issuesByGuid = issueSet();
+    const presenceOk = r => state.botsPresence === 'all' || (state.botsPresence === 'online') === r.online;
+    const queryOk = r => !query || r.name.toLowerCase().includes(query) || r.cls.includes(query) || r.spec.toLowerCase().includes(query);
+    const stateOk = r => state.botsState === 'all' || (r.live && (r.live.state || 'idle') === state.botsState);
+    const classOk = r => state.botsClass === 'all' || r.cls === state.botsClass;
+    const issueOk = r => !state.botsIssueOnly || !!issues[r.guid];
 
-    const filtered = state.bots.filter(b => {
-      if (state.roleFilter !== 'all' && b.role !== state.roleFilter) return false;
-      if (state.rosterClassFilter !== 'all' && b.class !== state.rosterClassFilter) return false;
-      if (state.rosterStatusFilter !== 'all' && b.state !== state.rosterStatusFilter) return false;
-      if (state.rosterIssueOnly && !issuesByGuid[b.guid]) return false;
-      if (query && !String(b.name || '').toLowerCase().includes(query) && !String(b.class || '').toLowerCase().includes(query)) return false;
-      return true;
-    });
+    const base = rows.filter(r => presenceOk(r) && queryOk(r));
+    renderBotChips(base, issues, stateOk, classOk);
+    const list = base.filter(r => stateOk(r) && classOk(r) && issueOk(r));
 
-    const key = state.rosterSort.key;
-    const dir = state.rosterSort.dir;
-    filtered.sort((a, b) => {
-      const av = rosterSortValue(a, key), bv = rosterSortValue(b, key);
+    const cols = BOT_VIEWS[state.botsView] || BOT_VIEWS.live;
+    const sortKey = cols.includes(state.botsSort.key) ? state.botsSort.key : null;
+    const dir = state.botsSort.dir;
+    const sortFn = sortKey ? BOT_COLS[sortKey].sort : r => 0;
+    list.sort((a, b) => {
+      if (!sortKey && a.online !== b.online) return a.online ? -1 : 1;
+      const av = sortFn(a), bv = sortFn(b);
       if (av < bv) return -1 * dir;
       if (av > bv) return 1 * dir;
-      return String(a.name || '').localeCompare(String(b.name || ''));
+      return a.name.localeCompare(b.name);
     });
 
-    if (el.rosterCount) el.rosterCount.textContent = `· ${filtered.length}/${state.bots.length}`;
-    updateRosterSortIndicators();
-
-    if (filtered.length === 0) {
-      el.rosterTable.innerHTML = `<tr><td colspan="13" style="text-align: center; color: var(--text-muted); padding: 24px;">No matching bots.</td></tr>`;
-      return;
+    const online = rows.filter(r => r.online).length;
+    if (el.rosterCount) el.rosterCount.textContent = `${list.length === rows.length ? rows.length : `${list.length} of ${rows.length}`} bots`;
+    if (el.rosterNote) {
+      el.rosterNote.textContent = `${online} online · ${rows.length - online} offline` +
+        (state.rosterError ? ' · offline bots unavailable (database list failed)' : '');
     }
 
-    el.rosterTable.innerHTML = '';
-    filtered.forEach(b => {
-      const tr = document.createElement('tr');
-      const hpPct = b.max_hp ? Math.round((b.hp / b.max_hp) * 100) : 100;
-      const powerPct = b.max_power ? Math.round((b.power / b.max_power) * 100) : 0;
-      const roleBadge = roleBadgeClass(b.role);
-      const issue = issuesByGuid[b.guid];
-      const issueBadge = issue
-        ? ` <span class="badge ${issue.severity === 'persistent' ? 'badge-error' : 'badge-warn'}" title="${esc(ISSUE_LABELS[issue.type] || issue.type)}">${esc(fmtDuration(issue.duration_sec))}</span>`
-        : '';
+    el.rosterHead.innerHTML = '<tr>' + cols.map(k => {
+      const c = BOT_COLS[k];
+      const active = k === sortKey;
+      return `<th class="sortable${active ? ' sort-active' : ''}" tabindex="0" data-sort="${k}"${c.title ? ` title="${esc(c.title)}"` : ''}>${esc(c.label)}${active ? (dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
+    }).join('') + '</tr>';
 
-      tr.innerHTML = `
-        <td style="font-weight: 600; cursor: pointer; color: #58a6ff;" data-guid="${esc(b.guid)}" title="Show on map">${esc(b.name)}${issueBadge}</td>
-        <td>${esc(b.class)}</td>
-        <td><span class="badge ${roleBadge}" title="AI combat role (forced role / combat strategies / talent-gear auto-detect), not a group slot">${esc(roleLabel(b))}</span></td>
-        <td>${esc(b.level)}</td>
-        <td class="mono">${gearCell(b)}</td>
-        <td class="roster-bar-cell" style="width: 150px;">${xpCell(b)}</td>
-        <td class="roster-bar-cell" style="width: 130px;">
-          <div style="font-size: 0.7rem; margin-bottom: 2px;">${esc(b.hp)}/${esc(b.max_hp)} (${hpPct}%)</div>
-          <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${hpPct}%; background: var(--accent-green-bright);"></div></div>
-        </td>
-        <td class="roster-bar-cell" style="width: 140px;">
-          <div style="font-size: 0.7rem; margin-bottom: 2px;">${esc(powerLabel(b))} ${esc(b.power)}/${esc(b.max_power)} (${powerPct}%)</div>
-          <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${powerPct}%; background: var(--accent-blue-bright);"></div></div>
-        </td>
-        <td><span class="badge ${stateBadgeClass(b.state)}">${esc(b.state || 'idle')}</span></td>
-        <td class="mono">${b.activity ? esc(b.activity.quests_rewarded || 0) : '<span style="color: var(--text-muted);">–</span>'}</td>
-        <td class="mono">${b.activity ? esc(b.activity.loot_items || 0) : '<span style="color: var(--text-muted);">–</span>'}</td>
-        <td style="color: #f85149;">${esc(displayTarget(b))}${b.target_level ? ` <span style="color: var(--text-muted);">L${esc(b.target_level)}</span>` : ''}</td>
-        <td class="mono" style="font-size: 0.8rem;">${esc(getZoneName(b.zone, b.map))}</td>
-      `;
-      tr.querySelector('td[data-guid]').addEventListener('click', () => focusBot(b.guid));
-      el.rosterTable.appendChild(tr);
-    });
+    if (!list.length) {
+      el.rosterTable.innerHTML = `<tr><td colspan="${cols.length}" class="table-empty">${rows.length ? 'No bots match these filters.' : 'Waiting for bots…'}</td></tr>`;
+      return;
+    }
+    const ctx = { issues };
+    el.rosterTable.innerHTML = list.map(r =>
+      `<tr class="row-link${r.online ? '' : ' row-offline'}${r.guid === state.profileGuid ? ' row-selected' : ''}" data-guid="${esc(r.guid)}">${cols.map(k => `<td>${BOT_COLS[k].cell(r, ctx)}</td>`).join('')}</tr>`
+    ).join('');
   }
 
-  if (el.botSearch) {
-    el.botSearch.addEventListener('input', () => renderRoster());
+  function renderBotsTab() {
+    renderRoster();
   }
 
-  if (el.roleFilter) {
-    el.roleFilter.addEventListener('change', (e) => {
-      state.roleFilter = e.target.value;
-      renderRoster();
-      renderMap();
-    });
+  // Offline bots come from the database; refreshed on Bots activation, by the
+  // Refresh button and once a minute (it is one indexed query, never per tick).
+  let rosterInflight = false;
+  function fetchRoster() {
+    if (rosterInflight) return;
+    rosterInflight = true;
+    fetch('/api/v1/armory/bots')
+      .then(jsonOrThrow)
+      .then(bots => {
+        if (!Array.isArray(bots)) throw new Error('bad payload');
+        state.roster = bots;
+        state.rosterAt = Date.now();
+        state.rosterError = false;
+      })
+      .catch(() => { state.rosterError = true; })
+      .finally(() => {
+        rosterInflight = false;
+        if (state.activeTab === 'roster') renderRoster();
+      });
   }
 
-  if (el.classFilter) {
-    el.classFilter.addEventListener('change', (e) => {
-      state.rosterClassFilter = e.target.value;
+  function initBots() {
+    const saved = (() => { try { return localStorage.getItem(BOTS_VIEW_STORAGE_KEY); } catch (e) { return null; } })();
+    if (saved && BOT_VIEWS[saved]) state.botsView = saved;
+
+    if (el.botSearch) el.botSearch.addEventListener('input', renderRoster);
+    bindSeg(el.presenceSeg, v => { state.botsPresence = v; renderRoster(); });
+    bindSeg(el.viewSeg, v => {
+      state.botsView = v;
+      try { localStorage.setItem(BOTS_VIEW_STORAGE_KEY, v); } catch (e) {}
       renderRoster();
     });
-  }
 
-  if (el.statusFilter) {
-    el.statusFilter.addEventListener('change', (e) => {
-      state.rosterStatusFilter = e.target.value;
+    const onChip = (e) => {
+      const btn = e.target.closest('.chip[data-kind]');
+      if (!btn) return;
+      const v = btn.dataset.v;
+      if (btn.dataset.kind === 'state') state.botsState = state.botsState === v ? 'all' : v;
+      else if (btn.dataset.kind === 'class') state.botsClass = state.botsClass === v ? 'all' : v;
+      else state.botsIssueOnly = !state.botsIssueOnly;
       renderRoster();
-    });
-  }
+    };
+    el.stateChips.addEventListener('click', onChip);
+    el.classChips.addEventListener('click', onChip);
 
-  if (el.issueOnlyFilter) {
-    el.issueOnlyFilter.addEventListener('change', (e) => {
-      state.rosterIssueOnly = e.target.checked;
-      renderRoster();
-    });
-  }
-
-  document.querySelectorAll('#tab-roster th.sortable').forEach(th => {
-    onSortableActivate(th, () => {
+    const sortBy = (th) => {
       const key = th.dataset.sort;
-      if (state.rosterSort.key === key) {
-        state.rosterSort.dir *= -1;
-      } else {
-        state.rosterSort.key = key;
-        state.rosterSort.dir = 1;
-      }
+      if (state.botsSort.key === key) state.botsSort.dir *= -1;
+      else state.botsSort = { key, dir: 1 };
       renderRoster();
+    };
+    el.rosterHead.addEventListener('click', e => { const th = e.target.closest('th.sortable'); if (th) sortBy(th); });
+    el.rosterHead.addEventListener('keydown', e => {
+      const th = e.target.closest('th.sortable');
+      if (th && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); sortBy(th); }
     });
-  });
 
-  // ---- Bot Activity / Progress ------------------------------------------
-  // Per-bot progress from the activity daemon. state.activity comes from the
-  // 30s GET /api/v1/activity poll; the loot/quest feeds re-fetch only while
-  // the Activity tab is visible or when their filters change.
+    // The name link navigates by itself (so ctrl-click works); any other cell
+    // of the row opens the profile too.
+    el.rosterTable.addEventListener('click', e => {
+      if (e.target.closest('a')) return;
+      const tr = e.target.closest('tr[data-guid]');
+      if (tr && !window.getSelection().toString()) openProfile(parseInt(tr.dataset.guid, 10));
+    });
+
+    // Overview shortcuts: a state row lists those bots, an issue row opens its bot.
+    if (el.activityPanel) {
+      el.activityPanel.addEventListener('click', e => {
+        const row = e.target.closest('[data-state]');
+        if (!row) return;
+        state.botsState = row.dataset.state;
+        state.botsPresence = 'online';
+        state.botsClass = 'all';
+        state.botsIssueOnly = false;
+        go({ tab: 'roster' });
+      });
+    }
+    if (el.fleetHealth) {
+      el.fleetHealth.addEventListener('click', e => {
+        const row = e.target.closest('[data-guid]');
+        if (row) openProfile(parseInt(row.dataset.guid, 10));
+      });
+    }
+  }
 
   function fmtClock(ts) {
     if (!ts) return '–';
@@ -2303,72 +2404,86 @@
     return `Counters cover the current game-server session${start}. They are kept across a dashboard restart and reset when the game server restarts.`;
   }
 
-  function activityCard(label, valueHtml) {
-    return `<div class="telemetry-card metric-stat"><div class="metric-big-num" style="font-size: 1.5rem;">${valueHtml}</div><div class="metric-label">${esc(label)}</div></div>`;
+  function botLink(guid, name, cls) {
+    return `<a class="bot-link"${cls ? ` style="color: ${classColor(cls)};"` : ''} href="${esc(routeHash({ tab: state.activeTab, bot: guid, ptab: state.profileTab }))}">${esc(name)}</a>`;
   }
 
-  // Activity tab counters: what bots did (quests, kills, deaths, gathering,
-  // trainers, give-ups). The money/vendor/AH half lives on the Economy tab.
+  function statGroup(title, rows) {
+    return `<div class="stat-group"><h3>${esc(title)}</h3>${rows.map(([label, value, hint]) =>
+      `<div class="stat-row"${hint ? ` title="${esc(hint)}"` : ''}><span>${esc(label)}</span><strong>${value}</strong></div>`).join('')}</div>`;
+  }
+
+  // Activity counters, grouped by theme: what bots did (quests, combat, loot,
+  // gathering) and the money loop (earned/spent, vendors, repairs, auction
+  // house). Per-bot numbers live in the Bots list (Activity columns).
   function renderActivityMetrics() {
-    if (!el.activityMetrics) return;
+    const host = el.activityMetrics;
+    if (!host) return;
     const summary = state.activity && state.activity.summary;
     const c = summary && summary.counters;
     if (!c) {
-      el.activityMetrics.innerHTML = '<div class="empty-hint">Waiting for activity data...</div>';
+      host.innerHTML = '<div class="empty-hint">Waiting for activity data...</div>';
       return;
     }
     const num = v => esc(v || 0);
-    const win = counterWindowTitle();
-    if (el.activityWindow) el.activityWindow.textContent = `POOL COUNTERS · ${counterWindow().toUpperCase()} · ALL TRACKED BOTS`;
-    // Each card carries the window in its tooltip as well; the header states
-    // it once for the row.
-    el.activityMetrics.title = win;
-    el.activityMetrics.innerHTML =
-      activityCard('Quests rewarded', num(c.quests_rewarded)) +
-      activityCard('Hand-ins', num(c.quest_handins)) +
-      activityCard('Finished, not handed in', num(c.open_quests)) +
-      activityCard('Kills', num(c.kills)) +
-      activityCard('Deaths', num(c.deaths)) +
-      activityCard('Ghost time', esc(fmtDuration(c.ghost_seconds))) +
-      activityCard('Loot items', num(c.loot_items)) +
-      activityCard('Gathering', num(c.gathering)) +
-      activityCard('Skinning', num(c.skinning)) +
-      activityCard('Skill-ups', num(c.skillups)) +
-      activityCard('Trainers', num(c.trainer_visits)) +
-      activityCard('Spells', num(c.spells_learned)) +
-      activityCard('Give-ups', num(c.giveups));
-    if (el.activityCount) el.activityCount.textContent = `· ${summary.bots_tracked || 0} tracked · ${counterWindow()}`;
+    if (el.activityWindow) el.activityWindow.textContent = `POOL COUNTERS · ${counterWindow().toUpperCase()} · ${summary.bots_tracked || 0} TRACKED BOTS`;
+    host.title = counterWindowTitle();
+    host.innerHTML =
+      statGroup('Quests', [
+        ['Rewarded', num(c.quests_rewarded)],
+        ['Hand-ins', num(c.quest_handins)],
+        ['Finished, not handed in', num(c.open_quests)]
+      ]) +
+      statGroup('Combat', [
+        ['Kills', num(c.kills)],
+        ['Deaths', num(c.deaths)],
+        ['Ghost time', esc(fmtDuration(c.ghost_seconds))],
+        ['Give-ups', num(c.giveups)]
+      ]) +
+      statGroup('Loot & gathering', [
+        ['Loot items', num(c.loot_items)],
+        ['Notable loot', num(c.notable_loot), 'Green or better'],
+        ['Gathering', num(c.gathering)],
+        ['Skinning', num(c.skinning)],
+        ['Skill-ups', num(c.skillups)]
+      ]) +
+      statGroup('Money', [
+        ['Earned', formatMoney(c.money_earned)],
+        ['Spent', formatMoney(c.money_spent)],
+        ['Sold', `${num(c.items_sold)} · ${formatMoney(c.sold_value)}`],
+        ['Bought', `${num(c.items_bought)} · ${formatMoney(c.bought_value)}`]
+      ]) +
+      statGroup('Services', [
+        ['Vendor visits', num(c.vendor_visits)],
+        ['Repairs', `${num(c.repairs)} · ${formatMoney(c.repair_cost)}`],
+        ['Trainer visits', num(c.trainer_visits)],
+        ['Spells learned', num(c.spells_learned)],
+        ['AH listings / bids', `${num(c.ah_listings)} / ${num(c.ah_bids)}`]
+      ]);
   }
 
-  // Economy counters: the money loop (earned/spent, sold/bought), vendor and
-  // repair traffic and the auction house — the pool-level view of "does the
-  // commerce loop close?".
-  function renderEconomyMetrics() {
-    if (!el.economyMetrics) return;
-    const summary = state.activity && state.activity.summary;
-    const c = summary && summary.counters;
-    if (!c) {
-      el.economyMetrics.innerHTML = '<div class="empty-hint">Waiting for activity data...</div>';
-      return;
-    }
-    const num = v => esc(v || 0);
-    if (el.economyWindow) el.economyWindow.textContent = `POOL ECONOMY · ${counterWindow().toUpperCase()} · ALL TRACKED BOTS`;
-    el.economyMetrics.title = counterWindowTitle();
-    el.economyMetrics.innerHTML =
-      activityCard('Money earned', formatMoney(c.money_earned)) +
-      activityCard('Money spent', formatMoney(c.money_spent)) +
-      activityCard('Sold', `${num(c.items_sold)} · ${formatMoney(c.sold_value)}`) +
-      activityCard('Bought', `${num(c.items_bought)} · ${formatMoney(c.bought_value)}`) +
-      activityCard('Notable loot', num(c.notable_loot)) +
-      activityCard('Vendors', num(c.vendor_visits)) +
-      activityCard('Repairs', `${num(c.repairs)} · ${formatMoney(c.repair_cost)}`) +
-      activityCard('AH listings', num(c.ah_listings)) +
-      activityCard('AH bids', num(c.ah_bids));
-  }
+  // Friendly names for the raw quest event ids the emitter forwards.
+  const QUEST_EVENT_LABELS = {
+    QuestRewarded: 'Rewarded', AcceptQuestAction: 'Accepted', QuestCompleted: 'Completed',
+    QuestUpdateCompleteAction: 'Completed', QuestDropped: 'Dropped', TalkToQuestGiverAction: 'Hand-in'
+  };
+  const questEventLabel = e => QUEST_EVENT_LABELS[e] || e || 'quest';
 
   function classLevelCell(cls, level) {
-    const name = cls ? String(cls).charAt(0).toUpperCase() + String(cls).slice(1) : '–';
-    return `${esc(name)} <span style="color: var(--text-muted);">L${esc(level)}</span>`;
+    return `${esc(capClass(cls))} <span class="cell-muted">L${esc(level)}</span>`;
+  }
+
+  // Feeds: one panel, three views (quests / loot / live console).
+  function showFeed(view) {
+    state.feedView = view;
+    paintSeg(el.feedSeg, view);
+    document.querySelectorAll('[data-feed]').forEach(n => { n.hidden = n.dataset.feed !== view; });
+    fetchFeed();
+  }
+
+  function fetchFeed() {
+    if (state.feedView === 'quests') fetchQuestFeed();
+    else if (state.feedView === 'loot') fetchLootFeed();
   }
 
   function lootFeedParams() {
@@ -2381,7 +2496,7 @@
   }
 
   function fetchLootFeed() {
-    if (!el.lootTable || state.activeTab !== 'economy') return;
+    if (!el.lootTable || state.activeTab !== 'activity' || state.feedView !== 'loot') return;
     fetch(`/api/v1/activity/loot?${lootFeedParams()}`)
       .then(jsonOrThrow)
       .then(rows => {
@@ -2391,36 +2506,31 @@
       .catch(() => {});
   }
 
+  function lootItemCell(r) {
+    if (r.source === 'money') return `<span class="mono">${formatMoney(r.money)}</span>`;
+    const q = Number(r.quality) || 0;
+    return `<span class="quality-text-${q}" title="${esc(qualityName(q))}">${esc(r.item || 'Item')}</span>${r.value ? ` <span class="mono cell-muted">(${formatMoney(r.value)})</span>` : ''}`;
+  }
+
   function renderLootFeed() {
     if (!el.lootTable) return;
     const rows = state.lootFeed || [];
     if (!rows.length) {
-      el.lootTable.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">No loot rows match.</td></tr>`;
+      el.lootTable.innerHTML = '<tr><td colspan="6" class="table-empty">No loot rows match.</td></tr>';
       return;
     }
-    el.lootTable.innerHTML = '';
-    rows.forEach(r => {
-      const tr = document.createElement('tr');
-      const q = Number(r.quality) || 0;
-      const itemCell = r.source === 'money'
-        ? `<span class="mono">${formatMoney(r.money)}</span>`
-        : `<span class="quality-text-${q}" title="${esc(qualityName(q))}">${esc(r.item || 'Item')}</span>${r.value ? ` <span class="mono" style="color: var(--text-muted);">(${formatMoney(r.value)})</span>` : ''}`;
-      tr.innerHTML = `
-        <td class="mono" style="font-size: 0.75rem; color: var(--text-muted);">${esc(feedClock(r))}</td>
-        <td style="font-weight: 600; cursor: pointer; color: #58a6ff;" data-guid="${esc(r.guid)}">${esc(r.bot)}</td>
-        <td>${classLevelCell(r.class, r.level)}</td>
-        <td><span class="badge badge-info">${esc(r.source || '-')}</span></td>
-        <td>${itemCell}</td>
-        <td class="mono" style="font-size: 0.8rem;">${esc(getZoneName(r.zone, r.map))}</td>
-      `;
-      const cell = tr.querySelector('td[data-guid]');
-      if (cell) cell.addEventListener('click', () => focusBot(r.guid));
-      el.lootTable.appendChild(tr);
-    });
+    el.lootTable.innerHTML = rows.map(r => `<tr>
+      <td class="mono cell-time">${esc(feedClock(r))}</td>
+      <td>${botLink(r.guid, r.bot, r.class)}</td>
+      <td>${classLevelCell(r.class, r.level)}</td>
+      <td><span class="badge badge-info">${esc(r.source || '-')}</span></td>
+      <td>${lootItemCell(r)}</td>
+      <td class="mono">${esc(getZoneName(r.zone, r.map))}</td>
+    </tr>`).join('');
   }
 
   function fetchQuestFeed() {
-    if (!el.questsTable || state.activeTab !== 'activity') return;
+    if (!el.questsTable || state.activeTab !== 'activity' || state.feedView !== 'quests') return;
     const parts = ['limit=200'];
     if (el.questBotSearch && el.questBotSearch.value.trim()) parts.push(`bot=${encodeURIComponent(el.questBotSearch.value.trim())}`);
     fetch(`/api/v1/activity/quests?${parts.join('&')}`)
@@ -2436,106 +2546,39 @@
     if (!el.questsTable) return;
     const rows = state.questFeed || [];
     if (!rows.length) {
-      el.questsTable.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">No quest events match.</td></tr>`;
+      el.questsTable.innerHTML = '<tr><td colspan="5" class="table-empty">No quest events match.</td></tr>';
       return;
     }
-    el.questsTable.innerHTML = '';
-    rows.forEach(r => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="mono" style="font-size: 0.75rem; color: var(--text-muted);">${esc(feedClock(r))}</td>
-        <td style="font-weight: 600; cursor: pointer; color: #58a6ff;" data-guid="${esc(r.guid)}">${esc(r.bot)}</td>
-        <td>${classLevelCell(r.class, r.level)}</td>
-        <td><span class="badge badge-info">${esc(r.event || '-')}</span></td>
-        <td>${esc(r.quest || '-')}${r.quest_id ? ` <span class="mono" style="color: var(--text-muted);">#${esc(r.quest_id)}</span>` : ''}</td>
-      `;
-      const cell = tr.querySelector('td[data-guid]');
-      if (cell) cell.addEventListener('click', () => focusBot(r.guid));
-      el.questsTable.appendChild(tr);
-    });
+    el.questsTable.innerHTML = rows.map(r => `<tr>
+      <td class="mono cell-time">${esc(feedClock(r))}</td>
+      <td>${botLink(r.guid, r.bot, r.class)}</td>
+      <td>${classLevelCell(r.class, r.level)}</td>
+      <td><span class="badge badge-info">${esc(questEventLabel(r.event))}</span></td>
+      <td>${esc(r.quest || '-')}${r.quest_id ? ` <span class="mono cell-muted">#${esc(r.quest_id)}</span>` : ''}</td>
+    </tr>`).join('');
   }
 
-  function renderActivityTable() {
-    if (!el.activityTable) return;
-    const bots = (state.activity && Array.isArray(state.activity.bots)) ? state.activity.bots.slice() : [];
-    if (!bots.length) {
-      el.activityTable.innerHTML = `<tr><td colspan="15" style="text-align: center; color: var(--text-muted); padding: 24px;">No per-bot activity yet.</td></tr>`;
-      return;
-    }
-    bots.sort((x, y) => (((y.activity || {}).loot_items) || 0) - (((x.activity || {}).loot_items) || 0));
-    el.activityTable.innerHTML = '';
-    bots.forEach(b => {
-      const a = b.activity || {};
-      const tr = document.createElement('tr');
-      const cls = b.class ? String(b.class).charAt(0).toUpperCase() + String(b.class).slice(1) : '–';
-      tr.innerHTML = `
-        <td style="font-weight: 600; cursor: pointer; color: ${classColor(b.class)};" data-guid="${esc(b.guid)}">${esc(b.name)}</td>
-        <td>${esc(cls)}</td>
-        <td>${esc(b.level)}</td>
-        <td class="mono">${esc(a.quests_rewarded || 0)}</td>
-        <td class="mono">${esc(a.loot_items || 0)}</td>
-        <td class="mono">${esc(a.notable_loot || 0)}</td>
-        <td class="mono">${esc(a.kills || 0)}</td>
-        <td class="mono">${esc(a.deaths || 0)}</td>
-        <td class="mono" style="font-size: 0.75rem;">+${formatMoney(a.money_earned)}<br>-${formatMoney(a.money_spent)}</td>
-        <td class="mono">${esc(a.trainer_visits || 0)}</td>
-        <td class="mono">${esc(a.vendor_visits || 0)}</td>
-        <td class="mono">${esc(a.repairs || 0)}</td>
-        <td class="mono">${esc(a.giveups || 0)}</td>
-        <td class="mono">${esc(a.gathering || 0)}/${esc(a.skinning || 0)}</td>
-        <td class="mono">${esc(a.ah_listings || 0)}/${esc(a.ah_bids || 0)}</td>
-      `;
-      const cell = tr.querySelector('td[data-guid]');
-      if (cell) cell.addEventListener('click', () => openArmory(b.guid));
-      el.activityTable.appendChild(tr);
-    });
-  }
-
+  // Level-up timeline (Progress tab), newest first, capped so the DOM stays small.
   function renderLevelTimeline() {
     if (!el.levelTimeline) return;
     const feed = (state.activity && Array.isArray(state.activity.level_feed)) ? state.activity.level_feed.slice() : [];
     if (!feed.length) {
-      el.levelTimeline.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 24px;">No level-ups recorded yet.</td></tr>`;
+      el.levelTimeline.innerHTML = '<tr><td colspan="4" class="table-empty">No level-ups recorded yet.</td></tr>';
       return;
     }
     feed.sort((a, b) => (b.at || 0) - (a.at || 0));
-    el.levelTimeline.innerHTML = '';
-    feed.forEach(e => {
-      const tr = document.createElement('tr');
-      const cls = e.class ? String(e.class).charAt(0).toUpperCase() + String(e.class).slice(1) : '–';
-      tr.innerHTML = `
-        <td class="mono" style="font-size: 0.75rem; color: var(--text-muted);">${esc(feedClock(e))}</td>
-        <td style="font-weight: 600; cursor: pointer; color: #58a6ff;" data-guid="${esc(e.guid)}">${esc(e.bot)}</td>
-        <td>${esc(cls)}</td>
-        <td><span class="badge badge-success">L${esc(e.level)}</span></td>
-      `;
-      const cell = tr.querySelector('td[data-guid]');
-      if (cell) cell.addEventListener('click', () => focusBot(e.guid));
-      el.levelTimeline.appendChild(tr);
-    });
+    el.levelTimeline.innerHTML = feed.slice(0, 300).map(e => `<tr>
+      <td class="mono cell-time">${esc(feedClock(e))}</td>
+      <td>${botLink(e.guid, e.bot, e.class)}</td>
+      <td>${esc(capClass(e.class))}</td>
+      <td><span class="badge badge-success">L${esc(e.level)}</span></td>
+    </tr>`).join('');
   }
 
   function renderActivityTab() {
     renderActivityMetrics();
-    renderActivityTable();
     renderQuestFeed();
-  }
-
-  function renderEconomyTab() {
-    renderEconomyMetrics();
     renderLootFeed();
-  }
-
-  // Bots tab: either the layout as a whole (composition + live roster) or, if
-  // the armory sub-view is open, the armory list/profile instead.
-  function renderBotsTab() {
-    if (state.armoryOpen) {
-      armoryView();
-      if (state.armoryGuid === null || state.armoryGuid === undefined) renderArmoryList();
-      return;
-    }
-    renderComposition();
-    renderRoster();
   }
 
   function fetchActivity() {
@@ -2545,9 +2588,9 @@
         if (!data || !data.summary) return;
         state.activity = data;
         populateLootClassFilter();
-        if (state.activeTab === 'activity') { renderActivityTab(); fetchQuestFeed(); }
-        if (state.activeTab === 'economy') { renderEconomyTab(); fetchLootFeed(); }
-        if (state.armoryProfile && state.armorySubtab === 'progress') renderArmoryPanel(state.armoryProfile, 'progress');
+        if (state.activeTab === 'activity') { renderActivityMetrics(); fetchFeed(); }
+        if (state.activeTab === 'progress') renderLevelTimeline();
+        if (state.profileGuid !== null && state.profileTab === 'progress' && state.profile) renderArmoryPanel(state.profile, 'progress');
       })
       .catch(() => {});
   }
@@ -2559,8 +2602,8 @@
     if (state.activity && Array.isArray(state.activity.bots)) state.activity.bots.forEach(b => { if (b.class) set.add(String(b.class).toLowerCase()); });
     const classes = [...set].sort();
     const cur = el.lootClassFilter.value || '';
-    el.lootClassFilter.innerHTML = '<option value="">All Classes</option>' +
-      classes.map(c => `<option value="${esc(c)}">${esc(c.charAt(0).toUpperCase() + c.slice(1))}</option>`).join('');
+    el.lootClassFilter.innerHTML = '<option value="">All classes</option>' +
+      classes.map(c => `<option value="${esc(c)}">${esc(capClass(c))}</option>`).join('');
     el.lootClassFilter.value = classes.includes(cur) ? cur : '';
   }
 
@@ -2568,6 +2611,7 @@
   let questFilterTimer = null;
 
   function initActivity() {
+    bindSeg(el.feedSeg, showFeed);
     if (el.lootQualityFilter) el.lootQualityFilter.addEventListener('change', fetchLootFeed);
     if (el.lootClassFilter) el.lootClassFilter.addEventListener('change', fetchLootFeed);
     if (el.lootMinLevel) el.lootMinLevel.addEventListener('change', fetchLootFeed);
@@ -2722,52 +2766,73 @@
     return isNaN(f) ? '–' : (Number.isInteger(f) ? String(f) : f.toFixed(1));
   }
 
-  // Armory has two views inside the Bots tab: the searchable all-bots list
-  // (covers offline bots too) and the per-bot profile. state.armoryOpen picks
-  // the sub-view; state.armoryGuid === null means the list.
-  function armoryView() {
-    const listMode = state.armoryGuid === null || state.armoryGuid === undefined;
-    if (el.rosterPanel) el.rosterPanel.style.display = state.armoryOpen ? 'none' : 'block';
-    if (el.armoryListView) el.armoryListView.style.display = state.armoryOpen && listMode ? 'block' : 'none';
-    if (el.armoryProfileView) el.armoryProfileView.style.display = state.armoryOpen && !listMode ? 'block' : 'none';
-    paintNavActive();
+  // ---- Bot profile (slide-over) ----------------------------------------------
+  // One profile for every bot, reachable from every tab: it overlays the page
+  // so closing it returns to exactly where the operator was. Live telemetry
+  // fills what the database cannot (state, target, health), the database fills
+  // everything for offline bots (gear, talents, spells, bags).
+
+  function openProfile(guid) {
+    go({ bot: guid });
   }
 
-  function showRoster() {
-    state.armoryOpen = false;
-    state.armoryGuid = null;
-    state.armoryProfile = null;
-    armoryView();
+  function closeProfile() {
+    go({ bot: null });
   }
 
-  // The Armory tab: the Bots section on its armory sub-view. Kept next to the
-  // other sub-view helpers so both entry points behave identically.
-  function showArmoryTab() {
-    switchTab('roster');
-    showArmoryList();
+  function liveBot(guid) {
+    return state.bots.find(b => b.guid === guid) || null;
   }
 
-  function showArmoryList() {
-    state.armoryOpen = true;
-    state.armoryGuid = null;
-    state.armoryProfile = null;
-    armoryView();
-    renderArmoryList();
+  function knownBotName(guid) {
+    const live = liveBot(guid);
+    if (live) return live.name;
+    if (state.profile && state.profile.summary && state.profile.summary.guid === guid) return state.profile.summary.name;
+    const row = state.roster.find(r => r.guid === guid);
+    return row ? row.name : '';
   }
 
-  function openArmory(guid) {
-    state.armoryOpen = true;
-    state.armoryGuid = guid;
-    state.armoryProfile = null;
-    switchTab('roster');
-    armoryView();
-    if (el.armoryError) el.armoryError.style.display = 'none';
-    if (el.armoryBody) el.armoryBody.style.display = 'none';
-    if (el.armoryName) { el.armoryName.textContent = 'Loading…'; el.armoryName.style.color = '#fff'; }
-    if (el.armorySubtitle) el.armorySubtitle.textContent = '';
-    if (el.armoryMoney) el.armoryMoney.innerHTML = '';
-    if (el.armoryIlvl) { el.armoryIlvl.textContent = ''; el.armoryIlvl.title = ''; }
-    if (el.armoryPlayed) el.armoryPlayed.textContent = '';
+  // The selection highlight (map ring, list row) follows the open profile.
+  function refreshSelection() {
+    if (state.activeTab === 'map') renderMap();
+    else if (state.activeTab === 'roster') renderRoster();
+  }
+
+  function showProfile(guid) {
+    const changed = state.profileGuid !== guid;
+    state.profileGuid = guid;
+    el.profileDrawer.classList.add('open');
+    el.profileDrawer.setAttribute('aria-hidden', 'false');
+    el.profileBackdrop.classList.add('active');
+    // On the map the backdrop is click-through so another marker can be picked.
+    el.profileBackdrop.classList.toggle('passive', state.activeTab === 'map');
+    el.profileDrawer.classList.toggle('compact', state.activeTab === 'map');
+    if (changed) {
+      state.profile = null;
+      state.profileRecent = null;
+      const body = el.profileDrawer.querySelector('.profile-body');
+      if (body) body.scrollTop = 0;
+      if (el.armoryError) el.armoryError.style.display = 'none';
+      fetchProfile(guid);
+    }
+    renderProfileHeader();
+    renderArmoryPanel(state.profile, state.profileTab);
+    ensureProfileRecent();
+    if (changed) refreshSelection();
+  }
+
+  function hideProfile() {
+    if (state.profileGuid === null) return;
+    state.profileGuid = null;
+    state.profile = null;
+    state.profileRecent = null;
+    el.profileDrawer.classList.remove('open');
+    el.profileDrawer.setAttribute('aria-hidden', 'true');
+    el.profileBackdrop.classList.remove('active');
+    refreshSelection();
+  }
+
+  function fetchProfile(guid) {
     fetch(`/api/v1/armory/bot/${encodeURIComponent(guid)}`)
       .then(async r => {
         if (r.status === 401) throw new Error('HTTP 401');
@@ -2778,203 +2843,240 @@
         return r.json();
       })
       .then(p => {
-        if (state.armoryGuid !== guid) return;
-        state.armoryProfile = p;
+        if (state.profileGuid !== guid) return;
+        state.profile = p;
         renderArmory();
+        ensureProfileRecent();
       })
       .catch(e => {
-        if (state.armoryGuid !== guid) return;
+        if (state.profileGuid !== guid) return;
         const msg = String((e && e.message) || 'fetch failed');
-        if (msg.includes('401')) {
-          if (el.armoryName) el.armoryName.textContent = 'Session expired';
-          if (el.armoryError) {
-            el.armoryError.style.display = 'block';
-            el.armoryError.innerHTML = 'Session expired — <a href="/login" style="color: #58a6ff;">log in again</a>, then reopen the bot.';
-          }
-          return;
-        }
-        if (el.armoryName) el.armoryName.textContent = 'Bot not found';
         if (el.armoryError) {
           el.armoryError.style.display = 'block';
-          el.armoryError.textContent = `Could not load bot #${guid}: ${msg}`;
+          el.armoryError.innerHTML = msg.includes('401')
+            ? 'Session expired — <a href="/login">log in again</a>, then reopen the bot.'
+            : `Could not load the database profile of bot #${esc(guid)}: ${esc(msg)}`;
         }
       });
   }
 
-  function closeArmory() {
-    showArmoryList();
-  }
-
-  function armorySortValue(b, key) {
-    switch (key) {
-      case 'class': return classNameById(b.class).toLowerCase();
-      case 'spec': return (b.spec || '').toLowerCase();
-      case 'level': return b.level || 0;
-      case 'race': return raceNameById(b.race).toLowerCase();
-      case 'money': return parseInt(b.money, 10) || 0;
-      case 'online': return b.online ? 1 : 0;
-      default: return (b.name || '').toLowerCase();
-    }
-  }
-
-  function updateArmorySortIndicators() {
-    document.querySelectorAll('#armory-list-view th.sortable').forEach(th => {
-      th.classList.toggle('sort-active', th.dataset.armorySort === state.armorySort.key);
-      const base = th.textContent.replace(/[ ▲▼]+$/, '');
-      const arrow = th.dataset.armorySort === state.armorySort.key ? (state.armorySort.dir > 0 ? ' ▲' : ' ▼') : '';
-      th.textContent = base + arrow;
+  // The bot's latest quest and loot events (from the same bounded in-memory
+  // feeds the Activity tab reads), merged into one short list.
+  function ensureProfileRecent() {
+    const guid = state.profileGuid;
+    if (guid === null || (state.profileRecent && state.profileRecent.guid === guid)) return;
+    const name = knownBotName(guid);
+    if (!name) return;
+    state.profileRecent = { guid, rows: null };
+    const enc = encodeURIComponent(name);
+    Promise.all([
+      fetch(`/api/v1/activity/quests?bot=${enc}&limit=100`).then(jsonOrThrow).catch(() => []),
+      fetch(`/api/v1/activity/loot?bot=${enc}&min_quality=0&limit=100`).then(jsonOrThrow).catch(() => [])
+    ]).then(([quests, loot]) => {
+      if (state.profileGuid !== guid) return;
+      const rows = []
+        .concat((quests || []).filter(r => r.guid === guid).map(r => ({ at: r.at, time: feedClock(r), html: `<span class="badge badge-info recent-kind">${esc(questEventLabel(r.event))}</span><span>${esc(r.quest || '-')}</span>` })))
+        .concat((loot || []).filter(r => r.guid === guid).map(r => ({ at: r.at, time: feedClock(r), html: `<span class="badge badge-info recent-kind">${esc(r.source || 'loot')}</span><span>${lootItemCell(r)}</span>` })))
+        .sort((a, b) => (b.at || 0) - (a.at || 0))
+        .slice(0, 12);
+      state.profileRecent = { guid, rows };
+      renderProfileOverview();
     });
   }
 
-  let armoryListTimer = null;
-  function renderArmoryList() {
-    if (!el.armoryListBody) return;
-    const q = ((el.armoryListSearch && el.armoryListSearch.value) || '').trim();
-    el.armoryListBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading…</td></tr>`;
-    fetch(`/api/v1/armory/bots?q=${encodeURIComponent(q)}`)
-      .then(async r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then(bots => {
-        if (!Array.isArray(bots)) throw new Error('bad payload');
-        if (!bots.length) {
-          el.armoryListBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 24px;">No bots match “${esc(q)}”.</td></tr>`;
-          return;
-        }
+  function profileBars(p, live) {
+    const st = (p && p.stats) || {};
+    // Online bots: telemetry is current, the database row lags.
+    const hpMax = live && live.max_hp ? live.max_hp : (st.maxhealth || 0);
+    const hpCur = live && live.max_hp ? live.hp : (st.health !== undefined ? st.health : hpMax);
+    const hpPct = hpMax ? Math.min(100, Math.max(0, Math.round((hpCur / hpMax) * 100))) : 0;
+    if (el.armoryHpBar) el.armoryHpBar.style.width = `${hpPct}%`;
+    if (el.armoryHpText) el.armoryHpText.textContent = hpMax ? `${fmtNum(hpCur)} / ${fmtNum(hpMax)} HP` : '– HP';
 
-        const key = state.armorySort.key;
-        const dir = state.armorySort.dir;
-        bots.sort((a, b) => {
-          const av = armorySortValue(a, key), bv = armorySortValue(b, key);
-          if (av < bv) return -1 * dir;
-          if (av > bv) return 1 * dir;
-          return String(a.name || '').localeCompare(String(b.name || ''));
-        });
-
-        updateArmorySortIndicators();
-
-        el.armoryListBody.innerHTML = bots.map(b => `
-          <tr>
-            <td data-guid="${b.guid}" style="cursor: pointer; font-weight: 600; color: ${classColor(classNameById(b.class))};">${esc(b.name)}</td>
-            <td>${esc(classNameById(b.class))}</td>
-            <td style="color: var(--accent-yellow); font-weight: 500;">${esc(b.spec || '–')}</td>
-            <td>${esc(b.level)}</td>
-            <td>${esc(raceNameById(b.race))}</td>
-            <td class="mono">${formatMoney(b.money)}</td>
-            <td><span class="badge ${b.online ? 'badge-success' : 'badge-warn'}">${b.online ? 'Online' : 'Offline'}</span></td>
-          </tr>`).join('');
-      })
-      .catch(e => {
-        el.armoryListBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #f85149; padding: 24px;">Failed to load bot list: ${esc(String((e && e.message) || e))}</td></tr>`;
-      });
-  }
-
-  function armoryFocusMap() {
-    const guid = state.armoryGuid;
-    if (guid === null || guid === undefined) return;
-    const live = state.bots.some(b => b.guid === guid);
-    if (live) focusBot(guid);
-    else switchTab('map');
-  }
-
-  function renderArmory() {
-    const p = state.armoryProfile;
-    if (!p || !p.summary) return;
-    const s = p.summary;
-    const st = p.stats || {};
-    const clsName = classNameById(s.class);
-    if (el.armoryName) {
-      el.armoryName.textContent = s.name;
-      el.armoryName.style.color = classColor(clsName);
-    }
-    // Online bots keep moving: DB zone/position rows lag, so prefer the live
-    // roster snapshot (authoritative telemetry) whenever it has this bot.
-    const live = state.bots.find(b => b.guid === s.guid);
-    const zoneTxt = live
-      ? `${getZoneName(live.zone, live.map)} (live)`
-      : (s.online ? 'Online — position pending' : 'Offline');
-    if (el.armorySubtitle) el.armorySubtitle.textContent = `Level ${s.level} ${raceNameById(s.race)} ${clsName} · ${zoneTxt}`;
-    if (el.armoryMoney) el.armoryMoney.innerHTML = formatMoney(s.money);
-    if (el.armoryPlayed) el.armoryPlayed.textContent = formatPlayed(s.totaltime);
-    if (el.armoryOnline) {
-      const on = !!s.online;
-      el.armoryOnline.textContent = on ? 'Online' : 'Offline';
-      el.armoryOnline.className = `badge ${on ? 'badge-success' : 'badge-warn'}`;
-    }
-
-    // Spec detection (highest talent tree points)
-    const trees = p.talents || [];
-    let specName = 'Unspecified';
-    let ptsArr = [0, 0, 0];
-    if (trees.length) {
-      ptsArr = trees.map(t => t.points || 0);
-      const totalPts = ptsArr.reduce((a, b) => a + b, 0);
-      if (totalPts > 0) {
-        let maxT = trees[0];
-        trees.forEach(t => {
-          if ((t.points || 0) > (maxT.points || 0)) maxT = t;
-        });
-        specName = maxT.name || 'Hybrid';
+    if (el.armoryPowBar && el.armoryPowText) {
+      if (live && live.max_power) {
+        const type = live.power_type || 'mana';
+        el.armoryPowBar.className = `stat-bar-fill stat-bar-${type === 'rage' ? 'rage' : type === 'energy' ? 'energy' : 'mana'}`;
+        el.armoryPowBar.style.width = `${Math.min(100, Math.round((live.power / live.max_power) * 100))}%`;
+        el.armoryPowText.textContent = `${fmtNum(live.power)} / ${fmtNum(live.max_power)} ${powerLabel(live)}`;
       } else {
-        specName = 'Hybrid';
+        // The armory tables carry only max values — no live current power —
+        // so render max only, never a faked full bar.
+        const cls = p && p.summary ? p.summary.class : 0;
+        const label = cls === 1 ? 'Rage' : cls === 4 ? 'Energy' : 'Mana';
+        const max = cls === 1 ? (st.maxpower2 || 100) : cls === 4 ? (st.maxpower4 || 100) : (st.maxpower1 || 0);
+        el.armoryPowBar.className = `stat-bar-fill stat-bar-${cls === 1 ? 'rage' : cls === 4 ? 'energy' : 'mana'}`;
+        el.armoryPowBar.style.width = '0%';
+        el.armoryPowText.textContent = max ? `Max ${fmtNum(max)} ${label}` : '–';
       }
     }
-    const specInfo = el.armorySpecInfo || document.getElementById('armory-spec-info');
-    if (specInfo) specInfo.textContent = `${specName} (${ptsArr.join(' / ')})`;
 
-    // HP Bar
-    const maxHp = st.maxhealth || 1;
-    const curHp = st.health !== undefined ? st.health : maxHp;
-    const hpPct = Math.min(100, Math.max(0, Math.round((curHp / maxHp) * 100)));
-    const hpBar = el.armoryHpBar || document.getElementById('armory-hp-bar');
-    const hpText = el.armoryHpText || document.getElementById('armory-hp-text');
-    if (hpBar) hpBar.style.width = `${hpPct}%`;
-    if (hpText) hpText.textContent = `${fmtNum(curHp)} / ${fmtNum(maxHp)} HP`;
-
-    // Power Bar (Mana / Rage / Energy). The armory stats tables carry only
-    // max values — no live current power — so render max only, never a
-    // faked full "cur = max" bar.
-    const cls = s.class || 0;
-    const powerLabel = cls === 1 ? 'Rage' : cls === 4 ? 'Energy' : 'Mana';
-    const powerClass = cls === 1 ? 'stat-bar-fill stat-bar-rage' : cls === 4 ? 'stat-bar-fill stat-bar-energy' : 'stat-bar-fill stat-bar-mana';
-    const maxPow = cls === 1 ? (st.maxpower2 || 100) : cls === 4 ? (st.maxpower4 || 100) : (st.maxpower1 || 1);
-    const powBar = el.armoryPowBar || document.getElementById('armory-pow-bar');
-    const powText = el.armoryPowText || document.getElementById('armory-pow-text');
-    if (powBar) {
-      powBar.className = powerClass;
-      // No live current value: leave the bar empty rather than full.
-      powBar.style.width = '0%';
-    }
-    if (powText) powText.textContent = `Max ${fmtNum(maxPow)} ${powerLabel}`;
-
-    // XP bar from live telemetry (same source as the roster XP column).
-    // The armory DB has no per-level XP row, so offline bots show nothing
-    // rather than a fake bar.
-    const xpWrap = document.getElementById('armory-xp-wrap');
-    const xpBar = document.getElementById('armory-xp-bar');
-    const xpText = document.getElementById('armory-xp-text');
-    if (xpWrap) {
+    // XP bar: live telemetry only (the database has no per-level XP row).
+    if (el.armoryXpWrap) {
       const pct = live ? xpPct(live) : null;
-      if (pct === null) {
-        xpWrap.style.display = 'none';
-      } else {
-        xpWrap.style.display = '';
-        if (xpBar) xpBar.style.width = `${pct}%`;
-        if (xpText) {
-          const rate = fmtXpRate(live.xp_per_hour);
-          xpText.textContent = rate !== '–'
-            ? `${live.xp} / ${live.next_xp} XP (${pct}%) · ${rate}`
-            : `${live.xp} / ${live.next_xp} XP (${pct}%)`;
-        }
+      el.armoryXpWrap.style.display = pct === null ? 'none' : '';
+      if (pct !== null) {
+        const rate = fmtXpRate(live.xp_per_hour);
+        if (el.armoryXpBar) el.armoryXpBar.style.width = `${pct}%`;
+        if (el.armoryXpText) el.armoryXpText.textContent = `${live.xp} / ${live.next_xp} XP (${pct}%)${rate !== '–' ? ` · ${rate}` : ''}`;
       }
     }
+  }
 
+  function renderProfileHeader() {
+    const guid = state.profileGuid;
+    const p = state.profile;
+    const s = p && p.summary;
+    const live = liveBot(guid);
+    const clsName = s ? classNameById(s.class) : (live ? capClass(live.class) : '');
+    const online = !!live || !!(s && s.online);
+
+    if (el.armoryName) {
+      el.armoryName.textContent = s ? s.name : (live ? live.name : '…');
+      el.armoryName.style.color = clsName ? classColor(clsName) : '#fff';
+    }
+    if (el.armorySubtitle) {
+      const level = live ? live.level : (s ? s.level : '');
+      const zone = live ? `${getZoneName(live.zone, live.map)} (live)` : (s ? (s.online ? 'Online — position pending' : 'Offline') : '');
+      el.armorySubtitle.textContent = [
+        level !== '' ? `Level ${level}${s ? ` ${raceNameById(s.race)}` : ''} ${clsName}`.trim() : clsName,
+        zone
+      ].filter(Boolean).join(' · ');
+    }
+    if (el.armoryOnline) {
+      el.armoryOnline.textContent = online ? 'Online' : 'Offline';
+      el.armoryOnline.className = `badge ${online ? 'badge-success' : 'badge-warn'}`;
+    }
+    if (el.armoryMapBtn) el.armoryMapBtn.style.display = live ? '' : 'none';
+    if (el.armoryMoney) el.armoryMoney.innerHTML = s ? formatMoney(s.money) : '';
+    if (el.armoryPlayed) el.armoryPlayed.textContent = s ? formatPlayed(s.totaltime) : '';
+
+    // Spec = the talent tree with the most points.
+    if (el.armorySpecInfo) {
+      const trees = (p && p.talents) || [];
+      if (!trees.length) {
+        el.armorySpecInfo.textContent = '';
+      } else {
+        const pts = trees.map(t => t.points || 0);
+        const total = pts.reduce((a, b) => a + b, 0);
+        let top = trees[0];
+        trees.forEach(t => { if ((t.points || 0) > (top.points || 0)) top = t; });
+        el.armorySpecInfo.textContent = `${total > 0 ? (top.name || 'Hybrid') : 'Unspecified'} (${pts.join(' / ')})`;
+      }
+    }
+    profileBars(p, live);
+  }
+
+  const kv = (label, value) => `<div class="kv-row"><span>${esc(label)}</span><span>${value}</span></div>`;
+  const kvMono = (value) => `<span class="mono">${esc(value || '-')}</span>`;
+
+  function renderProfileOverview() {
+    const host = document.getElementById('armory-content-overview');
+    if (!host || state.profileTab !== 'overview' || state.profileGuid === null) return;
+    const guid = state.profileGuid;
+    const live = liveBot(guid);
+    const mine = state.issues.active.filter(i => i.guid === guid);
+    const past = state.issues.resolved.filter(i => i.guid === guid).slice(0, 5);
+    let html = '';
+
+    if (live) {
+      const xp = xpPct(live);
+      html += `<div class="profile-grid profile-section">
+        <div class="kv-card">
+          <div class="section-label">Right now</div>
+          ${kv('Status', stateTag(live.state))}
+          ${kv('Target', live.target ? `<strong class="target-cell">${esc(displayTarget(live))}</strong>${live.target_level ? ` <span class="cell-muted">L${esc(live.target_level)}</span>` : ''}` : DASH)}
+          ${live.travel_purpose ? kv('Travel', `<strong>${esc(live.travel_purpose)}</strong><span class="cell-muted"> → ${esc(live.travel_to || '')}</span>`) : ''}
+          ${kv('Last action', kvMono(live.last_action))}
+          ${kv('Trigger', kvMono(live.last_trigger))}
+          ${kv('Strategy', kvMono(live.strategy || 'default'))}
+          ${kv('Combat role', `<span class="badge badge-info" title="AI combat role (forced role / combat strategies / talent-gear auto-detect), not a group slot">${esc(roleLabel(live))}</span>`)}
+        </div>
+        <div class="kv-card">
+          <div class="section-label">Where &amp; how it is going</div>
+          ${kv('Zone', `<span class="mono">${esc(getZoneName(live.zone, live.map))}</span>`)}
+          ${xp === null ? '' : kv('XP', `<span class="mono">${esc(live.xp)} / ${esc(live.next_xp)} (${xp}%)</span>`)}
+          ${xp === null ? '' : kv('XP per hour', `<span class="mono">${esc(fmtXpRate(live.xp_per_hour))}</span>`)}
+          ${xp === null ? '' : kv('Last XP gain', `<span class="mono">${esc(fmtGainAge(live.xp_gain_age_sec))}</span>`)}
+          ${live.gear ? kv('Gear item level', gearCell(live)) : ''}
+        </div>
+      </div>`;
+    } else {
+      html += `<div class="offline-note profile-section">Offline — no live status. Everything else comes from the database.</div>`;
+    }
+
+    if (mine.length || past.length) {
+      html += `<div class="profile-section"><div class="section-label">Issues</div>
+        ${mine.map(i => `<div class="issue-chip ${esc(i.severity)}"><span>${esc(ISSUE_LABELS[i.type] || i.type)} · ${esc(getZoneName(i.zone, i.map))}</span><span class="mono">${esc(fmtDuration(i.duration_sec))}</span></div>`).join('')}
+        ${past.length ? `<div class="empty-hint">Recently resolved: ${past.map(i => `${esc(ISSUE_LABELS[i.type] || i.type)} (${esc(fmtDuration(i.duration_sec))})`).join(', ')}</div>` : ''}
+      </div>`;
+    }
+
+    const recent = state.profileRecent && state.profileRecent.guid === guid ? state.profileRecent.rows : null;
+    html += `<div class="profile-section"><div class="section-label">Recent events</div>${
+      recent === null ? '<div class="empty-hint">Loading…</div>'
+        : recent.length ? recent.map(r => `<div class="recent-row"><span class="recent-time mono">${esc(r.time)}</span>${r.html}</div>`).join('')
+          : '<div class="empty-hint">No quest or loot events recorded this session.</div>'
+    }</div>`;
+    host.innerHTML = html;
+  }
+
+  // Everything that depends on the database profile: header, paperdoll, stats
+  // and the active sub-tab.
+  function renderArmory() {
+    const p = state.profile;
+    if (!p || !p.summary) return;
     if (el.armoryError) el.armoryError.style.display = 'none';
-    if (el.armoryBody) el.armoryBody.style.display = 'block';
-    renderArmoryGear(p, live);
+    renderProfileHeader();
+    renderArmoryGear(p, liveBot(p.summary.guid));
     renderArmoryStats(p);
-    renderArmoryPanel(p, state.armorySubtab || 'bags');
+    renderArmoryPanel(p, state.profileTab);
+  }
+
+  // Cheap per-snapshot refresh: bars and the live overview, nothing heavier.
+  function renderProfileLive() {
+    if (state.profileGuid === null) return;
+    renderProfileHeader();
+    renderProfileOverview();
+  }
+
+  function showOnMap() {
+    const b = liveBot(state.profileGuid);
+    if (b) openZone(b.zone, b.guid);
+  }
+
+  function initProfile() {
+    if (el.closeProfile) el.closeProfile.addEventListener('click', closeProfile);
+    if (el.profileBackdrop) el.profileBackdrop.addEventListener('click', closeProfile);
+    if (el.armoryMapBtn) el.armoryMapBtn.addEventListener('click', showOnMap);
+    if (el.profileTabs) {
+      el.profileTabs.addEventListener('click', e => {
+        const btn = e.target.closest('.armory-subtab[data-subtab]');
+        if (btn) go({ ptab: btn.dataset.subtab }, { replace: true });
+      });
+    }
+  }
+
+  function renderArmoryPanel(p, tab) {
+    state.profileTab = tab;
+    document.querySelectorAll('#profile-tabs .armory-subtab[data-subtab]').forEach(b => b.classList.toggle('active', b.dataset.subtab === tab));
+    PROFILE_TABS.forEach(t => {
+      const panel = document.getElementById(`armory-content-${t}`);
+      if (panel) panel.style.display = t === tab ? 'block' : 'none';
+    });
+    if (tab === 'overview') { renderProfileOverview(); return; }
+    if (!p) {
+      const host = document.getElementById(`armory-content-${tab}`);
+      if (host && tab !== 'gear') host.innerHTML = '<div class="empty-hint">Loading…</div>';
+      return;
+    }
+    // Gear & stats render together with the profile (renderArmory).
+    if (tab === 'bags') renderArmoryBags(p);
+    else if (tab === 'talents') renderArmoryTalents(p);
+    else if (tab === 'spells') renderArmorySpells(p);
+    else if (tab === 'professions') renderArmoryProfessions(p);
+    else if (tab === 'skills') renderArmorySkills(p);
+    else if (tab === 'progress') renderArmoryProgress(p);
   }
 
   function itemSubclassName(cls, sub) {
@@ -3293,7 +3395,7 @@
     if (el.gearRight) el.gearRight.innerHTML = GEAR_RIGHT.map(s => gearRowRight(s, m[s])).join('');
     if (el.gearWeapons) el.gearWeapons.innerHTML = GEAR_WEAPONS.map(s => gearRowWeapon(s, m[s])).join('');
     renderGearSummary(p, live && live.gear);
-    bindItemTooltips(document.getElementById('tab-roster'));
+    bindItemTooltips(document.getElementById('profile-drawer'));
   }
 
   function armoryTipDiv() {
@@ -3367,26 +3469,6 @@
 
   function bagTable(items) {
     return `<div style="overflow-x: auto;"><table class="data-table"><thead><tr><th>Slot</th><th>Item</th><th>Count</th><th>Entry</th></tr></thead><tbody>${items.map(bagItemRow).join('')}</tbody></table></div>`;
-  }
-
-  function renderArmoryPanel(p, tab) {
-    if (tab === 'stats') tab = 'bags';
-    state.armorySubtab = tab;
-    // Scoped to the sub-view buttons: the talent trees reuse the .armory-subtab
-    // class for styling and carry data-ttab instead, so a bare class selector
-    // would clear their active state and clear every panel for tab ===
-    // undefined.
-    document.querySelectorAll('.armory-subtab[data-subtab]').forEach(b => b.classList.toggle('active', b.dataset.subtab === tab));
-    ['bags', 'talents', 'spells', 'professions', 'skills', 'progress'].forEach(t => {
-      const panel = document.getElementById(`armory-content-${t}`);
-      if (panel) panel.style.display = t === tab ? 'block' : 'none';
-    });
-    if (tab === 'bags') renderArmoryBags(p);
-    else if (tab === 'talents') renderArmoryTalents(p);
-    else if (tab === 'spells') renderArmorySpells(p);
-    else if (tab === 'professions') renderArmoryProfessions(p);
-    else if (tab === 'skills') renderArmorySkills(p);
-    else if (tab === 'progress') renderArmoryProgress(p);
   }
 
   function renderArmoryStats(p) {
@@ -3750,49 +3832,6 @@
     host.innerHTML = groups.map((g, i) => g.length ? `<div class="section-label" style="margin: 14px 0 8px;">${titles[i]}</div>${skillTable(g)}` : '').join('') || `<div class="empty-hint">No skills.</div>`;
   }
 
-  function initArmory() {
-    if (el.armoryBack) el.armoryBack.addEventListener('click', closeArmory);
-    if (el.armoryMapBtn) el.armoryMapBtn.addEventListener('click', armoryFocusMap);
-    // Bots tab: roster <-> armory list, plus the profile's "back to list".
-    if (el.rosterArmoryBtn) el.rosterArmoryBtn.addEventListener('click', showArmoryList);
-    if (el.armoryRosterBtn) el.armoryRosterBtn.addEventListener('click', () => { showRoster(); renderRoster(); });
-    document.querySelectorAll('.armory-subtab[data-subtab]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (state.armoryProfile) renderArmoryPanel(state.armoryProfile, btn.dataset.subtab);
-        else {
-          state.armorySubtab = btn.dataset.subtab;
-          document.querySelectorAll('.armory-subtab[data-subtab]').forEach(b => b.classList.toggle('active', b === btn));
-        }
-      });
-    });
-    // Armory list: server-side name search, click a row to open the profile.
-    if (el.armoryListSearch) {
-      el.armoryListSearch.addEventListener('input', () => {
-        clearTimeout(armoryListTimer);
-        armoryListTimer = setTimeout(renderArmoryList, 300);
-      });
-    }
-    if (el.armoryListBody) {
-      // Name cell only: other cells stay selectable so spec/gold text can
-      // be copied without opening the profile by accident.
-      el.armoryListBody.addEventListener('click', e => {
-        const td = e.target.closest('td[data-guid]');
-        if (td) openArmory(parseInt(td.dataset.guid, 10));
-      });
-    }
-    document.querySelectorAll('#armory-list-view th.sortable').forEach(th => {
-      onSortableActivate(th, () => {
-        const key = th.dataset.armorySort;
-        if (state.armorySort.key === key) {
-          state.armorySort.dir *= -1;
-        } else {
-          state.armorySort.key = key;
-          state.armorySort.dir = 1;
-        }
-        renderArmoryList();
-      });
-    });
-  }
   // REST helpers: a 401 means the GM session expired, so send the operator to
   // the login page instead of silently rendering stale/empty data; any other
   // non-2xx is an error the caller's catch handles.
@@ -3866,26 +3905,12 @@
     return best ? `${type} top ${best} ${bestN}` : '';
   }
 
-  // INFO rows (notably every BOT_DEATH) are feed noise; the sidebar badge
-  // counts warn/error only, the same subset the owner reads.
-  function anomalyIsActionable(a) {
-    const sev = (a.severity || '').toLowerCase();
-    return sev === 'warn' || sev === 'error';
-  }
-
   // Same bound as the daemon's ring buffer: a long session must not grow the
   // array (and the table) past what the server itself keeps.
   const ANOMALY_MAX = 1000;
 
-  // The sidebar badge must be fresh even while the table is hidden; the table
-  // itself is only rebuilt when the Incidents tab is on screen.
-  function updateAnomalyBadge() {
-    if (el.anomaliesCount) el.anomaliesCount.textContent = state.anomalies.filter(anomalyIsActionable).length;
-  }
-
   function renderAnomalies() {
     if (!el.anomaliesTable) return;
-    updateAnomalyBadge();
 
     const filtered = state.anomalies.filter(a => {
       const sev = (a.severity || '').toLowerCase();
@@ -3895,30 +3920,27 @@
     });
 
     if (filtered.length === 0) {
-      el.anomaliesTable.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 24px;">No incidents recorded.</td></tr>`;
+      el.anomaliesTable.innerHTML = '<tr><td colspan="7" class="table-empty">No incidents recorded.</td></tr>';
       return;
     }
 
     // Newest first, independent of the order the server returned them in.
     const ordered = filtered.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
 
-    el.anomaliesTable.innerHTML = '';
-    ordered.forEach(a => {
-      const tr = document.createElement('tr');
+    el.anomaliesTable.innerHTML = ordered.map(a => {
       const timeStr = a.time_str || (a.ts ? new Date(a.ts * 1000).toLocaleTimeString() : '-');
       const sev = (a.severity || 'info').toLowerCase();
       const sevBadge = sev === 'error' ? 'badge-error' : sev === 'warn' ? 'badge-warn' : 'badge-info';
-      tr.innerHTML = `
-        <td class="mono" style="font-size: 0.75rem; color: var(--text-muted);">${esc(timeStr)}</td>
+      return `<tr>
+        <td class="mono cell-time">${esc(timeStr)}</td>
         <td><span class="badge ${sevBadge}">${esc(sev.toUpperCase())}</span></td>
-        <td class="mono" style="font-size: 0.8rem; font-weight: 600;">${esc(a.type)}</td>
-        <td style="color: #fff; font-weight: 600;">${esc(a.bot || '-')}</td>
-        <td class="mono" style="font-size: 0.75rem;">${esc(getZoneName(a.zone, a.map))}</td>
-        <td style="color: var(--text-muted);">${esc(a.details || a.last_action || '-')}</td>
-        <td style="color: #f85149;">${esc(a.target && a.bot && a.target === a.bot ? 'self' : (a.target || '-'))}</td>
-      `;
-      el.anomaliesTable.appendChild(tr);
-    });
+        <td class="mono">${esc(a.type)}</td>
+        <td>${a.guid ? botLink(a.guid, a.bot || '-', a.class) : esc(a.bot || '-')}</td>
+        <td class="mono">${esc(getZoneName(a.zone, a.map))}</td>
+        <td class="cell-muted">${esc(a.details || a.last_action || '-')}</td>
+        <td class="target-cell">${esc(a.target && a.bot && a.target === a.bot ? 'self' : (a.target || '-'))}</td>
+      </tr>`;
+    }).join('');
   }
 
   if (el.typeFilter) {
@@ -3948,7 +3970,7 @@
     if (state.wsConnected && !force) return;
     fetch('/api/v1/issues')
       .then(jsonOrThrow)
-      .then(data => applyIssues(data))
+      .then(data => { applyIssues(data); renderLive(); })
       .catch(() => {});
   }
 
@@ -3960,19 +3982,14 @@
       .then(data => {
         if (!Array.isArray(data)) return;
         state.bots = data;
-        populateClassFilter();
         updateOverviewMetrics();
-        if (state.activeTab === 'map') { renderMap(); renderZoneList(); }
-        if (state.activeTab === 'roster' && !state.armoryOpen) renderRoster();
-        if (state.activeTab === 'overview') { renderFleetHealth(); renderActivity(); renderGrinding(); }
-        if (state.activeTab === 'progress') renderLevelBands();
+        renderLive();
       })
       .catch(() => {});
     fetch('/api/v1/grinding').then(jsonOrThrow).then(g => {
       if (g && typeof g.bots_tracked === 'number') {
         state.grinding = g;
-        if (state.activeTab === 'overview') { renderActivity(); renderGrinding(); }
-        if (state.activeTab === 'progress') renderLevelBands();
+        renderLive();
       }
     }).catch(() => {});
     fetch('/api/v1/server-info').then(r => {
@@ -4024,6 +4041,17 @@
     };
   }
 
+  // Re-render what a fresh roster/issue snapshot changes on the visible tab,
+  // plus the open profile's live part. Hidden tabs wait for their activation.
+  function renderLive() {
+    const tab = state.activeTab;
+    if (tab === 'overview') { renderStates(); renderAttention(); }
+    else if (tab === 'map') renderMap();
+    else if (tab === 'roster') renderRoster();
+    else if (tab === 'progress') { renderProgressKpis(); renderLevelBands(); }
+    renderProfileLive();
+  }
+
   function handleStreamMessage(msg) {
     const time = new Date().toLocaleTimeString();
 
@@ -4042,16 +4070,9 @@
       applyIssues(data.issues);
       updateOverviewMetrics();
 
-      // Keep a selected bot's drawer fresh; close it if the bot departed.
-      if (state.selectedBotGuid !== null) selectBot(state.selectedBotGuid);
-
-      if (state.activeTab === 'map') { renderMap(); renderZoneList(); }
-      if (state.activeTab === 'roster' && !state.armoryOpen) renderRoster();
-      if (state.activeTab === 'overview') { renderFleetHealth(); renderActivity(); renderGrinding(); }
-      if (state.activeTab === 'progress') renderLevelBands();
+      renderLive();
 
       if (state.bots.length !== prevCount) {
-        populateClassFilter();
         appendConsoleLog(time, 'roster', `Snapshot #${esc(state.snapshotSeq)}: ${state.bots.length} bots active.`);
       }
     } else if (msg.event === 'heartbeat') {
@@ -4064,15 +4085,9 @@
       state.server.diff = d.diff || 0;
       state.server.humans = d.humans || 0;
       state.server.bots = d.bots || 0;
-      if (Array.isArray(d.counts)) state.counts = d.counts;
       pushHistory();
       updateOverviewMetrics();
-      if (state.activeTab === 'overview') {
-        renderOverviewCharts();
-      }
-      if (state.activeTab === 'roster' && !state.armoryOpen) {
-        renderComposition();
-      }
+      if (state.activeTab === 'overview') renderOverviewCharts();
       // Heartbeats arrive every 2s; log sparsely to keep the console useful.
       if (!handleStreamMessage._lastPulse || Date.now() - handleStreamMessage._lastPulse > 30000) {
         handleStreamMessage._lastPulse = Date.now();
@@ -4090,7 +4105,6 @@
         // Keep the array at the daemon's own ring-buffer bound.
         if (state.anomalies.length > ANOMALY_MAX) state.anomalies.splice(0, state.anomalies.length - ANOMALY_MAX);
         // Rebuild the (up to 1000-row) table only when it is on screen.
-        updateAnomalyBadge();
         if (state.activeTab === 'issues') { renderAnomalies(); renderIssues(); }
         // The rolling feed above just grew by one; the cumulative session
         // totals behind the totals line grew with it, so refetch them.
@@ -4127,9 +4141,6 @@
     pushIssueHistory();
     updateIssueBadges();
     if (state.activeTab === 'issues') { renderIssues(); renderAnomalies(); }
-    if (state.activeTab === 'map') { renderMap(); renderZoneList(); }
-    if (state.activeTab === 'roster' && !state.armoryOpen) renderRoster();
-    if (state.activeTab === 'overview') updateOverviewMetrics();
   }
 
   function pushIssueHistory() {
@@ -4157,7 +4168,7 @@
     }
     if (el.metricIssues) {
       el.metricIssues.textContent = active;
-      el.metricIssues.style.color = persistent > 0 ? '#f85149' : active > 0 ? '#d29922' : '#fff';
+      el.metricIssues.className = `kpi-value ${persistent > 0 ? 'kpi-red' : active > 0 ? 'kpi-amber' : ''}`;
     }
     if (el.metricIssuesSub) el.metricIssuesSub.textContent = `${persistent} persistent`;
   }
@@ -4186,32 +4197,27 @@
       .sort((a, b) => (b.duration_sec || 0) - (a.duration_sec || 0));
 
     if (filtered.length === 0) {
-      el.issuesTable.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:24px;">No matching issues.</td></tr>`;
+      el.issuesTable.innerHTML = '<tr><td colspan="7" class="table-empty">No matching issues.</td></tr>';
       return;
     }
 
-    el.issuesTable.innerHTML = '';
-    filtered.forEach(i => {
-      const tr = document.createElement('tr');
-      const sevBadge = i.severity === 'persistent' ? 'badge-error' : 'badge-warn';
-      // Anomaly-derived rows (UNREACHABLE_TARGET) never carry a trigger: the
-      // column is hidden for them so it does not render an always-empty "-".
+    el.issuesTable.innerHTML = filtered.map(i => {
+      // Anomaly-derived rows (UNREACHABLE_TARGET) never carry a trigger.
       // Details carry the emitter's unreachable description instead; snapshot
       // rows (STUCK) keep their trigger appended so no context is lost.
-      const actionCell = (i.type === 'UNREACHABLE_TARGET' && i.details)
-        ? `<td class="mono" style="font-size:0.75rem;">${esc(i.details)}</td>`
-        : `<td class="mono" style="font-size:0.75rem;">${esc(i.action || i.details || '-')}${i.trigger ? ` <span style="color:var(--text-muted);">· ${esc(i.trigger)}</span>` : ''}</td>`;
-      tr.innerHTML = `
-        <td style="font-weight:600;color:#58a6ff;cursor:pointer;" data-guid="${esc(i.guid)}">${esc(i.bot)}</td>
-        <td>${esc(i.class || '-')}</td>
-        <td><span class="badge ${sevBadge}">${esc(ISSUE_LABELS[i.type] || i.type)}</span></td>
-        <td class="mono" style="color:${i.severity === 'persistent' ? '#f85149' : '#d29922'};">${esc(fmtDuration(i.duration_sec))}</td>
-        ${actionCell}
-        <td class="mono" style="font-size:0.75rem;">${esc(getZoneName(i.zone, i.map))}</td>
-        <td style="color:#f85149;">${esc(i.target && i.bot && i.target === i.bot ? 'self' : (i.target || '-'))}</td>`;
-      tr.querySelector('td[data-guid]').addEventListener('click', () => focusBot(i.guid));
-      el.issuesTable.appendChild(tr);
-    });
+      const action = (i.type === 'UNREACHABLE_TARGET' && i.details)
+        ? esc(i.details)
+        : `${esc(i.action || i.details || '-')}${i.trigger ? ` <span class="cell-muted">· ${esc(i.trigger)}</span>` : ''}`;
+      return `<tr>
+        <td>${botLink(i.guid, i.bot, i.class)}</td>
+        <td>${esc(capClass(i.class))}</td>
+        <td><span class="badge ${i.severity === 'persistent' ? 'badge-error' : 'badge-warn'}">${esc(ISSUE_LABELS[i.type] || i.type)}</span></td>
+        <td class="mono" style="color: ${i.severity === 'persistent' ? '#f85149' : '#d29922'};">${esc(fmtDuration(i.duration_sec))}</td>
+        <td class="mono">${action}</td>
+        <td class="mono">${esc(getZoneName(i.zone, i.map))}</td>
+        <td class="target-cell">${esc(i.target && i.bot && i.target === i.bot ? 'self' : (i.target || '-'))}</td>
+      </tr>`;
+    }).join('');
   }
 
   function renderIssueZones() {
@@ -4303,31 +4309,32 @@
       return;
     }
     el.issuesResolved.innerHTML = list.map(i =>
-      `<div class="resolved-row"><span class="badge badge-info">${esc(ISSUE_LABELS[i.type] || i.type)}</span><strong style="color:#fff;">${esc(i.bot)}</strong><span style="color:var(--text-muted);">${esc(getZoneName(i.zone, i.map))}</span><span class="mono" style="margin-left:auto;color:#2ea043;">${esc(fmtDuration(i.duration_sec))}</span></div>`
+      `<div class="resolved-row"><span class="badge badge-info">${esc(ISSUE_LABELS[i.type] || i.type)}</span><strong>${botLink(i.guid, i.bot, i.class)}</strong><span class="cell-muted">${esc(getZoneName(i.zone, i.map))}</span><span class="mono" style="margin-left: auto; color: #2ea043;">${esc(fmtDuration(i.duration_sec))}</span></div>`
     ).join('');
   }
 
-  function focusBot(guid) {
-    const bot = state.bots.find(b => b.guid === guid);
-    // Open the map on the zone the bot is actually in, otherwise the marker
-    // would not be drawn (the map filters to the selected zone).
-    if (bot) openZone(bot.zone);
-    state.selectedBotGuid = guid;
-    switchTab('map');
-    selectBot(guid);
+
+  // Issues: one panel, three lists (active / resolved / incident feed).
+  function showIssuesView(view) {
+    state.issuesView = view;
+    paintSeg(el.issuesSeg, view);
+    document.querySelectorAll('[data-issues]').forEach(n => { n.hidden = n.dataset.issues !== view; });
   }
 
-  if (el.issueTypeFilter) {
-    el.issueTypeFilter.addEventListener('change', (e) => {
-      state.issueTypeFilter = e.target.value;
-      renderIssueTable();
-    });
-  }
-  if (el.issueDurationFilter) {
-    el.issueDurationFilter.addEventListener('change', (e) => {
-      state.issueDurationFilter = parseInt(e.target.value, 10) || 0;
-      renderIssueTable();
-    });
+  function initIssues() {
+    bindSeg(el.issuesSeg, showIssuesView);
+    if (el.issueTypeFilter) {
+      el.issueTypeFilter.addEventListener('change', (e) => {
+        state.issueTypeFilter = e.target.value;
+        renderIssueTable();
+      });
+    }
+    if (el.issueDurationFilter) {
+      el.issueDurationFilter.addEventListener('change', (e) => {
+        state.issueDurationFilter = parseInt(e.target.value, 10) || 0;
+        renderIssueTable();
+      });
+    }
   }
 
   // Local watchdog: the daemon cannot tell us it died, so the client decides
@@ -4348,24 +4355,30 @@
   bindMapOverlay(el.mapOverlay);
   bindMapOverlay(el.worldOverlay);
   initZoneSelector();
-  initArmory();
+  initQuickFind();
+  initBots();
   initActivity();
+  initProfile();
+  initIssues();
   initDiagButton();
   renderServerPanel();
   fetchBots();
   fetchAnomalies();
   fetchIssues();
   fetchActivity();
+  fetchRoster();
   setInterval(fetchActivity, 30000);
+  setInterval(fetchRoster, 60000);
   initWebSocket();
 
-  // Restore the tab the operator last used (validated against the tab set;
-  // "armory" is the Bots section opened on its armory sub-view).
-  let initialTab = 'overview';
-  try {
-    const saved = localStorage.getItem(TAB_STORAGE_KEY);
-    if (saved && (saved === 'armory' || TAB_TITLES[saved])) initialTab = saved;
-  } catch (e) {}
-  if (initialTab === 'armory') showArmoryTab();
-  else switchTab(initialTab);
+  // First route: the URL hash wins; without one, return to the last tab used.
+  if (!parseRoute().tab) {
+    let tab = 'overview';
+    try {
+      const saved = localStorage.getItem(TAB_STORAGE_KEY);
+      if (saved && TABS[saved]) tab = saved;
+    } catch (e) {}
+    history.replaceState(null, '', routeHash({ tab }));
+  }
+  applyRoute();
 })();
