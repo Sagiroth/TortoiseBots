@@ -42,6 +42,12 @@
 - Stalled pool bots that earn no XP for 45 minutes get automatically relogged to unstick them — roughly 1 in 20 fresh bots could idle for hours after an early level-up. Battlegrounds and bots grouped with a real player are exempt. New option: `AiPlayerbot.RandomBotStallRelogMinutes` (`0` disables). [#503](https://github.com/Sagiroth/TortoiseBots/pull/503)
 - Overnight log fixes rolled up from monitoring and player reports. [#504](https://github.com/Sagiroth/TortoiseBots/pull/504)
 
+### Observability & Engine
+- Dashboard redesign ships seven tabs, a single unified bot list, a slide-over bot profile, hash routing, and a responsive layout — far less clicking to find a specific bot or stat. [#505](https://github.com/Sagiroth/TortoiseBots/pull/505)
+
+### Travel & Pathing
+- Bots stuck with no valid path from their current position now trigger the long-stuck rescue after three failed targets instead of waiting 15 minutes — stranded bots recover in seconds, not quarter-hours. [#506](https://github.com/Sagiroth/TortoiseBots/pull/506)
+
 ## 2026-10-04
 
 ### Travel & Pathing
