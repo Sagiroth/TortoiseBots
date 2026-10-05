@@ -16,6 +16,7 @@ public:
 
     bool OnGossipHello(Player* player, Creature* creature) override;
     bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override;
+    uint32 GetDialogStatus(Player* player, Creature* creature) override;
 };
 
 } // namespace TortoiseBots
