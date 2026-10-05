@@ -181,6 +181,10 @@ int main()
         CHECK(!IsDeathGatedPurpose(QUEST_GIVER, GRIND, QUEST_ALL));
         CHECK(!IsDeathGatedPurpose(QUEST_TAKER, GRIND, QUEST_ALL));
         CHECK(!IsDeathGatedPurpose(VENDOR, GRIND, QUEST_ALL));
+        // Call sites pass objectives + quest NPCs: hand-ins in a camp are gated.
+        CHECK(IsDeathGatedPurpose(QUEST_GIVER, GRIND, QUEST_ALL | QUEST_GIVER | QUEST_TAKER));
+        CHECK(IsDeathGatedPurpose(QUEST_TAKER, GRIND, QUEST_ALL | QUEST_GIVER | QUEST_TAKER));
+        CHECK(!IsDeathGatedPurpose(VENDOR, GRIND, QUEST_ALL | QUEST_GIVER | QUEST_TAKER));
     }
 
     std::cout << "All death-cluster escalation tests passed.\n";

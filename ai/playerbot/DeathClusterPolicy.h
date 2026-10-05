@@ -140,11 +140,15 @@ namespace ai
         spots[slot].radiusYd = radiusYd;
     }
 
-    // Quest-objective purposes (bitmask enum) share one bitmask with the
-    // composite QuestAllObjective flag, so test with & instead of a range:
-    // a composite purpose id would fail a >=/<= check.
-    inline bool IsDeathGatedPurpose(std::uint32_t purposeId, std::uint32_t grindId, std::uint32_t allObjectivesId)
+    // Quest purposes (bitmask enum) share one bitmask with the composite
+    // QuestAllObjective flag, so test with & instead of a range: a composite
+    // purpose id would fail a >=/<= check. questMask covers the objectives
+    // and the quest giver/taker NPCs: a hand-in inside a camp the bot keeps
+    // dying in is a death loop too (Rane Yorick at Ivar Patch: 38 level 10-12
+    // bots died 837 times walking to him through the Moonrage worgens).
+    // Services (vendor, trainer, repair) stay walkable.
+    inline bool IsDeathGatedPurpose(std::uint32_t purposeId, std::uint32_t grindId, std::uint32_t questMask)
     {
-        return purposeId == grindId || (purposeId & allObjectivesId) != 0;
+        return purposeId == grindId || (purposeId & questMask) != 0;
     }
 }
