@@ -3468,7 +3468,13 @@ uint32 RandomItemMgr::GetLiveStatWeight(Player* player, uint32 itemId, uint32 sp
     // No-stat jewellery below 30: a weight-1 neck/ring/trinket beats an
     // empty slot at 10-29 (owner spec: prefer usable over empty). The seed
     // loop filters weight-0 only, so this gate is what emptied the slots.
-    if (info->weights[specId] == 1 && player->GetLevel() >= 30 && (
+    // Random-suffix jewellery ("... of the Eagle") is weight 1 by base stats
+    // but gets its value from the suffix the caller picks per spec, so it is
+    // exempt: zeroing it here left hired companions at 30+ without a neck
+    // or rings, since most green jewellery is random-suffix.
+    ItemPrototype const* clampProto = sObjectMgr.GetItemPrototype(itemId);
+    if (info->weights[specId] == 1 && player->GetLevel() >= 30 &&
+        !(clampProto && clampProto->RandomProperty) && (
         info->slot == EQUIPMENT_SLOT_NECK ||
         info->slot == EQUIPMENT_SLOT_TRINKET1 ||
         info->slot == EQUIPMENT_SLOT_TRINKET2 ||

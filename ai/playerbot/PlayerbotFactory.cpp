@@ -1785,25 +1785,19 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
             // The seed's quality band is level-derived, so quality degradation
             // cannot widen it — one round is the whole search on that path.
         } while (!found && !seedSpread && attempts < 3 && quality != ITEM_QUALITY_POOR);
-        bool const jewellery = slot == EQUIPMENT_SLOT_NECK || slot == EQUIPMENT_SLOT_FINGER1 ||
-            slot == EQUIPMENT_SLOT_FINGER2 || slot == EQUIPMENT_SLOT_TRINKET1 ||
-            slot == EQUIPMENT_SLOT_TRINKET2;
-        if (!found && seedSpread &&
-            (jewellery || (level < 30 &&
-             (slot == EQUIPMENT_SLOT_HEAD || slot == EQUIPMENT_SLOT_SHOULDERS ||
-              slot == EQUIPMENT_SLOT_RANGED))) &&
+        if (!found && seedSpread && level < 30 &&
+            (slot == EQUIPMENT_SLOT_HEAD || slot == EQUIPMENT_SLOT_SHOULDERS ||
+             slot == EQUIPMENT_SLOT_NECK || slot == EQUIPMENT_SLOT_FINGER1 ||
+             slot == EQUIPMENT_SLOT_FINGER2 || slot == EQUIPMENT_SLOT_TRINKET1 ||
+             slot == EQUIPMENT_SLOT_TRINKET2 || slot == EQUIPMENT_SLOT_RANGED) &&
             !bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
         {
             // Low-level coverage (§9): the scored pools for these slots are
             // thin at 10-29, so a usable item of the right slot/level beats
-            // an empty slot. Jewellery gets the sweep at every level: the
-            // seed path rolls once, and at 30+ the weight-1 zeroing plus
-            // quest/provenance gates left hired companions without a neck
-            // or rings although cached, spec-weighted items existed. Sweep
-            // every cached quality for the slot and take the first wearable,
-            // tier-passing candidate. The cache only holds spec-weighted
-            // items, and nothing above rare. Empty slots only: never
-            // destroys anything.
+            // an empty slot. Sweep every cached quality for the slot and
+            // take the first wearable, tier-passing candidate — no stat
+            // gate beyond wearable, no junk force-fill above 30. Empty
+            // slots only: never destroys anything.
             for (uint32 q = ITEM_QUALITY_POOR; q <= ITEM_QUALITY_RARE && !found; ++q)
             {
                 std::vector<uint32> fallback = sRandomItemMgr.Query(level, bot->GetClass(), uint8(specId), slot, q);
