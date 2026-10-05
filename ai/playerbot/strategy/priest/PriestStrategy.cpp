@@ -379,6 +379,14 @@ void PriestBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "target of attacker",
         NextAction::array(0, new NextAction("elune's grace", ACTION_HIGH + 3), NULL)));
+
+    // A companion priest follows a master who rarely stands still between
+    // pulls, so the out-of-combat Fortitude kept losing to follow and never
+    // landed on the party. Also allow it in combat, below every heal and
+    // attack, for the quiet moments of a fight.
+    triggers.push_back(new TriggerNode(
+        "power word: fortitude on party",
+        NextAction::array(0, new NextAction("power word: fortitude on party", ACTION_LOW), NULL)));
 }
 
 void PriestBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

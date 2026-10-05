@@ -316,7 +316,20 @@ bool MasterTargetActiveTrigger::IsActive()
         return false;
 
     Unit* victim = master->GetVictim();
-    return victim && victim->IsAlive();
+    if (victim && victim->IsAlive())
+        return true;
+
+    // GetVictim is the melee swing target only: a master who opens with a
+    // spell or a shot never has one, so the companions stood idle until the
+    // mob reached them. Count the master's selected enemy too, once it is
+    // fighting the master or someone in the master's group.
+    if (master == bot || !master->IsInCombat())
+        return false;
+    Unit* selected = ai->GetUnit(master->GetSelectionGuid());
+    if (!selected || selected == bot || !selected->IsAlive() || !selected->IsInCombat() || !master->IsHostileTo(selected))
+        return false;
+    Unit* selectedVictim = selected->GetVictim();
+    return selectedVictim && master->IsInRaidWith(selectedVictim);
 }
 
 bool MyAttackerCountTrigger::IsActive()
