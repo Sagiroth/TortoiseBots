@@ -734,9 +734,16 @@ void BotManager::OnPlayerLogin(::Player* player)
         }
     }
 
+    // A hired companion is flagged random too, but the hire provisions its
+    // level and gear itself (the master's level). Seeding it like a pool bot
+    // first rolled a random start level (1-60 by default) and gear for that
+    // level; the hire then lowered the level and the gear stayed on, so a
+    // level 9 companion arrived in level 47 gear.
+    bool const hired = HireLifecycle::Instance().IsHired(player->GetObjectGuid());
+
     // Level seeding runs before the login scatter so PickLevelFittingPoint sees
     // the seeded level (the scatter itself is gated on level >= 10).
-    if (record.random &&
+    if (record.random && !hired &&
         TortoiseBots::NeedsInitialGearSeeding(player->GetTotalPlayedTime(), sRandomBotFacade.GetValue(player->GetGUIDLow(), "levelSeeded")))
     {
         uint32 seedLevel = urand(sPlayerbotAIConfig.randomBotStartLevelMin,
@@ -767,7 +774,7 @@ void BotManager::OnPlayerLogin(::Player* player)
 
     bool freshBot = TortoiseBots::NeedsInitialGearSeeding(
         player->GetTotalPlayedTime(), sRandomBotFacade.GetValue(botGuidLow, "seeded"));
-    if (record.random && sPlayerbotAIConfig.randomGearUpgradeEnabled && player->GetLevel() >= 5 && freshBot)
+    if (record.random && !hired && sPlayerbotAIConfig.randomGearUpgradeEnabled && player->GetLevel() >= 5 && freshBot)
     {
         sRandomBotFacade.UpdateGearSpells(player);
         sRandomBotFacade.SetValue(botGuidLow, "seeded", 1);
