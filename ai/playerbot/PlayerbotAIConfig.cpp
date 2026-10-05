@@ -294,6 +294,7 @@ bool PlayerbotAIConfig::Initialize()
     levelLadderLogMinutes = config.GetIntDefault("AiPlayerbot.LevelLadderLogMinutes", 5);
     minRandomBotInWorldTime = config.GetIntDefault("AiPlayerbot.MinRandomBotInWorldTime", 1 * 1800);
     maxRandomBotInWorldTime = config.GetIntDefault("AiPlayerbot.MaxRandomBotInWorldTime", 6 * 3600);
+    randomBotStallRelogMinutes = config.GetIntDefault("AiPlayerbot.RandomBotStallRelogMinutes", 45);
     minRandomBotRandomizeTime = config.GetIntDefault("AiPlayerbot.MinRandomBotRandomizeTime", 6 * 3600);
     maxRandomBotRandomizeTime = config.GetIntDefault("AiPlayerbot.MaxRandomBotRandomizeTime",
         config.GetIntDefault("AiPlayerbot.MaxRandomRandomizeTime", 24 * 3600));

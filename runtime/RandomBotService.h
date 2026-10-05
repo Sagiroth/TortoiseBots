@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <unordered_map>
 #include <set>
 #include <string>
 
@@ -101,6 +102,11 @@ private:
     std::vector<uint32_t> m_ladderRetryMs; // per candidate: not picked again before this time (failed / busy)
     uint32_t m_quickLogouts = 0;           // bots that left within a minute of logging in (diagnostic)
     std::vector<uint8_t> m_wasBot;         // per candidate: was a random bot at the last service interval
+    // Stall watchdog: last seen level/XP per online pool bot and how long it
+    // has not changed. A bot that earns no XP for RandomBotStallRelogMinutes
+    // is relogged, the one thing measured to unstick it.
+    struct XpProgress { uint32_t level = 0; uint32_t xp = 0; uint32_t stallMs = 0; };
+    std::unordered_map<uint32_t, XpProgress> m_xpProgress;
     uint32_t m_quickLogoutLogMs = 0;
     uint32_t m_serviceElapsedMs = 0;
     // Stable target: snapshot of DesiredTargetCount once at Initialize when

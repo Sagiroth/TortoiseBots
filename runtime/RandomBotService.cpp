@@ -1,6 +1,8 @@
 #include "RandomBotService.h"
 #include "BotActivityLease.h"
 #include "BotManager.h"
+#include "PlayerbotAIStorage.h"
+#include "playerbot/PlayerbotAI.h"
 #include "GearSeedingGuard.h"
 #include "HireLifecycle.h"
 #include "../host/BotSessionAdapter.h"
@@ -1085,6 +1087,7 @@ void RandomBotService::RemoveExpiredBots(uint32_t diff)
             }
             m_wasBot[i] = 0;
             m_ageMs[i] = 0;
+            m_xpProgress.erase(candidate.characterGuid.GetCounter());
             continue;
         }
         m_wasBot[i] = 1;
@@ -1116,6 +1119,40 @@ void RandomBotService::RemoveExpiredBots(uint32_t diff)
             continue;
 
         m_ageMs[i] += diff;
+
+        // Stall watchdog: about 5% of a fresh pool went idle right after an
+        // early ding and stayed online without a single XP point for hours,
+        // until the timed logout relogged them and they levelled normally
+        // again. No XP for the configured time below 60 = relog now.
+        if (sPlayerbotAIConfig.randomBotStallRelogMinutes && candidate.level < 60)
+        {
+            if (::Player* player = ObjectAccessor::FindPlayer(candidate.characterGuid))
+            {
+                XpProgress& progress = m_xpProgress[candidate.characterGuid.GetCounter()];
+                uint32_t const level = player->GetLevel();
+                uint32_t const xp = player->GetUInt32Value(PLAYER_XP);
+                // Battlegrounds give no XP and a bot playing with a real
+                // player follows that player: neither is a stall.
+                ::PlayerbotAI* stallAi = PlayerbotAIStorage::Instance().GetAI(player);
+                bool const busyNoXp = player->InBattleGround() || (stallAi && stallAi->HasRealPlayerMaster());
+                if (busyNoXp || level != progress.level || xp != progress.xp)
+                    progress = XpProgress{ level, xp, 0 };
+                else
+                    progress.stallMs += diff;
+                if (level < 60 && progress.stallMs >= sPlayerbotAIConfig.randomBotStallRelogMinutes * MINUTE * IN_MILLISECONDS)
+                {
+                    TB_LOG_BASIC("TortoiseBots: random bot %s (level %u) earned no XP for %u minutes; relogging",
+                        player->GetName(), level, sPlayerbotAIConfig.randomBotStallRelogMinutes);
+                    m_xpProgress.erase(candidate.characterGuid.GetCounter());
+                    BotManager::Instance().RemoveBot(candidate.characterGuid, true);
+                    BotActivityLeaseManager::Instance().Release(candidate.characterGuid.GetCounter(), BotActivity::Grinding);
+                    m_wasBot[i] = 0;
+                    m_ageMs[i] = 0;
+                    continue;
+                }
+            }
+        }
+
         if (!sPlayerbotAIConfig.randomBotTimedLogout || !sPlayerbotAIConfig.maxRandomBotInWorldTime)
             continue;
 
@@ -1125,6 +1162,7 @@ void RandomBotService::RemoveExpiredBots(uint32_t diff)
 
         TB_LOG_DETAIL("TortoiseBots: native random bot %s reached its online lifetime; removing",
             candidate.characterGuid.GetString().c_str());
+        m_xpProgress.erase(candidate.characterGuid.GetCounter());
         BotManager::Instance().RemoveBot(candidate.characterGuid, true);
         BotActivityLeaseManager::Instance().Release(candidate.characterGuid.GetCounter(), BotActivity::Grinding);
         // A deliberate timed logout is not a quick logout: the bot was online for its whole
