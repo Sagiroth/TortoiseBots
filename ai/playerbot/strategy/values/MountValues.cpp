@@ -374,7 +374,7 @@ std::vector<int32> AvailableMountVendors::Calculate()
     std::vector<int32> mountVendors;
     std::vector<MountValue> const& mountList = GAI_VALUE_REF(std::vector<MountValue>, "full mount list");
 
-    for (auto& mount : mountList)
+    for (auto const& mount : mountList)
     {
         if (!mount.IsItem())
             continue;

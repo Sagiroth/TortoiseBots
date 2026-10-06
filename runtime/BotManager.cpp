@@ -1579,7 +1579,22 @@ void BotManager::UpdateBots(uint32_t diff)
 
         if (entry.aiAdapter && entry.aiAdapter->IsUsable())
         {
+            auto const botStart = std::chrono::steady_clock::now();
             entry.aiAdapter->Update(diff);
+            auto const botElapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - botStart).count();
+            if (botElapsedMs >= 50)
+            {
+                PlayerbotAI* ai = entry.aiAdapter->GetAI();
+                Player* bot = ai ? ai->GetBot() : nullptr;
+                Action* action = (ai && ai->GetLastExecutedAction(ai->GetState())) ?
+                    const_cast<Action*>(ai->GetLastExecutedAction(ai->GetState())) : nullptr;
+                TB_LOG_BASIC("TortoiseBots: BOTSPIKE bot=%s lvl=%u action=%s took=%lldms",
+                    bot ? bot->GetName() : "unknown",
+                    bot ? bot->GetLevel() : 0u,
+                    action ? action->getName().c_str() : "none",
+                    static_cast<long long>(botElapsedMs));
+            }
         }
     };
 

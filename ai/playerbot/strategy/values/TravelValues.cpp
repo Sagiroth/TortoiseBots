@@ -63,8 +63,8 @@ static uint32 GameObjectLockSkill(GameObjectInfo const* gInfo)
 
 EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
 {
-    EntryQuestRelationMap relationMap = GAI_VALUE(EntryQuestRelationMap, "entry quest relation");
-    EntryGuidps guidpMap = GAI_VALUE(EntryGuidps, "entry guidps");
+    EntryQuestRelationMap const& relationMap = GAI_VALUE_REF(EntryQuestRelationMap, "entry quest relation");
+    EntryGuidps const& guidpMap = GAI_VALUE_REF(EntryGuidps, "entry guidps");
 
     EntryTravelPurposeMap entryPurposeMap;
 
@@ -147,7 +147,8 @@ EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
         {
             if (cInfo->rank == 1)
             {
-                if (guidpMap[entry].size() == 1)
+                auto it = guidpMap.find(entry);
+                if (it != guidpMap.end() && it->second.size() == 1)
                     purpose |= (uint32)TravelDestinationPurpose::Boss;
             }
             else

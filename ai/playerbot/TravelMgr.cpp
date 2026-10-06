@@ -1609,22 +1609,22 @@ void TravelMgr::LoadQuestTravelTable()
 
     sLog.outString("Loading object locations.");
 
-    EntryGuidps guidpMap = GAI_VALUE(EntryGuidps, "entry guidps");
+    EntryGuidps const& guidpMap = GAI_VALUE_REF(EntryGuidps, "entry guidps");
 
     sLog.outString("Finding possible travel destinations.");
 
-    EntryQuestRelationMap eMap = GAI_VALUE(EntryQuestRelationMap, "entry quest relation");
+    EntryQuestRelationMap const& eMap = GAI_VALUE_REF(EntryQuestRelationMap, "entry quest relation");
 
     sLog.outString("Creating travel destinations.");
 
     BarGoLink bar(eMap.size());
 
-    for (auto& [entry, relation] : eMap)
+    for (auto const& [entry, relation] : eMap)
     {
 
 
         bar.step();
-        for (auto& [questId, flag] : relation)
+        for (auto const& [questId, flag] : relation)
         {
             if (guidpMap.find(entry) == guidpMap.end())
             {
@@ -1652,7 +1652,7 @@ void TravelMgr::LoadQuestTravelTable()
 
             if (!locs.empty())
             {
-                for (auto& guidP : guidpMap.at(entry))
+                for (auto const& guidP : guidpMap.at(entry))
                 {
                     pointsMap.insert(std::make_pair(guidP.GetRawValue(), guidP));
 
@@ -1667,7 +1667,7 @@ void TravelMgr::LoadQuestTravelTable()
 
     sLog.outString("Loading all travel locations.");
 
-    for (auto& [entry, purpose] : GAI_VALUE(EntryTravelPurposeMap, "entry travel purpose"))
+    for (auto const& [entry, purpose] : GAI_VALUE_REF(EntryTravelPurposeMap, "entry travel purpose"))
     {
         std::vector<TravelDestination*> dests;
 
@@ -2419,11 +2419,11 @@ void TravelMgr::GetPopulatedGrids()
 
 void TravelMgr::GetPopulatedGrids(uint32 mapId)
 {
-    EntryGuidps guidpMap = GAI_VALUE(EntryGuidps, "entry guidps");
+    EntryGuidps const& guidpMap = GAI_VALUE_REF(EntryGuidps, "entry guidps");
 
-    for (auto& [entry, guidPs] : guidpMap)
+    for (auto const& [entry, guidPs] : guidpMap)
     {
-        for (auto& guidP : guidPs)
+        for (auto const& guidP : guidPs)
         {
             if (guidP.GetMapId() == mapId)
             {

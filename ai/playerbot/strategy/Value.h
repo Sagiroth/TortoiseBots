@@ -1,4 +1,5 @@
 #pragma once
+#include <type_traits>
 #include "Action.h"
 #include "Event.h"
 #include "playerbot/PlayerbotAIAware.h"
@@ -62,26 +63,23 @@ namespace ai
         virtual ~CalculatedValue() {}
 
     public:
-        virtual T Get() override
+        virtual void Refresh()
         {
             time_t now = time(0);
             if (!lastCheckTime || (checkInterval < 2 && (now - lastCheckTime > 0.1)) || now - lastCheckTime >= checkInterval / 2)
             {
                 lastCheckTime = now;
-
-                // auto pmo = sPerformanceMonitor.start
                 value = Calculate();
             }
+        }
+        virtual T Get() override
+        {
+            Refresh();
             return value;
         }
         virtual typename Value<T>::RefType GetRef() override
         {
-            time_t now = time(0);
-            if (!lastCheckTime || (checkInterval < 2 && (now - lastCheckTime > 0.1)) || now - lastCheckTime >= checkInterval / 2)
-            {
-                lastCheckTime = now;
-                value = Calculate();
-            }
+            Refresh();
             return value;
         }
         virtual T LazyGet() override
@@ -109,26 +107,23 @@ namespace ai
     public:
         SingleCalculatedValue(PlayerbotAI* ai, std::string name = "value") : CalculatedValue<T>(ai, name) { this->Reset(); }
 
-        virtual T Get() override
+        virtual void Refresh() override
         {
             time_t now = time(0);
             if (!this->lastCheckTime)
             {
                 this->lastCheckTime = now;
-
-                // auto pmo = sPerformanceMonitor.start
                 this->value = this->Calculate();
             }
+        }
+        virtual T Get() override
+        {
+            Refresh();
             return this->value;
         }
         virtual typename Value<T>::RefType GetRef() override
         {
-            time_t now = time(0);
-            if (!this->lastCheckTime)
-            {
-                this->lastCheckTime = now;
-                this->value = this->Calculate();
-            }
+            Refresh();
             return this->value;
         }
     };
@@ -142,8 +137,8 @@ namespace ai
         virtual bool UpdateChange() { if (!CanCheckChange()) return false; lastChangeTime = time(0); lastValue = this->value; return true; }
 
         virtual void Set(T value) override { CalculatedValue<T>::Set(value); UpdateChange(); }
-        virtual T Get() override { this->value = CalculatedValue<T>::Get(); UpdateChange(); return this->value; }
-        virtual typename Value<T>::RefType GetRef() override { this->value = CalculatedValue<T>::Get(); UpdateChange(); return this->value; }
+        virtual T Get() override { CalculatedValue<T>::Refresh(); UpdateChange(); return this->value; }
+        virtual typename Value<T>::RefType GetRef() override { CalculatedValue<T>::Refresh(); UpdateChange(); return this->value; }
 
         time_t LastChangeOn() { Get(); return lastChangeTime; }
         uint32 LastChangeDelay() override { return time(0) - LastChangeOn(); }
