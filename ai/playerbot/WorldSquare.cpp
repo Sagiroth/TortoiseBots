@@ -21,8 +21,9 @@ float MapWpSquare::sqOutDistance(const WorldPosition& point) const
     if (point.mapId != mapId)
     {
         float minSqDist = FLT_MAX;
-        //distance = point -> portal (on map of square)
-        for (auto& [portal, distance] : sTravelMgr.sqMapTransDistances(point, mapId))
+        thread_local std::vector<std::pair<WorldPosition, float>> portals;
+        sTravelMgr.CollectMapTransferPortals(point, mapId, portals);
+        for (auto const& [portal, distance] : portals)
         {
             float sqDist = distance + sqDistance(portal); //Add sqDistance = portal -> square.
             if (sqDist < minSqDist)

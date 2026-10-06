@@ -2571,27 +2571,45 @@ DestinationList TravelMgr::GetDestinations(const PlayerTravelInfo& info, uint32 
 
     for (auto& [purpose, entryDests] : destinationMap)
     {
-
         if (purposeFlag != (uint32)TravelDestinationPurpose::None && !((uint32)purpose & (uint32)purposeFlag))
             continue;
 
-        for (auto& [destEntry, dests] : entryDests)
+        if (!entries.empty())
         {
-            if (entries.size() && std::find(entries.begin(), entries.end(), destEntry) == entries.end())
-                continue;
-
-            for (auto& dest : dests)
+            for (int32 entry : entries)
             {
-                if (onlyPossible && !dest->IsPossible(info))
+                auto it = entryDests.find(entry);
+                if (it == entryDests.end())
                     continue;
 
-                if (maxDistance > 0 && dest->DistanceTo(center) > maxDistance)
-                    continue;
+                for (auto& dest : it->second)
+                {
+                    float dist = dest->DistanceTo(center);
+                    if (dist == FLT_MAX || (maxDistance > 0 && dist > maxDistance))
+                        continue;
 
-                if (dest->DistanceTo(center) == FLT_MAX) //Do not return destinations on maps you can't path to.
-                    continue;
+                    if (onlyPossible && !dest->IsPossible(info))
+                        continue;
 
-                retDests.push_back(dest);
+                    retDests.push_back(dest);
+                }
+            }
+        }
+        else
+        {
+            for (auto& [destEntry, dests] : entryDests)
+            {
+                for (auto& dest : dests)
+                {
+                    float dist = dest->DistanceTo(center);
+                    if (dist == FLT_MAX || (maxDistance > 0 && dist > maxDistance))
+                        continue;
+
+                    if (onlyPossible && !dest->IsPossible(info))
+                        continue;
+
+                    retDests.push_back(dest);
+                }
             }
         }
     }
@@ -2873,12 +2891,6 @@ PartitionedTravelList TravelMgr::GetPartitions(const WorldPosition& center, cons
         float minDistance = FLT_MAX;
         for (auto& position : points)
         {
-            if (!IsLocationLevelValid(*position, info, purposeFlag, grindZoneFloor, excludeZoneId))
-            {
-                probeRejectLevel++;
-                continue;
-            }
-
             float distance = position->distance(center);
 
             if (distance > maxDistance)
@@ -2892,6 +2904,12 @@ PartitionedTravelList TravelMgr::GetPartitions(const WorldPosition& center, cons
             if (info.GetLevel() <= 5 && distance > 1500.0f)
             {
                 probeRejectDistance++;
+                continue;
+            }
+
+            if (!IsLocationLevelValid(*position, info, purposeFlag, grindZoneFloor, excludeZoneId))
+            {
+                probeRejectLevel++;
                 continue;
             }
 
