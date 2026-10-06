@@ -142,8 +142,10 @@ bool ai::AhBuyerTripNeeded(PlayerbotAI* ai)
     // reports cross-map houses as FLT_MAX (unroutable); mirror that here via
     // the cached entry positions ("entry guidps": per-entry spawn points with
     // map ids, no world scan) filtered to AH-purpose entries.
-    // Precalculated static map set (Issue #518): populated once on first call,
+    // Precalculated static map set (Issue #518): populated once on first evaluation,
     // avoiding deep copies of EntryGuidps and EntryTravelPurposeMap on every bot check.
+    // Note: The first bot evaluating this pays the one-time copy cost at startup.
+    // Overworld auction house locations are assumed static across server runtime.
     static std::unordered_set<uint32> ahMaps;
     static std::once_flag ahMapsInitOnce;
     std::call_once(ahMapsInitOnce, []() {
