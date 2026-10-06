@@ -103,9 +103,9 @@ namespace ai
         bool IsActive() override;
     };
 
-    // Universal raid survival: 4H-style mark rotation. The Four Horsemen
-    // marks (28832 Thane, 28833 Blaumeux, 28834 Mograine, 28835 Zeliek)
-    // stack to lethal; at 3+ stacks the carrier must rotate out.
+    // Legacy 4H mark threshold alert. ReactionStrategy routes this to the
+    // generic hazard escape; it does not rotate targets, assign tanks, or
+    // ensure that moving away is safe. Marks: 28832-28835.
     class FourHorsemenMarkTrigger : public Trigger
     {
     public:

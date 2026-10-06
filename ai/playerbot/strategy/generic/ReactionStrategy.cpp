@@ -31,8 +31,9 @@ void ReactionStrategy::InitReactionTriggers(std::list<TriggerNode*> &triggers)
         NextAction::array(0, new NextAction("move away from hazard", ACTION_EMERGENCY + 5), NULL)));
 
     // Universal raid survival (any raid map): bomb carriers run 30yd clear,
-    // 4H mark carriers rotate out, non-tanks flank dragons, stacked ranged
-    // split. Reaction engine ticks regardless of combat state.
+    // non-tanks flank dragons, stacked ranged split. Reaction engine ticks
+    // regardless of combat state. The legacy 4H threshold below only calls
+    // generic hazard escape; it is not a mark rotation or tank assignment.
     triggers.push_back(new TriggerNode(
         "raid bomb debuff",
         NextAction::array(0, new NextAction("raid bomb runout", ACTION_EMERGENCY + 6), NULL)));
