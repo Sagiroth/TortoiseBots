@@ -63,7 +63,7 @@ namespace ai
         bool IsFriendlyTo(WorldObject* object) { return IsFriendlyTo(GuidPosition(object), object->GetInstanceId()); }
         bool IsHostileTo(const WorldObject* object) { return IsHostileTo(GuidPosition(object), object->GetInstanceId()); }
 
-        bool isDead(uint32 instanceId); //For loaded grids check if the unit/object is unloaded/dead.
+        bool isDead(uint32 instanceId) const; //For loaded grids check if the unit/object is unloaded/dead.
 
         uint16 IsPartOfAPool();
         uint16 GetGameEventId();

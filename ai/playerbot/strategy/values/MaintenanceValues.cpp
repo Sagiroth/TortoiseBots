@@ -149,8 +149,8 @@ bool ai::AhBuyerTripNeeded(PlayerbotAI* ai)
     static std::unordered_set<uint32> ahMaps;
     static std::once_flag ahMapsInitOnce;
     std::call_once(ahMapsInitOnce, []() {
-        EntryGuidps const& guidps = GAI_VALUE(EntryGuidps, "entry guidps");
-        EntryTravelPurposeMap const& purposeMap = GAI_VALUE(EntryTravelPurposeMap, "entry travel purpose");
+        EntryGuidps const& guidps = GAI_VALUE_REF(EntryGuidps, "entry guidps");
+        EntryTravelPurposeMap const& purposeMap = GAI_VALUE_REF(EntryTravelPurposeMap, "entry travel purpose");
         for (auto const& [entry, purpose] : purposeMap)
         {
             if (!(purpose & (uint32)TravelDestinationPurpose::AH))

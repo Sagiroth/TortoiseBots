@@ -7,6 +7,8 @@
 // the native module build.
 #define AI_VALUE(type, name) context->GetValue<type>(name)->Get()
 #define AI_VALUE2(type, name, param) context->GetValue<type>(name, param)->Get()
+#define AI_VALUE_REF(type, name) context->GetValue<type>(name)->GetRef()
+#define AI_VALUE2_REF(type, name, param) context->GetValue<type>(name, param)->GetRef()
 
 #define AI_VALUE_SAFE(type, name) context->GetValue<type>(name) ? context->GetValue<type>(name)->Get() : type()
 #define AI_VALUE2_SAFE(type, name, param) context->GetValue<type>(name, param) ? context->GetValue<type>(name, param)->Get() : type()
@@ -41,6 +43,8 @@
 
 #define GAI_VALUE(type, name) sSharedObjectContext.GetValue<type>(name)->Get()
 #define GAI_VALUE2(type, name, param) sSharedObjectContext.GetValue<type>(name, param)->Get()
+#define GAI_VALUE_REF(type, name) sSharedObjectContext.GetValue<type>(name)->GetRef()
+#define GAI_VALUE2_REF(type, name, param) sSharedObjectContext.GetValue<type>(name, param)->GetRef()
 #define SET_GAI_VALUE(type, name, value) sSharedObjectContext.GetValue<type>(name)->Set(value)
 #define SET_GAI_VALUE2(type, name, param, value) sSharedObjectContext.GetValue<type>(name, param)->Set(value)
 

@@ -138,7 +138,7 @@ const ReputationRank GuidPosition::GetReactionTo(const GuidPosition& other, uint
     return PlayerbotAI::GetFactionReaction(GetFactionTemplateEntry(), other.GetFactionTemplateEntry());
 }
 
-bool GuidPosition::isDead(uint32 instanceId)
+bool GuidPosition::isDead(uint32 instanceId) const
 {
     if (!getMap(instanceId))
         return false;

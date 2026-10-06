@@ -150,15 +150,19 @@ questGiverMap QuestGiversValue::Calculate()
 	if (hasQualifier)
 		level = stoi(q);
 
-	questGuidpMap questMap = GAI_VALUE(questGuidpMap, "quest guidp map");
+	questGuidpMap const& questMap = GAI_VALUE_REF(questGuidpMap, "quest guidp map");
 
 	questGiverMap guidps;
 
-	for (auto& [questId, questRelationGuidps]: questMap)
+	for (auto const& [questId, questRelationGuidps]: questMap)
 	{
-		for (auto& entry : questRelationGuidps[(uint8)TravelDestinationPurpose::QuestGiver])
+		auto it = questRelationGuidps.find((uint8)TravelDestinationPurpose::QuestGiver);
+		if (it == questRelationGuidps.end())
+			continue;
+
+		for (auto const& entry : it->second)
 		{
-			for (auto& guidp : entry.second)
+			for (auto const& guidp : entry.second)
 			{
 				if (hasQualifier)
 				{
@@ -178,11 +182,11 @@ questGiverMap QuestGiversValue::Calculate()
 
 std::list<GuidPosition> ActiveQuestGiversValue::Calculate()
 {
-	questGiverMap qGivers = GAI_VALUE2(questGiverMap, "quest givers", bot->GetLevel());
+	questGiverMap const& qGivers = GAI_VALUE2_REF(questGiverMap, "quest givers", bot->GetLevel());
 
 	std::list<GuidPosition> retQuestGivers;
 
-	for (auto& [questId, guidPs] :qGivers)
+	for (auto const& [questId, guidPs] : qGivers)
 	{
 		Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
 
@@ -221,7 +225,7 @@ std::list<GuidPosition> ActiveQuestGiversValue::Calculate()
 
 std::list<GuidPosition> ActiveQuestTakersValue::Calculate()
 {
-	questGuidpMap questMap = GAI_VALUE(questGuidpMap, "quest guidp map");
+	questGuidpMap const& questMap = GAI_VALUE_REF(questGuidpMap, "quest guidp map");
 
 	std::list<GuidPosition> retQuestTakers;
 
@@ -279,7 +283,7 @@ std::list<GuidPosition> ActiveQuestTakersValue::Calculate()
 
 std::list<GuidPosition> ActiveQuestObjectivesValue::Calculate()
 {
-	questGuidpMap questMap = GAI_VALUE(questGuidpMap, "quest guidp map");
+	questGuidpMap const& questMap = GAI_VALUE_REF(questGuidpMap, "quest guidp map");
 
 	std::list<GuidPosition> retQuestObjectives;
 

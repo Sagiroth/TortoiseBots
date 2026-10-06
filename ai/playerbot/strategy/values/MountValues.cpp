@@ -372,7 +372,7 @@ uint32 MountSkillTypeValue::Calculate()
 std::vector<int32> AvailableMountVendors::Calculate()
 {
     std::vector<int32> mountVendors;
-    std::vector<MountValue> mountList = GAI_VALUE(std::vector<MountValue>, "full mount list");
+    std::vector<MountValue> const& mountList = GAI_VALUE_REF(std::vector<MountValue>, "full mount list");
 
     for (auto& mount : mountList)
     {

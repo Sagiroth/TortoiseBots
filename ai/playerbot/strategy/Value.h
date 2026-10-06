@@ -38,7 +38,12 @@ namespace ai
     class Value
     {
     public:
+        virtual ~Value() {}
+
+    public:
+        using RefType = std::add_lvalue_reference_t<std::remove_reference_t<T> const>;
         virtual T Get() = 0;
+        virtual RefType GetRef() = 0;
         virtual T LazyGet() = 0;
         virtual void Reset() {}
         virtual void Set(T value) = 0;
@@ -65,6 +70,16 @@ namespace ai
                 lastCheckTime = now;
 
                 // auto pmo = sPerformanceMonitor.start
+                value = Calculate();
+            }
+            return value;
+        }
+        virtual typename Value<T>::RefType GetRef() override
+        {
+            time_t now = time(0);
+            if (!lastCheckTime || (checkInterval < 2 && (now - lastCheckTime > 0.1)) || now - lastCheckTime >= checkInterval / 2)
+            {
+                lastCheckTime = now;
                 value = Calculate();
             }
             return value;
@@ -106,6 +121,16 @@ namespace ai
             }
             return this->value;
         }
+        virtual typename Value<T>::RefType GetRef() override
+        {
+            time_t now = time(0);
+            if (!this->lastCheckTime)
+            {
+                this->lastCheckTime = now;
+                this->value = this->Calculate();
+            }
+            return this->value;
+        }
     };
 
     template<class T> class MemoryCalculatedValue : public CalculatedValue<T>
@@ -118,6 +143,7 @@ namespace ai
 
         virtual void Set(T value) override { CalculatedValue<T>::Set(value); UpdateChange(); }
         virtual T Get() override { this->value = CalculatedValue<T>::Get(); UpdateChange(); return this->value; }
+        virtual typename Value<T>::RefType GetRef() override { this->value = CalculatedValue<T>::Get(); UpdateChange(); return this->value; }
 
         time_t LastChangeOn() { Get(); return lastChangeTime; }
         uint32 LastChangeDelay() override { return time(0) - LastChangeOn(); }
@@ -342,6 +368,7 @@ namespace ai
 
     public:
         virtual T Get() override { return value; }
+        virtual typename Value<T>::RefType GetRef() override { return value; }
         virtual T LazyGet() override { return value; }
         virtual void Set(T value) override { this->value = value; }
         virtual void Update() { }

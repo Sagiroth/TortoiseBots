@@ -13,10 +13,10 @@ namespace ai
         MountValue(Item* item) { spellId = GetMountSpell(item->GetProto()->ItemId); proto = item->GetProto(); };
         MountValue(const MountValue& mount) : spellId(mount.spellId), proto(mount.proto) {};
 
-        bool IsItem() { return proto; }
-        const ItemPrototype* GetItemProto() { return proto; }
-        uint32 GetSpellId() { return spellId; }
-        uint32 GetSpeed() { return GetSpeed(spellId); }
+        bool IsItem() const { return proto; }
+        const ItemPrototype* GetItemProto() const { return proto; }
+        uint32 GetSpellId() const { return spellId; }
+        uint32 GetSpeed() const { return GetSpeed(spellId); }
         // Dynamic speed mirrors the core rider rule
         // (HandleAuraModIncreaseMountedSpeed): SPELL_CUSTOM_MOUNT_SPEED_100
         // -> 100, SPELL_CUSTOM_IGNORE_RIDING_SKILL_MOUNT_SPEED -> static DBC
