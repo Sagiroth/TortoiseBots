@@ -1,5 +1,7 @@
 
 #include "MaintenanceValues.h"
+#include <mutex>
+#include <unordered_set>
 #include "playerbot/strategy/actions/SellAction.h"
 #include "NearbyServicePolicy.h"
 #include "Mail/Mail.h"
@@ -118,6 +120,14 @@ bool ai::AhBuyerTripNeeded(PlayerbotAI* ai)
         if (map->IsDungeon() || map->IsBattleGround())
             return false;
     AiObjectContext* context = ai->GetAiObjectContext();
+
+    // ONE money rule: spendable "free money for anything" must cover the
+    // policy floor - exactly the purse AhBidAction will read on arrival.
+    // Early financial exit (Issue #518): evaluate cheap coin check first.
+    uint32 spendable = AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::anything);
+    if (spendable < ai::kBuyerTripMinSpareCopper)
+        return false;
+
     // Parked after a failed or empty AH search: stay parked like every other
     // purpose instead of re-requesting every tick (finding 9).
     if (AI_VALUE2(time_t, "manual time", "no travel purpose until::" + std::to_string((uint32)TravelDestinationPurpose::AH)) > time(0))
@@ -132,10 +142,13 @@ bool ai::AhBuyerTripNeeded(PlayerbotAI* ai)
     // reports cross-map houses as FLT_MAX (unroutable); mirror that here via
     // the cached entry positions ("entry guidps": per-entry spawn points with
     // map ids, no world scan) filtered to AH-purpose entries.
-    {
+    // Precalculated static map set (Issue #518): populated once on first call,
+    // avoiding deep copies of EntryGuidps and EntryTravelPurposeMap on every bot check.
+    static std::unordered_set<uint32> ahMaps;
+    static std::once_flag ahMapsInitOnce;
+    std::call_once(ahMapsInitOnce, []() {
         EntryGuidps const& guidps = GAI_VALUE(EntryGuidps, "entry guidps");
         EntryTravelPurposeMap const& purposeMap = GAI_VALUE(EntryTravelPurposeMap, "entry travel purpose");
-        bool sameMapHouse = false;
         for (auto const& [entry, purpose] : purposeMap)
         {
             if (!(purpose & (uint32)TravelDestinationPurpose::AH))
@@ -145,23 +158,15 @@ bool ai::AhBuyerTripNeeded(PlayerbotAI* ai)
                 continue;
             for (AsyncGuidPosition const& guidp : it->second)
             {
-                if (guidp.getMapId() == bot->GetMapId())
-                {
-                    sameMapHouse = true;
-                    break;
-                }
+                ahMaps.insert(guidp.getMapId());
             }
-            if (sameMapHouse)
-                break;
         }
-        if (!ai::BuyerTripSameContinent(bot->GetMapId(), sameMapHouse))
-            return false;
-    }
-    // ONE money rule: spendable "free money for anything" must cover the
-    // policy floor - exactly the purse AhBidAction will read on arrival.
-    uint32 spendable = AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::anything);
-    if (spendable < ai::kBuyerTripMinSpareCopper)
+    });
+
+    bool sameMapHouse = (ahMaps.find(bot->GetMapId()) != ahMaps.end());
+    if (!ai::BuyerTripSameContinent(bot->GetMapId(), sameMapHouse))
         return false;
+
     return true;
 }
 

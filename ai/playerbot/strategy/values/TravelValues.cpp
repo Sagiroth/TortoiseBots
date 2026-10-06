@@ -345,16 +345,18 @@ bool ShouldTravelNamedValue::Calculate()
         if (!botPos.isOverworld())
             return false;
 
+        uint32 rpgPhase = ai->GetFixedBotNumber(BotTypeNumber::RPG_PHASE_NUMBER, ai::kBuyerTripPhaseMax, 1);
+
         // A city trip without capital business is a 3000 yd walk to nowhere
         // (live: 1614 "city" picks, 917 move failures, 520 drops against no
         // buyer/seller need of its own). Gate it on the same needs the
         // capital serves: stock to post at the AH, or an affordable AH
         // purchase. Trainer/vendor/mail trips carry their own need gates;
         // the battlemaster leg is gone (bots never queue on their own).
-        if (!AI_VALUE(bool, "should ah sell") && !ai::AhBuyerTripNeeded(ai))
+        // Only buyer leg is phase-gated to avoid checking AhBuyerTripNeeded continuously.
+        bool shouldAhSell = AI_VALUE(bool, "should ah sell");
+        if (!shouldAhSell && !(ai::BuyerTripPhaseOpen(rpgPhase) && ai::AhBuyerTripNeeded(ai)))
             return false;
-
-        uint32 rpgPhase = ai->GetFixedBotNumber(BotTypeNumber::RPG_PHASE_NUMBER, 60, 1);
 
         if (rpgPhase > 20) //Only first 20 minutes of the hour allow generic city pvp without reason.
             return false;
