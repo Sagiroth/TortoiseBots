@@ -671,6 +671,13 @@ bool ExploreTravelDestination::IsPossible(const PlayerTravelInfo& info) const
     if (GetLevel() && (uint32)GetLevel() > info.GetLevel() && info.GetLevel() < DEFAULT_MAX_LEVEL)
         return false;
 
+    if (info.IsMasterlessRandom())
+    {
+        Team const botTeam = info.GetTeam();
+        if (area->Team == (botTeam == ALLIANCE ? 2 : (botTeam == HORDE ? 4 : 0)))
+            return false;
+    }
+
     return true;
 }
 

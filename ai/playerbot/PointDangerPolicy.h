@@ -39,12 +39,11 @@ namespace ai
     // the bot standing there: aggro range plus wander, in yards.
     constexpr float POINT_DANGER_RADIUS_YD = 40.0f;
 
-    // The gate only binds pool bots below level 10: from 10 the +4 order cap
-    // and the area gates carry the risk, and owned/hired bots follow their
-    // player anywhere.
-    inline bool PointDangerApplies(std::uint32_t botLevel, bool masterlessRandom)
+    // The gate binds all masterless random pool bots: owned/hired bots follow
+    // their player anywhere.
+    inline bool PointDangerApplies(std::uint32_t /*botLevel*/, bool masterlessRandom)
     {
-        return masterlessRandom && botLevel < 10;
+        return masterlessRandom;
     }
 
     // Whether the highest hostile spawn near the point bars a bot of this

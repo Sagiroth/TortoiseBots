@@ -260,6 +260,14 @@ bool MisplacedBotEligible(::Player* bot, int32& areaLevelOut, std::string* why =
         return true;
     }
 
+    // Bots caught in hostile guarded towns (Grom'gol, Southshore, Brackenwall, Feathermoon, Revantusk, etc.)
+    // are hopelessly misplaced and camped by level 55 guards.
+    if (sPlayerbotAIConfig.avoidHostileTowns && ai::WorldPosition(bot).IsGuardedHostileTownFor(bot))
+    {
+        areaLevelOut = 55;
+        return true;
+    }
+
     auto& travelMgr = MaNGOS::Singleton<ai::TravelMgr>::Instance();
     int32 areaLevel = 0;
     if (!travelMgr.TryGetValidatedAreaLevel(bot->GetAreaId(), areaLevel) || areaLevel <= 0)
