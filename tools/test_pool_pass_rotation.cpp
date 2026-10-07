@@ -205,6 +205,35 @@ static void TestEmptyPool()
     CHECK(!budgetHit);
 }
 
+static void TestSpentBudgetStartsNoNewBot()
+{
+    // Budget already spent (zero budget): the pass must start no bot, report
+    // the hit, and leave the cursor unmoved so the next pass retries the
+    // same first bot instead of skipping it.
+    PoolPassRotation rotation;
+    std::vector<uint32_t> pool = {1, 2, 3};
+    g_live = {1, 2, 3};
+    rotation.Refresh(pool, InPool);
+
+    FakeClock clock;
+    bool budgetHit = false;
+    std::vector<uint32_t> visited;
+    uint32_t processed = rotation.Run(true, 0,
+        [&clock]() { return clock.Now(); },
+        [&](uint32_t guidLow) { visited.push_back(guidLow); },
+        budgetHit);
+    CHECK(processed == 0);
+    CHECK(visited.empty());
+    CHECK(budgetHit);
+
+    // Cursor unmoved: a full pass still starts at the first bot.
+    rotation.Run(false, 0,
+        [&clock]() { return clock.Now(); },
+        [&](uint32_t guidLow) { visited.push_back(guidLow); },
+        budgetHit);
+    CHECK(visited == pool);
+}
+
 int main()
 {
     TestFullPassVisitsEveryBotOnce();
@@ -213,6 +242,7 @@ int main()
     TestUnchangedMembershipKeepsCursor();
     TestMembershipChangeRebuilds();
     TestEmptyPool();
+    TestSpentBudgetStartsNoNewBot();
 
     std::printf("PASSED: pool pass rotation (%d checks)\n", checks);
     return 0;

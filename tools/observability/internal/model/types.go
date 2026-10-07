@@ -42,6 +42,8 @@ type BotSnapshot struct {
 	TargetLevel uint32 `json:"target_level,omitempty"` // selected-unit target level (0 = none/self)
 	Strategy    string `json:"strategy"`
 	State       string `json:"state"` // "combat", "moving", "busy", "stalled", "resting", "dead", "idle"
+	Killer      string `json:"killer,omitempty"`
+	KillerLevel uint32 `json:"killer_level,omitempty"`
 	LastAction  string `json:"last_action,omitempty"`
 	LastTrigger string `json:"last_trigger,omitempty"`
 	// TravelPurpose/TravelTo describe the active travel destination ("grind",
@@ -291,6 +293,8 @@ type HeartbeatPayload struct {
 	Type        string           `json:"type"`
 	Uptime      uint32           `json:"uptime"`
 	TickDiffMs  float64          `json:"diff"`
+	TickAvgMs   float64          `json:"diff_avg,omitempty"`
+	TickWorstMs float64          `json:"diff_worst,omitempty"`
 	WindowSecs  uint32           `json:"window_secs,omitempty"`
 	HumansCount uint32           `json:"humans"`
 	BotsCount   uint32           `json:"bots"`
@@ -375,6 +379,8 @@ type ServerStatus struct {
 	Seq                 uint64      `json:"seq"`
 	Uptime              uint32      `json:"uptime"`
 	TickDiffMs          float64     `json:"diff"`
+	TickAvgMs           float64     `json:"diff_avg,omitempty"`
+	TickWorstMs         float64     `json:"diff_worst,omitempty"`
 	WindowSecs          uint32      `json:"window_secs,omitempty"`
 	Humans              uint32      `json:"humans"`
 	Bots                uint32      `json:"bots"`

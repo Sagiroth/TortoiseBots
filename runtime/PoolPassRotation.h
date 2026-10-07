@@ -49,11 +49,11 @@ public:
 
     // Visit bots from the cursor, resuming where the previous call stopped, and
     // stop early when the budget is spent. `nowUs` is a monotonic microsecond
-    // clock; the budget is only checked between bots (so a call can overshoot
-    // by one bot's work) and only while budgetActive. Returns the number of
-    // bots visited and sets budgetHit when the stop left work for the next
-    // tick. Without an active budget the whole pool is visited and the cursor
-    // ends where it started.
+    // clock; the budget is checked before starting the next bot (and only
+    // while budgetActive), so a call never starts new work over budget. Returns
+    // the number of bots visited and sets budgetHit when the stop left work
+    // for the next tick. Without an active budget the whole pool is visited
+    // and the cursor ends where it started.
     template <typename NowUsFn, typename UpdateFn>
     uint32_t Run(bool budgetActive, uint64_t budgetUs, NowUsFn nowUs, UpdateFn update, bool& budgetHit)
     {
@@ -71,16 +71,17 @@ public:
         uint32_t processed = 0;
         for (uint32_t remaining = size; remaining > 0; --remaining)
         {
-            uint32_t const guidLow = m_order[m_cursor];
-            m_cursor = (m_cursor + 1 == size) ? 0 : m_cursor + 1;
-            update(guidLow);
-            ++processed;
-
-            if (budgetActive && processed < size && nowUs() - startUs >= budgetUs)
+            // Budget already spent: leave the cursor on this bot so the next
+            // pass resumes here instead of starting another over-budget update.
+            if (budgetActive && nowUs() - startUs >= budgetUs)
             {
                 budgetHit = true;
                 break;
             }
+            uint32_t const guidLow = m_order[m_cursor];
+            m_cursor = (m_cursor + 1 == size) ? 0 : m_cursor + 1;
+            update(guidLow);
+            ++processed;
         }
         return processed;
     }

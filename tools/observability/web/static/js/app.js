@@ -49,6 +49,8 @@
       stale: true,
       uptime: 0,
       diff: 0,
+      diff_avg: 0,
+      diff_worst: 0,
       humans: 0,
       bots: 0
     },
@@ -1532,7 +1534,7 @@
       el.tickNow.style.color = last > 100 ? '#f85149' : last > 70 ? '#d29922' : 'var(--text-muted)';
     }
     const avgEl = document.getElementById('metric-tick-avg');
-    if (avgEl) avgEl.textContent = `avg ${avg} ms (10 min)`;
+    if (avgEl && !state.server.diff_worst) avgEl.textContent = `avg ${avg} ms (10 min)`;
     // Dashed average line across the chart.
     ctx.setLineDash([6, 3]);
     ctx.strokeStyle = 'rgba(88, 166, 255, 0.6)';
@@ -1834,7 +1836,7 @@
     state.history.t.push(Date.now());
     state.history.bots.push(s.online ? s.bots : 0);
     state.history.humans.push(s.online ? s.humans : 0);
-    state.history.diff.push(s.diff || 0);
+    state.history.diff.push(s.diff_avg || s.diff || 0);
     if (state.history.t.length > HIST_MAX) {
       state.history.t.shift();
       state.history.bots.shift();
@@ -1854,14 +1856,16 @@
 
   function updateOverviewMetrics() {
     const s = state.server;
-    const diff = s.diff || 0;
+    const diff = s.diff_avg || s.diff || 0;
     if (el.metricBotsOnline) el.metricBotsOnline.textContent = s.online ? s.bots : 0;
     if (el.metricHumansOnline) el.metricHumansOnline.textContent = s.online ? s.humans : 0;
     if (el.metricUptime) el.metricUptime.textContent = s.online ? `up ${formatUptime(s.uptime)}` : 'offline';
     if (el.metricTick) {
-      el.metricTick.textContent = s.online ? `${diff} ms` : '–';
+      el.metricTick.textContent = s.online ? `${Math.round(diff)} ms` : '–';
       el.metricTick.className = `kpi-value ${!s.online ? '' : diff > 100 ? 'kpi-red' : diff > 70 ? 'kpi-amber' : 'kpi-green'}`;
     }
+    const tickSub = document.getElementById('metric-tick-avg');
+    if (tickSub && s.online && s.diff_worst) tickSub.textContent = `worst ${Math.round(s.diff_worst)} ms`;
     updateSnapshotAge();
     setStatusPill();
   }
@@ -1917,6 +1921,7 @@
       <strong style="color: #fff;">${esc(b.name)}</strong> (${esc(b.class)} Lvl ${esc(b.level)})<br>
       <span style="color: var(--text-muted);">Role:</span> ${esc(roleLabel(b))}<br>
       <span style="color: var(--text-muted);">Status:</span> ${esc(b.state || 'idle')}<br>
+      ${b.killer ? `<span style="color: var(--text-muted);">Killed by:</span> ${esc(b.killer)}${b.killer_level ? ` (${b.killer_level})` : ''}<br>` : ''}
       <span style="color: var(--text-muted);">Zone:</span> ${esc(getZoneName(b.zone, b.map))}<br>
       <span style="color: var(--text-muted);">Target:</span> ${esc(displayTarget(b))}
       ${issueLine}
@@ -4017,8 +4022,9 @@
     state.server.stale = !!s.stale;
     state.server.uptime = s.uptime || 0;
     state.server.diff = s.diff || 0;
+    state.server.diff_avg = s.diff_avg || 0;
+    state.server.diff_worst = s.diff_worst || 0;
     state.server.humans = s.humans || 0;
-    state.server.bots = s.bots || 0;
   }
 
   // WebSocket Live Streaming
@@ -4094,8 +4100,9 @@
       state.server.stale = false;
       state.server.uptime = d.uptime || 0;
       state.server.diff = d.diff || 0;
+      state.server.diff_avg = d.diff_avg || 0;
+      state.server.diff_worst = d.diff_worst || 0;
       state.server.humans = d.humans || 0;
-      state.server.bots = d.bots || 0;
       pushHistory();
       updateOverviewMetrics();
       if (state.activeTab === 'overview') renderOverviewCharts();

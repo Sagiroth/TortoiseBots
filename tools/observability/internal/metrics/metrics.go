@@ -39,7 +39,7 @@ func New() *Registry {
 		}),
 		tickDuration: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: "mangos_server_tick_duration_ms",
-			Help: "Current world update tick time in milliseconds",
+			Help: "Recent average world update interval in milliseconds",
 		}),
 		playersOnline: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: "mangos_players_online",
@@ -108,7 +108,11 @@ func (r *Registry) RecordHeartbeat(p *model.HeartbeatPayload) {
 	r.mu.Unlock()
 
 	r.serverOnline.Set(1)
-	r.tickDuration.Set(p.TickDiffMs)
+	if p.TickAvgMs > 0 {
+		r.tickDuration.Set(p.TickAvgMs)
+	} else {
+		r.tickDuration.Set(p.TickDiffMs)
+	}
 	r.playersOnline.Set(float64(p.HumansCount))
 
 	r.stateRatio.WithLabelValues("combat").Set(p.States.Combat)

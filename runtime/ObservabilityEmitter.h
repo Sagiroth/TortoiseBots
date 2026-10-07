@@ -2,6 +2,7 @@
 
 #include "Common.h"
 #include <cstdint>
+#include <ctime>
 #include <map>
 #include <unordered_map>
 #include <mutex>
@@ -38,6 +39,10 @@ struct BotTelemetrySnapshot
     std::string target;
     uint32 targetLevel = 0;  // combat target level (0 = none/non-unit)
     std::string strategy;
+    // Killer remembered when BOT_DEATH fires, shown on later snapshots while
+    // the bot is dead. Never the live target: "target" stays the selected unit.
+    std::string killer;
+    uint32 killerLevel = 0;
     std::string state;       // "combat", "moving", "busy", "stalled", "resting", "dead", "idle"
     std::string lastAction;  // last action the AI executed (loop detection)
     std::string lastTrigger; // event source that drove the last action
@@ -107,7 +112,8 @@ public:
                      std::string const& details,
                      std::string const& targetName = "",
                      std::string const& strategy = "",
-                     std::string const& lastAction = "");
+                     std::string const& lastAction = "",
+                     uint32 killerLevel = 0);
 
     void OnActionFailed(Player* bot,
                         std::string const& actionName,
@@ -142,6 +148,7 @@ private:
     void PruneState(uint32 nowMs);
     bool AnomalyAllowed(uint32 guid, uint8 typeId, uint32 nowMs);
     void AddStateTime(size_t stateIndex, uint32 diff);
+    void NoteTickDiff(uint32 diff);
     void EmitSnapshotCycle(std::vector<Player*> const& activeBots, uint32 diff);
     // Effective running settings for the dashboard Server panel (Addendum 2):
     // core rate getters + AiPlayerbot flags, sent at startup and on a slow
@@ -151,7 +158,7 @@ private:
     // Exact server-side stats for the dashboard armory
     // (tortoise_bots_armory_stats); a few bots per snapshot, round-robin.
     void WriteArmoryStats(Player* bot);
-    size_t m_armoryCursor = 0;
+    size_t m_armoryOffset = 0;
 
     // Storage-only handle: this header stays free of <winsock2.h>/<sys/socket.h>, the same
     // way m_destAddr below stays a void* rather than a struct sockaddr_in*. std::uintptr_t
@@ -194,6 +201,28 @@ private:
     // stale cycles of the previous process.
     uint64 m_sessionId;
     uint64 m_snapshotSeq;
+    // World-tick truth: every Update(diff) feeds this window, so the
+    // heartbeat reports the recent average and worst instead of the one
+    // gated tick. ~40 ticks cover a few seconds at live rates.
+    static constexpr size_t kTickWindowSize = 40;
+    uint32 m_tickWindow[kTickWindowSize] = {};
+    size_t m_tickWindowIndex = 0;
+    size_t m_tickWindowCount = 0;
+    uint32 m_tickAvgMs = 0;
+    uint32 m_tickWorstMs = 0;
+
+    static constexpr size_t kMaxDeathKillers = 5000;
+
+    struct DeathKillerInfo
+    {
+        std::string name;
+        uint32 level = 0;
+        time_t time = 0;
+    };
+    // guid -> killer from the last BOT_DEATH. Attached to later snapshots
+    // while the bot is dead, cleared when the bot is seen alive again.
+    std::unordered_map<uint32, DeathKillerInfo> m_deathKillers;
+    void NoteDeathKiller(uint32 guid, std::string const& name, uint32 level);
 
     std::unordered_map<uint32, BotTrackState> m_botTracking;
 

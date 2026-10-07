@@ -1633,7 +1633,7 @@ void PlayerbotAI::OnDeath()
                     deathDetails << " to " << killerName << " (" << killerLevel << ")";
 
                 sObservabilityEmitter.EmitAnomaly("BOT_DEATH", "INFO", bot, deathDetails.str(),
-                    killerName, "", "death");
+                    killerName, "", "death", killerLevel);
             }
 
             // Death gets its own bot_events.csv row: logEvent also records the

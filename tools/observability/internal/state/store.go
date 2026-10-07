@@ -841,6 +841,8 @@ func (s *Store) statusLocked(now time.Time) model.ServerStatus {
 	if hb := s.heartbeat; hb != nil {
 		status.Uptime = hb.Uptime
 		status.TickDiffMs = hb.TickDiffMs
+		status.TickAvgMs = hb.TickAvgMs
+		status.TickWorstMs = hb.TickWorstMs
 		status.WindowSecs = hb.WindowSecs
 		status.Humans = hb.HumansCount
 		status.Bots = hb.BotsCount
