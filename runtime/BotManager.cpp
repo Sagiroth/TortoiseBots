@@ -63,15 +63,19 @@ constexpr uint32_t kSlowBotUpdateMs = 50;
 constexpr uint8_t kMaxFollowUps = 4;
 constexpr uint64_t kFollowUpBudgetDivisor = 2;
 
-// Steps between "needs a destination" and "walking": each used to cost a full
-// rotation visit (15-25 s with 2000 bots), so a bot stood for minutes before
-// its first step. Check values is housekeeping, not a step.
-bool IsTravelPipelineStep(std::string const& action)
+// A travel target waiting on the bot's next decision: a search to pick up
+// (PREPARE) or a chosen destination to start walking to (READY). Each step used
+// to cost a full rotation visit (15-25 s with 2000 bots), so a bot stood for
+// minutes before its first step. Read the fresh status, not the last executed
+// action: that one is not cleared by a visit that executed nothing.
+bool AwaitsTravelStep(PlayerbotAI* ai)
 {
-    return action == "request travel target" || action == "request named travel target" ||
-        action == "request quest travel target" || action == "choose travel target" ||
-        action == "reset travel target" || action == "refresh travel target" ||
-        action == "check mount state";
+    ai::TravelTarget* target = ai->GetAiObjectContext()->GetValue<ai::TravelTarget*>("travel target")->Get();
+    if (!target)
+        return false;
+
+    ai::TravelStatus const status = target->GetStatus();
+    return status == ai::TravelStatus::TRAVEL_STATUS_PREPARE || status == ai::TravelStatus::TRAVEL_STATUS_READY;
 }
 
 // One-shot headless RNDBOT scatter using persisted GenericRpg destinations.
@@ -1872,8 +1876,7 @@ void BotManager::UpdateBots(uint32_t diff)
 
             if (PlayerbotAI* stepAi = entry.aiAdapter->GetAI())
             {
-                ai::Action const* last = stepAi->GetLastExecutedAction(stepAi->GetState());
-                if (last && IsTravelPipelineStep(const_cast<ai::Action*>(last)->getName()))
+                if (AwaitsTravelStep(stepAi))
                 {
                     if (entry.followUps < kMaxFollowUps)
                     {
