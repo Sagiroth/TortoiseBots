@@ -18,7 +18,7 @@ public:
     }
 
 private:
-    // Hand of Reckoning (Turtle spell_template 45806/51302, level 10 taunt)
+    // Hand of Reckoning (Turtle trainer spell 51303, level 10 taunt)
     // first, Righteous Defense as the party-member fallback. Mirrors the live
     // ProtectionPaladinStrategy node and the donor's own factory.
     static ActionNode* hand_of_reckoning([[maybe_unused]] PlayerbotAI* botAI)
