@@ -109,13 +109,15 @@ namespace ai
         HeroicStrikeTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "heroic strike") {}
         bool IsActive() override
         {
-            bool hasTalents = bot->HasSpell(12294) || bot->HasSpell(21551) || bot->HasSpell(21552) || bot->HasSpell(21553) || bot->HasSpell(25248) || bot->HasSpell(23881) || bot->HasSpell(23892) || bot->HasSpell(23893) || bot->HasSpell(23894) || bot->HasSpell(25251);
-            if ((hasTalents && AI_VALUE2(uint8, "rage", "self target") > 60) || (!hasTalents && AI_VALUE2(uint8, "rage", "self target") >= 15))
-            {
-                return SpellCanBeCastedTrigger::IsActive()
-                    && (AI_VALUE2(uint8, "health", "current target") > 20 || ai->IsTank(bot));
-            }
-            return false;
+            // Rage dump, not a builder: hold heroic strike until 60+ rage so
+            // slam/shield-slam/mortal-strike/bloodthirst (all 15-30 rage) fire
+            // first (donor TankWarrior gates high-rage the same way). The old
+            // 15-rage floor for untalented levelers starved every rage buyer
+            // above it in the prot/arms/fury lists.
+            if (AI_VALUE2(uint8, "rage", "self target") < 60)
+                return false;
+            return SpellCanBeCastedTrigger::IsActive()
+                && (AI_VALUE2(uint8, "health", "current target") > 20 || ai->IsTank(bot));
         }
     };
 

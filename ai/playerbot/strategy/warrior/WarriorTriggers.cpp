@@ -23,6 +23,16 @@ bool SunderArmorDebuffTrigger::IsActive()
     if (!target)
         return false;
 
+    // Stop at a full 5-stack: re-sunder only to refresh, not to stack.
+    // (Refresh timing stays with the aura-expiry check in the action; the
+    // old tank-always-true burned a GCD + 15 rage on every tick forever.)
+    if (Aura* aura = ai->GetAura("sunder armor", target))
+    {
+        if (aura->GetStackAmount() >= 5)
+            return false;
+        return true;
+    }
+
     if (ai->IsTank(bot) && !target->IsPlayer())
         return true;
 
