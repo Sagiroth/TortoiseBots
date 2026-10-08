@@ -176,6 +176,7 @@ namespace ai
                 creators["fire ward"] = [](PlayerbotAI* ai) { return new FireWardTrigger(ai); };
                 creators["frost ward"] = [](PlayerbotAI* ai) { return new FrostWardTrigger(ai); };
                 creators["blink"] = [](PlayerbotAI* ai) { return new BlinkTrigger(ai); };
+                creators["blink back"] = [](PlayerbotAI* ai) { return new BlinkBackTrigger(ai); };
                 creators["mana shield"] = [](PlayerbotAI* ai) { return new ManaShieldTrigger(ai); };
                 creators["fire spells locked"] = [](PlayerbotAI* ai) { return new FireSpellsLocked(ai); };
                 creators["cold snap"] = [](PlayerbotAI* ai) { return new ColdSnapTrigger(ai); };

@@ -5,6 +5,21 @@
 
 using namespace ai;
 
+bool BlinkBackTrigger::IsActive()
+{
+    // Blink spell id 1953; ready check keeps the escape for when it can run.
+    if (!sServerFacade.IsSpellReady(bot, 1953))
+        return false;
+    // Rooted/stunned handled by the plain blink node above (EMERGENCY).
+    if (bot->HasAuraType(SPELL_AURA_MOD_ROOT) || bot->HasAuraType(SPELL_AURA_MOD_STUN))
+        return false;
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target || !target->IsAlive())
+        return false;
+    // Inside ~8 yd melee reach of the bot: blink away, then resume nuking.
+    return sServerFacade.getDistance2d(bot, target) <= 8.0f;
+}
+
 bool AnyMageArmorTrigger::IsActive()
 {
     Unit* target = GetTarget();
