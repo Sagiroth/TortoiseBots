@@ -3925,3 +3925,60 @@ green on each of the four commits; `git diff --check` clean. No build (per
 task constraints); live in-game check pending: rogue eviscerate in combat
 last_action distribution, hunter feign rows + falling death rate, druid
 rejuv share collapse, warlock tap-before-wand ordering.
+
+## Combat rotation ports batch 2: mage blink-back, warrior rage/stack discipline, paladin builder, priest fade, shaman strike order (night2 rotations) — 2026-10-08
+
+Feature: five small donor-parity rotation fixes, the honorable mentions of
+night2 research. (1) Mage: new `BlinkBackTrigger` (live melee target inside
+8 yd, blink off cooldown, not rooted/stunned) drives a HIGH+5 `blink` node
+in the live base combat list, below the EMERGENCY root/stun blink and the
+cc-strategy frost-nova pack root — a mob walking up to the mage now eats a
+blink, then the nuke loop resumes. (2) Warrior: `HeroicStrikeTrigger` holds
+heroic strike until 60 rage for every spec (the old 15-rage floor for
+untalented levelers starved slam/shield-slam/MS/BT above it), and
+`SunderArmorDebuffTrigger` stops at a full 5-stack (re-sunder only to
+refresh). (3) Paladin: `crusader strike` promoted to NORMAL+2 above `holy
+strike` NORMAL+1 in the live ret list — main builder first, seal/judge
+upkeep untouched. (4) Priest: `medium threat` -> `fade` at HIGH in the base
+combat list (any group; the action's group requirement keeps solo priests
+on heals), alongside the existing raid EMERG-adjacent node. (5) Shaman:
+`stormstrike` promoted to NORMAL+2 above the shield-consuming `lightning
+strike` NORMAL+1, so the nature-vulnerability debuff lands first.
+
+Source repository: `mod-playerbots/mod-playerbots`
+
+Source commit: `b6696bdbd3740e575598d167d69f39f68cc0b907` (local
+`playerbots-references/mod-playerbots` checkout).
+
+Source files:
+- `src/Ai/Class/Mage/Strategy/GenericMageStrategy.cpp:105` (`enemy too close for spell` -> blink back 35)
+- `src/Ai/Class/Warrior/Strategy/TankWarriorStrategy.cpp:185-191,331-335` (slam HIGH+2 above high-rage-gated heroic)
+- `src/Ai/Class/Paladin/Strategy/DpsPaladinStrategy.cpp:104-111` (crusader strike default+0.4 second builder)
+- `src/Ai/Class/Priest/Strategy/GenericPriestStrategy.cpp:21` (medium threat -> fade 55)
+- `src/Ai/Class/Shaman/Strategy/EnhancementShamanStrategy.cpp` (stormstrike top of default chain)
+
+Copied / ported / independently reimplemented: reimplemented against the
+live list-based engine; the dead new-style forward-ports stay untouched.
+Mage blink id 1953 checked via `sServerFacade.IsSpellReady`; the 8 yd band
+mirrors the hunter dead-zone hysteresis already in-tree. Crusader Strike
+verified as an already-wired live trigger + action node
+(`CrusaderStrikeTrigger` CD_TRIGGER, `CastCrusaderStrikeAction` melee
+spell); only the priority moved. Skipped as not-small in this batch: mage
+fire-immune fallback, scorch exclusivity/HP gate, blizzard 10s gate (D5
+M-items); prot disarm/block/panic/intervene/overpower/thunder items, arms
+death-wish/stance/execute (D6 S-items beyond the two rage/stack gates); ret
+exorcism split, double-bubble, blessing refresh (D7); priest mana recovery,
+ranged default, self-shield (D8); shaman totem bloat, earthbind, heal
+protection (D9).
+
+Reason: night2 rotation research (report-class-rotations.md D5-D9): mages
+died to even-level melee with no escape (+0 killer gap, 10.9k deaths),
+heroic spam starved slam while sunder stacked forever, crusader strike
+fired last, priests never faded outside raids (11.3k deaths, most of any
+class), lightning strike burned the shield before the nature debuff.
+
+Local validation: `python3 tools/verify_okf.py` + `bash tools/verify_all.sh`
+green on each of the five commits; `git diff --check` clean. No build (per
+task constraints); live in-game check pending: mage blink rows vs melee
+deaths, heroic/slam cast split + sunder aura stacks capped at 5, ret
+builder split, priest fade rows in groups, enh opener order.
