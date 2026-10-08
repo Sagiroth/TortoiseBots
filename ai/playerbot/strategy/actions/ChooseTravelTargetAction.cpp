@@ -471,13 +471,12 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
         if (purpose == "AH")
             SET_AI_VALUE2(time_t, "manual time", "ah buyer trip since", time(0));
         // One trainer journey at a time: a walk to a trainer has just started, and
-        // the errand's trigger refuses another until this is ten minutes old, the
-        // bot has learned something (TrainerAction) or it has dinged
-        // (AutoLearnSpellAction). Without it a trip that never reached the trainer
+        // RequestNamedTravelTargetAction::isAllowed refuses another until this is
+        // ten minutes old, the bot has learned something (TrainerAction) or it has
+        // dinged (AutoLearnSpellAction). Without it a trip that never reached the trainer
         // was re-issued as fast as its travel target died - cycle-3 pool, level 5:
         // 1,124 trainer-class picks from 172 bots in 90 min, 638 of 952 consecutive
-        // picks made from the same coordinate, against ~130 actual learns. See
-        // ShouldTravelNamedValue.
+        // picks made from the same coordinate, against ~130 actual learns.
         if (purpose.find("trainer") == 0)
             SET_AI_VALUE2(time_t, "manual time", "trainer trip since", time(0));
     }
@@ -1887,9 +1886,16 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             return false;
         }
 
-        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [entries = trainerEntries, partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]()
+        // Pool bots look for a trainer inside the same local window as camp
+        // errands (500 yd at level <= 5, 2500 yd above). The open 10000 yd
+        // search sent them on median 2.8 km walks: 21% died on the way and
+        // under 1% learned anything. A trainer further out is still used by
+        // the nearby-trainer service when the bot passes it.
+        bool const masterless = sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster();
+        float const trainerMaxDistance = CampRequestMaxDistance(masterless, bot->GetLevel(), 10000.0f);
+        *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [entries = trainerEntries, partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, trainerMaxDistance]()
             {
-                return sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::Trainer, entries, false);
+                return sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::Trainer, entries, false, trainerMaxDistance);
             });
     }
     else if (travelName == "mount")
@@ -2008,7 +2014,18 @@ bool RequestNamedTravelTargetAction::isAllowed() const
     }
     else if (name.find("trainer") == 0)
     {
-        if (urand(1, 100) > 100)
+        // One trainer journey at a time (cycle-3 pool: 1,124 trainer picks from
+        // 172 bots in 90 min against ~130 learns, 638 of 952 re-picks from the
+        // same spot). The window is request-side, like the vendor trip: in
+        // ShouldTravelNamedValue it was also the running trip's stored
+        // condition and cancelled every trip on its first step. The stamp is
+        // set when a trainer pick lands (setNewTarget) and cleared by a learn
+        // (TrainerAction) or a ding (AutoLearnSpellAction).
+        if (VendorTripSuppressedByRecentTrip(AI_VALUE2(time_t, "manual time", "trainer trip since"), time(0)))
+            return false;
+        // No trainer errand from inside a hostile guarded town: picks made
+        // there died 60% of the time and never reached a trainer.
+        if (WorldPosition(bot).IsGuardedHostileTownFor(bot, 120.0f))
             return false;
         return true;
     }

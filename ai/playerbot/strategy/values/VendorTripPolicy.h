@@ -4,8 +4,9 @@
 // Pure policy for the "one vendor journey at a time" rule (issue #399): a
 // picked vendor trip suppresses new vendor requests for a while, so a bot
 // whose walk never starts (move starved by loot/attacks, wander range) cannot
-// re-pick the same vendor every ~20 s. Mirrors the trainer window
-// (ShouldTravelNamedValue, "trainer trip since"): the stamp is set when a
+// re-pick the same vendor every ~20 s. The trainer window
+// (RequestNamedTravelTargetAction::isAllowed, "trainer trip since") uses the
+// same helper. The stamp is set when a
 // vendor pick lands (ChooseTravelTargetAction::setNewTarget) and cleared when
 // a sale lands (SellAction) or the bot dings (XpGainAction,
 // AutoLearnSpellAction) - the two events that change what the stock is worth.
