@@ -83,6 +83,11 @@ struct BotEntry
 {
     BotRecord record;
     std::unique_ptr<PlayerbotAIAdapter> aiAdapter;
+    // Server time (WorldTimer ms) of this bot's last AI update; 0 = never.
+    uint32_t lastAiUpdateMs = 0;
+    // Teleport acks sent by UpdateBots, and how many left the near flag set.
+    uint32_t teleportAcks = 0;
+    uint32_t teleportAcksIgnored = 0;
     BotEntry() = default;
     ~BotEntry();
     BotEntry(BotEntry&&) = default;
@@ -246,6 +251,9 @@ private:
     // revive. A bot seen alive (or gone) drops out; only a bot dead across the
     // whole grace window is touched. Key = guid counter.
     std::unordered_map<uint32_t, time_t> m_deadSince;
+    // First-seen timestamps for bots the sweep found mid-teleport; a bot seen
+    // out of teleport drops out. Feeds the "stuck teleport" diagnostic line.
+    std::unordered_map<uint32_t, time_t> m_teleportSince;
     void SweepStrandedBots(uint32_t diff);
     uint32_t m_strandedSweepElapsedMs = 0;
     std::unordered_map<uint32_t, time_t> m_strandedSince; // key = guid counter

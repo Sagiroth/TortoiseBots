@@ -26,6 +26,7 @@
 #include "Log.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "World.h"
+#include "Timer.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectMgr.h"
 #include "AccountMgr.h"
@@ -52,6 +53,12 @@
 namespace TortoiseBots {
 
 namespace {
+// Upper bound on the elapsed time one AI update may consume; a bot parked
+// for minutes (teleport, load) resumes as if 10 s passed.
+constexpr uint32_t kMaxAiElapsedMs = 10000;
+// A single bot update at least this long is logged as SLOWBOT.
+constexpr uint32_t kSlowBotUpdateMs = 50;
+
 // One-shot headless RNDBOT scatter using persisted GenericRpg destinations.
 // Fail-closed: any validation miss retains original position. No DB scan,
 // no GenerateTravelNodes, no homebind update.
@@ -362,6 +369,8 @@ void BotManager::SweepDeadBots(uint32_t diff)
     uint32_t skipNotRandom = 0, skipHasMaster = 0, skipNoPlayer = 0, skipNotHeadless = 0;
     uint32_t skipNotInWorld = 0, skipTeleport = 0, skipBattleground = 0, skipGrouped = 0;
     uint32_t skipHired = 0, skipDungeon = 0, skipPinned = 0, skipAlive = 0;
+    uint32_t stuckTeleport = 0;
+    std::vector<std::string> stuckSamples;
     time_t now = time(nullptr);
     for (auto& [key, entry] : m_bots)
     {
@@ -407,8 +416,27 @@ void BotManager::SweepDeadBots(uint32_t diff)
         {
             // Transient: a bot flickering through teleport keeps its timer.
             ++skipTeleport;
+            auto [since, fresh] = m_teleportSince.emplace(key, now);
+            if (!fresh && now - since->second >= 60)
+            {
+                ++stuckTeleport;
+                if (stuckSamples.size() < 3)
+                {
+                    char buf[256];
+                    WorldLocation const& dest = p->GetTeleportDest();
+                    snprintf(buf, sizeof(buf), "%s(%lds near=%d far=%d alive=%d ghost=%d map=%u acks=%u ignored=%u "
+                        "pos=%.0f,%.0f dest=%u:%.0f,%.0f)", p->GetName(),
+                        static_cast<long>(now - since->second), p->IsBeingTeleportedNear() ? 1 : 0,
+                        p->IsBeingTeleportedFar() ? 1 : 0, p->IsAlive() ? 1 : 0,
+                        p->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST) ? 1 : 0, p->GetMapId(),
+                        entry.teleportAcks, entry.teleportAcksIgnored, p->GetPositionX(), p->GetPositionY(),
+                        dest.mapId, dest.x, dest.y);
+                    stuckSamples.push_back(buf);
+                }
+            }
             continue;
         }
+        m_teleportSince.erase(key);
         if (p->InBattleGround())
         {
             ++skipBattleground;
@@ -527,6 +555,13 @@ void BotManager::SweepDeadBots(uint32_t diff)
         else
             ++it;
     }
+    for (auto it = m_teleportSince.begin(); it != m_teleportSince.end();)
+    {
+        if (m_bots.find(it->first) == m_bots.end())
+            it = m_teleportSince.erase(it);
+        else
+            ++it;
+    }
     // One counted line per sweep (outString is visible at default log level;
     // outDetail is not, which left the first version of this sweep blind).
     // The skip counters explain a 0-watched sweep instead of hiding it.
@@ -536,6 +571,15 @@ void BotManager::SweepDeadBots(uint32_t diff)
         watched, released, revived, moved,
         skipNotRandom, skipHasMaster, skipNoPlayer, skipNotHeadless, skipNotInWorld, skipTeleport,
         skipBattleground, skipGrouped, skipHired, skipDungeon, skipPinned, skipAlive);
+    // A teleport should end within a few seconds; one still open after a
+    // minute leaves the bot without AI (UpdateBots only acks it).
+    if (stuckTeleport)
+    {
+        std::string samples;
+        for (std::string const& sample : stuckSamples)
+            samples += " " + sample;
+        sLog.outString("TortoiseBots: dead sweep: %u bots in teleport for 60s+:%s", stuckTeleport, samples.c_str());
+    }
 }
 
 bool BotManager::RelocateHopelessBot(::Player* bot)
@@ -1783,13 +1827,39 @@ void BotManager::UpdateBots(uint32_t diff)
             // before the destination has been installed.
             PlayerbotAI* ai = entry.aiAdapter->GetAI();
             if ((player->IsBeingTeleportedNear() || player->IsBeingTeleportedFar()) && ai)
+            {
                 ai->HandleTeleportAck();
+                ++entry.teleportAcks;
+                if (player->IsBeingTeleportedNear())
+                    ++entry.teleportAcksIgnored;
+            }
             return;
         }
 
         if (entry.aiAdapter && entry.aiAdapter->IsUsable())
         {
-            entry.aiAdapter->Update(diff);
+            // The AI counts its delays (GCD, react, rpg, sit...) down by the
+            // elapsed time it is given. A budgeted pool bot is visited once
+            // every N ticks, so it must get the time since ITS last update,
+            // not one world tick, or every delay stretches N times.
+            uint32_t const nowMs = WorldTimer::getMSTime();
+            uint32_t const elapsed = entry.lastAiUpdateMs
+                ? std::min(WorldTimer::getMSTimeDiff(entry.lastAiUpdateMs, nowMs), kMaxAiElapsedMs)
+                : diff;
+            entry.lastAiUpdateMs = nowMs ? nowMs : 1;
+            entry.aiAdapter->Update(elapsed);
+
+            // One bot's update is never cut by the budget, so a single slow
+            // one lands whole in the tick every player waits on. Name it.
+            uint32_t const tookMs = WorldTimer::getMSTimeDiff(nowMs, WorldTimer::getMSTime());
+            if (tookMs >= kSlowBotUpdateMs && player)
+            {
+                PlayerbotAI* botAi = entry.aiAdapter->GetAI();
+                ai::Action const* last = botAi ? botAi->GetLastExecutedAction(botAi->GetState()) : nullptr;
+                TB_LOG_BASIC("TortoiseBots: SLOWBOT %s took %u ms (state %u, last action %s, map %u)",
+                    player->GetName(), tookMs, botAi ? static_cast<uint32_t>(botAi->GetState()) : 0u,
+                    last ? const_cast<ai::Action*>(last)->getName().c_str() : "-", player->GetMapId());
+            }
         }
     };
 
