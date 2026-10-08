@@ -1031,9 +1031,11 @@ void BotManager::OnPlayerLogin(::Player* player)
             // Frostbolt and went 0.3 kills to 8.4 deaths (Oct 2026 pool). Give
             // the seeded level's spells once, like a hired companion gets them;
             // every later level is still trained at a trainer.
+            size_t const spellsBefore = player->GetSpellMap().size();
             PlayerbotFactory(player, seedLevel).LearnSeedLevelSpells();
             sRandomBotFacade.SetValue(player->GetGUIDLow(), "levelSeeded", 1);
-            TB_LOG_DETAIL("TortoiseBots: seeded fresh bot %s to level %u.", player->GetName(), seedLevel);
+            TB_LOG_DETAIL("TortoiseBots: seeded fresh bot %s to level %u (+%u spells).", player->GetName(), seedLevel,
+                uint32(player->GetSpellMap().size() - spellsBefore));
         }
     }
 
