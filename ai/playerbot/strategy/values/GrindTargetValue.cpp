@@ -478,20 +478,22 @@ Unit* GrindTargetValue::FindIdleFallbackTarget()
         if (!bot->IsHonorOrXPTarget(unit))
             continue;
 
+        float const dist = sServerFacade.GetDistance2d(bot, unit);
+        if (best && !(dist < bestDist))
+            continue;
+
         // Above the starter band the fallback walks into real camps, so the
         // travel layer's own survival gates apply: no mob inside a camp the
         // bot keeps dying in (issue #398), and no mob whose surroundings
         // hold hostiles past the grind cap (PointDangerPolicy.h, #418).
-        // Both are data-only reads (avoidance list, static spawn index).
+        // Both are data-only reads (avoidance list, static spawn index),
+        // run only for a candidate nearer than the current best.
         WorldPosition mobPos(unit);
         if (ai->IsDeathSpotAvoided(mobPos.GetMapId(), mobPos.getX(), mobPos.getY(), nowMs))
             continue;
         uint32 const highestNear = mobPos.GetHighestHostileLevelNear(
             ai::POINT_DANGER_RADIUS_YD, bot->GetTeam());
         if (highestNear != 0 && ai::PointDangerous((int)highestNear, bot->GetLevel()))
-            continue;
-        float const dist = sServerFacade.GetDistance2d(bot, unit);
-        if (best && !(dist < bestDist))
             continue;
 
         if (!WorldPosition(bot).canPathTo(WorldPosition(unit), bot))

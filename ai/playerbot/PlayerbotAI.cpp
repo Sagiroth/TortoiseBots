@@ -1396,8 +1396,10 @@ void PlayerbotAI::SetLastKiller(Unit* killer)
     // == the bot itself and the real killing blow is only in the damager
     // memory above. Fall back to it (96% of "Environment" deaths are
     // priests 30+, Oct 2026 pool); a true self-kill with no remembered
-    // damager keeps the old Environment verdict.
-    if ((!killer || killer == bot) && !lastDamager_.name.empty())
+    // damager keeps the old Environment verdict. Only a recent damager counts
+    // (the spirit lasts 15 s), so a fall long after a fight stays Environment.
+    if ((!killer || killer == bot) && !lastDamager_.name.empty() &&
+        WorldTimer::getMSTimeDiff(lastDamager_.time, lastKiller_.time) <= 30000)
     {
         lastKiller_ = lastDamager_;
         lastKiller_.time = WorldTimer::getMSTime();
@@ -5414,11 +5416,11 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
         // the item left the bot's inventory between pick and cast (sold,
         // consumed, moved by another tick), the core dereferences a dangling
         // pointer. Validate ownership here; on mismatch cast without the item
-        // instead of crashing. Remove when the core GetValidatedCastItem fix
-        // ships in the running binary.
+        // instead of crashing. The core has no such check, so this stays.
         Item* castItem = itemTarget ? itemTarget : aiObjectContext->GetValue<Item*>("item for spell", spellId)->Get();
         if (castItem && bot->GetItemByGuid(castItem->GetObjectGuid()) != castItem)
             castItem = nullptr;
+        spell->SetCastItem(castItem);
         targets.setItemTarget(spell->m_targets.getItemTarget());
 
         if (bot->GetTradeData())
