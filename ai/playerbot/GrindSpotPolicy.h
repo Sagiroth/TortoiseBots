@@ -142,7 +142,7 @@ namespace ai
     // Whether an idle bot may take one wander step right now: the same scope
     // as the prey fallback (masterless, no journey, not fighting,
     // overworld, able to move) plus no grind target at all - wander is the
-    // last resort under the prey rule, never beside it. The "seldom" trigger
+    // last resort under the prey rule, never beside it. The "often" trigger
     // paces it; the action re-checks nothing per tick beyond this gate.
     inline bool IdleWanderAllowed(bool masterlessRandom, bool travelTargetActive,
         bool inCombat, bool inBattleground, bool overworld, bool canMoveAround,

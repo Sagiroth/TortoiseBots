@@ -2459,7 +2459,7 @@ bool IdleWanderAction::Execute(Event& event)
     // MoveRandomNear, same shape): 8 sampled candidates, height + static
     // line-of-sight vetted inside GetReachableRandomPointOnGround, and the
     // ordinary core path runs the winner. A bad roll returns false and the
-    // next seldom tick tries again - never a blind walk.
+    // next often tick tries again - never a blind walk.
     WorldPosition botPos(bot);
     WorldPosition wanderTo = botPos;
     if (!wanderTo.GetReachableRandomPointOnGround(bot, ai::IDLE_WANDER_RANGE_YD))
