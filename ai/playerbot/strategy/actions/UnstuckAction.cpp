@@ -293,8 +293,13 @@ bool UnstuckAction::Execute(Event& event)
         // so other purposes (vendor/repair/quest/grind) keep working and the
         // long-stuck hearth/repop path can fire. Fresh targets and real
         // progress reset the streak.
+        // Only a trip still under way is kept: a target in its work or cooldown
+        // state means the bot already arrived, and restoring it restarted the
+        // five-minute work clock, so the bot stood at the npc for another round.
         TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
         bool const keepTravel = travelTarget && travelTarget->IsActive() &&
+            (travelTarget->GetStatus() == TravelStatus::TRAVEL_STATUS_READY ||
+             travelTarget->GetStatus() == TravelStatus::TRAVEL_STATUS_TRAVEL) &&
             travelTarget->GetDestination() && travelTarget->getPosition() &&
             typeid(*travelTarget->GetDestination()) != typeid(NullTravelDestination);
         int32 stuckKeeps = AI_VALUE2(int32, "manual int", "stuck keep count");

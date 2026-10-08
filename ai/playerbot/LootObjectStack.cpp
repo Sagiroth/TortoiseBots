@@ -526,17 +526,20 @@ bool LootObjectStack::Add(ObjectGuid guid)
     // Re-adding refreshes the entry's age. Ignoring a guid that is already queued left the corpse
     // with the timestamp of the first Add, so OrderByDistance dropped it LOOT_OBJECT_TTL_SECONDS
     // later even though "add all loot" (or the bot's own next kill) had just re-offered it.
-    availableLoot.erase(LootTarget(guid));
+    // A refresh is not an addition, though (donor LootObjectStack::Add returns false too):
+    // "add gathering loot" runs every second above travel, and counting the node it had
+    // already queued as done took the decision of bots standing next to an ore vein or herb.
+    bool const known = availableLoot.erase(LootTarget(guid)) > 0;
     availableLoot.insert(LootTarget(guid));
 
     if (availableLoot.size() < MAX_LOOT_OBJECT_COUNT)
-        return true;
+        return !known;
 
     std::vector<LootObject> ordered = OrderByDistance();
     for (size_t i = MAX_LOOT_OBJECT_COUNT; i < ordered.size(); i++)
         Remove(ordered[i].guid);
 
-    return true;
+    return !known;
 }
 
 void LootObjectStack::Remove(ObjectGuid guid)
