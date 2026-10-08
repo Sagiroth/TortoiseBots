@@ -92,13 +92,14 @@ void HunterStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "aimed shot",
         NextAction::array(0, new NextAction("aimed shot", ACTION_NORMAL + 2), NULL)));
 
-    // Distracting shot: peel a peeling target back onto the hunter when the
-    // bot is losing it. "medium threat" fires when the bot trails the tank
-    // but still holds measurable threat; usefulness stays with the mature
-    // action (ammo + spell state).
+    // Medium threat means the bot is climbing toward the top of the threat
+    // table without holding aggro - exactly when a hunter should drop combat
+    // (mod-playerbots GenericHunterStrategy fires feign death 35 here). The
+    // old distracting-shot taunt pulled the mob back harder; feign threat
+    // stands the bot back up via the raid action node.
     triggers.push_back(new TriggerNode(
         "medium threat",
-        NextAction::array(0, new NextAction("distracting shot", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("feign death threat", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode(
         "arcane shot",
