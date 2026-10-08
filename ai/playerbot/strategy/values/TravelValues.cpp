@@ -486,25 +486,27 @@ bool ShouldTravelNamedValue::Calculate()
         if (AI_VALUE2(uint32, "train cost", trainerType) == 0) //Has nothing to train
             return false;
 
-        // Trade trips need the bot's OWN craft in reach: "train cost" counts
-        // every green rank in the world, so without this a level-5 bot with
-        // nothing learnable nearby still raised the trigger, requested, and -
-        // with the profession filter in AvailableTrainersValue - parked for a
-        // minute, every minute. The need doubles as the in-flight trip's stored
-        // condition, so this must stay true while walking: a picked trainer is
-        // always inside the window it was picked from, and learning only ever
-        // removes entries, which is exactly when the trip should end.
-        if (name == "trainer trade")
+        // Class and trade trips need a trainer of the bot's OWN class/craft in
+        // reach: "train cost" counts every green rank in the world, so without
+        // this a bot with nothing learnable nearby still raised the trigger,
+        // requested, and parked for a minute, every minute (live: ~1000 empty
+        // + ~400 rejected "trainer class" searches in 20 min, ~33 wasted trade
+        // picks/h at level 5). The search uses the same window. The need
+        // doubles as the in-flight trip's stored condition, so this must stay
+        // true while walking: a picked trainer is always inside the window it
+        // was picked from, and learning only ever removes entries, which is
+        // exactly when the trip should end.
+        if (name == "trainer class" || name == "trainer trade")
         {
-            std::vector<int32> tradeEntries =
-                AI_VALUE2(std::vector<int32>, "available trainers", (uint32)TRAINER_TYPE_TRADESKILLS);
-            if (tradeEntries.empty())
+            std::vector<int32> entries =
+                AI_VALUE2(std::vector<int32>, "available trainers", (uint32)trainerType);
+            if (entries.empty())
                 return false;
 
             bool const masterless = sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster();
             float const window = CampRequestMaxDistance(masterless, bot->GetLevel(), 10000.0f);
             if (sTravelMgr.GetDestinations(PlayerTravelInfo(bot),
-                    (uint32)TravelDestinationPurpose::Trainer, tradeEntries, false, window).empty())
+                    (uint32)TravelDestinationPurpose::Trainer, entries, false, window).empty())
                 return false;
         }
 
