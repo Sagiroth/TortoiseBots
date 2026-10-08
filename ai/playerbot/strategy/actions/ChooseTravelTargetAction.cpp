@@ -892,12 +892,13 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                     // a point inside a camp the bot keeps dying in is refused
                     // and the next candidate wins instead, while other camps of
                     // the same grind creature or quest objective stay usable.
-                    // Grind, quest objectives and quest givers/takers -
-                    // services stay walkable.
+                    // Grind, quest objectives, quest givers/takers and
+                    // mining/herbalism nodes - services and fishing stay walkable.
                     uint32 const pickPurposeId = (uint32)destination->GetPurpose();
                     bool const pickIsDeathGated = ai::IsDeathGatedPurpose(pickPurposeId,
                         (uint32)TravelDestinationPurpose::Grind, (uint32)TravelDestinationPurpose::QuestAllObjective |
-            (uint32)TravelDestinationPurpose::QuestGiver | (uint32)TravelDestinationPurpose::QuestTaker);
+            (uint32)TravelDestinationPurpose::QuestGiver | (uint32)TravelDestinationPurpose::QuestTaker,
+                        (uint32)TravelDestinationPurpose::GatherMining | (uint32)TravelDestinationPurpose::GatherHerbalism);
                     if (pickIsDeathGated && ai->IsDeathSpotAvoided(position->GetMapId(), position->getX(),
                         position->getY(), WorldTimer::getMSTime()))
                     {
@@ -1190,15 +1191,16 @@ bool RefreshTravelTargetAction::Execute(Event& event)
 
     // Death-spot avoidance (issue #398): a re-point of the same camp the bot
     // keeps dying in is refused so the refresh falls through to a fresh pick
-    // elsewhere instead of re-arming the loop. Grind, quest objectives and
-    // quest givers/takers, same set as the gates above.
+    // elsewhere instead of re-arming the loop. Grind, quest objectives, quest
+    // givers/takers and mining/herbalism nodes, same set as the gates above.
     WorldPosition* refreshPoint = target->getPosition();
     if (oldDestination && refreshPoint)
     {
         uint32 const refreshPurposeId = (uint32)oldDestination->GetPurpose();
         bool const refreshIsDeathGated = ai::IsDeathGatedPurpose(refreshPurposeId,
             (uint32)TravelDestinationPurpose::Grind, (uint32)TravelDestinationPurpose::QuestAllObjective |
-            (uint32)TravelDestinationPurpose::QuestGiver | (uint32)TravelDestinationPurpose::QuestTaker);
+            (uint32)TravelDestinationPurpose::QuestGiver | (uint32)TravelDestinationPurpose::QuestTaker,
+            (uint32)TravelDestinationPurpose::GatherMining | (uint32)TravelDestinationPurpose::GatherHerbalism);
         if (refreshIsDeathGated && ai->IsDeathSpotAvoided(refreshPoint->GetMapId(), refreshPoint->getX(),
             refreshPoint->getY(), WorldTimer::getMSTime()))
         {

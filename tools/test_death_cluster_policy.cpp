@@ -43,7 +43,9 @@ namespace
     std::uint32_t const QUEST_GIVER = 1u << 0;
     std::uint32_t const QUEST_TAKER = 1u << 5;
     std::uint32_t const VENDOR = 1u << 9;
-
+    std::uint32_t const GATHER_MINE = 1u << 15;
+    std::uint32_t const GATHER_HERB = 1u << 16;
+    std::uint32_t const GATHER_FISH = 1u << 17;
     void AvoidOne(DeathAvoidSpot* spots, float x, float y, std::uint32_t nowMs, std::uint32_t level)
     {
         AddDeathAvoidSpot(spots, kDeathAvoidSpots, MAP, x, y, nowMs, DeathAvoidDurationMs(level),
@@ -185,6 +187,17 @@ int main()
         CHECK(IsDeathGatedPurpose(QUEST_GIVER, GRIND, QUEST_ALL | QUEST_GIVER | QUEST_TAKER));
         CHECK(IsDeathGatedPurpose(QUEST_TAKER, GRIND, QUEST_ALL | QUEST_GIVER | QUEST_TAKER));
         CHECK(!IsDeathGatedPurpose(VENDOR, GRIND, QUEST_ALL | QUEST_GIVER | QUEST_TAKER));
+        // Mining/herbalism nodes in the avoided camp are gated too (the
+        // default gather mask keeps the old behaviour for older callers);
+        // fishing and services stay walkable.
+        std::uint32_t const questMask = QUEST_ALL | QUEST_GIVER | QUEST_TAKER;
+        std::uint32_t const gatherMask = GATHER_MINE | GATHER_HERB;
+        CHECK(!IsDeathGatedPurpose(GATHER_MINE, GRIND, questMask));
+        CHECK(IsDeathGatedPurpose(GATHER_MINE, GRIND, questMask, gatherMask));
+        CHECK(IsDeathGatedPurpose(GATHER_HERB, GRIND, questMask, gatherMask));
+        CHECK(!IsDeathGatedPurpose(GATHER_FISH, GRIND, questMask, gatherMask));
+        CHECK(!IsDeathGatedPurpose(VENDOR, GRIND, questMask, gatherMask));
+        CHECK(IsDeathGatedPurpose(GRIND, GRIND, questMask, gatherMask));
     }
 
     std::cout << "All death-cluster escalation tests passed.\n";

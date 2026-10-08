@@ -146,9 +146,13 @@ namespace ai
     // and the quest giver/taker NPCs: a hand-in inside a camp the bot keeps
     // dying in is a death loop too (Rane Yorick at Ivar Patch: 38 level 10-12
     // bots died 837 times walking to him through the Moonrage worgens).
-    // Services (vendor, trainer, repair) stay walkable.
-    inline bool IsDeathGatedPurpose(std::uint32_t purposeId, std::uint32_t grindId, std::uint32_t questMask)
+    // gatherMask covers mining/herbalism nodes the same way: a node inside
+    // the avoided camp is re-mined otherwise (Khuceburn: 7 deaths in 12 min
+    // to Searing Hatchlings on the same Gold Vein, Oct 2026 pool).
+    // Services (vendor, trainer, repair) and fishing stay walkable.
+    inline bool IsDeathGatedPurpose(std::uint32_t purposeId, std::uint32_t grindId, std::uint32_t questMask,
+        std::uint32_t gatherMask = 0)
     {
-        return purposeId == grindId || (purposeId & questMask) != 0;
+        return purposeId == grindId || (purposeId & questMask) != 0 || (purposeId & gatherMask) != 0;
     }
 }
