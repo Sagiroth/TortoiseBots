@@ -21,6 +21,13 @@ void CombatRogueStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "expose armor",
         NextAction::array(0, new NextAction("expose armor", ACTION_HIGH), NULL)));
 
+    // Almost-dead finisher dump (donor DpsRogueStrategy HIGH+2, no CP gate):
+    // outbids the gated SnD/eviscerate nodes only while the target is nearly
+    // dead, so combo points land as damage instead of dying with the mob.
+    triggers.push_back(new TriggerNode(
+        "target with combo points almost dead",
+        NextAction::array(0, new NextAction("eviscerate", ACTION_HIGH + 2), NULL)));
+
     triggers.push_back(new TriggerNode(
         "slice and dice",
         NextAction::array(0, new NextAction("slice and dice", ACTION_HIGH + 2), NULL)));

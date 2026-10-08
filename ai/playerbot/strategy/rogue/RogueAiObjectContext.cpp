@@ -215,6 +215,7 @@ namespace ai
                 creators["shadow of death"] = [](PlayerbotAI* ai) { return new ShadowOfDeathTrigger(ai); };
                 creators["mark for death"] = [](PlayerbotAI* ai) { return new MarkForDeathTrigger(ai); };
                 creators["eviscerate"] = [](PlayerbotAI* ai) { return new EviscerateTrigger(ai); };
+                creators["target with combo points almost dead"] = [](PlayerbotAI* ai) { return new AlmostDeadFinisherTrigger(ai); };
                 creators["blade flurry"] = [](PlayerbotAI* ai) { return new RogueBoostBuffTrigger(ai, "blade flurry"); };
                 creators["riposte"] = [](PlayerbotAI* ai) { return new RiposteCastTrigger(ai); };
                 creators["apply deadly poison main hand"] = [](PlayerbotAI* ai) { return new ApplyDeadlyPoisonTrigger(ai, true); };

@@ -59,6 +59,19 @@ namespace ai
         EviscerateTrigger(PlayerbotAI* ai, uint8 comboPoints = 4) : ComboPointsAvailableTrigger(ai, comboPoints) {}
     };
 
+    // Almost-dead finisher dump (mod-playerbots DpsRogueStrategy "target with
+    // combo points almost dead" -> eviscerate HIGH+2, no CP gate): a leveling
+    // mob that will die in the next swing should eat whatever combo points
+    // are banked instead of dying with them. Any CP (1+) qualifies; the
+    // regular 4CP eviscerate node below still owns healthy targets.
+    class AlmostDeadFinisherTrigger : public Trigger
+    {
+    public:
+        AlmostDeadFinisherTrigger(PlayerbotAI* ai) : Trigger(ai, "target with combo points almost dead") {}
+        bool IsActive() override;
+    };
+
+
     class ExposeArmorTrigger : public NoDebuffAndComboPointsAvailableTrigger
     {
     public:

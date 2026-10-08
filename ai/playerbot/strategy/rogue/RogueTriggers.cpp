@@ -62,6 +62,17 @@ bool MarkForDeathTrigger::IsActive()
 	return AI_VALUE2(uint8, "health", "current target") > 50;
 }
 
+bool AlmostDeadFinisherTrigger::IsActive()
+{
+    // Any banked combo point qualifies (donor: no CP gate); the target must
+    // actually be nearly dead so healthy targets keep building to SnD/4CP.
+    if (AI_VALUE2(uint8, "combo", "current target") < 1)
+        return false;
+    if (!sServerFacade.IsSpellReady(bot, 2098))
+        return false;
+    return AI_VALUE2(uint8, "health", "current target") <= 25;
+}
+
 bool MainHandWeaponNoEnchantTrigger::IsActive()
 {
     Item* weapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
