@@ -123,6 +123,15 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
     // them) and left skinners casting Skinning on an unlooted corpse every tick forever.
     if (creature && creature->HasFlag(UNIT_DYNAMIC_FLAGS, UNIT_DYNFLAG_LOOTABLE))
     {
+        // Dismount in the open step (mod-playerbots LootAction.cpp:93-98): the select
+        // triggers veto mounted bots, so without this a bot that mounted after picking
+        // a corpse waits for the mount-state round-trip before the chain can run.
+        if (bot->IsMounted())
+        {
+            ai->Unmount();
+            ai->SetNextCheckDelay(sPlayerbotAIConfig.lootDelay);
+        }
+
         if (!lootObject.IsLootPossible(bot)) //Clear loot if bot can't loot it.
         {
             sLog.outDebug("[BOT LOOT] %s: IsLootPossible=false on lootable corpse, clearing (corpse stays lootable -> may re-add)",
