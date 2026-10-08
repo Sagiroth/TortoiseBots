@@ -15,6 +15,7 @@
 #include "Movement/spline/MoveSplineInit.h"
 #include "Movement/spline/MoveSpline.h"
 #include "playerbot/TravelMgr.h"
+#include "playerbot/GrindSpotPolicy.h"
 #include "playerbot/TravelRepickPolicy.h"
 #include "Transports/Transport.h"
 #include "playerbot/strategy/generic/CombatStrategy.h"
@@ -2450,6 +2451,36 @@ bool MoveRandomAction::Execute(Event& event)
 bool MoveRandomAction::isUseful()
 {
     return !ai->HasRealPlayerMaster() && ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid> >("nearest friendly players")->Get().size() > urand(25, 100);
+}
+
+bool IdleWanderAction::Execute(Event& event)
+{
+    // One short drift to a near reachable point (donor mod-playerbots
+    // MoveRandomNear, same shape): 8 sampled candidates, height + static
+    // line-of-sight vetted inside GetReachableRandomPointOnGround, and the
+    // ordinary core path runs the winner. A bad roll returns false and the
+    // next seldom tick tries again - never a blind walk.
+    WorldPosition botPos(bot);
+    WorldPosition wanderTo = botPos;
+    if (!wanderTo.GetReachableRandomPointOnGround(bot, ai::IDLE_WANDER_RANGE_YD))
+        return false;
+    // The helper may return a point underfoot when every sample fails open;
+    // standing still is not a wander.
+    if (wanderTo.sqDistance2d(botPos) < 5.0f * 5.0f)
+        return false;
+    return MoveTo(bot->GetMapId(), wanderTo.getX(), wanderTo.getY(), wanderTo.getZ());
+}
+
+bool IdleWanderAction::isUseful()
+{
+    if (!MovementAction::isUseful())
+        return false;
+    if (!ai::IdleWanderAllowed(sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster(),
+        AI_VALUE(bool, "travel target active"), sServerFacade.IsInCombat(bot),
+        bot->InBattleGround(), WorldPosition(bot).isOverworld(),
+        AI_VALUE(bool, "can move around"), AI_VALUE(Unit*, "grind target") == nullptr))
+        return false;
+    return true;
 }
 
 bool MoveToAction::Execute(Event& event)

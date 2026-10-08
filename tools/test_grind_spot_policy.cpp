@@ -14,7 +14,9 @@
 using ai::GetGrindLevelBand;
 using ai::GrindLevelBand;
 using ai::GrindIdleFallbackAllowed;
+using ai::IdleWanderAllowed;
 using ai::GRIND_IDLE_FALLBACK_RANGE_YD;
+using ai::IDLE_WANDER_RANGE_YD;
 using ai::GrindLevelFits;
 using ai::GrindPreyAllowed;
 using ai::GrindSpotCapacity;
@@ -245,6 +247,28 @@ int main()
         CHECK(!BeginnerValleyLeashAllows(true, 14, 14, false, 0.0f));
         CHECK(BEGINNER_HOME_LEASH_YD == 500.0f);
         std::cout << "  [PASS] starter-valley leash keeps exempted picks home\n";
+    }
+
+    // -------------------------------------------------------------
+    // Test 10: idle-wander gate
+    // -------------------------------------------------------------
+    {
+        // A masterless bot with no journey, no grind target and nothing else
+        // going on may take one short drift. Last resort under the prey
+        // fallback, never beside it.
+        CHECK(IdleWanderAllowed(true, false, false, false, true, true, true));
+        // A journey, a grind target, or an owner vetoes it.
+        CHECK(!IdleWanderAllowed(true, true, false, false, true, true, true));
+        CHECK(!IdleWanderAllowed(true, false, false, false, true, true, false));
+        CHECK(!IdleWanderAllowed(false, false, false, false, true, true, true));
+        // Fighting, battleground, instance and stuck bots are excluded.
+        CHECK(!IdleWanderAllowed(true, false, true, false, true, true, true));
+        CHECK(!IdleWanderAllowed(true, false, false, true, true, true, true));
+        CHECK(!IdleWanderAllowed(true, false, false, false, false, true, true));
+        CHECK(!IdleWanderAllowed(true, false, false, false, true, false, true));
+        // One short drift, donor step scale.
+        CHECK(IDLE_WANDER_RANGE_YD == 50.0f);
+        std::cout << "  [PASS] idle-wander gate is the last resort\n";
     }
 
     std::cout << "All grind-spot level-band tests passed.\n";

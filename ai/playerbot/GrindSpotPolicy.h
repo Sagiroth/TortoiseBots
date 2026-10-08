@@ -132,6 +132,26 @@ namespace ai
             canMoveAround && normalPickEmpty;
     }
 
+    // How far one idle-wander drift may reach. The wander fires only when the
+    // bot has no journey, no grind target (the fallback scan above found
+    // nothing either) and nothing else to do: 50 yd is the donor
+    // mod-playerbots MoveRandomNear default step, near enough to stay inside
+    // the same camp while still crossing into a fresh aggro bubble.
+    float const IDLE_WANDER_RANGE_YD = 50.0f;
+
+    // Whether an idle bot may take one wander step right now: the same scope
+    // as the prey fallback (masterless, no journey, not fighting,
+    // overworld, able to move) plus no grind target at all - wander is the
+    // last resort under the prey rule, never beside it. The "seldom" trigger
+    // paces it; the action re-checks nothing per tick beyond this gate.
+    inline bool IdleWanderAllowed(bool masterlessRandom, bool travelTargetActive,
+        bool inCombat, bool inBattleground, bool overworld, bool canMoveAround,
+        bool noGrindTarget)
+    {
+        return masterlessRandom && !travelTargetActive && !inCombat &&
+            !inBattleground && overworld && canMoveAround && noGrindTarget;
+    }
+
     // Creature-level window a grind destination must sit in.
     //
     // The long-standing window (roughly half the bot's level, narrowed further by

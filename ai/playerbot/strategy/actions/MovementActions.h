@@ -177,6 +177,14 @@ namespace ai
         virtual bool isUseful() override;
     };
 
+    class IdleWanderAction : public MovementAction
+    {
+    public:
+        IdleWanderAction(PlayerbotAI* ai) : MovementAction(ai, "idle wander") {}
+        virtual bool Execute(Event& event) override;
+        virtual bool isUseful() override;
+    };
+
     class MoveToAction : public MovementAction, public Qualified
     {
     public:
