@@ -4,7 +4,7 @@
 // every pool bot exactly once, a budgeted pass resumes where the previous one
 // stopped instead of skipping bots, the budget only bites while it is active,
 // and a membership change rebuilds the order (including the same-size case)
-// while an unchanged pool keeps its cursor.
+// without losing the rotation's place, while an unchanged pool keeps its cursor.
 //
 // Build and run:
 //   g++ -std=c++17 -Wall -Wextra tools/test_pool_pass_rotation.cpp -o /tmp/test_pool_pass_rotation
@@ -176,7 +176,8 @@ static void TestMembershipChangeRebuilds()
     CHECK(rotation.Size() == 3);
 
     // Same size, different members: bot 2 leaves, bot 4 joins. The rebuild must
-    // follow the live list and drop the departed bot for good.
+    // follow the live list and drop the departed bot for good. The cursor
+    // pointed at bot 2, which left, so the pass resumes at the same index.
     pool = {4, 1, 3};
     g_live = {1, 3, 4};
     rotation.Refresh(pool, InPool);
@@ -187,8 +188,32 @@ static void TestMembershipChangeRebuilds()
         [&clock]() { return clock.Now(); },
         [&](uint32_t guidLow) { visited.push_back(guidLow); },
         budgetHit);
-    CHECK(visited == pool);
+    CHECK((visited == std::vector<uint32_t>{1, 3, 4}));
     CHECK(std::set<uint32_t>(visited.begin(), visited.end()) == g_live);
+}
+
+static void TestGrowingPoolDoesNotStarveTail()
+{
+    // Bots logging in change the pool on every tick. A rebuild must resume at
+    // the bot the cursor pointed at, not restart at the front, or a budget of
+    // one bot per tick would serve bot 1 forever.
+    PoolPassRotation rotation;
+    std::vector<uint32_t> pool = {1, 2, 3};
+    g_live = {1, 2, 3};
+    FakeClock clock;
+    bool budgetHit = false;
+    std::vector<uint32_t> visited;
+    for (uint32_t joining = 4; joining <= 6; ++joining)
+    {
+        rotation.Refresh(pool, InPool);
+        rotation.Run(true, 10,
+            [&clock]() { return clock.Now(); },
+            [&](uint32_t guidLow) { visited.push_back(guidLow); clock.Charge(10); },
+            budgetHit);
+        pool.push_back(joining);
+        g_live.insert(joining);
+    }
+    CHECK((visited == std::vector<uint32_t>{1, 2, 3}));
 }
 
 static void TestEmptyPool()
@@ -241,6 +266,7 @@ int main()
     TestBudgetNotHitWhenItCoversThePool();
     TestUnchangedMembershipKeepsCursor();
     TestMembershipChangeRebuilds();
+    TestGrowingPoolDoesNotStarveTail();
     TestEmptyPool();
     TestSpentBudgetStartsNoNewBot();
 

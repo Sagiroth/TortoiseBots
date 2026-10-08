@@ -23,14 +23,16 @@ public:
     // Keep the current order while the live membership is unchanged: equal
     // size plus "every stored guid is still in the pool" proves the sets are
     // equal, because both hold distinct guids drawn from the same live pool.
-    // A rebuild resets the cursor, which only restarts the rotation.
+    // A rebuild keeps the rotation's place: it resumes at the bot the cursor
+    // pointed at, or at the same index when that bot left. Restarting at 0
+    // starved the tail: with 2000 bots and ~50 served per tick, logins
+    // changed the pool every tick and the tail never got an update.
     template <typename InPoolFn>
     void Refresh(std::vector<uint32_t> const& livePool, InPoolFn stillInPool)
     {
         if (m_order.size() != livePool.size())
         {
-            m_order.assign(livePool.begin(), livePool.end());
-            m_cursor = 0;
+            Rebuild(livePool);
             return;
         }
 
@@ -38,8 +40,7 @@ public:
         {
             if (!stillInPool(guidLow))
             {
-                m_order.assign(livePool.begin(), livePool.end());
-                m_cursor = 0;
+                Rebuild(livePool);
                 return;
             }
         }
@@ -87,6 +88,22 @@ public:
     }
 
 private:
+    void Rebuild(std::vector<uint32_t> const& livePool)
+    {
+        uint32_t const resumeGuid = m_cursor < m_order.size() ? m_order[m_cursor] : 0;
+        m_order.assign(livePool.begin(), livePool.end());
+        for (uint32_t i = 0; i < m_order.size(); ++i)
+        {
+            if (m_order[i] == resumeGuid)
+            {
+                m_cursor = i;
+                return;
+            }
+        }
+        if (m_cursor >= m_order.size())
+            m_cursor = 0;
+    }
+
     std::vector<uint32_t> m_order;
     uint32_t m_cursor = 0;
 };
