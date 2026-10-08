@@ -743,14 +743,14 @@ static bool RouteIsSurvivableUncached(Player* bot, WorldPosition const& start, W
     return ok;
 }
 
-// Nearest-poly sieve for grind picks: a destination point with no walkable
-// navmesh polygon nearby can never be walked to - the first failed move
-// probes NOPATH and the target drops after six fails, only to be re-picked.
-// One findNearestPoly query per accepted candidate (not a full A*), mirroring
-// the core walk-poly lookup (5 yd box, 10 yd height). Fails open everywhere
-// it has nothing to say: cross-map points, unloaded tiles and water (the
-// movement generator swims those) are all kept.
-static bool GrindPointOnMesh(Player* bot, WorldPosition* position)
+// Nearest-poly sieve for grind and gather picks: a destination point with no
+// walkable navmesh polygon nearby can never be walked to - the first failed
+// move probes NOPATH and the target drops after six fails, only to be
+// re-picked. One findNearestPoly query per accepted candidate (not a full
+// A*), mirroring the core walk-poly lookup (5 yd box, 10 yd height). Fails
+// open everywhere it has nothing to say: cross-map points, unloaded tiles
+// and water (the movement generator swims those) are all kept.
+static bool DestinationPointOnMesh(Player* bot, WorldPosition* position)
 {
     if (!bot || !position)
         return true;
@@ -968,16 +968,21 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                         ++rejects["route"];
                         continue;
                     }
-                    // Off-mesh grind points (night2 movestuck: 103 of 119
-                    // grind move-failures probed NOPATH from a median 2328
-                    // yd): the gates above never ask the navmesh whether the
-                    // point itself can be stood on, so a spawn inside rock,
-                    // over water without a swim route or off the meshed area
-                    // is picked, fails six walks and is re-picked. One
-                    // nearest-poly query on the candidate that passed every
-                    // other gate - usually the winner - never a full A*.
-                    if (destination->GetPurpose() == TravelDestinationPurpose::Grind &&
-                        !GrindPointOnMesh(bot, position))
+                    // Off-mesh grind and gather points (night2 movestuck:
+                    // 103 of 119 grind move-failures probed NOPATH from a
+                    // median 2328 yd; night2 gatherfrozen: 51 of 65 mining
+                    // fails the same way): the gates above never ask the
+                    // navmesh whether the point itself can be stood on, so
+                    // a spawn inside rock or off the meshed area is picked,
+                    // fails six walks and is re-picked. One nearest-poly
+                    // query on the candidate that passed every other gate
+                    // - usually the winner - never a full A*. Fishing
+                    // stays out: its spots are water by design.
+                    TravelDestinationPurpose const pointPurpose = destination->GetPurpose();
+                    bool const sieveApplies = pointPurpose == TravelDestinationPurpose::Grind ||
+                        pointPurpose == TravelDestinationPurpose::GatherMining ||
+                        pointPurpose == TravelDestinationPurpose::GatherHerbalism;
+                    if (sieveApplies && !DestinationPointOnMesh(bot, position))
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - off the navmesh", "debug travel");
                         ++rejects["offmesh"];
