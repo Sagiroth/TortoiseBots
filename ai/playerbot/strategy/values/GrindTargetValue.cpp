@@ -211,6 +211,20 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
             continue;
         }
 
+        // No player pull while either side is fresh from a revive: pool bots of
+        // both factions revived at one shared spirit healer and killed each
+        // other in a loop. Self-defence (the attackers loop above) still fights.
+        if (Player* victim = unit->ToPlayer())
+        {
+            PlayerbotAI* victimAi = PlayerbotAIStorage::Instance().GetAI(victim);
+            if (ai->InReviveGrace() || (victimAi && victimAi->InReviveGrace()) ||
+                victim->HasAura(SPELL_ID_PASSIVE_RESURRECTION_SICKNESS))
+            {
+                logGrind(unit, "ignored (revive grace).");
+                continue;
+            }
+        }
+
         Creature* creature = dynamic_cast<Creature*>(unit);
         if (creature && creature->GetCreatureInfo() && creature->GetCreatureInfo()->rank > CREATURE_ELITE_NORMAL && !AI_VALUE(bool, "can fight elite"))
         {

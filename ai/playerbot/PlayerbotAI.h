@@ -729,6 +729,8 @@ public:
     // 57 of 257 within 60 s), so the first minute after any revive runs the
     // full-rate scan and lets the bot feel the same pack coming back.
     static constexpr uint32 kReviveGraceMs = 60000;
+    // Inside the minute after a revive (corpse, spirit healer or sweep).
+    bool InReviveGrace() const { return m_reviveGraceUntilMs && int32(m_reviveGraceUntilMs - WorldTimer::getMSTime()) > 0; }
     bool IsSpatialScanIdle() const;
     bool ShouldReuseSpatialScan();
     void NoteSpatialScan() { m_lastSpatialScanMs = WorldTimer::getMSTime(); }
