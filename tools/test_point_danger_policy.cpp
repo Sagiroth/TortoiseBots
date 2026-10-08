@@ -18,18 +18,18 @@ int main()
     std::cout << "Starting TortoiseBots point-danger gate tests...\n";
 
     // -------------------------------------------------------------
-    // (1) Scope: pool bots below 10 only. Owned/hired bots follow
-    // their player; level 10+ keeps the old area/route gates.
+    // (1) Scope: every masterless pool bot. Owned/hired bots follow
+    // their player.
     // -------------------------------------------------------------
     {
         CHECK(PointDangerApplies(1, true));
         CHECK(PointDangerApplies(4, true));
         CHECK(PointDangerApplies(9, true));
-        CHECK(!PointDangerApplies(10, true));
-        CHECK(!PointDangerApplies(60, true));
+        CHECK(PointDangerApplies(10, true));
+        CHECK(PointDangerApplies(60, true));
         CHECK(!PointDangerApplies(2, false));
-        CHECK(!PointDangerApplies(4, false));
-        std::cout << "  [PASS] gate binds masterless bots below 10 only\n";
+        CHECK(!PointDangerApplies(60, false));
+        std::cout << "  [PASS] gate binds masterless pool bots at every level\n";
     }
 
     // -------------------------------------------------------------

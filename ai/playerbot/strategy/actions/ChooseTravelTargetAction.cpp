@@ -731,17 +731,6 @@ static bool RouteIsSurvivableUncached(Player* bot, WorldPosition const& start, W
 // neighbourhood (see SetBestTarget).
 static bool RouteIsSurvivable(Player* bot, WorldPosition* position, std::string& blocker, bool checkShortHop = false)
 {
-    if (!position)
-        return false;
-
-    PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(bot);
-    bool const avoidTowns = sPlayerbotAIConfig.avoidHostileTowns && botAi && !botAi->HasRealPlayerMaster();
-    if (avoidTowns && position->IsGuardedHostileTownFor(bot))
-    {
-        blocker = position->getAreaName(true, true) + " (hostile town guards)";
-        return false;
-    }
-
     WorldPosition start(bot);
     if (!checkShortHop && start.getMapId() == position->getMapId() && start.distance(*position) < 1000.0f)
         return true;
@@ -754,6 +743,9 @@ static bool RouteIsSurvivable(Player* bot, WorldPosition* position, std::string&
     };
     static std::mutex cacheMutex;
     static std::unordered_map<std::string, Verdict> cache;
+
+    PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(bot);
+    bool const avoidTowns = sPlayerbotAIConfig.avoidHostileTowns && botAi && !botAi->HasRealPlayerMaster();
 
     std::ostringstream key;
     key << bot->GetGUIDLow() << ':' << bot->GetLevel() << ':' << avoidTowns << ':' << checkShortHop << ':'

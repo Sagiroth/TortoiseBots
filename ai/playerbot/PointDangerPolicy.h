@@ -18,7 +18,7 @@ namespace ai
     // 1-4 killed by mobs 2+ above, most of them on quest/grind trips whose
     // destination entry was itself in cap.
     //
-    // Rule: a pool bot below level 10 walks no quest-objective / quest-loot /
+    // Rule: a masterless pool bot walks no quest-objective / quest-loot /
     // grind point whose surroundings (hostile spawns within
     // POINT_DANGER_RADIUS_YD, static spawn data) hold a creature past its
     // grind cap (PullGrindLevelCap, same numbers the order cap uses). When

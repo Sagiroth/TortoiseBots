@@ -673,8 +673,14 @@ bool ExploreTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 
     if (info.IsMasterlessRandom())
     {
+        // Enemy home zone, same rule as WorldPosition::isEnemyHomeZoneFor:
+        // sub-areas usually carry no team and inherit their zone's.
+        uint32 areaTeam = area->Team;
+        if (areaTeam == AREATEAM_NONE && area->ZoneId)
+            if (AreaEntry const* zone = AreaEntry::GetById(area->ZoneId))
+                areaTeam = zone->Team;
         Team const botTeam = info.GetTeam();
-        if (area->Team == (botTeam == ALLIANCE ? 2 : (botTeam == HORDE ? 4 : 0)))
+        if ((areaTeam == AREATEAM_ALLY && botTeam == HORDE) || (areaTeam == AREATEAM_HORDE && botTeam == ALLIANCE))
             return false;
     }
 
@@ -2842,7 +2848,7 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
     // #418), but the field around it is not - a level-4 bot on the item-750
     // trip walks to a Timber Wolf point outside Northshire and dies to the
     // Defias Cutpurse 5 / Forest Spider 6 / Mangy Wolf 6 standing next to
-    // it. Pool bots below 10 only (PointDangerApplies); quest objectives,
+    // it. Masterless pool bots only (PointDangerApplies); quest objectives,
     // quest loot and grind. The static cell index (40 yd, one build, no
     // world scan) keeps this cheap inside the async search; neutral camps
     // and wildlife never count (template reaction), so giver/taker walks
