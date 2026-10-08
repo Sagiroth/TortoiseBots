@@ -542,10 +542,18 @@ bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
             return true;
     }
 
-    //Ignore Hard hostiles while not already fighting.
-    if (target->GetLevel() > (playerToCheckAgainst->GetLevel() + 5) && ai->GetState() == BotState::BOT_STATE_NON_COMBAT)
+    // Ignore hard hostiles while not already fighting - but never a mob that
+    // is already fighting this bot. The old shape refused a +6 attacker on a
+    // long trip outright, which kept it out of "attackers", "has attackers"
+    // and the grind pick alike: no combat state, no revenge order, the bot
+    // walked on and died (27% of non-guard walk-past deaths are +6 or more,
+    // Oct 2026 pool). Answering pulls nothing new; flee/outnumbered still
+    // decide whether the fight is winnable.
+    bool const alreadyFightingBot = target->GetVictim() == playerToCheckAgainst ||
+        target->GetThreatManager().getThreat(playerToCheckAgainst) > 0.0f;
+    if (!alreadyFightingBot && target->GetLevel() > (playerToCheckAgainst->GetLevel() + 5) && ai->GetState() == BotState::BOT_STATE_NON_COMBAT)
     {
-        //When traveling a long distance.
+        // When traveling a long distance.
         if (AI_VALUE(bool, "travel target traveling") && AI_VALUE2(float, "distance", "travel target") > sPlayerbotAIConfig.reactDistance)
             return true;
 
