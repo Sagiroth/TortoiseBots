@@ -749,22 +749,43 @@ bool MoveToTravelTargetAction::Execute(Event& event)
         {
             std::string failDetail = std::to_string((int32)botLocation.distance(location));
             failDetail += ":";
-            bool noPath = false;
+            // The navmesh verdict for the blacklist below: only a same-map
+            // probe ran on the mesh at all (cross-map is never probed, an
+            // unloaded tile reports not-using-path and has nothing to say).
+            std::string pathTag;
             if (location.GetMapId() != bot->GetMapId())
-                failDetail += "crossmap";
+                pathTag = "crossmap";
             else
             {
                 PathFinder probe(bot);
                 probe.calculate(location.getX(), location.getY(), location.getZ(), false);
-                std::string const pathTag = TravelMoveFailPathTag((uint32_t)probe.getPathType());
-                noPath = pathTag == "nopath";
-                failDetail += pathTag;
+                pathTag = TravelMoveFailPathTag((uint32_t)probe.getPathType());
             }
+            bool const noPath = pathTag == "nopath";
+            failDetail += pathTag;
             failDetail += ":";
             failDetail += MoveFailReasonName(AI_VALUE(LastMovement&, "last movement").moveFailReason);
             failDetail += ":";
             failDetail += std::to_string((int32)botLocation.getZ()) + ">" + std::to_string((int32)location.getZ());
             sPlayerbotAIConfig.logEvent(ai, "TravelMoveFailed", purpose, failDetail);
+
+            // Give up the kind like a wedged combat target: a mesh-proven
+            // hole to a grind spot blacklists the creature kind for five
+            // minutes (the reach-action window), so the re-pick after the
+            // coming drop walks a different kind instead of the same spot.
+            // Without it the bot drops, re-picks the identical target and
+            // fires "move stuck" resets in place indefinitely.
+            if (TravelMoveFailBlacklistsKind(!ai->HasRealPlayerMaster() && sRandomBotFacade.IsRandomBot(bot),
+                dynamic_cast<GrindTravelDestination*>(target->GetDestination()) != nullptr,
+                noPath, target->GetEntry()))
+            {
+                AiObjectContext* context = ai->GetAiObjectContext();
+                uint32 const nowMs = WorldTimer::getMSTime();
+                context->GetValue<std::map<uint32, uint32>&>("unreachable entries")->Get()[(uint32)target->GetEntry()] =
+                    nowMs + 5 * MINUTE * IN_MILLISECONDS;
+                ai->TellDebug(ai->GetMaster(), "Giving up on this hunting ground - no path there.", "debug travel");
+            }
+
 
             if (TryRescueNoPathTrap(noPath, purpose))
                 return false;

@@ -113,6 +113,30 @@ namespace ai
         constexpr int NO_ROUTE_FALLBACK_TYPE = 7;
         return pointCount == 1 && nodeType == NO_ROUTE_FALLBACK_TYPE && entry == 0;
     }
+    // A grind destination whose walk keeps failing is given up like a wedged
+    // combat target (ReachTargetActions.h): the creature kind goes on the
+    // same "unreachable entries" blacklist, so the grind gate
+    // (GrindTravelDestination::IsActive) stops offering it for a while and
+    // the next pick walks a different kind instead of re-picking the same
+    // spot. Live 2026-10-08 pool: 103 of 119 grind move-failures probed
+    // NOPATH from a median 2328 yd away, yet the same kind was re-picked
+    // within a minute because nothing recorded the failure - the bot
+    // dropped, re-picked, failed and fired "move stuck" resets in place
+    // for 10+ min (frozen grind bots 107 -> 276 while the empty-search
+    // fallthrough re-armed local grind). Grind only: quest takers settle
+    // through their own hand-in path and services through their teleport
+    // rescue, and only a same-map probe that ran on the navmesh and found
+    // no path counts - cross-map (never probed) and unloaded tiles
+    // (not-using-path) keep the target, and entry-less destinations have
+    // no kind to blacklist. Masterless pool bots only: an owned bot's
+    // player may be walking it there themselves.
+    inline bool TravelMoveFailBlacklistsKind(bool masterlessRandom, bool grindDestination,
+        bool meshProbedNoPath, int32_t entry)
+    {
+        return masterlessRandom && grindDestination && meshProbedNoPath && entry > 0;
+    }
+
+
     // May a stuck reset keep its travel target - the same keep rule the
     // move-stuck path applies: an active target with a real destination and
     // position survives PlayerbotAI::Reset(true); anything else (no target,

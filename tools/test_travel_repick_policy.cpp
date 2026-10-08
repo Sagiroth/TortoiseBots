@@ -18,6 +18,7 @@ using ai::TravelInvalidParkKey;
 using ai::TravelIsNoRouteFallbackPoint;
 using ai::TravelIsResetToNull;
 using ai::TravelMoveFailPathTag;
+using ai::TravelMoveFailBlacklistsKind;
 using ai::TravelPurposeParkKey;
 using ai::TravelTargetIsNull;
 
@@ -130,6 +131,21 @@ int main()
     CHECK(NoPathTrapStreak(0, true, false, false, false) == 1);
     CHECK(ai::NOPATH_TRAP_FLOOR_Z_YD == 10.0f);
     std::cout << "  [PASS] nopath trap streak counts targets from one spot\n";
+
+    // (i) Move-fail kind give-up: a mesh-proven NOPATH walk to a grind
+    // spot blacklists the creature kind for a masterless pool bot.
+    // Anything else keeps the target pickable: owned bots (their player
+    // may walk them there), non-grind destinations (their own settle
+    // paths), cross-map/unloaded probes (no mesh verdict), and
+    // entry-less destinations (nothing to blacklist).
+    CHECK(TravelMoveFailBlacklistsKind(true, true, true, 4389));
+    CHECK(!TravelMoveFailBlacklistsKind(false, true, true, 4389));
+    CHECK(!TravelMoveFailBlacklistsKind(true, false, true, 4389));
+    CHECK(!TravelMoveFailBlacklistsKind(true, true, false, 4389));
+    CHECK(!TravelMoveFailBlacklistsKind(true, true, true, 0));
+    CHECK(!TravelMoveFailBlacklistsKind(true, true, true, -5));
+    CHECK(!TravelMoveFailBlacklistsKind(false, false, false, 0));
+    std::cout << "  [PASS] move-fail kind give-up needs a mesh nopath to grind\n";
 
     std::cout << "travel repick policy: OK\n";
     return 0;

@@ -1,5 +1,8 @@
 # Changelog
 
+### Bots & Behavior
+- Bots give up on a grind spot the world mesh cannot reach — a same-map walk that probes `nopath` blacklists that creature kind for five minutes (the same list the give-up-on-a-wedged-mob rule uses), so after the doomed target drops the next pick walks a different kind instead of re-picking the same spot and firing `move stuck` resets in place.
+
 ## 2026-10-08
 
 ### Combat & AI
