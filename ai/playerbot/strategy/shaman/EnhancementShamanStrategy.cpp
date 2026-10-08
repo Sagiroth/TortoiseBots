@@ -50,13 +50,17 @@ void EnhancementShamanStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
 {
     ShamanStrategy::InitCombatTriggers(triggers);
 
+    // Stormstrike first: the nature-vulnerability debuff amplifies everything
+    // after it, so it outranks the shield-consuming lightning strike even
+    // though both sit in the NORMAL band (donor EnhancementShaman orders
+    // stormstrike top of its default chain the same way).
     triggers.push_back(new TriggerNode(
         "stormstrike",
-        NextAction::array(0, new NextAction("stormstrike", ACTION_NORMAL + 1), NULL)));
+        NextAction::array(0, new NextAction("stormstrike", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "lightning strike",
-        NextAction::array(0, new NextAction("lightning strike", ACTION_NORMAL + 2), NULL)));
+        NextAction::array(0, new NextAction("lightning strike", ACTION_NORMAL + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "flame shock upkeep",
