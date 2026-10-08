@@ -81,7 +81,7 @@ cmake -B build -DMODULES=static -DMODULE_TORTOISEBOTS=static
 cmake --build build -j"$(nproc)"
 ```
 
-Configuration is generated at build time from `ai/playerbot/aiplayerbot.conf.dist.in` and `conf/tortoise_bots.conf.dist` and installed next to `mangosd.conf` (`aiplayerbot.conf`, and `modules/tortoise_bots.conf`). See [**Configuration & Tuning**](docs/guides/configuration-tuning.md) for available settings.
+Install puts the templates next to `mangosd.conf` (`aiplayerbot.conf.dist`, `modules/tortoise_bots.conf.dist`) and creates `aiplayerbot.conf` and `modules/tortoise_bots.conf` from them on the first install only; a reinstall keeps your edited files. Module SQL in `data/sql/world` and `data/sql/character` is applied by the core auto-updater on startup. See [**Configuration & Tuning**](docs/guides/configuration-tuning.md) for available settings.
 
 ---
 

@@ -13,28 +13,28 @@ ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT_DIR"
 
 test -f data/sql/world/20260824090000_world.sql || fail "world migration is missing"
-test -f data/sql/char/20260824090001_char.sql || fail "character migration is missing"
+test -f data/sql/character/20260824090001_char.sql || fail "character migration is missing"
 test -f data/sql/world/20260824090002_world.sql || fail "world compatibility migration is missing"
-test -f data/sql/char/20260824090002_char.sql || fail "character compatibility migration is missing"
+test -f data/sql/character/20260824090002_char.sql || fail "character compatibility migration is missing"
 test -f data/sql/world/20260824090003_world.sql || fail "world cleanup migration is missing"
-test -f data/sql/char/20260824090003_char.sql || fail "character cleanup migration is missing"
+test -f data/sql/character/20260824090003_char.sql || fail "character cleanup migration is missing"
 test -f data/sql/world/20260916090001_world.sql || fail "weight-scale seed migration is missing"
 test ! -e data/sql/World || fail "uppercase World migration directory remains"
 test ! -e data/sql/Char || fail "uppercase Char migration directory remains"
 
 grep -q 'template_changed' data/sql/world/20260824090002_world.sql \
     || fail "help schema lacks template_changed"
-grep -q 'scale_32' data/sql/char/20260824090002_char.sql \
+grep -q 'scale_32' data/sql/character/20260824090002_char.sql \
     || fail "item-info schema lacks scale_32"
 grep -q 'ai_playerbot_zone_level' data/sql/world/20260824090002_world.sql \
     || fail "zone-level schema is not owned by World migration"
 grep -q 'ADD COLUMN IF NOT EXISTS' data/sql/world/20260824090002_world.sql \
     || fail "World compatibility migration is not additive"
-grep -q 'scale_32' data/sql/char/20260824090002_char.sql \
+grep -q 'scale_32' data/sql/character/20260824090002_char.sql \
     || fail "Char compatibility migration lacks scale_32"
 grep -q 'DROP TABLE IF EXISTS' data/sql/world/20260824090003_world.sql \
     || fail "World cleanup migration lacks explicit dead-table cleanup"
-grep -q 'DROP TABLE IF EXISTS' data/sql/char/20260824090003_char.sql \
+grep -q 'DROP TABLE IF EXISTS' data/sql/character/20260824090003_char.sql \
     || fail "Char cleanup migration lacks explicit dead-table cleanup"
 grep -q 'ai_playerbot_weightscale_data' data/sql/world/20260916090001_world.sql \
     || fail "weight-scale stat data is not seeded"

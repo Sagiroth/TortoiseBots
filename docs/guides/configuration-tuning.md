@@ -15,7 +15,7 @@ relates_to:
 
 TortoiseBots provides a rich set of feature flags and tuning knobs. Whether you are running a solo private server or hosting a community realm, these settings allow you to customize bot intelligence, party convenience, world immersion, and economy.
 
-Configuration lives in two installed files (the build generates them from templates):
+Configuration lives in two installed files. The first install creates them from their templates (installed beside them as `.dist`); later installs never overwrite them, so compare with the `.dist` after an update to pick up new keys (a missing key uses its default):
 1. `aiplayerbot.conf`, installed next to `mangosd.conf` — every `AiPlayerbot.*` gameplay flag, QoL toggle, AI threshold and service. Template: `ai/playerbot/aiplayerbot.conf.dist.in`. A different path can be set with `AiPlayerbot.ConfigFile` in `mangosd.conf`.
 2. `modules/tortoise_bots.conf` in the server config directory — `TortoiseBots.*` module options (log level, telemetry). Template: `conf/tortoise_bots.conf.dist`.
 

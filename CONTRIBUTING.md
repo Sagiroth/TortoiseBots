@@ -32,7 +32,7 @@ Pull requests for this repository should normally target TortoiseBots'
   generic host capability it provides and why an existing seam is insufficient.
 - Do not reintroduce direct bot coupling such as `WorldSession::GetBot()` or
   `m_bot` into normal core gameplay code.
-- Keep SQL migrations in the appropriate `data/sql/world` or `data/sql/char`
+- Keep SQL migrations in the appropriate `data/sql/world` or `data/sql/character`
   directory, use a timestamped filename, and comment non-obvious statements.
 - If behavior is adapted from another project, record the source and commit in
   [`docs/PROVENANCE.md`](docs/PROVENANCE.md).

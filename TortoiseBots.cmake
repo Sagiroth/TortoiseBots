@@ -91,33 +91,51 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
   # string cannot go stale.
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${TORTOISEBOTS_ROOT}/VERSION")
 
-  # PlayerbotAIConfig reads its mature configuration beside mangosd.conf.
-  set(TORTOISEBOTS_AI_CONFIG "${CMAKE_CURRENT_BINARY_DIR}/aiplayerbot.conf")
+  # Configuration ships as templates. The core installs conf/*.conf.dist into
+  # the modules config folder and loads the matching .conf; PlayerbotAIConfig
+  # reads aiplayerbot.conf beside mangosd.conf. Each live .conf is created from
+  # its template on the first install only - a reinstall must never overwrite
+  # settings the admin edited. Keys a template gains later fall back to the
+  # code defaults, which equal the template values.
+  set(TORTOISEBOTS_AI_CONFIG_DIST "${CMAKE_CURRENT_BINARY_DIR}/aiplayerbot.conf.dist")
   configure_file(
     "${TORTOISEBOTS_ROOT}/ai/playerbot/aiplayerbot.conf.dist.in"
-    "${TORTOISEBOTS_AI_CONFIG}"
+    "${TORTOISEBOTS_AI_CONFIG_DIST}"
     COPYONLY)
-  install(FILES "${TORTOISEBOTS_AI_CONFIG}" DESTINATION "${CONF_DIR}")
+  install(FILES "${TORTOISEBOTS_AI_CONFIG_DIST}" DESTINATION "${CONF_DIR}")
 
-  configure_file(
-    "${TORTOISEBOTS_ROOT}/conf/tortoise_bots.conf.dist"
-    "${CMAKE_CURRENT_BINARY_DIR}/tortoise_bots.conf"
-    COPYONLY)
-  CopyModuleConfig("${CMAKE_CURRENT_BINARY_DIR}/tortoise_bots.conf")
+  if(WIN32)
+    set(TORTOISEBOTS_MODULE_CONF_DIR "${CMAKE_INSTALL_PREFIX}/modules")
+  else()
+    set(TORTOISEBOTS_MODULE_CONF_DIR "${CONF_DIR}/modules")
+  endif()
+  foreach(TORTOISEBOTS_LIVE_CONFIG
+      "${CONF_DIR}/aiplayerbot.conf|${TORTOISEBOTS_AI_CONFIG_DIST}"
+      "${TORTOISEBOTS_MODULE_CONF_DIR}/tortoise_bots.conf|${TORTOISEBOTS_ROOT}/conf/tortoise_bots.conf.dist")
+    string(REPLACE "|" ";" TORTOISEBOTS_LIVE_CONFIG "${TORTOISEBOTS_LIVE_CONFIG}")
+    list(GET TORTOISEBOTS_LIVE_CONFIG 0 TORTOISEBOTS_LIVE_CONFIG_DEST)
+    list(GET TORTOISEBOTS_LIVE_CONFIG 1 TORTOISEBOTS_LIVE_CONFIG_SRC)
+    install(CODE "
+      set(_dest \"\$ENV{DESTDIR}${TORTOISEBOTS_LIVE_CONFIG_DEST}\")
+      if(NOT EXISTS \"\${_dest}\")
+        message(STATUS \"Creating: \${_dest}\")
+        configure_file(\"${TORTOISEBOTS_LIVE_CONFIG_SRC}\" \"\${_dest}\" COPYONLY)
+      else()
+        message(STATUS \"Keeping: \${_dest}\")
+      endif()")
+  endforeach()
 
-  # Optional module migrations are installed only with the module. The core
-  # AutoUpdater applies them on startup without making bots a core dependency.
-  # AutoUpdater's module contract is case-sensitive on Linux. Penqle's
-  # effective mangosd.conf.dist names these configured folders `world` and
-  # `character`; the uppercase names in AutoUpdater.cpp are only fallback
-  # defaults when those settings are absent. Keep the module aligned with the
-  # shipped core configuration so a fresh install cannot silently skip SQL.
+  # Optional module migrations are applied by the core AutoUpdater, which reads
+  # <modules>/TortoiseBots/data/sql/<Database.AutoUpdate.*UpdateName> from the
+  # source tree (TW_SOURCE_MODULES_DIR); the shipped mangosd.conf.dist names
+  # these `world` and `character`, so the source folders carry exactly those
+  # names. The copies below serve installs that run without the source tree.
   if(EXISTS "${TORTOISEBOTS_ROOT}/data/sql/world")
     install(DIRECTORY "${TORTOISEBOTS_ROOT}/data/sql/world/"
       DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/TortoiseBots/data/sql/world")
   endif()
-  if(EXISTS "${TORTOISEBOTS_ROOT}/data/sql/char")
-    install(DIRECTORY "${TORTOISEBOTS_ROOT}/data/sql/char/"
+  if(EXISTS "${TORTOISEBOTS_ROOT}/data/sql/character")
+    install(DIRECTORY "${TORTOISEBOTS_ROOT}/data/sql/character/"
       DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/TortoiseBots/data/sql/character")
   endif()
 

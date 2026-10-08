@@ -43,7 +43,7 @@ Lookup order: gameplay/class AI/CC/movement → mod-playerbots, then shyalya-tor
 ## Working rules
 
 - **Configuration:** a key's code fallback (`Get*Default`) must equal the value the shipped template sets, and a commented example must show the value that actually runs — otherwise deleting a line silently changes behaviour. A key that is read but unused says so in the template.
-- **SQL:** migrations go to `data/sql/world/` or `data/sql/char/` (character DB; installed as `character/`), named `YYYYMMDDHHMMSS_<world|char>.sql`, idempotent. Never edit an applied migration — add a new one.
+- **SQL:** migrations go to `data/sql/world/` or `data/sql/character/` (the core's updater reads the module source tree, folder names must match `Database.AutoUpdate.*UpdateName`), named `YYYYMMDDHHMMSS_<world|char>.sql`, idempotent. Never edit an applied migration — add a new one.
 - **Performance:** nothing per bot tick hits the DB, scans the world or rebuilds strategy graphs; startup caches are built in one pass (O(rows), never item × template loops); expensive diagnostics are opt-in. Measure rather than guess.
 - **Edits:** when adding a declaration or line next to an existing one, check `git diff` for accidental removals (`-` lines) before committing; count prepared-statement placeholders against columns.
 - **Git:** check `git status --short` before and after; never stage, reset or discard changes you did not make.
