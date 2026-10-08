@@ -32,7 +32,7 @@ Ally Health 50%-70% (medium) ──► Heal / Lesser Heal
 Ally Health 70%-90% (almost) ──► Renew
 Multiple Injured              ──► Prayer of Healing (Party AoE heal)
 ```
-*Desperate Prayer* is a self-only emergency heal and never lands on allies.
+*Desperate Prayer* is a self-only emergency heal and never lands on allies. A heal is never skipped for mana reasons on a target at or below the low-health line: danger always outbids efficiency. Above the medium line the bot refuses oversized or merely average-efficiency heals (a 50%-bar *Heal* on an 85% target waits for a cheaper window), and while its own mana sits below the medium-mana line it refuses mana-hungry heals (*Flash Heal*) in favor of efficient ones (*Renew*, *Power Word: Shield*). Tanks count the expected heal at two-thirds (bigger bars).
 
 ### Healer Off-Spec Damage & Wand
 A grouped Holy priest only damages while **nobody in the party is below 90% health** and its mana is comfortable (85% reserve on easy pulls, 65% on normal ones, the medium-mana line on hard ones). Then it uses *Shadow Word: Pain*, *Holy Fire*, *Smite*, *Starshards* or *Mind Blast* at the lowest priority, so every heal outbids it, and *Holy Nova* when a pack stands in melee range. When the party is healthy but mana is not, it wands the target instead. A solo priest damages freely.

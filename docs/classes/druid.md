@@ -30,7 +30,7 @@ The bot's shapeshifting engine maintains the appropriate form based on assigned 
 - If designated as **Melee DPS**, the bot stays in **Cat Form**.
 - If designated as **Ranged DPS**, the bot stays in **Moonkin Form** (if talented) or Humanoid form.
 - If designated as **Healer**, the bot stays in **Humanoid Form** or **Tree of Life Form**.
-- **Caster Shifting:** The bot automatically shifts out of feral forms when out of combat to cast party buffs (*Mark of the Wild*, *Thorns*), dispel poisons (*Abolish Poison*, with *Cure Poison* as the fallback), or consume water.
+- **Caster Shifting:** The bot automatically shifts out of feral forms when out of combat to cast party buffs (*Mark of the Wild*, *Thorns*), dispel poisons (*Abolish Poison*, with *Cure Poison* as the fallback) or curses (*Remove Curse*, which outbids poison: a hex locks the member out of the fight), or consume water.
 
 ---
 
@@ -44,6 +44,7 @@ The bot's shapeshifting engine maintains the appropriate form based on assigned 
 - **Swiftmend HoT-Gating (Spell ID 18562):**
   - Consumes the shortest remaining active *Rejuvenation* or *Regrowth* HoT on an ally to deliver instantaneous burst healing.
   - The bot verifies that an active HoT exists on the target before attempting cast, preventing wasted cooldown triggers.
+  - *Rejuvenation* and *Regrowth* are never stacked on a party member that already carries the aura; the heal ladder falls through to a direct heal instead. Same mana sense as the other healers: no veto at or below the low-health line, no oversized or average-efficiency heals above the medium line, no mana-hungry heals below the medium-mana line.
 
 ---
 

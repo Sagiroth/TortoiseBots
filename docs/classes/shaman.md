@@ -52,7 +52,8 @@ Shamans automatically drop and maintain fixed per-spec 4-element totem sets (oth
 - **Shock rotation:** Elemental and Enhancement keep *Flame Shock* up first, then spend the shared shock cooldown on *Earth Shock*; *Earth Shock* keeps its separate interrupt duty on casting targets.
 - **Snares:** Casts *Frost Shock* to snare targets.
 - **Weapon Imbues:** Automatically maintains weapon imbues (*Windfury Weapon* / *Flametongue Weapon* for Enhancement, *Flametongue Weapon* otherwise, with *Rockbiter Weapon* / *Frostbrand Weapon* as fallbacks).
-- **Dispels & Cleansing:** Uses *Purge* to strip enemy buffs (shields, HoTs) and *Cure Poison* / *Cure Disease* on party members.
+- **Dispels & Cleansing:** Uses *Purge* to strip enemy buffs (shields, HoTs) and *Cure Poison* / *Cure Disease* on party members (no curse cure exists for shamans in 1.12; curses stay a druid/mage job).
+- **Mana sense:** Never skips a target at or below the low-health line for mana reasons; above the medium line it refuses oversized or average-efficiency heals, and below the medium-mana line it refuses mana-hungry heals (*Lesser Healing Wave*) in favor of *Healing Wave*. Tanks count the expected heal at two-thirds.
 - **Resurrection:** Resurrects fallen party members with *Ancestral Spirit* (no self-Reincarnation).
 - **Defensive & Utility:** Keeps *Earth Shield* on the party tank, uses *Call of the Elements* / *Call of the Ancestors* / *Call of the Spirits* totem recall, and shifts to *Ghost Wolf* when carrying a PvP flag.
 

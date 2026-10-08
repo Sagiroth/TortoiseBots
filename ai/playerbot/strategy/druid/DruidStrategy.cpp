@@ -229,6 +229,17 @@ void DruidCureStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     CureStrategy::InitCombatTriggers(triggers);
 
+    // Night2 gap 6 (donor DruidCureStrategy: curse 57 > poison 51): curses
+    // (hex, magic dust) lock a party member out of the fight; poison ticks
+    // through it. Curse rows outbid poison rows both for self and party.
+    triggers.push_back(new TriggerNode(
+        "remove curse",
+        NextAction::array(0, new NextAction("remove curse", ACTION_DISPEL + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member remove curse",
+        NextAction::array(0, new NextAction("remove curse on party", ACTION_DISPEL + 2), NULL)));
+
     triggers.push_back(new TriggerNode(
         "cure poison",
         NextAction::array(0, new NextAction("abolish poison", ACTION_DISPEL), NULL)));
@@ -236,14 +247,6 @@ void DruidCureStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "party member cure poison",
         NextAction::array(0, new NextAction("abolish poison on party", ACTION_DISPEL), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "remove curse",
-        NextAction::array(0, new NextAction("remove curse", ACTION_DISPEL), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "party member remove curse",
-        NextAction::array(0, new NextAction("remove curse on party", ACTION_DISPEL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "rooted",

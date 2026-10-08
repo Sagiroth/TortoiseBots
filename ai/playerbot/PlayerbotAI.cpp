@@ -6031,8 +6031,12 @@ bool PlayerbotAI::HasAuraToDispel(Unit* target, uint32 dispelType)
 			if (!isPositiveSpell && !isFriend)
 				continue;
 
+			// A short aura (totem pulse, brief snare) is not worth a dispel,
+			// but it must not blind the rest of the scan: skip it and keep
+			// looking (donor `continue`s here; `return false` dropped every
+			// real debuff behind one short aura).
 			if (sPlayerbotAIConfig.dispelAuraDuration && aura->GetAuraDuration() && aura->GetAuraDuration() < (int32)sPlayerbotAIConfig.dispelAuraDuration)
-			    return false;
+			    continue;
 
 			if (canDispel(entry, dispelType))
 				return true;
