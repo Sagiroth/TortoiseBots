@@ -55,11 +55,15 @@ bool AttackAnythingAction::isUseful()
 
     // Healers start no fights on their own: without a dps kit (offdps) the
     // order would arm a target the combat engine never swings at. Revenge
-    // above already answered, so this gate only ever refuses a NEW pull -
-    // a healer being hit fights back through the combat engine's own
-    // healer-should-attack nodes instead of walking on (disc priests died
-    // at 5% fight-back vs 14-17% for shadow/holy, Oct 2026 pool).
+    // above already answered, so this gate only ever refuses a NEW pull.
     if (ai->ContainsStrategy(STRATEGY_TYPE_HEAL) && !ai->HasStrategy("offdps", BotState::BOT_STATE_COMBAT))
+        return false;
+
+    // A pool bot fresh from a revive (50% health, standing where it died or
+    // at the graveyard) pulls nothing for the revive grace minute: it rests
+    // first. Over half of all revives died again within 10 min (Oct 2026
+    // pool). Revenge above still answers anything that attacks it.
+    if (ai->InReviveGrace() && sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster())
         return false;
 
     // A finished quest waiting at its taker is the bot's own business: the walk

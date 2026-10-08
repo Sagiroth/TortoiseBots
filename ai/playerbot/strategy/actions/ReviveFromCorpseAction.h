@@ -25,5 +25,7 @@ namespace ai
 	    SpiritHealerAction(PlayerbotAI* ai, std::string name = "spirit healer") : MovementAction(ai,name) {}
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;
+    private:
+        bool ShouldApplyResurrectionSickness();
     };
 }

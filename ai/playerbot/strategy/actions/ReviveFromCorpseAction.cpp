@@ -654,6 +654,18 @@ bool FindCorpseAction::isUseful()
     return bot->GetCorpse();
 }
 
+// Resurrection sickness only for bots a real player answers for. A pool bot
+// revived at -75% stats walked straight back into fights: 55% of level 20+
+// spirit-healer revives died again within 10 min (Oct 2026 pool). The donor
+// never pays it either (mod-playerbots revives random bots in place at full
+// health). The repair cheat keeps skipping it as before.
+bool SpiritHealerAction::ShouldApplyResurrectionSickness()
+{
+    if (ai->HasCheat(BotCheatMask::repair))
+        return false;
+    return !(sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster());
+}
+
 bool SpiritHealerAction::Execute(Event& event)
 {
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
@@ -667,7 +679,7 @@ bool SpiritHealerAction::Execute(Event& event)
         {
             sLog.outDetail("Bot #%d <%s> is a ghost without a corpse, reviving at the nearest graveyard", bot->GetGUIDLow(), bot->GetName());
             bot->RepopAtGraveyard();
-            bot->ResurrectPlayer(0.5f, !ai->HasCheat(BotCheatMask::repair));
+            bot->ResurrectPlayer(0.5f, ShouldApplyResurrectionSickness());
             bot->DurabilityLossAll(0.25f, true);
             bot->SaveToDB();
             SET_AI_VALUE(bool, "corpse run", false);
@@ -759,7 +771,7 @@ bool SpiritHealerAction::Execute(Event& event)
 
         sLog.outDetail("Bot #%d %s:%d <%s> revives at spirit healer", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
         PlayerbotChatHandler ch(bot);
-        bot->ResurrectPlayer(0.5f, !ai->HasCheat(BotCheatMask::repair));
+        bot->ResurrectPlayer(0.5f, ShouldApplyResurrectionSickness());
         bot->DurabilityLossAll(0.25f, true);
 
         bot->SpawnCorpseBones();
