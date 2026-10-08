@@ -36,6 +36,7 @@ Paladins provide exceptional party utility, versatile auras, class blessings, an
 
 ### 3. Retribution (DPS)
 - **Seals & Judgement:** Maintains *Seal of Command* (falling back to *Seal of Righteousness* on spell availability, with no weapon-speed check) and unleashes *Judgement* on cooldown. The rotation also wires *Exorcism* (instant with the Art of War proc), *Holy Strike*, and *Crusader Strike*.
+- **Builder order:** *Crusader Strike* is the main builder and outranks *Holy Strike* within the normal band; seal/judge upkeep still outbids both.
 - **Finishers:** Casts *Hammer of Wrath* when target falls below 20% health.
 
 ---

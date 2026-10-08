@@ -94,9 +94,13 @@ void RetributionPaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& tri
         "holy strike",
         NextAction::array(0, new NextAction("holy strike", ACTION_NORMAL + 1), NULL)));
 
+    // Main builder first: crusader strike (Turtle 1.18.1 paladin strike,
+    // already wired via CrusaderStrikeTrigger + action node) outranks holy
+    // strike within the NORMAL band, mirroring the donor's second-builder
+    // default. Seal/judge upkeep above is untouched.
     triggers.push_back(new TriggerNode(
         "crusader strike",
-        NextAction::array(0, new NextAction("crusader strike", ACTION_NORMAL), NULL)));
+        NextAction::array(0, new NextAction("crusader strike", ACTION_NORMAL + 2), NULL)));
 }
 
 void RetributionPaladinStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
