@@ -2584,7 +2584,8 @@ void PlayerbotFactory::InitClassLevelSpells()
     }
 
     std::set<std::pair<bool, uint32>> processedTrainers;
-    auto learnTrainerSpells = [this, classFamily = classEntry->spellfamily](TrainerSpellData const* trainerSpells)
+    uint32 learnedThisPass = 0;
+    auto learnTrainerSpells = [this, classFamily = classEntry->spellfamily, &learnedThisPass](TrainerSpellData const* trainerSpells)
     {
         if (!trainerSpells)
             return;
@@ -2670,11 +2671,15 @@ void PlayerbotFactory::InitClassLevelSpells()
                     !teachingSpell->EffectTriggerSpell[effect])
                     continue;
 
+                if (!bot->HasSpell(teachingSpell->EffectTriggerSpell[effect]))
+                    ++learnedThisPass;
                 bot->LearnSpell(teachingSpell->EffectTriggerSpell[effect], false);
             }
         }
     };
 
+    // Collect this class's trainer lists once (one scan of the creature map).
+    std::vector<TrainerSpellData const*> trainerLists;
     for (auto const& creatureEntry : sObjectMgr.GetCreatureInfoMap())
     {
         CreatureInfo const* creature = creatureEntry.second.get();
@@ -2682,14 +2687,24 @@ void PlayerbotFactory::InitClassLevelSpells()
             creature->trainer_class != bot->GetClass())
             continue;
 
-        if (creature->trainer_id)
-        {
-            if (processedTrainers.insert({ true, creature->trainer_id }).second)
-                learnTrainerSpells(sObjectMgr.GetNpcTrainerTemplateSpells(creature->trainer_id));
-        }
+        if (creature->trainer_id && processedTrainers.insert({ true, creature->trainer_id }).second)
+            trainerLists.push_back(sObjectMgr.GetNpcTrainerTemplateSpells(creature->trainer_id));
 
         if (processedTrainers.insert({ false, creature->entry }).second)
-            learnTrainerSpells(sObjectMgr.GetNpcTrainerSpells(creature->entry));
+            trainerLists.push_back(sObjectMgr.GetNpcTrainerSpells(creature->entry));
+    }
+
+    // A rank is GREEN only once the rank below it is known, so one pass over
+    // the lists teaches little beyond rank 1 (pool mages seeded at 50+ knew no
+    // Fireball rank past 1, Oct 2026). Repeat until a pass adds nothing; each
+    // pass climbs every chain by at least one rank.
+    for (uint32 pass = 0; pass < 20; ++pass)
+    {
+        learnedThisPass = 0;
+        for (TrainerSpellData const* trainerSpells : trainerLists)
+            learnTrainerSpells(trainerSpells);
+        if (!learnedThisPass)
+            break;
     }
 }
 
