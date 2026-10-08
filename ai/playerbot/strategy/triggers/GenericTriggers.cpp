@@ -818,7 +818,7 @@ bool TankFaceNeededTrigger::IsActive()
     // stepping to the far side of the mob points its front at the tank.
     if (!target->GetVictim() || target->GetVictim()->getObjectGuid() != bot->getObjectGuid())
         return false;
-    if (!bot->IsWithinMeleeRange(target) || target->isMoving())
+    if (!bot->CanReachWithMeleeAutoAttack(target) || target->IsMoving())
         return false;
     Group* group = bot->GetGroup();
     if (!group)
