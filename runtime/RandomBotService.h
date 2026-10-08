@@ -109,6 +109,10 @@ private:
     std::unordered_map<uint32_t, XpProgress> m_xpProgress;
     uint32_t m_quickLogoutLogMs = 0;
     uint32_t m_serviceElapsedMs = 0;
+    // Service pass counter; spreads ProcessBot so each bot gets it once every
+    // kProcessBotEveryPasses passes (one pass per service cadence, ~1 s).
+    uint32_t m_servicePass = 0;
+    static constexpr uint32_t kProcessBotEveryPasses = 60;
     // Stable target: snapshot of DesiredTargetCount once at Initialize when
     // auto-create is enabled (no per-cadence re-roll/ratchet toward Max). For
     // non-auto, snapshot of TargetCount (capped). Handles bounds and deficit

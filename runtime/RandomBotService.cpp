@@ -1565,6 +1565,7 @@ void RandomBotService::Update(uint32_t diff)
     if (sPlayerbotAIConfig.levelLadder)
         LadderLog(elapsed);
 
+    ++m_servicePass;
     for (size_t i = 0; i < m_candidates.size(); ++i)
     {
         Candidate const& candidate = m_candidates[i];
@@ -1581,9 +1582,11 @@ void RandomBotService::Update(uint32_t diff)
         if (BotActivityLeaseManager::Instance().GetActivity(player->GetGUIDLow()) == BotActivity::Dungeon)
             continue;
 
-        // Recovery/expired-value work stays on the world thread and is bounded
-        // by the configured service cadence rather than a second AI loop.
-        sRandomBotFacade.ProcessBot(player);
+        // Expired-value cleanup stays on the world thread. Each bot gets it on
+        // one service pass in kProcessBotEveryPasses: every pass for the whole
+        // pool cost ~10% of the world thread at 2000 bots.
+        if ((i + m_servicePass) % kProcessBotEveryPasses == 0)
+            sRandomBotFacade.ProcessBot(player);
 
         m_strategyAgeMs[i] += elapsed;
         uint32 strategyInterval = sPlayerbotAIConfig.minRandomBotChangeStrategyTime;

@@ -468,6 +468,8 @@ void BattlegroundQueueService::ReconcileMasterQueue()
 {
     if (!sPlayerbotAIConfig.enabled || !sPlayerbotAIConfig.randomBotBgEnabled)
         return;
+    if (m_ownedQueuedGuids.empty())
+        return;
     PruneOwnedQueueSet();
     // Reconcile service-owned queued bots whose human master became active
     // before invite. Only touches (guid, queueType) pairs owned by this service
@@ -530,9 +532,16 @@ void BattlegroundQueueService::Update(uint32_t diff)
     if (!RandomBotService::Instance().IsPoolAvailable())
         return;
 
-    // Reconcile every tick: if a bot queued by this service now has an active
-    // human master, leave queue via native BattleGroundQueue before invite.
-    ReconcileMasterQueue();
+    // Reconcile once a second: if a bot queued by this service now has an
+    // active human master, leave queue via native BattleGroundQueue before
+    // invite. Every tick it scanned the whole pool twice (~4% of the world
+    // thread at 2000 bots) for a queue that is almost always empty.
+    m_reconcileElapsedMs += diff;
+    if (m_reconcileElapsedMs >= 1000)
+    {
+        m_reconcileElapsedMs = 0;
+        ReconcileMasterQueue();
+    }
 
     uint32 interval = sPlayerbotAIConfig.randomBotBgQueueInterval;
     if (interval < 5000)

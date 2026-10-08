@@ -43,6 +43,7 @@ private:
 
     bool m_initialized = false;
     uint32_t m_elapsedMs = 0;
+    uint32_t m_reconcileElapsedMs = 0;
     // In-memory ownership as (guidLow, queueType) pairs so an excluded
     // bracket/offline group member is never mistaken for a service-owned
     // entry, and a separate manual queueType for the same guid is not
