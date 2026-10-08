@@ -52,6 +52,24 @@ bool ai::TravelBlockedInsideInstance(PlayerbotAI* ai)
     return TravelSelectionBlockedByInstance(ai->HasRealPlayerMaster(), inInstance);
 }
 
+// Diagnostic for an empty travel search (idle brief Q2): one throttled row
+// per purpose per bot, like QuestTripNoTarget/VendorTripNoTarget but for
+// every purpose. info1 is the human purpose name, info2 "ranges:reason" -
+// ranges offered, plus why nothing was picked (invalid = async result
+// unusable; empty = no ranges; rejected = ranges came back and SetBestTarget
+// refused them all). Throttle key is per purpose so a stuck purpose cannot
+// starve the others' diagnostics.
+inline void LogTravelSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const& parkKey,
+    std::string const& reason, std::size_t ranges)
+{
+    std::string const throttleKey = "travel search empty log::" + parkKey;
+    if (AI_VALUE2(time_t, "manual time", throttleKey) > time(0))
+        return;
+    SET_AI_VALUE2(time_t, "manual time", throttleKey, time(0) + 10 * MINUTE);
+    sPlayerbotAIConfig.logEvent(ai, "TravelSearchEmpty", GetTravelPurposeName(parkKey),
+        std::to_string(ranges) + ":" + reason);
+}
+
 namespace
 {
     // Cheap mirror of the NeedTravelPurposeValue need gates (same constants,
@@ -201,6 +219,7 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         // expiry; clearing here is what lets a parked-then-expired purpose
         // re-enter the roll instead of holding a stale win.
         SET_AI_VALUE2(time_t, "manual time", ai::RpgMixerUntilKey(), time_t(0));
+        LogTravelSearchEmpty(ai, bot, invalidParkKey, "invalid", 0);
         return false;
     }
 
@@ -313,6 +332,12 @@ bool ChooseTravelTargetAction::Execute(Event& event)
             sPlayerbotAIConfig.logEvent(ai, "QuestTripNoTarget",
                 std::to_string(destinationList.size()), std::to_string(bot->GetLevel()));
         }
+
+        //Every purpose, not just quest and vendor: without this the idle brief's
+        //Q2 ("which purposes park most, and why") is unanswerable - grind,
+        //gather, trainer and camp searches park silently every minute.
+        LogTravelSearchEmpty(ai, bot, purposeKey,
+            destinationList.empty() ? "empty" : "rejected", destinationList.size());
 
         return false;
     }
