@@ -819,24 +819,6 @@ void ObservabilityEmitter::PruneState(uint32 nowMs)
     }
 }
 
-void ObservabilityEmitter::NoteTickDiff(uint32 diff)
-{
-    m_tickWindow[m_tickWindowIndex] = diff;
-    m_tickWindowIndex = (m_tickWindowIndex + 1) % kTickWindowSize;
-    if (m_tickWindowCount < kTickWindowSize)
-        ++m_tickWindowCount;
-    uint64 sum = 0;
-    uint32 worst = 0;
-    for (size_t i = 0; i < m_tickWindowCount; ++i)
-    {
-        sum += m_tickWindow[i];
-        if (m_tickWindow[i] > worst)
-            worst = m_tickWindow[i];
-    }
-    m_tickAvgMs = m_tickWindowCount ? static_cast<uint32>(sum / m_tickWindowCount) : diff;
-    m_tickWorstMs = worst;
-}
-
 void ObservabilityEmitter::NoteDeathKiller(uint32 guid, std::string const& name, uint32 level)
 {
     if (m_deathKillers.size() >= kMaxDeathKillers && m_deathKillers.find(guid) == m_deathKillers.end())
@@ -852,7 +834,7 @@ void ObservabilityEmitter::Update(uint32 diff)
 {
     if (!IsEnabled())
         return;
-    NoteTickDiff(diff);
+    m_tickWindow.Add(diff);
 
     if (!m_hostResolved)
         RetryHostResolution(diff);
@@ -1208,6 +1190,7 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
     for (BotTelemetrySnapshot const& b : botSnapshots)
         countMap[{b.className, b.role}]++;
 
+    PlayerLagWindow::Stats const tick = m_tickWindow.Compute();
     std::ostringstream ss;
     ss << "{\"v\":" << kProtocolVersion
        << ",\"session\":" << m_sessionId
@@ -1216,8 +1199,10 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
        << ",\"type\":\"HEARTBEAT\""
        << ",\"uptime\":" << sWorld.GetUptime()
        << ",\"diff\":" << diff
-       << ",\"diff_avg\":" << m_tickAvgMs
-       << ",\"diff_worst\":" << m_tickWorstMs
+       << ",\"diff_avg\":" << tick.avgMs
+       << ",\"diff_worst\":" << tick.worstMs
+       << ",\"lag_p50\":" << tick.p50Ms
+       << ",\"lag_p95\":" << tick.p95Ms
        << ",\"window_secs\":" << (kStateBucketCount * kStateBucketMs / 1000)
        << ",\"humans\":" << humanCount
        << ",\"bots\":" << botCount

@@ -18,6 +18,8 @@ type Registry struct {
 
 	serverOnline   prometheus.Gauge
 	tickDuration   prometheus.Gauge
+	playerLagP50   prometheus.Gauge
+	playerLagP95   prometheus.Gauge
 	playersOnline  prometheus.Gauge
 	botActiveCount *prometheus.GaugeVec
 	anomaliesTotal *prometheus.CounterVec
@@ -40,6 +42,14 @@ func New() *Registry {
 		tickDuration: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: "mangos_server_tick_duration_ms",
 			Help: "Recent average world update interval in milliseconds",
+		}),
+		playerLagP50: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: "mangos_player_lag_p50_ms",
+			Help: "Median server delay before a player's action is handled (rest of the world tick an action lands in, last 30 s); add the player's ping",
+		}),
+		playerLagP95: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: "mangos_player_lag_p95_ms",
+			Help: "95th percentile server delay before a player's action is handled (rest of the world tick an action lands in, last 30 s); add the player's ping",
 		}),
 		playersOnline: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: "mangos_players_online",
@@ -113,6 +123,8 @@ func (r *Registry) RecordHeartbeat(p *model.HeartbeatPayload) {
 	} else {
 		r.tickDuration.Set(p.TickDiffMs)
 	}
+	r.playerLagP50.Set(p.LagP50Ms)
+	r.playerLagP95.Set(p.LagP95Ms)
 	r.playersOnline.Set(float64(p.HumansCount))
 
 	r.stateRatio.WithLabelValues("combat").Set(p.States.Combat)
@@ -180,6 +192,8 @@ func (r *Registry) markOffline() {
 
 	r.serverOnline.Set(0)
 	r.tickDuration.Set(0)
+	r.playerLagP50.Set(0)
+	r.playerLagP95.Set(0)
 	r.playersOnline.Set(0)
 	r.botActiveCount.Reset()
 	r.issuesActive.Reset()

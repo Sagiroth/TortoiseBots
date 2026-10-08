@@ -110,10 +110,10 @@
       <!-- TAB: OVERVIEW — is everything running? -->
       <section id="tab-overview" class="tab-view">
         <div class="kpi-row">
-          <div class="kpi" title="Average world-update interval over the last few seconds. The subtitle is the worst tick in that window. 50 ms is the 20 Hz target.">
-            <div class="kpi-label">World tick</div>
+          <div class="kpi" title="How long the server takes to react to a player's action (cast, move, loot), last 30 s: 95 % of actions are handled faster than this. Players feel their own ping on top; the in-game latency meter shows only the ping. Green under 100 ms, red over 150 ms.">
+            <div class="kpi-label">Player lag (p95)</div>
             <div id="metric-tick" class="kpi-value">–</div>
-            <div class="kpi-sub" id="metric-tick-avg">avg – (10 min)</div>
+            <div class="kpi-sub" id="metric-tick-avg">median – · worst –</div>
           </div>
           <div class="kpi">
             <div class="kpi-label">Bots online</div>
@@ -150,7 +150,7 @@
           </div>
           <div class="card chart-card">
             <div class="card-head">
-              <h2 class="card-title">World tick <span class="card-hint">last 10 min</span></h2>
+              <h2 class="card-title" title="Server-side delay before a player's action is handled. Orange: 95th percentile, blue: median. Dashed lines: 100 ms (good) and 150 ms (players notice). Add the player's ping.">Player lag <span class="card-hint">last 10 min</span></h2>
               <span id="tick-now" class="mono card-hint">–</span>
             </div>
             <div class="chart-box"><canvas id="tick-chart"></canvas></div>

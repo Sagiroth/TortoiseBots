@@ -295,6 +295,8 @@ type HeartbeatPayload struct {
 	TickDiffMs  float64          `json:"diff"`
 	TickAvgMs   float64          `json:"diff_avg,omitempty"`
 	TickWorstMs float64          `json:"diff_worst,omitempty"`
+	LagP50Ms    float64          `json:"lag_p50,omitempty"`
+	LagP95Ms    float64          `json:"lag_p95,omitempty"`
 	WindowSecs  uint32           `json:"window_secs,omitempty"`
 	HumansCount uint32           `json:"humans"`
 	BotsCount   uint32           `json:"bots"`
@@ -381,6 +383,8 @@ type ServerStatus struct {
 	TickDiffMs          float64     `json:"diff"`
 	TickAvgMs           float64     `json:"diff_avg,omitempty"`
 	TickWorstMs         float64     `json:"diff_worst,omitempty"`
+	LagP50Ms            float64     `json:"lag_p50,omitempty"`
+	LagP95Ms            float64     `json:"lag_p95,omitempty"`
 	WindowSecs          uint32      `json:"window_secs,omitempty"`
 	Humans              uint32      `json:"humans"`
 	Bots                uint32      `json:"bots"`

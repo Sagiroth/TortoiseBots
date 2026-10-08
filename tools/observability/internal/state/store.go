@@ -843,6 +843,8 @@ func (s *Store) statusLocked(now time.Time) model.ServerStatus {
 		status.TickDiffMs = hb.TickDiffMs
 		status.TickAvgMs = hb.TickAvgMs
 		status.TickWorstMs = hb.TickWorstMs
+		status.LagP50Ms = hb.LagP50Ms
+		status.LagP95Ms = hb.LagP95Ms
 		status.WindowSecs = hb.WindowSecs
 		status.Humans = hb.HumansCount
 		status.Bots = hb.BotsCount

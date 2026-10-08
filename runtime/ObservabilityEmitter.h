@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common.h"
+#include "PlayerLagWindow.h"
 #include <cstdint>
 #include <ctime>
 #include <map>
@@ -148,7 +149,6 @@ private:
     void PruneState(uint32 nowMs);
     bool AnomalyAllowed(uint32 guid, uint8 typeId, uint32 nowMs);
     void AddStateTime(size_t stateIndex, uint32 diff);
-    void NoteTickDiff(uint32 diff);
     void EmitSnapshotCycle(std::vector<Player*> const& activeBots, uint32 diff);
     // Effective running settings for the dashboard Server panel (Addendum 2):
     // core rate getters + AiPlayerbot flags, sent at startup and on a slow
@@ -201,15 +201,10 @@ private:
     // stale cycles of the previous process.
     uint64 m_sessionId;
     uint64 m_snapshotSeq;
-    // World-tick truth: every Update(diff) feeds this window, so the
-    // heartbeat reports the recent average and worst instead of the one
-    // gated tick. ~40 ticks cover a few seconds at live rates.
-    static constexpr size_t kTickWindowSize = 40;
-    uint32 m_tickWindow[kTickWindowSize] = {};
-    size_t m_tickWindowIndex = 0;
-    size_t m_tickWindowCount = 0;
-    uint32 m_tickAvgMs = 0;
-    uint32 m_tickWorstMs = 0;
+    // World-tick truth: every Update(diff) feeds the last 30 s of ticks, so
+    // the heartbeat reports what players wait (see PlayerLagWindow.h)
+    // instead of the one gated tick.
+    PlayerLagWindow m_tickWindow;
 
     static constexpr size_t kMaxDeathKillers = 5000;
 
