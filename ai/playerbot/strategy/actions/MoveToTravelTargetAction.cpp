@@ -689,6 +689,20 @@ bool MoveToTravelTargetAction::Execute(Event& event)
         x += dx;
         y += dy;
 
+        // Land the walk point on the mesh, not inside the counter or above
+        // the floor: the NPC's own z can sit above unmeshed space
+        // (Stormwind upper floors). A snapped point keeps the stable x/y
+        // approach; a failed snap keeps the raw point, exactly as before.
+        WorldPosition walkPoint(mapId, x, y, z);
+        if (walkPoint.isMmapLoaded(bot->GetInstanceId()) &&
+            walkPoint.ClosestCorrectPoint(maxDistance, maxDistance, bot->GetInstanceId()) &&
+            fabs(walkPoint.getZ() - z) <= maxDistance)
+        {
+            x = walkPoint.getX();
+            y = walkPoint.getY();
+            z = walkPoint.getZ();
+        }
+
         if (ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
         {
             std::ostringstream out;
