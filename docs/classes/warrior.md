@@ -28,7 +28,7 @@ Warriors serve as primary dungeon tanks or powerful melee DPS. The bot manages r
 2. **Threat Generation:**
    - Keeps *Shield Block* active on cooldown to enable *Revenge*.
    - Stacks *Sunder Armor* to a full 5-stack, then stops (re-applies only to refresh, never to over-stack; no spreading to secondary mobs; AoE threat is *Challenging Shout*).
-   - *Heroic Strike* is a rage dump at 60+ rage only, so *Slam*/*Shield Slam*/*Mortal Strike*/*Bloodthirst* fire first; *Shield Slam* stays the priority buyer.
+   - *Thunder Clap* fires on spare rage (40+) as extra threat, since the AoE toggle the base tree gates it behind is normally off in party pulls.
 3. **Emergency Mitigation:**
    - *Last Stand* (12975, per game data) triggers on the critical-health trigger (default 20).
    - *Shield Wall* triggers under severe incoming damage.

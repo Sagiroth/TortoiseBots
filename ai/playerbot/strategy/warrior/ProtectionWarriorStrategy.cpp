@@ -91,6 +91,14 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         "sunder armor",
         NextAction::array(0, new NextAction("sunder armor", ACTION_HIGH + 2), NULL)));
 
+    // Thunder clap on spare rage (donor TankWarriorStrategy fires it at
+    // medium rage HIGH+1): the base AoE tree only covers thunder clap when
+    // the opt-in aoe toggle is on, so a tank in a normal party pull never
+    // clapped. Sits with sunder/revenge, below slam (rage-gated higher).
+    triggers.push_back(new TriggerNode(
+        "medium rage available",
+        NextAction::array(0, new NextAction("thunder clap", ACTION_HIGH + 1), NULL)));
+
     triggers.push_back(new TriggerNode(
         "revenge",
         NextAction::array(0, new NextAction("revenge", ACTION_HIGH + 3), NULL)));
