@@ -19,7 +19,7 @@ namespace ai
     // destination entry was itself in cap.
     //
     // Rule: a masterless pool bot walks no quest-objective / quest-loot /
-    // grind point whose surroundings (hostile spawns within
+    // grind / gather point whose surroundings (hostile spawns within
     // POINT_DANGER_RADIUS_YD, static spawn data) hold a creature past its
     // grind cap (PullGrindLevelCap, same numbers the order cap uses). When
     // every point of a destination is dangerous the search comes back empty
