@@ -12,6 +12,7 @@
 #include "playerbot/strategy/actions/ChooseTargetActions.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
 #include "playerbot/PullRegenPolicy.h"
+#include "playerbot/PointDangerPolicy.h"
 #include "playerbot/GrindSpotPolicy.h"
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
@@ -414,16 +415,21 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
 Unit* GrindTargetValue::FindIdleFallbackTarget()
 {
     // Gate first, scan never: the wider grid visit only runs for an idle
-    // starter bot with no journey and an empty normal pick (see
+    // bot with no journey and an empty normal pick (see
     // GrindIdleFallbackAllowed in GrindSpotPolicy.h). Everything else keeps
-    // today's behaviour.
+    // today's behaviour. Called only when the normal pick came back empty,
+    // so normalPickEmpty is true by construction.
     TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
+    if (!ai::GrindIdleFallbackAllowed(sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster(),
+        bot->GetLevel(), travelTarget && travelTarget->IsActive(),
+        sServerFacade.IsInCombat(bot), bot->InBattleGround(),
+        WorldPosition(bot).isOverworld(), AI_VALUE(bool, "can move around"), true))
+        return nullptr;
 
     uint32 const nowMs = WorldTimer::getMSTime();
     if (lastIdleFallbackMs && nowMs - lastIdleFallbackMs < ai::GRIND_IDLE_FALLBACK_INTERVAL_MS)
         return nullptr;
     lastIdleFallbackMs = nowMs;
-
     // The normal 60 yd scan is empty by construction here: look a little
     // wider for the nearest mob the bot can actually fight. Every per-mob
     // gate mirrors the normal pick - in-cap only (PullGrindLevelCap, never
@@ -472,6 +478,18 @@ Unit* GrindTargetValue::FindIdleFallbackTarget()
         if (!bot->IsHonorOrXPTarget(unit))
             continue;
 
+        // Above the starter band the fallback walks into real camps, so the
+        // travel layer's own survival gates apply: no mob inside a camp the
+        // bot keeps dying in (issue #398), and no mob whose surroundings
+        // hold hostiles past the grind cap (PointDangerPolicy.h, #418).
+        // Both are data-only reads (avoidance list, static spawn index).
+        WorldPosition mobPos(unit);
+        if (ai->IsDeathSpotAvoided(mobPos.GetMapId(), mobPos.getX(), mobPos.getY(), nowMs))
+            continue;
+        uint32 const highestNear = mobPos.GetHighestHostileLevelNear(
+            ai::POINT_DANGER_RADIUS_YD, bot->GetTeam());
+        if (highestNear != 0 && ai::PointDangerous((int)highestNear, bot->GetLevel()))
+            continue;
         float const dist = sServerFacade.GetDistance2d(bot, unit);
         if (best && !(dist < bestDist))
             continue;

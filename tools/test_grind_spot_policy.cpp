@@ -200,19 +200,23 @@ int main()
     }
 
     // -------------------------------------------------------------
-    // Test 9: idle-starter fallback gate
+    // Test 9: idle fallback gate
     // -------------------------------------------------------------
     {
-        // An idle level 1-5 masterless bot with no journey and an empty normal
-        // pick may take the wider fallback scan.
+        // An idle masterless bot with no journey and an empty normal pick
+        // may take the wider fallback scan at any level (idle brief: bots
+        // above 5 stood through whole quest parks with no other rule moving
+        // them). The cap, range and per-mob gates are unchanged.
         CHECK(GrindIdleFallbackAllowed(true, 1, false, false, false, true, true, true));
         CHECK(GrindIdleFallbackAllowed(true, 5, false, false, false, true, true, true));
+        CHECK(GrindIdleFallbackAllowed(true, 37, false, false, false, true, true, true));
+        CHECK(GrindIdleFallbackAllowed(true, 60, false, false, false, true, true, true));
         // Owned/hired bots keep today's behaviour.
         CHECK(!GrindIdleFallbackAllowed(false, 1, false, false, false, true, true, true));
-        // Above the starter band the travel layer owns longer walks.
-        CHECK(!GrindIdleFallbackAllowed(true, 6, false, false, false, true, true, true));
+        CHECK(!GrindIdleFallbackAllowed(false, 60, false, false, false, true, true, true));
         // A bot with a journey keeps walking it.
         CHECK(!GrindIdleFallbackAllowed(true, 1, true, false, false, true, true, true));
+        CHECK(!GrindIdleFallbackAllowed(true, 60, true, false, false, true, true, true));
         // Fighting, battleground, instance and stuck bots are excluded.
         CHECK(!GrindIdleFallbackAllowed(true, 1, false, true, false, true, true, true));
         CHECK(!GrindIdleFallbackAllowed(true, 1, false, false, true, true, true, true));
@@ -222,7 +226,7 @@ int main()
         CHECK(!GrindIdleFallbackAllowed(true, 1, false, false, false, true, true, false));
         // The fallback reaches past the 60 yd combat scan but stays nearby.
         CHECK(GRIND_IDLE_FALLBACK_RANGE_YD == 150.0f);
-        std::cout << "  [PASS] idle-starter fallback gate is tight\n";
+        std::cout << "  [PASS] idle fallback gate is tight\n";
     }
 
     {

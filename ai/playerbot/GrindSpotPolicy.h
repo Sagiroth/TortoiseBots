@@ -106,15 +106,22 @@ namespace ai
     // cadence so a stranded pool does not pay it every second.
     std::uint32_t const GRIND_IDLE_FALLBACK_INTERVAL_MS = 10000;
 
-    // Highest bot level the fallback serves. Above this the travel layer owns
-    // longer walks (destinations, route gates, death-spot avoidance); the
-    // fallback is the starter safety net, not a second travel system.
-    std::uint32_t const GRIND_IDLE_FALLBACK_MAX_LEVEL = 5;
+    // Highest bot level the fallback serves. It used to stop at 5: above that
+    // the travel layer owns longer walks, and the fallback was the starter
+    // safety net, not a second travel system. Live 2000-bot pool (idle brief,
+    // Oct 2026): targetless bots above 5 with nothing requestable and nothing
+    // in the 60 yd scan stand through whole 10-minute quest parks instead -
+    // there is no other rule that moves them. So the fallback now serves all
+    // levels, still capped the same way: one in-cap XP-paying mob inside 150
+    // yd, no journey in flight. The travel layer still outranks it (a bot
+    // with a destination keeps walking it), and the per-mob gates below are
+    // unchanged, so this stays a nearby-prey rule, not a travel system.
+    std::uint32_t const GRIND_IDLE_FALLBACK_MAX_LEVEL = 60;
 
-    // Whether an idle starter bot may take a fallback grind target right now:
-    // masterless, low level, no journey in flight, not fighting, overworld,
-    // able to move, and the normal pick came back empty. Owned/hired bots
-    // keep today's behaviour (their player decides), and a bot with a travel
+    // Whether an idle bot may take a fallback grind target right now:
+    // masterless, no journey in flight, not fighting, overworld, able to
+    // move, and the normal pick came back empty. Owned/hired bots keep
+    // today's behaviour (their player decides), and a bot with a travel
     // destination keeps walking it - the travel layer outranks this rule.
     inline bool GrindIdleFallbackAllowed(bool masterlessRandom, std::uint32_t botLevel,
         bool travelTargetActive, bool inCombat, bool inBattleground, bool overworld,
