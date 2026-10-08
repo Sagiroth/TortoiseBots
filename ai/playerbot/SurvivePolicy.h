@@ -73,8 +73,8 @@ namespace ai
     // Hard-mob ignore (AttackersValue::IgnoreTarget): a +6 mob on a long
     // trip is walked past - unless it is already fighting the bot (victim
     // or threat), in which case it stays a valid attacker so combat state
-    // and revenge engage. Without the carve-out the bot died without a
-    // swing (27% of walk-past deaths are +6 or more, Oct 2026 pool).
+    // and revenge engage. Without the carve-out the bot could die to it
+    // without a swing.
     inline bool ShouldIgnoreHardHostile(int targetLevel, int botLevel, bool alreadyFightingBot)
     {
         return !alreadyFightingBot && targetLevel > botLevel + 5;

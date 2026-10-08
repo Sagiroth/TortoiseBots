@@ -546,9 +546,8 @@ bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
     // is already fighting this bot. The old shape refused a +6 attacker on a
     // long trip outright, which kept it out of "attackers", "has attackers"
     // and the grind pick alike: no combat state, no revenge order, the bot
-    // walked on and died (27% of non-guard walk-past deaths are +6 or more,
-    // Oct 2026 pool). Answering pulls nothing new; flee/outnumbered still
-    // decide whether the fight is winnable.
+    // walked on while being hit. Answering pulls nothing new; flee and
+    // outnumbered still decide whether the fight is winnable.
     bool const alreadyFightingBot = target->GetVictim() == playerToCheckAgainst ||
         target->GetThreatManager().getThreat(playerToCheckAgainst) > 0.0f;
     if (ai::ShouldIgnoreHardHostile((int)target->GetLevel(), (int)playerToCheckAgainst->GetLevel(), alreadyFightingBot) && ai->GetState() == BotState::BOT_STATE_NON_COMBAT)
