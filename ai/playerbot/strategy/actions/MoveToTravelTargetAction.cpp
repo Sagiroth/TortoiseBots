@@ -727,8 +727,10 @@ bool MoveToTravelTargetAction::Execute(Event& event)
         // in MoveTo2/DispatchMovement (LastMovement::moveFailReason, stamped
         // right before each `return false`), so a "complete" probe over a
         // clipped route is separable from a dispatch that truly reached the
-        // goal and failed. Parsers reading `dist:pathtag` keep working: the
-        // reason is only ever appended after the tag.
+        // goal and failed. A third colon carries the bot/target height pair
+        // (botZ>targetZ, whole yards), so an above-the-mesh trap reads
+        // straight off the row. Parsers reading `dist:pathtag` keep working:
+        // the reason and the heights are only ever appended after the tag.
         if (target->GetRetryCount(true) == 2)
         {
             std::string failDetail = std::to_string((int32)botLocation.distance(location));
@@ -746,6 +748,8 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             }
             failDetail += ":";
             failDetail += MoveFailReasonName(AI_VALUE(LastMovement&, "last movement").moveFailReason);
+            failDetail += ":";
+            failDetail += std::to_string((int32)botLocation.getZ()) + ">" + std::to_string((int32)location.getZ());
             sPlayerbotAIConfig.logEvent(ai, "TravelMoveFailed", purpose, failDetail);
 
             if (TryRescueNoPathTrap(noPath, purpose))
