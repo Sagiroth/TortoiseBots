@@ -57,7 +57,7 @@ Warriors serve as primary dungeon tanks or powerful melee DPS. The bot manages r
 
 ## Utility & Interrupts
 
-- **Interrupts:** Protection: *Shield Bash* · Fury: *Pummel* (auto-Berserker) · Arms: none wired. *Shield Bash* has no stance precondition in code.
+- **Interrupts:** Protection: *Shield Bash* (+enemy-healer row) · Fury: *Pummel* (auto-Berserker) · Arms/Fury base: *Pummel* first, *Shield Bash* as the no-stance-dance fallback (both at ACTION_INTERRUPT, plus enemy-healer rows). Pummel stance-dances via its berserker-stance node; shield bash has no stance gate, so one of the two always fires without per-cast dancing.
 - **Shouts:** Automatically maintains *Battle Shout* on party members (all specs); only Protection wires *Demoralizing Shout*. *Intimidating Shout* (AoE fear) never fires inside a dungeon or raid, or for a bot grouped with a real player (a feared mob pulls neighbouring packs); outdoors with no master to disrupt, a critical-health bot may still shout to make space.
 
 ---
