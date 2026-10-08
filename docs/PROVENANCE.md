@@ -4015,3 +4015,57 @@ green on each of the five commits; `git diff --check` clean. No build (per
 task constraints); live in-game check pending: mage blink rows vs melee
 deaths, heroic/slam cast split + sunder aura stacks capped at 5, ret
 builder split, priest fade rows in groups, enh opener order.
+
+## Combat rotation ports batch 3: prot thunder/disarm, rogue expose, mage nova gate, hunter wing clip (night2 rotations) — 2026-10-09
+
+Feature: five small donor-parity rotation fixes, party-play first. (1)
+Warrior: `medium rage available` -> `thunder clap` at HIGH+1 in the live
+prot combat list — the base AoE tree gates thunder clap behind the opt-in
+aoe toggle, so party-pull tanks never clapped; 40+ rage sits with
+sunder/revenge below slam. (2) Warrior: prot `disarm` NORMAL -> HIGH+1,
+where it can actually win a relevance contest (mitigation). (3) Rogue:
+combat `expose armor` HIGH -> HIGH+3 above the damage finishers — the
+armor cut helps all party melee. (4) Mage: new `CastFrostNovaAction::isUseful`
+veto (already-frozen target via `sServerFacade.IsFrozen`, freeze-immune
+target via `IsImmuneToSpellEffect` over the spell effects), so the GCD
+goes to damage instead of a wasted re-nova. (5) Hunter: `wing clip` as
+second NextAction under `raptor strike` on the live `enemy is close` node
+(donor melee chain order), so a mob that closes in eats the snare.
+
+Source repository: `mod-playerbots/mod-playerbots`
+
+Source commit: `b6696bdbd3740e575598d167d69f39f68cc0b907` (local
+`playerbots-references/mod-playerbots` checkout).
+
+Source files:
+- `src/Ai/Class/Warrior/Strategy/TankWarriorStrategy.cpp:209-216` (disarm HIGH+1) and `:338-345` (medium rage -> thunder clap HIGH+1)
+- `src/Ai/Class/Rogue/Strategy/DpsRogueStrategy.cpp:196-199` (expose armor HIGH+3)
+- `src/Ai/Class/Mage/MageActions.cpp:67-78` (`CastFrostNovaAction::isUseful`: not-frozen, no freeze-mechanic immunity, 10 yd)
+- `src/Ai/Class/Hunter/Strategy/GenericHunterStrategy.cpp:80-82` (melee chain: mongoose bite 22, wing clip 21)
+
+Copied / ported / independently reimplemented: reimplemented against the
+live list-based engine; the dead new-style forward-ports stay untouched.
+Thunder Clap 6343/8198/8204/8205 (Battle+Defensive stances) and Wing Clip
+2974/14267 verified in Turtle `tw_world_spell_template.sql`; disarm 676
+and expose armor are pre-existing live trigger/action pairs. Skipped in
+this batch (already live or not small): warrior overpower (live twice:
+arms HIGH + prot stance-dance; donor taste-for-blood path is WotLK-only),
+paladin blessing refresh (live blessing-on-party ladder is a superset of
+the donor per-buff strategies), priest inner fire upkeep + self-shield
+(both live; no melee-gated shield donor source exists), shaman earthbind
+vs fleeing (no donor wiring — donor snares fleeing via frost shock; novel
+totem-slot behavior), mage scorch exclusivity/HP gate (donor list is WotLK
+raid-debuff homogenization), hunter/warlock pet sanity (live pet-attack
+trigger strictly stronger than donor; donor comments it out of combat),
+fear ward on main tank (needs a new main-tank target value — not small).
+
+Reason: night2 rotation research (report-class-rotations.md D3/D5/D6):
+prot tanks with zero thunder-clap coverage in normal pulls, disarm never
+firing at NORMAL, expose tied where rupture/eviscerate won, nova GCDs
+wasted on frozen mobs, hunters with a registered-but-unpushed wing clip.
+
+Local validation: `python3 tools/verify_okf.py` + `bash tools/verify_all.sh`
+green on each of the five commits; `git diff --check` clean. No build (per
+task constraints); live in-game check pending: prot thunder-clap cast
+share, disarm rows, expose-before-eviscerate order, nova casts per frozen
+target, wing-clip casts in melee.
