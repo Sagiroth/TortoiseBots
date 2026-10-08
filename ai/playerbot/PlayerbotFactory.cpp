@@ -2651,7 +2651,11 @@ void PlayerbotFactory::InitClassLevelSpells()
                     learnedSpell->spellLevel != 0, true))
                 continue;
 
-            if (teachingSpell->SpellFamilyName != classFamily)
+            // Turtle trainer rows teach through generic-family (0) spells, so
+            // the taught spell's family decides too: checking the teaching
+            // spell alone sent every mage/priest rank into the skill filter
+            // below, and seeded mages knew no Fireball (Oct 2026).
+            if (teachingSpell->SpellFamilyName != classFamily && learnedSpell->SpellFamilyName != classFamily)
             {
                 SkillLineAbilityMapBounds bounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySpellId(learnedSpellId);
                 if (bounds.first == bounds.second)
