@@ -181,9 +181,16 @@ bool OutNumberedTrigger::IsActive()
     int32 botLevel = bot->GetLevel();
     float healthMod = bot->GetHealthPercent() / 100.0f;
     uint32 friendPower = 100 + 100 * healthMod, foePower = 0;
-    for (auto &attacker : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get())
+    // Only mobs actually fighting this bot count, like the donor (mod-playerbots
+    // weighs "attackers"). The old loop weighed every hostile in "possible attack
+    // targets", so idle mobs standing near a fair one-on-one fight made a pool
+    // bot under 70% health "outnumbered": it stopped swinging to flee, covered
+    // no ground (median 0 yd) and died - 76% of deaths had a flee in their last
+    // 30 s (Oct 2026 roster poll, 571 deaths). bot->GetAttackers() rather than
+    // the "attackers" value, which also shares nearby players' targets.
+    for (Unit* attacker : bot->GetAttackers())
     {
-        Creature* creature = ai->GetCreature(attacker);
+        Creature* creature = attacker ? attacker->ToCreature() : nullptr;
         if (!creature)
             continue;
 
