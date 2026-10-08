@@ -1838,6 +1838,35 @@
       (age < 6 ? 'snapshot-fresh' : age < 10 ? 'snapshot-stale' : 'snapshot-offline');
   }
 
+  // Seed the timelines from the daemon's rolling history so a refresh
+  // shows the last 10 minutes instead of empty charts. Live heartbeats
+  // then keep appending via pushHistory/pushIssueHistory. Runs once:
+  // later fetches must not clobber the live samples already appended.
+  let historySeeded = false;
+  function seedHistory(samples) {
+    if (historySeeded || !Array.isArray(samples) || samples.length === 0) return;
+    historySeeded = true;
+    const rows = samples.slice(-HIST_MAX);
+    state.history.t = rows.map(r => r.at || Date.now());
+    state.history.bots = rows.map(r => r.bots || 0);
+    state.history.humans = rows.map(r => r.humans || 0);
+    state.history.diff = rows.map(r => r.lag_p95 || 0);
+    state.history.lag50 = rows.map(r => r.lag_p50 || 0);
+    state.issueHistory.t = rows.map(r => r.at || Date.now());
+    ISSUE_TYPES.forEach(t => {
+      state.issueHistory.series[t] = rows.map(r => (r.issues && r.issues[t]) || 0);
+    });
+    if (state.activeTab === 'overview') renderOverviewCharts();
+    if (state.activeTab === 'issues') renderIssueChart();
+  }
+
+  function fetchHistory() {
+    fetch('/api/v1/history')
+      .then(jsonOrThrow)
+      .then(data => { if (data && Array.isArray(data.samples)) seedHistory(data.samples); })
+      .catch(() => {});
+  }
+
   function pushHistory() {
     const s = state.server;
     state.history.t.push(Date.now());
@@ -4401,8 +4430,8 @@
   fetchBots();
   fetchAnomalies();
   fetchIssues();
+  fetchHistory();
   fetchActivity();
-  fetchRoster();
   setInterval(fetchActivity, 30000);
   setInterval(fetchRoster, 60000);
   initWebSocket();

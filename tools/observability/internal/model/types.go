@@ -457,6 +457,28 @@ type AnomalyPayload struct {
 	ReceivedAt time.Time `json:"-"`
 }
 
+// HistorySample is one daemon-side chart observation: the values the
+// dashboard's 10-minute timelines draw, sampled once per heartbeat
+// (~2 s) so a page refresh can seed its charts instead of starting
+// empty. At is a unix-millis timestamp (the browser's own Date.now
+// scale); Issues reuse the IssueSnapshot per-type active counts.
+type HistorySample struct {
+	At       int64          `json:"at"`
+	Bots     uint32         `json:"bots"`
+	Humans   uint32         `json:"humans"`
+	LagP50Ms float64        `json:"lag_p50"`
+	LagP95Ms float64        `json:"lag_p95"`
+	Issues   map[string]int `json:"issues"`
+}
+
+// HistoryResponse is the payload of GET /api/v1/history: the rolling
+// in-memory chart history, oldest first. Daemon restarts clear it;
+// game-server restarts clip it to the current session (see Since).
+type HistoryResponse struct {
+	Samples []HistorySample `json:"samples"`
+	Since   int64           `json:"since"`
+}
+
 // AnomalyTotals is the cumulative per-session anomaly count behind
 // GET /api/v1/anomalies/totals. The incident feed (/api/v1/anomalies) is a
 // rolling 1000-row window, so whole-run counts (e.g. ACTION_LOOP rows for

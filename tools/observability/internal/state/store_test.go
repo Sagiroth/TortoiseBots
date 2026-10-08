@@ -509,3 +509,123 @@ func TestServerInfoStoredAndSessionGated(t *testing.T) {
 		t.Fatal("session change must clear server info")
 	}
 }
+
+func TestHistorySamplesHeartbeatSeries(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+	if got := len(s.History().Samples); got != 0 {
+		t.Fatalf("fresh store must have no history, got %d", got)
+	}
+
+	// Two heartbeats 2 s apart: two samples, oldest first, carrying
+	// the population and lag series the dashboard charts draw.
+	hb := heartbeat(1, 10)
+	hb.HumansCount = 3
+	hb.LagP50Ms, hb.LagP95Ms = 20, 90
+	s.ApplyHeartbeat(hb)
+	c.Advance(2 * time.Second)
+	hb2 := heartbeat(2, 11)
+	hb2.HumansCount = 4
+	hb2.LagP50Ms, hb2.LagP95Ms = 25, 95
+	s.ApplyHeartbeat(hb2)
+
+	h := s.History()
+	if len(h.Samples) != 2 {
+		t.Fatalf("expected 2 samples, got %d", len(h.Samples))
+	}
+	first, second := h.Samples[0], h.Samples[1]
+	if first.Bots != 10 || first.Humans != 3 || first.LagP50Ms != 20 || first.LagP95Ms != 90 {
+		t.Fatalf("first sample wrong: %+v", first)
+	}
+	if second.Bots != 11 || second.Humans != 4 || second.LagP50Ms != 25 || second.LagP95Ms != 95 {
+		t.Fatalf("second sample wrong: %+v", second)
+	}
+	if second.At-first.At != 2000 {
+		t.Fatalf("samples must be 2 s apart in unix-millis, got %d -> %d", first.At, second.At)
+	}
+}
+
+func TestHistoryBoundedAndSessionClipped(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+
+	// Overfill: the oldest samples drop, the buffer never grows.
+	for i := uint64(1); i <= historyMaxSamples+50; i++ {
+		s.ApplyHeartbeat(heartbeat(i, uint32(i)))
+		c.Advance(2 * time.Second)
+	}
+	h := s.History()
+	if len(h.Samples) != historyMaxSamples {
+		t.Fatalf("history must cap at %d, got %d", historyMaxSamples, len(h.Samples))
+	}
+	if h.Samples[0].Bots != 51 {
+		t.Fatalf("oldest sample must be seq 51, got bots=%d", h.Samples[0].Bots)
+	}
+	if h.Samples[historyMaxSamples-1].Bots != historyMaxSamples+50 {
+		t.Fatalf("newest sample wrong: %+v", h.Samples[historyMaxSamples-1])
+	}
+
+	// A new game-server session clips the series: the restarted pool
+	// starts its charts empty, not with the previous pool's numbers.
+	hb := heartbeat(1, 7)
+	hb.Session = 99
+	s.ApplyHeartbeat(hb)
+	h = s.History()
+	if len(h.Samples) != 1 || h.Samples[0].Bots != 7 {
+		t.Fatalf("session change must clip history to the new sample: %+v", h.Samples)
+	}
+}
+
+func TestHistoryFallsBackToTickAverage(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+
+	// Older modules send no lag percentiles: the seed must apply the
+	// same lag_p95||diff_avg||diff fallback the live chart uses, or a
+	// refresh draws a flat zero line where live draws the average.
+	hb := heartbeat(1, 5)
+	hb.TickDiffMs, hb.TickAvgMs = 40, 55
+	s.ApplyHeartbeat(hb)
+	h := s.History()
+	if len(h.Samples) != 1 {
+		t.Fatalf("expected 1 sample, got %d", len(h.Samples))
+	}
+	if h.Samples[0].LagP50Ms != 55 || h.Samples[0].LagP95Ms != 55 {
+		t.Fatalf("lag must fall back to the tick average: %+v", h.Samples[0])
+	}
+}
+
+func TestHistoryCarriesIssueCounts(t *testing.T) {
+	c := newClock()
+	s := newTestStore(c)
+
+	// A stuck bot opens a STUCK episode; once it passes the 5 min
+	// surface gate, the next heartbeat sample carries the count.
+	stuck := bot(1, "Stuck", 0)
+	stuck.State = "moving"
+	seq := uint64(0)
+	publish := func() {
+		seq++
+		s.ApplyHeartbeat(heartbeat(seq, 1))
+		s.ApplyBatch(batch(seq, 0, 1, stuck))
+	}
+	publish()
+	c.Advance(61 * time.Second)
+	publish()
+	c.Advance(5 * time.Minute)
+	publish()
+	c.Advance(2 * time.Second)
+	s.ApplyHeartbeat(heartbeat(seq+1, 1))
+
+	h := s.History()
+	if len(h.Samples) != 4 {
+		t.Fatalf("expected 4 samples, got %d", len(h.Samples))
+	}
+	last := h.Samples[3]
+	if last.Issues["STUCK"] != 1 {
+		t.Fatalf("last sample must carry the open STUCK count: %+v", last.Issues)
+	}
+	if h.Samples[0].Issues["STUCK"] != 0 {
+		t.Fatalf("pre-episode sample must carry zero: %+v", h.Samples[0].Issues)
+	}
+}
