@@ -1,4 +1,5 @@
 #include "playerbot/playerbot.h"
+#include <algorithm>
 #include "TravelValues.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/LocalPickPolicy.h"
@@ -509,8 +510,16 @@ bool ShouldTravelNamedValue::Calculate()
                 ClassTrainerRequestMaxDistance(masterless, bot->GetLevel(),
                     AI_VALUE2(std::vector<TrainerSpell const*>, "trainable spells", (uint32)TRAINER_TYPE_CLASS).size(), 10000.0f) :
                 CampRequestMaxDistance(masterless, bot->GetLevel(), 10000.0f);
-            if (sTravelMgr.GetDestinations(PlayerTravelInfo(bot),
-                    (uint32)TravelDestinationPurpose::Trainer, entries, false, window).empty())
+            // Only trainers the pick would accept: possible (level, outgrown
+            // town) and active (not hostile, not just visited). Counting every
+            // listed trainer raised the need for an enemy-faction or outgrown
+            // trainer nearby, and the search then refused them all and parked
+            // a minute, every minute (1836 "inactive" refusals in 20 min).
+            PlayerTravelInfo const info(bot);
+            DestinationList const trainers = sTravelMgr.GetDestinations(info,
+                (uint32)TravelDestinationPurpose::Trainer, entries, true, window);
+            if (std::none_of(trainers.begin(), trainers.end(),
+                    [&](TravelDestination* trainer) { return trainer->IsActive(bot, info); }))
                 return false;
         }
 
