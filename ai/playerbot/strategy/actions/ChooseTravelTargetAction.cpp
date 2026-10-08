@@ -338,7 +338,7 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         //Q2 ("which purposes park most, and why") is unanswerable - grind,
         //gather, trainer and camp searches park silently every minute.
         LogTravelSearchEmpty(ai, bot, purposeKey,
-            destinationList.empty() ? "empty" : "rejected", destinationList.size());
+            destinationList.empty() ? "empty" : "rejected[" + lastRejectReasons + "]", destinationList.size());
 
         return false;
     }
@@ -809,6 +809,7 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
 {
     bool distanceCheck = true;
     std::unordered_map<TravelDestination*, bool> isActive;
+    std::map<std::string, uint32> rejects;
 
     bool hasTarget = false;
 
@@ -827,6 +828,7 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                 if (position->distance(center) > distance * 2 && position->distance(center) > 100)
                 {
                     ai->TellDebug(requester, "We had some destinations but we moved too far since. Trying to get a new list.", "debug travel");
+                    lastRejectReasons = "moved";
                     return false;
                 }
 
@@ -842,6 +844,7 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                     if (position->IsEnemyHomeZoneFor(bot->GetTeam()))
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - enemy home zone", "debug travel");
+                        ++rejects["enemyzone"];
                         continue;
                     }
 
@@ -854,6 +857,7 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                         position->IsGuardedHostileTownFor(bot))
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - hostile town guards", "debug travel");
+                        ++rejects["hostiletown"];
                         continue;
                     }
 
@@ -863,6 +867,7 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                         (PlayerbotAIConfig::IsIsolatedCustomZone(zoneId) || (area && PlayerbotAIConfig::IsIsolatedCustomZone(area->Id))))
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - custom starting zone", "debug travel");
+                        ++rejects["customzone"];
                         continue;
                     }
 
@@ -879,12 +884,14 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                     if (!valleyExempted && posAreaLevel > 0 && posAreaLevel > (int32)bot->GetLevel() + 5)
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - area level too high", "debug travel");
+                        ++rejects["arealevel"];
                         continue;
                     }
 
                     if (destination->GetPurpose() == TravelDestinationPurpose::GatherFishing && IsFishingSpotGuarded(bot, *position))
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - fishing spot guarded by hostile creatures", "debug travel");
+                        ++rejects["fishguard"];
                         continue;
                     }
 
@@ -903,12 +910,14 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                         position->getY(), WorldTimer::getMSTime()))
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - death spot avoided", "debug travel");
+                        ++rejects["deathspot"];
                         continue;
                     }
 
                     if (bot->GetLevel() <= 5 && position->distance(bot) > 1500.0f)
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - too far for starting level", "debug travel");
+                        ++rejects["toofar"];
                         continue;
                     }
 
@@ -935,6 +944,7 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                             out << bot->GetName() << "," << bot->GetLevel() << "," << destination->GetTitle() << "," << blocker;
                             sPlayerbotAIConfig.log("travel_route_gate.csv", out.str().c_str());
                         }
+                        ++rejects["route"];
                         continue;
                     }
                 }
@@ -953,6 +963,7 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
             else
             {
                 ai->TellDebug(requester, "Not active: " + destination->GetTitle() + " " + std::to_string((uint32)round(destination->DistanceTo(bot))) + "y", "debug travel");
+                ++rejects["inactive"];
             }
 
         }
@@ -963,6 +974,10 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
 
     if(hasTarget)
         ai->TellDebug(requester, "Point at " + std::to_string(uint32(target->Distance(bot))) + "y selected.", "debug travel");
+
+    lastRejectReasons.clear();
+    for (auto const& [reason, count] : rejects)
+        lastRejectReasons += (lastRejectReasons.empty() ? "" : ",") + reason + "=" + std::to_string(count);
 
     return hasTarget;
 }
