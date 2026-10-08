@@ -56,7 +56,6 @@ public:
     void UpdateGearSpells(Player* bot);
     bool ProcessBot(Player* player);
     void ChangeStrategy(Player* player);
-    void Revive(Player* player);
 
     bool GetNamedLocation(std::string const& name, WorldLocation& location);
     bool getNamedLocation(std::string const& name, WorldLocation& location)

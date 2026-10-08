@@ -242,16 +242,18 @@ bool RandomBotFacade::ProcessBot(Player* player)
     if (!player || !IsRandomBot(player) || !player->IsInWorld() || player->IsBeingTeleported())
         return false;
     // A dungeon crew (another module holds the Dungeon activity lease) is left alone:
-    // no graveyard repop, no expired-value sweep. This runs from the bot's own AI
+    // no expired-value sweep. This runs from the bot's own AI
     // ("random bot update") as well as from the service loop, so the guard sits here.
     if (TortoiseBots::BotActivityLeaseManager::Instance().GetActivity(player->GetGUIDLow()) == TortoiseBots::BotActivity::Dungeon)
         return false;
 
+    // Dead bots are left to their own AI and BotManager::SweepDeadBots. A
+    // graveyard repop here, once a second, re-armed the near teleport of every
+    // ghost already standing on its graveyard; with a large budgeted pool each
+    // AI visit found the bot mid-teleport and only acked it, so ~700 ghosts
+    // never ran their corpse run.
     if (!player->IsAlive())
-    {
-        Revive(player);
         return true;
-    }
 
     if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(player))
         ai->GetAiObjectContext()->ClearExpiredValues();
@@ -456,12 +458,6 @@ void RandomBotFacade::ChangeStrategy(Player* player)
         ai->ChangeStrategy(sPlayerbotAIConfig.randomBotCombatStrategies, BotState::BOT_STATE_COMBAT);
         ai->ChangeStrategy(sPlayerbotAIConfig.randomBotNonCombatStrategies, BotState::BOT_STATE_NON_COMBAT);
     }
-}
-
-void RandomBotFacade::Revive(Player* player)
-{
-    if (player && player->IsInWorld() && !player->IsAlive())
-        player->RepopAtGraveyard();
 }
 
 void RandomBotFacade::PrintTeleportCache()
