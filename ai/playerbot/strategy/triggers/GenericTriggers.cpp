@@ -239,7 +239,13 @@ bool OutNumberedTrigger::IsActive()
 
 bool BuffTrigger::IsActive()
 {
-    Unit* target = GetTarget();
+    // Cheap gates first (perf): the old order ran GetTarget (a "self target"
+    // unit value read) before the two O(1) refuses. HasSpell is a spellbook
+    // hit, the claim is two map lookups under one short lock; both are
+    // cheaper than resolving and liveness-checking the target, and the aura
+    // scan below is the most expensive step. Same verdict, only reordered:
+    // a missing spell or a live claim refuses whatever the target is, and
+    // IsTargetClaimedByOther already returns false for a null target.
     // A buff that was never trained can never appear as an aura, so without
     // this the trigger stays active forever and the cast fails every tick
     // (observed ACTION_LOOPs: inner fire / lightning shield / aspect of the
@@ -251,9 +257,10 @@ bool BuffTrigger::IsActive()
     // Issue #T7: another bot is already casting this spell on the target (or, for
     // the area buffs, on the whole group). Stay inactive this tick rather than
     // pick the next member - that would re-create the same race for the others.
-    if (BuffClaimRegistry::IsTargetClaimedByOther(bot, target, spell))
+    if (BuffClaimRegistry::IsTargetClaimedByOther(bot, GetTarget(), spell))
         return false;
 
+    Unit* target = GetTarget();
     if (!target || !target->IsAlive())
         return false;
 

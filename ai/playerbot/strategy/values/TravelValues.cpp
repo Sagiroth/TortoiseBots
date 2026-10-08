@@ -479,9 +479,21 @@ bool ShouldTravelNamedValue::Calculate()
     }
     else if (name.find("trainer") == 0)
     {
-        if (ai->HasRealPlayerMaster())
+        // Park pre-gate (perf): a parked trainer need stays parked until the
+        // purse covers the cheapest rank (money park) or a level-up clears it
+        // (AutoLearnSpellAction). The full probe below walks the trainer map
+        // and the destination window; skip it while the park timestamp the
+        // tail of this branch reads is still in the future and the purse
+        // cannot have lifted it. Same verdict, no destination walk: a money
+        // park with no new money still refuses, a teaching park still refuses.
+        // The tail re-reads the timestamp, so a park that expired (or was
+        // cleared by a ding) since the last visit falls through to the probe.
+        if (AI_VALUE2(time_t, "manual time", "no travel purpose until::" + name) > time(0) &&
+            !AI_VALUE2(bool, "manual bool", "trainer park needs money"))
             return false;
 
+        if (ai->HasRealPlayerMaster())
+            return false;
         TrainerType trainerType = TRAINER_TYPE_CLASS;
         NeedMoneyFor budgetType = NeedMoneyFor::spells;
 
