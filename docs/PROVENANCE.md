@@ -4067,3 +4067,44 @@ green on each of the commits; `git diff --check` clean. No build (per
 task constraints); live in-game check pending: prot thunder-clap cast
 share, disarm rows, nova casts per frozen
 target, wing-clip casts in melee.
+
+## Ranged party keep-away (caster steps out of melee toward tank) — 2026-10-09
+Feature: non-hunter casters in a group step out when a mob is in melee
+reach of THEM even while the tank holds it. Donor `enemy too close for
+spell` fires at melee range regardless of victim
+(`src/Ai/Base/Trigger/RangeTriggers.cpp:14-18`); the module's victim gate
+(`RangeTriggers.h`, "casters flee only when the mob targets them") means a
+tank-held mob standing on the mage/priest/lock never fires it, so the
+caster stands in melee and eats cleaves.
+
+Source repository: `mod-playerbots` @
+`b6696bdbd3740e575598d167d69f39f68cc0b907` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Base/Strategy/RangedCombatStrategy.cpp:10-16` (`enemy too close for
+spell` -> flee) + `src/Ai/Base/Actions/MovementActions.cpp:1367-1399`
+(victim==bot -> flee to tank) + `src/Ai/Base/Trigger/RangeTriggers.cpp:14-18`
+(victim-independent melee-range fire condition).
+
+Copied / ported / reimplemented: reimplemented as a narrow gate inside the
+live `EnemyTooCloseForSpellTrigger`, ahead of the victim gate: non-hunter,
+grouped, mob in melee reach of this bot (`CanReachWithMeleeAutoAttack`),
+live same-map tank groupmate (`LiveGroupMembers` + `ai->IsTank`) -> true.
+The existing `flee` action then runs to the tank (victim==bot branch,
+`MovementActions.cpp:1824-1837`) or steps out via FleeManager when no tank
+is near. Deliberately narrower than donor: no trigger when solo (slow-kite
+guard still refuses: chasing a mob you cannot outrun only stops the casts),
+no trigger for hunters (own dead-zone trigger), melee-reach instead of the
+spell-band fraction so it is a short step out of melee, not a long kite.
+Solo pool bots and hunters: unchanged.
+
+Reason: night2 party-combat gap 6 ("ranged has no keep-away/flee-to-tank
+equivalent of donor `enemy too close`"): the base flee row + flee-to-tank
+endpoint were already ported (prior "keep-away verification" row), only the
+firing condition was missing for the tank-holds-it case.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No build
+(per task constraints); live in-game check pending: party caster steps out
+of melee toward the tank while the tank holds the mob, no long kite, solo
+casters unaffected.

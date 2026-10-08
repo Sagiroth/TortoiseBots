@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/Trigger.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
@@ -58,6 +59,22 @@ namespace ai
                 if (bot->GetMap()->IsRaid())
                     isRaid = true;
 
+                // Party keep-away: a tank-held mob standing on a caster never
+                // fires the victim gate below, so the caster stands in melee.
+                // When the mob is in melee reach of THIS bot and a live tank
+                // groupmate exists to take it, step out anyway: Flee() runs
+                // to the tank when one is near. Solo bots keep the slow-kite
+                // guard above, never this row. Hunters keep their own gate.
+                if (bot->GetClass() != CLASS_HUNTER && !isVictim && bot->GetGroup() &&
+                    bot->CanReachWithMeleeAutoAttack(target))
+                {
+                    for (Player* member : LiveGroupMembers(bot->GetGroup()))
+                    {
+                        if (member && member != bot && sServerFacade.IsAlive(member) &&
+                            bot->GetMapId() == member->GetMapId() && ai->IsTank(member))
+                            return true;
+                    }
+                }
                 // Casters have no minimum range — only flee if the mob is actually targeting/attacking this bot.
                 // Hunters are excluded: their ranged weapons have a ~8 yd minimum range so they must
                 // maintain distance even when the mob is focused on someone else.
