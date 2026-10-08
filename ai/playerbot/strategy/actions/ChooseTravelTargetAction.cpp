@@ -62,6 +62,7 @@ bool ai::TravelBlockedInsideInstance(PlayerbotAI* ai)
 inline void LogTravelSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const& parkKey,
     std::string const& reason, std::size_t ranges)
 {
+    AiObjectContext* context = ai->GetAiObjectContext();
     std::string const throttleKey = "travel search empty log::" + parkKey;
     if (AI_VALUE2(time_t, "manual time", throttleKey) > time(0))
         return;
