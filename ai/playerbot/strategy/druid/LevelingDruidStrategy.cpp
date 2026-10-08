@@ -13,6 +13,14 @@ void LevelingDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
 {
     DruidStrategy::InitCombatTriggers(triggers);
 
+    // Shapeshifted stand-down: a 10+ druid in Bear/Dire Bear/Cat already runs
+    // a feral kit, so the caster wrath/moonfire/heal nodes below must not
+    // outbid the form rotation. This node carries no action - it only wins
+    // the relevance contest at HIGH while shifted, idling the kit.
+    triggers.push_back(new TriggerNode(
+        "in feral form",
+        NextAction::array(0, new NextAction("melee", ACTION_HIGH), NULL)));
+
     // Cast Healing Touch when health is under 50% (critical health [0,20%) + low health [20,50%))
     triggers.push_back(new TriggerNode(
         "critical health",
@@ -22,7 +30,9 @@ void LevelingDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
         "low health",
         NextAction::array(0, new NextAction("healing touch", ACTION_CRITICAL_HEAL), NULL)));
 
-    // Cast Rejuvenation if health is not full and Rejuvenation is not already applied
+    // Cast Rejuvenation when actually hurt (below the low-health line) with
+    // mana to spare - the trigger gates both, so scratches no longer outbid
+    // the DPS kit at MEDIUM_HEAL.
     triggers.push_back(new TriggerNode(
         "leveling rejuvenation",
         NextAction::array(0, new NextAction("rejuvenation", ACTION_MEDIUM_HEAL), NULL)));

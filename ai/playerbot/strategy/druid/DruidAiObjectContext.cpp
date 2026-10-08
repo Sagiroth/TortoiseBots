@@ -227,6 +227,7 @@ namespace ai
                 creators["hibernate"] = [](PlayerbotAI* ai) { return new HibernateTrigger(ai); };
                 creators["bear form"] = [](PlayerbotAI* ai) { return new BearFormTrigger(ai); };
                 creators["cat form"] = [](PlayerbotAI* ai) { return new CatFormTrigger(ai); };
+                creators["in feral form"] = [](PlayerbotAI* ai) { return new InFeralFormTrigger(ai); };
                 creators["tree form"] = [](PlayerbotAI* ai) { return new TreeFormTrigger(ai); };
                 creators["moonkin form"] = [](PlayerbotAI* ai) { return new MoonkinFormTrigger(ai); };
                 creators["arcane eclipse"] = [](PlayerbotAI* ai) { return new HasArcaneEclipseTrigger(ai); };

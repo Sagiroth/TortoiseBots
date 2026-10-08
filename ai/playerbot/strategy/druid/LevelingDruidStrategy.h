@@ -13,15 +13,20 @@ namespace ai
         std::string getName() override { return "leveling"; }
     };
 
-    // Rejuvenation not applied on self AND health not full - matches "cast Rejuvenation if
-    // health is not full and Rejuvenation is not applied".
+    // Rejuvenation not applied on self AND actually hurt (below the low-health
+    // line, default 50) AND mana left to afford it: chip damage no longer
+    // outbids the whole DPS kit at MEDIUM_HEAL. Healing Touch below still
+    // owns the critical/low bands; this is the top-up between fights worth
+    // of HoT, not a per-scratch mid-fight cast.
     class LevelingRejuvenationTrigger : public BuffTrigger
     {
     public:
         LevelingRejuvenationTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "rejuvenation") {}
         bool IsActive() override
         {
-            return BuffTrigger::IsActive() && AI_VALUE2(uint8, "health", "self target") < 100;
+            return BuffTrigger::IsActive()
+                && AI_VALUE2(uint8, "health", "self target") < sPlayerbotAIConfig.lowHealth
+                && AI_VALUE2(uint8, "mana", "self target") >= 30;
         }
     };
 

@@ -188,6 +188,17 @@ namespace ai
         virtual bool IsActive() override { return !ai->HasAura("cat form", bot); }
     };
 
+    // State signal (not a buff request): true while the bot sits in Bear,
+    // Dire Bear or Cat form. The leveling kit uses it to stand down: a
+    // shapeshifted 10+ druid already runs a feral kit, so the caster
+    // wrath/moonfire/heal nodes must not outbid the form rotation.
+    class InFeralFormTrigger : public Trigger
+    {
+    public:
+        InFeralFormTrigger(PlayerbotAI* ai) : Trigger(ai, "in feral form") {}
+        bool IsActive() override;
+    };
+
     // Tortoise Balance redesign: Eclipse capstone (talent 320, spell 51444).
     // Wrath crit → "Arcane Eclipse" buff (spell 51443) → boosts Arcane damage
     //   → bot pivots to spam Starfire during the ~10 sec window.
