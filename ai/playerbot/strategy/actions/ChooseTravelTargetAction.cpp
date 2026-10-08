@@ -408,6 +408,16 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
     if(!AI_VALUE2(std::string, "manual string", "future travel condition").empty())
         AI_VALUE(TravelTarget*, "travel target")->SetConditions({ AI_VALUE2(std::string, "manual string", "future travel condition")});
 
+    // The giver re-pick streak below counts consecutive same-quest giver
+    // picks: any pick that is not one breaks it here, at the single shared
+    // entry (taker, objective, other purpose, null reset all pass through).
+    {
+        TravelDestination* picked = newTarget ? newTarget->GetDestination() : nullptr;
+        QuestRelationTravelDestination* giverPick = picked ? dynamic_cast<QuestRelationTravelDestination*>(picked) : nullptr;
+        if (!giverPick || giverPick->GetPurpose() != TravelDestinationPurpose::QuestGiver)
+            SET_AI_VALUE2(int32, "manual int", "giver repick count", 0);
+    }
+
     if (QuestObjectiveTravelDestination* dest = dynamic_cast<QuestObjectiveTravelDestination*>(oldTarget->GetDestination()))
     {
         std::string condition = "group or::{following party,need quest objective::{" + std::to_string(dest->GetQuestId()) + "," + std::to_string((uint8)dest->getObjective()) + "}}";
@@ -422,6 +432,7 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
 
             condition = "group or::{following party,or::{can accept quest npc::" + qualifier + ",can accept quest low level npc::" + qualifier + "}}";
         else
+
             condition = "group or::{following party,can turn in quest npc::" + qualifier + "}";
 
         oldTarget->AddCondition(condition);
@@ -438,6 +449,28 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
         // its own navmesh probe cannot.
         if (dest->GetPurpose() == TravelDestinationPurpose::QuestTaker)
             MoveToTravelTargetAction::CountHandInNoProgress(ai, dest->GetQuestId(), dest->GetEntry());
+        // Same-quest giver re-pick guard: consecutive picks of one quest id
+        // with no other pick between them (the streak-break at this
+        // function's entry) mean the bot stands at the giver re-picking
+        // instead of accepting (each pick restarts the WORK clock). The 3rd
+        // parks the quest errand 1 min (see GiverRepickParksQuest); the pick
+        // itself still lands.
+        if (dest->GetPurpose() == TravelDestinationPurpose::QuestGiver)
+        {
+            uint32 const pickedQuest = dest->GetQuestId();
+            int32 repicks = AI_VALUE2(int32, "manual int", "giver repick count");
+            uint32 const lastQuest = (uint32)AI_VALUE2(int32, "manual int", "giver repick quest");
+            repicks = (pickedQuest != 0 && pickedQuest == lastQuest) ? repicks + 1 : 1;
+            SET_AI_VALUE2(int32, "manual int", "giver repick quest", (int32)pickedQuest);
+            SET_AI_VALUE2(int32, "manual int", "giver repick count", repicks);
+            if (GiverRepickParksQuest(repicks))
+            {
+                SET_AI_VALUE2(bool, "no active travel destinations", "quest", true);
+                SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::quest", time(0) + MINUTE);
+                SET_AI_VALUE2(int32, "manual int", "giver repick count", 0);
+                ai->TellDebug(ai->GetMaster(), "Same giver re-picked 3 times, parking the quest errand.", "debug travel");
+            }
+        }
     }
 
     // Travel-target observability: one line per newly chosen target. A pick from

@@ -21,6 +21,8 @@ using ai::TravelMoveFailPathTag;
 using ai::TravelMoveFailBlacklistsKind;
 using ai::TravelPurposeParkKey;
 using ai::TravelTargetIsNull;
+using ai::GiverRepickParksQuest;
+using ai::GIVER_REPICK_PARK_AFTER;
 
 int main()
 {
@@ -146,6 +148,16 @@ int main()
     CHECK(!TravelMoveFailBlacklistsKind(true, true, true, -5));
     CHECK(!TravelMoveFailBlacklistsKind(false, false, false, 0));
     std::cout << "  [PASS] move-fail kind give-up needs a mesh nopath to grind\n";
+
+    // Giver re-pick loop: the 1st and 2nd consecutive same-quest picks ride
+    // through, the 3rd parks the quest errand (caller resets the streak on
+    // any other pick).
+    CHECK(!GiverRepickParksQuest(1));
+    CHECK(!GiverRepickParksQuest(2));
+    CHECK(GiverRepickParksQuest(3));
+    CHECK(GiverRepickParksQuest(4));
+    CHECK(GIVER_REPICK_PARK_AFTER == 3);
+    std::cout << "  [PASS] giver re-pick parks quest on the 3rd same-quest pick\n";
 
     std::cout << "travel repick policy: OK\n";
     return 0;

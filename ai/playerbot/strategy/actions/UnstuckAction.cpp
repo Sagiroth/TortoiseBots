@@ -307,6 +307,21 @@ bool UnstuckAction::Execute(Event& event)
         if (!keepTravel)
         {
             SET_AI_VALUE2(int32, "manual int", "stuck keep count", 0);
+            // Targetless and still for 5+ min: every purpose search already
+            // came back empty and parked, and the quest errand's 10-min park
+            // is the longest pole (grind/gather re-search every ~1 min). The
+            // wait proved nothing new will arrive, so cap the quest park at
+            // the 1-min rhythm the other purposes use: the next pool visit
+            // may re-search instead of standing out the full ten minutes.
+            // Permission to search only: the search gates (sieve, kind
+            // blacklist, route, danger) still refuse unreachable spots, so
+            // no wedged destination can be re-armed from here. Live
+            // night2 pool: 52/145 frozen bots targetless with all searches
+            // emptying, quest parked 10 min while grind re-tried every 1.
+            time_t const questParkUntil = AI_VALUE2(time_t, "manual time", "no travel purpose until::quest");
+            time_t const now = time(0);
+            if (questParkUntil > now + MINUTE)
+                SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::quest", now + MINUTE);
             return ai->DoSpecificAction("reset", event, true);
         }
         if (stuckKeeps >= 3 && WorldPosition(bot).sqDistance(stuckAnchor) < 30.0f * 30.0f)

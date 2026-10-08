@@ -44,6 +44,21 @@ namespace ai
         return futurePurpose.empty() ? "quest" : futurePurpose;
     }
 
+    // Same-quest giver re-pick loop (night2 pool: 62 bots picked 3+ givers in
+    // 15 min, same quest id re-picked standing at the NPC with no accept,
+    // move-fail or drop between picks - each CopyTarget restarts the 5-min
+    // WORK clock, so the hold never expires). The 3rd consecutive pick of
+    // one quest id parks the quest errand 1 min (the standard empty-search
+    // park), bounding the loop without breaking legit retries: a different
+    // quest, a taker, or any other purpose resets the streak, and the park
+    // only delays the 4th re-pick - the pick itself still lands. Givers
+    // only: takers settle through their own hand-in path.
+    constexpr int GIVER_REPICK_PARK_AFTER = 3;
+    inline bool GiverRepickParksQuest(int consecutiveSameQuestPicks)
+    {
+        return consecutiveSameQuestPicks >= GIVER_REPICK_PARK_AFTER;
+    }
+
     // PathFinder::getPathType() bucket for the TravelMoveFailed row: NOPATH
     // vs INCOMPLETE vs a tile that never used the navmesh could not be
     // separated from the CSV (finding 14). Bit values mirror the core
