@@ -3869,3 +3869,59 @@ Local validation: `python3 tools/verify_okf.py` + `bash tools/verify_all.sh`
 (see commit); `git diff --check` clean. No build (per task constraints);
 live in-game check pending: tank sidesteps on pull, melee work the rear,
 no jitter, pool bots unchanged.
+
+## Combat rotation ports: rogue finisher dump, hunter feign, druid rejuv gate, warlock tap (night2 rotations) — 2026-10-08
+
+Feature: four small donor-parity rotation fixes from night2 research. (1)
+Rogue: an almost-dead target (<=25% health) eats whatever combo points are
+banked (1+) as *Eviscerate* at HIGH+2, ahead of the gated SnD/4CP finishers,
+so points land as damage instead of dying with the mob. (2) Hunter: `medium
+threat` fires `feign death threat` (HIGH) instead of the distracting-shot
+taunt; the base kit already covers open-world combat, so feign now drops
+aggro outside raids too. (3) Druid: the leveling kit casts *Rejuvenation*
+only below the low-health line with mana to spare (scratches no longer
+outbid the damage kit), and a 10+ druid sitting in Bear/Dire Bear/Cat form
+idles the caster wrath/moonfire/heal nodes at HIGH while shifted so they
+never outbid the feral form rotation. (4) Warlock: *Life Tap* fires at the
+medium-mana line (default 40, health floor unchanged) at NORMAL+2, above the
+dot upkeep it feeds, instead of waiting until 15% and wanding the rest of
+the fight.
+
+Source repository: `mod-playerbots/mod-playerbots`
+
+Source commit: `b6696bdbd3740e575598d167d69f39f68cc0b907` (local
+`playerbots-references/mod-playerbots` checkout).
+
+Source files:
+- `src/Ai/Class/Rogue/Strategy/DpsRogueStrategy.cpp:129-137` (`target with combo points almost dead` -> eviscerate HIGH+2, no CP gate)
+- `src/Ai/Class/Hunter/Strategy/GenericHunterStrategy.cpp:71` (`medium threat` -> feign death 35)
+- `src/Ai/Class/Druid/Strategy/BalanceDruidStrategy.cpp` (ranged defaults + no sub-100% heal trigger; rejuv gate is a local 1.12 adaptation)
+- `src/Ai/Class/Warlock/Strategy/AfflictionWarlockStrategy.cpp` + `src/Ai/Class/Warlock/Strategy/GenericWarlockStrategy.cpp:22-30` (life-tap mana<85% at relevance 95)
+
+Copied / ported / independently reimplemented: reimplemented against the
+live list-based engine (NOT the unregistered new-style forward-ports:
+`GenericMageStrategy`, `GenericWarlockStrategy`, `DpsRogueStrategy`,
+`TankWarriorStrategy` remain untouched dead code). Rogue: new
+`AlmostDeadFinisherTrigger` (1+ CP, target <=25%, eviscerate ready) instead
+of the donor's group-DPS lifetime estimate — no `estimated lifetime` value
+is registered in our context, and a flat execute band matches the existing
+`target critical health` (20%) conventions nearby. Hunter: remapped the live
+`medium threat` node to the existing `feign death threat` action node
+(stand-up included); distracting-shot action kept for manual use. Druid: new
+`InFeralFormTrigger` (Bear/Dire Bear/Cat aura state) + relevance-only
+stand-down node carrying the existing `melee` default action; healer-party
+behavior unchanged (restoration kit + offheal untouched). Warlock: threshold
+mediumMana (40) rather than donor 85% — a 1.12 leveling adaptation keeping
+the health floor; relevance NORMAL+2 above dots, below execute.
+
+Reason: night2 rotation research (report-class-rotations.md D2/D3/D1/D4):
+rogues never landed eviscerate (CP died with the mob), hunters taunted on
+medium threat and died (9.7k deaths), 10+ druids chain-cast rejuvenation at
+chip damage in the sub-10 kit (4/7 live druids mid-rejuv, 80 deaths/capita),
+warlocks OOM-wanded the second half of every fight.
+
+Local validation: `python3 tools/verify_okf.py` + `bash tools/verify_all.sh`
+green on each of the four commits; `git diff --check` clean. No build (per
+task constraints); live in-game check pending: rogue eviscerate in combat
+last_action distribution, hunter feign rows + falling death rate, druid
+rejuv share collapse, warlock tap-before-wand ordering.
