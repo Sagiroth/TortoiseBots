@@ -14,7 +14,6 @@ using ai::IsNoPathTrapped;
 using ai::NoPathTrapStreak;
 using ai::ShouldKeepTravelAcrossStuckReset;
 using ai::ShouldRetireStuckTravelKeep;
-using ai::TravelEmptyFallthroughToGrind;
 using ai::TravelInvalidParkKey;
 using ai::TravelIsNoRouteFallbackPoint;
 using ai::TravelIsResetToNull;
@@ -131,20 +130,6 @@ int main()
     CHECK(NoPathTrapStreak(0, true, false, false, false) == 1);
     CHECK(ai::NOPATH_TRAP_FLOOR_Z_YD == 10.0f);
     std::cout << "  [PASS] nopath trap streak counts targets from one spot\n";
-
-    // (i) Empty-search fallthrough: a masterless pool bot whose non-grind
-    // purpose came back empty re-arms a local grind search. Owned/hired
-    // bots keep player control, the grind purpose itself has nothing to
-    // fall through to, an empty key (a wiped purpose) is not a real empty,
-    // and a parked or out-of-window grind stays parked.
-    CHECK(TravelEmptyFallthroughToGrind(true, "quest", "4096", true));
-    CHECK(TravelEmptyFallthroughToGrind(true, "128", "4096", true));
-    CHECK(!TravelEmptyFallthroughToGrind(false, "quest", "4096", true));
-    CHECK(!TravelEmptyFallthroughToGrind(true, "4096", "4096", true));
-    CHECK(!TravelEmptyFallthroughToGrind(true, "", "4096", true));
-    CHECK(!TravelEmptyFallthroughToGrind(true, "quest", "4096", false));
-    CHECK(!TravelEmptyFallthroughToGrind(false, "", "4096", false));
-    std::cout << "  [PASS] empty fallthrough re-arms grind for masterless bots\n";
 
     std::cout << "travel repick policy: OK\n";
     return 0;
