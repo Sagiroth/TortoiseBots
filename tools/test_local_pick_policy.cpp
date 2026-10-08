@@ -13,6 +13,7 @@
 
 using ai::CampLocalRange;
 using ai::CampRequestMaxDistance;
+using ai::ClassTrainerRequestMaxDistance;
 using ai::GrindLocalFarRange;
 using ai::GrindLocalNearRange;
 using ai::GrindRequestMaxDistance;
@@ -82,6 +83,19 @@ int main()
         CHECK(Feq(CampRequestMaxDistance(true, 3, 10000.0f), 500.0f));
         CHECK(Feq(CampRequestMaxDistance(true, 20, 10000.0f), 2500.0f));
         std::cout << "  [PASS] pool camp errands capped by level\n";
+    }
+
+    // -------------------------------------------------------------
+    // Test 6: class trainer goes far only when several spells behind
+    // -------------------------------------------------------------
+    {
+        CHECK(Feq(ClassTrainerRequestMaxDistance(true, 20, 0, 10000.0f), 2500.0f));
+        CHECK(Feq(ClassTrainerRequestMaxDistance(true, 20, 2, 10000.0f), 2500.0f));
+        CHECK(Feq(ClassTrainerRequestMaxDistance(true, 20, 3, 10000.0f), 10000.0f));
+        CHECK(Feq(ClassTrainerRequestMaxDistance(true, 9, 5, 10000.0f), 2500.0f));
+        CHECK(Feq(ClassTrainerRequestMaxDistance(true, 3, 5, 10000.0f), 500.0f));
+        CHECK(Feq(ClassTrainerRequestMaxDistance(false, 20, 0, 10000.0f), 10000.0f));
+        std::cout << "  [PASS] class trainer far trip only when 3+ spells behind at 10+\n";
     }
 
     std::cout << "All local grind/camp pick tests passed.\n";

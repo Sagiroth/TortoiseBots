@@ -504,7 +504,11 @@ bool ShouldTravelNamedValue::Calculate()
                 return false;
 
             bool const masterless = sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster();
-            float const window = CampRequestMaxDistance(masterless, bot->GetLevel(), 10000.0f);
+            // Same window the request searches (ChooseTravelTargetAction).
+            float const window = name == "trainer class" ?
+                ClassTrainerRequestMaxDistance(masterless, bot->GetLevel(),
+                    AI_VALUE2(std::vector<TrainerSpell const*>, "trainable spells", (uint32)TRAINER_TYPE_CLASS).size(), 10000.0f) :
+                CampRequestMaxDistance(masterless, bot->GetLevel(), 10000.0f);
             if (sTravelMgr.GetDestinations(PlayerTravelInfo(bot),
                     (uint32)TravelDestinationPurpose::Trainer, entries, false, window).empty())
                 return false;

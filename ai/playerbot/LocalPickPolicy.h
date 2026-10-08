@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 // Local grind/camp picks (issue #424, donor mod-playerbots
@@ -100,5 +101,25 @@ namespace ai
             return CampLocalRange(botLevel);
 
         return defaultMax;
+    }
+
+    // Class-trainer errand: local like a camp errand, until the bot has fallen
+    // CLASS_TRAINER_FAR_TRIP_SPELLS class spells behind - then it goes back to
+    // a trainer wherever it is, as a player hearths or flies to town every
+    // couple of levels. A local-only search left bots out in the zones without
+    // their new ranks for good (#542 made it local after far walks died; the
+    // count only drops by learning, so the window holds for the whole trip).
+    // Starter levels (< CLASS_TRAINER_FAR_TRIP_MIN_LEVEL) keep the local
+    // window: their trainer stands in the valley.
+    constexpr std::size_t CLASS_TRAINER_FAR_TRIP_SPELLS = 3;
+    constexpr std::uint32_t CLASS_TRAINER_FAR_TRIP_MIN_LEVEL = 10;
+
+    inline float ClassTrainerRequestMaxDistance(bool masterlessRandom,
+        std::uint32_t botLevel, std::size_t trainableClassSpells, float defaultMax)
+    {
+        if (botLevel >= CLASS_TRAINER_FAR_TRIP_MIN_LEVEL && trainableClassSpells >= CLASS_TRAINER_FAR_TRIP_SPELLS)
+            return defaultMax;
+
+        return CampRequestMaxDistance(masterlessRandom, botLevel, defaultMax);
     }
 }

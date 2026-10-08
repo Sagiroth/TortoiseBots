@@ -1930,12 +1930,17 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         }
 
         // Pool bots look for a trainer inside the same local window as camp
-        // errands (500 yd at level <= 5, 2500 yd above). The open 10000 yd
+        // errands (500 yd at level <= 5, 2500 yd above); a class trainer is
+        // searched in full once the bot is several spells behind
+        // (ClassTrainerRequestMaxDistance). The open 10000 yd
         // search sent them on median 2.8 km walks: 21% died on the way and
         // under 1% learned anything. A trainer further out is still used by
         // the nearby-trainer service when the bot passes it.
         bool const masterless = sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster();
-        float const trainerMaxDistance = CampRequestMaxDistance(masterless, bot->GetLevel(), 10000.0f);
+        float const trainerMaxDistance = type == TRAINER_TYPE_CLASS ?
+            ClassTrainerRequestMaxDistance(masterless, bot->GetLevel(),
+                AI_VALUE2(std::vector<TrainerSpell const*>, "trainable spells", (uint32)TRAINER_TYPE_CLASS).size(), 10000.0f) :
+            CampRequestMaxDistance(masterless, bot->GetLevel(), 10000.0f);
         *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [entries = trainerEntries, partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, trainerMaxDistance]()
             {
                 return sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::Trainer, entries, false, trainerMaxDistance);
