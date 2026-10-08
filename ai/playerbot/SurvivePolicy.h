@@ -60,6 +60,26 @@ namespace ai
         return !hasRealPlayerMaster;
     }
 
+    // Revenge (self-defence) answers before every other gate in
+    // AttackAnythingAction::isUseful: a mob that already holds the bot as
+    // its victim is fought while travelling, while wounded, and by healers
+    // that otherwise start no fights. Answering pulls nothing new.
+    // Callers pass target->GetVictim() == bot (non-player hostile target).
+    inline bool ShouldAnswerAttacker(bool victimIsBot)
+    {
+        return victimIsBot;
+    }
+
+    // Hard-mob ignore (AttackersValue::IgnoreTarget): a +6 mob on a long
+    // trip is walked past - unless it is already fighting the bot (victim
+    // or threat), in which case it stays a valid attacker so combat state
+    // and revenge engage. Without the carve-out the bot died without a
+    // swing (27% of walk-past deaths are +6 or more, Oct 2026 pool).
+    inline bool ShouldIgnoreHardHostile(int targetLevel, int botLevel, bool alreadyFightingBot)
+    {
+        return !alreadyFightingBot && targetLevel > botLevel + 5;
+    }
+
     // Death telemetry: the deaths.csv 'adds' loop used to count victim-
     // filtered "all targets" entries, but SetDeathState drains the attacker
     // set and clears victim pointers before OnDeath runs, so it was

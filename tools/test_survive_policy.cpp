@@ -15,11 +15,12 @@ using ai::DrinkStopManaPct;
 using ai::FormatDeathAttackers;
 using ai::IsDeathAttackerSnapshotFresh;
 using ai::RestStopHealthPct;
+using ai::ShouldAnswerAttacker;
 using ai::ShouldFleeAtCriticalHealth;
+using ai::ShouldIgnoreHardHostile;
 using ai::ShouldSeedDrink;
 using ai::ShouldDrinkAtManaPct;
 using ai::DeathAttackerEntry;
-
 int main()
 {
     // Rest stop: cheat bots eat to almost-full, everyone else to low.
@@ -97,6 +98,19 @@ int main()
         CHECK(formatted.second == 8);
         CHECK(formatted.first == "Mob0(5)Mob1(5)Mob2(5)Mob3(5)Mob4(5)Mob5(5)Mob6(5)Mob7(5)");
     }
+
+    // Revenge answers whenever the mob holds the bot as victim - the only
+    // input; wounds, travel and healer spec are decided by other gates.
+    CHECK(ShouldAnswerAttacker(true));
+    CHECK(!ShouldAnswerAttacker(false));
+
+    // Hard-mob ignore keeps the old +5 line, but never for a mob already
+    // fighting the bot: that one stays valid so revenge can answer.
+    CHECK(ShouldIgnoreHardHostile(36, 30, false));
+    CHECK(!ShouldIgnoreHardHostile(35, 30, false));
+    CHECK(!ShouldIgnoreHardHostile(36, 30, true));
+    CHECK(!ShouldIgnoreHardHostile(60, 30, true));
+    CHECK(!ShouldIgnoreHardHostile(25, 30, false));
 
     std::cout << "survive policy: OK\n";
     return 0;

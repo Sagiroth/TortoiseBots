@@ -551,7 +551,7 @@ bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
     // decide whether the fight is winnable.
     bool const alreadyFightingBot = target->GetVictim() == playerToCheckAgainst ||
         target->GetThreatManager().getThreat(playerToCheckAgainst) > 0.0f;
-    if (!alreadyFightingBot && target->GetLevel() > (playerToCheckAgainst->GetLevel() + 5) && ai->GetState() == BotState::BOT_STATE_NON_COMBAT)
+    if (ai::ShouldIgnoreHardHostile((int)target->GetLevel(), (int)playerToCheckAgainst->GetLevel(), alreadyFightingBot) && ai->GetState() == BotState::BOT_STATE_NON_COMBAT)
     {
         // When traveling a long distance.
         if (AI_VALUE(bool, "travel target traveling") && AI_VALUE2(float, "distance", "travel target") > sPlayerbotAIConfig.reactDistance)

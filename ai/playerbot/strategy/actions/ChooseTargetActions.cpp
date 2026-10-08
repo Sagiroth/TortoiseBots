@@ -6,6 +6,7 @@
 #include "playerbot/strategy/generic/PullStrategy.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
 #include "playerbot/PullRegenPolicy.h"
+#include "playerbot/SurvivePolicy.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "playerbot/strategy/values/GrindTargetValue.h"
 #include <map>
@@ -48,7 +49,7 @@ bool AttackAnythingAction::isUseful()
     // elsewhere, Oct 2026 pool). Answering an attacker that already holds the
     // bot as victim pulls nothing new, so there is no adds risk.
     bool const isRevenge = !target->IsPlayer() && target->IsHostileTo(bot) &&
-        target->GetVictim() == bot;
+        ai::ShouldAnswerAttacker(target->GetVictim() == bot);
     if (isRevenge)
         return true;
 
