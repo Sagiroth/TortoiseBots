@@ -1385,6 +1385,7 @@ void PlayerbotAI::NoteDamager(Unit* damager)
     lastDamager_.isEnvironment = false;
     lastDamager_.time = WorldTimer::getMSTime();
     lastDamager_.entry = damager->IsCreature() ? damager->GetEntry() : 0;
+    lastDamager_.healthPct = damager->GetHealthPercent();
 }
 
 void PlayerbotAI::SetLastKiller(Unit* killer)
@@ -1418,6 +1419,7 @@ void PlayerbotAI::SetLastKiller(Unit* killer)
         lastKiller_.level = killer->GetLevel();
         lastKiller_.isEnvironment = false;
         lastKiller_.entry = killer->IsCreature() ? killer->GetEntry() : 0;
+        lastKiller_.healthPct = killer->GetHealthPercent();
     }
 }
 
@@ -1688,10 +1690,20 @@ void PlayerbotAI::OnDeath()
 
                 botPos.printWKT(out);
 
+                // Killer health is read at the killing blow (death hook), not
+                // from "current target" here: the old read wrote 100 for 92%
+                // of deaths, even for bots seen fighting ~36 s before dying
+                // (Oct 2026 roster poll), so the target no longer matches by
+                // the time the AI handles the death.
                 float killerHealth = 100.0f;
-                Unit* ctarget = AI_VALUE(Unit*, "current target");
-                if (ctarget && (!killerName.empty() && ctarget->GetName() == killerName))
-                    killerHealth = ctarget->GetHealthPercent();
+                if (!lastKiller_.name.empty() && lastKiller_.name == killerName)
+                    killerHealth = lastKiller_.healthPct;
+                else
+                {
+                    Unit* ctarget = AI_VALUE(Unit*, "current target");
+                    if (ctarget && (!killerName.empty() && ctarget->GetName() == killerName))
+                        killerHealth = ctarget->GetHealthPercent();
+                }
 
                 if (!killerName.empty())
                 {

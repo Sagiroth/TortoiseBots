@@ -750,6 +750,7 @@ public:
         bool isEnvironment = false;
         uint32 time = 0;
         uint32 entry = 0;       // creature entry, 0 for players and the environment
+        float healthPct = 100.0f; // killer's health at the killing blow (deaths.csv fight-back proxy)
     };
     // Live attacker snapshot for the deaths.csv 'adds' column: sampled from
     // bot->GetAttackers() while fighting (NoteFightAttackers, throttled),
