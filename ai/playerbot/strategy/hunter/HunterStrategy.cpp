@@ -105,9 +105,12 @@ void HunterStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "arcane shot",
         NextAction::array(0, new NextAction("arcane shot", ACTION_NORMAL + 1), NULL)));
 
+    // Wing clip snare under raptor strike (donor melee chain): when a mob
+    // closes in, slow it so the hunter keeps range; raptor stays first.
     triggers.push_back(new TriggerNode(
         "enemy is close",
-        NextAction::array(0, new NextAction("raptor strike", ACTION_NORMAL + 1), NULL)));
+        NextAction::array(0, new NextAction("raptor strike", ACTION_NORMAL + 1),
+                             new NextAction("wing clip", ACTION_NORMAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "no pet",
