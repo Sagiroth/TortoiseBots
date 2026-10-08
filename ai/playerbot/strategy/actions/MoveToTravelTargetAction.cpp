@@ -277,8 +277,14 @@ bool MoveToTravelTargetAction::TryRescueServiceTrip(TravelTarget* target, std::s
     if (target->IsForced())
         return false;
 
-    WorldPosition const location = *target->getPosition();
+    WorldPosition location = *target->getPosition();
     if (location.GetMapId() != bot->GetMapId())
+        return false;
+    // Land on the navmesh, not on the npc's own spot: npcs on upper floors and
+    // balconies the mmaps never meshed (Stormwind trainers) left the bot above
+    // the mesh, where every path probe fails and the bot stood until rescued.
+    if (!location.isMmapLoaded(bot->GetInstanceId()) ||
+        !location.ClosestCorrectPoint(30.0f, 60.0f, bot->GetInstanceId()))
         return false;
     if (!bot->IsAlive() || bot->IsInCombat() || bot->IsTaxiFlying() || bot->IsBeingTeleported())
         return false;

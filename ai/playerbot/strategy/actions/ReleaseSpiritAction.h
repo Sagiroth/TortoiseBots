@@ -260,7 +260,11 @@ namespace ai
                 if (grave)
                 {
                     WorldPosition gravePos(grave);
-                    if (IsUsableGraveyardTarget(true, grave->map_id == bot->GetMapId(), WorldPosition(bot).fDist(gravePos)))
+                    float const graveDist = WorldPosition(bot).fDist(gravePos);
+                    // A bot already standing on its graveyard (revived there,
+                    // then nopath-trapped) would teleport onto itself and loop;
+                    // send it to spawn/homebind below instead.
+                    if (graveDist > 30.0f && IsUsableGraveyardTarget(true, grave->map_id == bot->GetMapId(), graveDist))
                     {
                         sLog.outDetail("Repop: Teleporting bot #%d %s:%d <%s> to the nearest graveyard", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
                         bot->TeleportTo(grave->map_id, grave->x, grave->y, grave->z, bot->GetOrientation());
