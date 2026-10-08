@@ -4,6 +4,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/SpellRankPolicy.h"
+#include "playerbot/TravelMgr.h"
 
 using namespace ai;
 
@@ -227,6 +228,18 @@ bool TrainerAction::Execute(Event& event)
             SET_AI_VALUE2(bool, "manual bool", "trainer park needs money", visitCheapestUnaffordable != UINT32_MAX);
             SET_AI_VALUE2(bool, "no active travel destinations", purposeKey, true);
             SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + purposeKey, time(0) + 10 * MINUTE);
+        }
+
+        // The visit is the whole errand: a trip to this trainer is done once it has
+        // taught what it can. Left alone the target sat in its work state for the full
+        // five-minute expiry, and a pool bot with nothing else to do stood at the
+        // trainer for those five minutes (93 of 643 frozen bots at 2000, all trained).
+        TravelTarget* target = AI_VALUE(TravelTarget*, "travel target");
+        if (!ai->HasActivePlayerMaster() && target->GetStatus() == TravelStatus::TRAVEL_STATUS_WORK &&
+            target->GetEntry() == (int32)creature->GetEntry())
+        {
+            sTravelMgr.SetNullTravelTarget(target);
+            RESET_AI_VALUE(bool, "travel target active");
         }
     }
     else
