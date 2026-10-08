@@ -188,6 +188,7 @@ bool OutNumberedTrigger::IsActive()
     // no ground (median 0 yd) and died - 76% of deaths had a flee in their last
     // 30 s (Oct 2026 roster poll, 571 deaths). bot->GetAttackers() rather than
     // the "attackers" value, which also shares nearby players' targets.
+    uint32 attackerCount = 0;
     for (Unit* attacker : bot->GetAttackers())
     {
         Creature* creature = attacker ? attacker->ToCreature() : nullptr;
@@ -202,10 +203,19 @@ bool OutNumberedTrigger::IsActive()
         healthMod = creature->GetHealthPercent() / 100.0f;
 
         if(dLevel > -10)
+        {
             foePower += std::max(100 + 10 * dLevel, dLevel * 200) * healthMod;
+            ++attackerCount;
+        }
     }
 
-    if (!foePower)
+    // Outnumbered means more than one: a pool bot does not run from a single
+    // mob. Its flee cannot outpace the mob (median 0 yd covered, Oct 2026
+    // poll), so breaking off a one-on-one only stops the swings - the weights
+    // above made any mob two levels up "outnumber" a bot under 70% health.
+    // The genuine near-death escape stays with the panic / critical health
+    // triggers.
+    if (!foePower || attackerCount < 2)
         return false;
 
     for (auto & helper : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid> >("nearest friendly players")->Get())
