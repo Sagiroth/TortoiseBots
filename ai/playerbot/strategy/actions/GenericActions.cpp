@@ -549,15 +549,17 @@ bool TogglePetSpellAutoCastAction::isPossible()
 // spells are skipped via IsPassiveSpell (the cmangos-compat-shim documents
 // that 1.12 has no separate NO_AUTOCAST_AI bit, and Pet::ToggleAutocast
 // refuses passives the same way) and stale autocast entries are pruned via
-// Pet::HasSpell, which already excludes PETSPELL_REMOVED. Silence (no
-// toggle, pet fresh from InitPet) returns true so the per-tick "has pet"
-// node stays cheap instead of FAILED-logged.
+// Pet::HasSpell, which already excludes PETSPELL_REMOVED. Returns true only
+// when something changed, like the donor: at relevance 60 a no-op "success"
+// took the bot's only decision of the visit, and a pool bot visited every
+// ~15 s at 2000 bots then never moved.
 bool TogglePetSpellAutoCastAction::Execute(Event& /*event*/)
 {
     Pet* pet = bot->GetPet();
     if (!pet)
         return false;
 
+    bool changed = false;
     std::vector<uint32> stale;
     for (uint32 autocast : pet->m_autospells)
         if (!pet->HasSpell(autocast))
@@ -566,7 +568,10 @@ bool TogglePetSpellAutoCastAction::Execute(Event& /*event*/)
     {
         auto it = std::find(pet->m_autospells.begin(), pet->m_autospells.end(), spellId);
         if (it != pet->m_autospells.end())
+        {
             pet->m_autospells.erase(it);
+            changed = true;
+        }
     }
 
     for (PetSpellMap::const_iterator itr = pet->m_petSpells.begin(); itr != pet->m_petSpells.end(); ++itr)
@@ -585,9 +590,13 @@ bool TogglePetSpellAutoCastAction::Execute(Event& /*event*/)
             continue;
 
         pet->ToggleAutocast(spellId, decision == TortoiseBots::PetAutocastDecision::Enable);
+        // Counted only when the toggle took: a spell the core refuses would
+        // otherwise "change" on every visit and hog the bot again.
+        if (active != (std::find(pet->m_autospells.begin(), pet->m_autospells.end(), spellId) != pet->m_autospells.end()))
+            changed = true;
     }
 
-    return true;
+    return changed;
 }
 
 bool SetPetStanceAction::isPossible()

@@ -32,7 +32,7 @@ void ClassStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     triggers.push_back(new TriggerNode(
         "very often",
-        NextAction::array(0, new NextAction("check mount state", ACTION_IDLE), new NextAction("check values", ACTION_IDLE), NULL)));
+        NextAction::array(0, new NextAction("check mount state", ACTION_IDLE), new NextAction("check values", 0.5f), NULL)));
 }
 
 void ClassStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
