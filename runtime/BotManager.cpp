@@ -382,8 +382,11 @@ void BotManager::SweepDeadBots(uint32_t diff)
     // At most a handful of releases/revives per sweep: a sweep that revived
     // 189 in one tick is the freeze this cap exists to prevent. The rest keep
     // their timers for the next 30s sweep.
-    constexpr uint32_t kMaxReleasesPerSweep = 8;
-    constexpr uint32_t kMaxRevivesPerSweep = 8;
+    // Releases and in-place revives are cheap; teleports (corpse moves) keep
+    // the small cap so a sweep never moves a batch.
+    constexpr uint32_t kMaxReleasesPerSweep = 30;
+    constexpr uint32_t kMaxRevivesPerSweep = 30;
+    constexpr uint32_t kMaxMovesPerSweep = 8;
     uint32_t released = 0, revived = 0, watched = 0, moved = 0;
     uint32_t skipNotRandom = 0, skipHasMaster = 0, skipNoPlayer = 0, skipNotHeadless = 0;
     uint32_t skipNotInWorld = 0, skipTeleport = 0, skipBattleground = 0, skipGrouped = 0;
@@ -549,9 +552,9 @@ void BotManager::SweepDeadBots(uint32_t diff)
         // the AI tick that would walk it is starved. Move one bot onto its
         // corpse and let the next sweep revive it. No corpse: only the
         // existing hopeless/lowbie relocate, never a resurrect in place.
-        // Shares the revive cap so a sweep cannot teleport a batch.
+        // Own small cap (kMaxMovesPerSweep) so a sweep cannot teleport a batch.
         constexpr time_t kGhostMoveGraceSec = 180;
-        if (deadFor >= kGhostMoveGraceSec && revived + moved < kMaxRevivesPerSweep)
+        if (deadFor >= kGhostMoveGraceSec && moved < kMaxMovesPerSweep)
         {
             if (Corpse* corpse = p->GetCorpse())
             {
@@ -1947,8 +1950,13 @@ void BotManager::UpdateBots(uint32_t diff)
             if (it == m_bots.end() || it->second.record.lifecycle != BotLifecycle::InWorld)
                 continue;
 
+            // Dead bots ride this pass too: a death is a chain of decisions
+            // (release, corpse run legs, revive or spirit healer), and at one
+            // pool-rotation visit per ~26 s each step waited a full lap - the
+            // dead sweep then ran at its cap every 30 s with ~165 corpses
+            // queued and some lay dead 12+ min (Oct 2026, 2000 bots).
             ::Player* p = sObjectAccessor.FindPlayer(it->second.record.characterGuid);
-            if (p && p->IsInCombat())
+            if (p && (p->IsInCombat() || !p->IsAlive()))
             {
                 updateOneBot(guidLow);
                 if (combatBudgetUs > 0)
