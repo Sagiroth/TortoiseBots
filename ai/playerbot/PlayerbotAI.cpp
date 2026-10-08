@@ -1562,14 +1562,14 @@ void PlayerbotAI::OnDeath()
                         sPlayerbotAIConfig.logEvent(this, "DeathClusterEscape", std::to_string(clusterEntry), WorldPosition(bot).GetAreaName());
                         TellDebug(GetMaster(), "Leaving this hunting ground for a while - it killed me " + std::to_string(kDeathClusterDeaths) + " times", "debug move");
                         // Rotating killers defeat the kind blacklist above (issue
-                        // #398: median 7 killer kinds per loop bot), so the second
-                        // escape inside the avoidance window escalates to the spot
-                        // itself: grind and quest-objective picks inside the camp
-                        // are refused for a while and the bot walks elsewhere.
-                        // Lowbies (<= 5, stuck in their starter valley) avoid a
-                        // smaller camp for a shorter while; a ding clears the
-                        // list. Owned bots and bots with a real player master
-                        // stay out - their player decides where to hunt.
+                        // #398: median 7 killer kinds per loop bot), so the escape
+                        // escalates to the spot itself at once: grind and
+                        // quest-objective picks inside the camp are refused for
+                        // a while and the bot walks elsewhere. Lowbies (<= 5,
+                        // stuck in their starter valley) avoid a smaller camp
+                        // for a shorter while; a ding clears the list. Owned
+                        // bots and bots with a real player master stay out -
+                        // their player decides where to hunt.
                         if (!HasRealPlayerMaster())
                         {
                             deathEscapeCount_ = ai::NextDeathEscapeCount(deathEscapeCount_, nowClusterMs, deathLastEscapeMs_);

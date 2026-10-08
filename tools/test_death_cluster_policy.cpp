@@ -57,19 +57,16 @@ int main()
 {
     std::cout << "Starting TortoiseBots death-cluster escalation tests...\n";
 
-    // -------------------------------------------------------------
-    // Test 1: a lone escape only blacklists the kind, no escalation
-    // -------------------------------------------------------------
+    // Test 1: the first escape already avoids the spot: rotating killers
+    // defeat the kind-only blacklist, so waiting costs three more deaths.
     {
         std::uint32_t count = NextDeathEscapeCount(0, NOW, 0);
         CHECK(count == 1);
-        CHECK(!DeathAvoidanceEscalated(count));
-        CHECK(kDeathAvoidEscapes == 2);
+        CHECK(DeathAvoidanceEscalated(count));
+        CHECK(kDeathAvoidEscapes == 1);
     }
 
-    // -------------------------------------------------------------
-    // Test 2: a second escape inside the hour escalates to avoidance
-    // -------------------------------------------------------------
+    // Test 2: a second escape inside the hour stays escalated
     {
         std::uint32_t count = NextDeathEscapeCount(1, NOW, NOW - 11 * 60 * 1000); // median loop gap 10.7 min
         CHECK(count == 2);
@@ -80,13 +77,12 @@ int main()
         CHECK(DeathAvoidanceEscalated(count));
     }
 
-    // -------------------------------------------------------------
-    // Test 3: an escape after the window starts a fresh streak
-    // -------------------------------------------------------------
+    // Test 3: an escape after the window starts a fresh streak - which still
+    // avoids, since one escape is enough
     {
         std::uint32_t count = NextDeathEscapeCount(2, NOW, NOW - kDeathAvoidWindowMs - 1);
         CHECK(count == 1);
-        CHECK(!DeathAvoidanceEscalated(count));
+        CHECK(DeathAvoidanceEscalated(count));
         // Exactly on the window edge still belongs to the loop.
         count = NextDeathEscapeCount(1, NOW, NOW - kDeathAvoidWindowMs);
         CHECK(count == 2);

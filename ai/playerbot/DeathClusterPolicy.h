@@ -8,10 +8,13 @@ namespace ai
     // PlayerbotAI::OnDeath cannot break a camp loop whose mobs rotate as they
     // kill the bot (measured: median 7 distinct killer kinds per loop bot, 728
     // DeathClusterEscape rows across 191 bots with dying continuing). The
-    // second escape inside the window below escalates from "leave this kind
-    // alone" to "leave this hunting ground alone": the spot around the death
-    // is avoided, so grind and quest-objective picks inside it are refused
-    // and the bot walks elsewhere.
+    // first escape already escalates from "leave this kind alone" to "leave
+    // this hunting ground alone": the spot around the death is avoided, so
+    // grind and quest-objective picks inside it are refused and the bot walks
+    // elsewhere. Waiting for a second escape cost three more deaths per loop
+    // (Oct 2026 pool: 240 bots in a graveyard camp loop, 1,090 deaths within
+    // 300 yd/15 min of a spirit-healer revive), and the kind blacklist the
+    // first escape buys cannot help when the killers rotate.
     //
     // Pure decision rule, no core includes: PlayerbotAI owns the per-bot
     // avoidance list, SetBestTarget only asks IsDeathSpotAvoided. All clocks
@@ -19,7 +22,7 @@ namespace ai
     // comparison below uses unsigned subtraction, which stays correct across
     // the wrap (a direct nowMs >= expiryMs read goes true the instant a
     // wrapped expiry is stored).
-    std::uint32_t const kDeathAvoidEscapes = 2; // escapes inside the window that trigger avoidance
+    std::uint32_t const kDeathAvoidEscapes = 1; // escapes inside the window that trigger avoidance
 
     std::uint32_t const kDeathAvoidWindowMs = 60u * 60u * 1000u; // escapes this far apart belong to one loop
 
