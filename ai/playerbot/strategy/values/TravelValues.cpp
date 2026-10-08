@@ -288,12 +288,29 @@ bool NeedTravelPurposeValue::Calculate()
     case TravelDestinationPurpose::GatherMining:
     case TravelDestinationPurpose::GatherHerbalism:
         skill = gatheringSkills.at(purpose);
-        if (bot->GetSkillValue(skill) < std::min(bot->GetSkillMax(skill), bot->GetSkillMaxForLevel(bot)))
+        if (bot->GetSkillValue(skill) >= std::min(bot->GetSkillMax(skill), bot->GetSkillMaxForLevel(bot)))
+            return false;
+
+        // Empty-search probe, same shape as the trainer class/trade probe
+        // below: skill headroom alone raised the need while no node in the
+        // window would be accepted, so the bot requested, searched, parked
+        // a minute and re-asked (live: 414 empty GatherMining + 107 empty
+        // GatherHerbalism searches in 23 min, mostly "0:empty"). Refuse
+        // when no destination in the request window is active. Same window
+        // the purpose request searches (RequestTravelTargetAction), same
+        // entry source (all entries) and same acceptance (IsActive): a
+        // picked node is always inside the window it was picked from, so
+        // this stays true while walking its own trip.
         {
-            return true;
+            PlayerTravelInfo const info(bot);
+            DestinationList const nodes = sTravelMgr.GetDestinations(info,
+                (uint32)purpose, {}, true, 10000.0f);
+            if (std::none_of(nodes.begin(), nodes.end(),
+                    [&](TravelDestination* node) { return node->IsActive(bot, info); }))
+                return false;
         }
 
-        return false;
+        return true;
     case TravelDestinationPurpose::Boss:
         return AI_VALUE(bool, "can fight boss");
     case TravelDestinationPurpose::Mail:
