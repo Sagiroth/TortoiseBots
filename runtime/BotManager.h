@@ -90,6 +90,8 @@ struct BotEntry
     uint32_t teleportAcksIgnored = 0;
     // Last SLOWBOT line for this bot (WorldTimer ms); throttles the log.
     uint32_t lastSlowLogMs = 0;
+    // Follow-up visits granted in a row for travel-pipeline steps.
+    uint8_t followUps = 0;
     BotEntry() = default;
     ~BotEntry();
     BotEntry(BotEntry&&) = default;
@@ -223,6 +225,9 @@ private:
     // cursor that lets a budgeted pass resume where the previous tick stopped
     // (see PoolPassRotation.h).
     PoolPassRotation m_poolRotation;
+    // Pool bots whose last action was a travel-pipeline step, visited again
+    // on the next tick ahead of the rotation (UpdateBots).
+    std::vector<uint32_t> m_followUps;
     // Cursor for budgeted Pass 2 (combat bots) round-robin iteration.
     uint32_t m_combatCursor = 0;
     // BOTPERF window: UpdateBots pass cost accumulated over ~30 s of tick time.

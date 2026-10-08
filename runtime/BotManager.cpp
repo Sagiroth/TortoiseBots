@@ -58,6 +58,21 @@ namespace {
 constexpr uint32_t kMaxAiElapsedMs = 10000;
 // A single bot update at least this long is logged as SLOWBOT.
 constexpr uint32_t kSlowBotUpdateMs = 50;
+// Travel-pipeline follow-ups: a pool bot gets at most this many extra visits
+// in a row, from at most this share (1/kFollowUpBudgetDivisor) of the pool budget.
+constexpr uint8_t kMaxFollowUps = 4;
+constexpr uint64_t kFollowUpBudgetDivisor = 2;
+
+// Steps between "needs a destination" and "walking": each used to cost a full
+// rotation visit (15-25 s with 2000 bots), so a bot stood for minutes before
+// its first step. Check values is housekeeping, not a step.
+bool IsTravelPipelineStep(std::string const& action)
+{
+    return action == "request travel target" || action == "request named travel target" ||
+        action == "request quest travel target" || action == "choose travel target" ||
+        action == "reset travel target" || action == "refresh travel target" ||
+        action == "check mount state";
+}
 
 // One-shot headless RNDBOT scatter using persisted GenericRpg destinations.
 // Fail-closed: any validation miss retains original position. No DB scan,
@@ -1855,6 +1870,21 @@ void BotManager::UpdateBots(uint32_t diff)
             entry.lastAiUpdateMs = nowMs ? nowMs : 1;
             entry.aiAdapter->Update(elapsed);
 
+            if (PlayerbotAI* stepAi = entry.aiAdapter->GetAI())
+            {
+                ai::Action const* last = stepAi->GetLastExecutedAction(stepAi->GetState());
+                if (last && IsTravelPipelineStep(const_cast<ai::Action*>(last)->getName()))
+                {
+                    if (entry.followUps < kMaxFollowUps)
+                    {
+                        ++entry.followUps;
+                        m_followUps.push_back(guidLow);
+                    }
+                }
+                else
+                    entry.followUps = 0;
+            }
+
             // One bot's update is never cut by the budget, so a single slow
             // one lands whole in the tick every player waits on. Name it, at
             // most once a minute per bot. Re-resolve the player: the update
@@ -1929,9 +1959,40 @@ void BotManager::UpdateBots(uint32_t diff)
     // the rotation reaches them; correctness first, the rotation stays fair.
     uint32_t const playerBots = static_cast<uint32_t>(playerGuids.size());
     uint32_t const poolBots = m_poolRotation.Size();
-    uint64_t const budgetUs = sPlayerbotAIConfig.poolTickBudgetUs;
+    uint64_t budgetUs = sPlayerbotAIConfig.poolTickBudgetUs;
     uint32 const gateMs = sPlayerbotAIConfig.poolBudgetWhenTickOverMs;
     bool const budgetActive = budgetUs > 0 && (gateMs == 0 || diff > gateMs);
+
+    // Pass 2b: bots that took a travel-pipeline step last tick get the next
+    // step now, from part of the pool budget, so "pick a destination" to
+    // "walk" takes a few ticks instead of several rotation laps.
+    uint32_t followUpsServed = 0;
+    if (!m_followUps.empty())
+    {
+        std::vector<uint32_t> followUps;
+        followUps.swap(m_followUps);
+        auto const nowUs = []()
+        {
+            return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+        };
+        uint64_t const followStartUs = nowUs();
+        uint64_t const followBudgetUs = budgetUs / kFollowUpBudgetDivisor;
+        for (uint32_t guidLow : followUps)
+        {
+            if (budgetActive && nowUs() - followStartUs >= followBudgetUs)
+                break;
+            auto it = m_bots.find(guidLow);
+            if (it == m_bots.end() || IsPlayerOwnedBot(ClassifyBot(it->second)))
+                continue;
+            updateOneBot(guidLow);
+            ++followUpsServed;
+        }
+        uint64_t const spentUs = nowUs() - followStartUs;
+        if (budgetActive)
+            budgetUs = spentUs < budgetUs ? budgetUs - spentUs : 1;
+    }
+
     bool budgetHit = false;
     uint32_t const poolProcessed = m_poolRotation.Run(budgetActive, budgetUs,
         []()
@@ -1964,9 +2025,9 @@ void BotManager::UpdateBots(uint32_t diff)
     m_perfElapsedMs += diff;
     if (m_perfElapsedMs >= 30000)
     {
-        TB_LOG_BASIC("TortoiseBots: BOTPERF passUs=%llu playerBots=%u ownedBots=%u masterBots=%u poolBots=%u poolProcessed=%u budgetHit=%u maxUs=%llu ticks=%u",
+        TB_LOG_BASIC("TortoiseBots: BOTPERF passUs=%llu playerBots=%u ownedBots=%u masterBots=%u poolBots=%u poolProcessed=%u followUps=%u budgetHit=%u maxUs=%llu ticks=%u",
             static_cast<unsigned long long>(m_perfPassUsSum / m_perfPassCount),
-            playerBots, ownedAccountBots, masterBots, poolBots, poolProcessed, budgetHit ? 1u : 0u,
+            playerBots, ownedAccountBots, masterBots, poolBots, poolProcessed, followUpsServed, budgetHit ? 1u : 0u,
             static_cast<unsigned long long>(m_perfPassUsMax), m_perfPassCount);
         m_perfPassUsSum = 0;
         m_perfPassUsMax = 0;
