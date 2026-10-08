@@ -147,7 +147,12 @@ void PlayerbotFactory::LearnSeedLevelSpells()
     InitAvailableSpells();
     // Seeded hunters now know Call Pet: without a pet they cast it forever
     // (41% of pool hunters frozen on "call pet", Oct 2026). Same pet step as
-    // ProvisionSpellsAndGear below.
+    // ProvisionSpellsAndGear below. A login that just moved the bot off an
+    // isolated start zone is mid far-teleport with no map, and pet creation
+    // needs one (GetMap asserted, Oct 2026); the "initialize pet" action
+    // covers that bot once it lands.
+    if (!bot->FindMap() || bot->IsBeingTeleportedFar())
+        return;
     if ((bot->GetClass() == CLASS_HUNTER && bot->GetLevel() >= TortoiseBots::HUNTER_PET_MIN_LEVEL) ||
         bot->GetClass() == CLASS_WARLOCK)
     {
