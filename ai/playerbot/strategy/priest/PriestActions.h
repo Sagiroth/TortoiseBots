@@ -55,15 +55,15 @@ namespace ai
 
     // holy
     HEAL_ACTION(CastLesserHealAction, "lesser heal");
-    HEAL_PARTY_ACTION(CastLesserHealOnPartyAction, "lesser heal");
+    HEAL_PARTY_ACTION_E(CastLesserHealOnPartyAction, "lesser heal", 50, HealManaEfficiency::MEDIUM);
     HEAL_ACTION(CastHealAction, "heal");
-    HEAL_PARTY_ACTION(CastHealOnPartyAction, "heal");
+    HEAL_PARTY_ACTION_E(CastHealOnPartyAction, "heal", 50, HealManaEfficiency::MEDIUM);
     HEAL_ACTION(CastGreaterHealAction, "greater heal");
-    HEAL_PARTY_ACTION(CastGreaterHealOnPartyAction, "greater heal");
+    HEAL_PARTY_ACTION_E(CastGreaterHealOnPartyAction, "greater heal", 50, HealManaEfficiency::MEDIUM);
     HEAL_ACTION(CastFlashHealAction, "flash heal");
-    HEAL_PARTY_ACTION(CastFlashHealOnPartyAction, "flash heal");
+    HEAL_PARTY_ACTION_E(CastFlashHealOnPartyAction, "flash heal", 15, HealManaEfficiency::LOW);
     HEAL_ACTION(CastRenewAction, "renew");
-    HEAL_HOT_PARTY_ACTION(CastRenewOnPartyAction, "renew");
+    HEAL_HOT_PARTY_ACTION_E(CastRenewOnPartyAction, "renew", 15, HealManaEfficiency::VERY_HIGH);
 
     // Prayer of Healing targets an injured party member and heals that
     // member's nearby group. Use the mature AOE-heal target/reach path rather

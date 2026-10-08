@@ -2,6 +2,7 @@
 #include "playerbot/strategy/Action.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/PlayerbotAI.h"
+#include "playerbot/HealerManaPolicy.h"
 
 namespace ai
 {
@@ -262,7 +263,8 @@ namespace ai
     class CastHealingSpellAction : public CastAuraSpellAction
     {
     public:
-        CastHealingSpellAction(PlayerbotAI* ai, std::string spell, uint8 estAmount = 15.0f) : CastAuraSpellAction(ai, spell, true), estAmount(estAmount) {}
+        CastHealingSpellAction(PlayerbotAI* ai, std::string spell, uint8 estAmount, HealManaEfficiency efficiency) : CastAuraSpellAction(ai, spell, true), estAmount(estAmount), manaEfficiency(efficiency) {}
+        CastHealingSpellAction(PlayerbotAI* ai, std::string spell) : CastAuraSpellAction(ai, spell, true), estAmount(15), manaEfficiency(HealManaEfficiency::MEDIUM) {}
 
     protected:
         virtual ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_AOE; }
@@ -271,12 +273,14 @@ namespace ai
 
     protected:
         uint8 estAmount;
+        HealManaEfficiency manaEfficiency;
     };
 
     class CastAoeHealSpellAction : public CastHealingSpellAction
     {
     public:
-	CastAoeHealSpellAction(PlayerbotAI* ai, std::string spell, uint8 estAmount = 15.0f) : CastHealingSpellAction(ai, spell, estAmount) {}
+	CastAoeHealSpellAction(PlayerbotAI* ai, std::string spell, uint8 estAmount, HealManaEfficiency efficiency) : CastHealingSpellAction(ai, spell, estAmount, efficiency) {}
+	CastAoeHealSpellAction(PlayerbotAI* ai, std::string spell) : CastHealingSpellAction(ai, spell) {}
 		virtual std::string GetTargetName() override { return "party member to heal"; }
         virtual bool isUseful() override;
     };
@@ -301,14 +305,16 @@ namespace ai
     class HealPartyMemberAction : public CastHealingSpellAction, public PartyMemberActionNameSupport
     {
     public:
-        HealPartyMemberAction(PlayerbotAI* ai, std::string spell, uint8 estAmount = 15.0f) : CastHealingSpellAction(ai, spell, estAmount), PartyMemberActionNameSupport(spell) {}
+        HealPartyMemberAction(PlayerbotAI* ai, std::string spell, uint8 estAmount, HealManaEfficiency efficiency) : CastHealingSpellAction(ai, spell, estAmount, efficiency), PartyMemberActionNameSupport(spell) {}
+        HealPartyMemberAction(PlayerbotAI* ai, std::string spell) : CastHealingSpellAction(ai, spell), PartyMemberActionNameSupport(spell) {}
         virtual std::string getName() override { return PartyMemberActionNameSupport::getName(); }
 		virtual std::string GetTargetName() override { return "party member to heal"; }
+        virtual bool isUseful() override;
     };
-
     class HealHotPartyMemberAction : public HealPartyMemberAction
     {
     public:
+        HealHotPartyMemberAction(PlayerbotAI* ai, std::string spell, uint8 estAmount, HealManaEfficiency efficiency) : HealPartyMemberAction(ai, spell, estAmount, efficiency) {}
         HealHotPartyMemberAction(PlayerbotAI* ai, std::string spell) : HealPartyMemberAction(ai, spell) {}
         virtual bool isUseful() override;
     };

@@ -16,7 +16,7 @@ namespace ai
     class CastLesserHealingWaveOnPartyAction : public HealPartyMemberAction
     {
     public:
-        CastLesserHealingWaveOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "lesser healing wave") {}
+        CastLesserHealingWaveOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "lesser healing wave", 25, HealManaEfficiency::LOW) {}
     };
 
     class CastHealingWaveAction : public CastHealingSpellAction
@@ -28,7 +28,7 @@ namespace ai
     class CastHealingWaveOnPartyAction : public HealPartyMemberAction
     {
     public:
-        CastHealingWaveOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "healing wave") {}
+        CastHealingWaveOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "healing wave", 50, HealManaEfficiency::MEDIUM) {}
     };
 
     class CastChainHealAction : public CastAoeHealSpellAction

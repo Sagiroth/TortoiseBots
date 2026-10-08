@@ -28,7 +28,7 @@ namespace ai
 	MELEE_DEBUFF_ACTION_R(CastJudgementOfJusticeAction, "judgement of justice", 10.0f);
 
 	SPELL_ACTION(CastHolyShockAction, "holy shock");
-	HEAL_PARTY_ACTION(CastHolyShockOnPartyAction, "holy shock");
+	HEAL_PARTY_ACTION_E(CastHolyShockOnPartyAction, "holy shock", 25, HealManaEfficiency::LOW);
 
 	// consecration
 	class CastConsecrationAction : public CastSpellAction
@@ -460,7 +460,7 @@ namespace ai
     class CastHolyLightOnPartyAction : public HealPartyMemberAction
     {
     public:
-        CastHolyLightOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "holy light") {}
+        CastHolyLightOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "holy light", 50, HealManaEfficiency::MEDIUM) {}
     };
 
     class CastFlashOfLightAction : public CastHealingSpellAction
@@ -472,7 +472,7 @@ namespace ai
     class CastFlashOfLightOnPartyAction : public HealPartyMemberAction
     {
     public:
-        CastFlashOfLightOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "flash of light") {}
+        CastFlashOfLightOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "flash of light", 15, HealManaEfficiency::HIGH) {}
     };
 
     class CastLayOnHandsAction : public CastHealingSpellAction

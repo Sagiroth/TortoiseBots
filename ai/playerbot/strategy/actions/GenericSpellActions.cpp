@@ -591,6 +591,31 @@ bool CastAoeHealSpellAction::isUseful()
     return CastSpellAction::isUseful();
 }
 
+// Night2 gaps 1+2 (donor HealerAutoSaveManaMultiplier): refuse to START a
+// single-target direct heal whose expected amount dwarfs the target's
+// missing health, and refuse mana-hungry heals while the healer runs low.
+// Never vetoes a target in danger (at/below lowHealth): a vetoed big heal
+// falls through to the cheaper alternative in the same trigger row
+// (flash -> greater -> heal -> lesser via the action-node fallback chain).
+bool HealPartyMemberAction::isUseful()
+{
+    Unit* target = GetTarget();
+    if (!target)
+        return false;
+    HealerManaState heal{};
+    heal.targetHealth = target->GetHealthPercent() > 100.0f ? 100 : (std::uint8_t)target->GetHealthPercent();
+    heal.healerMana = AI_VALUE2(uint8, "mana", "self target");
+    heal.estAmount = estAmount;
+    heal.efficiency = manaEfficiency;
+    heal.targetIsTank = target->IsPlayer() && ai->IsTank((Player*)target, false);
+    heal.lowHealth = sPlayerbotAIConfig.lowHealth;
+    heal.mediumHealth = sPlayerbotAIConfig.mediumHealth;
+    heal.mediumMana = sPlayerbotAIConfig.mediumMana;
+    if (!ShouldStartHeal(heal))
+        return false;
+    return CastHealingSpellAction::isUseful();
+}
+
 bool HealHotPartyMemberAction::isUseful()
 {
     return HealPartyMemberAction::isUseful() && !ai->HasAura(GetSpellName(), GetTarget());

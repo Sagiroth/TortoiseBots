@@ -332,19 +332,20 @@ class clazz : public super \
         virtual bool isUseful() override { return useful; } \
     }
 
-#define HEAL_PARTY_ACTION(clazz, spell) \
+#define HEAL_PARTY_ACTION_E(clazz, spell, est, eff) \
     class clazz : public HealPartyMemberAction \
     { \
     public: \
-        clazz(PlayerbotAI* ai) : HealPartyMemberAction(ai, spell) {} \
+        clazz(PlayerbotAI* ai) : HealPartyMemberAction(ai, spell, est, eff) {} \
     }
 
-#define HEAL_HOT_PARTY_ACTION(clazz, spell) \
+#define HEAL_HOT_PARTY_ACTION_E(clazz, spell, est, eff) \
     class clazz : public HealHotPartyMemberAction \
     { \
     public: \
-        clazz(PlayerbotAI* ai) : HealHotPartyMemberAction(ai, spell) {} \
+        clazz(PlayerbotAI* ai) : HealHotPartyMemberAction(ai, spell, est, eff) {} \
     }
+
 
 #define AOE_HEAL_ACTION(clazz, spell) \
     class clazz : public CastAoeHealSpellAction \

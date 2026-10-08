@@ -34,22 +34,22 @@ namespace ai
         CastHealingTouchAction(PlayerbotAI* ai) : CastHealingSpellAction(ai, "healing touch") {}
     };
 
-    class CastRejuvenationOnPartyAction : public HealPartyMemberAction
+    class CastRejuvenationOnPartyAction : public HealHotPartyMemberAction
     {
     public:
-        CastRejuvenationOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "rejuvenation") {}
+        CastRejuvenationOnPartyAction(PlayerbotAI* ai) : HealHotPartyMemberAction(ai, "rejuvenation", 15, HealManaEfficiency::VERY_HIGH) {}
     };
 
-    class CastRegrowthOnPartyAction : public HealPartyMemberAction
+    class CastRegrowthOnPartyAction : public HealHotPartyMemberAction
     {
     public:
-        CastRegrowthOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "regrowth") {}
+        CastRegrowthOnPartyAction(PlayerbotAI* ai) : HealHotPartyMemberAction(ai, "regrowth", 35, HealManaEfficiency::HIGH) {}
     };
 
     class CastHealingTouchOnPartyAction : public HealPartyMemberAction
     {
     public:
-        CastHealingTouchOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "healing touch") {}
+        CastHealingTouchOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "healing touch", 50, HealManaEfficiency::MEDIUM) {}
     };
 
     class CastSwiftmendAction : public CastHealingSpellAction
