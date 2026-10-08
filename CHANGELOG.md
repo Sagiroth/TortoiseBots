@@ -1,5 +1,8 @@
 # Changelog
 
+### Bots & Behavior
+- A bot whose travel search comes back empty no longer stands around until its next turn (about 26 seconds away at 2000 bots) — masterless pool bots now fall through to a nearby grind spot in the same decision, the way the reference bot AI falls through to grind instead of parking.
+
 ## 2026-10-08
 
 ### Combat & AI

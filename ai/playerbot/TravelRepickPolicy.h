@@ -43,6 +43,33 @@ namespace ai
     {
         return futurePurpose.empty() ? "quest" : futurePurpose;
     }
+    // Empty-search fallthrough (2026-10-08): a masterless pool bot whose
+    // choose step ends with no target (search empty or every candidate
+    // refused) used to park the purpose and stand until the next pool visit
+    // (~26 s) re-ranked purposes. The donor (mod-playerbots
+    // ChooseTravelTargetAction::getNewTarget) never parks: a purpose with
+    // nothing falls through to the next one, ending at grind, in the same
+    // decision. The small port: when the choose step ends empty for a
+    // non-grind purpose, re-arm a local grind search (the same window the
+    // grind purpose uses) before parking, so the bot leaves the decision
+    // with a re-armed search instead of a bare park. Owned/hired bots skip
+    // (their player decides); the grind purpose itself skips (nothing to
+    // fall through to); a parked or out-of-window grind skips too (its own
+    // search just failed, or camp owns this slice of the hour). Pure inputs
+    // only: the caller reads the cached park timestamp and phase, launches
+    // std::async like RequestTravelTargetAction::Execute, and the follow-up
+    // pass (BotManager pass 2b) picks it up next tick via PREPARE.
+    inline bool TravelEmptyFallthroughToGrind(bool masterlessRandom,
+        const std::string& emptyPurposeKey, const std::string& grindPurposeKey,
+        bool grindWindowOpen)
+    {
+        if (!masterlessRandom || !grindWindowOpen)
+            return false;
+        if (emptyPurposeKey.empty() || emptyPurposeKey == grindPurposeKey)
+            return false;
+        return true;
+    }
+
 
     // PathFinder::getPathType() bucket for the TravelMoveFailed row: NOPATH
     // vs INCOMPLETE vs a tile that never used the navmesh could not be

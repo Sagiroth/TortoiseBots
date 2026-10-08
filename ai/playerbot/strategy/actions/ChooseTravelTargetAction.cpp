@@ -221,6 +221,30 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         // re-enter the roll instead of holding a stale win.
         SET_AI_VALUE2(time_t, "manual time", ai::RpgMixerUntilKey(), time_t(0));
         LogTravelSearchEmpty(ai, bot, invalidParkKey, "invalid", 0);
+        // Same fallthrough as the empty-pick path below: the async result was
+        // unusable, so re-arm a local grind search for a masterless pool bot
+        // instead of leaving it parked with nothing. targetRelevance above
+        // holds this request's own relevance (none was consumed), so mirror
+        // it like the pick path does.
+        std::string const invalidGrindKey = std::to_string((uint32)TravelDestinationPurpose::Grind);
+        bool const invalidMasterless = sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster();
+        bool const invalidGrindParked = AI_VALUE2(time_t, "manual time", "no travel purpose until::" + invalidGrindKey) > time(0);
+        if (!invalidGrindParked && TravelEmptyFallthroughToGrind(invalidMasterless, invalidParkKey, invalidGrindKey, RpgMixerGrindPhaseOpen(ai)))
+        {
+            WorldPosition invalidCenter = requester ? WorldPosition(requester) : WorldPosition(bot);
+            float const invalidMax = GrindRequestMaxDistance(false, invalidMasterless, bot->GetLevel(), 10000.0f);
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async(
+                (sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred),
+                [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), invalidCenter, invalidMax]()
+                { return sTravelMgr.GetPartitions(invalidCenter, partitions, travelInfo,
+                    (uint32)TravelDestinationPurpose::Grind, {}, true, invalidMax); });
+            travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_PREPARE);
+            SET_AI_VALUE2(std::string, "manual string", "future travel purpose", invalidGrindKey);
+            SET_AI_VALUE2(std::string, "manual string", "future travel condition",
+                "val::need travel purpose::" + invalidGrindKey);
+            SET_AI_VALUE2(int, "manual int", "future travel relevance", targetRelevance);
+            ai->TellDebug(ai->GetMaster(), "No " + futureTravelPurposeName + " result, falling through to local grind", "debug travel");
+        }
         return false;
     }
 
@@ -339,6 +363,46 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         //gather, trainer and camp searches park silently every minute.
         LogTravelSearchEmpty(ai, bot, purposeKey,
             destinationList.empty() ? "empty" : "rejected[" + lastRejectReasons + "]", destinationList.size());
+
+        // Empty-search fallthrough (donor getNewTarget ends at grind): a
+        // masterless pool bot that just parked a non-grind purpose re-arms a
+        // local grind search in the same decision, so the next tick can pick
+        // a grind spot instead of standing until the next pool visit (~26 s)
+        // re-ranks purposes. Same local window the grind purpose requests
+        // (LocalPickPolicy), same async launch as RequestTravelTargetAction
+        // (the worker only reads the snapshotted travel info): PREPARE makes
+        // the follow-up pass (BotManager pass 2b) serve the pick next tick.
+        // The park above stays: the empty purpose must not re-request while
+        // its search is known dead, and service errands (vendor/repair stays
+        // served) re-fire on their own rows next tick. Owned/hired bots and
+        // the grind purpose itself skip (see TravelEmptyFallthroughToGrind).
+        // The mixer verdict stays cleared (spent above): the grind trip rolls
+        // fresh like any other request. Relevance/condition below mirror a
+        // real grind request (numeric purpose, trigger-form condition), so
+        // the pick logs and keeps the trip exactly like one.
+        std::string const grindKey = std::to_string((uint32)TravelDestinationPurpose::Grind);
+        bool const masterless = sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster();
+        // Grind's own window (need gate mirror): parked, or the last quarter
+        // of the hour when camp owns leisure (beginners grind all hours).
+        // Without it the fallthrough re-arms a grind the request gate would
+        // refuse, and the bot burns a PREPARE cycle to re-park it.
+        bool const grindParked = AI_VALUE2(time_t, "manual time", "no travel purpose until::" + grindKey) > time(0);
+        if (!grindParked && TravelEmptyFallthroughToGrind(masterless, purposeKey, grindKey, RpgMixerGrindPhaseOpen(ai)))
+        {
+            WorldPosition fallthroughCenter = requester ? WorldPosition(requester) : WorldPosition(bot);
+            float const fallthroughMax = GrindRequestMaxDistance(false, masterless, bot->GetLevel(), 10000.0f);
+            *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async(
+                (sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred),
+                [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), fallthroughCenter, fallthroughMax]()
+                { return sTravelMgr.GetPartitions(fallthroughCenter, partitions, travelInfo,
+                    (uint32)TravelDestinationPurpose::Grind, {}, true, fallthroughMax); });
+            travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_PREPARE);
+            SET_AI_VALUE2(std::string, "manual string", "future travel purpose", grindKey);
+            SET_AI_VALUE2(std::string, "manual string", "future travel condition",
+                "val::need travel purpose::" + grindKey);
+            SET_AI_VALUE2(int, "manual int", "future travel relevance", targetRelevance);
+            ai->TellDebug(ai->GetMaster(), "No " + futureTravelPurposeName + " target, falling through to local grind", "debug travel");
+        }
 
         return false;
     }
