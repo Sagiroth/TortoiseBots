@@ -119,9 +119,11 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         "heroic strike",
         NextAction::array(0, new NextAction("heroic strike", ACTION_HIGH + 1), NULL)));
 
+    // Disarm at HIGH+1 (donor TankWarriorStrategy): stripping the mob's
+    // weapon cuts tank damage taken; buried at NORMAL it never fired.
     triggers.push_back(new TriggerNode(
         "disarm",
-        NextAction::array(0, new NextAction("disarm", ACTION_NORMAL), NULL)));
+        NextAction::array(0, new NextAction("disarm", ACTION_HIGH + 1), NULL)));
 
     // Tortoise build additions:
     //
