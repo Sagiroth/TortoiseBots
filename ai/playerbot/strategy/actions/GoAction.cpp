@@ -243,7 +243,8 @@ inline bool TellStuck(PlayerbotAI* ai, Player* requester)
 
     if (ai->GetState() == BotState::BOT_STATE_COMBAT)
     {
-        uint32 timeSinceCombatChange = AI_VALUE2(uint32, "time since last change", "combat::self target");
+        time_t const combatStart = AI_VALUE(time_t, "combat start time");
+        uint32 timeSinceCombatChange = combatStart ? uint32(time(0) - combatStart) : 0;
 
         if (timeSinceCombatChange > 2 * MINUTE)
         {

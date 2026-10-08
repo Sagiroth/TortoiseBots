@@ -193,7 +193,14 @@ namespace ai
 
             WorldPosition botPos(bot);
 
-            uint32 timeSinceCombatChange = AI_VALUE2(uint32, "time since last change", "combat::self target");
+            // Time in this fight, from the combat start stamp (set on combat start,
+            // cleared on combat end). The old "time since last change" of the
+            // "combat" value was only sampled here, inside combat, so it never
+            // saw the gap between fights: after a bot's first fight every later
+            // one counted as stuck within seconds and "unstuck" dropped the
+            // target mid-fight (Oct 2026: in the 5 min before 45% of deaths).
+            time_t const combatStart = AI_VALUE(time_t, "combat start time");
+            uint32 timeSinceCombatChange = combatStart ? uint32(time(0) - combatStart) : 0;
 
             if (timeSinceCombatChange > 5 * MINUTE)
             {
@@ -241,7 +248,8 @@ namespace ai
 
             WorldPosition botPos(bot);
 
-            uint32 timeSinceCombatChange = AI_VALUE2(uint32, "time since last change", "combat::self target");
+            time_t const combatStart = AI_VALUE(time_t, "combat start time");
+            uint32 timeSinceCombatChange = combatStart ? uint32(time(0) - combatStart) : 0;
 
             // Same false "stuck" class as MoveLongStuckTrigger: 15 minutes of
             // uninterrupted combat is normal for a bot chaining pulls in a dense
