@@ -241,6 +241,15 @@ void ProtectionPaladinAoeRaidStrategy::InitNonCombatTriggers(std::list<TriggerNo
 void ProtectionPaladinBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     PaladinBuffStrategy::InitCombatTriggers(triggers);
+
+    // Righteous Fury drops when the tank dies or bubbles mid-fight; without
+    // a combat row it stays off until the pull ends. Ported from the donor's
+    // TankPaladinStrategy righteous-fury row (mod-playerbots
+    // TankPaladinStrategy.cpp:147-154, ACTION_HIGH + 8); kept at buff-level
+    // priority here so taunts and Holy Shield still win the tick.
+    triggers.push_back(new TriggerNode(
+        "righteous fury",
+        NextAction::array(0, new NextAction("righteous fury", ACTION_NORMAL + 1), NULL)));
 }
 
 void ProtectionPaladinBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
