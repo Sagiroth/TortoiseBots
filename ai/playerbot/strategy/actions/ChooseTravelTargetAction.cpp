@@ -731,6 +731,9 @@ static bool RouteIsSurvivableUncached(Player* bot, WorldPosition const& start, W
 // neighbourhood (see SetBestTarget).
 static bool RouteIsSurvivable(Player* bot, WorldPosition* position, std::string& blocker, bool checkShortHop = false)
 {
+    if (!position)
+        return false;
+
     WorldPosition start(bot);
     if (!checkShortHop && start.getMapId() == position->getMapId() && start.distance(*position) < 1000.0f)
         return true;

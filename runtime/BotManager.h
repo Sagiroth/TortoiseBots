@@ -88,6 +88,8 @@ struct BotEntry
     // Teleport acks sent by UpdateBots, and how many left the near flag set.
     uint32_t teleportAcks = 0;
     uint32_t teleportAcksIgnored = 0;
+    // Last SLOWBOT line for this bot (WorldTimer ms); throttles the log.
+    uint32_t lastSlowLogMs = 0;
     BotEntry() = default;
     ~BotEntry();
     BotEntry(BotEntry&&) = default;

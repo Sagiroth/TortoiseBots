@@ -1566,6 +1566,7 @@ void RandomBotService::Update(uint32_t diff)
         LadderLog(elapsed);
 
     ++m_servicePass;
+    uint32 const processEvery = std::max<uint32>(1, kProcessBotIntervalMs / std::max<uint32>(1, cadence));
     for (size_t i = 0; i < m_candidates.size(); ++i)
     {
         Candidate const& candidate = m_candidates[i];
@@ -1582,10 +1583,10 @@ void RandomBotService::Update(uint32_t diff)
         if (BotActivityLeaseManager::Instance().GetActivity(player->GetGUIDLow()) == BotActivity::Dungeon)
             continue;
 
-        // Expired-value cleanup stays on the world thread. Each bot gets it on
-        // one service pass in kProcessBotEveryPasses: every pass for the whole
-        // pool cost ~10% of the world thread at 2000 bots.
-        if ((i + m_servicePass) % kProcessBotEveryPasses == 0)
+        // Expired-value cleanup stays on the world thread. Each bot gets it
+        // about once a minute, spread over the passes: every pass for the
+        // whole pool cost ~10% of the world thread at 2000 bots.
+        if ((i + m_servicePass) % processEvery == 0)
             sRandomBotFacade.ProcessBot(player);
 
         m_strategyAgeMs[i] += elapsed;

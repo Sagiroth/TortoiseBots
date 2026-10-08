@@ -1826,14 +1826,20 @@ void BotManager::UpdateBots(uint32_t diff)
             // transfer; acknowledging the pending marker would reset state
             // before the destination has been installed.
             PlayerbotAI* ai = entry.aiAdapter->GetAI();
-            if ((player->IsBeingTeleportedNear() || player->IsBeingTeleportedFar()) && ai)
+            bool const near = player->IsBeingTeleportedNear();
+            if ((near || player->IsBeingTeleportedFar()) && ai)
             {
                 ai->HandleTeleportAck();
                 ++entry.teleportAcks;
                 if (player->IsBeingTeleportedNear())
                     ++entry.teleportAcksIgnored;
             }
-            return;
+            // A near teleport completes inside the ack, so the bot may act in
+            // this same visit. Returning here let anything that re-arms a
+            // teleport between visits keep the bot's AI off for good (the
+            // per-second graveyard repop did that to ~700 ghosts).
+            if (!near || player->IsBeingTeleported() || !player->IsInWorld())
+                return;
         }
 
         if (entry.aiAdapter && entry.aiAdapter->IsUsable())
@@ -1850,15 +1856,24 @@ void BotManager::UpdateBots(uint32_t diff)
             entry.aiAdapter->Update(elapsed);
 
             // One bot's update is never cut by the budget, so a single slow
-            // one lands whole in the tick every player waits on. Name it.
-            uint32_t const tookMs = WorldTimer::getMSTimeDiff(nowMs, WorldTimer::getMSTime());
-            if (tookMs >= kSlowBotUpdateMs && player)
+            // one lands whole in the tick every player waits on. Name it, at
+            // most once a minute per bot. Re-resolve the player: the update
+            // just ran arbitrary AI code.
+            uint32_t const doneMs = WorldTimer::getMSTime();
+            uint32_t const tookMs = WorldTimer::getMSTimeDiff(nowMs, doneMs);
+            if (tookMs >= kSlowBotUpdateMs &&
+                (!entry.lastSlowLogMs || WorldTimer::getMSTimeDiff(entry.lastSlowLogMs, doneMs) >= 60000))
             {
-                PlayerbotAI* botAi = entry.aiAdapter->GetAI();
-                ai::Action const* last = botAi ? botAi->GetLastExecutedAction(botAi->GetState()) : nullptr;
-                TB_LOG_BASIC("TortoiseBots: SLOWBOT %s took %u ms (state %u, last action %s, map %u)",
-                    player->GetName(), tookMs, botAi ? static_cast<uint32_t>(botAi->GetState()) : 0u,
-                    last ? const_cast<ai::Action*>(last)->getName().c_str() : "-", player->GetMapId());
+                ::Player* slow = sObjectAccessor.FindPlayer(entry.record.characterGuid);
+                PlayerbotAI* botAi = slow && entry.aiAdapter ? entry.aiAdapter->GetAI() : nullptr;
+                if (slow && botAi)
+                {
+                    entry.lastSlowLogMs = doneMs ? doneMs : 1;
+                    ai::Action const* last = botAi->GetLastExecutedAction(botAi->GetState());
+                    TB_LOG_BASIC("TortoiseBots: SLOWBOT %s took %u ms (state %u, last action %s, map %u)",
+                        slow->GetName(), tookMs, static_cast<uint32_t>(botAi->GetState()),
+                        last ? const_cast<ai::Action*>(last)->getName().c_str() : "-", slow->GetMapId());
+                }
             }
         }
     };

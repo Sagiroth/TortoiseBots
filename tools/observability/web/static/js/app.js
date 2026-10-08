@@ -1875,7 +1875,9 @@
       el.metricTick.className = `kpi-value ${!s.online ? '' : lag > LAG_BAD_MS ? 'kpi-red' : lag > LAG_GOOD_MS ? 'kpi-amber' : 'kpi-green'}`;
     }
     const tickSub = document.getElementById('metric-tick-avg');
-    if (tickSub && s.online && s.lag_p50) tickSub.textContent = `median ${Math.round(s.lag_p50)} · worst ${Math.round(s.diff_worst)} ms`;
+    if (tickSub && s.online) tickSub.textContent = s.lag_p50
+      ? `median ${Math.round(s.lag_p50)} · worst tick ${Math.round(s.diff_worst)} ms`
+      : `worst tick ${Math.round(s.diff_worst || s.diff || 0)} ms`;
     updateSnapshotAge();
     setStatusPill();
   }

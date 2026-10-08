@@ -666,7 +666,6 @@ public:
 
     bool HasPlayerNearby(WorldPosition pos, float range);
     bool HasPlayerNearby(float range = sPlayerbotAIConfig.reactDistance);
-    bool HasManyPlayersNearby(uint32 trigerrValue = 20, float range = sPlayerbotAIConfig.sightDistance);
     bool ChannelHasRealPlayer(std::string channelName);
 
 

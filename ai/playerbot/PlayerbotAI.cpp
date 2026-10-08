@@ -6386,28 +6386,6 @@ bool PlayerbotAI::HasPlayerNearby(float range)
     return HasPlayerNearby(bot, range);
 }
 
-bool PlayerbotAI::HasManyPlayersNearby(uint32 trigerrValue, float range)
-{
-    float sqRange = range * range;
-    uint32 found = 0;
-
-    for (auto& i : sRandomBotFacade.GetPlayers())
-    {
-        Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, i.first));
-        if (!player || !player->IsInWorld())
-            continue;
-
-        if ((!player->IsGameMaster() || player->IsGMVisible()) && sServerFacade.getDistance2d(player, bot) < sqRange)
-        {
-            found++;
-
-            if (found >= trigerrValue)
-                return true;
-        }
-    }
-    return false;
-}
-
 bool PlayerbotAI::ChannelHasRealPlayer(std::string channelName)
 {
     (void)channelName;
