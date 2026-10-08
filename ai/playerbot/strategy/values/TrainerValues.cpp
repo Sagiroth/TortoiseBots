@@ -3,6 +3,7 @@
 #include "TrainerValues.h"
 #include "SharedValueContext.h"
 #include "playerbot/PlayerbotHelpMgr.h"
+#include "playerbot/strategy/values/TradeTrainerPolicy.h"
 #include "../../../../runtime/ProfessionGrantPolicy.h"
 
 using namespace ai;
@@ -173,6 +174,17 @@ std::vector<int32> AvailableTrainersValue::Calculate()
             for (auto& [trainerSpell, trainers] : trainerSpellList)
             {
                 if (std::find(trainableSpells.begin(), trainableSpells.end(), trainerSpell) == trainableSpells.end())
+                    continue;
+
+                // Trade trainers teach the bot's OWN craft only: for TRADESKILLS
+                // the map key is the spell's skill id, so a herbalism trainer
+                // never qualifies a miner. Without this every green rank-1 in
+                // the world qualified every trade trainer, and level-5 bots
+                // walked to whichever craft was nearest, learning nothing.
+                if (trainerType == TRAINER_TYPE_TRADESKILLS &&
+                    !TradeSpellJustifiesTrip(requirement, bot->HasSkill((uint16)requirement),
+                        sSpellMgr.IsPrimaryProfessionFirstRankSpell(trainerSpell->spell),
+                        bot->GetFreePrimaryProfessionPoints() > 0))
                     continue;
 
                 for (auto& trainer : trainers)
