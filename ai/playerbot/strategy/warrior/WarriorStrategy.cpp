@@ -107,6 +107,27 @@ WarriorStrategy::WarriorStrategy(PlayerbotAI* ai) : ClassStrategy(ai)
 void WarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitCombatTriggers(triggers);
+
+    // Base-combat interrupts (Arms/Fury DPS): pummel first, shield bash as
+    // the no-stance-dance fallback. Pummel resolves through the berserker
+    // stance node registered above; shield bash has no stance prerequisite,
+    // so the engine picks whichever the bot can cast from its current stance
+    // instead of dancing every cast. Tank specs keep their own rows.
+    triggers.push_back(new TriggerNode(
+        "pummel",
+        NextAction::array(0, new NextAction("pummel", ACTION_INTERRUPT), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "pummel on enemy healer",
+        NextAction::array(0, new NextAction("pummel on enemy healer", ACTION_INTERRUPT), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "shield bash",
+        NextAction::array(0, new NextAction("shield bash", ACTION_INTERRUPT), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "shield bash on enemy healer",
+        NextAction::array(0, new NextAction("shield bash on enemy healer", ACTION_INTERRUPT), NULL)));
 }
 
 void WarriorStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
