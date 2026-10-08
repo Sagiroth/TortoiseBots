@@ -328,8 +328,10 @@ bool MoveToTravelTargetAction::TryRescueNoPathTrap(bool noPath, std::string cons
     time_t const since = AI_VALUE2(time_t, "manual time", "nopath trap since");
 
     bool const nearAnchor = anchor.isValid() && botPos.GetMapId() == anchor.GetMapId() &&
-        botPos.sqDistance(anchor) <= NOPATH_TRAP_RADIUS_YD * NOPATH_TRAP_RADIUS_YD;
-    int32 const next = NoPathTrapStreak(streak, noPath, nearAnchor, now - since > NOPATH_TRAP_WINDOW_SECONDS);
+        botPos.sqDistance2d(anchor) <= NOPATH_TRAP_RADIUS_YD * NOPATH_TRAP_RADIUS_YD;
+    bool const sameFloor = !anchor.isValid() ||
+        fabs(botPos.getZ() - anchor.getZ()) <= NOPATH_TRAP_FLOOR_Z_YD;
+    int32 const next = NoPathTrapStreak(streak, noPath, nearAnchor, now - since > NOPATH_TRAP_WINDOW_SECONDS, sameFloor);
     if (noPath && next == 1)
     {
         SET_AI_VALUE2(WorldPosition, "custom position", "nopath trap anchor", botPos);

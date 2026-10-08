@@ -72,15 +72,26 @@ namespace ai
     // spot, not the targets, is the problem, and the long-stuck rescue
     // relocates the bot. A drop that is not NOPATH leaves the streak alone, a
     // failure elsewhere or after the window starts a new one.
+    // The nearness check runs against the first failure's position, not the
+    // last one: after a hearth, repop or taxi moves the bot, the next NOPATH
+    // failure lands far from the stale anchor and restarts the streak at the
+    // new spot (the caller re-anchors whenever the streak returns to 1).
+    // Stormwind upper floors (2026-10-08): the anchor spans one floor only.
+    // A bot that climbs or drops a level keeps failing NOPATH from the same
+    // x/y but a new z, so a same-x/y failure more than NOPATH_TRAP_FLOOR_Z_YD
+    // above or below the anchor starts a fresh streak instead of joining it.
     constexpr int NOPATH_TRAP_TARGETS = 3;
     constexpr float NOPATH_TRAP_RADIUS_YD = 10.0f;
+    constexpr float NOPATH_TRAP_FLOOR_Z_YD = 10.0f;
     constexpr time_t NOPATH_TRAP_WINDOW_SECONDS = 20 * 60;
 
-    inline int NoPathTrapStreak(int streak, bool noPath, bool nearAnchor, bool windowExpired)
+    inline int NoPathTrapStreak(int streak, bool noPath, bool nearAnchor, bool windowExpired, bool sameFloor = true)
     {
         if (!noPath)
             return streak;
-        return (streak > 0 && nearAnchor && !windowExpired) ? streak + 1 : 1;
+        if (streak > 0 && nearAnchor && !windowExpired && sameFloor)
+            return streak + 1;
+        return 1;
     }
 
     inline bool IsNoPathTrapped(int streak)

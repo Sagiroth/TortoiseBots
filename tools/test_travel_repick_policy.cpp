@@ -113,6 +113,9 @@ int main()
     // (h) NOPATH trap: three NOPATH targets from one spot inside the window
     // trigger the rescue; moving away, an expired window or the first failure
     // start a fresh streak, and a non-NOPATH drop leaves the streak alone.
+    // The streak restarts after a relocation (hearth, repop, taxi): the next
+    // failure lands far from the stale anchor, so the caller re-anchors.
+    // Same x/y on another floor (Stormwind upper levels) restarts too.
     CHECK(NoPathTrapStreak(0, true, false, false) == 1);
     CHECK(NoPathTrapStreak(1, true, true, false) == 2);
     CHECK(NoPathTrapStreak(2, true, true, false) == 3);
@@ -122,6 +125,10 @@ int main()
     CHECK(NoPathTrapStreak(2, true, true, true) == 1);
     CHECK(NoPathTrapStreak(2, false, true, false) == 2);
     CHECK(NoPathTrapStreak(0, false, false, false) == 0);
+    CHECK(NoPathTrapStreak(2, true, true, false, false) == 1);
+    CHECK(NoPathTrapStreak(2, true, true, false, true) == 3);
+    CHECK(NoPathTrapStreak(0, true, false, false, false) == 1);
+    CHECK(ai::NOPATH_TRAP_FLOOR_Z_YD == 10.0f);
     std::cout << "  [PASS] nopath trap streak counts targets from one spot\n";
 
     std::cout << "travel repick policy: OK\n";
