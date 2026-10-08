@@ -58,20 +58,24 @@ bool CorruptionOnAttackerTrigger::IsActive()
 
 bool LifeTapTrigger::IsActive()
 {
-	if (!ai->HasSpell("life tap"))
-		return false;
+    if (!ai->HasSpell("life tap"))
+        return false;
 
-	const uint32 mana = AI_VALUE2(uint8, "mana", "self target");
-	if (mana <= sPlayerbotAIConfig.lowMana)
-	{
-		const uint32 health = AI_VALUE2(uint8, "health", "self target");
-		if (health > sPlayerbotAIConfig.lowHealth)
-		{
-			return true;
-		}
-	}
+    // Tap early (medium-mana line, default 40) instead of at 15%: a warlock
+    // that waits until nearly empty spends the rest of the fight wanding.
+    // The health floor below keeps the tap safe; the relevance bump in
+    // WarlockStrategy puts it above the dot upkeep it feeds.
+    const uint32 mana = AI_VALUE2(uint8, "mana", "self target");
+    if (mana <= (uint32)sPlayerbotAIConfig.mediumMana)
+    {
+        const uint32 health = AI_VALUE2(uint8, "health", "self target");
+        if (health > sPlayerbotAIConfig.lowHealth)
+        {
+            return true;
+        }
+    }
 
-	return false;
+    return false;
 }
 
 bool DrainSoulTrigger::IsActive()

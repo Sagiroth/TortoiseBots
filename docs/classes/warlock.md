@@ -31,7 +31,7 @@ Warlocks provide sustained Shadow and Fire DPS through curses and damage-over-ti
 ### 2. Mana Management: Life Tap
 - Affliction also casts *Dark Pact* on low mana, so *Life Tap* is not the only mana tool.
 - Warlocks dynamically cast *Life Tap* to convert surplus health into mana.
-- Safety check: *Life Tap* fires when mana is at/below the low-mana line and health exceeds the low-health line (default 50); no incoming-damage check exists.
+- Safety check: *Life Tap* fires when mana is at/below the medium-mana line (default 40) and health exceeds the low-health line (default 50); tapping early keeps dots rolling instead of wanding the second half of the fight. No incoming-damage check exists.
 
 ---
 
