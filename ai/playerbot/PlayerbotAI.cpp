@@ -1376,9 +1376,33 @@ void PlayerbotAI::RefillPoolRations()
     }
 }
 
+void PlayerbotAI::NoteDamager(Unit* damager)
+{
+    if (!damager || damager == bot)
+        return;
+    lastDamager_.name = damager->GetName();
+    lastDamager_.level = damager->GetLevel();
+    lastDamager_.isEnvironment = false;
+    lastDamager_.time = WorldTimer::getMSTime();
+    lastDamager_.entry = damager->IsCreature() ? damager->GetEntry() : 0;
+}
+
 void PlayerbotAI::SetLastKiller(Unit* killer)
 {
     lastKiller_.time = WorldTimer::getMSTime();
+    // Spirit of Redemption: the core saves the priest as a spirit (aura
+    // 27827) instead of killing it, then self-kills the spirit when the
+    // aura expires (spell 27965) - so the death hook arrives with killer
+    // == the bot itself and the real killing blow is only in the damager
+    // memory above. Fall back to it (96% of "Environment" deaths are
+    // priests 30+, Oct 2026 pool); a true self-kill with no remembered
+    // damager keeps the old Environment verdict.
+    if ((!killer || killer == bot) && !lastDamager_.name.empty())
+    {
+        lastKiller_ = lastDamager_;
+        lastKiller_.time = WorldTimer::getMSTime();
+        return;
+    }
     if (!killer || killer == bot)
     {
         lastKiller_.name = "Environment";

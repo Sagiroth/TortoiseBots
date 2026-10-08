@@ -796,7 +796,12 @@ public:
     uint32 avoidPlayerKillerMs_ = 0;
     void SetLastKiller(Unit* killer);
     const LastKillerInfo& GetLastKiller() const { return lastKiller_; }
-    void ClearLastKiller() { lastKiller_ = LastKillerInfo(); }
+    void ClearLastKiller() { lastKiller_ = LastKillerInfo(); lastDamager_ = LastKillerInfo(); }
+    // Last non-self damager, fed by the UNITHOOK_ON_DAMAGE hook: the death
+    // hook alone cannot name the killer when the core self-kills (Spirit of
+    // Redemption expiry, spell 27965). Read only when the death hook reports
+    // no killer or the bot itself; cleared on resurrect with the killer.
+    void NoteDamager(Unit* damager);
     // 10-minute avoidance window after a player kill (matches the lethal-kind
     // 15-min/30-min shape, shorter because the killer is one named player).
     void SetAvoidPlayerKiller(std::string const& name) { avoidPlayerKiller_ = name; avoidPlayerKillerMs_ = WorldTimer::getMSTime(); }
@@ -916,6 +921,7 @@ protected:
     std::vector<std::string> m_recordedMessages;
     ai::Event lastEvent;
     LastKillerInfo lastKiller_;
+    LastKillerInfo lastDamager_; // last non-self damager (UNITHOOK_ON_DAMAGE); SoR fallback for SetLastKiller
     bool deathHandled_ = false; // this death was logged and counted; cleared when the bot is seen alive again
 
     // Evade probe (diagnostics only): samples the health and evade state of the creature

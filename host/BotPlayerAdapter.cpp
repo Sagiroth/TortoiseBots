@@ -172,7 +172,7 @@ void BotPlayerAdapter::OnLogout(Player* player)
 }
 
 BotUnitAdapter::BotUnitAdapter()
-    : UnitScript("tortoisebots_units", { UNITHOOK_ON_UNIT_DEATH })
+    : UnitScript("tortoisebots_units", { UNITHOOK_ON_UNIT_DEATH, UNITHOOK_ON_DAMAGE })
 {
 }
 
@@ -187,6 +187,18 @@ void BotUnitAdapter::OnUnitDeath(Unit* unit, Unit* killer)
         return;
 
     ai->SetLastKiller(killer);
+}
+
+void BotUnitAdapter::OnDamage(Unit* attacker, Unit* victim, uint32& /*damage*/)
+{
+    if (!attacker || !victim || attacker == victim || !victim->IsPlayer())
+        return;
+
+    PlayerbotAI* ai = GET_PLAYERBOT_AI(victim->ToPlayer());
+    if (!ai)
+        return;
+
+    ai->NoteDamager(attacker);
 }
 
 } // namespace TortoiseBots
