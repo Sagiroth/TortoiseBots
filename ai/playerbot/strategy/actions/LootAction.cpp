@@ -127,10 +127,7 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
         // triggers veto mounted bots, so without this a bot that mounted after picking
         // a corpse waits for the mount-state round-trip before the chain can run.
         if (bot->IsMounted())
-        {
             ai->Unmount();
-            ai->SetNextCheckDelay(sPlayerbotAIConfig.lootDelay);
-        }
 
         if (!lootObject.IsLootPossible(bot)) //Clear loot if bot can't loot it.
         {
