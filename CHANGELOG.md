@@ -5,6 +5,7 @@
 - Bots stop re-picking the same quest giver forever — the third consecutive pick of one quest id parks the quest errand for a minute, bounding the stand-at-giver loop while the pick itself still lands.
 - Bots give up on a grind spot the world mesh cannot reach — a same-map walk that probes `nopath` blacklists that creature kind for five minutes (the same list the give-up-on-a-wedged-mob rule uses), so after the doomed target drops the next pick walks a different kind instead of re-picking the same spot and firing `move stuck` resets in place.
 - Grind picks skip spots off the world mesh — a candidate point with no walkable navmesh polygon nearby is refused at pick time, so the next candidate wins instead of six wasted walks, a drop, and a re-pick of the same unreachable spot.
+- Bots stop standing on a travel walk that goes nowhere — a move that reports success while the bot stays inside 2 yards for 5 seconds now fills the failure budget like a refused move, so the six-fail drop, the purpose park and the kind blacklist engage instead of phantom successes cancelling real failures until the travel timeout.
 - Gather (mining/herbalism) picks skip spots off the world mesh too — the same one-query pick-time sieve grind got, after 51 of 65 mining move-failures probed `nopath` the same way.
 
 ## 2026-10-08

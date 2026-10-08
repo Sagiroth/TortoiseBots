@@ -40,6 +40,14 @@ static constexpr time_t AUTO_HAND_IN_PATH_CHECK = 60;         // seconds between
 static constexpr int32 AUTO_HAND_IN_EPISODE = 10 * MINUTE;    // no failed move for this long ends the episode
 static constexpr int32 AUTO_HAND_IN_PARK = 30 * MINUTE;       // the quest's hand-in travel park, set when it fires
 
+// No-displacement watchdog: a move that reports success while the bot stands
+// still (spline into geometry, collapsed shortcut) must fill the same failure
+// budget a refused move does. Same anchor + window as the "move to loot"
+// watchdog (MovementActions.cpp): a walking bot covers this in about a
+// second, so only a bot that truly stands still ever trips it.
+static constexpr float TRAVEL_NO_PROGRESS_RADIUS = 2.0f;  // yards
+static constexpr time_t TRAVEL_NO_PROGRESS_TIMEOUT = 5;   // seconds
+
 // The hand-in destination a travel target is currently carrying, when it is a
 // taker trip a pool bot could hand in. nullptr for every other purpose.
 static QuestTravelDestination* HandInTakerDestination(TravelTarget* target, std::string const& purpose)
@@ -347,6 +355,46 @@ bool MoveToTravelTargetAction::TryRescueNoPathTrap(bool noPath, std::string cons
     return ai->DoSpecificAction("unstuck", rescueEvent, true);
 }
 
+bool MoveToTravelTargetAction::TravelMoveMadeNoProgress()
+{
+    time_t const now = time(0);
+    LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
+
+    // A scheduled teleport-hop wait stands still by design: the bot jumped
+    // forward and the next move goes out once the hop's travel time passes.
+    if (lastMove.nextTeleport > now)
+        return false;
+
+    // A transport leg (boat/dock wait) stands still by design.
+    for (PathNodePoint const& point : lastMove.lastPath.GetPath())
+        if (point.type == PathNodeType::NODE_TRANSPORT)
+            return false;
+
+    float const x = bot->GetPositionX();
+    float const y = bot->GetPositionY();
+    float const dx = x - noProgressX;
+    float const dy = y - noProgressY;
+    bool const anchored = noProgressArmed &&
+        dx * dx + dy * dy <= TRAVEL_NO_PROGRESS_RADIUS * TRAVEL_NO_PROGRESS_RADIUS;
+    if (!anchored)
+    {
+        noProgressArmed = true;
+        noProgressX = x;
+        noProgressY = y;
+        noProgressSince = now;
+        return false;
+    }
+
+    if (now - noProgressSince < TRAVEL_NO_PROGRESS_TIMEOUT)
+        return false;
+
+    // Stood inside the radius for the whole window while moves kept
+    // reporting success: count it and start a new window, so a continued
+    // stand keeps filling the failure budget below.
+    noProgressSince = now;
+    return true;
+}
+
 // Flight plan: decided ONCE per travel target (item 5) in
 // DecideFlightPlanForTarget below, stored on manual values, and only read
 // (never recomputed) on travel ticks. Walk-to-master staging (item 4): when
@@ -652,6 +700,11 @@ bool MoveToTravelTargetAction::Execute(Event& event)
                 }
             }
 
+            // Waiting for a group member stands still by design: disarm the
+            // no-displacement watchdog so the first tick after the wait does
+            // not read the wait itself as a stuck move.
+            noProgressArmed = false;
+
             return true;
         }
     }
@@ -724,7 +777,15 @@ bool MoveToTravelTargetAction::Execute(Event& event)
 
     bool canMove = MoveTo(mapId, x, y, z, false, false);
 
-    if (!canMove)
+    // A move that reports success while the bot does not displace (a spline
+    // launched into geometry, a collapsed shortcut) fills the failure budget
+    // like a refused move: each phantom success used to decay it instead, so
+    // the 6-fail drop below never fired and the bot stood until the TRAVEL
+    // timeout. The drop, the purpose park and the kind blacklist then engage
+    // exactly as for a refused move; nothing is re-armed.
+    bool const noProgress = canMove && TravelMoveMadeNoProgress();
+
+    if (!canMove || noProgress)
     {
         target->IncRetry(true);
 

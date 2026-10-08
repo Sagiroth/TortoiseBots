@@ -55,6 +55,21 @@ namespace ai
         // cycling targets from a spot nothing is reachable from. Returns true
         // when the rescue ran (the caller stops this tick).
         bool TryRescueNoPathTrap(bool noPath, std::string const& purpose);
+
+        // No-displacement watchdog for a move that reported success: a spline
+        // launched into geometry (or a collapsed shortcut) returns true while
+        // the bot never displaces, and each phantom success decays the retry
+        // budget, so the 6-fail drop never fires. Same anchor + window shape
+        // as MoveToLootAction::StuckOnApproach. Returns true when the bot has
+        // stood inside the radius for the whole window: the caller counts a
+        // failed move instead of decaying. A scheduled teleport-hop wait and
+        // a transport leg stand still by design and are skipped.
+        bool TravelMoveMadeNoProgress();
+
+        float noProgressX = 0.0f;
+        float noProgressY = 0.0f;
+        time_t noProgressSince = 0;
+        bool noProgressArmed = false;
     };
 
 }
