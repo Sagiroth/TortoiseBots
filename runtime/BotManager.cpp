@@ -1023,6 +1023,12 @@ void BotManager::OnPlayerLogin(::Player* player)
         if (player->GetLevel() < seedLevel)
         {
             player->GiveLevel(seedLevel);
+            // A bot born at level N never walked levels 1..N-1, so it never
+            // bought their spells: pool mages seeded at 50+ knew no Fireball or
+            // Frostbolt and went 0.3 kills to 8.4 deaths (Oct 2026 pool). Give
+            // the seeded level's spells once, like a hired companion gets them;
+            // every later level is still trained at a trainer.
+            PlayerbotFactory(player, seedLevel).LearnSeedLevelSpells();
             sRandomBotFacade.SetValue(player->GetGUIDLow(), "levelSeeded", 1);
             TB_LOG_DETAIL("TortoiseBots: seeded fresh bot %s to level %u.", player->GetName(), seedLevel);
         }

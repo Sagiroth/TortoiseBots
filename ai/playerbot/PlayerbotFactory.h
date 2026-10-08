@@ -57,6 +57,10 @@ public:
     // without reimplementing gear/spell init. Incremental-only callers must
     // use UpgradeGearBest (never the wiping non-incremental path).
     void ProvisionSpellsAndGear();
+    // Class spells up to the bot's current level, once, when a fresh pool bot
+    // is seeded above level 1. Later levels are trained at a trainer as usual
+    // (AutoLearnTrainerSpells stays the owner's knob).
+    void LearnSeedLevelSpells() { if (bot) InitAvailableSpells(); }
     // Cheap periodic top-up for hired/owned companions (no item cheat):
     // class reagents, food/drink, potions and level-tier bandages, each
     // topped to a small bounded stack. Safe to run hourly; never duplicates.

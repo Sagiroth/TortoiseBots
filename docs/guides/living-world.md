@@ -181,7 +181,8 @@ AiPlayerbot.RandomBotAutoCreate = 1
 AiPlayerbot.MinRandomBots = 60
 AiPlayerbot.MaxRandomBots = 150
 
-# Fresh-bot level seed (verified 10–15 test pool)
+# Fresh-bot level seed (verified 10–15 test pool). A seeded bot learns its
+# class spells up to the seed level once; later levels are trained at a trainer.
 AiPlayerbot.RandomBotStartLevelMin = 10
 AiPlayerbot.RandomBotStartLevelMax = 15
 
