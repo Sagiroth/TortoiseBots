@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "TravelValues.h"
 #include "playerbot/TravelMgr.h"
+#include "playerbot/LocalPickPolicy.h"
 #include "MaintenanceValues.h"
 #include "QuestValues.h"
 #include "SharedValueContext.h"
@@ -484,6 +485,28 @@ bool ShouldTravelNamedValue::Calculate()
 
         if (AI_VALUE2(uint32, "train cost", trainerType) == 0) //Has nothing to train
             return false;
+
+        // Trade trips need the bot's OWN craft in reach: "train cost" counts
+        // every green rank in the world, so without this a level-5 bot with
+        // nothing learnable nearby still raised the trigger, requested, and -
+        // with the profession filter in AvailableTrainersValue - parked for a
+        // minute, every minute. The need doubles as the in-flight trip's stored
+        // condition, so this must stay true while walking: a picked trainer is
+        // always inside the window it was picked from, and learning only ever
+        // removes entries, which is exactly when the trip should end.
+        if (name == "trainer trade")
+        {
+            std::vector<int32> tradeEntries =
+                AI_VALUE2(std::vector<int32>, "available trainers", (uint32)TRAINER_TYPE_TRADESKILLS);
+            if (tradeEntries.empty())
+                return false;
+
+            bool const masterless = sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster();
+            float const window = CampRequestMaxDistance(masterless, bot->GetLevel(), 10000.0f);
+            if (sTravelMgr.GetDestinations(PlayerTravelInfo(bot),
+                    (uint32)TravelDestinationPurpose::Trainer, tradeEntries, false, window).empty())
+                return false;
+        }
 
         // Partial-purse rule: travel when at least the cheapest trainable spell
         // fits the free-money budget. The old "has all money for" check demanded
