@@ -58,9 +58,10 @@ public:
     // use UpgradeGearBest (never the wiping non-incremental path).
     void ProvisionSpellsAndGear();
     // Class spells up to the bot's current level, once, when a fresh pool bot
-    // is seeded above level 1. Later levels are trained at a trainer as usual
-    // (AutoLearnTrainerSpells stays the owner's knob).
-    void LearnSeedLevelSpells() { if (bot) InitAvailableSpells(); }
+    // is seeded above level 1, plus the pet a hunter (10+) or warlock of that
+    // level would have - like a hired companion. Later levels are trained at a
+    // trainer as usual (AutoLearnTrainerSpells stays the owner's knob).
+    void LearnSeedLevelSpells();
     // Cheap periodic top-up for hired/owned companions (no item cheat):
     // class reagents, food/drink, potions and level-tier bandages, each
     // topped to a small bounded stack. Safe to run hourly; never duplicates.

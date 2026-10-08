@@ -140,6 +140,22 @@ void PlayerbotFactory::AutogearOwned(uint32 cappedQuality, uint32 ilvlCap)
     bot->SaveToDB();
 }
 
+void PlayerbotFactory::LearnSeedLevelSpells()
+{
+    if (!bot)
+        return;
+    InitAvailableSpells();
+    // Seeded hunters now know Call Pet: without a pet they cast it forever
+    // (41% of pool hunters frozen on "call pet", Oct 2026). Same pet step as
+    // ProvisionSpellsAndGear below.
+    if ((bot->GetClass() == CLASS_HUNTER && bot->GetLevel() >= TortoiseBots::HUNTER_PET_MIN_LEVEL) ||
+        bot->GetClass() == CLASS_WARLOCK)
+    {
+        InitPet();
+        InitPetSpells();
+    }
+}
+
 // Issue #192: spells + skills + incremental gear for a hired companion.
 // Public wrapper around the private init steps so the provisioner never
 // touches wiping paths. Talents are owned by the provisioner (role-matching
