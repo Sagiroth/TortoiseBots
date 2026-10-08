@@ -3310,6 +3310,39 @@ registered in `tools/verify_all.sh`);
 `bash tools/verify_all.sh`; `git diff --check`. No deploy (orchestrator
 compiles).
 
+## Giver-stall release (night2 idlecheck) — 2026-10-09
+
+Feature: `TravelAction::Execute` expires a quest-giver target on arrival
+(status WORK) when the giver NPC is within talk range and its menu holds no
+rewardable hand-in and no acceptable quest (`AcceptAllQuestsAction::
+OffersAcceptableQuest`, the same predicate the nearby-service rule uses, so
+the two cannot drift). Donor `mod-playerbots` invalidates a questgiver
+purpose whose arrival yields nothing (validity gates flip false once the
+errand is done: `TravelMgr.cpp:1141-1215` questgiver/taker gates, `NewRpg`
+watchdog expiry + arrival-noop back to idle); ours held WORK for the full
+5-min expiry with the stay-alive conditions still green, so the bot idled at
+the NPC on the 0.5-relevance `check values` floor. Takers keep their own
+hand-in path (including the stuck-hand-in settle); pool upkeep bots only.
+One `bot_events.csv` row per release (`QuestGiverStalled`).
+
+Source project: `mod-playerbots` (gold-standard behaviour donor).
+
+Source files: `src/Mgr/Travel/TravelMgr.cpp:1141-1215` (questgiver/taker
+validity gates), `src/Ai/World/Rpg/Action/NewRpgAction.cpp:271-327,383-412`
+(watchdog expiry, NPC arrival-noop back to idle).
+
+Copied / ported / reimplemented: reimplemented (donor flips destination
+validity; ours expires the arrived target once, the next tick re-picks).
+
+Reason: live 2026-10-08 pool — 115 of 153 still questgiver bots showed no
+accept, move-fail or drop after their giver pick; 30 old-idle
+check-values/very-often bots split questgiver 10 / grind 8 / none 7 with the
+questgiver share arrived-and-exhausted (accepted everything offered, WORK
+held to expiry).
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No deploy
+(orchestrator compiles).
+
 ## Local grind and camp picks (issue #424) — 2026-10-03
 
 Feature: pool bots search the grind errand inside the donor's local window

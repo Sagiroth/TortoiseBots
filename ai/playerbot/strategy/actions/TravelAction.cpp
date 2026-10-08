@@ -8,6 +8,7 @@
 #include "Maps/GridNotifiersImpl.h"
 #include "Maps/CellImpl.h"
 #include "playerbot/QuestStallPolicy.h"
+#include "AcceptQuestAction.h"
 #include "playerbot/TravelMgr.h"
 
 
@@ -88,6 +89,39 @@ bool TravelAction::Execute(Event& event)
                         quest->GetTitle(), std::to_string(questId));
                     sTravelMgr.SetNullTravelTarget(target);
                     RESET_AI_VALUE(bool, "travel target active");
+                    return true;
+                }
+            }
+        }
+    }
+    // Giver-stall release, arrival side: the donor invalidates a questgiver
+    // purpose whose arrival yields nothing (validity gates flip false once
+    // the errand is done), while ours holds WORK for the full 5-min expiry
+    // with the stay-alive conditions still green. A giver whose menu holds
+    // no rewardable hand-in and no acceptable quest is done: expire the
+    // target so the next tick re-picks instead of idling at the NPC. Same
+    // OffersAcceptableQuest the nearby-service rule uses, so the two cannot
+    // drift. Givers only: takers settle through their own hand-in path.
+    // Pool upkeep bots only.
+    if (sPlayerbotAIConfig.botQuestLogUpkeep && !ai->HasActivePlayerMaster() &&
+        sRandomBotFacade.IsRandomBot(bot) &&
+        target->GetStatus() == TravelStatus::TRAVEL_STATUS_WORK)
+    {
+        if (QuestRelationTravelDestination* giver =
+            dynamic_cast<QuestRelationTravelDestination*>(target->GetDestination()))
+        {
+            if (giver->GetPurpose() == TravelDestinationPurpose::QuestGiver &&
+                giver->GetEntry() > 0)
+            {
+                Creature* giverNpc = bot->FindNearestCreature(
+                    (uint32)giver->GetEntry(), INTERACTION_DISTANCE * 2);
+                if (giverNpc && giverNpc->IsAlive() &&
+                    bot->IsWithinDistInMap(giverNpc, INTERACTION_DISTANCE * 2) &&
+                    !AcceptAllQuestsAction::OffersAcceptableQuest(ai, bot, giverNpc))
+                {
+                    sPlayerbotAIConfig.logEvent(ai, "QuestGiverStalled",
+                        giver->GetTitle(), std::to_string(giver->GetQuestId()));
+                    target->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
                     return true;
                 }
             }
