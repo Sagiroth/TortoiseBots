@@ -146,6 +146,7 @@ namespace ai
             creators["behind target"] = [](PlayerbotAI* ai) { return new IsBehindTargetTrigger(ai); };
             creators["not behind target"] = [](PlayerbotAI* ai) { return new IsNotBehindTargetTrigger(ai); };
             creators["not facing target"] = [](PlayerbotAI* ai) { return new IsNotFacingTargetTrigger(ai); };
+            creators["tank face needed"] = [](PlayerbotAI* ai) { return new TankFaceNeededTrigger(ai); };
             creators["far from master"] = [](PlayerbotAI* ai) { return new FarFromMasterTrigger(ai); };
             creators["not near master"] = [](PlayerbotAI* ai) { return new NotNearMasterTrigger(ai); };
             creators["out of react range"] = [](PlayerbotAI* ai) { return new OutOfReactRangeTrigger(ai); };

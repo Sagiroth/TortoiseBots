@@ -161,6 +161,17 @@ namespace ai
         virtual bool isPossible() override;
     };
 
+    // Party tank-face (night2 research): sidesteps to the far side of the
+    // held mob so its front points away from the party. Generic version of
+    // the raid-dragon TankFaceAway; raid paths untouched.
+    class TankFaceAwayAction : public MovementAction
+    {
+    public:
+        TankFaceAwayAction(PlayerbotAI* ai) : MovementAction(ai, "tank face away") {}
+        virtual bool Execute(Event& event) override;
+        virtual bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
+    };
+
     class MoveOutOfCollisionAction : public MovementAction
     {
     public:

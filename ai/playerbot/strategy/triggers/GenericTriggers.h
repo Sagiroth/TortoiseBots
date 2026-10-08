@@ -790,12 +790,23 @@ namespace ai
         virtual bool IsActive() override;
     };
 
+    // Party tank-face (night2 research): a tank bot holding a mob turns it
+    // so its front points away from the rest of the party. Fires only in
+    // real-player-master groups; pool bots keep old behaviour.
+    class TankFaceNeededTrigger : public Trigger
+    {
+    public:
+        TankFaceNeededTrigger(PlayerbotAI* ai) : Trigger(ai, "tank face needed", 2) {}
+        virtual bool IsActive() override;
+    };
+
     class IsNotFacingTargetTrigger : public Trigger
     {
     public:
         IsNotFacingTargetTrigger(PlayerbotAI* ai) : Trigger(ai) {}
         virtual bool IsActive() override;
     };
+
 
     class HasCcTargetTrigger : public Trigger
     {

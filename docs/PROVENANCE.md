@@ -3827,3 +3827,41 @@ Original module implementation; no donor code. `LogFileRotation.h` and
 Motivation: a restart discarded the bot-event evidence for a live healer report.
 Validation: filesystem fixture covers first/second startup, repeated refresh,
 append mode and failed rotation with both current and previous data preserved.
+
+## Party tank-face + melee rear (night2 research gap 2) — 2026-10-08
+
+Feature: in a real-player-master party a tank bot holding a mob sidesteps so
+the mob's front points away from the party (`tank face needed` trigger →
+`tank face away` action on the `close` strategy); melee DPS on a mob that
+targets someone else works its rear via `set behind` (`behind` strategy now
+on every melee DPS kit, including retribution and enhancement, which lacked
+it). Pool bots unchanged (trigger requires a real player master).
+
+Source repository: `mod-playerbots/mod-playerbots`
+
+Source commit: `b6696bdbd3740e575598d167d69f39f68cc0b907` (local
+`playerbots-references/mod-playerbots` checkout).
+
+Source files:
+- `src/Ai/Base/Actions/MovementActions.cpp:2405-2471` (`TankFaceAction::Execute`: has-aggro + melee + stationary gates, party-average angle, +-3PI/5 near-point sidestep, 90-degree hysteresis)
+- `src/Ai/Base/Actions/MovementActions.cpp:2327-2367` (`AverageGroupAngle`)
+- `src/Ai/Base/Strategy/CombatStrategy.cpp:74-86` (`TankFaceStrategy` default action)
+- `src/Ai/Base/Strategy/MeleeCombatStrategy.cpp:18-23` (`SetBehindCombatStrategy` wiring)
+
+Copied / ported / independently reimplemented: ported, adapted to the 1.12
+codebase. Trigger/action geometry (average party angle, +-108-degree
+destinations, nearest-side pick, LOS/terrain check, 90-degree fire window) is
+behavior-identical; the flee-info anti-oscillation cache is replaced by the
+hysteresis window plus a 2 s trigger interval. Local additions: explicit-hold
+exemptions (`stay`, `wait for attack`), creature-only scope, LOS fallback
+mirroring `SetBehindTargetAction`. The raid-dragon `dragon flank` /
+`dragon tank face away` paths are untouched (entry-gated raid geometry).
+`SetBehindTargetAction` itself is unchanged — only its strategy coverage grew.
+
+Reason: tank bots never turned mobs away (cleaves hit the party) and
+retribution/enhancement DPS never left the mob's front (no `behind` kit).
+
+Local validation: `python3 tools/verify_okf.py` + `bash tools/verify_all.sh`
+(see commit); `git diff --check` clean. No build (per task constraints);
+live in-game check pending: tank sidesteps on pull, melee work the rear,
+no jitter, pool bots unchanged.

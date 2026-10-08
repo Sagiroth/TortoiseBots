@@ -558,7 +558,9 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
             }
             else
             {
-                combatEngine->addStrategies("enhancement", "aoe", "cc", "close", NULL);
+                // Melee DPS works the mob's rear via "behind" (set behind):
+                // without it enhancement never sidesteps off the mob's front.
+                combatEngine->addStrategies("enhancement", "aoe", "cc", "close", "behind", NULL);
                 if (sPlayerbotAIConfig.enableOffSpecStrategies)
                     combatEngine->addStrategy("offheal");
             }
@@ -581,7 +583,9 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
             }
             else
             {
-                combatEngine->addStrategies("retribution", "dps assist", "close", NULL);
+                // Melee DPS works the mob's rear via "behind" (set behind):
+                // without it retribution never sidesteps off the mob's front.
+                combatEngine->addStrategies("retribution", "dps assist", "close", "behind", NULL);
                 if (sPlayerbotAIConfig.enableOffSpecStrategies)
                     combatEngine->addStrategy("offheal");
             }

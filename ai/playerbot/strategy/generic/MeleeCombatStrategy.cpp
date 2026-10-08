@@ -10,6 +10,13 @@ void MeleeCombatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
         "enemy out of melee",
         NextAction::array(0, new NextAction("reach melee", ACTION_MOVE), NULL)));
 
+    // Party tank-face: the tank sidesteps so the held mob's front points
+    // away from the party. Combat-only row, trigger-scoped to
+    // real-player-master groups; pool bots never fire it.
+    triggers.push_back(new TriggerNode(
+        "tank face needed",
+        NextAction::array(0, new NextAction("tank face away", ACTION_MOVE + 5), NULL)));
+
     // No "enemy too close for melee" -> "move out of enemy contact" row: the
     // donor (mod-playerbots MeleeCombatStrategy) dropped it. Mobs keep walking
     // into the player's hitbox, so it outranked the swings and melee bots

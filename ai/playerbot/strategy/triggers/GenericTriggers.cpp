@@ -1,4 +1,5 @@
 #include "playerbot/playerbot.h"
+#include "playerbot/GroupMembers.h"
 #include "playerbot/GroupBuffPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "GenericTriggers.h"
@@ -796,6 +797,58 @@ bool IsNotBehindTargetTrigger::IsActive()
 bool IsNotFacingTargetTrigger::IsActive()
 {
     return !AI_VALUE2(bool, "facing", "current target");
+}
+
+bool TankFaceNeededTrigger::IsActive()
+{
+    // Scope: real-player-master parties only. Pool bots keep old behaviour.
+    if (!ai->HasRealPlayerMaster())
+        return false;
+    if (!ai->IsTank(bot))
+        return false;
+    // Explicit holds win: a tank parked by stay/wait-for-attack does not
+    // sidestep (mirrors the spread exemption in RaidSpreadNeededTrigger).
+    if (ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT))
+        return false;
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target || !target->IsCreature() || !sServerFacade.IsAlive(target))
+        return false;
+    // Only while the tank holds the mob: it turns to face the tank, so
+    // stepping to the far side of the mob points its front at the tank.
+    if (!target->GetVictim() || target->GetVictim()->getObjectGuid() != bot->getObjectGuid())
+        return false;
+    if (!bot->IsWithinMeleeRange(target) || target->isMoving())
+        return false;
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+    // Average angle from the mob to the live party (donor AverageGroupAngle).
+    // Needs at least one other member: alone, there is nobody to protect.
+    float sumX = 0.0f, sumY = 0.0f;
+    int count = 0;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || member == bot || !sServerFacade.IsAlive(member))
+            continue;
+        if (member->GetMapId() != bot->GetMapId())
+            continue;
+        sumX += member->GetPositionX() - target->GetPositionX();
+        sumY += member->GetPositionY() - target->GetPositionY();
+        ++count;
+    }
+    if (!count)
+        return false;
+    float averageAngle = atan2(sumY, sumX);
+    // Hysteresis (donor TankFaceAction, tolerable = PI/2): fire only while
+    // the mob's front points at the party side. After the sidestep the tank
+    // sits ~108 degrees off, outside this window, so it does not jitter.
+    float delta = averageAngle - target->GetAngle(bot);
+    while (delta > M_PI)
+        delta -= 2.0f * M_PI;
+    while (delta < -M_PI)
+        delta += 2.0f * M_PI;
+    return fabs(delta) <= M_PI / 2.0f;
 }
 
 bool HasCcTargetTrigger::IsActive()

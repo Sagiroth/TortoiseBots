@@ -2399,6 +2399,65 @@ bool SetBehindTargetAction::isPossible()
     return false;
 }
 
+bool TankFaceAwayAction::Execute(Event& event)
+{
+    (void)event;
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target || !sServerFacade.IsAlive(target))
+        return false;
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+    // Average angle from the mob to the live party (donor
+    // CombatFormationMoveAction::AverageGroupAngle, self excluded).
+    float sumX = 0.0f, sumY = 0.0f;
+    int count = 0;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || member == bot || !sServerFacade.IsAlive(member))
+            continue;
+        if (member->GetMapId() != bot->GetMapId())
+            continue;
+        sumX += member->GetPositionX() - target->GetPositionX();
+        sumY += member->GetPositionY() - target->GetPositionY();
+        ++count;
+    }
+    if (!count)
+        return false;
+    float averageAngle = atan2(sumY, sumX);
+    // Donor TankFaceAction destinations: averageAngle +- 3*PI/5 puts the
+    // ranged clump behind the tank, outside the frontal cone, while staying
+    // in melee. Nearest of the two wins.
+    const float dist = std::max(sServerFacade.getDistance2d(bot, target), 3.0f);
+    const float sides[] = { averageAngle + 3.0f * M_PI / 5.0f, averageAngle - 3.0f * M_PI / 5.0f };
+    float bestX = 0.0f, bestY = 0.0f, bestZ = 0.0f, bestDist = FLT_MAX;
+    bool found = false;
+    for (float side : sides)
+    {
+        float x = target->getPositionX() + cos(side) * dist;
+        float y = target->getPositionY() + sin(side) * dist;
+        float z = target->getPositionZ();
+        bot->UpdateGroundPositionZ(x, y, z);
+        float ox, oy, oz;
+        target->GetPosition(ox, oy, oz);
+        target->GetMap()->GetLosHitPosition(ox, oy, oz + bot->GetCollisionHeight(), x, y, z, -0.5f);
+        if (!target->IsWithinLOS(x, y, z + bot->GetCollisionHeight(), true))
+            continue;
+        float d = sServerFacade.getDistance2d(bot, x, y);
+        if (d < bestDist)
+        {
+            bestDist = d;
+            bestX = x;
+            bestY = y;
+            bestZ = z;
+            found = true;
+        }
+    }
+    if (!found)
+        return false;
+    return MoveTo(bot->GetMapId(), bestX, bestY, bestZ);
+}
+
 bool MoveOutOfCollisionAction::Execute(Event& event)
 {
     WorldPosition botPos(bot);
