@@ -50,6 +50,26 @@ namespace ai
     {
     public:
         CastFrostNovaAction(PlayerbotAI* ai) : CastMeleeAoeSpellAction(ai, "frost nova", 10.0f) {}
+        // Donor CastFrostNovaAction::isUseful (MageActions.cpp): skip the
+        // cast when the target is already frozen or immune to the freeze,
+        // so the GCD goes to damage instead of a wasted nova.
+        bool isUseful() override
+        {
+            if (!CastMeleeAoeSpellAction::isUseful())
+                return false;
+            Unit* target = GetTarget();
+            if (!target || !target->IsInWorld() || sServerFacade.IsFrozen(target))
+                return false;
+            if (SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(GetSpellID()))
+            {
+                for (int32 i = EFFECT_INDEX_0; i <= EFFECT_INDEX_2; ++i)
+                {
+                    if (target->IsImmuneToSpellEffect(spellInfo, (SpellEffectIndex)i, false))
+                        return false;
+                }
+            }
+            return true;
+        }
     };
 
 	class CastFrostboltAction : public CastSpellAction

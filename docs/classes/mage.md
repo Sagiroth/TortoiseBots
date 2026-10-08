@@ -26,7 +26,7 @@ Mages provide premier ranged spell DPS, the game's most reliable crowd control (
 ### 1. Frost Mage
 - Opens at max range with *Frostbolt*.
 - If enemies reach melee range, casts *Frost Nova* and *Blink* to reset distance.
-- Kite escape: a live melee mob inside 8 yd eats a *Blink* even when not rooted or stunned (below the root/stun blink and the nova pack root in priority), then the nuke loop resumes.
+  - Skips *Frost Nova* when the target is already frozen or immune to the freeze, so the GCD goes to damage.
 - Uses *Blizzard* and *Flamestrike* on grouped enemies (*Cone of Cold* on light AoE; *Arcane Explosion* point-blank for Arcane; *Blast Wave* for Fire).
 - Uses *Cold Snap* once any Frost cooldown (Frost Nova, Cone of Cold, Ice Barrier, Ice Block, Frost Ward) is spent.
 
