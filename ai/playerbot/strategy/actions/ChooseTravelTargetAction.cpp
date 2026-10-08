@@ -743,6 +743,27 @@ static bool RouteIsSurvivableUncached(Player* bot, WorldPosition const& start, W
     return ok;
 }
 
+// Nearest-poly sieve for grind picks: a destination point with no walkable
+// navmesh polygon nearby can never be walked to - the first failed move
+// probes NOPATH and the target drops after six fails, only to be re-picked.
+// One findNearestPoly query per accepted candidate (not a full A*), mirroring
+// the core walk-poly lookup (5 yd box, 10 yd height). Fails open everywhere
+// it has nothing to say: cross-map points, unloaded tiles and water (the
+// movement generator swims those) are all kept.
+static bool GrindPointOnMesh(Player* bot, WorldPosition* position)
+{
+    if (!bot || !position)
+        return true;
+    if (position->GetMapId() != bot->GetMapId())
+        return true;
+    if (position->isUnderWater())
+        return true;
+    WorldPosition probe = *position;
+    if (!probe.isMmapLoaded(bot->GetInstanceId()))
+        return true;
+    return probe.ClosestCorrectPoint(5.0f, 10.0f, bot->GetInstanceId());
+}
+
 // The verdict is cached per bot, level, hostile-town mode, checked-hop mode,
 // start area (200 yd cells) and destination (25 yd cells) for 5 minutes.
 // SetBestTarget re-checks the same candidates
@@ -945,6 +966,21 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                             sPlayerbotAIConfig.log("travel_route_gate.csv", out.str().c_str());
                         }
                         ++rejects["route"];
+                        continue;
+                    }
+                    // Off-mesh grind points (night2 movestuck: 103 of 119
+                    // grind move-failures probed NOPATH from a median 2328
+                    // yd): the gates above never ask the navmesh whether the
+                    // point itself can be stood on, so a spawn inside rock,
+                    // over water without a swim route or off the meshed area
+                    // is picked, fails six walks and is re-picked. One
+                    // nearest-poly query on the candidate that passed every
+                    // other gate - usually the winner - never a full A*.
+                    if (destination->GetPurpose() == TravelDestinationPurpose::Grind &&
+                        !GrindPointOnMesh(bot, position))
+                    {
+                        ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - off the navmesh", "debug travel");
+                        ++rejects["offmesh"];
                         continue;
                     }
                 }
