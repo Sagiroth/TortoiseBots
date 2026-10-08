@@ -1643,7 +1643,7 @@ AiPlayerbot.UseKnockback = 1
 #AiPlayerbot.UseWanderAsDefaultFollowStrategy = 1
 
 # Default bot formation
-#AiPlayerbot.DefaultFormation = near
+#AiPlayerbot.DefaultFormation = chaos
 
 # Debug switches
 #AiPlayerbot.SpellDump = 0
