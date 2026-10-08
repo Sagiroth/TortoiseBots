@@ -10,9 +10,11 @@ void MeleeCombatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
         "enemy out of melee",
         NextAction::array(0, new NextAction("reach melee", ACTION_MOVE), NULL)));
 
-    triggers.push_back(new TriggerNode(
-        "enemy too close for melee",
-        NextAction::array(0, new NextAction("move out of enemy contact", static_cast<float>(ACTION_NORMAL) + 8.0f), NULL)));
+    // No "enemy too close for melee" -> "move out of enemy contact" row: the
+    // donor (mod-playerbots MeleeCombatStrategy) dropped it. Mobs keep walking
+    // into the player's hitbox, so it outranked the swings and melee bots
+    // spent whole seconds stepping out instead of hitting (Oct 2026 roster
+    // poll: warriors dancing for ~8 s at 50% health before dying).
 }
 
 void SetBehindCombatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
