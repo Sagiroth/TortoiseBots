@@ -30,8 +30,8 @@ Paladins provide exceptional party utility, versatile auras, class blessings, an
 - **Self-Defense:** Pops *Divine Shield* (Bubble) if personal health drops into danger, continuing to heal the group while immune.
 
 ### 2. Protection (Tank)
-- **Aggro Mechanics:** Always keeps *Righteous Fury* active. On lose-aggro the tank taunts with *Hand of Reckoning* (Turtle spell 45806/51302, level 10), falling back to *Righteous Defense*; *Judgement* is damage rotation, not the taunt path.
-- **AoE Holding:** Drops *Consecration* on mob clusters to maintain lock on multiple targets. Keeps *Holy Shield* active on cooldown for block rating and reflective holy damage.
+- **Aggro Mechanics:** Keeps *Righteous Fury* up in and out of combat (re-cast on loss mid-pull, e.g. after death or bubble). On lose-aggro the tank taunts with *Hand of Reckoning* (Turtle trainer spell 51303, level 10), falling back to *Righteous Defense* (ranks 51328-51330); *Judgement* is damage rotation, not the taunt path.
+- **AoE Holding:** Drops *Consecration* on 2+ attackers in reach (3+, or 2 at 70%+ mana) with the AoE kit active. Keeps *Holy Shield* active on cooldown for block rating and reflective holy damage.
 - **Burst Threat:** Judges *Seal of Righteousness* on primary target.
 
 ### 3. Retribution (DPS)
