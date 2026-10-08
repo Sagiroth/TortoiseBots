@@ -96,4 +96,23 @@ namespace ai
             return false;
         return missingBothCount >= minMissing;
     }
+
+    // Mana percent an upkeep buff waits for before it is (re)cast. Charge
+    // buffs (Inner Fire, shields, Shadowguard: spent by being hit, re-cast
+    // at full price) use the higher floor. A bot with a real player master
+    // buffs on the master's schedule - the master watches the bar and pulls
+    // around it - so the floor drops: the healer veto (HealerManaPolicy,
+    // mediumMana) still guards the actual heal casts, which is the reserve
+    // that matters. Pool bots keep the conservative floor.
+    std::uint8_t const kBuffMinManaPercent = 40;
+    std::uint8_t const kChargeBuffMinManaPercent = 70;
+    std::uint8_t const kHiredBuffMinManaPercent = 20;
+    std::uint8_t const kHiredChargeBuffMinManaPercent = 40;
+
+    inline std::uint8_t BuffManaFloor(bool isChargeBuff, bool hasRealPlayerMaster)
+    {
+        if (hasRealPlayerMaster)
+            return isChargeBuff ? kHiredChargeBuffMinManaPercent : kHiredBuffMinManaPercent;
+        return isChargeBuff ? kChargeBuffMinManaPercent : kBuffMinManaPercent;
+    }
 }

@@ -66,6 +66,21 @@ static void TestPortedConstants()
     CHECK(kBuffRefreshMinMaxDurationMs == 5 * 60 * 1000);
 }
 
+// Mana floor: pool bots wait for 40% (70% charge buffs); a bot with a real
+// player master buffs on the master's schedule, so the floor drops to
+// 20% (40% charge). Heals keep their own reserve via HealerManaPolicy.
+static void TestManaFloor()
+{
+    CHECK(BuffManaFloor(false, false) == 40);
+    CHECK(BuffManaFloor(true, false) == 70);
+    CHECK(BuffManaFloor(false, true) == 20);
+    CHECK(BuffManaFloor(true, true) == 40);
+    CHECK(kBuffMinManaPercent == 40);
+    CHECK(kChargeBuffMinManaPercent == 70);
+    CHECK(kHiredBuffMinManaPercent == 20);
+    CHECK(kHiredChargeBuffMinManaPercent == 40);
+}
+
 // Variant map: the five 1.12 group buffs, blessings excluded.
 static void TestVariantMap()
 {
@@ -114,6 +129,7 @@ int main()
 {
     TestRefreshWindow();
     TestPortedConstants();
+    TestManaFloor();
     TestVariantMap();
     TestUpgradePairScope();
     TestUpgradeQuorum();

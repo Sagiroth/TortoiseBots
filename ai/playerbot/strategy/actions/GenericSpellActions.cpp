@@ -32,11 +32,8 @@ uint32 const BUFF_RETRY_COOLDOWN = 3;
 uint32 const GREATER_BUFF_RETRY_COOLDOWN = 60;
 // Seconds between two "SelfBuff" telemetry rows for the same bot and spell.
 uint32 const SELF_BUFF_EVENT_INTERVAL = 10;
-// Mana percent an upkeep buff waits for before it is (re)cast (issue #378).
-// A charge buff (Shadowguard, Touch of Weakness, Inner Fire, shields) is spent
-// by being hit and then re-cast at full price, so it uses the higher floor.
-uint8 const BUFF_MIN_MANA_PERCENT = 40;
-uint8 const CHARGE_BUFF_MIN_MANA_PERCENT = 70;
+// Mana floors live in ai::BuffManaFloor (GroupBuffPolicy.h): 40/70 pool,
+// 20/40 with a real player master.
 
 // Issue #T7: how long a buff claim keeps the other buffers of the same spell
 // away. Must cover the cast plus the delay before the aura lands (the longest
@@ -478,7 +475,7 @@ bool CastBuffSpellAction::HasManaForBuff()
     if (!manaCost)
         return true;
 
-    uint8 const minMana = spellInfo->procCharges ? CHARGE_BUFF_MIN_MANA_PERCENT : BUFF_MIN_MANA_PERCENT;
+    uint8 const minMana = ai::BuffManaFloor(spellInfo->procCharges != 0, ai->HasRealPlayerMaster());
     return ai->GetManaPercent() >= minMana;
 }
 
@@ -545,21 +542,28 @@ bool BuffOnPartyAction::isUseful()
 
 bool CastBuffSpellAction::Execute(Event& event)
 {
-    // Recorded before the cast so a failed attempt starts the cooldown too -
-    // otherwise the action is retried on every tick (issue #359). The claim
-    // (issue #T7) is written at the same point, so the other buffers of the same
-    // spell see the cast while its aura is still in flight.
-    if (Unit* target = GetTarget())
+    // The retry stamp and the claim are written only once the cast actually
+    // starts: a whiffed attempt (target out of range or LOS at cast time,
+    // reagents just spent, master sprinting away) used to silence the spell
+    // party-wide for the whole retry window (3 s single, 60 s group) plus
+    // the 4 s claim, while the trigger only re-checks every 2-4 s on top.
+    // The issue-#359 loop this replaced (retrying a missing aura every tick)
+    // cannot come back: a failed Execute runs no cast, spends no mana and
+    // lands no aura, so the next tick re-evaluates from the same state and
+    // either casts or fails its gates. The claim still covers the cast plus
+    // the aura-in-flight delay for successful casts (issue #T7).
+    Unit* const target = GetTarget();
+
+    if (!CastSpellAction::Execute(event))
+        return false;
+
+    if (target)
     {
         lastAttemptTarget = target->getObjectGuid();
         ClaimBuffCast(target);
     }
     lastAttemptTime = time(0);
 
-    if (!CastSpellAction::Execute(event))
-        return false;
-
-    Unit* target = GetTarget();
     if (target && target == bot)
     {
         time_t const now = time(0);
