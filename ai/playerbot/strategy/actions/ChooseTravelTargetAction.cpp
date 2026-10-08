@@ -831,6 +831,13 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
     bool distanceCheck = true;
     std::unordered_map<TravelDestination*, bool> isActive;
     std::map<std::string, uint32> rejects;
+    // One snapshot for the whole pick: PlayerTravelInfo reads ~15 AI values
+    // plus group/skill/money state, and IsActive only reads from it, so a
+    // per-candidate construction re-reads identical state N times per visit.
+    // A single synchronous pick cannot observe a change mid-loop (no tick
+    // passes, values are per-bot and this thread owns the visit), hence the
+    // verdict is unchanged while the cost stops scaling with the list size.
+    PlayerTravelInfo const travelInfo(bot);
 
     bool hasTarget = false;
 
@@ -856,7 +863,7 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                 distanceCheck = false;
             }
 
-            if (target->IsForced() || (isActive[destination] = destination->IsActive(bot, PlayerTravelInfo(bot))))
+            if (target->IsForced() || (isActive[destination] = destination->IsActive(bot, travelInfo)))
             {
                 // Checked after IsActive so the area lookup only happens for
                 // the point that was actually selected.
