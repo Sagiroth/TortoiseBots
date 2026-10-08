@@ -106,6 +106,15 @@ void PriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "target of attacker",
         NextAction::array(0, new NextAction("power word: shield", ACTION_HIGH), NULL)));
+
+    // Drop aggro while climbing the threat table in a group (donor
+    // GenericPriestStrategy fires fade at 55 here; the raid-only node below
+    // keeps its EMERG-adjacent slot). Fade needs a group to shed to - the
+    // action's usefulness already requires one - so solo priests keep
+    // burning the GCD on heals instead of fading into nothing.
+    triggers.push_back(new TriggerNode(
+        "medium threat",
+        NextAction::array(0, new NextAction("fade", ACTION_HIGH), NULL)));
 }
 
 void PriestStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

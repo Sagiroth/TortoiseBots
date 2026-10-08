@@ -40,6 +40,8 @@ A grouped Holy priest only damages while **nobody in the party is below 90% heal
 ### Power Word: Shield & Weakened Soul Refusal
 The bot checks for the *Weakened Soul* debuff (6788) before attempting *Power Word: Shield*. If the target already has Weakened Soul, the shield is skipped in favor of a direct heal, preventing wasted cast attempts.
 
+### Threat Drop
+Climbing toward the top of the threat table without holding aggro fires *Fade* at high priority in any group (solo priests have nobody to shed to, so they keep healing instead); raids keep the additional emergency-slot fade.
 ---
 
 ## Shadow DPS Rotation
