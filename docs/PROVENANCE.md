@@ -4522,3 +4522,38 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Warlock spec-level DoT spreading (WAR-10) — 2026-10-09
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Warlock/Strategy/AfflictionWarlockStrategy.cpp:32-48` +
+`DemonologyWarlockStrategy.cpp:49-65` +
+`GenericWarlockStrategy.cpp:142-160` (corruption/UA/agony on attacker at
+spec level, independent of aoe).
+
+Source files (module, modified):
+`ai/playerbot/strategy/warlock/AfflictionWarlockStrategy.cpp`
+(`corruption on attacker` + `siphon life on attacker` at NORMAL),
+`ai/playerbot/strategy/warlock/DemonologyWarlockStrategy.cpp`
+(`corruption on attacker` at NORMAL) + `docs/classes/warlock.md`,
+`CHANGELOG.md` (doc lines). No new triggers/actions — the on-attacker
+pairs and the `WarlockAoeStrategy` HIGH-1 rows already exist.
+
+Copied / ported / reimplemented: reimplemented as priority layering.
+Deviations from the donor, all deliberate: (a) the aoe HIGH-1 rows stay
+— spec NORMAL rows are a fallback when aoe is off (aoe is default-on, so
+this only bites when the player disables it); (b) NORMAL sits below
+single-target upkeep (NORMAL+1/2), urgent tap and Dark Pact, above filler
+tap — spreading never starves the main rotation or mana recovery (the
+mana sanity); (c) no Unstable Affliction (WotLK-only); agony spread stays
+aoe-gated in the base curses strategy; (d) destruction gets no row here —
+its spreader is immolate, which is WAR-2's unmerged row; immolate-on-aoe
+composes with this when both land.
+
+Reason: with aoe toggled off, multi-mob pulls dotted one target while
+adds beat on the bot; donor spreads at spec level regardless.
+
+Local validation: `bash tools/verify_all.sh` (no new names — wiring
+unchanged); `git diff --check`; shared-builder compile via
+`build-commit.sh` (BUILD OK); live in-game check pending: aoe-off
+multi-pull dots each attacker, mana stays out of the urgent band.

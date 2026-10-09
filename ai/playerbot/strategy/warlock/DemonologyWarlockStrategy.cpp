@@ -41,6 +41,12 @@ void DemonologyWarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         "power overwhelming",
         NextAction::array(0, new NextAction("power overwhelming", ACTION_NORMAL + 3), NULL)));
 
+    // Spec-level DoT spreading (WAR-10, donor parity): corruption rides at
+    // NORMAL with the aoe strategy off; the aoe HIGH-1 row wins when on.
+    triggers.push_back(new TriggerNode(
+        "corruption on attacker",
+        NextAction::array(0, new NextAction("corruption on attacker", ACTION_NORMAL), NULL)));
+
     triggers.push_back(new TriggerNode(
         "no pet",
         NextAction::array(0, new NextAction("fel domination", ACTION_HIGH),
