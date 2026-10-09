@@ -219,29 +219,31 @@ void PaladinCureStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "party member rooted",
         NextAction::array(0, new NextAction("blessing of freedom on party", ACTION_DISPEL), NULL)));
 
+    // Donor staggers self (DISPEL+2) above party (DISPEL+1): a paladin
+    // locked down by disease/poison/magic cleanses itself before others.
     triggers.push_back(new TriggerNode(
         "cleanse cure disease",
-        NextAction::array(0, new NextAction("cleanse disease", ACTION_DISPEL), NULL)));
+        NextAction::array(0, new NextAction("cleanse disease", ACTION_DISPEL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "cleanse party member cure disease",
-        NextAction::array(0, new NextAction("cleanse disease on party", ACTION_DISPEL), NULL)));
+        NextAction::array(0, new NextAction("cleanse disease on party", ACTION_DISPEL + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "cleanse cure poison",
-        NextAction::array(0, new NextAction("cleanse poison", ACTION_DISPEL), NULL)));
+        NextAction::array(0, new NextAction("cleanse poison", ACTION_DISPEL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "cleanse party member cure poison",
-        NextAction::array(0, new NextAction("cleanse poison on party", ACTION_DISPEL), NULL)));
+        NextAction::array(0, new NextAction("cleanse poison on party", ACTION_DISPEL + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "cleanse cure magic",
-        NextAction::array(0, new NextAction("cleanse magic", ACTION_DISPEL), NULL)));
+        NextAction::array(0, new NextAction("cleanse magic", ACTION_DISPEL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "cleanse party member cure magic",
-        NextAction::array(0, new NextAction("cleanse magic on party", ACTION_DISPEL), NULL)));
+        NextAction::array(0, new NextAction("cleanse magic on party", ACTION_DISPEL + 1), NULL)));
 }
 
 void PaladinCureStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
