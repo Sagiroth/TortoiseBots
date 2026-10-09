@@ -3,6 +3,7 @@
 #include "WarlockTriggers.h"
 #include "WarlockActions.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#include "../../../runtime/VoidwalkerPolicy.h"
 #include "../../../runtime/WarlockPetPolicy.h"
 
 using namespace ai;
@@ -401,4 +402,49 @@ bool PowerOverwhelmingTrigger::IsActive()
 
     Unit* target = GetTarget();
     return target && target->IsAlive();
+}
+
+// PET-8a: cheap-first — pet presence and entry before the attacker count;
+// the PET-3 permission comes from the shared helper (group walk only while
+// grouped). Spell knowledge/cooldown stay in the action's isPossible.
+bool SufferingTrigger::IsActive()
+{
+    Unit* pet = AI_VALUE(Unit*, "pet target");
+    if (!pet)
+        return false;
+    TortoiseBots::SufferingGateInputs gate;
+    gate.hasPet = true;
+    gate.currentPetEntry = pet->GetEntry();
+    if (gate.currentPetEntry != TortoiseBots::WARLOCK_VOIDWALKER_ENTRY)
+        return false;
+    gate.attackerCount = AI_VALUE(uint8, "my attacker count");
+    if (gate.attackerCount < 3)
+        return false;
+    gate.petTauntAllowed = ai::IsPetTauntAllowed(ai, bot);
+    return TortoiseBots::CanCastSuffering(gate);
+}
+
+// PET-8c: cheap-first scalar reads; the channel breaks on damage so combat
+// vetoes, and mounted vetoes (can't channel while mounted anyway).
+bool ConsumeShadowsTrigger::IsActive()
+{
+    Unit* pet = AI_VALUE(Unit*, "pet target");
+    if (!pet)
+        return false;
+    TortoiseBots::ConsumeShadowsGateInputs gate;
+    gate.hasPet = true;
+    gate.currentPetEntry = pet->GetEntry();
+    if (gate.currentPetEntry != TortoiseBots::WARLOCK_VOIDWALKER_ENTRY)
+        return false;
+    gate.petAlive = pet->IsAlive();
+    if (!gate.petAlive)
+        return false;
+    if (bot->IsInCombat())
+        return false;
+    gate.petHealth = AI_VALUE2(uint8, "health", "pet target");
+    if (gate.petHealth >= 70)
+        return false;
+    gate.mounted = AI_VALUE2(bool, "mounted", "self target");
+    gate.ownerInCombat = false;
+    return TortoiseBots::CanCastConsumeShadows(gate);
 }

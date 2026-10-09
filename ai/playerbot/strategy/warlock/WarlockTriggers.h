@@ -344,4 +344,20 @@ namespace ai
         PowerOverwhelmingTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "power overwhelming") {}
         bool IsActive() override;
     };
+
+    // PET-8a: AoE taunt for a tanking Voidwalker facing a pack.
+    class SufferingTrigger : public Trigger
+    {
+    public:
+        SufferingTrigger(PlayerbotAI* ai) : Trigger(ai, "suffering") {}
+        bool IsActive() override;
+    };
+
+    // PET-8c: channeled self-heal, out of combat only.
+    class ConsumeShadowsTrigger : public Trigger
+    {
+    public:
+        ConsumeShadowsTrigger(PlayerbotAI* ai) : Trigger(ai, "consume shadows") {}
+        bool IsActive() override;
+    };
 }

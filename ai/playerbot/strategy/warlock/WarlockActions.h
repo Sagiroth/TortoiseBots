@@ -3,6 +3,7 @@
 #include "playerbot/strategy/actions/GenericActions.h"
 #include "playerbot/strategy/actions/UseItemAction.h"
 #include "playerbot/AoeFearPolicy.h"
+#include "../../../runtime/VoidwalkerPolicy.h"
 
 namespace ai
 {
@@ -303,6 +304,50 @@ namespace ai
             Unit* target = GetTarget();
             Unit* pet = AI_VALUE(Unit*, "pet target");
             return target && pet && target->GetVictim() != pet;
+        }
+    };
+
+    // PET-8a: Voidwalker AoE taunt. Pet-cast on the current target; the
+    // trigger holds the pack-size and PET-3 permission gates, the policy
+    // repeats here for the evaluation-to-execution gap.
+    class CastSufferingAction : public CastPetSpellAction
+    {
+    public:
+        CastSufferingAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "suffering") {}
+        bool isUseful() override
+        {
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            if (!pet)
+                return false;
+            TortoiseBots::SufferingGateInputs gate;
+            gate.hasPet = true;
+            gate.currentPetEntry = pet->GetEntry();
+            gate.petTauntAllowed = ai::IsPetTauntAllowed(ai, bot);
+            gate.attackerCount = AI_VALUE(uint8, "my attacker count");
+            return TortoiseBots::CanCastSuffering(gate) && CastPetSpellAction::isUseful();
+        }
+    };
+
+    // PET-8c: Voidwalker channeled self-heal. Pet-cast on itself; NC-only
+    // via the trigger (the channel breaks on damage, combat would waste it).
+    class CastConsumeShadowsAction : public CastPetSpellAction
+    {
+    public:
+        CastConsumeShadowsAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "consume shadows") {}
+        std::string GetTargetName() override { return "pet target"; }
+        bool isUseful() override
+        {
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            if (!pet)
+                return false;
+            TortoiseBots::ConsumeShadowsGateInputs gate;
+            gate.hasPet = true;
+            gate.currentPetEntry = pet->GetEntry();
+            gate.petAlive = pet->IsAlive();
+            gate.petHealth = AI_VALUE2(uint8, "health", "pet target");
+            gate.ownerInCombat = bot->IsInCombat();
+            gate.mounted = AI_VALUE2(bool, "mounted", "self target");
+            return TortoiseBots::CanCastConsumeShadows(gate) && CastPetSpellAction::isUseful();
         }
     };
 
