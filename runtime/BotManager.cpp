@@ -1856,8 +1856,8 @@ void BotManager::UpdateBots(uint32_t diff)
             // transfer; acknowledging the pending marker would reset state
             // before the destination has been installed.
             PlayerbotAI* ai = entry.aiAdapter->GetAI();
-            bool const near = player->IsBeingTeleportedNear();
-            if ((near || player->IsBeingTeleportedFar()) && ai)
+            bool const nearTeleport = player->IsBeingTeleportedNear();
+            if ((nearTeleport || player->IsBeingTeleportedFar()) && ai)
             {
                 ai->HandleTeleportAck();
                 ++entry.teleportAcks;
@@ -1868,7 +1868,7 @@ void BotManager::UpdateBots(uint32_t diff)
             // this same visit. Returning here let anything that re-arms a
             // teleport between visits keep the bot's AI off for good (the
             // per-second graveyard repop did that to ~700 ghosts).
-            if (!near || player->IsBeingTeleported() || !player->IsInWorld())
+            if (!nearTeleport || player->IsBeingTeleported() || !player->IsInWorld())
                 return;
         }
 

@@ -13,10 +13,9 @@ import (
 // dashboard came up". The daemon snapshots the rollup to one small JSON file
 // every minute (see cmd/server) and restores it at startup.
 //
-// The file is keyed by the game-server session: counters only continue when
-// the same server process is still running. A different session means a
-// restarted game server, whose pool starts from zero anyway, so the first
-// datagram drops the restored state via beginSessionLocked.
+// The counters are cumulative: they continue across a dashboard restart and
+// across a game-server restart (a new session only re-anchors money tracking
+// in beginSessionLocked), so the file is restored whatever session it names.
 const activityStateVersion = 1
 
 type persistedActivity struct {

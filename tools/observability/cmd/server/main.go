@@ -322,6 +322,14 @@ func main() {
 		writeJSON(w, store.Snapshot().Grinding)
 	}))
 
+	// Chart history: the rolling in-memory samples (one per heartbeat)
+	// behind the dashboard's 10-minute timelines. The page seeds its
+	// charts from this on load instead of starting empty after a
+	// refresh; live heartbeats then keep appending as before.
+	mux.HandleFunc("GET /api/v1/history", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, store.History())
+	}))
+
 	// Issue episodes (active + recently resolved). The dashboard fetches this
 	// on init and on Refresh to recover the issue tab/badge when a WebSocket
 	// event was missed.

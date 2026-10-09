@@ -37,6 +37,10 @@ const (
 	// minXpRateWindowSec floors XP/hour windows so one fast kill cannot
 	// extrapolate to 100k XP/h.
 	minXpRateWindowSec = 60
+	// historyMaxSamples bounds the in-memory chart history: one sample
+	// per heartbeat (~2 s) covers 10 minutes, matching the dashboard's
+	// own 300-sample window. Older samples are dropped, never grown.
+	historyMaxSamples = 300
 )
 
 // Config tunes retention. Zero values fall back to the defaults.
@@ -131,6 +135,12 @@ type Store struct {
 	// Replaced wholesale by SetGear on every sweep (it is DB truth, not
 	// session state), so it stays bounded by the pool that sweep saw.
 	gear map[uint32]model.BotGear
+
+	// history is the rolling chart seed behind GET /api/v1/history: one
+	// sample per heartbeat, oldest first, capped at historyMaxSamples
+	// (~10 min). Cleared on session change so a restarted game server
+	// cannot inherit the previous pool's series.
+	history []model.HistorySample
 }
 
 // New creates an empty store. The ring buffer is owned by the caller and is
@@ -193,6 +203,7 @@ func (s *Store) ApplyHeartbeat(hb *model.HeartbeatPayload) bool {
 	s.heartbeat = hb
 	s.heartbeatAt = now
 	s.prunePendingLocked(now)
+	s.appendHistoryLocked(now)
 
 	if hb.Seq == 0 || hb.Seq <= s.lastSeq {
 		return false
@@ -732,6 +743,64 @@ func appendTrail(trail []model.Coordinate, snap model.BotSnapshot, limit int) []
 	return trail
 }
 
+// History returns the rolling chart seed: up to historyMaxSamples
+// heartbeat observations, oldest first. The slice is a copy; callers
+// may marshal without holding the lock.
+func (s *Store) History() model.HistoryResponse {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := model.HistoryResponse{
+		Samples: make([]model.HistorySample, len(s.history)),
+	}
+	copy(out.Samples, s.history)
+	if !s.sessionSince.IsZero() {
+		out.Since = s.sessionSince.UnixMilli()
+	}
+	return out
+}
+
+// appendHistoryLocked records one chart observation from the current
+// heartbeat plus the live issue counts, dropping the oldest sample
+// past the bound. The issue counts come from the tracker (the same
+// Snapshot every client already sees), not from the heartbeat, so
+// the series matches the Issues tab exactly. Lag percentiles fall
+// back to the tick average/diff exactly like the live chart, so a
+// seed from an older module draws the same line as live samples.
+func (s *Store) appendHistoryLocked(now time.Time) {
+	if s.heartbeat == nil {
+		return
+	}
+	hb := s.heartbeat
+	p50 := hb.LagP50Ms
+	if p50 == 0 {
+		p50 = hb.TickAvgMs
+	}
+	if p50 == 0 {
+		p50 = hb.TickDiffMs
+	}
+	p95 := hb.LagP95Ms
+	if p95 == 0 {
+		p95 = hb.TickAvgMs
+	}
+	if p95 == 0 {
+		p95 = hb.TickDiffMs
+	}
+	counts := s.issues.Snapshot().CountsByType
+	sample := model.HistorySample{
+		At:       now.UnixMilli(),
+		Bots:     hb.BotsCount,
+		Humans:   hb.HumansCount,
+		LagP50Ms: p50,
+		LagP95Ms: p95,
+		Issues:   counts,
+	}
+	s.history = append(s.history, sample)
+	if len(s.history) > historyMaxSamples {
+		s.history = append([]model.HistorySample(nil), s.history[len(s.history)-historyMaxSamples:]...)
+	}
+}
+
 // beginSessionLocked resets sequence and transient roster state when a
 // different game-server process starts. Sequence numbers start from 1 on each
 // server launch. Cumulative activity counters and recent feeds persist across
@@ -761,6 +830,7 @@ func (s *Store) beginSessionLocked(session uint64) {
 	s.serverInfo = nil
 	s.issues.Reset()
 	s.issues.NoteSessionChange(s.now())
+	s.history = nil
 }
 
 // BackfillActivityFromDB merges authoritative lifetime quest completions,

@@ -31,6 +31,19 @@
 - Bots get off their mount to gather — a bot that rode to its herb or vein now dismounts when it opens the node, like it already does for corpses, instead of burning its approach tries on casts that never start and abandoning the node.
 - Gather (mining/herbalism) picks skip spots off the world mesh too — the same one-query pick-time sieve grind got, after 51 of 65 mining move-failures probed `nopath` the same way.
 
+## 2026-10-09
+
+### Observability & Engine
+
+- Fixed the `internal/state` tests to match the now-cumulative bot activity model (session re-anchor, roster wipes, and no more pruning of departed bots), so `dashboard-binaries.yml` can finally get past `go test ./...` on every run. [#552](https://github.com/Sagiroth/TortoiseBots/pull/552)
+- Dashboard binaries now ship with a published `sha256`, letting operators verify the `tortoise-observability-*` artifacts before deploying. [#552](https://github.com/Sagiroth/TortoiseBots/pull/552)
+
+### Core Sync & Fixes
+
+- Renamed the `near` local in `BotManager::UpdateBots`'s teleport-ack path — it collided with an MSVC keyword and produced a wall of `C2513`/`C2059`/`C2143` errors, so Windows builds compile again. [#548](https://github.com/Sagiroth/TortoiseBots/pull/548)
+
+---
+
 ## 2026-10-08
 
 ### Combat & AI
@@ -86,6 +99,16 @@
 
 ### Core Sync & Fixes
 - Landed @waterys419's twelve-fix batch #530–#541 together, since they all add tests to the same check script and conflict if merged individually. [#545](https://github.com/Sagiroth/TortoiseBots/pull/545)
+
+### Combat & AI
+
+- Rescue teleports now land bots on the nearest walkable ground instead of right next to the trainer, so bots sent to upper floors and balconies no longer get stranded — this alone was leaving ~100 bots stuck in Stormwind. [#546](https://github.com/Sagiroth/TortoiseBots/pull/546)
+- Fixed the graveyard loop: a bot that revived and couldn't path out was "rescued" by teleporting it to the nearest graveyard — the exact one it was already standing on. Rescue now actually moves it somewhere it can walk from. [#546](https://github.com/Sagiroth/TortoiseBots/pull/546)
+
+### Observability & Engine
+- Dashboard timelines (bots online, lag, issues over time) now survive page refreshes: the service keeps a rolling 10-minute window in memory and the page loads it on open, so you no longer wait for charts to refill. [#547](https://github.com/Sagiroth/TortoiseBots/pull/547)
+- New read-only endpoint `GET /api/v1/history` exposes dashboard history with the same login as the rest of the API. [#547](https://github.com/Sagiroth/TortoiseBots/pull/547)
+- History is bounded to 300 samples, one per heartbeat, and nothing is written to disk—restarting the game server starts the charts fresh so new sessions never show old numbers. [#547](https://github.com/Sagiroth/TortoiseBots/pull/547)
 
 ## 2026-10-07
 
