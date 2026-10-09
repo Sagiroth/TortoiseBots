@@ -4556,9 +4556,11 @@ Copied / ported / reimplemented: reimplemented in our per-boss fight
 strategy idiom (StartBossFightTrigger + enable/disable actions, mirror the
 Magmadar pattern). Deviations from the donor, all deliberate: (a) the
 donor blocks movement via per-action type checks (MovementAction,
-CastReachTargetSpellAction); here the multiplier vetoes by action name so
-only `move away from geddon` and the universal `raid bomb runout` pass —
-same observable behavior without donor class coupling; (b) the trigger is
+CastReachTargetSpellAction); here the multiplier first type-gates on the
+same two action families via dynamic_cast (heals/DPS/consumables always
+pass), then name-matches so only `move away from geddon` and the
+universal `raid bomb runout` pass — same observable behavior without donor
+class coupling; (b) the trigger is
 range-gated (fires only within 20y) so already-safe bots do not attempt a
 failing move each tick; (c) Living Bomb needs no new code — the universal
 `raid bomb debuff` runout already covers spell 20475; (d) no cast-stop in
