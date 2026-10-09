@@ -393,6 +393,7 @@ bool IsRaidDragonEntry(uint32 entry)
         case 11981: // Flamegor
         case 11983: // Firemaw
         case 11583: // Nefarian
+        case 13020: // Vaelastrasz the Corrupt
         case 60748: // Solnius (Emerald Sanctum, Acid Breath 24839)
             return true;
         default:
@@ -410,10 +411,16 @@ bool DragonBreathRiskTrigger::IsActive()
         return false;
     if (!IsRaidDragonEntry(target->GetEntry()))
         return false;
-    // Tanks hold the head; the trigger tells non-tanks to flank. Tank
-    // positioning itself is an explicit .bot raid tankface command.
+    // The head-holding tank stays; everyone else flanks — including
+    // off-tanks that are not the victim (Firemaw/Ebonroc/Flamegor spare
+    // tanks, mod-playerbots parity). Tank positioning itself is an
+    // explicit .bot raid tankface command.
     if (ai->IsTank(bot))
-        return false;
+    {
+        Unit* victim = target->GetVictim();
+        if (!victim || victim->getObjectGuid() == bot->getObjectGuid())
+            return false;
+    }
     const float dist = bot->GetDistance(target);
     if (dist > sPlayerbotAIConfig.spellDistance + 10.0f)
         return false;

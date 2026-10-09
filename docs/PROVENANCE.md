@@ -4522,3 +4522,51 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## BWL bundle 1: Broodlord range, drake off-tank flank, Vael flank entry, Nef mage Ice Block (raid1 item 4) — 2026-10-09
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Raid/BWL/BWLTriggers.cpp:59-71` (BwlBroodlordRangedTooCloseTrigger:
+ranged non-victim within BROODLORD_SAFE_DISTANCE), `:102-106`
+(BwlNefarianWildMagicTrigger: mage + SPELL_WILD_MAGIC 23410),
+`src/Ai/Raid/BWL/BWLActions.cpp:269-278` (step out to exactly 18y),
+`src/Ai/Raid/BWL/BWLStrategy.cpp:38-47,54-55` (drake rear flank, ice block
+wiring), `src/Ai/Raid/BWL/BWLHelpers.h:55` (18y constant).
+
+Source files (module, modified): `ai/playerbot/BwlBundle1Policy.h` (new
+pure rule: ids, 18y, leave/flank/ice-block predicates),
+`ai/playerbot/strategy/triggers/BlackwingLairDungeonTriggers.h`
+(Broodlord/NefarianStart+EndFightTrigger on entries 12017/11583,
+header-inline BroodlordRangedTrigger with victim hold, header-inline
+NefarianWildMagicTrigger: mage + self aura 23410),
+`ai/playerbot/strategy/actions/BlackwingLairDungeonActions.h`
+(enable/disable actions, BroodlordMoveAwayAction 12017/18y),
+`ai/playerbot/strategy/generic/BlackwingLairDungeonStrategies.h/.cpp`
+(`broodlord` fight strategy with ranged 18y reaction; `nefarian` fight
+strategy with mage Ice Block reaction reusing the existing `ice block`
+action; start triggers; end-fight cleanup),
+`ai/playerbot/strategy/triggers/DungeonTriggers.cpp` (Vaelastrasz 13020
+added to IsRaidDragonEntry; DragonBreathRiskTrigger fires for tanks that
+are not the victim), registrations (`TriggerContext.h`,
+`ActionContext.h`, `StrategyContext.h`),
+`tools/test_bwl_bundle1_policy.cpp` (new standalone test) +
+`tools/verify_all.sh` (test list), `docs/guides/dungeon-tactics.md` (doc
+line).
+
+Copied / ported / reimplemented: reimplemented in our per-boss fight
+strategy idiom. Deviations from the donor, all deliberate: (a) no
+resist-aura triggers here (separate raid1 item 8); (b) Nefarian positioning
+is already covered by the universal dragon flank (Nefarian is in the flank
+list), so only the Wild Magic class call is new; (c) the drake change is a
+one-condition edit on the shared trigger, so Onyxia/Nefarian/Solnius gain
+off-tank flanking too — same geometry, no per-boss special case.
+
+Reason: raid1 gaps BWL-BROODLORD (ranged ate Blast Wave), BWL-DRAKES
+(off-tanks stood in breath), BWL-VAEL (13020 missing from flank list),
+BWL-NEFARIAN-WILDMAGIC (mages never Ice Blocked).
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. Entries 12017/13020/11583 and spell
+23410 verified against tw_world. Build via build-commit.sh pending; live
+in-game check pending.

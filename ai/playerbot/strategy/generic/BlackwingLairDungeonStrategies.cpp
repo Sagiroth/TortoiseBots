@@ -8,6 +8,60 @@ void BlackwingLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
     triggers.push_back(new TriggerNode(
         "suppression device close",
         NextAction::array(0, new NextAction("disarm suppression device", 80.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "start broodlord fight",
+        NextAction::array(0, new NextAction("enable broodlord fight strategy", 100.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "start nefarian fight",
+        NextAction::array(0, new NextAction("enable nefarian fight strategy", 100.0f), NULL)));
+}
+
+void BroodlordFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    Player* bot = ai->GetBot();
+    if (ai->IsRanged(bot) || ai->IsHeal(bot))
+    {
+        triggers.push_back(new TriggerNode(
+            "broodlord ranged",
+            NextAction::array(0, new NextAction("move away from broodlord", ACTION_EMERGENCY + 5), NULL)));
+    }
+}
+
+void BroodlordFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end broodlord fight",
+        NextAction::array(0, new NextAction("disable broodlord fight strategy", 100.0f), NULL)));
+}
+
+void BroodlordFightStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end broodlord fight",
+        NextAction::array(0, new NextAction("disable broodlord fight strategy", 100.0f), NULL)));
+}
+
+void NefarianFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "nefarian wild magic",
+        NextAction::array(0, new NextAction("ice block", ACTION_EMERGENCY + 5), NULL)));
+}
+
+void NefarianFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end nefarian fight",
+        NextAction::array(0, new NextAction("disable nefarian fight strategy", 100.0f), NULL)));
+}
+
+void NefarianFightStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end nefarian fight",
+        NextAction::array(0, new NextAction("disable nefarian fight strategy", 100.0f), NULL)));
 }
 
 void BlackwingLairDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
