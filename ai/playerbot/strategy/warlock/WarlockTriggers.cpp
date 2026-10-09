@@ -117,13 +117,13 @@ bool NoCurseTrigger::IsActive()
 	Unit* target = GetTarget();
 	if (target)
 	{
-		return !ai->HasAura("curse of agony", target, false, true) &&
-			   !ai->HasAura("curse of doom", target, false, true) &&
-			   !ai->HasAura("curse of recklessness", target, false, true) &&
-			   !ai->HasAura("curse of shadow", target, false, true) &&
-			   !ai->HasAura("curse of the elements", target, false, true) &&
-			   !ai->HasAura("curse of weakness", target, false, true) &&
-			   !ai->HasAura("curse of tongues", target, false, true);
+		return !ai->HasAura("curse of agony", target) &&
+			   !ai->HasAura("curse of doom", target) &&
+			   !ai->HasAura("curse of recklessness", target) &&
+			   !ai->HasAura("curse of shadow", target) &&
+			   !ai->HasAura("curse of the elements", target) &&
+			   !ai->HasAura("curse of weakness", target) &&
+			   !ai->HasAura("curse of tongues", target);
 	}
 
 	return false;
@@ -147,13 +147,13 @@ bool NoCurseOnAttackerTrigger::IsActive()
         Unit* attacker = ai->GetUnit(*i);
         if (attacker && attacker != currentTarget)
         {
-			if (!ai->HasAura("curse of agony", attacker, false, true) &&
-				!ai->HasAura("curse of doom", attacker, false, true) &&
-				!ai->HasAura("curse of recklessness", attacker, false, true) &&
-				!ai->HasAura("curse of shadow", attacker, false, true) &&
-				!ai->HasAura("curse of the elements", attacker, false, true) &&
-				!ai->HasAura("curse of weakness", attacker, false, true) &&
-				!ai->HasAura("curse of tongues", attacker, false, true))
+			if (!ai->HasAura("curse of agony", attacker) &&
+				!ai->HasAura("curse of doom", attacker) &&
+				!ai->HasAura("curse of recklessness", attacker) &&
+				!ai->HasAura("curse of shadow", attacker) &&
+				!ai->HasAura("curse of the elements", attacker) &&
+				!ai->HasAura("curse of weakness", attacker) &&
+				!ai->HasAura("curse of tongues", attacker))
 			{
 				return true;
 			}

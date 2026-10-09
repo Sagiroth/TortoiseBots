@@ -4522,3 +4522,43 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Warlock spec-aware curse default + curse-conflict awareness (WAR-3 + WAR-8) — 2026-10-09
+
+Donor: mod-playerbots (`79bd4281`):
+per-spec curse defaults
+(`src/Ai/Class/Warlock/Strategy/GenericWarlockStrategy.cpp:138-240`,
+`WarlockAiObjectContext.cpp:102-122`: affli Agony, destro Elements);
+CoE/CoW conflict skips
+(`src/Ai/Class/Warlock/WarlockTriggers.cpp:113-162`).
+
+Source files (module, modified): `runtime/WarlockCursePolicy.h` (new pure
+rule: destro Elements, affli/demo Agony, no default while any curse sits
+on the target),
+`ai/playerbot/strategy/warlock/DestructionWarlockStrategy.cpp`
+(`DestructionWarlockCursesStrategy` queues CoE + aoe-gated on-attacker
+CoE instead of the base Agony rows — base not called, no double queue),
+`ai/playerbot/strategy/warlock/WarlockTriggers.cpp` (`NoCurseTrigger` +
+`NoCurseOnAttackerTrigger` drop the owner check so a groupmate's curse
+suppresses the default),
+`tools/test_warlock_curse_policy.cpp` (new standalone test, wired into
+`tools/verify_all.sh`) + `docs/classes/warlock.md`, `CHANGELOG.md` (doc
+lines).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) the donor's WotLK conflict lists (Ebon
+Plague, Earth and Moon, Vindication) do not exist in 1.18.1 — the rule
+here is the vanilla one-curse-per-target gate on the 7-curse family,
+which covers CoW-vs-shout overwrites too; (b) Curse of Shadow stays a
+manual pick, not the affliction default (raid debuff-slot pressure);
+(c) per-curse `DebuffTrigger`s already see anyone's aura, so only the
+`NoCurse` pair needed the fix; (d) manual `curse X` strategies bypass the
+gate — the player always wins.
+
+Reason: destro bots opened Agony like everyone else (lost fire damage +
+raid spell damage), and two warlocks on one target overwrote each
+other's curse every refresh.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`;
+shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
+check pending: destro opens CoE, grouped warlocks keep one curse.

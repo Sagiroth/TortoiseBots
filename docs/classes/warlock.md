@@ -24,7 +24,7 @@ Warlocks provide sustained Shadow and Fire DPS through curses and damage-over-ti
 ## Combat Rotations & Priorities
 
 ### 1. DoT Upkeep & Shard Economy
-- **Curses:** Defaults to *Curse of Agony*; other curses only when you enable them manually.
+- **Curses:** Affliction and Demonology default to *Curse of Agony*; Destruction defaults to *Curse of the Elements* (fire damage). Other curses only when you enable them manually (`.bot strategy +curse <shadow|weakness|...>` still overrides). One curse per target: the bot never overwrites another warlock's curse with its default.
 - **DoTs:** Only *Corruption* is health-gated (skipped at/below 20% target health); *Immolate* has no gate and is kept up by all three specs. Affliction also maintains *Siphon Life*.
 - **Soul Shard Harvest:** Shards are never seeded or conjured — the bot harvests them organically with *Drain Soul* when the target is at/below 20% health, provided it holds fewer than 5 Soul Shards and has bag space; no elite check. Excess above 5 is destroyed out of combat. Healthstones (*Create Healthstone*, level 10+) and Soulstones (*Create Soulstone (Minor)*, level 18+) are created out of combat whenever the bot holds a shard and lacks one.
 
