@@ -1,5 +1,7 @@
 # Changelog
 
+- Warlocks top up mana with Life Tap before and during fights — below 85% mana with safe health the bot taps at low priority (never preempting DoT upkeep) in combat and pre-taps between pulls, so it enters the pull near-full mana instead of wanding the second half; the urgent tap at low mana and the health floor are unchanged.
+
 ### Bots & Behavior
 - Bots no longer get stuck on the Deeprun Tram — wandering bots could be routed through the tram between Stormwind and Ironforge but cannot ride the train, so they stood on the platform for good; their routes now go overland, and any bot already stranded there is moved out through the nearest station exit.
 - Bots stranded on islands without travel routes (Lapidis Isle) no longer stand at the shore forever — after three destinations in a row fail from the same spot they are moved to the nearest travel route instead of an island graveyard they would just walk back from.

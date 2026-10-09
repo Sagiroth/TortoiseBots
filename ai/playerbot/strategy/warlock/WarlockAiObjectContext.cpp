@@ -226,6 +226,7 @@ namespace ai
                 creators["death coil on snare target"] = [](PlayerbotAI* ai) { return new DeathCoilSnareTrigger(ai); };
                 creators["inferno"] = [](PlayerbotAI* ai) { return new InfernoTrigger(ai); };
                 creators["life tap"] = [](PlayerbotAI* ai) { return new LifeTapTrigger(ai); };
+                creators["life tap top-up"] = [](PlayerbotAI* ai) { return new LifeTapTopUpTrigger(ai); };
                 creators["drain soul"] = [](PlayerbotAI* ai) { return new DrainSoulTrigger(ai); };
                 creators["no soul shard"] = [](PlayerbotAI* ai) { return new NoSoulShardTrigger(ai); };
                 creators["too many soul shards"] = [](PlayerbotAI* ai) { return new TooManySoulShardsTrigger(ai); };

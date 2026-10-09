@@ -54,6 +54,13 @@ void WarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "life tap",
         NextAction::array(0, new NextAction("life tap", ACTION_NORMAL + 2), NULL)));
 
+    // Donor-parity filler (WAR-5): mana below 85% with safe health taps at
+    // NORMAL-1, under dot upkeep (NORMAL..NORMAL+2) and the urgent band, so
+    // mid-fight taps never preempt corruption/immolate refreshes.
+    triggers.push_back(new TriggerNode(
+        "life tap top-up",
+        NextAction::array(0, new NextAction("life tap", ACTION_NORMAL - 1), NULL)));
+
     triggers.push_back(new TriggerNode(
         "no mana",
         NextAction::array(0, new NextAction("shoot", ACTION_NORMAL), NULL)));
@@ -85,6 +92,14 @@ void WarlockStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "no soulstone",
         NextAction::array(0, new NextAction("create soulstone", ACTION_NORMAL), NULL)));
+
+    // Donor-parity pre-tap (WAR-5): top up to near-full mana between pulls
+    // while health allows, so the bot enters the pull casting instead of
+    // tapping. Quieter than drink (6.0); food/drink rows still win below
+    // their bands.
+    triggers.push_back(new TriggerNode(
+        "life tap top-up",
+        NextAction::array(0, new NextAction("life tap", ACTION_NORMAL), NULL)));
 
     /*
     triggers.push_back(new TriggerNode(

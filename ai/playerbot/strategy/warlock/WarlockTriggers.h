@@ -195,6 +195,16 @@ namespace ai
         bool IsActive() override;
     };
 
+    // Donor-parity top-up band (WAR-5): mana below 85% with safe health,
+    // queued as low-priority filler in combat and pre-tap out of combat.
+    // The urgent band stays on LifeTapTrigger (mana <= mediumMana).
+    class LifeTapTopUpTrigger : public Trigger
+    {
+    public:
+        LifeTapTopUpTrigger(PlayerbotAI* ai) : Trigger(ai, "life tap top-up", 2) {}
+        bool IsActive() override;
+    };
+
     class DrainSoulTrigger : public Trigger
     {
     public:

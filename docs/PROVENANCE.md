@@ -4522,3 +4522,48 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Warlock Life Tap top-up + out-of-combat pre-tap (WAR-5) — 2026-10-09
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Warlock/WarlockTriggers.cpp:92-103` (`LifeTapTrigger`:
+mana<85 with health above `LowHealth`), per-spec
+`src/Ai/Class/Warlock/Strategy/*WarlockStrategy.cpp:101-117` (`life tap`
+filler at 5.1),
+`src/Ai/Class/Warlock/Strategy/GenericWarlockStrategy.cpp:23-30`
+(`low mana` emergency tap at 95.0),
+`src/Ai/Class/Warlock/Strategy/GenericWarlockNonCombatStrategy.cpp:93`
+(NC pre-tap at 23.0).
+
+Source files (module, modified): `runtime/WarlockTapPolicy.h` (new pure
+two-band rule: urgent at mana<=mediumMana, top-up below 85, both gated on
+health above lowHealth),
+`ai/playerbot/strategy/warlock/WarlockTriggers.{h,cpp}` (existing
+`LifeTapTrigger` routes through the policy urgent band; new
+`LifeTapTopUpTrigger` for the 85% band),
+`ai/playerbot/strategy/warlock/WarlockAiObjectContext.cpp` (registered
+`life tap top-up`),
+`ai/playerbot/strategy/warlock/WarlockStrategy.cpp` (combat filler row at
+NORMAL-1 under dot upkeep, non-combat pre-tap row at NORMAL),
+`tools/test_warlock_tap_policy.cpp` (new standalone test, wired into
+`tools/verify_all.sh`) + `docs/classes/warlock.md`, `CHANGELOG.md` (doc
+lines).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) no `low mana` emergency row — ours already
+taps at mana<=mediumMana (default 40, stricter than donor `low mana`
+15%) at NORMAL+2, kept as the urgent band; (b) the top-up combat row sits
+at NORMAL-1 (donor 5.1 filler sits under everything) so mid-fight taps
+never preempt corruption/immolate refresh or shadowburn execute; (c) the
+health floor stays ours (`lowHealth` default 50, stricter than donor
+45); (d) no glyph-buff row (WotLK glyph, no 1.18.1 spell); (e)
+Affliction Dark Pact on low mana untouched and still wins the emergency.
+
+Reason: warlock bots entered every pull at whatever mana the last fight
+left and spent the second half wanding; donor tops up to near-full
+between pulls and fills mid-fight at low priority.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`;
+shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
+check pending: bot enters pull near-full mana, mid-fight taps don't
+preempt dots.
