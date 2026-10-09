@@ -374,6 +374,21 @@ namespace ai
         }
     };
 
+    // mod-playerbots parity (DRU-1): out-of-combat resurrection. Vanilla
+    // druids have no normal resurrect, only Rebirth, so a dead party member
+    // out of combat sits until a priest/paladin/shaman wakes up — or the
+    // druid burns its 30 min battle rez. This trigger stays quiet while any
+    // living groupmate of a resurrecting class (priest/paladin/shaman) is
+    // around; their normal rez is always preferred. Declared here, defined
+    // in DruidTriggers.cpp (needs the group-member scan).
+    class OocRebirthTrigger : public RebirthTrigger
+    {
+    public:
+        OocRebirthTrigger(PlayerbotAI* ai) : RebirthTrigger(ai) {}
+        std::string getName() override { return "ooc rebirth"; }
+        bool IsActive() override;
+    };
+
     class InnervateTrigger : public SpellTargetTrigger
     {
     public:

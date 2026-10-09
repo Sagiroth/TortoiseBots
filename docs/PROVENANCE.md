@@ -4522,3 +4522,49 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Druid parity DRU-1: out-of-combat Rebirth when no living resurrector — 2026-10-09
+Feature: new `OocRebirthTrigger` (`RebirthTrigger` + living
+priest/paladin/shaman group scan, cheap class check first, then the base
+cooldown/spellbook/target checks) + non-combat row `ooc rebirth` ->
+`rebirth` at ACTION_EMERGENCY in `DruidStrategy` (base, so all four wired
+specs + leveling inherit) + pure rule `ShouldCastOocRebirth` in new
+`ai/playerbot/OocRebirthPolicy.h` + `tools/test_ooc_rebirth_policy.cpp`
+(6 checks, registered in `tools/verify_all.sh`).
+
+Source repository: `mod-playerbots` @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Class/Druid/Strategy/GenericDruidNonCombatStrategy.cpp:116`
+(`party member dead` -> `revive`) +
+`src/Ai/Class/Druid/DruidTriggers.h:120-153` (donor trigger shape) +
+`src/Ai/Class/Priest/Strategy/...` + paladin/shaman equivalents for the
+ACTION_EMERGENCY non-combat row shape (`PaladinStrategy.cpp:95-97` etc).
+Deviations, deliberate and verified against live `tw_world`: the donor's
+`revive` spell does not exist as a druid-taught spell in 1.18.1 — report
+claim "Revive 2435" is wrong (2435 = Numbing Strike here); the only
+`Revive` row (24341) is a Zul'Gurub boss spell (boss_mandokir.cpp) with no
+trainer or skill-line entry, while druid trainers teach Rebirth
+(20484+, skill class_mask 1024 = druid). So the port casts Rebirth out of
+combat instead of a non-existent Revive, and gates it on no living
+priest/paladin/shaman in the group (their normal rez is always
+preferred). Combat rebirth rows are untouched.
+
+Reason: druid parity report DRU-1 — wired specs never resurrected out of
+combat; every other healer class has the non-combat row.
+
+Source files (module, modified): `ai/playerbot/OocRebirthPolicy.h` (new),
+`ai/playerbot/strategy/druid/DruidTriggers.h`,
+`ai/playerbot/strategy/druid/DruidTriggers.cpp`,
+`ai/playerbot/strategy/druid/DruidStrategy.cpp`,
+`ai/playerbot/strategy/druid/DruidAiObjectContext.cpp`,
+`tools/test_ooc_rebirth_policy.cpp` (new), `tools/verify_all.sh` +
+`docs/classes/druid.md` (behaviour lines).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells: Rebirth 20484/20739/20742/20747/20748
+verified in spell_template (family 7, druid skill line).
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
+live test (no live test per parity brief); build via build-commit.sh.
