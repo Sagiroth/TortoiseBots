@@ -527,7 +527,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         {
             if (tab == 2)
             {
-                combatEngine->addStrategies("protection", "tank assist", "pull", "pull back", "close", NULL);
+                combatEngine->addStrategies("protection", "tank assist", "pull", "pull back", "close", "tank face", NULL);
             }
             else if (player->GetLevel() < 30 || tab == 0)
             {
@@ -573,7 +573,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         {
             if (tab == 1)
             {
-                combatEngine->addStrategies("protection", "tank assist", "pull", "pull back", "close", NULL);
+                combatEngine->addStrategies("protection", "tank assist", "pull", "pull back", "close", "tank face", NULL);
 			}
             else if(tab == 0)
             {
@@ -619,7 +619,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
 
                 if (tanking)
                 {
-                    combatEngine->addStrategies("tank feral", "tank assist", "pull", "pull back", "close", NULL);
+                    combatEngine->addStrategies("tank feral", "tank assist", "pull", "pull back", "close", "tank face", NULL);
                 }
                 else
                 {

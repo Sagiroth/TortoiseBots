@@ -4522,3 +4522,46 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Tank-face as a real strategy for any tank (POS-6) — 2026-10-09
+
+Feature: `TankFaceStrategy` (`tank face`), donor `TankFaceStrategy` shape.
+The old `tank face needed` → `tank face away` row moves off the shared
+`close` strategy onto its own strategy; the trigger's `HasRealPlayerMaster`
+gate becomes strategy membership, so pool/raid tanks face held mobs away
+from the party too. `AiFactory` adds `tank face` to the warrior-protection,
+paladin-protection, and druid-tank-feral kits (donor factory shape:
+`IsTank → +tank face`). Stay/wait-for-attack exemptions kept; the geometry
+(average party angle ±108°, nearest side, LoS/terrain, 90° hysteresis) is
+unchanged. `TankFaceAwayAction` itself is untouched.
+
+Source repository: `mod-playerbots/mod-playerbots`
+
+Source commit: `79bd4281` (local
+`playerbots-references/mod-playerbots` checkout).
+
+Source files:
+- `src/Ai/Base/Strategy/CombatStrategy.cpp` (`TankFaceStrategy`: triggerless, default action `tank face` at ACTION_MOVE)
+- `src/Ai/Base/Strategy/CombatStrategy.h` (declaration)
+- `src/Bot/Factory/AiFactory.cpp` (`IsTank → +tank face`)
+
+Source files (module, modified):
+`ai/playerbot/strategy/generic/MeleeCombatStrategy.{h,cpp}` (new strategy,
+row moved off `close`), `ai/playerbot/strategy/StrategyContext.h`
+(registration), `ai/playerbot/strategy/triggers/GenericTriggers.cpp`
+(membership gate), `ai/playerbot/AiFactory.cpp` (3 tank kits),
+`docs/concepts/bot-mechanics-and-quirks.md` (doc row).
+
+Copied / ported / reimplemented: ported, adapted to the 1.12 codebase.
+Deviations from the donor, all deliberate: (a) the row keeps its trigger
+(`tank face needed`) instead of going fully triggerless — the trigger
+carries the hysteresis math and the stay/wait exemptions the donor lacks;
+(b) priority stays ACTION_MOVE (donor shape) rather than the old
+ACTION_MOVE + 5; (c) no `recently flee info` consult yet (POS-7
+generalizes the helper later).
+
+Reason: pool/raid tanks never faced mobs away — cleaves hit the party
+whenever no real-player master led the group.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check` clean.
+Build via build-commit.sh (see PR summary); no live in-game check.

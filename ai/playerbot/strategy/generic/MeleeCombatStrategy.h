@@ -27,6 +27,21 @@ namespace ai
         void InitCombatTriggers(std::list<TriggerNode*> &triggers) override;
     };
 
+    // Tank-face as a real strategy (donor TankFaceStrategy shape): default
+    // action "tank face away" at ACTION_MOVE, triggerless — the action
+    // self-gates via TankFaceNeededTrigger's hysteresis math in isUseful.
+    // Membership replaces the old real-player-master gate: any tank with
+    // this strategy faces held mobs away from the party.
+    class TankFaceStrategy : public CombatStrategy
+    {
+    public:
+        TankFaceStrategy(PlayerbotAI* ai) : CombatStrategy(ai) {}
+        std::string getName() override { return "tank face"; }
+
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*> &triggers) override;
+    };
+
     class ChaseJumpStrategy : public Strategy
     {
     public:
