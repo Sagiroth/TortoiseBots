@@ -96,9 +96,18 @@ public:
         // Start of the current run of churn-only activity: a new last-action
         // name or an active travel target, with no movement, loot, cast or
         // sit. When the run reaches kIdleAfterMs the bot is stalled, not
-        // busy; real progress (or a full kIdleAfterMs with no activity at
-        // all) resets it to 0.
+        // busy (unless it fought or gained XP inside kRecentFightMs — a
+        // spawn camp between pulls stays busy); real progress (or a full
+        // kIdleAfterMs with no activity at all) resets it to 0.
         uint32 churnSinceMs = 0;
+        // Last world-tick time the bot was seen in combat, and last time its
+        // XP or level changed (kill, quest, or ding). A bot inside
+        // kRecentFightMs of either is camping a spawn, not stuck: it reports
+        // busy, never stalled. Zero when never observed.
+        uint32 lastCombatMs = 0;
+        uint32 lastXpMs = 0;
+        uint32 lastXp = 0;
+        uint32 lastLevel = 0;
         bool hasWorkTarget = false;
         // Last executed action name, to notice a new action without string
         // compares against history: any pointer/name change is activity.
@@ -254,6 +263,11 @@ private:
     static constexpr uint32 kStateBucketMs = 2000;
     static constexpr size_t kStateCount = 7; // combat, moving, busy, stalled, resting, dead, idle
     static constexpr uint32 kIdleAfterMs = 45000;
+    // A bot in combat or with an XP/level change inside this window is camping
+    // a spawn (killing in place, waiting for respawn), not stuck: it reports
+    // busy instead of stalled. Longer than kIdleAfterMs so a between-pull lull
+    // cannot flip a fighting camp to stalled.
+    static constexpr uint32 kRecentFightMs = 60000;
     uint64 m_stateWindow[kStateBucketCount][kStateCount];
     size_t m_stateBucketIndex;
     uint32 m_stateBucketElapsedMs;

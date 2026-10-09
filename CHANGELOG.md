@@ -2,6 +2,7 @@
 
 ### Bots & Behavior
 - Bots with nothing to do take a short walk instead of standing — a wandering bot whose every search for a destination comes back empty now walks 20-50 yards to a random reachable spot (never into a guarded enemy town), so new mobs come into view and its next search starts from somewhere else.
+- Bots fighting in place no longer count as stalled — a bot that fought or gained experience in the last minute (camping a spawn between pulls) now shows as busy instead of stalled, so the stalled count only means standing with a destination and getting nowhere.
 - Fewer "no route" trips — the walk from the bot to the first waypoint, and from the last waypoint to the target, now counts as reachable when it ends within 5 yards instead of 1, so a target standing just off the walkable ground (a doorway, a bridge edge, a vendor behind a counter) no longer refuses the whole route.
 - Bots with no route keep walking toward their goal — when no path to a far target is found, a wandering bot standing off the walkable ground (in water, under a city, on a ledge) hops back onto the nearest walkable spot, and otherwise walks to a reachable point that is at least 5 yards closer and tries again from there, instead of standing and dropping the trip.
 - Stuck-trip rescues land on the street, not under it — the class-trainer rescue teleport now picks the walkable spot closest to the trainer's own floor and checks it walks back to the trainer, instead of the mesh under Stormwind where over half of the rescues landed and stood for good.

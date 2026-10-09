@@ -880,20 +880,37 @@ void ObservabilityEmitter::Update(uint32 diff)
             track.churnSinceMs = nowMs;
         if (fresh && track.lastActivityMs == 0)
             track.lastActivityMs = nowMs - kIdleAfterMs;
-
+        // Spawn-camp recency: a bot fighting in place or banking XP is doing
+        // real work even when standing still between pulls. Both signals are
+        // member reads already paid for (combat state) or beside (XP/level)
+        // this tick's classification.
         uint8 state = BaseMacroState(bot, ai);
+        if (state == STATE_COMBAT)
+            track.lastCombatMs = nowMs;
+        uint32 curXp = bot->GetUInt32Value(PLAYER_XP);
+        uint32 curLevel = bot->GetLevel();
+        if (track.lastSeenMs != 0 && (curXp != track.lastXp || curLevel != track.lastLevel))
+            track.lastXpMs = nowMs;
+        track.lastXp = curXp;
+        track.lastLevel = curLevel;
+
         // Idle means really doing nothing: a base IDLE bot that did anything
         // inside kIdleAfterMs is busy while it made real progress, and stalled
         // when its only activity was churn (a travel target or action-name
         // changes) for that whole window. Combat, moving, resting and dead are
-        // instant states, never gated.
+        // instant states, never gated. A recent fight or XP gain (kill, quest,
+        // ding) inside kRecentFightMs vetoes stalled: the bot is camping a
+        // spawn between pulls, not standing with a destination and getting
+        // nowhere.
         if (state == STATE_IDLE)
         {
             if (track.lastActivityMs != 0 && (nowMs - track.lastActivityMs) < kIdleAfterMs)
             {
                 bool churnOnly = track.churnSinceMs != 0 &&
                     (nowMs - track.churnSinceMs) >= kIdleAfterMs;
-                state = churnOnly ? STATE_STALLED : STATE_BUSY;
+                bool recentFight = (track.lastCombatMs != 0 && (nowMs - track.lastCombatMs) < kRecentFightMs) ||
+                    (track.lastXpMs != 0 && (nowMs - track.lastXpMs) < kRecentFightMs);
+                state = (churnOnly && !recentFight) ? STATE_STALLED : STATE_BUSY;
             }
             else
             {
