@@ -4545,14 +4545,14 @@ the live list-based engine (`ProtectionWarriorStrategy.cpp`,
 `ai/playerbot/strategy/warrior/`). Deviations from the donor, all
 deliberate: (a) no heroic-throw fallback chain — Heroic Throw has no
 1.18.1 player spell row, and the existing `taunt` -> `battle shout taunt`
-fallback node already covers taunt failure; (b) no mocking-blow fallback —
-it would stance-dance the tank out of defensive with no return row, and
-its 10-rage melee-range shape duplicates taunt rather than extending it;
-(c) the `lose aggro` trigger itself (`GenericTriggers.cpp`, `ai->IsTank`
-check + non-tank-victim gate) is kept as-is — no `main tank` value or
-LowTankThreat wiring since that LD-8 branch is not on the integration
-branch yet; (d) `taunt on snare target` stays at ACTION_MOVE (different
-target: adds, not the lost-aggro mob).
+fallback node already covers taunt failure; (b) the `lose aggro` trigger
+itself (`GenericTriggers.cpp`, `ai->IsTank` check + non-tank-victim gate)
+is kept as-is — no `main tank` value or LowTankThreat wiring since that
+LD-8 branch is not on the integration branch yet — plus a player-target
+guard the bump made load-bearing (players have no threat list; without it
+the trigger is spuriously active in PvP and the 41-priority taunt would
+outbid real interrupts for zero effect); (c) `taunt on snare target` stays
+at ACTION_MOVE (different target: adds, not the lost-aggro mob).
 
 Reason: WAR-3 in the warrior parity sweep: the tank's taunt sat below
 interrupts and the intercept/charge path, so a peeled mob waited behind a
