@@ -2301,13 +2301,18 @@ bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float rad
         count = MeleeAoeCandidates(tanking, offsets);
     else
         count = RangedAoeCandidates(offsets);
-    float const angleToTarget = target ? bot->GetAngle(target) : bot->GetAngle(&hazardCenter);
+    float const angleToTarget = target ? bot->GetAngle(target) : bot->GetAngle(hazardCenter.getX(), hazardCenter.getY());
     float const angleFromHazard = hazardCenter.GetAngleTo(WorldPosition(bot));
     const WorldPosition botPos(bot);
     LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
     uint32 const nowMs = WorldTimer::getMSTime();
     lastMove.fleeFailures.Observe(target ? target->GetObjectGuid().GetRawValue() : 0,
         bot->GetMapId(), target ? sServerFacade.getDistance2d(bot, target) : 0.0f, nowMs, bot->movespline->GetId());
+    // Unpulled-hostile guard (mirrors the FindStep aggro sense used by the
+    // bomb/spread step-outs: FindStep itself lives in DungeonActions.cpp):
+    // one cached "possible targets" read, no scan per candidate.
+    std::list<ObjectGuid> const& possibleTargets =
+        ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid> >("possible targets")->Get();
     for (int pass = 0; pass < 2; ++pass)
     {
         bool const vetoSecondPass = (pass == 1);
@@ -2337,8 +2342,27 @@ bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float rad
                 if (!lastMove.fleeFailures.IsHeadingFree(checkHeading, nowMs))
                     continue;
             }
-            WorldPosition out(botPos);
-            if (!FindStep(ai, bot, botPos, heading, step, out))
+            WorldPosition out = cand;
+            if (!bot->IsWithinLOS(out.getX(), out.getY(), out.getZ() + bot->GetCollisionHeight()))
+                continue;
+            if (!botPos.canPathTo(out, bot))
+                continue;
+            bool nearUnpulled = false;
+            for (ObjectGuid const& guid : possibleTargets)
+            {
+                Unit* unit = ai->GetUnit(guid);
+                if (!unit || !sServerFacade.IsAlive(unit) || unit == bot)
+                    continue;
+                if (unit->GetVictim())
+                    continue;
+                if (sServerFacade.IsDistanceLessThan(sServerFacade.getDistance2d(unit, out.getX(), out.getY()),
+                    sPlayerbotAIConfig.aggroDistance))
+                {
+                    nearUnpulled = true;
+                    break;
+                }
+            }
+            if (nearUnpulled)
                 continue;
             if (!MoveTo(bot->GetMapId(), out.getX(), out.getY(), out.getZ(), false, IsReaction(), false, true))
                 continue;
