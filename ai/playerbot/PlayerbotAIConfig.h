@@ -620,10 +620,13 @@ public:
     // bracket/state/deserter/taxi/combat/queue checks, native handler
     // ownership/invites/queue updates via HandleBattlemasterJoinOpcode (guid
     // 1337 bypass) + SMSG_BATTLEFIELD_STATUS/BGStatusAction invite path.
-    // No second queue/thread/arena/vehicle/expansion or DB tick scans.
     bool randomBotBgEnabled = true;
     uint32 randomBotBgQueueInterval = 30000;
     uint32 randomBotBgMaxQueuePerInterval = 1;
+    // Opt-in autonomous bot-only WSG (default off). Seeds one 10v10 in the
+    // most populated bracket, capped at one concurrent instance (average PC).
+    bool randomBotBgAutonomous = false;
+    uint32 randomBotBgAutonomousMaxInstances = 1;
 
     bool jumpInBg;
     bool jumpWithPlayer;

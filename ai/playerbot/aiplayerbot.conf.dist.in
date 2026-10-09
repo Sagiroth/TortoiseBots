@@ -395,6 +395,12 @@ AiPlayerbot.AhMarketValueVendor = 1
 #AiPlayerbot.RandomBotBgEnabled = 1
 #AiPlayerbot.RandomBotBgQueueInterval = 30000
 #AiPlayerbot.RandomBotBgMaxQueuePerInterval = 1
+# Opt-in autonomous bot-only Warsong Gulch (default off). When no human waits
+# in any BG queue, seeds one 10v10 WSG in the most populated level bracket so
+# pool bots have matches of their own. Capped at 1 concurrent instance for an
+# average PC (20 bots on one map); raise to 2 only on a strong host.
+#AiPlayerbot.RandomBotBgAutonomous = 0
+#AiPlayerbot.RandomBotBgAutonomousMaxInstances = 1
 
 # Currently has NO effect: the key is read but nothing uses it (kept for
 # config compatibility). Bot activity is controlled by

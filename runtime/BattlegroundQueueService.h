@@ -17,6 +17,11 @@ namespace TortoiseBots
 // invites, and port events. InBattleGround, LFT, group, master, and owned-pair
 // guards remain module policy without exposing queue internals. No blind
 // periodic queueing, second queue, thread, arena, vehicle, expansion, or DB scan.
+//
+// Opt-in autonomous bot-only WSG (AiPlayerbot.RandomBotBgAutonomous, default
+// off): when no human demand exists, seeds one 10v10 WSG in the bracket
+// nearest the pool median level, capped at one concurrent instance for an
+// average PC. Queued-but-unstarted seeds block new seeds (anti-over-queue).
 class BattlegroundQueueService
 {
 public:
@@ -40,6 +45,12 @@ private:
     bool IsGroupFullyBotOwned(::Group* group) const;
     bool HasLiveNonBotMember(::Group* group) const;
     void PruneOwnedQueueSet();
+    // Autonomous seeding: counts and queue helpers. Pure counting over the
+    // in-memory bot snapshot and the copy-only participant snapshot.
+    void UpdateAutonomousSeeding();
+    uint32_t CountRunningBotOnlyWsg() const;
+    uint32_t CountOwnedQueuedFor(uint32_t queueTypeValue, uint32_t bracketIndex) const;
+    uint32_t CountSeededForTeam(uint32_t queueTypeValue, uint32_t bracketIndex, uint32_t team) const;
 
     bool m_initialized = false;
     uint32_t m_elapsedMs = 0;
