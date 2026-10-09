@@ -1756,6 +1756,9 @@ TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Uni
     return TravelNodeRoute();
 }
 
+// How close a walk leg to/from the node route must end to count as reaching it.
+static float const TRAVEL_WALK_LEG_REACH_YD = 5.0f;
+
 TravelNodeRoute TravelNodeMap::getRoute(WorldPosition startPos, WorldPosition endPos, std::vector<WorldPosition>& startPath, std::vector<WorldPosition>& endPath, Unit* unit)
 {
     if (m_nodes.empty())
@@ -1805,7 +1808,7 @@ TravelNodeRoute TravelNodeMap::getRoute(WorldPosition startPos, WorldPosition en
             WorldPosition startNodePosition = *startNode->getPosition();
             WorldPosition endNodePosition = *endNode->getPosition();
 
-            float maxStartDistance = startNode->IsTransport() ? 20.0f : 1.0f;
+            float maxStartDistance = startNode->IsTransport() ? 20.0f : TRAVEL_WALK_LEG_REACH_YD;
 
             TravelNodeRoute route = getRoute(startNode, endNode, unit);
 
@@ -1824,7 +1827,11 @@ TravelNodeRoute TravelNodeMap::getRoute(WorldPosition startPos, WorldPosition en
                 {
                     endPath = endNodePosition.GetPathTo(endPos, unit);
 
-                    bool hasPath = endPos.isPathTo(endPath, 1.0f);
+                    // 5 yd, not 1: a target a step off the mesh (npc in a doorway,
+                    // on a bridge) refused the whole route. 395 of 453 nopath
+                    // failures were these walk legs (live 2026-10-09); arrival is
+                    // judged by interaction range anyway.
+                    bool hasPath = endPos.isPathTo(endPath, TRAVEL_WALK_LEG_REACH_YD);
 
                     if (!hasPath)
                     {
@@ -1833,7 +1840,7 @@ TravelNodeRoute TravelNodeMap::getRoute(WorldPosition startPos, WorldPosition en
                         if (surfaceNode.setAtWaterSurface() || surfaceEnd.setAtWaterSurface())
                         {
                             endPath = surfaceNode.GetPathTo(surfaceEnd, unit);
-                            hasPath = surfaceEnd.isPathTo(endPath, 1.0f);
+                            hasPath = surfaceEnd.isPathTo(endPath, TRAVEL_WALK_LEG_REACH_YD);
                         }
                     }
 
