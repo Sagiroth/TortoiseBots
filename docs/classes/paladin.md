@@ -56,7 +56,7 @@ Paladins provide exceptional party utility, versatile auras, class blessings, an
 
 ## Utility, Blessings & Auras
 
-- **Blessings:** Coordinates blessings across party classes (*Blessing of Kings*, *Might*, *Wisdom*, *Salvation*, *Sanctuary*, *Light*). Automatically avoids overriding higher-tier blessings.
+- **Blessings:** Coordinates blessings across party classes (*Blessing of Kings*, *Might*, *Wisdom*, *Salvation*, *Sanctuary*, *Light*). Automatically avoids overriding higher-tier blessings. With two paladins in one party, a short shared *buff claim* keeps them from double-casting: while one paladin's blessing cast is in flight the other stands down on that member instead of overwriting it.
 - **Blessing scheduling:** Out of combat, catching up to the master runs below the blessings (a pending blessing in range wins the tick, follow resumes next). Upkeep blessings wait for 40% mana, 20% with a real player master.
 - **Auras:** Each spec keeps a fixed default aura (Holy → Concentration, Protection → Retribution, Retribution → Sanctity); otherwise the bot casts the first missing aura in a fixed list. No damage-type or group-composition detection exists.
 - **Cleansing:** Uses *Cleanse* and *Purify* to remove poisons, diseases, and magic debuffs from party members.

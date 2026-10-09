@@ -4148,3 +4148,42 @@ the prey rule); `bash tools/verify_all.sh`; `python3 tools/verify_okf.py`;
 `git diff --check`. No build/deploy (orchestrator compiles); live check
 pending: `idle wander` rows for parked purpose-None bots, stalled share,
 no change in grind pick/re-park rates.
+
+
+## Party buffs batch 2: blessing claim + in-combat motw/AI/spirit fallback — 2026-10-09
+Feature: two paladins no longer double-cast the same blessing on one member,
+and mark of the wild / arcane intellect / divine spirit land in the quiet
+moments of long fights. Native work (no donor port): the blessing picker was
+a bare CastSpellAction with no claim, and only priest fortitude had an
+in-combat fallback row.
+
+Source files (module, modified):
+`ai/playerbot/strategy/paladin/PaladinActions.{h,cpp}`
+(`CastBlessingOnPartyAction`: `isUseful` stands down while another bot holds
+a live claim on the resolved blessing+target, `Execute` claims the resolved
+pair only on a cast that actually starts) +
+`ai/playerbot/strategy/{druid/DruidStrategy,mage/MageStrategy,priest/PriestStrategy}.cpp`
+(combat fallback rows for the single-target party buffs at ACTION_DEFAULT,
+the priest-fortitude shape: below every heal and attack).
+
+Copied / ported / reimplemented: reimplemented from the module's own
+patterns. Claim reuses the shared BuffClaimRegistry (4 s TTL) exactly like
+CastBuffSpellAction::Execute (stamp on cast start, never on a whiff).
+Fallback rows reuse the existing fortitude precedent (plain combat row at
+ACTION_DEFAULT, no master/mana gate in the row: the buff trigger's own aura
+gate plus the upkeep mana floor and retry cooldown in CastBuffSpellAction
+already decide whether the cast is worth it). Cure tiering (task item 3)
+deliberately untouched: live paladin/druid/shaman rows already match the
+donor's flat self/party split (donor tiers nothing across dispel types).
+Buff rank by target level (task item 4) skipped: no rank-selection helper
+exists (SpellIdValue only reads the global mana save level), plumbing target
+level through is not small.
+
+Reason: night2 buffs-live findings 1+4: chain-pulling masters starve every
+party buff except fortitude (follow beats out-of-combat buffs; combat rows
+were empty), and two paladins resolve the same member through the same
+shared value with no cross-bot coordination.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No build
+(per task constraints); live in-game check pending: blessing double-cast
+rate with two paladins, buffs-active share across long fights.
