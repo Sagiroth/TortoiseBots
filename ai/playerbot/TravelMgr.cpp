@@ -1336,6 +1336,23 @@ void TravelTarget::CheckStatus()
                 return;
             }
 
+            // A quest errand that went inactive is done (quest accepted,
+            // objective complete, reward taken): it cannot be re-picked, so the
+            // 1-minute cooldown only froze the pool bot - COOLDOWN still counts
+            // as active and the request gate refuses every new pick meanwhile
+            // (live 2026-10-09: 1-3 min idle after each hand-in). Expire it so
+            // the next tick picks the next errand. Owned bots keep the cooldown.
+            if (destinationInactive && sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster() &&
+                (tDestination->GetPurpose() == TravelDestinationPurpose::QuestGiver ||
+                 tDestination->GetPurpose() == TravelDestinationPurpose::QuestTaker ||
+                 static_cast<uint32>(tDestination->GetPurpose()) & static_cast<uint32>(TravelDestinationPurpose::QuestAllObjective)))
+            {
+                ai->TellDebug(ai->GetMaster(), "The target is expiring because its quest errand is done.", "debug travel");
+                forced = false;
+                SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
+                return;
+            }
+
             ai->TellDebug(ai->GetMaster(), "The target is cooling down because the destination was no longer active or the conditions are no longer true.", "debug travel");
             forced = false;
             // A trip that never arrived must not re-request on expiry: the
