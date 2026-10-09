@@ -25,10 +25,12 @@ Shamans bring unparalleled group utility through totem sets, elemental shocks, w
 
 Shamans automatically drop and maintain fixed per-spec 4-element totem sets (other totems are selectable via manual `totem ...` strategies):
 
-- **Earth Totem:** *Strength of Earth Totem* (automatic; *Stoneskin Totem* as fallback). *Tremor Totem* is manual-only.
+- **Earth Totem:** *Strength of Earth Totem* (automatic; *Stoneskin Totem* as fallback). Reacts to fear with *Tremor Totem* (any party member feared/charmed/confused, or the target casting) and to runners with *Earthbind Totem* (fleeing target or snared party member) — only while the earth slot is empty.
 - **Fire Totem:** *Searing Totem* (single target), *Magma Totem* / *Fire Nova Totem* (AoE packs).
-- **Water Totem:** *Mana Spring Totem* or *Healing Stream Totem* (automatic per spec). *Poison Cleansing Totem* is manual-only.
-- **Air Totem:** *Windfury Totem* (automatic; *Grace of Air Totem* for Enhancement), *Grounding Totem* as fallback.
+- **Water Totem:** *Mana Spring Totem* or *Healing Stream Totem* (automatic per spec). Reacts to party poison/disease with *Poison/Disease Cleansing Totem* — only while the water slot is empty.
+- **Air Totem:** *Windfury Totem* (automatic; *Grace of Air Totem* for Enhancement), *Grounding Totem* as fallback. Reacts to enemy casting with *Grounding Totem* — only while the air slot is empty.
+
+Reactive swaps never fight an explicit order: any manual `totem <slot> <which>` strategy for that slot disables the matching swap, and a dropped totem quiets its trigger (no flapping).
 
 ---
 

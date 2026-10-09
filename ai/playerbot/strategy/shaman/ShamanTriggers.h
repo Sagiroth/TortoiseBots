@@ -444,6 +444,152 @@ namespace ai
     public:
         PartyMemberCureDiseaseTrigger(PlayerbotAI* ai) : PartyMemberNeedCureTrigger(ai, "cure disease", DISPEL_DISEASE) {}
     };
+    // Reactive situational totems (mod-playerbots parity SHM-2). Each fires
+    // only when its element slot is currently empty (no flap: totems
+    // persist, so once dropped the trigger goes quiet) and never against an
+    // explicit player order (`totem <slot> <which>` manual strategy wins).
+    class TremorTotemReactiveTrigger : public Trigger
+    {
+    public:
+        TremorTotemReactiveTrigger(PlayerbotAI* ai) : Trigger(ai, "tremor totem reactive", 5) {}
+
+        virtual bool IsActive() override
+        {
+            if (ai->HasStrategy("totem earth stoneclaw", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem earth stoneskin", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem earth earthbind", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem earth strength", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem earth tremor", BotState::BOT_STATE_COMBAT))
+                return false;
+            if (!ai->HasSpell("tremor totem"))
+                return false;
+            if (AI_VALUE2(bool, "has totem", "stoneclaw totem") ||
+                AI_VALUE2(bool, "has totem", "stoneskin totem") ||
+                AI_VALUE2(bool, "has totem", "earthbind totem") ||
+                AI_VALUE2(bool, "has totem", "strength of earth totem") ||
+                AI_VALUE2(bool, "has totem", "tremor totem"))
+                return false;
+            // Party fear scan first (cheap self check, then group members).
+            if (bot->HasAuraType(SPELL_AURA_MOD_FEAR) || bot->HasAuraType(SPELL_AURA_MOD_CHARM) ||
+                bot->HasAuraType(SPELL_AURA_MOD_CONFUSE))
+                return true;
+            Group* group = bot->GetGroup();
+            if (group)
+            {
+                for (Player* member : LiveGroupMembers(group))
+                {
+                    if (!member || member == bot)
+                        continue;
+                    if (member->HasAuraType(SPELL_AURA_MOD_FEAR) || member->HasAuraType(SPELL_AURA_MOD_CHARM) ||
+                        member->HasAuraType(SPELL_AURA_MOD_CONFUSE))
+                        return true;
+                }
+            }
+            // Pre-drop when the current target is casting (cheap: no aura
+            // scan, just the cast flag the interrupt path already reads).
+            Unit* target = AI_VALUE(Unit*, "current target");
+            return target && target->IsNonMeleeSpellCasted(true);
+        }
+    };
+
+    class GroundingTotemReactiveTrigger : public Trigger
+    {
+    public:
+        GroundingTotemReactiveTrigger(PlayerbotAI* ai) : Trigger(ai, "grounding totem reactive", 5) {}
+
+        virtual bool IsActive() override
+        {
+            if (ai->HasStrategy("totem air grace", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem air grounding", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem air resistance", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem air windfury", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem air windwall", BotState::BOT_STATE_COMBAT))
+                return false;
+            if (!ai->HasSpell("grounding totem"))
+                return false;
+            if (AI_VALUE2(bool, "has totem", "grace of air totem") ||
+                AI_VALUE2(bool, "has totem", "windwall totem") ||
+                AI_VALUE2(bool, "has totem", "windfury totem") ||
+                AI_VALUE2(bool, "has totem", "grounding totem") ||
+                AI_VALUE2(bool, "has totem", "sentry totem") ||
+                AI_VALUE2(bool, "has totem", "nature resistance totem"))
+                return false;
+            Unit* target = AI_VALUE(Unit*, "current target");
+            return target && target->IsNonMeleeSpellCasted(true);
+        }
+    };
+
+    class CleansingTotemReactiveTrigger : public Trigger
+    {
+    public:
+        CleansingTotemReactiveTrigger(PlayerbotAI* ai) : Trigger(ai, "cleansing totem reactive", 5) {}
+
+        virtual bool IsActive() override
+        {
+            if (ai->HasStrategy("totem water cleansing", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem water resistance", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem water healing", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem water mana", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem water poison", BotState::BOT_STATE_COMBAT))
+                return false;
+            if (!ai->HasSpell("poison cleansing totem") && !ai->HasSpell("disease cleansing totem"))
+                return false;
+            if (AI_VALUE2(bool, "has totem", "healing stream totem") ||
+                AI_VALUE2(bool, "has totem", "mana spring totem") ||
+                AI_VALUE2(bool, "has totem", "poison cleansing totem") ||
+                AI_VALUE2(bool, "has totem", "disease cleansing totem") ||
+                AI_VALUE2(bool, "has totem", "mana tide totem") ||
+                AI_VALUE2(bool, "has totem", "fire resistance totem"))
+                return false;
+            // Reuse the cure path's own scan: self first (cheap), then the
+            // party dispel value the cure triggers already query.
+            if (ai->HasAuraToDispel(bot, DISPEL_POISON) || ai->HasAuraToDispel(bot, DISPEL_DISEASE))
+                return true;
+            Group* group = bot->GetGroup();
+            if (!group)
+                return false;
+            for (Player* member : LiveGroupMembers(group))
+            {
+                if (!member || member == bot || !sServerFacade.IsAlive(member))
+                    continue;
+                if (ai->HasAuraToDispel(member, DISPEL_POISON) || ai->HasAuraToDispel(member, DISPEL_DISEASE))
+                    return true;
+            }
+            return false;
+        }
+    };
+
+    class EarthbindTotemReactiveTrigger : public Trigger
+    {
+    public:
+        EarthbindTotemReactiveTrigger(PlayerbotAI* ai) : Trigger(ai, "earthbind totem reactive", 5) {}
+
+        virtual bool IsActive() override
+        {
+            if (ai->HasStrategy("totem earth stoneclaw", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem earth stoneskin", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem earth earthbind", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem earth strength", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem earth tremor", BotState::BOT_STATE_COMBAT))
+                return false;
+            if (!ai->HasSpell("earthbind totem"))
+                return false;
+            if (AI_VALUE2(bool, "has totem", "stoneclaw totem") ||
+                AI_VALUE2(bool, "has totem", "stoneskin totem") ||
+                AI_VALUE2(bool, "has totem", "earthbind totem") ||
+                AI_VALUE2(bool, "has totem", "strength of earth totem") ||
+                AI_VALUE2(bool, "has totem", "tremor totem"))
+                return false;
+            // Runner: fleeing/confused movement (low-health mobs running,
+            // fear breaks) or a snared party member needing the slow.
+            Unit* target = AI_VALUE(Unit*, "current target");
+            if (target && sServerFacade.IsAlive(target) &&
+                target->HasUnitState(UNIT_STAT_FLEEING | UNIT_STAT_CONFUSED))
+                return true;
+            return AI_VALUE(Unit*, "party member to remove roots") != nullptr;
+        }
+    };
+
 
     class BloodlustTrigger : public BoostTrigger
     {
