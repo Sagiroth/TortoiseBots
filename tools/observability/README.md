@@ -15,7 +15,7 @@ Rules that keep its state honest:
 
 ## Telemetry surface (protocol v8)
 
-Each `BOT_BATCH` bot entry carries: `name, guid, class, role, level, xp, next_xp, hp/max_hp, power/max_power, power_type, map, zone, x/y/z/o, target, target_level, strategy, state, last_action, last_trigger, travel_purpose, travel_to`.
+Each `BOT_BATCH` bot entry carries: `name, guid, class, role, level, xp, next_xp, hp/max_hp, power/max_power, power_type, map, zone, x/y/z/o, target, target_level, strategy, state, last_action, last_trigger, travel_purpose, travel_to, travel_status, travel_dist`.
 
 Macro states (`state`, heartbeat `states`, `tortoisebots_state_ratio`): `combat` (in combat), `moving` (a movement generator owns the bot), `busy` (standing still but doing real work: looting, casting, sitting to eat/drink, or movement within the last 45 s), `stalled` (standing still for 45+ s whose only activity was churn — an active travel target or a changing last-action name, no movement/loot/cast/sit — i.e. standing with a destination and getting nowhere), `resting` (rest flag), `idle` (no movement, action, cast, loot, or active target for 45+ s — really doing nothing), `dead`. `stalled` exists so a bot parked with a travel target is no longer reported as busy. Per-tick cost is member reads + one action-name compare; the 3-min window is unchanged.
 - `power_type` is the current resource (`mana`, `rage`, `energy`, `focus`, `happiness`); druids reflect their active form. Label bars by it, never hardcode "mana".
