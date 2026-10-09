@@ -6,6 +6,7 @@
 #include "playerbot/strategy/Value.h"
 #include "Group/Group.h"
 #include "TargetValue.h"
+#include "PossibleAttackTargetsValue.h"
 
 namespace ai
 {
@@ -46,19 +47,25 @@ namespace ai
             if (!guid)
                 return NULL;
 
-            std::list<ObjectGuid> attackers = context->GetValue<std::list<ObjectGuid>>("possible targets")->Get();
-            if (std::find(attackers.begin(), attackers.end(), guid) == attackers.end()) return NULL;
-
+            // Pre-pull marks are not in "possible targets" yet (that value only
+            // holds units already fighting the bot): like the donor
+            // (RtiTargetValue::Calculate, attackers gate deleted), accept a
+            // marked unit on legality + range + LOS instead of combat state.
             Unit* unit = ai->GetUnit(ObjectGuid(guid));
-            if (!unit || sServerFacade.UnitIsDead(unit) ||
-                !bot->IsWithinDistInMap(unit, sPlayerbotAIConfig.sightDistance, false))
+            if (!unit || sServerFacade.UnitIsDead(unit))
+                return NULL;
+
+            if (!PossibleAttackTargetsValue::IsPossibleTarget(unit, bot, sPlayerbotAIConfig.sightDistance, false))
+                return NULL;
+
+            if (!bot->IsWithinLOSInMap(unit))
                 return NULL;
 
             return unit;
         }
 
     private:
-    std::string type;
+        std::string type;
     };
 
     class RtiCcTargetValue : public RtiTargetValue
