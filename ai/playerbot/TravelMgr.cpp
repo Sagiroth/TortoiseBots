@@ -1374,6 +1374,25 @@ void TravelTarget::CheckStatus()
                 SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
                 return;
             }
+            // A gather trip that went inactive before arrival reached an empty
+            // node (looted, tapped, despawned): the static destination data
+            // still offers it, so the 1-minute cooldown only stands the pool
+            // bot at nothing - COOLDOWN still counts as active and the request
+            // gate refuses every new pick meanwhile (live 2026-10-09: ~17% of
+            // gather-stalled bot-time sits in cooldown a median 57 yd out).
+            // Expire it so the next tick walks a live node; the dead one is
+            // skipped (SetBestTarget requires IsActive). An arrived trip
+            // (WORK) keeps today's behaviour. Owned bots keep the cooldown.
+            if (destinationInactive && GetStatus() == TravelStatus::TRAVEL_STATUS_TRAVEL &&
+                sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster() &&
+                (tDestination->GetPurpose() == TravelDestinationPurpose::GatherMining ||
+                 tDestination->GetPurpose() == TravelDestinationPurpose::GatherHerbalism))
+            {
+                ai->TellDebug(ai->GetMaster(), "The target is expiring because its gather node is gone.", "debug travel");
+                forced = false;
+                SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
+                return;
+            }
 
             ai->TellDebug(ai->GetMaster(), "The target is cooling down because the destination was no longer active or the conditions are no longer true.", "debug travel");
             forced = false;

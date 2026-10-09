@@ -21,6 +21,8 @@
 - Bots give up on a grind spot the world mesh cannot reach — a same-map walk that probes `nopath` blacklists that creature kind for five minutes (the same list the give-up-on-a-wedged-mob rule uses), so after the doomed target drops the next pick walks a different kind instead of re-picking the same spot and firing `move stuck` resets in place.
 - Grind picks skip spots off the world mesh — a candidate point with no walkable navmesh polygon nearby is refused at pick time, so the next candidate wins instead of six wasted walks, a drop, and a re-pick of the same unreachable spot.
 - Bots stop standing on a travel walk that goes nowhere — a move that reports success while the bot stays inside 2 yards for 5 seconds now fills the failure budget like a refused move, so the six-fail drop, the purpose park and the kind blacklist engage instead of phantom successes cancelling real failures until the travel timeout.
+- Gather trips walk on from an empty node instead of standing out the cooldown — a gather trip that reaches its node to find it looted, tapped or despawned no longer sits in a one-minute cooldown that blocked every new pick, so the next visit walks a live node instead of standing a median 57 yards out; arrived trips and owned bots keep today's behaviour.
+- Bots get off their mount to gather — a bot that rode to its herb or vein now dismounts when it opens the node, like it already does for corpses, instead of burning its approach tries on casts that never start and abandoning the node.
 - Gather (mining/herbalism) picks skip spots off the world mesh too — the same one-query pick-time sieve grind got, after 51 of 65 mining move-failures probed `nopath` the same way.
 
 ## 2026-10-08

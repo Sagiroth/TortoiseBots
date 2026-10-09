@@ -208,6 +208,14 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
         }
     }
 
+    // Dismount for a game-object node like the corpse path above: the loot
+    // chain refuses mounted bots, so without this a bot that rode to its
+    // node burns its approach failures on casts that never start, the node
+    // is abandoned, and the travel action re-walks the same last yards.
+
+    if (bot->IsMounted())
+        ai->Unmount();
+
     GameObject* go = ai->GetGameObject(lootObject.guid);
     if (go && (go->getLootState() == GO_ACTIVATED || go->GetGoState() == GO_STATE_ACTIVE))
         return false;
