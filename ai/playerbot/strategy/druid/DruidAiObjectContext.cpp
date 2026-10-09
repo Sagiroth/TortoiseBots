@@ -235,7 +235,6 @@ namespace ai
                 creators["bash on enemy healer"] = [](PlayerbotAI* ai) { return new BashInterruptEnemyHealerSpellTrigger(ai); };
                 creators["nature's swiftness"] = [](PlayerbotAI* ai) { return new NaturesSwiftnessTrigger(ai); };
                 creators["nature's swiftness active"] = [](PlayerbotAI* ai) { return new NaturesSwiftnessActiveTrigger(ai); };
-                creators["nature's swiftness heal"] = [](PlayerbotAI* ai) { return new TwoTriggers(ai, "nature's swiftness active", "party member critical health"); };
                 creators["ferocious bite"] = [](PlayerbotAI* ai) { return new FerociousBiteTrigger(ai); };
                 creators["claw"] = [](PlayerbotAI* ai) { return new SpellCanBeCastedTrigger(ai, "claw"); };
                 creators["rip"] = [](PlayerbotAI* ai) { return new RipTrigger(ai, 3); };
