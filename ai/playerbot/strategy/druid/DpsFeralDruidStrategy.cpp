@@ -77,6 +77,10 @@ void DpsFeralDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
         NextAction::array(0, new NextAction("rebirth", ACTION_EMERGENCY), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "medium threat",
+        NextAction::array(0, new NextAction("cower", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "critical health",
         NextAction::array(0, new NextAction("regrowth", ACTION_CRITICAL_HEAL + 1),
                              new NextAction("healing touch", ACTION_CRITICAL_HEAL), NULL)));
@@ -209,10 +213,6 @@ void DpsFeralDruidRaidStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
 {
     DpsFeralDruidStrategy::InitCombatTriggers(triggers);
     DruidRaidStrategy::InitCombatTriggers(triggers);
-
-    triggers.push_back(new TriggerNode(
-        "medium threat",
-        NextAction::array(0, new NextAction("cower", ACTION_HIGH), NULL)));
 }
 
 void DpsFeralDruidRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
