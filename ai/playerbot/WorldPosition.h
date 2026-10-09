@@ -330,8 +330,11 @@ namespace ai
         // (map -> 64 yd cells -> guard positions), not a spawn-table walk: the
         // world tick is already 100-218 ms and AttackersValue runs on the hot path.
         // Random bots only (callers gate on AvoidHostileTowns + masterless).
-        bool isGuardedHostileTownFor(Player const* bot, float radius = 60.0f) const;
-        bool IsGuardedHostileTownFor(Player const* bot, float radius = 60.0f) const { return isGuardedHostileTownFor(bot, radius); }
+        // neutralTowns: count neutral-town bruisers (Booty Bay, Gadgetzan,
+        // Ratchet, Everlook). They only punish fighting in town, so travel
+        // routes and destinations pass false; fight checks keep the default.
+        bool isGuardedHostileTownFor(Player const* bot, float radius = 60.0f, bool neutralTowns = true) const;
+        bool IsGuardedHostileTownFor(Player const* bot, float radius = 60.0f, bool neutralTowns = true) const { return isGuardedHostileTownFor(bot, radius, neutralTowns); }
         // Test hook + diagnostics: index state without a bot. Built flag is
         // atomic (release on build, acquire on read); cell/guard counts only
         // meaningful after Built() returns true.

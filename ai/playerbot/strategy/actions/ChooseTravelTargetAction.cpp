@@ -765,7 +765,7 @@ static bool RouteIsSurvivableUncached(Player* bot, WorldPosition const& start, W
             ok = false;
             break;
         }
-        if (avoidTowns && p->IsGuardedHostileTownFor(bot))
+        if (avoidTowns && p->IsGuardedHostileTownFor(bot, 60.0f, false))
         {
             blocker = p->getAreaName(true, true) + " (hostile town guards)";
             ok = false;
@@ -913,9 +913,12 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                     // bot's team (static spawn data, 60 yd). Random masterless bots
                     // only; owned/alt bots obey their player. Enemy home zones are
                     // already skipped above; this covers contested-zone towns
-                    // (Splintertree, Booty Bay, Southshore, Menethil...).
+                    // (Splintertree, Southshore, Menethil...). Neutral towns (Booty
+                    // Bay, Gadgetzan, Ratchet, Everlook) stay open: their bruisers
+                    // only punish fighting in town, and refusing them cut every
+                    // route through the boat hubs and zone centres.
                     if (sPlayerbotAIConfig.avoidHostileTowns && !ai->HasRealPlayerMaster() &&
-                        position->IsGuardedHostileTownFor(bot))
+                        position->IsGuardedHostileTownFor(bot, 60.0f, false))
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - hostile town guards", "debug travel");
                         ++rejects["hostiletown"];

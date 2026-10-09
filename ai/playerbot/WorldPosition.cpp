@@ -682,7 +682,7 @@ size_t WorldPosition::GetHostileTownIndexGuards()
     return s_hostileTownGuards[0] + s_hostileTownGuards[1];
 }
 
-bool WorldPosition::isGuardedHostileTownFor(Player const* bot, float radius) const
+bool WorldPosition::isGuardedHostileTownFor(Player const* bot, float radius, bool neutralTowns) const
 {
     // O(1)-ish lock-free cell lookup after the one-time build: the query cell
     // + neighbours within radius, exact 2D distance per guard, then the live
@@ -719,7 +719,11 @@ bool WorldPosition::isGuardedHostileTownFor(Player const* bot, float radius) con
                 // kill whoever fights in town regardless of standing: always
                 // guarded inside the radius.
                 if (guard.neutralBruiser)
-                    return true;
+                {
+                    if (neutralTowns)
+                        return true;
+                    continue;
+                }
                 // Live check per the rule: hostile to the bot only if the bot is
                 // hostile to the guard's faction. Static template reaction first
                 // (covers the indexed opposing-faction case with zero reputation
