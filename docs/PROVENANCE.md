@@ -4564,3 +4564,18 @@ trainer-taught, creators pre-registered.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
 live test (no live test per parity brief); build via build-commit.sh.
+
+## Review fixes (2026-10-09, PR #582 CHANGES_REQUESTED)
+Blocking finding verified real and fixed: without an absolute-HP gate,
+the execute row (CP>=1 at +6) eats every combo point on any sub-25%
+target before Rip (CP>=3 at +4) can refresh — confirmed by trigger/row
+priorities, so Rip would fall off for the whole execute phase on bosses.
+Fixed with the donor's absolute gate scaled to vanilla: fire only when
+remaining HP < 4000 (donor: < 20000; WotLK top-rank bite hits roughly an
+order of magnitude harder than vanilla ranks, verified via
+spell_template bite values). Bosses keep Rip; trash and near-dead
+targets still eat early bites.
+Non-blocking raid note (no rip row in raid kit): pre-existing gap,
+unchanged by this PR (pre-PR flat CP5 bite behaved the same there);
+left for a follow-up, not widening this diff.
+verify_all.sh PASSED, build-commit.sh BUILD OK (commit pending push to same branch).

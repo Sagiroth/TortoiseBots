@@ -47,9 +47,16 @@ bool FerociousBiteExecuteTrigger::IsActive()
     if (AI_VALUE2(uint8, "combo", "current target") < 1)
         return false;
 
-    // Dying target: bite now instead of waiting for 5 CP / Rip ticks.
-    // (Donor also gates on an absolute-HP clause tuned for WotLK pools;
-    // vanilla pools make HP% alone the right gate.)
+    // Dying target a bite can matter against: HP% alone would fire 1-CP
+    // bites on sub-25% bosses all execute phase, eating every combo point
+    // before Rip (CP>=3) can refresh — Rip falls off for the whole phase.
+    // The donor's absolute gate (remaining < 20000, tuned for WotLK bite
+    // damage) is scaled to vanilla pools (~4000: top-rank bite hits an
+    // order of magnitude softer here), so bosses keep Rip while trash and
+    // near-dead targets still eat early bites.
+    if (target->GetHealth() >= 4000)
+        return false;
+
     return AI_VALUE2(uint8, "health", "current target") < 25;
 }
 
