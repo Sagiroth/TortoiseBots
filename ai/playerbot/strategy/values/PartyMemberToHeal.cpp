@@ -50,6 +50,18 @@ bool compareByMissingHealth(const Unit* u1, const Unit* u2, bool incomingDamage 
     return (hpmax1 - hp1) > (hpmax2 - hp2);
 }
 
+// Urgency for the LOS tie-break below: missing health falls back to health
+// percent when max health is unreachable (should not happen for live units,
+// but the sort must stay a strict ordering either way).
+static uint32 missingHealthForLosTieBreak(const Unit* u)
+{
+    uint32 cur = u->GetHealth();
+    uint32 max = u->GetMaxHealth();
+    if (!max || cur >= max)
+        return 0;
+    return max - cur;
+}
+
 Unit* PartyMemberToHeal::Calculate()
 {
     std::vector<Unit*> needHeals;
@@ -143,6 +155,36 @@ Unit* PartyMemberToHeal::Calculate()
 
     bool preHealing = ai->HasStrategy("preheal", BotState::BOT_STATE_COMBAT);
     sort(needHeals.begin(), needHeals.end(), [preHealing](const Unit* u1, const Unit* u2) { return compareByMissingHealth(u1, u2, preHealing); });
+
+    // Prefer an in-LOS member over an out-of-LOS one at similar urgency: an
+    // out-of-LOS pick still casts (its reach action walks the healer into
+    // LOS), so without this the healer chases a pillar-blocked member while
+    // a reachable one waits. LOS is only a tie-break inside a small missing-
+    // health window, never a filter: a dying member behind a pillar still
+    // outranks a scratched one in the open. Pets share the candidate set and
+    // take the same tie-break (no separate path).
+    Unit* mostUrgent = needHeals.front();
+    if (!sServerFacade.IsWithinLOSInMap(bot, mostUrgent))
+    {
+        // Window: a candidate less urgent by more than this still loses.
+        // mediumHealth 70 -> 30% of the top target's max health.
+        uint32 topMissing = missingHealthForLosTieBreak(mostUrgent);
+        uint32 smallGap = mostUrgent->GetMaxHealth()
+            ? mostUrgent->GetMaxHealth() * (100 - sPlayerbotAIConfig.mediumHealth) / 100
+            : 0;
+        for (Unit* candidate : needHeals)
+        {
+            if (candidate == mostUrgent)
+                continue;
+            if (topMissing > missingHealthForLosTieBreak(candidate) + smallGap)
+                break;
+            if (sServerFacade.IsWithinLOSInMap(bot, candidate))
+            {
+                std::swap(*std::find(needHeals.begin(), needHeals.end(), candidate), needHeals.front());
+                break;
+            }
+        }
+    }
 
     int healerIndex = 0;
     if (!partyMembers.empty())
