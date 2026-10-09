@@ -30,6 +30,14 @@ void WorldPacketHandlerStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &
         "check mount state",
         NextAction::array(0, new NextAction("check mount state", 2.0f), NULL)));
 
+    // Polling fallback for a BG invite whose status packet never reached the
+    // AI tick: the trigger only fires on a real invite (per-slot invited
+    // flag), and the action re-requests battlefield status so the normal
+    // "bg status" port path runs. Cheap: the trigger reads player-side queue
+    // flags, the action is gated on queued and sends one status opcode.
+    triggers.push_back(new TriggerNode(
+        "bg invite active",
+        NextAction::array(0, new NextAction("bg status check", relevance), NULL)));
     triggers.push_back(new TriggerNode(
         "group invite",
         NextAction::array(0, new NextAction("accept invitation", relevance), NULL)));

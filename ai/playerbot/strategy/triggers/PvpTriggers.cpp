@@ -78,6 +78,11 @@ bool BgActiveTrigger::IsActive()
 
 bool BgInviteActiveTrigger::IsActive()
 {
+    // Queued but not yet inside: fire when the core has flagged any queue
+    // slot invited (SetInviteForBattleGroundQueueType on SMSG_BATTLEFIELD_STATUS
+    // STATUS_WAIT_JOIN). Player-side flag read only: no queue-map access, no
+    // DB hit. Donor mod-playerbots reads the queue's GroupQueueInfo for the
+    // same invite state; the per-slot invited flag is this core's equivalent.
     if (bot->InBattleGround() || !bot->InBattleGroundQueue())
     {
         return false;
@@ -88,6 +93,9 @@ bool BgInviteActiveTrigger::IsActive()
         BattleGroundQueueTypeId queueTypeId = bot->GetBattleGroundQueueTypeId(i);
         if (queueTypeId == BATTLEGROUND_QUEUE_NONE)
             continue;
+
+        if (bot->IsInvitedForBattleGroundQueueType(queueTypeId))
+            return true;
     }
     return false;
 }

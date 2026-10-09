@@ -4522,3 +4522,39 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## BG invite polling fallback (SOC-P3, 2026-10-09)
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Base/Trigger/PvpTriggers.cpp:76-105` (BgInviteActiveTrigger reads
+the queue's GroupQueueInfo invite state and fires `bg status check`),
+`src/Ai/Base/Strategy/BattlegroundStrategy.cpp:10-15` (BGStrategy node
+`bg invite active` -> `bg status check`).
+
+Source files (module, modified): `ai/playerbot/BgInvitePolicy.h` (new pure
+rule: invited-on-any-slot verdict over the three queue slots),
+`ai/playerbot/strategy/triggers/PvpTriggers.cpp`
+(BgInviteActiveTrigger now returns true when any queue slot reports
+invited instead of falling through to false),
+`ai/playerbot/strategy/generic/WorldPacketHandlerStrategy.cpp`
+(`bg invite active` -> `bg status check` node on the always-present
+`default` strategy), `tools/test_bg_invite_policy.cpp` (new standalone
+test), `tools/verify_all.sh` (register test) + `CHANGELOG.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) the invite state comes from the player-side
+per-slot invited flag (`IsInvitedForBattleGroundQueueType`, set by the core
+on SMSG_BATTLEFIELD_STATUS) instead of the queue's GroupQueueInfo map, so
+the trigger does no queue-map access; (b) the consumer node lives on the
+always-present `default` (WorldPacketHandler) strategy rather than a
+BG-only strategy, because `battleground` is only added after the bot is
+inside - a queued bot outside the BG would never evaluate it; (c) no
+`bg join` auto-queue (queueing stays with the existing demand-aware
+auto-queue service and explicit battlemaster joins).
+
+Reason: queued bots whose invite status packet never reached the AI tick
+stood in queue until the invite expired; the trigger was dead-false (loop
+with no return) and nothing consumed it.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`; shared-builder
+compile check; no live in-game test.
