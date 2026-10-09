@@ -58,7 +58,7 @@ namespace ai
                     return false;
                 if (bot->GetDistance2d(attacker) > 15.0f)
                     return false;
-                return attacker->HasInArc(M_PI_F, bot);
+                return attacker->HasInArc(bot, M_PI_F);
             }
             return false;
         }
@@ -93,7 +93,7 @@ namespace ai
                     return false;
                 if (bot->GetDistance2d(attacker) > 15.0f)
                     return false;
-                return !attacker->HasInArc(M_PI_F, bot);
+                return !attacker->HasInArc(bot, M_PI_F);
             }
             return false;
         }
