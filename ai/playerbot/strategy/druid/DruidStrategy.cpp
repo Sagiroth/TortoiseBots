@@ -525,21 +525,20 @@ void DruidOffdpsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     OffdpsStrategy::InitCombatTriggers(triggers);
 
+    // mod-playerbots parity (DRU-8): resto healer-dps. Only while nobody
+    // needs healing and mana is comfortable (healer should attack, which
+    // already mana-gates), at the lowest relevance so every heal outbids
+    // it. Tree-form exit needs no extra row: every dps action below
+    // carries the caster-form prerequisite node, and CastCasterFormAction
+    // covers tree of life.
     triggers.push_back(new TriggerNode(
-        "faerie fire",
-        NextAction::array(0, new NextAction("faerie fire", ACTION_NORMAL + 3), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "insect swarm",
-        NextAction::array(0, new NextAction("insect swarm", ACTION_NORMAL + 2), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "moonfire",
-        NextAction::array(0, new NextAction("moonfire", ACTION_NORMAL + 1), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "wrath",
-        NextAction::array(0, new NextAction("wrath", ACTION_NORMAL), NULL)));
+        "healer should attack",
+        NextAction::array(0,
+            new NextAction("faerie fire", ACTION_DEFAULT + 0.5f),
+            new NextAction("insect swarm", ACTION_DEFAULT + 0.4f),
+            new NextAction("moonfire", ACTION_DEFAULT + 0.3f),
+            new NextAction("starfire", ACTION_DEFAULT + 0.25f),
+            new NextAction("wrath", ACTION_DEFAULT + 0.2f), NULL)));
 }
 
 void DruidOffdpsStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

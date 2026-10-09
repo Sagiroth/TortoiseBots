@@ -30,6 +30,7 @@ namespace ai
                 creators["cure"] = [](PlayerbotAI* ai) { return new CurePlaceholderStrategy(ai); };
                 creators["powershift"] = [](PlayerbotAI* ai) { return new DpsFeralDruidPowershiftStrategy(ai); };
                 creators["offheal"] = [](PlayerbotAI* ai) { return new OffhealPlaceholderStrategy(ai); };
+                creators["offdps"] = [](PlayerbotAI* ai) { return new OffdpsPlaceholderStrategy(ai); };
             }
         };
 
@@ -101,6 +102,19 @@ namespace ai
                 creators["offheal pve"] = [](PlayerbotAI* ai) { return new DruidOffhealPveStrategy(ai); };
                 creators["offheal pvp"] = [](PlayerbotAI* ai) { return new DruidOffhealPvpStrategy(ai); };
                 creators["offheal raid"] = [](PlayerbotAI* ai) { return new DruidOffhealRaidStrategy(ai); };
+            }
+        };
+
+        // mod-playerbots parity (DRU-8): the DruidOffdps* strategies exist
+        // but were never registered — wire them like priest offdps.
+        class OffdpsSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            OffdpsSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["offdps pve"] = [](PlayerbotAI* ai) { return new DruidOffdpsPveStrategy(ai); };
+                creators["offdps pvp"] = [](PlayerbotAI* ai) { return new DruidOffdpsPvpStrategy(ai); };
+                creators["offdps raid"] = [](PlayerbotAI* ai) { return new DruidOffdpsRaidStrategy(ai); };
             }
         };
 
@@ -346,6 +360,7 @@ DruidAiObjectContext::DruidAiObjectContext(PlayerbotAI* ai) : AiObjectContext(ai
     strategyContexts.Add(new ai::druid::CureSituationStrategyFactoryInternal());
     strategyContexts.Add(new ai::druid::BuffSituationStrategyFactoryInternal());
     strategyContexts.Add(new ai::druid::OffhealSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::druid::OffdpsSituationStrategyFactoryInternal());
     strategyContexts.Add(new ai::druid::BoostSituationStrategyFactoryInternal());
     strategyContexts.Add(new ai::druid::CcSituationStrategyFactoryInternal());
     strategyContexts.Add(new ai::druid::StealthSituationStrategyFactoryInternal());
