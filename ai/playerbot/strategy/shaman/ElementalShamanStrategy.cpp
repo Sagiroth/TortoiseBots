@@ -52,6 +52,9 @@ void ElementalShamanStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
     triggers.push_back(new TriggerNode(
         "shock",
         NextAction::array(0, new NextAction("earth shock", ACTION_NORMAL), NULL)));
+    triggers.push_back(new TriggerNode(
+        "chain lightning filler",
+        NextAction::array(0, new NextAction("chain lightning", ACTION_NORMAL - 1), NULL)));
 }
 
 void ElementalShamanStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -365,6 +368,10 @@ void ElementalShamanTotemsRaidStrategy::InitNonCombatTriggers(std::list<TriggerN
 void ElementalShamanBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ShamanBuffStrategy::InitCombatTriggers(triggers);
+
+    triggers.push_back(new TriggerNode(
+        "water shield",
+        NextAction::array(0, new NextAction("water shield", ACTION_NORMAL), NULL)));
 }
 
 void ElementalShamanBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -372,8 +379,8 @@ void ElementalShamanBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>&
     ShamanBuffStrategy::InitNonCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
-        "lightning shield",
-        NextAction::array(0, new NextAction("lightning shield", ACTION_NORMAL), NULL)));
+        "water shield",
+        NextAction::array(0, new NextAction("water shield", ACTION_NORMAL), NULL)));
 }
 
 void ElementalShamanBuffPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

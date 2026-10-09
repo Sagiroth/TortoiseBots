@@ -470,6 +470,7 @@ namespace ai
     };
 
     CAN_CAST_TRIGGER(ChainLightningTrigger, "chain lightning");
+    CD_TRIGGER(ChainLightningFillerTrigger, "chain lightning");
 
     CAN_CAST_TRIGGER(StormstrikeTrigger, "stormstrike");
     BUFF_TRIGGER(ElementalMasteryTrigger, "elemental mastery");

@@ -279,6 +279,7 @@ namespace ai
                 creators["totemic recall"] = [](PlayerbotAI* ai) { return new ReadyToRemoveTotemsTrigger(ai); };
                 creators["earth shield on party tank"] = [](PlayerbotAI* ai) { return new PartyTankEarthShieldTrigger(ai); };
                 creators["chain lightning"] = [](PlayerbotAI* ai) { return new ChainLightningTrigger(ai); };
+                creators["chain lightning filler"] = [](PlayerbotAI* ai) { return new ChainLightningFillerTrigger(ai); };
                 creators["stormstrike"] = [](PlayerbotAI* ai) { return new StormstrikeTrigger(ai); };
                 creators["lightning strike"] = [](PlayerbotAI* ai) { return new LightningStrikeTrigger(ai); };
                 creators["elemental mastery"] = [](PlayerbotAI* ai) { return new ElementalMasteryTrigger(ai); };
