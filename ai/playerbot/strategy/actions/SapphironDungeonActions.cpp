@@ -2,31 +2,16 @@
 #include "SapphironDungeonActions.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/SapphironIcePolicy.h"
+#include "playerbot/strategy/SapphironDungeonHelper.h"
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
 #include "Maps/CellImpl.h"
 
 using namespace ai;
 
-namespace
-{
-    Unit* FindSapphironForHide(PlayerbotAI* ai, Player* bot)
-    {
-        const std::list<ObjectGuid> attackers =
-            ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get();
-        for (const ObjectGuid& guid : attackers)
-        {
-            Unit* unit = ai->GetUnit(guid);
-            if (unit && unit->GetEntry() == 15989)
-                return unit;
-        }
-        return nullptr;
-    }
-}
-
 bool SapphironHideAction::Execute(Event& event)
 {
-    Unit* boss = FindSapphironForHide(ai, bot);
+    Unit* boss = FindSapphironBoss(ai, bot);
     if (!boss)
         return false;
 

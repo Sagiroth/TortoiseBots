@@ -26,25 +26,14 @@ namespace ai
         bool IsActive() override;
     };
 
-    // Chill on the bot (28534 periodic / 28547 damage): a Blizzard NPC
-    // (16474) is on top of the bot.
+    // Chill damage on the bot (28547): a Blizzard NPC (16474) is on
+    // top of the bot. (28534 is the NPC's self aura, not the player's.)
     class SapphironBlizzardTrigger : public Trigger
     {
     public:
         SapphironBlizzardTrigger(PlayerbotAI* ai, std::string name = "sapphiron blizzard", int checkInterval = 1)
             : Trigger(ai, name, checkInterval) {}
         std::string GetTargetName() override { return "self target"; }
-        bool IsActive() override;
-    };
-
-    // Ground + non-tank melee in range: flank behind (tail sweep 15847
-    // rear cone; breath frontal — flanks via the shared set-behind).
-    class SapphironFlankTrigger : public Trigger
-    {
-    public:
-        SapphironFlankTrigger(PlayerbotAI* ai, std::string name = "sapphiron flank", int checkInterval = 1)
-            : Trigger(ai, name, checkInterval) {}
-        std::string GetTargetName() override { return "current target"; }
         bool IsActive() override;
     };
 }

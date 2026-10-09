@@ -6,20 +6,16 @@ using namespace ai;
 void SapphironFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     // Air phase: hide behind the nearest iceblocked player (Frost Breath
-    // one-shots the open floor).
+    // one-shots the open floor). Lethal relevance: above all heals
+    // (healers must stop casting and hide), same tier as bomb runout.
     triggers.push_back(new TriggerNode(
         "sapphiron air hide",
-        NextAction::array(0, new NextAction("sapphiron hide", ACTION_HIGH + 2), NULL)));
+        NextAction::array(0, new NextAction("sapphiron hide", ACTION_EMERGENCY + 6), NULL)));
 
-    // Blizzard on the bot: step 10yd clear of the Blizzard NPC.
+    // Blizzard on the bot: step clear of the Blizzard NPC (flank tier).
     triggers.push_back(new TriggerNode(
         "sapphiron blizzard",
-        NextAction::array(0, new NextAction("sapphiron avoid blizzard", ACTION_HIGH + 1), NULL)));
-
-    // Ground: non-tank melee work behind (tail sweep rear cone).
-    triggers.push_back(new TriggerNode(
-        "sapphiron flank",
-        NextAction::array(0, new NextAction("set behind", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("sapphiron avoid blizzard", ACTION_EMERGENCY + 4), NULL)));
 }
 
 void SapphironFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
