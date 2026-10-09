@@ -249,7 +249,9 @@ bool QuestRelationTravelDestination::IsActive(Player* bot, const PlayerTravelInf
         return false;
 
     bool forceThisQuest = info.HasFocusQuest(); //Checked in IsPossible if it's 'this' quest.
-    if (GetRelation() == 0 && GetEntry() > 0 && info.IsMasterlessRandom())
+    // Gameobject givers (negative entry, quest boards) take the same gates:
+    // with "> 0" a parked board was re-picked at once (live 2026-10-09).
+    if (GetRelation() == 0 && GetEntry() != 0 && info.IsMasterlessRandom())
     {
         // Giver-stall back-off (TravelAction parks the pair 30 min after 2
         // stalls with no quest-state change): this pair's menu never offers
@@ -261,7 +263,8 @@ bool QuestRelationTravelDestination::IsActive(Player* bot, const PlayerTravelInf
         // offers any quest; this quest itself may sit behind an unfinished
         // chain (Virulence 60113 behind 367) and never show in the menu.
         if (Quest const* quest = sObjectMgr.GetQuestTemplate(GetQuestId()))
-            if (!bot->SatisfyQuestPreviousQuest(quest, false) || !bot->SatisfyQuestPrevChain(quest, false))
+            if (!bot->SatisfyQuestPreviousQuest(quest, false) || !bot->SatisfyQuestPrevChain(quest, false) ||
+                bot->GetLevel() < quest->GetMinLevel())
                 return false;
 
         std::string const backoffKey = ai::QuestGiverBackoffKey(GetEntry(), GetQuestId());
