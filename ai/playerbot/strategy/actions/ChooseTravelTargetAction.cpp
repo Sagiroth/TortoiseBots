@@ -925,6 +925,21 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
                         continue;
                     }
 
+                    // Capital grind guard: a Grind point inside a capital
+                    // (AREA_FLAG_CAPITAL on the point's area or its parent
+                    // zone) holds no killable grind mobs - the bot walks
+                    // there and stands. Masterless pool bots only; owned/hired
+                    // bots obey their player. Grind purpose only: capital
+                    // vendors/trainers/AH/bank run through other purposes.
+                    if (destination->GetPurpose() == TravelDestinationPurpose::Grind &&
+                        !ai->HasRealPlayerMaster() && sRandomBotFacade.IsRandomBot(bot) &&
+                        position->HasAreaFlag(AREA_FLAG_CAPITAL))
+                    {
+                        ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - capital grind spot", "debug travel");
+                        ++rejects["capital"];
+                        continue;
+                    }
+
                     AreaTableEntry const* area = position->GetArea();
                     uint32 zoneId = area ? (area->ZoneId ? area->ZoneId : area->Id) : 0;
                     if (!sPlayerbotAIConfig.allowIsolatedCustomStartingZones &&

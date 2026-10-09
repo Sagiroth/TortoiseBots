@@ -29,7 +29,11 @@ int main()
     // (trainer/AH/bank), not away from a zone, and the service gate keeps
     // capital vendors for outleveled bots - excluding the capital's zone
     // would fight that. Night2 case: Zarortharur fired 4x idling in
-    // Ironforge and kept picking Dun Morogh, correctly.
+    // Ironforge and kept picking Dun Morogh, correctly. The capital itself
+    // stays searchable on purpose; Grind points inside it are refused by the
+    // SetBestTarget "capital" gate in ChooseTravelTargetAction instead, so a
+    // capital-idle leave (e.g. Orgrimmar) can no longer land back inside the
+    // same capital.
     CHECK(ZoneMigrationExcludeZone(1, true) == 0);
     CHECK(ZoneMigrationExcludeZone(14, true) == 0);
     std::cout << "  [PASS] capital-idle leave excludes nothing\n";
