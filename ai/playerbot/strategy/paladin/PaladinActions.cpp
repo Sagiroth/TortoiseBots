@@ -272,6 +272,22 @@ Unit* CastBlessingOnPartyAction::GetTarget()
     return AI_VALUE2(Unit*, "party member without my aura", blessList);
 }
 
+bool CastBlessingOnPartyAction::isUseful()
+{
+    // Two paladins pick through the same shared "party member without my aura"
+    // value: neither sees the other's in-flight cast, so both can resolve the
+    // same member the same tick and overwrite each other's blessing. Stand
+    // down while another bot holds a live claim on this member for the
+    // blessing this bot would cast (BuffClaimRegistry, 4 s TTL).
+    Unit* target = GetTarget();
+    if (!target)
+        return false;
+    std::string const blessing = GetBlessingForTarget(target);
+    if (!blessing.empty() && BuffClaimRegistry::IsTargetClaimedByOther(bot, target, blessing))
+        return false;
+    return CastSpellAction::isUseful();
+}
+
 bool CastBlessingOnPartyAction::isPossible()
 {
     Unit* target = GetTarget();
@@ -286,6 +302,18 @@ bool CastBlessingOnPartyAction::isPossible()
     }
 
     return false;
+}
+
+bool CastBlessingOnPartyAction::Execute(Event& event)
+{
+    Unit* const target = GetTarget();
+    if (!CastSpellAction::Execute(event))
+        return false;
+    // Claim only on a cast that actually started: a whiff (range/LOS at cast
+    // time) must not stand the other paladin down for the TTL.
+    if (target)
+        BuffClaimRegistry::Claim(bot->GetObjectGuid(), target->GetObjectGuid(), GetSpellName());
+    return true;
 }
 
 std::string CastBlessingOnPartyAction::GetBlessingForTarget(Unit* target)

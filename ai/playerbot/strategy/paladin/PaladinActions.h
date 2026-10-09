@@ -216,10 +216,12 @@ namespace ai
     {
     public:
         CastBlessingOnPartyAction(PlayerbotAI* ai, std::string name, bool greater) : CastSpellAction(ai, name), greater(greater) {}
+        bool Execute(Event& event) override;
 
     private:
         Unit* GetTarget() override;
         bool isPossible() override;
+        bool isUseful() override;
         virtual std::string GetBlessingForTarget(Unit* target);
 
     protected:
