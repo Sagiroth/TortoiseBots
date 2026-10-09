@@ -7,10 +7,11 @@ namespace ai
 {
     // Name-based boss lookup (mod-playerbots parity: "find target" /
     // "boss target" from TargetValue.h / ValueContext.h). The qualifier is
-    // a lowercase creature-name substring ("loatheb", "anub'rekhan").
-    // Searches the shared "attackers" list first (cheap, already cached),
-    // then falls back to a 100yd grid sweep for bosses the raid is fighting
-    // but that have not hit this bot yet (phase detection before aggro).
+    // the full lowercase creature name ("ossirian the unscarred") —
+    // case-insensitive full equality (ai::RaidNameMatches), never a
+    // substring. Searches the group-wide "attackers" list only, like the
+    // donor's threat-list search: non-null implies engagement, with no
+    // grid fallback (unengaged units must not arm suppression).
     class FindTargetByNameValue : public UnitCalculatedValue, public Qualified
     {
     public:
@@ -21,9 +22,10 @@ namespace ai
         Unit* Calculate() override;
     };
 
-    // Nearest hostile world-boss unit (rank CREATURE_ELITE_WORLDBOSS),
-    // regardless of name. Used by per-fight suppression multipliers to arm
-    // only while a real boss is engaged.
+    // Nearest engaged hostile world-boss unit (rank
+    // CREATURE_ELITE_WORLDBOSS + IsInCombat), regardless of name. Used by
+    // per-fight suppression multipliers to arm only while a real boss is
+    // engaged — dormant worldbosses nearby do not qualify.
     class BossTargetValue : public UnitCalculatedValue, public Qualified
     {
     public:

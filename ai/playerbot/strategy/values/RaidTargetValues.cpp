@@ -1,40 +1,23 @@
-
 #include "playerbot/playerbot.h"
 #include "RaidTargetValues.h"
-#include "playerbot/GroupMembers.h"
-#include "playerbot/ServerFacade.h"
+#include "playerbot/RaidFrameworkPolicy.h"
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
 #include "Maps/CellImpl.h"
 
 using namespace ai;
 
-namespace
-{
-    std::string ToLowerName(const std::string& name)
-    {
-        std::string lower = name;
-        std::transform(lower.begin(), lower.end(), lower.begin(),
-            [](unsigned char c) { return std::tolower(c); });
-        return lower;
-    }
-
-    // Substring match so "anub'rekhan" finds "Anub'Rekhan" and short
-    // qualifiers ("loatheb") still hit. Empty qualifier never matches.
-    bool NameMatches(const std::string& unitName, const std::string& qualifier)
-    {
-        if (qualifier.empty() || unitName.empty())
-            return false;
-        return ToLowerName(unitName).find(ToLowerName(qualifier)) != std::string::npos;
-    }
-}
-
 Unit* FindTargetByNameValue::Calculate()
 {
     if (qualifier.empty())
         return nullptr;
 
-    // Cheap path: the shared attackers list is already cached per tick.
+    // The shared attackers list is group-wide ("in combat with the bot
+    // (or bot group)"), already cached per tick — and engagement is the
+    // point: like the donor (threat-list only), non-null implies the raid
+    // is fighting the unit. No grid fallback: it would return bosses the
+    // raid is NOT fighting (e.g. Loatheb while clearing trash), arming
+    // suppression for a future fight.
     const std::list<ObjectGuid> attackers =
         AI_VALUE(std::list<ObjectGuid>, "attackers");
     for (const ObjectGuid& guid : attackers)
@@ -42,21 +25,7 @@ Unit* FindTargetByNameValue::Calculate()
         Unit* unit = ai->GetUnit(guid);
         if (!unit || !unit->IsAlive())
             continue;
-        if (NameMatches(unit->GetName(), qualifier))
-            return unit;
-    }
-
-    // Fallback: grid sweep for a boss the raid fights but that has not
-    // hit this bot yet (phase helpers need it before first aggro).
-    std::list<Unit*> nearby;
-    MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck check(bot, bot, 100.0f);
-    MaNGOS::UnitListSearcher<MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck> searcher(nearby, check);
-    Cell::VisitAllObjects(bot, searcher, 100.0f);
-    for (Unit* unit : nearby)
-    {
-        if (!unit || !unit->IsAlive())
-            continue;
-        if (NameMatches(unit->GetName(), qualifier))
+        if (RaidNameMatches(unit->GetName(), qualifier))
             return unit;
     }
 
@@ -74,12 +43,16 @@ Unit* BossTargetValue::Calculate()
     Cell::VisitAllObjects(bot, searcher, 100.0f);
     for (Unit* unit : nearby)
     {
-        if (!unit || !unit->IsAlive())
+        // Engagement gate (donor searches attackers only): a dormant
+        // worldboss within 100yd must not arm fight suppression.
+        if (!unit || !unit->IsAlive() || !unit->IsInCombat())
             continue;
         Creature* creature = dynamic_cast<Creature*>(unit);
         if (!creature)
             continue;
         const CreatureInfo* info = creature->GetCreatureInfo();
+        // Rank 3 = WORLDBOSS in Turtle's creature_template (verified for
+        // every AQ20/Naxx boss; adds are rank 0/1).
         if (!info || info->rank != CREATURE_ELITE_WORLDBOSS)
             continue;
         float dist = bot->GetDistance(unit);

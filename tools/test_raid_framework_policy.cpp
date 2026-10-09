@@ -11,26 +11,23 @@
 } while (0)
 
 using ai::IsClassicRaidMap;
-using ai::NeglectThreatNeedsRefresh;
 using ai::RaidNameMatches;
 
 int main()
 {
     std::cout << "Starting TortoiseBots raid-framework policy tests...\n";
 
-    // Name matching is case-insensitive substring; empty never matches.
+    // Name matching is case-insensitive FULL equality like the donor:
+    // partial qualifiers never match (no twin ambiguity).
     CHECK(RaidNameMatches("Loatheb", "loatheb"));
     CHECK(RaidNameMatches("Anub'Rekhan", "anub'rekhan"));
-    CHECK(RaidNameMatches("Anub'Rekhan", "rekhan"));
+    CHECK(RaidNameMatches("Ossirian the Unscarred", "ossirian the unscarred"));
+    CHECK(!RaidNameMatches("Anub'Rekhan", "rekhan"));
+    CHECK(!RaidNameMatches("Loatheb", "loathe"));
     CHECK(!RaidNameMatches("Loatheb", ""));
     CHECK(!RaidNameMatches("", "loatheb"));
     CHECK(!RaidNameMatches("Gluth", "loatheb"));
-    std::cout << "  [PASS] name matching is case-insensitive substring\n";
-
-    // Read-once flag: only a fresh Set per evaluation keeps suppression up.
-    CHECK(NeglectThreatNeedsRefresh(true));
-    CHECK(!NeglectThreatNeedsRefresh(false));
-    std::cout << "  [PASS] neglect-threat needs a fresh set per evaluation\n";
+    std::cout << "  [PASS] name matching is case-insensitive full equality\n";
 
     // Classic raid maps auto-enable their tactics rows.
     CHECK(IsClassicRaidMap(509));
