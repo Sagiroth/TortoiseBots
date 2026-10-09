@@ -27,11 +27,11 @@ namespace ai
         void InitCombatTriggers(std::list<TriggerNode*> &triggers) override;
     };
 
-    // Tank-face as a real strategy (donor TankFaceStrategy shape): default
-    // action "tank face away" at ACTION_MOVE, triggerless — the action
-    // self-gates via TankFaceNeededTrigger's hysteresis math in isUseful.
-    // Membership replaces the old real-player-master gate: any tank with
-    // this strategy faces held mobs away from the party.
+    // Tank-face as a real strategy (donor TankFaceStrategy shape, kept as a
+    // trigger row instead of triggerless: "tank face needed" carries the
+    // hysteresis math plus the stay/wait-for-attack exemptions the donor
+    // lacks). Membership replaces the old real-player-master gate: any tank
+    // with this strategy faces held mobs away from the party.
     class TankFaceStrategy : public CombatStrategy
     {
     public:

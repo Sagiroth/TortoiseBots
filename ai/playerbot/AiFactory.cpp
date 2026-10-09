@@ -738,7 +738,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
                 }
                 else
                 {
-                    combatEngine->addStrategies("tank feral", "tank assist", "close", NULL);
+                    combatEngine->addStrategies("tank feral", "tank assist", "close", "tank face", NULL);
                     combatEngine->removeStrategy("dps feral");
                     combatEngine->removeStrategy("dps assist");
                     combatEngine->removeStrategy("behind");
@@ -841,7 +841,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
                 : (player->HasSpell(16961) || player->HasSpell(16958));
             if (bgTanking)
             {
-                combatEngine->addStrategies("tank feral", "close", NULL);
+                combatEngine->addStrategies("tank feral", "close", "tank face", NULL);
             }
             else
             {

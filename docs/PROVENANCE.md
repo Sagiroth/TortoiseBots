@@ -4565,3 +4565,26 @@ whenever no real-player master led the group.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check` clean.
 Build via build-commit.sh (see PR summary); no live in-game check.
+
+## Review fixes (2026-10-09, reviewer muse-1.3 max, CHANGES_REQUESTED)
+
+Blocking 1 (solo ungrouped feral-tank override — REAL, fixed): the
+solo→tank flip row now adds `tank face` alongside `tank assist`/`close`,
+so a druid flipped before joining a group faces mobs away.
+
+Blocking 2 (BG feral-tank override — REAL, fixed): the BG tanking row now
+adds `tank face`, closing the pool-BG-tank hole.
+
+Non-blocking "triggerless comment" — FIXED: comment now says trigger row
+(kept for hysteresis + stay/wait exemptions), matching code and
+PROVENANCE.
+
+Non-blocking "party-angle distance filter" — ACKNOWLEDGED, not fixed:
+donor filters to ranged within sight; ours averages all live
+same-map members. Pre-existing, amplified by raid scope. Needs a live
+raid check or a distance filter — left for playtesting.
+
+Non-blocking "off-spec forced tanks" — ACKNOWLEDGED, not fixed: arms/ret
+with forced tank role never get the `tank face` kit (old code fired via
+`close` + `IsTank`). Donor misses these too and the case is rare; noting
+the regression for a follow-up.
