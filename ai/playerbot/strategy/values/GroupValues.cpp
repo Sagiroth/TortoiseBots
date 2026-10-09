@@ -151,8 +151,13 @@ bool GroupReadyValue::Calculate()
         // are topped up. The live hasAttackers conjunct released the wait the
         // moment a fight ended, so wounded/OOM bots walked on at once.
         // Still skip members already fighting (they are being healed, not
-        // resting) and mana-less classes below.
-        if (member->GetHealthPercent() < sPlayerbotAIConfig.almostFullHealth && !member->IsInCombat())
+        // resting) and mana-less classes below. Grouped bots only: a solo
+        // bot is its own only member, and holding it below almostFull would
+        // freeze every wounded pool bot that is not eating - solo keeps the
+        // old attacker-gated wait.
+        bool const holdForRegen = bot->GetGroup() ||
+            AI_VALUE_LAZY(bool, "has attackers") || AI_VALUE_LAZY(bool, "has enemy player targets") || AI_VALUE_LAZY(Unit*, "dps target");
+        if (holdForRegen && member->GetHealthPercent() < sPlayerbotAIConfig.almostFullHealth && !member->IsInCombat())
             return false;
 
         if (!member->GetPower(POWER_MANA))
