@@ -362,9 +362,11 @@ bool MoveToTravelTargetAction::TeleportToNearestRouteNode()
         if (node->IsTransport())
             continue;
         WorldPosition const nodePos = *node->getPosition();
-        // Nodes within reach are the ones the route search just refused.
-        if (nodePos.distance(botPos) < 50.0f)
-            continue;
+        // A node within 300 yd means a mesh pocket on a mapped continent
+        // (Stormwind floors, live 2026-10-09: 88-127 yd), not an island: the
+        // regular hearth/repop rescue handles those without a teleport.
+        if (nodePos.distance(botPos) < 300.0f)
+            return false;
         if (ai->HasPlayerNearby(nodePos, sPlayerbotAIConfig.reactDistance))
             return false;
         if (!bot->TeleportTo(nodePos.GetMapId(), nodePos.getX(), nodePos.getY(), nodePos.getZ(), botPos.GetAngleTo(nodePos)))
