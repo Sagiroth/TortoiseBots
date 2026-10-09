@@ -4,6 +4,7 @@
 #include "playerbot/strategy/Value.h"
 #include "NearestUnitsValue.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/AvoidAoePolicy.h"
 
 namespace ai
 {

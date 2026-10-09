@@ -3,6 +3,7 @@
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/Value.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/AvoidAoePolicy.h"
 
 namespace ai
 {
