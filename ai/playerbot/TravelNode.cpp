@@ -129,6 +129,11 @@ float TravelNodePath::getCost(Unit* unit, uint32 cGold)
                     if (at && at->requiredCondition && !sObjectMgr.IsConditionSatisfied(at->requiredCondition, bot, map, nullptr, (ConditionSource)CONDITION_FROM_AREATRIGGER_TELEPORT))
                         return -1;
             }
+
+            // Closed by AreaTriggerAction after the server refused to teleport this bot.
+            if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
+                if (ai->GetAiObjectContext()->GetValue<time_t>("manual time", "area trigger refused::" + std::to_string(triggerId))->Get() > time(0))
+                    return -1;
         }
 
         if (getPathType() == TravelNodePathType::staticPortal && pathObject)

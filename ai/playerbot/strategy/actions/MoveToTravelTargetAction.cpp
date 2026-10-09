@@ -288,12 +288,6 @@ bool MoveToTravelTargetAction::TryRescueServiceTrip(TravelTarget* target, std::s
     WorldPosition location = *target->getPosition();
     if (location.GetMapId() != bot->GetMapId())
         return false;
-    // Land on the navmesh, not on the npc's own spot: npcs on upper floors and
-    // balconies the mmaps never meshed (Stormwind trainers) left the bot above
-    // the mesh, where every path probe fails and the bot stood until rescued.
-    if (!location.isMmapLoaded(bot->GetInstanceId()) ||
-        !location.ClosestCorrectPoint(30.0f, 60.0f, bot->GetInstanceId()))
-        return false;
     if (!bot->IsAlive() || bot->IsInCombat() || bot->IsTaxiFlying() || bot->IsBeingTeleported())
         return false;
     if (ai->HasRealPlayerMaster() || !sRandomBotFacade.IsRandomBot(bot))
@@ -306,6 +300,33 @@ bool MoveToTravelTargetAction::TryRescueServiceTrip(TravelTarget* target, std::s
     time_t const now = time(0);
     if (AI_VALUE2(time_t, "manual time", "service trip rescue") + SERVICE_TRIP_RESCUE_COOLDOWN_SEC > now)
         return false;
+
+    // Land on the navmesh, not on the npc's own spot: npcs on upper floors and
+    // balconies the mmaps never meshed (Stormwind trainers) left the bot above
+    // the mesh, where every path probe fails and the bot stood until rescued.
+    // Narrowest height window first, and the landing must walk back to the npc:
+    // with one 60 yd window the nearest poly under a Stormwind trainer was the
+    // mesh beneath the city, and 94 of 174 rescues (live 2026-10-09) landed
+    // there and failed every move again.
+    if (!location.isMmapLoaded(bot->GetInstanceId()))
+        return false;
+    WorldPosition landing;
+    bool landed = false;
+    for (float const height : { 5.0f, 15.0f, 30.0f, 60.0f })
+    {
+        WorldPosition candidate = location;
+        if (!candidate.ClosestCorrectPoint(30.0f, height, bot->GetInstanceId()))
+            continue;
+        if (location.isPathTo(candidate.GetPathTo(location, bot), 10.0f, 10.0f))
+        {
+            landing = candidate;
+            landed = true;
+            break;
+        }
+    }
+    if (!landed)
+        return false;
+    location = landing;
 
     if (!bot->TeleportTo(location.GetMapId(), location.getX(), location.getY(), location.getZ(),
         WorldPosition(bot).GetAngleTo(location)))

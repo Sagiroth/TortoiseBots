@@ -66,9 +66,18 @@ bool AreaTriggerAction::Execute(Event& event)
     if (!at)
         return true;
 
+    WorldPosition const before(bot);
     WorldPacket p(CMSG_AREATRIGGER);
     p << triggerId;
     p.rpos(0);
     bot->GetSession()->HandleAreaTriggerOpcode(p);
+
+    // A refused teleport (missing item or level) leaves the bot standing in the
+    // trigger, and the route planner kept sending it back: the Booty Bay
+    // transpolyporter held 13 bots ~8 min each (live 2026-10-09). Close the
+    // trigger for this bot for 30 min; TravelNodePath::getCost skips it.
+    if (!bot->IsBeingTeleported() && bot->GetMapId() == before.GetMapId() && WorldPosition(bot).distance(before) < 1.0f)
+        SET_AI_VALUE2(time_t, "manual time", "area trigger refused::" + std::to_string(triggerId), time(0) + 30 * MINUTE);
+
     return true;
 }
