@@ -4553,3 +4553,4 @@ vendor order, compounding into wrong picks over levels.
 Local validation: `bash tools/verify_all.sh` (incl. new policy test +
 wiring check live-missing=0); `git diff --check`; shared-builder compile
 check; no live in-game test.
+| Loatheb fight (Naxx), spores only: 1yd spore assignment + tank/ranged spots | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Loatheb.cpp` (spore/position legs only) | Reimplemented trigger-driven; heal-suppression explicitly NOT ported (Necrotic Aura absent in vanilla); Doom-window healing is future design | Kit verified in tw_world + core boss_loatheb.cpp (16011, spore 16286, 29201/29204/29232/29865) | `bash tools/verify_all.sh` + `tools/test_loatheb_spores_policy.cpp`; build-commit + no live test |
