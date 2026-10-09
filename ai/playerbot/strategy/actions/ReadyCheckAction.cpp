@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "ReadyCheckAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/ReadyRebuffPolicy.h"
 #include "playerbot/ServerFacade.h"
 
 using namespace ai;
@@ -150,6 +151,18 @@ bool ReadyCheckAction::Execute(Event& event)
         p >> player;
         if (player == bot->getObjectGuid())
             return false;
+
+        // Defer the confirm until buffs settle (SOC-S5): report status now,
+        // stamp the anchor, and let the "force rebuff pending" trigger send
+        // the confirm via "ready reply". Gated on the config key and kept
+        // out of combat; manual "ready" whispers (empty packet) and the
+        // finish path answer immediately as before.
+        if (sPlayerbotAIConfig.forceRebuffOnReadyCheck && !bot->IsInCombat())
+        {
+            ReportReadiness(requester);
+            context->GetValue<time_t>("manual time", ai::ReadyRebuffAnchorKey())->Set(time(0));
+            return true;
+        }
     }
 
 	return ReadyCheck(requester);
@@ -178,6 +191,21 @@ bool ReadyCheckAction::ReadyCheck(Player* requester)
         result = result && ok;
     }
 
+    ReportReadiness(requester);
+
+    SendReadyConfirm();
+
+    ai->ChangeStrategy("-ready check", BotState::BOT_STATE_NON_COMBAT);
+
+    // A manual finish answers an already-open check: clear any deferred
+    // anchor so the pending trigger cannot send a second confirm.
+    context->GetValue<time_t>("manual time", ai::ReadyRebuffAnchorKey())->Set(time_t(0));
+
+    return true;
+}
+
+void ReadyCheckAction::ReportReadiness(Player* requester)
+{
     std::ostringstream out;
 
     uint32 hp = AI_VALUE2(uint32, "item count", "healing potion");
@@ -199,18 +227,41 @@ bool ReadyCheckAction::ReadyCheck(Player* requester)
     }
 
     ai->TellPlayer(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+}
 
+void ReadyCheckAction::SendReadyConfirm()
+{
     WorldPacket packet(MSG_RAID_READY_CHECK);
     packet << uint8(1);
     bot->GetSession()->HandleRaidReadyCheckOpcode(packet);
-
-    ai->ChangeStrategy("-ready check", BotState::BOT_STATE_NON_COMBAT);
-
-    return true;
 }
 
 bool FinishReadyCheckAction::Execute(Event& event)
 {
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     return ReadyCheck(requester);
+}
+
+bool ReadyReplyAction::isUseful()
+{
+    if (!sPlayerbotAIConfig.forceRebuffOnReadyCheck || bot->IsInCombat())
+        return false;
+
+    time_t anchor = context->GetValue<time_t>("manual time", ai::ReadyRebuffAnchorKey())->Get();
+    if (anchor == time_t(0))
+        return false;
+
+    bool isCasting = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL) != nullptr ||
+        bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL) != nullptr;
+    return ai::ReadyRebuffDue(anchor, time(0), isCasting);
+}
+
+bool ReadyReplyAction::Execute(Event& /*event*/)
+{
+    SendReadyConfirm();
+
+    context->GetValue<time_t>("manual time", ai::ReadyRebuffAnchorKey())->Set(time_t(0));
+
+    ai->ChangeStrategy("-ready check", BotState::BOT_STATE_NON_COMBAT);
+    return true;
 }

@@ -205,6 +205,7 @@ namespace ai
             creators["dispel enrage"] = [](PlayerbotAI* ai) { return new DispelEnrageOnTargetTrigger(ai); };
             creators["has poison debuff"] = [](PlayerbotAI* ai) { return new HasPoisonDebuffTrigger(ai); };
             creators["at war"] = [](PlayerbotAI* ai) { return new AtWarTrigger(ai); };
+            creators["force rebuff pending"] = [](PlayerbotAI* ai) { return new ForceRebuffPendingTrigger(ai); };
             creators["quest log nearly full"] = [](PlayerbotAI* ai) { return new QuestLogNearlyFullTrigger(ai); };
 
             creators["mounted"] = [](PlayerbotAI* ai) { return new IsMountedTrigger(ai); };

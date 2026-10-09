@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/GroupBuffPolicy.h"
+#include "playerbot/ReadyRebuffPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "GenericTriggers.h"
 #include "playerbot/LootObjectStack.h"
@@ -1360,6 +1361,19 @@ bool AtWarTrigger::IsActive()
     }
 
     return false;
+}
+
+// Deferred ready-check confirm is waiting (SOC-S5). Cheap first: config
+// gate and anchor read only; no aura scans. The due verdict itself
+// (grace/cap/casting) lives in the action's isUseful, so this trigger only
+// says "a confirm is held".
+bool ForceRebuffPendingTrigger::IsActive()
+{
+    if (!sPlayerbotAIConfig.forceRebuffOnReadyCheck || bot->IsInCombat())
+        return false;
+
+    time_t anchor = context->GetValue<time_t>("manual time", ai::ReadyRebuffAnchorKey())->Get();
+    return anchor != time_t(0);
 }
 
 // One-shot per pet identity (E01): ported from mod-playerbots NewPetTrigger,

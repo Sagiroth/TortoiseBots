@@ -627,6 +627,11 @@ public:
 
     bool jumpInBg;
     bool jumpWithPlayer;
+    // Ready-check rebuff defer (SOC-S5). Off by default: when on, a bot that
+    // gets a ready check out of combat reports status immediately but holds
+    // the confirm until buffs settle (grace) or a hard cap fires, instead of
+    // answering ready and buffing through the pull.
+    bool forceRebuffOnReadyCheck = false;
     bool jumpFollow;
     bool jumpChase;
     bool useKnockback;

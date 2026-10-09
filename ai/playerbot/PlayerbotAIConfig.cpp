@@ -243,6 +243,7 @@ bool PlayerbotAIConfig::Initialize()
     jumpHSpeed = config.GetFloatDefault("AiPlayerbot.JumpHSpeed", 7.0f);
     jumpInBg = config.GetBoolDefault("AiPlayerbot.JumpInBg", false);
     jumpWithPlayer = config.GetBoolDefault("AiPlayerbot.JumpWithPlayer", false);
+    forceRebuffOnReadyCheck = config.GetBoolDefault("AiPlayerbot.ForceRebuffOnReadyCheck", false);
     jumpFollow = config.GetBoolDefault("AiPlayerbot.JumpFollow", true);
     jumpChase = config.GetBoolDefault("AiPlayerbot.JumpChase", true);
     useKnockback = config.GetBoolDefault("AiPlayerbot.UseKnockback", true);

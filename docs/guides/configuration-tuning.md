@@ -61,6 +61,7 @@ These settings dramatically enhance the solo or small-group experience with owne
 | `AiPlayerbot.RandomGearAllowReputation` | `0` | **`0`** | **Seed Rep Gear:** Allow reputation-gated gear (item/quest/vendor/recipe rep) on fresh/hired bots. |
 | `AiPlayerbot.RandomGearAllowPvP` | `0` | **`0`** | **Seed PvP Gear:** Allow PvP gear (honor rank, NO_DISENCHANT rewards) on fresh/hired bots. |
 | `AiPlayerbot.RandomGearSeedEpicChance` | `0.02` | **`0.02`** | **Seed World-Epic Chance:** Per-slot chance a fresh seed rolls a rare loot-attested BoE world epic instead of the green/blue band; falls back to the band when the slot has none. |
+| `AiPlayerbot.ForceRebuffOnReadyCheck` | `0` | `0` | **Rebuff before ready (mod-playerbots parity):** a bot that gets a ready check out of combat reports its status immediately but holds the confirm until its buffs settle (8 s grace once not casting) or a 30 s cap fires — instead of answering ready and buffing through the pull. Off by default; needs restart. |
 
 The spec weights these caches are scored with come from the `ai_playerbot_weightscales` and `ai_playerbot_weightscale_data` tables, seeded by `data/sql/world/20260916090001_world.sql`. If bots wear wrong-slot gear from their bags but never swap an upgrade in, that dataset is empty — re-apply the migration and restart.
 ---

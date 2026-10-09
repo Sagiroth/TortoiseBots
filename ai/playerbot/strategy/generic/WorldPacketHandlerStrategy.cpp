@@ -104,6 +104,13 @@ void WorldPacketHandlerStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &
         "ready check finished",
         NextAction::array(0, new NextAction("finish ready check", relevance), NULL)));
 
+    // Deferred ready-check confirm (SOC-S5): the trigger only fires while a
+    // confirm is held, and the action replies once buffs settle or the cap
+    // hits. Inert unless AiPlayerbot.ForceRebuffOnReadyCheck is on.
+    triggers.push_back(new TriggerNode(
+        "force rebuff pending",
+        NextAction::array(0, new NextAction("ready reply", relevance), NULL)));
+
     triggers.push_back(new TriggerNode(
         "often",
         NextAction::array(0, new NextAction("security check", relevance), new NextAction("check mail", relevance), NULL)));
