@@ -357,7 +357,8 @@ void RandomBotService::LoadCandidates()
             candidate.accountId = accountId;
             candidate.characterGuid = ObjectGuid(HIGHGUID_PLAYER, guidLow);
             candidate.level = std::max<uint8_t>(1, fields[1].GetUInt8());
-            candidate.team = Player::TeamForRace(fields[2].GetUInt8());
+            candidate.race = fields[2].GetUInt8();
+            candidate.team = Player::TeamForRace(candidate.race);
             m_candidates.push_back(candidate);
         } while (characters->NextRow());
     }
@@ -446,37 +447,32 @@ uint32_t RandomBotService::GetAccountAllowedTeam(uint32_t accountId, bool& isMix
 
 void RandomBotService::StartZoneCountsForBatch(uint32_t batch)
 {
-    // One bounded characters-table pass per creation batch (the Update loop
-    // below runs up to 5 TryAutoCreate calls per cadence). Counts level-1
-    // pool characters per start zone; fail-closed keeps the previous (or
-    // zeroed) counts so a DB miss never blocks creation. A creation inside
-    // the same batch bumps the picked zone locally, so consecutive picks see
-    // each other without another SELECT.
+    // One in-memory candidate pass per creation batch (the Update loop below
+    // runs up to 5 TryAutoCreate calls per cadence). Counts level-1 pool
+    // characters per start zone from the candidates loaded at startup plus
+    // auto-created appends; a creation inside the same batch bumps the
+    // picked zone locally, so consecutive picks see each other. No DB hit
+    // on the world thread: the old characters-table SELECT blocked inside
+    // SSL_read at 2000 bots. Level comes from the cached candidate (kept
+    // current while online in Update), race from the load row; characters
+    // levelled past 1 or deleted after load drift the count until the next
+    // restart reload, which only biases the even-spread pick, never blocks
+    // creation.
     if (m_startZoneBatch == batch && batch != 0)
         return;
     m_startZoneBatch = batch;
     if (!sPlayerbotAIConfig.randomBotEvenStartZones)
         return;
-
-    RandomBotAccountRegistry& registry = RandomBotAccountRegistry::Instance();
-    if (!registry.IsValidated())
-        return;
-    std::string accounts = registry.AccountIdList();
-    if (accounts.empty())
-        return;
     for (uint32_t& count : m_startZoneCounts)
         count = 0;
-    std::unique_ptr<QueryResult> rows(CharacterDatabase.PQuery(
-        "SELECT `race` FROM `characters` WHERE `deleteDate` IS NULL AND `level` = 1 AND `account` IN (%s)",
-        accounts.c_str()));
-    if (!rows)
-        return;
-    do
+    for (Candidate const& candidate : m_candidates)
     {
-        int zone = StartZoneIndexForRace(rows->Fetch()[0].GetUInt32());
+        if (candidate.level != 1)
+            continue;
+        int zone = StartZoneIndexForRace(candidate.race);
         if (zone >= 0 && zone < int(kStartZoneCount))
             ++m_startZoneCounts[zone];
-    } while (rows->NextRow());
+    }
 }
 
 namespace
@@ -624,7 +620,12 @@ RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAcc
                     outcome.guid.GetCounter());
             }
 
-            m_candidates.push_back({accountId, outcome.guid});
+            Candidate created;
+            created.accountId = accountId;
+            created.characterGuid = outcome.guid;
+            created.race = race;
+            created.team = Player::TeamForRace(race);
+            m_candidates.push_back(created);
             m_ageMs.push_back(0);
             m_strategyAgeMs.push_back(0);
             m_randomizeAgeMs.push_back(0);

@@ -36,11 +36,17 @@ ReactionEngine::ReactionEngine(PlayerbotAI* ai, AiObjectContext* factory, BotSta
 
 bool ReactionEngine::FindReaction(bool isStunned)
 {
+    // Steady-state fast path: with no live master, no transition, full
+    // health/mana, no aura, no victim and no follow motion, the only
+    // triggers that can still fire are the chat/packet commands (which need
+    // a queued ExternalEvent, drained below) and the cell-grid hazard scan.
+    // Skip the fan-out there; the delay bookkeeping in Update still runs.
+    if (!HasReactionWork())
+        return false;
     // Don't find a new reaction if the previous reaction is still running
     if(!IsReacting())
     {
         aiObjectContext->Update();
-
         ai->HandleCommands();
 
         // This will populate the queue to be processed with the reactions that can be triggered
@@ -298,6 +304,49 @@ bool ReactionEngine::CanUpdateAIReaction() const
     return (aiReactionUpdateDelay < 100U) &&
             bot->IsInWorld() &&
            !bot->IsBeingTeleported();
+}
+bool ReactionEngine::HasReactionWork() const
+{
+    // External triggers arrive only via queued chat commands or packet
+    // handlers (HandleCommands drains the queue, HandlePacket sets
+    // WorldPacketTrigger); with no queue and no live master to whisper,
+    // every ChatCommandTrigger visit ends empty. State flips need a live
+    // transition (combat/death/alive mismatch), potions need low health or
+    // mana, dispel/aoe/dragon/spread need a target, aura or group member in
+    // range. Check only cheap scalar state here; anything ambiguous returns
+    // true and runs the full fan-out as before.
+    Player* bot = ai->GetBot();
+    if (!bot)
+        return true;
+    // Queued owner commands or combat/death/alive transitions always run.
+    if (ai->HasRealPlayerMaster())
+        return true;
+    if (ai->IsStateActive(BotState::BOT_STATE_COMBAT) != bot->IsInCombat())
+        return true;
+    // Group attackers arrive before the core combat flag flips: a member
+    // under attack must still run "combat start" this tick.
+    if (!bot->GetAttackers().empty())
+        return true;
+    if (!ai->IsStateActive(BotState::BOT_STATE_DEAD) != bot->IsAlive())
+        return true;
+    // "stop follow" fires while the bot runs follow motion (pool bots follow
+    // bot leaders); its action then self-vetoes when not following.
+    if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
+        return true;
+    // "heal target full health" interrupts a preparing single-target heal.
+    if (bot->IsNonMeleeSpellCasted(true))
+        return true;
+    // Damaged or low-resource bots may need potions, bandages, dispels.
+    if (bot->GetHealth() < bot->GetMaxHealth())
+        return true;
+    // Dispel/dragon/spread triggers need a live victim or current target.
+    if (bot->GetVictim())
+        return true;
+    if (bot->GetPowerType() == POWER_MANA && bot->GetPower(POWER_MANA) < bot->GetMaxPower(POWER_MANA))
+        return true;
+    if (!bot->GetSpellAuraHolderMap().empty())
+        return true;
+    return false;
 }
 
 const Reaction* ReactionEngine::GetReaction() const

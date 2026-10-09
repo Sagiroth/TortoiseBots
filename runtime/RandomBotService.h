@@ -43,6 +43,7 @@ private:
         ObjectGuid characterGuid;
         uint8_t level = 1;      // from the characters table at load, refreshed while online
         uint32_t team = 0;      // Team enum from the race (ALLIANCE / HORDE)
+        uint8_t race = 0;       // SharedDefines Races value, for the even-start-zone count
     };
 
     RandomBotService() = default;

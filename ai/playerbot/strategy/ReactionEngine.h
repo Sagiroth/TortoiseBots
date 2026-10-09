@@ -45,8 +45,10 @@ namespace ai
         bool FindReaction(bool isStunned);
         bool StartReaction();
         void StopReaction();
-
         bool CanUpdateAIReaction() const;
+        // True when no reaction trigger can produce an action this tick, so
+        // FindReaction can skip its ~100-trigger fan-out verdict-identically.
+        bool HasReactionWork() const;
 
         Action* InitializeAction(ActionNode* actionNode) override;
         bool ListenAndExecute(Action* action, Event& event) override;
