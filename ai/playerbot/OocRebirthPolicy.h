@@ -23,24 +23,15 @@
 
 namespace ai
 {
-    // Vanilla classes with a normal out-of-combat resurrection spell.
-    // A living groupmate of any of these classes resurrects instead of us.
-    enum class OocResurrectClass : std::uint8_t
-    {
-        NONE = 0,
-        PRIEST = 1,
-        PALADIN = 2,
-        SHAMAN = 3,
-        OTHER = 4
-    };
-
     struct OocRebirthState
     {
         bool partyMemberDead;        // someone in the group needs a rez
         bool botKnowsRebirth;        // the druid has Rebirth trained
         bool botAlive;               // the druid itself is alive
         bool botInCombat;            // out-of-combat row: must be false
-        bool livingResurrector;      // a living priest/paladin/shaman is in the group
+        bool livingResurrector;      // a living priest/paladin/shaman that
+                                     // could actually rez: same map and in
+                                     // spell range of the corpse
     };
 
     // True when the druid should burn Rebirth out of combat: someone is

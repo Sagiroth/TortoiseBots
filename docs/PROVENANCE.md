@@ -4537,8 +4537,7 @@ Source repository: `mod-playerbots` @ `79bd4281` (local checkout
 
 Source files (donor, reference only):
 `src/Ai/Class/Druid/Strategy/GenericDruidNonCombatStrategy.cpp:116`
-(`party member dead` -> `revive`) +
-`src/Ai/Class/Druid/DruidTriggers.h:120-153` (donor trigger shape) +
+(`party member dead` -> `revive`, via the generic `PartyMemberDeadTrigger`)
 `src/Ai/Class/Priest/Strategy/...` + paladin/shaman equivalents for the
 ACTION_EMERGENCY non-combat row shape (`PaladinStrategy.cpp:95-97` etc).
 Deviations, deliberate and verified against live `tw_world`: the donor's
@@ -4568,3 +4567,11 @@ verified in spell_template (family 7, druid skill line).
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
 live test (no live test per parity brief); build via build-commit.sh.
+
+## Review fixes (2026-10-09, PR #567 CHANGES_REQUESTED)
+All three blocking findings verified real in code and fixed:
+- Finding 1 (cross-map priest veto deadlocks the corpse): confirmed — the scan had no map/range check while `PartyMemberValue::Check` requires same map + sight. Fixed: scan now skips members off-map or beyond sightDistance of the corpse (reviewer's shape, cf. ReleaseSpiritAction precedent).
+- Finding 2 (explicit `revive target` orders vetoed): confirmed — `SpellTargetTrigger::IsActive` validates manual targets through the same `IsTargetValid`. Fixed: non-empty manual `revive targets` bypasses the gate (player control first).
+- Finding 3 (policy header dead code): confirmed — nothing included it. Fixed by refactoring the trigger onto it instead of deleting: `IsTargetValid` now builds `OocRebirthState` and calls `ShouldCastOocRebirth`, so the 6-check test exercises the shipped gate; unused `OocResurrectClass` enum removed.
+- Non-blocking citation fixed (`DruidTriggers.h:120-153` is FaerieFireFeral — now cites the generic `PartyMemberDeadTrigger` path). Toggle note: no toggle added — OOC auto-rez matches the other three classes; revisit if owners complain.
+verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
