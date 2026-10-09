@@ -2232,7 +2232,9 @@ bool AvoidAoeAction::AvoidDamagingTrap(float& outRadius, WorldPosition& outCente
         GameObjectInfo const* goInfo = go->GetGOInfo();
         if (!goInfo || goInfo->type != GAMEOBJECT_TYPE_TRAP)
             continue;
-        float radius = (float)goInfo->trap.diameter / 2.0f + go->GetCombatReach();
+        // 1.12 trap GOs carry an activation radius (no diameter field);
+        // same shape as the environmental-trap react radius nearby.
+        float radius = (float)goInfo->trap.radius + go->GetCombatReach();
         if (!IsAvoidableAoeRadius(radius))
             continue;
         if (bot->GetDistance(go) > radius)
