@@ -538,6 +538,13 @@ bool SetPetAction::Execute(Event& event)
     return false;
 }
 
+bool TogglePetSpellAutoCastAction::isPossible()
+{
+    // Pool bots only: a player who owns or hired the bot sets its pet's
+    // autocast and stance themselves, and this must not override them.
+    return bot->GetPet() != nullptr && !ai->HasRealPlayerMaster();
+}
+
 // PET-3: live input gathering for runtime/PetTauntPolicy.h. Solo bots skip
 // the member walk (no group, pet is the tank); grouped bots look for any
 // member filling the tank role — real players via talents/forced role, bots
