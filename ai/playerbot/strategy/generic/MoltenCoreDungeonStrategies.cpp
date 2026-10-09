@@ -20,6 +20,50 @@ void MoltenCoreDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         NextAction::array(0, new NextAction("enable shazzrah fight strategy", 100.0f), NULL)));
 }
 
+void GarrFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end garr fight",
+        NextAction::array(0, new NextAction("disable garr fight strategy", 100.0f), NULL)));
+}
+
+void GarrFightStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end garr fight",
+        NextAction::array(0, new NextAction("disable garr fight strategy", 100.0f), NULL)));
+}
+
+void GarrFightStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new GarrAoeOffMultiplier(ai));
+}
+
+void ShazzrahFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    Player* bot = ai->GetBot();
+    if (ai->IsRanged(bot) || ai->IsHeal(bot))
+    {
+        triggers.push_back(new TriggerNode(
+            "shazzrah ranged",
+            NextAction::array(0, new NextAction("move away from shazzrah", ACTION_EMERGENCY + 5), NULL)));
+    }
+}
+
+void ShazzrahFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end shazzrah fight",
+        NextAction::array(0, new NextAction("disable shazzrah fight strategy", 100.0f), NULL)));
+}
+
+void ShazzrahFightStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end shazzrah fight",
+        NextAction::array(0, new NextAction("disable shazzrah fight strategy", 100.0f), NULL)));
+}
+
 void MoltenCoreDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     triggers.push_back(new TriggerNode(
