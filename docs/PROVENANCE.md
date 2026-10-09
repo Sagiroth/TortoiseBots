@@ -4109,3 +4109,42 @@ Local validation: `bash tools/verify_all.sh`; `git diff --check`. No build
 (per task constraints); live in-game check pending: party caster steps out
 of melee toward the tank while the tank holds the mob, no long kite, solo
 casters unaffected.
+
+## Idle wander beside the prey rule (night2 idlefallback) — 2026-10-09
+Feature: `idle wander` no longer waits for the grind target to come back
+empty. Donor `mod-playerbots` idles through local motion (`NewRpg`
+`WanderRandom`/`WanderNpc` + `MoveRandomNear`, `getNewTarget` falling
+through to local grind/rpg/wander instead of parking); the module gated
+its drift on no-grind-target-at-all, so a held-but-never-attacked pick
+(out of the front arc, leader travelling, tapped since the pick) vetoed
+the only motion that could break the standstill — live night2 pool: 0
+wander rows for ~289 parked purpose-None bots while `attack anything`
+refused the held prey. The drift (50 yd, relevance 0.6, `often` trigger,
+mesh-vetted reachable point + ordinary core path) now fires beside the
+prey rule; the attack row (5.0) still wins whenever the prey is usable.
+No travel destination is touched, no park is re-armed: unreachable spots
+cannot be re-picked by this change. Pool (masterless random) bots only.
+
+Source repository: `mod-playerbots` @
+`b6696bdbd3740e575598d167d69f39f68cc0b907` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Base/Actions/ChooseTravelTargetAction.cpp:42-178`
+(`getNewTarget` fallthrough to `SetGrindTarget`, idle only if grind fails)
++ `src/Ai/World/Rpg/Action/NewRpgBaseAction.cpp:240-280`
+(`MoveRandomNear`) and `:964-1062` (`SelectRandomGrindPos` local window).
+
+Copied / ported / reimplemented: reimplemented (one predicate parameter
+dropped in `GrindSpotPolicy.h::IdleWanderAllowed` + call site in
+`IdleWanderAction::isUseful`; trigger row unchanged).
+
+Reason: night2 idlefallback quantify — 289 purpose-None stalled bots, 123
+earning no XP in 12 min, wander firing 0x pool-wide while the local prey
+path served the other 166.
+
+Local validation: `tools/test_grind_spot_policy.cpp` test 10 (gate beside
+the prey rule); `bash tools/verify_all.sh`; `python3 tools/verify_okf.py`;
+`git diff --check`. No build/deploy (orchestrator compiles); live check
+pending: `idle wander` rows for parked purpose-None bots, stalled share,
+no change in grind pick/re-park rates.
