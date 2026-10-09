@@ -2542,6 +2542,10 @@ bool IdleWanderAction::isUseful()
         bot->InBattleGround(), WorldPosition(bot).isOverworld(),
         AI_VALUE(bool, "can move around")))
         return false;
+    // A bot already walking to its held prey is not standing still: never
+    // turn that approach into a drift.
+    if (bot->IsMoving() && AI_VALUE(Unit*, "grind target"))
+        return false;
     return true;
 }
 
