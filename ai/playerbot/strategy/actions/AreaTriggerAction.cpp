@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "AreaTriggerAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/RandomBotFacade.h"
 
 using namespace ai;
 
@@ -74,10 +75,21 @@ bool AreaTriggerAction::Execute(Event& event)
 
     // A refused teleport (missing item or level) leaves the bot standing in the
     // trigger, and the route planner kept sending it back: the Booty Bay
-    // transpolyporter held 13 bots ~8 min each (live 2026-10-09). Close the
-    // trigger for this bot for 30 min; TravelNodePath::getCost skips it.
+    // transpolyporter held 13 bots ~8 min each (live 2026-10-09).
     if (!bot->IsBeingTeleported() && bot->GetMapId() == before.GetMapId() && WorldPosition(bot).distance(before) < 1.0f)
+    {
+        // Masterless pool bots skip the requirement of an open-world exit
+        // (transponder pads and the like) and ride it anyway; dungeon entrances
+        // keep their level gate.
+        AreaTriggerTeleport const* tele = sObjectMgr.GetAreaTriggerTeleport(triggerId);
+        if (tele && WorldPosition(tele->destination.mapId, 0, 0, 0).isOverworld() &&
+            !ai->HasRealPlayerMaster() && sRandomBotFacade.IsRandomBot(bot) && bot->IsAlive() &&
+            bot->TeleportTo(tele->destination.mapId, tele->destination.x, tele->destination.y, tele->destination.z, tele->destination.o))
+            return true;
+
+        // Otherwise close the trigger for this bot for 30 min; TravelNodePath::getCost skips it.
         SET_AI_VALUE2(time_t, "manual time", "area trigger refused::" + std::to_string(triggerId), time(0) + 30 * MINUTE);
+    }
 
     return true;
 }
