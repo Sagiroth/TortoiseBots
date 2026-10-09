@@ -807,6 +807,23 @@ bool IsNotBehindTargetTrigger::IsActive()
     return target && !AI_VALUE2(bool, "behind", "current target");
 }
 
+bool RearFlankNeededTrigger::IsActive()
+{
+    // Mirror of RearFlankAction::isUseful, trigger-cheap: creature target,
+    // inMelee-ish range, and inside the frontal arc or tail cone. Tanks
+    // holding the mob keep the tank-face path, never flank off it.
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target || !target->IsCreature() || !sServerFacade.IsAlive(target))
+        return false;
+    if (target->GetVictim() && target->GetVictim()->getObjectGuid() == bot->getObjectGuid())
+        return false;
+    if (bot->GetDistance(target) > 15.0f)
+        return false;
+    bool inFront = target->HasInArc(2.0f * (float)M_PI / 2.0f, bot);
+    bool inRear = !target->HasInArc(2.0f * (float)M_PI - 2.0f * (float)M_PI / 3.0f, bot);
+    return inFront || inRear;
+}
+
 bool IsNotFacingTargetTrigger::IsActive()
 {
     return !AI_VALUE2(bool, "facing", "current target");

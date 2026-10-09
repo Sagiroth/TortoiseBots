@@ -161,6 +161,20 @@ namespace ai
         virtual bool isPossible() override;
     };
 
+    // Generic rear-flank (mod-playerbots RearFlankAction shape): a melee
+    // bot in the mob's frontal arc or tail cone sidesteps to the nearer
+    // flank instead of walking straight through the cleave to the exact
+    // rear point. Set-behind keeps the final rear point; this owns the
+    // approach. Dragon raid geometry untouched (entry-gated, tighter cones).
+    class RearFlankAction : public MovementAction
+    {
+    public:
+        RearFlankAction(PlayerbotAI* ai) : MovementAction(ai, "rear flank") {}
+        virtual bool Execute(Event& event) override;
+        virtual bool isUseful() override;
+        virtual bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
+    };
+
     // Party tank-face (night2 research): sidesteps to the far side of the
     // held mob so its front points away from the party. Generic version of
     // the raid-dragon TankFaceAway; raid paths untouched.

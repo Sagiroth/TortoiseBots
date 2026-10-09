@@ -169,6 +169,7 @@ namespace ai
             creators["set facing"] = [](PlayerbotAI* ai) { return new SetFacingTargetAction(ai); };
             creators["tank face away"] = [](PlayerbotAI* ai) { return new TankFaceAwayAction(ai); };
             creators["set behind"] = [](PlayerbotAI* ai) { return new SetBehindTargetAction(ai); };
+            creators["rear flank"] = [](PlayerbotAI* ai) { return new RearFlankAction(ai); };
             creators["attack duel opponent"] = [](PlayerbotAI* ai) { return new AttackDuelOpponentAction(ai); };
             creators["select new target"] = [](PlayerbotAI* ai) { return new SelectNewTargetAction(ai); };
             creators["check mail"] = [](PlayerbotAI* ai) { return new CheckMailAction(ai); };

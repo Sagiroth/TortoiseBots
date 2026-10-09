@@ -26,6 +26,12 @@ void MeleeCombatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 
 void SetBehindCombatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 {
+    // Flank first: a bot in the frontal arc or tail cone sidesteps to a
+    // flank (outranks set-behind) instead of walking through the cleave to
+    // the exact rear point. Set-behind keeps the final rear point.
+    triggers.push_back(new TriggerNode(
+        "rear flank needed",
+        NextAction::array(0, new NextAction("rear flank", ACTION_HIGH + 1), NULL)));
     triggers.push_back(new TriggerNode(
         "not behind target",
         NextAction::array(0, new NextAction("set behind", ACTION_HIGH), NULL)));
