@@ -4231,3 +4231,79 @@ walking on while the party sat to drink.
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No build
 (per task constraints); live in-game check pending: moon-sheep on approach,
 skull pre-focus before first hit, party idle between pulls until topped up.
+
+## Party gaps round 3: warlock CC type gates, resto chain-lightning range, healer LOS tie-break, balance hurricane (night2 partygaps3) — 2026-10-09
+Feature: four small donor-parity party fixes from night2 research. (1)
+Warlock CC legality: `CastFearOnCcAction::isPossible` refuses undead and
+mechanical marks, `CastBanishOnCcAction::isPossible` accepts only demon
+and elemental marks (players excluded outright: `GetCreatureType` answers
+with the shapeshift form for players, so a bear-form druid reads as
+beast). The core rejects illegal types, so firing there wasted mana and
+the GCD. (2) Resto healer-DPS chain lightning: the dead-tree row queued
+bare `medium aoe and healer should attack`, which has no creator (a
+`TwoTriggers` on an unregistered name is a silent no-op); registered the
+`ranged medium aoe and healer should attack` combo (3 attackers, spell
+range — the melee one is PBAoE range, wrong for a 30 yd cast) and pointed
+the row at it. (3) Healer target pick: `PartyMemberToHeal` tie-breaks the
+missing-health sort on LOS — when the most urgent member is out of LOS and
+another is within 30% of the top target's max health (the medium-health
+band width), the reachable one goes first. Never a filter: a dying member
+behind a pillar still outranks a scratched one in the open, and the reach
+action still walks the healer into LOS for genuinely urgent picks. (4)
+Balance hurricane: the only rows lived in the dead vector-style
+`GenericDruid` tree (bare `medium aoe` has no creator); added one
+`ranged medium aoe` (3 attackers, spell range) row to the live
+`BalanceDruidStrategy`, covering pve/pvp/raid via inheritance. Gap 3
+(auto-mark combat gate) confirmed moot: `MarkRtiStrategy` only queues on
+`no rti target` in combat.
+
+Source repository: `mod-playerbots` @
+`b6696bdbd3740e575598d167d69f39f68cc0b907` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Class/Warlock/WarlockActions.cpp:33-63` (banish demon/elemental
+only, fear not on mechanical/undead) +
+`src/Ai/Class/Shaman/Strategy/RestoShamanStrategy.cpp:63` (chain
+lightning on `medium aoe and healer should attack`) +
+`src/Ai/Base/Value/PartyMemberToHeal.cpp:124-136` (`Check`: same map, not
+charmed, 2x heal distance, in LOS) +
+`src/Ai/Class/Druid/Strategy/GenericDruidStrategy.cpp:170-179`
+(hurricane on `medium aoe`) + `src/Ai/Base/TriggerContext.h:102,106,313`
+(`medium aoe` = 3 attackers at 8 yd; the healer combo).
+
+Source files (module, modified):
+`ai/playerbot/strategy/warlock/WarlockActions.h` (both OnCc `isPossible`
+gates) + `ai/playerbot/strategy/triggers/TriggerContext.h` (registered
+the ranged healer combo) +
+`ai/playerbot/strategy/shaman/RestoShamanStrategy.cpp` (row retargeted) +
+`ai/playerbot/strategy/values/PartyMemberToHeal.cpp` (LOS tie-break after
+the missing-health sort, before the multi-healer spread) +
+`ai/playerbot/strategy/druid/BalanceDruidStrategy.cpp` (hurricane row) +
+`docs/classes/warlock.md`, `docs/classes/druid.md` (behaviour lines).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) donor's heal `Check` is a hard LOS filter;
+live keeps out-of-LOS members as candidates (the reach action closes the
+gap) and uses LOS only as a bounded tie-break, so a dying tank behind a
+pillar is never ignored; (b) donor's chain-lightning trigger is the bare
+`medium aoe` name (WotLK tree still registers it); live has only
+ranged/melee splits, so the row keys off `ranged medium aoe`; (c) donor's
+hurricane rows sit in its generic tree; live's generic druid tree is dead,
+so the row goes on the live balance strategy. Turtle creature types match
+the donor 1:1 (`SharedDefines.h`: demon 3, elemental 4, undead 6,
+mechanical 9); all four spells/mechanics exist in 1.12.
+
+Reason: night2 partygaps3 research: after parts 1-2 (marks, regen, solo
+guard) these were the remaining ranked small items — wrong-CC-type casts,
+a healer-DPS row that could never fire, LOS-blind heal picks, and a
+missing balance pack cast.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`; wiring
+audit `python3 tools/verify_action_trigger_wiring.py` (0 live-missing
+before and after; `medium aoe and healer should attack` refs drop from 2
+to 1 — the remaining one is the donor-faithful priest row in the dead
+`GenericPriestStrategy.cpp`). No build (per task constraints); live
+in-game check pending: no fear on undead/mechanical marks, no banish on
+non-demon/elemental, resto chain lightning on ranged packs when nobody
+needs healing, reachable-first heal picks, balance hurricane at 3+.
