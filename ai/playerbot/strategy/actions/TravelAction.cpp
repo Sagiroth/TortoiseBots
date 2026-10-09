@@ -96,6 +96,37 @@ bool TravelAction::Execute(Event& event)
             }
         }
     }
+    // Vendor objective, arrival side: "loot <item> from <vendor>" targets are
+    // the vendors that sell a quest item (QuestValues "item vendor list"), but
+    // nothing bought it on arrival, so the bot stood at the vendor until the
+    // target expired and re-picked it (live 2026-10-09: Rhapsody Malt at the
+    // Kharanos innkeeper, Coarse Thread). Walk up to the vendor and buy one per
+    // tick until the objective count is met.
+    if (!ai->HasActivePlayerMaster() && target->GetStatus() == TravelStatus::TRAVEL_STATUS_WORK)
+    {
+        if (QuestObjectiveTravelDestination* objective =
+            dynamic_cast<QuestObjectiveTravelDestination*>(target->GetDestination()))
+        {
+            Quest const* quest = sObjectMgr.GetQuestTemplate(objective->GetQuestId());
+            uint32 const itemId = quest ? quest->ReqItemId[objective->GetObjective()] : 0;
+            uint32 const itemCount = quest ? quest->ReqItemCount[objective->GetObjective()] : 0;
+            ItemPrototype const* proto = itemId ? sObjectMgr.GetItemPrototype(itemId) : nullptr;
+            Creature* vendor = proto && objective->GetEntry() > 0 ?
+                bot->FindNearestCreature((uint32)objective->GetEntry(), INTERACTION_DISTANCE * 4) : nullptr;
+            if (vendor && vendor->IsAlive() && vendor->IsVendor() && bot->GetItemCount(itemId, true) < itemCount)
+            {
+                if (!bot->IsWithinDistInMap(vendor, INTERACTION_DISTANCE))
+                {
+                    if (!bot->IsMoving())
+                        bot->GetMotionMaster()->MovePoint(vendor->GetMapId(), vendor->GetPositionX(), vendor->GetPositionY(), vendor->GetPositionZ(), MOVE_RUN_MODE | MOVE_PATHFINDING);
+                    return true;
+                }
+                if (ai->DoSpecificAction("buy", Event("travel", ChatHelper::formatItem(proto)), true))
+                    return true;
+            }
+        }
+    }
+
     // Giver-stall release, arrival side: the donor invalidates a questgiver
     // purpose whose arrival yields nothing (validity gates flip false once
     // the errand is done), while ours holds WORK for the full 5-min expiry
@@ -112,14 +143,46 @@ bool TravelAction::Execute(Event& event)
         if (QuestRelationTravelDestination* giver =
             dynamic_cast<QuestRelationTravelDestination*>(target->GetDestination()))
         {
-            if (giver->GetPurpose() == TravelDestinationPurpose::QuestGiver &&
-                giver->GetEntry() > 0)
+            // Gameobject givers (negative entry: "Wanted!" boards) never matched
+            // the creature lookup, so nothing accepted their quest and the bot
+            // stood at the board until the 5-min expiry, then re-picked it (live
+            // 2026-10-09: 13 bots at the Brill board). Walk to the board, take
+            // the quest, or fall through to the stall release below.
+            WorldObject* giverObject = nullptr;
+            bool boardRefused = false;
+            if (giver->GetPurpose() == TravelDestinationPurpose::QuestGiver && giver->GetEntry() < 0)
             {
-                Creature* giverNpc = bot->FindNearestCreature(
-                    (uint32)giver->GetEntry(), INTERACTION_DISTANCE * 2);
-                if (giverNpc && giverNpc->IsAlive() &&
-                    bot->IsWithinDistInMap(giverNpc, INTERACTION_DISTANCE * 2) &&
-                    !AcceptAllQuestsAction::OffersAcceptableQuest(ai, bot, giverNpc))
+                GameObject* board = bot->FindNearestGameObject((uint32)-giver->GetEntry(), INTERACTION_DISTANCE * 4);
+                if (board && board->GetGoType() == GAMEOBJECT_TYPE_QUESTGIVER)
+                {
+                    if (AcceptAllQuestsAction::OffersAcceptableQuest(ai, bot, board))
+                    {
+                        if (sServerFacade.getDistance2d(bot, board) > INTERACTION_DISTANCE)
+                        {
+                            if (!bot->IsMoving())
+                                bot->GetMotionMaster()->MovePoint(board->GetMapId(), board->GetPositionX(), board->GetPositionY(), board->GetPositionZ(), MOVE_RUN_MODE | MOVE_PATHFINDING);
+                            return true;
+                        }
+                        if (ai->DoSpecificAction("accept all quests", Event("travel", board->GetObjectGuid()), true))
+                            return true;
+                        boardRefused = true;
+                    }
+                    giverObject = board;
+                }
+            }
+
+            if (giver->GetPurpose() == TravelDestinationPurpose::QuestGiver &&
+                giver->GetEntry() != 0)
+            {
+                if (giver->GetEntry() > 0)
+                {
+                    Creature* giverNpc = bot->FindNearestCreature(
+                        (uint32)giver->GetEntry(), INTERACTION_DISTANCE * 2);
+                    if (giverNpc && giverNpc->IsAlive() &&
+                        bot->IsWithinDistInMap(giverNpc, INTERACTION_DISTANCE * 2))
+                        giverObject = giverNpc;
+                }
+                if (giverObject && (boardRefused || !AcceptAllQuestsAction::OffersAcceptableQuest(ai, bot, giverObject)))
                 {
                     sPlayerbotAIConfig.logEvent(ai, "QuestGiverStalled",
                         giver->GetTitle(), std::to_string(giver->GetQuestId()));
