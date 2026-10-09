@@ -14,11 +14,14 @@ public:
         creators["shred"] = &shred;
         creators["mangle (cat)"] = &mangle_cat;
         creators["powershift"] = &powershift;
+        creators["innervate"] = &innervate;
     }
 
 private:
 
     ACTION_NODE_P(omen_of_clarity, "omen of clarity", "caster form");
+
+    ACTION_NODE_P(innervate, "innervate", "caster form");
 
     ACTION_NODE_A(shred, "shred", "mangle (cat)");
 
@@ -88,6 +91,15 @@ void DpsFeralDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
     triggers.push_back(new TriggerNode(
         "low health",
         NextAction::array(0, new NextAction("regrowth", ACTION_MEDIUM_HEAL), NULL)));
+
+    // mod-playerbots parity (DRU-3): the cat feeds Innervate to a thirsty
+    // group healer. The innervate action already targets the lowest-mana
+    // party healer (manual .bot boost wins); this row just fires it.
+    // Below cower, above the rotation — a living healer outranks combo
+    // points. The innervate node shifts to caster form first.
+    triggers.push_back(new TriggerNode(
+        "healer low mana",
+        NextAction::array(0, new NextAction("innervate", ACTION_HIGH - 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "faerie fire (feral)",

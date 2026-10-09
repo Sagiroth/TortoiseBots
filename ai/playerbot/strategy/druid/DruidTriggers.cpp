@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/GroupMembers.h"
 #include "DruidTriggers.h"
 #include "DruidActions.h"
 
@@ -33,4 +34,26 @@ bool EntanglingRootsKiteTrigger::IsActive()
 bool InFeralFormTrigger::IsActive()
 {
     return ai->HasAura("bear form", bot) || ai->HasAura("dire bear form", bot) || ai->HasAura("cat form", bot);
+}
+
+bool HealerLowManaTrigger::IsActive()
+{
+    // Mirror of the healer scan in CastInnervateAction::GetTarget: any
+    // living same-map party healer (not self) below the LowMana line.
+    // Uses ai->IsHeal so role detection matches the action exactly.
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || member == bot || !ai->IsSafe(member) || !ai->IsHeal(member))
+            continue;
+        if (member->GetMapId() != bot->GetMapId() || !sServerFacade.IsAlive(member))
+            continue;
+        if (!member->GetMaxPower(POWER_MANA))
+            continue;
+        if (ai->GetManaPercent(*member) < sPlayerbotAIConfig.lowMana)
+            return true;
+    }
+    return false;
 }

@@ -4522,3 +4522,45 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Druid parity DRU-3: feral/cat Innervate on the group healer — 2026-10-09
+Feature: new local `HealerLowManaTrigger` (named exactly "healer low
+mana", true while a living same-map party healer sits below the LowMana
+line — mirror of the scan in `CastInnervateAction::GetTarget`) + combat
+row `healer low mana` -> `innervate` at ACTION_HIGH-1 in
+`DpsFeralDruidStrategy` (below Cower, above the rotation) + `innervate`
+caster-form node in the cat action-node factory (was missing — balance
+and resto each define their own; without it the cat casts from form and
+fails). No new action: the existing `innervate` action already targets
+the lowest-mana party healer with manual `.bot boost` winning.
+
+Source repository: `mod-playerbots` @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Class/Druid/Strategy/CatDruidStrategy.cpp:100-106`
+(`healer low mana` -> `innervate on healer` 35.0). Deviations,
+deliberate: per the parity coordination note this was implemented with a
+LOCAL trigger because the shared `healer low mana` value/trigger
+(parity/heal-2) is not on the integration branch yet — the local trigger
+uses the exact shared name, so when that lands this trigger is deleted
+and the cat row needs no change. No pvp/raid exclusion either (donor
+ports sometimes scope this to pve; a thirsty healer needs Innervate in
+any bracket).
+
+Reason: druid parity report DRU-3 — feral drained nothing back to the
+healer; innervate rows were balance/resto self-only.
+
+Source files (module, modified):
+`ai/playerbot/strategy/druid/DruidTriggers.h`,
+`ai/playerbot/strategy/druid/DruidTriggers.cpp`,
+`ai/playerbot/strategy/druid/DruidAiObjectContext.cpp`,
+`ai/playerbot/strategy/druid/DpsFeralDruidStrategy.cpp` +
+`docs/classes/druid.md` (behaviour lines).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells: Innervate 29166 verified in
+spell_template; trigger/action creators registered in the druid context.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
+live test (no live test per parity brief); build via build-commit.sh.

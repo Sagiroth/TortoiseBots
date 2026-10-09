@@ -391,6 +391,18 @@ namespace ai
         }
     };
 
+    // mod-playerbots parity (DRU-3): true while a living party healer sits
+    // below the LowMana line. Named exactly "healer low mana" to converge
+    // with the shared trigger another agent is adding (parity/heal-2):
+    // when that lands, this local trigger is deleted and the cat row below
+    // needs no change. Defined in DruidTriggers.cpp.
+    class HealerLowManaTrigger : public Trigger
+    {
+    public:
+        HealerLowManaTrigger(PlayerbotAI* ai) : Trigger(ai, "healer low mana") {}
+        bool IsActive() override;
+    };
+
     class ClearcastingTrigger : public HasAuraTrigger
     {
     public:
