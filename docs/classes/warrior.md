@@ -30,8 +30,8 @@ Warriors serve as primary dungeon tanks or powerful melee DPS. The bot manages r
    - Stacks *Sunder Armor* to a full 5-stack, then stops (re-applies only to refresh, never to over-stack; no spreading to secondary mobs; AoE threat is *Challenging Shout*).
    - *Thunder Clap* fires on spare rage (40+) as extra threat, since the AoE toggle the base tree gates it behind is normally off in party pulls.
 3. **Emergency Mitigation:**
-   - *Last Stand* (12975, per game data) triggers on the critical-health trigger (default 20).
-   - *Shield Wall* triggers under severe incoming damage.
+   - *Shield Wall* fires early at low health (default 20-50%) so damage is blunted before it becomes lethal.
+   - *Last Stand* (12975, per game data) is held for the critical-health trigger (default 20) only.
    - *Taunt* fires on the current target whenever it peels onto any non-tank member (not just healers/casters).
 
 ### 2. Arms / Fury (DPS)

@@ -43,13 +43,17 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
 {
     WarriorStrategy::InitCombatTriggers(triggers);
 
+    // Staggered defensives (donor TankWarriorStrategy): Shield Wall fires
+    // early at low health (20-50%), Last Stand only at critical (<20%).
+    // Stacking both at critical wastes Wall's 30-min cooldown on fights
+    // Last Stand alone would survive.
     triggers.push_back(new TriggerNode(
-        "critical health",
-        NextAction::array(0, new NextAction("last stand", ACTION_EMERGENCY + 2), NULL)));
+        "low health",
+        NextAction::array(0, new NextAction("shield wall", ACTION_MEDIUM_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "critical health",
-        NextAction::array(0, new NextAction("shield wall", ACTION_EMERGENCY + 1), NULL)));
+        NextAction::array(0, new NextAction("last stand", ACTION_EMERGENCY + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "has blessing of salvation",
