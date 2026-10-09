@@ -4522,3 +4522,41 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Druid parity DRU-6: Faerie Fire (Feral) free threat filler — 2026-10-09
+Feature: `FaerieFireFeralTrigger::IsActive` override (port of donor
+`DruidTriggers.h:120-153`): in combat only; Bear/Dire Bear -> any live
+in-world target (free threat spam); Cat + Prowl -> quiet; Cat + Omen of
+Clarity aura -> any live target (proc fishing); Cat without Omen ->
+plain `DebuffTrigger::IsActive` (apply once, don't reapply). No
+strategy, context, action, or doc-table changes: the existing bear row
+(ACTION_HIGH) and cat row (ACTION_NORMAL+5) pick up the new firing
+pattern untouched.
+
+Source repository: `mod-playerbots` @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Class/Druid/DruidTriggers.h:120-153`. Deviations, deliberate:
+donor reads the Omen aura via a raw aura id (`AURA_OMEN_OF_CLARITY`);
+ours uses the local `ai->HasAura("omen of clarity", bot)` name idiom.
+Donor bear branch checks `bot->IsInWorld()` on the caster; ours checks
+the target (caster in-world is implied by the engine ticking). The
+report's suggestion to drop the bear row to NORMAL+2 was rejected on
+evidence: lose-aggro Growl rides ACTION_MOVE (30) above FF at HIGH (20),
+so the ordering stays sane with no change.
+
+Reason: druid parity report DRU-6 — FF(feral) fired once per debuff
+absence; free Bear threat and Omen fishing were unwired.
+
+Source files (module, modified):
+`ai/playerbot/strategy/druid/DruidTriggers.h`,
+`ai/playerbot/strategy/druid/DruidTriggers.cpp` +
+`docs/classes/druid.md` (behaviour lines).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells: FF(feral) ranks trainer-taught,
+trigger/action creators pre-registered.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
+live test (no live test per parity brief); build via build-commit.sh.

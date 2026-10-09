@@ -100,6 +100,7 @@ namespace ai
     {
     public:
         FaerieFireFeralTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "faerie fire (feral)") {}
+        bool IsActive() override;
     };
 
     class BashInterruptSpellTrigger : public InterruptSpellTrigger

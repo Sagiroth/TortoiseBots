@@ -34,3 +34,32 @@ bool InFeralFormTrigger::IsActive()
 {
     return ai->HasAura("bear form", bot) || ai->HasAura("dire bear form", bot) || ai->HasAura("cat form", bot);
 }
+
+bool FaerieFireFeralTrigger::IsActive()
+{
+    if (!sServerFacade.IsInCombat(bot))
+        return false;
+
+    // Bear: every cast is free threat/damage — spam it on any live target.
+    if (ai->HasAura("bear form", bot) || ai->HasAura("dire bear form", bot))
+    {
+        Unit* target = GetTarget();
+        return target && target->IsAlive() && target->IsInWorld();
+    }
+
+    if (!ai->HasAura("cat form", bot))
+        return false;
+
+    if (ai->HasAura("prowl", bot))
+        return false;
+
+    // Cat with Omen of Clarity: spam to fish for Clearcasting procs.
+    if (ai->HasAura("omen of clarity", bot))
+    {
+        Unit* target = GetTarget();
+        return target && target->IsAlive() && target->IsInWorld();
+    }
+
+    // Cat without Omen: apply as a normal debuff, don't reapply.
+    return DebuffTrigger::IsActive();
+}

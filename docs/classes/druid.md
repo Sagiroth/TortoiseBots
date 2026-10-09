@@ -16,6 +16,7 @@ Druids are the ultimate hybrid class, able to fulfill Tank, Healer, Melee DPS, o
 ## Supported Specs & Roles
 
 - **Feral (Bear Tank):** Dire Bear Form tank specializing in *Growl*, *Maul*, *Swipe*, and *Demoralizing Roar*, with *Frenzied Regeneration*, *Challenging Roar*, *Mangle (Bear)*, *Faerie Fire (Feral)*, and *Enrage* also wired.
+- **Faerie Fire (Feral) threat filler:** free in Bear form, so the bear spams it on any live target mid-fight for steady threat (still below Growl's lose-aggro row, above the damage rotation). Cat spams it while Omen of Clarity is up to fish for Clearcasting procs, and treats it as a plain refresh-then-stop debuff otherwise — never in Prowl.
 - **Feral (Cat Melee DPS):** Cat Form stealth and energy specialist utilizing *Claw*, *Rake*, *Shred* (with *Mangle (Cat)* as fallback), *Rip*, and *Ferocious Bite*, with *Pounce*, *Ravage*, and *Tiger's Fury* also wired. Backs off with *Cower* at medium threat in any group, not just raids.
 - **Restoration (Healer):** HoT-focused healing with *Rejuvenation*, *Regrowth*, *Healing Touch*, and *Swiftmend*, with *Nature's Swiftness* and *Tranquility* also wired.
 - **Balance (Ranged DPS):** Moonkin caster driving Nature and Arcane damage via *Moonfire*, *Wrath*, *Starfire*, and *Insect Swarm*.
