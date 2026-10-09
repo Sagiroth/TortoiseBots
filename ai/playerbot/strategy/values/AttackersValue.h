@@ -46,6 +46,12 @@ namespace ai
         static bool InCombat(Unit* target, Player* player, bool checkPullTargets = true);
 
         WorldPosition calculatePos;
+
+        // A target copied from another bot's list counts when it threatens us
+        // or anyone we fight for (group, master) - the same rule a fresh scan
+        // applies. Validating against ourselves only dropped every threat aimed
+        // at a groupmate, so grouped bots never engaged (#549).
+        bool IsValidForGroup(Unit* target);
     };
 
     // List of attackers that are currently targeting the bot

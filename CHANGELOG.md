@@ -31,6 +31,7 @@
 - Bots get off their mount to gather — a bot that rode to its herb or vein now dismounts when it opens the node, like it already does for corpses, instead of burning its approach tries on casts that never start and abandoning the node.
 - Gather (mining/herbalism) picks skip spots off the world mesh too — the same one-query pick-time sieve grind got, after 51 of 65 mining move-failures probed `nopath` the same way.
 - GMs with the chat badge on can command bots again — `/p wander`, whispering a bot `attackers` and other chat commands used to be silently ignored. [#550](https://github.com/Sagiroth/TortoiseBots/issues/550)
+- Grouped bots now jump in when a mob attacks anyone standing with them — previously they kept following until told to attack, because they copied each other's empty "nothing attacking us" lists instead of checking for themselves. [#549](https://github.com/Sagiroth/TortoiseBots/issues/549)
 
 ## 2026-10-09
 

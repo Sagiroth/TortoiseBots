@@ -87,6 +87,12 @@ std::list<ObjectGuid> AttackersValue::Calculate()
             if (pAttackersValue->Expired())
                 continue;
 
+            // Never copy an empty list: the source simply had nothing at scan
+            // time, which says nothing about us (#549). Scanning fresh here is
+            // still cheaper than staying blind and re-resetting every 2 s.
+            if (PAI_VALUE(std::list<ObjectGuid>, valueName).empty())
+                continue;
+
             if (pAttackersValue->calculatePos.sqDistance2d(bot) > 100.0f)
                 continue;
 
@@ -118,6 +124,10 @@ std::list<ObjectGuid> AttackersValue::Calculate()
 
             // Validate these targets and enforce the invariant of distinct hostile units,
             // preserving original sequence (first-seen stable deduplication).
+            // A copied target counts when it threatens us or anyone we fight for
+            // (group, master) - the same rule a fresh scan applies. Validating
+            // against ourselves only dropped every threat aimed at a groupmate,
+            // so grouped bots never engaged (#549).
             std::list<ObjectGuid> distinctResult;
             std::set<ObjectGuid> seen;
 
@@ -127,7 +137,7 @@ std::list<ObjectGuid> AttackersValue::Calculate()
                     continue;
 
                 target = ai->GetUnit(guid);
-                if (IsValid(target, bot, bot))
+                if (IsValidForGroup(target))
                 {
                     distinctResult.push_back(guid);
                     if (getOne)
@@ -199,6 +209,43 @@ void AttackersValue::AddTargetsOf(Group* group, std::set<Unit*>& targets, std::s
             }
         }
     }
+}
+
+bool AttackersValue::IsValidForGroup(Unit* target)
+{
+    if (IsValid(target, bot, bot))
+        return true;
+
+    // Same membership rule as the fresh scan in AddTargetsOf(Group*): only
+    // alive, nearby members on our map fight for each other.
+    Group* group = bot->GetGroup();
+    if (group && !bot->InBattleGround())
+    {
+        Group::MemberSlotList const& groupSlot = group->GetMemberSlots();
+        for (Group::member_citerator itr = groupSlot.begin(); itr != groupSlot.end(); itr++)
+        {
+            Player* member = sObjectMgr.GetPlayer(itr->guid);
+            if (member && (member != bot) &&
+               sServerFacade.IsAlive(member) &&
+               member->IsInWorld() &&
+               !member->IsBeingTeleported() &&
+               (member->GetMapId() == bot->GetMapId()) &&
+               (sServerFacade.getDistance2d(bot, member) <= GetRange()))
+            {
+                if (IsValid(target, member, bot))
+                    return true;
+            }
+        }
+    }
+
+    Player* master = GetMaster();
+    if (master && !bot->InBattleGround() && (!group || master->GetGroup() != group))
+    {
+        if (IsValid(target, master, bot))
+            return true;
+    }
+
+    return false;
 }
 
 void AttackersValue::AddTargetsOf(Player* player, std::set<Unit*>& targets, std::set<ObjectGuid>& invalidTargets, bool getOne)
