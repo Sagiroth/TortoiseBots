@@ -132,24 +132,27 @@ namespace ai
             canMoveAround && normalPickEmpty;
     }
 
-    // How far one idle-wander drift may reach. The wander fires only when the
-    // bot has no journey, no grind target (the fallback scan above found
-    // nothing either) and nothing else to do: 50 yd is the donor
+    // How far one idle-wander drift may reach. The wander fires when the bot
+    // has no journey and nothing else to do: 50 yd is the donor
     // mod-playerbots MoveRandomNear default step, near enough to stay inside
     // the same camp while still crossing into a fresh aggro bubble.
     float const IDLE_WANDER_RANGE_YD = 50.0f;
 
     // Whether an idle bot may take one wander step right now: the same scope
     // as the prey fallback (masterless, no journey, not fighting,
-    // overworld, able to move) plus no grind target at all - wander is the
-    // last resort under the prey rule, never beside it. The "often" trigger
-    // paces it; the action re-checks nothing per tick beyond this gate.
+    // overworld, able to move). The "often" trigger paces it; the action
+    // re-checks nothing per tick beyond this gate. Deliberately NOT gated on
+    // the grind target: a selected-but-never-attacked prey (out of the front
+    // arc, leader travelling, tapped since the pick) blocked the only motion
+    // that could break the standstill - live pool: 0 wander rows for ~289
+    // parked bots while attack-anything refused the held pick. Attack (5.0)
+    // still outranks the drift (0.6), so a usable prey wins the tick; the
+    // drift only lands when nothing better wants it.
     inline bool IdleWanderAllowed(bool masterlessRandom, bool travelTargetActive,
-        bool inCombat, bool inBattleground, bool overworld, bool canMoveAround,
-        bool noGrindTarget)
+        bool inCombat, bool inBattleground, bool overworld, bool canMoveAround)
     {
         return masterlessRandom && !travelTargetActive && !inCombat &&
-            !inBattleground && overworld && canMoveAround && noGrindTarget;
+            !inBattleground && overworld && canMoveAround;
     }
 
     // Creature-level window a grind destination must sit in.

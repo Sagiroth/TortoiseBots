@@ -253,22 +253,23 @@ int main()
     // Test 10: idle-wander gate
     // -------------------------------------------------------------
     {
-        // A masterless bot with no journey, no grind target and nothing else
-        // going on may take one short drift. Last resort under the prey
-        // fallback, never beside it.
-        CHECK(IdleWanderAllowed(true, false, false, false, true, true, true));
-        // A journey, a grind target, or an owner vetoes it.
-        CHECK(!IdleWanderAllowed(true, true, false, false, true, true, true));
-        CHECK(!IdleWanderAllowed(true, false, false, false, true, true, false));
-        CHECK(!IdleWanderAllowed(false, false, false, false, true, true, true));
+        // A masterless bot with no journey and nothing else going on may
+        // take one short drift. Beside the prey rule, not under it: a held
+        // but unattackable grind pick must not veto the only motion that
+        // can break the standstill (the attack row still wins whenever the
+        // prey is usable, 5.0 over 0.6).
+        CHECK(IdleWanderAllowed(true, false, false, false, true, true));
+        // A journey or an owner vetoes it.
+        CHECK(!IdleWanderAllowed(true, true, false, false, true, true));
+        CHECK(!IdleWanderAllowed(false, false, false, false, true, true));
         // Fighting, battleground, instance and stuck bots are excluded.
-        CHECK(!IdleWanderAllowed(true, false, true, false, true, true, true));
-        CHECK(!IdleWanderAllowed(true, false, false, true, true, true, true));
-        CHECK(!IdleWanderAllowed(true, false, false, false, false, true, true));
-        CHECK(!IdleWanderAllowed(true, false, false, false, true, false, true));
+        CHECK(!IdleWanderAllowed(true, false, true, false, true, true));
+        CHECK(!IdleWanderAllowed(true, false, false, true, true, true));
+        CHECK(!IdleWanderAllowed(true, false, false, false, false, true));
+        CHECK(!IdleWanderAllowed(true, false, false, false, true, false));
         // One short drift, donor step scale.
         CHECK(IDLE_WANDER_RANGE_YD == 50.0f);
-        std::cout << "  [PASS] idle-wander gate is the last resort\n";
+        std::cout << "  [PASS] idle-wander gate drifts beside the prey rule\n";
     }
 
     std::cout << "All grind-spot level-band tests passed.\n";
