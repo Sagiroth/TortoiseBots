@@ -23,6 +23,18 @@ namespace ai
 		CastDemonArmorAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "demon armor") {}
 	};
 
+    class CastUnendingBreathAction : public CastBuffSpellAction
+    {
+    public:
+        CastUnendingBreathAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "unending breath") {}
+    };
+
+    class CastUnendingBreathOnPartyAction : public BuffOnPartyAction
+    {
+    public:
+        CastUnendingBreathOnPartyAction(PlayerbotAI* ai) : BuffOnPartyAction(ai, "unending breath") {}
+    };
+
     BEGIN_RANGED_SPELL_ACTION(CastShadowBoltAction, "shadow bolt")
     END_SPELL_ACTION()
 

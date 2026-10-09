@@ -4553,3 +4553,37 @@ vendor order, compounding into wrong picks over levels.
 Local validation: `bash tools/verify_all.sh` (incl. new policy test +
 wiring check live-missing=0); `git diff --check`; shared-builder compile
 check; no live in-game test.
+
+## Warlock Unending Breath on swimmers (WAR-6) — 2026-10-09
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Warlock/Strategy/GenericWarlockNonCombatStrategy.cpp:89-90`
+(self 12.0 + party 11.0), `WarlockTriggers.h:37-50` +
+`WarlockTriggers.cpp:67-75` (swim-gated buff + on-party pair).
+
+Source files (module, modified):
+`ai/playerbot/strategy/warlock/WarlockTriggers.{h,cpp}` (new
+`UnendingBreathTrigger : BuffTrigger` + `UnendingBreathOnPartyTrigger :
+BuffOnPartyTrigger`, both swim-gated),
+`ai/playerbot/strategy/warlock/WarlockActions.h`
+(`CastUnendingBreathAction : CastBuffSpellAction` +
+`CastUnendingBreathOnPartyAction : BuffOnPartyAction`),
+`ai/playerbot/strategy/warlock/WarlockAiObjectContext.cpp` (registered
+all four names), `ai/playerbot/strategy/warlock/WarlockStrategy.cpp`
+(`WarlockBuffStrategy` NC rows at NORMAL+1/NORMAL) +
+`docs/classes/warlock.md` (the old upkeep claim is now true),
+`CHANGELOG.md` (doc lines).
+
+Copied / ported / reimplemented: reimplemented in the live list-engine
+tree following the shaman Water Breathing idiom (`ShamanTriggers.h`,
+`ShamanNonCombatStrategy.cpp:91-95`) — the forward-ported
+`GenericWarlockNonCombatStrategy` rows were dead (file registered
+nowhere). Unending Breath 5697 verified in `tw_world.spell_template`.
+
+Reason: doc claimed upkeep the bot never performed; donor buffs self +
+party while swimming.
+
+Local validation: `bash tools/verify_all.sh` (wiring audit covers the
+four new names); `git diff --check`; shared-builder compile via
+`build-commit.sh` (BUILD OK); live in-game check pending: swim with a
+warlock bot, self + party gain the buff, nothing fires on land.

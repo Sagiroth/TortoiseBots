@@ -54,7 +54,7 @@ Warlocks provide sustained Shadow and Fire DPS through curses and damage-over-ti
   - *Imp:* The raid pet, providing *Blood Pact* (Stamina buff).
   - *Succubus:* Provides humanoid crowd control via *Seduce*.
   - *Felhunter:* Uses *Spell Lock* for ranged interrupts. *Devour Magic* has no registered action wiring, so the bot never casts it.
-- **Out-of-combat upkeep:** The bot maintains *Demon Armor* (with *Demon Skin* as fallback) and casts *Unending Breath* on itself and the party.
+- **Out-of-combat upkeep:** The bot maintains *Demon Armor* (with *Demon Skin* as fallback) and casts *Unending Breath* (5697) on itself and the party, but only while swimming — no buff churn on land.
   - **Pet upkeep:** the demon's known spells are swept for autocast (non-passive, except *Spell Lock* / *Devour Magic* deliberate-cast abilities) and pet plus guardians are pinned to *Defensive* after each summon — same autonomous pair as hunter pets. Explicit `.bot pet aggressive|defensive|passive` orders still apply immediately.
   - **Pet ranks:** the demon learns the highest rank its level allows on summon and on the periodic initialize-pet tick (Torment, Firebolt, Lash of Pain...; *Sacrifice* and *Seduction* stay manual, never autocast), replacing lower ranks automatically — pool bots never read Grimoires, so without this they would cast rank 1 forever.
 - **Healthstones & Soulstones:**

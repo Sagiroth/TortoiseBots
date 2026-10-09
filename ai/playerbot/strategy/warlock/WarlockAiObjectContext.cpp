@@ -193,6 +193,8 @@ namespace ai
             {
                 creators["shadow trance"] = [](PlayerbotAI* ai) { return new ShadowTranceTrigger(ai); };
                 creators["demon armor"] = [](PlayerbotAI* ai) { return new DemonArmorTrigger(ai); };
+                creators["unending breath"] = [](PlayerbotAI* ai) { return new UnendingBreathTrigger(ai); };
+                creators["unending breath on party"] = [](PlayerbotAI* ai) { return new UnendingBreathOnPartyTrigger(ai); };
                 creators["no healthstone"] = [](PlayerbotAI* ai) { return new HasHealthstoneTrigger(ai); };
                 creators["no soulstone"] = [](PlayerbotAI* ai) { return new HasSoulstoneTrigger(ai); };
                 creators["no firestone"] = [](PlayerbotAI* ai) { return new HasFirestoneTrigger(ai); };
@@ -257,6 +259,8 @@ namespace ai
             AiObjectContextInternal()
             {
                 creators["demon armor"] = [](PlayerbotAI* ai) { return new CastDemonArmorAction(ai); };
+                creators["unending breath"] = [](PlayerbotAI* ai) { return new CastUnendingBreathAction(ai); };
+                creators["unending breath on party"] = [](PlayerbotAI* ai) { return new CastUnendingBreathOnPartyAction(ai); };
                 creators["demon skin"] = [](PlayerbotAI* ai) { return new CastDemonSkinAction(ai); };
                 creators["create healthstone"] = [](PlayerbotAI* ai) { return new CastCreateHealthstoneAction(ai); };
                 creators["create soulstone"] = [](PlayerbotAI* ai) { return new CastCreateSoulstoneAction(ai); };

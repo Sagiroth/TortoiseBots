@@ -22,6 +22,16 @@ bool SpellstoneTrigger::IsActive()
     return BuffTrigger::IsActive() && AI_VALUE2(uint32, "item count", getName()) > 0;
 }
 
+bool UnendingBreathTrigger::IsActive()
+{
+    return BuffTrigger::IsActive() && AI_VALUE2(bool, "swimming", "self target");
+}
+
+bool UnendingBreathOnPartyTrigger::IsActive()
+{
+    return BuffOnPartyTrigger::IsActive() && AI_VALUE2(bool, "swimming", "self target");
+}
+
 bool InfernoTrigger::IsActive()
 {
 	return AI_VALUE(uint8, "attackers count") > 1 && bot->HasSpell(1122) && bot->HasItemCount(5565, 1) && !urand(0, 2);
