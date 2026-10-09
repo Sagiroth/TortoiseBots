@@ -103,8 +103,20 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         "revenge",
         NextAction::array(0, new NextAction("revenge", ACTION_HIGH + 3), NULL)));
 
+    // Turtle Improved Shield Slam proc (donor's Sword-and-Board slot at
+    // INTERRUPT): a +35%/+70% slam charge is the highest-value GCD available,
+    // so it outranks the whole rage ladder. Cast-side rage/cooldown checks
+    // still gate it — the trigger only names the moment.
     triggers.push_back(new TriggerNode(
-        "light rage available",
+        "improved shield slam proc",
+        NextAction::array(0, new NextAction("shield slam", ACTION_INTERRUPT), NULL)));
+
+    // Shield Slam at medium rage (donor TankWarriorStrategy gates at 40):
+    // at 20 rage slam fired before the sunder stack was complete and stole
+    // the GCD from revenge (5 rage, proc-gated). Thunder clap stays below
+    // at HIGH+1 (matches donor slam+2/devastate+1/clap+1 shape).
+    triggers.push_back(new TriggerNode(
+        "medium rage available",
         NextAction::array(0, new NextAction("shield slam", ACTION_HIGH + 4), NULL)));
 
     triggers.push_back(new TriggerNode(

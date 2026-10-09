@@ -4522,3 +4522,46 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Warrior WAR-2 + WAR-6: shield-slam proc row and 40-rage gate (2026-10-09)
+
+Feature: (WAR-2) new `improved shield slam proc` trigger fires `shield
+slam` at ACTION_INTERRUPT when the Turtle Improved Shield Slam proc aura
+is up; (WAR-6) the baseline `shield slam` row moved from `light rage
+available` (20+) to `medium rage available` (40+), keeping HIGH+4 above
+thunder clap (HIGH+1) and revenge/sunder ordering intact.
+
+Source repository: `mod-playerbots/mod-playerbots`
+
+Source commit: `79bd4281` (local
+`playerbots-references/mod-playerbots` checkout).
+
+Source files:
+- `src/Ai/Class/Warrior/Strategy/TankWarriorStrategy.cpp:299-305` (proc slam at INTERRUPT)
+- `src/Ai/Class/Warrior/Strategy/TankWarriorStrategy.cpp:184-192` (slam at medium rage HIGH+2)
+
+Copied / ported / independently reimplemented: reimplemented in place
+(`ProtectionWarriorStrategy.cpp`, `WarriorTriggers.h`,
+`WarriorAiObjectContext.cpp`, all `ai/playerbot/strategy/warrior/`).
+Deviations from the donor, all deliberate: (a) no "Sword and Board" aura
+name exists in 1.18.1 — Turtle's Improved Shield Slam talent
+(51598/51599, PROC_FLAG 0x10 = melee-ability hit procs the 1-charge
++35%/+70% damage aura 51596/51597) fills the slot, matched by spell id
+(`ai->HasAura(51596/51597, bot)`) because the permanent talent shares the
+"Improved Shield Slam" name and would keep a name trigger active forever;
+(b) the dead `SwordAndBoardTrigger` class (`HAS_AURA "sword and board"`,
+unregistered since it could never fire) is deleted — the dead
+new-architecture `TankWarriorStrategy.cpp:224` reference is left alone
+(never instantiated); (c) WAR-7's briefed "challenging shout medium→high"
+is NOT done: donor `high aoe` is 4+ enemies/8yd while ours fires at
+`melee medium aoe` (3+/5yd) with the `aoe` strategy default-on for
+warriors — moving to 6+ would make tanks shout LESS than the donor, a
+regression, and the report's "opt-in toggle" premise is wrong
+(`AiFactory.cpp` adds `aoe` by default). Challenging shout stays where it
+is.
+
+Reason: WAR-2/WAR-6 in the warrior parity sweep: the talented proc never
+fired slam, and 20-rage slam starved the sunder stack and revenge GCDs.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
+test (per task constraints).

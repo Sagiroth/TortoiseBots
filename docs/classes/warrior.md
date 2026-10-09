@@ -27,7 +27,7 @@ Warriors serve as primary dungeon tanks or powerful melee DPS. The bot manages r
 1. **Pull & Engagement:** Charges on enemy-out-of-melee, then swaps to Defensive Stance (no Battle Stance prep in code).
 2. **Threat Generation:**
    - Keeps *Shield Block* active on cooldown to enable *Revenge*.
-   - Stacks *Sunder Armor* to a full 5-stack, then stops (re-applies only to refresh, never to over-stack; no spreading to secondary mobs; AoE threat is *Challenging Shout*).
+   - *Shield Slam* fires on the Improved Shield Slam proc (+35%/+70% damage charge) above everything else, otherwise at 40+ rage — after the sunder stack is complete and *Revenge* has had its GCD.
    - *Thunder Clap* fires on spare rage (40+) as extra threat, since the AoE toggle the base tree gates it behind is normally off in party pulls.
 3. **Emergency Mitigation:**
    - *Last Stand* (12975, per game data) triggers on the critical-health trigger (default 20).
