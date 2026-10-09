@@ -186,12 +186,14 @@ namespace ai
             creators["bg waiting"] = [](PlayerbotAI* ai) { return new BgWaitingTrigger(ai); };
             creators["bg active"] = [](PlayerbotAI* ai) { return new BgActiveTrigger(ai); };
             creators["bg ended"] = [](PlayerbotAI* ai) { return new BgEndedTrigger(ai); };
+            creators["timer bg"] = [](PlayerbotAI* ai) { return new TimerBgTrigger(ai); };
             creators["bg invite active"] = [](PlayerbotAI* ai) { return new BgInviteActiveTrigger(ai); };
             creators["player has no flag"] = [](PlayerbotAI* ai) { return new PlayerHasNoFlag(ai); };
             creators["player has flag"] = [](PlayerbotAI* ai) { return new PlayerHasFlag(ai); };
             creators["team has flag"] = [](PlayerbotAI* ai) { return new TeamHasFlag(ai); };
             creators["enemy team has flag"] = [](PlayerbotAI* ai) { return new EnemyTeamHasFlag(ai); };
             creators["enemy flagcarrier near"] = [](PlayerbotAI* ai) { return new EnemyFlagCarrierNear(ai); };
+            creators["team flagcarrier near"] = [](PlayerbotAI* ai) { return new TeamFlagCarrierNear(ai); };
             creators["in battleground"] = [](PlayerbotAI* ai) { return new PlayerIsInBattleground(ai); };
             creators["in battleground without flag"] = [](PlayerbotAI* ai) { return new PlayerIsInBattlegroundWithoutFlag(ai); };
             creators["wants in bg"] = [](PlayerbotAI* ai) { return new PlayerWantsInBattlegroundTrigger(ai); };

@@ -4522,3 +4522,48 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## WSG bodyguard + objective reset (SOC-P5/SOC-P6, 2026-10-09)
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Base/Strategy/BattlegroundStrategy.cpp:24` (generic `dead` ->
+`bg reset objective force`), `:31` (Warsong `team flagcarrier near` ->
+`bg protect fc`), `:36` (Warsong `timer bg` -> force), Alterac `:41`
+(timer bg -> force),
+`src/Ai/Base/Actions/BattleGroundTactics.cpp:1631-1643` (force branch:
+stop + clear motion + resetObjective unless carrying),
+`src/Ai/Base/Trigger/GenericTriggers.{h:634-643,cpp:480-491}`
+(TimerBGTrigger, ~60 s watchdog).
+
+Source files (module, modified): `ai/playerbot/BgForceResetPolicy.h` (new
+pure gate: in-match, out-of-combat, once per 60 s),
+`ai/playerbot/strategy/actions/BattleGroundTactics.{h,cpp}` (force branch +
+isUseful gate + anchor stamp),
+`ai/playerbot/strategy/actions/ActionContext.h` (force creator),
+`ai/playerbot/strategy/triggers/PvpTriggers.{h,cpp}` (new TimerBgTrigger),
+`ai/playerbot/strategy/triggers/TriggerContext.h` (timer-bg + team
+flagcarrier-near creators),
+`ai/playerbot/strategy/generic/BattlegroundStrategy.cpp` (Warsong
+bodyguard + timer nodes, Alterac timer node),
+`ai/playerbot/strategy/generic/DeadStrategy.cpp` (death reset node),
+`tools/test_bg_force_reset_policy.cpp` (new standalone test),
+`tools/verify_all.sh` (register test) + `CHANGELOG.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) the `dead` node lives in DeadStrategy, not
+the generic BG strategy - bg strategies only evaluate inside the match
+while alive, so the donor's generic `dead` node would never fire here; the
+dead engine is the live path; (b) the force action carries a gate the donor
+lacks (in-match, out-of-combat, 60 s latch): without it the dead node would
+re-roll the role and re-path every tick while corpse-running and the timer
+could stop the bot mid-fight; (c) `team flagcarrier near` needed a creator
+(it had none - only the commented-out node referenced it); (d) flag-carrier
+check covers the two WSG flag auras (no EY/Netherstorm in 1.12).
+
+Reason: the friendly flag carrier died undefended (guard node commented
+out, trigger unwired), and bots walked back to death spots or stood on
+stale objectives with no forced re-pick.
+
+Local validation: `bash tools/verify_all.sh` (incl. new policy test +
+wiring check live-missing=0); `git diff --check`; shared-builder compile
+check; no live in-game test.
