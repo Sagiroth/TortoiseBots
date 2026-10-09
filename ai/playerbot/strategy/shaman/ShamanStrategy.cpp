@@ -48,6 +48,10 @@ void ShamanStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("purge", ACTION_DISPEL), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "earth shock on enemy healer",
+        NextAction::array(0, new NextAction("earth shock on enemy healer", ACTION_INTERRUPT + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "earth shock interrupt",
         NextAction::array(0, new NextAction("earth shock", ACTION_INTERRUPT + 2), NULL)));
 }

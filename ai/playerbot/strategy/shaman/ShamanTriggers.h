@@ -411,11 +411,9 @@ namespace ai
     // is already up or still unknown. The interrupt trigger is untouched.
     DEBUFF_TRIGGER(FlameShockTrigger, "flame shock");
 
-    class EarthShockInterruptSpellTrigger : public InterruptSpellTrigger
-    {
-    public:
-        EarthShockInterruptSpellTrigger(PlayerbotAI* ai) : InterruptSpellTrigger(ai, "earth shock") {}
-    };
+    INTERRUPT_TRIGGER(EarthShockInterruptSpellTrigger, "earth shock");
+
+    INTERRUPT_HEALER_TRIGGER(EarthShockInterruptEnemyHealerSpellTrigger, "earth shock");
 
     class FrostShockSnareTrigger : public SnareTargetTrigger
     {

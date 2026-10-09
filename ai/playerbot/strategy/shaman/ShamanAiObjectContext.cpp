@@ -261,6 +261,7 @@ namespace ai
                 creators["shock"] = [](PlayerbotAI* ai) { return new ShockTrigger(ai); };
                 creators["flame shock upkeep"] = [](PlayerbotAI* ai) { return new FlameShockTrigger(ai); };
                 creators["earth shock interrupt"] = [](PlayerbotAI* ai) { return new EarthShockInterruptSpellTrigger(ai); };
+                creators["earth shock on enemy healer"] = [](PlayerbotAI* ai) { return new EarthShockInterruptEnemyHealerSpellTrigger(ai); };
                 creators["frost shock snare"] = [](PlayerbotAI* ai) { return new FrostShockSnareTrigger(ai); };
                 creators["cure poison"] = [](PlayerbotAI* ai) { return new CurePoisonTrigger(ai); };
                 creators["party member cure poison"] = [](PlayerbotAI* ai) { return new PartyMemberCurePoisonTrigger(ai); };
@@ -341,6 +342,7 @@ namespace ai
                 creators["water breathing on party"] = [](PlayerbotAI* ai) { return new CastWaterBreathingOnPartyAction(ai); };
                 creators["flame shock"] = [](PlayerbotAI* ai) { return new CastFlameShockAction(ai); };
                 creators["earth shock"] = [](PlayerbotAI* ai) { return new CastEarthShockAction(ai); };
+                creators["earth shock on enemy healer"] = [](PlayerbotAI* ai) { return new CastEarthShockOnEnemyHealerAction(ai); };
                 creators["frost shock"] = [](PlayerbotAI* ai) { return new CastFrostShockAction(ai); };
                 creators["chain lightning"] = [](PlayerbotAI* ai) { return new CastChainLightningAction(ai); };
                 creators["lightning bolt"] = [](PlayerbotAI* ai) { return new CastLightningBoltAction(ai); };

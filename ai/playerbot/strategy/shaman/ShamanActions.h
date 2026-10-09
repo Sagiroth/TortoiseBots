@@ -412,6 +412,8 @@ namespace ai
         CastEarthShockAction(PlayerbotAI* ai) : CastRangedDebuffSpellAction(ai, "earth shock") {}
     };
 
+    ENEMY_HEALER_ACTION(CastEarthShockOnEnemyHealerAction, "earth shock");
+
     class CastFrostShockAction : public CastSnareSpellAction
     {
     public:
