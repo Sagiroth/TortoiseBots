@@ -164,7 +164,10 @@ Unit* PartyMemberToHeal::Calculate()
     // outranks a scratched one in the open. Pets share the candidate set and
     // take the same tie-break (no separate path).
     Unit* mostUrgent = needHeals.front();
-    if (!sServerFacade.IsWithinLOSInMap(bot, mostUrgent))
+    // Never while the top pick is in real danger: below lowHealth the
+    // healer goes to it, pillar or not.
+    if (mostUrgent->GetHealthPercent() >= sPlayerbotAIConfig.lowHealth &&
+        !sServerFacade.IsWithinLOSInMap(bot, mostUrgent))
     {
         // Window: a candidate less urgent by more than this still loses.
         // mediumHealth 70 -> 30% of the top target's max health.
