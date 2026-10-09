@@ -4553,3 +4553,55 @@ vendor order, compounding into wrong picks over levels.
 Local validation: `bash tools/verify_all.sh` (incl. new policy test +
 wiring check live-missing=0); `git diff --check`; shared-builder compile
 check; no live in-game test.
+
+## Vaelastrasz BA refinement: victim hold + repulsion flee (raid1 item 6) — 2026-10-09
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Raid/BWL/BWLActions.cpp:142-265` (VaelastraszMoveAway: victim
+holds while boss lives; weighted-repulsion flee from non-BA bots within
+20y; BA carriers cluster; tail-sweep recovery past 30y; ranged past 25y
+blends toward the boss), `src/Ai/Raid/BWL/BWLMultipliers.cpp:64-89`
+(BA carriers: only the BA move runs, charge blocked), `src/Ai/Raid/BWL/
+BWLStrategy.cpp:26-32` (rear-flank + BA runout wiring), donor constants
+20y/30y/25y repulsion/recovery/bias.
+
+Source files (module, modified): `ai/playerbot/VaelPolicy.h` (new pure
+rule: repulsion/cluster/recovery/bias/victim-hold predicates),
+`ai/playerbot/strategy/actions/DungeonActions.h/.cpp`
+(VaelBurningAdrenalineFleeAction: victim hold, 20y weighted repulsion
+ignoring BA carriers while boss lives, 30y tail-sweep recovery, 25y
+ranged bias, 3y donor incremental steps via FindStep),
+`ai/playerbot/strategy/generic/BlackwingLairDungeonStrategies.h/.cpp`
+(`vael` fight strategy: bomb trigger re-queued to the flee at
+EMERGENCY+7 above the universal runout, potion node, end-fight cleanup,
+start trigger), `ai/playerbot/strategy/triggers/
+BlackwingLairDungeonTriggers.h` (VaelStart/EndFightTrigger on entry
+13020), `ai/playerbot/strategy/actions/BlackwingLairDungeonActions.h`
+(enable/disable actions), registrations (`TriggerContext.h`,
+`ActionContext.h`, `StrategyContext.h`), `tools/test_vael_policy.cpp`
+(new standalone test) + `tools/verify_all.sh` (test list),
+`docs/guides/dungeon-tactics.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in our fight-strategy
+idiom on top of the universal bomb trigger. Deviations from the donor,
+all deliberate: (a) no new trigger — the universal `raid bomb debuff`
+already fires on all three BA ids, so `vael` only re-queues it to the
+smarter flee at higher priority; outside Vael the generic anchor-flee
+runs unchanged; (b) no BA movement-lock multiplier: the donor blocks all
+other movement once far from clean bots, but our flee re-fires each tick
+until the aura expires and FindStep rejects bad landings, so a lock adds
+ceremony without observable gain; (c) ranged LOS is inherited from
+FindStep's own LOS check rather than the donor's two-pass LOS/no-LOS
+search; (d) the 25y bias blends by snapping to the boss heading only when
+fleeing away from it (avoids oscillation from weighted averaging).
+
+Reason: raid1 gap BWL-VAEL (b): the universal runout flees blindly from
+the anchor with no victim exemption and no BA clustering — the tank ran
+and victims scattered into the clean raid.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. BA ids 18173/23478/23620 already
+covered by the universal trigger; Vael 13020 in the flank list from the
+BWL bundle PR. Build via build-commit.sh pending; live in-game check
+pending.

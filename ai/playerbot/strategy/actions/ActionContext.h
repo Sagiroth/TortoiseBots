@@ -352,6 +352,7 @@ namespace ai
 
             creators["move away from hazard"] = [](PlayerbotAI* ai) { return new MoveAwayFromHazard(ai); };
             creators["raid bomb runout"] = [](PlayerbotAI* ai) { return new RaidBombRunoutAction(ai); };
+            creators["vael adrenaline flee"] = [](PlayerbotAI* ai) { return new VaelBurningAdrenalineFleeAction(ai); };
             creators["dragon flank"] = [](PlayerbotAI* ai) { return new DragonFlankAction(ai); };
             creators["raid spread"] = [](PlayerbotAI* ai) { return new RaidSpreadAction(ai); };
             creators["dragon tank face away"] = [](PlayerbotAI* ai) { return new DragonTankFaceAwayAction(ai); };
@@ -362,6 +363,9 @@ namespace ai
             creators["move to suppression device"] = [](PlayerbotAI* ai) { return new MoveToSuppressionDeviceAction(ai); };
             creators["stealth for suppression device"] = [](PlayerbotAI* ai) { return new StealthForSuppressionDeviceAction(ai); };
             creators["disarm suppression device"] = [](PlayerbotAI* ai) { return new DisarmSuppressionDeviceAction(ai); };
+
+            creators["enable vael fight strategy"] = [](PlayerbotAI* ai) { return new VaelEnableFightStrategyAction(ai); };
+            creators["disable vael fight strategy"] = [](PlayerbotAI* ai) { return new VaelDisableFightStrategyAction(ai); };
 
             creators["enable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanEnableFightStrategyAction(ai); };
             creators["disable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanDisableFightStrategyAction(ai); };
