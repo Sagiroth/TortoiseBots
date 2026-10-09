@@ -44,6 +44,7 @@
 #include "playerbot/strategy/actions/FishAction.h"
 #include "playerbot/DeathClusterPolicy.h"
 #include "playerbot/SurvivePolicy.h"
+#include "../../runtime/AutoToolsKitPolicy.h"
 #include "Movement/spline/MoveSplineInitArgs.h"
 #include "Movement/spline/MoveSpline.h"
 #include "Maps/InstanceData.h"
@@ -821,6 +822,10 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         // only shrinks through sharing/selling/destroying - top it back up
         // every tick, same as ammo. One stack each; bags fit (3x14 now).
         RefillPoolRations();
+        // Owner rule (auto-tools kit): same cheat block, same tick. Rogues
+        // keep max lockpicking + Thieves' Tools; Bronze carriers in BWL get
+        // one Hourglass Sand; MC visitors get one Quintessence.
+        EnsureAutoToolsKit();
     }
 
     // Alt level sync - level up non-random bots to match master level
@@ -1395,6 +1400,69 @@ void PlayerbotAI::RefillPoolRations()
         if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, wantId, want - have) != EQUIP_ERR_OK)
             continue;
         bot->StoreNewItem(dest, wantId, true, Item::GenerateItemRandomPropertyId(wantId));
+    }
+}
+
+bool PlayerbotAI::EnsureCheatItem(uint32 itemId, uint32 count)
+{
+    // Generic cheat-gated mint the KIT_TASK brief asks for: #578's sand use
+    // (and any future behaviour item) calls this instead of reimplementing
+    // the cheat gate. No-op without the item cheat or with the item held;
+    // returns true when the bot holds (or now holds) the item.
+    if (!bot || !bot->IsAlive() || !bot->IsInWorld() || !itemId || !count)
+        return false;
+    if (bot->HasItemCount(itemId, count))
+        return true;
+    if (!HasCheat(BotCheatMask::item))
+        return false;
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+    if (!proto)
+        return false;
+    uint32 have = bot->GetItemCount(itemId);
+    if (have >= count)
+        return true;
+    ItemPosCountVec dest;
+    if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, count - have) != EQUIP_ERR_OK)
+        return false;
+    bot->StoreNewItem(dest, itemId, true, Item::GenerateItemRandomPropertyId(itemId));
+    return bot->HasItemCount(itemId, 1);
+}
+
+void PlayerbotAI::EnsureAutoToolsKit()
+{
+    // Owner rule (auto-tools kit), per-tick inside the cheat block: the bot
+    // carries what its behaviours need. Cheap checks first, one throttle
+    // for the whole pass (bag-walking ensures are rare by construction).
+    if (!bot || !bot->IsAlive() || !bot->IsInWorld())
+        return;
+    if (!HasCheat(BotCheatMask::item))
+        return;
+    // Rogues: lockpicking at max-for-level plus Thieves' Tools in the bags,
+    // so UnlockItemAction and PR #614 trade unlocks never fail on kit.
+    if (TortoiseBots::RogueWantsLockpickSkill(bot->GetClass(), bot->GetLevel()))
+    {
+        uint32 lockpickMax = TortoiseBots::LockpickSkillForLevel(bot->GetLevel());
+        if (bot->GetSkillValue(SKILL_LOCKPICKING) < lockpickMax)
+            bot->SetSkill(SKILL_LOCKPICKING, lockpickMax, lockpickMax);
+        if (TortoiseBots::RogueWantsThievesTools(bot->GetClass(), bot->GetLevel()))
+            EnsureCheatItem(TortoiseBots::THIEVES_TOOLS_ITEM_ID, 1);
+    }
+    // Chromaggus Bronze (PR #578): a bot carrying the affliction gets one
+    // Hourglass Sand if it holds none, then the fight strategy uses it.
+    // BWL map gate keeps this off everywhere else.
+    if (bot->GetMapId() == TortoiseBots::BWL_MAP_ID &&
+        HasAura(TortoiseBots::BRONZE_AFFLICTION_SPELL_ID, bot) &&
+        TortoiseBots::ShouldEnsureHourglassSand(true, bot->GetItemCount(TortoiseBots::HOURGLASS_SAND_ITEM_ID)))
+    {
+        EnsureCheatItem(TortoiseBots::HOURGLASS_SAND_ITEM_ID, 1);
+    }
+    // MC rune douse: one Quintessence while inside Molten Core so the rune
+    // actions never silently skip for lack of the item.
+    if (TortoiseBots::ShouldEnsureQuintessence(bot->GetMapId(),
+        bot->GetItemCount(TortoiseBots::ETERNAL_QUINTESSENCE_ITEM_ID),
+        bot->GetItemCount(TortoiseBots::AQUAL_QUINTESSENCE_ITEM_ID)))
+    {
+        EnsureCheatItem(TortoiseBots::QuintessenceEnsureId(bot->GetLevel()), 1);
     }
 }
 

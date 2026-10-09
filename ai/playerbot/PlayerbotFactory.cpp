@@ -2330,6 +2330,15 @@ void PlayerbotFactory::InitSkills()
         SetRandomSkill(SKILL_CROSSBOWS);
         SetRandomSkill(SKILL_FIST_WEAPONS);
         SetRandomSkill(SKILL_THROWN);
+        // Owner rule (auto-tools kit): rogues always pick at max-for-level
+        // (5 per level, cap 300) so lockbox unlocks never silently fail.
+        // SetSkill only raises, never lowers a hand-trained value.
+        if (bot->GetLevel() >= 15)
+        {
+            uint32 lockpickMax = std::min<uint32>(bot->GetLevel() * 5, 300);
+            if (bot->GetSkillValue(SKILL_LOCKPICKING) < lockpickMax)
+                bot->SetSkill(SKILL_LOCKPICKING, lockpickMax, lockpickMax);
+        }
         break;
     }
 
@@ -3676,6 +3685,12 @@ void PlayerbotFactory::InitInventorySkill()
     // tool ownership is 0% in every band. StoreItem is already idempotent.
     if (bot->HasSkill(SKILL_FISHING)) {
         StoreItem(6256, 1); // Fishing Pole
+    }
+    // Owner rule (auto-tools kit): every rogue 15+ carries Thieves' Tools
+    // (5060, Pick Lock 1804 totem1) so unlocks and PR #614 trade unlocks
+    // never fail on a missing tool. StoreItem is idempotent.
+    if (bot->GetClass() == CLASS_ROGUE && bot->GetLevel() >= 15) {
+        StoreItem(5060, 1); // Thieves' Tools
     }
 }
 

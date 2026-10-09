@@ -763,6 +763,12 @@ public:
     // Per-tick top-up of the level-tier food/drink stack (owner addendum):
     // the cheat-block sibling of the ammo refill, pool-only.
     void RefillPoolRations();
+    // Owner rule (auto-tools kit): cheat-gated item/skill ensure. Mint one
+    // stack of the behaviour item the bot needs right now (rogue tools,
+    // Hourglass Sand on Bronze, Quintessence in MC); lockpicking rides at
+    // max-for-level. All branches no-op without the item cheat.
+    bool EnsureCheatItem(uint32 itemId, uint32 count);
+    void EnsureAutoToolsKit();
     std::vector<ai::DeathAttackerEntry> deathAttackers_;
     uint32 deathAttackersMs_ = 0; // WorldTimer ms of the last sample, 0 = none
     uint32 prevKillerEntry_ = 0; // the kind that killed the bot before (lethal-kind rule in OnDeath)
