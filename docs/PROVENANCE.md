@@ -4553,3 +4553,34 @@ vendor order, compounding into wrong picks over levels.
 Local validation: `bash tools/verify_all.sh` (incl. new policy test +
 wiring check live-missing=0); `git diff --check`; shared-builder compile
 check; no live in-game test.
+
+## Warrior WAR-8: tank Intervene on focused party member (2026-10-09)
+
+Feature: `ProtectionWarriorStrategy` gains `protect party member` →
+`intervene` at ACTION_EMERGENCY, plus the `intervene` → `defensive stance`
+prerequisite node in the live base-warrior factory (it existed only in the
+commented-out census block). Verified real first: Intervene 45595 is
+Defensive-locked in `spell_template` and taught by 47277 (26 trainer
+rows) — a genuine learnable 1.18.1 player spell, so the row was added.
+
+Source repository: `mod-playerbots/mod-playerbots`
+
+Source commit: `79bd4281` (local
+`playerbots-references/mod-playerbots` checkout).
+
+Source files:
+- `src/Ai/Class/Warrior/Strategy/TankWarriorStrategy.cpp:322-329` (protect party member → intervene at EMERGENCY)
+
+Copied / ported / independently reimplemented: reimplemented in place
+(`ProtectionWarriorStrategy.cpp`, `WarriorStrategy.cpp`,
+`ai/playerbot/strategy/warrior/`). Deviations from the donor: none in
+behavior — same trigger, same priority. The trigger (`protect party
+member` → `party member to protect` value), the PROTECT action, and both
+context registrations already existed; only the strategy row and the live
+stance node were missing.
+
+Reason: WAR-8 in the warrior parity sweep: full Intervene infrastructure
+with zero live consumers.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
+test (per task constraints).
