@@ -153,6 +153,25 @@ namespace ai
                 }
             }
 
+            // DPS warriors sunder only when no tank warrior is in the group
+            // (donor CastSunderArmorAction::isUseful): with a real tank the
+            // stack is their job and DPS rage is better spent on damage.
+            if (!isTank)
+            {
+                Group* group = bot->GetGroup();
+                if (group)
+                {
+                    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+                    {
+                        Player* member = ref->GetSource();
+                        if (!member || member == bot || !member->IsAlive() || !member->IsInWorld() ||
+                            member->GetMapId() != bot->GetMapId())
+                            continue;
+
+                        if (member->getClass() == CLASS_WARRIOR && ai->IsTank(member, false))
+                            return false;
+                    }
+                }
             if (isTank && !target->IsPlayer())
                 return true;
 

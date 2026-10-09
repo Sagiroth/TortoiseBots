@@ -4553,3 +4553,39 @@ vendor order, compounding into wrong picks over levels.
 Local validation: `bash tools/verify_all.sh` (incl. new policy test +
 wiring check live-missing=0); `git diff --check`; shared-builder compile
 check; no live in-game test.
+
+## Warrior WAR-1: DPS sunder with no tank warrior (2026-10-09)
+
+Feature: arms/fury combat lists gain a bottom-rung `sunder armor` row
+(NORMAL+1, below every damage spender), and `CastSunderArmorAction::isUseful`
+now returns false for non-tanks while a tank warrior (any group member of
+class warrior that `IsTank`) shares their map and is alive in-world. A DPS
+warrior in a tankless group keeps the 5-stack up; with a tank warrior
+present it spends rage on damage instead. Tank behavior unchanged.
+
+Source repository: `mod-playerbots/mod-playerbots`
+
+Source commit: `79bd4281` (local
+`playerbots-references/mod-playerbots` checkout).
+
+Source files:
+- `src/Ai/Class/Warrior/WarriorActions.cpp:48-73` (`CastSunderArmorAction::isUseful` group tank-warrior check, 5-stack/refresh logic)
+- `src/Ai/Class/Warrior/Strategy/FuryWarriorStrategy.cpp:72` (sunder default +0.3)
+- `src/Ai/Class/Warrior/Strategy/ArmsWarriorStrategy.cpp:83` (sunder default +0.05)
+
+Copied / ported / independently reimplemented: reimplemented in place
+(`WarriorActions.h`, `ArmsWarriorStrategy.cpp`, `FuryWarriorStrategy.cpp`,
+all `ai/playerbot/strategy/warrior/`). Deviations from the donor, all
+deliberate: (a) donor's 6s-refresh clause is covered by our existing
+trigger-side 5-stack stop + action-side aura-expiry re-arm (report
+verified: equivalent); (b) donor returns false for non-tanks with no group
+at all — ours still sunders ungrouped (a solo DPS warrior benefits from
+the armor reduction, and no tank exists to defer to); (c) row placed
+bottom-ladder NORMAL+1 in both specs (donor: bottom filler above melee in
+both defaults).
+
+Reason: WAR-1 in the warrior parity sweep: zero sunder rows in Arms/Fury
+meant tankless groups never got the armor-reduction stack.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
+test (per task constraints).

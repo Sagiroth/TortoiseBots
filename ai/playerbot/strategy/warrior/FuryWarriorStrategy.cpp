@@ -77,6 +77,14 @@ void FuryWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "intercept on snare target",
         NextAction::array(0, new NextAction("intercept on snare target", ACTION_NORMAL), NULL)));
+
+    // No tank warrior in the group: keep the sunder stack up (donor fury
+    // default +0.3). Bottom of the ladder, below every damage spender;
+    // the action-side group-tank check keeps this quiet when a real tank
+    // is present, and the trigger stops at a full 5-stack.
+    triggers.push_back(new TriggerNode(
+        "sunder armor",
+        NextAction::array(0, new NextAction("sunder armor", ACTION_NORMAL + 1), NULL)));
 }
 
 void FuryWarriorStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
