@@ -250,6 +250,23 @@ namespace ai
         bool inMovement;
     };
 
+    class StoneclawPanicTrigger : public Trigger
+    {
+    public:
+        StoneclawPanicTrigger(PlayerbotAI* ai) : Trigger(ai, "stoneclaw panic", 5) {}
+
+        virtual bool IsActive() override
+        {
+            // Solo panic button (mod-playerbots parity SHM-3): at low health
+            // a solo bot drops Stoneclaw so the totem taunts the attackers
+            // off it. Grouped bots keep the spec earth totem unless the
+            // player explicitly ordered Stoneclaw for this fight.
+            return AI_VALUE2(uint8, "health", "self target") <= sPlayerbotAIConfig.lowHealth &&
+                (ai->HasStrategy("totem earth stoneclaw", BotState::BOT_STATE_COMBAT) || !bot->GetGroup()) &&
+                !AI_VALUE2(bool, "has totem", "stoneclaw totem");
+        }
+    };
+
     class LightningShieldTrigger : public BuffTrigger
     {
     public:
