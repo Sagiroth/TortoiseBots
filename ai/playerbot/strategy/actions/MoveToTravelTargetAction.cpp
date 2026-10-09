@@ -796,6 +796,7 @@ bool MoveToTravelTargetAction::Execute(Event& event)
         }
     }
 
+    TravelNodeMap::LastRouteFail().clear();
     bool canMove = MoveTo(mapId, x, y, z, false, false);
 
     // A move that reports success while the bot does not displace (a spline
@@ -849,6 +850,9 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             failDetail += MoveFailReasonName(AI_VALUE(LastMovement&, "last movement").moveFailReason);
             failDetail += ":";
             failDetail += std::to_string((int32)botLocation.getZ()) + ">" + std::to_string((int32)location.getZ());
+            // Fifth field: why the node route was empty (TravelNodeMap::getRoute), when one was asked for.
+            if (!TravelNodeMap::LastRouteFail().empty())
+                failDetail += ":" + TravelNodeMap::LastRouteFail();
             sPlayerbotAIConfig.logEvent(ai, "TravelMoveFailed", purpose, failDetail);
 
             // Give up the kind like a wedged combat target: a mesh-proven

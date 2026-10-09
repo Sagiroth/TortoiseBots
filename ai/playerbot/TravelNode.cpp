@@ -1771,6 +1771,7 @@ TravelNodeRoute TravelNodeMap::getRoute(WorldPosition startPos, WorldPosition en
 
     if (startNodes.empty() || endNodes.empty())
     {
+        LastRouteFail() = startNodes.empty() ? "nostartnode" : "noendnode";
         sLog.outDetail("TortoiseBots: Travel route unreachable from (map %u, %.1f, %.1f, %.1f) to (map %u, %.1f, %.1f, %.1f): %s",
             startPos.getMapId(), startPos.getX(), startPos.getY(), startPos.getZ(),
             endPos.getMapId(), endPos.getX(), endPos.getY(), endPos.getZ(),
@@ -1790,6 +1791,7 @@ TravelNodeRoute TravelNodeMap::getRoute(WorldPosition startPos, WorldPosition en
     uint64 uid = urand(0, UINT32_MAX) * urand(0, UINT32_MAX);
 
     std::vector<TravelNode*> badStartNodes, badEndNodes;
+    uint32 noRouteCombos = 0;
 
     //Cycle over the combinations of these 5 nodes.
     for (auto& endNode : endNodes)
@@ -1811,7 +1813,10 @@ TravelNodeRoute TravelNodeMap::getRoute(WorldPosition startPos, WorldPosition en
                 return route;
 
             if (route.isEmpty())
+            {
+                ++noRouteCombos;
                 continue;
+            }
 
             if (endPath.empty())
             {
@@ -1929,6 +1934,15 @@ TravelNodeRoute TravelNodeMap::getRoute(WorldPosition startPos, WorldPosition en
         }
     }
 
+    // Dominant cause over the tried combinations: node graph split, the last
+    // walk from an end node to the target, or the first walk to a start node.
+    if (!badEndNodes.empty() && badEndNodes.size() == endNodes.size())
+        LastRouteFail() = "endwalk";
+    else if (noRouteCombos && badStartNodes.empty())
+        LastRouteFail() = "nolink";
+    else
+        LastRouteFail() = "startwalk";
+
     sLog.outDetail("TortoiseBots: Travel route unreachable from (map %u, %.1f, %.1f, %.1f) to (map %u, %.1f, %.1f, %.1f): no navigable node combination",
         startPos.getMapId(), startPos.getX(), startPos.getY(), startPos.getZ(),
         endPos.getMapId(), endPos.getX(), endPos.getY(), endPos.getZ());
@@ -1940,6 +1954,7 @@ TravelPath TravelNodeMap::getFullPath(WorldPosition startPos, WorldPosition endP
 {
     TravelPath movePath;
     std::vector<WorldPosition> beginPath, endPath;
+    LastRouteFail().clear();
 
     beginPath = endPos.GetPathFromPath({ startPos }, unit, 40);
 

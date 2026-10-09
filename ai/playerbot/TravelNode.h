@@ -433,6 +433,8 @@ namespace ai
 
         //Find the full path between those locations
         static TravelPath getFullPath(WorldPosition startPos, WorldPosition endPos, Unit* unit = nullptr);
+        // Why the last getFullPath on this thread found no node route ("" when it did), for the TravelMoveFailed row.
+        static std::string& LastRouteFail() { static thread_local std::string reason; return reason; }
         static TravelPath GetFullPath(WorldPosition startPos, WorldPosition endPos, Unit* unit = nullptr) { return getFullPath(startPos, endPos, unit); }
 
         //Manage/update nodes
