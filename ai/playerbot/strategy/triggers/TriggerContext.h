@@ -20,6 +20,7 @@
 #include "NaxxramasDungeonTriggers.h"
 #include "EmeraldSanctumDungeonTriggers.h"
 #include "LowerKarazhanDungeonTriggers.h"
+#include "ThaddiusDungeonTriggers.h"
 #include "WorldBuffTravelTriggers.h"
 
 namespace ai
@@ -333,6 +334,11 @@ namespace ai
 
             creators["start four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanStartFightTrigger(ai); };
             creators["end four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanEndFightTrigger(ai); };
+            creators["start thaddius fight"] = [](PlayerbotAI* ai) { return new ThaddiusStartFightTrigger(ai); };
+            creators["end thaddius fight"] = [](PlayerbotAI* ai) { return new ThaddiusEndFightTrigger(ai); };
+            creators["thaddius phase pet"] = [](PlayerbotAI* ai) { return new ThaddiusPhasePetTrigger(ai); };
+            creators["thaddius phase transition"] = [](PlayerbotAI* ai) { return new ThaddiusPhaseTransitionTrigger(ai); };
+            creators["thaddius phase thaddius"] = [](PlayerbotAI* ai) { return new ThaddiusPhaseThaddiusTrigger(ai); };
             creators["void zone too close"] = [](PlayerbotAI* ai) { return new FourHorsemanVoidZoneTrigger(ai); };
             creators["start solnius fight"] = [](PlayerbotAI* ai) { return new SolniusStartFightTrigger(ai); };
             creators["end solnius fight"] = [](PlayerbotAI* ai) { return new SolniusEndFightTrigger(ai); };
