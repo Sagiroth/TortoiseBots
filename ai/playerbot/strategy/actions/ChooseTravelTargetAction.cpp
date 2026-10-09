@@ -71,6 +71,46 @@ inline void LogTravelSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const
         std::to_string(ranges) + ":" + reason);
 }
 
+// A masterless pool bot whose every search came back empty stood where it was
+// until a search finally succeeded: 28 of 139 bots standing 90%+ of a 5-min
+// window had nothing but empty searches (live 2026-10-09). mod-playerbots'
+// idle state wanders instead (NewRpgBaseAction::MoveRandomNear): a short walk
+// to a random reachable spot brings new mobs into sight and the next search
+// starts from somewhere else.
+static void WanderOnEmptyPick(PlayerbotAI* ai, Player* bot)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    if (ai->HasRealPlayerMaster() || !sRandomBotFacade.IsRandomBot(bot) || bot->InBattleGround() ||
+        bot->IsInCombat() || !bot->IsAlive() || bot->IsTaxiFlying() || bot->GetTransport() || bot->IsMoving() ||
+        AI_VALUE2(time_t, "manual time", "empty pick wander at") + 20 > time(0))
+        return;
+
+    WorldPosition const botPos(bot);
+    if (!botPos.isMmapLoaded(bot->GetInstanceId()))
+        return;
+
+    SET_AI_VALUE2(time_t, "manual time", "empty pick wander at", time(0));
+    for (int attempt = 0; attempt < 4; ++attempt)
+    {
+        float const angle = rand_norm_f() * 2 * M_PI_F;
+        float const reach = 20.0f + rand_norm_f() * 30.0f;
+        WorldPosition spot(bot->GetMapId(), botPos.getX() + cos(angle) * reach, botPos.getY() + sin(angle) * reach, botPos.getZ());
+        if (!spot.ClosestCorrectPoint(10.0f, 20.0f, bot->GetInstanceId()) || spot.isInWater())
+            continue;
+        std::vector<WorldPosition> path = botPos.GetPathTo(spot, bot);
+        if (path.size() < 2 || !spot.isPathTo(path, 3.0f) || spot.IsGuardedHostileTownFor(bot))
+            continue;
+
+        bot->GetMotionMaster()->MovePoint(spot.GetMapId(), spot.getX(), spot.getY(), spot.getZ(), MOVE_RUN_MODE | MOVE_PATHFINDING);
+        if (AI_VALUE2(time_t, "manual time", "empty pick wander log") <= time(0))
+        {
+            SET_AI_VALUE2(time_t, "manual time", "empty pick wander log", time(0) + 5 * MINUTE);
+            sPlayerbotAIConfig.logEvent(ai, "EmptyPickWander", std::to_string((int32)botPos.distance(spot)), "");
+        }
+        return;
+    }
+}
+
 namespace
 {
     // Cheap mirror of the NeedTravelPurposeValue need gates (same constants,
@@ -339,6 +379,8 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         //gather, trainer and camp searches park silently every minute.
         LogTravelSearchEmpty(ai, bot, purposeKey,
             destinationList.empty() ? "empty" : "rejected[" + lastRejectReasons + "]", destinationList.size());
+
+        WanderOnEmptyPick(ai, bot);
 
         return false;
     }
