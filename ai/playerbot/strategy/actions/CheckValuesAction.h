@@ -20,3 +20,4 @@ namespace ai
         virtual bool isUseful() override;
         virtual bool Execute(Event& event) override;
     };
+}
