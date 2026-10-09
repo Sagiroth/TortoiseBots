@@ -4522,3 +4522,41 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Far-away leave + give-leader-in-dungeon (SOC-G2/SOC-G4, 2026-10-09)
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Base/Actions/LeaveGroupAction.cpp:156-159` (different map or
+distance >= 2xRpgDistance -> leave),
+`src/Ai/Base/Trigger/LfgTriggers.cpp:12-16` (UnknownDungeonTrigger: real
+master in dungeon on the bot's map),
+`src/Ai/Base/Strategy/LfgStrategy.cpp:15-16` (unknown dungeon -> give
+leader in dungeon).
+
+Source files (module, modified): `ai/playerbot/GroupHygienePolicy.h` (new
+pure gates for both behaviors),
+`ai/playerbot/strategy/actions/LeaveGroupAction.{cpp}` (far-away clause in
+LeaveFarAwayAction::isUseful, routed through the policy),
+`ai/playerbot/strategy/actions/PassLeadershipToMasterAction.h` (new
+GiveLeaderInDungeonAction: master target + dungeon gate via the policy),
+`ai/playerbot/strategy/actions/WorldPacketActionContext.h` (creator now
+builds the dungeon action),
+`ai/playerbot/strategy/generic/GroupStrategy.cpp` (seldom-tick dungeon
+node), `tools/test_group_hygiene_policy.cpp` (new standalone test),
+`tools/verify_all.sh` (register test) + `CHANGELOG.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) no LfgStrategy exists here, so the dungeon
+node rides GroupStrategy's seldom tick (the live path for grouped bots)
+and the gate lives in the action's isUseful instead of a trigger class;
+(b) the dungeon action targets the master (strategy events carry no
+whisper owner, which the chat action's event.GetOwner() would need);
+(c) the far-away clause only binds when bot grouping is enabled
+(RandomBotGroupNearby) - otherwise the action is already useful further up.
+
+Reason: cross-map/straggler bots held dead groups, and a bot leading inside
+a dungeon kept leadership it could not use while its master knew the way.
+
+Local validation: `bash tools/verify_all.sh` (incl. new policy test +
+wiring check live-missing=0); `git diff --check`; shared-builder compile
+check; no live in-game test.

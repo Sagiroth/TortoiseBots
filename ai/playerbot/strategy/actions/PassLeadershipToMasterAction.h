@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
+#include "playerbot/GroupHygienePolicy.h"
 #include "GenericActions.h"
 
 namespace ai
@@ -56,6 +57,31 @@ namespace ai
         virtual bool isUseful() override
         {
             return bot->GetGroup() && bot->GetGroup()->IsLeader(bot->getObjectGuid());
+        }
+    };
+
+    // Yield leadership to a real-player master inside a dungeon (SOC-G4):
+    // the bot does not know the dungeon, the master does. Donor
+    // mod-playerbots UnknownDungeonTrigger behavior; fires from the group
+    // strategy's seldom tick, so the target must be the master (strategy
+    // events carry no whisper owner).
+    class GiveLeaderInDungeonAction : public GiveLeaderAction
+    {
+    public:
+        GiveLeaderInDungeonAction(PlayerbotAI* ai, std::string message = "I don't know this dungeon, lead the way!") : GiveLeaderAction(ai, message) {}
+
+        virtual Player* PassLeaderTo(Event& event) { return GetMaster(); };
+
+        virtual bool isUseful() override
+        {
+            Player* master = GetMaster();
+            Map* masterMap = (master && master->IsInWorld()) ? master->GetMap() : nullptr;
+            return ai::DungeonLeadershipYield(
+                bot->GetGroup() && bot->GetGroup()->IsLeader(bot->getObjectGuid()),
+                ai->HasRealPlayerMaster() && master != nullptr,
+                master && master->IsInWorld(),
+                masterMap && masterMap->IsDungeon(),
+                master && bot->GetMapId() == master->GetMapId());
         }
     };
 }
