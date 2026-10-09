@@ -1,71 +1,32 @@
 #include "playerbot/playerbot.h"
 #include "RuinsOfAhnqirajDungeonTriggers.h"
 #include "playerbot/OssirianCrystalPolicy.h"
+#include "playerbot/strategy/OssirianCrystalHelper.h"
 
 using namespace ai;
 
-namespace
-{
-    // Minimum weakness-debuff duration left on Ossirian across the five
-    // weakness spells (core SpellWeakness: 25177/78/80/81/83). Large when
-    // no debuff is up (buff phase or pre-fight).
-    int32 OssirianDebuffMsRemaining(Unit* boss, PlayerbotAI* ai)
-    {
-        static const uint32 weakness[] = { 25177, 25178, 25180, 25181, 25183 };
-        int32 remaining = 0xffffff;
-        for (uint32 spellId : weakness)
-        {
-            if (Aura* aura = ai->GetAura(spellId, boss))
-            {
-                int32 duration = aura->GetAuraDuration();
-                if (duration < remaining)
-                    remaining = duration;
-            }
-        }
-        return remaining;
-    }
-
-    Unit* FindOssirian(PlayerbotAI* ai)
-    {
-        // Cheap first: attackers list (boss usually has the bot on threat).
-        const std::list<ObjectGuid> attackers = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get();
-        for (const ObjectGuid& guid : attackers)
-        {
-            Unit* unit = ai->GetUnit(guid);
-            if (unit && unit->GetEntry() == 15339)
-                return unit;
-        }
-        // Fallback: 100yd grid sweep by entry (phase helpers need the boss
-        // before it has hit this bot).
-        Player* bot = ai->GetBot();
-        std::list<Unit*> nearby;
-        MaNGOS::AllCreaturesOfEntryInRange check(bot, 15339, 100.0f);
-        MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRange> searcher(nearby, check);
-        Cell::VisitAllObjects(bot, searcher, 100.0f);
-        for (Unit* unit : nearby)
-        {
-            if (unit && unit->IsAlive())
-                return unit;
-        }
-        return nullptr;
-    }
-}
-
 bool OssirianCrystalRunTrigger::IsActive()
 {
-    Unit* boss = FindOssirian(ai);
+    // Cheap role gate first: tanks/healers never run, before any scan.
+    if (!IsOssirianCrystalRunner(ai, bot))
+        return false;
+
+    Unit* boss = FindOssirianBoss(ai, bot);
     if (!boss || !boss->IsInCombat())
         return false;
 
+    // Boss-relative crystal (the raid kites Ossirian to one of the two;
+    // a bot-relative pick strands bots at the wrong crystal). Bail when
+    // no crystal is up rather than feeding runMs = 0.
+    GameObject* crystal = NearestOssirianCrystalToBoss(boss);
+    if (!crystal)
+        return false;
+
     const bool buffUp = ai->HasAura(25176, boss);
-    const int32 debuffMs = OssirianDebuffMsRemaining(boss, ai);
+    const int32 debuffMs = OssirianWeaknessMsLeft(ai, boss);
 
-    // Run time to the nearest crystal: grid sweep for GO 180619 in 200yd
-    // (donor range), estimate ~7yd/s run speed.
-    GameObject* crystal = bot->FindNearestGameObject(180619, 200.0f);
-    int32 runMs = 0;
-    if (crystal)
-        runMs = int32(bot->GetDistance(crystal) / 7.0f * 1000.0f);
+    // Run time from the bot to the boss's crystal (~7yd/s run speed).
+    const int32 runMs = int32(bot->GetDistance(crystal) / 7.0f * 1000.0f);
 
-    return ShouldRunToOssirianCrystal(true, buffUp, debuffMs, crystal ? runMs : 0);
+    return ShouldRunToOssirianCrystal(true, buffUp, debuffMs, runMs);
 }

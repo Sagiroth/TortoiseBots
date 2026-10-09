@@ -1,71 +1,37 @@
 #include "playerbot/playerbot.h"
 #include "RuinsOfAhnqirajDungeonActions.h"
 #include "playerbot/OssirianCrystalPolicy.h"
-#include "Maps/GridNotifiers.h"
-#include "Maps/GridNotifiersImpl.h"
-#include "Maps/CellImpl.h"
+#include "playerbot/strategy/OssirianCrystalHelper.h"
 
 using namespace ai;
 
-namespace
-{
-    Unit* FindOssirianForCrystal(PlayerbotAI* ai, Player* bot)
-    {
-        const std::list<ObjectGuid> attackers = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get();
-        for (const ObjectGuid& guid : attackers)
-        {
-            Unit* unit = ai->GetUnit(guid);
-            if (unit && unit->GetEntry() == 15339)
-                return unit;
-        }
-        std::list<Unit*> nearby;
-        MaNGOS::AllCreaturesOfEntryInRange check(bot, 15339, 100.0f);
-        MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRange> searcher(nearby, check);
-        Cell::VisitAllObjects(bot, searcher, 100.0f);
-        for (Unit* unit : nearby)
-        {
-            if (unit && unit->IsAlive())
-                return unit;
-        }
-        return nullptr;
-    }
-
-    int32 OssirianWeaknessMsLeft(PlayerbotAI* ai, Unit* boss)
-    {
-        static const uint32 weakness[] = { 25177, 25178, 25180, 25181, 25183 };
-        int32 remaining = 0xffffff;
-        for (uint32 spellId : weakness)
-        {
-            if (Aura* aura = ai->GetAura(spellId, boss))
-            {
-                int32 duration = aura->GetAuraDuration();
-                if (duration < remaining)
-                    remaining = duration;
-            }
-        }
-        return remaining;
-    }
-}
-
 bool UseOssirianCrystalAction::Execute(Event& event)
 {
-    Unit* boss = FindOssirianForCrystal(ai, bot);
+    if (!IsOssirianCrystalRunner(ai, bot))
+        return false;
+
+    Unit* boss = FindOssirianBoss(ai, bot);
     if (!boss)
         return false;
 
-    GameObject* crystal = bot->FindNearestGameObject(180619, 200.0f);
+    GameObject* crystal = NearestOssirianCrystalToBoss(boss);
     if (!crystal)
         return false;
 
     if (bot->GetDistance(crystal) > INTERACTION_DISTANCE)
         return MoveTo(bot->GetMapId(), crystal->GetPositionX(), crystal->GetPositionY(), crystal->GetPositionZ());
 
-    // In range: wait here until the buff is up or the weakness is nearly
-    // out, then use iff Ossirian is close enough and the crystal is idle.
+    // In range: hold position until the buff is up (or the weakness is
+    // nearly out) and Ossirian is close. Returning true keeps the engine
+    // from falling back to combat actions that would walk the bot back
+    // to the boss and oscillate.
     if (!ShouldUseOssirianCrystal(boss->GetDistance(crystal),
         crystal->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_IN_USE),
         ai->HasAura(25176, boss), OssirianWeaknessMsLeft(ai, boss)))
-        return false;
+    {
+        ai->StopMoving();
+        return true;
+    }
 
     if (!bot->GetGameObjectIfCanInteractWith(crystal->getObjectGuid()))
         return false;
@@ -74,4 +40,9 @@ bool UseOssirianCrystalAction::Execute(Event& event)
     *packet << crystal->getObjectGuid();
     bot->GetSession()->QueuePacket(packet.release());
     return true;
+}
+
+bool UseOssirianCrystalAction::isPossible()
+{
+    return IsOssirianCrystalRunner(ai, bot) && ai->CanMove();
 }

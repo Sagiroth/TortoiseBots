@@ -25,23 +25,6 @@ namespace ai
 #endif
     };
 
-    class OssirianCrystalsValue : public StringCalculatedValue, public Qualified
-    {
-    public:
-        OssirianCrystalsValue(PlayerbotAI* ai, std::string name = "ossirian crystals") : StringCalculatedValue(ai, name, 1), Qualified() {}
-
-        virtual std::string Calculate() override { return "180619"; };
-
-#ifdef GenerateBotHelp
-        virtual std::string GetHelpName() { return "ossirian crystals"; } //Must equal iternal name
-        virtual std::string GetHelpTypeName() { return "entry"; }
-        virtual std::string GetHelpDescription()
-        {
-            return "This value contains the entries of the Ossirian Crystal game objects.";
-        }
-        virtual std::vector<std::string> GetUsedValues() { return { }; }
-#endif
-    };
 }
 
 class SuppressionDevicesValue : public StringCalculatedValue, public Qualified

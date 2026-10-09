@@ -40,6 +40,6 @@ class UseOssirianCrystalAction : public MovementAction
 public:
     UseOssirianCrystalAction(PlayerbotAI* ai) : MovementAction(ai, "use ossirian crystal") {}
     bool Execute(Event& event) override;
-    bool isPossible() override { return ai->CanMove(); }
+    bool isPossible() override;
 };
 }
