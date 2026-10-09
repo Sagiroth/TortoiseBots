@@ -172,6 +172,9 @@ namespace ai
     {
     public:
         CastFearWardOnTankAction(PlayerbotAI* ai) : BuffOnTankAction(ai, "fear ward") {}
+        // BuffOnTankAction names itself "<spell> on party"; match the
+        // registered name so backoff/telemetry/log keys agree with it.
+        std::string getName() override { return "fear ward on tank"; }
     };
 
     class CastFearWardAction : public CastSpellTargetAction

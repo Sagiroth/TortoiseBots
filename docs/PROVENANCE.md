@@ -4526,9 +4526,12 @@ Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 ## Priest parity PRI-1: Fear Ward on the party tank in combat — 2026-10-09
 Feature: new `FearWardOnTankTrigger` (`BuffOnTankTrigger` on "fear ward",
 cooldown-guarded like the donor) + `CastFearWardOnTankAction`
-(`BuffOnTankAction`, targets "party tank without aura") + combat row
-`fear ward on tank` at ACTION_HIGH+3 in `PriestBuffStrategy`, above the
-existing generic `fear ward` row that covers whoever lacks the buff.
+(`BuffOnTankAction`, targets "party tank without aura", `getName`
+overridden to the registered name) + combat row `fear ward on tank` at
+ACTION_HIGH+3 in `PriestBuffStrategy`, outranking the generic `fear ward`
+row (demoted from ACTION_EMERGENCY to ACTION_HIGH+2) by relevance — the
+engine executes the highest-relevance action, so the tank is warded first
+and the generic row stays as a manual-target fallback.
 
 Source repository: `mod-playerbots` @ `79bd4281` (local checkout
 `../playerbots-references/mod-playerbots`).
