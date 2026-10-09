@@ -4522,3 +4522,45 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Rogue lockbox in trade (AG-5 + AG-9, 2026-10-09)
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Base/Actions/TradeStatusExtendedAction.cpp:14-80` (parse
+extended-trade packet; locked NONTRADED slot + rogue -> unlock),
+`src/Ai/Base/Strategy/WorldPacketHandlerStrategy` wiring (`:37`),
+`src/Ai/Base/Trigger/ChatTriggerContext.h:163` + supported `:176`
+(manual unlock chat trigger).
+
+Source files (module, modified): `ai/playerbot/TradeLockboxPolicy.h` (new
+pure usefulness gate),
+`ai/playerbot/strategy/actions/UnlockTradedItemAction.{h,cpp}`
+(isUseful gate via the policy),
+`ai/playerbot/PlayerbotAI.cpp` (SMSG_TRADE_STATUS_EXTENDED packet
+handler), `ai/playerbot/strategy/triggers/WorldPacketTriggerContext.h`
+(trigger creator),
+`ai/playerbot/strategy/generic/WorldPacketHandlerStrategy.cpp`
+(extended-update -> unlock node),
+`ai/playerbot/strategy/triggers/ChatTriggerContext.h` +
+`ai/playerbot/strategy/generic/ChatCommandHandlerStrategy.cpp` (AG-9
+manual whisper trigger), `tools/test_trade_lockbox_policy.cpp` (new
+standalone test), `tools/verify_all.sh` (register test) +
+`CHANGELOG.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) no packet parsing - the 1.12 extended
+layout differs from the donor's WotLK parse (no gem fields), and the
+unlock action already reads the box from TradeData, so the packet only
+wakes the action; (b) the usefulness gate the donor lacks (rogue + locked
+box present): trade updates arrive on every window change, so an ungated
+action would chat errors every tick for non-rogues; fine checks (skill,
+spell, level) stay in Execute, which still tells when it runs; (c) the
+existing thorough unlock action (skill-vs-lock, pick cast, tells) is
+reused, not the donor's DoSpecificAction stub.
+
+Reason: the unlock action existed but never fired - rogues let trades
+complete around locked boxes.
+
+Local validation: `bash tools/verify_all.sh` (incl. new policy test +
+wiring check live-missing=0); `git diff --check`; shared-builder compile
+check; no live in-game test.
