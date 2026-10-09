@@ -4527,10 +4527,12 @@ Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 Feature: new `ThornsOnTankTrigger` (`BuffOnTankTrigger` on "thorns",
 fire-shield conflict skip mirroring `ThornsOnPartyTrigger`) + new
 `CastThornsOnTankAction` (`BuffOnTankAction`, targets "party tank without
-aura") + non-combat row `thorns on tank` at ACTION_NORMAL+3 in
-`DruidBuffStrategy`, above the party blanket at +2. Names resolve via the
-base `spell + " on tank"` / action-name support (same shape as priest
-PRI-1 `fear ward on tank`).
+aura", with an explicit `getName()` override returning "thorns on tank"
+— the base reports spell+" on party", which would collide with the party
+blanket in queue dedup and failure backoff) + non-combat row `thorns on
+tank` at ACTION_NORMAL+3 in `DruidBuffStrategy`, above the party blanket
+at +2 (same BuffOnTank shape as priest PRI-1 `fear ward on tank`,
+verified on the PRI-1 branch).
 
 Source repository: `mod-playerbots` @ `79bd4281` (local checkout
 `../playerbots-references/mod-playerbots`).

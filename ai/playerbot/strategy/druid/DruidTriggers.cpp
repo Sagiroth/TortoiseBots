@@ -41,5 +41,5 @@ bool ThornsOnTankTrigger::IsActive()
         return false;
     // Don't apply thorns if fire shield (conflict) is on the tank.
     Unit* target = GetTarget();
-    return !target || !ai->HasAura("fire shield", target);
+    return target && !ai->HasAura("fire shield", target);
 }

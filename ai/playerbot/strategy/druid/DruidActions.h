@@ -117,11 +117,14 @@ namespace ai
     };
 
     // mod-playerbots parity (DRU-7): Thorns on the party tank first.
-    // Name resolves to "thorns on tank" via BuffOnTankTrigger/BuffOnTankAction.
+    // Explicit getName: the BuffOnTankAction base reports spell+" on party"
+    // via PartyMemberActionNameSupport, which would collide with the party
+    // blanket in queue dedup and failure backoff (both key on getName).
     class CastThornsOnTankAction : public BuffOnTankAction
     {
     public:
         CastThornsOnTankAction(PlayerbotAI* ai) : BuffOnTankAction(ai, "thorns") {}
+        std::string getName() override { return "thorns on tank"; }
     };
 
 	class CastOmenOfClarityAction : public CastBuffSpellAction
