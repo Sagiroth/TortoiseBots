@@ -4522,3 +4522,42 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Priest parity shadow kit: PRI-14 fallback chain + PRI-3 DP spread + PRI-9 healer silence — 2026-10-09
+Feature: (1) `ShadowPriestStrategy` now uses the existing
+`ShadowPriestStrategyActionNodeFactory.h` (mind blast to mind flay to
+smite to shoot fallbacks) instead of the empty local factory class that
+shadowed it — an out-of-mana shadow bot wands instead of idling, and a
+pre-Mind-Flay lowbie smites. (2) AoE kit spreads `devouring plague on
+attacker` below the SW:P spread (Devouring Plague is the 1.12 second
+DoT; vanilla has no Vampiric Touch). (3) Base shadow kit silences enemy
+healers (the row used to need the `+cc` toggle; the cc kit keeps its own
+copy).
+
+Source repository: `mod-playerbots` @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Class/Priest/Strategy/ShadowPriestStrategyActionNodeFactory.h`
+(fallback chain) +
+`src/Ai/Class/Priest/Strategy/ShadowPriestStrategy.cpp:72-106`
+(second-DoT spread) + `:54-70` (always-on silence rows). Deviations,
+deliberate: VT mapped to Devouring Plague 2944+ (undead racial, gated by
+the trigger's HasSpell check); no Shadow Word: Death (no 1.18.1 spell
+row — report PRI-4).
+
+Reason: priest parity report PRI-14/PRI-3/PRI-9 — dead fallback chain,
+single-DoT AoE, healer silence behind a toggle.
+
+Source files (module, modified):
+`ai/playerbot/strategy/priest/ShadowPriestStrategy.cpp`,
+`ai/playerbot/strategy/priest/PriestTriggers.h`,
+`ai/playerbot/strategy/priest/PriestActions.h`,
+`ai/playerbot/strategy/priest/PriestAiObjectContext.cpp` +
+`docs/classes/priest.md` (rotation lines).
+
+Copied / ported / reimplemented: reimplemented in place. No new spells
+(SW:P 589+, Devouring Plague 2944+, Silence 15487 in 1.18.1 data).
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`.
+Build via build-commit.sh. No live test.
