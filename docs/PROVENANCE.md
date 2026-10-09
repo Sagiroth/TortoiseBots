@@ -4523,40 +4523,27 @@ expires; ~20% of all stall time sits in WORK.
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
 
-## Druid parity DRU-6: Faerie Fire (Feral) free threat filler — 2026-10-09
-Feature: `FaerieFireFeralTrigger::IsActive` override (port of donor
-`DruidTriggers.h:120-153`): in combat only; Bear/Dire Bear -> any live
-in-world target (free threat spam); Cat + Prowl -> quiet; Cat + Omen of
-Clarity aura -> any live target (proc fishing); Cat without Omen ->
-plain `DebuffTrigger::IsActive` (apply once, don't reapply). No
-strategy, context, action, or doc-table changes: the existing bear row
-(ACTION_HIGH) and cat row (ACTION_NORMAL+5) pick up the new firing
-pattern untouched.
+## Druid parity DRU-6: Faerie Fire (Feral) spam — NOT PORTED (rejected on 1.18.1 mechanics) — 2026-10-09
+Review of the original spam port (PR #585, review findings verified in
+code and accepted): the donor behaviour does not apply to 1.18.1, so the
+override was reverted and the pre-existing plain-debuff behaviour kept.
+Evidence: (1) FF(feral) 16857 is Effect1=APPLY_AURA (armor reduction),
+zero damage — recasting over a live 40 s debuff buys no threat, and
+`CastAuraSpellAction::isUseful` refuses recast while the aura stands
+anyway, so "spam" degrades to apply-once with extra failure modes;
+(2) the override bypassed `DebuffTrigger`'s `HasSpell` guard, queueing an
+un-castable action every combat tick for bears/cats without the spell
+(FF feral rank 1 is an 11-point Feral talent, not trainer-taught — only
+3739 appears in npc_trainer); (3) Omen fishing is WotLK thinking: cat
+GCDs spent on a 0-damage non-builder above Rip/Bite/Rake/Shred lose
+combo-point generation for no gain.
 
 Source repository: `mod-playerbots` @ `79bd4281` (local checkout
-`../playerbots-references/mod-playerbots`).
+`../playerbots-references/mod-playerbots`),
+`src/Ai/Class/Druid/DruidTriggers.h:120-153` (reference only, not ported).
 
-Source files (donor, reference only):
-`src/Ai/Class/Druid/DruidTriggers.h:120-153`. Deviations, deliberate:
-donor reads the Omen aura via a raw aura id (`AURA_OMEN_OF_CLARITY`);
-ours uses the local `ai->HasAura("omen of clarity", bot)` name idiom.
-Donor bear branch checks `bot->IsInWorld()` on the caster; ours checks
-the target (caster in-world is implied by the engine ticking). The
-report's suggestion to drop the bear row to NORMAL+2 was rejected on
-evidence: lose-aggro Growl rides ACTION_MOVE (30) above FF at HIGH (20),
-so the ordering stays sane with no change.
-
-Reason: druid parity report DRU-6 — FF(feral) fired once per debuff
-absence; free Bear threat and Omen fishing were unwired.
-
-Source files (module, modified):
-`ai/playerbot/strategy/druid/DruidTriggers.h`,
-`ai/playerbot/strategy/druid/DruidTriggers.cpp` +
-`docs/classes/druid.md` (behaviour lines).
-
-Copied / ported / reimplemented: reimplemented in place in the live
-strategy idiom. No new spells: FF(feral) ranks trainer-taught,
-trigger/action creators pre-registered.
+Source files (module, modified): none — full revert to pre-PR behaviour.
+`docs/classes/druid.md` line added by the original PR removed again.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
 live test (no live test per parity brief); build via build-commit.sh.
