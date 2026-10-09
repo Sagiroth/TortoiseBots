@@ -4,6 +4,7 @@
 #include "playerbot/strategy/actions/UseItemAction.h"
 #include "playerbot/AoeFearPolicy.h"
 #include "../../../runtime/VoidwalkerPolicy.h"
+#include "WarlockPetTaunt.h"
 
 namespace ai
 {
@@ -322,7 +323,7 @@ namespace ai
             TortoiseBots::SufferingGateInputs gate;
             gate.hasPet = true;
             gate.currentPetEntry = pet->GetEntry();
-            gate.petTauntAllowed = ai::IsPetTauntAllowed(ai, bot);
+            gate.petTauntAllowed = ai::WarlockPetTauntAllowed(ai, bot);
             gate.attackerCount = AI_VALUE(uint8, "my attacker count");
             return TortoiseBots::CanCastSuffering(gate) && CastPetSpellAction::isUseful();
         }

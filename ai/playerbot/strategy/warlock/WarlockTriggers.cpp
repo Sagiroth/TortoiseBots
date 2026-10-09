@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "WarlockTriggers.h"
 #include "WarlockActions.h"
+#include "WarlockPetTaunt.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "../../../runtime/VoidwalkerPolicy.h"
 #include "../../../runtime/WarlockPetPolicy.h"
@@ -420,7 +421,7 @@ bool SufferingTrigger::IsActive()
     gate.attackerCount = AI_VALUE(uint8, "my attacker count");
     if (gate.attackerCount < 3)
         return false;
-    gate.petTauntAllowed = ai::IsPetTauntAllowed(ai, bot);
+    gate.petTauntAllowed = ai::WarlockPetTauntAllowed(ai, bot);
     return TortoiseBots::CanCastSuffering(gate);
 }
 
