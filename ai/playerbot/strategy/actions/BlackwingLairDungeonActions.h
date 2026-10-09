@@ -218,4 +218,31 @@ namespace ai
             return !gos.empty();
         }
     };
+
+    class RazorgoreEnableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        RazorgoreEnableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "enable razorgore fight strategy", "+razorgore") {}
+    };
+
+    class RazorgoreDisableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        RazorgoreDisableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable razorgore fight strategy", "-razorgore") {}
+    };
+
+    // Cone escape: step to directly behind the boss (melee 3y, ranged hold
+    // 15y), the donor's AvoidAoe geometry. Inherits the hazard-aware point
+    // search from MoveAwayFromCreature by targeting the boss entry.
+    class RazorgoreEscapeConeAction : public MoveAwayFromCreature
+    {
+    public:
+        RazorgoreEscapeConeAction(PlayerbotAI* ai) : MoveAwayFromCreature(ai, "escape razorgore cone", 12435, 15.0f) {}
+    };
+
+    class RazorgoreBackOffAction : public MoveAwayFromCreature
+    {
+    public:
+        RazorgoreBackOffAction(PlayerbotAI* ai) : MoveAwayFromCreature(ai, "back off razorgore", 12435, 15.0f) {}
+    };
 }

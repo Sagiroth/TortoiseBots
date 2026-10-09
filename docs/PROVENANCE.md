@@ -4522,3 +4522,56 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Razorgore cone escape + off-tank hold (raid1 item 5) — 2026-10-09
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Raid/BWL/BWLTriggers.cpp:34-39` (NotMindControlled: boss lacks
+Possess 19832), `src/Ai/Raid/BWL/BWLActions.cpp:59-106` (AvoidAoe: victim
+holds; in-cone within 15y steps behind — melee 3y, ranged 15y; ranged
+outside cone but close backs off for War Stomp), `:108-138` (MarkBoss:
+off-tank moons boss while eggs live), `src/Ai/Raid/BWL/
+BWLMultipliers.cpp:20-41` (off-tank tank-assist veto while eggs live;
+non-victim tanks skip Cleave-facing after), `src/Ai/Raid/BWL/
+BWLHelpers.h:21,40` (Possess aura, egg GO 177807), `:58-59` geometry
+constants (15y cone radius, 180-degree arc, 15y ranged, 3y melee).
+
+Source files (module, modified): `ai/playerbot/RazorgorePolicy.h` (new
+pure rule: ids, geometry, phase/escape/back-off/hold predicates),
+`ai/playerbot/strategy/triggers/BlackwingLairDungeonTriggers.h`
+(RazorgoreStart/EndFightTrigger on entry 12435, header-inline
+RazorgoreConeTrigger with victim + Possess gates, header-inline
+RazorgoreRangedTrigger), `ai/playerbot/strategy/actions/
+BlackwingLairDungeonActions.h` (enable/disable actions,
+RazorgoreEscapeConeAction + RazorgoreBackOffAction: MoveAwayFromCreature
+12435/15y), `ai/playerbot/strategy/generic/
+BlackwingLairDungeonStrategies.h/.cpp` (`razorgore` fight strategy: cone
+reaction EMERGENCY+5, ranged back-off EMERGENCY+4, potion node, end-fight
+cleanup, RazorgoreOffTankMultiplier), `ai/playerbot/strategy/generic/
+DungeonMultipliers.h/.cpp` (RazorgoreOffTankMultiplier: first living tank
+by member-slot order holds via tank-assist veto), registrations
+(`TriggerContext.h`, `ActionContext.h`, `StrategyContext.h`),
+`tools/test_razorgore_policy.cpp` (new standalone test) +
+`tools/verify_all.sh` (test list), `docs/guides/dungeon-tactics.md` (doc
+line).
+
+Copied / ported / reimplemented: reimplemented in our per-boss fight
+strategy idiom. Deviations from the donor, all deliberate: (a) no orb MC
+— bots never touch the orb, that stays a player job (same as donor
+intent); (b) no moon-mark action: our generic `mark rti` covers marking
+and the off-tank hold is enforced by the multiplier, so the extra mark
+action would be ceremony; (c) off-tank = first living tank by member-slot
+order via LiveGroupMembers (no IsAssistTankOfIndex exists; Golemagg will
+revisit tank roles); (d) egg-liveness falls back to hold-the-boss when no
+egg data is reachable — the safe side; (e) cone escape reuses
+MoveAwayFromCreature's hazard-aware search instead of the donor's
+incremental step + fuzz (same observable: out of the cone, behind boss).
+
+Reason: raid1 gap BWL-RAZORGORE: no tactics at all — raid stood in Cleave
+and War Stomp, nobody held the boss for the egg phase.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. Entries 12435/19832/177807
+verified against tw_world. Build via build-commit.sh pending; live
+in-game check pending.

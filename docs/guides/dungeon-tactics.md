@@ -112,7 +112,7 @@ Entering a raid map auto-enables the `dungeon` transition engine, which swaps in
 - **Ranged spread:** stacked casters split 12yd apart (`AiPlayerbot.HazardEvasionDistance`). Pool bots (no real player master) also spread in any group combat — not just raids — when a friendly stands within 10yd; explicit hold orders (`stay`, `follow`, `wait for attack`, `grind`) and owned/hired bots under a player master are exempt.
 - **Spread memory:** a bot that spreads remembers its last two step-out headings and picks a different vector next time (within ~45 degrees is skipped). Ordinary flees do not use this veto: kiting casters need to keep stepping straight away from the mob.
 
-Encounter notes: MC runes douse via `.bot action raid douse` (Eternal Quintessence 22754 first, Aqual 17333 fallback); Onyxia phase 2 swaps bots to `shoot` + spread while airborne; BWL rogues disarm suppression devices (wired in both combat and non-combat states); 4H mark carriers (3+ stacks) rotate out via hazard move.
+Encounter notes: MC runes douse via `.bot action raid douse` (Eternal Quintessence 22754 first, Aqual 17333 fallback); Onyxia phase 2 swaps bots to `shoot` + spread while airborne; BWL rogues disarm suppression devices (wired in both combat and non-combat states); Razorgore non-victims clear the 15yd frontal cone (ranged hold 15yd for War Stomp), the first tank holds the boss while eggs live, and the orb stays a player job; 4H mark carriers (3+ stacks) rotate out via hazard move.
 
 ## 7. Custom Turtle Raids (Emerald Sanctum / Lower Karazhan / Karazhan Crypt)
 
