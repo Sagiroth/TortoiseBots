@@ -4522,3 +4522,4 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+| Kel'Thuzad fight (Naxx): role-split add priorities, center gather, phase-2 ring/tank spots, fissure flee, Detonate Mana runout | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Kelthuzad.cpp`, `src/Ai/Raid/Naxx/NaxxBossHelper.h` (KelthuzadBossHelper), `src/Ai/Raid/Naxx/NaxxStrategy.cpp` (KT rows) | Reimplemented trigger-driven; phase via NOT_SELECTABLE (vanilla) not NON_ATTACKABLE; Detonate 27819 added to universal bomb runout; p1 totem/pet suppression omitted | IDs verified in tw_world (15990, 16427/28/29/41, 16129, 27808/10/19/12, 28408); center verified vs core pullPortal | `bash tools/verify_all.sh` + `tools/test_kelthuzad_adds_policy.cpp`; build-commit + no live test |

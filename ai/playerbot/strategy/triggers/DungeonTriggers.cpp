@@ -355,8 +355,9 @@ bool RaidBombDebuffTrigger::IsActive()
     if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
         return false;
     // Spell-ID based: Geddon Living Bomb, Vael Burning Adrenaline
-    // (Turtle 23620 + classic 18173), Grobbulus Mutating Injection.
-    static const uint32 bombSpells[] = { 20475, 23620, 18173, 23478, 28169 };
+    // (Turtle 23620 + classic 18173), Grobbulus Mutating Injection,
+    // Kel'Thuzad Detonate Mana (27819, vanilla-only).
+    static const uint32 bombSpells[] = { 20475, 23620, 18173, 23478, 28169, 27819 };
     for (uint32 spellId : bombSpells)
     {
         if (ai->HasAura(spellId, bot))

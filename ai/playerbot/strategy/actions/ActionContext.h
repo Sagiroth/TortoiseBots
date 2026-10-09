@@ -81,6 +81,7 @@
 #include "EmeraldSanctumDungeonActions.h"
 #include "LowerKarazhanDungeonActions.h"
 #include "KarazhanCryptDungeonActions.h"
+#include "KelthuzadDungeonActions.h"
 
 namespace ai
 {
@@ -365,6 +366,10 @@ namespace ai
 
             creators["enable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanEnableFightStrategyAction(ai); };
             creators["disable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanDisableFightStrategyAction(ai); };
+            creators["enable kel'thuzad fight strategy"] = [](PlayerbotAI* ai) { return new KelthuzadEnableFightStrategyAction(ai); };
+            creators["disable kel'thuzad fight strategy"] = [](PlayerbotAI* ai) { return new KelthuzadDisableFightStrategyAction(ai); };
+            creators["kel'thuzad choose target"] = [](PlayerbotAI* ai) { return new KelthuzadChooseTargetAction(ai); };
+            creators["kel'thuzad position"] = [](PlayerbotAI* ai) { return new KelthuzadPositionAction(ai); };
             creators["move away from void zone"] = [](PlayerbotAI* ai) { return new FourHorsemanMoveAwayFromVoidZoneAction(ai); };
             creators["enable solnius fight strategy"] = [](PlayerbotAI* ai) { return new SolniusEnableFightStrategyAction(ai); };
             creators["disable solnius fight strategy"] = [](PlayerbotAI* ai) { return new SolniusDisableFightStrategyAction(ai); };
