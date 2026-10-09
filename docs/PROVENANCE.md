@@ -4553,3 +4553,4 @@ vendor order, compounding into wrong picks over levels.
 Local validation: `bash tools/verify_all.sh` (incl. new policy test +
 wiring check live-missing=0); `git diff --check`; shared-builder compile
 check; no live in-game test.
+| Anub'Rekhan fight (Naxx): adds-first targeting, swarm center-collapse, flee suppression | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Anubrekhan.cpp`, `src/Ai/Raid/Naxx/NaxxStrategy.cpp` (Anub rows), `src/Ai/Raid/Naxx/NaxxMultipliers.cpp` (AnubrekhanGenericMultiplier) | Reimplemented trigger-driven; MT kite ring omitted (needs live waypoints) | Kit verified in tw_world + core boss_anubrekhan.cpp (15956, guard 16573, 28785, 28783) | `bash tools/verify_all.sh` + `tools/test_anubrekhan_swarm_policy.cpp`; build-commit + no live test |

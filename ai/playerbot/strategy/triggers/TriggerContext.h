@@ -20,6 +20,7 @@
 #include "NaxxramasDungeonTriggers.h"
 #include "EmeraldSanctumDungeonTriggers.h"
 #include "LowerKarazhanDungeonTriggers.h"
+#include "AnubrekhanDungeonTriggers.h"
 #include "WorldBuffTravelTriggers.h"
 
 namespace ai
@@ -333,6 +334,10 @@ namespace ai
 
             creators["start four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanStartFightTrigger(ai); };
             creators["end four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanEndFightTrigger(ai); };
+            creators["start anub'rekhan fight"] = [](PlayerbotAI* ai) { return new AnubrekhanStartFightTrigger(ai); };
+            creators["end anub'rekhan fight"] = [](PlayerbotAI* ai) { return new AnubrekhanEndFightTrigger(ai); };
+            creators["anub'rekhan adds"] = [](PlayerbotAI* ai) { return new AnubrekhanAddsTrigger(ai); };
+            creators["anub'rekhan swarm"] = [](PlayerbotAI* ai) { return new AnubrekhanSwarmTrigger(ai); };
             creators["void zone too close"] = [](PlayerbotAI* ai) { return new FourHorsemanVoidZoneTrigger(ai); };
             creators["start solnius fight"] = [](PlayerbotAI* ai) { return new SolniusStartFightTrigger(ai); };
             creators["end solnius fight"] = [](PlayerbotAI* ai) { return new SolniusEndFightTrigger(ai); };
