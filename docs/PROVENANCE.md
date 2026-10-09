@@ -4523,3 +4523,34 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Quest-reward score tiebreak (AG-3/RPG-A1, 2026-10-09)
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Base/Actions/TalkToQuestGiverAction.cpp:179-190` (among tied
+BestRewards ids, pick max stat-weight score),
+`src/Ai/World/Rpg/Action/NewRpgBaseAction.cpp:536-551` (same two-pass
+shape for the RPG path).
+
+Source files (module, modified): `ai/playerbot/QuestRewardPolicy.h` (new
+pure winner rule over (index, weight) pairs, strictly-greater keeps vendor
+order on exact ties),
+`ai/playerbot/strategy/actions/TalkToQuestGiverAction.cpp` (auto-pick
+caller scores tied candidates via GetLiveStatWeight and picks the winner;
+winner score appended to the QuestRewarded event line),
+`tools/test_quest_reward_policy.cpp` (new standalone test),
+`tools/verify_all.sh` (register test) + `CHANGELOG.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) the tiebreak applies only to the autonomous
+auto-pick caller - BestRewards itself still returns the full tied set, so
+owned bots keep the ask-on-tie behavior and the guild-share override stays
+first; (b) single-candidate and guild-share paths are untouched (no
+scoring when there is nothing to break).
+
+Reason: two EQUIP rewards tied on usage and the bot took the first in
+vendor order, compounding into wrong picks over levels.
+
+Local validation: `bash tools/verify_all.sh` (incl. new policy test +
+wiring check live-missing=0); `git diff --check`; shared-builder compile
+check; no live in-game test.
