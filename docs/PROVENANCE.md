@@ -4522,3 +4522,41 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Warrior WAR-3: lost-aggro taunt priority (2026-10-09)
+
+Feature: protection warrior `lose aggro` now fires `taunt` at
+ACTION_INTERRUPT+1 (41) instead of ACTION_MOVE+4 (34) — above every DPS
+spender row (HIGH band), the interrupt rows, and the out-of-melee charge
+path; below EMERGENCY defensives. A mob peeling onto a non-tank member
+gets taunted back within a GCD instead of waiting behind shield slam,
+interrupts, and charge movement.
+
+Source repository: `mod-playerbots/mod-playerbots`
+
+Source commit: `79bd4281` (local
+`playerbots-references/mod-playerbots` checkout).
+
+Source files:
+- `src/Ai/Class/Warrior/Strategy/TankWarriorStrategy.cpp:217-232` (`lose aggro` -> taunt at ACTION_INTERRUPT+1)
+
+Copied / ported / independently reimplemented: reimplemented in place in
+the live list-based engine (`ProtectionWarriorStrategy.cpp`,
+`ai/playerbot/strategy/warrior/`). Deviations from the donor, all
+deliberate: (a) no heroic-throw fallback chain — Heroic Throw has no
+1.18.1 player spell row, and the existing `taunt` -> `battle shout taunt`
+fallback node already covers taunt failure; (b) no mocking-blow fallback —
+it would stance-dance the tank out of defensive with no return row, and
+its 10-rage melee-range shape duplicates taunt rather than extending it;
+(c) the `lose aggro` trigger itself (`GenericTriggers.cpp`, `ai->IsTank`
+check + non-tank-victim gate) is kept as-is — no `main tank` value or
+LowTankThreat wiring since that LD-8 branch is not on the integration
+branch yet; (d) `taunt on snare target` stays at ACTION_MOVE (different
+target: adds, not the lost-aggro mob).
+
+Reason: WAR-3 in the warrior parity sweep: the tank's taunt sat below
+interrupts and the intercept/charge path, so a peeled mob waited behind a
+missed kick and a charge GCD while the healer took hits.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
+test (per task constraints).
