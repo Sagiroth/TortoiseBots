@@ -51,5 +51,7 @@ void ShamanHealerDpsStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("healer should attack", { NextAction("flame shock", ACTION_DEFAULT + 0.2f),
                                                                  NextAction("lightning bolt", ACTION_DEFAULT) }));
 
-    triggers.push_back( new TriggerNode("medium aoe and healer should attack", { NextAction("chain lightning", ACTION_DEFAULT + 0.3f) }));
+    // Chain lightning is a 30 yd ranged cast: key the pack off the ranged
+    // medium pack, the same 3-attacker density the melee kit uses at 5 yd.
+    triggers.push_back( new TriggerNode("ranged medium aoe and healer should attack", { NextAction("chain lightning", ACTION_DEFAULT + 0.3f) }));
 }

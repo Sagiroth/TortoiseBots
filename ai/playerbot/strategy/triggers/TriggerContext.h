@@ -57,6 +57,7 @@ namespace ai
             creators["healer should attack"] = [](PlayerbotAI* ai) { return new HealerShouldAttackTrigger(ai); };
             creators["healer should wand"] = [](PlayerbotAI* ai) { return new HealerShouldAttackTrigger(ai, "healer should wand", false); };
             creators["melee medium aoe and healer should attack"] = [](PlayerbotAI* ai) { return new TwoTriggers(ai, "melee medium aoe", "healer should attack"); };
+            creators["ranged medium aoe and healer should attack"] = [](PlayerbotAI* ai) { return new TwoTriggers(ai, "ranged medium aoe", "healer should attack"); };
 
             creators["party member critical health"] = [](PlayerbotAI* ai) { return new PartyMemberCriticalHealthTrigger(ai); };
             creators["party member low health"] = [](PlayerbotAI* ai) { return new PartyMemberLowHealthTrigger(ai); };
