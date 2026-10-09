@@ -35,14 +35,17 @@ namespace ai
         return diff;
     }
 
-    // Whether the bot (at botAngle around the target, measured from the
-    // target's facing) needs a flank step: inside the frontal 90-degree
-    // half-cone (donor: HasInArc(2 x 90)) or outside the rear safe cone
-    // (donor: !HasInArc(2PI - 120)). diffFront = |targetFacing - angleToBot|
-    // folded to [0, PI]; diffRear = angular distance from the tail axis.
+    // Whether the bot needs a flank step: inside the frontal 90-degree
+    // half-cone (donor front arc: HasInArc(2 x 90)). Front-arc-only: the
+    // donor's tail clause (!HasInArc(2PI - 120)) would re-fire at
+    // set-behind's exact-rear destination and ping-pong flank→rear→flank,
+    // so the trigger and action check only the front. diffFromFacing =
+    // |targetFacing - angleToBot| folded to [0, PI]. diffFromTail is kept
+    // for the test's tail-boundary documentation; production ignores it.
     inline bool NeedsRearFlank(float diffFromFacing, float diffFromTail)
     {
-        return diffFromFacing < kFlankMinAngle || diffFromTail > kFlankMaxAngle;
+        (void)diffFromTail;
+        return diffFromFacing < kFlankMinAngle;
     }
 
     // Flank destination for one side: polar offset off the target's facing

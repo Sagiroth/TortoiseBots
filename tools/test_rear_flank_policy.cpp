@@ -22,12 +22,14 @@ int main()
     std::cout << "Starting TortoiseBots rear-flank policy tests...\n";
 
     // Dead ahead of the mob: flank. Directly behind: hold (set-behind
-    // owns that point). Off to the side past 90 degrees: hold.
+    // owns that point — the tail clause is deliberately dropped so the
+    // flank row cannot ping-pong against set-behind's destination).
+    // Off to the side past 90 degrees: hold.
     CHECK(NeedsRearFlank(0.0f, 3.1415926536f));
     CHECK(NeedsRearFlank(1.0f, 2.5f));
     CHECK(!NeedsRearFlank(1.8f, 0.3f));
     CHECK(!NeedsRearFlank(3.1415926536f, 0.0f));
-    std::cout << "  [PASS] front arc and tail cone fire, flank holds\n";
+    std::cout << "  [PASS] front arc fires, flank and rear hold\n";
 
     // Boundary: exactly 90 degrees off the facing is safe (donor uses a
     // strict less-than on the front arc).
@@ -35,10 +37,11 @@ int main()
     CHECK(NeedsRearFlank(kFlankMinAngle - 0.01f, 1.0f));
     std::cout << "  [PASS] 90-degree boundary is exclusive\n";
 
-    // Tail boundary: more than 120 degrees from the tail axis fires.
-    CHECK(NeedsRearFlank(2.0f, kFlankMaxAngle + 0.01f));
+    // Tail input is ignored: even far off the tail axis, a bot outside the
+    // front arc holds (documents the dropped donor tail clause).
+    CHECK(!NeedsRearFlank(2.0f, kFlankMaxAngle + 0.01f));
     CHECK(!NeedsRearFlank(2.0f, kFlankMaxAngle - 0.01f));
-    std::cout << "  [PASS] 120-degree tail boundary\n";
+    std::cout << "  [PASS] tail input ignored (front-arc-only)\n";
 
     // Flank offsets mirror about the facing axis at the flank radius.
     {

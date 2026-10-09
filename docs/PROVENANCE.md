@@ -4570,3 +4570,44 @@ reach the exact rear point, eating avoidable damage on any mob.
 Local validation: `bash tools/verify_all.sh` (incl. new policy test); `git
 diff --check` clean. Build via build-commit.sh (see PR summary); no live
 in-game check.
+
+## Review fixes (2026-10-09, reviewer muse-1.3 max, CHANGES_REQUESTED)
+
+Blocking 1 (flank↔set-behind oscillation — REAL, fixed): the tail-cone
+clause fired at set-behind's exact-rear destination while flank outranks
+it with a freshly re-rolled random angle every tick. Dropped the `inRear`
+clause from both the trigger and `isUseful`: generic flank is now
+front-arc-only (vanilla trash has no tail swipes); the full donor
+front+tail shape is reserved for boss/dragon contexts. Belt and braces:
+the trigger also returns false when `behind` is already true.
+
+Blocking 2 (explicit holds lose — REAL, fixed): stay/wait-for-attack
+exemptions added to `RearFlankNeededTrigger` (mirrors
+`TankFaceNeededTrigger`); `isUseful` gates stay via
+`MovementAction::isUseful` as before.
+
+Blocking 3 (tank guard trigger-only — REAL, fixed): victim==bot guard
+added to `RearFlankAction::isPossible` (mirrors
+`SetBehindTargetAction::isPossible`), so an aggro flip between trigger
+poll and Execute cannot walk a tank off its mob.
+
+Non-blocking "dead policy header" — FIXED by aligning, not deleting:
+`NeedsRearFlank` is now front-arc-only (tail param documented
+ignored); the test pins the front-only expectations. (Production still
+inlines `HasInArc` for the hot path — the header pins the geometry
+contract, including the 90° exclusivity `HasInArc`'s inclusivity would
+otherwise drift from.)
+
+Non-blocking "generic scope vs donor per-boss" — ACKNOWLEDGED, partially
+addressed: front-arc-only already narrows the blast radius to mobs whose
+front actually matters; no elite/boss gate added (cleave exists on
+non-elite trash too, e.g. SM/RFK). Left for playtesting.
+
+Non-blocking "dragon interplay" — ACKNOWLEDGED, not verified live:
+reaction-engine `dragon flank` (entry-gated dragons, EMERGENCY+4) vs
+combat-engine `rear flank` (half melee range). Different ranges/engines;
+arbitration needs a live dragon check before merge.
+
+Non-blocking "LOS-fail no fallback" — ACKNOWLEDGED, not fixed: returns
+false, retries next tick with a re-rolled angle. Same shape as before;
+minor spin risk on LOS-blocked geometry, left for playtesting.

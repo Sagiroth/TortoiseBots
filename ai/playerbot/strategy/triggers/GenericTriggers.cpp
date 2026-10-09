@@ -809,19 +809,24 @@ bool IsNotBehindTargetTrigger::IsActive()
 
 bool RearFlankNeededTrigger::IsActive()
 {
-    // Mirror of RearFlankAction::isUseful, trigger-cheap: creature target,
-    // inMelee-ish range, and inside the frontal arc or tail cone. Tanks
-    // holding the mob keep the tank-face path, never flank off it.
+    // Front-arc-only (no tail clause): set-behind's destination is the
+    // exact rear, and firing there would ping-pong flank→rear→flank
+    // against the higher-priority flank row every tick. Tanks holding the
+    // mob keep the tank-face path, never flank off it. Explicit holds
+    // (stay/wait-for-attack) veto; settled-behind bots hold position.
     Unit* target = AI_VALUE(Unit*, "current target");
     if (!target || !target->IsCreature() || !sServerFacade.IsAlive(target))
         return false;
     if (target->GetVictim() && target->GetVictim()->getObjectGuid() == bot->getObjectGuid())
         return false;
+    if (ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT))
+        return false;
     if (bot->GetDistance(target) > 15.0f)
         return false;
-    bool inFront = target->HasInArc(bot, 2.0f * (float)M_PI / 2.0f);
-    bool inRear = !target->HasInArc(bot, 2.0f * (float)M_PI - 2.0f * (float)M_PI / 3.0f);
-    return inFront || inRear;
+    if (AI_VALUE2(bool, "behind", "current target"))
+        return false;
+    return target->HasInArc(bot, 2.0f * (float)M_PI / 2.0f);
 }
 
 bool IsNotFacingTargetTrigger::IsActive()

@@ -2406,12 +2406,20 @@ bool RearFlankAction::isUseful()
     Unit* target = AI_VALUE(Unit*, "current target");
     if (!target || !target->IsCreature() || !sServerFacade.IsAlive(target))
         return false;
-    // Donor shape: in the frontal 2x90-degree arc (mirrored HasInArc) or
-    // outside the rear (2PI - 120-degree) cone. Cheap angle checks only.
+    // Front-arc-only (mirrors the trigger): the tail clause would re-fire
+    // at set-behind's exact-rear destination and ping-pong every tick.
     // (1.12 HasInArc takes the target first, arc second.)
-    bool inFront = target->HasInArc(bot, 2.0f * (float)M_PI / 2.0f);
-    bool inRear = !target->HasInArc(bot, 2.0f * (float)M_PI - 2.0f * (float)M_PI / 3.0f);
-    return inFront || inRear;
+    return target->HasInArc(bot, 2.0f * (float)M_PI / 2.0f);
+}
+
+bool RearFlankAction::isPossible()
+{
+    if (!MovementAction::isPossible() || !ai->CanMove())
+        return false;
+    // Tank guard (mirrors SetBehindTargetAction::isPossible): an aggro flip
+    // between trigger poll and Execute must not walk a tank off its mob.
+    Unit* target = AI_VALUE(Unit*, "current target");
+    return !target || !(target->GetVictim() && target->GetVictim()->getObjectGuid() == bot->getObjectGuid());
 }
 
 bool RearFlankAction::Execute(Event& event)

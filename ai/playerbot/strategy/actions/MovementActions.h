@@ -172,7 +172,7 @@ namespace ai
         RearFlankAction(PlayerbotAI* ai) : MovementAction(ai, "rear flank") {}
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;
-        virtual bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
+        virtual bool isPossible() override;
     };
 
     // Party tank-face (night2 research): sidesteps to the far side of the
