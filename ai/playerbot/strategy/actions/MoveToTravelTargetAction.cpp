@@ -587,6 +587,64 @@ static bool TryBoardFlightToTarget(PlayerbotAI* ai, Player* bot, TravelTarget* t
     return true;
 }
 
+// A pool bot whose travel move found no route used to stand and drop the
+// target (44% of move failures were nopath, live 2026-10-09). Two cheap steps
+// instead, like mod-playerbots NewRpgBaseAction::MoveFarTo:
+//  - standing off the walkable mesh (water, under a city, a balcony): hop to
+//    the nearest walkable spot within 15 yd;
+//  - otherwise walk to a reachable point in the cone toward the target that
+//    ends at least 5 yd closer, and try again from there. Every step must
+//    close the gap, so the walk cannot loop.
+bool MoveToTravelTargetAction::TryStepTowardTarget(WorldPosition const& location)
+{
+    if (ai->HasRealPlayerMaster() || !sRandomBotFacade.IsRandomBot(bot) || bot->InBattleGround() ||
+        bot->IsInCombat() || !bot->IsAlive() || bot->IsTaxiFlying() || bot->GetTransport() ||
+        location.GetMapId() != bot->GetMapId())
+        return false;
+
+    WorldPosition const botPos(bot);
+    if (!botPos.isMmapLoaded(bot->GetInstanceId()))
+        return false;
+
+    WorldPosition onMesh = botPos;
+    if (!onMesh.ClosestCorrectPoint(2.0f, 3.0f, bot->GetInstanceId()))
+    {
+        WorldPosition hop = botPos;
+        if (hop.ClosestCorrectPoint(15.0f, 10.0f, bot->GetInstanceId()) && !ai->HasPlayerNearby(botPos, sPlayerbotAIConfig.reactDistance) &&
+            bot->TeleportTo(hop.GetMapId(), hop.getX(), hop.getY(), hop.getZ(), bot->GetOrientation()))
+        {
+            sPlayerbotAIConfig.logEvent(ai, "TravelMeshHop", std::to_string((int32)botPos.distance(hop)), "");
+            return true;
+        }
+        return false;
+    }
+
+    float const gap = botPos.distance(location);
+    float const baseAngle = botPos.getAngleTo(location);
+    for (int attempt = 0; attempt < 2; ++attempt)
+    {
+        float const angle = baseAngle + (rand_norm_f() - 0.5f) * M_PI_F;
+        float const reach = std::min(gap, 40.0f + rand_norm_f() * 40.0f);
+        WorldPosition stone(bot->GetMapId(), botPos.getX() + cos(angle) * reach, botPos.getY() + sin(angle) * reach, botPos.getZ());
+        if (!stone.ClosestCorrectPoint(10.0f, 30.0f, bot->GetInstanceId()))
+            continue;
+        std::vector<WorldPosition> path = botPos.GetPathTo(stone, bot);
+        if (path.size() < 2)
+            continue;
+        WorldPosition const end = path.back();
+        if (end.distance(location) + 5.0f >= gap)
+            continue;
+
+        bot->GetMotionMaster()->MovePoint(end.GetMapId(), end.getX(), end.getY(), end.getZ(), MOVE_RUN_MODE | MOVE_PATHFINDING);
+        WaitForReach(botPos.distance(end));
+        // WaitForReach caps at a few seconds; the walk itself may take longer.
+        SET_AI_VALUE2(time_t, "manual time", "travel step until", time(0) + 2 + (time_t)(botPos.distance(end) / 7.0f));
+        sPlayerbotAIConfig.logEvent(ai, "TravelStepToward", std::to_string((int32)gap), std::to_string((int32)end.distance(location)));
+        return true;
+    }
+    return false;
+}
+
 bool MoveToTravelTargetAction::Execute(Event& event)
 {
     TravelTarget* target = AI_VALUE(TravelTarget*, "travel target");
@@ -796,6 +854,11 @@ bool MoveToTravelTargetAction::Execute(Event& event)
         }
     }
 
+    // A step toward the target (TryStepTowardTarget) is still walking: let it finish
+    // instead of clearing it with a move that already found no route.
+    if (bot->IsMoving() && AI_VALUE2(time_t, "manual time", "travel step until") > time(0))
+        return true;
+
     TravelNodeMap::LastRouteFail().clear();
     bool canMove = MoveTo(mapId, x, y, z, false, false);
 
@@ -875,6 +938,14 @@ bool MoveToTravelTargetAction::Execute(Event& event)
 
             if (TryRescueNoPathTrap(noPath, purpose))
                 return false;
+        }
+
+        // A step toward the target (or a hop back onto the mesh) replaces the
+        // drop. The odd count keeps the first-failure row from repeating.
+        if (!canMove && TryStepTowardTarget(location))
+        {
+            target->SetRetry(true, 1);
+            return true;
         }
 
         // A failed move toward a hand-in taker is one no-progress episode for that

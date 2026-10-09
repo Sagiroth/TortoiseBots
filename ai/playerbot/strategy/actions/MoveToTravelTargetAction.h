@@ -65,6 +65,7 @@ namespace ai
         // failed move instead of decaying. A scheduled teleport-hop wait and
         // a transport leg stand still by design and are skipped.
         bool TravelMoveMadeNoProgress();
+        bool TryStepTowardTarget(WorldPosition const& location);
 
         float noProgressX = 0.0f;
         float noProgressY = 0.0f;
