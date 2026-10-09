@@ -67,6 +67,9 @@ void ShamanStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "low health",
         NextAction::array(0, new NextAction("healing wave", ACTION_MEDIUM_HEAL), NULL)));
+    triggers.push_back(new TriggerNode(
+        "totemic recall",
+        NextAction::array(0, new NextAction("totemic recall", ACTION_NORMAL), NULL)));
 }
 
 void ShamanStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)

@@ -56,7 +56,7 @@ Shamans automatically drop and maintain fixed per-spec 4-element totem sets (oth
 - **Dispels & Cleansing:** Uses *Purge* to strip enemy buffs (shields, HoTs) and *Cure Poison* / *Cure Disease* on party members (no curse cure exists for shamans in 1.12; curses stay a druid/mage job).
 - **Mana sense:** Never skips a target at or below the low-health line for mana reasons; above the medium line it refuses oversized or average-efficiency heals, and below the medium-mana line it refuses mana-hungry heals (*Lesser Healing Wave*) in favor of *Healing Wave*. Tanks count the expected heal at two-thirds.
 - **Resurrection:** Resurrects fallen party members with *Ancestral Spirit* (no self-Reincarnation).
-- **Defensive & Utility:** Keeps *Earth Shield* on the party tank, uses *Call of the Elements* / *Call of the Ancestors* / *Call of the Spirits* totem recall, and shifts to *Ghost Wolf* when carrying a PvP flag.
+- **Defensive & Utility:** Keeps *Earth Shield* on the party tank, recalls standing totems out of combat with *Totemic Recall* for mana (never the *Mana Tide* cooldown totem, never while anyone fights), and shifts to *Ghost Wolf* when carrying a PvP flag.
 
 ---
 

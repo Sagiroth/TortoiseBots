@@ -20,20 +20,31 @@ namespace ai
 
         virtual bool IsActive() override
         {
-            // Avoid removing any of the big cooldown totems.
-            return AI_VALUE(bool, "have any totem")
-                && !AI_VALUE2(bool, "has totem", "mana tide totem");
-        }
-    };
-
-    class TotemsAreNotSummonedTrigger : public Trigger
-    {
-    public:
-        TotemsAreNotSummonedTrigger(PlayerbotAI* ai) : Trigger(ai, "no totems summoned", 5) {}
-
-        virtual bool IsActive() override
-        {
-            return !AI_VALUE(bool, "have any totem");
+            // Out-of-combat mana refund (mod-playerbots parity SHM-5):
+            // recall only when the bot and no group member is fighting.
+            // Never recall mana tide: destroying the cooldown totem wastes
+            // it for pennies. (No fire-elemental totem action exists in
+            // 1.18.1, so there is nothing else to spare.)
+            if (!ai->HasSpell("totemic recall"))
+                return false;
+            if (!(AI_VALUE(bool, "have any totem")))
+                return false;
+            if (AI_VALUE2(bool, "has totem", "mana tide totem"))
+                return false;
+            if (bot->IsInCombat())
+                return false;
+            Group* group = bot->GetGroup();
+            if (group)
+            {
+                for (Player* member : LiveGroupMembers(group))
+                {
+                    if (!member || member == bot)
+                        continue;
+                    if (member->IsInCombat())
+                        return false;
+                }
+            }
+            return true;
         }
     };
 

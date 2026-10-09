@@ -463,24 +463,6 @@ namespace ai
         CastEarthShieldOnPartyTankAction(PlayerbotAI* ai) : BuffOnTankAction(ai, "earth shield") {}
     };
 
-    class CastCallOfTheElements : public CastBuffSpellAction
-    {
-    public:
-        CastCallOfTheElements(PlayerbotAI* ai) : CastBuffSpellAction(ai, "call of the elements") {}
-    };
-
-    class CastCallOfTheAncestors : public CastBuffSpellAction
-    {
-    public:
-        CastCallOfTheAncestors(PlayerbotAI* ai) : CastBuffSpellAction(ai, "call of the ancestors") {}
-    };
-
-    class CastCallOfTheSpirits : public CastBuffSpellAction
-    {
-    public:
-        CastCallOfTheSpirits(PlayerbotAI* ai) : CastBuffSpellAction(ai, "call of the spirits") {}
-    };
-
     class CastTotemicRecall : public CastBuffSpellAction
     {
     public:
