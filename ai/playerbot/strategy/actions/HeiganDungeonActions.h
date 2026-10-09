@@ -27,6 +27,24 @@ class HeiganDanceMoveAction : public MovementAction
 public:
     HeiganDanceMoveAction(PlayerbotAI* ai) : MovementAction(ai, "heigan dance move") {}
     bool Execute(Event& event) override;
+
+private:
+    int lastArea = -1;
+    uint32 fallbackAnchorMs = 0;
+};
+
+// Dance suppression (donor HeiganDanceMultiplier, movement leg): while
+// the dance is on, only the dance/platform moves reposition the bot —
+// flee, spread, follow and any other movement would walk off the safe
+// spot. Attacks, heals and dispels pass through untouched (no cast
+// gating: our multiplier API cannot see remaining cast time, so timed
+// casts may eat an eruption mid-dance — disclosed gap). Fail-open when
+// the boss is off threat (no sweep).
+class HeiganDanceSuppressionMultiplier : public Multiplier
+{
+public:
+    HeiganDanceSuppressionMultiplier(PlayerbotAI* ai) : Multiplier(ai, "heigan dance suppression") {}
+    float GetValue(Action* action) override;
 };
 
 // Fight phase: ranged/healers wait on Heigan's platform (floor sections

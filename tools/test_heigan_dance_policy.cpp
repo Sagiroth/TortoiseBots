@@ -10,10 +10,10 @@
     } \
 } while (0)
 
-using ai::HeiganNextEruption;
+using ai::HeiganDanceElapsed;
 using ai::HeiganSafeArea;
 using ai::HeiganSafeAreaNow;
-using ai::IsHeiganDanceUp;
+using ai::HeiganSafeIndex;
 
 int main()
 {
@@ -30,25 +30,41 @@ int main()
     CHECK(HeiganSafeArea(7) == 1);
     std::cout << "  [PASS] safe-area walk matches core section cycle\n";
 
-    // Eruptions at 4s, 7s, 10s...; 1s move lead picks the next one.
-    CHECK(HeiganNextEruption(0) == 0);
-    CHECK(HeiganNextEruption(3000) == 1);
-    CHECK(HeiganNextEruption(4000) == 1);
-    CHECK(HeiganNextEruption(6500) == 2);
-    CHECK(HeiganNextEruption(43000) == 14);
-    std::cout << "  [PASS] eruption clock uses 4s-first / 3s-cadence\n";
+    // Windows: eruption k at 4+3k s; stand in seq[k] for [t_k, t_{k+1})
+    // with a 300ms early move. At 3.9s eruption 0 has NOT fired (fires
+    // at 4s) — stand in seq[0], not seq[1].
+    CHECK(HeiganSafeIndex(0) == 0);
+    CHECK(HeiganSafeIndex(3699) == 0);
+    CHECK(HeiganSafeIndex(3700) == 0);
+    CHECK(HeiganSafeIndex(3900) == 0);
+    CHECK(HeiganSafeIndex(4100) == 0);
+    CHECK(HeiganSafeIndex(6800) == 1);
+    CHECK(HeiganSafeIndex(7000) == 1);
+    CHECK(HeiganSafeIndex(9800) == 2);
+    CHECK(HeiganSafeIndex(12800) == 3);
+    CHECK(HeiganSafeIndex(15800) == 4);
+    // Past the last eruption (43s): clamp to the final window.
+    CHECK(HeiganSafeIndex(43000) == 13);
+    CHECK(HeiganSafeIndex(44000) == 13);
+    CHECK(HeiganSafeIndex(60000) == 13);
+    std::cout << "  [PASS] window index stands in the current section\n";
 
-    // Spot choice folds clock + walk together.
     CHECK(HeiganSafeAreaNow(0) == 0);
-    CHECK(HeiganSafeAreaNow(3000) == 1);
-    CHECK(HeiganSafeAreaNow(6500) == 2);
-    CHECK(HeiganSafeAreaNow(9500) == 3);
-    CHECK(HeiganSafeAreaNow(12500) == 2);
+    CHECK(HeiganSafeAreaNow(3900) == 0);
+    CHECK(HeiganSafeAreaNow(4100) == 0);
+    CHECK(HeiganSafeAreaNow(6800) == 1);
+    CHECK(HeiganSafeAreaNow(9800) == 2);
+    CHECK(HeiganSafeAreaNow(12800) == 3);
+    CHECK(HeiganSafeAreaNow(15800) == 2);
     std::cout << "  [PASS] spot choice follows the dance\n";
 
-    CHECK(IsHeiganDanceUp(true));
-    CHECK(!IsHeiganDanceUp(false));
-    std::cout << "  [PASS] dance detection is the Plague Cloud aura\n";
+    // Clock from aura max - remaining; fallback total when max unknown.
+    CHECK(HeiganDanceElapsed(45000, 45000) == 0);
+    CHECK(HeiganDanceElapsed(45000, 41000) == 4000);
+    CHECK(HeiganDanceElapsed(45000, 2000) == 43000);
+    CHECK(HeiganDanceElapsed(0, 41000) == 4000);
+    CHECK(HeiganDanceElapsed(-1, 45000) == 0);
+    std::cout << "  [PASS] dance clock reads max-minus-remaining\n";
 
     std::cout << "All Heigan-dance policy tests passed.\n";
     return 0;

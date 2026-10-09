@@ -1,51 +1,34 @@
 #include "playerbot/playerbot.h"
 #include "HeiganDungeonTriggers.h"
-#include "playerbot/HeiganDancePolicy.h"
-#include "Maps/GridNotifiers.h"
-#include "Maps/GridNotifiersImpl.h"
-#include "Maps/CellImpl.h"
+#include "playerbot/strategy/HeiganDungeonHelper.h"
+#include "playerbot/ServerFacade.h"
+#include "playerbot/CombatSpreadPolicy.h"
 
 using namespace ai;
 
-namespace
-{
-    Unit* FindHeigan(PlayerbotAI* ai, Player* bot)
-    {
-        const std::list<ObjectGuid> attackers =
-            ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get();
-        for (const ObjectGuid& guid : attackers)
-        {
-            Unit* unit = ai->GetUnit(guid);
-            if (unit && unit->GetEntry() == 15936)
-                return unit;
-        }
-        std::list<Unit*> nearby;
-        MaNGOS::AllCreaturesOfEntryInRange check(bot, 15936, 100.0f);
-        MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRange> searcher(nearby, check);
-        Cell::VisitAllObjects(bot, searcher, 100.0f);
-        for (Unit* unit : nearby)
-        {
-            if (unit && unit->IsAlive())
-                return unit;
-        }
-        return nullptr;
-    }
-}
-
 bool HeiganDanceTrigger::IsActive()
 {
-    Unit* heigan = FindHeigan(ai, bot);
-    if (!heigan)
-        return false;
-    return IsHeiganDanceUp(ai->HasAura(29350, heigan));
+    Unit* heigan = FindHeiganBoss(ai, bot);
+    return IsHeiganDancing(ai, heigan);
 }
 
 bool HeiganPlatformHoldTrigger::IsActive()
 {
     if (!ai->IsRanged(bot) && !ai->IsHeal(bot))
         return false;
-    Unit* heigan = FindHeigan(ai, bot);
+    // Explicit orders win: a bot parked by its player (stay/follow/
+    // wait/grind) or answering to a live master holds position — same
+    // exemptions as the ranged-spread rule. Only the lethal dance is
+    // forced.
+    if (!ShouldCombatSpread(sServerFacade.IsInCombat(bot), ai->HasRealPlayerMaster(),
+        ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)) ||
+        IsSpreadExemptOwned(ai->HasRealPlayerMaster(), ai->IsOwnedBot()))
+        return false;
+    Unit* heigan = FindHeiganBoss(ai, bot);
     if (!heigan)
         return false;
-    return !IsHeiganDanceUp(ai->HasAura(29350, heigan));
+    return !IsHeiganDancing(ai, heigan);
 }
