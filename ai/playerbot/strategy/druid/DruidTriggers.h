@@ -379,14 +379,16 @@ namespace ai
     // out of combat sits until a priest/paladin/shaman wakes up — or the
     // druid burns its 30 min battle rez. This trigger stays quiet while any
     // living groupmate of a resurrecting class (priest/paladin/shaman) is
-    // around; their normal rez is always preferred. Declared here, defined
-    // in DruidTriggers.cpp (needs the group-member scan).
+    // around; their normal rez is always preferred. Gates on IsTargetValid
+    // (public) rather than IsActive (private in SpellTargetTrigger), so the
+    // base cooldown/spellbook checks and manual revive-target assignment
+    // keep working untouched. Defined in DruidTriggers.cpp.
     class OocRebirthTrigger : public RebirthTrigger
     {
     public:
         OocRebirthTrigger(PlayerbotAI* ai) : RebirthTrigger(ai) {}
         std::string getName() override { return "ooc rebirth"; }
-        bool IsActive() override;
+        bool IsTargetValid(Unit* target) override;
     };
 
     class InnervateTrigger : public SpellTargetTrigger

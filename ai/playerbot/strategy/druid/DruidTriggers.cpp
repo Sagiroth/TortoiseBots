@@ -36,12 +36,14 @@ bool InFeralFormTrigger::IsActive()
     return ai->HasAura("bear form", bot) || ai->HasAura("dire bear form", bot) || ai->HasAura("cat form", bot);
 }
 
-bool OocRebirthTrigger::IsActive()
+bool OocRebirthTrigger::IsTargetValid(Unit* target)
 {
+    if (!RebirthTrigger::IsTargetValid(target))
+        return false;
     // A living priest, paladin or shaman in the group resurrects with a
     // normal out-of-combat spell; their rez is always preferred over our
-    // 30 min battle rez. Scan first (cheap early-outs before Rebirth's
-    // own cooldown/spellbook checks in the base IsActive below).
+    // 30 min battle rez. Cheap class check first, no spellbook/cooldown
+    // queries of our own — the base IsActive owns those.
     Group* group = bot->GetGroup();
     if (group)
     {
@@ -54,5 +56,5 @@ bool OocRebirthTrigger::IsActive()
                 return false;
         }
     }
-    return RebirthTrigger::IsActive();
+    return true;
 }
