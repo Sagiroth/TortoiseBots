@@ -103,6 +103,24 @@ namespace ai
         bool IsActive() override;
     };
 
+    // Generic too-close-to-debuffed-player gate (donor
+    // TooCloseToPlayerWithDebuffTrigger shape): fires when a groupmate
+    // carrying spellId is inside range. The bot itself never counts (its
+    // own bomb is the carrier-side "raid bomb debuff" path).
+    class TooCloseToPlayerWithDebuffTrigger : public Trigger
+    {
+    public:
+        TooCloseToPlayerWithDebuffTrigger(PlayerbotAI* ai, std::string name, uint32 spellId, float range)
+        : Trigger(ai, name, 1)
+        , spellId(spellId)
+        , range(range) {}
+        bool IsActive() override;
+
+    private:
+        uint32 spellId;
+        float range;
+    };
+
     // Legacy 4H mark threshold alert. ReactionStrategy routes this to the
     // generic hazard escape; it does not rotate targets, assign tanks, or
     // ensure that moving away is safe. Marks: 28832-28835.

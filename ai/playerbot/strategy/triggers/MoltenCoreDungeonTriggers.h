@@ -40,6 +40,27 @@ namespace ai
         MagmadarTooCloseTrigger(PlayerbotAI* ai) : CloseToCreatureTrigger(ai, "magmadar too close", 11982, 30.0f) {}
     };
 
+    // Geddon Living Bomb (20475, 10yd): anyone standing next to the carrier
+    // steps out. The carrier itself runs out via "raid bomb debuff" and is
+    // never counted by the base trigger.
+    class GeddonLivingBombProximityTrigger : public TooCloseToPlayerWithDebuffTrigger
+    {
+    public:
+        GeddonLivingBombProximityTrigger(PlayerbotAI* ai) : TooCloseToPlayerWithDebuffTrigger(ai, "geddon living bomb near", 20475, 10.0f) {}
+    };
+
+    class GeddonStartFightTrigger : public StartBossFightTrigger
+    {
+    public:
+        GeddonStartFightTrigger(PlayerbotAI* ai) : StartBossFightTrigger(ai, "start geddon fight", "geddon", 12056) {}
+    };
+
+    class GeddonEndFightTrigger : public EndBossFightTrigger
+    {
+    public:
+        GeddonEndFightTrigger(PlayerbotAI* ai) : EndBossFightTrigger(ai, "end geddon fight", "geddon", 12056) {}
+    };
+
     class FireProtectionPotionReadyTrigger : public ItemBuffReadyTrigger
     {
     public:

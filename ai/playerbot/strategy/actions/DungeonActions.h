@@ -55,6 +55,23 @@ namespace ai
         float range;
     };
 
+    // Generic move-away-from-debuffed-player primitive (donor
+    // MoveAwayFromPlayerWithDebuffAction shape): raid scripts instantiate
+    // it per boss (e.g. Geddon Living Bomb) via a spell-id/range subclass.
+    // Everyone EXCEPT the carrier steps out of the blast radius; the
+    // carrier's own escape stays RaidBombRunoutAction.
+    class MoveAwayFromPlayerWithDebuff : public MovementAction
+    {
+    public:
+        MoveAwayFromPlayerWithDebuff(PlayerbotAI* ai, std::string name, uint32 spellId, float range) : MovementAction(ai, name), spellId(spellId), range(range) {}
+        bool Execute(Event& event) override;
+        bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
+
+    private:
+        uint32 spellId;
+        float range;
+    };
+
     // Universal raid survival: bomb/plague runout. Flees AWAY from the raid
     // anchor (not toward a member like FleeAction) so the 30yd detonation
     // cannot bracket the clump. Reuses the flee-distance config knob.

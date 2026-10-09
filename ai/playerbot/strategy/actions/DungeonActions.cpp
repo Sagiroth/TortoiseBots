@@ -5,6 +5,7 @@
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/strategy/values/LastMovementValue.h"
 #include "playerbot/CombatSpreadPolicy.h"
+#include "playerbot/DebuffSpreadPolicy.h"
 #include "Movement/spline/MoveSpline.h"
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
@@ -493,4 +494,58 @@ bool MoveAwayFromCreature::IsHazardNearby(const WorldPosition& point, const std:
     }
 
     return false;
+}
+
+bool MoveAwayFromPlayerWithDebuff::Execute(Event& event)
+{
+    (void)event;
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+    // Carriers: live groupmates (never self) holding the debuff. Self is
+    // excluded: the carrier's own escape is RaidBombRunoutAction, and
+    // counting self would fight that runout for the same move.
+    std::vector<Player*> carriers;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || member == bot || !sServerFacade.IsAlive(member))
+            continue;
+        if (member->GetMapId() != bot->GetMapId())
+            continue;
+        if (ai->HasAura(spellId, member))
+            carriers.push_back(member);
+    }
+    if (carriers.empty())
+        return false;
+    // Donor search: 8 compass directions x 3yd steps out to range+5yd.
+    // A candidate is safe when EVERY carrier stays outside the blast
+    // radius; the safest (largest minimum separation) wins.
+    const WorldPosition botPos(bot);
+    WorldPosition best(botPos);
+    float bestClearance = -1.0f;
+    for (int dir = 0; dir < 8; ++dir)
+    {
+        float angle = (dir * 2.0f * (float)M_PI) / 8.0f;
+        for (float dist = kDebuffSpreadStepYd; dist <= range + kDebuffSpreadOvershootYd; dist += kDebuffSpreadStepYd)
+        {
+            WorldPosition cand = botPos + WorldPosition(0, dist * cos(angle), dist * sin(angle), 1.0f);
+            cand.setZ(cand.GetHeight());
+            float minCarrier = FLT_MAX;
+            for (Player* carrier : carriers)
+                minCarrier = std::min(minCarrier, sServerFacade.getDistance2d(carrier, cand.getX(), cand.getY()));
+            if (!IsDebuffSafePoint(minCarrier, range))
+                continue;
+            WorldPosition stepOut(botPos);
+            if (!FindStep(ai, bot, botPos, angle, dist, stepOut))
+                continue;
+            if (minCarrier > bestClearance)
+            {
+                bestClearance = minCarrier;
+                best = stepOut;
+            }
+        }
+    }
+    if (bestClearance < 0.0f)
+        return false;
+    return MoveTo(bot->GetMapId(), best.getX(), best.getY(), best.getZ(), false, IsReaction(), false, true);
 }

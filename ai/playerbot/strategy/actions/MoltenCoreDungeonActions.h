@@ -42,6 +42,24 @@ namespace ai
         MagmadarMoveAwayAction(PlayerbotAI* ai) : MoveAwayFromCreature(ai, "move away from magmadar", 11982, 31.0f) {}
     };
 
+    class GeddonMoveAwayFromLivingBombAction : public MoveAwayFromPlayerWithDebuff
+    {
+    public:
+        GeddonMoveAwayFromLivingBombAction(PlayerbotAI* ai) : MoveAwayFromPlayerWithDebuff(ai, "move away from living bomb", 20475, 10.0f) {}
+    };
+
+    class GeddonEnableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        GeddonEnableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "enable geddon fight strategy", "+geddon") {}
+    };
+
+    class GeddonDisableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        GeddonDisableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable geddon fight strategy", "-geddon") {}
+    };
+
     class MoveToMCRuneAction : public MoveToAction
     {
     public:

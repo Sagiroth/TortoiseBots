@@ -365,6 +365,29 @@ bool RaidBombDebuffTrigger::IsActive()
     return false;
 }
 
+bool TooCloseToPlayerWithDebuffTrigger::IsActive()
+{
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+        return false;
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+    // Cheap scan first (aura check is the expensive call): skip anyone
+    // outside the blast radius or off-map before testing the debuff.
+    // Self never counts: the carrier's own bomb is the "raid bomb debuff"
+    // path, not this one.
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || member == bot || !sServerFacade.IsAlive(member))
+            continue;
+        if (member->GetMapId() != bot->GetMapId())
+            continue;
+        if (sServerFacade.getDistance2d(bot, member) < range && ai->HasAura(spellId, member))
+            return true;
+    }
+    return false;
+}
+
 bool FourHorsemenMarkTrigger::IsActive()
 {
     if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))

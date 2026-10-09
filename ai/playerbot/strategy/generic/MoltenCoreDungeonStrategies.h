@@ -27,4 +27,16 @@ namespace ai
         void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;
         void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
     };
+
+    class GeddonFightStrategy : public Strategy
+    {
+    public:
+        GeddonFightStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "geddon"; }
+
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitDeadTriggers(std::list<TriggerNode*>& triggers) override;
+    };
 }
