@@ -278,6 +278,7 @@ bool UnstuckAction::Execute(Event& event)
     if (source.find("move stuck") != std::string::npos)
     {
         ai->TellDebug(master, "Unstuck: Move stuck detected, resetting.", "debug unstuck");
+        SET_AI_VALUE2(time_t, "manual time", "move stuck reset at", time(0));
 
         // The reset below nulls the travel target (PlayerbotAI::Reset(true)).
         // A sticky need - e.g. an unvisited class trainer - then re-requests the

@@ -47,6 +47,16 @@ namespace ai
                 return false;
             }
 
+            // Stays true for up to 10 min after the bot last moved little, and
+            // every 5 s poll ran a full reset that stops movement and clears the
+            // target - so a flagged bot was halted again seconds after it set
+            // off and never escaped the flag (196 of 2000 live bots stalled 75%+
+            // of the time, 79 of them in this loop, 2026-10-09). mod-playerbots
+            // maps "move stuck" to an unregistered "reset" action, a no-op.
+            // One reset, then two minutes to walk away.
+            if (time(0) - AI_VALUE2(time_t, "manual time", "move stuck reset at") < 2 * MINUTE)
+                return false;
+
             WorldPosition botPos(bot);
 
             uint32 timeSinceLastMove = AI_VALUE2(uint32, "time since last change", "current position");
