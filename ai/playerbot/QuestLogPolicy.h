@@ -69,6 +69,26 @@ namespace ai
         return zoneOrSort == -365 && hasItemObjective;
     }
 
+    // Accept-time solo-capability gate (RPG-A2): donor mod-playerbots
+    // IsQuestCapableDoing refuses at accept what the log triage would later
+    // drop - over-level (+3), non-solo type, group-suggested. Same numbers
+    // as QuestTriageShouldDrop above, minus the drop-only clauses (failed /
+    // zone, meaningless before pickup). Grouped-and-able bots
+    // (canFightBoss: 4+ following members) keep elite/dungeon/group quests;
+    // the donor has no such carve-out because its random bots never group
+    // for this path. QuestLevel 0 is scaling: never over-level.
+    inline bool QuestAcceptSoloCapable(int questLevel, std::uint32_t botLevel,
+        std::uint32_t questType, std::uint32_t suggestedPlayers, bool canFightBoss)
+    {
+        if (questLevel > 0 && (int)botLevel + 3 < questLevel)
+            return false;
+
+        if (!canFightBoss && (questType != 0 || suggestedPlayers >= 2))
+            return false;
+
+        return true;
+    }
+
 
     // Novelty / deprecated quests the owner banned: CLUCK! (3861, a chicken
     // escort that pins a log slot for a joke reward) and inactive quest
