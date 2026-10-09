@@ -4522,3 +4522,54 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Baron Geddon Inferno runout (raid1 item 1) — 2026-10-09
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Raid/MC/MCTriggers.cpp` (McBaronGeddonInfernoTrigger: boss has
+SPELL_INFERNO 19695), `src/Ai/Raid/MC/MCActions.cpp:34-49`
+(McMoveFromBaronGeddonAction: everyone runs INFERNO_DISTANCE 20y out,
+stops casts first), `src/Ai/Raid/MC/MCMultipliers.cpp`
+(BaronGeddonAbilityMultiplier: only the runout moves while Inferno or
+Living Bomb is up), `src/Ai/Raid/MC/MCStrategy.cpp:45-47` (trigger wiring).
+
+Source files (module, modified): `ai/playerbot/GeddonInfernoPolicy.h`
+(new pure rule: ids, 20y distance, trigger/multiplier predicates),
+`ai/playerbot/strategy/triggers/MoltenCoreDungeonTriggers.h/.cpp`
+(GeddonStart/EndFightTrigger on entry 12056, GeddonInfernoTrigger: aura
+19695 on Geddon + within 20y), `ai/playerbot/strategy/actions/
+MoltenCoreDungeonActions.h` (GeddonEnable/DisableFightStrategyAction,
+GeddonMoveAwayAction: MoveAwayFromCreature 12056/20y),
+`ai/playerbot/strategy/generic/MoltenCoreDungeonStrategies.h/.cpp`
+(`geddon` fight strategy: inferno reaction at ACTION_EMERGENCY+5, potion
+combat node, end-fight cleanup, GeddonInfernoMultiplier),
+`ai/playerbot/strategy/generic/DungeonMultipliers.h/.cpp`
+(GeddonInfernoMultiplier declaration + implementation),
+`ai/playerbot/strategy/triggers/TriggerContext.h`,
+`ai/playerbot/strategy/actions/ActionContext.h`,
+`ai/playerbot/strategy/StrategyContext.h` (registrations),
+`tools/test_geddon_inferno_policy.cpp` (new standalone test) +
+`tools/verify_all.sh` (test list), `docs/guides/dungeon-tactics.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in our per-boss fight
+strategy idiom (StartBossFightTrigger + enable/disable actions, mirror the
+Magmadar pattern). Deviations from the donor, all deliberate: (a) the
+donor blocks movement via per-action type checks (MovementAction,
+CastReachTargetSpellAction); here the multiplier vetoes by action name so
+only `move away from geddon` and the universal `raid bomb runout` pass —
+same observable behavior without donor class coupling; (b) the trigger is
+range-gated (fires only within 20y) so already-safe bots do not attempt a
+failing move each tick; (c) Living Bomb needs no new code — the universal
+`raid bomb debuff` runout already covers spell 20475; (d) no cast-stop in
+the trigger/action — MoveAwayFromCreature movement already interrupts via
+the movement path, and the multiplier prevents re-approach casts from
+queuing while Inferno burns.
+
+Reason: raid1 gap MC-GEDDON-INFERNO: Living Bomb was covered universally
+but nothing moved bots out of the 20y Inferno pulse.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. Spell ids 19695/20475 and creature
+12056 verified against tw_world. Build via build-commit.sh pending; live
+in-game check pending.
