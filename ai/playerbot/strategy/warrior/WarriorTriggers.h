@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/strategy/triggers/GenericTriggers.h"
+#include "playerbot/BattleShoutPolicy.h"
 
 namespace ai
 {
@@ -49,6 +50,21 @@ namespace ai
             for (uint32 id : battleShoutIds)
             {
                 if (bot->HasAura(id))
+                    return false;
+            }
+
+            // Skip Battle Shout when a stronger Blessing of Might is up (donor
+            // BattleShoutTrigger compares AP values). Tables + rule live in
+            // BattleShoutPolicy.h (unit-tested).
+            int32 shoutAp = BattleShoutAttackPower(AI_VALUE2(uint32, "spell id", "battle shout"));
+            if (Aura* might = ai->GetAura("blessing of might", bot))
+            {
+                if (!ShouldBattleShout(shoutAp, true, BlessingOfMightAttackPower(might->GetSpellProto()->Id)))
+                    return false;
+            }
+            if (Aura* greaterMight = ai->GetAura("greater blessing of might", bot))
+            {
+                if (!ShouldBattleShout(shoutAp, true, BlessingOfMightAttackPower(greaterMight->GetSpellProto()->Id)))
                     return false;
             }
             return true;

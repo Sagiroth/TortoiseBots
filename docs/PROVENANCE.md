@@ -4553,3 +4553,37 @@ vendor order, compounding into wrong picks over levels.
 Local validation: `bash tools/verify_all.sh` (incl. new policy test +
 wiring check live-missing=0); `git diff --check`; shared-builder compile
 check; no live in-game test.
+
+## Warrior WAR-9: skip Battle Shout under stronger Might (2026-10-09)
+
+Feature: `BattleShoutTrigger` now compares attack-power values and stays
+inactive while an equal-or-stronger Blessing of Might (regular or greater)
+is on the bot. A stronger shout rank still fires over a weaker might.
+Pure rule extracted to `ai/playerbot/BattleShoutPolicy.h` with standalone
+test `tools/test_battle_shout_policy.cpp` (registered in
+`tools/verify_all.sh`).
+
+Source repository: `mod-playerbots/mod-playerbots`
+
+Source commit: `79bd4281` (local
+`playerbots-references/mod-playerbots` checkout).
+
+Source files:
+- `src/Ai/Class/Warrior/WarriorTriggers.cpp:75-140` (`BattleShoutTrigger::IsActive` AP comparison incl. Commanding Presence half)
+
+Copied / ported / independently reimplemented: reimplemented in place
+(`WarriorTriggers.h` delegates to the new policy header).
+Deviations from the donor, all deliberate: (a) static AP tables instead of
+the donor's SpellInfo scan — our 1.12 ids are stable and the trigger
+already hardcodes shout ids (every value verified against
+`spell_template` EffectBasePoints+1: shout 15/35/55/85/130/185/232, might
+20/35/55/85/115/155, greater 155/185); (b) no Commanding Presence talent
+multiplier — no such talent exists in Turtle DBC; (c) trigger only, the
+`battle shout` action itself is unchanged so an explicit player order
+still shouts.
+
+Reason: WAR-9 in the warrior parity sweep: every paladin group wasted rage
+and a GCD shouting over a stronger might.
+
+Local validation: `bash tools/verify_all.sh` (incl. new policy test);
+`git diff --check`. No live test (per task constraints).
