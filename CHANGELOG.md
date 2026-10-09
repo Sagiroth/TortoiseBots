@@ -30,6 +30,7 @@
 - Gather trips walk on from an empty node instead of standing out the cooldown — a gather trip that reaches its node to find it looted, tapped or despawned no longer sits in a one-minute cooldown that blocked every new pick, so the next visit walks a live node instead of standing a median 57 yards out; arrived trips and owned bots keep today's behaviour.
 - Bots get off their mount to gather — a bot that rode to its herb or vein now dismounts when it opens the node, like it already does for corpses, instead of burning its approach tries on casts that never start and abandoning the node.
 - Gather (mining/herbalism) picks skip spots off the world mesh too — the same one-query pick-time sieve grind got, after 51 of 65 mining move-failures probed `nopath` the same way.
+- GMs with the chat badge on can command bots again — `/p wander`, whispering a bot `attackers` and other chat commands used to be silently ignored. [#550](https://github.com/Sagiroth/TortoiseBots/issues/550)
 
 ## 2026-10-09
 

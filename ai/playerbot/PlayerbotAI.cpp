@@ -111,6 +111,28 @@ static void SanitizeCommandLikeChat(std::string& msg)
     }
 }
 
+// Issue #550: the core wraps GM chat (CHAT_TAG_GM) as `|c1049e6ff<message>|r`,
+// so strip one whole-message colour wrapper before parsing commands. Item and
+// spell links (`|cff...|Hitem:...|h[..]|h|r`) always carry an inner |H and are
+// left untouched.
+static void StripGmBadgeColor(std::string& text)
+{
+    // `|c` + 8 hex digits + message + `|r`.
+    if (text.size() < 12 || text.compare(0, 2, "|c") != 0 || text.compare(text.size() - 2, 2, "|r") != 0)
+        return;
+    for (size_t i = 2; i < 10; ++i)
+    {
+        char c = text[i];
+        bool isHex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+        if (!isHex)
+            return;
+    }
+    std::string inner = text.substr(10, text.size() - 12);
+    if (inner.find("|c") != std::string::npos || inner.find("|H") != std::string::npos)
+        return;
+    text = inner;
+}
+
 // Would Spell::prepare() refuse this cast for lack of power?
 //
 // The throwaway Spell the CanCastSpell probes build never runs prepare(), and
@@ -2256,6 +2278,7 @@ bool PlayerbotAI::CheckBotCommandAuth(Player& fromPlayer, std::string const& com
 void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fromPlayer, const uint32 lang)
 {
     std::string filtered = text;
+    StripGmBadgeColor(filtered);
 
     if (!IsAllowedCommand(filtered) && !GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE, type != CHAT_MSG_WHISPER, &fromPlayer))
         return;
