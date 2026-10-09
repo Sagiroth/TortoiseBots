@@ -136,6 +136,18 @@ bool CheckMountStateAction::Execute(Event& event)
         }
     }
 
+    // At a herb/ore node: the loot chain refuses mounted bots, and a gather trip
+    // can stop a few yards short of the node while its status still reads
+    // TRAVEL, so the "working" rule below never dismounted it (live 2026-10-09:
+    // bots mounted 3-14 yd from their node until the 5-min move-stuck reset).
+    if (IsMounted)
+    {
+        TravelTarget* gatherTarget = AI_VALUE(TravelTarget*, "travel target");
+        if (gatherTarget && dynamic_cast<GatherTravelDestination*>(gatherTarget->GetDestination()) &&
+            AI_VALUE2(float, "distance", "travel target") < 20.0f)
+            return UnMount();
+    }
+
     //Doing stuff nearby.
     if (AI_VALUE(bool, "travel target working"))
     {
