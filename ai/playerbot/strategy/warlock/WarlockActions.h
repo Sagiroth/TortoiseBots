@@ -440,6 +440,18 @@ namespace ai
     {
     public:
         CastBanishOnCcAction(PlayerbotAI* ai) : CastCrowdControlSpellAction(ai, "banish") {}
+        bool isPossible() override
+        {
+            // Banish only lands on demons and elementals; the core rejects
+            // other types, so firing there wastes mana and the GCD.
+            Unit* target = GetTarget();
+            if (!target || target->IsPlayer())
+                return false;
+            uint32 type = target->GetCreatureType();
+            if (type != CREATURE_TYPE_DEMON && type != CREATURE_TYPE_ELEMENTAL)
+                return false;
+            return CastCrowdControlSpellAction::isPossible();
+        }
     };
 
     class CastRainOfFireAction : public CastSpellAction
@@ -477,6 +489,18 @@ namespace ai
     {
     public:
         CastFearOnCcAction(PlayerbotAI* ai) : CastCrowdControlSpellAction(ai, "fear") {}
+        bool isPossible() override
+        {
+            // Fear never lands on undead or mechanical targets; the core
+            // rejects them, so firing there wastes mana and the GCD.
+            Unit* target = GetTarget();
+            if (!target || target->IsPlayer())
+                return false;
+            uint32 type = target->GetCreatureType();
+            if (type == CREATURE_TYPE_UNDEAD || type == CREATURE_TYPE_MECHANICAL)
+                return false;
+            return CastCrowdControlSpellAction::isPossible();
+        }
     };
 
     class CastLifeTapAction: public CastSpellAction
