@@ -4486,3 +4486,39 @@ Local validation: `bash tools/verify_all.sh`; `git diff --check`; wiring
 audit via verify_all (0 live-missing). No build (per task constraints);
 live in-game check pending: shaman earth shocks off-target healers, cat
 cowers in 5-mans, paladin cleanses self first.
+
+## Workidle empty-destination release (2026-10-09)
+
+Donor: mod-playerbots NewRpg (`b6696bdbd3740e575598d167d69f39f68cc0b907`):
+`src/Ai/World/Rpg/Action/NewRpgAction.cpp:248-256` (GO_GRIND returns to
+WANDER_RANDOM on arrival; GO_CAMP to WANDER_NPC),
+`src/Ai/World/Rpg/Action/NewRpgAction.cpp:375-410`
+(NewRpgWanderNpcAction returns to IDLE when no NPC can be found),
+`src/Ai/World/Rpg/Action/NewRpgAction.cpp:528-551,622-629`
+(5-min no-progress POI verdict marks the quest low-priority and returns to
+IDLE), `src/Ai/World/Rpg/Action/NewRpgBaseAction.cpp:1223-1230`
+(WANDER_RANDOM requires a live grind target; IDLE re-rolls).
+
+Source files (module, modified): `ai/playerbot/WorkIdlePolicy.h` (new pure
+rule: 30 s horizon, anchor upkeep, stale verdict),
+`ai/playerbot/TravelMgr.cpp` (CheckStatus WORK release for masterless pool
+bots), `tools/test_work_idle_policy.cpp` (new standalone test) +
+`docs/concepts/bot-mechanics-and-quirks.md`, `CHANGELOG.md` (doc lines).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) no IDLE/WANDER state machine exists here, so
+the release expires the travel target (TRAVEL_STATUS_EXPIRED, like the
+GrindSpotOutgrown/quest-errand expiry) and the next visit requests a new
+one; (b) the verdict is time-based (~30 s, three pool visits) on the
+already-cached "grind target" pick plus the core attacker set, not a
+destination re-search, so no per-tick DB/world scans; (c) quest-objective
+POI tracking stays with the existing 5-min QuestStallPolicy - this rule
+only covers the nothing-to-do hold, any prey or attacker holds the stay;
+(d) masterless pool bots only, owned/hired bots unchanged.
+
+Reason: live 2000-bot pool: a masterless bot that arrives with nothing to
+do holds WORK (blocks requests and idle drift) until the ~5-min timer
+expires; ~20% of all stall time sits in WORK.
+
+Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
+--check`. No build (per task constraints); live in-game check pending.

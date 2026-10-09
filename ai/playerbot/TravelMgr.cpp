@@ -7,6 +7,7 @@
 // Pure travel re-pick decisions (cooldown park, kind give-up, trap streak).
 #include "playerbot/ZoneMigratePolicy.h"
 #include "playerbot/TravelRepickPolicy.h"
+#include "playerbot/WorkIdlePolicy.h"
 #include <numeric>
 #include <mutex>
 #include <iomanip>
@@ -1373,6 +1374,38 @@ void TravelTarget::CheckStatus()
                 context->GetValue<time_t>("manual time", "no travel purpose until::" + parkKey)->Set(time(0) + ai::TRAVEL_COOLDOWN_PARK_SECONDS);
             }
             SetStatus(TravelStatus::TRAVEL_STATUS_COOLDOWN);
+            return;
+        }
+    }
+
+    // Empty-destination WORK release (workidle): a masterless pool bot that
+    // arrived where there is nothing to do holds WORK with the destination
+    // verdict still green (static data, not the live scene), blocking the
+    // next request and the idle drift until WORK expires (~5 min). Past the
+    // horizon with no attackable grind prey and nobody fighting the bot the
+    // target expires, so the next visit requests a new one - the donor
+    // mod-playerbots shape (GO_GRIND/WANDER_NPC return to IDLE with no
+    // target instead of holding). Both signals are already-cached engine
+    // reads ("grind target" 2 s, core attacker set + combat flag free), so
+    // no DB hit, world scan or graph rebuild here. Pool upkeep bots only;
+    // owned/hired bots keep the full WORK clock.
+    if (GetStatus() == TravelStatus::TRAVEL_STATUS_WORK &&
+        !IsForced() && !IsGroupCopy() &&
+        sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster())
+    {
+        AiObjectContext* workContext = ai->GetAiObjectContext();
+        Unit* grindPrey = workContext->GetValue<Unit*>("grind target")->Get();
+        bool const hasAttackers = !bot->GetAttackers().empty() || bot->IsInCombat();
+        time_t const now = time(0);
+        time_t anchor = workContext->GetValue<time_t>("manual time", ai::WorkIdleAnchorKey())->Get();
+        anchor = ai::WorkIdleAnchor(anchor, now, grindPrey != nullptr, hasAttackers);
+        workContext->GetValue<time_t>("manual time", ai::WorkIdleAnchorKey())->Set(anchor);
+        if (ai::WorkIdleStale(anchor, now, grindPrey != nullptr, hasAttackers))
+        {
+            ai->TellDebug(ai->GetMaster(), "The target is expiring because there is nothing to do here.", "debug travel");
+            sPlayerbotAIConfig.logEvent(ai, "WorkIdleStale", tDestination ? tDestination->GetShortName() : "unknown");
+            workContext->GetValue<time_t>("manual time", ai::WorkIdleAnchorKey())->Set(time_t(0));
+            SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
             return;
         }
     }
