@@ -47,6 +47,7 @@ namespace ai
     INTERRUPT_TRIGGER(DeathCoilInterruptTrigger, "death coil");
     INTERRUPT_HEALER_TRIGGER(DeathCoilInterruptTHealerTrigger, "death coil");
     SNARE_TRIGGER(DeathCoilSnareTrigger, "death coil");
+    SNARE_TRIGGER(CurseOfExhaustionSnareTrigger, "curse of exhaustion");
 
     class CorruptionOnAttackerTrigger : public DebuffOnAttackerTrigger
     {

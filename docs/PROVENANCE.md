@@ -4553,3 +4553,37 @@ vendor order, compounding into wrong picks over levels.
 Local validation: `bash tools/verify_all.sh` (incl. new policy test +
 wiring check live-missing=0); `git diff --check`; shared-builder compile
 check; no live in-game test.
+
+## Warlock Curse of Exhaustion snare strategy (WAR-7) — 2026-10-09
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Warlock/Strategy/GenericWarlockStrategy.cpp:194-208`
+(CoE toggle strategy at 29.0, disabled by default),
+`WarlockAiObjectContext.cpp:110,183`, `WarlockTriggers.h:257-262`.
+
+Source files (module, modified):
+`ai/playerbot/strategy/warlock/WarlockTriggers.h`
+(`SNARE_TRIGGER(CurseOfExhaustionSnareTrigger)` — the shared snare
+target already picks fleeing/chasing/kiting attackers),
+`ai/playerbot/strategy/warlock/WarlockActions.h`
+(`SNARE_ACTION(CastCurseOfExhaustionSnareAction)`),
+`ai/playerbot/strategy/warlock/WarlockAiObjectContext.cpp` (registered
+both `curse of exhaustion on snare target` names + the manual `curse
+exhaustion` strategy) + `docs/classes/warlock.md`, `CHANGELOG.md` (doc
+lines). The PvP `enemy ten yards` hardcode and the plain
+`CastCurseOfExhaustionAction` are untouched.
+
+Copied / ported / reimplemented: reimplemented in the death-coil snare
+idiom. Deviations from the donor, all deliberate: (a) donor fires on the
+current target; ours fires on the snare target (runners/chasers, not the
+tank's mob) — the feature asked for kiting, and the value already
+excludes rooted/stunned targets; (b) off by default like the donor (new
+automation behind a toggle); order `.bot strategy +curse exhaustion`.
+
+Reason: the action existed but no trigger or strategy ever queued it, so
+bots never slowed runners outside the affliction-PvP hardcode.
+
+Local validation: `bash tools/verify_all.sh` (wiring audit covers the
+new names); `git diff --check`; shared-builder compile via
+`build-commit.sh` (BUILD OK); live in-game check pending: ordered bot
+slows a fleeing mob, untriggered bot unchanged.

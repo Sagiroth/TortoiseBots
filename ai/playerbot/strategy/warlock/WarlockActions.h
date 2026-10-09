@@ -7,6 +7,7 @@
 namespace ai
 {
 	SNARE_ACTION(CastDeathCoilSnareAction, "death coil");
+	SNARE_ACTION(CastCurseOfExhaustionSnareAction, "curse of exhaustion");
 	ENEMY_HEALER_ACTION(CastDeathCoilOnHealerAction, "death coil");
 	SPELL_ACTION(CastDeathCoilAction, "death coil");
     BUFF_ACTION(CastShadowWardAction, "shadow ward");
