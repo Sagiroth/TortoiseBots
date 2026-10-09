@@ -623,9 +623,9 @@ public:
     bool randomBotBgEnabled = true;
     uint32 randomBotBgQueueInterval = 30000;
     uint32 randomBotBgMaxQueuePerInterval = 1;
-    // Opt-in autonomous bot-only WSG (default off). Seeds one 10v10 in the
-    // most populated bracket, capped at one concurrent instance (average PC).
-    bool randomBotBgAutonomous = false;
+    // Autonomous bot-only WSG (default on). Seeds one 10v10 in the most
+    // populated bracket, capped at one concurrent instance (average PC).
+    bool randomBotBgAutonomous = true;
     uint32 randomBotBgAutonomousMaxInstances = 1;
 
     bool jumpInBg;

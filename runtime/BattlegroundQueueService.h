@@ -18,10 +18,10 @@ namespace TortoiseBots
 // guards remain module policy without exposing queue internals. No blind
 // periodic queueing, second queue, thread, arena, vehicle, expansion, or DB scan.
 //
-// Opt-in autonomous bot-only WSG (AiPlayerbot.RandomBotBgAutonomous, default
-// off): when no human demand exists, seeds one 10v10 WSG in the bracket
-// nearest the pool median level, capped at one concurrent instance for an
-// average PC. Queued-but-unstarted seeds block new seeds (anti-over-queue).
+// Autonomous bot-only WSG (AiPlayerbot.RandomBotBgAutonomous, default on):
+// when no human demand exists, seeds one 10v10 WSG in the bracket nearest
+// the pool median level, capped at one concurrent instance for an average
+// PC. Queued-but-unstarted seeds block new seeds (anti-over-queue).
 class BattlegroundQueueService
 {
 public:
