@@ -4396,3 +4396,38 @@ tools/verify_okf.py`; `git diff --check`. No build/deploy
 (orchestrator compiles); live check pending: `open loot` last_action
 share of frozen bots, `giving up on guid=... after repeated failed
 opens` debug rate, no change to player-ordered loot completion.
+
+## Rogue low-health vanish fallback (night2 deaths) — 2026-10-09
+Feature: the live rogue low-health node was evasion -> feint. Evasion keeps
+the kill when ready, but on its 5-minute cooldown (death loops hit the same
+bot within 600 s 36-41% of the time) the bot feinted - a threat drop with
+no tank to take over for a solo pool bot - and died. Vanish now sits
+between them (evasion, vanish, feint): grouped rogues keep today's order
+(evasion first, feint last for the tank save); solo rogues with evasion
+spent break combat instead of dying. No new actions/triggers; same trigger,
+same EMERGENCY relevance; untrained rogues fall through to feint via the
+existing impossible-action path.
+
+Source repository: `mod-playerbots` @
+`b6696bdbd3740e575598d167d69f39f68cc0b907` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Class/Rogue/Strategy/DpsRogueStrategy.cpp:141` (vanish on medium
+threat) + `:150` (evasion HIGH+9 / feint HIGH+8 on low health). Deviations,
+deliberate: donor vanishes on threat (group-tank context); solo pool bots
+have no threat signal worth reacting to, so the low-health band carries it,
+behind evasion so winnable fights still end in kills, not resets.
+
+Reason: night2 deaths research — post-02:20-UK build pool telemetry:
+rogue 2.20/bot-h (#2 killer after mage 3.76), 173 fair-fight (<=+4, fought)
+deaths/h with killer left at 55% HP; evasion casts pool-wide while vanish
+casts zero (both self-casts, identically observable in bot_events.csv
+SelfBuff rows), rogues dying with evasion up pre-death. The critical-band
+blind -> vanish chain exists but never executes a vanish live.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
+build/deploy (orchestrator compiles); live check pending: `vanish` rows in
+bot_events.csv SelfBuffs, rogue deaths/bot-hour, repeat-death share for
+rogues (41% pool-wide within 600 s), adds>0 share must stay flat (vanish
+pulls nothing new).

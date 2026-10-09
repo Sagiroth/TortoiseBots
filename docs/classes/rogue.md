@@ -40,8 +40,8 @@ Rogues provide premier single-target melee physical DPS, invaluable pre-combat c
 
 ### 3. Burst Cooldowns
 - Combat casts *Adrenaline Rush* and *Blade Flurry* during tough encounters or multi-mob pulls; Assassination fires *Cold Blood* and Subtlety fires *Preparation*.
-- Activates *Evasion* (with *Feint*) on the low-health trigger (own HP in the low band), regardless of aggro source.
-- Activates *Vanish* if health falls below 20% to wipe threat.
+- Activates *Evasion* on the low-health trigger (own HP in the low band), regardless of aggro source; when evasion is spent (5-minute cooldown, e.g. death loops), *Vanish* breaks combat instead of a solo-useless *Feint*, which stays last for grouped rogues with a tank to save.
+- Activates *Vanish* if health falls below 20% to wipe threat (after *Blind*).
 
 ---
 

@@ -76,9 +76,18 @@ void RogueStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
                              new NextAction("vanish", ACTION_EMERGENCY + 1),
                              new NextAction("vanish", ACTION_EMERGENCY), NULL)));
 
+    // Vanish sits between evasion and feint: evasion keeps the kill when it is
+    // ready, but on its 5-minute cooldown (death loops, back-to-back pulls)
+    // the bot used to feint - a threat drop with no tank to take over - and
+    // die. Vanish breaks combat for a real disengage instead (donor
+    // DpsRogueStrategy.cpp:141 vanishes on medium threat, far earlier than
+    // our critical-health chain, which pool telemetry shows never executes:
+    // zero vanish casts against hundreds of evasion casts while rogues die
+    // evading). Feint stays last for grouped rogues with a tank to save.
     triggers.push_back(new TriggerNode(
         "low health",
         NextAction::array(0, new NextAction("evasion", ACTION_EMERGENCY),
+                             new NextAction("vanish", ACTION_EMERGENCY),
                              new NextAction("feint", ACTION_EMERGENCY), NULL)));
 
     triggers.push_back(new TriggerNode(
