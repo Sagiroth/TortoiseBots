@@ -723,6 +723,16 @@ bool ShouldLeaveOutgrownZoneValue::Calculate()
         return true;
     }
 
+    // A zone that is not outgrown can still be barren for this bot: two
+    // Grind searches in a row found nothing (all spots out of level, out of
+    // reach or in enemy territory). Leaving it is the same move - grind in
+    // another zone that fits the bot's level - instead of standing between
+    // empty searches (83 of 2000 pool bots had no target for a whole 5-min
+    // window, live 2026-10-09).
+    if (AI_VALUE2(int32, "manual int", "grind empty streak") >= 2 &&
+        AI_VALUE2(time_t, "manual time", "grind empty at") + 10 * MINUTE > time(0))
+        return true;
+
     // Fail closed: unknown area levels never trigger the rule (zoneKnown
     // above covers the unresolvable/unknown case).
     if (!zoneKnown)

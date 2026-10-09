@@ -382,8 +382,20 @@ bool ChooseTravelTargetAction::Execute(Event& event)
 
         WanderOnEmptyPick(ai, bot);
 
+        // Count Grind searches that found nothing in a row: two of them mean
+        // the area holds nothing for this bot, and "should leave outgrown
+        // zone" sends it to grind in another zone that fits its level.
+        if (purposeKey == std::to_string((uint32)TravelDestinationPurpose::Grind))
+        {
+            SET_AI_VALUE2(int32, "manual int", "grind empty streak", AI_VALUE2(int32, "manual int", "grind empty streak") + 1);
+            SET_AI_VALUE2(time_t, "manual time", "grind empty at", time(0));
+        }
+
         return false;
     }
+
+    if (futureTravelPurpose == std::to_string((uint32)TravelDestinationPurpose::Grind))
+        SET_AI_VALUE2(int32, "manual int", "grind empty streak", 0);
 
     setNewTarget(requester, &newTarget, travelTarget);
 
@@ -1443,7 +1455,13 @@ bool ResetTargetAction::Execute(Event& event)
     setNewTarget(requester, &newTarget, oldTarget);
 
     oldTarget->SetStatus(TravelStatus::TRAVEL_STATUS_COOLDOWN);
-    oldTarget->SetExpireIn(60000); //1 minute;
+    // The cooldown counts as an active target, so it blocks every request.
+    // A pool bot resets here when all its purposes are parked, and a full
+    // minute on top of the park left it standing until the next minute
+    // boundary: 2-5 min targetless runs were 59% of targetless standing
+    // (live 2026-10-09). Owned bots keep the minute.
+    bool const poolBot = sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster();
+    oldTarget->SetExpireIn(poolBot ? 15000 : 60000);
 
     ai->TellDebug(requester, "Cleared travel target fetches", "debug travel");
 
