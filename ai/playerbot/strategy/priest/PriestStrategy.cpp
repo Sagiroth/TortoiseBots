@@ -627,13 +627,21 @@ void PriestOffdpsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
             new NextAction("holy fire", ACTION_DEFAULT + 0.4f),
             new NextAction("smite", ACTION_DEFAULT + 0.3f),
             new NextAction("starshards", ACTION_DEFAULT + 0.25f),
-            new NextAction("mind blast", ACTION_DEFAULT + 0.2f), NULL)));
+            new NextAction("mind blast", ACTION_DEFAULT + 0.2f),
+            new NextAction("mana burn", ACTION_DEFAULT + 0.15f), NULL)));
 
     // Holy Nova is the 1.12 stand-in for the donor's Mind Sear: point-blank,
     // so it keys off a melee-range pack.
     triggers.push_back(new TriggerNode(
         "melee medium aoe and healer should attack",
         NextAction::array(0, new NextAction("holy nova", ACTION_DEFAULT + 0.6f), NULL)));
+
+    // mod-playerbots parity (PRI-6): holy burns caster targets at low mana.
+    // The action's usefulness gate (self mana < 50, target mana >= 20) keeps
+    // it off mana-less mobs; PvE risk is nil, value is PvP + caster mobs.
+    triggers.push_back(new TriggerNode(
+        "low mana",
+        NextAction::array(0, new NextAction("mana burn", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode(
         "healer should wand",

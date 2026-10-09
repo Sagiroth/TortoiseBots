@@ -4522,3 +4522,38 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Priest parity healer damage: PRI-2 default offdps + PRI-6 mana burn — 2026-10-09
+Feature: (1) Holy and discipline bots now ship with the `offdps` strategy
+on by default (AiFactory, inside the existing `enableOffSpecStrategies`
+gate); the player can `-offdps` per bot. The `healer should attack` mana
+and nobody-hurt gates are unchanged, so healers still heal first. (2)
+`PriestOffdpsStrategy` gains a `low mana → mana burn` row at ACTION_HIGH
+(donor HolyDps ordering) plus `mana burn` as the lowest offdps ladder
+entry; the action's usefulness gate (own mana < 50, target mana >= 20)
+keeps it off mana-less mobs.
+
+Source repository: `mod-playerbots` @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Class/Priest/Strategy/HolyPriestStrategy.cpp:32-76`
+(HolyDps defaults incl. mana burn + low-mana burn row). Deviations,
+deliberate: no new `holy dps` strategy name — the local `offdps` ladder
+(SWP/holy-fire/smite/starshards/mind-blast, Holy Nova for Mind Sear)
+already carries the kit behind the tested healer gate; this PR only
+defaults it on and wires the dead `mana burn` action (registered but
+trigger-less since the 2026-09-24 off-spec gate).
+
+Reason: priest parity report PRI-2/PRI-6 — default holy/disc bots dealt
+zero damage when nobody needed healing, and Mana Burn never fired.
+
+Source files (module, modified): `ai/playerbot/AiFactory.cpp`,
+`ai/playerbot/strategy/priest/PriestStrategy.cpp` +
+`docs/classes/priest.md` (off-spec section).
+
+Copied / ported / reimplemented: reimplemented in place. No new spells
+(Mana Burn 8129+ in 1.18.1 data).
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`.
+Build via build-commit.sh. No live test.
