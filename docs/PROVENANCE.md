@@ -4522,3 +4522,42 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Druid parity DRU-2: Nature's Swiftness -> instant Healing Touch chain — 2026-10-09
+Feature: new `NaturesSwiftnessActiveTrigger` (`HasAuraTrigger` on
+"nature's swiftness", true while the buff sits on the bot) + `TwoTriggers`
+combo `nature's swiftness heal` (active + party member critical health) +
+two combat rows in `RestorationDruidStrategy`: pop `nature's swiftness` at
+ACTION_CRITICAL_HEAL+1 on party-member-critical (below the instant
+Swiftmend ladder, so no 3 min cooldown burns first), spend with
+`healing touch on party` at ACTION_CRITICAL_HEAL+3 (above the ladder, so
+the buff never idles).
+
+Source repository: `mod-playerbots` @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Class/Druid/Strategy/RestoDruidStrategy.cpp:37-43` (critical ->
+`nature's swiftness` 58.0, `nature's swiftness active` -> `healing touch
+on party` 55.0) + `src/Ai/Class/Shaman/ShamanAiObjectContext.cpp:286-288`
+(the `ancestral swiftness active` + `TwoTriggers` pairing pattern copied
+here). Deviations, deliberate: donor pop row outranks its whole heal
+ladder; ours sits below Swiftmend (instant already, cheaper than a 3 min
+cooldown) — same shape, cheaper ordering for vanilla cooldowns.
+
+Reason: druid parity report DRU-2 — we cast NS as a bare buff with no
+spend row; the donor's core resto save was never rewired.
+
+Source files (module, modified):
+`ai/playerbot/strategy/druid/DruidTriggers.h`,
+`ai/playerbot/strategy/druid/DruidAiObjectContext.cpp`,
+`ai/playerbot/strategy/druid/RestorationDruidStrategy.cpp` +
+`docs/classes/druid.md` (behaviour lines).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells or actions: Nature's Swiftness 17116 and
+Healing Touch ranks verified in spell_template; both trigger and action
+creators already registered.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
+live test (no live test per parity brief); build via build-commit.sh.

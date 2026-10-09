@@ -232,6 +232,15 @@ namespace ai
         NaturesSwiftnessTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "nature's swiftness") {}
     };
 
+    // mod-playerbots parity (DRU-2): true while the Nature's Swiftness buff
+    // sits on the bot, so the emergency instant-Healing-Touch row can spend
+    // it immediately. Mirrors shaman AncestralSwiftnessAuraTrigger.
+    class NaturesSwiftnessActiveTrigger : public HasAuraTrigger
+    {
+    public:
+        NaturesSwiftnessActiveTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "nature's swiftness") {}
+    };
+
     class EnrageTrigger : public BuffTrigger
     {
     public:

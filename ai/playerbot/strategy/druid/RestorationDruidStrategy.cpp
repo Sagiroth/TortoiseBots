@@ -36,6 +36,20 @@ void RestorationDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
         "rebirth",
         NextAction::array(0, new NextAction("rebirth", ACTION_EMERGENCY), NULL)));
 
+    // mod-playerbots parity (DRU-2): Nature's Swiftness emergency chain.
+    // On a critically hurt party member the druid pops Nature's Swiftness,
+    // then the pairing row below spends the buff on an instant Healing
+    // Touch before anything else can eat the aura. The pop row sits below
+    // the swiftmend ladder (Swiftmend is instant already and cheaper than
+    // a cooldown); the spend row sits above it so the buff never idles.
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("nature's swiftness", ACTION_CRITICAL_HEAL + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "nature's swiftness heal",
+        NextAction::array(0, new NextAction("healing touch on party", ACTION_CRITICAL_HEAL + 3), NULL)));
+
     triggers.push_back(new TriggerNode(
         "critical health",
         NextAction::array(0, new NextAction("swiftmend", ACTION_CRITICAL_HEAL + 2),
