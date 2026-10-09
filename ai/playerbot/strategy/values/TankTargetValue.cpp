@@ -109,8 +109,31 @@ Unit* TankTargetValue::Calculate()
     if (Unit* explicitTarget = GetExplicitAttackTarget())
         return explicitTarget;
 
-    Unit* rti = RtiTargetValue::Calculate();
-    if (rti) return rti;
+    // mod-playerbots conditional tank RTI (LD-5, TankTargetValue.cpp:110-131):
+    // take the marked target only when its victim is a non-tank (peel for
+    // them) or a tank bot with a different RTI setting (else it is the other
+    // tank's mob — leave it for them). Otherwise fall through to the smart
+    // tournament instead of peeling the main tank's skull.
+    if (Unit* rti = RtiTargetValue::Calculate())
+    {
+        Unit* victim = rti->GetVictim();
+        if (victim && victim != bot)
+        {
+            if (Player* victimPlayer = dynamic_cast<Player*>(victim))
+            {
+                if (!ai->IsTank(victimPlayer))
+                    return rti;
+                PlayerbotAI* victimAi = PlayerbotAIStorage::Instance().GetAI(victimPlayer);
+                std::string myRti = ai->GetAiObjectContext()->GetValue<std::string>("rti")->Get();
+                if (!victimAi || victimAi->GetAiObjectContext()->GetValue<std::string>("rti")->Get() != myRti)
+                    return rti;
+            }
+            else
+                return rti;
+        }
+        else if (!victim)
+            return rti;
+    }
 
     FindTankTargetSmartStrategy strategy(ai);
     return FindTarget(&strategy);
