@@ -215,6 +215,26 @@ namespace ai
         return masterlessRandom && grindDestination && meshProbedNoPath && entry > 0;
     }
 
+    // A trip that never arrived cools down without ever parking its purpose:
+    // the kind blacklist (above) only covers the one failed creature kind,
+    // and the 6-fail drop below never fires - the 60 s cooldown expires first
+    // and the expiry re-requests immediately. Live night2 pool: 1 grind drop
+    // vs 45 grind move-fails in 8 min, with capital-loop bots (Stormwind ->
+    // Westfall) re-picking the same zone every ~2.5 min from the same
+    // standstill. A never-arrived cooldown therefore parks its purpose like
+    // a drop (5 min, same keys the request gate reads): other purposes keep
+    // working, and the same destination cannot be re-picked at once. An
+    // arrived trip (WORK) keeps today's behaviour - its spot emptied, so a
+    // fresh nearby pick is desired. Masterless pool bots only; owned bots
+    // keep player control. The caller passes the status the trip held when
+    // it cooled down.
+    constexpr time_t TRAVEL_COOLDOWN_PARK_SECONDS = 5 * 60;
+    inline bool TravelCooldownParksPurpose(bool masterlessRandom, bool wasTraveling)
+    {
+        return masterlessRandom && wasTraveling;
+    }
+
+
 
     // May a stuck reset keep its travel target - the same keep rule the
     // move-stuck path applies: an active target with a real destination and

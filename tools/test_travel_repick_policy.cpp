@@ -152,6 +152,18 @@ int main()
     CHECK(!TravelMoveFailBlacklistsKind(false, false, false, 0));
     std::cout << "  [PASS] move-fail kind give-up needs a mesh nopath to grind\n";
 
+    // (j) Never-arrived cooldown park: a pool trip that cooled down while
+    // still travelling parks its purpose (the 6-fail drop never fires - the
+    // 60 s cooldown expires first - so without this the same zone is
+    // re-picked every ~2.5 min). An arrived (WORK) trip keeps today's
+    // behaviour, and owned bots keep player control.
+    CHECK(ai::TravelCooldownParksPurpose(true, true));
+    CHECK(!ai::TravelCooldownParksPurpose(true, false));
+    CHECK(!ai::TravelCooldownParksPurpose(false, true));
+    CHECK(!ai::TravelCooldownParksPurpose(false, false));
+    CHECK(ai::TRAVEL_COOLDOWN_PARK_SECONDS == 5 * 60);
+    std::cout << "  [PASS] cooldown parks the purpose only for never-arrived pool trips\n";
+
     // Giver re-pick loop: the 1st and 2nd consecutive same-quest picks ride
     // through, the 3rd parks the quest errand (caller resets the streak on
     // any other pick).

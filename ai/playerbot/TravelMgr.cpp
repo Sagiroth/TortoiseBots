@@ -4,7 +4,9 @@
 #include "playerbot/PullRegenPolicy.h"
 #include "playerbot/PointDangerPolicy.h"
 // Zone migration exclusion for the leave-outgrown-zone grind errand.
+// Pure travel re-pick decisions (cooldown park, kind give-up, trap streak).
 #include "playerbot/ZoneMigratePolicy.h"
+#include "playerbot/TravelRepickPolicy.h"
 #include <numeric>
 #include <mutex>
 #include <iomanip>
@@ -1336,6 +1338,23 @@ void TravelTarget::CheckStatus()
 
             ai->TellDebug(ai->GetMaster(), "The target is cooling down because the destination was no longer active or the conditions are no longer true.", "debug travel");
             forced = false;
+            // A trip that never arrived must not re-request on expiry: the
+            // kind blacklist only covers one creature kind and the 6-fail
+            // drop never fires (the 60 s cooldown expires first), so without
+            // a park the same zone is re-picked every ~2.5 min from the same
+            // standstill (night2 capital-loop bots). Park the purpose like a
+            // drop (same keys the request gate reads); other purposes keep
+            // working. An arrived trip (WORK) keeps today's behaviour.
+            // Grind only: a quest/vendor trip also cools down when its errand
+            // completes en route, and parking those would stall questing.
+            if (tDestination->GetPurpose() == TravelDestinationPurpose::Grind &&
+                ai::TravelCooldownParksPurpose(sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster(),
+                GetStatus() == TravelStatus::TRAVEL_STATUS_TRAVEL))
+            {
+                std::string const parkKey = std::to_string(static_cast<uint32>(tDestination->GetPurpose()));
+                context->GetValue<bool>("no active travel destinations", parkKey)->Set(true);
+                context->GetValue<time_t>("manual time", "no travel purpose until::" + parkKey)->Set(time(0) + ai::TRAVEL_COOLDOWN_PARK_SECONDS);
+            }
             SetStatus(TravelStatus::TRAVEL_STATUS_COOLDOWN);
             return;
         }
