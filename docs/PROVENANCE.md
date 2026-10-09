@@ -4522,3 +4522,52 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## MC Garr AoE-off + Shazzrah 26y range (raid1 item 3) — 2026-10-09
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Raid/MC/MCMultipliers.cpp:26-53` (GarrDisableDpsAoeMultiplier:
+DpsAoeAction + named AoE-spell list + any ACTION_THREAT_AOE cast while Garr
+lives), `src/Ai/Raid/MC/MCTriggers.cpp:27-37` (McShazzrahRangedTrigger:
+ranged inside ARCANE_EXPLOSION_DISTANCE), `src/Ai/Raid/MC/MCActions.cpp:51-60`
+(step out to exactly 26y), `src/Ai/Raid/MC/MCHelpers.h:38` (26y constant),
+`src/Ai/Raid/MC/MCStrategy.cpp` (trigger wiring).
+
+Source files (module, modified): `ai/playerbot/McGarrShazzrahPolicy.h`
+(new pure rule: ids, 26y, Garr-suppress + Shazzrah-leave predicates),
+`ai/playerbot/strategy/triggers/MoltenCoreDungeonTriggers.h`
+(Garr/ShazzrahStart+EndFightTrigger on entries 12057/12264,
+header-inline ShazzrahRangedTrigger: ranged + within 26y + live fight),
+`ai/playerbot/strategy/actions/MoltenCoreDungeonActions.h`
+(Garr/ShazzrahEnable+DisableFightStrategyAction, ShazzrahMoveAwayAction:
+MoveAwayFromCreature 12264/26y), `ai/playerbot/strategy/generic/
+MoltenCoreDungeonStrategies.h/.cpp` (`garr` fight strategy with
+GarrAoeOffMultiplier; `shazzrah` fight strategy with a ranged 26y reaction
+at ACTION_EMERGENCY+5; start triggers on `molten core`; end-fight
+cleanup), `ai/playerbot/strategy/generic/DungeonMultipliers.h/.cpp`
+(GarrAoeOffMultiplier), `ai/playerbot/strategy/triggers/TriggerContext.h`,
+`ai/playerbot/strategy/actions/ActionContext.h`,
+`ai/playerbot/strategy/StrategyContext.h` (registrations),
+`tools/test_mc_garr_shazzrah_policy.cpp` (new standalone test) +
+`tools/verify_all.sh` (test list), `docs/guides/dungeon-tactics.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in our per-boss fight
+strategy idiom (mirror the Magmadar pattern). Deviations from the donor,
+all deliberate: (a) no per-boss multiplier plumbing in the generic raid
+strategy — each fight strategy carries its own multiplier, so Garr's
+AoE-off cannot leak into other fights; (b) DPS = neither tank nor heal via
+our role API (no IsDps exists); the donor's named AoE-spell list is covered
+by ACTION_THREAT_AOE on our spell actions plus the generic `dps aoe` node;
+(c) the Shazzrah reaction node is queued only for ranged/heal bots at
+strategy level (melee never sees the trigger); the manual `dps aoe` addon
+switch stays as the player's override.
+
+Reason: raid1 gaps MC-GARR-AOE + MC-SHAZZRAH: stray AoE broke Garr
+Firesworn control (banish-safe single-target), and ranged ate Arcane
+Explosion at 26y.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. Creature entries 12057/12264
+verified against tw_world. Build via build-commit.sh pending; live in-game
+check pending.

@@ -34,6 +34,61 @@ namespace ai
         MagmadarLavaBombTrigger(PlayerbotAI* ai) : CloseToGameObjectHazardTrigger(ai, "magmadar lava bomb", 177704, 5.0f, 60) {}
     };
 
+    class GarrStartFightTrigger : public StartBossFightTrigger
+    {
+    public:
+        GarrStartFightTrigger(PlayerbotAI* ai) : StartBossFightTrigger(ai, "start garr fight", "garr", 12057) {}
+    };
+
+    class GarrEndFightTrigger : public EndBossFightTrigger
+    {
+    public:
+        GarrEndFightTrigger(PlayerbotAI* ai) : EndBossFightTrigger(ai, "end garr fight", "garr", 12057) {}
+    };
+
+    class ShazzrahStartFightTrigger : public StartBossFightTrigger
+    {
+    public:
+        ShazzrahStartFightTrigger(PlayerbotAI* ai) : StartBossFightTrigger(ai, "start shazzrah fight", "shazzrah", 12264) {}
+    };
+
+    class ShazzrahEndFightTrigger : public EndBossFightTrigger
+    {
+    public:
+        ShazzrahEndFightTrigger(PlayerbotAI* ai) : EndBossFightTrigger(ai, "end shazzrah fight", "shazzrah", 12264) {}
+    };
+
+    // Shazzrah Arcane Explosion: ranged bots inside 26y step out
+    // (mod-playerbots parity). Header-inline: aura-free range check, and
+    // the fight-strategy gate lives in the strategy wiring.
+    class ShazzrahRangedTrigger : public Trigger
+    {
+    public:
+        ShazzrahRangedTrigger(PlayerbotAI* ai, std::string name = "shazzrah ranged", int checkInterval = 1)
+        : Trigger(ai, name, checkInterval) {}
+
+        bool IsActive() override
+        {
+            if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+                return false;
+            if (!ai->HasStrategy("shazzrah", BotState::BOT_STATE_COMBAT))
+                return false;
+            // Donor gates on IsRanged only (healers included when ranged).
+            if (!ai->IsRanged(bot))
+                return false;
+            AiObjectContext* context = ai->GetAiObjectContext();
+            const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+            for (const ObjectGuid& attackerGuid : attackers)
+            {
+                Unit* attacker = ai->GetUnit(attackerGuid);
+                if (!attacker || attacker->GetEntry() != 12264)
+                    continue;
+                return bot->IsWithinDist(attacker, 26.0f);
+            }
+            return false;
+        }
+    };
+
     class MagmadarTooCloseTrigger : public CloseToCreatureTrigger
     {
     public:

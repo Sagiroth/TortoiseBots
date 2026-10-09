@@ -10,6 +10,14 @@ void MoltenCoreDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
     triggers.push_back(new TriggerNode(
         "start magmadar fight",
         NextAction::array(0, new NextAction("enable magmadar fight strategy", 100.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "start garr fight",
+        NextAction::array(0, new NextAction("enable garr fight strategy", 100.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "start shazzrah fight",
+        NextAction::array(0, new NextAction("enable shazzrah fight strategy", 100.0f), NULL)));
 }
 
 void MoltenCoreDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
