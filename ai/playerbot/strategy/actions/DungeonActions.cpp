@@ -390,6 +390,11 @@ bool RaidSpreadAction::Execute(Event& event)
         if (!ai->IsRanged(bot))
             return false;
     }
+    // One step per cooldown: stacked bots settle after a single step-out
+    // instead of ping-ponging toward the next friendly every tick.
+    LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
+    if (IsSpreadOnCooldown(WorldTimer::getMSTime(), lastMove.lastSpreadStepMs))
+        return false;
     // Step out directly away from the nearest stacked friendly.
     Group* group = bot->GetGroup();
     if (!group)
