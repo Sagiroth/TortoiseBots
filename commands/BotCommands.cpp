@@ -3300,7 +3300,7 @@ static bool HandleRaidAction(ChatHandler* handler, BotCommandContext const& cont
                 continue;
             std::string active;
             for (char const* strategy : { "molten core", "onyxia's lair", "blackwing lair", "naxxramas",
-                                          "onyxia", "magmadar", "suppression room", "four horseman",
+                                          "onyxia", "magmadar", "suppression room", "four horseman", "sapphiron",
                                           "emerald sanctum", "lower karazhan", "karazhan crypt",
                                           "solnius", "araxxna", "moroes" })
             {

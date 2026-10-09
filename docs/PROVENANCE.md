@@ -4522,3 +4522,4 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+| Sapphiron fight (Naxx): hover-based air detection, iceblock hide, blizzard step-out, ground flank | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Sapphiron.cpp`, `src/Ai/Raid/Naxx/NaxxBossHelper.h` (SapphironBossHelper), `src/Ai/Raid/Naxx/NaxxStrategy.cpp` (Sapphiron rows) | Reimplemented trigger-driven; air detection via MOVEFLAG_HOVER not IsFlying (vanilla SetFly commented out); blizzard avoid via NPC 16474 grid step-out (no dynobj dependency) | IDs verified in tw_world (15989, 28522, 28534/28547, 16474, 181247); core boss_sapphiron.cpp hover + icebolt/blizzard confirmed | `bash tools/verify_all.sh` + `tools/test_sapphiron_ice_policy.cpp`; build-commit + no live test (hide timing wants a live run) |

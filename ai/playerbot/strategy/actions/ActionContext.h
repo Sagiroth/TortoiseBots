@@ -81,6 +81,7 @@
 #include "EmeraldSanctumDungeonActions.h"
 #include "LowerKarazhanDungeonActions.h"
 #include "KarazhanCryptDungeonActions.h"
+#include "SapphironDungeonActions.h"
 
 namespace ai
 {
@@ -365,6 +366,10 @@ namespace ai
 
             creators["enable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanEnableFightStrategyAction(ai); };
             creators["disable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanDisableFightStrategyAction(ai); };
+            creators["enable sapphiron fight strategy"] = [](PlayerbotAI* ai) { return new SapphironEnableFightStrategyAction(ai); };
+            creators["disable sapphiron fight strategy"] = [](PlayerbotAI* ai) { return new SapphironDisableFightStrategyAction(ai); };
+            creators["sapphiron hide"] = [](PlayerbotAI* ai) { return new SapphironHideAction(ai); };
+            creators["sapphiron avoid blizzard"] = [](PlayerbotAI* ai) { return new SapphironAvoidBlizzardAction(ai); };
             creators["move away from void zone"] = [](PlayerbotAI* ai) { return new FourHorsemanMoveAwayFromVoidZoneAction(ai); };
             creators["enable solnius fight strategy"] = [](PlayerbotAI* ai) { return new SolniusEnableFightStrategyAction(ai); };
             creators["disable solnius fight strategy"] = [](PlayerbotAI* ai) { return new SolniusDisableFightStrategyAction(ai); };
