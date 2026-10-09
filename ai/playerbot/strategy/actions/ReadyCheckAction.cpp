@@ -144,25 +144,29 @@ bool ReadyCheckAction::Execute(Event& event)
 {
     Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
     WorldPacket p = event.GetPacket();
-    ObjectGuid player;
-    p.rpos(0);
     if (!p.empty())
     {
+        // Member answer forwarded to the raid leader (1.12 server sends
+        // these with the member GUID + state): not a new check. Keep the
+        // old path - ignore our own echo, otherwise answer immediately.
+        ObjectGuid player;
+        p.rpos(0);
         p >> player;
         if (player == bot->getObjectGuid())
             return false;
-
-        // Defer the confirm until buffs settle (SOC-S5): report status now,
-        // stamp the anchor, and let the "force rebuff pending" trigger send
-        // the confirm via "ready reply". Gated on the config key and kept
-        // out of combat; manual "ready" whispers (empty packet) and the
-        // finish path answer immediately as before.
-        if (sPlayerbotAIConfig.forceRebuffOnReadyCheck && !bot->IsInCombat())
-        {
-            ReportReadiness(requester);
-            context->GetValue<time_t>("manual time", ai::ReadyRebuffAnchorKey())->Set(time(0));
-            return true;
-        }
+    }
+    else if (sPlayerbotAIConfig.forceRebuffOnReadyCheck && !bot->IsInCombat())
+    {
+        // Defer the confirm until buffs settle (SOC-S5): the 1.12 request
+        // broadcast carries an empty payload, so emptiness marks a real
+        // incoming check. Report status now, stamp the anchor, and let the
+        // "force rebuff pending" trigger send the confirm via "ready
+        // reply". Manual "ready" whispers also arrive empty but carry an
+        // event owner... they take this path too when the key is on, which
+        // is intended (same hold-then-confirm).
+        ReportReadiness(requester);
+        context->GetValue<time_t>("manual time", ai::ReadyRebuffAnchorKey())->Set(time(0));
+        return true;
     }
 
 	return ReadyCheck(requester);
@@ -170,27 +174,6 @@ bool ReadyCheckAction::Execute(Event& event)
 
 bool ReadyCheckAction::ReadyCheck(Player* requester)
 {
-    if (ReadyChecker::checkers.empty())
-    {
-        ReadyChecker::checkers.push_back(new HealthChecker());
-        ReadyChecker::checkers.push_back(new ManaChecker());
-        ReadyChecker::checkers.push_back(new DistanceChecker());
-        ReadyChecker::checkers.push_back(new HunterChecker());
-
-        ReadyChecker::checkers.push_back(new ItemCountChecker("food", "Food"));
-        ReadyChecker::checkers.push_back(new ManaPotionChecker("drink", "Water"));
-        ReadyChecker::checkers.push_back(new ItemCountChecker("healing potion", "Hpot"));
-        ReadyChecker::checkers.push_back(new ManaPotionChecker("mana potion", "Mpot"));
-    }
-
-    bool result = true;
-    for (std::list<ReadyChecker*>::iterator i = ReadyChecker::checkers.begin(); i != ReadyChecker::checkers.end(); ++i)
-    {
-        ReadyChecker* checker = *i;
-        bool ok = checker->Check(requester, ai, context);
-        result = result && ok;
-    }
-
     ReportReadiness(requester);
 
     SendReadyConfirm();
@@ -206,6 +189,30 @@ bool ReadyCheckAction::ReadyCheck(Player* requester)
 
 void ReadyCheckAction::ReportReadiness(Player* requester)
 {
+    if (ReadyChecker::checkers.empty())
+    {
+        ReadyChecker::checkers.push_back(new HealthChecker());
+        ReadyChecker::checkers.push_back(new ManaChecker());
+        ReadyChecker::checkers.push_back(new DistanceChecker());
+        ReadyChecker::checkers.push_back(new HunterChecker());
+
+        ReadyChecker::checkers.push_back(new ItemCountChecker("food", "Food"));
+        ReadyChecker::checkers.push_back(new ManaPotionChecker("drink", "Water"));
+        ReadyChecker::checkers.push_back(new ItemCountChecker("healing potion", "Hpot"));
+        ReadyChecker::checkers.push_back(new ManaPotionChecker("mana potion", "Mpot"));
+    }
+
+    // Diagnostics first (donor ReportReadinessToMaster shape): hunter ammo /
+    // pet warnings must fire on the deferred path too, which never reaches
+    // ReadyCheck.
+    bool result = true;
+    for (std::list<ReadyChecker*>::iterator i = ReadyChecker::checkers.begin(); i != ReadyChecker::checkers.end(); ++i)
+    {
+        ReadyChecker* checker = *i;
+        bool ok = checker->Check(requester, ai, context);
+        result = result && ok;
+    }
+
     std::ostringstream out;
 
     uint32 hp = AI_VALUE2(uint32, "item count", "healing potion");

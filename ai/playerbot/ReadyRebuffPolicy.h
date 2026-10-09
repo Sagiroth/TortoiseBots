@@ -32,6 +32,11 @@ namespace ai
     // Hard cap: always reply by now, even mid-cast. Ready checks last tens
     // of seconds; holding longer risks the pull leaving without an answer.
     inline std::int64_t ReadyRebuffCapSec() { return 30; }
+    // Expiry slack past the cap: a confirm held through combat (or a wedged
+    // tick) answers late but never for a long-dead check. Past cap + slack
+    // the anchor is expired, not due - clearing it stops a stale confirm
+    // for a check that concluded minutes ago.
+    inline std::int64_t ReadyRebuffExpirySlackSec() { return 5; }
 
     // Manual-time anchor key (per-bot value, zero cost when unset).
     inline char const* ReadyRebuffAnchorKey() { return "rebuff ready since"; }
@@ -39,13 +44,17 @@ namespace ai
     // Reply verdict: no anchor means nothing deferred. Inside the grace
     // window hold (let the buff pass run). Past grace, reply once not
     // mid-cast; past the cap, reply regardless so the check can never wedge.
+    // Past cap + slack the check is dead: expire, never reply.
     inline bool ReadyRebuffDue(std::int64_t anchorTime, std::int64_t now,
         bool isCasting, std::int64_t graceSec = ReadyRebuffGraceSec(),
-        std::int64_t capSec = ReadyRebuffCapSec())
+        std::int64_t capSec = ReadyRebuffCapSec(),
+        std::int64_t expirySlackSec = ReadyRebuffExpirySlackSec())
     {
         if (anchorTime == 0)
             return false;
         std::int64_t age = now - anchorTime;
+        if (age > capSec + expirySlackSec)
+            return false;
         if (age >= capSec)
             return true;
         if (age < graceSec)

@@ -1366,14 +1366,24 @@ bool AtWarTrigger::IsActive()
 // Deferred ready-check confirm is waiting (SOC-S5). Cheap first: config
 // gate and anchor read only; no aura scans. The due verdict itself
 // (grace/cap/casting) lives in the action's isUseful, so this trigger only
-// says "a confirm is held".
+// says "a confirm is held". An anchor held past cap + slack (e.g. through
+// combat, when this trigger stays quiet) is a dead check: clear it here so
+// no stale confirm goes out when combat ends minutes later.
 bool ForceRebuffPendingTrigger::IsActive()
 {
     if (!sPlayerbotAIConfig.forceRebuffOnReadyCheck || bot->IsInCombat())
         return false;
 
     time_t anchor = context->GetValue<time_t>("manual time", ai::ReadyRebuffAnchorKey())->Get();
-    return anchor != time_t(0);
+    if (anchor == time_t(0))
+        return false;
+
+    if (time(0) - anchor > ai::ReadyRebuffCapSec() + ai::ReadyRebuffExpirySlackSec())
+    {
+        context->GetValue<time_t>("manual time", ai::ReadyRebuffAnchorKey())->Set(time_t(0));
+        return false;
+    }
+    return true;
 }
 
 // One-shot per pet identity (E01): ported from mod-playerbots NewPetTrigger,

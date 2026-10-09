@@ -14,6 +14,7 @@
 using ai::ReadyRebuffAnchorKey;
 using ai::ReadyRebuffCapSec;
 using ai::ReadyRebuffDue;
+using ai::ReadyRebuffExpirySlackSec;
 using ai::ReadyRebuffGraceSec;
 
 int main()
@@ -52,8 +53,15 @@ int main()
     // the check and leave the raid waiting on a bot that already answered.
     CHECK(ReadyRebuffDue(1000, 1000 + ReadyRebuffCapSec(), true));
     CHECK(ReadyRebuffDue(1000, 1000 + ReadyRebuffCapSec(), false));
-    CHECK(ReadyRebuffDue(1000, 1000 + 300, true));
+    CHECK(ReadyRebuffDue(1000, 1000 + ReadyRebuffCapSec() + ReadyRebuffExpirySlackSec(), true));
     std::cout << "  [PASS] cap always replies\n";
+
+    // Past cap + slack: the check is dead (e.g. held through combat), so
+    // expire instead of confirming a ready check that concluded minutes ago.
+    CHECK(!ReadyRebuffDue(1000, 1000 + ReadyRebuffCapSec() + ReadyRebuffExpirySlackSec() + 1, true));
+    CHECK(!ReadyRebuffDue(1000, 1000 + ReadyRebuffCapSec() + ReadyRebuffExpirySlackSec() + 1, false));
+    CHECK(!ReadyRebuffDue(1000, 1000 + 300, true));
+    std::cout << "  [PASS] stale anchors expire, never reply\n";
 
     std::cout << "All TortoiseBots ready-rebuff defer tests passed.\n";
     return 0;
