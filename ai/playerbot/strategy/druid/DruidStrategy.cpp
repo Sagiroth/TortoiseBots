@@ -352,6 +352,13 @@ void DruidBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     BuffStrategy::InitCombatTriggers(triggers);
 
+    // Same shape as the priest Fortitude fallback below: the out-of-combat
+    // Mark kept losing to follow on a moving master and never landed on the
+    // party in long fights. Also allow it in combat, below every heal and
+    // attack, for the quiet moments of a fight.
+    triggers.push_back(new TriggerNode(
+        "mark of the wild on party",
+        NextAction::array(0, new NextAction("mark of the wild on party", ACTION_DEFAULT), NULL)));
 }
 
 void DruidBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

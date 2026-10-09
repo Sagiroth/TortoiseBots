@@ -246,6 +246,14 @@ void MageBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "low health",
         NextAction::array(0, new NextAction("mana shield", ACTION_HIGH), NULL)));
+
+    // Same shape as the priest Fortitude fallback: the out-of-combat
+    // Intellect kept losing to follow on a moving master and never landed on
+    // the party in long fights. Also allow it in combat, below every heal
+    // and attack, for the quiet moments of a fight.
+    triggers.push_back(new TriggerNode(
+        "arcane intellect on party",
+        NextAction::array(0, new NextAction("arcane intellect on party", ACTION_DEFAULT), NULL)));
 }
 
 void MageBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

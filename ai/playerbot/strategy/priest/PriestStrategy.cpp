@@ -396,6 +396,13 @@ void PriestBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "power word: fortitude on party",
         NextAction::array(0, new NextAction("power word: fortitude on party", ACTION_DEFAULT), NULL)));
+
+    // Same shape as the Fortitude fallback above: the out-of-combat Spirit
+    // kept losing to follow on a moving master and never landed on the party
+    // in long fights.
+    triggers.push_back(new TriggerNode(
+        "divine spirit on party",
+        NextAction::array(0, new NextAction("divine spirit on party", ACTION_DEFAULT), NULL)));
 }
 
 void PriestBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
