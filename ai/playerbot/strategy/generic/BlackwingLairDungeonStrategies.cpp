@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "BlackwingLairDungeonStrategies.h"
+#include "DungeonMultipliers.h"
 
 using namespace ai;
 
