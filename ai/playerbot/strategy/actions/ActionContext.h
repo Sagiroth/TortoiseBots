@@ -81,6 +81,7 @@
 #include "EmeraldSanctumDungeonActions.h"
 #include "LowerKarazhanDungeonActions.h"
 #include "KarazhanCryptDungeonActions.h"
+#include "GrobbulusDungeonActions.h"
 
 namespace ai
 {
@@ -365,6 +366,9 @@ namespace ai
 
             creators["enable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanEnableFightStrategyAction(ai); };
             creators["disable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanDisableFightStrategyAction(ai); };
+            creators["enable grobbulus fight strategy"] = [](PlayerbotAI* ai) { return new GrobbulusEnableFightStrategyAction(ai); };
+            creators["disable grobbulus fight strategy"] = [](PlayerbotAI* ai) { return new GrobbulusDisableFightStrategyAction(ai); };
+            creators["grobbulus go behind"] = [](PlayerbotAI* ai) { return new GrobbulusGoBehindAction(ai); };
             creators["move away from void zone"] = [](PlayerbotAI* ai) { return new FourHorsemanMoveAwayFromVoidZoneAction(ai); };
             creators["enable solnius fight strategy"] = [](PlayerbotAI* ai) { return new SolniusEnableFightStrategyAction(ai); };
             creators["disable solnius fight strategy"] = [](PlayerbotAI* ai) { return new SolniusDisableFightStrategyAction(ai); };

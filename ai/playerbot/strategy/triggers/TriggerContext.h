@@ -20,6 +20,7 @@
 #include "NaxxramasDungeonTriggers.h"
 #include "EmeraldSanctumDungeonTriggers.h"
 #include "LowerKarazhanDungeonTriggers.h"
+#include "GrobbulusDungeonTriggers.h"
 #include "WorldBuffTravelTriggers.h"
 
 namespace ai
@@ -333,6 +334,10 @@ namespace ai
 
             creators["start four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanStartFightTrigger(ai); };
             creators["end four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanEndFightTrigger(ai); };
+            creators["start grobbulus fight"] = [](PlayerbotAI* ai) { return new GrobbulusStartFightTrigger(ai); };
+            creators["end grobbulus fight"] = [](PlayerbotAI* ai) { return new GrobbulusEndFightTrigger(ai); };
+            creators["grobbulus injection ranged"] = [](PlayerbotAI* ai) { return new GrobbulusInjectionRangedTrigger(ai); };
+            creators["grobbulus cloud"] = [](PlayerbotAI* ai) { return new GrobbulusCloudTrigger(ai); };
             creators["void zone too close"] = [](PlayerbotAI* ai) { return new FourHorsemanVoidZoneTrigger(ai); };
             creators["start solnius fight"] = [](PlayerbotAI* ai) { return new SolniusStartFightTrigger(ai); };
             creators["end solnius fight"] = [](PlayerbotAI* ai) { return new SolniusEndFightTrigger(ai); };

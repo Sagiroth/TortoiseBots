@@ -4522,3 +4522,4 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+| Grobbulus fight (Naxx): ranged behind-boss carriers, poison-cloud step-out | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Grobbulus.cpp`, `src/Ai/Raid/Naxx/NaxxStrategy.cpp` (Grobbulus rows) | Reimplemented trigger-driven; return-to-center omitted (reach-to-attack covers); MT rotation omitted (no MT concept, needs live ring coords) | Kit verified in tw_world + core boss_grobbulus.cpp (15931, 28169, 28240, cloud 15933) | `bash tools/verify_all.sh` + `tools/test_grobbulus_cloud_policy.cpp`; build-commit + no live test |
