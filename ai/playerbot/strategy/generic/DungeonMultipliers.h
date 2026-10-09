@@ -26,3 +26,4 @@ namespace ai
     public:
         virtual float GetValue(Action* action) override;
     };
+}
