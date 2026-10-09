@@ -35,5 +35,21 @@ bool FearWardOnTankTrigger::IsActive()
     if (!spellId || !sServerFacade.IsSpellReady(bot, spellId))
         return false;
 
+    // Explicit orders win: a wardable manual buff target is served by the
+    // generic row. With a non-empty list FearWardTrigger checks only manual
+    // targets (no self fallback), so mirror that check here: stand down iff
+    // a manual target would take the ward. (FearWardTrigger::IsActive is
+    // private engine-side, hence the inline mirror of its list branch.)
+    const std::list<ObjectGuid>& manualTargets = AI_VALUE(std::list<ObjectGuid>, "buff targets");
+    if (!manualTargets.empty())
+    {
+        FearWardTrigger probe(ai);
+        for (const ObjectGuid& guid : manualTargets)
+        {
+            if (probe.IsTargetValid(ai->GetUnit(guid)))
+                return false;
+        }
+    }
+
     return BuffOnTankTrigger::IsActive();
 }
