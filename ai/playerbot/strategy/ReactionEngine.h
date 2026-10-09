@@ -49,6 +49,9 @@ namespace ai
         // True when no reaction trigger can produce an action this tick, so
         // FindReaction can skip its ~100-trigger fan-out verdict-identically.
         bool HasReactionWork() const;
+        // True when the bot carries a danger aura the reaction triggers test
+        // (raid bomb / 4H mark spell ids, dispellable poison).
+        bool HasReactionAuraWork(Player* bot) const;
 
         Action* InitializeAction(ActionNode* actionNode) override;
         bool ListenAndExecute(Action* action, Event& event) override;

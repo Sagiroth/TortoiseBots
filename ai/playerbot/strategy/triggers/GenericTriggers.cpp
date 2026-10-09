@@ -106,10 +106,16 @@ bool HasAggroTrigger::IsActive()
 
 bool PanicTrigger::IsActive()
 {
-    return !ai->IsInPvp() &&
-           AI_VALUE2(uint8, "health", "self target") < sPlayerbotAIConfig.criticalHealth &&
-		   (!AI_VALUE2(bool, "has mana", "self target") ||
-            AI_VALUE2(uint8, "mana", "self target") < sPlayerbotAIConfig.lowMana);
+    // Cheap gates first (perf): health/mana are scalar value reads, while
+    // IsInPvp walks the enemy-player grid scan. Same && verdict, only
+    // reordered: a bot above critical health, or with mana to fight on,
+    // refuses whatever the PvP scan finds.
+    if (AI_VALUE2(uint8, "health", "self target") >= sPlayerbotAIConfig.criticalHealth)
+        return false;
+    if (AI_VALUE2(bool, "has mana", "self target") &&
+        AI_VALUE2(uint8, "mana", "self target") >= sPlayerbotAIConfig.lowMana)
+        return false;
+    return !ai->IsInPvp();
 }
 
 bool CriticalHealthNoMasterTrigger::IsActive()

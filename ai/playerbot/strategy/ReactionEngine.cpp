@@ -312,9 +312,10 @@ bool ReactionEngine::HasReactionWork() const
     // WorldPacketTrigger); with no queue and no live master to whisper,
     // every ChatCommandTrigger visit ends empty. State flips need a live
     // transition (combat/death/alive mismatch), potions need low health or
-    // mana, dispel/aoe/dragon/spread need a target, aura or group member in
-    // range. Check only cheap scalar state here; anything ambiguous returns
-    // true and runs the full fan-out as before.
+    // mana, aoe/dragon/spread need a target or group member in range, and
+    // the bomb/mark/poison aura triggers need a matching danger aura
+    // (HasReactionAuraWork). Check only cheap scalar state here; anything
+    // ambiguous returns true and runs the full fan-out as before.
     Player* bot = ai->GetBot();
     if (!bot)
         return true;
@@ -339,12 +340,41 @@ bool ReactionEngine::HasReactionWork() const
     // Damaged or low-resource bots may need potions, bandages, dispels.
     if (bot->GetHealth() < bot->GetMaxHealth())
         return true;
-    // Dispel/dragon/spread triggers need a live victim or current target.
+    // Dragon/spread triggers need a live victim or current target.
     if (bot->GetVictim())
         return true;
     if (bot->GetPowerType() == POWER_MANA && bot->GetPower(POWER_MANA) < bot->GetMaxPower(POWER_MANA))
         return true;
-    if (!bot->GetSpellAuraHolderMap().empty())
+    // Aura-gated reaction triggers only test the bomb/mark/poison
+    // families (raid bomb spell ids, 4H mark spell ids, dispellable poison
+    // on self for "has poison debuff"): a holder map holding only
+    // buffs/talents/racials can never fire them. Check those categories
+    // directly (map probes, no aura walk) instead of map emptiness. Party
+    // cure runs on the combat/non-combat engines, never here.
+    if (HasReactionAuraWork(bot))
+        return true;
+    return false;
+}
+
+// True when the bot carries an aura any reaction trigger actually tests:
+// the raid bomb spell ids, the 4H mark spell ids, or a dispellable poison
+// on self ("has poison debuff" -> anti-venom). Passive talents, racials
+// and buffs fall through and let FindReaction skip the fan-out.
+bool ReactionEngine::HasReactionAuraWork(Player* bot) const
+{
+    static const uint32 bombSpells[] = { 20475, 23620, 18173, 23478, 28169 };
+    for (uint32 spellId : bombSpells)
+    {
+        if (bot->HasAura(spellId))
+            return true;
+    }
+    static const uint32 markSpells[] = { 28832, 28833, 28834, 28835 };
+    for (uint32 spellId : markSpells)
+    {
+        if (bot->HasAura(spellId))
+            return true;
+    }
+    if (ai->HasAuraToDispel(bot, DISPEL_POISON))
         return true;
     return false;
 }
