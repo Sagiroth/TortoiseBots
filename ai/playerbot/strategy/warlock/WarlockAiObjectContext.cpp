@@ -227,6 +227,7 @@ namespace ai
                 creators["inferno"] = [](PlayerbotAI* ai) { return new InfernoTrigger(ai); };
                 creators["life tap"] = [](PlayerbotAI* ai) { return new LifeTapTrigger(ai); };
                 creators["drain soul"] = [](PlayerbotAI* ai) { return new DrainSoulTrigger(ai); };
+                creators["health funnel"] = [](PlayerbotAI* ai) { return new HealthFunnelTrigger(ai); };
                 creators["no soul shard"] = [](PlayerbotAI* ai) { return new NoSoulShardTrigger(ai); };
                 creators["too many soul shards"] = [](PlayerbotAI* ai) { return new TooManySoulShardsTrigger(ai); };
                 creators["no curse"] = [](PlayerbotAI* ai) { return new NoCurseTrigger(ai); };
@@ -291,6 +292,7 @@ namespace ai
                 creators["destroy soul shard"] = [](PlayerbotAI* ai) { return new DestroySoulShardAction(ai); };
                 creators["shadow bolt"] = [](PlayerbotAI* ai) { return new CastShadowBoltAction(ai); };
                 creators["drain mana"] = [](PlayerbotAI* ai) { return new CastDrainManaAction(ai); };
+                creators["health funnel"] = [](PlayerbotAI* ai) { return new CastHealthFunnelAction(ai); };
                 creators["drain life"] = [](PlayerbotAI* ai) { return new CastDrainLifeAction(ai); };
                 creators["banish"] = [](PlayerbotAI* ai) { return new CastBanishAction(ai); };
                 creators["banish on cc"] = [](PlayerbotAI* ai) { return new CastBanishOnCcAction(ai); };
