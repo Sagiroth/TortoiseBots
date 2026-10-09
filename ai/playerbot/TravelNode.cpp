@@ -13,6 +13,7 @@
 #include "strategy/values/BudgetValues.h"
 #include "strategy/values/LastMovementValue.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/RandomBotFacade.h"
 #include "Maps/MoveMap.h"
 #include "strategy/values/HazardsValue.h"
 
@@ -132,8 +133,17 @@ float TravelNodePath::getCost(Unit* unit, uint32 cGold)
 
             // Closed by AreaTriggerAction after the server refused to teleport this bot.
             if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot))
+            {
                 if (ai->GetAiObjectContext()->GetValue<time_t>("manual time", "area trigger refused::" + std::to_string(triggerId))->Get() > time(0))
                     return -1;
+
+                // The Deeprun Tram is crossed by riding the train, which bots
+                // cannot board: a bot routed through it stood on the platform
+                // for good (13 of 2000 pool bots, live 2026-10-09). Masterless
+                // bots walk or fly between Stormwind and Ironforge instead.
+                if (at && at->destination.mapId == MAP_DEEPRUN_TRAM && !ai->HasRealPlayerMaster())
+                    return -1;
+            }
         }
 
         if (getPathType() == TravelNodePathType::staticPortal && pathObject)
@@ -1758,6 +1768,41 @@ TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Uni
 
 // How close a walk leg to/from the node route must end to count as reaching it.
 static float const TRAVEL_WALK_LEG_REACH_YD = 5.0f;
+
+bool LeaveDeeprunTram(PlayerbotAI* ai, Player* bot, WorldPosition const& goal)
+{
+    if (bot->GetMapId() != MAP_DEEPRUN_TRAM || ai->HasRealPlayerMaster() || !sRandomBotFacade.IsRandomBot(bot) ||
+        bot->IsInCombat() || !bot->IsAlive() || bot->IsBeingTeleported())
+        return false;
+
+    // The station exits are the tram map's own area triggers leading back to
+    // Stormwind and Ironforge: a bot routed in before tram links were refused
+    // (TravelNodePath::getCost) has no other way out.
+    AreaTriggerTeleport const* best = nullptr;
+    float bestDistance = 0.0f;
+    for (uint32 i = 0; i < sAreaTriggerStore.GetNumRows(); i++)
+    {
+        AreaTriggerEntry const* atEntry = sAreaTriggerStore.LookupEntry(i);
+        if (!atEntry || atEntry->mapid != MAP_DEEPRUN_TRAM)
+            continue;
+        AreaTriggerTeleport const* at = sObjectMgr.GetAreaTriggerTeleport(i);
+        if (!at || at->destination.mapId == MAP_DEEPRUN_TRAM)
+            continue;
+        WorldPosition const exit(at->destination.mapId, at->destination.x, at->destination.y, at->destination.z);
+        float const distance = goal.GetMapId() == exit.GetMapId() ? exit.distance(goal) : 0.0f;
+        if (!best || distance < bestDistance)
+        {
+            best = at;
+            bestDistance = distance;
+        }
+    }
+
+    if (!best || !bot->TeleportTo(best->destination.mapId, best->destination.x, best->destination.y, best->destination.z, best->destination.o))
+        return false;
+
+    sPlayerbotAIConfig.logEvent(ai, "TramExitTeleport", std::to_string(best->destination.mapId), std::to_string((int32)bestDistance));
+    return true;
+}
 
 TravelNodeRoute TravelNodeMap::getRoute(WorldPosition startPos, WorldPosition endPos, std::vector<WorldPosition>& startPath, std::vector<WorldPosition>& endPath, Unit* unit)
 {

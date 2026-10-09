@@ -4,6 +4,14 @@
 #include "WorldPosition.h"
 #include "Maps/PathFinder.h"
 
+// The Deeprun Tram map: crossed only by riding the train, which bots cannot board.
+static constexpr uint32 MAP_DEEPRUN_TRAM = 369;
+
+class PlayerbotAI;
+// Moves a masterless pool bot stranded on the tram map out through the
+// station exit nearest to `goal` (any exit when goal is off map 0).
+bool LeaveDeeprunTram(PlayerbotAI* ai, Player* bot, ai::WorldPosition const& goal);
+
 //THEORY
 //
 // Pathfinding in (c)mangos is based on detour recast an opensource nashmesh creation and pathfinding codebase.

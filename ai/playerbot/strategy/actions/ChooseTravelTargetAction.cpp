@@ -86,6 +86,9 @@ static void WanderOnEmptyPick(PlayerbotAI* ai, Player* bot)
         return;
 
     WorldPosition const botPos(bot);
+    if (LeaveDeeprunTram(ai, bot, botPos))
+        return;
+
     if (!botPos.isMmapLoaded(bot->GetInstanceId()))
         return;
 

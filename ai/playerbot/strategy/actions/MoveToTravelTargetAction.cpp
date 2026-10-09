@@ -663,6 +663,9 @@ bool MoveToTravelTargetAction::Execute(Event& event)
     WorldPosition botLocation(bot);
     WorldPosition location = *target->getPosition();
 
+    if (LeaveDeeprunTram(ai, bot, location))
+        return true;
+
     // Decide-once flight plan (items 4-5): when the stored plan names a
     // flight, steer to the flight master as the intermediate move target
     // until inside interaction range, then board. The walk below aims at the
