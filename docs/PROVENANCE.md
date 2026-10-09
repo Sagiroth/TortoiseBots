@@ -4526,7 +4526,7 @@ Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 ## Shared flee-heading anti-oscillation memory (POS-7) — 2026-10-09
 
 Feature: the existing `FleeFailureMemory` (donor `CheckLastFlee` shape:
-45-degree reversal veto, 5 s window, observed-failures-only) is now
+45-degree same-heading veto, 5 s window, observed-failures-only) is now
 consulted by the two combat sidesteps that previously consulted nothing.
 `TankFaceAwayAction` vetoes sidestep headings remembered as failures
 (anchored on the held mob) with a two-pass fallback so the cache can never
@@ -4564,3 +4564,40 @@ tick when two triggers disagreed, jittering instead of settling.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check` clean.
 Build via build-commit.sh (see PR summary); no live in-game check.
+
+## Review fixes (2026-10-09, reviewer muse-1.3 max)
+
+Blocking 1 (failure-memory success rule vs sidesteps — REAL, fixed by
+revert): tank sidesteps preserve radius and rear approaches stay in melee
+by construction, so a successful sidestep never gains the 2 yd the
+`fleeFailures` success rule needs; the per-tick global observer would
+record it as a failure after 3 s and veto the heading for genuine flees
+too. Removed both consults (`SetBehindTargetAction` rear veto +
+`BeginAttempt`, `TankFaceAwayAction` two-pass veto + `Observe` +
+`BeginAttempt`); both actions are byte-identical to pre-PR behaviour plus
+a comment naming the 90-degree trigger window as the anti-oscillation.
+
+Blocking 2 (3 s rule cannot damp per-tick ping-pong — REAL, same fix):
+alternating L/R sidesteps restart `BeginAttempt`'s pending clock each
+dispatch, so no failure is ever recorded. Reverted rather than adding a
+new dispatch-time veto: per the report, the trigger's 90-degree
+hysteresis window (fires only while the mob's front points at the party
+side; the tank lands ~108 degrees off, outside the window) is the
+dampener, and no live jitter has been observed. If a live test shows
+alternation, the fix is a sidestep re-dispatch throttle, not the failure
+memory.
+
+Blocking 3 (stale-anchor consult order — MOOT after revert): the rear
+`IsHeadingFree` check before any `Observe` is gone with the consult
+itself. No fix needed.
+
+Non-blocking "reversal veto" wording — ACCEPTED: the code vetoes the same
+heading as the failure while the donor vetoes its reverse
+(`info.angle + PI`). Reworded the PROVENANCE entry and memory doc row to
+"same-heading veto".
+
+Non-blocking "hold instead of second pass" — MOOT after revert (no
+second pass remains).
+
+Non-blocking "no live jitter test" — ACKNOWLEDGED: still no live test;
+needs an in-game sidestep-alternation check before merge.
