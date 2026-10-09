@@ -48,3 +48,4 @@ namespace ai
         void FindUnits(std::list<Unit*> &targets) override;
         bool AcceptUnit(Unit* unit) override;
 	};
+}
