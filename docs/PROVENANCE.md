@@ -4187,3 +4187,47 @@ shared value with no cross-bot coordination.
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No build
 (per task constraints); live in-game check pending: blessing double-cast
 rate with two paladins, buffs-active share across long fights.
+
+## Party gaps round 2: pre-pull RTI marks + between-pull regen wait (night2 partygaps2) — 2026-10-09
+Feature: two small donor-parity party fixes from night2 research. (1) RTI
+marks resolve pre-pull: `RtiTargetValue::Calculate` no longer requires the
+marked unit to sit in "possible targets" (units already fighting the bot);
+it accepts a marked unit on legality + sight range + LOS instead. The
+mage's moon-sheep and the party's skull pre-focus now work on approach,
+not only after someone takes a hit. (2) The party waits for regen between
+pulls: `GroupReadyValue` drops the live `hasAttackers` conjunct on the
+health wait, restoring the donor's unconditional between-pull hold, so
+travel/grind/RPG movement stays parked while members sit wounded or OOM
+and the party drinks/eats together.
+
+Source repository: `mod-playerbots` @
+`b6696bdbd3740e575598d167d69f39f68cc0b907` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Base/Value/RtiTargetValue.cpp:35-78` (marked-unit resolution with
+the attackers gate deleted, LOS + sight range + master-distance guards) +
+`src/Ai/Base/Value/GroupValues.cpp:134-174` (`GroupReadyValue`, no
+attacker gate on the health/mana wait).
+
+Source files (module, modified):
+`ai/playerbot/strategy/values/RtiTargetValue.h` (pre-pull resolution via
+`PossibleAttackTargetsValue::IsPossibleTarget` sight-range/legality check
++ `IsWithinLOSInMap`; the old possible-targets membership test removed) +
+`ai/playerbot/strategy/values/GroupValues.cpp` (`GroupReadyValue` health
+wait without the `hasAttackers` conjunct; in-combat skip, mana gate,
+dungeon alive-gate and master-distance skip unchanged).
+
+Copied / ported / reimplemented: reimplemented inside the live values. The
+donor's master-distance chase guard is already covered live by the
+master-distance member skip above the wait. The donor's 2D range shape is
+already covered live by `IsPossibleTarget`'s `IsWithinDistInMap`.
+
+Reason: night2 partygaps2 research: with prior merges (threat, interrupts,
+tank-face, formation, healer mana, buff claim) landed, the two most visible
+remaining party gaps were CC/focus marks ignored before the pull and bots
+walking on while the party sat to drink.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No build
+(per task constraints); live in-game check pending: moon-sheep on approach,
+skull pre-focus before first hit, party idle between pulls until topped up.
