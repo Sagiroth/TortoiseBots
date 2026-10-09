@@ -79,6 +79,11 @@ void BalanceDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "nature eclipse",
         NextAction::array(0, new NextAction("wrath", ACTION_HIGH + 3), NULL)));
+
+    // Hurricane is the balance pack cast: 3+ attackers in spell range.
+    triggers.push_back(new TriggerNode(
+        "ranged medium aoe",
+        NextAction::array(0, new NextAction("hurricane", ACTION_HIGH), NULL)));
 }
 
 void BalanceDruidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
