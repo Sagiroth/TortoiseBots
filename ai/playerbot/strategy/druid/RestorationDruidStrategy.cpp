@@ -36,6 +36,22 @@ void RestorationDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
         "rebirth",
         NextAction::array(0, new NextAction("rebirth", ACTION_EMERGENCY), NULL)));
 
+    // mod-playerbots parity (DRU-2): Nature's Swiftness emergency chain.
+    // The pop outranks Swiftmend (donor order): NS is the top emergency
+    // cooldown, and when it is spent/on cooldown the BuffTrigger base
+    // refuses so the queue falls through to Swiftmend cleanly — no stale
+    // basket left behind to burn the cooldown a tick late. The spend row
+    // keys off the bare aura trigger (not a health TwoTriggers): if the
+    // target rises above critical between pop and spend, the instant HT
+    // still lands on whoever needs it via the party-heal target scan.
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("nature's swiftness", ACTION_CRITICAL_HEAL + 4), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "nature's swiftness active",
+        NextAction::array(0, new NextAction("healing touch on party", ACTION_CRITICAL_HEAL + 3), NULL)));
+
     triggers.push_back(new TriggerNode(
         "critical health",
         NextAction::array(0, new NextAction("swiftmend", ACTION_CRITICAL_HEAL + 2),
