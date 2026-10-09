@@ -14,6 +14,17 @@ CheckValuesAction::CheckValuesAction(PlayerbotAI* ai) : Action(ai, "check values
 {
 }
 
+bool CheckValuesAction::isUseful()
+{
+    // Masterless random-pool bots are served about once per rotation lap
+    // (~26 s at 2000 bots), far past the 1 s list TTLs - pre-warming only
+    // burns six grid scans per idle visit. Bots with a real player master,
+    // group play and combat ticks re-read within the TTL, so they keep it.
+    if (sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster())
+        return false;
+
+    return true;
+}
 bool CheckValuesAction::Execute(Event& event)
 {
     if (ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
