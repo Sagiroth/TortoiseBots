@@ -62,9 +62,15 @@ float AvoidAoeStrategyMultiplier::GetValue(Action* action)
 
 void AvoidAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    // Proactive strafe-to-safety (donor AvoidAoeAction shape): dynobj aura,
+    // damaging trap, or trigger NPC near the bot steps out while staying in
+    // combat range. The action self-gates via isUseful, so the row is a
+    // triggerless default; the old reactive flee stays as the fallback when
+    // the strafe finds no safe landing.
     triggers.push_back(new TriggerNode(
         "has area debuff",
-        NextAction::array(0, new NextAction("flee", ACTION_EMERGENCY + 5), NULL)));
+        NextAction::array(0, new NextAction("avoid aoe", ACTION_EMERGENCY + 5),
+            new NextAction("flee", ACTION_EMERGENCY + 4), NULL)));
 }
 
 void AvoidAoeStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)

@@ -32,4 +32,18 @@ namespace ai
         AllTargetsValue(PlayerbotAI* ai, float range = sPlayerbotAIConfig.sightDistance) :
         PossibleTargetsValue(ai, "all targets", range, true) {}
 	};
-}
+
+    // Proactive AoE sensor (donor PossibleTriggersValue shape): hostile,
+    // not-selectable units within 15yd whose periodic-trigger aura fires a
+    // school-damage spell (e.g. invisible void-zone trigger NPCs). LoS is
+    // ignored — the trigger sits inside the zone it marks.
+    class PossibleTriggersValue : public NearestUnitsValue
+	{
+	public:
+        PossibleTriggersValue(PlayerbotAI* ai) :
+            NearestUnitsValue(ai, "possible triggers", kMaxAoeAvoidRadiusYd, true) {}
+
+    protected:
+        void FindUnits(std::list<Unit*> &targets) override;
+        bool AcceptUnit(Unit* unit) override;
+	};

@@ -4522,3 +4522,61 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Proactive AoE avoidance with strafe-to-safety (POS-2) — 2026-10-09
+
+Feature: `AvoidAoeAction` (`avoid aoe`, donor `AvoidAoeAction` shape) with
+three sensors — dynobj aura affecting the bot, `nearest damaging traps`
+(ownerless damage-trap GOs, donor `NearestTrapWithDamageValue` shape),
+`possible triggers` (hostile not-selectable units with a periodic-trigger
+→ school-damage aura, donor `PossibleTriggersValue` shape) — then a
+strafe-first step-out that stays in combat range (donor
+`BestPositionForMeleeToFlee` / `BestPositionForRangedToFlee` shape):
+melee strafes ±90° off the target, ranged strafes inside the
+TooClose..Spell band; straight-line landings band-checked; 15yd radius
+cap (`MaxAoeAvoidRadius`); flee-heading memory vetoes failed directions
+(POS-7) with a two-pass fallback. `AvoidAoeStrategy` now runs `avoid aoe`
+at ACTION_EMERGENCY + 5 with the old reactive `flee` as the fallback at
++4; the cast-suppression multiplier is untouched. Pure ordering/band
+rules in `ai/playerbot/AvoidAoePolicy.h`, tested by
+`tools/test_avoid_aoe_policy.cpp` (wired into `verify_all.sh`). Reaction
+engine membership unchanged (everyone).
+
+Source repository: `mod-playerbots/mod-playerbots`
+
+Source commit: `79bd4281` (local
+`playerbots-references/mod-playerbots` checkout).
+
+Source files:
+- `src/Ai/Base/Actions/MovementActions.cpp` (`AvoidAoeAction::isUseful`/`Execute`, `AvoidAuraWithDynamicObj`, `AvoidGameObjectWithDamage`, `AvoidUnitWithDamageAura`, `BestPositionForMeleeToFlee`, `BestPositionForRangedToFlee`, `FleePosition`)
+- `src/Ai/Base/Actions/MovementActions.h` (declarations)
+- `src/Ai/Base/Value/PossibleTargetsValue.cpp` (`PossibleTriggersValue`)
+- `src/Ai/Base/Value/NearestGameObjects.cpp` (`NearestTrapWithDamageValue`)
+
+Source files (module, modified): `ai/playerbot/AvoidAoePolicy.h` (new),
+`ai/playerbot/strategy/actions/MovementActions.{h,cpp}` (action),
+`ai/playerbot/strategy/actions/ActionContext.h` (registration),
+`ai/playerbot/strategy/values/PossibleTargetsValue.{h,cpp}` (trigger
+sensor), `ai/playerbot/strategy/values/NearestGameObjects.{h,cpp}` (trap
+sensor), `ai/playerbot/strategy/values/ValueContext.h` (registrations),
+`ai/playerbot/strategy/generic/CombatStrategy.cpp` (strategy rewiring),
+`tools/test_avoid_aoe_policy.cpp` + `tools/verify_all.sh` (new standalone
+test), `docs/guides/dungeon-tactics.md` (doc line).
+
+Copied / ported / reimplemented: ported, adapted to the 1.12 codebase.
+Deviations from the donor, all deliberate: (a) 1.12 aura APIs
+(`GetAurasByType`, `EffectTriggerSpell[]`, `sSpellRadiusStore`) instead of
+AzerothCore `AuraEffect` lists; (b) candidates validate through `FindStep`
+(LoS + path + unpulled-hostile aggro guard) instead of the donor's
+collision-only check; (c) no `bot->Say` avoidance spam and no spell
+whitelist config (no stack-mechanic false positives observed — add if
+needed); (d) reactive `flee` kept as the fallback when no strafe landing
+validates; (e) 1000 ms donor throttle replaced by the existing
+flee-failure observation windows.
+
+Reason: AoE avoidance was reactive-only (fired after the debuff landed)
+and fled blindly — often toward the tank inside the same void zone.
+
+Local validation: `bash tools/verify_all.sh` (incl. new policy test); `git
+diff --check` clean. Build via build-commit.sh (see PR summary); no live
+in-game check.

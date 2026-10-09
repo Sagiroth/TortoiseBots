@@ -17,8 +17,8 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/GrindSpotPolicy.h"
 #include "playerbot/TravelRepickPolicy.h"
-#include "Transports/Transport.h"
-#include "playerbot/strategy/generic/CombatStrategy.h"
+#include "playerbot/AvoidAoePolicy.h"
+#include "Database/DBCStores.h"
 
 using namespace ai;
 
@@ -2163,6 +2163,192 @@ bool MovementAction::GeneratePathAvoidingHazards(std::vector<WorldPosition>& mov
 bool FleeAction::Execute(Event& event)
 {
     return Flee(AI_VALUE(Unit*, "current target"));
+}
+
+bool AvoidAoeAction::isUseful()
+{
+    if (!MovementAction::isUseful())
+        return false;
+    float radius = 0.0f;
+    WorldPosition center;
+    // Cheap sensor first (dynobj scan the value already caches); the GO
+    // and trigger scans run only when no aura already marks the bot.
+    if (AvoidAuraWithDynamicObj(radius, center))
+        return true;
+    if (AvoidDamagingTrap(radius, center))
+        return true;
+    return AvoidTriggerNpc(radius, center);
+}
+
+bool AvoidAoeAction::Execute(Event& event)
+{
+    (void)event;
+    float radius = 0.0f;
+    WorldPosition center;
+    if (!AvoidAuraWithDynamicObj(radius, center) &&
+        !AvoidDamagingTrap(radius, center) &&
+        !AvoidTriggerNpc(radius, center))
+        return false;
+    return StrafeToSafety(center, radius);
+}
+
+bool AvoidAoeAction::AvoidAuraWithDynamicObj(float& outRadius, WorldPosition& outCenter)
+{
+    if (!AI_VALUE2(bool, "has area debuff", "self target"))
+        return false;
+    // The value checks "self target"; re-scan the cached dynobj list for
+    // the aura actually affecting the bot to recover its radius.
+    std::list<ObjectGuid> const& dynobjs = AI_VALUE(std::list<ObjectGuid>, "nearest dynamic objects no los");
+    for (ObjectGuid const& guid : dynobjs)
+    {
+        DynamicObject* dyn = bot->GetMap()->GetDynamicObject(guid);
+        if (!dyn || !dyn->IsInWorld())
+            continue;
+        SpellEntry const* spellProto = sServerFacade.LookupSpellInfo(dyn->GetSpellId());
+        if (!spellProto || spellProto->IsPositiveEffect(dyn->GetEffIndex()))
+            continue;
+        if (!dyn->IsAffecting(bot))
+            continue;
+        float radius = dyn->GetRadius();
+        if (!IsAvoidableAoeRadius(radius))
+            continue;
+        if (bot->GetDistance(dyn) > radius)
+            continue;
+        outRadius = radius;
+        outCenter = WorldPosition(dyn->GetMapId(), dyn->GetPositionX(), dyn->GetPositionY(), dyn->GetPositionZ());
+        return true;
+    }
+    return false;
+}
+
+bool AvoidAoeAction::AvoidDamagingTrap(float& outRadius, WorldPosition& outCenter)
+{
+    std::list<ObjectGuid> const& traps = AI_VALUE(std::list<ObjectGuid>, "nearest damaging traps");
+    for (ObjectGuid const& guid : traps)
+    {
+        GameObject* go = ai->GetGameObject(guid);
+        if (!go || !go->IsInWorld())
+            continue;
+        GameObjectInfo const* goInfo = go->GetGOInfo();
+        if (!goInfo || goInfo->type != GAMEOBJECT_TYPE_TRAP)
+            continue;
+        float radius = (float)goInfo->trap.diameter / 2.0f + go->GetCombatReach();
+        if (!IsAvoidableAoeRadius(radius))
+            continue;
+        if (bot->GetDistance(go) > radius)
+            continue;
+        outRadius = radius;
+        outCenter = WorldPosition(go->GetMapId(), go->GetPositionX(), go->GetPositionY(), go->GetPositionZ());
+        return true;
+    }
+    return false;
+}
+
+bool AvoidAoeAction::AvoidTriggerNpc(float& outRadius, WorldPosition& outCenter)
+{
+    std::list<ObjectGuid> const& triggers = AI_VALUE(std::list<ObjectGuid>, "possible triggers");
+    for (ObjectGuid const& guid : triggers)
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (!unit || !unit->IsInWorld() || !sServerFacade.IsAlive(unit))
+            continue;
+        Unit::AuraList const& periodic = unit->GetAurasByType(SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+        for (Unit::AuraList::const_iterator it = periodic.begin(); it != periodic.end(); ++it)
+        {
+            Aura* aura = *it;
+            if (!aura)
+                continue;
+            SpellEntry const* spellProto = aura->GetSpellProto();
+            if (!spellProto)
+                continue;
+            SpellEntry const* triggerProto = sServerFacade.LookupSpellInfo(
+                spellProto->EffectTriggerSpell[aura->GetEffIndex()]);
+            if (!triggerProto)
+                continue;
+            for (int i = 0; i < MAX_EFFECT_INDEX; ++i)
+            {
+                if (triggerProto->Effect[i] != SPELL_EFFECT_SCHOOL_DAMAGE)
+                    continue;
+                SpellRadiusEntry const* radiusEntry = sSpellRadiusStore.LookupEntry(triggerProto->EffectRadiusIndex[i]);
+                float radius = radiusEntry ? radiusEntry->Radius : 0.0f;
+                if (!IsAvoidableAoeRadius(radius))
+                    continue;
+                if (bot->GetDistance(unit) > radius)
+                    continue;
+                outRadius = radius;
+                outCenter = WorldPosition(unit->GetMapId(), unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ());
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float radius)
+{
+    Unit* target = AI_VALUE(Unit*, "current target");
+    float const step = AoeEscapeStep(radius, sPlayerbotAIConfig.fleeDistance);
+    // Ordered offsets (policy): strafes off the target first, straight
+    // lines after; straight landings must stay in the combat band.
+    float offsets[5] = {};
+    int count = 0;
+    bool const melee = ai->IsMelee(bot);
+    bool tanking = false;
+    if (target && target->GetVictim() == bot &&
+        !target->isFrozen() && !target->HasAuraType(SPELL_AURA_MOD_ROOT))
+        tanking = true;
+    if (melee)
+        count = MeleeAoeCandidates(tanking, offsets);
+    else
+        count = RangedAoeCandidates(offsets);
+    float const angleToTarget = target ? bot->GetAngle(target) : bot->GetAngle(&hazardCenter);
+    float const angleFromHazard = hazardCenter.GetAngleTo(WorldPosition(bot));
+    const WorldPosition botPos(bot);
+    LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
+    uint32 const nowMs = WorldTimer::getMSTime();
+    lastMove.fleeFailures.Observe(target ? target->GetObjectGuid().GetRawValue() : 0,
+        bot->GetMapId(), target ? sServerFacade.getDistance2d(bot, target) : 0.0f, nowMs, bot->movespline->GetId());
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        bool const vetoSecondPass = (pass == 1);
+        for (int i = 0; i < count; ++i)
+        {
+            // Last slot anchors away-from-hazard; the rest anchor the target.
+            bool const hazardAnchored = (i == count - 1) && count > 3;
+            float heading = hazardAnchored ? angleFromHazard : angleToTarget + offsets[i];
+            bool const strict = (offsets[i] == 0.0f || offsets[i] > 3.14f || hazardAnchored);
+            WorldPosition cand = botPos + WorldPosition(0, step * cos(heading), step * sin(heading), 1.0f);
+            cand.setZ(cand.GetHeight());
+            if (target && strict)
+            {
+                float landing = sqrtf((cand.getX() - target->GetPositionX()) * (cand.getX() - target->GetPositionX()) +
+                    (cand.getY() - target->GetPositionY()) * (cand.getY() - target->GetPositionY()));
+                if (melee)
+                {
+                    if (!MeleeAoeLandingInRange(landing, sPlayerbotAIConfig.tooCloseDistance))
+                        continue;
+                }
+                else if (!RangedAoeLandingInRange(landing, sPlayerbotAIConfig.tooCloseDistance, sPlayerbotAIConfig.spellDistance))
+                    continue;
+            }
+            if (!vetoSecondPass)
+            {
+                float checkHeading = botPos.GetAngleTo(cand);
+                if (!lastMove.fleeFailures.IsHeadingFree(checkHeading, nowMs))
+                    continue;
+            }
+            WorldPosition out(botPos);
+            if (!FindStep(ai, bot, botPos, heading, step, out))
+                continue;
+            if (!MoveTo(bot->GetMapId(), out.getX(), out.getY(), out.getZ(), false, IsReaction(), false, true))
+                continue;
+            lastMove.fleeFailures.BeginAttempt(target ? target->GetObjectGuid().GetRawValue() : 0,
+                bot->GetMapId(), botPos.GetAngleTo(out),
+                target ? sServerFacade.getDistance2d(bot, target) : 0.0f, nowMs, bot->movespline->GetId());
+            return true;
+        }
+    }
+    return false;
 }
 
 bool FleeWithPetAction::Execute(Event& event)

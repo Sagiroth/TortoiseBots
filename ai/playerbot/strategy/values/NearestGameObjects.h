@@ -50,6 +50,20 @@ namespace ai
         LineOfSight lineOfSight;
 	};
 
+    // Proactive AoE sensor (donor NearestTrapWithDamageValue shape):
+    // ownerless GAMEOBJECT_TYPE_TRAP GOs within 15yd whose trap spell is
+    // non-positive and deals periodic or school damage. LoS ignored — the
+    // trap sits inside the zone it marks.
+    class NearestDamagingTrapsValue : public ObjectGuidListCalculatedValue
+	{
+	public:
+        NearestDamagingTrapsValue(PlayerbotAI* ai) :
+            ObjectGuidListCalculatedValue(ai, "nearest damaging traps") {}
+
+    protected:
+        virtual std::list<ObjectGuid> Calculate() override;
+	};
+
     class NearestDynamicObjects : public ObjectGuidListCalculatedValue
     {
     public:
