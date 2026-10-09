@@ -155,15 +155,16 @@ bool ReadyCheckAction::Execute(Event& event)
         if (player == bot->getObjectGuid())
             return false;
     }
-    else if (sPlayerbotAIConfig.forceRebuffOnReadyCheck && !bot->IsInCombat())
+    else if (p.getOpcode() == MSG_RAID_READY_CHECK && sPlayerbotAIConfig.forceRebuffOnReadyCheck && !bot->IsInCombat())
     {
-        // Defer the confirm until buffs settle (SOC-S5): the 1.12 request
-        // broadcast carries an empty payload, so emptiness marks a real
-        // incoming check. Report status now, stamp the anchor, and let the
-        // "force rebuff pending" trigger send the confirm via "ready
-        // reply". Manual "ready" whispers also arrive empty but carry an
-        // event owner... they take this path too when the key is on, which
-        // is intended (same hold-then-confirm).
+        // Defer the confirm until buffs settle (SOC-S5): only a real
+        // incoming check (1.12 request broadcast: this opcode with an empty
+        // payload) holds. Manual "ready" whispers arrive with a default
+        // opcode-0 packet, so they fall through to the immediate answer
+        // below - an explicit order answers now, and it also clears any
+        // pending anchor, so no second confirm goes out. Report status now,
+        // stamp the anchor, and let the "force rebuff pending" trigger send
+        // the confirm via "ready reply".
         ReportReadiness(requester);
         context->GetValue<time_t>("manual time", ai::ReadyRebuffAnchorKey())->Set(time(0));
         return true;
