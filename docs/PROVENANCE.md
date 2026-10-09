@@ -4553,3 +4553,47 @@ vendor order, compounding into wrong picks over levels.
 Local validation: `bash tools/verify_all.sh` (incl. new policy test +
 wiring check live-missing=0); `git diff --check`; shared-builder compile
 check; no live in-game test.
+
+## Onyxia Deep Breath safe-zone dodging (raid1 item 7) — 2026-10-09
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Raid/Ony/OnyTriggers.cpp` (OnyxiaDeepBreathTrigger: boss
+CURRENT_GENERIC_SPELL id in the 8 breath ids),
+`src/Ai/Raid/Ony/OnyActions.h:52-93` (MoveToSafeZone: nearest of 2 safe
+zones per breath direction + already-safe early-out + AttackStop/CastStop
+first), `src/Ai/Raid/Ony/OnyStrategy.cpp:21-23` (trigger wiring at
+ACTION_RAID).
+
+Source files (module, modified): `ai/playerbot/OnyxiaBreathPolicy.h`
+(new pure rule: 8 breath ids, axis pairing, 5y hold radius),
+`ai/playerbot/strategy/triggers/OnyxiasLairDungeonTriggers.h`
+(header-inline OnyxiaDeepBreathTrigger reading the boss current-target
+generic-spell cast, gated on the `onyxia` fight strategy),
+`ai/playerbot/strategy/actions/OnyxiasLairDungeonActions.h/.cpp`
+(OnyxiaBreathSafeZoneAction: nearest zone of the matching donor pair,
+already-inside hold, cast-stop first, MoveTo with reaction flag),
+`ai/playerbot/strategy/generic/OnyxiasLairDungeonStrategies.cpp`
+(reaction wired at ACTION_EMERGENCY+5 above the generic flank),
+registrations (`TriggerContext.h`, `ActionContext.h`),
+`tools/test_onyxia_breath_policy.cpp` (new standalone test) +
+`tools/verify_all.sh` (test list), `docs/guides/dungeon-tactics.md` (doc
+line).
+
+Copied / ported / reimplemented: reimplemented in our Onyxia fight
+strategy idiom. Deviations from the donor, all deliberate: (a) no
+fallback-center zone (donor default arm): an unknown spell id fails the
+trigger instead of walking the raid to mid-room — unreachable in practice
+since the trigger gates the action on the same 8 ids; (b) priority
+EMERGENCY+5 above the universal flank (donor runs both at raid priority):
+cast-triggered lane dodge beats cone geometry while a breath casts; (c)
+z taken from the donor spot table (lava-side heights differ per spot).
+
+Reason: raid1 gap ONY-BREATH: the flank trigger escapes front/rear cones
+but never dodged the breath lanes — the actual phase-2 killer.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. All 8 breath ids verified against
+tw_world (all named Breath). Donor safe-zone coords used as-is; Turtle map
+validation still wants eyes in a live Onyxia run (flagged in the report).
+Build via build-commit.sh pending; live in-game check pending.

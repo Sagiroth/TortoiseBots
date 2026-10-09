@@ -28,4 +28,16 @@ namespace ai
     public:
         OnyxiaDisableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable onyxia fight strategy", "-onyxia") {}
     };
+
+    // Deep Breath safe-zone dodge: run to the nearest of the 2 safe spots
+    // for the breath direction currently casting (mod-playerbots parity).
+    // Inherits MovementAction; Execute reads the boss cast, picks the
+    // nearest zone of the matching pair, holds when already inside.
+    class OnyxiaBreathSafeZoneAction : public MovementAction
+    {
+    public:
+        OnyxiaBreathSafeZoneAction(PlayerbotAI* ai) : MovementAction(ai, "onyxia breath safe zone") {}
+        bool Execute(Event& event) override;
+        bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
+    };
 }
