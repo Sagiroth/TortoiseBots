@@ -363,6 +363,10 @@ namespace ai
             creators["stealth for suppression device"] = [](PlayerbotAI* ai) { return new StealthForSuppressionDeviceAction(ai); };
             creators["disarm suppression device"] = [](PlayerbotAI* ai) { return new DisarmSuppressionDeviceAction(ai); };
 
+            creators["enable chromaggus fight strategy"] = [](PlayerbotAI* ai) { return new ChromaggusEnableFightStrategyAction(ai); };
+            creators["disable chromaggus fight strategy"] = [](PlayerbotAI* ai) { return new ChromaggusDisableFightStrategyAction(ai); };
+            creators["use hourglass sand"] = [](PlayerbotAI* ai) { return new UseHourglassSandAction(ai); };
+
             creators["enable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanEnableFightStrategyAction(ai); };
             creators["disable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanDisableFightStrategyAction(ai); };
             creators["move away from void zone"] = [](PlayerbotAI* ai) { return new FourHorsemanMoveAwayFromVoidZoneAction(ai); };

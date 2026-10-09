@@ -51,6 +51,36 @@ namespace ai
         }
     };
 
+    class ChromaggusStartFightTrigger : public StartBossFightTrigger
+    {
+    public:
+        ChromaggusStartFightTrigger(PlayerbotAI* ai) : StartBossFightTrigger(ai, "start chromaggus fight", "chromaggus", 14020) {}
+    };
+
+    class ChromaggusEndFightTrigger : public EndBossFightTrigger
+    {
+    public:
+        ChromaggusEndFightTrigger(PlayerbotAI* ai) : EndBossFightTrigger(ai, "end chromaggus fight", "chromaggus", 14020) {}
+    };
+
+    // Brood Affliction: Bronze on self → cleanse with Hourglass Sand
+    // (mod-playerbots parity). Inline like the suppression triggers above:
+    // the aura check is the whole body, and the fight-strategy gate lives
+    // in the strategy wiring (trigger only queued while +chromaggus).
+    class ChromaggusBronzeAfflictionTrigger : public Trigger
+    {
+    public:
+        ChromaggusBronzeAfflictionTrigger(PlayerbotAI* ai, std::string name = "chromaggus bronze affliction", int checkInterval = 1)
+        : Trigger(ai, name, checkInterval) {}
+
+        bool IsActive() override
+        {
+            if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+                return false;
+            return bot->HasAura(23170);
+        }
+    };
+
     class SuppressionDeviceCloseTrigger : public Trigger
     {
     public:

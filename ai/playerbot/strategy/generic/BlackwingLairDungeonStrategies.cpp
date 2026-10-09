@@ -8,6 +8,10 @@ void BlackwingLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
     triggers.push_back(new TriggerNode(
         "suppression device close",
         NextAction::array(0, new NextAction("disarm suppression device", 80.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "start chromaggus fight",
+        NextAction::array(0, new NextAction("enable chromaggus fight strategy", 100.0f), NULL)));
 }
 
 void BlackwingLairDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
