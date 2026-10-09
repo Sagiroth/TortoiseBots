@@ -4522,3 +4522,45 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Shared flee-heading anti-oscillation memory (POS-7) — 2026-10-09
+
+Feature: the existing `FleeFailureMemory` (donor `CheckLastFlee` shape:
+45-degree reversal veto, 5 s window, observed-failures-only) is now
+consulted by the two combat sidesteps that previously consulted nothing.
+`TankFaceAwayAction` vetoes sidestep headings remembered as failures
+(anchored on the held mob) with a two-pass fallback so the cache can never
+block every route; `SetBehindTargetAction` diverts to its flank-angle
+fallback when the direct rear point repeats a failed heading. Both record
+(`BeginAttempt`) and observe like the flee/spread paths. `FleeManager`
+(plain flee) and `RaidSpreadAction` (spread) already consult — no change
+there. No new value plumbing: all state lives on `LastMovement` as before.
+
+Source repository: `mod-playerbots/mod-playerbots`
+
+Source commit: `79bd4281` (local
+`playerbots-references/mod-playerbots` checkout).
+
+Source files:
+- `src/Ai/Base/Actions/MovementActions.cpp` (`MovementAction::CheckLastFlee`; consults in avoid-aoe `FleePosition`, tank-face, set-behind)
+
+Source files (module, modified):
+`ai/playerbot/strategy/actions/MovementActions.cpp`
+(`TankFaceAwayAction::Execute`, `SetBehindTargetAction::Execute`),
+`docs/concepts/bot-mechanics-and-quirks.md` (doc line).
+
+Copied / ported / reimplemented: ported, adapted to the 1.12 codebase.
+Deviations from the donor, all deliberate: (a) failures are observed
+outcomes (2 yd rule), not dispatches — a successful heading stays
+repeatable, where the donor vetoes any recent flee heading; (b) two-pass
+fallback (vetoed headings allowed on the second pass) so the memory can
+never strand the bot; (c) tank-face and set-behind share the `fleeFailures`
+instance anchored per-target, no new `LastMovement` fields; (d) the
+`AvoidAoeAction::FleePosition` consumer arrives with POS-2 (this PR wires
+the helper into the existing sidesteps only).
+
+Reason: tank sidesteps and rear approaches could alternate headings every
+tick when two triggers disagreed, jittering instead of settling.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check` clean.
+Build via build-commit.sh (see PR summary); no live in-game check.

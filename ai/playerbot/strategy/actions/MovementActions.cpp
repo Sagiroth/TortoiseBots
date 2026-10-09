@@ -2344,7 +2344,30 @@ bool SetBehindTargetAction::Execute(Event& event)
     target->GetMap()->GetLosHitPosition(ox, oy, oz + bot->GetCollisionHeight(), x, y, z, -0.5f);
 
     const bool isLos = target->IsWithinLOS(x, y, z + bot->GetCollisionHeight(), true);
-    bool moved = MoveTo(bot->GetMapId(), x, y, z);
+    // Anti-oscillation (donor CheckLastFlee shape): when the direct rear
+    // point repeats a recently failed heading, prefer the flank angle the
+    // fallback path already computes instead of re-walking the same line.
+    LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
+    uint32 const nowMs = WorldTimer::getMSTime();
+    const WorldPosition botPos(bot);
+    float rearHeading = botPos.GetAngleTo(WorldPosition(target->GetMapId(), x, y, z));
+    bool moved = false;
+    if (!lastMove.fleeFailures.IsHeadingFree(rearHeading, nowMs))
+    {
+        float fx = target->getPositionX() + cos(angle) * sPlayerbotAIConfig.contactDistance;
+        float fy = target->getPositionY() + sin(angle) * sPlayerbotAIConfig.contactDistance;
+        float fz = target->getPositionZ();
+        bot->UpdateGroundPositionZ(fx, fy, fz);
+        if (target->IsWithinLOS(fx, fy, fz + bot->GetCollisionHeight(), true) &&
+            MoveTo(bot->GetMapId(), fx, fy, fz))
+        {
+            lastMove.fleeFailures.BeginAttempt(target->GetObjectGuid().GetRawValue(),
+                target->GetMapId(), botPos.GetAngleTo(WorldPosition(target->GetMapId(), fx, fy, fz)),
+                sServerFacade.getDistance2d(bot, target), nowMs, bot->movespline->GetId());
+            return true;
+        }
+    }
+    moved = MoveTo(bot->GetMapId(), x, y, z);
     if (!moved && !isLos)
     {
         distance = sPlayerbotAIConfig.contactDistance;
@@ -2354,6 +2377,10 @@ bool SetBehindTargetAction::Execute(Event& event)
         bot->UpdateGroundPositionZ(x, y, z);
         moved = MoveTo(bot->GetMapId(), x, y, z);
     }
+    if (moved)
+        lastMove.fleeFailures.BeginAttempt(target->GetObjectGuid().GetRawValue(),
+            target->GetMapId(), rearHeading,
+            sServerFacade.getDistance2d(bot, target), nowMs, bot->movespline->GetId());
 
     return moved;
 }
@@ -2430,32 +2457,55 @@ bool TankFaceAwayAction::Execute(Event& event)
     // in melee. Nearest of the two wins.
     const float dist = std::max(sServerFacade.getDistance2d(bot, target), 3.0f);
     const float sides[] = { averageAngle + 3.0f * M_PI / 5.0f, averageAngle - 3.0f * M_PI / 5.0f };
+    // Anti-oscillation (donor CheckLastFlee shape): skip sidesteps whose
+    // heading recently failed to gain spacing, so two alternating triggers
+    // cannot ping-pong the tank every tick. A second pass allows vetoed
+    // headings so the cache can never block every route.
+    LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
+    uint32 const nowMs = WorldTimer::getMSTime();
+    lastMove.fleeFailures.Observe(target->GetObjectGuid().GetRawValue(),
+        target->GetMapId(), sServerFacade.getDistance2d(bot, target), nowMs, bot->movespline->GetId());
     float bestX = 0.0f, bestY = 0.0f, bestZ = 0.0f, bestDist = FLT_MAX;
     bool found = false;
-    for (float side : sides)
+    const WorldPosition botPos(bot);
+    for (int pass = 0; pass < 2; ++pass)
     {
-        float x = target->getPositionX() + cos(side) * dist;
-        float y = target->getPositionY() + sin(side) * dist;
-        float z = target->getPositionZ();
-        bot->UpdateGroundPositionZ(x, y, z);
-        float ox, oy, oz;
-        target->GetPosition(ox, oy, oz);
-        target->GetMap()->GetLosHitPosition(ox, oy, oz + bot->GetCollisionHeight(), x, y, z, -0.5f);
-        if (!target->IsWithinLOS(x, y, z + bot->GetCollisionHeight(), true))
-            continue;
-        float d = sServerFacade.getDistance2d(bot, x, y);
-        if (d < bestDist)
+        bool const vetoSecondPass = (pass == 1);
+        for (float side : sides)
         {
-            bestDist = d;
-            bestX = x;
-            bestY = y;
-            bestZ = z;
-            found = true;
+            float x = target->getPositionX() + cos(side) * dist;
+            float y = target->getPositionY() + sin(side) * dist;
+            float z = target->getPositionZ();
+            bot->UpdateGroundPositionZ(x, y, z);
+            float ox, oy, oz;
+            target->GetPosition(ox, oy, oz);
+            target->GetMap()->GetLosHitPosition(ox, oy, oz + bot->GetCollisionHeight(), x, y, z, -0.5f);
+            if (!target->IsWithinLOS(x, y, z + bot->GetCollisionHeight(), true))
+                continue;
+            float heading = botPos.GetAngleTo(WorldPosition(target->GetMapId(), x, y, z));
+            if (!vetoSecondPass && !lastMove.fleeFailures.IsHeadingFree(heading, nowMs))
+                continue;
+            float d = sServerFacade.getDistance2d(bot, x, y);
+            if (d < bestDist)
+            {
+                bestDist = d;
+                bestX = x;
+                bestY = y;
+                bestZ = z;
+                found = true;
+            }
         }
+        if (found)
+            break;
     }
     if (!found)
         return false;
-    return MoveTo(bot->GetMapId(), bestX, bestY, bestZ);
+    if (!MoveTo(bot->GetMapId(), bestX, bestY, bestZ))
+        return false;
+    lastMove.fleeFailures.BeginAttempt(target->GetObjectGuid().GetRawValue(),
+        target->GetMapId(), botPos.GetAngleTo(WorldPosition(target->GetMapId(), bestX, bestY, bestZ)),
+        sServerFacade.getDistance2d(bot, target), nowMs, bot->movespline->GetId());
+    return true;
 }
 
 bool MoveOutOfCollisionAction::Execute(Event& event)
