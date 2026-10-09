@@ -1,6 +1,7 @@
 # Changelog
 
 ### Bots & Behavior
+- Fewer "no route" trips — the walk from the bot to the first waypoint, and from the last waypoint to the target, now counts as reachable when it ends within 5 yards instead of 1, so a target standing just off the walkable ground (a doorway, a bridge edge, a vendor behind a counter) no longer refuses the whole route.
 - Bots with no route keep walking toward their goal — when no path to a far target is found, a wandering bot standing off the walkable ground (in water, under a city, on a ledge) hops back onto the nearest walkable spot, and otherwise walks to a reachable point that is at least 5 yards closer and tries again from there, instead of standing and dropping the trip.
 - Stuck-trip rescues land on the street, not under it — the class-trainer rescue teleport now picks the walkable spot closest to the trainer's own floor and checks it walks back to the trainer, instead of the mesh under Stormwind where over half of the rescues landed and stood for good.
 - Bots stop standing in portals that refuse them — a world portal that turns a wandering bot away (the Booty Bay transpolyporter without its transponder) now takes it through anyway; any other refused trigger, such as a dungeon entrance below its level, is closed for that bot for 30 minutes so routes go around it.
