@@ -241,6 +241,8 @@ namespace ai
                 creators["spell lock"] = [](PlayerbotAI* ai) { return new SpellLockTrigger(ai); };
                 creators["spell lock enemy healer"] = [](PlayerbotAI* ai) { return new SpellLockEnemyHealerTrigger(ai); };
                 creators["spell lock on enemy healer"] = [](PlayerbotAI* ai) { return new SpellLockEnemyHealerTrigger(ai); };
+                creators["devour magic purge"] = [](PlayerbotAI* ai) { return new DevourMagicPurgeTrigger(ai); };
+                creators["devour magic cleanse"] = [](PlayerbotAI* ai) { return new DevourMagicCleanseTrigger(ai); };
                 creators["soulstone"] = [](PlayerbotAI* ai) { return new SoulstoneTrigger(ai); };
                 creators["soul link"] = [](PlayerbotAI* ai) { return new SoulLinkTrigger(ai); };
                 creators["shadow ward"] = [](PlayerbotAI* ai) { return new ShadowWardTrigger(ai); };
@@ -324,6 +326,8 @@ namespace ai
                 creators["soulstone"] = [](PlayerbotAI* ai) { return new CastSoulstoneAction(ai); };
                 creators["shadow ward"] = [](PlayerbotAI* ai) { return new CastShadowWardAction(ai); };
                 creators["torment"] = [](PlayerbotAI* ai) { return new CastTormentAction(ai); };
+                creators["devour magic purge"] = [](PlayerbotAI* ai) { return new CastDevourMagicPurgeAction(ai); };
+                creators["devour magic cleanse"] = [](PlayerbotAI* ai) { return new CastDevourMagicCleanseAction(ai); };
                 creators["blood pact"] = [](PlayerbotAI* ai) { return new CastBloodPactAction(ai); };
                 creators["firebolt"] = [](PlayerbotAI* ai) { return new CastFireboltAction(ai); };
             }
