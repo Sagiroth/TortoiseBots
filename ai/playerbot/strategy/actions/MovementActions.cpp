@@ -2297,7 +2297,7 @@ bool AvoidAoeAction::StrafeToSafety(const WorldPosition& hazardCenter, float rad
     bool const melee = ai->IsMelee(bot);
     bool tanking = false;
     if (target && target->GetVictim() == bot &&
-        !target->isFrozen() && !target->HasAuraType(SPELL_AURA_MOD_ROOT))
+        !target->HasAuraType(SPELL_AURA_MOD_ROOT) && !target->HasAuraType(SPELL_AURA_MOD_STUN))
         tanking = true;
     if (melee)
         count = MeleeAoeCandidates(tanking, offsets);
