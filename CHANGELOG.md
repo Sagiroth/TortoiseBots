@@ -7,7 +7,7 @@
 - Bots now take quests from quest boards ("Wanted!" posters) — they used to walk to the board and stand there for minutes, because only quest-giving characters were handled.
 - Bots now buy quest items that are sold by vendors (Rhapsody Malt, Coarse Thread) instead of standing next to the vendor waiting to loot them.
 - Gathering bots now get off their mount at the herb or ore node — they could stop a few yards short of it still mounted and wait there for minutes, because gathering does not start while mounted.
-- Bots move on from areas with nothing for them — a wandering bot (level 10+) whose last two searches for a grinding spot came back empty now heads for a zone that fits its level, the same way it leaves a zone it has outgrown; and a wandering bot with every errand on hold checks for a new one every 15 seconds instead of once a minute.
+- Bots move on from areas with nothing for them — a wandering bot (level 10+) whose last two searches for a grinding spot came back empty now heads for a zone that fits its level, the same way it leaves a zone it has outgrown; and a wandering bot with every errand on hold checks for a new one every 5 seconds instead of once a minute, taking a short walk in between (unless it is about to hand in a quest nearby).
 - Bots with nothing to do take a short walk instead of standing — a wandering bot whose every search for a destination comes back empty now walks 20-50 yards to a random reachable spot (never into a guarded enemy town), so new mobs come into view and its next search starts from somewhere else.
 - Bots fighting in place no longer count as stalled — a bot that fought or gained experience in the last minute (camping a spawn between pulls) now shows as busy instead of stalled, so the stalled count only means standing with a destination and getting nowhere.
 - Bots stop looping on a quest giver with nothing for them — a masterless pool bot that arrives at a giver whose menu never offers the quest (wrong chain step, already taken, accept rules) now leaves that giver and quest alone for 30 minutes after the second wasted visit, so the next pick goes elsewhere instead of walking back forever; owned bots are unchanged.
@@ -32,6 +32,7 @@
 - Gather (mining/herbalism) picks skip spots off the world mesh too — the same one-query pick-time sieve grind got, after 51 of 65 mining move-failures probed `nopath` the same way.
 - GMs with the chat badge on can command bots again — `/p wander`, whispering a bot `attackers` and other chat commands used to be silently ignored. [#550](https://github.com/Sagiroth/TortoiseBots/issues/550)
 - Grouped bots now jump in when a mob attacks anyone standing with them — previously they kept following until told to attack, because they copied each other's empty "nothing attacking us" lists instead of checking for themselves. [#549](https://github.com/Sagiroth/TortoiseBots/issues/549)
+- Wandering bots no longer stand around after picking a camp or explore errand — the activity they rolled was refused again by a second dice roll (half or nine times in ten), and nothing else was allowed until the choice expired; the roll now decides alone. Your own and hired bots are unchanged.
 
 ## 2026-10-09
 
