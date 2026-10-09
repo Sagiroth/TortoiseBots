@@ -425,6 +425,17 @@ void WarlockPetStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "spell lock enemy healer",
         NextAction::array(0, new NextAction("spell lock", ACTION_INTERRUPT + 2), NULL)));
+
+    // Felhunter utility: strip a magic buff off the enemy, or lift magic off
+    // a party member. Both actions refuse to fire without a Felhunter out
+    // (entry gate in isUseful), so other demons idle here safely.
+    triggers.push_back(new TriggerNode(
+        "devour magic purge",
+        NextAction::array(0, new NextAction("devour magic purge", ACTION_DISPEL + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "devour magic cleanse",
+        NextAction::array(0, new NextAction("devour magic cleanse", ACTION_DISPEL), NULL)));
 }
 
 void WarlockPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

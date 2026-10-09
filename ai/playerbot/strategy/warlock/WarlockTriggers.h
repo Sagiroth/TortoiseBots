@@ -303,6 +303,18 @@ namespace ai
         }
     };
 
+    class DevourMagicPurgeTrigger : public TargetAuraDispelTrigger
+    {
+    public:
+        DevourMagicPurgeTrigger(PlayerbotAI* ai) : TargetAuraDispelTrigger(ai, "devour magic", DISPEL_MAGIC) {}
+    };
+
+    class DevourMagicCleanseTrigger : public PartyMemberNeedCureTrigger
+    {
+    public:
+        DevourMagicCleanseTrigger(PlayerbotAI* ai) : PartyMemberNeedCureTrigger(ai, "devour magic", DISPEL_MAGIC) {}
+    };
+
     class SpellLockEnemyHealerTrigger : public InterruptEnemyHealerTrigger
     {
     public:

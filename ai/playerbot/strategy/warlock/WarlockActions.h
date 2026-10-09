@@ -285,6 +285,31 @@ namespace ai
         CastSpellLockAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "spell lock") {}
     };
 
+    class CastDevourMagicPurgeAction : public CastPetSpellAction
+    {
+    public:
+        CastDevourMagicPurgeAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "devour magic") {}
+        bool isUseful() override
+        {
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            return pet && pet->GetEntry() == 417 && CastPetSpellAction::isUseful();
+        }
+    };
+
+    class CastDevourMagicCleanseAction : public CastPetSpellAction
+    {
+    public:
+        CastDevourMagicCleanseAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "devour magic") {}
+        std::string GetTargetName() override { return "party member to dispel"; }
+        std::string GetTargetQualifier() override { return std::to_string(DISPEL_MAGIC); }
+        std::string getName() override { return "devour magic cleanse"; }
+        bool isUseful() override
+        {
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            return pet && pet->GetEntry() == 417 && CastPetSpellAction::isUseful();
+        }
+    };
+
     class CastSpellLockOnEnemyHealerAction : public CastPetSpellAction
     {
     public:
