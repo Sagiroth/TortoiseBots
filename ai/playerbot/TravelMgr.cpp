@@ -257,6 +257,13 @@ bool QuestRelationTravelDestination::IsActive(Player* bot, const PlayerTravelInf
         // elsewhere. Owned bots keep today's behaviour. Reads only a created
         // value (like the "no quest hand in until::<quest>" park the taker
         // path reads) so the value store grows no entry per pair.
+        // The npc-level "can accept quest" check below passes when the giver
+        // offers any quest; this quest itself may sit behind an unfinished
+        // chain (Virulence 60113 behind 367) and never show in the menu.
+        if (Quest const* quest = sObjectMgr.GetQuestTemplate(GetQuestId()))
+            if (!bot->SatisfyQuestPreviousQuest(quest, false) || !bot->SatisfyQuestPrevChain(quest, false))
+                return false;
+
         std::string const backoffKey = ai::QuestGiverBackoffKey(GetEntry(), GetQuestId());
         if (context->HasValue("manual time", backoffKey) &&
             context->GetValue<time_t>("manual time", backoffKey)->Get() > time(0))
