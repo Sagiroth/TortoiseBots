@@ -214,6 +214,7 @@ namespace ai
                 creators["curse of shadow"] = [](PlayerbotAI* ai) { return new CurseOfShadowTrigger(ai); };
                 creators["curse of shadow on attacker"] = [](PlayerbotAI* ai) { return new CurseOfShadowOnAttackerTrigger(ai); };
                 creators["banish"] = [](PlayerbotAI* ai) { return new BanishTrigger(ai); };
+                creators["seduction"] = [](PlayerbotAI* ai) { return new SeductionTrigger(ai); };
                 creators["spellstone"] = [](PlayerbotAI* ai) { return new SpellstoneTrigger(ai); };
                 creators["fear"] = [](PlayerbotAI* ai) { return new FearTrigger(ai); };
                 creators["fear pvp"] = [](PlayerbotAI* ai) { return new FearPvpTrigger(ai); };
@@ -293,6 +294,7 @@ namespace ai
                 creators["drain mana"] = [](PlayerbotAI* ai) { return new CastDrainManaAction(ai); };
                 creators["drain life"] = [](PlayerbotAI* ai) { return new CastDrainLifeAction(ai); };
                 creators["banish"] = [](PlayerbotAI* ai) { return new CastBanishAction(ai); };
+                creators["seduction on cc"] = [](PlayerbotAI* ai) { return new CastSeductionOnCcAction(ai); };
                 creators["banish on cc"] = [](PlayerbotAI* ai) { return new CastBanishOnCcAction(ai); };
                 creators["rain of fire"] = [](PlayerbotAI* ai) { return new CastRainOfFireAction(ai); };
                 creators["inferno"] = [](PlayerbotAI* ai) { return new CastInfernoAction(ai); };
