@@ -4522,3 +4522,45 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Druid parity DRU-5: Ferocious Bite execute + Rip-guard timing — 2026-10-09
+Feature: new `FerociousBiteExecuteTrigger` (CP>=1 + target alive + target
+HP%<25, with a `HasSpell("ferocious bite")` guard) + new
+`FerociousBiteTimeTrigger` (CP5 + target Rip absent or >10 s left via
+`ai->GetAura("rip", target, true)->GetAuraDuration()`) + two combat rows
+in `DpsFeralDruidStrategy` replacing the flat CP5 row: execute-bite at
+ACTION_NORMAL+6 (top finisher, strictly above the faerie-fire row at +5 —
+ties keep the first-pushed basket), timed bite at ACTION_NORMAL+3 (below
+the pve rip row at +4). Finisher order: execute > rip > timed bite.
+
+Source repository: `mod-playerbots` @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Class/Druid/DruidTriggers.h:368-420`
+(`FerociousBiteTimeTrigger` with rip/roar duration reads,
+`FerociousBiteExecuteTrigger` with CP/HP% gates) +
+`src/Ai/Class/Druid/Strategy/CatDruidStrategy.cpp:158-178` (execute 24.0
+> rip 23.5 > timed 22.5). Deviations, deliberate: donor savage-roar
+clause dropped (no such spell in 1.18.1); donor absolute <20k-HP clause
+dropped (tuned for WotLK pools — vanilla pools make HP% alone the right
+execute gate).
+
+Reason: druid parity report DRU-5 — flat CP5 bite fired regardless of
+rip/bite windows, clipping Rip refreshes and missing executes.
+
+Source files (module, modified):
+`ai/playerbot/strategy/druid/DruidTriggers.h`,
+`ai/playerbot/strategy/druid/DruidTriggers.cpp`,
+`ai/playerbot/strategy/druid/DruidAiObjectContext.cpp`,
+`ai/playerbot/strategy/druid/DpsFeralDruidStrategy.cpp` +
+`docs/classes/druid.md` (behaviour lines). The old flat
+`FerociousBiteTrigger` creator stays registered (harmless, no live rows
+reference it anymore).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells or actions: Ferocious Bite / Rip ranks
+trainer-taught, creators pre-registered.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
+live test (no live test per parity brief); build via build-commit.sh.

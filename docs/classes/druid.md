@@ -17,6 +17,7 @@ Druids are the ultimate hybrid class, able to fulfill Tank, Healer, Melee DPS, o
 
 - **Feral (Bear Tank):** Dire Bear Form tank specializing in *Growl*, *Maul*, *Swipe*, and *Demoralizing Roar*, with *Frenzied Regeneration*, *Challenging Roar*, *Mangle (Bear)*, *Faerie Fire (Feral)*, and *Enrage* also wired.
 - **Feral (Cat Melee DPS):** Cat Form stealth and energy specialist utilizing *Claw*, *Rake*, *Shred* (with *Mangle (Cat)* as fallback), *Rip*, and *Ferocious Bite*, with *Pounce*, *Ravage*, and *Tiger's Fury* also wired. Backs off with *Cower* at medium threat in any group, not just raids.
+- **Ferocious Bite windows:** bite fires early on a dying target (under 25% health, 1+ combo points) instead of waiting for 5; at 5 points it fires only when *Rip* is absent or healthy (over 10 s left), so bite never clips a Rip refresh. Finisher order: execute-bite, then Rip, then timed bite.
 - **Restoration (Healer):** HoT-focused healing with *Rejuvenation*, *Regrowth*, *Healing Touch*, and *Swiftmend*, with *Nature's Swiftness* and *Tranquility* also wired.
 - **Balance (Ranged DPS):** Moonkin caster driving Nature and Arcane damage via *Moonfire*, *Wrath*, *Starfire*, and *Insect Swarm*.
 - **Balance AoE:** casts *Hurricane* on packs of 3+ attackers in spell range.
