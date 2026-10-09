@@ -4408,6 +4408,19 @@ spent break combat instead of dying. No new actions/triggers; same trigger,
 same EMERGENCY relevance; untrained rogues fall through to feint via the
 existing impossible-action path.
 
+## Party gaps round 4: shaman off-target interrupt, cat cower in parties, paladin self-first cleanse (night2 partygaps4) — 2026-10-09
+Feature: three XS donor-parity party fixes from night2 research. (1)
+Shaman interrupt: new `EarthShockInterruptEnemyHealerSpellTrigger`
+(`InterruptEnemyHealerTrigger` on "earth shock") + `earth shock on enemy
+healer` row at ACTION_INTERRUPT+2 in base `ShamanStrategy`, so shamans
+interrupt a second attacker casting a heal like every other interrupt
+class (warrior/rogue/mage/druid/warlock all had the pair). (2) Cat
+threat: `medium threat` -> `cower` moves from `DpsFeralDruidRaidStrategy`
+to base `DpsFeralDruidStrategy`, so 5-man/party cats back off like the
+donor (raid inherits). (3) Paladin cleanse: self rows at ACTION_DISPEL+2
+above party rows at +1, matching the donor stagger (was: all six flat at
+DISPEL).
+
 Source repository: `mod-playerbots` @
 `b6696bdbd3740e575598d167d69f39f68cc0b907` (local checkout
 `../playerbots-references/mod-playerbots`).
@@ -4431,3 +4444,45 @@ build/deploy (orchestrator compiles); live check pending: `vanish` rows in
 bot_events.csv SelfBuffs, rogue deaths/bot-hour, repeat-death share for
 rogues (41% pool-wide within 600 s), adds>0 share must stay flat (vanish
 pulls nothing new).
+
+`src/Ai/Class/Warrior/WarriorTriggers.h:57-62` +
+`src/Ai/Class/Warlock/WarlockTriggers.h:154-158` (interrupt pairs incl.
+healer variants; donor shaman interrupt is WotLK-only wind shear
+`src/Ai/Class/Shaman/ShamanTriggers.h:141-151`, no 1.12 equivalent — live
+earth shock covers it) +
+`src/Ai/Class/Druid/Strategy/CatDruidStrategy.cpp:194-197` (cower at
+medium threat in base combat) +
+`src/Ai/Class/Paladin/Strategy/GenericPaladinStrategy.cpp:40-54` (cleanse
+self DISPEL+2 above party DISPEL+1).
+
+Source files (module, modified):
+`ai/playerbot/strategy/shaman/ShamanTriggers.h`,
+`ai/playerbot/strategy/shaman/ShamanActions.h`,
+`ai/playerbot/strategy/shaman/ShamanAiObjectContext.cpp`,
+`ai/playerbot/strategy/shaman/ShamanStrategy.cpp` (healer trigger, action,
+creators, row) + `ai/playerbot/strategy/druid/DpsFeralDruidStrategy.cpp`
+(cower row moved to base) +
+`ai/playerbot/strategy/paladin/PaladinStrategy.cpp` (cleanse stagger) +
+`docs/classes/shaman.md`, `docs/classes/druid.md`,
+`docs/classes/paladin.md` (behaviour lines).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) earth shock keeps its debuff-spell action
+class (`CastRangedDebuffSpellAction`) — only the targeting comes from the
+new healer action; (b) no new spells — all three fixes are row/trigger
+wiring on existing 1.12 spells; (c) the cross-cutting heal-vs-dispel
+priority inversion (live dispels 50-53 lose to heals 60-82; donor dispels
+beat heals) is recorded but NOT changed — heal-first may be intended
+Tortoise tuning, needs owner call. Deferred: mage/warlock threat dumps
+(no 1.12 mirror image/soulshatter), tank-aggro open gating (neither tree
+has it), formation spread (no donor-portable trigger set live).
+
+Reason: night2 partygaps4 research: interrupts/dispels/threat/positioning
+comparison found rogue/mage/druid interrupts at parity (cc is default-on
+for all classes), dispel coverage at parity, melee-behind and ranged
+band-keeping at parity; these three were the ranked XS gaps.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`; wiring
+audit via verify_all (0 live-missing). No build (per task constraints);
+live in-game check pending: shaman earth shocks off-target healers, cat
+cowers in 5-mans, paladin cleanses self first.

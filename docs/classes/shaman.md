@@ -49,7 +49,7 @@ Shamans automatically drop and maintain fixed per-spec 4-element totem sets (oth
 
 ## Utility & Interrupts
 
-- **Shock rotation:** Elemental and Enhancement keep *Flame Shock* up first, then spend the shared shock cooldown on *Earth Shock*; *Earth Shock* keeps its separate interrupt duty on casting targets.
+- **Shock rotation:** Elemental and Enhancement keep *Flame Shock* up first, then spend the shared shock cooldown on *Earth Shock*; *Earth Shock* keeps its separate interrupt duty on casting targets (own target and off-target enemy healers).
 - **Strike order (Enhancement):** *Stormstrike* fires before the shield-consuming *Lightning Strike*, so the nature-vulnerability debuff amplifies everything after it.
 - **Snares:** Casts *Frost Shock* to snare targets.
 - **Weapon Imbues:** Automatically maintains weapon imbues (*Windfury Weapon* / *Flametongue Weapon* for Enhancement, *Flametongue Weapon* otherwise, with *Rockbiter Weapon* / *Frostbrand Weapon* as fallbacks).
