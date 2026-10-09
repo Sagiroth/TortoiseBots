@@ -76,6 +76,13 @@ void RestorationDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
         "almost full health",
         NextAction::array(0, new NextAction("rejuvenation", ACTION_LIGHT_HEAL + 1), NULL)));
 
+    // mod-playerbots parity (DRU-4): spend Omen of Clarity procs on a free
+    // Rejuvenation — Lifebloom does not exist in 1.18.1, so the free HoT
+    // lands here, above the normal almost-full-health HoT rows.
+    triggers.push_back(new TriggerNode(
+        "clearcasting",
+        NextAction::array(0, new NextAction("rejuvenation on party", ACTION_LIGHT_HEAL + 3), NULL)));
+
     triggers.push_back(new TriggerNode(
         "party member almost full health",
         NextAction::array(0, new NextAction("rejuvenation on party", ACTION_LIGHT_HEAL), NULL)));
