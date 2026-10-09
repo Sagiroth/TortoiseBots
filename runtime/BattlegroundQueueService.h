@@ -19,9 +19,10 @@ namespace TortoiseBots
 // periodic queueing, second queue, thread, arena, vehicle, expansion, or DB scan.
 //
 // Autonomous bot-only WSG (AiPlayerbot.RandomBotBgAutonomous, default on):
-// when no human demand exists, seeds one 10v10 WSG in the bracket nearest
-// the pool median level, capped at one concurrent instance for an average
-// PC. Queued-but-unstarted seeds block new seeds (anti-over-queue).
+// when no human demand exists, top-up seeds one 10v10 WSG in the most
+// populated ready bracket (both factions >= 10 eligible; sticky while owned
+// seeds wait), capped at RandomBotBgAutonomousMaxInstances (clamped 0-2, 1 for
+// an average PC). Per-team targets bound the queueing, never a first-seed latch.
 class BattlegroundQueueService
 {
 public:

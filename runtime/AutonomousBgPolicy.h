@@ -5,14 +5,12 @@
 //   RandomPlayerbotMgr::CheckBgQueue autonomous seeder
 //   (src/Bot/RandomPlayerbotMgr.cpp:1162-1217, updateBGInstanceCount).
 // Adapted: the donor fakes activeBgQueue=1 per (queue, bracket) up to a
-// per-bracket count and lets the normal shouldJoinBg top-up fire, with a known
-// over-queueing bug (donor conf comment). Here there is no census to fake —
-// the service owns its queue entries — so the rule is a direct gate on three
-// plain counts the service computes: running bot-only instances, owned bots
-// already queued for the seed bracket, and eligible candidates. One BG type
-// (WSG, smallest: 10v10), one bracket, one instance cap sized for an average
-// PC. No core includes: callers translate game state into plain inputs so the
-// rules stay testable in tools/test_autonomous_bg_policy.cpp.
+// per-bracket count and lets the normal shouldJoinBg top-up fire. Here there
+// is no census to fake — the service owns its queue entries — so the rule is
+// need-based top-up: keep queueing while a team is below target, stop when
+// full. One BG type (WSG, smallest: 10v10), one bracket, one instance cap
+// sized for an average PC. No core includes: callers translate game state into
+// plain inputs so the rules stay testable in tools/test_autonomous_bg_policy.cpp.
 
 #include <cstdint>
 
@@ -28,9 +26,20 @@ namespace TortoiseBots
     // demand-driven backfill path is unaffected and may run alongside.
     constexpr std::uint32_t kAutonomousBgMaxInstances = 1;
 
+    // Clamp for the max-instances knob: 0 disables via the gate below, and
+    // anything above 2 is an average-PC risk (2 full WSG = 40 fighting bots).
+    constexpr std::uint32_t kAutonomousBgMaxInstancesLimit = 2;
+
+    inline std::uint32_t ClampAutonomousMaxInstances(std::uint32_t configured)
+    {
+        if (configured > kAutonomousBgMaxInstancesLimit)
+            return kAutonomousBgMaxInstancesLimit;
+        return configured;
+    }
+
     // Seed fill target per team: queue until each side can field a team.
-    // The core starts the match when both sides have enough; extra bots past
-    // the target are left for the demand path, never seeded.
+    // The core starts the match when both sides reach min (4v4) and fills to
+    // 10v10; extra bots past the target are left for the demand path.
     inline std::uint32_t AutonomousBgTeamTarget()
     {
         return kAutonomousBgTeamSize;
@@ -38,22 +47,29 @@ namespace TortoiseBots
 
     // Gate: seed this tick only when autonomous mode is on, no human demand
     // exists (demand path owns queueing then), running bot-only instances are
-    // below the cap, and nothing already seeded is still waiting in queue.
-    // Queued-but-unstarted seeds must start (or time out via the core) before
-    // new ones are added — this is the anti-over-queue rule the donor lacks.
+    // below the (clamped) cap, and at least one team still needs bots.
+    // Queued seeds do NOT block: batches of maxPerInterval accumulate across
+    // ticks until both teams reach target (donor-style top-up). Over-queueing
+    // is bounded by the per-team target, not by a first-seed latch.
     inline bool ShouldSeedAutonomousBg(bool autonomousEnabled, bool hasHumanDemand,
-        std::uint32_t runningBotOnlyInstances, std::uint32_t ownedQueuedForSeed,
+        std::uint32_t runningBotOnlyInstances, bool anyTeamNeedsBots,
         std::uint32_t maxInstances = kAutonomousBgMaxInstances)
     {
         if (!autonomousEnabled)
             return false;
         if (hasHumanDemand)
             return false;
-        if (runningBotOnlyInstances >= maxInstances)
+        if (runningBotOnlyInstances >= ClampAutonomousMaxInstances(maxInstances))
             return false;
-        if (ownedQueuedForSeed > 0)
-            return false;
-        return true;
+        return anyTeamNeedsBots;
+    }
+
+    // Bracket readiness: both factions must have enough eligible bots to form
+    // a match. A 19/1 bracket never seeds (it could never reach core min).
+    inline bool BracketCanSeed(std::uint32_t eligibleAlliance, std::uint32_t eligibleHorde,
+        std::uint32_t teamTarget = kAutonomousBgTeamSize)
+    {
+        return eligibleAlliance >= teamTarget && eligibleHorde >= teamTarget;
     }
 
     // Per-team gate: keep queueing this team while its seeded count (queued +
