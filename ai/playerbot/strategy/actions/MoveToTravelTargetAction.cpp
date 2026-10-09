@@ -939,7 +939,13 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             }
 
 
-            if (TryRescueNoPathTrap(noPath, purpose))
+            // A bot that cannot walk to any route node is trapped the same way:
+            // islands with no nodes (Lapidis Isle, live 2026-10-09) failed every
+            // off-island target as "not-using-path" + startwalk at the shore and
+            // never counted toward the trap streak.
+            std::string const& routeFail = TravelNodeMap::LastRouteFail();
+            bool const trapped = noPath || routeFail == "startwalk" || routeFail == "nostartnode";
+            if (TryRescueNoPathTrap(trapped, purpose))
                 return false;
         }
 
