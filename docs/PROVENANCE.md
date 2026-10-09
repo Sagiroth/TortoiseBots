@@ -4522,3 +4522,4 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+| Ossirian crystal tactic (AQ20): crystal-run timing by buff/debuff-vs-travel-time, wait-in-range + 25yd use guards, single CMSG_GAMEOBJ_USE | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Aq20/Aq20Triggers.cpp` (Aq20MoveToCrystalTrigger), `src/Ai/Raid/Aq20/Aq20Actions.cpp` (Aq20UseCrystalAction), `src/Ai/Raid/Aq20/Aq20Utils.cpp` (buff/debuff/crystal helpers) | Reimplemented: trigger-driven `ossirian crystal run` + `use ossirian crystal` on the new `ruins of ahn'qiraj`/`ossirian` strategies; 1.12 single queued use-packet (no report-use opcode; cf. suppression-device precedent) | Donor's entire AQ20 module, all IDs verified in tw_world | `bash tools/verify_all.sh` + `tools/test_ossirian_crystal_policy.cpp`; build-commit + no live test |

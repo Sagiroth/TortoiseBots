@@ -104,7 +104,7 @@ If your group wipes, follow this checklist to recover quickly:
 
 ## 6. Raid Survival (MC / Onyxia / BWL / Naxx)
 
-Entering a raid map auto-enables the `dungeon` transition engine, which swaps in the matching raid tactics (`molten core`, `onyxia's lair`, `blackwing lair`, `naxxramas`) and tears them down on exit. Four universal behaviors run on the reaction engine in any raid:
+Entering a raid map auto-enables the `dungeon` transition engine, which swaps in the matching raid tactics (`molten core`, `onyxia's lair`, `blackwing lair`, `naxxramas`, `ruins of ahn'qiraj`) and tears them down on exit. Four universal behaviors run on the reaction engine in any raid:
 
 - **Bomb runout:** carriers of *Living Bomb* (Geddon), *Burning Adrenaline* (Vaelastrasz), or *Mutating Injection* (Grobbulus) run 30yd clear of the raid anchor (`AiPlayerbot.BombRunoutDistance`).
 - **Hazard evasion:** lava bombs, void zones, and poison clouds trigger the shared hazard move-away as a reactive step-out (no persistent path avoidance yet).
@@ -112,7 +112,7 @@ Entering a raid map auto-enables the `dungeon` transition engine, which swaps in
 - **Ranged spread:** stacked casters split 12yd apart (`AiPlayerbot.HazardEvasionDistance`). Pool bots (no real player master) also spread in any group combat — not just raids — when a friendly stands within 10yd; explicit hold orders (`stay`, `follow`, `wait for attack`, `grind`) and owned/hired bots under a player master are exempt.
 - **Spread memory:** a bot that spreads remembers its last two step-out headings and picks a different vector next time (within ~45 degrees is skipped). Ordinary flees do not use this veto: kiting casters need to keep stepping straight away from the mob.
 
-Encounter notes: MC runes douse via `.bot action raid douse` (Eternal Quintessence 22754 first, Aqual 17333 fallback); Onyxia phase 2 swaps bots to `shoot` + spread while airborne; BWL rogues disarm suppression devices (wired in both combat and non-combat states); 4H mark carriers (3+ stacks) rotate out via hazard move.
+Encounter notes: AQ20 Ossirian runners head for the nearest crystal while his *Strength of Ossirian* (25176) buff is up (or the weakness is nearly out), wait in range, and use the crystal while he is within 25yd; other AQ20 bosses have no scripted tactics yet. MC runes douse via `.bot action raid douse` (Eternal Quintessence 22754 first, Aqual 17333 fallback); Onyxia phase 2 swaps bots to `shoot` + spread while airborne; BWL rogues disarm suppression devices (wired in both combat and non-combat states); 4H mark carriers (3+ stacks) rotate out via hazard move.
 
 ## 7. Custom Turtle Raids (Emerald Sanctum / Lower Karazhan / Karazhan Crypt)
 

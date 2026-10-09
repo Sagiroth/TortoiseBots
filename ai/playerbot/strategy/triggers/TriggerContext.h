@@ -20,6 +20,7 @@
 #include "NaxxramasDungeonTriggers.h"
 #include "EmeraldSanctumDungeonTriggers.h"
 #include "LowerKarazhanDungeonTriggers.h"
+#include "RuinsOfAhnqirajDungeonTriggers.h"
 #include "WorldBuffTravelTriggers.h"
 
 namespace ai
@@ -304,6 +305,8 @@ namespace ai
             creators["leave lower karazhan"] = [](PlayerbotAI* ai) { return new LowerKarazhanLeaveDungeonTrigger(ai); };
             creators["enter karazhan crypt"] = [](PlayerbotAI* ai) { return new KarazhanCryptEnterDungeonTrigger(ai); };
             creators["leave karazhan crypt"] = [](PlayerbotAI* ai) { return new KarazhanCryptLeaveDungeonTrigger(ai); };
+            creators["enter ruins of ahn'qiraj"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajEnterDungeonTrigger(ai); };
+            creators["leave ruins of ahn'qiraj"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajLeaveDungeonTrigger(ai); };
 
             creators["environmental hazard nearby"] = [](PlayerbotAI* ai) { return new EnvironmentalHazardTrigger(ai); };
             creators["raid bomb debuff"] = [](PlayerbotAI* ai) { return new RaidBombDebuffTrigger(ai); };
@@ -332,6 +335,9 @@ namespace ai
 
 
             creators["start four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanStartFightTrigger(ai); };
+            creators["start ossirian fight"] = [](PlayerbotAI* ai) { return new OssirianStartFightTrigger(ai); };
+            creators["end ossirian fight"] = [](PlayerbotAI* ai) { return new OssirianEndFightTrigger(ai); };
+            creators["ossirian crystal run"] = [](PlayerbotAI* ai) { return new OssirianCrystalRunTrigger(ai); };
             creators["end four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanEndFightTrigger(ai); };
             creators["void zone too close"] = [](PlayerbotAI* ai) { return new FourHorsemanVoidZoneTrigger(ai); };
             creators["start solnius fight"] = [](PlayerbotAI* ai) { return new SolniusStartFightTrigger(ai); };

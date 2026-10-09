@@ -428,6 +428,7 @@ namespace ai
 
             creators["mc runes"] = [](PlayerbotAI* ai) { return new MCRunesValue(ai); };
             creators["suppression devices"] = [](PlayerbotAI* ai) { return new SuppressionDevicesValue(ai); };
+            creators["ossirian crystals"] = [](PlayerbotAI* ai) { return new OssirianCrystalsValue(ai); };
             creators["gos"] = [](PlayerbotAI* ai) { return new GameObjectsValue(ai); };
             creators["entry filter"] = [](PlayerbotAI* ai) { return new EntryFilterValue(ai); };
             creators["guid filter"] = [](PlayerbotAI* ai) { return new GuidFilterValue(ai); };
