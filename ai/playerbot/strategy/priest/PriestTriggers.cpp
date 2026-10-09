@@ -29,3 +29,11 @@ bool ShadowguardTrigger::IsActive()
 {
     return BuffTrigger::IsActive() && !ai->HasAura("touch of weakness", bot);
 }
+bool FearWardOnTankTrigger::IsActive()
+{
+    uint32 spellId = AI_VALUE2(uint32, "spell id", spell);
+    if (!spellId || !sServerFacade.IsSpellReady(bot, spellId))
+        return false;
+
+    return BuffOnTankTrigger::IsActive();
+}

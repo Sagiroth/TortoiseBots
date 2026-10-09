@@ -99,6 +99,18 @@ namespace ai
         std::string GetTargetName() override { return "self target"; }
     };
 
+    // mod-playerbots parity (FearWardOnMainTankTrigger): ward the tank first
+    // in combat instead of only whoever lacks the buff. The cooldown guard
+    // mirrors the donor: Fear Ward has a 30 s cooldown and the BuffTrigger
+    // base never checks it, so without the guard the trigger spins (and the
+    // cast fails) every tick while the tank's ward is consumed.
+    class FearWardOnTankTrigger : public BuffOnTankTrigger
+    {
+    public:
+        FearWardOnTankTrigger(PlayerbotAI* ai) : BuffOnTankTrigger(ai, "fear ward") {}
+        bool IsActive() override;
+    };
+
     class FearWardTrigger : public SpellTargetTrigger
     {
     public:

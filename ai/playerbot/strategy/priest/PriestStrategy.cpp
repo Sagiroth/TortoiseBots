@@ -382,6 +382,10 @@ void PriestBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     BuffStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
+        "fear ward on tank",
+        NextAction::array(0, new NextAction("fear ward on tank", ACTION_HIGH + 3), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "fear ward",
         NextAction::array(0, new NextAction("fear ward", ACTION_EMERGENCY), NULL)));
 

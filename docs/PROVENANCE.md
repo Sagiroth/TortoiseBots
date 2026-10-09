@@ -4522,3 +4522,43 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Priest parity PRI-1: Fear Ward on the party tank in combat — 2026-10-09
+Feature: new `FearWardOnTankTrigger` (`BuffOnTankTrigger` on "fear ward",
+cooldown-guarded like the donor) + `CastFearWardOnTankAction`
+(`BuffOnTankAction`, targets "party tank without aura") + combat row
+`fear ward on tank` at ACTION_HIGH+3 in `PriestBuffStrategy`, above the
+existing generic `fear ward` row that covers whoever lacks the buff.
+
+Source repository: `mod-playerbots` @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Class/Priest/PriestTriggers.h:94` +
+`src/Ai/Class/Priest/PriestTriggers.cpp:35-42`
+(`FearWardOnMainTankTrigger::IsActive` with spell-cooldown guard) +
+`src/Ai/Class/Priest/PriestActions.h:247` (`CastFearWardOnMainTankAction`
+on `BuffOnMainTankAction`) +
+`src/Ai/Class/Priest/Strategy/GenericPriestStrategy.cpp:25-26`
+(row at ACTION_HIGH+3). Deviations, deliberate: donor names say "main
+tank" on `BuffOnMainTankTrigger`; ours says "tank" on the local
+`BuffOnTankTrigger` (same "party tank without aura" value, cf. shaman
+`earth shield on party tank`) — no new value needed.
+
+Reason: priest parity report PRI-1 — biggest tank-survival gap in fear
+dungeons; we only buffed whoever lacked Fear Ward.
+
+Source files (module, modified):
+`ai/playerbot/strategy/priest/PriestTriggers.h`,
+`ai/playerbot/strategy/priest/PriestTriggers.cpp`,
+`ai/playerbot/strategy/priest/PriestActions.h`,
+`ai/playerbot/strategy/priest/PriestAiObjectContext.cpp`,
+`ai/playerbot/strategy/priest/PriestStrategy.cpp` +
+`docs/classes/priest.md` (behaviour line).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells: Fear Ward 6346/19337 verified in
+spell_template.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
+live test (no live test per parity brief); build via build-commit.sh.

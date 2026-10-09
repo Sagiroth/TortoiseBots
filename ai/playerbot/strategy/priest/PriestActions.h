@@ -168,6 +168,12 @@ namespace ai
         std::string GetTargetName() override { return "self target"; }
     };
 
+    class CastFearWardOnTankAction : public BuffOnTankAction
+    {
+    public:
+        CastFearWardOnTankAction(PlayerbotAI* ai) : BuffOnTankAction(ai, "fear ward") {}
+    };
+
     class CastFearWardAction : public CastSpellTargetAction
     {
     public:
