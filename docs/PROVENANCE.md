@@ -4572,6 +4572,14 @@ attacker` below the SW:P spread (Devouring Plague is the 1.12 second
 DoT; vanilla has no Vampiric Touch). (3) Base shadow kit silences enemy
 healers (the row used to need the `+cc` toggle; the cc kit keeps its own
 copy).
+## Druid parity DRU-4: Omen of Clarity clearcasting consumption — 2026-10-09
+Feature: two combat rows, no new triggers or actions (both registered,
+verified by the wiring check). Cat (`DpsFeralDruidStrategy`):
+`clearcasting` -> `shred` at ACTION_NORMAL+6, above the bite/rip/builder
+ladder and strictly above the faerie-fire row at +5 (queue ties keep the
+first-pushed basket, so the proc must outrank the debuff refresh).
+Restoration: `clearcasting` -> `rejuvenation on party` at
+ACTION_LIGHT_HEAL+3, above the normal HoT rows.
 
 Source repository: `mod-playerbots` @ `79bd4281` (local checkout
 `../playerbots-references/mod-playerbots`).
@@ -4591,6 +4599,20 @@ spend row; the donor's core resto save was never rewired.
 Source files (module, modified):
 `ai/playerbot/strategy/druid/DruidTriggers.h`,
 `ai/playerbot/strategy/druid/DruidAiObjectContext.cpp`,
+`src/Ai/Class/Druid/Strategy/CatDruidStrategy.cpp:165-171`
+(`clearcasting` -> `shred` 24.5, above rip 23.5) +
+`src/Ai/Class/Druid/Strategy/RestoDruidStrategy.cpp:45-46`
+(`clearcasting` -> free HoT 13.0). Deviations, deliberate: donor resto
+spends the proc on Lifebloom-on-tank, which does not exist in 1.18.1 —
+ours spends it on party Rejuvenation. The cat-swipe AoE combo row was
+skipped (no `TwoTriggers` combo registered for it; single-target spend
+covers the proc).
+
+Reason: druid parity report DRU-4 — the `clearcasting` trigger was
+registered but zero wired rows referenced it.
+
+Source files (module, modified):
+`ai/playerbot/strategy/druid/DpsFeralDruidStrategy.cpp`,
 `ai/playerbot/strategy/druid/RestorationDruidStrategy.cpp` +
 `docs/classes/druid.md` (behaviour lines).
 
@@ -4624,3 +4646,8 @@ Copied / ported / reimplemented: reimplemented in place. No new spells
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`.
 Build via build-commit.sh. No live test.
+strategy idiom. No new spells: Omen of Clarity 16864 / Clearcasting
+16870 verified in spell_template.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
+live test (no live test per parity brief); build via build-commit.sh.

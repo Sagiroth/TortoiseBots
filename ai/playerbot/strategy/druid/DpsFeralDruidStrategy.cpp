@@ -97,6 +97,14 @@ void DpsFeralDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
         "ferocious bite",
         NextAction::array(0, new NextAction("ferocious bite", ACTION_NORMAL + 3), NULL)));
 
+    // mod-playerbots parity (DRU-4): spend Omen of Clarity procs on a free
+    // Shred — free combo points above the whole finisher/builder ladder
+    // (and above the faerie-fire row at +5: ties keep the first-pushed
+    // basket, so the proc must strictly outrank the debuff refresh).
+    triggers.push_back(new TriggerNode(
+        "clearcasting",
+        NextAction::array(0, new NextAction("shred", ACTION_NORMAL + 6), NULL)));
+
     triggers.push_back(new TriggerNode(
         "behind target",
         NextAction::array(0, new NextAction("shred", ACTION_NORMAL + 1), NULL)));
