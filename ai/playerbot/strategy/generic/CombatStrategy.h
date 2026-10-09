@@ -124,9 +124,8 @@ namespace ai
 #endif
     };
 
-    // Opt-in combat spread (donor "formation" strategy shape): default
-    // action "raid spread"; the action self-gates via "spread needed", so
-    // no per-tick trigger list is needed here. Off by default — nobody
+    // Opt-in combat spread (donor "formation" strategy shape): one trigger
+    // row ("spread needed" → "raid spread"). Off by default — nobody
     // carries it unless the player enables it.
     class SpreadStrategy : public Strategy
     {

@@ -4537,7 +4537,11 @@ and hold orders (stay/follow/wait-for-attack/grind) veto in both paths.
 Pure gate/radius rules extend `ai/playerbot/CombatSpreadPolicy.h`
 (`ShouldOptInSpread`, `SpreadRadius`), tested by
 `tools/test_spread_toggle_policy.cpp` (wired into `verify_all.sh`).
-Default: nobody (opt-in); no factory change.
+Default: nobody (opt-in); no factory change. The legacy pool path is
+near-identical when off except the action now also requires ranged (aligns
+with the trigger; Onyxia P2 direct dispatch no longer spreads pool
+melee). The action returns true on a step (consumes the tick, displaces
+only filler DPS at ACTION_NORMAL) where the donor always returns false.
 
 Source repository: `mod-playerbots/mod-playerbots`
 
@@ -4556,7 +4560,10 @@ distance` value), `ai/playerbot/strategy/values/ValueContext.h`
 (registration), `ai/playerbot/strategy/triggers/DungeonTriggers.{h,cpp}`
 (`spread needed` gate), `ai/playerbot/strategy/triggers/TriggerContext.h`
 (registration), `ai/playerbot/strategy/actions/DungeonActions.cpp`
-(action generalization), `commands/BotCommands.cpp` (behavior toggle +
+(action generalization + tank veto + radius-scaled step),
+`ai/playerbot/strategy/actions/SpreadDistanceAction.{h,cpp}` (new knob
+writer) + `ChatActionContext.h` (registration),
+`commands/BotCommands.cpp` (behavior toggle +
 usage), `tools/test_spread_toggle_policy.cpp` + `tools/verify_all.sh`
 (new standalone test), `docs/guides/player-controls.md`,
 `docs/guides/dungeon-tactics.md` (doc lines).
@@ -4565,7 +4572,8 @@ Copied / ported / reimplemented: ported, adapted to the 1.12 codebase.
 Deviations from the donor, all deliberate: (a) no `disperse set` chat
 increments — the knob is a persisted value, the toggle is `.bot behavior`;
 (b) hold-order vetoes kept even when opted in (owner "explicit orders beat
-automation"); (c) step-out reuses the existing failure-memory + FindStep
+automation"; stay/guard/wait-for-attack gate in combat, follow/grind params are
+near-dead NON_COMBAT checks kept for symmetry); (c) step-out reuses the existing failure-memory + FindStep
 path (LoS/path/aggro-checked) instead of the donor's blind flee; (d) melee
 at 2yd only when the player opts in (default stacking unchanged).
 
@@ -4575,3 +4583,41 @@ pool-bot-only and ranged-only.
 Local validation: `bash tools/verify_all.sh` (incl. new policy test); `git
 diff --check` clean. Build via build-commit.sh (see PR summary); no live
 in-game check.
+
+## Review fixes (2026-10-09, reviewer muse-1.3 max, CHANGES_REQUESTED)
+
+Blocking 1 (dead `spread distance` knob — REAL, fixed): added
+`SpreadDistanceAction` (`spread distance` chat action, RangeAction
+mirror: `<yards>` set, `?` read, `off`/`reset` reset to role default),
+registered in `ChatActionContext.h`. `RESET_AI_VALUE` restores the -1.0
+default, so the manual branch of `SpreadRadius` is now reachable.
+
+Blocking 2 (12yd step vs 2yd/5yd radii ping-pong — REAL, fixed): step is
+now `min(radius + 1, hazardEvasionDistance)` (donor shape: 3yd melee /
+6yd ranged steps), so a melee pair 1.5yd apart steps 3yd, not 12yd out
+of melee range.
+
+Blocking 3 (no tank exemption — REAL, fixed): `IsTank` veto in both the
+`SpreadNeededTrigger` gate and the `RaidSpreadAction` opt-in block, so
+`.bot behavior party spread on` can no longer drag the boss through the
+raid. Tanks keep the legacy stacking behavior.
+
+Non-blocking "follow/grind dead checks" — ACCEPTED with the reviewer's
+prescribed fix (document, don't widen): `ShouldOptInSpread` comment now
+notes follow/grind are NON_COMBAT-only so those params are near-dead;
+stay/guard/wait-for-attack do the real combat veto work. PR
+description/provenance/docs claims corrected to stay/guard.
+
+Non-blocking "legacy path not byte-identical" — ACKNOWLEDGED, intent
+confirmed: the added `IsRanged` check in the non-opt-in `Execute` path
+aligns the action with the trigger (Onyxia P2 direct dispatch no longer
+spreads pool melee). PROVENANCE claim corrected.
+
+Non-blocking "default action comment" — FIXED (one trigger row, not
+triggerless).
+
+Non-blocking "returns true vs donor returns false" — RECORDED in
+deviations: at ACTION_NORMAL this only displaces filler DPS.
+
+Non-blocking "guard missing" — FIXED: `guard` added to both opt-in
+gates (guard sits on COMBAT, unlike follow/grind).

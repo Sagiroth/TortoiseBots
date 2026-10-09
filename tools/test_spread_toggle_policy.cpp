@@ -21,12 +21,13 @@ int main()
 
     // Opt-in gate: combat-only, hold orders always veto — but ownership
     // and ranged-only never gate (the player asked for spacing).
-    CHECK(ShouldOptInSpread(true, false, false, false, false));
-    CHECK(!ShouldOptInSpread(false, false, false, false, false));
-    CHECK(!ShouldOptInSpread(true, true, false, false, false));
-    CHECK(!ShouldOptInSpread(true, false, true, false, false));
-    CHECK(!ShouldOptInSpread(true, false, false, true, false));
-    CHECK(!ShouldOptInSpread(true, false, false, false, true));
+    CHECK(ShouldOptInSpread(true, false, false, false, false, false));
+    CHECK(!ShouldOptInSpread(false, false, false, false, false, false));
+    CHECK(!ShouldOptInSpread(true, true, false, false, false, false));
+    CHECK(!ShouldOptInSpread(true, false, true, false, false, false));
+    CHECK(!ShouldOptInSpread(true, false, false, true, false, false));
+    CHECK(!ShouldOptInSpread(true, false, false, false, true, false));
+    CHECK(!ShouldOptInSpread(true, false, false, false, false, true));
     std::cout << "  [PASS] opt-in gate is combat plus no-hold-orders\n";
 
     // Radius: manual knob wins when set; role defaults otherwise.

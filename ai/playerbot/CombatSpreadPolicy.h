@@ -202,14 +202,17 @@ namespace ai
 
     // Opt-in spread gate ("spread" strategy): the player asked for spacing,
     // so owned/hired bots and melee are eligible too. Still combat-only and
-    // never against an explicit hold order (stay/follow/wait-for-attack/
-    // grind anchors) — explicit orders beat automation even when opted in.
+    // never against an explicit hold order (stay/follow/guard/
+    // wait-for-attack/grind anchors) — explicit orders beat automation
+    // even when opted in. Note: follow/grind only exist on NON_COMBAT, so
+    // those two params are near-dead checks kept for symmetry with the
+    // legacy gate; stay/guard/wait-for-attack do the real work in combat.
     inline bool ShouldOptInSpread(bool inCombat,
-        bool stayOrdered, bool followOrdered, bool waitOrdered, bool grindOrdered)
+        bool stayOrdered, bool followOrdered, bool guardOrdered, bool waitOrdered, bool grindOrdered)
     {
         if (!inCombat)
             return false;
-        return !stayOrdered && !followOrdered && !waitOrdered && !grindOrdered;
+        return !stayOrdered && !followOrdered && !guardOrdered && !waitOrdered && !grindOrdered;
     }
 
     // Donor "disperse distance" defaults (DisperseSetAction enable/reset):

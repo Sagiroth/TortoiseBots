@@ -365,9 +365,14 @@ bool RaidSpreadAction::Execute(Event& event)
     float radius = kSpreadSettledDistance;
     if (optIn)
     {
+        // Tanks never spread: stepping out drags the boss/cleave through the
+        // raid, then reach-melee runs back and re-fires — ping-pong.
+        if (ai->IsTank(bot))
+            return false;
         if (!ShouldOptInSpread(sServerFacade.IsInCombat(bot),
             ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
             ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT),
+            ai->HasStrategy("guard", BotState::BOT_STATE_COMBAT),
             ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
             ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)))
             return false;
@@ -424,7 +429,10 @@ bool RaidSpreadAction::Execute(Event& event)
         bot->GetMapId(), nearestDist, nowMs, bot->movespline->GetId());
     // Prefer headings that have not failed to gain spacing. A second pass
     // allows remembered failures so the cache can never block every route.
-    const float spread = sPlayerbotAIConfig.hazardEvasionDistance;
+    // Step just past the trigger radius (donor: min(radius + 1, flee)): a
+    // fixed 12yd leap from a 2yd melee trigger would overshoot out of melee
+    // and ping-pong back via reach-melee.
+    const float spread = std::min(radius + 1.0f, sPlayerbotAIConfig.hazardEvasionDistance);
     const float angles[] = { 0.0f, 0.6f, -0.6f, 1.2f, -1.2f, (float)M_PI };
     WorldPosition out(botPos);
     for (int pass = 0; pass < 2; ++pass)
