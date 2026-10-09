@@ -1,6 +1,7 @@
 #pragma once
 #include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/triggers/GenericTriggers.h"
+#include "ShamanStoneclawPolicy.h"
 
 namespace ai
 {
@@ -260,9 +261,18 @@ namespace ai
             // Solo panic button (mod-playerbots parity SHM-3): at low health
             // a solo bot drops Stoneclaw so the totem taunts the attackers
             // off it. Grouped bots keep the spec earth totem unless the
-            // player explicitly ordered Stoneclaw for this fight.
-            return AI_VALUE2(uint8, "health", "self target") <= sPlayerbotAIConfig.lowHealth &&
-                (ai->HasStrategy("totem earth stoneclaw", BotState::BOT_STATE_COMBAT) || !bot->GetGroup()) &&
+            // player explicitly ordered Stoneclaw for this fight, and any
+            // other explicit earth order always wins over the panic drop.
+            // Gate lives in ShamanStoneclawPolicy.h so the unit test pins
+            // this exact logic.
+            bool low = AI_VALUE2(uint8, "health", "self target") <= sPlayerbotAIConfig.lowHealth;
+            bool grp = bot->GetGroup() != nullptr;
+            bool man = ai->HasStrategy("totem earth stoneclaw", BotState::BOT_STATE_COMBAT);
+            bool other = ai->HasStrategy("totem earth stoneskin", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem earth earthbind", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem earth strength", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem earth tremor", BotState::BOT_STATE_COMBAT);
+            return StoneclawPanicShouldDrop(low, grp, man, other) &&
                 !AI_VALUE2(bool, "has totem", "stoneclaw totem");
         }
     };
