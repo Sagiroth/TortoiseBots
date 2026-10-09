@@ -34,3 +34,12 @@ bool InFeralFormTrigger::IsActive()
 {
     return ai->HasAura("bear form", bot) || ai->HasAura("dire bear form", bot) || ai->HasAura("cat form", bot);
 }
+
+bool ThornsOnTankTrigger::IsActive()
+{
+    if (!BuffOnTankTrigger::IsActive())
+        return false;
+    // Don't apply thorns if fire shield (conflict) is on the tank.
+    Unit* target = GetTarget();
+    return !target || !ai->HasAura("fire shield", target);
+}

@@ -41,6 +41,17 @@ namespace ai
         }
     };
 
+    // mod-playerbots parity (DRU-7): Thorns lands on the tank first.
+    // BuffOnTankTrigger targets "party tank without aura", so the tank is
+    // covered before the party blanket below; the fire-shield conflict
+    // skip mirrors ThornsOnPartyTrigger. Name resolves to "thorns on tank".
+    class ThornsOnTankTrigger : public BuffOnTankTrigger
+    {
+    public:
+        ThornsOnTankTrigger(PlayerbotAI* ai) : BuffOnTankTrigger(ai, "thorns") {}
+        bool IsActive() override;
+    };
+
     class ThornsTrigger : public BuffTrigger
     {
     public:

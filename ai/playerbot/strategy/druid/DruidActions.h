@@ -116,6 +116,14 @@ namespace ai
         CastThornsOnPartyAction(PlayerbotAI* ai) : BuffOnPartyAction(ai, "thorns") {}
     };
 
+    // mod-playerbots parity (DRU-7): Thorns on the party tank first.
+    // Name resolves to "thorns on tank" via BuffOnTankTrigger/BuffOnTankAction.
+    class CastThornsOnTankAction : public BuffOnTankAction
+    {
+    public:
+        CastThornsOnTankAction(PlayerbotAI* ai) : BuffOnTankAction(ai, "thorns") {}
+    };
+
 	class CastOmenOfClarityAction : public CastBuffSpellAction
 	{
 	public:

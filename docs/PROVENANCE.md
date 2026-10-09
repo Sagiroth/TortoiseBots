@@ -4522,3 +4522,42 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Druid parity DRU-7: Thorns on the party tank first — 2026-10-09
+Feature: new `ThornsOnTankTrigger` (`BuffOnTankTrigger` on "thorns",
+fire-shield conflict skip mirroring `ThornsOnPartyTrigger`) + new
+`CastThornsOnTankAction` (`BuffOnTankAction`, targets "party tank without
+aura") + non-combat row `thorns on tank` at ACTION_NORMAL+3 in
+`DruidBuffStrategy`, above the party blanket at +2. Names resolve via the
+base `spell + " on tank"` / action-name support (same shape as priest
+PRI-1 `fear ward on tank`).
+
+Source repository: `mod-playerbots` @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Class/Druid/Strategy/GenericDruidNonCombatStrategy.cpp:198-200`
+(`thorns on main tank` 11.0 above `thorns` 10.0). Deviations, deliberate:
+donor names say "main tank" on `BuffOnMainTankTrigger`; ours says "tank"
+on the local `BuffOnTankTrigger` (same "party tank without aura" value,
+cf. PRI-1). The report's "refresh-via-recast may need cancel aura
+support" proved unnecessary: the without-aura value only targets a tank
+lacking Thorns, so expiry re-fires the row naturally. No addon change:
+the main-tank pick already exists via the role button.
+
+Reason: druid parity report DRU-7 — Thorns fell out of the tank's
+rotation once the party row was satisfied.
+
+Source files (module, modified):
+`ai/playerbot/strategy/druid/DruidTriggers.h`,
+`ai/playerbot/strategy/druid/DruidTriggers.cpp`,
+`ai/playerbot/strategy/druid/DruidActions.h`,
+`ai/playerbot/strategy/druid/DruidAiObjectContext.cpp`,
+`ai/playerbot/strategy/druid/DruidStrategy.cpp` +
+`docs/classes/druid.md` (behaviour lines).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells: Thorns ranks trainer-taught.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
+live test (no live test per parity brief); build via build-commit.sh.

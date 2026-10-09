@@ -375,6 +375,13 @@ void DruidBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
         "mark of the wild on party",
         NextAction::array(0, new NextAction("mark of the wild on party", ACTION_NORMAL + 2), NULL)));
 
+    // mod-playerbots parity (DRU-7): Thorns lands on the tank first
+    // (above the party blanket), so the tank never waits for the blanket
+    // rotation to reach them.
+    triggers.push_back(new TriggerNode(
+        "thorns on tank",
+        NextAction::array(0, new NextAction("thorns on tank", ACTION_NORMAL + 3), NULL)));
+
     triggers.push_back(new TriggerNode(
         "thorns on party",
         NextAction::array(0, new NextAction("thorns on party", ACTION_NORMAL + 2), NULL)));
