@@ -28,7 +28,7 @@ namespace
     Unit* FindOssirian(PlayerbotAI* ai)
     {
         // Cheap first: attackers list (boss usually has the bot on threat).
-        const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+        const std::list<ObjectGuid> attackers = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get();
         for (const ObjectGuid& guid : attackers)
         {
             Unit* unit = ai->GetUnit(guid);
