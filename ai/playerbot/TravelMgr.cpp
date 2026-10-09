@@ -7,6 +7,7 @@
 // Pure travel re-pick decisions (cooldown park, kind give-up, trap streak).
 #include "playerbot/ZoneMigratePolicy.h"
 #include "playerbot/TravelRepickPolicy.h"
+#include "playerbot/QuestGiverStallPolicy.h"
 #include "playerbot/WorkIdlePolicy.h"
 #include <numeric>
 #include <mutex>
@@ -248,6 +249,19 @@ bool QuestRelationTravelDestination::IsActive(Player* bot, const PlayerTravelInf
         return false;
 
     bool forceThisQuest = info.HasFocusQuest(); //Checked in IsPossible if it's 'this' quest.
+    if (GetRelation() == 0 && GetEntry() > 0 && info.IsMasterlessRandom())
+    {
+        // Giver-stall back-off (TravelAction parks the pair 30 min after 2
+        // stalls with no quest-state change): this pair's menu never offers
+        // the quest, so the search stops offering it and the next pick goes
+        // elsewhere. Owned bots keep today's behaviour. Reads only a created
+        // value (like the "no quest hand in until::<quest>" park the taker
+        // path reads) so the value store grows no entry per pair.
+        std::string const backoffKey = ai::QuestGiverBackoffKey(GetEntry(), GetQuestId());
+        if (context->HasValue("manual time", backoffKey) &&
+            context->GetValue<time_t>("manual time", backoffKey)->Get() > time(0))
+            return false;
+    }
 
     if (GetRelation() == 0)
     {

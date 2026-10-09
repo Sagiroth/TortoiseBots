@@ -7,7 +7,9 @@
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
 #include "Maps/CellImpl.h"
+#include "playerbot/QuestGiverStallPolicy.h"
 #include "playerbot/QuestStallPolicy.h"
+#include <cstdlib>
 #include "AcceptQuestAction.h"
 #include "playerbot/TravelMgr.h"
 
@@ -121,6 +123,44 @@ bool TravelAction::Execute(Event& event)
                 {
                     sPlayerbotAIConfig.logEvent(ai, "QuestGiverStalled",
                         giver->GetTitle(), std::to_string(giver->GetQuestId()));
+                    // Giver-stall back-off: the pick gate reads static template
+                    // fit while this stall reads the live menu (chain
+                    // prerequisites, taken status, accept policy), so a giver
+                    // whose menu never offers the quest is re-picked forever.
+                    // The 2nd stall for one (giver, quest) without the quest
+                    // state changing parks that pair 30 min, so the next
+                    // search goes elsewhere. Pool upkeep bots only.
+                    {
+                        int32 const giverEntry = giver->GetEntry();
+                        uint32 const questId = giver->GetQuestId();
+                        std::string const stallKey = ai::QuestGiverStallKey(giverEntry, questId);
+                        QuestStatus status = bot->GetQuestStatus(questId);
+                        bool rewarded = bot->GetQuestRewardStatus(questId);
+                        // Fingerprint: status plus rewarded (a hand-in flips
+                        // rewarded without touching status; a drop resets both).
+                        uint32 const curState = (uint32)status * 2 + (rewarded ? 1 : 0);
+                        std::string const storedState = sRandomBotFacade.GetData(bot->GetGUIDLow(), stallKey);
+                        bool const hasStored = !storedState.empty();
+                        uint32 const prevState = hasStored ? (uint32)std::strtoul(storedState.c_str(), nullptr, 10) : 0;
+                        uint32 stalls = 1;
+                        if (!ai::QuestGiverStallStateChanged(prevState, hasStored, curState))
+                            stalls = sRandomBotFacade.GetValue(bot, stallKey) + 1;
+                        // Counter TTL 35 min: bridges the ~90 s stall loop but
+                        // cannot outlive the 30-min park it arms (a stale
+                        // counter re-firing right after expiry would re-park
+                        // on one stall instead of two).
+                        sRandomBotFacade.SetValue(bot, stallKey, stalls, std::to_string(curState),
+                            (int32)(ai::kQuestGiverBackoffParkSec + 5 * 60));
+                        if (ai::QuestGiverStallBacksOff(stalls))
+                        {
+                            SET_AI_VALUE2(time_t, "manual time", ai::QuestGiverBackoffKey(giverEntry, questId),
+                                time(0) + ai::kQuestGiverBackoffParkSec);
+                            sPlayerbotAIConfig.logEvent(ai, "QuestGiverBackoff",
+                                giver->GetTitle(), std::to_string(questId));
+                            sRandomBotFacade.SetValue(bot, stallKey, 0, std::to_string(curState),
+                                (int32)(ai::kQuestGiverBackoffParkSec + 5 * 60));
+                        }
+                    }
                     target->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
                     return true;
                 }
