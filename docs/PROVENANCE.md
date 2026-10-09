@@ -4522,3 +4522,33 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Dual-wield MH->OH cascade (AG-2, 2026-10-09)
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Base/Actions/EquipAction.cpp:144-252` (priority 1: new weapon
+beats MH -> equip MH, demote old MH to OH when it fits and beats OH;
+priority 2: new weapon not beating MH but beating OH -> equip OH).
+
+Source files (module, modified): `ai/playerbot/DualWieldPolicy.h` (new
+pure demotion verdict),
+`ai/playerbot/strategy/actions/EquipAction.cpp` (audit loop captures the
+displaced MH before a 1H MH upgrade and demotes it to OH via the policy +
+explicit-slot equip), `tools/test_dual_wield_policy.cpp` (new standalone
+test), `tools/verify_all.sh` (register test) + `CHANGELOG.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) only the demotion is ported - priority 2
+already works here via secondary-slot resolution (GetPreferredEquipSlot
+targets the weaker/empty hand); (b) all Titan Grip branches dropped (no
+1.12 API); (c) a 2H MH upgrade never cascades (it blocks the off hand);
+(d) the cascade claims the OH slot for the run and requires spec legality
++ core slot validation, so shield specs and later stale-usage candidates
+cannot ping-pong it.
+
+Reason: dual-wield bots left the old main hand's stats in the bags after
+every MH upgrade.
+
+Local validation: `bash tools/verify_all.sh` (incl. new policy test +
+wiring check live-missing=0); `git diff --check`; shared-builder compile
+check; no live in-game test.

@@ -1,6 +1,7 @@
 # Changelog
 
 ### Bots & Behavior
+- Dual-wield bots now hand their old main-hand weapon to the off hand — after a main-hand upgrade lands, the displaced weapon moves to the off hand when it fits there and beats what is equipped, instead of sitting in the bags.
 - Bots no longer get stuck on the Deeprun Tram — wandering bots could be routed through the tram between Stormwind and Ironforge but cannot ride the train, so they stood on the platform for good; their routes now go overland, and any bot already stranded there is moved out through the nearest station exit.
 - Bots stranded on islands without travel routes (Lapidis Isle) no longer stand at the shore forever — after three destinations in a row fail from the same spot they are moved to the nearest travel route instead of an island graveyard they would just walk back from.
 - Druids no longer freeze in place re-applying their strategies — balance, restoration and bear druids carrying the stealth strategy kept trying to add a stealth variant that does not exist for their spec, which took up every turn they should have spent moving.

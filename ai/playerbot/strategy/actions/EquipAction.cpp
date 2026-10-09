@@ -4,6 +4,7 @@
 
 #include <set>
 
+#include "playerbot/DualWieldPolicy.h"
 #include "playerbot/RandomItemMgr.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/ItemCountValue.h"
@@ -597,6 +598,14 @@ bool EquipUpgradesAction::Execute(Event& event)
             continue;
         }
 
+        // The displaced main hand for the cascade below: captured before the
+        // equip moves it to the bags. Only a 1H upgrade on a dual-wielder
+        // displaces a demotable hand (a 2H upgrade blocks the off hand).
+        Item* displacedMH = nullptr;
+        if (slot == EQUIPMENT_SLOT_MAINHAND && proto->Class == ITEM_CLASS_WEAPON &&
+            proto->InventoryType != INVTYPE_2HWEAPON && bot->CanDualWield())
+            displacedMH = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+
         filledSlots.insert(slot);
         didEquip = true;
 
@@ -614,6 +623,35 @@ bool EquipUpgradesAction::Execute(Event& event)
         else
         {
             EquipItemToSlot(GetMaster(), item, slot);
+        }
+
+        // MH->OH cascade (AG-2): the upgrade above pushed the old main hand
+        // to the bags; demote it to the off hand when it fits there and
+        // beats what is equipped. Donor mod-playerbots priority-1 demotion,
+        // minus Titan Grip (no 1.12 API). Claims the off-hand slot for this
+        // run so a later candidate cannot overwrite it on a stale usage.
+        if (displacedMH && bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND) != displacedMH)
+        {
+            ItemPrototype const* displacedProto = displacedMH->GetProto();
+            bool fitsOffHand = displacedProto->InventoryType == INVTYPE_WEAPON ||
+                displacedProto->InventoryType == INVTYPE_WEAPONOFFHAND;
+            if (fitsOffHand)
+            {
+                uint32 specId = sRandomItemMgr.GetPlayerSpecId(bot);
+                Item* curOH = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND);
+                uint16 ohDest;
+                if (ai::DualWieldCascade(true,
+                    sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, displacedProto, EQUIPMENT_SLOT_OFFHAND, true),
+                    curOH == nullptr,
+                    sRandomItemMgr.ItemStatWeight(bot, displacedMH),
+                    curOH ? sRandomItemMgr.ItemStatWeight(bot, curOH) : 0) &&
+                    bot->CanEquipItem(EQUIPMENT_SLOT_OFFHAND, ohDest, displacedMH, true) == EQUIP_ERR_OK && (ohDest & 0xFF) == EQUIPMENT_SLOT_OFFHAND)
+                {
+                    EquipItemToSlot(GetMaster(), displacedMH, EQUIPMENT_SLOT_OFFHAND);
+                    filledSlots.insert(EQUIPMENT_SLOT_OFFHAND);
+                    sLog.outDetail("Bot #%d <%s> cascades old main hand %d to offhand", bot->GetGUIDLow(), bot->GetName(), displacedProto->ItemId);
+                }
+            }
         }
     }
 
