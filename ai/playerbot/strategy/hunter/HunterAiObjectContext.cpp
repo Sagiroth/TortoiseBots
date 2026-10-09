@@ -191,6 +191,7 @@ namespace ai
                 creators["no stings"] = [](PlayerbotAI* ai) { return new HunterNoStingsActiveTrigger(ai); };
                 creators["hunters pet dead"] = [](PlayerbotAI* ai) { return new HuntersPetDeadTrigger(ai); };
                 creators["hunters pet low health"] = [](PlayerbotAI* ai) { return new HuntersPetLowHealthTrigger(ai); };
+                creators["pet has aggro"] = [](PlayerbotAI* ai) { return new PetHasAggroTrigger(ai); };
                 creators["hunter's mark"] = [](PlayerbotAI* ai) { return new HuntersMarkTrigger(ai); };
                 creators["freezing trap"] = [](PlayerbotAI* ai) { return new FreezingTrapTrigger(ai); };
                 creators["frost trap"] = [](PlayerbotAI* ai) { return new FrostTrapTrigger(ai); };
@@ -257,6 +258,7 @@ namespace ai
                 creators["mend pet"] = [](PlayerbotAI* ai) { return new CastMendPetAction(ai); };
                 creators["revive pet"] = [](PlayerbotAI* ai) { return new CastRevivePetAction(ai); };
                 creators["call pet"] = [](PlayerbotAI* ai) { return new CastCallPetAction(ai); };
+                creators["cower"] = [](PlayerbotAI* ai) { return new CastCowerAction(ai); };
                 creators["rapid fire"] = [](PlayerbotAI* ai) { return new CastRapidFireAction(ai); };
                 creators["boost"] = [](PlayerbotAI* ai) { return new CastRapidFireAction(ai); };
                 creators["readiness"] = [](PlayerbotAI* ai) { return new CastReadinessAction(ai); };

@@ -53,6 +53,9 @@ namespace ai
     BEGIN_TRIGGER(HuntersPetLowHealthTrigger, Trigger)
     END_TRIGGER()
 
+    BEGIN_TRIGGER(PetHasAggroTrigger, Trigger)
+    END_TRIGGER()
+
     class HuntersMarkTrigger : public DebuffTrigger
     {
     public:

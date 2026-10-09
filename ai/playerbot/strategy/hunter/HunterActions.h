@@ -168,6 +168,16 @@ public:
         CastRevivePetAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "revive pet") {}
     };
 
+    // PET-8b: deliberate threat drop ordered when the pet holds aggro while
+    // taunts are stood down. Pet-cast (range/cooldown resolve against the
+    // pet); autocast stays off via the upkeep denylist.
+    class CastCowerAction : public CastPetSpellAction
+    {
+    public:
+        CastCowerAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "cower") {}
+        std::string GetTargetName() override { return "pet target"; }
+    };
+
     class CastTrueshotAuraAction : public CastBuffSpellAction
     {
     public:

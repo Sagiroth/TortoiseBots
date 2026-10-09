@@ -29,6 +29,21 @@ bool HuntersPetLowHealthTrigger::IsActive()
         !AI_VALUE2(bool, "dead", "pet target") && !AI_VALUE2(bool, "mounted", "self target");
 }
 
+// PET-3/PET-8b: fires while the pet holds the enemy's attention AND pet
+// taunts are stood down (grouped with a real tank). Cheap-first: the
+// victim check and group check run before the member walk inside the
+// helper, so solo hunters never pay for the scan.
+bool PetHasAggroTrigger::IsActive()
+{
+    Unit* pet = AI_VALUE(Unit*, "pet target");
+    if (!pet || !pet->IsAlive())
+        return false;
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target || target->GetVictim() != pet)
+        return false;
+    return bot->GetGroup() && !ai::IsPetTauntAllowed(ai, bot);
+}
+
 bool HunterPetNotHappy::IsActive()
 {
     return !AI_VALUE(bool, "pet happy") && !AI_VALUE2(bool, "mounted", "self target");

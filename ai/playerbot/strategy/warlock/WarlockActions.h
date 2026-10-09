@@ -302,7 +302,10 @@ namespace ai
         {
             Unit* target = GetTarget();
             Unit* pet = AI_VALUE(Unit*, "pet target");
-            return target && pet && target->GetVictim() != pet;
+            // PET-3: no peel onto the Voidwalker while grouped with a real
+            // tank — that pull is the tank's job. Solo/tankless the peel
+            // still fires (cheap group check first inside the helper).
+            return target && pet && target->GetVictim() != pet && IsPetTauntAllowed(ai, bot);
         }
     };
 
