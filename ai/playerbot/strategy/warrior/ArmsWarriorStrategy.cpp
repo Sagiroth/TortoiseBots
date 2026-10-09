@@ -241,9 +241,15 @@ void ArmsWarriorBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
 {
     WarriorBuffStrategy::InitCombatTriggers(triggers);
 
+    // Battle-stance pin (donor ArmsWarriorStrategy pins battle at HIGH+10):
+    // charge/overpower/mocking blow/sweeping strikes/retaliation are all
+    // Battle-locked, and pinning berserker broke every one of them. Whirlwind
+    // keeps its arms-scoped berserker prerequisite node, so it still dances
+    // out and back (donor accepts the same dance); the AoE multipliers keep
+    // managing the sweeping-strikes stance choice on packs.
     triggers.push_back(new TriggerNode(
-        "berserker stance",
-        NextAction::array(0, new NextAction("berserker stance", ACTION_NORMAL), NULL)));
+        "battle stance",
+        NextAction::array(0, new NextAction("battle stance", ACTION_NORMAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "feared",
