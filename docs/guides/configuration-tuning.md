@@ -243,6 +243,23 @@ Errors (`sLog.outError`) are always written regardless of this setting. The leve
 
 This setting is separate from the strategy AI's own action trace, which stays gated behind the `debug`/`debug action` bot strategies (`.bot strategy +debug`) rather than a server-wide config key.
 
+### Action counts (live rotation measurement)
+
+| Setting | Default | What It Does |
+| :--- | :---: | :--- |
+| `AiPlayerbot.ActionCountsLog` | `0` | When `1`, every executed bot action is counted by bot class and action name (`warrior` / `shield slam`), split into ok vs failed/impossible outcomes. Every 5 minutes a cumulative snapshot (`utc_time,class,action,ok_count,fail_count`) is appended to `logs/action_counts.csv`, next to `bot_events.csv`. `0` costs one branch per executed action and nothing else. Needs a restart. |
+
+Turn it on for a measurement window on a busy realm, then copy the live file twice a while apart and diff the copies to see what each class actually spends its time doing:
+
+```
+cp logs/action_counts.csv /tmp/actions_early.csv
+# ... wait 30+ minutes ...
+cp logs/action_counts.csv /tmp/actions_late.csv
+python3 tools/action_counts_report.py /tmp/actions_early.csv /tmp/actions_late.csv --top 10
+```
+
+The report prints the top actions per class between the two snapshots with the ok share, so dead or failing actions (low ok share) stand out. Counters are cumulative since server start; comparing snapshots from different runs is meaningless.
+
 ---
 
 ## 7. Bot Chatter & Broadcasts

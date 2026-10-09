@@ -17,9 +17,21 @@
 // across ~80 call sites. Read SC_ as "bot diag".
 
 #include "Log.h"
+#include <cstdint>
 
 namespace ai { namespace botdiag {
     bool IsActionLogEnabled();
+
+    // Aggregate counter of executed bot actions (AiPlayerbot.ActionCountsLog,
+    // default off). Engine records the OK / FAILED / IMPOSSIBLE outcome of each
+    // executed action keyed by (bot class, action name); BotManager dumps a
+    // cumulative CSV snapshot every 5 minutes. Bots update on parallel map
+    // threads, so counting takes a mutex; the off path is one branch.
+    // Player is deliberately not named: this header must stay free of the AI
+    // class (see the evade probe note below), so call sites pass the already
+    // resolved class id and the action name.
+    void CountAction(uint8_t botClass, char const* actionName, bool ok);
+    void DumpActionCounts();
 
     // State of the evade probe in PlayerbotAI::UpdateEvadeProbe (implemented in
     // BotDiagnostics.cpp). Kept here as plain data: this header is included by host code

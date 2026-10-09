@@ -5,7 +5,10 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/ServerFacade.h"
 #include <ctime>
+#include <cstdint>
+#include <mutex>
 #include <sstream>
+#include <vector>
 
 namespace ai { namespace botdiag {
     thread_local const char* gLastPhaseTag     = nullptr;
@@ -14,6 +17,77 @@ namespace ai { namespace botdiag {
     bool IsActionLogEnabled()
     {
         return sPlayerbotAIConfig.enableActionLog;
+    }
+
+    namespace
+    {
+        struct ActionCountRow
+        {
+            uint8_t botClass = 0;
+            std::string name;
+            uint64_t ok = 0;
+            uint64_t fail = 0;
+        };
+        // Bots update on parallel map threads: every access takes the mutex.
+        // Small row count (one per class x action), so a linear scan is fine
+        // and costs no allocation once the row exists.
+        std::mutex gActionCountsMutex;
+        std::vector<ActionCountRow> gActionCounts;
+    }
+
+    void CountAction(uint8_t botClass, char const* actionName, bool ok)
+    {
+        if (!sPlayerbotAIConfig.actionCountsLog || !actionName)
+            return;
+        std::lock_guard<std::mutex> guard(gActionCountsMutex);
+        for (ActionCountRow& row : gActionCounts)
+        {
+            if (row.botClass == botClass && row.name == actionName)
+            {
+                if (ok) ++row.ok; else ++row.fail;
+                return;
+            }
+        }
+        ActionCountRow row;
+        row.botClass = botClass;
+        row.name = actionName;
+        if (ok) ++row.ok; else ++row.fail;
+        gActionCounts.push_back(row);
+    }
+
+    void DumpActionCounts()
+    {
+        if (!sPlayerbotAIConfig.actionCountsLog)
+            return;
+        std::vector<ActionCountRow> snapshot;
+        {
+            std::lock_guard<std::mutex> guard(gActionCountsMutex);
+            snapshot = gActionCounts;
+        }
+        if (snapshot.empty())
+            return;
+        // First dump of the run truncates (haslog=true bypasses the allowlist,
+        // like bot_test_results.log), later dumps append. Header lives at the
+        // top because nothing else writes this file.
+        static bool sHeaderWritten = false;
+        if (!sHeaderWritten)
+        {
+            if (!sPlayerbotAIConfig.openLog("action_counts.csv", "w", true))
+                return;
+            sPlayerbotAIConfig.log("action_counts.csv", "utc_time,class,action,ok_count,fail_count");
+            sHeaderWritten = true;
+        }
+        time_t now = time(nullptr);
+        tm* utc = gmtime(&now);
+        char ts[20];
+        strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", utc ? utc : localtime(&now));
+        for (ActionCountRow const& row : snapshot)
+        {
+            std::ostringstream line;
+            line << ts << "," << (unsigned)row.botClass << "," << row.name
+                 << "," << row.ok << "," << row.fail;
+            sPlayerbotAIConfig.log("action_counts.csv", line.str().c_str());
+        }
     }
 }}
 

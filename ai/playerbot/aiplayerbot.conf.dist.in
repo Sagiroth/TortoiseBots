@@ -612,6 +612,13 @@ AiPlayerbot.InviteChat = 1
 # reads a thread-local "last phase" tag set by SC_PHASE when this is on.
 # AiPlayerbot.EnableActionLog = 0
 
+# Aggregate counter of executed bot actions for live measurement on large
+# realms: every 5 minutes a cumulative snapshot (utc_time,class,action,
+# ok_count,fail_count) is appended to logs/action_counts.csv. Off in
+# production; turn on for a measurement window, then diff two snapshots with
+# tools/action_counts_report.py to see the top actions per class.
+AiPlayerbot.ActionCountsLog = 0
+
 # Redirect all bot subsystem log output to a dedicated file so the main
 # server.log stays clean. Path is relative to the server's LogsDir setting.
 #

@@ -453,6 +453,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         if (actionExecuted)
                         {
                             LogAction("A:%s - OK src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
+                            botdiag::CountAction(ai->GetBot() ? ai->GetBot()->GetClass() : 0, action->getName().c_str(), true);
                             ClearActionFailures(action, event);
                             MultiplyAndPush(actionNode->getContinuers(), 0, false, event, "cont");
                             lastRelevance = relevance;
@@ -462,6 +463,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         else
                         {
                             LogAction("A:%s - FAILED src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
+                            botdiag::CountAction(ai->GetBot() ? ai->GetBot()->GetClass() : 0, action->getName().c_str(), false);
                             RecordFailure(action, event, ACTION_RESULT_FAILED);
                             MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.03, false, event, "alt");
                         }
@@ -491,6 +493,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                             }
                         }
                         LogAction("A:%s - IMPOSSIBLE src=%s base=%.3f eff=%.3f", action->getName().c_str(), event.getSource().c_str(), oldRelevance, relevance);
+                        botdiag::CountAction(ai->GetBot() ? ai->GetBot()->GetClass() : 0, action->getName().c_str(), false);
                         RecordFailure(action, event, ACTION_RESULT_IMPOSSIBLE);
                         MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.03, false, event, "alt");
                     }
