@@ -4573,3 +4573,37 @@ Local validation: `bash tools/verify_all.sh` (all suites incl. the new
 policy test pass); `git diff --check`. Spell ids 19695/20475 and creature
 12056 verified against tw_world. Build via build-commit.sh pending; live
 in-game check pending.
+
+## Review fixes: Geddon multiplier movement-gate + dungeon-wide registration (PR #568) — 2026-10-09
+
+Review verdict on the Inferno runout PR was CHANGES_REQUESTED with two
+blocking findings; both verified real against the donor
+(`src/Ai/Raid/MC/MCMultipliers.cpp:55-66`,
+`src/Ai/Raid/MC/MCStrategy.cpp:101-106`) and fixed:
+
+(a) The multiplier vetoed EVERY action by name while Inferno burned or a
+bomb was carried — healers at 30y could not heal, ranged did zero DPS, and
+the fight's own fire-protection potion was vetoed by its own strategy. The
+donor only vetoes MovementAction (except the two runouts) plus
+CastReachTargetSpellAction. Fixed: `GeddonInfernoMultiplier::GetValue`
+returns 1.0 immediately for non-movement/non-reach actions (also skipping
+the attacker/aura scan for ~90% of evaluated actions), and
+`ShouldBlockGeddonMove` takes an `actionMovesOrReaches` gate computed via
+dynamic_cast at the call site so the policy stays unit-testable.
+
+(b) The multiplier lived on the ephemeral `geddon` fight strategy, so the
+post-death Living Bomb carrier lost approach suppression when `-geddon`
+removed the strategy. The donor registers on the dungeon-wide MC strategy.
+Fixed: multiplier moved to `MoltenCoreDungeonStrategy::
+InitCombatMultipliers` + `InitNonCombatMultipliers`; the `geddon` fight
+strategy keeps only triggers (Inferno reaction, potion, end-fight
+cleanup). The non-combat registration covers the out-of-combat bomb case.
+
+Non-blocking findings also addressed: the multiplier scan is now gated
+behind the movement check (finding 1), and the policy test asserts
+non-movement immunes (`greater heal`, `flash heal`, `renew`, `shoot`,
+`fire protection potion`, `tank assist` with Inferno + bomb — all pass).
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the updated
+policy test pass); `git diff --check`. Build via build-commit.sh pending;
+live in-game check pending.

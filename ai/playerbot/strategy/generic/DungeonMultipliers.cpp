@@ -31,6 +31,15 @@ float GeddonInfernoMultiplier::GetValue(Action* action)
     if (!action)
         return 1.0f;
 
+    // Donor shape: only movement (except the two runouts) and
+    // reach-to-cast spells are vetoed — heals, DPS, threat and consumables
+    // always pass. This gate also skips the attacker/aura scan for ~90%
+    // of evaluated actions.
+    bool actionMovesOrReaches = dynamic_cast<MovementAction*>(action) != nullptr ||
+        dynamic_cast<CastReachTargetSpellAction*>(action) != nullptr;
+    if (!actionMovesOrReaches)
+        return 1.0f;
+
     // Cheap checks first: no aura lookups unless a Geddon fight is live.
     bool bombOnSelf = bot->HasAura(kLivingBombSpellId);
     if (!bombOnSelf && !ai->HasStrategy("geddon", BotState::BOT_STATE_COMBAT))
@@ -53,7 +62,7 @@ float GeddonInfernoMultiplier::GetValue(Action* action)
         }
     }
 
-    if (ShouldBlockGeddonMove(action->getName(), infernoActive, bombOnSelf))
+    if (ShouldBlockGeddonMove(actionMovesOrReaches, action->getName(), infernoActive, bombOnSelf))
         return 0.0f;
 
     return 1.0f;

@@ -32,18 +32,24 @@ namespace ai
     }
 
     // Multiplier: while Inferno is up on the boss (or the bot carries Living
-    // Bomb, which outlives the boss), only the two survival moves may run:
-    // the inferno runout and the universal bomb runout. Everything else that
-    // moves the bot or pulls it back into melee range is vetoed.
+    // Bomb, which outlives the boss), only the two survival moves may move
+    // the bot: the inferno runout and the universal bomb runout. Mirrors
+    // the donor's BaronGeddonAbilityMultiplier, which vetoes MovementAction
+    // (except the two runouts) and CastReachTargetSpellAction — heals, DPS,
+    // threat and consumables always pass. The caller computes
+    // actionMovesOrReaches via dynamic_cast; the policy stays free of Action
+    // types so it remains unit-testable.
     inline bool IsGeddonSurvivalMove(const std::string& actionName)
     {
         return actionName == "move away from geddon" ||
                actionName == "raid bomb runout";
     }
 
-    inline bool ShouldBlockGeddonMove(const std::string& actionName,
+    inline bool ShouldBlockGeddonMove(bool actionMovesOrReaches, const std::string& actionName,
         bool infernoActive, bool bombOnSelf)
     {
+        if (!actionMovesOrReaches)
+            return false;
         if (!infernoActive && !bombOnSelf)
             return false;
         return !IsGeddonSurvivalMove(actionName);

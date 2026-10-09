@@ -33,6 +33,19 @@ void MoltenCoreDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& t
         NextAction::array(0, new NextAction("fire protection potion", 100.0f), NULL)));
 }
 
+void MoltenCoreDungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    // Dungeon-wide (not on the geddon fight strategy): the Living Bomb
+    // carrier keeps approach suppression after Geddon dies and combat
+    // ends — mirrors the donor's RaidMcStrategy registration.
+    multipliers.push_back(new GeddonInfernoMultiplier(ai));
+}
+
+void MoltenCoreDungeonStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new GeddonInfernoMultiplier(ai));
+}
+
 void MagmadarFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     Player* bot = ai->GetBot();
@@ -106,7 +119,5 @@ void GeddonFightStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers
         NextAction::array(0, new NextAction("move away from geddon", ACTION_EMERGENCY + 5), NULL)));
 }
 
-void GeddonFightStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
-{
-    multipliers.push_back(new GeddonInfernoMultiplier(ai));
-}
+// No InitCombatMultipliers here: the multiplier lives on the dungeon-wide
+// "molten core" strategy so bomb carriers stay covered after the fight.
