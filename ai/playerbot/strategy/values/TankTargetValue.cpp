@@ -78,7 +78,7 @@ public:
         // in a 2+ tank group the off-tank skips this hold so loose adds win
         // the tournament above; the main tank (and every lone tank) holds.
         Unit* current = ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
-        Unit* mainTank = AI_VALUE(Unit*, "main tank");
+        Unit* mainTank = ai->GetAiObjectContext()->GetValue<Unit*>("main tank")->Get();
         unsigned tankCount = GetGroupTankCount(ai);
         bool hold = !mainTank || mainTank == bot || !MainTankSticksToCurrent(true, tankCount);
         if (hold && oldUnit == current)
