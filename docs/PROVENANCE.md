@@ -4522,3 +4522,4 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+| Gluth fight (Naxx): wound taunt-swap, chow execute triage | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Gluth.cpp`, `src/Ai/Raid/Naxx/NaxxStrategy.cpp` (Gluth rows), `src/Ai/Raid/Naxx/NaxxTriggers.h` (GluthMainTankMortalWoundTrigger) | Reimplemented trigger-driven; kite ring / pre-decimate spots / hunter slowdown omitted (need live coords) | Kit verified in tw_world + core boss_gluth.cpp (15932, 16360, 25646, 28374/75, 28371) | `bash tools/verify_all.sh` + `tools/test_gluth_kite_policy.cpp`; build-commit + no live test |

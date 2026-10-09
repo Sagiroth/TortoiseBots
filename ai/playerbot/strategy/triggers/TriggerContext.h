@@ -20,6 +20,7 @@
 #include "NaxxramasDungeonTriggers.h"
 #include "EmeraldSanctumDungeonTriggers.h"
 #include "LowerKarazhanDungeonTriggers.h"
+#include "GluthDungeonTriggers.h"
 #include "WorldBuffTravelTriggers.h"
 
 namespace ai
@@ -333,6 +334,10 @@ namespace ai
 
             creators["start four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanStartFightTrigger(ai); };
             creators["end four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanEndFightTrigger(ai); };
+            creators["start gluth fight"] = [](PlayerbotAI* ai) { return new GluthStartFightTrigger(ai); };
+            creators["end gluth fight"] = [](PlayerbotAI* ai) { return new GluthEndFightTrigger(ai); };
+            creators["gluth mortal wound swap"] = [](PlayerbotAI* ai) { return new GluthMortalWoundSwapTrigger(ai); };
+            creators["gluth chow up"] = [](PlayerbotAI* ai) { return new GluthChowUpTrigger(ai); };
             creators["void zone too close"] = [](PlayerbotAI* ai) { return new FourHorsemanVoidZoneTrigger(ai); };
             creators["start solnius fight"] = [](PlayerbotAI* ai) { return new SolniusStartFightTrigger(ai); };
             creators["end solnius fight"] = [](PlayerbotAI* ai) { return new SolniusEndFightTrigger(ai); };

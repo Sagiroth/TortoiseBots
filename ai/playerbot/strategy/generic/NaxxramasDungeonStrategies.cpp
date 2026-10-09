@@ -10,6 +10,10 @@ void NaxxramasDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
 	triggers.push_back(new TriggerNode(
 		"start four horseman fight",
 		NextAction::array(0, new NextAction("enable four horseman fight strategy", 100.0f), NULL)));
+
+	triggers.push_back(new TriggerNode(
+		"start gluth fight",
+		NextAction::array(0, new NextAction("enable gluth fight strategy", 100.0f), NULL)));
 }
 
 void FourHorsemanFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
