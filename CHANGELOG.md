@@ -1,6 +1,7 @@
 # Changelog
 
 ### Bots & Behavior
+- Starved bots fight what's beside them instead of re-requesting travel — a bot that holds a grind pick with no journey and whose recent travel searches came back empty across the rotation (3+ of quest/grind/camp/explore/gather/boss/vendor/repair/AH/mail parked) stops requesting new errands until the pick resolves, so `attack anything` (5.0) wins instead of losing every visit to a request (6.3-6.99) that refuses and parks; a bot whose searches succeed quests exactly as today.
 - Parked bots drift instead of standing — the 50 yd idle wander no longer waits for the grind target to come back empty, so a held-but-unattackable pick stops vetoing the only motion that can break the standstill; the attack row still wins whenever the prey is usable.
 - Targetless bots stop standing out the full quest park — a `move stuck` trip with no travel target caps the 10-minute quest-errand park at 1 minute, so the next decision may re-search instead of idling; unreachable spots stay refused by the existing pick gates.
 - Bots stop re-picking the same quest giver forever — the third consecutive pick of one quest id parks the quest errand for a minute, bounding the stand-at-giver loop while the pick itself still lands.

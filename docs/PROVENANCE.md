@@ -4257,6 +4257,30 @@ Balance hurricane: the only rows lived in the dead vector-style
 (auto-mark combat gate) confirmed moot: `MarkRtiStrategy` only queues on
 `no rti target` in combat.
 
+## Held pick outranks a new errand, starved bots only (night2 heldprey2) — 2026-10-09
+Feature: `TravelActionMultiplier` vetoes travel request actions while the
+bot holds a grind pick and has no active travel target, but only once the
+bot's own recent travel searches prove starved: three or more of the
+twelve counted purposes (quest errand + every numeric travel purpose -
+Grind, GenericRpg, Explore, GatherMining/Herbalism/Fishing, Boss, Vendor,
+Repair, AH, Mail) still inside their `no travel purpose until::<key>`
+park. A successful pick sets no park, so a bot whose searches succeed
+keeps questing exactly as today - its requests return 1.0 here. Named
+errands (trainer class, city, ...) stay out of the count: their parks are
+common on healthy bots (a trainer with nothing affordable parks ten
+minutes), and counting them would veto questing bots that are succeeding
+everywhere else. Healers without `offdps` exempt (they start no fights);
+travelling bots untouched (the hasTarget veto still owns those ticks);
+owned/hired bots keep today's order (player-ordered journeys). Scoped
+down from round 1 (`agent/heldprey` 41990572, NOT merged), which vetoed
+on the held pick alone and would have pinned a bot that just finished a
+trip wherever mobs stand - no quests, trainers, vendors. Pure predicate
+(`TravelSearchesStarved` + `TravelStarvedParkKeys`,
+`TRAVEL_STARVED_PARKED_PURPOSES = 3`) in `TravelRepickPolicy.h`, tested
+in `tools/test_travel_repick_policy.cpp`; both veto reads are
+already-cached values (grind pick 2 s, manual timestamps free), no extra
+world scan.
+
 Source repository: `mod-playerbots` @
 `b6696bdbd3740e575598d167d69f39f68cc0b907` (local checkout
 `../playerbots-references/mod-playerbots`).
@@ -4307,3 +4331,28 @@ to 1 — the remaining one is the donor-faithful priest row in the dead
 in-game check pending: no fear on undead/mechanical marks, no banish on
 non-demon/elemental, resto chain lightning on ranged packs when nobody
 needs healing, reachable-first heal picks, balance hurricane at 3+.
+
+`src/Ai/Base/Strategy/GrindingStrategy.cpp:23-25`
+(`no target` -> `attack anything` 4.0, no per-tick travel competition) +
+`src/Ai/Base/Actions/ChooseTargetActions.cpp:88-102`
+(`AttackAnythingAction::Execute` carries the approach: sets `pull target`,
+clears the motion master, never breaks the walk).
+
+Copied / ported / reimplemented: reimplemented (starved-gated veto branch
+in `TravelActionMultiplier::GetValue`,
+`ai/playerbot/strategy/generic/TravelStrategy.cpp`; local shape only — the
+donor needs no equivalent because its travel decisions run on the manager
+sweep, not in the per-tick queue).
+
+Reason: night2 heldprey quantify — post-01:21-UK build, 01:24/01:32 snapshots
+(2000/1996 bots): 41 purpose-None bots still 8 min apart, 16 earning XP via
+the local path, ~5 attack orders per 40 still bots per 10 min while
+`TravelSearchEmpty` rows rotate across purposes (empty/rejected) and zero
+sub-6.x actions win; `EvadeProbe` 0 rows on the cohort (no wedged orders —
+the picks are ordinary, the rank is the block).
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
+build/deploy (orchestrator compiles); live check pending:
+`AttackAnythingAction` rows for standing purpose-None bots with picks,
+stalled-None share, no rise in over-level orders (level cap + adds gates
+unchanged), `QuestRewarded` lag only on the no-XP cohort.

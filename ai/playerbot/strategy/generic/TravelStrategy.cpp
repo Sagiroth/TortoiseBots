@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "TravelStrategy.h"
 #include "playerbot/TravelMgr.h"
+#include "playerbot/TravelRepickPolicy.h"
 #include "playerbot/strategy/actions/ChooseTravelTargetAction.h"
 #include "playerbot/strategy/values/MaintenanceValues.h"
 
@@ -36,6 +37,48 @@ float TravelActionMultiplier::GetValue(Action* action)
         }
 
         return 0.0f;
+    }
+
+    // A held grind pick outranks a new errand, but only for a starved bot.
+    // The non-combat queue is one relevance race and every travel request
+    // (6.3-6.99) outranks "attack anything" (5.0): with ~8 purposes on
+    // staggered 1-min parks one is almost always unparked, so a bot that
+    // holds a usable pick with no journey re-requests travel every visit
+    // instead of attacking what stands beside it. Vetoing on the held pick
+    // alone would pin a bot that just finished a trip wherever mobs stand
+    // (no quests, trainers, vendors - organic levelling dead), so the veto
+    // only engages once the bot's own recent searches prove starved: it
+    // counts the existing "no travel purpose until::<key>" parks behind
+    // the twelve counted purposes (quest + every numeric travel purpose;
+    // named errands stay out, their parks are common on healthy bots) and
+    // fires at three or more (TravelSearchesStarved). A bot whose searches
+    // succeed keeps questing exactly as today: its requests return 1.0
+    // here. Healers without offdps are exempt (they start no fights -
+    // blocking errands while a refused pick is held would strand them),
+    // travelling bots are untouched (the hasTarget veto above still owns
+    // those ticks), and owned/hired bots keep today's order (their
+    // journeys are player-ordered). Both reads are already-cached values
+    // (grind pick 2 s, manual timestamps free), so no extra world scan.
+    if (!hasTarget && name.find("request") == 0)
+    {
+        if (ai->ContainsStrategy(STRATEGY_TYPE_HEAL) && !ai->HasStrategy("offdps", BotState::BOT_STATE_COMBAT))
+            return 1.0f;
+        if (!sRandomBotFacade.IsRandomBot(bot) || ai->HasRealPlayerMaster())
+            return 1.0f;
+        if (AI_VALUE(Unit*, "grind target"))
+        {
+            int parked = 0;
+            time_t const now = time(0);
+            for (std::string const& key : TravelStarvedParkKeys())
+            {
+                if (!HAS_AI_VALUE2("manual time", key))
+                    continue;
+                if (AI_VALUE2(time_t, "manual time", key) > now)
+                    ++parked;
+            }
+            if (TravelSearchesStarved(parked))
+                return 0.0f;
+        }
     }
 
     return 1.0f;

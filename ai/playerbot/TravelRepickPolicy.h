@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <ctime>
 #include <string>
+#include <vector>
 
 // Pure policy for the travel re-pick churn fixes (loops handover sections 3
 // and 4): combat-stuck resets kept no travel target while move-stuck
@@ -57,6 +58,69 @@ namespace ai
     inline bool GiverRepickParksQuest(int consecutiveSameQuestPicks)
     {
         return consecutiveSameQuestPicks >= GIVER_REPICK_PARK_AFTER;
+    }
+
+    // Held-prey travel veto, starved-only gate (night2 heldprey2): the
+    // non-combat queue is one relevance race and every travel request
+    // (6.3-6.99) outranks "attack anything" (5.0), so a bot holding a
+    // usable pick with no journey spends every visit re-requesting travel
+    // while any purpose stays unparked - each search then refuses
+    // (empty/rejected) and parks a minute, and with ~8 purposes rotating
+    // the attack never wins. Vetoing on the held pick alone would also pin
+    // a bot that just finished a trip wherever mobs stand (no quests,
+    // trainers, vendors - organic levelling dead), so the veto only
+    // engages once the bot's own recent searches prove starved: a
+    // successful pick sets no park, while every failed search does
+    // (empty/invalid 1 min, quest-empty 10 min, move-fail drop and stuck
+    // retire 5 min, giver re-pick guard and fruitless trainer visit their
+    // own windows - all filed under "no travel purpose until::<key>", the
+    // same timestamp the request gate reads). Three parked purposes out
+    // of the twelve below means the rotation is failing broadly, not one
+    // errand waiting out a moment: one or two parks is an ordinary
+    // questing bot between trips. Counted live at the call site from the
+    // existing timestamps - no new value, no scan. The caller only counts
+    // while a pick is held and no journey is active, and only for
+    // masterless pool bots (owned/hired journeys are player-ordered).
+    constexpr int TRAVEL_STARVED_PARKED_PURPOSES = 3;
+
+    // Park keys the starved count reads: the quest errand ("quest", its
+    // requests carry no qualifier) plus every numeric travel purpose in
+    // the request tables (Grind 4096, GenericRpg 64, Explore 262144,
+    // GatherMining 32768, GatherHerbalism 65536, GatherFishing 131072,
+    // Boss 8192, Vendor 512, Repair 256, AH 1024, Mail 2048). Full
+    // "manual time" keys, so the call site pays no per-tick
+    // concatenation. Named errands (trainer class, city, ...) are out:
+    // their parks are common on healthy bots (a trainer with nothing
+    // affordable parks ten minutes), and counting them would veto
+    // questing bots that are succeeding everywhere else.
+    inline std::vector<std::string> const& TravelStarvedParkKeys()
+    {
+        static std::vector<std::string> const keys =
+        {
+            "no travel purpose until::quest",
+            "no travel purpose until::4096",
+            "no travel purpose until::64",
+            "no travel purpose until::262144",
+            "no travel purpose until::32768",
+            "no travel purpose until::65536",
+            "no travel purpose until::131072",
+            "no travel purpose until::8192",
+            "no travel purpose until::512",
+            "no travel purpose until::256",
+            "no travel purpose until::1024",
+            "no travel purpose until::2048"
+        };
+        return keys;
+    }
+
+    // Starved verdict over the caller's fresh-park count: three or more
+    // parked purposes means recent searches came back empty across the
+    // rotation, so holding the pick outranks the next errand until the
+    // pick resolves (kill, tap, or cache refresh clears it and the veto
+    // lifts with it).
+    inline bool TravelSearchesStarved(int parkedPurposeCount)
+    {
+        return parkedPurposeCount >= TRAVEL_STARVED_PARKED_PURPOSES;
     }
 
     // PathFinder::getPathType() bucket for the TravelMoveFailed row: NOPATH

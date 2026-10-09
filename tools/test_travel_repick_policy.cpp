@@ -23,6 +23,9 @@ using ai::TravelPurposeParkKey;
 using ai::TravelTargetIsNull;
 using ai::GiverRepickParksQuest;
 using ai::GIVER_REPICK_PARK_AFTER;
+using ai::TRAVEL_STARVED_PARKED_PURPOSES;
+using ai::TravelSearchesStarved;
+using ai::TravelStarvedParkKeys;
 
 int main()
 {
@@ -158,6 +161,30 @@ int main()
     CHECK(GiverRepickParksQuest(4));
     CHECK(GIVER_REPICK_PARK_AFTER == 3);
     std::cout << "  [PASS] giver re-pick parks quest on the 3rd same-quest pick\n";
+
+    // Held-prey veto starved gate: fewer than three parked purposes is an
+    // ordinary questing bot between trips (no veto), three or more is a
+    // rotation failing broadly (veto while the pick is held). The key list
+    // covers the quest errand plus every numeric travel purpose, and stays
+    // clear of named errands (trainer class, city) whose parks are common
+    // on healthy bots.
+    CHECK(!TravelSearchesStarved(0));
+    CHECK(!TravelSearchesStarved(1));
+    CHECK(!TravelSearchesStarved(2));
+    CHECK(TravelSearchesStarved(3));
+    CHECK(TravelSearchesStarved(5));
+    CHECK(TRAVEL_STARVED_PARKED_PURPOSES == 3);
+    CHECK(TravelStarvedParkKeys().size() == 12);
+    CHECK(TravelStarvedParkKeys().front() == "no travel purpose until::quest");
+    CHECK(TravelStarvedParkKeys()[1] == "no travel purpose until::4096");
+    {
+        bool trainerCounted = false;
+        for (std::string const& key : TravelStarvedParkKeys())
+            if (key.find("trainer") != std::string::npos)
+                trainerCounted = true;
+        CHECK(!trainerCounted);
+    }
+    std::cout << "  [PASS] starved gate needs 3 parked purposes, named errands out\n";
 
     std::cout << "travel repick policy: OK\n";
     return 0;
