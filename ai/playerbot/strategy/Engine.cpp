@@ -238,7 +238,12 @@ void Engine::Init()
 
 bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 {
-    LogAction("--- AI Tick --- state=%s strats=%s", BotStateName(state), StrategySignature().c_str());
+    // Hot path: this tick line used to format + append + trim + detail-log on
+    // every DoNextAction call. LogAction early-outs for groupless bots, but
+    // only after that work; skip the call itself when it would be a no-op.
+    // lastAction keeps every other PUSH/A/T line, so .bot action output is unchanged.
+    if (!sPlayerbotAIConfig.logInGroupOnly || (ai->GetBot() && ai->GetBot()->GetGroup()))
+        LogAction("--- AI Tick --- state=%s strats=%s", BotStateName(state), StrategySignature().c_str());
     if (sPlayerbotAIConfig.logValuesPerTick)
         LogValues();
 
