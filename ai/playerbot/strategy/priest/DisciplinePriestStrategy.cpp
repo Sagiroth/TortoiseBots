@@ -38,11 +38,17 @@ void DisciplinePriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
 
     triggers.push_back(new TriggerNode(
         "party member medium health",
-        NextAction::array(0, new NextAction("greater heal on party", ACTION_MEDIUM_HEAL), NULL)));
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_LIGHT_HEAL + 9),
+                             new NextAction("greater heal on party", ACTION_MEDIUM_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member almost full health",
-        NextAction::array(0, new NextAction("renew on party", ACTION_LIGHT_HEAL), NULL)));
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_LIGHT_HEAL + 3),
+                             new NextAction("renew on party", ACTION_LIGHT_HEAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "medium mana and party member medium health",
+        NextAction::array(0, new NextAction("inner focus", ACTION_HIGH + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member to heal out of spell range",
@@ -52,6 +58,27 @@ void DisciplinePriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
 void DisciplinePriestStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     PriestStrategy::InitNonCombatTriggers(triggers);
+
+    // mod-playerbots parity (PRI-12): disc had no non-combat heals at all —
+    // only the reach row. Shield-first ladder mirroring the combat kit.
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_MOVE + 1),
+            new NextAction("flash heal on party", ACTION_MOVE), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member low health",
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_HIGH + 2),
+            new NextAction("greater heal on party", ACTION_HIGH + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member medium health",
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_HIGH),
+            new NextAction("greater heal on party", ACTION_HIGH - 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member almost full health",
+        NextAction::array(0, new NextAction("renew on party", ACTION_NORMAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member to heal out of spell range",

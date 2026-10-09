@@ -4522,3 +4522,54 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Priest parity healing ladder: PRI-11 holy greater/flash + PRI-5 disc shield + PRI-7 inner focus + PRI-12 disc non-combat — 2026-10-09
+Feature: (1) Holy combat ladder: medium tier tries `greater heal on party`
+before heal/lesser; low tier tries flash after shield, then greater/heal/
+lesser (low-rank fallbacks kept for 13-19 dungeons). (2) Disc combat
+ladder: medium tier shields at LIGHT+9 above greater heal; almost-full
+tier shields at LIGHT+3 above renew (Weakened Soul guard already in the
+shield action). (3) Holy + disc combat: `medium mana and party member
+medium health` compound trigger fires `inner focus` at ACTION_HIGH+1, so
+the 5-min cooldown only spends when a heal target exists. (4) Disc
+non-combat: shield-first ladder (critical/low/medium/almost-full,
+mirroring holy's non-combat bands) replacing the reach-only kit.
+Skipped: PRI-12 non-combat Vampiric Embrace — VE 15286 is a
+debuff-limit-affected enemy-target debuff (core SpellAuras.cpp), not
+self-castable; with no target out of combat the trigger could never fire.
+
+Source repository: `mod-playerbots` @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Class/Priest/Strategy/HolyPriestStrategy.cpp:150-180`
+(greater-first medium, flash filler, renew almost-full) +
+`src/Ai/Class/Priest/Strategy/DiscPriestStrategy.cpp:26-93`
+(shield-first ladder every tier) +
+`src/Ai/Class/Priest/Strategy/GenericPriestStrategy.cpp:29-35`
+(medium mana to inner focus) +
+`src/Ai/Class/Priest/Strategy/PriestNonCombatStrategy.cpp:29-48`
+(non-combat renew/greater ladder). Deviations, deliberate: donor's
+WotLK spells omitted (Penance, Prayer of Mending, Circle of Healing —
+no 1.12 equivalents); inner focus gated on a heal target (donor fires
+on mana alone; 5-min CD 14751 verified in spell data); disc non-combat
+bands mirror holy's local ACTION_MOVE/ACTION_HIGH/ACTION_NORMAL shape
+rather than the donor's exact relevances.
+
+Reason: priest parity report PRI-11/PRI-5/PRI-7/PRI-12 — holy bots cast
+Heal R4 where Greater Heal belonged, disc never shielded above low
+health, healer Inner Focus never fired, disc never healed out of combat.
+
+Source files (module, modified):
+`ai/playerbot/strategy/priest/HolyPriestStrategy.cpp`,
+`ai/playerbot/strategy/priest/DisciplinePriestStrategy.cpp`,
+`ai/playerbot/strategy/priest/PriestAiObjectContext.cpp` (compound
+trigger creator) + `docs/classes/priest.md` (ladder + inner focus +
+non-combat lines).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells (Greater Heal 2060+, Flash Heal, Inner
+Focus 14751, PW:S all in 1.18.1 data).
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`.
+Build via build-commit.sh. No live test.

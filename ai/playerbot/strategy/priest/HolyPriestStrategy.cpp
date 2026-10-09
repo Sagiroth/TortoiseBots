@@ -38,17 +38,24 @@ void HolyPriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "party member low health",
         NextAction::array(0, new NextAction("power word: shield on party", ACTION_MEDIUM_HEAL + 2),
-                             new NextAction("heal on party", ACTION_MEDIUM_HEAL + 1),
-                             new NextAction("lesser heal on party", ACTION_MEDIUM_HEAL), NULL)));
+                             new NextAction("flash heal on party", ACTION_MEDIUM_HEAL + 1),
+                             new NextAction("greater heal on party", ACTION_MEDIUM_HEAL),
+                             new NextAction("heal on party", ACTION_MEDIUM_HEAL - 1),
+                             new NextAction("lesser heal on party", ACTION_MEDIUM_HEAL - 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member medium health",
-        NextAction::array(0, new NextAction("heal on party", ACTION_MEDIUM_HEAL),
-                             new NextAction("lesser heal on party", ACTION_MEDIUM_HEAL - 1), NULL)));
+        NextAction::array(0, new NextAction("greater heal on party", ACTION_MEDIUM_HEAL),
+                             new NextAction("heal on party", ACTION_MEDIUM_HEAL - 1),
+                             new NextAction("lesser heal on party", ACTION_MEDIUM_HEAL - 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member almost full health",
         NextAction::array(0, new NextAction("renew on party", ACTION_LIGHT_HEAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "medium mana and party member medium health",
+        NextAction::array(0, new NextAction("inner focus", ACTION_HIGH + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member to heal out of spell range",
