@@ -627,11 +627,11 @@ uint32_t BattlegroundQueueService::CountRunningBotOnlyWsg() const
         BattleGround* bg = it->second;
         if (!bg || bg->GetStatus() == STATUS_WAIT_LEAVE)
             continue;
-        BattleGroundPlayerMap const& players = bg->GetPlayers();
+        BattleGround::BattleGroundPlayerMap const& players = bg->GetPlayers();
         if (players.empty())
             continue;
         bool botOnly = true;
-        for (auto const& pair : players)
+        for (BattleGround::BattleGroundPlayerMap::value_type const& pair : players)
         {
             Player* member = sObjectAccessor.FindPlayer(pair.first);
             if (!member || !member->IsInWorld() || !member->GetSession() ||
@@ -698,7 +698,7 @@ uint32_t BattlegroundQueueService::CountSeededForTeam(uint32_t queueTypeValue, u
         BattleGround* bg = it->second;
         if (!bg || bg->GetStatus() == STATUS_WAIT_LEAVE)
             continue;
-        for (auto const& pair : bg->GetPlayers())
+        for (BattleGround::BattleGroundPlayerMap::value_type const& pair : bg->GetPlayers())
         {
             Player* member = sObjectAccessor.FindPlayer(pair.first);
             if (!member || uint32(member->GetTeam()) != team)
