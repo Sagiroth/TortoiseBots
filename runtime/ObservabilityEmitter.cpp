@@ -332,10 +332,12 @@ Activity NoteActivity(Player* bot, bool hasWorkTarget, ObservabilityEmitter::Bot
 // (the value object already exists; Get() returns the pointer); GetShortName/
 // GetTitle are cheap string builders on the already-chosen destination. Idle
 // bots contribute empty strings so the pool rollup can count not-travelling.
-void FillTravelInfo(PlayerbotAI* ai, std::string& purpose, std::string& to)
+void FillTravelInfo(PlayerbotAI* ai, std::string& purpose, std::string& to, std::string& status, int32& dist)
 {
     purpose.clear();
     to.clear();
+    status.clear();
+    dist = -1;
     if (!ai || !ai->GetAiObjectContext())
         return;
     ai::Value<ai::TravelTarget*>* value =
@@ -356,6 +358,10 @@ void FillTravelInfo(PlayerbotAI* ai, std::string& purpose, std::string& to)
         return;
     }
     to = dest->GetTitle();
+    static char const* const statusNames[] = { "none", "prepare", "ready", "travel", "work", "cooldown", "expired" };
+    uint8 const st = static_cast<uint8>(target->GetStatus());
+    status = st < 7 ? statusNames[st] : "unknown";
+    dist = static_cast<int32>(target->Distance(ai->GetBot()));
 }
 
 } // anonymous namespace
@@ -1143,7 +1149,7 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
         else
             m_deathKillers.erase(bot->GetGUIDLow());
         snap.state = MacroStateName(state);
-        FillTravelInfo(ai, snap.travelPurpose, snap.travelTo);
+        FillTravelInfo(ai, snap.travelPurpose, snap.travelTo, snap.travelStatus, snap.travelDist);
 
         if (ai)
         {
@@ -1280,7 +1286,9 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
                 << ",\"last_action\":\"" << EscapeJson(b.lastAction) << "\""
                 << ",\"last_trigger\":\"" << EscapeJson(b.lastTrigger) << "\""
                 << ",\"travel_purpose\":\"" << EscapeJson(b.travelPurpose) << "\""
-                << ",\"travel_to\":\"" << EscapeJson(b.travelTo) << "\"}";
+                << ",\"travel_to\":\"" << EscapeJson(b.travelTo) << "\""
+                << ",\"travel_status\":\"" << b.travelStatus << "\""
+                << ",\"travel_dist\":" << b.travelDist << "}";
         }
         bss << "]}";
         SendDatagram(bss.str());

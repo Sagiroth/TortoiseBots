@@ -50,6 +50,10 @@ type BotSnapshot struct {
 	// "vendor", ... + title); empty when the bot is not travelling.
 	TravelPurpose string `json:"travel_purpose,omitempty"`
 	TravelTo      string `json:"travel_to,omitempty"`
+	// TravelStatus is the travel target state ("travel", "work",
+	// "cooldown", ...); TravelDist the yards left (-1 when idle).
+	TravelStatus string `json:"travel_status,omitempty"`
+	TravelDist   int32  `json:"travel_dist,omitempty"`
 
 	// XpPerHour is daemon-derived from successive XP samples (level-up
 	// aware), not on the wire. XpGainAgeSec is seconds since the last

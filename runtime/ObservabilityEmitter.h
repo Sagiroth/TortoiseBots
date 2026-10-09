@@ -49,6 +49,8 @@ struct BotTelemetrySnapshot
     std::string lastTrigger; // event source that drove the last action
     std::string travelPurpose; // active travel destination short name ("grind", "vendor", ...)
     std::string travelTo;      // active travel destination title (empty when idle)
+    std::string travelStatus;  // "travel", "work", "cooldown", ... (empty when idle)
+    int32 travelDist = -1;     // yards to the destination point (-1 when idle)
 };
 
 // ObservabilityEmitter sends non-blocking loopback UDP telemetry to the
