@@ -2416,8 +2416,24 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
     *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, destinationFetches, takerOnly]()
         {
             PartitionedTravelList list;
-            for (auto [purpose, questId, range] : destinationFetches)
+            // One destination walk per (purpose, range) group instead of one
+            // per quest-log entry: fetches that share purpose and range walk
+            // disjoint destination keys (quest destinations are keyed by quest
+            // id), so a single GetPartitions over the combined entry list
+            // visits each destination exactly once under the same gates, seed
+            // and range. Same surviving set and partition assignment; only the
+            // shuffle tie-break order within a partition can differ, which is
+            // already nondeterministic via the urand skip in SetBestTarget.
+            std::vector<bool> walked(destinationFetches.size(), false);
+            for (size_t i = 0; i < destinationFetches.size(); ++i)
             {
+                if (walked[i])
+                    continue;
+                walked[i] = true;
+
+                uint32 const purpose = std::get<0>(destinationFetches[i]);
+                float const range = std::get<2>(destinationFetches[i]);
+
                 // Quest destinations are keyed by quest id (TravelMgr::AddDestination:
                 // id = questId ? questId : entry), and the primary quest-giver fetch
                 // carries 0 - so the old `{ questId }` filter asked for a
@@ -2425,7 +2441,22 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
                 // come from the empty-filter fallback below, which only runs when
                 // nothing else was found. An empty vector is this API's "no entry
                 // filter" (see FindDestination, which searches givers the same way).
-                std::vector<int32> const entryFilter = questId ? std::vector<int32>{ questId } : std::vector<int32>();
+                // A 0-keyed fetch therefore always walks alone: folding quest keys
+                // into its unfiltered walk would visit them twice.
+                std::vector<int32> entryFilter;
+                if (std::get<1>(destinationFetches[i]) != 0)
+                {
+                    entryFilter.push_back(std::get<1>(destinationFetches[i]));
+                    for (size_t j = i + 1; j < destinationFetches.size(); ++j)
+                    {
+                        if (walked[j] || std::get<0>(destinationFetches[j]) != purpose ||
+                            std::get<2>(destinationFetches[j]) != range || std::get<1>(destinationFetches[j]) == 0)
+                            continue;
+                        walked[j] = true;
+                        entryFilter.push_back(std::get<1>(destinationFetches[j]));
+                    }
+                }
+
                 PartitionedTravelList subList = sTravelMgr.GetPartitions(center, partitions, travelInfo, purpose, entryFilter, true, range);
 
                 for (auto& [partition, points] : subList)
@@ -2440,7 +2471,16 @@ bool RequestQuestTravelTargetAction::Execute(Event& event)
             if (list.empty() && !takerOnly)
             {
                 float questGiverRange = (travelInfo.GetLevel() <= 5) ? 1500.0f : ((travelInfo.GetLevel() <= 10) ? 3000.0f : 10000.0f);
-                list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::QuestGiver, {}, true, questGiverRange);
+                // The primary quest-giver fetch above (always destinationFetches
+                // front: the class-quest reset keeps it, takerOnly is excluded
+                // here) already walked the whole giver table out to its own
+                // range. When that range covers this one its result was empty
+                // too, so this walk is a proven empty subset - skip it. Strictly
+                // identical (an empty walk merges nothing); saves a full-table
+                // walk on every empty low-level search, where the primary range
+                // always covers it.
+                if (questGiverRange > std::get<2>(destinationFetches.front()))
+                    list = sTravelMgr.GetPartitions(center, partitions, travelInfo, (uint32)TravelDestinationPurpose::QuestGiver, {}, true, questGiverRange);
             }
 
             return list;
