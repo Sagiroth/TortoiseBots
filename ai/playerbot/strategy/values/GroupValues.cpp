@@ -146,10 +146,13 @@ bool GroupReadyValue::Calculate()
         if (ai->GetGroupMaster() && sServerFacade.getDistance2d(member, ai->GetGroupMaster()) > sPlayerbotAIConfig.sightDistance)
             continue;
 
-        bool hasAttackers = AI_VALUE_LAZY(bool, "has attackers") || AI_VALUE_LAZY(bool, "has enemy player targets") || AI_VALUE_LAZY(Unit*, "dps target");
-
-        //Wait for members to recover health/mana.
-        if (hasAttackers && member->GetHealthPercent() < sPlayerbotAIConfig.almostFullHealth && !member->IsInCombat())
+        // Between pulls the party drinks/eats together: like the donor
+        // (GroupReadyValue, no attacker gate), hold movement until members
+        // are topped up. The live hasAttackers conjunct released the wait the
+        // moment a fight ended, so wounded/OOM bots walked on at once.
+        // Still skip members already fighting (they are being healed, not
+        // resting) and mana-less classes below.
+        if (member->GetHealthPercent() < sPlayerbotAIConfig.almostFullHealth && !member->IsInCombat())
             return false;
 
         if (!member->GetPower(POWER_MANA))
