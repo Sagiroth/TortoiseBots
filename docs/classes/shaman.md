@@ -15,7 +15,7 @@ Shamans bring unparalleled group utility through totem sets, elemental shocks, w
 
 ## Supported Specs & Roles
 
-- **Restoration (Healer):** Premier multi-target healer utilizing *Chain Heal*, *Healing Wave*, *Lesser Healing Wave*, and *Mana Tide Totem*.
+- **Restoration (Healer):** Premier multi-target healer utilizing *Chain Heal* (group-wide when the pack needs it), *Healing Wave*, *Lesser Healing Wave*, and *Mana Tide Totem*.
 - **Enhancement (Melee DPS):** Dual-wielding or two-handed melee powerhouse utilizing *Windfury*, *Stormstrike*, and shocks.
 - **Elemental (Ranged DPS):** Nature and fire caster driving high burst through *Lightning Bolt*, *Chain Lightning*, and *Elemental Mastery*.
 
@@ -26,7 +26,7 @@ Shamans bring unparalleled group utility through totem sets, elemental shocks, w
 Shamans automatically drop and maintain fixed per-spec 4-element totem sets (other totems are selectable via manual `totem ...` strategies):
 
 - **Earth Totem:** *Strength of Earth Totem* (automatic; *Stoneskin Totem* as fallback). *Tremor Totem* is manual-only.
-- **Fire Totem:** *Searing Totem* (single target), *Magma Totem* / *Fire Nova Totem* (AoE packs).
+- **Fire Totem:** *Searing Totem* (single target), *Magma Totem* / *Fire Nova Totem* (AoE packs). *Fire Nova* only fires with a fire totem down and the target within its 8-yard pulse — no more whiffed casts.
 - **Water Totem:** *Mana Spring Totem* or *Healing Stream Totem* (automatic per spec). *Poison Cleansing Totem* is manual-only.
 - **Air Totem:** *Windfury Totem* (automatic; *Grace of Air Totem* for Enhancement), *Grounding Totem* as fallback.
 

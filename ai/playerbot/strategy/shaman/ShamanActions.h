@@ -315,6 +315,35 @@ namespace ai
     {
     public:
         CastFireNovaAction(PlayerbotAI* ai) : CastSpellAction(ai, "fire nova") {}
+        virtual bool isUseful() override
+        {
+            // Vanilla Fire Nova pulses from the fire totem (donor parity
+            // SHM-7): with no fire totem down, or the target beyond pulse
+            // range of ours, the cast only burns the GCD.
+            Unit* target = AI_VALUE(Unit*, "current target");
+            if (!target)
+                return false;
+            std::list<ObjectGuid> units = *context->GetValue<std::list<ObjectGuid>>("nearest npcs");
+            for (ObjectGuid guid : units)
+            {
+                Unit* unit = ai->GetUnit(guid);
+                if (!unit)
+                    continue;
+                Creature* totem = dynamic_cast<Creature*>(unit);
+                if (!totem || !totem->IsTotem() || totem->GetOwner() != bot)
+                    continue;
+                const char* name = totem->GetName();
+                if (strstri(name, "searing") || strstri(name, "magma") ||
+                    strstri(name, "flametongue") || strstri(name, "fire nova") ||
+                    strstri(name, "frost resistance"))
+                {
+                    if (totem->GetDistance(target) <= 8.0f)
+                        return CastSpellAction::isUseful();
+                    return false;
+                }
+            }
+            return false;
+        }
     };
 
 	class CastAncestralSpiritAction : public ResurrectPartyMemberAction
