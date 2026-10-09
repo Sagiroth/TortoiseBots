@@ -4356,3 +4356,43 @@ build/deploy (orchestrator compiles); live check pending:
 `AttackAnythingAction` rows for standing purpose-None bots with picks,
 stalled-None share, no rise in over-level orders (level cap + adds gates
 unchanged), `QuestRewarded` lag only on the no-XP cohort.
+
+## Loot open-failure give-up (night2 lootfrozen) — 2026-10-09
+Feature: `OpenLootAction::Execute` (`ai/playerbot/strategy/actions/LootAction.cpp`)
+counts each failed open on the loot stack's existing per-corpse failure
+memory (`LootObjectStack::NoteApproachFailure`, the same counter `move to
+loot` uses for unreachable corpses) and drops the corpse once it is
+abandoned (3 failures inside the 120 s window), clearing `loot target`
+so `loot` selects the next corpse. Covers every `DoLoot` "not now"
+path that previously retried forever with no counter: failed
+open/skin/gather casts, a contended game object, no opening spell.
+Player-ordered looting (`.bot` loot orders via `ChatCommandHandlerStrategy`)
+issues the action once per order and can never fill a counter that
+needs repeated failures. Documented in
+`docs/concepts/bot-mechanics-and-quirks.md` (Loot Open-Failure Give-Up).
+
+Source repository: `mod-playerbots` @
+`5397110` (local checkout
+`../playerbots-references/mod-playerbots`, read-only) —
+`src/Ai/Base/Actions/LootAction.cpp` (open removes the corpse only on
+success; no per-object attempt counter or timeout anywhere in the
+donor loot chain) + `src/Mgr/Item/LootObjectStack.cpp` (stack-wide 30 s
+TTL + 200-cap eviction only). No donor behavior to port: the donor has
+the same unbounded retry on failed opens; the counter reuses our own
+`MoveToLootAction` abandonment shape.
+
+Reason: night2 lootfrozen live measure — two 120 s-apart dashboard
+snapshots (01:30/01:33 UTC, 1999 bots) + `bot_events.csv` window:
+30-44 of ~550-740 alive-out-of-combat frozen bots carry a loot
+last_action, but only 6 persist across both snapshots and 5 of those
+log loot progress in-window (StoreLoot/GatherLoot/LootMoney —
+skinning chains and multi-corpse clears, not wedges). The hard wedge
+is rare (~2/2000: `open loot`/`can loot` pinned 240 s+ with zero
+displacement and no loot events). Bag-full is lossy but not a wedge
+(per-item skip + release); solo pool bots show no group roll waits.
+
+Local validation: `bash tools/verify_all.sh`; `python3
+tools/verify_okf.py`; `git diff --check`. No build/deploy
+(orchestrator compiles); live check pending: `open loot` last_action
+share of frozen bots, `giving up on guid=... after repeated failed
+opens` debug rate, no change to player-ordered loot completion.

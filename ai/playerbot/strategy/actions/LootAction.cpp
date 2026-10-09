@@ -73,8 +73,33 @@ bool OpenLootAction::Execute(Event& event)
     {
         AI_VALUE(LootObjectStack*, "available loot")->Remove(lootObject.guid);
         context->GetValue<LootObject>("loot target")->Set(LootObject());
+        return true;
     }
-    return result;
+
+    // Bounded give-up: DoLoot says "not now" without dropping the corpse on several
+    // paths (failed open/skin/gather cast, a contended game object, no opening spell),
+    // so without a counter the same target re-fires every tick while the bot stands
+    // still. Count consecutive failures per corpse on the stack's failure memory (the
+    // same one "move to loot" uses for unreachable corpses); once it is abandoned the
+    // stack drops it and "loot" selects the next corpse. Player-ordered looting only
+    // issues the action once per order, so a counter that needs repeated failures can
+    // never veto a fresh order.
+    if (!lootObject.IsEmpty())
+    {
+        LootObjectStack* lootStack = AI_VALUE(LootObjectStack*, "available loot");
+        if (lootStack)
+        {
+            lootStack->NoteApproachFailure(lootObject.guid);
+            if (lootStack->IsAbandoned(lootObject.guid))
+            {
+                sLog.outDebug("[BOT LOOT] %s: giving up on guid=%lu after repeated failed opens",
+                    bot->GetName(), lootObject.guid.GetRawValue());
+                lootStack->Remove(lootObject.guid);
+                context->GetValue<LootObject>("loot target")->Set(LootObject());
+            }
+        }
+    }
+    return false;
 }
 
 bool OpenLootAction::DoLoot(LootObject& lootObject)
