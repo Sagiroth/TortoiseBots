@@ -8,6 +8,14 @@ void BlackwingLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
     triggers.push_back(new TriggerNode(
         "suppression device close",
         NextAction::array(0, new NextAction("disarm suppression device", 80.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "boss wants fire aura",
+        NextAction::array(0, new NextAction("swap fire resistance aura", ACTION_HIGH + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "boss wants shadow aura",
+        NextAction::array(0, new NextAction("swap shadow resistance aura", ACTION_HIGH + 1), NULL)));
 }
 
 void BlackwingLairDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

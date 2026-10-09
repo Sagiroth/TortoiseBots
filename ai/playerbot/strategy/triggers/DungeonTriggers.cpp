@@ -467,3 +467,58 @@ bool RaidSpreadNeededTrigger::IsActive()
     }
     return false;
 }
+
+#include "playerbot/ResistAuraPolicy.h"
+
+bool BossWantsFireAuraTrigger::IsActive()
+{
+    // Cheap class gate first: filters out most of the raid.
+    if (bot->GetClass() != CLASS_PALADIN)
+        return false;
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+        return false;
+    // Don't fight an explicit player order: a manually set aura stays.
+    if (ai->HasStrategy("aura fire", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("aura shadow", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("aura frost", BotState::BOT_STATE_COMBAT))
+        return false;
+    // Already covered: no re-cast churn each tick.
+    if (ai->HasAura("fire resistance aura", bot))
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+    for (const ObjectGuid& attackerGuid : attackers)
+    {
+        Unit* attacker = ai->GetUnit(attackerGuid);
+        if (!attacker || !sServerFacade.IsAlive(attacker))
+            continue;
+        if (IsFireAuraBoss(attacker->GetEntry()))
+            return true;
+    }
+    return false;
+}
+
+bool BossWantsShadowAuraTrigger::IsActive()
+{
+    if (bot->GetClass() != CLASS_PALADIN)
+        return false;
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+        return false;
+    if (ai->HasStrategy("aura fire", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("aura shadow", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("aura frost", BotState::BOT_STATE_COMBAT))
+        return false;
+    if (ai->HasAura("shadow resistance aura", bot))
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+    for (const ObjectGuid& attackerGuid : attackers)
+    {
+        Unit* attacker = ai->GetUnit(attackerGuid);
+        if (!attacker || !sServerFacade.IsAlive(attacker))
+            continue;
+        if (IsShadowAuraBoss(attacker->GetEntry()))
+            return true;
+    }
+    return false;
+}

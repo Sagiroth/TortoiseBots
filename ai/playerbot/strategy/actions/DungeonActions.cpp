@@ -494,3 +494,16 @@ bool MoveAwayFromCreature::IsHazardNearby(const WorldPosition& point, const std:
 
     return false;
 }
+bool SwapFireResistanceAuraAction::Execute(Event& event)
+{
+    // Strategy first (so the aura persists via the strategy trigger),
+    // then cast it now like the donor's DoSpecificAction.
+    ChangeAllStrategyAction::Execute(event);
+    return ai->DoSpecificAction("fire resistance aura", event, true);
+}
+
+bool SwapShadowResistanceAuraAction::Execute(Event& event)
+{
+    ChangeAllStrategyAction::Execute(event);
+    return ai->DoSpecificAction("shadow resistance aura", event, true);
+}

@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
+#include "ChangeStrategyAction.h"
 #include "MovementActions.h"
 #include "playerbot/strategy/values/HazardsValue.h"
 
@@ -75,6 +76,24 @@ namespace ai
         DragonFlankAction(PlayerbotAI* ai, std::string name = "dragon flank") : MovementAction(ai, name) {}
         bool Execute(Event& event) override;
         bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
+    };
+
+    // Resist-aura auto-swap (mod-playerbots parity): switch the
+    // paladin to the matching resistance-aura strategy and cast it now.
+    // Manual "aura fire/shadow/frost" strategies stay as player overrides
+    // (the triggers refuse to fire while any is set).
+    class SwapFireResistanceAuraAction : public ChangeAllStrategyAction
+    {
+    public:
+        SwapFireResistanceAuraAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "swap fire resistance aura", "+aura fire") {}
+        bool Execute(Event& event) override;
+    };
+
+    class SwapShadowResistanceAuraAction : public ChangeAllStrategyAction
+    {
+    public:
+        SwapShadowResistanceAuraAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "swap shadow resistance aura", "+aura shadow") {}
+        bool Execute(Event& event) override;
     };
 
     // Universal raid survival: ranged spread. Steps 10-12yd away from the
