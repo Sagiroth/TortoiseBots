@@ -4651,3 +4651,28 @@ strategy idiom. No new spells: Omen of Clarity 16864 / Clearcasting
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
 live test (no live test per parity brief); build via build-commit.sh.
+## Chat `pull back` alias + `attackers` wiring fix (SOC-C2/SOC-C4, 2026-10-09)
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Base/Strategy/ChatCommandHandlerStrategy.cpp:72` (`pull back` ->
+`pull my target`), `:68` (`attackers` -> `tell attackers`).
+
+Source files (module, modified): `ai/playerbot/strategy/generic/ChatCommandHandlerStrategy.cpp`
+(new `pull back` -> `pull my target` node; `attackers` node now points at
+the existing `tell attackers` action instead of the nonexistent `attackers`
+action), `ai/playerbot/strategy/triggers/ChatTriggerContext.h` (new
+`pull back` trigger creator) + `CHANGELOG.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in place (two trigger-node
+lines + one creator line). No deviations: same alias target and same action
+name as the donor. The `pull back` tank auto-pull strategy name is
+unaffected - chat dispatch resolves whisper text against trigger creators,
+not strategy names.
+
+Reason: whispering a bot `pull back` resolved no trigger (only `pull` and
+`pull rti` existed); whispering `attackers` matched the trigger but queued
+an action with no creator, so the bot stayed silent.
+
+Local validation: `bash tools/verify_all.sh` (incl. wiring check:
+live-missing=0); `git diff --check`; shared-builder compile check; no live
+in-game test.
