@@ -61,4 +61,41 @@ namespace ai
         // Eternal Quintessence (22754): exalted-Hydraxian upgrade, same use.
         DouseMCRuneActionEternal(PlayerbotAI* ai) : UseItemIdAction(ai, "douse mc rune eternal") { qualifier = "{22754,entry filter::{gos close,mc runes}}"; }
     };
+
+    class GolemaggEnableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        GolemaggEnableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "enable golemagg fight strategy", "+golemagg") {}
+    };
+
+    class GolemaggDisableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        GolemaggDisableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable golemagg fight strategy", "-golemagg") {}
+    };
+
+    class GolemaggBackOffAction : public MoveAwayFromCreature
+    {
+    public:
+        // Donor 12y clear until the splash stack expires.
+        GolemaggBackOffAction(PlayerbotAI* ai) : MoveAwayFromCreature(ai, "back off golemagg", 11988, 12.0f) {}
+    };
+
+    // Healer midpoint move (donor camp midpoint 821.2,-1007).
+    class GolemaggHealerPositionAction : public MoveToAction
+    {
+    public:
+        GolemaggHealerPositionAction(PlayerbotAI* ai) : MoveToAction(ai, "golemagg healer position") {}
+        bool Execute(Event& event) override;
+    };
+
+    // Main-tank hold: keep Golemagg at his camp while the Trust buff lives
+    // on the ragers (donor 795.7,-994.9). Assist holds a rager at its camp
+    // (donor 846.6,-1019.1) via the same move shape.
+    class GolemaggTankHoldAction : public MoveToAction
+    {
+    public:
+        GolemaggTankHoldAction(PlayerbotAI* ai) : MoveToAction(ai, "golemagg tank hold") {}
+        bool Execute(Event& event) override;
+    };
 }

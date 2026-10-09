@@ -350,6 +350,12 @@ namespace ai
             creators["disable magmadar fight strategy"] = [](PlayerbotAI* ai) { return new MagmadarDisableFightStrategyAction(ai); };
             creators["move away from magmadar"] = [](PlayerbotAI* ai) { return new MagmadarMoveAwayAction(ai); };
 
+            creators["enable golemagg fight strategy"] = [](PlayerbotAI* ai) { return new GolemaggEnableFightStrategyAction(ai); };
+            creators["disable golemagg fight strategy"] = [](PlayerbotAI* ai) { return new GolemaggDisableFightStrategyAction(ai); };
+            creators["back off golemagg"] = [](PlayerbotAI* ai) { return new GolemaggBackOffAction(ai); };
+            creators["golemagg healer position"] = [](PlayerbotAI* ai) { return new GolemaggHealerPositionAction(ai); };
+            creators["golemagg tank hold"] = [](PlayerbotAI* ai) { return new GolemaggTankHoldAction(ai); };
+
             creators["move away from hazard"] = [](PlayerbotAI* ai) { return new MoveAwayFromHazard(ai); };
             creators["raid bomb runout"] = [](PlayerbotAI* ai) { return new RaidBombRunoutAction(ai); };
             creators["dragon flank"] = [](PlayerbotAI* ai) { return new DragonFlankAction(ai); };

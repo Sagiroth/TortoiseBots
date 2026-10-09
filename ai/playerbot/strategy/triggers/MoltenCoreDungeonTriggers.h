@@ -1,6 +1,7 @@
 #pragma once
 #include "DungeonTriggers.h"
 #include "GenericTriggers.h"
+#include "playerbot/GolemaggPolicy.h"
 
 namespace ai
 {
@@ -32,6 +33,104 @@ namespace ai
     {
     public:
         MagmadarLavaBombTrigger(PlayerbotAI* ai) : CloseToGameObjectHazardTrigger(ai, "magmadar lava bomb", 177704, 5.0f, 60) {}
+    };
+
+    class GolemaggStartFightTrigger : public StartBossFightTrigger
+    {
+    public:
+        GolemaggStartFightTrigger(PlayerbotAI* ai) : StartBossFightTrigger(ai, "start golemagg fight", "golemagg", 11988) {}
+    };
+
+    class GolemaggEndFightTrigger : public EndBossFightTrigger
+    {
+    public:
+        GolemaggEndFightTrigger(PlayerbotAI* ai) : EndBossFightTrigger(ai, "end golemagg fight", "golemagg", 11988) {}
+    };
+
+    // Magma Splash back-off: non-tanks at 20+ stacks step 12y out unless
+    // the burn phase (<10%) has started (mod-playerbots parity).
+    class GolemaggSplashTrigger : public Trigger
+    {
+    public:
+        GolemaggSplashTrigger(PlayerbotAI* ai, std::string name = "golemagg splash", int checkInterval = 1)
+        : Trigger(ai, name, checkInterval) {}
+
+        bool IsActive() override
+        {
+            if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+                return false;
+            if (!ai->HasStrategy("golemagg", BotState::BOT_STATE_COMBAT))
+                return false;
+            if (ai->IsTank(bot))
+                return false;
+            AiObjectContext* context = ai->GetAiObjectContext();
+            const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+            for (const ObjectGuid& attackerGuid : attackers)
+            {
+                Unit* attacker = ai->GetUnit(attackerGuid);
+                if (!attacker || attacker->GetEntry() != 11988)
+                    continue;
+                if (attacker->GetHealthPercent() <= 10.0f)
+                    return false;
+                Aura* splash = ai->GetAura(13880, bot);
+                int stacks = splash ? (int)splash->GetStackAmount() : 0;
+                if (!ShouldBackOffSplash(false, stacks, (float)attacker->GetHealthPercent()))
+                    return false;
+                return bot->IsWithinDist(attacker, 12.0f);
+            }
+            return false;
+        }
+    };
+
+    // Healer midpoint: healers work from the camp midpoint so both tank
+    // camps stay in range (mod-playerbots parity).
+    class GolemaggHealerTrigger : public Trigger
+    {
+    public:
+        GolemaggHealerTrigger(PlayerbotAI* ai, std::string name = "golemagg healer", int checkInterval = 5)
+        : Trigger(ai, name, checkInterval) {}
+
+        bool IsActive() override
+        {
+            if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+                return false;
+            if (!ai->HasStrategy("golemagg", BotState::BOT_STATE_COMBAT))
+                return false;
+            if (!ai->IsHeal(bot))
+                return false;
+            return bot->GetDistance2d(821.2f, -1007.0f) > 8.0f;
+        }
+    };
+
+    // Tank camp hold: fires for tanks while the fight lives and Trust
+    // is up on a rager (the split is still on). The action itself holds
+    // position when already at camp.
+    class GolemaggTankHoldTrigger : public Trigger
+    {
+    public:
+        GolemaggTankHoldTrigger(PlayerbotAI* ai, std::string name = "golemagg tank hold", int checkInterval = 5)
+        : Trigger(ai, name, checkInterval) {}
+
+        bool IsActive() override
+        {
+            if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+                return false;
+            if (!ai->HasStrategy("golemagg", BotState::BOT_STATE_COMBAT))
+                return false;
+            if (!ai->IsTank(bot))
+                return false;
+            AiObjectContext* context = ai->GetAiObjectContext();
+            const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+            for (const ObjectGuid& attackerGuid : attackers)
+            {
+                Unit* attacker = ai->GetUnit(attackerGuid);
+                if (!attacker || attacker->GetEntry() != 11672)
+                    continue;
+                if (ai->HasAura(20553, attacker))
+                    return true;
+            }
+            return false;
+        }
     };
 
     class MagmadarTooCloseTrigger : public CloseToCreatureTrigger

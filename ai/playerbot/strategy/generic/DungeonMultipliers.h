@@ -6,6 +6,20 @@ class Action;
 
 namespace ai
 {
+    // Golemagg fight discipline (mod-playerbots parity): single-tank
+    // groups skip the role dance; assist tanks never follow tank-assist
+    // retargets; DPS AoE stays off; ranged never melee-fallbacks onto the
+    // boss; backed-off melee stay out until the splash stack expires. The
+    // burn phase (<10%) releases everything except the single-tank dance.
+    class GolemaggFightMultiplier : public Multiplier
+    {
+    public:
+        GolemaggFightMultiplier(PlayerbotAI* ai) : Multiplier(ai, "golemagg fight") {}
+
+    public:
+        virtual float GetValue(Action* action) override;
+    };
+
     class PreventMoveAwayFromCreatureOnReachToCastMultiplier : public Multiplier
     {
     public:
