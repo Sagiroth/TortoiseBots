@@ -80,6 +80,7 @@
 #include "NaxxramasDungeonActions.h"
 #include "EmeraldSanctumDungeonActions.h"
 #include "LowerKarazhanDungeonActions.h"
+#include "ClassicRaidDungeonActions.h"
 #include "KarazhanCryptDungeonActions.h"
 
 namespace ai
@@ -335,6 +336,12 @@ namespace ai
             creators["disable blackwing lair strategy"] = [](PlayerbotAI* ai) { return new BlackwingLairDisableDungeonStrategyAction(ai); };
             creators["enable naxxramas strategy"] = [](PlayerbotAI* ai) { return new NaxxramasEnableDungeonStrategyAction(ai); };
             creators["disable naxxramas strategy"] = [](PlayerbotAI* ai) { return new NaxxramasDisableDungeonStrategyAction(ai); };
+            creators["enable zul'gurub strategy"] = [](PlayerbotAI* ai) { return new ZulgurubEnableDungeonStrategyAction(ai); };
+            creators["disable zul'gurub strategy"] = [](PlayerbotAI* ai) { return new ZulgurubDisableDungeonStrategyAction(ai); };
+            creators["enable ruins of ahn'qiraj strategy"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajEnableDungeonStrategyAction(ai); };
+            creators["disable ruins of ahn'qiraj strategy"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajDisableDungeonStrategyAction(ai); };
+            creators["enable ahn'qiraj temple strategy"] = [](PlayerbotAI* ai) { return new AhnqirajTempleEnableDungeonStrategyAction(ai); };
+            creators["disable ahn'qiraj temple strategy"] = [](PlayerbotAI* ai) { return new AhnqirajTempleDisableDungeonStrategyAction(ai); };
             creators["enable emerald sanctum strategy"] = [](PlayerbotAI* ai) { return new EmeraldSanctumEnableDungeonStrategyAction(ai); };
             creators["disable emerald sanctum strategy"] = [](PlayerbotAI* ai) { return new EmeraldSanctumDisableDungeonStrategyAction(ai); };
             creators["enable lower karazhan strategy"] = [](PlayerbotAI* ai) { return new LowerKarazhanEnableDungeonStrategyAction(ai); };
