@@ -54,7 +54,8 @@ namespace ai
         // and, at the threshold, runs the long-stuck rescue instead of
         // cycling targets from a spot nothing is reachable from. Returns true
         // when the rescue ran (the caller stops this tick).
-        bool TryRescueNoPathTrap(bool noPath, std::string const& purpose);
+        bool TryRescueNoPathTrap(bool noPath, bool offGraph, std::string const& purpose);
+        bool TeleportToNearestRouteNode();
 
         // No-displacement watchdog for a move that reported success: a spline
         // launched into geometry (or a collapsed shortcut) returns true while

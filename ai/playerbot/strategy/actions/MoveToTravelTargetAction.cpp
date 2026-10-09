@@ -344,7 +344,38 @@ bool MoveToTravelTargetAction::TryRescueServiceTrip(TravelTarget* target, std::s
 // alone, like the other rescues. A rescue that does not move the bot still
 // resets the streak, so the next try needs three fresh failures. The
 // streak lives in the facade value store, like "stuck keep count".
-bool MoveToTravelTargetAction::TryRescueNoPathTrap(bool noPath, std::string const& purpose)
+// Off-graph trap (no route node in walking reach, e.g. Lapidis Isle): hearth
+// and repop keep the bot on the island when its graveyard is there (live
+// 2026-10-09: every repop landed at the island graveyard and the bot walked
+// back to the shore). A masterless pool bot nobody watches goes to the nearest
+// route node instead, from where every route works.
+bool MoveToTravelTargetAction::TeleportToNearestRouteNode()
+{
+    if (ai->HasRealPlayerMaster() || !sRandomBotFacade.IsRandomBot(bot) || bot->IsBeingTeleported() || bot->IsTaxiFlying())
+        return false;
+    WorldPosition const botPos(bot);
+    if (ai->HasPlayerNearby(botPos, sPlayerbotAIConfig.reactDistance))
+        return false;
+
+    for (TravelNode* node : sTravelNodeMap.getNodes(botPos))
+    {
+        if (node->IsTransport())
+            continue;
+        WorldPosition const nodePos = *node->getPosition();
+        // Nodes within reach are the ones the route search just refused.
+        if (nodePos.distance(botPos) < 50.0f)
+            continue;
+        if (ai->HasPlayerNearby(nodePos, sPlayerbotAIConfig.reactDistance))
+            return false;
+        if (!bot->TeleportTo(nodePos.GetMapId(), nodePos.getX(), nodePos.getY(), nodePos.getZ(), botPos.GetAngleTo(nodePos)))
+            return false;
+        sPlayerbotAIConfig.logEvent(ai, "OffGraphTeleport", node->getName(), std::to_string((int32)nodePos.distance(botPos)));
+        return true;
+    }
+    return false;
+}
+
+bool MoveToTravelTargetAction::TryRescueNoPathTrap(bool noPath, bool offGraph, std::string const& purpose)
 {
     if (ai->HasRealPlayerMaster() || bot->InBattleGround() || bot->IsInCombat() || !bot->IsAlive())
         return false;
@@ -372,6 +403,12 @@ bool MoveToTravelTargetAction::TryRescueNoPathTrap(bool noPath, std::string cons
 
     SET_AI_VALUE2(int32, "manual int", "nopath trap streak", 0);
     sPlayerbotAIConfig.logEvent(ai, "NoPathTrapRescue", purpose, std::to_string(next));
+    if (offGraph && TeleportToNearestRouteNode())
+    {
+        if (TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target"))
+            sTravelMgr.SetNullTravelTarget(travelTarget);
+        return true;
+    }
     Event rescueEvent("travel nopath trapped");
     return ai->DoSpecificAction("unstuck", rescueEvent, true);
 }
@@ -944,8 +981,8 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             // off-island target as "not-using-path" + startwalk at the shore and
             // never counted toward the trap streak.
             std::string const& routeFail = TravelNodeMap::LastRouteFail();
-            bool const trapped = noPath || routeFail == "startwalk" || routeFail == "nostartnode";
-            if (TryRescueNoPathTrap(trapped, purpose))
+            bool const offGraph = routeFail == "startwalk" || routeFail == "nostartnode";
+            if (TryRescueNoPathTrap(noPath || offGraph, offGraph, purpose))
                 return false;
         }
 
