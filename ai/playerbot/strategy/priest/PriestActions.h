@@ -87,6 +87,7 @@ namespace ai
     // shadow
     RANGED_DEBUFF_ACTION(CastPowerWordPainAction, "shadow word: pain");
     RANGED_DEBUFF_ENEMY_ACTION(CastPowerWordPainOnAttackerAction, "shadow word: pain");
+    RANGED_DEBUFF_ENEMY_ACTION(CastDevouringPlagueOnAttackerAction, "devouring plague");
     SPELL_ACTION(CastMindBlastAction, "mind blast");
     class CastPsychicScreamAction : public CastSpellAction
     {
