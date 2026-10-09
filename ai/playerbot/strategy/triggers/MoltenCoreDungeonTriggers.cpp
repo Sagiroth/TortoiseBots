@@ -2,6 +2,8 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/GeddonInfernoPolicy.h"
+#include "playerbot/strategy/AiObjectContext.h"
+#include "MoltenCoreDungeonTriggers.h"
 
 using namespace ai;
 
