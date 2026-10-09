@@ -819,8 +819,8 @@ bool RearFlankNeededTrigger::IsActive()
         return false;
     if (bot->GetDistance(target) > 15.0f)
         return false;
-    bool inFront = target->HasInArc(2.0f * (float)M_PI / 2.0f, bot);
-    bool inRear = !target->HasInArc(2.0f * (float)M_PI - 2.0f * (float)M_PI / 3.0f, bot);
+    bool inFront = target->HasInArc(bot, 2.0f * (float)M_PI / 2.0f);
+    bool inRear = !target->HasInArc(bot, 2.0f * (float)M_PI - 2.0f * (float)M_PI / 3.0f);
     return inFront || inRear;
 }
 

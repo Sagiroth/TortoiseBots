@@ -2408,8 +2408,9 @@ bool RearFlankAction::isUseful()
         return false;
     // Donor shape: in the frontal 2x90-degree arc (mirrored HasInArc) or
     // outside the rear (2PI - 120-degree) cone. Cheap angle checks only.
-    bool inFront = target->HasInArc(2.0f * (float)M_PI / 2.0f, bot);
-    bool inRear = !target->HasInArc(2.0f * (float)M_PI - 2.0f * (float)M_PI / 3.0f, bot);
+    // (1.12 HasInArc takes the target first, arc second.)
+    bool inFront = target->HasInArc(bot, 2.0f * (float)M_PI / 2.0f);
+    bool inRear = !target->HasInArc(bot, 2.0f * (float)M_PI - 2.0f * (float)M_PI / 3.0f);
     return inFront || inRear;
 }
 
