@@ -4527,13 +4527,15 @@ Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 Feature: (1) Holy combat ladder: medium tier tries `greater heal on party`
 before heal/lesser; low tier tries flash after shield, then greater/heal/
 lesser (low-rank fallbacks kept for 13-19 dungeons). (2) Disc combat
-ladder: medium tier shields at LIGHT+9 above greater heal; almost-full
+ladder: medium tier shields at MEDIUM+1 above greater heal; almost-full
 tier shields at LIGHT+3 above renew (Weakened Soul guard already in the
-shield action). (3) Holy + disc combat: `medium mana and party member
-medium health` compound trigger fires `inner focus` at ACTION_HIGH+1, so
-the 5-min cooldown only spends when a heal target exists. (4) Disc
-non-combat: shield-first ladder (critical/low/medium/almost-full,
-mirroring holy's non-combat bands) replacing the reach-only kit.
+shield action). (3) Holy + disc combat: `inner focus for heal` trigger
+fires `inner focus` at MEDIUM+3 (above the heal rows so the next heal
+crits); the trigger self-gates on the trained spell, the cooldown,
+medium-or-lower mana and a medium-or-worse heal target. (4) Disc
+non-combat: shield-first ladder at critical/low, direct heals at
+medium/almost-full (shields restore no HP out of combat), replacing the
+reach-only kit.
 Skipped: PRI-12 non-combat Vampiric Embrace — VE 15286 is a
 debuff-limit-affected enemy-target debuff (core SpellAuras.cpp), not
 self-castable; with no target out of combat the trigger could never fire.
@@ -4551,10 +4553,12 @@ Source files (donor, reference only):
 `src/Ai/Class/Priest/Strategy/PriestNonCombatStrategy.cpp:29-48`
 (non-combat renew/greater ladder). Deviations, deliberate: donor's
 WotLK spells omitted (Penance, Prayer of Mending, Circle of Healing —
-no 1.12 equivalents); inner focus gated on a heal target (donor fires
-on mana alone; 5-min CD 14751 verified in spell data); disc non-combat
-bands mirror holy's local ACTION_MOVE/ACTION_HIGH/ACTION_NORMAL shape
-rather than the donor's exact relevances.
+no 1.12 equivalents); inner focus gated on trained spell + cooldown +
+mana + heal target (donor fires on mana alone; 3-min CD 14751 per DBC);
+disc non-combat uses direct heals at medium (donor never shields out of
+combat — shields restore no HP and spread Weakened Soul); disc combat
+medium tier shields at MEDIUM+1 above greater heal at MEDIUM; holy low
+tier runs greater before flash (donor order).
 
 Reason: priest parity report PRI-11/PRI-5/PRI-7/PRI-12 — holy bots cast
 Heal R4 where Greater Heal belonged, disc never shielded above low
@@ -4563,8 +4567,8 @@ health, healer Inner Focus never fired, disc never healed out of combat.
 Source files (module, modified):
 `ai/playerbot/strategy/priest/HolyPriestStrategy.cpp`,
 `ai/playerbot/strategy/priest/DisciplinePriestStrategy.cpp`,
-`ai/playerbot/strategy/priest/PriestAiObjectContext.cpp` (compound
-trigger creator) + `docs/classes/priest.md` (ladder + inner focus +
+`ai/playerbot/strategy/priest/PriestAiObjectContext.cpp` (`inner
+focus for heal` creator) + `docs/classes/priest.md` (ladder + inner focus +
 non-combat lines).
 
 Copied / ported / reimplemented: reimplemented in place in the live

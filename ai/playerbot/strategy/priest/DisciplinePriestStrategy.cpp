@@ -38,7 +38,7 @@ void DisciplinePriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
 
     triggers.push_back(new TriggerNode(
         "party member medium health",
-        NextAction::array(0, new NextAction("power word: shield on party", ACTION_LIGHT_HEAL + 9),
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_MEDIUM_HEAL + 1),
                              new NextAction("greater heal on party", ACTION_MEDIUM_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
@@ -46,9 +46,11 @@ void DisciplinePriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
         NextAction::array(0, new NextAction("power word: shield on party", ACTION_LIGHT_HEAL + 3),
                              new NextAction("renew on party", ACTION_LIGHT_HEAL), NULL)));
 
+    // Pre-cast above the heal rows so the next heal crits; the trigger
+    // self-gates on the trained spell, the cooldown, mana and a target.
     triggers.push_back(new TriggerNode(
-        "medium mana and party member medium health",
-        NextAction::array(0, new NextAction("inner focus", ACTION_HIGH + 1), NULL)));
+        "inner focus for heal",
+        NextAction::array(0, new NextAction("inner focus", ACTION_MEDIUM_HEAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member to heal out of spell range",
@@ -69,12 +71,15 @@ void DisciplinePriestStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& tr
     triggers.push_back(new TriggerNode(
         "party member low health",
         NextAction::array(0, new NextAction("power word: shield on party", ACTION_HIGH + 2),
-            new NextAction("greater heal on party", ACTION_HIGH + 1), NULL)));
+            new NextAction("greater heal on party", ACTION_HIGH + 1),
+            new NextAction("heal on party", ACTION_HIGH),
+            new NextAction("lesser heal on party", ACTION_HIGH - 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member medium health",
-        NextAction::array(0, new NextAction("power word: shield on party", ACTION_HIGH),
-            new NextAction("greater heal on party", ACTION_HIGH - 1), NULL)));
+        NextAction::array(0, new NextAction("greater heal on party", ACTION_HIGH),
+            new NextAction("heal on party", ACTION_HIGH - 1),
+            new NextAction("lesser heal on party", ACTION_HIGH - 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member almost full health",

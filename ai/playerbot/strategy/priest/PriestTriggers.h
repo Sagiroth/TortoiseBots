@@ -15,6 +15,18 @@ namespace ai
     BUFF_TRIGGER_A(InnerFireTrigger, "inner fire");
     BUFF_TRIGGER_A(ShadowformTrigger, "shadowform");
     BUFF_TRIGGER(InnerFocusTrigger, "inner focus");
+
+    // mod-playerbots parity (PRI-7): Inner Focus pre-cast when mana is low
+    // and a heal target exists. Self-gated on the trained spell, the
+    // cooldown, medium-or-lower mana and a medium-or-worse heal target, so
+    // untalented bots and cooling-down bots never queue an impossible cast.
+    class InnerFocusForHealTrigger : public Trigger
+    {
+    public:
+        InnerFocusForHealTrigger(PlayerbotAI* ai) : Trigger(ai, "inner focus for heal") {}
+        bool IsActive() override;
+    };
+
     BUFF_TRIGGER(AscendanceTrigger, "ascendance");
     CC_TRIGGER(ShackleUndeadTrigger, "shackle undead");
     INTERRUPT_TRIGGER(SilenceTrigger, "silence");

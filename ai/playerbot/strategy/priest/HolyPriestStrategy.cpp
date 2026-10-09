@@ -35,13 +35,15 @@ void HolyPriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     // heal (16): flash heal needs 20, greater heal needs 40. Without a
     // direct low-rank trigger the engine never falls back (alternatives
     // only run on isPossible failure, not isUseful), so the priest idles.
+    // Donor order: efficient Greater Heal before fast Flash Heal; the
+    // low-level heal/lesser ranks stay as fallbacks for untrained bots.
     triggers.push_back(new TriggerNode(
         "party member low health",
-        NextAction::array(0, new NextAction("power word: shield on party", ACTION_MEDIUM_HEAL + 2),
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_MEDIUM_HEAL + 3),
+                             new NextAction("greater heal on party", ACTION_MEDIUM_HEAL + 2),
                              new NextAction("flash heal on party", ACTION_MEDIUM_HEAL + 1),
-                             new NextAction("greater heal on party", ACTION_MEDIUM_HEAL),
-                             new NextAction("heal on party", ACTION_MEDIUM_HEAL - 1),
-                             new NextAction("lesser heal on party", ACTION_MEDIUM_HEAL - 2), NULL)));
+                             new NextAction("heal on party", ACTION_MEDIUM_HEAL),
+                             new NextAction("lesser heal on party", ACTION_MEDIUM_HEAL - 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member medium health",
@@ -53,9 +55,11 @@ void HolyPriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "party member almost full health",
         NextAction::array(0, new NextAction("renew on party", ACTION_LIGHT_HEAL), NULL)));
 
+    // Pre-cast above the heal rows so the next heal crits; the trigger
+    // self-gates on the trained spell, the cooldown, mana and a target.
     triggers.push_back(new TriggerNode(
-        "medium mana and party member medium health",
-        NextAction::array(0, new NextAction("inner focus", ACTION_HIGH + 1), NULL)));
+        "inner focus for heal",
+        NextAction::array(0, new NextAction("inner focus", ACTION_MEDIUM_HEAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member to heal out of spell range",
