@@ -54,6 +54,9 @@ type BotSnapshot struct {
 	// "cooldown", ...); TravelDist the yards left (-1 when idle).
 	TravelStatus string `json:"travel_status,omitempty"`
 	TravelDist   int32  `json:"travel_dist,omitempty"`
+	// AiVisits counts AI updates since login; AiAgeMs is ms since the last.
+	AiVisits uint32 `json:"ai_visits,omitempty"`
+	AiAgeMs  uint32 `json:"ai_age_ms,omitempty"`
 
 	// XpPerHour is daemon-derived from successive XP samples (level-up
 	// aware), not on the wire. XpGainAgeSec is seconds since the last

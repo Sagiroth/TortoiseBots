@@ -51,6 +51,8 @@ struct BotTelemetrySnapshot
     std::string travelTo;      // active travel destination title (empty when idle)
     std::string travelStatus;  // "travel", "work", "cooldown", ... (empty when idle)
     int32 travelDist = -1;     // yards to the destination point (-1 when idle)
+    uint32 aiVisits = 0;       // AI updates since login
+    uint32 aiAgeMs = 0;        // ms since the last AI update
 };
 
 // ObservabilityEmitter sends non-blocking loopback UDP telemetry to the

@@ -85,6 +85,8 @@ struct BotEntry
     std::unique_ptr<PlayerbotAIAdapter> aiAdapter;
     // Server time (WorldTimer ms) of this bot's last AI update; 0 = never.
     uint32_t lastAiUpdateMs = 0;
+    // AI updates this bot has had since login (dashboard visit rate).
+    uint32_t aiVisits = 0;
     // Teleport acks sent by UpdateBots, and how many left the near flag set.
     uint32_t teleportAcks = 0;
     uint32_t teleportAcksIgnored = 0;
@@ -164,6 +166,8 @@ public:
     // diagnostics. Ownership remains entirely inside BotManager.
     std::vector<Player*> GetAllBots() const;
     uint32_t GetBotCount() const { return static_cast<uint32_t>(m_bots.size()); }
+    // Diagnostics: AI updates so far and ms since the last one (0, 0 when unknown).
+    void GetAiVisitInfo(uint32_t guidLow, uint32_t& visits, uint32_t& ageMs) const;
 
     // Native follow command and durable master ownership.
 // pi-lens-ignore: clang:unknown_typename

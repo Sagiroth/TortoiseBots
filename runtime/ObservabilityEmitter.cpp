@@ -1150,6 +1150,7 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
             m_deathKillers.erase(bot->GetGUIDLow());
         snap.state = MacroStateName(state);
         FillTravelInfo(ai, snap.travelPurpose, snap.travelTo, snap.travelStatus, snap.travelDist);
+        BotManager::Instance().GetAiVisitInfo(bot->GetGUIDLow(), snap.aiVisits, snap.aiAgeMs);
 
         if (ai)
         {
@@ -1288,7 +1289,9 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
                 << ",\"travel_purpose\":\"" << EscapeJson(b.travelPurpose) << "\""
                 << ",\"travel_to\":\"" << EscapeJson(b.travelTo) << "\""
                 << ",\"travel_status\":\"" << b.travelStatus << "\""
-                << ",\"travel_dist\":" << b.travelDist << "}";
+                << ",\"travel_dist\":" << b.travelDist
+                << ",\"ai_visits\":" << b.aiVisits
+                << ",\"ai_age_ms\":" << b.aiAgeMs << "}";
         }
         bss << "]}";
         SendDatagram(bss.str());

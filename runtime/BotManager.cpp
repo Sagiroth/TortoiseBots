@@ -1883,6 +1883,7 @@ void BotManager::UpdateBots(uint32_t diff)
                 ? std::min(WorldTimer::getMSTimeDiff(entry.lastAiUpdateMs, nowMs), kMaxAiElapsedMs)
                 : diff;
             entry.lastAiUpdateMs = nowMs ? nowMs : 1;
+            ++entry.aiVisits;
             entry.aiAdapter->Update(elapsed);
 
             if (PlayerbotAI* stepAi = entry.aiAdapter->GetAI())
@@ -2592,3 +2593,14 @@ void BotManager::UpdateAutoTest(uint32_t diff)
 }
 
 } // namespace TortoiseBots
+
+void TortoiseBots::BotManager::GetAiVisitInfo(uint32_t guidLow, uint32_t& visits, uint32_t& ageMs) const
+{
+    visits = 0;
+    ageMs = 0;
+    auto it = m_bots.find(guidLow);
+    if (it == m_bots.end() || !it->second.lastAiUpdateMs)
+        return;
+    visits = it->second.aiVisits;
+    ageMs = WorldTimer::getMSTimeDiff(it->second.lastAiUpdateMs, WorldTimer::getMSTime());
+}
