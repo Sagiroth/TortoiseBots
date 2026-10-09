@@ -124,6 +124,12 @@ namespace ai
 
     DEBUFF_TRIGGER(ImmolateTrigger, "immolate");
 
+    class ImmolateOnAttackerTrigger : public DebuffOnAttackerTrigger
+    {
+    public:
+        ImmolateOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "immolate") {}
+    };
+
     class ShadowTranceTrigger : public HasAuraTrigger
     {
     public:
