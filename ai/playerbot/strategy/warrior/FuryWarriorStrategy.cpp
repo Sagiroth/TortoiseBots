@@ -287,6 +287,10 @@ void FuryWarriorBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
         NextAction::array(0, new NextAction("death wish", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "almost full health",
+        NextAction::array(0, new NextAction("retaliation", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "recklessness",
         NextAction::array(0, new NextAction("recklessness", ACTION_HIGH), NULL)));
 }
