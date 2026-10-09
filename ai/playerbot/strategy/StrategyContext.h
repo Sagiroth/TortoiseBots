@@ -148,6 +148,7 @@ namespace ai
             creators["focus rti targets"] = [](PlayerbotAI* ai) { return new FocusRtiTargetsStrategy(ai); };
             creators["heal interrupt"] = [](PlayerbotAI* ai) { return new HealInterruptStrategy(ai); };
             creators["preheal"] = [](PlayerbotAI* ai) { return new PreHealStrategy(ai); };
+            creators["spread"] = [](PlayerbotAI* ai) { return new SpreadStrategy(ai); };
             creators["wbuff"] = [](PlayerbotAI* ai) { return new WorldBuffStrategy(ai); };
             // creators["wbuff travel"] = [](PlayerbotAI* ai) { return new WorldBuffTravelStrategy(ai); }; // E2E green: excluded
             creators["silent"] = [](PlayerbotAI* ai) { return new SilentStrategy(ai); };

@@ -199,4 +199,31 @@ namespace ai
             return false;
         return (nowMs - lastStepMs) < cooldownMs;
     }
+
+    // Opt-in spread gate ("spread" strategy): the player asked for spacing,
+    // so owned/hired bots and melee are eligible too. Still combat-only and
+    // never against an explicit hold order (stay/follow/wait-for-attack/
+    // grind anchors) — explicit orders beat automation even when opted in.
+    inline bool ShouldOptInSpread(bool inCombat,
+        bool stayOrdered, bool followOrdered, bool waitOrdered, bool grindOrdered)
+    {
+        if (!inCombat)
+            return false;
+        return !stayOrdered && !followOrdered && !waitOrdered && !grindOrdered;
+    }
+
+    // Donor "disperse distance" defaults (DisperseSetAction enable/reset):
+    // 5yd for ranged, 2yd for melee. A set "spread distance" value (> 0)
+    // overrides both; unset (-1) keeps the role default.
+    constexpr float kSpreadDistanceRangedYd = 5.0f;
+    constexpr float kSpreadDistanceMeleeYd = 2.0f;
+
+    // Effective "too close" radius: the manual knob when set, else the role
+    // default. Non-positive manual values mean unset (donor: dis <= 0 off).
+    inline float SpreadRadius(float manualDistance, bool isRanged)
+    {
+        if (manualDistance > 0.0f)
+            return manualDistance;
+        return isRanged ? kSpreadDistanceRangedYd : kSpreadDistanceMeleeYd;
+    }
 } // namespace ai

@@ -277,6 +277,7 @@ namespace ai
             creators["already seen players"] = [](PlayerbotAI* ai) { return new AlreadySeenPlayersValue(ai); };
             creators["group"] = [](PlayerbotAI* ai) { return new IsInGroupValue(ai); };
             creators["range"] = [](PlayerbotAI* ai) { return new RangeValue(ai); };
+            creators["spread distance"] = [](PlayerbotAI* ai) { return new SpreadDistanceValue(ai); };
             creators["inside target"] = [](PlayerbotAI* ai) { return new InsideTargetValue(ai); };
             creators["party member without item"] = [](PlayerbotAI* ai) { return new PartyMemberWithoutItemValue(ai); };
             creators["party member without food"] = [](PlayerbotAI* ai) { return new PartyMemberWithoutFoodValue(ai); };

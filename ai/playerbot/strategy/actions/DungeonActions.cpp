@@ -357,23 +357,40 @@ bool DragonFlankAction::Execute(Event& event)
 bool RaidSpreadAction::Execute(Event& event)
 {
     (void)event;
-    // The reaction engine fires this for any stacked ranged bot, but the
-    // Onyxia fight strategy also queues it directly: re-check the spread
-    // gate here so explicit hold orders and owned bots (live master OR owner
-    // record, for offline masters) hold position instead of stepping out.
-    if (!ShouldCombatSpread(sServerFacade.IsInCombat(bot), ai->HasRealPlayerMaster(),
-        ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
-        ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT),
-        ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
-        ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)) ||
-        IsSpreadExemptOwned(ai->HasRealPlayerMaster(), ai->IsOwnedBot()))
-        return false;
-    // One step per cooldown: stacked bots settle after a single step-out
-    // instead of ping-ponging toward the next friendly every tick.
-    LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
-    if (IsSpreadOnCooldown(WorldTimer::getMSTime(), lastMove.lastSpreadStepMs))
-        return false;
-    // Step 12yd directly away from the nearest stacked friendly.
+    // Opt-in spread ("spread" strategy): the player asked for spacing, so
+    // owned/hired bots and melee are eligible and the manual "spread
+    // distance" (or role default) is the "too close" radius. Otherwise the
+    // legacy pool-only path: ranged pool bots at the 10yd stack radius.
+    bool const optIn = ai->HasStrategy("spread", BotState::BOT_STATE_COMBAT);
+    float radius = kSpreadSettledDistance;
+    if (optIn)
+    {
+        if (!ShouldOptInSpread(sServerFacade.IsInCombat(bot),
+            ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
+            ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT),
+            ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
+            ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)))
+            return false;
+        radius = SpreadRadius(AI_VALUE(float, "spread distance"), ai->IsRanged(bot));
+    }
+    else
+    {
+        // The reaction engine fires this for any stacked ranged bot, but the
+        // Onyxia fight strategy also queues it directly: re-check the spread
+        // gate here so explicit hold orders and owned bots (live master OR owner
+        // record, for offline masters) hold position instead of stepping out.
+        if (!ShouldCombatSpread(sServerFacade.IsInCombat(bot), ai->HasRealPlayerMaster(),
+            ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
+            ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT),
+            ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
+            ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)) ||
+            IsSpreadExemptOwned(ai->HasRealPlayerMaster(), ai->IsOwnedBot()))
+            return false;
+        // Melee/tanks stack by design; spread is a ranged survival behavior.
+        if (!ai->IsRanged(bot))
+            return false;
+    }
+    // Step out directly away from the nearest stacked friendly.
     Group* group = bot->GetGroup();
     if (!group)
         return false;
@@ -392,7 +409,7 @@ bool RaidSpreadAction::Execute(Event& event)
             nearest = member;
         }
     }
-    if (!nearest || nearestDist >= kSpreadSettledDistance)
+    if (!nearest || nearestDist >= radius)
         return false;
     const WorldPosition botPos(bot);
     const WorldPosition nearPos(nearest);

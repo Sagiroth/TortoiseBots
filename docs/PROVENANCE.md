@@ -4522,3 +4522,56 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## Opt-in combat spread for owned/hired bots and melee (POS-3) — 2026-10-09
+
+Feature: `SpreadStrategy` (`spread`, donor `formation` shape) + `spread
+distance` manual value (donor `disperse distance` shape: -1 unset, 5yd
+ranged / 2yd melee defaults) + `SpreadNeededTrigger` (`spread needed`) +
+`.bot behavior <scope> spread on|off` (BehaviorToggles table, persisted,
+reported in TBM:BOTSTATE automatically). `RaidSpreadAction` generalizes:
+with `spread` on, owned/hired bots and melee are eligible and the manual
+knob (or role default) is the "too close" radius; the legacy pool-only
+path (ranged, 10yd, owner-exempt) is byte-identical when off. Combat-only
+and hold orders (stay/follow/wait-for-attack/grind) veto in both paths.
+Pure gate/radius rules extend `ai/playerbot/CombatSpreadPolicy.h`
+(`ShouldOptInSpread`, `SpreadRadius`), tested by
+`tools/test_spread_toggle_policy.cpp` (wired into `verify_all.sh`).
+Default: nobody (opt-in); no factory change.
+
+Source repository: `mod-playerbots/mod-playerbots`
+
+Source commit: `79bd4281` (local
+`playerbots-references/mod-playerbots` checkout).
+
+Source files:
+- `src/Ai/Base/Actions/MovementActions.cpp` (`CombatFormationMoveAction::Execute`: disperse-distance step-out; `DisperseSetAction::Execute`: enable/reset 5yd ranged / 2yd melee, disable, +-1yd)
+- `src/Ai/Base/Actions/MovementActions.h` (`DEFAULT_DISPERSE_DISTANCE_RANGED/MELEE`)
+
+Source files (module, modified): `ai/playerbot/CombatSpreadPolicy.h`
+(rules), `ai/playerbot/strategy/values/RangeValues.{h,cpp}` (`spread
+distance` value), `ai/playerbot/strategy/values/ValueContext.h`
+(registration), `ai/playerbot/strategy/generic/CombatStrategy.{h,cpp}`
+(`spread` strategy), `ai/playerbot/strategy/StrategyContext.h`
+(registration), `ai/playerbot/strategy/triggers/DungeonTriggers.{h,cpp}`
+(`spread needed` gate), `ai/playerbot/strategy/triggers/TriggerContext.h`
+(registration), `ai/playerbot/strategy/actions/DungeonActions.cpp`
+(action generalization), `commands/BotCommands.cpp` (behavior toggle +
+usage), `tools/test_spread_toggle_policy.cpp` + `tools/verify_all.sh`
+(new standalone test), `docs/guides/player-controls.md`,
+`docs/guides/dungeon-tactics.md` (doc lines).
+
+Copied / ported / reimplemented: ported, adapted to the 1.12 codebase.
+Deviations from the donor, all deliberate: (a) no `disperse set` chat
+increments — the knob is a persisted value, the toggle is `.bot behavior`;
+(b) hold-order vetoes kept even when opted in (owner "explicit orders beat
+automation"); (c) step-out reuses the existing failure-memory + FindStep
+path (LoS/path/aggro-checked) instead of the donor's blind flee; (d) melee
+at 2yd only when the player opts in (default stacking unchanged).
+
+Reason: a player's own raid clumped on chain-cleave bosses — spread was
+pool-bot-only and ranged-only.
+
+Local validation: `bash tools/verify_all.sh` (incl. new policy test); `git
+diff --check` clean. Build via build-commit.sh (see PR summary); no live
+in-game check.
