@@ -116,6 +116,18 @@ namespace ai
         CastThornsOnPartyAction(PlayerbotAI* ai) : BuffOnPartyAction(ai, "thorns") {}
     };
 
+    // HEAL-3/LD-8: thorns cast on the designated main tank (donor
+    // BuffOnMainTankAction). The trigger gates auras/claims; the action only
+    // retargets from self to the MT value.
+    class CastThornsOnMainTankAction : public CastThornsAction
+    {
+    public:
+        CastThornsOnMainTankAction(PlayerbotAI* ai) : CastThornsAction(ai) {}
+
+    protected:
+        std::string GetTargetName() override { return "main tank"; }
+    };
+
 	class CastOmenOfClarityAction : public CastBuffSpellAction
 	{
 	public:

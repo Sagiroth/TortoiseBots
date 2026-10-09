@@ -23,6 +23,7 @@ public:
         creators["hibernate on cc"] = &hibernate_on_cc;
         creators["thorns"] = &thorns;
         creators["thorns on party"] = &thorns_on_party;
+        creators["thorns on main tank"] = &thorns_on_main_tank;
         creators["mark of the wild"] = &mark_of_the_wild;
         creators["mark of the wild on party"] = &mark_of_the_wild_on_party;
         creators["gift of the wild on party"] = &gift_of_the_wild_on_party;
@@ -79,6 +80,8 @@ private:
     ACTION_NODE_P(thorns, "thorns", "caster form");
 
     ACTION_NODE_P(thorns_on_party, "thorns on party", "caster form");
+
+    ACTION_NODE_P(thorns_on_main_tank, "thorns on main tank", "caster form");
 
     ACTION_NODE_P(mark_of_the_wild, "mark of the wild", "caster form");
 
@@ -378,6 +381,12 @@ void DruidBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "thorns on party",
         NextAction::array(0, new NextAction("thorns on party", ACTION_NORMAL + 2), NULL)));
+
+    // HEAL-3/LD-8 (donor BuffOnMainTank): the MT gets thorns first, above the
+    // party scan — one cast on the tank beats re-scanning the party.
+    triggers.push_back(new TriggerNode(
+        "thorns on main tank",
+        NextAction::array(0, new NextAction("thorns on main tank", ACTION_NORMAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "mark of the wild",

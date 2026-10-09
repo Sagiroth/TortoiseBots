@@ -1,7 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/GroupMembers.h"
-#include "playerbot/GroupBuffPolicy.h"
-#include "playerbot/SurvivePolicy.h"
+#include "playerbot/MainTankPolicy.h"
+#include "playerbot/ServerFacade.h"
 #include "GenericTriggers.h"
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -405,6 +405,21 @@ bool MediumThreatTrigger::IsActive()
         return true;
 
     return false;
+}
+
+bool LowTankThreatTrigger::IsActive()
+{
+    Unit* currentTarget = AI_VALUE(Unit*, "current target");
+    if (!currentTarget || currentTarget->IsPlayer())
+        return false;
+
+    Unit* mainTank = AI_VALUE(Unit*, "main tank");
+    if (!mainTank || mainTank == bot)
+        return false;
+
+    float threat = sServerFacade.GetThreatManager(currentTarget).getThreat(bot);
+    float tankThreat = sServerFacade.GetThreatManager(currentTarget).getThreat(mainTank);
+    return LowTankThreatFires(false, threat, tankThreat);
 }
 
 bool SomeThreatTrigger::IsActive()

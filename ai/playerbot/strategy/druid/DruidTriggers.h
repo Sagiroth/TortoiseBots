@@ -41,6 +41,17 @@ namespace ai
         }
     };
 
+    // HEAL-3/LD-8: thorns pinned on the designated main tank (donor
+    // BuffOnMainTankTrigger). Inherits the melee + fire-shield guards from
+    // ThornsOnPartyTrigger; only the target changes from party scan to MT.
+    class ThornsOnMainTankTrigger : public ThornsOnPartyTrigger
+    {
+    public:
+        ThornsOnMainTankTrigger(PlayerbotAI* ai) : ThornsOnPartyTrigger(ai) {}
+
+        virtual Value<Unit*>* GetTargetValue() override;
+    };
+
     class ThornsTrigger : public BuffTrigger
     {
     public:

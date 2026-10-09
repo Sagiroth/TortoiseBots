@@ -129,6 +129,7 @@ namespace ai
             creators["multiple attackers"] = [](PlayerbotAI* ai) { return new MultipleAttackersTrigger(ai); };
             creators["high threat"] = [](PlayerbotAI* ai) { return new HighThreatTrigger(ai); };
             creators["medium threat"] = [](PlayerbotAI* ai) { return new MediumThreatTrigger(ai); };
+            creators["low tank threat"] = [](PlayerbotAI* ai) { return new LowTankThreatTrigger(ai); };
             creators["some threat"] = [](PlayerbotAI* ai) { return new SomeThreatTrigger(ai); };
             creators["no threat"] = [](PlayerbotAI* ai) { return new NoThreatTrigger(ai); };
             creators["dead"] = [](PlayerbotAI* ai) { return new DeadTrigger(ai); };
