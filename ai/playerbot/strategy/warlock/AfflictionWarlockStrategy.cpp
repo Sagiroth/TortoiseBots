@@ -190,6 +190,14 @@ void AfflictionWarlockBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& 
 void AfflictionWarlockBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     WarlockBuffStrategy::InitNonCombatTriggers(triggers);
+
+    // Spellstone upkeep (WAR-4, donor parity): the temp-enchant use and the
+    // oil fallback exclude each other both ways (oil refuses an enchanted
+    // weapon, the stone use is suppressed past the temp slot), so whichever
+    // lands first wins and the other stands down.
+    triggers.push_back(new TriggerNode(
+        "spellstone",
+        NextAction::array(0, new NextAction("spellstone", ACTION_NORMAL), NULL)));
 }
 
 void AfflictionWarlockBuffPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

@@ -22,6 +22,22 @@ bool SpellstoneTrigger::IsActive()
     return BuffTrigger::IsActive() && AI_VALUE2(uint32, "item count", getName()) > 0;
 }
 
+bool FirestoneTrigger::IsActive()
+{
+    if (!BuffTrigger::IsActive())
+        return false;
+    if (AI_VALUE2(uint32, "item count", getName()) == 0)
+        return false;
+    // Off-hand held item: never displace worn gear, and a two-handed
+    // main-hand leaves nowhere to put it (the use would fail every tick).
+    if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND))
+        return false;
+    Item* mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+    if (!mainHand || mainHand->GetProto()->InventoryType == INVTYPE_2HWEAPON)
+        return false;
+    return true;
+}
+
 bool InfernoTrigger::IsActive()
 {
 	return AI_VALUE(uint8, "attackers count") > 1 && bot->HasSpell(1122) && bot->HasItemCount(5565, 1) && !urand(0, 2);

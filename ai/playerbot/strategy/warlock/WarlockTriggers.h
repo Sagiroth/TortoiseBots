@@ -19,6 +19,17 @@ namespace ai
         virtual bool IsActive() override;
     };
 
+    // Vanilla off-hand semantics (WAR-4): a firestone is a held off-hand
+    // item (inventory_type 23) with an on-equip aura, not a consumable.
+    // Only equips into an EMPTY off-hand next to a one-handed main-hand,
+    // so it never swaps out a real off-hand, fights a staff, or loops.
+    class FirestoneTrigger : public BuffTrigger
+    {
+    public:
+        FirestoneTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "firestone") {}
+        virtual bool IsActive() override;
+    };
+
     class NoCurseTrigger : public Trigger
     {
     public:

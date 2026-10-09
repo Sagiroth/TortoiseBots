@@ -192,6 +192,12 @@ void DemonologyWarlockBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*
     triggers.push_back(new TriggerNode(
         "soul link",
         NextAction::array(0, new NextAction("soul link", ACTION_NORMAL), NULL)));
+
+    // Spellstone upkeep (WAR-4, donor parity): see affliction note on the
+    // oil/stone mutual exclusion.
+    triggers.push_back(new TriggerNode(
+        "spellstone",
+        NextAction::array(0, new NextAction("spellstone", ACTION_NORMAL), NULL)));
 }
 
 void DemonologyWarlockBuffPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

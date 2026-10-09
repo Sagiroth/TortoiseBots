@@ -4553,3 +4553,45 @@ vendor order, compounding into wrong picks over levels.
 Local validation: `bash tools/verify_all.sh` (incl. new policy test +
 wiring check live-missing=0); `git diff --check`; shared-builder compile
 check; no live in-game test.
+
+## Warlock Firestone / Spellstone create+use (WAR-4) — 2026-10-09
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Warlock/Strategy/GenericWarlockNonCombatStrategy.cpp:200-222`
+(per-spec stone strategies: affli/demo spellstone, destro firestone),
+`WarlockTriggers.h:66-78,116-126` + `WarlockActions.h:79-94`.
+
+Source files (module, modified):
+`ai/playerbot/strategy/warlock/WarlockStrategy.cpp` (uncommented the
+`no firestone` / `no spellstone` create rows),
+`ai/playerbot/strategy/warlock/WarlockTriggers.{h,cpp}` (new
+`FirestoneTrigger : BuffTrigger` with vanilla off-hand gates),
+`ai/playerbot/strategy/warlock/WarlockAiObjectContext.cpp` (registered
+`firestone` trigger + use action; `spellstone` pair already existed),
+`ai/playerbot/strategy/warlock/AfflictionWarlockStrategy.cpp` +
+`DemonologyWarlockStrategy.cpp` (`spellstone` use row) +
+`DestructionWarlockStrategy.cpp` (`firestone` use row) +
+`docs/classes/warlock.md`, `CHANGELOG.md` (doc lines).
+
+Copied / ported / reimplemented: reimplemented with vanilla item
+semantics, verified first in `tw_world` (report's 1254/5522-series ids
+are item entries, not spells — the spells are Create 607/918,
+on-use temp-enchant 128/17729/17730 (effect 38), on-equip aura 758):
+stones are off-hand held items (`inventory_type` 23), Spellstone is
+consumed as a weapon temp-enchant through the existing
+`UseSpellItemAction` path (already mutual-exclusion-safe:
+`ImbueWithOilAction::isUseful` refuses an enchanted weapon and
+`SpellCastUsefulValue` suppresses the stone past the temp slot), while
+Firestone equips to the off-hand behind empty-slot + one-hand gates so
+it never displaces worn gear or fights a staff. Create Spellstone costs
+a shard (2362 reagent 6265x1, core fails gracefully when shardless —
+same accepted pattern as soulstone).
+
+Reason: both create rows were commented out and no use path was queued;
+donor keeps per-spec stones up out of combat.
+
+Local validation: `bash tools/verify_all.sh` (wiring audit covers the
+new `firestone` names); `git diff --check`; shared-builder compile via
+`build-commit.sh` (BUILD OK); live in-game check pending: stone created
+once, spellstone applied, firestone equipped without touching real
+off-hands.
