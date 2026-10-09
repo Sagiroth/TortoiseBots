@@ -404,6 +404,27 @@ namespace ai
         ShockTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "earth shock") {}
         virtual bool IsActive() override;
     };
+    // Elemental execute discipline (mod-playerbots parity SHM-4): earth
+    // shock only lands the killing blow (target below 25% AND below 1500
+    // hp), saving the shared shock cooldown and boss debuff slots on
+    // healthy targets. Enhancement keeps the ungated `shock` line; the
+    // interrupt triggers are untouched.
+    class EarthShockExecuteTrigger : public Trigger
+    {
+    public:
+        EarthShockExecuteTrigger(PlayerbotAI* ai) : Trigger(ai, "earth shock execute") {}
+
+        virtual bool IsActive() override
+        {
+            Unit* target = AI_VALUE(Unit*, "current target");
+            if (!target || !sServerFacade.IsAlive(target))
+                return false;
+            if (target->GetHealthPercent() >= 25.0f)
+                return false;
+            return target->GetHealth() < 1500;
+        }
+    };
+
 
     // Flame shock is the DoT half of the shared shock cooldown: it fires
     // whenever flame shock itself is down, above the generic shock line, so

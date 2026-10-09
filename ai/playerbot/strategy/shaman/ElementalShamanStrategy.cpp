@@ -50,7 +50,7 @@ void ElementalShamanStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
         NextAction::array(0, new NextAction("flame shock", ACTION_NORMAL + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "shock",
+        "earth shock execute",
         NextAction::array(0, new NextAction("earth shock", ACTION_NORMAL), NULL)));
 }
 
