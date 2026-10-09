@@ -168,10 +168,11 @@ namespace ai
                             member->GetMapId() != bot->GetMapId())
                             continue;
 
-                        if (member->getClass() == CLASS_WARRIOR && ai->IsTank(member, false))
+                        if (member->GetClass() == CLASS_WARRIOR && ai->IsTank(member, false))
                             return false;
                     }
                 }
+            }
             if (isTank && !target->IsPlayer())
                 return true;
 
