@@ -35,19 +35,15 @@ bool RazuviousMindControlAction::Execute(Event& event)
         if (!boss)
             return false;
         if (charm->GetVictim() != boss)
-        {
             charm->Attack(boss, true);
+        if (charm->GetMotionMaster()->GetCurrentMovementGeneratorType() != CHASE_MOTION_TYPE)
             charm->GetMotionMaster()->MoveChase(boss);
-        }
         if (charm->GetDistance(boss) > ATTACK_DISTANCE)
             return true;
 
         uint32 const now = WorldTimer::getMSTime();
-        if (WorldTimer::getMSTimeDiff(m_barrierAt, now) >= 30000 || !m_barrierAt)
-        {
+        if (!charm->HasAura(kBoneBarrier))
             charm->CastSpell(charm, kBoneBarrier, true);
-            m_barrierAt = now;
-        }
         if (boss->GetVictim() != charm &&
             (WorldTimer::getMSTimeDiff(m_tauntAt, now) >= 20000 || !m_tauntAt))
         {
@@ -59,7 +55,7 @@ bool RazuviousMindControlAction::Execute(Event& event)
 
     if (!free || bot->IsNonMeleeSpellCasted(true))
         return false;
-    m_tauntAt = m_barrierAt = 0;
+    m_tauntAt = 0;
     if (bot->GetDistance(free) > kMindControlRange - 2.0f)
         return MoveNear(free, kMindControlRange - 4.0f);
     return ai->CastSpell("mind control", free);
@@ -72,8 +68,11 @@ float RazuviousFightMultiplier::GetValue(Action* action)
     std::string const name = action->getName();
     if (bot->GetCharm())
         return name == "razuvious mind control" ? 1.0f : 0.0f;
-    if (name == "taunt" || name == "growl" || name == "mocking blow" ||
-        name == "challenging shout" || name == "challenging roar")
+    // Only on the boss itself: tanks may still peel a loose add off a healer.
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (target && target->GetEntry() == kRazuviousEntry &&
+        (name == "taunt" || name == "growl" || name == "mocking blow" ||
+         name == "challenging shout" || name == "challenging roar"))
         return 0.0f;
     return 1.0f;
 }

@@ -30,7 +30,6 @@ public:
 
 private:
     uint32 m_tauntAt = 0;
-    uint32 m_barrierAt = 0;
 };
 
 // Donor InstructorRazuviousGenericMultiplier: no player taunts on the boss;
