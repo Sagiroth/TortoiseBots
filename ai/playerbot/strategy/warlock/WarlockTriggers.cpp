@@ -24,12 +24,12 @@ bool SpellstoneTrigger::IsActive()
 
 bool UnendingBreathTrigger::IsActive()
 {
-    return BuffTrigger::IsActive() && AI_VALUE2(bool, "swimming", "self target");
+    return AI_VALUE2(bool, "swimming", "self target") && BuffTrigger::IsActive();
 }
 
 bool UnendingBreathOnPartyTrigger::IsActive()
 {
-    return BuffOnPartyTrigger::IsActive() && AI_VALUE2(bool, "swimming", "self target");
+    return AI_VALUE2(bool, "swimming", "self target") && BuffOnPartyTrigger::IsActive();
 }
 
 bool InfernoTrigger::IsActive()

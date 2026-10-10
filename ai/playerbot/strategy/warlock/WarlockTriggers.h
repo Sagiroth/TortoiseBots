@@ -32,7 +32,7 @@ namespace ai
     class UnendingBreathOnPartyTrigger : public BuffOnPartyTrigger
     {
     public:
-        UnendingBreathOnPartyTrigger(PlayerbotAI* ai) : BuffOnPartyTrigger(ai, "unending breath on party", 2) {}
+        UnendingBreathOnPartyTrigger(PlayerbotAI* ai) : BuffOnPartyTrigger(ai, "unending breath", 2) {}
         virtual bool IsActive() override;
     };
 
