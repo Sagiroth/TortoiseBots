@@ -12,6 +12,8 @@
 
 using ai::BattleShoutAttackPower;
 using ai::BlessingOfMightAttackPower;
+using ai::EffectiveBattleShoutAp;
+using ai::ImprovedBattleShoutBonus;
 using ai::ShouldBattleShout;
 
 int main()
@@ -33,10 +35,25 @@ int main()
     CHECK(BlessingOfMightAttackPower(19837) == 115);
     CHECK(BlessingOfMightAttackPower(19838) == 155);
     CHECK(BlessingOfMightAttackPower(25782) == 155);
+    CHECK(BlessingOfMightAttackPower(25291) == 185);
     CHECK(BlessingOfMightAttackPower(25916) == 185);
     CHECK(BattleShoutAttackPower(0) == 0);
     CHECK(BlessingOfMightAttackPower(999999) == 0);
     std::cout << "  [PASS] AP tables cover every rank\n";
+
+    // Improved Battle Shout talent (Vanilla Fury ids): +5%/rank.
+    CHECK(ImprovedBattleShoutBonus(12318) == 0.05f);
+    CHECK(ImprovedBattleShoutBonus(12857) == 0.10f);
+    CHECK(ImprovedBattleShoutBonus(12858) == 0.15f);
+    CHECK(ImprovedBattleShoutBonus(12860) == 0.20f);
+    CHECK(ImprovedBattleShoutBonus(12861) == 0.25f);
+    CHECK(ImprovedBattleShoutBonus(0) == 0.0f);
+    CHECK(EffectiveBattleShoutAp(185, 0.25f) == 231);
+    CHECK(EffectiveBattleShoutAp(185, 0.0f) == 185);
+    // Talented R6 shout (231) beats top might (185); untalented ties skip.
+    CHECK(ShouldBattleShout(EffectiveBattleShoutAp(185, 0.25f), true, 185));
+    CHECK(!ShouldBattleShout(EffectiveBattleShoutAp(185, 0.0f), true, 185));
+    std::cout << "  [PASS] talent multiplier credited\n";
 
     // No might up: always shout.
     CHECK(ShouldBattleShout(15, false, 0));

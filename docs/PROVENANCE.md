@@ -4577,10 +4577,12 @@ Deviations from the donor, all deliberate: (a) static AP tables instead of
 the donor's SpellInfo scan — our 1.12 ids are stable and the trigger
 already hardcodes shout ids (every value verified against
 `spell_template` EffectBasePoints+1: shout 15/35/55/85/130/185/232, might
-20/35/55/85/115/155, greater 155/185); (b) no Commanding Presence talent
-multiplier — no such talent exists in Turtle DBC; (c) trigger only, the
-`battle shout` action itself is unchanged so an explicit player order
-still shouts.
+20/35/55/85/115/155/185 incl. R7 25291, greater 155/185); (b) the talent
+multiplier ported under its Vanilla name — donor COMMANDING_PRESENCE_RANKS
+are literally the Vanilla Improved Battle Shout ids
+(12318/12857/12858/12860/12861, +5%/rank), credited via spellbook check;
+(c) trigger only, the `battle shout` action itself is unchanged so an
+explicit player order still shouts.
 
 Reason: WAR-9 in the warrior parity sweep: every paladin group wasted rage
 and a GCD shouting over a stronger might.

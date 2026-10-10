@@ -55,8 +55,22 @@ namespace ai
 
             // Skip Battle Shout when a stronger Blessing of Might is up (donor
             // BattleShoutTrigger compares AP values). Tables + rule live in
-            // BattleShoutPolicy.h (unit-tested).
-            int32 shoutAp = BattleShoutAttackPower(AI_VALUE2(uint32, "spell id", "battle shout"));
+            // BattleShoutPolicy.h (unit-tested). Own AP scaled by Improved
+            // Battle Shout talent (donor COMMANDING_PRESENCE_RANKS are these
+            // same Vanilla ids); highest learned rank wins. Spellbook check
+            // (not aura): passive talent auras may not be visible.
+            static const uint32 impBattleShoutRanks[] = { 12318, 12857, 12858, 12860, 12861 };
+            float talentBonus = 0.0f;
+            for (int rank = 4; rank >= 0; --rank)
+            {
+                if (bot->HasSpell(impBattleShoutRanks[rank]))
+                {
+                    talentBonus = ImprovedBattleShoutBonus(impBattleShoutRanks[rank]);
+                    break;
+                }
+            }
+            int32 shoutAp = EffectiveBattleShoutAp(
+                BattleShoutAttackPower(AI_VALUE2(uint32, "spell id", "battle shout")), talentBonus);
             if (Aura* might = ai->GetAura("blessing of might", bot))
             {
                 if (!ShouldBattleShout(shoutAp, true, BlessingOfMightAttackPower(might->GetSpellProto()->Id)))
