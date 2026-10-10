@@ -65,6 +65,7 @@
 #include "FlagAction.h"
 #include "HireAction.h"
 #include "RangeAction.h"
+#include "SpreadDistanceAction.h"
 #include "SetCraftAction.h"
 #include "GuildCraftOrderAction.h"
 #include "WtsAction.h"
@@ -92,6 +93,7 @@ namespace ai
         ChatActionContext()
         {
             creators["range"] = [](PlayerbotAI* ai) { return new RangeAction(ai); };
+            creators["spread distance"] = [](PlayerbotAI* ai) { return new SpreadDistanceAction(ai); };
             creators["stats"] = [](PlayerbotAI* ai) { return new StatsAction(ai); };
             creators["quests"] = [](PlayerbotAI* ai) { return new ListQuestsAction(ai); };
             creators["quest reward"] = [](PlayerbotAI* ai) { return new QuestRewardAction(ai); };

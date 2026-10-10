@@ -29,7 +29,10 @@ public:
 class EstimatedGroupDpsValue : public FloatCalculatedValue
 {
 public:
-    EstimatedGroupDpsValue(PlayerbotAI* botAI) : FloatCalculatedValue(botAI, "estimated group dps", 20 * 1000) {}
+    // checkInterval is seconds (halved by CalculatedValue::Refresh): 40 s ≈
+    // 20 s effective. (Was 20*1000, donor milliseconds copied verbatim —
+    // review PR #596 — which froze DPS for hours.)
+    EstimatedGroupDpsValue(PlayerbotAI* botAI) : FloatCalculatedValue(botAI, "estimated group dps", 40) {}
 
 public:
     float Calculate() override;
