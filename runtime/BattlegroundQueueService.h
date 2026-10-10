@@ -18,7 +18,7 @@ namespace TortoiseBots
 // guards remain module policy without exposing queue internals. No blind
 // periodic queueing, second queue, thread, arena, vehicle, expansion, or DB scan.
 //
-// Autonomous bot-only WSG (AiPlayerbot.RandomBotBgAutonomous, default on):
+// Autonomous bot-only WSG (AiPlayerbot.RandomBotBgAutonomous, default on, set 0 to opt out):
 // when no human demand exists, top-up seeds one 10v10 WSG in the most
 // populated ready bracket (both factions >= 10 eligible; sticky while owned
 // seeds wait), capped at RandomBotBgAutonomousMaxInstances (clamped 0-2, 1 for
