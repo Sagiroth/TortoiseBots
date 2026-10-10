@@ -66,7 +66,7 @@ static bool WarlockOocTapAllowed(PlayerbotAI* ai)
 {
     if (ai->GetBot()->IsInCombat())
         return true;
-    if (AI_VALUE(bool, "should eat"))
+    if (ai->GetAiObjectContext()->GetValue<bool>("should eat")->Get())
         return false;
     return AI_VALUE2(uint8, "health", "self target") >= (uint8)sPlayerbotAIConfig.mediumHealth;
 }
