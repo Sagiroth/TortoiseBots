@@ -251,7 +251,7 @@ Errors (`sLog.outError`) are always written regardless of this setting. The leve
 
 ### Bot CSV files (`AiPlayerbot.AllowedLogFiles`)
 
-The bot CSV logs are off by default, because on a busy realm they grow without limit. To diagnose something, list the files you need (comma separated) in `aiplayerbot.conf`, for example `AiPlayerbot.AllowedLogFiles = bot_events.csv,deaths.csv`. Docs that mention a row in `bot_events.csv` assume that file is listed.
+`bot_events.csv` (bot decisions) and `deaths.csv` (bot deaths and killers) are written to the server's logs directory by default, so a bug report can include them. Each file is capped at `AiPlayerbot.LogFileMaxMB` (default `25`). When a file is full it becomes `<name>.1`, replacing the older copy, and a new file starts. Each log therefore keeps the most recent activity (about an hour at 1000 bots) and never takes more than twice the cap on disk. `0` removes the cap, and an empty `AiPlayerbot.AllowedLogFiles` writes no bot log files at all. Other diagnostics (`travel_route_gate.csv`, `ghost_moves.csv`) are added to the same comma-separated list.
 
 This setting is separate from the strategy AI's own action trace, which stays gated behind the `debug`/`debug action` bot strategies (`.bot strategy +debug`) rather than a server-wide config key.
 

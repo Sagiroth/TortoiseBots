@@ -31,6 +31,15 @@ public:
         return true;
     }
 
+    // Size cap: the full file replaces the previous copy, and the next open
+    // starts a new one.
+    bool RotateFull(std::string const& path, std::error_code& error)
+    {
+        error.clear();
+        std::filesystem::rename(path, path + ".1", error);
+        return !error;
+    }
+
 private:
     std::unordered_set<std::string> prepared;
 };

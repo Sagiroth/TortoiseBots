@@ -1742,10 +1742,15 @@ AiPlayerbot.RndBotCheats = repair,breath,item
 
 # Allowed log files. See SPP_MAP for more information
 # https://github.com/mostlikely4r/spp-map
-# Off by default: on a busy realm these files grow without limit. Diagnostics to list here:
-# bot_events.csv (bot decisions), deaths.csv (bot deaths and killers),
-# travel_route_gate.csv (rejected travel routes), ghost_moves.csv (dead bots walking to their corpse).
-AiPlayerbot.AllowedLogFiles =
+# On by default so a bug report can carry them: bot_events.csv (bot decisions), deaths.csv (bot deaths and killers).
+# Opt-in diagnostics: travel_route_gate.csv (rejected travel routes), ghost_moves.csv (dead bots walking to their corpse).
+# Leave empty to write no bot log files.
+AiPlayerbot.AllowedLogFiles = bot_events.csv,deaths.csv
+
+# Size cap per bot log file, in MB. A full file becomes <name>.1 (replacing the older copy) and a new
+# file starts, so each log keeps the most recent activity and never takes more than twice this on disk.
+# 0 = no cap.
+AiPlayerbot.LogFileMaxMB = 25
 
 # Filters certain actions from showing up in 'nc +debug' and 'nc +debug action'
 # AiPlayerbot.DebugFilter = add gathering loot,check values,emote,check mount state,jump

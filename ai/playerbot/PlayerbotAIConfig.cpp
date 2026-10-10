@@ -666,6 +666,7 @@ bool PlayerbotAIConfig::Initialize()
     rndBotCheatMask = uint32(CheatAction::GetCheatMask(config.GetStringDefault("AiPlayerbot.RndBotCheats", "repair,breath,item")));
 
     LoadListString<std::list<std::string>>(config.GetStringDefault("AiPlayerbot.AllowedLogFiles", ""), allowedLogFiles);
+    logFileMaxBytes = uint64(std::max(0, config.GetIntDefault("AiPlayerbot.LogFileMaxMB", 25))) * 1024 * 1024;
     LoadListString<std::list<std::string>>(config.GetStringDefault("AiPlayerbot.DebugFilter", "add gathering loot,check values,emote,check mount state,jump"), debugFilter);
 
     worldBuffs.clear();
@@ -1279,14 +1280,7 @@ bool PlayerbotAIConfig::openLog(std::string fileName, char const* mode, bool has
         fclose(file);
     logFileIt->second = {nullptr, false};
 
-    std::string m_logsDir = sConfig.GetStringDefault("LogsDir", "");
-    if (!m_logsDir.empty())
-    {
-        if ((m_logsDir.at(m_logsDir.length() - 1) != '/') && (m_logsDir.at(m_logsDir.length() - 1) != '\\'))
-            m_logsDir.append("/");
-    }
-
-
+    std::string const m_logsDir = logsDirPath();
     std::string const path = m_logsDir + fileName;
     std::error_code rotationError;
     if (!logRotation.Prepare(path, mode, rotationError))
@@ -1320,6 +1314,39 @@ bool PlayerbotAIConfig::openLog(std::string fileName, char const* mode, bool has
     return true;
 }
 
+std::string PlayerbotAIConfig::logsDirPath()
+{
+    std::string logsDir = sConfig.GetStringDefault("LogsDir", "");
+    if (!logsDir.empty())
+    {
+        if ((logsDir.at(logsDir.length() - 1) != '/') && (logsDir.at(logsDir.length() - 1) != '\\'))
+            logsDir.append("/");
+    }
+    return logsDir;
+}
+
+// A log past AiPlayerbot.LogFileMaxMB becomes <name>.1, replacing the older
+// copy, and the next line starts a new file, so one log never takes more than
+// twice the cap on disk. Caller holds m_logMtx.
+void PlayerbotAIConfig::capLogSize(std::string const& fileName, FILE* file)
+{
+    if (!logFileMaxBytes || ftell(file) < static_cast<long>(logFileMaxBytes))
+        return;
+
+    fclose(file);
+    logFiles[fileName] = {nullptr, false};
+
+    std::string const path = logsDirPath() + fileName;
+    std::error_code error;
+    if (!logRotation.RotateFull(path, error))
+    {
+        // Without the rename every further line would land here again.
+        sLog.outError("Could not rotate full bot log file %s: %s. Log size cap is off for this run.",
+            path.c_str(), error.message().c_str());
+        logFileMaxBytes = 0;
+    }
+}
+
 void PlayerbotAIConfig::log(std::string fileName, const char* line)
 {
     if (!line)
@@ -1340,6 +1367,7 @@ void PlayerbotAIConfig::log(std::string fileName, const char* line)
     fputs(line, file);
     fputc('\n', file);
     fflush(file);
+    capLogSize(fileName, file);
 
     fflush(stdout);
 }
@@ -1363,6 +1391,7 @@ void PlayerbotAIConfig::logf(std::string fileName, const char* format, ...)
     va_end(ap);
     fputc('\n', file);
     fflush(file);
+    capLogSize(fileName, file);
 
     fflush(stdout);
 }
