@@ -2332,6 +2332,41 @@
         .map(([c, n]) => chip('class', c, capClass(c), n, classColor(c), state.botsClass === c)).join('');
   }
 
+  // Search-box fields: "lvl:50-60 ilvl:>40 zone:tanaris". Any column key works;
+  // these aliases and scales make the common ones read the way they display.
+  const QUERY_ALIASES = { lvl: 'level', ilvl: 'gear', spec: 'class' };
+  const QUERY_SCALE = { gold: 1 / 10000, hp: 100, power: 100, xp: 100 };
+
+  // Field token -> row predicate, or null when it is not a field token (then
+  // the word is matched against name/class/spec as before).
+  function queryField(token) {
+    const m = token.match(/^([a-z]+):(.+)$/);
+    if (!m) return null;
+    const key = QUERY_ALIASES[m[1]] || m[1];
+    const col = BOT_COLS[key];
+    if (!col) return null;
+    const value = m[2];
+    const range = value.match(/^(>=|<=|>|<)?(\d+(?:\.\d+)?)(?:-(\d+(?:\.\d+)?))?$/);
+    if (!range) return r => String(col.sort(r)).includes(value);
+    const a = parseFloat(range[2]);
+    const b = range[3] !== undefined ? parseFloat(range[3]) : null;
+    const scale = QUERY_SCALE[key] || 1;
+    return r => {
+      const raw = col.sort(r);
+      // Unknown values sort as -1 or '' (offline bots, gear not swept yet).
+      if (typeof raw !== 'number' || raw < 0) return false;
+      const v = raw * scale;
+      if (b !== null) return v >= a && v <= b;
+      switch (range[1]) {
+        case '>': return v > a;
+        case '>=': return v >= a;
+        case '<': return v < a;
+        case '<=': return v <= a;
+        default: return Math.floor(v) === a;
+      }
+    };
+  }
+
   function renderRoster() {
     if (!el.rosterTable) return;
     paintSeg(el.presenceSeg, state.botsPresence);
@@ -2341,7 +2376,12 @@
     const issues = issueSet();
     const query = (el.botSearch ? el.botSearch.value : '').toLowerCase().trim();
     const presenceOk = r => state.botsPresence === 'all' || (state.botsPresence === 'online') === r.online;
-    const queryOk = r => !query || r.name.toLowerCase().includes(query) || r.cls.includes(query) || r.spec.toLowerCase().includes(query);
+    const words = query.split(/\s+/).filter(Boolean);
+    const fields = words.map(queryField);
+    const text = words.filter((w, i) => !fields[i]);
+    const tests = fields.filter(Boolean);
+    const queryOk = r => tests.every(t => t(r)) &&
+      text.every(w => r.name.toLowerCase().includes(w) || r.cls.includes(w) || r.spec.toLowerCase().includes(w));
     const stateOk = r => state.botsState === 'all' || (r.live && (r.live.state || 'idle') === state.botsState);
     const classOk = r => state.botsClass === 'all' || r.cls === state.botsClass;
     const issueOk = r => !state.botsIssueOnly || !!issues[r.guid];
