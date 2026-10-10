@@ -80,8 +80,8 @@ namespace
         bool foundHighPriority;
     };
 
-    // Caster: skip CC-moon, skip <5 s overkill, prefer 5-30 s in range, don't
-    // switch when everything is nearly dead (donor lines 53-155).
+    // Caster: skip CC-moon, prefer 5-30 s in range (sub-5 s ranks second,
+    // never skipped), don't switch when everything is nearly dead (donor).
     class CasterDpsStrategy : public DpsTournamentStrategy
     {
     public:
@@ -89,11 +89,9 @@ namespace
 
         void CheckAttacker(Unit* attacker, ThreatManager*) override
         {
-            if (!attacker || !attacker->IsAlive() || IsMoon(attacker) || IsCcTarget(attacker))
+            if (!attacker || attacker->IsPlayer() || !attacker->IsAlive() || IsMoon(attacker) || IsCcTarget(attacker))
                 return;
             if (CheckSkull(attacker))
-                return;
-            if (CasterSkipsOverkill(Lifetime(attacker)))
                 return;
             if (!result || IsBetter(attacker, result))
                 result = attacker;
@@ -128,7 +126,7 @@ namespace
 
         void CheckAttacker(Unit* attacker, ThreatManager*) override
         {
-            if (!attacker || !attacker->IsAlive() || IsMoon(attacker) || IsCcTarget(attacker))
+            if (!attacker || attacker->IsPlayer() || !attacker->IsAlive() || IsMoon(attacker) || IsCcTarget(attacker))
                 return;
             if (CheckSkull(attacker))
                 return;
@@ -157,7 +155,7 @@ namespace
 
         void CheckAttacker(Unit* attacker, ThreatManager*) override
         {
-            if (!attacker || !attacker->IsAlive() || IsMoon(attacker) || IsCcTarget(attacker))
+            if (!attacker || attacker->IsPlayer() || !attacker->IsAlive() || IsMoon(attacker) || IsCcTarget(attacker))
                 return;
             if (CheckSkull(attacker))
                 return;
@@ -292,12 +290,13 @@ Unit* DpsTargetValue::Calculate()
     // mod-playerbots picks the tournament by bot type in groups of 4+
     // (DpsTargetValue.cpp:281-295); small groups always run the general pick.
     float groupDps = AI_VALUE(float, "estimated group dps");
-    if (NearGroupCount(ai, bot) > 3 && IsCasterBot(ai, bot))
+    unsigned nearCount = NearGroupCount(ai, bot);
+    if (nearCount > 3 && IsCasterBot(ai, bot))
     {
         CasterDpsStrategy strategy(ai, groupDps);
         return TargetValue::FindTarget(&strategy);
     }
-    if (NearGroupCount(ai, bot) > 3 && IsComboBot(ai, bot))
+    if (nearCount > 3 && IsComboBot(ai, bot))
     {
         ComboDpsStrategy strategy(ai, groupDps);
         return TargetValue::FindTarget(&strategy);

@@ -10,7 +10,6 @@
     } \
 } while (0)
 
-using ai::CasterSkipsOverkill;
 using ai::CasterTargetBucket;
 using ai::GeneralTargetBucket;
 
@@ -37,17 +36,7 @@ int main()
     }
 
     // -------------------------------------------------------------
-    // (2) Overkill skip: <5 s lifetime is not worth a fresh cast.
-    // -------------------------------------------------------------
-    {
-        CHECK(CasterSkipsOverkill(4.9f));
-        CHECK(!CasterSkipsOverkill(5.0f));
-        CHECK(!CasterSkipsOverkill(30.0f));
-        std::cout << "  [PASS] sub-5 s targets skipped by casters\n";
-    }
-
-    // -------------------------------------------------------------
-    // (3) General buckets: range decides, lifetime orders within.
+    // (2) General buckets: range decides, lifetime orders within.
     // -------------------------------------------------------------
     {
         CHECK(GeneralTargetBucket(true) > GeneralTargetBucket(false));
