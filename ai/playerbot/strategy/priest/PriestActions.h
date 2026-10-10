@@ -87,6 +87,7 @@ namespace ai
     // shadow
     RANGED_DEBUFF_ACTION(CastPowerWordPainAction, "shadow word: pain");
     RANGED_DEBUFF_ENEMY_ACTION(CastPowerWordPainOnAttackerAction, "shadow word: pain");
+    RANGED_DEBUFF_ENEMY_ACTION(CastDevouringPlagueOnAttackerAction, "devouring plague");
     SPELL_ACTION(CastMindBlastAction, "mind blast");
     class CastPsychicScreamAction : public CastSpellAction
     {
@@ -166,6 +167,15 @@ namespace ai
     public:
         CastPowerInfusionAction(PlayerbotAI* ai) : CastSpellTargetAction(ai, "power infusion", "boost targets", true, true) {}
         std::string GetTargetName() override { return "self target"; }
+    };
+
+    class CastFearWardOnTankAction : public BuffOnTankAction
+    {
+    public:
+        CastFearWardOnTankAction(PlayerbotAI* ai) : BuffOnTankAction(ai, "fear ward") {}
+        // BuffOnTankAction names itself "<spell> on party"; match the
+        // registered name so backoff/telemetry/log keys agree with it.
+        std::string getName() override { return "fear ward on tank"; }
     };
 
     class CastFearWardAction : public CastSpellTargetAction

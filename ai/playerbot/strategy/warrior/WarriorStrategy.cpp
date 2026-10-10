@@ -44,6 +44,7 @@ public:
         creators["revenge"] = &revenge;
         creators["shield block"] = &shield_block;
         creators["shield wall"] = &shield_wall;
+        creators["intervene"] = &intervene;
 
         creators["berserker rage"] = &berserker_rage;
     }
@@ -94,6 +95,8 @@ private:
     ACTION_NODE_P(shield_block, "shield block", "defensive stance");
 
     ACTION_NODE_P(shield_wall, "shield wall", "defensive stance");
+
+    ACTION_NODE_P(intervene, "intervene", "defensive stance");
 
     ACTION_NODE_P(berserker_rage, "berserker rage", "berserker stance");
 };

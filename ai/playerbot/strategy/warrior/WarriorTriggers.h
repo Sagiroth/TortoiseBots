@@ -16,7 +16,22 @@ namespace ai
     CAN_CAST_TRIGGER(RevengeAvailableTrigger, "revenge");
     CAN_CAST_TRIGGER(OverpowerAvailableTrigger, "overpower");
     BUFF_TRIGGER_A(BloodrageBuffTrigger, "bloodrage");
-    HAS_AURA_TRIGGER(SwordAndBoardTrigger, "sword and board");
+    // Turtle Improved Shield Slam proc (51596/51597, +35%/+70% slam damage
+    // on melee-ability hit): same slot as the donor's Sword-and-Board row,
+    // but matched by spell id, not name — the permanent talent (51598/51599)
+    // shares the "Improved Shield Slam" name and would keep a name trigger
+    // active forever. Proc aura is 1 charge (procCharges=1), so firing slam
+    // immediately consumes the bonus before it expires.
+    class ImprovedShieldSlamProcTrigger : public Trigger
+    {
+    public:
+        ImprovedShieldSlamProcTrigger(PlayerbotAI* ai) : Trigger(ai, "improved shield slam proc") {}
+
+        bool IsActive() override
+        {
+            return ai->HasAura(51596, bot) || ai->HasAura(51597, bot);
+        }
+    };
     SNARE_TRIGGER(ConcussionBlowTrigger, "concussion blow");
     SNARE_TRIGGER(HamstringTrigger, "hamstring");
     SNARE_TRIGGER(MockingBlowTrigger, "mocking blow");
