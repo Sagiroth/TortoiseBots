@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/ArcaneRupturePolicy.h"
 #include "MageTriggers.h"
 #include "MageActions.h"
 
@@ -140,4 +141,14 @@ bool EvocationChannelCheckTrigger::IsActive()
         }
     }
     return false;
+}
+
+bool ArcaneRuptureTrigger::IsActive()
+{
+    // Cheap gates first: known spell, then the self-buff aura check.
+    if (!ai->HasSpell("arcane rupture"))
+        return false;
+    ArcaneRuptureState state{false, true, false};
+    state.hasRuptureBuff = ai->HasAura(52502, bot) || ai->HasAura(52588, bot);
+    return ShouldCastArcaneRupture(state);
 }

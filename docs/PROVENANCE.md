@@ -5732,3 +5732,48 @@ slows a fleeing mob, untriggered bot unchanged.
 | Mend pet at medium health (PET-4) | `mod-playerbots` @ `79bd4281` `src/Ai/Class/Hunter/Strategy/GenericHunterStrategy.cpp:72-73` (`hunters pet medium health` below MediumHealth 70 → mend pet 22.0 combat / 60.0 NC) + `GenericHunterNonCombatStrategy.cpp:33` | `ai/playerbot/strategy/hunter/HunterTriggers.{h,cpp}` (`HuntersPetMediumHealthTrigger` below `sPlayerbotAIConfig.mediumHealth`), `HunterStrategy.cpp` (combat mend at ACTION_HIGH-1 below low's ACTION_HIGH; NC at ACTION_NORMAL below low's NORMAL+1), `HunterAiObjectContext.cpp` (creator) | Reimplemented in live strategy priorities (donor 22/21/60 maps onto our ACTION_HIGH-1/HIGH + NORMAL/NORMAL+1); low band still wins below 40 | `bash tools/verify_all.sh`; `python3 tools/verify_action_trigger_wiring.py` (0 live-missing); `git diff --check`. Compile via shared builder; no live in-game test |
 | Combat call pet + safe combat revive, tame demoted (PET-5) | Transferable extension of donor NC-only `no pet` → `call pet` / `hunters pet dead` → `revive pet` (`GenericHunterNonCombatStrategy.cpp:29,34`); donor has no combat call/revive | `HunterStrategy.cpp` (combat `no pet` → `call pet` NORMAL+1, `safe to revive pet` → `revive pet` NORMAL; both combat+NC `tame beast` demoted EMERGENCY → NORMAL so instant call wins wherever castable and the engine falls through to tame only when call is impossible), `HunterTriggers.{h,cpp}` (`SafeToRevivePetTrigger` wired to `runtime/PetRevivePolicy.h`; `HunterNoPet` simplified to donor `NoPetTrigger` shape — petless + unmounted — so the call nodes are reachable for dismissed pets), `HunterAiObjectContext.cpp` (creator), `runtime/PetRevivePolicy.h` + `tools/test_pet_revive_policy.cpp` | Reimplemented: donor never called/revived in combat; revive gated on zero attackers (10s channel safety). Tame demotion via relevance fallback instead of a trigger spell gate | `bash tools/verify_all.sh`; wiring 0 live-missing; standalone `test_pet_revive_policy` (5 checks); `git diff --check`. Compile via shared builder; no live in-game test |
 | Chain-heal group trigger verification + Fire Nova Totem drop gate (SHM-7/SHM-9) | Donor `CastFireNovaAction::isUseful` (`mod-playerbots` `ShamanActions.cpp:28-41`: fire-totem + 8y gate) is WotLK-3.3.0+ mechanics — 1.12 Fire Nova is a totem DROP (1535 line, detonates after 4s), not a pulse of a down totem, so the donor gate is NOT ported (it would refuse every drop). Ported as a placement gate instead @ `79bd4281` | `ai/playerbot/strategy/shaman/ShamanActions.h` (`CastFireNovaAction::isUseful`: bot-to-target <= 10y + policy call), `ShamanFireGatePolicy.h` + `tools/test_shaman_fire_gate_policy.cpp` | Chain heal: verified already wired — live `medium aoe heal -> chain heal` at ACTION_MEDIUM_HEAL matches priest/druid shape, no new trigger; donor `group heal setting` exists only in dead ports. Fire Nova: 10y placement gate (totem lands at our feet); manual `totem fire nova` and magma->nova continuer unaffected (no existing-totem requirement). Spells: Fire Nova Totem 1535 line / Fire Nova pulse 8350 line (verified in tw_world.spell_template; action resolves via spellbook to the trained drop) | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
+
+## Mage arcane rupture to missiles rhythm (MAG-5) — 2026-10-10
+
+Donor (idea only): mod-playerbots (`79bd4281`)
+`src/Ai/Class/Mage/Strategy/ArcaneMageStrategy.cpp:56-64` (blast-stack +
+missile-barrage proc timing the missiles). The WotLK spells do not exist
+in 1.18.1 — only the transferable idea ports ("arcane has a
+builder/spender rhythm"), mapped onto Turtle's Arcane Rupture → Missiles
+pair.
+
+Source files (module, modified):
+`ai/playerbot/ArcaneRupturePolicy.h` (new pure rule:
+`ShouldCastArcaneRupture` fires when the rupture self buff is absent and
+the spell is known; `IsArcaneRuptureCastId` covers 51955-51960),
+`tools/test_arcane_rupture_policy.cpp` (new standalone test, 17 checks)
++ `tools/verify_all.sh` (registered),
+`ai/playerbot/strategy/mage/MageActions.h` (new
+`CastArcaneRuptureAction : CastSpellAction`),
+`ai/playerbot/strategy/mage/MageTriggers.h/.cpp` (new
+`ArcaneRuptureTrigger : Trigger`: `HasSpell` gate, then self-buff
+52502/52588 check via `ai->HasAura(uint32)` into the policy),
+`ai/playerbot/strategy/mage/MageAiObjectContext.cpp` (registered
+`arcane rupture` trigger + action),
+`ai/playerbot/strategy/mage/ArcaneMageStrategy.cpp`
+(`ArcaneMageStrategy::InitCombatTriggers`: → `arcane rupture` at HIGH;
+the missiles IDLE default owns the GCD while buffed),
+`docs/classes/mage.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented. Mechanics verified in
+`tw_world.spell_template`: rupture cast 51955 is effect-36 triggering
+damage 51949 on the enemy (target B/C missing = enemy), self buff
+52502/52588 is effect-6 aura-108 (+19% missiles, target A=1 self, 8s
+duration idx 31), cast time idx 19 (2.5s per the report — actually the
+51955 cast row shows CastingTimeIndex 1/instant; the damage lands
+instantly). Trainers teach ranks 2-6 (51956-51960) at 28-60 (Theocritus
+et al.; rank 1 from the starting kit). Arcane Surge deliberately out of
+scope (needs a "resist happened" value that does not exist).
+
+Reason: arcane bots were bare missiles + explosion with zero combat
+triggers of their own — no builder/spender rhythm at all.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`; shared-builder compile via
+`build-commit.sh` (BUILD OK); live in-game check pending: arcane bot
+ruptures once, then missiles through the buff window.

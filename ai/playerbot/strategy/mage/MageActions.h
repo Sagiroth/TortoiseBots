@@ -34,6 +34,15 @@ namespace ai
         CastArcaneMissilesAction(PlayerbotAI* ai) : CastSpellAction(ai, "arcane missiles") {}
     };
 
+    // Turtle Arcane Rupture (51955+): instant direct damage that lands the
+    // self buff (52502/52588, +19% missiles, 8s). Builder half of the
+    // arcane rupture->missiles rhythm (MAG-5).
+    class CastArcaneRuptureAction : public CastSpellAction
+    {
+    public:
+        CastArcaneRuptureAction(PlayerbotAI* ai) : CastSpellAction(ai, "arcane rupture") {}
+    };
+
     class CastPyroblastAction : public CastSpellAction
     {
     public:

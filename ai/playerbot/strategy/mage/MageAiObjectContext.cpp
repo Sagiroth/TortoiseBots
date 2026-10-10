@@ -171,6 +171,7 @@ namespace ai
                 creators["polymorph"] = [](PlayerbotAI* ai) { return new PolymorphTrigger(ai); };
                 creators["counterspell on enemy healer"] = [](PlayerbotAI* ai) { return new CounterspellEnemyHealerTrigger(ai); };
                 creators["arcane power"] = [](PlayerbotAI* ai) { return new ArcanePowerTrigger(ai); };
+                creators["arcane rupture"] = [](PlayerbotAI* ai) { return new ArcaneRuptureTrigger(ai); };
                 creators["presence of mind"] = [](PlayerbotAI* ai) { return new PresenceOfMindTrigger(ai); };
                 creators["presence of mind aura"] = [](PlayerbotAI* ai) { return new PresenceOfMindAuraTrigger(ai); };
                 creators["fire ward"] = [](PlayerbotAI* ai) { return new FireWardTrigger(ai); };
@@ -228,6 +229,7 @@ namespace ai
                 creators["lesser invisibility"] = [](PlayerbotAI* ai) { return new CastLesserInvisibilityAction(ai); };
                 creators["evocation"] = [](PlayerbotAI* ai) { return new CastEvocationAction(ai); };
                 creators["arcane missiles"] = [](PlayerbotAI* ai) { return new CastArcaneMissilesAction(ai); };
+                creators["arcane rupture"] = [](PlayerbotAI* ai) { return new CastArcaneRuptureAction(ai); };
                 creators["counterspell on enemy healer"] = [](PlayerbotAI* ai) { return new CastCounterspellOnEnemyHealerAction(ai); };
                 creators["fire ward"] = [](PlayerbotAI* ai) { return new CastFireWardAction(ai); };
                 creators["frost ward"] = [](PlayerbotAI* ai) { return new CastFrostWardAction(ai); };
