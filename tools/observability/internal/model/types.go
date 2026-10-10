@@ -59,6 +59,8 @@ type BotSnapshot struct {
 	AiAgeMs  uint32 `json:"ai_age_ms,omitempty"`
 	// Pvp is "bg" inside a battleground, "queue" when queued, else empty.
 	Pvp string `json:"pvp,omitempty"`
+	// PvpBg names the battleground (or the queued ones, comma separated).
+	PvpBg string `json:"pvp_bg,omitempty"`
 
 	// XpPerHour is daemon-derived from successive XP samples (level-up
 	// aware), not on the wire. XpGainAgeSec is seconds since the last

@@ -18,8 +18,10 @@ void BattlegroundStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &trigge
         "bg active",
         NextAction::array(0, new NextAction("check mount state", 2.0f), new NextAction("bg move to objective", 1.0f), NULL)));
 
+    // Random "often" like mod-playerbots: on "very often" the re-pick won
+    // nearly every visit and "bg move to objective" never got a turn.
     triggers.push_back(new TriggerNode(
-        "very often",
+        "often",
         NextAction::array(0, new NextAction("bg check objective", 10.0f), NULL)));
 
     triggers.push_back(new TriggerNode(

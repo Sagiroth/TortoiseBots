@@ -35,6 +35,8 @@
 #include "../host/ModuleVersion.h"
 #include "Timer.h"
 #include "MotionMaster.h"
+#include "Battlegrounds/BattleGround.h"
+#include "Battlegrounds/BattleGroundMgr.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -1169,9 +1171,25 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
         FillTravelInfo(ai, snap.travelPurpose, snap.travelTo, snap.travelStatus, snap.travelDist);
         BotManager::Instance().GetAiVisitInfo(bot->GetGUIDLow(), snap.aiVisits, snap.aiAgeMs);
         if (bot->InBattleGround())
+        {
             snap.pvp = "bg";
+            if (BattleGround* bg = bot->GetBattleGround())
+                if (bg->GetName())
+                    snap.pvpWhere = bg->GetName();
+        }
         else if (bot->InBattleGroundQueue())
+        {
             snap.pvp = "queue";
+            for (uint32 i = 0; i < PLAYER_MAX_BATTLEGROUND_QUEUES; ++i)
+            {
+                BattleGroundQueueTypeId queueType = bot->GetBattleGroundQueueTypeId(i);
+                if (queueType == BATTLEGROUND_QUEUE_NONE)
+                    continue;
+                BattleGround* bgTemplate = sBattleGroundMgr.GetBattleGroundTemplate(BattleGroundMgr::BGTemplateId(queueType));
+                if (bgTemplate && bgTemplate->GetName())
+                    snap.pvpWhere += (snap.pvpWhere.empty() ? "" : ", ") + std::string(bgTemplate->GetName());
+            }
+        }
 
         if (ai)
         {
@@ -1313,7 +1331,8 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
                 << ",\"travel_dist\":" << b.travelDist
                 << ",\"ai_visits\":" << b.aiVisits
                 << ",\"ai_age_ms\":" << b.aiAgeMs
-                << ",\"pvp\":\"" << b.pvp << "\"}";
+                << ",\"pvp\":\"" << b.pvp << "\""
+                << ",\"pvp_bg\":\"" << EscapeJson(b.pvpWhere) << "\"}";
         }
         bss << "]}";
         SendDatagram(bss.str());
