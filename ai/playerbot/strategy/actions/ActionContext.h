@@ -387,6 +387,7 @@ namespace ai
             creators["golemagg tank hold"] = [](PlayerbotAI* ai) { return new GolemaggTankHoldAction(ai); };
             creators["enable geddon fight strategy"] = [](PlayerbotAI* ai) { return new GeddonEnableFightStrategyAction(ai); };
             creators["disable geddon fight strategy"] = [](PlayerbotAI* ai) { return new GeddonDisableFightStrategyAction(ai); };
+            creators["move away from living bomb"] = [](PlayerbotAI* ai) { return new GeddonMoveAwayFromLivingBombAction(ai); };
             creators["move away from geddon"] = [](PlayerbotAI* ai) { return new GeddonMoveAwayAction(ai); };
 
             creators["move away from hazard"] = [](PlayerbotAI* ai) { return new MoveAwayFromHazard(ai); };

@@ -364,6 +364,7 @@ namespace ai
             creators["golemagg tank hold"] = [](PlayerbotAI* ai) { return new GolemaggTankHoldTrigger(ai); };
             creators["start geddon fight"] = [](PlayerbotAI* ai) { return new GeddonStartFightTrigger(ai); };
             creators["end geddon fight"] = [](PlayerbotAI* ai) { return new GeddonEndFightTrigger(ai); };
+            creators["geddon living bomb near"] = [](PlayerbotAI* ai) { return new GeddonLivingBombProximityTrigger(ai); };
             creators["geddon inferno"] = [](PlayerbotAI* ai) { return new GeddonInfernoTrigger(ai); };
 
             creators["fire protection potion ready"] = [](PlayerbotAI* ai) { return new FireProtectionPotionReadyTrigger(ai); };

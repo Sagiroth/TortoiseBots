@@ -41,6 +41,15 @@ namespace ai
         GeddonEndFightTrigger(PlayerbotAI* ai) : EndBossFightTrigger(ai, "end geddon fight", "geddon", 12056) {}
     };
 
+    // Geddon Living Bomb (20475, 10yd): anyone standing next to the carrier
+    // steps out. The carrier itself runs out via "raid bomb debuff" and is
+    // never counted by the base trigger.
+    class GeddonLivingBombProximityTrigger : public TooCloseToPlayerWithDebuffTrigger
+    {
+    public:
+        GeddonLivingBombProximityTrigger(PlayerbotAI* ai) : TooCloseToPlayerWithDebuffTrigger(ai, "geddon living bomb near", 20475, 10.0f) {}
+    };
+
     // Baron Geddon Inferno: while Geddon carries the Inferno aura (19695)
     // everyone runs 20y out (mod-playerbots parity). Living Bomb needs no
     // trigger: the universal "raid bomb debuff" runout already covers it.

@@ -7508,3 +7508,85 @@ Focus 14751, PW:S all in 1.18.1 data).
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`.
 Build via build-commit.sh. No live test.
+
+## Move away from debuffed player primitive + Geddon Living Bomb spacing (POS-4) — 2026-10-09
+
+Feature: generic spell-id parametrised `MoveAwayFromPlayerWithDebuff`
+action + `TooCloseToPlayerWithDebuffTrigger` (donor
+`MoveAwayFromPlayerWithDebuffAction` / `TooCloseToPlayerWithDebuffTrigger`
+shape). Anyone standing within the blast radius of a debuffed groupmate
+steps out via an 8-direction x 3yd safety-score search; the carrier itself
+is never counted (its escape stays `raid bomb runout`). Pure 2D geometry
+lives in `ai/playerbot/DebuffSpreadPolicy.h`, tested by
+`tools/test_debuff_spread_policy.cpp` (wired into `verify_all.sh`). First
+consumer: `geddon` fight strategy (start/end triggers on Geddon entry
+12056, `geddon living bomb near` 20475/10yd →
+`move away from living bomb`, ACTION_MOVE + 8).
+
+Source repository: `mod-playerbots/mod-playerbots`
+
+Source commit: `79bd4281` (local
+`playerbots-references/mod-playerbots` checkout).
+
+Source files:
+- `src/Ai/Base/Actions/MovementActions.cpp` (`MoveAwayFromPlayerWithDebuffAction::Execute`: 8-dir x range+5yd safety-score search)
+- `src/Ai/Base/Trigger/RangeTriggers.cpp` (`TooCloseToPlayerWithDebuffTrigger::TooCloseToPlayerWithDebuff`: group aura scan within range)
+- `src/Ai/Base/Actions/MovementActions.h` / `src/Ai/Base/Trigger/RangeTriggers.h` (declarations)
+
+Source files (module, modified): `ai/playerbot/DebuffSpreadPolicy.h` (new),
+`ai/playerbot/strategy/actions/DungeonActions.{h,cpp}` (generic base),
+`ai/playerbot/strategy/triggers/DungeonTriggers.{h,cpp}` (generic gate),
+`ai/playerbot/strategy/actions/MoltenCoreDungeonActions.h` (Geddon subclass),
+`ai/playerbot/strategy/triggers/MoltenCoreDungeonTriggers.h` (Geddon start/end/proximity),
+`ai/playerbot/strategy/generic/MoltenCoreDungeonStrategies.{h,cpp}` (`geddon` strategy),
+`ai/playerbot/strategy/{actions/ActionContext.h,triggers/TriggerContext.h,strategy/StrategyContext.h}` (registration),
+`tools/test_debuff_spread_policy.cpp` + `tools/verify_all.sh` (new standalone test),
+`docs/guides/dungeon-tactics.md` (doc line).
+
+Copied / ported / reimplemented: ported, adapted to the 1.12 codebase.
+Deviations from the donor, all deliberate: (a) self never counts as a
+carrier (donor scans the whole group including self) — the carrier-side
+path here is the existing `raid bomb debuff` runout and counting self
+would fight it for the same move; (b) candidates validate through the
+existing `FindStep` (LoS + path + unpulled-hostile aggro guard) instead of
+the donor's LoS-only check; (c) trigger checks distance before the aura
+call (cheap gate first, no per-tick waste); (d) wired into one boss-fight
+strategy (Geddon) rather than global raid scripts — other bosses follow as
+data, not code. `TooFarFromPlayerWithAuraTrigger` not ported (no consumer).
+
+Reason: nobody moved away FROM a Geddon bomb carrier — only the carrier
+ran out, so the raid still ate the blast when anyone stood next to them.
+
+Local validation: `bash tools/verify_all.sh` (incl. new policy test); `git
+diff --check` clean. Build via build-commit.sh (see PR summary); no live
+in-game check.
+
+## Review fixes (2026-10-09, reviewer muse-1.3 max, CHANGES_REQUESTED)
+
+Blocking 1 (deleted `dragon tank face away` registration — REAL, fixed):
+my edit had dropped the line; `.bot action raid tankface` would have
+gone UNKNOWN. Restored next to `raid spread`.
+
+Blocking 2 (`ACTION_MOVE + 8` loses to heals — REAL, fixed): Geddon row
+raised to `ACTION_EMERGENCY + 5` (survival tier, below the carrier's own
+runout at +6), so healers step out instead of casting through the blast.
+
+Non-blocking "untested policy helpers" — FIXED by wiring: the trigger
+gate now calls `NeedsDebuffSpread` (the action already used
+`IsDebuffSafePoint` + the step/overshoot constants). `DebuffEscapeClearance`
+stays test-only by design (production iterates live `Player*` carriers;
+the helper takes plain anchors) — documented in the header.
+
+Non-blocking "raid status omits geddon" — FIXED: added to the list.
+
+Non-blocking "10yd blast unverified" — ACKNOWLEDGED, not fixed: spell
+radius not in scripts; needs an in-game Geddon check that 10yd clears
+the detonation.
+
+Non-blocking "tank steps out, drags boss" — ACKNOWLEDGED, not fixed:
+the Geddon row moves everyone including the holding tank (unlike
+Magmadar's ranged/heal-only row). Left for the live check; a
+victim==bot exemption is the fallback if it drags.
+
+Non-blocking "donor Geddon never used this primitive" — ACKNOWLEDGED:
+donor consumers are RS/Ulduar; the Geddon application is novel. Noted.
