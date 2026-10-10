@@ -5556,3 +5556,39 @@ All three blocking findings verified real in code and fixed:
 - Finding 3 (policy header dead code): confirmed — nothing included it. Fixed by refactoring the trigger onto it instead of deleting: `IsTargetValid` now builds `OocRebirthState` and calls `ShouldCastOocRebirth`, so the 6-check test exercises the shipped gate; unused `OocResurrectClass` enum removed.
 - Non-blocking citation fixed (`DruidTriggers.h:120-153` is FaerieFireFeral — now cites the generic `PartyMemberDeadTrigger` path). Toggle note: no toggle added — OOC auto-rez matches the other three classes; revisit if owners complain.
 verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
+
+## Mage Hot Streak proc to instant Pyroblast (MAG-1) — 2026-10-10
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Mage/Strategy/FireMageStrategy.cpp:51-58` (`hot streak` →
+`pyroblast` 25.0), `src/Ai/Class/Mage/MageTriggers.h:81-85`
+(`HotStreakTrigger : HasAuraTrigger("hot streak")`),
+`src/Ai/Class/Mage/MageAiObjectContext.cpp:99` (trigger registration).
+
+Source files (module, modified):
+`ai/playerbot/strategy/mage/MageTriggers.h` (new `HotStreakTrigger` via
+`HAS_AURA_TRIGGER`, self-target name-based aura check),
+`ai/playerbot/strategy/mage/MageAiObjectContext.cpp` (registered
+`hot streak`), `ai/playerbot/strategy/mage/FireMageStrategy.cpp`
+(`FireMageStrategy::InitCombatTriggers` row: `hot streak` → `pyroblast`
+at HIGH+2, above the scorch/vulnerability rows and the debuff-refresh
+pyroblast row), `docs/classes/mage.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in the live list-based
+style (donor uses the newer vector/NextAction-float API). Deviations
+from the donor, all deliberate: (a) fire-only wiring (Hot Streak is a
+fire-tier-4 talent, 51927/51928; proc auras 51930/51931) — donor also
+wires it on frostfire, which has no 1.18.1 equivalent; (b) priority
+HIGH+2 instead of donor's flat 25.0, sitting below interrupt/emergency
+rows but above the normal rotation; (c) V1 fires on any Hot Streak aura
+presence (donor does the same) rather than gating on full 5-stack —
+stack-gating left for a follow-up.
+
+Reason: every fire mage with the Turtle Hot Streak talent procced free
+instant Pyroblasts that bots silently ignored — the highest-value mage
+gap in the parity report.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`;
+shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
+check pending: fire bot with Hot Streak casts pyroblast while the proc
+aura is up.

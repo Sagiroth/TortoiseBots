@@ -28,9 +28,9 @@ Mages provide premier ranged spell DPS, the game's most reliable crowd control (
 - If enemies reach melee range, casts *Frost Nova* and *Blink* to reset distance.
   - Skips *Frost Nova* when the target is already frozen or immune to the freeze, so the GCD goes to damage.
 - Uses *Blizzard* and *Flamestrike* on grouped enemies (*Cone of Cold* on light AoE; *Arcane Explosion* point-blank for Arcane; *Blast Wave* for Fire).
-- Uses *Cold Snap* once any Frost cooldown (Frost Nova, Cone of Cold, Ice Barrier, Ice Block, Frost Ward) is spent.
 
 ### 2. Fire Mage
+- Fires a free *Pyroblast* whenever the *Hot Streak* proc aura is up (highest-priority nuke).
 - Refreshes *Pyroblast* in combat and consumes *Presence of Mind* with it.
 - Weaves *Scorch* casts to maintain the *Improved Scorch* fire vulnerability.
 - Casts *Fireball* as main nuke and *Fire Blast* on the move or for finishing blows.

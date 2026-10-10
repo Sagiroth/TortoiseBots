@@ -172,7 +172,7 @@ namespace ai
                 creators["counterspell on enemy healer"] = [](PlayerbotAI* ai) { return new CounterspellEnemyHealerTrigger(ai); };
                 creators["arcane power"] = [](PlayerbotAI* ai) { return new ArcanePowerTrigger(ai); };
                 creators["presence of mind"] = [](PlayerbotAI* ai) { return new PresenceOfMindTrigger(ai); };
-                creators["presence of mind aura"] = [](PlayerbotAI* ai) { return new PresenceOfMindAuraTrigger(ai); };
+                creators["hot streak"] = [](PlayerbotAI* ai) { return new HotStreakTrigger(ai); };
                 creators["fire ward"] = [](PlayerbotAI* ai) { return new FireWardTrigger(ai); };
                 creators["frost ward"] = [](PlayerbotAI* ai) { return new FrostWardTrigger(ai); };
                 creators["blink"] = [](PlayerbotAI* ai) { return new BlinkTrigger(ai); };

@@ -132,7 +132,7 @@ namespace ai
         PresenceOfMindTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "presence of mind") {}
     };
 
-    HAS_AURA_TRIGGER(PresenceOfMindAuraTrigger, "presence of mind");
+    HAS_AURA_TRIGGER(HotStreakTrigger, "hot streak");
 
     class ManaShieldTrigger : public BuffTrigger
     {
