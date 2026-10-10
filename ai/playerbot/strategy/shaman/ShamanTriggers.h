@@ -256,6 +256,23 @@ namespace ai
         LightningShieldTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "lightning shield") {}
     };
 
+    // Elemental-only pre-water fallback: Water Shield (R1 trains at 26)
+    // and Lightning Shield are mutually exclusive, but each trigger only
+    // checks its own aura — without this gate the two ele buff rows would
+    // recast over each other every tick once Water Shield is trained.
+    // Enhancement keeps using the shared LightningShieldTrigger.
+    class ElementalLightningShieldFallbackTrigger : public BuffTrigger
+    {
+    public:
+        ElementalLightningShieldFallbackTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "lightning shield") {}
+        bool IsActive() override
+        {
+            if (ai->HasSpell("water shield"))
+                return false;
+            return BuffTrigger::IsActive();
+        }
+    };
+
     class LightningStrikeTrigger : public SpellCanBeCastedTrigger
     {
     public:
@@ -470,7 +487,6 @@ namespace ai
     };
 
     CAN_CAST_TRIGGER(ChainLightningTrigger, "chain lightning");
-    CD_TRIGGER(ChainLightningReadyTrigger, "chain lightning");
 
     CAN_CAST_TRIGGER(StormstrikeTrigger, "stormstrike");
     BUFF_TRIGGER(ElementalMasteryTrigger, "elemental mastery");

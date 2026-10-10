@@ -254,6 +254,7 @@ namespace ai
                 creators["shaman weapon"] = [](PlayerbotAI* ai) { return new ShamanWeaponTrigger(ai); };
                 creators["water shield"] = [](PlayerbotAI* ai) { return new WaterShieldTrigger(ai); };
                 creators["lightning shield"] = [](PlayerbotAI* ai) { return new LightningShieldTrigger(ai); };
+                creators["lightning shield fallback"] = [](PlayerbotAI* ai) { return new ElementalLightningShieldFallbackTrigger(ai); };
                 creators["water breathing"] = [](PlayerbotAI* ai) { return new WaterBreathingTrigger(ai); };
                 creators["water walking"] = [](PlayerbotAI* ai) { return new WaterWalkingTrigger(ai); };
                 creators["water breathing on party"] = [](PlayerbotAI* ai) { return new WaterBreathingOnPartyTrigger(ai); };
@@ -279,8 +280,6 @@ namespace ai
                 creators["totemic recall"] = [](PlayerbotAI* ai) { return new ReadyToRemoveTotemsTrigger(ai); };
                 creators["earth shield on party tank"] = [](PlayerbotAI* ai) { return new PartyTankEarthShieldTrigger(ai); };
                 creators["chain lightning"] = [](PlayerbotAI* ai) { return new ChainLightningTrigger(ai); };
-                creators["chain lightning ready"] = [](PlayerbotAI* ai) { return new ChainLightningReadyTrigger(ai); };
-                creators["chain lightning filler"] = [](PlayerbotAI* ai) { return new TwoTriggers(ai, "chain lightning ready", "ranged medium aoe"); };
                 creators["stormstrike"] = [](PlayerbotAI* ai) { return new StormstrikeTrigger(ai); };
                 creators["lightning strike"] = [](PlayerbotAI* ai) { return new LightningStrikeTrigger(ai); };
                 creators["elemental mastery"] = [](PlayerbotAI* ai) { return new ElementalMasteryTrigger(ai); };

@@ -160,13 +160,6 @@ void ElementalShamanAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& tri
     triggers.push_back(new TriggerNode(
         "ranged medium aoe",
         NextAction::array(0, new NextAction("earthquake", ACTION_HIGH + 1), NULL)));
-
-    // Cooldown-ready Chain Lightning as pack filler below earthquake: the
-    // trigger already requires a 3+ ranged pack, so this never fires
-    // single-target (no CC breaks, no OOM spam).
-    triggers.push_back(new TriggerNode(
-        "chain lightning filler",
-        NextAction::array(0, new NextAction("chain lightning", ACTION_HIGH - 1), NULL)));
 }
 
 void ElementalShamanAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -377,11 +370,12 @@ void ElementalShamanBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& tr
         "water shield",
         NextAction::array(0, new NextAction("water shield", ACTION_NORMAL), NULL)));
 
-    // Pre-34 fallback: Water Shield trains at 34, Lightning Shield at 8.
-    // The water trigger stays quiet until trained, so low-level ele keeps
-    // a shield instead of none.
+    // Pre-water fallback: Water Shield R1 trains at 26, Lightning Shield at 8.
+    // The water trigger stays quiet until trained, and the fallback gates
+    // itself off once water is known, so the rows never recast over each
+    // other post-water (the two shields are mutually exclusive).
     triggers.push_back(new TriggerNode(
-        "lightning shield",
+        "lightning shield fallback",
         NextAction::array(0, new NextAction("lightning shield", ACTION_NORMAL - 1), NULL)));
 }
 
@@ -393,9 +387,9 @@ void ElementalShamanBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>&
         "water shield",
         NextAction::array(0, new NextAction("water shield", ACTION_NORMAL), NULL)));
 
-    // Pre-34 fallback, same as combat.
+    // Pre-water fallback, same as combat.
     triggers.push_back(new TriggerNode(
-        "lightning shield",
+        "lightning shield fallback",
         NextAction::array(0, new NextAction("lightning shield", ACTION_NORMAL - 1), NULL)));
 }
 
