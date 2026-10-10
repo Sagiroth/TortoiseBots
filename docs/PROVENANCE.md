@@ -6647,3 +6647,39 @@ Both blocking findings verified real in code and fixed:
 - Finding 2 (exit/re-enter livelock): confirmed — tree re-entry at HIGH would win every tick after the exit. Fixed with the donor's `no healer dps strategy` gate: new `NoOffdpsTrigger` (`!HasStrategy("offdps", COMBAT)`) + `tree form and no offdps` TwoTriggers combo on the Tree row; offdps rows stay on plain `healer should attack` (strategy membership is the opt-in gate).
 - Non-blocking: nuke order corrected to donor (wrath above starfire); insect swarm + faerie fire dropped (donor healer-dps is MF/Wrath/SF; IS is a balance talent most restos lack); doc corrected (auto-added for random bots like priest holy, not opt-in); solo-OOM claim dropped (gate returns true groupless — harmless fallthrough to melee default).
 verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
+
+## Warrior WAR-9: skip Battle Shout under stronger Might (2026-10-09)
+
+Feature: `BattleShoutTrigger` now compares attack-power values and stays
+inactive while an equal-or-stronger Blessing of Might (regular or greater)
+is on the bot. A stronger shout rank still fires over a weaker might.
+Pure rule extracted to `ai/playerbot/BattleShoutPolicy.h` with standalone
+test `tools/test_battle_shout_policy.cpp` (registered in
+`tools/verify_all.sh`).
+
+Source repository: `mod-playerbots/mod-playerbots`
+
+Source commit: `79bd4281` (local
+`playerbots-references/mod-playerbots` checkout).
+
+Source files:
+- `src/Ai/Class/Warrior/WarriorTriggers.cpp:75-140` (`BattleShoutTrigger::IsActive` AP comparison incl. Commanding Presence half)
+
+Copied / ported / independently reimplemented: reimplemented in place
+(`WarriorTriggers.h` delegates to the new policy header).
+Deviations from the donor, all deliberate: (a) static AP tables instead of
+the donor's SpellInfo scan — our 1.12 ids are stable and the trigger
+already hardcodes shout ids (every value verified against
+`spell_template` EffectBasePoints+1: shout 15/35/55/85/130/185/232, might
+20/35/55/85/115/155/185 incl. R7 25291, greater 155/185); (b) the talent
+multiplier ported under its Vanilla name — donor COMMANDING_PRESENCE_RANKS
+are literally the Vanilla Improved Battle Shout ids
+(12318/12857/12858/12860/12861, +5%/rank), credited via spellbook check;
+(c) trigger only, the `battle shout` action itself is unchanged so an
+explicit player order still shouts.
+
+Reason: WAR-9 in the warrior parity sweep: every paladin group wasted rage
+and a GCD shouting over a stronger might.
+
+Local validation: `bash tools/verify_all.sh` (incl. new policy test);
+`git diff --check`. No live test (per task constraints).
