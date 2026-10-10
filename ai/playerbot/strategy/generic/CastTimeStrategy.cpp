@@ -11,13 +11,18 @@ float CastTimeMultiplier::GetValue(Action* action)
 {
     if (action == NULL) return 1.0f;
 
-    uint8 targetHealth = AI_VALUE2(uint8, "health", "current target");
     std::string name = action->GetName();
 
     if (action->GetTarget() != AI_VALUE(Unit*, "current target"))
         return 1.0f;
 
-    if (targetHealth < sPlayerbotAIConfig.criticalHealth && dynamic_cast<CastSpellAction*>(action))
+    // mod-playerbots CastTimeMultiplier (LD-7): deprioritize a cast the target
+    // will not live to see — cast time vs health / estimated group dps. The
+    // old HP% + cast-time ladder only fired below critical health, so a 3 s
+    // cast on a 500-HP mob at full health still started and fizzled on a
+    // corpse. (Low HP usually means short lifetime, but a low-% boss still
+    // has a long one — review PR #596 — so this is not a strict superset.)
+    if (dynamic_cast<CastSpellAction*>(action))
     {
         uint32 spellId = AI_VALUE2(uint32, "spell id", name);
         const SpellEntry* const pSpellInfo = sServerFacade.LookupSpellInfo(spellId);
@@ -29,14 +34,21 @@ float CastTimeMultiplier::GetValue(Action* action)
             return 1.0f;
 
         uint32 castTime = GetSpellCastTime(pSpellInfo, bot);
-        if (spellId && castTime >= 3000)
-            return 0.0f;
+        if (IsChanneledSpell(pSpellInfo))
+        {
+            int32 duration = std::min(GetSpellDuration(pSpellInfo), (int32)3000);
+            if (duration > 0)
+                castTime += duration;
+        }
 
-        if (spellId && castTime >= 1500)
-            return 0.5f;
+        Unit* target = action->GetTarget();
+        if (!target || !target->IsAlive() || !target->IsInWorld())
+            return 1.0f;
 
-        if (spellId && castTime >= 1000)
-            return 0.25f;
+        float groupDps = AI_VALUE(float, "estimated group dps");
+        if (groupDps > 0.0f &&
+            castTime > IN_MILLISECONDS * (float)target->GetHealth() / groupDps)
+            return 0.1f;
     }
 
     return 1.0f;

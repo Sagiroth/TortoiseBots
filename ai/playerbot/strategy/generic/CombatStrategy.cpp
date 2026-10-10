@@ -183,3 +183,10 @@ void HealInterruptStrategy::InitReactionTriggers(std::list<TriggerNode*>& trigge
 {
     InitCombatTriggers(triggers);
 }
+
+void SpreadStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "spread needed",
+        NextAction::array(0, new NextAction("raid spread", ACTION_NORMAL), NULL)));
+}

@@ -13,6 +13,13 @@ namespace ai
 
         virtual bool IsActive() override
 		{
+            // mod-playerbots NoRtiTrigger (LD-6, RtiTriggers.cpp:15-16): no
+            // automatic marks while travelling or idle — tanks used to set
+            // raid icons on everything nearby out of combat. Explicit marks
+            // (chat orders, pre-pull skull) still resolve through the values.
+            if (!bot->IsInCombat())
+                return false;
+
             if (AI_VALUE(Unit*, "rti target"))
             {
                 return false;

@@ -249,30 +249,11 @@ namespace ai
             }
             // Turtle 29166 is a single-target healer battery: prefer the
             // lowest-mana party healer under LowMana, fall back to self.
-            Group* group = bot->GetGroup();
-            if (group)
-            {
-                Unit* lowestHealer = nullptr;
-                float lowestPct = static_cast<float>(sPlayerbotAIConfig.lowMana);
-                for (Player* member : LiveGroupMembers(group))
-                {
-                    if (!member || member == bot || !ai->IsSafe(member) || !ai->IsHeal(member))
-                        continue;
-                    if (member->GetMapId() != bot->GetMapId() || !sServerFacade.IsAlive(member))
-                        continue;
-                    uint32 maxMana = member->GetMaxPower(POWER_MANA);
-                    if (!maxMana)
-                        continue;
-                    float pct = (static_cast<float>(member->GetPower(POWER_MANA)) / maxMana) * 100.0f;
-                    if (pct < lowestPct)
-                    {
-                        lowestPct = pct;
-                        lowestHealer = member;
-                    }
-                }
-                if (lowestHealer && IsTargetValid(lowestHealer))
-                    return lowestHealer;
-            }
+            // Routed through the shared "healer low mana" value so trigger
+            // and action agree on the target (PR #650 unification with #615).
+            Unit* lowestHealer = AI_VALUE(Unit*, "healer low mana");
+            if (lowestHealer && IsTargetValid(lowestHealer))
+                return lowestHealer;
             Unit* fallback = CastSpellAction::GetTarget();
             return (fallback && IsTargetValid(fallback)) ? fallback : nullptr;
         }
@@ -284,6 +265,34 @@ namespace ai
             if (!target->GetMaxPower(POWER_MANA))
                 return false;
             return ai->GetManaPercent(*target) < sPlayerbotAIConfig.lowMana;
+        }
+
+        bool isPossible() override
+        {
+            // Innervate unknown: stay quiet so the row never queues a cast
+            // that fails after the caster-form shift (from #615's trigger).
+            return ai->HasSpell("innervate") && CastSpellAction::isPossible();
+        }
+
+        bool isUseful() override
+        {
+            // Innervate on cooldown or target out of range / already buffed:
+            // the engine checks these before queueing (from #615's trigger).
+            // isUseful runs after GetTarget, so reuse the resolved target.
+            Unit* target = GetTarget();
+            if (!target)
+                return false;
+            uint32 innervateId = AI_VALUE2(uint32, "spell id", "innervate");
+            if (!innervateId || !sServerFacade.IsSpellReady(bot, innervateId))
+                return false;
+            if (ai->HasAura("innervate", target))
+                return false;
+            float maxRange = 0.0f;
+            if (!ai->GetSpellRange("innervate", &maxRange))
+                return false;
+            if (sServerFacade.getDistance2d(bot, target) > maxRange)
+                return false;
+            return CastSpellAction::isUseful();
         }
     };
 

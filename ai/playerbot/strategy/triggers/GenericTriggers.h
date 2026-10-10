@@ -615,6 +615,19 @@ namespace ai
 		virtual bool IsActive() override;
 	};
 
+    // A group healer is running dry (mod-playerbots parity, donor default
+    // interval 1): fires when the lowest-mana healer (the "healer low mana"
+    // value) drops below the low-mana line. Pure mana check — cast-specific
+    // guards (Innervate known/ready/range/aura) live in the druid action.
+    class HealerLowManaTrigger : public Trigger
+    {
+    public:
+        HealerLowManaTrigger(PlayerbotAI* ai) : Trigger(ai, "healer low mana") {}
+
+        virtual std::string GetTargetName() override { return "healer low mana"; }
+        virtual bool IsActive() override;
+    };
+
     class HighManaTrigger : public Trigger
     {
     public:
@@ -787,6 +800,16 @@ namespace ai
     {
     public:
         IsNotBehindTargetTrigger(PlayerbotAI* ai) : Trigger(ai) {}
+        virtual bool IsActive() override;
+    };
+
+    // Generic rear-flank gate (donor RearFlankAction::isUseful shape):
+    // fires while the bot stands in the target's frontal arc or tail cone.
+    // Angle check only, no movement: cheap enough for the combat tick.
+    class RearFlankNeededTrigger : public Trigger
+    {
+    public:
+        RearFlankNeededTrigger(PlayerbotAI* ai) : Trigger(ai, "rear flank needed", 1) {}
         virtual bool IsActive() override;
     };
 
@@ -1365,6 +1388,17 @@ namespace ai
     {
     public:
         AtWarTrigger(PlayerbotAI* ai) : Trigger(ai, "at war", 60) {}
+
+        bool IsActive() override;
+    };
+
+    // Deferred ready-check confirm is waiting (SOC-S5): the confirm was
+    // held so buffs could land; fires the "ready reply" action once buffs
+    // settle or the cap hits.
+    class ForceRebuffPendingTrigger : public Trigger
+    {
+    public:
+        ForceRebuffPendingTrigger(PlayerbotAI* ai) : Trigger(ai, "force rebuff pending", 1) {}
 
         bool IsActive() override;
     };

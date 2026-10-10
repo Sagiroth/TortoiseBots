@@ -48,6 +48,10 @@ void FireMageStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("scorch", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "hot streak",
+        NextAction::array(0, new NextAction("pyroblast", ACTION_HIGH + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "pyroblast",
         NextAction::array(0, new NextAction("pyroblast", ACTION_NORMAL + 1), NULL)));
 
