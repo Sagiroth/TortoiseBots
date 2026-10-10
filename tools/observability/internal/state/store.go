@@ -131,9 +131,6 @@ type Store struct {
 	questFeed []model.QuestFeedItem
 	levelFeed []model.ActivityLevelItem
 
-	// activityForgotAt is the last forgetGoneBotsLocked sweep.
-	activityForgotAt time.Time
-
 	// gear is the daemon's periodic equipped-gear sweep, keyed by GUID.
 	// Replaced wholesale by SetGear on every sweep (it is DB truth, not
 	// session state), so it stays bounded by the pool that sweep saw.

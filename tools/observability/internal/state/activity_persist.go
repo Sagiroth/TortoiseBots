@@ -42,7 +42,6 @@ type persistedBot struct {
 	DeadAt     int64             `json:"dead_at,omitempty"`
 	LastLevel  uint32            `json:"last_level"`
 	OpenQuests []uint32          `json:"open_quests,omitempty"`
-	LastSeen   int64             `json:"last_seen,omitempty"`
 }
 
 // SaveActivity writes the activity rollup to path. The write is atomic
@@ -76,7 +75,6 @@ func (s *Store) SaveActivity(path string) error {
 			LastMoney: a.lastMoney,
 			HasMoney:  a.hasMoney,
 			LastLevel: a.lastLevel,
-			LastSeen:  a.lastSeen,
 		}
 		if !a.deadAt.IsZero() {
 			pb.DeadAt = a.deadAt.Unix()
@@ -138,10 +136,6 @@ func (s *Store) RestoreActivity(path string) (int, error) {
 			hasMoney:  false, // re-anchor on first live event
 			lastLevel: b.LastLevel,
 			openQuest: make(map[uint32]bool, len(b.OpenQuests)),
-			lastSeen:  b.LastSeen,
-		}
-		if a.lastSeen == 0 {
-			a.lastSeen = snap.SavedAt // snapshot written before lastSeen existed
 		}
 		if b.DeadAt > 0 {
 			a.deadAt = time.Unix(b.DeadAt, 0)
@@ -160,7 +154,6 @@ func (s *Store) RestoreActivity(path string) (int, error) {
 		s.sessionSince = time.Unix(snap.Since, 0)
 	}
 	s.activity = activity
-	s.activityForgotAt = s.now()
 	s.lootFeed = snap.LootFeed
 	s.questFeed = snap.QuestFeed
 	s.levelFeed = snap.LevelFeed

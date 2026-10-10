@@ -85,6 +85,26 @@ func (s *Service) GearRollup() (map[uint32]model.BotGear, error) {
 }
 
 // CompletedQuestsRollup returns the lifetime completed quest count for every pool bot.
+// ExistingCharacters returns the guid of every character that still exists,
+// so the activity rollup can forget the ones a pool reset deleted.
+func (s *Service) ExistingCharacters() (map[uint32]struct{}, error) {
+	rows, err := s.db.Query(`SELECT guid FROM characters WHERE deleteDate IS NULL`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[uint32]struct{})
+	for rows.Next() {
+		var guid uint32
+		if err := rows.Scan(&guid); err != nil {
+			return nil, err
+		}
+		out[guid] = struct{}{}
+	}
+	return out, rows.Err()
+}
+
 func (s *Service) CompletedQuestsRollup() (map[uint32]uint64, error) {
 	query := `
 		SELECT c.guid, COUNT(*)

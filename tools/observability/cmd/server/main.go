@@ -140,6 +140,7 @@ func main() {
 	// Background DB sweeps: runs immediately then every 5 minutes.
 	// 1. Equipped-gear rollup feeding roster item-level and armory.
 	// 2. Lifetime completed quests and spells backfill from character DB.
+	// 3. Counters of deleted characters are forgotten.
 	go func() {
 		const sweepInterval = 5 * time.Minute
 		for {
@@ -149,6 +150,12 @@ func main() {
 			} else {
 				store.SetGear(stats)
 				log.Printf("[Gear] swept %d bots", len(stats))
+			}
+
+			if existing, err := armoryService.ExistingCharacters(); err != nil {
+				log.Printf("[Activity] character sweep failed: %v", err)
+			} else if n := store.ForgetDeletedBots(existing); n > 0 {
+				log.Printf("[Activity] forgot %d deleted bots", n)
 			}
 
 			quests, qErr := armoryService.CompletedQuestsRollup()
