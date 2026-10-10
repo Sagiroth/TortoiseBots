@@ -303,6 +303,19 @@ void ArmsWarriorBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
     WarriorBoostStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
+        "death wish",
+        NextAction::array(0, new NextAction("death wish", ACTION_HIGH), NULL)));
+
+    // Retaliation while winning (donor arms fires at almost-full-health):
+    // 70-90% hp with melee attackers is when the counterattack shield earns
+    // its 30-min cooldown. Battle-locked: fires from battle stance (the
+    // WAR-5 pin holds it there; without that PR this row simply waits for
+    // battle rather than dancing).
+    triggers.push_back(new TriggerNode(
+        "almost full health",
+        NextAction::array(0, new NextAction("retaliation", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "recklessness",
         NextAction::array(0, new NextAction("recklessness", ACTION_HIGH), NULL)));
 }

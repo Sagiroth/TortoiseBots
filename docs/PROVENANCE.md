@@ -4694,6 +4694,15 @@ Blow, Sweeping Strikes, and Retaliation are all Battle-locked in 1.18.1
 and never fired from the old berserker pin; Whirlwind keeps its
 arms-scoped berserker prerequisite node so it still dances out and back.
 
+## Warrior WAR-10: arms/fury boost rows (2026-10-09)
+
+Feature: `ArmsWarriorBoostStrategy` gains `death wish` (HIGH) and `almost
+full health` → `retaliation` (HIGH) rows; `FuryWarriorBoostStrategy` gains
+`almost full health` → `retaliation` (HIGH) alongside its existing death
+wish / recklessness rows. Retaliation fires at 70-90% hp — winning fights
+where the counterattack shield punishes melee adds. All behind the default
+`boost` strategy (player-togglable), protection boost stays empty.
+
 Source repository: `mod-playerbots/mod-playerbots`
 
 Source commit: `79bd4281` (local
@@ -4760,6 +4769,23 @@ unchanged.
 
 Reason: WAR-5 in the warrior parity sweep: arms bots sat in berserker and
 five Battle-locked abilities never fired.
+- `src/Ai/Class/Warrior/Strategy/ArmsWarriorStrategy.cpp:217-224` (death wish HIGH+2)
+- `src/Ai/Class/Warrior/Strategy/ArmsWarriorStrategy.cpp:244-251` (retaliation at almost-full-health EMERGENCY+1)
+
+Copied / ported / independently reimplemented: reimplemented in place
+(`ArmsWarriorStrategy.cpp`, `FuryWarriorStrategy.cpp`,
+`ai/playerbot/strategy/warrior/`). Deviations from the donor, all
+deliberate: (a) rows at HIGH, not HIGH+2/EMERGENCY+1 — they sit alongside
+the existing HIGH recklessness/death-wish siblings and the boost spec is
+already gated; EMERGENCY would outbid real survival reactions; (b) no
+retaliation stance node in the live factory — it fires from battle stance,
+which the WAR-5 pin holds (soft dependency; without that PR the row waits
+for battle rather than dancing); (c) no enraged-regen row — no such player
+spell in 1.18.1.
+
+Reason: WAR-10 in the warrior parity sweep: arms boost had recklessness
+only (death wish just a fallback alternative), and neither spec gated
+retaliation on the winning-health band.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
 test (per task constraints).
