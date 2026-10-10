@@ -4626,6 +4626,15 @@ in `DpsFeralDruidStrategy` replacing the flat CP5 row: execute-bite at
 ACTION_NORMAL+6 (top finisher, strictly above the faerie-fire row at +5 —
 ties keep the first-pushed basket), timed bite at ACTION_NORMAL+3 (below
 the pve rip row at +4). Finisher order: execute > rip > timed bite.
+## Priest parity PRI-1: Fear Ward on the party tank in combat — 2026-10-09
+Feature: new `FearWardOnTankTrigger` (`BuffOnTankTrigger` on "fear ward",
+cooldown-guarded like the donor) + `CastFearWardOnTankAction`
+(`BuffOnTankAction`, targets "party tank without aura", `getName`
+overridden to the registered name) + combat row `fear ward on tank` at
+ACTION_HIGH+3 in `PriestBuffStrategy`, outranking the generic `fear ward`
+row (demoted from ACTION_EMERGENCY to ACTION_HIGH+2) by relevance — the
+engine executes the highest-relevance action, so the tank is warded first
+and the generic row stays as a manual-target fallback.
 
 Source repository: `mod-playerbots` @ `79bd4281` (local checkout
 `../playerbots-references/mod-playerbots`).
@@ -5315,3 +5324,31 @@ deviations: at ACTION_NORMAL this only displaces filler DPS.
 Non-blocking "guard missing" — FIXED: `guard` added to both opt-in
 gates (guard sits on COMBAT, unlike follow/grind).
 | Shaman Stoneclaw panic totem at low health (SHM-3) | `mod-playerbots` `src/Ai/Class/Shaman/Strategy/ElementalShamanStrategy.cpp:38-45` + `RestoShamanStrategy.cpp:22` (`low health -> stoneclaw totem` 40.0) + `ShamanActions.cpp:48-52` (solo-only isUseful) @ `79bd4281` | `ai/playerbot/strategy/shaman/ShamanTriggers.h` (new `StoneclawPanicTrigger`), `ShamanAiObjectContext.cpp` (creator), `ElementalShamanStrategy.cpp` + `RestorationShamanStrategy.cpp` (totems combat rows), `ShamanStoneclawPolicy.h` + `tools/test_shaman_stoneclaw_policy.cpp` | Reimplemented in live classic style: new `stoneclaw panic` trigger (self health <= LowHealth 50, stoneclaw not down, solo-only unless manual `totem earth stoneclaw` ordered) queued at ACTION_HIGH above the fixed earth-totem rows in ele + resto totems strategies. Donor 40.0 numeric priority maps to ACTION_HIGH in our enum. Spells: Stoneclaw ranks 5730/6390/6391/6392/10427/10428 (existing `CastStoneclawTotemAction`, verified in 1.18.1). Deviations: enhancement excluded (melee totem set stays; scope per report ele+resto) | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
+`src/Ai/Class/Priest/PriestTriggers.h:94` +
+`src/Ai/Class/Priest/PriestTriggers.cpp:35-42`
+(`FearWardOnMainTankTrigger::IsActive` with spell-cooldown guard) +
+`src/Ai/Class/Priest/PriestActions.h:247` (`CastFearWardOnMainTankAction`
+on `BuffOnMainTankAction`) +
+`src/Ai/Class/Priest/Strategy/GenericPriestStrategy.cpp:25-26`
+(row at ACTION_HIGH+3). Deviations, deliberate: donor names say "main
+tank" on `BuffOnMainTankTrigger`; ours says "tank" on the local
+`BuffOnTankTrigger` (same "party tank without aura" value, cf. shaman
+`earth shield on party tank`) — no new value needed.
+
+Reason: priest parity report PRI-1 — biggest tank-survival gap in fear
+dungeons; we only buffed whoever lacked Fear Ward.
+
+Source files (module, modified):
+`ai/playerbot/strategy/priest/PriestTriggers.h`,
+`ai/playerbot/strategy/priest/PriestTriggers.cpp`,
+`ai/playerbot/strategy/priest/PriestActions.h`,
+`ai/playerbot/strategy/priest/PriestAiObjectContext.cpp`,
+`ai/playerbot/strategy/priest/PriestStrategy.cpp` +
+`docs/classes/priest.md` (behaviour line).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells: Fear Ward 6346/19337 verified in
+spell_template.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
+live test (no live test per parity brief); build via build-commit.sh.
