@@ -149,6 +149,7 @@ namespace ai
                 creators["curse weakness"] = [](PlayerbotAI* ai) { return new WarlockManualCurseStrategy(ai, "curse weakness", "curse of weakness", "curse of weakness"); };
                 creators["curse tongues"] = [](PlayerbotAI* ai) { return new WarlockManualCurseStrategy(ai, "curse tongues", "curse of tongues", "curse of tongues"); };
                 creators["curse shadow"] = [](PlayerbotAI* ai) { return new WarlockManualCurseStrategy(ai, "curse shadow", "curse of shadow", "curse of shadow"); };
+                creators["curse exhaustion"] = [](PlayerbotAI* ai) { return new WarlockCurseOfExhaustionStrategy(ai); };
             }
         };
 
@@ -227,6 +228,7 @@ namespace ai
                 creators["death coil interrupt"] = [](PlayerbotAI* ai) { return new DeathCoilInterruptTrigger(ai); };
                 creators["death coil on enemy healer"] = [](PlayerbotAI* ai) { return new DeathCoilInterruptTHealerTrigger(ai); };
                 creators["death coil on snare target"] = [](PlayerbotAI* ai) { return new DeathCoilSnareTrigger(ai); };
+                creators["curse of exhaustion on snare target"] = [](PlayerbotAI* ai) { return new CurseOfExhaustionSnareTrigger(ai); };
                 creators["inferno"] = [](PlayerbotAI* ai) { return new InfernoTrigger(ai); };
                 creators["life tap"] = [](PlayerbotAI* ai) { return new LifeTapTrigger(ai); };
                 creators["drain soul"] = [](PlayerbotAI* ai) { return new DrainSoulTrigger(ai); };
@@ -313,6 +315,7 @@ namespace ai
                 creators["death coil"] = [](PlayerbotAI* ai) { return new CastDeathCoilAction(ai); };
                 creators["death coil on enemy healer"] = [](PlayerbotAI* ai) { return new CastDeathCoilOnHealerAction(ai); };
                 creators["death coil on snare target"] = [](PlayerbotAI* ai) { return new CastDeathCoilSnareAction(ai); };
+                creators["curse of exhaustion on snare target"] = [](PlayerbotAI* ai) { return new CastCurseOfExhaustionSnareAction(ai); };
                 creators["dark pact"] = [](PlayerbotAI* ai) { return new CastDarkPactAction(ai); };
                 creators["fel domination"] = [](PlayerbotAI* ai) { return new CastFelDominationAction(ai); };
                 creators["dark harvest"] = [](PlayerbotAI* ai) { return new CastDarkHarvestAction(ai); };
