@@ -5580,3 +5580,40 @@ All three blocking findings verified real in code and fixed:
 - Finding 3 (policy header dead code): confirmed — nothing included it. Fixed by refactoring the trigger onto it instead of deleting: `IsTargetValid` now builds `OocRebirthState` and calls `ShouldCastOocRebirth`, so the 6-check test exercises the shipped gate; unused `OocResurrectClass` enum removed.
 - Non-blocking citation fixed (`DruidTriggers.h:120-153` is FaerieFireFeral — now cites the generic `PartyMemberDeadTrigger` path). Toggle note: no toggle added — OOC auto-rez matches the other three classes; revisit if owners complain.
 verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
+## Group-AoE-heal gates (HEAL-1 + HEAL-4) — 2026-10-10
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Base/Trigger/HealthTriggers.cpp:34-50` + `.h:195-206`
+(`AoeInGroupTrigger`: hurt threshold scales with near-group count),
+`src/Ai/Base/TriggerContext.h:165-166,283-289` (creators
+`"group heal setting"` -> almost-full band, `"medium group heal setting"`
+-> medium band), `src/Ai/Base/Value/AoeHealValues.cpp:24-25`
+(`"almost full"` qualifier branch).
+
+Source files (module, modified): `ai/playerbot/GroupHealPolicy.h` (new
+pure rule: donor scaling table + below-5 refusal),
+`ai/playerbot/strategy/triggers/HealthTriggers.h/.cpp` (new
+`AoeInGroupTrigger`; near count on the 30y heal radius via
+`LiveGroupMembers`), `ai/playerbot/strategy/values/AoeHealValues.cpp`
+(`"almost full"` branch), `ai/playerbot/strategy/triggers/TriggerContext.h`
+(registrations: `"group heal setting"`, `"medium group heal setting"`,
+`"almost full aoe heal"` — folds HEAL-4), `tools/test_group_heal_policy.cpp`
+(new standalone test) + `tools/verify_all.sh` (test list),
+`docs/classes/{priest,druid,paladin,shaman}.md` (doc lines).
+
+Copied / ported / reimplemented: reimplemented. Deviations from the
+donor, all deliberate: (a) near count uses the 30y heal radius our
+`AoeHealValue` scans (donor uses sight distance) so a far-away raid
+subgroup cannot arm the gate; (b) iteration via `LiveGroupMembers`
+(ObjectAccessor resolution, never a stale GroupReference pointer — see
+`ai/playerbot/GroupMembers.h`); (c) no strategy edits — the 6 dead nodes
+(resto druid tranquility, heal paladin holy light, heal priest
+shield/prayer, resto shaman chain heal x2) light up unchanged.
+
+Reason: support parity gap HEAL-1 (high/S): the 6 TriggerNodes dangled
+(engine skips null creators) so group-wide heals never fired.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. Build via build-commit.sh pending;
+live in-game check pending.
