@@ -145,18 +145,49 @@ namespace ai
                 uint32 mortalStrike = AI_VALUE2(uint32, "spell id", "mortal strike");
                 uint32 shieldSlam = AI_VALUE2(uint32, "spell id", "shield slam");
 
+                // Defer sunder to a spender only when that spender can actually
+                // fire: IsSpellReady is cooldown-only, so without the rage
+                // gate below-40 rage vetoed sunder while the gated slam row
+                // was inactive — a melee-only dead zone. Slam's row lives on
+                // `medium rage available`, so the veto follows the same
+                // trigger; BT/MS rows are CanCast-gated (rage-aware already).
+                bool slamLive = shieldSlam && sServerFacade.IsSpellReady(bot, shieldSlam) &&
+                    AI_VALUE2(bool, "trigger active", "medium rage available");
                 if ((bloodThirst && sServerFacade.IsSpellReady(bot, bloodThirst)) ||
                     (mortalStrike && sServerFacade.IsSpellReady(bot, mortalStrike)) ||
-                    (shieldSlam && sServerFacade.IsSpellReady(bot, shieldSlam)))
+                    slamLive)
                 {
                     return false;
                 }
             }
 
+            // DPS warriors sunder only when no tank warrior is in the group
+            // (donor CastSunderArmorAction::isUseful): with a real tank the
+            // stack is their job and DPS rage is better spent on damage.
+            if (!isTank)
+            {
+                Group* group = bot->GetGroup();
+                if (group)
+                {
+                    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+                    {
+                        Player* member = ref->GetSource();
+                        if (!member || member == bot || !member->IsAlive() || !member->IsInWorld() ||
+                            member->GetMapId() != bot->GetMapId())
+                            continue;
+
+                        if (member->GetClass() == CLASS_WARRIOR && ai->IsTank(member, false))
+                            return false;
+                    }
+                }
+            }
             if (isTank && !target->IsPlayer())
                 return true;
 
-            return !ai->HasAura("sunder armor", target, true);
+            // Stack to 5, then only refresh an expiring stack (donor
+            // CastSunderArmorAction::isUseful: stack < 5 or <=6s left).
+            Aura* aura = ai->GetAura("sunder armor", target, false);
+            return !aura || aura->GetStackAmount() < 5 || aura->GetAuraDuration() <= 6000;
         }
     };
 
