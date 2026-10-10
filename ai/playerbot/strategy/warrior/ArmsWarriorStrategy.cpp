@@ -17,6 +17,7 @@ public:
         creators["heroic strike"] = &heroic_strike;
         creators["whirlwind"] = &whirlwind;
         creators["sweeping strikes"] = &sweeping_strikes;
+        creators["sunder armor"] = &sunder_armor;
     }
 
 private:
@@ -27,8 +28,9 @@ private:
     ACTION_NODE_A(piercing_howl, "piercing howl", "mocking blow");
 
     ACTION_NODE_A(mocking_blow, "mocking blow", "hamstring");
-
     ACTION_NODE_A(heroic_strike, "heroic strike", "melee");
+
+    ACTION_NODE_A(sunder_armor, "sunder armor", "melee");
 
     ACTION_NODE_A(berserker_rage_fear, "berserker rage", "death wish");
 
@@ -90,6 +92,15 @@ void ArmsWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "rend",
         NextAction::array(0, new NextAction("rend", ACTION_NORMAL), NULL)));
+
+    // No tank warrior in the group: keep the sunder stack up (donor arms
+    // default +0.05, below NORMAL). Bottom of the ladder at NORMAL-1, below
+    // rend (NORMAL) and every damage spender; the action-side group-tank
+    // check keeps this quiet when a real tank is present, and the trigger
+    // stops at a full 5-stack (re-arming only to refresh).
+    triggers.push_back(new TriggerNode(
+        "sunder armor",
+        NextAction::array(0, new NextAction("sunder armor", ACTION_NORMAL - 1), NULL)));
 }
 
 void ArmsWarriorStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

@@ -11,6 +11,16 @@ void MoltenCoreDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         "start magmadar fight",
         NextAction::array(0, new NextAction("enable magmadar fight strategy", 100.0f), NULL)));
 
+    // Paladin resist auto-swap (fight-agnostic: the trigger reads boss
+    // entries off the attacker list, so no per-boss wiring is needed).
+    triggers.push_back(new TriggerNode(
+        "boss wants fire aura",
+        NextAction::array(0, new NextAction("swap fire resistance aura", ACTION_HIGH + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "boss wants shadow aura",
+        NextAction::array(0, new NextAction("swap shadow resistance aura", ACTION_HIGH + 1), NULL)));
+
     triggers.push_back(new TriggerNode(
         "start geddon fight",
         NextAction::array(0, new NextAction("enable geddon fight strategy", 100.0f), NULL)));

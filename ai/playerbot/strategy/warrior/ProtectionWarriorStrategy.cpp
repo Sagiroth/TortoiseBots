@@ -121,8 +121,21 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         "revenge",
         NextAction::array(0, new NextAction("revenge", ACTION_HIGH + 3), NULL)));
 
+    // Turtle Improved Shield Slam proc (donor's Sword-and-Board slot): a
+    // +35%/+70% slam charge outranks the rage ladder but not tank
+    // correctness — taunt (41) and shield block (tied 25, block listed
+    // earlier wins ties) stay above it, matching the donor's taunt/block
+    // above proc order. Still above baseline slam (24)/revenge/sunder.
     triggers.push_back(new TriggerNode(
-        "light rage available",
+        "improved shield slam proc",
+        NextAction::array(0, new NextAction("shield slam", ACTION_HIGH + 5), NULL)));
+
+    // Shield Slam at medium rage (donor TankWarriorStrategy gates at 40):
+    // at 20 rage slam fired before the sunder stack was complete and stole
+    // the GCD from revenge (5 rage, proc-gated). Thunder clap stays below
+    // at HIGH+1 (matches donor slam+2/devastate+1/clap+1 shape).
+    triggers.push_back(new TriggerNode(
+        "medium rage available",
         NextAction::array(0, new NextAction("shield slam", ACTION_HIGH + 4), NULL)));
 
     triggers.push_back(new TriggerNode(

@@ -32,6 +32,20 @@ bool MediumManaTrigger::IsActive()
     return AI_VALUE2(bool, "has mana", "self target") && AI_VALUE2(uint8, "mana", "self target") < sPlayerbotAIConfig.mediumMana;
 }
 
+bool HealerLowManaTrigger::IsActive()
+{
+    // Pure donor check (HealthTriggers.cpp:25-32): the "healer low mana"
+    // value picks the lowest-mana alive group healer; fire while that
+    // healer sits below the low-mana line. No Innervate guards here: those
+    // live in the druid action (spell known/ready, range, aura), so shaman
+    // Mana Tide rows and future batteries can share this trigger.
+    Unit* target = GetTarget();
+    if (!target || !target->GetMaxPower(POWER_MANA))
+        return false;
+
+    return ai->GetManaPercent(*target) < sPlayerbotAIConfig.lowMana;
+}
+
 bool HighManaTrigger::IsActive()
 {
     return AI_VALUE2(bool, "has mana", "self target") && AI_VALUE2(uint8, "mana", "self target") < 65;
