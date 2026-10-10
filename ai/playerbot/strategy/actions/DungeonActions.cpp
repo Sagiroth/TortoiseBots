@@ -5,6 +5,7 @@
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/strategy/values/LastMovementValue.h"
 #include "playerbot/CombatSpreadPolicy.h"
+#include "playerbot/VaelPolicy.h"
 #include "Movement/spline/MoveSpline.h"
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
@@ -492,5 +493,119 @@ bool MoveAwayFromCreature::IsHazardNearby(const WorldPosition& point, const std:
         }
     }
 
+    return false;
+}
+bool VaelBurningAdrenalineFleeAction::Execute(Event& event)
+{
+    (void)event;
+    // Current BA spell ids (universal bomb trigger covers 20475/23620/
+    // 18173/23478/28169 — Vael's set is the middle three).
+    static const uint32 baSpells[] = { 23620, 18173, 23478 };
+    bool hasBa = false;
+    for (uint32 spellId : baSpells)
+    {
+        if (ai->HasAura(spellId, bot))
+        {
+            hasBa = true;
+            break;
+        }
+    }
+    if (!hasBa)
+        return false;
+    // Find Vael among the attackers (entry 13020, set by the BWL bundle).
+    AiObjectContext* context = ai->GetAiObjectContext();
+    const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+    Unit* boss = nullptr;
+    for (const ObjectGuid& attackerGuid : attackers)
+    {
+        Unit* attacker = ai->GetUnit(attackerGuid);
+        if (attacker && attacker->GetEntry() == 13020)
+        {
+            boss = attacker;
+            break;
+        }
+    }
+    bool bossAlive = boss && sServerFacade.IsAlive(boss);
+    // The victim holds while Vael lives — fleeing the tank through the
+    // raid wipes it faster than the detonation.
+    if (boss && boss->GetVictim() && boss->GetVictim()->getObjectGuid() == bot->getObjectGuid())
+    {
+        if (ShouldVaelVictimHold(true, bossAlive))
+            return false;
+    }
+    // Weighted repulsion from non-BA bots within 20y (closer pushes
+    // harder); other BA carriers are ignored while the boss lives so
+    // victims cluster together away from the clean raid.
+    const WorldPosition botPos(bot);
+    float fleeX = 0.0f, fleeY = 0.0f;
+    Group* group = bot->GetGroup();
+    if (group)
+    {
+        for (Player* member : LiveGroupMembers(group))
+        {
+            if (!member || member == bot || !sServerFacade.IsAlive(member))
+                continue;
+            if (member->GetMapId() != bot->GetMapId())
+                continue;
+            bool memberHasBa = false;
+            for (uint32 spellId : baSpells)
+            {
+                if (ai->HasAura(spellId, member))
+                {
+                    memberHasBa = true;
+                    break;
+                }
+            }
+            if (ShouldClusterWithBaCarriers(memberHasBa, bossAlive))
+                continue;
+            float dist = sServerFacade.getDistance2d(bot, member);
+            if (dist < kVaelRepulsionRange && dist > 0.1f)
+            {
+                float weight = 1.0f - dist / kVaelRepulsionRange;
+                fleeX += (botPos.getX() - member->GetPositionX()) / dist * weight;
+                fleeY += (botPos.getY() - member->GetPositionY()) / dist * weight;
+            }
+        }
+    }
+    float fleeLen = sqrt(fleeX * fleeX + fleeY * fleeY);
+    float baseAngle;
+    if (fleeLen < 0.1f)
+    {
+        // No push: tail-sweep recovery — knocked past 30y, walk back to
+        // the boss instead of standing out of range.
+        if (!boss || !ShouldRecoverToVaelBoss(false, bossAlive, boss && bot->GetDistance(boss) > kVaelTailSweepRecoveryRange))
+            return false;
+        const WorldPosition bossPos(boss);
+        baseAngle = botPos.GetAngleTo(bossPos);
+    }
+    else
+    {
+        fleeX /= fleeLen;
+        fleeY /= fleeLen;
+        baseAngle = atan2(fleeY, fleeX);
+        // Ranged past 25y blends the flee toward the boss to hold cast
+        // range; FindStep keeps LOS via its own checks.
+        if (boss && ShouldBiasFleeToVaelBoss(ai->IsRanged(bot), bossAlive, bot->GetDistance(boss) > kVaelRangedBiasThreshold))
+        {
+            const WorldPosition bossPos(boss);
+            float toBoss = botPos.GetAngleTo(bossPos);
+            // Blend only when fleeing away from the boss.
+            float diff = fabs(baseAngle - toBoss);
+            while (diff > M_PI_F)
+                diff = fabs(diff - 2.0f * M_PI_F);
+            if (diff > M_PI_F / 2.0f)
+                baseAngle = toBoss;
+        }
+    }
+    // Step 3y along the flee heading (donor incremental step), sliding
+    // along walls on failure like the bomb runout.
+    WorldPosition out(botPos);
+    const float angles[] = { 0.0f, 0.5f, -0.5f };
+    for (float d : angles)
+    {
+        if (FindStep(ai, bot, botPos, baseAngle + d, 3.0f, out) &&
+            MoveTo(bot->GetMapId(), out.getX(), out.getY(), out.getZ(), false, IsReaction(), false, true))
+            return true;
+    }
     return false;
 }
