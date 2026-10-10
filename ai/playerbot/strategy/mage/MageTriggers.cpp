@@ -75,25 +75,6 @@ bool NoImprovedScorchDebuffTrigger::IsActive()
 {
     if (bot->HasSpell(11095) || bot->HasSpell(12872) || bot->HasSpell(12873))
     {
-        // Exclusive debuff slot (mod-playerbots ImprovedScorchTrigger):
-        // scorch would overwrite a frost mage's Winter's Chill, a
-        // warlock's Shadow Vulnerability, or a live Fire Vulnerability,
-        // so leave the stronger debuff alone.
-        Unit* target = GetTarget();
-        if (target)
-        {
-            static const uint32 exclusiveDebuffs[] = {
-                12579,                                        // Winter's Chill
-                22959,                                        // Fire Vulnerability
-                17794, 17797, 17798, 17799, 17800             // Shadow Vulnerability
-            };
-            for (uint32 spellId : exclusiveDebuffs)
-            {
-                if (ai->HasAura(spellId, target))
-                    return false;
-            }
-        }
-
         return DebuffTrigger::IsActive();
     }
 
