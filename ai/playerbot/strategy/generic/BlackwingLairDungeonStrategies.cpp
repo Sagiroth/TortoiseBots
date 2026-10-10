@@ -18,6 +18,10 @@ void BlackwingLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
         NextAction::array(0, new NextAction("swap shadow resistance aura", ACTION_HIGH + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "start chromaggus fight",
+        NextAction::array(0, new NextAction("enable chromaggus fight strategy", 100.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "start broodlord fight",
         NextAction::array(0, new NextAction("enable broodlord fight strategy", 100.0f), NULL)));
 
@@ -28,6 +32,27 @@ void BlackwingLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
     triggers.push_back(new TriggerNode(
         "start vael fight",
         NextAction::array(0, new NextAction("enable vael fight strategy", 100.0f), NULL)));
+}
+
+void ChromaggusFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "chromaggus bronze affliction",
+        NextAction::array(0, new NextAction("use hourglass sand", ACTION_EMERGENCY + 5), NULL)));
+}
+
+void ChromaggusFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end chromaggus fight",
+        NextAction::array(0, new NextAction("disable chromaggus fight strategy", 100.0f), NULL)));
+}
+
+void ChromaggusFightStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end chromaggus fight",
+        NextAction::array(0, new NextAction("disable chromaggus fight strategy", 100.0f), NULL)));
 }
 
 void BroodlordFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

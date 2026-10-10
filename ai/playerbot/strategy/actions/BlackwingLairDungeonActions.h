@@ -219,6 +219,28 @@ namespace ai
         }
     };
 
+    class ChromaggusEnableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        ChromaggusEnableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "enable chromaggus fight strategy", "+chromaggus") {}
+    };
+
+    class ChromaggusDisableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        ChromaggusDisableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable chromaggus fight strategy", "-chromaggus") {}
+    };
+
+    // Brood Affliction: Bronze cleanse. Hourglass Sand (19183) casts
+    // Hourglass Sand (23645) on use; the qualifier pins the exact item so
+    // no other "sand" item can sneak in. Bots loot the sand off Chromaggus
+    // trash like any other drop, so no loot change is needed.
+    class UseHourglassSandAction : public UseItemIdAction
+    {
+    public:
+        UseHourglassSandAction(PlayerbotAI* ai) : UseItemIdAction(ai, "use hourglass sand") { qualifier = "{19183}"; }
+    };
+
     class BroodlordEnableFightStrategyAction : public ChangeAllStrategyAction
     {
     public:

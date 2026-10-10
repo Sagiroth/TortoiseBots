@@ -4621,6 +4621,30 @@ HIGH+4 above thunder clap (HIGH+1) and revenge/sunder ordering intact, and
 the tank sunder veto now defers to slam only when slam's medium-rage row
 is actually live (cooldown-only `IsSpellReady` used to veto sunder through
 the whole 15-39 band where slam couldn't fire).
+## Chromaggus Hourglass Sand cleanse (raid1 item 2) — 2026-10-09
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Raid/BWL/BWLTriggers.cpp:87-90` (BwlAfflictionBronzeTrigger: self
+has SPELL_BROOD_AFFLICTION_BRONZE 23170), `src/Ai/Raid/BWL/BWLActions.cpp`
+(BwlUseHourglassSandAction: cast SPELL_HOURGLASS_SAND 23645 on self),
+`src/Ai/Raid/BWL/BWLStrategy.cpp` (trigger wiring), `src/Ai/Raid/BWL/
+BWLHelpers.h:27-28` (spell ids).
+
+Source files (module, modified): `ai/playerbot/ChromaggusSandPolicy.h`
+(new pure rule: ids), `ai/playerbot/strategy/triggers/
+BlackwingLairDungeonTriggers.h` (ChromaggusStart/EndFightTrigger on entry
+14020, ChromaggusBronzeAfflictionTrigger: self aura 23170, header-inline
+like the suppression triggers), `ai/playerbot/strategy/actions/
+BlackwingLairDungeonActions.h` (ChromaggusEnable/DisableFightStrategyAction,
+UseHourglassSandAction: UseItemIdAction qualifier {19183}),
+`ai/playerbot/strategy/generic/BlackwingLairDungeonStrategies.h/.cpp`
+(`chromaggus` fight strategy: bronze reaction at ACTION_EMERGENCY+5,
+end-fight cleanup, start trigger on the `blackwing lair` strategy),
+`ai/playerbot/strategy/triggers/TriggerContext.h`,
+`ai/playerbot/strategy/actions/ActionContext.h`,
+`ai/playerbot/strategy/StrategyContext.h` (registrations),
+`tools/test_chromaggus_sand_policy.cpp` (new standalone test) +
 ## BWL bundle 1: Broodlord range, drake off-tank flank, Vael flank entry, Nef mage Ice Block (raid1 item 4) — 2026-10-09
 
 Donor: mod-playerbots @ `79bd4281` (local checkout
@@ -5955,6 +5979,22 @@ combat node, end-fight cleanup, GeddonInfernoMultiplier),
 
 Copied / ported / reimplemented: reimplemented in our per-boss fight
 strategy idiom (StartBossFightTrigger + enable/disable actions, mirror the
+Magmadar/Geddon pattern). Deviations from the donor, all deliberate: (a)
+the donor casts spell 23645 directly; here the bot uses the Hourglass Sand
+item (19183, exact-qualifier UseItemIdAction) so no-cast-without-item is
+impossible — a bot with no sand simply fails the action usefully; (b) no
+loot change: bots already loot the sand off Chromaggus trash like any other
+drop, and the item stacks to 200; (c) Bronze id 23170 used directly (bot
+self-aura, no boss lookup needed).
+
+Reason: raid1 gap BWL-CHROMAGGUS: nothing cleansed the Bronze slow; one DB
+lookup away per the report.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. Spell ids 23170/23645, item 19183
+(casts 23645, stack 200), creature 14020 verified against tw_world — note
+the report's classic-21171 item guess was wrong for 1.18.1. Build via
+build-commit.sh pending; live in-game check pending.
 Magmadar pattern). Deviations from the donor, all deliberate: (a) the
 donor blocks movement via per-action type checks (MovementAction,
 CastReachTargetSpellAction); here the multiplier first type-gates on the
