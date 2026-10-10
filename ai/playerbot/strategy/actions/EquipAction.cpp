@@ -637,8 +637,20 @@ bool EquipUpgradesAction::Execute(Event& event)
                 displacedProto->InventoryType == INVTYPE_WEAPONOFFHAND;
             if (fitsOffHand)
             {
-                uint32 specId = sRandomItemMgr.GetPlayerSpecId(bot);
+                // Explicit keep orders win over automation: a displaced hand
+                // pinned to the bags stays there, and a pinned off hand is
+                // never bounced for it (normal path refuses both).
+                bool displacedKeepInBag = AI_VALUE2_EXISTS(ForceItemUsage, "force item usage", displacedProto->ItemId, ForceItemUsage::FORCE_USAGE_NONE) == ForceItemUsage::FORCE_USAGE_BAG;
                 Item* curOH = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND);
+                bool curOHForced = curOH && AI_VALUE2_EXISTS(ForceItemUsage, "force item usage", curOH->GetProto()->ItemId, ForceItemUsage::FORCE_USAGE_NONE) == ForceItemUsage::FORCE_USAGE_EQUIP;
+                // Broken-over-working never auto-equips elsewhere either: a
+                // broken displaced hand only fills an empty off hand.
+                bool displacedBroken = displacedMH->GetUInt32Value(ITEM_FIELD_DURABILITY) == 0 && displacedMH->GetUInt32Value(ITEM_FIELD_MAXDURABILITY) > 0;
+                bool curOHBroken = curOH && curOH->GetUInt32Value(ITEM_FIELD_DURABILITY) == 0 && curOH->GetUInt32Value(ITEM_FIELD_MAXDURABILITY) > 0;
+                if (displacedKeepInBag || curOHForced || (curOH && displacedBroken && !curOHBroken))
+                    continue;
+
+                uint32 specId = sRandomItemMgr.GetPlayerSpecId(bot);
                 uint16 ohDest;
                 if (ai::DualWieldCascade(true,
                     sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, displacedProto, EQUIPMENT_SLOT_OFFHAND, true),
