@@ -117,6 +117,8 @@ bool OocRebirthTrigger::IsTargetValid(Unit* target)
         }
     }
     return ShouldCastOocRebirth(state);
+}
+
 bool HealerLowManaTrigger::IsActive()
 {
     // Innervate unknown or on cooldown: stay quiet so the row never queues
