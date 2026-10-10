@@ -4526,6 +4526,16 @@ expires; ~20% of all stall time sits in WORK.
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
 
+## Druid parity DRU-7: Thorns on the party tank first — 2026-10-09
+Feature: new `ThornsOnTankTrigger` (`BuffOnTankTrigger` on "thorns",
+fire-shield conflict skip mirroring `ThornsOnPartyTrigger`) + new
+`CastThornsOnTankAction` (`BuffOnTankAction`, targets "party tank without
+aura", with an explicit `getName()` override returning "thorns on tank"
+— the base reports spell+" on party", which would collide with the party
+blanket in queue dedup and failure backoff) + non-combat row `thorns on
+tank` at ACTION_NORMAL+3 in `DruidBuffStrategy`, above the party blanket
+at +2 (same BuffOnTank shape as priest PRI-1 `fear ward on tank`,
+verified on the PRI-1 branch).
 ## Warrior WAR-2 + WAR-6: shield-slam proc row and 40-rage gate (2026-10-09)
 
 Feature: (WAR-2) new `improved shield slam proc` trigger fires `shield
@@ -4730,6 +4740,84 @@ coords still want live Turtle validation (non-blocking 2, unchanged).
 Local validation: `bash tools/verify_all.sh` (all suites incl. the updated
 policy test with facing-mapping coverage pass); `git diff --check`.
 Build via build-commit.sh pending; live in-game check pending.
+## Warlock Firestone / Spellstone create+equip (WAR-4) — 2026-10-09
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Warlock/Strategy/GenericWarlockNonCombatStrategy.cpp:200-222`
+(per-spec stone strategies: affli/demo spellstone, destro firestone),
+`WarlockTriggers.h:66-78,116-126` (`FirestoneTrigger`/`SpellstoneTrigger :
+BuffTrigger`, `HasFirestoneTrigger`/`HasSpellstoneTrigger`) +
+`WarlockAiObjectContext.cpp:330-331` (both use actions are
+`UseSpellItemAction`), `WarlockActions.h:79-94`.
+
+Source files (module, modified):
+`ai/playerbot/strategy/warlock/WarlockStrategy.cpp` (base `no firestone` /
+`no spellstone` create rows stay removed — creation is per-spec only),
+`ai/playerbot/strategy/warlock/WarlockTriggers.{h,cpp}` (`FirestoneTrigger`
+and `SpellstoneTrigger` as plain `Trigger`s with O(1) item/slot gates,
+not `BuffTrigger`: no player spell is named "firestone"/"spellstone" so
+the `BuffTrigger` HasSpell gate would never pass),
+`ai/playerbot/strategy/warlock/WarlockAiObjectContext.cpp` (`firestone`
+trigger + `EquipFirestoneAction`, `spellstone` trigger +
+`EquipSpellstoneAction`; `create firestone`/`create spellstone` actions),
+`ai/playerbot/strategy/warlock/DestructionWarlockStrategy.cpp` (`firestone`
+use row) + `AfflictionWarlockStrategy.cpp` + `DemonologyWarlockStrategy.cpp`
+(`spellstone` use rows) + `docs/classes/warlock.md`, `CHANGELOG.md`.
+
+Copied / ported / reimplemented: reimplemented with vanilla item
+semantics, verified in `tw_world` (report's 1254/5522-series ids are item
+entries, not spells — the spells are Create Firestone 607 / Create
+Spellstone 918). Both stones are off-hand held items (`inventory_type`
+23), and both are *equipped*, never applied as weapon temp-enchants:
+Firestone's item spells are on-equip auras (758 Firestone Passive on
+Lesser 1254, 17945+ on the higher ranks), and Spellstone's on-use spells
+(128/17729/17730, effect 38 `SPELL_EFFECT_DISPEL` + effect 6 aura 69
+`SPELL_AURA_SCHOOL_ABSORB`, target 1 = caster, per the on-use description
+"Removes all magic effects from the caster and will absorb ... magic
+damage") likewise target the caster — while a sharpening stone works
+through `UseItem` only because it is an `INVTYPE_NON_EQUIP` consumable,
+`UseItemInternal` refuses equippable items sitting in bags, so a bag
+stone could never be applied that way. Core's
+`Player::RemoveItemDependentAurasAndCasts` exempts spellstone items
+5522/13602/13603/21685 from aura removal on unequip ("Pierres de sort"),
+so the equip aura (18384 Increased Critical Spell on all three ranks)
+survives briefly after the on-use dispel/absorb is cast from the worn
+stone. `EquipSpellstoneAction`/`EquipFirestoneAction` therefore equip a
+bag stone into an empty off-hand beside a one-handed main-hand (never
+displacing real gear or fighting a staff); the equip aura then applies
+and the on-use stays available through normal use once worn. Create
+Spellstone costs a shard (2362 reagent 6265x1, core fails gracefully when
+shardless — same accepted pattern as soulstone).
+
+Reason: both create rows were commented out and no use path was queued;
+donor keeps per-spec stones up out of combat.
+
+Local validation: `bash tools/verify_all.sh` (wiring audit covers the
+`firestone`/`spellstone` names); `git diff --check`; shared-builder
+compile via `build-commit.sh` (BUILD OK); live in-game check pending:
+each stone created once, equipped without touching real off-hands.
+
+## Review fixes (pr-618, CHANGES_REQUESTED → fixed)
+First round (commit ec6423d): (1) firestone is a dedicated
+`EquipFirestoneAction` (static slot-safe equip — the `UseSpellItemAction`
+path refused equippables in bags per `UseItemInternal`, and firestones
+have no on-use spell); (2) creation is per-spec (`no spellstone` in
+affli/demo buff NC, `no firestone` in destro buff NC — no more cross-spec
+shard drain or bag pollution); (3) both use-triggers are plain `Trigger`s
+with O(1) item/slot gates. Second round: (1) the new
+`ApplySpellstoneAction` routed through the same refused `UseItem` →
+`UseItemInternal:441` path — real, fixed by replacing it with
+`EquipSpellstoneAction` (same equip-into-empty-off-hand semantics as
+firestone); post-equip verification added to both equip actions (return
+whether the stone actually landed, so silent core refusals surface as
+action failure with retry next tick). (2) the "spellstone as weapon
+temp-enchant" claim was wrong — verified against `tw_world` + core
+(`SpellDefines.h:182` effect 38 is `SPELL_EFFECT_DISPEL`, not 54 =
+temp-enchant; on-use targets the caster per the spell description) — so
+the temp-slot trigger/action gates are gone from both sides; both stones
+are now plain off-hand equips (spec split kept: spellstone for
+affli/demo, firestone for destro). Rejected nothing.
+
 ## Paladin resist aura auto-swap per boss (raid1 item 8) — 2026-10-09
 
 Donor: mod-playerbots @ `79bd4281` (local checkout
@@ -4848,6 +4936,17 @@ Source repository: `mod-playerbots` @ `79bd4281` (local checkout
 `../playerbots-references/mod-playerbots`).
 
 Source files (donor, reference only):
+`src/Ai/Class/Druid/Strategy/GenericDruidNonCombatStrategy.cpp:198-200`
+(`thorns on main tank` 11.0 above `thorns` 10.0). Deviations, deliberate:
+donor names say "main tank" on `BuffOnMainTankTrigger`; ours says "tank"
+on the local `BuffOnTankTrigger` (same "party tank without aura" value,
+cf. PRI-1). The report's "refresh-via-recast may need cancel aura
+support" proved unnecessary: the without-aura value only targets a tank
+lacking Thorns, so expiry re-fires the row naturally. No addon change:
+the main-tank pick already exists via the role button.
+
+Reason: druid parity report DRU-7 — Thorns fell out of the tank's
+rotation once the party row was satisfied.
 `src/Ai/Class/Druid/Strategy/RestoDruidStrategy.cpp:37-43` (critical ->
 `nature's swiftness` 58.0, `nature's swiftness active` -> `healing touch
 on party` 55.0) + `src/Ai/Class/Shaman/ShamanAiObjectContext.cpp:286-288`
@@ -5248,6 +5347,13 @@ healer; innervate rows were balance/resto self-only.
 Source files (module, modified):
 `ai/playerbot/strategy/druid/DruidTriggers.h`,
 `ai/playerbot/strategy/druid/DruidTriggers.cpp`,
+`ai/playerbot/strategy/druid/DruidActions.h`,
+`ai/playerbot/strategy/druid/DruidAiObjectContext.cpp`,
+`ai/playerbot/strategy/druid/DruidStrategy.cpp` +
+`docs/classes/druid.md` (behaviour lines).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells: Thorns ranks trainer-taught.
 `ai/playerbot/strategy/druid/DruidAiObjectContext.cpp`,
 `ai/playerbot/strategy/druid/DpsFeralDruidStrategy.cpp` +
 `docs/classes/druid.md` (behaviour lines). The old flat
@@ -5294,6 +5400,17 @@ spell_template; trigger/action creators registered in the druid context.
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
 live test (no live test per parity brief); build via build-commit.sh.
 
+## Review fixes round 2 (2026-10-10, PR #590 CHANGES_REQUESTED)
+Blocking finding verified real and fixed: new `thorns on tank` action
+had no ActionNode — `Engine::CreateActionNode` falls back to a bare node
+with NULL prerequisites, so a shapeshifted druid fails the cast via
+`GetErrorAtShapeshiftedCast` and the tank row never beats the blanket
+for shifted druids. Fixed: `thorns_on_tank` caster-form node in
+`DruidStrategyActionNodeFactory` (same shape as every sibling buff row).
+Non-blocking: check interval matched to sibling/donor 4; MotW-vs-thorns
+ordering kept (tank-first is the feature); early-refresh overlap left as
+harmless (reviewer agrees).
+verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
 ## Review fixes (2026-10-09, PR #582 CHANGES_REQUESTED)
 Blocking finding verified real and fixed: without an absolute-HP gate,
 the execute row (CP>=1 at +6) eats every combo point on any sub-25%

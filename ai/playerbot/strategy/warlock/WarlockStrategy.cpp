@@ -85,16 +85,6 @@ void WarlockStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "no soulstone",
         NextAction::array(0, new NextAction("create soulstone", ACTION_NORMAL), NULL)));
-
-    /*
-    triggers.push_back(new TriggerNode(
-        "no firestone",
-        NextAction::array(0, new NextAction("create firestone", ACTION_NORMAL), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "no spellstone",
-        NextAction::array(0, new NextAction("create spellstone", ACTION_NORMAL), NULL)));
-    */
 }
 
 void WarlockStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
