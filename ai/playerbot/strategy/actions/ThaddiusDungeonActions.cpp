@@ -1,38 +1,14 @@
 #include "playerbot/playerbot.h"
 #include "ThaddiusDungeonActions.h"
 #include "playerbot/ThaddiusPolarityPolicy.h"
+#include "playerbot/strategy/ThaddiusDungeonHelper.h"
 #include "playerbot/strategy/actions/GenericSpellActions.h"
 #include "playerbot/strategy/actions/ChooseTargetActions.h"
-#include "Maps/GridNotifiers.h"
-#include "Maps/GridNotifiersImpl.h"
-#include "Maps/CellImpl.h"
 
 using namespace ai;
 
 namespace
 {
-    Unit* FindEntry(PlayerbotAI* ai, Player* bot, uint32 entry)
-    {
-        const std::list<ObjectGuid> attackers =
-            ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get();
-        for (const ObjectGuid& guid : attackers)
-        {
-            Unit* unit = ai->GetUnit(guid);
-            if (unit && unit->GetEntry() == entry)
-                return unit;
-        }
-        std::list<Unit*> nearby;
-        MaNGOS::AllCreaturesOfEntryInRange check(bot, entry, 100.0f);
-        MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRange> searcher(nearby, check);
-        Cell::VisitAllObjects(bot, searcher, 100.0f);
-        for (Unit* unit : nearby)
-        {
-            if (unit && unit->IsAlive())
-                return unit;
-        }
-        return nullptr;
-    }
-
     bool PetActive(Unit* pet)
     {
         return pet && IsThaddiusPetActive(pet->IsAlive(),
@@ -42,8 +18,10 @@ namespace
 
 bool ThaddiusAttackNearestPetAction::Execute(Event& event)
 {
-    Unit* stalagg = FindEntry(ai, bot, 15929);
-    Unit* feugen = FindEntry(ai, bot, 15930);
+    Unit* stalagg;
+    Unit* feugen;
+    Unit* thaddius;
+    FindThaddiusAdds(ai, bot, stalagg, feugen, thaddius);
 
     Unit* target = nullptr;
     if (PetActive(feugen))
@@ -65,18 +43,29 @@ bool ThaddiusAttackNearestPetAction::Execute(Event& event)
 
 bool ThaddiusMoveToPlatformAction::Execute(Event& event)
 {
-    // Donor edge/jump-down coords (NaxxActions_Thaddius.cpp): pick the
-    // nearer balcony edge by side, then walk off to the floor center —
-    // engine pathing drops the ledge under gravity, so no forced jump.
-    // High (balcony) z ~312, floor z ~304.
+    // Donor edge/low spots (NaxxActions_Thaddius.cpp): pick the nearer
+    // balcony edge by side; walk off through the low spot to the floor
+    // center. Staged descent: MoveTo reports arrival (false) at each leg,
+    // so chain edge -> low -> center instead of gating legs on Z (which
+    // stuck bots on the balcony: arrival never drops Z below the gate).
     const bool leftSide = bot->GetDistance2d(3462.99f, -2918.90f) <
         bot->GetDistance2d(3520.65f, -2976.51f);
+    const float edgeX = leftSide ? 3462.99f : 3520.65f;
+    const float edgeY = leftSide ? -2918.90f : -2976.51f;
+    const float lowX = leftSide ? 3471.36f : 3528.80f;
+    const float lowY = leftSide ? -2910.65f : -2967.04f;
+
     if (bot->GetPositionZ() >= 309.0f)
     {
-        if (leftSide)
-            return MoveTo(bot->GetMapId(), 3462.99f, -2918.90f, 312.00f);
-        return MoveTo(bot->GetMapId(), 3520.65f, -2976.51f, 312.00f);
+        // Leg 1: reach the edge. Arrival (false) falls to leg 2.
+        if (MoveTo(bot->GetMapId(), edgeX, edgeY, 312.00f))
+            return true;
+        // Leg 2: off the edge through the low spot. Gravity drops Z;
+        // arrival falls to leg 3.
+        if (MoveTo(bot->GetMapId(), lowX, lowY, 304.02f))
+            return true;
     }
+    // Leg 3: floor center.
     return MoveTo(bot->GetMapId(), 3512.19f, -2928.58f, 304.02f);
 }
 
@@ -103,9 +92,25 @@ float ThaddiusEvenHpMultiplier::GetValue(Action* action)
     if (!action)
         return 1.0f;
 
-    Unit* stalagg = FindEntry(ai, bot, 15929);
-    Unit* feugen = FindEntry(ai, bot, 15930);
-    if (!PetActive(stalagg) || !PetActive(feugen))
+    // One cached lookup (current target, attackers, possible
+    // targets — no grid sweep per candidate action). Skip everything
+    // when the pet phase is inactive.
+    Unit* stalagg;
+    Unit* feugen;
+    Unit* thaddius;
+    FindThaddiusAdds(ai, bot, stalagg, feugen, thaddius);
+    const bool stalaggUp = PetActive(stalagg);
+    const bool feugenUp = PetActive(feugen);
+
+    // Pet-phase assist suppression (donor ThaddiusGenericMultiplier):
+    // the nearest-pet action owns targeting while adds live; assists
+    // would redundantly re-target every tick.
+    if (stalaggUp || feugenUp)
+    {
+        if (dynamic_cast<DpsAssistAction*>(action) || dynamic_cast<TankAssistAction*>(action))
+            return 0.0f;
+    }
+    if (!stalaggUp || !feugenUp)
         return 1.0f;
 
     Unit* target = AI_VALUE(Unit*, "current target");

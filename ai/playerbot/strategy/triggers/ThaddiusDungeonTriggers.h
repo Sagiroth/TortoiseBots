@@ -3,12 +3,16 @@
 
 namespace ai
 {
-    class ThaddiusStartFightTrigger : public StartBossFightTrigger
+    // Either add entering combat opens the fight (Thaddius himself is
+    // not selectable until phase 2; the balconies are ~84yd apart, so a
+    // single-entry trigger strands the far side). Custom trigger, not
+    // StartBossFightTrigger, to watch both entries.
+    class ThaddiusStartFightTrigger : public Trigger
     {
     public:
-        // Either add entering combat opens the fight (Thaddius himself is
-        // not selectable until phase 2).
-        ThaddiusStartFightTrigger(PlayerbotAI* ai) : StartBossFightTrigger(ai, "start thaddius fight", "thaddius", 15929) {}
+        ThaddiusStartFightTrigger(PlayerbotAI* ai, std::string name = "start thaddius fight", int checkInterval = 1)
+            : Trigger(ai, name, checkInterval) {}
+        bool IsActive() override;
     };
 
     class ThaddiusEndFightTrigger : public EndBossFightTrigger

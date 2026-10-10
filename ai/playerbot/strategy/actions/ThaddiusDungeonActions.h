@@ -30,9 +30,9 @@ public:
     bool Execute(Event& event) override;
 };
 
-// Transition: run to the platform edge, then jump down to the floor
-// (donor ThaddiusMoveToPlatformAction via our physics JumpAction:
-// qualifier carries "map x y z" like other jump callers).
+// Transition: run to the platform edge, then walk down through the
+// donor low spot to the floor center — engine pathing drops the ledge
+// under gravity (donor JumpTo not ported; needs a live tech check).
 class ThaddiusMoveToPlatformAction : public MovementAction
 {
 public:
