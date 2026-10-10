@@ -316,8 +316,12 @@ void ElementalShamanTotemsStrategy::InitCombatTriggers(std::list<TriggerNode*>& 
         NextAction::array(0, new NextAction("mana spring totem", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "cleansing totem reactive",
-        NextAction::array(0, new NextAction("cleansing totem", ACTION_HIGH + 1), NULL)));
+        "poison cleansing totem reactive",
+        NextAction::array(0, new NextAction("poison cleansing totem", ACTION_HIGH + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "disease cleansing totem reactive",
+        NextAction::array(0, new NextAction("disease cleansing totem", ACTION_HIGH + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "tremor totem reactive",

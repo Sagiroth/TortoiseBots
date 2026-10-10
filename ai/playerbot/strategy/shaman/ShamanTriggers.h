@@ -470,8 +470,9 @@ namespace ai
                 AI_VALUE2(bool, "has totem", "tremor totem"))
                 return false;
             // Party fear scan first (cheap self check, then group members).
-            if (bot->HasAuraType(SPELL_AURA_MOD_FEAR) || bot->HasAuraType(SPELL_AURA_MOD_CHARM) ||
-                bot->HasAuraType(SPELL_AURA_MOD_CONFUSE))
+            // Fear + charm only: tremor dispels charm/fear/sleep mechanics
+            // (effect 8146), never confuse/polymorph.
+            if (bot->HasAuraType(SPELL_AURA_MOD_FEAR) || bot->HasAuraType(SPELL_AURA_MOD_CHARM))
                 return true;
             Group* group = bot->GetGroup();
             if (group)
@@ -480,15 +481,11 @@ namespace ai
                 {
                     if (!member || member == bot)
                         continue;
-                    if (member->HasAuraType(SPELL_AURA_MOD_FEAR) || member->HasAuraType(SPELL_AURA_MOD_CHARM) ||
-                        member->HasAuraType(SPELL_AURA_MOD_CONFUSE))
+                    if (member->HasAuraType(SPELL_AURA_MOD_FEAR) || member->HasAuraType(SPELL_AURA_MOD_CHARM))
                         return true;
                 }
             }
-            // Pre-drop when the current target is casting (cheap: no aura
-            // scan, just the cast flag the interrupt path already reads).
-            Unit* target = AI_VALUE(Unit*, "current target");
-            return target && target->IsNonMeleeSpellCasted(true);
+            return false;
         }
     };
 
@@ -514,15 +511,32 @@ namespace ai
                 AI_VALUE2(bool, "has totem", "sentry totem") ||
                 AI_VALUE2(bool, "has totem", "nature resistance totem"))
                 return false;
+            // Only when the in-flight cast is aimed at us or our party:
+            // grounding cannot redirect AoE, self-buffs or heals aimed
+            // elsewhere, and must not suppress windfury for whole fights on
+            // casts it cannot answer (DeflectSpellTrigger pattern).
             Unit* target = AI_VALUE(Unit*, "current target");
-            return target && target->IsNonMeleeSpellCasted(true);
+            if (!target || !target->IsNonMeleeSpellCasted(true))
+                return false;
+            ObjectGuid victim = target->GetTargetGuid();
+            if (victim == bot->getObjectGuid())
+                return true;
+            Group* group = bot->GetGroup();
+            if (!group)
+                return false;
+            for (Player* member : LiveGroupMembers(group))
+                if (member && member->getObjectGuid() == victim)
+                    return true;
+            return false;
         }
     };
 
-    class CleansingTotemReactiveTrigger : public Trigger
+    // One trigger per debuff type: 1.12 has no "Cleansing Totem" spell, only
+    // the poison / disease pair, each with its own registered action.
+    class PoisonCleansingTotemReactiveTrigger : public Trigger
     {
     public:
-        CleansingTotemReactiveTrigger(PlayerbotAI* ai) : Trigger(ai, "cleansing totem reactive", 5) {}
+        PoisonCleansingTotemReactiveTrigger(PlayerbotAI* ai) : Trigger(ai, "poison cleansing totem reactive", 5) {}
 
         virtual bool IsActive() override
         {
@@ -532,7 +546,7 @@ namespace ai
                 ai->HasStrategy("totem water mana", BotState::BOT_STATE_COMBAT) ||
                 ai->HasStrategy("totem water poison", BotState::BOT_STATE_COMBAT))
                 return false;
-            if (!ai->HasSpell("poison cleansing totem") && !ai->HasSpell("disease cleansing totem"))
+            if (!ai->HasSpell("poison cleansing totem"))
                 return false;
             if (AI_VALUE2(bool, "has totem", "healing stream totem") ||
                 AI_VALUE2(bool, "has totem", "mana spring totem") ||
@@ -541,9 +555,7 @@ namespace ai
                 AI_VALUE2(bool, "has totem", "mana tide totem") ||
                 AI_VALUE2(bool, "has totem", "fire resistance totem"))
                 return false;
-            // Reuse the cure path's own scan: self first (cheap), then the
-            // party dispel value the cure triggers already query.
-            if (ai->HasAuraToDispel(bot, DISPEL_POISON) || ai->HasAuraToDispel(bot, DISPEL_DISEASE))
+            if (ai->HasAuraToDispel(bot, DISPEL_POISON))
                 return true;
             Group* group = bot->GetGroup();
             if (!group)
@@ -552,7 +564,45 @@ namespace ai
             {
                 if (!member || member == bot || !sServerFacade.IsAlive(member))
                     continue;
-                if (ai->HasAuraToDispel(member, DISPEL_POISON) || ai->HasAuraToDispel(member, DISPEL_DISEASE))
+                if (ai->HasAuraToDispel(member, DISPEL_POISON))
+                    return true;
+            }
+            return false;
+        }
+    };
+
+    class DiseaseCleansingTotemReactiveTrigger : public Trigger
+    {
+    public:
+        DiseaseCleansingTotemReactiveTrigger(PlayerbotAI* ai) : Trigger(ai, "disease cleansing totem reactive", 5) {}
+
+        virtual bool IsActive() override
+        {
+            if (ai->HasStrategy("totem water cleansing", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem water resistance", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem water healing", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem water mana", BotState::BOT_STATE_COMBAT) ||
+                ai->HasStrategy("totem water poison", BotState::BOT_STATE_COMBAT))
+                return false;
+            if (!ai->HasSpell("disease cleansing totem"))
+                return false;
+            if (AI_VALUE2(bool, "has totem", "healing stream totem") ||
+                AI_VALUE2(bool, "has totem", "mana spring totem") ||
+                AI_VALUE2(bool, "has totem", "poison cleansing totem") ||
+                AI_VALUE2(bool, "has totem", "disease cleansing totem") ||
+                AI_VALUE2(bool, "has totem", "mana tide totem") ||
+                AI_VALUE2(bool, "has totem", "fire resistance totem"))
+                return false;
+            if (ai->HasAuraToDispel(bot, DISPEL_DISEASE))
+                return true;
+            Group* group = bot->GetGroup();
+            if (!group)
+                return false;
+            for (Player* member : LiveGroupMembers(group))
+            {
+                if (!member || member == bot || !sServerFacade.IsAlive(member))
+                    continue;
+                if (ai->HasAuraToDispel(member, DISPEL_DISEASE))
                     return true;
             }
             return false;

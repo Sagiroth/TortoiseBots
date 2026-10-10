@@ -10,56 +10,56 @@
     } \
 } while (0)
 
-using ai::CleansingShouldDrop;
+using ai::DiseaseCleansingShouldDrop;
 using ai::EarthbindShouldDrop;
 using ai::GroundingShouldDrop;
+using ai::PoisonCleansingShouldDrop;
 using ai::SituationalTotemManualOverride;
-using ai::TremorOutranksEarthbind;
 using ai::TremorShouldDrop;
 
 int main()
 {
     std::cout << "Starting shaman situational totem policy tests...\n";
 
-    // Tremor: fires on party fear or a fear-casting target, solo or grouped,
-    // but never into an occupied earth slot or against a manual order.
-    CHECK(TremorShouldDrop(true, false, true, false) == true);
-    CHECK(TremorShouldDrop(false, true, true, false) == true);
-    CHECK(TremorShouldDrop(false, false, true, false) == false);
-    CHECK(TremorShouldDrop(true, true, true, false) == true);
-    CHECK(TremorShouldDrop(true, false, false, false) == false);
-    CHECK(TremorShouldDrop(true, false, true, true) == false);
-    CHECK(TremorShouldDrop(false, true, false, true) == false);
-    std::cout << "  [PASS] tremor reacts to fear, respects slot and manual orders\n";
+    // Tremor: fires on party fear/charm, never into an occupied earth slot
+    // or against a manual order. No confuse arm, no any-cast pre-drop:
+    // tremor answers fear/charm only.
+    CHECK(TremorShouldDrop(true, true, false) == true);
+    CHECK(TremorShouldDrop(false, true, false) == false);
+    CHECK(TremorShouldDrop(true, false, false) == false);
+    CHECK(TremorShouldDrop(true, true, true) == false);
+    std::cout << "  [PASS] tremor reacts to fear/charm, respects slot and manual orders\n";
 
-    // Grounding: only a live cast steals the air slot.
+    // Grounding: only a cast aimed at the party steals the air slot (AoE,
+    // self-buffs and casts aimed elsewhere cannot be redirected).
     CHECK(GroundingShouldDrop(true, true, false) == true);
     CHECK(GroundingShouldDrop(false, true, false) == false);
     CHECK(GroundingShouldDrop(true, false, false) == false);
     CHECK(GroundingShouldDrop(true, true, true) == false);
-    std::cout << "  [PASS] grounding reacts to casting, respects slot and manual orders\n";
+    std::cout << "  [PASS] grounding reacts to party-aimed casts, respects slot and manual orders\n";
 
-    // Cleansing: either debuff type triggers; slot and manual order gate.
-    CHECK(CleansingShouldDrop(true, false, true, false) == true);
-    CHECK(CleansingShouldDrop(false, true, true, false) == true);
-    CHECK(CleansingShouldDrop(true, true, true, false) == true);
-    CHECK(CleansingShouldDrop(false, false, true, false) == false);
-    CHECK(CleansingShouldDrop(true, false, false, false) == false);
-    CHECK(CleansingShouldDrop(false, true, true, true) == false);
-    std::cout << "  [PASS] cleansing reacts to poison/disease, respects slot and manual orders\n";
+    // Poison twin: poison only; disease twin: disease only.
+    CHECK(PoisonCleansingShouldDrop(true, true, false) == true);
+    CHECK(PoisonCleansingShouldDrop(false, true, false) == false);
+    CHECK(PoisonCleansingShouldDrop(true, false, false) == false);
+    CHECK(PoisonCleansingShouldDrop(true, true, true) == false);
+    CHECK(DiseaseCleansingShouldDrop(true, true, false) == true);
+    CHECK(DiseaseCleansingShouldDrop(false, true, false) == false);
+    CHECK(DiseaseCleansingShouldDrop(true, false, false) == false);
+    CHECK(DiseaseCleansingShouldDrop(true, true, true) == false);
+    std::cout << "  [PASS] cleansing twins react per debuff type, respect slot and manual orders\n";
 
-    // Earthbind: fleeing target only; slot and manual order gate.
+    // Earthbind: fleeing target or snared member; slot and manual order gate.
     CHECK(EarthbindShouldDrop(true, true, false) == true);
     CHECK(EarthbindShouldDrop(false, true, false) == false);
     CHECK(EarthbindShouldDrop(true, false, false) == false);
     CHECK(EarthbindShouldDrop(true, true, true) == false);
     std::cout << "  [PASS] earthbind reacts to runners, respects slot and manual orders\n";
 
-    // Manual override helper + earth arbitration: tremor beats earthbind.
+    // Manual override helper.
     CHECK(SituationalTotemManualOverride(true) == true);
     CHECK(SituationalTotemManualOverride(false) == false);
-    CHECK(TremorOutranksEarthbind() == true);
-    std::cout << "  [PASS] manual orders veto automation, tremor outranks earthbind\n";
+    std::cout << "  [PASS] manual orders veto automation\n";
 
     std::cout << "All shaman situational totem policy checks PASSED!\n";
     return 0;
