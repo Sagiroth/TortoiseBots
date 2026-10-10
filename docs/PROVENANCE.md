@@ -5660,3 +5660,42 @@ Local validation: `bash tools/verify_all.sh` (wiring audit covers the
 four new names); `git diff --check`; shared-builder compile via
 `build-commit.sh` (BUILD OK); live in-game check pending: swim with a
 warlock bot, self + party gain the buff, nothing fires on land.
+
+## Mage blizzard channel cancel when the pack thins (MAG-3) — 2026-10-10
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Mage/MageTriggers.h:293-304` +
+`MageTriggers.cpp:148-170` (`BlizzardChannelCheckTrigger`: channel id
+in {10, 6141, 8427, 10185, 10186, 10187, 27085, 42938, 42939} and
+`attacker count` < 2),
+`src/Ai/Class/Mage/Strategy/GenericMageStrategy.cpp:175` (→ `cancel
+channel` 26.0), `MageAiObjectContext.cpp:123` (registration).
+
+Source files (module, modified):
+`ai/playerbot/strategy/mage/MageTriggers.h/.cpp` (new
+`BlizzardChannelCheckTrigger`, cloned off the live
+`IciclesChannelCheckTrigger` shape: current channeled spell id in the
+per-rank channel set {10, 6141, 8427, 10185, 10186, 10187} — rank-1
+effect 10 plus our rank rows 6141/8427/10185-87, all verified in
+`tw_world.spell_template`, matching the donor's WotLK-extended list
+minus the three WotLK-only ranks — and `attacker count` < 2),
+`ai/playerbot/strategy/mage/MageAiObjectContext.cpp` (registered
+`blizzard channel check`),
+`ai/playerbot/strategy/mage/MageStrategy.cpp`
+(`MageAoeStrategy::InitCombatTriggers`: → `cancel channel` at HIGH+3,
+one place covering all specs), `docs/classes/mage.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented. Deviations from the
+donor, all deliberate: (a) the row lives on the live list-based base
+`MageAoeStrategy`, not the dead vector-API `GenericMageStrategy.cpp:149`
+forward-port (PROVENANCE already records that file as unregistered dead
+code — left untouched); (b) only the six 1.18.1 channel ids, no
+27085/42938/42939 which have no 1.18.1 rank rows; (c) priority HIGH+3
+matches our icicles cancel row rather than donor's flat 26.0.
+
+Reason: bots channeled the full blizzard into one leftover mob while the
+rest of the pack was dead — wasted channel time.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`;
+shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
+check pending: blizzard stops early as the pack drops below two.

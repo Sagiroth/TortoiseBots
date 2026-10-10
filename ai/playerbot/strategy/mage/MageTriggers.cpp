@@ -141,3 +141,24 @@ bool EvocationChannelCheckTrigger::IsActive()
     }
     return false;
 }
+
+bool BlizzardChannelCheckTrigger::IsActive()
+{
+    if (Spell* spell = bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
+    {
+        if (spell->m_spellInfo)
+        {
+            // Per-rank Blizzard channel ids (effect spells): 10 rank 1,
+            // 6141 rank 2, 8427 rank 3, 10185/10186/10187 ranks 4-6.
+            // Matches mod-playerbots BlizzardChannelCheckTrigger ids.
+            uint32 id = spell->m_spellInfo->Id;
+            if (id == 10 || id == 6141 || id == 8427 ||
+                id == 10185 || id == 10186 || id == 10187)
+            {
+                // Pack thinned below a blizzard's worth: stop channeling.
+                return AI_VALUE(uint8, "attacker count") < 2;
+            }
+        }
+    }
+    return false;
+}

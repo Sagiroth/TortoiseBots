@@ -173,6 +173,13 @@ namespace ai
         bool IsActive() override;
     };
 
+    class BlizzardChannelCheckTrigger : public Trigger
+    {
+    public:
+        BlizzardChannelCheckTrigger(PlayerbotAI* ai) : Trigger(ai, "blizzard channel check") {}
+        bool IsActive() override;
+    };
+
     class FireSpellsLocked : public Trigger
     {
     public:
