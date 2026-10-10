@@ -301,14 +301,15 @@ bool NeedTravelPurposeValue::Calculate()
         // entry source (all entries) and same acceptance (IsActive): a
         // picked node is always inside the window it was picked from, so
         // this stays true while walking its own trip.
-        {
-            PlayerTravelInfo const info(bot);
-            DestinationList const nodes = sTravelMgr.GetDestinations(info,
-                (uint32)purpose, {}, true, 10000.0f);
-            if (std::none_of(nodes.begin(), nodes.end(),
-                    [&](TravelDestination* node) { return node->IsActive(bot, info); }))
-                return false;
-        }
+        if (!activeNodeProbe.Get([&]()
+            {
+                PlayerTravelInfo const info(bot);
+                DestinationList const nodes = sTravelMgr.GetDestinations(info,
+                    (uint32)purpose, {}, true, 10000.0f);
+                return std::any_of(nodes.begin(), nodes.end(),
+                    [&](TravelDestination* node) { return node->IsActive(bot, info); });
+            }))
+            return false;
 
         return true;
     case TravelDestinationPurpose::Boss:
@@ -544,11 +545,14 @@ bool ShouldTravelNamedValue::Calculate()
             // listed trainer raised the need for an enemy-faction or outgrown
             // trainer nearby, and the search then refused them all and parked
             // a minute, every minute (1836 "inactive" refusals in 20 min).
-            PlayerTravelInfo const info(bot);
-            DestinationList const trainers = sTravelMgr.GetDestinations(info,
-                (uint32)TravelDestinationPurpose::Trainer, entries, true, window);
-            if (std::none_of(trainers.begin(), trainers.end(),
-                    [&](TravelDestination* trainer) { return trainer->IsActive(bot, info); }))
+            if (!activeTrainerProbe.Get([&]()
+                {
+                    PlayerTravelInfo const info(bot);
+                    DestinationList const trainers = sTravelMgr.GetDestinations(info,
+                        (uint32)TravelDestinationPurpose::Trainer, entries, true, window);
+                    return std::any_of(trainers.begin(), trainers.end(),
+                        [&](TravelDestination* trainer) { return trainer->IsActive(bot, info); });
+                }))
                 return false;
         }
 
