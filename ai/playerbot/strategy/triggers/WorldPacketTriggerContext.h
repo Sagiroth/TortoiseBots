@@ -31,6 +31,7 @@ namespace ai
             creators["check mount state"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "check mount state"); };
             creators["activate taxi"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "activate taxi"); };
             creators["trade status"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "trade status"); };
+            creators["trade status extended"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "trade status extended"); };
             creators["loot response"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "loot response"); };
             creators["quest update add kill"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "quest update add kill"); };
             creators["quest update add item"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "quest update add item"); };

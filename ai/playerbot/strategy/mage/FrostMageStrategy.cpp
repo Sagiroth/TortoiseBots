@@ -120,6 +120,10 @@ void FrostMageAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     MageAoeStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
+        "ranged light aoe",
+        NextAction::array(0, new NextAction("cone of cold", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "ranged medium aoe",
         NextAction::array(0, new NextAction("blizzard", ACTION_HIGH + 1), NULL)));
 
