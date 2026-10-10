@@ -396,4 +396,15 @@ namespace ai
     public:
         ClearcastingTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "clearcasting") {}
     };
+
+    // mod-playerbots parity (DRU-8): donor "no healer dps strategy" gate.
+    // True while the opt-in offdps kit is NOT running, so Tree of Life
+    // maintenance stands down during healer-dps instead of livelocking
+    // against the caster-form exit. Defined in DruidTriggers.cpp.
+    class NoOffdpsTrigger : public Trigger
+    {
+    public:
+        NoOffdpsTrigger(PlayerbotAI* ai) : Trigger(ai, "no offdps") {}
+        bool IsActive() override;
+    };
 }

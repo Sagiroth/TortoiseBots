@@ -237,9 +237,12 @@ void RestorationDruidBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
     // Tortoise Tree of Life (45705): spirit-scaling heal modifier + party aura
     // + polymorph immunity at the cost of movement speed. No spell lockouts
     // beyond standard shapeshift rules (core-enforced); emergency exits go
-    // through the shared caster-form node. Maintain like Bear/Cat forms.
+    // through the shared caster-form node. Maintain like Bear/Cat forms —
+    // except while the opt-in offdps kit is running (donor "no healer dps
+    // strategy" gate): otherwise exit/re-enter livelocks, tick N shifting
+    // out for a nuke and tick N+1 shifting back before it casts.
     triggers.push_back(new TriggerNode(
-        "tree form",
+        "tree form and no offdps",
         NextAction::array(0, new NextAction("tree form", ACTION_HIGH), NULL)));
 }
 

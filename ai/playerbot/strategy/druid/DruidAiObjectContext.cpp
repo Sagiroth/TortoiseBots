@@ -243,6 +243,8 @@ namespace ai
                 creators["cat form"] = [](PlayerbotAI* ai) { return new CatFormTrigger(ai); };
                 creators["in feral form"] = [](PlayerbotAI* ai) { return new InFeralFormTrigger(ai); };
                 creators["tree form"] = [](PlayerbotAI* ai) { return new TreeFormTrigger(ai); };
+                creators["no offdps"] = [](PlayerbotAI* ai) { return new NoOffdpsTrigger(ai); };
+                creators["tree form and no offdps"] = [](PlayerbotAI* ai) { return new TwoTriggers(ai, "tree form", "no offdps"); };
                 creators["moonkin form"] = [](PlayerbotAI* ai) { return new MoonkinFormTrigger(ai); };
                 creators["arcane eclipse"] = [](PlayerbotAI* ai) { return new HasArcaneEclipseTrigger(ai); };
                 creators["nature eclipse"] = [](PlayerbotAI* ai) { return new HasNatureEclipseTrigger(ai); };

@@ -4567,3 +4567,10 @@ Fire/Insect Swarm trainer-taught, creators pre-registered.
 Local validation: `bash tools/verify_all.sh` (wiring check:
 live-missing=0); `git diff --check`. No live test (no live test per
 parity brief); build via build-commit.sh.
+
+## Review fixes (2026-10-10, PR #610 CHANGES_REQUESTED)
+Both blocking findings verified real in code and fixed:
+- Finding 1 (no tree-form exit): confirmed — zero ActionNode creators cover ff/is/mf/wrath, and the only starfire node is balance-spec-gated. My "caster-form prerequisite" comment was wrong. Fixed: `caster form` (instant RemoveShapeshift exit) rides as the first alternative in the offdps row, nukes as fallbacks — donor shape (cancel 5.4 > nukes).
+- Finding 2 (exit/re-enter livelock): confirmed — tree re-entry at HIGH would win every tick after the exit. Fixed with the donor's `no healer dps strategy` gate: new `NoOffdpsTrigger` (`!HasStrategy("offdps", COMBAT)`) + `tree form and no offdps` TwoTriggers combo on the Tree row; offdps rows stay on plain `healer should attack` (strategy membership is the opt-in gate).
+- Non-blocking: nuke order corrected to donor (wrath above starfire); insect swarm + faerie fire dropped (donor healer-dps is MF/Wrath/SF; IS is a balance talent most restos lack); doc corrected (auto-added for random bots like priest holy, not opt-in); solo-OOM claim dropped (gate returns true groupless — harmless fallthrough to melee default).
+verify_all.sh + build-commit.sh + push to same branch per brief (see summary).

@@ -34,3 +34,8 @@ bool InFeralFormTrigger::IsActive()
 {
     return ai->HasAura("bear form", bot) || ai->HasAura("dire bear form", bot) || ai->HasAura("cat form", bot);
 }
+
+bool NoOffdpsTrigger::IsActive()
+{
+    return !ai->HasStrategy("offdps", BotState::BOT_STATE_COMBAT);
+}
