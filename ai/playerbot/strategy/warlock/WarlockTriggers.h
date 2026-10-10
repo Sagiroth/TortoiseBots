@@ -19,6 +19,23 @@ namespace ai
         virtual bool IsActive() override;
     };
 
+    // Swim-gated water breathing (WAR-6, donor parity, shaman WaterBreathing
+    // idiom): self + party rows fire only while the bot swims, so the buff
+    // lands where the water is instead of on every buff tick on land.
+    class UnendingBreathTrigger : public BuffTrigger
+    {
+    public:
+        UnendingBreathTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "unending breath", 5) {}
+        virtual bool IsActive() override;
+    };
+
+    class UnendingBreathOnPartyTrigger : public BuffOnPartyTrigger
+    {
+    public:
+        UnendingBreathOnPartyTrigger(PlayerbotAI* ai) : BuffOnPartyTrigger(ai, "unending breath", 2) {}
+        virtual bool IsActive() override;
+    };
+
     class NoCurseTrigger : public Trigger
     {
     public:

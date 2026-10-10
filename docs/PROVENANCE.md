@@ -5627,3 +5627,36 @@ All three blocking findings verified real in code and fixed:
 - Finding 3 (policy header dead code): confirmed — nothing included it. Fixed by refactoring the trigger onto it instead of deleting: `IsTargetValid` now builds `OocRebirthState` and calls `ShouldCastOocRebirth`, so the 6-check test exercises the shipped gate; unused `OocResurrectClass` enum removed.
 - Non-blocking citation fixed (`DruidTriggers.h:120-153` is FaerieFireFeral — now cites the generic `PartyMemberDeadTrigger` path). Toggle note: no toggle added — OOC auto-rez matches the other three classes; revisit if owners complain.
 verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
+## Warlock Unending Breath on swimmers (WAR-6) — 2026-10-09
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Warlock/Strategy/GenericWarlockNonCombatStrategy.cpp:89-90`
+(self 12.0 + party 11.0), `WarlockTriggers.h:37-50` +
+`WarlockTriggers.cpp:67-75` (swim-gated buff + on-party pair).
+
+Source files (module, modified):
+`ai/playerbot/strategy/warlock/WarlockTriggers.{h,cpp}` (new
+`UnendingBreathTrigger : BuffTrigger` + `UnendingBreathOnPartyTrigger :
+BuffOnPartyTrigger`, both swim-gated),
+`ai/playerbot/strategy/warlock/WarlockActions.h`
+(`CastUnendingBreathAction : CastBuffSpellAction` +
+`CastUnendingBreathOnPartyAction : BuffOnPartyAction`),
+`ai/playerbot/strategy/warlock/WarlockAiObjectContext.cpp` (registered
+all four names), `ai/playerbot/strategy/warlock/WarlockStrategy.cpp`
+(`WarlockBuffStrategy` NC rows at NORMAL+1/NORMAL) +
+`docs/classes/warlock.md` (the old upkeep claim is now true),
+`CHANGELOG.md` (doc lines).
+
+Copied / ported / reimplemented: reimplemented in the live list-engine
+tree following the shaman Water Breathing idiom (`ShamanTriggers.h`,
+`ShamanNonCombatStrategy.cpp:91-95`) — the forward-ported
+`GenericWarlockNonCombatStrategy` rows were dead (file registered
+nowhere). Unending Breath 5697 verified in `tw_world.spell_template`.
+
+Reason: doc claimed upkeep the bot never performed; donor buffs self +
+party while swimming.
+
+Local validation: `bash tools/verify_all.sh` (wiring audit covers the
+four new names); `git diff --check`; shared-builder compile via
+`build-commit.sh` (BUILD OK); live in-game check pending: swim with a
+warlock bot, self + party gain the buff, nothing fires on land.
