@@ -4523,7 +4523,7 @@ expires; ~20% of all stall time sits in WORK.
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
 
-## Priest parity healer damage: PRI-2 default offdps + PRI-6 mana burn — 2026-10-09
+## Priest parity healer damage: PRI-2 default offdps (PRI-6 mana burn rejected) — 2026-10-09
 Feature: discipline bots now ship with the `offdps` strategy on by
 default instead of `offheal` (AiFactory, inside the existing
 `enableOffSpecStrategies` gate — matching every other heal spec:
@@ -4557,9 +4557,9 @@ disc's `offheal` was the anomaly). PRI-6 Mana Burn rejected on review:
 no grouped-healer donor precedent, contradicts the mana-conservation
 design, and the action gate made the ladder entry dead code.
 
-Source files (module, modified): `ai/playerbot/AiFactory.cpp`,
-`ai/playerbot/strategy/priest/PriestStrategy.cpp` +
-`docs/classes/priest.md` (off-spec section).
+Source files (module, modified): `ai/playerbot/AiFactory.cpp` +
+`docs/classes/priest.md` (off-spec section). (`PriestStrategy.cpp` mana-burn
+wiring added then removed on review — no net diff.)
 
 Copied / ported / reimplemented: reimplemented in place. No new spells
 (Mana Burn 8129+ in 1.18.1 data).
