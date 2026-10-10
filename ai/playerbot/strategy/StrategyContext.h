@@ -177,6 +177,8 @@ namespace ai
             creators["magmadar"] = [](PlayerbotAI* ai) { return new MagmadarFightStrategy(ai); };
             creators["geddon"] = [](PlayerbotAI* ai) { return new GeddonFightStrategy(ai); };
             creators["suppression room"] = [](PlayerbotAI* ai) { return new SuppressionRoomStrategy(ai); };
+            creators["broodlord"] = [](PlayerbotAI* ai) { return new BroodlordFightStrategy(ai); };
+            creators["nefarian"] = [](PlayerbotAI* ai) { return new NefarianFightStrategy(ai); };
             creators["vael"] = [](PlayerbotAI* ai) { return new VaelFightStrategy(ai); };
             creators["four horseman"] = [](PlayerbotAI* ai) { return new FourHorsemanFightStrategy(ai); };
             creators["sapphiron"] = [](PlayerbotAI* ai) { return new SapphironFightStrategy(ai); };

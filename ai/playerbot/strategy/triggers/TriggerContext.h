@@ -345,6 +345,12 @@ namespace ai
             creators["suppression device in sight"] = [](PlayerbotAI* ai) { return new SuppressionDeviceInSightTrigger(ai); };
             creators["suppression device close"] = [](PlayerbotAI* ai) { return new SuppressionDeviceCloseTrigger(ai); };
 
+            creators["start broodlord fight"] = [](PlayerbotAI* ai) { return new BroodlordStartFightTrigger(ai); };
+            creators["end broodlord fight"] = [](PlayerbotAI* ai) { return new BroodlordEndFightTrigger(ai); };
+            creators["broodlord ranged"] = [](PlayerbotAI* ai) { return new BroodlordRangedTrigger(ai); };
+            creators["start nefarian fight"] = [](PlayerbotAI* ai) { return new NefarianStartFightTrigger(ai); };
+            creators["end nefarian fight"] = [](PlayerbotAI* ai) { return new NefarianEndFightTrigger(ai); };
+            creators["nefarian wild magic"] = [](PlayerbotAI* ai) { return new NefarianWildMagicTrigger(ai); };
             creators["start vael fight"] = [](PlayerbotAI* ai) { return new VaelStartFightTrigger(ai); };
             creators["end vael fight"] = [](PlayerbotAI* ai) { return new VaelEndFightTrigger(ai); };
 

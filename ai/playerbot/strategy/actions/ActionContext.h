@@ -377,6 +377,11 @@ namespace ai
             creators["stealth for suppression device"] = [](PlayerbotAI* ai) { return new StealthForSuppressionDeviceAction(ai); };
             creators["disarm suppression device"] = [](PlayerbotAI* ai) { return new DisarmSuppressionDeviceAction(ai); };
 
+            creators["enable broodlord fight strategy"] = [](PlayerbotAI* ai) { return new BroodlordEnableFightStrategyAction(ai); };
+            creators["disable broodlord fight strategy"] = [](PlayerbotAI* ai) { return new BroodlordDisableFightStrategyAction(ai); };
+            creators["move away from broodlord"] = [](PlayerbotAI* ai) { return new BroodlordMoveAwayAction(ai); };
+            creators["enable nefarian fight strategy"] = [](PlayerbotAI* ai) { return new NefarianEnableFightStrategyAction(ai); };
+            creators["disable nefarian fight strategy"] = [](PlayerbotAI* ai) { return new NefarianDisableFightStrategyAction(ai); };
             creators["enable vael fight strategy"] = [](PlayerbotAI* ai) { return new VaelEnableFightStrategyAction(ai); };
             creators["disable vael fight strategy"] = [](PlayerbotAI* ai) { return new VaelDisableFightStrategyAction(ai); };
 
