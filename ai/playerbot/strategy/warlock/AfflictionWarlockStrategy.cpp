@@ -43,6 +43,18 @@ void AfflictionWarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
     triggers.push_back(new TriggerNode(
         "immolate",
         NextAction::array(0, new NextAction("immolate", ACTION_NORMAL), NULL)));
+
+    // Spec-level DoT spreading (WAR-10, donor parity): corruption and siphon
+    // ride at NORMAL even with the aoe strategy off (its HIGH-1 rows still
+    // win when it is on). Below single-target upkeep and urgent taps, so
+    // spreading never starves the main rotation or mana recovery.
+    triggers.push_back(new TriggerNode(
+        "corruption on attacker",
+        NextAction::array(0, new NextAction("corruption on attacker", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "siphon life on attacker",
+        NextAction::array(0, new NextAction("siphon life on attacker", ACTION_NORMAL), NULL)));
 }
 
 void AfflictionWarlockStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

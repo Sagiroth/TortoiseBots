@@ -23,6 +23,10 @@ void DestructionWarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& tri
     triggers.push_back(new TriggerNode(
         "immolate",
         NextAction::array(0, new NextAction("immolate", ACTION_NORMAL + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "immolate on attacker",
+        NextAction::array(0, new NextAction("immolate on attacker", ACTION_NORMAL), NULL)));
 }
 
 void DestructionWarlockStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
