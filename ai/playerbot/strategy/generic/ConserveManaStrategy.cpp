@@ -5,6 +5,7 @@
 #include "playerbot/strategy/actions/GenericSpellActions.h"
 #include "playerbot/strategy/values/LastSpellCastValue.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/ForceRebuffPolicy.h"
 
 using namespace ai;
 
@@ -89,4 +90,29 @@ float SaveManaMultiplier::GetValue(Action* action)
 void ConserveManaStrategy::InitCombatMultipliers(std::list<Multiplier*> &multipliers)
 {
     multipliers.push_back(new ConserveManaMultiplier(ai));
+}
+
+float ForceRebuffBuffFirstMultiplier::GetValue(Action* action)
+{
+    if (!action || bot->IsInCombat())
+        return 1.0f;
+
+    AiObjectContext* rebuffContext = ai->GetAiObjectContext();
+    if (!rebuffContext)
+        return 1.0f;
+    uint32 beginMs = rebuffContext->GetValue<uint32>("manual int", "force rebuff begin ms")->Get();
+    if (!beginMs || !ai::ForceRebuffPending(beginMs, WorldTimer::getMSTime()))
+        return 1.0f;
+
+    if (!dynamic_cast<CastHealingSpellAction*>(action))
+        return 1.0f;
+
+    bool proposed = rebuffContext->GetValue<bool>("manual bool", "force rebuff buff proposed")->Get();
+    bool pending = rebuffContext->GetValue<bool>("manual bool", "force rebuff buff pending")->Get();
+    return ai::ForceRebuffSuppressHeal(true, false, proposed, pending) ? 0.0f : 1.0f;
+}
+
+void ForceRebuffStrategy::InitNonCombatMultipliers(std::list<Multiplier*> &multipliers)
+{
+    multipliers.push_back(new ForceRebuffBuffFirstMultiplier(ai));
 }

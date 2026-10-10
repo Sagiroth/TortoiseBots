@@ -44,6 +44,11 @@ namespace ai
         virtual std::string GetTargetName() { return "self target"; }
 
 		bool needCheck() {
+		    // During an out-of-combat force-rebuff pass, buff triggers
+		    // bypass the check interval and evaluate every tick (donor
+		    // Trigger::needCheck) via the IsBuffTrigger hook below.
+		    if (IsBuffTrigger() && !IsDebuffTrigger() && BypassIntervalForRebuff())
+		        return true;
 		    if (checkInterval < 2) return true;
 
 		    time_t now = time(0);
@@ -53,6 +58,13 @@ namespace ai
 			}
 			return false;
 		}
+
+		// Donor parity: buff triggers opt into the force-rebuff per-tick
+		// bypass. Base says no; BuffTrigger overrides below. Non-virtual
+		// state read stays in the .cpp to keep this header dependency-free.
+		virtual bool IsDebuffTrigger() const { return false; }
+		virtual bool IsBuffTrigger() const { return false; }
+		bool BypassIntervalForRebuff();
 
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "dummy"; } //Must equal iternal name

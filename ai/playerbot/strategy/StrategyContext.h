@@ -87,6 +87,7 @@ namespace ai
             creators["chat"] = [](PlayerbotAI* ai) { return new ChatCommandHandlerStrategy(ai); };
             creators["default"] = [](PlayerbotAI* ai) { return new WorldPacketHandlerStrategy(ai); };
             creators["ready check"] = [](PlayerbotAI* ai) { return new ReadyCheckStrategy(ai); };
+            creators["force rebuff"] = [](PlayerbotAI* ai) { return new ForceRebuffStrategy(ai); };
             creators["dead"] = [](PlayerbotAI* ai) { return new DeadStrategy(ai); };
             creators["flee"] = [](PlayerbotAI* ai) { return new FleeStrategy(ai); };
             creators["avoid mobs"] = [](PlayerbotAI* ai) { return new AvoidMobsStrategy(ai); };

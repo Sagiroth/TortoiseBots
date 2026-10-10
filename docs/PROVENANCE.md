@@ -6711,6 +6711,55 @@ Local validation: `bash tools/verify_all.sh` (wiring audit covers the
 new names); `git diff --check`; shared-builder compile via
 `build-commit.sh` (BUILD OK); live in-game check pending: ordered bot
 slows a fleeing mob, untriggered bot unchanged.
+## Force-rebuff OOC pass + ready-check entry + rebuff command (BUFF-1/BUFF-2) — 2026-10-10
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Bot/ForceRebuff.{h,cpp}` (2-min window, margin rule, buff-first heal
+veto, per-tick trigger bypass), `src/Ai/Base/Actions/GenericSpellActions.
+cpp:287,312` (NoteBuffWork on buff casts), `src/Bot/Engine/Trigger/
+Trigger.cpp:37` (interval bypass), `src/Ai/Base/Actions/ReadyCheckAction.
+cpp:172-176,252-275` (ready-check entry, ForceRebuffAction, ReadyReply
+gating), `src/Ai/Base/Strategy/ChatCommandHandlerStrategy.cpp:75`
+(`rebuff` chat row), `src/Ai/Base/StrategyContext.h:76` (strategy
+registration).
+
+Source files (module, modified): `ai/playerbot/ForceRebuffPolicy.h` (new
+pure rule) + `tools/test_force_rebuff_policy.cpp` (new test),
+`ai/playerbot/strategy/triggers/GenericTriggers.{h,cpp}` (top-off verdict
+in BuffTrigger + IsBuffTrigger bypass hook), `ai/playerbot/strategy/
+Trigger.{h,cpp}` (interval bypass), `ai/playerbot/strategy/actions/
+GenericSpellActions.cpp` (NoteBuffWork on successful buff casts),
+`ai/playerbot/strategy/generic/ConserveManaStrategy.{h,cpp}` (new
+`force rebuff` strategy + buff-first multiplier),
+`ai/playerbot/strategy/StrategyContext.h` + `ai/playerbot/AiFactory.cpp`
+(registration, on by default in the non-combat kit),
+`ai/playerbot/strategy/actions/ReadyCheckAction.{h,cpp}` (window opens on
+ready check; reply holds while buffs work; new ForceRebuffAction),
+`ai/playerbot/strategy/actions/WorldPacketActionContext.h` +
+`ai/playerbot/strategy/triggers/ChatTriggerContext.h` +
+`ai/playerbot/strategy/generic/ChatCommandHandlerStrategy.cpp`
+(`rebuff` command), `ai/playerbot/strategy/Engine.cpp` (per-tick flag
+roll), `ai/playerbot/ReadyRebuffPolicy.h` (PastCap helper),
+`tools/verify_all.sh`, `docs/guides/player-controls.md` (command rows).
+
+Copied / ported / reimplemented: reimplemented. Deviations from the
+donor, all deliberate: (a) pending state lives in per-bot manual
+int/bool values (`force rebuff begin ms`, `force rebuff buff
+pending/proposed`, WorldTimer ms), not a PlayerbotAI member — matches our
+SOC-S5 ready-defer shape; (b) margin floor 60 s == donor
+ForceRebuffMarginSecs default, no new config key; (c) outside the window
+the existing 15 s GroupBuffPolicy refresh rule applies; (d) the strategy
+is on by default in the non-combat kit (donor factory default too),
+disable with `.bot nc -force rebuff` — no behaviour change when no window
+is open since every gate requires a pending window.
+
+Reason: support parity gaps BUFF-1 (high/M, no OOC top-off pass) + BUFF-2
+(med/S, no ready-check/manual entry) — bots only rebuffed on fall-off.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. Build via build-commit.sh pending;
+live in-game check pending.
 ## Trinket usage filters (CD-1) — 2026-10-10
 
 Donor: mod-playerbots @ `79bd4281` (local checkout
