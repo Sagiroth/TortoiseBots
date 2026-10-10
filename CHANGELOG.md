@@ -104,6 +104,17 @@
 - Overview has a new **In PvP** tile showing bots in battlegrounds, with the queued count underneath; clicking it opens the bots list filtered to them. [#668](https://github.com/Sagiroth/TortoiseBots/pull/668)
 - The bots list has an **In PvP** filter chip. [#668](https://github.com/Sagiroth/TortoiseBots/pull/668)
 
+### Battleground & PvP AI
+- Battleground bots now receive the same prioritized AI turn cadence as bots in combat, so they stop standing around in their base instead of fighting. [#669](https://github.com/Sagiroth/TortoiseBots/pull/669)
+- Objective re-picking moved off the fixed 5 s timer onto the random `often` trigger (matching mod-playerbots), freeing turns for `bg move to objective` so bots actually leave spawn. [#669](https://github.com/Sagiroth/TortoiseBots/pull/669)
+
+### Dashboard & Observability
+- Telemetry now reports `pvp_bg` — the active battleground, or the queued battlegrounds — so the dashboard can surface PvP state. [#669](https://github.com/Sagiroth/TortoiseBots/pull/669)
+- Every bot in a battleground gets a purple **PvP · WSG** badge next to its name (queued bots show **Queue · WSG**), with the full battleground name on hover and the same badge on the bot profile — no more guessing who's where. [#670](https://github.com/Sagiroth/TortoiseBots/pull/670)
+- The **In PvP** tile now counts everyone taking part (in a battleground plus queued), broken down per battleground with the queued count underneath. [#670](https://github.com/Sagiroth/TortoiseBots/pull/670)
+- Dropped the redundant "queued for" note in the zone column, since the new badge covers it. [#670](https://github.com/Sagiroth/TortoiseBots/pull/670)
+- Bumped the asset cache version so browsers pick up the new page immediately. [#670](https://github.com/Sagiroth/TortoiseBots/pull/670)
+
 ## 2026-10-09
 
 ### Observability & Engine
