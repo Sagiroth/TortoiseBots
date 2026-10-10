@@ -23,7 +23,9 @@ float EstimatedLifetimeValue::Calculate()
         return 0.0f;
     }
     float dps = AI_VALUE(float, "estimated group dps");
-    bool aoePenalty = AI_VALUE(uint8, "attacker count") >= 3;
+    // NOTE: singular "attacker count" is NOT a registered value (only
+    // "attackers count" plural is) — keep the plural spelling.
+    bool aoePenalty = AI_VALUE(uint8, "attackers count") >= 3;
     if (aoePenalty)
         dps *= 0.75;
     float res = target->GetHealth() / dps;

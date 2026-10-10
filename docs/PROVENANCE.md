@@ -5693,6 +5693,14 @@ code — left untouched); (b) only the six 1.18.1 channel ids, no
 27085/42938/42939 which have no 1.18.1 rank rows; (c) priority HIGH+3
 matches our icicles cancel row rather than donor's flat 26.0.
 
+Deviations from the donor, continued: (d) the trigger reads the
+registered group-wide `attackers count` (plural), NOT the donor's singular
+`attacker count` — the singular name is unregistered here and `AI_VALUE`
+null-derefs on it (`ValueMacros.h:8`, `GetValue` returns NULL for unknown
+names). Do not "fix" this back to the donor spelling. The same latent
+wrong name in `EstimatedLifetimeValue.cpp:26` (dead code, value never
+registered/used) was fixed to the plural alongside so nobody copies it.
+
 Reason: bots channeled the full blizzard into one leftover mob while the
 rest of the pack was dead — wasted channel time.
 

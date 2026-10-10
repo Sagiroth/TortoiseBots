@@ -156,7 +156,11 @@ bool BlizzardChannelCheckTrigger::IsActive()
                 id == 10185 || id == 10186 || id == 10187)
             {
                 // Pack thinned below a blizzard's worth: stop channeling.
-                return AI_VALUE(uint8, "attacker count") < 2;
+                // NOTE: the donor reads singular "attacker count", which is
+                // NOT registered here (only "attackers count" plural is) —
+                // the singular name null-derefs in AI_VALUE. Do not "fix"
+                // this back to the donor spelling.
+                return AI_VALUE(uint8, "attackers count") < 2;
             }
         }
     }
