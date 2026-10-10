@@ -4686,6 +4686,14 @@ fire stacked at the same moment — Wall blunts damage early, Last Stand is
 held for genuinely lethal moments, and Wall's 30-min cooldown is not spent
 on fights Last Stand alone would survive.
 
+## Warrior WAR-5: arms battle-stance pin (2026-10-09)
+
+Feature: `ArmsWarriorBuffStrategy` combat pin swapped from `berserker
+stance` to `battle stance` (ACTION_NORMAL). Charge, Overpower, Mocking
+Blow, Sweeping Strikes, and Retaliation are all Battle-locked in 1.18.1
+and never fired from the old berserker pin; Whirlwind keeps its
+arms-scoped berserker prerequisite node so it still dances out and back.
+
 Source repository: `mod-playerbots/mod-playerbots`
 
 Source commit: `79bd4281` (local
@@ -4736,3 +4744,22 @@ nearly-full log triage would later drop - refused at accept instead.
 Local validation: `bash tools/verify_all.sh` (incl. extended triage test
 + wiring check live-missing=0); `git diff --check`; shared-builder
 compile check; no live in-game test.
+- `src/Ai/Class/Warrior/Strategy/ArmsWarriorStrategy.cpp:100-107` (battle stance pin at HIGH+10)
+
+Copied / ported / independently reimplemented: reimplemented in place
+(`ArmsWarriorStrategy.cpp`, `ai/playerbot/strategy/warrior/`).
+Deviations from the donor, all deliberate: (a) pin at NORMAL, not HIGH —
+the buff spec is additive with combat and a HIGH pin would fight
+Whirlwind's berserker node every tick; NORMAL still beats no other stance
+row in the buff spec so the pin holds; (b) no new stance-prerequisite
+nodes in the live factory — sweeping strikes already has its arms-scoped
+battle node, charge falls back to reach melee, and the pin itself puts
+overpower/mocking/retaliation in the right stance by default; (c) the AoE
+sweeping-strikes multipliers keep managing the pack stance choice
+unchanged.
+
+Reason: WAR-5 in the warrior parity sweep: arms bots sat in berserker and
+five Battle-locked abilities never fired.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
+test (per task constraints).

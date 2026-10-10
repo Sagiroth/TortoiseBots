@@ -16,7 +16,7 @@ Warriors serve as primary dungeon tanks or powerful melee DPS. The bot manages r
 ## Supported Specs & Roles
 
 - **Protection (Tank):** Operates primarily in **Defensive Stance**. Prioritizes threat generation via *Sunder Armor*, *Revenge*, *Shield Slam*, and *Taunt*.
-- **Arms (Melee DPS):** Uses two-handed weapons in **Battle Stance** or **Berserker Stance**. Centers on *Mortal Strike*, *Overpower* on dodges, and *Sweeping Strikes* for cleaving packs.
+- **Arms (Melee DPS):** Uses two-handed weapons, pinned to **Battle Stance** (dancing to Berserker for *Whirlwind* only). Centers on *Mortal Strike*, *Overpower* on dodges, and *Sweeping Strikes* for cleaving packs.
 - **Fury (Melee DPS):** Dual-wields in **Berserker Stance**. Drives high rage spend into *Bloodthirst*, *Whirlwind*, and *Execute*.
 
 ---
