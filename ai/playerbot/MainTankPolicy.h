@@ -30,6 +30,9 @@ namespace ai
         return botThreat > tankThreat * 0.5f;
     }
 
+    // Deferred-spec anchor (review PR #573): no call sites yet — nothing in
+    // TankTargetValue.cpp includes or calls this. Pins the donor rule for a
+    // future explicit-only, stickiness-first split; tank picks are unchanged.
     // Donor explicit-MT stickiness (TankTargetValue.cpp:76-83): only the
     // explicitly flagged main tank, and only when the group fields more than
     // one tank — a lone tank keeps the normal loose-add tournament.
