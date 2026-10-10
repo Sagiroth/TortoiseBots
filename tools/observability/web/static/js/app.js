@@ -132,6 +132,17 @@
   // state badges and the map markers so "dead" is never three colours.
   const BG_SHORT = { 'Warsong Gulch': 'WSG', 'Arathi Basin': 'AB', 'Alterac Valley': 'AV' };
 
+  // "PvP · WSG" while inside a battleground, "Queue · WSG" while waiting.
+  function pvpBadge(live) {
+    if (!live || !live.pvp) return '';
+    const name = live.pvp_bg || 'battleground';
+    // A bot may queue for several battlegrounds: "Warsong Gulch, Arathi Basin" -> "WSG, AB".
+    const short = (live.pvp_bg || '').split(', ').filter(Boolean).map(n => BG_SHORT[n] || n).join(', ') || '?';
+    return live.pvp === 'bg'
+      ? `<span class="badge badge-pvp" title="In battleground: ${esc(name)}">PvP · ${esc(short)}</span>`
+      : `<span class="badge badge-info" title="Queued for: ${esc(name)}">Queue · ${esc(short)}</span>`;
+  }
+
   const STATE_COLORS = {
     combat: '#f85149', moving: '#58a6ff', busy: '#d29922', stalled: '#e3852a',
     resting: '#2ea043', idle: '#9aa4b2', dead: '#8b949e'
@@ -1937,7 +1948,7 @@
       const perBg = {};
       inBg.forEach(b => { const n = BG_SHORT[b.pvp_bg] || b.pvp_bg || '?'; perBg[n] = (perBg[n] || 0) + 1; });
       const where = Object.entries(perBg).sort((a, b) => b[1] - a[1]).map(([n, c]) => `${n} ${c}`);
-      el.metricPvp.textContent = inBg.length;
+      el.metricPvp.textContent = inBg.length + queued;
       if (el.metricPvpSub) el.metricPvpSub.textContent = where.concat(`${queued} queued`).join(' · ');
     }
     if (el.metricUptime) el.metricUptime.textContent = s.online ? `up ${formatUptime(s.uptime)}` : 'offline';
@@ -2186,7 +2197,8 @@
         const badge = issue
           ? ` <span class="badge ${issue.severity === 'persistent' ? 'badge-error' : 'badge-warn'}" title="${esc(ISSUE_LABELS[issue.type] || issue.type)}">${esc(fmtDuration(issue.duration_sec))}</span>`
           : '';
-        return `<a class="bot-name bot-link" style="color: ${classColor(r.cls)};" href="${esc(routeHash({ tab: 'roster', bot: r.guid, ptab: state.profileTab }))}">${esc(r.name)}</a>${badge}`;
+        const pvp = pvpBadge(r.live);
+        return `<a class="bot-name bot-link" style="color: ${classColor(r.cls)};" href="${esc(routeHash({ tab: 'roster', bot: r.guid, ptab: state.profileTab }))}">${esc(r.name)}</a>${pvp ? ` ${pvp}` : ''}${badge}`;
       }
     },
     class: {
@@ -2232,8 +2244,7 @@
     zone: {
       label: 'Zone',
       sort: r => (r.live ? getZoneName(r.live.zone, r.live.map).toLowerCase() : ''),
-      cell: r => (r.live ? `<span class="mono">${esc(getZoneName(r.live.zone, r.live.map))}</span>` +
-        (r.live.pvp === 'queue' && r.live.pvp_bg ? ` <span class="cell-muted">· queued for ${esc(r.live.pvp_bg)}</span>` : '') : DASH)
+      cell: r => (r.live ? `<span class="mono">${esc(getZoneName(r.live.zone, r.live.map))}</span>` : DASH)
     },
     xp: {
       label: 'XP',
@@ -3108,6 +3119,7 @@
           ${kv('Last action', kvMono(live.last_action))}
           ${kv('Trigger', kvMono(live.last_trigger))}
           ${kv('Strategy', kvMono(live.strategy || 'default'))}
+          ${live.pvp ? kv('PvP', pvpBadge(live)) : ''}
           ${kv('Combat role', `<span class="badge badge-info" title="AI combat role (forced role / combat strategies / talent-gear auto-detect), not a group slot">${esc(roleLabel(live))}</span>`)}
         </div>
         <div class="kv-card">

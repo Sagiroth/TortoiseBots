@@ -988,6 +988,7 @@ select.input {
 .badge-success { background: rgba(46, 160, 67, 0.15); color: var(--accent-green-bright); }
 .badge-warn { background: rgba(210, 153, 34, 0.15); color: var(--accent-yellow); }
 .badge-error { background: rgba(248, 81, 73, 0.15); color: var(--accent-red); }
+.badge-pvp { background: rgba(188, 140, 255, 0.18); color: var(--accent-purple); }
 
 /* ---------- Overview panels ---------- */
 .composition-list {
