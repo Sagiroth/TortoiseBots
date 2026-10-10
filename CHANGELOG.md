@@ -140,6 +140,11 @@
 - Each log keeps the most recent activity — about an hour at 1000 bots, longer with fewer — and never takes more than twice the cap on disk. [#675](https://github.com/Sagiroth/TortoiseBots/pull/675)
 - If the rotation rename fails, the error is logged once and the size cap turns off for that run. [#675](https://github.com/Sagiroth/TortoiseBots/pull/675)
 
+### Observability & Engine
+- `AiPlayerbot.LogRetentionDays` (default `3`, `0` = never delete) replaces `LogFileMaxMB`, so bug reports now carry days of bot history instead of an hour's worth. [#676](https://github.com/Sagiroth/TortoiseBots/pull/676)
+- Live `bot_events.csv` / `deaths.csv` stay plain text, but every hour (and at server start) they roll into `<name>_<date>_<time>.csv.gz` named after close time — packed on a background thread so the world tick never pays for it, with packs past retention deleted. [#676](https://github.com/Sagiroth/TortoiseBots/pull/676)
+- Server restarts no longer overwrite the previous log: the old file is packed instead of lost, keeping history intact across reboots. [#676](https://github.com/Sagiroth/TortoiseBots/pull/676)
+
 ## 2026-10-09
 
 ### Observability & Engine
