@@ -597,7 +597,7 @@ No per-tick AH/DB scan or new AH-specific core seam is required.
 `RandomBotService` discovers the characters of **registered managed pool
 accounts** (character-database table `tortoise_bots_pool_account`, seeded by
 `data/sql/character/20260924120000_char.sql`); with
-`AiPlayerbot.RandomBotAutoCreate=1` (default `0`, one character per
+`AiPlayerbot.RandomBotAutoCreate=1` (default `1`, one character per
 `RandomBotUpdateInterval`, world-thread) it creates the bounded deficit toward
 `MinRandomBots`/`MaxRandomBots` through `AccountMgr::CreateAccount` (random
 12-character alphanumeric password, hashed and never logged) and the generic

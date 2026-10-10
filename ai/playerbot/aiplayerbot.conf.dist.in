@@ -16,10 +16,10 @@ AiPlayerbot.Observability = 0
 AiPlayerbot.ObservabilityPort = 9195
 
 # Enable random bot system
-# Single-bot manual-add (`.bot add <name>`) is the
-# recommended starting point. Random bots auto-spawn dozens of characters and
-# need DB schema + tuned class probabilities — defer this.
-AiPlayerbot.RandomBotAutologin = 0
+# On by default: a fresh install brings up a living world of random bots
+# (see MinRandomBots/MaxRandomBots, RandomBotAutoCreate). 0 turns the pool off
+# and leaves only manually added bots (`.bot add <name>`).
+AiPlayerbot.RandomBotAutologin = 1
 
 # Log on all random bots on start
 AiPlayerbot.RandomBotLoginAtStartup = 0
@@ -58,9 +58,10 @@ AiPlayerbot.BotAutologin = 0
 # Mark many quests <= Bot level as complete (slows down bot creation)
 AiPlayerbot.PreQuests = 0
 
-# Random bot count
-AiPlayerbot.MinRandomBots = 0
-AiPlayerbot.MaxRandomBots = 0
+# Random bot count. Default 500 is sized for an average PC or a Steam Deck
+# (with the self-tuning tick budget below); a bigger machine can raise both.
+AiPlayerbot.MinRandomBots = 500
+AiPlayerbot.MaxRandomBots = 500
 AiPlayerbot.RandomBotMaxLevel = 60
 
 # Username prefix used when the module NAMES a new pool account, and when the
@@ -127,7 +128,7 @@ AiPlayerbot.RandomBotPoolReset = off
 # to the normal Headless login (AddRandomBot -> LoginPlayer) and post-login
 # PlayerbotFactory gear enrichment (already in RandomBotService.Update) handle
 # them. No raw INSERT, no DB worker, no AddAsyncTask.
-AiPlayerbot.RandomBotAutoCreate = 0
+AiPlayerbot.RandomBotAutoCreate = 1
 
 # Optional pinned RNDBOT names that remain online when possible. Comma-separated
 # character names matched using the database's stored `characters.name` collation

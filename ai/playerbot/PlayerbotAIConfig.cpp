@@ -284,9 +284,9 @@ bool PlayerbotAIConfig::Initialize()
     LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.ImmuneSpellIds", "19428"), immuneSpellIds);
 
     botAutologin = BotAutoLogin(config.GetIntDefault("AiPlayerbot.BotAutologin", 0));
-    randomBotAutologin = config.GetBoolDefault("AiPlayerbot.RandomBotAutologin", false);
-    minRandomBots = config.GetIntDefault("AiPlayerbot.MinRandomBots", 0);
-    maxRandomBots = config.GetIntDefault("AiPlayerbot.MaxRandomBots", 0);
+    randomBotAutologin = config.GetBoolDefault("AiPlayerbot.RandomBotAutologin", true);
+    minRandomBots = config.GetIntDefault("AiPlayerbot.MinRandomBots", 500);
+    maxRandomBots = config.GetIntDefault("AiPlayerbot.MaxRandomBots", 500);
     randomBotUpdateInterval = config.GetIntDefault("AiPlayerbot.RandomBotUpdateInterval", 500);
     randomBotTimedLogout = config.GetBoolDefault("AiPlayerbot.RandomBotTimedLogout", true);
     randomBotTimedOffline = config.GetBoolDefault("AiPlayerbot.RandomBotTimedOffline", false);
@@ -403,7 +403,7 @@ bool PlayerbotAIConfig::Initialize()
     summonAtInnkeepersEnabled = config.GetBoolDefault("AiPlayerbot.SummonAtInnkeepersEnabled", true);
     randomBotMaxLevel = config.GetIntDefault("AiPlayerbot.RandomBotMaxLevel", 60);
     randomBotLoginAtStartup = config.GetBoolDefault("AiPlayerbot.RandomBotLoginAtStartup", false);
-    randomBotAutoCreate = config.GetBoolDefault("AiPlayerbot.RandomBotAutoCreate", false);
+    randomBotAutoCreate = config.GetBoolDefault("AiPlayerbot.RandomBotAutoCreate", true);
     enableRandomTeleports = config.GetBoolDefault("AiPlayerbot.EnableRandomTeleports", true);
     randomBotEvenStartZones = config.GetBoolDefault("AiPlayerbot.RandomBotEvenStartZones", true);
     allowIsolatedCustomStartingZones = config.GetBoolDefault("AiPlayerbot.AllowIsolatedCustomStartingZones", false);

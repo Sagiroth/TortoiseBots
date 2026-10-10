@@ -71,9 +71,9 @@ These flags control the behavior of autonomous random bots roaming the world:
 
 | Setting | Default | Recommended | What It Does |
 | :--- | :---: | :---: | :--- |
-| `AiPlayerbot.RandomBotAutologin` | `0` | **`1`** | Automatically logs in random bots (characters on managed pool accounts) at server startup. |
-| `AiPlayerbot.RandomBotAutoCreate` | `0` | **`1`** | Automatically creates new bot accounts/characters if the active pool is below `MinRandomBots`. Required by `RandomBotPoolReset`: a reset is refused without it, so the pool is never left empty. |
-| `AiPlayerbot.MinRandomBots` / `MaxRandomBots` | `0` | `50` / `150` | Sets the minimum and maximum active random bot population. |
+| `AiPlayerbot.RandomBotAutologin` | `1` | `1` | Automatically logs in random bots (characters on managed pool accounts) at server startup. |
+| `AiPlayerbot.RandomBotAutoCreate` | `1` | `1` | Automatically creates new bot accounts/characters if the active pool is below `MinRandomBots`. Required by `RandomBotPoolReset`: a reset is refused without it, so the pool is never left empty. |
+| `AiPlayerbot.MinRandomBots` / `MaxRandomBots` | `500` / `500` | `500` / `500` | Sets the minimum and maximum active random bot population. The default is sized for an average PC or a Steam Deck; raise both on a bigger machine. |
 | `AiPlayerbot.RandomBotPoolReset` | `off` | `off` (production) | **Managed pool rebuild:** `off` never resets, `once:<token>` rebuilds the pool on the next server start when `<token>` has not been applied yet, `always` rebuilds on every start (**development only**, destroys all bot progression). Needs `RandomBotAutoCreate = 1`. See [Resetting the managed bot pool](living-world.md#resetting-the-managed-bot-pool). |
 | `AiPlayerbot.RandomBotAccountPrefix` | `RNDBOT` | `RNDBOT` | Prefix used to *name* new pool accounts and to list legacy accounts for adoption at the server console. It never authorizes ownership: only accounts registered in `tortoise_bots_pool_account` are managed pool accounts. |
 | `AiPlayerbot.RandomBotStartLevelMin` / `Max` | `1` / `60` | `1` / `60` | **Fresh-Bot Level Seed:** A newly created pool bot gets a random level in this range once, on its first login, before its skills, professions and starter gear are seeded, so a fresh pool has bots at every level instead of all walking up from 1. Narrow it for test pools (e.g. `10` / `15`); set both to `1` for the historic level-1 start. |
