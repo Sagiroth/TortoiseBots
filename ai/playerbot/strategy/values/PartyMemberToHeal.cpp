@@ -350,6 +350,34 @@ Unit* PartyMemberToProtect::Calculate()
     return needProtect[0];
 }
 
+Unit* HealerLowMana::Calculate()
+{
+    Group* group = bot->GetGroup();
+    if (!group)
+        return nullptr;
+
+    Unit* lowestHealer = nullptr;
+    float lowestPct = 100.0f;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || member == bot || !ai->IsSafe(member) || !ai->IsHeal(member))
+            continue;
+        if (member->GetMapId() != bot->GetMapId() || !sServerFacade.IsAlive(member))
+            continue;
+        uint32 maxMana = member->GetMaxPower(POWER_MANA);
+        if (!maxMana)
+            continue;
+        float pct = (static_cast<float>(member->GetPower(POWER_MANA)) / maxMana) * 100.0f;
+        if (pct < lowestPct)
+        {
+            lowestPct = pct;
+            lowestHealer = member;
+        }
+    }
+
+    return lowestHealer;
+}
+
 Unit* PartyMemberToRemoveRoots::Calculate()
 {
     Unit* target = nullptr;

@@ -289,8 +289,8 @@ Unit* DpsTargetValue::Calculate()
 
     // mod-playerbots picks the tournament by bot type in groups of 4+
     // (DpsTargetValue.cpp:281-295); small groups always run the general pick.
-    float groupDps = AI_VALUE(float, "estimated group dps");
     unsigned nearCount = NearGroupCount(ai, bot);
+    float groupDps = AI_VALUE(float, "estimated group dps");
     if (nearCount > 3 && IsCasterBot(ai, bot))
     {
         CasterDpsStrategy strategy(ai, groupDps);
