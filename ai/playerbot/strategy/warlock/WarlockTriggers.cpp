@@ -5,6 +5,7 @@
 #include "WarlockPetTaunt.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "../../../runtime/VoidwalkerPolicy.h"
+#include "../../../runtime/HealthFunnelPolicy.h"
 #include "../../../runtime/WarlockPetPolicy.h"
 
 using namespace ai;
@@ -21,7 +22,41 @@ bool DemonArmorTrigger::IsActive()
 
 bool SpellstoneTrigger::IsActive()
 {
-    return BuffTrigger::IsActive() && AI_VALUE2(uint32, "item count", getName()) > 0;
+    if (AI_VALUE2(uint32, "item count", getName()) == 0)
+        return false;
+    // Off-hand held item like firestone (not a weapon temp-enchant: the
+    // stone's on-use spell targets the caster). Same gates: never displace
+    // worn gear, and a two-handed main-hand leaves nowhere to put it.
+    if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND))
+        return false;
+    Item* mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+    if (!mainHand || mainHand->GetProto()->InventoryType == INVTYPE_2HWEAPON)
+        return false;
+    return true;
+}
+
+bool FirestoneTrigger::IsActive()
+{
+    if (AI_VALUE2(uint32, "item count", getName()) == 0)
+        return false;
+    // Off-hand held item: never displace worn gear, and a two-handed
+    // main-hand leaves nowhere to put it (the equip would fail every tick).
+    if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND))
+        return false;
+    Item* mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+    if (!mainHand || mainHand->GetProto()->InventoryType == INVTYPE_2HWEAPON)
+        return false;
+    return true;
+}
+
+bool UnendingBreathTrigger::IsActive()
+{
+    return AI_VALUE2(bool, "swimming", "self target") && BuffTrigger::IsActive();
+}
+
+bool UnendingBreathOnPartyTrigger::IsActive()
+{
+    return AI_VALUE2(bool, "swimming", "self target") && BuffOnPartyTrigger::IsActive();
 }
 
 bool InfernoTrigger::IsActive()
@@ -113,7 +148,8 @@ bool NoCurseTrigger::IsActive()
 		!ai->HasSpell("curse of shadow") &&
 		!ai->HasSpell("curse of the elements") &&
 		!ai->HasSpell("curse of weakness") &&
-		!ai->HasSpell("curse of tongues"))
+		!ai->HasSpell("curse of tongues") &&
+		!ai->HasSpell("curse of exhaustion"))
 		return false;
 
 	Unit* target = GetTarget();
@@ -125,7 +161,8 @@ bool NoCurseTrigger::IsActive()
 			   !ai->HasAura("curse of shadow", target, false, true) &&
 			   !ai->HasAura("curse of the elements", target, false, true) &&
 			   !ai->HasAura("curse of weakness", target, false, true) &&
-			   !ai->HasAura("curse of tongues", target, false, true);
+			   !ai->HasAura("curse of tongues", target, false, true) &&
+			   !ai->HasAura("curse of exhaustion", target, false, true);
 	}
 
 	return false;
@@ -139,7 +176,8 @@ bool NoCurseOnAttackerTrigger::IsActive()
 		!ai->HasSpell("curse of shadow") &&
 		!ai->HasSpell("curse of the elements") &&
 		!ai->HasSpell("curse of weakness") &&
-		!ai->HasSpell("curse of tongues"))
+		!ai->HasSpell("curse of tongues") &&
+		!ai->HasSpell("curse of exhaustion"))
 		return false;
 
     std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "possible attack targets");
@@ -155,7 +193,8 @@ bool NoCurseOnAttackerTrigger::IsActive()
 				!ai->HasAura("curse of shadow", attacker, false, true) &&
 				!ai->HasAura("curse of the elements", attacker, false, true) &&
 				!ai->HasAura("curse of weakness", attacker, false, true) &&
-				!ai->HasAura("curse of tongues", attacker, false, true))
+				!ai->HasAura("curse of tongues", attacker, false, true) &&
+				!ai->HasAura("curse of exhaustion", attacker, false, true))
 			{
 				return true;
 			}
@@ -451,4 +490,24 @@ bool ConsumeShadowsTrigger::IsActive()
     gate.mounted = AI_VALUE2(bool, "mounted", "self target");
     gate.ownerInCombat = false;
     return TortoiseBots::CanCastConsumeShadows(gate);
+}
+
+// PET-6: cheap-first — pet presence, then the policy gate on scalar health
+// reads. Spell knowledge/cooldown/range stay in the action's isPossible.
+bool HealthFunnelTrigger::IsActive()
+{
+    Unit* pet = AI_VALUE(Unit*, "pet target");
+    if (!pet)
+        return false;
+    TortoiseBots::HealthFunnelGateInputs gate;
+    gate.hasPet = true;
+    gate.petAlive = pet->IsAlive();
+    if (!gate.petAlive)
+        return false;
+    gate.petHealth = AI_VALUE2(uint8, "health", "pet target");
+    if (gate.petHealth >= 50)
+        return false;
+    gate.ownerHealth = AI_VALUE2(uint8, "health", "self target");
+    gate.ownerInCombat = bot->IsInCombat();
+    return TortoiseBots::CanCastHealthFunnel(gate);
 }

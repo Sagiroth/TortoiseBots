@@ -12,10 +12,45 @@ namespace ai
 		virtual bool IsActive() override;
 	};
 
-    class SpellstoneTrigger : public BuffTrigger
+    // Vanilla off-hand semantics (WAR-4): a spellstone is a held off-hand
+    // item (inventory_type 23) with an on-equip aura, like firestone — not
+    // a weapon temp-enchant (its on-use spell targets the caster).
+    // Only equips into an EMPTY off-hand next to a one-handed main-hand.
+    // Plain Trigger (not Buff): no player spell is named "spellstone", so
+    // the BuffTrigger HasSpell gate would never pass.
+    class SpellstoneTrigger : public Trigger
     {
     public:
-        SpellstoneTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "spellstone") {}
+        SpellstoneTrigger(PlayerbotAI* ai) : Trigger(ai, "spellstone") {}
+        virtual bool IsActive() override;
+    };
+
+    // Vanilla off-hand semantics (WAR-4): a firestone is a held off-hand
+    // item (inventory_type 23) with an on-equip aura, not a consumable.
+    // Only equips into an EMPTY off-hand next to a one-handed main-hand,
+    // so it never swaps out a real off-hand, fights a staff, or loops.
+    // Plain Trigger (not Buff): no player spell is named "firestone".
+    class FirestoneTrigger : public Trigger
+    {
+    public:
+        FirestoneTrigger(PlayerbotAI* ai) : Trigger(ai, "firestone") {}
+        virtual bool IsActive() override;
+    };
+
+    // Swim-gated water breathing (WAR-6, donor parity, shaman WaterBreathing
+    // idiom): self + party rows fire only while the bot swims, so the buff
+    // lands where the water is instead of on every buff tick on land.
+    class UnendingBreathTrigger : public BuffTrigger
+    {
+    public:
+        UnendingBreathTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "unending breath", 5) {}
+        virtual bool IsActive() override;
+    };
+
+    class UnendingBreathOnPartyTrigger : public BuffOnPartyTrigger
+    {
+    public:
+        UnendingBreathOnPartyTrigger(PlayerbotAI* ai) : BuffOnPartyTrigger(ai, "unending breath", 2) {}
         virtual bool IsActive() override;
     };
 
@@ -47,6 +82,7 @@ namespace ai
     INTERRUPT_TRIGGER(DeathCoilInterruptTrigger, "death coil");
     INTERRUPT_HEALER_TRIGGER(DeathCoilInterruptTHealerTrigger, "death coil");
     SNARE_TRIGGER(DeathCoilSnareTrigger, "death coil");
+    SNARE_TRIGGER(CurseOfExhaustionSnareTrigger, "curse of exhaustion");
 
     class CorruptionOnAttackerTrigger : public DebuffOnAttackerTrigger
     {
@@ -123,6 +159,12 @@ namespace ai
     };
 
     DEBUFF_TRIGGER(ImmolateTrigger, "immolate");
+
+    class ImmolateOnAttackerTrigger : public DebuffOnAttackerTrigger
+    {
+    public:
+        ImmolateOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "immolate") {}
+    };
 
     class ShadowTranceTrigger : public HasAuraTrigger
     {
@@ -303,6 +345,32 @@ namespace ai
         }
     };
 
+    class DevourMagicPurgeTrigger : public TargetAuraDispelTrigger
+    {
+    public:
+        DevourMagicPurgeTrigger(PlayerbotAI* ai) : TargetAuraDispelTrigger(ai, "devour magic", DISPEL_MAGIC) {}
+        bool IsActive() override
+        {
+            // Cheap-first: no Felhunter, no aura scan and no queue spam —
+            // the actions would discard as USELESS anyway.
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            return pet && pet->GetEntry() == 417 && TargetAuraDispelTrigger::IsActive();
+        }
+    };
+
+    class DevourMagicCleanseTrigger : public PartyMemberNeedCureTrigger
+    {
+    public:
+        DevourMagicCleanseTrigger(PlayerbotAI* ai) : PartyMemberNeedCureTrigger(ai, "devour magic", DISPEL_MAGIC) {}
+        bool IsActive() override
+        {
+            // Same cheap-first gate: the party-wide dispel scan only runs
+            // while a Felhunter is actually out.
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            return pet && pet->GetEntry() == 417 && PartyMemberNeedCureTrigger::IsActive();
+        }
+    };
+
     class SpellLockEnemyHealerTrigger : public InterruptEnemyHealerTrigger
     {
     public:
@@ -358,6 +426,14 @@ namespace ai
     {
     public:
         ConsumeShadowsTrigger(PlayerbotAI* ai) : Trigger(ai, "consume shadows") {}
+        bool IsActive() override;
+    };
+
+    // PET-6: demon below half while the owner can afford the drain.
+    class HealthFunnelTrigger : public Trigger
+    {
+    public:
+        HealthFunnelTrigger(PlayerbotAI* ai) : Trigger(ai, "health funnel") {}
         bool IsActive() override;
     };
 }

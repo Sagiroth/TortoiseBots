@@ -25,6 +25,10 @@ Warlocks provide sustained Shadow and Fire DPS through curses and damage-over-ti
 
 ### 1. DoT Upkeep & Shard Economy
 - **Curses:** Defaults to *Curse of Agony*; other curses only when you enable them manually.
+- **DoTs:** Only *Corruption* is health-gated (skipped at/below 20% target health); *Immolate* has no gate and is kept up by all three specs. Affliction also maintains *Siphon Life*. *Immolate* spreads to extra attackers (aoe strategy, plus Demonology/Destruction at spec level) under the 16-debuff cap.
+- **DoTs:** Only *Corruption* is health-gated (skipped at/below 20% target health); *Immolate* has no gate and is kept up by all three specs. Affliction also maintains *Siphon Life*. Affliction spreads *Corruption* and *Siphon Life* to extra attackers, Demonology spreads *Corruption*, at spec level even with the aoe strategy off (its rows still win when it is on); spreading runs below single-target upkeep and mana recovery, under the 16-debuff cap.
+- **Curses:** Defaults to *Curse of Agony*; other curses only when you enable them manually (`.bot strategy +curse <shadow|weakness|...|exhaustion>` still overrides). *Curse of Exhaustion* snares runners and kiters via the snare target.
+- **Curses:** Affliction and Demonology default to *Curse of Agony*; Destruction defaults to *Curse of the Elements* once trained (level 32), *Curse of Agony* before that. Other curses only when you enable them manually (`.bot strategy +curse <shadow|weakness|...>` still overrides). Different curses from different warlocks stack; the bot never recasts a curse anyone already holds.
 - **DoTs:** Only *Corruption* is health-gated (skipped at/below 20% target health); *Immolate* has no gate and is kept up by all three specs. Affliction also maintains *Siphon Life*.
 - **Soul Shard Harvest:** Shards are never seeded or conjured — the bot harvests them organically with *Drain Soul* when the target is at/below 20% health, provided it holds fewer than 5 Soul Shards and has bag space; no elite check. Excess above 5 is destroyed out of combat. Healthstones (*Create Healthstone*, level 10+) and Soulstones (*Create Soulstone (Minor)*, level 18+) are created out of combat whenever the bot holds a shard and lacks one.
 
@@ -54,9 +58,14 @@ Warlocks provide sustained Shadow and Fire DPS through curses and damage-over-ti
   - *Imp:* The raid pet, providing *Blood Pact* (Stamina buff).
   - *Succubus:* Provides humanoid crowd control via *Seduce*.
   - *Felhunter:* Uses *Spell Lock* for ranged interrupts, and *Devour Magic* both ways: strips a magic buff off the current target (purge) and lifts magic off a party member (cleanse). Both fire only while a Felhunter is out.
+  - *Felhunter:* Uses *Spell Lock* for ranged interrupts, and *Devour Magic* both ways: strips a magic buff off the current target (purge) and lifts magic off a party member (cleanse). Both fire only while a Felhunter is out; other demons idle those nodes safely.
 - **Out-of-combat upkeep:** The bot maintains *Demon Armor* (with *Demon Skin* as fallback) and casts *Unending Breath* on itself and the party.
+  - *Felhunter:* Uses *Spell Lock* for ranged interrupts. *Devour Magic* has no registered action wiring, so the bot never casts it.
+- **Out-of-combat upkeep:** The bot maintains *Demon Armor* (with *Demon Skin* as fallback) and casts *Unending Breath* (5697) on itself and the party, but only while swimming — no buff churn on land.
   - **Pet upkeep:** the demon's known spells are swept for autocast (non-passive, except *Spell Lock* / *Devour Magic* deliberate-cast abilities) and pet plus guardians are pinned to *Defensive* after each summon — same autonomous pair as hunter pets. Explicit `.bot pet aggressive|defensive|passive` orders still apply immediately.
+  - **Pet upkeep:** the demon's known spells are swept for autocast (non-passive, except *Spell Lock* / *Devour Magic* deliberate-cast abilities) and pet plus guardians are pinned to *Defensive* after each summon — same autonomous pair as hunter pets. Explicit `.bot pet aggressive|defensive|passive` orders still apply immediately. Mid-fight the bot channels *Health Funnel* into a demon below half health while its own health stays above 60% — never a suicide channel, combat only.
   - **Pet ranks:** the demon learns the highest rank its level allows on summon and on the periodic initialize-pet tick (Torment, Firebolt, Lash of Pain...; *Sacrifice* and *Seduction* stay manual, never autocast), replacing lower ranks automatically — pool bots never read Grimoires, so without this they would cast rank 1 forever.
+- **Weapon stones:** Affliction and Demonology create (one shard each) and equip *Spellstones* into an empty off-hand, Destruction creates and equips *Firestones* the same way — vanilla off-hand semantics, only beside a one-handed weapon, never displacing real gear or fighting a staff. Each spec only conjures its own stone.
 - **Healthstones & Soulstones:**
   - Creates and uses *Healthstones* during combat.
   - Creates and stores Soulstones on the party healer or tank whenever an in-range healer/tank lacks one (not timed to boss pulls).
