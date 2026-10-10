@@ -500,6 +500,29 @@ namespace ai
         std::string GetTargetName() override { return "self target"; }
         };
 
+    // Equips a bag firestone into an empty off-hand (WAR-4). Not a
+    // UseSpellItemAction: UseItemInternal refuses equippable items sitting
+    // in bags, and firestones have no on-use spell anyway (on-equip aura).
+    class EquipFirestoneAction : public Action
+    {
+    public:
+        EquipFirestoneAction(PlayerbotAI* ai) : Action(ai, "firestone") {}
+        bool Execute(Event& event) override;
+    };
+
+    // Equips a bag spellstone into an empty off-hand (WAR-4), same vanilla
+    // off-hand semantics as firestone: the stone's equip aura (Increased
+    // Critical Spell) then applies, and its on-use dispel/absorb stays
+    // available through normal use once worn. Never a weapon temp-enchant:
+    // the on-use spell targets the caster, and UseItemInternal refuses
+    // equippable items sitting in bags.
+    class EquipSpellstoneAction : public Action
+    {
+    public:
+        EquipSpellstoneAction(PlayerbotAI* ai) : Action(ai, "spellstone") {}
+        bool Execute(Event& event) override;
+    };
+
 	class CastCreateFirestoneAction : public CastSpellAction
 	{
 	public:
