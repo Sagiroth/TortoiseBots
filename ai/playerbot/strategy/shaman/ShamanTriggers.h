@@ -2,6 +2,7 @@
 #include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/triggers/GenericTriggers.h"
 #include "ShamanStoneclawPolicy.h"
+#include "ShamanEarthShockPolicy.h"
 
 namespace ai
 {
@@ -431,6 +432,28 @@ namespace ai
         ShockTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "earth shock") {}
         virtual bool IsActive() override;
     };
+    // Elemental execute discipline (mod-playerbots parity SHM-4): earth
+    // shock only lands the killing blow (target below 25% AND below 1500
+    // hp), saving the shared shock cooldown and boss debuff slots on
+    // healthy targets. Enhancement keeps the ungated `shock` line; the
+    // interrupt triggers are untouched.
+    class EarthShockExecuteTrigger : public Trigger
+    {
+    public:
+        EarthShockExecuteTrigger(PlayerbotAI* ai) : Trigger(ai, "earth shock execute") {}
+
+        virtual bool IsActive() override
+        {
+            // Gate lives in ShamanEarthShockPolicy.h so the unit test pins
+            // this exact logic.
+            Unit* target = AI_VALUE(Unit*, "current target");
+            if (!target)
+                return false;
+            return EarthShockExecuteShouldFire((float)target->GetHealth(), (float)target->GetMaxHealth(),
+                sServerFacade.IsAlive(target));
+        }
+    };
+
 
     // Flame shock is the DoT half of the shared shock cooldown: it fires
     // whenever flame shock itself is down, above the generic shock line, so

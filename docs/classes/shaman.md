@@ -17,7 +17,7 @@ Shamans bring unparalleled group utility through totem sets, elemental shocks, w
 
 - **Restoration (Healer):** Premier multi-target healer utilizing *Chain Heal*, *Healing Wave*, *Lesser Healing Wave*, and *Mana Tide Totem*. When nobody needs healing and mana is comfortable, casts *Flame Shock* / *Lightning Bolt* (*Chain Lightning* into packs) at the lowest relevance so every heal wins first — the same healer-dps pattern priests use.
 - **Enhancement (Melee DPS):** Dual-wielding or two-handed melee powerhouse utilizing *Windfury*, *Stormstrike*, and shocks.
-- **Elemental (Ranged DPS):** Nature and fire caster driving high burst through *Lightning Bolt*, *Chain Lightning*, and *Elemental Mastery*.
+- **Elemental (Ranged DPS):** Nature and fire caster driving high burst through *Lightning Bolt*, *Chain Lightning*, and *Elemental Mastery*. *Earth Shock* is saved as an execute (target below 25% health and 1500 hp) so the shared shock cooldown and boss debuff slots are not wasted on healthy targets; interrupts still fire anytime.
 
 ---
 
