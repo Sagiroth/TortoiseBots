@@ -80,6 +80,7 @@
 #include "NaxxramasDungeonActions.h"
 #include "EmeraldSanctumDungeonActions.h"
 #include "LowerKarazhanDungeonActions.h"
+#include "ClassicRaidDungeonActions.h"
 #include "KarazhanCryptDungeonActions.h"
 #include "SapphironDungeonActions.h"
 
@@ -170,6 +171,7 @@ namespace ai
             creators["set facing"] = [](PlayerbotAI* ai) { return new SetFacingTargetAction(ai); };
             creators["tank face away"] = [](PlayerbotAI* ai) { return new TankFaceAwayAction(ai); };
             creators["set behind"] = [](PlayerbotAI* ai) { return new SetBehindTargetAction(ai); };
+            creators["rear flank"] = [](PlayerbotAI* ai) { return new RearFlankAction(ai); };
             creators["attack duel opponent"] = [](PlayerbotAI* ai) { return new AttackDuelOpponentAction(ai); };
             creators["select new target"] = [](PlayerbotAI* ai) { return new SelectNewTargetAction(ai); };
             creators["check mail"] = [](PlayerbotAI* ai) { return new CheckMailAction(ai); };
@@ -336,6 +338,12 @@ namespace ai
             creators["disable blackwing lair strategy"] = [](PlayerbotAI* ai) { return new BlackwingLairDisableDungeonStrategyAction(ai); };
             creators["enable naxxramas strategy"] = [](PlayerbotAI* ai) { return new NaxxramasEnableDungeonStrategyAction(ai); };
             creators["disable naxxramas strategy"] = [](PlayerbotAI* ai) { return new NaxxramasDisableDungeonStrategyAction(ai); };
+            creators["enable zul'gurub strategy"] = [](PlayerbotAI* ai) { return new ZulgurubEnableDungeonStrategyAction(ai); };
+            creators["disable zul'gurub strategy"] = [](PlayerbotAI* ai) { return new ZulgurubDisableDungeonStrategyAction(ai); };
+            creators["enable ruins of ahn'qiraj strategy"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajEnableDungeonStrategyAction(ai); };
+            creators["disable ruins of ahn'qiraj strategy"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajDisableDungeonStrategyAction(ai); };
+            creators["enable ahn'qiraj temple strategy"] = [](PlayerbotAI* ai) { return new AhnqirajTempleEnableDungeonStrategyAction(ai); };
+            creators["disable ahn'qiraj temple strategy"] = [](PlayerbotAI* ai) { return new AhnqirajTempleDisableDungeonStrategyAction(ai); };
             creators["enable emerald sanctum strategy"] = [](PlayerbotAI* ai) { return new EmeraldSanctumEnableDungeonStrategyAction(ai); };
             creators["disable emerald sanctum strategy"] = [](PlayerbotAI* ai) { return new EmeraldSanctumDisableDungeonStrategyAction(ai); };
             creators["enable lower karazhan strategy"] = [](PlayerbotAI* ai) { return new LowerKarazhanEnableDungeonStrategyAction(ai); };
@@ -350,6 +358,10 @@ namespace ai
             creators["enable magmadar fight strategy"] = [](PlayerbotAI* ai) { return new MagmadarEnableFightStrategyAction(ai); };
             creators["disable magmadar fight strategy"] = [](PlayerbotAI* ai) { return new MagmadarDisableFightStrategyAction(ai); };
             creators["move away from magmadar"] = [](PlayerbotAI* ai) { return new MagmadarMoveAwayAction(ai); };
+
+            creators["enable geddon fight strategy"] = [](PlayerbotAI* ai) { return new GeddonEnableFightStrategyAction(ai); };
+            creators["disable geddon fight strategy"] = [](PlayerbotAI* ai) { return new GeddonDisableFightStrategyAction(ai); };
+            creators["move away from geddon"] = [](PlayerbotAI* ai) { return new GeddonMoveAwayAction(ai); };
 
             creators["move away from hazard"] = [](PlayerbotAI* ai) { return new MoveAwayFromHazard(ai); };
             creators["raid bomb runout"] = [](PlayerbotAI* ai) { return new RaidBombRunoutAction(ai); };

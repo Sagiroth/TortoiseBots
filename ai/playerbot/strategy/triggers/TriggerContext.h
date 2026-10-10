@@ -19,6 +19,7 @@
 #include "BlackwingLairDungeonTriggers.h"
 #include "NaxxramasDungeonTriggers.h"
 #include "EmeraldSanctumDungeonTriggers.h"
+#include "ClassicRaidDungeonTriggers.h"
 #include "LowerKarazhanDungeonTriggers.h"
 #include "SapphironDungeonTriggers.h"
 #include "WorldBuffTravelTriggers.h"
@@ -147,6 +148,7 @@ namespace ai
             creators["critical health no master"] = [](PlayerbotAI* ai) { return new CriticalHealthNoMasterTrigger(ai); };
             creators["behind target"] = [](PlayerbotAI* ai) { return new IsBehindTargetTrigger(ai); };
             creators["not behind target"] = [](PlayerbotAI* ai) { return new IsNotBehindTargetTrigger(ai); };
+            creators["rear flank needed"] = [](PlayerbotAI* ai) { return new RearFlankNeededTrigger(ai); };
             creators["not facing target"] = [](PlayerbotAI* ai) { return new IsNotFacingTargetTrigger(ai); };
             creators["tank face needed"] = [](PlayerbotAI* ai) { return new TankFaceNeededTrigger(ai); };
             creators["far from master"] = [](PlayerbotAI* ai) { return new FarFromMasterTrigger(ai); };
@@ -206,6 +208,7 @@ namespace ai
             creators["dispel enrage"] = [](PlayerbotAI* ai) { return new DispelEnrageOnTargetTrigger(ai); };
             creators["has poison debuff"] = [](PlayerbotAI* ai) { return new HasPoisonDebuffTrigger(ai); };
             creators["at war"] = [](PlayerbotAI* ai) { return new AtWarTrigger(ai); };
+            creators["force rebuff pending"] = [](PlayerbotAI* ai) { return new ForceRebuffPendingTrigger(ai); };
             creators["quest log nearly full"] = [](PlayerbotAI* ai) { return new QuestLogNearlyFullTrigger(ai); };
 
             creators["mounted"] = [](PlayerbotAI* ai) { return new IsMountedTrigger(ai); };
@@ -299,6 +302,12 @@ namespace ai
             creators["leave naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasLeaveDungeonTrigger(ai); };
             creators["enter blackwing lair"] = [](PlayerbotAI* ai) { return new BlackwingLairEnterDungeonTrigger(ai); };
             creators["leave blackwing lair"] = [](PlayerbotAI* ai) { return new BlackwingLairLeaveDungeonTrigger(ai); };
+            creators["enter zul'gurub"] = [](PlayerbotAI* ai) { return new ZulgurubEnterDungeonTrigger(ai); };
+            creators["leave zul'gurub"] = [](PlayerbotAI* ai) { return new ZulgurubLeaveDungeonTrigger(ai); };
+            creators["enter ruins of ahn'qiraj"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajEnterDungeonTrigger(ai); };
+            creators["leave ruins of ahn'qiraj"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajLeaveDungeonTrigger(ai); };
+            creators["enter ahn'qiraj temple"] = [](PlayerbotAI* ai) { return new AhnqirajTempleEnterDungeonTrigger(ai); };
+            creators["leave ahn'qiraj temple"] = [](PlayerbotAI* ai) { return new AhnqirajTempleLeaveDungeonTrigger(ai); };
             creators["enter emerald sanctum"] = [](PlayerbotAI* ai) { return new EmeraldSanctumEnterDungeonTrigger(ai); };
             creators["leave emerald sanctum"] = [](PlayerbotAI* ai) { return new EmeraldSanctumLeaveDungeonTrigger(ai); };
             creators["enter lower karazhan"] = [](PlayerbotAI* ai) { return new LowerKarazhanEnterDungeonTrigger(ai); };
@@ -311,6 +320,7 @@ namespace ai
             creators["four horsemen mark"] = [](PlayerbotAI* ai) { return new FourHorsemenMarkTrigger(ai); };
             creators["dragon breath risk"] = [](PlayerbotAI* ai) { return new DragonBreathRiskTrigger(ai); };
             creators["raid spread needed"] = [](PlayerbotAI* ai) { return new RaidSpreadNeededTrigger(ai); };
+            creators["spread needed"] = [](PlayerbotAI* ai) { return new SpreadNeededTrigger(ai); };
             creators["start onyxia fight"] = [](PlayerbotAI* ai) { return new OnyxiaStartFightTrigger(ai); };
             creators["end onyxia fight"] = [](PlayerbotAI* ai) { return new OnyxiaEndFightTrigger(ai); };
             creators["onyxia airborne"] = [](PlayerbotAI* ai) { return new OnyxiaAirborneTrigger(ai); };
@@ -321,6 +331,10 @@ namespace ai
             creators["end magmadar fight"] = [](PlayerbotAI* ai) { return new MagmadarEndFightTrigger(ai); };
             creators["magmadar lava bomb"] = [](PlayerbotAI* ai) { return new MagmadarLavaBombTrigger(ai); };
             creators["magmadar too close"] = [](PlayerbotAI* ai) { return new MagmadarTooCloseTrigger(ai); };
+
+            creators["start geddon fight"] = [](PlayerbotAI* ai) { return new GeddonStartFightTrigger(ai); };
+            creators["end geddon fight"] = [](PlayerbotAI* ai) { return new GeddonEndFightTrigger(ai); };
+            creators["geddon inferno"] = [](PlayerbotAI* ai) { return new GeddonInfernoTrigger(ai); };
 
             creators["fire protection potion ready"] = [](PlayerbotAI* ai) { return new FireProtectionPotionReadyTrigger(ai); };
 

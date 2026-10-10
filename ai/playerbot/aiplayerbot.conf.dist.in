@@ -1633,6 +1633,10 @@ AiPlayerbot.JumpHeightLimit = 60
 AiPlayerbot.JumpWithPlayer = 0
 # Add rpg jump strategy in BG
 AiPlayerbot.JumpInBg = 0
+# Hold the ready-check confirm until buffs settle (grace) or a 30 s cap fires,
+# instead of answering ready and buffing through the pull. Off by default;
+# the readiness text report is immediate either way.
+AiPlayerbot.ForceRebuffOnReadyCheck = 0
 
 # Use jump if can not find a proper path to follow, if possible
 AiPlayerbot.JumpFollow = 1

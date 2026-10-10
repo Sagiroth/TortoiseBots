@@ -358,23 +358,50 @@ bool DragonFlankAction::Execute(Event& event)
 bool RaidSpreadAction::Execute(Event& event)
 {
     (void)event;
-    // The reaction engine fires this for any stacked ranged bot, but the
-    // Onyxia fight strategy also queues it directly: re-check the spread
-    // gate here so explicit hold orders and owned bots (live master OR owner
-    // record, for offline masters) hold position instead of stepping out.
-    if (!ShouldCombatSpread(sServerFacade.IsInCombat(bot), ai->HasRealPlayerMaster(),
-        ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
-        ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT),
-        ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
-        ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)) ||
-        IsSpreadExemptOwned(ai->HasRealPlayerMaster(), ai->IsOwnedBot()))
-        return false;
+    // Opt-in spread ("spread" strategy): the player asked for spacing, so
+    // owned/hired bots and melee are eligible and the manual "spread
+    // distance" (or role default) is the "too close" radius. Otherwise the
+    // legacy pool-only path: ranged pool bots at the 10yd stack radius.
+    bool const optIn = ai->HasStrategy("spread", BotState::BOT_STATE_COMBAT);
+    float radius = kSpreadSettledDistance;
+    if (optIn)
+    {
+        // Tanks never spread: stepping out drags the boss/cleave through the
+        // raid, then reach-melee runs back and re-fires — ping-pong.
+        if (ai->IsTank(bot))
+            return false;
+        if (!ShouldOptInSpread(sServerFacade.IsInCombat(bot),
+            ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
+            ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT),
+            ai->HasStrategy("guard", BotState::BOT_STATE_COMBAT),
+            ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
+            ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)))
+            return false;
+        radius = SpreadRadius(AI_VALUE(float, "spread distance"), ai->IsRanged(bot));
+    }
+    else
+    {
+        // The reaction engine fires this for any stacked ranged bot, but the
+        // Onyxia fight strategy also queues it directly: re-check the spread
+        // gate here so explicit hold orders and owned bots (live master OR owner
+        // record, for offline masters) hold position instead of stepping out.
+        if (!ShouldCombatSpread(sServerFacade.IsInCombat(bot), ai->HasRealPlayerMaster(),
+            ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
+            ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT),
+            ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
+            ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)) ||
+            IsSpreadExemptOwned(ai->HasRealPlayerMaster(), ai->IsOwnedBot()))
+            return false;
+        // Melee/tanks stack by design; spread is a ranged survival behavior.
+        if (!ai->IsRanged(bot))
+            return false;
+    }
     // One step per cooldown: stacked bots settle after a single step-out
     // instead of ping-ponging toward the next friendly every tick.
     LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
     if (IsSpreadOnCooldown(WorldTimer::getMSTime(), lastMove.lastSpreadStepMs))
         return false;
-    // Step 12yd directly away from the nearest stacked friendly.
+    // Step out directly away from the nearest stacked friendly.
     Group* group = bot->GetGroup();
     if (!group)
         return false;
@@ -393,7 +420,7 @@ bool RaidSpreadAction::Execute(Event& event)
             nearest = member;
         }
     }
-    if (!nearest || nearestDist >= kSpreadSettledDistance)
+    if (!nearest || nearestDist >= radius)
         return false;
     const WorldPosition botPos(bot);
     const WorldPosition nearPos(nearest);
@@ -403,7 +430,10 @@ bool RaidSpreadAction::Execute(Event& event)
         bot->GetMapId(), nearestDist, nowMs, bot->movespline->GetId());
     // Prefer headings that have not failed to gain spacing. A second pass
     // allows remembered failures so the cache can never block every route.
-    const float spread = sPlayerbotAIConfig.hazardEvasionDistance;
+    // Step just past the trigger radius (donor: min(radius + 1, flee)): a
+    // fixed 12yd leap from a 2yd melee trigger would overshoot out of melee
+    // and ping-pong back via reach-melee.
+    const float spread = std::min(radius + 1.0f, sPlayerbotAIConfig.hazardEvasionDistance);
     const float angles[] = { 0.0f, 0.6f, -0.6f, 1.2f, -1.2f, (float)M_PI };
     WorldPosition out(botPos);
     for (int pass = 0; pass < 2; ++pass)
