@@ -132,11 +132,21 @@ namespace ai
         PresenceOfMindTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "presence of mind") {}
     };
 
-    HAS_AURA_TRIGGER(HotStreakTrigger, "hot streak");
+    HAS_AURA_TRIGGER(PresenceOfMindAuraTrigger, "presence of mind");
+
+    // Turtle fire talent Hot Streak (51927/51928): crits stack a cast-time
+    // reduction aura for the next Pyroblast (proc 51930/51931). The talent
+    // auras share the "Hot Streak" name, so this MUST NOT be a name-based
+    // HasAuraTrigger — see HotStreakTrigger::IsActive in MageTriggers.cpp.
+    class HotStreakTrigger : public Trigger
+    {
+    public:
+        HotStreakTrigger(PlayerbotAI* ai) : Trigger(ai, "hot streak") {}
+        bool IsActive() override;
+    };
 
     class ManaShieldTrigger : public BuffTrigger
     {
-    public:
         ManaShieldTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "mana shield", 5) {}
         virtual bool IsActive() override;
     };

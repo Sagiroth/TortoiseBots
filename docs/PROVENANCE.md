@@ -5557,7 +5557,7 @@ All three blocking findings verified real in code and fixed:
 - Non-blocking citation fixed (`DruidTriggers.h:120-153` is FaerieFireFeral — now cites the generic `PartyMemberDeadTrigger` path). Toggle note: no toggle added — OOC auto-rez matches the other three classes; revisit if owners complain.
 verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
 
-## Mage Hot Streak proc to instant Pyroblast (MAG-1) — 2026-10-10
+## Mage Hot Streak proc to hurried Pyroblast (MAG-1) — 2026-10-10
 
 Donor: mod-playerbots (`79bd4281`):
 `src/Ai/Class/Mage/Strategy/FireMageStrategy.cpp:51-58` (`hot streak` →
@@ -5566,29 +5566,65 @@ Donor: mod-playerbots (`79bd4281`):
 `src/Ai/Class/Mage/MageAiObjectContext.cpp:99` (trigger registration).
 
 Source files (module, modified):
-`ai/playerbot/strategy/mage/MageTriggers.h` (new `HotStreakTrigger` via
-`HAS_AURA_TRIGGER`, self-target name-based aura check),
-`ai/playerbot/strategy/mage/MageAiObjectContext.cpp` (registered
-`hot streak`), `ai/playerbot/strategy/mage/FireMageStrategy.cpp`
+`ai/playerbot/HotStreakPolicy.h` (new pure rule:
+`ShouldCastHotStreakPyroblast` fires only for proc auras 51930/51931 at
+full 5 stacks), `tools/test_hot_streak_policy.cpp` (new standalone test,
+17 checks) + `tools/verify_all.sh` (registered),
+`ai/playerbot/strategy/mage/MageTriggers.h/.cpp` (new `HotStreakTrigger :
+Trigger` with a custom `IsActive()` reading the proc IDs via
+`ai->GetAura` into the policy — deliberately NOT a name-based
+`HAS_AURA_TRIGGER`), `ai/playerbot/strategy/mage/MageAiObjectContext.cpp`
+(registered `hot streak`; the `presence of mind aura` registration is
+kept), `ai/playerbot/strategy/mage/FireMageStrategy.cpp`
 (`FireMageStrategy::InitCombatTriggers` row: `hot streak` → `pyroblast`
-at HIGH+2, above the scorch/vulnerability rows and the debuff-refresh
-pyroblast row), `docs/classes/mage.md` (doc line).
+at HIGH+2), `docs/classes/mage.md` (doc line).
 
 Copied / ported / reimplemented: reimplemented in the live list-based
 style (donor uses the newer vector/NextAction-float API). Deviations
 from the donor, all deliberate: (a) fire-only wiring (Hot Streak is a
 fire-tier-4 talent, 51927/51928; proc auras 51930/51931) — donor also
 wires it on frostfire, which has no 1.18.1 equivalent; (b) priority
-HIGH+2 instead of donor's flat 25.0, sitting below interrupt/emergency
-rows but above the normal rotation; (c) V1 fires on any Hot Streak aura
-presence (donor does the same) rather than gating on full 5-stack —
-stack-gating left for a follow-up.
+HIGH+2 instead of donor's flat 25.0 — ties with the base execute row
+(`target critical health` → fire blast, also 22) but `Queue::Peek` uses
+strict `>`, so the earlier-pushed base row wins ties deterministically
+and the execute keeps priority, which is the intended winner; (c) the
+donor's name-based aura check does NOT port: Turtle's proc is a stacking
+cast-time reduction (-1001ms/stack, 5 stacks ≈ instant on the 6s
+Pyroblast), not WotLK's binary instant, and the passive talent auras
+51927/51928 share the "Hot Streak" name — so the trigger gates on full
+proc stacks instead of any presence.
 
 Reason: every fire mage with the Turtle Hot Streak talent procced free
-instant Pyroblasts that bots silently ignored — the highest-value mage
+faster Pyroblasts that bots silently ignored — the highest-value mage
 gap in the parity report.
 
-Local validation: `bash tools/verify_all.sh`; `git diff --check`;
-shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
-check pending: fire bot with Hot Streak casts pyroblast while the proc
-aura is up.
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`; shared-builder compile via
+`build-commit.sh` (BUILD OK); live in-game check pending: talented fire
+bot hardcasts normally at low stacks, hurries Pyroblast at full stacks.
+
+## Review fixes (2026-10-10, PR #646 CHANGES_REQUESTED)
+Both blocking findings verified real in code and fixed:
+- Finding 1 (deleted PoM-aura trigger orphaned two live consumer rows):
+confirmed — the first version replaced the `PresenceOfMindAuraTrigger`
+declaration and its registration instead of adding alongside, which
+would have silently no-op'd the `presence of mind aura` → pyroblast /
+frostbolt rows (`Engine.cpp:866-867` skips unregistered triggers) while
+arcane kept casting PoM. Fixed: PoM declaration + registration restored
+(diff now shows pure additions on those lines); Hot Streak is an
+additional trigger/row.
+- Finding 2 (name-based check matches the permanent talent auras):
+confirmed — 51927/51928 share SpellName "Hot Streak" (attributes 464
+incl. passive) with the procs, and with non-empty `SpellIds("hot
+streak")` the `HasAura` name path matches by ID list, so the trigger
+meant "talent learned", not "proc up". Also confirmed the deeper point:
+Turtle's proc is per-stack cast-time reduction (effect 107, -1001ms per
+stack, 5 stacks, 1 charge), not an instant — firing on any presence
+would spend a 1-stack proc. Fixed: custom `IsActive()` checks proc IDs
+51930/51931 only (via `ai->GetAura`, bypassing the name path entirely)
+and the new `HotStreakPolicy.h` rule requires full 5 stacks (17-check
+standalone test).
+- Non-blocking: Cold Snap doc line restored (behavior never changed);
+HIGH+2 tie resolves to the execute row winning (verified `Queue::Peek`
+strict-`>`); doc now says "hurries" not "free/instant" (no mana
+reduction in the tooltip); live in-game check still pending.
