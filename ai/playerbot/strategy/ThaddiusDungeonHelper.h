@@ -18,7 +18,7 @@ namespace ai
         stalagg = nullptr;
         feugen = nullptr;
         thaddius = nullptr;
-        Unit* current = AI_VALUE(Unit*, "current target");
+        Unit* current = ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
         if (current && current->IsAlive())
         {
             if (current->GetEntry() == kStalaggEntry)
