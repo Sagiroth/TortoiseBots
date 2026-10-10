@@ -24,9 +24,9 @@ Player-facing summary, no internals. Every claim below exists in the code on thi
 <details><summary><b>🌍 Living world & autonomy</b> — questing, grinding, travel, professions, auction house, guilds</summary>
 
 - Quest, grind and explore on their own: pick up level-fitting quests, fight level-appropriate mobs, rest with food and water, and return to town to repair, sell junk, learn spells and turn in.
-- Travel like players: flight paths, zeppelins, boats and hearthstones (no teleports).
+- Travel like players: flight paths, zeppelins, boats and hearthstones — autonomous travel never teleports (your `.bot summon` order does).
 - Gather and craft: herbalism/mining runs from level 10, skinning what they kill, fishing while idle, materials feeding crafting and the Auction House.
-- Trade on the Auction House with their own loot at market prices; your auctions get bought with real gold in your mailbox.
+- Trade on the Auction House with their own loot at market prices — opt-in and off by default (`AiPlayerbot.AhMarketEnabled = 1`; the synthetic buyer that can take your auctions needs `AiPlayerbot.AhMarketBuyer = 1`).
 - Social life: greet passing players, invite lone questers to a party, form and join guilds with custom names.
 -
 - Details: [Living World & Autonomous Bots](docs/guides/living-world.md).
@@ -38,7 +38,7 @@ Player-facing summary, no internals. Every claim below exists in the code on thi
 - Keep party buffs up automatically (single and group versions); bots can hold a ready-check confirm until buffs settle (opt-in).
 - Answer ready checks, roll Need/Greed/Pass on loot, share conjured food, water and healthstones through trade.
 - Hire companions at inn recruiters: fresh characters at your level with talents, spells and spec-weighted gear; summon stragglers to your side.
-- Line-of-sight corner pulling (`pullback`), crowd-control marks that the party will not break, and an opt-in AoE fear/CC safety net.
+- Line-of-sight corner pulling (`pullback`), crowd-control marks that the party will not break, and safe CC defaults (AoE fear off in groups, auto-CC off) with opt-in overrides.
 -
 - Details: [Player Controls](docs/guides/player-controls.md), [Dungeon & Raid Tactics](docs/guides/dungeon-tactics.md).
 </details>
@@ -48,7 +48,7 @@ Player-facing summary, no internals. Every claim below exists in the code on thi
 - One rotation per class and spec, rebuilt when you set `.bot role <Name> tank|healer|dps` — tanks hold aggro and turn mobs away, healers triage the party, DPS focus fire.
 - Interrupt on order (`.bot action interrupt`): the first party bot with a ready interrupt closes in and casts it.
 - Dispel magic, curses, poisons and diseases off the party; ease off when near the tank's threat.
-- Positioning: melee strike from behind the target, step out of AoE and hazards, spread apart on order, flee and regroup when told.
+- Positioning: melee strike from behind the target, step out of AoE and hazards, spread apart via the opt-in spread toggle, flee and regroup when told.
 -
 - Details: [Class AI & Rotations](docs/classes/overview.md).
 </details>
@@ -101,7 +101,7 @@ Player-facing summary, no internals. Every claim below exists in the code on thi
 
 <details><summary><b>🎛️ Player control</b> — commands, addon, formations</summary>
 
-- `.bot action` intents: attack, pull, pullback, focus, cc, aoe on/off, flee, stop, stay, follow, summon, trade, release, corpse run.
+- `.bot action` intents: attack, interrupt, pull, pullback, focus skull, cc \<mark\>, aoe on/off, flee, stop, stay, follow, trade, release, corpse run (plus come/hold/loot/repair/sell/rest/learn/ready/raid). Summon is the separate `.bot summon \<Name\>`.
 - Roster commands: add, hire, role, invite, summon, maintenance, autogear, remove — or whisper a bot directly.
 - [TortoiseBotsManager](https://github.com/Sagiroth/TortoiseBotsManager) (`/tbm`) addon: roster, party actions, bot panel (gear, bags, behaviour toggles) over a silent channel.
 - Formations (arrow, queue, near, line, circle, shield), opt-in combat spread, mimic-consumables toggle, per-bot loot/AoE/mana/threat/potion switches.
