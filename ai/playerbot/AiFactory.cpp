@@ -485,12 +485,16 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
             {
                 combatEngine->addStrategy("discipline");
                 if (sPlayerbotAIConfig.enableOffSpecStrategies)
-                    combatEngine->addStrategy("offheal");
+                    // mod-playerbots parity (PRI-2): disc healer bots deal
+                    // off-spec damage by default; the player can `-offdps`.
+                    combatEngine->addStrategy("offdps");
             }
             else if (tab == 1)
             {
                 combatEngine->addStrategy("holy");
                 if (sPlayerbotAIConfig.enableOffSpecStrategies)
+                    // mod-playerbots parity (PRI-2): holy healer bots deal
+                    // off-spec damage by default; the player can `-offdps`.
                     combatEngine->addStrategy("offdps");
             }
             else

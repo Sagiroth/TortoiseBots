@@ -5,6 +5,9 @@
 #include "MovementActions.h"
 #include "UseItemAction.h"
 #include "playerbot/strategy/values/GuidPositionValues.h"
+#include "playerbot/RazorgorePolicy.h"
+#include "playerbot/ServerFacade.h"
+#include "playerbot/strategy/AiObjectContext.h"
 
 namespace ai
 {
@@ -241,6 +244,118 @@ namespace ai
         UseHourglassSandAction(PlayerbotAI* ai) : UseItemIdAction(ai, "use hourglass sand") { qualifier = "{19183}"; }
     };
 
+    class RazorgoreEnableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        RazorgoreEnableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "enable razorgore fight strategy", "+razorgore") {}
+    };
+
+    class RazorgoreDisableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        RazorgoreDisableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable razorgore fight strategy", "-razorgore") {}
+    };
+
+    // Cone escape: donor AvoidAoe geometry — step to directly behind the
+    // boss (melee 3y, ranged 15y) with a small angular fuzz so the raid
+    // does not stack one spot. Custom Execute (not MoveAwayFromCreature,
+    // which flees radially outward and strands melee at 17y+ with no
+    // uptime).
+    class RazorgoreEscapeConeAction : public MovementAction
+    {
+    public:
+        RazorgoreEscapeConeAction(PlayerbotAI* ai) : MovementAction(ai, "escape razorgore cone") {}
+        bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
+
+        bool Execute(Event& event) override
+        {
+            (void)event;
+            AiObjectContext* context = ai->GetAiObjectContext();
+            const std::list<ObjectGuid>& attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+            Unit* boss = nullptr;
+            for (const ObjectGuid& attackerGuid : attackers)
+            {
+                Unit* attacker = ai->GetUnit(attackerGuid);
+                if (attacker && attacker->GetEntry() == kRazorgoreEntry)
+                {
+                    boss = attacker;
+                    break;
+                }
+            }
+            if (!boss || !sServerFacade.IsAlive(boss))
+                return false;
+            // The victim holds — moving rotates the boss into the raid.
+            if (boss->GetVictim() && boss->GetVictim()->getObjectGuid() == bot->getObjectGuid())
+                return false;
+            // Donor geometry: directly behind the boss + small fuzz;
+            // melee 3y, ranged 15y (War Stomp spacing).
+            float fuzz = frand(-M_PI_F / 4.0f, M_PI_F / 4.0f);
+            float moveAngle = boss->GetOrientation() + (float)M_PI + fuzz;
+            float radius = ai->IsRanged(bot) ? kRazorgoreRangedDistance : kRazorgoreMeleeDistance;
+            float tx = boss->GetPositionX() + radius * cos(moveAngle);
+            float ty = boss->GetPositionY() + radius * sin(moveAngle);
+            WorldPosition dest(bot->GetMapId(), tx, ty, bot->GetPositionZ());
+            dest.setZ(dest.GetHeight());
+            if (!bot->IsWithinLOS(dest.getX(), dest.getY(), dest.getZ() + bot->GetCollisionHeight()))
+                return false;
+            return MoveTo(bot->GetMapId(), dest.getX(), dest.getY(), dest.getZ(), false, IsReaction(), false, true);
+        }
+    };
+
+    // Off-tank engage: attack Razorgore while eggs live (the donor MarkBoss
+    // attack arm; the moon mark itself stays dropped — generic mark rti
+    // covers marking).
+    class RazorgoreEngageAction : public AttackAction
+    {
+    public:
+        RazorgoreEngageAction(PlayerbotAI* ai) : AttackAction(ai, "razorgore engage") {}
+        std::string GetTargetName() override { return "current target"; }
+
+        bool Execute(Event& event) override
+        {
+            AiObjectContext* context = ai->GetAiObjectContext();
+            // Explicit player orders win: don't re-attack the boss over a
+            // `.bot attack` on an add.
+            if (!AI_VALUE(ObjectGuid, "explicit attack target").IsEmpty())
+                return false;
+            const std::list<ObjectGuid>& attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+            Unit* boss = nullptr;
+            for (const ObjectGuid& attackerGuid : attackers)
+            {
+                Unit* attacker = ai->GetUnit(attackerGuid);
+                if (attacker && attacker->GetEntry() == kRazorgoreEntry && sServerFacade.IsAlive(attacker))
+                {
+                    boss = attacker;
+                    break;
+                }
+            }
+            if (!boss)
+                return false;
+            // Eggs dead: release back to normal target selection.
+            bool eggsAlive = false;
+            const std::list<ObjectGuid> nearestGos = AI_VALUE(std::list<ObjectGuid>, "nearest game objects");
+            for (const ObjectGuid& goGuid : nearestGos)
+            {
+                GameObject* go = ai->GetGameObject(goGuid);
+                if (go && go->GetEntry() == kBlackDragonEggEntry)
+                {
+                    eggsAlive = true;
+                    break;
+                }
+            }
+            if (!eggsAlive)
+                return false;
+            Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+            return Attack(requester, boss);
+        }
+    };
+
+    class RazorgoreBackOffAction : public MoveAwayFromCreature
+    {
+    public:
+        RazorgoreBackOffAction(PlayerbotAI* ai) : MoveAwayFromCreature(ai, "back off razorgore", kRazorgoreEntry, kRazorgoreRangedDistance) {}
+    };
+
     class BroodlordEnableFightStrategyAction : public ChangeAllStrategyAction
     {
     public:
@@ -282,5 +397,6 @@ namespace ai
     {
     public:
         VaelDisableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable vael fight strategy", "-vael") {}
+
     };
 }

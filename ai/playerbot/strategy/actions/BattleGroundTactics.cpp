@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/BgForceResetPolicy.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "MovementActions.h"
 #include "Battlegrounds/BattleGround.h"
@@ -2083,6 +2084,21 @@ bool BGTactics::wsgRoofJump()
 // actual bg tactics below
 //
 
+bool BGTactics::isUseful()
+{
+    // Only the forced reset needs a gate; every other bg action keeps the
+    // base movement contract (notably: an explicit "stay" order suppresses
+    // movement). The force action fires from the dead engine (DeadStrategy)
+    // and the per-map timer nodes: keep it inside the match, out of combat
+    // (a mid-fight stop would feed the enemy a standing target), and at most
+    // once a minute (per-tick resets would churn the role roll and re-path
+    // every tick while corpse-running).
+    if (getName() != "reset objective force")
+        return MovementAction::isUseful();
+    time_t anchor = context->GetValue<time_t>("manual time", ai::BgForceResetAnchorKey())->Get();
+    return ai::BgForceResetUseful(bot->InBattleGround(), bot->IsInCombat(), anchor, time(0));
+}
+
 bool BGTactics::Execute(Event& event)
 {
     BattleGround *bg = bot->GetBattleGround();
@@ -2222,6 +2238,21 @@ bool BGTactics::Execute(Event& event)
 
     if (getName() == "check objective")
         return resetObjective();
+
+    // Forced objective reset (SOC-P6): full stop and re-pick so a bot stuck
+    // walking toward stale data (after death, or a minute of no progress)
+    // drops the old spot instead of standing in it. Never touches a flag
+    // carrier. Donor mod-playerbots "reset objective force" branch.
+    if (getName() == "reset objective force")
+    {
+        if (bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG))
+            return false;
+
+        ai->StopMoving();
+        bot->GetMotionMaster()->Clear();
+        context->GetValue<time_t>("manual time", ai::BgForceResetAnchorKey())->Set(time(0));
+        return resetObjective();
+    }
 
     return false;
 }
@@ -3099,7 +3130,9 @@ bool BGTactics::protectFC()
         return false;
 
     Unit* teamFC = AI_VALUE(Unit*, "team flag carrier");
-    if (teamFC && bot->IsWithinDistInMap(teamFC, VISIBILITY_DISTANCE_SMALL))
+    // The carrier itself matches the trigger (distance 0 to self): a carrier
+    // following itself stands still. Donor guards teamFC == bot.
+    if (teamFC && teamFC != bot && bot->IsWithinDistInMap(teamFC, VISIBILITY_DISTANCE_SMALL))
         return Follow(teamFC);
 
     return false;

@@ -40,6 +40,20 @@ namespace ai
         void InitDeadTriggers(std::list<TriggerNode*>& triggers) override;
     };
 
+    class GolemaggFightStrategy : public Strategy
+    {
+    public:
+        GolemaggFightStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "golemagg"; }
+
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitDeadTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+    };
+
     class MagmadarFightStrategy : public Strategy
     {
     public:
