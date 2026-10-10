@@ -1,9 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "AnubrekhanDungeonActions.h"
 #include "AttackAction.h"
-#include "Maps/GridNotifiers.h"
-#include "Maps/GridNotifiersImpl.h"
-#include "Maps/CellImpl.h"
 
 using namespace ai;
 
@@ -25,9 +22,14 @@ bool AnubrekhanChooseTargetAction::Execute(Event& event)
         if (unit->GetEntry() == 15956)
             boss = unit;
         else if (unit->GetEntry() == 16573 &&
-            (!weakest || unit->GetHealth() < weakest->GetHealth()))
+            (!weakest || unit->GetHealthPct() < weakest->GetHealthPct()))
             weakest = unit;
     }
+
+    // Explicit master orders win over the fight choreography.
+    ObjectGuid explicitGuid = AI_VALUE(ObjectGuid, "explicit attack target");
+    if (!explicitGuid.IsEmpty())
+        return false;
 
     Unit* want = weakest ? weakest : boss;
     if (!want)
@@ -39,9 +41,11 @@ bool AnubrekhanChooseTargetAction::Execute(Event& event)
 
 bool AnubrekhanToCenterAction::Execute(Event& event)
 {
-    if (bot->GetDistance2d(3272.49f, -3476.27f) < 3.0f)
+    // Map gate (non-blocking review): never path to Naxx coords from
+    // another map if the strategy is forced on outside.
+    if (bot->GetMapId() != 533)
         return false;
-    return MoveTo(bot->GetMapId(), 3272.49f, -3476.27f, bot->GetPositionZ());
+    return MoveNear(bot->GetMapId(), 3272.49f, -3476.27f, bot->GetPositionZ(), 5.0f);
 }
 
 float AnubrekhanSwarmMultiplier::GetValue(Action* action)
@@ -51,6 +55,8 @@ float AnubrekhanSwarmMultiplier::GetValue(Action* action)
     if (dynamic_cast<FleeAction*>(action) == nullptr)
         return 1.0f;
 
+    // Cached lists only: no grid sweep per action evaluation. During
+    // the encounter Anub is on threat group-wide.
     const std::list<ObjectGuid> attackers =
         ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get();
     for (const ObjectGuid& guid : attackers)
@@ -59,14 +65,12 @@ float AnubrekhanSwarmMultiplier::GetValue(Action* action)
         if (unit && unit->GetEntry() == 15956 && ai->HasAura(28785, unit))
             return 0.0f;
     }
-
-    std::list<Unit*> nearby;
-    MaNGOS::AllCreaturesOfEntryInRange check(bot, 15956, 100.0f);
-    MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRange> searcher(nearby, check);
-    Cell::VisitAllObjects(bot, searcher, 100.0f);
-    for (Unit* unit : nearby)
+    const std::list<ObjectGuid> targets =
+        ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
+    for (const ObjectGuid& guid : targets)
     {
-        if (unit && unit->IsAlive() && ai->HasAura(28785, unit))
+        Unit* unit = ai->GetUnit(guid);
+        if (unit && unit->GetEntry() == 15956 && ai->HasAura(28785, unit))
             return 0.0f;
     }
     return 1.0f;

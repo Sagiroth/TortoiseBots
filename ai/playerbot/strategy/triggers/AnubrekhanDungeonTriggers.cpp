@@ -1,16 +1,16 @@
 #include "playerbot/playerbot.h"
 #include "AnubrekhanDungeonTriggers.h"
 #include "playerbot/AnubrekhanSwarmPolicy.h"
-#include "Maps/GridNotifiers.h"
-#include "Maps/GridNotifiersImpl.h"
-#include "Maps/CellImpl.h"
 
 using namespace ai;
 
 namespace
 {
+    // Cached lists only: during the encounter Anub is on threat
+    // group-wide. No grid sweep per trigger tick.
     Unit* FindAnub(PlayerbotAI* ai, Player* bot)
     {
+        (void)bot;
         const std::list<ObjectGuid> attackers =
             ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get();
         for (const ObjectGuid& guid : attackers)
@@ -19,13 +19,12 @@ namespace
             if (unit && unit->GetEntry() == 15956)
                 return unit;
         }
-        std::list<Unit*> nearby;
-        MaNGOS::AllCreaturesOfEntryInRange check(bot, 15956, 100.0f);
-        MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRange> searcher(nearby, check);
-        Cell::VisitAllObjects(bot, searcher, 100.0f);
-        for (Unit* unit : nearby)
+        const std::list<ObjectGuid> targets =
+            ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
+        for (const ObjectGuid& guid : targets)
         {
-            if (unit && unit->IsAlive())
+            Unit* unit = ai->GetUnit(guid);
+            if (unit && unit->GetEntry() == 15956)
                 return unit;
         }
         return nullptr;
