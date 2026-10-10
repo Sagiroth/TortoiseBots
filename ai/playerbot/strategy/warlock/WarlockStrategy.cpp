@@ -93,7 +93,7 @@ void WarlockStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("create soulstone", ACTION_NORMAL), NULL)));
 
     // Donor-parity pre-tap (WAR-5): top up to near-full mana between pulls
-    // while health allows. Both bands at 9: above drink (6)/loot (8) so the
+    // while health allows. Both bands at 9: above drink (6)/loot (6) so the
     // bot taps instead of drinking away its health advantage, below stones
     // (10). The urgent band (mana<=medium) needs its own row: the top-up
     // trigger only covers 41-84.
@@ -395,10 +395,15 @@ void WarlockCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "death coil on snare target",
         NextAction::array(0, new NextAction("death coil on snare target", ACTION_INTERRUPT + 3), NULL)));
-
     triggers.push_back(new TriggerNode(
         "banish",
         NextAction::array(0, new NextAction("banish on cc", ACTION_INTERRUPT + 2), NULL)));
+
+    // PET-2: below fear so the owner's fear wins ties; the succubus gate in
+    // isUseful keeps this silent without a succubus out.
+    triggers.push_back(new TriggerNode(
+        "seduction",
+        NextAction::array(0, new NextAction("seduction on cc", ACTION_INTERRUPT), NULL)));
 
     triggers.push_back(new TriggerNode(
         "fear",

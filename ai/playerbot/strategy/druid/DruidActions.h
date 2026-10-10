@@ -116,6 +116,17 @@ namespace ai
         CastThornsOnPartyAction(PlayerbotAI* ai) : BuffOnPartyAction(ai, "thorns") {}
     };
 
+    // mod-playerbots parity (DRU-7): Thorns on the party tank first.
+    // Explicit getName: the BuffOnTankAction base reports spell+" on party"
+    // via PartyMemberActionNameSupport, which would collide with the party
+    // blanket in queue dedup and failure backoff (both key on getName).
+    class CastThornsOnTankAction : public BuffOnTankAction
+    {
+    public:
+        CastThornsOnTankAction(PlayerbotAI* ai) : BuffOnTankAction(ai, "thorns") {}
+        std::string getName() override { return "thorns on tank"; }
+    };
+
 	class CastOmenOfClarityAction : public CastBuffSpellAction
 	{
 	public:
@@ -751,6 +762,10 @@ namespace ai
             strategiesRequired = { "offheal" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "offheal pve", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "offheal pve", strategiesRequired);
+
+            strategiesRequired = { "offdps" };
+            strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "offdps pve", strategiesRequired);
+            strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "offdps pve", strategiesRequired);
         }
     };
 
@@ -879,6 +894,10 @@ namespace ai
             strategiesRequired = { "offheal" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "offheal pvp", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "offheal pvp", strategiesRequired);
+
+            strategiesRequired = { "offdps" };
+            strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "offdps pvp", strategiesRequired);
+            strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "offdps pvp", strategiesRequired);
         }
     };
 
@@ -1007,6 +1026,10 @@ namespace ai
             strategiesRequired = { "offheal" };
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "offheal raid", strategiesRequired);
             strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "offheal raid", strategiesRequired);
+
+            strategiesRequired = { "offdps" };
+            strategiesToUpdate.emplace_back(BotState::BOT_STATE_COMBAT, "offdps raid", strategiesRequired);
+            strategiesToUpdate.emplace_back(BotState::BOT_STATE_NON_COMBAT, "offdps raid", strategiesRequired);
         }
     };
 }

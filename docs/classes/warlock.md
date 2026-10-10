@@ -64,6 +64,7 @@ Warlocks provide sustained Shadow and Fire DPS through curses and damage-over-ti
   - **Pet upkeep:** the demon's known spells are swept for autocast (non-passive, except *Spell Lock* / *Devour Magic* deliberate-cast abilities) and pet plus guardians are pinned to *Defensive* after each summon — same autonomous pair as hunter pets. Explicit `.bot pet aggressive|defensive|passive` orders still apply immediately.
   - **Pet upkeep:** the demon's known spells are swept for autocast (non-passive, except *Spell Lock* / *Devour Magic* deliberate-cast abilities) and pet plus guardians are pinned to *Defensive* after each summon — same autonomous pair as hunter pets. Explicit `.bot pet aggressive|defensive|passive` orders still apply immediately. Mid-fight the bot channels *Health Funnel* into a demon below half health while its own health stays above 60% — never a suicide channel, combat only.
   - **Pet ranks:** the demon learns the highest rank its level allows on summon and on the periodic initialize-pet tick (Torment, Firebolt, Lash of Pain...; *Sacrifice* and *Seduction* stay manual, never autocast), replacing lower ranks automatically — pool bots never read Grimoires, so without this they would cast rank 1 forever.
+- **Weapon stones:** Affliction and Demonology create (one shard each) and equip *Spellstones* into an empty off-hand, Destruction creates and equips *Firestones* the same way — vanilla off-hand semantics, only beside a one-handed weapon, never displacing real gear or fighting a staff. Each spec only conjures its own stone.
 - **Healthstones & Soulstones:**
   - Creates and uses *Healthstones* during combat.
   - Creates and stores Soulstones on the party healer or tank whenever an in-range healer/tank lacks one (not timed to boss pulls).
@@ -73,7 +74,7 @@ Warlocks provide sustained Shadow and Fire DPS through curses and damage-over-ti
   - Casts *Fear* only on its assigned raid CC mark, and never on a mob already under another CC (a feared mob pulls adds). There is no automatic Fear on unmarked mobs. Skips undead and mechanical marks (fear never lands on them).
   - *Howl of Terror* (AoE fear) is PvP-only; it is never cast in PvE groups, and never inside a dungeon or raid (a feared mob pulls neighbouring packs).
   - Casts *Banish* on Demons and Elementals (other marks are skipped: banish only lands on those two types).
-  - *Seduce* (Succubus) is a manual pet ability, not a bot CC executor: no CC-flagged seduction action exists, so `.bot action cc` never assigns it.
+  - *Seduce* (Succubus) is a CC executor for humanoid marks: with a Succubus out, the bot orders *Seduction* on its assigned CC mark (pet-cast, so range resolves against the demon — she must already be near the mark). Other types are skipped, and fear wins ties.
 
 ---
 
