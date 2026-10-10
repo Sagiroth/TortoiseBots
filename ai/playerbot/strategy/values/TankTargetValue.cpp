@@ -2,37 +2,15 @@
 #include "playerbot/playerbot.h"
 #include "TankTargetValue.h"
 #include "PossibleAttackTargetsValue.h"
-#include "playerbot/GroupMembers.h"
-#include "playerbot/MainTankPolicy.h"
 #include "playerbot/ServerFacade.h"
 
 using namespace ai;
-
-namespace
-{
-    // mod-playerbots PlayerbotAI::GetGroupTankNum: live tanks in the group.
-    unsigned GetGroupTankCount(PlayerbotAI* ai)
-    {
-        Player* bot = ai ? ai->GetBot() : nullptr;
-        Group* group = bot ? bot->GetGroup() : nullptr;
-        if (!group)
-            return 0;
-
-        unsigned count = 0;
-        for (Player* member : LiveGroupMembers(group))
-            if (member && member->IsAlive() && PlayerbotAI::IsTank(member))
-                ++count;
-
-        return count;
-    }
-}
 
 // mod-playerbots FindTankTargetSmartStrategy (a63c6b67, refined by 0a76fc1d):
 // bucket attackers by GetIntervalLevel instead of a flat lowest-threat
 // tournament. Loose mobs (nothing held) come first so adds get picked up;
 // held mobs rank by melee reach, then lowest threat, so the tank finishes
-// what it holds instead of ping-ponging. Explicit-MT stickiness (LD-8):
-// in a 2+ tank group the off-tank skips the current-target hold. CC skips stay.
+// what it holds instead of ping-ponging. CC skips stay.
 class FindTankTargetSmartStrategy : public FindNonCcTargetStrategy
 {
 public:
@@ -74,16 +52,15 @@ public:
 
         // Among mobs the tank already holds, stay on the current one; lowest
         // threat only orders the others, so two held mobs never ping-pong.
-        // mod-playerbots explicit-MT stickiness (LD-8, TankTargetValue.cpp:76-83):
-        // in a 2+ tank group the off-tank skips this hold so loose adds win
-        // the tournament above; the main tank (and every lone tank) holds.
+        // (Review PR #573: the 2-tank MT/OT split does not belong here — it
+        // gated after the interval check, so it never picked up adds, and it
+        // keyed on the fallback MT instead of the explicit raid flag. The
+        // LD-5 conditional-RTI gate already keeps the off-tank off the MT's
+        // skull; re-add an explicit-only, stickiness-first split if needed.)
         Unit* current = ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
-        Unit* mainTank = ai->GetAiObjectContext()->GetValue<Unit*>("main tank")->Get();
-        unsigned tankCount = GetGroupTankCount(ai);
-        bool hold = !mainTank || mainTank == bot || !MainTankSticksToCurrent(true, tankCount);
-        if (hold && oldUnit == current)
+        if (oldUnit == current)
             return false;
-        if (hold && newUnit == current)
+        if (newUnit == current)
             return true;
 
         return newThreat < oldThreat;

@@ -124,6 +124,8 @@ namespace ai
     public:
         CastThornsOnMainTankAction(PlayerbotAI* ai) : CastThornsAction(ai) {}
 
+        virtual std::string getName() { return "thorns on main tank"; }
+
     protected:
         std::string GetTargetName() override { return "main tank"; }
     };

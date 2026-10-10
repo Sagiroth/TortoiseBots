@@ -50,6 +50,7 @@ namespace ai
         ThornsOnMainTankTrigger(PlayerbotAI* ai) : ThornsOnPartyTrigger(ai) {}
 
         virtual Value<Unit*>* GetTargetValue() override;
+        virtual std::string getName() { return "thorns on main tank"; }
     };
 
     class ThornsTrigger : public BuffTrigger

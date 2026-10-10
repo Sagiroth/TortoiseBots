@@ -397,7 +397,7 @@ Unit* PartyMemberMainTankValue::Calculate()
     // Else the first live tank in slot order (donor fallback).
     for (Player* member : LiveGroupMembers(group))
     {
-        if (member && member->IsAlive() && PlayerbotAI::IsTank(member))
+        if (member && member->IsAlive() && ai->IsSafe(member) && PlayerbotAI::IsTank(member))
             return member;
     }
 

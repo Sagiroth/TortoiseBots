@@ -382,11 +382,12 @@ void DruidBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
         "thorns on party",
         NextAction::array(0, new NextAction("thorns on party", ACTION_NORMAL + 2), NULL)));
 
-    // HEAL-3/LD-8 (donor BuffOnMainTank): the MT gets thorns first, above the
-    // party scan — one cast on the tank beats re-scanning the party.
+    // HEAL-3/LD-8 (donor BuffOnMainTank): MT thorns below the party scan to
+    // match donor order (mark 13 > thorns-MT 11) — the scan already covers
+    // the MT, this row only pins the leftovers.
     triggers.push_back(new TriggerNode(
         "thorns on main tank",
-        NextAction::array(0, new NextAction("thorns on main tank", ACTION_NORMAL + 3), NULL)));
+        NextAction::array(0, new NextAction("thorns on main tank", ACTION_NORMAL + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "mark of the wild",
