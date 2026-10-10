@@ -318,6 +318,8 @@ void ElementalShamanTotemsStrategy::InitCombatTriggers(std::list<TriggerNode*>& 
     triggers.push_back(new TriggerNode(
         "stoneclaw panic",
         NextAction::array(0, new NextAction("stoneclaw totem", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "poison cleansing totem reactive",
         NextAction::array(0, new NextAction("poison cleansing totem", ACTION_HIGH + 1), NULL)));
 
