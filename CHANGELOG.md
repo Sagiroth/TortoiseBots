@@ -118,6 +118,11 @@
 ### Combat & AI
 - Bot turn scheduling is now a single fair queue (`runtime/BotTurnScheduler.h`, covered by `tools/test_bot_turn_scheduler.cpp`) instead of three competing lanes — combat, travel follow-up, and round-robin rotation — so bots are re-queued based on their own AI state rather than burning turns on bots with nothing to do. On a 1000-bot test realm this ends the old skew where dead bots got ~195 turns/min and fighting bots ~64 while questing bots got ~11 (one every 4s), and walking bots no longer wait a full lap. [#671](https://github.com/Sagiroth/TortoiseBots/pull/671)
 
+### Combat & AI
+
+- Bot AI no longer re-walks every trainer spell in the world just to recompute trainable spells and available trainers; results are cached until something the check actually reads changes (level, known spell count, skill value/bonus, free profession points). Big drop in per-bot AI cost on large realms. [#672](https://github.com/Sagiroth/TortoiseBots/pull/672)
+- Active-destination probes (`NeedTravelPurposeValue` for gather errands and `ShouldTravelNamedValue`) stop re-running their scans every 2 seconds per bot, cutting wasted world-thread time on travel decision logic. [#672](https://github.com/Sagiroth/TortoiseBots/pull/672)
+
 ## 2026-10-09
 
 ### Observability & Engine
