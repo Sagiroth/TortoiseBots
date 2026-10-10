@@ -76,6 +76,9 @@
 
 ---
 
+### Dungeon & Instances
+- Bots that miss the dungeon entrance — or rez outside after a wipe — now get summoned to their player once both are grouped, the bot is set to follow, and the player is inside an instance; no more bots stranded on the wrong map. [#665](https://github.com/Sagiroth/TortoiseBots/pull/665)
+
 ## 2026-10-09
 
 ### Observability & Engine
