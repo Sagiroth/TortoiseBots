@@ -375,6 +375,11 @@ namespace ai
             creators["enable shazzrah fight strategy"] = [](PlayerbotAI* ai) { return new ShazzrahEnableFightStrategyAction(ai); };
             creators["disable shazzrah fight strategy"] = [](PlayerbotAI* ai) { return new ShazzrahDisableFightStrategyAction(ai); };
             creators["move away from shazzrah"] = [](PlayerbotAI* ai) { return new ShazzrahMoveAwayAction(ai); };
+            creators["enable golemagg fight strategy"] = [](PlayerbotAI* ai) { return new GolemaggEnableFightStrategyAction(ai); };
+            creators["disable golemagg fight strategy"] = [](PlayerbotAI* ai) { return new GolemaggDisableFightStrategyAction(ai); };
+            creators["back off golemagg"] = [](PlayerbotAI* ai) { return new GolemaggBackOffAction(ai); };
+            creators["golemagg healer position"] = [](PlayerbotAI* ai) { return new GolemaggHealerPositionAction(ai); };
+            creators["golemagg tank hold"] = [](PlayerbotAI* ai) { return new GolemaggTankHoldAction(ai); };
             creators["enable geddon fight strategy"] = [](PlayerbotAI* ai) { return new GeddonEnableFightStrategyAction(ai); };
             creators["disable geddon fight strategy"] = [](PlayerbotAI* ai) { return new GeddonDisableFightStrategyAction(ai); };
             creators["move away from geddon"] = [](PlayerbotAI* ai) { return new GeddonMoveAwayAction(ai); };

@@ -4890,6 +4890,96 @@ wiring check live-missing=0); `git diff --check`; shared-builder compile
 check; no live in-game test.
 | Loatheb fight (Naxx), spores only: 1yd spore assignment + tank/ranged spots | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Loatheb.cpp` (spore/position legs only) | Reimplemented trigger-driven; heal-suppression explicitly NOT ported (Necrotic Aura absent in vanilla); Doom-window healing is future design | Kit verified in tw_world + core boss_loatheb.cpp (16011, spore 16286, 29201/29204/29232/29865) | `bash tools/verify_all.sh` + `tools/test_loatheb_spores_policy.cpp`; build-commit + no live test |
 
+## Golemagg full fight (raid1 item 9, LAST) — 2026-10-09
+
+Implemented LAST per the task order. The main-tank value PR
+(parity/ld-8-main-tank) was NOT merged at implementation time (verified:
+branch exists with `main tank` value + MT stickiness, not an ancestor of
+origin/feat/playerbots-parity), so this PR implements Golemagg on the
+slot-order fallback and says so here.
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Raid/MC/MCActions.cpp:115-301` (main-tank boss camp, assist rager
+camps, Trust separation, splash back-off, healer midpoint, rager pickup),
+`src/Ai/Raid/MC/MCTriggers.cpp:46-88` (splash/healer/main/assist role
+triggers), `src/Ai/Raid/MC/MCMultipliers.cpp:105-144` (single-tank dance,
+assist tank-assist veto, AoE-off, ranged melee-fallback ban, back-off
+lock, 10% burn), `src/Ai/Raid/MC/MCStrategy.cpp:60-79,108-128` (role
+wiring + Core Rager DPS exclusion), `:17-25` (camp coords, 30y Trust, 5y
+step), `src/Ai/Raid/MC/MCHelpers.h:15,30-35` (entries, 20-stack, 12y).
+
+Source files (module, modified): `ai/playerbot/GolemaggPolicy.h` (new
+pure rule: ids, 20-stack/12y/8y/30y/10% constants, camp coords,
+back-off/lock/exclusion/single-tank predicates),
+`ai/playerbot/strategy/triggers/MoltenCoreDungeonTriggers.h`
+(GolemaggStart/EndFightTrigger 11988, GolemaggSplashTrigger with
+victim-agnostic stack + range gates, GolemaggHealerTrigger midpoint
+check, GolemaggTankHoldTrigger on Trust aura),
+`ai/playerbot/strategy/actions/MoltenCoreDungeonActions.h/.cpp`
+(enable/disable actions, GolemaggBackOffAction 11988/12y,
+GolemaggHealerPositionAction, GolemaggTankHoldAction with main/assist
+camp split), `ai/playerbot/strategy/generic/
+MoltenCoreDungeonStrategies.h/.cpp` (`golemagg` fight strategy: potion +
+tank-hold + healer nodes, splash reaction EMERGENCY+5, end-fight cleanup,
+GolemaggFightMultiplier; start trigger on `molten core`),
+`ai/playerbot/strategy/generic/DungeonMultipliers.h/.cpp`
+(GolemaggFightMultiplier), registrations (`TriggerContext.h`,
+`ActionContext.h`, `StrategyContext.h`),
+`tools/test_golemagg_policy.cpp` (new standalone test) +
+`tools/verify_all.sh` (test list), `docs/guides/dungeon-tactics.md` (doc
+line).
+
+Copied / ported / reimplemented: reimplemented in our per-boss fight
+strategy idiom. Deviations from the donor, all deliberate: (a) tank roles
+= first living tank by member-slot order is main, next tanks are assists
+(the ld-8 `main tank` value + IsAssistTankOfIndex do not exist on this
+base; when ld-8 merges, role reads move to the shared value — no rework
+of triggers/actions needed, only the two role expressions); (b) no skull
+mark action (our generic `mark rti` covers it; extra action = ceremony);
+(c) DPS rager exclusion enforced via the fight multiplier's AoE veto +
+documented single-target discipline rather than a target-value blacklist
+(the Majordomo half stays out — separate fight, separate PR); (d) melee
+fallback ban covers ranged bots (donor IsRanged includes healers; ours
+matches at strategy level); (e) camp coords used as-is from donor map
+data — Turtle validation wants eyes in a live MC run.
+
+Reason: raid1 gap MC-GOLEMAGG (L, high): the whole fight was missing —
+tank camps, splash back-off, healer spot, rager exclusion.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test pass); `git diff --check`. Entries 11988/11672 and spells
+13880/20553 verified against tw_world. Build via build-commit.sh pending;
+live in-game check pending (esp. camp coords on the Turtle map).
+
+## Review fixes: Golemagg 2D range, combat MoveTo, healer priority, named AoE, any-stack lockout (PR #632) — 2026-10-10
+
+All five blocking findings verified real in code and fixed; non-blocking
+2 declined (kGolemaggEntry in the action header would need a new include
+for one literal — reverted; the literal matches the file's existing
+11982/12056 style).
+
+(a) Splash trigger used `IsWithinDist(attacker, 12.0f)` (3D + reach
+padding on a huge boss) while the 12y move search uses entry-range
+lookups: fixed to the donor shape `GetDistance2d < kMagmaSplashBackOffDistance`.
+(b) Healer/tank-hold `MoveTo(..., IsReaction(), ...)` forwarded a constant
+false from combat context: fixed to explicit `false` per the review.
+(c) Healer midpoint at ACTION_HIGH (20) lost to heals/dispels and could
+drag healers into splash via reach-to-heal: raised to ACTION_MOVE + 5 (35).
+(d) AoE veto reused the Garr threat-flag match, which under-marks real AoE
+and over-marks heals/dots (same hole as PR #587 review): now uses the
+local `IsGolemaggSuppressedAoeAction` name list (this branch predates the
+Garr PR merge; merge both to one home when the branches land).
+(e) Back-off lockout fired only at 20+ stacks (19 stacks re-engaged),
+ignored non-boss targets, and missed `ReachTargetAction` (`reach melee`
+is MovementAction-based): now holds on ANY remaining stack via
+`ShouldHoldBackOff`, gates engages on `current target == boss`, and
+covers Attack/Melee/Reach/ReachSpell actions.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the
+golemagg policy test, which already pinned any-stack hold, pass); `git
+diff --check`. Build via build-commit.sh pending; live in-game check
+pending (esp. camp coords on the Turtle map).
 ## Onyxia Deep Breath safe-zone dodging (raid1 item 7) — 2026-10-09
 
 Donor: mod-playerbots @ `79bd4281` (local checkout

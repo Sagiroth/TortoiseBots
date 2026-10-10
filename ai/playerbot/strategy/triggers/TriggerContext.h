@@ -355,6 +355,11 @@ namespace ai
             creators["start shazzrah fight"] = [](PlayerbotAI* ai) { return new ShazzrahStartFightTrigger(ai); };
             creators["end shazzrah fight"] = [](PlayerbotAI* ai) { return new ShazzrahEndFightTrigger(ai); };
             creators["shazzrah ranged"] = [](PlayerbotAI* ai) { return new ShazzrahRangedTrigger(ai); };
+            creators["start golemagg fight"] = [](PlayerbotAI* ai) { return new GolemaggStartFightTrigger(ai); };
+            creators["end golemagg fight"] = [](PlayerbotAI* ai) { return new GolemaggEndFightTrigger(ai); };
+            creators["golemagg splash"] = [](PlayerbotAI* ai) { return new GolemaggSplashTrigger(ai); };
+            creators["golemagg healer"] = [](PlayerbotAI* ai) { return new GolemaggHealerTrigger(ai); };
+            creators["golemagg tank hold"] = [](PlayerbotAI* ai) { return new GolemaggTankHoldTrigger(ai); };
             creators["start geddon fight"] = [](PlayerbotAI* ai) { return new GeddonStartFightTrigger(ai); };
             creators["end geddon fight"] = [](PlayerbotAI* ai) { return new GeddonEndFightTrigger(ai); };
             creators["geddon inferno"] = [](PlayerbotAI* ai) { return new GeddonInfernoTrigger(ai); };
