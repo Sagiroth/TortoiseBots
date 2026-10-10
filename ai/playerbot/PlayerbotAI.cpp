@@ -1431,37 +1431,43 @@ bool PlayerbotAI::EnsureCheatItem(uint32 itemId, uint32 count)
 void PlayerbotAI::EnsureAutoToolsKit()
 {
     // Owner rule (auto-tools kit), inside the cheat block: the bot carries
-    // what its behaviours need. Throttled to one pass per 30 s per bot (the
-    // ensures walk the bags; nothing here drains faster than that) and
-    // map-gated before any inventory count so open-world bots never scan
-    // bags for raid-specific items.
+    // what its behaviours need. Two speeds: the Bronze/sand branch is
+    // combat-critical and runs every tick (cheap when unafflicted: map +
+    // aura checks short-circuit before any bag count); the rest is
+    // throttled to one pass per 30 s per bot since those ensures walk the
+    // bags and nothing there drains faster than that.
     if (!bot || !bot->IsAlive() || !bot->IsInWorld())
         return;
     if (!HasCheat(BotCheatMask::item))
         return;
-    uint32 const nowMs = WorldTimer::getMSTime();
-    if (m_lastAutoToolsKitMs && nowMs - m_lastAutoToolsKitMs < 30 * 1000)
-        return;
-    m_lastAutoToolsKitMs = nowMs;
     uint32 const mapId = bot->GetMapId();
-    // Rogues: lockpicking at max-for-level plus Thieves' Tools in the bags,
-    // so UnlockItemAction and PR #614 trade unlocks never fail on kit.
-    // Pure value: enchant/racial bonuses must not mask a low base skill.
-    if (TortoiseBots::RogueWantsLockpickSkill(bot->GetClass(), bot->GetLevel()))
-    {
-        uint32 lockpickMax = TortoiseBots::LockpickSkillForLevel(bot->GetLevel());
-        if (bot->GetSkillValuePure(SKILL_LOCKPICKING) < lockpickMax)
-            bot->SetSkill(SKILL_LOCKPICKING, lockpickMax, lockpickMax);
-        EnsureCheatItem(TortoiseBots::THIEVES_TOOLS_ITEM_ID, 1);
-    }
-    // Chromaggus Bronze (PR #578): a bot carrying the affliction gets one
-    // Hourglass Sand if it holds none, then the fight strategy uses it.
-    // BWL map gate keeps this off everywhere else.
+    // Chromaggus Bronze (PR #578): a bot carrying the affliction gets sand
+    // if it holds none, then the fight strategy uses it. Before the
+    // throttle: Bronze re-applies through the fight, so a bot afflicted
+    // just after a kit pass must not wait out stun ticks for the next one.
     if (mapId == TortoiseBots::BWL_MAP_ID &&
         HasAura(TortoiseBots::BRONZE_AFFLICTION_SPELL_ID, bot) &&
         TortoiseBots::ShouldEnsureHourglassSand(true, bot->GetItemCount(TortoiseBots::HOURGLASS_SAND_ITEM_ID)))
     {
         EnsureCheatItem(TortoiseBots::HOURGLASS_SAND_ITEM_ID, 1);
+    }
+    uint32 const nowMs = WorldTimer::getMSTime();
+    if (m_lastAutoToolsKitMs && nowMs - m_lastAutoToolsKitMs < 30 * 1000)
+        return;
+    m_lastAutoToolsKitMs = nowMs;
+    // Rogues: lockpicking at max-for-level plus Thieves' Tools in the bags,
+    // so UnlockItemAction and PR #614 trade unlocks never fail on kit.
+    // Pure value: enchant/racial bonuses must not mask a low base skill.
+    // Pick Lock 1804 rides along: its ability row has learn_on_get_skill =
+    // 0, so the skill alone never teaches it (verified in core).
+    if (TortoiseBots::RogueWantsLockpickSkill(bot->GetClass(), bot->GetLevel()))
+    {
+        uint32 lockpickMax = TortoiseBots::LockpickSkillForLevel(bot->GetLevel());
+        if (bot->GetSkillValuePure(SKILL_LOCKPICKING) < lockpickMax)
+            bot->SetSkill(SKILL_LOCKPICKING, lockpickMax, lockpickMax);
+        if (!bot->HasSpell(TortoiseBots::PICK_LOCK_SPELL_ID))
+            bot->LearnSpell(TortoiseBots::PICK_LOCK_SPELL_ID, false);
+        EnsureCheatItem(TortoiseBots::THIEVES_TOOLS_ITEM_ID, 1);
     }
     // MC rune douse: map gate first so open-world bots skip the bag counts;
     // one Quintessence while inside Molten Core so the rune actions never
