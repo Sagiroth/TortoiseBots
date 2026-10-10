@@ -6152,6 +6152,52 @@ build-commit.sh pending; live in-game check pending.
 | Combat call pet + safe combat revive, tame demoted (PET-5) | Transferable extension of donor NC-only `no pet` → `call pet` / `hunters pet dead` → `revive pet` (`GenericHunterNonCombatStrategy.cpp:29,34`); donor has no combat call/revive | `HunterStrategy.cpp` (combat `no pet` → `call pet` NORMAL+1, `safe to revive pet` → `revive pet` NORMAL; both combat+NC `tame beast` demoted EMERGENCY → NORMAL so instant call wins wherever castable and the engine falls through to tame only when call is impossible), `HunterTriggers.{h,cpp}` (`SafeToRevivePetTrigger` wired to `runtime/PetRevivePolicy.h`; `HunterNoPet` simplified to donor `NoPetTrigger` shape — petless + unmounted — so the call nodes are reachable for dismissed pets), `HunterAiObjectContext.cpp` (creator), `runtime/PetRevivePolicy.h` + `tools/test_pet_revive_policy.cpp` | Reimplemented: donor never called/revived in combat; revive gated on zero attackers (10s channel safety). Tame demotion via relevance fallback instead of a trigger spell gate | `bash tools/verify_all.sh`; wiring 0 live-missing; standalone `test_pet_revive_policy` (5 checks); `git diff --check`. Compile via shared builder; no live in-game test |
 | Chain-heal group trigger verification + Fire Nova Totem drop gate (SHM-7/SHM-9) | Donor `CastFireNovaAction::isUseful` (`mod-playerbots` `ShamanActions.cpp:28-41`: fire-totem + 8y gate) is WotLK-3.3.0+ mechanics — 1.12 Fire Nova is a totem DROP (1535 line, detonates after 4s), not a pulse of a down totem, so the donor gate is NOT ported (it would refuse every drop). Ported as a placement gate instead @ `79bd4281` | `ai/playerbot/strategy/shaman/ShamanActions.h` (`CastFireNovaAction::isUseful`: bot-to-target <= 10y + policy call), `ShamanFireGatePolicy.h` + `tools/test_shaman_fire_gate_policy.cpp` | Chain heal: verified already wired — live `medium aoe heal -> chain heal` at ACTION_MEDIUM_HEAL matches priest/druid shape, no new trigger; donor `group heal setting` exists only in dead ports. Fire Nova: 10y placement gate (totem lands at our feet); manual `totem fire nova` and magma->nova continuer unaffected (no existing-totem requirement). Spells: Fire Nova Totem 1535 line / Fire Nova pulse 8350 line (verified in tw_world.spell_template; action resolves via spellbook to the trained drop) | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
 | Totemic Recall out of combat + dead Call-spell cleanup (SHM-5) | `mod-playerbots` `src/Ai/Class/Shaman/ShamanTriggers.cpp:187-262` (`TotemicRecallTrigger`: dungeon boss guard, group combat guard, mana-tide/fire-ele sparing) + `Strategy/ShamanNonCombatStrategy.cpp:88` @ `79bd4281` | `ai/playerbot/strategy/shaman/ShamanStrategy.cpp` (non-combat `totemic recall` row), `ShamanTriggers.h` (`ReadyToRemoveTotemsTrigger` hardened + `TotemsAreNotSummonedTrigger` removed as orphan), `ShamanActions.h` (3 `CastCallOfThe...` classes deleted), `ShamanAiObjectContext.cpp` (6 dead creators removed), `ShamanRecallPolicy.h` + `tools/test_shaman_recall_policy.cpp` | Reimplemented in live classic style: trigger requires the spell trained + any OWN totem down (new owner-scoped `have any own totem` / `has own totem` values — recall refunds only ours, so strangers' totems never trigger and a teammate's tide never vetoes), vetoes bot/group-member/pet combat, queued at ACTION_NORMAL below rez/heal. Deviations: no dungeon boss-encounter check (no InstanceScript hook in triggers; group combat covers live fights); fire-ele sparing dropped (no fire-elemental totem action in 1.18.1). Base stays `CastBuffSpellAction`: Turtle recall costs 0 mana (verified powerType 0, manaCost 0), so the mana-floor veto cannot block the refund. Cleanup: `Call of the Elements/Ancestors/Spirits` return zero rows in tw_world.spell_template (verified) — deleted 3 action classes + 6 creators that could only log cast failures. Spells: Totemic Recall 45513/47340 (Turtle custom, verified) | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
+## Dangling-node/typo bundle (BUFF-6, SUPD-1, SUPD-2, MANA-1, CD-2, CD-3) — 2026-10-10
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+SUPD-1 `src/Ai/Base/Trigger/GenericTriggers.h:739-743` (fear/charm/sleep
+-> WotF); SUPD-2 `:745-751` (fear/sleep/sapped trigger); MANA-1
+`:37-43` (EnoughMana > HighMana); CD-2 `:442-452` (generic boost:
+balance<=50, PvP-target always); CD-3 `:400-406` (DebuffOnBoss:
+IsDungeonBoss || isWorldBoss).
+
+Source files (module, modified):
+- SUPD-1 (`ai/playerbot/strategy/triggers/GenericTriggers.h`):
+`WOtFTrigger` was 4 sequential returns (only fear fired); folded into one
+`||` over fear/charm/stun/confuse aura types plus a sleep/sapped mechanic
+scan (StoneformTrigger aura-holder idiom; no `HasAuraWithMechanic` on this
+core).
+- SUPD-2 (same header + `TriggerContext.h`): new `FearSleepSapTrigger`
+(fear aura OR sleep/sapped mechanic); the two warrior strategy rows
+already pushed `"fear sleep sap"` with no creator — they light up, no
+strategy edit.
+- MANA-1 (same header note: `HighManaTrigger` gains an optional name; plus
+`TriggerContext.h`): new `"enough mana"` creator (same >65 verdict as high
+mana, distinct name); the tank-paladin consecration consumer starts working.
+- CD-2 (same header + `.cpp` + `TriggerContext.h` +
+`generic/RacialsStrategy.cpp`): new `GenericBoostTrigger`
+(balance<=50, PvP-target-always, combat-only); generic berserking/blood
+fury rows rewired from bare per-spell triggers to one `"generic boost"`
+node. Class `BoostTrigger` consumers untouched.
+- CD-3 (same header + `.cpp`): new `DebuffOnBossTrigger` (debuff wanted
+AND target is world boss or elite in dungeon/raid — `IsDungeonBoss` has no
+1.12 equivalent; `RangeTriggers.h` precedent uses `IsWorldBoss`).
+Registered nowhere by design (Base trigger only, class wiring = follow-up).
+- BUFF-6 (`paladin/GenericPaladinNonCombatStrategy.cpp`): deleted the 2-line
+`"greater blessing needed"` dead node (neither trigger nor action name
+registered anywhere; full assignment port is a Class-layer M needing owner
+input). Recommended delete per report.
+
+Copied / ported / reimplemented: reimplemented. No addon changes (racials
+auto-fire, no toggles).
+
+Reason: six small support gaps in one focused bundle — 3 dead nodes firing
+wrong/never, 1 gate missing, 2 difficulty/boss gates absent.
+
+Local validation: `bash tools/verify_all.sh` (all suites pass);
+`git diff --check`. Build via build-commit.sh pending; live in-game check
+pending.
 
 ## Mage blizzard channel cancel when the pack thins (MAG-3) — 2026-10-10
 
