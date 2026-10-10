@@ -145,6 +145,22 @@ namespace ai
         int count;
         std::string type;
     };
+    // Group-size-scaled AoE-heal gate (mod-playerbots parity): fires when
+    // enough near-group members are hurt, with the hurt threshold scaling
+    // with group size (see GroupHealPolicy.h). Lets the 6 pre-existing
+    // "group heal setting" / "medium group heal setting" strategy nodes
+    // (resto druid, heal paladin, heal priest, resto shaman) fire.
+    class AoeInGroupTrigger : public Trigger
+    {
+    public:
+        AoeInGroupTrigger(PlayerbotAI* ai, std::string name, std::string type) :
+            Trigger(ai, name), type(type) {}
+    public:
+        virtual bool IsActive() override;
+
+    protected:
+        std::string type;
+    };
 
     class HealTargetFullHealthTrigger : public Trigger
     {

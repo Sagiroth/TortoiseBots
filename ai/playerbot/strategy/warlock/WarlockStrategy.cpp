@@ -54,6 +54,12 @@ void WarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "life tap",
         NextAction::array(0, new NextAction("life tap", ACTION_NORMAL + 2), NULL)));
 
+    // No combat filler for the 85% top-up band (review pr-593): engine
+    // defaults are pushed at relevance-200 ("shadow bolt" IDLE=1 lands at
+    // -199), so any trigger row would preempt the nuke and tap instead of
+    // casting on every tick mana sits at 41-84. The urgent band above is the
+    // only combat tap; the top-up band pre-taps out of combat only.
+
     triggers.push_back(new TriggerNode(
         "no mana",
         NextAction::array(0, new NextAction("shoot", ACTION_NORMAL), NULL)));
@@ -85,6 +91,19 @@ void WarlockStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "no soulstone",
         NextAction::array(0, new NextAction("create soulstone", ACTION_NORMAL), NULL)));
+
+    // Donor-parity pre-tap (WAR-5): top up to near-full mana between pulls
+    // while health allows. Both bands at 9: above drink (6)/loot (6) so the
+    // bot taps instead of drinking away its health advantage, below stones
+    // (10). The urgent band (mana<=medium) needs its own row: the top-up
+    // trigger only covers 41-84.
+    triggers.push_back(new TriggerNode(
+        "life tap",
+        NextAction::array(0, new NextAction("life tap", ACTION_NORMAL - 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "life tap top-up",
+        NextAction::array(0, new NextAction("life tap", ACTION_NORMAL - 1), NULL)));
 
     /*
     triggers.push_back(new TriggerNode(
@@ -376,10 +395,15 @@ void WarlockCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "death coil on snare target",
         NextAction::array(0, new NextAction("death coil on snare target", ACTION_INTERRUPT + 3), NULL)));
-
     triggers.push_back(new TriggerNode(
         "banish",
         NextAction::array(0, new NextAction("banish on cc", ACTION_INTERRUPT + 2), NULL)));
+
+    // PET-2: below fear so the owner's fear wins ties; the succubus gate in
+    // isUseful keeps this silent without a succubus out.
+    triggers.push_back(new TriggerNode(
+        "seduction",
+        NextAction::array(0, new NextAction("seduction on cc", ACTION_INTERRUPT), NULL)));
 
     triggers.push_back(new TriggerNode(
         "fear",
@@ -472,6 +496,12 @@ void WarlockPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers
     triggers.push_back(new TriggerNode(
         "new pet",
         NextAction::array(0, new NextAction("set pet stance", ACTION_NORMAL), NULL)));
+
+    // PET-8c: hurt Voidwalker heals itself between pulls (NC-only; the
+    // channel breaks on damage so combat would waste it).
+    triggers.push_back(new TriggerNode(
+        "consume shadows",
+        NextAction::array(0, new NextAction("consume shadows", ACTION_NORMAL), NULL)));
 }
 
 void WarlockPetPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -494,6 +524,13 @@ void WarlockPetPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
     triggers.push_back(new TriggerNode(
         "has aggro",
         NextAction::array(0, new NextAction("torment", ACTION_HIGH), NULL)));
+
+    // PET-8a: AoE taunt when the Voidwalker tanks a pack solo. Same prio as
+    // the single-target peel; the triggers are mutually exclusive in
+    // practice (pack vs single) and both refuse without a live Voidwalker.
+    triggers.push_back(new TriggerNode(
+        "suffering",
+        NextAction::array(0, new NextAction("suffering", ACTION_HIGH), NULL)));
 }
 
 void WarlockPetPveStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

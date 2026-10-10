@@ -24,6 +24,7 @@ namespace ai
         virtual std::vector<std::string> GetUsedValues() { return { }; }
 #endif
     };
+
 }
 
 class SuppressionDevicesValue : public StringCalculatedValue, public Qualified

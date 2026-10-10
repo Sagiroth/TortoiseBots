@@ -206,6 +206,12 @@ void RestorationDruidRaidStrategy::InitDeadTriggers(std::list<TriggerNode*>& tri
 void RestorationDruidAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     DruidAoeStrategy::InitCombatTriggers(triggers);
+
+    // Group-size-scaled gate (mod-playerbots parity, HEAL-1): fires
+    // Tranquility when enough of the group is hurt at once.
+    triggers.push_back(new TriggerNode(
+        "medium group heal setting",
+        NextAction::array(0, new NextAction("tranquility", ACTION_MEDIUM_HEAL + 2), NULL)));
 }
 
 void RestorationDruidAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -260,9 +266,12 @@ void RestorationDruidBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
     // Tortoise Tree of Life (45705): spirit-scaling heal modifier + party aura
     // + polymorph immunity at the cost of movement speed. No spell lockouts
     // beyond standard shapeshift rules (core-enforced); emergency exits go
-    // through the shared caster-form node. Maintain like Bear/Cat forms.
+    // through the shared caster-form node. Maintain like Bear/Cat forms —
+    // except while the opt-in offdps kit is running (donor "no healer dps
+    // strategy" gate): otherwise exit/re-enter livelocks, tick N shifting
+    // out for a nuke and tick N+1 shifting back before it casts.
     triggers.push_back(new TriggerNode(
-        "tree form",
+        "tree form and no offdps",
         NextAction::array(0, new NextAction("tree form", ACTION_HIGH), NULL)));
 }
 

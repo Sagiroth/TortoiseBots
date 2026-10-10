@@ -58,17 +58,12 @@ DEAD_FILES = (
     'GenericPriestStrategy.cpp', 'GenericShamanStrategy.cpp',
     'GenericRogueNonCombatStrategy.cpp', 'GenericWarriorStrategy.cpp',
     'GenericWarriorNonCombatStrategy.cpp', 'GenericWarlockStrategy.cpp',
-    'GenericWarlockNonCombatStrategy.cpp', 'BearDruidStrategy.cpp',
-    'CatDruidStrategy.cpp', 'RestoDruidStrategy.cpp', 'DpsRogueStrategy.cpp',
-    'RestoShamanStrategy.cpp', 'HealPriestStrategy.cpp',
-    'TankPaladinStrategy.cpp', 'LevelingDruidStrategy.cpp',
-    'BattlegroundStrategy.cpp',
+    'GenericWarlockNonCombatStrategy.cpp', 'LevelingDruidStrategy.cpp',
+    'DpsRogueStrategy.cpp', 'TankPaladinStrategy.cpp', 'DpsPaladinStrategy.cpp',
+    'OffhealRetPaladinStrategy.cpp', 'BattlegroundStrategy.cpp',
     'TravelStrategy.cpp', 'RpgStrategy.cpp', 'MeleeCombatStrategy.cpp',
     'SayStrategy.cpp', 'TotemsShamanStrategy.cpp',
-    'ShamanNonCombatStrategy.cpp', 'DpsPaladinStrategy.cpp',
-    'OffhealRetPaladinStrategy.cpp', 'TankPaladinStrategy.cpp',
-    'HealPaladinStrategy.cpp', 'TankWarriorStrategy.cpp',
-    'PriestNonCombatStrategy.cpp',
+    'TankWarriorStrategy.cpp', 'PriestNonCombatStrategy.cpp',
 )
 
 def is_dead(ref):

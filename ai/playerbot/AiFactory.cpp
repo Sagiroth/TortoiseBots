@@ -485,12 +485,16 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
             {
                 combatEngine->addStrategy("discipline");
                 if (sPlayerbotAIConfig.enableOffSpecStrategies)
-                    combatEngine->addStrategy("offheal");
+                    // mod-playerbots parity (PRI-2): disc healer bots deal
+                    // off-spec damage by default; the player can `-offdps`.
+                    combatEngine->addStrategy("offdps");
             }
             else if (tab == 1)
             {
                 combatEngine->addStrategy("holy");
                 if (sPlayerbotAIConfig.enableOffSpecStrategies)
+                    // mod-playerbots parity (PRI-2): holy healer bots deal
+                    // off-spec damage by default; the player can `-offdps`.
                     combatEngine->addStrategy("offdps");
             }
             else
@@ -552,7 +556,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
             }
             else if (tab == 2)
             {
-                combatEngine->addStrategies("restoration", "flee", "ranged", NULL);
+                combatEngine->addStrategies("restoration", "aoe", "flee", "ranged", NULL);
                 if (sPlayerbotAIConfig.enableOffSpecStrategies)
                     combatEngine->addStrategy("offdps");
             }
@@ -935,7 +939,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
             }
             else if (tab == 2)
             {
-                nonCombatEngine->addStrategies("restoration", NULL);
+                nonCombatEngine->addStrategies("restoration", "aoe", NULL);
             }
             else
             {

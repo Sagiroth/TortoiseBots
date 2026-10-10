@@ -31,18 +31,28 @@ void DisciplinePriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
         NextAction::array(0, new NextAction("power word: shield on party", ACTION_CRITICAL_HEAL + 1),
                              new NextAction("flash heal on party", ACTION_CRITICAL_HEAL), NULL)));
 
+    // Shields sit above Inner Focus (MEDIUM+3) so the order is shield,
+    // then Inner Focus, then the direct heal the buff applies to.
     triggers.push_back(new TriggerNode(
         "party member low health",
-        NextAction::array(0, new NextAction("power word: shield on party", ACTION_MEDIUM_HEAL + 2),
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_MEDIUM_HEAL + 4),
                              new NextAction("greater heal on party", ACTION_MEDIUM_HEAL + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member medium health",
-        NextAction::array(0, new NextAction("greater heal on party", ACTION_MEDIUM_HEAL), NULL)));
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_MEDIUM_HEAL + 4),
+                             new NextAction("greater heal on party", ACTION_MEDIUM_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member almost full health",
-        NextAction::array(0, new NextAction("renew on party", ACTION_LIGHT_HEAL), NULL)));
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_LIGHT_HEAL + 3),
+                             new NextAction("renew on party", ACTION_LIGHT_HEAL), NULL)));
+
+    // Pre-cast above the heal rows so the next heal crits; the trigger
+    // self-gates on the trained spell, the cooldown, mana and a target.
+    triggers.push_back(new TriggerNode(
+        "inner focus for heal",
+        NextAction::array(0, new NextAction("inner focus", ACTION_MEDIUM_HEAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member to heal out of spell range",
@@ -52,6 +62,30 @@ void DisciplinePriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
 void DisciplinePriestStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     PriestStrategy::InitNonCombatTriggers(triggers);
+
+    // mod-playerbots parity (PRI-12): disc had no non-combat heals at all —
+    // only the reach row. Shield-first ladder mirroring the combat kit.
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_MOVE + 1),
+            new NextAction("flash heal on party", ACTION_MOVE), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member low health",
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_HIGH + 2),
+            new NextAction("greater heal on party", ACTION_HIGH + 1),
+            new NextAction("heal on party", ACTION_HIGH),
+            new NextAction("lesser heal on party", ACTION_HIGH - 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member medium health",
+        NextAction::array(0, new NextAction("greater heal on party", ACTION_HIGH),
+            new NextAction("heal on party", ACTION_HIGH - 1),
+            new NextAction("lesser heal on party", ACTION_HIGH - 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member almost full health",
+        NextAction::array(0, new NextAction("renew on party", ACTION_NORMAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member to heal out of spell range",
@@ -147,6 +181,17 @@ void DisciplinePriestAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& tr
     triggers.push_back(new TriggerNode(
         "medium aoe heal",
         NextAction::array(0, new NextAction("prayer of healing", ACTION_MEDIUM_HEAL), NULL)));
+
+    // Group-size-scaled gates (mod-playerbots parity, HEAL-1): shields on
+    // the almost-full band, Prayer of Healing on the medium band.
+    triggers.push_back(new TriggerNode(
+        "group heal setting",
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_MEDIUM_HEAL + 7), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "medium group heal setting",
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_CRITICAL_HEAL + 5),
+                             new NextAction("prayer of healing", ACTION_CRITICAL_HEAL + 4), NULL)));
 }
 
 void DisciplinePriestAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

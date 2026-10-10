@@ -505,6 +505,18 @@ namespace ai
         virtual std::string getName() override { return spell + " on attacker"; }
     };
 
+    // Boss-gated debuff conservation (mod-playerbots parity, CD-3, Base
+    // trigger only): fires when the current target wants this debuff AND is
+    // a world boss (no IsDungeonBoss on this core; dungeon-boss coverage
+    // waits on a real boss flag), so expensive debuffs are saved for bosses.
+    // Class debuff wiring stays untouched in this PR.
+    class DebuffOnBossTrigger : public DebuffTrigger
+    {
+    public:
+        DebuffOnBossTrigger(PlayerbotAI* ai, std::string spell) : DebuffTrigger(ai, spell) {}
+        virtual bool IsActive() override;
+    };
+
 	class BoostTrigger : public BuffTrigger
 	{
 	public:
@@ -514,6 +526,19 @@ namespace ai
 	protected:
 		float balance;
 	};
+
+    // Difficulty-gated cooldown trigger (mod-playerbots parity, CD-2):
+    // fires in combat when the fight is hard enough (balance <= 50, i.e.
+    // not a trivial pull), always against a PvP target, or always for a
+    // player-owned bot (local master bypass, same as BoostTrigger).
+    // Rewires only the generic racial/trinket rows; per-class
+    // BoostTrigger consumers keep their own gates.
+    class GenericBoostTrigger : public Trigger
+    {
+    public:
+        GenericBoostTrigger(PlayerbotAI* ai) : Trigger(ai, "generic boost", 3) {}
+        virtual bool IsActive() override;
+    };
 
     class RandomTrigger : public Trigger
     {
@@ -635,6 +660,18 @@ namespace ai
     {
     public:
         HighManaTrigger(PlayerbotAI* ai) : Trigger(ai, "high mana") {}
+
+        virtual bool IsActive() override;
+    };
+
+    // Donor EnoughManaTrigger verdict (mod-playerbots GenericTriggers.cpp):
+    // fires while mana sits ABOVE the high-mana line, gating spenders like
+    // consecration. Deliberately separate from HighManaTrigger, whose local
+    // verdict is inverted (mana < 65) to drive the drink row.
+    class EnoughManaTrigger : public Trigger
+    {
+    public:
+        EnoughManaTrigger(PlayerbotAI* ai) : Trigger(ai, "enough mana") {}
 
         virtual bool IsActive() override;
     };
@@ -1085,6 +1122,17 @@ namespace ai
         virtual bool IsActive() override;
     };
 
+    // Proactive AoE gate: fires when any of the three strafe sensors sees
+    // danger — dynobj aura on the bot, damaging trap in range, trigger NPC
+    // in range. Mirrors AvoidAoeAction::isUseful so the trigger row and
+    // the action agree; the sensor reads are value-cached.
+    class AoeThreatNearbyTrigger : public Trigger
+    {
+    public:
+        AoeThreatNearbyTrigger(PlayerbotAI* ai) : Trigger(ai, "aoe threat nearby", 1) {}
+        virtual bool IsActive() override;
+    };
+
     // racials
 
     class BerserkingTrigger : public BoostTrigger
@@ -1137,10 +1185,42 @@ namespace ai
 
         virtual bool IsActive() override
         {
-            return bot->HasAuraType(SPELL_AURA_MOD_FEAR);
-            return bot->HasAuraType(SPELL_AURA_MOD_STUN);
-            return bot->HasAuraType(SPELL_AURA_MOD_CHARM);
-            return bot->HasAuraType(SPELL_AURA_MOD_CONFUSE);
+            // Donor FearCharmSleepTrigger shape (fear/charm/sleep): 1.12 WotF
+            // (spell 7744, charm+fear immunity) breaks exactly these, so the
+            // stun/confuse/sap arms only fired uselessly on uncastable bots.
+            if (bot->HasAuraType(SPELL_AURA_MOD_FEAR) ||
+                bot->HasAuraType(SPELL_AURA_MOD_CHARM) ||
+                bot->HasAuraType(SPELL_AURA_AOE_CHARM))
+                return true;
+            uint32 sleepMask = 1 << (MECHANIC_SLEEP - 1);
+            for (auto itr : bot->GetSpellAuraHolderMap())
+            {
+                if (itr.second->HasMechanicMask(sleepMask))
+                    return true;
+            }
+            return false;
+        }
+    };
+
+    // Lift-CC cooldown gate (mod-playerbots parity, SUPD-2): fires while
+    // feared, slept or sapped so warrior Berserker Rage rows light up. The
+    // two warrior strategy rows already push this name — no creator existed.
+    class FearSleepSapTrigger : public Trigger
+    {
+    public:
+        FearSleepSapTrigger(PlayerbotAI* ai) : Trigger(ai, "fear sleep sap") {}
+
+        bool IsActive() override
+        {
+            if (bot->HasAuraType(SPELL_AURA_MOD_FEAR))
+                return true;
+            uint32 sleepSapMask = (1 << (MECHANIC_SLEEP - 1)) | (1 << (MECHANIC_SAPPED - 1));
+            for (auto itr : bot->GetSpellAuraHolderMap())
+            {
+                if (itr.second->HasMechanicMask(sleepSapMask))
+                    return true;
+            }
+            return false;
         }
     };
 

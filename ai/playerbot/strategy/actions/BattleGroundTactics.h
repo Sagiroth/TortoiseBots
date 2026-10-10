@@ -48,6 +48,7 @@ public:
         virtual std::vector<std::string> GetUsedValues() { return {}; }
 #endif
     virtual bool Execute(Event& event) override;
+    virtual bool isUseful() override;
 private:
     bool SelectAvObjectiveAlliance(WorldLocation& objectiveLocation);
     bool SelectAvObjectiveHorde(WorldLocation& objectiveLocation);

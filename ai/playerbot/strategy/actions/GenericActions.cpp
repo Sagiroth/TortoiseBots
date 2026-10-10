@@ -1,4 +1,5 @@
 
+#include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "GenericActions.h"
 #include "AttackAction.h"
@@ -9,6 +10,7 @@
 #include "../../../runtime/HunterPetPolicy.h"
 #include "../../../runtime/PetSpellRankPolicy.h"
 #include "../../../runtime/WarlockPetPolicy.h"
+#include "../../../runtime/PetTauntPolicy.h"
 
 using namespace ai;
 
@@ -136,32 +138,42 @@ bool InitializePetAction::Execute(Event& event)
         // drive the missing-rank check, so this teaches exactly what
         // isUseful named: top rank per line + singles, skipping ids with no
         // SpellEntry (unteachable) and pinning autocast.
+        // PET-3: the teach tick pins autocast per spell; taunt spells follow
+        // the same situation read as the sweep so a fresh rank doesn't flip
+        // Growl/Torment back on under a live tank until the next sweep.
+        bool const tauntAllowed = ai::IsPetTauntAllowed(ai, bot);
+        auto autocastDefault = [tauntAllowed](uint32 spellId)
+        {
+            if (TortoiseBots::IsPetTauntSpell(spellId) && !tauntAllowed)
+                return false;
+            return TortoiseBots::ShouldPetSpellAutocastDefault(spellId);
+        };
         if (bot->GetClass() == CLASS_HUNTER)
         {
             CreatureInfo const* petInfo = sObjectMgr.GetCreatureTemplate(pet->GetEntry());
             uint32 beastFamily = petInfo ? petInfo->beast_family : 0;
             TortoiseBots::ForEachHunterWantedSpell(beastFamily, pet->GetLevel(),
-                [pet](TortoiseBots::PetWantedSpell wanted)
+                [pet, &autocastDefault](TortoiseBots::PetWantedSpell wanted)
             {
                 if (!sSpellMgr.GetSpellEntry(wanted.spellId))
                     return;
                 if (!pet->HasSpell(wanted.spellId))
                     pet->LearnSpell(wanted.spellId);
                 if (!wanted.passive && pet->HasSpell(wanted.spellId) && !IsPassiveSpell(wanted.spellId))
-                    pet->ToggleAutocast(wanted.spellId, TortoiseBots::ShouldPetSpellAutocastDefault(wanted.spellId));
+                    pet->ToggleAutocast(wanted.spellId, autocastDefault(wanted.spellId));
             });
         }
         else
         {
             TortoiseBots::ForEachWarlockWantedSpell(pet->GetEntry(), pet->GetLevel(),
-                [pet](TortoiseBots::PetWantedSpell wanted)
+                [pet, &autocastDefault](TortoiseBots::PetWantedSpell wanted)
             {
                 if (!sSpellMgr.GetSpellEntry(wanted.spellId))
                     return;
                 if (!pet->HasSpell(wanted.spellId))
                     pet->LearnSpell(wanted.spellId);
                 if (pet->HasSpell(wanted.spellId) && !IsPassiveSpell(wanted.spellId))
-                    pet->ToggleAutocast(wanted.spellId, TortoiseBots::ShouldPetSpellAutocastDefault(wanted.spellId));
+                    pet->ToggleAutocast(wanted.spellId, autocastDefault(wanted.spellId));
             });
         }
         return true;
@@ -543,6 +555,33 @@ bool TogglePetSpellAutoCastAction::isPossible()
     return bot->GetPet() != nullptr && !ai->HasRealPlayerMaster();
 }
 
+// PET-3: live input gathering for runtime/PetTauntPolicy.h. Solo bots skip
+// the member walk (no group, pet is the tank); grouped bots look for any
+// member filling the tank role — real players via talents/forced role, bots
+// via tank strategy — using the same IsTank read the rest of the AI uses.
+bool ai::IsPetTauntAllowed(PlayerbotAI* ai, Player* bot)
+{
+    if (!bot || !bot->GetGroup())
+        return true;
+    TortoiseBots::PetTauntInputs inputs;
+    inputs.grouped = true;
+    for (Player* member : LiveGroupMembers(bot->GetGroup()))
+    {
+        if (!member || member == bot)
+            continue;
+        // A dead tank holds nothing: the pet is the fallback until the tank
+        // is back up.
+        if (!member->IsAlive())
+            continue;
+        if (PlayerbotAI::IsTank(member))
+        {
+            inputs.tankInGroup = true;
+            break;
+        }
+    }
+    return TortoiseBots::ShouldPetTaunt(inputs);
+}
+
 // Autonomous autocast sweep (E01): ported from mod-playerbots
 // TogglePetSpellAutoCastAction, adapted to the 1.12 APIs. The donor reads
 // SpellInfo::IsAutocastable plus a rank-prune of m_autospells; here passive
@@ -558,6 +597,12 @@ bool TogglePetSpellAutoCastAction::Execute(Event& /*event*/)
     Pet* pet = bot->GetPet();
     if (!pet)
         return false;
+
+    // PET-3: Growl/Torment autocast follows the taunt situation — on while
+    // the pet must hold aggro (solo or tankless group), off when grouped
+    // with a real tank. Computed once per sweep (the "has pet" trigger
+    // throttles this), not per spell.
+    bool const tauntAllowed = ai::IsPetTauntAllowed(ai, bot);
 
     bool changed = false;
     std::vector<uint32> stale;
@@ -584,8 +629,10 @@ bool TogglePetSpellAutoCastAction::Execute(Event& /*event*/)
             continue;
 
         bool active = std::find(pet->m_autospells.begin(), pet->m_autospells.end(), spellId) != pet->m_autospells.end();
+        bool const disabled = TortoiseBots::IsDisabledPetAutocast(spellId) ||
+            (TortoiseBots::IsPetTauntSpell(spellId) && !tauntAllowed);
         TortoiseBots::PetAutocastDecision decision =
-            TortoiseBots::DecidePetAutocast(active, TortoiseBots::IsDisabledPetAutocast(spellId));
+            TortoiseBots::DecidePetAutocast(active, disabled);
         if (decision == TortoiseBots::PetAutocastDecision::LeaveAlone)
             continue;
 

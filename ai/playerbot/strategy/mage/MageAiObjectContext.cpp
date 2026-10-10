@@ -171,6 +171,7 @@ namespace ai
                 creators["polymorph"] = [](PlayerbotAI* ai) { return new PolymorphTrigger(ai); };
                 creators["counterspell on enemy healer"] = [](PlayerbotAI* ai) { return new CounterspellEnemyHealerTrigger(ai); };
                 creators["arcane power"] = [](PlayerbotAI* ai) { return new ArcanePowerTrigger(ai); };
+                creators["arcane rupture"] = [](PlayerbotAI* ai) { return new ArcaneRuptureTrigger(ai); };
                 creators["presence of mind"] = [](PlayerbotAI* ai) { return new PresenceOfMindTrigger(ai); };
                 creators["presence of mind aura"] = [](PlayerbotAI* ai) { return new PresenceOfMindAuraTrigger(ai); };
                 creators["hot streak"] = [](PlayerbotAI* ai) { return new HotStreakTrigger(ai); };
@@ -185,6 +186,7 @@ namespace ai
                 creators["icicles"] = [](PlayerbotAI* ai) { return new IciclesTrigger(ai); };
                 creators["icicles channel check"] = [](PlayerbotAI* ai) { return new IciclesChannelCheckTrigger(ai); };
                 creators["evocation channel check"] = [](PlayerbotAI* ai) { return new EvocationChannelCheckTrigger(ai); };
+                creators["flamestrike window"] = [](PlayerbotAI* ai) { return new FlamestrikeWindowTrigger(ai); };
                 creators["blizzard channel check"] = [](PlayerbotAI* ai) { return new BlizzardChannelCheckTrigger(ai); };
                 creators["no improved scorch"] = [](PlayerbotAI* ai) { return new NoImprovedScorchDebuffTrigger(ai); };
                 creators["no fire vulnerability"] = [](PlayerbotAI* ai) { return new NoFireVulnerabilityTrigger(ai); };
@@ -229,6 +231,7 @@ namespace ai
                 creators["polymorph"] = [](PlayerbotAI* ai) { return new CastPolymorphAction(ai); };
                 creators["evocation"] = [](PlayerbotAI* ai) { return new CastEvocationAction(ai); };
                 creators["arcane missiles"] = [](PlayerbotAI* ai) { return new CastArcaneMissilesAction(ai); };
+                creators["arcane rupture"] = [](PlayerbotAI* ai) { return new CastArcaneRuptureAction(ai); };
                 creators["counterspell on enemy healer"] = [](PlayerbotAI* ai) { return new CastCounterspellOnEnemyHealerAction(ai); };
                 creators["fire ward"] = [](PlayerbotAI* ai) { return new CastFireWardAction(ai); };
                 creators["frost ward"] = [](PlayerbotAI* ai) { return new CastFrostWardAction(ai); };

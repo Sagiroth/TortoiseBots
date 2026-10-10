@@ -35,20 +35,31 @@ void HolyPriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     // heal (16): flash heal needs 20, greater heal needs 40. Without a
     // direct low-rank trigger the engine never falls back (alternatives
     // only run on isPossible failure, not isUseful), so the priest idles.
+    // Donor order: efficient Greater Heal before fast Flash Heal; the
+    // low-level heal/lesser ranks stay as fallbacks for untrained bots.
     triggers.push_back(new TriggerNode(
         "party member low health",
-        NextAction::array(0, new NextAction("power word: shield on party", ACTION_MEDIUM_HEAL + 2),
-                             new NextAction("heal on party", ACTION_MEDIUM_HEAL + 1),
-                             new NextAction("lesser heal on party", ACTION_MEDIUM_HEAL), NULL)));
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_MEDIUM_HEAL + 4),
+                             new NextAction("greater heal on party", ACTION_MEDIUM_HEAL + 2),
+                             new NextAction("flash heal on party", ACTION_MEDIUM_HEAL + 1),
+                             new NextAction("heal on party", ACTION_MEDIUM_HEAL),
+                             new NextAction("lesser heal on party", ACTION_MEDIUM_HEAL - 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member medium health",
-        NextAction::array(0, new NextAction("heal on party", ACTION_MEDIUM_HEAL),
-                             new NextAction("lesser heal on party", ACTION_MEDIUM_HEAL - 1), NULL)));
+        NextAction::array(0, new NextAction("greater heal on party", ACTION_MEDIUM_HEAL),
+                             new NextAction("heal on party", ACTION_MEDIUM_HEAL - 1),
+                             new NextAction("lesser heal on party", ACTION_MEDIUM_HEAL - 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member almost full health",
         NextAction::array(0, new NextAction("renew on party", ACTION_LIGHT_HEAL), NULL)));
+
+    // Pre-cast above the heal rows so the next heal crits; the trigger
+    // self-gates on the trained spell, the cooldown, mana and a target.
+    triggers.push_back(new TriggerNode(
+        "inner focus for heal",
+        NextAction::array(0, new NextAction("inner focus", ACTION_MEDIUM_HEAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member to heal out of spell range",
@@ -176,6 +187,17 @@ void HolyPriestAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
     triggers.push_back(new TriggerNode(
         "medium aoe heal",
         NextAction::array(0, new NextAction("prayer of healing", ACTION_MEDIUM_HEAL), NULL)));
+
+    // Group-size-scaled gates (mod-playerbots parity, HEAL-1): shields on
+    // the almost-full band, Prayer of Healing on the medium band.
+    triggers.push_back(new TriggerNode(
+        "group heal setting",
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_MEDIUM_HEAL + 7), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "medium group heal setting",
+        NextAction::array(0, new NextAction("power word: shield on party", ACTION_CRITICAL_HEAL + 5),
+                             new NextAction("prayer of healing", ACTION_CRITICAL_HEAL + 4), NULL)));
 }
 
 void HolyPriestAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
