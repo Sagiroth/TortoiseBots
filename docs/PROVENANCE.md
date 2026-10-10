@@ -5854,3 +5854,51 @@ strict-`>`); doc now says "hurries" not "free/instant" (no mana
 reduction in the tooltip); live in-game check still pending.
 | Health Funnel demon sustain (PET-6) | New behavior (neither `mod-playerbots` nor the module funneled; vanilla spell verified in `tw_world.spell_template`: 755/3698-3707/11693-11698/16569) | `runtime/HealthFunnelPolicy.h` (`CanCastHealthFunnel`: pet <50% + owner >60% + combat) + `tools/test_health_funnel_policy.cpp`; `ai/playerbot/strategy/warlock/WarlockTriggers.{h,cpp}` (`HealthFunnelTrigger`), `WarlockActions.h` (`CastHealthFunnelAction : CastSpellAction` on pet target, policy gate repeated for the evaluation gap), `WarlockStrategy.cpp` (`WarlockPetStrategy` combat node at ACTION_NORMAL+1), `WarlockAiObjectContext.cpp` (2 creators) | Reimplemented in place: owner-cast (warlock knows the spell, demon doesn't), combat-only v1, all demons eligible, below interrupt kit/pet attack | `bash tools/verify_all.sh`; wiring 0 live-missing; standalone `test_health_funnel_policy` (9 checks); `git diff --check`. Compile via shared builder; no live in-game test |
 | Heigan safety dance (Naxx): Plague-Cloud-anchored per-bot clock, 4s-first/3s-cadence section walk on core sect spots, ranged platform hold | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Heigan.cpp`, `src/Ai/Raid/Naxx/NaxxBossHelper.h` (HeiganBossHelper), `src/Ai/Raid/Naxx/NaxxStrategy.cpp` (Heigan rows) | Reimplemented with re-derived vanilla constants (dance 45s/4s/3s vs donor 45s/7s/4s; core sect coords vs donor WotLK waypoints; no shared clock — per-bot aura clock) | Core boss_heigan.cpp: dance 90s cycle, erupt 15s/10s fight + 4s/3s dance, section cycle 0-1-2-3-2-1 confirmed; Plague Cloud duration 45s verified in SpellDuration.dbc | `bash tools/verify_all.sh` + `tools/test_heigan_dance_policy.cpp`; build-commit + no live test (playtest gate: first dance timing) |
+
+## Warrior WAR-1: DPS sunder with no tank warrior (2026-10-09)
+
+Feature: arms/fury combat lists gain a bottom-rung `sunder armor` row
+(NORMAL-1, below rend/intercept and every damage spender), and
+`CastSunderArmorAction::isUseful` now returns false for non-tanks while a
+tank warrior (any group member of class warrior that `IsTank`) shares
+their map and is alive in-world. A DPS warrior in a tankless group keeps
+the 5-stack up (stacking, then refreshing an expiring stack); with a tank
+warrior present it spends rage on damage instead.
+
+Source repository: `mod-playerbots/mod-playerbots`
+
+Source commit: `79bd4281` (local
+`playerbots-references/mod-playerbots` checkout).
+
+Source files:
+- `src/Ai/Class/Warrior/WarriorActions.cpp:48-73` (`CastSunderArmorAction::isUseful` group tank-warrior check, 5-stack/refresh logic)
+- `src/Ai/Class/Warrior/Strategy/FuryWarriorStrategy.cpp:72` (sunder default +0.3)
+- `src/Ai/Class/Warrior/Strategy/ArmsWarriorStrategy.cpp:83` (sunder default +0.05)
+
+Copied / ported / independently reimplemented: reimplemented in place
+(`WarriorActions.h`, `WarriorTriggers.cpp`, `ArmsWarriorStrategy.cpp`,
+`FuryWarriorStrategy.cpp`, all `ai/playerbot/strategy/warrior/`).
+Deviations from the donor, all deliberate: (a) donor returns false for
+non-tanks with no group at all — ours still sunders ungrouped (a solo DPS
+warrior benefits from the armor reduction, and no tank exists to defer
+to); (b) row at NORMAL-1 rather than donor DEFAULT+0.x — same bottom
+shape (above nothing but melee-idle) in our NORMAL/HIGH ladder; the
+original NORMAL+1 wrongly tied heroic strike and beat rend; (c) the
+group-tank scan stays inline in `isUseful` (donor-identical): it is a
+bounded in-memory walk (≤40 refs, class gate first so `IsTank` runs only
+for warriors) evaluated only while the stack is incomplete — no cached
+group-role value exists and none is warranted; (d) `sunder armor` →
+`melee` fallback nodes added to both DPS factories (prot pattern), so a
+failed sunder falls through to auto-attack.
+
+Review fixes: (1) ported the donor 6s-expiry refresh to both trigger
+(5-stack re-arms at <=6s) and action (`!aura || stack<5 || <=6s`) — the
+old trigger-side `>=5 → false` let full stacks fall off entirely (also
+affected tanks; pre-existing, fixed here); (2) priority NORMAL+1 →
+NORMAL-1 per above.
+
+Reason: WAR-1 in the warrior parity sweep: zero sunder rows in Arms/Fury
+meant tankless groups never got the armor-reduction stack.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
+test (per task constraints).
