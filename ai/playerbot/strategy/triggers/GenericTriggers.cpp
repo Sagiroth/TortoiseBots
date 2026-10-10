@@ -34,29 +34,15 @@ bool MediumManaTrigger::IsActive()
 
 bool HealerLowManaTrigger::IsActive()
 {
-    // Innervate unknown or on cooldown: stay quiet so a row never queues a
-    // cast that fails after the caster-form shift (mirrors
-    // SpellTargetTrigger::IsSpellReady). Kept from the druid-local trigger
-    // this unifies (PR #615 behaviour): the shared trigger exists for
-    // mana batteries, and a non-druid consumer without Innervate trained
-    // simply never fires it.
-    uint32 innervateId = AI_VALUE2(uint32, "spell id", "innervate");
-    if (!innervateId || !sServerFacade.IsSpellReady(bot, innervateId))
-        return false;
-    // The value picks the lowest-mana alive group healer (not self); skip
-    // ones already carrying Innervate (the action's auraCheck would refuse
-    // them) and anyone out of spell range (the action has no reach
-    // prerequisite, so an unreachable healer only burns the shift).
+    // Pure donor check (HealthTriggers.cpp:25-32): the "healer low mana"
+    // value picks the lowest-mana alive group healer; fire while that
+    // healer sits below the low-mana line. No Innervate guards here: those
+    // live in the druid action (spell known/ready, range, aura), so shaman
+    // Mana Tide rows and future batteries can share this trigger.
     Unit* target = GetTarget();
     if (!target || !target->GetMaxPower(POWER_MANA))
         return false;
-    if (target->IsPlayer() && ai->HasAura("innervate", target))
-        return false;
-    float maxRange = 0.0f;
-    if (!ai->GetSpellRange("innervate", &maxRange))
-        return false;
-    if (sServerFacade.getDistance2d(bot, target) > maxRange)
-        return false;
+
     return ai->GetManaPercent(*target) < sPlayerbotAIConfig.lowMana;
 }
 

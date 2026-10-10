@@ -5668,17 +5668,22 @@ Donor: mod-playerbots @ `79bd4281` (local checkout
 Source files (module, modified): `ai/playerbot/strategy/values/
 PartyMemberToHeal.h/.cpp` (new `HealerLowMana` value),
 `ai/playerbot/strategy/triggers/GenericTriggers.h/.cpp` (new
-`HealerLowManaTrigger`), `ai/playerbot/strategy/values/ValueContext.h` +
-`ai/playerbot/strategy/triggers/TriggerContext.h` (registrations).
+`HealerLowManaTrigger`, pure donor mana check, interval 1),
+`ai/playerbot/strategy/values/ValueContext.h` +
+`ai/playerbot/strategy/triggers/TriggerContext.h` (registrations),
+`ai/playerbot/strategy/druid/DruidActions.h` (`CastInnervateAction` reads
+the shared value; `isPossible`/`isUseful` carry #615's guards: spell
+known, cooldown-ready, target in range, no Innervate aura yet).
 
 Copied / ported / reimplemented: reimplemented. Deviations from the
 donor, all deliberate: (a) iteration via `LiveGroupMembers`
 (ObjectAccessor resolution, never a stale GroupReference pointer);
 (b) mana percent via `GetPower`/`GetMaxPower` with a zero-max guard
 (non-mana healers skipped) matching our neighbouring druid picker;
-(c) value ships with no strategy consumers yet — other agents' class-side
-innervate / mana-tide rows target it next; the druid's existing
-innervate picker stays as-is in this PR.
+(c) the shared trigger is a pure mana check (donor parity) so shaman Mana
+Tide rows can share it — Innervate-specific guards live in the druid
+action's `isPossible`/`isUseful`, which the engine checks before queueing
+(same observable behaviour as #615's trigger guards, kept verbatim).
 
 Reason: support parity gap HEAL-2/MANA-2 (med/S-M): no generic
 lowest-healer-mana routing existed, so mana batteries could only target
