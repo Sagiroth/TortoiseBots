@@ -63,7 +63,7 @@ The bot's shapeshifting engine maintains the appropriate form based on assigned 
   - Casts *Feral Charge* (Bear) as a gap-closer on any out-of-melee enemy.
   - Casts *Bash* (Bear) as an interrupt (also wired against enemy healers).
 - **Combat Resurrection:**
-  - Uses *Rebirth* (Battle Rez) on the first dead party member mid-fight (no tank/healer priority).
+  - Uses *Rebirth* (Battle Rez) on a dead party member mid-fight through the existing Balance / Feral / Restoration `rebirth` rows (no separate combat-rez gate: the donor's `combat party member dead` trigger feeds only its generic druid rows, which are dead code here). No tank/healer priority.
 - **Out-of-Combat Resurrection:**
   - Burns *Rebirth* on a dead party member out of combat only when no living priest, paladin or shaman is in the group — their normal resurrection is always preferred over the 30 min battle rez. (Vanilla druids have no normal resurrect; the only *Revive* row in game data is a boss spell, not a trainable druid spell.)
 - **Innervate:**
@@ -74,6 +74,7 @@ The bot's shapeshifting engine maintains the appropriate form based on assigned 
 - **Party Buffs:**
   - Maintains *Mark of the Wild* (armor, stats, resistances) and *Thorns* (reflective nature damage) on party members, upgrading *Mark of the Wild* to *Gift of the Wild* once known, trained and stocked (the group version outbids the single-target cast once at least three same-map members lack both auras, and only targets a member that lacks both). Buffs expiring within 15 s count as missing, so they are refreshed before they drop (issue #468). Single-target *Mark of the Wild* is also allowed in combat at the lowest priority, so a druid following a master who chain-pulls still buffs the party in the quiet moments of a fight. With several druids in one party, a short shared *buff claim* keeps them from duplicating each other: while one druid's cast is in flight the others stand down and wait for the aura instead of casting the same buff on the same member (issue #378).
   - Out of combat, catching up to the master runs below the party buffs (a pending buff in range wins the tick, follow resumes next). Upkeep buffs wait for 40% mana, 20% with a real player master. A failed buff attempt no longer starts the retry window or the duplicate-cast claim; only a cast that actually starts does.
+- **Thorns on the tank first:** the tank gets *Thorns* before the party blanket rotation reaches them (skipped while Fire Shield sits on the tank — the two don't stack).
 
 ---
 

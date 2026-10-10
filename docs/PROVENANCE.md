@@ -3737,6 +3737,8 @@ compiles).
 | Paladin tank taunt (Hand of Reckoning + Righteous Defense fallback) | `mod-playerbots` `src/Ai/Class/Paladin/Strategy/TankPaladinStrategy.cpp:116-121` + node factory (`hand_of_reckoning` -> `righteous defense` alternative) | `ai/playerbot/strategy/paladin/TankPaladinStrategy.cpp` (lose-aggro row + `TankPaladinStrategyActionNodeFactory`) | Ported row + node, mirroring live `ProtectionPaladinStrategy`. Turtle core: Hand of Reckoning is trainer spell 51303 (level 10); Righteous Defense ranks are 51328-51330 (`spell_paladin_righteous_defense`); DBC `Spell.dbc` names both plus Righteous Fury. Actions resolve via `PaladinAiObjectContext`. Note: file is an unregistered forward-port; live tanks run Protection (already correct) | `python3 tools/verify_action_trigger_wiring.py` (0 live-missing); `bash tools/verify_all.sh`. Runtime taunt check pending deploy |
 | Protection righteous fury upkeep in combat | `mod-playerbots` `src/Ai/Class/Paladin/Strategy/TankPaladinStrategy.cpp:147-154` (righteous-fury trigger row) | `ai/playerbot/strategy/paladin/ProtectionPaladinStrategy.cpp` (`ProtectionPaladinBuffStrategy::InitCombatTriggers`) | Ported: prior live row existed only in `InitNonCombatTriggers`, so mid-pull loss (death/bubble) stayed off all fight. Same trigger, buff-level priority so taunts and Holy Shield win the tick. Dropped donor pieces stay dropped: seal of corruption/vengeance, shield of righteousness, hammer of the righteous, avenger's shield, avenging wrath, divine sacrifice (WotLK-only); live already covers taunt, holy shield, 2+ consecration, sanctuary/kings, righteousness seal | `bash tools/verify_all.sh`; `git diff --check`. Runtime fury-uptime check pending deploy |
 | Ranged keep-away verification (no change) | `mod-playerbots` `src/Ai/Base/Strategy/RangedCombatStrategy.cpp:10-16` (enemy-too-close -> flee) | `ai/playerbot/strategy/generic/RangedCombatStrategy.cpp:7-22` (already has `enemy too close for spell` -> `flee` at ACTION_MOVE + `enemy out of spell` -> `reach spell`) | Verified present; no edit. Applies to every bot with the `ranged` kit, pool bots included (unchanged behavior, as required) | Code read; `bash tools/verify_all.sh` |
+| DPS target tournament + skull snap (LD-1/LD-4) | `mod-playerbots` @ 79bd4281 `src/Ai/Base/Value/DpsTargetValue.cpp:53-306` (caster/general/combo tournaments, CC-moon skip, skull snap), `src/Ai/Base/Value/TargetValue.cpp:124-143` (IsHighPriority) | `ai/playerbot/DpsTargetPolicy.h` (new pure bucket rules + `tools/test_dps_target_policy.cpp`), `strategy/values/DpsTargetValue.cpp` (caster/general/combo tournament strategies, skull snap with sticky flag; explicit > RTI > tank-follow entry order unchanged, LD-2 deliberately not ported) | Reimplemented in place: `prioritized targets` half of IsHighPriority has no equivalent here (skull only); small groups (<=3 near) always run the general pick; no `IsCombo` helper existed (rogue or cat-aura druid inline) | `bash tools/verify_all.sh` (incl. new policy test); `git diff --check`. No live dungeon test |
+| `focus` single-target burn strategy (LD-3) | `mod-playerbots` @ 79bd4281 `src/Ai/Base/Strategy/ThreatStrategy.cpp:44-64` (FocusMultiplier vetoes AoE + CastDebuffSpellOnAttackerAction), `src/Ai/Base/StrategyContext.h:145` (focus registration) | `ai/playerbot/strategy/generic/FocusStrategy.{h,cpp}` (new FocusMultiplier + FocusStrategy, off by default), `strategy/StrategyContext.h` (`focus` creator), `docs/guides/player-controls.md` (`co +focus` toggle row) | Reimplemented in place: donor's single attacker-debuff class maps to ours split `CastMelee/RangedDebuffSpellOnAttackerAction`; heal exemption kept (CastHealingSpellAction) | `bash tools/verify_all.sh`; `git diff --check`. No live CC-pack test | Deliberate divergence (review PR #584): spell-data detection vetoes more than the donor (consecration, holy nova, thunder clap, shouts, frost nova, fears, chains) — breaking less CC is the toggle's purpose.
 | `end pull` stuck-pull escape hatch (LD-9) | `mod-playerbots` @ 79bd4281 `src/Ai/Base/ActionContext.h:116,331` (`end pull` = `ChangeCombatStrategyAction(-pull)`) | `strategy/actions/ActionContext.h` (`end pull` creator reusing `PullEndAction`), `strategy/triggers/ChatTriggerContext.h` + `strategy/generic/ChatCommandHandlerStrategy.cpp` (chat wiring), `docs/guides/player-controls.md` (whisper row) | Reimplemented: donor drops the `pull` strategy; ours runs `PullEndAction` bookkeeping (target clear, party release, movement restore) and keeps `pull` armed for the next pull — no re-enable needed | `bash tools/verify_all.sh` (incl. wiring check); `git diff --check`. No live stuck-pull test |
 | Cast-time lifetime veto (LD-7) | `mod-playerbots` @ 79bd4281 `src/Ai/Base/Strategy/CastTimeStrategy.cpp:11-65` (cast-time vs health/estimated-group-dps lifetime to 0.1x, dest-location exclusions, channeled-duration add) | `strategy/generic/CastTimeStrategy.cpp` (HP%+ladder replaced with donor lifetime comparison; criticalHealth gate dropped) | Reimplemented in place: channeled add via local `IsChanneledSpell`/`GetSpellDuration` idiom (donor `SpellInfo::IsChanneled`) | `bash tools/verify_all.sh`; `git diff --check`. No live cast-observation test |
 | Conditional tank RTI + combat-gated auto-mark (LD-5/LD-6) | `mod-playerbots` @ 79bd4281 `src/Ai/Base/Value/TankTargetValue.cpp:110-131` (take RTI only for non-tank victims or different-RTI tanks), `src/Ai/Base/Trigger/RtiTriggers.cpp:10-20` (NoRti false out of combat), `MarkRtiStrategy.cpp:13` (NORMAL relevance) | `strategy/values/TankTargetValue.cpp` (victim gate; victimless pre-pull marks still taken), `strategy/triggers/RtiTriggers.h` (`!IsInCombat` refuse), `strategy/generic/MarkRtiStrategy.cpp` (EMERGENCY→NORMAL) | Reimplemented in place: victimless RTI still taken (donor falls through; preserves today's pre-pull tank open); pet victims taken (donor only checks players) | `bash tools/verify_all.sh`; `git diff --check`. No live 2-tank test |
@@ -4576,6 +4578,45 @@ Local validation: `bash tools/verify_all.sh` (all suites incl. the new
 policy test pass); `git diff --check`. Creature entries 12057/12264
 verified against tw_world. Build via build-commit.sh pending; live in-game
 check pending.
+## Druid parity DRU-7: Thorns on the party tank first — 2026-10-09
+Feature: new `ThornsOnTankTrigger` (`BuffOnTankTrigger` on "thorns",
+fire-shield conflict skip mirroring `ThornsOnPartyTrigger`) + new
+`CastThornsOnTankAction` (`BuffOnTankAction`, targets "party tank without
+aura", with an explicit `getName()` override returning "thorns on tank"
+— the base reports spell+" on party", which would collide with the party
+blanket in queue dedup and failure backoff) + non-combat row `thorns on
+tank` at ACTION_NORMAL+3 in `DruidBuffStrategy`, above the party blanket
+at +2 (same BuffOnTank shape as priest PRI-1 `fear ward on tank`,
+verified on the PRI-1 branch).
+## Far-away leave (SOC-G2, 2026-10-09; SOC-G4 rejected, 2026-10-10)
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Base/Actions/LeaveGroupAction.cpp:156-159` (different map or
+distance >= 2xRpgDistance -> leave).
+SOC-G4 (`src/Ai/Base/Trigger/LfgTriggers.cpp:12-16`,
+`src/Ai/Base/Strategy/LfgStrategy.cpp:15-16`) was ported in the first
+version of this PR and removed on review: `PlayerbotAI::DoNextAction`
+already yields leadership to any in-world real player every tick (broader
+than the seldom node, which could never observe its precondition), and the
+node lacked the deliberate `dungeonCrew` exemption while its inherited
+`Execute` reset strategies mid-dungeon. No donor behavior is lost.
+
+Source files (module, modified): `ai/playerbot/GroupHygienePolicy.h` (new
+pure far-away gate),
+`ai/playerbot/strategy/actions/LeaveGroupAction.{cpp}` (far-away clause in
+LeaveFarAwayAction::isUseful, routed through the policy),
+`tools/test_group_hygiene_policy.cpp` (new standalone test),
+`tools/verify_all.sh` (register test) + `CHANGELOG.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) the clause evaluates above the
+member-safety veto loop - it reads only the bot and the live-resolved
+group master, and a cross-map master would otherwise veto its own leave
+(IsSafe requires same map), making the cross-map branch dead; (b) the
+far-away clause only binds when bot grouping is enabled
+(RandomBotGroupNearby) - otherwise the action is already useful further up.
+
+Reason: cross-map/straggler bots held dead groups.
 ## Warrior WAR-2 + WAR-6: shield-slam proc row and 40-rage gate (2026-10-09)
 
 Feature: (WAR-2) new `improved shield slam proc` trigger fires `shield
@@ -4702,6 +4743,84 @@ Local validation: `bash tools/verify_all.sh` (incl. new policy test +
 wiring check live-missing=0); `git diff --check`; shared-builder compile
 check; no live in-game test.
 
+## Warlock Firestone / Spellstone create+equip (WAR-4) — 2026-10-09
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Warlock/Strategy/GenericWarlockNonCombatStrategy.cpp:200-222`
+(per-spec stone strategies: affli/demo spellstone, destro firestone),
+`WarlockTriggers.h:66-78,116-126` (`FirestoneTrigger`/`SpellstoneTrigger :
+BuffTrigger`, `HasFirestoneTrigger`/`HasSpellstoneTrigger`) +
+`WarlockAiObjectContext.cpp:330-331` (both use actions are
+`UseSpellItemAction`), `WarlockActions.h:79-94`.
+
+Source files (module, modified):
+`ai/playerbot/strategy/warlock/WarlockStrategy.cpp` (base `no firestone` /
+`no spellstone` create rows stay removed — creation is per-spec only),
+`ai/playerbot/strategy/warlock/WarlockTriggers.{h,cpp}` (`FirestoneTrigger`
+and `SpellstoneTrigger` as plain `Trigger`s with O(1) item/slot gates,
+not `BuffTrigger`: no player spell is named "firestone"/"spellstone" so
+the `BuffTrigger` HasSpell gate would never pass),
+`ai/playerbot/strategy/warlock/WarlockAiObjectContext.cpp` (`firestone`
+trigger + `EquipFirestoneAction`, `spellstone` trigger +
+`EquipSpellstoneAction`; `create firestone`/`create spellstone` actions),
+`ai/playerbot/strategy/warlock/DestructionWarlockStrategy.cpp` (`firestone`
+use row) + `AfflictionWarlockStrategy.cpp` + `DemonologyWarlockStrategy.cpp`
+(`spellstone` use rows) + `docs/classes/warlock.md`, `CHANGELOG.md`.
+
+Copied / ported / reimplemented: reimplemented with vanilla item
+semantics, verified in `tw_world` (report's 1254/5522-series ids are item
+entries, not spells — the spells are Create Firestone 607 / Create
+Spellstone 918). Both stones are off-hand held items (`inventory_type`
+23), and both are *equipped*, never applied as weapon temp-enchants:
+Firestone's item spells are on-equip auras (758 Firestone Passive on
+Lesser 1254, 17945+ on the higher ranks), and Spellstone's on-use spells
+(128/17729/17730, effect 38 `SPELL_EFFECT_DISPEL` + effect 6 aura 69
+`SPELL_AURA_SCHOOL_ABSORB`, target 1 = caster, per the on-use description
+"Removes all magic effects from the caster and will absorb ... magic
+damage") likewise target the caster — while a sharpening stone works
+through `UseItem` only because it is an `INVTYPE_NON_EQUIP` consumable,
+`UseItemInternal` refuses equippable items sitting in bags, so a bag
+stone could never be applied that way. Core's
+`Player::RemoveItemDependentAurasAndCasts` exempts spellstone items
+5522/13602/13603/21685 from aura removal on unequip ("Pierres de sort"),
+so the equip aura (18384 Increased Critical Spell on all three ranks)
+survives briefly after the on-use dispel/absorb is cast from the worn
+stone. `EquipSpellstoneAction`/`EquipFirestoneAction` therefore equip a
+bag stone into an empty off-hand beside a one-handed main-hand (never
+displacing real gear or fighting a staff); the equip aura then applies
+and the on-use stays available through normal use once worn. Create
+Spellstone costs a shard (2362 reagent 6265x1, core fails gracefully when
+shardless — same accepted pattern as soulstone).
+
+Reason: both create rows were commented out and no use path was queued;
+donor keeps per-spec stones up out of combat.
+
+Local validation: `bash tools/verify_all.sh` (wiring audit covers the
+`firestone`/`spellstone` names); `git diff --check`; shared-builder
+compile via `build-commit.sh` (BUILD OK); live in-game check pending:
+each stone created once, equipped without touching real off-hands.
+
+## Review fixes (pr-618, CHANGES_REQUESTED → fixed)
+First round (commit ec6423d): (1) firestone is a dedicated
+`EquipFirestoneAction` (static slot-safe equip — the `UseSpellItemAction`
+path refused equippables in bags per `UseItemInternal`, and firestones
+have no on-use spell); (2) creation is per-spec (`no spellstone` in
+affli/demo buff NC, `no firestone` in destro buff NC — no more cross-spec
+shard drain or bag pollution); (3) both use-triggers are plain `Trigger`s
+with O(1) item/slot gates. Second round: (1) the new
+`ApplySpellstoneAction` routed through the same refused `UseItem` →
+`UseItemInternal:441` path — real, fixed by replacing it with
+`EquipSpellstoneAction` (same equip-into-empty-off-hand semantics as
+firestone); post-equip verification added to both equip actions (return
+whether the stone actually landed, so silent core refusals surface as
+action failure with retry next tick). (2) the "spellstone as weapon
+temp-enchant" claim was wrong — verified against `tw_world` + core
+(`SpellDefines.h:182` effect 38 is `SPELL_EFFECT_DISPEL`, not 54 =
+temp-enchant; on-use targets the caster per the spell description) — so
+the temp-slot trigger/action gates are gone from both sides; both stones
+are now plain off-hand equips (spec split kept: spellstone for
+affli/demo, firestone for destro). Rejected nothing.
+
 ## Paladin resist aura auto-swap per boss (raid1 item 8) — 2026-10-09
 
 Donor: mod-playerbots @ `79bd4281` (local checkout
@@ -4820,6 +4939,17 @@ Source repository: `mod-playerbots` @ `79bd4281` (local checkout
 `../playerbots-references/mod-playerbots`).
 
 Source files (donor, reference only):
+`src/Ai/Class/Druid/Strategy/GenericDruidNonCombatStrategy.cpp:198-200`
+(`thorns on main tank` 11.0 above `thorns` 10.0). Deviations, deliberate:
+donor names say "main tank" on `BuffOnMainTankTrigger`; ours says "tank"
+on the local `BuffOnTankTrigger` (same "party tank without aura" value,
+cf. PRI-1). The report's "refresh-via-recast may need cancel aura
+support" proved unnecessary: the without-aura value only targets a tank
+lacking Thorns, so expiry re-fires the row naturally. No addon change:
+the main-tank pick already exists via the role button.
+
+Reason: druid parity report DRU-7 — Thorns fell out of the tank's
+rotation once the party row was satisfied.
 `src/Ai/Class/Druid/Strategy/RestoDruidStrategy.cpp:37-43` (critical ->
 `nature's swiftness` 58.0, `nature's swiftness active` -> `healing touch
 on party` 55.0) + `src/Ai/Class/Shaman/ShamanAiObjectContext.cpp:286-288`
@@ -5220,6 +5350,13 @@ healer; innervate rows were balance/resto self-only.
 Source files (module, modified):
 `ai/playerbot/strategy/druid/DruidTriggers.h`,
 `ai/playerbot/strategy/druid/DruidTriggers.cpp`,
+`ai/playerbot/strategy/druid/DruidActions.h`,
+`ai/playerbot/strategy/druid/DruidAiObjectContext.cpp`,
+`ai/playerbot/strategy/druid/DruidStrategy.cpp` +
+`docs/classes/druid.md` (behaviour lines).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells: Thorns ranks trainer-taught.
 `ai/playerbot/strategy/druid/DruidAiObjectContext.cpp`,
 `ai/playerbot/strategy/druid/DpsFeralDruidStrategy.cpp` +
 `docs/classes/druid.md` (behaviour lines). The old flat
@@ -5266,6 +5403,17 @@ spell_template; trigger/action creators registered in the druid context.
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
 live test (no live test per parity brief); build via build-commit.sh.
 
+## Review fixes round 2 (2026-10-10, PR #590 CHANGES_REQUESTED)
+Blocking finding verified real and fixed: new `thorns on tank` action
+had no ActionNode — `Engine::CreateActionNode` falls back to a bare node
+with NULL prerequisites, so a shapeshifted druid fails the cast via
+`GetErrorAtShapeshiftedCast` and the tank row never beats the blanket
+for shifted druids. Fixed: `thorns_on_tank` caster-form node in
+`DruidStrategyActionNodeFactory` (same shape as every sibling buff row).
+Non-blocking: check interval matched to sibling/donor 4; MotW-vs-thorns
+ordering kept (tank-first is the feature); early-refresh overlap left as
+harmless (reviewer agrees).
+verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
 ## Review fixes (2026-10-09, PR #582 CHANGES_REQUESTED)
 Blocking finding verified real and fixed: without an absolute-HP gate,
 the execute row (CP>=1 at +6) eats every combo point on any sub-25%
@@ -5798,6 +5946,57 @@ All three blocking findings verified real in code and fixed:
 - Finding 3 (policy header dead code): confirmed — nothing included it. Fixed by refactoring the trigger onto it instead of deleting: `IsTargetValid` now builds `OocRebirthState` and calls `ShouldCastOocRebirth`, so the 6-check test exercises the shipped gate; unused `OocResurrectClass` enum removed.
 - Non-blocking citation fixed (`DruidTriggers.h:120-153` is FaerieFireFeral — now cites the generic `PartyMemberDeadTrigger` path). Toggle note: no toggle added — OOC auto-rez matches the other three classes; revisit if owners complain.
 verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
+
+## Mage Improved Scorch shared-slot gate ABANDONED (MAG-8) — 2026-10-10
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Mage/MageTriggers.cpp:126-146`
+(`ImprovedScorchTrigger::IsActive` skips scorch while the target carries
+Shadow Vulnerability 17794-17800, Winter's Chill 12579, or Fire
+Vulnerability 22959).
+
+Decision: deliberately NOT ported (review PR #647 finding 2). In this
+core the exclusivity premise is false: mage `MOD_ATTACKER_SPELL_CRIT_CHANCE`
+auras explicitly return `false` from `_IsExclusiveSpellAura`
+(`tortoise-wow/src/game/Spells/SpellAuras.cpp`, "Winter's Chill /
+Improved Scorch" comment), cross-family pairs return `false` from
+`IsNoStackSpellDueToSpell` (`SpellMgr.cpp`), and there is no mage↔warlock
+no-stack rule linking 12579/22959/17794-17800 — Chill and Fire
+Vulnerability coexist rather than overwrite. Worse, the debuffs benefit
+different schools (DB: Chill aura 179/frost misc 16, Fire Vuln aura
+87/misc 4, Shadow Vuln aura 87/misc 32), so holding scorch on Chill or
+Shadow Vulnerability is a group-DPS loss, not a save. The original MAG-8
+code (exclusive-debuff gate on `NoImprovedScorchDebuffTrigger`,
+`docs/classes/mage.md` line) is reverted by this review-fix commit.
+Code and doc are back to the pre-PR state; no behaviour change ships.
+
+## Review fixes (2026-10-10, PR #647 CHANGES_REQUESTED)
+All three blocking findings verified real in code and fixed by
+abandoning the port (no live test needed — nothing ships):
+- Finding 1 (ungated `no fire vulnerability` still scorches over Chill
+via `ACTION_NORMAL+2`): confirmed — `MageTriggers.h` `NoFireVulnerabilityTrigger`
+returns true with no Chill/ShadowVuln check. Fixed by the revert: both
+triggers are back to pre-PR behaviour, so the claimed hold no longer
+exists and there is nothing left to bypass.
+- Finding 2 (no shared exclusive slot in this core): confirmed verbatim —
+`_IsExclusiveSpellAura` returns `false` for mage 179 auras,
+`SpellMgr.cpp:1275-1279` returns `false` for cross-family pairs, no
+mage↔warlock rule. This is the reason for abandonment (see above).
+- Finding 3 (gated trigger dead: `DebuffTrigger("improved scorch")`
+never fires): confirmed — `ChatHelper::PopulateSpellNameList` builds
+`SpellIds("improved scorch")` from DB spell names, and no spell is named
+exactly that (castable is "Scorch", debuff is "Fire Vulnerability";
+talent ranks are "Fire Vulnerability", DB attributes 448 = passive).
+`SpellIdValue` then filters passive talents, so `HasSpell` is always
+false. Fixed by the revert: the dead gate is gone with the rest.
+- Non-blocking notes folded in: `ai->HasAura(uint32)` vs donor
+`target->HasAura` parity gap and the donor null/dead-target guard are
+moot (no shipped gate); the "refresh trigger untouched" deviation note
+is superseded by this abandonment record.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`;
+shared-builder compile via `build-commit.sh` (BUILD OK).
+
 ## Healer-low-mana value + trigger (HEAL-2/MANA-2) — 2026-10-10
 
 Donor: mod-playerbots @ `79bd4281` (local checkout
@@ -5869,6 +6068,57 @@ Local validation: `bash tools/verify_all.sh` (wiring audit covers the
 four new names); `git diff --check`; shared-builder compile via
 `build-commit.sh` (BUILD OK); live in-game check pending: swim with a
 warlock bot, self + party gain the buff, nothing fires on land.
+## Combat resurrection trigger (RES-1) — 2026-10-10 — no behaviour change
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Base/Trigger/HealthTriggers.h:164-170` + `.cpp:19`
+(`CombatPartyMemberDeadTrigger`, interval 1),
+`src/Ai/Base/TriggerContext.h:136` (creator `"combat party member dead"`),
+consumed only by the donor's `GenericDruidStrategy` combat-rez rows
+(`src/Ai/Class/Druid/Strategy/GenericDruidStrategy.cpp:67-76`).
+
+Investigation result: our combat Rebirth already fires. The live
+Balance / Feral / Restoration `"rebirth"` rows (`BalanceDruidStrategy.cpp:46`,
+`RestorationDruidStrategy.cpp:36`, `TankFeralDruidStrategy.cpp:101,142`,
+`DpsFeralDruidStrategy.cpp:79`, via `RebirthTrigger`: spell known/ready +
+dead valid target) predate this PR, and our `GenericDruidStrategy` copy of
+the donor's combat-rez rows is dead — the class is never instantiated (zero
+`new` sites, no creator in `DruidAiObjectContext.cpp:158-197`; live bots run
+the placeholder→pve/pvp/raid hierarchy). A `"combat party member dead"`
+creator would feed zero live `TriggerNode`s, so this PR adds no code: no
+new trigger, no new creator, no strategy edits. Divergences from the donor,
+all deliberate: (a) no `"combat party member to resurrect"` value alias —
+donor's trigger returns `"party member to resurrect"` with no new value
+either; (b) no `Predator's Swiftness` port — the aura has no 1.18.1
+spell-template row (checked `tw_world`: Predatory Strikes only, no
+swiftness proc), and the `"predator's swiftness ..."` rows in the dead
+`GenericDruidStrategy.cpp:60,121-123` stay untouched dead-file tech debt
+(wiring audit `DEAD_FILES`-listed, same as PR #648's HEAL-1 fix). Range
+handling stays with the existing reach-to-rez action per the deliberate
+RES-3 decision.
+
+Reason: support parity gap RES-1 (high/S) investigated and closed with no
+code change — combat Rebirth already fires mid-fight through the existing
+`"rebirth"` rows.
+
+Local validation: `bash tools/verify_all.sh` (all suites pass);
+`git diff --check`. Rebirth 2011 verified in the report. Build via
+build-commit.sh pending; live in-game check pending.
+
+## Review fixes (2026-10-10, PR #653 CHANGES_REQUESTED)
+Both blocking findings verified real in code and fixed by removing the
+no-op: (1) the `"combat party member dead"` trigger + creator fed zero
+live `TriggerNode`s (dead `GenericDruidStrategy` only) and its `IsActive`
+merely re-ran the already-live `"rebirth"` trigger — removed, no
+replacement; (2) docs now state no behaviour change (combat Rebirth
+already fired via the existing `"rebirth"` rows). Non-blocking notes
+accepted: no donor value alias added (donor has none — confirmed
+`HealthTriggers.h:168` returns `"party member to resurrect"`); Predator
+rows in `GenericDruidStrategy.cpp:60,121-123` predate this PR (dead file,
+untouched — the "port removed" note in the summary referred to the
+never-merged `PredatorsSwiftnessTrigger`, not those rows); leftover brief
+text deleted from this entry.
 | Elemental earth-shock execute discipline (SHM-4) | `mod-playerbots` `src/Ai/Class/Shaman/ShamanTriggers.cpp:50-64` (`EarthShockExecuteTrigger`: <25% AND <1500hp) + `Strategy/ElementalShamanStrategy.cpp:58-65` (execute node 5.5) @ `79bd4281` | `ai/playerbot/strategy/shaman/ShamanTriggers.h` (new `EarthShockExecuteTrigger`), `ShamanAiObjectContext.cpp` (creator), `ElementalShamanStrategy.cpp` (`shock` row -> `earth shock execute` at same ACTION_NORMAL), `ShamanEarthShockPolicy.h` + `tools/test_shaman_earth_shock_policy.cpp` | Ported verbatim thresholds via `GetHealthPercent()` + absolute `GetHealth() < 1500` (house idiom; donor divides manually). Ele only; enhancement keeps ungated `shock` (melee threat tool); interrupt triggers untouched. Spell: Earth Shock 8042+ (existing action, verified) | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
 ## Review fixes (2026-10-09, PR #615 CHANGES_REQUESTED)
 All three blocking findings verified real in code and fixed:

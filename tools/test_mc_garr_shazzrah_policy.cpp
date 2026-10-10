@@ -45,6 +45,9 @@ int main()
     CHECK(IsGarrSuppressedAoeAction("blast wave"));
     CHECK(IsGarrSuppressedAoeAction("arcane explosion"));
     CHECK(IsGarrSuppressedAoeAction("chain lightning"));
+    CHECK(IsGarrSuppressedAoeAction("multi-shot"));
+    CHECK(IsGarrSuppressedAoeAction("volley"));
+    CHECK(IsGarrSuppressedAoeAction("rain of fire"));
     CHECK(!IsGarrSuppressedAoeAction("corruption on attacker"));
     CHECK(!IsGarrSuppressedAoeAction("serpent sting"));
     CHECK(!IsGarrSuppressedAoeAction("heal party member"));

@@ -202,6 +202,16 @@ void DemonologyWarlockBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*
     triggers.push_back(new TriggerNode(
         "soul link",
         NextAction::array(0, new NextAction("soul link", ACTION_NORMAL), NULL)));
+
+    // Spellstone upkeep (WAR-4, donor parity): create + equip, see the
+    // affliction note on shard cost and the empty-off-hand gates.
+    triggers.push_back(new TriggerNode(
+        "no spellstone",
+        NextAction::array(0, new NextAction("create spellstone", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "spellstone",
+        NextAction::array(0, new NextAction("spellstone", ACTION_NORMAL), NULL)));
 }
 
 void DemonologyWarlockBuffPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
