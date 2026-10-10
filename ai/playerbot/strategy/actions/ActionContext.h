@@ -88,6 +88,7 @@
 #include "SapphironDungeonActions.h"
 #include "HeiganDungeonActions.h"
 #include "AnubrekhanDungeonActions.h"
+#include "RuinsOfAhnqirajDungeonActions.h"
 
 namespace ai
 {
@@ -354,6 +355,11 @@ namespace ai
             creators["disable ruins of ahn'qiraj strategy"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajDisableDungeonStrategyAction(ai); };
             creators["enable ahn'qiraj temple strategy"] = [](PlayerbotAI* ai) { return new AhnqirajTempleEnableDungeonStrategyAction(ai); };
             creators["disable ahn'qiraj temple strategy"] = [](PlayerbotAI* ai) { return new AhnqirajTempleDisableDungeonStrategyAction(ai); };
+            creators["enable ruins of ahn'qiraj strategy"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajEnableDungeonStrategyAction(ai); };
+            creators["disable ruins of ahn'qiraj strategy"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajDisableDungeonStrategyAction(ai); };
+            creators["enable ossirian fight strategy"] = [](PlayerbotAI* ai) { return new OssirianEnableFightStrategyAction(ai); };
+            creators["disable ossirian fight strategy"] = [](PlayerbotAI* ai) { return new OssirianDisableFightStrategyAction(ai); };
+            creators["use ossirian crystal"] = [](PlayerbotAI* ai) { return new UseOssirianCrystalAction(ai); };
             creators["enable emerald sanctum strategy"] = [](PlayerbotAI* ai) { return new EmeraldSanctumEnableDungeonStrategyAction(ai); };
             creators["disable emerald sanctum strategy"] = [](PlayerbotAI* ai) { return new EmeraldSanctumDisableDungeonStrategyAction(ai); };
             creators["enable lower karazhan strategy"] = [](PlayerbotAI* ai) { return new LowerKarazhanEnableDungeonStrategyAction(ai); };

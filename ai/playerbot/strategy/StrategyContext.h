@@ -63,6 +63,7 @@
 #include "generic/SapphironDungeonStrategies.h"
 #include "generic/HeiganDungeonStrategies.h"
 #include "generic/AnubrekhanDungeonStrategies.h"
+#include "generic/RuinsOfAhnqirajDungeonStrategies.h"
 
 namespace ai
 {
@@ -175,6 +176,7 @@ namespace ai
             creators["zul'gurub"] = [](PlayerbotAI* ai) { return new ZulgurubDungeonStrategy(ai); };
             creators["ruins of ahn'qiraj"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajDungeonStrategy(ai); };
             creators["ahn'qiraj temple"] = [](PlayerbotAI* ai) { return new AhnqirajTempleDungeonStrategy(ai); };
+            creators["ruins of ahn'qiraj"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajDungeonStrategy(ai); };
             creators["emerald sanctum"] = [](PlayerbotAI* ai) { return new EmeraldSanctumDungeonStrategy(ai); };
             creators["lower karazhan"] = [](PlayerbotAI* ai) { return new LowerKarazhanDungeonStrategy(ai); };
             creators["karazhan crypt"] = [](PlayerbotAI* ai) { return new KarazhanCryptDungeonStrategy(ai); };
@@ -199,6 +201,7 @@ namespace ai
             creators["sapphiron"] = [](PlayerbotAI* ai) { return new SapphironFightStrategy(ai); };
             creators["heigan"] = [](PlayerbotAI* ai) { return new HeiganFightStrategy(ai); };
             creators["anub'rekhan"] = [](PlayerbotAI* ai) { return new AnubrekhanFightStrategy(ai); };
+            creators["ossirian"] = [](PlayerbotAI* ai) { return new OssirianFightStrategy(ai); };
             creators["solnius"] = [](PlayerbotAI* ai) { return new SolniusFightStrategy(ai); };
             creators["araxxna"] = [](PlayerbotAI* ai) { return new AraxxnaFightStrategy(ai); };
             creators["moroes"] = [](PlayerbotAI* ai) { return new MoroesFightStrategy(ai); };

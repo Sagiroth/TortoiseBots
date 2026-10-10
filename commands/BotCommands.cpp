@@ -3306,6 +3306,7 @@ static bool HandleRaidAction(ChatHandler* handler, BotCommandContext const& cont
                                           "heigan", "anub'rekhan", "kel'thuzad",
                                           "grobbulus",
                                           "loatheb",
+                                          "ossirian",
                                           "emerald sanctum", "lower karazhan", "karazhan crypt",
                                           "solnius", "araxxna", "moroes" })
             {
