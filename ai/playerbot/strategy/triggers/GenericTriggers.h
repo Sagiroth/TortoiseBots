@@ -504,8 +504,9 @@ namespace ai
 
     // Boss-gated debuff conservation (mod-playerbots parity, CD-3, Base
     // trigger only): fires when the current target wants this debuff AND is
-    // a dungeon/raid boss, so expensive debuffs are saved for bosses. Class
-    // debuff wiring stays untouched in this PR.
+    // a world boss (no IsDungeonBoss on this core; dungeon-boss coverage
+    // waits on a real boss flag), so expensive debuffs are saved for bosses.
+    // Class debuff wiring stays untouched in this PR.
     class DebuffOnBossTrigger : public DebuffTrigger
     {
     public:
@@ -525,9 +526,10 @@ namespace ai
 
     // Difficulty-gated cooldown trigger (mod-playerbots parity, CD-2):
     // fires in combat when the fight is hard enough (balance <= 50, i.e.
-    // not a trivial pull) or always against a PvP target. Rewires only the
-    // generic racial/trinket rows; per-class BoostTrigger consumers keep
-    // their own gates.
+    // not a trivial pull), always against a PvP target, or always for a
+    // player-owned bot (local master bypass, same as BoostTrigger).
+    // Rewires only the generic racial/trinket rows; per-class
+    // BoostTrigger consumers keep their own gates.
     class GenericBoostTrigger : public Trigger
     {
     public:
@@ -654,7 +656,19 @@ namespace ai
     class HighManaTrigger : public Trigger
     {
     public:
-        HighManaTrigger(PlayerbotAI* ai, std::string name = "high mana") : Trigger(ai, name) {}
+        HighManaTrigger(PlayerbotAI* ai) : Trigger(ai, "high mana") {}
+
+        virtual bool IsActive() override;
+    };
+
+    // Donor EnoughManaTrigger verdict (mod-playerbots GenericTriggers.cpp):
+    // fires while mana sits ABOVE the high-mana line, gating spenders like
+    // consecration. Deliberately separate from HighManaTrigger, whose local
+    // verdict is inverted (mana < 65) to drive the drink row.
+    class EnoughManaTrigger : public Trigger
+    {
+    public:
+        EnoughManaTrigger(PlayerbotAI* ai) : Trigger(ai, "enough mana") {}
 
         virtual bool IsActive() override;
     };
@@ -1157,18 +1171,17 @@ namespace ai
 
         virtual bool IsActive() override
         {
-            // Was 4 sequential returns (only fear ever fired): fold into one.
-            // Covers fear/charm/stun/confuse via aura types plus sleep/sap
-            // via mechanic scan (StoneformTrigger idiom) — WotF breaks all.
+            // Donor FearCharmSleepTrigger shape (fear/charm/sleep): 1.12 WotF
+            // (spell 7744, charm+fear immunity) breaks exactly these, so the
+            // stun/confuse/sap arms only fired uselessly on uncastable bots.
             if (bot->HasAuraType(SPELL_AURA_MOD_FEAR) ||
                 bot->HasAuraType(SPELL_AURA_MOD_CHARM) ||
-                bot->HasAuraType(SPELL_AURA_MOD_STUN) ||
-                bot->HasAuraType(SPELL_AURA_MOD_CONFUSE))
+                bot->HasAuraType(SPELL_AURA_AOE_CHARM))
                 return true;
-            uint32 sleepSapMask = (1 << (MECHANIC_SLEEP - 1)) | (1 << (MECHANIC_SAPPED - 1));
+            uint32 sleepMask = 1 << (MECHANIC_SLEEP - 1);
             for (auto itr : bot->GetSpellAuraHolderMap())
             {
-                if (itr.second->HasMechanicMask(sleepSapMask))
+                if (itr.second->HasMechanicMask(sleepMask))
                     return true;
             }
             return false;

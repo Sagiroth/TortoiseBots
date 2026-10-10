@@ -51,6 +51,11 @@ bool HighManaTrigger::IsActive()
     return AI_VALUE2(bool, "has mana", "self target") && AI_VALUE2(uint8, "mana", "self target") < 65;
 }
 
+bool EnoughManaTrigger::IsActive()
+{
+    return AI_VALUE2(bool, "has mana", "self target") && AI_VALUE2(uint8, "mana", "self target") > 65;
+}
+
 bool HealerShouldAttackTrigger::IsActive()
 {
     if (!bot->GetGroup())
@@ -514,16 +519,15 @@ bool DebuffTrigger::IsActive()
 
 bool DebuffOnBossTrigger::IsActive()
 {
+    // No IsDungeonBoss on this core: world boss only, matching the donor
+    // world-boss arm exactly. Elites-in-dungeon would open the gate to all
+    // trash and defeat the conservation intent; dungeon-boss coverage waits
+    // on a real boss flag.
     if (!DebuffTrigger::IsActive())
         return false;
     Unit* target = GetTarget();
     Creature* creature = target ? dynamic_cast<Creature*>(target) : nullptr;
-    if (!creature)
-        return false;
-    if (creature->IsWorldBoss())
-        return true;
-    Map* map = creature->GetMap();
-    return creature->IsElite() && map && (map->IsDungeon() || map->IsRaid());
+    return creature && creature->IsWorldBoss();
 }
 
 bool DebuffTrigger::HasMaxDebuffs()
@@ -672,10 +676,15 @@ bool BoostTrigger::IsActive()
 
 bool GenericBoostTrigger::IsActive()
 {
+    // Donor GenericBoostTrigger verdict (balance <= 50, PvP-target always)
+    // plus the local owned-bot master bypass so player-owned racials keep
+    // popping every combat the way BoostTrigger consumers always have.
     if (!ai->IsStateActive(BotState::BOT_STATE_COMBAT))
         return false;
     Unit* target = AI_VALUE(Unit*, "current target");
     if (target && target->IsPlayer())
+        return true;
+    if (ai->HasRealPlayerMaster())
         return true;
     return AI_VALUE(uint8, "balance") <= 50;
 }
