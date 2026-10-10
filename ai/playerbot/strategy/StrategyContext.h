@@ -62,6 +62,7 @@
 #include "generic/KelthuzadDungeonStrategies.h"
 #include "generic/GrobbulusDungeonStrategies.h"
 #include "generic/LoathebDungeonStrategies.h"
+#include "generic/RazuviousDungeonStrategies.h"
 #include "generic/SapphironDungeonStrategies.h"
 #include "generic/HeiganDungeonStrategies.h"
 #include "generic/AnubrekhanDungeonStrategies.h"
@@ -202,6 +203,7 @@ namespace ai
             creators["kel'thuzad"] = [](PlayerbotAI* ai) { return new KelthuzadFightStrategy(ai); };
             creators["grobbulus"] = [](PlayerbotAI* ai) { return new GrobbulusFightStrategy(ai); };
             creators["loatheb"] = [](PlayerbotAI* ai) { return new LoathebFightStrategy(ai); };
+            creators["razuvious"] = [](PlayerbotAI* ai) { return new RazuviousFightStrategy(ai); };
             creators["sapphiron"] = [](PlayerbotAI* ai) { return new SapphironFightStrategy(ai); };
             creators["heigan"] = [](PlayerbotAI* ai) { return new HeiganFightStrategy(ai); };
             creators["anub'rekhan"] = [](PlayerbotAI* ai) { return new AnubrekhanFightStrategy(ai); };

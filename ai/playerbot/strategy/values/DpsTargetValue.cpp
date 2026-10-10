@@ -10,6 +10,32 @@ using namespace ai;
 
 namespace
 {
+    // Wasted DPS targets (mod-playerbots RaidMcStrategy::AppendTargetExclusions,
+    // plus the vanilla Razuvious Understudies): Majordomo cannot die, Core
+    // Ragers heal to full while Golemagg lives, and Understudies are the
+    // priests' Mind Control tanks while Razuvious lives. Tanks still pick
+    // them up through their own target selection.
+    bool IsWastedDpsTarget(PlayerbotAI* ai, Unit* unit)
+    {
+        uint32 const entry = unit->GetEntry();
+        uint32 boss = 0;
+        if (entry == 12018)
+            return true;
+        if (entry == 11672)
+            boss = 11988;
+        else if (entry == 16803)
+            boss = 16061;
+        else
+            return false;
+        for (ObjectGuid const& guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get())
+        {
+            Unit* other = ai->GetUnit(guid);
+            if (other && other->IsAlive() && other->GetEntry() == boss)
+                return true;
+        }
+        return false;
+    }
+
     // mod-playerbots DPS target tournament (LD-1/LD-4): lifetime buckets per
     // bot type instead of flat least-HP, CC-moon skip, skull snap. The
     // group-tank follow above stays: vanilla threat punishes independent
@@ -89,7 +115,8 @@ namespace
 
         void CheckAttacker(Unit* attacker, ThreatManager*) override
         {
-            if (!attacker || attacker->IsPlayer() || !attacker->IsAlive() || IsMoon(attacker) || IsCcTarget(attacker))
+            if (!attacker || attacker->IsPlayer() || !attacker->IsAlive() || IsMoon(attacker) || IsCcTarget(attacker) ||
+                IsWastedDpsTarget(ai, attacker))
                 return;
             if (CheckSkull(attacker))
                 return;
@@ -126,7 +153,8 @@ namespace
 
         void CheckAttacker(Unit* attacker, ThreatManager*) override
         {
-            if (!attacker || attacker->IsPlayer() || !attacker->IsAlive() || IsMoon(attacker) || IsCcTarget(attacker))
+            if (!attacker || attacker->IsPlayer() || !attacker->IsAlive() || IsMoon(attacker) || IsCcTarget(attacker) ||
+                IsWastedDpsTarget(ai, attacker))
                 return;
             if (CheckSkull(attacker))
                 return;
@@ -155,7 +183,8 @@ namespace
 
         void CheckAttacker(Unit* attacker, ThreatManager*) override
         {
-            if (!attacker || attacker->IsPlayer() || !attacker->IsAlive() || IsMoon(attacker) || IsCcTarget(attacker))
+            if (!attacker || attacker->IsPlayer() || !attacker->IsAlive() || IsMoon(attacker) || IsCcTarget(attacker) ||
+                IsWastedDpsTarget(ai, attacker))
                 return;
             if (CheckSkull(attacker))
                 return;
@@ -283,7 +312,8 @@ Unit* DpsTargetValue::Calculate()
     GeneralDpsStrategy ccProbe(ai, 0.0f);
     if (Unit* tankTarget = GetGroupTankTarget(ai))
     {
-        if (tankTarget != AI_VALUE(Unit*, "cc target") && !ccProbe.IsCcTarget(tankTarget))
+        if (tankTarget != AI_VALUE(Unit*, "cc target") && !ccProbe.IsCcTarget(tankTarget) &&
+            !IsWastedDpsTarget(ai, tankTarget))
             return tankTarget;
     }
 
