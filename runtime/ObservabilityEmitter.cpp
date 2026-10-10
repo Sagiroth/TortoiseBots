@@ -1168,6 +1168,10 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
         snap.state = MacroStateName(state);
         FillTravelInfo(ai, snap.travelPurpose, snap.travelTo, snap.travelStatus, snap.travelDist);
         BotManager::Instance().GetAiVisitInfo(bot->GetGUIDLow(), snap.aiVisits, snap.aiAgeMs);
+        if (bot->InBattleGround())
+            snap.pvp = "bg";
+        else if (bot->InBattleGroundQueue())
+            snap.pvp = "queue";
 
         if (ai)
         {
@@ -1308,7 +1312,8 @@ void ObservabilityEmitter::EmitSnapshotCycle(std::vector<Player*> const& activeB
                 << ",\"travel_status\":\"" << b.travelStatus << "\""
                 << ",\"travel_dist\":" << b.travelDist
                 << ",\"ai_visits\":" << b.aiVisits
-                << ",\"ai_age_ms\":" << b.aiAgeMs << "}";
+                << ",\"ai_age_ms\":" << b.aiAgeMs
+                << ",\"pvp\":\"" << b.pvp << "\"}";
         }
         bss << "]}";
         SendDatagram(bss.str());

@@ -57,6 +57,8 @@ type BotSnapshot struct {
 	// AiVisits counts AI updates since login; AiAgeMs is ms since the last.
 	AiVisits uint32 `json:"ai_visits,omitempty"`
 	AiAgeMs  uint32 `json:"ai_age_ms,omitempty"`
+	// Pvp is "bg" inside a battleground, "queue" when queued, else empty.
+	Pvp string `json:"pvp,omitempty"`
 
 	// XpPerHour is daemon-derived from successive XP samples (level-up
 	// aware), not on the wire. XpGainAgeSec is seconds since the last
