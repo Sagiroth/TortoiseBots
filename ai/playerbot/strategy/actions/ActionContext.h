@@ -82,6 +82,7 @@
 #include "LowerKarazhanDungeonActions.h"
 #include "ClassicRaidDungeonActions.h"
 #include "KarazhanCryptDungeonActions.h"
+#include "ThaddiusDungeonActions.h"
 #include "KelthuzadDungeonActions.h"
 #include "GrobbulusDungeonActions.h"
 #include "LoathebDungeonActions.h"
@@ -387,6 +388,7 @@ namespace ai
             creators["golemagg tank hold"] = [](PlayerbotAI* ai) { return new GolemaggTankHoldAction(ai); };
             creators["enable geddon fight strategy"] = [](PlayerbotAI* ai) { return new GeddonEnableFightStrategyAction(ai); };
             creators["disable geddon fight strategy"] = [](PlayerbotAI* ai) { return new GeddonDisableFightStrategyAction(ai); };
+            creators["move away from living bomb"] = [](PlayerbotAI* ai) { return new GeddonMoveAwayFromLivingBombAction(ai); };
             creators["move away from geddon"] = [](PlayerbotAI* ai) { return new GeddonMoveAwayAction(ai); };
 
             creators["move away from hazard"] = [](PlayerbotAI* ai) { return new MoveAwayFromHazard(ai); };
@@ -423,6 +425,11 @@ namespace ai
 
             creators["enable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanEnableFightStrategyAction(ai); };
             creators["disable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanDisableFightStrategyAction(ai); };
+            creators["enable thaddius fight strategy"] = [](PlayerbotAI* ai) { return new ThaddiusEnableFightStrategyAction(ai); };
+            creators["disable thaddius fight strategy"] = [](PlayerbotAI* ai) { return new ThaddiusDisableFightStrategyAction(ai); };
+            creators["thaddius attack nearest pet"] = [](PlayerbotAI* ai) { return new ThaddiusAttackNearestPetAction(ai); };
+            creators["thaddius move to platform"] = [](PlayerbotAI* ai) { return new ThaddiusMoveToPlatformAction(ai); };
+            creators["thaddius move polarity"] = [](PlayerbotAI* ai) { return new ThaddiusMovePolarityAction(ai); };
             creators["enable kel'thuzad fight strategy"] = [](PlayerbotAI* ai) { return new KelthuzadEnableFightStrategyAction(ai); };
             creators["disable kel'thuzad fight strategy"] = [](PlayerbotAI* ai) { return new KelthuzadDisableFightStrategyAction(ai); };
             creators["kel'thuzad choose target"] = [](PlayerbotAI* ai) { return new KelthuzadChooseTargetAction(ai); };
