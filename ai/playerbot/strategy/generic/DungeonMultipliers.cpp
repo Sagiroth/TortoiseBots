@@ -5,8 +5,6 @@
 #include "DungeonMultipliers.h"
 #include "playerbot/strategy/actions/DungeonActions.h"
 #include "playerbot/strategy/actions/ReachTargetActions.h"
-#include "playerbot/strategy/actions/GenericSpellActions.h"
-#include "playerbot/strategy/actions/ChooseTargetActions.h"
 
 using namespace ai;
 
@@ -37,7 +35,7 @@ float GarrAoeOffMultiplier::GetValue(Action* action)
     if (!ai->HasStrategy("garr", BotState::BOT_STATE_COMBAT))
         return 1.0f;
     AiObjectContext* context = ai->GetAiObjectContext();
-    const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+    const std::list<ObjectGuid>& attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
     bool garrAlive = false;
     for (const ObjectGuid& attackerGuid : attackers)
     {
@@ -54,15 +52,11 @@ float GarrAoeOffMultiplier::GetValue(Action* action)
     // Our role API exposes tank/heal/ranged; DPS = neither tank nor heal.
     Player* bot = ai->GetBot();
     bool botIsDps = !ai->IsTank(bot) && !ai->IsHeal(bot);
-    // AoE actions: the generic "dps aoe" node plus any spell action whose
-    // threat type is AOE (mirrors the donor's named AoE-spell list, which
-    // all carry ACTION_THREAT_AOE in our spell actions).
-    bool actionIsAoe = dynamic_cast<DpsAoeAction*>(action) != nullptr;
-    if (!actionIsAoe)
-    {
-        if (CastSpellAction* spellAction = dynamic_cast<CastSpellAction*>(action))
-            actionIsAoe = spellAction->getThreatType() == ActionThreatType::ACTION_THREAT_AOE;
-    }
+    // Name-matched AoE set (donor's explicit list): threat flags do not
+    // mark our real AoE (Whirlwind etc. return SINGLE/NONE) and wrongly
+    // flag heals plus single-target dots as AOE, so type/threat matching
+    // is both under- and over-inclusive here.
+    bool actionIsAoe = IsGarrSuppressedAoeAction(action->getName());
     if (ShouldSuppressGarrAoe(garrAlive, botIsDps, actionIsAoe))
         return 0.0f;
     return 1.0f;

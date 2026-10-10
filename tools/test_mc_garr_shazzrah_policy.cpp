@@ -10,6 +10,7 @@
     } \
 } while (0)
 
+using ai::IsGarrSuppressedAoeAction;
 using ai::IsShazzrahMoveAction;
 using ai::kGarrEntry;
 using ai::kShazzrahEntry;
@@ -26,6 +27,30 @@ int main()
     CHECK(kShazzrahEntry == 12264);
     CHECK(kShazzrahRangeDistance == 26.0f);
     std::cout << "  [PASS] ids and 26y range pinned\n";
+
+    // Garr AoE set: the donor's explicit list by action name. Real AoE
+    // (whirlwind, consecration, magma totem, traps, hurricane, mage AoE,
+    // hunter shots, warlock rain) is suppressed; single-target dots, curses
+    // and heals — which our threat flags wrongly mark AOE — are NOT.
+    CHECK(IsGarrSuppressedAoeAction("dps aoe"));
+    CHECK(IsGarrSuppressedAoeAction("whirlwind"));
+    CHECK(IsGarrSuppressedAoeAction("consecration"));
+    CHECK(IsGarrSuppressedAoeAction("magma totem"));
+    CHECK(IsGarrSuppressedAoeAction("explosive trap"));
+    CHECK(IsGarrSuppressedAoeAction("hurricane"));
+    CHECK(IsGarrSuppressedAoeAction("flamestrike"));
+    CHECK(IsGarrSuppressedAoeAction("arcane explosion"));
+    CHECK(IsGarrSuppressedAoeAction("multi-shot"));
+    CHECK(IsGarrSuppressedAoeAction("volley"));
+    CHECK(IsGarrSuppressedAoeAction("rain of fire"));
+    CHECK(IsGarrSuppressedAoeAction("hellfire"));
+    CHECK(!IsGarrSuppressedAoeAction("corruption on attacker"));
+    CHECK(!IsGarrSuppressedAoeAction("serpent sting"));
+    CHECK(!IsGarrSuppressedAoeAction("heal party member"));
+    CHECK(!IsGarrSuppressedAoeAction("flash heal"));
+    CHECK(!IsGarrSuppressedAoeAction("dps assist"));
+    CHECK(!IsGarrSuppressedAoeAction("tank assist"));
+    std::cout << "  [PASS] garr aoe name set (real aoe only)\n";
 
     // Garr AoE-off: only DPS-bot AoE while Garr lives is suppressed.
     CHECK(ShouldSuppressGarrAoe(true, true, true));

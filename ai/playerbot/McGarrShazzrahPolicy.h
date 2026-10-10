@@ -23,9 +23,28 @@ namespace ai
     constexpr float kShazzrahRangeDistance = 26.0f;
 
     // Garr: DPS-bot AoE suppressed while Garr lives. The donor names its
-    // AoE set by action type; here the caller passes the already-computed
-    // verdict (is this bot DPSing, is this action an AoE) so the policy
-    // stays free of Action-type coupling.
+    // AoE set explicitly (DpsAoeAction + Consecration/Starfall/Whirlwind/
+    // Magma Totem/Explosive Trap/Death and Decay + any AOE-threat cast);
+    // here the caller passes the action NAME and we match the same set,
+    // because our threat flags do not mark real AoE (Whirlwind etc. return
+    // SINGLE/NONE) while wrongly flagging heals and single-target dots as
+    // AOE. Name-matching keeps the policy free of Action-type coupling.
+    inline bool IsGarrSuppressedAoeAction(const std::string& actionName)
+    {
+        return actionName == "dps aoe" ||
+               actionName == "consecration" ||
+               actionName == "whirlwind" ||
+               actionName == "magma totem" ||
+               actionName == "explosive trap" ||
+               actionName == "hurricane" ||
+               actionName == "flamestrike" ||
+               actionName == "arcane explosion" ||
+               actionName == "multi-shot" ||
+               actionName == "volley" ||
+               actionName == "rain of fire" ||
+               actionName == "hellfire";
+    }
+
     inline bool ShouldSuppressGarrAoe(bool garrAlive, bool botIsDps, bool actionIsAoe)
     {
         return garrAlive && botIsDps && actionIsAoe;

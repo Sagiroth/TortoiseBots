@@ -4557,11 +4557,13 @@ strategy idiom (mirror the Magmadar pattern). Deviations from the donor,
 all deliberate: (a) no per-boss multiplier plumbing in the generic raid
 strategy — each fight strategy carries its own multiplier, so Garr's
 AoE-off cannot leak into other fights; (b) DPS = neither tank nor heal via
-our role API (no IsDps exists); the donor's named AoE-spell list is covered
-by ACTION_THREAT_AOE on our spell actions plus the generic `dps aoe` node;
-(c) the Shazzrah reaction node is queued only for ranged/heal bots at
-strategy level (melee never sees the trigger); the manual `dps aoe` addon
-switch stays as the player's override.
+our role API (no IsDps exists); the donor's named AoE-spell list is
+matched by action NAME (threat flags under-mark our real AoE and
+over-mark heals + single-target dots, so type matching is wrong both
+ways); (c) the Shazzrah reaction node is queued only for ranged/heal bots
+at strategy level (melee never sees the trigger). Note: the veto is
+unconditional while Garr lives — the addon's manual AoE switch does NOT
+override it on this fight (single-target discipline is the mechanic).
 
 Reason: raid1 gaps MC-GARR-AOE + MC-SHAZZRAH: stray AoE broke Garr
 Firesworn control (banish-safe single-target), and ranged ate Arcane
