@@ -218,4 +218,16 @@ namespace ai
             return !gos.empty();
         }
     };
+
+    class VaelEnableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        VaelEnableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "enable vael fight strategy", "+vael") {}
+    };
+
+    class VaelDisableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        VaelDisableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable vael fight strategy", "-vael") {}
+    };
 }

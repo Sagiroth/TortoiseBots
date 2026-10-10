@@ -241,9 +241,15 @@ void ArmsWarriorBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
 {
     WarriorBuffStrategy::InitCombatTriggers(triggers);
 
+    // Battle-stance pin (donor ArmsWarriorStrategy pins battle at HIGH+10):
+    // charge/overpower/mocking blow/sweeping strikes/retaliation are all
+    // Battle-locked, and pinning berserker broke every one of them. Whirlwind
+    // keeps its arms-scoped berserker prerequisite node, so it still dances
+    // out and back (donor accepts the same dance); the AoE multipliers keep
+    // managing the sweeping-strikes stance choice on packs.
     triggers.push_back(new TriggerNode(
-        "berserker stance",
-        NextAction::array(0, new NextAction("berserker stance", ACTION_NORMAL), NULL)));
+        "battle stance",
+        NextAction::array(0, new NextAction("battle stance", ACTION_NORMAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "feared",
@@ -295,6 +301,19 @@ void ArmsWarriorBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>&
 void ArmsWarriorBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     WarriorBoostStrategy::InitCombatTriggers(triggers);
+
+    triggers.push_back(new TriggerNode(
+        "death wish",
+        NextAction::array(0, new NextAction("death wish", ACTION_HIGH), NULL)));
+
+    // Retaliation while winning (donor arms fires at almost-full-health):
+    // 70-90% hp with melee attackers is when the counterattack shield earns
+    // its 30-min cooldown. Battle-locked: fires from battle stance (the
+    // WAR-5 pin holds it there; without that PR this row simply waits for
+    // battle rather than dancing).
+    triggers.push_back(new TriggerNode(
+        "almost full health",
+        NextAction::array(0, new NextAction("retaliation", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode(
         "recklessness",

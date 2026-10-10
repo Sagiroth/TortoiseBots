@@ -124,6 +124,12 @@ namespace ai
 
     DEBUFF_TRIGGER(ImmolateTrigger, "immolate");
 
+    class ImmolateOnAttackerTrigger : public DebuffOnAttackerTrigger
+    {
+    public:
+        ImmolateOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "immolate") {}
+    };
+
     class ShadowTranceTrigger : public HasAuraTrigger
     {
     public:
@@ -300,6 +306,32 @@ namespace ai
         bool IsActive() override
         {
             return InterruptSpellTrigger::IsActive();
+        }
+    };
+
+    class DevourMagicPurgeTrigger : public TargetAuraDispelTrigger
+    {
+    public:
+        DevourMagicPurgeTrigger(PlayerbotAI* ai) : TargetAuraDispelTrigger(ai, "devour magic", DISPEL_MAGIC) {}
+        bool IsActive() override
+        {
+            // Cheap-first: no Felhunter, no aura scan and no queue spam —
+            // the actions would discard as USELESS anyway.
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            return pet && pet->GetEntry() == 417 && TargetAuraDispelTrigger::IsActive();
+        }
+    };
+
+    class DevourMagicCleanseTrigger : public PartyMemberNeedCureTrigger
+    {
+    public:
+        DevourMagicCleanseTrigger(PlayerbotAI* ai) : PartyMemberNeedCureTrigger(ai, "devour magic", DISPEL_MAGIC) {}
+        bool IsActive() override
+        {
+            // Same cheap-first gate: the party-wide dispel scan only runs
+            // while a Felhunter is actually out.
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            return pet && pet->GetEntry() == 417 && PartyMemberNeedCureTrigger::IsActive();
         }
     };
 

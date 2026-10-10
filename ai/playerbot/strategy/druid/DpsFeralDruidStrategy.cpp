@@ -93,9 +93,25 @@ void DpsFeralDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
         "faerie fire (feral)",
         NextAction::array(0, new NextAction("faerie fire (feral)", ACTION_NORMAL + 5), NULL)));
 
+    // mod-playerbots parity (DRU-5): execute-bite outranks everything
+    // below (a dying target dies now); strictly above the faerie-fire row
+    // at +5 since ties keep the first-pushed basket. Timed bite replaces
+    // the old flat-CP5 row below rip, so: execute > rip > timed bite.
     triggers.push_back(new TriggerNode(
-        "ferocious bite",
+        "ferocious bite execute",
+        NextAction::array(0, new NextAction("ferocious bite", ACTION_NORMAL + 6), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "ferocious bite time",
         NextAction::array(0, new NextAction("ferocious bite", ACTION_NORMAL + 3), NULL)));
+
+    // mod-playerbots parity (DRU-4): spend Omen of Clarity procs on a free
+    // Shred — free combo points above the whole finisher/builder ladder
+    // (and above the faerie-fire row at +5: ties keep the first-pushed
+    // basket, so the proc must strictly outrank the debuff refresh).
+    triggers.push_back(new TriggerNode(
+        "clearcasting",
+        NextAction::array(0, new NextAction("shred", ACTION_NORMAL + 6), NULL)));
 
     triggers.push_back(new TriggerNode(
         "behind target",

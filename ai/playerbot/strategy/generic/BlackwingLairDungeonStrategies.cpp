@@ -8,6 +8,40 @@ void BlackwingLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
     triggers.push_back(new TriggerNode(
         "suppression device close",
         NextAction::array(0, new NextAction("disarm suppression device", 80.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "start vael fight",
+        NextAction::array(0, new NextAction("enable vael fight strategy", 100.0f), NULL)));
+}
+
+void VaelFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "fire protection potion ready",
+        NextAction::array(0, new NextAction("fire protection potion", 100.0f), NULL)));
+}
+
+void VaelFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end vael fight",
+        NextAction::array(0, new NextAction("disable vael fight strategy", 100.0f), NULL)));
+}
+
+void VaelFightStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "end vael fight",
+        NextAction::array(0, new NextAction("disable vael fight strategy", 100.0f), NULL)));
+}
+
+void VaelFightStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    // Outranks the universal bomb runout (EMERGENCY+6): repulsion flee
+    // with victim hold replaces the blind anchor-flee while +vael lives.
+    triggers.push_back(new TriggerNode(
+        "raid bomb debuff",
+        NextAction::array(0, new NextAction("vael adrenaline flee", ACTION_EMERGENCY + 7), NULL)));
 }
 
 void BlackwingLairDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

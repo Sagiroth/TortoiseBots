@@ -24,6 +24,7 @@ namespace ai
                 creators["boost"] = [](PlayerbotAI* ai) { return new BoostPlaceholderStrategy(ai); };
                 creators["pull"] = [](PlayerbotAI* ai) { return new PullStrategy(ai, "lightning bolt"); };
                 creators["offheal"] = [](PlayerbotAI* ai) { return new OffhealPlaceholderStrategy(ai); };
+                creators["offdps"] = [](PlayerbotAI* ai) { return new OffdpsPlaceholderStrategy(ai); };
             }
         };
 
@@ -105,6 +106,17 @@ namespace ai
                 creators["offheal raid"] = [](PlayerbotAI* ai) { return new ShamanOffhealRaidStrategy(ai); };
             }
         };
+        class OffdpsSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            OffdpsSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["offdps pve"] = [](PlayerbotAI* ai) { return new ShamanOffdpsPveStrategy(ai); };
+                creators["offdps pvp"] = [](PlayerbotAI* ai) { return new ShamanOffdpsPvpStrategy(ai); };
+                creators["offdps raid"] = [](PlayerbotAI* ai) { return new ShamanOffdpsRaidStrategy(ai); };
+            }
+        };
+
 
         class BoostSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
         {
@@ -381,6 +393,7 @@ ShamanAiObjectContext::ShamanAiObjectContext(PlayerbotAI* ai) : AiObjectContext(
     strategyContexts.Add(new ai::shaman::ClassSituationStrategyFactoryInternal());
     strategyContexts.Add(new ai::shaman::BuffSituationStrategyFactoryInternal());
     strategyContexts.Add(new ai::shaman::OffhealSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::shaman::OffdpsSituationStrategyFactoryInternal());
     strategyContexts.Add(new ai::shaman::BoostSituationStrategyFactoryInternal());
     actionContexts.Add(new ai::shaman::AiObjectContextInternal());
     triggerContexts.Add(new ai::shaman::TriggerFactoryInternal());

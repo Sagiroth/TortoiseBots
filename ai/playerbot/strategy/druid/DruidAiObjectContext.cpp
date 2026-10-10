@@ -234,7 +234,10 @@ namespace ai
                 creators["nature eclipse"] = [](PlayerbotAI* ai) { return new HasNatureEclipseTrigger(ai); };
                 creators["bash on enemy healer"] = [](PlayerbotAI* ai) { return new BashInterruptEnemyHealerSpellTrigger(ai); };
                 creators["nature's swiftness"] = [](PlayerbotAI* ai) { return new NaturesSwiftnessTrigger(ai); };
+                creators["nature's swiftness active"] = [](PlayerbotAI* ai) { return new NaturesSwiftnessActiveTrigger(ai); };
                 creators["ferocious bite"] = [](PlayerbotAI* ai) { return new FerociousBiteTrigger(ai); };
+                creators["ferocious bite execute"] = [](PlayerbotAI* ai) { return new FerociousBiteExecuteTrigger(ai); };
+                creators["ferocious bite time"] = [](PlayerbotAI* ai) { return new FerociousBiteTimeTrigger(ai); };
                 creators["claw"] = [](PlayerbotAI* ai) { return new SpellCanBeCastedTrigger(ai, "claw"); };
                 creators["rip"] = [](PlayerbotAI* ai) { return new RipTrigger(ai, 3); };
                 creators["enrage"] = [](PlayerbotAI* ai) { return new EnrageTrigger(ai); };

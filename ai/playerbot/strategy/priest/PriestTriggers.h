@@ -7,6 +7,7 @@ namespace ai
     DEBUFF_TRIGGER(HolyFireTrigger, "holy fire");
     DEBUFF_TRIGGER(PowerWordPainTrigger, "shadow word: pain");
     DEBUFF_ENEMY_TRIGGER(PowerWordPainOnAttackerTrigger, "shadow word: pain");
+    DEBUFF_ENEMY_TRIGGER(DevouringPlagueOnAttackerTrigger, "devouring plague");
     DEBUFF_TRIGGER(VampiricEmbraceTrigger, "vampiric embrace");
     CURE_TRIGGER(DispelMagicTrigger, "dispel magic", DISPEL_MAGIC);
     CURE_PARTY_TRIGGER(DispelMagicPartyMemberTrigger, "dispel magic", DISPEL_MAGIC);

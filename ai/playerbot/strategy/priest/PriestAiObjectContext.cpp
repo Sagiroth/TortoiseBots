@@ -172,6 +172,7 @@ namespace ai
                 creators["devouring plague"] = [](PlayerbotAI* ai) { return new DevouringPlagueTrigger(ai); };
                 creators["shadow word: pain"] = [](PlayerbotAI* ai) { return new PowerWordPainTrigger(ai); };
                 creators["shadow word: pain on attacker"] = [](PlayerbotAI* ai) { return new PowerWordPainOnAttackerTrigger(ai); };
+                creators["devouring plague on attacker"] = [](PlayerbotAI* ai) { return new DevouringPlagueOnAttackerTrigger(ai); };
                 creators["dispel magic"] = [](PlayerbotAI* ai) { return new DispelMagicTrigger(ai); };
                 creators["dispel magic on party"] = [](PlayerbotAI* ai) { return new DispelMagicPartyMemberTrigger(ai); };
                 creators["cure disease"] = [](PlayerbotAI* ai) { return new CureDiseaseTrigger(ai); };
@@ -221,6 +222,7 @@ namespace ai
                 creators["ascendance"] = [](PlayerbotAI* ai) { return new CastAscendanceAction(ai); };
                 creators["shadow word: pain"] = [](PlayerbotAI* ai) { return new CastPowerWordPainAction(ai); };
                 creators["shadow word: pain on attacker"] = [](PlayerbotAI* ai) { return new CastPowerWordPainOnAttackerAction(ai); };
+                creators["devouring plague on attacker"] = [](PlayerbotAI* ai) { return new CastDevouringPlagueOnAttackerAction(ai); };
                 creators["devouring plague"] = [](PlayerbotAI* ai) { return new CastDevouringPlagueAction(ai); };
                 creators["mind flay"] = [](PlayerbotAI* ai) { return new CastMindFlayAction(ai); };
                 creators["discipline fire"] = [](PlayerbotAI* ai) { return new CastHolyFireAction(ai); };
