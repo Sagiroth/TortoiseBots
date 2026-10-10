@@ -99,6 +99,11 @@
 - **Red banner:** game server is not responding — no heartbeat for over 10 seconds, meaning the server is down, restarting, or frozen. [#667](https://github.com/Sagiroth/TortoiseBots/pull/667)
 - **Amber banner:** bot data is out of date — server is up but the bot roster hasn't refreshed in over 30 seconds. [#667](https://github.com/Sagiroth/TortoiseBots/pull/667)
 
+### Dashboard & Telemetry
+- Bot telemetry now includes a `pvp` field: `bg` inside a battleground, `queue` while queued. [#668](https://github.com/Sagiroth/TortoiseBots/pull/668)
+- Overview has a new **In PvP** tile showing bots in battlegrounds, with the queued count underneath; clicking it opens the bots list filtered to them. [#668](https://github.com/Sagiroth/TortoiseBots/pull/668)
+- The bots list has an **In PvP** filter chip. [#668](https://github.com/Sagiroth/TortoiseBots/pull/668)
+
 ## 2026-10-09
 
 ### Observability & Engine
