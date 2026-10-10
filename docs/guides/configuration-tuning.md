@@ -258,6 +258,8 @@ cp logs/action_counts.csv /tmp/actions_late.csv
 python3 tools/action_counts_report.py /tmp/actions_early.csv /tmp/actions_late.csv --top 10
 ```
 
+A copy taken mid-dump can tear (the 5-minute append is not atomic): copy twice back-to-back and compare the two before trusting one — identical files mean a clean copy.
+
 The report prints the top actions per class between the two snapshots with the ok share, so dead or failing actions (low ok share) stand out. Counters are cumulative since server start; comparing snapshots from different runs is meaningless.
 
 ---

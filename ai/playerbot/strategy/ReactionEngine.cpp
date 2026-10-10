@@ -142,10 +142,17 @@ bool ReactionEngine::StartReaction()
     bool reactionExecuted = false;
     if (incomingReaction.IsValid())
     {
+        // Capture before executing: Execute can re-entrantly Reset() (nulling
+        // the reaction's action) on paths that then return false, so reading
+        // the action back afterwards can null-deref - even with the counter
+        // off, since arguments evaluate before CountAction's off-check.
+        Action* const reactionAction = incomingReaction.GetAction();
+        std::string const reactionName = reactionAction ? reactionAction->getName() : std::string();
         // Execute the incoming reaction
-        reactionExecuted = ListenAndExecute(incomingReaction.GetAction(), incomingReaction.GetEvent());
-        botdiag::CountAction(ai->GetBot() ? ai->GetBot()->GetClass() : 0,
-            incomingReaction.GetAction()->getName().c_str(), reactionExecuted);
+        reactionExecuted = ListenAndExecute(reactionAction, incomingReaction.GetEvent());
+        if (!reactionName.empty())
+            botdiag::CountAction(ai->GetBot() ? ai->GetBot()->GetClass() : 0,
+                reactionName.c_str(), reactionExecuted);
         if (reactionExecuted)
         {
             // Move the incoming reaction to the ongoing reaction
