@@ -127,6 +127,12 @@
 - Bot CSV diagnostics are now off by default: `AiPlayerbot.AllowedLogFiles` ships empty instead of `bot_events.csv,deaths.csv`, so fresh installs stop silently writing forever-growing files (`deaths.csv` alone hit 60 MB on one realm). Add only the files you need while investigating. [#673](https://github.com/Sagiroth/TortoiseBots/pull/673)
 - Dashboard activity counters (loot, quests, money per bot) are now pruned when bots are deleted, so pool resets no longer leak dead characters into memory and `activity-state.json` (one realm was tracking 6,800 bots for a 1,000-bot pool). [#673](https://github.com/Sagiroth/TortoiseBots/pull/673)
 
+### Observability & Engine
+- Dashboard counters are now dropped when a character is actually **deleted**, not when a bot is merely unseen for 3 days — offline-but-existing bots keep their stats indefinitely [#674](https://github.com/Sagiroth/TortoiseBots/pull/674)
+- The existing 5-minute database sweep now checks which characters still exist, so counters clear correctly after a pool reset [#674](https://github.com/Sagiroth/TortoiseBots/pull/674)
+- Safe failure mode: if the existence query fails or returns nothing, no counters are dropped [#674](https://github.com/Sagiroth/TortoiseBots/pull/674)
+- The old 3-day timestamp heuristic from #673 is fully removed [#674](https://github.com/Sagiroth/TortoiseBots/pull/674)
+
 ## 2026-10-09
 
 ### Observability & Engine
