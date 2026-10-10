@@ -140,20 +140,21 @@ bool KelthuzadPositionAction::Execute(Event& event)
 
     if (PlayerbotAI::IsTank(bot))
     {
-        // Aggro holder takes the MT anchor; a guardian tank takes the
-        // assist anchor; other tanks stay and fight.
-        if (AI_VALUE2(bool, "has aggro", "current target"))
-        {
-            if (bot->GetDistance2d(kKtTankX, kKtTankY) < 3.0f)
-                return false;
-            return MoveTo(bot->GetMapId(), kKtTankX, kKtTankY, bot->GetPositionZ());
-        }
+        // Guardian target first: a guardian OT holding aggro must take the
+        // assist anchor, not the MT anchor (donor: only non-main tanks take
+        // assist_tank_pos; the main tank never targets guardians).
         Unit* current = AI_VALUE(Unit*, "current target");
         if (current && current->GetEntry() == kKtGuardian)
         {
             if (bot->GetDistance2d(kKtAssistTankX, kKtAssistTankY) < 3.0f)
                 return false;
             return MoveTo(bot->GetMapId(), kKtAssistTankX, kKtAssistTankY, bot->GetPositionZ());
+        }
+        if (AI_VALUE2(bool, "has aggro", "current target"))
+        {
+            if (bot->GetDistance2d(kKtTankX, kKtTankY) < 3.0f)
+                return false;
+            return MoveTo(bot->GetMapId(), kKtTankX, kKtTankY, bot->GetPositionZ());
         }
         return false;
     }
