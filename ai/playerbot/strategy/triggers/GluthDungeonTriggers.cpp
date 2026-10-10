@@ -41,14 +41,37 @@ bool GluthMortalWoundSwapTrigger::IsActive()
     return ShouldGluthTauntSwap(true, true, true, stacks);
 }
 
+bool GluthTrigger::IsActive()
+{
+    if (PlayerbotAI::IsTank(bot))
+        return false;
+    const std::list<ObjectGuid> attackers =
+        ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get();
+    for (const ObjectGuid& guid : attackers)
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (unit && unit->IsAlive() && unit->GetEntry() == 15932)
+            return true;
+    }
+    const std::list<ObjectGuid> targets =
+        ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
+    for (const ObjectGuid& guid : targets)
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (unit && unit->IsAlive() && unit->GetEntry() == 15932)
+            return true;
+    }
+    return false;
+}
+
 bool GluthChowUpTrigger::IsActive()
 {
     if (PlayerbotAI::IsTank(bot))
         return false;
 
-    // Cheap cached check only: any chow on the shared target lists. The
-    // chooser (fired by this trigger) does the single precise sweep and
-    // reverts to boss when nothing qualifies.
+    // Cheap cached check only: any chow on the shared target lists.
+    // (Kept for status/introspection; the strategy drives triage off the
+    // continuous "gluth" trigger so the target also swaps back to boss.)
     const std::list<ObjectGuid> targets =
         ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
     for (const ObjectGuid& guid : targets)

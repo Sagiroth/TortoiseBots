@@ -37,4 +37,18 @@ namespace ai
         std::string GetTargetName() override { return "self target"; }
         bool IsActive() override;
     };
+
+    // Encounter trigger (donor parity: donor runs "gluth choose target"
+    // off the continuous "gluth" trigger): Gluth himself on the shared
+    // cached lists. Cheap cached check only - the chooser does the one
+    // precise world sweep and falls back to the boss, so bots swap back
+    // once chow die.
+    class GluthTrigger : public Trigger
+    {
+    public:
+        GluthTrigger(PlayerbotAI* ai, std::string name = "gluth", int checkInterval = 2)
+            : Trigger(ai, name, checkInterval) {}
+        std::string GetTargetName() override { return "self target"; }
+        bool IsActive() override;
+    };
 }

@@ -399,6 +399,7 @@ namespace ai
             creators["enable gluth fight strategy"] = [](PlayerbotAI* ai) { return new GluthEnableFightStrategyAction(ai); };
             creators["disable gluth fight strategy"] = [](PlayerbotAI* ai) { return new GluthDisableFightStrategyAction(ai); };
             creators["gluth choose target"] = [](PlayerbotAI* ai) { return new GluthChooseTargetAction(ai); };
+            creators["gluth taunt swap"] = [](PlayerbotAI* ai) { return new GluthTauntSwapAction(ai); };
             creators["enable sapphiron fight strategy"] = [](PlayerbotAI* ai) { return new SapphironEnableFightStrategyAction(ai); };
             creators["disable sapphiron fight strategy"] = [](PlayerbotAI* ai) { return new SapphironDisableFightStrategyAction(ai); };
             creators["sapphiron hide"] = [](PlayerbotAI* ai) { return new SapphironHideAction(ai); };

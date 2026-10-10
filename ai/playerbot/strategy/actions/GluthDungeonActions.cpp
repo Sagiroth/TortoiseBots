@@ -76,3 +76,27 @@ bool GluthChooseTargetAction::Execute(Event& event)
         return false;
     return Attack(bot, want);
 }
+
+bool GluthTauntSwapAction::Execute(Event& event)
+{
+    if (!PlayerbotAI::IsTank(bot))
+        return false;
+
+    Unit* gluth = FindGluthBoss(ai);
+    if (!gluth || !gluth->IsAlive())
+        return false;
+
+    // Class-correct taunt: these actions are always registered in the
+    // class AiObjectContext (unlike the legacy "taunt spell" node alias).
+    const char* taunt = nullptr;
+    switch (bot->GetClass())
+    {
+        case CLASS_WARRIOR: taunt = "taunt"; break;
+        case CLASS_DRUID: taunt = "growl"; break;
+        case CLASS_PALADIN: taunt = "hand of reckoning"; break;
+        default: return false;
+    }
+    if (!ai->CanCastSpell(taunt, gluth))
+        return false;
+    return ai->CastSpell(taunt, gluth);
+}

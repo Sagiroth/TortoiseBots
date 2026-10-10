@@ -8,11 +8,13 @@ void GluthFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     // Off-tank taunts when the MT holds 5+ Mortal Wounds.
     triggers.push_back(new TriggerNode(
         "gluth mortal wound swap",
-        NextAction::array(0, new NextAction("taunt spell", ACTION_HIGH + 2), NULL)));
+        NextAction::array(0, new NextAction("gluth taunt swap", ACTION_HIGH + 2), NULL)));
 
-    // DPS: execute low chow, else boss.
+    // DPS triage, donor wiring: runs continuously while the encounter
+    // is up ("gluth"), choosing the execute chow or falling back to
+    // Gluth - so the target swaps back to the boss once chow die.
     triggers.push_back(new TriggerNode(
-        "gluth chow up",
+        "gluth",
         NextAction::array(0, new NextAction("gluth choose target", ACTION_HIGH + 1), NULL)));
 }
 

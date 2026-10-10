@@ -368,6 +368,7 @@ namespace ai
             creators["end gluth fight"] = [](PlayerbotAI* ai) { return new GluthEndFightTrigger(ai); };
             creators["gluth mortal wound swap"] = [](PlayerbotAI* ai) { return new GluthMortalWoundSwapTrigger(ai); };
             creators["gluth chow up"] = [](PlayerbotAI* ai) { return new GluthChowUpTrigger(ai); };
+            creators["gluth"] = [](PlayerbotAI* ai) { return new GluthTrigger(ai); };
             creators["start sapphiron fight"] = [](PlayerbotAI* ai) { return new SapphironStartFightTrigger(ai); };
             creators["end sapphiron fight"] = [](PlayerbotAI* ai) { return new SapphironEndFightTrigger(ai); };
             creators["sapphiron air hide"] = [](PlayerbotAI* ai) { return new SapphironAirTrigger(ai); };
