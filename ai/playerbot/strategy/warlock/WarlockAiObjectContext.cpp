@@ -263,8 +263,8 @@ namespace ai
                 creators["create soulstone"] = [](PlayerbotAI* ai) { return new CastCreateSoulstoneAction(ai); };
                 creators["create firestone"] = [](PlayerbotAI* ai) { return new CastCreateFirestoneAction(ai); };
                 creators["create spellstone"] = [](PlayerbotAI* ai) { return new CastCreateSpellstoneAction(ai); };
-                creators["spellstone"] = [](PlayerbotAI* ai) { return new UseSpellItemAction(ai, "spellstone"); };
-                creators["firestone"] = [](PlayerbotAI* ai) { return new UseSpellItemAction(ai, "firestone"); };
+                creators["spellstone"] = [](PlayerbotAI* ai) { return new ApplySpellstoneAction(ai); };
+                creators["firestone"] = [](PlayerbotAI* ai) { return new EquipFirestoneAction(ai); };
                 creators["summon voidwalker"] = [](PlayerbotAI* ai) { return new CastSummonVoidwalkerAction(ai); };
                 creators["summon succubus"] = [](PlayerbotAI* ai) { return new CastSummonSuccubusAction(ai); };
                 creators["summon felhunter"] = [](PlayerbotAI* ai) { return new CastSummonFelhunterAction(ai); };

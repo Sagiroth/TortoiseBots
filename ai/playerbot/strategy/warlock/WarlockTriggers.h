@@ -12,10 +12,14 @@ namespace ai
 		virtual bool IsActive() override;
 	};
 
-    class SpellstoneTrigger : public BuffTrigger
+    // Temp-enchant consumable (WAR-4): fires while a stone is held and the
+    // main-hand weapon has no temp enchant. Plain Trigger (not Buff): no
+    // player spell is named "spellstone", so the BuffTrigger HasSpell gate
+    // would never pass.
+    class SpellstoneTrigger : public Trigger
     {
     public:
-        SpellstoneTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "spellstone") {}
+        SpellstoneTrigger(PlayerbotAI* ai) : Trigger(ai, "spellstone") {}
         virtual bool IsActive() override;
     };
 
@@ -23,10 +27,11 @@ namespace ai
     // item (inventory_type 23) with an on-equip aura, not a consumable.
     // Only equips into an EMPTY off-hand next to a one-handed main-hand,
     // so it never swaps out a real off-hand, fights a staff, or loops.
-    class FirestoneTrigger : public BuffTrigger
+    // Plain Trigger (not Buff): no player spell is named "firestone".
+    class FirestoneTrigger : public Trigger
     {
     public:
-        FirestoneTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "firestone") {}
+        FirestoneTrigger(PlayerbotAI* ai) : Trigger(ai, "firestone") {}
         virtual bool IsActive() override;
     };
 

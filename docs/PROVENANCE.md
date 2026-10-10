@@ -4595,3 +4595,18 @@ new `firestone` names); `git diff --check`; shared-builder compile via
 `build-commit.sh` (BUILD OK); live in-game check pending: stone created
 once, spellstone applied, firestone equipped without touching real
 off-hands.
+
+## Review fixes (pr-618, CHANGES_REQUESTED → fixed)
+All three blocking findings verified in code and fixed: (1) `firestone`
+is now a dedicated `EquipFirestoneAction` (static slot-safe equip — the
+`UseSpellItemAction` path refused equippables in bags per
+`UseItemInternal`, and firestones have no on-use spell); (2) creation is
+per-spec (`no spellstone` in affli/demo buff NC, `no firestone` in destro
+buff NC — no more cross-spec shard drain or bag pollution); (3) both
+use-triggers are plain `Trigger`s with O(1) item/slot gates. While
+verifying I found the same latent deadness the reviewer suspected in the
+pre-existing `SpellstoneTrigger` (no player spell is named "spellstone",
+so its `BuffTrigger` HasSpell gate never passed) and fixed it the same
+way. `ApplySpellstoneAction` goes through the item's own on-use spell
+targeted on the weapon (sharpening-stone path in `UseItemInternal`),
+not the refused generic use path.

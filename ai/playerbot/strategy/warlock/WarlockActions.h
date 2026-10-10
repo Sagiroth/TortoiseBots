@@ -413,6 +413,28 @@ namespace ai
         std::string GetTargetName() override { return "self target"; }
         };
 
+    // Equips a bag firestone into an empty off-hand (WAR-4). Not a
+    // UseSpellItemAction: UseItemInternal refuses equippable items sitting
+    // in bags, and firestones have no on-use spell anyway (on-equip aura).
+    class EquipFirestoneAction : public Action
+    {
+    public:
+        EquipFirestoneAction(PlayerbotAI* ai) : Action(ai, "firestone") {}
+        bool Execute(Event& event) override;
+    };
+
+    // Applies a bag spellstone to the main-hand weapon as its temp enchant
+    // (WAR-4) via the item's own on-use spell, targeted on the weapon like
+    // a sharpening stone (UseSpellItemAction can't: UseItemInternal refuses
+    // equippable items sitting in bags).
+    class ApplySpellstoneAction : public UseAction
+    {
+    public:
+        ApplySpellstoneAction(PlayerbotAI* ai) : UseAction(ai, "spellstone") {}
+        bool Execute(Event& event) override;
+        bool isUseful() override;
+    };
+
 	class CastCreateFirestoneAction : public CastSpellAction
 	{
 	public:

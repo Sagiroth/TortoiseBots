@@ -167,9 +167,13 @@ void DestructionWarlockBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode
 {
     WarlockBuffStrategy::InitNonCombatTriggers(triggers);
 
-    // Firestone upkeep (WAR-4, donor parity): vanilla off-hand equip gated
-    // in FirestoneTrigger (empty off-hand, one-handed main-hand), so this
-    // never swaps out real gear or fights a staff.
+    // Firestone upkeep (WAR-4, donor parity): create while holding none,
+    // equip into an empty off-hand beside a one-handed main-hand (gated in
+    // FirestoneTrigger), so this never swaps out real gear or fights a staff.
+    triggers.push_back(new TriggerNode(
+        "no firestone",
+        NextAction::array(0, new NextAction("create firestone", ACTION_NORMAL), NULL)));
+
     triggers.push_back(new TriggerNode(
         "firestone",
         NextAction::array(0, new NextAction("firestone", ACTION_NORMAL), NULL)));

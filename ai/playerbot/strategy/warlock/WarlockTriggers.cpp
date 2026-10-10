@@ -19,17 +19,20 @@ bool DemonArmorTrigger::IsActive()
 
 bool SpellstoneTrigger::IsActive()
 {
-    return BuffTrigger::IsActive() && AI_VALUE2(uint32, "item count", getName()) > 0;
+    if (AI_VALUE2(uint32, "item count", getName()) == 0)
+        return false;
+    // Mutual exclusion with oils at trigger level (the action's isUseful
+    // repeats it): never burn a shard-made stone over an oiled weapon.
+    Item* weapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+    return weapon && weapon->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT) == 0;
 }
 
 bool FirestoneTrigger::IsActive()
 {
-    if (!BuffTrigger::IsActive())
-        return false;
     if (AI_VALUE2(uint32, "item count", getName()) == 0)
         return false;
     // Off-hand held item: never displace worn gear, and a two-handed
-    // main-hand leaves nowhere to put it (the use would fail every tick).
+    // main-hand leaves nowhere to put it (the equip would fail every tick).
     if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND))
         return false;
     Item* mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
