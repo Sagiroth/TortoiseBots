@@ -4523,20 +4523,33 @@ expires; ~20% of all stall time sits in WORK.
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
 
-## Druid parity DRU-6: Faerie Fire (Feral) spam — NOT PORTED (rejected on 1.18.1 mechanics) — 2026-10-09
+## Druid parity DRU-6: Faerie Fire (Feral) spam — NOT PORTED (rejected on module mechanics) — 2026-10-09
 Review of the original spam port (PR #585, review findings verified in
-code and accepted): the donor behaviour does not apply to 1.18.1, so the
-override was reverted and the pre-existing plain-debuff behaviour kept.
-Evidence: (1) FF(feral) 16857 is Effect1=APPLY_AURA (armor reduction),
-zero damage — recasting over a live 40 s debuff buys no threat, and
+code and accepted): the donor trigger behaviour does not port as a
+trigger-only change, so the override was reverted and the pre-existing
+plain-debuff behaviour kept. Evidence, corrected after review round 2
+(three original claims were factually wrong and are corrected here):
+(1) the real blocker is module-side, not core-side:
 `CastAuraSpellAction::isUseful` refuses recast while the aura stands
-anyway, so "spam" degrades to apply-once with extra failure modes;
-(2) the override bypassed `DebuffTrigger`'s `HasSpell` guard, queueing an
-un-castable action every combat tick for bears/cats without the spell
-(FF feral rank 1 is an 11-point Feral talent, not trainer-taught — only
-3739 appears in npc_trainer); (3) Omen fishing is WotLK thinking: cat
-GCDs spent on a 0-damage non-builder above Rip/Bite/Rake/Shred lose
-combo-point generation for no gain.
+(`BuffNeedsRefresh` false for the sub-5-min debuff), so a trigger-only
+port degrades to apply-once with extra failure modes. Core DOES apply
+flat 108 threat per 16857 cast (`spell_threat` row, no debuff check) —
+but that threat is unreachable through the aura-gated module action; a
+future action-layer attempt (FFF action off `CastSpellAction`, donor
+shape) could collect it and is not ruled out.
+(2) the override bypassed `DebuffTrigger`'s `HasSpell` guard, evaluating
+the spam branches every combat tick for bears/cats without the spell
+(wasted per-tick evaluation; the engine drops the un-castable action at
+`isUseful`/`isPossible`, so queue pollution, not pollution — harm
+overstated originally). The "not trainer-taught" claim was false: 3739
+IS `Faerie Fire (Feral)`, Effect 36 LEARN_SPELL teaching 17390, sold by
+druid trainers at 30.
+(3) Omen fishing is WotLK thinking: 16864 procs off melee flags
+(`spell_proc_event`), so FFF casts don't fish procs, and FFF deals no
+damage and builds no CP — filler GCDs buy nothing next to Shred, which
+builds CP and can proc Omen. (Priority detail: the live wired cat row
+is NORMAL+5, above the builders — the review's 5.0 figure is the dead
+legacy `CatDruidStrategy`; the mechanics objection stands regardless.)
 
 Source repository: `mod-playerbots` @ `79bd4281` (local checkout
 `../playerbots-references/mod-playerbots`),
