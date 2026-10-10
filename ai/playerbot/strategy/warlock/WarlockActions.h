@@ -521,6 +521,12 @@ namespace ai
         CastImmolateAction(PlayerbotAI* ai) : CastRangedDebuffSpellAction(ai, "immolate") {}
     };
 
+    class CastImmolateOnAttackerAction : public CastRangedDebuffSpellOnAttackerAction
+    {
+    public:
+        CastImmolateOnAttackerAction(PlayerbotAI* ai) : CastRangedDebuffSpellOnAttackerAction(ai, "immolate") {}
+    };
+
     class CastConflagrateAction : public CastSpellAction
     {
     public:

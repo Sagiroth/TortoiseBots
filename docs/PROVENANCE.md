@@ -5062,3 +5062,38 @@ across audits for nothing.
 Local validation: `bash tools/verify_all.sh` (incl. new policy test +
 wiring check); `git diff --check`; shared-builder compile check; no live
 in-game test.
+## Warlock Immolate spreading (WAR-2) — 2026-10-09
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Warlock/Strategy/DemonologyWarlockStrategy.cpp:58-81`
+(`immolate on attacker` 19.0 + `immolate` 17.5),
+`WarlockTriggers.h:202-207` + `WarlockActions.h:287-296`
+(`DebuffOnAttacker` pair).
+
+Source files (module, modified):
+`ai/playerbot/strategy/warlock/WarlockTriggers.h`
+(`ImmolateOnAttackerTrigger : DebuffOnAttackerTrigger`),
+`ai/playerbot/strategy/warlock/WarlockActions.h`
+(`CastImmolateOnAttackerAction : CastRangedDebuffSpellOnAttackerAction`),
+`ai/playerbot/strategy/warlock/WarlockAiObjectContext.cpp` (registered
+both names), `ai/playerbot/strategy/warlock/WarlockStrategy.cpp`
+(`WarlockAoeStrategy` row at HIGH-1 next to corruption on attacker),
+`ai/playerbot/strategy/warlock/DemonologyWarlockStrategy.cpp` +
+`DestructionWarlockStrategy.cpp` (spec-level row at NORMAL) +
+`docs/classes/warlock.md`, `CHANGELOG.md` (doc lines).
+
+Copied / ported / reimplemented: reimplemented as an exact mirror of
+the live corruption on-attacker pair — no new policy header (nothing to
+decide beyond the shared `DebuffOnAttacker` + 16-cap guard). Deviations
+from the donor, all deliberate: (a) no ≤20% target-health gate on the
+spreader (the corruption spreader has none either — the gate lives on
+the single-target trigger only); (b) affliction spreads via the aoe row
+only, keeping its single-target Agony/Siphon economy untouched.
+
+Reason: demo/destro bots dotted one mob while adds beat on them; donor
+spreads Immolate at spec level.
+
+Local validation: `bash tools/verify_all.sh` (wiring audit covers the two
+new names); `git diff --check`; shared-builder compile via
+`build-commit.sh` (BUILD OK); live in-game check pending: 2+ attackers
+each gain immolate, single-target rotation unchanged.

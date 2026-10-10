@@ -38,6 +38,10 @@ void DemonologyWarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         NextAction::array(0, new NextAction("immolate", ACTION_NORMAL + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "immolate on attacker",
+        NextAction::array(0, new NextAction("immolate on attacker", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "power overwhelming",
         NextAction::array(0, new NextAction("power overwhelming", ACTION_NORMAL + 3), NULL)));
 

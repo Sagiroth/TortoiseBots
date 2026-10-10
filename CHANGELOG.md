@@ -1,5 +1,7 @@
 # Changelog
 
+- Warlock Immolate now spreads to extra attackers instead of only the main target — Demonology and Destruction keep it up at spec level, all specs spread it with the aoe strategy on.
+
 ### Bots & Behavior
 - Masterless bots stop accepting quests they cannot finish alone — over-level, elite/dungeon and group-suggested quests are refused at the giver instead of being picked up and dropped later. Grouped bots that can fight bosses and player-owned bots are unchanged.
 - Bots pick the better quest reward when two are equally usable — tied rewards are now broken by stat weight for the bot instead of taking whatever the vendor lists first.

@@ -218,6 +218,7 @@ namespace ai
                 creators["fear"] = [](PlayerbotAI* ai) { return new FearTrigger(ai); };
                 creators["fear pvp"] = [](PlayerbotAI* ai) { return new FearPvpTrigger(ai); };
                 creators["immolate"] = [](PlayerbotAI* ai) { return new ImmolateTrigger(ai); };
+                creators["immolate on attacker"] = [](PlayerbotAI* ai) { return new ImmolateOnAttackerTrigger(ai); };
                 creators["amplify curse"] = [](PlayerbotAI* ai) { return new AmplifyCurseTrigger(ai); };
                 creators["siphon life"] = [](PlayerbotAI* ai) { return new SiphonLifeTrigger(ai); };
                 creators["siphon life on attacker"] = [](PlayerbotAI* ai) { return new SiphonLifeOnAttackerTrigger(ai); };
@@ -271,6 +272,7 @@ namespace ai
                 creators["summon imp"] = [](PlayerbotAI* ai) { return new CastSummonImpAction(ai); };
                 creators["summon inferno"] = [](PlayerbotAI* ai) { return new CastSummonInfernoAction(ai); };
                 creators["immolate"] = [](PlayerbotAI* ai) { return new CastImmolateAction(ai); };
+                creators["immolate on attacker"] = [](PlayerbotAI* ai) { return new CastImmolateOnAttackerAction(ai); };
                 creators["corruption"] = [](PlayerbotAI* ai) { return new CastCorruptionAction(ai); };
                 creators["corruption on attacker"] = [](PlayerbotAI* ai) { return new CastCorruptionOnAttackerAction(ai); };
                 creators["siphon life"] = [](PlayerbotAI* ai) { return new CastSiphonLifeAction(ai); };
