@@ -593,6 +593,7 @@ public:
     // the tick stays near this target (above target + 10 ms -> shrink, at or
     // below -> reclaim toward the ceilings). 0 disables the controller
     // (static budgets).
+    uint32 targetWorldTickMs = 50;
     // Issue #84: bounded failure backoff tuning. Zero base/max disables.
     uint32 failedActionRetryBaseMs;
     uint32 failedActionRetryMaxMs;
