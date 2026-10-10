@@ -7,7 +7,7 @@
 #include <vector>
 // pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectGuid.h"
-#include "PoolPassRotation.h"
+#include "BotTurnScheduler.h"
 #include "AdaptiveBudget.h"
 #ifndef MANGOS_OBJECT_GUID_H
 // Lens/build fallback — core header not on analyzer include path.
@@ -93,8 +93,13 @@ struct BotEntry
     uint32_t teleportAcksIgnored = 0;
     // Last SLOWBOT line for this bot (WorldTimer ms); throttles the log.
     uint32_t lastSlowLogMs = 0;
-    // Follow-up visits granted in a row for travel-pipeline steps.
+    // Immediate turns granted in a row for travel-pipeline steps.
     uint8_t followUps = 0;
+    // Pool turn queue (BotTurnScheduler.h): when the next turn is due
+    // (WorldTimer ms) and the situation it was scheduled for; a change of
+    // situation makes the bot due at once.
+    uint32_t turnDueMs = 0;
+    TurnSituation turnSituation = TurnSituation::Normal;
     BotEntry() = default;
     ~BotEntry();
     BotEntry(BotEntry&&) = default;
@@ -226,15 +231,9 @@ private:
         bool save = true;
     };
     std::vector<PendingBotRemoval> m_pendingBotRemovals;
-    // Round-robin rotation for the random-pool pass in UpdateBots, with the
-    // cursor that lets a budgeted pass resume where the previous tick stopped
-    // (see PoolPassRotation.h).
-    PoolPassRotation m_poolRotation;
-    // Pool bots whose last action was a travel-pipeline step, visited again
-    // on the next tick ahead of the rotation (UpdateBots).
-    std::vector<uint32_t> m_followUps;
-    // Cursor for budgeted Pass 2 (combat bots) round-robin iteration.
-    uint32_t m_combatCursor = 0;
+    // Due pool turns collected each UpdateBots pass (kept to reuse the
+    // allocation; see BotTurnScheduler.h).
+    std::vector<DueTurn> m_dueTurns;
     // Self-tuning tick budget: fed the measured world tick each pass, hands
     // back the effective pool/combat budgets. Lazily re-synced when the
     // operator's target or ceilings change (restart-only keys, so once).
@@ -247,6 +246,10 @@ private:
     uint64_t m_perfPassUsMax = 0;
     uint32_t m_perfPassCount = 0;
     uint32_t m_perfElapsedMs = 0;
+    // BOTPERF window: pool turns served and how late they ran (ms past due).
+    uint32_t m_perfTurns = 0;
+    uint64_t m_perfLateMsSum = 0;
+    uint32_t m_perfLateMsMax = 0;
     // Action-count snapshot cadence: cumulative per-(class, action) CSV dump
     // every 5 minutes of tick time (AiPlayerbot.ActionCountsLog only).
     uint32_t m_actionCountsElapsedMs = 0;

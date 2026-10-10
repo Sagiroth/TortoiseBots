@@ -58,10 +58,9 @@ namespace {
 constexpr uint32_t kMaxAiElapsedMs = 10000;
 // A single bot update at least this long is logged as SLOWBOT.
 constexpr uint32_t kSlowBotUpdateMs = 50;
-// Travel-pipeline follow-ups: a pool bot gets at most this many extra visits
-// in a row, from at most this share (1/kFollowUpBudgetDivisor) of the pool budget.
+// Travel-pipeline follow-ups: a pool bot gets at most this many immediate
+// turns in a row (due again next tick) while a travel step waits on it.
 constexpr uint8_t kMaxFollowUps = 4;
-constexpr uint64_t kFollowUpBudgetDivisor = 2;
 
 // A travel target waiting on the bot's next decision: a search to pick up
 // (PREPARE) or a chosen destination to start walking to (READY). Each step used
@@ -76,6 +75,24 @@ bool AwaitsTravelStep(PlayerbotAI* ai)
 
     ai::TravelStatus const status = target->GetStatus();
     return status == ai::TravelStatus::TRAVEL_STATUS_PREPARE || status == ai::TravelStatus::TRAVEL_STATUS_READY;
+}
+
+// The situation that caps how long a pool bot may wait for its next turn
+// (BotTurnScheduler.h). Takes the FindPlayerNotInWorld lookup, so a bot
+// mid-teleport is still seen; no player at all (logging in/out) waits as Normal.
+TurnSituation TurnSituationOf(::Player* player)
+{
+    if (!player)
+        return TurnSituation::Normal;
+    if (player->IsBeingTeleported())
+        return TurnSituation::Teleport;
+    if (!player->IsAlive())
+        return TurnSituation::Dead;
+    if (player->IsInCombat())
+        return TurnSituation::Combat;
+    if (player->InBattleGround())
+        return TurnSituation::Battleground;
+    return TurnSituation::Normal;
 }
 
 // One-shot headless RNDBOT scatter using persisted GenericRpg destinations.
@@ -1815,17 +1832,6 @@ void BotManager::UpdateBots(uint32_t diff)
             poolGuids.push_back(kv.first);
     }
 
-    // Round-robin order for the pool pass. Rebuilt only when the live
-    // membership changes, so the cursor points at the same place in the same
-    // rotation between ticks: a bot that misses a pass is served on a later
-    // one, never skipped permanently.
-    m_poolRotation.Refresh(poolGuids, [this](uint32_t guidLow)
-    {
-        auto it = m_bots.find(guidLow);
-        return it != m_bots.end() && it->second.record.lifecycle == BotLifecycle::InWorld &&
-            !IsPlayerOwnedBot(ClassifyBot(it->second));
-    });
-
     auto updateOneBot = [this, diff](uint32_t guidLow)
     {
         auto it = m_bots.find(guidLow);
@@ -1838,6 +1844,10 @@ void BotManager::UpdateBots(uint32_t diff)
         // a bot whose session stop is pending.
         if (entry.record.lifecycle != BotLifecycle::InWorld)
             return;
+
+        // Next pool turn for every path below that returns before the AI runs
+        // (teleport still pending, adapter not usable yet): retry at the cap.
+        entry.turnDueMs = WorldTimer::getMSTime() + TurnMaxWaitMs(entry.turnSituation);
 
         // Headless players have no client to acknowledge a core near/far
         // teleport. The donor PlayerbotMgr drove this acknowledgement from its
@@ -1885,18 +1895,22 @@ void BotManager::UpdateBots(uint32_t diff)
             ++entry.aiVisits;
             entry.aiAdapter->Update(elapsed);
 
+            // Next pool turn: when the AI asked to think again, capped by the
+            // bot's situation after this turn. A travel-pipeline step (pick a
+            // destination, then start walking) goes again next tick, up to
+            // kMaxFollowUps times in a row, so it does not wait a full turn.
             if (PlayerbotAI* stepAi = entry.aiAdapter->GetAI())
             {
-                if (AwaitsTravelStep(stepAi))
-                {
-                    if (entry.followUps < kMaxFollowUps)
-                    {
-                        ++entry.followUps;
-                        m_followUps.push_back(guidLow);
-                    }
-                }
-                else
+                uint32_t aiDelayMs = stepAi->GetAIInternalUpdateDelay();
+                if (!AwaitsTravelStep(stepAi))
                     entry.followUps = 0;
+                else if (entry.followUps < kMaxFollowUps)
+                {
+                    ++entry.followUps;
+                    aiDelayMs = 0;
+                }
+                entry.turnSituation = TurnSituationOf(sObjectAccessor.FindPlayerNotInWorld(entry.record.characterGuid));
+                entry.turnDueMs = TurnNextDueMs(WorldTimer::getMSTime(), aiDelayMs, entry.turnSituation);
             }
 
             // One bot's update is never cut by the budget, so a single slow
@@ -1926,103 +1940,62 @@ void BotManager::UpdateBots(uint32_t diff)
     for (uint32_t guidLow : playerGuids)
         updateOneBot(guidLow);
 
-    // Pass 2: pool bots in combat, prioritized before the idle pool rotation.
-    // A bot in combat gets prioritized ticks so it can heal, flee, attack, etc.
-    // If there are many bots in combat, we cap Pass 2 to combatTickBudgetUs
-    // using a round-robin cursor to ensure all combat bots get fair CPU time across ticks.
-    uint64_t const combatBudgetUs = m_adaptiveBudget.CombatUs();
-    uint64_t const combatStartUs = (combatBudgetUs > 0) ?
-        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count()) : 0;
-
-    uint32_t const poolSize = static_cast<uint32_t>(poolGuids.size());
-    if (poolSize > 0)
-    {
-        if (m_combatCursor >= poolSize)
-            m_combatCursor = 0;
-
-        uint32_t const startCursor = m_combatCursor;
-        for (uint32_t i = 0; i < poolSize; ++i)
-        {
-            uint32_t const idx = (startCursor + i) % poolSize;
-            m_combatCursor = (idx + 1) % poolSize;
-
-            uint32_t const guidLow = poolGuids[idx];
-            auto it = m_bots.find(guidLow);
-            if (it == m_bots.end() || it->second.record.lifecycle != BotLifecycle::InWorld)
-                continue;
-
-            // Dead bots ride this pass too: a death is a chain of decisions
-            // (release, corpse run legs, revive or spirit healer), and at one
-            // pool-rotation visit per ~26 s each step waited a full lap - the
-            // dead sweep then ran at its cap every 30 s with ~165 corpses
-            // queued and some lay dead 12+ min (Oct 2026, 2000 bots).
-            ::Player* p = sObjectAccessor.FindPlayer(it->second.record.characterGuid);
-            // Battleground bots too: a match is constant movement and objective
-            // changes, and one visit every few seconds left them standing at
-            // their spawn (Oct 2026).
-            if (p && (p->IsInCombat() || !p->IsAlive() || p->InBattleGround()))
-            {
-                updateOneBot(guidLow);
-                if (combatBudgetUs > 0)
-                {
-                    uint64_t const now = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
-                        std::chrono::steady_clock::now().time_since_epoch()).count());
-                    if (now - combatStartUs >= combatBudgetUs)
-                        break;
-                }
-            }
-        }
-    }
-    // Pass 3: the pool, resuming at the rotation cursor. The budget is checked
-    // before starting each bot (so a pass never starts new work over budget)
-    // and only engages once the previous world tick ran longer than the gate.
-    // Bots already served by pass 2 simply get a second tick when
-    // the rotation reaches them; correctness first, the rotation stays fair.
+    // Pass 2: the random pool, one turn queue (BotTurnScheduler.h). A bot is
+    // due when its AI asked to think again, capped by its situation (combat,
+    // dead, battleground, teleport or anything else), and a change of
+    // situation makes it due at once. Due bots run most overdue first relative
+    // to that cap until the budget is spent; whoever is left is later still on
+    // the next tick and so runs first. The budget is checked before starting
+    // each bot, so a pass never starts new work over budget. PoolTickBudgetUs
+    // and CombatTickBudgetUs add up to the one budget (0 in either: no budget).
     uint32_t const playerBots = static_cast<uint32_t>(playerGuids.size());
-    uint32_t const poolBots = m_poolRotation.Size();
-    uint64_t budgetUs = m_adaptiveBudget.PoolUs();
+    uint32_t const poolBots = static_cast<uint32_t>(poolGuids.size());
+    uint64_t const budgetUs = (m_adaptiveBudget.PoolUs() == 0 || m_adaptiveBudget.CombatUs() == 0)
+        ? 0 : m_adaptiveBudget.PoolUs() + m_adaptiveBudget.CombatUs();
     uint32 const gateMs = sPlayerbotAIConfig.poolBudgetWhenTickOverMs;
     bool const budgetActive = budgetUs > 0 && (gateMs == 0 || diff > gateMs);
 
-    // Pass 2b: bots that took a travel-pipeline step last tick get the next
-    // step now, from part of the pool budget, so "pick a destination" to
-    // "walk" takes a few ticks instead of several rotation laps.
-    uint32_t followUpsServed = 0;
-    if (!m_followUps.empty())
+    uint32_t const turnNowMs = WorldTimer::getMSTime();
+    m_dueTurns.clear();
+    for (uint32_t guidLow : poolGuids)
     {
-        std::vector<uint32_t> followUps;
-        followUps.swap(m_followUps);
-        auto const nowUs = []()
+        auto it = m_bots.find(guidLow);
+        if (it == m_bots.end() || it->second.record.lifecycle != BotLifecycle::InWorld)
+            continue;
+        BotEntry& entry = it->second;
+        TurnSituation const situation = TurnSituationOf(sObjectAccessor.FindPlayerNotInWorld(entry.record.characterGuid));
+        if (situation != entry.turnSituation || entry.turnDueMs == 0)
         {
-            return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count());
-        };
-        uint64_t const followStartUs = nowUs();
-        uint64_t const followBudgetUs = budgetUs / kFollowUpBudgetDivisor;
-        for (uint32_t guidLow : followUps)
-        {
-            if (budgetActive && nowUs() - followStartUs >= followBudgetUs)
-                break;
-            auto it = m_bots.find(guidLow);
-            if (it == m_bots.end() || IsPlayerOwnedBot(ClassifyBot(it->second)))
-                continue;
-            updateOneBot(guidLow);
-            ++followUpsServed;
+            entry.turnSituation = situation;
+            entry.turnDueMs = turnNowMs;
         }
-        uint64_t const spentUs = nowUs() - followStartUs;
-        if (budgetActive)
-            budgetUs = spentUs < budgetUs ? budgetUs - spentUs : 1;
+        if (TurnIsDue(turnNowMs, entry.turnDueMs))
+            m_dueTurns.push_back({guidLow, entry.turnDueMs, situation});
     }
+    OrderDueTurns(m_dueTurns, turnNowMs);
 
+    auto const nowUs = []()
+    {
+        return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+    };
+    uint64_t const turnsStartUs = budgetActive ? nowUs() : 0;
+    uint32_t poolProcessed = 0;
     bool budgetHit = false;
-    uint32_t const poolProcessed = m_poolRotation.Run(budgetActive, budgetUs,
-        []()
+    for (DueTurn const& turn : m_dueTurns)
+    {
+        if (budgetActive && nowUs() - turnsStartUs >= budgetUs)
         {
-            return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count());
-        },
-        updateOneBot, budgetHit);
+            budgetHit = true;
+            break;
+        }
+        uint32_t const lateMs = static_cast<uint32_t>(turnNowMs - turn.dueMs);
+        m_perfLateMsSum += lateMs;
+        m_perfLateMsMax = std::max(m_perfLateMsMax, lateMs);
+        ++m_perfTurns;
+        updateOneBot(turn.guidLow);
+        ++poolProcessed;
+    }
 
     m_inBotUpdate = false;
 
@@ -2047,16 +2020,21 @@ void BotManager::UpdateBots(uint32_t diff)
     m_perfElapsedMs += diff;
     if (m_perfElapsedMs >= 30000)
     {
-        TB_LOG_BASIC("TortoiseBots: BOTPERF passUs=%llu playerBots=%u ownedBots=%u masterBots=%u poolBots=%u poolProcessed=%u followUps=%u budgetHit=%u maxUs=%llu ticks=%u poolBudgetUs=%llu combatBudgetUs=%llu",
+        TB_LOG_BASIC("TortoiseBots: BOTPERF passUs=%llu playerBots=%u ownedBots=%u masterBots=%u poolBots=%u poolProcessed=%u due=%u budgetHit=%u maxUs=%llu ticks=%u poolBudgetUs=%llu combatBudgetUs=%llu turnLateAvgMs=%u turnLateMaxMs=%u",
             static_cast<unsigned long long>(m_perfPassUsSum / m_perfPassCount),
-            playerBots, ownedAccountBots, masterBots, poolBots, poolProcessed, followUpsServed, budgetHit ? 1u : 0u,
+            playerBots, ownedAccountBots, masterBots, poolBots, poolProcessed,
+            static_cast<uint32_t>(m_dueTurns.size()), budgetHit ? 1u : 0u,
             static_cast<unsigned long long>(m_perfPassUsMax), m_perfPassCount,
             static_cast<unsigned long long>(m_adaptiveBudget.PoolUs()),
-            static_cast<unsigned long long>(m_adaptiveBudget.CombatUs()));
+            static_cast<unsigned long long>(m_adaptiveBudget.CombatUs()),
+            m_perfTurns ? static_cast<uint32_t>(m_perfLateMsSum / m_perfTurns) : 0u, m_perfLateMsMax);
         m_perfPassUsSum = 0;
         m_perfPassUsMax = 0;
         m_perfPassCount = 0;
         m_perfElapsedMs = 0;
+        m_perfTurns = 0;
+        m_perfLateMsSum = 0;
+        m_perfLateMsMax = 0;
     }
 
     // Cumulative action-count snapshot every 5 minutes of tick time. The dump
