@@ -149,6 +149,7 @@ namespace ai
                 creators["curse weakness"] = [](PlayerbotAI* ai) { return new WarlockManualCurseStrategy(ai, "curse weakness", "curse of weakness", "curse of weakness"); };
                 creators["curse tongues"] = [](PlayerbotAI* ai) { return new WarlockManualCurseStrategy(ai, "curse tongues", "curse of tongues", "curse of tongues"); };
                 creators["curse shadow"] = [](PlayerbotAI* ai) { return new WarlockManualCurseStrategy(ai, "curse shadow", "curse of shadow", "curse of shadow"); };
+                creators["curse exhaustion"] = [](PlayerbotAI* ai) { return new WarlockCurseOfExhaustionStrategy(ai); };
             }
         };
 
@@ -193,6 +194,8 @@ namespace ai
             {
                 creators["shadow trance"] = [](PlayerbotAI* ai) { return new ShadowTranceTrigger(ai); };
                 creators["demon armor"] = [](PlayerbotAI* ai) { return new DemonArmorTrigger(ai); };
+                creators["unending breath"] = [](PlayerbotAI* ai) { return new UnendingBreathTrigger(ai); };
+                creators["unending breath on party"] = [](PlayerbotAI* ai) { return new UnendingBreathOnPartyTrigger(ai); };
                 creators["no healthstone"] = [](PlayerbotAI* ai) { return new HasHealthstoneTrigger(ai); };
                 creators["no soulstone"] = [](PlayerbotAI* ai) { return new HasSoulstoneTrigger(ai); };
                 creators["no firestone"] = [](PlayerbotAI* ai) { return new HasFirestoneTrigger(ai); };
@@ -225,9 +228,11 @@ namespace ai
                 creators["death coil interrupt"] = [](PlayerbotAI* ai) { return new DeathCoilInterruptTrigger(ai); };
                 creators["death coil on enemy healer"] = [](PlayerbotAI* ai) { return new DeathCoilInterruptTHealerTrigger(ai); };
                 creators["death coil on snare target"] = [](PlayerbotAI* ai) { return new DeathCoilSnareTrigger(ai); };
+                creators["curse of exhaustion on snare target"] = [](PlayerbotAI* ai) { return new CurseOfExhaustionSnareTrigger(ai); };
                 creators["inferno"] = [](PlayerbotAI* ai) { return new InfernoTrigger(ai); };
                 creators["life tap"] = [](PlayerbotAI* ai) { return new LifeTapTrigger(ai); };
                 creators["drain soul"] = [](PlayerbotAI* ai) { return new DrainSoulTrigger(ai); };
+                creators["health funnel"] = [](PlayerbotAI* ai) { return new HealthFunnelTrigger(ai); };
                 creators["no soul shard"] = [](PlayerbotAI* ai) { return new NoSoulShardTrigger(ai); };
                 creators["too many soul shards"] = [](PlayerbotAI* ai) { return new TooManySoulShardsTrigger(ai); };
                 creators["no curse"] = [](PlayerbotAI* ai) { return new NoCurseTrigger(ai); };
@@ -260,6 +265,8 @@ namespace ai
             AiObjectContextInternal()
             {
                 creators["demon armor"] = [](PlayerbotAI* ai) { return new CastDemonArmorAction(ai); };
+                creators["unending breath"] = [](PlayerbotAI* ai) { return new CastUnendingBreathAction(ai); };
+                creators["unending breath on party"] = [](PlayerbotAI* ai) { return new CastUnendingBreathOnPartyAction(ai); };
                 creators["demon skin"] = [](PlayerbotAI* ai) { return new CastDemonSkinAction(ai); };
                 creators["create healthstone"] = [](PlayerbotAI* ai) { return new CastCreateHealthstoneAction(ai); };
                 creators["create soulstone"] = [](PlayerbotAI* ai) { return new CastCreateSoulstoneAction(ai); };
@@ -295,6 +302,7 @@ namespace ai
                 creators["destroy soul shard"] = [](PlayerbotAI* ai) { return new DestroySoulShardAction(ai); };
                 creators["shadow bolt"] = [](PlayerbotAI* ai) { return new CastShadowBoltAction(ai); };
                 creators["drain mana"] = [](PlayerbotAI* ai) { return new CastDrainManaAction(ai); };
+                creators["health funnel"] = [](PlayerbotAI* ai) { return new CastHealthFunnelAction(ai); };
                 creators["drain life"] = [](PlayerbotAI* ai) { return new CastDrainLifeAction(ai); };
                 creators["banish"] = [](PlayerbotAI* ai) { return new CastBanishAction(ai); };
                 creators["banish on cc"] = [](PlayerbotAI* ai) { return new CastBanishOnCcAction(ai); };
@@ -309,6 +317,7 @@ namespace ai
                 creators["death coil"] = [](PlayerbotAI* ai) { return new CastDeathCoilAction(ai); };
                 creators["death coil on enemy healer"] = [](PlayerbotAI* ai) { return new CastDeathCoilOnHealerAction(ai); };
                 creators["death coil on snare target"] = [](PlayerbotAI* ai) { return new CastDeathCoilSnareAction(ai); };
+                creators["curse of exhaustion on snare target"] = [](PlayerbotAI* ai) { return new CastCurseOfExhaustionSnareAction(ai); };
                 creators["dark pact"] = [](PlayerbotAI* ai) { return new CastDarkPactAction(ai); };
                 creators["fel domination"] = [](PlayerbotAI* ai) { return new CastFelDominationAction(ai); };
                 creators["dark harvest"] = [](PlayerbotAI* ai) { return new CastDarkHarvestAction(ai); };

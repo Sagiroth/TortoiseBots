@@ -239,6 +239,9 @@ private:
     uint64_t m_perfPassUsMax = 0;
     uint32_t m_perfPassCount = 0;
     uint32_t m_perfElapsedMs = 0;
+    // Action-count snapshot cadence: cumulative per-(class, action) CSV dump
+    // every 5 minutes of tick time (AiPlayerbot.ActionCountsLog only).
+    uint32_t m_actionCountsElapsedMs = 0;
     bool m_autoTestEnabled = false;
     uint32_t m_autoTestAccount = 0;
 // pi-lens-ignore: clang:unknown_typename

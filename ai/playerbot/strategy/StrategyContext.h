@@ -57,6 +57,8 @@
 #include "generic/ClassicRaidDungeonStrategies.h"
 #include "generic/KarazhanCryptDungeonStrategies.h"
 #include "generic/SapphironDungeonStrategies.h"
+#include "generic/HeiganDungeonStrategies.h"
+#include "generic/AnubrekhanDungeonStrategies.h"
 
 namespace ai
 {
@@ -177,9 +179,13 @@ namespace ai
             creators["magmadar"] = [](PlayerbotAI* ai) { return new MagmadarFightStrategy(ai); };
             creators["geddon"] = [](PlayerbotAI* ai) { return new GeddonFightStrategy(ai); };
             creators["suppression room"] = [](PlayerbotAI* ai) { return new SuppressionRoomStrategy(ai); };
+            creators["broodlord"] = [](PlayerbotAI* ai) { return new BroodlordFightStrategy(ai); };
+            creators["nefarian"] = [](PlayerbotAI* ai) { return new NefarianFightStrategy(ai); };
             creators["vael"] = [](PlayerbotAI* ai) { return new VaelFightStrategy(ai); };
             creators["four horseman"] = [](PlayerbotAI* ai) { return new FourHorsemanFightStrategy(ai); };
             creators["sapphiron"] = [](PlayerbotAI* ai) { return new SapphironFightStrategy(ai); };
+            creators["heigan"] = [](PlayerbotAI* ai) { return new HeiganFightStrategy(ai); };
+            creators["anub'rekhan"] = [](PlayerbotAI* ai) { return new AnubrekhanFightStrategy(ai); };
             creators["solnius"] = [](PlayerbotAI* ai) { return new SolniusFightStrategy(ai); };
             creators["araxxna"] = [](PlayerbotAI* ai) { return new AraxxnaFightStrategy(ai); };
             creators["moroes"] = [](PlayerbotAI* ai) { return new MoroesFightStrategy(ai); };

@@ -75,6 +75,14 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         "intercept and rage",
         NextAction::array(0, new NextAction("intercept", ACTION_MOVE + 5), NULL)));
 
+    // Intervene a focused party member (donor TankWarriorStrategy fires at
+    // EMERGENCY): Intervene 45595 is a real learnable 1.18.1 spell
+    // (Defensive-locked, taught by 47277), and the trigger/action/PROTECT
+    // targeting were already registered — only this row was missing.
+    triggers.push_back(new TriggerNode(
+        "protect party member",
+        NextAction::array(0, new NextAction("intervene", ACTION_EMERGENCY), NULL)));
+
     // Lost aggro (donor TankWarriorStrategy: taunt at INTERRUPT+1): a mob
     // peeling onto a non-tank member outranks DPS spenders and interrupts —
     // a missed kick costs damage, a missed taunt costs the healer.

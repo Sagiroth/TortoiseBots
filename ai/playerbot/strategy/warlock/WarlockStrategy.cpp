@@ -260,6 +260,16 @@ void WarlockBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trigger
         "soulstone",
         NextAction::array(0, new NextAction("soulstone", ACTION_NORMAL + 1), NULL)));
 
+    // Swim-gated water breathing (WAR-6, donor parity): only fires while
+    // the bot swims, self first, then the party.
+    triggers.push_back(new TriggerNode(
+        "unending breath",
+        NextAction::array(0, new NextAction("unending breath", ACTION_NORMAL + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "unending breath on party",
+        NextAction::array(0, new NextAction("unending breath on party", ACTION_NORMAL), NULL)));
+
     triggers.push_back(new TriggerNode(
         "often",
         NextAction::array(0, new NextAction("apply oil", ACTION_NORMAL), NULL)));
@@ -440,6 +450,11 @@ void WarlockPetStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "devour magic cleanse",
         NextAction::array(0, new NextAction("devour magic cleanse", ACTION_DISPEL), NULL)));
+    // PET-6: sustain the demon mid-fight. Below the interrupt kit and the
+    // pet attack — keeping the pet alive never outranks using it.
+    triggers.push_back(new TriggerNode(
+        "health funnel",
+        NextAction::array(0, new NextAction("health funnel", ACTION_NORMAL + 1), NULL)));
 }
 
 void WarlockPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -553,6 +568,13 @@ void WarlockManualPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& tr
     triggers.push_back(new TriggerNode(
         "often",
         NextAction::array(0, new NextAction("initialize pet", ACTION_NORMAL + 1), NULL)));
+}
+
+void WarlockCurseOfExhaustionStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "curse of exhaustion on snare target",
+        NextAction::array(0, new NextAction("curse of exhaustion on snare target", ACTION_HIGH), NULL)));
 }
 
 void WarlockManualCurseStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

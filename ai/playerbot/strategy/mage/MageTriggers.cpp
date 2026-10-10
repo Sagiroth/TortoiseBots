@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/HotStreakPolicy.h"
 #include "MageTriggers.h"
 #include "MageActions.h"
 
@@ -47,6 +48,27 @@ bool ManaShieldTrigger::IsActive()
         return false;
 
     return !ai->HasAura("mana shield", bot) && AI_VALUE2(uint8, "mana", "self target") > sPlayerbotAIConfig.mediumMana;
+}
+
+bool HotStreakTrigger::IsActive()
+{
+    // Proc auras only (51930/51931): the talent auras 51927/51928 share
+    // the "Hot Streak" name and sit on the bot permanently, so a
+    // name-based HasAura check would fire on every tick for any talented
+    // bot. Turtle's proc stacks cast-time reduction (5 stacks ≈ instant);
+    // fire only at full stacks so a 1-stack proc is not spent early.
+    HotStreakState state{false, 0, false, 0};
+    if (Aura* aura = ai->GetAura(HOT_STREAK_PROC_RANK_1, bot))
+    {
+        state.hasProcRank1 = true;
+        state.procRank1Stacks = aura->GetStackAmount();
+    }
+    if (Aura* aura = ai->GetAura(HOT_STREAK_PROC_RANK_2, bot))
+    {
+        state.hasProcRank2 = true;
+        state.procRank2Stacks = aura->GetStackAmount();
+    }
+    return ShouldCastHotStreakPyroblast(state);
 }
 
 bool NoImprovedScorchDebuffTrigger::IsActive()
@@ -156,6 +178,31 @@ bool EvocationChannelCheckTrigger::IsActive()
             if (!AI_VALUE2(bool, "has mana", "self target"))
                 return false;
             return AI_VALUE2(uint8, "mana", "self target") >= 95;
+        }
+    }
+    return false;
+}
+
+bool BlizzardChannelCheckTrigger::IsActive()
+{
+    if (Spell* spell = bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
+    {
+        if (spell->m_spellInfo)
+        {
+            // Per-rank Blizzard channel ids (effect spells): 10 rank 1,
+            // 6141 rank 2, 8427 rank 3, 10185/10186/10187 ranks 4-6.
+            // Matches mod-playerbots BlizzardChannelCheckTrigger ids.
+            uint32 id = spell->m_spellInfo->Id;
+            if (id == 10 || id == 6141 || id == 8427 ||
+                id == 10185 || id == 10186 || id == 10187)
+            {
+                // Pack thinned below a blizzard's worth: stop channeling.
+                // NOTE: the donor reads singular "attacker count", which is
+                // NOT registered here (only "attackers count" plural is) —
+                // the singular name null-derefs in AI_VALUE. Do not "fix"
+                // this back to the donor spelling.
+                return AI_VALUE(uint8, "attackers count") < 2;
+            }
         }
     }
     return false;
