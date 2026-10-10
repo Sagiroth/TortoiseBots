@@ -11,6 +11,11 @@ using namespace ai;
 
 bool LoathebChooseTargetAction::Execute(Event& event)
 {
+    // Explicit master orders win: a bot told to hit something else keeps
+    // its target without paying for the grid sweep below.
+    if (!AI_VALUE(ObjectGuid, "explicit attack target").IsEmpty())
+        return false;
+
     Unit* boss = nullptr;
     Unit* spore = nullptr;
 
@@ -43,17 +48,19 @@ bool LoathebChooseTargetAction::Execute(Event& event)
         }
     }
 
-    // Explicit master orders win: a bot told to hit something else
-    // keeps its target. (Stay/follow need no guard here — killing the
-    // spore underfoot moves nobody.)
-    ObjectGuid explicitGuid = AI_VALUE(ObjectGuid, "explicit attack target");
-    if (!explicitGuid.IsEmpty())
-        return false;
-
     Unit* want = spore ? spore : boss;
     if (!want)
         return false;
-    if (!PossibleAttackTargetsValue::IsValid(want, bot))
+    // Spores threaten one random raid member (core AddThreats a single
+    // target), so a neutral spore underfoot is never *this* bot's attacker:
+    // skip the attacker gate and only check attackability + tap. The boss
+    // keeps the full gate (threat/victim/CC checks apply to him normally).
+    if (want == spore)
+    {
+        if (!PossibleAttackTargetsValue::IsPossibleTarget(want, bot, sPlayerbotAIConfig.sightDistance, false))
+            return false;
+    }
+    else if (!PossibleAttackTargetsValue::IsValid(want, bot))
         return false;
     if (AI_VALUE(Unit*, "current target") == want)
         return false;
