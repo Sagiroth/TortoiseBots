@@ -790,6 +790,16 @@ namespace ai
         virtual bool IsActive() override;
     };
 
+    // Generic rear-flank gate (donor RearFlankAction::isUseful shape):
+    // fires while the bot stands in the target's frontal arc or tail cone.
+    // Angle check only, no movement: cheap enough for the combat tick.
+    class RearFlankNeededTrigger : public Trigger
+    {
+    public:
+        RearFlankNeededTrigger(PlayerbotAI* ai) : Trigger(ai, "rear flank needed", 1) {}
+        virtual bool IsActive() override;
+    };
+
     // Party tank-face (night2 research): a tank bot holding a mob turns it
     // so its front points away from the rest of the party. Fires only in
     // real-player-master groups; pool bots keep old behaviour.
@@ -1376,6 +1386,17 @@ namespace ai
     {
     public:
         AtWarTrigger(PlayerbotAI* ai) : Trigger(ai, "at war", 60) {}
+
+        bool IsActive() override;
+    };
+
+    // Deferred ready-check confirm is waiting (SOC-S5): the confirm was
+    // held so buffs could land; fires the "ready reply" action once buffs
+    // settle or the cap hits.
+    class ForceRebuffPendingTrigger : public Trigger
+    {
+    public:
+        ForceRebuffPendingTrigger(PlayerbotAI* ai) : Trigger(ai, "force rebuff pending", 1) {}
 
         bool IsActive() override;
     };

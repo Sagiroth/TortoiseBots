@@ -8,6 +8,12 @@ using namespace ai;
 
 float ThreatMultiplier::GetValue(Action* action)
 {
+    // Per-fight suppression (mod-playerbots "neglect threat"): a boss
+    // fight strategy that owns positioning/targeting sets this while
+    // engaged so threat gating does not veto its scripted target choice.
+    if (AI_VALUE(bool, "neglect threat"))
+        return 1.0f;
+
     if (action == NULL || action->GetThreatType() == ActionThreatType::ACTION_THREAT_NONE)
         return 1.0f;
 
