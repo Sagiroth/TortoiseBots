@@ -1443,17 +1443,21 @@ AiPlayerbot.PremadeSpecLink.11.2.60 = 5002012--5050013355213521
 # Per-tick AI pass scheduling for a large random pool (party-bot latency).
 # Bots owned by a real player — module-owned records and every bot bound to a
 # master — are always updated first, every tick, with no budget. The random
-# pool runs after them in a round-robin order that resumes where the previous
-# tick stopped, so a bot that misses a pass is served on a later one, never
-# dropped.
-#   PoolTickBudgetUs: microseconds of module work per tick for the pool pass.
-#       0 = no budget at all (the pool always gets the full pass).
+# pool runs after them as one turn queue: after each turn a bot is due again
+# when its AI asked to think next, never later than its situation allows
+# (combat 400 ms, dead or battleground 1 s, teleport 100 ms, else 3 s), and a
+# change of situation makes it due at once. Due bots run most overdue first
+# relative to that cap until the budget is spent, so nobody is dropped.
+#   PoolTickBudgetUs: microseconds of module work per tick for the pool turn
+#       queue, added to CombatTickBudgetUs (the two make one budget).
+#       0 = no budget at all (every due bot runs).
 #       Values below 1000 are raised to 1000; 100000 is the ceiling.
 #   PoolBudgetWhenTickOverMs: the budget only engages while the previous world
 #       tick ran longer than this. 0 = budget on every tick (the default: with
 #       the self-tuning budget below, a healthy server reclaims the full
 #       ceiling on its own, so there is no need to gate behind slow ticks).
-#   CombatTickBudgetUs: microseconds of module work per tick for Pass 2 (bots in combat or dead).
+#   CombatTickBudgetUs: the second half of the same budget (it once fed a
+#       separate combat pass; kept so existing configs keep their total).
 #       0 = no budget at all. Default is 15000 (15 ms).
 #   TargetWorldTickMs: self-tuning tick budget. Each tick the controller moves
 #       the effective pool/combat budgets from the measured previous world

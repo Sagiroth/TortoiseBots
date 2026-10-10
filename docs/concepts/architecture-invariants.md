@@ -86,7 +86,7 @@ This leaves disabled services inert, including periodic performance reporting
 and stale-hire recovery. The AI enable flag is read at startup; changing it
 requires a restart.
 
-Within that world-tick pass, `BotManager::UpdateBots` schedules bots without any core involvement: bots under a real player update first and unbudgeted, the random pool follows in a resumable round-robin rotation whose per-tick budget engages only while the previous world tick ran long (see [Strategy Engine & Action Scheduling](strategy-engine.md) and [Configuration Knobs & Feature Flags](../guides/configuration-tuning.md)).
+Within that world-tick pass, `BotManager::UpdateBots` schedules bots without any core involvement: bots under a real player update first and unbudgeted, the random pool follows as one turn queue (each bot due when its AI asked to think next, capped by its situation, most overdue first) whose per-tick budget engages only while the previous world tick ran long (see [Strategy Engine & Action Scheduling](strategy-engine.md) and [Configuration Knobs & Feature Flags](../guides/configuration-tuning.md)).
 
 #### 5. Asynchronous LLM Isolation
 LLM-based chat interactions are purely asynchronous and decoupled. If an LLM backend times out or fails, combat AI, movement, healing, interrupts, and crowd control continue running with zero interruption or frame hitching.

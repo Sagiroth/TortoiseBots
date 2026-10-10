@@ -162,11 +162,12 @@ The module's AI pass runs at the end of every world tick, so a bot a real player
 
 Everything else is the pool, including characters on `RNDBOT` pool accounts that carry a master from a bot-only group, a stale `PlayerMaster` lease, or `random = false` after a restart. Those flags are not ownership signals: bot-only groups hand their members a bot master and a lease (`PlayerbotAI::GetGroupMaster` → `BotManager::BindBotMaster`), which once misclassified ~40 % of a 500-bot pool (212 bots) as player-owned and kept them unbudgeted.
 
-The pool runs under a per-tick time budget; on a healthy server the self-tuning controller below keeps the effective budgets at their ceilings, so the pool gets the full pass. When ticks run long the controller shrinks the budgets and the rotation carries the remainder to later ticks.
+The pool runs as one turn queue under a per-tick time budget. After each turn a bot is due again when its AI asked to think next, never later than its situation allows (combat 400 ms, dead or in a battleground 1 s, mid-teleport 100 ms, anything else 3 s); a change of situation makes it due at once. Each tick the due bots run most overdue first relative to that cap until the budget is spent. On a healthy server the self-tuning controller below keeps the effective budgets at their ceilings; when ticks run long it shrinks them and every pool bot runs proportionally later, fights least.
 
 | Setting | Default | What It Does |
 | :--- | :---: | :--- |
-| `AiPlayerbot.PoolTickBudgetUs` | `10000` | Ceiling for the pool pass: microseconds of module work per tick. `0` removes the budget entirely (the pool always runs its full pass). Values below `1000` are raised to `1000`; `100000` is the ceiling. |
+| `AiPlayerbot.PoolTickBudgetUs` | `10000` | Ceiling for the pool turn queue, added to `CombatTickBudgetUs`: microseconds of module work per tick. `0` removes the budget entirely (every due bot runs). Values below `1000` are raised to `1000`; `100000` is the ceiling. |
+| `AiPlayerbot.CombatTickBudgetUs` | `15000` | Second half of the same budget (it once fed a separate combat pass; the two now add up, so existing configs keep their total). `0` removes the budget entirely. |
 | `AiPlayerbot.PoolBudgetWhenTickOverMs` | `0` | The gate: the budget applies only while the previous world tick took longer than this. `0` applies it on every tick — the default, because the self-tuning budget below reclaims the full ceiling on a healthy server by itself. |
 | `AiPlayerbot.TargetWorldTickMs` | `50` | Self-tuning tick budget: each tick the controller moves the effective pool/combat budgets from the measured previous world tick so the tick stays near this target (over target + 10 ms: shrink fast; at or under: creep back +1 ms/tick; the world thread pads healthy ticks to ~50 ms, so reclaim keeps the full ceilings on a healthy server). No hardware detection — a fast PC keeps the full ceilings, a weak one backs off on its own. `0` disables the controller (static ceilings; also set `PoolBudgetWhenTickOverMs=150` to restore the old gate). |
 
@@ -175,11 +176,11 @@ Tuning: on a healthy server you should not need to touch anything — the contro
 With AI enabled (`AiPlayerbot.Enabled = 1`), the module reports the pass once per ~30 s of world-tick time at `TortoiseBots.LogLevel = 1` or higher (default `2`):
 
 ```
-TortoiseBots: BOTPERF passUs=812 playerBots=5 ownedBots=5 masterBots=0 poolBots=495 poolProcessed=4 budgetHit=1 maxUs=9820 ticks=62 poolBudgetUs=10000 combatBudgetUs=15000
+TortoiseBots: BOTPERF passUs=812 playerBots=5 ownedBots=5 masterBots=0 poolBots=495 poolProcessed=4 due=9 budgetHit=1 maxUs=9820 ticks=62 poolBudgetUs=10000 combatBudgetUs=15000 turnLateAvgMs=180 turnLateMaxMs=1400
 ```
 
 
-`passUs` is the average `UpdateBots` cost in the window in microseconds (`maxUs` the worst), `playerBots` the unbudgeted candidate count, split into `ownedBots` (owner's account) and `masterBots` (live player master), `poolBots` the pool candidate count, `poolProcessed` the pool slots the rotation advanced past (a record that was unusable that tick still counts), `budgetHit` `1` when the budget cut that pass short, and `poolBudgetUs`/`combatBudgetUs` the effective budgets the pass just ran under (equal to the configured ceilings when the server is healthy). Read it like this: `budgetHit=1` with a small `passUs` is the throttle working; `budgetHit=1` and `poolProcessed=1` means the budget is too tight for the pool size (raise it); a low `passUs…
+`passUs` is the average `UpdateBots` cost in the window in microseconds (`maxUs` the worst), `playerBots` the unbudgeted candidate count, split into `ownedBots` (owner's account) and `masterBots` (live player master), `poolBots` the pool candidate count, `poolProcessed` the pool turns that pass ran (a record that was unusable that tick still counts) out of `due` bots due, `budgetHit` `1` when the budget cut that pass short, `poolBudgetUs`/`combatBudgetUs` the effective budgets the pass just ran under (their sum is the one budget; equal to the configured ceilings when the server is healthy), and `turnLateAvgMs`/`turnLateMaxMs` how far past due the window's pool turns ran — the direct measure of how far behind the pool is. Read it like this: `budgetHit=1` with a small `passUs` is the throttle working; `budgetHit=1` and `poolProcessed=1` means the budget is too tight for the pool size (raise it); a low `passUs…
 
 ### Server settings for many bots (`mangosd.conf`)
 

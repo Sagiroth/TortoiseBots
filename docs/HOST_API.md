@@ -199,8 +199,9 @@ module-owned `PlayerConvenience`, `AhMarketService`, and
 The core listener is generic; it does not call a PlayerBots singleton.
 
 Inside that pass (`BotManager::UpdateBots`) bots under a real player are
-updated first and without a budget, then the random pool follows in a
-resumable round-robin rotation; the pool's per-tick time budget engages
+updated first and without a budget, then the random pool follows as one
+turn queue, each bot due when its AI asked to think next, capped by its
+situation (`runtime/BotTurnScheduler.h`); the pool's per-tick time budget engages
 while the previous world tick ran longer than
 `AiPlayerbot.PoolBudgetWhenTickOverMs` (0 = every tick, the default — the
 self-tuning `AiPlayerbot.TargetWorldTickMs` controller then reclaims the
