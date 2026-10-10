@@ -917,37 +917,20 @@ void BotManager::OnPlayerLogin(::Player* player)
     PlayerbotFactory::EnsureSkillRewardedSpells(player);
 
     // Normalize Goblin and High Elf (and any random bot in custom isolated
-    // starting zones lacking navmesh/transport to mainland) to standard faction starting zones.
-    // With RandomBotEvenStartZones the destination is the least-populated
-    // standard start of the bot's faction (one bounded characters-table count
-    // per normalization); otherwise goblins go to Valley of Trials and high
-    // elves to Northshire as before.
+    // starting zones lacking navmesh/transport to mainland) to standard faction
+    // starting zones: Valley of Trials and Northshire. RandomBotEvenStartZones
+    // counts goblins toward Durotar and high elves toward Elwynn when it picks
+    // the race, so landing them anywhere else unbalanced the spread it made
+    // (live 2026-10-09: the high elves sent to Dun Morogh/Teldrassil left
+    // Elwynn with humans only).
     if (record.random && !sPlayerbotAIConfig.allowIsolatedCustomStartingZones)
     {
         uint32 zoneId = player->GetZoneId();
         uint32 areaId = player->GetAreaId();
         if (PlayerbotAIConfig::IsIsolatedCustomZone(zoneId) || PlayerbotAIConfig::IsIsolatedCustomZone(areaId))
         {
-            StartZoneSpawn const* spawn = nullptr;
             bool horde = player->GetTeam() == HORDE;
-            if (sPlayerbotAIConfig.randomBotEvenStartZones)
-            {
-                uint32_t counts[kStartZoneCount] = {};
-                std::unique_ptr<QueryResult> rows(CharacterDatabase.PQuery(
-                    "SELECT `race` FROM `characters` WHERE `deleteDate` IS NULL AND `level` = 1"));
-                if (rows)
-                {
-                    do
-                    {
-                        int zone = StartZoneIndexForRace(rows->Fetch()[0].GetUInt32());
-                        if (zone >= 0 && zone < int(kStartZoneCount))
-                            ++counts[zone];
-                    } while (rows->NextRow());
-                }
-                spawn = &kStartZoneSpawns[LeastPopulatedStartZone(counts, horde)];
-            }
-            else
-                spawn = horde ? &kStartZoneSpawns[0] : &kStartZoneSpawns[3];
+            StartZoneSpawn const* spawn = horde ? &kStartZoneSpawns[0] : &kStartZoneSpawns[3];
             player->TeleportTo(spawn->map, spawn->x, spawn->y, spawn->z, spawn->o);
             player->SetHomebindToLocation(WorldLocation(spawn->map, spawn->x, spawn->y, spawn->z, spawn->o), spawn->area);
             player->SaveToDB();

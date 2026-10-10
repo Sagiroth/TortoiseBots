@@ -1462,9 +1462,15 @@ bool ResetTargetAction::Execute(Event& event)
     // A pool bot resets here when all its purposes are parked, and a full
     // minute on top of the park left it standing until the next minute
     // boundary: 2-5 min targetless runs were 59% of targetless standing
-    // (live 2026-10-09). Owned bots keep the minute.
+    // (live 2026-10-09). Owned bots keep the minute. 15 s still stood the
+    // bot ~20-35 s (status check every 5 s, cached "travel target active",
+    // visit gaps) and reset cooldowns were half of all stalled bots (live
+    // 2026-10-09 evening): 5 s, and the bot wanders meanwhile like an empty
+    // pick - unless it reset to hand in at a nearby quest taker.
     bool const poolBot = sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster();
-    oldTarget->SetExpireIn(poolBot ? 15000 : 60000);
+    oldTarget->SetExpireIn(poolBot ? 5000 : 60000);
+    if (poolBot && !AI_VALUE(bool, "has nearby quest taker"))
+        WanderOnEmptyPick(ai, bot);
 
     ai->TellDebug(requester, "Cleared travel target fetches", "debug travel");
 
@@ -1670,10 +1676,14 @@ bool RequestTravelTargetAction::isAllowed() const
             return urand(1, 100) < 90;
     case TravelDestinationPurpose::Boss:
         return urand(1, 100) < 50;
+    // A pool bot's camp/explore request already won the weighted RPG mixer
+    // roll; a second skip roll on top refused it 50-90% of the time while the
+    // cached verdict blocked every other leisure purpose, so the bot reset and
+    // stood until the verdict changed. Owned bots keep the skip chance.
     case TravelDestinationPurpose::Explore:
-        return urand(1, 100) < 10;
+        return (sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster()) || urand(1, 100) < 10;
     case TravelDestinationPurpose::GenericRpg:
-        return urand(1, 100) < 50;
+        return (sRandomBotFacade.IsRandomBot(bot) && !ai->HasRealPlayerMaster()) || urand(1, 100) < 50;
     case TravelDestinationPurpose::Grind:
         return true;
     default:

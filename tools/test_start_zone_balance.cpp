@@ -1,6 +1,6 @@
 // Standalone regression test for even start-zone distribution: the race ->
-// start-zone mapping and the least-populated pick that keep the six racial
-// starting zones balanced. Exercises the pure rules without a database or a
+// start-zone mapping and the level band counted toward the six racial
+// starting zones. Exercises the pure rules without a database or a
 // running core.
 //
 // Build and run:
@@ -41,27 +41,15 @@ static void TestRaceMapping()
     CHECK(StartZoneIndexForRace(11) == -1);
 }
 
-static void TestEmptyPoolKeepsHistoricalDefaults()
+static void TestStartZoneLevelBand()
 {
-    uint32_t counts[kStartZoneCount] = {};
-    CHECK(LeastPopulatedStartZone(counts, true) == 0);
-    CHECK(LeastPopulatedStartZone(counts, false) == 3);
-}
-
-static void TestEmptiestZoneWins()
-{
-    uint32_t horde[kStartZoneCount] = { 147, 40, 42, 0, 0, 0 };
-    CHECK(LeastPopulatedStartZone(horde, true) == 1);
-    uint32_t alliance[kStartZoneCount] = { 0, 0, 0, 117, 106, 42 };
-    CHECK(LeastPopulatedStartZone(alliance, false) == 5);
-}
-
-static void TestCrossFactionCountsAreIgnored()
-{
-    // A full Alliance side must not push a Horde bot out of Valley of Trials.
-    uint32_t counts[kStartZoneCount] = { 5, 9, 9, 0, 0, 0 };
-    CHECK(LeastPopulatedStartZone(counts, true) == 0);
-    CHECK(LeastPopulatedStartZone(counts, false) == 3);
+    // A fresh pool levels to 2-3 while creation still runs: those bots are
+    // still in their start zone and must keep counting.
+    CHECK(CountsTowardStartZone(1));
+    CHECK(CountsTowardStartZone(3));
+    CHECK(CountsTowardStartZone(9));
+    CHECK(!CountsTowardStartZone(10));
+    CHECK(!CountsTowardStartZone(60));
 }
 
 static void TestSpawnTableMatchesCorePlayercreateinfo()
@@ -77,9 +65,7 @@ static void TestSpawnTableMatchesCorePlayercreateinfo()
 int main()
 {
     TestRaceMapping();
-    TestEmptyPoolKeepsHistoricalDefaults();
-    TestEmptiestZoneWins();
-    TestCrossFactionCountsAreIgnored();
+    TestStartZoneLevelBand();
     TestSpawnTableMatchesCorePlayercreateinfo();
     std::printf("start zone balance: %d checks passed\n", checks);
     return 0;
