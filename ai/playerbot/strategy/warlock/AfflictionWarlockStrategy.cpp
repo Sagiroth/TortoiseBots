@@ -205,8 +205,8 @@ void AfflictionWarlockBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*
 
     // Spellstone upkeep (WAR-4, donor parity): create while holding none
     // (costs a shard; core fails gracefully when shardless, like soulstone),
-    // apply while the weapon has no temp enchant. The oil fallback excludes
-    // the stone both ways, so whichever lands first wins.
+    // equip into an empty off-hand beside a one-handed main-hand (gated in
+    // SpellstoneTrigger), so this never swaps out real gear or fights a staff.
     triggers.push_back(new TriggerNode(
         "no spellstone",
         NextAction::array(0, new NextAction("create spellstone", ACTION_NORMAL), NULL)));

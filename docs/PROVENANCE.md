@@ -4638,62 +4638,84 @@ Local validation: `bash tools/verify_all.sh` (incl. new policy test +
 wiring check live-missing=0); `git diff --check`; shared-builder compile
 check; no live in-game test.
 
-## Warlock Firestone / Spellstone create+use (WAR-4) — 2026-10-09
+## Warlock Firestone / Spellstone create+equip (WAR-4) — 2026-10-09
 
 Donor: mod-playerbots (`79bd4281`):
 `src/Ai/Class/Warlock/Strategy/GenericWarlockNonCombatStrategy.cpp:200-222`
 (per-spec stone strategies: affli/demo spellstone, destro firestone),
-`WarlockTriggers.h:66-78,116-126` + `WarlockActions.h:79-94`.
+`WarlockTriggers.h:66-78,116-126` (`FirestoneTrigger`/`SpellstoneTrigger :
+BuffTrigger`, `HasFirestoneTrigger`/`HasSpellstoneTrigger`) +
+`WarlockAiObjectContext.cpp:330-331` (both use actions are
+`UseSpellItemAction`), `WarlockActions.h:79-94`.
 
 Source files (module, modified):
-`ai/playerbot/strategy/warlock/WarlockStrategy.cpp` (uncommented the
-`no firestone` / `no spellstone` create rows),
-`ai/playerbot/strategy/warlock/WarlockTriggers.{h,cpp}` (new
-`FirestoneTrigger : BuffTrigger` with vanilla off-hand gates),
-`ai/playerbot/strategy/warlock/WarlockAiObjectContext.cpp` (registered
-`firestone` trigger + use action; `spellstone` pair already existed),
-`ai/playerbot/strategy/warlock/AfflictionWarlockStrategy.cpp` +
-`DemonologyWarlockStrategy.cpp` (`spellstone` use row) +
-`DestructionWarlockStrategy.cpp` (`firestone` use row) +
-`docs/classes/warlock.md`, `CHANGELOG.md` (doc lines).
+`ai/playerbot/strategy/warlock/WarlockStrategy.cpp` (base `no firestone` /
+`no spellstone` create rows stay removed — creation is per-spec only),
+`ai/playerbot/strategy/warlock/WarlockTriggers.{h,cpp}` (`FirestoneTrigger`
+and `SpellstoneTrigger` as plain `Trigger`s with O(1) item/slot gates,
+not `BuffTrigger`: no player spell is named "firestone"/"spellstone" so
+the `BuffTrigger` HasSpell gate would never pass),
+`ai/playerbot/strategy/warlock/WarlockAiObjectContext.cpp` (`firestone`
+trigger + `EquipFirestoneAction`, `spellstone` trigger +
+`EquipSpellstoneAction`; `create firestone`/`create spellstone` actions),
+`ai/playerbot/strategy/warlock/DestructionWarlockStrategy.cpp` (`firestone`
+use row) + `AfflictionWarlockStrategy.cpp` + `DemonologyWarlockStrategy.cpp`
+(`spellstone` use rows) + `docs/classes/warlock.md`, `CHANGELOG.md`.
 
 Copied / ported / reimplemented: reimplemented with vanilla item
-semantics, verified first in `tw_world` (report's 1254/5522-series ids
-are item entries, not spells — the spells are Create 607/918,
-on-use temp-enchant 128/17729/17730 (effect 38), on-equip aura 758):
-stones are off-hand held items (`inventory_type` 23), Spellstone is
-consumed as a weapon temp-enchant through the existing
-`UseSpellItemAction` path (already mutual-exclusion-safe:
-`ImbueWithOilAction::isUseful` refuses an enchanted weapon and
-`SpellCastUsefulValue` suppresses the stone past the temp slot), while
-Firestone equips to the off-hand behind empty-slot + one-hand gates so
-it never displaces worn gear or fights a staff. Create Spellstone costs
-a shard (2362 reagent 6265x1, core fails gracefully when shardless —
-same accepted pattern as soulstone).
+semantics, verified in `tw_world` (report's 1254/5522-series ids are item
+entries, not spells — the spells are Create Firestone 607 / Create
+Spellstone 918). Both stones are off-hand held items (`inventory_type`
+23), and both are *equipped*, never applied as weapon temp-enchants:
+Firestone's item spells are on-equip auras (758 Firestone Passive on
+Lesser 1254, 17945+ on the higher ranks), and Spellstone's on-use spells
+(128/17729/17730, effect 38 `SPELL_EFFECT_DISPEL` + effect 6 aura 69
+`SPELL_AURA_SCHOOL_ABSORB`, target 1 = caster, per the on-use description
+"Removes all magic effects from the caster and will absorb ... magic
+damage") likewise target the caster — while a sharpening stone works
+through `UseItem` only because it is an `INVTYPE_NON_EQUIP` consumable,
+`UseItemInternal` refuses equippable items sitting in bags, so a bag
+stone could never be applied that way. Core's
+`Player::RemoveItemDependentAurasAndCasts` exempts spellstone items
+5522/13602/13603/21685 from aura removal on unequip ("Pierres de sort"),
+so the equip aura (18384 Increased Critical Spell on all three ranks)
+survives briefly after the on-use dispel/absorb is cast from the worn
+stone. `EquipSpellstoneAction`/`EquipFirestoneAction` therefore equip a
+bag stone into an empty off-hand beside a one-handed main-hand (never
+displacing real gear or fighting a staff); the equip aura then applies
+and the on-use stays available through normal use once worn. Create
+Spellstone costs a shard (2362 reagent 6265x1, core fails gracefully when
+shardless — same accepted pattern as soulstone).
 
 Reason: both create rows were commented out and no use path was queued;
 donor keeps per-spec stones up out of combat.
 
 Local validation: `bash tools/verify_all.sh` (wiring audit covers the
-new `firestone` names); `git diff --check`; shared-builder compile via
-`build-commit.sh` (BUILD OK); live in-game check pending: stone created
-once, spellstone applied, firestone equipped without touching real
-off-hands.
+`firestone`/`spellstone` names); `git diff --check`; shared-builder
+compile via `build-commit.sh` (BUILD OK); live in-game check pending:
+each stone created once, equipped without touching real off-hands.
 
 ## Review fixes (pr-618, CHANGES_REQUESTED → fixed)
-All three blocking findings verified in code and fixed: (1) `firestone`
-is now a dedicated `EquipFirestoneAction` (static slot-safe equip — the
-`UseSpellItemAction` path refused equippables in bags per
-`UseItemInternal`, and firestones have no on-use spell); (2) creation is
-per-spec (`no spellstone` in affli/demo buff NC, `no firestone` in destro
-buff NC — no more cross-spec shard drain or bag pollution); (3) both
-use-triggers are plain `Trigger`s with O(1) item/slot gates. While
-verifying I found the same latent deadness the reviewer suspected in the
-pre-existing `SpellstoneTrigger` (no player spell is named "spellstone",
-so its `BuffTrigger` HasSpell gate never passed) and fixed it the same
-way. `ApplySpellstoneAction` goes through the item's own on-use spell
-targeted on the weapon (sharpening-stone path in `UseItemInternal`),
-not the refused generic use path.
+First round (commit ec6423d): (1) firestone is a dedicated
+`EquipFirestoneAction` (static slot-safe equip — the `UseSpellItemAction`
+path refused equippables in bags per `UseItemInternal`, and firestones
+have no on-use spell); (2) creation is per-spec (`no spellstone` in
+affli/demo buff NC, `no firestone` in destro buff NC — no more cross-spec
+shard drain or bag pollution); (3) both use-triggers are plain `Trigger`s
+with O(1) item/slot gates. Second round: (1) the new
+`ApplySpellstoneAction` routed through the same refused `UseItem` →
+`UseItemInternal:441` path — real, fixed by replacing it with
+`EquipSpellstoneAction` (same equip-into-empty-off-hand semantics as
+firestone); post-equip verification added to both equip actions (return
+whether the stone actually landed, so silent core refusals surface as
+action failure with retry next tick). (2) the "spellstone as weapon
+temp-enchant" claim was wrong — verified against `tw_world` + core
+(`SpellDefines.h:182` effect 38 is `SPELL_EFFECT_DISPEL`, not 54 =
+temp-enchant; on-use targets the caster per the spell description) — so
+the temp-slot trigger/action gates are gone from both sides; both stones
+are now plain off-hand equips (spec split kept: spellstone for
+affli/demo, firestone for destro). Rejected nothing.
+
 ## Paladin resist aura auto-swap per boss (raid1 item 8) — 2026-10-09
 
 Donor: mod-playerbots @ `79bd4281` (local checkout

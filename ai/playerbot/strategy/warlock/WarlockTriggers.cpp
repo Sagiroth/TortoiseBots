@@ -22,10 +22,15 @@ bool SpellstoneTrigger::IsActive()
 {
     if (AI_VALUE2(uint32, "item count", getName()) == 0)
         return false;
-    // Mutual exclusion with oils at trigger level (the action's isUseful
-    // repeats it): never burn a shard-made stone over an oiled weapon.
-    Item* weapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
-    return weapon && weapon->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT) == 0;
+    // Off-hand held item like firestone (not a weapon temp-enchant: the
+    // stone's on-use spell targets the caster). Same gates: never displace
+    // worn gear, and a two-handed main-hand leaves nowhere to put it.
+    if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND))
+        return false;
+    Item* mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+    if (!mainHand || mainHand->GetProto()->InventoryType == INVTYPE_2HWEAPON)
+        return false;
+    return true;
 }
 
 bool FirestoneTrigger::IsActive()

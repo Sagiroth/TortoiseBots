@@ -18,32 +18,27 @@ bool EquipFirestoneAction::Execute(Event& /*event*/)
         if (stone && !stone->IsEquipped())
         {
             EquipAction::EquipItem(ai, nullptr, stone, true);
-            return true;
+            return bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND) == stone;
         }
     }
 
     return false;
 }
 
-bool ApplySpellstoneAction::isUseful()
+bool EquipSpellstoneAction::Execute(Event& /*event*/)
 {
-    // Never burn a shard-made stone over an oiled weapon (mirrors the
-    // trigger gate; the engine may evaluate either first).
-    Item* weapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
-    return weapon && weapon->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT) == 0;
-}
-
-bool ApplySpellstoneAction::Execute(Event& event)
-{
-    Item* weapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
-    if (!weapon || weapon->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT) != 0)
+    // Same empty-off-hand re-check as firestone: never displace worn gear.
+    if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND))
         return false;
 
     std::list<Item*> stones = AI_VALUE2(std::list<Item*>, "inventory items", "spellstone");
     for (Item* stone : stones)
     {
-        if (stone && !stone->IsEquipped() && UseItem(event.GetOwner(), stone->GetProto()->ItemId, weapon))
-            return true;
+        if (stone && !stone->IsEquipped())
+        {
+            EquipAction::EquipItem(ai, nullptr, stone, true);
+            return bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND) == stone;
+        }
     }
 
     return false;

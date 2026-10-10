@@ -12,10 +12,12 @@ namespace ai
 		virtual bool IsActive() override;
 	};
 
-    // Temp-enchant consumable (WAR-4): fires while a stone is held and the
-    // main-hand weapon has no temp enchant. Plain Trigger (not Buff): no
-    // player spell is named "spellstone", so the BuffTrigger HasSpell gate
-    // would never pass.
+    // Vanilla off-hand semantics (WAR-4): a spellstone is a held off-hand
+    // item (inventory_type 23) with an on-equip aura, like firestone — not
+    // a weapon temp-enchant (its on-use spell targets the caster).
+    // Only equips into an EMPTY off-hand next to a one-handed main-hand.
+    // Plain Trigger (not Buff): no player spell is named "spellstone", so
+    // the BuffTrigger HasSpell gate would never pass.
     class SpellstoneTrigger : public Trigger
     {
     public:
