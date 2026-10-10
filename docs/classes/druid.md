@@ -21,6 +21,7 @@ Druids are the ultimate hybrid class, able to fulfill Tank, Healer, Melee DPS, o
 - **Restoration (Healer):** HoT-focused healing with *Rejuvenation*, *Regrowth*, *Healing Touch*, and *Swiftmend*, with *Nature's Swiftness* and *Tranquility* also wired. *Tranquility* fires on headcount (5+ members within 30 yards, 3 hurt in a 5-man scaling to 15 in a raid).
 - **Nature's Swiftness emergency chain:** on a critically hurt party member the druid pops *Nature's Swiftness*, then spends the buff on an instant *Healing Touch* before anything else can eat the aura. The pop sits above Swiftmend and the spend right below it, so the buff is used on the very next cast.
 - **Omen of Clarity procs:** a Clearcasting proc buys a free *Shred* for Cat (above the whole builder/finisher ladder) or a free party *Rejuvenation* for Restoration (above the normal HoT rows) — procs are spent, never left idle.
+- **Resto healer-dps (`+offdps`):** with nothing to heal and mana comfortable, the druid exits Tree of Life and nukes (*Moonfire*, *Wrath*, *Starfire*) at the lowest priority, so every heal outbids every nuke; Tree re-entry stands down while the kit runs, so the two never livelock. On by default for random bots (same auto-add as priest holy), removable with `-offdps`.
 - **Balance (Ranged DPS):** Moonkin caster driving Nature and Arcane damage via *Moonfire*, *Wrath*, *Starfire*, and *Insect Swarm*.
 - **Balance AoE:** casts *Hurricane* on packs of 3+ attackers in spell range.
 - **Below level 10 (`leveling` kit):** Neither the Feral nor the Balance kit is affordable yet, so the bot runs the dedicated leveling set: it fights in melee (auto-attack is its default action), keeps *Moonfire* applied, and heals itself with *Healing Touch*/*Rejuvenation*. It closes distance like every other melee kit — an out-of-melee enemy is walked into contact, and *Wrath* lands whenever the bot cannot move (rooted, stunned, or a target it gave up reaching).
@@ -63,7 +64,7 @@ The bot's shapeshifting engine maintains the appropriate form based on assigned 
   - Casts *Feral Charge* (Bear) as a gap-closer on any out-of-melee enemy.
   - Casts *Bash* (Bear) as an interrupt (also wired against enemy healers).
 - **Combat Resurrection:**
-  - Uses *Rebirth* (Battle Rez) on the first dead party member mid-fight (no tank/healer priority).
+  - Uses *Rebirth* (Battle Rez) on a dead party member mid-fight through the existing Balance / Feral / Restoration `rebirth` rows (no separate combat-rez gate: the donor's `combat party member dead` trigger feeds only its generic druid rows, which are dead code here). No tank/healer priority.
 - **Out-of-Combat Resurrection:**
   - Burns *Rebirth* on a dead party member out of combat only when no living priest, paladin or shaman is in the group — their normal resurrection is always preferred over the 30 min battle rez. (Vanilla druids have no normal resurrect; the only *Revive* row in game data is a boss spell, not a trainable druid spell.)
 - **Innervate:**
