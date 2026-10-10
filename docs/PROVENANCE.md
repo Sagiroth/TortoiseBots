@@ -6265,3 +6265,41 @@ Local validation: `bash tools/verify_all.sh`; `git diff --check`;
 shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
 check pending: destro opens CoE, grouped warlocks keep one curse.
 | Elemental water-shield mana loop + pack-gated chain lightning (SHM-6) | Donor behavior: ele keeps water shield + chain-lightning-no-cd (`mod-playerbots` `ElementalShamanStrategy.cpp:76-83`, `ShamanAoeStrategy` `GenericShamanStrategy.cpp:161`) @ `79bd4281` | `ai/playerbot/strategy/shaman/ElementalShamanStrategy.cpp` (buff combat + non-combat water rows + lightning fallback rows; AoE `chain lightning filler` row), `ShamanTriggers.h` (`ChainLightningReadyTrigger` via CD_TRIGGER), `ShamanAiObjectContext.cpp` (`chain lightning filler` = TwoTriggers ready + ranged-medium-aoe), `ShamanManaLoopPolicy.h` + `tools/test_shaman_mana_loop_policy.cpp` | Water at ACTION_NORMAL combat + non-combat with lightning at NORMAL-1 fallback (Water trains 34, Lightning 8 — verified npc_trainer; low-level ele keeps a shield). Filler is pack-only by trigger conjunction (ready + 3+ ranged pack), queued in the AoE strategy below earthquake — never single-target (no CC breaks, no OOM spam). Spells: Water Shield Turtle ranks (verified), Chain Lightning 421 (existing). No WotLK-only spells | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
+
+## Druid parity DRU-6: Faerie Fire (Feral) spam — NOT PORTED (rejected on module mechanics) — 2026-10-09
+Review of the original spam port (PR #585, review findings verified in
+code and accepted): the donor trigger behaviour does not port as a
+trigger-only change, so the override was reverted and the pre-existing
+plain-debuff behaviour kept. Evidence, corrected after review round 2
+(three original claims were factually wrong and are corrected here):
+(1) the real blocker is module-side, not core-side:
+`CastAuraSpellAction::isUseful` refuses recast while the aura stands
+(`BuffNeedsRefresh` false for the sub-5-min debuff), so a trigger-only
+port degrades to apply-once with extra failure modes. Core DOES apply
+flat 108 threat per 16857 cast (`spell_threat` row, no debuff check) —
+but that threat is unreachable through the aura-gated module action; a
+future action-layer attempt (FFF action off `CastSpellAction`, donor
+shape) could collect it and is not ruled out.
+(2) the override bypassed `DebuffTrigger`'s `HasSpell` guard, evaluating
+the spam branches every combat tick for bears/cats without the spell
+(wasted per-tick evaluation; the engine drops the un-castable action at
+`isUseful`/`isPossible`, so queue pollution, not pollution — harm
+overstated originally). The "not trainer-taught" claim was false: 3739
+IS `Faerie Fire (Feral)`, Effect 36 LEARN_SPELL teaching 17390, sold by
+druid trainers at 30.
+(3) Omen fishing is WotLK thinking: 16864 procs off melee flags
+(`spell_proc_event`), so FFF casts don't fish procs, and FFF deals no
+damage and builds no CP — filler GCDs buy nothing next to Shred, which
+builds CP and can proc Omen. (Priority detail: the live wired cat row
+is NORMAL+5, above the builders — the review's 5.0 figure is the dead
+legacy `CatDruidStrategy`; the mechanics objection stands regardless.)
+
+Source repository: `mod-playerbots` @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`),
+`src/Ai/Class/Druid/DruidTriggers.h:120-153` (reference only, not ported).
+
+Source files (module, modified): none — full revert to pre-PR behaviour.
+`docs/classes/druid.md` line added by the original PR removed again.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
+live test (no live test per parity brief); build via build-commit.sh.
