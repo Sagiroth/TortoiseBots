@@ -86,6 +86,12 @@
 - With role borrowing off, untalented bots are now skipped during fills and logged as `spec unknown (no talents spent yet)` in the fill's skip log, making it obvious why a bot was passed over. [#664](https://github.com/Sagiroth/TortoiseBots/pull/664)
 - With role borrowing enabled, nothing changes — existing borrow behavior is preserved. [#664](https://github.com/Sagiroth/TortoiseBots/pull/664)
 
+### Combat & AI
+- Razuvious Mind Control tanking is now handled — bots take over the MC'd tank role in the Instructor Razuvious encounter. [#666](https://github.com/Sagiroth/TortoiseBots/pull/666)
+- DPS bots no longer target Majordomo Executus; he can't be killed, so any damage sent his way was pure waste. [#666](https://github.com/Sagiroth/TortoiseBots/pull/666)
+- DPS bots ignore Core Ragers while Golemagg is alive — they heal back to full, so burning them down accomplished nothing. [#666](https://github.com/Sagiroth/TortoiseBots/pull/666)
+- DPS bots ignore Death Knight Understudies while Razuvious is alive, keeping damage focused on the actual kill target. [#666](https://github.com/Sagiroth/TortoiseBots/pull/666)
+
 ## 2026-10-09
 
 ### Observability & Engine
