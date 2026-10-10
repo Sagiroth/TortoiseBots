@@ -43,6 +43,7 @@ namespace
                 // Matches the donor: armor counts, other schools do not.
                 return (spellInfo->EffectMiscValue[effect] & SPELL_SCHOOL_MASK_NORMAL) != 0;
             case SPELL_AURA_MOD_INCREASE_HEALTH:
+            case SPELL_AURA_MOD_INCREASE_HEALTH_PERCENT:
             case SPELL_AURA_MOD_PARRY_PERCENT:
             case SPELL_AURA_MOD_DODGE_PERCENT:
             case SPELL_AURA_MOD_BLOCK_PERCENT:
@@ -68,12 +69,16 @@ TrinketEffectClass UseTrinketAction::ClassifyTrinketSpell(SpellEntry const* spel
         defensive = defensive || IsDefensiveTankEffect1_12(spellInfo, effect);
     }
     // Priority mirrors the donor gates: restore first (mana gate below),
-    // then defensive (health gate), then plain aura. Efficiency alone never
-    // fires (donor aura-or-restore-only gate) and maps to None.
+    // then defensive (health gate), then efficiency (high-mana gate), then
+    // plain aura. Donor treats efficiency as an orthogonal flag alongside
+    // applyAura; restore+efficiency collapses to restore since both gates
+    // share the mana path.
     if (restore)
         return TrinketEffectClass::ManaRestore;
     if (defensive)
         return TrinketEffectClass::Defensive;
+    if (efficiency)
+        return TrinketEffectClass::ManaEfficiency;
     if (aura)
         return TrinketEffectClass::Aura;
     return TrinketEffectClass::None;
@@ -105,7 +110,7 @@ bool UseTrinketAction::UseTrinket(Player* requester, Item* item)
     if (!spellId)
         return false;
 
-    // Donor per-item + per-category cooldown memory (DB values are seconds).
+    // Donor per-item + per-category cooldown memory (1.12 DB values are ms).
     uint32 nowMs = WorldTimer::getMSTime();
     std::pair<uint32, uint32> itemKey(item->GetEntry(), spellId);
     auto itemIt = itemCooldownExpiries.find(itemKey);
@@ -125,8 +130,8 @@ bool UseTrinketAction::UseTrinket(Player* requester, Item* item)
     if (!TrinketEffectAllowed(effect))
         return false;
 
-    // Donor mana/health gates. Efficiency never reaches here (classified
-    // None above); the efficiency branch of the policy covers future use.
+    // Donor mana/health gates (restore: medium mana; efficiency: high mana;
+    // defensive: low health).
     uint8 manaPct = AI_VALUE2(uint8, "mana", "self target");
     bool hasMana = AI_VALUE2(bool, "has mana", "self target");
     if (!TrinketManaAllowed(effect, hasMana, manaPct, sPlayerbotAIConfig.mediumMana))
@@ -139,9 +144,9 @@ bool UseTrinketAction::UseTrinket(Player* requester, Item* item)
         return false;
 
     if (itemCooldown > 0)
-        itemCooldownExpiries[itemKey] = nowMs + uint32(itemCooldown) * IN_MILLISECONDS;
+        itemCooldownExpiries[itemKey] = nowMs + uint32(itemCooldown);
     if (itemCategory && itemCategoryCooldown > 0)
-        categoryCooldownExpiries[itemCategory] = nowMs + uint32(itemCategoryCooldown) * IN_MILLISECONDS;
+        categoryCooldownExpiries[itemCategory] = nowMs + uint32(itemCategoryCooldown);
     return true;
 }
 

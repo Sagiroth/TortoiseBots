@@ -33,11 +33,15 @@ namespace ai
 
     // Donor aura-or-mana-restore-only gate: a use effect must apply an aura
     // or restore mana, otherwise it is a damage/proc effect that does not
-    // belong on the automatic path.
+    // belong on the automatic path. Defensive tank effects and mana
+    // efficiency effects are auras by construction (see the classifier), so
+    // they pass here and reach the health/mana gates below.
     inline bool TrinketEffectAllowed(TrinketEffectClass effect)
     {
         return effect == TrinketEffectClass::Aura ||
-            effect == TrinketEffectClass::ManaRestore;
+            effect == TrinketEffectClass::ManaRestore ||
+            effect == TrinketEffectClass::ManaEfficiency ||
+            effect == TrinketEffectClass::Defensive;
     }
 
     // Donor mana gates: a restore trinket fires below medium mana; an

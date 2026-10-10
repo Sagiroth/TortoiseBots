@@ -30,9 +30,9 @@ static void TestSpellAndEffectGates()
     CHECK(!TrinketSpellAllowed(false));
     CHECK(TrinketEffectAllowed(TEC::Aura));
     CHECK(TrinketEffectAllowed(TEC::ManaRestore));
+    CHECK(TrinketEffectAllowed(TEC::ManaEfficiency));
+    CHECK(TrinketEffectAllowed(TEC::Defensive));
     CHECK(!TrinketEffectAllowed(TEC::None));
-    CHECK(!TrinketEffectAllowed(TEC::ManaEfficiency));
-    CHECK(!TrinketEffectAllowed(TEC::Defensive));
     std::printf("  [PASS] spell/effect gates\n");
 }
 
