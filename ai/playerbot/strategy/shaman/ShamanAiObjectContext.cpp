@@ -271,6 +271,7 @@ namespace ai
                 creators["water breathing on party"] = [](PlayerbotAI* ai) { return new WaterBreathingOnPartyTrigger(ai); };
                 creators["water walking on party"] = [](PlayerbotAI* ai) { return new WaterWalkingOnPartyTrigger(ai); };
                 creators["shock"] = [](PlayerbotAI* ai) { return new ShockTrigger(ai); };
+                creators["earth shock execute"] = [](PlayerbotAI* ai) { return new EarthShockExecuteTrigger(ai); };
                 creators["flame shock upkeep"] = [](PlayerbotAI* ai) { return new FlameShockTrigger(ai); };
                 creators["earth shock interrupt"] = [](PlayerbotAI* ai) { return new EarthShockInterruptSpellTrigger(ai); };
                 creators["earth shock on enemy healer"] = [](PlayerbotAI* ai) { return new EarthShockInterruptEnemyHealerSpellTrigger(ai); };
@@ -284,11 +285,15 @@ namespace ai
                 creators["fire totem aoe"] = [](PlayerbotAI* ai) { return new FireTotemAoeTrigger(ai); };
                 creators["earth totem"] = [](PlayerbotAI* ai) { return new EarthTotemTrigger(ai); };
                 creators["stoneclaw panic"] = [](PlayerbotAI* ai) { return new StoneclawPanicTrigger(ai); };
+                creators["tremor totem reactive"] = [](PlayerbotAI* ai) { return new TremorTotemReactiveTrigger(ai); };
+                creators["earthbind totem reactive"] = [](PlayerbotAI* ai) { return new EarthbindTotemReactiveTrigger(ai); };
+                creators["grounding totem reactive"] = [](PlayerbotAI* ai) { return new GroundingTotemReactiveTrigger(ai); };
+                creators["poison cleansing totem reactive"] = [](PlayerbotAI* ai) { return new PoisonCleansingTotemReactiveTrigger(ai); };
+                creators["disease cleansing totem reactive"] = [](PlayerbotAI* ai) { return new DiseaseCleansingTotemReactiveTrigger(ai); };
                 creators["water totem"] = [](PlayerbotAI* ai) { return new WaterTotemTrigger(ai); };
                 creators["air totem"] = [](PlayerbotAI* ai) { return new AirTotemTrigger(ai); };
-                creators["call of the elements"] = [](PlayerbotAI* ai) { return new TotemsAreNotSummonedTrigger(ai); };
-                creators["call of the ancestors"] = [](PlayerbotAI* ai) { return new TotemsAreNotSummonedTrigger(ai); };
-                creators["call of the spirits"] = [](PlayerbotAI* ai) { return new TotemsAreNotSummonedTrigger(ai); };
+                // NOTE: `call of the ...` triggers removed with their
+                // spell-less actions above (dead port only otherwise).
                 creators["totemic recall"] = [](PlayerbotAI* ai) { return new ReadyToRemoveTotemsTrigger(ai); };
                 creators["earth shield on party tank"] = [](PlayerbotAI* ai) { return new PartyTankEarthShieldTrigger(ai); };
                 creators["chain lightning"] = [](PlayerbotAI* ai) { return new ChainLightningTrigger(ai); };
@@ -365,9 +370,9 @@ namespace ai
                 creators["cure poison"] = [](PlayerbotAI* ai) { return new CastCurePoisonAction(ai); };
                 creators["cure poison on party"] = [](PlayerbotAI* ai) { return new CastCurePoisonOnPartyAction(ai); };
                 creators["ghost wolf"] = [](PlayerbotAI* ai) { return new CastGhostWolfAction(ai); };
-                creators["call of the elements"] = [](PlayerbotAI* ai) { return new CastCallOfTheElements(ai); };
-                creators["call of the ancestors"] = [](PlayerbotAI* ai) { return new CastCallOfTheAncestors(ai); };
-                creators["call of the spirits"] = [](PlayerbotAI* ai) { return new CastCallOfTheSpirits(ai); };
+                // NOTE: `call of the elements/ancestors/spirits` are WotLK
+                // totem-bar spells with no 1.18.1 spell rows; their actions
+                // are deleted (only Totemic Recall refunds mana here).
                 creators["totemic recall"] = [](PlayerbotAI* ai) { return new CastTotemicRecall(ai); };
                 creators["set totembars on levelup"] = [](PlayerbotAI* ai) { return new SetTotemBars(ai); };
                 creators["update pve strats"] = [](PlayerbotAI* ai) { return new UpdateShamanPveStrategiesAction(ai); };

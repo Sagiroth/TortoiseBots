@@ -44,6 +44,7 @@
 #include "LastSpellCastValue.h"
 #include "ChatValue.h"
 #include "HasTotemValue.h"
+#include "HasOwnTotemValue.h"
 #include "HaveAnyTotemValue.h"
 #include "LeastHpTargetValue.h"
 #include "AoeHealValues.h"
@@ -223,7 +224,9 @@ namespace ai
             creators["last potion used time"] = [](PlayerbotAI* ai) { return new LastPotionUsedTimeValue(ai); };
             creators["chat"] = [](PlayerbotAI* ai) { return new ChatValue(ai); };
             creators["has totem"] = [](PlayerbotAI* ai) { return new HasTotemValue(ai); };
+            creators["has own totem"] = [](PlayerbotAI* ai) { return new HasOwnTotemValue(ai); };
             creators["have any totem"] = [](PlayerbotAI* ai) { return new HaveAnyTotemValue(ai); };
+            creators["have any own totem"] = [](PlayerbotAI* ai) { return new HaveAnyOwnTotemValue(ai); };
 
             creators["aoe heal"] = [](PlayerbotAI* ai) { return new AoeHealValue(ai); };
 

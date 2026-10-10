@@ -83,6 +83,8 @@
 #include "ClassicRaidDungeonActions.h"
 #include "KarazhanCryptDungeonActions.h"
 #include "SapphironDungeonActions.h"
+#include "HeiganDungeonActions.h"
+#include "AnubrekhanDungeonActions.h"
 
 namespace ai
 {
@@ -368,6 +370,8 @@ namespace ai
             creators["vael adrenaline flee"] = [](PlayerbotAI* ai) { return new VaelBurningAdrenalineFleeAction(ai); };
             creators["dragon flank"] = [](PlayerbotAI* ai) { return new DragonFlankAction(ai); };
             creators["raid spread"] = [](PlayerbotAI* ai) { return new RaidSpreadAction(ai); };
+            creators["swap fire resistance aura"] = [](PlayerbotAI* ai) { return new SwapFireResistanceAuraAction(ai); };
+            creators["swap shadow resistance aura"] = [](PlayerbotAI* ai) { return new SwapShadowResistanceAuraAction(ai); };
             creators["dragon tank face away"] = [](PlayerbotAI* ai) { return new DragonTankFaceAwayAction(ai); };
             creators["move to mc rune"] = [](PlayerbotAI* ai) { return new MoveToMCRuneAction(ai); };
             creators["douse mc rune aqual"] = [](PlayerbotAI* ai) { return new DouseMCRuneActionAqual(ai); };
@@ -391,6 +395,14 @@ namespace ai
             creators["disable sapphiron fight strategy"] = [](PlayerbotAI* ai) { return new SapphironDisableFightStrategyAction(ai); };
             creators["sapphiron hide"] = [](PlayerbotAI* ai) { return new SapphironHideAction(ai); };
             creators["sapphiron avoid blizzard"] = [](PlayerbotAI* ai) { return new SapphironAvoidBlizzardAction(ai); };
+            creators["enable heigan fight strategy"] = [](PlayerbotAI* ai) { return new HeiganEnableFightStrategyAction(ai); };
+            creators["disable heigan fight strategy"] = [](PlayerbotAI* ai) { return new HeiganDisableFightStrategyAction(ai); };
+            creators["heigan dance move"] = [](PlayerbotAI* ai) { return new HeiganDanceMoveAction(ai); };
+            creators["heigan hold platform"] = [](PlayerbotAI* ai) { return new HeiganHoldPlatformAction(ai); };
+            creators["enable anub'rekhan fight strategy"] = [](PlayerbotAI* ai) { return new AnubrekhanEnableFightStrategyAction(ai); };
+            creators["disable anub'rekhan fight strategy"] = [](PlayerbotAI* ai) { return new AnubrekhanDisableFightStrategyAction(ai); };
+            creators["anub'rekhan choose target"] = [](PlayerbotAI* ai) { return new AnubrekhanChooseTargetAction(ai); };
+            creators["anub'rekhan to center"] = [](PlayerbotAI* ai) { return new AnubrekhanToCenterAction(ai); };
             creators["move away from void zone"] = [](PlayerbotAI* ai) { return new FourHorsemanMoveAwayFromVoidZoneAction(ai); };
             creators["enable solnius fight strategy"] = [](PlayerbotAI* ai) { return new SolniusEnableFightStrategyAction(ai); };
             creators["disable solnius fight strategy"] = [](PlayerbotAI* ai) { return new SolniusDisableFightStrategyAction(ai); };

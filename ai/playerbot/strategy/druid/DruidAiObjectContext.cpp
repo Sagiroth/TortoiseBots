@@ -251,6 +251,7 @@ namespace ai
                 creators["rebirth"] = [](PlayerbotAI* ai) { return new RebirthTrigger(ai); };
                 creators["ooc rebirth"] = [](PlayerbotAI* ai) { return new OocRebirthTrigger(ai); };
                 creators["innervate"] = [](PlayerbotAI* ai) { return new InnervateTrigger(ai); };
+                creators["healer low mana"] = [](PlayerbotAI* ai) { return new HealerLowManaTrigger(ai); };
                 creators["berserk"] = [](PlayerbotAI* ai) { return new BerserkTrigger(ai); };
                 creators["clearcasting"] = [](PlayerbotAI* ai) { return new ClearcastingTrigger(ai); };
             }
