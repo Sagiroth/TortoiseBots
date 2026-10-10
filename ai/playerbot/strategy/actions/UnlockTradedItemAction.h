@@ -15,6 +15,10 @@ public:
     UnlockTradedItemAction(PlayerbotAI* botAI) : Action(botAI, "unlock traded item") {}
 
     bool Execute(Event& event) override;
+    // Automatic path gate (AG-5): only a rogue with a locked box in the
+    // trader's do-not-trade slot runs on window updates. The fine checks
+    // (skill, spell, level) stay in Execute, which still tells when asked.
+    bool isUseful() override;
 
 private:
     bool CanUnlockItem(Item* item);

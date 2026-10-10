@@ -30,6 +30,18 @@ namespace ai
         MagmadarDisableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable magmadar fight strategy", "-magmadar") {}
     };
 
+    class GeddonEnableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        GeddonEnableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "enable geddon fight strategy", "+geddon") {}
+    };
+
+    class GeddonDisableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        GeddonDisableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable geddon fight strategy", "-geddon") {}
+    };
+
     class MagmadarMoveAwayFromLavaBombAction : public MoveAwayFromHazard
     {
     public:
@@ -40,6 +52,13 @@ namespace ai
     {
     public:
         MagmadarMoveAwayAction(PlayerbotAI* ai) : MoveAwayFromCreature(ai, "move away from magmadar", 11982, 31.0f) {}
+    };
+
+    class GeddonMoveAwayAction : public MoveAwayFromCreature
+    {
+    public:
+        // Donor INFERNO_DISTANCE: 20y clear while Inferno burns.
+        GeddonMoveAwayAction(PlayerbotAI* ai) : MoveAwayFromCreature(ai, "move away from geddon", 12056, 20.0f) {}
     };
 
     class MoveToMCRuneAction : public MoveToAction

@@ -22,8 +22,20 @@ void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("enable blackwing lair strategy", 100.0f), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "enter zul'gurub",
+        NextAction::array(0, new NextAction("enable zul'gurub strategy", 100.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "enter ruins of ahn'qiraj",
+        NextAction::array(0, new NextAction("enable ruins of ahn'qiraj strategy", 100.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "enter naxxramas",
         NextAction::array(0, new NextAction("enable naxxramas strategy", 100.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "enter ahn'qiraj temple",
+        NextAction::array(0, new NextAction("enable ahn'qiraj temple strategy", 100.0f), NULL)));
 
     if (sPlayerbotAIConfig.enableCustomRaidTactics)
     {
@@ -69,12 +81,36 @@ void DungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("disable blackwing lair strategy", 100.0f), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "enter zul'gurub",
+        NextAction::array(0, new NextAction("enable zul'gurub strategy", 100.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "leave zul'gurub",
+        NextAction::array(0, new NextAction("disable zul'gurub strategy", 100.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "enter ruins of ahn'qiraj",
+        NextAction::array(0, new NextAction("enable ruins of ahn'qiraj strategy", 100.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "leave ruins of ahn'qiraj",
+        NextAction::array(0, new NextAction("disable ruins of ahn'qiraj strategy", 100.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "enter naxxramas",
         NextAction::array(0, new NextAction("enable naxxramas strategy", 100.0f), NULL)));
 
     triggers.push_back(new TriggerNode(
         "leave naxxramas",
         NextAction::array(0, new NextAction("disable naxxramas strategy", 100.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "enter ahn'qiraj temple",
+        NextAction::array(0, new NextAction("enable ahn'qiraj temple strategy", 100.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "leave ahn'qiraj temple",
+        NextAction::array(0, new NextAction("disable ahn'qiraj temple strategy", 100.0f), NULL)));
 
     if (sPlayerbotAIConfig.enableCustomRaidTactics)
     {
