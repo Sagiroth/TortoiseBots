@@ -12,4 +12,15 @@ namespace ai
         virtual std::string Save() override;
         virtual bool Load(std::string value) override;
     };
+
+    // Opt-in combat spread knob (donor "disperse distance" shape):
+    // unset (-1, default) keeps the role default; a set value (> 0) is the
+    // "too close" radius in yards. Persisted like RangeValue.
+    class SpreadDistanceValue : public ManualSetValue<float>, public Qualified
+	{
+	public:
+        SpreadDistanceValue(PlayerbotAI* ai);
+        virtual std::string Save() override;
+        virtual bool Load(std::string value) override;
+    };
 }

@@ -85,16 +85,6 @@ void WarlockStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "no soulstone",
         NextAction::array(0, new NextAction("create soulstone", ACTION_NORMAL), NULL)));
-
-    /*
-    triggers.push_back(new TriggerNode(
-        "no firestone",
-        NextAction::array(0, new NextAction("create firestone", ACTION_NORMAL), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "no spellstone",
-        NextAction::array(0, new NextAction("create spellstone", ACTION_NORMAL), NULL)));
-    */
 }
 
 void WarlockStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
@@ -198,6 +188,10 @@ void WarlockAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "corruption on attacker",
         NextAction::array(0, new NextAction("corruption on attacker", ACTION_HIGH - 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "immolate on attacker",
+        NextAction::array(0, new NextAction("immolate on attacker", ACTION_HIGH - 1), NULL)));
 }
 
 void WarlockAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -255,6 +249,16 @@ void WarlockBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trigger
     triggers.push_back(new TriggerNode(
         "soulstone",
         NextAction::array(0, new NextAction("soulstone", ACTION_NORMAL + 1), NULL)));
+
+    // Swim-gated water breathing (WAR-6, donor parity): only fires while
+    // the bot swims, self first, then the party.
+    triggers.push_back(new TriggerNode(
+        "unending breath",
+        NextAction::array(0, new NextAction("unending breath", ACTION_NORMAL + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "unending breath on party",
+        NextAction::array(0, new NextAction("unending breath on party", ACTION_NORMAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "often",
@@ -362,10 +366,15 @@ void WarlockCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "death coil on snare target",
         NextAction::array(0, new NextAction("death coil on snare target", ACTION_INTERRUPT + 3), NULL)));
-
     triggers.push_back(new TriggerNode(
         "banish",
         NextAction::array(0, new NextAction("banish on cc", ACTION_INTERRUPT + 2), NULL)));
+
+    // PET-2: below fear so the owner's fear wins ties; the succubus gate in
+    // isUseful keeps this silent without a succubus out.
+    triggers.push_back(new TriggerNode(
+        "seduction",
+        NextAction::array(0, new NextAction("seduction on cc", ACTION_INTERRUPT), NULL)));
 
     triggers.push_back(new TriggerNode(
         "fear",
@@ -425,6 +434,22 @@ void WarlockPetStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "spell lock enemy healer",
         NextAction::array(0, new NextAction("spell lock", ACTION_INTERRUPT + 2), NULL)));
+
+    // Felhunter utility: strip a magic buff off the enemy, or lift magic off
+    // a party member. Both actions refuse to fire without a Felhunter out
+    // (entry gate in isUseful), so other demons idle here safely.
+    triggers.push_back(new TriggerNode(
+        "devour magic purge",
+        NextAction::array(0, new NextAction("devour magic purge", ACTION_DISPEL + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "devour magic cleanse",
+        NextAction::array(0, new NextAction("devour magic cleanse", ACTION_DISPEL), NULL)));
+    // PET-6: sustain the demon mid-fight. Below the interrupt kit and the
+    // pet attack — keeping the pet alive never outranks using it.
+    triggers.push_back(new TriggerNode(
+        "health funnel",
+        NextAction::array(0, new NextAction("health funnel", ACTION_NORMAL + 1), NULL)));
 }
 
 void WarlockPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -538,6 +563,13 @@ void WarlockManualPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& tr
     triggers.push_back(new TriggerNode(
         "often",
         NextAction::array(0, new NextAction("initialize pet", ACTION_NORMAL + 1), NULL)));
+}
+
+void WarlockCurseOfExhaustionStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "curse of exhaustion on snare target",
+        NextAction::array(0, new NextAction("curse of exhaustion on snare target", ACTION_HIGH), NULL)));
 }
 
 void WarlockManualCurseStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

@@ -52,6 +52,16 @@ namespace ai
         virtual Value<Unit*>* GetTargetValue() override;
         virtual std::string getName() { return "thorns on main tank"; }
     };
+    // mod-playerbots parity (DRU-7): Thorns lands on the tank first.
+    // BuffOnTankTrigger targets "party tank without aura", so the tank is
+    // covered before the party blanket below; the fire-shield conflict
+    // skip mirrors ThornsOnPartyTrigger. Name resolves to "thorns on tank".
+    class ThornsOnTankTrigger : public BuffOnTankTrigger
+    {
+    public:
+        ThornsOnTankTrigger(PlayerbotAI* ai) : BuffOnTankTrigger(ai, "thorns", 4) {}
+        bool IsActive() override;
+    };
 
     class ThornsTrigger : public BuffTrigger
     {
@@ -244,6 +254,15 @@ namespace ai
         NaturesSwiftnessTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "nature's swiftness") {}
     };
 
+    // mod-playerbots parity (DRU-2): true while the Nature's Swiftness buff
+    // sits on the bot, so the emergency instant-Healing-Touch row can spend
+    // it immediately. Mirrors shaman AncestralSwiftnessAuraTrigger.
+    class NaturesSwiftnessActiveTrigger : public HasAuraTrigger
+    {
+    public:
+        NaturesSwiftnessActiveTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "nature's swiftness") {}
+    };
+
     class EnrageTrigger : public BuffTrigger
     {
     public:
@@ -372,6 +391,31 @@ namespace ai
         FerociousBiteTrigger(PlayerbotAI* ai) : ComboPointsAvailableTrigger(ai, 5) {}
     };
 
+    // mod-playerbots parity (DRU-5): Ferocious Bite execute window — a
+    // dying target dies to bite before Rip ticks out. Port of donor
+    // FerociousBiteExecuteTrigger minus the WotLK clauses (no savage roar
+    // in 1.18.1; the raw <20k-HP clause scaled to a plain HP% gate —
+    // vanilla health pools make an absolute gate meaningless). Defined in
+    // DruidTriggers.cpp.
+    class FerociousBiteExecuteTrigger : public Trigger
+    {
+    public:
+        FerociousBiteExecuteTrigger(PlayerbotAI* ai) : Trigger(ai, "ferocious bite execute") {}
+        bool IsActive() override;
+    };
+
+    // mod-playerbots parity (DRU-5): Ferocious Bite timing window — at 5
+    // combo points bite only when Rip is absent or healthy (>10 s left),
+    // so bite never clips a Rip refresh. Port of donor
+    // FerociousBiteTimeTrigger minus the savage-roar clause (no such spell
+    // in 1.18.1). Defined in DruidTriggers.cpp.
+    class FerociousBiteTimeTrigger : public Trigger
+    {
+    public:
+        FerociousBiteTimeTrigger(PlayerbotAI* ai) : Trigger(ai, "ferocious bite time") {}
+        bool IsActive() override;
+    };
+
     BOOST_TRIGGER(BerserkTrigger, "berserk");
 
     class RebirthTrigger : public SpellTargetTrigger
@@ -384,6 +428,23 @@ namespace ai
         {
             return SpellTargetTrigger::IsTargetValid(target) && target->IsDead();
         }
+    };
+
+    // mod-playerbots parity (DRU-1): out-of-combat resurrection. Vanilla
+    // druids have no normal resurrect, only Rebirth, so a dead party member
+    // out of combat sits until a priest/paladin/shaman wakes up — or the
+    // druid burns its 30 min battle rez. This trigger stays quiet while any
+    // living groupmate of a resurrecting class (priest/paladin/shaman) is
+    // around; their normal rez is always preferred. Gates on IsTargetValid
+    // (public) rather than IsActive (private in SpellTargetTrigger), so the
+    // base cooldown/spellbook checks and manual revive-target assignment
+    // keep working untouched. Defined in DruidTriggers.cpp.
+    class OocRebirthTrigger : public RebirthTrigger
+    {
+    public:
+        OocRebirthTrigger(PlayerbotAI* ai) : RebirthTrigger(ai) {}
+        std::string getName() override { return "ooc rebirth"; }
+        bool IsTargetValid(Unit* target) override;
     };
 
     class InnervateTrigger : public SpellTargetTrigger
@@ -403,9 +464,21 @@ namespace ai
         }
     };
 
+
     class ClearcastingTrigger : public HasAuraTrigger
     {
     public:
         ClearcastingTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "clearcasting") {}
+    };
+
+    // mod-playerbots parity (DRU-8): donor "no healer dps strategy" gate.
+    // True while the opt-in offdps kit is NOT running, so Tree of Life
+    // maintenance stands down during healer-dps instead of livelocking
+    // against the caster-form exit. Defined in DruidTriggers.cpp.
+    class NoOffdpsTrigger : public Trigger
+    {
+    public:
+        NoOffdpsTrigger(PlayerbotAI* ai) : Trigger(ai, "no offdps") {}
+        bool IsActive() override;
     };
 }

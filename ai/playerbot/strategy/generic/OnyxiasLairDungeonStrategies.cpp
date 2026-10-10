@@ -39,5 +39,9 @@ void OnyxiaFightStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
 
 void OnyxiaFightStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
-    // ...
+    // Deep Breath outranks the generic flank: cast-triggered lane dodge to
+    // the nearest safe zone beats cone geometry while a breath casts.
+    triggers.push_back(new TriggerNode(
+        "onyxia deep breath",
+        NextAction::array(0, new NextAction("onyxia breath safe zone", ACTION_EMERGENCY + 5), NULL)));
 }

@@ -1,7 +1,28 @@
 # Changelog
 
+- Warlocks use weapon stones again — Affliction and Demonology create and equip Spellstones, Destruction creates and equips its Firestone (only into an empty off-hand, never swapping out real gear).
+- Warlock Immolate now spreads to extra attackers instead of only the main target — Demonology and Destruction keep it up at spec level, all specs spread it with the aoe strategy on.
+- Warlock DoTs spread to extra attackers even with the aoe strategy off — Affliction keeps Corruption and Siphon Life up at spec level, Demonology keeps Corruption up, at low priority under the main rotation and mana recovery.
+- Warlocks cast Unending Breath on themselves and the party while swimming instead of never casting it.
+- Warlocks can snare runners with Curse of Exhaustion — order `.bot strategy +curse exhaustion` and the bot slows fleeing or chasing targets instead of only the main target.
+
+- Destruction warlocks open with Curse of the Elements instead of Curse of Agony (Curse of Agony until it is trained), and warlock bots no longer recast a curse anyone already holds — manual curse orders still override.
+
 ### Bots & Behavior
 - Grouped tanks now know who the main tank is — in a two-tank group the designated main tank holds its target while the other tank picks up loose adds, and druids put thorns on the main tank first instead of scanning the party.
+- Casters stop wasting casts on nearly-dead mobs — in groups of four or more, casters now prefer targets with 5-30 seconds of life left (nearly-dead ones rank second, never ignored), rogues and cat druids stick to their combo target, and every damage dealer switches to a freshly marked skull at once while leaving the crowd-controlled moon alone.
+- Grouped bots keep their groups tidy — a bot stranded on another map (or impossibly far on the same one) leaves the group instead of holding a dead slot.
+- Bots can now burn one target without breaking crowd control — telling a bot `co +focus` (off by default) stops all area damage and off-target debuffs, so sheep and sap survive the fight.
+- Masterless bots stop accepting quests they cannot finish alone — over-level, elite/dungeon and group-suggested quests are refused at the giver instead of being picked up and dropped later. Grouped bots that can fight bosses and player-owned bots are unchanged.
+- Tanks stop stealing the main tank's marked target — an off-tank now leaves a skull held by another tank alone and picks up loose adds instead. (For tanks with automatic marking enabled, raid icons are no longer set while travelling or idle — marking now happens in combat, without outranking defensive cooldowns.)
+- Bots pick the better quest reward when two are equally usable — tied rewards are now broken by stat weight for the bot instead of taking whatever the vendor lists first.
+- Whispering a bot `pull back` now works like `pull` — it pulls your target; whispering `attackers` now answers with who is attacking instead of staying silent.
+- Rogue bots now pick locked boxes mid-trade — when a trader parks a lockbox in the do-not-trade slot, a rogue bot unlocks it instead of letting the trade complete around it. Whispering a rogue `unlock traded item` forces it manually.
+- Bots stop swapping gear for tiny gains — an upgrade must now beat the old item by 10% of stat weight (`AiPlayerbot.EquipUpgradeThreshold`, mod-playerbots parity) instead of swapping on any epsilon difference. Set it to `1.0` for the old any-gain behavior.
+- Bots can now finish buffing before answering a ready check — with `AiPlayerbot.ForceRebuffOnReadyCheck = 1`, a bot that gets a ready check out of combat reports its status right away but holds the confirm until its buffs settle (or 30 seconds pass), instead of answering ready and buffing through the pull. Off by default.
+- A stuck pull can now be called off — whispering the tank `end pull` drops the wedged pull target and sends the tank back to following you, instead of standing until the timeout fires.
+- Casters no longer start long casts on dying mobs — a spell whose cast time outlasts the target's remaining life is now held back at any health level, not just near death, so fewer casts fizzle on corpses.
+- Dual-wield bots now hand their old main-hand weapon to the off hand — after a main-hand upgrade lands, the displaced weapon moves to the off hand when it fits there and beats what is equipped, instead of sitting in the bags.
 - Bots no longer get stuck on the Deeprun Tram — wandering bots could be routed through the tram between Stormwind and Ironforge but cannot ride the train, so they stood on the platform for good; their routes now go overland, and any bot already stranded there is moved out through the nearest station exit.
 - Bots stranded on islands without travel routes (Lapidis Isle) no longer stand at the shore forever — after three destinations in a row fail from the same spot they are moved to the nearest travel route instead of an island graveyard they would just walk back from.
 - Druids no longer freeze in place re-applying their strategies — balance, restoration and bear druids carrying the stealth strategy kept trying to add a stealth variant that does not exist for their spec, which took up every turn they should have spent moving.

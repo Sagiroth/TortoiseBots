@@ -43,6 +43,18 @@ void AfflictionWarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
     triggers.push_back(new TriggerNode(
         "immolate",
         NextAction::array(0, new NextAction("immolate", ACTION_NORMAL), NULL)));
+
+    // Spec-level DoT spreading (WAR-10, donor parity): corruption and siphon
+    // ride at NORMAL even with the aoe strategy off (its HIGH-1 rows still
+    // win when it is on). Below single-target upkeep and urgent taps, so
+    // spreading never starves the main rotation or mana recovery.
+    triggers.push_back(new TriggerNode(
+        "corruption on attacker",
+        NextAction::array(0, new NextAction("corruption on attacker", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "siphon life on attacker",
+        NextAction::array(0, new NextAction("siphon life on attacker", ACTION_NORMAL), NULL)));
 }
 
 void AfflictionWarlockStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -190,6 +202,18 @@ void AfflictionWarlockBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& 
 void AfflictionWarlockBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     WarlockBuffStrategy::InitNonCombatTriggers(triggers);
+
+    // Spellstone upkeep (WAR-4, donor parity): create while holding none
+    // (costs a shard; core fails gracefully when shardless, like soulstone),
+    // equip into an empty off-hand beside a one-handed main-hand (gated in
+    // SpellstoneTrigger), so this never swaps out real gear or fights a staff.
+    triggers.push_back(new TriggerNode(
+        "no spellstone",
+        NextAction::array(0, new NextAction("create spellstone", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "spellstone",
+        NextAction::array(0, new NextAction("spellstone", ACTION_NORMAL), NULL)));
 }
 
 void AfflictionWarlockBuffPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
