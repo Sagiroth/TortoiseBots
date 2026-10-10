@@ -4,10 +4,12 @@
 #include "playerbot/strategy/actions/UseItemAction.h"
 #include "playerbot/AoeFearPolicy.h"
 #include "../../../runtime/DevourMagicPolicy.h"
+#include "../../../runtime/HealthFunnelPolicy.h"
 
 namespace ai
 {
 	SNARE_ACTION(CastDeathCoilSnareAction, "death coil");
+	SNARE_ACTION(CastCurseOfExhaustionSnareAction, "curse of exhaustion");
 	ENEMY_HEALER_ACTION(CastDeathCoilOnHealerAction, "death coil");
 	SPELL_ACTION(CastDeathCoilAction, "death coil");
     BUFF_ACTION(CastShadowWardAction, "shadow ward");
@@ -23,6 +25,18 @@ namespace ai
 	public:
 		CastDemonArmorAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "demon armor") {}
 	};
+
+    class CastUnendingBreathAction : public CastBuffSpellAction
+    {
+    public:
+        CastUnendingBreathAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "unending breath") {}
+    };
+
+    class CastUnendingBreathOnPartyAction : public BuffOnPartyAction
+    {
+    public:
+        CastUnendingBreathOnPartyAction(PlayerbotAI* ai) : BuffOnPartyAction(ai, "unending breath") {}
+    };
 
     BEGIN_RANGED_SPELL_ACTION(CastShadowBoltAction, "shadow bolt")
     END_SPELL_ACTION()
@@ -158,6 +172,31 @@ namespace ai
 			return CastSpellAction::isUseful() && AI_VALUE2(uint8, "health", "self target") < sPlayerbotAIConfig.almostFullHealth;
 		}
 	};
+
+    // PET-6: Health Funnel channels owner health into the demon. Owner-cast
+    // (the warlock knows the spell, the pet doesn't) on the pet target.
+    // The policy gate repeats here for the evaluation-to-execution gap: the
+    // trigger may have fired ticks ago while the owner dropped below the
+    // drain floor since.
+    class CastHealthFunnelAction : public CastSpellAction
+    {
+    public:
+        CastHealthFunnelAction(PlayerbotAI* ai) : CastSpellAction(ai, "health funnel") {}
+        std::string GetTargetName() override { return "pet target"; }
+        bool isUseful() override
+        {
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            if (!pet)
+                return false;
+            TortoiseBots::HealthFunnelGateInputs gate;
+            gate.hasPet = true;
+            gate.petAlive = pet->IsAlive();
+            gate.petHealth = AI_VALUE2(uint8, "health", "pet target");
+            gate.ownerHealth = AI_VALUE2(uint8, "health", "self target");
+            gate.ownerInCombat = bot->IsInCombat();
+            return TortoiseBots::CanCastHealthFunnel(gate) && CastSpellAction::isUseful();
+        }
+    };
 
     class CastCurseOfExhaustionAction : public CastRangedDebuffSpellAction
     {

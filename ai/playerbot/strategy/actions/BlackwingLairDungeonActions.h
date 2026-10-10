@@ -219,6 +219,37 @@ namespace ai
         }
     };
 
+    class BroodlordEnableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        BroodlordEnableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "enable broodlord fight strategy", "+broodlord") {}
+    };
+
+    class BroodlordDisableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        BroodlordDisableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable broodlord fight strategy", "-broodlord") {}
+    };
+
+    class NefarianEnableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        NefarianEnableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "enable nefarian fight strategy", "+nefarian") {}
+    };
+
+    class NefarianDisableFightStrategyAction : public ChangeAllStrategyAction
+    {
+    public:
+        NefarianDisableFightStrategyAction(PlayerbotAI* ai) : ChangeAllStrategyAction(ai, "disable nefarian fight strategy", "-nefarian") {}
+    };
+
+    class BroodlordMoveAwayAction : public MoveAwayFromCreature
+    {
+    public:
+        // Donor BROODLORD_SAFE_DISTANCE: ranged holds 18y (Blast Wave).
+        BroodlordMoveAwayAction(PlayerbotAI* ai) : MoveAwayFromCreature(ai, "move away from broodlord", 12017, 18.0f) {}
+    };
+
     class VaelEnableFightStrategyAction : public ChangeAllStrategyAction
     {
     public:

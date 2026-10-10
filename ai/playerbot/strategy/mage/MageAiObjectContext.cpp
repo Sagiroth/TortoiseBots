@@ -173,6 +173,7 @@ namespace ai
                 creators["arcane power"] = [](PlayerbotAI* ai) { return new ArcanePowerTrigger(ai); };
                 creators["presence of mind"] = [](PlayerbotAI* ai) { return new PresenceOfMindTrigger(ai); };
                 creators["presence of mind aura"] = [](PlayerbotAI* ai) { return new PresenceOfMindAuraTrigger(ai); };
+                creators["hot streak"] = [](PlayerbotAI* ai) { return new HotStreakTrigger(ai); };
                 creators["fire ward"] = [](PlayerbotAI* ai) { return new FireWardTrigger(ai); };
                 creators["frost ward"] = [](PlayerbotAI* ai) { return new FrostWardTrigger(ai); };
                 creators["blink"] = [](PlayerbotAI* ai) { return new BlinkTrigger(ai); };
@@ -184,6 +185,7 @@ namespace ai
                 creators["icicles"] = [](PlayerbotAI* ai) { return new IciclesTrigger(ai); };
                 creators["icicles channel check"] = [](PlayerbotAI* ai) { return new IciclesChannelCheckTrigger(ai); };
                 creators["evocation channel check"] = [](PlayerbotAI* ai) { return new EvocationChannelCheckTrigger(ai); };
+                creators["blizzard channel check"] = [](PlayerbotAI* ai) { return new BlizzardChannelCheckTrigger(ai); };
                 creators["no improved scorch"] = [](PlayerbotAI* ai) { return new NoImprovedScorchDebuffTrigger(ai); };
                 creators["no fire vulnerability"] = [](PlayerbotAI* ai) { return new NoFireVulnerabilityTrigger(ai); };
                 creators["no food"] = [](PlayerbotAI* ai) { return new NoFoodTrigger(ai); };

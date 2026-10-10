@@ -22,6 +22,8 @@
 #include "ClassicRaidDungeonTriggers.h"
 #include "LowerKarazhanDungeonTriggers.h"
 #include "SapphironDungeonTriggers.h"
+#include "HeiganDungeonTriggers.h"
+#include "AnubrekhanDungeonTriggers.h"
 #include "WorldBuffTravelTriggers.h"
 
 namespace ai
@@ -348,6 +350,12 @@ namespace ai
             creators["suppression device in sight"] = [](PlayerbotAI* ai) { return new SuppressionDeviceInSightTrigger(ai); };
             creators["suppression device close"] = [](PlayerbotAI* ai) { return new SuppressionDeviceCloseTrigger(ai); };
 
+            creators["start broodlord fight"] = [](PlayerbotAI* ai) { return new BroodlordStartFightTrigger(ai); };
+            creators["end broodlord fight"] = [](PlayerbotAI* ai) { return new BroodlordEndFightTrigger(ai); };
+            creators["broodlord ranged"] = [](PlayerbotAI* ai) { return new BroodlordRangedTrigger(ai); };
+            creators["start nefarian fight"] = [](PlayerbotAI* ai) { return new NefarianStartFightTrigger(ai); };
+            creators["end nefarian fight"] = [](PlayerbotAI* ai) { return new NefarianEndFightTrigger(ai); };
+            creators["nefarian wild magic"] = [](PlayerbotAI* ai) { return new NefarianWildMagicTrigger(ai); };
             creators["start vael fight"] = [](PlayerbotAI* ai) { return new VaelStartFightTrigger(ai); };
             creators["end vael fight"] = [](PlayerbotAI* ai) { return new VaelEndFightTrigger(ai); };
 
@@ -358,6 +366,14 @@ namespace ai
             creators["end sapphiron fight"] = [](PlayerbotAI* ai) { return new SapphironEndFightTrigger(ai); };
             creators["sapphiron air hide"] = [](PlayerbotAI* ai) { return new SapphironAirTrigger(ai); };
             creators["sapphiron blizzard"] = [](PlayerbotAI* ai) { return new SapphironBlizzardTrigger(ai); };
+            creators["start heigan fight"] = [](PlayerbotAI* ai) { return new HeiganStartFightTrigger(ai); };
+            creators["end heigan fight"] = [](PlayerbotAI* ai) { return new HeiganEndFightTrigger(ai); };
+            creators["heigan dance"] = [](PlayerbotAI* ai) { return new HeiganDanceTrigger(ai); };
+            creators["heigan platform hold"] = [](PlayerbotAI* ai) { return new HeiganPlatformHoldTrigger(ai); };
+            creators["start anub'rekhan fight"] = [](PlayerbotAI* ai) { return new AnubrekhanStartFightTrigger(ai); };
+            creators["end anub'rekhan fight"] = [](PlayerbotAI* ai) { return new AnubrekhanEndFightTrigger(ai); };
+            creators["anub'rekhan adds"] = [](PlayerbotAI* ai) { return new AnubrekhanAddsTrigger(ai); };
+            creators["anub'rekhan swarm"] = [](PlayerbotAI* ai) { return new AnubrekhanSwarmTrigger(ai); };
             creators["void zone too close"] = [](PlayerbotAI* ai) { return new FourHorsemanVoidZoneTrigger(ai); };
             creators["start solnius fight"] = [](PlayerbotAI* ai) { return new SolniusStartFightTrigger(ai); };
             creators["end solnius fight"] = [](PlayerbotAI* ai) { return new SolniusEndFightTrigger(ai); };

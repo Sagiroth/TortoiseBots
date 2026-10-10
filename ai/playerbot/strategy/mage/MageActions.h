@@ -336,6 +336,15 @@ namespace ai
     {
     public:
         CastConeOfColdAction(PlayerbotAI* ai) : CastMeleeAoeSpellAction(ai, "cone of cold", 10.0f) {}
+        // Donor CastConeOfColdAction::isUseful: a cone only hits what the
+        // caster faces. Refuse cast while turned away so the GCD goes to a
+        // nuke instead of an empty cone (range gate stays in the base).
+        bool isUseful() override
+        {
+            if (!CastMeleeAoeSpellAction::isUseful())
+                return false;
+            return AI_VALUE2(bool, "facing", "current target");
+        }
     };
 
     class CastBlastWaveAction : public CastMeleeAoeSpellAction

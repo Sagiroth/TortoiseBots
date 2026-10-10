@@ -68,6 +68,7 @@ The bot's shapeshifting engine maintains the appropriate form based on assigned 
   - Burns *Rebirth* on a dead party member out of combat only when no living priest, paladin or shaman is in the group — their normal resurrection is always preferred over the 30 min battle rez. (Vanilla druids have no normal resurrect; the only *Revive* row in game data is a boss spell, not a trainable druid spell.)
 - **Innervate:**
   - Casts *Innervate* on the lowest-mana party healer below the `AiPlayerbot.LowMana` threshold (default 15%), falling back to self when solo or healers are healthy. Manual `.bot boost` assignments win over automation. Shifts to caster form first (required by Turtle 1.18.1 shapeshift rules).
+- **Cat feeds the healer:** a Feral cat with no thirsty healer of its own still watches the group's mana — when a party healer drops below the line, the cat shifts out and sends them *Innervate* (below Cower, above the rotation).
 - **Barkskin:**
   - Balance/Restoration cast *Barkskin* on own-health triggers (medium-health band in the Balance/Restoration combat sets, almost-full-health band in the generic set); never wired for Feral (Cat/Bear lose form bonuses under Turtle 1.18.1 attack-speed and shapeshift penalties).
 - **Party Buffs:**
