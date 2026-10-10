@@ -1467,13 +1467,16 @@ AiPlayerbot.PremadeSpecLink.11.2.60 = 5002012--5050013355213521
 #       feedback on tick time — a fast desktop keeps the full configured
 #       ceilings, a weak machine backs off on its own. 0 = off (static
 #       ceilings; also set PoolBudgetWhenTickOverMs=150 to restore the old
-#       gate). Default is 50.
+#       gate). Default is 100: player lag stays well under ~200 ms while a
+#       large pool keeps its bots moving. Lower it (e.g. 50) for snappier
+#       ping at the cost of slower bot turns on a busy server. If the server
+#       cannot hold even 100, run fewer bots.
 # The pass cost and whether the budget cut a pass are reported by the
 # "TortoiseBots: BOTPERF ..." log line every ~30 s (LogLevel 1 or higher).
 AiPlayerbot.PoolTickBudgetUs = 10000
 AiPlayerbot.PoolBudgetWhenTickOverMs = 0
 AiPlayerbot.CombatTickBudgetUs = 15000
-AiPlayerbot.TargetWorldTickMs = 50
+AiPlayerbot.TargetWorldTickMs = 100
 
 # Bounded failure backoff for autonomous background work (issue #84).
 # Repeated failures wait base, 2x, 4x, 8x, 16x up to the max before the
