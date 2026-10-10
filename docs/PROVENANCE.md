@@ -5903,3 +5903,54 @@ meant tankless groups never got the armor-reduction stack.
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
 test (per task constraints).
 | Anub'Rekhan fight (Naxx): adds-first targeting, swarm center-collapse, flee suppression | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Anubrekhan.cpp`, `src/Ai/Raid/Naxx/NaxxStrategy.cpp` (Anub rows), `src/Ai/Raid/Naxx/NaxxMultipliers.cpp` (AnubrekhanGenericMultiplier) | Reimplemented trigger-driven; MT kite ring omitted (needs live waypoints) | Kit verified in tw_world + core boss_anubrekhan.cpp (15956, guard 16573, 28785, 28783) | `bash tools/verify_all.sh` + `tools/test_anubrekhan_swarm_policy.cpp`; build-commit + no live test |
+
+## Mage close-range AoE: cone of cold + arcane explosion rows with guards (MAG-6) — 2026-10-10
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Mage/Strategy/GenericMageStrategy.cpp:206` (frost `light
+aoe` → cone of cold 21), `src/Ai/Class/Mage/MageActions.cpp:81-109`
+(cone/facing + 10yd `isUseful` guards; arcane explosion omni,
+range-only).
+
+Source files (module, modified):
+`ai/playerbot/strategy/mage/MageActions.h`
+(`CastConeOfColdAction::isUseful` now also requires
+`AI_VALUE2(bool, "facing", "current target")`; the 10yd range gate
+stays in `CastMeleeAoeSpellAction::isUseful`),
+`ai/playerbot/strategy/mage/FrostMageStrategy.cpp`
+(`FrostMageAoeStrategy`: new `ranged light aoe` → `cone of cold` row at
+HIGH, below blizzard/flamestrike medium-aoe rows),
+`docs/classes/mage.md` (doc line).
+
+The first version of this PR also added a `melee medium aoe` →
+`arcane explosion` row on the base `MageAoeStrategy` (all specs). That
+row is REMOVED: review caught that it has no donor source (zero
+`xplosion` hits in the donor mage AI; the cited guard block covers
+cone/dragon's-breath/blast-wave, and the "omni, range-only" guard is
+blast wave's, not arcane explosion's). Donor mages never cast arcane
+explosion — the all-specs behaviour was invented scope. Arcane keeps its
+pre-existing single-enemy `enemy too close for spell` → `arcane
+explosion` row (`ArcaneMageStrategy.cpp:128`), which this PR does not
+touch. The remaining cone work (facing `isUseful` + frost `ranged light
+aoe` row) is donor-sourced and stays.
+
+Copied / ported / reimplemented: reimplemented in the live list-based
+style. Deviations from the donor, all deliberate: (a) [REMOVED with the
+explosion row — see above]; (b) frost cone fires on our `ranged light
+aoe` (2 attackers in sight) while the 10yd + facing `isUseful` does the
+real gating, per the report's accepted v1 semantics; (c) cone action
+stays registered under its existing name — only the guard is new, so
+the frost-nova fallback node (`MageStrategy.cpp:26`) is untouched.
+Finding 2 (cone/explosion tie starving the cone) is moot: with the
+explosion row gone there is no tie — cone at HIGH sits above the
+`ACTION_NORMAL + 1` nukes and the flamestrike row shares HIGH but pushes
+later, so first-pushed-wins orders cone first (donor: cone 21 above
+flamestrike/blizzard on the same light/medium pair).
+
+Reason: cone of cold was registered but had zero trigger rows anywhere,
+and arcane explosion only fired for arcane bots — solo frost/fire bots
+with 2 mobs chewing on them never used either.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`;
+shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
+check pending: 2-mob pack at melee range, cone fires while facing.
