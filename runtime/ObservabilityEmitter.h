@@ -53,6 +53,7 @@ struct BotTelemetrySnapshot
     int32 travelDist = -1;     // yards to the destination point (-1 when idle)
     uint32 aiVisits = 0;       // AI updates since login
     uint32 aiAgeMs = 0;        // ms since the last AI update
+    std::string pvp;           // "bg" inside a battleground, "queue" when queued, else empty
 };
 
 // ObservabilityEmitter sends non-blocking loopback UDP telemetry to the

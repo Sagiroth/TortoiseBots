@@ -73,6 +73,7 @@
     botsState: 'all',
     botsClass: 'all',
     botsIssueOnly: false,
+    botsPvpOnly: false,
     botsSort: { key: null, dir: 1 }, // null = online first, then by name
     anomalyTypeFilter: 'all',
     anomalySeverityFilter: 'all',
@@ -570,6 +571,9 @@
     issuesCount: document.getElementById('issues-count'),
     metricIssues: document.getElementById('metric-issues'),
     metricIssuesSub: document.getElementById('metric-issues-sub'),
+    kpiPvp: document.getElementById('kpi-pvp'),
+    metricPvp: document.getElementById('metric-pvp'),
+    metricPvpSub: document.getElementById('metric-pvp-sub'),
 
     // Overview
     activityPanel: document.getElementById('activity-panel'),
@@ -1925,6 +1929,12 @@
     const lag = s.lag_p95 || s.diff_avg || s.diff || 0;
     if (el.metricBotsOnline) el.metricBotsOnline.textContent = s.online ? s.bots : 0;
     if (el.metricHumansOnline) el.metricHumansOnline.textContent = s.online ? s.humans : 0;
+    if (el.metricPvp) {
+      const inBg = s.online ? state.bots.filter(b => b.pvp === 'bg').length : 0;
+      const queued = s.online ? state.bots.filter(b => b.pvp === 'queue').length : 0;
+      el.metricPvp.textContent = inBg;
+      if (el.metricPvpSub) el.metricPvpSub.textContent = `${queued} queued`;
+    }
     if (el.metricUptime) el.metricUptime.textContent = s.online ? `up ${formatUptime(s.uptime)}` : 'offline';
     if (el.metricTick) {
       el.metricTick.textContent = s.online ? `${Math.round(lag)} ms` : '–';
@@ -2288,11 +2298,13 @@
     const stateCount = {};
     forStates.forEach(r => { if (r.live) { const k = r.live.state || 'idle'; stateCount[k] = (stateCount[k] || 0) + 1; } });
     const withIssues = base.filter(r => issues[r.guid]).length;
+    const inPvp = base.filter(r => r.live && r.live.pvp).length;
     el.stateChips.innerHTML =
       chip('state', 'all', 'Any state', forStates.length, '', state.botsState === 'all') +
       STATE_ORDER.filter(k => stateCount[k] || state.botsState === k)
         .map(k => chip('state', k, k[0].toUpperCase() + k.slice(1), stateCount[k] || 0, STATE_COLORS[k], state.botsState === k)).join('') +
-      (withIssues || state.botsIssueOnly ? chip('issues', '1', 'With issues', withIssues, '#f85149', state.botsIssueOnly, ' chip-warn') : '');
+      (withIssues || state.botsIssueOnly ? chip('issues', '1', 'With issues', withIssues, '#f85149', state.botsIssueOnly, ' chip-warn') : '') +
+      (inPvp || state.botsPvpOnly ? chip('pvp', '1', 'In PvP', inPvp, '#a371f7', state.botsPvpOnly) : '');
 
     const forClasses = base.filter(stateOk);
     const classCount = {};
@@ -2316,10 +2328,11 @@
     const stateOk = r => state.botsState === 'all' || (r.live && (r.live.state || 'idle') === state.botsState);
     const classOk = r => state.botsClass === 'all' || r.cls === state.botsClass;
     const issueOk = r => !state.botsIssueOnly || !!issues[r.guid];
+    const pvpOk = r => !state.botsPvpOnly || !!(r.live && r.live.pvp);
 
     const base = rows.filter(r => presenceOk(r) && queryOk(r));
     renderBotChips(base, issues, stateOk, classOk);
-    const list = base.filter(r => stateOk(r) && classOk(r) && issueOk(r));
+    const list = base.filter(r => stateOk(r) && classOk(r) && issueOk(r) && pvpOk(r));
 
     const cols = BOT_VIEWS[state.botsView] || BOT_VIEWS.live;
     const sortKey = cols.includes(state.botsSort.key) ? state.botsSort.key : null;
@@ -2399,6 +2412,7 @@
       const v = btn.dataset.v;
       if (btn.dataset.kind === 'state') state.botsState = state.botsState === v ? 'all' : v;
       else if (btn.dataset.kind === 'class') state.botsClass = state.botsClass === v ? 'all' : v;
+      else if (btn.dataset.kind === 'pvp') state.botsPvpOnly = !state.botsPvpOnly;
       else state.botsIssueOnly = !state.botsIssueOnly;
       renderRoster();
     };
@@ -2434,6 +2448,19 @@
         state.botsPresence = 'online';
         state.botsClass = 'all';
         state.botsIssueOnly = false;
+        state.botsPvpOnly = false;
+        go({ tab: 'roster' });
+      });
+    }
+    // The PvP tile lists every online bot in a battleground or its queue.
+    if (el.kpiPvp) {
+      el.kpiPvp.addEventListener('click', e => {
+        e.preventDefault();
+        state.botsState = 'all';
+        state.botsPresence = 'online';
+        state.botsClass = 'all';
+        state.botsIssueOnly = false;
+        state.botsPvpOnly = true;
         go({ tab: 'roster' });
       });
     }
