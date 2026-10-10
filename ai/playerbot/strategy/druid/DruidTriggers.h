@@ -48,7 +48,7 @@ namespace ai
     class ThornsOnTankTrigger : public BuffOnTankTrigger
     {
     public:
-        ThornsOnTankTrigger(PlayerbotAI* ai) : BuffOnTankTrigger(ai, "thorns") {}
+        ThornsOnTankTrigger(PlayerbotAI* ai) : BuffOnTankTrigger(ai, "thorns", 4) {}
         bool IsActive() override;
     };
 

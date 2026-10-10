@@ -4563,3 +4563,15 @@ strategy idiom. No new spells: Thorns ranks trainer-taught.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No
 live test (no live test per parity brief); build via build-commit.sh.
+
+## Review fixes round 2 (2026-10-10, PR #590 CHANGES_REQUESTED)
+Blocking finding verified real and fixed: new `thorns on tank` action
+had no ActionNode — `Engine::CreateActionNode` falls back to a bare node
+with NULL prerequisites, so a shapeshifted druid fails the cast via
+`GetErrorAtShapeshiftedCast` and the tank row never beats the blanket
+for shifted druids. Fixed: `thorns_on_tank` caster-form node in
+`DruidStrategyActionNodeFactory` (same shape as every sibling buff row).
+Non-blocking: check interval matched to sibling/donor 4; MotW-vs-thorns
+ordering kept (tank-first is the feature); early-refresh overlap left as
+harmless (reviewer agrees).
+verify_all.sh + build-commit.sh + push to same branch per brief (see summary).

@@ -23,6 +23,7 @@ public:
         creators["hibernate on cc"] = &hibernate_on_cc;
         creators["thorns"] = &thorns;
         creators["thorns on party"] = &thorns_on_party;
+        creators["thorns on tank"] = &thorns_on_tank;
         creators["mark of the wild"] = &mark_of_the_wild;
         creators["mark of the wild on party"] = &mark_of_the_wild_on_party;
         creators["gift of the wild on party"] = &gift_of_the_wild_on_party;
@@ -79,6 +80,8 @@ private:
     ACTION_NODE_P(thorns, "thorns", "caster form");
 
     ACTION_NODE_P(thorns_on_party, "thorns on party", "caster form");
+
+    ACTION_NODE_P(thorns_on_tank, "thorns on tank", "caster form");
 
     ACTION_NODE_P(mark_of_the_wild, "mark of the wild", "caster form");
 
