@@ -5733,3 +5733,50 @@ slows a fleeing mob, untriggered bot unchanged.
 | Combat call pet + safe combat revive, tame demoted (PET-5) | Transferable extension of donor NC-only `no pet` → `call pet` / `hunters pet dead` → `revive pet` (`GenericHunterNonCombatStrategy.cpp:29,34`); donor has no combat call/revive | `HunterStrategy.cpp` (combat `no pet` → `call pet` NORMAL+1, `safe to revive pet` → `revive pet` NORMAL; both combat+NC `tame beast` demoted EMERGENCY → NORMAL so instant call wins wherever castable and the engine falls through to tame only when call is impossible), `HunterTriggers.{h,cpp}` (`SafeToRevivePetTrigger` wired to `runtime/PetRevivePolicy.h`; `HunterNoPet` simplified to donor `NoPetTrigger` shape — petless + unmounted — so the call nodes are reachable for dismissed pets), `HunterAiObjectContext.cpp` (creator), `runtime/PetRevivePolicy.h` + `tools/test_pet_revive_policy.cpp` | Reimplemented: donor never called/revived in combat; revive gated on zero attackers (10s channel safety). Tame demotion via relevance fallback instead of a trigger spell gate | `bash tools/verify_all.sh`; wiring 0 live-missing; standalone `test_pet_revive_policy` (5 checks); `git diff --check`. Compile via shared builder; no live in-game test |
 | Chain-heal group trigger verification + Fire Nova Totem drop gate (SHM-7/SHM-9) | Donor `CastFireNovaAction::isUseful` (`mod-playerbots` `ShamanActions.cpp:28-41`: fire-totem + 8y gate) is WotLK-3.3.0+ mechanics — 1.12 Fire Nova is a totem DROP (1535 line, detonates after 4s), not a pulse of a down totem, so the donor gate is NOT ported (it would refuse every drop). Ported as a placement gate instead @ `79bd4281` | `ai/playerbot/strategy/shaman/ShamanActions.h` (`CastFireNovaAction::isUseful`: bot-to-target <= 10y + policy call), `ShamanFireGatePolicy.h` + `tools/test_shaman_fire_gate_policy.cpp` | Chain heal: verified already wired — live `medium aoe heal -> chain heal` at ACTION_MEDIUM_HEAL matches priest/druid shape, no new trigger; donor `group heal setting` exists only in dead ports. Fire Nova: 10y placement gate (totem lands at our feet); manual `totem fire nova` and magma->nova continuer unaffected (no existing-totem requirement). Spells: Fire Nova Totem 1535 line / Fire Nova pulse 8350 line (verified in tw_world.spell_template; action resolves via spellbook to the trained drop) | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
 | Totemic Recall out of combat + dead Call-spell cleanup (SHM-5) | `mod-playerbots` `src/Ai/Class/Shaman/ShamanTriggers.cpp:187-262` (`TotemicRecallTrigger`: dungeon boss guard, group combat guard, mana-tide/fire-ele sparing) + `Strategy/ShamanNonCombatStrategy.cpp:88` @ `79bd4281` | `ai/playerbot/strategy/shaman/ShamanStrategy.cpp` (non-combat `totemic recall` row), `ShamanTriggers.h` (`ReadyToRemoveTotemsTrigger` hardened + `TotemsAreNotSummonedTrigger` removed as orphan), `ShamanActions.h` (3 `CastCallOfThe...` classes deleted), `ShamanAiObjectContext.cpp` (6 dead creators removed), `ShamanRecallPolicy.h` + `tools/test_shaman_recall_policy.cpp` | Reimplemented in live classic style: trigger requires the spell trained + any OWN totem down (new owner-scoped `have any own totem` / `has own totem` values — recall refunds only ours, so strangers' totems never trigger and a teammate's tide never vetoes), vetoes bot/group-member/pet combat, queued at ACTION_NORMAL below rez/heal. Deviations: no dungeon boss-encounter check (no InstanceScript hook in triggers; group combat covers live fights); fire-ele sparing dropped (no fire-elemental totem action in 1.18.1). Base stays `CastBuffSpellAction`: Turtle recall costs 0 mana (verified powerType 0, manaCost 0), so the mana-floor veto cannot block the refund. Cleanup: `Call of the Elements/Ancestors/Spirits` return zero rows in tw_world.spell_template (verified) — deleted 3 action classes + 6 creators that could only log cast failures. Spells: Totemic Recall 45513/47340 (Turtle custom, verified) | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
+
+## Mage blizzard channel cancel when the pack thins (MAG-3) — 2026-10-10
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Class/Mage/MageTriggers.h:293-304` +
+`MageTriggers.cpp:148-170` (`BlizzardChannelCheckTrigger`: channel id
+in {10, 6141, 8427, 10185, 10186, 10187, 27085, 42938, 42939} and
+`attacker count` < 2),
+`src/Ai/Class/Mage/Strategy/GenericMageStrategy.cpp:175` (→ `cancel
+channel` 26.0), `MageAiObjectContext.cpp:123` (registration).
+
+Source files (module, modified):
+`ai/playerbot/strategy/mage/MageTriggers.h/.cpp` (new
+`BlizzardChannelCheckTrigger`, cloned off the live
+`IciclesChannelCheckTrigger` shape: current channeled spell id in the
+per-rank channel set {10, 6141, 8427, 10185, 10186, 10187} — rank-1
+effect 10 plus our rank rows 6141/8427/10185-87, all verified in
+`tw_world.spell_template`, matching the donor's WotLK-extended list
+minus the three WotLK-only ranks — and `attacker count` < 2),
+`ai/playerbot/strategy/mage/MageAiObjectContext.cpp` (registered
+`blizzard channel check`),
+`ai/playerbot/strategy/mage/MageStrategy.cpp`
+(`MageAoeStrategy::InitCombatTriggers`: → `cancel channel` at HIGH+3,
+one place covering all specs), `docs/classes/mage.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented. Deviations from the
+donor, all deliberate: (a) the row lives on the live list-based base
+`MageAoeStrategy`, not the dead vector-API `GenericMageStrategy.cpp:149`
+forward-port (PROVENANCE already records that file as unregistered dead
+code — left untouched); (b) only the six 1.18.1 channel ids, no
+27085/42938/42939 which have no 1.18.1 rank rows; (c) priority HIGH+3
+matches our icicles cancel row rather than donor's flat 26.0.
+
+Deviations from the donor, continued: (d) the trigger reads the
+registered group-wide `attackers count` (plural), NOT the donor's singular
+`attacker count` — the singular name is unregistered here and `AI_VALUE`
+null-derefs on it (`ValueMacros.h:8`, `GetValue` returns NULL for unknown
+names). Do not "fix" this back to the donor spelling. The same latent
+wrong name in `EstimatedLifetimeValue.cpp:26` (dead code, value never
+registered/used) was fixed to the plural alongside so nobody copies it.
+
+Reason: bots channeled the full blizzard into one leftover mob while the
+rest of the pack was dead — wasted channel time.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`;
+shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
+check pending: blizzard stops early as the pack drops below two.
