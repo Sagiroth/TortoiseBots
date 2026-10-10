@@ -6,6 +6,7 @@
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
 #include "../ai/playerbot/AiFactory.h"
+#include "../ai/playerbot/PlayerbotDbStore.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectAccessor.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -197,6 +198,15 @@ std::string LftBotFillService::RoleMismatchReason(Player* bot, uint8 needRole) c
     if (!bot)
         return "no bot";
     // Natural role only, unless the operator opted into role borrowing.
+    // A level 10+ bot with no talent points spent yet (just seeded, talents
+    // still pending) reports its class default spec - holy for a priest - so
+    // its real role is unknown. Borrowing respecs it to the slot anyway.
+    if (!sPlayerbotAIConfig.randomBotLftAllowRoleBorrow && bot->GetLevel() >= 10)
+    {
+        std::map<uint32, int32> tabs = AiFactory::GetPlayerSpecTabs(bot);
+        if (tabs[0] + tabs[1] + tabs[2] == 0)
+            return "spec unknown (no talents spent yet)";
+    }
     uint8 mask = GetBotRoleMask(bot);
     if ((mask & needRole) == 0)
         return "role mismatch (own spec cannot fill)";
@@ -358,6 +368,7 @@ void LftBotFillService::ClearForcedRole(uint32 guidLow)
         if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(p))
         {
             ai->SetForcedRole(0);
+            sPlayerbotDbStore.InvalidateStrategySnapshots(ai);
             ai->DoSpecificAction("auto talents");
         }
 }
@@ -787,7 +798,11 @@ void LftBotFillService::Update(uint32_t diff)
                 if (borrowRole)
                     if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(chosen))
                     {
+                        // Same rebuild as `.bot role`: a stored strategy
+                        // snapshot would replay the old spec's kit (e.g.
+                        // "shadow pve") under the borrowed role.
                         ai->SetForcedRole(needRole);
+                        sPlayerbotDbStore.InvalidateStrategySnapshots(ai);
                         ai->DoSpecificAction("auto talents");
                     }
 
@@ -798,6 +813,7 @@ void LftBotFillService::Update(uint32_t diff)
                         if (PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(chosen))
                         {
                             ai->SetForcedRole(0);
+                            sPlayerbotDbStore.InvalidateStrategySnapshots(ai);
                             ai->DoSpecificAction("auto talents");
                         }
                     BotActivityLeaseManager::Instance().Release(guidLow, BotActivity::LftQueued,
