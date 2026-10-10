@@ -4,6 +4,7 @@
 #include "playerbot/strategy/actions/UseItemAction.h"
 #include "playerbot/AoeFearPolicy.h"
 #include "../../../runtime/DevourMagicPolicy.h"
+#include "../../../runtime/HealthFunnelPolicy.h"
 
 namespace ai
 {
@@ -171,6 +172,31 @@ namespace ai
 			return CastSpellAction::isUseful() && AI_VALUE2(uint8, "health", "self target") < sPlayerbotAIConfig.almostFullHealth;
 		}
 	};
+
+    // PET-6: Health Funnel channels owner health into the demon. Owner-cast
+    // (the warlock knows the spell, the pet doesn't) on the pet target.
+    // The policy gate repeats here for the evaluation-to-execution gap: the
+    // trigger may have fired ticks ago while the owner dropped below the
+    // drain floor since.
+    class CastHealthFunnelAction : public CastSpellAction
+    {
+    public:
+        CastHealthFunnelAction(PlayerbotAI* ai) : CastSpellAction(ai, "health funnel") {}
+        std::string GetTargetName() override { return "pet target"; }
+        bool isUseful() override
+        {
+            Unit* pet = AI_VALUE(Unit*, "pet target");
+            if (!pet)
+                return false;
+            TortoiseBots::HealthFunnelGateInputs gate;
+            gate.hasPet = true;
+            gate.petAlive = pet->IsAlive();
+            gate.petHealth = AI_VALUE2(uint8, "health", "pet target");
+            gate.ownerHealth = AI_VALUE2(uint8, "health", "self target");
+            gate.ownerInCombat = bot->IsInCombat();
+            return TortoiseBots::CanCastHealthFunnel(gate) && CastSpellAction::isUseful();
+        }
+    };
 
     class CastCurseOfExhaustionAction : public CastRangedDebuffSpellAction
     {
@@ -473,6 +499,29 @@ namespace ai
                 CastCreateSoulstoneAction(PlayerbotAI* ai) : CastSpellAction(ai, "create soulstone") {}
         std::string GetTargetName() override { return "self target"; }
         };
+
+    // Equips a bag firestone into an empty off-hand (WAR-4). Not a
+    // UseSpellItemAction: UseItemInternal refuses equippable items sitting
+    // in bags, and firestones have no on-use spell anyway (on-equip aura).
+    class EquipFirestoneAction : public Action
+    {
+    public:
+        EquipFirestoneAction(PlayerbotAI* ai) : Action(ai, "firestone") {}
+        bool Execute(Event& event) override;
+    };
+
+    // Equips a bag spellstone into an empty off-hand (WAR-4), same vanilla
+    // off-hand semantics as firestone: the stone's equip aura (Increased
+    // Critical Spell) then applies, and its on-use dispel/absorb stays
+    // available through normal use once worn. Never a weapon temp-enchant:
+    // the on-use spell targets the caster, and UseItemInternal refuses
+    // equippable items sitting in bags.
+    class EquipSpellstoneAction : public Action
+    {
+    public:
+        EquipSpellstoneAction(PlayerbotAI* ai) : Action(ai, "spellstone") {}
+        bool Execute(Event& event) override;
+    };
 
 	class CastCreateFirestoneAction : public CastSpellAction
 	{

@@ -24,15 +24,15 @@ static int checks = 0;
 
 int main()
 {
-    // Cast-ID guard: trainer ranks 51955-51960 count; damage effects,
-    // buffs, and neighbours do not.
-    for (std::uint32_t id = 51955; id <= 51960; ++id)
+    // Cast-ID guard: spellbook ranks 51949-51954 count; the 51955-51960
+    // trainer learn-spell wrappers, buffs, and neighbours do not.
+    for (std::uint32_t id = 51949; id <= 51954; ++id)
         CHECK(IsArcaneRuptureCastId(id));
-    CHECK(!IsArcaneRuptureCastId(51949));
-    CHECK(!IsArcaneRuptureCastId(51950));
+    CHECK(!IsArcaneRuptureCastId(51955));
+    CHECK(!IsArcaneRuptureCastId(51960));
     CHECK(!IsArcaneRuptureCastId(52502));
     CHECK(!IsArcaneRuptureCastId(52588));
-    CHECK(!IsArcaneRuptureCastId(51954));
+    CHECK(!IsArcaneRuptureCastId(51948));
     CHECK(!IsArcaneRuptureCastId(51961));
     CHECK(!IsArcaneRuptureCastId(0));
 

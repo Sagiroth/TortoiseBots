@@ -3,11 +3,14 @@
 #include <cstdint>
 
 // Pure decision rule for the mage arcane rupture -> missiles rhythm port
-// (MAG-5): Turtle's Arcane Rupture (cast 51955+, instant, trainer-taught
-// 28-60) deals direct damage (trigger 51949) AND lands a self buff
-// (52502/52588, +19% Arcane Missiles, 8s, implicit target A=1 self). The
-// rotation is rupture while the self buff is absent, then missiles (the
-// arcane default) while buffed.
+// (MAG-5): Turtle's Arcane Rupture casts (51949-51954, ranks 1-6, cast
+// time index 19 like other mage nukes — exact seconds unverified, DBC not
+// in repo) deal direct damage AND land a self buff (52502/52588, +19%
+// Arcane Missiles, 8s, implicit target A=1 self). The rotation is rupture
+// while the self buff is absent, then missiles (the arcane default) while
+// buffed. Ids 51955-51960 look like higher ranks but are effect-36
+// (SPELL_EFFECT_LEARN_SPELL) trainer wrappers that teach the matching
+// 51949-51954 cast — they never enter the spellbook.
 //
 // The donor's arcane rhythm (blast stacks + missile-barrage proc timing,
 // `ArcaneMageStrategy.cpp:56-64`) does not transfer — those WotLK spells
@@ -23,12 +26,11 @@
 
 namespace ai
 {
-    // Arcane Rupture cast spell ids (trainer-taught ranks; the cast
-    // triggers damage 51949+ on the enemy):
-    // 51955 rank 1, 51956-51960 ranks 2-6.
+    // Arcane Rupture cast spell ids (spellbook ranks 1-6): 51949-51954.
+    // 51955-51960 are the trainer learn-spell wrappers, not casts.
     inline bool IsArcaneRuptureCastId(std::uint32_t spellId)
     {
-        return spellId >= 51955 && spellId <= 51960;
+        return spellId >= 51949 && spellId <= 51954;
     }
 
     struct ArcaneRuptureState

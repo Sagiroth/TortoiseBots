@@ -1,6 +1,7 @@
 #pragma once
 #include "playerbot/PlayerbotAI.h"
 #include "MovementActions.h"
+#include "playerbot/ResistAuraPolicy.h"
 #include "playerbot/strategy/values/HazardsValue.h"
 
 namespace ai
@@ -75,6 +76,26 @@ namespace ai
         DragonFlankAction(PlayerbotAI* ai, std::string name = "dragon flank") : MovementAction(ai, name) {}
         bool Execute(Event& event) override;
         bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
+    };
+
+    // Resist-aura auto-swap (mod-playerbots parity): switch the
+    // paladin to the matching resistance upkeep strategy (combat only,
+    // like the donor) and cast it now. Inherit plain Action, not
+    // ChangeAllStrategyAction: the manual "aura fire/shadow/..." strategies
+    // only maintain auras out of combat, and persisting the swap into the
+    // non-combat engine would overwrite the player's resting aura.
+    class SwapFireResistanceAuraAction : public Action
+    {
+    public:
+        SwapFireResistanceAuraAction(PlayerbotAI* ai) : Action(ai, "swap fire resistance aura") {}
+        bool Execute(Event& event) override;
+    };
+
+    class SwapShadowResistanceAuraAction : public Action
+    {
+    public:
+        SwapShadowResistanceAuraAction(PlayerbotAI* ai) : Action(ai, "swap shadow resistance aura") {}
+        bool Execute(Event& event) override;
     };
 
     // Vaelastrasz Burning Adrenaline refinement (mod-playerbots parity):

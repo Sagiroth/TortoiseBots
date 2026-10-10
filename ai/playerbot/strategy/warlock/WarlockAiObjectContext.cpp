@@ -218,6 +218,7 @@ namespace ai
                 creators["curse of shadow on attacker"] = [](PlayerbotAI* ai) { return new CurseOfShadowOnAttackerTrigger(ai); };
                 creators["banish"] = [](PlayerbotAI* ai) { return new BanishTrigger(ai); };
                 creators["spellstone"] = [](PlayerbotAI* ai) { return new SpellstoneTrigger(ai); };
+                creators["firestone"] = [](PlayerbotAI* ai) { return new FirestoneTrigger(ai); };
                 creators["fear"] = [](PlayerbotAI* ai) { return new FearTrigger(ai); };
                 creators["fear pvp"] = [](PlayerbotAI* ai) { return new FearPvpTrigger(ai); };
                 creators["immolate"] = [](PlayerbotAI* ai) { return new ImmolateTrigger(ai); };
@@ -232,6 +233,7 @@ namespace ai
                 creators["inferno"] = [](PlayerbotAI* ai) { return new InfernoTrigger(ai); };
                 creators["life tap"] = [](PlayerbotAI* ai) { return new LifeTapTrigger(ai); };
                 creators["drain soul"] = [](PlayerbotAI* ai) { return new DrainSoulTrigger(ai); };
+                creators["health funnel"] = [](PlayerbotAI* ai) { return new HealthFunnelTrigger(ai); };
                 creators["no soul shard"] = [](PlayerbotAI* ai) { return new NoSoulShardTrigger(ai); };
                 creators["too many soul shards"] = [](PlayerbotAI* ai) { return new TooManySoulShardsTrigger(ai); };
                 creators["no curse"] = [](PlayerbotAI* ai) { return new NoCurseTrigger(ai); };
@@ -271,7 +273,8 @@ namespace ai
                 creators["create soulstone"] = [](PlayerbotAI* ai) { return new CastCreateSoulstoneAction(ai); };
                 creators["create firestone"] = [](PlayerbotAI* ai) { return new CastCreateFirestoneAction(ai); };
                 creators["create spellstone"] = [](PlayerbotAI* ai) { return new CastCreateSpellstoneAction(ai); };
-                creators["spellstone"] = [](PlayerbotAI* ai) { return new UseSpellItemAction(ai, "spellstone"); };
+                creators["spellstone"] = [](PlayerbotAI* ai) { return new EquipSpellstoneAction(ai); };
+                creators["firestone"] = [](PlayerbotAI* ai) { return new EquipFirestoneAction(ai); };
                 creators["summon voidwalker"] = [](PlayerbotAI* ai) { return new CastSummonVoidwalkerAction(ai); };
                 creators["summon succubus"] = [](PlayerbotAI* ai) { return new CastSummonSuccubusAction(ai); };
                 creators["summon felhunter"] = [](PlayerbotAI* ai) { return new CastSummonFelhunterAction(ai); };
@@ -301,6 +304,7 @@ namespace ai
                 creators["destroy soul shard"] = [](PlayerbotAI* ai) { return new DestroySoulShardAction(ai); };
                 creators["shadow bolt"] = [](PlayerbotAI* ai) { return new CastShadowBoltAction(ai); };
                 creators["drain mana"] = [](PlayerbotAI* ai) { return new CastDrainManaAction(ai); };
+                creators["health funnel"] = [](PlayerbotAI* ai) { return new CastHealthFunnelAction(ai); };
                 creators["drain life"] = [](PlayerbotAI* ai) { return new CastDrainLifeAction(ai); };
                 creators["banish"] = [](PlayerbotAI* ai) { return new CastBanishAction(ai); };
                 creators["banish on cc"] = [](PlayerbotAI* ai) { return new CastBanishOnCcAction(ai); };
