@@ -227,7 +227,6 @@ namespace ai
                 creators["combustion"] = [](PlayerbotAI* ai) { return new CastCombustionAction(ai); };
                 creators["ice block"] = [](PlayerbotAI* ai) { return new CastIceBlockAction(ai); };
                 creators["polymorph"] = [](PlayerbotAI* ai) { return new CastPolymorphAction(ai); };
-                creators["lesser invisibility"] = [](PlayerbotAI* ai) { return new CastLesserInvisibilityAction(ai); };
                 creators["evocation"] = [](PlayerbotAI* ai) { return new CastEvocationAction(ai); };
                 creators["arcane missiles"] = [](PlayerbotAI* ai) { return new CastArcaneMissilesAction(ai); };
                 creators["counterspell on enemy healer"] = [](PlayerbotAI* ai) { return new CastCounterspellOnEnemyHealerAction(ai); };

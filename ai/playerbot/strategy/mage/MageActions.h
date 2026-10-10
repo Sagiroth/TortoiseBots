@@ -251,12 +251,6 @@ namespace ai
         }
     };
 
-    class CastLesserInvisibilityAction : public CastBuffSpellAction
-    {
-    public:
-        CastLesserInvisibilityAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "lesser invisibility") {}
-    };
-
 	class CastEvocationAction : public CastSpellAction
 	{
 	public:
