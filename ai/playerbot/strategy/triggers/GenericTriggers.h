@@ -617,11 +617,13 @@ namespace ai
 
     // A group healer is running dry (mod-playerbots parity): fires when the
     // lowest-mana healer (the "healer low mana" value) drops below the low
-    // mana line. Other agents' innervate / mana-tide rows target this.
+    // mana line. Carries the druid Innervate guards from PR #615 (spell
+    // known + ready, target in range, no Innervate aura yet) so the cat
+    // row never queues a cast that fails after the caster-form shift.
     class HealerLowManaTrigger : public Trigger
     {
     public:
-        HealerLowManaTrigger(PlayerbotAI* ai) : Trigger(ai, "healer low mana") {}
+        HealerLowManaTrigger(PlayerbotAI* ai) : Trigger(ai, "healer low mana", 2) {}
 
         virtual std::string GetTargetName() override { return "healer low mana"; }
         virtual bool IsActive() override;
