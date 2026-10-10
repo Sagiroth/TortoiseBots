@@ -125,18 +125,6 @@ namespace ai
 		virtual bool IsActive() override;
 	};
 
-    // Combat resurrection gate (mod-playerbots parity, RES-1): fires while a
-    // dead member needs Rebirth mid-fight. Delegates to the live druid
-    // "rebirth" trigger (RebirthTrigger: spell known/ready + dead valid
-    // target), so combat Rebirth fires through the equipped Balance / Feral
-    // / Restoration rows — not through the dead donor-hierarchy classes.
-    class CombatPartyMemberDeadTrigger : public Trigger
-    {
-    public:
-        CombatPartyMemberDeadTrigger(PlayerbotAI* ai) : Trigger(ai, "combat party member dead", 1) {}
-        virtual bool IsActive() override;
-    };
-
     class DeadTrigger : public Trigger
     {
     public:

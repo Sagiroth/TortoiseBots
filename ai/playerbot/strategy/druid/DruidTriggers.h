@@ -241,7 +241,6 @@ namespace ai
         NaturesSwiftnessActiveTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "nature's swiftness") {}
     };
 
-
     class EnrageTrigger : public BuffTrigger
     {
     public:
