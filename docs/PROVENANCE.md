@@ -7443,3 +7443,68 @@ Copied / ported / reimplemented: reimplemented in place. No new spells
 Local validation: `bash tools/verify_all.sh`; `git diff --check`.
 Build via build-commit.sh. No live test.
 | Ossirian crystal tactic (AQ20): crystal-run timing by buff/debuff-vs-travel-time, wait-in-range + 25yd use guards, single CMSG_GAMEOBJ_USE | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Aq20/Aq20Triggers.cpp` (Aq20MoveToCrystalTrigger), `src/Ai/Raid/Aq20/Aq20Actions.cpp` (Aq20UseCrystalAction), `src/Ai/Raid/Aq20/Aq20Utils.cpp` (buff/debuff/crystal helpers) | Reimplemented: trigger-driven `ossirian crystal run` + `use ossirian crystal` on the new `ruins of ahn'qiraj`/`ossirian` strategies; 1.12 single queued use-packet (no report-use opcode; cf. suppression-device precedent) | Donor's entire AQ20 module, all IDs verified in tw_world | `bash tools/verify_all.sh` + `tools/test_ossirian_crystal_policy.cpp`; build-commit + no live test |
+
+## Priest parity healing ladder: PRI-11 holy greater/flash + PRI-5 disc shield + PRI-7 inner focus + PRI-12 disc non-combat — 2026-10-09
+Feature: (1) Holy combat ladder: medium tier tries `greater heal on party`
+before heal/lesser; low tier tries flash after shield, then greater/heal/
+lesser (low-rank fallbacks kept for 13-19 dungeons). (2) Disc combat
+ladder: medium/low tiers shield at MEDIUM+4 above greater heal; almost-full
+tier shields at LIGHT+3 above renew (Weakened Soul guard already in the
+shield action; the party shield action runs at VERY_HIGH efficiency like
+the donor's). (3) Holy + disc combat: `inner focus for heal` trigger
+fires `inner focus` at MEDIUM+3 (above the direct heals, below the
+heal-row shields at MEDIUM+4 — shields can't crit, so the order is
+shield, then Inner Focus, then the direct heal; this inverts the donor,
+which fires on mana alone below every heal row and can spend the buff on
+nothing — deliberate: the buff must land on a real heal); the trigger
+self-gates on the trained spell, the cooldown, medium-or-lower mana and
+a medium-or-worse heal target. The old ungated boost-kit `inner focus`
+node is deleted (it fired whenever the aura was down and burned the CD
+while idle). (4) Disc
+non-combat: shield-first ladder at critical/low, direct heals at
+medium/almost-full (shields restore no HP out of combat), replacing the
+reach-only kit.
+Skipped: PRI-12 non-combat Vampiric Embrace — VE 15286 is a
+debuff-limit-affected enemy-target debuff (core SpellAuras.cpp), not
+self-castable; with no target out of combat the trigger could never fire.
+
+Source repository: `mod-playerbots` @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`).
+
+Source files (donor, reference only):
+`src/Ai/Class/Priest/Strategy/HolyPriestStrategy.cpp:150-180`
+(greater-first medium, flash filler, renew almost-full) +
+`src/Ai/Class/Priest/Strategy/DiscPriestStrategy.cpp:26-93`
+(shield-first ladder every tier) +
+`src/Ai/Class/Priest/Strategy/GenericPriestStrategy.cpp:29-35`
+(medium mana to inner focus) +
+`src/Ai/Class/Priest/Strategy/PriestNonCombatStrategy.cpp:29-48`
+(non-combat renew/greater ladder). Deviations, deliberate: donor's
+WotLK spells omitted (Penance, Prayer of Mending, Circle of Healing —
+no 1.12 equivalents); inner focus gated on trained spell + cooldown +
+mana + heal target (donor fires on mana alone below the heals; 3-min
+CD 14751 verified in Spell.dbc field 19 = 180000ms); disc non-combat uses
+direct heals at medium (donor never shields out of combat — shields
+restore no HP and spread Weakened Soul; critical/low OOC shields mirror
+module holy, acceptable local deviation, not donor parity); disc combat
+medium/low tiers shield at MEDIUM+4 above greater heal and above Inner
+Focus at MEDIUM+3; holy low tier runs greater before flash (donor order);
+party shield at VERY_HIGH efficiency matches donor PriestActions.h:73.
+
+Reason: priest parity report PRI-11/PRI-5/PRI-7/PRI-12 — holy bots cast
+Heal R4 where Greater Heal belonged, disc never shielded above low
+health, healer Inner Focus never fired, disc never healed out of combat.
+
+Source files (module, modified):
+`ai/playerbot/strategy/priest/HolyPriestStrategy.cpp`,
+`ai/playerbot/strategy/priest/DisciplinePriestStrategy.cpp`,
+`ai/playerbot/strategy/priest/PriestAiObjectContext.cpp` (`inner
+focus for heal` creator) + `docs/classes/priest.md` (ladder + inner focus +
+non-combat lines).
+
+Copied / ported / reimplemented: reimplemented in place in the live
+strategy idiom. No new spells (Greater Heal 2060+, Flash Heal, Inner
+Focus 14751, PW:S all in 1.18.1 data).
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`.
+Build via build-commit.sh. No live test.

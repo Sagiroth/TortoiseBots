@@ -26,7 +26,10 @@ namespace ai
     class CastPowerWordShieldOnPartyAction : public HealPartyMemberAction
     {
     public:
-        CastPowerWordShieldOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "power word: shield") {}
+        // mod-playerbots parity (PriestActions.h:73): the donor shields at
+        // VERY_HIGH efficiency, so the almost-full tier is reachable — with
+        // the MEDIUM default ShouldStartHeal vetoes shields at/above medium.
+        CastPowerWordShieldOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "power word: shield", 15, HealManaEfficiency::VERY_HIGH) {}
         bool isUseful() override
         {
             Unit* target = GetTarget();
