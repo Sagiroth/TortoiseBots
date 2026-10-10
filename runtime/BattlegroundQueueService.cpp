@@ -618,10 +618,14 @@ void BattlegroundQueueService::Update(uint32_t diff)
 
 uint32_t BattlegroundQueueService::CountRunningBotOnlyWsg(uint32_t bracketIndex) const
 {
-    // A bot-only instance is a running WSG of THIS bracket whose players are
-    // all service Headless random bots. Humans, owned/party bots, other
-    // brackets, or an empty map fail the check so mixed matches and parallel
-    // brackets never count against this bracket's cap.
+    // A FULL bot-only instance of THIS bracket: running WSG whose players are
+    // all service Headless random bots and whose sides are both at max, so
+    // the core's free-slot path no longer invites queued seeds into it.
+    // A still-forming match (either side below max) absorbs queued seeds
+    // through FillPlayersToBG, so it must NOT count — otherwise top-up would
+    // stall at core min (4v4) instead of reaching 10v10. Humans, owned/party
+    // bots, other brackets, or an empty map fail the check so mixed matches
+    // and parallel brackets never count against this bracket's cap.
     uint32_t count = 0;
     for (auto it = sBattleGroundMgr.GetBattleGroundsBegin(BATTLEGROUND_WS);
         it != sBattleGroundMgr.GetBattleGroundsEnd(BATTLEGROUND_WS); ++it)
@@ -632,10 +636,17 @@ uint32_t BattlegroundQueueService::CountRunningBotOnlyWsg(uint32_t bracketIndex)
         if (bracketIndex < MAX_BATTLEGROUND_BRACKETS &&
             bg->GetBracketId() != BattleGroundBracketId(bracketIndex))
             continue;
+        if (bg->GetStatus() != STATUS_WAIT_JOIN && bg->GetStatus() != STATUS_IN_PROGRESS)
+            continue;
+        uint32_t maxPerTeam = bg->GetMaxPlayersPerTeam();
+        if (!maxPerTeam)
+            maxPerTeam = AutonomousBgTeamTarget();
         BattleGround::BattleGroundPlayerMap const& players = bg->GetPlayers();
         if (players.empty())
             continue;
         bool botOnly = true;
+        uint32_t inAlliance = 0;
+        uint32_t inHorde = 0;
         for (BattleGround::BattleGroundPlayerMap::value_type const& pair : players)
         {
             Player* member = sObjectAccessor.FindPlayer(pair.first);
@@ -652,8 +663,16 @@ uint32_t BattlegroundQueueService::CountRunningBotOnlyWsg(uint32_t bracketIndex)
                     botOnly = false;
                     break;
                 }
+            if (uint32(member->GetTeam()) == uint32(ALLIANCE))
+                ++inAlliance;
+            else if (uint32(member->GetTeam()) == uint32(HORDE))
+                ++inHorde;
         }
-        if (botOnly)
+        if (!botOnly)
+            continue;
+        // Both sides at max: full, closed to top-up. Anything less is still
+        // forming and keeps absorbing queued seeds.
+        if (inAlliance >= maxPerTeam && inHorde >= maxPerTeam)
             ++count;
     }
     return count;
@@ -705,12 +724,12 @@ void BattlegroundQueueService::CountSeededForTeams(uint32_t queueTypeValue, uint
         else if (uint32(p->GetTeam()) == uint32(HORDE))
             ++seededHorde;
     }
-    // In-match bots count while the match is still forming: until core min
-    // (4v4 for WSG) both sides enter, teams keep topping up to the target.
-    // Once EITHER side reaches min, the match is real — late joiners can
-    // still enter through the core, so seeding stops and the stragglers stay
-    // queued (the core pulls them in or the queue times out).
-    bool formingCapped = false;
+    // In-match bots of a still-forming bot-only instance count toward the
+    // target: the queued seeds plus the players already inside must reach
+    // 10v10 together, and the core's free-slot path keeps inviting the queued
+    // seeds in while either side is below max. A FULL instance (both sides at
+    // max) absorbs nothing more, so it contributes nothing here — the
+    // bracket-scoped cap in UpdateAutonomousSeeding stops new seeds.
     for (auto it = sBattleGroundMgr.GetBattleGroundsBegin(BATTLEGROUND_WS);
         it != sBattleGroundMgr.GetBattleGroundsEnd(BATTLEGROUND_WS); ++it)
     {
@@ -719,6 +738,11 @@ void BattlegroundQueueService::CountSeededForTeams(uint32_t queueTypeValue, uint
             continue;
         if (bg->GetBracketId() != BattleGroundBracketId(bracketIndex))
             continue;
+        if (bg->GetStatus() != STATUS_WAIT_JOIN && bg->GetStatus() != STATUS_IN_PROGRESS)
+            continue;
+        uint32_t maxPerTeam = bg->GetMaxPlayersPerTeam();
+        if (!maxPerTeam)
+            maxPerTeam = AutonomousBgTeamTarget();
         BattleGround::BattleGroundPlayerMap const& players = bg->GetPlayers();
         if (players.empty())
             continue;
@@ -749,21 +773,11 @@ void BattlegroundQueueService::CountSeededForTeams(uint32_t queueTypeValue, uint
         }
         if (!botOnly)
             continue;
-        // Core min reached on either side: the match has started forming.
-        if (inAlliance >= 4 || inHorde >= 4)
-        {
-            formingCapped = true;
-            break;
-        }
+        // Full on both sides: absorbs nothing more; the cap path stops seeds.
+        if (inAlliance >= maxPerTeam && inHorde >= maxPerTeam)
+            continue;
         seededAlliance += inAlliance;
         seededHorde += inHorde;
-    }
-    if (formingCapped)
-    {
-        // Report both teams full so top-up stops: the forming match absorbs
-        // the queued seeds through the core invite path.
-        seededAlliance = AutonomousBgTeamTarget();
-        seededHorde = AutonomousBgTeamTarget();
     }
 }
 
@@ -843,8 +857,9 @@ void BattlegroundQueueService::UpdateAutonomousSeeding()
     if (!found)
         return;
 
-    // Bracket-scoped cap: a running match in THIS bracket blocks new seeds
-    // for it; other brackets are unaffected.
+    // Bracket-scoped cap: a FULL bot-only instance in THIS bracket blocks new
+    // seeds for it; a still-forming match keeps absorbing queued seeds, so it
+    // does not count. Other brackets are unaffected.
     uint32_t running = CountRunningBotOnlyWsg(bestBracket);
     uint32_t seededAlliance = 0;
     uint32_t seededHorde = 0;

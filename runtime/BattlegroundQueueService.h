@@ -22,7 +22,9 @@ namespace TortoiseBots
 // when no human demand exists, top-up seeds one 10v10 WSG in the most
 // populated ready bracket (both factions >= 10 eligible; sticky while owned
 // seeds wait), capped at RandomBotBgAutonomousMaxInstances (clamped 0-2, 1 for
-// an average PC). Per-team targets bound the queueing, never a first-seed latch.
+// an average PC) FULL instances per bracket. A still-forming match absorbs
+// queued seeds, so it never counts as running; top-up stops only when both
+// teams reach target or a full instance exists.
 class BattlegroundQueueService
 {
 public:

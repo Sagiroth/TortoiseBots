@@ -44,10 +44,12 @@ int main()
     CHECK(ShouldSeedAutonomousBg(true, true, 0, true) == false);
     std::cout << "  [PASS] yields to human demand\n";
 
-    // Cap reached: a running bot-only match blocks a second.
+    // Cap reached: a full bot-only match blocks a second. A still-forming
+    // match absorbs queued seeds, so it never counts (the service only passes
+    // full instances here).
     CHECK(ShouldSeedAutonomousBg(true, false, 1, true) == false);
     CHECK(ShouldSeedAutonomousBg(true, false, 2, true) == false);
-    std::cout << "  [PASS] one running match blocks another\n";
+    std::cout << "  [PASS] one full match blocks another\n";
 
     // Need-based top-up (no first-seed latch): queued seeds do NOT block —
     // batches accumulate across ticks until both teams are full.
