@@ -406,6 +406,16 @@ namespace ai
         // so the pet is the target — never the owner's current target, which
         // may be null or far away while the pet tanks the pack.
         std::string GetTargetName() override { return "pet target"; }
+        bool isPossible() override
+        {
+            // Actions are cached singletons: the ctor-resolved spellId stays
+            // 0 when no Voidwalker is out at first creation (and goes stale
+            // across rank upgrades), which would fail the pet HasSpell check
+            // forever. Refresh before the base checks (same as the Devour
+            // actions above).
+            SetSpellName("suffering", "spell id", true);
+            return CastPetSpellAction::isPossible();
+        }
         bool isUseful() override
         {
             Unit* pet = AI_VALUE(Unit*, "pet target");
@@ -416,7 +426,7 @@ namespace ai
             gate.currentPetEntry = pet->GetEntry();
             gate.petTauntAllowed = ai::WarlockPetTauntAllowed(ai, bot);
             gate.attackerCount = static_cast<uint8_t>(pet->GetAttackers().size());
-            return TortoiseBots::CanCastSuffering(gate);
+            return TortoiseBots::CanCastSuffering(gate) && CastPetSpellAction::isUseful();
         }
     };
 
@@ -427,13 +437,21 @@ namespace ai
     public:
         CastConsumeShadowsAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "consume shadows") {}
         std::string GetTargetName() override { return "pet target"; }
+        bool isPossible() override
+        {
+            // Same cached-singleton refresh as above (VW summoned at 10,
+            // Consume rank 1 at 18).
+            SetSpellName("consume shadows", "spell id", true);
+            return CastPetSpellAction::isPossible();
+        }
         bool isUseful() override
         {
-            // Policy gate only: the base owner-cast isUseful reads the
-            // owner's spell state, which says nothing about a pet spell.
-            // Cooldown/knowledge/range stay in isPossible at execution time.
             Unit* pet = AI_VALUE(Unit*, "pet target");
             if (!pet)
+                return false;
+            // Don't re-order mid-channel: the core refuses with
+            // SPELL_FAILED_SPELL_IN_PROGRESS, which burns the NC decision.
+            if (pet->IsNonMeleeSpellCasted(false))
                 return false;
             TortoiseBots::ConsumeShadowsGateInputs gate;
             gate.hasPet = true;
@@ -442,7 +460,7 @@ namespace ai
             gate.petHealth = AI_VALUE2(uint8, "health", "pet target");
             gate.ownerInCombat = bot->IsInCombat();
             gate.mounted = AI_VALUE2(bool, "mounted", "self target");
-            return TortoiseBots::CanCastConsumeShadows(gate);
+            return TortoiseBots::CanCastConsumeShadows(gate) && CastPetSpellAction::isUseful();
         }
     };
 
