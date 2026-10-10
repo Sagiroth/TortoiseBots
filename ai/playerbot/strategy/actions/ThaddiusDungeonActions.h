@@ -27,12 +27,13 @@ class ThaddiusAttackNearestPetAction : public AttackAction
 {
 public:
     ThaddiusAttackNearestPetAction(PlayerbotAI* ai) : AttackAction(ai, "thaddius attack nearest pet") {}
+    bool isUseful() override;
     bool Execute(Event& event) override;
 };
 
-// Transition: run to the platform edge, then walk down through the
-// donor low spot to the floor center — engine pathing drops the ledge
-// under gravity (donor JumpTo not ported; needs a live tech check).
+// Transition: run to the nearer platform edge, walk off through the
+// donor low spot to the floor center (staged on MoveTo arrival);
+// engine pathing walks the ledge drop under gravity.
 class ThaddiusMoveToPlatformAction : public MovementAction
 {
 public:

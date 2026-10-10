@@ -4,6 +4,7 @@
 #include "playerbot/strategy/ThaddiusDungeonHelper.h"
 #include "playerbot/strategy/actions/GenericSpellActions.h"
 #include "playerbot/strategy/actions/ChooseTargetActions.h"
+#include "playerbot/strategy/actions/ReachTargetActions.h"
 
 using namespace ai;
 
@@ -14,6 +15,21 @@ namespace
         return pet && IsThaddiusPetActive(pet->IsAlive(),
             pet->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE));
     }
+}
+
+bool ThaddiusAttackNearestPetAction::isUseful()
+{
+    Unit* stalagg;
+    Unit* feugen;
+    Unit* thaddius;
+    FindThaddiusAdds(ai, bot, stalagg, feugen, thaddius);
+
+    Unit* target = nullptr;
+    if (PetActive(feugen))
+        target = feugen;
+    if (PetActive(stalagg) && (!target || bot->GetDistance(stalagg) < bot->GetDistance(target)))
+        target = stalagg;
+    return target && bot->IsWithinDistInMap(target, 50.0f);
 }
 
 bool ThaddiusAttackNearestPetAction::Execute(Event& event)
@@ -102,12 +118,23 @@ float ThaddiusEvenHpMultiplier::GetValue(Action* action)
     const bool stalaggUp = PetActive(stalagg);
     const bool feugenUp = PetActive(feugen);
 
-    // Pet-phase assist suppression (donor ThaddiusGenericMultiplier):
-    // the nearest-pet action owns targeting while adds live; assists
-    // would redundantly re-target every tick.
+    // Pet-phase suppression (donor ThaddiusGenericMultiplier): the
+    // nearest-pet action owns targeting while adds live. Donor zeroes
+    // assists, ranged debuffs on attackers, reach-to-heal, tank buffs
+    // and formation moves; formation moves do not exist here (generic
+    // reach/flee holds positioning instead) so the other four are
+    // suppressed. BuffOnTankAction covers all tank-buff spells (thorns,
+    // fear ward, spirit link); melee-debuff-on-attacker stays allowed
+    // per donor (only the ranged sibling is vetoed there).
     if (stalaggUp || feugenUp)
     {
         if (dynamic_cast<DpsAssistAction*>(action) || dynamic_cast<TankAssistAction*>(action))
+            return 0.0f;
+        if (dynamic_cast<CastRangedDebuffSpellOnAttackerAction*>(action))
+            return 0.0f;
+        if (dynamic_cast<ReachPartyMemberToHealAction*>(action))
+            return 0.0f;
+        if (dynamic_cast<BuffOnTankAction*>(action))
             return 0.0f;
     }
     if (!stalaggUp || !feugenUp)
