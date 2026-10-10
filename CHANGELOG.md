@@ -1,6 +1,7 @@
 # Changelog
 
 ### Bots & Behavior
+- Masterless bots stop accepting quests they cannot finish alone — over-level, elite/dungeon and group-suggested quests are refused at the giver instead of being picked up and dropped later. Grouped bots that can fight bosses and player-owned bots are unchanged.
 - Bots pick the better quest reward when two are equally usable — tied rewards are now broken by stat weight for the bot instead of taking whatever the vendor lists first.
 - Whispering a bot `pull back` now works like `pull` — it pulls your target; whispering `attackers` now answers with who is attacking instead of staying silent.
 - Bots no longer get stuck on the Deeprun Tram — wandering bots could be routed through the tram between Stormwind and Ironforge but cannot ride the train, so they stood on the platform for good; their routes now go overland, and any bot already stranded there is moved out through the nearest station exit.

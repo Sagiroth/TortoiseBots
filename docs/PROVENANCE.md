@@ -4706,3 +4706,33 @@ below 20%, wasting the longer-cooldown Wall.
 
 Local validation: `bash tools/verify_all.sh`; `git diff --check`. No live
 test (per task constraints).
+
+## Accept-time solo-capability gate (RPG-A2, 2026-10-09)
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/World/Rpg/Action/NewRpgBaseAction.cpp:573-588`
+(IsQuestCapableDoing: refuse questLevel > level+3, type != 0,
+suggestedPlayers >= 2).
+
+Source files (module, modified): `ai/playerbot/QuestLogPolicy.h` (new
+pure QuestAcceptSoloCapable rule, same numbers as the drop triage minus
+drop-only clauses), `ai/playerbot/strategy/actions/AcceptQuestAction.cpp`
+(gate in WouldAcceptQuest for masterless random bots),
+`tools/test_quest_log_triage_policy.cpp` (extended with accept-gate
+cases; already registered in verify_all) + `CHANGELOG.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) grouped-and-able bots (can fight boss: 4+
+following members, same value the travel pick gate uses) keep
+elite/dungeon/group quests - the donor has no carve-out because its random
+bots never group for this path; (b) pool bots below 10 keep the stricter
++1 taker-fit already in WouldAcceptQuest; (c) repeatable/seasonal refusal
+not ported (no 1.12 seasonal API; `rpg repeat quest` is an explicit
+feature); (d) owned/hired bots follow the player, unchanged.
+
+Reason: nearby NPCs and travel could accept elite/group quests the
+nearly-full log triage would later drop - refused at accept instead.
+
+Local validation: `bash tools/verify_all.sh` (incl. extended triage test
++ wiring check live-missing=0); `git diff --check`; shared-builder
+compile check; no live in-game test.
