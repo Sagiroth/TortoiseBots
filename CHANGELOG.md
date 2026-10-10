@@ -92,6 +92,13 @@
 - DPS bots ignore Core Ragers while Golemagg is alive — they heal back to full, so burning them down accomplished nothing. [#666](https://github.com/Sagiroth/TortoiseBots/pull/666)
 - DPS bots ignore Death Knight Understudies while Razuvious is alive, keeping damage focused on the actual kill target. [#666](https://github.com/Sagiroth/TortoiseBots/pull/666)
 
+### Dashboard & Observability
+
+- The dashboard no longer renders a misleading `0 bots · 0 players` when the server is actually down or still booting — a banner across every tab now flags that the numbers on screen are not live, so quiet-and-healthy no longer looks identical to dead. [#667](https://github.com/Sagiroth/TortoiseBots/pull/667)
+- **Red banner:** dashboard service unreachable — the live connection dropped and the page is reconnecting. [#667](https://github.com/Sagiroth/TortoiseBots/pull/667)
+- **Red banner:** game server is not responding — no heartbeat for over 10 seconds, meaning the server is down, restarting, or frozen. [#667](https://github.com/Sagiroth/TortoiseBots/pull/667)
+- **Amber banner:** bot data is out of date — server is up but the bot roster hasn't refreshed in over 30 seconds. [#667](https://github.com/Sagiroth/TortoiseBots/pull/667)
+
 ## 2026-10-09
 
 ### Observability & Engine
