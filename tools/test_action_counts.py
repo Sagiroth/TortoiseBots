@@ -68,6 +68,8 @@ static std::string readAll(char const* path) {
 }
 int main() {
     using namespace ai::botdiag;
+    // A stale file from an aborted run must not break the off-assert below.
+    remove("/tmp/action_counts.csv");
     // Off: one branch, nothing recorded, nothing dumped.
     CountAction(1, "shield slam", true);
     DumpActionCounts();

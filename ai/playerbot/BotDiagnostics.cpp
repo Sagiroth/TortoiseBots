@@ -28,7 +28,8 @@ namespace ai { namespace botdiag {
             uint64_t ok = 0;
             uint64_t fail = 0;
         };
-        // Bots update on parallel map threads: every access takes the mutex.
+        // AI ticks run on the world thread, but explicit-order executions can
+        // arrive from console/RCON threads, so every access takes the mutex.
         // Small row count (one per class x action), so a linear scan is fine
         // and costs no allocation once the row exists.
         std::mutex gActionCountsMutex;

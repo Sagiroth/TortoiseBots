@@ -695,10 +695,12 @@ ActionResult Engine::ExecuteAction(const std::string& name, Event& event)
 
                     MultiplyAndPush(action->getContinuers(), 0.0f, false, event, "default");
                     actionResult = executionResult ? ACTION_RESULT_OK : ACTION_RESULT_FAILED;
+                    botdiag::CountAction(ai->GetBot() ? ai->GetBot()->GetClass() : 0, action->getName().c_str(), executionResult);
                 }
                 else
                 {
                     actionResult = ACTION_RESULT_IMPOSSIBLE;
+                    botdiag::CountAction(ai->GetBot() ? ai->GetBot()->GetClass() : 0, action->getName().c_str(), false);
                 }
             }
             else

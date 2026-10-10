@@ -144,6 +144,8 @@ bool ReactionEngine::StartReaction()
     {
         // Execute the incoming reaction
         reactionExecuted = ListenAndExecute(incomingReaction.GetAction(), incomingReaction.GetEvent());
+        botdiag::CountAction(ai->GetBot() ? ai->GetBot()->GetClass() : 0,
+            incomingReaction.GetAction()->getName().c_str(), reactionExecuted);
         if (reactionExecuted)
         {
             // Move the incoming reaction to the ongoing reaction

@@ -25,8 +25,9 @@ namespace ai { namespace botdiag {
     // Aggregate counter of executed bot actions (AiPlayerbot.ActionCountsLog,
     // default off). Engine records the OK / FAILED / IMPOSSIBLE outcome of each
     // executed action keyed by (bot class, action name); BotManager dumps a
-    // cumulative CSV snapshot every 5 minutes. Bots update on parallel map
-    // threads, so counting takes a mutex; the off path is one branch.
+    // cumulative CSV snapshot every 5 minutes. Counting takes a mutex: AI
+    // ticks run on the world thread, but explicit-order executions can arrive
+    // from console/RCON threads. The off path is one branch.
     // Player is deliberately not named: this header must stay free of the AI
     // class (see the evade probe note below), so call sites pass the already
     // resolved class id and the action name.

@@ -247,7 +247,7 @@ This setting is separate from the strategy AI's own action trace, which stays ga
 
 | Setting | Default | What It Does |
 | :--- | :---: | :--- |
-| `AiPlayerbot.ActionCountsLog` | `0` | When `1`, every executed bot action is counted by bot class and action name (`warrior` / `shield slam`), split into ok vs failed/impossible outcomes. Every 5 minutes a cumulative snapshot (`utc_time,class,action,ok_count,fail_count`) is appended to `logs/action_counts.csv`, next to `bot_events.csv`. `0` costs one branch per executed action and nothing else. Needs a restart. |
+| `AiPlayerbot.ActionCountsLog` | `0` | When `1`, every executed bot action is counted by bot class id and action name (class `1` with `shield slam` is a warrior's Shield Slam; the report script prints class names), split into ok vs failed/impossible outcomes. Every 5 minutes a cumulative snapshot (`utc_time,class,action,ok_count,fail_count`) is appended to `logs/action_counts.csv`, next to `bot_events.csv`. `0` costs one branch per executed action and nothing else. Needs a restart. |
 
 Turn it on for a measurement window on a busy realm, then copy the live file twice a while apart and diff the copies to see what each class actually spends its time doing:
 
