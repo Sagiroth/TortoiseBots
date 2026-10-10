@@ -285,6 +285,11 @@ namespace ai
                 creators["fire totem aoe"] = [](PlayerbotAI* ai) { return new FireTotemAoeTrigger(ai); };
                 creators["earth totem"] = [](PlayerbotAI* ai) { return new EarthTotemTrigger(ai); };
                 creators["stoneclaw panic"] = [](PlayerbotAI* ai) { return new StoneclawPanicTrigger(ai); };
+                creators["tremor totem reactive"] = [](PlayerbotAI* ai) { return new TremorTotemReactiveTrigger(ai); };
+                creators["earthbind totem reactive"] = [](PlayerbotAI* ai) { return new EarthbindTotemReactiveTrigger(ai); };
+                creators["grounding totem reactive"] = [](PlayerbotAI* ai) { return new GroundingTotemReactiveTrigger(ai); };
+                creators["poison cleansing totem reactive"] = [](PlayerbotAI* ai) { return new PoisonCleansingTotemReactiveTrigger(ai); };
+                creators["disease cleansing totem reactive"] = [](PlayerbotAI* ai) { return new DiseaseCleansingTotemReactiveTrigger(ai); };
                 creators["water totem"] = [](PlayerbotAI* ai) { return new WaterTotemTrigger(ai); };
                 creators["air totem"] = [](PlayerbotAI* ai) { return new AirTotemTrigger(ai); };
                 creators["call of the elements"] = [](PlayerbotAI* ai) { return new TotemsAreNotSummonedTrigger(ai); };
