@@ -123,6 +123,27 @@ namespace ai
         }
 #endif
     };
+
+    // Opt-in combat spread (donor "formation" strategy shape): one trigger
+    // row ("spread needed" → "raid spread"). Off by default — nobody
+    // carries it unless the player enables it.
+    class SpreadStrategy : public Strategy
+    {
+    public:
+        SpreadStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "spread"; }
+
+#ifdef GenerateBotHelp
+        virtual std::string GetHelpName() { return "spread"; } //Must equal iternal name
+        virtual std::string GetHelpDescription()
+        {
+            return "This strategy makes the bot keep spacing from nearby groupmates in combat.";
+        }
+#endif
+
+    private:
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+    };
 }
 
 using ai::CombatStrategy;

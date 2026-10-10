@@ -16,6 +16,7 @@ public:
         creators["rejuvenation"] = &rejuvenation;
         creators["rejuvenation on party"] = &rejuvenation_on_party;
         creators["rebirth"] = &rebirth;
+        creators["nature's swiftness"] = &natures_swiftness;
         creators["abolish poison"] = &abolish_poison;
         creators["abolish poison on party"] = &abolish_poison_on_party;
         creators["remove curse"] = &remove_curse;
@@ -65,6 +66,8 @@ private:
 
     ACTION_NODE_P(rebirth, "rebirth", "caster form");
 
+    ACTION_NODE_P(natures_swiftness, "nature's swiftness", "caster form");
+
     ACTION_NODE_P(regrowth, "regrowth", "caster form");
 
     ACTION_NODE_P(regrowth_on_party, "regrowth on party", "caster form");
@@ -108,6 +111,14 @@ void DruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 void DruidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitNonCombatTriggers(triggers);
+
+    // mod-playerbots parity (DRU-1): out-of-combat resurrection for all
+    // druid specs (base strategy, like the paladin/priest/shaman rows).
+    // Vanilla druids have no normal resurrect — the trigger only fires
+    // Rebirth when no living priest/paladin/shaman can rez instead.
+    triggers.push_back(new TriggerNode(
+        "ooc rebirth",
+        NextAction::array(0, new NextAction("rebirth", ACTION_EMERGENCY), NULL)));
 }
 
 void DruidStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)

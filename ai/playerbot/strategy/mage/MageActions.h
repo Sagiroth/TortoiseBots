@@ -251,12 +251,6 @@ namespace ai
         }
     };
 
-    class CastLesserInvisibilityAction : public CastBuffSpellAction
-    {
-    public:
-        CastLesserInvisibilityAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "lesser invisibility") {}
-    };
-
 	class CastEvocationAction : public CastSpellAction
 	{
 	public:
@@ -336,6 +330,15 @@ namespace ai
     {
     public:
         CastConeOfColdAction(PlayerbotAI* ai) : CastMeleeAoeSpellAction(ai, "cone of cold", 10.0f) {}
+        // Donor CastConeOfColdAction::isUseful: a cone only hits what the
+        // caster faces. Refuse cast while turned away so the GCD goes to a
+        // nuke instead of an empty cone (range gate stays in the base).
+        bool isUseful() override
+        {
+            if (!CastMeleeAoeSpellAction::isUseful())
+                return false;
+            return AI_VALUE2(bool, "facing", "current target");
+        }
     };
 
     class CastBlastWaveAction : public CastMeleeAoeSpellAction
@@ -348,6 +351,16 @@ namespace ai
     {
     public:
         UseManaGemAction(PlayerbotAI* ai) : UseItemIdAction(ai, "mana gem") {}
+
+        // MAG-9: gems are for staying in the fight, not for topping up
+        // between pulls (donor gates every rank on in-combat). Has-item is
+        // already covered by UseItemIdAction::isPossible.
+        bool isUseful() override
+        {
+            if (!UseItemIdAction::isUseful())
+                return false;
+            return AI_VALUE2(bool, "combat", "self target");
+        }
 
         uint32 GetItemId() override
         {
