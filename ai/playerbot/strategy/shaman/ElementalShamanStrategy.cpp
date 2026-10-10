@@ -389,6 +389,18 @@ void ElementalShamanTotemsRaidStrategy::InitNonCombatTriggers(std::list<TriggerN
 void ElementalShamanBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ShamanBuffStrategy::InitCombatTriggers(triggers);
+
+    triggers.push_back(new TriggerNode(
+        "water shield",
+        NextAction::array(0, new NextAction("water shield", ACTION_NORMAL), NULL)));
+
+    // Pre-water fallback: Water Shield R1 trains at 26, Lightning Shield at 8.
+    // The water trigger stays quiet until trained, and the fallback gates
+    // itself off once water is known, so the rows never recast over each
+    // other post-water (the two shields are mutually exclusive).
+    triggers.push_back(new TriggerNode(
+        "lightning shield fallback",
+        NextAction::array(0, new NextAction("lightning shield", ACTION_NORMAL - 1), NULL)));
 }
 
 void ElementalShamanBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -396,8 +408,13 @@ void ElementalShamanBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>&
     ShamanBuffStrategy::InitNonCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
-        "lightning shield",
-        NextAction::array(0, new NextAction("lightning shield", ACTION_NORMAL), NULL)));
+        "water shield",
+        NextAction::array(0, new NextAction("water shield", ACTION_NORMAL), NULL)));
+
+    // Pre-water fallback, same as combat.
+    triggers.push_back(new TriggerNode(
+        "lightning shield fallback",
+        NextAction::array(0, new NextAction("lightning shield", ACTION_NORMAL - 1), NULL)));
 }
 
 void ElementalShamanBuffPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

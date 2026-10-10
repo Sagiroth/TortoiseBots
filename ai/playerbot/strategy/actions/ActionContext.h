@@ -159,6 +159,10 @@ namespace ai
             creators["pull action"] = [](PlayerbotAI* ai) { return new PullAction(ai); };
             creators["return to pull position"] = [](PlayerbotAI* ai) { return new ReturnToPullPositionAction(ai); };
             creators["pull end"] = [](PlayerbotAI* ai) { return new PullEndAction(ai); };
+            // mod-playerbots `end pull` escape hatch (LD-9): abort a stuck pull
+            // via the same bookkeeping as the state machine's own pull end.
+            // Guarded subclass (review PR #603): no-op unless a pull started.
+            creators["end pull"] = [](PlayerbotAI* ai) { return new EndPullAction(ai); };
             creators["release pull hold"] = [](PlayerbotAI* ai) { return new ReleasePullHoldAction(ai); };
             creators["emote"] = [](PlayerbotAI* ai) { return new EmoteAction(ai); };
             creators["talk"] = [](PlayerbotAI* ai) { return new TalkAction(ai); };

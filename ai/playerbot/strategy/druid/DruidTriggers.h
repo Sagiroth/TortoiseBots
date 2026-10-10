@@ -41,6 +41,17 @@ namespace ai
         }
     };
 
+    // mod-playerbots parity (DRU-7): Thorns lands on the tank first.
+    // BuffOnTankTrigger targets "party tank without aura", so the tank is
+    // covered before the party blanket below; the fire-shield conflict
+    // skip mirrors ThornsOnPartyTrigger. Name resolves to "thorns on tank".
+    class ThornsOnTankTrigger : public BuffOnTankTrigger
+    {
+    public:
+        ThornsOnTankTrigger(PlayerbotAI* ai) : BuffOnTankTrigger(ai, "thorns", 4) {}
+        bool IsActive() override;
+    };
+
     class ThornsTrigger : public BuffTrigger
     {
     public:
@@ -442,17 +453,6 @@ namespace ai
         }
     };
 
-    // mod-playerbots parity (DRU-3): true while a living party healer sits
-    // below the LowMana line. Named exactly "healer low mana" to converge
-    // with the shared trigger another agent is adding (parity/heal-2):
-    // when that lands, this local trigger is deleted and the cat row below
-    // needs no change. Defined in DruidTriggers.cpp.
-    class HealerLowManaTrigger : public Trigger
-    {
-    public:
-        HealerLowManaTrigger(PlayerbotAI* ai) : Trigger(ai, "healer low mana", 2) {}
-        bool IsActive() override;
-    };
 
     class ClearcastingTrigger : public HasAuraTrigger
     {

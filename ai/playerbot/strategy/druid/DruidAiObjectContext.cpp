@@ -203,6 +203,7 @@ namespace ai
                 creators["omen of clarity"] = [](PlayerbotAI* ai) { return new OmenOfClarityTrigger(ai); };
                 creators["thorns"] = [](PlayerbotAI* ai) { return new ThornsTrigger(ai); };
                 creators["thorns on party"] = [](PlayerbotAI* ai) { return new ThornsOnPartyTrigger(ai); };
+                creators["thorns on tank"] = [](PlayerbotAI* ai) { return new ThornsOnTankTrigger(ai); };
                 creators["bash"] = [](PlayerbotAI* ai) { return new BashInterruptSpellTrigger(ai); };
                 creators["faerie fire (feral)"] = [](PlayerbotAI* ai) { return new FaerieFireFeralTrigger(ai); };
                 creators["faerie fire"] = [](PlayerbotAI* ai) { return new FaerieFireTrigger(ai); };
@@ -249,7 +250,6 @@ namespace ai
                 creators["rebirth"] = [](PlayerbotAI* ai) { return new RebirthTrigger(ai); };
                 creators["ooc rebirth"] = [](PlayerbotAI* ai) { return new OocRebirthTrigger(ai); };
                 creators["innervate"] = [](PlayerbotAI* ai) { return new InnervateTrigger(ai); };
-                creators["healer low mana"] = [](PlayerbotAI* ai) { return new HealerLowManaTrigger(ai); };
                 creators["berserk"] = [](PlayerbotAI* ai) { return new BerserkTrigger(ai); };
                 creators["clearcasting"] = [](PlayerbotAI* ai) { return new ClearcastingTrigger(ai); };
             }
@@ -297,6 +297,7 @@ namespace ai
                 creators["rip"] = [](PlayerbotAI* ai) { return new CastRipAction(ai); };
                 creators["cower"] = [](PlayerbotAI* ai) { return new CastCowerAction(ai); };
                 creators["thorns"] = [](PlayerbotAI* ai) { return new CastThornsAction(ai); };
+                creators["thorns on tank"] = [](PlayerbotAI* ai) { return new CastThornsOnTankAction(ai); };
                 creators["thorns on party"] = [](PlayerbotAI* ai) { return new CastThornsOnPartyAction(ai); };
                 creators["cure poison"] = [](PlayerbotAI* ai) { return new CastCurePoisonAction(ai); };
                 creators["cure poison on party"] = [](PlayerbotAI* ai) { return new CastCurePoisonOnPartyAction(ai); };
