@@ -133,6 +133,13 @@
 - Safe failure mode: if the existence query fails or returns nothing, no counters are dropped [#674](https://github.com/Sagiroth/TortoiseBots/pull/674)
 - The old 3-day timestamp heuristic from #673 is fully removed [#674](https://github.com/Sagiroth/TortoiseBots/pull/674)
 
+### Observability & Engine
+- `bot_events.csv` and `deaths.csv` are written by default again, so normal servers keep useful bot logs for bug reports. [#675](https://github.com/Sagiroth/TortoiseBots/pull/675)
+- New `AiPlayerbot.LogFileMaxMB` setting (default `25`, `0` = no cap) caps every bot log. [#675](https://github.com/Sagiroth/TortoiseBots/pull/675)
+- When a log file is full, it rotates to `<name>.1`, replacing the older copy, and a new file starts. [#675](https://github.com/Sagiroth/TortoiseBots/pull/675)
+- Each log keeps the most recent activity — about an hour at 1000 bots, longer with fewer — and never takes more than twice the cap on disk. [#675](https://github.com/Sagiroth/TortoiseBots/pull/675)
+- If the rotation rename fails, the error is logged once and the size cap turns off for that run. [#675](https://github.com/Sagiroth/TortoiseBots/pull/675)
+
 ## 2026-10-09
 
 ### Observability & Engine
