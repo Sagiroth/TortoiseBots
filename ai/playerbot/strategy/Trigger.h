@@ -47,7 +47,7 @@ namespace ai
 		    // During an out-of-combat force-rebuff pass, buff triggers
 		    // bypass the check interval and evaluate every tick (donor
 		    // Trigger::needCheck) via the IsBuffTrigger hook below.
-		    if (IsBuffTrigger() && BypassIntervalForRebuff())
+		    if (IsBuffTrigger() && !IsDebuffTrigger() && BypassIntervalForRebuff())
 		        return true;
 		    if (checkInterval < 2) return true;
 
@@ -62,6 +62,7 @@ namespace ai
 		// Donor parity: buff triggers opt into the force-rebuff per-tick
 		// bypass. Base says no; BuffTrigger overrides below. Non-virtual
 		// state read stays in the .cpp to keep this header dependency-free.
+		virtual bool IsDebuffTrigger() const { return false; }
 		virtual bool IsBuffTrigger() const { return false; }
 		bool BypassIntervalForRebuff();
 

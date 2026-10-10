@@ -487,7 +487,8 @@ namespace ai
 
     public:
 		virtual std::string GetTargetName() override { return "current target"; }
-        virtual bool IsActive() override;
+        virtual bool IsDebuffTrigger() const override { return true; }
+
 
     protected:
         bool HasMaxDebuffs();

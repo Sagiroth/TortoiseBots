@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "playerbot/GroupBuffPolicy.h"
+#include "playerbot/ForceRebuffPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "GenericActions.h"
 #include "UseItemAction.h"
@@ -403,6 +404,20 @@ bool CastAuraSpellAction::isUseful()
     // still up but expiring, so the recast lands before the buff drops.
     // Short combat buffs (max < 5 min) only re-arm on fall-off, as before.
     Aura* aura = ai->GetAura(GetSpellName(), target, isOwner);
+    // Force-rebuff pass (donor BuffBelowRefreshTarget action site): while a
+    // rebuff window is pending OOC, a LONG buff below the margin rule counts
+    // as useful so the expiring cast actually starts. Outside the window
+    // the normal refresh rule applies.
+    if (aura && !bot->IsInCombat())
+    {
+        AiObjectContext* rebuffContext = ai->GetAiObjectContext();
+        uint32 beginMs = rebuffContext ? rebuffContext->GetValue<uint32>("manual int", "force rebuff begin ms")->Get() : 0;
+        uint32 nowMs = WorldTimer::getMSTime();
+        if (beginMs && ai::ForceRebuffPending(beginMs, nowMs) &&
+            ai::ForceRebuffBelowTarget(true, aura->GetAuraDuration(),
+                aura->GetAuraMaxDuration(), beginMs, nowMs))
+            return CastSpellAction::isUseful();
+    }
     return CastSpellAction::isUseful() && ai::BuffNeedsRefresh(aura != nullptr,
         aura ? aura->GetAuraDuration() : 0, aura ? aura->GetAuraMaxDuration() : 0);
 }
@@ -557,11 +572,18 @@ bool CastBuffSpellAction::Execute(Event& event)
     if (!CastSpellAction::Execute(event))
         return false;
 
-    // Force-rebuff pass (donor NoteBuffWork): a buff cast that actually
-    // starts marks work this cycle so the ready-check gate holds the
-    // confirm while casts are still landing. Failed casts mark nothing.
+    // Force-rebuff pass (donor NoteBuffWork, window-gated like the donor):
+    // a buff cast that actually starts marks work this cycle so the
+    // ready-check gate holds the confirm while casts are still landing.
+    // Failed casts mark nothing, and casts with no window open mark nothing
+    // (chained instant OOC buffs must not delay a held confirm tick by tick
+    // outside any pass).
     if (!bot->IsInCombat())
-        context->GetValue<bool>("manual bool", "force rebuff buff pending")->Set(true);
+    {
+        uint32 beginMs = context->GetValue<uint32>("manual int", "force rebuff begin ms")->Get();
+        if (beginMs && ai::ForceRebuffPending(beginMs, WorldTimer::getMSTime()))
+            context->GetValue<bool>("manual bool", "force rebuff buff pending")->Set(true);
+    }
     if (target)
     {
         lastAttemptTarget = target->getObjectGuid();

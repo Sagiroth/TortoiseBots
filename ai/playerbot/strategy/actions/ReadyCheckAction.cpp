@@ -167,12 +167,18 @@ bool ReadyCheckAction::Execute(Event& event)
         // the confirm via "ready reply".
         ReportReadiness(requester);
         context->GetValue<time_t>("manual time", ai::ReadyRebuffAnchorKey())->Set(time(0));
-        // Force-rebuff entry (donor ForceRebuffOnReadyCheck): open the 2-min
-        // OOC top-off window alongside the deferred confirm. Buff triggers
-        // bypass their interval and use the margin rule until it closes.
-        context->GetValue<uint32>("manual int", "force rebuff begin ms")->Set(WorldTimer::getMSTime());
-        context->GetValue<bool>("manual bool", "force rebuff buff pending")->Set(false);
-        context->GetValue<bool>("manual bool", "force rebuff buff proposed")->Set(false);
+        // Force-rebuff entry (donor ForceRebuffOnReadyCheck, strategy-gated
+        // like the donor's Begin()): the 2-min OOC top-off window opens only
+        // for bots with the "force rebuff" strategy, so `.bot nc -force
+        // rebuff` disables the top-off, the per-tick bypass, and the reply
+        // hold. The anchor stamp above stays ungated so opted-out bots keep
+        // the pre-existing SOC-S5 defer.
+        if (ai->HasStrategy("force rebuff", BotState::BOT_STATE_NON_COMBAT))
+        {
+            context->GetValue<uint32>("manual int", "force rebuff begin ms")->Set(WorldTimer::getMSTime());
+            context->GetValue<bool>("manual bool", "force rebuff buff pending")->Set(false);
+            context->GetValue<bool>("manual bool", "force rebuff buff proposed")->Set(false);
+        }
         return true;
     }
 
@@ -266,12 +272,15 @@ bool ReadyReplyAction::isUseful()
         return false;
 
     // Force-rebuff gate (donor ReadyReply gating): hold the confirm while a
-    // buff cast landed this cycle or one is mid-cast — the pass is still
-    // working. Past the hard cap the due verdict replies regardless.
+    // buff cast landed this cycle, one is mid-cast, or a buff trigger fired
+    // this tick ("proposed", covering inter-cast gaps where neither pending
+    // nor casting is set for chained instants). Past the hard cap the due
+    // verdict replies regardless. The 30 s cap still bounds the hold.
     bool buffWorking = context->GetValue<bool>("manual bool", "force rebuff buff pending")->Get();
+    bool proposed = context->GetValue<bool>("manual bool", "force rebuff buff proposed")->Get();
     bool isCasting = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL) != nullptr ||
         bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL) != nullptr;
-    if ((buffWorking || isCasting) && !ai::ReadyRebuffPastCap(anchor, time(0)))
+    if ((buffWorking || proposed || isCasting) && !ai::ReadyRebuffPastCap(anchor, time(0)))
         return false;
     return ai::ReadyRebuffDue(anchor, time(0), isCasting);
 }
