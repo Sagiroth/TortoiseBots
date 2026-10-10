@@ -70,7 +70,11 @@ bool PartyMemberDeadTrigger::IsActive()
 
 bool CombatPartyMemberDeadTrigger::IsActive()
 {
-    return GetTarget();
+    // Only a druid that knows Rebirth can combat-rez: delegate to the live
+    // druid trigger (null-safe for non-druids, whose context has no such
+    // creator) instead of duplicating its scan.
+    Trigger* rebirth = ai->GetAiObjectContext()->GetTrigger("rebirth");
+    return rebirth && rebirth->IsActive();
 }
 
 bool DeadTrigger::IsActive()

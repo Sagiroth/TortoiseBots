@@ -241,14 +241,6 @@ namespace ai
         NaturesSwiftnessActiveTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "nature's swiftness") {}
     };
 
-    // Feral instant-cast proc (mod-playerbots parity): true while the
-    // Predator's Swiftness aura sits on the bot, so the instant-Rebirth row
-    // can spend it immediately.
-    class PredatorsSwiftnessTrigger : public HasAuraTrigger
-    {
-    public:
-        PredatorsSwiftnessTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "predator's swiftness") {}
-    };
 
     class EnrageTrigger : public BuffTrigger
     {
