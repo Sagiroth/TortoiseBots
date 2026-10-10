@@ -84,6 +84,7 @@
 #include "KarazhanCryptDungeonActions.h"
 #include "KelthuzadDungeonActions.h"
 #include "GrobbulusDungeonActions.h"
+#include "LoathebDungeonActions.h"
 #include "SapphironDungeonActions.h"
 #include "HeiganDungeonActions.h"
 #include "AnubrekhanDungeonActions.h"
@@ -419,6 +420,10 @@ namespace ai
             creators["enable grobbulus fight strategy"] = [](PlayerbotAI* ai) { return new GrobbulusEnableFightStrategyAction(ai); };
             creators["disable grobbulus fight strategy"] = [](PlayerbotAI* ai) { return new GrobbulusDisableFightStrategyAction(ai); };
             creators["grobbulus go behind"] = [](PlayerbotAI* ai) { return new GrobbulusGoBehindAction(ai); };
+            creators["enable loatheb fight strategy"] = [](PlayerbotAI* ai) { return new LoathebEnableFightStrategyAction(ai); };
+            creators["disable loatheb fight strategy"] = [](PlayerbotAI* ai) { return new LoathebDisableFightStrategyAction(ai); };
+            creators["loatheb choose target"] = [](PlayerbotAI* ai) { return new LoathebChooseTargetAction(ai); };
+            creators["loatheb position"] = [](PlayerbotAI* ai) { return new LoathebPositionAction(ai); };
             creators["enable sapphiron fight strategy"] = [](PlayerbotAI* ai) { return new SapphironEnableFightStrategyAction(ai); };
             creators["disable sapphiron fight strategy"] = [](PlayerbotAI* ai) { return new SapphironDisableFightStrategyAction(ai); };
             creators["sapphiron hide"] = [](PlayerbotAI* ai) { return new SapphironHideAction(ai); };
