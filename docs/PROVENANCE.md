@@ -3737,6 +3737,9 @@ compiles).
 | Paladin tank taunt (Hand of Reckoning + Righteous Defense fallback) | `mod-playerbots` `src/Ai/Class/Paladin/Strategy/TankPaladinStrategy.cpp:116-121` + node factory (`hand_of_reckoning` -> `righteous defense` alternative) | `ai/playerbot/strategy/paladin/TankPaladinStrategy.cpp` (lose-aggro row + `TankPaladinStrategyActionNodeFactory`) | Ported row + node, mirroring live `ProtectionPaladinStrategy`. Turtle core: Hand of Reckoning is trainer spell 51303 (level 10); Righteous Defense ranks are 51328-51330 (`spell_paladin_righteous_defense`); DBC `Spell.dbc` names both plus Righteous Fury. Actions resolve via `PaladinAiObjectContext`. Note: file is an unregistered forward-port; live tanks run Protection (already correct) | `python3 tools/verify_action_trigger_wiring.py` (0 live-missing); `bash tools/verify_all.sh`. Runtime taunt check pending deploy |
 | Protection righteous fury upkeep in combat | `mod-playerbots` `src/Ai/Class/Paladin/Strategy/TankPaladinStrategy.cpp:147-154` (righteous-fury trigger row) | `ai/playerbot/strategy/paladin/ProtectionPaladinStrategy.cpp` (`ProtectionPaladinBuffStrategy::InitCombatTriggers`) | Ported: prior live row existed only in `InitNonCombatTriggers`, so mid-pull loss (death/bubble) stayed off all fight. Same trigger, buff-level priority so taunts and Holy Shield win the tick. Dropped donor pieces stay dropped: seal of corruption/vengeance, shield of righteousness, hammer of the righteous, avenger's shield, avenging wrath, divine sacrifice (WotLK-only); live already covers taunt, holy shield, 2+ consecration, sanctuary/kings, righteousness seal | `bash tools/verify_all.sh`; `git diff --check`. Runtime fury-uptime check pending deploy |
 | Ranged keep-away verification (no change) | `mod-playerbots` `src/Ai/Base/Strategy/RangedCombatStrategy.cpp:10-16` (enemy-too-close -> flee) | `ai/playerbot/strategy/generic/RangedCombatStrategy.cpp:7-22` (already has `enemy too close for spell` -> `flee` at ACTION_MOVE + `enemy out of spell` -> `reach spell`) | Verified present; no edit. Applies to every bot with the `ranged` kit, pool bots included (unchanged behavior, as required) | Code read; `bash tools/verify_all.sh` |
+| `end pull` stuck-pull escape hatch (LD-9) | `mod-playerbots` @ 79bd4281 `src/Ai/Base/ActionContext.h:116,331` (`end pull` = `ChangeCombatStrategyAction(-pull)`) | `strategy/actions/ActionContext.h` (`end pull` creator reusing `PullEndAction`), `strategy/triggers/ChatTriggerContext.h` + `strategy/generic/ChatCommandHandlerStrategy.cpp` (chat wiring), `docs/guides/player-controls.md` (whisper row) | Reimplemented: donor drops the `pull` strategy; ours runs `PullEndAction` bookkeeping (target clear, party release, movement restore) and keeps `pull` armed for the next pull — no re-enable needed | `bash tools/verify_all.sh` (incl. wiring check); `git diff --check`. No live stuck-pull test |
+| Cast-time lifetime veto (LD-7) | `mod-playerbots` @ 79bd4281 `src/Ai/Base/Strategy/CastTimeStrategy.cpp:11-65` (cast-time vs health/estimated-group-dps lifetime to 0.1x, dest-location exclusions, channeled-duration add) | `strategy/generic/CastTimeStrategy.cpp` (HP%+ladder replaced with donor lifetime comparison; criticalHealth gate dropped) | Reimplemented in place: channeled add via local `IsChanneledSpell`/`GetSpellDuration` idiom (donor `SpellInfo::IsChanneled`) | `bash tools/verify_all.sh`; `git diff --check`. No live cast-observation test |
+| Conditional tank RTI + combat-gated auto-mark (LD-5/LD-6) | `mod-playerbots` @ 79bd4281 `src/Ai/Base/Value/TankTargetValue.cpp:110-131` (take RTI only for non-tank victims or different-RTI tanks), `src/Ai/Base/Trigger/RtiTriggers.cpp:10-20` (NoRti false out of combat), `MarkRtiStrategy.cpp:13` (NORMAL relevance) | `strategy/values/TankTargetValue.cpp` (victim gate; victimless pre-pull marks still taken), `strategy/triggers/RtiTriggers.h` (`!IsInCombat` refuse), `strategy/generic/MarkRtiStrategy.cpp` (EMERGENCY→NORMAL) | Reimplemented in place: victimless RTI still taken (donor falls through; preserves today's pre-pull tank open); pet victims taken (donor only checks players) | `bash tools/verify_all.sh`; `git diff --check`. No live 2-tank test |
 
 ## Quest accept/drop churn + banned quests + Bone Chew Toy — 2026-10-04
 Feature: masterless pool bots refuse war-effort item turn-ins (AQ sort
@@ -5696,6 +5699,44 @@ All three blocking findings verified real in code and fixed:
 - Finding 3 (policy header dead code): confirmed — nothing included it. Fixed by refactoring the trigger onto it instead of deleting: `IsTargetValid` now builds `OocRebirthState` and calls `ShouldCastOocRebirth`, so the 6-check test exercises the shipped gate; unused `OocResurrectClass` enum removed.
 - Non-blocking citation fixed (`DruidTriggers.h:120-153` is FaerieFireFeral — now cites the generic `PartyMemberDeadTrigger` path). Toggle note: no toggle added — OOC auto-rez matches the other three classes; revisit if owners complain.
 verify_all.sh + build-commit.sh + push to same branch per brief (see summary).
+## Healer-low-mana value + trigger (HEAL-2/MANA-2) — 2026-10-10
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Base/Value/PartyMemberToHeal.cpp:138-162` + `.h:41-48`
+(`HealerLowMana`: lowest-mana alive group healer, skips self),
+`src/Ai/Base/Trigger/HealthTriggers.cpp:25-32` + `.h:146-153`
+(`HealerLowManaTrigger`: target mana below LowMana),
+`src/Ai/Base/ValueContext.h:136/455` + `src/Ai/Base/TriggerContext.h:69,396`
+(registrations under the exact name `"healer low mana"`).
+
+Source files (module, modified): `ai/playerbot/strategy/values/
+PartyMemberToHeal.h/.cpp` (new `HealerLowMana` value),
+`ai/playerbot/strategy/triggers/GenericTriggers.h/.cpp` (new
+`HealerLowManaTrigger`, pure donor mana check, interval 1),
+`ai/playerbot/strategy/values/ValueContext.h` +
+`ai/playerbot/strategy/triggers/TriggerContext.h` (registrations),
+`ai/playerbot/strategy/druid/DruidActions.h` (`CastInnervateAction` reads
+the shared value; `isPossible`/`isUseful` carry #615's guards: spell
+known, cooldown-ready, target in range, no Innervate aura yet).
+
+Copied / ported / reimplemented: reimplemented. Deviations from the
+donor, all deliberate: (a) iteration via `LiveGroupMembers`
+(ObjectAccessor resolution, never a stale GroupReference pointer);
+(b) mana percent via `GetPower`/`GetMaxPower` with a zero-max guard
+(non-mana healers skipped) matching our neighbouring druid picker;
+(c) the shared trigger is a pure mana check (donor parity) so shaman Mana
+Tide rows can share it — Innervate-specific guards live in the druid
+action's `isPossible`/`isUseful`, which the engine checks before queueing
+(same observable behaviour as #615's trigger guards, kept verbatim).
+
+Reason: support parity gap HEAL-2/MANA-2 (med/S-M): no generic
+lowest-healer-mana routing existed, so mana batteries could only target
+self.
+
+Local validation: `bash tools/verify_all.sh` (all suites pass);
+`git diff --check`. Build via build-commit.sh pending; live in-game check
+pending.
 ## Warlock Unending Breath on swimmers (WAR-6) — 2026-10-09
 
 Donor: mod-playerbots (`79bd4281`):
@@ -5817,6 +5858,43 @@ Local validation: `bash tools/verify_all.sh` (wiring audit covers the
 new names); `git diff --check`; shared-builder compile via
 `build-commit.sh` (BUILD OK); live in-game check pending: ordered bot
 slows a fleeing mob, untriggered bot unchanged.
+## Trinket usage filters (CD-1) — 2026-10-10
+
+Donor: mod-playerbots @ `79bd4281` (local checkout
+`../playerbots-references/mod-playerbots`):
+`src/Ai/Base/Actions/GenericSpellActions.cpp:509-663`
+(`UseTrinketAction`: positive-only, aura-or-mana-restore-only, mana gates,
+tank-defensive health gate, mixed-trigger exclusion, per-item +
+per-category cooldown maps), `:81-115` (effect classifiers
+IsManaRestore/IsManaEfficiency/IsDefensiveTankEffect).
+
+Source files (module, modified): `ai/playerbot/TrinketUsePolicy.h` (new
+pure rule) + `tools/test_trinket_use_policy.cpp` (new test),
+`ai/playerbot/strategy/actions/UseTrinketAction.{h,cpp}` (filters +
+cooldown memory), `tools/verify_all.sh` (test list).
+
+Copied / ported / reimplemented: reimplemented. Deviations from the
+donor, all deliberate: (a) 1.12 category mapping via `Effect[]` /
+`EffectApplyAuraName[]` / `EffectMiscValue[]` (donor
+SpellEffectInfo/ApplyAuraName/MiscValue) + `SPELL_SCHOOL_MASK_NORMAL`;
+no rating-mask branch (no CombatRating enum on this core — resistance /
+health / dodge / parry / block / damage-taken-taken cover 1.12 tank
+trinkets); (b) per-item + per-category memory keyed on
+(itemEntry, spellId) / category from the 1.12 `_ItemSpell` struct, using
+the outer `IsSpellReady` check in `ItemCountValue.cpp:35-67` as before;
+(c) no mixed-trigger exclusion (WotLK item-template concern, no 1.12
+equivalent); (d) efficiency-only trinkets never fire (donor
+aura-or-restore-only gate — kept as `None` classification rather than a
+separate efficiency gate). No context/strategy/addon change — the `often`
+rows now pick a filtered trinket instead of first-ready.
+
+Reason: support parity gap CD-1 (high/M): trinkets fired blind (first
+ready ON_USE wins), wasting mana restores at full mana and defensives at
+full health.
+
+Local validation: `bash tools/verify_all.sh` (all suites incl. the new
+policy test, 23 checks, pass); `git diff --check`. Build via
+build-commit.sh pending; live in-game check pending.
 | Mend pet at medium health (PET-4) | `mod-playerbots` @ `79bd4281` `src/Ai/Class/Hunter/Strategy/GenericHunterStrategy.cpp:72-73` (`hunters pet medium health` below MediumHealth 70 → mend pet 22.0 combat / 60.0 NC) + `GenericHunterNonCombatStrategy.cpp:33` | `ai/playerbot/strategy/hunter/HunterTriggers.{h,cpp}` (`HuntersPetMediumHealthTrigger` below `sPlayerbotAIConfig.mediumHealth`), `HunterStrategy.cpp` (combat mend at ACTION_HIGH-1 below low's ACTION_HIGH; NC at ACTION_NORMAL below low's NORMAL+1), `HunterAiObjectContext.cpp` (creator) | Reimplemented in live strategy priorities (donor 22/21/60 maps onto our ACTION_HIGH-1/HIGH + NORMAL/NORMAL+1); low band still wins below 40 | `bash tools/verify_all.sh`; `python3 tools/verify_action_trigger_wiring.py` (0 live-missing); `git diff --check`. Compile via shared builder; no live in-game test |
 | Combat call pet + safe combat revive, tame demoted (PET-5) | Transferable extension of donor NC-only `no pet` → `call pet` / `hunters pet dead` → `revive pet` (`GenericHunterNonCombatStrategy.cpp:29,34`); donor has no combat call/revive | `HunterStrategy.cpp` (combat `no pet` → `call pet` NORMAL+1, `safe to revive pet` → `revive pet` NORMAL; both combat+NC `tame beast` demoted EMERGENCY → NORMAL so instant call wins wherever castable and the engine falls through to tame only when call is impossible), `HunterTriggers.{h,cpp}` (`SafeToRevivePetTrigger` wired to `runtime/PetRevivePolicy.h`; `HunterNoPet` simplified to donor `NoPetTrigger` shape — petless + unmounted — so the call nodes are reachable for dismissed pets), `HunterAiObjectContext.cpp` (creator), `runtime/PetRevivePolicy.h` + `tools/test_pet_revive_policy.cpp` | Reimplemented: donor never called/revived in combat; revive gated on zero attackers (10s channel safety). Tame demotion via relevance fallback instead of a trigger spell gate | `bash tools/verify_all.sh`; wiring 0 live-missing; standalone `test_pet_revive_policy` (5 checks); `git diff --check`. Compile via shared builder; no live in-game test |
 | Chain-heal group trigger verification + Fire Nova Totem drop gate (SHM-7/SHM-9) | Donor `CastFireNovaAction::isUseful` (`mod-playerbots` `ShamanActions.cpp:28-41`: fire-totem + 8y gate) is WotLK-3.3.0+ mechanics — 1.12 Fire Nova is a totem DROP (1535 line, detonates after 4s), not a pulse of a down totem, so the donor gate is NOT ported (it would refuse every drop). Ported as a placement gate instead @ `79bd4281` | `ai/playerbot/strategy/shaman/ShamanActions.h` (`CastFireNovaAction::isUseful`: bot-to-target <= 10y + policy call), `ShamanFireGatePolicy.h` + `tools/test_shaman_fire_gate_policy.cpp` | Chain heal: verified already wired — live `medium aoe heal -> chain heal` at ACTION_MEDIUM_HEAL matches priest/druid shape, no new trigger; donor `group heal setting` exists only in dead ports. Fire Nova: 10y placement gate (totem lands at our feet); manual `totem fire nova` and magma->nova continuer unaffected (no existing-totem requirement). Spells: Fire Nova Totem 1535 line / Fire Nova pulse 8350 line (verified in tw_world.spell_template; action resolves via spellbook to the trained drop) | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
@@ -6112,3 +6190,74 @@ Local validation: `bash tools/verify_all.sh`; `git diff --check`;
 shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
 check pending: long fight, gem consumed above 15%, evocation still the
 last resort.
+
+## Dual-wield MH->OH cascade (AG-2, 2026-10-09)
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Base/Actions/EquipAction.cpp:144-252` (priority 1: new weapon
+beats MH -> equip MH, demote old MH to OH when it fits and beats OH;
+priority 2: new weapon not beating MH but beating OH -> equip OH).
+
+Source files (module, modified): `ai/playerbot/DualWieldPolicy.h` (new
+pure demotion verdict),
+`ai/playerbot/strategy/actions/EquipAction.cpp` (audit loop captures the
+displaced MH before a 1H MH upgrade and demotes it to OH via the policy +
+explicit-slot equip), `tools/test_dual_wield_policy.cpp` (new standalone
+test), `tools/verify_all.sh` (register test) + `CHANGELOG.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) only the demotion is ported - priority 2
+already works here via secondary-slot resolution (GetPreferredEquipSlot
+targets the weaker/empty hand); (b) all Titan Grip branches dropped (no
+1.12 API); (c) a 2H MH upgrade never cascades (it blocks the off hand);
+(d) the cascade claims the OH slot for the run and requires spec legality
++ core slot validation, so shield specs and later stale-usage candidates
+cannot ping-pong it.
+
+Reason: dual-wield bots left the old main hand's stats in the bags after
+every MH upgrade.
+
+Local validation: `bash tools/verify_all.sh` (incl. new policy test +
+wiring check live-missing=0); `git diff --check`; shared-builder compile
+check; no live in-game test.
+
+## Warlock spec-aware curse default + curse-conflict awareness (WAR-3 + WAR-8) — 2026-10-09
+
+Donor: mod-playerbots (`79bd4281`):
+per-spec curse defaults
+(`src/Ai/Class/Warlock/Strategy/GenericWarlockStrategy.cpp:138-240`,
+`WarlockAiObjectContext.cpp:102-122`: affli Agony, destro Elements);
+CoE/CoW conflict skips
+(`src/Ai/Class/Warlock/WarlockTriggers.cpp:113-162`).
+
+Source files (module, modified): `runtime/WarlockCursePolicy.h` (new pure
+rule: destro Elements, affli/demo Agony, no default while any curse sits
+on the target),
+`ai/playerbot/strategy/warlock/DestructionWarlockStrategy.cpp`
+(`DestructionWarlockCursesStrategy` queues CoE + aoe-gated on-attacker
+CoE instead of the base Agony rows — base not called, no double queue),
+`ai/playerbot/strategy/warlock/WarlockTriggers.cpp` (`NoCurseTrigger` +
+`NoCurseOnAttackerTrigger` drop the owner check so a groupmate's curse
+suppresses the default),
+`tools/test_warlock_curse_policy.cpp` (new standalone test, wired into
+`tools/verify_all.sh`) + `docs/classes/warlock.md`, `CHANGELOG.md` (doc
+lines).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) the donor's WotLK conflict lists (Ebon
+Plague, Earth and Moon, Vindication) do not exist in 1.18.1 — the rule
+here is the vanilla one-curse-per-target gate on the 7-curse family,
+which covers CoW-vs-shout overwrites too; (b) Curse of Shadow stays a
+manual pick, not the affliction default (raid debuff-slot pressure);
+(c) per-curse `DebuffTrigger`s already see anyone's aura, so only the
+`NoCurse` pair needed the fix; (d) manual `curse X` strategies bypass the
+gate — the player always wins.
+
+Reason: destro bots opened Agony like everyone else (lost fire damage +
+raid spell damage), and two warlocks on one target overwrote each
+other's curse every refresh.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`;
+shared-builder compile via `build-commit.sh` (BUILD OK); live in-game
+check pending: destro opens CoE, grouped warlocks keep one curse.
+| Elemental water-shield mana loop + pack-gated chain lightning (SHM-6) | Donor behavior: ele keeps water shield + chain-lightning-no-cd (`mod-playerbots` `ElementalShamanStrategy.cpp:76-83`, `ShamanAoeStrategy` `GenericShamanStrategy.cpp:161`) @ `79bd4281` | `ai/playerbot/strategy/shaman/ElementalShamanStrategy.cpp` (buff combat + non-combat water rows + lightning fallback rows; AoE `chain lightning filler` row), `ShamanTriggers.h` (`ChainLightningReadyTrigger` via CD_TRIGGER), `ShamanAiObjectContext.cpp` (`chain lightning filler` = TwoTriggers ready + ranged-medium-aoe), `ShamanManaLoopPolicy.h` + `tools/test_shaman_mana_loop_policy.cpp` | Water at ACTION_NORMAL combat + non-combat with lightning at NORMAL-1 fallback (Water trains 34, Lightning 8 — verified npc_trainer; low-level ele keeps a shield). Filler is pack-only by trigger conjunction (ready + 3+ ranged pack), queued in the AoE strategy below earthquake — never single-target (no CC breaks, no OOM spam). Spells: Water Shield Turtle ranks (verified), Chain Lightning 421 (existing). No WotLK-only spells | `bash tools/verify_all.sh` (incl. new policy test), `git diff --check`; shared-builder compile + no live test per parity pipeline |
