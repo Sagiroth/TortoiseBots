@@ -45,8 +45,9 @@ bool GluthMortalWoundSwapTrigger::IsActive()
 
 bool GluthTrigger::IsActive()
 {
-    if (PlayerbotAI::IsTank(bot))
-        return false;
+    // Fires for tanks too: the chooser pins tanks to Gluth (donor pins
+    // MainTank/Assist0 to the boss), so they bank second-place threat
+    // and stay in taunt range instead of chasing chow.
     const std::list<ObjectGuid> attackers =
         ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get();
     for (const ObjectGuid& guid : attackers)

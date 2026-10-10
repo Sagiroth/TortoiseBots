@@ -34,15 +34,21 @@ namespace
 
 bool GluthChooseTargetAction::Execute(Event& event)
 {
-    if (PlayerbotAI::IsTank(bot))
-        return false;
-
     // Explicit master orders win over the fight choreography.
     ObjectGuid explicitGuid = AI_VALUE(ObjectGuid, "explicit attack target");
     if (!explicitGuid.IsEmpty())
         return false;
 
     Unit* boss = FindGluthBoss(ai);
+
+    // Tanks hold Gluth (donor pins MainTank/Assist0 to the boss): bank
+    // second-place threat and stay in taunt range, never chase chow.
+    if (PlayerbotAI::IsTank(bot))
+    {
+        if (!boss || AI_VALUE(Unit*, "current target") == boss)
+            return false;
+        return Attack(bot, boss);
+    }
 
     // One 30yd sweep for execute-range chow. Chow must come from the
     // world, not the cached target lists: post-Decimate chow MoveFollow
@@ -98,7 +104,15 @@ bool GluthTauntSwapAction::Execute(Event& event)
         case CLASS_DRUID: taunt = "growl"; break;
         default: return false;
     }
+    // Move "current target" onto Gluth first: the taunt spell only sets
+    // selection, so without this the rotation keeps hitting chow and the
+    // boss snaps back to the wounded tank. Attack() sticks even when the
+    // taunt itself cannot fire yet (cooldown/range).
+    if (AI_VALUE(Unit*, "current target") != gluth)
+    {
+        if (Attack(bot, gluth) && !ai->CanCastSpell(taunt, gluth))
+            return true;
+    }
     if (!ai->CanCastSpell(taunt, gluth))
         return false;
     return ai->CastSpell(taunt, gluth);
-}
