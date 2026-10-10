@@ -1,6 +1,7 @@
 #pragma once
 #include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/triggers/GenericTriggers.h"
+#include "ShamanEarthShockPolicy.h"
 
 namespace ai
 {
@@ -416,12 +417,13 @@ namespace ai
 
         virtual bool IsActive() override
         {
+            // Gate lives in ShamanEarthShockPolicy.h so the unit test pins
+            // this exact logic.
             Unit* target = AI_VALUE(Unit*, "current target");
-            if (!target || !sServerFacade.IsAlive(target))
+            if (!target)
                 return false;
-            if (target->GetHealthPercent() >= 25.0f)
-                return false;
-            return target->GetHealth() < 1500;
+            return EarthShockExecuteShouldFire((float)target->GetHealth(), (float)target->GetMaxHealth(),
+                sServerFacade.IsAlive(target));
         }
     };
 

@@ -35,10 +35,13 @@ int main()
     std::cout << "  [PASS] high-hp targets vetoed even below 25 percent\n";
 
     // Boundaries and degenerate input.
-    CHECK(EarthShockExecuteShouldFire(0.0f, 1000.0f) == true);
+    CHECK(EarthShockExecuteShouldFire(1.0f, 1000.0f) == true);
     CHECK(EarthShockExecuteHealthPercent(0.0f, 0.0f) == 100.0f);
     CHECK(EarthShockExecuteShouldFire(0.0f, 0.0f) == false);
-    std::cout << "  [PASS] boundaries and zero-max-health safe\n";
+    // Dead targets never take the execute (matches the trigger IsAlive gate).
+    CHECK(EarthShockExecuteShouldFire(100.0f, 1000.0f, false) == false);
+    CHECK(EarthShockExecuteShouldFire(100.0f, 1000.0f, true) == true);
+    std::cout << "  [PASS] boundaries, zero-max-health, and dead targets safe\n";
 
     std::cout << "All shaman earth-shock execute policy checks PASSED!\n";
     return 0;
