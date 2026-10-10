@@ -1,26 +1,20 @@
 #pragma once
 
-// Pure policy for shaman fire-totem range gates (mod-playerbots parity
-// SHM-7): vanilla Fire Nova 8350 pulses from the fire totem, so casting it
-// with no fire totem down or the target beyond pulse range only burns the
-// GCD. Magma already gates on melee range via CastMeleeSpellAction; the nova
-// gate additionally requires a fire totem within pulse range of the target.
+// Pure policy for the Fire Nova totem drop gate (SHM-7): in 1.12 Fire Nova
+// is a totem DROP that detonates after 4s — not a pulse of an already-down
+// totem (that is the WotLK 3.3.0+ mechanic; do not port it). Refuse to place
+// the totem when the target is out of detonation range of the drop point,
+// mirroring the magma melee gate. Chain heal needs no change: the live
+// `medium aoe heal -> chain heal` row already matches priest/druid shape.
 
 namespace ai
 {
-    // Fire Nova pulse radius (donor: target within 8y of the fire totem).
-    inline float FireNovaTotemPulseRange() { return 8.0f; }
+    // Drop-point detonation range: the totem lands at our feet, so the
+    // bot-to-target distance at cast time bounds the pulse.
+    inline float FireNovaDropRange() { return 10.0f; }
 
-    inline bool FireNovaShouldFire(bool hasFireTotem, float targetDistanceToTotem)
+    inline bool FireNovaDropShouldFire(float botDistanceToTarget)
     {
-        if (!hasFireTotem)
-            return false;
-        return targetDistanceToTotem <= FireNovaTotemPulseRange();
+        return botDistanceToTarget <= FireNovaDropRange();
     }
-
-    // Chain heal (group-heal half of SHM-7): the live `medium aoe heal`
-    // trigger already keys chain heal at ACTION_MEDIUM_HEAL, matching priest
-    // (prayer of healing) and druid (tranquility) shape — no new trigger is
-    // needed. This documents the expected wiring so the unit test pins it.
-    inline bool ChainHealWiredToMediumAoeHeal() { return true; }
 }

@@ -10,30 +10,24 @@
     } \
 } while (0)
 
-using ai::ChainHealWiredToMediumAoeHeal;
-using ai::FireNovaShouldFire;
-using ai::FireNovaTotemPulseRange;
+using ai::FireNovaDropRange;
+using ai::FireNovaDropShouldFire;
 
 int main()
 {
     std::cout << "Starting shaman fire-gate policy tests...\n";
 
-    // Pulse radius is the donor's 8 yards.
-    CHECK(FireNovaTotemPulseRange() == 8.0f);
-    std::cout << "  [PASS] pulse radius is 8 yards\n";
+    // Drop range matches the totem-placement idiom (10y, like CastTotemAction).
+    CHECK(FireNovaDropRange() == 10.0f);
+    std::cout << "  [PASS] drop range is 10 yards\n";
 
-    // Nova fires only with a fire totem down and the target in pulse range.
-    CHECK(FireNovaShouldFire(true, 5.0f) == true);
-    CHECK(FireNovaShouldFire(true, 8.0f) == true);
-    CHECK(FireNovaShouldFire(true, 8.1f) == false);
-    CHECK(FireNovaShouldFire(true, 30.0f) == false);
-    CHECK(FireNovaShouldFire(false, 0.0f) == false);
-    CHECK(FireNovaShouldFire(false, 5.0f) == false);
-    std::cout << "  [PASS] nova needs a fire totem with the target in range\n";
-
-    // Chain heal stays wired to medium aoe heal (no new trigger).
-    CHECK(ChainHealWiredToMediumAoeHeal() == true);
-    std::cout << "  [PASS] chain heal wiring documented\n";
+    // The totem lands at our feet: in-range targets detonate, far ones waste
+    // the drop (and destroy the current fire totem for nothing).
+    CHECK(FireNovaDropShouldFire(5.0f) == true);
+    CHECK(FireNovaDropShouldFire(10.0f) == true);
+    CHECK(FireNovaDropShouldFire(10.1f) == false);
+    CHECK(FireNovaDropShouldFire(30.0f) == false);
+    std::cout << "  [PASS] out-of-range targets veto the drop\n";
 
     std::cout << "All shaman fire-gate policy checks PASSED!\n";
     return 0;

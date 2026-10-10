@@ -3,6 +3,7 @@
 #include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/actions/GenericActions.h"
 #include "playerbot/strategy/actions/ChangeStrategyAction.h"
+#include "ShamanFireGatePolicy.h"
 
 namespace ai
 {
@@ -317,32 +318,15 @@ namespace ai
         CastFireNovaAction(PlayerbotAI* ai) : CastSpellAction(ai, "fire nova") {}
         virtual bool isUseful() override
         {
-            // Vanilla Fire Nova pulses from the fire totem (donor parity
-            // SHM-7): with no fire totem down, or the target beyond pulse
-            // range of ours, the cast only burns the GCD.
+            // 1.12 Fire Nova is a totem DROP (not a pulse of an existing
+            // totem): refuse to place it when the target is out of
+            // detonation range of the drop point, like the magma melee
+            // gate. Gate lives in ShamanFireGatePolicy.h so the unit test
+            // pins this exact logic.
             Unit* target = AI_VALUE(Unit*, "current target");
             if (!target)
                 return false;
-            std::list<ObjectGuid> units = *context->GetValue<std::list<ObjectGuid>>("nearest npcs");
-            for (ObjectGuid guid : units)
-            {
-                Unit* unit = ai->GetUnit(guid);
-                if (!unit)
-                    continue;
-                Creature* totem = dynamic_cast<Creature*>(unit);
-                if (!totem || !totem->IsTotem() || totem->GetOwner() != bot)
-                    continue;
-                const char* name = totem->GetName();
-                if (strstri(name, "searing") || strstri(name, "magma") ||
-                    strstri(name, "flametongue") || strstri(name, "fire nova") ||
-                    strstri(name, "frost resistance"))
-                {
-                    if (totem->GetDistance(target) <= 8.0f)
-                        return CastSpellAction::isUseful();
-                    return false;
-                }
-            }
-            return false;
+            return FireNovaDropShouldFire(bot->GetDistance(target)) && CastSpellAction::isUseful();
         }
     };
 
