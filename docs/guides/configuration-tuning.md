@@ -251,7 +251,7 @@ Errors (`sLog.outError`) are always written regardless of this setting. The leve
 
 ### Bot CSV files (`AiPlayerbot.AllowedLogFiles`)
 
-`bot_events.csv` (bot decisions) and `deaths.csv` (bot deaths and killers) are written to the server's logs directory by default, so a bug report can include them. Each file is capped at `AiPlayerbot.LogFileMaxMB` (default `25`). When a file is full it becomes `<name>.1`, replacing the older copy, and a new file starts. Each log therefore keeps the most recent activity (about an hour at 1000 bots) and never takes more than twice the cap on disk. `0` removes the cap, and an empty `AiPlayerbot.AllowedLogFiles` writes no bot log files at all. Other diagnostics (`travel_route_gate.csv`, `ghost_moves.csv`) are added to the same comma-separated list.
+`bot_events.csv` (bot decisions) and `deaths.csv` (bot deaths and killers) are written to the server's logs directory by default, so a bug report can include them. The live file is plain text. Every hour, and at server start, it is packed into `<name>_<date>_<time>.csv.gz` next to it, named after the time it was closed. Packs older than `AiPlayerbot.LogRetentionDays` (default `3`, `0` = never delete) are deleted. Packing runs in the background, and a server stopped in the middle of it packs the leftover file on its next start. Three days take roughly 65-130 MB at 500 bots and 130-260 MB at 1000 bots. An empty `AiPlayerbot.AllowedLogFiles` writes no bot log files at all. Other diagnostics (`travel_route_gate.csv`, `ghost_moves.csv`) are added to the same comma-separated list.
 
 This setting is separate from the strategy AI's own action trace, which stays gated behind the `debug`/`debug action` bot strategies (`.bot strategy +debug`) rather than a server-wide config key.
 

@@ -3,6 +3,8 @@
 #include "playerbot/playerbot.h"
 #include <cerrno>
 #include <cstring>
+#include <thread>
+#include <zlib.h>
 #include "BotLog.h"
 #include "AccountMgr.h"
 #include "RandomItemMgr.h"
@@ -666,7 +668,7 @@ bool PlayerbotAIConfig::Initialize()
     rndBotCheatMask = uint32(CheatAction::GetCheatMask(config.GetStringDefault("AiPlayerbot.RndBotCheats", "repair,breath,item")));
 
     LoadListString<std::list<std::string>>(config.GetStringDefault("AiPlayerbot.AllowedLogFiles", ""), allowedLogFiles);
-    logFileMaxBytes = uint64(std::max(0, config.GetIntDefault("AiPlayerbot.LogFileMaxMB", 25))) * 1024 * 1024;
+    logRetentionDays = uint32(std::max(0, config.GetIntDefault("AiPlayerbot.LogRetentionDays", 3)));
     LoadListString<std::list<std::string>>(config.GetStringDefault("AiPlayerbot.DebugFilter", "add gathering loot,check values,emote,check mount state,jump"), debugFilter);
 
     worldBuffs.clear();
@@ -1245,6 +1247,35 @@ void PlayerbotAIConfig::loadFreeAltBotAccounts()
     }
 }
 
+// Packs a closed log piece into <piece>.gz off the world thread and deletes
+// the plain piece once the pack is complete. A stopped server leaves the plain
+// piece, and the next start packs it again.
+static void CompressLogPiece(std::string const& piece)
+{
+    std::thread([piece]()
+    {
+        FILE* in = fopen(piece.c_str(), "rb");
+        if (!in)
+            return;
+        gzFile out = gzopen((piece + ".gz").c_str(), "wb6");
+        if (!out)
+        {
+            fclose(in);
+            return;
+        }
+        bool ok = true;
+        char buffer[64 * 1024];
+        size_t n;
+        while (ok && (n = fread(buffer, 1, sizeof(buffer), in)) > 0)
+            ok = gzwrite(out, buffer, unsigned(n)) == int(n);
+        fclose(in);
+        if (gzclose(out) != Z_OK)
+            ok = false;
+        if (ok)
+            std::remove(piece.c_str());
+    }).detach();
+}
+
 std::string PlayerbotAIConfig::GetTimestampStr()
 {
     time_t t = time(nullptr);
@@ -1282,12 +1313,16 @@ bool PlayerbotAIConfig::openLog(std::string fileName, char const* mode, bool has
 
     std::string const m_logsDir = logsDirPath();
     std::string const path = m_logsDir + fileName;
-    std::error_code rotationError;
-    if (!logRotation.Prepare(path, mode, rotationError))
+    time_t const now = time(nullptr);
+    if (logRotation.FirstOpen(path))
     {
-        sLog.outError("Could not rotate bot log file %s: %s. Existing file preserved.",
-            path.c_str(), rotationError.message().c_str());
-        return false;
+        // Pack the last run's file, and finish the packs a stopped run left.
+        std::vector<std::string> plain, compressed;
+        ai::LogFileRotation::Pieces(path, plain, compressed);
+        for (std::string const& piece : plain)
+            CompressLogPiece(piece);
+        if (!archiveLog(path, now))
+            return false;
     }
     file = fopen(path.c_str(), mode);
 
@@ -1310,6 +1345,7 @@ bool PlayerbotAIConfig::openLog(std::string fileName, char const* mode, bool has
 
     logFileIt->second.first = file;
     logFileIt->second.second = true;
+    logHour[fileName] = now / 3600;
 
     return true;
 }
@@ -1325,26 +1361,39 @@ std::string PlayerbotAIConfig::logsDirPath()
     return logsDir;
 }
 
-// A log past AiPlayerbot.LogFileMaxMB becomes <name>.1, replacing the older
-// copy, and the next line starts a new file, so one log never takes more than
-// twice the cap on disk. Caller holds m_logMtx.
-void PlayerbotAIConfig::capLogSize(std::string const& fileName, FILE* file)
+// Moves a live log to a timestamped piece, packs it in the background and
+// deletes pieces older than AiPlayerbot.LogRetentionDays. False when the
+// rename failed; the live file is then left as it was.
+bool PlayerbotAIConfig::archiveLog(std::string const& path, time_t now)
 {
-    if (!logFileMaxBytes || ftell(file) < static_cast<long>(logFileMaxBytes))
+    std::string piece;
+    std::error_code error;
+    if (!ai::LogFileRotation::Archive(path, now, piece, error))
+    {
+        sLog.outError("Could not rotate bot log file %s: %s. Existing file preserved.",
+            path.c_str(), error.message().c_str());
+        return false;
+    }
+    if (!piece.empty())
+        CompressLogPiece(piece);
+    if (logRetentionDays)
+        ai::LogFileRotation::Prune(path, logRetentionDays);
+    return true;
+}
+
+// The live log holds at most the current hour: when the hour changes it is
+// packed and the next line starts a new file. Caller holds m_logMtx.
+void PlayerbotAIConfig::rotateLogHourly(std::string const& fileName, FILE* file)
+{
+    time_t const now = time(nullptr);
+    auto const hour = logHour.find(fileName);
+    if (hour == logHour.end() || hour->second == now / 3600)
         return;
 
     fclose(file);
     logFiles[fileName] = {nullptr, false};
-
-    std::string const path = logsDirPath() + fileName;
-    std::error_code error;
-    if (!logRotation.RotateFull(path, error))
-    {
-        // Without the rename every further line would land here again.
-        sLog.outError("Could not rotate full bot log file %s: %s. Log size cap is off for this run.",
-            path.c_str(), error.message().c_str());
-        logFileMaxBytes = 0;
-    }
+    logHour.erase(hour);
+    archiveLog(logsDirPath() + fileName, now);
 }
 
 void PlayerbotAIConfig::log(std::string fileName, const char* line)
@@ -1367,7 +1416,7 @@ void PlayerbotAIConfig::log(std::string fileName, const char* line)
     fputs(line, file);
     fputc('\n', file);
     fflush(file);
-    capLogSize(fileName, file);
+    rotateLogHourly(fileName, file);
 
     fflush(stdout);
 }
@@ -1391,7 +1440,7 @@ void PlayerbotAIConfig::logf(std::string fileName, const char* format, ...)
     va_end(ap);
     fputc('\n', file);
     fflush(file);
-    capLogSize(fileName, file);
+    rotateLogHourly(fileName, file);
 
     fflush(stdout);
 }

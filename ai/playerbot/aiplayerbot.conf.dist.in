@@ -1747,10 +1747,10 @@ AiPlayerbot.RndBotCheats = repair,breath,item
 # Leave empty to write no bot log files.
 AiPlayerbot.AllowedLogFiles = bot_events.csv,deaths.csv
 
-# Size cap per bot log file, in MB. A full file becomes <name>.1 (replacing the older copy) and a new
-# file starts, so each log keeps the most recent activity and never takes more than twice this on disk.
-# 0 = no cap.
-AiPlayerbot.LogFileMaxMB = 25
+# Days of bot logs to keep. The live file is plain text; every hour and at server start it is packed into
+# <name>_<date>_<time>.csv.gz next to it (named after the time it was closed), and packs older than this
+# are deleted. 0 = never delete.
+AiPlayerbot.LogRetentionDays = 3
 
 # Filters certain actions from showing up in 'nc +debug' and 'nc +debug action'
 # AiPlayerbot.DebugFilter = add gathering loot,check values,emote,check mount state,jump
