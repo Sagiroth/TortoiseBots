@@ -22,6 +22,7 @@ echo "✓ Action and trigger wiring verified (0 missing live creators)."
 echo ""
 echo "=== 4. Running Engine Unit Tests (AoE Density, Walk Gating & Disabled World Updates) ==="
 python3 -m unittest tools/test_log_open_rotation.py
+python3 -m unittest tools/test_action_counts.py
 python3 -m unittest tools/test_attackers_aoe_density.py
 python3 -m unittest tools/test_engine_walk_gating.py
 python3 -m unittest tools/test_instance_grind_target.py
