@@ -1,3 +1,9 @@
+#include "playerbot/playerbot.h"
+#include "BlackwingLairDungeonStrategies.h"
+#include "DungeonMultipliers.h"
+
+using namespace ai;
+
 void BlackwingLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     triggers.push_back(new TriggerNode(
