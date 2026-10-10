@@ -24,6 +24,7 @@ public:
         creators["hibernate on cc"] = &hibernate_on_cc;
         creators["thorns"] = &thorns;
         creators["thorns on party"] = &thorns_on_party;
+        creators["thorns on tank"] = &thorns_on_tank;
         creators["mark of the wild"] = &mark_of_the_wild;
         creators["mark of the wild on party"] = &mark_of_the_wild_on_party;
         creators["gift of the wild on party"] = &gift_of_the_wild_on_party;
@@ -82,6 +83,8 @@ private:
     ACTION_NODE_P(thorns, "thorns", "caster form");
 
     ACTION_NODE_P(thorns_on_party, "thorns on party", "caster form");
+
+    ACTION_NODE_P(thorns_on_tank, "thorns on tank", "caster form");
 
     ACTION_NODE_P(mark_of_the_wild, "mark of the wild", "caster form");
 
@@ -386,6 +389,13 @@ void DruidBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
         "mark of the wild on party",
         NextAction::array(0, new NextAction("mark of the wild on party", ACTION_NORMAL + 2), NULL)));
 
+    // mod-playerbots parity (DRU-7): Thorns lands on the tank first
+    // (above the party blanket), so the tank never waits for the blanket
+    // rotation to reach them.
+    triggers.push_back(new TriggerNode(
+        "thorns on tank",
+        NextAction::array(0, new NextAction("thorns on tank", ACTION_NORMAL + 3), NULL)));
+
     triggers.push_back(new TriggerNode(
         "thorns on party",
         NextAction::array(0, new NextAction("thorns on party", ACTION_NORMAL + 2), NULL)));
@@ -536,21 +546,21 @@ void DruidOffdpsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     OffdpsStrategy::InitCombatTriggers(triggers);
 
+    // mod-playerbots parity (DRU-8): resto healer-dps. Only while nobody
+    // needs healing and mana is comfortable (healer should attack, which
+    // already mana-gates), at the lowest relevance so every heal outbids
+    // it. Tree of Life blocks the nukes, so the exit ("caster form",
+    // instant via RemoveShapeshift) rides as the first alternative and
+    // the nukes as fallbacks: tick N shifts out, tick N+1 the tree
+    // trigger (gated on no-offdps below) stays quiet and a nuke casts.
+    // Wrath above starfire (donor order): faster, mana-cheaper healer nuke.
     triggers.push_back(new TriggerNode(
-        "faerie fire",
-        NextAction::array(0, new NextAction("faerie fire", ACTION_NORMAL + 3), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "insect swarm",
-        NextAction::array(0, new NextAction("insect swarm", ACTION_NORMAL + 2), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "moonfire",
-        NextAction::array(0, new NextAction("moonfire", ACTION_NORMAL + 1), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "wrath",
-        NextAction::array(0, new NextAction("wrath", ACTION_NORMAL), NULL)));
+        "healer should attack",
+        NextAction::array(0,
+            new NextAction("caster form", ACTION_DEFAULT + 0.6f),
+            new NextAction("moonfire", ACTION_DEFAULT + 0.5f),
+            new NextAction("wrath", ACTION_DEFAULT + 0.4f),
+            new NextAction("starfire", ACTION_DEFAULT + 0.3f), NULL)));
 }
 
 void DruidOffdpsStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

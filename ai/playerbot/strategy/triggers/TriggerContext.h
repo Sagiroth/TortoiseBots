@@ -21,6 +21,7 @@
 #include "EmeraldSanctumDungeonTriggers.h"
 #include "ClassicRaidDungeonTriggers.h"
 #include "LowerKarazhanDungeonTriggers.h"
+#include "KelthuzadDungeonTriggers.h"
 #include "SapphironDungeonTriggers.h"
 #include "HeiganDungeonTriggers.h"
 #include "AnubrekhanDungeonTriggers.h"
@@ -58,6 +59,7 @@ namespace ai
             creators["healer low mana"] = [](PlayerbotAI* ai) { return new HealerLowManaTrigger(ai); };
             creators["medium mana"] = [](PlayerbotAI* ai) { return new MediumManaTrigger(ai); };
             creators["high mana"] = [](PlayerbotAI* ai) { return new HighManaTrigger(ai); };
+            creators["enough mana"] = [](PlayerbotAI* ai) { return new EnoughManaTrigger(ai); };
             creators["almost full mana"] = [](PlayerbotAI* ai) { return new AlmostFullManaTrigger(ai); };
             creators["healer should attack"] = [](PlayerbotAI* ai) { return new HealerShouldAttackTrigger(ai); };
             creators["healer should wand"] = [](PlayerbotAI* ai) { return new HealerShouldAttackTrigger(ai, "healer should wand", false); };
@@ -287,8 +289,10 @@ namespace ai
             // racials
             creators["berserking"] = [](PlayerbotAI* ai) { return new BerserkingTrigger(ai); };
             creators["blood fury"] = [](PlayerbotAI* ai) { return new BloodFuryTrigger(ai); };
+            creators["generic boost"] = [](PlayerbotAI* ai) { return new GenericBoostTrigger(ai); };
             creators["cannibalize"] = [](PlayerbotAI* ai) { return new CannibalizeTrigger(ai); };
             creators["will of the forsaken"] = [](PlayerbotAI* ai) { return new WOtFTrigger(ai); };
+            creators["fear sleep sap"] = [](PlayerbotAI* ai) { return new FearSleepSapTrigger(ai); };
             creators["stoneform"] = [](PlayerbotAI* ai) { return new StoneformTrigger(ai); };
             creators["shadowmeld"] = [](PlayerbotAI* ai) { return new ShadowmeldTrigger(ai); };
             creators["mana tap"] = [](PlayerbotAI* ai) { return new ManaTapTrigger(ai); };
@@ -330,6 +334,7 @@ namespace ai
             creators["start onyxia fight"] = [](PlayerbotAI* ai) { return new OnyxiaStartFightTrigger(ai); };
             creators["end onyxia fight"] = [](PlayerbotAI* ai) { return new OnyxiaEndFightTrigger(ai); };
             creators["onyxia airborne"] = [](PlayerbotAI* ai) { return new OnyxiaAirborneTrigger(ai); };
+            creators["onyxia deep breath"] = [](PlayerbotAI* ai) { return new OnyxiaDeepBreathTrigger(ai); };
 
             // Dungeon Boss Triggers
 
@@ -368,6 +373,12 @@ namespace ai
 
             creators["start four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanStartFightTrigger(ai); };
             creators["end four horseman fight"] = [](PlayerbotAI* ai) { return new FourHorsemanEndFightTrigger(ai); };
+            creators["start kel'thuzad fight"] = [](PlayerbotAI* ai) { return new KelthuzadStartFightTrigger(ai); };
+            creators["end kel'thuzad fight"] = [](PlayerbotAI* ai) { return new KelthuzadEndFightTrigger(ai); };
+            creators["kel'thuzad phase one"] = [](PlayerbotAI* ai) { return new KelthuzadPhaseOneTrigger(ai); };
+            creators["kel'thuzad adds"] = [](PlayerbotAI* ai) { return new KelthuzadAddsTrigger(ai); };
+            creators["kel'thuzad phase two"] = [](PlayerbotAI* ai) { return new KelthuzadPhaseTwoTrigger(ai); };
+            creators["kel'thuzad fissure"] = [](PlayerbotAI* ai) { return new KelthuzadFissureTrigger(ai); };
             creators["start sapphiron fight"] = [](PlayerbotAI* ai) { return new SapphironStartFightTrigger(ai); };
             creators["end sapphiron fight"] = [](PlayerbotAI* ai) { return new SapphironEndFightTrigger(ai); };
             creators["sapphiron air hide"] = [](PlayerbotAI* ai) { return new SapphironAirTrigger(ai); };

@@ -217,7 +217,9 @@ namespace ai
                 creators["curse of shadow"] = [](PlayerbotAI* ai) { return new CurseOfShadowTrigger(ai); };
                 creators["curse of shadow on attacker"] = [](PlayerbotAI* ai) { return new CurseOfShadowOnAttackerTrigger(ai); };
                 creators["banish"] = [](PlayerbotAI* ai) { return new BanishTrigger(ai); };
+                creators["seduction"] = [](PlayerbotAI* ai) { return new SeductionTrigger(ai); };
                 creators["spellstone"] = [](PlayerbotAI* ai) { return new SpellstoneTrigger(ai); };
+                creators["firestone"] = [](PlayerbotAI* ai) { return new FirestoneTrigger(ai); };
                 creators["fear"] = [](PlayerbotAI* ai) { return new FearTrigger(ai); };
                 creators["fear pvp"] = [](PlayerbotAI* ai) { return new FearPvpTrigger(ai); };
                 creators["immolate"] = [](PlayerbotAI* ai) { return new ImmolateTrigger(ai); };
@@ -272,7 +274,8 @@ namespace ai
                 creators["create soulstone"] = [](PlayerbotAI* ai) { return new CastCreateSoulstoneAction(ai); };
                 creators["create firestone"] = [](PlayerbotAI* ai) { return new CastCreateFirestoneAction(ai); };
                 creators["create spellstone"] = [](PlayerbotAI* ai) { return new CastCreateSpellstoneAction(ai); };
-                creators["spellstone"] = [](PlayerbotAI* ai) { return new UseSpellItemAction(ai, "spellstone"); };
+                creators["spellstone"] = [](PlayerbotAI* ai) { return new EquipSpellstoneAction(ai); };
+                creators["firestone"] = [](PlayerbotAI* ai) { return new EquipFirestoneAction(ai); };
                 creators["summon voidwalker"] = [](PlayerbotAI* ai) { return new CastSummonVoidwalkerAction(ai); };
                 creators["summon succubus"] = [](PlayerbotAI* ai) { return new CastSummonSuccubusAction(ai); };
                 creators["summon felhunter"] = [](PlayerbotAI* ai) { return new CastSummonFelhunterAction(ai); };
@@ -305,6 +308,7 @@ namespace ai
                 creators["health funnel"] = [](PlayerbotAI* ai) { return new CastHealthFunnelAction(ai); };
                 creators["drain life"] = [](PlayerbotAI* ai) { return new CastDrainLifeAction(ai); };
                 creators["banish"] = [](PlayerbotAI* ai) { return new CastBanishAction(ai); };
+                creators["seduction on cc"] = [](PlayerbotAI* ai) { return new CastSeductionOnCcAction(ai); };
                 creators["banish on cc"] = [](PlayerbotAI* ai) { return new CastBanishOnCcAction(ai); };
                 creators["rain of fire"] = [](PlayerbotAI* ai) { return new CastRainOfFireAction(ai); };
                 creators["inferno"] = [](PlayerbotAI* ai) { return new CastInfernoAction(ai); };

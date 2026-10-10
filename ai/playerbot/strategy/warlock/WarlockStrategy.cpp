@@ -85,16 +85,6 @@ void WarlockStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "no soulstone",
         NextAction::array(0, new NextAction("create soulstone", ACTION_NORMAL), NULL)));
-
-    /*
-    triggers.push_back(new TriggerNode(
-        "no firestone",
-        NextAction::array(0, new NextAction("create firestone", ACTION_NORMAL), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "no spellstone",
-        NextAction::array(0, new NextAction("create spellstone", ACTION_NORMAL), NULL)));
-    */
 }
 
 void WarlockStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
@@ -376,10 +366,15 @@ void WarlockCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "death coil on snare target",
         NextAction::array(0, new NextAction("death coil on snare target", ACTION_INTERRUPT + 3), NULL)));
-
     triggers.push_back(new TriggerNode(
         "banish",
         NextAction::array(0, new NextAction("banish on cc", ACTION_INTERRUPT + 2), NULL)));
+
+    // PET-2: below fear so the owner's fear wins ties; the succubus gate in
+    // isUseful keeps this silent without a succubus out.
+    triggers.push_back(new TriggerNode(
+        "seduction",
+        NextAction::array(0, new NextAction("seduction on cc", ACTION_INTERRUPT), NULL)));
 
     triggers.push_back(new TriggerNode(
         "fear",

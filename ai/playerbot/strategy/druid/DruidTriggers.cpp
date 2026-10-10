@@ -37,6 +37,15 @@ bool InFeralFormTrigger::IsActive()
     return ai->HasAura("bear form", bot) || ai->HasAura("dire bear form", bot) || ai->HasAura("cat form", bot);
 }
 
+bool ThornsOnTankTrigger::IsActive()
+{
+    if (!BuffOnTankTrigger::IsActive())
+        return false;
+    // Don't apply thorns if fire shield (conflict) is on the tank.
+    Unit* target = GetTarget();
+    return target && !ai->HasAura("fire shield", target);
+}
+
 bool FerociousBiteExecuteTrigger::IsActive()
 {
     Unit* target = AI_VALUE(Unit*, "current target");
@@ -117,4 +126,9 @@ bool OocRebirthTrigger::IsTargetValid(Unit* target)
         }
     }
     return ShouldCastOocRebirth(state);
+}
+
+bool NoOffdpsTrigger::IsActive()
+{
+    return !ai->HasStrategy("offdps", BotState::BOT_STATE_COMBAT);
 }
