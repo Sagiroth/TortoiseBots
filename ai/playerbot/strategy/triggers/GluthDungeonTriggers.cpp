@@ -65,22 +65,3 @@ bool GluthTrigger::IsActive()
     }
     return false;
 }
-
-bool GluthChowUpTrigger::IsActive()
-{
-    if (PlayerbotAI::IsTank(bot))
-        return false;
-
-    // Cheap cached check only: any chow on the shared target lists.
-    // (Kept for status/introspection; the strategy drives triage off the
-    // continuous "gluth" trigger so the target also swaps back to boss.)
-    const std::list<ObjectGuid> targets =
-        ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
-    for (const ObjectGuid& guid : targets)
-    {
-        Unit* unit = ai->GetUnit(guid);
-        if (unit && unit->IsAlive() && unit->GetEntry() == 16360)
-            return true;
-    }
-    return false;
-}

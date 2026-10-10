@@ -29,17 +29,6 @@ namespace ai
         bool IsActive() override;
     };
 
-    // Chow triage trigger: live Zombie Chow (16360) within 30yd for a
-    // non-tank whose target is not already the execute chow.
-    class GluthChowUpTrigger : public Trigger
-    {
-    public:
-        GluthChowUpTrigger(PlayerbotAI* ai, std::string name = "gluth chow up", int checkInterval = 2)
-            : Trigger(ai, name, checkInterval) {}
-        std::string GetTargetName() override { return "self target"; }
-        bool IsActive() override;
-    };
-
     // Encounter trigger (donor parity: donor runs "gluth choose target"
     // off the continuous "gluth" trigger): Gluth himself on the shared
     // cached lists. Cheap cached check only - the chooser does the one

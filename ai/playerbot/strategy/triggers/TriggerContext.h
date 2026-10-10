@@ -372,7 +372,6 @@ namespace ai
             creators["start gluth fight"] = [](PlayerbotAI* ai) { return new GluthStartFightTrigger(ai); };
             creators["end gluth fight"] = [](PlayerbotAI* ai) { return new GluthEndFightTrigger(ai); };
             creators["gluth mortal wound swap"] = [](PlayerbotAI* ai) { return new GluthMortalWoundSwapTrigger(ai); };
-            creators["gluth chow up"] = [](PlayerbotAI* ai) { return new GluthChowUpTrigger(ai); };
             creators["gluth"] = [](PlayerbotAI* ai) { return new GluthTrigger(ai); };
             creators["start kel'thuzad fight"] = [](PlayerbotAI* ai) { return new KelthuzadStartFightTrigger(ai); };
             creators["end kel'thuzad fight"] = [](PlayerbotAI* ai) { return new KelthuzadEndFightTrigger(ai); };
