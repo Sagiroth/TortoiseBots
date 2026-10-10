@@ -54,8 +54,12 @@
 #include "generic/NaxxramasDungeonStrategies.h"
 #include "generic/EmeraldSanctumDungeonStrategies.h"
 #include "generic/LowerKarazhanDungeonStrategies.h"
+#include "generic/ClassicRaidDungeonStrategies.h"
 #include "generic/KarazhanCryptDungeonStrategies.h"
 #include "generic/GrobbulusDungeonStrategies.h"
+#include "generic/SapphironDungeonStrategies.h"
+#include "generic/HeiganDungeonStrategies.h"
+#include "generic/AnubrekhanDungeonStrategies.h"
 
 namespace ai
 {
@@ -115,6 +119,7 @@ namespace ai
             creators["close"] = [](PlayerbotAI* ai) { return new MeleeCombatStrategy(ai); };
             creators["ranged"] = [](PlayerbotAI* ai) { return new RangedCombatStrategy(ai); };
             creators["behind"] = [](PlayerbotAI* ai) { return new SetBehindCombatStrategy(ai); };
+            creators["tank face"] = [](PlayerbotAI* ai) { return new TankFaceStrategy(ai); };
             creators["battleground"] = [](PlayerbotAI* ai) { return new BattlegroundStrategy(ai); };
             creators["warsong"] = [](PlayerbotAI* ai) { return new WarsongStrategy(ai); };
             creators["alterac"] = [](PlayerbotAI* ai) { return new AlteracStrategy(ai); };
@@ -149,6 +154,7 @@ namespace ai
             creators["focus rti targets"] = [](PlayerbotAI* ai) { return new FocusRtiTargetsStrategy(ai); };
             creators["heal interrupt"] = [](PlayerbotAI* ai) { return new HealInterruptStrategy(ai); };
             creators["preheal"] = [](PlayerbotAI* ai) { return new PreHealStrategy(ai); };
+            creators["spread"] = [](PlayerbotAI* ai) { return new SpreadStrategy(ai); };
             creators["wbuff"] = [](PlayerbotAI* ai) { return new WorldBuffStrategy(ai); };
             // creators["wbuff travel"] = [](PlayerbotAI* ai) { return new WorldBuffTravelStrategy(ai); }; // E2E green: excluded
             creators["silent"] = [](PlayerbotAI* ai) { return new SilentStrategy(ai); };
@@ -162,6 +168,9 @@ namespace ai
             creators["molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreDungeonStrategy(ai); };
             creators["blackwing lair"] = [](PlayerbotAI* ai) { return new BlackwingLairDungeonStrategy(ai); };
             creators["naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasDungeonStrategy(ai); };
+            creators["zul'gurub"] = [](PlayerbotAI* ai) { return new ZulgurubDungeonStrategy(ai); };
+            creators["ruins of ahn'qiraj"] = [](PlayerbotAI* ai) { return new RuinsOfAhnqirajDungeonStrategy(ai); };
+            creators["ahn'qiraj temple"] = [](PlayerbotAI* ai) { return new AhnqirajTempleDungeonStrategy(ai); };
             creators["emerald sanctum"] = [](PlayerbotAI* ai) { return new EmeraldSanctumDungeonStrategy(ai); };
             creators["lower karazhan"] = [](PlayerbotAI* ai) { return new LowerKarazhanDungeonStrategy(ai); };
             creators["karazhan crypt"] = [](PlayerbotAI* ai) { return new KarazhanCryptDungeonStrategy(ai); };
@@ -169,9 +178,16 @@ namespace ai
             // Dungeon Boss Strategies
             creators["onyxia"] = [](PlayerbotAI* ai) { return new OnyxiaFightStrategy(ai); };
             creators["magmadar"] = [](PlayerbotAI* ai) { return new MagmadarFightStrategy(ai); };
+            creators["geddon"] = [](PlayerbotAI* ai) { return new GeddonFightStrategy(ai); };
             creators["suppression room"] = [](PlayerbotAI* ai) { return new SuppressionRoomStrategy(ai); };
+            creators["broodlord"] = [](PlayerbotAI* ai) { return new BroodlordFightStrategy(ai); };
+            creators["nefarian"] = [](PlayerbotAI* ai) { return new NefarianFightStrategy(ai); };
+            creators["vael"] = [](PlayerbotAI* ai) { return new VaelFightStrategy(ai); };
             creators["four horseman"] = [](PlayerbotAI* ai) { return new FourHorsemanFightStrategy(ai); };
             creators["grobbulus"] = [](PlayerbotAI* ai) { return new GrobbulusFightStrategy(ai); };
+            creators["sapphiron"] = [](PlayerbotAI* ai) { return new SapphironFightStrategy(ai); };
+            creators["heigan"] = [](PlayerbotAI* ai) { return new HeiganFightStrategy(ai); };
+            creators["anub'rekhan"] = [](PlayerbotAI* ai) { return new AnubrekhanFightStrategy(ai); };
             creators["solnius"] = [](PlayerbotAI* ai) { return new SolniusFightStrategy(ai); };
             creators["araxxna"] = [](PlayerbotAI* ai) { return new AraxxnaFightStrategy(ai); };
             creators["moroes"] = [](PlayerbotAI* ai) { return new MoroesFightStrategy(ai); };
