@@ -3004,6 +3004,12 @@ static bool HandleAction(ChatHandler* handler, char const* args)
         // Pull start/action are normal movement-priority actions.  A minimal
         // step filters them out and leaves the tank waiting for a later tick.
         ExecuteQuietNextAction(ai, false);
+        // The first step only runs "pull start". The walk to the firing position
+        // is the next one ("pull action" with its "reach pull" prerequisite), so
+        // whether the move started can only be judged after that step - judging
+        // it after the first one aborted every ranged pull the moment it began.
+        if (!bodyPull)
+            ExecuteQuietNextAction(ai, false);
 
         // A ranged pull closes the distance with a point move to a firing
         // position. If that move cannot be launched the tank stands where it
