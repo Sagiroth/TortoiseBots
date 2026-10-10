@@ -19,7 +19,7 @@ struct SufferingGateInputs
     bool hasPet = false;
     uint32_t currentPetEntry = 0;
     bool petTauntAllowed = false; // PET-3 predicate: solo or tankless group
-    uint8_t attackerCount = 0;    // mobs on the bot
+    uint8_t attackerCount = 0;    // mobs on the pet (not the owner)
 };
 
 // Suffering is AoE: needs several attackers to justify the cooldown and the

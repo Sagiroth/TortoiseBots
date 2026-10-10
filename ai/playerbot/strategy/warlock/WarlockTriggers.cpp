@@ -418,7 +418,10 @@ bool SufferingTrigger::IsActive()
     gate.currentPetEntry = pet->GetEntry();
     if (gate.currentPetEntry != TortoiseBots::WARLOCK_VOIDWALKER_ENTRY)
         return false;
-    gate.attackerCount = AI_VALUE(uint8, "my attacker count");
+    // Pack on the pet, not the owner: a tanking Voidwalker holds the mobs
+    // while the warlock stands free, so the owner's attacker set is empty
+    // exactly when Suffering is most needed.
+    gate.attackerCount = static_cast<uint8_t>(pet->GetAttackers().size());
     if (gate.attackerCount < 3)
         return false;
     gate.petTauntAllowed = ai::WarlockPetTauntAllowed(ai, bot);

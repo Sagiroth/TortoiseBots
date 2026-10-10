@@ -315,6 +315,10 @@ namespace ai
     {
     public:
         CastSufferingAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "suffering") {}
+        // Suffering radiates from the demon (implicit target A, caster src),
+        // so the pet is the target — never the owner's current target, which
+        // may be null or far away while the pet tanks the pack.
+        std::string GetTargetName() override { return "pet target"; }
         bool isUseful() override
         {
             Unit* pet = AI_VALUE(Unit*, "pet target");
@@ -324,8 +328,8 @@ namespace ai
             gate.hasPet = true;
             gate.currentPetEntry = pet->GetEntry();
             gate.petTauntAllowed = ai::WarlockPetTauntAllowed(ai, bot);
-            gate.attackerCount = AI_VALUE(uint8, "my attacker count");
-            return TortoiseBots::CanCastSuffering(gate) && CastPetSpellAction::isUseful();
+            gate.attackerCount = static_cast<uint8_t>(pet->GetAttackers().size());
+            return TortoiseBots::CanCastSuffering(gate);
         }
     };
 
@@ -338,6 +342,9 @@ namespace ai
         std::string GetTargetName() override { return "pet target"; }
         bool isUseful() override
         {
+            // Policy gate only: the base owner-cast isUseful reads the
+            // owner's spell state, which says nothing about a pet spell.
+            // Cooldown/knowledge/range stay in isPossible at execution time.
             Unit* pet = AI_VALUE(Unit*, "pet target");
             if (!pet)
                 return false;
@@ -348,7 +355,7 @@ namespace ai
             gate.petHealth = AI_VALUE2(uint8, "health", "pet target");
             gate.ownerInCombat = bot->IsInCombat();
             gate.mounted = AI_VALUE2(bool, "mounted", "self target");
-            return TortoiseBots::CanCastConsumeShadows(gate) && CastPetSpellAction::isUseful();
+            return TortoiseBots::CanCastConsumeShadows(gate);
         }
     };
 
