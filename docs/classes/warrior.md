@@ -35,6 +35,8 @@ Warriors serve as primary dungeon tanks or powerful melee DPS. The bot manages r
    - *Taunt* fires on the current target whenever it peels onto any non-tank member (not just healers/casters).
    - *Last Stand* (12975, per game data) triggers on the critical-health trigger (default 20).
    - *Shield Wall* triggers under severe incoming damage.
+   - *Taunt* fires on the current target whenever it peels onto any non-tank member (not just healers/casters).
+   - *Intervene* charges to a focused party member taking melee hits.
    - *Taunt* fires whenever the current target peels onto any non-tank member (not just healers/casters), outranking DPS spenders and interrupts.
 
 ### 2. Arms / Fury (DPS)
