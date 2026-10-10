@@ -4537,6 +4537,35 @@ blanket in queue dedup and failure backoff) + non-combat row `thorns on
 tank` at ACTION_NORMAL+3 in `DruidBuffStrategy`, above the party blanket
 at +2 (same BuffOnTank shape as priest PRI-1 `fear ward on tank`,
 verified on the PRI-1 branch).
+## Far-away leave (SOC-G2, 2026-10-09; SOC-G4 rejected, 2026-10-10)
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Base/Actions/LeaveGroupAction.cpp:156-159` (different map or
+distance >= 2xRpgDistance -> leave).
+SOC-G4 (`src/Ai/Base/Trigger/LfgTriggers.cpp:12-16`,
+`src/Ai/Base/Strategy/LfgStrategy.cpp:15-16`) was ported in the first
+version of this PR and removed on review: `PlayerbotAI::DoNextAction`
+already yields leadership to any in-world real player every tick (broader
+than the seldom node, which could never observe its precondition), and the
+node lacked the deliberate `dungeonCrew` exemption while its inherited
+`Execute` reset strategies mid-dungeon. No donor behavior is lost.
+
+Source files (module, modified): `ai/playerbot/GroupHygienePolicy.h` (new
+pure far-away gate),
+`ai/playerbot/strategy/actions/LeaveGroupAction.{cpp}` (far-away clause in
+LeaveFarAwayAction::isUseful, routed through the policy),
+`tools/test_group_hygiene_policy.cpp` (new standalone test),
+`tools/verify_all.sh` (register test) + `CHANGELOG.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) the clause evaluates above the
+member-safety veto loop - it reads only the bot and the live-resolved
+group master, and a cross-map master would otherwise veto its own leave
+(IsSafe requires same map), making the cross-map branch dead; (b) the
+far-away clause only binds when bot grouping is enabled
+(RandomBotGroupNearby) - otherwise the action is already useful further up.
+
+Reason: cross-map/straggler bots held dead groups.
 ## Warrior WAR-2 + WAR-6: shield-slam proc row and 40-rage gate (2026-10-09)
 
 Feature: (WAR-2) new `improved shield slam proc` trigger fires `shield

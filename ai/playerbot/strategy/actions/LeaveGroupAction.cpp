@@ -1,5 +1,5 @@
-
 #include "playerbot/GroupMembers.h"
+#include "playerbot/GroupHygienePolicy.h"
 #include "playerbot/playerbot.h"
 #include "../../runtime/PlayerbotAIStorage.h" // Headless storage shim
 #include "LeaveGroupAction.h"
@@ -72,6 +72,18 @@ namespace ai
 
         if (ai->HasActivePlayerMaster())
             return false;
+
+        // Far-away leave (SOC-G2): a different map, or more than twice the
+        // RPG roam distance away, means the bot cannot contribute to the
+        // group. Donor mod-playerbots LeaveFarAwayAction clause. This reads
+        // only the bot and the live-resolved group master, so it evaluates
+        // above the member-safety veto loop below: a cross-map master would
+        // otherwise veto its own leave (IsSafe requires same map), making
+        // the cross-map branch dead. Map sameness short-circuits inside the
+        // rule before distance is weighed.
+        if (ai::GroupFarAwayLeave(bot->GetMapId() == groupMaster->GetMapId(),
+            bot->GetDistance2d(groupMaster), sPlayerbotAIConfig.rpgDistance))
+            return true;
 
         for (Player* member : LiveGroupMembers(bot->GetGroup()))
         {
