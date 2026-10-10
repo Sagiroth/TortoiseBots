@@ -471,6 +471,10 @@ namespace ai
         std::string getName() override { return "seduction on cc"; }
         bool IsCrowdControlAction() const override { return true; }
         std::string GetCrowdControlSpellName() const override { return GetSpellName(); }
+        // CC, not DPS: banish/fear are THREAT_NONE so the threat multiplier
+        // never zeroes them — seduction must match or it fails exactly when
+        // the warlock is under pressure.
+        ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_NONE; }
         bool isPossible() override
         {
             // Succubus out on a humanoid mark — the only type the core lets
@@ -479,6 +483,10 @@ namespace ai
             // ctor-resolved spellId stays 0 when no succubus is out at first
             // creation, which would fail the pet HasSpell check forever.
             Unit* target = GetTarget();
+            // A dotted mark breaks on the first tick and re-seduces forever:
+            // refuse it like the free-pick and auto-CC choosers already do.
+            if (target && target->HasAuraType(SPELL_AURA_PERIODIC_DAMAGE))
+                return false;
             TortoiseBots::SeductionGateInputs gate;
             Unit* pet = AI_VALUE(Unit*, "pet target");
             gate.hasPet = pet != nullptr;

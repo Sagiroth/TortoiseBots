@@ -138,6 +138,15 @@ bool PossibleAttackTargetsValue::HasBreakableCC(Unit* target, Player* player)
         {
             return true;
         }
+
+        // Succubus Seduction is a breakable charm: DPS filtering, pet
+        // attacks and the CC-over-CC guard all consult this list, so a
+        // seduced mark must read as held here (not just in the AoE
+        // interlock) or our own side breaks it.
+        if (ai->HasAura("seduction", target))
+        {
+            return true;
+        }
     }
 
     return false;

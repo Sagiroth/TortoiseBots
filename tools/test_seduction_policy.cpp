@@ -56,6 +56,7 @@ static void TestNonHumanoidsStayQuiet()
     CHECK(!CanCastSeduction(Mark(WARLOCK_SUCCUBUS_PET_ENTRY, 3)));
     CHECK(!CanCastSeduction(Mark(WARLOCK_SUCCUBUS_PET_ENTRY, 4)));
     CHECK(!CanCastSeduction(Mark(WARLOCK_SUCCUBUS_PET_ENTRY, 6)));
+    CHECK(!CanCastSeduction(Mark(WARLOCK_SUCCUBUS_PET_ENTRY, 9)));
 }
 
 static void TestPlayersStayQuiet()
