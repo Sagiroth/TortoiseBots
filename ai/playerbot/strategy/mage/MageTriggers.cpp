@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/HotStreakPolicy.h"
 #include "MageTriggers.h"
 #include "MageActions.h"
 
@@ -47,6 +48,27 @@ bool ManaShieldTrigger::IsActive()
         return false;
 
     return !ai->HasAura("mana shield", bot) && AI_VALUE2(uint8, "mana", "self target") > sPlayerbotAIConfig.mediumMana;
+}
+
+bool HotStreakTrigger::IsActive()
+{
+    // Proc auras only (51930/51931): the talent auras 51927/51928 share
+    // the "Hot Streak" name and sit on the bot permanently, so a
+    // name-based HasAura check would fire on every tick for any talented
+    // bot. Turtle's proc stacks cast-time reduction (5 stacks ≈ instant);
+    // fire only at full stacks so a 1-stack proc is not spent early.
+    HotStreakState state{false, 0, false, 0};
+    if (Aura* aura = ai->GetAura(HOT_STREAK_PROC_RANK_1, bot))
+    {
+        state.hasProcRank1 = true;
+        state.procRank1Stacks = aura->GetStackAmount();
+    }
+    if (Aura* aura = ai->GetAura(HOT_STREAK_PROC_RANK_2, bot))
+    {
+        state.hasProcRank2 = true;
+        state.procRank2Stacks = aura->GetStackAmount();
+    }
+    return ShouldCastHotStreakPyroblast(state);
 }
 
 bool NoImprovedScorchDebuffTrigger::IsActive()
