@@ -4523,39 +4523,35 @@ expires; ~20% of all stall time sits in WORK.
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
 
-## Far-away leave + give-leader-in-dungeon (SOC-G2/SOC-G4, 2026-10-09)
+## Far-away leave (SOC-G2, 2026-10-09; SOC-G4 rejected, 2026-10-10)
 
 Donor: mod-playerbots (`79bd4281`):
 `src/Ai/Base/Actions/LeaveGroupAction.cpp:156-159` (different map or
-distance >= 2xRpgDistance -> leave),
-`src/Ai/Base/Trigger/LfgTriggers.cpp:12-16` (UnknownDungeonTrigger: real
-master in dungeon on the bot's map),
-`src/Ai/Base/Strategy/LfgStrategy.cpp:15-16` (unknown dungeon -> give
-leader in dungeon).
+distance >= 2xRpgDistance -> leave).
+SOC-G4 (`src/Ai/Base/Trigger/LfgTriggers.cpp:12-16`,
+`src/Ai/Base/Strategy/LfgStrategy.cpp:15-16`) was ported in the first
+version of this PR and removed on review: `PlayerbotAI::DoNextAction`
+already yields leadership to any in-world real player every tick (broader
+than the seldom node, which could never observe its precondition), and the
+node lacked the deliberate `dungeonCrew` exemption while its inherited
+`Execute` reset strategies mid-dungeon. No donor behavior is lost.
 
 Source files (module, modified): `ai/playerbot/GroupHygienePolicy.h` (new
-pure gates for both behaviors),
+pure far-away gate),
 `ai/playerbot/strategy/actions/LeaveGroupAction.{cpp}` (far-away clause in
 LeaveFarAwayAction::isUseful, routed through the policy),
-`ai/playerbot/strategy/actions/PassLeadershipToMasterAction.h` (new
-GiveLeaderInDungeonAction: master target + dungeon gate via the policy),
-`ai/playerbot/strategy/actions/WorldPacketActionContext.h` (creator now
-builds the dungeon action),
-`ai/playerbot/strategy/generic/GroupStrategy.cpp` (seldom-tick dungeon
-node), `tools/test_group_hygiene_policy.cpp` (new standalone test),
+`tools/test_group_hygiene_policy.cpp` (new standalone test),
 `tools/verify_all.sh` (register test) + `CHANGELOG.md` (doc line).
 
 Copied / ported / reimplemented: reimplemented in place. Deviations from
-the donor, all deliberate: (a) no LfgStrategy exists here, so the dungeon
-node rides GroupStrategy's seldom tick (the live path for grouped bots)
-and the gate lives in the action's isUseful instead of a trigger class;
-(b) the dungeon action targets the master (strategy events carry no
-whisper owner, which the chat action's event.GetOwner() would need);
-(c) the far-away clause only binds when bot grouping is enabled
+the donor, all deliberate: (a) the clause evaluates above the
+member-safety veto loop - it reads only the bot and the live-resolved
+group master, and a cross-map master would otherwise veto its own leave
+(IsSafe requires same map), making the cross-map branch dead; (b) the
+far-away clause only binds when bot grouping is enabled
 (RandomBotGroupNearby) - otherwise the action is already useful further up.
 
-Reason: cross-map/straggler bots held dead groups, and a bot leading inside
-a dungeon kept leadership it could not use while its master knew the way.
+Reason: cross-map/straggler bots held dead groups.
 
 Local validation: `bash tools/verify_all.sh` (incl. new policy test +
 wiring check live-missing=0); `git diff --check`; shared-builder compile

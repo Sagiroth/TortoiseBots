@@ -10,7 +10,6 @@
     } \
 } while (0)
 
-using ai::DungeonLeadershipYield;
 using ai::GroupFarAwayLeave;
 
 int main()
@@ -18,6 +17,8 @@ int main()
     std::cout << "Starting TortoiseBots group-hygiene gate tests...\n";
 
     // SOC-G2: cross-map groups always leave (no contribution possible).
+    // The caller evaluates this above the member-safety veto loop, so a
+    // cross-map master cannot veto its own leave.
     CHECK(GroupFarAwayLeave(false, 10.0f, 200.0f));
     CHECK(GroupFarAwayLeave(false, 0.0f, 200.0f));
     std::cout << "  [PASS] cross-map group leaves\n";
@@ -31,19 +32,6 @@ int main()
     CHECK(!GroupFarAwayLeave(true, 0.0f, 200.0f));
     CHECK(!GroupFarAwayLeave(true, 399.9f, 200.0f));
     std::cout << "  [PASS] nearby group stays\n";
-
-    // SOC-G4: leader bot + live real master + same-map dungeon yields.
-    CHECK(DungeonLeadershipYield(true, true, true, true, true));
-    std::cout << "  [PASS] dungeon leadership yields\n";
-
-    // SOC-G4: any missing clause keeps leadership.
-    CHECK(!DungeonLeadershipYield(false, true, true, true, true));
-    CHECK(!DungeonLeadershipYield(true, false, true, true, true));
-    CHECK(!DungeonLeadershipYield(true, true, false, true, true));
-    CHECK(!DungeonLeadershipYield(true, true, true, false, true));
-    CHECK(!DungeonLeadershipYield(true, true, true, true, false));
-    CHECK(!DungeonLeadershipYield(false, false, false, false, false));
-    std::cout << "  [PASS] every missing clause keeps leadership\n";
 
     std::cout << "All TortoiseBots group-hygiene gate tests passed.\n";
     return 0;

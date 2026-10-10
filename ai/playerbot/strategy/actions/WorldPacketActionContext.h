@@ -39,7 +39,7 @@ namespace ai
             creators["bg status"] = [](PlayerbotAI* ai) { return new BGStatusAction(ai); };
             creators["bg leave"] = [](PlayerbotAI* ai) { return new BGLeaveAction(ai); };
             creators["accept invitation"] = [](PlayerbotAI* ai) { return new AcceptInvitationAction(ai); };
-            creators["give leader in dungeon"] = [](PlayerbotAI* ai) { return new GiveLeaderInDungeonAction(ai); };
+            creators["give leader in dungeon"] = [](PlayerbotAI* ai) { return new GiveLeaderAction(ai, "I don't know this dungeon, lead the way!"); };
             creators["leader"] = [](PlayerbotAI* ai) { return new PassLeadershipToMasterAction(ai); };
             creators["tell not enough money"] = [](PlayerbotAI* ai) { return new TellMasterAction(ai, "Not enough money"); };
             creators["tell not enough reputation"] = [](PlayerbotAI* ai) { return new TellMasterAction(ai, "Not enough reputation"); };
