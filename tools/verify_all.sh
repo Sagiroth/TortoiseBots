@@ -7,6 +7,7 @@ cd "${ROOT_DIR}"
 
 echo "=== 1. Verifying Open Knowledge Format (OKF) Docs ==="
 python3 tools/verify_okf.py
+python3 tools/verify_manual_value_types.py
 echo "✓ OKF docs verified."
 
 echo ""
