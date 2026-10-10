@@ -353,6 +353,68 @@ void ShamanOffhealRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& t
     OffhealRaidStrategy::InitNonCombatTriggers(triggers);
 }
 
+void ShamanOffdpsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    OffdpsStrategy::InitCombatTriggers(triggers);
+
+    // Resto healer damage (mod-playerbots parity SHM-1, priest offdps
+    // pattern): only while nobody needs healing and mana is comfortable
+    // (`healer should attack` gate), at the lowest relevance so every heal
+    // outbids it. Flame shock first for the DoT, then lightning bolt filler;
+    // chain lightning only into a ranged pack.
+    triggers.push_back(new TriggerNode(
+        "healer should attack",
+        NextAction::array(0,
+            new NextAction("flame shock", ACTION_DEFAULT + 0.2f),
+            new NextAction("lightning bolt", ACTION_DEFAULT), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "ranged medium aoe and healer should attack",
+        NextAction::array(0, new NextAction("chain lightning", ACTION_DEFAULT + 0.3f), NULL)));
+}
+
+void ShamanOffdpsStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    OffdpsStrategy::InitNonCombatTriggers(triggers);
+}
+
+void ShamanOffdpsPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    ShamanOffdpsStrategy::InitCombatTriggers(triggers);
+    OffdpsPvpStrategy::InitCombatTriggers(triggers);
+}
+
+void ShamanOffdpsPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    ShamanOffdpsStrategy::InitNonCombatTriggers(triggers);
+    OffdpsPvpStrategy::InitNonCombatTriggers(triggers);
+}
+
+void ShamanOffdpsPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    ShamanOffdpsStrategy::InitCombatTriggers(triggers);
+    OffdpsPveStrategy::InitCombatTriggers(triggers);
+}
+
+void ShamanOffdpsPveStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    ShamanOffdpsStrategy::InitNonCombatTriggers(triggers);
+    OffdpsPveStrategy::InitNonCombatTriggers(triggers);
+}
+
+void ShamanOffdpsRaidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    ShamanOffdpsStrategy::InitCombatTriggers(triggers);
+    OffdpsRaidStrategy::InitCombatTriggers(triggers);
+}
+
+void ShamanOffdpsRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    ShamanOffdpsStrategy::InitNonCombatTriggers(triggers);
+    OffdpsRaidStrategy::InitNonCombatTriggers(triggers);
+}
+
+
 void ShamanTotemsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
 

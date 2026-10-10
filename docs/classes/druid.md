@@ -17,7 +17,10 @@ Druids are the ultimate hybrid class, able to fulfill Tank, Healer, Melee DPS, o
 
 - **Feral (Bear Tank):** Dire Bear Form tank specializing in *Growl*, *Maul*, *Swipe*, and *Demoralizing Roar*, with *Frenzied Regeneration*, *Challenging Roar*, *Mangle (Bear)*, *Faerie Fire (Feral)*, and *Enrage* also wired.
 - **Feral (Cat Melee DPS):** Cat Form stealth and energy specialist utilizing *Claw*, *Rake*, *Shred* (with *Mangle (Cat)* as fallback), *Rip*, and *Ferocious Bite*, with *Pounce*, *Ravage*, and *Tiger's Fury* also wired. Backs off with *Cower* at medium threat in any group, not just raids.
+- **Ferocious Bite windows:** bite fires early on a dying target (under 25% health, 1+ combo points) instead of waiting for 5; at 5 points it fires only when *Rip* is absent or healthy (over 10 s left), so bite never clips a Rip refresh. Finisher order: execute-bite, then Rip, then timed bite.
 - **Restoration (Healer):** HoT-focused healing with *Rejuvenation*, *Regrowth*, *Healing Touch*, and *Swiftmend*, with *Nature's Swiftness* and *Tranquility* also wired.
+- **Nature's Swiftness emergency chain:** on a critically hurt party member the druid pops *Nature's Swiftness*, then spends the buff on an instant *Healing Touch* before anything else can eat the aura. The pop sits above Swiftmend and the spend right below it, so the buff is used on the very next cast.
+- **Omen of Clarity procs:** a Clearcasting proc buys a free *Shred* for Cat (above the whole builder/finisher ladder) or a free party *Rejuvenation* for Restoration (above the normal HoT rows) — procs are spent, never left idle.
 - **Balance (Ranged DPS):** Moonkin caster driving Nature and Arcane damage via *Moonfire*, *Wrath*, *Starfire*, and *Insect Swarm*.
 - **Balance AoE:** casts *Hurricane* on packs of 3+ attackers in spell range.
 - **Below level 10 (`leveling` kit):** Neither the Feral nor the Balance kit is affordable yet, so the bot runs the dedicated leveling set: it fights in melee (auto-attack is its default action), keeps *Moonfire* applied, and heals itself with *Healing Touch*/*Rejuvenation*. It closes distance like every other melee kit — an out-of-melee enemy is walked into contact, and *Wrath* lands whenever the bot cannot move (rooted, stunned, or a target it gave up reaching).
@@ -61,8 +64,11 @@ The bot's shapeshifting engine maintains the appropriate form based on assigned 
   - Casts *Bash* (Bear) as an interrupt (also wired against enemy healers).
 - **Combat Resurrection:**
   - Uses *Rebirth* (Battle Rez) on the first dead party member mid-fight (no tank/healer priority).
+- **Out-of-Combat Resurrection:**
+  - Burns *Rebirth* on a dead party member out of combat only when no living priest, paladin or shaman is in the group — their normal resurrection is always preferred over the 30 min battle rez. (Vanilla druids have no normal resurrect; the only *Revive* row in game data is a boss spell, not a trainable druid spell.)
 - **Innervate:**
   - Casts *Innervate* on the lowest-mana party healer below the `AiPlayerbot.LowMana` threshold (default 15%), falling back to self when solo or healers are healthy. Manual `.bot boost` assignments win over automation. Shifts to caster form first (required by Turtle 1.18.1 shapeshift rules).
+- **Cat feeds the healer:** a Feral cat with no thirsty healer of its own still watches the group's mana — when a party healer drops below the line, the cat shifts out and sends them *Innervate* (below Cower, above the rotation).
 - **Barkskin:**
   - Balance/Restoration cast *Barkskin* on own-health triggers (medium-health band in the Balance/Restoration combat sets, almost-full-health band in the generic set); never wired for Feral (Cat/Bear lose form bonuses under Turtle 1.18.1 attack-speed and shapeshift penalties).
 - **Party Buffs:**

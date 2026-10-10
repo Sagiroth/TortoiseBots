@@ -98,6 +98,20 @@ namespace ai
         bool Execute(Event& event) override;
     };
 
+    // Vaelastrasz Burning Adrenaline refinement (mod-playerbots parity):
+    // flees by weighted repulsion from non-BA bots (BA carriers cluster),
+    // the boss's victim holds while Vael lives, tail-sweep recovery past
+    // 30y walks back, ranged past 25y blends toward the boss. Queued by the
+    // universal "raid bomb debuff" trigger only while +vael is active; the
+    // generic anchor-flee stays the fallback for every other bomb.
+    class VaelBurningAdrenalineFleeAction : public MovementAction
+    {
+    public:
+        VaelBurningAdrenalineFleeAction(PlayerbotAI* ai, std::string name = "vael adrenaline flee") : MovementAction(ai, name) {}
+        bool Execute(Event& event) override;
+        bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
+    };
+
     // Universal raid survival: ranged spread. Steps 10-12yd away from the
     // nearest stacked friendly so chain abilities cannot bracket casters.
     class RaidSpreadAction : public MovementAction

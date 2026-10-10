@@ -1,6 +1,7 @@
 // Vanilla/Tortoise trade lockpicking action.
 
 #include "playerbot/playerbot.h"
+#include "playerbot/TradeLockboxPolicy.h"
 #include "UnlockTradedItemAction.h"
 #include "Database/DBCStores.h"
 #include "Objects/Item.h"
@@ -12,6 +13,17 @@
 #include <sstream>
 
 inline constexpr uint32_t PICK_LOCK_SPELL_ID = 1804;
+
+bool UnlockTradedItemAction::isUseful()
+{
+    Player* trader = bot->GetTrader();
+    TradeData* tradeData = trader ? bot->GetTradeData() : nullptr;
+    Item* lockbox = tradeData ? tradeData->GetTraderData()->GetItem(TRADE_SLOT_NONTRADED) : nullptr;
+    ItemPrototype const* proto = lockbox ? lockbox->GetProto() : nullptr;
+    return ai::TradeLockboxUseful(bot->GetClass() == CLASS_ROGUE, lockbox && proto,
+        proto && proto->LockID != 0,
+        lockbox && lockbox->HasFlag(ITEM_FIELD_FLAGS, ITEM_DYNFLAG_UNLOCKED));
+}
 
 bool UnlockTradedItemAction::Execute(Event& event)
 {

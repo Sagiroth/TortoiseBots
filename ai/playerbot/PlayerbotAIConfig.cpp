@@ -243,6 +243,7 @@ bool PlayerbotAIConfig::Initialize()
     jumpHSpeed = config.GetFloatDefault("AiPlayerbot.JumpHSpeed", 7.0f);
     jumpInBg = config.GetBoolDefault("AiPlayerbot.JumpInBg", false);
     jumpWithPlayer = config.GetBoolDefault("AiPlayerbot.JumpWithPlayer", false);
+    forceRebuffOnReadyCheck = config.GetBoolDefault("AiPlayerbot.ForceRebuffOnReadyCheck", false);
     jumpFollow = config.GetBoolDefault("AiPlayerbot.JumpFollow", true);
     jumpChase = config.GetBoolDefault("AiPlayerbot.JumpChase", true);
     useKnockback = config.GetBoolDefault("AiPlayerbot.UseKnockback", true);
@@ -845,6 +846,7 @@ bool PlayerbotAIConfig::Initialize()
     //SPP automation
     autoPickReward = config.GetStringDefault("AiPlayerbot.AutoPickReward", "yes");
     autoEquipUpgradeLoot = config.GetBoolDefault("AiPlayerbot.AutoEquipUpgradeLoot", true);
+    equipUpgradeThreshold = config.GetFloatDefault("AiPlayerbot.EquipUpgradeThreshold", 1.1f);
     syncQuestWithPlayer = config.GetBoolDefault("AiPlayerbot.SyncQuestWithPlayer", false);
     syncQuestForPlayer = config.GetBoolDefault("AiPlayerbot.SyncQuestForPlayer", false);
     autoTrainSpells = config.GetStringDefault("AiPlayerbot.AutoTrainSpells", "yes");

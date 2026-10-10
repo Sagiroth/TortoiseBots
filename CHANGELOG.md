@@ -1,7 +1,17 @@
 # Changelog
 
+- Warlock Immolate now spreads to extra attackers instead of only the main target — Demonology and Destruction keep it up at spec level, all specs spread it with the aoe strategy on.
+- Warlock DoTs spread to extra attackers even with the aoe strategy off — Affliction keeps Corruption and Siphon Life up at spec level, Demonology keeps Corruption up, at low priority under the main rotation and mana recovery.
+- Warlocks cast Unending Breath on themselves and the party while swimming instead of never casting it.
+- Warlocks can snare runners with Curse of Exhaustion — order `.bot strategy +curse exhaustion` and the bot slows fleeing or chasing targets instead of only the main target.
+
 ### Bots & Behavior
+- Masterless bots stop accepting quests they cannot finish alone — over-level, elite/dungeon and group-suggested quests are refused at the giver instead of being picked up and dropped later. Grouped bots that can fight bosses and player-owned bots are unchanged.
 - Bots pick the better quest reward when two are equally usable — tied rewards are now broken by stat weight for the bot instead of taking whatever the vendor lists first.
+- Whispering a bot `pull back` now works like `pull` — it pulls your target; whispering `attackers` now answers with who is attacking instead of staying silent.
+- Rogue bots now pick locked boxes mid-trade — when a trader parks a lockbox in the do-not-trade slot, a rogue bot unlocks it instead of letting the trade complete around it. Whispering a rogue `unlock traded item` forces it manually.
+- Bots stop swapping gear for tiny gains — an upgrade must now beat the old item by 10% of stat weight (`AiPlayerbot.EquipUpgradeThreshold`, mod-playerbots parity) instead of swapping on any epsilon difference. Set it to `1.0` for the old any-gain behavior.
+- Bots can now finish buffing before answering a ready check — with `AiPlayerbot.ForceRebuffOnReadyCheck = 1`, a bot that gets a ready check out of combat reports its status right away but holds the confirm until its buffs settle (or 30 seconds pass), instead of answering ready and buffing through the pull. Off by default.
 - Bots no longer get stuck on the Deeprun Tram — wandering bots could be routed through the tram between Stormwind and Ironforge but cannot ride the train, so they stood on the platform for good; their routes now go overland, and any bot already stranded there is moved out through the nearest station exit.
 - Bots stranded on islands without travel routes (Lapidis Isle) no longer stand at the shore forever — after three destinations in a row fail from the same spot they are moved to the nearest travel route instead of an island graveyard they would just walk back from.
 - Druids no longer freeze in place re-applying their strategies — balance, restoration and bear druids carrying the stealth strategy kept trying to add a stealth variant that does not exist for their spec, which took up every turn they should have spent moving.

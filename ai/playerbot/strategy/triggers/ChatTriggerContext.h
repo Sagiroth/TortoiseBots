@@ -57,6 +57,7 @@ namespace ai
             creators["attack"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "attack"); };
             creators["attack rti"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "attack rti"); };
             creators["pull"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "pull"); };
+            creators["pull back"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "pull back"); };
             creators["pull rti"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "pull rti"); };
             creators["chat"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "chat"); };
             creators["accept"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "accept"); };
@@ -126,6 +127,7 @@ namespace ai
             creators["range"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "range"); };
             creators["ra"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "ra"); };
             creators["give leader"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "give leader"); };
+            creators["unlock traded item"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "unlock traded item"); };
             creators["cheat"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "cheat"); };
             creators["ah"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "ah"); };
             creators["ah bid"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "ah bid"); };

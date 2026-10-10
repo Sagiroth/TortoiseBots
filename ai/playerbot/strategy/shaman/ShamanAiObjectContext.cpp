@@ -24,6 +24,7 @@ namespace ai
                 creators["boost"] = [](PlayerbotAI* ai) { return new BoostPlaceholderStrategy(ai); };
                 creators["pull"] = [](PlayerbotAI* ai) { return new PullStrategy(ai, "lightning bolt"); };
                 creators["offheal"] = [](PlayerbotAI* ai) { return new OffhealPlaceholderStrategy(ai); };
+                creators["offdps"] = [](PlayerbotAI* ai) { return new OffdpsPlaceholderStrategy(ai); };
             }
         };
 
@@ -105,6 +106,17 @@ namespace ai
                 creators["offheal raid"] = [](PlayerbotAI* ai) { return new ShamanOffhealRaidStrategy(ai); };
             }
         };
+        class OffdpsSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
+        {
+        public:
+            OffdpsSituationStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
+            {
+                creators["offdps pve"] = [](PlayerbotAI* ai) { return new ShamanOffdpsPveStrategy(ai); };
+                creators["offdps pvp"] = [](PlayerbotAI* ai) { return new ShamanOffdpsPvpStrategy(ai); };
+                creators["offdps raid"] = [](PlayerbotAI* ai) { return new ShamanOffdpsRaidStrategy(ai); };
+            }
+        };
+
 
         class BoostSituationStrategyFactoryInternal : public NamedObjectContext<Strategy>
         {
@@ -259,6 +271,7 @@ namespace ai
                 creators["water breathing on party"] = [](PlayerbotAI* ai) { return new WaterBreathingOnPartyTrigger(ai); };
                 creators["water walking on party"] = [](PlayerbotAI* ai) { return new WaterWalkingOnPartyTrigger(ai); };
                 creators["shock"] = [](PlayerbotAI* ai) { return new ShockTrigger(ai); };
+                creators["earth shock execute"] = [](PlayerbotAI* ai) { return new EarthShockExecuteTrigger(ai); };
                 creators["flame shock upkeep"] = [](PlayerbotAI* ai) { return new FlameShockTrigger(ai); };
                 creators["earth shock interrupt"] = [](PlayerbotAI* ai) { return new EarthShockInterruptSpellTrigger(ai); };
                 creators["earth shock on enemy healer"] = [](PlayerbotAI* ai) { return new EarthShockInterruptEnemyHealerSpellTrigger(ai); };
@@ -271,6 +284,12 @@ namespace ai
                 creators["fire totem"] = [](PlayerbotAI* ai) { return new FireTotemTrigger(ai); };
                 creators["fire totem aoe"] = [](PlayerbotAI* ai) { return new FireTotemAoeTrigger(ai); };
                 creators["earth totem"] = [](PlayerbotAI* ai) { return new EarthTotemTrigger(ai); };
+                creators["stoneclaw panic"] = [](PlayerbotAI* ai) { return new StoneclawPanicTrigger(ai); };
+                creators["tremor totem reactive"] = [](PlayerbotAI* ai) { return new TremorTotemReactiveTrigger(ai); };
+                creators["earthbind totem reactive"] = [](PlayerbotAI* ai) { return new EarthbindTotemReactiveTrigger(ai); };
+                creators["grounding totem reactive"] = [](PlayerbotAI* ai) { return new GroundingTotemReactiveTrigger(ai); };
+                creators["poison cleansing totem reactive"] = [](PlayerbotAI* ai) { return new PoisonCleansingTotemReactiveTrigger(ai); };
+                creators["disease cleansing totem reactive"] = [](PlayerbotAI* ai) { return new DiseaseCleansingTotemReactiveTrigger(ai); };
                 creators["water totem"] = [](PlayerbotAI* ai) { return new WaterTotemTrigger(ai); };
                 creators["air totem"] = [](PlayerbotAI* ai) { return new AirTotemTrigger(ai); };
                 creators["call of the elements"] = [](PlayerbotAI* ai) { return new TotemsAreNotSummonedTrigger(ai); };
@@ -381,6 +400,7 @@ ShamanAiObjectContext::ShamanAiObjectContext(PlayerbotAI* ai) : AiObjectContext(
     strategyContexts.Add(new ai::shaman::ClassSituationStrategyFactoryInternal());
     strategyContexts.Add(new ai::shaman::BuffSituationStrategyFactoryInternal());
     strategyContexts.Add(new ai::shaman::OffhealSituationStrategyFactoryInternal());
+    strategyContexts.Add(new ai::shaman::OffdpsSituationStrategyFactoryInternal());
     strategyContexts.Add(new ai::shaman::BoostSituationStrategyFactoryInternal());
     actionContexts.Add(new ai::shaman::AiObjectContextInternal());
     triggerContexts.Add(new ai::shaman::TriggerFactoryInternal());

@@ -394,6 +394,7 @@ bool IsRaidDragonEntry(uint32 entry)
         case 11981: // Flamegor
         case 11983: // Firemaw
         case 11583: // Nefarian
+        case 13020: // Vaelastrasz the Corrupt
         case 60748: // Solnius (Emerald Sanctum, Acid Breath 24839)
             return true;
         default:
@@ -411,10 +412,16 @@ bool DragonBreathRiskTrigger::IsActive()
         return false;
     if (!IsRaidDragonEntry(target->GetEntry()))
         return false;
-    // Tanks hold the head; the trigger tells non-tanks to flank. Tank
-    // positioning itself is an explicit .bot raid tankface command.
+    // The head-holding tank stays; everyone else flanks — including
+    // off-tanks that are not the victim (Firemaw/Ebonroc/Flamegor spare
+    // tanks, mod-playerbots parity). Tank positioning itself is an
+    // explicit .bot raid tankface command.
     if (ai->IsTank(bot))
-        return false;
+    {
+        Unit* victim = target->GetVictim();
+        if (!victim || victim->getObjectGuid() == bot->getObjectGuid())
+            return false;
+    }
     const float dist = bot->GetDistance(target);
     if (dist > sPlayerbotAIConfig.spellDistance + 10.0f)
         return false;
@@ -590,4 +597,36 @@ bool BossWantsShadowAuraTrigger::IsActive()
         }
     }
     return ShouldSwapResistAura(false, wantShadow, false, hasShadowAura);
+}
+
+bool SpreadNeededTrigger::IsActive()
+{
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+        return false;
+    // Opt-in spread: combat-only, hold orders veto. Ownership and
+    // ranged-only never gate — the strategy on the bot is the consent.
+    // Tanks never spread (see RaidSpreadAction: dragging the boss).
+    if (ai->IsTank(bot))
+        return false;
+    if (!ShouldOptInSpread(sServerFacade.IsInCombat(bot),
+        ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("guard", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
+        ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)))
+        return false;
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+    float const radius = SpreadRadius(AI_VALUE(float, "spread distance"), ai->IsRanged(bot));
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || member == bot || !sServerFacade.IsAlive(member))
+            continue;
+        if (member->GetMapId() != bot->GetMapId())
+            continue;
+        if (sServerFacade.getDistance2d(bot, member) < radius)
+            return true;
+    }
+    return false;
 }
