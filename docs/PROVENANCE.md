@@ -5852,3 +5852,40 @@ standalone test).
 HIGH+2 tie resolves to the execute row winning (verified `Queue::Peek`
 strict-`>`); doc now says "hurries" not "free/instant" (no mana
 reduction in the tooltip); live in-game check still pending.
+
+## Mage threat dump NOT ported: Lesser Invisibility unobtainable (MAG-4) — 2026-10-10
+
+Donor: mod-playerbots (`79bd4281`)
+`src/Ai/Class/Mage/Strategy/GenericMageStrategy.cpp:96-97` (`high
+threat` → mirror image, `medium threat` → invisibility).
+
+Decision: WONTFIX (dead code removed instead). Availability check in
+`tw_world`, all negative:
+- `npc_trainer` (38,037 rows): zero rows teach Lesser Invisibility (66),
+Invisibility (885), or the trigger-teacher spells 515/886/1202/1237
+(which would grant 66/885 via effect-36).
+- Tomes of Lesser Invisibility (item 1002) / Invisibility (item 4160):
+zero `npc_vendor` rows, zero `creature_loot_template` /
+`gameobject_loot_template` / `fishing_loot_template` rows, zero
+`quest_template` item/spell rewards (`RewSpell`/`RewSpellCast`/`RewItem*`
+all empty for these ids). No obtain path exists in 1.18.1.
+- Mirror Image (the donor's high-threat answer) likewise has no
+player-learnable 1.18.1 form.
+
+Source files (module, modified):
+`ai/playerbot/strategy/mage/MageActions.h` (deleted
+`CastLesserInvisibilityAction`, 6 lines),
+`ai/playerbot/strategy/mage/MageAiObjectContext.cpp` (deleted the
+`lesser invisibility` registration, 1 line). Zero references to
+`lesser invisibility` remain in `ai/`. No strategy rows ever referenced
+it (the donor's `medium threat` → invisibility row was never ported),
+so no trigger wiring changes. `ThreatMultiplier` (zeroes DPS at high
+threat) stays the only mage threat response.
+
+Reason: the registered-but-never-triggered action was dead weight
+promising a spell no bot can ever learn; wiring a trigger to it would
+produce an every-fight failing cast.
+
+Local validation: `bash tools/verify_all.sh`; `git diff --check`;
+shared-builder compile via `build-commit.sh` (BUILD OK); no live test
+(nothing behaviourally changes — the action never fired).
