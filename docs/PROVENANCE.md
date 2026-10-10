@@ -4527,6 +4527,47 @@ expires; ~20% of all stall time sits in WORK.
 
 Local validation: `bash tools/verify_all.sh` (run before commit); `git diff
 --check`. No build (per task constraints); live in-game check pending.
+
+## WSG bodyguard + objective reset (SOC-P5/SOC-P6, 2026-10-09)
+
+Donor: mod-playerbots (`79bd4281`):
+`src/Ai/Base/Strategy/BattlegroundStrategy.cpp:24` (generic `dead` ->
+`bg reset objective force`), `:31` (Warsong `team flagcarrier near` ->
+`bg protect fc`), `:36` (Warsong `timer bg` -> force), Alterac `:41`
+(timer bg -> force),
+`src/Ai/Base/Actions/BattleGroundTactics.cpp:1631-1643` (force branch:
+stop + clear motion + resetObjective unless carrying),
+`src/Ai/Base/Trigger/GenericTriggers.{h:634-643,cpp:480-491}`
+(TimerBGTrigger, ~60 s watchdog).
+
+Source files (module, modified): `ai/playerbot/BgForceResetPolicy.h` (new
+pure gate: in-match, out-of-combat, once per 60 s),
+`ai/playerbot/strategy/actions/BattleGroundTactics.{h,cpp}` (force branch +
+isUseful gate + anchor stamp),
+`ai/playerbot/strategy/actions/ActionContext.h` (force creator),
+`ai/playerbot/strategy/triggers/PvpTriggers.{h,cpp}` (new TimerBgTrigger),
+`ai/playerbot/strategy/triggers/TriggerContext.h` (timer-bg + team
+flagcarrier-near creators),
+`ai/playerbot/strategy/generic/BattlegroundStrategy.cpp` (Warsong
+bodyguard + timer nodes, Alterac timer node),
+`ai/playerbot/strategy/generic/DeadStrategy.cpp` (death reset node),
+`tools/test_bg_force_reset_policy.cpp` (new standalone test),
+`tools/verify_all.sh` (register test) + `CHANGELOG.md` (doc line).
+
+Copied / ported / reimplemented: reimplemented in place. Deviations from
+the donor, all deliberate: (a) the `dead` node lives in DeadStrategy, not
+the generic BG strategy - bg strategies only evaluate inside the match
+while alive, so the donor's generic `dead` node would never fire here; the
+dead engine is the live path; (b) the force action carries a gate the donor
+lacks (in-match, out-of-combat, 60 s latch): without it the dead node would
+re-roll the role and re-path every tick while corpse-running and the timer
+could stop the bot mid-fight; (c) `team flagcarrier near` needed a creator
+(it had none - only the commented-out node referenced it); (d) flag-carrier
+check covers the two WSG flag auras (no EY/Netherstorm in 1.12).
+
+Reason: the friendly flag carrier died undefended (guard node commented
+out, trigger unwired), and bots walked back to death spots or stood on
+stale objectives with no forced re-pick.
 | Succubus Seduction as warlock CC for humanoids (PET-2) | New behavior (donor has no seduction AI; only the breakable-CC aura entry). CC flow follows the live `HasCcTargetTrigger` / `banish on cc` shape | `ai/playerbot/strategy/warlock/WarlockTriggers.h` (`SeductionTrigger`), `WarlockActions.h` (`CastSeductionOnCcAction : CastPetSpellAction` with CC target + CC flags, succubus/humanoid gate via `runtime/SeductionPolicy.h`, cached-spellId refresh), `WarlockStrategy.cpp` (`WarlockCcStrategy` node below fear at ACTION_INTERRUPT), `WarlockAiObjectContext.cpp` (2 creators), `runtime/SeductionPolicy.h` + `tools/test_seduction_policy.cpp` | Reimplemented: pet-cast instead of owner-cast (no reach prerequisite; range resolves demon→mark, so she must already be near). Break-protection via existing breakable-CC list + `CanPetAttack` gates | `bash tools/verify_all.sh`; wiring 0 live-missing; standalone `test_seduction_policy` (9 checks); `git diff --check`. Compile via shared builder; no live in-game test |
 | Kel'Thuzad fight (Naxx): role-split add priorities, center gather, phase-2 ring/tank spots, fissure flee, Detonate Mana runout | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Kelthuzad.cpp`, `src/Ai/Raid/Naxx/NaxxBossHelper.h` (KelthuzadBossHelper), `src/Ai/Raid/Naxx/NaxxStrategy.cpp` (KT rows) | Reimplemented trigger-driven; phase via NOT_SELECTABLE (vanilla) not NON_ATTACKABLE; Detonate 27819 added to universal bomb runout; p1 totem/pet suppression omitted; donor debuff-on-attacker + phase-2 Blizzard/Frost Nova suppression legs omitted (no local equivalent: local debuff-on-attacker actions do not retarget current target; no WotLK shackle mechanic) | IDs verified in tw_world (15990, 16427/28/29/41, 16129, 27808/10/19/12, 28408); center verified vs core pullPortal | `bash tools/verify_all.sh` + `tools/test_kelthuzad_adds_policy.cpp`; build-commit + no live test |
 | Grobbulus fight (Naxx): ranged behind-boss carriers, poison-cloud step-out | `mod-playerbots` | `79bd4281` | `src/Ai/Raid/Naxx/Action/NaxxActions_Grobbulus.cpp`, `src/Ai/Raid/Naxx/NaxxStrategy.cpp` (Grobbulus rows) | Reimplemented trigger-driven; ranged-carrier row raised to reaction level (EMERGENCY+7 over universal runout, else starved); cloud step-out synthesized from generic hazard mechanics (donor's cloud trigger is the MT rotation, omitted: no MT concept, needs live ring coords); return-to-center omitted (reach-to-attack covers) | Kit verified in tw_world + core boss_grobbulus.cpp (15931, 28169, 28240, cloud 15933) | `bash tools/verify_all.sh` + `tools/test_grobbulus_cloud_policy.cpp`; build-commit + no live test |
